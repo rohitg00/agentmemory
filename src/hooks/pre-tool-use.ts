@@ -30,7 +30,11 @@ async function main() {
 
   const toolInput = (data.tool_input || {}) as Record<string, unknown>;
   const files: string[] = [];
-  for (const key of ["file_path", "path", "file", "pattern"]) {
+  const fileKeys =
+    toolName === "Grep"
+      ? ["path", "file"]
+      : ["file_path", "path", "file", "pattern"];
+  for (const key of fileKeys) {
     const val = toolInput[key];
     if (typeof val === "string" && val.length > 0) files.push(val);
   }

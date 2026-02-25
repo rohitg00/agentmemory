@@ -31,8 +31,8 @@ export function registerObserveFunction(sdk: ISdk, kv: StateKV): void {
         raw: sanitizedRaw,
       };
 
-      if (typeof payload.data === "object" && payload.data !== null) {
-        const d = payload.data as Record<string, unknown>;
+      if (typeof sanitizedRaw === "object" && sanitizedRaw !== null) {
+        const d = sanitizedRaw as Record<string, unknown>;
         if (
           payload.hookType === "post_tool_use" ||
           payload.hookType === "post_tool_failure"

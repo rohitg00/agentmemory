@@ -30,8 +30,8 @@ async function main() {
 				timestamp: (/* @__PURE__ */ new Date()).toISOString(),
 				data: {
 					tool_name: data.tool_name,
-					tool_input: data.tool_input,
-					error: data.error
+					tool_input: typeof data.tool_input === "string" ? data.tool_input.slice(0, 4e3) : JSON.stringify(data.tool_input ?? "").slice(0, 4e3),
+					error: typeof data.error === "string" ? data.error.slice(0, 4e3) : JSON.stringify(data.error ?? "").slice(0, 4e3)
 				}
 			}),
 			signal: AbortSignal.timeout(3e3)

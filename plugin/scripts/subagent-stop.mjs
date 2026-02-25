@@ -34,7 +34,7 @@ async function main() {
 					last_message: lastMsg
 				}
 			}),
-			signal: AbortSignal.timeout(3e3)
+			signal: AbortSignal.timeout(2e3)
 		});
 	} catch {}
 }

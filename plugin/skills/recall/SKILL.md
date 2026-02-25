@@ -7,7 +7,7 @@ user-invocable: true
 
 Search agentmemory for observations matching: $ARGUMENTS
 
-!`curl -s -H "Content-Type: application/json" -H "Authorization: Bearer ${AGENTMEMORY_SECRET:-}" -X POST http://${AGENTMEMORY_URL:-localhost:3111}/agentmemory/search -d "{\"query\": \"$ARGUMENTS\", \"limit\": 10}" 2>/dev/null || echo '{"results":[]}'`
+!`QUERY=$(echo "$ARGUMENTS" | sed 's/\\/\\\\/g; s/"/\\"/g') && curl -s -H "Content-Type: application/json" -H "Authorization: Bearer ${AGENTMEMORY_SECRET:-}" -X POST http://${AGENTMEMORY_URL:-localhost:3111}/agentmemory/search -d "{\"query\": \"${QUERY}\", \"limit\": 10}" 2>/dev/null || echo '{"results":[]}'`
 
 Present the search results to the user in a readable format:
 - Group by session

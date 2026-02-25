@@ -20,27 +20,36 @@ interface FileHistory {
 export function registerFileIndexFunction(sdk: ISdk, kv: StateKV): void {
   sdk.registerFunction(
     { id: "mem::file-context" },
-    async (data: { sessionId: string; files: string[] }) => {
+    async (data: { sessionId: string; files: string[]; project?: string }) => {
       const ctx = getContext();
       const results: FileHistory[] = [];
 
       const sessions = await kv.list<Session>(KV.sessions);
-      const otherSessions = sessions
-        .filter((s) => s.id !== data.sessionId)
+      let otherSessions = sessions.filter((s) => s.id !== data.sessionId);
+      if (data.project) {
+        otherSessions = otherSessions.filter((s) => s.project === data.project);
+      }
+      otherSessions = otherSessions
         .sort(
           (a, b) =>
             new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime(),
         )
         .slice(0, 15);
 
+      const obsCache = new Map<string, CompressedObservation[]>();
+      for (const session of otherSessions) {
+        obsCache.set(
+          session.id,
+          await kv.list<CompressedObservation>(KV.observations(session.id)),
+        );
+      }
+
       for (const file of data.files) {
         const history: FileHistory = { file, observations: [] };
         const normalizedFile = file.replace(/^\.\//, "");
 
         for (const session of otherSessions) {
-          const observations = await kv.list<CompressedObservation>(
-            KV.observations(session.id),
-          );
+          const observations = obsCache.get(session.id) || [];
 
           for (const obs of observations) {
             if (!obs.files || !obs.title) continue;

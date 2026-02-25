@@ -47,7 +47,7 @@ export function registerPatternsFunction(sdk: ISdk, kv: StateKV): void {
           }
 
           if (obs.type === "error" && obs.title) {
-            const key = obs.title.toLowerCase().slice(0, 80);
+            const key = obs.title.toLowerCase();
             if (!errorPatterns.has(key)) {
               errorPatterns.set(key, { count: 0, sessions: new Set() });
             }

@@ -67,7 +67,9 @@ async function main() {
   console.log(`  POST /agentmemory/context           - Generate context`);
   console.log(`  POST /agentmemory/search            - Search observations`);
   console.log(`  POST /agentmemory/summarize         - Summarize session`);
-  console.log(`  POST /agentmemory/remember          - Save to long-term memory`);
+  console.log(
+    `  POST /agentmemory/remember          - Save to long-term memory`,
+  );
   console.log(`  POST /agentmemory/forget            - Delete memory data`);
   console.log(`  POST /agentmemory/file-context      - File history context`);
   console.log(`  POST /agentmemory/consolidate       - Consolidate memories`);
@@ -78,6 +80,9 @@ async function main() {
   );
   console.log(`  GET  /agentmemory/health            - Health check`);
   console.log(`  GET  /agentmemory/viewer            - Web viewer`);
+  console.log(
+    `  POST /agentmemory/generate-rules     - Generate rules from patterns`,
+  );
   console.log(`  POST /agentmemory/migrate           - Import from SQLite`);
   console.log(`  GET  /agentmemory/mcp/tools         - MCP tool listing`);
   console.log(`  POST /agentmemory/mcp/call          - MCP tool execution`);

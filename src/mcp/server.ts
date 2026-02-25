@@ -94,7 +94,8 @@ const MCP_TOOLS: McpTool[] = [
       properties: {
         project: {
           type: "string",
-          description: "Project path to analyze (optional, analyzes all if omitted)",
+          description:
+            "Project path to analyze (optional, analyzes all if omitted)",
         },
       },
     },
@@ -149,64 +150,134 @@ export function registerMcpEndpoints(
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
 
-      const { name, arguments: args } = req.body;
+      if (!req.body || typeof req.body.name !== "string") {
+        return { status_code: 400, body: { error: "name is required" } };
+      }
 
-      switch (name) {
-        case "memory_recall": {
-          const result = await sdk.trigger("mem::search", {
-            query: args.query as string,
-            limit: (args.limit as number) || 10,
-          });
-          return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] } };
+      const { name, arguments: args = {} } = req.body;
+
+      try {
+        switch (name) {
+          case "memory_recall": {
+            if (typeof args.query !== "string" || !args.query.trim()) {
+              return {
+                status_code: 400,
+                body: { error: "query is required for memory_recall" },
+              };
+            }
+            const result = await sdk.trigger("mem::search", {
+              query: args.query,
+              limit: (args.limit as number) || 10,
+            });
+            return {
+              status_code: 200,
+              body: {
+                content: [
+                  { type: "text", text: JSON.stringify(result, null, 2) },
+                ],
+              },
+            };
+          }
+
+          case "memory_save": {
+            if (typeof args.content !== "string" || !args.content.trim()) {
+              return {
+                status_code: 400,
+                body: { error: "content is required for memory_save" },
+              };
+            }
+            const type = (args.type as string) || "fact";
+            const concepts = args.concepts
+              ? (args.concepts as string)
+                  .split(",")
+                  .map((c: string) => c.trim())
+              : [];
+            const files = args.files
+              ? (args.files as string).split(",").map((f: string) => f.trim())
+              : [];
+
+            const result = await sdk.trigger("mem::remember", {
+              content: args.content,
+              type,
+              concepts,
+              files,
+            });
+            return {
+              status_code: 200,
+              body: {
+                content: [{ type: "text", text: JSON.stringify(result) }],
+              },
+            };
+          }
+
+          case "memory_file_history": {
+            if (typeof args.files !== "string" || !args.files.trim()) {
+              return {
+                status_code: 400,
+                body: { error: "files is required for memory_file_history" },
+              };
+            }
+            const fileList = (args.files as string)
+              .split(",")
+              .map((f: string) => f.trim());
+            const result = await sdk.trigger("mem::file-context", {
+              sessionId: (args.sessionId as string) || "",
+              files: fileList,
+            });
+            return {
+              status_code: 200,
+              body: {
+                content: [
+                  {
+                    type: "text",
+                    text:
+                      (result as { context: string }).context ||
+                      "No history found.",
+                  },
+                ],
+              },
+            };
+          }
+
+          case "memory_patterns": {
+            const result = await sdk.trigger("mem::patterns", {
+              project: args.project as string,
+            });
+            return {
+              status_code: 200,
+              body: {
+                content: [
+                  { type: "text", text: JSON.stringify(result, null, 2) },
+                ],
+              },
+            };
+          }
+
+          case "memory_sessions": {
+            const sessions = await kv.list(KV.sessions);
+            return {
+              status_code: 200,
+              body: {
+                content: [
+                  { type: "text", text: JSON.stringify({ sessions }, null, 2) },
+                ],
+              },
+            };
+          }
+
+          default:
+            return {
+              status_code: 400,
+              body: { error: `Unknown tool: ${name}` },
+            };
         }
-
-        case "memory_save": {
-          const content = args.content as string;
-          const type = (args.type as string) || "fact";
-          const concepts = args.concepts
-            ? (args.concepts as string).split(",").map((c: string) => c.trim())
-            : [];
-          const files = args.files
-            ? (args.files as string).split(",").map((f: string) => f.trim())
-            : [];
-
-          const result = await sdk.trigger("mem::remember", {
-            content,
-            type,
-            concepts,
-            files,
-          });
-          return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(result) }] } };
-        }
-
-        case "memory_file_history": {
-          const fileList = (args.files as string)
-            .split(",")
-            .map((f: string) => f.trim());
-          const result = await sdk.trigger("mem::file-context", {
-            sessionId: (args.sessionId as string) || "",
-            files: fileList,
-          });
-          return { status_code: 200, body: { content: [{ type: "text", text: (result as { context: string }).context || "No history found." }] } };
-        }
-
-        case "memory_patterns": {
-          const result = await sdk.trigger("mem::patterns", {
-            project: args.project as string,
-          });
-          return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] } };
-        }
-
-        case "memory_sessions": {
-          const sessions = await kv.list(KV.sessions);
-          return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify({ sessions }, null, 2) }] } };
-        }
-
-        default:
-          return {
-            status_code: 400,
-            body: { error: `Unknown tool: ${name}` },
-          };
+      } catch (err) {
+        return {
+          status_code: 500,
+          body: {
+            error: err instanceof Error ? err.message : "Internal error",
+          },
+        };
       }
     },
   );
