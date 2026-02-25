@@ -42,7 +42,7 @@ async function main() {
 
   const secret = getEnvVar("AGENTMEMORY_SECRET");
   registerApiTriggers(sdk, kv, secret);
-  registerEventTriggers(sdk);
+  registerEventTriggers(sdk, kv);
 
   const indexCount = await rebuildIndex(kv).catch(() => 0);
   if (indexCount > 0) {

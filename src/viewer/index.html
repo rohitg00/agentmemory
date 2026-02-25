@@ -104,7 +104,8 @@
   <script>
     const REST = window.location.origin;
     const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsPort = parseInt(window.location.port || '3111') + 1;
+    const params = new URLSearchParams(window.location.search);
+    const wsPort = params.get('wsPort') || String(parseInt(window.location.port || '3111') + 1);
     const WS_URL = `${wsProto}//${window.location.hostname}:${wsPort}`;
     const timeline = document.getElementById('timeline');
     const statusEl = document.getElementById('status');
