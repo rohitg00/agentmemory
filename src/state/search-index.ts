@@ -44,7 +44,7 @@ export class SearchIndex {
       }
 
       for (const [indexTerm, obsIds] of this.invertedIndex) {
-        if (indexTerm !== term && indexTerm.includes(term)) {
+        if (indexTerm !== term && indexTerm.startsWith(term)) {
           for (const obsId of obsIds) {
             scores.set(obsId, (scores.get(obsId) || 0) + 0.5);
           }

@@ -102,8 +102,10 @@
   </div>
 
   <script>
-    const REST = 'http://localhost:3111';
-    const WS_URL = 'ws://localhost:3112';
+    const REST = window.location.origin;
+    const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsPort = parseInt(window.location.port || '3111') + 1;
+    const WS_URL = `${wsProto}//${window.location.hostname}:${wsPort}`;
     const timeline = document.getElementById('timeline');
     const statusEl = document.getElementById('status');
     const searchEl = document.getElementById('search');
@@ -174,6 +176,7 @@
 
       timeline.innerHTML = filtered.map(o => {
         const imp = (o.importance || 5) >= 7 ? 'high' : (o.importance || 5) >= 4 ? 'med' : 'low';
+        const impClass = ['high', 'med', 'low'].includes(imp) ? imp : 'low';
         const isRaw = !o.title;
         const title = o.title || o.toolName || o.hookType || 'Raw observation';
         const type = o.type || o.hookType || 'raw';
@@ -183,7 +186,7 @@
         const concepts = (o.concepts || []).map(c => `<span class="tag">${esc(c)}</span>`).join('');
         const files = (o.files || []).map(f => `<span class="tag file-tag">${esc(f)}</span>`).join('');
 
-        return `<div class="obs importance-${imp}">
+        return `<div class="obs importance-${impClass}">
           <div class="obs-header">
             <span class="obs-type ${isRaw ? 'raw-badge' : ''}">${esc(type)}</span>
             <span class="obs-time">${time}</span>
