@@ -33,10 +33,13 @@ export function registerObserveFunction(sdk: ISdk, kv: StateKV): void {
 
       if (typeof payload.data === "object" && payload.data !== null) {
         const d = payload.data as Record<string, unknown>;
-        if (payload.hookType === "post_tool_use") {
+        if (
+          payload.hookType === "post_tool_use" ||
+          payload.hookType === "post_tool_failure"
+        ) {
           raw.toolName = d["tool_name"] as string | undefined;
           raw.toolInput = d["tool_input"];
-          raw.toolOutput = d["tool_output"];
+          raw.toolOutput = d["tool_output"] || d["error"];
         }
         if (payload.hookType === "prompt_submit") {
           raw.userPrompt = d["prompt"] as string | undefined;

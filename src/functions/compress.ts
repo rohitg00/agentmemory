@@ -26,6 +26,9 @@ const VALID_TYPES = new Set<string>([
   "error",
   "decision",
   "discovery",
+  "subagent",
+  "notification",
+  "task",
   "other",
 ]);
 
