@@ -1,0 +1,34 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "type": "command",
+        "command": "node __PLUGIN_DIR__/../dist/hooks/session-start.js"
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "type": "command",
+        "command": "node __PLUGIN_DIR__/../dist/hooks/prompt-submit.js"
+      }
+    ],
+    "PostToolUse": [
+      {
+        "type": "command",
+        "command": "node __PLUGIN_DIR__/../dist/hooks/post-tool-use.js"
+      }
+    ],
+    "Stop": [
+      {
+        "type": "command",
+        "command": "node __PLUGIN_DIR__/../dist/hooks/stop.js"
+      }
+    ],
+    "SessionEnd": [
+      {
+        "type": "command",
+        "command": "node __PLUGIN_DIR__/../dist/hooks/session-end.js"
+      }
+    ]
+  }
+}

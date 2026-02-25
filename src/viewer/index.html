@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>agentmemory viewer</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+      background: #0d1117;
+      color: #c9d1d9;
+      line-height: 1.5;
+    }
+    .header {
+      padding: 16px 24px;
+      border-bottom: 1px solid #21262d;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .header h1 { font-size: 16px; color: #58a6ff; font-weight: 600; }
+    .header .status { font-size: 12px; padding: 2px 8px; border-radius: 12px; }
+    .status.connected { background: #1b4332; color: #40c057; }
+    .status.disconnected { background: #3d1f1f; color: #f85149; }
+    .controls {
+      padding: 12px 24px;
+      border-bottom: 1px solid #21262d;
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+    .controls select, .controls input {
+      background: #161b22;
+      border: 1px solid #30363d;
+      color: #c9d1d9;
+      padding: 6px 10px;
+      border-radius: 6px;
+      font-family: inherit;
+      font-size: 13px;
+    }
+    .controls input { flex: 1; }
+    .timeline { padding: 16px 24px; overflow-y: auto; height: calc(100vh - 120px); }
+    .obs {
+      margin-bottom: 12px;
+      padding: 12px 16px;
+      background: #161b22;
+      border: 1px solid #21262d;
+      border-radius: 8px;
+      border-left: 3px solid #30363d;
+    }
+    .obs.importance-high { border-left-color: #f85149; }
+    .obs.importance-med { border-left-color: #d29922; }
+    .obs.importance-low { border-left-color: #3fb950; }
+    .obs-header { display: flex; justify-content: space-between; margin-bottom: 6px; }
+    .obs-type {
+      font-size: 11px;
+      padding: 1px 6px;
+      border-radius: 4px;
+      background: #21262d;
+      color: #8b949e;
+      text-transform: uppercase;
+    }
+    .obs-time { font-size: 11px; color: #484f58; }
+    .obs-title { font-size: 14px; font-weight: 600; color: #e6edf3; margin-bottom: 4px; }
+    .obs-narrative { font-size: 13px; color: #8b949e; }
+    .obs-facts { margin-top: 6px; padding-left: 16px; }
+    .obs-facts li { font-size: 12px; color: #7d8590; margin-bottom: 2px; }
+    .obs-meta { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+    .tag {
+      font-size: 11px;
+      padding: 1px 6px;
+      border-radius: 4px;
+      background: #1f2937;
+      color: #58a6ff;
+    }
+    .file-tag { color: #3fb950; }
+    .empty {
+      text-align: center;
+      padding: 60px 0;
+      color: #484f58;
+    }
+    .raw-badge {
+      background: #3d2b00;
+      color: #d29922;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>agentmemory</h1>
+    <span id="status" class="status disconnected">disconnected</span>
+  </div>
+  <div class="controls">
+    <select id="session-filter">
+      <option value="">All sessions</option>
+    </select>
+    <input id="search" type="text" placeholder="Search observations...">
+  </div>
+  <div id="timeline" class="timeline">
+    <div class="empty">Waiting for observations...</div>
+  </div>
+
+  <script>
+    const REST = 'http://localhost:3111';
+    const WS_URL = 'ws://localhost:3112';
+    const timeline = document.getElementById('timeline');
+    const statusEl = document.getElementById('status');
+    const searchEl = document.getElementById('search');
+    const sessionFilter = document.getElementById('session-filter');
+    let observations = [];
+    let ws = null;
+
+    function connect() {
+      try {
+        ws = new WebSocket(WS_URL);
+        ws.onopen = () => {
+          statusEl.textContent = 'connected';
+          statusEl.className = 'status connected';
+        };
+        ws.onmessage = (e) => {
+          try {
+            const msg = JSON.parse(e.data);
+            if (msg.observation) {
+              const existing = observations.findIndex(o => o.id === msg.observation.id);
+              if (existing >= 0) {
+                observations[existing] = msg.observation;
+              } else {
+                observations.unshift(msg.observation);
+              }
+              render();
+            }
+          } catch {}
+        };
+        ws.onclose = () => {
+          statusEl.textContent = 'disconnected';
+          statusEl.className = 'status disconnected';
+          setTimeout(connect, 3000);
+        };
+        ws.onerror = () => ws.close();
+      } catch {
+        setTimeout(connect, 3000);
+      }
+    }
+
+    async function loadSessions() {
+      try {
+        const res = await fetch(`${REST}/agentmemory/sessions`);
+        const data = await res.json();
+        for (const s of data.sessions || []) {
+          const opt = document.createElement('option');
+          opt.value = s.id;
+          opt.textContent = `${s.project.split('/').pop()} (${s.id.slice(0, 8)})`;
+          sessionFilter.appendChild(opt);
+        }
+      } catch {}
+    }
+
+    function render() {
+      const query = searchEl.value.toLowerCase();
+      const session = sessionFilter.value;
+      let filtered = observations;
+      if (session) filtered = filtered.filter(o => o.sessionId === session);
+      if (query) filtered = filtered.filter(o =>
+        (o.title || '').toLowerCase().includes(query) ||
+        (o.narrative || '').toLowerCase().includes(query) ||
+        (o.concepts || []).some(c => c.toLowerCase().includes(query))
+      );
+
+      if (filtered.length === 0) {
+        timeline.innerHTML = '<div class="empty">No observations match</div>';
+        return;
+      }
+
+      timeline.innerHTML = filtered.map(o => {
+        const imp = (o.importance || 5) >= 7 ? 'high' : (o.importance || 5) >= 4 ? 'med' : 'low';
+        const isRaw = !o.title;
+        const title = o.title || o.toolName || o.hookType || 'Raw observation';
+        const type = o.type || o.hookType || 'raw';
+        const time = o.timestamp ? new Date(o.timestamp).toLocaleTimeString() : '';
+        const narrative = o.narrative || '';
+        const facts = (o.facts || []).map(f => `<li>${esc(f)}</li>`).join('');
+        const concepts = (o.concepts || []).map(c => `<span class="tag">${esc(c)}</span>`).join('');
+        const files = (o.files || []).map(f => `<span class="tag file-tag">${esc(f)}</span>`).join('');
+
+        return `<div class="obs importance-${imp}">
+          <div class="obs-header">
+            <span class="obs-type ${isRaw ? 'raw-badge' : ''}">${esc(type)}</span>
+            <span class="obs-time">${time}</span>
+          </div>
+          <div class="obs-title">${esc(title)}</div>
+          ${narrative ? `<div class="obs-narrative">${esc(narrative)}</div>` : ''}
+          ${facts ? `<ul class="obs-facts">${facts}</ul>` : ''}
+          ${concepts || files ? `<div class="obs-meta">${concepts}${files}</div>` : ''}
+        </div>`;
+      }).join('');
+    }
+
+    function esc(s) {
+      const d = document.createElement('div');
+      d.textContent = s;
+      return d.innerHTML;
+    }
+
+    searchEl.addEventListener('input', render);
+    sessionFilter.addEventListener('change', render);
+    loadSessions();
+    connect();
+  </script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+services:
+  iii-engine:
+    image: iiidev/iii:latest
+    ports:
+      - "49134:49134"
+      - "3111:3111"
+      - "3112:3112"
+      - "9464:9464"
+    volumes:
+      - iii-data:/data
+    restart: unless-stopped
+
+volumes:
+  iii-data:
