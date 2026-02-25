@@ -1,131 +1,242 @@
-import type { ISdk, ApiRequest } from 'iii-sdk'
-import type { Session, CompressedObservation, HookPayload } from '../types.js'
-import { KV } from '../state/schema.js'
-import { StateKV } from '../state/kv.js'
-import { readFileSync } from 'node:fs'
-import { join, dirname } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import type { ISdk, ApiRequest } from "iii-sdk";
+import type { Session, CompressedObservation, HookPayload } from "../types.js";
+import { KV } from "../state/schema.js";
+import { StateKV } from "../state/kv.js";
+import { readFileSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 
-type Response = { status_code: number; headers?: Record<string, string>; body: unknown }
+type Response = {
+  status_code: number;
+  headers?: Record<string, string>;
+  body: unknown;
+};
 
-export function registerApiTriggers(sdk: ISdk, kv: StateKV): void {
+function checkAuth(
+  req: ApiRequest,
+  secret: string | undefined,
+): Response | null {
+  if (!secret) return null;
+  const auth = req.headers?.["authorization"] || req.headers?.["Authorization"];
+  if (auth !== `Bearer ${secret}`) {
+    return { status_code: 401, body: { error: "unauthorized" } };
+  }
+  return null;
+}
 
+export function registerApiTriggers(
+  sdk: ISdk,
+  kv: StateKV,
+  secret?: string,
+): void {
   sdk.registerFunction(
-    { id: 'api::health' },
+    { id: "api::health" },
     async (): Promise<Response> => ({
       status_code: 200,
-      body: { status: 'ok', service: 'agentmemory', version: '0.1.0' },
-    })
-  )
-  sdk.registerTrigger({ type: 'http', function_id: 'api::health', config: { api_path: '/agentmemory/health', http_method: 'GET' } })
+      body: { status: "ok", service: "agentmemory", version: "0.1.0" },
+    }),
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::health",
+    config: { api_path: "/agentmemory/health", http_method: "GET" },
+  });
 
   sdk.registerFunction(
-    { id: 'api::observe' },
+    { id: "api::observe" },
     async (req: ApiRequest<HookPayload>): Promise<Response> => {
-      const result = await sdk.trigger('mem::observe', req.body)
-      return { status_code: 201, body: result }
-    }
-  )
-  sdk.registerTrigger({ type: 'http', function_id: 'api::observe', config: { api_path: '/agentmemory/observe', http_method: 'POST' } })
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const result = await sdk.trigger("mem::observe", req.body);
+      return { status_code: 201, body: result };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::observe",
+    config: { api_path: "/agentmemory/observe", http_method: "POST" },
+  });
 
   sdk.registerFunction(
-    { id: 'api::context' },
-    async (req: ApiRequest<{ sessionId: string; project: string; budget?: number }>): Promise<Response> => {
-      const result = await sdk.trigger('mem::context', req.body)
-      return { status_code: 200, body: result }
-    }
-  )
-  sdk.registerTrigger({ type: 'http', function_id: 'api::context', config: { api_path: '/agentmemory/context', http_method: 'POST' } })
+    { id: "api::context" },
+    async (
+      req: ApiRequest<{ sessionId: string; project: string; budget?: number }>,
+    ): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const result = await sdk.trigger("mem::context", req.body);
+      return { status_code: 200, body: result };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::context",
+    config: { api_path: "/agentmemory/context", http_method: "POST" },
+  });
 
   sdk.registerFunction(
-    { id: 'api::search' },
-    async (req: ApiRequest<{ query: string; limit?: number }>): Promise<Response> => {
-      const result = await sdk.trigger('mem::search', req.body)
-      return { status_code: 200, body: result }
-    }
-  )
-  sdk.registerTrigger({ type: 'http', function_id: 'api::search', config: { api_path: '/agentmemory/search', http_method: 'POST' } })
+    { id: "api::search" },
+    async (
+      req: ApiRequest<{ query: string; limit?: number }>,
+    ): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const result = await sdk.trigger("mem::search", req.body);
+      return { status_code: 200, body: result };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::search",
+    config: { api_path: "/agentmemory/search", http_method: "POST" },
+  });
 
   sdk.registerFunction(
-    { id: 'api::session::start' },
-    async (req: ApiRequest<{ sessionId: string; project: string; cwd: string }>): Promise<Response> => {
-      const { sessionId, project, cwd } = req.body
+    { id: "api::session::start" },
+    async (
+      req: ApiRequest<{ sessionId: string; project: string; cwd: string }>,
+    ): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const { sessionId, project, cwd } = req.body;
       const session: Session = {
-        id: sessionId, project, cwd,
+        id: sessionId,
+        project,
+        cwd,
         startedAt: new Date().toISOString(),
-        status: 'active',
+        status: "active",
         observationCount: 0,
-      }
-      await kv.set(KV.sessions, sessionId, session)
-      const contextResult = await sdk.trigger<{ sessionId: string; project: string }, { context: string }>('mem::context', { sessionId, project })
-      return { status_code: 200, body: { session, context: contextResult.context } }
-    }
-  )
-  sdk.registerTrigger({ type: 'http', function_id: 'api::session::start', config: { api_path: '/agentmemory/session/start', http_method: 'POST' } })
+      };
+      await kv.set(KV.sessions, sessionId, session);
+      const contextResult = await sdk.trigger<
+        { sessionId: string; project: string },
+        { context: string }
+      >("mem::context", { sessionId, project });
+      return {
+        status_code: 200,
+        body: { session, context: contextResult.context },
+      };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::session::start",
+    config: { api_path: "/agentmemory/session/start", http_method: "POST" },
+  });
 
   sdk.registerFunction(
-    { id: 'api::session::end' },
+    { id: "api::session::end" },
     async (req: ApiRequest<{ sessionId: string }>): Promise<Response> => {
-      const session = await kv.get<Session>(KV.sessions, req.body.sessionId)
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const session = await kv.get<Session>(KV.sessions, req.body.sessionId);
       if (session) {
         await kv.set(KV.sessions, req.body.sessionId, {
-          ...session, endedAt: new Date().toISOString(), status: 'completed' as const,
-        })
+          ...session,
+          endedAt: new Date().toISOString(),
+          status: "completed" as const,
+        });
       }
-      return { status_code: 200, body: { success: true } }
-    }
-  )
-  sdk.registerTrigger({ type: 'http', function_id: 'api::session::end', config: { api_path: '/agentmemory/session/end', http_method: 'POST' } })
+      return { status_code: 200, body: { success: true } };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::session::end",
+    config: { api_path: "/agentmemory/session/end", http_method: "POST" },
+  });
 
   sdk.registerFunction(
-    { id: 'api::summarize' },
+    { id: "api::summarize" },
     async (req: ApiRequest<{ sessionId: string }>): Promise<Response> => {
-      const result = await sdk.trigger('mem::summarize', req.body)
-      return { status_code: 200, body: result }
-    }
-  )
-  sdk.registerTrigger({ type: 'http', function_id: 'api::summarize', config: { api_path: '/agentmemory/summarize', http_method: 'POST' } })
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const result = await sdk.trigger("mem::summarize", req.body);
+      return { status_code: 200, body: result };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::summarize",
+    config: { api_path: "/agentmemory/summarize", http_method: "POST" },
+  });
+
+  sdk.registerFunction({ id: "api::sessions" }, async (): Promise<Response> => {
+    const sessions = await kv.list<Session>(KV.sessions);
+    return { status_code: 200, body: { sessions } };
+  });
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::sessions",
+    config: { api_path: "/agentmemory/sessions", http_method: "GET" },
+  });
 
   sdk.registerFunction(
-    { id: 'api::sessions' },
-    async (): Promise<Response> => {
-      const sessions = await kv.list<Session>(KV.sessions)
-      return { status_code: 200, body: { sessions } }
-    }
-  )
-  sdk.registerTrigger({ type: 'http', function_id: 'api::sessions', config: { api_path: '/agentmemory/sessions', http_method: 'GET' } })
-
-  sdk.registerFunction(
-    { id: 'api::observations' },
+    { id: "api::observations" },
     async (req: ApiRequest): Promise<Response> => {
-      const sessionId = req.query_params['sessionId'] as string
-      if (!sessionId) return { status_code: 400, body: { error: 'sessionId required' } }
-      const observations = await kv.list<CompressedObservation>(KV.observations(sessionId))
-      return { status_code: 200, body: { observations } }
-    }
-  )
-  sdk.registerTrigger({ type: 'http', function_id: 'api::observations', config: { api_path: '/agentmemory/observations', http_method: 'GET' } })
+      const sessionId = req.query_params["sessionId"] as string;
+      if (!sessionId)
+        return { status_code: 400, body: { error: "sessionId required" } };
+      const observations = await kv.list<CompressedObservation>(
+        KV.observations(sessionId),
+      );
+      return { status_code: 200, body: { observations } };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::observations",
+    config: { api_path: "/agentmemory/observations", http_method: "GET" },
+  });
 
   sdk.registerFunction(
-    { id: 'api::migrate' },
+    { id: "api::migrate" },
     async (req: ApiRequest<{ dbPath: string }>): Promise<Response> => {
-      const result = await sdk.trigger('mem::migrate', req.body)
-      return { status_code: 200, body: result }
-    }
-  )
-  sdk.registerTrigger({ type: 'http', function_id: 'api::migrate', config: { api_path: '/agentmemory/migrate', http_method: 'POST' } })
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const result = await sdk.trigger("mem::migrate", req.body);
+      return { status_code: 200, body: result };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::migrate",
+    config: { api_path: "/agentmemory/migrate", http_method: "POST" },
+  });
 
-  sdk.registerFunction(
-    { id: 'api::viewer' },
-    async (): Promise<Response> => {
-      try {
-        const viewerPath = join(dirname(fileURLToPath(import.meta.url)), '..', 'viewer', 'index.html')
-        const html = readFileSync(viewerPath, 'utf-8')
-        return { status_code: 200, headers: { 'Content-Type': 'text/html' }, body: html }
-      } catch {
-        return { status_code: 200, headers: { 'Content-Type': 'text/html' }, body: '<!DOCTYPE html><html><body><h1>agentmemory</h1></body></html>' }
-      }
+  sdk.registerFunction({ id: "api::viewer" }, async (): Promise<Response> => {
+    try {
+      const viewerPath = join(
+        dirname(fileURLToPath(import.meta.url)),
+        "..",
+        "viewer",
+        "index.html",
+      );
+      const html = readFileSync(viewerPath, "utf-8");
+      return {
+        status_code: 200,
+        headers: {
+          "Content-Type": "text/html",
+          "Content-Security-Policy":
+            "default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self' ws://localhost:* wss://localhost:*",
+        },
+        body: html,
+      };
+    } catch {
+      return {
+        status_code: 200,
+        headers: {
+          "Content-Type": "text/html",
+          "Content-Security-Policy":
+            "default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self' ws://localhost:* wss://localhost:*",
+        },
+        body: "<!DOCTYPE html><html><body><h1>agentmemory</h1></body></html>",
+      };
     }
-  )
-  sdk.registerTrigger({ type: 'http', function_id: 'api::viewer', config: { api_path: '/agentmemory/viewer', http_method: 'GET' } })
+  });
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::viewer",
+    config: { api_path: "/agentmemory/viewer", http_method: "GET" },
+  });
 }
