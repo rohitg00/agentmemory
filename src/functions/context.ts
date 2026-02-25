@@ -67,14 +67,15 @@ export function registerContextFunction(
         );
 
         if (important.length > 0) {
-          const content = important
+          const items = important
             .sort((a, b) => b.importance - a.importance)
             .slice(0, 5)
             .map((o) => `- [${o.type}] ${o.title}: ${o.narrative}`)
             .join("\n");
+          const content = `## Session ${session.id.slice(0, 8)} (${session.startedAt})\n${items}`;
           blocks.push({
             type: "observation",
-            content: `## Session ${session.id.slice(0, 8)} (${session.startedAt})\n${content}`,
+            content,
             tokens: estimateTokens(content),
             recency: new Date(session.startedAt).getTime(),
           });

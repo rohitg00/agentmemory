@@ -15,12 +15,27 @@ import {
 import { getXmlTag, getXmlChildren } from "../prompts/xml.js";
 import { getSearchIndex } from "./search.js";
 
+const VALID_TYPES = new Set<string>([
+  "file_read",
+  "file_write",
+  "file_edit",
+  "command_run",
+  "search",
+  "web_fetch",
+  "conversation",
+  "error",
+  "decision",
+  "discovery",
+  "other",
+]);
+
 function parseCompressionXml(
   xml: string,
 ): Omit<CompressedObservation, "id" | "sessionId" | "timestamp"> | null {
-  const type = getXmlTag(xml, "type");
+  const rawType = getXmlTag(xml, "type");
   const title = getXmlTag(xml, "title");
-  if (!type || !title) return null;
+  if (!rawType || !title) return null;
+  const type = VALID_TYPES.has(rawType) ? rawType : "other";
 
   return {
     type: type as ObservationType,
@@ -30,7 +45,10 @@ function parseCompressionXml(
     narrative: getXmlTag(xml, "narrative"),
     concepts: getXmlChildren(xml, "concepts", "concept"),
     files: getXmlChildren(xml, "files", "file"),
-    importance: parseInt(getXmlTag(xml, "importance") || "5", 10),
+    importance: Math.max(
+      1,
+      Math.min(10, parseInt(getXmlTag(xml, "importance") || "5", 10) || 5),
+    ),
   };
 }
 

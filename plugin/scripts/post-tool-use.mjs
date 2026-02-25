@@ -1,6 +1,12 @@
 #!/usr/bin/env node
 //#region src/hooks/post-tool-use.ts
 const REST_URL = process.env["AGENTMEMORY_URL"] || "http://localhost:3111";
+const SECRET = process.env["AGENTMEMORY_SECRET"] || "";
+function authHeaders() {
+	const h = { "Content-Type": "application/json" };
+	if (SECRET) h["Authorization"] = `Bearer ${SECRET}`;
+	return h;
+}
 async function main() {
 	let input = "";
 	for await (const chunk of process.stdin) input += chunk;
@@ -14,7 +20,7 @@ async function main() {
 	try {
 		await fetch(`${REST_URL}/agentmemory/observe`, {
 			method: "POST",
-			headers: { "Content-Type": "application/json" },
+			headers: authHeaders(),
 			body: JSON.stringify({
 				hookType: "post_tool_use",
 				sessionId,
@@ -35,7 +41,7 @@ function truncate(value, max) {
 	if (typeof value === "string" && value.length > max) return value.slice(0, max) + "\n[...truncated]";
 	if (typeof value === "object" && value !== null) {
 		const str = JSON.stringify(value);
-		if (str.length > max) return JSON.parse(str.slice(0, max - 1) + "}");
+		if (str.length > max) return str.slice(0, max) + "...[truncated]";
 		return value;
 	}
 	return value;
