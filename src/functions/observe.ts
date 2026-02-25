@@ -14,29 +14,33 @@ export function registerObserveFunction(sdk: ISdk, kv: StateKV): void {
     async (payload: HookPayload) => {
       const ctx = getContext();
       const obsId = generateId("obs");
-      const sanitizedData = stripPrivateData(JSON.stringify(payload.data));
+      let sanitizedRaw: unknown = payload.data;
+      try {
+        const jsonStr = JSON.stringify(payload.data);
+        const sanitized = stripPrivateData(jsonStr);
+        sanitizedRaw = JSON.parse(sanitized);
+      } catch {
+        sanitizedRaw = stripPrivateData(String(payload.data));
+      }
 
       const raw: RawObservation = {
         id: obsId,
         sessionId: payload.sessionId,
         timestamp: payload.timestamp,
         hookType: payload.hookType,
-        raw: JSON.parse(sanitizedData),
+        raw: sanitizedRaw,
       };
 
-      const d =
-        typeof payload.data === "object" && payload.data !== null
-          ? (payload.data as Record<string, unknown>)
-          : null;
-
-      if (payload.hookType === "post_tool_use" && d) {
-        raw.toolName = d["tool_name"] as string | undefined;
-        raw.toolInput = d["tool_input"];
-        raw.toolOutput = d["tool_output"];
-      }
-
-      if (payload.hookType === "prompt_submit" && d) {
-        raw.userPrompt = d["prompt"] as string | undefined;
+      if (typeof payload.data === "object" && payload.data !== null) {
+        const d = payload.data as Record<string, unknown>;
+        if (payload.hookType === "post_tool_use") {
+          raw.toolName = d["tool_name"] as string | undefined;
+          raw.toolInput = d["tool_input"];
+          raw.toolOutput = d["tool_output"];
+        }
+        if (payload.hookType === "prompt_submit") {
+          raw.userPrompt = d["prompt"] as string | undefined;
+        }
       }
 
       await kv.set(KV.observations(payload.sessionId), obsId, raw);

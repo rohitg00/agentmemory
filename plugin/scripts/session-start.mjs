@@ -1,6 +1,12 @@
 #!/usr/bin/env node
 //#region src/hooks/session-start.ts
 const REST_URL = process.env["AGENTMEMORY_URL"] || "http://localhost:3111";
+const SECRET = process.env["AGENTMEMORY_SECRET"] || "";
+function authHeaders() {
+	const h = { "Content-Type": "application/json" };
+	if (SECRET) h["Authorization"] = `Bearer ${SECRET}`;
+	return h;
+}
 async function main() {
 	let input = "";
 	for await (const chunk of process.stdin) input += chunk;
@@ -15,7 +21,7 @@ async function main() {
 	try {
 		const res = await fetch(`${REST_URL}/agentmemory/session/start`, {
 			method: "POST",
-			headers: { "Content-Type": "application/json" },
+			headers: authHeaders(),
 			body: JSON.stringify({
 				sessionId,
 				project,
