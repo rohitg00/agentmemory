@@ -33,6 +33,17 @@ Session 2: "Now add rate limiting"
 
 ## Quick Start
 
+### 1. Install the Plugin
+
+```bash
+/plugin marketplace add rohitg00/agentmemory
+/plugin install agentmemory
+```
+
+All 5 hooks are registered automatically. No manual config needed.
+
+### 2. Start the Worker
+
 ```bash
 git clone https://github.com/rohitg00/agentmemory.git
 cd agentmemory
@@ -44,18 +55,18 @@ docker compose up -d
 npm install && npm run build && npm start
 ```
 
-agentmemory connects to iii-engine on `ws://localhost:49134` and exposes its API on port `3111`.
-
-### Verify it works
+### 3. Verify
 
 ```bash
 curl http://localhost:3111/agentmemory/health
 # {"status":"ok","service":"agentmemory","version":"0.1.0"}
 ```
 
-### Connect to Claude Code
+That's it. Start a Claude Code session and agentmemory begins capturing. Start another session and it injects context from all previous sessions.
 
-Add to `~/.claude/settings.json`:
+### Manual Hook Setup (alternative)
+
+If you prefer not to use the plugin, add hooks directly to `~/.claude/settings.json`:
 
 ```json
 {
@@ -68,10 +79,6 @@ Add to `~/.claude/settings.json`:
   }
 }
 ```
-
-Or install as a [Claude Code plugin](#plugin-install) for automatic hook registration.
-
-That's it. Start a Claude Code session and agentmemory begins capturing. Start another session and it injects context from all previous sessions.
 
 ## How It Works
 
@@ -219,14 +226,23 @@ Connects to iii-engine's WebSocket stream. Dark theme, timeline layout, session 
 
 ## Plugin Install
 
-Install as a Claude Code plugin for zero-config hook registration:
+### From Marketplace (recommended)
 
 ```bash
-# Symlink into Claude Code plugins
-ln -s /path/to/agentmemory/plugin ~/.claude/plugins/agentmemory
+/plugin marketplace add rohitg00/agentmemory
+/plugin install agentmemory
 ```
 
-All 5 hooks are registered automatically via `hooks.json`.
+Restart Claude Code. All 5 hooks are registered automatically.
+
+### Plugin Commands
+
+```bash
+/plugin install agentmemory          # Install
+/plugin disable agentmemory          # Disable without uninstalling
+/plugin enable agentmemory           # Re-enable
+/plugin uninstall agentmemory        # Remove
+```
 
 ## Migration
 

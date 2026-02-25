@@ -3,31 +3,31 @@
     "SessionStart": [
       {
         "type": "command",
-        "command": "node __PLUGIN_DIR__/../dist/hooks/session-start.js"
+        "command": "node ${CLAUDE_PLUGIN_ROOT}/scripts/session-start.mjs"
       }
     ],
     "UserPromptSubmit": [
       {
         "type": "command",
-        "command": "node __PLUGIN_DIR__/../dist/hooks/prompt-submit.js"
+        "command": "node ${CLAUDE_PLUGIN_ROOT}/scripts/prompt-submit.mjs"
       }
     ],
     "PostToolUse": [
       {
         "type": "command",
-        "command": "node __PLUGIN_DIR__/../dist/hooks/post-tool-use.js"
+        "command": "node ${CLAUDE_PLUGIN_ROOT}/scripts/post-tool-use.mjs"
       }
     ],
     "Stop": [
       {
         "type": "command",
-        "command": "node __PLUGIN_DIR__/../dist/hooks/stop.js"
+        "command": "node ${CLAUDE_PLUGIN_ROOT}/scripts/stop.mjs"
       }
     ],
     "SessionEnd": [
       {
         "type": "command",
-        "command": "node __PLUGIN_DIR__/../dist/hooks/session-end.js"
+        "command": "node ${CLAUDE_PLUGIN_ROOT}/scripts/session-end.mjs"
       }
     ]
   }
