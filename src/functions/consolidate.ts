@@ -68,7 +68,7 @@ export function registerConsolidateFunction(
     { id: "mem::consolidate" },
     async (data: { project?: string; minObservations?: number }) => {
       const ctx = getContext();
-      const minObs = data.minObservations || 10;
+      const minObs = data.minObservations ?? 10;
 
       const sessions = await kv.list<Session>(KV.sessions);
       const filtered = data.project
@@ -122,10 +122,15 @@ export function registerConsolidateFunction(
           .join("\n\n");
 
         try {
-          const response = await provider.compress(
-            CONSOLIDATION_SYSTEM,
-            `Concept: "${concept}"\n\nObservations:\n${prompt}`,
-          );
+          const response = await Promise.race([
+            provider.compress(
+              CONSOLIDATION_SYSTEM,
+              `Concept: "${concept}"\n\nObservations:\n${prompt}`,
+            ),
+            new Promise<never>((_, reject) =>
+              setTimeout(() => reject(new Error("compress timeout")), 30_000),
+            ),
+          ]);
           const parsed = parseMemoryXml(response, sessionIds);
           if (!parsed) continue;
 

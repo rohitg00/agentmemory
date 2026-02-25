@@ -14,6 +14,9 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
       files?: string[];
     }) => {
       const ctx = getContext();
+      if (!data.content || !data.content.trim()) {
+        return { success: false, error: "content is required" };
+      }
       const validTypes = new Set([
         "pattern",
         "preference",
@@ -65,7 +68,7 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
         deleted++;
       }
 
-      if (data.observationIds && data.sessionId) {
+      if (data.observationIds?.length && data.sessionId) {
         for (const obsId of data.observationIds) {
           await kv.delete(KV.observations(data.sessionId), obsId);
           deleted++;

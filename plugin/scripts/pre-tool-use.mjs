@@ -27,12 +27,13 @@ async function main() {
 	].includes(toolName)) return;
 	const toolInput = data.tool_input || {};
 	const files = [];
-	for (const key of [
+	const fileKeys = toolName === "Grep" ? ["path", "file"] : [
 		"file_path",
 		"path",
 		"file",
 		"pattern"
-	]) {
+	];
+	for (const key of fileKeys) {
 		const val = toolInput[key];
 		if (typeof val === "string" && val.length > 0) files.push(val);
 	}

@@ -221,6 +221,13 @@ export function registerApiTriggers(
     ): Promise<Response> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
+      if (
+        !req.body?.content ||
+        typeof req.body.content !== "string" ||
+        !req.body.content.trim()
+      ) {
+        return { status_code: 400, body: { error: "content is required" } };
+      }
       const result = await sdk.trigger("mem::remember", req.body);
       return { status_code: 201, body: result };
     },
@@ -242,6 +249,12 @@ export function registerApiTriggers(
     ): Promise<Response> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
+      if (!req.body?.sessionId && !req.body?.memoryId) {
+        return {
+          status_code: 400,
+          body: { error: "sessionId or memoryId is required" },
+        };
+      }
       const result = await sdk.trigger("mem::forget", req.body);
       return { status_code: 200, body: result };
     },
@@ -304,6 +317,9 @@ export function registerApiTriggers(
     async (req: ApiRequest<{ dbPath: string }>): Promise<Response> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
+      if (!req.body?.dbPath || typeof req.body.dbPath !== "string") {
+        return { status_code: 400, body: { error: "dbPath is required" } };
+      }
       const result = await sdk.trigger("mem::migrate", req.body);
       return { status_code: 200, body: result };
     },

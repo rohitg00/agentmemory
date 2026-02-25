@@ -23,9 +23,10 @@ async function main() {
   }
 
   const sessionId = (data.session_id as string) || "unknown";
-  const lastMsg = typeof data.last_assistant_message === "string"
-    ? data.last_assistant_message.slice(0, 4000)
-    : "";
+  const lastMsg =
+    typeof data.last_assistant_message === "string"
+      ? data.last_assistant_message.slice(0, 4000)
+      : "";
 
   try {
     await fetch(`${REST_URL}/agentmemory/observe`, {
@@ -43,7 +44,7 @@ async function main() {
           last_message: lastMsg,
         },
       }),
-      signal: AbortSignal.timeout(3000),
+      signal: AbortSignal.timeout(2000),
     });
   } catch {
     // fire and forget
