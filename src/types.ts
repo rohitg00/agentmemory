@@ -48,6 +48,9 @@ export type ObservationType =
   | "error"
   | "decision"
   | "discovery"
+  | "subagent"
+  | "notification"
+  | "task"
   | "other";
 
 export interface Memory {
@@ -78,7 +81,14 @@ export interface SessionSummary {
 export type HookType =
   | "session_start"
   | "prompt_submit"
+  | "pre_tool_use"
   | "post_tool_use"
+  | "post_tool_failure"
+  | "pre_compact"
+  | "subagent_start"
+  | "subagent_stop"
+  | "notification"
+  | "task_completed"
   | "stop"
   | "session_end";
 

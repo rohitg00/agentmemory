@@ -3,7 +3,14 @@ import { defineConfig } from "tsdown";
 const hookEntries = [
   "src/hooks/session-start.ts",
   "src/hooks/prompt-submit.ts",
+  "src/hooks/pre-tool-use.ts",
   "src/hooks/post-tool-use.ts",
+  "src/hooks/post-tool-failure.ts",
+  "src/hooks/pre-compact.ts",
+  "src/hooks/subagent-start.ts",
+  "src/hooks/subagent-stop.ts",
+  "src/hooks/notification.ts",
+  "src/hooks/task-completed.ts",
   "src/hooks/stop.ts",
   "src/hooks/session-end.ts",
 ];

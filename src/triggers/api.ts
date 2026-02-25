@@ -36,7 +36,7 @@ export function registerApiTriggers(
     { id: "api::health" },
     async (): Promise<Response> => ({
       status_code: 200,
-      body: { status: "ok", service: "agentmemory", version: "0.1.0" },
+      body: { status: "ok", service: "agentmemory", version: "0.2.0" },
     }),
   );
   sdk.registerTrigger({
@@ -190,6 +190,113 @@ export function registerApiTriggers(
     type: "http",
     function_id: "api::observations",
     config: { api_path: "/agentmemory/observations", http_method: "GET" },
+  });
+
+  sdk.registerFunction(
+    { id: "api::file-context" },
+    async (
+      req: ApiRequest<{ sessionId: string; files: string[] }>,
+    ): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const result = await sdk.trigger("mem::file-context", req.body);
+      return { status_code: 200, body: result };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::file-context",
+    config: { api_path: "/agentmemory/file-context", http_method: "POST" },
+  });
+
+  sdk.registerFunction(
+    { id: "api::remember" },
+    async (
+      req: ApiRequest<{
+        content: string;
+        type?: string;
+        concepts?: string[];
+        files?: string[];
+      }>,
+    ): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const result = await sdk.trigger("mem::remember", req.body);
+      return { status_code: 201, body: result };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::remember",
+    config: { api_path: "/agentmemory/remember", http_method: "POST" },
+  });
+
+  sdk.registerFunction(
+    { id: "api::forget" },
+    async (
+      req: ApiRequest<{
+        sessionId?: string;
+        observationIds?: string[];
+        memoryId?: string;
+      }>,
+    ): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const result = await sdk.trigger("mem::forget", req.body);
+      return { status_code: 200, body: result };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::forget",
+    config: { api_path: "/agentmemory/forget", http_method: "POST" },
+  });
+
+  sdk.registerFunction(
+    { id: "api::consolidate" },
+    async (
+      req: ApiRequest<{ project?: string; minObservations?: number }>,
+    ): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const result = await sdk.trigger("mem::consolidate", req.body);
+      return { status_code: 200, body: result };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::consolidate",
+    config: { api_path: "/agentmemory/consolidate", http_method: "POST" },
+  });
+
+  sdk.registerFunction(
+    { id: "api::patterns" },
+    async (req: ApiRequest<{ project?: string }>): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const result = await sdk.trigger("mem::patterns", req.body);
+      return { status_code: 200, body: result };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::patterns",
+    config: { api_path: "/agentmemory/patterns", http_method: "POST" },
+  });
+
+  sdk.registerFunction(
+    { id: "api::generate-rules" },
+    async (req: ApiRequest<{ project?: string }>): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const result = await sdk.trigger("mem::generate-rules", req.body);
+      return { status_code: 200, body: result };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::generate-rules",
+    config: { api_path: "/agentmemory/generate-rules", http_method: "POST" },
   });
 
   sdk.registerFunction(

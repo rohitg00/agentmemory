@@ -9,8 +9,13 @@ import { registerSearchFunction, rebuildIndex } from "./functions/search.js";
 import { registerContextFunction } from "./functions/context.js";
 import { registerSummarizeFunction } from "./functions/summarize.js";
 import { registerMigrateFunction } from "./functions/migrate.js";
+import { registerFileIndexFunction } from "./functions/file-index.js";
+import { registerConsolidateFunction } from "./functions/consolidate.js";
+import { registerPatternsFunction } from "./functions/patterns.js";
+import { registerRememberFunction } from "./functions/remember.js";
 import { registerApiTriggers } from "./triggers/api.js";
 import { registerEventTriggers } from "./triggers/events.js";
+import { registerMcpEndpoints } from "./mcp/server.js";
 
 async function main() {
   const config = loadConfig();
@@ -31,6 +36,7 @@ async function main() {
   });
 
   const kv = new StateKV(sdk);
+  const secret = getEnvVar("AGENTMEMORY_SECRET");
 
   registerPrivacyFunction(sdk);
   registerObserveFunction(sdk, kv);
@@ -39,10 +45,14 @@ async function main() {
   registerContextFunction(sdk, kv, config.tokenBudget);
   registerSummarizeFunction(sdk, kv, provider);
   registerMigrateFunction(sdk, kv);
+  registerFileIndexFunction(sdk, kv);
+  registerConsolidateFunction(sdk, kv, provider);
+  registerPatternsFunction(sdk, kv);
+  registerRememberFunction(sdk, kv);
 
-  const secret = getEnvVar("AGENTMEMORY_SECRET");
   registerApiTriggers(sdk, kv, secret);
   registerEventTriggers(sdk, kv);
+  registerMcpEndpoints(sdk, kv, secret);
 
   const indexCount = await rebuildIndex(kv).catch(() => 0);
   if (indexCount > 0) {
@@ -57,6 +67,11 @@ async function main() {
   console.log(`  POST /agentmemory/context           - Generate context`);
   console.log(`  POST /agentmemory/search            - Search observations`);
   console.log(`  POST /agentmemory/summarize         - Summarize session`);
+  console.log(`  POST /agentmemory/remember          - Save to long-term memory`);
+  console.log(`  POST /agentmemory/forget            - Delete memory data`);
+  console.log(`  POST /agentmemory/file-context      - File history context`);
+  console.log(`  POST /agentmemory/consolidate       - Consolidate memories`);
+  console.log(`  POST /agentmemory/patterns          - Detect patterns`);
   console.log(`  GET  /agentmemory/sessions          - List sessions`);
   console.log(
     `  GET  /agentmemory/observations      - Get session observations`,
@@ -64,6 +79,8 @@ async function main() {
   console.log(`  GET  /agentmemory/health            - Health check`);
   console.log(`  GET  /agentmemory/viewer            - Web viewer`);
   console.log(`  POST /agentmemory/migrate           - Import from SQLite`);
+  console.log(`  GET  /agentmemory/mcp/tools         - MCP tool listing`);
+  console.log(`  POST /agentmemory/mcp/call          - MCP tool execution`);
 
   const shutdown = async () => {
     console.log(`\n[agentmemory] Shutting down...`);

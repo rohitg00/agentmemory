@@ -12,10 +12,53 @@
         "command": "node ${CLAUDE_PLUGIN_ROOT}/scripts/prompt-submit.mjs"
       }
     ],
+    "PreToolUse": [
+      {
+        "type": "command",
+        "command": "node ${CLAUDE_PLUGIN_ROOT}/scripts/pre-tool-use.mjs",
+        "matcher": "Edit|Write|Read|Glob|Grep"
+      }
+    ],
     "PostToolUse": [
       {
         "type": "command",
         "command": "node ${CLAUDE_PLUGIN_ROOT}/scripts/post-tool-use.mjs"
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "type": "command",
+        "command": "node ${CLAUDE_PLUGIN_ROOT}/scripts/post-tool-failure.mjs"
+      }
+    ],
+    "PreCompact": [
+      {
+        "type": "command",
+        "command": "node ${CLAUDE_PLUGIN_ROOT}/scripts/pre-compact.mjs"
+      }
+    ],
+    "SubagentStart": [
+      {
+        "type": "command",
+        "command": "node ${CLAUDE_PLUGIN_ROOT}/scripts/subagent-start.mjs"
+      }
+    ],
+    "SubagentStop": [
+      {
+        "type": "command",
+        "command": "node ${CLAUDE_PLUGIN_ROOT}/scripts/subagent-stop.mjs"
+      }
+    ],
+    "Notification": [
+      {
+        "type": "command",
+        "command": "node ${CLAUDE_PLUGIN_ROOT}/scripts/notification.mjs"
+      }
+    ],
+    "TaskCompleted": [
+      {
+        "type": "command",
+        "command": "node ${CLAUDE_PLUGIN_ROOT}/scripts/task-completed.mjs"
       }
     ],
     "Stop": [
