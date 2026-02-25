@@ -1,5 +1,13 @@
 import { defineConfig } from "tsdown";
 
+const hookEntries = [
+  "src/hooks/session-start.ts",
+  "src/hooks/prompt-submit.ts",
+  "src/hooks/post-tool-use.ts",
+  "src/hooks/stop.ts",
+  "src/hooks/session-end.ts",
+];
+
 export default defineConfig([
   {
     entry: ["src/index.ts"],
@@ -12,14 +20,16 @@ export default defineConfig([
     banner: { js: "#!/usr/bin/env node" },
   },
   {
-    entry: [
-      "src/hooks/session-start.ts",
-      "src/hooks/prompt-submit.ts",
-      "src/hooks/post-tool-use.ts",
-      "src/hooks/stop.ts",
-      "src/hooks/session-end.ts",
-    ],
+    entry: hookEntries,
     outDir: "dist/hooks",
+    format: ["esm"],
+    clean: false,
+    sourcemap: false,
+    target: "node18",
+  },
+  {
+    entry: hookEntries,
+    outDir: "plugin/scripts",
     format: ["esm"],
     clean: false,
     sourcemap: false,

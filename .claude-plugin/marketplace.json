@@ -1,0 +1,9 @@
+{
+  "plugins": [
+    {
+      "name": "agentmemory",
+      "description": "Persistent memory for AI coding agents -- captures tool usage, compresses via LLM, injects context into future sessions",
+      "path": "./plugin"
+    }
+  ]
+}
