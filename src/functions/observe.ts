@@ -31,19 +31,16 @@ export function registerObserveFunction(sdk: ISdk, kv: StateKV): void {
         raw: sanitizedRaw,
       };
 
-      const d =
-        typeof payload.data === "object" && payload.data !== null
-          ? (payload.data as Record<string, unknown>)
-          : null;
-
-      if (payload.hookType === "post_tool_use" && d) {
-        raw.toolName = d["tool_name"] as string | undefined;
-        raw.toolInput = d["tool_input"];
-        raw.toolOutput = d["tool_output"];
-      }
-
-      if (payload.hookType === "prompt_submit" && d) {
-        raw.userPrompt = d["prompt"] as string | undefined;
+      if (typeof payload.data === "object" && payload.data !== null) {
+        const d = payload.data as Record<string, unknown>;
+        if (payload.hookType === "post_tool_use") {
+          raw.toolName = d["tool_name"] as string | undefined;
+          raw.toolInput = d["tool_input"];
+          raw.toolOutput = d["tool_output"];
+        }
+        if (payload.hookType === "prompt_submit") {
+          raw.userPrompt = d["prompt"] as string | undefined;
+        }
       }
 
       await kv.set(KV.observations(payload.sessionId), obsId, raw);

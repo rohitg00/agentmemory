@@ -1,18 +1,12 @@
 import type { ISdk } from "iii-sdk";
-import { getContext } from "iii-sdk";
 import type { HookPayload, Session } from "../types.js";
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 
 export function registerEventTriggers(sdk: ISdk, kv: StateKV): void {
   sdk.registerFunction(
-    {
-      id: "event::session::started",
-      description: "Handle session start event",
-    },
+    { id: "event::session::started" },
     async (data: { sessionId: string; project: string; cwd: string }) => {
-      const ctx = getContext();
-      ctx.logger.info("Session start event", { sessionId: data.sessionId });
       const session: Session = {
         id: data.sessionId,
         project: data.project,
@@ -36,15 +30,8 @@ export function registerEventTriggers(sdk: ISdk, kv: StateKV): void {
   });
 
   sdk.registerFunction(
-    { id: "event::observation", description: "Handle new observation event" },
-    async (data: HookPayload) => {
-      const ctx = getContext();
-      ctx.logger.info("Observation event", {
-        sessionId: data.sessionId,
-        hook: data.hookType,
-      });
-      return await sdk.trigger("mem::observe", data);
-    },
+    { id: "event::observation" },
+    async (data: HookPayload) => sdk.trigger("mem::observe", data),
   );
   sdk.registerTrigger({
     type: "queue",
@@ -53,17 +40,8 @@ export function registerEventTriggers(sdk: ISdk, kv: StateKV): void {
   });
 
   sdk.registerFunction(
-    {
-      id: "event::session::stopped",
-      description: "Handle stop event (trigger summarize)",
-    },
-    async (data: { sessionId: string }) => {
-      const ctx = getContext();
-      ctx.logger.info("Session stop event, triggering summarize", {
-        sessionId: data.sessionId,
-      });
-      return await sdk.trigger("mem::summarize", data);
-    },
+    { id: "event::session::stopped" },
+    async (data: { sessionId: string }) => sdk.trigger("mem::summarize", data),
   );
   sdk.registerTrigger({
     type: "queue",
@@ -72,19 +50,14 @@ export function registerEventTriggers(sdk: ISdk, kv: StateKV): void {
   });
 
   sdk.registerFunction(
-    {
-      id: "event::session::ended",
-      description: "Handle session end event",
-    },
+    { id: "event::session::ended" },
     async (data: { sessionId: string }) => {
-      const ctx = getContext();
-      ctx.logger.info("Session end event", { sessionId: data.sessionId });
       const session = await kv.get<Session>(KV.sessions, data.sessionId);
       if (session) {
         await kv.set(KV.sessions, data.sessionId, {
           ...session,
           endedAt: new Date().toISOString(),
-          status: "completed" as const,
+          status: "completed",
         });
       }
       return { success: true };

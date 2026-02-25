@@ -137,7 +137,7 @@ export function registerApiTriggers(
         await kv.set(KV.sessions, req.body.sessionId, {
           ...session,
           endedAt: new Date().toISOString(),
-          status: "completed" as const,
+          status: "completed",
         });
       }
       return { status_code: 200, body: { success: true } };
@@ -208,6 +208,10 @@ export function registerApiTriggers(
   });
 
   sdk.registerFunction({ id: "api::viewer" }, async (): Promise<Response> => {
+    const headers = {
+      "Content-Type": "text/html",
+      "Content-Security-Policy": VIEWER_CSP,
+    };
     try {
       const viewerPath = join(
         dirname(fileURLToPath(import.meta.url)),
@@ -215,22 +219,15 @@ export function registerApiTriggers(
         "viewer",
         "index.html",
       );
-      const html = readFileSync(viewerPath, "utf-8");
       return {
         status_code: 200,
-        headers: {
-          "Content-Type": "text/html",
-          "Content-Security-Policy": VIEWER_CSP,
-        },
-        body: html,
+        headers,
+        body: readFileSync(viewerPath, "utf-8"),
       };
     } catch {
       return {
         status_code: 200,
-        headers: {
-          "Content-Type": "text/html",
-          "Content-Security-Policy": VIEWER_CSP,
-        },
+        headers,
         body: "<!DOCTYPE html><html><body><h1>agentmemory</h1></body></html>",
       };
     }
