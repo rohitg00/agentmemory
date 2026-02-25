@@ -13,8 +13,10 @@
     "dev": "tsx src/index.ts",
     "start": "node dist/index.js",
     "migrate": "node dist/functions/migrate.js",
-    "test": "vitest run",
-    "test:watch": "vitest"
+    "test": "vitest run --exclude test/integration.test.ts",
+    "test:watch": "vitest --exclude test/integration.test.ts",
+    "test:integration": "vitest run test/integration.test.ts",
+    "test:all": "vitest run"
   },
   "keywords": [
     "ai",

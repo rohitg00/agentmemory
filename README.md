@@ -1,16 +1,27 @@
-# agentmemory
+<p align="center">
+  <h1 align="center">agentmemory</h1>
+  <p align="center">Persistent memory for AI coding agents.<br/>Powered by <a href="https://iii.dev">iii-engine</a>.</p>
+</p>
 
-Persistent memory for AI coding agents, powered by [iii-engine](https://iii.dev)'s three primitives (Worker / Function / Trigger).
+<p align="center">
+  <a href="#quick-start">Quick Start</a> &bull;
+  <a href="#how-it-works">How It Works</a> &bull;
+  <a href="#configuration">Configuration</a> &bull;
+  <a href="#api">API</a> &bull;
+  <a href="#plugin-install">Plugin Install</a>
+</p>
 
-agentmemory captures tool usage during coding sessions, compresses observations via LLM, and injects relevant context into future sessions. Your AI agent remembers what it did yesterday.
+---
 
-## How It Works
+Your AI coding agent forgets everything between sessions. agentmemory fixes that.
+
+It silently captures tool usage during coding sessions, compresses observations via LLM, and injects relevant context into future sessions. No manual notes. No copy-pasting. The agent just *knows*.
 
 ```
 Session 1: "Add auth to the API"
   Claude Code writes code, runs tests, fixes bugs
   agentmemory silently captures every tool use
-  Session ends -> LLM compresses observations into structured memory
+  Session ends -> observations compressed into structured memory
 
 Session 2: "Now add rate limiting"
   agentmemory injects context from Session 1:
@@ -20,108 +31,96 @@ Session 2: "Now add rate limiting"
   Claude Code starts with full project awareness
 ```
 
-No manual notes. No copy-pasting. The agent just knows.
-
-## Architecture
-
-agentmemory replaces the traditional memory stack with iii-engine's three primitives:
-
-| Traditional Stack | agentmemory |
-|---|---|
-| Express.js server | iii Worker + HTTP Triggers |
-| SQLite + FTS5 | iii KV State |
-| SSE streaming | iii Streams (WebSocket) |
-| Process manager (pm2/systemd) | iii-engine manages workers |
-| 20+ REST endpoints | API Triggers -> Functions |
-
-**27 source files. 1,808 lines of code. 35KB bundled.**
-
-Scalable from day one -- iii-engine handles orchestration, state persistence, and real-time streaming natively.
-
 ## Quick Start
 
 ```bash
-# 1. Start iii-engine
+git clone https://github.com/rohitg00/agentmemory.git
+cd agentmemory
+
+# Start iii-engine
 docker compose up -d
 
-# 2. Install and build
-npm install && npm run build
-
-# 3. Start agentmemory worker
-npm start
+# Install, build, run
+npm install && npm run build && npm start
 ```
 
-That's it. agentmemory connects to iii-engine on `ws://localhost:49134` and exposes REST endpoints on port `3111`.
+agentmemory connects to iii-engine on `ws://localhost:49134` and exposes its API on port `3111`.
 
-### Configure Claude Code Hooks
+### Verify it works
 
-Add to your `~/.claude/settings.json`:
+```bash
+curl http://localhost:3111/agentmemory/health
+# {"status":"ok","service":"agentmemory","version":"0.1.0"}
+```
+
+### Connect to Claude Code
+
+Add to `~/.claude/settings.json`:
 
 ```json
 {
   "hooks": {
-    "SessionStart": [{ "type": "command", "command": "node /path/to/agentmemory/dist/hooks/session-start.mjs" }],
-    "UserPromptSubmit": [{ "type": "command", "command": "node /path/to/agentmemory/dist/hooks/prompt-submit.mjs" }],
-    "PostToolUse": [{ "type": "command", "command": "node /path/to/agentmemory/dist/hooks/post-tool-use.mjs" }],
-    "Stop": [{ "type": "command", "command": "node /path/to/agentmemory/dist/hooks/stop.mjs" }],
-    "SessionEnd": [{ "type": "command", "command": "node /path/to/agentmemory/dist/hooks/session-end.mjs" }]
+    "SessionStart": [{ "type": "command", "command": "node ~/agentmemory/dist/hooks/session-start.mjs" }],
+    "UserPromptSubmit": [{ "type": "command", "command": "node ~/agentmemory/dist/hooks/prompt-submit.mjs" }],
+    "PostToolUse": [{ "type": "command", "command": "node ~/agentmemory/dist/hooks/post-tool-use.mjs" }],
+    "Stop": [{ "type": "command", "command": "node ~/agentmemory/dist/hooks/stop.mjs" }],
+    "SessionEnd": [{ "type": "command", "command": "node ~/agentmemory/dist/hooks/session-end.mjs" }]
   }
 }
 ```
 
-Or install as a Claude Code plugin (see [Plugin Install](#claude-code-plugin)).
+Or install as a [Claude Code plugin](#plugin-install) for automatic hook registration.
 
-## Observation Pipeline
+That's it. Start a Claude Code session and agentmemory begins capturing. Start another session and it injects context from all previous sessions.
 
-Every tool use flows through a four-stage pipeline:
+## How It Works
+
+### Observation Pipeline
+
+Every tool use flows through this pipeline:
 
 ```
-Claude Code PostToolUse hook
-  |
-  v
-mem::observe        Store raw observation to KV, push to real-time stream
-  |
-  v
-mem::compress       LLM extracts structured data (type, facts, narrative, concepts, files)
-  |                 Runs async -- doesn't block the coding session
-  v
-mem::summarize      End-of-session: LLM generates session summary from all observations
+PostToolUse hook fires
+  -> mem::privacy     Strip secrets, API keys, <private> tags
+  -> mem::observe     Store raw observation, push to real-time stream
+  -> mem::compress    LLM extracts: type, facts, narrative, concepts, files
+                      (async -- never blocks your session)
+```
+
+### Context Injection
+
+On `SessionStart`, agentmemory builds context from your history:
+
+```
+SessionStart hook fires
+  -> mem::context     Load recent sessions for this project
+                      Prefer summaries, fall back to high-importance observations
+                      Apply token budget (default: 2000 tokens)
+                      Return formatted context block
+  -> stdout           Claude Code injects it into the conversation
 ```
 
 ### What Gets Captured
 
-| Hook | Data |
-|------|------|
+| Hook | Captures |
+|------|----------|
 | `SessionStart` | Project path, session ID, working directory |
 | `UserPromptSubmit` | User prompts (privacy-filtered) |
 | `PostToolUse` | Tool name, input, output (Read, Write, Edit, Bash, etc.) |
-| `Stop` | Triggers session summarization |
+| `Stop` | Triggers end-of-session summary |
 | `SessionEnd` | Marks session complete |
 
 ### Privacy
 
-All observations pass through `mem::privacy` before storage:
-- `<private>...</private>` blocks are stripped
-- API keys, tokens, and secrets are redacted (`ANTHROPIC_API_KEY`, `GITHUB_TOKEN`, etc.)
+All data passes through `mem::privacy` before storage:
+- `<private>...</private>` tags are stripped
+- API keys (`sk-*`, `ghp_*`, `xoxb-*`, `AKIA*`), JWTs, and secrets are redacted
 
-## Context Injection
+## Configuration
 
-On `SessionStart`, agentmemory builds a context block from previous sessions:
+### LLM Providers
 
-```
-mem::context
-  |
-  +-- Load recent sessions for this project (up to 10)
-  +-- For each: prefer session summary, fall back to high-importance observations
-  +-- Apply token budget (default: 2000 tokens)
-  +-- Return formatted <agentmemory-context> block
-```
-
-The hook writes the context to stdout, and Claude Code injects it into the conversation.
-
-## LLM Providers
-
-agentmemory uses LLM calls for two operations: compressing observations and generating session summaries. Four providers are supported:
+agentmemory needs an LLM for two things: compressing observations and generating session summaries.
 
 | Provider | Config | Cost |
 |----------|--------|------|
@@ -130,14 +129,14 @@ agentmemory uses LLM calls for two operations: compressing observations and gene
 | **Gemini** | `GEMINI_API_KEY` | Per-token |
 | **OpenRouter** | `OPENROUTER_API_KEY` | Per-token |
 
-Provider is auto-detected. No API key configured = subscription mode via `@anthropic-ai/claude-agent-sdk`.
+No API key? agentmemory uses your Claude subscription automatically via `@anthropic-ai/claude-agent-sdk`. Zero config.
 
-### Configure
+### Environment Variables
 
 Create `~/.agentmemory/.env`:
 
 ```env
-# Pick one (or leave empty for subscription mode)
+# LLM provider -- pick one (or leave empty for subscription mode)
 ANTHROPIC_API_KEY=sk-ant-...
 # GEMINI_API_KEY=...
 # OPENROUTER_API_KEY=...
@@ -147,201 +146,136 @@ ANTHROPIC_API_KEY=sk-ant-...
 # GEMINI_MODEL=gemini-2.0-flash
 # OPENROUTER_MODEL=anthropic/claude-sonnet-4-20250514
 
-# Optional: engine connection (defaults shown)
+# Optional: bearer token for API auth
+# AGENTMEMORY_SECRET=your-secret-here
+
+# Optional: engine connection
 # III_ENGINE_URL=ws://localhost:49134
 # III_REST_PORT=3111
 # III_STREAMS_PORT=3112
 
-# Optional: memory settings
+# Optional: memory tuning
 # TOKEN_BUDGET=2000
 # MAX_OBS_PER_SESSION=500
 ```
 
-## API Endpoints
+## API
 
-All endpoints are served via iii-engine's REST API on port `3111`.
+All endpoints on port `3111`. Protected endpoints require `Authorization: Bearer <secret>` when `AGENTMEMORY_SECRET` is set.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/agentmemory/health` | Health check |
-| `POST` | `/agentmemory/session/start` | Start session, return context from previous sessions |
+| `GET` | `/agentmemory/health` | Health check (always public) |
+| `POST` | `/agentmemory/session/start` | Start session + get context |
 | `POST` | `/agentmemory/session/end` | Mark session complete |
-| `POST` | `/agentmemory/observe` | Capture a tool-use observation |
-| `POST` | `/agentmemory/context` | Generate context for a project |
-| `POST` | `/agentmemory/search` | Search observations by keyword |
+| `POST` | `/agentmemory/observe` | Capture observation |
+| `POST` | `/agentmemory/context` | Generate context |
+| `POST` | `/agentmemory/search` | Search observations |
 | `POST` | `/agentmemory/summarize` | Generate session summary |
 | `GET` | `/agentmemory/sessions` | List all sessions |
-| `GET` | `/agentmemory/observations?sessionId=X` | Get observations for a session |
+| `GET` | `/agentmemory/observations?sessionId=X` | Session observations |
 | `GET` | `/agentmemory/viewer` | Real-time web viewer |
-| `POST` | `/agentmemory/migrate` | Import from SQLite database |
+| `POST` | `/agentmemory/migrate` | Import from SQLite |
 
 ### Examples
 
 ```bash
-# Health check
-curl http://localhost:3111/agentmemory/health
+# Start a session
+curl -X POST http://localhost:3111/agentmemory/session/start \
+  -H "Content-Type: application/json" \
+  -d '{"sessionId": "ses-1", "project": "/my/project", "cwd": "/my/project"}'
 
-# Search observations
+# Capture an observation
+curl -X POST http://localhost:3111/agentmemory/observe \
+  -H "Content-Type: application/json" \
+  -d '{
+    "hookType": "post_tool_use",
+    "sessionId": "ses-1",
+    "project": "/my/project",
+    "cwd": "/my/project",
+    "timestamp": "2026-02-25T12:00:00Z",
+    "data": {"tool": "Edit", "file": "src/auth.ts", "content": "Added JWT validation"}
+  }'
+
+# Search across all observations
 curl -X POST http://localhost:3111/agentmemory/search \
   -H "Content-Type: application/json" \
   -d '{"query": "authentication middleware", "limit": 10}'
 
-# Get context for a project
+# Get context for a new session
 curl -X POST http://localhost:3111/agentmemory/context \
   -H "Content-Type: application/json" \
-  -d '{"sessionId": "current", "project": "/path/to/project"}'
+  -d '{"sessionId": "ses-2", "project": "/my/project"}'
 
-# List all sessions
+# List sessions
 curl http://localhost:3111/agentmemory/sessions
 ```
 
 ## Real-Time Viewer
 
-Open `http://localhost:3111/agentmemory/viewer` in your browser.
+Open [http://localhost:3111/agentmemory/viewer](http://localhost:3111/agentmemory/viewer) to watch observations flow in real-time.
 
-The viewer connects to iii-engine's WebSocket stream on port `3112` and shows observations as they flow in -- raw captures first, then structured data after LLM compression.
+Connects to iii-engine's WebSocket stream. Dark theme, timeline layout, session filtering, auto-scroll.
 
-Dark theme. Timeline layout. Filter by session. Auto-scrolls.
+## Plugin Install
 
-## Claude Code Plugin
-
-Install as a plugin for automatic hook registration:
+Install as a Claude Code plugin for zero-config hook registration:
 
 ```bash
-# Build first
-npm run build
-
-# Option 1: Symlink the plugin directory
+# Symlink into Claude Code plugins
 ln -s /path/to/agentmemory/plugin ~/.claude/plugins/agentmemory
-
-# Option 2: Copy plugin manifest
-cp -r plugin/ ~/.claude/plugins/agentmemory
 ```
 
-The plugin registers all 5 hooks automatically via `hooks.json`.
+All 5 hooks are registered automatically via `hooks.json`.
 
 ## Migration
 
-Import data from existing SQLite-based memory systems:
-
-```bash
-curl -X POST http://localhost:3111/agentmemory/migrate \
-  -H "Content-Type: application/json" \
-  -d '{"dbPath": "/path/to/memory.db"}'
-```
-
-Reads `sessions`, `observations`/`compressed_observations`, and `session_summaries` tables. Requires `better-sqlite3` as an optional dependency:
+Import from existing SQLite-based memory systems :
 
 ```bash
 npm install better-sqlite3
+
+curl -X POST http://localhost:3111/agentmemory/migrate \
+  -H "Content-Type: application/json" \
+  -d '{"dbPath": "~/.agentmemory/memory.db"}'
 ```
 
-## iii-engine Functions
+Imports sessions, observations, and summaries.
 
-agentmemory registers these iii Functions:
+## Architecture
 
-| Function ID | Description |
-|-------------|-------------|
-| `mem::observe` | Capture and store a tool-use observation |
-| `mem::compress` | LLM compression of raw observation into structured data |
-| `mem::privacy` | Strip private data, secrets, and API keys |
-| `mem::search` | Keyword search across compressed observations |
-| `mem::context` | Generate token-budgeted context from past sessions |
-| `mem::summarize` | LLM-generated end-of-session summary |
-| `mem::migrate` | Import data from SQLite databases |
-| `api::health` | Health check endpoint |
-| `api::session::start` | Session start + context retrieval |
-| `api::session::end` | Mark session complete |
-| `api::observe` | HTTP -> `mem::observe` |
-| `api::context` | HTTP -> `mem::context` |
-| `api::search` | HTTP -> `mem::search` |
-| `api::summarize` | HTTP -> `mem::summarize` |
-| `api::sessions` | List all sessions |
-| `api::observations` | Get session observations |
-| `api::viewer` | Serve web viewer |
-| `api::migrate` | HTTP -> `mem::migrate` |
+agentmemory is built on iii-engine's three primitives:
 
-Event triggers (queue type) handle async lifecycle events: `session.started`, `observation`, `session.stopped`, `session.ended`.
+| What you'd normally need | What agentmemory uses |
+|---|---|
+| Express.js / Fastify | iii HTTP Triggers |
+| SQLite / Postgres | iii KV State |
+| SSE / Socket.io | iii Streams (WebSocket) |
+| pm2 / systemd | iii-engine worker management |
 
-## KV State Schema
+**~30 source files. ~1,800 LOC. 37KB bundled.**
 
-| Scope | Key | Data |
-|-------|-----|------|
+### Data Model
+
+| Scope | Key | Stores |
+|-------|-----|--------|
 | `mem:sessions` | `{session_id}` | Session metadata, project, timestamps |
 | `mem:obs:{session_id}` | `{obs_id}` | Compressed observations |
 | `mem:summaries` | `{session_id}` | End-of-session summaries |
-| `mem:memories` | `{memory_id}` | Long-term memories |
-| `mem:config` | `{key}` | Plugin settings |
-
-## Project Structure
-
-```
-agentmemory/
-├── src/
-│   ├── index.ts                 # Worker entry: init SDK, register all
-│   ├── types.ts                 # TypeScript interfaces
-│   ├── config.ts                # Env vars, provider auto-detection
-│   ├── hooks/                   # 5 Claude Code hook scripts
-│   │   ├── session-start.ts     # Start session, inject context (stdout)
-│   │   ├── prompt-submit.ts     # Capture user prompts
-│   │   ├── post-tool-use.ts     # Capture tool usage
-│   │   ├── stop.ts              # Trigger session summarization
-│   │   └── session-end.ts       # Mark session complete
-│   ├── providers/               # LLM provider abstraction
-│   │   ├── index.ts             # Factory + auto-detection
-│   │   ├── agent-sdk.ts         # Claude subscription (Agent SDK)
-│   │   ├── anthropic.ts         # Direct Anthropic API
-│   │   └── openrouter.ts        # OpenRouter + Gemini
-│   ├── functions/               # iii Functions (core logic)
-│   │   ├── observe.ts           # Capture + store + stream
-│   │   ├── compress.ts          # LLM compression
-│   │   ├── privacy.ts           # Secret/tag stripping
-│   │   ├── search.ts            # Keyword search
-│   │   ├── context.ts           # Context generation
-│   │   ├── summarize.ts         # Session summary
-│   │   └── migrate.ts           # SQLite import
-│   ├── triggers/                # Trigger registrations
-│   │   ├── api.ts               # 11 HTTP endpoints
-│   │   └── events.ts            # 4 queue event handlers
-│   ├── state/                   # State helpers
-│   │   ├── kv.ts                # Typed KV wrapper
-│   │   ├── schema.ts            # Scope constants + ID generators
-│   │   └── search-index.ts      # In-memory keyword index
-│   ├── prompts/                 # LLM prompts
-│   │   ├── compression.ts       # Observation compression prompt
-│   │   └── summary.ts           # Session summary prompt
-│   └── viewer/
-│       └── index.html           # Single-file dark-theme viewer
-├── plugin/                      # Claude Code plugin
-│   ├── .claude-plugin/
-│   │   └── plugin.json
-│   └── hooks/
-│       └── hooks.json
-├── docker-compose.yml           # iii-engine container
-├── package.json
-├── tsconfig.json
-├── tsdown.config.ts
-└── LICENSE                      # Apache-2.0
-```
-
-## Prerequisites
-
-- **Node.js** >= 18
-- **Docker** (for iii-engine)
-- **Claude Code** (for hook integration)
 
 ## Development
 
 ```bash
-# Dev mode with hot reload
-npm run dev
-
-# Build
-npm run build
-
-# Run tests
-npm test
+npm run dev               # Hot reload
+npm run build             # Production build
+npm test                  # Unit tests (45 tests, ~250ms)
+npm run test:integration  # API tests (requires running services)
 ```
+
+### Prerequisites
+
+- Node.js >= 18
+- Docker
 
 ## License
 
