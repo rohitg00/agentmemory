@@ -12,6 +12,9 @@ type Response = {
   body: unknown;
 };
 
+const VIEWER_CSP =
+  "default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self' ws://localhost:* wss://localhost:*";
+
 function checkAuth(
   req: ApiRequest,
   secret: string | undefined,
@@ -217,8 +220,7 @@ export function registerApiTriggers(
         status_code: 200,
         headers: {
           "Content-Type": "text/html",
-          "Content-Security-Policy":
-            "default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self' ws://localhost:* wss://localhost:*",
+          "Content-Security-Policy": VIEWER_CSP,
         },
         body: html,
       };
@@ -227,8 +229,7 @@ export function registerApiTriggers(
         status_code: 200,
         headers: {
           "Content-Type": "text/html",
-          "Content-Security-Policy":
-            "default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self' ws://localhost:* wss://localhost:*",
+          "Content-Security-Policy": VIEWER_CSP,
         },
         body: "<!DOCTYPE html><html><body><h1>agentmemory</h1></body></html>",
       };

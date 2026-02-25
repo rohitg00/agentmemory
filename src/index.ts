@@ -65,16 +65,13 @@ async function main() {
   console.log(`  GET  /agentmemory/viewer            - Web viewer`);
   console.log(`  POST /agentmemory/migrate           - Import from SQLite`);
 
-  process.on("SIGINT", async () => {
+  const shutdown = async () => {
     console.log(`\n[agentmemory] Shutting down...`);
     await sdk.shutdown();
     process.exit(0);
-  });
-
-  process.on("SIGTERM", async () => {
-    await sdk.shutdown();
-    process.exit(0);
-  });
+  };
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
 }
 
 main().catch((err) => {

@@ -3,7 +3,6 @@ import type { CompressedObservation } from "../types.js";
 interface IndexEntry {
   obsId: string;
   sessionId: string;
-  terms: Set<string>;
 }
 
 export class SearchIndex {
@@ -12,12 +11,7 @@ export class SearchIndex {
 
   add(obs: CompressedObservation): void {
     const terms = this.extractTerms(obs);
-    const entry: IndexEntry = {
-      obsId: obs.id,
-      sessionId: obs.sessionId,
-      terms,
-    };
-    this.entries.set(obs.id, entry);
+    this.entries.set(obs.id, { obsId: obs.id, sessionId: obs.sessionId });
 
     for (const term of terms) {
       if (!this.invertedIndex.has(term)) {
