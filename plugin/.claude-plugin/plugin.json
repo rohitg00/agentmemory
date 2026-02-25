@@ -1,0 +1,9 @@
+{
+  "name": "agentmemory",
+  "version": "0.1.0",
+  "description": "Persistent memory for AI coding agents powered by iii-engine",
+  "author": "Rohit Ghumare",
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/rohitg00/agentmemory",
+  "hooks": "../hooks/hooks.json"
+}

@@ -1,0 +1,48 @@
+{
+  "name": "agentmemory",
+  "version": "0.1.0",
+  "description": "Persistent memory for AI coding agents, powered by iii-engine's three primitives",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "agentmemory": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsdown",
+    "dev": "tsx src/index.ts",
+    "start": "node dist/index.js",
+    "migrate": "node dist/functions/migrate.js",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "keywords": [
+    "ai",
+    "agent",
+    "memory",
+    "persistent",
+    "iii-engine",
+    "claude-code",
+    "coding-agent",
+    "context",
+    "observation"
+  ],
+  "author": "Rohit Ghumare <ghumare64@gmail.com>",
+  "license": "Apache-2.0",
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.2.56",
+    "@anthropic-ai/sdk": "^0.39.0",
+    "dotenv": "^16.4.7",
+    "iii-sdk": "^0.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsdown": "^0.20.3",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

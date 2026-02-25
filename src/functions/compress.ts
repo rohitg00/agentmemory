@@ -1,0 +1,111 @@
+import type { ISdk } from "iii-sdk";
+import { getContext } from "iii-sdk";
+import type {
+  RawObservation,
+  CompressedObservation,
+  ObservationType,
+  MemoryProvider,
+} from "../types.js";
+import { KV, STREAM } from "../state/schema.js";
+import { StateKV } from "../state/kv.js";
+import {
+  COMPRESSION_SYSTEM,
+  buildCompressionPrompt,
+} from "../prompts/compression.js";
+import { getXmlTag, getXmlChildren } from "../prompts/xml.js";
+import { getSearchIndex } from "./search.js";
+
+function parseCompressionXml(
+  xml: string,
+): Omit<CompressedObservation, "id" | "sessionId" | "timestamp"> | null {
+  const type = getXmlTag(xml, "type");
+  const title = getXmlTag(xml, "title");
+  if (!type || !title) return null;
+
+  return {
+    type: type as ObservationType,
+    title,
+    subtitle: getXmlTag(xml, "subtitle") || undefined,
+    facts: getXmlChildren(xml, "facts", "fact"),
+    narrative: getXmlTag(xml, "narrative"),
+    concepts: getXmlChildren(xml, "concepts", "concept"),
+    files: getXmlChildren(xml, "files", "file"),
+    importance: parseInt(getXmlTag(xml, "importance") || "5", 10),
+  };
+}
+
+export function registerCompressFunction(
+  sdk: ISdk,
+  kv: StateKV,
+  provider: MemoryProvider,
+): void {
+  sdk.registerFunction(
+    {
+      id: "mem::compress",
+      description: "Compress a raw observation using LLM",
+    },
+    async (data: {
+      observationId: string;
+      sessionId: string;
+      raw: RawObservation;
+    }) => {
+      const ctx = getContext();
+      const prompt = buildCompressionPrompt({
+        hookType: data.raw.hookType,
+        toolName: data.raw.toolName,
+        toolInput: data.raw.toolInput,
+        toolOutput: data.raw.toolOutput,
+        userPrompt: data.raw.userPrompt,
+        timestamp: data.raw.timestamp,
+      });
+
+      try {
+        const response = await provider.compress(COMPRESSION_SYSTEM, prompt);
+        const parsed = parseCompressionXml(response);
+        if (!parsed) {
+          ctx.logger.warn("Failed to parse compression XML", {
+            obsId: data.observationId,
+          });
+          return { success: false, error: "parse_failed" };
+        }
+
+        const compressed: CompressedObservation = {
+          id: data.observationId,
+          sessionId: data.sessionId,
+          timestamp: data.raw.timestamp,
+          ...parsed,
+        };
+
+        await kv.set(
+          KV.observations(data.sessionId),
+          data.observationId,
+          compressed,
+        );
+
+        getSearchIndex().add(compressed);
+
+        await sdk.trigger("stream::set", {
+          stream_name: STREAM.name,
+          group_id: STREAM.group(data.sessionId),
+          item_id: data.observationId,
+          data: { type: "compressed", observation: compressed },
+        });
+
+        ctx.logger.info("Observation compressed", {
+          obsId: data.observationId,
+          type: compressed.type,
+          importance: compressed.importance,
+        });
+
+        return { success: true, compressed };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        ctx.logger.error("Compression failed", {
+          obsId: data.observationId,
+          error: msg,
+        });
+        return { success: false, error: msg };
+      }
+    },
+  );
+}
