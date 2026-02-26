@@ -13,8 +13,8 @@ export function registerHealthMonitor(
   let prevCpuTime = Date.now();
 
   if (typeof sdk.on === "function") {
-    sdk.on("connection_state", (state: string) => {
-      connectionState = state;
+    sdk.on("connection_state", (state?: unknown) => {
+      connectionState = state as string;
     });
   }
 
@@ -28,9 +28,7 @@ export function registerHealthMonitor(
     const userDelta = currentCpu.user - prevCpuUsage.user;
     const systemDelta = currentCpu.system - prevCpuUsage.system;
     const cpuPercent =
-      elapsedMs > 0
-        ? ((userDelta + systemDelta) / 1000 / elapsedMs) * 100
-        : 0;
+      elapsedMs > 0 ? ((userDelta + systemDelta) / 1000 / elapsedMs) * 100 : 0;
     prevCpuUsage = currentCpu;
     prevCpuTime = now;
 

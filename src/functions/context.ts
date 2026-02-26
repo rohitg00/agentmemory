@@ -5,6 +5,7 @@ import type {
   CompressedObservation,
   SessionSummary,
   ContextBlock,
+  ProjectProfile,
 } from "../types.js";
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
@@ -35,6 +36,46 @@ export function registerContextFunction(
       const ctx = getContext();
       const budget = data.budget || tokenBudget;
       const blocks: ContextBlock[] = [];
+
+      const profile = await kv
+        .get<ProjectProfile>(KV.profiles, data.project)
+        .catch(() => null);
+      if (profile) {
+        const profileParts = [];
+        if (profile.topConcepts.length > 0) {
+          profileParts.push(
+            `Concepts: ${profile.topConcepts
+              .slice(0, 8)
+              .map((c) => c.concept)
+              .join(", ")}`,
+          );
+        }
+        if (profile.topFiles.length > 0) {
+          profileParts.push(
+            `Key files: ${profile.topFiles
+              .slice(0, 5)
+              .map((f) => f.file)
+              .join(", ")}`,
+          );
+        }
+        if (profile.conventions.length > 0) {
+          profileParts.push(`Conventions: ${profile.conventions.join("; ")}`);
+        }
+        if (profile.commonErrors.length > 0) {
+          profileParts.push(
+            `Common errors: ${profile.commonErrors.slice(0, 3).join("; ")}`,
+          );
+        }
+        if (profileParts.length > 0) {
+          const profileContent = `## Project Profile\n${profileParts.join("\n")}`;
+          blocks.push({
+            type: "memory",
+            content: profileContent,
+            tokens: estimateTokens(profileContent),
+            recency: new Date(profile.updatedAt).getTime(),
+          });
+        }
+      }
 
       const allSessions = await kv.list<Session>(KV.sessions);
       const sessions = allSessions
