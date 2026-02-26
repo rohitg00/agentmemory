@@ -48,6 +48,9 @@ export type ObservationType =
   | "error"
   | "decision"
   | "discovery"
+  | "subagent"
+  | "notification"
+  | "task"
   | "other";
 
 export interface Memory {
@@ -78,7 +81,14 @@ export interface SessionSummary {
 export type HookType =
   | "session_start"
   | "prompt_submit"
+  | "pre_tool_use"
   | "post_tool_use"
+  | "post_tool_failure"
+  | "pre_compact"
+  | "subagent_start"
+  | "subagent_stop"
+  | "notification"
+  | "task_completed"
   | "stop"
   | "session_end";
 
@@ -127,4 +137,44 @@ export interface ContextBlock {
   content: string;
   tokens: number;
   recency: number;
+}
+
+export interface EvalResult {
+  valid: boolean;
+  errors: string[];
+  qualityScore: number;
+  latencyMs: number;
+  functionId: string;
+}
+
+export interface FunctionMetrics {
+  functionId: string;
+  totalCalls: number;
+  successCount: number;
+  failureCount: number;
+  avgLatencyMs: number;
+  avgQualityScore: number;
+}
+
+export interface HealthSnapshot {
+  connectionState: string;
+  workers: Array<{ id: string; name: string; status: string }>;
+  memory: {
+    heapUsed: number;
+    heapTotal: number;
+    rss: number;
+    external: number;
+  };
+  cpu: { userMicros: number; systemMicros: number; percent: number };
+  eventLoopLagMs: number;
+  uptimeSeconds: number;
+  status: "healthy" | "degraded" | "critical";
+  alerts: string[];
+}
+
+export interface CircuitBreakerState {
+  state: "closed" | "open" | "half-open";
+  failures: number;
+  lastFailureAt: number | null;
+  openedAt: number | null;
 }

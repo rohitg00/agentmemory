@@ -5,6 +5,9 @@ import { StateKV } from "../state/kv.js";
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { getLatestHealth } from "../health/monitor.js";
+import type { MetricsStore } from "../eval/metrics-store.js";
+import type { ResilientProvider } from "../providers/resilient.js";
 
 type Response = {
   status_code: number;
@@ -31,14 +34,30 @@ export function registerApiTriggers(
   sdk: ISdk,
   kv: StateKV,
   secret?: string,
+  metricsStore?: MetricsStore,
+  provider?: ResilientProvider | { circuitState?: unknown },
 ): void {
-  sdk.registerFunction(
-    { id: "api::health" },
-    async (): Promise<Response> => ({
-      status_code: 200,
-      body: { status: "ok", service: "agentmemory", version: "0.1.0" },
-    }),
-  );
+  sdk.registerFunction({ id: "api::health" }, async (): Promise<Response> => {
+    const health = await getLatestHealth(kv);
+    const functionMetrics = metricsStore ? await metricsStore.getAll() : [];
+    const circuitBreaker =
+      provider && "circuitState" in provider ? provider.circuitState : null;
+
+    const status = health?.status || "healthy";
+    const statusCode = status === "critical" ? 503 : 200;
+
+    return {
+      status_code: statusCode,
+      body: {
+        status,
+        service: "agentmemory",
+        version: "0.3.0",
+        health: health || null,
+        functionMetrics,
+        circuitBreaker,
+      },
+    };
+  });
   sdk.registerTrigger({
     type: "http",
     function_id: "api::health",
@@ -193,10 +212,133 @@ export function registerApiTriggers(
   });
 
   sdk.registerFunction(
+    { id: "api::file-context" },
+    async (
+      req: ApiRequest<{ sessionId: string; files: string[] }>,
+    ): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const result = await sdk.trigger("mem::file-context", req.body);
+      return { status_code: 200, body: result };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::file-context",
+    config: { api_path: "/agentmemory/file-context", http_method: "POST" },
+  });
+
+  sdk.registerFunction(
+    { id: "api::remember" },
+    async (
+      req: ApiRequest<{
+        content: string;
+        type?: string;
+        concepts?: string[];
+        files?: string[];
+      }>,
+    ): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      if (
+        !req.body?.content ||
+        typeof req.body.content !== "string" ||
+        !req.body.content.trim()
+      ) {
+        return { status_code: 400, body: { error: "content is required" } };
+      }
+      const result = await sdk.trigger("mem::remember", req.body);
+      return { status_code: 201, body: result };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::remember",
+    config: { api_path: "/agentmemory/remember", http_method: "POST" },
+  });
+
+  sdk.registerFunction(
+    { id: "api::forget" },
+    async (
+      req: ApiRequest<{
+        sessionId?: string;
+        observationIds?: string[];
+        memoryId?: string;
+      }>,
+    ): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      if (!req.body?.sessionId && !req.body?.memoryId) {
+        return {
+          status_code: 400,
+          body: { error: "sessionId or memoryId is required" },
+        };
+      }
+      const result = await sdk.trigger("mem::forget", req.body);
+      return { status_code: 200, body: result };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::forget",
+    config: { api_path: "/agentmemory/forget", http_method: "POST" },
+  });
+
+  sdk.registerFunction(
+    { id: "api::consolidate" },
+    async (
+      req: ApiRequest<{ project?: string; minObservations?: number }>,
+    ): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const result = await sdk.trigger("mem::consolidate", req.body);
+      return { status_code: 200, body: result };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::consolidate",
+    config: { api_path: "/agentmemory/consolidate", http_method: "POST" },
+  });
+
+  sdk.registerFunction(
+    { id: "api::patterns" },
+    async (req: ApiRequest<{ project?: string }>): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const result = await sdk.trigger("mem::patterns", req.body);
+      return { status_code: 200, body: result };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::patterns",
+    config: { api_path: "/agentmemory/patterns", http_method: "POST" },
+  });
+
+  sdk.registerFunction(
+    { id: "api::generate-rules" },
+    async (req: ApiRequest<{ project?: string }>): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const result = await sdk.trigger("mem::generate-rules", req.body);
+      return { status_code: 200, body: result };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::generate-rules",
+    config: { api_path: "/agentmemory/generate-rules", http_method: "POST" },
+  });
+
+  sdk.registerFunction(
     { id: "api::migrate" },
     async (req: ApiRequest<{ dbPath: string }>): Promise<Response> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
+      if (!req.body?.dbPath || typeof req.body.dbPath !== "string") {
+        return { status_code: 400, body: { error: "dbPath is required" } };
+      }
       const result = await sdk.trigger("mem::migrate", req.body);
       return { status_code: 200, body: result };
     },
@@ -205,6 +347,23 @@ export function registerApiTriggers(
     type: "http",
     function_id: "api::migrate",
     config: { api_path: "/agentmemory/migrate", http_method: "POST" },
+  });
+
+  sdk.registerFunction(
+    { id: "api::evict" },
+    async (req: ApiRequest<{ dryRun?: boolean }>): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const dryRun =
+        req.query_params?.["dryRun"] === "true" || req.body?.dryRun === true;
+      const result = await sdk.trigger("mem::evict", { dryRun });
+      return { status_code: 200, body: result };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::evict",
+    config: { api_path: "/agentmemory/evict", http_method: "POST" },
   });
 
   sdk.registerFunction({ id: "api::viewer" }, async (): Promise<Response> => {
