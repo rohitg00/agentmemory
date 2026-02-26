@@ -27,7 +27,7 @@ async function main() {
   const config = loadConfig();
   const provider = createProvider(config.provider);
 
-  console.log(`[agentmemory] Starting worker v0.3.0...`);
+  console.log(`[agentmemory] Starting worker v0.2.0...`);
   console.log(`[agentmemory] Engine: ${config.engineUrl}`);
   console.log(
     `[agentmemory] Provider: ${config.provider.provider} (${config.provider.model})`,

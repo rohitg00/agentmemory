@@ -6,7 +6,7 @@ interface OtelConfig {
 
 export const OTEL_CONFIG: OtelConfig = {
   serviceName: "agentmemory",
-  serviceVersion: "0.3.0",
+  serviceVersion: "0.2.0",
   metricsExportIntervalMs: 30_000,
 };
 
@@ -62,9 +62,10 @@ const HISTOGRAM_NAMES: Array<[keyof Histograms, string]> = [
   ["qualityScore", "quality.score"],
 ];
 
-export function initMetrics(
-  getMeter?: (name: string) => Meter,
-): { counters: Counters; histograms: Histograms } {
+export function initMetrics(getMeter?: (name: string) => Meter): {
+  counters: Counters;
+  histograms: Histograms;
+} {
   const meter = getMeter?.("agentmemory");
 
   counters = Object.fromEntries(

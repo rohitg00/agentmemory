@@ -51,7 +51,7 @@ export function registerApiTriggers(
       body: {
         status,
         service: "agentmemory",
-        version: "0.3.0",
+        version: "0.2.0",
         health: health || null,
         functionMetrics,
         circuitBreaker,

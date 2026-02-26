@@ -34,7 +34,7 @@ Session 2: "Now add rate limiting"
   Claude Code starts with full project awareness
 ```
 
-## What's New in v0.3.0
+## What's New in v0.2.0
 
 - **Self-evaluation framework** — Zod I/O validation, quality scoring (0-100), self-correcting LLM retries, per-function metrics
 - **Health monitoring** — Real-time CPU, memory, event loop lag tracking with degraded/critical alerts
@@ -83,7 +83,7 @@ Returns real health data:
 {
   "status": "healthy",
   "service": "agentmemory",
-  "version": "0.3.0",
+  "version": "0.2.0",
   "health": {
     "memory": { "heapUsed": 42000000, "heapTotal": 67000000 },
     "cpu": { "percent": 2.1 },
@@ -177,7 +177,7 @@ All data passes through `mem::privacy` before storage:
 
 ## Self-Evaluation
 
-agentmemory v0.3.0 monitors its own health and validates its own I/O.
+agentmemory v0.2.0 monitors its own health and validates its own I/O.
 
 ### Quality Scoring
 
