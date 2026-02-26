@@ -4,6 +4,8 @@ export const KV = {
   memories: "mem:memories",
   summaries: "mem:summaries",
   config: "mem:config",
+  metrics: "mem:metrics",
+  health: "mem:health",
 } as const;
 
 export const STREAM = {
