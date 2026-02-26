@@ -9,12 +9,12 @@ export class ResilientProvider implements MemoryProvider {
     this.name = `resilient(${inner.name})`;
   }
 
-  async compress(systemPrompt: string, userPrompt: string): Promise<string> {
+  private async call(fn: () => Promise<string>): Promise<string> {
     if (!this.breaker.isAllowed) {
       throw new Error("circuit_breaker_open");
     }
     try {
-      const result = await this.inner.compress(systemPrompt, userPrompt);
+      const result = await fn();
       this.breaker.recordSuccess();
       return result;
     } catch (err) {
@@ -23,18 +23,12 @@ export class ResilientProvider implements MemoryProvider {
     }
   }
 
+  async compress(systemPrompt: string, userPrompt: string): Promise<string> {
+    return this.call(() => this.inner.compress(systemPrompt, userPrompt));
+  }
+
   async summarize(systemPrompt: string, userPrompt: string): Promise<string> {
-    if (!this.breaker.isAllowed) {
-      throw new Error("circuit_breaker_open");
-    }
-    try {
-      const result = await this.inner.summarize(systemPrompt, userPrompt);
-      this.breaker.recordSuccess();
-      return result;
-    } catch (err) {
-      this.breaker.recordFailure();
-      throw err;
-    }
+    return this.call(() => this.inner.summarize(systemPrompt, userPrompt));
   }
 
   get circuitState(): CircuitBreakerState {
