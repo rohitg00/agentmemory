@@ -103,6 +103,18 @@ export function registerSummarizeFunction(
           "mem::summarize",
         );
 
+        if (!validation.valid) {
+          const latencyMs = Date.now() - startMs;
+          if (metricsStore) {
+            await metricsStore.record("mem::summarize", latencyMs, false);
+          }
+          ctx.logger.warn("Summary validation failed", {
+            sessionId: data.sessionId,
+            errors: validation.result.errors,
+          });
+          return { success: false, error: "validation_failed" };
+        }
+
         const qualityScore = scoreSummary(summaryForValidation);
 
         await kv.set(KV.summaries, data.sessionId, summary);

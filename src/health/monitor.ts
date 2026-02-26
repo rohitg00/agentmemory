@@ -4,12 +4,14 @@ import type { StateKV } from "../state/kv.js";
 import { KV } from "../state/schema.js";
 import { evaluateHealth } from "./thresholds.js";
 
-let connectionState = "connected";
-
 export function registerHealthMonitor(
   sdk: ISdk,
   kv: StateKV,
 ): { stop: () => void } {
+  let connectionState = "connected";
+  let prevCpuUsage = process.cpuUsage();
+  let prevCpuTime = Date.now();
+
   if (typeof sdk.on === "function") {
     sdk.on("connection_state", (state: string) => {
       connectionState = state;
@@ -18,8 +20,19 @@ export function registerHealthMonitor(
 
   async function collectHealth(): Promise<HealthSnapshot> {
     const mem = process.memoryUsage();
-    const cpu = process.cpuUsage();
+    const currentCpu = process.cpuUsage();
+    const now = Date.now();
     const uptime = process.uptime();
+
+    const elapsedMs = now - prevCpuTime;
+    const userDelta = currentCpu.user - prevCpuUsage.user;
+    const systemDelta = currentCpu.system - prevCpuUsage.system;
+    const cpuPercent =
+      elapsedMs > 0
+        ? ((userDelta + systemDelta) / 1000 / elapsedMs) * 100
+        : 0;
+    prevCpuUsage = currentCpu;
+    prevCpuTime = now;
 
     const startMark = performance.now();
     await new Promise((resolve) => setImmediate(resolve));
@@ -27,10 +40,10 @@ export function registerHealthMonitor(
 
     let workers: HealthSnapshot["workers"] = [];
     try {
-      const result = await sdk.trigger<unknown, { workers?: HealthSnapshot["workers"] }>(
-        "engine::workers::list",
-        {},
-      );
+      const result = await sdk.trigger<
+        unknown,
+        { workers?: HealthSnapshot["workers"] }
+      >("engine::workers::list", {});
       if (result?.workers) workers = result.workers;
     } catch {}
 
@@ -44,9 +57,9 @@ export function registerHealthMonitor(
         external: mem.external,
       },
       cpu: {
-        userMicros: cpu.user,
-        systemMicros: cpu.system,
-        percent: 0,
+        userMicros: currentCpu.user,
+        systemMicros: currentCpu.system,
+        percent: Math.round(cpuPercent * 100) / 100,
       },
       eventLoopLagMs,
       uptimeSeconds: uptime,
@@ -72,6 +85,8 @@ export function registerHealthMonitor(
   };
 }
 
-export async function getLatestHealth(kv: StateKV): Promise<HealthSnapshot | null> {
+export async function getLatestHealth(
+  kv: StateKV,
+): Promise<HealthSnapshot | null> {
   return kv.get<HealthSnapshot>(KV.health, "latest");
 }

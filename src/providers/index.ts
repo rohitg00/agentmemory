@@ -5,19 +5,29 @@ import { OpenRouterProvider } from "./openrouter.js";
 import { ResilientProvider } from "./resilient.js";
 import { getEnvVar } from "../config.js";
 
+function requireEnvVar(key: string): string {
+  const value = getEnvVar(key);
+  if (!value) {
+    throw new Error(
+      `Missing required environment variable: ${key}. Set it in ~/.agentmemory/.env or as an environment variable.`,
+    );
+  }
+  return value;
+}
+
 export function createProvider(config: ProviderConfig): ResilientProvider {
   let base: MemoryProvider;
   switch (config.provider) {
     case "anthropic":
       base = new AnthropicProvider(
-        getEnvVar("ANTHROPIC_API_KEY")!,
+        requireEnvVar("ANTHROPIC_API_KEY"),
         config.model,
         config.maxTokens,
       );
       break;
     case "gemini":
       base = new OpenRouterProvider(
-        getEnvVar("GEMINI_API_KEY")!,
+        requireEnvVar("GEMINI_API_KEY"),
         config.model,
         config.maxTokens,
         "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
@@ -25,7 +35,7 @@ export function createProvider(config: ProviderConfig): ResilientProvider {
       break;
     case "openrouter":
       base = new OpenRouterProvider(
-        getEnvVar("OPENROUTER_API_KEY")!,
+        requireEnvVar("OPENROUTER_API_KEY"),
         config.model,
         config.maxTokens,
         "https://openrouter.ai/api/v1/chat/completions",

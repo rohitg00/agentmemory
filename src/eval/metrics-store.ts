@@ -4,6 +4,7 @@ import { KV } from "../state/schema.js";
 
 export class MetricsStore {
   private cache = new Map<string, FunctionMetrics>();
+  private qualityCallCounts = new Map<string, number>();
 
   constructor(private kv: StateKV) {}
 
@@ -15,7 +16,7 @@ export class MetricsStore {
   ): Promise<void> {
     let m = this.cache.get(functionId);
     if (!m) {
-      m = await this.kv.get<FunctionMetrics>(KV.metrics, functionId) ?? {
+      m = (await this.kv.get<FunctionMetrics>(KV.metrics, functionId)) ?? {
         functionId,
         totalCalls: 0,
         successCount: 0,
@@ -34,7 +35,11 @@ export class MetricsStore {
       m.failureCount += 1;
     }
     if (qualityScore !== undefined) {
-      m.avgQualityScore = (m.avgQualityScore * prev + qualityScore) / m.totalCalls;
+      const prevQualityCalls = this.qualityCallCounts.get(functionId) || 0;
+      m.avgQualityScore =
+        (m.avgQualityScore * prevQualityCalls + qualityScore) /
+        (prevQualityCalls + 1);
+      this.qualityCallCounts.set(functionId, prevQualityCalls + 1);
     }
 
     this.cache.set(functionId, m);
@@ -42,12 +47,19 @@ export class MetricsStore {
   }
 
   async get(functionId: string): Promise<FunctionMetrics | null> {
-    return this.cache.get(functionId) ??
-      await this.kv.get<FunctionMetrics>(KV.metrics, functionId);
+    return (
+      this.cache.get(functionId) ??
+      (await this.kv.get<FunctionMetrics>(KV.metrics, functionId))
+    );
   }
 
   async getAll(): Promise<FunctionMetrics[]> {
-    if (this.cache.size > 0) return Array.from(this.cache.values());
-    return this.kv.list<FunctionMetrics>(KV.metrics).catch(() => []);
+    const kvMetrics = await this.kv
+      .list<FunctionMetrics>(KV.metrics)
+      .catch(() => []);
+    const merged = new Map<string, FunctionMetrics>();
+    for (const m of kvMetrics) merged.set(m.functionId, m);
+    for (const [id, m] of this.cache) merged.set(id, m);
+    return Array.from(merged.values());
   }
 }

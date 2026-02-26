@@ -27,7 +27,10 @@ export function evaluateHealth(
   let critical = false;
   let degraded = false;
 
-  if (snapshot.connectionState === "disconnected" || snapshot.connectionState === "failed") {
+  if (
+    snapshot.connectionState === "disconnected" ||
+    snapshot.connectionState === "failed"
+  ) {
     alerts.push(`connection_${snapshot.connectionState}`);
     critical = true;
   } else if (snapshot.connectionState === "reconnecting") {
@@ -36,7 +39,9 @@ export function evaluateHealth(
   }
 
   if (snapshot.eventLoopLagMs > cfg.eventLoopLagCriticalMs) {
-    alerts.push(`event_loop_lag_critical_${Math.round(snapshot.eventLoopLagMs)}ms`);
+    alerts.push(
+      `event_loop_lag_critical_${Math.round(snapshot.eventLoopLagMs)}ms`,
+    );
     critical = true;
   } else if (snapshot.eventLoopLagMs > cfg.eventLoopLagWarnMs) {
     alerts.push(`event_loop_lag_warn_${Math.round(snapshot.eventLoopLagMs)}ms`);
@@ -51,9 +56,10 @@ export function evaluateHealth(
     degraded = true;
   }
 
-  const memPercent = snapshot.memory.heapTotal > 0
-    ? (snapshot.memory.rss / snapshot.memory.heapTotal) * 100
-    : 0;
+  const memPercent =
+    snapshot.memory.heapTotal > 0
+      ? (snapshot.memory.heapUsed / snapshot.memory.heapTotal) * 100
+      : 0;
   if (memPercent > cfg.memoryCriticalPercent) {
     alerts.push(`memory_critical_${Math.round(memPercent)}%`);
     critical = true;
