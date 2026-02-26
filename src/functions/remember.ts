@@ -1,7 +1,7 @@
 import type { ISdk } from "iii-sdk";
 import { getContext } from "iii-sdk";
 import type { Memory } from "../types.js";
-import { KV, generateId } from "../state/schema.js";
+import { KV, generateId, jaccardSimilarity } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 
 export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
@@ -30,6 +30,24 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
         : "fact";
 
       const now = new Date().toISOString();
+
+      const existingMemories = await kv.list<Memory>(KV.memories);
+      let supersededId: string | undefined;
+      const lowerContent = data.content.toLowerCase();
+      for (const existing of existingMemories) {
+        if (!existing.isLatest) continue;
+        const similarity = jaccardSimilarity(
+          lowerContent,
+          existing.content.toLowerCase(),
+        );
+        if (similarity > 0.7) {
+          existing.isLatest = false;
+          await kv.set(KV.memories, existing.id, existing);
+          supersededId = existing.id;
+          break;
+        }
+      }
+
       const memory: Memory = {
         id: generateId("mem"),
         createdAt: now,
@@ -41,6 +59,10 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
         files: data.files || [],
         sessionIds: [],
         strength: 7,
+        version: supersededId ? 2 : 1,
+        parentId: supersededId,
+        supersedes: supersededId ? [supersededId] : [],
+        isLatest: true,
       };
 
       await kv.set(KV.memories, memory.id, memory);

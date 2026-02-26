@@ -4,6 +4,7 @@ import type {
   Session,
   CompressedObservation,
   SessionSummary,
+  Memory,
 } from "../types.js";
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
@@ -28,6 +29,8 @@ interface EvictionStats {
   staleSessions: number;
   lowImportanceObs: number;
   capEvictions: number;
+  expiredMemories: number;
+  nonLatestMemories: number;
   dryRun: boolean;
 }
 
@@ -51,6 +54,8 @@ export function registerEvictFunction(sdk: ISdk, kv: StateKV): void {
         staleSessions: 0,
         lowImportanceObs: 0,
         capEvictions: 0,
+        expiredMemories: 0,
+        nonLatestMemories: 0,
         dryRun,
       };
 
@@ -117,6 +122,29 @@ export function registerEvictFunction(sdk: ISdk, kv: StateKV): void {
               await kv
                 .delete(KV.observations(o.sessionId), o.id)
                 .catch(() => {});
+            }
+          }
+        }
+      }
+
+      const memories = await kv.list<Memory>(KV.memories).catch(() => []);
+      for (const mem of memories) {
+        if (mem.forgetAfter) {
+          const expiry = new Date(mem.forgetAfter).getTime();
+          if (now > expiry) {
+            stats.expiredMemories++;
+            if (!dryRun) {
+              await kv.delete(KV.memories, mem.id).catch(() => {});
+            }
+          }
+        }
+
+        if (mem.isLatest === false && mem.createdAt) {
+          const age = now - new Date(mem.createdAt).getTime();
+          if (age > cfg.lowImportanceMaxDays * MS_PER_DAY) {
+            stats.nonLatestMemories++;
+            if (!dryRun) {
+              await kv.delete(KV.memories, mem.id).catch(() => {});
             }
           }
         }

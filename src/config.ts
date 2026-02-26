@@ -1,7 +1,12 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
-import type { AgentMemoryConfig, ProviderConfig } from "./types.js";
+import type {
+  AgentMemoryConfig,
+  ProviderConfig,
+  EmbeddingConfig,
+  FallbackConfig,
+} from "./types.js";
 
 const DATA_DIR = join(homedir(), ".agentmemory");
 const ENV_FILE = join(DATA_DIR, ".env");
@@ -60,8 +65,7 @@ function detectProvider(env: Record<string, string>): ProviderConfig {
 }
 
 export function loadConfig(): AgentMemoryConfig {
-  const fileEnv = loadEnvFile();
-  const env = { ...fileEnv, ...process.env } as Record<string, string>;
+  const env = getMergedEnv();
 
   const provider = detectProvider(env);
 
@@ -80,7 +84,47 @@ export function loadConfig(): AgentMemoryConfig {
   };
 }
 
-export function getEnvVar(key: string): string | undefined {
+function getMergedEnv(
+  overrides?: Record<string, string>,
+): Record<string, string> {
   const fileEnv = loadEnvFile();
-  return process.env[key] || fileEnv[key];
+  return { ...fileEnv, ...process.env, ...overrides } as Record<string, string>;
+}
+
+export function getEnvVar(key: string): string | undefined {
+  return getMergedEnv()[key];
+}
+
+export function loadEmbeddingConfig(): EmbeddingConfig {
+  const env = getMergedEnv();
+  return {
+    provider: env["EMBEDDING_PROVIDER"] || undefined,
+    bm25Weight: parseFloat(env["BM25_WEIGHT"] || "0.4"),
+    vectorWeight: parseFloat(env["VECTOR_WEIGHT"] || "0.6"),
+  };
+}
+
+export function detectEmbeddingProvider(
+  env?: Record<string, string>,
+): string | null {
+  const merged = getMergedEnv(env);
+  const forced = merged["EMBEDDING_PROVIDER"];
+  if (forced) return forced;
+
+  if (merged["GEMINI_API_KEY"]) return "gemini";
+  if (merged["OPENAI_API_KEY"]) return "openai";
+  if (merged["VOYAGE_API_KEY"]) return "voyage";
+  if (merged["COHERE_API_KEY"]) return "cohere";
+  if (merged["OPENROUTER_API_KEY"]) return "openrouter";
+  return null;
+}
+
+export function loadFallbackConfig(): FallbackConfig {
+  const env = getMergedEnv();
+  const raw = env["FALLBACK_PROVIDERS"] || "";
+  const providers = raw
+    .split(",")
+    .map((p) => p.trim())
+    .filter(Boolean) as FallbackConfig["providers"];
+  return { providers };
 }

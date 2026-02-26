@@ -6,7 +6,7 @@ interface OtelConfig {
 
 export const OTEL_CONFIG: OtelConfig = {
   serviceName: "agentmemory",
-  serviceVersion: "0.2.0",
+  serviceVersion: "0.3.0",
   metricsExportIntervalMs: 30_000,
 };
 
@@ -25,6 +25,11 @@ interface Counters {
   dedupSkipped: Counter;
   evictionTotal: Counter;
   circuitBreakerOpen: Counter;
+  embeddingSuccess: Counter;
+  embeddingFailure: Counter;
+  vectorSearchTotal: Counter;
+  autoForgetTotal: Counter;
+  profileGenerated: Counter;
 }
 
 interface Histograms {
@@ -32,6 +37,8 @@ interface Histograms {
   searchLatency: Histogram;
   contextTokens: Histogram;
   qualityScore: Histogram;
+  embeddingLatency: Histogram;
+  vectorSearchLatency: Histogram;
 }
 
 type Meter = {
@@ -53,6 +60,11 @@ const COUNTER_NAMES: Array<[keyof Counters, string]> = [
   ["dedupSkipped", "dedup.skipped"],
   ["evictionTotal", "eviction.total"],
   ["circuitBreakerOpen", "circuit_breaker.open"],
+  ["embeddingSuccess", "embedding.success"],
+  ["embeddingFailure", "embedding.failure"],
+  ["vectorSearchTotal", "vector_search.total"],
+  ["autoForgetTotal", "auto_forget.total"],
+  ["profileGenerated", "profile.generated"],
 ];
 
 const HISTOGRAM_NAMES: Array<[keyof Histograms, string]> = [
@@ -60,6 +72,8 @@ const HISTOGRAM_NAMES: Array<[keyof Histograms, string]> = [
   ["searchLatency", "search.latency_ms"],
   ["contextTokens", "context.tokens"],
   ["qualityScore", "quality.score"],
+  ["embeddingLatency", "embedding.latency_ms"],
+  ["vectorSearchLatency", "vector_search.latency_ms"],
 ];
 
 export function initMetrics(getMeter?: (name: string) => Meter): {
@@ -73,14 +87,14 @@ export function initMetrics(getMeter?: (name: string) => Meter): {
       key,
       meter ? meter.createCounter(name) : NOOP_COUNTER,
     ]),
-  ) as Counters;
+  ) as unknown as Counters;
 
   histograms = Object.fromEntries(
     HISTOGRAM_NAMES.map(([key, name]) => [
       key,
       meter ? meter.createHistogram(name) : NOOP_HISTOGRAM,
     ]),
-  ) as Histograms;
+  ) as unknown as Histograms;
 
   return { counters, histograms };
 }

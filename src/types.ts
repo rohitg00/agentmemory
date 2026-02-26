@@ -64,6 +64,12 @@ export interface Memory {
   files: string[];
   sessionIds: string[];
   strength: number;
+  version: number;
+  parentId?: string;
+  supersedes?: string[];
+  relatedIds?: string[];
+  isLatest: boolean;
+  forgetAfter?: string;
 }
 
 export interface SessionSummary {
@@ -177,4 +183,74 @@ export interface CircuitBreakerState {
   failures: number;
   lastFailureAt: number | null;
   openedAt: number | null;
+}
+
+export interface EmbeddingProvider {
+  name: string;
+  dimensions: number;
+  embed(text: string): Promise<Float32Array>;
+  embedBatch(texts: string[]): Promise<Float32Array[]>;
+}
+
+export interface MemoryRelation {
+  type: "supersedes" | "extends" | "derives" | "contradicts" | "related";
+  sourceId: string;
+  targetId: string;
+  createdAt: string;
+}
+
+export interface HybridSearchResult {
+  observation: CompressedObservation;
+  bm25Score: number;
+  vectorScore: number;
+  combinedScore: number;
+  sessionId: string;
+}
+
+export interface CompactSearchResult {
+  obsId: string;
+  sessionId: string;
+  title: string;
+  type: ObservationType;
+  score: number;
+  timestamp: string;
+}
+
+export interface TimelineEntry {
+  observation: CompressedObservation;
+  sessionId: string;
+  relativePosition: number;
+}
+
+export interface ProjectProfile {
+  project: string;
+  updatedAt: string;
+  topConcepts: Array<{ concept: string; frequency: number }>;
+  topFiles: Array<{ file: string; frequency: number }>;
+  conventions: string[];
+  commonErrors: string[];
+  recentActivity: string[];
+  sessionCount: number;
+  totalObservations: number;
+  summary?: string;
+}
+
+export interface ExportData {
+  version: "0.3.0";
+  exportedAt: string;
+  sessions: Session[];
+  observations: Record<string, CompressedObservation[]>;
+  memories: Memory[];
+  summaries: SessionSummary[];
+  profiles?: ProjectProfile[];
+}
+
+export interface EmbeddingConfig {
+  provider?: string;
+  bm25Weight: number;
+  vectorWeight: number;
+}
+
+export interface FallbackConfig {
+  providers: ProviderType[];
 }

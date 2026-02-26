@@ -25,7 +25,11 @@ export class SearchIndex {
       termCount++;
     }
 
-    this.entries.set(obs.id, { obsId: obs.id, sessionId: obs.sessionId, termCount });
+    this.entries.set(obs.id, {
+      obsId: obs.id,
+      sessionId: obs.sessionId,
+      termCount,
+    });
     this.docTermCounts.set(obs.id, termFreq);
     this.totalDocLength += termCount;
 
@@ -64,7 +68,8 @@ export class SearchIndex {
         const docLen = entry.termCount;
 
         const numerator = tf * (this.k1 + 1);
-        const denominator = tf + this.k1 * (1 - this.b + this.b * (docLen / avgDocLen));
+        const denominator =
+          tf + this.k1 * (1 - this.b + this.b * (docLen / avgDocLen));
         const bm25Score = idf * (numerator / denominator);
 
         scores.set(obsId, (scores.get(obsId) || 0) + bm25Score);
@@ -73,15 +78,20 @@ export class SearchIndex {
       for (const [indexTerm, obsIds] of this.invertedIndex) {
         if (indexTerm !== term && indexTerm.startsWith(term)) {
           const prefixDf = obsIds.size;
-          const prefixIdf = Math.log((N - prefixDf + 0.5) / (prefixDf + 0.5) + 1) * 0.5;
+          const prefixIdf =
+            Math.log((N - prefixDf + 0.5) / (prefixDf + 0.5) + 1) * 0.5;
           for (const obsId of obsIds) {
             const entry = this.entries.get(obsId)!;
             const docTerms = this.docTermCounts.get(obsId);
             const tf = docTerms?.get(indexTerm) || 0;
             const docLen = entry.termCount;
             const numerator = tf * (this.k1 + 1);
-            const denominator = tf + this.k1 * (1 - this.b + this.b * (docLen / avgDocLen));
-            scores.set(obsId, (scores.get(obsId) || 0) + prefixIdf * (numerator / denominator));
+            const denominator =
+              tf + this.k1 * (1 - this.b + this.b * (docLen / avgDocLen));
+            scores.set(
+              obsId,
+              (scores.get(obsId) || 0) + prefixIdf * (numerator / denominator),
+            );
           }
         }
       }
@@ -105,6 +115,39 @@ export class SearchIndex {
     this.invertedIndex.clear();
     this.docTermCounts.clear();
     this.totalDocLength = 0;
+  }
+
+  serialize(): string {
+    const entries = Array.from(this.entries.entries());
+    const inverted = Array.from(this.invertedIndex.entries()).map(
+      ([term, ids]) => [term, Array.from(ids)] as [string, string[]],
+    );
+    const docTerms = Array.from(this.docTermCounts.entries()).map(
+      ([id, counts]) =>
+        [id, Array.from(counts.entries())] as [string, [string, number][]],
+    );
+    return JSON.stringify({
+      entries,
+      inverted,
+      docTerms,
+      totalDocLength: this.totalDocLength,
+    });
+  }
+
+  static deserialize(json: string): SearchIndex {
+    const idx = new SearchIndex();
+    const data = JSON.parse(json);
+    for (const [key, val] of data.entries) {
+      idx.entries.set(key, val);
+    }
+    for (const [term, ids] of data.inverted) {
+      idx.invertedIndex.set(term, new Set(ids));
+    }
+    for (const [id, counts] of data.docTerms) {
+      idx.docTermCounts.set(id, new Map(counts));
+    }
+    idx.totalDocLength = data.totalDocLength;
+    return idx;
   }
 
   private extractTerms(obs: CompressedObservation): string[] {
