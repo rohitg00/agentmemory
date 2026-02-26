@@ -4,8 +4,13 @@ import type { RawObservation, HookPayload, Session } from "../types.js";
 import { KV, STREAM, generateId } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { stripPrivateData } from "./privacy.js";
+import { DedupMap } from "./dedup.js";
 
-export function registerObserveFunction(sdk: ISdk, kv: StateKV): void {
+export function registerObserveFunction(
+  sdk: ISdk,
+  kv: StateKV,
+  dedupMap?: DedupMap,
+): void {
   sdk.registerFunction(
     {
       id: "mem::observe",
@@ -14,6 +19,24 @@ export function registerObserveFunction(sdk: ISdk, kv: StateKV): void {
     async (payload: HookPayload) => {
       const ctx = getContext();
       const obsId = generateId("obs");
+
+      if (dedupMap) {
+        const d =
+          typeof payload.data === "object" && payload.data !== null
+            ? (payload.data as Record<string, unknown>)
+            : {};
+        const toolName = (d["tool_name"] as string) || payload.hookType;
+        const hash = dedupMap.computeHash(
+          payload.sessionId,
+          toolName,
+          d["tool_input"],
+        );
+        if (dedupMap.isDuplicate(hash)) {
+          return { deduplicated: true, sessionId: payload.sessionId };
+        }
+        dedupMap.record(hash);
+      }
+
       let sanitizedRaw: unknown = payload.data;
       try {
         const jsonStr = JSON.stringify(payload.data);

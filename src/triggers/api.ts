@@ -5,6 +5,9 @@ import { StateKV } from "../state/kv.js";
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { getLatestHealth } from "../health/monitor.js";
+import type { MetricsStore } from "../eval/metrics-store.js";
+import type { ResilientProvider } from "../providers/resilient.js";
 
 type Response = {
   status_code: number;
@@ -31,13 +34,34 @@ export function registerApiTriggers(
   sdk: ISdk,
   kv: StateKV,
   secret?: string,
+  metricsStore?: MetricsStore,
+  provider?: ResilientProvider | { circuitState?: unknown },
 ): void {
   sdk.registerFunction(
     { id: "api::health" },
-    async (): Promise<Response> => ({
-      status_code: 200,
-      body: { status: "ok", service: "agentmemory", version: "0.2.0" },
-    }),
+    async (): Promise<Response> => {
+      const health = await getLatestHealth(kv);
+      const functionMetrics = metricsStore
+        ? await metricsStore.getAll()
+        : [];
+      const circuitBreaker =
+        provider && "circuitState" in provider ? provider.circuitState : null;
+
+      const status = health?.status || "healthy";
+      const statusCode = status === "critical" ? 503 : 200;
+
+      return {
+        status_code: statusCode,
+        body: {
+          status,
+          service: "agentmemory",
+          version: "0.3.0",
+          health: health || null,
+          functionMetrics,
+          circuitBreaker,
+        },
+      };
+    },
   );
   sdk.registerTrigger({
     type: "http",
@@ -328,6 +352,24 @@ export function registerApiTriggers(
     type: "http",
     function_id: "api::migrate",
     config: { api_path: "/agentmemory/migrate", http_method: "POST" },
+  });
+
+  sdk.registerFunction(
+    { id: "api::evict" },
+    async (
+      req: ApiRequest<{ dryRun?: boolean }>,
+    ): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const dryRun = req.query_params?.["dryRun"] === "true" || req.body?.dryRun;
+      const result = await sdk.trigger("mem::evict", { dryRun });
+      return { status_code: 200, body: result };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::evict",
+    config: { api_path: "/agentmemory/evict", http_method: "POST" },
   });
 
   sdk.registerFunction({ id: "api::viewer" }, async (): Promise<Response> => {

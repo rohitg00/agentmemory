@@ -14,6 +14,11 @@ import {
 } from "../prompts/compression.js";
 import { getXmlTag, getXmlChildren } from "../prompts/xml.js";
 import { getSearchIndex } from "./search.js";
+import { CompressOutputSchema } from "../eval/schemas.js";
+import { validateOutput } from "../eval/validator.js";
+import { scoreCompression } from "../eval/quality.js";
+import { compressWithRetry } from "../eval/self-correct.js";
+import type { MetricsStore } from "../eval/metrics-store.js";
 
 const VALID_TYPES = new Set<string>([
   "file_read",
@@ -59,6 +64,7 @@ export function registerCompressFunction(
   sdk: ISdk,
   kv: StateKV,
   provider: MemoryProvider,
+  metricsStore?: MetricsStore,
 ): void {
   sdk.registerFunction(
     {
@@ -71,6 +77,7 @@ export function registerCompressFunction(
       raw: RawObservation;
     }) => {
       const ctx = getContext();
+      const startMs = Date.now();
       const prompt = buildCompressionPrompt({
         hookType: data.raw.hookType,
         toolName: data.raw.toolName,
@@ -81,14 +88,41 @@ export function registerCompressFunction(
       });
 
       try {
-        const response = await provider.compress(COMPRESSION_SYSTEM, prompt);
+        const validator = (response: string) => {
+          const parsed = parseCompressionXml(response);
+          if (!parsed) return { valid: false, errors: ["xml_parse_failed"] };
+          const result = validateOutput(
+            CompressOutputSchema,
+            parsed,
+            "mem::compress",
+          );
+          return result.valid
+            ? { valid: true }
+            : { valid: false, errors: result.result.errors };
+        };
+
+        const { response, retried } = await compressWithRetry(
+          provider,
+          COMPRESSION_SYSTEM,
+          prompt,
+          validator,
+          1,
+        );
+
         const parsed = parseCompressionXml(response);
         if (!parsed) {
+          const latencyMs = Date.now() - startMs;
+          if (metricsStore) {
+            await metricsStore.record("mem::compress", latencyMs, false);
+          }
           ctx.logger.warn("Failed to parse compression XML", {
             obsId: data.observationId,
+            retried,
           });
           return { success: false, error: "parse_failed" };
         }
+
+        const qualityScore = scoreCompression(parsed);
 
         const compressed: CompressedObservation = {
           id: data.observationId,
@@ -112,15 +146,31 @@ export function registerCompressFunction(
           data: { type: "compressed", observation: compressed },
         });
 
+        const latencyMs = Date.now() - startMs;
+        if (metricsStore) {
+          await metricsStore.record(
+            "mem::compress",
+            latencyMs,
+            true,
+            qualityScore,
+          );
+        }
+
         ctx.logger.info("Observation compressed", {
           obsId: data.observationId,
           type: compressed.type,
           importance: compressed.importance,
+          qualityScore,
+          retried,
         });
 
-        return { success: true, compressed };
+        return { success: true, compressed, qualityScore };
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
+        const latencyMs = Date.now() - startMs;
+        if (metricsStore) {
+          await metricsStore.record("mem::compress", latencyMs, false);
+        }
         ctx.logger.error("Compression failed", {
           obsId: data.observationId,
           error: msg,
