@@ -14,12 +14,14 @@ export class DedupMap {
 
   constructor() {
     this.cleanupTimer = setInterval(() => this.cleanup(), CLEANUP_INTERVAL_MS);
+    this.cleanupTimer.unref();
   }
 
   computeHash(sessionId: string, toolName: string, toolInput: unknown): string {
-    const input = typeof toolInput === "string"
-      ? toolInput.slice(0, 500)
-      : JSON.stringify(toolInput ?? "").slice(0, 500);
+    const input =
+      typeof toolInput === "string"
+        ? toolInput.slice(0, 500)
+        : JSON.stringify(toolInput ?? "").slice(0, 500);
     const raw = `${sessionId}:${toolName}:${input}`;
     return createHash("sha256").update(raw).digest("hex");
   }

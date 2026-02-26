@@ -68,14 +68,22 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
         deleted++;
       }
 
-      if (data.observationIds?.length && data.sessionId) {
+      if (
+        data.sessionId &&
+        data.observationIds &&
+        data.observationIds.length > 0
+      ) {
         for (const obsId of data.observationIds) {
           await kv.delete(KV.observations(data.sessionId), obsId);
           deleted++;
         }
       }
 
-      if (data.sessionId && !data.observationIds) {
+      if (
+        data.sessionId &&
+        (!data.observationIds || data.observationIds.length === 0) &&
+        !data.memoryId
+      ) {
         const observations = await kv.list<{ id: string }>(
           KV.observations(data.sessionId),
         );

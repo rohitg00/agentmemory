@@ -37,32 +37,27 @@ export function registerApiTriggers(
   metricsStore?: MetricsStore,
   provider?: ResilientProvider | { circuitState?: unknown },
 ): void {
-  sdk.registerFunction(
-    { id: "api::health" },
-    async (): Promise<Response> => {
-      const health = await getLatestHealth(kv);
-      const functionMetrics = metricsStore
-        ? await metricsStore.getAll()
-        : [];
-      const circuitBreaker =
-        provider && "circuitState" in provider ? provider.circuitState : null;
+  sdk.registerFunction({ id: "api::health" }, async (): Promise<Response> => {
+    const health = await getLatestHealth(kv);
+    const functionMetrics = metricsStore ? await metricsStore.getAll() : [];
+    const circuitBreaker =
+      provider && "circuitState" in provider ? provider.circuitState : null;
 
-      const status = health?.status || "healthy";
-      const statusCode = status === "critical" ? 503 : 200;
+    const status = health?.status || "healthy";
+    const statusCode = status === "critical" ? 503 : 200;
 
-      return {
-        status_code: statusCode,
-        body: {
-          status,
-          service: "agentmemory",
-          version: "0.3.0",
-          health: health || null,
-          functionMetrics,
-          circuitBreaker,
-        },
-      };
-    },
-  );
+    return {
+      status_code: statusCode,
+      body: {
+        status,
+        service: "agentmemory",
+        version: "0.3.0",
+        health: health || null,
+        functionMetrics,
+        circuitBreaker,
+      },
+    };
+  });
   sdk.registerTrigger({
     type: "http",
     function_id: "api::health",
@@ -356,12 +351,11 @@ export function registerApiTriggers(
 
   sdk.registerFunction(
     { id: "api::evict" },
-    async (
-      req: ApiRequest<{ dryRun?: boolean }>,
-    ): Promise<Response> => {
+    async (req: ApiRequest<{ dryRun?: boolean }>): Promise<Response> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
-      const dryRun = req.query_params?.["dryRun"] === "true" || req.body?.dryRun;
+      const dryRun =
+        req.query_params?.["dryRun"] === "true" || req.body?.dryRun === true;
       const result = await sdk.trigger("mem::evict", { dryRun });
       return { status_code: 200, body: result };
     },
