@@ -97,25 +97,27 @@ export function getEnvVar(key: string): string | undefined {
 
 export function loadEmbeddingConfig(): EmbeddingConfig {
   const env = getMergedEnv();
+  const bm25Weight = parseFloat(env["BM25_WEIGHT"] || "0.4");
+  const vectorWeight = parseFloat(env["VECTOR_WEIGHT"] || "0.6");
   return {
     provider: env["EMBEDDING_PROVIDER"] || undefined,
-    bm25Weight: parseFloat(env["BM25_WEIGHT"] || "0.4"),
-    vectorWeight: parseFloat(env["VECTOR_WEIGHT"] || "0.6"),
+    bm25Weight: isNaN(bm25Weight) ? 0.4 : bm25Weight,
+    vectorWeight: isNaN(vectorWeight) ? 0.6 : vectorWeight,
   };
 }
 
 export function detectEmbeddingProvider(
   env?: Record<string, string>,
 ): string | null {
-  const merged = getMergedEnv(env);
-  const forced = merged["EMBEDDING_PROVIDER"];
+  const source = env ?? getMergedEnv();
+  const forced = source["EMBEDDING_PROVIDER"];
   if (forced) return forced;
 
-  if (merged["GEMINI_API_KEY"]) return "gemini";
-  if (merged["OPENAI_API_KEY"]) return "openai";
-  if (merged["VOYAGE_API_KEY"]) return "voyage";
-  if (merged["COHERE_API_KEY"]) return "cohere";
-  if (merged["OPENROUTER_API_KEY"]) return "openrouter";
+  if (source["GEMINI_API_KEY"]) return "gemini";
+  if (source["OPENAI_API_KEY"]) return "openai";
+  if (source["VOYAGE_API_KEY"]) return "voyage";
+  if (source["COHERE_API_KEY"]) return "cohere";
+  if (source["OPENROUTER_API_KEY"]) return "openrouter";
   return null;
 }
 

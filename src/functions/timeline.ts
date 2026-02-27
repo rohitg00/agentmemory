@@ -1,6 +1,10 @@
 import type { ISdk } from "iii-sdk";
 import { getContext } from "iii-sdk";
-import type { CompressedObservation, Session, TimelineEntry } from "../types.js";
+import type {
+  CompressedObservation,
+  Session,
+  TimelineEntry,
+} from "../types.js";
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 
@@ -17,15 +21,26 @@ export function registerTimelineFunction(sdk: ISdk, kv: StateKV): void {
       after?: number;
     }) => {
       const ctx = getContext();
-      const before = data.before ?? 5;
-      const after = data.after ?? 5;
+      const before = Math.max(0, Math.floor(data.before ?? 5));
+      const after = Math.max(0, Math.floor(data.after ?? 5));
+
+      if (!data.anchor || typeof data.anchor !== "string") {
+        return { entries: [], anchor: data.anchor, reason: "invalid_anchor" };
+      }
 
       let anchorTime: number;
       const isoPattern = /^\d{4}-\d{2}-\d{2}/;
       if (isoPattern.test(data.anchor)) {
         anchorTime = new Date(data.anchor).getTime();
+        if (isNaN(anchorTime)) {
+          return { entries: [], anchor: data.anchor, reason: "invalid_date" };
+        }
       } else {
-        const searchResults = await findByKeyword(kv, data.anchor, data.project);
+        const searchResults = await findByKeyword(
+          kv,
+          data.anchor,
+          data.project,
+        );
         if (searchResults.length === 0) {
           return { entries: [], anchor: data.anchor, reason: "no_match" };
         }
@@ -118,7 +133,6 @@ async function findByKeyword(
   }
 
   return matches.sort(
-    (a, b) =>
-      new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
+    (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
   );
 }

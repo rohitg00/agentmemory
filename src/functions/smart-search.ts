@@ -47,11 +47,11 @@ export function registerSmartSearchFunction(
         return { mode: "expanded", results: expanded };
       }
 
-      if (!data.query) {
+      if (!data.query || typeof data.query !== "string" || !data.query.trim()) {
         return { mode: "compact", results: [], error: "query is required" };
       }
 
-      const limit = data.limit ?? 20;
+      const limit = Math.max(1, Math.min(data.limit ?? 20, 100));
       const hybridResults = await searchFn(data.query, limit);
 
       const compact: CompactSearchResult[] = hybridResults.map((r) => ({

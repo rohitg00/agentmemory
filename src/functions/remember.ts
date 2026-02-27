@@ -59,7 +59,10 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
         files: data.files || [],
         sessionIds: [],
         strength: 7,
-        version: supersededId ? 2 : 1,
+        version: supersededId
+          ? (existingMemories.find((m) => m.id === supersededId)?.version ??
+              1) + 1
+          : 1,
         parentId: supersededId,
         supersedes: supersededId ? [supersededId] : [],
         isLatest: true,
