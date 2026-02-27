@@ -1,6 +1,10 @@
 <p align="center">
-  <h1 align="center">agentmemory</h1>
-  <p align="center">Persistent memory for AI coding agents.<br/>Powered by <a href="https://iii.dev">iii-engine</a>.</p>
+  <img src="assets/banner.png" alt="agentmemory — Persistent memory for AI coding agents" width="100%" />
+</p>
+
+<p align="center">
+  <strong>Persistent memory for AI coding agents.</strong><br/>
+  Powered by <a href="https://iii.dev">iii-engine</a>.
 </p>
 
 <p align="center">
