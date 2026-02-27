@@ -60,7 +60,17 @@ export class VectorIndex {
   }
 
   restoreFrom(other: VectorIndex): void {
-    this.vectors = new Map((other as any).vectors);
+    const src = (other as any).vectors as Map<
+      string,
+      { embedding: Float32Array; sessionId: string }
+    >;
+    this.vectors = new Map();
+    for (const [obsId, entry] of src) {
+      this.vectors.set(obsId, {
+        embedding: new Float32Array(entry.embedding),
+        sessionId: entry.sessionId,
+      });
+    }
   }
 
   serialize(): string {
@@ -78,20 +88,32 @@ export class VectorIndex {
   }
 
   static deserialize(json: string): VectorIndex {
+    const idx = new VectorIndex();
+    let data: unknown;
     try {
-      const idx = new VectorIndex();
-      const data: Array<[string, { embedding: string; sessionId: string }]> =
-        JSON.parse(json);
-      if (!Array.isArray(data)) return idx;
-      for (const [obsId, entry] of data) {
+      data = JSON.parse(json);
+    } catch {
+      return idx;
+    }
+    if (!Array.isArray(data)) return idx;
+    for (const row of data) {
+      try {
+        if (!Array.isArray(row) || row.length < 2) continue;
+        const [obsId, entry] = row;
+        if (
+          typeof obsId !== "string" ||
+          typeof entry?.embedding !== "string" ||
+          typeof entry?.sessionId !== "string"
+        )
+          continue;
         idx.vectors.set(obsId, {
           embedding: base64ToFloat32(entry.embedding),
           sessionId: entry.sessionId,
         });
+      } catch {
+        continue;
       }
-      return idx;
-    } catch {
-      return new VectorIndex();
     }
+    return idx;
   }
 }

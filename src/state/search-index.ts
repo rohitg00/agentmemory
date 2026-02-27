@@ -118,7 +118,9 @@ export class SearchIndex {
   }
 
   restoreFrom(other: SearchIndex): void {
-    this.entries = new Map(other.entries);
+    this.entries = new Map(
+      Array.from(other.entries.entries()).map(([k, v]) => [k, { ...v }]),
+    );
     this.invertedIndex = new Map(
       Array.from(other.invertedIndex.entries()).map(([k, v]) => [
         k,
@@ -165,7 +167,9 @@ export class SearchIndex {
       for (const [id, counts] of data.docTerms) {
         idx.docTermCounts.set(id, new Map(counts));
       }
-      idx.totalDocLength = data.totalDocLength || 0;
+      const rawLen = Number(data.totalDocLength);
+      idx.totalDocLength =
+        Number.isFinite(rawLen) && rawLen >= 0 ? Math.floor(rawLen) : 0;
       return idx;
     } catch {
       return new SearchIndex();

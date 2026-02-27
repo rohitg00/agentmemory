@@ -44,8 +44,8 @@ export function registerSmartSearchFunction(
         const truncated = data.expandIds.length > ids.length;
         ctx.logger.info("Smart search expanded", {
           requested: data.expandIds.length,
-          returned: ids.length,
-          found: expanded.length,
+          attempted: ids.length,
+          returned: expanded.length,
           truncated,
         });
         return { mode: "expanded", results: expanded, truncated };

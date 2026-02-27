@@ -126,6 +126,15 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
           error: `Too many summaries (max ${MAX_SUMMARIES})`,
         };
       }
+      const MAX_OBS_BUCKETS = 10_000;
+      const obsBuckets = Object.keys(importData.observations);
+      if (obsBuckets.length > MAX_OBS_BUCKETS) {
+        return {
+          success: false,
+          error: `Too many observation buckets (max ${MAX_OBS_BUCKETS})`,
+        };
+      }
+
       let totalObservations = 0;
       for (const [, obs] of Object.entries(importData.observations)) {
         if (!Array.isArray(obs)) {
