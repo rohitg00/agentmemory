@@ -114,14 +114,19 @@ export class HybridSearch {
     }>,
     limit: number,
   ): Promise<HybridSearchResult[]> {
+    const sliced = results.slice(0, limit);
+    const observations = await Promise.all(
+      sliced.map((r) =>
+        this.kv
+          .get<CompressedObservation>(KV.observations(r.sessionId), r.obsId)
+          .catch(() => null),
+      ),
+    );
     const enriched: HybridSearchResult[] = [];
-    for (const r of results.slice(0, limit)) {
-      const obs = await this.kv.get<CompressedObservation>(
-        KV.observations(r.sessionId),
-        r.obsId,
-      );
+    for (let i = 0; i < sliced.length; i++) {
+      const obs = observations[i];
       if (obs) {
-        enriched.push({ observation: obs, ...r });
+        enriched.push({ observation: obs, ...sliced[i] });
       }
     }
     return enriched;

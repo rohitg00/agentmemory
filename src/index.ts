@@ -149,7 +149,12 @@ async function main() {
     }
   }
 
-  if (!loaded?.bm25 || loaded.bm25.size === 0) {
+  const needsRebuild =
+    !loaded?.bm25 ||
+    loaded.bm25.size === 0 ||
+    (embeddingProvider && vectorIndex && vectorIndex.size === 0);
+
+  if (needsRebuild) {
     const indexCount = await rebuildIndex(kv).catch((err) => {
       console.warn(`[agentmemory] Failed to rebuild search index:`, err);
       return 0;
@@ -172,7 +177,9 @@ async function main() {
     healthMonitor.stop();
     dedupMap.stop();
     indexPersistence.stop();
-    await indexPersistence.save().catch(() => {});
+    await indexPersistence.save().catch((err) => {
+      console.warn(`[agentmemory] Failed to save index on shutdown:`, err);
+    });
     await sdk.shutdown();
     process.exit(0);
   };
