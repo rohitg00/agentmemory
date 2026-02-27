@@ -38,11 +38,13 @@ export function registerAutoForgetFunction(sdk: ISdk, kv: StateKV): void {
       };
 
       const memories = await kv.list<Memory>(KV.memories);
+      const deletedIds = new Set<string>();
       for (const mem of memories) {
         if (mem.forgetAfter) {
           const expiry = new Date(mem.forgetAfter).getTime();
           if (now > expiry) {
             result.ttlExpired.push(mem.id);
+            deletedIds.add(mem.id);
             if (!dryRun) {
               await kv.delete(KV.memories, mem.id);
             }
@@ -50,7 +52,9 @@ export function registerAutoForgetFunction(sdk: ISdk, kv: StateKV): void {
         }
       }
 
-      const latestMemories = memories.filter((m) => m.isLatest !== false);
+      const latestMemories = memories.filter(
+        (m) => m.isLatest !== false && !deletedIds.has(m.id),
+      );
       for (let i = 0; i < latestMemories.length; i++) {
         for (let j = i + 1; j < latestMemories.length; j++) {
           const sim = jaccardSimilarity(

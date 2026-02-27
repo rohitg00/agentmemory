@@ -6,7 +6,10 @@ import { StateKV } from "../state/kv.js";
 
 export function registerRelationsFunction(sdk: ISdk, kv: StateKV): void {
   sdk.registerFunction(
-    { id: "mem::relate", description: "Create a relationship between memories" },
+    {
+      id: "mem::relate",
+      description: "Create a relationship between memories",
+    },
     async (data: {
       sourceId: string;
       targetId: string;
@@ -66,9 +69,6 @@ export function registerRelationsFunction(sdk: ISdk, kv: StateKV): void {
         return { success: false, error: "memory not found" };
       }
 
-      existing.isLatest = false;
-      await kv.set(KV.memories, existing.id, existing);
-
       const now = new Date().toISOString();
       const evolved: Memory = {
         ...existing,
@@ -84,6 +84,9 @@ export function registerRelationsFunction(sdk: ISdk, kv: StateKV): void {
       };
 
       await kv.set(KV.memories, evolved.id, evolved);
+
+      existing.isLatest = false;
+      await kv.set(KV.memories, existing.id, existing);
 
       const relation: MemoryRelation = {
         type: "supersedes",
@@ -132,7 +135,17 @@ export function registerRelationsFunction(sdk: ISdk, kv: StateKV): void {
         const relatedIds = memory.relatedIds || [];
         const supersedes = memory.supersedes || [];
         const parentId = memory.parentId ? [memory.parentId] : [];
-        const allLinks = [...new Set([...relatedIds, ...supersedes, ...parentId])];
+
+        const kvRelations = await kv
+          .list<MemoryRelation>(KV.relations)
+          .catch(() => []);
+        const kvLinked = kvRelations
+          .filter((r) => r.sourceId === current.id || r.targetId === current.id)
+          .map((r) => (r.sourceId === current.id ? r.targetId : r.sourceId));
+
+        const allLinks = [
+          ...new Set([...relatedIds, ...supersedes, ...parentId, ...kvLinked]),
+        ];
 
         for (const nextId of allLinks) {
           if (!visited.has(nextId)) {

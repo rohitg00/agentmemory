@@ -411,6 +411,8 @@ export function registerApiTriggers(
   sdk.registerFunction(
     { id: "api::profile" },
     async (req: ApiRequest): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
       const project = req.query_params["project"] as string;
       if (!project) {
         return {

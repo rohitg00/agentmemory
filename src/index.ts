@@ -136,7 +136,10 @@ async function main() {
 
   const indexPersistence = new IndexPersistence(kv, bm25Index, vectorIndex);
 
-  const loaded = await indexPersistence.load().catch(() => null);
+  const loaded = await indexPersistence.load().catch((err) => {
+    console.warn(`[agentmemory] Failed to load persisted index:`, err);
+    return null;
+  });
   if (loaded?.bm25) {
     const restoredCount = loaded.bm25.size;
     if (restoredCount > 0) {
@@ -147,7 +150,10 @@ async function main() {
   }
 
   if (!loaded?.bm25 || loaded.bm25.size === 0) {
-    const indexCount = await rebuildIndex(kv).catch(() => 0);
+    const indexCount = await rebuildIndex(kv).catch((err) => {
+      console.warn(`[agentmemory] Failed to rebuild search index:`, err);
+      return 0;
+    });
     if (indexCount > 0) {
       console.log(
         `[agentmemory] Search index rebuilt: ${indexCount} observations`,

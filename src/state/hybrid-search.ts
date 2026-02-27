@@ -36,7 +36,21 @@ export class HybridSearch {
       );
     }
 
-    const queryEmbedding = await this.embeddingProvider.embed(query);
+    let queryEmbedding: Float32Array;
+    try {
+      queryEmbedding = await this.embeddingProvider.embed(query);
+    } catch {
+      return this.enrichResults(
+        bm25Results.map((r) => ({
+          obsId: r.obsId,
+          sessionId: r.sessionId,
+          bm25Score: r.score,
+          vectorScore: 0,
+          combinedScore: r.score,
+        })),
+        limit,
+      );
+    }
     const vectorResults = this.vector.search(queryEmbedding, limit * 2);
 
     const scores = new Map<

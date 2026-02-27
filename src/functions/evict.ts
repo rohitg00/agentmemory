@@ -128,18 +128,24 @@ export function registerEvictFunction(sdk: ISdk, kv: StateKV): void {
       }
 
       const memories = await kv.list<Memory>(KV.memories).catch(() => []);
+      const evictedMemIds = new Set<string>();
       for (const mem of memories) {
         if (mem.forgetAfter) {
           const expiry = new Date(mem.forgetAfter).getTime();
           if (now > expiry) {
             stats.expiredMemories++;
+            evictedMemIds.add(mem.id);
             if (!dryRun) {
               await kv.delete(KV.memories, mem.id).catch(() => {});
             }
           }
         }
 
-        if (mem.isLatest === false && mem.createdAt) {
+        if (
+          !evictedMemIds.has(mem.id) &&
+          mem.isLatest === false &&
+          mem.createdAt
+        ) {
           const age = now - new Date(mem.createdAt).getTime();
           if (age > cfg.lowImportanceMaxDays * MS_PER_DAY) {
             stats.nonLatestMemories++;
