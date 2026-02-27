@@ -109,6 +109,105 @@ const MCP_TOOLS: McpTool[] = [
       properties: {},
     },
   },
+  {
+    name: "memory_smart_search",
+    description:
+      "Hybrid semantic+keyword search with progressive disclosure. Returns compact summaries first; pass expandIds to get full observation text.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: {
+          type: "string",
+          description: "Search query combining semantic and keyword matching",
+        },
+        expandIds: {
+          type: "string",
+          description:
+            "Comma-separated observation IDs to expand with full text",
+        },
+        limit: {
+          type: "number",
+          description: "Max results to return (default 10)",
+        },
+      },
+      required: ["query"],
+    },
+  },
+  {
+    name: "memory_timeline",
+    description:
+      "Chronological observations around an anchor point. Use to see what happened before and after a specific date or event.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        anchor: {
+          type: "string",
+          description:
+            "Anchor point: ISO date (e.g. 2026-02-15) or keyword (today, yesterday, last-week)",
+        },
+        project: {
+          type: "string",
+          description: "Filter by project path",
+        },
+        before: {
+          type: "number",
+          description: "Number of observations before anchor (default 5)",
+        },
+        after: {
+          type: "number",
+          description: "Number of observations after anchor (default 5)",
+        },
+      },
+      required: ["anchor"],
+    },
+  },
+  {
+    name: "memory_profile",
+    description:
+      "User/project profile with top concepts, frequently modified files, and recurring patterns.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        project: {
+          type: "string",
+          description: "Project path to build profile for",
+        },
+        refresh: {
+          type: "string",
+          description: "Set to 'true' to force rebuild the profile cache",
+        },
+      },
+      required: ["project"],
+    },
+  },
+  {
+    name: "memory_export",
+    description:
+      "Export all memory data as JSON. Useful for backup or migration.",
+    inputSchema: {
+      type: "object",
+      properties: {},
+    },
+  },
+  {
+    name: "memory_relations",
+    description:
+      "Query the memory relationship graph. Returns related memories within a given hop distance.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        memoryId: {
+          type: "string",
+          description: "ID of the memory to find relations for",
+        },
+        maxHops: {
+          type: "number",
+          description: "Maximum graph traversal depth (default 2)",
+        },
+      },
+      required: ["memoryId"],
+    },
+  },
 ];
 
 export function registerMcpEndpoints(
@@ -260,6 +359,110 @@ export function registerMcpEndpoints(
               body: {
                 content: [
                   { type: "text", text: JSON.stringify({ sessions }, null, 2) },
+                ],
+              },
+            };
+          }
+
+          case "memory_smart_search": {
+            if (typeof args.query !== "string" || !args.query.trim()) {
+              return {
+                status_code: 400,
+                body: { error: "query is required for memory_smart_search" },
+              };
+            }
+            const expandIds = args.expandIds
+              ? (args.expandIds as string)
+                  .split(",")
+                  .map((id: string) => id.trim())
+              : [];
+            const result = await sdk.trigger("mem::smart-search", {
+              query: args.query,
+              expandIds,
+              limit: (args.limit as number) || 10,
+            });
+            return {
+              status_code: 200,
+              body: {
+                content: [
+                  { type: "text", text: JSON.stringify(result, null, 2) },
+                ],
+              },
+            };
+          }
+
+          case "memory_timeline": {
+            if (typeof args.anchor !== "string" || !args.anchor.trim()) {
+              return {
+                status_code: 400,
+                body: { error: "anchor is required for memory_timeline" },
+              };
+            }
+            const result = await sdk.trigger("mem::timeline", {
+              anchor: args.anchor,
+              project: (args.project as string) || undefined,
+              before: (args.before as number) || 5,
+              after: (args.after as number) || 5,
+            });
+            return {
+              status_code: 200,
+              body: {
+                content: [
+                  { type: "text", text: JSON.stringify(result, null, 2) },
+                ],
+              },
+            };
+          }
+
+          case "memory_profile": {
+            if (typeof args.project !== "string" || !args.project.trim()) {
+              return {
+                status_code: 400,
+                body: { error: "project is required for memory_profile" },
+              };
+            }
+            const result = await sdk.trigger("mem::profile", {
+              project: args.project,
+              refresh: args.refresh === "true",
+            });
+            return {
+              status_code: 200,
+              body: {
+                content: [
+                  { type: "text", text: JSON.stringify(result, null, 2) },
+                ],
+              },
+            };
+          }
+
+          case "memory_export": {
+            const result = await sdk.trigger("mem::export", {});
+            return {
+              status_code: 200,
+              body: {
+                content: [
+                  { type: "text", text: JSON.stringify(result, null, 2) },
+                ],
+              },
+            };
+          }
+
+          case "memory_relations": {
+            if (typeof args.memoryId !== "string" || !args.memoryId.trim()) {
+              return {
+                status_code: 400,
+                body: { error: "memoryId is required for memory_relations" },
+              };
+            }
+            const result = await sdk.trigger("mem::get-related", {
+              memoryId: args.memoryId,
+              maxHops: (args.maxHops as number) || 2,
+            });
+            return {
+              status_code: 200,
+              body: {
+                content: [
+                  { type: "text", text: JSON.stringify(result, null, 2) },
                 ],
               },
             };

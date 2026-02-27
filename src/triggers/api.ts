@@ -51,7 +51,7 @@ export function registerApiTriggers(
       body: {
         status,
         service: "agentmemory",
-        version: "0.2.0",
+        version: "0.3.0",
         health: health || null,
         functionMetrics,
         circuitBreaker,
@@ -364,6 +364,184 @@ export function registerApiTriggers(
     type: "http",
     function_id: "api::evict",
     config: { api_path: "/agentmemory/evict", http_method: "POST" },
+  });
+
+  sdk.registerFunction(
+    { id: "api::smart-search" },
+    async (
+      req: ApiRequest<{ query?: string; expandIds?: string[]; limit?: number }>,
+    ): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      if (
+        !req.body?.query &&
+        (!req.body?.expandIds || req.body.expandIds.length === 0)
+      ) {
+        return {
+          status_code: 400,
+          body: { error: "query or expandIds is required" },
+        };
+      }
+      const result = await sdk.trigger("mem::smart-search", req.body);
+      return { status_code: 200, body: result };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::smart-search",
+    config: { api_path: "/agentmemory/smart-search", http_method: "POST" },
+  });
+
+  sdk.registerFunction(
+    { id: "api::timeline" },
+    async (
+      req: ApiRequest<{
+        anchor: string;
+        project?: string;
+        before?: number;
+        after?: number;
+      }>,
+    ): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      if (!req.body?.anchor) {
+        return { status_code: 400, body: { error: "anchor is required" } };
+      }
+      const result = await sdk.trigger("mem::timeline", req.body);
+      return { status_code: 200, body: result };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::timeline",
+    config: { api_path: "/agentmemory/timeline", http_method: "POST" },
+  });
+
+  sdk.registerFunction(
+    { id: "api::profile" },
+    async (req: ApiRequest): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const project = req.query_params["project"] as string;
+      if (!project) {
+        return {
+          status_code: 400,
+          body: { error: "project query param is required" },
+        };
+      }
+      const result = await sdk.trigger("mem::profile", { project });
+      return { status_code: 200, body: result };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::profile",
+    config: { api_path: "/agentmemory/profile", http_method: "GET" },
+  });
+
+  sdk.registerFunction(
+    { id: "api::export" },
+    async (req: ApiRequest): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const result = await sdk.trigger("mem::export", {});
+      return { status_code: 200, body: result };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::export",
+    config: { api_path: "/agentmemory/export", http_method: "GET" },
+  });
+
+  sdk.registerFunction(
+    { id: "api::import" },
+    async (
+      req: ApiRequest<{
+        exportData: unknown;
+        strategy?: "merge" | "replace" | "skip";
+      }>,
+    ): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      if (!req.body?.exportData) {
+        return { status_code: 400, body: { error: "exportData is required" } };
+      }
+      const result = await sdk.trigger("mem::import", req.body);
+      return { status_code: 200, body: result };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::import",
+    config: { api_path: "/agentmemory/import", http_method: "POST" },
+  });
+
+  sdk.registerFunction(
+    { id: "api::relations" },
+    async (
+      req: ApiRequest<{ sourceId: string; targetId: string; type: string }>,
+    ): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      if (!req.body?.sourceId || !req.body?.targetId || !req.body?.type) {
+        return {
+          status_code: 400,
+          body: { error: "sourceId, targetId, and type are required" },
+        };
+      }
+      const result = await sdk.trigger("mem::relate", req.body);
+      return { status_code: 201, body: result };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::relations",
+    config: { api_path: "/agentmemory/relations", http_method: "POST" },
+  });
+
+  sdk.registerFunction(
+    { id: "api::evolve" },
+    async (
+      req: ApiRequest<{
+        memoryId: string;
+        newContent: string;
+        newTitle?: string;
+      }>,
+    ): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      if (!req.body?.memoryId || !req.body?.newContent) {
+        return {
+          status_code: 400,
+          body: { error: "memoryId and newContent are required" },
+        };
+      }
+      const result = await sdk.trigger("mem::evolve", req.body);
+      return { status_code: 200, body: result };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::evolve",
+    config: { api_path: "/agentmemory/evolve", http_method: "POST" },
+  });
+
+  sdk.registerFunction(
+    { id: "api::auto-forget" },
+    async (req: ApiRequest<{ dryRun?: boolean }>): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const dryRun =
+        req.query_params?.["dryRun"] === "true" || req.body?.dryRun === true;
+      const result = await sdk.trigger("mem::auto-forget", { dryRun });
+      return { status_code: 200, body: result };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::auto-forget",
+    config: { api_path: "/agentmemory/auto-forget", http_method: "POST" },
   });
 
   sdk.registerFunction({ id: "api::viewer" }, async (): Promise<Response> => {

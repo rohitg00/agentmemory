@@ -56,6 +56,8 @@ function parseMemoryXml(
       1,
       Math.min(10, parseInt(getXmlTag(xml, "strength") || "5", 10) || 5),
     ),
+    version: 1,
+    isLatest: true,
   };
 }
 
@@ -134,19 +136,44 @@ export function registerConsolidateFunction(
           const parsed = parseMemoryXml(response, sessionIds);
           if (!parsed) continue;
 
-          if (existingTitles.has(parsed.title.toLowerCase())) continue;
+          const existingMatch = existingMemories.find(
+            (m) => m.title.toLowerCase() === parsed.title.toLowerCase(),
+          );
 
           const now = new Date().toISOString();
-          const memory: Memory = {
-            id: generateId("mem"),
-            createdAt: now,
-            updatedAt: now,
-            ...parsed,
-          };
+          if (existingMatch) {
+            existingMatch.isLatest = false;
+            await kv.set(KV.memories, existingMatch.id, existingMatch);
 
-          await kv.set(KV.memories, memory.id, memory);
-          existingTitles.add(memory.title.toLowerCase());
-          consolidated++;
+            const evolved: Memory = {
+              id: generateId("mem"),
+              createdAt: now,
+              updatedAt: now,
+              ...parsed,
+              version: (existingMatch.version || 1) + 1,
+              parentId: existingMatch.id,
+              supersedes: [
+                existingMatch.id,
+                ...(existingMatch.supersedes || []),
+              ],
+              isLatest: true,
+            };
+            await kv.set(KV.memories, evolved.id, evolved);
+            existingTitles.add(evolved.title.toLowerCase());
+            consolidated++;
+          } else {
+            const memory: Memory = {
+              id: generateId("mem"),
+              createdAt: now,
+              updatedAt: now,
+              ...parsed,
+              version: 1,
+              isLatest: true,
+            };
+            await kv.set(KV.memories, memory.id, memory);
+            existingTitles.add(memory.title.toLowerCase());
+            consolidated++;
+          }
         } catch (err) {
           ctx.logger.warn("Consolidation failed for concept", {
             concept,

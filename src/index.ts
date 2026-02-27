@@ -1,11 +1,27 @@
 import { init } from "iii-sdk";
-import { loadConfig, getEnvVar } from "./config.js";
-import { createProvider } from "./providers/index.js";
+import {
+  loadConfig,
+  getEnvVar,
+  loadEmbeddingConfig,
+  loadFallbackConfig,
+} from "./config.js";
+import {
+  createProvider,
+  createFallbackProvider,
+  createEmbeddingProvider,
+} from "./providers/index.js";
 import { StateKV } from "./state/kv.js";
+import { VectorIndex } from "./state/vector-index.js";
+import { HybridSearch } from "./state/hybrid-search.js";
+import { IndexPersistence } from "./state/index-persistence.js";
 import { registerPrivacyFunction } from "./functions/privacy.js";
 import { registerObserveFunction } from "./functions/observe.js";
 import { registerCompressFunction } from "./functions/compress.js";
-import { registerSearchFunction, rebuildIndex } from "./functions/search.js";
+import {
+  registerSearchFunction,
+  rebuildIndex,
+  getSearchIndex,
+} from "./functions/search.js";
 import { registerContextFunction } from "./functions/context.js";
 import { registerSummarizeFunction } from "./functions/summarize.js";
 import { registerMigrateFunction } from "./functions/migrate.js";
@@ -14,24 +30,44 @@ import { registerConsolidateFunction } from "./functions/consolidate.js";
 import { registerPatternsFunction } from "./functions/patterns.js";
 import { registerRememberFunction } from "./functions/remember.js";
 import { registerEvictFunction } from "./functions/evict.js";
+import { registerRelationsFunction } from "./functions/relations.js";
+import { registerTimelineFunction } from "./functions/timeline.js";
+import { registerSmartSearchFunction } from "./functions/smart-search.js";
+import { registerProfileFunction } from "./functions/profile.js";
+import { registerAutoForgetFunction } from "./functions/auto-forget.js";
+import { registerExportImportFunction } from "./functions/export-import.js";
 import { registerApiTriggers } from "./triggers/api.js";
 import { registerEventTriggers } from "./triggers/events.js";
 import { registerMcpEndpoints } from "./mcp/server.js";
 import { MetricsStore } from "./eval/metrics-store.js";
 import { DedupMap } from "./functions/dedup.js";
-import { ObservationQueue } from "./health/recovery.js";
-import { registerHealthMonitor, getLatestHealth } from "./health/monitor.js";
+import { registerHealthMonitor } from "./health/monitor.js";
 import { initMetrics, OTEL_CONFIG } from "./telemetry/setup.js";
 
 async function main() {
   const config = loadConfig();
-  const provider = createProvider(config.provider);
+  const embeddingConfig = loadEmbeddingConfig();
+  const fallbackConfig = loadFallbackConfig();
 
-  console.log(`[agentmemory] Starting worker v0.2.0...`);
+  const provider =
+    fallbackConfig.providers.length > 0
+      ? createFallbackProvider(config.provider, fallbackConfig)
+      : createProvider(config.provider);
+
+  const embeddingProvider = createEmbeddingProvider();
+
+  console.log(`[agentmemory] Starting worker v0.3.0...`);
   console.log(`[agentmemory] Engine: ${config.engineUrl}`);
   console.log(
     `[agentmemory] Provider: ${config.provider.provider} (${config.provider.model})`,
   );
+  if (embeddingProvider) {
+    console.log(
+      `[agentmemory] Embedding provider: ${embeddingProvider.name} (${embeddingProvider.dimensions} dims)`,
+    );
+  } else {
+    console.log(`[agentmemory] Embedding provider: none (BM25-only mode)`);
+  }
   console.log(
     `[agentmemory] REST API: http://localhost:${config.restPort}/agentmemory/*`,
   );
@@ -50,10 +86,13 @@ async function main() {
   const secret = getEnvVar("AGENTMEMORY_SECRET");
   const metricsStore = new MetricsStore(kv);
   const dedupMap = new DedupMap();
-  const observationQueue = new ObservationQueue();
 
-  const { counters, histograms } = initMetrics(
-    typeof sdk.getMeter === "function" ? sdk.getMeter.bind(sdk) : undefined,
+  const vectorIndex = embeddingProvider ? new VectorIndex() : null;
+
+  initMetrics(
+    typeof (sdk as any).getMeter === "function"
+      ? (sdk as any).getMeter.bind(sdk)
+      : undefined,
   );
 
   registerPrivacyFunction(sdk);
@@ -69,50 +108,78 @@ async function main() {
   registerRememberFunction(sdk, kv);
   registerEvictFunction(sdk, kv);
 
+  registerRelationsFunction(sdk, kv);
+  registerTimelineFunction(sdk, kv);
+  registerProfileFunction(sdk, kv);
+  registerAutoForgetFunction(sdk, kv);
+  registerExportImportFunction(sdk, kv);
+
+  const bm25Index = getSearchIndex();
+  const hybridSearch = new HybridSearch(
+    bm25Index,
+    vectorIndex,
+    embeddingProvider,
+    kv,
+    embeddingConfig.bm25Weight,
+    embeddingConfig.vectorWeight,
+  );
+
+  registerSmartSearchFunction(sdk, kv, (query, limit) =>
+    hybridSearch.search(query, limit),
+  );
+
   registerApiTriggers(sdk, kv, secret, metricsStore, provider);
   registerEventTriggers(sdk, kv);
   registerMcpEndpoints(sdk, kv, secret);
 
   const healthMonitor = registerHealthMonitor(sdk, kv);
 
-  const indexCount = await rebuildIndex(kv).catch(() => 0);
-  if (indexCount > 0) {
-    console.log(`[agentmemory] Search index: ${indexCount} observations`);
+  const indexPersistence = new IndexPersistence(kv, bm25Index, vectorIndex);
+
+  const loaded = await indexPersistence.load().catch((err) => {
+    console.warn(`[agentmemory] Failed to load persisted index:`, err);
+    return null;
+  });
+  if (loaded?.bm25) {
+    const restoredCount = loaded.bm25.size;
+    if (restoredCount > 0) {
+      console.log(
+        `[agentmemory] Loaded persisted BM25 index (${restoredCount} docs)`,
+      );
+    }
   }
 
-  console.log(`[agentmemory] Ready. Endpoints:`);
+  const needsRebuild =
+    !loaded?.bm25 ||
+    loaded.bm25.size === 0 ||
+    (embeddingProvider && vectorIndex && vectorIndex.size === 0);
+
+  if (needsRebuild) {
+    const indexCount = await rebuildIndex(kv).catch((err) => {
+      console.warn(`[agentmemory] Failed to rebuild search index:`, err);
+      return 0;
+    });
+    if (indexCount > 0) {
+      console.log(
+        `[agentmemory] Search index rebuilt: ${indexCount} observations`,
+      );
+      indexPersistence.scheduleSave();
+    }
+  }
+
   console.log(
-    `  POST /agentmemory/session/start   - Start session + get context`,
+    `[agentmemory] Ready. ${embeddingProvider ? "Hybrid" : "BM25"} search active.`,
   );
-  console.log(`  POST /agentmemory/observe          - Capture observation`);
-  console.log(`  POST /agentmemory/context           - Generate context`);
-  console.log(`  POST /agentmemory/search            - Search observations`);
-  console.log(`  POST /agentmemory/summarize         - Summarize session`);
-  console.log(
-    `  POST /agentmemory/remember          - Save to long-term memory`,
-  );
-  console.log(`  POST /agentmemory/forget            - Delete memory data`);
-  console.log(`  POST /agentmemory/file-context      - File history context`);
-  console.log(`  POST /agentmemory/consolidate       - Consolidate memories`);
-  console.log(`  POST /agentmemory/patterns          - Detect patterns`);
-  console.log(`  POST /agentmemory/evict             - Evict stale memories`);
-  console.log(`  GET  /agentmemory/sessions          - List sessions`);
-  console.log(
-    `  GET  /agentmemory/observations      - Get session observations`,
-  );
-  console.log(`  GET  /agentmemory/health            - Health + metrics`);
-  console.log(`  GET  /agentmemory/viewer            - Web viewer`);
-  console.log(
-    `  POST /agentmemory/generate-rules     - Generate rules from patterns`,
-  );
-  console.log(`  POST /agentmemory/migrate           - Import from SQLite`);
-  console.log(`  GET  /agentmemory/mcp/tools         - MCP tool listing`);
-  console.log(`  POST /agentmemory/mcp/call          - MCP tool execution`);
+  console.log(`[agentmemory] Endpoints: 28 REST + 10 MCP tools + 21 functions`);
 
   const shutdown = async () => {
     console.log(`\n[agentmemory] Shutting down...`);
     healthMonitor.stop();
     dedupMap.stop();
+    indexPersistence.stop();
+    await indexPersistence.save().catch((err) => {
+      console.warn(`[agentmemory] Failed to save index on shutdown:`, err);
+    });
     await sdk.shutdown();
     process.exit(0);
   };

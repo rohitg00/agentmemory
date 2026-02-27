@@ -1,7 +1,12 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
-import type { AgentMemoryConfig, ProviderConfig } from "./types.js";
+import type {
+  AgentMemoryConfig,
+  ProviderConfig,
+  EmbeddingConfig,
+  FallbackConfig,
+} from "./types.js";
 
 const DATA_DIR = join(homedir(), ".agentmemory");
 const ENV_FILE = join(DATA_DIR, ".env");
@@ -60,8 +65,7 @@ function detectProvider(env: Record<string, string>): ProviderConfig {
 }
 
 export function loadConfig(): AgentMemoryConfig {
-  const fileEnv = loadEnvFile();
-  const env = { ...fileEnv, ...process.env } as Record<string, string>;
+  const env = getMergedEnv();
 
   const provider = detectProvider(env);
 
@@ -80,7 +84,63 @@ export function loadConfig(): AgentMemoryConfig {
   };
 }
 
-export function getEnvVar(key: string): string | undefined {
+function getMergedEnv(
+  overrides?: Record<string, string>,
+): Record<string, string> {
   const fileEnv = loadEnvFile();
-  return process.env[key] || fileEnv[key];
+  return { ...fileEnv, ...process.env, ...overrides } as Record<string, string>;
+}
+
+export function getEnvVar(key: string): string | undefined {
+  return getMergedEnv()[key];
+}
+
+export function loadEmbeddingConfig(): EmbeddingConfig {
+  const env = getMergedEnv();
+  let bm25Weight = parseFloat(env["BM25_WEIGHT"] || "0.4");
+  let vectorWeight = parseFloat(env["VECTOR_WEIGHT"] || "0.6");
+  bm25Weight =
+    isNaN(bm25Weight) || bm25Weight < 0 ? 0.4 : Math.min(bm25Weight, 1);
+  vectorWeight =
+    isNaN(vectorWeight) || vectorWeight < 0 ? 0.6 : Math.min(vectorWeight, 1);
+  return {
+    provider: env["EMBEDDING_PROVIDER"] || undefined,
+    bm25Weight,
+    vectorWeight,
+  };
+}
+
+export function detectEmbeddingProvider(
+  env?: Record<string, string>,
+): string | null {
+  const source = env ?? getMergedEnv();
+  const forced = source["EMBEDDING_PROVIDER"];
+  if (forced) return forced;
+
+  if (source["GEMINI_API_KEY"]) return "gemini";
+  if (source["OPENAI_API_KEY"]) return "openai";
+  if (source["VOYAGE_API_KEY"]) return "voyage";
+  if (source["COHERE_API_KEY"]) return "cohere";
+  if (source["OPENROUTER_API_KEY"]) return "openrouter";
+  return null;
+}
+
+const VALID_PROVIDERS = new Set([
+  "anthropic",
+  "gemini",
+  "openrouter",
+  "agent-sdk",
+]);
+
+export function loadFallbackConfig(): FallbackConfig {
+  const env = getMergedEnv();
+  const raw = env["FALLBACK_PROVIDERS"] || "";
+  const providers = raw
+    .split(",")
+    .map((p) => p.trim())
+    .filter(
+      (p): p is FallbackConfig["providers"][number] =>
+        Boolean(p) && VALID_PROVIDERS.has(p),
+    );
+  return { providers };
 }
