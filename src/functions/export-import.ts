@@ -89,32 +89,61 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
       const MAX_MEMORIES = 50_000;
       const MAX_SUMMARIES = 10_000;
       const MAX_OBS_PER_SESSION = 5_000;
+      const MAX_TOTAL_OBSERVATIONS = 500_000;
 
-      if (importData.sessions?.length > MAX_SESSIONS) {
+      if (!Array.isArray(importData.sessions)) {
+        return { success: false, error: "sessions must be an array" };
+      }
+      if (!Array.isArray(importData.memories)) {
+        return { success: false, error: "memories must be an array" };
+      }
+      if (!Array.isArray(importData.summaries)) {
+        return { success: false, error: "summaries must be an array" };
+      }
+      if (
+        typeof importData.observations !== "object" ||
+        importData.observations === null ||
+        Array.isArray(importData.observations)
+      ) {
+        return { success: false, error: "observations must be an object" };
+      }
+
+      if (importData.sessions.length > MAX_SESSIONS) {
         return {
           success: false,
           error: `Too many sessions (max ${MAX_SESSIONS})`,
         };
       }
-      if (importData.memories?.length > MAX_MEMORIES) {
+      if (importData.memories.length > MAX_MEMORIES) {
         return {
           success: false,
           error: `Too many memories (max ${MAX_MEMORIES})`,
         };
       }
-      if (importData.summaries?.length > MAX_SUMMARIES) {
+      if (importData.summaries.length > MAX_SUMMARIES) {
         return {
           success: false,
           error: `Too many summaries (max ${MAX_SUMMARIES})`,
         };
       }
-      for (const [, obs] of Object.entries(importData.observations || {})) {
+      let totalObservations = 0;
+      for (const [, obs] of Object.entries(importData.observations)) {
+        if (!Array.isArray(obs)) {
+          return { success: false, error: "observation values must be arrays" };
+        }
         if (obs.length > MAX_OBS_PER_SESSION) {
           return {
             success: false,
             error: `Too many observations per session (max ${MAX_OBS_PER_SESSION})`,
           };
         }
+        totalObservations += obs.length;
+      }
+      if (totalObservations > MAX_TOTAL_OBSERVATIONS) {
+        return {
+          success: false,
+          error: `Too many total observations (max ${MAX_TOTAL_OBSERVATIONS})`,
+        };
       }
 
       const stats = {

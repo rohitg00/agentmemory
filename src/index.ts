@@ -153,9 +153,7 @@ async function main() {
     );
   }
 
-  const needsRebuild =
-    bm25Index.size === 0 ||
-    (embeddingProvider && vectorIndex && vectorIndex.size === 0);
+  const needsRebuild = bm25Index.size === 0;
 
   if (needsRebuild) {
     const indexCount = await rebuildIndex(kv).catch((err) => {

@@ -118,9 +118,19 @@ export class SearchIndex {
   }
 
   restoreFrom(other: SearchIndex): void {
-    this.entries = other.entries;
-    this.invertedIndex = other.invertedIndex;
-    this.docTermCounts = other.docTermCounts;
+    this.entries = new Map(other.entries);
+    this.invertedIndex = new Map(
+      Array.from(other.invertedIndex.entries()).map(([k, v]) => [
+        k,
+        new Set(v),
+      ]),
+    );
+    this.docTermCounts = new Map(
+      Array.from(other.docTermCounts.entries()).map(([k, v]) => [
+        k,
+        new Map(v),
+      ]),
+    );
     this.totalDocLength = other.totalDocLength;
   }
 

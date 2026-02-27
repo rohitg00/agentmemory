@@ -8,6 +8,12 @@ import type {
   FallbackConfig,
 } from "./types.js";
 
+function safeParseInt(value: string | undefined, fallback: number): number {
+  if (!value) return fallback;
+  const parsed = parseInt(value, 10);
+  return Number.isNaN(parsed) ? fallback : parsed;
+}
+
 const DATA_DIR = join(homedir(), ".agentmemory");
 const ENV_FILE = join(DATA_DIR, ".env");
 
@@ -74,9 +80,8 @@ export function loadConfig(): AgentMemoryConfig {
     restPort: parseInt(env["III_REST_PORT"] || "3111", 10) || 3111,
     streamsPort: parseInt(env["III_STREAMS_PORT"] || "3112", 10) || 3112,
     provider,
-    tokenBudget: parseInt(env["TOKEN_BUDGET"] || "2000", 10) || 2000,
-    maxObservationsPerSession:
-      parseInt(env["MAX_OBS_PER_SESSION"] || "500", 10) || 500,
+    tokenBudget: safeParseInt(env["TOKEN_BUDGET"], 2000),
+    maxObservationsPerSession: safeParseInt(env["MAX_OBS_PER_SESSION"], 500),
     compressionModel: provider.model,
     dataDir: DATA_DIR,
   };

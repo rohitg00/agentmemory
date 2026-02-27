@@ -54,6 +54,10 @@ export function registerAutoForgetFunction(sdk: ISdk, kv: StateKV): void {
 
       const latestMemories = memories
         .filter((m) => m.isLatest !== false && !deletedIds.has(m.id))
+        .sort(
+          (a, b) =>
+            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+        )
         .slice(0, 1000);
       for (let i = 0; i < latestMemories.length; i++) {
         for (let j = i + 1; j < latestMemories.length; j++) {

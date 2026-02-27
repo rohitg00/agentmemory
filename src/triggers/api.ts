@@ -16,7 +16,7 @@ type Response = {
 };
 
 const VIEWER_CSP =
-  "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self' ws://localhost:* wss://localhost:*; img-src 'self'; font-src 'self'";
+  "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self' ws://localhost:* wss://localhost:*; img-src 'self'; font-src 'self'";
 
 function checkAuth(
   req: ApiRequest,
@@ -37,6 +37,19 @@ export function registerApiTriggers(
   metricsStore?: MetricsStore,
   provider?: ResilientProvider | { circuitState?: unknown },
 ): void {
+  sdk.registerFunction(
+    { id: "api::liveness" },
+    async (): Promise<Response> => ({
+      status_code: 200,
+      body: { status: "ok", service: "agentmemory" },
+    }),
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::liveness",
+    config: { api_path: "/agentmemory/livez", http_method: "GET" },
+  });
+
   sdk.registerFunction(
     { id: "api::health" },
     async (req: ApiRequest): Promise<Response> => {

@@ -41,11 +41,14 @@ export function registerSmartSearchFunction(
           }
         }
 
+        const truncated = data.expandIds.length > ids.length;
         ctx.logger.info("Smart search expanded", {
-          requested: ids.length,
+          requested: data.expandIds.length,
+          returned: ids.length,
           found: expanded.length,
+          truncated,
         });
-        return { mode: "expanded", results: expanded };
+        return { mode: "expanded", results: expanded, truncated };
       }
 
       if (!data.query || typeof data.query !== "string" || !data.query.trim()) {

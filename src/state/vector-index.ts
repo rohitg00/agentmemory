@@ -60,7 +60,7 @@ export class VectorIndex {
   }
 
   restoreFrom(other: VectorIndex): void {
-    this.vectors = (other as any).vectors;
+    this.vectors = new Map((other as any).vectors);
   }
 
   serialize(): string {
