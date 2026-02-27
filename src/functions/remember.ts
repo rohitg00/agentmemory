@@ -33,17 +33,19 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
 
       const existingMemories = await kv.list<Memory>(KV.memories);
       let supersededId: string | undefined;
+      let supersededVersion = 1;
+      let supersededMemory: Memory | undefined;
       const lowerContent = data.content.toLowerCase();
       for (const existing of existingMemories) {
-        if (!existing.isLatest) continue;
+        if (existing.isLatest === false) continue;
         const similarity = jaccardSimilarity(
           lowerContent,
           existing.content.toLowerCase(),
         );
         if (similarity > 0.7) {
-          existing.isLatest = false;
-          await kv.set(KV.memories, existing.id, existing);
           supersededId = existing.id;
+          supersededVersion = existing.version ?? 1;
+          supersededMemory = existing;
           break;
         }
       }
@@ -59,16 +61,17 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
         files: data.files || [],
         sessionIds: [],
         strength: 7,
-        version: supersededId
-          ? (existingMemories.find((m) => m.id === supersededId)?.version ??
-              1) + 1
-          : 1,
+        version: supersededId ? supersededVersion + 1 : 1,
         parentId: supersededId,
         supersedes: supersededId ? [supersededId] : [],
         isLatest: true,
       };
 
       await kv.set(KV.memories, memory.id, memory);
+      if (supersededMemory) {
+        supersededMemory.isLatest = false;
+        await kv.set(KV.memories, supersededMemory.id, supersededMemory);
+      }
 
       ctx.logger.info("Memory saved", {
         memId: memory.id,

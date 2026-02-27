@@ -97,12 +97,16 @@ export function getEnvVar(key: string): string | undefined {
 
 export function loadEmbeddingConfig(): EmbeddingConfig {
   const env = getMergedEnv();
-  const bm25Weight = parseFloat(env["BM25_WEIGHT"] || "0.4");
-  const vectorWeight = parseFloat(env["VECTOR_WEIGHT"] || "0.6");
+  let bm25Weight = parseFloat(env["BM25_WEIGHT"] || "0.4");
+  let vectorWeight = parseFloat(env["VECTOR_WEIGHT"] || "0.6");
+  bm25Weight =
+    isNaN(bm25Weight) || bm25Weight < 0 ? 0.4 : Math.min(bm25Weight, 1);
+  vectorWeight =
+    isNaN(vectorWeight) || vectorWeight < 0 ? 0.6 : Math.min(vectorWeight, 1);
   return {
     provider: env["EMBEDDING_PROVIDER"] || undefined,
-    bm25Weight: isNaN(bm25Weight) ? 0.4 : bm25Weight,
-    vectorWeight: isNaN(vectorWeight) ? 0.6 : vectorWeight,
+    bm25Weight,
+    vectorWeight,
   };
 }
 
@@ -121,12 +125,22 @@ export function detectEmbeddingProvider(
   return null;
 }
 
+const VALID_PROVIDERS = new Set([
+  "anthropic",
+  "gemini",
+  "openrouter",
+  "agent-sdk",
+]);
+
 export function loadFallbackConfig(): FallbackConfig {
   const env = getMergedEnv();
   const raw = env["FALLBACK_PROVIDERS"] || "";
   const providers = raw
     .split(",")
     .map((p) => p.trim())
-    .filter(Boolean) as FallbackConfig["providers"];
+    .filter(
+      (p): p is FallbackConfig["providers"][number] =>
+        Boolean(p) && VALID_PROVIDERS.has(p),
+    );
   return { providers };
 }

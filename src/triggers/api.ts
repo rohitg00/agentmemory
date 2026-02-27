@@ -373,6 +373,15 @@ export function registerApiTriggers(
     ): Promise<Response> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
+      if (
+        !req.body?.query &&
+        (!req.body?.expandIds || req.body.expandIds.length === 0)
+      ) {
+        return {
+          status_code: 400,
+          body: { error: "query or expandIds is required" },
+        };
+      }
       const result = await sdk.trigger("mem::smart-search", req.body);
       return { status_code: 200, body: result };
     },
