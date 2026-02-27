@@ -18,6 +18,22 @@ export function registerObserveFunction(
     },
     async (payload: HookPayload) => {
       const ctx = getContext();
+
+      if (
+        !payload?.sessionId ||
+        typeof payload.sessionId !== "string" ||
+        !payload.hookType ||
+        typeof payload.hookType !== "string" ||
+        !payload.timestamp ||
+        typeof payload.timestamp !== "string"
+      ) {
+        return {
+          success: false,
+          error:
+            "Invalid payload: sessionId, hookType, and timestamp are required",
+        };
+      }
+
       const obsId = generateId("obs");
 
       if (dedupMap) {

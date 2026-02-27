@@ -175,7 +175,7 @@ export function registerCompressFunction(
           obsId: data.observationId,
           error: msg,
         });
-        return { success: false, error: msg };
+        return { success: false, error: "compression_failed" };
       }
     },
   );

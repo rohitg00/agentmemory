@@ -112,7 +112,12 @@ export function registerRelationsFunction(sdk: ISdk, kv: StateKV): void {
     },
     async (data: { memoryId: string; maxHops?: number }) => {
       const ctx = getContext();
-      const maxHops = data.maxHops ?? 2;
+      const maxHops = Math.min(data.maxHops ?? 2, 5);
+      const MAX_VISITED = 500;
+
+      const allRelations = await kv
+        .list<MemoryRelation>(KV.relations)
+        .catch(() => []);
 
       const visited = new Set<string>();
       const result: Array<{ memory: Memory; hop: number }> = [];
@@ -120,7 +125,7 @@ export function registerRelationsFunction(sdk: ISdk, kv: StateKV): void {
         { id: data.memoryId, hop: 0 },
       ];
 
-      while (queue.length > 0) {
+      while (queue.length > 0 && visited.size < MAX_VISITED) {
         const current = queue.shift()!;
         if (visited.has(current.id) || current.hop > maxHops) continue;
         visited.add(current.id);
@@ -136,10 +141,7 @@ export function registerRelationsFunction(sdk: ISdk, kv: StateKV): void {
         const supersedes = memory.supersedes || [];
         const parentId = memory.parentId ? [memory.parentId] : [];
 
-        const kvRelations = await kv
-          .list<MemoryRelation>(KV.relations)
-          .catch(() => []);
-        const kvLinked = kvRelations
+        const kvLinked = allRelations
           .filter((r) => r.sourceId === current.id || r.targetId === current.id)
           .map((r) => (r.sourceId === current.id ? r.targetId : r.sourceId));
 

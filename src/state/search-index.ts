@@ -117,6 +117,25 @@ export class SearchIndex {
     this.totalDocLength = 0;
   }
 
+  restoreFrom(other: SearchIndex): void {
+    this.entries = new Map(
+      Array.from(other.entries.entries()).map(([k, v]) => [k, { ...v }]),
+    );
+    this.invertedIndex = new Map(
+      Array.from(other.invertedIndex.entries()).map(([k, v]) => [
+        k,
+        new Set(v),
+      ]),
+    );
+    this.docTermCounts = new Map(
+      Array.from(other.docTermCounts.entries()).map(([k, v]) => [
+        k,
+        new Map(v),
+      ]),
+    );
+    this.totalDocLength = other.totalDocLength;
+  }
+
   serialize(): string {
     const entries = Array.from(this.entries.entries());
     const inverted = Array.from(this.invertedIndex.entries()).map(
@@ -135,19 +154,26 @@ export class SearchIndex {
   }
 
   static deserialize(json: string): SearchIndex {
-    const idx = new SearchIndex();
-    const data = JSON.parse(json);
-    for (const [key, val] of data.entries) {
-      idx.entries.set(key, val);
+    try {
+      const idx = new SearchIndex();
+      const data = JSON.parse(json);
+      if (!data?.entries || !data?.inverted || !data?.docTerms) return idx;
+      for (const [key, val] of data.entries) {
+        idx.entries.set(key, val);
+      }
+      for (const [term, ids] of data.inverted) {
+        idx.invertedIndex.set(term, new Set(ids));
+      }
+      for (const [id, counts] of data.docTerms) {
+        idx.docTermCounts.set(id, new Map(counts));
+      }
+      const rawLen = Number(data.totalDocLength);
+      idx.totalDocLength =
+        Number.isFinite(rawLen) && rawLen >= 0 ? Math.floor(rawLen) : 0;
+      return idx;
+    } catch {
+      return new SearchIndex();
     }
-    for (const [term, ids] of data.inverted) {
-      idx.invertedIndex.set(term, new Set(ids));
-    }
-    for (const [id, counts] of data.docTerms) {
-      idx.docTermCounts.set(id, new Map(counts));
-    }
-    idx.totalDocLength = data.totalDocLength;
-    return idx;
   }
 
   private extractTerms(obs: CompressedObservation): string[] {

@@ -23,13 +23,14 @@ export function registerSmartSearchFunction(
       const ctx = getContext();
 
       if (data.expandIds && data.expandIds.length > 0) {
+        const ids = data.expandIds.slice(0, 20);
         const expanded: Array<{
           obsId: string;
           sessionId: string;
           observation: CompressedObservation;
         }> = [];
 
-        for (const obsId of data.expandIds) {
+        for (const obsId of ids) {
           const obs = await findObservation(kv, obsId);
           if (obs) {
             expanded.push({
@@ -40,11 +41,14 @@ export function registerSmartSearchFunction(
           }
         }
 
+        const truncated = data.expandIds.length > ids.length;
         ctx.logger.info("Smart search expanded", {
           requested: data.expandIds.length,
-          found: expanded.length,
+          attempted: ids.length,
+          returned: expanded.length,
+          truncated,
         });
-        return { mode: "expanded", results: expanded };
+        return { mode: "expanded", results: expanded, truncated };
       }
 
       if (!data.query || typeof data.query !== "string" || !data.query.trim()) {
