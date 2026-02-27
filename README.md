@@ -71,7 +71,7 @@ No manual notes. No copy-pasting. The agent just *knows*.
 
 ## Supported Agents
 
-agentmemory works with any agent that supports hooks or MCP.
+agentmemory works with any agent that supports hooks, MCP, or via its REST API.
 
 ### Native hook support (zero config)
 
@@ -96,7 +96,7 @@ Any agent that connects to MCP servers can use agentmemory's 10 tools. The agent
 
 ### REST API (any agent, any language)
 
-Agents without hook or MCP support can use the 28 REST endpoints directly. This works with any language or framework.
+Agents without hooks or MCP can integrate via the 28 REST endpoints directly. This works with any agent, language, or framework.
 
 ```bash
 POST /agentmemory/observe       # Capture what the agent did
