@@ -52,9 +52,9 @@ export function registerAutoForgetFunction(sdk: ISdk, kv: StateKV): void {
         }
       }
 
-      const latestMemories = memories.filter(
-        (m) => m.isLatest !== false && !deletedIds.has(m.id),
-      );
+      const latestMemories = memories
+        .filter((m) => m.isLatest !== false && !deletedIds.has(m.id))
+        .slice(0, 1000);
       for (let i = 0; i < latestMemories.length; i++) {
         for (let j = i + 1; j < latestMemories.length; j++) {
           const sim = jaccardSimilarity(

@@ -14,8 +14,18 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
       files?: string[];
     }) => {
       const ctx = getContext();
-      if (!data.content || !data.content.trim()) {
+      if (
+        !data.content ||
+        typeof data.content !== "string" ||
+        !data.content.trim()
+      ) {
         return { success: false, error: "content is required" };
+      }
+      if (data.files && !Array.isArray(data.files)) {
+        return { success: false, error: "files must be an array" };
+      }
+      if (data.concepts && !Array.isArray(data.concepts)) {
+        return { success: false, error: "concepts must be an array" };
       }
       const validTypes = new Set([
         "pattern",

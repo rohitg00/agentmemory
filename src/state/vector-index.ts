@@ -21,10 +21,8 @@ function cosineSimilarity(a: Float32Array, b: Float32Array): number {
 }
 
 export class VectorIndex {
-  private vectors: Map<
-    string,
-    { embedding: Float32Array; sessionId: string }
-  > = new Map();
+  private vectors: Map<string, { embedding: Float32Array; sessionId: string }> =
+    new Map();
 
   add(obsId: string, sessionId: string, embedding: Float32Array): void {
     this.vectors.set(obsId, { embedding, sessionId });
@@ -61,10 +59,12 @@ export class VectorIndex {
     this.vectors.clear();
   }
 
+  restoreFrom(other: VectorIndex): void {
+    this.vectors = (other as any).vectors;
+  }
+
   serialize(): string {
-    const data: Array<
-      [string, { embedding: string; sessionId: string }]
-    > = [];
+    const data: Array<[string, { embedding: string; sessionId: string }]> = [];
     for (const [obsId, entry] of this.vectors) {
       data.push([
         obsId,
@@ -78,16 +78,20 @@ export class VectorIndex {
   }
 
   static deserialize(json: string): VectorIndex {
-    const idx = new VectorIndex();
-    const data: Array<
-      [string, { embedding: string; sessionId: string }]
-    > = JSON.parse(json);
-    for (const [obsId, entry] of data) {
-      idx.vectors.set(obsId, {
-        embedding: base64ToFloat32(entry.embedding),
-        sessionId: entry.sessionId,
-      });
+    try {
+      const idx = new VectorIndex();
+      const data: Array<[string, { embedding: string; sessionId: string }]> =
+        JSON.parse(json);
+      if (!Array.isArray(data)) return idx;
+      for (const [obsId, entry] of data) {
+        idx.vectors.set(obsId, {
+          embedding: base64ToFloat32(entry.embedding),
+          sessionId: entry.sessionId,
+        });
+      }
+      return idx;
+    } catch {
+      return new VectorIndex();
     }
-    return idx;
   }
 }

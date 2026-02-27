@@ -117,6 +117,13 @@ export class SearchIndex {
     this.totalDocLength = 0;
   }
 
+  restoreFrom(other: SearchIndex): void {
+    this.entries = other.entries;
+    this.invertedIndex = other.invertedIndex;
+    this.docTermCounts = other.docTermCounts;
+    this.totalDocLength = other.totalDocLength;
+  }
+
   serialize(): string {
     const entries = Array.from(this.entries.entries());
     const inverted = Array.from(this.invertedIndex.entries()).map(
@@ -135,19 +142,24 @@ export class SearchIndex {
   }
 
   static deserialize(json: string): SearchIndex {
-    const idx = new SearchIndex();
-    const data = JSON.parse(json);
-    for (const [key, val] of data.entries) {
-      idx.entries.set(key, val);
+    try {
+      const idx = new SearchIndex();
+      const data = JSON.parse(json);
+      if (!data?.entries || !data?.inverted || !data?.docTerms) return idx;
+      for (const [key, val] of data.entries) {
+        idx.entries.set(key, val);
+      }
+      for (const [term, ids] of data.inverted) {
+        idx.invertedIndex.set(term, new Set(ids));
+      }
+      for (const [id, counts] of data.docTerms) {
+        idx.docTermCounts.set(id, new Map(counts));
+      }
+      idx.totalDocLength = data.totalDocLength || 0;
+      return idx;
+    } catch {
+      return new SearchIndex();
     }
-    for (const [term, ids] of data.inverted) {
-      idx.invertedIndex.set(term, new Set(ids));
-    }
-    for (const [id, counts] of data.docTerms) {
-      idx.docTermCounts.set(id, new Map(counts));
-    }
-    idx.totalDocLength = data.totalDocLength;
-    return idx;
   }
 
   private extractTerms(obs: CompressedObservation): string[] {

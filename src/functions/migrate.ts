@@ -10,10 +10,7 @@ import type {
   SessionSummary,
 } from "../types.js";
 
-const ALLOWED_DIRS = [
-  resolve(homedir(), ".agentmemory"),
-  resolve(homedir(), ".claude"),
-];
+const ALLOWED_DIRS = [resolve(homedir(), ".agentmemory")];
 
 function isAllowedPath(dbPath: string): boolean {
   const resolved = resolve(dbPath);
@@ -149,7 +146,7 @@ export function registerMigrateFunction(sdk: ISdk, kv: StateKV): void {
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         ctx.logger.error("Migration failed", { error: msg });
-        return { success: false, error: msg };
+        return { success: false, error: "Migration failed" };
       }
     },
   );

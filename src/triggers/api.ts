@@ -16,7 +16,7 @@ type Response = {
 };
 
 const VIEWER_CSP =
-  "default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self' ws://localhost:* wss://localhost:*";
+  "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self' ws://localhost:* wss://localhost:*; img-src 'self'; font-src 'self'";
 
 function checkAuth(
   req: ApiRequest,
@@ -37,27 +37,33 @@ export function registerApiTriggers(
   metricsStore?: MetricsStore,
   provider?: ResilientProvider | { circuitState?: unknown },
 ): void {
-  sdk.registerFunction({ id: "api::health" }, async (): Promise<Response> => {
-    const health = await getLatestHealth(kv);
-    const functionMetrics = metricsStore ? await metricsStore.getAll() : [];
-    const circuitBreaker =
-      provider && "circuitState" in provider ? provider.circuitState : null;
+  sdk.registerFunction(
+    { id: "api::health" },
+    async (req: ApiRequest): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
 
-    const status = health?.status || "healthy";
-    const statusCode = status === "critical" ? 503 : 200;
+      const health = await getLatestHealth(kv);
+      const functionMetrics = metricsStore ? await metricsStore.getAll() : [];
+      const circuitBreaker =
+        provider && "circuitState" in provider ? provider.circuitState : null;
 
-    return {
-      status_code: statusCode,
-      body: {
-        status,
-        service: "agentmemory",
-        version: "0.3.0",
-        health: health || null,
-        functionMetrics,
-        circuitBreaker,
-      },
-    };
-  });
+      const status = health?.status || "healthy";
+      const statusCode = status === "critical" ? 503 : 200;
+
+      return {
+        status_code: statusCode,
+        body: {
+          status,
+          service: "agentmemory",
+          version: "0.3.0",
+          health: health || null,
+          functionMetrics,
+          circuitBreaker,
+        },
+      };
+    },
+  );
   sdk.registerTrigger({
     type: "http",
     function_id: "api::health",
@@ -183,10 +189,15 @@ export function registerApiTriggers(
     config: { api_path: "/agentmemory/summarize", http_method: "POST" },
   });
 
-  sdk.registerFunction({ id: "api::sessions" }, async (): Promise<Response> => {
-    const sessions = await kv.list<Session>(KV.sessions);
-    return { status_code: 200, body: { sessions } };
-  });
+  sdk.registerFunction(
+    { id: "api::sessions" },
+    async (req: ApiRequest): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const sessions = await kv.list<Session>(KV.sessions);
+      return { status_code: 200, body: { sessions } };
+    },
+  );
   sdk.registerTrigger({
     type: "http",
     function_id: "api::sessions",
@@ -196,6 +207,8 @@ export function registerApiTriggers(
   sdk.registerFunction(
     { id: "api::observations" },
     async (req: ApiRequest): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
       const sessionId = req.query_params["sessionId"] as string;
       if (!sessionId)
         return { status_code: 400, body: { error: "sessionId required" } };

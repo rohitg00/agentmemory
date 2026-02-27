@@ -230,10 +230,11 @@ export function registerMcpEndpoints(
 
   sdk.registerFunction(
     { id: "mcp::tools::list" },
-    async (): Promise<McpResponse> => ({
-      status_code: 200,
-      body: { tools: MCP_TOOLS },
-    }),
+    async (req: ApiRequest): Promise<McpResponse> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      return { status_code: 200, body: { tools: MCP_TOOLS } };
+    },
   );
   sdk.registerTrigger({
     type: "http",
@@ -375,6 +376,7 @@ export function registerMcpEndpoints(
               ? (args.expandIds as string)
                   .split(",")
                   .map((id: string) => id.trim())
+                  .slice(0, 20)
               : [];
             const result = await sdk.trigger("mem::smart-search", {
               query: args.query,
@@ -478,7 +480,7 @@ export function registerMcpEndpoints(
         return {
           status_code: 500,
           body: {
-            error: err instanceof Error ? err.message : "Internal error",
+            error: "Internal error",
           },
         };
       }

@@ -85,6 +85,38 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
         };
       }
 
+      const MAX_SESSIONS = 10_000;
+      const MAX_MEMORIES = 50_000;
+      const MAX_SUMMARIES = 10_000;
+      const MAX_OBS_PER_SESSION = 5_000;
+
+      if (importData.sessions?.length > MAX_SESSIONS) {
+        return {
+          success: false,
+          error: `Too many sessions (max ${MAX_SESSIONS})`,
+        };
+      }
+      if (importData.memories?.length > MAX_MEMORIES) {
+        return {
+          success: false,
+          error: `Too many memories (max ${MAX_MEMORIES})`,
+        };
+      }
+      if (importData.summaries?.length > MAX_SUMMARIES) {
+        return {
+          success: false,
+          error: `Too many summaries (max ${MAX_SUMMARIES})`,
+        };
+      }
+      for (const [, obs] of Object.entries(importData.observations || {})) {
+        if (obs.length > MAX_OBS_PER_SESSION) {
+          return {
+            success: false,
+            error: `Too many observations per session (max ${MAX_OBS_PER_SESSION})`,
+          };
+        }
+      }
+
       const stats = {
         sessions: 0,
         observations: 0,

@@ -140,18 +140,21 @@ async function main() {
     console.warn(`[agentmemory] Failed to load persisted index:`, err);
     return null;
   });
-  if (loaded?.bm25) {
-    const restoredCount = loaded.bm25.size;
-    if (restoredCount > 0) {
-      console.log(
-        `[agentmemory] Loaded persisted BM25 index (${restoredCount} docs)`,
-      );
-    }
+  if (loaded?.bm25 && loaded.bm25.size > 0) {
+    bm25Index.restoreFrom(loaded.bm25);
+    console.log(
+      `[agentmemory] Loaded persisted BM25 index (${bm25Index.size} docs)`,
+    );
+  }
+  if (loaded?.vector && vectorIndex && loaded.vector.size > 0) {
+    vectorIndex.restoreFrom(loaded.vector);
+    console.log(
+      `[agentmemory] Loaded persisted vector index (${vectorIndex.size} vectors)`,
+    );
   }
 
   const needsRebuild =
-    !loaded?.bm25 ||
-    loaded.bm25.size === 0 ||
+    bm25Index.size === 0 ||
     (embeddingProvider && vectorIndex && vectorIndex.size === 0);
 
   if (needsRebuild) {

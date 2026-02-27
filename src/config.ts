@@ -71,14 +71,12 @@ export function loadConfig(): AgentMemoryConfig {
 
   return {
     engineUrl: env["III_ENGINE_URL"] || "ws://localhost:49134",
-    restPort: parseInt(env["III_REST_PORT"] || "3111", 10),
-    streamsPort: parseInt(env["III_STREAMS_PORT"] || "3112", 10),
+    restPort: parseInt(env["III_REST_PORT"] || "3111", 10) || 3111,
+    streamsPort: parseInt(env["III_STREAMS_PORT"] || "3112", 10) || 3112,
     provider,
-    tokenBudget: parseInt(env["TOKEN_BUDGET"] || "2000", 10),
-    maxObservationsPerSession: parseInt(
-      env["MAX_OBS_PER_SESSION"] || "500",
-      10,
-    ),
+    tokenBudget: parseInt(env["TOKEN_BUDGET"] || "2000", 10) || 2000,
+    maxObservationsPerSession:
+      parseInt(env["MAX_OBS_PER_SESSION"] || "500", 10) || 500,
     compressionModel: provider.model,
     dataDir: DATA_DIR,
   };
