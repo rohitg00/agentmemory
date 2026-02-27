@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/banner.png" alt="agentmemory — Persistent memory for AI coding agents" width="100%" />
+  <img src="assets/banner.png" alt="agentmemory — Persistent memory for AI coding agents" width="720" />
 </p>
 
 <p align="center">
