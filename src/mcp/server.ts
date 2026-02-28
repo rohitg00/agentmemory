@@ -1,6 +1,12 @@
 import type { ISdk, ApiRequest } from "iii-sdk";
 import type { StateKV } from "../state/kv.js";
 import { KV } from "../state/schema.js";
+import type {
+  SessionSummary,
+  Memory,
+  Session,
+  MemoryRelation,
+} from "../types.js";
 
 type McpTool = {
   name: string;
@@ -203,6 +209,11 @@ const MCP_TOOLS: McpTool[] = [
         maxHops: {
           type: "number",
           description: "Maximum graph traversal depth (default 2)",
+        },
+        minConfidence: {
+          type: "number",
+          description:
+            "Minimum confidence threshold to include (0-1, default 0)",
         },
       },
       required: ["memoryId"],
@@ -459,6 +470,7 @@ export function registerMcpEndpoints(
             const result = await sdk.trigger("mem::get-related", {
               memoryId: args.memoryId,
               maxHops: (args.maxHops as number) || 2,
+              minConfidence: (args.minConfidence as number) || 0,
             });
             return {
               status_code: 200,
@@ -490,5 +502,344 @@ export function registerMcpEndpoints(
     type: "http",
     function_id: "mcp::tools::call",
     config: { api_path: "/agentmemory/mcp/call", http_method: "POST" },
+  });
+
+  const MCP_RESOURCES = [
+    {
+      uri: "agentmemory://status",
+      name: "Agent Memory Status",
+      description: "Current session count, memory count, and health status",
+      mimeType: "application/json",
+    },
+    {
+      uri: "agentmemory://project/{name}/profile",
+      name: "Project Profile",
+      description:
+        "Top concepts, frequently modified files, and conventions for a project",
+      mimeType: "application/json",
+    },
+    {
+      uri: "agentmemory://project/{name}/recent",
+      name: "Recent Sessions",
+      description: "Last 5 session summaries for a project",
+      mimeType: "application/json",
+    },
+    {
+      uri: "agentmemory://memories/latest",
+      name: "Latest Memories",
+      description: "Top 10 latest memories with their type and strength",
+      mimeType: "application/json",
+    },
+  ];
+
+  sdk.registerFunction(
+    { id: "mcp::resources::list" },
+    async (req: ApiRequest): Promise<McpResponse> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      return { status_code: 200, body: { resources: MCP_RESOURCES } };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "mcp::resources::list",
+    config: { api_path: "/agentmemory/mcp/resources", http_method: "GET" },
+  });
+
+  sdk.registerFunction(
+    { id: "mcp::resources::read" },
+    async (req: ApiRequest<{ uri: string }>): Promise<McpResponse> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+
+      const uri = req.body?.uri;
+      if (!uri || typeof uri !== "string") {
+        return { status_code: 400, body: { error: "uri is required" } };
+      }
+
+      try {
+        if (uri === "agentmemory://status") {
+          const sessions = await kv.list<Session>(KV.sessions);
+          const memories = await kv.list<Memory>(KV.memories);
+          const healthData = await kv.list(KV.health).catch(() => []);
+          return {
+            status_code: 200,
+            body: {
+              contents: [
+                {
+                  uri,
+                  mimeType: "application/json",
+                  text: JSON.stringify({
+                    sessionCount: sessions.length,
+                    memoryCount: memories.length,
+                    healthStatus:
+                      healthData.length > 0 ? "available" : "no-data",
+                  }),
+                },
+              ],
+            },
+          };
+        }
+
+        const projectProfileMatch = uri.match(
+          /^agentmemory:\/\/project\/(.+)\/profile$/,
+        );
+        if (projectProfileMatch) {
+          const projectName = decodeURIComponent(projectProfileMatch[1]);
+          const profile = await sdk.trigger("mem::profile", {
+            project: projectName,
+          });
+          return {
+            status_code: 200,
+            body: {
+              contents: [
+                {
+                  uri,
+                  mimeType: "application/json",
+                  text: JSON.stringify(profile),
+                },
+              ],
+            },
+          };
+        }
+
+        const projectRecentMatch = uri.match(
+          /^agentmemory:\/\/project\/(.+)\/recent$/,
+        );
+        if (projectRecentMatch) {
+          const projectName = decodeURIComponent(projectRecentMatch[1]);
+          const summaries = await kv.list<SessionSummary>(KV.summaries);
+          const filtered = summaries
+            .filter((s) => s.project === projectName)
+            .sort(
+              (a, b) =>
+                new Date(b.createdAt).getTime() -
+                new Date(a.createdAt).getTime(),
+            )
+            .slice(0, 5);
+          return {
+            status_code: 200,
+            body: {
+              contents: [
+                {
+                  uri,
+                  mimeType: "application/json",
+                  text: JSON.stringify(filtered),
+                },
+              ],
+            },
+          };
+        }
+
+        if (uri === "agentmemory://memories/latest") {
+          const memories = await kv.list<Memory>(KV.memories);
+          const latest = memories
+            .filter((m) => m.isLatest)
+            .sort(
+              (a, b) =>
+                new Date(b.updatedAt).getTime() -
+                new Date(a.updatedAt).getTime(),
+            )
+            .slice(0, 10)
+            .map((m) => ({
+              id: m.id,
+              title: m.title,
+              type: m.type,
+              strength: m.strength,
+            }));
+          return {
+            status_code: 200,
+            body: {
+              contents: [
+                {
+                  uri,
+                  mimeType: "application/json",
+                  text: JSON.stringify(latest),
+                },
+              ],
+            },
+          };
+        }
+
+        return {
+          status_code: 404,
+          body: { error: `Unknown resource: ${uri}` },
+        };
+      } catch {
+        return { status_code: 500, body: { error: "Internal error" } };
+      }
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "mcp::resources::read",
+    config: {
+      api_path: "/agentmemory/mcp/resources/read",
+      http_method: "POST",
+    },
+  });
+
+  const MCP_PROMPTS = [
+    {
+      name: "recall_context",
+      description:
+        "Search observations and memories to build context for a task",
+      arguments: [
+        {
+          name: "task_description",
+          description: "What you are working on",
+          required: true,
+        },
+      ],
+    },
+    {
+      name: "session_handoff",
+      description:
+        "Generate a handoff summary for continuing work in a new session",
+      arguments: [
+        {
+          name: "session_id",
+          description: "Session ID to hand off from",
+          required: true,
+        },
+      ],
+    },
+    {
+      name: "detect_patterns",
+      description: "Detect recurring patterns across sessions for a project",
+      arguments: [
+        {
+          name: "project",
+          description: "Project path to analyze (optional)",
+          required: false,
+        },
+      ],
+    },
+  ];
+
+  sdk.registerFunction(
+    { id: "mcp::prompts::list" },
+    async (req: ApiRequest): Promise<McpResponse> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      return { status_code: 200, body: { prompts: MCP_PROMPTS } };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "mcp::prompts::list",
+    config: { api_path: "/agentmemory/mcp/prompts", http_method: "GET" },
+  });
+
+  sdk.registerFunction(
+    { id: "mcp::prompts::get" },
+    async (
+      req: ApiRequest<{ name: string; arguments?: Record<string, string> }>,
+    ): Promise<McpResponse> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+
+      const promptName = req.body?.name;
+      if (!promptName || typeof promptName !== "string") {
+        return { status_code: 400, body: { error: "name is required" } };
+      }
+
+      const promptArgs = req.body?.arguments || {};
+
+      try {
+        switch (promptName) {
+          case "recall_context": {
+            const taskDesc = promptArgs.task_description;
+            if (!taskDesc) {
+              return {
+                status_code: 400,
+                body: {
+                  error: "task_description argument is required",
+                },
+              };
+            }
+            const searchResult = await sdk
+              .trigger("mem::search", { query: taskDesc, limit: 10 })
+              .catch(() => ({ results: [] }));
+            const memories = await kv.list<Memory>(KV.memories);
+            const relevant = memories.filter((m) => m.isLatest).slice(0, 5);
+            return {
+              status_code: 200,
+              body: {
+                messages: [
+                  {
+                    role: "user",
+                    content: {
+                      type: "text",
+                      text: `Here is relevant context from past sessions for the task: "${taskDesc}"\n\n## Past Observations\n${JSON.stringify(searchResult, null, 2)}\n\n## Relevant Memories\n${JSON.stringify(relevant, null, 2)}`,
+                    },
+                  },
+                ],
+              },
+            };
+          }
+
+          case "session_handoff": {
+            const sessionId = promptArgs.session_id;
+            if (!sessionId) {
+              return {
+                status_code: 400,
+                body: { error: "session_id argument is required" },
+              };
+            }
+            const session = await kv.get<Session>(KV.sessions, sessionId);
+            const summaries = await kv.list<SessionSummary>(KV.summaries);
+            const summary = summaries.find((s) => s.sessionId === sessionId);
+            return {
+              status_code: 200,
+              body: {
+                messages: [
+                  {
+                    role: "user",
+                    content: {
+                      type: "text",
+                      text: `## Session Handoff\n\n### Session\n${JSON.stringify(session, null, 2)}\n\n### Summary\n${JSON.stringify(summary || "No summary available", null, 2)}`,
+                    },
+                  },
+                ],
+              },
+            };
+          }
+
+          case "detect_patterns": {
+            const result = await sdk.trigger("mem::patterns", {
+              project: promptArgs.project || undefined,
+            });
+            return {
+              status_code: 200,
+              body: {
+                messages: [
+                  {
+                    role: "user",
+                    content: {
+                      type: "text",
+                      text: `## Pattern Analysis\n\n${JSON.stringify(result, null, 2)}`,
+                    },
+                  },
+                ],
+              },
+            };
+          }
+
+          default:
+            return {
+              status_code: 400,
+              body: { error: `Unknown prompt: ${promptName}` },
+            };
+        }
+      } catch {
+        return { status_code: 500, body: { error: "Internal error" } };
+      }
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "mcp::prompts::get",
+    config: { api_path: "/agentmemory/mcp/prompts/get", http_method: "POST" },
   });
 }

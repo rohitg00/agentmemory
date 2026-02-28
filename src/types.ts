@@ -197,6 +197,7 @@ export interface MemoryRelation {
   sourceId: string;
   targetId: string;
   createdAt: string;
+  confidence?: number;
 }
 
 export interface HybridSearchResult {
