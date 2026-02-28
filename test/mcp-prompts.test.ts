@@ -203,4 +203,16 @@ describe("MCP Prompts", () => {
 
     expect(result.status_code).toBe(400);
   });
+
+  it("returns 400 for non-string argument value", async () => {
+    const fn = sdk.getFunction("mcp::prompts::get")!;
+    const result = (await fn(
+      makeReq({
+        name: "recall_context",
+        arguments: { task_description: 42 },
+      }),
+    )) as { status_code: number };
+
+    expect(result.status_code).toBe(400);
+  });
 });

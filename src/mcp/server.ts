@@ -467,10 +467,14 @@ export function registerMcpEndpoints(
                 body: { error: "memoryId is required for memory_relations" },
               };
             }
+            const rawMaxHops = Number(args.maxHops);
+            const rawMinConf = Number(args.minConfidence);
             const result = await sdk.trigger("mem::get-related", {
               memoryId: args.memoryId,
-              maxHops: (args.maxHops as number) || 2,
-              minConfidence: (args.minConfidence as number) || 0,
+              maxHops: Number.isFinite(rawMaxHops) ? rawMaxHops : 2,
+              minConfidence: Number.isFinite(rawMinConf)
+                ? Math.max(0, Math.min(1, rawMinConf))
+                : 0,
             });
             return {
               status_code: 200,
@@ -585,7 +589,15 @@ export function registerMcpEndpoints(
           /^agentmemory:\/\/project\/(.+)\/profile$/,
         );
         if (projectProfileMatch) {
-          const projectName = decodeURIComponent(projectProfileMatch[1]);
+          let projectName: string;
+          try {
+            projectName = decodeURIComponent(projectProfileMatch[1]);
+          } catch {
+            return {
+              status_code: 400,
+              body: { error: "Invalid percent-encoding in URI" },
+            };
+          }
           const profile = await sdk.trigger("mem::profile", {
             project: projectName,
           });
@@ -607,7 +619,15 @@ export function registerMcpEndpoints(
           /^agentmemory:\/\/project\/(.+)\/recent$/,
         );
         if (projectRecentMatch) {
-          const projectName = decodeURIComponent(projectRecentMatch[1]);
+          let projectName: string;
+          try {
+            projectName = decodeURIComponent(projectRecentMatch[1]);
+          } catch {
+            return {
+              status_code: 400,
+              body: { error: "Invalid percent-encoding in URI" },
+            };
+          }
           const summaries = await kv.list<SessionSummary>(KV.summaries);
           const filtered = summaries
             .filter((s) => s.project === projectName)
@@ -750,11 +770,12 @@ export function registerMcpEndpoints(
         switch (promptName) {
           case "recall_context": {
             const taskDesc = promptArgs.task_description;
-            if (!taskDesc) {
+            if (typeof taskDesc !== "string" || !taskDesc.trim()) {
               return {
                 status_code: 400,
                 body: {
-                  error: "task_description argument is required",
+                  error:
+                    "task_description argument is required and must be a string",
                 },
               };
             }
@@ -781,10 +802,12 @@ export function registerMcpEndpoints(
 
           case "session_handoff": {
             const sessionId = promptArgs.session_id;
-            if (!sessionId) {
+            if (typeof sessionId !== "string" || !sessionId.trim()) {
               return {
                 status_code: 400,
-                body: { error: "session_id argument is required" },
+                body: {
+                  error: "session_id argument is required and must be a string",
+                },
               };
             }
             const session = await kv.get<Session>(KV.sessions, sessionId);
@@ -807,6 +830,15 @@ export function registerMcpEndpoints(
           }
 
           case "detect_patterns": {
+            if (
+              promptArgs.project !== undefined &&
+              typeof promptArgs.project !== "string"
+            ) {
+              return {
+                status_code: 400,
+                body: { error: "project argument must be a string" },
+              };
+            }
             const result = await sdk.trigger("mem::patterns", {
               project: promptArgs.project || undefined,
             });

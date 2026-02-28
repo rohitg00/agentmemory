@@ -268,12 +268,26 @@ export function registerApiTriggers(
       if (authErr) return authErr;
       if (
         !req.body?.sessionId ||
+        typeof req.body.sessionId !== "string" ||
         !Array.isArray(req.body?.files) ||
-        req.body.files.length === 0
+        req.body.files.length === 0 ||
+        !req.body.files.every((f: unknown) => typeof f === "string")
       ) {
         return {
           status_code: 400,
-          body: { error: "sessionId and files array are required" },
+          body: {
+            error: "sessionId (string) and files (string[]) are required",
+          },
+        };
+      }
+      if (
+        req.body.terms !== undefined &&
+        (!Array.isArray(req.body.terms) ||
+          !req.body.terms.every((t: unknown) => typeof t === "string"))
+      ) {
+        return {
+          status_code: 400,
+          body: { error: "terms must be an array of strings" },
         };
       }
       const result = await sdk.trigger("mem::enrich", req.body);

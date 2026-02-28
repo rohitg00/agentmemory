@@ -6,6 +6,15 @@ import { StateKV } from "../state/kv.js";
 
 const MAX_CONTEXT_LENGTH = 4000;
 
+function escapeXml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
 export function registerEnrichFunction(sdk: ISdk, kv: StateKV): void {
   sdk.registerFunction(
     {
@@ -23,13 +32,13 @@ export function registerEnrichFunction(sdk: ISdk, kv: StateKV): void {
       const parts: string[] = [];
 
       const fileContextPromise = sdk
-        .trigger<
-          { sessionId: string; files: string[] },
-          { context: string }
-        >("mem::file-context", {
-          sessionId: data.sessionId,
-          files: data.files,
-        })
+        .trigger<{ sessionId: string; files: string[] }, { context: string }>(
+          "mem::file-context",
+          {
+            sessionId: data.sessionId,
+            files: data.files,
+          },
+        )
         .catch(() => ({ context: "" }));
 
       const searchQueries: string[] = [
@@ -53,12 +62,20 @@ export function registerEnrichFunction(sdk: ISdk, kv: StateKV): void {
       const bugMemoriesPromise = kv
         .list<Memory>(KV.memories)
         .then((memories) =>
-          memories.filter(
-            (m) =>
-              m.type === "bug" &&
-              m.isLatest &&
-              m.files.some((f) => data.files.some((df) => f.includes(df) || df.includes(f))),
-          ),
+          memories
+            .filter(
+              (m) =>
+                m.type === "bug" &&
+                m.isLatest &&
+                m.files.some((f) =>
+                  data.files.some((df) => f.includes(df) || df.includes(f)),
+                ),
+            )
+            .sort(
+              (a, b) =>
+                new Date(b.updatedAt || b.createdAt).getTime() -
+                new Date(a.updatedAt || a.createdAt).getTime(),
+            ),
         )
         .catch(() => []);
 
@@ -76,6 +93,7 @@ export function registerEnrichFunction(sdk: ISdk, kv: StateKV): void {
         const observations = searchResult.results
           .map((r) => r.observation?.narrative)
           .filter(Boolean)
+          .map((n) => escapeXml(n as string))
           .join("\n");
         if (observations) {
           parts.push(
@@ -87,7 +105,7 @@ export function registerEnrichFunction(sdk: ISdk, kv: StateKV): void {
       if (bugMemories.length > 0) {
         const bugs = bugMemories
           .slice(0, 3)
-          .map((m) => `- ${m.title}: ${m.content}`)
+          .map((m) => `- ${escapeXml(m.title)}: ${escapeXml(m.content)}`)
           .join("\n");
         parts.push(
           `<agentmemory-past-errors>\n${bugs}\n</agentmemory-past-errors>`,

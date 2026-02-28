@@ -271,4 +271,16 @@ describe("MCP Resources", () => {
     const data = JSON.parse(result.body.contents[0].text);
     expect(data.project).toBe("my app/subdir");
   });
+
+  it("returns 400 for malformed percent-encoding in URI", async () => {
+    const fn = sdk.getFunction("mcp::resources::read")!;
+    const result = (await fn(
+      makeReq({
+        uri: "agentmemory://project/bad%E0encoding/profile",
+      }),
+    )) as { status_code: number; body: { error: string } };
+
+    expect(result.status_code).toBe(400);
+    expect(result.body.error).toContain("percent-encoding");
+  });
 });

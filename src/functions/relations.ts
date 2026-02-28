@@ -155,7 +155,10 @@ export function registerRelationsFunction(sdk: ISdk, kv: StateKV): void {
       const ctx = getContext();
       const maxHops = Math.min(data.maxHops ?? 2, 5);
       const MAX_VISITED = 500;
-      const minConfidence = data.minConfidence ?? 0;
+      const rawMinConf = Number(data.minConfidence);
+      const minConfidence = Number.isFinite(rawMinConf)
+        ? Math.max(0, Math.min(1, rawMinConf))
+        : 0;
 
       const allRelations = await kv
         .list<MemoryRelation>(KV.relations)
@@ -180,12 +183,15 @@ export function registerRelationsFunction(sdk: ISdk, kv: StateKV): void {
         if (!memory) continue;
 
         if (current.hop > 0) {
-          const matchingRelation = allRelations.find(
+          const matchingRelations = allRelations.filter(
             (r) =>
               (r.sourceId === current.id && visited.has(r.targetId)) ||
               (r.targetId === current.id && visited.has(r.sourceId)),
           );
-          const confidence = matchingRelation?.confidence ?? 0.5;
+          const confidence =
+            matchingRelations.length > 0
+              ? Math.max(...matchingRelations.map((r) => r.confidence ?? 0.5))
+              : 0.5;
           if (confidence >= minConfidence) {
             result.push({ memory, hop: current.hop, confidence });
           }
