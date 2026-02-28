@@ -67,7 +67,7 @@ No manual notes. No copy-pasting. The agent just *knows*.
 | Forgetting | Manual delete | Auto-forget (TTL, contradictions, importance) |
 | Multi-agent | One file | Shared KV with project-scoped profiles |
 | Observability | None | Health monitor, circuit breaker, OTEL telemetry |
-| Integration | Built-in | Plugin + MCP server + REST API + slash commands |
+| Integration | Built-in | Plugin + MCP server (tools + resources + prompts) + REST API + slash commands |
 
 ## Supported Agents
 
@@ -84,7 +84,7 @@ These agents support hooks natively. agentmemory captures tool usage automatical
 
 ### MCP support (any MCP-compatible agent)
 
-Any agent that connects to MCP servers can use agentmemory's 10 tools. The agent actively queries and saves memory through MCP calls.
+Any agent that connects to MCP servers can use agentmemory's 10 tools, 4 resources, and 3 prompts. The agent actively queries and saves memory through MCP calls.
 
 | Agent | How to connect |
 |---|---|
@@ -96,12 +96,13 @@ Any agent that connects to MCP servers can use agentmemory's 10 tools. The agent
 
 ### REST API (any agent, any language)
 
-Agents without hooks or MCP can integrate via the 28 REST endpoints directly. This works with any agent, language, or framework.
+Agents without hooks or MCP can integrate via the 29 REST endpoints directly. This works with any agent, language, or framework.
 
 ```bash
 POST /agentmemory/observe       # Capture what the agent did
 POST /agentmemory/smart-search  # Find relevant memories
 POST /agentmemory/context       # Get context for injection
+POST /agentmemory/enrich        # Get enriched context (files + memories + bugs)
 POST /agentmemory/remember      # Save long-term memory
 GET  /agentmemory/profile       # Get project intelligence
 ```
@@ -112,8 +113,8 @@ GET  /agentmemory/profile       # Get project intelligence
 |---|---|
 | Claude Code user | Plugin install (hooks + MCP + skills) |
 | Building a custom agent with Claude SDK | AgentSDKProvider (zero config) |
-| Using Cursor, Windsurf, or any MCP client | MCP server (10 tools) |
-| Building your own agent framework | REST API (28 endpoints) |
+| Using Cursor, Windsurf, or any MCP client | MCP server (10 tools + 4 resources + 3 prompts) |
+| Building your own agent framework | REST API (29 endpoints) |
 | Sharing memory across multiple agents | All agents point to the same iii-engine instance |
 
 ## Quick Start
@@ -147,7 +148,7 @@ curl http://localhost:3111/agentmemory/health
 {
   "status": "healthy",
   "service": "agentmemory",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "health": {
     "memory": { "heapUsed": 42000000, "heapTotal": 67000000 },
     "cpu": { "percent": 2.1 },
@@ -213,7 +214,7 @@ SessionStart hook fires
 |------|----------|
 | `SessionStart` | Project path, session ID, working directory |
 | `UserPromptSubmit` | User prompts (privacy-filtered) |
-| `PreToolUse` | File access patterns (Read, Write, Edit, Glob, Grep) |
+| `PreToolUse` | File access patterns + enriched context injection (Read, Write, Edit, Glob, Grep) |
 | `PostToolUse` | Tool name, input, output |
 | `PostToolUseFailure` | Failed tool invocations with error context |
 | `PreCompact` | Re-injects memory context before context compaction |
@@ -225,7 +226,7 @@ SessionStart hook fires
 
 ## Search
 
-agentmemory v0.3.0 supports hybrid search combining keyword matching with semantic understanding.
+agentmemory supports hybrid search combining keyword matching with semantic understanding.
 
 ### How search works
 
@@ -283,7 +284,7 @@ Only the latest version is returned in search results. The full chain is preserv
 
 ### Relationships
 
-Memories can be linked: `supersedes`, `extends`, `derives`, `contradicts`, `related`. Traversal follows these links up to N hops.
+Memories can be linked: `supersedes`, `extends`, `derives`, `contradicts`, `related`. Each relationship carries a confidence score (0-1) computed from co-occurrence, recency, and relation type. Traversal follows these links up to N hops, with optional `minConfidence` filtering.
 
 ### Auto-forget
 
@@ -361,7 +362,7 @@ Collects every 30 seconds: heap usage, CPU percentage (delta sampling), event lo
 
 ## MCP Server
 
-10 tools for any MCP-compatible client:
+### Tools (10)
 
 | Tool | Description |
 |------|-------------|
@@ -374,13 +375,34 @@ Collects every 30 seconds: heap usage, CPU percentage (delta sampling), event lo
 | `memory_timeline` | Chronological observations around an anchor point |
 | `memory_profile` | Project profile with top concepts, files, patterns |
 | `memory_export` | Export all memory data as JSON |
-| `memory_relations` | Query memory relationship graph |
+| `memory_relations` | Query memory relationship graph (with confidence filtering) |
+
+### Resources (4)
+
+| URI | Description |
+|-----|-------------|
+| `agentmemory://status` | Session count, memory count, health status |
+| `agentmemory://project/{name}/profile` | Per-project intelligence (concepts, files, conventions) |
+| `agentmemory://project/{name}/recent` | Last 5 session summaries for a project |
+| `agentmemory://memories/latest` | Latest 10 active memories (id, title, type, strength) |
+
+### Prompts (3)
+
+| Prompt | Arguments | Description |
+|--------|-----------|-------------|
+| `recall_context` | `task_description` | Searches observations + memories, returns context messages |
+| `session_handoff` | `session_id` | Returns session data + summary for handoff between agents |
+| `detect_patterns` | `project` (optional) | Analyzes recurring patterns across sessions |
 
 ### MCP Endpoints
 
 ```
-GET  /agentmemory/mcp/tools   — List available tools
-POST /agentmemory/mcp/call    — Execute a tool
+GET  /agentmemory/mcp/tools          — List available tools
+POST /agentmemory/mcp/call           — Execute a tool
+GET  /agentmemory/mcp/resources      — List available resources
+POST /agentmemory/mcp/resources/read — Read a resource by URI
+GET  /agentmemory/mcp/prompts        — List available prompts
+POST /agentmemory/mcp/prompts/get    — Get a prompt with arguments
 ```
 
 ## Skills
@@ -447,11 +469,12 @@ ANTHROPIC_API_KEY=sk-ant-...
 
 ## API
 
-28 endpoints on port `3111`. Protected endpoints require `Authorization: Bearer <secret>` when `AGENTMEMORY_SECRET` is set.
+29 endpoints on port `3111`. Protected endpoints require `Authorization: Bearer <secret>` when `AGENTMEMORY_SECRET` is set.
 
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/agentmemory/health` | Health check with metrics (always public) |
+| `GET` | `/agentmemory/liveness` | Liveness probe (always public) |
 | `POST` | `/agentmemory/session/start` | Start session + get context |
 | `POST` | `/agentmemory/session/end` | Mark session complete |
 | `POST` | `/agentmemory/observe` | Capture observation |
@@ -465,10 +488,11 @@ ANTHROPIC_API_KEY=sk-ant-...
 | `POST` | `/agentmemory/patterns` | Detect recurring patterns |
 | `POST` | `/agentmemory/generate-rules` | Generate CLAUDE.md rules from patterns |
 | `POST` | `/agentmemory/file-context` | Get file-specific history |
+| `POST` | `/agentmemory/enrich` | Unified enrichment (file context + memories + bugs) |
 | `POST` | `/agentmemory/evict` | Evict stale memories (`?dryRun=true`) |
 | `POST` | `/agentmemory/migrate` | Import from SQLite |
 | `POST` | `/agentmemory/timeline` | Chronological observations around anchor |
-| `POST` | `/agentmemory/relations` | Create memory relationship |
+| `POST` | `/agentmemory/relations` | Create memory relationship (with confidence) |
 | `POST` | `/agentmemory/evolve` | Evolve memory (new version) |
 | `POST` | `/agentmemory/auto-forget` | Run auto-forget (`?dryRun=true`) |
 | `POST` | `/agentmemory/import` | Import data from JSON |
@@ -479,6 +503,10 @@ ANTHROPIC_API_KEY=sk-ant-...
 | `GET` | `/agentmemory/viewer` | Real-time web viewer |
 | `GET` | `/agentmemory/mcp/tools` | List MCP tools |
 | `POST` | `/agentmemory/mcp/call` | Execute MCP tool |
+| `GET` | `/agentmemory/mcp/resources` | List MCP resources |
+| `POST` | `/agentmemory/mcp/resources/read` | Read MCP resource by URI |
+| `GET` | `/agentmemory/mcp/prompts` | List MCP prompts |
+| `POST` | `/agentmemory/mcp/prompts/get` | Get MCP prompt with arguments |
 
 ## Plugin Install
 
@@ -513,9 +541,9 @@ agentmemory is built on iii-engine's three primitives:
 | Prometheus / Grafana | iii OTEL + built-in health monitor |
 | Redis (circuit breaker) | In-process circuit breaker + fallback chain |
 
-**69 source files. ~5,600 LOC. 144 tests. 126KB bundled.**
+**70 source files. ~8,200 LOC. 173 tests. 142KB bundled.**
 
-### Functions (21)
+### Functions (22)
 
 | Function | Purpose |
 |----------|---------|
@@ -539,6 +567,7 @@ agentmemory is built on iii-engine's three primitives:
 | `mem::timeline` | Chronological observations around anchor |
 | `mem::profile` | Aggregate project profile |
 | `mem::auto-forget` | TTL expiry + contradiction detection |
+| `mem::enrich` | Unified enrichment (file context + observations + bug memories) |
 | `mem::export` / `mem::import` | Full JSON round-trip |
 
 ### Data Model
@@ -561,8 +590,8 @@ agentmemory is built on iii-engine's three primitives:
 
 ```bash
 npm run dev               # Hot reload
-npm run build             # Production build (126KB)
-npm test                  # Unit tests (144 tests, ~700ms)
+npm run build             # Production build (142KB)
+npm test                  # Unit tests (173 tests, ~1s)
 npm run test:integration  # API tests (requires running services)
 ```
 
