@@ -40,13 +40,21 @@ async function main() {
   }
   if (files.length === 0) return;
 
+  const terms: string[] = [];
+  if (toolName === "Grep" || toolName === "Glob") {
+    const pattern = toolInput["pattern"];
+    if (typeof pattern === "string" && pattern.length > 0) {
+      terms.push(pattern);
+    }
+  }
+
   const sessionId = (data.session_id as string) || "unknown";
 
   try {
-    const res = await fetch(`${REST_URL}/agentmemory/file-context`, {
+    const res = await fetch(`${REST_URL}/agentmemory/enrich`, {
       method: "POST",
       headers: authHeaders(),
-      body: JSON.stringify({ sessionId, files }),
+      body: JSON.stringify({ sessionId, files, terms, toolName }),
       signal: AbortSignal.timeout(2000),
     });
 

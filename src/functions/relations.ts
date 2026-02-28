@@ -4,6 +4,35 @@ import type { Memory, MemoryRelation } from "../types.js";
 import { KV, generateId } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 
+function computeConfidence(
+  source: Memory,
+  target: Memory,
+  relationType: MemoryRelation["type"],
+): number {
+  let score = 0.5;
+
+  const sharedSessions = source.sessionIds.filter((sid) =>
+    target.sessionIds.includes(sid),
+  );
+  score += Math.min(sharedSessions.length * 0.1, 0.3);
+
+  const now = Date.now();
+  const sourceAge = now - new Date(source.updatedAt).getTime();
+  const targetAge = now - new Date(target.updatedAt).getTime();
+  const sevenDays = 7 * 24 * 60 * 60 * 1000;
+  const ninetyDays = 90 * 24 * 60 * 60 * 1000;
+  if (sourceAge < sevenDays && targetAge < sevenDays) {
+    score += 0.1;
+  } else if (sourceAge > ninetyDays && targetAge > ninetyDays) {
+    score -= 0.1;
+  }
+
+  if (relationType === "supersedes") score += 0.1;
+  if (relationType === "contradicts") score -= 0.05;
+
+  return Math.max(0, Math.min(1, score));
+}
+
 export function registerRelationsFunction(sdk: ISdk, kv: StateKV): void {
   sdk.registerFunction(
     {
@@ -14,6 +43,7 @@ export function registerRelationsFunction(sdk: ISdk, kv: StateKV): void {
       sourceId: string;
       targetId: string;
       type: MemoryRelation["type"];
+      confidence?: number;
     }) => {
       const ctx = getContext();
 
@@ -23,11 +53,17 @@ export function registerRelationsFunction(sdk: ISdk, kv: StateKV): void {
         return { success: false, error: "source or target memory not found" };
       }
 
+      const confidence =
+        data.confidence !== undefined
+          ? Math.max(0, Math.min(1, data.confidence))
+          : computeConfidence(source, target, data.type);
+
       const relation: MemoryRelation = {
         type: data.type,
         sourceId: data.sourceId,
         targetId: data.targetId,
         createdAt: new Date().toISOString(),
+        confidence,
       };
 
       const relationId = generateId("rel");
@@ -93,6 +129,7 @@ export function registerRelationsFunction(sdk: ISdk, kv: StateKV): void {
         sourceId: evolved.id,
         targetId: existing.id,
         createdAt: now,
+        confidence: 1.0,
       };
       await kv.set(KV.relations, generateId("rel"), relation);
 
@@ -110,17 +147,29 @@ export function registerRelationsFunction(sdk: ISdk, kv: StateKV): void {
       id: "mem::get-related",
       description: "Get related memories within N hops",
     },
-    async (data: { memoryId: string; maxHops?: number }) => {
+    async (data: {
+      memoryId: string;
+      maxHops?: number;
+      minConfidence?: number;
+    }) => {
       const ctx = getContext();
       const maxHops = Math.min(data.maxHops ?? 2, 5);
       const MAX_VISITED = 500;
+      const rawMinConf = Number(data.minConfidence);
+      const minConfidence = Number.isFinite(rawMinConf)
+        ? Math.max(0, Math.min(1, rawMinConf))
+        : 0;
 
       const allRelations = await kv
         .list<MemoryRelation>(KV.relations)
         .catch(() => []);
 
       const visited = new Set<string>();
-      const result: Array<{ memory: Memory; hop: number }> = [];
+      const result: Array<{
+        memory: Memory;
+        hop: number;
+        confidence: number;
+      }> = [];
       const queue: Array<{ id: string; hop: number }> = [
         { id: data.memoryId, hop: 0 },
       ];
@@ -134,7 +183,18 @@ export function registerRelationsFunction(sdk: ISdk, kv: StateKV): void {
         if (!memory) continue;
 
         if (current.hop > 0) {
-          result.push({ memory, hop: current.hop });
+          const matchingRelations = allRelations.filter(
+            (r) =>
+              (r.sourceId === current.id && visited.has(r.targetId)) ||
+              (r.targetId === current.id && visited.has(r.sourceId)),
+          );
+          const confidence =
+            matchingRelations.length > 0
+              ? Math.max(...matchingRelations.map((r) => r.confidence ?? 0.5))
+              : 0.5;
+          if (confidence >= minConfidence) {
+            result.push({ memory, hop: current.hop, confidence });
+          }
         }
 
         const relatedIds = memory.relatedIds || [];
@@ -155,6 +215,8 @@ export function registerRelationsFunction(sdk: ISdk, kv: StateKV): void {
           }
         }
       }
+
+      result.sort((a, b) => b.confidence - a.confidence);
 
       ctx.logger.info("Related memories retrieved", {
         memoryId: data.memoryId,

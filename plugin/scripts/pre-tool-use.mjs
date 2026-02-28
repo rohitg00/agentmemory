@@ -38,14 +38,21 @@ async function main() {
 		if (typeof val === "string" && val.length > 0) files.push(val);
 	}
 	if (files.length === 0) return;
+	const terms = [];
+	if (toolName === "Grep" || toolName === "Glob") {
+		const pattern = toolInput["pattern"];
+		if (typeof pattern === "string" && pattern.length > 0) terms.push(pattern);
+	}
 	const sessionId = data.session_id || "unknown";
 	try {
-		const res = await fetch(`${REST_URL}/agentmemory/file-context`, {
+		const res = await fetch(`${REST_URL}/agentmemory/enrich`, {
 			method: "POST",
 			headers: authHeaders(),
 			body: JSON.stringify({
 				sessionId,
-				files
+				files,
+				terms,
+				toolName
 			}),
 			signal: AbortSignal.timeout(2e3)
 		});

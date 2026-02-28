@@ -69,7 +69,7 @@ export function registerApiTriggers(
         body: {
           status,
           service: "agentmemory",
-          version: "0.3.0",
+          version: "0.4.0",
           health: health || null,
           functionMetrics,
           circuitBreaker,
@@ -252,6 +252,52 @@ export function registerApiTriggers(
     type: "http",
     function_id: "api::file-context",
     config: { api_path: "/agentmemory/file-context", http_method: "POST" },
+  });
+
+  sdk.registerFunction(
+    { id: "api::enrich" },
+    async (
+      req: ApiRequest<{
+        sessionId: string;
+        files: string[];
+        terms?: string[];
+        toolName?: string;
+      }>,
+    ): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      if (
+        !req.body?.sessionId ||
+        typeof req.body.sessionId !== "string" ||
+        !Array.isArray(req.body?.files) ||
+        req.body.files.length === 0 ||
+        !req.body.files.every((f: unknown) => typeof f === "string")
+      ) {
+        return {
+          status_code: 400,
+          body: {
+            error: "sessionId (string) and files (string[]) are required",
+          },
+        };
+      }
+      if (
+        req.body.terms !== undefined &&
+        (!Array.isArray(req.body.terms) ||
+          !req.body.terms.every((t: unknown) => typeof t === "string"))
+      ) {
+        return {
+          status_code: 400,
+          body: { error: "terms must be an array of strings" },
+        };
+      }
+      const result = await sdk.trigger("mem::enrich", req.body);
+      return { status_code: 200, body: result };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::enrich",
+    config: { api_path: "/agentmemory/enrich", http_method: "POST" },
   });
 
   sdk.registerFunction(

@@ -36,6 +36,7 @@ import { registerSmartSearchFunction } from "./functions/smart-search.js";
 import { registerProfileFunction } from "./functions/profile.js";
 import { registerAutoForgetFunction } from "./functions/auto-forget.js";
 import { registerExportImportFunction } from "./functions/export-import.js";
+import { registerEnrichFunction } from "./functions/enrich.js";
 import { registerApiTriggers } from "./triggers/api.js";
 import { registerEventTriggers } from "./triggers/events.js";
 import { registerMcpEndpoints } from "./mcp/server.js";
@@ -56,7 +57,7 @@ async function main() {
 
   const embeddingProvider = createEmbeddingProvider();
 
-  console.log(`[agentmemory] Starting worker v0.3.0...`);
+  console.log(`[agentmemory] Starting worker v0.4.0...`);
   console.log(`[agentmemory] Engine: ${config.engineUrl}`);
   console.log(
     `[agentmemory] Provider: ${config.provider.provider} (${config.provider.model})`,
@@ -113,6 +114,7 @@ async function main() {
   registerProfileFunction(sdk, kv);
   registerAutoForgetFunction(sdk, kv);
   registerExportImportFunction(sdk, kv);
+  registerEnrichFunction(sdk, kv);
 
   const bm25Index = getSearchIndex();
   const hybridSearch = new HybridSearch(
@@ -171,7 +173,9 @@ async function main() {
   console.log(
     `[agentmemory] Ready. ${embeddingProvider ? "Hybrid" : "BM25"} search active.`,
   );
-  console.log(`[agentmemory] Endpoints: 28 REST + 10 MCP tools + 21 functions`);
+  console.log(
+    `[agentmemory] Endpoints: 29 REST + 10 MCP tools + 4 MCP resources + 3 MCP prompts + 22 functions`,
+  );
 
   const shutdown = async () => {
     console.log(`\n[agentmemory] Shutting down...`);
