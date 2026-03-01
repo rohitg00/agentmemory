@@ -96,7 +96,7 @@ Any agent that connects to MCP servers can use agentmemory's 10 tools, 4 resourc
 
 ### REST API (any agent, any language)
 
-Agents without hooks or MCP can integrate via the 29 REST endpoints directly. This works with any agent, language, or framework.
+Agents without hooks or MCP can integrate via 34 REST endpoints directly. This works with any agent, language, or framework.
 
 ```bash
 POST /agentmemory/observe       # Capture what the agent did
@@ -114,7 +114,7 @@ GET  /agentmemory/profile       # Get project intelligence
 | Claude Code user | Plugin install (hooks + MCP + skills) |
 | Building a custom agent with Claude SDK | AgentSDKProvider (zero config) |
 | Using Cursor, Windsurf, or any MCP client | MCP server (10 tools + 4 resources + 3 prompts) |
-| Building your own agent framework | REST API (29 endpoints) |
+| Building your own agent framework | REST API (34 endpoints) |
 | Sharing memory across multiple agents | All agents point to the same iii-engine instance |
 
 ## Quick Start
@@ -396,7 +396,7 @@ Collects every 30 seconds: heap usage, CPU percentage (delta sampling), event lo
 
 ### MCP Endpoints
 
-```
+```http
 GET  /agentmemory/mcp/tools          — List available tools
 POST /agentmemory/mcp/call           — Execute a tool
 GET  /agentmemory/mcp/resources      — List available resources
@@ -469,7 +469,7 @@ ANTHROPIC_API_KEY=sk-ant-...
 
 ## API
 
-29 endpoints on port `3111`. Protected endpoints require `Authorization: Bearer <secret>` when `AGENTMEMORY_SECRET` is set.
+34 endpoints on port `3111` (28 core + 6 MCP protocol). Protected endpoints require `Authorization: Bearer <secret>` when `AGENTMEMORY_SECRET` is set.
 
 | Method | Path | Description |
 |--------|------|-------------|
