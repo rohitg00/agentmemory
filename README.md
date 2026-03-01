@@ -54,6 +54,13 @@ No manual notes. No copy-pasting. The agent just *knows*.
 | **Auto-forgetting** | TTL expiry, contradiction detection, and importance-based eviction keep memory clean |
 | **Privacy first** | API keys, secrets, and `<private>` tags are stripped before anything is stored |
 | **Self-healing** | Circuit breaker, provider fallback chain, self-correcting LLM output, health monitoring |
+| **Claude Code bridge** | Bi-directional sync with `~/.claude/projects/*/memory/MEMORY.md` |
+| **Cross-agent MCP** | Standalone MCP server for Cursor, Codex, Gemini CLI, Windsurf, any MCP client |
+| **Knowledge graph** | Entity extraction + BFS traversal across files, functions, concepts, errors |
+| **4-tier memory** | Working → episodic → semantic → procedural consolidation with strength decay |
+| **Team memory** | Namespaced shared + private memory across team members |
+| **Governance** | Edit, delete, bulk-delete, and audit trail for all memory operations |
+| **Git snapshots** | Version, rollback, and diff memory state via git commits |
 
 ### How it compares
 
@@ -84,7 +91,7 @@ These agents support hooks natively. agentmemory captures tool usage automatical
 
 ### MCP support (any MCP-compatible agent)
 
-Any agent that connects to MCP servers can use agentmemory's 10 tools, 4 resources, and 3 prompts. The agent actively queries and saves memory through MCP calls.
+Any agent that connects to MCP servers can use agentmemory's 18 tools, 6 resources, and 3 prompts. The agent actively queries and saves memory through MCP calls.
 
 | Agent | How to connect |
 |---|---|
@@ -96,7 +103,7 @@ Any agent that connects to MCP servers can use agentmemory's 10 tools, 4 resourc
 
 ### REST API (any agent, any language)
 
-Agents without hooks or MCP can integrate via 34 REST endpoints directly. This works with any agent, language, or framework.
+Agents without hooks or MCP can integrate via 49 REST endpoints directly. This works with any agent, language, or framework.
 
 ```bash
 POST /agentmemory/observe       # Capture what the agent did
@@ -113,8 +120,8 @@ GET  /agentmemory/profile       # Get project intelligence
 |---|---|
 | Claude Code user | Plugin install (hooks + MCP + skills) |
 | Building a custom agent with Claude SDK | AgentSDKProvider (zero config) |
-| Using Cursor, Windsurf, or any MCP client | MCP server (10 tools + 4 resources + 3 prompts) |
-| Building your own agent framework | REST API (34 endpoints) |
+| Using Cursor, Windsurf, or any MCP client | MCP server (18 tools + 6 resources + 3 prompts) |
+| Building your own agent framework | REST API (49 endpoints) |
 | Sharing memory across multiple agents | All agents point to the same iii-engine instance |
 
 ## Quick Start
@@ -362,7 +369,7 @@ Collects every 30 seconds: heap usage, CPU percentage (delta sampling), event lo
 
 ## MCP Server
 
-### Tools (10)
+### Tools (18)
 
 | Tool | Description |
 |------|-------------|
@@ -376,8 +383,16 @@ Collects every 30 seconds: heap usage, CPU percentage (delta sampling), event lo
 | `memory_profile` | Project profile with top concepts, files, patterns |
 | `memory_export` | Export all memory data as JSON |
 | `memory_relations` | Query memory relationship graph (with confidence filtering) |
+| `memory_claude_bridge_sync` | Sync memory to/from Claude Code's native MEMORY.md |
+| `memory_graph_query` | Query the knowledge graph for entities and relationships |
+| `memory_consolidate` | Run 4-tier memory consolidation pipeline |
+| `memory_team_share` | Share a memory or observation with team members |
+| `memory_team_feed` | Get recent shared items from all team members |
+| `memory_audit` | View the audit trail of memory operations |
+| `memory_governance_delete` | Delete specific memories with audit trail |
+| `memory_snapshot_create` | Create a git-versioned snapshot of memory state |
 
-### Resources (4)
+### Resources (6)
 
 | URI | Description |
 |-----|-------------|
@@ -385,6 +400,8 @@ Collects every 30 seconds: heap usage, CPU percentage (delta sampling), event lo
 | `agentmemory://project/{name}/profile` | Per-project intelligence (concepts, files, conventions) |
 | `agentmemory://project/{name}/recent` | Last 5 session summaries for a project |
 | `agentmemory://memories/latest` | Latest 10 active memories (id, title, type, strength) |
+| `agentmemory://graph/stats` | Knowledge graph node and edge counts by type |
+| `agentmemory://team/{id}/profile` | Team memory profile with shared concepts and patterns |
 
 ### Prompts (3)
 
@@ -394,7 +411,30 @@ Collects every 30 seconds: heap usage, CPU percentage (delta sampling), event lo
 | `session_handoff` | `session_id` | Returns session data + summary for handoff between agents |
 | `detect_patterns` | `project` (optional) | Analyzes recurring patterns across sessions |
 
-### MCP Endpoints
+### Standalone MCP Server
+
+Run agentmemory as a standalone MCP server for any MCP-compatible agent (Cursor, Codex, Gemini CLI, Windsurf):
+
+```bash
+npx agentmemory-mcp
+```
+
+Or add to your agent's MCP config:
+
+```json
+{
+  "mcpServers": {
+    "agentmemory": {
+      "command": "npx",
+      "args": ["agentmemory-mcp"]
+    }
+  }
+}
+```
+
+The standalone server uses in-memory KV with optional JSON persistence (`STANDALONE_PERSIST_PATH`).
+
+### MCP Endpoints (embedded mode)
 
 ```http
 GET  /agentmemory/mcp/tools          — List available tools
@@ -465,16 +505,42 @@ ANTHROPIC_API_KEY=sk-ant-...
 # Memory tuning
 # TOKEN_BUDGET=2000
 # MAX_OBS_PER_SESSION=500
+
+# Claude Code Memory Bridge (v0.4.0)
+# CLAUDE_MEMORY_BRIDGE=false
+# CLAUDE_MEMORY_LINE_BUDGET=200
+
+# Standalone MCP Server (v0.4.0)
+# STANDALONE_MCP=false
+# STANDALONE_PERSIST_PATH=~/.agentmemory/standalone.json
+
+# Knowledge Graph (v0.4.0)
+# GRAPH_EXTRACTION_ENABLED=false
+# GRAPH_EXTRACTION_BATCH_SIZE=10
+
+# Consolidation Pipeline (v0.4.0)
+# CONSOLIDATION_ENABLED=false
+# CONSOLIDATION_DECAY_DAYS=30
+
+# Team Memory (v0.4.0)
+# TEAM_ID=
+# USER_ID=
+# TEAM_MODE=private
+
+# Git Snapshots (v0.4.0)
+# SNAPSHOT_ENABLED=false
+# SNAPSHOT_INTERVAL=3600
+# SNAPSHOT_DIR=~/.agentmemory/snapshots
 ```
 
 ## API
 
-34 endpoints on port `3111` (28 core + 6 MCP protocol). Protected endpoints require `Authorization: Bearer <secret>` when `AGENTMEMORY_SECRET` is set.
+49 endpoints on port `3111` (43 core + 6 MCP protocol). Protected endpoints require `Authorization: Bearer <secret>` when `AGENTMEMORY_SECRET` is set.
 
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/agentmemory/health` | Health check with metrics (always public) |
-| `GET` | `/agentmemory/liveness` | Liveness probe (always public) |
+| `GET` | `/agentmemory/livez` | Liveness probe (always public) |
 | `POST` | `/agentmemory/session/start` | Start session + get context |
 | `POST` | `/agentmemory/session/end` | Mark session complete |
 | `POST` | `/agentmemory/observe` | Capture observation |
@@ -501,6 +567,21 @@ ANTHROPIC_API_KEY=sk-ant-...
 | `GET` | `/agentmemory/sessions` | List all sessions |
 | `GET` | `/agentmemory/observations` | Session observations (`?sessionId=X`) |
 | `GET` | `/agentmemory/viewer` | Real-time web viewer |
+| `GET` | `/agentmemory/claude-bridge/read` | Read Claude Code native MEMORY.md |
+| `POST` | `/agentmemory/claude-bridge/sync` | Sync memories to MEMORY.md |
+| `POST` | `/agentmemory/graph/query` | Query knowledge graph (BFS traversal) |
+| `GET` | `/agentmemory/graph/stats` | Knowledge graph node/edge counts |
+| `POST` | `/agentmemory/graph/extract` | Extract entities from observations |
+| `POST` | `/agentmemory/consolidate-pipeline` | Run 4-tier consolidation pipeline |
+| `POST` | `/agentmemory/team/share` | Share memory with team members |
+| `GET` | `/agentmemory/team/feed` | Recent shared items from team |
+| `GET` | `/agentmemory/team/profile` | Aggregated team memory profile |
+| `GET` | `/agentmemory/audit` | Query audit trail (`?operation=X&limit=N`) |
+| `DELETE` | `/agentmemory/governance/memories` | Delete specific memories with audit |
+| `POST` | `/agentmemory/governance/bulk-delete` | Bulk delete by type/date/quality |
+| `GET` | `/agentmemory/snapshots` | List git snapshots |
+| `POST` | `/agentmemory/snapshot/create` | Create git-versioned snapshot |
+| `POST` | `/agentmemory/snapshot/restore` | Restore from snapshot commit |
 | `GET` | `/agentmemory/mcp/tools` | List MCP tools |
 | `POST` | `/agentmemory/mcp/call` | Execute MCP tool |
 | `GET` | `/agentmemory/mcp/resources` | List MCP resources |
@@ -517,7 +598,7 @@ ANTHROPIC_API_KEY=sk-ant-...
 /plugin install agentmemory
 ```
 
-Restart Claude Code. All 12 hooks, 4 skills, and MCP tools are registered automatically.
+Restart Claude Code. All 12 hooks, 4 skills, and 18 MCP tools are registered automatically.
 
 ### Plugin Commands
 
@@ -541,9 +622,9 @@ agentmemory is built on iii-engine's three primitives:
 | Prometheus / Grafana | iii OTEL + built-in health monitor |
 | Redis (circuit breaker) | In-process circuit breaker + fallback chain |
 
-**70 source files. ~8,200 LOC. 173 tests. 142KB bundled.**
+**83 source files. ~11,000 LOC. 216 tests. 208KB bundled (192KB main + 16KB standalone).**
 
-### Functions (22)
+### Functions (33)
 
 | Function | Purpose |
 |----------|---------|
@@ -568,9 +649,23 @@ agentmemory is built on iii-engine's three primitives:
 | `mem::profile` | Aggregate project profile |
 | `mem::auto-forget` | TTL expiry + contradiction detection |
 | `mem::enrich` | Unified enrichment (file context + observations + bug memories) |
-| `mem::export` / `mem::import` | Full JSON round-trip |
+| `mem::export` / `mem::import` | Full JSON round-trip (v0.3.0 + v0.4.0 formats) |
+| `mem::claude-bridge-read` | Read Claude Code native MEMORY.md |
+| `mem::claude-bridge-sync` | Sync top memories back to MEMORY.md |
+| `mem::graph-extract` | LLM-powered entity extraction from observations |
+| `mem::graph-query` | BFS traversal of knowledge graph |
+| `mem::graph-stats` | Node/edge counts by type |
+| `mem::consolidate-pipeline` | 4-tier memory consolidation with strength decay |
+| `mem::team-share` | Share memory/observation with team namespace |
+| `mem::team-feed` | Fetch recent shared items from team |
+| `mem::team-profile` | Aggregate team concepts, files, patterns |
+| `mem::governance-delete` | Delete specific memories with audit trail |
+| `mem::governance-bulk` | Bulk delete by type/date/quality filter |
+| `mem::snapshot-create` | Git commit memory state |
+| `mem::snapshot-list` | List all snapshots |
+| `mem::snapshot-restore` | Restore memory from snapshot commit |
 
-### Data Model
+### Data Model (21 KV scopes)
 
 | Scope | Stores |
 |-------|--------|
@@ -585,13 +680,23 @@ agentmemory is built on iii-engine's three primitives:
 | `mem:metrics` | Per-function metrics |
 | `mem:health` | Health snapshots |
 | `mem:config` | Runtime configuration overrides |
+| `mem:confidence` | Confidence scores for memories |
+| `mem:claude-bridge` | Claude Code MEMORY.md bridge state |
+| `mem:graph:nodes` | Knowledge graph entities |
+| `mem:graph:edges` | Knowledge graph relationships |
+| `mem:semantic` | Semantic memories (consolidated facts) |
+| `mem:procedural` | Procedural memories (extracted workflows) |
+| `mem:team:{id}:shared` | Team shared items |
+| `mem:team:{id}:users:{uid}` | Per-user team state |
+| `mem:team:{id}:profile` | Aggregated team profile |
+| `mem:audit` | Audit trail for all operations |
 
 ## Development
 
 ```bash
 npm run dev               # Hot reload
-npm run build             # Production build (142KB)
-npm test                  # Unit tests (173 tests, ~1s)
+npm run build             # Production build (208KB)
+npm test                  # Unit tests (216 tests, ~1s)
 npm run test:integration  # API tests (requires running services)
 ```
 

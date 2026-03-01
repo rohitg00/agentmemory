@@ -18,6 +18,13 @@ async function main() {
 	}
 	const sessionId = data.session_id || "unknown";
 	const project = data.cwd || process.cwd();
+	if (process.env["CLAUDE_MEMORY_BRIDGE"] === "true") try {
+		await fetch(`${REST_URL}/agentmemory/claude-bridge/sync`, {
+			method: "POST",
+			headers: authHeaders(),
+			signal: AbortSignal.timeout(5e3)
+		});
+	} catch {}
 	try {
 		const res = await fetch(`${REST_URL}/agentmemory/context`, {
 			method: "POST",

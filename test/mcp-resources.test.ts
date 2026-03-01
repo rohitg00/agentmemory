@@ -71,7 +71,7 @@ describe("MCP Resources", () => {
     registerMcpEndpoints(sdk as never, kv as never);
   });
 
-  it("lists 4 resources", async () => {
+  it("lists 6 resources", async () => {
     const fn = sdk.getFunction("mcp::resources::list")!;
     const result = (await fn(makeReq())) as {
       status_code: number;
@@ -79,7 +79,7 @@ describe("MCP Resources", () => {
     };
 
     expect(result.status_code).toBe(200);
-    expect(result.body.resources).toHaveLength(4);
+    expect(result.body.resources).toHaveLength(6);
   });
 
   it("reads agentmemory://status", async () => {

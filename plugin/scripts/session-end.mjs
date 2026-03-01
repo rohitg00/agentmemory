@@ -25,6 +25,13 @@ async function main() {
 			signal: AbortSignal.timeout(5e3)
 		});
 	} catch {}
+	if (process.env["CLAUDE_MEMORY_BRIDGE"] === "true") try {
+		await fetch(`${REST_URL}/agentmemory/claude-bridge/sync`, {
+			method: "POST",
+			headers: authHeaders(),
+			signal: AbortSignal.timeout(5e3)
+		});
+	} catch {}
 }
 main();
 

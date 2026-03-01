@@ -237,13 +237,17 @@ export interface ProjectProfile {
 }
 
 export interface ExportData {
-  version: "0.3.0";
+  version: "0.3.0" | "0.4.0";
   exportedAt: string;
   sessions: Session[];
   observations: Record<string, CompressedObservation[]>;
   memories: Memory[];
   summaries: SessionSummary[];
   profiles?: ProjectProfile[];
+  graphNodes?: GraphNode[];
+  graphEdges?: GraphEdge[];
+  semanticMemories?: SemanticMemory[];
+  proceduralMemories?: ProceduralMemory[];
 }
 
 export interface EmbeddingConfig {
@@ -254,4 +258,163 @@ export interface EmbeddingConfig {
 
 export interface FallbackConfig {
   providers: ProviderType[];
+}
+
+export interface ClaudeBridgeConfig {
+  enabled: boolean;
+  projectPath: string;
+  memoryFilePath: string;
+  lineBudget: number;
+}
+
+export interface StandaloneConfig {
+  dataDir: string;
+  persistPath: string;
+  agentType?: string;
+}
+
+export interface GraphNode {
+  id: string;
+  type:
+    | "file"
+    | "function"
+    | "concept"
+    | "error"
+    | "decision"
+    | "pattern"
+    | "library"
+    | "person";
+  name: string;
+  properties: Record<string, string>;
+  sourceObservationIds: string[];
+  createdAt: string;
+}
+
+export interface GraphEdge {
+  id: string;
+  type:
+    | "uses"
+    | "imports"
+    | "modifies"
+    | "causes"
+    | "fixes"
+    | "depends_on"
+    | "related_to";
+  sourceNodeId: string;
+  targetNodeId: string;
+  weight: number;
+  sourceObservationIds: string[];
+  createdAt: string;
+}
+
+export interface GraphQueryResult {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  depth: number;
+}
+
+export type ConsolidationTier =
+  | "working"
+  | "episodic"
+  | "semantic"
+  | "procedural";
+
+export interface SemanticMemory {
+  id: string;
+  fact: string;
+  confidence: number;
+  sourceSessionIds: string[];
+  sourceMemoryIds: string[];
+  accessCount: number;
+  lastAccessedAt: string;
+  strength: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProceduralMemory {
+  id: string;
+  name: string;
+  steps: string[];
+  triggerCondition: string;
+  frequency: number;
+  sourceSessionIds: string[];
+  strength: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TeamConfig {
+  teamId: string;
+  userId: string;
+  mode: "shared" | "private";
+}
+
+export interface TeamSharedItem {
+  id: string;
+  sharedBy: string;
+  sharedAt: string;
+  type: "observation" | "memory" | "pattern";
+  content: unknown;
+  project: string;
+  visibility: "shared" | "private";
+}
+
+export interface TeamProfile {
+  teamId: string;
+  members: string[];
+  topConcepts: Array<{ concept: string; frequency: number }>;
+  topFiles: Array<{ file: string; frequency: number }>;
+  sharedPatterns: string[];
+  totalSharedItems: number;
+  updatedAt: string;
+}
+
+export interface AuditEntry {
+  id: string;
+  timestamp: string;
+  operation:
+    | "observe"
+    | "compress"
+    | "remember"
+    | "forget"
+    | "evolve"
+    | "consolidate"
+    | "share"
+    | "delete"
+    | "import"
+    | "export";
+  userId?: string;
+  functionId: string;
+  targetIds: string[];
+  details: Record<string, unknown>;
+  qualityScore?: number;
+}
+
+export interface GovernanceFilter {
+  type?: string[];
+  dateFrom?: string;
+  dateTo?: string;
+  project?: string;
+  qualityBelow?: number;
+}
+
+export interface SnapshotMeta {
+  id: string;
+  commitHash: string;
+  createdAt: string;
+  message: string;
+  stats: {
+    sessions: number;
+    observations: number;
+    memories: number;
+    graphNodes: number;
+  };
+}
+
+export interface SnapshotDiff {
+  fromCommit: string;
+  toCommit: string;
+  added: { memories: number; observations: number; graphNodes: number };
+  removed: { memories: number; observations: number; graphNodes: number };
 }

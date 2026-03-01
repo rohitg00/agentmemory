@@ -616,6 +616,353 @@ export function registerApiTriggers(
     config: { api_path: "/agentmemory/auto-forget", http_method: "POST" },
   });
 
+  sdk.registerFunction(
+    { id: "api::claude-bridge-read" },
+    async (req: ApiRequest): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      try {
+        const result = await sdk.trigger("mem::claude-bridge-read", {});
+        return { status_code: 200, body: result };
+      } catch {
+        return {
+          status_code: 404,
+          body: { error: "Claude bridge not enabled" },
+        };
+      }
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::claude-bridge-read",
+    config: { api_path: "/agentmemory/claude-bridge/read", http_method: "GET" },
+  });
+
+  sdk.registerFunction(
+    { id: "api::claude-bridge-sync" },
+    async (req: ApiRequest): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      try {
+        const result = await sdk.trigger("mem::claude-bridge-sync", {});
+        return { status_code: 200, body: result };
+      } catch {
+        return {
+          status_code: 404,
+          body: { error: "Claude bridge not enabled" },
+        };
+      }
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::claude-bridge-sync",
+    config: {
+      api_path: "/agentmemory/claude-bridge/sync",
+      http_method: "POST",
+    },
+  });
+
+  sdk.registerFunction(
+    { id: "api::graph-query" },
+    async (
+      req: ApiRequest<{
+        startNodeId?: string;
+        nodeType?: string;
+        maxDepth?: number;
+        query?: string;
+      }>,
+    ): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      try {
+        const result = await sdk.trigger("mem::graph-query", req.body || {});
+        return { status_code: 200, body: result };
+      } catch {
+        return {
+          status_code: 404,
+          body: { error: "Knowledge graph not enabled" },
+        };
+      }
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::graph-query",
+    config: { api_path: "/agentmemory/graph/query", http_method: "POST" },
+  });
+
+  sdk.registerFunction(
+    { id: "api::graph-stats" },
+    async (req: ApiRequest): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      try {
+        const result = await sdk.trigger("mem::graph-stats", {});
+        return { status_code: 200, body: result };
+      } catch {
+        return {
+          status_code: 404,
+          body: { error: "Knowledge graph not enabled" },
+        };
+      }
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::graph-stats",
+    config: { api_path: "/agentmemory/graph/stats", http_method: "GET" },
+  });
+
+  sdk.registerFunction(
+    { id: "api::graph-extract" },
+    async (req: ApiRequest<{ observations: unknown[] }>): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      try {
+        const result = await sdk.trigger("mem::graph-extract", req.body);
+        return { status_code: 200, body: result };
+      } catch {
+        return {
+          status_code: 404,
+          body: { error: "Knowledge graph not enabled" },
+        };
+      }
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::graph-extract",
+    config: { api_path: "/agentmemory/graph/extract", http_method: "POST" },
+  });
+
+  sdk.registerFunction(
+    { id: "api::consolidate-pipeline" },
+    async (req: ApiRequest<{ tier?: string }>): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      try {
+        const result = await sdk.trigger(
+          "mem::consolidate-pipeline",
+          req.body || {},
+        );
+        return { status_code: 200, body: result };
+      } catch {
+        return {
+          status_code: 404,
+          body: { error: "Consolidation pipeline not enabled" },
+        };
+      }
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::consolidate-pipeline",
+    config: {
+      api_path: "/agentmemory/consolidate-pipeline",
+      http_method: "POST",
+    },
+  });
+
+  sdk.registerFunction(
+    { id: "api::team-share" },
+    async (
+      req: ApiRequest<{ itemId: string; itemType: string; project?: string }>,
+    ): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      if (!req.body?.itemId || !req.body?.itemType) {
+        return {
+          status_code: 400,
+          body: { error: "itemId and itemType are required" },
+        };
+      }
+      try {
+        const result = await sdk.trigger("mem::team-share", req.body);
+        return { status_code: 201, body: result };
+      } catch {
+        return { status_code: 404, body: { error: "Team memory not enabled" } };
+      }
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::team-share",
+    config: { api_path: "/agentmemory/team/share", http_method: "POST" },
+  });
+
+  sdk.registerFunction(
+    { id: "api::team-feed" },
+    async (req: ApiRequest): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      try {
+        const limit = parseInt(req.query_params?.["limit"] as string) || 20;
+        const result = await sdk.trigger("mem::team-feed", { limit });
+        return { status_code: 200, body: result };
+      } catch {
+        return { status_code: 404, body: { error: "Team memory not enabled" } };
+      }
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::team-feed",
+    config: { api_path: "/agentmemory/team/feed", http_method: "GET" },
+  });
+
+  sdk.registerFunction(
+    { id: "api::team-profile" },
+    async (req: ApiRequest): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      try {
+        const result = await sdk.trigger("mem::team-profile", {});
+        return { status_code: 200, body: result };
+      } catch {
+        return { status_code: 404, body: { error: "Team memory not enabled" } };
+      }
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::team-profile",
+    config: { api_path: "/agentmemory/team/profile", http_method: "GET" },
+  });
+
+  sdk.registerFunction(
+    { id: "api::audit" },
+    async (req: ApiRequest): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const result = await sdk.trigger("mem::audit-query", {
+        operation: req.query_params?.["operation"],
+        limit: parseInt(req.query_params?.["limit"] as string) || 50,
+      });
+      return { status_code: 200, body: result };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::audit",
+    config: { api_path: "/agentmemory/audit", http_method: "GET" },
+  });
+
+  sdk.registerFunction(
+    { id: "api::governance-delete" },
+    async (
+      req: ApiRequest<{ memoryIds: string[]; reason?: string }>,
+    ): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      if (!req.body?.memoryIds || !Array.isArray(req.body.memoryIds)) {
+        return {
+          status_code: 400,
+          body: { error: "memoryIds array is required" },
+        };
+      }
+      const result = await sdk.trigger("mem::governance-delete", req.body);
+      return { status_code: 200, body: result };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::governance-delete",
+    config: {
+      api_path: "/agentmemory/governance/memories",
+      http_method: "DELETE",
+    },
+  });
+
+  sdk.registerFunction(
+    { id: "api::governance-bulk" },
+    async (
+      req: ApiRequest<{
+        type?: string[];
+        dateFrom?: string;
+        dateTo?: string;
+        qualityBelow?: number;
+        dryRun?: boolean;
+      }>,
+    ): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const result = await sdk.trigger("mem::governance-bulk", req.body || {});
+      return { status_code: 200, body: result };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::governance-bulk",
+    config: {
+      api_path: "/agentmemory/governance/bulk-delete",
+      http_method: "POST",
+    },
+  });
+
+  sdk.registerFunction(
+    { id: "api::snapshots" },
+    async (req: ApiRequest): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      try {
+        const result = await sdk.trigger("mem::snapshot-list", {});
+        return { status_code: 200, body: result };
+      } catch {
+        return { status_code: 404, body: { error: "Snapshots not enabled" } };
+      }
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::snapshots",
+    config: { api_path: "/agentmemory/snapshots", http_method: "GET" },
+  });
+
+  sdk.registerFunction(
+    { id: "api::snapshot-create" },
+    async (req: ApiRequest<{ message?: string }>): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      try {
+        const result = await sdk.trigger(
+          "mem::snapshot-create",
+          req.body || {},
+        );
+        return { status_code: 201, body: result };
+      } catch {
+        return { status_code: 404, body: { error: "Snapshots not enabled" } };
+      }
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::snapshot-create",
+    config: { api_path: "/agentmemory/snapshot/create", http_method: "POST" },
+  });
+
+  sdk.registerFunction(
+    { id: "api::snapshot-restore" },
+    async (req: ApiRequest<{ commitHash: string }>): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      if (!req.body?.commitHash) {
+        return { status_code: 400, body: { error: "commitHash is required" } };
+      }
+      try {
+        const result = await sdk.trigger("mem::snapshot-restore", req.body);
+        return { status_code: 200, body: result };
+      } catch {
+        return { status_code: 404, body: { error: "Snapshots not enabled" } };
+      }
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::snapshot-restore",
+    config: { api_path: "/agentmemory/snapshot/restore", http_method: "POST" },
+  });
+
   sdk.registerFunction({ id: "api::viewer" }, async (): Promise<Response> => {
     const headers = {
       "Content-Type": "text/html",

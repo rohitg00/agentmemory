@@ -6,7 +6,8 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "agentmemory": "dist/index.js"
+    "agentmemory": "dist/index.js",
+    "agentmemory-mcp": "dist/mcp-standalone.mjs"
   },
   "scripts": {
     "build": "tsdown",

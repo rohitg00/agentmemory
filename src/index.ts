@@ -4,6 +4,11 @@ import {
   getEnvVar,
   loadEmbeddingConfig,
   loadFallbackConfig,
+  loadClaudeBridgeConfig,
+  loadTeamConfig,
+  loadSnapshotConfig,
+  isGraphExtractionEnabled,
+  isConsolidationEnabled,
 } from "./config.js";
 import {
   createProvider,
@@ -37,6 +42,12 @@ import { registerProfileFunction } from "./functions/profile.js";
 import { registerAutoForgetFunction } from "./functions/auto-forget.js";
 import { registerExportImportFunction } from "./functions/export-import.js";
 import { registerEnrichFunction } from "./functions/enrich.js";
+import { registerClaudeBridgeFunction } from "./functions/claude-bridge.js";
+import { registerGraphFunction } from "./functions/graph.js";
+import { registerConsolidationPipelineFunction } from "./functions/consolidation-pipeline.js";
+import { registerTeamFunction } from "./functions/team.js";
+import { registerGovernanceFunction } from "./functions/governance.js";
+import { registerSnapshotFunction } from "./functions/snapshot.js";
 import { registerApiTriggers } from "./triggers/api.js";
 import { registerEventTriggers } from "./triggers/events.js";
 import { registerMcpEndpoints } from "./mcp/server.js";
@@ -116,6 +127,42 @@ async function main() {
   registerExportImportFunction(sdk, kv);
   registerEnrichFunction(sdk, kv);
 
+  const claudeBridgeConfig = loadClaudeBridgeConfig();
+  if (claudeBridgeConfig.enabled) {
+    registerClaudeBridgeFunction(sdk, kv, claudeBridgeConfig);
+    console.log(
+      `[agentmemory] Claude bridge: syncing to ${claudeBridgeConfig.memoryFilePath}`,
+    );
+  }
+
+  if (isGraphExtractionEnabled()) {
+    registerGraphFunction(sdk, kv, provider);
+    console.log(`[agentmemory] Knowledge graph: extraction enabled`);
+  }
+
+  if (isConsolidationEnabled()) {
+    registerConsolidationPipelineFunction(sdk, kv, provider);
+    console.log(`[agentmemory] Consolidation pipeline: enabled`);
+  }
+
+  const teamConfig = loadTeamConfig();
+  if (teamConfig) {
+    registerTeamFunction(sdk, kv, teamConfig);
+    console.log(
+      `[agentmemory] Team memory: ${teamConfig.teamId} (${teamConfig.mode})`,
+    );
+  }
+
+  registerGovernanceFunction(sdk, kv);
+
+  const snapshotConfig = loadSnapshotConfig();
+  if (snapshotConfig.enabled) {
+    registerSnapshotFunction(sdk, kv, snapshotConfig.dir);
+    console.log(
+      `[agentmemory] Git snapshots: ${snapshotConfig.dir} (every ${snapshotConfig.interval}s)`,
+    );
+  }
+
   const bm25Index = getSearchIndex();
   const hybridSearch = new HybridSearch(
     bm25Index,
@@ -174,7 +221,7 @@ async function main() {
     `[agentmemory] Ready. ${embeddingProvider ? "Hybrid" : "BM25"} search active.`,
   );
   console.log(
-    `[agentmemory] Endpoints: 29 REST + 10 MCP tools + 4 MCP resources + 3 MCP prompts + 22 functions`,
+    `[agentmemory] Endpoints: 43 REST + 18 MCP tools + 6 MCP resources + 3 MCP prompts + 33 functions`,
   );
 
   const shutdown = async () => {

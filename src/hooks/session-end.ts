@@ -34,6 +34,18 @@ async function main() {
   } catch {
     // best-effort
   }
+
+  if (process.env["CLAUDE_MEMORY_BRIDGE"] === "true") {
+    try {
+      await fetch(`${REST_URL}/agentmemory/claude-bridge/sync`, {
+        method: "POST",
+        headers: authHeaders(),
+        signal: AbortSignal.timeout(5000),
+      });
+    } catch {
+      // best-effort
+    }
+  }
 }
 
 main();

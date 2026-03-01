@@ -5,221 +5,16 @@ import type {
   SessionSummary,
   Memory,
   Session,
-  MemoryRelation,
+  GraphNode,
+  GraphEdge,
 } from "../types.js";
-
-type McpTool = {
-  name: string;
-  description: string;
-  inputSchema: {
-    type: "object";
-    properties: Record<string, { type: string; description: string }>;
-    required?: string[];
-  };
-};
+import { getAllTools } from "./tools-registry.js";
 
 type McpResponse = {
   status_code: number;
   headers?: Record<string, string>;
   body: unknown;
 };
-
-const MCP_TOOLS: McpTool[] = [
-  {
-    name: "memory_recall",
-    description:
-      "Search past session observations for relevant context. Use when you need to recall what happened in previous sessions, find past decisions, or look up how a file was modified before.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        query: {
-          type: "string",
-          description: "Search query (keywords, file names, concepts)",
-        },
-        limit: {
-          type: "number",
-          description: "Max results to return (default 10)",
-        },
-      },
-      required: ["query"],
-    },
-  },
-  {
-    name: "memory_save",
-    description:
-      "Explicitly save an important insight, decision, or pattern to long-term memory. Use when you discover something worth remembering for future sessions.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        content: {
-          type: "string",
-          description: "The insight or decision to remember",
-        },
-        type: {
-          type: "string",
-          description:
-            "Memory type: pattern, preference, architecture, bug, workflow, or fact",
-        },
-        concepts: {
-          type: "string",
-          description: "Comma-separated key concepts for searchability",
-        },
-        files: {
-          type: "string",
-          description: "Comma-separated relevant file paths",
-        },
-      },
-      required: ["content"],
-    },
-  },
-  {
-    name: "memory_file_history",
-    description:
-      "Get past observations about specific files. Use before modifying a file to understand its history and past changes.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        files: {
-          type: "string",
-          description: "Comma-separated file paths to look up",
-        },
-        sessionId: {
-          type: "string",
-          description: "Current session ID to exclude from results",
-        },
-      },
-      required: ["files"],
-    },
-  },
-  {
-    name: "memory_patterns",
-    description:
-      "Detect recurring patterns across sessions: files that change together, repeated errors, common workflows.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        project: {
-          type: "string",
-          description:
-            "Project path to analyze (optional, analyzes all if omitted)",
-        },
-      },
-    },
-  },
-  {
-    name: "memory_sessions",
-    description:
-      "List recent sessions with their status and observation counts.",
-    inputSchema: {
-      type: "object",
-      properties: {},
-    },
-  },
-  {
-    name: "memory_smart_search",
-    description:
-      "Hybrid semantic+keyword search with progressive disclosure. Returns compact summaries first; pass expandIds to get full observation text.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        query: {
-          type: "string",
-          description: "Search query combining semantic and keyword matching",
-        },
-        expandIds: {
-          type: "string",
-          description:
-            "Comma-separated observation IDs to expand with full text",
-        },
-        limit: {
-          type: "number",
-          description: "Max results to return (default 10)",
-        },
-      },
-      required: ["query"],
-    },
-  },
-  {
-    name: "memory_timeline",
-    description:
-      "Chronological observations around an anchor point. Use to see what happened before and after a specific date or event.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        anchor: {
-          type: "string",
-          description:
-            "Anchor point: ISO date (e.g. 2026-02-15) or keyword (today, yesterday, last-week)",
-        },
-        project: {
-          type: "string",
-          description: "Filter by project path",
-        },
-        before: {
-          type: "number",
-          description: "Number of observations before anchor (default 5)",
-        },
-        after: {
-          type: "number",
-          description: "Number of observations after anchor (default 5)",
-        },
-      },
-      required: ["anchor"],
-    },
-  },
-  {
-    name: "memory_profile",
-    description:
-      "User/project profile with top concepts, frequently modified files, and recurring patterns.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        project: {
-          type: "string",
-          description: "Project path to build profile for",
-        },
-        refresh: {
-          type: "string",
-          description: "Set to 'true' to force rebuild the profile cache",
-        },
-      },
-      required: ["project"],
-    },
-  },
-  {
-    name: "memory_export",
-    description:
-      "Export all memory data as JSON. Useful for backup or migration.",
-    inputSchema: {
-      type: "object",
-      properties: {},
-    },
-  },
-  {
-    name: "memory_relations",
-    description:
-      "Query the memory relationship graph. Returns related memories within a given hop distance.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        memoryId: {
-          type: "string",
-          description: "ID of the memory to find relations for",
-        },
-        maxHops: {
-          type: "number",
-          description: "Maximum graph traversal depth (default 2)",
-        },
-        minConfidence: {
-          type: "number",
-          description:
-            "Minimum confidence threshold to include (0-1, default 0)",
-        },
-      },
-      required: ["memoryId"],
-    },
-  },
-];
 
 export function registerMcpEndpoints(
   sdk: ISdk,
@@ -244,7 +39,7 @@ export function registerMcpEndpoints(
     async (req: ApiRequest): Promise<McpResponse> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
-      return { status_code: 200, body: { tools: MCP_TOOLS } };
+      return { status_code: 200, body: { tools: getAllTools() } };
     },
   );
   sdk.registerTrigger({
@@ -486,6 +281,230 @@ export function registerMcpEndpoints(
             };
           }
 
+          case "memory_claude_bridge_sync": {
+            const direction = (args.direction as string) || "write";
+            const funcId =
+              direction === "read"
+                ? "mem::claude-bridge-read"
+                : "mem::claude-bridge-sync";
+            try {
+              const result = await sdk.trigger(funcId, {});
+              return {
+                status_code: 200,
+                body: {
+                  content: [
+                    { type: "text", text: JSON.stringify(result, null, 2) },
+                  ],
+                },
+              };
+            } catch {
+              return {
+                status_code: 200,
+                body: {
+                  content: [
+                    {
+                      type: "text",
+                      text: "Claude bridge not enabled. Set CLAUDE_MEMORY_BRIDGE=true",
+                    },
+                  ],
+                },
+              };
+            }
+          }
+
+          case "memory_graph_query": {
+            try {
+              const result = await sdk.trigger("mem::graph-query", {
+                startNodeId: args.startNodeId as string,
+                nodeType: args.nodeType as string,
+                maxDepth: args.maxDepth as number,
+                query: args.query as string,
+              });
+              return {
+                status_code: 200,
+                body: {
+                  content: [
+                    { type: "text", text: JSON.stringify(result, null, 2) },
+                  ],
+                },
+              };
+            } catch {
+              return {
+                status_code: 200,
+                body: {
+                  content: [
+                    {
+                      type: "text",
+                      text: "Knowledge graph not enabled. Set GRAPH_EXTRACTION_ENABLED=true",
+                    },
+                  ],
+                },
+              };
+            }
+          }
+
+          case "memory_consolidate": {
+            try {
+              const result = await sdk.trigger("mem::consolidate-pipeline", {
+                tier: args.tier as string,
+              });
+              return {
+                status_code: 200,
+                body: {
+                  content: [
+                    { type: "text", text: JSON.stringify(result, null, 2) },
+                  ],
+                },
+              };
+            } catch {
+              return {
+                status_code: 200,
+                body: {
+                  content: [
+                    {
+                      type: "text",
+                      text: "Consolidation not enabled. Set CONSOLIDATION_ENABLED=true",
+                    },
+                  ],
+                },
+              };
+            }
+          }
+
+          case "memory_team_share": {
+            if (
+              typeof args.itemId !== "string" ||
+              typeof args.itemType !== "string"
+            ) {
+              return {
+                status_code: 400,
+                body: { error: "itemId and itemType are required" },
+              };
+            }
+            try {
+              const result = await sdk.trigger("mem::team-share", {
+                itemId: args.itemId,
+                itemType: args.itemType,
+              });
+              return {
+                status_code: 200,
+                body: {
+                  content: [
+                    { type: "text", text: JSON.stringify(result, null, 2) },
+                  ],
+                },
+              };
+            } catch {
+              return {
+                status_code: 200,
+                body: {
+                  content: [
+                    {
+                      type: "text",
+                      text: "Team memory not enabled. Set TEAM_ID and USER_ID",
+                    },
+                  ],
+                },
+              };
+            }
+          }
+
+          case "memory_team_feed": {
+            try {
+              const result = await sdk.trigger("mem::team-feed", {
+                limit: (args.limit as number) || 20,
+              });
+              return {
+                status_code: 200,
+                body: {
+                  content: [
+                    { type: "text", text: JSON.stringify(result, null, 2) },
+                  ],
+                },
+              };
+            } catch {
+              return {
+                status_code: 200,
+                body: {
+                  content: [
+                    {
+                      type: "text",
+                      text: "Team memory not enabled. Set TEAM_ID and USER_ID",
+                    },
+                  ],
+                },
+              };
+            }
+          }
+
+          case "memory_audit": {
+            const result = await sdk.trigger("mem::audit-query", {
+              operation: args.operation as string,
+              limit: (args.limit as number) || 50,
+            });
+            return {
+              status_code: 200,
+              body: {
+                content: [
+                  { type: "text", text: JSON.stringify(result, null, 2) },
+                ],
+              },
+            };
+          }
+
+          case "memory_governance_delete": {
+            if (typeof args.memoryIds !== "string") {
+              return {
+                status_code: 400,
+                body: { error: "memoryIds is required" },
+              };
+            }
+            const ids = (args.memoryIds as string)
+              .split(",")
+              .map((id) => id.trim())
+              .filter(Boolean);
+            const result = await sdk.trigger("mem::governance-delete", {
+              memoryIds: ids,
+              reason: args.reason as string,
+            });
+            return {
+              status_code: 200,
+              body: {
+                content: [
+                  { type: "text", text: JSON.stringify(result, null, 2) },
+                ],
+              },
+            };
+          }
+
+          case "memory_snapshot_create": {
+            try {
+              const result = await sdk.trigger("mem::snapshot-create", {
+                message: args.message as string,
+              });
+              return {
+                status_code: 200,
+                body: {
+                  content: [
+                    { type: "text", text: JSON.stringify(result, null, 2) },
+                  ],
+                },
+              };
+            } catch {
+              return {
+                status_code: 200,
+                body: {
+                  content: [
+                    {
+                      type: "text",
+                      text: "Snapshots not enabled. Set SNAPSHOT_ENABLED=true",
+                    },
+                  ],
+                },
+              };
+            }
+          }
+
           default:
             return {
               status_code: 400,
@@ -532,6 +551,18 @@ export function registerMcpEndpoints(
       uri: "agentmemory://memories/latest",
       name: "Latest Memories",
       description: "Top 10 latest memories with their type and strength",
+      mimeType: "application/json",
+    },
+    {
+      uri: "agentmemory://graph/stats",
+      name: "Knowledge Graph Stats",
+      description: "Node and edge counts by type in the knowledge graph",
+      mimeType: "application/json",
+    },
+    {
+      uri: "agentmemory://team/{id}/profile",
+      name: "Team Profile",
+      description: "Team memory profile with shared concepts and patterns",
       mimeType: "application/json",
     },
   ];
@@ -679,6 +710,90 @@ export function registerMcpEndpoints(
               ],
             },
           };
+        }
+
+        if (uri === "agentmemory://graph/stats") {
+          try {
+            const nodes = await kv.list<GraphNode>(KV.graphNodes);
+            const edges = await kv.list<GraphEdge>(KV.graphEdges);
+            const nodesByType: Record<string, number> = {};
+            for (const n of nodes)
+              nodesByType[n.type] = (nodesByType[n.type] || 0) + 1;
+            const edgesByType: Record<string, number> = {};
+            for (const e of edges)
+              edgesByType[e.type] = (edgesByType[e.type] || 0) + 1;
+            return {
+              status_code: 200,
+              body: {
+                contents: [
+                  {
+                    uri,
+                    mimeType: "application/json",
+                    text: JSON.stringify({
+                      totalNodes: nodes.length,
+                      totalEdges: edges.length,
+                      nodesByType,
+                      edgesByType,
+                    }),
+                  },
+                ],
+              },
+            };
+          } catch {
+            return {
+              status_code: 200,
+              body: {
+                contents: [
+                  {
+                    uri,
+                    mimeType: "application/json",
+                    text: JSON.stringify({
+                      totalNodes: 0,
+                      totalEdges: 0,
+                    }),
+                  },
+                ],
+              },
+            };
+          }
+        }
+
+        const teamProfileMatch = uri.match(
+          /^agentmemory:\/\/team\/(.+)\/profile$/,
+        );
+        if (teamProfileMatch) {
+          try {
+            const teamId = decodeURIComponent(teamProfileMatch[1]);
+            const items = await kv.list(KV.teamShared(teamId));
+            return {
+              status_code: 200,
+              body: {
+                contents: [
+                  {
+                    uri,
+                    mimeType: "application/json",
+                    text: JSON.stringify({
+                      teamId,
+                      sharedItems: items.length,
+                    }),
+                  },
+                ],
+              },
+            };
+          } catch {
+            return {
+              status_code: 200,
+              body: {
+                contents: [
+                  {
+                    uri,
+                    mimeType: "application/json",
+                    text: JSON.stringify({ teamId: "unknown", sharedItems: 0 }),
+                  },
+                ],
+              },
+            };
+          }
         }
 
         return {

@@ -6,6 +6,8 @@ import type {
   ProviderConfig,
   EmbeddingConfig,
   FallbackConfig,
+  ClaudeBridgeConfig,
+  TeamConfig,
 } from "./types.js";
 
 function safeParseInt(value: string | undefined, fallback: number): number {
@@ -126,6 +128,76 @@ export function detectEmbeddingProvider(
   if (source["COHERE_API_KEY"]) return "cohere";
   if (source["OPENROUTER_API_KEY"]) return "openrouter";
   return null;
+}
+
+export function loadClaudeBridgeConfig(): ClaudeBridgeConfig {
+  const env = getMergedEnv();
+  const enabled = env["CLAUDE_MEMORY_BRIDGE"] === "true";
+  const projectPath = env["CLAUDE_PROJECT_PATH"] || "";
+  const lineBudget = safeParseInt(env["CLAUDE_MEMORY_LINE_BUDGET"], 200);
+  let memoryFilePath = "";
+  if (enabled && projectPath) {
+    const safePath = projectPath.replace(/\//g, "-").replace(/^-/, "");
+    memoryFilePath = join(
+      homedir(),
+      ".claude",
+      "projects",
+      safePath,
+      "memory",
+      "MEMORY.md",
+    );
+  }
+  return { enabled, projectPath, memoryFilePath, lineBudget };
+}
+
+export function loadTeamConfig(): TeamConfig | null {
+  const env = getMergedEnv();
+  const teamId = env["TEAM_ID"];
+  const userId = env["USER_ID"];
+  if (!teamId || !userId) return null;
+  const mode = env["TEAM_MODE"] === "shared" ? "shared" : "private";
+  return { teamId, userId, mode };
+}
+
+export function loadSnapshotConfig(): {
+  enabled: boolean;
+  interval: number;
+  dir: string;
+} {
+  const env = getMergedEnv();
+  return {
+    enabled: env["SNAPSHOT_ENABLED"] === "true",
+    interval: safeParseInt(env["SNAPSHOT_INTERVAL"], 3600),
+    dir: env["SNAPSHOT_DIR"] || join(homedir(), ".agentmemory", "snapshots"),
+  };
+}
+
+export function isGraphExtractionEnabled(): boolean {
+  return getMergedEnv()["GRAPH_EXTRACTION_ENABLED"] === "true";
+}
+
+export function getGraphBatchSize(): number {
+  return safeParseInt(getMergedEnv()["GRAPH_EXTRACTION_BATCH_SIZE"], 10);
+}
+
+export function isConsolidationEnabled(): boolean {
+  return getMergedEnv()["CONSOLIDATION_ENABLED"] === "true";
+}
+
+export function getConsolidationDecayDays(): number {
+  return safeParseInt(getMergedEnv()["CONSOLIDATION_DECAY_DAYS"], 30);
+}
+
+export function isStandaloneMcp(): boolean {
+  return getMergedEnv()["STANDALONE_MCP"] === "true";
+}
+
+export function getStandalonePersistPath(): string {
+  const env = getMergedEnv();
+  return (
+    env["STANDALONE_PERSIST_PATH"] ||
+    join(homedir(), ".agentmemory", "standalone.json")
+  );
 }
 
 const VALID_PROVIDERS = new Set([

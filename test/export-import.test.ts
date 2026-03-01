@@ -118,7 +118,7 @@ describe("Export/Import Functions", () => {
   it("export produces valid ExportData structure", async () => {
     const result = (await sdk.trigger("mem::export", {})) as ExportData;
 
-    expect(result.version).toBe("0.3.0");
+    expect(result.version).toBe("0.4.0");
     expect(result.exportedAt).toBeDefined();
     expect(result.sessions.length).toBe(1);
     expect(result.sessions[0].id).toBe("ses_1");
@@ -131,13 +131,9 @@ describe("Export/Import Functions", () => {
     const exportData: ExportData = {
       version: "0.3.0",
       exportedAt: new Date().toISOString(),
-      sessions: [
-        { ...testSession, id: "ses_2", observationCount: 0 },
-      ],
+      sessions: [{ ...testSession, id: "ses_2", observationCount: 0 }],
       observations: {},
-      memories: [
-        { ...testMemory, id: "mem_2", title: "New pattern" },
-      ],
+      memories: [{ ...testMemory, id: "mem_2", title: "New pattern" }],
       summaries: [],
     };
 
@@ -214,14 +210,22 @@ describe("Export/Import Functions", () => {
     const importResult = (await freshSdk.trigger("mem::import", {
       exportData: exported,
       strategy: "merge",
-    })) as { success: boolean; sessions: number; observations: number; memories: number };
+    })) as {
+      success: boolean;
+      sessions: number;
+      observations: number;
+      memories: number;
+    };
 
     expect(importResult.success).toBe(true);
     expect(importResult.sessions).toBe(1);
     expect(importResult.observations).toBe(1);
     expect(importResult.memories).toBe(1);
 
-    const reExported = (await freshSdk.trigger("mem::export", {})) as ExportData;
+    const reExported = (await freshSdk.trigger(
+      "mem::export",
+      {},
+    )) as ExportData;
     expect(reExported.sessions.length).toBe(exported.sessions.length);
     expect(reExported.memories.length).toBe(exported.memories.length);
   });

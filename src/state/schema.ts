@@ -10,6 +10,16 @@ export const KV = {
   bm25Index: "mem:index:bm25",
   relations: "mem:relations",
   profiles: "mem:profiles",
+  claudeBridge: "mem:claude-bridge",
+  graphNodes: "mem:graph:nodes",
+  graphEdges: "mem:graph:edges",
+  semantic: "mem:semantic",
+  procedural: "mem:procedural",
+  teamShared: (teamId: string) => `mem:team:${teamId}:shared`,
+  teamUsers: (teamId: string, userId: string) =>
+    `mem:team:${teamId}:users:${userId}`,
+  teamProfile: (teamId: string) => `mem:team:${teamId}:profile`,
+  audit: "mem:audit",
 } as const;
 
 export const STREAM = {

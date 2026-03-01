@@ -1,0 +1,104 @@
+import type { ISdk } from "iii-sdk";
+import { getContext } from "iii-sdk";
+import type { Memory, GovernanceFilter, AuditEntry } from "../types.js";
+import { KV } from "../state/schema.js";
+import type { StateKV } from "../state/kv.js";
+import { recordAudit, queryAudit } from "./audit.js";
+
+export function registerGovernanceFunction(sdk: ISdk, kv: StateKV): void {
+  sdk.registerFunction(
+    { id: "mem::governance-delete" },
+    async (data: { memoryIds: string[]; reason?: string }) => {
+      const ctx = getContext();
+      if (!data.memoryIds || !Array.isArray(data.memoryIds) || data.memoryIds.length === 0) {
+        return { success: false, error: "memoryIds array is required" };
+      }
+
+      let deleted = 0;
+      for (const id of data.memoryIds) {
+        const mem = await kv.get<Memory>(KV.memories, id);
+        if (mem) {
+          await kv.delete(KV.memories, id);
+          deleted++;
+        }
+      }
+
+      await recordAudit(kv, "delete", "mem::governance-delete", data.memoryIds, {
+        reason: data.reason || "manual deletion",
+        deleted,
+      });
+
+      ctx.logger.info("Governance delete", {
+        requested: data.memoryIds.length,
+        deleted,
+      });
+      return { success: true, deleted, total: data.memoryIds.length };
+    },
+  );
+
+  sdk.registerFunction(
+    { id: "mem::governance-bulk" },
+    async (data: GovernanceFilter & { dryRun?: boolean }) => {
+      const ctx = getContext();
+      const memories = await kv.list<Memory>(KV.memories);
+      let candidates = memories;
+
+      if (data.type && data.type.length > 0) {
+        candidates = candidates.filter((m) => data.type!.includes(m.type));
+      }
+      if (data.dateFrom) {
+        const from = new Date(data.dateFrom).getTime();
+        candidates = candidates.filter(
+          (m) => new Date(m.createdAt).getTime() >= from,
+        );
+      }
+      if (data.dateTo) {
+        const to = new Date(data.dateTo).getTime();
+        candidates = candidates.filter(
+          (m) => new Date(m.createdAt).getTime() <= to,
+        );
+      }
+      if (data.qualityBelow !== undefined) {
+        candidates = candidates.filter(
+          (m) => m.strength < data.qualityBelow!,
+        );
+      }
+
+      if (data.dryRun) {
+        return {
+          success: true,
+          dryRun: true,
+          wouldDelete: candidates.length,
+          ids: candidates.map((m) => m.id),
+        };
+      }
+
+      for (const mem of candidates) {
+        await kv.delete(KV.memories, mem.id);
+      }
+
+      await recordAudit(
+        kv,
+        "delete",
+        "mem::governance-bulk",
+        candidates.map((m) => m.id),
+        { filter: data, deleted: candidates.length },
+      );
+
+      ctx.logger.info("Governance bulk delete", { deleted: candidates.length });
+      return { success: true, deleted: candidates.length };
+    },
+  );
+
+  sdk.registerFunction(
+    { id: "mem::audit-query" },
+    async (data?: {
+      operation?: AuditEntry["operation"];
+      dateFrom?: string;
+      dateTo?: string;
+      limit?: number;
+    }) => {
+      return queryAudit(kv, data);
+    },
+  );
+}

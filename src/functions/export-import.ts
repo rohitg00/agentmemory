@@ -7,6 +7,10 @@ import type {
   SessionSummary,
   ProjectProfile,
   ExportData,
+  GraphNode,
+  GraphEdge,
+  SemanticMemory,
+  ProceduralMemory,
 } from "../types.js";
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
@@ -40,14 +44,33 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
         if (profile) profiles.push(profile);
       }
 
+      const graphNodes = await kv
+        .list<GraphNode>(KV.graphNodes)
+        .catch(() => []);
+      const graphEdges = await kv
+        .list<GraphEdge>(KV.graphEdges)
+        .catch(() => []);
+      const semanticMemories = await kv
+        .list<SemanticMemory>(KV.semantic)
+        .catch(() => []);
+      const proceduralMemories = await kv
+        .list<ProceduralMemory>(KV.procedural)
+        .catch(() => []);
+
       const exportData: ExportData = {
-        version: "0.3.0",
+        version: "0.4.0",
         exportedAt: new Date().toISOString(),
         sessions,
         observations,
         memories,
         summaries,
         profiles: profiles.length > 0 ? profiles : undefined,
+        graphNodes: graphNodes.length > 0 ? graphNodes : undefined,
+        graphEdges: graphEdges.length > 0 ? graphEdges : undefined,
+        semanticMemories:
+          semanticMemories.length > 0 ? semanticMemories : undefined,
+        proceduralMemories:
+          proceduralMemories.length > 0 ? proceduralMemories : undefined,
       };
 
       const totalObs = Object.values(observations).reduce(
@@ -78,7 +101,7 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
       const strategy = data.strategy || "merge";
       const importData = data.exportData;
 
-      if (importData.version !== "0.3.0") {
+      if (importData.version !== "0.3.0" && importData.version !== "0.4.0") {
         return {
           success: false,
           error: `Unsupported export version: ${importData.version}`,
@@ -240,6 +263,27 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
         }
         await kv.set(KV.summaries, summary.sessionId, summary);
         stats.summaries++;
+      }
+
+      if (importData.graphNodes) {
+        for (const node of importData.graphNodes) {
+          await kv.set(KV.graphNodes, node.id, node);
+        }
+      }
+      if (importData.graphEdges) {
+        for (const edge of importData.graphEdges) {
+          await kv.set(KV.graphEdges, edge.id, edge);
+        }
+      }
+      if (importData.semanticMemories) {
+        for (const sem of importData.semanticMemories) {
+          await kv.set(KV.semantic, sem.id, sem);
+        }
+      }
+      if (importData.proceduralMemories) {
+        for (const proc of importData.proceduralMemories) {
+          await kv.set(KV.procedural, proc.id, proc);
+        }
       }
 
       ctx.logger.info("Import complete", { strategy, ...stats });

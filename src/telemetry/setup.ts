@@ -6,7 +6,7 @@ interface OtelConfig {
 
 export const OTEL_CONFIG: OtelConfig = {
   serviceName: "agentmemory",
-  serviceVersion: "0.3.0",
+  serviceVersion: "0.4.0",
   metricsExportIntervalMs: 30_000,
 };
 
@@ -30,6 +30,13 @@ interface Counters {
   vectorSearchTotal: Counter;
   autoForgetTotal: Counter;
   profileGenerated: Counter;
+  claudeBridgeSync: Counter;
+  graphExtraction: Counter;
+  consolidationRun: Counter;
+  teamShare: Counter;
+  auditLog: Counter;
+  snapshotCreate: Counter;
+  governanceDelete: Counter;
 }
 
 interface Histograms {
@@ -65,6 +72,13 @@ const COUNTER_NAMES: Array<[keyof Counters, string]> = [
   ["vectorSearchTotal", "vector_search.total"],
   ["autoForgetTotal", "auto_forget.total"],
   ["profileGenerated", "profile.generated"],
+  ["claudeBridgeSync", "claude_bridge.sync"],
+  ["graphExtraction", "graph.extraction"],
+  ["consolidationRun", "consolidation.run"],
+  ["teamShare", "team.share"],
+  ["auditLog", "audit.log"],
+  ["snapshotCreate", "snapshot.create"],
+  ["governanceDelete", "governance.delete"],
 ];
 
 const HISTOGRAM_NAMES: Array<[keyof Histograms, string]> = [

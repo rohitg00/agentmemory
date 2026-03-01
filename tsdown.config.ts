@@ -27,6 +27,15 @@ export default defineConfig([
     banner: { js: "#!/usr/bin/env node" },
   },
   {
+    entry: ["src/mcp/standalone.ts"],
+    outDir: "dist",
+    format: ["esm"],
+    clean: false,
+    sourcemap: false,
+    target: "node18",
+    banner: { js: "#!/usr/bin/env node" },
+  },
+  {
     entry: hookEntries,
     outDir: "dist/hooks",
     format: ["esm"],
