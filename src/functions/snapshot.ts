@@ -2,29 +2,16 @@ import type { ISdk } from "iii-sdk";
 import { getContext } from "iii-sdk";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import {
-  existsSync,
-  mkdirSync,
-  writeFileSync,
-  readFileSync,
-} from "node:fs";
+import { existsSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import type {
-  SnapshotMeta,
-  Session,
-  Memory,
-  GraphNode,
-} from "../types.js";
+import type { SnapshotMeta, Session, Memory, GraphNode } from "../types.js";
 import { KV, generateId } from "../state/schema.js";
 import type { StateKV } from "../state/kv.js";
 import { recordAudit } from "./audit.js";
 
 const execFileAsync = promisify(execFile);
 
-async function gitExec(
-  dir: string,
-  args: string[],
-): Promise<string> {
+async function gitExec(dir: string, args: string[]): Promise<string> {
   const { stdout } = await execFileAsync("git", args, { cwd: dir });
   return stdout.trim();
 }
@@ -59,7 +46,9 @@ export function registerSnapshotFunction(
 
         const observations: Record<string, unknown[]> = {};
         for (const session of sessions) {
-          const obs = await kv.list(KV.observations(session.id)).catch(() => []);
+          const obs = await kv
+            .list(KV.observations(session.id))
+            .catch(() => []);
           if (obs.length > 0) {
             observations[session.id] = obs;
           }
@@ -82,18 +71,19 @@ export function registerSnapshotFunction(
 
         await gitExec(snapshotDir, ["add", "."]);
 
-        const message =
-          data?.message || `Snapshot ${new Date().toISOString()}`;
+        const message = data?.message || `Snapshot ${new Date().toISOString()}`;
         try {
           await gitExec(snapshotDir, ["commit", "-m", message]);
-        } catch {
-          return { success: true, message: "No changes to snapshot" };
+        } catch (commitErr) {
+          const errMsg =
+            commitErr instanceof Error ? commitErr.message : String(commitErr);
+          if (errMsg.includes("nothing to commit")) {
+            return { success: true, message: "No changes to snapshot" };
+          }
+          throw commitErr;
         }
 
-        const commitHash = await gitExec(snapshotDir, [
-          "rev-parse",
-          "HEAD",
-        ]);
+        const commitHash = await gitExec(snapshotDir, ["rev-parse", "HEAD"]);
 
         const meta: SnapshotMeta = {
           id: generateId("snap"),
@@ -126,31 +116,30 @@ export function registerSnapshotFunction(
     },
   );
 
-  sdk.registerFunction(
-    { id: "mem::snapshot-list" },
-    async () => {
-      try {
-        if (!existsSync(join(snapshotDir, ".git"))) {
-          return { snapshots: [] };
-        }
-        const log = await gitExec(snapshotDir, [
-          "log",
-          "--format=%H|%aI|%s",
-          "-20",
-        ]);
-        const snapshots = log
-          .split("\n")
-          .filter(Boolean)
-          .map((line) => {
-            const [hash, date, msg] = line.split("|");
-            return { commitHash: hash, createdAt: date, message: msg };
-          });
-        return { snapshots };
-      } catch {
+  sdk.registerFunction({ id: "mem::snapshot-list" }, async () => {
+    try {
+      if (!existsSync(join(snapshotDir, ".git"))) {
         return { snapshots: [] };
       }
-    },
-  );
+      const log = await gitExec(snapshotDir, [
+        "log",
+        "--format=%H|%aI|%s",
+        "-20",
+      ]);
+      const snapshots = log
+        .split("\n")
+        .filter(Boolean)
+        .map((line) => {
+          const parts = line.split("|");
+          const [hash, date] = parts;
+          const msg = parts.slice(2).join("|");
+          return { commitHash: hash, createdAt: date, message: msg };
+        });
+      return { snapshots };
+    } catch {
+      return { snapshots: [] };
+    }
+  });
 
   sdk.registerFunction(
     { id: "mem::snapshot-restore" },
@@ -161,14 +150,21 @@ export function registerSnapshotFunction(
       }
 
       try {
-        await gitExec(snapshotDir, ["checkout", data.commitHash, "--", "state.json"]);
-        const content = readFileSync(
-          join(snapshotDir, "state.json"),
-          "utf-8",
-        );
+        await gitExec(snapshotDir, [
+          "checkout",
+          data.commitHash,
+          "--",
+          "state.json",
+        ]);
+        const content = readFileSync(join(snapshotDir, "state.json"), "utf-8");
         const state = JSON.parse(content) as {
           sessions?: Array<{ id: string } & Record<string, unknown>>;
           memories?: Array<{ id: string } & Record<string, unknown>>;
+          graphNodes?: Array<{ id: string } & Record<string, unknown>>;
+          observations?: Record<
+            string,
+            Array<{ id: string } & Record<string, unknown>>
+          >;
         };
 
         if (state.sessions) {
@@ -181,6 +177,18 @@ export function registerSnapshotFunction(
             await kv.set(KV.memories, memory.id, memory);
           }
         }
+        if (state.graphNodes) {
+          for (const node of state.graphNodes) {
+            await kv.set(KV.graphNodes, node.id, node);
+          }
+        }
+        if (state.observations) {
+          for (const [sessionId, obs] of Object.entries(state.observations)) {
+            for (const o of obs) {
+              await kv.set(KV.observations(sessionId), o.id, o);
+            }
+          }
+        }
 
         await gitExec(snapshotDir, ["checkout", "HEAD", "--", "state.json"]);
 
@@ -188,6 +196,7 @@ export function registerSnapshotFunction(
           commitHash: data.commitHash,
           sessions: state.sessions?.length || 0,
           memories: state.memories?.length || 0,
+          graphNodes: state.graphNodes?.length || 0,
         });
 
         ctx.logger.info("Snapshot restored", {

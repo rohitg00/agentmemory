@@ -26,6 +26,7 @@ function applyDecay(
   }>,
   decayDays: number,
 ): void {
+  if (decayDays <= 0 || !Number.isFinite(decayDays)) return;
   const now = Date.now();
   for (const item of items) {
     const lastAccess = item.lastAccessedAt || item.updatedAt;
@@ -87,7 +88,8 @@ export function registerConsolidationPipelineFunction(
             const now = new Date().toISOString();
 
             while ((match = factRegex.exec(response)) !== null) {
-              const confidence = parseFloat(match[1]) || 0.5;
+              const parsedConf = parseFloat(match[1]);
+              const confidence = Number.isNaN(parsedConf) ? 0.5 : parsedConf;
               const fact = match[2].trim();
 
               const existing = existingSemantic.find(
@@ -219,10 +221,7 @@ export function registerConsolidationPipelineFunction(
         }
 
         const procedural = await kv.list<ProceduralMemory>(KV.procedural);
-        applyDecay(
-          procedural.map((p) => ({ ...p, lastAccessedAt: undefined })),
-          decayDays,
-        );
+        applyDecay(procedural, decayDays);
         for (const p of procedural) {
           await kv.set(KV.procedural, p.id, p);
         }

@@ -16,17 +16,19 @@ Rules:
 - Weight relationships by how strong/direct the connection is
 - If no entities found, output empty tags`;
 
-export function buildGraphExtractionPrompt(observations: Array<{
-  title: string;
-  narrative: string;
-  concepts: string[];
-  files: string[];
-  type: string;
-}>): string {
+export function buildGraphExtractionPrompt(
+  observations: Array<{
+    title: string;
+    narrative: string;
+    concepts: string[];
+    files: string[];
+    type: string;
+  }>,
+): string {
   const items = observations
     .map(
       (o, i) =>
-        `[${i + 1}] Type: ${o.type}\nTitle: ${o.title}\nNarrative: ${o.narrative}\nConcepts: ${o.concepts.join(", ")}\nFiles: ${o.files.join(", ")}`,
+        `[${i + 1}] Type: ${o.type}\nTitle: ${o.title}\nNarrative: ${o.narrative}\nConcepts: ${(o.concepts ?? []).join(", ")}\nFiles: ${(o.files ?? []).join(", ")}`,
     )
     .join("\n\n");
   return `Extract entities and relationships from these observations:\n\n${items}`;

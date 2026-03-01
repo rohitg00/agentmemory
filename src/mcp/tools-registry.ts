@@ -16,8 +16,14 @@ export const CORE_TOOLS: McpToolDef[] = [
     inputSchema: {
       type: "object",
       properties: {
-        query: { type: "string", description: "Search query (keywords, file names, concepts)" },
-        limit: { type: "number", description: "Max results to return (default 10)" },
+        query: {
+          type: "string",
+          description: "Search query (keywords, file names, concepts)",
+        },
+        limit: {
+          type: "number",
+          description: "Max results to return (default 10)",
+        },
       },
       required: ["query"],
     },
@@ -29,10 +35,23 @@ export const CORE_TOOLS: McpToolDef[] = [
     inputSchema: {
       type: "object",
       properties: {
-        content: { type: "string", description: "The insight or decision to remember" },
-        type: { type: "string", description: "Memory type: pattern, preference, architecture, bug, workflow, or fact" },
-        concepts: { type: "string", description: "Comma-separated key concepts" },
-        files: { type: "string", description: "Comma-separated relevant file paths" },
+        content: {
+          type: "string",
+          description: "The insight or decision to remember",
+        },
+        type: {
+          type: "string",
+          description:
+            "Memory type: pattern, preference, architecture, bug, workflow, or fact",
+        },
+        concepts: {
+          type: "string",
+          description: "Comma-separated key concepts",
+        },
+        files: {
+          type: "string",
+          description: "Comma-separated relevant file paths",
+        },
       },
       required: ["content"],
     },
@@ -44,7 +63,10 @@ export const CORE_TOOLS: McpToolDef[] = [
       type: "object",
       properties: {
         files: { type: "string", description: "Comma-separated file paths" },
-        sessionId: { type: "string", description: "Current session ID to exclude" },
+        sessionId: {
+          type: "string",
+          description: "Current session ID to exclude",
+        },
       },
       required: ["files"],
     },
@@ -61,7 +83,8 @@ export const CORE_TOOLS: McpToolDef[] = [
   },
   {
     name: "memory_sessions",
-    description: "List recent sessions with their status and observation counts.",
+    description:
+      "List recent sessions with their status and observation counts.",
     inputSchema: { type: "object", properties: {} },
   },
   {
@@ -71,7 +94,10 @@ export const CORE_TOOLS: McpToolDef[] = [
       type: "object",
       properties: {
         query: { type: "string", description: "Search query" },
-        expandIds: { type: "string", description: "Comma-separated observation IDs to expand" },
+        expandIds: {
+          type: "string",
+          description: "Comma-separated observation IDs to expand",
+        },
         limit: { type: "number", description: "Max results (default 10)" },
       },
       required: ["query"],
@@ -83,10 +109,19 @@ export const CORE_TOOLS: McpToolDef[] = [
     inputSchema: {
       type: "object",
       properties: {
-        anchor: { type: "string", description: "Anchor point: ISO date or keyword" },
+        anchor: {
+          type: "string",
+          description: "Anchor point: ISO date or keyword",
+        },
         project: { type: "string", description: "Filter by project path" },
-        before: { type: "number", description: "Observations before anchor (default 5)" },
-        after: { type: "number", description: "Observations after anchor (default 5)" },
+        before: {
+          type: "number",
+          description: "Observations before anchor (default 5)",
+        },
+        after: {
+          type: "number",
+          description: "Observations after anchor (default 5)",
+        },
       },
       required: ["anchor"],
     },
@@ -98,7 +133,10 @@ export const CORE_TOOLS: McpToolDef[] = [
       type: "object",
       properties: {
         project: { type: "string", description: "Project path" },
-        refresh: { type: "string", description: "Set to 'true' to force rebuild" },
+        refresh: {
+          type: "string",
+          description: "Set to 'true' to force rebuild",
+        },
       },
       required: ["project"],
     },
@@ -114,9 +152,18 @@ export const CORE_TOOLS: McpToolDef[] = [
     inputSchema: {
       type: "object",
       properties: {
-        memoryId: { type: "string", description: "Memory ID to find relations for" },
-        maxHops: { type: "number", description: "Max traversal depth (default 2)" },
-        minConfidence: { type: "number", description: "Min confidence (0-1, default 0)" },
+        memoryId: {
+          type: "string",
+          description: "Memory ID to find relations for",
+        },
+        maxHops: {
+          type: "number",
+          description: "Max traversal depth (default 2)",
+        },
+        minConfidence: {
+          type: "number",
+          description: "Min confidence (0-1, default 0)",
+        },
       },
       required: ["memoryId"],
     },
@@ -126,12 +173,18 @@ export const CORE_TOOLS: McpToolDef[] = [
 export const V040_TOOLS: McpToolDef[] = [
   {
     name: "memory_claude_bridge_sync",
-    description: "Sync memory state to/from Claude Code's native MEMORY.md file.",
+    description:
+      "Sync memory state to/from Claude Code's native MEMORY.md file.",
     inputSchema: {
       type: "object",
       properties: {
-        direction: { type: "string", description: "'read' to import from MEMORY.md, 'write' to export to MEMORY.md" },
+        direction: {
+          type: "string",
+          description:
+            "'read' to import from MEMORY.md, 'write' to export to MEMORY.md",
+        },
       },
+      required: ["direction"],
     },
   },
   {
@@ -140,20 +193,30 @@ export const V040_TOOLS: McpToolDef[] = [
     inputSchema: {
       type: "object",
       properties: {
-        startNodeId: { type: "string", description: "Starting node ID for traversal" },
+        startNodeId: {
+          type: "string",
+          description: "Starting node ID for traversal",
+        },
         nodeType: { type: "string", description: "Filter by node type" },
-        maxDepth: { type: "number", description: "Max BFS depth (default 3, max 5)" },
+        maxDepth: {
+          type: "number",
+          description: "Max BFS depth (default 3, max 5)",
+        },
         query: { type: "string", description: "Search nodes by name" },
       },
     },
   },
   {
     name: "memory_consolidate",
-    description: "Run the 4-tier memory consolidation pipeline (working -> episodic -> semantic -> procedural).",
+    description:
+      "Run the 4-tier memory consolidation pipeline (working -> episodic -> semantic -> procedural).",
     inputSchema: {
       type: "object",
       properties: {
-        tier: { type: "string", description: "Target tier: episodic, semantic, or procedural" },
+        tier: {
+          type: "string",
+          description: "Target tier: episodic, semantic, or procedural",
+        },
       },
     },
   },
@@ -163,8 +226,14 @@ export const V040_TOOLS: McpToolDef[] = [
     inputSchema: {
       type: "object",
       properties: {
-        itemId: { type: "string", description: "ID of memory or observation to share" },
-        itemType: { type: "string", description: "Type: observation, memory, or pattern" },
+        itemId: {
+          type: "string",
+          description: "ID of memory or observation to share",
+        },
+        itemType: {
+          type: "string",
+          description: "Type: observation, memory, or pattern",
+        },
       },
       required: ["itemId", "itemType"],
     },
@@ -196,7 +265,10 @@ export const V040_TOOLS: McpToolDef[] = [
     inputSchema: {
       type: "object",
       properties: {
-        memoryIds: { type: "string", description: "Comma-separated memory IDs to delete" },
+        memoryIds: {
+          type: "string",
+          description: "Comma-separated memory IDs to delete",
+        },
         reason: { type: "string", description: "Reason for deletion" },
       },
       required: ["memoryIds"],

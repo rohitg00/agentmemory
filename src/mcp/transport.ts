@@ -23,20 +23,35 @@ export function createStdioTransport(handler: RequestHandler): {
   start: () => void;
   stop: () => void;
 } {
-  const rl = createInterface({ input: process.stdin });
+  let rl: ReturnType<typeof createInterface> | null = null;
 
   const onLine = async (line: string) => {
     const trimmed = line.trim();
     if (!trimmed) return;
 
-    let request: JsonRpcRequest;
+    let parsed: unknown;
     try {
-      request = JSON.parse(trimmed);
+      parsed = JSON.parse(trimmed);
     } catch {
       const error: JsonRpcResponse = {
         jsonrpc: "2.0",
-        id: 0,
+        id: null as unknown as number,
         error: { code: -32700, message: "Parse error" },
+      };
+      process.stdout.write(JSON.stringify(error) + "\n");
+      return;
+    }
+
+    const request = parsed as JsonRpcRequest;
+    if (
+      !request ||
+      request.jsonrpc !== "2.0" ||
+      typeof request.method !== "string"
+    ) {
+      const error: JsonRpcResponse = {
+        jsonrpc: "2.0",
+        id: request?.id ?? (null as unknown as number),
+        error: { code: -32600, message: "Invalid Request" },
       };
       process.stdout.write(JSON.stringify(error) + "\n");
       return;
@@ -65,10 +80,12 @@ export function createStdioTransport(handler: RequestHandler): {
 
   return {
     start() {
+      rl = createInterface({ input: process.stdin });
       rl.on("line", onLine);
     },
     stop() {
-      rl.close();
+      rl?.close();
+      rl = null;
     },
   };
 }

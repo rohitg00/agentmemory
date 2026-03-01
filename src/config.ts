@@ -137,7 +137,7 @@ export function loadClaudeBridgeConfig(): ClaudeBridgeConfig {
   const lineBudget = safeParseInt(env["CLAUDE_MEMORY_LINE_BUDGET"], 200);
   let memoryFilePath = "";
   if (enabled && projectPath) {
-    const safePath = projectPath.replace(/\//g, "-").replace(/^-/, "");
+    const safePath = projectPath.replace(/[/\\]/g, "-").replace(/^-/, "");
     memoryFilePath = join(
       homedir(),
       ".claude",

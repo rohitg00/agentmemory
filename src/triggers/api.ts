@@ -719,6 +719,15 @@ export function registerApiTriggers(
     async (req: ApiRequest<{ observations: unknown[] }>): Promise<Response> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
+      if (
+        !Array.isArray(req.body?.observations) ||
+        req.body.observations.length === 0
+      ) {
+        return {
+          status_code: 400,
+          body: { error: "observations array is required" },
+        };
+      }
       try {
         const result = await sdk.trigger("mem::graph-extract", req.body);
         return { status_code: 200, body: result };

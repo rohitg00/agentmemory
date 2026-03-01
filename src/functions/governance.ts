@@ -10,7 +10,11 @@ export function registerGovernanceFunction(sdk: ISdk, kv: StateKV): void {
     { id: "mem::governance-delete" },
     async (data: { memoryIds: string[]; reason?: string }) => {
       const ctx = getContext();
-      if (!data.memoryIds || !Array.isArray(data.memoryIds) || data.memoryIds.length === 0) {
+      if (
+        !data.memoryIds ||
+        !Array.isArray(data.memoryIds) ||
+        data.memoryIds.length === 0
+      ) {
         return { success: false, error: "memoryIds array is required" };
       }
 
@@ -23,10 +27,16 @@ export function registerGovernanceFunction(sdk: ISdk, kv: StateKV): void {
         }
       }
 
-      await recordAudit(kv, "delete", "mem::governance-delete", data.memoryIds, {
-        reason: data.reason || "manual deletion",
-        deleted,
-      });
+      await recordAudit(
+        kv,
+        "delete",
+        "mem::governance-delete",
+        data.memoryIds,
+        {
+          reason: data.reason || "manual deletion",
+          deleted,
+        },
+      );
 
       ctx.logger.info("Governance delete", {
         requested: data.memoryIds.length,
@@ -48,20 +58,24 @@ export function registerGovernanceFunction(sdk: ISdk, kv: StateKV): void {
       }
       if (data.dateFrom) {
         const from = new Date(data.dateFrom).getTime();
+        if (Number.isNaN(from)) {
+          return { success: false, error: "Invalid dateFrom format" };
+        }
         candidates = candidates.filter(
           (m) => new Date(m.createdAt).getTime() >= from,
         );
       }
       if (data.dateTo) {
         const to = new Date(data.dateTo).getTime();
+        if (Number.isNaN(to)) {
+          return { success: false, error: "Invalid dateTo format" };
+        }
         candidates = candidates.filter(
           (m) => new Date(m.createdAt).getTime() <= to,
         );
       }
       if (data.qualityBelow !== undefined) {
-        candidates = candidates.filter(
-          (m) => m.strength < data.qualityBelow!,
-        );
+        candidates = candidates.filter((m) => m.strength < data.qualityBelow!);
       }
 
       if (data.dryRun) {

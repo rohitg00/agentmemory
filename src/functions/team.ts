@@ -19,7 +19,7 @@ export function registerTeamFunction(
     { id: "mem::team-share" },
     async (data: {
       itemId: string;
-      itemType: "observation" | "memory" | "pattern";
+      itemType: "memory" | "pattern";
       project?: string;
     }) => {
       const ctx = getContext();
@@ -68,15 +68,15 @@ export function registerTeamFunction(
       const limit = data?.limit || 20;
       const items = await kv.list<TeamSharedItem>(KV.teamShared(config.teamId));
 
-      const sorted = items
-        .filter((i) => i.visibility === "shared")
+      const filtered = items.filter((i) => i.visibility === "shared");
+      const sorted = filtered
         .sort(
           (a, b) =>
             new Date(b.sharedAt).getTime() - new Date(a.sharedAt).getTime(),
         )
         .slice(0, limit);
 
-      return { items: sorted, total: items.length };
+      return { items: sorted, total: filtered.length };
     },
   );
 

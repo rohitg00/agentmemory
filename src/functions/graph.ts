@@ -57,7 +57,8 @@ function parseGraphXml(
     const type = match[1] as GraphEdge["type"];
     const sourceName = match[2];
     const targetName = match[3];
-    const weight = parseFloat(match[4]) || 0.5;
+    const parsedWeight = parseFloat(match[4]);
+    const weight = Number.isNaN(parsedWeight) ? 0.5 : parsedWeight;
 
     const sourceNode = nodes.find((n) => n.name === sourceName);
     const targetNode = nodes.find((n) => n.name === targetName);
@@ -110,12 +111,13 @@ export function registerGraphFunction(
         const obsIds = data.observations.map((o) => o.id);
         const { nodes, edges } = parseGraphXml(response, obsIds);
 
+        const existingNodes = await kv.list<GraphNode>(KV.graphNodes);
+        const existingEdges = await kv.list<GraphEdge>(KV.graphEdges);
+
         for (const node of nodes) {
-          const existing = await kv
-            .list<GraphNode>(KV.graphNodes)
-            .then((all) =>
-              all.find((n) => n.name === node.name && n.type === node.type),
-            );
+          const existing = existingNodes.find(
+            (n) => n.name === node.name && n.type === node.type,
+          );
           if (existing) {
             const merged = {
               ...existing,
@@ -125,13 +127,28 @@ export function registerGraphFunction(
               properties: { ...existing.properties, ...node.properties },
             };
             await kv.set(KV.graphNodes, existing.id, merged);
+            const idx = existingNodes.findIndex((n) => n.id === existing.id);
+            if (idx !== -1) existingNodes[idx] = merged;
           } else {
             await kv.set(KV.graphNodes, node.id, node);
+            existingNodes.push(node);
           }
         }
 
         for (const edge of edges) {
-          await kv.set(KV.graphEdges, edge.id, edge);
+          const edgeKey = `${edge.sourceNodeId}|${edge.targetNodeId}|${edge.type}`;
+          const existingEdge = existingEdges.find(
+            (e) => `${e.sourceNodeId}|${e.targetNodeId}|${e.type}` === edgeKey,
+          );
+          if (existingEdge) {
+            existingEdge.sourceObservationIds = [
+              ...new Set([...existingEdge.sourceObservationIds, ...obsIds]),
+            ];
+            await kv.set(KV.graphEdges, existingEdge.id, existingEdge);
+          } else {
+            await kv.set(KV.graphEdges, edge.id, edge);
+            existingEdges.push(edge);
+          }
         }
 
         await recordAudit(kv, "observe", "mem::graph-extract", obsIds, {
@@ -186,6 +203,7 @@ export function registerGraphFunction(
 
       if (data.startNodeId) {
         const visited = new Set<string>();
+        const visitedEdges = new Set<string>();
         const resultNodes: GraphNode[] = [];
         const resultEdges: GraphEdge[] = [];
         const queue: Array<{ nodeId: string; depth: number }> = [
@@ -208,7 +226,10 @@ export function registerGraphFunction(
             (e) => e.sourceNodeId === nodeId || e.targetNodeId === nodeId,
           );
           for (const edge of neighborEdges) {
-            resultEdges.push(edge);
+            if (!visitedEdges.has(edge.id)) {
+              visitedEdges.add(edge.id);
+              resultEdges.push(edge);
+            }
             const nextId =
               edge.sourceNodeId === nodeId
                 ? edge.targetNodeId

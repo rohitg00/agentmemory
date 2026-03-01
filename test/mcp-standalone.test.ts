@@ -13,7 +13,11 @@ vi.mock("node:fs", () => ({
   mkdirSync: vi.fn(),
 }));
 
-import { getAllTools, CORE_TOOLS, V040_TOOLS } from "../src/mcp/tools-registry.js";
+import {
+  getAllTools,
+  CORE_TOOLS,
+  V040_TOOLS,
+} from "../src/mcp/tools-registry.js";
 import { InMemoryKV } from "../src/mcp/in-memory-kv.js";
 import { writeFileSync } from "node:fs";
 
@@ -71,9 +75,9 @@ describe("InMemoryKV", () => {
     expect(result).toEqual([]);
   });
 
-  it("persist writes JSON", () => {
+  it("persist writes JSON", async () => {
     const kvWithPersist = new InMemoryKV("/tmp/test-kv.json");
-    kvWithPersist.set("scope1", "key1", { data: "test" });
+    await kvWithPersist.set("scope1", "key1", { data: "test" });
     kvWithPersist.persist();
 
     expect(writeFileSync).toHaveBeenCalledWith(

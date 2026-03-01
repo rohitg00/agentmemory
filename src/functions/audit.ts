@@ -35,7 +35,7 @@ export async function queryAudit(
   },
 ): Promise<AuditEntry[]> {
   const all = await kv.list<AuditEntry>(KV.audit);
-  let entries = all.sort(
+  let entries = [...all].sort(
     (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
   );
 
@@ -44,10 +44,16 @@ export async function queryAudit(
   }
   if (filter?.dateFrom) {
     const from = new Date(filter.dateFrom).getTime();
+    if (Number.isNaN(from)) {
+      throw new Error(`Invalid dateFrom: ${filter.dateFrom}`);
+    }
     entries = entries.filter((e) => new Date(e.timestamp).getTime() >= from);
   }
   if (filter?.dateTo) {
     const to = new Date(filter.dateTo).getTime();
+    if (Number.isNaN(to)) {
+      throw new Error(`Invalid dateTo: ${filter.dateTo}`);
+    }
     entries = entries.filter((e) => new Date(e.timestamp).getTime() <= to);
   }
 

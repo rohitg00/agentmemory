@@ -438,18 +438,28 @@ export function registerMcpEndpoints(
           }
 
           case "memory_audit": {
-            const result = await sdk.trigger("mem::audit-query", {
-              operation: args.operation as string,
-              limit: (args.limit as number) || 50,
-            });
-            return {
-              status_code: 200,
-              body: {
-                content: [
-                  { type: "text", text: JSON.stringify(result, null, 2) },
-                ],
-              },
-            };
+            try {
+              const result = await sdk.trigger("mem::audit-query", {
+                operation: args.operation as string,
+                limit: (args.limit as number) || 50,
+              });
+              return {
+                status_code: 200,
+                body: {
+                  content: [
+                    { type: "text", text: JSON.stringify(result, null, 2) },
+                  ],
+                },
+              };
+            } catch {
+              return {
+                status_code: 200,
+                body: {
+                  content: [{ type: "text", text: "Audit query failed" }],
+                  isError: true,
+                },
+              };
+            }
           }
 
           case "memory_governance_delete": {
@@ -463,18 +473,28 @@ export function registerMcpEndpoints(
               .split(",")
               .map((id) => id.trim())
               .filter(Boolean);
-            const result = await sdk.trigger("mem::governance-delete", {
-              memoryIds: ids,
-              reason: args.reason as string,
-            });
-            return {
-              status_code: 200,
-              body: {
-                content: [
-                  { type: "text", text: JSON.stringify(result, null, 2) },
-                ],
-              },
-            };
+            try {
+              const result = await sdk.trigger("mem::governance-delete", {
+                memoryIds: ids,
+                reason: args.reason as string,
+              });
+              return {
+                status_code: 200,
+                body: {
+                  content: [
+                    { type: "text", text: JSON.stringify(result, null, 2) },
+                  ],
+                },
+              };
+            } catch {
+              return {
+                status_code: 200,
+                body: {
+                  content: [{ type: "text", text: "Governance delete failed" }],
+                  isError: true,
+                },
+              };
+            }
           }
 
           case "memory_snapshot_create": {
@@ -788,7 +808,10 @@ export function registerMcpEndpoints(
                   {
                     uri,
                     mimeType: "application/json",
-                    text: JSON.stringify({ teamId: "unknown", sharedItems: 0 }),
+                    text: JSON.stringify({
+                      teamId: teamProfileMatch[1],
+                      sharedItems: 0,
+                    }),
                   },
                 ],
               },

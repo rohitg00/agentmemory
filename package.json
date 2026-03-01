@@ -7,7 +7,7 @@
   "types": "dist/index.d.ts",
   "bin": {
     "agentmemory": "dist/index.js",
-    "agentmemory-mcp": "dist/mcp-standalone.mjs"
+    "agentmemory-mcp": "dist/standalone.mjs"
   },
   "scripts": {
     "build": "tsdown",

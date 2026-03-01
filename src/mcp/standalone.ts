@@ -21,7 +21,7 @@ async function handleToolCall(
     case "memory_save": {
       const content = args.content as string;
       if (!content?.trim()) throw new Error("content is required");
-      const id = `mem_${Date.now().toString(36)}`;
+      const id = `mem_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
       await kv.set("mem:memories", id, {
         id,
         type: (args.type as string) || "fact",
