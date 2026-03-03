@@ -13,7 +13,7 @@ modules:
       host: 127.0.0.1
       default_timeout: 180000
       cors:
-        allowed_origins: ["*"]
+        allowed_origins: ["http://localhost:3111", "http://localhost:3113", "http://127.0.0.1:3111", "http://127.0.0.1:3113"]
         allowed_methods: [GET, POST, PUT, DELETE, OPTIONS]
 
   - class: modules::queue::QueueModule

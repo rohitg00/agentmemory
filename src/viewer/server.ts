@@ -244,6 +244,15 @@ async function buildGraphFromData(kv: StateKV): Promise<{
     }
   }
 
+  const oldNodes = await kv.list<GraphNode>(KV.graphNodes).catch(() => []);
+  for (const old of oldNodes) {
+    await kv.delete(KV.graphNodes, old.id);
+  }
+  const oldEdges = await kv.list<GraphEdge>(KV.graphEdges).catch(() => []);
+  for (const old of oldEdges) {
+    await kv.delete(KV.graphEdges, old.id);
+  }
+
   const nodes = [...nodeMap.values()];
   for (const n of nodes) {
     await kv.set(KV.graphNodes, n.id, n);
@@ -367,7 +376,12 @@ export function startViewerServer(
       return;
     }
 
-    if (method === "GET" && (pathname === "/" || pathname === "/viewer")) {
+    if (
+      method === "GET" &&
+      (pathname === "/" ||
+        pathname === "/viewer" ||
+        pathname === "/agentmemory/viewer")
+    ) {
       const base = dirname(fileURLToPath(import.meta.url));
       const candidates = [
         join(base, "..", "src", "viewer", "index.html"),
@@ -691,13 +705,14 @@ async function handleApiRoute(
     }
 
     if (path === "session/end") {
+      if (typeof body.sessionId !== "string" || !body.sessionId) {
+        json(res, 400, { success: false, error: "invalid sessionId" });
+        return;
+      }
       try {
-        const session = await kv.get<Session>(
-          KV.sessions,
-          body.sessionId as string,
-        );
+        const session = await kv.get<Session>(KV.sessions, body.sessionId);
         if (session) {
-          await kv.set(KV.sessions, body.sessionId as string, {
+          await kv.set(KV.sessions, body.sessionId, {
             ...session,
             endedAt: new Date().toISOString(),
             status: "completed",

@@ -1007,7 +1007,7 @@ export function registerApiTriggers(
       } catch {}
     }
     return {
-      status_code: 200,
+      status_code: 404,
       headers,
       body: "<!DOCTYPE html><html><body><h1>agentmemory</h1><p>viewer not found</p></body></html>",
     };

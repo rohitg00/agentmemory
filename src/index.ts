@@ -226,13 +226,21 @@ async function main() {
   );
 
   const viewerPort = config.restPort + 2;
-  startViewerServer(viewerPort, kv, sdk, secret, metricsStore, provider);
+  const viewerServer = startViewerServer(
+    viewerPort,
+    kv,
+    sdk,
+    secret,
+    metricsStore,
+    provider,
+  );
 
   const shutdown = async () => {
     console.log(`\n[agentmemory] Shutting down...`);
     healthMonitor.stop();
     dedupMap.stop();
     indexPersistence.stop();
+    await new Promise<void>((resolve) => viewerServer.close(() => resolve()));
     await indexPersistence.save().catch((err) => {
       console.warn(`[agentmemory] Failed to save index on shutdown:`, err);
     });
