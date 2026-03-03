@@ -26,15 +26,37 @@ import { getLatestHealth } from "../health/monitor.js";
 import type { MetricsStore } from "../eval/metrics-store.js";
 import type { ResilientProvider } from "../providers/resilient.js";
 
-const CORS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization",
-};
+const ALLOWED_ORIGINS = (
+  process.env.VIEWER_ALLOWED_ORIGINS ||
+  "http://localhost:3111,http://localhost:3113,http://127.0.0.1:3111,http://127.0.0.1:3113"
+)
+  .split(",")
+  .map((o) => o.trim());
 
-function json(res: ServerResponse, status: number, data: unknown): void {
+function corsHeaders(req: IncomingMessage): Record<string, string> {
+  const origin = req.headers.origin || "";
+  const allowed = ALLOWED_ORIGINS.includes(origin)
+    ? origin
+    : ALLOWED_ORIGINS[0];
+  return {
+    "Access-Control-Allow-Origin": allowed,
+    "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    Vary: "Origin",
+  };
+}
+
+function json(
+  res: ServerResponse,
+  status: number,
+  data: unknown,
+  req?: IncomingMessage,
+): void {
   const body = JSON.stringify(data);
-  res.writeHead(status, { ...CORS, "Content-Type": "application/json" });
+  const cors = req
+    ? corsHeaders(req)
+    : { "Access-Control-Allow-Origin": ALLOWED_ORIGINS[0], Vary: "Origin" };
+  res.writeHead(status, { ...cors, "Content-Type": "application/json" });
   res.end(body);
 }
 
@@ -186,8 +208,12 @@ async function buildGraphFromData(kv: StateKV): Promise<{
           : "decision",
       [],
     );
-    memNode.properties.memoryId = mem.id;
-    memNode.properties.memoryType = mem.type;
+    const ids = (memNode.properties.memoryIds as string[]) || [];
+    ids.push(mem.id);
+    memNode.properties.memoryIds = ids;
+    const types = (memNode.properties.memoryTypes as string[]) || [];
+    if (!types.includes(mem.type)) types.push(mem.type);
+    memNode.properties.memoryTypes = types;
 
     if (mem.concepts) {
       for (const c of mem.concepts) {
@@ -371,7 +397,10 @@ export function startViewerServer(
     const method = req.method || "GET";
 
     if (method === "OPTIONS") {
-      res.writeHead(204, { ...CORS, "Access-Control-Max-Age": "86400" });
+      res.writeHead(204, {
+        ...corsHeaders(req),
+        "Access-Control-Max-Age": "86400",
+      });
       res.end();
       return;
     }
@@ -405,7 +434,7 @@ export function startViewerServer(
     }
 
     if (!checkAuth(req, secret)) {
-      json(res, 401, { error: "unauthorized" });
+      json(res, 401, { error: "unauthorized" }, req);
       return;
     }
 
@@ -423,7 +452,7 @@ export function startViewerServer(
       );
     } catch (err) {
       console.error(`[viewer] API error on ${method} ${pathname}:`, err);
-      json(res, 500, { error: "internal error" });
+      json(res, 500, { error: "internal error" }, req);
     }
   });
 
@@ -448,7 +477,7 @@ async function handleApiRoute(
   const path = pathname.replace(/^\/agentmemory\//, "");
 
   if (method === "GET" && path === "livez") {
-    json(res, 200, { status: "ok", service: "agentmemory" });
+    json(res, 200, { status: "ok", service: "agentmemory" }, req);
     return;
   }
 
@@ -459,23 +488,33 @@ async function handleApiRoute(
       const circuitBreaker =
         provider && "circuitState" in provider ? provider.circuitState : null;
       const status = health?.status || "healthy";
-      json(res, status === "critical" ? 503 : 200, {
-        status,
-        service: "agentmemory",
-        version: "0.4.0",
-        health: health || null,
-        functionMetrics,
-        circuitBreaker,
-      });
+      json(
+        res,
+        status === "critical" ? 503 : 200,
+        {
+          status,
+          service: "agentmemory",
+          version: "0.4.0",
+          health: health || null,
+          functionMetrics,
+          circuitBreaker,
+        },
+        req,
+      );
     } catch {
-      json(res, 200, {
-        status: "healthy",
-        service: "agentmemory",
-        version: "0.4.0",
-        health: null,
-        functionMetrics: [],
-        circuitBreaker: null,
-      });
+      json(
+        res,
+        200,
+        {
+          status: "healthy",
+          service: "agentmemory",
+          version: "0.4.0",
+          health: null,
+          functionMetrics: [],
+          circuitBreaker: null,
+        },
+        req,
+      );
     }
     return;
   }
@@ -483,9 +522,9 @@ async function handleApiRoute(
   if (method === "GET" && path === "sessions") {
     try {
       const sessions = await kv.list<Session>(KV.sessions);
-      json(res, 200, { sessions });
+      json(res, 200, { sessions }, req);
     } catch {
-      json(res, 200, { sessions: [] });
+      json(res, 200, { sessions: [] }, req);
     }
     return;
   }
@@ -494,11 +533,14 @@ async function handleApiRoute(
     try {
       const memories = await kv.list<Memory>(KV.memories);
       const latest = params.get("latest") === "true";
-      json(res, 200, {
-        memories: latest ? memories.filter((m) => m.isLatest) : memories,
-      });
+      json(
+        res,
+        200,
+        { memories: latest ? memories.filter((m) => m.isLatest) : memories },
+        req,
+      );
     } catch {
-      json(res, 200, { memories: [] });
+      json(res, 200, { memories: [] }, req);
     }
     return;
   }
@@ -506,16 +548,16 @@ async function handleApiRoute(
   if (method === "GET" && path === "observations") {
     const sessionId = params.get("sessionId");
     if (!sessionId) {
-      json(res, 400, { error: "sessionId required" });
+      json(res, 400, { error: "sessionId required" }, req);
       return;
     }
     try {
       const observations = await kv.list<CompressedObservation>(
         KV.observations(sessionId),
       );
-      json(res, 200, { observations });
+      json(res, 200, { observations }, req);
     } catch {
-      json(res, 200, { observations: [] });
+      json(res, 200, { observations: [] }, req);
     }
     return;
   }
@@ -523,16 +565,21 @@ async function handleApiRoute(
   if (method === "GET" && path === "graph/stats") {
     try {
       const result = await sdk.trigger("mem::graph-stats", {});
-      json(res, 200, result);
+      json(res, 200, result, req);
     } catch {
       try {
         const nodes = await kv.list<GraphNode>(KV.graphNodes);
         const edges = await kv.list<GraphEdge>(KV.graphEdges);
         const types: Record<string, number> = {};
         for (const n of nodes) types[n.type] = (types[n.type] || 0) + 1;
-        json(res, 200, { nodes: nodes.length, edges: edges.length, types });
+        json(
+          res,
+          200,
+          { nodes: nodes.length, edges: edges.length, types },
+          req,
+        );
       } catch {
-        json(res, 200, { nodes: 0, edges: 0, types: {} });
+        json(res, 200, { nodes: 0, edges: 0, types: {} }, req);
       }
     }
     return;
@@ -547,9 +594,9 @@ async function handleApiRoute(
       const entries = Array.isArray(result)
         ? result
         : (result as Record<string, unknown>).entries || [];
-      json(res, 200, { entries });
+      json(res, 200, { entries }, req);
     } catch {
-      json(res, 200, { entries: [] });
+      json(res, 200, { entries: [] }, req);
     }
     return;
   }
@@ -557,7 +604,7 @@ async function handleApiRoute(
   if (method === "GET" && path === "profile") {
     const project = params.get("project");
     if (!project) {
-      json(res, 400, { error: "project required" });
+      json(res, 400, { error: "project required" }, req);
       return;
     }
     try {
@@ -570,17 +617,17 @@ async function handleApiRoute(
         ((Array.isArray(prof.topConcepts) && prof.topConcepts.length > 0) ||
           (Array.isArray(prof.topFiles) && prof.topFiles.length > 0));
       if (hasData) {
-        json(res, 200, result);
+        json(res, 200, result, req);
         return;
       }
       const enriched = await buildProfileFromRawObs(kv, project);
-      json(res, 200, { profile: { ...prof, ...enriched }, cached: false });
+      json(res, 200, { profile: { ...prof, ...enriched }, cached: false }, req);
     } catch {
       try {
         const enriched = await buildProfileFromRawObs(kv, project);
-        json(res, 200, { profile: enriched, cached: false });
+        json(res, 200, { profile: enriched, cached: false }, req);
       } catch {
-        json(res, 200, {});
+        json(res, 200, {}, req);
       }
     }
     return;
@@ -589,9 +636,9 @@ async function handleApiRoute(
   if (method === "GET" && path === "summaries") {
     try {
       const summaries = await kv.list<SessionSummary>(KV.summaries);
-      json(res, 200, { summaries });
+      json(res, 200, { summaries }, req);
     } catch {
-      json(res, 200, { summaries: [] });
+      json(res, 200, { summaries: [] }, req);
     }
     return;
   }
@@ -599,9 +646,9 @@ async function handleApiRoute(
   if (method === "GET" && path === "relations") {
     try {
       const relations = await kv.list<MemoryRelation>(KV.relations);
-      json(res, 200, { relations });
+      json(res, 200, { relations }, req);
     } catch {
-      json(res, 200, { relations: [] });
+      json(res, 200, { relations: [] }, req);
     }
     return;
   }
@@ -609,9 +656,9 @@ async function handleApiRoute(
   if (method === "GET" && path === "semantic") {
     try {
       const memories = await kv.list<SemanticMemory>(KV.semantic);
-      json(res, 200, { memories });
+      json(res, 200, { memories }, req);
     } catch {
-      json(res, 200, { memories: [] });
+      json(res, 200, { memories: [] }, req);
     }
     return;
   }
@@ -619,9 +666,9 @@ async function handleApiRoute(
   if (method === "GET" && path === "procedural") {
     try {
       const memories = await kv.list<ProceduralMemory>(KV.procedural);
-      json(res, 200, { memories });
+      json(res, 200, { memories }, req);
     } catch {
-      json(res, 200, { memories: [] });
+      json(res, 200, { memories: [] }, req);
     }
     return;
   }
@@ -629,9 +676,9 @@ async function handleApiRoute(
   if (method === "GET" && path === "function-metrics") {
     try {
       const metrics = metricsStore ? await metricsStore.getAll() : [];
-      json(res, 200, { metrics });
+      json(res, 200, { metrics }, req);
     } catch {
-      json(res, 200, { metrics: [] });
+      json(res, 200, { metrics: [] }, req);
     }
     return;
   }
@@ -642,16 +689,16 @@ async function handleApiRoute(
       const raw = await readBody(req);
       if (raw.trim()) body = JSON.parse(raw);
     } catch {
-      json(res, 400, { error: "invalid JSON" });
+      json(res, 400, { error: "invalid JSON" }, req);
       return;
     }
 
     if (path === "search") {
       try {
         const result = await sdk.trigger("mem::search", body);
-        json(res, 200, result);
+        json(res, 200, result, req);
       } catch {
-        json(res, 200, { results: [] });
+        json(res, 200, { results: [] }, req);
       }
       return;
     }
@@ -659,7 +706,7 @@ async function handleApiRoute(
     if (path === "graph/query") {
       try {
         const result = await sdk.trigger("mem::graph-query", body);
-        json(res, 200, result);
+        json(res, 200, result, req);
       } catch {
         try {
           const allNodes = await kv.list<GraphNode>(KV.graphNodes);
@@ -671,24 +718,25 @@ async function handleApiRoute(
               if (e.sourceNodeId === startId) connected.add(e.targetNodeId);
               if (e.targetNodeId === startId) connected.add(e.sourceNodeId);
             }
-            json(res, 200, {
-              nodes: allNodes.filter((n) => connected.has(n.id)),
-              edges: allEdges.filter(
-                (e) =>
-                  connected.has(e.sourceNodeId) &&
-                  connected.has(e.targetNodeId),
-              ),
-              depth: 1,
-            });
+            json(
+              res,
+              200,
+              {
+                nodes: allNodes.filter((n) => connected.has(n.id)),
+                edges: allEdges.filter(
+                  (e) =>
+                    connected.has(e.sourceNodeId) &&
+                    connected.has(e.targetNodeId),
+                ),
+                depth: 1,
+              },
+              req,
+            );
           } else {
-            json(res, 200, {
-              nodes: allNodes,
-              edges: allEdges,
-              depth: 0,
-            });
+            json(res, 200, { nodes: allNodes, edges: allEdges, depth: 0 }, req);
           }
         } catch {
-          json(res, 200, { nodes: [], edges: [], depth: 0 });
+          json(res, 200, { nodes: [], edges: [], depth: 0 }, req);
         }
       }
       return;
@@ -697,16 +745,16 @@ async function handleApiRoute(
     if (path === "graph/build") {
       try {
         const result = await buildGraphFromData(kv);
-        json(res, 200, result);
+        json(res, 200, result, req);
       } catch {
-        json(res, 200, { success: false, nodes: 0, edges: 0 });
+        json(res, 200, { success: false, nodes: 0, edges: 0 }, req);
       }
       return;
     }
 
     if (path === "session/end") {
       if (typeof body.sessionId !== "string" || !body.sessionId) {
-        json(res, 400, { success: false, error: "invalid sessionId" });
+        json(res, 400, { success: false, error: "invalid sessionId" }, req);
         return;
       }
       try {
@@ -718,9 +766,9 @@ async function handleApiRoute(
             status: "completed",
           });
         }
-        json(res, 200, { success: true });
+        json(res, 200, { success: true }, req);
       } catch {
-        json(res, 200, { success: false });
+        json(res, 200, { success: false }, req);
       }
       return;
     }
@@ -728,9 +776,9 @@ async function handleApiRoute(
     if (path === "summarize") {
       try {
         const result = await sdk.trigger("mem::summarize", body);
-        json(res, 200, result);
+        json(res, 200, result, req);
       } catch {
-        json(res, 200, { error: "summarize unavailable" });
+        json(res, 200, { error: "summarize unavailable" }, req);
       }
       return;
     }
@@ -742,17 +790,17 @@ async function handleApiRoute(
       const raw = await readBody(req);
       if (raw.trim()) body = JSON.parse(raw);
     } catch {
-      json(res, 400, { error: "invalid JSON" });
+      json(res, 400, { error: "invalid JSON" }, req);
       return;
     }
     try {
       const result = await sdk.trigger("mem::governance-delete", body);
-      json(res, 200, result);
+      json(res, 200, result, req);
     } catch {
-      json(res, 200, { success: false });
+      json(res, 200, { success: false }, req);
     }
     return;
   }
 
-  json(res, 404, { error: "not found" });
+  json(res, 404, { error: "not found" }, req);
 }
