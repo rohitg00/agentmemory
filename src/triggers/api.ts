@@ -972,30 +972,45 @@ export function registerApiTriggers(
     config: { api_path: "/agentmemory/snapshot/restore", http_method: "POST" },
   });
 
+  sdk.registerFunction(
+    { id: "api::memories" },
+    async (req: ApiRequest): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const memories = await kv.list<import("../types.js").Memory>(KV.memories);
+      const latest = req.query_params?.["latest"] === "true";
+      const filtered = latest ? memories.filter((m) => m.isLatest) : memories;
+      return { status_code: 200, body: { memories: filtered } };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::memories",
+    config: { api_path: "/agentmemory/memories", http_method: "GET" },
+  });
+
   sdk.registerFunction({ id: "api::viewer" }, async (): Promise<Response> => {
     const headers = {
       "Content-Type": "text/html",
       "Content-Security-Policy": VIEWER_CSP,
     };
-    try {
-      const viewerPath = join(
-        dirname(fileURLToPath(import.meta.url)),
-        "..",
-        "viewer",
-        "index.html",
-      );
-      return {
-        status_code: 200,
-        headers,
-        body: readFileSync(viewerPath, "utf-8"),
-      };
-    } catch {
-      return {
-        status_code: 200,
-        headers,
-        body: "<!DOCTYPE html><html><body><h1>agentmemory</h1></body></html>",
-      };
+    const base = dirname(fileURLToPath(import.meta.url));
+    const candidates = [
+      join(base, "..", "viewer", "index.html"),
+      join(base, "..", "src", "viewer", "index.html"),
+      join(base, "viewer", "index.html"),
+    ];
+    for (const p of candidates) {
+      try {
+        const html = readFileSync(p, "utf-8");
+        return { status_code: 200, headers, body: html };
+      } catch {}
     }
+    return {
+      status_code: 200,
+      headers,
+      body: "<!DOCTYPE html><html><body><h1>agentmemory</h1><p>viewer not found</p></body></html>",
+    };
   });
   sdk.registerTrigger({
     type: "http",

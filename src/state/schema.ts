@@ -25,6 +25,7 @@ export const KV = {
 export const STREAM = {
   name: "mem-live",
   group: (sessionId: string) => sessionId,
+  viewerGroup: "viewer",
 } as const;
 
 export function generateId(prefix: string): string {

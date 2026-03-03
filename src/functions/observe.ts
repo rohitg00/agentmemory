@@ -87,11 +87,18 @@ export function registerObserveFunction(
 
       await kv.set(KV.observations(payload.sessionId), obsId, raw);
 
-      await sdk.trigger("stream::set", {
+      sdk.triggerVoid("stream::set", {
         stream_name: STREAM.name,
         group_id: STREAM.group(payload.sessionId),
         item_id: obsId,
         data: { type: "raw", observation: raw },
+      });
+
+      sdk.triggerVoid("stream::set", {
+        stream_name: STREAM.name,
+        group_id: STREAM.viewerGroup,
+        item_id: obsId,
+        data: { type: "raw", observation: raw, sessionId: payload.sessionId },
       });
 
       const session = await kv.get<Session>(KV.sessions, payload.sessionId);

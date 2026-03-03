@@ -1,0 +1,51 @@
+modules:
+  - class: modules::state::StateModule
+    config:
+      adapter:
+        class: modules::state::adapters::KvStore
+        config:
+          store_method: file_based
+          file_path: ./data/state_store.db
+
+  - class: modules::api::RestApiModule
+    config:
+      port: 3111
+      host: 127.0.0.1
+      default_timeout: 180000
+      cors:
+        allowed_origins: ["*"]
+        allowed_methods: [GET, POST, PUT, DELETE, OPTIONS]
+
+  - class: modules::queue::QueueModule
+    config:
+      adapter:
+        class: modules::queue::BuiltinQueueAdapter
+
+  - class: modules::pubsub::PubSubModule
+    config:
+      adapter:
+        class: modules::pubsub::LocalAdapter
+
+  - class: modules::cron::CronModule
+    config:
+      adapter:
+        class: modules::cron::KvCronAdapter
+
+  - class: modules::stream::StreamModule
+    config:
+      port: 3112
+      host: 127.0.0.1
+
+  - class: modules::observability::OtelModule
+    config:
+      enabled: true
+      service_name: agentmemory
+      exporter: memory
+      logs_enabled: true
+
+  - class: modules::shell::ExecModule
+    config:
+      watch:
+        - src/**/*.ts
+      exec:
+        - node dist/index.mjs

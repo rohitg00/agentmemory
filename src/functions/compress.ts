@@ -139,11 +139,22 @@ export function registerCompressFunction(
 
         getSearchIndex().add(compressed);
 
-        await sdk.trigger("stream::set", {
+        sdk.triggerVoid("stream::set", {
           stream_name: STREAM.name,
           group_id: STREAM.group(data.sessionId),
           item_id: data.observationId,
           data: { type: "compressed", observation: compressed },
+        });
+
+        sdk.triggerVoid("stream::set", {
+          stream_name: STREAM.name,
+          group_id: STREAM.viewerGroup,
+          item_id: data.observationId,
+          data: {
+            type: "compressed",
+            observation: compressed,
+            sessionId: data.sessionId,
+          },
         });
 
         const latencyMs = Date.now() - startMs;
