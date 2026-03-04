@@ -128,10 +128,10 @@ export function registerRelationsFunction(sdk: ISdk, kv: StateKV): void {
         isLatest: true,
       };
 
-      await kv.set(KV.memories, evolved.id, evolved);
-
       existing.isLatest = false;
       await kv.set(KV.memories, existing.id, existing);
+
+      await kv.set(KV.memories, evolved.id, evolved);
 
       const relation: MemoryRelation = {
         type: "supersedes",

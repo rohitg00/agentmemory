@@ -25,6 +25,7 @@ import type { StateKV } from "../state/kv.js";
 import { getLatestHealth } from "../health/monitor.js";
 import type { MetricsStore } from "../eval/metrics-store.js";
 import type { ResilientProvider } from "../providers/resilient.js";
+import { timingSafeCompare, VIEWER_CSP } from "../auth.js";
 
 const ALLOWED_ORIGINS = (
   process.env.VIEWER_ALLOWED_ORIGINS ||
@@ -81,7 +82,9 @@ function readBody(req: IncomingMessage): Promise<string> {
 function checkAuth(req: IncomingMessage, secret: string | undefined): boolean {
   if (!secret) return true;
   const auth = req.headers["authorization"] || "";
-  return auth === `Bearer ${secret}`;
+  return (
+    typeof auth === "string" && timingSafeCompare(auth, `Bearer ${secret}`)
+  );
 }
 
 function gid(prefix: string): string {
@@ -422,6 +425,7 @@ export function startViewerServer(
           const html = readFileSync(p, "utf-8");
           res.writeHead(200, {
             "Content-Type": "text/html; charset=utf-8",
+            "Content-Security-Policy": VIEWER_CSP,
             "Cache-Control": "no-cache",
           });
           res.end(html);
@@ -684,6 +688,11 @@ async function handleApiRoute(
   }
 
   if (method === "POST") {
+    const ct = req.headers["content-type"] || "";
+    if (ct && !ct.includes("application/json")) {
+      json(res, 415, { error: "Content-Type must be application/json" }, req);
+      return;
+    }
     let body: Record<string, unknown> = {};
     try {
       const raw = await readBody(req);
@@ -785,6 +794,11 @@ async function handleApiRoute(
   }
 
   if (method === "DELETE" && path === "governance/memories") {
+    const ct = req.headers["content-type"] || "";
+    if (ct && !ct.includes("application/json")) {
+      json(res, 415, { error: "Content-Type must be application/json" }, req);
+      return;
+    }
     let body: Record<string, unknown> = {};
     try {
       const raw = await readBody(req);
