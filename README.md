@@ -8,6 +8,10 @@
 </p>
 
 <p align="center">
+  <video src="https://github.com/rohitg00/agentmemory/raw/main/assets/demo.mp4" width="720" controls></video>
+</p>
+
+<p align="center">
   <a href="#why-agentmemory">Why</a> &bull;
   <a href="#supported-agents">Agents</a> &bull;
   <a href="#quick-start">Quick Start</a> &bull;
