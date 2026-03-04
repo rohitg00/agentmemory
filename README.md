@@ -8,7 +8,11 @@
 </p>
 
 <p align="center">
-  <video src="https://github.com/rohitg00/agentmemory/raw/main/assets/demo.mp4" width="720" controls></video>
+  <a href="https://github.com/rohitg00/agentmemory/raw/main/assets/demo.mp4">
+    <img src="assets/demo-thumbnail.png" alt="agentmemory demo" width="720" />
+  </a>
+  <br/>
+  <em>Click to watch demo</em>
 </p>
 
 <p align="center">
