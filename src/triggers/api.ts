@@ -8,6 +8,8 @@ import { fileURLToPath } from "node:url";
 import { getLatestHealth } from "../health/monitor.js";
 import type { MetricsStore } from "../eval/metrics-store.js";
 import type { ResilientProvider } from "../providers/resilient.js";
+import { VERSION } from "../version.js";
+import { timingSafeCompare, VIEWER_CSP } from "../auth.js";
 
 type Response = {
   status_code: number;
@@ -15,16 +17,16 @@ type Response = {
   body: unknown;
 };
 
-const VIEWER_CSP =
-  "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self' ws://localhost:* wss://localhost:*; img-src 'self'; font-src 'self'";
-
 function checkAuth(
   req: ApiRequest,
   secret: string | undefined,
 ): Response | null {
   if (!secret) return null;
   const auth = req.headers?.["authorization"] || req.headers?.["Authorization"];
-  if (auth !== `Bearer ${secret}`) {
+  if (
+    typeof auth !== "string" ||
+    !timingSafeCompare(auth, `Bearer ${secret}`)
+  ) {
     return { status_code: 401, body: { error: "unauthorized" } };
   }
   return null;
@@ -69,7 +71,7 @@ export function registerApiTriggers(
         body: {
           status,
           service: "agentmemory",
-          version: "0.4.0",
+          version: VERSION,
           health: health || null,
           functionMetrics,
           circuitBreaker,

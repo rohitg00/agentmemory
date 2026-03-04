@@ -285,7 +285,7 @@ export interface GraphNode {
     | "library"
     | "person";
   name: string;
-  properties: Record<string, string>;
+  properties: Record<string, unknown>;
   sourceObservationIds: string[];
   createdAt: string;
 }

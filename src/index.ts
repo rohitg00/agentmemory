@@ -56,6 +56,7 @@ import { MetricsStore } from "./eval/metrics-store.js";
 import { DedupMap } from "./functions/dedup.js";
 import { registerHealthMonitor } from "./health/monitor.js";
 import { initMetrics, OTEL_CONFIG } from "./telemetry/setup.js";
+import { VERSION } from "./version.js";
 
 async function main() {
   const config = loadConfig();
@@ -69,7 +70,7 @@ async function main() {
 
   const embeddingProvider = createEmbeddingProvider();
 
-  console.log(`[agentmemory] Starting worker v0.4.0...`);
+  console.log(`[agentmemory] Starting worker v${VERSION}...`);
   console.log(`[agentmemory] Engine: ${config.engineUrl}`);
   console.log(
     `[agentmemory] Provider: ${config.provider.provider} (${config.provider.model})`,
@@ -109,7 +110,7 @@ async function main() {
   );
 
   registerPrivacyFunction(sdk);
-  registerObserveFunction(sdk, kv, dedupMap);
+  registerObserveFunction(sdk, kv, dedupMap, config.maxObservationsPerSession);
   registerCompressFunction(sdk, kv, provider, metricsStore);
   registerSearchFunction(sdk, kv);
   registerContextFunction(sdk, kv, config.tokenBudget);

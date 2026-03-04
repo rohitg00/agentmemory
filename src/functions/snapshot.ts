@@ -8,6 +8,9 @@ import type { SnapshotMeta, Session, Memory, GraphNode } from "../types.js";
 import { KV, generateId } from "../state/schema.js";
 import type { StateKV } from "../state/kv.js";
 import { recordAudit } from "./audit.js";
+import { VERSION } from "../version.js";
+
+const COMMIT_HASH_RE = /^[0-9a-f]{7,40}$/i;
 
 const execFileAsync = promisify(execFile);
 
@@ -55,7 +58,7 @@ export function registerSnapshotFunction(
         }
 
         const state = {
-          version: "0.4.0",
+          version: VERSION,
           timestamp: new Date().toISOString(),
           sessions,
           memories,
@@ -147,6 +150,9 @@ export function registerSnapshotFunction(
       const ctx = getContext();
       if (!data.commitHash) {
         return { success: false, error: "commitHash is required" };
+      }
+      if (!COMMIT_HASH_RE.test(data.commitHash)) {
+        return { success: false, error: "Invalid commitHash format" };
       }
 
       try {

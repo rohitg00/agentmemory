@@ -8,13 +8,8 @@ vi.mock("iii-sdk", () => ({
 
 vi.mock("node:child_process", () => ({
   execFile: vi.fn(
-    (
-      _cmd: string,
-      _args: string[],
-      _opts: unknown,
-      cb: Function,
-    ) => {
-      cb(null, { stdout: "abc123\n", stderr: "" });
+    (_cmd: string, _args: string[], _opts: unknown, cb: Function) => {
+      cb(null, { stdout: "abc1234\n", stderr: "" });
     },
   ),
 }));
@@ -26,7 +21,7 @@ vi.mock("node:util", async () => {
   >;
   return {
     ...actual,
-    promisify: () => async () => ({ stdout: "abc123\n", stderr: "" }),
+    promisify: () => async () => ({ stdout: "abc1234\n", stderr: "" }),
   };
 });
 
@@ -36,9 +31,7 @@ vi.mock("node:fs", () => ({
   writeFileSync: vi.fn(),
   readFileSync: vi
     .fn()
-    .mockReturnValue(
-      '{"version":"0.4.0","sessions":[],"memories":[]}',
-    ),
+    .mockReturnValue('{"version":"0.4.0","sessions":[],"memories":[]}'),
 }));
 
 import { registerSnapshotFunction } from "../src/functions/snapshot.js";
@@ -125,7 +118,7 @@ describe("Snapshot Functions", () => {
 
     expect(result.success).toBe(true);
     expect(result.snapshot).toBeDefined();
-    expect(result.snapshot.commitHash).toBe("abc123");
+    expect(result.snapshot.commitHash).toBe("abc1234");
     expect(result.snapshot.message).toBe("Test snapshot");
     expect(result.snapshot.stats.sessions).toBe(1);
     expect(result.snapshot.stats.memories).toBe(1);
@@ -133,7 +126,11 @@ describe("Snapshot Functions", () => {
 
   it("snapshot-list returns snapshots from git log", async () => {
     const result = (await sdk.trigger("mem::snapshot-list", {})) as {
-      snapshots: Array<{ commitHash: string; createdAt: string; message: string }>;
+      snapshots: Array<{
+        commitHash: string;
+        createdAt: string;
+        message: string;
+      }>;
     };
 
     expect(result.snapshots).toBeDefined();
@@ -152,11 +149,11 @@ describe("Snapshot Functions", () => {
 
   it("snapshot-restore loads state from commit", async () => {
     const result = (await sdk.trigger("mem::snapshot-restore", {
-      commitHash: "abc123",
+      commitHash: "abc1234",
     })) as { success: boolean; commitHash: string };
 
     expect(result.success).toBe(true);
-    expect(result.commitHash).toBe("abc123");
+    expect(result.commitHash).toBe("abc1234");
   });
 
   it("snapshot-create records an audit entry", async () => {

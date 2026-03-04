@@ -9,6 +9,7 @@ import type {
   GraphEdge,
 } from "../types.js";
 import { getAllTools } from "./tools-registry.js";
+import { timingSafeCompare } from "../auth.js";
 
 type McpResponse = {
   status_code: number;
@@ -28,7 +29,7 @@ export function registerMcpEndpoints(
     if (!sec) return null;
     const auth =
       req.headers?.["authorization"] || req.headers?.["Authorization"];
-    if (auth !== `Bearer ${sec}`) {
+    if (typeof auth !== "string" || !timingSafeCompare(auth, `Bearer ${sec}`)) {
       return { status_code: 401, body: { error: "unauthorized" } };
     }
     return null;

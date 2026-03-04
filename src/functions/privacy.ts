@@ -12,6 +12,9 @@ const SECRET_PATTERN_SOURCES = [
   /AKIA[0-9A-Z]{16}/g,
   /AIza[A-Za-z0-9\-_]{35}/g,
   /eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g,
+  /npm_[A-Za-z0-9]{36}/g,
+  /glpat-[A-Za-z0-9\-_]{20,}/g,
+  /dop_v1_[A-Za-z0-9]{64}/g,
 ];
 
 export function stripPrivateData(input: string): string {

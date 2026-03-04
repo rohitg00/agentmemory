@@ -14,6 +14,7 @@ import type {
 } from "../types.js";
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
+import { VERSION } from "../version.js";
 
 export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
   sdk.registerFunction(
@@ -58,7 +59,7 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
         .catch(() => []);
 
       const exportData: ExportData = {
-        version: "0.4.0",
+        version: VERSION,
         exportedAt: new Date().toISOString(),
         sessions,
         observations,
@@ -101,7 +102,8 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
       const strategy = data.strategy || "merge";
       const importData = data.exportData;
 
-      if (importData.version !== "0.3.0" && importData.version !== "0.4.0") {
+      const supportedVersions = new Set(["0.3.0", "0.4.0"]);
+      if (!supportedVersions.has(importData.version)) {
         return {
           success: false,
           error: `Unsupported export version: ${importData.version}`,

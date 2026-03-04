@@ -190,8 +190,8 @@ export function registerGraphFunction(
         const matchingNodes = allNodes.filter(
           (n) =>
             n.name.toLowerCase().includes(lower) ||
-            Object.values(n.properties).some((v) =>
-              v.toLowerCase().includes(lower),
+            Object.values(n.properties).some(
+              (v) => typeof v === "string" && v.toLowerCase().includes(lower),
             ),
         );
         const nodeIds = new Set(matchingNodes.map((n) => n.id));

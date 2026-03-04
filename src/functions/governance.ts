@@ -50,6 +50,19 @@ export function registerGovernanceFunction(sdk: ISdk, kv: StateKV): void {
     { id: "mem::governance-bulk" },
     async (data: GovernanceFilter & { dryRun?: boolean }) => {
       const ctx = getContext();
+
+      const hasFilter =
+        (data.type && data.type.length > 0) ||
+        data.dateFrom ||
+        data.dateTo ||
+        data.qualityBelow !== undefined;
+      if (!hasFilter && !data.dryRun) {
+        return {
+          success: false,
+          error: "At least one filter is required for non-dryRun bulk delete",
+        };
+      }
+
       const memories = await kv.list<Memory>(KV.memories);
       let candidates = memories;
 

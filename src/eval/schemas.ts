@@ -112,7 +112,7 @@ export const EvolveInputSchema = z.object({
 
 export const ExportImportInputSchema = z.object({
   exportData: z.object({
-    version: z.literal("0.3.0"),
+    version: z.union([z.literal("0.3.0"), z.literal("0.4.0")]),
     exportedAt: z.string(),
     sessions: z.array(z.unknown()),
     observations: z.record(z.string(), z.array(z.unknown())),

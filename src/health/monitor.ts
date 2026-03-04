@@ -77,6 +77,7 @@ export function registerHealthMonitor(
   const interval = setInterval(() => {
     collectHealth().catch(() => {});
   }, 30_000);
+  interval.unref();
 
   return {
     stop: () => clearInterval(interval),

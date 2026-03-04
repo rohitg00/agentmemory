@@ -10,6 +10,8 @@ import { KV, generateId } from "../state/schema.js";
 import type { StateKV } from "../state/kv.js";
 import { recordAudit } from "./audit.js";
 
+const VALID_ITEM_TYPES = new Set(["memory", "pattern", "observation"]);
+
 export function registerTeamFunction(
   sdk: ISdk,
   kv: StateKV,
@@ -19,19 +21,30 @@ export function registerTeamFunction(
     { id: "mem::team-share" },
     async (data: {
       itemId: string;
-      itemType: "memory" | "pattern";
+      itemType: "memory" | "pattern" | "observation";
+      sessionId?: string;
       project?: string;
     }) => {
       const ctx = getContext();
       if (!data.itemId || !data.itemType) {
         return { success: false, error: "itemId and itemType are required" };
       }
-
-      let content: unknown = null;
-      if (data.itemType === "memory" || data.itemType === "pattern") {
-        content = await kv.get<Memory>(KV.memories, data.itemId);
+      if (!VALID_ITEM_TYPES.has(data.itemType)) {
+        return { success: false, error: `Invalid itemType: ${data.itemType}` };
       }
 
+      let content: unknown;
+      if (data.itemType === "observation") {
+        if (!data.sessionId) {
+          return {
+            success: false,
+            error: "sessionId is required for observations",
+          };
+        }
+        content = await kv.get(KV.observations(data.sessionId), data.itemId);
+      } else {
+        content = await kv.get<Memory>(KV.memories, data.itemId);
+      }
       if (!content) {
         return { success: false, error: "Item not found" };
       }

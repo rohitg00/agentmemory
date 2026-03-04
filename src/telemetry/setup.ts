@@ -1,3 +1,5 @@
+import { VERSION } from "../version.js";
+
 interface OtelConfig {
   serviceName: string;
   serviceVersion: string;
@@ -6,7 +8,7 @@ interface OtelConfig {
 
 export const OTEL_CONFIG: OtelConfig = {
   serviceName: "agentmemory",
-  serviceVersion: "0.4.0",
+  serviceVersion: VERSION,
   metricsExportIntervalMs: 30_000,
 };
 
@@ -111,14 +113,4 @@ export function initMetrics(getMeter?: (name: string) => Meter): {
   ) as unknown as Histograms;
 
   return { counters, histograms };
-}
-
-export function getCounters(): Counters {
-  if (!counters) initMetrics();
-  return counters!;
-}
-
-export function getHistograms(): Histograms {
-  if (!histograms) initMetrics();
-  return histograms!;
 }

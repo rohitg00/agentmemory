@@ -5,11 +5,13 @@ import { KV, STREAM, generateId } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { stripPrivateData } from "./privacy.js";
 import { DedupMap } from "./dedup.js";
+import { withKeyedLock } from "../state/keyed-mutex.js";
 
 export function registerObserveFunction(
   sdk: ISdk,
   kv: StateKV,
   dedupMap?: DedupMap,
+  maxObservationsPerSession?: number,
 ): void {
   sdk.registerFunction(
     {
@@ -36,21 +38,21 @@ export function registerObserveFunction(
 
       const obsId = generateId("obs");
 
+      let dedupHash: string | undefined;
       if (dedupMap) {
         const d =
           typeof payload.data === "object" && payload.data !== null
             ? (payload.data as Record<string, unknown>)
             : {};
         const toolName = (d["tool_name"] as string) || payload.hookType;
-        const hash = dedupMap.computeHash(
+        dedupHash = dedupMap.computeHash(
           payload.sessionId,
           toolName,
           d["tool_input"],
         );
-        if (dedupMap.isDuplicate(hash)) {
+        if (dedupMap.isDuplicate(dedupHash)) {
           return { deduplicated: true, sessionId: payload.sessionId };
         }
-        dedupMap.record(hash);
       }
 
       let sanitizedRaw: unknown = payload.data;
@@ -85,42 +87,58 @@ export function registerObserveFunction(
         }
       }
 
-      await kv.set(KV.observations(payload.sessionId), obsId, raw);
+      return withKeyedLock(`obs:${payload.sessionId}`, async () => {
+        if (maxObservationsPerSession && maxObservationsPerSession > 0) {
+          const existing = await kv.list(KV.observations(payload.sessionId));
+          if (existing.length >= maxObservationsPerSession) {
+            return {
+              success: false,
+              error: `Session observation limit reached (${maxObservationsPerSession})`,
+            };
+          }
+        }
 
-      sdk.triggerVoid("stream::set", {
-        stream_name: STREAM.name,
-        group_id: STREAM.group(payload.sessionId),
-        item_id: obsId,
-        data: { type: "raw", observation: raw },
-      });
+        await kv.set(KV.observations(payload.sessionId), obsId, raw);
 
-      sdk.triggerVoid("stream::set", {
-        stream_name: STREAM.name,
-        group_id: STREAM.viewerGroup,
-        item_id: obsId,
-        data: { type: "raw", observation: raw, sessionId: payload.sessionId },
-      });
+        if (dedupMap && dedupHash) {
+          dedupMap.record(dedupHash);
+        }
 
-      const session = await kv.get<Session>(KV.sessions, payload.sessionId);
-      if (session) {
-        await kv.set(KV.sessions, payload.sessionId, {
-          ...session,
-          observationCount: (session.observationCount || 0) + 1,
+        sdk.triggerVoid("stream::set", {
+          stream_name: STREAM.name,
+          group_id: STREAM.group(payload.sessionId),
+          item_id: obsId,
+          data: { type: "raw", observation: raw },
         });
-      }
 
-      sdk.triggerVoid("mem::compress", {
-        observationId: obsId,
-        sessionId: payload.sessionId,
-        raw,
-      });
+        sdk.triggerVoid("stream::set", {
+          stream_name: STREAM.name,
+          group_id: STREAM.viewerGroup,
+          item_id: obsId,
+          data: { type: "raw", observation: raw, sessionId: payload.sessionId },
+        });
 
-      ctx.logger.info("Observation captured", {
-        obsId,
-        sessionId: payload.sessionId,
-        hook: payload.hookType,
+        const session = await kv.get<Session>(KV.sessions, payload.sessionId);
+        if (session) {
+          await kv.set(KV.sessions, payload.sessionId, {
+            ...session,
+            observationCount: (session.observationCount || 0) + 1,
+          });
+        }
+
+        sdk.triggerVoid("mem::compress", {
+          observationId: obsId,
+          sessionId: payload.sessionId,
+          raw,
+        });
+
+        ctx.logger.info("Observation captured", {
+          obsId,
+          sessionId: payload.sessionId,
+          hook: payload.hookType,
+        });
+        return { observationId: obsId };
       });
-      return { observationId: obsId };
     },
   );
 }

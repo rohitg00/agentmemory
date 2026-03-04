@@ -4,10 +4,19 @@ import { InMemoryKV } from "./in-memory-kv.js";
 import { createStdioTransport } from "./transport.js";
 import { getAllTools } from "./tools-registry.js";
 import { getStandalonePersistPath } from "../config.js";
+import { VERSION } from "../version.js";
+
+const IMPLEMENTED_TOOLS = new Set([
+  "memory_save",
+  "memory_recall",
+  "memory_sessions",
+  "memory_export",
+  "memory_audit",
+]);
 
 const SERVER_INFO = {
   name: "agentmemory",
-  version: "0.4.0",
+  version: VERSION,
   protocolVersion: "2024-11-05",
 };
 
@@ -77,7 +86,7 @@ async function handleToolCall(
           {
             type: "text",
             text: JSON.stringify(
-              { version: "0.4.0", memories, sessions },
+              { version: VERSION, memories, sessions },
               null,
               2,
             ),
@@ -126,7 +135,9 @@ const transport = createStdioTransport(async (method, params) => {
       return {};
 
     case "tools/list":
-      return { tools: getAllTools() };
+      return {
+        tools: getAllTools().filter((t) => IMPLEMENTED_TOOLS.has(t.name)),
+      };
 
     case "tools/call": {
       const toolName = params.name as string;
