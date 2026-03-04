@@ -15,6 +15,7 @@
   <a href="#search">Search</a> &bull;
   <a href="#memory-evolution">Memory Evolution</a> &bull;
   <a href="#mcp-server">MCP</a> &bull;
+  <a href="#real-time-viewer">Viewer</a> &bull;
   <a href="#configuration">Configuration</a> &bull;
   <a href="#api">API</a>
 </p>
@@ -149,6 +150,9 @@ npm install && npm run build && npm start
 
 ```bash
 curl http://localhost:3111/agentmemory/health
+
+# Real-time viewer (auto-starts on port 3113)
+open http://localhost:3113
 ```
 
 ```json
@@ -456,6 +460,18 @@ Four slash commands for interacting with memory:
 | `/session-history` | Show recent session summaries |
 | `/forget` | Delete specific observations or entire sessions |
 
+## Real-Time Viewer
+
+agentmemory includes a real-time web dashboard that auto-starts on port `3113` (configurable via `III_REST_PORT + 2`).
+
+- Live observation stream via WebSocket
+- Session explorer with observation details
+- Memory browser with search and filtering
+- Knowledge graph visualization
+- Health and metrics dashboard
+
+Access at `http://localhost:3113` or via `GET /agentmemory/viewer` on the API port. Protected by `AGENTMEMORY_SECRET` when set. CSP headers applied to all HTML responses.
+
 ## Configuration
 
 ### LLM Providers
@@ -501,6 +517,7 @@ ANTHROPIC_API_KEY=sk-ant-...
 # III_ENGINE_URL=ws://localhost:49134
 # III_REST_PORT=3111
 # III_STREAMS_PORT=3112
+# Viewer runs on III_REST_PORT + 2 (default: 3113)
 
 # Memory tuning
 # TOKEN_BUDGET=2000
@@ -566,7 +583,7 @@ ANTHROPIC_API_KEY=sk-ant-...
 | `GET` | `/agentmemory/export` | Export all data as JSON |
 | `GET` | `/agentmemory/sessions` | List all sessions |
 | `GET` | `/agentmemory/observations` | Session observations (`?sessionId=X`) |
-| `GET` | `/agentmemory/viewer` | Real-time web viewer |
+| `GET` | `/agentmemory/viewer` | Real-time web viewer (also at `http://localhost:3113`) |
 | `GET` | `/agentmemory/claude-bridge/read` | Read Claude Code native MEMORY.md |
 | `POST` | `/agentmemory/claude-bridge/sync` | Sync memories to MEMORY.md |
 | `POST` | `/agentmemory/graph/query` | Query knowledge graph (BFS traversal) |
@@ -622,7 +639,7 @@ agentmemory is built on iii-engine's three primitives:
 | Prometheus / Grafana | iii OTEL + built-in health monitor |
 | Redis (circuit breaker) | In-process circuit breaker + fallback chain |
 
-**83 source files. ~11,000 LOC. 216 tests. 208KB bundled (192KB main + 16KB standalone).**
+**87 source files. ~11,300 LOC. 216 tests. 232KB bundled (218KB main + 14KB standalone).**
 
 ### Functions (33)
 
