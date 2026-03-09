@@ -224,7 +224,14 @@ export function registerRoutinesFunction(sdk: ISdk, kv: StateKV): void {
 
           const stepOrder = (action.metadata as { stepOrder?: number })?.stepOrder;
           if (stepOrder !== undefined && stepOrder in run.stepStatus) {
-            const mapped = action.status === "cancelled" ? "failed" : action.status as "pending" | "active" | "done";
+            let mapped: "pending" | "active" | "done" | "failed";
+            if (action.status === "cancelled") {
+              mapped = "failed";
+            } else if (action.status === "blocked") {
+              mapped = "pending";
+            } else {
+              mapped = action.status as "pending" | "active" | "done";
+            }
             if (run.stepStatus[stepOrder] !== mapped) {
               run.stepStatus[stepOrder] = mapped;
               statusChanged = true;
@@ -255,6 +262,8 @@ export function registerRoutinesFunction(sdk: ISdk, kv: StateKV): void {
           done: actionStates.filter((a) => a.status === "done").length,
           active: actionStates.filter((a) => a.status === "active").length,
           pending: actionStates.filter((a) => a.status === "pending").length,
+          blocked: actionStates.filter((a) => a.status === "blocked").length,
+          cancelled: actionStates.filter((a) => a.status === "cancelled").length,
         },
       };
     },
@@ -266,14 +275,16 @@ export function registerRoutinesFunction(sdk: ISdk, kv: StateKV): void {
       if (!data.routineId) {
         return { success: false, error: "routineId is required" };
       }
-      const routine = await kv.get<Routine>(KV.routines, data.routineId);
-      if (!routine) {
-        return { success: false, error: "routine not found" };
-      }
-      routine.frozen = true;
-      routine.updatedAt = new Date().toISOString();
-      await kv.set(KV.routines, routine.id, routine);
-      return { success: true, routine };
+      return withKeyedLock(`mem:routine:${data.routineId}`, async () => {
+        const routine = await kv.get<Routine>(KV.routines, data.routineId);
+        if (!routine) {
+          return { success: false, error: "routine not found" };
+        }
+        routine.frozen = true;
+        routine.updatedAt = new Date().toISOString();
+        await kv.set(KV.routines, routine.id, routine);
+        return { success: true, routine };
+      });
     },
   );
 }

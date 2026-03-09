@@ -96,11 +96,11 @@ export function registerMcpEndpoints(
             const type = (args.type as string) || "fact";
             const concepts =
               typeof args.concepts === "string"
-                ? args.concepts.split(",").map((c: string) => c.trim())
+                ? args.concepts.split(",").map((c: string) => c.trim()).filter(Boolean)
                 : [];
             const files =
               typeof args.files === "string"
-                ? args.files.split(",").map((f: string) => f.trim())
+                ? args.files.split(",").map((f: string) => f.trim()).filter(Boolean)
                 : [];
 
             const result = await sdk.trigger("mem::remember", {
@@ -533,12 +533,12 @@ export function registerMcpEndpoints(
             }
             const edges: Array<{ type: string; targetActionId: string }> = [];
             if (typeof args.requires === "string" && args.requires.trim()) {
-              for (const id of (args.requires as string).split(",").map((s: string) => s.trim())) {
+              for (const id of args.requires.split(",").map((s: string) => s.trim()).filter(Boolean)) {
                 edges.push({ type: "requires", targetActionId: id });
               }
             }
             const tags = typeof args.tags === "string" && args.tags.trim()
-              ? args.tags.split(",").map((t: string) => t.trim())
+              ? args.tags.split(",").map((t: string) => t.trim()).filter(Boolean)
               : [];
             const actionResult = await sdk.trigger("mem::action-create", {
               title: args.title,
@@ -817,9 +817,17 @@ export function registerMcpEndpoints(
           }
 
           case "memory_sentinel_trigger": {
+            let snlTrigPayload: unknown;
+            if (args.result !== undefined && args.result !== null) {
+              if (typeof args.result === "string") {
+                try { snlTrigPayload = JSON.parse(args.result); } catch { return { status_code: 400, body: { error: "invalid result JSON" } }; }
+              } else {
+                snlTrigPayload = args.result;
+              }
+            }
             const snlTrigResult = await sdk.trigger("mem::sentinel-trigger", {
               sentinelId: args.sentinelId,
-              result: args.result ? JSON.parse(args.result as string) : undefined,
+              result: snlTrigPayload,
             });
             return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(snlTrigResult, null, 2) }] } };
           }
@@ -885,11 +893,17 @@ export function registerMcpEndpoints(
           }
 
           case "memory_facet_query": {
-            const fqAll = args.matchAll
-              ? (args.matchAll as string).split(",").map((s: string) => s.trim()).filter(Boolean)
+            if (args.matchAll !== undefined && typeof args.matchAll !== "string") {
+              return { status_code: 400, body: { error: "matchAll must be a string" } };
+            }
+            if (args.matchAny !== undefined && typeof args.matchAny !== "string") {
+              return { status_code: 400, body: { error: "matchAny must be a string" } };
+            }
+            const fqAll = typeof args.matchAll === "string" && args.matchAll.trim()
+              ? args.matchAll.split(",").map((s: string) => s.trim()).filter(Boolean)
               : undefined;
-            const fqAny = args.matchAny
-              ? (args.matchAny as string).split(",").map((s: string) => s.trim()).filter(Boolean)
+            const fqAny = typeof args.matchAny === "string" && args.matchAny.trim()
+              ? args.matchAny.split(",").map((s: string) => s.trim()).filter(Boolean)
               : undefined;
             const fqResult = await sdk.trigger("mem::facet-query", {
               matchAll: fqAll,

@@ -185,16 +185,20 @@ export function registerMeshFunction(sdk: ISdk, kv: StateKV): void {
         for (const mem of data.memories) {
           if (!mem.id || typeof mem.id !== "string" || !mem.updatedAt) continue;
           if (Number.isNaN(new Date(mem.updatedAt).getTime())) continue;
-          const existing = await kv.get<Memory>(KV.memories, mem.id);
-          if (!existing) {
-            await kv.set(KV.memories, mem.id, mem);
-            accepted++;
-          } else if (
-            new Date(mem.updatedAt) > new Date(existing.updatedAt)
-          ) {
-            await kv.set(KV.memories, mem.id, mem);
-            accepted++;
-          }
+          const wrote = await withKeyedLock(`mem:memory:${mem.id}`, async () => {
+            const existing = await kv.get<Memory>(KV.memories, mem.id);
+            if (!existing) {
+              await kv.set(KV.memories, mem.id, mem);
+              return true;
+            } else if (
+              new Date(mem.updatedAt) > new Date(existing.updatedAt)
+            ) {
+              await kv.set(KV.memories, mem.id, mem);
+              return true;
+            }
+            return false;
+          });
+          if (wrote) accepted++;
         }
       }
 
@@ -270,24 +274,33 @@ async function applySyncData(
 
   if (scopes.includes("memories") && data.memories) {
     for (const mem of data.memories) {
-      const existing = await kv.get<Memory>(KV.memories, mem.id);
-      if (!existing || new Date(mem.updatedAt) > new Date(existing.updatedAt)) {
-        await kv.set(KV.memories, mem.id, mem);
-        applied++;
-      }
+      if (!mem.id || typeof mem.id !== "string" || !mem.updatedAt) continue;
+      if (Number.isNaN(new Date(mem.updatedAt).getTime())) continue;
+      const wrote = await withKeyedLock(`mem:memory:${mem.id}`, async () => {
+        const existing = await kv.get<Memory>(KV.memories, mem.id);
+        if (!existing || new Date(mem.updatedAt) > new Date(existing.updatedAt)) {
+          await kv.set(KV.memories, mem.id, mem);
+          return true;
+        }
+        return false;
+      });
+      if (wrote) applied++;
     }
   }
 
   if (scopes.includes("actions") && data.actions) {
     for (const action of data.actions) {
-      const existing = await kv.get<Action>(KV.actions, action.id);
-      if (
-        !existing ||
-        new Date(action.updatedAt) > new Date(existing.updatedAt)
-      ) {
-        await kv.set(KV.actions, action.id, action);
-        applied++;
-      }
+      if (!action.id || typeof action.id !== "string" || !action.updatedAt) continue;
+      if (Number.isNaN(new Date(action.updatedAt).getTime())) continue;
+      const wrote = await withKeyedLock(`mem:action:${action.id}`, async () => {
+        const existing = await kv.get<Action>(KV.actions, action.id);
+        if (!existing || new Date(action.updatedAt) > new Date(existing.updatedAt)) {
+          await kv.set(KV.actions, action.id, action);
+          return true;
+        }
+        return false;
+      });
+      if (wrote) applied++;
     }
   }
 

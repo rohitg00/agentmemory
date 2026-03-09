@@ -575,7 +575,7 @@ ANTHROPIC_API_KEY=sk-ant-...
 
 ## API
 
-93 endpoints on port `3111` (87 core + 6 MCP protocol). Protected endpoints require `Authorization: Bearer <secret>` when `AGENTMEMORY_SECRET` is set.
+93 endpoints on port `3111` (87 core + 6 MCP protocol). Protected endpoints require `Authorization: Bearer <secret>` when `AGENTMEMORY_SECRET` is set. The table below shows a representative subset; see `src/api.ts` for the full endpoint list.
 
 | Method | Path | Description |
 |--------|------|-------------|

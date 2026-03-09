@@ -104,7 +104,7 @@ export function registerLeasesFunction(sdk: ISdk, kv: StateKV): void {
         await kv.set(KV.leases, activeLease.id, activeLease);
 
         const action = await kv.get<Action>(KV.actions, data.actionId);
-        if (action) {
+        if (action && action.status === "active" && action.assignedTo === data.agentId) {
           if (data.result) {
             action.status = "done";
             action.result = data.result;
@@ -148,7 +148,8 @@ export function registerLeasesFunction(sdk: ISdk, kv: StateKV): void {
         }
 
         const now = new Date();
-        activeLease.expiresAt = new Date(now.getTime() + ttl).toISOString();
+        const base = Math.max(now.getTime(), new Date(activeLease.expiresAt).getTime());
+        activeLease.expiresAt = new Date(base + ttl).toISOString();
         activeLease.renewedAt = now.toISOString();
         await kv.set(KV.leases, activeLease.id, activeLease);
 

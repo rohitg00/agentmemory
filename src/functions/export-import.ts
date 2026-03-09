@@ -14,7 +14,6 @@ import type {
   Action,
   ActionEdge,
   Routine,
-  RoutineRun,
   Signal,
   Checkpoint,
   Sentinel,
@@ -236,6 +235,33 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
         for (const s of existingSummaries) {
           await kv.delete(KV.summaries, s.sessionId);
         }
+        for (const a of await kv.list<Action>(KV.actions).catch(() => [])) {
+          await kv.delete(KV.actions, a.id);
+        }
+        for (const e of await kv.list<ActionEdge>(KV.actionEdges).catch(() => [])) {
+          await kv.delete(KV.actionEdges, e.id);
+        }
+        for (const r of await kv.list<Routine>(KV.routines).catch(() => [])) {
+          await kv.delete(KV.routines, r.id);
+        }
+        for (const s of await kv.list<Signal>(KV.signals).catch(() => [])) {
+          await kv.delete(KV.signals, s.id);
+        }
+        for (const c of await kv.list<Checkpoint>(KV.checkpoints).catch(() => [])) {
+          await kv.delete(KV.checkpoints, c.id);
+        }
+        for (const s of await kv.list<Sentinel>(KV.sentinels).catch(() => [])) {
+          await kv.delete(KV.sentinels, s.id);
+        }
+        for (const s of await kv.list<Sketch>(KV.sketches).catch(() => [])) {
+          await kv.delete(KV.sketches, s.id);
+        }
+        for (const c of await kv.list<Crystal>(KV.crystals).catch(() => [])) {
+          await kv.delete(KV.crystals, c.id);
+        }
+        for (const f of await kv.list<Facet>(KV.facets).catch(() => [])) {
+          await kv.delete(KV.facets, f.id);
+        }
       }
 
       for (const session of importData.sessions) {
@@ -298,21 +324,37 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
 
       if (importData.graphNodes) {
         for (const node of importData.graphNodes) {
+          if (strategy === "skip") {
+            const existing = await kv.get(KV.graphNodes, node.id).catch(() => null);
+            if (existing) { stats.skipped++; continue; }
+          }
           await kv.set(KV.graphNodes, node.id, node);
         }
       }
       if (importData.graphEdges) {
         for (const edge of importData.graphEdges) {
+          if (strategy === "skip") {
+            const existing = await kv.get(KV.graphEdges, edge.id).catch(() => null);
+            if (existing) { stats.skipped++; continue; }
+          }
           await kv.set(KV.graphEdges, edge.id, edge);
         }
       }
       if (importData.semanticMemories) {
         for (const sem of importData.semanticMemories) {
+          if (strategy === "skip") {
+            const existing = await kv.get(KV.semantic, sem.id).catch(() => null);
+            if (existing) { stats.skipped++; continue; }
+          }
           await kv.set(KV.semantic, sem.id, sem);
         }
       }
       if (importData.proceduralMemories) {
         for (const proc of importData.proceduralMemories) {
+          if (strategy === "skip") {
+            const existing = await kv.get(KV.procedural, proc.id).catch(() => null);
+            if (existing) { stats.skipped++; continue; }
+          }
           await kv.set(KV.procedural, proc.id, proc);
         }
       }
