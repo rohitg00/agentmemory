@@ -127,6 +127,7 @@ export function registerMeshFunction(sdk: ISdk, kv: StateKV): void {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(pushData),
                 signal: AbortSignal.timeout(30000),
+                redirect: "error",
               });
               if (response.ok) {
                 const body = (await response.json()) as { accepted: number };
@@ -143,7 +144,7 @@ export function registerMeshFunction(sdk: ISdk, kv: StateKV): void {
             try {
               const response = await fetch(
                 `${peer.url}/agentmemory/mesh/export?since=${peer.lastSyncAt || ""}`,
-                { signal: AbortSignal.timeout(30000) },
+                { signal: AbortSignal.timeout(30000), redirect: "error" },
               );
               if (response.ok) {
                 const pullData = (await response.json()) as {

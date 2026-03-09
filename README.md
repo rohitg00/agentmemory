@@ -662,7 +662,7 @@ agentmemory is built on iii-engine's three primitives:
 | Prometheus / Grafana | iii OTEL + built-in health monitor |
 | Redis (circuit breaker) | In-process circuit breaker + fallback chain |
 
-**101 source files. ~15,000 LOC. 518 tests. 361KB bundled.**
+**101 source files. ~15,000 LOC. 518 tests. 365KB bundled.**
 
 ### Functions (50)
 
@@ -761,7 +761,7 @@ agentmemory is built on iii-engine's three primitives:
 
 ```bash
 npm run dev               # Hot reload
-npm run build             # Production build (354KB)
+npm run build             # Production build (365KB)
 npm test                  # Unit tests (518 tests, ~1s)
 npm run test:integration  # API tests (requires running services)
 ```

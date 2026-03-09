@@ -111,6 +111,7 @@ export function registerRoutinesFunction(sdk: ISdk, kv: StateKV): void {
           const template = step.actionTemplate || {};
           const override = data.overrides?.[step.order] || {};
 
+          const hasDeps = (step.dependsOn || []).length > 0;
           const action: Action = {
             id: generateId("act"),
             title: override.title || template.title || step.title,
@@ -118,7 +119,7 @@ export function registerRoutinesFunction(sdk: ISdk, kv: StateKV): void {
               override.description ||
               template.description ||
               step.description,
-            status: "pending",
+            status: hasDeps ? "blocked" : "pending",
             priority:
               override.priority ?? template.priority ?? 5,
             createdAt: now,
@@ -144,16 +145,6 @@ export function registerRoutinesFunction(sdk: ISdk, kv: StateKV): void {
         for (const step of routine.steps) {
           const actionId = stepOrderToActionId.get(step.order);
           if (!actionId) continue;
-
-          if (step.dependsOn.length > 0) {
-            const action = await kv.get<Action>(KV.actions, actionId);
-            if (action) {
-              action.status = "blocked";
-              action.updatedAt = now;
-              await kv.set(KV.actions, action.id, action);
-            }
-            stepStatus[step.order] = "pending";
-          }
 
           for (const depOrder of step.dependsOn) {
             const depActionId = stepOrderToActionId.get(depOrder);
@@ -237,6 +228,14 @@ export function registerRoutinesFunction(sdk: ISdk, kv: StateKV): void {
               statusChanged = true;
             }
           }
+        } else {
+          actionStates.push({
+            actionId,
+            status: "cancelled",
+            title: "(missing)",
+          });
+          allDone = false;
+          anyFailed = true;
         }
       }
 
@@ -258,7 +257,7 @@ export function registerRoutinesFunction(sdk: ISdk, kv: StateKV): void {
         run,
         actions: actionStates,
         progress: {
-          total: actionStates.length,
+          total: run.actionIds.length,
           done: actionStates.filter((a) => a.status === "done").length,
           active: actionStates.filter((a) => a.status === "active").length,
           pending: actionStates.filter((a) => a.status === "pending").length,

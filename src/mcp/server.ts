@@ -718,7 +718,7 @@ export function registerMcpEndpoints(
             }
             const readResult = await sdk.trigger("mem::signal-read", {
               agentId: args.agentId,
-              unreadOnly: args.unreadOnly === "true",
+              unreadOnly: args.unreadOnly === true || args.unreadOnly === "true",
               threadId: args.threadId,
               limit: args.limit,
             });
@@ -799,8 +799,10 @@ export function registerMcpEndpoints(
           }
 
           case "memory_sentinel_create": {
-            let snlConfig = {};
-            if (typeof args.config === "string" && args.config.trim()) {
+            let snlConfig: Record<string, unknown> = {};
+            if (typeof args.config === "object" && args.config !== null) {
+              snlConfig = args.config as Record<string, unknown>;
+            } else if (typeof args.config === "string" && args.config.trim()) {
               try { snlConfig = JSON.parse(args.config); } catch { return { status_code: 400, body: { error: "invalid config JSON" } }; }
             }
             const snlLinked = typeof args.linkedActionIds === "string" && args.linkedActionIds.trim()
@@ -877,7 +879,7 @@ export function registerMcpEndpoints(
               : undefined;
             const healResult = await sdk.trigger("mem::heal", {
               categories: healCats,
-              dryRun: args.dryRun === "true",
+              dryRun: args.dryRun === true || args.dryRun === "true",
             });
             return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(healResult, null, 2) }] } };
           }
