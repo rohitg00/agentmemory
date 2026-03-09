@@ -286,6 +286,228 @@ export const V040_TOOLS: McpToolDef[] = [
   },
 ];
 
+export const V050_TOOLS: McpToolDef[] = [
+  {
+    name: "memory_action_create",
+    description:
+      "Create an actionable work item with typed dependencies. Actions track what agents need to do and how work items relate to each other.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        title: { type: "string", description: "Action title" },
+        description: {
+          type: "string",
+          description: "Detailed description of the work",
+        },
+        priority: {
+          type: "number",
+          description: "Priority 1-10 (10 highest)",
+        },
+        project: { type: "string", description: "Project path" },
+        tags: {
+          type: "string",
+          description: "Comma-separated tags",
+        },
+        parentId: {
+          type: "string",
+          description: "Parent action ID for hierarchical actions",
+        },
+        requires: {
+          type: "string",
+          description:
+            "Comma-separated action IDs that must complete before this",
+        },
+      },
+      required: ["title"],
+    },
+  },
+  {
+    name: "memory_action_update",
+    description:
+      "Update an action's status, priority, or details. Set status to 'done' to complete it and unblock dependent actions.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        actionId: { type: "string", description: "Action ID to update" },
+        status: {
+          type: "string",
+          description: "New status: pending, active, done, blocked, cancelled",
+        },
+        result: {
+          type: "string",
+          description: "Outcome description (when completing)",
+        },
+        priority: { type: "number", description: "New priority 1-10" },
+      },
+      required: ["actionId"],
+    },
+  },
+  {
+    name: "memory_frontier",
+    description:
+      "Get all unblocked actions ranked by priority and urgency. Returns the frontier of actionable work with no unsatisfied dependencies.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        project: { type: "string", description: "Filter by project" },
+        agentId: {
+          type: "string",
+          description: "Agent ID to check lease conflicts",
+        },
+        limit: { type: "number", description: "Max results (default 20)" },
+      },
+    },
+  },
+  {
+    name: "memory_next",
+    description:
+      "Get the single most important next action to work on. Combines dependency resolution, priority, and recency into a score.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        project: { type: "string", description: "Filter by project" },
+        agentId: { type: "string", description: "Current agent ID" },
+      },
+    },
+  },
+  {
+    name: "memory_lease",
+    description:
+      "Acquire, release, or renew an exclusive lease on an action. Prevents multiple agents from working on the same thing.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        actionId: { type: "string", description: "Action ID" },
+        agentId: { type: "string", description: "Agent claiming the action" },
+        operation: {
+          type: "string",
+          description: "acquire, release, or renew",
+        },
+        result: {
+          type: "string",
+          description: "Result when releasing (marks action done)",
+        },
+        ttlMs: {
+          type: "number",
+          description: "Lease duration in ms (default 10min, max 1hr)",
+        },
+      },
+      required: ["actionId", "agentId", "operation"],
+    },
+  },
+  {
+    name: "memory_routine_run",
+    description:
+      "Instantiate a frozen workflow routine, creating actions for each step with proper dependencies.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        routineId: { type: "string", description: "Routine template ID" },
+        project: { type: "string", description: "Project context" },
+        initiatedBy: { type: "string", description: "Agent starting the run" },
+      },
+      required: ["routineId"],
+    },
+  },
+  {
+    name: "memory_signal_send",
+    description:
+      "Send a message to another agent or broadcast. Supports threading, typed messages, and TTL expiration.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        from: { type: "string", description: "Sender agent ID" },
+        to: {
+          type: "string",
+          description: "Recipient agent ID (omit for broadcast)",
+        },
+        content: { type: "string", description: "Message content" },
+        type: {
+          type: "string",
+          description: "Message type: info, request, response, alert, handoff",
+        },
+        replyTo: {
+          type: "string",
+          description: "Signal ID to reply to (auto-threads)",
+        },
+      },
+      required: ["from", "content"],
+    },
+  },
+  {
+    name: "memory_signal_read",
+    description:
+      "Read messages for an agent. Marks delivered messages as read.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        agentId: { type: "string", description: "Agent to read messages for" },
+        unreadOnly: {
+          type: "string",
+          description: "Set to 'true' for unread only",
+        },
+        threadId: {
+          type: "string",
+          description: "Filter by conversation thread",
+        },
+        limit: { type: "number", description: "Max messages (default 50)" },
+      },
+      required: ["agentId"],
+    },
+  },
+  {
+    name: "memory_checkpoint",
+    description:
+      "Create or resolve an external checkpoint (CI result, approval, deploy status) that gates action progress.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        operation: {
+          type: "string",
+          description: "create, resolve, or list",
+        },
+        name: { type: "string", description: "Checkpoint name (for create)" },
+        checkpointId: {
+          type: "string",
+          description: "Checkpoint ID (for resolve)",
+        },
+        status: {
+          type: "string",
+          description: "passed or failed (for resolve)",
+        },
+        type: {
+          type: "string",
+          description: "Checkpoint type: ci, approval, deploy, external, timer",
+        },
+        linkedActionIds: {
+          type: "string",
+          description:
+            "Comma-separated action IDs this checkpoint gates (for create)",
+        },
+      },
+      required: ["operation"],
+    },
+  },
+  {
+    name: "memory_mesh_sync",
+    description:
+      "Sync memories and actions with peer agentmemory instances for multi-agent collaboration.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        peerId: {
+          type: "string",
+          description: "Specific peer ID (omit for all)",
+        },
+        direction: {
+          type: "string",
+          description: "push, pull, or both (default both)",
+        },
+      },
+    },
+  },
+];
+
 export function getAllTools(): McpToolDef[] {
-  return [...CORE_TOOLS, ...V040_TOOLS];
+  return [...CORE_TOOLS, ...V040_TOOLS, ...V050_TOOLS];
 }

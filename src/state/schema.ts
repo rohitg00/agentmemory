@@ -20,6 +20,14 @@ export const KV = {
     `mem:team:${teamId}:users:${userId}`,
   teamProfile: (teamId: string) => `mem:team:${teamId}:profile`,
   audit: "mem:audit",
+  actions: "mem:actions",
+  actionEdges: "mem:action-edges",
+  leases: "mem:leases",
+  routines: "mem:routines",
+  routineRuns: "mem:routine-runs",
+  signals: "mem:signals",
+  checkpoints: "mem:checkpoints",
+  mesh: "mem:mesh",
 } as const;
 
 export const STREAM = {
@@ -32,6 +40,12 @@ export function generateId(prefix: string): string {
   const ts = Date.now().toString(36);
   const rand = crypto.randomUUID().replace(/-/g, "").slice(0, 12);
   return `${prefix}_${ts}_${rand}`;
+}
+
+export function fingerprintId(prefix: string, content: string): string {
+  const crypto = require("node:crypto") as typeof import("node:crypto");
+  const hash = crypto.createHash("sha256").update(content).digest("hex");
+  return `${prefix}_${hash.slice(0, 16)}`;
 }
 
 export function jaccardSimilarity(a: string, b: string): number {

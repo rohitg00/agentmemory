@@ -22,9 +22,9 @@ import { InMemoryKV } from "../src/mcp/in-memory-kv.js";
 import { writeFileSync } from "node:fs";
 
 describe("Tools Registry", () => {
-  it("getAllTools returns 18 tools", () => {
+  it("getAllTools returns 28 tools", () => {
     const tools = getAllTools();
-    expect(tools.length).toBe(18);
+    expect(tools.length).toBe(28);
   });
 
   it("CORE_TOOLS has 10 items", () => {

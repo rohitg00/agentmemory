@@ -991,6 +991,591 @@ export function registerApiTriggers(
     config: { api_path: "/agentmemory/memories", http_method: "GET" },
   });
 
+  sdk.registerFunction(
+    { id: "api::action-create" },
+    async (
+      req: ApiRequest<{
+        title: string;
+        description?: string;
+        priority?: number;
+        createdBy?: string;
+        project?: string;
+        tags?: string[];
+        parentId?: string;
+        edges?: Array<{ type: string; targetActionId: string }>;
+      }>,
+    ): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      if (!req.body?.title) {
+        return { status_code: 400, body: { error: "title is required" } };
+      }
+      const result = await sdk.trigger("mem::action-create", req.body);
+      return { status_code: 201, body: result };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::action-create",
+    config: { api_path: "/agentmemory/actions", http_method: "POST" },
+  });
+
+  sdk.registerFunction(
+    { id: "api::action-update" },
+    async (
+      req: ApiRequest<{
+        actionId: string;
+        status?: string;
+        title?: string;
+        description?: string;
+        priority?: number;
+        result?: string;
+      }>,
+    ): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      if (!req.body?.actionId) {
+        return { status_code: 400, body: { error: "actionId is required" } };
+      }
+      const result = await sdk.trigger("mem::action-update", req.body);
+      return { status_code: 200, body: result };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::action-update",
+    config: { api_path: "/agentmemory/actions/update", http_method: "POST" },
+  });
+
+  sdk.registerFunction(
+    { id: "api::action-list" },
+    async (req: ApiRequest): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const result = await sdk.trigger("mem::action-list", {
+        status: req.query_params?.["status"],
+        project: req.query_params?.["project"],
+        parentId: req.query_params?.["parentId"],
+      });
+      return { status_code: 200, body: result };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::action-list",
+    config: { api_path: "/agentmemory/actions", http_method: "GET" },
+  });
+
+  sdk.registerFunction(
+    { id: "api::action-get" },
+    async (req: ApiRequest<{ actionId: string }>): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const actionId = req.query_params?.["actionId"] as string;
+      if (!actionId) {
+        return { status_code: 400, body: { error: "actionId required" } };
+      }
+      const result = await sdk.trigger("mem::action-get", { actionId });
+      return { status_code: 200, body: result };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::action-get",
+    config: { api_path: "/agentmemory/actions/get", http_method: "GET" },
+  });
+
+  sdk.registerFunction(
+    { id: "api::action-edge" },
+    async (
+      req: ApiRequest<{
+        sourceActionId: string;
+        targetActionId: string;
+        type: string;
+      }>,
+    ): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      if (!req.body?.sourceActionId || !req.body?.targetActionId || !req.body?.type) {
+        return { status_code: 400, body: { error: "sourceActionId, targetActionId, and type are required" } };
+      }
+      const result = await sdk.trigger("mem::action-edge-create", req.body);
+      return { status_code: 201, body: result };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::action-edge",
+    config: { api_path: "/agentmemory/actions/edges", http_method: "POST" },
+  });
+
+  sdk.registerFunction(
+    { id: "api::frontier" },
+    async (req: ApiRequest): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const result = await sdk.trigger("mem::frontier", {
+        project: req.query_params?.["project"],
+        agentId: req.query_params?.["agentId"],
+        limit: parseInt(req.query_params?.["limit"] as string) || undefined,
+      });
+      return { status_code: 200, body: result };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::frontier",
+    config: { api_path: "/agentmemory/frontier", http_method: "GET" },
+  });
+
+  sdk.registerFunction(
+    { id: "api::next" },
+    async (req: ApiRequest): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const result = await sdk.trigger("mem::next", {
+        project: req.query_params?.["project"],
+        agentId: req.query_params?.["agentId"],
+      });
+      return { status_code: 200, body: result };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::next",
+    config: { api_path: "/agentmemory/next", http_method: "GET" },
+  });
+
+  sdk.registerFunction(
+    { id: "api::lease-acquire" },
+    async (
+      req: ApiRequest<{ actionId: string; agentId: string; ttlMs?: number }>,
+    ): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      if (!req.body?.actionId || !req.body?.agentId) {
+        return { status_code: 400, body: { error: "actionId and agentId are required" } };
+      }
+      const result = await sdk.trigger("mem::lease-acquire", req.body);
+      return { status_code: 200, body: result };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::lease-acquire",
+    config: { api_path: "/agentmemory/leases/acquire", http_method: "POST" },
+  });
+
+  sdk.registerFunction(
+    { id: "api::lease-release" },
+    async (
+      req: ApiRequest<{ actionId: string; agentId: string; result?: string }>,
+    ): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      if (!req.body?.actionId || !req.body?.agentId) {
+        return { status_code: 400, body: { error: "actionId and agentId are required" } };
+      }
+      const result = await sdk.trigger("mem::lease-release", req.body);
+      return { status_code: 200, body: result };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::lease-release",
+    config: { api_path: "/agentmemory/leases/release", http_method: "POST" },
+  });
+
+  sdk.registerFunction(
+    { id: "api::lease-renew" },
+    async (
+      req: ApiRequest<{ actionId: string; agentId: string; ttlMs?: number }>,
+    ): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      if (!req.body?.actionId || !req.body?.agentId) {
+        return { status_code: 400, body: { error: "actionId and agentId are required" } };
+      }
+      const result = await sdk.trigger("mem::lease-renew", req.body);
+      return { status_code: 200, body: result };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::lease-renew",
+    config: { api_path: "/agentmemory/leases/renew", http_method: "POST" },
+  });
+
+  sdk.registerFunction(
+    { id: "api::routine-create" },
+    async (req: ApiRequest): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      if (!req.body?.name) {
+        return { status_code: 400, body: { error: "name is required" } };
+      }
+      const result = await sdk.trigger("mem::routine-create", req.body);
+      return { status_code: 201, body: result };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::routine-create",
+    config: { api_path: "/agentmemory/routines", http_method: "POST" },
+  });
+
+  sdk.registerFunction(
+    { id: "api::routine-list" },
+    async (req: ApiRequest): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const result = await sdk.trigger("mem::routine-list", {
+        frozen: req.query_params?.["frozen"] === "true" ? true : undefined,
+      });
+      return { status_code: 200, body: result };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::routine-list",
+    config: { api_path: "/agentmemory/routines", http_method: "GET" },
+  });
+
+  sdk.registerFunction(
+    { id: "api::routine-run" },
+    async (
+      req: ApiRequest<{ routineId: string; project?: string; initiatedBy?: string }>,
+    ): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      if (!req.body?.routineId) {
+        return { status_code: 400, body: { error: "routineId is required" } };
+      }
+      const result = await sdk.trigger("mem::routine-run", req.body);
+      return { status_code: 201, body: result };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::routine-run",
+    config: { api_path: "/agentmemory/routines/run", http_method: "POST" },
+  });
+
+  sdk.registerFunction(
+    { id: "api::routine-status" },
+    async (req: ApiRequest): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const runId = req.query_params?.["runId"] as string;
+      if (!runId) {
+        return { status_code: 400, body: { error: "runId query param required" } };
+      }
+      const result = await sdk.trigger("mem::routine-status", { runId });
+      return { status_code: 200, body: result };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::routine-status",
+    config: { api_path: "/agentmemory/routines/status", http_method: "GET" },
+  });
+
+  sdk.registerFunction(
+    { id: "api::signal-send" },
+    async (
+      req: ApiRequest<{
+        from: string;
+        to?: string;
+        content: string;
+        type?: string;
+        replyTo?: string;
+      }>,
+    ): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      if (!req.body?.from || !req.body?.content) {
+        return { status_code: 400, body: { error: "from and content are required" } };
+      }
+      const result = await sdk.trigger("mem::signal-send", req.body);
+      return { status_code: 201, body: result };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::signal-send",
+    config: { api_path: "/agentmemory/signals/send", http_method: "POST" },
+  });
+
+  sdk.registerFunction(
+    { id: "api::signal-read" },
+    async (req: ApiRequest): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const agentId = req.query_params?.["agentId"] as string;
+      if (!agentId) {
+        return { status_code: 400, body: { error: "agentId query param required" } };
+      }
+      const result = await sdk.trigger("mem::signal-read", {
+        agentId,
+        unreadOnly: req.query_params?.["unreadOnly"] === "true",
+        threadId: req.query_params?.["threadId"],
+        limit: parseInt(req.query_params?.["limit"] as string) || undefined,
+      });
+      return { status_code: 200, body: result };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::signal-read",
+    config: { api_path: "/agentmemory/signals", http_method: "GET" },
+  });
+
+  sdk.registerFunction(
+    { id: "api::checkpoint-create" },
+    async (
+      req: ApiRequest<{
+        name: string;
+        description?: string;
+        type?: string;
+        linkedActionIds?: string[];
+        expiresInMs?: number;
+      }>,
+    ): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      if (!req.body?.name) {
+        return { status_code: 400, body: { error: "name is required" } };
+      }
+      const result = await sdk.trigger("mem::checkpoint-create", req.body);
+      return { status_code: 201, body: result };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::checkpoint-create",
+    config: { api_path: "/agentmemory/checkpoints", http_method: "POST" },
+  });
+
+  sdk.registerFunction(
+    { id: "api::checkpoint-resolve" },
+    async (
+      req: ApiRequest<{
+        checkpointId: string;
+        status: string;
+        resolvedBy?: string;
+        result?: unknown;
+      }>,
+    ): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      if (!req.body?.checkpointId || !req.body?.status) {
+        return { status_code: 400, body: { error: "checkpointId and status are required" } };
+      }
+      const result = await sdk.trigger("mem::checkpoint-resolve", req.body);
+      return { status_code: 200, body: result };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::checkpoint-resolve",
+    config: { api_path: "/agentmemory/checkpoints/resolve", http_method: "POST" },
+  });
+
+  sdk.registerFunction(
+    { id: "api::checkpoint-list" },
+    async (req: ApiRequest): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const result = await sdk.trigger("mem::checkpoint-list", {
+        status: req.query_params?.["status"],
+        type: req.query_params?.["type"],
+      });
+      return { status_code: 200, body: result };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::checkpoint-list",
+    config: { api_path: "/agentmemory/checkpoints", http_method: "GET" },
+  });
+
+  sdk.registerFunction(
+    { id: "api::mesh-register" },
+    async (
+      req: ApiRequest<{ url: string; name: string; sharedScopes?: string[] }>,
+    ): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      if (!req.body?.url || !req.body?.name) {
+        return { status_code: 400, body: { error: "url and name are required" } };
+      }
+      const result = await sdk.trigger("mem::mesh-register", req.body);
+      return { status_code: 201, body: result };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::mesh-register",
+    config: { api_path: "/agentmemory/mesh/peers", http_method: "POST" },
+  });
+
+  sdk.registerFunction(
+    { id: "api::mesh-list" },
+    async (req: ApiRequest): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const result = await sdk.trigger("mem::mesh-list", {});
+      return { status_code: 200, body: result };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::mesh-list",
+    config: { api_path: "/agentmemory/mesh/peers", http_method: "GET" },
+  });
+
+  sdk.registerFunction(
+    { id: "api::mesh-sync" },
+    async (
+      req: ApiRequest<{ peerId?: string; direction?: string }>,
+    ): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const result = await sdk.trigger("mem::mesh-sync", req.body || {});
+      return { status_code: 200, body: result };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::mesh-sync",
+    config: { api_path: "/agentmemory/mesh/sync", http_method: "POST" },
+  });
+
+  sdk.registerFunction(
+    { id: "api::mesh-receive" },
+    async (req: ApiRequest): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const result = await sdk.trigger("mem::mesh-receive", req.body || {});
+      return { status_code: 200, body: result };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::mesh-receive",
+    config: { api_path: "/agentmemory/mesh/receive", http_method: "POST" },
+  });
+
+  sdk.registerFunction(
+    { id: "api::mesh-export" },
+    async (req: ApiRequest): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const since = req.query_params?.["since"] as string;
+      if (since) {
+        const parsed = new Date(since).getTime();
+        if (Number.isNaN(parsed)) {
+          return { status_code: 400, body: { error: "Invalid 'since' date format" } };
+        }
+      }
+      const memories = await kv.list<import("../types.js").Memory>(KV.memories);
+      const actions = await kv.list<import("../types.js").Action>(KV.actions);
+      const sinceTime = since ? new Date(since).getTime() : 0;
+      return {
+        status_code: 200,
+        body: {
+          memories: memories.filter(
+            (m) => new Date(m.updatedAt).getTime() > sinceTime,
+          ),
+          actions: actions.filter(
+            (a) => new Date(a.updatedAt).getTime() > sinceTime,
+          ),
+        },
+      };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::mesh-export",
+    config: { api_path: "/agentmemory/mesh/export", http_method: "GET" },
+  });
+
+  sdk.registerFunction(
+    { id: "api::flow-compress" },
+    async (
+      req: ApiRequest<{
+        runId?: string;
+        actionIds?: string[];
+        project?: string;
+      }>,
+    ): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      try {
+        const result = await sdk.trigger("mem::flow-compress", req.body || {});
+        return { status_code: 200, body: result };
+      } catch {
+        return {
+          status_code: 404,
+          body: { error: "Flow compression requires a provider" },
+        };
+      }
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::flow-compress",
+    config: { api_path: "/agentmemory/flow/compress", http_method: "POST" },
+  });
+
+  sdk.registerFunction(
+    { id: "api::branch-detect" },
+    async (req: ApiRequest): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const cwd = (req.query_params?.["cwd"] as string) || process.cwd();
+      const result = await sdk.trigger("mem::detect-worktree", { cwd });
+      return { status_code: 200, body: result };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::branch-detect",
+    config: { api_path: "/agentmemory/branch/detect", http_method: "GET" },
+  });
+
+  sdk.registerFunction(
+    { id: "api::branch-worktrees" },
+    async (req: ApiRequest): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const cwd = (req.query_params?.["cwd"] as string) || process.cwd();
+      const result = await sdk.trigger("mem::list-worktrees", { cwd });
+      return { status_code: 200, body: result };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::branch-worktrees",
+    config: { api_path: "/agentmemory/branch/worktrees", http_method: "GET" },
+  });
+
+  sdk.registerFunction(
+    { id: "api::branch-sessions" },
+    async (req: ApiRequest): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const cwd = (req.query_params?.["cwd"] as string) || process.cwd();
+      const result = await sdk.trigger("mem::branch-sessions", { cwd });
+      return { status_code: 200, body: result };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::branch-sessions",
+    config: { api_path: "/agentmemory/branch/sessions", http_method: "GET" },
+  });
+
   sdk.registerFunction({ id: "api::viewer" }, async (): Promise<Response> => {
     const headers = {
       "Content-Type": "text/html",

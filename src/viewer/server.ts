@@ -498,7 +498,7 @@ async function handleApiRoute(
         {
           status,
           service: "agentmemory",
-          version: "0.4.0",
+          version: "0.5.0",
           health: health || null,
           functionMetrics,
           circuitBreaker,
@@ -512,7 +512,7 @@ async function handleApiRoute(
         {
           status: "healthy",
           service: "agentmemory",
-          version: "0.4.0",
+          version: "0.5.0",
           health: null,
           functionMetrics: [],
           circuitBreaker: null,

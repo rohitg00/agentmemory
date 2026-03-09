@@ -526,6 +526,282 @@ export function registerMcpEndpoints(
             }
           }
 
+          case "memory_action_create": {
+            if (typeof args.title !== "string" || !args.title.trim()) {
+              return {
+                status_code: 400,
+                body: { error: "title is required" },
+              };
+            }
+            const edges: Array<{ type: string; targetActionId: string }> = [];
+            if (typeof args.requires === "string" && args.requires.trim()) {
+              for (const id of (args.requires as string).split(",").map((s: string) => s.trim())) {
+                edges.push({ type: "requires", targetActionId: id });
+              }
+            }
+            const tags = args.tags
+              ? (args.tags as string).split(",").map((t: string) => t.trim())
+              : [];
+            const actionResult = await sdk.trigger("mem::action-create", {
+              title: args.title,
+              description: args.description,
+              priority: args.priority,
+              project: args.project,
+              tags,
+              parentId: args.parentId,
+              edges: edges.length > 0 ? edges : undefined,
+            });
+            return {
+              status_code: 200,
+              body: {
+                content: [
+                  { type: "text", text: JSON.stringify(actionResult, null, 2) },
+                ],
+              },
+            };
+          }
+
+          case "memory_action_update": {
+            if (typeof args.actionId !== "string" || !args.actionId.trim()) {
+              return {
+                status_code: 400,
+                body: { error: "actionId is required" },
+              };
+            }
+            const updateResult = await sdk.trigger("mem::action-update", {
+              actionId: args.actionId,
+              status: args.status,
+              result: args.result,
+              priority: args.priority,
+            });
+            return {
+              status_code: 200,
+              body: {
+                content: [
+                  { type: "text", text: JSON.stringify(updateResult, null, 2) },
+                ],
+              },
+            };
+          }
+
+          case "memory_frontier": {
+            const frontierResult = await sdk.trigger("mem::frontier", {
+              project: args.project,
+              agentId: args.agentId,
+              limit: args.limit,
+            });
+            return {
+              status_code: 200,
+              body: {
+                content: [
+                  { type: "text", text: JSON.stringify(frontierResult, null, 2) },
+                ],
+              },
+            };
+          }
+
+          case "memory_next": {
+            const nextResult = await sdk.trigger("mem::next", {
+              project: args.project,
+              agentId: args.agentId,
+            });
+            return {
+              status_code: 200,
+              body: {
+                content: [
+                  { type: "text", text: JSON.stringify(nextResult, null, 2) },
+                ],
+              },
+            };
+          }
+
+          case "memory_lease": {
+            if (
+              typeof args.actionId !== "string" ||
+              typeof args.agentId !== "string" ||
+              typeof args.operation !== "string"
+            ) {
+              return {
+                status_code: 400,
+                body: { error: "actionId, agentId, and operation are required" },
+              };
+            }
+            const op = args.operation as string;
+            let leaseResult;
+            if (op === "acquire") {
+              leaseResult = await sdk.trigger("mem::lease-acquire", {
+                actionId: args.actionId,
+                agentId: args.agentId,
+                ttlMs: args.ttlMs,
+              });
+            } else if (op === "release") {
+              leaseResult = await sdk.trigger("mem::lease-release", {
+                actionId: args.actionId,
+                agentId: args.agentId,
+                result: args.result,
+              });
+            } else if (op === "renew") {
+              leaseResult = await sdk.trigger("mem::lease-renew", {
+                actionId: args.actionId,
+                agentId: args.agentId,
+                ttlMs: args.ttlMs,
+              });
+            } else {
+              return {
+                status_code: 400,
+                body: { error: "operation must be acquire, release, or renew" },
+              };
+            }
+            return {
+              status_code: 200,
+              body: {
+                content: [
+                  { type: "text", text: JSON.stringify(leaseResult, null, 2) },
+                ],
+              },
+            };
+          }
+
+          case "memory_routine_run": {
+            if (typeof args.routineId !== "string") {
+              return {
+                status_code: 400,
+                body: { error: "routineId is required" },
+              };
+            }
+            const runResult = await sdk.trigger("mem::routine-run", {
+              routineId: args.routineId,
+              project: args.project,
+              initiatedBy: args.initiatedBy,
+            });
+            return {
+              status_code: 200,
+              body: {
+                content: [
+                  { type: "text", text: JSON.stringify(runResult, null, 2) },
+                ],
+              },
+            };
+          }
+
+          case "memory_signal_send": {
+            if (
+              typeof args.from !== "string" ||
+              typeof args.content !== "string"
+            ) {
+              return {
+                status_code: 400,
+                body: { error: "from and content are required" },
+              };
+            }
+            const sigResult = await sdk.trigger("mem::signal-send", {
+              from: args.from,
+              to: args.to,
+              content: args.content,
+              type: args.type,
+              replyTo: args.replyTo,
+            });
+            return {
+              status_code: 200,
+              body: {
+                content: [
+                  { type: "text", text: JSON.stringify(sigResult, null, 2) },
+                ],
+              },
+            };
+          }
+
+          case "memory_signal_read": {
+            if (typeof args.agentId !== "string") {
+              return {
+                status_code: 400,
+                body: { error: "agentId is required" },
+              };
+            }
+            const readResult = await sdk.trigger("mem::signal-read", {
+              agentId: args.agentId,
+              unreadOnly: args.unreadOnly === "true",
+              threadId: args.threadId,
+              limit: args.limit,
+            });
+            return {
+              status_code: 200,
+              body: {
+                content: [
+                  { type: "text", text: JSON.stringify(readResult, null, 2) },
+                ],
+              },
+            };
+          }
+
+          case "memory_checkpoint": {
+            const cpOp = args.operation as string;
+            if (!cpOp) {
+              return {
+                status_code: 400,
+                body: { error: "operation is required" },
+              };
+            }
+            let cpResult;
+            if (cpOp === "create") {
+              const linkedIds = args.linkedActionIds
+                ? (args.linkedActionIds as string)
+                    .split(",")
+                    .map((s: string) => s.trim())
+                : [];
+              cpResult = await sdk.trigger("mem::checkpoint-create", {
+                name: args.name,
+                description: args.description,
+                type: args.type,
+                linkedActionIds: linkedIds,
+              });
+            } else if (cpOp === "resolve") {
+              if (typeof args.checkpointId !== "string" || !args.checkpointId.trim()) {
+                return {
+                  status_code: 400,
+                  body: { error: "checkpointId is required for resolve operation" },
+                };
+              }
+              cpResult = await sdk.trigger("mem::checkpoint-resolve", {
+                checkpointId: args.checkpointId,
+                status: args.status,
+              });
+            } else if (cpOp === "list") {
+              cpResult = await sdk.trigger("mem::checkpoint-list", {
+                status: args.status,
+                type: args.type,
+              });
+            } else {
+              return {
+                status_code: 400,
+                body: { error: "operation must be create, resolve, or list" },
+              };
+            }
+            return {
+              status_code: 200,
+              body: {
+                content: [
+                  { type: "text", text: JSON.stringify(cpResult, null, 2) },
+                ],
+              },
+            };
+          }
+
+          case "memory_mesh_sync": {
+            const meshResult = await sdk.trigger("mem::mesh-sync", {
+              peerId: args.peerId,
+              direction: args.direction,
+            });
+            return {
+              status_code: 200,
+              body: {
+                content: [
+                  { type: "text", text: JSON.stringify(meshResult, null, 2) },
+                ],
+              },
+            };
+          }
+
           default:
             return {
               status_code: 400,
