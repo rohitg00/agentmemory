@@ -537,8 +537,8 @@ export function registerMcpEndpoints(
                 edges.push({ type: "requires", targetActionId: id });
               }
             }
-            const tags = args.tags
-              ? (args.tags as string).split(",").map((t: string) => t.trim())
+            const tags = typeof args.tags === "string" && args.tags.trim()
+              ? args.tags.split(",").map((t: string) => t.trim())
               : [];
             const actionResult = await sdk.trigger("mem::action-create", {
               title: args.title,
@@ -742,10 +742,8 @@ export function registerMcpEndpoints(
             }
             let cpResult;
             if (cpOp === "create") {
-              const linkedIds = args.linkedActionIds
-                ? (args.linkedActionIds as string)
-                    .split(",")
-                    .map((s: string) => s.trim())
+              const linkedIds = typeof args.linkedActionIds === "string" && args.linkedActionIds.trim()
+                ? args.linkedActionIds.split(",").map((s: string) => s.trim())
                 : [];
               cpResult = await sdk.trigger("mem::checkpoint-create", {
                 name: args.name,
@@ -801,9 +799,12 @@ export function registerMcpEndpoints(
           }
 
           case "memory_sentinel_create": {
-            const snlConfig = args.config ? JSON.parse(args.config as string) : {};
-            const snlLinked = args.linkedActionIds
-              ? (args.linkedActionIds as string).split(",").map((s: string) => s.trim()).filter(Boolean)
+            let snlConfig = {};
+            if (typeof args.config === "string" && args.config.trim()) {
+              try { snlConfig = JSON.parse(args.config); } catch { return { status_code: 400, body: { error: "invalid config JSON" } }; }
+            }
+            const snlLinked = typeof args.linkedActionIds === "string" && args.linkedActionIds.trim()
+              ? args.linkedActionIds.split(",").map((s: string) => s.trim()).filter(Boolean)
               : undefined;
             const snlResult = await sdk.trigger("mem::sentinel-create", {
               name: args.name,
@@ -842,7 +843,10 @@ export function registerMcpEndpoints(
           }
 
           case "memory_crystallize": {
-            const crysIds = (args.actionIds as string).split(",").map((s: string) => s.trim()).filter(Boolean);
+            if (typeof args.actionIds !== "string" || !args.actionIds.trim()) {
+              return { status_code: 400, body: { error: "actionIds is required" } };
+            }
+            const crysIds = args.actionIds.split(",").map((s: string) => s.trim()).filter(Boolean);
             const crysResult = await sdk.trigger("mem::crystallize", {
               actionIds: crysIds,
               project: args.project,
@@ -852,16 +856,16 @@ export function registerMcpEndpoints(
           }
 
           case "memory_diagnose": {
-            const diagCats = args.categories
-              ? (args.categories as string).split(",").map((s: string) => s.trim()).filter(Boolean)
+            const diagCats = typeof args.categories === "string" && args.categories.trim()
+              ? args.categories.split(",").map((s: string) => s.trim()).filter(Boolean)
               : undefined;
             const diagResult = await sdk.trigger("mem::diagnose", { categories: diagCats });
             return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(diagResult, null, 2) }] } };
           }
 
           case "memory_heal": {
-            const healCats = args.categories
-              ? (args.categories as string).split(",").map((s: string) => s.trim()).filter(Boolean)
+            const healCats = typeof args.categories === "string" && args.categories.trim()
+              ? args.categories.split(",").map((s: string) => s.trim()).filter(Boolean)
               : undefined;
             const healResult = await sdk.trigger("mem::heal", {
               categories: healCats,

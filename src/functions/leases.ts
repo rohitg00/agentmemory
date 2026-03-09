@@ -15,7 +15,10 @@ export function registerLeasesFunction(sdk: ISdk, kv: StateKV): void {
         return { success: false, error: "actionId and agentId are required" };
       }
 
-      const ttl = Math.min(data.ttlMs || DEFAULT_LEASE_TTL_MS, MAX_LEASE_TTL_MS);
+      const rawTtl = typeof data.ttlMs === "number" && Number.isFinite(data.ttlMs) && data.ttlMs > 0
+        ? data.ttlMs
+        : DEFAULT_LEASE_TTL_MS;
+      const ttl = Math.min(rawTtl, MAX_LEASE_TTL_MS);
 
       return withKeyedLock(`mem:action:${data.actionId}`, async () => {
         const action = await kv.get<Action>(KV.actions, data.actionId);
@@ -125,7 +128,10 @@ export function registerLeasesFunction(sdk: ISdk, kv: StateKV): void {
         return { success: false, error: "actionId and agentId are required" };
       }
 
-      const ttl = Math.min(data.ttlMs || DEFAULT_LEASE_TTL_MS, MAX_LEASE_TTL_MS);
+      const rawTtl = typeof data.ttlMs === "number" && Number.isFinite(data.ttlMs) && data.ttlMs > 0
+        ? data.ttlMs
+        : DEFAULT_LEASE_TTL_MS;
+      const ttl = Math.min(rawTtl, MAX_LEASE_TTL_MS);
 
       return withKeyedLock(`mem:action:${data.actionId}`, async () => {
         const leases = await kv.list<Lease>(KV.leases);

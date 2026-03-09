@@ -25,6 +25,21 @@ export function registerRoutinesFunction(sdk: ISdk, kv: StateKV): void {
         }
       }
 
+      const orders = data.steps.map((s, i) => s.order ?? i);
+      const uniqueOrders = new Set(orders);
+      if (uniqueOrders.size !== orders.length) {
+        return { success: false, error: "duplicate step orders" };
+      }
+      for (const step of data.steps) {
+        if (step.dependsOn) {
+          for (const dep of step.dependsOn) {
+            if (!uniqueOrders.has(dep)) {
+              return { success: false, error: `step ${step.order ?? data.steps.indexOf(step)} depends on unknown order ${dep}` };
+            }
+          }
+        }
+      }
+
       const now = new Date().toISOString();
       const routine: Routine = {
         id: generateId("rtn"),
@@ -130,18 +145,27 @@ export function registerRoutinesFunction(sdk: ISdk, kv: StateKV): void {
           const actionId = stepOrderToActionId.get(step.order);
           if (!actionId) continue;
 
+          if (step.dependsOn.length > 0) {
+            const action = await kv.get<Action>(KV.actions, actionId);
+            if (action) {
+              action.status = "blocked";
+              action.updatedAt = now;
+              await kv.set(KV.actions, action.id, action);
+            }
+            stepStatus[step.order] = "pending";
+          }
+
           for (const depOrder of step.dependsOn) {
             const depActionId = stepOrderToActionId.get(depOrder);
-            if (depActionId) {
-              const edge = {
-                id: generateId("ae"),
-                type: "requires" as const,
-                sourceActionId: actionId,
-                targetActionId: depActionId,
-                createdAt: now,
-              };
-              await kv.set(KV.actionEdges, edge.id, edge);
-            }
+            if (!depActionId) continue;
+            const edge = {
+              id: generateId("ae"),
+              type: "requires" as const,
+              sourceActionId: actionId,
+              targetActionId: depActionId,
+              createdAt: now,
+            };
+            await kv.set(KV.actionEdges, edge.id, edge);
           }
         }
 
@@ -186,6 +210,7 @@ export function registerRoutinesFunction(sdk: ISdk, kv: StateKV): void {
       let allDone = true;
       let anyFailed = false;
 
+      let statusChanged = false;
       for (const actionId of run.actionIds) {
         const action = await kv.get<Action>(KV.actions, actionId);
         if (action) {
@@ -196,15 +221,28 @@ export function registerRoutinesFunction(sdk: ISdk, kv: StateKV): void {
           });
           if (action.status !== "done") allDone = false;
           if (action.status === "cancelled") anyFailed = true;
+
+          const stepOrder = (action.metadata as { stepOrder?: number })?.stepOrder;
+          if (stepOrder !== undefined && stepOrder in run.stepStatus) {
+            const mapped = action.status === "cancelled" ? "failed" : action.status as "pending" | "active" | "done";
+            if (run.stepStatus[stepOrder] !== mapped) {
+              run.stepStatus[stepOrder] = mapped;
+              statusChanged = true;
+            }
+          }
         }
       }
 
       if (allDone && run.status === "running") {
         run.status = "completed";
         run.completedAt = new Date().toISOString();
-        await kv.set(KV.routineRuns, run.id, run);
+        statusChanged = true;
       } else if (anyFailed && run.status === "running") {
         run.status = "failed";
+        statusChanged = true;
+      }
+
+      if (statusChanged) {
         await kv.set(KV.routineRuns, run.id, run);
       }
 

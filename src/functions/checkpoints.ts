@@ -18,6 +18,11 @@ export function registerCheckpointsFunction(sdk: ISdk, kv: StateKV): void {
         return { success: false, error: "name is required" };
       }
 
+      const validTypes: Checkpoint["type"][] = ["ci", "approval", "deploy", "external", "timer"];
+      if (data.type && !validTypes.includes(data.type)) {
+        return { success: false, error: `invalid checkpoint type: ${data.type}. Must be one of: ${validTypes.join(", ")}` };
+      }
+
       const now = new Date();
       const checkpoint: Checkpoint = {
         id: generateId("ckpt"),
@@ -53,6 +58,13 @@ export function registerCheckpointsFunction(sdk: ISdk, kv: StateKV): void {
             createdAt: now.toISOString(),
           };
           await kv.set(KV.actionEdges, edge.id, edge);
+
+          const action = await kv.get<Action>(KV.actions, actionId);
+          if (action && action.status === "pending") {
+            action.status = "blocked";
+            action.updatedAt = now.toISOString();
+            await kv.set(KV.actions, action.id, action);
+          }
         }
       }
 

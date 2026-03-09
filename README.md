@@ -377,7 +377,7 @@ Collects every 30 seconds: heap usage, CPU percentage (delta sampling), event lo
 
 ## MCP Server
 
-### Tools (18)
+### Tools (37)
 
 | Tool | Description |
 |------|-------------|
@@ -399,6 +399,25 @@ Collects every 30 seconds: heap usage, CPU percentage (delta sampling), event lo
 | `memory_audit` | View the audit trail of memory operations |
 | `memory_governance_delete` | Delete specific memories with audit trail |
 | `memory_snapshot_create` | Create a git-versioned snapshot of memory state |
+| `memory_action_create` | Create actionable work items with typed dependencies |
+| `memory_action_update` | Update action status, priority, or details |
+| `memory_frontier` | Get unblocked actions ranked by priority and urgency |
+| `memory_next` | Get the single most important next action |
+| `memory_lease` | Acquire, release, or renew exclusive action leases |
+| `memory_routine_run` | Instantiate a frozen workflow routine into action chains |
+| `memory_signal_send` | Send threaded messages between agents |
+| `memory_signal_read` | Read messages for an agent with read receipts |
+| `memory_checkpoint` | Create or resolve external condition gates (CI, approval, deploy) |
+| `memory_mesh_sync` | Sync memories and actions with peer instances |
+| `memory_sentinel_create` | Create event-driven condition watchers |
+| `memory_sentinel_trigger` | Externally fire a sentinel to unblock gated actions |
+| `memory_sketch_create` | Create ephemeral action graphs for exploratory work |
+| `memory_sketch_promote` | Promote sketch actions to permanent actions |
+| `memory_crystallize` | LLM-powered compaction of completed action chains |
+| `memory_diagnose` | Health checks across all subsystems |
+| `memory_heal` | Auto-fix stuck, orphaned, and inconsistent state |
+| `memory_facet_tag` | Attach structured dimension:value tags to targets |
+| `memory_facet_query` | Query targets by facet tags with AND/OR logic |
 
 ### Resources (6)
 
@@ -643,9 +662,9 @@ agentmemory is built on iii-engine's three primitives:
 | Prometheus / Grafana | iii OTEL + built-in health monitor |
 | Redis (circuit breaker) | In-process circuit breaker + fallback chain |
 
-**92 source files. ~14,500 LOC. 518 tests. 354KB bundled.**
+**101 source files. ~15,000 LOC. 518 tests. 361KB bundled.**
 
-### Functions (33)
+### Functions (50)
 
 | Function | Purpose |
 |----------|---------|

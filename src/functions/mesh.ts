@@ -1,6 +1,7 @@
 import type { ISdk } from "iii-sdk";
 import type { StateKV } from "../state/kv.js";
 import { KV, generateId } from "../state/schema.js";
+import { withKeyedLock } from "../state/keyed-mutex.js";
 import type { MeshPeer, Memory, Action } from "../types.js";
 
 function isAllowedUrl(urlStr: string): boolean {
@@ -16,7 +17,11 @@ function isAllowedUrl(urlStr: string): boolean {
       host.startsWith("10.") ||
       host.startsWith("192.168.") ||
       host === "169.254.169.254" ||
-      /^172\.(1[6-9]|2\d|3[01])\./.test(host)
+      /^172\.(1[6-9]|2\d|3[01])\./.test(host) ||
+      host.startsWith("fe80:") ||
+      host.startsWith("fc00:") ||
+      host.startsWith("fd") ||
+      host.startsWith("::ffff:")
     ) {
       return false;
     }
@@ -197,16 +202,20 @@ export function registerMeshFunction(sdk: ISdk, kv: StateKV): void {
         for (const action of data.actions) {
           if (!action.id || typeof action.id !== "string" || !action.updatedAt) continue;
           if (Number.isNaN(new Date(action.updatedAt).getTime())) continue;
-          const existing = await kv.get<Action>(KV.actions, action.id);
-          if (!existing) {
-            await kv.set(KV.actions, action.id, action);
-            accepted++;
-          } else if (
-            new Date(action.updatedAt) > new Date(existing.updatedAt)
-          ) {
-            await kv.set(KV.actions, action.id, action);
-            accepted++;
-          }
+          const wrote = await withKeyedLock(`mem:action:${action.id}`, async () => {
+            const existing = await kv.get<Action>(KV.actions, action.id);
+            if (!existing) {
+              await kv.set(KV.actions, action.id, action);
+              return true;
+            } else if (
+              new Date(action.updatedAt) > new Date(existing.updatedAt)
+            ) {
+              await kv.set(KV.actions, action.id, action);
+              return true;
+            }
+            return false;
+          });
+          if (wrote) accepted++;
         }
       }
 

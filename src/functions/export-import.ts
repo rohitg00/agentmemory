@@ -319,46 +319,82 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
 
       if (importData.actions) {
         for (const action of importData.actions) {
+          if (strategy === "skip") {
+            const existing = await kv.get(KV.actions, action.id).catch(() => null);
+            if (existing) { stats.skipped++; continue; }
+          }
           await kv.set(KV.actions, action.id, action);
         }
       }
       if (importData.actionEdges) {
         for (const edge of importData.actionEdges) {
+          if (strategy === "skip") {
+            const existing = await kv.get(KV.actionEdges, edge.id).catch(() => null);
+            if (existing) { stats.skipped++; continue; }
+          }
           await kv.set(KV.actionEdges, edge.id, edge);
         }
       }
       if (importData.routines) {
         for (const routine of importData.routines) {
+          if (strategy === "skip") {
+            const existing = await kv.get(KV.routines, routine.id).catch(() => null);
+            if (existing) { stats.skipped++; continue; }
+          }
           await kv.set(KV.routines, routine.id, routine);
         }
       }
       if (importData.signals) {
         for (const signal of importData.signals) {
+          if (strategy === "skip") {
+            const existing = await kv.get(KV.signals, signal.id).catch(() => null);
+            if (existing) { stats.skipped++; continue; }
+          }
           await kv.set(KV.signals, signal.id, signal);
         }
       }
       if (importData.checkpoints) {
         for (const checkpoint of importData.checkpoints) {
+          if (strategy === "skip") {
+            const existing = await kv.get(KV.checkpoints, checkpoint.id).catch(() => null);
+            if (existing) { stats.skipped++; continue; }
+          }
           await kv.set(KV.checkpoints, checkpoint.id, checkpoint);
         }
       }
       if (importData.sentinels) {
         for (const sentinel of importData.sentinels) {
+          if (strategy === "skip") {
+            const existing = await kv.get(KV.sentinels, sentinel.id).catch(() => null);
+            if (existing) { stats.skipped++; continue; }
+          }
           await kv.set(KV.sentinels, sentinel.id, sentinel);
         }
       }
       if (importData.sketches) {
         for (const sketch of importData.sketches) {
+          if (strategy === "skip") {
+            const existing = await kv.get(KV.sketches, sketch.id).catch(() => null);
+            if (existing) { stats.skipped++; continue; }
+          }
           await kv.set(KV.sketches, sketch.id, sketch);
         }
       }
       if (importData.crystals) {
         for (const crystal of importData.crystals) {
+          if (strategy === "skip") {
+            const existing = await kv.get(KV.crystals, crystal.id).catch(() => null);
+            if (existing) { stats.skipped++; continue; }
+          }
           await kv.set(KV.crystals, crystal.id, crystal);
         }
       }
       if (importData.facets) {
         for (const facet of importData.facets) {
+          if (strategy === "skip") {
+            const existing = await kv.get(KV.facets, facet.id).catch(() => null);
+            if (existing) { stats.skipped++; continue; }
+          }
           await kv.set(KV.facets, facet.id, facet);
         }
       }

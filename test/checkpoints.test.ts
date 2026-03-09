@@ -284,7 +284,7 @@ describe("Checkpoint Functions", () => {
     });
 
     it("does not unblock actions that are not in blocked status", async () => {
-      await kv.set("mem:actions", "act_1", makeAction("act_1", "pending"));
+      await kv.set("mem:actions", "act_1", makeAction("act_1", "active"));
 
       const cp = (await sdk.trigger("mem::checkpoint-create", {
         name: "Gate for non-blocked",
