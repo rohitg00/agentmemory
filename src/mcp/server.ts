@@ -802,6 +802,101 @@ export function registerMcpEndpoints(
             };
           }
 
+          case "memory_sentinel_create": {
+            const snlConfig = args.config ? JSON.parse(args.config as string) : {};
+            const snlLinked = args.linkedActionIds
+              ? (args.linkedActionIds as string).split(",").map((s: string) => s.trim()).filter(Boolean)
+              : undefined;
+            const snlResult = await sdk.trigger("mem::sentinel-create", {
+              name: args.name,
+              type: args.type,
+              config: snlConfig,
+              linkedActionIds: snlLinked,
+              expiresInMs: args.expiresInMs,
+            });
+            return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(snlResult, null, 2) }] } };
+          }
+
+          case "memory_sentinel_trigger": {
+            const snlTrigResult = await sdk.trigger("mem::sentinel-trigger", {
+              sentinelId: args.sentinelId,
+              result: args.result ? JSON.parse(args.result as string) : undefined,
+            });
+            return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(snlTrigResult, null, 2) }] } };
+          }
+
+          case "memory_sketch_create": {
+            const skResult = await sdk.trigger("mem::sketch-create", {
+              title: args.title,
+              description: args.description,
+              expiresInMs: args.expiresInMs,
+              project: args.project,
+            });
+            return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(skResult, null, 2) }] } };
+          }
+
+          case "memory_sketch_promote": {
+            const skpResult = await sdk.trigger("mem::sketch-promote", {
+              sketchId: args.sketchId,
+              project: args.project,
+            });
+            return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(skpResult, null, 2) }] } };
+          }
+
+          case "memory_crystallize": {
+            const crysIds = (args.actionIds as string).split(",").map((s: string) => s.trim()).filter(Boolean);
+            const crysResult = await sdk.trigger("mem::crystallize", {
+              actionIds: crysIds,
+              project: args.project,
+              sessionId: args.sessionId,
+            });
+            return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(crysResult, null, 2) }] } };
+          }
+
+          case "memory_diagnose": {
+            const diagCats = args.categories
+              ? (args.categories as string).split(",").map((s: string) => s.trim()).filter(Boolean)
+              : undefined;
+            const diagResult = await sdk.trigger("mem::diagnose", { categories: diagCats });
+            return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(diagResult, null, 2) }] } };
+          }
+
+          case "memory_heal": {
+            const healCats = args.categories
+              ? (args.categories as string).split(",").map((s: string) => s.trim()).filter(Boolean)
+              : undefined;
+            const healResult = await sdk.trigger("mem::heal", {
+              categories: healCats,
+              dryRun: args.dryRun === "true",
+            });
+            return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(healResult, null, 2) }] } };
+          }
+
+          case "memory_facet_tag": {
+            const fctResult = await sdk.trigger("mem::facet-tag", {
+              targetId: args.targetId,
+              targetType: args.targetType,
+              dimension: args.dimension,
+              value: args.value,
+            });
+            return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(fctResult, null, 2) }] } };
+          }
+
+          case "memory_facet_query": {
+            const fqAll = args.matchAll
+              ? (args.matchAll as string).split(",").map((s: string) => s.trim()).filter(Boolean)
+              : undefined;
+            const fqAny = args.matchAny
+              ? (args.matchAny as string).split(",").map((s: string) => s.trim()).filter(Boolean)
+              : undefined;
+            const fqResult = await sdk.trigger("mem::facet-query", {
+              matchAll: fqAll,
+              matchAny: fqAny,
+              targetType: args.targetType,
+            });
+            return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(fqResult, null, 2) }] } };
+          }
+
           default:
             return {
               status_code: 400,

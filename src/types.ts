@@ -253,6 +253,10 @@ export interface ExportData {
   routines?: Routine[];
   signals?: Signal[];
   checkpoints?: Checkpoint[];
+  sentinels?: Sentinel[];
+  sketches?: Sketch[];
+  crystals?: Crystal[];
+  facets?: Facet[];
 }
 
 export interface EmbeddingConfig {
@@ -396,7 +400,16 @@ export interface AuditEntry {
     | "routine_run"
     | "signal_send"
     | "checkpoint_resolve"
-    | "mesh_sync";
+    | "mesh_sync"
+    | "sentinel_create"
+    | "sentinel_trigger"
+    | "sketch_create"
+    | "sketch_promote"
+    | "sketch_discard"
+    | "crystallize"
+    | "diagnose"
+    | "heal"
+    | "facet_tag";
   userId?: string;
   functionId: string;
   targetIds: string[];
@@ -449,6 +462,8 @@ export interface Action {
   result?: string;
   parentId?: string;
   metadata?: Record<string, unknown>;
+  sketchId?: string;
+  crystallizedInto?: string;
 }
 
 export type ActionEdgeType =
@@ -534,6 +549,62 @@ export interface Checkpoint {
   result?: unknown;
   expiresAt?: string;
   linkedActionIds: string[];
+}
+
+export interface Sketch {
+  id: string;
+  title: string;
+  description: string;
+  status: "active" | "promoted" | "discarded";
+  actionIds: string[];
+  project?: string;
+  createdAt: string;
+  expiresAt: string;
+  promotedAt?: string;
+  discardedAt?: string;
+}
+
+export interface Facet {
+  id: string;
+  targetId: string;
+  targetType: "action" | "memory" | "observation";
+  dimension: string;
+  value: string;
+  createdAt: string;
+}
+
+export interface Sentinel {
+  id: string;
+  name: string;
+  type: "webhook" | "timer" | "threshold" | "pattern" | "approval" | "custom";
+  status: "watching" | "triggered" | "cancelled" | "expired";
+  config: Record<string, unknown>;
+  result?: unknown;
+  createdAt: string;
+  triggeredAt?: string;
+  expiresAt?: string;
+  linkedActionIds: string[];
+  escalatedAt?: string;
+}
+
+export interface Crystal {
+  id: string;
+  narrative: string;
+  keyOutcomes: string[];
+  filesAffected: string[];
+  lessons: string[];
+  sourceActionIds: string[];
+  sessionId?: string;
+  project?: string;
+  createdAt: string;
+}
+
+export interface DiagnosticCheck {
+  name: string;
+  category: string;
+  status: "pass" | "warn" | "fail";
+  message: string;
+  fixable: boolean;
 }
 
 export interface MeshPeer {

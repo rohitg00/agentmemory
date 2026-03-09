@@ -28,6 +28,10 @@ export const KV = {
   signals: "mem:signals",
   checkpoints: "mem:checkpoints",
   mesh: "mem:mesh",
+  sketches: "mem:sketches",
+  facets: "mem:facets",
+  sentinels: "mem:sentinels",
+  crystals: "mem:crystals",
 } as const;
 
 export const STREAM = {

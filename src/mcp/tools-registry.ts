@@ -508,6 +508,164 @@ export const V050_TOOLS: McpToolDef[] = [
   },
 ];
 
+export const V051_TOOLS: McpToolDef[] = [
+  {
+    name: "memory_sentinel_create",
+    description:
+      "Create an event-driven sentinel that watches for conditions (webhook, timer, threshold, pattern, approval) and auto-unblocks gated actions when triggered.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "Sentinel name" },
+        type: {
+          type: "string",
+          description: "Type: webhook, timer, threshold, pattern, approval, custom",
+        },
+        config: {
+          type: "string",
+          description: "JSON config (timer: {durationMs}, threshold: {metric,operator,value}, pattern: {pattern}, webhook: {path})",
+        },
+        linkedActionIds: {
+          type: "string",
+          description: "Comma-separated action IDs to gate",
+        },
+        expiresInMs: { type: "number", description: "Auto-expire after ms" },
+      },
+      required: ["name", "type"],
+    },
+  },
+  {
+    name: "memory_sentinel_trigger",
+    description:
+      "Externally fire a sentinel, providing an optional result payload. Unblocks any gated actions.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sentinelId: { type: "string", description: "Sentinel ID to trigger" },
+        result: { type: "string", description: "JSON result payload" },
+      },
+      required: ["sentinelId"],
+    },
+  },
+  {
+    name: "memory_sketch_create",
+    description:
+      "Create an ephemeral action graph for exploratory work. Auto-expires after TTL. Can be promoted to permanent actions or discarded.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        title: { type: "string", description: "Sketch title" },
+        description: { type: "string", description: "What this sketch explores" },
+        expiresInMs: { type: "number", description: "TTL in ms (default 1 hour)" },
+        project: { type: "string", description: "Project context" },
+      },
+      required: ["title"],
+    },
+  },
+  {
+    name: "memory_sketch_promote",
+    description:
+      "Promote a sketch's ephemeral actions to permanent actions. Makes the exploratory work official.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sketchId: { type: "string", description: "Sketch ID to promote" },
+        project: { type: "string", description: "Override project for promoted actions" },
+      },
+      required: ["sketchId"],
+    },
+  },
+  {
+    name: "memory_crystallize",
+    description:
+      "Compress completed action chains into compact crystal digests using LLM summarization. Extracts narrative, key outcomes, files affected, and lessons.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        actionIds: {
+          type: "string",
+          description: "Comma-separated completed action IDs to crystallize",
+        },
+        project: { type: "string", description: "Project context" },
+        sessionId: { type: "string", description: "Session context" },
+      },
+      required: ["actionIds"],
+    },
+  },
+  {
+    name: "memory_diagnose",
+    description:
+      "Run health checks across all subsystems (actions, leases, sentinels, sketches, signals, sessions, memories, mesh). Identifies stuck, orphaned, and inconsistent state.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        categories: {
+          type: "string",
+          description: "Comma-separated categories to check (default all)",
+        },
+      },
+    },
+  },
+  {
+    name: "memory_heal",
+    description:
+      "Auto-fix all fixable issues found by diagnostics. Unblocks stuck actions, expires stale leases, cleans up orphaned data.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        categories: {
+          type: "string",
+          description: "Comma-separated categories to heal (default all)",
+        },
+        dryRun: {
+          type: "string",
+          description: "Set to 'true' for dry run (report but don't fix)",
+        },
+      },
+    },
+  },
+  {
+    name: "memory_facet_tag",
+    description:
+      "Attach a structured tag (dimension:value) to an action, memory, or observation for multi-dimensional categorization.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        targetId: { type: "string", description: "ID of the target to tag" },
+        targetType: {
+          type: "string",
+          description: "Type: action, memory, or observation",
+        },
+        dimension: { type: "string", description: "Tag dimension (e.g., priority, team, status)" },
+        value: { type: "string", description: "Tag value (e.g., urgent, backend, reviewed)" },
+      },
+      required: ["targetId", "targetType", "dimension", "value"],
+    },
+  },
+  {
+    name: "memory_facet_query",
+    description:
+      "Query targets by facet tags with AND/OR logic. Find all actions tagged priority:urgent AND team:backend.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        matchAll: {
+          type: "string",
+          description: "Comma-separated dimension:value pairs (AND logic)",
+        },
+        matchAny: {
+          type: "string",
+          description: "Comma-separated dimension:value pairs (OR logic)",
+        },
+        targetType: {
+          type: "string",
+          description: "Filter by type: action, memory, or observation",
+        },
+      },
+    },
+  },
+];
+
 export function getAllTools(): McpToolDef[] {
-  return [...CORE_TOOLS, ...V040_TOOLS, ...V050_TOOLS];
+  return [...CORE_TOOLS, ...V040_TOOLS, ...V050_TOOLS, ...V051_TOOLS];
 }

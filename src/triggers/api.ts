@@ -1604,4 +1604,202 @@ export function registerApiTriggers(
     function_id: "api::viewer",
     config: { api_path: "/agentmemory/viewer", http_method: "GET" },
   });
+
+  sdk.registerFunction({ id: "api::sentinel-create" }, async (req: ApiRequest) => {
+    const denied = checkAuth(req, secret);
+    if (denied) return denied;
+    const body = req.body as Record<string, unknown>;
+    if (!body?.name) return { status_code: 400, body: { error: "name is required" } };
+    const result = await sdk.trigger("mem::sentinel-create", body);
+    return { status_code: 200, body: result };
+  });
+  sdk.registerTrigger({ type: "http", function_id: "api::sentinel-create", config: { api_path: "/agentmemory/sentinels", http_method: "POST" } });
+
+  sdk.registerFunction({ id: "api::sentinel-trigger" }, async (req: ApiRequest) => {
+    const denied = checkAuth(req, secret);
+    if (denied) return denied;
+    const body = req.body as Record<string, unknown>;
+    if (!body?.sentinelId) return { status_code: 400, body: { error: "sentinelId is required" } };
+    const result = await sdk.trigger("mem::sentinel-trigger", body);
+    return { status_code: 200, body: result };
+  });
+  sdk.registerTrigger({ type: "http", function_id: "api::sentinel-trigger", config: { api_path: "/agentmemory/sentinels/trigger", http_method: "POST" } });
+
+  sdk.registerFunction({ id: "api::sentinel-check" }, async (req: ApiRequest) => {
+    const denied = checkAuth(req, secret);
+    if (denied) return denied;
+    const result = await sdk.trigger("mem::sentinel-check", {});
+    return { status_code: 200, body: result };
+  });
+  sdk.registerTrigger({ type: "http", function_id: "api::sentinel-check", config: { api_path: "/agentmemory/sentinels/check", http_method: "POST" } });
+
+  sdk.registerFunction({ id: "api::sentinel-cancel" }, async (req: ApiRequest) => {
+    const denied = checkAuth(req, secret);
+    if (denied) return denied;
+    const body = req.body as Record<string, unknown>;
+    if (!body?.sentinelId) return { status_code: 400, body: { error: "sentinelId is required" } };
+    const result = await sdk.trigger("mem::sentinel-cancel", body);
+    return { status_code: 200, body: result };
+  });
+  sdk.registerTrigger({ type: "http", function_id: "api::sentinel-cancel", config: { api_path: "/agentmemory/sentinels/cancel", http_method: "POST" } });
+
+  sdk.registerFunction({ id: "api::sentinel-list" }, async (req: ApiRequest) => {
+    const denied = checkAuth(req, secret);
+    if (denied) return denied;
+    const params = req.query_params || {};
+    const result = await sdk.trigger("mem::sentinel-list", { status: params.status, type: params.type });
+    return { status_code: 200, body: result };
+  });
+  sdk.registerTrigger({ type: "http", function_id: "api::sentinel-list", config: { api_path: "/agentmemory/sentinels", http_method: "GET" } });
+
+  sdk.registerFunction({ id: "api::sketch-create" }, async (req: ApiRequest) => {
+    const denied = checkAuth(req, secret);
+    if (denied) return denied;
+    const body = req.body as Record<string, unknown>;
+    if (!body?.title) return { status_code: 400, body: { error: "title is required" } };
+    const result = await sdk.trigger("mem::sketch-create", body);
+    return { status_code: 200, body: result };
+  });
+  sdk.registerTrigger({ type: "http", function_id: "api::sketch-create", config: { api_path: "/agentmemory/sketches", http_method: "POST" } });
+
+  sdk.registerFunction({ id: "api::sketch-add" }, async (req: ApiRequest) => {
+    const denied = checkAuth(req, secret);
+    if (denied) return denied;
+    const body = req.body as Record<string, unknown>;
+    if (!body?.sketchId || !body?.title) return { status_code: 400, body: { error: "sketchId and title are required" } };
+    const result = await sdk.trigger("mem::sketch-add", body);
+    return { status_code: 200, body: result };
+  });
+  sdk.registerTrigger({ type: "http", function_id: "api::sketch-add", config: { api_path: "/agentmemory/sketches/add", http_method: "POST" } });
+
+  sdk.registerFunction({ id: "api::sketch-promote" }, async (req: ApiRequest) => {
+    const denied = checkAuth(req, secret);
+    if (denied) return denied;
+    const body = req.body as Record<string, unknown>;
+    if (!body?.sketchId) return { status_code: 400, body: { error: "sketchId is required" } };
+    const result = await sdk.trigger("mem::sketch-promote", body);
+    return { status_code: 200, body: result };
+  });
+  sdk.registerTrigger({ type: "http", function_id: "api::sketch-promote", config: { api_path: "/agentmemory/sketches/promote", http_method: "POST" } });
+
+  sdk.registerFunction({ id: "api::sketch-discard" }, async (req: ApiRequest) => {
+    const denied = checkAuth(req, secret);
+    if (denied) return denied;
+    const body = req.body as Record<string, unknown>;
+    if (!body?.sketchId) return { status_code: 400, body: { error: "sketchId is required" } };
+    const result = await sdk.trigger("mem::sketch-discard", body);
+    return { status_code: 200, body: result };
+  });
+  sdk.registerTrigger({ type: "http", function_id: "api::sketch-discard", config: { api_path: "/agentmemory/sketches/discard", http_method: "POST" } });
+
+  sdk.registerFunction({ id: "api::sketch-list" }, async (req: ApiRequest) => {
+    const denied = checkAuth(req, secret);
+    if (denied) return denied;
+    const params = req.query_params || {};
+    const result = await sdk.trigger("mem::sketch-list", { status: params.status, project: params.project });
+    return { status_code: 200, body: result };
+  });
+  sdk.registerTrigger({ type: "http", function_id: "api::sketch-list", config: { api_path: "/agentmemory/sketches", http_method: "GET" } });
+
+  sdk.registerFunction({ id: "api::sketch-gc" }, async (req: ApiRequest) => {
+    const denied = checkAuth(req, secret);
+    if (denied) return denied;
+    const result = await sdk.trigger("mem::sketch-gc", {});
+    return { status_code: 200, body: result };
+  });
+  sdk.registerTrigger({ type: "http", function_id: "api::sketch-gc", config: { api_path: "/agentmemory/sketches/gc", http_method: "POST" } });
+
+  sdk.registerFunction({ id: "api::crystallize" }, async (req: ApiRequest) => {
+    const denied = checkAuth(req, secret);
+    if (denied) return denied;
+    const body = req.body as Record<string, unknown>;
+    if (!body?.actionIds) return { status_code: 400, body: { error: "actionIds is required" } };
+    const result = await sdk.trigger("mem::crystallize", body);
+    return { status_code: 200, body: result };
+  });
+  sdk.registerTrigger({ type: "http", function_id: "api::crystallize", config: { api_path: "/agentmemory/crystals/create", http_method: "POST" } });
+
+  sdk.registerFunction({ id: "api::crystal-list" }, async (req: ApiRequest) => {
+    const denied = checkAuth(req, secret);
+    if (denied) return denied;
+    const params = req.query_params || {};
+    const result = await sdk.trigger("mem::crystal-list", { project: params.project, sessionId: params.sessionId, limit: params.limit ? parseInt(params.limit as string) : undefined });
+    return { status_code: 200, body: result };
+  });
+  sdk.registerTrigger({ type: "http", function_id: "api::crystal-list", config: { api_path: "/agentmemory/crystals", http_method: "GET" } });
+
+  sdk.registerFunction({ id: "api::auto-crystallize" }, async (req: ApiRequest) => {
+    const denied = checkAuth(req, secret);
+    if (denied) return denied;
+    const body = req.body as Record<string, unknown>;
+    const result = await sdk.trigger("mem::auto-crystallize", body || {});
+    return { status_code: 200, body: result };
+  });
+  sdk.registerTrigger({ type: "http", function_id: "api::auto-crystallize", config: { api_path: "/agentmemory/crystals/auto", http_method: "POST" } });
+
+  sdk.registerFunction({ id: "api::diagnose" }, async (req: ApiRequest) => {
+    const denied = checkAuth(req, secret);
+    if (denied) return denied;
+    const body = req.body as Record<string, unknown>;
+    const result = await sdk.trigger("mem::diagnose", body || {});
+    return { status_code: 200, body: result };
+  });
+  sdk.registerTrigger({ type: "http", function_id: "api::diagnose", config: { api_path: "/agentmemory/diagnostics", http_method: "POST" } });
+
+  sdk.registerFunction({ id: "api::heal" }, async (req: ApiRequest) => {
+    const denied = checkAuth(req, secret);
+    if (denied) return denied;
+    const body = req.body as Record<string, unknown>;
+    const result = await sdk.trigger("mem::heal", body || {});
+    return { status_code: 200, body: result };
+  });
+  sdk.registerTrigger({ type: "http", function_id: "api::heal", config: { api_path: "/agentmemory/diagnostics/heal", http_method: "POST" } });
+
+  sdk.registerFunction({ id: "api::facet-tag" }, async (req: ApiRequest) => {
+    const denied = checkAuth(req, secret);
+    if (denied) return denied;
+    const body = req.body as Record<string, unknown>;
+    if (!body?.targetId || !body?.dimension || !body?.value) return { status_code: 400, body: { error: "targetId, dimension, and value are required" } };
+    const result = await sdk.trigger("mem::facet-tag", body);
+    return { status_code: 200, body: result };
+  });
+  sdk.registerTrigger({ type: "http", function_id: "api::facet-tag", config: { api_path: "/agentmemory/facets", http_method: "POST" } });
+
+  sdk.registerFunction({ id: "api::facet-untag" }, async (req: ApiRequest) => {
+    const denied = checkAuth(req, secret);
+    if (denied) return denied;
+    const body = req.body as Record<string, unknown>;
+    if (!body?.targetId || !body?.dimension) return { status_code: 400, body: { error: "targetId and dimension are required" } };
+    const result = await sdk.trigger("mem::facet-untag", body);
+    return { status_code: 200, body: result };
+  });
+  sdk.registerTrigger({ type: "http", function_id: "api::facet-untag", config: { api_path: "/agentmemory/facets/remove", http_method: "POST" } });
+
+  sdk.registerFunction({ id: "api::facet-query" }, async (req: ApiRequest) => {
+    const denied = checkAuth(req, secret);
+    if (denied) return denied;
+    const body = req.body as Record<string, unknown>;
+    const result = await sdk.trigger("mem::facet-query", body || {});
+    return { status_code: 200, body: result };
+  });
+  sdk.registerTrigger({ type: "http", function_id: "api::facet-query", config: { api_path: "/agentmemory/facets/query", http_method: "POST" } });
+
+  sdk.registerFunction({ id: "api::facet-get" }, async (req: ApiRequest) => {
+    const denied = checkAuth(req, secret);
+    if (denied) return denied;
+    const params = req.query_params || {};
+    if (!params.targetId) return { status_code: 400, body: { error: "targetId query param is required" } };
+    const result = await sdk.trigger("mem::facet-get", { targetId: params.targetId });
+    return { status_code: 200, body: result };
+  });
+  sdk.registerTrigger({ type: "http", function_id: "api::facet-get", config: { api_path: "/agentmemory/facets", http_method: "GET" } });
+
+  sdk.registerFunction({ id: "api::facet-stats" }, async (req: ApiRequest) => {
+    const denied = checkAuth(req, secret);
+    if (denied) return denied;
+    const params = req.query_params || {};
+    const result = await sdk.trigger("mem::facet-stats", { targetType: params.targetType });
+    return { status_code: 200, body: result };
+  });
+  sdk.registerTrigger({ type: "http", function_id: "api::facet-stats", config: { api_path: "/agentmemory/facets/stats", http_method: "GET" } });
 }

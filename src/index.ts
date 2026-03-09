@@ -57,6 +57,11 @@ import { registerCheckpointsFunction } from "./functions/checkpoints.js";
 import { registerFlowCompressFunction } from "./functions/flow-compress.js";
 import { registerMeshFunction } from "./functions/mesh.js";
 import { registerBranchAwareFunction } from "./functions/branch-aware.js";
+import { registerSentinelsFunction } from "./functions/sentinels.js";
+import { registerSketchesFunction } from "./functions/sketches.js";
+import { registerCrystallizeFunction } from "./functions/crystallize.js";
+import { registerDiagnosticsFunction } from "./functions/diagnostics.js";
+import { registerFacetsFunction } from "./functions/facets.js";
 import { registerApiTriggers } from "./triggers/api.js";
 import { registerEventTriggers } from "./triggers/events.js";
 import { registerMcpEndpoints } from "./mcp/server.js";
@@ -175,8 +180,13 @@ async function main() {
   registerMeshFunction(sdk, kv);
   registerBranchAwareFunction(sdk, kv);
   registerFlowCompressFunction(sdk, kv, provider);
+  registerSentinelsFunction(sdk, kv);
+  registerSketchesFunction(sdk, kv);
+  registerCrystallizeFunction(sdk, kv, provider);
+  registerDiagnosticsFunction(sdk, kv);
+  registerFacetsFunction(sdk, kv);
   console.log(
-    `[agentmemory] Orchestration layer: actions, frontier, leases, routines, signals, checkpoints, flow-compress, mesh, branch-aware`,
+    `[agentmemory] Orchestration layer: actions, frontier, leases, routines, signals, checkpoints, flow-compress, mesh, branch-aware, sentinels, sketches, crystallize, diagnostics, facets`,
   );
 
   const snapshotConfig = loadSnapshotConfig();
@@ -245,7 +255,7 @@ async function main() {
     `[agentmemory] Ready. ${embeddingProvider ? "Hybrid" : "BM25"} search active.`,
   );
   console.log(
-    `[agentmemory] Endpoints: 72 REST + 28 MCP tools + 6 MCP resources + 3 MCP prompts`,
+    `[agentmemory] Endpoints: 93 REST + 37 MCP tools + 6 MCP resources + 3 MCP prompts`,
   );
 
   const viewerPort = config.restPort + 2;

@@ -108,7 +108,7 @@ Any agent that connects to MCP servers can use agentmemory's 28 tools, 6 resourc
 
 ### REST API (any agent, any language)
 
-Agents without hooks or MCP can integrate via 49 REST endpoints directly. This works with any agent, language, or framework.
+Agents without hooks or MCP can integrate via 93 REST endpoints directly. This works with any agent, language, or framework.
 
 ```bash
 POST /agentmemory/observe       # Capture what the agent did
@@ -619,7 +619,7 @@ ANTHROPIC_API_KEY=sk-ant-...
 /plugin install agentmemory
 ```
 
-Restart Claude Code. All 12 hooks, 4 skills, and 28 MCP tools are registered automatically.
+Restart Claude Code. All 12 hooks, 4 skills, and 37 MCP tools are registered automatically.
 
 ### Plugin Commands
 
@@ -643,7 +643,7 @@ agentmemory is built on iii-engine's three primitives:
 | Prometheus / Grafana | iii OTEL + built-in health monitor |
 | Redis (circuit breaker) | In-process circuit breaker + fallback chain |
 
-**87 source files. ~11,300 LOC. 216 tests. 232KB bundled (218KB main + 14KB standalone).**
+**92 source files. ~14,500 LOC. 518 tests. 354KB bundled.**
 
 ### Functions (33)
 
@@ -694,8 +694,13 @@ agentmemory is built on iii-engine's three primitives:
 | `mem::flow-compress` | LLM-powered summarization of completed action chains |
 | `mem::mesh-register` / `sync` / `receive` | P2P sync between agentmemory instances |
 | `mem::detect-worktree` / `branch-sessions` | Git worktree detection for shared memory |
+| `mem::sentinel-create` / `trigger` / `check` | Event-driven condition watchers (webhook, timer, threshold, pattern, approval) |
+| `mem::sketch-create` / `add` / `promote` / `discard` | Ephemeral action graphs for exploratory work with auto-expiry |
+| `mem::crystallize` / `auto-crystallize` | LLM-powered compaction of completed action chains into crystal digests |
+| `mem::diagnose` / `heal` | Self-diagnosis across 8 categories with auto-fix for stuck/orphaned/stale state |
+| `mem::facet-tag` / `query` / `stats` | Multi-dimensional tagging with AND/OR queries on actions, memories, observations |
 
-### Data Model (29 KV scopes)
+### Data Model (33 KV scopes)
 
 | Scope | Stores |
 |-------|--------|
@@ -728,13 +733,17 @@ agentmemory is built on iii-engine's three primitives:
 | `mem:signals` | Inter-agent messages with threading |
 | `mem:checkpoints` | External condition gates |
 | `mem:mesh` | Registered P2P sync peers |
+| `mem:sentinels` | Event-driven condition watchers |
+| `mem:sketches` | Ephemeral action graphs |
+| `mem:crystals` | Compacted action chain digests |
+| `mem:facets` | Multi-dimensional tags |
 
 ## Development
 
 ```bash
 npm run dev               # Hot reload
-npm run build             # Production build (289KB)
-npm test                  # Unit tests (386 tests, ~1s)
+npm run build             # Production build (354KB)
+npm test                  # Unit tests (518 tests, ~1s)
 npm run test:integration  # API tests (requires running services)
 ```
 
