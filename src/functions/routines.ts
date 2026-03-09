@@ -195,7 +195,7 @@ export function registerRoutinesFunction(sdk: ISdk, kv: StateKV): void {
             title: action.title,
           });
           if (action.status !== "done") allDone = false;
-          if (action.status === "cancelled" || action.status === "failed") anyFailed = true;
+          if (action.status === "cancelled") anyFailed = true;
         }
       }
 

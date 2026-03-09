@@ -32,6 +32,15 @@ export function registerCheckpointsFunction(sdk: ISdk, kv: StateKV): void {
           : undefined,
       };
 
+      if (data.linkedActionIds && data.linkedActionIds.length > 0) {
+        for (const actionId of data.linkedActionIds) {
+          const action = await kv.get<Action>(KV.actions, actionId);
+          if (!action) {
+            return { success: false, error: `linked action not found: ${actionId}` };
+          }
+        }
+      }
+
       await kv.set(KV.checkpoints, checkpoint.id, checkpoint);
 
       if (data.linkedActionIds && data.linkedActionIds.length > 0) {
@@ -103,11 +112,20 @@ export function registerCheckpointsFunction(sdk: ISdk, kv: StateKV): void {
                   const gates = allEdges.filter(
                     (e) => e.sourceActionId === actionId && e.type === "gated_by",
                   );
-                  const allPassed = gates.every((g) => {
+                  const allGatesPassed = gates.every((g) => {
                     const cp = cpMap.get(g.targetActionId);
                     return cp && cp.status === "passed";
                   });
-                  if (allPassed) {
+                  const requires = allEdges.filter(
+                    (e) => e.sourceActionId === actionId && e.type === "requires",
+                  );
+                  const allActions = await kv.list<Action>(KV.actions);
+                  const actionMap = new Map(allActions.map((a) => [a.id, a]));
+                  const allRequiresMet = requires.every((r) => {
+                    const dep = actionMap.get(r.targetActionId);
+                    return dep && dep.status === "done";
+                  });
+                  if (allGatesPassed && allRequiresMet) {
                     action.status = "pending";
                     action.updatedAt = new Date().toISOString();
                     await kv.set(KV.actions, action.id, action);

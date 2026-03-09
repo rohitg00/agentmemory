@@ -48,8 +48,6 @@ export function registerActionsFunction(sdk: ISdk, kv: StateKV): void {
           }
         }
 
-        await kv.set(KV.actions, action.id, action);
-
         const validEdgeTypes = [
           "requires",
           "unlocks",
@@ -57,7 +55,8 @@ export function registerActionsFunction(sdk: ISdk, kv: StateKV): void {
           "gated_by",
           "conflicts_with",
         ];
-        const createdEdges: ActionEdge[] = [];
+        const pendingEdges: ActionEdge[] = [];
+        let hasRequires = false;
         if (data.edges && Array.isArray(data.edges)) {
           for (const e of data.edges) {
             if (!validEdgeTypes.includes(e.type)) {
@@ -67,19 +66,28 @@ export function registerActionsFunction(sdk: ISdk, kv: StateKV): void {
             if (!targetAction) {
               return { success: false, error: `target action not found: ${e.targetActionId}` };
             }
-            const edge: ActionEdge = {
+            if (e.type === "requires") hasRequires = true;
+            pendingEdges.push({
               id: generateId("ae"),
               type: e.type as ActionEdge["type"],
               sourceActionId: action.id,
               targetActionId: e.targetActionId,
               createdAt: now,
-            };
-            await kv.set(KV.actionEdges, edge.id, edge);
-            createdEdges.push(edge);
+            });
           }
         }
 
-        return { success: true, action, edges: createdEdges };
+        if (hasRequires) {
+          action.status = "blocked";
+        }
+
+        await kv.set(KV.actions, action.id, action);
+
+        for (const edge of pendingEdges) {
+          await kv.set(KV.actionEdges, edge.id, edge);
+        }
+
+        return { success: true, action, edges: pendingEdges };
       });
     },
   );

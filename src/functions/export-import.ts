@@ -11,6 +11,16 @@ import type {
   GraphEdge,
   SemanticMemory,
   ProceduralMemory,
+  Action,
+  ActionEdge,
+  Routine,
+  RoutineRun,
+  Signal,
+  Checkpoint,
+  Sentinel,
+  Sketch,
+  Crystal,
+  Facet,
 } from "../types.js";
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
@@ -58,6 +68,16 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
         .list<ProceduralMemory>(KV.procedural)
         .catch(() => []);
 
+      const actions = await kv.list<Action>(KV.actions).catch(() => []);
+      const actionEdges = await kv.list<ActionEdge>(KV.actionEdges).catch(() => []);
+      const sentinels = await kv.list<Sentinel>(KV.sentinels).catch(() => []);
+      const sketches = await kv.list<Sketch>(KV.sketches).catch(() => []);
+      const crystals = await kv.list<Crystal>(KV.crystals).catch(() => []);
+      const facets = await kv.list<Facet>(KV.facets).catch(() => []);
+      const routines = await kv.list<Routine>(KV.routines).catch(() => []);
+      const signals = await kv.list<Signal>(KV.signals).catch(() => []);
+      const checkpoints = await kv.list<Checkpoint>(KV.checkpoints).catch(() => []);
+
       const exportData: ExportData = {
         version: VERSION,
         exportedAt: new Date().toISOString(),
@@ -72,6 +92,15 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
           semanticMemories.length > 0 ? semanticMemories : undefined,
         proceduralMemories:
           proceduralMemories.length > 0 ? proceduralMemories : undefined,
+        actions: actions.length > 0 ? actions : undefined,
+        actionEdges: actionEdges.length > 0 ? actionEdges : undefined,
+        sentinels: sentinels.length > 0 ? sentinels : undefined,
+        sketches: sketches.length > 0 ? sketches : undefined,
+        crystals: crystals.length > 0 ? crystals : undefined,
+        facets: facets.length > 0 ? facets : undefined,
+        routines: routines.length > 0 ? routines : undefined,
+        signals: signals.length > 0 ? signals : undefined,
+        checkpoints: checkpoints.length > 0 ? checkpoints : undefined,
       };
 
       const totalObs = Object.values(observations).reduce(
@@ -285,6 +314,52 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
       if (importData.proceduralMemories) {
         for (const proc of importData.proceduralMemories) {
           await kv.set(KV.procedural, proc.id, proc);
+        }
+      }
+
+      if (importData.actions) {
+        for (const action of importData.actions) {
+          await kv.set(KV.actions, action.id, action);
+        }
+      }
+      if (importData.actionEdges) {
+        for (const edge of importData.actionEdges) {
+          await kv.set(KV.actionEdges, edge.id, edge);
+        }
+      }
+      if (importData.routines) {
+        for (const routine of importData.routines) {
+          await kv.set(KV.routines, routine.id, routine);
+        }
+      }
+      if (importData.signals) {
+        for (const signal of importData.signals) {
+          await kv.set(KV.signals, signal.id, signal);
+        }
+      }
+      if (importData.checkpoints) {
+        for (const checkpoint of importData.checkpoints) {
+          await kv.set(KV.checkpoints, checkpoint.id, checkpoint);
+        }
+      }
+      if (importData.sentinels) {
+        for (const sentinel of importData.sentinels) {
+          await kv.set(KV.sentinels, sentinel.id, sentinel);
+        }
+      }
+      if (importData.sketches) {
+        for (const sketch of importData.sketches) {
+          await kv.set(KV.sketches, sketch.id, sketch);
+        }
+      }
+      if (importData.crystals) {
+        for (const crystal of importData.crystals) {
+          await kv.set(KV.crystals, crystal.id, crystal);
+        }
+      }
+      if (importData.facets) {
+        for (const facet of importData.facets) {
+          await kv.set(KV.facets, facet.id, facet);
         }
       }
 

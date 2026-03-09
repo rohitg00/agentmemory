@@ -17,13 +17,16 @@ export function registerLeasesFunction(sdk: ISdk, kv: StateKV): void {
 
       const ttl = Math.min(data.ttlMs || DEFAULT_LEASE_TTL_MS, MAX_LEASE_TTL_MS);
 
-      return withKeyedLock(`mem:lease:${data.actionId}`, async () => {
+      return withKeyedLock(`mem:action:${data.actionId}`, async () => {
         const action = await kv.get<Action>(KV.actions, data.actionId);
         if (!action) {
           return { success: false, error: "action not found" };
         }
         if (action.status === "done" || action.status === "cancelled") {
           return { success: false, error: "action already completed" };
+        }
+        if (action.status === "blocked") {
+          return { success: false, error: "action is blocked" };
         }
 
         const existingLeases = await kv.list<Lease>(KV.leases);
@@ -80,13 +83,14 @@ export function registerLeasesFunction(sdk: ISdk, kv: StateKV): void {
         return { success: false, error: "actionId and agentId are required" };
       }
 
-      return withKeyedLock(`mem:lease:${data.actionId}`, async () => {
+      return withKeyedLock(`mem:action:${data.actionId}`, async () => {
         const leases = await kv.list<Lease>(KV.leases);
         const activeLease = leases.find(
           (l) =>
             l.actionId === data.actionId &&
             l.agentId === data.agentId &&
-            l.status === "active",
+            l.status === "active" &&
+            new Date(l.expiresAt).getTime() > Date.now(),
         );
 
         if (!activeLease) {
@@ -123,7 +127,7 @@ export function registerLeasesFunction(sdk: ISdk, kv: StateKV): void {
 
       const ttl = Math.min(data.ttlMs || DEFAULT_LEASE_TTL_MS, MAX_LEASE_TTL_MS);
 
-      return withKeyedLock(`mem:lease:${data.actionId}`, async () => {
+      return withKeyedLock(`mem:action:${data.actionId}`, async () => {
         const leases = await kv.list<Lease>(KV.leases);
         const activeLease = leases.find(
           (l) =>
@@ -160,7 +164,7 @@ export function registerLeasesFunction(sdk: ISdk, kv: StateKV): void {
           new Date(lease.expiresAt).getTime() <= now
         ) {
           const didExpire = await withKeyedLock(
-            `mem:lease:${lease.actionId}`,
+            `mem:action:${lease.actionId}`,
             async () => {
               const currentLease = await kv.get<Lease>(KV.leases, lease.id);
               if (

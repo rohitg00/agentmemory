@@ -421,13 +421,13 @@ describe("Routines Functions", () => {
       expect(result.run.status).toBe("failed");
     });
 
-    it("marks run failed when any action has status failed", async () => {
+    it("marks run failed when any action is cancelled (mixed statuses)", async () => {
       const action = await kv.get<Action>("mem:actions", actionIds[1]);
       (action as Action).status = "done";
       await kv.set("mem:actions", actionIds[1], action);
 
       const action2 = await kv.get<Action>("mem:actions", actionIds[2]);
-      (action2 as unknown as { status: string }).status = "failed";
+      (action2 as Action).status = "cancelled";
       await kv.set("mem:actions", actionIds[2], action2);
 
       const result = (await sdk.trigger("mem::routine-status", {

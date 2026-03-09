@@ -96,7 +96,7 @@ These agents support hooks natively. agentmemory captures tool usage automatical
 
 ### MCP support (any MCP-compatible agent)
 
-Any agent that connects to MCP servers can use agentmemory's 28 tools, 6 resources, and 3 prompts. The agent actively queries and saves memory through MCP calls.
+Any agent that connects to MCP servers can use agentmemory's 37 tools, 6 resources, and 3 prompts. The agent actively queries and saves memory through MCP calls.
 
 | Agent | How to connect |
 |---|---|
@@ -125,8 +125,8 @@ GET  /agentmemory/profile       # Get project intelligence
 |---|---|
 | Claude Code user | Plugin install (hooks + MCP + skills) |
 | Building a custom agent with Claude SDK | AgentSDKProvider (zero config) |
-| Using Cursor, Windsurf, or any MCP client | MCP server (28 tools + 6 resources + 3 prompts) |
-| Building your own agent framework | REST API (72 endpoints) |
+| Using Cursor, Windsurf, or any MCP client | MCP server (37 tools + 6 resources + 3 prompts) |
+| Building your own agent framework | REST API (93 endpoints) |
 | Sharing memory across multiple agents | All agents point to the same iii-engine instance |
 
 ## Quick Start
@@ -556,7 +556,7 @@ ANTHROPIC_API_KEY=sk-ant-...
 
 ## API
 
-72 endpoints on port `3111` (66 core + 6 MCP protocol). Protected endpoints require `Authorization: Bearer <secret>` when `AGENTMEMORY_SECRET` is set.
+93 endpoints on port `3111` (87 core + 6 MCP protocol). Protected endpoints require `Authorization: Bearer <secret>` when `AGENTMEMORY_SECRET` is set.
 
 | Method | Path | Description |
 |--------|------|-------------|

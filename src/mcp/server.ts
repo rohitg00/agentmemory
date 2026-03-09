@@ -94,14 +94,14 @@ export function registerMcpEndpoints(
               };
             }
             const type = (args.type as string) || "fact";
-            const concepts = args.concepts
-              ? (args.concepts as string)
-                  .split(",")
-                  .map((c: string) => c.trim())
-              : [];
-            const files = args.files
-              ? (args.files as string).split(",").map((f: string) => f.trim())
-              : [];
+            const concepts =
+              typeof args.concepts === "string"
+                ? args.concepts.split(",").map((c: string) => c.trim())
+                : [];
+            const files =
+              typeof args.files === "string"
+                ? args.files.split(",").map((f: string) => f.trim())
+                : [];
 
             const result = await sdk.trigger("mem::remember", {
               content: args.content,
@@ -179,12 +179,10 @@ export function registerMcpEndpoints(
                 body: { error: "query is required for memory_smart_search" },
               };
             }
-            const expandIds = args.expandIds
-              ? (args.expandIds as string)
-                  .split(",")
-                  .map((id: string) => id.trim())
-                  .slice(0, 20)
-              : [];
+            const expandIds =
+              typeof args.expandIds === "string"
+                ? args.expandIds.split(",").map((id: string) => id.trim()).slice(0, 20)
+                : [];
             const result = await sdk.trigger("mem::smart-search", {
               query: args.query,
               expandIds,

@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 export const KV = {
   sessions: "mem:sessions",
   observations: (sessionId: string) => `mem:obs:${sessionId}`,
@@ -47,8 +49,7 @@ export function generateId(prefix: string): string {
 }
 
 export function fingerprintId(prefix: string, content: string): string {
-  const crypto = require("node:crypto") as typeof import("node:crypto");
-  const hash = crypto.createHash("sha256").update(content).digest("hex");
+  const hash = createHash("sha256").update(content).digest("hex");
   return `${prefix}_${hash.slice(0, 16)}`;
 }
 

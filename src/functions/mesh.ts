@@ -38,6 +38,10 @@ export function registerMeshFunction(sdk: ISdk, kv: StateKV): void {
         return { success: false, error: "url and name are required" };
       }
 
+      if (!isAllowedUrl(data.url)) {
+        return { success: false, error: "URL blocked: private/local address not allowed" };
+      }
+
       const existing = await kv.list<MeshPeer>(KV.mesh);
       const duplicate = existing.find((p) => p.url === data.url);
       if (duplicate) {
