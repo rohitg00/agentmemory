@@ -7,7 +7,16 @@ vi.mock("iii-sdk", () => ({
 }));
 
 import { registerMeshFunction } from "../src/functions/mesh.js";
-import type { MeshPeer, Memory, Action } from "../src/types.js";
+import type {
+  MeshPeer,
+  Memory,
+  Action,
+  SemanticMemory,
+  ProceduralMemory,
+  MemoryRelation,
+  GraphNode,
+  GraphEdge,
+} from "../src/types.js";
 
 function mockKV() {
   const store = new Map<string, Map<string, unknown>>();
@@ -75,14 +84,33 @@ describe("Mesh Functions", () => {
       expect(peers.length).toBe(1);
     });
 
-    it("uses default sharedScopes when not provided", async () => {
+    it("uses expanded default sharedScopes when not provided", async () => {
       const result = (await sdk.trigger("mem::mesh-register", {
         url: "https://peer2.example.com",
         name: "peer-2",
       })) as { success: boolean; peer: MeshPeer };
 
       expect(result.success).toBe(true);
-      expect(result.peer.sharedScopes).toEqual(["memories", "actions"]);
+      expect(result.peer.sharedScopes).toEqual([
+        "memories",
+        "actions",
+        "semantic",
+        "procedural",
+        "relations",
+        "graph:nodes",
+        "graph:edges",
+      ]);
+    });
+
+    it("stores syncFilter when provided", async () => {
+      const result = (await sdk.trigger("mem::mesh-register", {
+        url: "https://peer3.example.com",
+        name: "peer-3",
+        syncFilter: { project: "/my/project" },
+      })) as { success: boolean; peer: MeshPeer };
+
+      expect(result.success).toBe(true);
+      expect(result.peer.syncFilter).toEqual({ project: "/my/project" });
     });
 
     it("returns error when url is missing", async () => {
@@ -481,6 +509,192 @@ describe("Mesh Functions", () => {
       })) as { success: boolean };
 
       expect(result.success).toBe(true);
+    });
+  });
+
+  describe("mesh-receive expanded scopes", () => {
+    it("accepts semantic memories", async () => {
+      const sem: SemanticMemory = {
+        id: "sem_1",
+        fact: "React uses JSX",
+        confidence: 0.9,
+        sourceSessionIds: ["ses_1"],
+        sourceMemoryIds: ["mem_1"],
+        accessCount: 1,
+        lastAccessedAt: "2026-03-01T00:00:00Z",
+        strength: 7,
+        createdAt: "2026-03-01T00:00:00Z",
+        updatedAt: "2026-03-01T00:00:00Z",
+      };
+
+      const result = (await sdk.trigger("mem::mesh-receive", {
+        semantic: [sem],
+      })) as { success: boolean; accepted: number };
+
+      expect(result.success).toBe(true);
+      expect(result.accepted).toBe(1);
+      const stored = await kv.get<SemanticMemory>("mem:semantic", "sem_1");
+      expect(stored).toBeDefined();
+      expect(stored!.fact).toBe("React uses JSX");
+    });
+
+    it("accepts procedural memories", async () => {
+      const proc: ProceduralMemory = {
+        id: "proc_1",
+        name: "Deploy to prod",
+        steps: ["build", "test", "deploy"],
+        triggerCondition: "on merge to main",
+        frequency: 5,
+        sourceSessionIds: ["ses_1"],
+        strength: 8,
+        createdAt: "2026-03-01T00:00:00Z",
+        updatedAt: "2026-03-01T00:00:00Z",
+      };
+
+      const result = (await sdk.trigger("mem::mesh-receive", {
+        procedural: [proc],
+      })) as { success: boolean; accepted: number };
+
+      expect(result.success).toBe(true);
+      expect(result.accepted).toBe(1);
+      const stored = await kv.get<ProceduralMemory>("mem:procedural", "proc_1");
+      expect(stored!.name).toBe("Deploy to prod");
+    });
+
+    it("accepts graph nodes", async () => {
+      const node: GraphNode = {
+        id: "gn_1",
+        type: "concept",
+        name: "typescript",
+        properties: {},
+        sourceObservationIds: ["obs_1"],
+        createdAt: "2026-03-01T00:00:00Z",
+      };
+
+      const result = (await sdk.trigger("mem::mesh-receive", {
+        graphNodes: [node],
+      })) as { success: boolean; accepted: number };
+
+      expect(result.success).toBe(true);
+      expect(result.accepted).toBe(1);
+      const stored = await kv.get<GraphNode>("mem:graph:nodes", "gn_1");
+      expect(stored!.name).toBe("typescript");
+    });
+
+    it("accepts graph edges", async () => {
+      const edge: GraphEdge = {
+        id: "ge_1",
+        type: "uses",
+        sourceNodeId: "gn_1",
+        targetNodeId: "gn_2",
+        weight: 1,
+        sourceObservationIds: ["obs_1"],
+        createdAt: "2026-03-01T00:00:00Z",
+      };
+
+      const result = (await sdk.trigger("mem::mesh-receive", {
+        graphEdges: [edge],
+      })) as { success: boolean; accepted: number };
+
+      expect(result.success).toBe(true);
+      expect(result.accepted).toBe(1);
+      const stored = await kv.get<GraphEdge>("mem:graph:edges", "ge_1");
+      expect(stored!.type).toBe("uses");
+    });
+
+    it("accepts relations", async () => {
+      const rel: MemoryRelation = {
+        type: "supersedes",
+        sourceId: "mem_2",
+        targetId: "mem_1",
+        createdAt: "2026-03-01T00:00:00Z",
+        confidence: 0.95,
+      };
+      const relWithId = { ...rel, id: "rel_1" } as MemoryRelation & { id: string };
+
+      const result = (await sdk.trigger("mem::mesh-receive", {
+        relations: [relWithId],
+      })) as { success: boolean; accepted: number };
+
+      expect(result.success).toBe(true);
+      expect(result.accepted).toBe(1);
+    });
+
+    it("accepts all scope types in one call", async () => {
+      const mem: Memory = {
+        id: "mem_all",
+        createdAt: "2026-03-01T00:00:00Z",
+        updatedAt: "2026-03-01T00:00:00Z",
+        type: "fact",
+        title: "All scopes test",
+        content: "Content",
+        concepts: [],
+        files: [],
+        sessionIds: [],
+        strength: 5,
+        version: 1,
+        isLatest: true,
+      };
+      const sem: SemanticMemory = {
+        id: "sem_all",
+        fact: "Test",
+        confidence: 0.5,
+        sourceSessionIds: [],
+        sourceMemoryIds: [],
+        accessCount: 0,
+        lastAccessedAt: "2026-03-01T00:00:00Z",
+        strength: 5,
+        createdAt: "2026-03-01T00:00:00Z",
+        updatedAt: "2026-03-01T00:00:00Z",
+      };
+      const node: GraphNode = {
+        id: "gn_all",
+        type: "file",
+        name: "test.ts",
+        properties: {},
+        sourceObservationIds: [],
+        createdAt: "2026-03-01T00:00:00Z",
+      };
+
+      const result = (await sdk.trigger("mem::mesh-receive", {
+        memories: [mem],
+        semantic: [sem],
+        graphNodes: [node],
+      })) as { success: boolean; accepted: number };
+
+      expect(result.success).toBe(true);
+      expect(result.accepted).toBe(3);
+    });
+
+    it("applies LWW for semantic memories", async () => {
+      const older: SemanticMemory = {
+        id: "sem_lww",
+        fact: "Old fact",
+        confidence: 0.5,
+        sourceSessionIds: [],
+        sourceMemoryIds: [],
+        accessCount: 1,
+        lastAccessedAt: "2026-03-01T00:00:00Z",
+        strength: 5,
+        createdAt: "2026-03-01T00:00:00Z",
+        updatedAt: "2026-03-01T00:00:00Z",
+      };
+      await kv.set("mem:semantic", "sem_lww", older);
+
+      const newer: SemanticMemory = {
+        ...older,
+        fact: "New fact",
+        updatedAt: "2026-03-02T00:00:00Z",
+      };
+
+      const result = (await sdk.trigger("mem::mesh-receive", {
+        semantic: [newer],
+      })) as { success: boolean; accepted: number };
+
+      expect(result.success).toBe(true);
+      expect(result.accepted).toBe(1);
+      const stored = await kv.get<SemanticMemory>("mem:semantic", "sem_lww");
+      expect(stored!.fact).toBe("New fact");
     });
   });
 });

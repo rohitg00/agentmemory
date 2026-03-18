@@ -162,7 +162,7 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
       const strategy = data.strategy || "merge";
       const importData = data.exportData;
 
-      const supportedVersions = new Set(["0.3.0", "0.4.0", "0.5.0", "0.6.0"]);
+      const supportedVersions = new Set(["0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.6.1"]);
       if (!supportedVersions.has(importData.version)) {
         return {
           success: false,

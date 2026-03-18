@@ -14,6 +14,7 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
       concepts?: string[];
       files?: string[];
       ttlDays?: number;
+      sourceObservationIds?: string[];
     }) => {
       const ctx = getContext();
       if (
@@ -77,6 +78,7 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
           version: supersededId ? supersededVersion + 1 : 1,
           parentId: supersededId,
           supersedes: supersededId ? [supersededId] : [],
+          sourceObservationIds: data.sourceObservationIds || [],
           isLatest: true,
         };
 
@@ -89,6 +91,12 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
           await kv.set(KV.memories, supersededMemory.id, supersededMemory);
         }
         await kv.set(KV.memories, memory.id, memory);
+
+        if (supersededId) {
+          sdk.triggerVoid("mem::cascade-update", {
+            supersededMemoryId: supersededId,
+          });
+        }
 
         ctx.logger.info("Memory saved", {
           memId: memory.id,

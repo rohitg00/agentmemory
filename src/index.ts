@@ -62,6 +62,8 @@ import { registerSketchesFunction } from "./functions/sketches.js";
 import { registerCrystallizeFunction } from "./functions/crystallize.js";
 import { registerDiagnosticsFunction } from "./functions/diagnostics.js";
 import { registerFacetsFunction } from "./functions/facets.js";
+import { registerVerifyFunction } from "./functions/verify.js";
+import { registerCascadeFunction } from "./functions/cascade.js";
 import { registerSlidingWindowFunction } from "./functions/sliding-window.js";
 import { registerQueryExpansionFunction } from "./functions/query-expansion.js";
 import { registerTemporalGraphFunctions } from "./functions/temporal-graph.js";
@@ -189,6 +191,8 @@ async function main() {
   registerCrystallizeFunction(sdk, kv, provider);
   registerDiagnosticsFunction(sdk, kv);
   registerFacetsFunction(sdk, kv);
+  registerVerifyFunction(sdk, kv);
+  registerCascadeFunction(sdk, kv);
 
   registerSlidingWindowFunction(sdk, kv, provider);
   registerQueryExpansionFunction(sdk, provider);

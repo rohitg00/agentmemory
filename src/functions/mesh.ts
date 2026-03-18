@@ -2,7 +2,16 @@ import type { ISdk } from "iii-sdk";
 import type { StateKV } from "../state/kv.js";
 import { KV, generateId } from "../state/schema.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
-import type { MeshPeer, Memory, Action } from "../types.js";
+import type {
+  MeshPeer,
+  Memory,
+  Action,
+  SemanticMemory,
+  ProceduralMemory,
+  MemoryRelation,
+  GraphNode,
+  GraphEdge,
+} from "../types.js";
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
 
@@ -44,6 +53,57 @@ async function isAllowedUrl(urlStr: string): Promise<boolean> {
   }
 }
 
+const DEFAULT_SHARED_SCOPES = [
+  "memories",
+  "actions",
+  "semantic",
+  "procedural",
+  "relations",
+  "graph:nodes",
+  "graph:edges",
+];
+
+interface MeshSyncPayload {
+  memories?: Memory[];
+  actions?: Action[];
+  semantic?: SemanticMemory[];
+  procedural?: ProceduralMemory[];
+  relations?: MemoryRelation[];
+  graphNodes?: GraphNode[];
+  graphEdges?: GraphEdge[];
+}
+
+async function lwwMergeList<T extends { id: string }>(
+  kv: StateKV,
+  scope: string,
+  items: T[] | undefined,
+  lockPrefix: string,
+  tsField: "updatedAt" | "createdAt",
+): Promise<number> {
+  if (!items || !Array.isArray(items)) return 0;
+  let count = 0;
+  for (const item of items) {
+    if (!item.id || typeof item.id !== "string") continue;
+    const ts = (item as Record<string, unknown>)[tsField];
+    if (typeof ts !== "string" || Number.isNaN(new Date(ts).getTime())) continue;
+    const wrote = await withKeyedLock(`${lockPrefix}:${item.id}`, async () => {
+      const existing = await kv.get<T>(scope, item.id);
+      if (!existing) {
+        await kv.set(scope, item.id, item);
+        return true;
+      }
+      const existingTs = (existing as Record<string, unknown>)[tsField] as string;
+      if (new Date(ts) > new Date(existingTs)) {
+        await kv.set(scope, item.id, item);
+        return true;
+      }
+      return false;
+    });
+    if (wrote) count++;
+  }
+  return count;
+}
+
 export function registerMeshFunction(sdk: ISdk, kv: StateKV): void {
   sdk.registerFunction(
     { id: "mem::mesh-register" },
@@ -51,6 +111,7 @@ export function registerMeshFunction(sdk: ISdk, kv: StateKV): void {
       url: string;
       name: string;
       sharedScopes?: string[];
+      syncFilter?: { project?: string };
     }) => {
       if (!data.url || !data.name) {
         return { success: false, error: "url and name are required" };
@@ -71,7 +132,8 @@ export function registerMeshFunction(sdk: ISdk, kv: StateKV): void {
         url: data.url,
         name: data.name,
         status: "disconnected",
-        sharedScopes: data.sharedScopes || ["memories", "actions"],
+        sharedScopes: data.sharedScopes || DEFAULT_SHARED_SCOPES,
+        syncFilter: data.syncFilter,
       };
 
       await kv.set(KV.mesh, peer.id, peer);
@@ -133,7 +195,7 @@ export function registerMeshFunction(sdk: ISdk, kv: StateKV): void {
           }
 
           if (direction === "push" || direction === "both") {
-            const pushData = await collectSyncData(kv, scopes, peer.lastSyncAt);
+            const pushData = await collectSyncData(kv, scopes, peer.lastSyncAt, peer.syncFilter);
             try {
               const response = await fetch(`${peer.url}/agentmemory/mesh/receive`, {
                 method: "POST",
@@ -192,50 +254,28 @@ export function registerMeshFunction(sdk: ISdk, kv: StateKV): void {
 
   sdk.registerFunction(
     { id: "mem::mesh-receive" },
-    async (data: { memories?: Memory[]; actions?: Action[] }) => {
+    async (data: MeshSyncPayload) => {
       let accepted = 0;
 
-      if (data.memories && Array.isArray(data.memories)) {
-        for (const mem of data.memories) {
-          if (!mem.id || typeof mem.id !== "string" || !mem.updatedAt) continue;
-          if (Number.isNaN(new Date(mem.updatedAt).getTime())) continue;
-          const wrote = await withKeyedLock(`mem:memory:${mem.id}`, async () => {
-            const existing = await kv.get<Memory>(KV.memories, mem.id);
+      accepted += await lwwMergeList(kv, KV.memories, data.memories, "mem:memory", "updatedAt");
+      accepted += await lwwMergeList(kv, KV.actions, data.actions, "mem:action", "updatedAt");
+      accepted += await lwwMergeList(kv, KV.semantic, data.semantic, "mem:semantic", "updatedAt");
+      accepted += await lwwMergeList(kv, KV.procedural, data.procedural, "mem:procedural", "updatedAt");
+      if (data.relations && Array.isArray(data.relations)) {
+        for (const rel of data.relations) {
+          if (!rel.sourceId || !rel.targetId || !rel.type) continue;
+          const relKey = `${rel.sourceId}:${rel.targetId}:${rel.type}`;
+          await withKeyedLock(`mem:relation:${relKey}`, async () => {
+            const existing = await kv.get<MemoryRelation>(KV.relations, relKey);
             if (!existing) {
-              await kv.set(KV.memories, mem.id, mem);
-              return true;
-            } else if (
-              new Date(mem.updatedAt) > new Date(existing.updatedAt)
-            ) {
-              await kv.set(KV.memories, mem.id, mem);
-              return true;
+              await kv.set(KV.relations, relKey, rel);
+              accepted++;
             }
-            return false;
           });
-          if (wrote) accepted++;
         }
       }
-
-      if (data.actions && Array.isArray(data.actions)) {
-        for (const action of data.actions) {
-          if (!action.id || typeof action.id !== "string" || !action.updatedAt) continue;
-          if (Number.isNaN(new Date(action.updatedAt).getTime())) continue;
-          const wrote = await withKeyedLock(`mem:action:${action.id}`, async () => {
-            const existing = await kv.get<Action>(KV.actions, action.id);
-            if (!existing) {
-              await kv.set(KV.actions, action.id, action);
-              return true;
-            } else if (
-              new Date(action.updatedAt) > new Date(existing.updatedAt)
-            ) {
-              await kv.set(KV.actions, action.id, action);
-              return true;
-            }
-            return false;
-          });
-          if (wrote) accepted++;
-        }
-      }
+      accepted += await lwwMergeList(kv, KV.graphNodes, data.graphNodes, "mem:gnode", "createdAt");
+      accepted += await lwwMergeList(kv, KV.graphEdges, data.graphEdges, "mem:gedge", "createdAt");
 
       return { success: true, accepted };
     },
@@ -253,27 +293,62 @@ export function registerMeshFunction(sdk: ISdk, kv: StateKV): void {
   );
 }
 
+function deltaFilter<T>(
+  items: T[],
+  sinceTime: number,
+  tsField: "updatedAt" | "createdAt",
+): T[] {
+  return items.filter(
+    (item) => new Date((item as Record<string, unknown>)[tsField] as string).getTime() > sinceTime,
+  );
+}
+
 async function collectSyncData(
   kv: StateKV,
   scopes: string[],
   since?: string,
-): Promise<{ memories?: Memory[]; actions?: Action[] }> {
-  const result: { memories?: Memory[]; actions?: Action[] } = {};
+  syncFilter?: { project?: string },
+): Promise<MeshSyncPayload> {
+  const result: MeshSyncPayload = {};
   const parsed = since ? new Date(since).getTime() : 0;
   const sinceTime = Number.isNaN(parsed) ? 0 : parsed;
 
   if (scopes.includes("memories")) {
-    const allMemories = await kv.list<Memory>(KV.memories);
-    result.memories = allMemories.filter(
-      (m) => new Date(m.updatedAt).getTime() > sinceTime,
-    );
+    const all = await kv.list<Memory>(KV.memories);
+    result.memories = deltaFilter(all, sinceTime, "updatedAt");
   }
 
   if (scopes.includes("actions")) {
-    const allActions = await kv.list<Action>(KV.actions);
-    result.actions = allActions.filter(
-      (a) => new Date(a.updatedAt).getTime() > sinceTime,
-    );
+    let all = await kv.list<Action>(KV.actions);
+    if (syncFilter?.project) {
+      all = all.filter((a) => a.project === syncFilter.project);
+    }
+    result.actions = deltaFilter(all, sinceTime, "updatedAt");
+  }
+
+  if (scopes.includes("semantic")) {
+    const all = await kv.list<SemanticMemory>(KV.semantic);
+    result.semantic = deltaFilter(all, sinceTime, "updatedAt");
+  }
+
+  if (scopes.includes("procedural")) {
+    const all = await kv.list<ProceduralMemory>(KV.procedural);
+    result.procedural = deltaFilter(all, sinceTime, "updatedAt");
+  }
+
+  if (scopes.includes("relations")) {
+    const all = await kv.list<MemoryRelation>(KV.relations);
+    result.relations = deltaFilter(all, sinceTime, "createdAt");
+  }
+
+  if (scopes.includes("graph:nodes")) {
+    const all = await kv.list<GraphNode>(KV.graphNodes);
+    result.graphNodes = deltaFilter(all, sinceTime, "createdAt");
+  }
+
+  if (scopes.includes("graph:edges")) {
+    const all = await kv.list<GraphEdge>(KV.graphEdges);
+    result.graphEdges = deltaFilter(all, sinceTime, "createdAt");
   }
 
   return result;
@@ -281,19 +356,31 @@ async function collectSyncData(
 
 async function applySyncData(
   kv: StateKV,
-  data: { memories?: Memory[]; actions?: Action[] },
+  data: MeshSyncPayload,
   scopes: string[],
 ): Promise<number> {
   let applied = 0;
 
-  if (scopes.includes("memories") && data.memories) {
-    for (const mem of data.memories) {
-      if (!mem.id || typeof mem.id !== "string" || !mem.updatedAt) continue;
-      if (Number.isNaN(new Date(mem.updatedAt).getTime())) continue;
-      const wrote = await withKeyedLock(`mem:memory:${mem.id}`, async () => {
-        const existing = await kv.get<Memory>(KV.memories, mem.id);
-        if (!existing || new Date(mem.updatedAt) > new Date(existing.updatedAt)) {
-          await kv.set(KV.memories, mem.id, mem);
+  if (scopes.includes("memories")) {
+    applied += await lwwMergeList(kv, KV.memories, data.memories, "mem:memory", "updatedAt");
+  }
+  if (scopes.includes("actions")) {
+    applied += await lwwMergeList(kv, KV.actions, data.actions, "mem:action", "updatedAt");
+  }
+  if (scopes.includes("semantic")) {
+    applied += await lwwMergeList(kv, KV.semantic, data.semantic, "mem:semantic", "updatedAt");
+  }
+  if (scopes.includes("procedural")) {
+    applied += await lwwMergeList(kv, KV.procedural, data.procedural, "mem:procedural", "updatedAt");
+  }
+  if (scopes.includes("relations") && data.relations) {
+    for (const rel of data.relations) {
+      if (!rel.sourceId || !rel.targetId || !rel.type) continue;
+      const relKey = `${rel.sourceId}:${rel.targetId}:${rel.type}`;
+      const wrote = await withKeyedLock(`mem:relation:${relKey}`, async () => {
+        const existing = await kv.get<MemoryRelation>(KV.relations, relKey);
+        if (!existing) {
+          await kv.set(KV.relations, relKey, rel);
           return true;
         }
         return false;
@@ -301,21 +388,11 @@ async function applySyncData(
       if (wrote) applied++;
     }
   }
-
-  if (scopes.includes("actions") && data.actions) {
-    for (const action of data.actions) {
-      if (!action.id || typeof action.id !== "string" || !action.updatedAt) continue;
-      if (Number.isNaN(new Date(action.updatedAt).getTime())) continue;
-      const wrote = await withKeyedLock(`mem:action:${action.id}`, async () => {
-        const existing = await kv.get<Action>(KV.actions, action.id);
-        if (!existing || new Date(action.updatedAt) > new Date(existing.updatedAt)) {
-          await kv.set(KV.actions, action.id, action);
-          return true;
-        }
-        return false;
-      });
-      if (wrote) applied++;
-    }
+  if (scopes.includes("graph:nodes")) {
+    applied += await lwwMergeList(kv, KV.graphNodes, data.graphNodes, "mem:gnode", "createdAt");
+  }
+  if (scopes.includes("graph:edges")) {
+    applied += await lwwMergeList(kv, KV.graphEdges, data.graphEdges, "mem:gedge", "createdAt");
   }
 
   return applied;

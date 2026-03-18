@@ -129,6 +129,7 @@ export function registerCompressFunction(
           sessionId: data.sessionId,
           timestamp: data.raw.timestamp,
           ...parsed,
+          confidence: qualityScore / 100,
         };
 
         await kv.set(

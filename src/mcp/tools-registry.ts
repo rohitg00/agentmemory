@@ -666,6 +666,24 @@ export const V051_TOOLS: McpToolDef[] = [
   },
 ];
 
+export const V061_TOOLS: McpToolDef[] = [
+  {
+    name: "memory_verify",
+    description:
+      "Verify a memory or observation by tracing its citation chain back to source observations and session context. Returns provenance information including confidence scores.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: {
+          type: "string",
+          description: "Memory ID or observation ID to verify",
+        },
+      },
+      required: ["id"],
+    },
+  },
+];
+
 export function getAllTools(): McpToolDef[] {
-  return [...CORE_TOOLS, ...V040_TOOLS, ...V050_TOOLS, ...V051_TOOLS];
+  return [...CORE_TOOLS, ...V040_TOOLS, ...V050_TOOLS, ...V051_TOOLS, ...V061_TOOLS];
 }

@@ -915,6 +915,14 @@ export function registerMcpEndpoints(
             return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(fqResult, null, 2) }] } };
           }
 
+          case "memory_verify": {
+            if (!args.id || typeof args.id !== "string") {
+              return { status_code: 400, body: { error: "id is required" } };
+            }
+            const verifyResult = await sdk.trigger("mem::verify", { id: args.id });
+            return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(verifyResult, null, 2) }] } };
+          }
+
           default:
             return {
               status_code: 400,

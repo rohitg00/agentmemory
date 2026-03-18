@@ -35,6 +35,7 @@ export interface CompressedObservation {
   concepts: string[];
   files: string[];
   importance: number;
+  confidence?: number;
 }
 
 export type ObservationType =
@@ -68,6 +69,7 @@ export interface Memory {
   parentId?: string;
   supersedes?: string[];
   relatedIds?: string[];
+  sourceObservationIds?: string[];
   isLatest: boolean;
   forgetAfter?: string;
 }
@@ -247,7 +249,7 @@ export interface ExportPagination {
 }
 
 export interface ExportData {
-  version: "0.3.0" | "0.4.0" | "0.5.0" | "0.6.0";
+  version: "0.3.0" | "0.4.0" | "0.5.0" | "0.6.0" | "0.6.1";
   exportedAt: string;
   sessions: Session[];
   observations: Record<string, CompressedObservation[]>;
@@ -317,6 +319,7 @@ export interface GraphNode {
   createdAt: string;
   updatedAt?: string;
   aliases?: string[];
+  stale?: boolean;
 }
 
 export type GraphEdgeType =
@@ -352,6 +355,7 @@ export interface GraphEdge {
   version?: number;
   supersededBy?: string;
   isLatest?: boolean;
+  stale?: boolean;
 }
 
 export interface EdgeContext {
@@ -660,6 +664,7 @@ export interface MeshPeer {
   lastSyncAt?: string;
   status: "connected" | "disconnected" | "syncing" | "error";
   sharedScopes: string[];
+  syncFilter?: { project?: string };
 }
 
 
