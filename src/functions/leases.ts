@@ -185,7 +185,19 @@ export function registerLeasesFunction(sdk: ISdk, kv: StateKV): void {
               await kv.set(KV.leases, currentLease.id, currentLease);
 
               const action = await kv.get<Action>(KV.actions, currentLease.actionId);
-              if (action && action.status === "active" && action.assignedTo === currentLease.agentId) {
+              const otherActiveLease = (await kv.list<Lease>(KV.leases)).some(
+                (l) =>
+                  l.id !== currentLease.id &&
+                  l.actionId === currentLease.actionId &&
+                  l.status === "active" &&
+                  new Date(l.expiresAt).getTime() > Date.now(),
+              );
+              if (
+                action &&
+                !otherActiveLease &&
+                action.status === "active" &&
+                action.assignedTo === currentLease.agentId
+              ) {
                 action.status = "pending";
                 action.assignedTo = undefined;
                 action.updatedAt = new Date().toISOString();

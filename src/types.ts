@@ -653,6 +653,7 @@ export interface MeshPeer {
   sharedScopes: string[];
 }
 
+
 export interface EnrichedChunk {
   id: string;
   originalObsId: string;

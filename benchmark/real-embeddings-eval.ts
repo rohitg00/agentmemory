@@ -167,14 +167,21 @@ async function evalSystem(
     });
   }
 
-  const avgResultTokens = results.reduce((sum, r) => sum + r.relevant_count, 0) / results.length;
-  const avgObsTokens = observations.slice(0, 50).reduce((s, o) => s + estimateTokens(JSON.stringify(o)), 0) / 50;
+  let totalReturnedTokens = 0;
+  for (const q of queries) {
+    const searchResults = await hybrid.search(q.query, 10);
+    totalReturnedTokens += searchResults.reduce(
+      (sum, r) => sum + estimateTokens(JSON.stringify(r.observation)),
+      0,
+    );
+  }
+  const avgReturnedTokens = Math.round(totalReturnedTokens / queries.length);
 
   return {
     name,
     results,
     embed_time_ms: embedTime,
-    tokens_per_query: Math.round(avgObsTokens * Math.min(10, avgResultTokens)),
+    tokens_per_query: avgReturnedTokens,
   };
 }
 

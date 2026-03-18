@@ -424,7 +424,7 @@ function registerDiagnosticsFunction(sdk, kv) {
 						fixed++;
 						continue;
 					}
-					if (await withKeyedLock(`mem:lease:${lease.actionId}`, async () => {
+					if (await withKeyedLock(`mem:action:${lease.actionId}`, async () => {
 						const fresh = await kv.get(KV.leases, lease.id);
 						if (!fresh || fresh.status !== "active" || new Date(fresh.expiresAt).getTime() > Date.now()) return false;
 						fresh.status = "expired";

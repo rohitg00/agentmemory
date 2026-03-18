@@ -3,28 +3,41 @@ import type { StateKV } from "../state/kv.js";
 import { KV, generateId } from "../state/schema.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
 import type { MeshPeer, Memory, Action } from "../types.js";
+import { lookup } from "node:dns/promises";
+import { isIP } from "node:net";
 
-function isAllowedUrl(urlStr: string): boolean {
+function isPrivateIP(ip: string): boolean {
+  if (ip === "127.0.0.1" || ip === "::1" || ip === "0.0.0.0") return true;
+  if (ip.startsWith("10.") || ip.startsWith("192.168.")) return true;
+  if (/^172\.(1[6-9]|2\d|3[01])\./.test(ip)) return true;
+  if (ip === "169.254.169.254") return true;
+  if (ip.startsWith("fe80:") || ip.startsWith("fc00:") || ip.startsWith("fd")) return true;
+  if (ip.startsWith("::ffff:")) {
+    const v4 = ip.slice(7);
+    return isPrivateIP(v4);
+  }
+  return false;
+}
+
+async function isAllowedUrl(urlStr: string): Promise<boolean> {
   try {
     const parsed = new URL(urlStr);
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
+    if (parsed.username || parsed.password) return false;
     const host = parsed.hostname.toLowerCase();
-    if (
-      host === "localhost" ||
-      host === "127.0.0.1" ||
-      host === "::1" ||
-      host === "0.0.0.0" ||
-      host.startsWith("10.") ||
-      host.startsWith("192.168.") ||
-      host === "169.254.169.254" ||
-      /^172\.(1[6-9]|2\d|3[01])\./.test(host) ||
-      host.startsWith("fe80:") ||
-      host.startsWith("fc00:") ||
-      host.startsWith("fd") ||
-      host.startsWith("::ffff:")
-    ) {
-      return false;
+
+    if (host === "localhost") return false;
+    if (isIP(host) && isPrivateIP(host)) return false;
+
+    if (!isIP(host)) {
+      try {
+        const resolved = await lookup(host, { all: true });
+        if (resolved.some((r) => isPrivateIP(r.address))) return false;
+      } catch {
+        // DNS resolution failed — allow the URL (the actual fetch will fail if unreachable)
+      }
     }
+
     return true;
   } catch {
     return false;
@@ -43,7 +56,7 @@ export function registerMeshFunction(sdk: ISdk, kv: StateKV): void {
         return { success: false, error: "url and name are required" };
       }
 
-      if (!isAllowedUrl(data.url)) {
+      if (!(await isAllowedUrl(data.url))) {
         return { success: false, error: "URL blocked: private/local address not allowed" };
       }
 
@@ -111,7 +124,7 @@ export function registerMeshFunction(sdk: ISdk, kv: StateKV): void {
         const scopes = data.scopes || peer.sharedScopes;
 
         try {
-          if (!isAllowedUrl(peer.url)) {
+          if (!(await isAllowedUrl(peer.url))) {
             result.errors.push("peer URL blocked: private/local address not allowed");
             peer.status = "error";
             await kv.set(KV.mesh, peer.id, peer);
