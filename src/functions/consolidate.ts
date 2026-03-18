@@ -117,8 +117,15 @@ export function registerConsolidateFunction(
         existingMemories.map((m) => m.title.toLowerCase()),
       );
 
-      for (const [concept, obsGroup] of conceptGroups) {
-        if (obsGroup.length < 3) continue;
+      const MAX_LLM_CALLS = 10;
+      let llmCallCount = 0;
+
+      const sortedGroups = [...conceptGroups.entries()]
+        .filter(([, g]) => g.length >= 3)
+        .sort((a, b) => b[1].length - a[1].length);
+
+      for (const [concept, obsGroup] of sortedGroups) {
+        if (llmCallCount >= MAX_LLM_CALLS) break;
 
         const top = obsGroup
           .sort((a, b) => b.importance - a.importance)
@@ -142,6 +149,7 @@ export function registerConsolidateFunction(
               setTimeout(() => reject(new Error("compress timeout")), 30_000),
             ),
           ]);
+          llmCallCount++;
           const parsed = parseMemoryXml(response, sessionIds);
           if (!parsed) continue;
 

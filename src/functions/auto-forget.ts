@@ -59,27 +59,71 @@ export function registerAutoForgetFunction(sdk: ISdk, kv: StateKV): void {
             new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
         )
         .slice(0, 1000);
-      for (let i = 0; i < latestMemories.length; i++) {
-        for (let j = i + 1; j < latestMemories.length; j++) {
-          const sim = jaccardSimilarity(
-            latestMemories[i].content.toLowerCase(),
-            latestMemories[j].content.toLowerCase(),
-          );
-          if (sim > CONTRADICTION_THRESHOLD) {
-            result.contradictions.push({
-              memoryA: latestMemories[i].id,
-              memoryB: latestMemories[j].id,
-              similarity: sim,
-            });
 
-            if (!dryRun) {
-              const older =
-                new Date(latestMemories[i].createdAt).getTime() <
-                new Date(latestMemories[j].createdAt).getTime()
-                  ? latestMemories[i]
-                  : latestMemories[j];
-              older.isLatest = false;
-              await kv.set(KV.memories, older.id, older);
+      const tokenCache = new Map<string, Set<string>>();
+      for (const mem of latestMemories) {
+        tokenCache.set(
+          mem.id,
+          new Set(
+            mem.content
+              .toLowerCase()
+              .split(/\s+/)
+              .filter((t) => t.length > 2),
+          ),
+        );
+      }
+
+      const memById = new Map(latestMemories.map((m) => [m.id, m]));
+      const conceptIndex = new Map<string, string[]>();
+      for (const mem of latestMemories) {
+        const concepts = mem.concepts || [];
+        for (const c of concepts) {
+          const key = c.toLowerCase();
+          if (!conceptIndex.has(key)) conceptIndex.set(key, []);
+          conceptIndex.get(key)!.push(mem.id);
+        }
+      }
+
+      const compared = new Set<string>();
+      for (const [, memIds] of conceptIndex) {
+        for (let i = 0; i < memIds.length; i++) {
+          for (let j = i + 1; j < memIds.length; j++) {
+            const key =
+              memIds[i] < memIds[j]
+                ? `${memIds[i]}|${memIds[j]}`
+                : `${memIds[j]}|${memIds[i]}`;
+            if (compared.has(key)) continue;
+            compared.add(key);
+
+            const setA = tokenCache.get(memIds[i])!;
+            const setB = tokenCache.get(memIds[j])!;
+            let intersection = 0;
+            if (setA.size === 0 && setB.size === 0) continue;
+            if (setA.size === 0 || setB.size === 0) continue;
+            for (const word of setA) {
+              if (setB.has(word)) intersection++;
+            }
+            const sim =
+              intersection / (setA.size + setB.size - intersection);
+
+            if (sim > CONTRADICTION_THRESHOLD) {
+              const memA = memById.get(memIds[i])!;
+              const memB = memById.get(memIds[j])!;
+              result.contradictions.push({
+                memoryA: memA.id,
+                memoryB: memB.id,
+                similarity: sim,
+              });
+
+              if (!dryRun) {
+                const older =
+                  new Date(memA.createdAt).getTime() <
+                  new Date(memB.createdAt).getTime()
+                    ? memA
+                    : memB;
+                older.isLatest = false;
+                await kv.set(KV.memories, older.id, older);
+              }
             }
           }
         }

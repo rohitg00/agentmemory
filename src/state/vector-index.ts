@@ -41,14 +41,25 @@ export class VectorIndex {
       sessionId: string;
       score: number;
     }> = [];
+    let minScore = -Infinity;
 
     for (const [obsId, entry] of this.vectors) {
       const score = cosineSimilarity(query, entry.embedding);
-      results.push({ obsId, sessionId: entry.sessionId, score });
+      if (results.length < limit) {
+        results.push({ obsId, sessionId: entry.sessionId, score });
+        if (results.length === limit) {
+          results.sort((a, b) => a.score - b.score);
+          minScore = results[0].score;
+        }
+      } else if (score > minScore) {
+        results[0] = { obsId, sessionId: entry.sessionId, score };
+        results.sort((a, b) => a.score - b.score);
+        minScore = results[0].score;
+      }
     }
 
     results.sort((a, b) => b.score - a.score);
-    return results.slice(0, limit);
+    return results;
   }
 
   get size(): number {

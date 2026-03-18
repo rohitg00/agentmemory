@@ -281,6 +281,29 @@ async function main() {
     config.restPort,
   );
 
+  const autoForgetIntervalMs = parseInt(process.env.AUTO_FORGET_INTERVAL_MS || "3600000", 10);
+  const consolidationIntervalMs = parseInt(process.env.CONSOLIDATION_INTERVAL_MS || "7200000", 10);
+
+  if (process.env.AUTO_FORGET_ENABLED !== "false") {
+    const autoForgetTimer = setInterval(async () => {
+      try {
+        await sdk.trigger("mem::auto-forget", { dryRun: false });
+      } catch {}
+    }, autoForgetIntervalMs);
+    autoForgetTimer.unref();
+    console.log(`[agentmemory] Auto-forget: enabled (every ${autoForgetIntervalMs / 60000}m)`);
+  }
+
+  if (process.env.CONSOLIDATION_ENABLED === "true") {
+    const consolidationTimer = setInterval(async () => {
+      try {
+        await sdk.trigger("mem::consolidate-pipeline", {});
+      } catch {}
+    }, consolidationIntervalMs);
+    consolidationTimer.unref();
+    console.log(`[agentmemory] Auto-consolidation: enabled (every ${consolidationIntervalMs / 60000}m)`);
+  }
+
   const shutdown = async () => {
     console.log(`\n[agentmemory] Shutting down...`);
     healthMonitor.stop();

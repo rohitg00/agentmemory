@@ -13,6 +13,7 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
       type?: string;
       concepts?: string[];
       files?: string[];
+      ttlDays?: number;
     }) => {
       const ctx = getContext();
       if (
@@ -78,6 +79,10 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
           supersedes: supersededId ? [supersededId] : [],
           isLatest: true,
         };
+
+        if (data.ttlDays && typeof data.ttlDays === "number" && data.ttlDays > 0) {
+          memory.forgetAfter = new Date(Date.now() + data.ttlDays * 86400000).toISOString();
+        }
 
         if (supersededMemory) {
           supersededMemory.isLatest = false;
