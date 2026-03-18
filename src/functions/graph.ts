@@ -181,8 +181,8 @@ export function registerGraphFunction(
       maxDepth?: number;
       query?: string;
     }): Promise<GraphQueryResult> => {
-      const allNodes = await kv.list<GraphNode>(KV.graphNodes);
-      const allEdges = await kv.list<GraphEdge>(KV.graphEdges);
+      const allNodes = (await kv.list<GraphNode>(KV.graphNodes)).filter((n) => !n.stale);
+      const allEdges = (await kv.list<GraphEdge>(KV.graphEdges)).filter((e) => !e.stale);
       const maxDepth = Math.min(data.maxDepth || 3, 5);
 
       if (data.query) {

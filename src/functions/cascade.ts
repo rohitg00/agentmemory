@@ -23,12 +23,14 @@ export function registerCascadeFunction(sdk: ISdk, kv: StateKV): void {
       const obsIds = new Set(superseded.sourceObservationIds || []);
 
       if (obsIds.size > 0) {
+        const now = new Date().toISOString();
         const nodes = await kv.list<GraphNode>(KV.graphNodes);
         for (const node of nodes) {
           if (node.stale) continue;
           const overlap = (node.sourceObservationIds ?? []).some((id) => obsIds.has(id));
           if (overlap) {
             node.stale = true;
+            node.updatedAt = now;
             await kv.set(KV.graphNodes, node.id, node);
             flaggedNodes++;
           }

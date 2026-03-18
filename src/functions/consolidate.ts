@@ -158,7 +158,7 @@ export function registerConsolidateFunction(
           );
 
           const now = new Date().toISOString();
-          const obsIds = top.map((o) => o.id);
+          const obsIds = [...new Set(top.map((o) => o.id))];
           if (existingMatch) {
             existingMatch.isLatest = false;
             await kv.set(KV.memories, existingMatch.id, existingMatch);

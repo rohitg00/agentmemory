@@ -1478,28 +1478,34 @@ export function registerApiTriggers(
           return { status_code: 400, body: { error: "Invalid 'since' date format" } };
         }
       }
+      const project = req.query_params?.["project"] as string | undefined;
       const sinceTime = since ? new Date(since).getTime() : 0;
       const df = <T>(items: T[], field: "updatedAt" | "createdAt") =>
         items.filter((i) => new Date((i as Record<string, unknown>)[field] as string).getTime() > sinceTime);
       const memories = await kv.list<import("../types.js").Memory>(KV.memories);
-      const actions = await kv.list<import("../types.js").Action>(KV.actions);
-      const semantic = await kv.list<import("../types.js").SemanticMemory>(KV.semantic);
-      const procedural = await kv.list<import("../types.js").ProceduralMemory>(KV.procedural);
-      const relations = await kv.list<import("../types.js").MemoryRelation>(KV.relations);
-      const graphNodes = await kv.list<import("../types.js").GraphNode>(KV.graphNodes);
-      const graphEdges = await kv.list<import("../types.js").GraphEdge>(KV.graphEdges);
-      return {
-        status_code: 200,
-        body: {
-          memories: df(memories, "updatedAt"),
-          actions: df(actions, "updatedAt"),
-          semantic: df(semantic, "updatedAt"),
-          procedural: df(procedural, "updatedAt"),
-          relations: df(relations, "createdAt"),
-          graphNodes: df(graphNodes, "createdAt"),
-          graphEdges: df(graphEdges, "createdAt"),
-        },
+      let actions = await kv.list<import("../types.js").Action>(KV.actions);
+      if (project) {
+        actions = actions.filter((a) => a.project === project);
+      }
+      const body: Record<string, unknown> = {
+        memories: df(memories, "updatedAt"),
+        actions: df(actions, "updatedAt"),
       };
+      if (!project) {
+        const semantic = await kv.list<import("../types.js").SemanticMemory>(KV.semantic);
+        const procedural = await kv.list<import("../types.js").ProceduralMemory>(KV.procedural);
+        const relations = await kv.list<import("../types.js").MemoryRelation>(KV.relations);
+        const graphNodes = await kv.list<import("../types.js").GraphNode>(KV.graphNodes);
+        const graphEdges = await kv.list<import("../types.js").GraphEdge>(KV.graphEdges);
+        body.semantic = df(semantic, "updatedAt");
+        body.procedural = df(procedural, "updatedAt");
+        body.relations = df(relations, "createdAt");
+        body.graphNodes = graphNodes.filter(
+          (n) => new Date(n.updatedAt || n.createdAt).getTime() > sinceTime,
+        );
+        body.graphEdges = df(graphEdges, "createdAt");
+      }
+      return { status_code: 200, body };
     },
   );
   sdk.registerTrigger({

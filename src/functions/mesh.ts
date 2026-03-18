@@ -104,6 +104,37 @@ async function lwwMergeList<T extends { id: string }>(
   return count;
 }
 
+function graphNodeTs(node: GraphNode): string {
+  return node.updatedAt || node.createdAt;
+}
+
+async function lwwMergeGraphNodes(
+  kv: StateKV,
+  items: GraphNode[] | undefined,
+): Promise<number> {
+  if (!items || !Array.isArray(items)) return 0;
+  let count = 0;
+  for (const item of items) {
+    if (!item.id || typeof item.id !== "string") continue;
+    const ts = graphNodeTs(item);
+    if (!ts || Number.isNaN(new Date(ts).getTime())) continue;
+    const wrote = await withKeyedLock(`mem:gnode:${item.id}`, async () => {
+      const existing = await kv.get<GraphNode>(KV.graphNodes, item.id);
+      if (!existing) {
+        await kv.set(KV.graphNodes, item.id, item);
+        return true;
+      }
+      if (new Date(ts) > new Date(graphNodeTs(existing))) {
+        await kv.set(KV.graphNodes, item.id, item);
+        return true;
+      }
+      return false;
+    });
+    if (wrote) count++;
+  }
+  return count;
+}
+
 export function registerMeshFunction(sdk: ISdk, kv: StateKV): void {
   sdk.registerFunction(
     { id: "mem::mesh-register" },
@@ -274,7 +305,7 @@ export function registerMeshFunction(sdk: ISdk, kv: StateKV): void {
           });
         }
       }
-      accepted += await lwwMergeList(kv, KV.graphNodes, data.graphNodes, "mem:gnode", "createdAt");
+      accepted += await lwwMergeGraphNodes(kv, data.graphNodes);
       accepted += await lwwMergeList(kv, KV.graphEdges, data.graphEdges, "mem:gedge", "createdAt");
 
       return { success: true, accepted };
@@ -326,27 +357,31 @@ async function collectSyncData(
     result.actions = deltaFilter(all, sinceTime, "updatedAt");
   }
 
-  if (scopes.includes("semantic")) {
+  const projectScoped = !!syncFilter?.project;
+
+  if (scopes.includes("semantic") && !projectScoped) {
     const all = await kv.list<SemanticMemory>(KV.semantic);
     result.semantic = deltaFilter(all, sinceTime, "updatedAt");
   }
 
-  if (scopes.includes("procedural")) {
+  if (scopes.includes("procedural") && !projectScoped) {
     const all = await kv.list<ProceduralMemory>(KV.procedural);
     result.procedural = deltaFilter(all, sinceTime, "updatedAt");
   }
 
-  if (scopes.includes("relations")) {
+  if (scopes.includes("relations") && !projectScoped) {
     const all = await kv.list<MemoryRelation>(KV.relations);
     result.relations = deltaFilter(all, sinceTime, "createdAt");
   }
 
-  if (scopes.includes("graph:nodes")) {
+  if (scopes.includes("graph:nodes") && !projectScoped) {
     const all = await kv.list<GraphNode>(KV.graphNodes);
-    result.graphNodes = deltaFilter(all, sinceTime, "createdAt");
+    result.graphNodes = all.filter(
+      (n) => new Date(graphNodeTs(n)).getTime() > sinceTime,
+    );
   }
 
-  if (scopes.includes("graph:edges")) {
+  if (scopes.includes("graph:edges") && !projectScoped) {
     const all = await kv.list<GraphEdge>(KV.graphEdges);
     result.graphEdges = deltaFilter(all, sinceTime, "createdAt");
   }
@@ -389,7 +424,7 @@ async function applySyncData(
     }
   }
   if (scopes.includes("graph:nodes")) {
-    applied += await lwwMergeList(kv, KV.graphNodes, data.graphNodes, "mem:gnode", "createdAt");
+    applied += await lwwMergeGraphNodes(kv, data.graphNodes);
   }
   if (scopes.includes("graph:edges")) {
     applied += await lwwMergeList(kv, KV.graphEdges, data.graphEdges, "mem:gedge", "createdAt");
