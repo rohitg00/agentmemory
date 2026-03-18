@@ -74,8 +74,9 @@ export function startViewerServer(
   _kv: unknown,
   _sdk: unknown,
   secret?: string,
+  restPort?: number,
 ): Server {
-  const restPort = port - 2;
+  const resolvedRestPort = restPort ?? port - 2;
 
   const server = createServer(async (req, res) => {
     const raw = req.url || "/";
@@ -128,7 +129,7 @@ export function startViewerServer(
     }
 
     try {
-      await proxyToRestApi(restPort, pathname, qs, method, req, res, secret);
+      await proxyToRestApi(resolvedRestPort, pathname, qs, method, req, res, secret);
     } catch (err) {
       console.error(`[viewer] proxy error on ${method} ${pathname}:`, err);
       json(res, 502, { error: "upstream error" }, req);
@@ -171,11 +172,25 @@ async function proxyToRestApi(
     body = await readBody(req);
   }
 
-  const upstream = await fetch(upstreamUrl, {
-    method,
-    headers,
-    body: body || undefined,
-  });
+  const controller = new AbortController();
+  const fetchTimeout = setTimeout(() => controller.abort(), 10000);
+  let upstream: Response;
+  try {
+    upstream = await fetch(upstreamUrl, {
+      method,
+      headers,
+      body: body || undefined,
+      signal: controller.signal,
+    });
+    clearTimeout(fetchTimeout);
+  } catch (err) {
+    clearTimeout(fetchTimeout);
+    if (err instanceof Error && err.name === "AbortError") {
+      json(res, 504, { error: "upstream timeout" }, req);
+      return;
+    }
+    throw err;
+  }
 
   const cors = corsHeaders(req);
   const responseBody = await upstream.text();

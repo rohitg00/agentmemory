@@ -28,11 +28,13 @@ export function registerSmartSearchFunction(
 
       if (data.expandIds && data.expandIds.length > 0) {
         const raw = data.expandIds.slice(0, 20);
-        const items = raw.map((entry) =>
-          typeof entry === "string"
-            ? { obsId: entry, sessionId: undefined as string | undefined }
-            : { obsId: entry.obsId, sessionId: entry.sessionId },
-        );
+        const items = raw.map((entry) => {
+          if (typeof entry === "string") return { obsId: entry, sessionId: undefined as string | undefined };
+          if (entry && typeof entry === "object" && typeof (entry as any).obsId === "string") {
+            return { obsId: (entry as any).obsId, sessionId: (entry as any).sessionId as string | undefined };
+          }
+          return null;
+        }).filter((item): item is NonNullable<typeof item> => item !== null);
 
         const expanded: Array<{
           obsId: string;
@@ -99,12 +101,15 @@ async function findObservation(
   }
 
   const sessions = await kv.list<{ id: string }>(KV.sessions);
-  const results = await Promise.all(
-    sessions.map((session) =>
-      kv
-        .get<CompressedObservation>(KV.observations(session.id), obsId)
-        .catch(() => null),
-    ),
-  );
-  return results.find((obs) => obs != null) ?? null;
+  for (let i = 0; i < sessions.length; i += 5) {
+    const batch = sessions.slice(i, i + 5);
+    const results = await Promise.all(
+      batch.map((s) =>
+        kv.get<CompressedObservation>(KV.observations(s.id), obsId).catch(() => null),
+      ),
+    );
+    const found = results.find((r) => r !== null);
+    if (found) return found;
+  }
+  return null;
 }

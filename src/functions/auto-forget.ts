@@ -86,13 +86,18 @@ export function registerAutoForgetFunction(sdk: ISdk, kv: StateKV): void {
       }
 
       const sessions = await kv.list<Session>(KV.sessions);
-      const obsPerSession = await Promise.all(
-        sessions.map((s) =>
-          kv
-            .list<CompressedObservation>(KV.observations(s.id))
-            .catch(() => [] as CompressedObservation[]),
-        ),
-      );
+      const obsPerSession: CompressedObservation[][] = [];
+      for (let batch = 0; batch < sessions.length; batch += 10) {
+        const chunk = sessions.slice(batch, batch + 10);
+        const results = await Promise.all(
+          chunk.map((s) =>
+            kv
+              .list<CompressedObservation>(KV.observations(s.id))
+              .catch(() => [] as CompressedObservation[]),
+          ),
+        );
+        obsPerSession.push(...results);
+      }
       for (let i = 0; i < sessions.length; i++) {
         for (const obs of obsPerSession[i]) {
           if (!obs.timestamp) continue;

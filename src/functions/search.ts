@@ -20,9 +20,26 @@ export async function rebuildIndex(kv: StateKV): Promise<number> {
   if (!sessions.length) return 0
 
   let count = 0
-  const obsPerSession = await Promise.all(
-    sessions.map(s => kv.list<CompressedObservation>(KV.observations(s.id)).catch(() => [] as CompressedObservation[]))
-  )
+  const obsPerSession: CompressedObservation[][] = []
+  const failedSessions: string[] = []
+  for (let batch = 0; batch < sessions.length; batch += 10) {
+    const chunk = sessions.slice(batch, batch + 10)
+    const results = await Promise.all(
+      chunk.map(async (s) => {
+        try {
+          return await kv.list<CompressedObservation>(KV.observations(s.id))
+        } catch {
+          failedSessions.push(s.id)
+          return [] as CompressedObservation[]
+        }
+      })
+    )
+    obsPerSession.push(...results)
+  }
+  if (failedSessions.length > 0) {
+    const ctx = getContext()
+    ctx.logger.warn('rebuildIndex: failed to load observations for sessions', { failedSessions })
+  }
   for (const observations of obsPerSession) {
     for (const obs of observations) {
       if (obs.title && obs.narrative) {

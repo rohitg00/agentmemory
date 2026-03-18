@@ -20,6 +20,7 @@ import type {
   Sketch,
   Crystal,
   Facet,
+  ExportPagination,
 } from "../types.js";
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
@@ -30,11 +31,15 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
     { id: "mem::export", description: "Export all memory data as JSON" },
     async (data?: { maxSessions?: number; offset?: number }) => {
       const ctx = getContext();
-      const maxSessions = data?.maxSessions ?? 100;
-      const offset = data?.offset ?? 0;
+      const rawMax = Number(data?.maxSessions);
+      const maxSessions = Number.isFinite(rawMax) && rawMax > 0 ? Math.min(Math.floor(rawMax), 1000) : undefined;
+      const rawOffset = Number(data?.offset);
+      const offset = Number.isFinite(rawOffset) && rawOffset >= 0 ? Math.floor(rawOffset) : 0;
 
       const allSessions = await kv.list<Session>(KV.sessions);
-      const paginatedSessions = allSessions.slice(offset, offset + maxSessions);
+      const paginatedSessions = maxSessions !== undefined
+        ? allSessions.slice(offset, offset + maxSessions)
+        : allSessions;
       const memories = await kv.list<Memory>(KV.memories);
       const summaries = await kv.list<SessionSummary>(KV.summaries);
 
@@ -94,9 +99,7 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
         kv.list<Checkpoint>(KV.checkpoints).catch(() => []),
       ]);
 
-      const exportData: ExportData & {
-        pagination?: { offset: number; limit: number; total: number; hasMore: boolean };
-      } = {
+      const exportData: ExportData = {
         version: VERSION,
         exportedAt: new Date().toISOString(),
         sessions: paginatedSessions,
@@ -121,7 +124,7 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
         checkpoints: checkpoints.length > 0 ? checkpoints : undefined,
       };
 
-      if (allSessions.length > maxSessions) {
+      if (maxSessions !== undefined) {
         exportData.pagination = {
           offset,
           limit: maxSessions,
