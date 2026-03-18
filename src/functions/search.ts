@@ -20,8 +20,10 @@ export async function rebuildIndex(kv: StateKV): Promise<number> {
   if (!sessions.length) return 0
 
   let count = 0
-  for (const session of sessions) {
-    const observations = await kv.list<CompressedObservation>(KV.observations(session.id))
+  const obsPerSession = await Promise.all(
+    sessions.map(s => kv.list<CompressedObservation>(KV.observations(s.id)).catch(() => [] as CompressedObservation[]))
+  )
+  for (const observations of obsPerSession) {
     for (const obs of observations) {
       if (obs.title && obs.narrative) {
         idx.add(obs)

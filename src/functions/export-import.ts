@@ -28,59 +28,78 @@ import { VERSION } from "../version.js";
 export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
   sdk.registerFunction(
     { id: "mem::export", description: "Export all memory data as JSON" },
-    async () => {
+    async (data?: { maxSessions?: number; offset?: number }) => {
       const ctx = getContext();
+      const maxSessions = data?.maxSessions ?? 100;
+      const offset = data?.offset ?? 0;
 
-      const sessions = await kv.list<Session>(KV.sessions);
+      const allSessions = await kv.list<Session>(KV.sessions);
+      const paginatedSessions = allSessions.slice(offset, offset + maxSessions);
       const memories = await kv.list<Memory>(KV.memories);
       const summaries = await kv.list<SessionSummary>(KV.summaries);
 
       const observations: Record<string, CompressedObservation[]> = {};
-      for (const session of sessions) {
-        const obs = await kv
-          .list<CompressedObservation>(KV.observations(session.id))
-          .catch(() => []);
+      const obsResults = await Promise.all(
+        paginatedSessions.map((session) =>
+          kv
+            .list<CompressedObservation>(KV.observations(session.id))
+            .catch(() => [] as CompressedObservation[])
+            .then((obs) => ({ sessionId: session.id, obs })),
+        ),
+      );
+      for (const { sessionId, obs } of obsResults) {
         if (obs.length > 0) {
-          observations[session.id] = obs;
+          observations[sessionId] = obs;
         }
       }
 
       const profiles: ProjectProfile[] = [];
-      const uniqueProjects = [...new Set(sessions.map((s) => s.project))];
-      for (const project of uniqueProjects) {
-        const profile = await kv
-          .get<ProjectProfile>(KV.profiles, project)
-          .catch(() => null);
+      const uniqueProjects = [...new Set(paginatedSessions.map((s) => s.project))];
+      const profileResults = await Promise.all(
+        uniqueProjects.map((project) =>
+          kv.get<ProjectProfile>(KV.profiles, project).catch(() => null),
+        ),
+      );
+      for (const profile of profileResults) {
         if (profile) profiles.push(profile);
       }
 
-      const graphNodes = await kv
-        .list<GraphNode>(KV.graphNodes)
-        .catch(() => []);
-      const graphEdges = await kv
-        .list<GraphEdge>(KV.graphEdges)
-        .catch(() => []);
-      const semanticMemories = await kv
-        .list<SemanticMemory>(KV.semantic)
-        .catch(() => []);
-      const proceduralMemories = await kv
-        .list<ProceduralMemory>(KV.procedural)
-        .catch(() => []);
+      const [
+        graphNodes,
+        graphEdges,
+        semanticMemories,
+        proceduralMemories,
+        actions,
+        actionEdges,
+        sentinels,
+        sketches,
+        crystals,
+        facets,
+        routines,
+        signals,
+        checkpoints,
+      ] = await Promise.all([
+        kv.list<GraphNode>(KV.graphNodes).catch(() => []),
+        kv.list<GraphEdge>(KV.graphEdges).catch(() => []),
+        kv.list<SemanticMemory>(KV.semantic).catch(() => []),
+        kv.list<ProceduralMemory>(KV.procedural).catch(() => []),
+        kv.list<Action>(KV.actions).catch(() => []),
+        kv.list<ActionEdge>(KV.actionEdges).catch(() => []),
+        kv.list<Sentinel>(KV.sentinels).catch(() => []),
+        kv.list<Sketch>(KV.sketches).catch(() => []),
+        kv.list<Crystal>(KV.crystals).catch(() => []),
+        kv.list<Facet>(KV.facets).catch(() => []),
+        kv.list<Routine>(KV.routines).catch(() => []),
+        kv.list<Signal>(KV.signals).catch(() => []),
+        kv.list<Checkpoint>(KV.checkpoints).catch(() => []),
+      ]);
 
-      const actions = await kv.list<Action>(KV.actions).catch(() => []);
-      const actionEdges = await kv.list<ActionEdge>(KV.actionEdges).catch(() => []);
-      const sentinels = await kv.list<Sentinel>(KV.sentinels).catch(() => []);
-      const sketches = await kv.list<Sketch>(KV.sketches).catch(() => []);
-      const crystals = await kv.list<Crystal>(KV.crystals).catch(() => []);
-      const facets = await kv.list<Facet>(KV.facets).catch(() => []);
-      const routines = await kv.list<Routine>(KV.routines).catch(() => []);
-      const signals = await kv.list<Signal>(KV.signals).catch(() => []);
-      const checkpoints = await kv.list<Checkpoint>(KV.checkpoints).catch(() => []);
-
-      const exportData: ExportData = {
+      const exportData: ExportData & {
+        pagination?: { offset: number; limit: number; total: number; hasMore: boolean };
+      } = {
         version: VERSION,
         exportedAt: new Date().toISOString(),
-        sessions,
+        sessions: paginatedSessions,
         observations,
         memories,
         summaries,
@@ -102,12 +121,22 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
         checkpoints: checkpoints.length > 0 ? checkpoints : undefined,
       };
 
+      if (allSessions.length > maxSessions) {
+        exportData.pagination = {
+          offset,
+          limit: maxSessions,
+          total: allSessions.length,
+          hasMore: offset + maxSessions < allSessions.length,
+        };
+      }
+
       const totalObs = Object.values(observations).reduce(
         (sum, arr) => sum + arr.length,
         0,
       );
       ctx.logger.info("Export complete", {
-        sessions: sessions.length,
+        sessions: paginatedSessions.length,
+        totalSessions: allSessions.length,
         observations: totalObs,
         memories: memories.length,
         summaries: summaries.length,

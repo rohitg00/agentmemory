@@ -174,6 +174,7 @@ export interface HealthSnapshot {
   cpu: { userMicros: number; systemMicros: number; percent: number };
   eventLoopLagMs: number;
   uptimeSeconds: number;
+  kvConnectivity?: { status: string; latencyMs?: number; error?: string };
   status: "healthy" | "degraded" | "critical";
   alerts: string[];
 }

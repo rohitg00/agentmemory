@@ -19,32 +19,42 @@ export function registerSmartSearchFunction(
       description:
         "Search with progressive disclosure: compact results first, expand specific IDs for full details",
     },
-    async (data: { query?: string; expandIds?: string[]; limit?: number }) => {
+    async (data: {
+      query?: string;
+      expandIds?: Array<string | { obsId: string; sessionId: string }>;
+      limit?: number;
+    }) => {
       const ctx = getContext();
 
       if (data.expandIds && data.expandIds.length > 0) {
-        const ids = data.expandIds.slice(0, 20);
+        const raw = data.expandIds.slice(0, 20);
+        const items = raw.map((entry) =>
+          typeof entry === "string"
+            ? { obsId: entry, sessionId: undefined as string | undefined }
+            : { obsId: entry.obsId, sessionId: entry.sessionId },
+        );
+
         const expanded: Array<{
           obsId: string;
           sessionId: string;
           observation: CompressedObservation;
         }> = [];
 
-        for (const obsId of ids) {
-          const obs = await findObservation(kv, obsId);
-          if (obs) {
-            expanded.push({
-              obsId,
-              sessionId: obs.sessionId,
-              observation: obs,
-            });
-          }
+        const results = await Promise.all(
+          items.map(({ obsId, sessionId }) =>
+            findObservation(kv, obsId, sessionId).then((obs) =>
+              obs ? { obsId, sessionId: obs.sessionId, observation: obs } : null,
+            ),
+          ),
+        );
+        for (const r of results) {
+          if (r) expanded.push(r);
         }
 
-        const truncated = data.expandIds.length > ids.length;
+        const truncated = data.expandIds.length > raw.length;
         ctx.logger.info("Smart search expanded", {
           requested: data.expandIds.length,
-          attempted: ids.length,
+          attempted: raw.length,
           returned: expanded.length,
           truncated,
         });
@@ -79,13 +89,22 @@ export function registerSmartSearchFunction(
 async function findObservation(
   kv: StateKV,
   obsId: string,
+  sessionIdHint?: string,
 ): Promise<CompressedObservation | null> {
-  const sessions = await kv.list<{ id: string }>(KV.sessions);
-  for (const session of sessions) {
+  if (sessionIdHint) {
     const obs = await kv
-      .get<CompressedObservation>(KV.observations(session.id), obsId)
+      .get<CompressedObservation>(KV.observations(sessionIdHint), obsId)
       .catch(() => null);
     if (obs) return obs;
   }
-  return null;
+
+  const sessions = await kv.list<{ id: string }>(KV.sessions);
+  const results = await Promise.all(
+    sessions.map((session) =>
+      kv
+        .get<CompressedObservation>(KV.observations(session.id), obsId)
+        .catch(() => null),
+    ),
+  );
+  return results.find((obs) => obs != null) ?? null;
 }

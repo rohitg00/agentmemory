@@ -278,8 +278,6 @@ async function main() {
     kv,
     sdk,
     secret,
-    metricsStore,
-    provider,
   );
 
   const shutdown = async () => {

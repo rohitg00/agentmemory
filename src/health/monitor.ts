@@ -45,6 +45,16 @@ export function registerHealthMonitor(
       if (result?.workers) workers = result.workers;
     } catch {}
 
+    let kvConnectivity: { status: string; latencyMs?: number; error?: string };
+    const kvStart = performance.now();
+    try {
+      await kv.set(KV.health, "_probe", { ts: Date.now() });
+      await kv.get(KV.health, "_probe");
+      kvConnectivity = { status: "ok", latencyMs: Math.round((performance.now() - kvStart) * 100) / 100 };
+    } catch (err) {
+      kvConnectivity = { status: "error", error: err instanceof Error ? err.message : String(err) };
+    }
+
     const snapshot: HealthSnapshot = {
       connectionState,
       workers,
@@ -61,6 +71,7 @@ export function registerHealthMonitor(
       },
       eventLoopLagMs,
       uptimeSeconds: uptime,
+      kvConnectivity,
       status: "healthy",
       alerts: [],
     };

@@ -86,9 +86,15 @@ export function registerContextFunction(
         )
         .slice(0, 10);
 
-      for (const session of sessions) {
-        const summary = await kv.get<SessionSummary>(KV.summaries, session.id);
+      const summariesPerSession = await Promise.all(
+        sessions.map((s) =>
+          kv.get<SessionSummary>(KV.summaries, s.id).catch(() => null),
+        ),
+      );
 
+      const sessionsNeedingObs: number[] = [];
+      for (let i = 0; i < sessions.length; i++) {
+        const summary = summariesPerSession[i];
         if (summary) {
           const content = `## ${summary.title}\n${summary.narrative}\nDecisions: ${summary.keyDecisions.join("; ")}\nFiles: ${summary.filesModified.join(", ")}`;
           blocks.push({
@@ -97,12 +103,22 @@ export function registerContextFunction(
             tokens: estimateTokens(content),
             recency: new Date(summary.createdAt).getTime(),
           });
-          continue;
+        } else {
+          sessionsNeedingObs.push(i);
         }
+      }
 
-        const observations = await kv.list<CompressedObservation>(
-          KV.observations(session.id),
-        );
+      const obsResults = await Promise.all(
+        sessionsNeedingObs.map((i) =>
+          kv
+            .list<CompressedObservation>(KV.observations(sessions[i].id))
+            .catch(() => []),
+        ),
+      );
+
+      for (let j = 0; j < sessionsNeedingObs.length; j++) {
+        const i = sessionsNeedingObs[j];
+        const observations = obsResults[j];
         const important = observations.filter(
           (o) => o.title && o.importance >= 5,
         );
@@ -113,12 +129,12 @@ export function registerContextFunction(
             .slice(0, 5)
             .map((o) => `- [${o.type}] ${o.title}: ${o.narrative}`)
             .join("\n");
-          const content = `## Session ${session.id.slice(0, 8)} (${session.startedAt})\n${items}`;
+          const content = `## Session ${sessions[i].id.slice(0, 8)} (${sessions[i].startedAt})\n${items}`;
           blocks.push({
             type: "observation",
             content,
             tokens: estimateTokens(content),
-            recency: new Date(session.startedAt).getTime(),
+            recency: new Date(sessions[i].startedAt).getTime(),
           });
         }
       }

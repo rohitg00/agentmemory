@@ -49,10 +49,18 @@ export function registerProfileFunction(sdk: ISdk, kv: StateKV): void {
           new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime(),
       );
 
-      for (const session of sortedSessions.slice(0, 20)) {
-        const observations = await kv.list<CompressedObservation>(
-          KV.observations(session.id),
-        );
+      const top20Sessions = sortedSessions.slice(0, 20);
+      const obsPerSession = await Promise.all(
+        top20Sessions.map((s) =>
+          kv
+            .list<CompressedObservation>(KV.observations(s.id))
+            .catch(() => [] as CompressedObservation[]),
+        ),
+      );
+
+      for (let i = 0; i < top20Sessions.length; i++) {
+        const session = top20Sessions[i];
+        const observations = obsPerSession[i];
         totalObs += observations.length;
 
         for (const obs of observations) {

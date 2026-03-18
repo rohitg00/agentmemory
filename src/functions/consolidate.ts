@@ -78,13 +78,17 @@ export function registerConsolidateFunction(
         : sessions;
 
       const allObs: Array<CompressedObservation & { sid: string }> = [];
-      for (const session of filtered) {
-        const observations = await kv.list<CompressedObservation>(
-          KV.observations(session.id),
-        );
-        for (const obs of observations) {
+      const obsPerSession = await Promise.all(
+        filtered.map((s) =>
+          kv
+            .list<CompressedObservation>(KV.observations(s.id))
+            .catch(() => [] as CompressedObservation[]),
+        ),
+      );
+      for (let i = 0; i < filtered.length; i++) {
+        for (const obs of obsPerSession[i]) {
           if (obs.title && obs.importance >= 5) {
-            allObs.push({ ...obs, sid: session.id });
+            allObs.push({ ...obs, sid: filtered[i].id });
           }
         }
       }
