@@ -62,6 +62,10 @@ import { registerSketchesFunction } from "./functions/sketches.js";
 import { registerCrystallizeFunction } from "./functions/crystallize.js";
 import { registerDiagnosticsFunction } from "./functions/diagnostics.js";
 import { registerFacetsFunction } from "./functions/facets.js";
+import { registerSlidingWindowFunction } from "./functions/sliding-window.js";
+import { registerQueryExpansionFunction } from "./functions/query-expansion.js";
+import { registerTemporalGraphFunctions } from "./functions/temporal-graph.js";
+import { registerRetentionFunctions } from "./functions/retention.js";
 import { registerApiTriggers } from "./triggers/api.js";
 import { registerEventTriggers } from "./triggers/events.js";
 import { registerMcpEndpoints } from "./mcp/server.js";
@@ -185,6 +189,14 @@ async function main() {
   registerCrystallizeFunction(sdk, kv, provider);
   registerDiagnosticsFunction(sdk, kv);
   registerFacetsFunction(sdk, kv);
+
+  registerSlidingWindowFunction(sdk, kv, provider);
+  registerQueryExpansionFunction(sdk, provider);
+  registerTemporalGraphFunctions(sdk, kv, provider);
+  registerRetentionFunctions(sdk, kv);
+  console.log(
+    `[agentmemory] v0.6 advanced retrieval: sliding-window, query-expansion, temporal-graph, retention-scoring`,
+  );
   console.log(
     `[agentmemory] Orchestration layer: actions, frontier, leases, routines, signals, checkpoints, flow-compress, mesh, branch-aware, sentinels, sketches, crystallize, diagnostics, facets`,
   );
@@ -198,6 +210,7 @@ async function main() {
   }
 
   const bm25Index = getSearchIndex();
+  const graphWeight = parseFloat(getEnvVar("AGENTMEMORY_GRAPH_WEIGHT") || "0.3");
   const hybridSearch = new HybridSearch(
     bm25Index,
     vectorIndex,
@@ -205,6 +218,7 @@ async function main() {
     kv,
     embeddingConfig.bm25Weight,
     embeddingConfig.vectorWeight,
+    graphWeight,
   );
 
   registerSmartSearchFunction(sdk, kv, (query, limit) =>
@@ -252,10 +266,10 @@ async function main() {
   }
 
   console.log(
-    `[agentmemory] Ready. ${embeddingProvider ? "Hybrid" : "BM25"} search active.`,
+    `[agentmemory] Ready. ${embeddingProvider ? "Triple-stream (BM25+Vector+Graph)" : "BM25+Graph"} search active.`,
   );
   console.log(
-    `[agentmemory] Endpoints: 93 REST + 37 MCP tools + 6 MCP resources + 3 MCP prompts`,
+    `[agentmemory] Endpoints: 93 REST + 46 MCP tools + 6 MCP resources + 3 MCP prompts`,
   );
 
   const viewerPort = config.restPort + 2;

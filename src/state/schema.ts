@@ -34,6 +34,10 @@ export const KV = {
   facets: "mem:facets",
   sentinels: "mem:sentinels",
   crystals: "mem:crystals",
+  graphEdgeHistory: "mem:graph:edge-history",
+  enrichedChunks: (sessionId: string) => `mem:enriched:${sessionId}`,
+  latentEmbeddings: (obsId: string) => `mem:latent:${obsId}`,
+  retentionScores: "mem:retention",
 } as const;
 
 export const STREAM = {

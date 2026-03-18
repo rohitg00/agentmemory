@@ -76,7 +76,7 @@ describe("HybridSearch", () => {
     expect(results).toEqual([]);
   });
 
-  it("combinedScore equals bm25Score when no vector index", async () => {
+  it("combinedScore is derived from bm25Score when no vector index", async () => {
     const obs = makeObs({ id: "obs_1", sessionId: "ses_1" });
     bm25.add(obs);
     await kv.set("mem:obs:ses_1", "obs_1", obs);
@@ -84,7 +84,9 @@ describe("HybridSearch", () => {
     const hybrid = new HybridSearch(bm25, null, null, kv as never);
     const results = await hybrid.search("auth");
 
-    expect(results[0].combinedScore).toBe(results[0].bm25Score);
+    expect(results[0].combinedScore).toBeGreaterThan(0);
+    expect(results[0].vectorScore).toBe(0);
+    expect(results[0].graphScore).toBe(0);
   });
 
   it("results are sorted by combinedScore descending", async () => {

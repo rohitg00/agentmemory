@@ -1,4 +1,6 @@
 import type { CompressedObservation } from "../types.js";
+import { stem } from "./stemmer.js";
+import { getSynonyms } from "./synonyms.js";
 
 interface IndexEntry {
   obsId: string;
@@ -11,6 +13,7 @@ export class SearchIndex {
   private invertedIndex: Map<string, Set<string>> = new Map();
   private docTermCounts: Map<string, Map<string, number>> = new Map();
   private totalDocLength = 0;
+  private sortedTerms: string[] | null = null;
 
   private readonly k1 = 1.2;
   private readonly b = 0.75;
@@ -39,60 +42,82 @@ export class SearchIndex {
       }
       this.invertedIndex.get(term)!.add(obs.id);
     }
+
+    this.sortedTerms = null;
   }
 
   search(
     query: string,
     limit = 20,
   ): Array<{ obsId: string; sessionId: string; score: number }> {
-    const queryTerms = this.tokenize(query.toLowerCase());
-    if (queryTerms.length === 0) return [];
+    const rawTerms = this.tokenize(query.toLowerCase());
+    if (rawTerms.length === 0) return [];
 
     const N = this.entries.size;
     if (N === 0) return [];
     const avgDocLen = this.totalDocLength / N;
 
+    const queryTerms: Array<{ term: string; weight: number }> = [];
+    const seen = new Set<string>();
+    for (const term of rawTerms) {
+      if (!seen.has(term)) {
+        seen.add(term);
+        queryTerms.push({ term, weight: 1.0 });
+      }
+      for (const syn of getSynonyms(term)) {
+        if (!seen.has(syn)) {
+          seen.add(syn);
+          queryTerms.push({ term: syn, weight: 0.7 });
+        }
+      }
+    }
+
     const scores = new Map<string, number>();
+    const sorted = this.getSortedTerms();
 
-    for (const term of queryTerms) {
+    for (const { term, weight } of queryTerms) {
       const matchingDocs = this.invertedIndex.get(term);
-      if (!matchingDocs) continue;
+      if (matchingDocs) {
+        const df = matchingDocs.size;
+        const idf = Math.log((N - df + 0.5) / (df + 0.5) + 1);
 
-      const df = matchingDocs.size;
-      const idf = Math.log((N - df + 0.5) / (df + 0.5) + 1);
+        for (const obsId of matchingDocs) {
+          const entry = this.entries.get(obsId)!;
+          const docTerms = this.docTermCounts.get(obsId);
+          const tf = docTerms?.get(term) || 0;
+          const docLen = entry.termCount;
 
-      for (const obsId of matchingDocs) {
-        const entry = this.entries.get(obsId)!;
-        const docTerms = this.docTermCounts.get(obsId);
-        const tf = docTerms?.get(term) || 0;
-        const docLen = entry.termCount;
+          const numerator = tf * (this.k1 + 1);
+          const denominator =
+            tf + this.k1 * (1 - this.b + this.b * (docLen / avgDocLen));
+          const bm25Score = idf * (numerator / denominator) * weight;
 
-        const numerator = tf * (this.k1 + 1);
-        const denominator =
-          tf + this.k1 * (1 - this.b + this.b * (docLen / avgDocLen));
-        const bm25Score = idf * (numerator / denominator);
-
-        scores.set(obsId, (scores.get(obsId) || 0) + bm25Score);
+          scores.set(obsId, (scores.get(obsId) || 0) + bm25Score);
+        }
       }
 
-      for (const [indexTerm, obsIds] of this.invertedIndex) {
-        if (indexTerm !== term && indexTerm.startsWith(term)) {
-          const prefixDf = obsIds.size;
-          const prefixIdf =
-            Math.log((N - prefixDf + 0.5) / (prefixDf + 0.5) + 1) * 0.5;
-          for (const obsId of obsIds) {
-            const entry = this.entries.get(obsId)!;
-            const docTerms = this.docTermCounts.get(obsId);
-            const tf = docTerms?.get(indexTerm) || 0;
-            const docLen = entry.termCount;
-            const numerator = tf * (this.k1 + 1);
-            const denominator =
-              tf + this.k1 * (1 - this.b + this.b * (docLen / avgDocLen));
-            scores.set(
-              obsId,
-              (scores.get(obsId) || 0) + prefixIdf * (numerator / denominator),
-            );
-          }
+      const startIdx = this.lowerBound(sorted, term);
+      for (let si = startIdx; si < sorted.length; si++) {
+        const indexTerm = sorted[si];
+        if (!indexTerm.startsWith(term)) break;
+        if (indexTerm === term) continue;
+
+        const obsIds = this.invertedIndex.get(indexTerm)!;
+        const prefixDf = obsIds.size;
+        const prefixIdf =
+          Math.log((N - prefixDf + 0.5) / (prefixDf + 0.5) + 1) * 0.5;
+        for (const obsId of obsIds) {
+          const entry = this.entries.get(obsId)!;
+          const docTerms = this.docTermCounts.get(obsId);
+          const tf = docTerms?.get(indexTerm) || 0;
+          const docLen = entry.termCount;
+          const numerator = tf * (this.k1 + 1);
+          const denominator =
+            tf + this.k1 * (1 - this.b + this.b * (docLen / avgDocLen));
+          scores.set(
+            obsId,
+            (scores.get(obsId) || 0) + prefixIdf * (numerator / denominator) * weight,
+          );
         }
       }
     }
@@ -115,6 +140,7 @@ export class SearchIndex {
     this.invertedIndex.clear();
     this.docTermCounts.clear();
     this.totalDocLength = 0;
+    this.sortedTerms = null;
   }
 
   restoreFrom(other: SearchIndex): void {
@@ -134,6 +160,7 @@ export class SearchIndex {
       ]),
     );
     this.totalDocLength = other.totalDocLength;
+    this.sortedTerms = null;
   }
 
   serialize(): string {
@@ -146,6 +173,7 @@ export class SearchIndex {
         [id, Array.from(counts.entries())] as [string, [string, number][]],
     );
     return JSON.stringify({
+      v: 2,
       entries,
       inverted,
       docTerms,
@@ -193,6 +221,25 @@ export class SearchIndex {
     return text
       .replace(/[^\w\s/.\-_]/g, " ")
       .split(/\s+/)
-      .filter((t) => t.length > 1);
+      .filter((t) => t.length > 1)
+      .map((t) => stem(t));
+  }
+
+  private getSortedTerms(): string[] {
+    if (!this.sortedTerms) {
+      this.sortedTerms = Array.from(this.invertedIndex.keys()).sort();
+    }
+    return this.sortedTerms;
+  }
+
+  private lowerBound(arr: string[], target: string): number {
+    let lo = 0;
+    let hi = arr.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >>> 1;
+      if (arr[mid] < target) lo = mid + 1;
+      else hi = mid;
+    }
+    return lo;
   }
 }

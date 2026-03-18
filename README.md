@@ -67,19 +67,40 @@ No manual notes. No copy-pasting. The agent just *knows*.
 | **Governance** | Edit, delete, bulk-delete, and audit trail for all memory operations |
 | **Git snapshots** | Version, rollback, and diff memory state via git commits |
 
-### How it compares
+### How it compares to built-in agent memory
 
-| | CLAUDE.md | agentmemory |
+Every AI coding agent now ships with built-in memory — Claude Code has `MEMORY.md`, Cursor has notepads, Windsurf has Cascade memories, Cline has memory bank. These work like sticky notes: fast, always-on, but fundamentally limited.
+
+agentmemory is the searchable database behind the sticky notes.
+
+| | Built-in (CLAUDE.md, .cursorrules) | agentmemory |
 |---|---|---|
-| Storage | Flat file | iii-engine KV (persistent, distributed) |
-| Capture | Manual | All 12 hook types |
-| Search | Text find | Hybrid BM25 + vector (6 embedding providers) |
-| Intelligence | None | LLM compression, quality scoring, self-correction |
-| Memory model | Append-only | Versioned with relationships and evolution |
-| Forgetting | Manual delete | Auto-forget (TTL, contradictions, importance) |
-| Multi-agent | One file | Shared KV with project-scoped profiles |
-| Observability | None | Health monitor, circuit breaker, OTEL telemetry |
-| Integration | Built-in | Plugin + MCP server (tools + resources + prompts) + REST API + slash commands |
+| Scale | 200-line cap (MEMORY.md) | Unlimited |
+| Search | Loads everything into context | BM25 + vector + graph (returns top-K only) |
+| Token cost | 22K+ tokens at 240 observations | ~1,900 tokens (92% less) |
+| At 1K observations | 80% of memories invisible | 100% searchable |
+| At 5K observations | Exceeds context window | Still ~2K tokens |
+| Cross-session recall | Only within line cap | Full corpus search |
+| Cross-agent | Per-agent files (no sharing) | MCP + REST API (any agent) |
+| Multi-agent coordination | Impossible | Leases, signals, actions, routines |
+| Semantic search | No (keyword grep) | Yes (Recall@10: 64% vs 56% for grep) |
+| Memory lifecycle | Manual pruning | Ebbinghaus decay + tiered eviction |
+| Knowledge graph | No | Entity extraction + temporal versioning |
+| Observability | Read files manually | Real-time viewer on :3113 |
+
+### Benchmarks (measured, not projected)
+
+Evaluated on 240 real-world coding observations across 30 sessions with 20 labeled queries:
+
+| System | Recall@10 | NDCG@10 | MRR | Tokens/query |
+|---|---|---|---|---|
+| Built-in (grep all into context) | 55.8% | 80.3% | 82.5% | 19,462 |
+| agentmemory BM25 (stemmed + synonyms) | 55.9% | 82.7% | 95.5% | 1,571 |
+| agentmemory + Xenova embeddings | **64.1%** | **94.9%** | **100.0%** | **1,571** |
+
+With real embeddings, agentmemory finds "N+1 query fix" when you search "database performance optimization" — something keyword matching literally cannot do.
+
+Full benchmark reports: [`benchmark/QUALITY.md`](benchmark/QUALITY.md), [`benchmark/SCALE.md`](benchmark/SCALE.md), [`benchmark/REAL-EMBEDDINGS.md`](benchmark/REAL-EMBEDDINGS.md)
 
 ## Supported Agents
 
@@ -163,7 +184,7 @@ open http://localhost:3113
 {
   "status": "healthy",
   "service": "agentmemory",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "health": {
     "memory": { "heapUsed": 42000000, "heapTotal": 67000000 },
     "cpu": { "percent": 2.1 },
@@ -241,31 +262,38 @@ SessionStart hook fires
 
 ## Search
 
-agentmemory supports hybrid search combining keyword matching with semantic understanding.
+agentmemory uses triple-stream retrieval combining three signals for maximum recall.
 
 ### How search works
 
-| Mode | When | How |
+| Stream | What it does | When |
 |---|---|---|
-| **BM25 only** | No embedding API key configured | Keyword matching with BM25 (k1=1.2, b=0.75) |
-| **Hybrid** | Any embedding key configured | BM25 + vector cosine similarity fused with Reciprocal Rank Fusion (k=60) |
+| **BM25** | Stemmed keyword matching with synonym expansion and binary-search prefix matching | Always on |
+| **Vector** | Cosine similarity over dense embeddings (Xenova, OpenAI, Gemini, Voyage, Cohere, OpenRouter) | Any embedding provider configured |
+| **Graph** | Knowledge graph traversal via entity matching and co-occurrence edges | Entities detected in query |
 
-Hybrid search means "authentication middleware" finds results even if the stored text says "auth layer" or "JWT validation". BM25-only mode still works well for exact keyword matches.
+All three streams are fused with Reciprocal Rank Fusion (RRF, k=60) and session-diversified (max 3 results per session) to maximize coverage.
+
+**BM25 enhancements (v0.6.0):** Porter stemmer normalizes word forms ("authentication" ↔ "authenticating"), coding-domain synonyms expand queries ("db" ↔ "database", "perf" ↔ "performance"), and binary-search prefix matching replaces O(n) scans.
 
 ### Embedding providers
 
-agentmemory auto-detects which provider to use from your environment variables. No embedding key? It falls back to BM25-only mode with zero degradation.
+agentmemory auto-detects which provider to use. For best results, install local embeddings (no API key needed):
+
+```bash
+npm install @xenova/transformers
+```
 
 | Provider | Model | Dimensions | Env Var | Notes |
 |---|---|---|---|---|
+| **Local (recommended)** | `all-MiniLM-L6-v2` | 384 | `EMBEDDING_PROVIDER=local` | Free, offline, +8pp recall over BM25-only |
 | Gemini | `text-embedding-004` | 768 | `GEMINI_API_KEY` | Free tier (1500 RPM) |
 | OpenAI | `text-embedding-3-small` | 1536 | `OPENAI_API_KEY` | $0.02/1M tokens |
 | Voyage AI | `voyage-code-3` | 1024 | `VOYAGE_API_KEY` | Optimized for code |
 | Cohere | `embed-english-v3.0` | 1024 | `COHERE_API_KEY` | Free trial available |
 | OpenRouter | Any embedding model | varies | `OPENROUTER_API_KEY` | Multi-model proxy |
-| Local | `all-MiniLM-L6-v2` | 384 | (none) | Offline, optional `@xenova/transformers` |
 
-Override auto-detection with `EMBEDDING_PROVIDER=voyage` in your `.env`.
+No embedding provider? BM25-only mode with stemming and synonyms still outperforms built-in memory.
 
 ### Progressive disclosure
 
@@ -662,7 +690,7 @@ agentmemory is built on iii-engine's three primitives:
 | Prometheus / Grafana | iii OTEL + built-in health monitor |
 | Redis (circuit breaker) | In-process circuit breaker + fallback chain |
 
-**101 source files. ~15,000 LOC. 518 tests. 365KB bundled.**
+**105+ source files. ~16,000 LOC. 551 tests. Zero external DB dependencies.**
 
 ### Functions (50)
 
@@ -718,6 +746,11 @@ agentmemory is built on iii-engine's three primitives:
 | `mem::crystallize` / `auto-crystallize` | LLM-powered compaction of completed action chains into crystal digests |
 | `mem::diagnose` / `heal` | Self-diagnosis across 8 categories with auto-fix for stuck/orphaned/stale state |
 | `mem::facet-tag` / `query` / `stats` | Multi-dimensional tagging with AND/OR queries on actions, memories, observations |
+| `mem::expand-query` | LLM-generated query reformulations for improved recall |
+| `mem::sliding-window` | Context-window enrichment at ingestion (resolve pronouns, abbreviations) |
+| `mem::temporal-graph` | Append-only versioned edges with point-in-time queries |
+| `mem::retention-score` / `evict` | Ebbinghaus-inspired decay with tiered storage (hot/warm/cold/evictable) |
+| `mem::graph-retrieval` | Entity search + chunk expansion + temporal queries via knowledge graph |
 
 ### Data Model (33 KV scopes)
 

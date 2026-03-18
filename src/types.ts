@@ -204,8 +204,10 @@ export interface HybridSearchResult {
   observation: CompressedObservation;
   bm25Score: number;
   vectorScore: number;
+  graphScore: number;
   combinedScore: number;
   sessionId: string;
+  graphContext?: string;
 }
 
 export interface CompactSearchResult {
@@ -237,7 +239,7 @@ export interface ProjectProfile {
 }
 
 export interface ExportData {
-  version: "0.3.0" | "0.4.0" | "0.5.0";
+  version: "0.3.0" | "0.4.0" | "0.5.0" | "0.6.0";
   exportedAt: string;
   sessions: Session[];
   observations: Record<string, CompressedObservation[]>;
@@ -282,38 +284,73 @@ export interface StandaloneConfig {
   agentType?: string;
 }
 
+export type GraphNodeType =
+  | "file"
+  | "function"
+  | "concept"
+  | "error"
+  | "decision"
+  | "pattern"
+  | "library"
+  | "person"
+  | "project"
+  | "preference"
+  | "location"
+  | "organization"
+  | "event";
+
 export interface GraphNode {
   id: string;
-  type:
-    | "file"
-    | "function"
-    | "concept"
-    | "error"
-    | "decision"
-    | "pattern"
-    | "library"
-    | "person";
+  type: GraphNodeType;
   name: string;
   properties: Record<string, unknown>;
   sourceObservationIds: string[];
   createdAt: string;
+  updatedAt?: string;
+  aliases?: string[];
 }
+
+export type GraphEdgeType =
+  | "uses"
+  | "imports"
+  | "modifies"
+  | "causes"
+  | "fixes"
+  | "depends_on"
+  | "related_to"
+  | "works_at"
+  | "prefers"
+  | "blocked_by"
+  | "caused_by"
+  | "optimizes_for"
+  | "rejected"
+  | "avoids"
+  | "located_in"
+  | "succeeded_by";
 
 export interface GraphEdge {
   id: string;
-  type:
-    | "uses"
-    | "imports"
-    | "modifies"
-    | "causes"
-    | "fixes"
-    | "depends_on"
-    | "related_to";
+  type: GraphEdgeType;
   sourceNodeId: string;
   targetNodeId: string;
   weight: number;
   sourceObservationIds: string[];
   createdAt: string;
+  tcommit?: string;
+  tvalid?: string;
+  tvalidEnd?: string;
+  context?: EdgeContext;
+  version?: number;
+  supersededBy?: string;
+  isLatest?: boolean;
+}
+
+export interface EdgeContext {
+  reasoning?: string;
+  sentiment?: string;
+  alternatives?: string[];
+  situationalFactors?: string[];
+  confidence?: number;
 }
 
 export interface GraphQueryResult {
@@ -614,4 +651,81 @@ export interface MeshPeer {
   lastSyncAt?: string;
   status: "connected" | "disconnected" | "syncing" | "error";
   sharedScopes: string[];
+}
+
+export interface EnrichedChunk {
+  id: string;
+  originalObsId: string;
+  sessionId: string;
+  content: string;
+  resolvedEntities: Record<string, string>;
+  preferences: string[];
+  contextBridges: string[];
+  windowStart: number;
+  windowEnd: number;
+  createdAt: string;
+}
+
+export interface LatentEmbedding {
+  obsId: string;
+  contentEmbedding: string;
+  latentEmbedding: string;
+  sessionId: string;
+}
+
+export interface QueryExpansion {
+  original: string;
+  reformulations: string[];
+  temporalConcretizations: string[];
+  entityExtractions: string[];
+}
+
+export interface TripleStreamResult {
+  observation: CompressedObservation;
+  vectorScore: number;
+  bm25Score: number;
+  graphScore: number;
+  combinedScore: number;
+  sessionId: string;
+  graphContext?: string;
+}
+
+export interface TemporalQuery {
+  entityName: string;
+  asOf?: string;
+  from?: string;
+  to?: string;
+  includeHistory?: boolean;
+}
+
+export interface TemporalState {
+  entity: GraphNode;
+  currentEdges: GraphEdge[];
+  historicalEdges: GraphEdge[];
+  timeline: Array<{
+    edge: GraphEdge;
+    validFrom: string;
+    validTo?: string;
+    context?: EdgeContext;
+  }>;
+}
+
+export interface RetentionScore {
+  memoryId: string;
+  score: number;
+  salience: number;
+  temporalDecay: number;
+  reinforcementBoost: number;
+  lastAccessed: string;
+  accessCount: number;
+}
+
+export interface DecayConfig {
+  lambda: number;
+  sigma: number;
+  tierThresholds: {
+    hot: number;
+    warm: number;
+    cold: number;
+  };
 }
