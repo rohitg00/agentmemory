@@ -12,9 +12,9 @@
 </p>
 
 <p align="center">
+  <a href="#quick-start">Quick Start</a> &bull;
   <a href="#why-agentmemory">Why</a> &bull;
   <a href="#supported-agents">Agents</a> &bull;
-  <a href="#quick-start">Quick Start</a> &bull;
   <a href="#how-it-works">How It Works</a> &bull;
   <a href="#search">Search</a> &bull;
   <a href="#memory-evolution">Memory Evolution</a> &bull;
@@ -23,6 +23,18 @@
   <a href="#configuration">Configuration</a> &bull;
   <a href="#api">API</a>
 </p>
+
+---
+
+Every AI coding agent has the same blind spot. Session ends, memory vanishes. You re-explain architecture. You re-discover bugs. You re-teach preferences. Built-in memory files like CLAUDE.md and .cursorrules are 200-line sticky notes that overflow and go stale. agentmemory replaces that with a searchable, versioned, cross-agent database — 38 MCP tools, triple-stream retrieval (BM25 + vector + knowledge graph), 4-tier memory consolidation, provenance-tracked citations, and cascading staleness so retired facts never pollute your context again. One instance serves Claude Code, Cursor, Codex, Windsurf, and any MCP client simultaneously. 573 tests. Zero external DB dependencies.
+
+The result is measurable. On 240 real observations across 30 sessions, agentmemory hits 64% Recall@10 and perfect MRR while using 92% fewer tokens than dumping everything into context. When an agent searches "database performance optimization," it finds the N+1 fix you made three weeks ago — something keyword grep literally cannot do. Memories version automatically, supersede each other, propagate staleness to related graph nodes, and sync across agent instances via P2P mesh. Your agents stop repeating mistakes. Your context stays clean. Your sessions start fast.
+
+```bash
+git clone https://github.com/rohitg00/agentmemory.git && cd agentmemory
+docker compose up -d && npm install && npm run build && npm start
+curl http://localhost:3111/agentmemory/health
+```
 
 ---
 
@@ -61,6 +73,8 @@ No manual notes. No copy-pasting. The agent just *knows*.
 | **Self-healing** | Circuit breaker, provider fallback chain, self-correcting LLM output, health monitoring |
 | **Claude Code bridge** | Bi-directional sync with `~/.claude/projects/*/memory/MEMORY.md` |
 | **Cross-agent MCP** | Standalone MCP server for Cursor, Codex, Gemini CLI, Windsurf, any MCP client |
+| **Citation provenance** | JIT verification traces any memory back to source observations and sessions |
+| **Cascading staleness** | Superseded memories auto-flag related graph nodes, edges, and siblings as stale |
 | **Knowledge graph** | Entity extraction + BFS traversal across files, functions, concepts, errors |
 | **4-tier memory** | Working → episodic → semantic → procedural consolidation with strength decay |
 | **Team memory** | Namespaced shared + private memory across team members |
@@ -83,6 +97,8 @@ agentmemory is the searchable database behind the sticky notes.
 | Cross-session recall | Only within line cap | Full corpus search |
 | Cross-agent | Per-agent files (no sharing) | MCP + REST API (any agent) |
 | Multi-agent coordination | Impossible | Leases, signals, actions, routines |
+| Cross-agent sync | No | P2P mesh (7 scopes: memories, actions, semantic, procedural, relations, graph) |
+| Memory trust | No verification | Citation chain back to source observations with confidence scores |
 | Semantic search | No (keyword grep) | Yes (Recall@10: 64% vs 56% for grep) |
 | Memory lifecycle | Manual pruning | Ebbinghaus decay + tiered eviction |
 | Knowledge graph | No | Entity extraction + temporal versioning |
@@ -117,7 +133,7 @@ These agents support hooks natively. agentmemory captures tool usage automatical
 
 ### MCP support (any MCP-compatible agent)
 
-Any agent that connects to MCP servers can use agentmemory's 37 tools, 6 resources, and 3 prompts. The agent actively queries and saves memory through MCP calls.
+Any agent that connects to MCP servers can use agentmemory's 38 tools, 6 resources, and 3 prompts. The agent actively queries and saves memory through MCP calls.
 
 | Agent | How to connect |
 |---|---|
@@ -146,7 +162,7 @@ GET  /agentmemory/profile       # Get project intelligence
 |---|---|
 | Claude Code user | Plugin install (hooks + MCP + skills) |
 | Building a custom agent with Claude SDK | AgentSDKProvider (zero config) |
-| Using Cursor, Windsurf, or any MCP client | MCP server (37 tools + 6 resources + 3 prompts) |
+| Using Cursor, Windsurf, or any MCP client | MCP server (38 tools + 6 resources + 3 prompts) |
 | Building your own agent framework | REST API (93 endpoints) |
 | Sharing memory across multiple agents | All agents point to the same iii-engine instance |
 
@@ -184,7 +200,7 @@ open http://localhost:3113
 {
   "status": "healthy",
   "service": "agentmemory",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "health": {
     "memory": { "heapUsed": 42000000, "heapTotal": 67000000 },
     "cpu": { "percent": 2.1 },
@@ -405,7 +421,7 @@ Collects every 30 seconds: heap usage, CPU percentage (delta sampling), event lo
 
 ## MCP Server
 
-### Tools (37)
+### Tools (38)
 
 | Tool | Description |
 |------|-------------|
@@ -446,6 +462,7 @@ Collects every 30 seconds: heap usage, CPU percentage (delta sampling), event lo
 | `memory_heal` | Auto-fix stuck, orphaned, and inconsistent state |
 | `memory_facet_tag` | Attach structured dimension:value tags to targets |
 | `memory_facet_query` | Query targets by facet tags with AND/OR logic |
+| `memory_verify` | Trace a memory's provenance back to source observations and sessions |
 
 ### Resources (6)
 
@@ -603,7 +620,7 @@ ANTHROPIC_API_KEY=sk-ant-...
 
 ## API
 
-93 endpoints on port `3111` (87 core + 6 MCP protocol). Protected endpoints require `Authorization: Bearer <secret>` when `AGENTMEMORY_SECRET` is set. The table below shows a representative subset; see `src/api.ts` for the full endpoint list.
+95 endpoints on port `3111` (89 core + 6 MCP protocol). Protected endpoints require `Authorization: Bearer <secret>` when `AGENTMEMORY_SECRET` is set. The table below shows a representative subset; see `src/api.ts` for the full endpoint list.
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -666,7 +683,7 @@ ANTHROPIC_API_KEY=sk-ant-...
 /plugin install agentmemory
 ```
 
-Restart Claude Code. All 12 hooks, 4 skills, and 37 MCP tools are registered automatically.
+Restart Claude Code. All 12 hooks, 4 skills, and 38 MCP tools are registered automatically.
 
 ### Plugin Commands
 
@@ -690,9 +707,9 @@ agentmemory is built on iii-engine's three primitives:
 | Prometheus / Grafana | iii OTEL + built-in health monitor |
 | Redis (circuit breaker) | In-process circuit breaker + fallback chain |
 
-**105+ source files. ~16,000 LOC. 551 tests. Zero external DB dependencies.**
+**105+ source files. ~16,000 LOC. 573 tests. Zero external DB dependencies.**
 
-### Functions (50)
+### Functions (52)
 
 | Function | Purpose |
 |----------|---------|
@@ -751,6 +768,8 @@ agentmemory is built on iii-engine's three primitives:
 | `mem::temporal-graph` | Append-only versioned edges with point-in-time queries |
 | `mem::retention-score` / `evict` | Ebbinghaus-inspired decay with tiered storage (hot/warm/cold/evictable) |
 | `mem::graph-retrieval` | Entity search + chunk expansion + temporal queries via knowledge graph |
+| `mem::verify` | JIT verification — trace memory provenance back to source observations |
+| `mem::cascade-update` | Propagate staleness to graph nodes, edges, and sibling memories |
 
 ### Data Model (33 KV scopes)
 
@@ -795,7 +814,7 @@ agentmemory is built on iii-engine's three primitives:
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build (365KB)
-npm test                  # Unit tests (518 tests, ~1s)
+npm test                  # Unit tests (573 tests, ~1.5s)
 npm run test:integration  # API tests (requires running services)
 ```
 
