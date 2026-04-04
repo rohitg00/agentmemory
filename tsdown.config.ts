@@ -15,47 +15,48 @@ const hookEntries = [
   "src/hooks/session-end.ts",
 ];
 
+const shared = {
+  format: ["esm"] as const,
+  target: "node20" as const,
+  inlineOnly: false as const,
+};
+
 export default defineConfig([
   {
     entry: ["src/index.ts"],
     outDir: "dist",
-    format: ["esm"],
+    ...shared,
     dts: true,
     clean: true,
     sourcemap: true,
-    target: "node18",
     banner: { js: "#!/usr/bin/env node" },
   },
   {
     entry: ["src/cli.ts"],
     outDir: "dist",
-    format: ["esm"],
+    ...shared,
     clean: false,
     sourcemap: false,
-    target: "node18",
   },
   {
     entry: ["src/mcp/standalone.ts"],
     outDir: "dist",
-    format: ["esm"],
+    ...shared,
     clean: false,
     sourcemap: false,
-    target: "node18",
   },
   {
     entry: hookEntries,
     outDir: "dist/hooks",
-    format: ["esm"],
+    ...shared,
     clean: false,
     sourcemap: false,
-    target: "node18",
   },
   {
     entry: hookEntries,
     outDir: "plugin/scripts",
-    format: ["esm"],
+    ...shared,
     clean: false,
     sourcemap: false,
-    target: "node18",
   },
 ]);
