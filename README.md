@@ -26,7 +26,7 @@
 
 ---
 
-Every AI coding agent has the same blind spot. Session ends, memory vanishes. You re-explain architecture. You re-discover bugs. You re-teach preferences. Built-in memory files like CLAUDE.md and .cursorrules are 200-line sticky notes that overflow and go stale. agentmemory replaces that with a searchable, versioned, cross-agent database — 38 MCP tools, triple-stream retrieval (BM25 + vector + knowledge graph), 4-tier memory consolidation, provenance-tracked citations, and cascading staleness so retired facts never pollute your context again. One instance serves Claude Code, Cursor, Codex, Windsurf, and any MCP client simultaneously. 573 tests. Zero external DB dependencies.
+Every AI coding agent has the same blind spot. Session ends, memory vanishes. You re-explain architecture. You re-discover bugs. You re-teach preferences. Built-in memory files like CLAUDE.md and .cursorrules are 200-line sticky notes that overflow and go stale. agentmemory replaces that with a searchable, versioned, cross-agent database — 41 MCP tools, triple-stream retrieval (BM25 + vector + knowledge graph), 4-tier memory consolidation, provenance-tracked citations, and cascading staleness so retired facts never pollute your context again. One instance serves Claude Code, Cursor, Codex, Windsurf, and any MCP client simultaneously. 573 tests. Zero external DB dependencies.
 
 The result is measurable. On 240 real observations across 30 sessions, agentmemory hits 64% Recall@10 and perfect MRR while using 92% fewer tokens than dumping everything into context. When an agent searches "database performance optimization," it finds the N+1 fix you made three weeks ago — something keyword grep literally cannot do. Memories version automatically, supersede each other, propagate staleness to related graph nodes, and sync across agent instances via P2P mesh. Your agents stop repeating mistakes. Your context stays clean. Your sessions start fast.
 
@@ -133,7 +133,7 @@ These agents support hooks natively. agentmemory captures tool usage automatical
 
 ### MCP support (any MCP-compatible agent)
 
-Any agent that connects to MCP servers can use agentmemory's 38 tools, 6 resources, and 3 prompts. The agent actively queries and saves memory through MCP calls.
+Any agent that connects to MCP servers can use agentmemory's 41 tools, 6 resources, and 3 prompts. The agent actively queries and saves memory through MCP calls.
 
 | Agent | How to connect |
 |---|---|
@@ -145,7 +145,7 @@ Any agent that connects to MCP servers can use agentmemory's 38 tools, 6 resourc
 
 ### REST API (any agent, any language)
 
-Agents without hooks or MCP can integrate via 93 REST endpoints directly. This works with any agent, language, or framework.
+Agents without hooks or MCP can integrate via 99 REST endpoints directly. This works with any agent, language, or framework.
 
 ```bash
 POST /agentmemory/observe       # Capture what the agent did
@@ -620,7 +620,7 @@ ANTHROPIC_API_KEY=sk-ant-...
 
 ## API
 
-95 endpoints on port `3111` (89 core + 6 MCP protocol). Protected endpoints require `Authorization: Bearer <secret>` when `AGENTMEMORY_SECRET` is set. The table below shows a representative subset; see `src/api.ts` for the full endpoint list.
+99 endpoints on port `3111` (93 core + 6 MCP protocol). Protected endpoints require `Authorization: Bearer <secret>` when `AGENTMEMORY_SECRET` is set. The table below shows a representative subset; see `src/triggers/api.ts` for the full endpoint list.
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -683,7 +683,7 @@ ANTHROPIC_API_KEY=sk-ant-...
 /plugin install agentmemory
 ```
 
-Restart Claude Code. All 12 hooks, 4 skills, and 38 MCP tools are registered automatically.
+Restart Claude Code. All 12 hooks, 4 skills, and 41 MCP tools are registered automatically.
 
 ### Plugin Commands
 

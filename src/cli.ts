@@ -22,7 +22,7 @@ Options:
   --port <N>         Override REST port (default: 3111)
 
 Environment:
-  AGENTMEMORY_TOOLS=all    Expose all 48+ MCP tools
+  AGENTMEMORY_TOOLS=all    Expose all 41 MCP tools
   AGENTMEMORY_SECRET=xxx   Auth secret for REST/MCP
   CONSOLIDATION_ENABLED=false  Disable auto-consolidation
   OBSIDIAN_AUTO_EXPORT=true    Auto-export on consolidation
