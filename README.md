@@ -145,7 +145,7 @@ Any agent that connects to MCP servers can use agentmemory's 41 tools, 6 resourc
 
 ### REST API (any agent, any language)
 
-Agents without hooks or MCP can integrate via 99 REST endpoints directly. This works with any agent, language, or framework.
+Agents without hooks or MCP can integrate via 100 REST endpoints directly. This works with any agent, language, or framework.
 
 ```bash
 POST /agentmemory/observe       # Capture what the agent did
@@ -620,7 +620,7 @@ ANTHROPIC_API_KEY=sk-ant-...
 
 ## API
 
-99 endpoints on port `3111` (93 core + 6 MCP protocol). Protected endpoints require `Authorization: Bearer <secret>` when `AGENTMEMORY_SECRET` is set. The table below shows a representative subset; see `src/triggers/api.ts` for the full endpoint list.
+106 endpoints on port `3111` (100 core + 6 MCP protocol). Protected endpoints require `Authorization: Bearer <secret>` when `AGENTMEMORY_SECRET` is set. The table below shows a representative subset; see `src/triggers/api.ts` for the full endpoint list.
 
 | Method | Path | Description |
 |--------|------|-------------|

@@ -275,7 +275,7 @@ async function main() {
     `[agentmemory] Ready. ${embeddingProvider ? "Triple-stream (BM25+Vector+Graph)" : "BM25+Graph"} search active.`,
   );
   console.log(
-    `[agentmemory] Endpoints: 99 REST + 41 MCP tools + 6 MCP resources + 3 MCP prompts`,
+    `[agentmemory] Endpoints: 100 REST + 41 MCP tools + 6 MCP resources + 3 MCP prompts`,
   );
 
   const viewerPort = config.restPort + 2;

@@ -8,10 +8,11 @@ vi.mock("iii-sdk", () => ({
 
 vi.mock("../src/config.js", () => ({
   getConsolidationDecayDays: () => 30,
-  isConsolidationEnabled: () => true,
+  isConsolidationEnabled: vi.fn(() => true),
 }));
 
 import { registerConsolidationPipelineFunction } from "../src/functions/consolidation-pipeline.js";
+import { isConsolidationEnabled } from "../src/config.js";
 import type { SessionSummary, Memory, SemanticMemory, ProceduralMemory } from "../src/types.js";
 
 function mockKV() {
@@ -206,5 +207,45 @@ describe("Consolidation Pipeline", () => {
 
     const audits = await kv.list("mem:audit");
     expect(audits.length).toBe(1);
+  });
+
+  it("pipeline returns early when consolidation is disabled", async () => {
+    vi.mocked(isConsolidationEnabled).mockReturnValue(false);
+    const provider = {
+      name: "test",
+      compress: vi.fn(),
+      summarize: vi.fn(),
+    };
+    registerConsolidationPipelineFunction(sdk as never, kv as never, provider as never);
+
+    const result = (await sdk.trigger("mem::consolidate-pipeline", {})) as {
+      success: boolean;
+      skipped?: boolean;
+      reason?: string;
+    };
+
+    expect(result.success).toBe(false);
+    expect(result.skipped).toBe(true);
+    expect(result.reason).toContain("CONSOLIDATION_ENABLED");
+    expect(provider.summarize).not.toHaveBeenCalled();
+    vi.mocked(isConsolidationEnabled).mockReturnValue(true);
+  });
+
+  it("pipeline proceeds with force=true even when consolidation is disabled", async () => {
+    vi.mocked(isConsolidationEnabled).mockReturnValue(false);
+    const provider = {
+      name: "test",
+      compress: vi.fn(),
+      summarize: vi.fn(),
+    };
+    registerConsolidationPipelineFunction(sdk as never, kv as never, provider as never);
+
+    const result = (await sdk.trigger("mem::consolidate-pipeline", {
+      force: true,
+    })) as { success: boolean; results: Record<string, unknown> };
+
+    expect(result.success).toBe(true);
+    expect(result.results).toBeDefined();
+    vi.mocked(isConsolidationEnabled).mockReturnValue(true);
   });
 });

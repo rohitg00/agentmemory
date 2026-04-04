@@ -1,6 +1,13 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+
+vi.mock("iii-sdk", () => ({
+  getContext: () => ({
+    logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn() },
+  }),
+}));
+
 import { getAllTools } from "../src/mcp/tools-registry.js";
 import { VERSION } from "../src/version.js";
 
@@ -31,8 +38,10 @@ describe("Consistency checks", () => {
 
   it("README mentions correct MCP tool count", () => {
     const readme = readText("README.md");
-    expect(readme).toContain(`${toolCount} MCP tools`);
-    expect(readme).toContain(`${toolCount} tools, 6 resources`);
+    const toolCountPattern = new RegExp(`${toolCount}\\s+MCP tools`);
+    expect(readme).toMatch(toolCountPattern);
+    const toolResourcePattern = new RegExp(`${toolCount}\\s+tools,\\s+6\\s+resources`);
+    expect(readme).toMatch(toolResourcePattern);
   });
 
   it("all tool names are unique", () => {

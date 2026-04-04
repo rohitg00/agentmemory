@@ -135,10 +135,12 @@ export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
 
       scored.sort((a, b) => b.score - a.score);
 
-      await recordAudit(kv, "lesson_recall", "mem::lesson-recall", [], {
-        query: data.query,
-        resultCount: scored.length,
-      });
+      try {
+        await recordAudit(kv, "lesson_recall", "mem::lesson-recall", [], {
+          query: data.query,
+          resultCount: scored.length,
+        });
+      } catch {}
 
       return {
         success: true,
@@ -194,9 +196,12 @@ export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
       reinforceLesson(lesson);
 
       await kv.set(KV.lessons, lesson.id, lesson);
-      await recordAudit(kv, "lesson_strengthen", "mem::lesson-strengthen", [
-        lesson.id,
-      ]);
+
+      try {
+        await recordAudit(kv, "lesson_strengthen", "mem::lesson-strengthen", [
+          lesson.id,
+        ]);
+      } catch {}
 
       return { success: true, lesson };
     },

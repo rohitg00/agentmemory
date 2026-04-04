@@ -106,7 +106,7 @@ Hook scripts in `src/hooks/` are standalone Node.js scripts (no iii-sdk import).
 ## Current Stats (v0.7.0)
 
 - 41 MCP tools (7 visible by default, `AGENTMEMORY_TOOLS=all` for all)
-- 99 REST endpoints
+- 100 REST endpoints
 - 6 MCP resources, 3 MCP prompts
 - 12 hooks, 4 skills
 - 50+ iii functions
