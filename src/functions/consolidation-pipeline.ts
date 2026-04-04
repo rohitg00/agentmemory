@@ -232,6 +232,12 @@ export function registerConsolidationPipelineFunction(
         };
       }
 
+      if (process.env["OBSIDIAN_AUTO_EXPORT"] === "true") {
+        try {
+          await sdk.trigger("mem::obsidian-export", {});
+        } catch {}
+      }
+
       await recordAudit(kv, "consolidate", "mem::consolidate-pipeline", [], {
         tier,
         results,

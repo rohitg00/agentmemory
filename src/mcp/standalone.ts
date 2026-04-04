@@ -2,7 +2,7 @@
 
 import { InMemoryKV } from "./in-memory-kv.js";
 import { createStdioTransport } from "./transport.js";
-import { getAllTools } from "./tools-registry.js";
+import { getVisibleTools } from "./tools-registry.js";
 import { getStandalonePersistPath } from "../config.js";
 import { VERSION } from "../version.js";
 
@@ -136,7 +136,7 @@ const transport = createStdioTransport(async (method, params) => {
 
     case "tools/list":
       return {
-        tools: getAllTools().filter((t) => IMPLEMENTED_TOOLS.has(t.name)),
+        tools: getVisibleTools().filter((t) => IMPLEMENTED_TOOLS.has(t.name)),
       };
 
     case "tools/call": {

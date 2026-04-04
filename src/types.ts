@@ -249,7 +249,7 @@ export interface ExportPagination {
 }
 
 export interface ExportData {
-  version: "0.3.0" | "0.4.0" | "0.5.0" | "0.6.0" | "0.6.1";
+  version: "0.3.0" | "0.4.0" | "0.5.0" | "0.6.0" | "0.6.1" | "0.7.0";
   exportedAt: string;
   sessions: Session[];
   observations: Record<string, CompressedObservation[]>;
@@ -269,6 +269,7 @@ export interface ExportData {
   sketches?: Sketch[];
   crystals?: Crystal[];
   facets?: Facet[];
+  lessons?: Lesson[];
   pagination?: ExportPagination;
 }
 
@@ -459,7 +460,11 @@ export interface AuditEntry {
     | "crystallize"
     | "diagnose"
     | "heal"
-    | "facet_tag";
+    | "facet_tag"
+    | "lesson_save"
+    | "lesson_recall"
+    | "lesson_strengthen"
+    | "obsidian_export";
   userId?: string;
   functionId: string;
   targetIds: string[];
@@ -647,6 +652,23 @@ export interface Crystal {
   sessionId?: string;
   project?: string;
   createdAt: string;
+}
+
+export interface Lesson {
+  id: string;
+  content: string;
+  context: string;
+  confidence: number;
+  reinforcements: number;
+  source: "crystal" | "manual" | "consolidation";
+  sourceIds: string[];
+  project?: string;
+  tags: string[];
+  createdAt: string;
+  updatedAt: string;
+  lastReinforcedAt?: string;
+  decayRate: number;
+  deleted?: boolean;
 }
 
 export interface DiagnosticCheck {

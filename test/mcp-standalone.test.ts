@@ -22,10 +22,13 @@ import { InMemoryKV } from "../src/mcp/in-memory-kv.js";
 import { writeFileSync } from "node:fs";
 
 describe("Tools Registry", () => {
-  it("getAllTools returns 38 tools including memory_verify", () => {
+  it("getAllTools returns 41 tools including memory_verify and v0.7.0 tools", () => {
     const tools = getAllTools();
-    expect(tools.length).toBe(38);
+    expect(tools.length).toBe(41);
     expect(tools.some((t) => t.name === "memory_verify")).toBe(true);
+    expect(tools.some((t) => t.name === "memory_lesson_save")).toBe(true);
+    expect(tools.some((t) => t.name === "memory_lesson_recall")).toBe(true);
+    expect(tools.some((t) => t.name === "memory_obsidian_export")).toBe(true);
   });
 
   it("CORE_TOOLS has 10 items", () => {

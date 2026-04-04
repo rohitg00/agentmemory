@@ -27,6 +27,14 @@ export default defineConfig([
     banner: { js: "#!/usr/bin/env node" },
   },
   {
+    entry: ["src/cli.ts"],
+    outDir: "dist",
+    format: ["esm"],
+    clean: false,
+    sourcemap: false,
+    target: "node18",
+  },
+  {
     entry: ["src/mcp/standalone.ts"],
     outDir: "dist",
     format: ["esm"],

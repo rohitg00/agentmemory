@@ -1838,4 +1838,66 @@ export function registerApiTriggers(
     return { status_code: 200, body: result };
   });
   sdk.registerTrigger({ type: "http", function_id: "api::cascade-update", config: { api_path: "/agentmemory/cascade-update", http_method: "POST" } });
+
+  sdk.registerFunction({ id: "api::lesson-save" }, async (req: ApiRequest) => {
+    const denied = checkAuth(req, secret);
+    if (denied) return denied;
+    const body = req.body as Record<string, unknown>;
+    if (!body?.content || typeof body.content !== "string") return { status_code: 400, body: { error: "content is required" } };
+    const tags = typeof body.tags === "string" ? (body.tags as string).split(",").map((t: string) => t.trim()).filter(Boolean) : Array.isArray(body.tags) ? body.tags : [];
+    const result = await sdk.trigger("mem::lesson-save", {
+      content: body.content,
+      context: body.context || "",
+      confidence: typeof body.confidence === "number" ? body.confidence : undefined,
+      project: typeof body.project === "string" ? body.project : undefined,
+      tags,
+      source: "manual",
+    });
+    return { status_code: 200, body: result };
+  });
+  sdk.registerTrigger({ type: "http", function_id: "api::lesson-save", config: { api_path: "/agentmemory/lessons", http_method: "POST" } });
+
+  sdk.registerFunction({ id: "api::lesson-list" }, async (req: ApiRequest) => {
+    const denied = checkAuth(req, secret);
+    if (denied) return denied;
+    const params = req.query_params || {};
+    const result = await sdk.trigger("mem::lesson-list", {
+      project: params.project,
+      source: params.source,
+      minConfidence: params.minConfidence ? parseFloat(params.minConfidence as string) : undefined,
+      limit: params.limit ? parseInt(params.limit as string, 10) : undefined,
+    });
+    return { status_code: 200, body: result };
+  });
+  sdk.registerTrigger({ type: "http", function_id: "api::lesson-list", config: { api_path: "/agentmemory/lessons", http_method: "GET" } });
+
+  sdk.registerFunction({ id: "api::lesson-search" }, async (req: ApiRequest) => {
+    const denied = checkAuth(req, secret);
+    if (denied) return denied;
+    const body = req.body as Record<string, unknown>;
+    if (!body?.query || typeof body.query !== "string") return { status_code: 400, body: { error: "query is required" } };
+    const result = await sdk.trigger("mem::lesson-recall", body);
+    return { status_code: 200, body: result };
+  });
+  sdk.registerTrigger({ type: "http", function_id: "api::lesson-search", config: { api_path: "/agentmemory/lessons/search", http_method: "POST" } });
+
+  sdk.registerFunction({ id: "api::lesson-strengthen" }, async (req: ApiRequest) => {
+    const denied = checkAuth(req, secret);
+    if (denied) return denied;
+    const body = req.body as Record<string, unknown>;
+    if (!body?.lessonId || typeof body.lessonId !== "string") return { status_code: 400, body: { error: "lessonId is required" } };
+    const result = await sdk.trigger("mem::lesson-strengthen", { lessonId: body.lessonId });
+    return { status_code: 200, body: result };
+  });
+  sdk.registerTrigger({ type: "http", function_id: "api::lesson-strengthen", config: { api_path: "/agentmemory/lessons/strengthen", http_method: "POST" } });
+
+  sdk.registerFunction({ id: "api::obsidian-export" }, async (req: ApiRequest) => {
+    const denied = checkAuth(req, secret);
+    if (denied) return denied;
+    const body = (req.body as Record<string, unknown>) || {};
+    const types = typeof body.types === "string" ? body.types.split(",").map((t: string) => t.trim()).filter(Boolean) : undefined;
+    const result = await sdk.trigger("mem::obsidian-export", { vaultDir: body.vaultDir, types });
+    return { status_code: 200, body: result };
+  });
+  sdk.registerTrigger({ type: "http", function_id: "api::obsidian-export", config: { api_path: "/agentmemory/obsidian/export", http_method: "POST" } });
 }

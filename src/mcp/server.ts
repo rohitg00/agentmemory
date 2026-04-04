@@ -8,7 +8,7 @@ import type {
   GraphNode,
   GraphEdge,
 } from "../types.js";
-import { getAllTools } from "./tools-registry.js";
+import { getVisibleTools } from "./tools-registry.js";
 import { timingSafeCompare } from "../auth.js";
 
 type McpResponse = {
@@ -40,7 +40,7 @@ export function registerMcpEndpoints(
     async (req: ApiRequest): Promise<McpResponse> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
-      return { status_code: 200, body: { tools: getAllTools() } };
+      return { status_code: 200, body: { tools: getVisibleTools() } };
     },
   );
   sdk.registerTrigger({
@@ -921,6 +921,48 @@ export function registerMcpEndpoints(
             }
             const verifyResult = await sdk.trigger("mem::verify", { id: args.id });
             return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(verifyResult, null, 2) }] } };
+          }
+
+          case "memory_lesson_save": {
+            if (typeof args.content !== "string" || !args.content.trim()) {
+              return { status_code: 400, body: { error: "content is required" } };
+            }
+            const lessonTags = typeof args.tags === "string" && args.tags.trim()
+              ? args.tags.split(",").map((t: string) => t.trim()).filter(Boolean)
+              : [];
+            const lessonSaveResult = await sdk.trigger("mem::lesson-save", {
+              content: args.content,
+              context: args.context || "",
+              confidence: args.confidence,
+              project: args.project,
+              tags: lessonTags,
+              source: "manual",
+            });
+            return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(lessonSaveResult, null, 2) }] } };
+          }
+
+          case "memory_lesson_recall": {
+            if (typeof args.query !== "string" || !args.query.trim()) {
+              return { status_code: 400, body: { error: "query is required" } };
+            }
+            const lessonRecallResult = await sdk.trigger("mem::lesson-recall", {
+              query: args.query,
+              project: args.project,
+              minConfidence: args.minConfidence,
+              limit: args.limit,
+            });
+            return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(lessonRecallResult, null, 2) }] } };
+          }
+
+          case "memory_obsidian_export": {
+            const exportTypes = typeof args.types === "string" && args.types.trim()
+              ? args.types.split(",").map((t: string) => t.trim()).filter(Boolean)
+              : undefined;
+            const obsidianResult = await sdk.trigger("mem::obsidian-export", {
+              vaultDir: args.vaultDir,
+              types: exportTypes,
+            });
+            return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(obsidianResult, null, 2) }] } };
           }
 
           default:

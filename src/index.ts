@@ -64,6 +64,8 @@ import { registerDiagnosticsFunction } from "./functions/diagnostics.js";
 import { registerFacetsFunction } from "./functions/facets.js";
 import { registerVerifyFunction } from "./functions/verify.js";
 import { registerCascadeFunction } from "./functions/cascade.js";
+import { registerLessonsFunctions } from "./functions/lessons.js";
+import { registerObsidianExportFunction } from "./functions/obsidian-export.js";
 import { registerSlidingWindowFunction } from "./functions/sliding-window.js";
 import { registerQueryExpansionFunction } from "./functions/query-expansion.js";
 import { registerTemporalGraphFunctions } from "./functions/temporal-graph.js";
@@ -162,10 +164,8 @@ async function main() {
     console.log(`[agentmemory] Knowledge graph: extraction enabled`);
   }
 
-  if (isConsolidationEnabled()) {
-    registerConsolidationPipelineFunction(sdk, kv, provider);
-    console.log(`[agentmemory] Consolidation pipeline: enabled`);
-  }
+  registerConsolidationPipelineFunction(sdk, kv, provider);
+  console.log(`[agentmemory] Consolidation pipeline: registered (auto=${isConsolidationEnabled() ? "on" : "off"})`);
 
   const teamConfig = loadTeamConfig();
   if (teamConfig) {
@@ -192,6 +192,8 @@ async function main() {
   registerDiagnosticsFunction(sdk, kv);
   registerFacetsFunction(sdk, kv);
   registerVerifyFunction(sdk, kv);
+  registerLessonsFunctions(sdk, kv);
+  registerObsidianExportFunction(sdk, kv);
   registerCascadeFunction(sdk, kv);
 
   registerSlidingWindowFunction(sdk, kv, provider);
@@ -273,7 +275,7 @@ async function main() {
     `[agentmemory] Ready. ${embeddingProvider ? "Triple-stream (BM25+Vector+Graph)" : "BM25+Graph"} search active.`,
   );
   console.log(
-    `[agentmemory] Endpoints: 93 REST + 46 MCP tools + 6 MCP resources + 3 MCP prompts`,
+    `[agentmemory] Endpoints: 99 REST + 49 MCP tools + 6 MCP resources + 3 MCP prompts`,
   );
 
   const viewerPort = config.restPort + 2;
@@ -298,7 +300,15 @@ async function main() {
     console.log(`[agentmemory] Auto-forget: enabled (every ${autoForgetIntervalMs / 60000}m)`);
   }
 
-  if (process.env.CONSOLIDATION_ENABLED === "true") {
+  const lessonDecayTimer = setInterval(async () => {
+    try {
+      await sdk.trigger("mem::lesson-decay-sweep", {});
+    } catch {}
+  }, 86400000);
+  lessonDecayTimer.unref();
+  console.log(`[agentmemory] Lesson decay sweep: enabled (every 24h)`);
+
+  if (isConsolidationEnabled()) {
     const consolidationTimer = setInterval(async () => {
       try {
         await sdk.trigger("mem::consolidate-pipeline", {});

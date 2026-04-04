@@ -684,6 +684,86 @@ export const V061_TOOLS: McpToolDef[] = [
   },
 ];
 
+export const V070_TOOLS: McpToolDef[] = [
+  {
+    name: "memory_lesson_save",
+    description:
+      "Save a lesson learned from this session. Lessons have confidence scores that strengthen when reinforced and decay when not used. Duplicate content auto-strengthens the existing lesson.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        content: {
+          type: "string",
+          description: "The lesson learned (what worked, what to avoid, when to use X approach)",
+        },
+        context: {
+          type: "string",
+          description: "When/where this lesson applies",
+        },
+        confidence: {
+          type: "number",
+          description: "Initial confidence 0.0-1.0 (default 0.5)",
+        },
+        project: { type: "string", description: "Project this lesson is about" },
+        tags: { type: "string", description: "Comma-separated tags" },
+      },
+      required: ["content"],
+    },
+  },
+  {
+    name: "memory_lesson_recall",
+    description:
+      "Search lessons by query. Returns lessons sorted by confidence and recency. Use to check what the agent has learned before making decisions.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Search query" },
+        project: { type: "string", description: "Filter by project" },
+        minConfidence: {
+          type: "number",
+          description: "Minimum confidence threshold (default 0.1)",
+        },
+        limit: { type: "number", description: "Max results (default 10)" },
+      },
+      required: ["query"],
+    },
+  },
+  {
+    name: "memory_obsidian_export",
+    description:
+      "Export memories, lessons, and crystals as Obsidian-compatible Markdown files with YAML frontmatter and wikilinks for graph view.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        vaultDir: {
+          type: "string",
+          description: "Output directory (default ~/.agentmemory/vault/)",
+        },
+        types: {
+          type: "string",
+          description: "Comma-separated types to export: memories,lessons,crystals,sessions (default all)",
+        },
+      },
+    },
+  },
+];
+
+const ESSENTIAL_TOOLS = new Set([
+  "memory_save",
+  "memory_recall",
+  "memory_consolidate",
+  "memory_governance_delete",
+  "memory_sessions",
+  "memory_diagnose",
+  "memory_lesson_save",
+]);
+
 export function getAllTools(): McpToolDef[] {
-  return [...CORE_TOOLS, ...V040_TOOLS, ...V050_TOOLS, ...V051_TOOLS, ...V061_TOOLS];
+  return [...CORE_TOOLS, ...V040_TOOLS, ...V050_TOOLS, ...V051_TOOLS, ...V061_TOOLS, ...V070_TOOLS];
+}
+
+export function getVisibleTools(): McpToolDef[] {
+  const mode = process.env["AGENTMEMORY_TOOLS"] || "core";
+  if (mode === "all") return getAllTools();
+  return getAllTools().filter((t) => ESSENTIAL_TOOLS.has(t.name));
 }

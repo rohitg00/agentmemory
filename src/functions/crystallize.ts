@@ -72,6 +72,20 @@ export function registerCrystallizeFunction(
 
         await kv.set(KV.crystals, crystal.id, crystal);
 
+        await Promise.all(
+          digest.lessons.map((lesson) =>
+            sdk.trigger("mem::lesson-save", {
+              content: lesson,
+              context: crystal.narrative,
+              confidence: 0.6,
+              project: data.project,
+              tags: [],
+              source: "crystal",
+              sourceIds: [crystal.id],
+            }).catch(() => {}),
+          ),
+        );
+
         for (const action of actions) {
           const updated = { ...action, crystallizedInto: crystal.id };
           await kv.set(KV.actions, action.id, updated);
