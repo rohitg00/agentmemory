@@ -24,7 +24,7 @@ Options:
 Environment:
   AGENTMEMORY_TOOLS=all    Expose all 41 MCP tools
   AGENTMEMORY_SECRET=xxx   Auth secret for REST/MCP
-  CONSOLIDATION_ENABLED=false  Disable auto-consolidation
+  CONSOLIDATION_ENABLED=true   Enable auto-consolidation (off by default)
   OBSIDIAN_AUTO_EXPORT=true    Auto-export on consolidation
 
 Quick start:
@@ -74,8 +74,9 @@ function findIiiConfig(): string {
 }
 
 function whichBinary(name: string): string | null {
+  const cmd = process.platform === "win32" ? "where" : "which";
   try {
-    return execFileSync("which", [name], { encoding: "utf-8" }).trim();
+    return execFileSync(cmd, [name], { encoding: "utf-8" }).trim().split("\n")[0];
   } catch {
     return null;
   }
@@ -141,8 +142,9 @@ Or run with --no-engine to connect to a remote engine.
     console.log(`[agentmemory] Waiting for iii-engine to start...`);
     const ready = await waitForEngine(15000);
     if (!ready) {
+      const port = getRestPort();
       console.error(`[agentmemory] iii-engine did not become ready within 15s.`);
-      console.error(`[agentmemory] Check that ports 3111, 3112, 49134 are available.`);
+      console.error(`[agentmemory] Check that ports ${port}, ${port + 1}, 49134 are available.`);
       process.exit(1);
     }
     console.log(`[agentmemory] iii-engine is ready.`);

@@ -181,7 +181,7 @@ export function getGraphBatchSize(): number {
 }
 
 export function isConsolidationEnabled(): boolean {
-  return getMergedEnv()["CONSOLIDATION_ENABLED"] !== "false";
+  return getMergedEnv()["CONSOLIDATION_ENABLED"] === "true";
 }
 
 export function getConsolidationDecayDays(): number {

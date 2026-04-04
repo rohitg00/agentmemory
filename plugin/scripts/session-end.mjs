@@ -25,22 +25,27 @@ async function main() {
 			signal: AbortSignal.timeout(5e3)
 		});
 	} catch {}
-	try {
-		await fetch(`${REST_URL}/agentmemory/crystals/auto`, {
-			method: "POST",
-			headers: authHeaders(),
-			body: JSON.stringify({ olderThanDays: 0 }),
-			signal: AbortSignal.timeout(15e3)
-		});
-	} catch {}
-	try {
-		await fetch(`${REST_URL}/agentmemory/consolidate-pipeline`, {
-			method: "POST",
-			headers: authHeaders(),
-			body: JSON.stringify({ tier: "all" }),
-			signal: AbortSignal.timeout(3e4)
-		});
-	} catch {}
+	if (process.env["CONSOLIDATION_ENABLED"] === "true") {
+		try {
+			await fetch(`${REST_URL}/agentmemory/crystals/auto`, {
+				method: "POST",
+				headers: authHeaders(),
+				body: JSON.stringify({ olderThanDays: 0 }),
+				signal: AbortSignal.timeout(15e3)
+			});
+		} catch {}
+		try {
+			await fetch(`${REST_URL}/agentmemory/consolidate-pipeline`, {
+				method: "POST",
+				headers: authHeaders(),
+				body: JSON.stringify({
+					tier: "all",
+					force: true
+				}),
+				signal: AbortSignal.timeout(3e4)
+			});
+		} catch {}
+	}
 	if (process.env["CLAUDE_MEMORY_BRIDGE"] === "true") try {
 		await fetch(`${REST_URL}/agentmemory/claude-bridge/sync`, {
 			method: "POST",

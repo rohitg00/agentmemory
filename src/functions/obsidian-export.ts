@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import type { ISdk } from "iii-sdk";
@@ -175,6 +175,12 @@ function sessionToMd(s: Session): string {
     .join("\n");
 }
 
+interface ExportError {
+  id: string;
+  path: string;
+  error: string;
+}
+
 export function registerObsidianExportFunction(
   sdk: ISdk,
   kv: StateKV,
@@ -194,11 +200,12 @@ export function registerObsidianExportFunction(
         sessions: join(vaultDir, "sessions"),
       };
 
-      for (const dir of Object.values(dirs)) {
-        mkdirSync(dir, { recursive: true });
-      }
+      await Promise.all(
+        Object.values(dirs).map((dir) => mkdir(dir, { recursive: true })),
+      );
 
       const stats = { memories: 0, lessons: 0, crystals: 0, sessions: 0 };
+      const errors: ExportError[] = [];
       const memoryMoc: string[] = [];
       const lessonMoc: string[] = [];
       const crystalMoc: string[] = [];
@@ -213,23 +220,38 @@ export function registerObsidianExportFunction(
 
       for (const m of memories.filter((m) => m.isLatest)) {
         const filename = `${sanitize(m.id)}.md`;
-        writeFileSync(join(dirs.memories, filename), memoryToMd(m));
-        stats.memories++;
-        memoryMoc.push(`- [[memories/${sanitize(m.id)}|${m.title}]] (${m.type}, strength: ${m.strength})`);
+        const filepath = join(dirs.memories, filename);
+        try {
+          await writeFile(filepath, memoryToMd(m));
+          stats.memories++;
+          memoryMoc.push(`- [[memories/${sanitize(m.id)}|${m.title}]] (${m.type}, strength: ${m.strength})`);
+        } catch (err) {
+          errors.push({ id: m.id, path: filepath, error: err instanceof Error ? err.message : String(err) });
+        }
       }
 
       for (const l of lessons.filter((l) => !l.deleted)) {
         const filename = `${sanitize(l.id)}.md`;
-        writeFileSync(join(dirs.lessons, filename), lessonToMd(l));
-        stats.lessons++;
-        lessonMoc.push(`- [[lessons/${sanitize(l.id)}|${l.content.slice(0, 60)}]] (confidence: ${l.confidence})`);
+        const filepath = join(dirs.lessons, filename);
+        try {
+          await writeFile(filepath, lessonToMd(l));
+          stats.lessons++;
+          lessonMoc.push(`- [[lessons/${sanitize(l.id)}|${l.content.slice(0, 60)}]] (confidence: ${l.confidence})`);
+        } catch (err) {
+          errors.push({ id: l.id, path: filepath, error: err instanceof Error ? err.message : String(err) });
+        }
       }
 
       for (const c of crystals) {
         const filename = `${sanitize(c.id)}.md`;
-        writeFileSync(join(dirs.crystals, filename), crystalToMd(c));
-        stats.crystals++;
-        crystalMoc.push(`- [[crystals/${sanitize(c.id)}|${c.narrative.slice(0, 60)}]]`);
+        const filepath = join(dirs.crystals, filename);
+        try {
+          await writeFile(filepath, crystalToMd(c));
+          stats.crystals++;
+          crystalMoc.push(`- [[crystals/${sanitize(c.id)}|${c.narrative.slice(0, 60)}]]`);
+        } catch (err) {
+          errors.push({ id: c.id, path: filepath, error: err instanceof Error ? err.message : String(err) });
+        }
       }
 
       const recent = sessions
@@ -241,9 +263,14 @@ export function registerObsidianExportFunction(
         .slice(0, 50);
       for (const s of recent) {
         const filename = `${sanitize(s.id)}.md`;
-        writeFileSync(join(dirs.sessions, filename), sessionToMd(s));
-        stats.sessions++;
-        sessionMoc.push(`- [[sessions/${sanitize(s.id)}|${s.project} (${s.status})]]`);
+        const filepath = join(dirs.sessions, filename);
+        try {
+          await writeFile(filepath, sessionToMd(s));
+          stats.sessions++;
+          sessionMoc.push(`- [[sessions/${sanitize(s.id)}|${s.project} (${s.status})]]`);
+        } catch (err) {
+          errors.push({ id: s.id, path: filepath, error: err instanceof Error ? err.message : String(err) });
+        }
       }
 
       const exportedAt = new Date().toISOString();
@@ -270,14 +297,14 @@ export function registerObsidianExportFunction(
         ...sessionMoc,
       ].join("\n");
 
-      writeFileSync(join(vaultDir, "MOC.md"), moc);
+      await writeFile(join(vaultDir, "MOC.md"), moc);
 
       await recordAudit(kv, "obsidian_export", "mem::obsidian-export", [], {
         vaultDir,
         stats,
       });
 
-      return { success: true, exported: stats, vaultDir };
+      return { success: true, exported: stats, errors: errors.length > 0 ? errors : undefined, vaultDir };
     },
   );
 }

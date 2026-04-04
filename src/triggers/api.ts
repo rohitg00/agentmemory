@@ -1852,8 +1852,9 @@ export function registerApiTriggers(
       project: typeof body.project === "string" ? body.project : undefined,
       tags,
       source: "manual",
-    });
-    return { status_code: 200, body: result };
+    }) as { action?: string };
+    const statusCode = result?.action === "created" ? 201 : 200;
+    return { status_code: statusCode, body: result };
   });
   sdk.registerTrigger({ type: "http", function_id: "api::lesson-save", config: { api_path: "/agentmemory/lessons", http_method: "POST" } });
 

@@ -16,7 +16,7 @@ import {
   buildProceduralExtractionPrompt,
 } from "../prompts/consolidation.js";
 import { recordAudit } from "./audit.js";
-import { getConsolidationDecayDays } from "../config.js";
+import { getConsolidationDecayDays, isConsolidationEnabled } from "../config.js";
 
 function applyDecay(
   items: Array<{
@@ -49,7 +49,10 @@ export function registerConsolidationPipelineFunction(
 ): void {
   sdk.registerFunction(
     { id: "mem::consolidate-pipeline" },
-    async (data?: { tier?: string }) => {
+    async (data?: { tier?: string; force?: boolean }) => {
+      if (!data?.force && !isConsolidationEnabled()) {
+        return { success: false, skipped: true, reason: "CONSOLIDATION_ENABLED is not set to true" };
+      }
       const ctx = getContext();
       const tier = data?.tier || "all";
       const decayDays = getConsolidationDecayDays();
@@ -235,7 +238,12 @@ export function registerConsolidationPipelineFunction(
       if (process.env["OBSIDIAN_AUTO_EXPORT"] === "true") {
         try {
           await sdk.trigger("mem::obsidian-export", {});
-        } catch {}
+          results.obsidianExport = { success: true };
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          ctx.logger.warn("Obsidian auto-export failed", { error: msg });
+          results.obsidianExport = { success: false, error: msg };
+        }
       }
 
       await recordAudit(kv, "consolidate", "mem::consolidate-pipeline", [], {

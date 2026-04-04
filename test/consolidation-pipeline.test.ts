@@ -8,6 +8,7 @@ vi.mock("iii-sdk", () => ({
 
 vi.mock("../src/config.js", () => ({
   getConsolidationDecayDays: () => 30,
+  isConsolidationEnabled: () => true,
 }));
 
 import { registerConsolidationPipelineFunction } from "../src/functions/consolidation-pipeline.js";

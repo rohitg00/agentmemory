@@ -41,9 +41,11 @@ export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
         }
         await kv.set(KV.lessons, existing.id, existing);
 
-        await recordAudit(kv, "lesson_strengthen", "mem::lesson-save", [
-          existing.id,
-        ]);
+        try {
+          await recordAudit(kv, "lesson_strengthen", "mem::lesson-save", [
+            existing.id,
+          ]);
+        } catch {}
 
         return {
           success: true,
@@ -76,7 +78,10 @@ export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
       };
 
       await kv.set(KV.lessons, lesson.id, lesson);
-      await recordAudit(kv, "lesson_save", "mem::lesson-save", [lesson.id]);
+
+      try {
+        await recordAudit(kv, "lesson_save", "mem::lesson-save", [lesson.id]);
+      } catch {}
 
       return { success: true, action: "created", lesson };
     },
@@ -210,17 +215,18 @@ export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
       for (const lesson of lessons) {
         if (lesson.deleted) continue;
 
-        const lastActive = lesson.lastReinforcedAt || lesson.createdAt;
-        const weeksSince =
-          (now - new Date(lastActive).getTime()) / (1000 * 60 * 60 * 24 * 7);
+        const baseline = lesson.lastDecayedAt || lesson.lastReinforcedAt || lesson.createdAt;
+        const weeksSinceBaseline =
+          (now - new Date(baseline).getTime()) / (1000 * 60 * 60 * 24 * 7);
 
-        if (weeksSince < 1) continue;
+        if (weeksSinceBaseline < 1) continue;
 
-        const decay = lesson.decayRate * weeksSince;
+        const decay = lesson.decayRate * weeksSinceBaseline;
         const newConfidence = Math.max(0.05, lesson.confidence - decay);
 
         if (newConfidence !== lesson.confidence) {
           lesson.confidence = Math.round(newConfidence * 1000) / 1000;
+          lesson.lastDecayedAt = timestamp;
           lesson.updatedAt = timestamp;
 
           if (lesson.confidence <= 0.1 && lesson.reinforcements === 0) {

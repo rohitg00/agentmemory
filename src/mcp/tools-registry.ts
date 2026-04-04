@@ -752,7 +752,7 @@ const ESSENTIAL_TOOLS = new Set([
   "memory_save",
   "memory_recall",
   "memory_consolidate",
-  "memory_governance_delete",
+  "memory_smart_search",
   "memory_sessions",
   "memory_diagnose",
   "memory_lesson_save",

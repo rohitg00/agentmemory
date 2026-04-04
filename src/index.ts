@@ -165,7 +165,7 @@ async function main() {
   }
 
   registerConsolidationPipelineFunction(sdk, kv, provider);
-  console.log(`[agentmemory] Consolidation pipeline: registered (auto=${isConsolidationEnabled() ? "on" : "off"})`);
+  console.log(`[agentmemory] Consolidation pipeline: registered (CONSOLIDATION_ENABLED=${isConsolidationEnabled() ? "true" : "false"})`);
 
   const teamConfig = loadTeamConfig();
   if (teamConfig) {
@@ -300,13 +300,15 @@ async function main() {
     console.log(`[agentmemory] Auto-forget: enabled (every ${autoForgetIntervalMs / 60000}m)`);
   }
 
-  const lessonDecayTimer = setInterval(async () => {
-    try {
-      await sdk.trigger("mem::lesson-decay-sweep", {});
-    } catch {}
-  }, 86400000);
-  lessonDecayTimer.unref();
-  console.log(`[agentmemory] Lesson decay sweep: enabled (every 24h)`);
+  if (process.env.LESSON_DECAY_ENABLED !== "false") {
+    const lessonDecayTimer = setInterval(async () => {
+      try {
+        await sdk.trigger("mem::lesson-decay-sweep", {});
+      } catch {}
+    }, 86400000);
+    lessonDecayTimer.unref();
+    console.log(`[agentmemory] Lesson decay sweep: enabled (every 24h)`);
+  }
 
   if (isConsolidationEnabled()) {
     const consolidationTimer = setInterval(async () => {

@@ -667,6 +667,7 @@ export interface Lesson {
   createdAt: string;
   updatedAt: string;
   lastReinforcedAt?: string;
+  lastDecayedAt?: string;
   decayRate: number;
   deleted?: boolean;
 }

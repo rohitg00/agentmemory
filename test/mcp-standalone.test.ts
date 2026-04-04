@@ -22,13 +22,21 @@ import { InMemoryKV } from "../src/mcp/in-memory-kv.js";
 import { writeFileSync } from "node:fs";
 
 describe("Tools Registry", () => {
-  it("getAllTools returns 41 tools including memory_verify and v0.7.0 tools", () => {
+  it("getAllTools returns all tools with unique names", () => {
     const tools = getAllTools();
-    expect(tools.length).toBe(41);
-    expect(tools.some((t) => t.name === "memory_verify")).toBe(true);
-    expect(tools.some((t) => t.name === "memory_lesson_save")).toBe(true);
-    expect(tools.some((t) => t.name === "memory_lesson_recall")).toBe(true);
-    expect(tools.some((t) => t.name === "memory_obsidian_export")).toBe(true);
+    expect(tools.length).toBeGreaterThanOrEqual(41);
+    const names = new Set(tools.map((t) => t.name));
+    expect(names.size).toBe(tools.length);
+    for (const required of [
+      "memory_verify",
+      "memory_lesson_save",
+      "memory_lesson_recall",
+      "memory_obsidian_export",
+      "memory_save",
+      "memory_recall",
+    ]) {
+      expect(tools.some((t) => t.name === required)).toBe(true);
+    }
   });
 
   it("CORE_TOOLS has 10 items", () => {

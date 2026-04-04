@@ -10,7 +10,7 @@
     "agentmemory-mcp": "dist/standalone.mjs"
   },
   "scripts": {
-    "build": "tsdown && cp iii-config.yaml dist/ 2>/dev/null || true && cp docker-compose.yml dist/ 2>/dev/null || true",
+    "build": "tsdown && (cp iii-config.yaml dist/ 2>/dev/null || true) && (cp docker-compose.yml dist/ 2>/dev/null || true)",
     "dev": "tsx src/index.ts",
     "start": "node dist/index.mjs",
     "migrate": "node dist/functions/migrate.js",
