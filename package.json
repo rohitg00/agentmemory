@@ -1,5 +1,5 @@
 {
-  "name": "agentmemory",
+  "name": "@agentmemory/agentmemory",
   "version": "0.7.0",
   "description": "Persistent memory for AI coding agents, powered by iii-engine's three primitives",
   "type": "module",
