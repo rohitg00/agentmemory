@@ -136,6 +136,14 @@ export function startViewerServer(
     }
   });
 
+  server.on("error", (err: NodeJS.ErrnoException) => {
+    if (err.code === "EADDRINUSE") {
+      console.warn(`[agentmemory] Viewer port ${port} already in use, skipping viewer.`);
+    } else {
+      console.error(`[agentmemory] Viewer error:`, err.message);
+    }
+  });
+
   server.listen(port, "127.0.0.1", () => {
     console.log(`[agentmemory] Viewer: http://localhost:${port}`);
   });

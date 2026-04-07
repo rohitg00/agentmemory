@@ -52,10 +52,10 @@ function getRestPort(): number {
 
 async function isEngineRunning(): Promise<boolean> {
   try {
-    const res = await fetch(`http://localhost:${getRestPort()}/agentmemory/livez`, {
+    await fetch(`http://localhost:${getRestPort()}/`, {
       signal: AbortSignal.timeout(2000),
     });
-    return res.ok;
+    return true;
   } catch {
     return false;
   }
