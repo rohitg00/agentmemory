@@ -67,6 +67,8 @@ import { registerCascadeFunction } from "./functions/cascade.js";
 import { registerLessonsFunctions } from "./functions/lessons.js";
 import { registerObsidianExportFunction } from "./functions/obsidian-export.js";
 import { registerReflectFunctions } from "./functions/reflect.js";
+import { registerWorkingMemoryFunctions } from "./functions/working-memory.js";
+import { registerSkillExtractFunctions } from "./functions/skill-extract.js";
 import { registerSlidingWindowFunction } from "./functions/sliding-window.js";
 import { registerQueryExpansionFunction } from "./functions/query-expansion.js";
 import { registerTemporalGraphFunctions } from "./functions/temporal-graph.js";
@@ -196,6 +198,8 @@ async function main() {
   registerLessonsFunctions(sdk, kv);
   registerObsidianExportFunction(sdk, kv);
   registerReflectFunctions(sdk, kv, provider);
+  registerWorkingMemoryFunctions(sdk, kv, config.tokenBudget);
+  registerSkillExtractFunctions(sdk, kv, provider);
   registerCascadeFunction(sdk, kv);
 
   registerSlidingWindowFunction(sdk, kv, provider);

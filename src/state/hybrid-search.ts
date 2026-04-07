@@ -13,6 +13,7 @@ import {
   type GraphRetrievalResult,
 } from "../functions/graph-retrieval.js";
 import { extractEntitiesFromQuery } from "../functions/query-expansion.js";
+import { rerank } from "./reranker.js";
 
 const RRF_K = 60;
 
@@ -27,6 +28,7 @@ export class HybridSearch {
     private bm25Weight = 0.4,
     private vectorWeight = 0.6,
     private graphWeight = 0.3,
+    private rerankEnabled = !!process.env.RERANK_ENABLED,
   ) {
     this.graphRetrieval = new GraphRetrieval(kv);
   }
@@ -216,7 +218,17 @@ export class HybridSearch {
 
     combined.sort((a, b) => b.combinedScore - a.combinedScore);
     const diversified = this.diversifyBySession(combined, limit);
-    return this.enrichResults(diversified, limit);
+    const enriched = await this.enrichResults(diversified, limit);
+
+    if (this.rerankEnabled && enriched.length > 1) {
+      try {
+        return await rerank(query, enriched, limit);
+      } catch {
+        return enriched;
+      }
+    }
+
+    return enriched;
   }
 
   private diversifyBySession(

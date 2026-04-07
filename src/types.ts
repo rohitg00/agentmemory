@@ -249,7 +249,7 @@ export interface ExportPagination {
 }
 
 export interface ExportData {
-  version: "0.3.0" | "0.4.0" | "0.5.0" | "0.6.0" | "0.6.1" | "0.7.0" | "0.7.2" | "0.7.3" | "0.7.4";
+  version: "0.3.0" | "0.4.0" | "0.5.0" | "0.6.0" | "0.6.1" | "0.7.0" | "0.7.2" | "0.7.3" | "0.7.4" | "0.8.0";
   exportedAt: string;
   sessions: Session[];
   observations: Record<string, CompressedObservation[]>;
@@ -398,8 +398,12 @@ export interface ProceduralMemory {
   name: string;
   steps: string[];
   triggerCondition: string;
+  expectedOutcome?: string;
   frequency: number;
   sourceSessionIds: string[];
+  sourceObservationIds?: string[];
+  tags?: string[];
+  concepts?: string[];
   strength: number;
   createdAt: string;
   updatedAt: string;
