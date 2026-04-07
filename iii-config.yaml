@@ -10,7 +10,7 @@ modules:
   - class: modules::api::RestApiModule
     config:
       port: 3111
-      host: 127.0.0.1
+      host: 0.0.0.0
       default_timeout: 180000
       cors:
         allowed_origins: ["http://localhost:3111", "http://localhost:3113", "http://127.0.0.1:3111", "http://127.0.0.1:3113"]
@@ -34,7 +34,7 @@ modules:
   - class: modules::stream::StreamModule
     config:
       port: 3112
-      host: 127.0.0.1
+      host: 0.0.0.0
 
   - class: modules::observability::OtelModule
     config:

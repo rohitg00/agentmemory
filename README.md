@@ -190,7 +190,7 @@ git clone https://github.com/rohitg00/agentmemory.git && cd agentmemory
 npm install && npm run build && npm start
 ```
 
-### 4. Verify
+### 3. Verify
 
 ```bash
 curl http://localhost:3111/agentmemory/health
@@ -203,7 +203,7 @@ open http://localhost:3113
 {
   "status": "healthy",
   "service": "agentmemory",
-  "version": "0.7.1",
+  "version": "0.7.4",
   "health": {
     "memory": { "heapUsed": 42000000, "heapTotal": 67000000 },
     "cpu": { "percent": 2.1 },

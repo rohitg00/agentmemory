@@ -8,6 +8,7 @@ services:
       - "9464:9464"
     volumes:
       - iii-data:/data
+      - ./iii-config.yaml:/app/config.yaml:ro
     restart: unless-stopped
 
 volumes:

@@ -12,7 +12,7 @@
   "scripts": {
     "build": "tsdown && (cp iii-config.yaml dist/ 2>/dev/null || true) && (cp docker-compose.yml dist/ 2>/dev/null || true)",
     "dev": "tsx src/index.ts",
-    "start": "node dist/index.mjs",
+    "start": "node dist/cli.mjs",
     "migrate": "node dist/functions/migrate.js",
     "test": "vitest run --exclude test/integration.test.ts",
     "test:watch": "vitest --exclude test/integration.test.ts",
@@ -51,7 +51,7 @@
     "@clack/prompts": "^1.2.0",
     "dotenv": "^16.4.7",
     "iii-sdk": "^0.3.0",
-    "zod": "^3.23.0"
+    "zod": "^4.0.0"
   },
   "optionalDependencies": {
     "@xenova/transformers": "^2.17.2"
