@@ -130,19 +130,16 @@ export function registerSkillExtractFunctions(
         };
       }
 
-      const summary = await kv
-        .get<SessionSummary>(KV.summaries, data.sessionId)
-        .catch(() => null);
+      const [summary, observations] = await Promise.all([
+        kv.get<SessionSummary>(KV.summaries, data.sessionId).catch(() => null),
+        kv.list<CompressedObservation>(KV.observations(data.sessionId)).catch(() => []),
+      ]);
       if (!summary) {
         return {
           success: false,
           error: "no summary — run mem::summarize first",
         };
       }
-
-      const observations = await kv
-        .list<CompressedObservation>(KV.observations(data.sessionId))
-        .catch(() => []);
       if (observations.length < 3) {
         return { success: false, error: "too few observations for skill extraction" };
       }
@@ -175,12 +172,13 @@ export function registerSkillExtractFunctions(
           .catch(() => null);
 
         if (existing) {
-          existing.strength = Math.min(1.0, existing.strength + 0.15);
-          existing.frequency++;
+          const alreadyReinforced = existing.sourceSessionIds.includes(data.sessionId);
+          if (!alreadyReinforced) {
+            existing.strength = Math.min(1.0, existing.strength + 0.15);
+            existing.frequency++;
+            existing.sourceSessionIds = [...existing.sourceSessionIds, data.sessionId];
+          }
           existing.updatedAt = new Date().toISOString();
-          existing.sourceSessionIds = [
-            ...new Set([...existing.sourceSessionIds, data.sessionId]),
-          ];
           await kv.set(KV.procedural, existing.id, existing);
 
           try {

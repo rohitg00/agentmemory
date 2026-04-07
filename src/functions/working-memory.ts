@@ -129,17 +129,23 @@ export function registerWorkingMemoryFunctions(
 
       const coreLines: string[] = [];
       const coreBudget = Math.floor(budget * 0.3);
+      const accessUpdates: Array<{ id: string; entry: CoreMemoryEntry }> = [];
+      const accessTimestamp = new Date().toISOString();
 
       for (const entry of [...pinned, ...unpinned]) {
         const tokens = estimateTokens(entry.content);
-        if (usedTokens + tokens > coreBudget && !entry.pinned) break;
+        if (usedTokens + tokens > coreBudget && !entry.pinned) continue;
         coreLines.push(`- ${entry.content}`);
         usedTokens += tokens;
 
         entry.accessCount++;
-        entry.lastAccessedAt = new Date().toISOString();
-        await kv.set(CORE_SCOPE, entry.id, entry);
+        entry.lastAccessedAt = accessTimestamp;
+        accessUpdates.push({ id: entry.id, entry });
       }
+
+      Promise.allSettled(
+        accessUpdates.map(({ id, entry }) => kv.set(CORE_SCOPE, id, entry)),
+      ).catch(() => {});
 
       const archivalLines: string[] = [];
 

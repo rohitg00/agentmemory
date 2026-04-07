@@ -218,14 +218,17 @@ export class HybridSearch {
 
     combined.sort((a, b) => b.combinedScore - a.combinedScore);
 
-    const rerankDepth = this.rerankEnabled ? Math.max(limit, 20) : limit;
-    const diversified = this.diversifyBySession(combined, rerankDepth);
-    const enriched = await this.enrichResults(diversified, rerankDepth);
+    const retrievalDepth = Math.max(limit, 20);
+    const rerankWindow = 20;
+    const diversified = this.diversifyBySession(combined, retrievalDepth);
+    const enriched = await this.enrichResults(diversified, retrievalDepth);
 
     if (this.rerankEnabled && enriched.length > 1) {
       try {
-        const reranked = await rerank(query, enriched, rerankDepth);
-        return reranked.slice(0, limit);
+        const head = enriched.slice(0, rerankWindow);
+        const tail = enriched.slice(rerankWindow);
+        const reranked = await rerank(query, head, rerankWindow);
+        return reranked.concat(tail).slice(0, limit);
       } catch {
         return enriched.slice(0, limit);
       }
