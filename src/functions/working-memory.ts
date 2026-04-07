@@ -114,12 +114,7 @@ export function registerWorkingMemoryFunctions(
       description:
         "Build working context: core memory (pinned) + paged archival (by relevance/recency)",
     },
-    async (data: {
-      sessionId: string;
-      project: string;
-      budget?: number;
-      query?: string;
-    }) => {
+    async (data: { budget?: number }) => {
       const ctx = getContext();
       const budget = data.budget || tokenBudget;
       const now = Date.now();
@@ -235,7 +230,7 @@ export function registerWorkingMemoryFunctions(
         const tokens = estimateTokens(entry.content);
 
         const archivalMemory: Memory = {
-          id: entry.id,
+          id: generateId("mem"),
           createdAt: entry.createdAt,
           updatedAt: new Date().toISOString(),
           type: "fact",

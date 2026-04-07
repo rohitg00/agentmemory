@@ -253,7 +253,7 @@ export function registerSkillExtractFunctions(
       id: "mem::skill-list",
       description: "List extracted procedural skills",
     },
-    async (data: { project?: string; limit?: number }) => {
+    async (data: { limit?: number }) => {
       const limit = data?.limit ?? 50;
       const skills = await kv.list<ProceduralMemory>(KV.procedural);
       const sorted = skills.sort((a, b) => b.strength - a.strength);
