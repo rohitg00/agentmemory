@@ -170,7 +170,7 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
       const strategy = data.strategy || "merge";
       const importData = data.exportData;
 
-      const supportedVersions = new Set(["0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.6.1", "0.7.0", "0.7.2", "0.7.3", "0.7.4"]);
+      const supportedVersions = new Set(["0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.6.1", "0.7.0", "0.7.2", "0.7.3", "0.7.4", "0.8.0"]);
       if (!supportedVersions.has(importData.version)) {
         return {
           success: false,
