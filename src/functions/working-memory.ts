@@ -3,6 +3,7 @@ import { getContext } from "iii-sdk";
 import type { Memory, CompressedObservation, ContextBlock } from "../types.js";
 import { KV, generateId } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
+import { recordAudit } from "./audit.js";
 
 const CORE_SCOPE = "mem:core-memory";
 
@@ -58,6 +59,15 @@ export function registerWorkingMemoryFunctions(
         createdAt: now,
       };
       await kv.set(CORE_SCOPE, entry.id, entry);
+
+      try {
+        await recordAudit(kv, "core_add", "mem::core-add", [entry.id], {
+          content: entry.content.slice(0, 100),
+          importance: entry.importance,
+          pinned: entry.pinned,
+        });
+      } catch {}
+
       return { success: true, id: entry.id };
     },
   );
@@ -70,6 +80,11 @@ export function registerWorkingMemoryFunctions(
     async (data: { id: string }) => {
       if (!data?.id) return { success: false, error: "id is required" };
       await kv.delete(CORE_SCOPE, data.id);
+
+      try {
+        await recordAudit(kv, "core_remove", "mem::core-remove", [data.id], {});
+      } catch {}
+
       return { success: true };
     },
   );
@@ -131,7 +146,6 @@ export function registerWorkingMemoryFunctions(
         await kv.set(CORE_SCOPE, entry.id, entry);
       }
 
-      const archivalBudget = budget - usedTokens;
       const archivalLines: string[] = [];
 
       const memories = await kv.list<Memory>(KV.memories);
@@ -215,12 +229,40 @@ export function registerWorkingMemoryFunctions(
         .sort((a, b) => scoreEntry(a, now) - scoreEntry(b, now));
 
       let paged = 0;
+      const pagedIds: string[] = [];
       for (const entry of unpinned) {
         if (totalTokens <= coreBudget) break;
         const tokens = estimateTokens(entry.content);
+
+        const archivalMemory: Memory = {
+          id: entry.id,
+          createdAt: entry.createdAt,
+          updatedAt: new Date().toISOString(),
+          type: "fact",
+          title: entry.content.slice(0, 80),
+          content: entry.content,
+          concepts: [],
+          files: [],
+          sessionIds: [],
+          strength: entry.importance / 10,
+          version: 1,
+          isLatest: true,
+        };
+        await kv.set(KV.memories, archivalMemory.id, archivalMemory);
         await kv.delete(CORE_SCOPE, entry.id);
+
         totalTokens -= tokens;
         paged++;
+        pagedIds.push(entry.id);
+      }
+
+      if (paged > 0) {
+        try {
+          await recordAudit(kv, "auto_page", "mem::auto-page", pagedIds, {
+            paged,
+            budget: coreBudget,
+          });
+        } catch {}
       }
 
       return { success: true, paged, totalTokens, budget: coreBudget };

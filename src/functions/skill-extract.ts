@@ -123,6 +123,12 @@ export function registerSkillExtractFunctions(
       if (!session) {
         return { success: false, error: "session not found" };
       }
+      if (session.status !== "completed") {
+        return {
+          success: false,
+          error: "session must be completed before skill extraction",
+        };
+      }
 
       const summary = await kv
         .get<SessionSummary>(KV.summaries, data.sessionId)
@@ -156,7 +162,14 @@ export function registerSkillExtractFunctions(
           return { success: true, extracted: false, reason: "no clear procedure found" };
         }
 
-        const fp = fingerprintId("skill", parsed.title.toLowerCase());
+        const fp = fingerprintId(
+          "skill",
+          JSON.stringify({
+            title: parsed.title.toLowerCase(),
+            trigger: parsed.trigger.toLowerCase(),
+            steps: parsed.steps.map((s) => s.toLowerCase().trim()),
+          }),
+        );
         const existing = await kv
           .get<ProceduralMemory>(KV.procedural, fp)
           .catch(() => null);
@@ -169,6 +182,14 @@ export function registerSkillExtractFunctions(
             ...new Set([...existing.sourceSessionIds, data.sessionId]),
           ];
           await kv.set(KV.procedural, existing.id, existing);
+
+          try {
+            await recordAudit(kv, "skill_extract", "mem::skill-extract", [], {
+              skillId: existing.id,
+              reinforced: true,
+              sessionId: data.sessionId,
+            });
+          } catch {}
 
           ctx.logger.info("Skill reinforced", {
             id: existing.id,

@@ -217,18 +217,21 @@ export class HybridSearch {
     }));
 
     combined.sort((a, b) => b.combinedScore - a.combinedScore);
-    const diversified = this.diversifyBySession(combined, limit);
-    const enriched = await this.enrichResults(diversified, limit);
+
+    const rerankDepth = this.rerankEnabled ? Math.max(limit, 20) : limit;
+    const diversified = this.diversifyBySession(combined, rerankDepth);
+    const enriched = await this.enrichResults(diversified, rerankDepth);
 
     if (this.rerankEnabled && enriched.length > 1) {
       try {
-        return await rerank(query, enriched, limit);
+        const reranked = await rerank(query, enriched, rerankDepth);
+        return reranked.slice(0, limit);
       } catch {
-        return enriched;
+        return enriched.slice(0, limit);
       }
     }
 
-    return enriched;
+    return enriched.slice(0, limit);
   }
 
   private diversifyBySession(

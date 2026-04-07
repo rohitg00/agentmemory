@@ -2,8 +2,10 @@ import type { HybridSearchResult } from "../types.js";
 
 let pipeline: any = null;
 let pipelineLoading: Promise<any> | null = null;
+let pipelineUnavailable = false;
 
 async function loadPipeline(): Promise<any> {
+  if (pipelineUnavailable) return null;
   if (pipeline) return pipeline;
   if (pipelineLoading) return pipelineLoading;
 
@@ -20,6 +22,7 @@ async function loadPipeline(): Promise<any> {
       return pipeline;
     } catch {
       pipeline = null;
+      pipelineUnavailable = true;
       return null;
     } finally {
       pipelineLoading = null;

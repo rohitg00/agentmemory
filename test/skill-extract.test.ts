@@ -125,7 +125,7 @@ describe("skill-extract", () => {
 
   it("skill-extract returns no-skill for exploratory sessions", async () => {
     mockKv.get.mockImplementation((scope: string) => {
-      if (scope === "mem:sessions") return Promise.resolve({ id: "s1", project: "test" });
+      if (scope === "mem:sessions") return Promise.resolve({ id: "s1", project: "test", status: "completed" });
       if (scope === "mem:summaries")
         return Promise.resolve({
           sessionId: "s1",

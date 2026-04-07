@@ -17,6 +17,10 @@ vi.mock("iii-sdk", () => ({
   }),
 }));
 
+vi.mock("../src/functions/audit.js", () => ({
+  recordAudit: vi.fn(),
+}));
+
 import { registerWorkingMemoryFunctions } from "../src/functions/working-memory.js";
 
 describe("working-memory", () => {
