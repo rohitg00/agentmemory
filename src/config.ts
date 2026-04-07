@@ -51,6 +51,13 @@ function detectProvider(env: Record<string, string>): ProviderConfig {
       maxTokens,
     };
   }
+  if (env["MINIMAX_API_KEY"]) {
+    return {
+      provider: "minimax",
+      model: env["MINIMAX_MODEL"] || "MiniMax-M2.7",
+      maxTokens,
+    };
+  }
   if (env["GEMINI_API_KEY"]) {
     return {
       provider: "gemini",
@@ -203,6 +210,7 @@ export function getStandalonePersistPath(): string {
 const VALID_PROVIDERS = new Set([
   "anthropic",
   "gemini",
+  "minimax",
   "openrouter",
   "agent-sdk",
 ]);

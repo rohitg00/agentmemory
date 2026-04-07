@@ -115,7 +115,7 @@ export interface ProviderConfig {
   maxTokens: number;
 }
 
-export type ProviderType = "agent-sdk" | "anthropic" | "gemini" | "openrouter";
+export type ProviderType = "agent-sdk" | "anthropic" | "gemini" | "minimax" | "openrouter";
 
 export interface MemoryProvider {
   name: string;

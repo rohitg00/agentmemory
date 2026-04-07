@@ -5,6 +5,7 @@ import type {
 } from "../types.js";
 import { AgentSDKProvider } from "./agent-sdk.js";
 import { AnthropicProvider } from "./anthropic.js";
+import { MiniMaxProvider, DEFAULT_MINIMAX_MODEL } from "./minimax.js";
 import { OpenRouterProvider } from "./openrouter.js";
 import { ResilientProvider } from "./resilient.js";
 import { FallbackChainProvider } from "./fallback-chain.js";
@@ -61,6 +62,12 @@ function createBaseProvider(config: ProviderConfig): MemoryProvider {
       return new AnthropicProvider(
         requireEnvVar("ANTHROPIC_API_KEY"),
         config.model,
+        config.maxTokens,
+      );
+    case "minimax":
+      return new MiniMaxProvider(
+        requireEnvVar("MINIMAX_API_KEY"),
+        config.model || DEFAULT_MINIMAX_MODEL,
         config.maxTokens,
       );
     case "gemini":
