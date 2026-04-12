@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 110 24" fill="none" role="img" aria-label="STABLE">
+  <rect x="0" y="0" width="110" height="24" rx="12" fill="#FFFFFF" stroke="#E5E7EB" stroke-width="1"/>
+  <circle cx="12" cy="12" r="3" fill="#FF6B35"/>
+  <text x="22" y="16" fill="#0F172A" font-family='ui-sans-serif, -apple-system, "Segoe UI", Inter, system-ui, sans-serif' font-size="10" font-weight="700" letter-spacing="1.2">STABLE</text>
+</svg>

@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 28" fill="none" role="img" aria-label="divider">
+  <defs>
+    <linearGradient id="divGradient" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#FF6B35" stop-opacity="0"/>
+      <stop offset="50%" stop-color="#FF6B35" stop-opacity="0.8"/>
+      <stop offset="100%" stop-color="#FF6B35" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="divAccent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FF6B35"/>
+      <stop offset="100%" stop-color="#FF8F5E"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="13" width="45" height="2" rx="1" fill="url(#divGradient)"/>
+  <rect x="54" y="8" width="12" height="12" rx="3" fill="url(#divAccent)" transform="rotate(45 60 14)"/>
+  <circle cx="60" cy="14" r="2" fill="#FFFFFF"/>
+  <rect x="75" y="13" width="45" height="2" rx="1" fill="url(#divGradient)"/>
+</svg>

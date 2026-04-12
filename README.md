@@ -15,12 +15,12 @@
 </p>
 
 <p align="center">
-  <img src="assets/tags/stat-recall.svg" alt="95.2% retrieval R@5" height="38" />
-  <img src="assets/tags/stat-tokens.svg" alt="92% fewer tokens" height="38" />
-  <img src="assets/tags/stat-tools.svg" alt="43 MCP tools" height="38" />
-  <img src="assets/tags/stat-hooks.svg" alt="12 auto hooks" height="38" />
-  <img src="assets/tags/stat-deps.svg" alt="0 external DBs" height="38" />
-  <img src="assets/tags/stat-tests.svg" alt="654 tests passing" height="38" />
+  <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-recall.svg"><img src="assets/tags/stat-recall.svg" alt="95.2% retrieval R@5" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-tokens.svg"><img src="assets/tags/stat-tokens.svg" alt="92% fewer tokens" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-tools.svg"><img src="assets/tags/stat-tools.svg" alt="43 MCP tools" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-hooks.svg"><img src="assets/tags/stat-hooks.svg" alt="12 auto hooks" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-deps.svg"><img src="assets/tags/stat-deps.svg" alt="0 external DBs" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-tests.svg"><img src="assets/tags/stat-tests.svg" alt="654 tests passing" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -41,7 +41,7 @@
 
 ---
 
-<h2 id="works-with-every-agent"><img src="assets/tags/section-agents.svg" alt="Works with every agent" height="32" /></h2>
+<h2 id="works-with-every-agent"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/section-agents.svg"><img src="assets/tags/section-agents.svg" alt="Works with every agent" height="32" /></picture></h2>
 
 agentmemory works with any agent that supports hooks, MCP, or REST API. All agents share the same memory server.
 
@@ -150,7 +150,7 @@ npx @agentmemory/agentmemory
 
 ---
 
-<h2 id="benchmarks"><img src="assets/tags/section-benchmarks.svg" alt="Benchmarks" height="32" /></h2>
+<h2 id="benchmarks"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/section-benchmarks.svg"><img src="assets/tags/section-benchmarks.svg" alt="Benchmarks" height="32" /></picture></h2>
 
 <table>
 <tr>
@@ -182,19 +182,19 @@ npx @agentmemory/agentmemory
 </table>
 
 <p align="center">
-  <img src="assets/tags/stat-recall.svg" alt="95.2% retrieval R@5" height="48" />
-  <img src="assets/tags/stat-tokens.svg" alt="92% fewer tokens" height="48" />
-  <img src="assets/tags/stat-tools.svg" alt="43 MCP tools" height="48" />
-  <img src="assets/tags/stat-hooks.svg" alt="12 auto hooks" height="48" />
-  <img src="assets/tags/stat-deps.svg" alt="0 external DBs" height="48" />
-  <img src="assets/tags/stat-tests.svg" alt="654 tests passing" height="48" />
+  <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-recall.svg"><img src="assets/tags/stat-recall.svg" alt="95.2% retrieval R@5" height="48" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-tokens.svg"><img src="assets/tags/stat-tokens.svg" alt="92% fewer tokens" height="48" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-tools.svg"><img src="assets/tags/stat-tools.svg" alt="43 MCP tools" height="48" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-hooks.svg"><img src="assets/tags/stat-hooks.svg" alt="12 auto hooks" height="48" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-deps.svg"><img src="assets/tags/stat-deps.svg" alt="0 external DBs" height="48" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-tests.svg"><img src="assets/tags/stat-tests.svg" alt="654 tests passing" height="48" /></picture>
 </p>
 
 > Embedding model: `all-MiniLM-L6-v2` (local, free, no API key). Full reports: [`benchmark/LONGMEMEVAL.md`](benchmark/LONGMEMEVAL.md), [`benchmark/QUALITY.md`](benchmark/QUALITY.md), [`benchmark/SCALE.md`](benchmark/SCALE.md). Competitor comparison: [`benchmark/COMPARISON.md`](benchmark/COMPARISON.md) — agentmemory vs mem0, Letta, Khoj, claude-mem, Hippo.
 
 ---
 
-<h2 id="vs-competitors"><img src="assets/tags/section-competitors.svg" alt="vs Competitors" height="32" /></h2>
+<h2 id="vs-competitors"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/section-competitors.svg"><img src="assets/tags/section-competitors.svg" alt="vs Competitors" height="32" /></picture></h2>
 
 <table>
 <tr>
@@ -285,7 +285,7 @@ npx @agentmemory/agentmemory
 
 ---
 
-<h2 id="quick-start"><img src="assets/tags/section-quickstart.svg" alt="Quick Start" height="32" /></h2>
+<h2 id="quick-start"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/section-quickstart.svg"><img src="assets/tags/section-quickstart.svg" alt="Quick Start" height="32" /></picture></h2>
 
 ### Try it in 30 seconds
 
@@ -379,7 +379,7 @@ Install `iii-engine` manually with `cargo install iii-engine` or follow [iii.dev
 
 ---
 
-<h2 id="why-agentmemory"><img src="assets/tags/section-why.svg" alt="Why agentmemory" height="32" /></h2>
+<h2 id="why-agentmemory"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/section-why.svg"><img src="assets/tags/section-why.svg" alt="Why agentmemory" height="32" /></picture></h2>
 
 Every coding agent forgets everything when the session ends. You waste the first 5 minutes of every session re-explaining your stack. agentmemory runs in the background and eliminates that entirely.
 
@@ -412,7 +412,7 @@ Every AI coding agent ships with built-in memory — Claude Code has `MEMORY.md`
 
 ---
 
-<h2 id="how-it-works"><img src="assets/tags/section-how.svg" alt="How It Works" height="32" /></h2>
+<h2 id="how-it-works"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/section-how.svg"><img src="assets/tags/section-how.svg" alt="How It Works" height="32" /></picture></h2>
 
 ### Memory Pipeline
 
@@ -477,7 +477,7 @@ Memories decay over time (Ebbinghaus curve). Frequently accessed memories streng
 
 ---
 
-<h2 id="search"><img src="assets/tags/section-search.svg" alt="Search" height="32" /></h2>
+<h2 id="search"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/section-search.svg"><img src="assets/tags/section-search.svg" alt="Search" height="32" /></picture></h2>
 
 Triple-stream retrieval combining three signals:
 
@@ -508,7 +508,7 @@ npm install @xenova/transformers
 
 ---
 
-<h2 id="mcp-server"><img src="assets/tags/section-mcp.svg" alt="MCP Server" height="32" /></h2>
+<h2 id="mcp-server"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/section-mcp.svg"><img src="assets/tags/section-mcp.svg" alt="MCP Server" height="32" /></picture></h2>
 
 43 tools, 6 resources, 3 prompts, and 4 skills — the most comprehensive MCP memory toolkit for any agent.
 
@@ -607,7 +607,7 @@ Or add to your agent's MCP config:
 
 ---
 
-<h2 id="real-time-viewer"><img src="assets/tags/section-viewer.svg" alt="Real-Time Viewer" height="32" /></h2>
+<h2 id="real-time-viewer"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/section-viewer.svg"><img src="assets/tags/section-viewer.svg" alt="Real-Time Viewer" height="32" /></picture></h2>
 
 Auto-starts on port `3113`. Live observation stream, session explorer, memory browser, knowledge graph visualization, and health dashboard.
 
@@ -619,7 +619,7 @@ The viewer server binds to `127.0.0.1` by default. The REST-served `/agentmemory
 
 ---
 
-<h2 id="configuration"><img src="assets/tags/section-config.svg" alt="Configuration" height="32" /></h2>
+<h2 id="configuration"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/section-config.svg"><img src="assets/tags/section-config.svg" alt="Configuration" height="32" /></picture></h2>
 
 ### LLM Providers
 
@@ -678,7 +678,7 @@ Create `~/.agentmemory/.env`:
 
 ---
 
-<h2 id="api"><img src="assets/tags/section-api.svg" alt="API" height="32" /></h2>
+<h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/section-api.svg"><img src="assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
 109 endpoints on port `3111`. The REST API binds to `127.0.0.1` by default. Protected endpoints require `Authorization: Bearer <secret>` when `AGENTMEMORY_SECRET` is set, and mesh sync endpoints require `AGENTMEMORY_SECRET` on both peers.
 
@@ -709,7 +709,7 @@ Full endpoint list: [`src/triggers/api.ts`](src/triggers/api.ts)
 
 ---
 
-<h2 id="architecture"><img src="assets/tags/section-architecture.svg" alt="Architecture" height="32" /></h2>
+<h2 id="architecture"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/section-architecture.svg"><img src="assets/tags/section-architecture.svg" alt="Architecture" height="32" /></picture></h2>
 
 Built on [iii-engine](https://iii.dev)'s three primitives — no Express, no Postgres, no Redis.
 
@@ -728,7 +728,7 @@ Built on [iii-engine](https://iii.dev)'s three primitives — no Express, no Pos
 
 </details>
 
-<h2 id="development"><img src="assets/tags/section-development.svg" alt="Development" height="32" /></h2>
+<h2 id="development"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/section-development.svg"><img src="assets/tags/section-development.svg" alt="Development" height="32" /></picture></h2>
 
 ```bash
 npm run dev               # Hot reload
@@ -739,6 +739,6 @@ npm run test:integration  # API tests (requires running services)
 
 **Prerequisites:** Node.js >= 20, [iii-engine](https://iii.dev/docs) or Docker
 
-<h2 id="license"><img src="assets/tags/section-license.svg" alt="License" height="32" /></h2>
+<h2 id="license"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/section-license.svg"><img src="assets/tags/section-license.svg" alt="License" height="32" /></picture></h2>
 
 [Apache-2.0](LICENSE)
