@@ -27,19 +27,15 @@ export class AgentmemoryPlugin {
     return "agentmemory";
   }
 
-  headers() {
-    const h = { "Content-Type": "application/json" };
-    if (this.secret) {
-      h["Authorization"] = `Bearer ${this.secret}`;
-    }
-    return h;
-  }
+  async postJson(path, payload) {
+    const headers = { "Content-Type": "application/json" };
+    if (this.secret) headers["Authorization"] = `Bearer ${this.secret}`;
 
-  async fetchJson(path, init = {}) {
     try {
       const res = await fetch(`${this.baseUrl}${path}`, {
-        ...init,
-        headers: { ...this.headers(), ...(init.headers || {}) },
+        method: "POST",
+        headers,
+        body: JSON.stringify(payload),
         signal: AbortSignal.timeout(this.timeoutMs),
       });
       if (!res.ok) return null;
@@ -51,55 +47,39 @@ export class AgentmemoryPlugin {
   }
 
   async onSessionStart(ctx) {
-    const result = await this.fetchJson("/agentmemory/session/start", {
-      method: "POST",
-      body: JSON.stringify({
-        sessionId: ctx.sessionId,
-        project: ctx.project || ctx.cwd,
-        cwd: ctx.cwd,
-      }),
+    const result = await this.postJson("/agentmemory/session/start", {
+      sessionId: ctx.sessionId,
+      project: ctx.project || ctx.cwd,
+      cwd: ctx.cwd,
     });
-    if (result?.context) {
-      ctx.injectContext(result.context);
-    }
+    if (result?.context) ctx.injectContext(result.context);
   }
 
   async onPreLlmCall(ctx) {
-    const result = await this.fetchJson("/agentmemory/context", {
-      method: "POST",
-      body: JSON.stringify({
-        sessionId: ctx.sessionId,
-        query: ctx.userMessage || "",
-        tokenBudget: this.tokenBudget,
-        minConfidence: this.minConfidence,
-      }),
+    const result = await this.postJson("/agentmemory/context", {
+      sessionId: ctx.sessionId,
+      query: ctx.userMessage || "",
+      tokenBudget: this.tokenBudget,
+      minConfidence: this.minConfidence,
     });
-    if (result?.context) {
-      ctx.injectContext(result.context);
-    }
+    if (result?.context) ctx.injectContext(result.context);
   }
 
   async onPostToolUse(ctx) {
-    await this.fetchJson("/agentmemory/observe", {
-      method: "POST",
-      body: JSON.stringify({
-        hookType: "post_tool_use",
-        sessionId: ctx.sessionId,
-        timestamp: new Date().toISOString(),
-        data: {
-          tool_name: ctx.toolName,
-          tool_input: ctx.toolInput,
-          tool_output: ctx.toolOutput,
-        },
-      }),
+    await this.postJson("/agentmemory/observe", {
+      hookType: "post_tool_use",
+      sessionId: ctx.sessionId,
+      timestamp: new Date().toISOString(),
+      data: {
+        tool_name: ctx.toolName,
+        tool_input: ctx.toolInput,
+        tool_output: ctx.toolOutput,
+      },
     });
   }
 
   async onSessionEnd(ctx) {
-    await this.fetchJson("/agentmemory/session/end", {
-      method: "POST",
-      body: JSON.stringify({ sessionId: ctx.sessionId }),
-    });
+    await this.postJson("/agentmemory/session/end", { sessionId: ctx.sessionId });
   }
 }
 

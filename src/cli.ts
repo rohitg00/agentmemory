@@ -269,33 +269,38 @@ async function runStatus() {
   }
 }
 
-async function runDemo() {
-  const port = getRestPort();
-  const base = `http://localhost:${port}`;
-  p.intro("agentmemory demo");
+type DemoObservation = {
+  toolName: string;
+  toolInput: Record<string, string>;
+  toolOutput: string;
+};
 
-  const up = await isEngineRunning();
-  if (!up) {
-    p.log.error(`Not running — no response on port ${port}`);
-    p.log.info("Start the server first: npx @agentmemory/agentmemory");
-    process.exit(1);
-  }
+type DemoSession = {
+  id: string;
+  title: string;
+  observations: DemoObservation[];
+};
 
-  const demoProject = "/tmp/agentmemory-demo";
-  const sessions = [
+type SearchResult = { query: string; hits: number; topTitle: string };
+
+function buildDemoSessions(): DemoSession[] {
+  const now = Date.now();
+  return [
     {
-      id: `demo-session-1-${Date.now()}`,
+      id: `demo-session-1-${now}`,
       title: "Session 1: JWT auth setup",
       observations: [
         {
           toolName: "Write",
           toolInput: { file_path: "src/middleware/auth.ts" },
-          toolOutput: "Created JWT middleware using jose library. Tokens expire after 30 days. Chose jose over jsonwebtoken for Edge compatibility.",
+          toolOutput:
+            "Created JWT middleware using jose library. Tokens expire after 30 days. Chose jose over jsonwebtoken for Edge compatibility.",
         },
         {
           toolName: "Write",
           toolInput: { file_path: "test/auth.test.ts" },
-          toolOutput: "Added token validation tests covering expired, malformed, and valid cases.",
+          toolOutput:
+            "Added token validation tests covering expired, malformed, and valid cases.",
         },
         {
           toolName: "Bash",
@@ -305,74 +310,127 @@ async function runDemo() {
       ],
     },
     {
-      id: `demo-session-2-${Date.now() + 1}`,
+      id: `demo-session-2-${now + 1}`,
       title: "Session 2: Database migration debugging",
       observations: [
         {
           toolName: "Read",
           toolInput: { file_path: "prisma/schema.prisma" },
-          toolOutput: "Found N+1 query issue in user relations. Need to add include on posts query.",
+          toolOutput:
+            "Found N+1 query issue in user relations. Need to add include on posts query.",
         },
         {
           toolName: "Edit",
           toolInput: { file_path: "src/api/users.ts" },
-          toolOutput: "Fixed N+1 by adding Prisma include. Query time dropped from 450ms to 28ms.",
+          toolOutput:
+            "Fixed N+1 by adding Prisma include. Query time dropped from 450ms to 28ms.",
         },
       ],
     },
     {
-      id: `demo-session-3-${Date.now() + 2}`,
+      id: `demo-session-3-${now + 2}`,
       title: "Session 3: Rate limiting",
       observations: [
         {
           toolName: "Write",
           toolInput: { file_path: "src/middleware/ratelimit.ts" },
-          toolOutput: "Added rate limiting middleware with 100 req/min default. Uses in-memory store for dev, Redis for prod.",
+          toolOutput:
+            "Added rate limiting middleware with 100 req/min default. Uses in-memory store for dev, Redis for prod.",
         },
       ],
     },
   ];
+}
+
+async function postJson<T = unknown>(
+  url: string,
+  body: unknown,
+  timeoutMs = 5000,
+): Promise<T | null> {
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!res.ok) return null;
+    return (await res.json().catch(() => null)) as T | null;
+  } catch {
+    return null;
+  }
+}
+
+async function seedDemoSession(
+  base: string,
+  project: string,
+  session: DemoSession,
+): Promise<number> {
+  await postJson(`${base}/agentmemory/session/start`, {
+    sessionId: session.id,
+    project,
+    cwd: project,
+  });
+
+  let stored = 0;
+  for (const obs of session.observations) {
+    const result = await postJson<{ observationId?: string }>(
+      `${base}/agentmemory/observe`,
+      {
+        hookType: "post_tool_use",
+        sessionId: session.id,
+        timestamp: new Date().toISOString(),
+        data: {
+          tool_name: obs.toolName,
+          tool_input: obs.toolInput,
+          tool_output: obs.toolOutput,
+        },
+      },
+    );
+    if (result) stored++;
+  }
+
+  await postJson(`${base}/agentmemory/session/end`, { sessionId: session.id });
+  return stored;
+}
+
+async function runDemoSearch(base: string, query: string): Promise<SearchResult> {
+  const data = await postJson<{ results?: Array<{ title?: string }> }>(
+    `${base}/agentmemory/smart-search`,
+    { query, limit: 5 },
+    10000,
+  );
+  const items = data?.results ?? [];
+  return {
+    query,
+    hits: items.length,
+    topTitle: items[0]?.title ?? "(no results)",
+  };
+}
+
+async function runDemo() {
+  const port = getRestPort();
+  const base = `http://localhost:${port}`;
+  p.intro("agentmemory demo");
+
+  if (!(await isEngineRunning())) {
+    p.log.error(`Not running — no response on port ${port}`);
+    p.log.info("Start the server first: npx @agentmemory/agentmemory");
+    process.exit(1);
+  }
+
+  const demoProject = "/tmp/agentmemory-demo";
+  const sessions = buildDemoSessions();
 
   const sSeed = p.spinner();
   sSeed.start("Seeding 3 demo sessions with realistic observations...");
 
   let totalObs = 0;
   for (const session of sessions) {
-    await fetch(`${base}/agentmemory/session/start`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sessionId: session.id, project: demoProject, cwd: demoProject }),
-      signal: AbortSignal.timeout(5000),
-    }).catch(() => null);
-
-    for (const obs of session.observations) {
-      const obsRes = await fetch(`${base}/agentmemory/observe`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          hookType: "post_tool_use",
-          sessionId: session.id,
-          timestamp: new Date().toISOString(),
-          data: {
-            tool_name: obs.toolName,
-            tool_input: obs.toolInput,
-            tool_output: obs.toolOutput,
-          },
-        }),
-        signal: AbortSignal.timeout(5000),
-      }).catch(() => null);
-      if (obsRes?.ok) totalObs++;
-    }
-
-    await fetch(`${base}/agentmemory/session/end`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sessionId: session.id }),
-      signal: AbortSignal.timeout(5000),
-    }).catch(() => null);
+    totalObs += await seedDemoSession(base, demoProject, session);
   }
 
-  sSeed.stop(`Seeded ${totalObs} observations across 3 sessions`);
+  sSeed.stop(`Seeded ${totalObs} observations across ${sessions.length} sessions`);
 
   const queries = [
     "jwt auth middleware",
@@ -381,67 +439,43 @@ async function runDemo() {
   ];
 
   const sQuery = p.spinner();
-  sQuery.start("Running 3 smart-search queries...");
+  sQuery.start(`Running ${queries.length} smart-search queries...`);
 
-  const results: Array<{ query: string; hits: number; topTitle: string }> = [];
+  const results: SearchResult[] = [];
   for (const query of queries) {
-    try {
-      const res = await fetch(`${base}/agentmemory/smart-search`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query, limit: 5 }),
-        signal: AbortSignal.timeout(10000),
-      });
-      const data = await res.json().catch(() => null);
-      const items = (data?.results as Array<{ title?: string }> | undefined) || [];
-      results.push({
-        query,
-        hits: items.length,
-        topTitle: items[0]?.title || "(no results)",
-      });
-    } catch {
-      results.push({ query, hits: 0, topTitle: "(search failed)" });
-    }
+    results.push(await runDemoSearch(base, query));
   }
 
   sQuery.stop("Search complete");
 
   const lines = [
     `Project:       ${demoProject}`,
-    `Sessions:      3 seeded (~9 observations)`,
+    `Sessions:      ${sessions.length} seeded (${totalObs} observations)`,
     "",
     "Search results:",
+    ...results.flatMap((r) => [
+      `  "${r.query}"`,
+      `    → ${r.hits} hit(s), top: ${r.topTitle.slice(0, 60)}`,
+    ]),
+    "",
+    `Notice: searching "database performance optimization"`,
+    `found the N+1 query fix — keyword matching can't do that.`,
+    "",
+    `Viewer:        http://localhost:${port + 2}`,
+    `Clean up with: curl -X DELETE "${base}/agentmemory/sessions?project=${demoProject}"`,
   ];
-
-  for (const r of results) {
-    lines.push(`  "${r.query}"`);
-    lines.push(`    → ${r.hits} hit(s), top: ${r.topTitle.slice(0, 60)}`);
-  }
-
-  lines.push("");
-  lines.push(`Notice: searching "database performance optimization"`);
-  lines.push(`found the N+1 query fix — keyword matching can't do that.`);
-  lines.push("");
-  lines.push(`Viewer:        http://localhost:${port + 2}`);
-  lines.push(`Clean up with: curl -X DELETE "${base}/agentmemory/sessions?project=${demoProject}"`);
 
   p.note(lines.join("\n"), "demo complete");
   p.log.success("agentmemory is working. Point your agent at it and get back to coding.");
 }
 
-if (args[0] === "status") {
-  runStatus().catch((err) => {
-    p.log.error(err instanceof Error ? err.message : String(err));
-    process.exit(1);
-  });
-} else if (args[0] === "demo") {
-  runDemo().catch((err) => {
-    p.log.error(err instanceof Error ? err.message : String(err));
-    process.exit(1);
-  });
-} else {
-  main().catch((err) => {
-    p.log.error(err instanceof Error ? err.message : String(err));
-    process.exit(1);
-  });
-}
+const commands: Record<string, () => Promise<void>> = {
+  status: runStatus,
+  demo: runDemo,
+};
+
+const handler = commands[args[0] ?? ""] ?? main;
+handler().catch((err) => {
+  p.log.error(err instanceof Error ? err.message : String(err));
+  process.exit(1);
+});
