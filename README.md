@@ -84,7 +84,7 @@ npx @agentmemory/agentmemory
 </tr>
 </table>
 
-> Embedding model: `all-MiniLM-L6-v2` (local, free, no API key). Full reports: [`benchmark/LONGMEMEVAL.md`](benchmark/LONGMEMEVAL.md), [`benchmark/QUALITY.md`](benchmark/QUALITY.md), [`benchmark/SCALE.md`](benchmark/SCALE.md)
+> Embedding model: `all-MiniLM-L6-v2` (local, free, no API key). Full reports: [`benchmark/LONGMEMEVAL.md`](benchmark/LONGMEMEVAL.md), [`benchmark/QUALITY.md`](benchmark/QUALITY.md), [`benchmark/SCALE.md`](benchmark/SCALE.md). Competitor comparison: [`benchmark/COMPARISON.md`](benchmark/COMPARISON.md) — agentmemory vs mem0, Letta, Khoj, claude-mem, Hippo.
 
 ---
 
@@ -210,6 +210,20 @@ agentmemory works with any agent that supports hooks, MCP, or REST API. All agen
 
 ## Quick Start
 
+### Try it in 30 seconds
+
+```bash
+# Terminal 1: start the server
+npx @agentmemory/agentmemory
+
+# Terminal 2: seed sample data and see recall in action
+npx @agentmemory/agentmemory demo
+```
+
+`demo` seeds 3 realistic sessions (JWT auth, N+1 query fix, rate limiting) and runs semantic searches against them. You'll see it find "N+1 query fix" when you search "database performance optimization" — keyword matching can't do that.
+
+Open `http://localhost:3113` to watch the memory build live.
+
 ### Claude Code (one block, paste it)
 
 ```
@@ -225,7 +239,7 @@ Then add the MCP config for your agent:
 | Agent | Setup |
 |---|---|
 | **Cursor** | Add to `~/.cursor/mcp.json`: `{"mcpServers": {"agentmemory": {"command": "npx", "args": ["agentmemory-mcp"]}}}` |
-| **OpenClaw** | Add to MCP config: `{"mcpServers": {"agentmemory": {"command": "npx", "args": ["agentmemory-mcp"]}}}` |
+| **OpenClaw** | Add to MCP config: `{"mcpServers": {"agentmemory": {"command": "npx", "args": ["agentmemory-mcp"]}}}` or use the [gateway plugin](integrations/openclaw/) |
 | **Gemini CLI** | `gemini mcp add agentmemory -- npx agentmemory-mcp` |
 | **Codex CLI** | Add to `.codex/config.yaml`: `mcp_servers: {agentmemory: {command: npx, args: ["agentmemory-mcp"]}}` |
 | **OpenCode** | Add to `.opencode/config.json`: `{"mcpServers": {"agentmemory": {"command": "npx", "args": ["agentmemory-mcp"]}}}` |
