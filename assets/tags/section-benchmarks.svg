@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 44" fill="none" role="img" aria-label="BENCHMARKS">
+  <defs>
+    <linearGradient id="accent" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FF6B35"/>
+      <stop offset="100%" stop-color="#FF8F5E"/>
+    </linearGradient>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#1A1A1A"/>
+      <stop offset="100%" stop-color="#0F0F0F"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="320" height="44" rx="8" fill="url(#bg)" stroke="#2A2A2A" stroke-width="1"/>
+  <rect x="0" y="0" width="6" height="44" rx="3" fill="url(#accent)"/>
+  <text x="22" y="20" fill="#FFFFFF" font-family='ui-sans-serif, -apple-system, "Segoe UI", Inter, system-ui, sans-serif' font-size="13" font-weight="800" letter-spacing="2.2" text-rendering="geometricPrecision">BENCHMARKS</text>
+  <text x="22" y="34" fill="#9CA3AF" font-family='ui-sans-serif, -apple-system, "Segoe UI", Inter, system-ui, sans-serif' font-size="10" font-weight="500" letter-spacing="0.2" text-rendering="geometricPrecision">Measured on LongMemEval-S (ICLR 2025)</text>
+</svg>

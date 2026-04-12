@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 140 28" fill="none" role="img" aria-label="NEW: v0.8.2">
+  <rect x="0" y="0" width="140" height="28" rx="6" fill="#1A1A1A" stroke="#2A2A2A" stroke-width="1"/>
+  <text x="12" y="18" fill="#9CA3AF" font-family='ui-sans-serif, -apple-system, "Segoe UI", Inter, system-ui, sans-serif' font-size="11" font-weight="600" letter-spacing="1.2">NEW</text>
+  <text x="128" y="18" fill="#FF6B35" font-family='ui-sans-serif, -apple-system, "Segoe UI", Inter, system-ui, sans-serif' font-size="11" font-weight="800" letter-spacing="0.5" text-anchor="end">v0.8.2</text>
+</svg>
