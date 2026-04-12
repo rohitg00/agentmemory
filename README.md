@@ -186,84 +186,84 @@ agentmemory works with any agent that supports hooks, MCP, or REST API. All agen
 <table>
 <tr>
 <td align="center" width="12.5%">
-<a href="https://claude.com/product/claude-code"><img src="https://cdn.simpleicons.org/anthropic/D97757" alt="Claude Code" width="40" height="40" /></a><br/>
+<a href="https://claude.com/product/claude-code"><img src="https://github.com/anthropics.png?size=120" alt="Claude Code" width="48" height="48" /></a><br/>
 <strong>Claude Code</strong><br/>
 <sub>12 hooks + MCP + skills</sub>
 </td>
 <td align="center" width="12.5%">
-<a href="https://cursor.com"><img src="https://cdn.simpleicons.org/cursor/000000" alt="Cursor" width="40" height="40" /></a><br/>
-<strong>Cursor</strong><br/>
-<sub>MCP server</sub>
-</td>
-<td align="center" width="12.5%">
-<a href="https://github.com/openclaw/openclaw"><img src="https://github.com/openclaw.png?size=80" alt="OpenClaw" width="40" height="40" /></a><br/>
+<a href="integrations/openclaw/"><img src="https://github.com/openclaw.png?size=120" alt="OpenClaw" width="48" height="48" /></a><br/>
 <strong>OpenClaw</strong><br/>
 <sub>MCP + <a href="integrations/openclaw/">plugin</a></sub>
 </td>
 <td align="center" width="12.5%">
-<a href="https://github.com/google-gemini/gemini-cli"><img src="https://cdn.simpleicons.org/googlegemini/8E75B2" alt="Gemini CLI" width="40" height="40" /></a><br/>
+<a href="integrations/hermes/"><img src="https://github.com/NousResearch.png?size=120" alt="Hermes" width="48" height="48" /></a><br/>
+<strong>Hermes</strong><br/>
+<sub>MCP + <a href="integrations/hermes/">plugin</a></sub>
+</td>
+<td align="center" width="12.5%">
+<a href="https://cursor.com"><img src="https://github.com/getcursor.png?size=120" alt="Cursor" width="48" height="48" /></a><br/>
+<strong>Cursor</strong><br/>
+<sub>MCP server</sub>
+</td>
+<td align="center" width="12.5%">
+<a href="https://github.com/google-gemini/gemini-cli"><img src="https://github.com/google-gemini.png?size=120" alt="Gemini CLI" width="48" height="48" /></a><br/>
 <strong>Gemini CLI</strong><br/>
 <sub>MCP server</sub>
 </td>
 <td align="center" width="12.5%">
-<a href="https://github.com/opencode-ai/opencode"><img src="https://github.com/opencode-ai.png?size=80" alt="OpenCode" width="40" height="40" /></a><br/>
+<a href="https://github.com/opencode-ai/opencode"><img src="https://github.com/opencode-ai.png?size=120" alt="OpenCode" width="48" height="48" /></a><br/>
 <strong>OpenCode</strong><br/>
 <sub>MCP server</sub>
 </td>
 <td align="center" width="12.5%">
-<a href="https://github.com/openai/codex"><img src="https://cdn.simpleicons.org/openai/000000" alt="Codex CLI" width="40" height="40" /></a><br/>
+<a href="https://github.com/openai/codex"><img src="https://github.com/openai.png?size=120" alt="Codex CLI" width="48" height="48" /></a><br/>
 <strong>Codex CLI</strong><br/>
 <sub>MCP server</sub>
 </td>
 <td align="center" width="12.5%">
-<a href="https://github.com/cline/cline"><img src="https://github.com/cline.png?size=80" alt="Cline" width="40" height="40" /></a><br/>
+<a href="https://github.com/cline/cline"><img src="https://github.com/cline.png?size=120" alt="Cline" width="48" height="48" /></a><br/>
 <strong>Cline</strong><br/>
 <sub>MCP server</sub>
-</td>
-<td align="center" width="12.5%">
-<a href="https://github.com/NousResearch/hermes-agent"><img src="https://github.com/NousResearch.png?size=80" alt="Hermes" width="40" height="40" /></a><br/>
-<strong>Hermes</strong><br/>
-<sub>MCP + <a href="integrations/hermes/">plugin</a></sub>
 </td>
 </tr>
 <tr>
 <td align="center" width="12.5%">
-<a href="https://github.com/block/goose"><img src="https://github.com/block.png?size=80" alt="Goose" width="40" height="40" /></a><br/>
+<a href="https://github.com/block/goose"><img src="https://github.com/block.png?size=120" alt="Goose" width="48" height="48" /></a><br/>
 <strong>Goose</strong><br/>
 <sub>MCP server</sub>
 </td>
 <td align="center" width="12.5%">
-<a href="https://github.com/kilo-org/kilocode"><img src="https://github.com/kilo-org.png?size=80" alt="Kilo Code" width="40" height="40" /></a><br/>
+<a href="https://github.com/Kilo-Org/kilocode"><img src="https://github.com/Kilo-Org.png?size=120" alt="Kilo Code" width="48" height="48" /></a><br/>
 <strong>Kilo Code</strong><br/>
 <sub>MCP server</sub>
 </td>
 <td align="center" width="12.5%">
-<a href="https://github.com/Aider-AI/aider"><img src="https://github.com/Aider-AI.png?size=80" alt="Aider" width="40" height="40" /></a><br/>
+<a href="https://github.com/Aider-AI/aider"><img src="https://github.com/Aider-AI.png?size=120" alt="Aider" width="48" height="48" /></a><br/>
 <strong>Aider</strong><br/>
 <sub>REST API</sub>
 </td>
 <td align="center" width="12.5%">
-<a href="https://claude.ai/download"><img src="https://cdn.simpleicons.org/anthropic/D97757" alt="Claude Desktop" width="40" height="40" /></a><br/>
+<a href="https://claude.ai/download"><img src="https://github.com/anthropics.png?size=120" alt="Claude Desktop" width="48" height="48" /></a><br/>
 <strong>Claude Desktop</strong><br/>
 <sub>MCP server</sub>
 </td>
 <td align="center" width="12.5%">
-<a href="https://windsurf.com"><img src="https://cdn.simpleicons.org/windsurf/30B894" alt="Windsurf" width="40" height="40" /></a><br/>
+<a href="https://windsurf.com"><img src="https://github.com/Exafunction.png?size=120" alt="Windsurf" width="48" height="48" /></a><br/>
 <strong>Windsurf</strong><br/>
 <sub>MCP server</sub>
 </td>
 <td align="center" width="12.5%">
-<a href="https://github.com/RooCodeInc/Roo-Code"><img src="https://github.com/RooCodeInc.png?size=80" alt="Roo Code" width="40" height="40" /></a><br/>
+<a href="https://github.com/RooCodeInc/Roo-Code"><img src="https://github.com/RooCodeInc.png?size=120" alt="Roo Code" width="48" height="48" /></a><br/>
 <strong>Roo Code</strong><br/>
 <sub>MCP server</sub>
 </td>
 <td align="center" width="12.5%">
-<a href="https://github.com/anthropics/claude-agent-sdk-typescript"><img src="https://cdn.simpleicons.org/anthropic/D97757" alt="Claude SDK" width="40" height="40" /></a><br/>
+<a href="https://github.com/anthropics/claude-agent-sdk-typescript"><img src="https://github.com/anthropics.png?size=120" alt="Claude SDK" width="48" height="48" /></a><br/>
 <strong>Claude SDK</strong><br/>
 <sub>AgentSDKProvider</sub>
 </td>
 <td align="center" width="12.5%">
-<img src="https://img.shields.io/badge/109-endpoints-1f6feb?style=flat-square" alt="REST API" /><br/>
+<img src="https://img.shields.io/badge/109-endpoints-1f6feb?style=flat-square" alt="REST API" width="48" /><br/>
 <strong>Any agent</strong><br/>
 <sub>REST API</sub>
 </td>
@@ -297,6 +297,46 @@ Open `http://localhost:3113` to watch the memory build live.
 ```
 Install agentmemory: run `npx @agentmemory/agentmemory` in a separate terminal to start the memory server. Then run `/plugin marketplace add rohitg00/agentmemory` and `/plugin install agentmemory` to register all 12 hooks, 4 skills, and 43 MCP tools. Verify with `curl http://localhost:3111/agentmemory/health`. The real-time viewer is at http://localhost:3113.
 ```
+
+<details>
+<summary><b>OpenClaw (paste this prompt)</b></summary>
+
+```
+Install agentmemory for OpenClaw. Run `npx @agentmemory/agentmemory` in a separate terminal to start the memory server on localhost:3111. Then add this to my OpenClaw MCP config so agentmemory is available with all 43 memory tools:
+
+{
+  "mcpServers": {
+    "agentmemory": {
+      "command": "npx",
+      "args": ["agentmemory-mcp"]
+    }
+  }
+}
+
+Restart OpenClaw. Verify with `curl http://localhost:3111/agentmemory/health`. Open http://localhost:3113 for the real-time viewer. For deeper 4-hook gateway integration, see integrations/openclaw in the agentmemory repo.
+```
+
+Full guide: [`integrations/openclaw/`](integrations/openclaw/)
+
+</details>
+
+<details>
+<summary><b>Hermes Agent (paste this prompt)</b></summary>
+
+```
+Install agentmemory for Hermes. Run `npx @agentmemory/agentmemory` in a separate terminal to start the memory server on localhost:3111. Then add this to ~/.hermes/config.yaml so Hermes can use agentmemory as an MCP server with all 43 memory tools:
+
+mcp_servers:
+  agentmemory:
+    command: npx
+    args: ["agentmemory-mcp"]
+
+Verify with `curl http://localhost:3111/agentmemory/health`. Open http://localhost:3113 for the real-time viewer. For deeper 6-hook memory provider integration (pre-LLM context injection, turn capture, MEMORY.md mirroring, system prompt block), copy integrations/hermes from the agentmemory repo to ~/.hermes/plugins/memory/agentmemory.
+```
+
+Full guide: [`integrations/hermes/`](integrations/hermes/)
+
+</details>
 
 ### Other agents
 

@@ -1,14 +1,15 @@
 <p align="center">
-  <img src="https://github.com/openclaw.png?size=96" alt="OpenClaw" width="72" height="72" />
-  <img src="https://img.shields.io/badge/+-gray?style=for-the-badge" alt="+" height="72" />
-  <img src="../../assets/icon.svg" alt="agentmemory" width="72" height="72" />
+  <img src="../../assets/banner.png" alt="agentmemory" width="640" />
 </p>
 
-<h1 align="center">agentmemory for OpenClaw</h1>
+<h1 align="center">
+  <img src="https://github.com/openclaw.png?size=80" alt="OpenClaw" width="28" height="28" align="center" />
+  &nbsp;agentmemory for OpenClaw
+</h1>
 
 <p align="center">
-  Persistent cross-session memory for <a href="https://github.com/openclaw/openclaw">OpenClaw</a> via agentmemory.<br/>
-  <sub>95.2% retrieval accuracy on <a href="https://arxiv.org/abs/2410.10813">LongMemEval-S</a> — no API key needed.</sub>
+  <strong>Your OpenClaw agents remember everything. No more re-explaining.</strong><br/>
+  <sub>Persistent cross-session memory via <a href="https://github.com/rohitg00/agentmemory">agentmemory</a> — 95.2% retrieval accuracy on <a href="https://arxiv.org/abs/2410.10813">LongMemEval-S</a>.</sub>
 </p>
 
 <p align="center">
@@ -16,6 +17,7 @@
   <img src="https://img.shields.io/badge/Hooks-4_lifecycle-1f6feb?style=flat-square" alt="4 lifecycle hooks" />
   <img src="https://img.shields.io/badge/R@5-95.2%25-00875f?style=flat-square" alt="95.2% R@5" />
   <img src="https://img.shields.io/badge/Self--hosted-yes-00875f?style=flat-square" alt="Self-hosted" />
+  <img src="https://img.shields.io/badge/License-Apache_2.0-blue?style=flat-square" alt="Apache 2.0" />
 </p>
 
 ---
