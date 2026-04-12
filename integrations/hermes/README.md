@@ -1,6 +1,53 @@
-# agentmemory for Hermes Agent
+<p align="center">
+  <img src="https://github.com/NousResearch.png?size=96" alt="Hermes Agent (Nous Research)" width="72" height="72" />
+  <img src="https://img.shields.io/badge/+-gray?style=for-the-badge" alt="+" height="72" />
+  <img src="../../assets/icon.svg" alt="agentmemory" width="72" height="72" />
+</p>
 
-Persistent cross-session memory for [Hermes Agent](https://github.com/NousResearch/hermes-agent) via agentmemory.
+<h1 align="center">agentmemory for Hermes Agent</h1>
+
+<p align="center">
+  Persistent cross-session memory for <a href="https://github.com/NousResearch/hermes-agent">Hermes Agent</a> via agentmemory.<br/>
+  <sub>95.2% retrieval accuracy on <a href="https://arxiv.org/abs/2410.10813">LongMemEval-S</a> — cross-agent shared with Claude Code, Cursor, OpenCode, and more.</sub>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/MCP-43_tools-1f6feb?style=flat-square" alt="43 MCP tools" />
+  <img src="https://img.shields.io/badge/Hooks-6_lifecycle-1f6feb?style=flat-square" alt="6 lifecycle hooks" />
+  <img src="https://img.shields.io/badge/R@5-95.2%25-00875f?style=flat-square" alt="95.2% R@5" />
+  <img src="https://img.shields.io/badge/Self--hosted-yes-00875f?style=flat-square" alt="Self-hosted" />
+</p>
+
+---
+
+## Install it in 30 seconds
+
+**Paste this prompt into Hermes** and it does the whole setup for you:
+
+```text
+Install agentmemory for Hermes. Run `npx @agentmemory/agentmemory` in a
+separate terminal to start the memory server on localhost:3111. Then
+add this to `~/.hermes/config.yaml` so Hermes can use agentmemory as
+an MCP server with all 43 memory tools:
+
+mcp_servers:
+  agentmemory:
+    command: npx
+    args: ["agentmemory-mcp"]
+
+Verify it's working with
+`curl http://localhost:3111/agentmemory/health` — it should return
+{"status":"healthy"}. Open the real-time viewer at
+http://localhost:3113 to watch memories being captured live.
+
+If I want deeper integration — pre-LLM context injection, turn-level
+capture, memory-write mirroring to MEMORY.md, and system prompt block
+injection — copy `integrations/hermes` from the agentmemory repo to
+`~/.hermes/plugins/memory/agentmemory` instead. That gives me the
+6-hook memory provider plugin on top of the MCP server.
+```
+
+That's it. Hermes handles the rest.
 
 ## Quick setup
 

@@ -1,6 +1,57 @@
-# agentmemory for OpenClaw
+<p align="center">
+  <img src="https://github.com/openclaw.png?size=96" alt="OpenClaw" width="72" height="72" />
+  <img src="https://img.shields.io/badge/+-gray?style=for-the-badge" alt="+" height="72" />
+  <img src="../../assets/icon.svg" alt="agentmemory" width="72" height="72" />
+</p>
 
-Persistent cross-session memory for [OpenClaw](https://github.com/openclaw/openclaw) via agentmemory. Gives every OpenClaw agent a searchable long-term memory with 95.2% retrieval accuracy on [LongMemEval-S](https://arxiv.org/abs/2410.10813).
+<h1 align="center">agentmemory for OpenClaw</h1>
+
+<p align="center">
+  Persistent cross-session memory for <a href="https://github.com/openclaw/openclaw">OpenClaw</a> via agentmemory.<br/>
+  <sub>95.2% retrieval accuracy on <a href="https://arxiv.org/abs/2410.10813">LongMemEval-S</a> — no API key needed.</sub>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/MCP-43_tools-1f6feb?style=flat-square" alt="43 MCP tools" />
+  <img src="https://img.shields.io/badge/Hooks-4_lifecycle-1f6feb?style=flat-square" alt="4 lifecycle hooks" />
+  <img src="https://img.shields.io/badge/R@5-95.2%25-00875f?style=flat-square" alt="95.2% R@5" />
+  <img src="https://img.shields.io/badge/Self--hosted-yes-00875f?style=flat-square" alt="Self-hosted" />
+</p>
+
+---
+
+## Install it in 30 seconds
+
+**Paste this prompt into OpenClaw** and it does the whole setup for you:
+
+```text
+Install agentmemory for OpenClaw. Run `npx @agentmemory/agentmemory` in a
+separate terminal to start the memory server on localhost:3111. Then add
+this to my OpenClaw MCP config so agentmemory is available as an MCP
+server with all 43 memory tools (memory_recall, memory_save,
+memory_smart_search, memory_timeline, memory_profile, etc.):
+
+{
+  "mcpServers": {
+    "agentmemory": {
+      "command": "npx",
+      "args": ["agentmemory-mcp"]
+    }
+  }
+}
+
+Restart OpenClaw. Verify it's working with
+`curl http://localhost:3111/agentmemory/health` — it should return
+{"status":"healthy"}. Open the real-time viewer at
+http://localhost:3113 to watch memories being captured live.
+
+If I want deeper integration with pre-LLM context injection and
+automatic tool-use capture, copy `integrations/openclaw` from the
+agentmemory repo to `~/.openclaw/plugins/memory/agentmemory` — that
+gives me the 4-hook gateway plugin instead of just the MCP server.
+```
+
+That's it. OpenClaw handles the rest.
 
 ## Why you want this
 

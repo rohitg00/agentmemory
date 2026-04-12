@@ -185,26 +185,94 @@ agentmemory works with any agent that supports hooks, MCP, or REST API. All agen
 
 <table>
 <tr>
-<td align="center" width="12.5%"><strong>Claude Code</strong><br/><sub>12 hooks + MCP + skills</sub></td>
-<td align="center" width="12.5%"><strong>Cursor</strong><br/><sub>MCP server</sub></td>
-<td align="center" width="12.5%"><strong>OpenClaw</strong><br/><sub>MCP server</sub></td>
-<td align="center" width="12.5%"><strong>Gemini CLI</strong><br/><sub>MCP server</sub></td>
-<td align="center" width="12.5%"><strong>OpenCode</strong><br/><sub>MCP server</sub></td>
-<td align="center" width="12.5%"><strong>Codex CLI</strong><br/><sub>MCP server</sub></td>
-<td align="center" width="12.5%"><strong>Cline</strong><br/><sub>MCP server</sub></td>
-<td align="center" width="12.5%"><strong>Hermes</strong><br/><sub>MCP + plugin</sub></td>
+<td align="center" width="12.5%">
+<a href="https://claude.com/product/claude-code"><img src="https://cdn.simpleicons.org/anthropic/D97757" alt="Claude Code" width="40" height="40" /></a><br/>
+<strong>Claude Code</strong><br/>
+<sub>12 hooks + MCP + skills</sub>
+</td>
+<td align="center" width="12.5%">
+<a href="https://cursor.com"><img src="https://cdn.simpleicons.org/cursor/000000" alt="Cursor" width="40" height="40" /></a><br/>
+<strong>Cursor</strong><br/>
+<sub>MCP server</sub>
+</td>
+<td align="center" width="12.5%">
+<a href="https://github.com/openclaw/openclaw"><img src="https://github.com/openclaw.png?size=80" alt="OpenClaw" width="40" height="40" /></a><br/>
+<strong>OpenClaw</strong><br/>
+<sub>MCP + <a href="integrations/openclaw/">plugin</a></sub>
+</td>
+<td align="center" width="12.5%">
+<a href="https://github.com/google-gemini/gemini-cli"><img src="https://cdn.simpleicons.org/googlegemini/8E75B2" alt="Gemini CLI" width="40" height="40" /></a><br/>
+<strong>Gemini CLI</strong><br/>
+<sub>MCP server</sub>
+</td>
+<td align="center" width="12.5%">
+<a href="https://github.com/opencode-ai/opencode"><img src="https://github.com/opencode-ai.png?size=80" alt="OpenCode" width="40" height="40" /></a><br/>
+<strong>OpenCode</strong><br/>
+<sub>MCP server</sub>
+</td>
+<td align="center" width="12.5%">
+<a href="https://github.com/openai/codex"><img src="https://cdn.simpleicons.org/openai/000000" alt="Codex CLI" width="40" height="40" /></a><br/>
+<strong>Codex CLI</strong><br/>
+<sub>MCP server</sub>
+</td>
+<td align="center" width="12.5%">
+<a href="https://github.com/cline/cline"><img src="https://github.com/cline.png?size=80" alt="Cline" width="40" height="40" /></a><br/>
+<strong>Cline</strong><br/>
+<sub>MCP server</sub>
+</td>
+<td align="center" width="12.5%">
+<a href="https://github.com/NousResearch/hermes-agent"><img src="https://github.com/NousResearch.png?size=80" alt="Hermes" width="40" height="40" /></a><br/>
+<strong>Hermes</strong><br/>
+<sub>MCP + <a href="integrations/hermes/">plugin</a></sub>
+</td>
 </tr>
 <tr>
-<td align="center" width="12.5%"><strong>Goose</strong><br/><sub>MCP server</sub></td>
-<td align="center" width="12.5%"><strong>Kilo Code</strong><br/><sub>MCP server</sub></td>
-<td align="center" width="12.5%"><strong>Aider</strong><br/><sub>REST API</sub></td>
-<td align="center" width="12.5%"><strong>Claude Desktop</strong><br/><sub>MCP server</sub></td>
-<td align="center" width="12.5%"><strong>Windsurf</strong><br/><sub>MCP server</sub></td>
-<td align="center" width="12.5%"><strong>Roo Code</strong><br/><sub>MCP server</sub></td>
-<td align="center" width="12.5%"><strong>Claude SDK</strong><br/><sub>AgentSDKProvider</sub></td>
-<td align="center" width="12.5%"><strong>Any agent</strong><br/><sub>REST API (109 endpoints)</sub></td>
+<td align="center" width="12.5%">
+<a href="https://github.com/block/goose"><img src="https://github.com/block.png?size=80" alt="Goose" width="40" height="40" /></a><br/>
+<strong>Goose</strong><br/>
+<sub>MCP server</sub>
+</td>
+<td align="center" width="12.5%">
+<a href="https://github.com/kilo-org/kilocode"><img src="https://github.com/kilo-org.png?size=80" alt="Kilo Code" width="40" height="40" /></a><br/>
+<strong>Kilo Code</strong><br/>
+<sub>MCP server</sub>
+</td>
+<td align="center" width="12.5%">
+<a href="https://github.com/Aider-AI/aider"><img src="https://github.com/Aider-AI.png?size=80" alt="Aider" width="40" height="40" /></a><br/>
+<strong>Aider</strong><br/>
+<sub>REST API</sub>
+</td>
+<td align="center" width="12.5%">
+<a href="https://claude.ai/download"><img src="https://cdn.simpleicons.org/anthropic/D97757" alt="Claude Desktop" width="40" height="40" /></a><br/>
+<strong>Claude Desktop</strong><br/>
+<sub>MCP server</sub>
+</td>
+<td align="center" width="12.5%">
+<a href="https://windsurf.com"><img src="https://cdn.simpleicons.org/windsurf/30B894" alt="Windsurf" width="40" height="40" /></a><br/>
+<strong>Windsurf</strong><br/>
+<sub>MCP server</sub>
+</td>
+<td align="center" width="12.5%">
+<a href="https://github.com/RooCodeInc/Roo-Code"><img src="https://github.com/RooCodeInc.png?size=80" alt="Roo Code" width="40" height="40" /></a><br/>
+<strong>Roo Code</strong><br/>
+<sub>MCP server</sub>
+</td>
+<td align="center" width="12.5%">
+<a href="https://github.com/anthropics/claude-agent-sdk-typescript"><img src="https://cdn.simpleicons.org/anthropic/D97757" alt="Claude SDK" width="40" height="40" /></a><br/>
+<strong>Claude SDK</strong><br/>
+<sub>AgentSDKProvider</sub>
+</td>
+<td align="center" width="12.5%">
+<img src="https://img.shields.io/badge/109-endpoints-1f6feb?style=flat-square" alt="REST API" /><br/>
+<strong>Any agent</strong><br/>
+<sub>REST API</sub>
+</td>
 </tr>
 </table>
+
+<p align="center">
+  <sub>Works with <strong>any</strong> agent that speaks MCP or HTTP. One server, memories shared across all of them.</sub>
+</p>
 
 ---
 
