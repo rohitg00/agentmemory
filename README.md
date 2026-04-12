@@ -146,10 +146,6 @@ You explain the same architecture every session. You re-discover the same bugs. 
 npx @agentmemory/agentmemory
 ```
 
-<p align="center">
-  <img src="assets/tags/new-v082.svg" alt="New in v0.8.2" height="28" />
-</p>
-
 > **New in v0.8.2** — Security hardening (default localhost, viewer CSP nonces, mesh auth), `agentmemory demo` command, benchmark comparison vs mem0/Letta/Khoj, OpenClaw gateway plugin, real-time token savings in CLI + viewer.
 
 ---
