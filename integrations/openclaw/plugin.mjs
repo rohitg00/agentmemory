@@ -17,11 +17,11 @@ const DEFAULT_TIMEOUT_MS = 5000;
 export class AgentmemoryPlugin {
   constructor(config = {}) {
     this.enabled = config.enabled !== false;
-    this.baseUrl = config.base_url || DEFAULT_BASE_URL;
-    this.tokenBudget = config.token_budget || 2000;
-    this.minConfidence = config.min_confidence || 0.5;
+    this.baseUrl = config.base_url ?? DEFAULT_BASE_URL;
+    this.tokenBudget = config.token_budget ?? 2000;
+    this.minConfidence = config.min_confidence ?? 0.5;
     this.fallbackOnError = config.fallback_on_error !== false;
-    this.timeoutMs = config.timeout_ms || DEFAULT_TIMEOUT_MS;
+    this.timeoutMs = config.timeout_ms ?? DEFAULT_TIMEOUT_MS;
     this.secret = process.env.AGENTMEMORY_SECRET;
   }
 
@@ -68,9 +68,8 @@ export class AgentmemoryPlugin {
     if (!this.enabled) return;
     const result = await this.postJson("/agentmemory/context", {
       sessionId: ctx.sessionId,
-      query: ctx.userMessage || "",
-      tokenBudget: this.tokenBudget,
-      minConfidence: this.minConfidence,
+      project: ctx.project || ctx.cwd,
+      budget: this.tokenBudget,
     });
     if (result?.context) ctx.injectContext(result.context);
   }
