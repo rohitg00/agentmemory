@@ -5,6 +5,7 @@ import { existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import * as p from "@clack/prompts";
+import { generateId } from "./state/schema.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
@@ -284,10 +285,9 @@ type DemoSession = {
 type SearchResult = { query: string; hits: number; topTitle: string };
 
 function buildDemoSessions(): DemoSession[] {
-  const now = Date.now();
   return [
     {
-      id: `demo-session-1-${now}`,
+      id: generateId("demo"),
       title: "Session 1: JWT auth setup",
       observations: [
         {
@@ -310,7 +310,7 @@ function buildDemoSessions(): DemoSession[] {
       ],
     },
     {
-      id: `demo-session-2-${now + 1}`,
+      id: generateId("demo"),
       title: "Session 2: Database migration debugging",
       observations: [
         {
@@ -328,7 +328,7 @@ function buildDemoSessions(): DemoSession[] {
       ],
     },
     {
-      id: `demo-session-3-${now + 2}`,
+      id: generateId("demo"),
       title: "Session 3: Rate limiting",
       observations: [
         {
@@ -361,12 +361,31 @@ async function postJson<T = unknown>(
   }
 }
 
+async function postJsonStrict<T = unknown>(
+  url: string,
+  body: unknown,
+  timeoutMs = 5000,
+): Promise<T | null> {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  if (!res.ok) {
+    const errBody = await res.text().catch(() => "");
+    const suffix = errBody ? ` — ${errBody.slice(0, 200)}` : "";
+    throw new Error(`POST ${url} failed: ${res.status} ${res.statusText}${suffix}`);
+  }
+  return (await res.json().catch(() => null)) as T | null;
+}
+
 async function seedDemoSession(
   base: string,
   project: string,
   session: DemoSession,
 ): Promise<number> {
-  await postJson(`${base}/agentmemory/session/start`, {
+  await postJsonStrict(`${base}/agentmemory/session/start`, {
     sessionId: session.id,
     project,
     cwd: project,
@@ -374,23 +393,41 @@ async function seedDemoSession(
 
   let stored = 0;
   for (const obs of session.observations) {
-    const result = await postJson<{ observationId?: string }>(
-      `${base}/agentmemory/observe`,
-      {
-        hookType: "post_tool_use",
-        sessionId: session.id,
-        timestamp: new Date().toISOString(),
-        data: {
-          tool_name: obs.toolName,
-          tool_input: obs.toolInput,
-          tool_output: obs.toolOutput,
-        },
+    const url = `${base}/agentmemory/observe`;
+    const payload = {
+      hookType: "post_tool_use",
+      sessionId: session.id,
+      timestamp: new Date().toISOString(),
+      data: {
+        tool_name: obs.toolName,
+        tool_input: obs.toolInput,
+        tool_output: obs.toolOutput,
       },
-    );
-    if (result) stored++;
+    };
+
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(5000),
+      });
+      if (res.ok) {
+        stored++;
+      } else {
+        const body = await res.text().catch(() => "");
+        p.log.warn(
+          `observe failed for ${obs.toolName}: ${res.status} ${res.statusText}${body ? ` — ${body.slice(0, 160)}` : ""}`,
+        );
+      }
+    } catch (err) {
+      p.log.warn(
+        `observe request failed for ${obs.toolName}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   }
 
-  await postJson(`${base}/agentmemory/session/end`, { sessionId: session.id });
+  await postJsonStrict(`${base}/agentmemory/session/end`, { sessionId: session.id });
   return stored;
 }
 

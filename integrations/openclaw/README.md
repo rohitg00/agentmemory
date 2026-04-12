@@ -52,9 +52,10 @@ npx @agentmemory/agentmemory
 
 The plugin auto-detects the running server and hooks into the OpenClaw agent loop:
 
-- `prefetch()` injects the most relevant memories before each LLM call (token-budgeted)
-- `capture()` saves every tool use, error, and decision after execution
-- `consolidate()` compresses raw observations into structured memory at session end
+- `onSessionStart` starts a new session on the agentmemory server and injects any returned context
+- `onPreLlmCall` injects token-budgeted memories before each LLM call (BM25 + vector + graph fusion)
+- `onPostToolUse` records every tool use, error, and decision after execution
+- `onSessionEnd` marks the session complete so raw observations can be compressed into structured memory
 
 Configure via `~/.openclaw/plugins/memory/agentmemory/config.yaml`:
 
@@ -71,7 +72,7 @@ min_confidence: 0.5
 
 When a session starts, agentmemory injects ~1,900 tokens of the most relevant past context:
 
-```
+```text
 Project profile:
   - Auth uses JWT middleware in src/middleware/auth.ts (jose, not jsonwebtoken)
   - Tests in test/auth.test.ts cover token validation

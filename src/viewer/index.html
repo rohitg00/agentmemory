@@ -1027,7 +1027,9 @@
       var savings = estFull > 0 ? Math.round((1 - estInjected / Math.max(estFull, 1)) * 100) : 0;
       if (savings < 0) savings = 0;
       var tokensSaved = Math.max(0, estFull - estInjected);
-      var costCents = Math.round(tokensSaved / 1000 * 0.3);
+      // Rate: $0.30 per 1K tokens (mid-tier model baseline)
+      var costDollars = tokensSaved / 1000 * 0.3;
+      var costCents = Math.round(costDollars * 100);
       var costStr = costCents >= 100 ? '$' + (costCents / 100).toFixed(2) : costCents + 'ct';
       html += '<div class="stat-card"><div class="label">Token Savings</div><div class="value">' + savings + '%</div><div class="sub">~' + tokensSaved.toLocaleString() + ' tokens · ' + costStr + ' saved</div></div>';
       html += '</div>';
