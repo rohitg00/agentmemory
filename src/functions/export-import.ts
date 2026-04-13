@@ -25,6 +25,7 @@ import type {
   ExportPagination,
   AccessLogExport,
 } from "../types.js";
+import { normalizeAccessLog } from "./access-tracker.js";
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { VERSION } from "../version.js";
@@ -187,6 +188,7 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
       const MAX_SUMMARIES = 10_000;
       const MAX_OBS_PER_SESSION = 5_000;
       const MAX_TOTAL_OBSERVATIONS = 500_000;
+      const MAX_ACCESS_LOGS = 50_000;
 
       if (!Array.isArray(importData.sessions)) {
         return { success: false, error: "sessions must be an array" };
@@ -524,10 +526,29 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
         }
       }
       if (importData.accessLogs) {
-        for (const log of importData.accessLogs) {
+        if (!Array.isArray(importData.accessLogs)) {
+          return { success: false, error: "accessLogs must be an array" };
+        }
+        if (importData.accessLogs.length > MAX_ACCESS_LOGS) {
+          return {
+            success: false,
+            error: `Too many access logs (max ${MAX_ACCESS_LOGS})`,
+          };
+        }
+        const memoryIds = new Set<string>(
+          importData.memories.map((m) => m.id),
+        );
+        for (const raw of importData.accessLogs) {
+          const log = normalizeAccessLog(raw);
+          if (!log.memoryId || !memoryIds.has(log.memoryId)) continue;
           if (strategy === "skip") {
-            const existing = await kv.get(KV.accessLog, log.memoryId).catch(() => null);
-            if (existing) { stats.skipped++; continue; }
+            const existing = await kv
+              .get(KV.accessLog, log.memoryId)
+              .catch(() => null);
+            if (existing) {
+              stats.skipped++;
+              continue;
+            }
           }
           await kv.set(KV.accessLog, log.memoryId, log);
         }

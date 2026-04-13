@@ -85,6 +85,7 @@ See GitHub Security Advisories for CVSS scores and affected version ranges.
 
 ---
 
+[0.8.3]: https://github.com/rohitg00/agentmemory/compare/v0.8.2...v0.8.3
 [0.8.2]: https://github.com/rohitg00/agentmemory/compare/v0.8.1...v0.8.2
 [0.8.1]: https://github.com/rohitg00/agentmemory/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/rohitg00/agentmemory/releases/tag/v0.8.0

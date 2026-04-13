@@ -139,4 +139,111 @@ describe("access-tracker", () => {
     expect(kv.store.get("mem:access")?.has("")).toBeFalsy();
     expect(kv.store.get("mem:access")?.get("mem_x")).toBeTruthy();
   });
+
+  it("deleteAccessLog removes the target entry and leaves siblings intact", async () => {
+    const { recordAccess, deleteAccessLog, getAccessLog } = await import(
+      "../src/functions/access-tracker.js"
+    );
+    const kv = mockKV();
+    await recordAccess(kv as never, "mem_a");
+    await recordAccess(kv as never, "mem_b");
+
+    await deleteAccessLog(kv as never, "mem_a");
+
+    expect(kv.store.get("mem:access")?.has("mem_a")).toBe(false);
+    expect((await getAccessLog(kv as never, "mem_b")).count).toBe(1);
+  });
+
+  it("deleteAccessLog is a no-op for unknown ids and empty ids", async () => {
+    const { deleteAccessLog, recordAccess } = await import(
+      "../src/functions/access-tracker.js"
+    );
+    const kv = mockKV();
+    await recordAccess(kv as never, "mem_keep");
+
+    await deleteAccessLog(kv as never, "");
+    await deleteAccessLog(kv as never, "mem_unknown");
+
+    expect(kv.store.get("mem:access")?.has("mem_keep")).toBe(true);
+  });
+
+  it("deleteAccessLog swallows kv.delete errors", async () => {
+    const { deleteAccessLog } = await import(
+      "../src/functions/access-tracker.js"
+    );
+    const kv = mockKV();
+    kv.delete = (async () => {
+      throw new Error("boom");
+    }) as never;
+
+    await expect(
+      deleteAccessLog(kv as never, "mem_x"),
+    ).resolves.toBeUndefined();
+  });
+});
+
+describe("normalizeAccessLog", () => {
+  it("returns a well-formed empty log for nullish / non-object input", async () => {
+    const { normalizeAccessLog } = await import(
+      "../src/functions/access-tracker.js"
+    );
+    const log = normalizeAccessLog(null);
+    expect(log).toEqual({
+      memoryId: "",
+      count: 0,
+      lastAt: "",
+      recent: [],
+    });
+    expect(normalizeAccessLog(undefined).count).toBe(0);
+    expect(normalizeAccessLog("garbage").count).toBe(0);
+  });
+
+  it("coerces count to a non-negative integer", async () => {
+    const { normalizeAccessLog } = await import(
+      "../src/functions/access-tracker.js"
+    );
+    expect(normalizeAccessLog({ count: -5 }).count).toBe(0);
+    expect(normalizeAccessLog({ count: 3.7 }).count).toBe(3);
+    expect(normalizeAccessLog({ count: NaN }).count).toBe(0);
+    expect(normalizeAccessLog({ count: "123" }).count).toBe(0);
+  });
+
+  it("preserves large lifetime counts (NOT capped at ring buffer size)", async () => {
+    const { normalizeAccessLog } = await import(
+      "../src/functions/access-tracker.js"
+    );
+    const log = normalizeAccessLog({ memoryId: "m", count: 500, recent: [1] });
+    expect(log.count).toBe(500);
+  });
+
+  it("truncates recent[] to the last 20 entries and drops non-finite values", async () => {
+    const { normalizeAccessLog } = await import(
+      "../src/functions/access-tracker.js"
+    );
+    const input = Array.from({ length: 40 }, (_, i) => i * 1000);
+    const withGarbage = [...input, NaN, Infinity, "bad" as unknown as number];
+    const log = normalizeAccessLog({ recent: withGarbage });
+    expect(log.recent.length).toBe(20);
+    expect(log.recent[0]).toBe(20_000);
+    expect(log.recent[19]).toBe(39_000);
+  });
+
+  it("count is at least recent.length when count < recent.length", async () => {
+    const { normalizeAccessLog } = await import(
+      "../src/functions/access-tracker.js"
+    );
+    const log = normalizeAccessLog({
+      count: 2,
+      recent: [1, 2, 3, 4, 5],
+    });
+    expect(log.count).toBeGreaterThanOrEqual(5);
+  });
+
+  it("fills in memoryId only when field is a string", async () => {
+    const { normalizeAccessLog } = await import(
+      "../src/functions/access-tracker.js"
+    );
+    expect(normalizeAccessLog({ memoryId: "mem_x" }).memoryId).toBe("mem_x");
+    expect(normalizeAccessLog({ memoryId: 42 }).memoryId).toBe("");
+  });
 });

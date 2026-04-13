@@ -217,6 +217,47 @@ describe("RetentionScoring with access log (issue #119)", () => {
     expect(Number.isFinite(entry.reinforcementBoost)).toBe(true);
   });
 
+  it("retention scoring normalizes malformed mem:access rows", async () => {
+    const { registerRetentionFunctions } = await import(
+      "../src/functions/retention.js"
+    );
+    const memories = [
+      makeMemory("mem_corrupt", 10),
+      makeMemory("mem_clean", 10),
+    ];
+    const sdk = mockSdk();
+    const kv = mockKV(memories);
+
+    // Seed the access namespace directly with garbage rows.
+    await kv.set("mem:access", "mem_corrupt", {
+      memoryId: "mem_corrupt",
+      count: "not-a-number" as unknown as number,
+      lastAt: 42 as unknown as string,
+      recent: [NaN, "bad" as unknown as number, 5_000, Infinity, -1_000],
+    });
+    await kv.set("mem:access", "mem_clean", {
+      memoryId: "mem_clean",
+      count: -7,
+      lastAt: "",
+      recent: Array.from({ length: 50 }, (_, i) => i * 1000),
+    });
+
+    registerRetentionFunctions(sdk as never, kv as never);
+
+    const result = (await sdk.trigger("mem::retention-score", {})) as any;
+    const corrupt = result.scores.find(
+      (s: any) => s.memoryId === "mem_corrupt",
+    );
+    const clean = result.scores.find((s: any) => s.memoryId === "mem_clean");
+
+    expect(Number.isFinite(corrupt.score)).toBe(true);
+    expect(Number.isFinite(corrupt.reinforcementBoost)).toBe(true);
+    expect(corrupt.accessCount).toBeGreaterThanOrEqual(0);
+    expect(Number.isFinite(clean.score)).toBe(true);
+    // recent[] was 50 entries; normalization should have capped at 20.
+    expect(clean.accessCount).toBeGreaterThanOrEqual(20);
+  });
+
   it("retention scoring survives kv.list(mem:access) failures", async () => {
     const { registerRetentionFunctions } = await import(
       "../src/functions/retention.js"

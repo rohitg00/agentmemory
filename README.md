@@ -589,8 +589,8 @@ npm install @xenova/transformers
 Run without the full server — for any MCP client. Either of these works:
 
 ```bash
-npx @agentmemory/agentmemory mcp   # canonical (always available)
-npx agentmemory-mcp                 # shim package alias
+npx -y @agentmemory/agentmemory mcp   # canonical (always available)
+npx -y agentmemory-mcp                 # shim package alias
 ```
 
 Or add to your agent's MCP config:

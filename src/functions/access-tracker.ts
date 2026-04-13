@@ -18,13 +18,21 @@ export function emptyAccessLog(memoryId: string): AccessLog {
 
 export function normalizeAccessLog(raw: unknown): AccessLog {
   const r = (raw ?? {}) as Partial<AccessLog>;
+  const rawCount =
+    typeof r.count === "number" && Number.isFinite(r.count) ? r.count : 0;
+  const count = Math.max(0, Math.floor(rawCount));
+  const rawRecent = Array.isArray(r.recent)
+    ? r.recent.filter(
+        (x): x is number => typeof x === "number" && Number.isFinite(x),
+      )
+    : [];
+  const recent =
+    rawRecent.length > RECENT_CAP ? rawRecent.slice(-RECENT_CAP) : rawRecent;
   return {
     memoryId: typeof r.memoryId === "string" ? r.memoryId : "",
-    count: typeof r.count === "number" && Number.isFinite(r.count) ? r.count : 0,
+    count: Math.max(count, recent.length),
     lastAt: typeof r.lastAt === "string" ? r.lastAt : "",
-    recent: Array.isArray(r.recent)
-      ? r.recent.filter((x): x is number => typeof x === "number" && Number.isFinite(x))
-      : [],
+    recent,
   };
 }
 
@@ -89,7 +97,9 @@ export async function deleteAccessLog(
 ): Promise<void> {
   if (!memoryId) return;
   try {
-    await kv.delete(KV.accessLog, memoryId);
+    await withKeyedLock(`mem:access:${memoryId}`, async () => {
+      await kv.delete(KV.accessLog, memoryId);
+    });
   } catch {}
 }
 
