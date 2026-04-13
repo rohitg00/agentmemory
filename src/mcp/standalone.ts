@@ -5,6 +5,7 @@ import { createStdioTransport } from "./transport.js";
 import { getVisibleTools } from "./tools-registry.js";
 import { getStandalonePersistPath } from "../config.js";
 import { VERSION } from "../version.js";
+import { generateId } from "../state/schema.js";
 
 const IMPLEMENTED_TOOLS = new Set([
   "memory_save",
@@ -31,7 +32,8 @@ export async function handleToolCall(
     case "memory_save": {
       const content = args.content as string;
       if (!content?.trim()) throw new Error("content is required");
-      const id = `mem_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+      const id = generateId("mem");
+      const isoNow = new Date().toISOString();
       await kvInstance.set("mem:memories", id, {
         id,
         type: (args.type as string) || "fact",
@@ -43,8 +45,8 @@ export async function handleToolCall(
         files: args.files
           ? (args.files as string).split(",").map((f) => f.trim())
           : [],
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
+        createdAt: isoNow,
+        updatedAt: isoNow,
         strength: 7,
         version: 1,
         isLatest: true,
