@@ -13,12 +13,21 @@ vi.mock("node:fs", () => ({
   mkdirSync: vi.fn(),
 }));
 
+vi.mock("../src/mcp/transport.js", () => ({
+  createStdioTransport: vi.fn(() => ({ start: vi.fn(), stop: vi.fn() })),
+}));
+
+vi.mock("../src/config.js", () => ({
+  getStandalonePersistPath: vi.fn(() => "/tmp/test-standalone.json"),
+}));
+
 import {
   getAllTools,
   CORE_TOOLS,
   V040_TOOLS,
 } from "../src/mcp/tools-registry.js";
 import { InMemoryKV } from "../src/mcp/in-memory-kv.js";
+import { handleToolCall } from "../src/mcp/standalone.js";
 import { writeFileSync } from "node:fs";
 
 describe("Tools Registry", () => {
@@ -109,5 +118,54 @@ describe("InMemoryKV", () => {
     expect(result).toBe("second");
     const list = await kv.list("scope1");
     expect(list.length).toBe(1);
+  });
+});
+
+describe("handleToolCall", () => {
+  beforeEach(() => {
+    vi.mocked(writeFileSync).mockClear();
+  });
+
+  it("memory_save persists to disk immediately after saving", async () => {
+    const kv = new InMemoryKV("/tmp/test-handle.json");
+    const result = await handleToolCall(
+      "memory_save",
+      { content: "Test memory content" },
+      kv,
+    );
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.saved).toMatch(/^mem_/);
+    expect(writeFileSync).toHaveBeenCalledWith(
+      "/tmp/test-handle.json",
+      expect.any(String),
+      "utf-8",
+    );
+  });
+
+  it("memory_save without persist path does not call writeFileSync", async () => {
+    const kv = new InMemoryKV();
+    await handleToolCall("memory_save", { content: "No persist path" }, kv);
+    expect(writeFileSync).not.toHaveBeenCalled();
+  });
+
+  it("memory_save throws when content is missing", async () => {
+    const kv = new InMemoryKV();
+    await expect(
+      handleToolCall("memory_save", {}, kv),
+    ).rejects.toThrow("content is required");
+  });
+
+  it("memory_recall returns matching memories", async () => {
+    const kv = new InMemoryKV();
+    await handleToolCall("memory_save", { content: "TypeScript is great" }, kv);
+    await handleToolCall("memory_save", { content: "Python is also great" }, kv);
+    const result = await handleToolCall(
+      "memory_recall",
+      { query: "typescript" },
+      kv,
+    );
+    const memories = JSON.parse(result.content[0].text);
+    expect(memories).toHaveLength(1);
+    expect(memories[0].content).toBe("TypeScript is great");
   });
 });
