@@ -7,6 +7,7 @@ import type {
 } from "../types.js";
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
+import { recordAccessBatch } from "./access-tracker.js";
 
 export function registerTimelineFunction(sdk: ISdk, kv: StateKV): void {
   sdk.registerFunction(
@@ -94,6 +95,11 @@ export function registerTimelineFunction(sdk: ISdk, kv: StateKV): void {
           relativePosition: i - anchorIdx,
         });
       }
+
+      void recordAccessBatch(
+        kv,
+        entries.map((e) => e.observation.id),
+      );
 
       ctx.logger.info("Timeline retrieved", {
         anchor: data.anchor,

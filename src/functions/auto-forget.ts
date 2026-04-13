@@ -3,6 +3,7 @@ import { getContext } from "iii-sdk";
 import type { Memory, CompressedObservation, Session } from "../types.js";
 import { KV, jaccardSimilarity } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
+import { deleteAccessLog } from "./access-tracker.js";
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const CONTRADICTION_THRESHOLD = 0.9;
@@ -47,6 +48,7 @@ export function registerAutoForgetFunction(sdk: ISdk, kv: StateKV): void {
             deletedIds.add(mem.id);
             if (!dryRun) {
               await kv.delete(KV.memories, mem.id);
+              await deleteAccessLog(kv, mem.id);
             }
           }
         }

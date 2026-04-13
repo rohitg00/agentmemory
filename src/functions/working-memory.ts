@@ -4,6 +4,7 @@ import type { Memory, CompressedObservation, ContextBlock } from "../types.js";
 import { KV, generateId } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { recordAudit } from "./audit.js";
+import { recordAccessBatch } from "./access-tracker.js";
 
 const CORE_SCOPE = "mem:core-memory";
 
@@ -160,12 +161,16 @@ export function registerWorkingMemoryFunctions(
           );
         });
 
+      const archivalIds: string[] = [];
       for (const mem of active) {
         const tokens = estimateTokens(mem.content);
         if (usedTokens + tokens > budget) continue;
         archivalLines.push(`- [${mem.type}] ${mem.title}: ${mem.content}`);
+        archivalIds.push(mem.id);
         usedTokens += tokens;
       }
+
+      void recordAccessBatch(kv, archivalIds);
 
       const pagedOut = active.length - archivalLines.length;
 

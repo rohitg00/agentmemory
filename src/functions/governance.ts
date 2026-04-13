@@ -4,6 +4,7 @@ import type { Memory, GovernanceFilter, AuditEntry } from "../types.js";
 import { KV } from "../state/schema.js";
 import type { StateKV } from "../state/kv.js";
 import { recordAudit, queryAudit } from "./audit.js";
+import { deleteAccessLog } from "./access-tracker.js";
 
 export function registerGovernanceFunction(sdk: ISdk, kv: StateKV): void {
   sdk.registerFunction(
@@ -23,6 +24,7 @@ export function registerGovernanceFunction(sdk: ISdk, kv: StateKV): void {
         const mem = await kv.get<Memory>(KV.memories, id);
         if (mem) {
           await kv.delete(KV.memories, id);
+          await deleteAccessLog(kv, id);
           deleted++;
         }
       }
@@ -102,6 +104,7 @@ export function registerGovernanceFunction(sdk: ISdk, kv: StateKV): void {
 
       for (const mem of candidates) {
         await kv.delete(KV.memories, mem.id);
+        await deleteAccessLog(kv, mem.id);
       }
 
       await recordAudit(

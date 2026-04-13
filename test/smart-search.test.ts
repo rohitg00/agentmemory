@@ -166,4 +166,30 @@ describe("Smart Search Function", () => {
     expect(result.mode).toBe("expanded");
     expect(result.results.length).toBe(0);
   });
+
+  it("compact mode records access for every returned observation id (#119)", async () => {
+    await sdk.trigger("mem::smart-search", { query: "auth" });
+    // recordAccessBatch is fire-and-forget — let the microtask queue drain.
+    await new Promise((r) => setImmediate(r));
+
+    const log1 = (await kv.get("mem:access", "obs_1")) as {
+      count: number;
+    } | null;
+    const log2 = (await kv.get("mem:access", "obs_2")) as {
+      count: number;
+    } | null;
+
+    expect(log1?.count).toBe(1);
+    expect(log2?.count).toBe(1);
+  });
+
+  it("expand mode records access for expanded observation ids (#119)", async () => {
+    await sdk.trigger("mem::smart-search", { expandIds: ["obs_1"] });
+    await new Promise((r) => setImmediate(r));
+
+    const log = (await kv.get("mem:access", "obs_1")) as {
+      count: number;
+    } | null;
+    expect(log?.count).toBe(1);
+  });
 });

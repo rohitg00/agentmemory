@@ -20,6 +20,7 @@ Commands:
   (default)          Start agentmemory worker
   status             Show connection status, memory count, and health
   demo               Seed sample sessions and show recall in action
+  mcp                Start standalone MCP server (no engine required)
 
 Options:
   --help, -h         Show this help
@@ -31,7 +32,8 @@ Quick start:
   npx @agentmemory/agentmemory          # start with local iii-engine or Docker
   npx @agentmemory/agentmemory status   # check health
   npx @agentmemory/agentmemory demo     # try it in 30 seconds (needs server running)
-  npx agentmemory-mcp                   # standalone MCP server (no engine)
+  npx @agentmemory/agentmemory mcp      # standalone MCP server (no engine)
+  npx agentmemory-mcp                   # same as above (shim package)
 `);
   process.exit(0);
 }
@@ -506,9 +508,14 @@ async function runDemo() {
   p.log.success("agentmemory is working. Point your agent at it and get back to coding.");
 }
 
+async function runMcp(): Promise<void> {
+  await import("./mcp/standalone.js");
+}
+
 const commands: Record<string, () => Promise<void>> = {
   status: runStatus,
   demo: runDemo,
+  mcp: runMcp,
 };
 
 const handler = commands[args[0] ?? ""] ?? main;

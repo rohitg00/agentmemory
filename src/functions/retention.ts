@@ -8,6 +8,12 @@ import type {
 } from "../types.js";
 import { KV } from "../state/schema.js";
 import type { StateKV } from "../state/kv.js";
+import type { AccessLog } from "./access-tracker.js";
+import {
+  emptyAccessLog,
+  deleteAccessLog,
+  normalizeAccessLog,
+} from "./access-tracker.js";
 
 const DEFAULT_DECAY: DecayConfig = {
   lambda: 0.01,
@@ -19,27 +25,35 @@ const DEFAULT_DECAY: DecayConfig = {
   },
 };
 
+function computeReinforcementBoost(
+  accessTimestamps: number[],
+  sigma: number,
+): number {
+  const now = Date.now();
+  let boost = 0;
+  for (const tAccess of accessTimestamps) {
+    if (!Number.isFinite(tAccess)) continue;
+    const daysSinceAccess = (now - tAccess) / (1000 * 60 * 60 * 24);
+    if (daysSinceAccess > 0) {
+      boost += 1 / daysSinceAccess;
+    }
+  }
+  return boost * sigma;
+}
+
 function computeRetention(
   salience: number,
   createdAt: string,
   accessTimestamps: number[],
   config: DecayConfig,
 ): number {
-  const now = Date.now();
-  const deltaT = (now - new Date(createdAt).getTime()) / (1000 * 60 * 60 * 24);
-
+  const deltaT =
+    (Date.now() - new Date(createdAt).getTime()) / (1000 * 60 * 60 * 24);
   const temporalDecay = Math.exp(-config.lambda * deltaT);
-
-  let reinforcementBoost = 0;
-  for (const tAccess of accessTimestamps) {
-    const daysSinceAccess =
-      (now - tAccess) / (1000 * 60 * 60 * 24);
-    if (daysSinceAccess > 0) {
-      reinforcementBoost += 1 / daysSinceAccess;
-    }
-  }
-  reinforcementBoost *= config.sigma;
-
+  const reinforcementBoost = computeReinforcementBoost(
+    accessTimestamps,
+    config.sigma,
+  );
   return Math.min(1, salience * temporalDecay + reinforcementBoost);
 }
 
@@ -83,33 +97,48 @@ export function registerRetentionFunctions(
       const ctx = getContext();
       const config = { ...DEFAULT_DECAY, ...data.config };
 
-      const memories = await kv.list<Memory>(KV.memories);
-      const semanticMems = await kv.list<SemanticMemory>(KV.semantic);
+      const [memories, semanticMems, allLogs] = await Promise.all([
+        kv.list<Memory>(KV.memories),
+        kv.list<SemanticMemory>(KV.semantic),
+        kv.list<unknown>(KV.accessLog).catch(() => [] as unknown[]),
+      ]);
+      const logsById = new Map<string, AccessLog>();
+      for (const raw of allLogs) {
+        const log = normalizeAccessLog(raw);
+        if (log.memoryId) logsById.set(log.memoryId, log);
+      }
 
       const scores: RetentionScore[] = [];
 
+      const computeDecay = (createdAt: string): number =>
+        Math.exp(
+          -config.lambda *
+            ((Date.now() - new Date(createdAt).getTime()) /
+              (1000 * 60 * 60 * 24)),
+        );
+
       for (const mem of memories) {
         if (!mem.isLatest) continue;
-        const salience = computeSalience(mem, 0);
-        const score = computeRetention(
-          salience,
-          mem.createdAt,
-          [],
-          config,
+        const log = logsById.get(mem.id) ?? emptyAccessLog(mem.id);
+        const salience = computeSalience(mem, log.count);
+        const temporalDecay = computeDecay(mem.createdAt);
+        const reinforcementBoost = computeReinforcementBoost(
+          log.recent,
+          config.sigma,
+        );
+        const score = Math.min(
+          1,
+          salience * temporalDecay + reinforcementBoost,
         );
 
         const entry: RetentionScore = {
           memoryId: mem.id,
           score,
           salience,
-          temporalDecay: Math.exp(
-            -config.lambda *
-              ((Date.now() - new Date(mem.createdAt).getTime()) /
-                (1000 * 60 * 60 * 24)),
-          ),
-          reinforcementBoost: 0,
-          lastAccessed: mem.updatedAt,
-          accessCount: 0,
+          temporalDecay,
+          reinforcementBoost,
+          lastAccessed: log.lastAt || mem.updatedAt,
+          accessCount: log.count,
         };
 
         scores.push(entry);
@@ -117,34 +146,42 @@ export function registerRetentionFunctions(
       }
 
       for (const sem of semanticMems) {
-        const accessTimestamps = sem.lastAccessedAt
-          ? [new Date(sem.lastAccessedAt).getTime()]
-          : [];
-        const salience = computeSalience(sem, sem.accessCount);
-        const score = computeRetention(
-          salience,
-          sem.createdAt,
+        const log = logsById.get(sem.id) ?? emptyAccessLog(sem.id);
+
+        // Pre-0.8.3 fallback: use sem.lastAccessedAt only when mem:access is empty.
+        let accessTimestamps: number[];
+        let effectiveCount: number;
+        if (log.recent.length > 0 || log.count > 0) {
+          accessTimestamps = log.recent;
+          effectiveCount = log.count;
+        } else if (sem.lastAccessedAt) {
+          const legacyTs = Date.parse(sem.lastAccessedAt);
+          accessTimestamps = Number.isFinite(legacyTs) ? [legacyTs] : [];
+          effectiveCount = sem.accessCount;
+        } else {
+          accessTimestamps = [];
+          effectiveCount = sem.accessCount;
+        }
+
+        const salience = computeSalience(sem, effectiveCount);
+        const temporalDecay = computeDecay(sem.createdAt);
+        const reinforcementBoost = computeReinforcementBoost(
           accessTimestamps,
-          config,
+          config.sigma,
+        );
+        const score = Math.min(
+          1,
+          salience * temporalDecay + reinforcementBoost,
         );
 
         const entry: RetentionScore = {
           memoryId: sem.id,
           score,
           salience,
-          temporalDecay: Math.exp(
-            -config.lambda *
-              ((Date.now() - new Date(sem.createdAt).getTime()) /
-                (1000 * 60 * 60 * 24)),
-          ),
-          reinforcementBoost:
-            score - salience * Math.exp(
-              -config.lambda *
-                ((Date.now() - new Date(sem.createdAt).getTime()) /
-                  (1000 * 60 * 60 * 24)),
-            ),
-          lastAccessed: sem.lastAccessedAt,
-          accessCount: sem.accessCount,
+          temporalDecay,
+          reinforcementBoost,
+          lastAccessed: log.lastAt || sem.lastAccessedAt,
+          accessCount: effectiveCount,
         };
 
         scores.push(entry);
@@ -218,6 +255,7 @@ export function registerRetentionFunctions(
         try {
           await kv.delete(KV.memories, candidate.memoryId);
           await kv.delete(KV.retentionScores, candidate.memoryId);
+          await deleteAccessLog(kv, candidate.memoryId);
           evicted++;
         } catch {
           continue;

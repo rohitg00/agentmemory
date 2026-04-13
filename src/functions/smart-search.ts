@@ -7,6 +7,7 @@ import type {
 } from "../types.js";
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
+import { recordAccessBatch } from "./access-tracker.js";
 
 export function registerSmartSearchFunction(
   sdk: ISdk,
@@ -53,6 +54,11 @@ export function registerSmartSearchFunction(
           if (r) expanded.push(r);
         }
 
+        void recordAccessBatch(
+          kv,
+          expanded.map((e) => e.observation.id),
+        );
+
         const truncated = data.expandIds.length > raw.length;
         ctx.logger.info("Smart search expanded", {
           requested: data.expandIds.length,
@@ -78,6 +84,11 @@ export function registerSmartSearchFunction(
         score: r.combinedScore,
         timestamp: r.observation.timestamp,
       }));
+
+      void recordAccessBatch(
+        kv,
+        compact.map((r) => r.obsId),
+      );
 
       ctx.logger.info("Smart search compact", {
         query: data.query,

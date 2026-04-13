@@ -4,6 +4,7 @@ import type { Memory } from "../types.js";
 import { KV, generateId, jaccardSimilarity } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
+import { deleteAccessLog } from "./access-tracker.js";
 
 export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
   sdk.registerFunction(
@@ -124,6 +125,7 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
 
       if (data.memoryId) {
         await kv.delete(KV.memories, data.memoryId);
+        await deleteAccessLog(kv, data.memoryId);
         deleted++;
       }
 

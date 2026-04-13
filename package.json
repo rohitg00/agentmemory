@@ -1,13 +1,20 @@
 {
   "name": "@agentmemory/agentmemory",
-  "version": "0.8.2",
+  "version": "0.8.3",
   "description": "Persistent memory for AI coding agents, powered by iii-engine's three primitives",
   "type": "module",
   "main": "dist/index.mjs",
   "types": "dist/index.d.mts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.mts",
+      "import": "./dist/index.mjs"
+    },
+    "./dist/standalone.mjs": "./dist/standalone.mjs",
+    "./package.json": "./package.json"
+  },
   "bin": {
-    "agentmemory": "dist/cli.mjs",
-    "agentmemory-mcp": "dist/standalone.mjs"
+    "agentmemory": "dist/cli.mjs"
   },
   "scripts": {
     "build": "tsdown && (cp iii-config.yaml dist/ 2>/dev/null || true) && (cp iii-config.docker.yaml dist/ 2>/dev/null || true) && (cp docker-compose.yml dist/ 2>/dev/null || true) && mkdir -p dist/viewer && cp src/viewer/index.html dist/viewer/",

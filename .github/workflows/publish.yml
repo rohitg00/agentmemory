@@ -23,6 +23,38 @@ jobs:
       - run: npm run build
       - run: npm test
 
-      - run: npm publish --provenance --access public
+      - name: Publish @agentmemory/agentmemory
+        run: |
+          if npm view "@agentmemory/agentmemory@$(node -p "require('./package.json').version")" version >/dev/null 2>&1; then
+            echo "Version already published, skipping"
+          else
+            npm publish --provenance --access public
+          fi
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Wait for npm registry propagation
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          for i in $(seq 1 24); do
+            if npm view "@agentmemory/agentmemory@$VERSION" version >/dev/null 2>&1; then
+              echo "Registry propagated after ${i} attempt(s)"
+              exit 0
+            fi
+            echo "Attempt $i: not yet available, sleeping 5s..."
+            sleep 5
+          done
+          echo "ERROR: registry never propagated after 2 minutes" >&2
+          exit 1
+
+      - name: Publish agentmemory-mcp shim
+        working-directory: packages/agentmemory-mcp
+        run: |
+          SHIM_VERSION=$(node -p "require('./package.json').version")
+          if npm view "agentmemory-mcp@$SHIM_VERSION" version >/dev/null 2>&1; then
+            echo "Shim version already published, skipping"
+          else
+            npm publish --provenance --access public
+          fi
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

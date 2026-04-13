@@ -4,7 +4,13 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { existsSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { SnapshotMeta, Session, Memory, GraphNode } from "../types.js";
+import type {
+  SnapshotMeta,
+  Session,
+  Memory,
+  GraphNode,
+  AccessLogExport,
+} from "../types.js";
 import { KV, generateId } from "../state/schema.js";
 import type { StateKV } from "../state/kv.js";
 import { recordAudit } from "./audit.js";
@@ -46,6 +52,9 @@ export function registerSnapshotFunction(
         const sessions = await kv.list<Session>(KV.sessions);
         const memories = await kv.list<Memory>(KV.memories);
         const graphNodes = await kv.list<GraphNode>(KV.graphNodes);
+        const accessLogs = await kv
+          .list<AccessLogExport>(KV.accessLog)
+          .catch(() => [] as AccessLogExport[]);
 
         const observations: Record<string, unknown[]> = {};
         for (const session of sessions) {
@@ -64,6 +73,7 @@ export function registerSnapshotFunction(
           memories,
           graphNodes,
           observations,
+          accessLogs,
         };
 
         writeFileSync(
@@ -171,6 +181,7 @@ export function registerSnapshotFunction(
             string,
             Array<{ id: string } & Record<string, unknown>>
           >;
+          accessLogs?: AccessLogExport[];
         };
 
         if (state.sessions) {
@@ -193,6 +204,11 @@ export function registerSnapshotFunction(
             for (const o of obs) {
               await kv.set(KV.observations(sessionId), o.id, o);
             }
+          }
+        }
+        if (state.accessLogs) {
+          for (const log of state.accessLogs) {
+            await kv.set(KV.accessLog, log.memoryId, log);
           }
         }
 

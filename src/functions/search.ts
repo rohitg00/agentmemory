@@ -4,6 +4,7 @@ import type { CompressedObservation, SearchResult, Session } from '../types.js'
 import { KV } from '../state/schema.js'
 import { StateKV } from '../state/kv.js'
 import { SearchIndex } from '../state/search-index.js'
+import { recordAccessBatch } from './access-tracker.js'
 
 let index: SearchIndex | null = null
 
@@ -124,6 +125,11 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
           })
         }
       }
+
+      void recordAccessBatch(
+        kv,
+        enriched.map((r) => r.observation.id),
+      )
 
       // Avoid logging raw cwd/project (host paths). Log only that filters were active.
       ctx.logger.info('Search completed', {

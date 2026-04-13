@@ -1,0 +1,40 @@
+{
+  "name": "agentmemory-mcp",
+  "version": "0.8.3",
+  "description": "Standalone MCP server for agentmemory — thin shim that re-exposes @agentmemory/agentmemory's MCP entrypoint",
+  "type": "module",
+  "bin": {
+    "agentmemory-mcp": "./bin.mjs"
+  },
+  "files": [
+    "bin.mjs",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "ai",
+    "agent",
+    "memory",
+    "mcp",
+    "agentmemory"
+  ],
+  "author": "Rohit Ghumare <ghumare64@gmail.com>",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/rohitg00/agentmemory",
+    "directory": "packages/agentmemory-mcp"
+  },
+  "homepage": "https://github.com/rohitg00/agentmemory#readme",
+  "bugs": "https://github.com/rohitg00/agentmemory/issues",
+  "dependencies": {
+    "@agentmemory/agentmemory": "~0.8.3"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

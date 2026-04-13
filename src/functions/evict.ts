@@ -8,6 +8,7 @@ import type {
 } from "../types.js";
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
+import { deleteAccessLog } from "./access-tracker.js";
 
 interface EvictionConfig {
   staleSessionDays: number;
@@ -137,6 +138,7 @@ export function registerEvictFunction(sdk: ISdk, kv: StateKV): void {
             evictedMemIds.add(mem.id);
             if (!dryRun) {
               await kv.delete(KV.memories, mem.id).catch(() => {});
+              await deleteAccessLog(kv, mem.id);
             }
           }
         }
@@ -151,6 +153,7 @@ export function registerEvictFunction(sdk: ISdk, kv: StateKV): void {
             stats.nonLatestMemories++;
             if (!dryRun) {
               await kv.delete(KV.memories, mem.id).catch(() => {});
+              await deleteAccessLog(kv, mem.id);
             }
           }
         }
