@@ -35,7 +35,7 @@ an MCP server with all 43 memory tools:
 mcp_servers:
   agentmemory:
     command: npx
-    args: ["-y", "agentmemory-mcp"]
+    args: ["-y", "@agentmemory/mcp"]
 
 Verify it's working with
 `curl http://localhost:3111/agentmemory/health` — it should return
@@ -61,7 +61,7 @@ Add to `~/.hermes/config.yaml`:
 mcp_servers:
   agentmemory:
     command: npx
-    args: ["-y", "agentmemory-mcp"]
+    args: ["-y", "@agentmemory/mcp"]
 ```
 
 This gives Hermes access to all 43 MCP tools. Start the server separately:

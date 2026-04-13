@@ -167,7 +167,7 @@ const transport = createStdioTransport(async (method, params) => {
 });
 
 process.stderr.write(
-  `[agentmemory-mcp] Standalone MCP server v${SERVER_INFO.version} starting...\n`,
+  `[@agentmemory/mcp] Standalone MCP server v${SERVER_INFO.version} starting...\n`,
 );
 transport.start();
 

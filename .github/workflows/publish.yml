@@ -47,11 +47,11 @@ jobs:
           echo "ERROR: registry never propagated after 2 minutes" >&2
           exit 1
 
-      - name: Publish agentmemory-mcp shim
-        working-directory: packages/agentmemory-mcp
+      - name: Publish @agentmemory/mcp shim
+        working-directory: packages/mcp
         run: |
           SHIM_VERSION=$(node -p "require('./package.json').version")
-          if npm view "agentmemory-mcp@$SHIM_VERSION" version >/dev/null 2>&1; then
+          if npm view "@agentmemory/mcp@$SHIM_VERSION" version >/dev/null 2>&1; then
             echo "Shim version already published, skipping"
           else
             npm publish --provenance --access public
@@ -59,12 +59,12 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      - name: Wait for agentmemory-mcp registry propagation
-        working-directory: packages/agentmemory-mcp
+      - name: Wait for @agentmemory/mcp registry propagation
+        working-directory: packages/mcp
         run: |
           SHIM_VERSION=$(node -p "require('./package.json').version")
           for i in $(seq 1 24); do
-            if npm view "agentmemory-mcp@$SHIM_VERSION" version >/dev/null 2>&1; then
+            if npm view "@agentmemory/mcp@$SHIM_VERSION" version >/dev/null 2>&1; then
               echo "Shim propagated after ${i} attempt(s)"
               exit 0
             fi

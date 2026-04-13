@@ -54,7 +54,7 @@ export class InMemoryKV {
       writeFileSync(this.persistPath, JSON.stringify(data), "utf-8");
     } catch (err) {
       process.stderr.write(
-        `[agentmemory-mcp] Persist failed: ${err instanceof Error ? err.message : String(err)}\n`,
+        `[@agentmemory/mcp] Persist failed: ${err instanceof Error ? err.message : String(err)}\n`,
       );
     }
   }

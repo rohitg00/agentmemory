@@ -317,7 +317,7 @@ Install agentmemory for OpenClaw. Run `npx @agentmemory/agentmemory` in a separa
   "mcpServers": {
     "agentmemory": {
       "command": "npx",
-      "args": ["-y", "agentmemory-mcp"]
+      "args": ["-y", "@agentmemory/mcp"]
     }
   }
 }
@@ -338,7 +338,7 @@ Install agentmemory for Hermes. Run `npx @agentmemory/agentmemory` in a separate
 mcp_servers:
   agentmemory:
     command: npx
-    args: ["-y", "agentmemory-mcp"]
+    args: ["-y", "@agentmemory/mcp"]
 
 Verify with `curl http://localhost:3111/agentmemory/health`. Open http://localhost:3113 for the real-time viewer. For deeper 6-hook memory provider integration (pre-LLM context injection, turn capture, MEMORY.md mirroring, system prompt block), copy integrations/hermes from the agentmemory repo to ~/.hermes/plugins/memory/agentmemory.
 ```
@@ -355,14 +355,14 @@ Then add the MCP config for your agent:
 
 | Agent | Setup |
 |---|---|
-| **Cursor** | Add to `~/.cursor/mcp.json`: `{"mcpServers": {"agentmemory": {"command": "npx", "args": ["-y", "agentmemory-mcp"]}}}` |
-| **OpenClaw** | Add to MCP config: `{"mcpServers": {"agentmemory": {"command": "npx", "args": ["-y", "agentmemory-mcp"]}}}` or use the [gateway plugin](integrations/openclaw/) |
-| **Gemini CLI** | `gemini mcp add agentmemory -- npx -y agentmemory-mcp` |
-| **Codex CLI** | Add to `.codex/config.yaml`: `mcp_servers: {agentmemory: {command: npx, args: ["-y", "agentmemory-mcp"]}}` |
-| **OpenCode** | Add to `opencode.json`: `{"mcp": {"agentmemory": {"type": "local", "command": ["npx", "-y", "agentmemory-mcp"], "enabled": true}}}` |
+| **Cursor** | Add to `~/.cursor/mcp.json`: `{"mcpServers": {"agentmemory": {"command": "npx", "args": ["-y", "@agentmemory/mcp"]}}}` |
+| **OpenClaw** | Add to MCP config: `{"mcpServers": {"agentmemory": {"command": "npx", "args": ["-y", "@agentmemory/mcp"]}}}` or use the [gateway plugin](integrations/openclaw/) |
+| **Gemini CLI** | `gemini mcp add agentmemory -- npx -y @agentmemory/mcp` |
+| **Codex CLI** | Add to `.codex/config.yaml`: `mcp_servers: {agentmemory: {command: npx, args: ["-y", "@agentmemory/mcp"]}}` |
+| **OpenCode** | Add to `opencode.json`: `{"mcp": {"agentmemory": {"type": "local", "command": ["npx", "-y", "@agentmemory/mcp"], "enabled": true}}}` |
 | **Hermes Agent** | Add to `~/.hermes/config.yaml` or use the [memory provider plugin](integrations/hermes/) |
 | **Cline / Goose / Kilo Code** | Add MCP server in settings |
-| **Claude Desktop** | Add to `claude_desktop_config.json`: `{"mcpServers": {"agentmemory": {"command": "npx", "args": ["-y", "agentmemory-mcp"]}}}` |
+| **Claude Desktop** | Add to `claude_desktop_config.json`: `{"mcpServers": {"agentmemory": {"command": "npx", "args": ["-y", "@agentmemory/mcp"]}}}` |
 | **Aider** | REST API: `curl -X POST http://localhost:3111/agentmemory/smart-search -d '{"query": "auth"}'` |
 | **Any agent (32+)** | `npx skillkit install agentmemory` |
 
@@ -416,7 +416,7 @@ npx -y @agentmemory/agentmemory
 ```powershell
 npx -y @agentmemory/agentmemory mcp
 # or via the shim package:
-npx -y agentmemory-mcp
+npx -y @agentmemory/mcp
 ```
 
 **Diagnostics for Windows:** if `npx @agentmemory/agentmemory` fails, re-run with `--verbose` to see the actual engine stderr. Common failure modes:
@@ -643,7 +643,7 @@ Run without the full server — for any MCP client. Either of these works:
 
 ```bash
 npx -y @agentmemory/agentmemory mcp   # canonical (always available)
-npx -y agentmemory-mcp                 # shim package alias
+npx -y @agentmemory/mcp                # shim package alias
 ```
 
 Or add to your agent's MCP config:
@@ -654,7 +654,7 @@ Most agents (Cursor, Claude Desktop, Cline, etc.):
   "mcpServers": {
     "agentmemory": {
       "command": "npx",
-      "args": ["-y", "agentmemory-mcp"]
+      "args": ["-y", "@agentmemory/mcp"]
     }
   }
 }
@@ -666,7 +666,7 @@ OpenCode (`opencode.json`):
   "mcp": {
     "agentmemory": {
       "type": "local",
-      "command": ["npx", "-y", "agentmemory-mcp"],
+      "command": ["npx", "-y", "@agentmemory/mcp"],
       "enabled": true
     }
   }

@@ -1,6 +1,6 @@
 {
   "name": "@agentmemory/agentmemory",
-  "version": "0.8.5",
+  "version": "0.8.6",
   "description": "Persistent memory for AI coding agents, powered by iii-engine's three primitives",
   "type": "module",
   "main": "dist/index.mjs",

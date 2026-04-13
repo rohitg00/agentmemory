@@ -37,7 +37,7 @@ memory_smart_search, memory_timeline, memory_profile, etc.):
   "mcpServers": {
     "agentmemory": {
       "command": "npx",
-      "args": ["-y", "agentmemory-mcp"]
+      "args": ["-y", "@agentmemory/mcp"]
     }
   }
 }
@@ -81,7 +81,7 @@ Then add to your OpenClaw MCP config:
   "mcpServers": {
     "agentmemory": {
       "command": "npx",
-      "args": ["-y", "agentmemory-mcp"]
+      "args": ["-y", "@agentmemory/mcp"]
     }
   }
 }

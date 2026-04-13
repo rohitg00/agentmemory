@@ -41,7 +41,7 @@ Quick start:
   npx @agentmemory/agentmemory status   # check health
   npx @agentmemory/agentmemory demo     # try it in 30 seconds (needs server running)
   npx @agentmemory/agentmemory mcp      # standalone MCP server (no engine)
-  npx agentmemory-mcp                   # same as above (shim package)
+  npx @agentmemory/mcp                  # same as above (shim package)
 `);
   process.exit(0);
 }

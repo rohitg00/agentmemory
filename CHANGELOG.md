@@ -4,6 +4,22 @@ All notable changes to agentmemory will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.6] — 2026-04-13
+
+Finishes the `npx <shim>` story from #120 by moving the standalone package under the `@agentmemory` scope.
+
+### Changed
+
+- **Standalone MCP shim is now `@agentmemory/mcp`** — the 0.8.5 publish attempted to push `agentmemory-mcp` as an unscoped package, but npm's name-similarity policy rejects it because of an unrelated third-party package called `agent-memory-mcp`. The shim now lives under the scope we already own, so `npx -y @agentmemory/mcp` works on the live registry. All README/integration/CLI-help snippets, the OpenClaw and Hermes guides, and the Claude-Desktop/Cursor/Codex/OpenCode MCP config examples have been updated to use the scoped name. The unscoped `agentmemory-mcp` command line (in the main package's `bin` field) was never published and has been removed from the docs.
+- **Package directory renamed** `packages/agentmemory-mcp/` → `packages/mcp/`. The `.github/workflows/publish.yml` publish step points at the new path and `npm view @agentmemory/mcp` for the propagation check.
+- **Log prefix** in `src/mcp/standalone.ts` and `src/mcp/in-memory-kv.ts` changed from `[agentmemory-mcp]` to `[@agentmemory/mcp]` so stderr output matches the package users install.
+
+### Fixed
+
+- **Shim version bump was missed in 0.8.5** — `packages/agentmemory-mcp/package.json` (now `packages/mcp/package.json`) was still pinned at `0.8.4` because the release bump script only touched the 8 files in the main package. The shim now tracks the main package and depends on `@agentmemory/agentmemory: ~0.8.6`.
+
+[0.8.6]: https://github.com/rohitg00/agentmemory/compare/v0.8.5...v0.8.6
+
 ## [0.8.5] — 2026-04-13
 
 Compatibility fix for stricter JSON-RPC clients, plus a spec cleanup CodeRabbit caught during review.
