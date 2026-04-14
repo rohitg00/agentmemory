@@ -118,7 +118,7 @@ describe("Export/Import Functions", () => {
   it("export produces valid ExportData structure", async () => {
     const result = (await sdk.trigger("mem::export", {})) as ExportData;
 
-    expect(result.version).toBe("0.8.7");
+    expect(result.version).toBe("0.8.8");
     expect(result.exportedAt).toBeDefined();
     expect(result.sessions.length).toBe(1);
     expect(result.sessions[0].id).toBe("ses_1");

@@ -4,6 +4,32 @@ All notable changes to agentmemory will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.8] — 2026-04-14
+
+**Behavior change**: per-observation LLM compression is now opt-in. If you were relying on LLM-generated summaries (the old default), set `AGENTMEMORY_AUTO_COMPRESS=true` in `~/.agentmemory/.env` and restart.
+
+### Fixed
+
+- **Stop silently burning Claude API tokens on every tool invocation** ([#138](https://github.com/rohitg00/agentmemory/issues/138), thanks [@olcor1](https://github.com/olcor1)) — the old `mem::observe` path fired `mem::compress` unconditionally on every PostToolUse hook, which called Claude via the user's `ANTHROPIC_API_KEY` to turn each raw observation into a structured summary. An active coding session (50-200 tool calls/hour) could run through hundreds of thousands of tokens in minutes, which is the exact opposite of what a memory tool should do. The new default path skips the LLM call and uses a zero-token **synthetic compression** step that derives `type`, `title`, `narrative`, and `files` from the raw tool name, tool input, and tool output directly. Recall and BM25 search still work — you just lose the LLM-generated summaries unless you opt in.
+
+### Added
+
+- **`AGENTMEMORY_AUTO_COMPRESS` env var** — default `false`. When `true`, restores the old per-observation LLM compression path. The engine startup banner now prints a loud warning when it's on, reminding you that it spends tokens proportional to your session tool-use frequency.
+- **`src/functions/compress-synthetic.ts`** — the new zero-LLM compression helper. `buildSyntheticCompression(raw)` maps tool names to `ObservationType` (via camelCase-aware substring matching for `Read`/`Write`/`Edit`/`Bash`/`Grep`/`WebFetch`/`Task`/etc.), pulls file paths out of `tool_input.file_path` / `pattern` / etc., and truncates narratives to 400 chars so one huge tool output can't blow up the BM25 index.
+- **Regression test** `test/auto-compress.test.ts` — 8 cases covering the default path (no `mem::compress` trigger, synthetic observation stored in KV), explicit opt-in, tool-name-to-type mapping, file-path extraction, narrative truncation, and the `post_tool_failure` → `error` path. Full suite: 707 passing.
+
+### Infrastructure
+
+- **Startup banner** (`src/index.ts:171`) now prints either `Auto-compress: OFF (default, #138)` or a prominent warning when opt-in is enabled, so the mode is never silent.
+- **Migration note**: if you were running 0.8.7 or earlier with `ANTHROPIC_API_KEY` set, your token usage will drop sharply on upgrade. Search quality may also drop slightly because narratives are now derived from raw tool I/O instead of Claude-generated summaries. If you want the old behavior:
+  ```env
+  # ~/.agentmemory/.env
+  AGENTMEMORY_AUTO_COMPRESS=true
+  ```
+  and restart. Existing compressed observations in `~/.agentmemory/` are untouched.
+
+[0.8.8]: https://github.com/rohitg00/agentmemory/compare/v0.8.7...v0.8.8
+
 ## [0.8.7] — 2026-04-14
 
 One-line fix for a brown-paper-bag bug reported in [#136](https://github.com/rohitg00/agentmemory/issues/136).

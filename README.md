@@ -718,6 +718,11 @@ Create `~/.agentmemory/.env`:
 # III_REST_PORT=3111
 
 # Features
+# AGENTMEMORY_AUTO_COMPRESS=false  # OFF by default (#138). When on,
+                                   # every PostToolUse hook calls your
+                                   # LLM provider to compress the
+                                   # observation — expect significant
+                                   # token spend on active sessions.
 # GRAPH_EXTRACTION_ENABLED=false
 # CONSOLIDATION_ENABLED=true
 # LESSON_DECAY_ENABLED=true

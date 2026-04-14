@@ -194,6 +194,16 @@ export function isConsolidationEnabled(): boolean {
   return getMergedEnv()["CONSOLIDATION_ENABLED"] === "true";
 }
 
+// Per-observation LLM compression is OFF by default as of 0.8.8 (see #138).
+// When disabled, observations are captured and indexed via a synthetic
+// (zero-LLM) compression path so recall/search still works. Users who want
+// richer LLM-generated summaries can set AGENTMEMORY_AUTO_COMPRESS=true in
+// ~/.agentmemory/.env — but should expect their Claude API token usage to
+// climb proportionally with session tool-use frequency.
+export function isAutoCompressEnabled(): boolean {
+  return getMergedEnv()["AGENTMEMORY_AUTO_COMPRESS"] === "true";
+}
+
 export function getConsolidationDecayDays(): number {
   return safeParseInt(getMergedEnv()["CONSOLIDATION_DECAY_DAYS"], 30);
 }

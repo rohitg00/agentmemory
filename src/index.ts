@@ -8,6 +8,7 @@ import {
   loadTeamConfig,
   loadSnapshotConfig,
   isGraphExtractionEnabled,
+  isAutoCompressEnabled,
   isConsolidationEnabled,
 } from "./config.js";
 import {
@@ -169,6 +170,16 @@ async function main() {
 
   registerConsolidationPipelineFunction(sdk, kv, provider);
   console.log(`[agentmemory] Consolidation pipeline: registered (CONSOLIDATION_ENABLED=${isConsolidationEnabled() ? "true" : "false"})`);
+
+  if (isAutoCompressEnabled()) {
+    console.log(
+      `[agentmemory] WARNING: AGENTMEMORY_AUTO_COMPRESS=true — every PostToolUse observation will be sent to your LLM provider for compression. This spends API tokens proportional to your session tool-use frequency (see #138). Set AGENTMEMORY_AUTO_COMPRESS=false to disable.`,
+    );
+  } else {
+    console.log(
+      `[agentmemory] Auto-compress: OFF (default, #138) — observations indexed via zero-LLM synthetic compression. Set AGENTMEMORY_AUTO_COMPRESS=true to opt-in to LLM-powered summaries (uses your API key).`,
+    );
+  }
 
   const teamConfig = loadTeamConfig();
   if (teamConfig) {

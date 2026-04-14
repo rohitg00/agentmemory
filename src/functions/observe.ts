@@ -6,6 +6,9 @@ import { StateKV } from "../state/kv.js";
 import { stripPrivateData } from "./privacy.js";
 import { DedupMap } from "./dedup.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
+import { isAutoCompressEnabled } from "../config.js";
+import { buildSyntheticCompression } from "./compress-synthetic.js";
+import { getSearchIndex } from "./search.js";
 
 export function registerObserveFunction(
   sdk: ISdk,
@@ -126,16 +129,47 @@ export function registerObserveFunction(
           });
         }
 
-        sdk.triggerVoid("mem::compress", {
-          observationId: obsId,
-          sessionId: payload.sessionId,
-          raw,
-        });
+        // Per-observation LLM compression is opt-in as of 0.8.8 (#138).
+        // Default path: build a zero-LLM synthetic compression so recall
+        // and BM25 search still work without burning the user's Claude
+        // token allocation on every tool invocation.
+        if (isAutoCompressEnabled()) {
+          sdk.triggerVoid("mem::compress", {
+            observationId: obsId,
+            sessionId: payload.sessionId,
+            raw,
+          });
+        } else {
+          const synthetic = buildSyntheticCompression(raw);
+          await kv.set(
+            KV.observations(payload.sessionId),
+            obsId,
+            synthetic,
+          );
+          getSearchIndex().add(synthetic);
+          sdk.triggerVoid("stream::set", {
+            stream_name: STREAM.name,
+            group_id: STREAM.group(payload.sessionId),
+            item_id: obsId,
+            data: { type: "compressed", observation: synthetic },
+          });
+          sdk.triggerVoid("stream::set", {
+            stream_name: STREAM.name,
+            group_id: STREAM.viewerGroup,
+            item_id: obsId,
+            data: {
+              type: "compressed",
+              observation: synthetic,
+              sessionId: payload.sessionId,
+            },
+          });
+        }
 
         ctx.logger.info("Observation captured", {
           obsId,
           sessionId: payload.sessionId,
           hook: payload.hookType,
+          compress: isAutoCompressEnabled() ? "llm" : "synthetic",
         });
         return { observationId: obsId };
       });
