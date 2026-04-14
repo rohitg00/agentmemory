@@ -8,7 +8,11 @@
 </p>
 
 <p align="center">
-  <sub>The design doc behind agentmemory went viral: <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><b>669 stars / 91 forks</b> on the gist</a> extending Karpathy's LLM Wiki pattern with confidence scoring, lifecycle, knowledge graphs, and hybrid search.</sub>
+  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/design%20doc-669%20stars%20%2F%2091%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white&labelColor=1a1a1a" alt="Design doc: 669 stars / 91 forks on the gist" /></a>
+</p>
+
+<p align="center">
+  <sub>The gist extends Karpathy's LLM Wiki pattern with confidence scoring, lifecycle, knowledge graphs, and hybrid search. agentmemory is the implementation.</sub>
 </p>
 
 <p align="center">
