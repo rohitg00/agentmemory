@@ -231,6 +231,59 @@ describe("handleToolCall", () => {
     expect(memories[0].content).toBe("Use bcrypt for password hashing");
   });
 
+  it("memory_smart_search rejects empty query to prevent match-all in forget flow (#139)", async () => {
+    const kv = new InMemoryKV();
+    await handleToolCall("memory_save", { content: "anything" }, kv);
+    await expect(
+      handleToolCall("memory_smart_search", {}, kv),
+    ).rejects.toThrow("query is required");
+    await expect(
+      handleToolCall("memory_smart_search", { query: "" }, kv),
+    ).rejects.toThrow("query is required");
+    await expect(
+      handleToolCall("memory_smart_search", { query: "   " }, kv),
+    ).rejects.toThrow("query is required");
+  });
+
+  it("memory_smart_search searches files and concepts, not just title/content (#139)", async () => {
+    const kv = new InMemoryKV();
+    await handleToolCall(
+      "memory_save",
+      {
+        content: "generic note",
+        concepts: ["oauth", "token-rotation"],
+        files: ["src/auth/refresh.ts"],
+      },
+      kv,
+    );
+    await handleToolCall("memory_save", { content: "unrelated" }, kv);
+
+    // Find by file path
+    const byFile = JSON.parse(
+      (
+        await handleToolCall(
+          "memory_smart_search",
+          { query: "src/auth/refresh.ts" },
+          kv,
+        )
+      ).content[0].text,
+    );
+    expect(byFile).toHaveLength(1);
+    expect(byFile[0].files).toContain("src/auth/refresh.ts");
+
+    // Find by concept
+    const byConcept = JSON.parse(
+      (
+        await handleToolCall(
+          "memory_smart_search",
+          { query: "token-rotation" },
+          kv,
+        )
+      ).content[0].text,
+    );
+    expect(byConcept).toHaveLength(1);
+  });
+
   it("memory_sessions honours the limit arg (#139)", async () => {
     const kv = new InMemoryKV();
     for (let i = 0; i < 5; i++) {

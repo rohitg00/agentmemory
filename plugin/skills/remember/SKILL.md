@@ -19,4 +19,7 @@ Steps:
    - `files` — the extracted file list (empty array if none apply)
 5. Confirm to the user that the memory was saved and show the concepts you tagged so they know what terms will retrieve it later.
 
-If `memory_save` isn't available, tell the user to verify the agentmemory engine is running on `localhost:3111` and that this plugin was enabled after install.
+If `memory_save` isn't available, the stdio MCP shim didn't start — tell the user to:
+1. Run `/plugin list` in Claude Code and confirm `agentmemory` shows as enabled.
+2. Restart Claude Code (the plugin's `.mcp.json` is only read on startup).
+3. Check `/mcp` to see whether the `agentmemory` MCP server is connected.

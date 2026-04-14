@@ -77,18 +77,39 @@ export async function handleToolCall(
 
     case "memory_recall":
     case "memory_smart_search": {
-      // memory_smart_search would normally run hybrid BM25+vector+graph in
-      // the engine-backed path, but the standalone shim (#139) only has
-      // the in-memory KV store, so we fall back to the same substring
-      // filter as memory_recall. The tool name is kept so plugin skills
-      // that say "use memory_smart_search" still work.
-      const query = (args.query as string)?.toLowerCase() || "";
+      // memory_smart_search would normally run hybrid BM25+vector+graph
+      // in the engine-backed path, but the standalone shim (#139) only
+      // has the in-memory KV store, so we fall back to a substring
+      // filter. The tool name is kept so plugin skills that say "use
+      // memory_smart_search" still work.
+      //
+      // Empty/missing query is rejected — the forget skill uses this
+      // as its confirmation step before a destructive delete, and an
+      // empty query would match every memory in the store, surfacing
+      // unrelated IDs for deletion.
+      const rawQuery = args.query;
+      if (typeof rawQuery !== "string" || !rawQuery.trim()) {
+        throw new Error("query is required");
+      }
+      const query = rawQuery.toLowerCase();
       const limit = (args.limit as number) || 10;
       const all =
         await kvInstance.list<Record<string, unknown>>("mem:memories");
       const results = all
         .filter((m) => {
-          const text = `${m.title} ${m.content}`.toLowerCase();
+          // Search title/content AND files/concepts/sessionIds so the
+          // forget skill can find memories by file path or session
+          // ID, not just by narrative text.
+          const text = [
+            typeof m["title"] === "string" ? m["title"] : "",
+            typeof m["content"] === "string" ? m["content"] : "",
+            Array.isArray(m["files"]) ? m["files"].join(" ") : "",
+            Array.isArray(m["concepts"]) ? m["concepts"].join(" ") : "",
+            Array.isArray(m["sessionIds"]) ? m["sessionIds"].join(" ") : "",
+            typeof m["id"] === "string" ? m["id"] : "",
+          ]
+            .join(" ")
+            .toLowerCase();
           return text.includes(query);
         })
         .slice(0, limit);

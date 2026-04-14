@@ -12,4 +12,7 @@ Present the returned sessions in reverse chronological order:
 - Note the total observation count per session
 - If a session summary exists, surface the title and the key decisions
 
-Format as a clean timeline. **Do NOT make up sessions** — only show what the MCP tool actually returned. If the tool isn't available, tell the user to verify the agentmemory engine is running on `localhost:3111` and that this plugin was enabled after install.
+Format as a clean timeline. **Do NOT make up sessions** — only show what the MCP tool actually returned. If `memory_sessions` isn't available, the stdio MCP shim didn't start — tell the user to:
+1. Run `/plugin list` in Claude Code and confirm `agentmemory` shows as enabled.
+2. Restart Claude Code (the plugin's `.mcp.json` is only read on startup).
+3. Check `/mcp` to see whether the `agentmemory` MCP server is connected.

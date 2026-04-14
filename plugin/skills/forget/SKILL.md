@@ -20,4 +20,7 @@ Steps:
    If the user wants to drop an entire session's observations, collect every memory ID in that session from the search results and pass them all via `memoryIds`. The standalone MCP doesn't accept a bare `sessionId` argument — it deletes by memory ID only.
 4. Confirm the deletion count back to the user.
 
-**Never delete without explicit user confirmation.** If the MCP tools aren't available, tell the user to verify the agentmemory engine is running on `localhost:3111` and that this plugin was enabled after install.
+**Never delete without explicit user confirmation.** If the MCP tools aren't available, the stdio MCP shim didn't start — tell the user to:
+1. Run `/plugin list` in Claude Code and confirm `agentmemory` shows as enabled.
+2. Restart Claude Code (the plugin's `.mcp.json` is only read on startup).
+3. Check `/mcp` to see whether the `agentmemory` MCP server is connected.

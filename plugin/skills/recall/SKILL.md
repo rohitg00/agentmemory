@@ -15,4 +15,7 @@ Present the returned results to the user in a readable format:
 - Highlight the most important observations (importance >= 7)
 - If no results come back, suggest 2-3 alternative search terms the user could try
 
-**Do NOT make up or hallucinate observations.** Only present what the MCP tool actually returned. If the tool is not available (plugin installed but MCP server not running), tell the user to check that the agentmemory engine is running on `localhost:3111` and that the plugin was enabled after install.
+**Do NOT make up or hallucinate observations.** Only present what the MCP tool actually returned. If `memory_smart_search` isn't available, the stdio MCP shim didn't start — tell the user to:
+1. Run `/plugin list` in Claude Code and confirm `agentmemory` shows as enabled.
+2. Restart Claude Code (the plugin's `.mcp.json` is only read on startup).
+3. Check `/mcp` to see whether the `agentmemory` MCP server is connected.
