@@ -155,6 +155,16 @@ describe("handleToolCall", () => {
     ).rejects.toThrow("content is required");
   });
 
+  it("memory_save rejects non-string content safely (no runtime TypeError)", async () => {
+    const kv = new InMemoryKV();
+    // These would have crashed on .trim() before the type-guard fix.
+    for (const bogus of [42, {}, [], null, undefined, true]) {
+      await expect(
+        handleToolCall("memory_save", { content: bogus }, kv),
+      ).rejects.toThrow("content is required");
+    }
+  });
+
   it("memory_recall returns matching memories", async () => {
     const kv = new InMemoryKV();
     await handleToolCall("memory_save", { content: "TypeScript is great" }, kv);
@@ -299,6 +309,32 @@ describe("handleToolCall", () => {
     );
     const parsed = JSON.parse(result.content[0].text);
     expect(parsed.sessions).toHaveLength(2);
+  });
+
+  it("parseLimit clamps bad/malicious limit values to a safe range", async () => {
+    const kv = new InMemoryKV();
+    for (let i = 0; i < 150; i++) {
+      await handleToolCall("memory_save", { content: `mem ${i}` }, kv);
+    }
+
+    // Negative / NaN / Infinity / string / object — all should fall back
+    // to the default (10) for memory_smart_search.
+    for (const bogus of [-1, NaN, Infinity, "abc", {}, true]) {
+      const r = await handleToolCall(
+        "memory_smart_search",
+        { query: "mem", limit: bogus },
+        kv,
+      );
+      expect(JSON.parse(r.content[0].text)).toHaveLength(10);
+    }
+
+    // An absurdly large limit gets clamped to MAX_LIMIT (100).
+    const huge = await handleToolCall(
+      "memory_smart_search",
+      { query: "mem", limit: 99999 },
+      kv,
+    );
+    expect(JSON.parse(huge.content[0].text)).toHaveLength(100);
   });
 
   it("memory_governance_delete removes memories by id array (#139)", async () => {

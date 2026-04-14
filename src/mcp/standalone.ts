@@ -44,6 +44,21 @@ function normalizeList(value: unknown): string[] {
   return [];
 }
 
+// Parse a user-supplied limit argument, clamping to a sane range so an
+// adversarial or buggy caller can't request a million memories or pass
+// a negative / NaN / Infinity value that breaks .slice().
+const DEFAULT_LIMIT = 10;
+const MAX_LIMIT = 100;
+function parseLimit(raw: unknown, fallback = DEFAULT_LIMIT): number {
+  // Only accept explicit numbers or numeric strings. Reject booleans,
+  // objects, arrays, null, undefined — they shouldn't silently coerce
+  // (e.g. `Number(true) === 1` would sneak a limit of 1 through).
+  if (typeof raw !== "number" && typeof raw !== "string") return fallback;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) return fallback;
+  return Math.min(Math.floor(n), MAX_LIMIT);
+}
+
 export async function handleToolCall(
   toolName: string,
   args: Record<string, unknown>,
@@ -51,8 +66,11 @@ export async function handleToolCall(
 ): Promise<{ content: Array<{ type: string; text: string }> }> {
   switch (toolName) {
     case "memory_save": {
-      const content = args.content as string;
-      if (!content?.trim()) throw new Error("content is required");
+      const rawContent = args.content;
+      if (typeof rawContent !== "string" || !rawContent.trim()) {
+        throw new Error("content is required");
+      }
+      const content = rawContent;
       const id = generateId("mem");
       const isoNow = new Date().toISOString();
       await kvInstance.set("mem:memories", id, {
@@ -91,8 +109,8 @@ export async function handleToolCall(
       if (typeof rawQuery !== "string" || !rawQuery.trim()) {
         throw new Error("query is required");
       }
-      const query = rawQuery.toLowerCase();
-      const limit = (args.limit as number) || 10;
+      const query = rawQuery.trim().toLowerCase();
+      const limit = parseLimit(args.limit);
       const all =
         await kvInstance.list<Record<string, unknown>>("mem:memories");
       const results = all
@@ -121,7 +139,7 @@ export async function handleToolCall(
     case "memory_sessions": {
       const sessions =
         await kvInstance.list<Record<string, unknown>>("mem:sessions");
-      const limit = (args.limit as number) || 20;
+      const limit = parseLimit(args.limit, 20);
       return {
         content: [
           {
@@ -188,7 +206,7 @@ export async function handleToolCall(
 
     case "memory_audit": {
       const entries = await kvInstance.list("mem:audit");
-      const limit = (args.limit as number) || 50;
+      const limit = parseLimit(args.limit, 50);
       return {
         content: [
           {
