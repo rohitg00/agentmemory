@@ -10,9 +10,11 @@ import { generateId } from "../state/schema.js";
 const IMPLEMENTED_TOOLS = new Set([
   "memory_save",
   "memory_recall",
+  "memory_smart_search",
   "memory_sessions",
   "memory_export",
   "memory_audit",
+  "memory_governance_delete",
 ]);
 
 const SERVER_INFO = {
@@ -22,6 +24,25 @@ const SERVER_INFO = {
 };
 
 const kv = new InMemoryKV(getStandalonePersistPath());
+
+// Accept arrays, comma-separated strings, or a single string and always
+// return a trimmed, non-empty string array. Plugin skills (#139) tell
+// Claude to pass arrays; older clients may still pass CSV strings.
+function normalizeList(value: unknown): string[] {
+  if (!value) return [];
+  if (Array.isArray(value)) {
+    return value
+      .map((v) => (typeof v === "string" ? v.trim() : ""))
+      .filter((v) => v.length > 0);
+  }
+  if (typeof value === "string") {
+    return value
+      .split(",")
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+  }
+  return [];
+}
 
 export async function handleToolCall(
   toolName: string,
@@ -39,12 +60,8 @@ export async function handleToolCall(
         type: (args.type as string) || "fact",
         title: content.slice(0, 80),
         content,
-        concepts: args.concepts
-          ? (args.concepts as string).split(",").map((c) => c.trim())
-          : [],
-        files: args.files
-          ? (args.files as string).split(",").map((f) => f.trim())
-          : [],
+        concepts: normalizeList(args.concepts),
+        files: normalizeList(args.files),
         createdAt: isoNow,
         updatedAt: isoNow,
         strength: 7,
@@ -58,10 +75,17 @@ export async function handleToolCall(
       };
     }
 
-    case "memory_recall": {
+    case "memory_recall":
+    case "memory_smart_search": {
+      // memory_smart_search would normally run hybrid BM25+vector+graph in
+      // the engine-backed path, but the standalone shim (#139) only has
+      // the in-memory KV store, so we fall back to the same substring
+      // filter as memory_recall. The tool name is kept so plugin skills
+      // that say "use memory_smart_search" still work.
       const query = (args.query as string)?.toLowerCase() || "";
       const limit = (args.limit as number) || 10;
-      const all = await kvInstance.list<Record<string, unknown>>("mem:memories");
+      const all =
+        await kvInstance.list<Record<string, unknown>>("mem:memories");
       const results = all
         .filter((m) => {
           const text = `${m.title} ${m.content}`.toLowerCase();
@@ -74,10 +98,52 @@ export async function handleToolCall(
     }
 
     case "memory_sessions": {
-      const sessions = await kvInstance.list("mem:sessions");
+      const sessions =
+        await kvInstance.list<Record<string, unknown>>("mem:sessions");
+      const limit = (args.limit as number) || 20;
       return {
         content: [
-          { type: "text", text: JSON.stringify({ sessions }, null, 2) },
+          {
+            type: "text",
+            text: JSON.stringify(
+              { sessions: sessions.slice(0, limit) },
+              null,
+              2,
+            ),
+          },
+        ],
+      };
+    }
+
+    case "memory_governance_delete": {
+      // Deletes memories by id. Accepts either a memoryIds array or a
+      // comma-separated memoryIds string (same normalization pattern as
+      // concepts/files) so plugin skills and legacy clients both work.
+      // Unknown ids are silently skipped — the response reports how many
+      // were actually removed so the caller can tell the user.
+      const ids = normalizeList(args.memoryIds);
+      if (ids.length === 0) {
+        throw new Error("memoryIds is required");
+      }
+      let deleted = 0;
+      for (const id of ids) {
+        const existing = await kvInstance.get("mem:memories", id);
+        if (existing) {
+          await kvInstance.delete("mem:memories", id);
+          deleted++;
+        }
+      }
+      kvInstance.persist();
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              deleted,
+              requested: ids.length,
+              reason: (args.reason as string) || "plugin skill request",
+            }),
+          },
         ],
       };
     }
