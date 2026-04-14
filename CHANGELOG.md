@@ -4,6 +4,20 @@ All notable changes to agentmemory will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.7] — 2026-04-14
+
+One-line fix for a brown-paper-bag bug reported in [#136](https://github.com/rohitg00/agentmemory/issues/136).
+
+### Fixed
+
+- **`npx @agentmemory/agentmemory` no longer crashes with "`/app/config.yaml` is a directory"** ([#136](https://github.com/rohitg00/agentmemory/issues/136), thanks [@stefano-medapps](https://github.com/stefano-medapps)) — the published tarball shipped `docker-compose.yml` but **not** `iii-config.docker.yaml`, even though the compose file mounts `./iii-config.docker.yaml:/app/config.yaml:ro`. Docker resolves missing host-path bind sources by silently creating them as empty directories, so the iii-engine container mounted an empty dir at `/app/config.yaml` and crashed with `Error: Failed to read config file '/app/config.yaml': Is a directory (os error 21)`. The `files` array in `package.json` now includes `iii-config.docker.yaml` alongside the regular `iii-config.yaml`.
+
+### Infrastructure
+
+- New regression test in `test/consistency.test.ts` parses every `./<path>:<container>` bind mount in `docker-compose.yml` and asserts the source file is shipped via the `files` array. Catches the class of bug where a new bind mount is added to compose without a corresponding entry in `files`.
+
+[0.8.7]: https://github.com/rohitg00/agentmemory/compare/v0.8.6...v0.8.7
+
 ## [0.8.6] — 2026-04-13
 
 Finishes the `npx <shim>` story from #120 by moving the standalone package under the `@agentmemory` scope.

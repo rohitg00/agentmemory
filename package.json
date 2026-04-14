@@ -1,6 +1,6 @@
 {
   "name": "@agentmemory/agentmemory",
-  "version": "0.8.6",
+  "version": "0.8.7",
   "description": "Persistent memory for AI coding agents, powered by iii-engine's three primitives",
   "type": "module",
   "main": "dist/index.mjs",
@@ -41,6 +41,7 @@
     "dist/",
     "plugin/",
     "iii-config.yaml",
+    "iii-config.docker.yaml",
     "docker-compose.yml",
     "LICENSE",
     "README.md",
