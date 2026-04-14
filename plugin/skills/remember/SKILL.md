@@ -7,19 +7,16 @@ user-invocable: true
 
 The user wants to save this to long-term memory: $ARGUMENTS
 
-To save this, make a POST request using the Bash tool:
-
-```bash
-curl -s -H "Content-Type: application/json" \
-  -H "Authorization: Bearer ${AGENTMEMORY_SECRET:-}" \
-  -X POST "http://${AGENTMEMORY_URL:-localhost:3111}/agentmemory/remember" \
-  -d '{"content": "<ESCAPED_CONTENT>", "concepts": [<CONCEPTS>], "files": [<FILES>]}'
-```
+Use the `memory_save` MCP tool (provided by the agentmemory server that this plugin wires up automatically via `.mcp.json`) to persist it.
 
 Steps:
-1. Analyze what the user wants to remember
-2. Extract key concepts (2-5 searchable terms)
-3. Extract relevant file paths if any
-4. Make the API call with the properly escaped content
-5. Confirm to the user that the memory was saved
-6. Show what concepts were tagged for future recall
+1. Analyze what the user wants to remember — pull out the core insight, decision, or fact.
+2. Extract 2-5 searchable `concepts` (lowercased keyword phrases) that capture what the memory is about. Prefer specific terms over generic ones (`"jwt-refresh-rotation"` beats `"auth"`).
+3. Extract any relevant `files` — absolute or repo-relative paths the memory references.
+4. Call `memory_save` with the fields:
+   - `content` — the full text to remember (preserve the user's phrasing as much as possible)
+   - `concepts` — the extracted concept list
+   - `files` — the extracted file list (empty array if none apply)
+5. Confirm to the user that the memory was saved and show the concepts you tagged so they know what terms will retrieve it later.
+
+If `memory_save` isn't available, tell the user to verify the agentmemory engine is running on `localhost:3111` and that this plugin was enabled after install.

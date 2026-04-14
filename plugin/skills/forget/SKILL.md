@@ -10,23 +10,12 @@ The user wants to remove data from agentmemory: $ARGUMENTS
 **IMPORTANT**: This is a destructive operation. Always confirm with the user before deleting.
 
 Steps:
-1. First, search for matching observations:
-   ```bash
-   curl -s -H "Content-Type: application/json" \
-     -H "Authorization: Bearer ${AGENTMEMORY_SECRET:-}" \
-     -X POST "http://${AGENTMEMORY_URL:-localhost:3111}/agentmemory/search" \
-     -d '{"query": "<SEARCH_TERM>", "limit": 20}'
-   ```
 
-2. Show the user what was found and ask for confirmation
-3. If confirmed, delete via:
-   ```bash
-   curl -s -H "Content-Type: application/json" \
-     -H "Authorization: Bearer ${AGENTMEMORY_SECRET:-}" \
-     -X POST "http://${AGENTMEMORY_URL:-localhost:3111}/agentmemory/forget" \
-     -d '{"sessionId": "<ID>"}' # or {"observationIds": ["id1", "id2"]}
-   ```
+1. First search for matching observations with the `memory_smart_search` MCP tool (provided by the agentmemory server this plugin wires up via `.mcp.json`). Use the user's input as the `query` with `limit: 20`.
+2. Show the user what was found — session IDs, observation IDs, titles — and ask for explicit confirmation before deleting.
+3. Once confirmed, call `memory_governance_delete` with either:
+   - `memoryIds: [<observationId>, ...]` to delete specific observations, or
+   - the session ID(s) in the same argument if the user wants to drop whole sessions
+4. Confirm the deletion count back to the user.
 
-4. Confirm deletion to the user
-
-Never delete without explicit user confirmation.
+**Never delete without explicit user confirmation.** If the MCP tools aren't available, tell the user to verify the agentmemory engine is running on `localhost:3111` and that this plugin was enabled after install.

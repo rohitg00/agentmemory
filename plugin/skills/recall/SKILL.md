@@ -5,14 +5,14 @@ argument-hint: "[search query]"
 user-invocable: true
 ---
 
-Search agentmemory for observations matching: $ARGUMENTS
+The user wants to recall past context about: $ARGUMENTS
 
-!`QUERY=$(echo "$ARGUMENTS" | sed 's/\\/\\\\/g; s/"/\\"/g') && curl -s -H "Content-Type: application/json" -H "Authorization: Bearer ${AGENTMEMORY_SECRET:-}" -X POST http://${AGENTMEMORY_URL:-localhost:3111}/agentmemory/search -d "{\"query\": \"${QUERY}\", \"limit\": 10}" 2>/dev/null || echo '{"results":[]}'`
+Use the `memory_smart_search` MCP tool (provided by the agentmemory server that this plugin wires up automatically via `.mcp.json`) with the user's query as the `query` argument and `limit: 10`. The tool runs hybrid BM25 + vector + graph-expanded search over captured observations and returns ranked results.
 
-Present the search results to the user in a readable format:
+Present the returned results to the user in a readable format:
 - Group by session
-- Show observation type, title, and narrative
+- For each observation show its type, title, and narrative
 - Highlight the most important observations (importance >= 7)
-- If no results found, suggest alternative search terms
+- If no results come back, suggest 2-3 alternative search terms the user could try
 
-Do NOT make up or hallucinate results. Only present what was returned from the search.
+**Do NOT make up or hallucinate observations.** Only present what the MCP tool actually returned. If the tool is not available (plugin installed but MCP server not running), tell the user to check that the agentmemory engine is running on `localhost:3111` and that the plugin was enabled after install.
