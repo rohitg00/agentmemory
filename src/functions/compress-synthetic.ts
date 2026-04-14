@@ -89,7 +89,7 @@ export function buildSyntheticCompression(
     id: raw.id,
     sessionId: raw.sessionId,
     timestamp: raw.timestamp,
-    type: inferType(raw.toolName, raw.hookType),
+    type: inferType(toolName, raw.hookType),
     title: truncate(toolName || "observation", 80),
     subtitle: inputStr ? truncate(inputStr, 120) : undefined,
     facts: [],
