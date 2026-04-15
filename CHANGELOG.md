@@ -6,30 +6,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [0.8.10] — 2026-04-15
 
-**Behavior change**: the PreToolUse and SessionStart hooks no longer inject memory context into Claude Code's conversation by default. If you were relying on the old in-conversation context injection, set `AGENTMEMORY_INJECT_CONTEXT=true` in `~/.agentmemory/.env` and restart. Observations are still captured via PostToolUse regardless — the memory store and MCP search tools are unaffected.
+**Behavior change**: the PreToolUse and SessionStart hooks no longer run enrichment by default. SessionStart saves ~1-2K input tokens per session you start (the only path that was actually reaching the model, per the [Claude Code hook docs](https://code.claude.com/docs/en/hooks.md)). PreToolUse stops spawning a Node process and POSTing to `/agentmemory/enrich` on every file-touching tool call — a pure resource cleanup, not a token fix. If you were relying on either path, set `AGENTMEMORY_INJECT_CONTEXT=true` in `~/.agentmemory/.env` and restart. Observations are still captured via PostToolUse regardless.
 
 ### Fixed
 
-- **Stop burning Claude Pro session tokens on every tool call** ([#143](https://github.com/rohitg00/agentmemory/issues/143), thanks [@adrianricardo](https://github.com/adrianricardo)) — 0.8.8 fixed the agentmemory-side token burn (where the engine called Claude via the user's `ANTHROPIC_API_KEY`), but it left untouched a *second* token-burn path on the Claude Code side: `src/hooks/pre-tool-use.ts` wrote up to 4,000 characters of enrichment context to stdout on every `Edit`/`Write`/`Read`/`Glob`/`Grep` tool call. Claude Code reads PreToolUse stdout and prepends it to the model's next turn, so every tool call silently grew Claude Code's input window by ~1000 tokens. On Claude Pro this drained entire allocations in 4 messages. `session-start.ts` had the same pattern with smaller blast radius (once per session).
+- **Gate SessionStart context injection** ([#143](https://github.com/rohitg00/agentmemory/issues/143), thanks [@adrianricardo](https://github.com/adrianricardo)) — `src/hooks/session-start.ts` previously wrote ~1-2K chars of project context to stdout at every session start. Per the [Claude Code hook docs](https://code.claude.com/docs/en/hooks.md), `SessionStart` stdout is explicitly injected into the model's context ("where stdout is added as context that Claude can see and act on"), so this was adding real tokens to the first turn of every new session. Now gated behind `AGENTMEMORY_INJECT_CONTEXT`, default off. The session still gets registered for observation tracking — only the stdout echo is skipped.
+- **Skip the PreToolUse enrichment round-trip when disabled** ([#143](https://github.com/rohitg00/agentmemory/issues/143)) — `src/hooks/pre-tool-use.ts` was POSTing `/agentmemory/enrich` on every `Edit`/`Write`/`Read`/`Glob`/`Grep` tool call and piping up to 4000 chars to stdout. The Claude Code docs make clear that PreToolUse stdout goes to the debug log, not the model context, so this was **not** burning user tokens — but it was spawning a Node process + full HTTP round-trip ~20x per user message with no effect on the conversation. Gating it makes the disabled hot path a ~15ms no-op Node startup instead of a ~100-300ms REST round-trip. **This is a resource cleanup, not a token fix**; leaving the gate in place protects forward in case Claude Code ever changes PreToolUse to inject stdout like SessionStart does.
 
-  The hooks now exit immediately when `AGENTMEMORY_INJECT_CONTEXT` is unset or false (the default). `pre-tool-use.ts` skips the entire `/agentmemory/enrich` round-trip — no stdin read, no fetch, no stdout write. `session-start.ts` still POSTs `/agentmemory/session/start` so the session gets registered for observation tracking, but no longer echoes the returned context back to Claude Code.
+### Honest note on #143
 
-  **This is the real root cause of the "token allocation busted in 4 messages" symptom from #138.** 0.8.8 only addressed users with `ANTHROPIC_API_KEY` set. 0.8.10 addresses all users, including Claude Pro subscribers with no API key at all.
+My initial diagnosis on the #143 thread pattern-matched too quickly to #138 and overclaimed that PreToolUse stdout was the smoking gun behind "Claude Pro burned in 4 messages". It wasn't — per the docs, PreToolUse stdout is debug-log only. The actual background cause is that [Claude Pro's Claude Code quotas are documented as tight](https://www.theregister.com/2026/03/31/anthropic_claude_code_limits/) and Anthropic has publicly confirmed "people are hitting usage limits in Claude Code way faster than expected." agentmemory contributes ~1-2K tokens per session via SessionStart, and that contribution is worth eliminating, but this release does not and cannot make Claude Pro's base quotas roomier. Users on heavy tool-call workloads should consider Max 5x or Team tiers regardless of whether agentmemory is installed.
+
+0.8.8's #138 fix (opt-in `mem::compress` via `AGENTMEMORY_AUTO_COMPRESS`) remains the correct fix for users with `ANTHROPIC_API_KEY` set — that path was a real per-observation Claude API burn and is unrelated to the Claude Code hook pipeline.
 
 ### Added
 
-- **`AGENTMEMORY_INJECT_CONTEXT` env var** — default `false`. When `true`, restores the old pre-tool enrichment and session-start context injection. Startup banner prints a loud warning when it's on, mirroring the `AGENTMEMORY_AUTO_COMPRESS` warning from 0.8.8.
-- **`isContextInjectionEnabled()`** helper in `src/config.ts` — single source of truth for the flag. The hooks read the env var directly (they're spawned as standalone `.mjs` files by Claude Code and don't bootstrap through `src/index.ts`), so the helper is there for the startup banner in `src/index.ts:179` and future code paths that want the same gate.
-- **5 subprocess regression tests** in `test/context-injection.test.ts` — spawns the compiled `pre-tool-use.mjs` and `session-start.mjs` hooks with real stdin/stdout pipes and asserts that stdout is empty when the env var is unset, when it's explicitly `false`, and that the disabled path exits under 1 second (no stdin consumption, no network fetch). Also asserts that the opt-in path with `AGENTMEMORY_INJECT_CONTEXT=true` pointing at an unreachable backend still exits cleanly without echoing anything to stdout. Full suite: **724 passing** (was 719 + 5 new).
+- **`AGENTMEMORY_INJECT_CONTEXT` env var** — default `false`. When `true`, restores the old SessionStart stdout write and the old PreToolUse `/enrich` round-trip. Startup banner prints a loud warning when it's on, mirroring the `AGENTMEMORY_AUTO_COMPRESS` warning from 0.8.8.
+- **`isContextInjectionEnabled()`** helper in `src/config.ts` — single source of truth for the flag. The hooks read the env var directly (they're spawned as standalone `.mjs` files by Claude Code and don't bootstrap through `src/index.ts`), so the helper is there for the startup banner and future code paths.
+- **5 subprocess regression tests** in `test/context-injection.test.ts` — spawns the compiled `pre-tool-use.mjs` and `session-start.mjs` hooks with real stdin/stdout pipes and asserts that stdout is empty when the env var is unset, when it's explicitly `false`, and that the disabled PreToolUse path exits under 1 second. Also asserts that the opt-in path with an unreachable backend still exits cleanly. Full suite: **724 passing** (was 719 + 5 new).
 
 ### Infrastructure
 
-- **Startup banner** (`src/index.ts:179`) now prints `Context injection: OFF (default, #143)` on normal startup and a prominent WARNING when opt-in is enabled, so the mode is never silent.
-- **Migration note**: if you were relying on automatic memory context injection before every tool call, add to `~/.agentmemory/.env`:
+- **Startup banner** (`src/index.ts`) now prints `Context injection: OFF (default, #143)` on normal startup and a prominent WARNING when opt-in is enabled, so the mode is never silent.
+- **Migration note**: if you were relying on the old SessionStart project-context injection or the old PreToolUse enrichment round-trip, add to `~/.agentmemory/.env`:
   ```env
   AGENTMEMORY_INJECT_CONTEXT=true
   ```
-  and restart Claude Code. You'll see the startup warning in the engine logs confirming it's active. Expect your Claude Pro session token count to grow proportional to the number of file-touching tool calls per turn.
+  and restart Claude Code. You'll see the startup warning in the engine logs confirming it's active.
 
 [0.8.10]: https://github.com/rohitg00/agentmemory/compare/v0.8.9...v0.8.10
 
