@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 //#region src/hooks/session-start.ts
+const INJECT_CONTEXT = process.env["AGENTMEMORY_INJECT_CONTEXT"] === "true";
 const REST_URL = process.env["AGENTMEMORY_URL"] || "http://localhost:3111";
 const SECRET = process.env["AGENTMEMORY_SECRET"] || "";
 function authHeaders() {
@@ -29,7 +30,7 @@ async function main() {
 			}),
 			signal: AbortSignal.timeout(5e3)
 		});
-		if (res.ok) {
+		if (INJECT_CONTEXT && res.ok) {
 			const result = await res.json();
 			if (result.context) process.stdout.write(result.context);
 		}

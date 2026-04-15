@@ -1,5 +1,14 @@
 #!/usr/bin/env node
 
+// Session-start hook.
+//
+// Always registers the session for observation tracking (so memories
+// captured on PostToolUse get attached to the right session). Only writes
+// project context to stdout — which Claude Code prepends to the very first
+// turn — when AGENTMEMORY_INJECT_CONTEXT=true. Default off as of 0.8.10
+// (#143); see pre-tool-use.ts for the full explanation.
+const INJECT_CONTEXT = process.env["AGENTMEMORY_INJECT_CONTEXT"] === "true";
+
 const REST_URL = process.env["AGENTMEMORY_URL"] || "http://localhost:3111";
 const SECRET = process.env["AGENTMEMORY_SECRET"] || "";
 
@@ -34,7 +43,10 @@ async function main() {
       signal: AbortSignal.timeout(5000),
     });
 
-    if (res.ok) {
+    // Only write context to stdout when the user has explicitly opted
+    // into injection. Registering the session is cheap and doesn't touch
+    // Claude Code's input token window.
+    if (INJECT_CONTEXT && res.ok) {
       const result = (await res.json()) as { context?: string };
       if (result.context) {
         process.stdout.write(result.context);

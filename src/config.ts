@@ -204,6 +204,19 @@ export function isAutoCompressEnabled(): boolean {
   return getMergedEnv()["AGENTMEMORY_AUTO_COMPRESS"] === "true";
 }
 
+// Hook-level context injection into Claude Code's conversation is OFF by
+// default as of 0.8.10 (see #143). When disabled, pre-tool-use and
+// session-start hooks still POST observations for background capture, but
+// never write context to stdout — so Claude Code doesn't inject an extra
+// ~4000-char blob into every tool turn. 0.8.8 stopped the agentmemory-side
+// Claude calls (via ANTHROPIC_API_KEY); this stops the Claude Code-side
+// token burn where every tool call silently grew the model input window.
+// Users who want the in-conversation context injection explicitly opt in
+// with AGENTMEMORY_INJECT_CONTEXT=true and get a loud startup warning.
+export function isContextInjectionEnabled(): boolean {
+  return getMergedEnv()["AGENTMEMORY_INJECT_CONTEXT"] === "true";
+}
+
 export function getConsolidationDecayDays(): number {
   return safeParseInt(getMergedEnv()["CONSOLIDATION_DECAY_DAYS"], 30);
 }

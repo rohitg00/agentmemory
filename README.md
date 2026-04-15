@@ -731,6 +731,14 @@ Create `~/.agentmemory/.env`:
                                    # LLM provider to compress the
                                    # observation — expect significant
                                    # token spend on active sessions.
+# AGENTMEMORY_INJECT_CONTEXT=false # OFF by default (#143). When on,
+                                   # PreToolUse and SessionStart hooks
+                                   # inject up to ~4000 chars of memory
+                                   # context into every tool turn.
+                                   # On Claude Pro this drains session
+                                   # tokens proportional to tool-call
+                                   # frequency. Observations are still
+                                   # captured via PostToolUse either way.
 # GRAPH_EXTRACTION_ENABLED=false
 # CONSOLIDATION_ENABLED=true
 # LESSON_DECAY_ENABLED=true

@@ -4,6 +4,35 @@ All notable changes to agentmemory will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.10] — 2026-04-15
+
+**Behavior change**: the PreToolUse and SessionStart hooks no longer inject memory context into Claude Code's conversation by default. If you were relying on the old in-conversation context injection, set `AGENTMEMORY_INJECT_CONTEXT=true` in `~/.agentmemory/.env` and restart. Observations are still captured via PostToolUse regardless — the memory store and MCP search tools are unaffected.
+
+### Fixed
+
+- **Stop burning Claude Pro session tokens on every tool call** ([#143](https://github.com/rohitg00/agentmemory/issues/143), thanks [@adrianricardo](https://github.com/adrianricardo)) — 0.8.8 fixed the agentmemory-side token burn (where the engine called Claude via the user's `ANTHROPIC_API_KEY`), but it left untouched a *second* token-burn path on the Claude Code side: `src/hooks/pre-tool-use.ts` wrote up to 4,000 characters of enrichment context to stdout on every `Edit`/`Write`/`Read`/`Glob`/`Grep` tool call. Claude Code reads PreToolUse stdout and prepends it to the model's next turn, so every tool call silently grew Claude Code's input window by ~1000 tokens. On Claude Pro this drained entire allocations in 4 messages. `session-start.ts` had the same pattern with smaller blast radius (once per session).
+
+  The hooks now exit immediately when `AGENTMEMORY_INJECT_CONTEXT` is unset or false (the default). `pre-tool-use.ts` skips the entire `/agentmemory/enrich` round-trip — no stdin read, no fetch, no stdout write. `session-start.ts` still POSTs `/agentmemory/session/start` so the session gets registered for observation tracking, but no longer echoes the returned context back to Claude Code.
+
+  **This is the real root cause of the "token allocation busted in 4 messages" symptom from #138.** 0.8.8 only addressed users with `ANTHROPIC_API_KEY` set. 0.8.10 addresses all users, including Claude Pro subscribers with no API key at all.
+
+### Added
+
+- **`AGENTMEMORY_INJECT_CONTEXT` env var** — default `false`. When `true`, restores the old pre-tool enrichment and session-start context injection. Startup banner prints a loud warning when it's on, mirroring the `AGENTMEMORY_AUTO_COMPRESS` warning from 0.8.8.
+- **`isContextInjectionEnabled()`** helper in `src/config.ts` — single source of truth for the flag. The hooks read the env var directly (they're spawned as standalone `.mjs` files by Claude Code and don't bootstrap through `src/index.ts`), so the helper is there for the startup banner in `src/index.ts:179` and future code paths that want the same gate.
+- **5 subprocess regression tests** in `test/context-injection.test.ts` — spawns the compiled `pre-tool-use.mjs` and `session-start.mjs` hooks with real stdin/stdout pipes and asserts that stdout is empty when the env var is unset, when it's explicitly `false`, and that the disabled path exits under 1 second (no stdin consumption, no network fetch). Also asserts that the opt-in path with `AGENTMEMORY_INJECT_CONTEXT=true` pointing at an unreachable backend still exits cleanly without echoing anything to stdout. Full suite: **724 passing** (was 719 + 5 new).
+
+### Infrastructure
+
+- **Startup banner** (`src/index.ts:179`) now prints `Context injection: OFF (default, #143)` on normal startup and a prominent WARNING when opt-in is enabled, so the mode is never silent.
+- **Migration note**: if you were relying on automatic memory context injection before every tool call, add to `~/.agentmemory/.env`:
+  ```env
+  AGENTMEMORY_INJECT_CONTEXT=true
+  ```
+  and restart Claude Code. You'll see the startup warning in the engine logs confirming it's active. Expect your Claude Pro session token count to grow proportional to the number of file-touching tool calls per turn.
+
+[0.8.10]: https://github.com/rohitg00/agentmemory/compare/v0.8.9...v0.8.10
+
 ## [0.8.9] — 2026-04-14
 
 Two UX fixes for the Claude Code plugin install path, both reported in [#139](https://github.com/rohitg00/agentmemory/issues/139) by [@stefanfaur](https://github.com/stefanfaur).

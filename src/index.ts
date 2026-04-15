@@ -10,6 +10,7 @@ import {
   isGraphExtractionEnabled,
   isAutoCompressEnabled,
   isConsolidationEnabled,
+  isContextInjectionEnabled,
 } from "./config.js";
 import {
   createProvider,
@@ -178,6 +179,16 @@ async function main() {
   } else {
     console.log(
       `[agentmemory] Auto-compress: OFF (default, #138) — observations indexed via zero-LLM synthetic compression. Set AGENTMEMORY_AUTO_COMPRESS=true to opt-in to LLM-powered summaries (uses your API key).`,
+    );
+  }
+
+  if (isContextInjectionEnabled()) {
+    console.log(
+      `[agentmemory] WARNING: AGENTMEMORY_INJECT_CONTEXT=true — the PreToolUse and SessionStart hooks will inject up to ~4000 chars of memory context into every tool turn. On Claude Pro this burns session tokens proportional to your tool-call frequency (see #143). Set AGENTMEMORY_INJECT_CONTEXT=false to disable.`,
+    );
+  } else {
+    console.log(
+      `[agentmemory] Context injection: OFF (default, #143) — hooks capture observations but do not inject context into Claude Code's conversation. Set AGENTMEMORY_INJECT_CONTEXT=true to opt-in (warning: expect your Claude Pro allocation to drain faster).`,
     );
   }
 

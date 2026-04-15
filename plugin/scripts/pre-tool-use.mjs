@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 //#region src/hooks/pre-tool-use.ts
+const INJECT_CONTEXT = process.env["AGENTMEMORY_INJECT_CONTEXT"] === "true";
 const REST_URL = process.env["AGENTMEMORY_URL"] || "http://localhost:3111";
 const SECRET = process.env["AGENTMEMORY_SECRET"] || "";
 function authHeaders() {
@@ -8,6 +9,7 @@ function authHeaders() {
 	return h;
 }
 async function main() {
+	if (!INJECT_CONTEXT) return;
 	let input = "";
 	for await (const chunk of process.stdin) input += chunk;
 	let data;
