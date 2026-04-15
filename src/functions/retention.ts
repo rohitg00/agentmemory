@@ -252,22 +252,42 @@ export function registerRetentionFunctions(
         };
       }
 
-      // Branch on source (#124). Pre-0.8.10 rows have no `source` field;
-      // treat them as episodic so upgraded stores continue to evict
-      // their old rows. After one re-score (mem::retention-score) every
-      // row will have the correct source tag.
+      // Branch on source (#124). Pre-0.8.10 rows have no `source` field,
+      // and that includes semantic retention rows that were written by
+      // the old scorer — so we can't just default to episodic, that
+      // would silently no-op the delete and leave the stranded semantic
+      // memory alive (the exact bug #124 is about). When `source` is
+      // missing, probe both namespaces to find where the memoryId
+      // actually lives and route the delete there. After one re-score
+      // (mem::retention-score) every row will have the correct tag.
       let evicted = 0;
       let evictedEpisodic = 0;
       let evictedSemantic = 0;
       for (const candidate of candidates) {
         try {
-          const scope =
-            candidate.source === "semantic" ? KV.semantic : KV.memories;
+          let scope: string;
+          let resolvedSource: "episodic" | "semantic";
+          if (candidate.source === "semantic") {
+            scope = KV.semantic;
+            resolvedSource = "semantic";
+          } else if (candidate.source === "episodic") {
+            scope = KV.memories;
+            resolvedSource = "episodic";
+          } else {
+            const episodic = await kv.get(KV.memories, candidate.memoryId);
+            if (episodic !== null) {
+              scope = KV.memories;
+              resolvedSource = "episodic";
+            } else {
+              scope = KV.semantic;
+              resolvedSource = "semantic";
+            }
+          }
           await kv.delete(scope, candidate.memoryId);
           await kv.delete(KV.retentionScores, candidate.memoryId);
           await deleteAccessLog(kv, candidate.memoryId);
           evicted++;
-          if (candidate.source === "semantic") evictedSemantic++;
+          if (resolvedSource === "semantic") evictedSemantic++;
           else evictedEpisodic++;
         } catch {
           continue;

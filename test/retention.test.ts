@@ -297,7 +297,47 @@ describe("RetentionScoring", () => {
     expect(remainingScores).toHaveLength(0);
   });
 
-  it("mem::retention-evict treats pre-0.8.10 rows with missing source as episodic (backwards-compat, #124)", async () => {
+  it("mem::retention-evict probes namespaces for legacy semantic rows (backwards-compat, #124)", async () => {
+    const { registerRetentionFunctions } = await import(
+      "../src/functions/retention.js"
+    );
+
+    // The actual nasty case from CodeRabbit's review: a pre-0.8.10
+    // store that had a semantic memory scored by the old code path.
+    // The retention row has NO source field and the memory lives in
+    // mem:semantic. If the eviction path blindly defaults missing
+    // source to episodic, it no-ops the delete and strands the
+    // semantic row forever — which is the exact bug #124 is about.
+    const sdk = mockSdk();
+    const kv = mockKV([], [makeSemanticMemory("sem_legacy", 500, 0)]);
+    registerRetentionFunctions(sdk as never, kv as never);
+
+    await kv.set("mem:retention", "sem_legacy", {
+      memoryId: "sem_legacy",
+      // No `source` field — simulates a row written by 0.8.9 or earlier.
+      score: 0.01,
+      salience: 0,
+      temporalDecay: 0,
+      reinforcementBoost: 0,
+      lastAccessed: new Date().toISOString(),
+      accessCount: 0,
+    });
+
+    const result = (await sdk.trigger("mem::retention-evict", {
+      threshold: 0.5,
+    })) as any;
+    expect(result.evicted).toBe(1);
+    expect(result.evictedSemantic).toBe(1);
+    expect(result.evictedEpisodic).toBe(0);
+
+    // Most important assertion: the semantic row is GONE from
+    // mem:semantic. Before the probe fix, this assertion failed
+    // because the delete targeted mem:memories.
+    const remainingSem = await kv.list("mem:semantic");
+    expect(remainingSem).toHaveLength(0);
+  });
+
+  it("mem::retention-evict routes pre-0.8.10 episodic rows with missing source to mem:memories (#124)", async () => {
     const { registerRetentionFunctions } = await import(
       "../src/functions/retention.js"
     );
