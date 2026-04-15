@@ -118,6 +118,13 @@ export function registerRetentionFunctions(
               (1000 * 60 * 60 * 24)),
         );
 
+      // Build all entries in memory first, then flush with Promise.all
+      // so a full rescore is one batched KV write instead of N sequential
+      // round-trips. Separate counts for the audit record at the end.
+      const pendingWrites: Array<[string, RetentionScore]> = [];
+      let episodicScored = 0;
+      let semanticScored = 0;
+
       for (const mem of memories) {
         if (!mem.isLatest) continue;
         const log = logsById.get(mem.id) ?? emptyAccessLog(mem.id);
@@ -144,7 +151,8 @@ export function registerRetentionFunctions(
         };
 
         scores.push(entry);
-        await kv.set(KV.retentionScores, mem.id, entry);
+        pendingWrites.push([mem.id, entry]);
+        episodicScored++;
       }
 
       for (const sem of semanticMems) {
@@ -188,8 +196,19 @@ export function registerRetentionFunctions(
         };
 
         scores.push(entry);
-        await kv.set(KV.retentionScores, sem.id, entry);
+        pendingWrites.push([sem.id, entry]);
+        semanticScored++;
       }
+
+      // Flush all retention rows in parallel. N sequential writes was
+      // making full rescores O(n) round-trips on stores with 1000+
+      // memories; batching drops that to O(1) wall time on the KV
+      // backends that can pipeline.
+      await Promise.all(
+        pendingWrites.map(([id, entry]) =>
+          kv.set(KV.retentionScores, id, entry),
+        ),
+      );
 
       scores.sort((a, b) => b.score - a.score);
 
@@ -215,6 +234,22 @@ export function registerRetentionFunctions(
         total: scores.length,
         ...tiers,
       });
+
+      // Audit the rescore as a single batched event per sweep. We
+      // intentionally pass an empty targetIds array — a mature store
+      // can have 1000+ memory ids per rescore and flooding the audit
+      // log with every memoryId on every cron tick is worse than
+      // recording just the summary. The details payload has enough
+      // context for observability (counts per source + per tier).
+      if (scores.length > 0) {
+        await recordAudit(kv, "retention_score", "mem::retention-score", [], {
+          total: scores.length,
+          episodic: episodicScored,
+          semantic: semanticScored,
+          tiers,
+          config,
+        });
+      }
 
       return { success: true, total: scores.length, tiers, scores };
     },

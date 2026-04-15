@@ -323,16 +323,21 @@ describe("RetentionScoring", () => {
     await sdk.trigger("mem::retention-score", {});
     await sdk.trigger("mem::retention-evict", { threshold: 0.9 });
 
-    const auditEntries = await kv.list<{
+    // Retention-score ALSO emits an audit row (one per rescore, also
+    // required by the repo audit-coverage policy), so filter the audit
+    // log down to just the retention-evict entry we're asserting on.
+    const allEntries = await kv.list<{
       operation: string;
       functionId: string;
       targetIds: string[];
       details: Record<string, unknown>;
     }>("mem:audit");
-    expect(auditEntries).toHaveLength(1);
-    const [entry] = auditEntries;
+    const evictEntries = allEntries.filter(
+      (e) => e.functionId === "mem::retention-evict",
+    );
+    expect(evictEntries).toHaveLength(1);
+    const [entry] = evictEntries;
     expect(entry.operation).toBe("delete");
-    expect(entry.functionId).toBe("mem::retention-evict");
     expect([...entry.targetIds].sort()).toEqual(["mem_a", "mem_b", "sem_c"]);
     expect(entry.details.evicted).toBe(3);
     expect(entry.details.evictedEpisodic).toBe(2);
@@ -346,15 +351,56 @@ describe("RetentionScoring", () => {
 
     const sdk = mockSdk();
     // Memory is 1 day old → score will be high → nothing falls below
-    // the strict 0.99 threshold → evict=0 → audit log stays empty.
+    // the strict 0.99 threshold → evict=0 → no evict audit row.
+    // Retention-score itself still writes one audit row per sweep,
+    // which is the expected behavior (zero-eviction != zero-rescore),
+    // so we filter the audit log down to just the evict entries.
     const kv = mockKV([makeMemory("mem_keep", "architecture", 1)]);
     registerRetentionFunctions(sdk as never, kv as never);
 
     await sdk.trigger("mem::retention-score", {});
     await sdk.trigger("mem::retention-evict", { threshold: 0.0001 });
 
-    const auditEntries = await kv.list("mem:audit");
-    expect(auditEntries).toHaveLength(0);
+    const allEntries = await kv.list<{ functionId: string }>("mem:audit");
+    const evictEntries = allEntries.filter(
+      (e) => e.functionId === "mem::retention-evict",
+    );
+    expect(evictEntries).toHaveLength(0);
+  });
+
+  it("mem::retention-score emits a batched audit row per rescore (#124, audit policy)", async () => {
+    const { registerRetentionFunctions } = await import(
+      "../src/functions/retention.js"
+    );
+
+    const sdk = mockSdk();
+    const kv = mockKV(
+      [makeMemory("mem_a", "fact", 10), makeMemory("mem_b", "fact", 10)],
+      [makeSemanticMemory("sem_c", 10, 2)],
+    );
+    registerRetentionFunctions(sdk as never, kv as never);
+
+    await sdk.trigger("mem::retention-score", {});
+
+    const allEntries = await kv.list<{
+      operation: string;
+      functionId: string;
+      targetIds: string[];
+      details: Record<string, unknown>;
+    }>("mem:audit");
+    const scoreEntries = allEntries.filter(
+      (e) => e.functionId === "mem::retention-score",
+    );
+    expect(scoreEntries).toHaveLength(1);
+    const [entry] = scoreEntries;
+    expect(entry.operation).toBe("retention_score");
+    // targetIds is intentionally empty — a mature store can have 1000+
+    // memory ids per rescore and flooding the audit log would be worse
+    // than recording just the summary counts.
+    expect(entry.targetIds).toEqual([]);
+    expect(entry.details.total).toBe(3);
+    expect(entry.details.episodic).toBe(2);
+    expect(entry.details.semantic).toBe(1);
   });
 
   it("mem::retention-evict probes namespaces for legacy semantic rows (backwards-compat, #124)", async () => {

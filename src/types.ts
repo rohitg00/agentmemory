@@ -472,6 +472,7 @@ export interface AuditEntry {
     | "sentinel_trigger"
     | "sketch_create"
     | "sketch_promote"
+    | "retention_score"
     | "sketch_discard"
     | "crystallize"
     | "diagnose"
