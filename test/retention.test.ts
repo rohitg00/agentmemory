@@ -260,6 +260,17 @@ describe("RetentionScoring", () => {
     const sem = result.scores.find((s: any) => s.memoryId === "sem_sem");
     expect(ep.source).toBe("episodic");
     expect(sem.source).toBe("semantic");
+
+    // Also assert the source discriminator is persisted to mem:retention,
+    // not just present in the transient response payload — the eviction
+    // loop reads back from stored rows, so a regression in kv.set or
+    // serialization would still pass the in-memory check above.
+    const [epStored, semStored] = await Promise.all([
+      kv.get("mem:retention", "mem_ep"),
+      kv.get("mem:retention", "sem_sem"),
+    ]);
+    expect(epStored).toMatchObject({ source: "episodic" });
+    expect(semStored).toMatchObject({ source: "semantic" });
   });
 
   it("mem::retention-evict deletes semantic memories from mem:semantic, not mem:memories (#124)", async () => {
@@ -295,6 +306,55 @@ describe("RetentionScoring", () => {
     // Retention score rows also cleaned up for both.
     const remainingScores = await kv.list("mem:retention");
     expect(remainingScores).toHaveLength(0);
+  });
+
+  it("mem::retention-evict emits a single batched audit record on success (#124, audit policy)", async () => {
+    const { registerRetentionFunctions } = await import(
+      "../src/functions/retention.js"
+    );
+
+    const sdk = mockSdk();
+    const kv = mockKV(
+      [makeMemory("mem_a", "fact", 500), makeMemory("mem_b", "fact", 500)],
+      [makeSemanticMemory("sem_c", 500, 0)],
+    );
+    registerRetentionFunctions(sdk as never, kv as never);
+
+    await sdk.trigger("mem::retention-score", {});
+    await sdk.trigger("mem::retention-evict", { threshold: 0.9 });
+
+    const auditEntries = await kv.list<{
+      operation: string;
+      functionId: string;
+      targetIds: string[];
+      details: Record<string, unknown>;
+    }>("mem:audit");
+    expect(auditEntries).toHaveLength(1);
+    const [entry] = auditEntries;
+    expect(entry.operation).toBe("delete");
+    expect(entry.functionId).toBe("mem::retention-evict");
+    expect([...entry.targetIds].sort()).toEqual(["mem_a", "mem_b", "sem_c"]);
+    expect(entry.details.evicted).toBe(3);
+    expect(entry.details.evictedEpisodic).toBe(2);
+    expect(entry.details.evictedSemantic).toBe(1);
+  });
+
+  it("mem::retention-evict skips audit when evicted=0 (no spurious audit rows)", async () => {
+    const { registerRetentionFunctions } = await import(
+      "../src/functions/retention.js"
+    );
+
+    const sdk = mockSdk();
+    // Memory is 1 day old → score will be high → nothing falls below
+    // the strict 0.99 threshold → evict=0 → audit log stays empty.
+    const kv = mockKV([makeMemory("mem_keep", "architecture", 1)]);
+    registerRetentionFunctions(sdk as never, kv as never);
+
+    await sdk.trigger("mem::retention-score", {});
+    await sdk.trigger("mem::retention-evict", { threshold: 0.0001 });
+
+    const auditEntries = await kv.list("mem:audit");
+    expect(auditEntries).toHaveLength(0);
   });
 
   it("mem::retention-evict probes namespaces for legacy semantic rows (backwards-compat, #124)", async () => {

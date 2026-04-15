@@ -14,6 +14,7 @@ import {
   deleteAccessLog,
   normalizeAccessLog,
 } from "./access-tracker.js";
+import { recordAudit } from "./audit.js";
 
 const DEFAULT_DECAY: DecayConfig = {
   lambda: 0.01,
@@ -263,6 +264,7 @@ export function registerRetentionFunctions(
       let evicted = 0;
       let evictedEpisodic = 0;
       let evictedSemantic = 0;
+      const evictedIds: string[] = [];
       for (const candidate of candidates) {
         try {
           let scope: string;
@@ -287,11 +289,28 @@ export function registerRetentionFunctions(
           await kv.delete(KV.retentionScores, candidate.memoryId);
           await deleteAccessLog(kv, candidate.memoryId);
           evicted++;
+          evictedIds.push(candidate.memoryId);
           if (resolvedSource === "semantic") evictedSemantic++;
           else evictedEpisodic++;
         } catch {
           continue;
         }
+      }
+
+      // Retention eviction is a structural delete path that removes
+      // memories, retention scores, and access logs, so it needs to
+      // emit an audit record per the repo's audit-coverage policy (see
+      // mem::governance-delete for the reference pattern). Batched,
+      // one record per invocation — per-candidate audits would flood
+      // the audit log during normal eviction sweeps.
+      if (evicted > 0) {
+        await recordAudit(kv, "delete", "mem::retention-evict", evictedIds, {
+          threshold,
+          evicted,
+          evictedEpisodic,
+          evictedSemantic,
+          reason: "retention score below threshold",
+        });
       }
 
       ctx.logger.info("Retention-based eviction complete", {
