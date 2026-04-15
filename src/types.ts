@@ -792,6 +792,11 @@ export interface TemporalState {
 
 export interface RetentionScore {
   memoryId: string;
+  // Which KV scope this row came from. Needed by mem::retention-evict
+  // so the delete loop routes to KV.memories or KV.semantic correctly.
+  // Missing on pre-0.8.10 rows — callers must treat `undefined` as
+  // "unknown, assume episodic" for backwards-compat. See #124.
+  source?: "episodic" | "semantic";
   score: number;
   salience: number;
   temporalDecay: number;

@@ -133,6 +133,7 @@ export function registerRetentionFunctions(
 
         const entry: RetentionScore = {
           memoryId: mem.id,
+          source: "episodic",
           score,
           salience,
           temporalDecay,
@@ -176,6 +177,7 @@ export function registerRetentionFunctions(
 
         const entry: RetentionScore = {
           memoryId: sem.id,
+          source: "semantic",
           score,
           salience,
           temporalDecay,
@@ -250,13 +252,23 @@ export function registerRetentionFunctions(
         };
       }
 
+      // Branch on source (#124). Pre-0.8.10 rows have no `source` field;
+      // treat them as episodic so upgraded stores continue to evict
+      // their old rows. After one re-score (mem::retention-score) every
+      // row will have the correct source tag.
       let evicted = 0;
+      let evictedEpisodic = 0;
+      let evictedSemantic = 0;
       for (const candidate of candidates) {
         try {
-          await kv.delete(KV.memories, candidate.memoryId);
+          const scope =
+            candidate.source === "semantic" ? KV.semantic : KV.memories;
+          await kv.delete(scope, candidate.memoryId);
           await kv.delete(KV.retentionScores, candidate.memoryId);
           await deleteAccessLog(kv, candidate.memoryId);
           evicted++;
+          if (candidate.source === "semantic") evictedSemantic++;
+          else evictedEpisodic++;
         } catch {
           continue;
         }
@@ -264,10 +276,12 @@ export function registerRetentionFunctions(
 
       ctx.logger.info("Retention-based eviction complete", {
         evicted,
+        evictedEpisodic,
+        evictedSemantic,
         threshold,
       });
 
-      return { success: true, evicted };
+      return { success: true, evicted, evictedEpisodic, evictedSemantic };
     },
   );
 }
