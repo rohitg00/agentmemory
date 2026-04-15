@@ -1,4 +1,4 @@
-import { TriggerAction, getContext, type ISdk } from "iii-sdk";
+import { TriggerAction, type ISdk } from "iii-sdk";
 import type { RawObservation, HookPayload } from "../types.js";
 import { KV, STREAM, generateId } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
@@ -8,6 +8,7 @@ import { withKeyedLock } from "../state/keyed-mutex.js";
 import { isAutoCompressEnabled } from "../config.js";
 import { buildSyntheticCompression } from "./compress-synthetic.js";
 import { getSearchIndex } from "./search.js";
+import { logger } from "../logger.js";
 
 export function registerObserveFunction(
   sdk: ISdk,
@@ -17,7 +18,6 @@ export function registerObserveFunction(
 ): void {
   sdk.registerFunction("mem::observe", 
     async (payload: HookPayload) => {
-      const ctx = getContext();
 
       if (
         !payload?.sessionId ||
@@ -185,7 +185,7 @@ export function registerObserveFunction(
           });
         }
 
-        ctx.logger.info("Observation captured", {
+        logger.info("Observation captured", {
           obsId,
           sessionId: payload.sessionId,
           hook: payload.hookType,

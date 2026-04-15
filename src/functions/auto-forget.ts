@@ -1,10 +1,10 @@
 import type { ISdk } from "iii-sdk";
-import { getContext } from "iii-sdk";
 import type { Memory, CompressedObservation, Session } from "../types.js";
 import { KV, jaccardSimilarity } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { recordAudit } from "./audit.js";
 import { deleteAccessLog } from "./access-tracker.js";
+import { logger } from "../logger.js";
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const CONTRADICTION_THRESHOLD = 0.9;
@@ -23,7 +23,6 @@ interface AutoForgetResult {
 export function registerAutoForgetFunction(sdk: ISdk, kv: StateKV): void {
   sdk.registerFunction("mem::auto-forget", 
     async (data: { dryRun?: boolean }): Promise<AutoForgetResult> => {
-      const ctx = getContext();
       const dryRun = data?.dryRun ?? false;
       const now = Date.now();
 
@@ -172,7 +171,7 @@ export function registerAutoForgetFunction(sdk: ISdk, kv: StateKV): void {
         }
       }
 
-      ctx.logger.info("Auto-forget complete", {
+      logger.info("Auto-forget complete", {
         ttlExpired: result.ttlExpired.length,
         contradictions: result.contradictions.length,
         lowValueObs: result.lowValueObs.length,

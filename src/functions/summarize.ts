@@ -1,5 +1,4 @@
 import type { ISdk } from "iii-sdk";
-import { getContext } from "iii-sdk";
 import type {
   CompressedObservation,
   SessionSummary,
@@ -15,6 +14,7 @@ import { validateOutput } from "../eval/validator.js";
 import { scoreSummary } from "../eval/quality.js";
 import type { MetricsStore } from "../eval/metrics-store.js";
 import { safeAudit } from "./audit.js";
+import { logger } from "../logger.js";
 
 function parseSummaryXml(
   xml: string,
@@ -46,7 +46,6 @@ export function registerSummarizeFunction(
 ): void {
   sdk.registerFunction("mem::summarize", 
     async (data: { sessionId: string } | undefined) => {
-      const ctx = getContext();
       const startMs = Date.now();
       if (!data || typeof data.sessionId !== "string" || !data.sessionId.trim()) {
         return { success: false, error: "sessionId is required" };
@@ -55,7 +54,7 @@ export function registerSummarizeFunction(
 
       const session = await kv.get<Session>(KV.sessions, sessionId);
       if (!session) {
-        ctx.logger.warn("Session not found for summarize", {
+        logger.warn("Session not found for summarize", {
           sessionId,
         });
         return { success: false, error: "session_not_found" };
@@ -67,7 +66,7 @@ export function registerSummarizeFunction(
       const compressed = observations.filter((o) => o.title);
 
       if (compressed.length === 0) {
-        ctx.logger.info("No observations to summarize", {
+        logger.info("No observations to summarize", {
           sessionId,
         });
         return { success: false, error: "no_observations" };
@@ -88,7 +87,7 @@ export function registerSummarizeFunction(
           if (metricsStore) {
             await metricsStore.record("mem::summarize", latencyMs, false);
           }
-          ctx.logger.warn("Failed to parse summary XML", {
+          logger.warn("Failed to parse summary XML", {
             sessionId,
           });
           return { success: false, error: "parse_failed" };
@@ -112,7 +111,7 @@ export function registerSummarizeFunction(
           if (metricsStore) {
             await metricsStore.record("mem::summarize", latencyMs, false);
           }
-          ctx.logger.warn("Summary validation failed", {
+          logger.warn("Summary validation failed", {
             sessionId,
             errors: validation.result.errors,
           });
@@ -137,7 +136,7 @@ export function registerSummarizeFunction(
           );
         }
 
-        ctx.logger.info("Session summarized", {
+        logger.info("Session summarized", {
           sessionId,
           title: summary.title,
           decisions: summary.keyDecisions.length,
@@ -152,7 +151,7 @@ export function registerSummarizeFunction(
         if (metricsStore) {
           await metricsStore.record("mem::summarize", latencyMs, false);
         }
-        ctx.logger.error("Summarize failed", {
+        logger.error("Summarize failed", {
           sessionId,
           error: msg,
         });

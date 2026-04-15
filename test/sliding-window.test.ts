@@ -76,14 +76,8 @@ function mockProvider(response: string): MemoryProvider {
   };
 }
 
-vi.mock("iii-sdk", () => ({
-  getContext: () => ({
-    logger: {
-      info: () => {},
-      warn: () => {},
-      error: () => {},
-    },
-  }),
+vi.mock("../src/logger.js", () => ({
+  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
 describe("SlidingWindow", () => {

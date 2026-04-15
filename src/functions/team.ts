@@ -1,5 +1,4 @@
 import type { ISdk } from "iii-sdk";
-import { getContext } from "iii-sdk";
 import type {
   TeamConfig,
   TeamSharedItem,
@@ -9,6 +8,7 @@ import type {
 import { KV, generateId } from "../state/schema.js";
 import type { StateKV } from "../state/kv.js";
 import { recordAudit } from "./audit.js";
+import { logger } from "../logger.js";
 
 const VALID_ITEM_TYPES = new Set(["memory", "pattern", "observation"]);
 
@@ -24,7 +24,6 @@ export function registerTeamFunction(
       sessionId?: string;
       project?: string;
     }) => {
-      const ctx = getContext();
       if (!data) {
         return { success: false, error: "payload required" };
       }
@@ -69,7 +68,7 @@ export function registerTeamFunction(
         itemType: data.itemType,
       });
 
-      ctx.logger.info("Team share", {
+      logger.info("Team share", {
         teamId: config.teamId,
         itemId: data.itemId,
       });

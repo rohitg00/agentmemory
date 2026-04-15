@@ -1,5 +1,4 @@
 import type { ISdk } from "iii-sdk";
-import { getContext } from "iii-sdk";
 import type {
   GraphNode,
   GraphEdge,
@@ -10,6 +9,7 @@ import type {
 } from "../types.js";
 import { KV, generateId } from "../state/schema.js";
 import type { StateKV } from "../state/kv.js";
+import { logger } from "../logger.js";
 
 const TEMPORAL_EXTRACTION_SYSTEM = `You are a temporal knowledge extraction engine. Given observations, extract entities AND their temporal relationships with full context metadata.
 
@@ -166,7 +166,6 @@ export function registerTemporalGraphFunctions(
         timestamp: string;
       }>;
     }) => {
-      const ctx = getContext();
       if (!data.observations || data.observations.length === 0) {
         return { success: false, error: "No observations provided" };
       }
@@ -258,7 +257,7 @@ export function registerTemporalGraphFunctions(
           existingEdges.push(edge);
         }
 
-        ctx.logger.info("Temporal graph extraction complete", {
+        logger.info("Temporal graph extraction complete", {
           nodes: nodes.length,
           edges: edges.length,
         });
@@ -269,7 +268,7 @@ export function registerTemporalGraphFunctions(
         };
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        ctx.logger.error("Temporal graph extraction failed", { error: msg });
+        logger.error("Temporal graph extraction failed", { error: msg });
         return { success: false, error: msg };
       }
     },

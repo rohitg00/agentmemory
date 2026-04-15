@@ -1,7 +1,7 @@
-import { getContext } from "iii-sdk";
 import type { AuditEntry } from "../types.js";
 import { KV, generateId } from "../state/schema.js";
 import type { StateKV } from "../state/kv.js";
+import { logger } from "../logger.js";
 
 export async function recordAudit(
   kv: StateKV,
@@ -39,8 +39,7 @@ export async function safeAudit(
     await recordAudit(kv, operation, functionId, targetIds, details, qualityScore, userId);
   } catch (err) {
     try {
-      const ctx = getContext();
-      ctx.logger.warn("audit write failed", {
+      logger.warn("audit write failed", {
         functionId,
         operation,
         targetIds,

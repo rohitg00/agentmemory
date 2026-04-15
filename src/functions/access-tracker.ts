@@ -1,7 +1,7 @@
-import { getContext } from "iii-sdk";
 import { KV } from "../state/schema.js";
 import type { StateKV } from "../state/kv.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
+import { logger } from "../logger.js";
 
 const RECENT_CAP = 20;
 
@@ -71,8 +71,7 @@ export async function recordAccess(
     });
   } catch (err) {
     try {
-      const ctx = getContext();
-      ctx.logger.warn("recordAccess failed", {
+      logger.warn("recordAccess failed", {
         memoryId,
         error: err instanceof Error ? err.message : String(err),
       });

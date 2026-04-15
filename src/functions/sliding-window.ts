@@ -1,5 +1,4 @@
 import type { ISdk } from "iii-sdk";
-import { getContext } from "iii-sdk";
 import type {
   CompressedObservation,
   EnrichedChunk,
@@ -8,6 +7,7 @@ import type {
 import { KV, generateId } from "../state/schema.js";
 import type { StateKV } from "../state/kv.js";
 import { recordAudit } from "./audit.js";
+import { logger } from "../logger.js";
 
 const SLIDING_WINDOW_SYSTEM = `You are a contextual enrichment engine. Given a primary observation and its surrounding context window (previous and next observations from the same session), produce an enriched version.
 
@@ -125,7 +125,6 @@ export function registerSlidingWindowFunction(
       lookback?: number;
       lookahead?: number;
     }) => {
-      const ctx = getContext();
       if (
         !data ||
         typeof data.sessionId !== "string" ||
@@ -174,7 +173,7 @@ export function registerSlidingWindowFunction(
         const parsed = parseEnrichedXml(response);
 
         if (!parsed) {
-          ctx.logger.warn("Failed to parse enrichment XML", {
+          logger.warn("Failed to parse enrichment XML", {
             obsId: data.observationId,
           });
           return { success: false, error: "parse_failed" };
@@ -204,7 +203,7 @@ export function registerSlidingWindowFunction(
           observationId,
         });
 
-        ctx.logger.info("Observation enriched via sliding window", {
+        logger.info("Observation enriched via sliding window", {
           obsId: observationId,
           entitiesResolved: Object.keys(parsed.resolvedEntities).length,
           preferencesFound: parsed.preferences.length,
@@ -214,7 +213,7 @@ export function registerSlidingWindowFunction(
         return { success: true, enriched };
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        ctx.logger.error("Sliding window enrichment failed", { error: msg });
+        logger.error("Sliding window enrichment failed", { error: msg });
         return { success: false, error: msg };
       }
     },
@@ -227,7 +226,6 @@ export function registerSlidingWindowFunction(
       lookahead?: number;
       minImportance?: number;
     }) => {
-      const ctx = getContext();
       if (!data || typeof data.sessionId !== "string" || !data.sessionId.trim()) {
         return { success: false, error: "sessionId is required" };
       }
@@ -256,7 +254,7 @@ export function registerSlidingWindowFunction(
         }
       }
 
-      ctx.logger.info("Session enrichment complete", {
+      logger.info("Session enrichment complete", {
         sessionId,
         total: toEnrich.length,
         enriched,

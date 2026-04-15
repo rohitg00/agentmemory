@@ -1,10 +1,10 @@
 import type { ISdk } from "iii-sdk";
-import { getContext } from "iii-sdk";
 import type { Memory, CompressedObservation, ContextBlock } from "../types.js";
 import { KV, generateId } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { recordAudit } from "./audit.js";
 import { recordAccessBatch } from "./access-tracker.js";
+import { logger } from "../logger.js";
 
 const CORE_SCOPE = "mem:core-memory";
 
@@ -99,7 +99,6 @@ export function registerWorkingMemoryFunctions(
 
   sdk.registerFunction("mem::working-context", 
     async (data: { budget?: number }) => {
-      const ctx = getContext();
       const budget = data.budget || tokenBudget;
       const now = Date.now();
       let usedTokens = 0;
@@ -172,7 +171,7 @@ export function registerWorkingMemoryFunctions(
 
       const context = sections.join("\n\n");
 
-      ctx.logger.info("Working context built", {
+      logger.info("Working context built", {
         coreEntries: coreLines.length,
         archivalEntries: archivalLines.length,
         pagedOut,

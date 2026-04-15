@@ -1,6 +1,6 @@
 import type { ISdk } from "iii-sdk";
-import { getContext } from "iii-sdk";
 import type { MemoryProvider, QueryExpansion } from "../types.js";
+import { logger } from "../logger.js";
 
 const QUERY_EXPANSION_SYSTEM = `You are a query expansion engine for a memory retrieval system. Given a user query, generate diverse reformulations to maximize recall.
 
@@ -72,9 +72,8 @@ export function registerQueryExpansionFunction(
 ): void {
   sdk.registerFunction("mem::expand-query", 
     async (data: { query: string; maxReformulations?: number } | undefined) => {
-      const ctx = getContext();
       if (!data || typeof data.query !== "string" || !data.query.trim()) {
-        ctx.logger.warn("Invalid expand-query payload");
+        logger.warn("Invalid expand-query payload");
         return { success: false, error: "query must be a non-empty string" };
       }
       const rawMaxR = Number(data.maxReformulations);
@@ -91,7 +90,7 @@ export function registerQueryExpansionFunction(
 
         const parsed = parseExpansionXml(response);
         if (!parsed) {
-          ctx.logger.warn("Failed to parse query expansion");
+          logger.warn("Failed to parse query expansion");
           return {
             success: true,
             expansion: {
@@ -106,7 +105,7 @@ export function registerQueryExpansionFunction(
         parsed.original = query;
         parsed.reformulations = parsed.reformulations.slice(0, maxR);
 
-        ctx.logger.info("Query expanded", {
+        logger.info("Query expanded", {
           original: query,
           reformulations: parsed.reformulations.length,
           entities: parsed.entityExtractions.length,
@@ -115,7 +114,7 @@ export function registerQueryExpansionFunction(
         return { success: true, expansion: parsed };
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        ctx.logger.error("Query expansion failed", { error: msg });
+        logger.error("Query expansion failed", { error: msg });
         return {
           success: true,
           expansion: {

@@ -1,8 +1,8 @@
 import type { ISdk } from "iii-sdk";
-import { getContext } from "iii-sdk";
 import type { Memory } from "../types.js";
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
+import { logger } from "../logger.js";
 
 const MAX_CONTEXT_LENGTH = 4000;
 
@@ -23,7 +23,6 @@ export function registerEnrichFunction(sdk: ISdk, kv: StateKV): void {
       terms?: string[];
       toolName?: string;
     }) => {
-      const ctx = getContext();
       const parts: string[] = [];
 
       const fileContextPromise = sdk
@@ -117,7 +116,7 @@ export function registerEnrichFunction(sdk: ISdk, kv: StateKV): void {
         truncated = true;
       }
 
-      ctx.logger.info("Enrichment completed", {
+      logger.info("Enrichment completed", {
         sessionId: data.sessionId,
         fileCount: data.files.length,
         contextLength: context.length,

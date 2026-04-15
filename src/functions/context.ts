@@ -1,5 +1,4 @@
 import type { ISdk } from "iii-sdk";
-import { getContext } from "iii-sdk";
 import type {
   Session,
   CompressedObservation,
@@ -10,6 +9,7 @@ import type {
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { recordAccessBatch } from "./access-tracker.js";
+import { logger } from "../logger.js";
 
 function estimateTokens(text: string): number {
   return Math.ceil(text.length / 3);
@@ -30,7 +30,6 @@ export function registerContextFunction(
 ): void {
   sdk.registerFunction("mem::context", 
     async (data: { sessionId: string; project: string; budget?: number }) => {
-      const ctx = getContext();
       const budget = data.budget || tokenBudget;
       const blocks: ContextBlock[] = [];
 
@@ -161,12 +160,12 @@ export function registerContextFunction(
       }
 
       if (selected.length === 0) {
-        ctx.logger.info("No context available", { project: data.project });
+        logger.info("No context available", { project: data.project });
         return { context: "", blocks: 0, tokens: 0 };
       }
 
       const result = `${header}\n${selected.join("\n\n")}\n${footer}`;
-      ctx.logger.info("Context generated", {
+      logger.info("Context generated", {
         blocks: selected.length,
         tokens: usedTokens,
       });

@@ -1,9 +1,10 @@
-import { TriggerAction, getContext, type ISdk } from "iii-sdk";
+import { TriggerAction, type ISdk } from "iii-sdk";
 import type { Memory } from "../types.js";
 import { KV, generateId, jaccardSimilarity } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
 import { deleteAccessLog } from "./access-tracker.js";
+import { logger } from "../logger.js";
 
 export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
   sdk.registerFunction("mem::remember", 
@@ -15,7 +16,6 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
       ttlDays?: number;
       sourceObservationIds?: string[];
     }) => {
-      const ctx = getContext();
       if (
         !data.content ||
         typeof data.content !== "string" ||
@@ -106,7 +106,7 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
           });
         }
 
-        ctx.logger.info("Memory saved", {
+        logger.info("Memory saved", {
           memId: memory.id,
           type: memory.type,
         });
@@ -121,7 +121,6 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
       observationIds?: string[];
       memoryId?: string;
     }) => {
-      const ctx = getContext();
       let deleted = 0;
 
       if (data.memoryId) {
@@ -158,7 +157,7 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
         deleted += 2;
       }
 
-      ctx.logger.info("Memory forgotten", { deleted });
+      logger.info("Memory forgotten", { deleted });
       return { success: true, deleted };
     },
   );

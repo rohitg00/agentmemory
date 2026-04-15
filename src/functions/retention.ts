@@ -1,5 +1,4 @@
 import type { ISdk } from "iii-sdk";
-import { getContext } from "iii-sdk";
 import type {
   Memory,
   SemanticMemory,
@@ -15,6 +14,7 @@ import {
   normalizeAccessLog,
 } from "./access-tracker.js";
 import { recordAudit } from "./audit.js";
+import { logger } from "../logger.js";
 
 const DEFAULT_DECAY: DecayConfig = {
   lambda: 0.01,
@@ -125,7 +125,6 @@ export function registerRetentionFunctions(
 ): void {
   sdk.registerFunction("mem::retention-score",
     async (data: { config?: Partial<DecayConfig> }) => {
-      const ctx = getContext();
       const resolved = resolveDecayConfig(data?.config);
       if ("error" in resolved) {
         return { success: false, error: resolved.error };
@@ -264,7 +263,7 @@ export function registerRetentionFunctions(
         ).length,
       };
 
-      ctx.logger.info("Retention scores computed", {
+      logger.info("Retention scores computed", {
         total: scores.length,
         ...tiers,
       });
@@ -295,7 +294,6 @@ export function registerRetentionFunctions(
       dryRun?: boolean;
       maxEvict?: number;
     }) => {
-      const ctx = getContext();
       const threshold =
         typeof data?.threshold === "number" && Number.isFinite(data.threshold)
           ? data.threshold
@@ -384,7 +382,7 @@ export function registerRetentionFunctions(
         });
       }
 
-      ctx.logger.info("Retention-based eviction complete", {
+      logger.info("Retention-based eviction complete", {
         evicted,
         evictedEpisodic,
         evictedSemantic,

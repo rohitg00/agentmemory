@@ -11,10 +11,8 @@ const mockSdk = {
   registerFunction: vi.fn(),
 };
 
-vi.mock("iii-sdk", () => ({
-  getContext: () => ({
-    logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
-  }),
+vi.mock("../src/logger.js", () => ({
+  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
 vi.mock("../src/functions/audit.js", () => ({

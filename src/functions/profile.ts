@@ -1,5 +1,4 @@
 import type { ISdk } from "iii-sdk";
-import { getContext } from "iii-sdk";
 import type {
   CompressedObservation,
   Session,
@@ -8,11 +7,11 @@ import type {
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { recordAudit } from "./audit.js";
+import { logger } from "../logger.js";
 
 export function registerProfileFunction(sdk: ISdk, kv: StateKV): void {
   sdk.registerFunction("mem::profile", 
     async (data: { project: string; refresh?: boolean } | undefined) => {
-      const ctx = getContext();
       if (!data || typeof data.project !== "string" || !data.project.trim()) {
         return { success: false, error: "project is required" };
       }
@@ -116,7 +115,7 @@ export function registerProfileFunction(sdk: ISdk, kv: StateKV): void {
         totalObservations: totalObs,
       });
 
-      ctx.logger.info("Profile generated", {
+      logger.info("Profile generated", {
         project,
         sessions: projectSessions.length,
         observations: totalObs,

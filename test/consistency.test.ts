@@ -2,10 +2,8 @@ import { describe, it, expect, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-vi.mock("iii-sdk", () => ({
-  getContext: () => ({
-    logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn() },
-  }),
+vi.mock("../src/logger.js", () => ({
+  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
 import { getAllTools } from "../src/mcp/tools-registry.js";

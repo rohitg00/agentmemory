@@ -1,15 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { RawObservation } from "../src/types.js";
 
-vi.mock("iii-sdk", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("iii-sdk")>();
-  return {
-    ...actual,
-    getContext: () => ({
-      logger: { info: () => {}, warn: () => {}, error: () => {} },
-    }),
-  };
-});
+vi.mock("../src/logger.js", () => ({
+  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+}));
 
 function mockKV() {
   const store = new Map<string, Map<string, unknown>>();

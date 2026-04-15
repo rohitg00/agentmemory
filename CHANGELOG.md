@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.8.11] — 2026-04-15
+
+**Fix**: `node dist/index.mjs` crashed on first import after the iii-sdk v0.11 migration (#116) merged. iii-sdk v0.11 dropped `getContext()`, but 32 `src/functions/*.ts` files still imported and called it. Added `src/logger.ts` (thin stderr shim with the same `.info/.warn/.error` signature) and mechanically replaced every `ctx.logger.*` call. Updated all 45 test mock blocks. Fixed `search.ts` `registerFunction` call to use the v0.11 string-ID API.
+
+### Fixed
+
+- **iii-sdk v0.11 getContext crash** ([#116](https://github.com/rohitg00/agentmemory/issues/116)) — `SyntaxError: The requested module 'iii-sdk' does not provide an export named 'getContext'` on startup. Removed all `getContext` imports from 32 function files, added `src/logger.ts` shim, updated 45 test mock blocks.
+
 ### Changed
 
 - Upgraded `iii-sdk` dependency from `^0.11.0-next.8` to stable `^0.11.0`.

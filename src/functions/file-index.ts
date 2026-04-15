@@ -1,10 +1,10 @@
 import type { ISdk } from "iii-sdk";
-import { getContext } from "iii-sdk";
 import type { CompressedObservation, Session } from "../types.js";
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { recordAudit } from "./audit.js";
 import { recordAccessBatch } from "./access-tracker.js";
+import { logger } from "../logger.js";
 
 interface FileHistory {
   file: string;
@@ -24,7 +24,6 @@ export function registerFileIndexFunction(sdk: ISdk, kv: StateKV): void {
     async (
       data: { sessionId?: string; files?: string[]; project?: string } | undefined,
     ) => {
-      const ctx = getContext();
       const sessionId =
         data && typeof data.sessionId === "string" ? data.sessionId.trim() : "";
       const normalizedProject =
@@ -125,7 +124,7 @@ export function registerFileIndexFunction(sdk: ISdk, kv: StateKV): void {
       void recordAccessBatch(kv, accessedIds);
 
       const context = lines.join("\n");
-      ctx.logger.info("File context generated", {
+      logger.info("File context generated", {
         files: files.length,
         results: results.length,
       });

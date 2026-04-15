@@ -1,5 +1,4 @@
 import type { ISdk } from "iii-sdk";
-import { getContext } from "iii-sdk";
 import type {
   CompressedObservation,
   Memory,
@@ -27,6 +26,7 @@ Output XML:
 </memory>`;
 
 import { getXmlTag, getXmlChildren } from "../prompts/xml.js";
+import { logger } from "../logger.js";
 
 function parseMemoryXml(
   xml: string,
@@ -69,7 +69,6 @@ export function registerConsolidateFunction(
 ): void {
   sdk.registerFunction("mem::consolidate", 
     async (data: { project?: string; minObservations?: number }) => {
-      const ctx = getContext();
       const minObs = data.minObservations ?? 10;
 
       const sessions = await kv.list<Session>(KV.sessions);
@@ -209,14 +208,14 @@ export function registerConsolidateFunction(
             consolidated++;
           }
         } catch (err) {
-          ctx.logger.warn("Consolidation failed for concept", {
+          logger.warn("Consolidation failed for concept", {
             concept,
             error: err instanceof Error ? err.message : String(err),
           });
         }
       }
 
-      ctx.logger.info("Consolidation complete", {
+      logger.info("Consolidation complete", {
         consolidated,
         totalObs: allObs.length,
       });

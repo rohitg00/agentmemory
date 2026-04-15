@@ -1,5 +1,4 @@
 import type { ISdk } from "iii-sdk";
-import { getContext } from "iii-sdk";
 import type {
   CompressedObservation,
   SessionSummary,
@@ -10,6 +9,7 @@ import type {
 import { KV, generateId, fingerprintId } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { recordAudit } from "./audit.js";
+import { logger } from "../logger.js";
 
 const SKILL_EXTRACT_SYSTEM = `You are a skill extraction engine. Given a completed multi-step task session, extract a reusable procedural skill document.
 
@@ -107,7 +107,6 @@ export function registerSkillExtractFunctions(
 ): void {
   sdk.registerFunction("mem::skill-extract", 
     async (data: { sessionId: string }) => {
-      const ctx = getContext();
       if (!data?.sessionId) {
         return { success: false, error: "sessionId is required" };
       }
@@ -148,7 +147,7 @@ export function registerSkillExtractFunctions(
         const parsed = parseSkillXml(response);
 
         if (!parsed) {
-          ctx.logger.info("No skill extracted — session was exploratory", {
+          logger.info("No skill extracted — session was exploratory", {
             sessionId: data.sessionId,
           });
           return { success: true, extracted: false, reason: "no clear procedure found" };
@@ -184,7 +183,7 @@ export function registerSkillExtractFunctions(
             });
           } catch {}
 
-          ctx.logger.info("Skill reinforced", {
+          logger.info("Skill reinforced", {
             id: existing.id,
             name: parsed.title,
           });
@@ -226,7 +225,7 @@ export function registerSkillExtractFunctions(
           });
         } catch {}
 
-        ctx.logger.info("Skill extracted", {
+        logger.info("Skill extracted", {
           id: skill.id,
           title: parsed.title,
           steps: parsed.steps.length,
@@ -235,7 +234,7 @@ export function registerSkillExtractFunctions(
         return { success: true, extracted: true, reinforced: false, skill };
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        ctx.logger.error("Skill extraction failed", { error: msg });
+        logger.error("Skill extraction failed", { error: msg });
         return { success: false, error: msg };
       }
     },

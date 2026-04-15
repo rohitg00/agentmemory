@@ -1,5 +1,4 @@
 import type { ISdk } from "iii-sdk";
-import { getContext } from "iii-sdk";
 import type {
   Session,
   CompressedObservation,
@@ -10,6 +9,7 @@ import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { recordAudit } from "./audit.js";
 import { deleteAccessLog } from "./access-tracker.js";
+import { logger } from "../logger.js";
 
 interface EvictionConfig {
   staleSessionDays: number;
@@ -39,7 +39,6 @@ interface EvictionStats {
 export function registerEvictFunction(sdk: ISdk, kv: StateKV): void {
   sdk.registerFunction("mem::evict", 
     async (data: { dryRun?: boolean }): Promise<EvictionStats> => {
-      const ctx = getContext();
       const dryRun = data?.dryRun ?? false;
 
       const configOverride = await kv
@@ -75,7 +74,7 @@ export function registerEvictFunction(sdk: ISdk, kv: StateKV): void {
               await kv.delete(KV.sessions, session.id);
               stats.staleSessions++;
             } catch (err) {
-              ctx.logger.warn("Eviction delete failed", {
+              logger.warn("Eviction delete failed", {
                 resource: "session",
                 id: session.id,
                 error: err instanceof Error ? err.message : String(err),
@@ -113,7 +112,7 @@ export function registerEvictFunction(sdk: ISdk, kv: StateKV): void {
                 await kv.delete(KV.observations(session.id), o.id);
                 stats.lowImportanceObs++;
               } catch (err) {
-                ctx.logger.warn("Eviction delete failed", {
+                logger.warn("Eviction delete failed", {
                   resource: "observation",
                   id: o.id,
                   sessionId: session.id,
@@ -154,7 +153,7 @@ export function registerEvictFunction(sdk: ISdk, kv: StateKV): void {
                 await kv.delete(KV.observations(o.sessionId), o.id);
                 stats.capEvictions++;
               } catch (err) {
-                ctx.logger.warn("Eviction delete failed", {
+                logger.warn("Eviction delete failed", {
                   resource: "observation",
                   id: o.id,
                   sessionId: o.sessionId,
@@ -188,7 +187,7 @@ export function registerEvictFunction(sdk: ISdk, kv: StateKV): void {
                 stats.expiredMemories++;
                 evictedMemIds.add(mem.id);
               } catch (err) {
-                ctx.logger.warn("Eviction delete failed", {
+                logger.warn("Eviction delete failed", {
                   resource: "memory",
                   id: mem.id,
                   reason: "expired_memory",
@@ -220,7 +219,7 @@ export function registerEvictFunction(sdk: ISdk, kv: StateKV): void {
                 await kv.delete(KV.memories, mem.id);
                 stats.nonLatestMemories++;
               } catch (err) {
-                ctx.logger.warn("Eviction delete failed", {
+                logger.warn("Eviction delete failed", {
                   resource: "memory",
                   id: mem.id,
                   reason: "old_non_latest_memory",
@@ -239,7 +238,7 @@ export function registerEvictFunction(sdk: ISdk, kv: StateKV): void {
         }
       }
 
-      ctx.logger.info("Eviction complete", { stats });
+      logger.info("Eviction complete", { stats });
       return stats;
     },
   );

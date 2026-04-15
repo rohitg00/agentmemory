@@ -1,9 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("iii-sdk", () => ({
-  getContext: () => ({
-    logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn() },
-  }),
+vi.mock("../src/logger.js", () => ({
+  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
 import { registerSmartSearchFunction } from "../src/functions/smart-search.js";

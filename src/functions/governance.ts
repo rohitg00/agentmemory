@@ -1,15 +1,14 @@
 import type { ISdk } from "iii-sdk";
-import { getContext } from "iii-sdk";
 import type { Memory, GovernanceFilter, AuditEntry } from "../types.js";
 import { KV } from "../state/schema.js";
 import type { StateKV } from "../state/kv.js";
 import { recordAudit, safeAudit, queryAudit } from "./audit.js";
 import { deleteAccessLog } from "./access-tracker.js";
+import { logger } from "../logger.js";
 
 export function registerGovernanceFunction(sdk: ISdk, kv: StateKV): void {
   sdk.registerFunction("mem::governance-delete", 
     async (data: { memoryIds: string[]; reason?: string }) => {
-      const ctx = getContext();
       if (
         !data.memoryIds ||
         !Array.isArray(data.memoryIds) ||
@@ -39,7 +38,7 @@ export function registerGovernanceFunction(sdk: ISdk, kv: StateKV): void {
         },
       );
 
-      ctx.logger.info("Governance delete", {
+      logger.info("Governance delete", {
         requested: data.memoryIds.length,
         deleted,
       });
@@ -49,7 +48,6 @@ export function registerGovernanceFunction(sdk: ISdk, kv: StateKV): void {
 
   sdk.registerFunction("mem::governance-bulk", 
     async (data: GovernanceFilter & { dryRun?: boolean }) => {
-      const ctx = getContext();
 
       const hasFilter =
         (data.type && data.type.length > 0) ||
@@ -116,7 +114,7 @@ export function registerGovernanceFunction(sdk: ISdk, kv: StateKV): void {
           if (result.status === "fulfilled") {
             successfulIds.push(mem.id);
           } else {
-            ctx.logger.warn("Governance bulk delete failed", {
+            logger.warn("Governance bulk delete failed", {
               memoryId: mem.id,
               error:
                 result.reason instanceof Error
@@ -144,7 +142,7 @@ export function registerGovernanceFunction(sdk: ISdk, kv: StateKV): void {
         },
       );
 
-      ctx.logger.info("Governance bulk delete", {
+      logger.info("Governance bulk delete", {
         deleted: successfulIds.length,
         failed: failures.length,
       });

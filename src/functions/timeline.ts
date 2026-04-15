@@ -1,5 +1,4 @@
 import type { ISdk } from "iii-sdk";
-import { getContext } from "iii-sdk";
 import type {
   CompressedObservation,
   Session,
@@ -8,6 +7,7 @@ import type {
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { recordAccessBatch } from "./access-tracker.js";
+import { logger } from "../logger.js";
 
 export function registerTimelineFunction(sdk: ISdk, kv: StateKV): void {
   sdk.registerFunction("mem::timeline", 
@@ -17,7 +17,6 @@ export function registerTimelineFunction(sdk: ISdk, kv: StateKV): void {
       before?: number;
       after?: number;
     }) => {
-      const ctx = getContext();
       const before = Math.max(0, Math.floor(data.before ?? 5));
       const after = Math.max(0, Math.floor(data.after ?? 5));
 
@@ -97,7 +96,7 @@ export function registerTimelineFunction(sdk: ISdk, kv: StateKV): void {
         entries.map((e) => e.observation.id),
       );
 
-      ctx.logger.info("Timeline retrieved", {
+      logger.info("Timeline retrieved", {
         anchor: data.anchor,
         entries: entries.length,
       });

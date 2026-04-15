@@ -1,5 +1,4 @@
 import type { ISdk } from "iii-sdk";
-import { getContext } from "iii-sdk";
 import type {
   GraphNode,
   GraphEdge,
@@ -14,6 +13,7 @@ import {
   buildGraphExtractionPrompt,
 } from "../prompts/graph-extraction.js";
 import { recordAudit } from "./audit.js";
+import { logger } from "../logger.js";
 
 function parseGraphXml(
   xml: string,
@@ -86,7 +86,6 @@ export function registerGraphFunction(
 ): void {
   sdk.registerFunction("mem::graph-extract", 
     async (data: { observations: CompressedObservation[] }) => {
-      const ctx = getContext();
       if (!data.observations || data.observations.length === 0) {
         return { success: false, error: "No observations provided" };
       }
@@ -155,7 +154,7 @@ export function registerGraphFunction(
           edgesExtracted: edges.length,
         });
 
-        ctx.logger.info("Graph extraction complete", {
+        logger.info("Graph extraction complete", {
           nodes: nodes.length,
           edges: edges.length,
         });
@@ -166,7 +165,7 @@ export function registerGraphFunction(
         };
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        ctx.logger.error("Graph extraction failed", { error: msg });
+        logger.error("Graph extraction failed", { error: msg });
         return { success: false, error: msg };
       }
     },

@@ -1,11 +1,11 @@
 import type { ISdk } from "iii-sdk";
-import { getContext } from "iii-sdk";
 import type { Memory, MemoryRelation } from "../types.js";
 import { KV, generateId } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
 import { safeAudit } from "./audit.js";
 import { recordAccessBatch } from "./access-tracker.js";
+import { logger } from "../logger.js";
 
 function computeConfidence(
   source: Memory,
@@ -44,7 +44,6 @@ export function registerRelationsFunction(sdk: ISdk, kv: StateKV): void {
       type: MemoryRelation["type"];
       confidence?: number;
     }) => {
-      const ctx = getContext();
       const [firstId, secondId] = [data.sourceId, data.targetId].sort();
       const lockKey =
         firstId === secondId ? `mem:${firstId}` : `mem:${firstId}:${secondId}`;
@@ -116,7 +115,7 @@ export function registerRelationsFunction(sdk: ISdk, kv: StateKV): void {
           );
         }
 
-        ctx.logger.info("Memory relation created", {
+        logger.info("Memory relation created", {
           relationId,
           type: data.type,
           source: data.sourceId,
@@ -133,7 +132,6 @@ export function registerRelationsFunction(sdk: ISdk, kv: StateKV): void {
       newContent: string;
       newTitle?: string;
     }) => {
-      const ctx = getContext();
 
       const existing = await kv.get<Memory>(KV.memories, data.memoryId);
       if (!existing) {
@@ -185,7 +183,7 @@ export function registerRelationsFunction(sdk: ISdk, kv: StateKV): void {
         newId: evolved.id,
       });
 
-      ctx.logger.info("Memory evolved", {
+      logger.info("Memory evolved", {
         oldId: existing.id,
         newId: evolved.id,
         version: evolved.version,
@@ -200,7 +198,6 @@ export function registerRelationsFunction(sdk: ISdk, kv: StateKV): void {
       maxHops?: number;
       minConfidence?: number;
     }) => {
-      const ctx = getContext();
       const maxHops = Math.min(data.maxHops ?? 2, 5);
       const MAX_VISITED = 500;
       const rawMinConf = Number(data.minConfidence);
@@ -271,7 +268,7 @@ export function registerRelationsFunction(sdk: ISdk, kv: StateKV): void {
         result.map((r) => r.memory.id),
       );
 
-      ctx.logger.info("Related memories retrieved", {
+      logger.info("Related memories retrieved", {
         memoryId: data.memoryId,
         found: result.length,
       });

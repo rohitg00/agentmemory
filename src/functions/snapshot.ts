@@ -1,5 +1,4 @@
 import type { ISdk } from "iii-sdk";
-import { getContext } from "iii-sdk";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { existsSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
@@ -15,6 +14,7 @@ import { KV, generateId } from "../state/schema.js";
 import type { StateKV } from "../state/kv.js";
 import { recordAudit } from "./audit.js";
 import { VERSION } from "../version.js";
+import { logger } from "../logger.js";
 
 const COMMIT_HASH_RE = /^[0-9a-f]{7,40}$/i;
 
@@ -43,7 +43,6 @@ export function registerSnapshotFunction(
 ): void {
   sdk.registerFunction("mem::snapshot-create", 
     async (data?: { message?: string }) => {
-      const ctx = getContext();
 
       try {
         await ensureGitRepo(snapshotDir);
@@ -119,11 +118,11 @@ export function registerSnapshotFunction(
           stats: meta.stats,
         });
 
-        ctx.logger.info("Snapshot created", { commitHash });
+        logger.info("Snapshot created", { commitHash });
         return { success: true, snapshot: meta };
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        ctx.logger.error("Snapshot failed", { error: msg });
+        logger.error("Snapshot failed", { error: msg });
         return { success: false, error: msg };
       }
     },
@@ -156,7 +155,6 @@ export function registerSnapshotFunction(
 
   sdk.registerFunction("mem::snapshot-restore", 
     async (data: { commitHash: string } | undefined) => {
-      const ctx = getContext();
       if (!data || typeof data.commitHash !== "string" || !data.commitHash.trim()) {
         return { success: false, error: "commitHash is required" };
       }
@@ -220,13 +218,13 @@ export function registerSnapshotFunction(
           graphNodes: state.graphNodes?.length || 0,
         });
 
-        ctx.logger.info("Snapshot restored", {
+        logger.info("Snapshot restored", {
           commitHash: data.commitHash,
         });
         return { success: true, commitHash: data.commitHash };
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        ctx.logger.error("Snapshot restore failed", { error: msg });
+        logger.error("Snapshot restore failed", { error: msg });
         return { success: false, error: msg };
       }
     },

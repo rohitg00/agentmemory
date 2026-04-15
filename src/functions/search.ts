@@ -1,10 +1,10 @@
 import type { ISdk } from 'iii-sdk'
-import { getContext } from 'iii-sdk'
 import type { CompressedObservation, SearchResult, Session } from '../types.js'
 import { KV } from '../state/schema.js'
 import { StateKV } from '../state/kv.js'
 import { SearchIndex } from '../state/search-index.js'
 import { recordAccessBatch } from './access-tracker.js'
+import { logger } from "../logger.js";
 
 let index: SearchIndex | null = null
 
@@ -38,8 +38,7 @@ export async function rebuildIndex(kv: StateKV): Promise<number> {
     obsPerSession.push(...results)
   }
   if (failedSessions.length > 0) {
-    const ctx = getContext()
-    ctx.logger.warn('rebuildIndex: failed to load observations for sessions', { failedSessions })
+    logger.warn('rebuildIndex: failed to load observations for sessions', { failedSessions })
   }
   for (const observations of obsPerSession) {
     for (const obs of observations) {
@@ -54,9 +53,8 @@ export async function rebuildIndex(kv: StateKV): Promise<number> {
 
 export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
   sdk.registerFunction(
-    { id: 'mem::search', description: 'Search observations by keyword' },
+    'mem::search',
     async (data: { query: string; limit?: number; project?: string; cwd?: string }) => {
-      const ctx = getContext()
       const idx = getSearchIndex()
 
       // Input validation / normalization.
@@ -77,7 +75,7 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
 
       if (idx.size === 0) {
         const count = await rebuildIndex(kv)
-        ctx.logger.info('Search index rebuilt', { entries: count })
+        logger.info('Search index rebuilt', { entries: count })
       }
 
       // When filtering by project/cwd, over-fetch from the index so the
@@ -132,7 +130,7 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
       )
 
       // Avoid logging raw cwd/project (host paths). Log only that filters were active.
-      ctx.logger.info('Search completed', {
+      logger.info('Search completed', {
         query,
         results: enriched.length,
         hasProjectFilter: !!projectFilter,
