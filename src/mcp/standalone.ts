@@ -128,7 +128,7 @@ export async function handleToolCall(
           ]
             .join(" ")
             .toLowerCase();
-          return text.includes(query);
+          return query.split(/\s+/).every((word) => text.includes(word));
         })
         .slice(0, limit);
       return {
