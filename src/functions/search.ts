@@ -1,5 +1,5 @@
 import type { ISdk } from 'iii-sdk'
-import type { CompressedObservation, SearchResult, Session } from '../types.js'
+import type { CompactSearchResult, CompressedObservation, SearchResult, Session } from '../types.js'
 import { KV } from '../state/schema.js'
 import { StateKV } from '../state/kv.js'
 import { SearchIndex } from '../state/search-index.js'
@@ -54,7 +54,14 @@ export async function rebuildIndex(kv: StateKV): Promise<number> {
 export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
   sdk.registerFunction(
     'mem::search',
-    async (data: { query: string; limit?: number; project?: string; cwd?: string }) => {
+    async (data: {
+      query: string
+      limit?: number
+      project?: string
+      cwd?: string
+      format?: string
+      token_budget?: number
+    }) => {
       const idx = getSearchIndex()
 
       // Input validation / normalization.
@@ -72,6 +79,17 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
       }
       const projectFilter = typeof data.project === 'string' && data.project.length > 0 ? data.project : undefined
       const cwdFilter = typeof data.cwd === 'string' && data.cwd.length > 0 ? data.cwd : undefined
+      const format = typeof data.format === 'string' ? data.format : 'full'
+      if (!['full', 'compact', 'narrative'].includes(format)) {
+        throw new Error("mem::search: format must be one of 'full', 'compact', or 'narrative'")
+      }
+      let tokenBudget: number | undefined
+      if (data.token_budget !== undefined) {
+        if (!Number.isInteger(data.token_budget) || data.token_budget < 1) {
+          throw new Error('mem::search: token_budget must be a positive integer')
+        }
+        tokenBudget = data.token_budget
+      }
 
       if (idx.size === 0) {
         const count = await rebuildIndex(kv)
@@ -129,14 +147,86 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
         enriched.map((r) => r.observation.id),
       )
 
+      const estimateTokens = (value: unknown): number =>
+        Math.max(1, Math.ceil(JSON.stringify(value).length / 3))
+
+      const applyTokenBudget = <T>(items: T[]): {
+        items: T[]
+        used: number
+        truncated: boolean
+      } => {
+        if (!tokenBudget) return { items, used: items.reduce((sum, item) => sum + estimateTokens(item), 0), truncated: false }
+        const selected: T[] = []
+        let used = 0
+        for (const item of items) {
+          const itemTokens = estimateTokens(item)
+          if (used + itemTokens > tokenBudget) {
+            return { items: selected, used, truncated: selected.length < items.length }
+          }
+          selected.push(item)
+          used += itemTokens
+        }
+        return { items: selected, used, truncated: false }
+      }
+
+      if (format === 'compact') {
+        const compactResults: CompactSearchResult[] = enriched.map((r) => ({
+          obsId: r.observation.id,
+          sessionId: r.sessionId,
+          title: r.observation.title,
+          type: r.observation.type,
+          score: r.score,
+          timestamp: r.observation.timestamp,
+        }))
+        const packed = applyTokenBudget(compactResults)
+        return {
+          format,
+          results: packed.items,
+          tokens_used: packed.used,
+          tokens_budget: tokenBudget,
+          truncated: packed.truncated,
+        }
+      }
+
+      if (format === 'narrative') {
+        const narrativeResults = enriched.map((r) => ({
+          obsId: r.observation.id,
+          sessionId: r.sessionId,
+          title: r.observation.title,
+          narrative: r.observation.narrative,
+          score: r.score,
+          timestamp: r.observation.timestamp,
+        }))
+        const packed = applyTokenBudget(narrativeResults)
+        const text = packed.items
+          .map((r, index) => `${index + 1}. ${r.title}\n${r.narrative}`)
+          .join('\n\n')
+        return {
+          format,
+          results: packed.items,
+          text,
+          tokens_used: packed.used,
+          tokens_budget: tokenBudget,
+          truncated: packed.truncated,
+        }
+      }
+
+      const packed = applyTokenBudget(enriched)
+
       // Avoid logging raw cwd/project (host paths). Log only that filters were active.
       logger.info('Search completed', {
         query,
-        results: enriched.length,
+        results: packed.items.length,
         hasProjectFilter: !!projectFilter,
         hasCwdFilter: !!cwdFilter,
       })
-      return { results: enriched }
+      return {
+        format,
+        results: packed.items,
+        tokens_used: packed.used,
+        tokens_budget: tokenBudget,
+        truncated: packed.truncated,
+      }
     }
   )
 }

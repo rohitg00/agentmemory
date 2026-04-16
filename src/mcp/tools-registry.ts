@@ -24,8 +24,31 @@ export const CORE_TOOLS: McpToolDef[] = [
           type: "number",
           description: "Max results to return (default 10)",
         },
+        format: {
+          type: "string",
+          description: "Result format: full, compact, or narrative (default full)",
+        },
+        token_budget: {
+          type: "number",
+          description: "Optional token budget to trim returned results",
+        },
       },
       required: ["query"],
+    },
+  },
+  {
+    name: "memory_compress_file",
+    description:
+      "Compress a markdown file to reduce token usage while preserving headings, URLs, and code blocks. Creates a .original.md backup before writing.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        filePath: {
+          type: "string",
+          description: "Path to the markdown file to compress",
+        },
+      },
+      required: ["filePath"],
     },
   },
   {

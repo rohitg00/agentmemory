@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>agentmemory — Systems View</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: #f7f3ed;
+  font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
+  color: #1a1a1a;
+  padding: 56px 52px;
+}
+.page { max-width: 920px; margin: 0 auto; }
+
+.eyebrow {
+  font-size: 9.5px; letter-spacing: 2.5px; text-transform: uppercase;
+  color: #aaa; margin-bottom: 10px;
+}
+h1 {
+  font-size: 31px; font-weight: 700; line-height: 1.2; margin-bottom: 14px;
+}
+.intro {
+  font-size: 13px; line-height: 1.72; color: #444;
+  max-width: 680px; margin-bottom: 28px;
+}
+.intro strong { color: #111; font-weight: 600; }
+.intro em { color: #111; font-style: italic; }
+
+.fig-label {
+  font-size: 9px; letter-spacing: 2px; text-transform: uppercase;
+  color: #c0b8ac; margin-bottom: 8px;
+}
+.diagram-wrap {
+  background: #eae5d8; border: 1px solid #c4bdb0;
+  border-radius: 3px; padding: 20px; margin-bottom: 20px;
+}
+
+.legend {
+  display: flex; gap: 18px; font-size: 10px; color: #999;
+  margin-bottom: 26px; align-items: center; flex-wrap: wrap;
+}
+.legend-item { display: flex; align-items: center; gap: 5px; }
+.lb { width: 11px; height: 9px; border: 1px solid; display: inline-block; }
+.lb-ext { background: #fff; border-color: #aaa; }
+.lb-inj { background: #f2c5b8; border-color: #c8907a; }
+.lb-ret { background: #c8dff5; border-color: #7aaddf; }
+.lb-bnd { background: #3c7ec4; border-color: #2a5ea0; }
+
+.callouts {
+  display: grid; grid-template-columns: repeat(4, 1fr);
+  gap: 22px; border-top: 1px solid #ccc;
+  padding-top: 20px; margin-bottom: 28px;
+}
+.callout h4 { font-size: 11px; font-weight: 700; margin-bottom: 5px; }
+.callout p { font-size: 11px; color: #555; line-height: 1.55; }
+
+.footer {
+  font-size: 9px; letter-spacing: 1.5px; color: #bbb;
+  text-transform: uppercase; border-top: 1px solid #ddd;
+  padding-top: 10px; display: flex; justify-content: space-between;
+}
+</style>
+</head>
+<body>
+<div class="page">
+
+<div class="eyebrow">agentmemory / systems view</div>
+<h1>Memory, Observations, &amp;<br>The Bitter Lesson</h1>
+<p class="intro">
+  The context window is a <strong>box we compute on</strong>. Everything outside it — tools,
+  skills, hooks, system prompts, and a growing store of experiential memory — lives as
+  <strong>external context</strong> that the harness must retrieve, shape, and inject as
+  fragments. As memory scales, reliably searching it and injecting the right fragments
+  becomes the game — <em>the bitter lesson applied to context</em>.
+</p>
+
+<div class="fig-label">FIG. 1 — MEMORY &amp; CONTEXT FRAGMENTS IN AGENTMEMORY</div>
+<div class="diagram-wrap">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 852 406"
+  width="100%" style="display:block;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Arial,sans-serif;">
+<defs>
+  <marker id="ah" markerWidth="7" markerHeight="6" refX="6" refY="3" orient="auto">
+    <polygon points="0 0,7 3,0 6" fill="#666"/>
+  </marker>
+  <marker id="ah-blue" markerWidth="7" markerHeight="6" refX="6" refY="3" orient="auto">
+    <polygon points="0 0,7 3,0 6" fill="#3a7cc2"/>
+  </marker>
+  <marker id="ah-gray" markerWidth="6" markerHeight="5" refX="5" refY="2.5" orient="auto">
+    <polygon points="0 0,6 2.5,0 5" fill="#c0b8ac"/>
+  </marker>
+</defs>
+
+<!-- Outer harness border -->
+<rect x="8" y="8" width="836" height="360" rx="4"
+  fill="none" stroke="#c0b8ac" stroke-width="1" stroke-dasharray="7 4"/>
+<text x="18" y="20" font-size="7.5" fill="#c8c0b4" letter-spacing="1.3">
+  HARNESS — system of blocks that control &amp; inject context
+</text>
+
+<!-- ══════════════════════════════════════════
+     LEFT ZONE — EXTERNAL CONTEXT
+══════════════════════════════════════════ -->
+<rect x="16" y="24" width="212" height="300" rx="3"
+  fill="none" stroke="#c8c0b4" stroke-width="1" stroke-dasharray="5 3"/>
+<text x="24" y="37" font-size="8.5" font-weight="600" fill="#999" letter-spacing="0.8">EXTERNAL CONTEXT</text>
+<text x="24" y="48" font-size="7.5" fill="#c0b8ac">(objects we populate)</text>
+
+<!-- System prompt -->
+<rect x="26" y="56" width="192" height="42" rx="3" fill="#ffffff" stroke="#d8d2c8" stroke-width="1"/>
+<text x="38" y="73" font-size="11" font-weight="600" fill="#111">System prompt</text>
+<text x="38" y="88" font-size="9" fill="#aaa">base · user-supplied</text>
+
+<!-- Tools Skills MCP -->
+<rect x="26" y="104" width="192" height="42" rx="3" fill="#ffffff" stroke="#d8d2c8" stroke-width="1"/>
+<text x="38" y="121" font-size="11" font-weight="600" fill="#111">Tools · Skills · MCP</text>
+<text x="38" y="136" font-size="9" fill="#aaa">names, schemas, descriptions</text>
+
+<!-- Hooks Middleware -->
+<rect x="26" y="152" width="192" height="42" rx="3" fill="#ffffff" stroke="#d8d2c8" stroke-width="1"/>
+<text x="38" y="169" font-size="11" font-weight="600" fill="#111">Hooks · Middleware</text>
+<text x="38" y="184" font-size="9" fill="#aaa">PostToolUse · stop · read-only reminders</text>
+
+<!-- Memory Store (blue highlight) -->
+<rect x="26" y="200" width="192" height="58" rx="3" fill="#c8dff5" stroke="#7ab4e8" stroke-width="1.2"/>
+<text x="38" y="220" font-size="11" font-weight="600" fill="#17385c">Memory Store</text>
+<text x="38" y="236" font-size="9" fill="#3a6a90">experiential · ever-growing</text>
+<text x="38" y="250" font-size="8" fill="#6a96b8">StateKV · BM25 · Vector · Graph</text>
+
+<!-- THE BITTER LESSON -->
+<rect x="26" y="266" width="192" height="38" rx="3" fill="#3a7cc2" stroke="#2560a8" stroke-width="1"/>
+<text x="122" y="286" text-anchor="middle" font-size="9.5" font-weight="700" fill="#ffffff">▲  THE BITTER LESSON</text>
+<text x="122" y="299" text-anchor="middle" font-size="8" fill="rgba(255,255,255,0.72)">search + scale wins over manual storage</text>
+
+<!-- ══════════════════════════════════════════
+     ARROWS: LEFT BOXES → CONTEXT FRAGMENTS
+══════════════════════════════════════════ -->
+<line x1="218" y1="77"  x2="272" y2="156" stroke="#bbb" stroke-width="1" marker-end="url(#ah)"/>
+<line x1="218" y1="125" x2="272" y2="162" stroke="#bbb" stroke-width="1" marker-end="url(#ah)"/>
+<line x1="218" y1="173" x2="272" y2="168" stroke="#bbb" stroke-width="1" marker-end="url(#ah)"/>
+<!-- Memory store arrow (blue dashed = RETRIEVE) -->
+<line x1="218" y1="229" x2="272" y2="178" stroke="#3a7cc2" stroke-width="1.2"
+  stroke-dasharray="5 2.5" marker-end="url(#ah-blue)"/>
+
+<!-- ══════════════════════════════════════════
+     CONTEXT FRAGMENTS (center)
+══════════════════════════════════════════ -->
+<rect x="272" y="142" width="128" height="56" rx="3"
+  fill="#fff" stroke="#888" stroke-width="1.3"/>
+<text x="336" y="163" text-anchor="middle" font-size="11" font-weight="700" fill="#111">Context</text>
+<text x="336" y="179" text-anchor="middle" font-size="11" font-weight="700" fill="#111">Fragments</text>
+<text x="336" y="191" text-anchor="middle" font-size="7.5" fill="#c0b8ac">each block contributes to model history</text>
+
+<!-- RETRIEVE · SHAPE · INJECT label + arrow -->
+<text x="450" y="157" text-anchor="middle" font-size="8.5" font-weight="600" fill="#555" letter-spacing="0.3">RETRIEVE · SHAPE · INJECT</text>
+<line x1="400" y1="170" x2="490" y2="170" stroke="#333" stroke-width="1.5" marker-end="url(#ah)"/>
+
+<!-- ══════════════════════════════════════════
+     RIGHT ZONE — CONTEXT WINDOW
+══════════════════════════════════════════ -->
+<rect x="490" y="24" width="350" height="300" rx="3"
+  fill="rgba(255,255,255,0.18)" stroke="#999" stroke-width="1.2"/>
+<text x="500" y="37" font-size="8.5" font-weight="600" fill="#888" letter-spacing="0.8">CONTEXT WINDOW</text>
+
+<!-- The Computation Box -->
+<rect x="500" y="46" width="330" height="206" rx="3" fill="#fff" stroke="#d8d2c8" stroke-width="1"/>
+<text x="665" y="63" text-anchor="middle" font-size="10.5" font-weight="700" fill="#222">The Computation Box</text>
+<text x="665" y="76" text-anchor="middle" font-size="8" fill="#c0b8ac">model reasons over the fragments appended here</text>
+
+<!-- Row items inside the computation box -->
+<rect x="510" y="82"  width="310" height="19" rx="2" fill="#f8f6f2"/>
+<text x="521" y="95"  font-size="9" fill="#666">system prompt</text>
+
+<rect x="510" y="103" width="310" height="19" rx="2" fill="#f5c4b4"/>
+<text x="521" y="116" font-size="9" fill="#6a2010">tool · skill descriptions</text>
+
+<rect x="510" y="124" width="310" height="19" rx="2" fill="#f5c4b4"/>
+<text x="521" y="137" font-size="9" fill="#6a2010">hook injections</text>
+
+<rect x="510" y="145" width="310" height="19" rx="2" fill="#c8dff5"/>
+<text x="521" y="158" font-size="9" fill="#17385c">retrieved memories</text>
+
+<rect x="510" y="166" width="310" height="19" rx="2" fill="#f8f6f2"/>
+<text x="521" y="179" font-size="9" fill="#666">user turn / tool results</text>
+
+<rect x="510" y="187" width="310" height="19" rx="2" fill="#f8f6f2"/>
+<text x="521" y="200" font-size="9" fill="#666">/ execution trajectory</text>
+
+<line x1="510" y1="212" x2="820" y2="212" stroke="#e8e2d8" stroke-width="1"/>
+
+<text x="521" y="228" font-size="10" font-weight="700" fill="#1a1a1a">MODEL · Forward pass</text>
+<text x="815" y="228" text-anchor="end" font-size="8" fill="#c0b8ac">→ next turn</text>
+
+<rect x="510" y="234" width="310" height="12" rx="2" fill="none" stroke="#d8d2c8" stroke-dasharray="3 2"/>
+<text x="665" y="243" text-anchor="middle" font-size="7.5" fill="#b8b0a4">context fragments → shape next-turn reasoning</text>
+
+<!-- ══════════════════════════════════════════
+     NEW TRAJECTORIES BACK-ARROW
+══════════════════════════════════════════ -->
+<path d="M 665,324 L 665,338 L 122,338 L 122,258"
+  fill="none" stroke="#c8c0b4" stroke-width="1" stroke-dasharray="4 3"
+  marker-end="url(#ah-gray)"/>
+<text x="394" y="350" text-anchor="middle" font-size="8" fill="#c0b8ac">
+  new trajectories → written back as experiential memory
+</text>
+
+<!-- ══════════════════════════════════════════
+     FLOATING ANNOTATIONS
+══════════════════════════════════════════ -->
+<text x="18" y="340" font-size="8.5" fill="#999" font-style="italic">more signal = better computation</text>
+<text x="492" y="340" font-size="8.5" fill="#bbb" font-style="italic">more noise = fragments conflict, model gets confused</text>
+
+<!-- ══════════════════════════════════════════
+     SIGNAL / NOISE BAR
+══════════════════════════════════════════ -->
+<rect x="8" y="376" width="836" height="24" rx="3"
+  fill="#ede8dc" stroke="#c8c2b5" stroke-width="1" stroke-dasharray="5 3"/>
+<text x="20" y="392" font-size="9" font-weight="700" fill="#666" letter-spacing="1.2">SIGNAL</text>
+<text x="210" y="391" font-size="8" fill="#c0b8ac">← targeted</text>
+<text x="580" y="391" font-size="8" fill="#c0b8ac">conflicting →</text>
+<text x="832" y="392" text-anchor="end" font-size="9" font-weight="700" fill="#ccc" letter-spacing="1.2">NOISE</text>
+
+</svg>
+</div>
+
+<div class="legend">
+  <div class="legend-item"><span class="lb lb-ext"></span> external context source</div>
+  <div class="legend-item"><span class="lb lb-inj"></span> injected fragment</div>
+  <div class="legend-item"><span class="lb lb-ret"></span> retrieved memory</div>
+  <div class="legend-item"><span class="lb lb-bnd"></span> computation boundary</div>
+</div>
+
+<div class="callouts">
+  <div class="callout">
+    <h4>Context window = computation box.</h4>
+    <p>The model only reasons over what's inside. Everything else is an object
+    the harness must fetch and shape before anything enters.</p>
+  </div>
+  <div class="callout">
+    <h4>Memory &amp; Search.</h4>
+    <p>As agents run longer and accumulate experiential memory, retrieval —
+    not storage — becomes the bottleneck. Bitter-lesson-pilled: scale + search wins.</p>
+  </div>
+  <div class="callout">
+    <h4>Fragments guide computation.</h4>
+    <p>Observations, hooks, skills, memories, system prompts — each contributes
+    fragments the model reasons over. Targeted fragments steer; conflicting ones
+    create the errors you debug later.</p>
+  </div>
+  <div class="callout">
+    <h4>Search: the bitter lesson.</h4>
+    <p>As experiential memory accumulates, the job shifts from "store it" to
+    "reliably retrieve and inject the right fragment." Scale + search wins —
+    the same lesson that ate every other AI subfield is coming for context.</p>
+  </div>
+</div>
+
+<div class="footer">
+  <span>agentmemory &nbsp;·&nbsp; iii-engine &nbsp;·&nbsp; 2026</span>
+  <span>v0.8.11 &nbsp;·&nbsp; agentmemory</span>
+</div>
+
+</div>
+</body>
+</html>

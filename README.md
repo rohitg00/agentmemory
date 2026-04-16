@@ -25,7 +25,7 @@
 <p align="center">
   <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-recall.svg"><img src="assets/tags/stat-recall.svg" alt="95.2% retrieval R@5" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-tokens.svg"><img src="assets/tags/stat-tokens.svg" alt="92% fewer tokens" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-tools.svg"><img src="assets/tags/stat-tools.svg" alt="43 MCP tools" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-tools.svg"><img src="assets/tags/stat-tools.svg" alt="44 MCP tools" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-hooks.svg"><img src="assets/tags/stat-hooks.svg" alt="12 auto hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-deps.svg"><img src="assets/tags/stat-deps.svg" alt="0 external DBs" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-tests.svg"><img src="assets/tags/stat-tests.svg" alt="654 tests passing" height="38" /></picture>
@@ -133,7 +133,7 @@ agentmemory works with any agent that supports hooks, MCP, or REST API. All agen
 <sub>AgentSDKProvider</sub>
 </td>
 <td align="center" width="12.5%">
-<img src="https://img.shields.io/badge/109-endpoints-1f6feb?style=flat-square" alt="REST API" width="48" /><br/>
+<img src="https://img.shields.io/badge/104-endpoints-1f6feb?style=flat-square" alt="REST API" width="48" /><br/>
 <strong>Any agent</strong><br/>
 <sub>REST API</sub>
 </td>
@@ -317,7 +317,7 @@ Implementation details live in `src/cli.ts` (see `runUpgrade` around the `src/cl
 ### Claude Code (one block, paste it)
 
 ```
-Install agentmemory: run `npx @agentmemory/agentmemory` in a separate terminal to start the memory server. Then run `/plugin marketplace add rohitg00/agentmemory` and `/plugin install agentmemory` — the plugin registers all 12 hooks, 4 skills, AND auto-wires the `@agentmemory/mcp` stdio server via its `.mcp.json`, so you get 43 MCP tools (memory_smart_search, memory_save, memory_sessions, memory_governance_delete, etc.) without any extra config step. Verify with `curl http://localhost:3111/agentmemory/health`. The real-time viewer is at http://localhost:3113.
+Install agentmemory: run `npx @agentmemory/agentmemory` in a separate terminal to start the memory server. Then run `/plugin marketplace add rohitg00/agentmemory` and `/plugin install agentmemory` — the plugin registers all 12 hooks, 4 skills, AND auto-wires the `@agentmemory/mcp` stdio server via its `.mcp.json`, so you get 44 MCP tools (memory_smart_search, memory_save, memory_sessions, memory_governance_delete, etc.) without any extra config step. Verify with `curl http://localhost:3111/agentmemory/health`. The real-time viewer is at http://localhost:3113.
 ```
 
 <details>
@@ -576,9 +576,9 @@ npm install @xenova/transformers
 
 <h2 id="mcp-server"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/section-mcp.svg"><img src="assets/tags/section-mcp.svg" alt="MCP Server" height="32" /></picture></h2>
 
-43 tools, 6 resources, 3 prompts, and 4 skills — the most comprehensive MCP memory toolkit for any agent.
+44 tools, 6 resources, 3 prompts, and 4 skills — the most comprehensive MCP memory toolkit for any agent.
 
-### 43 Tools
+### 44 Tools
 
 <details>
 <summary>Core tools (always available)</summary>
@@ -586,17 +586,21 @@ npm install @xenova/transformers
 | Tool | Description |
 |------|-------------|
 | `memory_recall` | Search past observations |
+| `memory_compress_file` | Compress markdown files while preserving structure |
 | `memory_save` | Save an insight, decision, or pattern |
+| `memory_patterns` | Detect recurring patterns |
 | `memory_smart_search` | Hybrid semantic + keyword search |
 | `memory_file_history` | Past observations about specific files |
 | `memory_sessions` | List recent sessions |
+| `memory_timeline` | Chronological observations |
 | `memory_profile` | Project profile (concepts, files, patterns) |
 | `memory_export` | Export all memory data |
+| `memory_relations` | Query relationship graph |
 
 </details>
 
 <details>
-<summary>Extended tools (43 total — set AGENTMEMORY_TOOLS=all)</summary>
+<summary>Extended tools (44 total — set AGENTMEMORY_TOOLS=all)</summary>
 
 | Tool | Description |
 |------|-------------|
@@ -772,7 +776,7 @@ Create `~/.agentmemory/.env`:
 # USER_ID=
 # TEAM_MODE=private
 
-# Tool visibility: "core" (7 tools) or "all" (43 tools)
+# Tool visibility: "core" (8 tools) or "all" (44 tools)
 # AGENTMEMORY_TOOLS=core
 ```
 
@@ -780,7 +784,7 @@ Create `~/.agentmemory/.env`:
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/section-api.svg"><img src="assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-109 endpoints on port `3111`. The REST API binds to `127.0.0.1` by default. Protected endpoints require `Authorization: Bearer <secret>` when `AGENTMEMORY_SECRET` is set, and mesh sync endpoints require `AGENTMEMORY_SECRET` on both peers.
+104 endpoints on port `3111`. The REST API binds to `127.0.0.1` by default. Protected endpoints require `Authorization: Bearer <secret>` when `AGENTMEMORY_SECRET` is set, and mesh sync endpoints require `AGENTMEMORY_SECRET` on both peers.
 
 <details>
 <summary>Key endpoints</summary>

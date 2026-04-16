@@ -225,7 +225,14 @@ export function registerApiTriggers(
 
   sdk.registerFunction("api::search", 
     async (
-      req: ApiRequest<{ query: string; limit?: number; project?: string; cwd?: string }>,
+      req: ApiRequest<{
+        query: string;
+        limit?: number;
+        project?: string;
+        cwd?: string;
+        format?: string;
+        token_budget?: number;
+      }>,
     ): Promise<Response> => {
       const body = (req.body ?? {}) as Record<string, unknown>;
       if (typeof body.query !== "string" || !body.query.trim()) {
@@ -243,11 +250,35 @@ export function registerApiTriggers(
       if (body.cwd !== undefined && typeof body.cwd !== "string") {
         return { status_code: 400, body: { error: "cwd must be a string" } };
       }
+      if (
+        body.format !== undefined &&
+        (typeof body.format !== "string" ||
+          !["full", "compact", "narrative"].includes(body.format.trim().toLowerCase()))
+      ) {
+        return {
+          status_code: 400,
+          body: { error: "format must be one of: full, compact, narrative" },
+        };
+      }
+      if (
+        body.token_budget !== undefined &&
+        (!Number.isInteger(body.token_budget) || (body.token_budget as number) < 1)
+      ) {
+        return {
+          status_code: 400,
+          body: { error: "token_budget must be a positive integer" },
+        };
+      }
       const payload = {
         query: body.query.trim(),
         limit: body.limit as number | undefined,
         project: body.project as string | undefined,
         cwd: body.cwd as string | undefined,
+        format:
+          typeof body.format === "string"
+            ? body.format.trim().toLowerCase()
+            : undefined,
+        token_budget: body.token_budget as number | undefined,
       };
       const result = await sdk.trigger({ function_id: "mem::search", payload: payload });
       return { status_code: 200, body: result };
@@ -261,6 +292,31 @@ export function registerApiTriggers(
       http_method: "POST",
       middleware_function_ids: ["middleware::api-auth"],
     },
+  });
+
+  sdk.registerFunction("api::compress-file", 
+    async (req: ApiRequest<{ filePath: string }>): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const filePath = asNonEmptyString(body.filePath);
+      if (!filePath) {
+        return {
+          status_code: 400,
+          body: { error: "filePath is required and must be a non-empty string" },
+        };
+      }
+      const result = await sdk.trigger({
+        function_id: "mem::compress-file",
+        payload: { filePath },
+      });
+      return { status_code: 200, body: result };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::compress-file",
+    config: { api_path: "/agentmemory/compress-file", http_method: "POST" },
   });
 
   sdk.registerFunction("api::session::start",

@@ -92,16 +92,65 @@ export function registerMcpEndpoints(
                 body: { error: "query is required for memory_recall" },
               };
             }
+            const format =
+              typeof args.format === "string" ? args.format.trim().toLowerCase() : "full";
+            if (!["full", "compact", "narrative"].includes(format)) {
+              return {
+                status_code: 400,
+                body: {
+                  error: "format must be one of: full, compact, narrative",
+                },
+              };
+            }
+            const tokenBudget = asNumber(args.token_budget);
+            if (
+              args.token_budget !== undefined &&
+              (!Number.isInteger(tokenBudget) || (tokenBudget ?? 0) < 1)
+            ) {
+              return {
+                status_code: 400,
+                body: { error: "token_budget must be a positive integer" },
+              };
+            }
             const result = await sdk.trigger({ function_id: "mem::search", payload: {
               query: args.query,
               limit: typeof args.limit === "number" ? args.limit : 10,
+              format,
+              token_budget: tokenBudget,
             } });
+            const text =
+              format === "narrative" &&
+              result &&
+              typeof result === "object" &&
+              "text" in (result as Record<string, unknown>) &&
+              typeof (result as { text?: unknown }).text === "string"
+                ? (result as { text: string }).text
+                : JSON.stringify(result, null, 2);
             return {
               status_code: 200,
               body: {
                 content: [
-                  { type: "text", text: JSON.stringify(result, null, 2) },
+                  { type: "text", text },
                 ],
+              },
+            };
+          }
+
+          case "memory_compress_file": {
+            if (typeof args.filePath !== "string" || !args.filePath.trim()) {
+              return {
+                status_code: 400,
+                body: { error: "filePath is required for memory_compress_file" },
+              };
+            }
+            const result = await sdk.trigger({
+              function_id: "mem::compress-file",
+              payload: { filePath: args.filePath.trim() },
+            });
+            return {
+              status_code: 200,
+              body: {
+                content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
               },
             };
           }
