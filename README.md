@@ -28,7 +28,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-tools.svg"><img src="assets/tags/stat-tools.svg" alt="51 MCP tools" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-hooks.svg"><img src="assets/tags/stat-hooks.svg" alt="12 auto hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-deps.svg"><img src="assets/tags/stat-deps.svg" alt="0 external DBs" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-tests.svg"><img src="assets/tags/stat-tests.svg" alt="654 tests passing" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-tests.svg"><img src="assets/tags/stat-tests.svg" alt="827 tests passing" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -779,25 +779,35 @@ agentmemory auto-detects from your environment. No API key needed if you have a 
 
 | Provider | Config | Notes |
 |----------|--------|-------|
-| **Claude subscription** (default) | No config needed | Uses `@anthropic-ai/claude-agent-sdk` |
+| **No-op (default)** | No config needed | LLM-backed compress/summarize is DISABLED. Synthetic BM25 compression + recall still work. See `AGENTMEMORY_ALLOW_AGENT_SDK` below if you used to rely on the Claude-subscription fallback. |
 | Anthropic API | `ANTHROPIC_API_KEY` | Per-token billing |
 | MiniMax | `MINIMAX_API_KEY` | Anthropic-compatible |
 | Gemini | `GEMINI_API_KEY` | Also enables embeddings |
 | OpenRouter | `OPENROUTER_API_KEY` | Any model |
+| Claude subscription fallback | `AGENTMEMORY_ALLOW_AGENT_SDK=true` | Opt-in only. Spawns `@anthropic-ai/claude-agent-sdk` sessions — used to cause unbounded Stop-hook recursion (#149 follow-up) so it is no longer the default. |
 
 ### Environment Variables
 
 Create `~/.agentmemory/.env`:
 
 ```env
-# LLM provider (pick one, or leave empty for Claude subscription)
+# LLM provider (pick one — default is the no-op provider: no LLM calls)
 # ANTHROPIC_API_KEY=sk-ant-...
+# ANTHROPIC_BASE_URL=...              # Optional: Anthropic-compatible proxy / Azure
 # GEMINI_API_KEY=...
 # OPENROUTER_API_KEY=...
+# MINIMAX_API_KEY=...
+# Opt-in Claude-subscription fallback (spawns @anthropic-ai/claude-agent-sdk);
+# leave OFF unless you understand the Stop-hook recursion risk (#149 follow-up):
+# AGENTMEMORY_ALLOW_AGENT_SDK=true
 
 # Embedding provider (auto-detected, or override)
 # EMBEDDING_PROVIDER=local
 # VOYAGE_API_KEY=...
+# OPENAI_API_KEY=sk-...
+# OPENAI_BASE_URL=https://api.openai.com   # Override for Azure / vLLM / LM Studio / proxies
+# OPENAI_EMBEDDING_MODEL=text-embedding-3-small
+# OPENAI_EMBEDDING_DIMENSIONS=1536        # Required when the model is not in the known-models table
 
 # Search tuning
 # BM25_WEIGHT=0.4
