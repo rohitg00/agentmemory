@@ -55,6 +55,7 @@ describe("OpenAIEmbeddingProvider", () => {
     process.env = { ...originalEnv };
     delete process.env["OPENAI_BASE_URL"];
     delete process.env["OPENAI_EMBEDDING_MODEL"];
+    delete process.env["OPENAI_EMBEDDING_DIMENSIONS"];
   });
 
   afterEach(() => {
@@ -102,5 +103,49 @@ describe("OpenAIEmbeddingProvider", () => {
     expect(body.model).toBe("text-embedding-3-large");
 
     fetchSpy.mockRestore();
+  });
+
+  it("derives dimensions from model in the known-models table", () => {
+    process.env["OPENAI_EMBEDDING_MODEL"] = "text-embedding-3-large";
+    const large = new OpenAIEmbeddingProvider("test-key");
+    expect(large.dimensions).toBe(3072);
+
+    process.env["OPENAI_EMBEDDING_MODEL"] = "text-embedding-ada-002";
+    const ada = new OpenAIEmbeddingProvider("test-key");
+    expect(ada.dimensions).toBe(1536);
+
+    process.env["OPENAI_EMBEDDING_MODEL"] = "text-embedding-3-small";
+    const small = new OpenAIEmbeddingProvider("test-key");
+    expect(small.dimensions).toBe(1536);
+  });
+
+  it("OPENAI_EMBEDDING_DIMENSIONS overrides the model-derived dimensions", () => {
+    process.env["OPENAI_EMBEDDING_MODEL"] = "text-embedding-3-large";
+    process.env["OPENAI_EMBEDDING_DIMENSIONS"] = "768";
+    const provider = new OpenAIEmbeddingProvider("test-key");
+    expect(provider.dimensions).toBe(768);
+  });
+
+  it("falls back to 1536 for unknown custom models", () => {
+    process.env["OPENAI_EMBEDDING_MODEL"] = "mystery-self-hosted-model";
+    const provider = new OpenAIEmbeddingProvider("test-key");
+    expect(provider.dimensions).toBe(1536);
+  });
+
+  it("rejects invalid OPENAI_EMBEDDING_DIMENSIONS values", () => {
+    process.env["OPENAI_EMBEDDING_DIMENSIONS"] = "not-a-number";
+    expect(() => new OpenAIEmbeddingProvider("test-key")).toThrow(
+      /OPENAI_EMBEDDING_DIMENSIONS must be a positive integer/,
+    );
+
+    process.env["OPENAI_EMBEDDING_DIMENSIONS"] = "-5";
+    expect(() => new OpenAIEmbeddingProvider("test-key")).toThrow(
+      /OPENAI_EMBEDDING_DIMENSIONS must be a positive integer/,
+    );
+
+    process.env["OPENAI_EMBEDDING_DIMENSIONS"] = "0";
+    expect(() => new OpenAIEmbeddingProvider("test-key")).toThrow(
+      /OPENAI_EMBEDDING_DIMENSIONS must be a positive integer/,
+    );
   });
 });
