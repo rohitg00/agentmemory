@@ -53,6 +53,42 @@ function detectProvider(env: Record<string, string>): ProviderConfig {
     };
   }
 
+  if (env["LMSTUDIO_BASE_URL"] || env["LMSTUDIO_MODEL"]) {
+    return {
+      provider: "lmstudio",
+      model: env["LMSTUDIO_MODEL"] || "local-model",
+      maxTokens,
+      baseURL: env["LMSTUDIO_BASE_URL"],
+    };
+  }
+
+  if (env["OLLAMA_BASE_URL"] || env["OLLAMA_MODEL"]) {
+    return {
+      provider: "ollama",
+      model: env["OLLAMA_MODEL"] || "llama3",
+      maxTokens,
+      baseURL: env["OLLAMA_BASE_URL"] || "http://localhost:11434/v1/chat/completions",
+    };
+  }
+
+  if (env["VLLM_BASE_URL"] || env["VLLM_MODEL"]) {
+    return {
+      provider: "vllm",
+      model: env["VLLM_MODEL"] || "local-model",
+      maxTokens,
+      baseURL: env["VLLM_BASE_URL"],
+    };
+  }
+
+  if (env["OPENAI_API_KEY"] || env["OPENAI_BASE_URL"]) {
+    return {
+      provider: "openai",
+      model: env["OPENAI_MODEL"] || "gpt-4o",
+      maxTokens,
+      baseURL: env["OPENAI_BASE_URL"] || "https://api.openai.com/v1/chat/completions",
+    };
+  }
+
   if (env["ANTHROPIC_API_KEY"]) {
     return {
       provider: "anthropic",
@@ -152,6 +188,10 @@ export function detectEmbeddingProvider(
   if (source["VOYAGE_API_KEY"]) return "voyage";
   if (source["COHERE_API_KEY"]) return "cohere";
   if (source["OPENROUTER_API_KEY"]) return "openrouter";
+  if (source["OLLAMA_EMBEDDING_BASE_URL"] || source["OLLAMA_EMBEDDING_MODEL"])
+    return "ollama";
+  if (source["LMSTUDIO_EMBEDDING_BASE_URL"] || source["LMSTUDIO_EMBEDDING_MODEL"])
+    return "lmstudio";
   return null;
 }
 
@@ -254,6 +294,10 @@ const VALID_PROVIDERS = new Set([
   "openrouter",
   "agent-sdk",
   "minimax",
+  "lmstudio",
+  "openai",
+  "ollama",
+  "vllm",
 ]);
 
 export function loadFallbackConfig(): FallbackConfig {

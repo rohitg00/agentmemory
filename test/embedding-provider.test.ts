@@ -2,47 +2,50 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createEmbeddingProvider } from "../src/providers/embedding/index.js";
 import { GeminiEmbeddingProvider } from "../src/providers/embedding/gemini.js";
 import { OpenAIEmbeddingProvider } from "../src/providers/embedding/openai.js";
+import * as config from "../src/config.js";
+
+vi.mock("../src/config.js", async (importOriginal) => {
+  const actual = await importOriginal<any>();
+  return {
+    ...actual,
+    detectEmbeddingProvider: vi.fn(),
+    getEnvVar: vi.fn(),
+  };
+});
 
 describe("createEmbeddingProvider", () => {
-  const originalEnv = { ...process.env };
+  const mockDetect = config.detectEmbeddingProvider as any;
+  const mockGetEnvVar = config.getEnvVar as any;
 
   beforeEach(() => {
-    process.env = { ...originalEnv };
-    delete process.env["GEMINI_API_KEY"];
-    delete process.env["OPENAI_API_KEY"];
-    delete process.env["VOYAGE_API_KEY"];
-    delete process.env["COHERE_API_KEY"];
-    delete process.env["OPENROUTER_API_KEY"];
-    delete process.env["EMBEDDING_PROVIDER"];
+    vi.resetAllMocks();
   });
 
-  afterEach(() => {
-    process.env = originalEnv;
-  });
-
-  it("returns null when no API keys are set", () => {
+  it("returns null when no provider is detected", () => {
+    mockDetect.mockReturnValue(null);
     const provider = createEmbeddingProvider();
     expect(provider).toBeNull();
   });
 
-  it("returns GeminiEmbeddingProvider when GEMINI_API_KEY is set", () => {
-    process.env["GEMINI_API_KEY"] = "test-key-123";
+  it("returns GeminiEmbeddingProvider when gemini is detected", () => {
+    mockDetect.mockReturnValue("gemini");
+    mockGetEnvVar.mockReturnValue("test-key");
     const provider = createEmbeddingProvider();
     expect(provider).toBeInstanceOf(GeminiEmbeddingProvider);
     expect(provider!.name).toBe("gemini");
   });
 
-  it("returns OpenAIEmbeddingProvider when OPENAI_API_KEY is set", () => {
-    process.env["OPENAI_API_KEY"] = "test-key-456";
+  it("returns OpenAIEmbeddingProvider when openai is detected", () => {
+    mockDetect.mockReturnValue("openai");
+    mockGetEnvVar.mockReturnValue("test-key");
     const provider = createEmbeddingProvider();
     expect(provider).toBeInstanceOf(OpenAIEmbeddingProvider);
     expect(provider!.name).toBe("openai");
   });
 
-  it("EMBEDDING_PROVIDER override takes precedence", () => {
-    process.env["GEMINI_API_KEY"] = "test-key-123";
-    process.env["OPENAI_API_KEY"] = "test-key-456";
-    process.env["EMBEDDING_PROVIDER"] = "openai";
+  it("uses the detected provider", () => {
+    mockDetect.mockReturnValue("openai");
+    mockGetEnvVar.mockReturnValue("test-key");
     const provider = createEmbeddingProvider();
     expect(provider).toBeInstanceOf(OpenAIEmbeddingProvider);
   });

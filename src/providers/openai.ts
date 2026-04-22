@@ -1,24 +1,18 @@
 import type { MemoryProvider } from "../types.js";
 
-export class OpenRouterProvider implements MemoryProvider {
-  name: string;
-  private apiKey: string;
-  private model: string;
-  private maxTokens: number;
-  private baseUrl: string;
-
+/**
+ * Generic OpenAI-compatible provider.
+ * Works with OpenAI, LM Studio, Ollama, vLLM, Groq, OpenRouter, etc.
+ */
+export class OpenAIProvider implements MemoryProvider {
   constructor(
-    apiKey: string,
-    model: string,
-    maxTokens: number,
-    baseUrl: string,
-  ) {
-    this.apiKey = apiKey;
-    this.model = model;
-    this.maxTokens = maxTokens;
-    this.baseUrl = baseUrl;
-    this.name = baseUrl.includes("openrouter") ? "openrouter" : "gemini";
-  }
+    public name: string,
+    private apiKey: string,
+    private model: string,
+    private maxTokens: number,
+    private baseUrl: string,
+    private extraHeaders: Record<string, string> = {},
+  ) {}
 
   async compress(systemPrompt: string, userPrompt: string): Promise<string> {
     return this.call(systemPrompt, userPrompt);
@@ -36,10 +30,10 @@ export class OpenRouterProvider implements MemoryProvider {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${this.apiKey}`,
-        ...(this.baseUrl.includes("openrouter")
-          ? { "HTTP-Referer": "https://github.com/rohitg00/agentmemory" }
+        ...(this.apiKey && this.apiKey !== "no-key-required"
+          ? { Authorization: `Bearer ${this.apiKey}` }
           : {}),
+        ...this.extraHeaders,
       },
       body: JSON.stringify({
         model: this.model,
@@ -56,11 +50,10 @@ export class OpenRouterProvider implements MemoryProvider {
       throw new Error(`${this.name} API error (${response.status}): ${text}`);
     }
 
-    const data = (await response.json()) as Record<string, unknown>;
-    const choices = data.choices as
-      | Array<{ message: { content: string } }>
-      | undefined;
-    const content = choices?.[0]?.message?.content;
+    const data = (await response.json()) as {
+      choices?: Array<{ message?: { content?: string } }>;
+    };
+    const content = data.choices?.[0]?.message?.content;
     if (!content) {
       throw new Error(
         `${this.name} returned unexpected response: ${JSON.stringify(data).slice(0, 200)}`,

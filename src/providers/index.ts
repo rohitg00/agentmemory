@@ -6,7 +6,7 @@ import type {
 import { AgentSDKProvider } from "./agent-sdk.js";
 import { AnthropicProvider } from "./anthropic.js";
 import { MinimaxProvider } from "./minimax.js";
-import { OpenRouterProvider } from "./openrouter.js";
+import { OpenAIProvider } from "./openai.js";
 import { ResilientProvider } from "./resilient.js";
 import { FallbackChainProvider } from "./fallback-chain.js";
 import { getEnvVar } from "../config.js";
@@ -58,6 +58,47 @@ export function createFallbackProvider(
 
 function createBaseProvider(config: ProviderConfig): MemoryProvider {
   switch (config.provider) {
+    case "openai":
+      return new OpenAIProvider(
+        "openai",
+        getEnvVar("OPENAI_API_KEY") || "no-key-required",
+        config.model,
+        config.maxTokens,
+        config.baseURL || "https://api.openai.com/v1/chat/completions",
+      );
+    case "ollama":
+      return new OpenAIProvider(
+        "ollama",
+        "no-key-required",
+        config.model,
+        config.maxTokens,
+        config.baseURL || "http://localhost:11434/v1/chat/completions",
+      );
+    case "vllm":
+      return new OpenAIProvider(
+        "vllm",
+        "no-key-required",
+        config.model,
+        config.maxTokens,
+        config.baseURL!,
+      );
+    case "lmstudio":
+      return new OpenAIProvider(
+        "lmstudio",
+        "no-key-required",
+        config.model,
+        config.maxTokens,
+        config.baseURL || "http://localhost:1234/v1/chat/completions",
+      );
+    case "openrouter":
+      return new OpenAIProvider(
+        "openrouter",
+        requireEnvVar("OPENROUTER_API_KEY"),
+        config.model,
+        config.maxTokens,
+        "https://openrouter.ai/api/v1/chat/completions",
+        { "HTTP-Referer": "https://github.com/rohitg00/agentmemory" },
+      );
     case "minimax":
       return new MinimaxProvider(
         requireEnvVar("MINIMAX_API_KEY"),
@@ -79,20 +120,14 @@ function createBaseProvider(config: ProviderConfig): MemoryProvider {
           "GEMINI_API_KEY (or GOOGLE_API_KEY) is required for the gemini provider",
         );
       }
-      return new OpenRouterProvider(
+      return new OpenAIProvider(
+        "gemini",
         geminiKey,
         config.model,
         config.maxTokens,
         "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
       );
     }
-    case "openrouter":
-      return new OpenRouterProvider(
-        requireEnvVar("OPENROUTER_API_KEY"),
-        config.model,
-        config.maxTokens,
-        "https://openrouter.ai/api/v1/chat/completions",
-      );
     case "agent-sdk":
     default:
       return new AgentSDKProvider();

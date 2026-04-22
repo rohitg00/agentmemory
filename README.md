@@ -782,6 +782,10 @@ agentmemory auto-detects from your environment. No API key needed if you have a 
 | **Claude subscription** (default) | No config needed | Uses `@anthropic-ai/claude-agent-sdk` |
 | Anthropic API | `ANTHROPIC_API_KEY` | Per-token billing |
 | MiniMax | `MINIMAX_API_KEY` | Anthropic-compatible |
+| OpenAI | `OPENAI_API_KEY` | Standard API |
+| LM Studio | `LMSTUDIO_BASE_URL` | Local OpenAI-compatible |
+| Ollama | `OLLAMA_BASE_URL` | Local OpenAI-compatible |
+| vLLM | `VLLM_BASE_URL` | Local OpenAI-compatible |
 | Gemini | `GEMINI_API_KEY` | Also enables embeddings |
 | OpenRouter | `OPENROUTER_API_KEY` | Any model |
 
@@ -794,10 +798,15 @@ Create `~/.agentmemory/.env`:
 # ANTHROPIC_API_KEY=sk-ant-...
 # GEMINI_API_KEY=...
 # OPENROUTER_API_KEY=...
+# OPENAI_API_KEY=sk-...
+# OLLAMA_MODEL=llama3
+# LMSTUDIO_BASE_URL=http://localhost:1234/v1/chat/completions
 
 # Embedding provider (auto-detected, or override)
 # EMBEDDING_PROVIDER=local
 # VOYAGE_API_KEY=...
+# OLLAMA_EMBEDDING_MODEL=nomic-embed-text
+# LMSTUDIO_EMBEDDING_BASE_URL=http://localhost:1234/v1/embeddings
 
 # Search tuning
 # BM25_WEIGHT=0.4

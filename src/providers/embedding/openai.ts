@@ -1,16 +1,17 @@
 import type { EmbeddingProvider } from "../../types.js";
 import { getEnvVar } from "../../config.js";
 
-const API_URL = "https://api.openai.com/v1/embeddings";
-
 export class OpenAIEmbeddingProvider implements EmbeddingProvider {
   readonly name = "openai";
   readonly dimensions = 1536;
   private apiKey: string;
+  private baseUrl: string;
+  private model: string;
 
-  constructor(apiKey?: string) {
-    this.apiKey = apiKey || getEnvVar("OPENAI_API_KEY") || "";
-    if (!this.apiKey) throw new Error("OPENAI_API_KEY is required");
+  constructor(apiKey?: string, baseUrl?: string, model?: string) {
+    this.apiKey = apiKey || getEnvVar("OPENAI_API_KEY") || "no-key-required";
+    this.baseUrl = baseUrl || "https://api.openai.com/v1/embeddings";
+    this.model = model || "text-embedding-3-small";
   }
 
   async embed(text: string): Promise<Float32Array> {
@@ -19,14 +20,16 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
   }
 
   async embedBatch(texts: string[]): Promise<Float32Array[]> {
-    const response = await fetch(API_URL, {
+    const response = await fetch(this.baseUrl, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${this.apiKey}`,
+        ...(this.apiKey && this.apiKey !== "no-key-required"
+          ? { Authorization: `Bearer ${this.apiKey}` }
+          : {}),
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "text-embedding-3-small",
+        model: this.model,
         input: texts,
       }),
     });
