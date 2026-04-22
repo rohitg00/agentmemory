@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { loadConfig, detectEmbeddingProvider } from "../src/config.js";
+import { loadConfig } from "../src/config.js";
 import { createProvider } from "../src/providers/index.js";
 import { OpenAIProvider } from "../src/providers/openai.js";
 import { OpenAIEmbeddingProvider } from "../src/providers/embedding/openai.js";
@@ -24,9 +24,6 @@ describe("Local Providers", () => {
     delete process.env["GOOGLE_API_KEY"];
     delete process.env["OPENROUTER_API_KEY"];
     delete process.env["MINIMAX_API_KEY"];
-    delete process.env["LMSTUDIO_EMBEDDING_BASE_URL"];
-    delete process.env["OLLAMA_EMBEDDING_BASE_URL"];
-    delete process.env["OLLAMA_EMBEDDING_MODEL"];
   });
 
   afterEach(() => {
@@ -53,18 +50,6 @@ describe("Local Providers", () => {
     const config = loadConfig();
     expect(config.provider.provider).toBe("vllm");
     expect(config.provider.baseURL).toBe("http://vllm-server:8000/v1/chat/completions");
-  });
-
-  it("detects lmstudio embedding provider when LMSTUDIO_EMBEDDING_BASE_URL is set", () => {
-    process.env["LMSTUDIO_EMBEDDING_BASE_URL"] = "http://localhost:1234/v1/embeddings";
-    const provider = detectEmbeddingProvider(process.env);
-    expect(provider).toBe("lmstudio");
-  });
-
-  it("detects ollama embedding provider when OLLAMA_EMBEDDING_MODEL is set", () => {
-    process.env["OLLAMA_EMBEDDING_MODEL"] = "nomic-embed-text";
-    const provider = detectEmbeddingProvider(process.env);
-    expect(provider).toBe("ollama");
   });
 
   it("creates OpenAIProvider from config for lmstudio", () => {

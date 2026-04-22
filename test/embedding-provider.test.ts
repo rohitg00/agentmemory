@@ -1,51 +1,66 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { createEmbeddingProvider } from "../src/providers/embedding/index.js";
 import { GeminiEmbeddingProvider } from "../src/providers/embedding/gemini.js";
 import { OpenAIEmbeddingProvider } from "../src/providers/embedding/openai.js";
 import * as config from "../src/config.js";
 
-vi.mock("../src/config.js", async (importOriginal) => {
-  const actual = await importOriginal<any>();
-  return {
-    ...actual,
-    detectEmbeddingProvider: vi.fn(),
-    getEnvVar: vi.fn(),
-  };
-});
-
 describe("createEmbeddingProvider", () => {
-  const mockDetect = config.detectEmbeddingProvider as any;
-  const mockGetEnvVar = config.getEnvVar as any;
+  const originalEnv = { ...process.env };
 
   beforeEach(() => {
-    vi.resetAllMocks();
+    process.env = { ...originalEnv };
+    // Set to empty string to override any local .env values for testing "not set" state
+    process.env["GEMINI_API_KEY"] = "";
+    process.env["OPENAI_API_KEY"] = "";
+    process.env["VOYAGE_API_KEY"] = "";
+    process.env["COHERE_API_KEY"] = "";
+    process.env["OPENROUTER_API_KEY"] = "";
+    process.env["EMBEDDING_PROVIDER"] = "";
+    process.env["OLLAMA_EMBEDDING_BASE_URL"] = "";
+    process.env["OLLAMA_EMBEDDING_MODEL"] = "";
+    process.env["LMSTUDIO_EMBEDDING_BASE_URL"] = "";
+    process.env["LMSTUDIO_EMBEDDING_MODEL"] = "";
   });
 
-  it("returns null when no provider is detected", () => {
-    mockDetect.mockReturnValue(null);
+  afterEach(() => {
+    process.env = originalEnv;
+  });
+
+  it("returns null when no API keys are set", () => {
     const provider = createEmbeddingProvider();
     expect(provider).toBeNull();
   });
 
-  it("returns GeminiEmbeddingProvider when gemini is detected", () => {
-    mockDetect.mockReturnValue("gemini");
-    mockGetEnvVar.mockReturnValue("test-key");
+  it("returns GeminiEmbeddingProvider when GEMINI_API_KEY is set", () => {
+    process.env["GEMINI_API_KEY"] = "test-key-123";
     const provider = createEmbeddingProvider();
     expect(provider).toBeInstanceOf(GeminiEmbeddingProvider);
     expect(provider!.name).toBe("gemini");
   });
 
-  it("returns OpenAIEmbeddingProvider when openai is detected", () => {
-    mockDetect.mockReturnValue("openai");
-    mockGetEnvVar.mockReturnValue("test-key");
+  it("returns OpenAIEmbeddingProvider when OPENAI_API_KEY is set", () => {
+    process.env["OPENAI_API_KEY"] = "test-key-456";
     const provider = createEmbeddingProvider();
     expect(provider).toBeInstanceOf(OpenAIEmbeddingProvider);
     expect(provider!.name).toBe("openai");
   });
 
-  it("uses the detected provider", () => {
-    mockDetect.mockReturnValue("openai");
-    mockGetEnvVar.mockReturnValue("test-key");
+  it("detects lmstudio embedding provider when LMSTUDIO_EMBEDDING_BASE_URL is set", () => {
+    process.env["LMSTUDIO_EMBEDDING_BASE_URL"] = "http://localhost:1234/v1/embeddings";
+    const provider = config.detectEmbeddingProvider(process.env);
+    expect(provider).toBe("lmstudio");
+  });
+
+  it("detects ollama embedding provider when OLLAMA_EMBEDDING_MODEL is set", () => {
+    process.env["OLLAMA_EMBEDDING_MODEL"] = "nomic-embed-text";
+    const provider = config.detectEmbeddingProvider(process.env);
+    expect(provider).toBe("ollama");
+  });
+
+  it("EMBEDDING_PROVIDER override takes precedence", () => {
+    process.env["GEMINI_API_KEY"] = "test-key-123";
+    process.env["OPENAI_API_KEY"] = "test-key-456";
+    process.env["EMBEDDING_PROVIDER"] = "openai";
     const provider = createEmbeddingProvider();
     expect(provider).toBeInstanceOf(OpenAIEmbeddingProvider);
   });
