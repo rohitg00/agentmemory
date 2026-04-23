@@ -1,2 +1,0 @@
-{"type":"user","uuid":"u1","sessionId":"sess-basic","timestamp":"2026-04-17T10:00:00.000Z","cwd":"/Users/alice/project","message":{"role":"user","content":[{"type":"text","text":"Fix the login bug"}]}}
-{"type":"assistant","uuid":"a1","sessionId":"sess-basic","timestamp":"2026-04-17T10:00:05.000Z","message":{"role":"assistant","content":[{"type":"text","text":"Looking into it now."}]}}

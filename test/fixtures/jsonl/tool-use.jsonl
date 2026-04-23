@@ -1,4 +1,0 @@
-{"type":"user","uuid":"u1","sessionId":"sess-tool","timestamp":"2026-04-17T11:00:00.000Z","cwd":"/Users/bob/repo","message":{"role":"user","content":[{"type":"text","text":"List the files"}]}}
-{"type":"assistant","uuid":"a1","sessionId":"sess-tool","timestamp":"2026-04-17T11:00:02.000Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_1","name":"Bash","input":{"command":"ls"}}]}}
-{"type":"user","uuid":"u2","sessionId":"sess-tool","timestamp":"2026-04-17T11:00:03.000Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_1","content":"README.md\nsrc\n"}]}}
-{"type":"assistant","uuid":"a2","sessionId":"sess-tool","timestamp":"2026-04-17T11:00:04.000Z","message":{"role":"assistant","content":[{"type":"text","text":"Two entries."}]}}

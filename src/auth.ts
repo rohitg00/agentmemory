@@ -14,6 +14,11 @@ export function createViewerNonce(): string {
 }
 
 export function buildViewerCsp(nonce: string): string {
+  const host = process.env.AGENTMEMORY_HOST;
+  const connectSrc =
+    host === "0.0.0.0"
+      ? "connect-src *"
+      : "connect-src 'self' http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:* wss://localhost:* wss://127.0.0.1:*";
   return [
     "default-src 'none'",
     "base-uri 'none'",
@@ -23,7 +28,7 @@ export function buildViewerCsp(nonce: string): string {
     `script-src 'nonce-${nonce}'`,
     "script-src-attr 'none'",
     "style-src 'unsafe-inline'",
-    "connect-src 'self' http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:* wss://localhost:* wss://127.0.0.1:*",
+    connectSrc,
     "img-src 'self'",
     "font-src 'self'",
   ].join("; ");

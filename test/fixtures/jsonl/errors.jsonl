@@ -1,4 +1,0 @@
-{"type":"user","uuid":"u1","sessionId":"sess-err","timestamp":"2026-04-17T12:00:00.000Z","cwd":"/tmp/x","message":{"role":"user","content":[{"type":"text","text":"Run tests"}]}}
-not-valid-json-line
-{"type":"assistant","uuid":"a1","sessionId":"sess-err","timestamp":"2026-04-17T12:00:01.000Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"npm test"}}]}}
-{"type":"user","uuid":"u2","sessionId":"sess-err","timestamp":"2026-04-17T12:00:02.000Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"exit 1","is_error":true}]}}
