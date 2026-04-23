@@ -376,12 +376,6 @@ function portInUseDiagnostic(port: number): string {
 async function main() {
   p.intro("agentmemory");
 
-  if (skipEngine) {
-    p.log.info("Skipping engine check (--no-engine)");
-    await import("./index.js");
-    return;
-  }
-
   const hostOverride = process.env["AGENTMEMORY_HOST"];
   if (hostOverride && hostOverride !== "127.0.0.1") {
     const secret = process.env["AGENTMEMORY_SECRET"];
@@ -390,6 +384,12 @@ async function main() {
         `Binding to ${hostOverride} without AGENTMEMORY_SECRET exposes your memory store to the network. Set AGENTMEMORY_SECRET in ~/.agentmemory/.env for authentication.`,
       );
     }
+  }
+
+  if (skipEngine) {
+    p.log.info("Skipping engine check (--no-engine)");
+    await import("./index.js");
+    return;
   }
 
   if (await isEngineRunning()) {
