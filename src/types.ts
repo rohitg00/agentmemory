@@ -140,6 +140,7 @@ export interface MemoryProvider {
 
 export interface AgentMemoryConfig {
   engineUrl: string;
+  host: string;
   restPort: number;
   streamsPort: number;
   provider: ProviderConfig;

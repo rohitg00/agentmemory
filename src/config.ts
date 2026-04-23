@@ -128,6 +128,7 @@ export function loadConfig(): AgentMemoryConfig {
 
   return {
     engineUrl: env["III_ENGINE_URL"] || "ws://localhost:49134",
+    host: env["AGENTMEMORY_HOST"] || "127.0.0.1",
     restPort: parseInt(env["III_REST_PORT"] || "3111", 10) || 3111,
     streamsPort: parseInt(env["III_STREAMS_PORT"] || "3112", 10) || 3112,
     provider,

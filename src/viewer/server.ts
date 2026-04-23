@@ -6,16 +6,35 @@ import {
 } from "node:http";
 import { renderViewerDocument } from "./document.js";
 
+const DEFAULT_ORIGINS =
+  "http://localhost:3111,http://localhost:3113,http://127.0.0.1:3111,http://127.0.0.1:3113";
+
 const ALLOWED_ORIGINS = (
-  process.env.VIEWER_ALLOWED_ORIGINS ||
-  "http://localhost:3111,http://localhost:3113,http://127.0.0.1:3111,http://127.0.0.1:3113"
+  process.env.VIEWER_ALLOWED_ORIGINS || DEFAULT_ORIGINS
 )
   .split(",")
   .map((o) => o.trim());
 
+function isAllowedOrigin(origin: string): boolean {
+  if (ALLOWED_ORIGINS.includes(origin)) return true;
+  const host = process.env.AGENTMEMORY_HOST;
+  if (host === "0.0.0.0") {
+    try {
+      const url = new URL(origin);
+      const port = url.port || (url.protocol === "https:" ? "443" : "80");
+      const restPort = process.env.III_REST_PORT || "3111";
+      const viewerPort = String(parseInt(restPort, 10) + 2);
+      return port === restPort || port === viewerPort;
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
+
 function corsHeaders(req: IncomingMessage): Record<string, string> {
   const origin = req.headers.origin || "";
-  const allowed = ALLOWED_ORIGINS.includes(origin)
+  const allowed = isAllowedOrigin(origin)
     ? origin
     : ALLOWED_ORIGINS[0];
   return {
@@ -64,8 +83,10 @@ export function startViewerServer(
   _sdk: unknown,
   secret?: string,
   restPort?: number,
+  host?: string,
 ): Server {
   const resolvedRestPort = restPort ?? port - 2;
+  const resolvedHost = host ?? "127.0.0.1";
 
   const server = createServer(async (req, res) => {
     const raw = req.url || "/";
@@ -120,8 +141,9 @@ export function startViewerServer(
     }
   });
 
-  server.listen(port, "127.0.0.1", () => {
-    console.log(`[agentmemory] Viewer: http://localhost:${port}`);
+  server.listen(port, resolvedHost, () => {
+    const displayHost = resolvedHost === "0.0.0.0" ? "0.0.0.0" : "localhost";
+    console.log(`[agentmemory] Viewer: http://${displayHost}:${port}`);
   });
 
   return server;

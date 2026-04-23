@@ -6,10 +6,18 @@ import {
   spawnSync,
   type ChildProcess,
 } from "node:child_process";
-import { existsSync, readdirSync, readFileSync, readlinkSync, statSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  readlinkSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { join, dirname, delimiter as PATH_DELIMITER } from "node:path";
 import { fileURLToPath } from "node:url";
-import { homedir, platform } from "node:os";
+import { homedir, platform, tmpdir } from "node:os";
 import * as p from "@clack/prompts";
 import { generateId } from "./state/schema.js";
 
@@ -45,6 +53,7 @@ Options:
   --tools all|core   Tool visibility (default: core = 7 tools)
   --no-engine        Skip auto-starting iii-engine
   --port <N>         Override REST port (default: 3111)
+  --host <addr>      Override bind address (default: 127.0.0.1)
 
 Environment:
   AGENTMEMORY_URL    Full REST base URL (e.g. http://localhost:3111).
@@ -70,6 +79,11 @@ if (toolsIdx !== -1 && args[toolsIdx + 1]) {
 const portIdx = args.indexOf("--port");
 if (portIdx !== -1 && args[portIdx + 1]) {
   process.env["III_REST_PORT"] = args[portIdx + 1];
+}
+
+const hostIdx = args.indexOf("--host");
+if (hostIdx !== -1 && args[hostIdx + 1]) {
+  process.env["AGENTMEMORY_HOST"] = args[hostIdx + 1];
 }
 
 const skipEngine = args.includes("--no-engine");
@@ -135,6 +149,22 @@ function findIiiConfig(): string {
     if (existsSync(c)) return c;
   }
   return "";
+}
+
+function patchIiiConfigHost(configPath: string, host: string): string {
+  let content = readFileSync(configPath, "utf-8");
+  content = content.replace(/host:\s*127\.0\.0\.1/g, `host: ${host}`);
+  if (host === "0.0.0.0") {
+    content = content.replace(
+      /allowed_origins:\s*\[.*?\]/,
+      `allowed_origins: ["*"]`,
+    );
+  }
+  const tmpDir = mkdtempSync(join(tmpdir(), "agentmemory-"));
+  const tmpConfig = join(tmpDir, "iii-config.yaml");
+  writeFileSync(tmpConfig, content, "utf-8");
+  vlog(`Patched iii-config host to ${host}: ${tmpConfig}`);
+  return tmpConfig;
 }
 
 function whichBinary(name: string): string | null {
@@ -227,9 +257,14 @@ async function startEngine(): Promise<boolean> {
   vlog(`iii binary: ${iiiBin ?? "(not on PATH)"}, config: ${configPath || "(not found)"}`);
 
   if (iiiBin && configPath) {
+    const hostOverride = process.env["AGENTMEMORY_HOST"];
+    const effectiveConfig =
+      hostOverride && hostOverride !== "127.0.0.1"
+        ? patchIiiConfigHost(configPath, hostOverride)
+        : configPath;
     const s = p.spinner();
     s.start(`Starting iii-engine: ${iiiBin}`);
-    spawnEngineBackground(iiiBin, ["--config", configPath], "iii-engine");
+    spawnEngineBackground(iiiBin, ["--config", effectiveConfig], "iii-engine");
     s.stop("iii-engine process started");
     return true;
   }
@@ -266,9 +301,14 @@ async function startEngine(): Promise<boolean> {
   }
 
   if (iiiBin && configPath) {
+    const hostOverride = process.env["AGENTMEMORY_HOST"];
+    const effectiveConfig =
+      hostOverride && hostOverride !== "127.0.0.1"
+        ? patchIiiConfigHost(configPath, hostOverride)
+        : configPath;
     const s = p.spinner();
     s.start(`Starting iii-engine: ${iiiBin}`);
-    spawnEngineBackground(iiiBin, ["--config", configPath], "iii-engine");
+    spawnEngineBackground(iiiBin, ["--config", effectiveConfig], "iii-engine");
     s.stop("iii-engine process started");
     return true;
   }
@@ -340,6 +380,16 @@ async function main() {
     p.log.info("Skipping engine check (--no-engine)");
     await import("./index.js");
     return;
+  }
+
+  const hostOverride = process.env["AGENTMEMORY_HOST"];
+  if (hostOverride && hostOverride !== "127.0.0.1") {
+    const secret = process.env["AGENTMEMORY_SECRET"];
+    if (!secret) {
+      p.log.warn(
+        `Binding to ${hostOverride} without AGENTMEMORY_SECRET exposes your memory store to the network. Set AGENTMEMORY_SECRET in ~/.agentmemory/.env for authentication.`,
+      );
+    }
   }
 
   if (await isEngineRunning()) {

@@ -153,10 +153,11 @@ async function main() {
       `[agentmemory] Image embedding provider: ${imageEmbeddingProvider.name} (${imageEmbeddingProvider.dimensions} dims) — vision-search active`,
     );
   }
+  const displayHost = config.host === "0.0.0.0" ? "0.0.0.0" : "localhost";
   console.log(
-    `[agentmemory] REST API: http://localhost:${config.restPort}/agentmemory/*`,
+    `[agentmemory] REST API: http://${displayHost}:${config.restPort}/agentmemory/*`,
   );
-  console.log(`[agentmemory] Streams: ws://localhost:${config.streamsPort}`);
+  console.log(`[agentmemory] Streams: ws://${displayHost}:${config.streamsPort}`);
 
   const sdk = registerWorker(config.engineUrl, {
     workerName: "agentmemory",
@@ -371,6 +372,7 @@ async function main() {
     sdk,
     secret,
     config.restPort,
+    config.host,
   );
 
   const autoForgetIntervalMs = parseInt(process.env.AUTO_FORGET_INTERVAL_MS || "3600000", 10);
