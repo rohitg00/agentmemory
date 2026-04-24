@@ -26,7 +26,8 @@ export class OpenAIProvider implements MemoryProvider {
     systemPrompt: string,
     userPrompt: string,
   ): Promise<string> {
-    const response = await fetch(this.baseUrl, {
+    const url = `${this.baseUrl}/v1/chat/completions`;
+    const response = await fetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

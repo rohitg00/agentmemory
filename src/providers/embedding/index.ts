@@ -53,8 +53,14 @@ export function createEmbeddingProvider(): EmbeddingProvider | null {
     case "ollama":
       return new OpenAIEmbeddingProvider(
         "no-key-required",
-        getEnvVar("OLLAMA_EMBEDDING_BASE_URL") || "http://localhost:11434/v1/embeddings",
+        getEnvVar("OLLAMA_EMBEDDING_BASE_URL") || "http://localhost:11434",
         getEnvVar("OLLAMA_EMBEDDING_MODEL") || "llama3",
+      );
+    case "lmstudio":
+      return new OpenAIEmbeddingProvider(
+        "no-key-required",
+        getEnvVar("LMSTUDIO_EMBEDDING_BASE_URL") || "http://localhost:1234",
+        getEnvVar("LMSTUDIO_EMBEDDING_MODEL"),
       );
     case "voyage":
       return new VoyageEmbeddingProvider(getEnvVar("VOYAGE_API_KEY")!);

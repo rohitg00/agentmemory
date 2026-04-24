@@ -71,7 +71,7 @@ function detectProvider(env: Record<string, string>): ProviderConfig {
       provider: "ollama",
       model: env["OLLAMA_MODEL"] || "llama3",
       maxTokens,
-      baseURL: env["OLLAMA_BASE_URL"] || "http://localhost:11434/v1/chat/completions",
+      baseURL: env["OLLAMA_BASE_URL"] || "http://localhost:11434",
     };
   }
 
@@ -89,7 +89,7 @@ function detectProvider(env: Record<string, string>): ProviderConfig {
       provider: "openai",
       model: env["OPENAI_MODEL"] || "gpt-4o",
       maxTokens,
-      baseURL: env["OPENAI_BASE_URL"] || "https://api.openai.com/v1/chat/completions",
+      baseURL: env["OPENAI_BASE_URL"] || "https://api.openai.com",
     };
   }
 

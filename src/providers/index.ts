@@ -66,7 +66,7 @@ function createBaseProvider(config: ProviderConfig): MemoryProvider {
         getEnvVar("OPENAI_API_KEY") || "no-key-required",
         config.model,
         config.maxTokens,
-        config.baseURL || "https://api.openai.com/v1/chat/completions",
+        config.baseURL || "https://api.openai.com",
       );
     case "ollama":
       return new OpenAIProvider(
@@ -74,7 +74,7 @@ function createBaseProvider(config: ProviderConfig): MemoryProvider {
         "no-key-required",
         config.model,
         config.maxTokens,
-        config.baseURL || "http://localhost:11434/v1/chat/completions",
+        config.baseURL || "http://localhost:11434",
       );
     case "vllm":
       return new OpenAIProvider(
@@ -90,7 +90,7 @@ function createBaseProvider(config: ProviderConfig): MemoryProvider {
         "no-key-required",
         config.model,
         config.maxTokens,
-        config.baseURL || "http://localhost:1234/v1/chat/completions",
+        config.baseURL || "http://localhost:1234",
       );
     case "openrouter":
       return new OpenRouterProvider(

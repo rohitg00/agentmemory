@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { loadConfig } from "../src/config.js";
 import { createProvider } from "../src/providers/index.js";
+import { createEmbeddingProvider } from "../src/providers/embedding/index.js";
 import { OpenAIProvider } from "../src/providers/openai.js";
 import { OpenAIEmbeddingProvider } from "../src/providers/embedding/openai.js";
 import { ResilientProvider } from "../src/providers/resilient.js";
@@ -11,19 +12,20 @@ describe("Local Providers", () => {
   beforeEach(() => {
     vi.resetModules();
     process.env = { ...originalEnv };
-    delete process.env["LMSTUDIO_BASE_URL"];
-    delete process.env["LMSTUDIO_MODEL"];
-    delete process.env["OLLAMA_BASE_URL"];
-    delete process.env["OLLAMA_MODEL"];
-    delete process.env["VLLM_BASE_URL"];
-    delete process.env["VLLM_MODEL"];
-    delete process.env["OPENAI_BASE_URL"];
-    delete process.env["OPENAI_MODEL"];
-    delete process.env["ANTHROPIC_API_KEY"];
-    delete process.env["GEMINI_API_KEY"];
-    delete process.env["GOOGLE_API_KEY"];
-    delete process.env["OPENROUTER_API_KEY"];
-    delete process.env["MINIMAX_API_KEY"];
+    process.env["LMSTUDIO_BASE_URL"] = "";
+    process.env["LMSTUDIO_MODEL"] = "";
+    process.env["OLLAMA_BASE_URL"] = "";
+    process.env["OLLAMA_MODEL"] = "";
+    process.env["VLLM_BASE_URL"] = "";
+    process.env["VLLM_MODEL"] = "";
+    process.env["OPENAI_BASE_URL"] = "";
+    process.env["OPENAI_MODEL"] = "";
+    process.env["ANTHROPIC_API_KEY"] = "";
+    process.env["GEMINI_API_KEY"] = "";
+    process.env["GOOGLE_API_KEY"] = "";
+    process.env["OPENROUTER_API_KEY"] = "";
+    process.env["MINIMAX_API_KEY"] = "";
+    process.env["EMBEDDING_PROVIDER"] = "";
   });
 
   afterEach(() => {
@@ -31,10 +33,10 @@ describe("Local Providers", () => {
   });
 
   it("detects lmstudio provider when LMSTUDIO_BASE_URL is set", () => {
-    process.env["LMSTUDIO_BASE_URL"] = "http://localhost:1234/v1/chat/completions";
+    process.env["LMSTUDIO_BASE_URL"] = "http://localhost:1234";
     const config = loadConfig();
     expect(config.provider.provider).toBe("lmstudio");
-    expect(config.provider.baseURL).toBe("http://localhost:1234/v1/chat/completions");
+    expect(config.provider.baseURL).toBe("http://localhost:1234");
   });
 
   it("detects ollama provider when OLLAMA_MODEL is set", () => {
@@ -42,14 +44,14 @@ describe("Local Providers", () => {
     const config = loadConfig();
     expect(config.provider.provider).toBe("ollama");
     expect(config.provider.model).toBe("llama3");
-    expect(config.provider.baseURL).toBe("http://localhost:11434/v1/chat/completions");
+    expect(config.provider.baseURL).toBe("http://localhost:11434");
   });
 
   it("detects vllm provider when VLLM_BASE_URL is set", () => {
-    process.env["VLLM_BASE_URL"] = "http://vllm-server:8000/v1/chat/completions";
+    process.env["VLLM_BASE_URL"] = "http://vllm-server:8000";
     const config = loadConfig();
     expect(config.provider.provider).toBe("vllm");
-    expect(config.provider.baseURL).toBe("http://vllm-server:8000/v1/chat/completions");
+    expect(config.provider.baseURL).toBe("http://vllm-server:8000");
   });
 
   it("creates OpenAIProvider from config for lmstudio", () => {
@@ -57,9 +59,23 @@ describe("Local Providers", () => {
       provider: "lmstudio",
       model: "local-model",
       maxTokens: 1000,
-      baseURL: "http://localhost:1234/v1/chat/completions",
+      baseURL: "http://localhost:1234",
     });
     expect(provider).toBeInstanceOf(ResilientProvider);
+  });
+
+  it("creates OpenAIEmbeddingProvider for lmstudio", () => {
+    process.env["LMSTUDIO_EMBEDDING_BASE_URL"] = "http://localhost:1234";
+    const provider = createEmbeddingProvider();
+    expect(provider).toBeInstanceOf(OpenAIEmbeddingProvider);
+    expect(provider!.name).toBe("openai");
+  });
+
+  it("creates OpenAIEmbeddingProvider for ollama", () => {
+    process.env["OLLAMA_EMBEDDING_BASE_URL"] = "http://localhost:11434";
+    const provider = createEmbeddingProvider();
+    expect(provider).toBeInstanceOf(OpenAIEmbeddingProvider);
+    expect(provider!.name).toBe("openai");
   });
 });
 
@@ -78,7 +94,7 @@ describe("OpenAIProvider implementation", () => {
       "test-key",
       "test-model",
       100,
-      "http://test-url/v1/chat/completions"
+      "http://test-url"
     );
     const result = await provider.compress("system", "user");
 
@@ -116,7 +132,7 @@ describe("OpenAIEmbeddingProvider implementation (Local compatibility)", () => {
 
     const provider = new OpenAIEmbeddingProvider(
       "no-key-required",
-      "http://local-ollama:11434/v1/embeddings",
+      "http://local-ollama:11434",
       "nomic-embed-text"
     );
     const result = await provider.embed("test text");
