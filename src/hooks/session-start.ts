@@ -1,5 +1,11 @@
 #!/usr/bin/env node
 
+function isSdkChildContext(payload: unknown): boolean {
+  if (process.env["AGENTMEMORY_SDK_CHILD"] === "1") return true;
+  if (!payload || typeof payload !== "object") return false;
+  return (payload as { entrypoint?: unknown }).entrypoint === "sdk-ts";
+}
+
 // Session-start hook.
 //
 // Always registers the session for observation tracking (so memories
@@ -30,6 +36,8 @@ async function main() {
   } catch {
     return;
   }
+
+  if (isSdkChildContext(data)) return;
 
   const sessionId =
     (data.session_id as string) || `ses_${Date.now().toString(36)}`;

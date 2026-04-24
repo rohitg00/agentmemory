@@ -65,3 +65,105 @@ describe("createEmbeddingProvider", () => {
     expect(provider).toBeInstanceOf(OpenAIEmbeddingProvider);
   });
 });
+
+describe("OpenAIEmbeddingProvider", () => {
+  const originalEnv = { ...process.env };
+
+  beforeEach(() => {
+    process.env = { ...originalEnv };
+    delete process.env["OPENAI_BASE_URL"];
+    delete process.env["OPENAI_EMBEDDING_MODEL"];
+    delete process.env["OPENAI_EMBEDDING_DIMENSIONS"];
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+  });
+
+  it("uses default base URL and model when env vars are not set", () => {
+    const provider = new OpenAIEmbeddingProvider("test-key");
+    expect(provider.name).toBe("openai");
+    expect(provider.dimensions).toBe(1536);
+  });
+
+  it("throws when no API key is provided", () => {
+    delete process.env["OPENAI_API_KEY"];
+    expect(() => new OpenAIEmbeddingProvider()).toThrow("OPENAI_API_KEY is required");
+  });
+
+  it("respects OPENAI_BASE_URL env var", async () => {
+    process.env["OPENAI_BASE_URL"] = "https://my-proxy.example.com";
+    const provider = new OpenAIEmbeddingProvider("test-key");
+
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ data: [{ embedding: [0.1, 0.2, 0.3] }] }), { status: 200 }),
+    );
+
+    await provider.embed("hello");
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "https://my-proxy.example.com/v1/embeddings",
+      expect.any(Object),
+    );
+
+    fetchSpy.mockRestore();
+  });
+
+  it("respects OPENAI_EMBEDDING_MODEL env var", async () => {
+    process.env["OPENAI_EMBEDDING_MODEL"] = "text-embedding-3-large";
+    const provider = new OpenAIEmbeddingProvider("test-key");
+
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ data: [{ embedding: [0.1, 0.2, 0.3] }] }), { status: 200 }),
+    );
+
+    await provider.embed("hello");
+    const body = JSON.parse((fetchSpy.mock.calls[0][1] as RequestInit).body as string);
+    expect(body.model).toBe("text-embedding-3-large");
+
+    fetchSpy.mockRestore();
+  });
+
+  it("derives dimensions from model in the known-models table", () => {
+    process.env["OPENAI_EMBEDDING_MODEL"] = "text-embedding-3-large";
+    const large = new OpenAIEmbeddingProvider("test-key");
+    expect(large.dimensions).toBe(3072);
+
+    process.env["OPENAI_EMBEDDING_MODEL"] = "text-embedding-ada-002";
+    const ada = new OpenAIEmbeddingProvider("test-key");
+    expect(ada.dimensions).toBe(1536);
+
+    process.env["OPENAI_EMBEDDING_MODEL"] = "text-embedding-3-small";
+    const small = new OpenAIEmbeddingProvider("test-key");
+    expect(small.dimensions).toBe(1536);
+  });
+
+  it("OPENAI_EMBEDDING_DIMENSIONS overrides the model-derived dimensions", () => {
+    process.env["OPENAI_EMBEDDING_MODEL"] = "text-embedding-3-large";
+    process.env["OPENAI_EMBEDDING_DIMENSIONS"] = "768";
+    const provider = new OpenAIEmbeddingProvider("test-key");
+    expect(provider.dimensions).toBe(768);
+  });
+
+  it("falls back to 1536 for unknown custom models", () => {
+    process.env["OPENAI_EMBEDDING_MODEL"] = "mystery-self-hosted-model";
+    const provider = new OpenAIEmbeddingProvider("test-key");
+    expect(provider.dimensions).toBe(1536);
+  });
+
+  it("rejects invalid OPENAI_EMBEDDING_DIMENSIONS values", () => {
+    process.env["OPENAI_EMBEDDING_DIMENSIONS"] = "not-a-number";
+    expect(() => new OpenAIEmbeddingProvider("test-key")).toThrow(
+      /OPENAI_EMBEDDING_DIMENSIONS must be a positive integer/,
+    );
+
+    process.env["OPENAI_EMBEDDING_DIMENSIONS"] = "-5";
+    expect(() => new OpenAIEmbeddingProvider("test-key")).toThrow(
+      /OPENAI_EMBEDDING_DIMENSIONS must be a positive integer/,
+    );
+
+    process.env["OPENAI_EMBEDDING_DIMENSIONS"] = "0";
+    expect(() => new OpenAIEmbeddingProvider("test-key")).toThrow(
+      /OPENAI_EMBEDDING_DIMENSIONS must be a positive integer/,
+    );
+  });
+});

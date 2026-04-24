@@ -45,6 +45,7 @@ export const KV = {
   imageEmbeddings: "mem:image-embeddings",
   slots: "mem:slots",
   globalSlots: "mem:slots:global",
+  state: "mem:state",
 } as const;
 
 export const STREAM = {

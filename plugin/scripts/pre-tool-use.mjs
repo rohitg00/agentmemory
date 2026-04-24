@@ -1,5 +1,10 @@
 #!/usr/bin/env node
 //#region src/hooks/pre-tool-use.ts
+function isSdkChildContext(payload) {
+	if (process.env["AGENTMEMORY_SDK_CHILD"] === "1") return true;
+	if (!payload || typeof payload !== "object") return false;
+	return payload.entrypoint === "sdk-ts";
+}
 const INJECT_CONTEXT = process.env["AGENTMEMORY_INJECT_CONTEXT"] === "true";
 const REST_URL = process.env["AGENTMEMORY_URL"] || "http://localhost:3111";
 const SECRET = process.env["AGENTMEMORY_SECRET"] || "";
@@ -18,6 +23,7 @@ async function main() {
 	} catch {
 		return;
 	}
+	if (isSdkChildContext(data)) return;
 	const toolName = data.tool_name;
 	if (!toolName) return;
 	if (![

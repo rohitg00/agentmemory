@@ -344,8 +344,11 @@ export function registerApiTriggers(
     async (req: ApiRequest): Promise<Response> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
-      const result = await sdk.trigger({ function_id: "mem::replay::sessions" });
-      return { status_code: 200, body: result };
+      const sessions = await kv.list<Session>(KV.sessions);
+      sessions.sort((a, b) =>
+        (b.startedAt || "").localeCompare(a.startedAt || ""),
+      );
+      return { status_code: 200, body: { success: true, sessions } };
     },
   );
   sdk.registerTrigger({
@@ -1095,16 +1098,16 @@ export function registerApiTriggers(
     config: { api_path: "/agentmemory/team/profile", http_method: "GET" },
   });
 
-  sdk.registerFunction("api::audit", 
+  sdk.registerFunction("api::audit",
     async (req: ApiRequest): Promise<Response> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
       const parsedLimit = parseOptionalInt(req.query_params?.["limit"]);
-      const result = await sdk.trigger({ function_id: "mem::audit-query", payload: {
+      const entries = await sdk.trigger({ function_id: "mem::audit-query", payload: {
         operation: req.query_params?.["operation"],
         limit: parsedLimit ?? 50,
       } });
-      return { status_code: 200, body: result };
+      return { status_code: 200, body: { entries, success: true } };
     },
   );
   sdk.registerTrigger({

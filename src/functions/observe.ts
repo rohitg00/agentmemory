@@ -190,19 +190,30 @@ export function registerObserveFunction(
           action: TriggerAction.Void(),
         });
 
-        const session = await kv.get<{ observationCount?: number }>(
+        const session = await kv.get<{ observationCount?: number; firstPrompt?: string }>(
           KV.sessions,
           payload.sessionId,
         );
         if (session) {
-          await kv.update(KV.sessions, payload.sessionId, [
+          const updates: Array<{ type: "set"; path: string; value: unknown }> = [
             { type: "set", path: "updatedAt", value: new Date().toISOString() },
             {
               type: "set",
               path: "observationCount",
               value: (session.observationCount || 0) + 1,
             },
-          ]);
+          ];
+          if (!session.firstPrompt && typeof raw.userPrompt === "string") {
+            const trimmed = raw.userPrompt.replace(/\s+/g, " ").trim();
+            if (trimmed.length > 0) {
+              updates.push({
+                type: "set",
+                path: "firstPrompt",
+                value: trimmed.slice(0, 200),
+              });
+            }
+          }
+          await kv.update(KV.sessions, payload.sessionId, updates);
         }
 
         // Per-observation LLM compression is opt-in as of 0.8.8 (#138).

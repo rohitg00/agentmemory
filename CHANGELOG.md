@@ -6,6 +6,56 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.9.2] — 2026-04-22
+
+Safety + import-pipeline patch. Kills the infinite Stop-hook recursion loop that burned Claude Pro tokens on unkeyed installs, repairs every empty viewer tab after `import-jsonl`, derives lessons and crystals automatically from imported sessions, and opens up OpenAI-compatible embedding endpoints.
+
+### Security
+
+- **Stop-hook recursion loop** ([#187](https://github.com/rohitg00/agentmemory/pull/187), follow-up to [#149](https://github.com/rohitg00/agentmemory/issues/149)). A user with no provider key and `AGENTMEMORY_AUTO_COMPRESS=false` could still trigger unbounded recursion: Stop hook → `/summarize` → `provider.summarize()` → agent-sdk provider spawned a Claude Agent SDK child session that inherited the same plugin hooks, whose own Stop fired, spawning another child, etc. ~579 ghost `entrypoint: sdk-ts` sessions could accumulate in minutes, draining the Claude Pro subscription. Fixed at five layers in defense-in-depth:
+  1. `detectProvider()` treats empty-string keys (`ANTHROPIC_API_KEY=`) as unset and returns the noop provider by default. The agent-sdk fallback now requires explicit `AGENTMEMORY_ALLOW_AGENT_SDK=true` opt-in with a second loud warning.
+  2. New `NoopProvider` returns empty strings for compress/summarize; callers detect `.name === "noop"` and short-circuit.
+  3. `agent-sdk` provider sets `AGENTMEMORY_SDK_CHILD=1` before spawning `query()` and restores the previous value in `finally` so later calls in the same parent process are not mis-classified.
+  4. All 12 hook scripts inline a shared `isSdkChildContext(payload)` guard that checks both the env marker and `payload.entrypoint === "sdk-ts"`, and bail early.
+  5. `/summarize` short-circuits with `{ success: false, error: "no_provider" }` when `provider.name === "noop"` instead of calling through. Empty provider responses are now logged and recorded as failures on the metrics store.
+
+### Added
+
+- **`OPENAI_BASE_URL` / `OPENAI_EMBEDDING_MODEL`** ([#186](https://github.com/rohitg00/agentmemory/pull/186), thanks @Edison-A-N). The `OpenAIEmbeddingProvider` now accepts a base URL override and a configurable model name, mirroring the `MINIMAX_BASE_URL` pattern. Unlocks Azure OpenAI, vLLM, LM Studio, and other OpenAI-compatible proxies for embeddings with zero breakage — defaults are preserved.
+- **`OPENAI_EMBEDDING_DIMENSIONS`** ([#189](https://github.com/rohitg00/agentmemory/pull/189)). Follow-up: `dimensions` is now derived from the model via a `MODEL_DIMENSIONS` lookup (3-small=1536, 3-large=3072, ada-002=1536) and falls back to 1536 for unknown models. Custom or self-hosted OpenAI-compatible models should set this env var explicitly; non-positive values are rejected at construction.
+- **Auto-derived lessons and crystals on `import-jsonl`** ([#188](https://github.com/rohitg00/agentmemory/pull/188)). Each imported session now produces one crystal (narrative, tool outcomes, files, lessons) and up to 20 heuristic lessons from instructional patterns (`always`/`never`/`don't`/`prefer`/`avoid`/`caveat`/`note`/`warning`). Lessons are keyed by `fingerprintId("lesson", content.toLowerCase())` so re-importing the same file bumps `reinforcements` on existing lessons instead of duplicating rows. Crystals are keyed by `fingerprintId("crystal", sessionId)` and preserve `createdAt` on upsert.
+- **Session preview on the sessions list** ([#188](https://github.com/rohitg00/agentmemory/pull/188)). `Session` gained `firstPrompt` / `summary` fields; both `import-jsonl` and the live `mem::observe` path populate `firstPrompt` from the first real user prompt they see, and the viewer renders it as a 140-char preview row under each session.
+- **Richer session detail + crystals viz + lessons tab explainers** ([#188](https://github.com/rohitg00/agentmemory/pull/188)). Clicking a session now fetches its observations and renders a 4-stat grid (observations / tools / files / duration), top-10 tool bar chart, activity breakdown, and file list. Crystals cards show resolved lesson content instead of raw IDs. Lessons tab has a header explainer card for the rule + confidence + decay model.
+
+### Changed
+
+- **`detectProvider()` default is now `noop`** (see Security). Users who had no API key and relied on the implicit Claude-subscription fallback must set `AGENTMEMORY_ALLOW_AGENT_SDK=true` to restore old behavior — and should read the warning about Stop-hook recursion first.
+- **`/agentmemory/audit` response shape** ([#188](https://github.com/rohitg00/agentmemory/pull/188)). Now returns `{ entries, success }` instead of a bare array to match the viewer's expected shape. The viewer was rendering empty despite populated data.
+- **`/agentmemory/replay/sessions` path** ([#188](https://github.com/rohitg00/agentmemory/pull/188)). Calls `kv.list` directly instead of `sdk.trigger → mem::replay::sessions`. Sub-50ms on 600+ sessions instead of timing out at 10s+.
+- **Viewer WebSocket connect timeout** ([#188](https://github.com/rohitg00/agentmemory/pull/188)). 5-second timeout around `new WebSocket(...)`. If the socket is still CONNECTING after that, it is force-closed so the `onclose` retry / polling-fallback chain kicks in. Previously the banner stuck on `CONNECTING…` forever when the iii-stream port accepted TCP but never completed the upgrade handshake.
+- **`import-jsonl` now runs synthetic compression + BM25 indexing** ([#188](https://github.com/rohitg00/agentmemory/pull/188)). Imported observations go through the same `buildSyntheticCompression` + `getSearchIndex().add()` path as live `mem::observe`. Previously the raw shape was written directly to KV and the search index never saw it — consolidation reported "fewer than 5 summaries" and semantic/procedural/memory tabs stayed empty.
+- **Viewer strength gauge** ([#188](https://github.com/rohitg00/agentmemory/pull/188)). Memory tab showed `700%` on `strength: 7` because the scale was treated as 0–1. Now handles both 0–1 and 0–10 and clamps at 100%.
+
+### Fixed
+
+- **`npm ci` on fork PRs** ([#187](https://github.com/rohitg00/agentmemory/pull/187), [#188](https://github.com/rohitg00/agentmemory/pull/188)). CI failed because lockfiles are gitignored at the repo level. `.github/workflows/ci.yml` + `publish.yml` now run a two-step install: `npm install --package-lock-only` to produce a lockfile in the runner workspace, then `npm ci` to install deterministically from it. Gives a single resolved dependency graph across build + test + publish within one job run — important because publish uses `--provenance`.
+- **`image-quota-cleanup` fail-closed on refCount read errors** ([#188](https://github.com/rohitg00/agentmemory/pull/188)). When `getImageRefCount` threw, the code fell through to `deleteImage` with `refCount === 0`, risking deletion of still-referenced images on transient KV errors. Fail-closed: log + return from the `withKeyedLock` callback, never reach `deleteImage` without a confirmed zero refcount.
+- **`raw.userPrompt` type guard** ([#188](https://github.com/rohitg00/agentmemory/pull/188)). `mem::observe` now runtime-checks `typeof raw.userPrompt === "string"` before calling `.replace` / `.trim` / `.slice`. Non-string truthy values from malformed hook payloads no longer crash the handler.
+- **Viewer Actions frontier field** ([#188](https://github.com/rohitg00/agentmemory/pull/188)). The tab was reading `results[1].actions` but `/frontier` returns `{ frontier: [...] }`. Fixed the read path; preserves actions/frontier unification.
+- **Hardcoded `maxTokens: 4096` in the agent-sdk branch of `detectProvider`** ([#188](https://github.com/rohitg00/agentmemory/pull/188), [#190](https://github.com/rohitg00/agentmemory/pull/190)). Ignored the `maxTokens` variable computed from `env["MAX_TOKENS"]`. Every other branch already used the computed value; agent-sdk now matches.
+
+### Infrastructure
+
+- `StateScope` interface in `types.ts` documents the `KV.state` scope shape (`system:currentDiskSize: number`); `disk-size-manager` uses `StateScope[typeof DISK_SIZE_KEY]` generics instead of ad-hoc `<number>`.
+- `onnxruntime-node` + `onnxruntime-web` moved to `optionalDependencies` alongside `@xenova/transformers` to make their lazy/transitive nature explicit; still externalized in `tsdown.config.ts` because bundling breaks the native `.node` binding paths.
+- `FALLBACK_PROVIDERS` parsing now honors the same `AGENTMEMORY_ALLOW_AGENT_SDK` gate as `detectProvider`, filtering out `agent-sdk` from the fallback chain unless explicitly opted in.
+- README provider table + env block updated: no-op is the new default, Claude-subscription fallback moved to a separate opt-in row, OpenAI env vars documented.
+- Hero stat badge refreshed from 654 → 827 tests (both dark + light variants).
+- `VERSION` / `ExportData.version` union / `supportedVersions` Set / `test/export-import.test.ts` / `@agentmemory/mcp` shim version all bumped in lockstep.
+- Test count: 827 (up from 812 in v0.9.1).
+
+[0.9.2]: https://github.com/rohitg00/agentmemory/compare/v0.9.1...v0.9.2
+
 ## [0.9.1] — 2026-04-21
 
 Trust-the-CLI patch. Three bugs that surfaced in real testing of v0.9.0: the dashboard viewer showed zeros for half its cards, the `import-jsonl` command crashed on anything but a perfect response, and `upgrade` hard-aborted on a cargo registry that never had the crate.

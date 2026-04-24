@@ -900,7 +900,7 @@
       activity: { loaded: false, observations: [], sessions: [], typeFilter: '' },
       lessons: { loaded: false, items: [], search: '' },
       actions: { loaded: false, items: [], frontier: [], statusFilter: '', search: '' },
-      crystals: { loaded: false, items: [], search: '' },
+      crystals: { loaded: false, items: [], search: '', lessonMap: {} },
       profile: { loaded: false, projects: [], selectedProject: '', data: null },
       replay: { loaded: false, sessions: [], selectedId: '', timeline: null, cursor: 0, playing: false, speed: 1, timer: null, startAt: 0, offsetAt: 0 },
       ws: null
@@ -1946,7 +1946,13 @@
       items.forEach(function(m) { types[m.type] = true; });
       var typeOptions = Object.keys(types).sort();
 
-      var html = '<div class="toolbar">';
+      var html = '<div class="card" style="margin-bottom:12px;padding:12px;background:var(--bg-subtle);">';
+      html += '<div style="font-size:13px;color:var(--ink-muted);line-height:1.5;">';
+      html += '<strong>Memories</strong> are durable facts, architecture notes, conventions, and lessons saved via <code>memory_remember</code> MCP tool or the <code>/agentmemory/remember</code> endpoint. They survive across sessions and supersede each other as v1, v2, etc. ';
+      html += '<span style="color:var(--ink-faint);">Shown: ' + items.length + ' total.</span>';
+      html += '</div></div>';
+
+      html += '<div class="toolbar">';
       html += '<input type="text" id="mem-search" placeholder="Search memories..." value="' + esc(state.memories.search) + '">';
       html += '<select id="mem-type-filter"><option value="">All types</option>';
       typeOptions.forEach(function(t) {
@@ -1955,12 +1961,14 @@
       html += '</select></div>';
 
       if (filtered.length === 0) {
-        html += '<div class="empty-state"><div class="empty-icon">&#128218;</div><p>No memories found</p></div>';
+        html += '<div class="empty-state"><div class="empty-icon">&#128218;</div><p>No memories found</p><p style="font-size:12px;color:var(--ink-faint);font-style:italic;">Save facts with the <code>memory_remember</code> MCP tool during Claude Code sessions.</p></div>';
       } else {
         html += '<table><tr><th>Title</th><th>Type</th><th>Strength</th><th>Version</th><th>Updated</th><th>Actions</th></tr>';
         filtered.forEach(function(m) {
           var badgeClass = TYPE_BADGES[m.type] || 'badge-muted';
-          var strength = Math.round((m.strength || 0) * 100);
+          var rawStrength = m.strength || 0;
+          var strength = Math.round(rawStrength <= 1 ? rawStrength * 100 : rawStrength * 10);
+          if (strength > 100) strength = 100;
           var barColor = strength > 70 ? 'var(--green)' : strength > 40 ? 'var(--yellow)' : 'var(--red)';
           html += '<tr>';
           var preview = (m.content || '').split('\n').slice(0, 2).join(' ').trim();
@@ -2409,6 +2417,10 @@
           html += '<div class="session-item' + (selected ? ' selected' : '') + '" data-action="select-session" data-session-id="' + esc(s.id) + '">';
           html += '<div class="session-top"><span class="session-project">' + esc(s.project ? s.project.split('/').pop() : 'Unknown') + '</span>';
           html += '<span class="badge ' + statusBadge + '">' + esc(s.status) + '</span></div>';
+          var preview = s.firstPrompt || s.summary || '';
+          if (preview) {
+            html += '<div class="session-preview" style="font-size:13px;color:var(--ink);margin:4px 0;line-height:1.4;">' + esc(truncate(preview, 140)) + '</div>';
+          }
           html += '<div class="session-meta">' + esc(s.id.slice(0, 12)) + ' &middot; ' + esc(formatTime(s.startedAt));
           html += ' &middot; ' + (s.observationCount || 0) + ' obs';
           if (s.model) html += ' &middot; ' + esc(s.model);
@@ -2427,24 +2439,96 @@
       renderSessions();
     }
 
-    function renderSessionDetail() {
+    async function renderSessionDetail() {
       var panel = document.getElementById('session-detail');
       if (!panel) return;
       var s = state.sessions.items.find(function(x) { return x.id === state.sessions.selectedId; });
       if (!s) { panel.innerHTML = ''; return; }
 
-      var html = '<div class="detail-panel"><h3>Session Details</h3>';
-      html += '<div class="detail-row"><div class="dl">Session ID</div><div class="dv" style="font-family:var(--font-mono);font-size:12px;">' + esc(s.id) + '</div></div>';
-      html += '<div class="detail-row"><div class="dl">Project</div><div class="dv">' + esc(s.project) + '</div></div>';
-      html += '<div class="detail-row"><div class="dl">Working Dir</div><div class="dv" style="font-family:var(--font-mono);font-size:12px;">' + esc(s.cwd) + '</div></div>';
-      html += '<div class="detail-row"><div class="dl">Status</div><div class="dv">' + esc(s.status) + '</div></div>';
-      html += '<div class="detail-row"><div class="dl">Started</div><div class="dv" style="font-family:var(--font-mono);font-size:12px;">' + esc(formatTime(s.startedAt)) + '</div></div>';
-      if (s.endedAt) html += '<div class="detail-row"><div class="dl">Ended</div><div class="dv" style="font-family:var(--font-mono);font-size:12px;">' + esc(formatTime(s.endedAt)) + '</div></div>';
-      html += '<div class="detail-row"><div class="dl">Observations</div><div class="dv" style="font-family:var(--font-mono);">' + (s.observationCount || 0) + '</div></div>';
-      if (s.model) html += '<div class="detail-row"><div class="dl">Model</div><div class="dv">' + esc(s.model) + '</div></div>';
-      if (s.tags && s.tags.length) html += '<div class="detail-row"><div class="dl">Tags</div><div class="dv">' + s.tags.map(function(t) { return '<span class="badge badge-muted" style="margin-right:4px;">' + esc(t) + '</span>'; }).join('') + '</div></div>';
+      panel.innerHTML = '<div class="detail-panel"><h3>Loading session details…</h3></div>';
 
-      html += '<div style="margin-top:16px;display:flex;gap:8px;">';
+      var obsRes = await apiGet('observations?sessionId=' + encodeURIComponent(s.id));
+      var obs = (obsRes && obsRes.observations) || [];
+
+      var typeCounts = {};
+      var toolCounts = {};
+      var fileSet = new Set();
+      var firstPromptFromObs = '';
+      obs.forEach(function(o) {
+        var t = o.type || o.hookType || 'other';
+        typeCounts[t] = (typeCounts[t] || 0) + 1;
+        var tool = o.title || o.toolName;
+        if (tool && t !== 'conversation') toolCounts[tool] = (toolCounts[tool] || 0) + 1;
+        (o.files || []).forEach(function(f) { fileSet.add(f); });
+        if (!firstPromptFromObs && (o.userPrompt || (o.type === 'conversation' && o.narrative))) {
+          firstPromptFromObs = o.userPrompt || o.narrative || '';
+        }
+      });
+
+      var durationMs = s.endedAt ? new Date(s.endedAt).getTime() - new Date(s.startedAt).getTime() : 0;
+      var durationLabel = durationMs > 0 ? (durationMs < 60000 ? (durationMs / 1000).toFixed(1) + 's' : (durationMs / 60000).toFixed(1) + 'm') : '-';
+
+      var preview = s.firstPrompt || s.summary || firstPromptFromObs || '';
+
+      var html = '<div class="detail-panel">';
+      html += '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;">';
+      html += '<h3 style="margin:0;">Session · ' + esc(s.project || 'Unknown') + '</h3>';
+      html += '<span class="badge ' + (s.status === 'active' ? 'badge-green' : 'badge-blue') + '">' + esc(s.status) + '</span>';
+      html += '</div>';
+
+      if (preview) {
+        html += '<div style="padding:10px 12px;margin-bottom:12px;background:var(--bg-alt);border-left:3px solid var(--accent);font-size:13px;line-height:1.5;color:var(--ink);">' + esc(truncate(preview, 600)) + '</div>';
+      }
+
+      html += '<div style="display:grid;grid-template-columns:repeat(4, 1fr);gap:10px;margin-bottom:14px;">';
+      html += '<div class="card" style="padding:10px;"><div style="font-size:10px;letter-spacing:0.08em;color:var(--ink-muted);">OBSERVATIONS</div><div style="font-size:20px;font-weight:600;">' + obs.length + '</div></div>';
+      html += '<div class="card" style="padding:10px;"><div style="font-size:10px;letter-spacing:0.08em;color:var(--ink-muted);">TOOLS USED</div><div style="font-size:20px;font-weight:600;">' + Object.keys(toolCounts).length + '</div></div>';
+      html += '<div class="card" style="padding:10px;"><div style="font-size:10px;letter-spacing:0.08em;color:var(--ink-muted);">FILES TOUCHED</div><div style="font-size:20px;font-weight:600;">' + fileSet.size + '</div></div>';
+      html += '<div class="card" style="padding:10px;"><div style="font-size:10px;letter-spacing:0.08em;color:var(--ink-muted);">DURATION</div><div style="font-size:20px;font-weight:600;">' + esc(durationLabel) + '</div></div>';
+      html += '</div>';
+
+      var topTools = Object.keys(toolCounts).sort(function(a, b) { return toolCounts[b] - toolCounts[a]; }).slice(0, 10);
+      if (topTools.length > 0) {
+        var maxC = toolCounts[topTools[0]] || 1;
+        html += '<div class="card" style="margin-bottom:12px;"><div class="card-title">Tool Invocations</div>';
+        html += '<div class="bar-chart" style="margin-top:8px;">';
+        topTools.forEach(function(t) {
+          var pct = Math.round((toolCounts[t] / maxC) * 100);
+          html += '<div class="bar-row"><span class="bar-label" style="font-family:var(--font-mono);">' + esc(t) + '</span><div class="bar-track"><div class="bar-fill" style="width:' + pct + '%;background:var(--accent);"></div></div><span class="bar-value">' + toolCounts[t] + '</span></div>';
+        });
+        html += '</div></div>';
+      }
+
+      var typeKeys = Object.keys(typeCounts).sort(function(a, b) { return typeCounts[b] - typeCounts[a]; });
+      if (typeKeys.length > 0) {
+        html += '<div class="card" style="margin-bottom:12px;"><div class="card-title">Activity Breakdown</div>';
+        html += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;">';
+        typeKeys.forEach(function(t) {
+          html += '<span class="badge badge-muted" style="font-family:var(--font-mono);">' + esc(t.replace(/_/g, ' ')) + ' · ' + typeCounts[t] + '</span>';
+        });
+        html += '</div></div>';
+      }
+
+      if (fileSet.size > 0) {
+        var filesArr = Array.from(fileSet).slice(0, 30);
+        html += '<div class="card" style="margin-bottom:12px;"><div class="card-title">Files</div>';
+        html += '<div style="font-size:12px;font-family:var(--font-mono);line-height:1.6;margin-top:8px;">';
+        filesArr.forEach(function(f) { html += '<div>&#8226; ' + esc(f) + '</div>'; });
+        if (fileSet.size > 30) html += '<div style="color:var(--ink-faint);">+' + (fileSet.size - 30) + ' more</div>';
+        html += '</div></div>';
+      }
+
+      html += '<div class="card" style="margin-bottom:12px;"><div class="card-title">Metadata</div>';
+      html += '<div style="font-size:12px;font-family:var(--font-mono);margin-top:8px;line-height:1.7;">';
+      html += '<div><span style="color:var(--ink-muted);">id:</span> ' + esc(s.id) + '</div>';
+      html += '<div><span style="color:var(--ink-muted);">cwd:</span> ' + esc(s.cwd || '-') + '</div>';
+      html += '<div><span style="color:var(--ink-muted);">started:</span> ' + esc(formatTime(s.startedAt)) + '</div>';
+      if (s.endedAt) html += '<div><span style="color:var(--ink-muted);">ended:</span> ' + esc(formatTime(s.endedAt)) + '</div>';
+      if (s.model) html += '<div><span style="color:var(--ink-muted);">model:</span> ' + esc(s.model) + '</div>';
+      if (s.tags && s.tags.length) html += '<div><span style="color:var(--ink-muted);">tags:</span> ' + s.tags.map(esc).join(', ') + '</div>';
+      html += '</div></div>';
+
+      html += '<div style="display:flex;gap:8px;">';
       if (s.status === 'active') {
         html += '<button class="btn btn-danger" data-action="end-session" data-session-id="' + esc(s.id) + '">End Session</button>';
       }
@@ -2488,13 +2572,18 @@
         });
       }
 
-      var html = '<div style="display:flex;gap:8px;margin-bottom:12px;">';
+      var html = '<div class="card" style="margin-bottom:12px;padding:12px;background:var(--bg-subtle);">';
+      html += '<div style="font-size:13px;color:var(--ink-muted);line-height:1.5;">';
+      html += '<strong>Lessons</strong> are portable heuristics — short imperative rules (always/never/prefer/avoid) extracted from past work. Auto-surface from JSONL imports (low confidence, tag <code>auto-import</code>), get reinforced when the agent applies them, and decay if unused. Higher confidence = more battle-tested.';
+      html += '</div></div>';
+
+      html += '<div style="display:flex;gap:8px;margin-bottom:12px;">';
       html += '<input class="search-input" type="text" placeholder="Search lessons..." value="' + esc(state.lessons.search) + '" oninput="state.lessons.search=this.value;renderLessons()" style="flex:1" />';
       html += '<span style="font-size:12px;color:var(--ink-faint);align-self:center;">' + items.length + ' lessons</span>';
       html += '</div>';
 
       if (items.length === 0) {
-        html += '<div class="empty-state"><div class="empty-icon">&#128161;</div><p>No lessons yet</p><p style="font-size:12px;color:var(--ink-faint);font-style:italic;">Lessons are extracted from crystals or saved manually via memory_lesson_save.</p></div>';
+        html += '<div class="empty-state"><div class="empty-icon">&#128161;</div><p>No lessons yet</p><p style="font-size:12px;color:var(--ink-faint);font-style:italic;">Import a Claude Code JSONL (Replay tab → Import JSONL) or save manually via <code>memory_lesson_save</code>.</p></div>';
       } else {
         html += '<table><thead><tr><th>Lesson</th><th>Confidence</th><th>Reinforcements</th><th>Source</th><th>Project</th><th>Updated</th></tr></thead><tbody>';
         items.forEach(function(l) {
@@ -2520,7 +2609,7 @@
       el.innerHTML = '<div class="loading">Loading actions...</div>';
       var results = await Promise.all([apiGet('actions'), apiGet('frontier')]);
       state.actions.items = (results[0] && results[0].actions) || [];
-      state.actions.frontier = (results[1] && results[1].actions) || [];
+      state.actions.frontier = (results[1] && (results[1].frontier || results[1].actions)) || [];
       state.actions.loaded = true;
       renderActions();
     }
@@ -2579,15 +2668,13 @@
 
     async function loadCrystals() {
       var el = document.getElementById('view-crystals');
-      if (state.dashboard.loaded && state.dashboard.crystals.length) {
-        state.crystals.items = state.dashboard.crystals;
-        state.crystals.loaded = true;
-        renderCrystals();
-        return;
-      }
       el.innerHTML = '<div class="loading">Loading crystals...</div>';
-      var result = await apiGet('crystals');
-      state.crystals.items = (result && result.crystals) || [];
+      var results = await Promise.all([apiGet('crystals'), apiGet('lessons')]);
+      state.crystals.items = (results[0] && results[0].crystals) || [];
+      var lessonMap = {};
+      var lessons = (results[1] && results[1].lessons) || [];
+      lessons.forEach(function(l) { if (l && l.id) lessonMap[l.id] = l; });
+      state.crystals.lessonMap = lessonMap;
       state.crystals.loaded = true;
       renderCrystals();
     }
@@ -2596,54 +2683,83 @@
       var el = document.getElementById('view-crystals');
       var items = state.crystals.items;
       var search = state.crystals.search.toLowerCase();
+      var lessonMap = state.crystals.lessonMap || {};
 
       if (search) {
         items = items.filter(function(c) {
-          return ((c.narrative || '') + ' ' + (c.keyOutcomes || []).join(' ') + ' ' + (c.lessons || []).join(' ')).toLowerCase().indexOf(search) >= 0;
+          var lessonText = (c.lessons || [])
+            .map(function(lid) {
+              var l = lessonMap[lid];
+              return l && typeof l.content === 'string' ? l.content : lid;
+            })
+            .join(' ');
+          var filesText = (c.filesAffected || []).join(' ');
+          var haystack = [
+            c.narrative || '',
+            (c.keyOutcomes || []).join(' '),
+            lessonText,
+            filesText,
+            c.project || '',
+          ].join(' ').toLowerCase();
+          return haystack.indexOf(search) >= 0;
         });
       }
 
-      var html = '<div style="display:flex;gap:8px;margin-bottom:12px;">';
+      var html = '<div class="card" style="margin-bottom:12px;padding:12px;background:var(--bg-subtle);">';
+      html += '<div style="font-size:13px;color:var(--ink-muted);line-height:1.5;">';
+      html += '<strong>Crystals</strong> are frozen snapshots of completed work. Each crystal captures one session\'s narrative, the tools invoked (key outcomes), files touched, and lessons surfaced — a replayable summary you keep after raw observations are pruned. Auto-created on JSONL import or via <code>memory_crystallize</code>.';
+      html += '</div></div>';
+
+      html += '<div style="display:flex;gap:8px;margin-bottom:12px;">';
       html += '<input class="search-input" type="text" placeholder="Search crystals..." value="' + esc(state.crystals.search) + '" oninput="state.crystals.search=this.value;renderCrystals()" style="flex:1" />';
       html += '<span style="font-size:12px;color:var(--ink-faint);align-self:center;">' + items.length + ' crystals</span>';
       html += '</div>';
 
       if (items.length === 0) {
-        html += '<div class="empty-state"><div class="empty-icon">&#128142;</div><p>No crystals yet</p><p style="font-size:12px;color:var(--ink-faint);font-style:italic;">Crystals are created by compressing completed action chains via memory_crystallize.</p></div>';
+        html += '<div class="empty-state"><div class="empty-icon">&#128142;</div><p>No crystals yet</p><p style="font-size:12px;color:var(--ink-faint);font-style:italic;">Crystals auto-generate from JSONL imports, or call <code>memory_crystallize</code> on a session.</p></div>';
       } else {
         items.forEach(function(c) {
-          html += '<div class="card" style="margin-bottom:12px;">';
-          html += '<div class="card-title" style="display:flex;justify-content:space-between;">';
-          html += '<span>' + esc(truncate(c.narrative, 100)) + '</span>';
-          html += '<span style="font-size:11px;color:var(--ink-faint);">' + formatTime(c.createdAt) + '</span>';
+          html += '<div class="card" style="margin-bottom:12px;border-left:3px solid var(--accent);">';
+          html += '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:8px;">';
+          html += '<div style="flex:1;font-size:14px;font-weight:600;color:var(--ink);line-height:1.4;">' + esc(truncate(c.narrative || 'Untitled crystal', 300)) + '</div>';
+          html += '<div style="font-size:10px;color:var(--ink-faint);font-family:var(--font-mono);white-space:nowrap;">' + esc(formatTime(c.createdAt)) + '</div>';
           html += '</div>';
 
-          if (c.keyOutcomes && c.keyOutcomes.length > 0) {
-            html += '<div style="margin:8px 0;"><strong style="font-size:11px;color:var(--ink-muted);">KEY OUTCOMES</strong>';
-            c.keyOutcomes.forEach(function(o) {
-              html += '<div style="font-size:12px;padding:2px 0;color:var(--ink);">&#8226; ' + esc(o) + '</div>';
-            });
-            html += '</div>';
-          }
+          var pillRow = [];
+          if (c.project) pillRow.push('<span class="badge badge-muted">' + esc(c.project) + '</span>');
+          if (c.sessionId) pillRow.push('<span class="badge badge-blue" style="font-family:var(--font-mono);">' + esc(c.sessionId.slice(0, 14)) + '</span>');
+          if (c.keyOutcomes && c.keyOutcomes.length) pillRow.push('<span style="font-size:11px;color:var(--ink-muted);">' + c.keyOutcomes.length + ' tools</span>');
+          if (c.filesAffected && c.filesAffected.length) pillRow.push('<span style="font-size:11px;color:var(--ink-muted);">' + c.filesAffected.length + ' files</span>');
+          if (c.lessons && c.lessons.length) pillRow.push('<span style="font-size:11px;color:var(--ink-muted);">' + c.lessons.length + ' lessons</span>');
+          if (pillRow.length) html += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">' + pillRow.join('') + '</div>';
 
-          if (c.lessons && c.lessons.length > 0) {
-            html += '<div style="margin:8px 0;"><strong style="font-size:11px;color:var(--ink-muted);">LESSONS</strong>';
-            c.lessons.forEach(function(l) {
-              html += '<div style="font-size:12px;padding:2px 0;color:var(--ink);">&#128161; ' + esc(l) + '</div>';
+          if (c.keyOutcomes && c.keyOutcomes.length > 0) {
+            html += '<div style="margin:10px 0;"><div style="font-size:10px;letter-spacing:0.08em;color:var(--ink-muted);margin-bottom:4px;">TOOLS USED</div>';
+            html += '<div style="display:flex;gap:4px;flex-wrap:wrap;">';
+            c.keyOutcomes.forEach(function(o) {
+              html += '<span class="badge" style="background:var(--bg-alt);color:var(--ink);font-family:var(--font-mono);">' + esc(o) + '</span>';
             });
-            html += '</div>';
+            html += '</div></div>';
           }
 
           if (c.filesAffected && c.filesAffected.length > 0) {
-            html += '<div style="margin:8px 0;font-size:11px;color:var(--ink-muted);">Files: <span style="font-family:var(--font-mono);">' + c.filesAffected.map(esc).join(', ') + '</span></div>';
+            html += '<div style="margin:10px 0;"><div style="font-size:10px;letter-spacing:0.08em;color:var(--ink-muted);margin-bottom:4px;">FILES TOUCHED</div>';
+            html += '<div style="font-size:12px;font-family:var(--font-mono);color:var(--ink);line-height:1.6;">';
+            c.filesAffected.slice(0, 10).forEach(function(f) {
+              html += '<div>&#8226; ' + esc(f) + '</div>';
+            });
+            if (c.filesAffected.length > 10) html += '<div style="color:var(--ink-faint);">+' + (c.filesAffected.length - 10) + ' more</div>';
+            html += '</div></div>';
           }
 
-          if (c.sourceActionIds && c.sourceActionIds.length > 0) {
-            html += '<div style="font-size:11px;color:var(--ink-faint);">Source actions: ' + c.sourceActionIds.map(esc).join(', ') + '</div>';
-          }
-
-          if (c.project) {
-            html += '<div style="font-size:11px;color:var(--ink-faint);margin-top:4px;">Project: ' + esc(c.project) + '</div>';
+          if (c.lessons && c.lessons.length > 0) {
+            html += '<div style="margin:10px 0;"><div style="font-size:10px;letter-spacing:0.08em;color:var(--ink-muted);margin-bottom:4px;">LESSONS SURFACED</div>';
+            c.lessons.slice(0, 8).forEach(function(lid) {
+              var content = lessonMap[lid] ? lessonMap[lid].content : lid;
+              html += '<div style="font-size:12px;padding:4px 8px;margin:2px 0;background:var(--bg-alt);border-radius:3px;color:var(--ink);line-height:1.4;">&#128161; ' + esc(content) + '</div>';
+            });
+            if (c.lessons.length > 8) html += '<div style="font-size:11px;color:var(--ink-faint);margin-top:4px;">+' + (c.lessons.length - 8) + ' more lessons</div>';
+            html += '</div>';
           }
 
           html += '</div>';
@@ -2888,6 +3004,8 @@
       pollTimer = null;
     }
 
+    var WS_CONNECT_TIMEOUT_MS = 5000;
+
     function connectWs() {
       if (wsRetries >= WS_MAX_RETRIES) {
         startPolling();
@@ -2902,8 +3020,14 @@
         ws = new WebSocket(WS_URL);
         ws.__direct = false;
       }
+      var connectTimer = setTimeout(function() {
+        if (ws.readyState === WebSocket.CONNECTING) {
+          try { ws.close(); } catch {}
+        }
+      }, WS_CONNECT_TIMEOUT_MS);
       try {
         ws.onopen = function() {
+          clearTimeout(connectTimer);
           if (state.ws !== ws) return;
           wsRetries = 0;
           stopPolling();
@@ -2935,6 +3059,7 @@
           } catch {}
         };
         ws.onclose = function() {
+          clearTimeout(connectTimer);
           if (state.ws !== ws) return;
           if (ws.__direct) {
             directFailures += 1;

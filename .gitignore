@@ -14,3 +14,8 @@ plugin/scripts/*.map
 plugin/scripts/*.d.mts
 data/
 .gstack/
+
+# Lock files — never commit (see feedback_no_lockfiles memory)
+package-lock.json
+pnpm-lock.yaml
+yarn.lock

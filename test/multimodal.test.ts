@@ -173,8 +173,8 @@ describe("Disk Size Manager", () => {
     let managerCallback: any = null;
     const sdkMocker = {
       ...localSdk,
-      registerFunction: vi.fn((config: any, cb: any) => {
-        if (config.id === "mem::disk-size-delta") managerCallback = cb;
+      registerFunction: vi.fn((id: string, cb: any) => {
+        if (id === "mem::disk-size-delta") managerCallback = cb;
       }),
     };
 
@@ -206,8 +206,8 @@ describe("Disk Size Manager", () => {
       let managerCallback: any = null;
       const sdkMocker = {
         ...localSdk,
-        registerFunction: vi.fn((config: any, cb: any) => {
-          if (config.id === "mem::disk-size-delta") managerCallback = cb;
+        registerFunction: vi.fn((id: string, cb: any) => {
+          if (id === "mem::disk-size-delta") managerCallback = cb;
         }),
       };
 
@@ -235,8 +235,8 @@ describe("Disk Size Manager", () => {
     let managerCallback: any = null;
     const sdkMocker = {
       ...localSdk,
-      registerFunction: vi.fn((config: any, cb: any) => {
-        if (config.id === "mem::disk-size-delta") managerCallback = cb;
+      registerFunction: vi.fn((id: string, cb: any) => {
+        if (id === "mem::disk-size-delta") managerCallback = cb;
       }),
     };
 
@@ -254,8 +254,8 @@ describe("Disk Size Manager", () => {
     let managerCallback: any = null;
     const sdkMocker = {
       ...localSdk,
-      registerFunction: vi.fn((config: any, cb: any) => {
-        if (config.id === "mem::disk-size-delta") managerCallback = cb;
+      registerFunction: vi.fn((id: string, cb: any) => {
+        if (id === "mem::disk-size-delta") managerCallback = cb;
       }),
     };
 

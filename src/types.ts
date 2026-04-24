@@ -8,6 +8,8 @@ export interface Session {
   observationCount: number;
   model?: string;
   tags?: string[];
+  firstPrompt?: string;
+  summary?: string;
 }
 
 export interface RawObservation {
@@ -127,7 +129,7 @@ export interface ProviderConfig {
   baseURL?: string;
 }
 
-export type ProviderType = "agent-sdk" | "anthropic" | "gemini" | "openrouter" | "minimax" | "lmstudio" | "openai" | "ollama" | "vllm";
+export type ProviderType = "agent-sdk" | "anthropic" | "gemini" | "openrouter" | "minimax" | "lmstudio" | "openai" | "ollama" | "vllm" | "noop";
 
 export interface MemoryProvider {
   name: string;
@@ -277,7 +279,7 @@ export interface ExportPagination {
 }
 
 export interface ExportData {
-  version: "0.3.0" | "0.4.0" | "0.5.0" | "0.6.0" | "0.6.1" | "0.7.0" | "0.7.2" | "0.7.3" | "0.7.4" | "0.7.5" | "0.7.6" | "0.7.9" | "0.8.0" | "0.8.1" | "0.8.2" | "0.8.3" | "0.8.4" | "0.8.5" | "0.8.6" | "0.8.7" | "0.8.8" | "0.8.9" | "0.8.10" | "0.8.11" | "0.8.12" | "0.8.13" | "0.9.0" | "0.9.1";
+  version: "0.3.0" | "0.4.0" | "0.5.0" | "0.6.0" | "0.6.1" | "0.7.0" | "0.7.2" | "0.7.3" | "0.7.4" | "0.7.5" | "0.7.6" | "0.7.9" | "0.8.0" | "0.8.1" | "0.8.2" | "0.8.3" | "0.8.4" | "0.8.5" | "0.8.6" | "0.8.7" | "0.8.8" | "0.8.9" | "0.8.10" | "0.8.11" | "0.8.12" | "0.8.13" | "0.9.0" | "0.9.1" | "0.9.2";
   exportedAt: string;
   sessions: Session[];
   observations: Record<string, CompressedObservation[]>;
@@ -837,7 +839,6 @@ export interface RetentionScore {
   reinforcementBoost: number;
   lastAccessed: string;
   accessCount: number;
-  source?: "episodic" | "semantic";
 }
 
 export interface DecayConfig {
@@ -849,3 +850,15 @@ export interface DecayConfig {
     cold: number;
   };
 }
+
+/**
+ * KV.state scope — long-lived system counters + flags keyed by string.
+ * Keep keys/types in sync with the state-scope callers (e.g.,
+ * disk-size-manager) so TypeScript enforces consistent value shapes
+ * instead of every caller using ad-hoc `<number>` generics.
+ */
+export interface StateScope {
+  "system:currentDiskSize": number;
+}
+
+export type StateScopeKey = keyof StateScope;

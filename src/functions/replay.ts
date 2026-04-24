@@ -4,14 +4,18 @@ import { resolve, join } from "node:path";
 import type { ISdk } from "iii-sdk";
 import type {
   CompressedObservation,
+  Crystal,
+  Lesson,
   RawObservation,
   Session,
 } from "../types.js";
 import type { StateKV } from "../state/kv.js";
-import { KV, generateId } from "../state/schema.js";
+import { KV, generateId, fingerprintId } from "../state/schema.js";
 import { parseJsonlText } from "../replay/jsonl-parser.js";
 import { projectTimeline, type Timeline } from "../replay/timeline.js";
 import { safeAudit } from "./audit.js";
+import { buildSyntheticCompression } from "./compress-synthetic.js";
+import { getSearchIndex } from "./search.js";
 import { logger } from "../logger.js";
 
 const SENSITIVE_PATH_PATTERNS: RegExp[] = [
@@ -52,6 +56,132 @@ function rawFromCompressed(obs: CompressedObservation): RawObservation {
     assistantResponse: undefined,
     raw: { title: obs.title, narrative: obs.narrative, facts: obs.facts },
   };
+}
+
+const LESSON_PATTERNS: RegExp[] = [
+  /\b(always|never|don'?t|do not|make sure|remember to|note:|caveat:|warning:)\b[^.\n]{10,200}[.!\n]/gi,
+  /\b(prefer|avoid)\s[^.\n]{10,200}[.!\n]/gi,
+];
+
+async function deriveCrystalAndLessons(
+  kv: StateKV,
+  sessionId: string,
+  project: string,
+  rawObs: RawObservation[],
+  compressed: CompressedObservation[],
+  firstPrompt: string | undefined,
+): Promise<void> {
+  if (rawObs.length === 0) return;
+  const createdAt = new Date().toISOString();
+
+  const files = new Set<string>();
+  const tools = new Set<string>();
+  for (const c of compressed) {
+    for (const f of c.files || []) files.add(f);
+    if (c.type && c.type !== "conversation" && c.title) tools.add(c.title);
+  }
+
+  const assistantTexts: string[] = [];
+  const userPrompts: string[] = [];
+  for (const r of rawObs) {
+    if (typeof r.assistantResponse === "string" && r.assistantResponse.trim()) {
+      assistantTexts.push(r.assistantResponse);
+    }
+    if (typeof r.userPrompt === "string" && r.userPrompt.trim()) {
+      userPrompts.push(r.userPrompt);
+    }
+  }
+
+  const lessonMatches = new Map<string, string>();
+  for (const text of assistantTexts.concat(userPrompts).slice(0, 200)) {
+    for (const pat of LESSON_PATTERNS) {
+      pat.lastIndex = 0;
+      let m: RegExpExecArray | null;
+      while ((m = pat.exec(text)) !== null && lessonMatches.size < 40) {
+        const snippet = m[0].replace(/\s+/g, " ").trim();
+        if (snippet.length >= 20 && snippet.length <= 220) {
+          const key = snippet.toLowerCase();
+          if (!lessonMatches.has(key)) lessonMatches.set(key, snippet);
+        }
+      }
+    }
+  }
+
+  const lessonEntries = Array.from(lessonMatches.values()).slice(0, 20);
+  const lessonIds: string[] = [];
+  for (const content of lessonEntries) {
+    // Content-addressed ID so re-importing the same JSONL does not
+    // duplicate lessons. fingerprintId hashes the normalized content,
+    // giving a stable lesson_xxx for identical text.
+    const lessonId = fingerprintId("lesson", content.trim().toLowerCase());
+    try {
+      const existing = await kv.get<Lesson>(KV.lessons, lessonId);
+      if (existing) {
+        const existingSources = existing.sourceIds || [];
+        const mergedSources = existingSources.includes(sessionId)
+          ? existingSources
+          : [...existingSources, sessionId];
+        const existingTags = existing.tags || [];
+        const mergedTags = existingTags.includes("auto-import")
+          ? existingTags
+          : [...existingTags, "auto-import"];
+        const merged: Lesson = {
+          ...existing,
+          sourceIds: mergedSources,
+          tags: mergedTags,
+          reinforcements: (existing.reinforcements || 0) + 1,
+          updatedAt: createdAt,
+          lastReinforcedAt: createdAt,
+        };
+        await kv.set(KV.lessons, lessonId, merged);
+      } else {
+        const lesson: Lesson = {
+          id: lessonId,
+          content,
+          context: firstPrompt || project,
+          confidence: 0.4,
+          reinforcements: 0,
+          source: "consolidation",
+          sourceIds: [sessionId],
+          project,
+          tags: ["auto-import"],
+          createdAt,
+          updatedAt: createdAt,
+          decayRate: 0.05,
+        };
+        await kv.set(KV.lessons, lessonId, lesson);
+      }
+      lessonIds.push(lessonId);
+    } catch {}
+  }
+
+  // Content-addressed on sessionId so re-importing the same session
+  // upserts the crystal in place instead of creating a new one.
+  const crystalId = fingerprintId("crystal", sessionId);
+  const narrativePreview = firstPrompt
+    ? firstPrompt.slice(0, 300)
+    : compressed
+        .slice(0, 5)
+        .map((c) => c.narrative || c.title)
+        .filter(Boolean)
+        .join(" · ")
+        .slice(0, 300);
+
+  try {
+    const existingCrystal = await kv.get<Crystal>(KV.crystals, crystalId);
+    const crystal: Crystal = {
+      id: crystalId,
+      narrative: narrativePreview || `Session ${sessionId.slice(0, 12)} (${rawObs.length} observations)`,
+      keyOutcomes: Array.from(tools).slice(0, 8),
+      filesAffected: Array.from(files).slice(0, 20),
+      lessons: lessonIds,
+      sourceActionIds: existingCrystal?.sourceActionIds ?? [],
+      sessionId,
+      project,
+      createdAt: existingCrystal?.createdAt ?? createdAt,
+    };
+    await kv.set(KV.crystals, crystalId, crystal);
+  } catch {}
 }
 
 function isRawShape(o: unknown): o is RawObservation {
@@ -196,6 +326,13 @@ export function registerReplayFunctions(sdk: ISdk, kv: StateKV): void {
         const parsed = parseJsonlText(text, generateId("sess"));
         if (parsed.observations.length === 0) continue;
 
+        const firstPromptObs = parsed.observations.find(
+          (o) => typeof o.userPrompt === "string" && o.userPrompt.trim().length > 0,
+        );
+        const firstPrompt = firstPromptObs?.userPrompt
+          ? firstPromptObs.userPrompt.replace(/\s+/g, " ").trim().slice(0, 200)
+          : undefined;
+
         const existing = await kv.get<Session>(KV.sessions, parsed.sessionId);
         if (existing) {
           existing.observationCount =
@@ -208,6 +345,9 @@ export function registerReplayFunctions(sdk: ISdk, kv: StateKV): void {
           if (!existingTags.includes("jsonl-import")) {
             existing.tags = [...existingTags, "jsonl-import"];
           }
+          if (!existing.firstPrompt && firstPrompt) {
+            existing.firstPrompt = firstPrompt;
+          }
           await kv.set(KV.sessions, existing.id, existing);
         } else {
           const session: Session = {
@@ -219,17 +359,32 @@ export function registerReplayFunctions(sdk: ISdk, kv: StateKV): void {
             status: "completed",
             observationCount: parsed.observations.length,
             tags: ["jsonl-import"],
+            firstPrompt,
           };
           await kv.set(KV.sessions, session.id, session);
         }
 
+        const searchIndex = getSearchIndex();
+        const compressed: CompressedObservation[] = [];
         await Promise.all(
-          parsed.observations.map((obs) =>
-            kv.set(KV.observations(parsed.sessionId), obs.id, obs),
-          ),
+          parsed.observations.map(async (obs) => {
+            const synthetic = buildSyntheticCompression(obs);
+            compressed.push(synthetic);
+            await kv.set(KV.observations(parsed.sessionId), obs.id, synthetic);
+            searchIndex.add(synthetic);
+          }),
         );
         observationCount += parsed.observations.length;
         sessionIds.push(parsed.sessionId);
+
+        await deriveCrystalAndLessons(
+          kv,
+          parsed.sessionId,
+          parsed.project,
+          parsed.observations,
+          compressed,
+          firstPrompt,
+        );
       }
 
       await safeAudit(kv, "import", "mem::replay::import-jsonl", sessionIds, {

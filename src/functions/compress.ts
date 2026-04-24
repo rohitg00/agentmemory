@@ -1,4 +1,4 @@
-import { TriggerAction, type ISdk, getContext } from "iii-sdk";
+import { TriggerAction, type ISdk } from "iii-sdk";
 import { readFileSync } from "node:fs";
 import { isManagedImagePath } from "../utils/image-store.js";
 import type {

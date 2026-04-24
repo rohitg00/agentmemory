@@ -1,5 +1,11 @@
 #!/usr/bin/env node
 
+function isSdkChildContext(payload: unknown): boolean {
+  if (process.env["AGENTMEMORY_SDK_CHILD"] === "1") return true;
+  if (!payload || typeof payload !== "object") return false;
+  return (payload as { entrypoint?: unknown }).entrypoint === "sdk-ts";
+}
+
 // Pre-tool-use enrichment hook.
 //
 // THIS HOOK IS A NO-OP BY DEFAULT AS OF 0.8.10 (#143). Previously it
@@ -41,6 +47,8 @@ async function main() {
   } catch {
     return;
   }
+
+  if (isSdkChildContext(data)) return;
 
   const toolName = data.tool_name as string;
   if (!toolName) return;

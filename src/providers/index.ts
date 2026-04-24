@@ -6,6 +6,7 @@ import type {
 import { AgentSDKProvider } from "./agent-sdk.js";
 import { AnthropicProvider } from "./anthropic.js";
 import { MinimaxProvider } from "./minimax.js";
+import { NoopProvider } from "./noop.js";
 import { OpenAIProvider } from "./openai.js";
 import { OpenRouterProvider } from "./openrouter.js";
 import { ResilientProvider } from "./resilient.js";
@@ -96,6 +97,7 @@ function createBaseProvider(config: ProviderConfig): MemoryProvider {
         requireEnvVar("OPENROUTER_API_KEY"),
         config.model,
         config.maxTokens,
+        "https://openrouter.ai/api/v1/chat/completions",
       );
     case "minimax":
       return new MinimaxProvider(
@@ -126,6 +128,8 @@ function createBaseProvider(config: ProviderConfig): MemoryProvider {
         "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
       );
     }
+    case "noop":
+      return new NoopProvider();
     case "agent-sdk":
     default:
       return new AgentSDKProvider();

@@ -1,5 +1,4 @@
 import type { ISdk } from "iii-sdk";
-import { getContext } from "iii-sdk";
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { readdir, stat } from "node:fs/promises";
@@ -7,17 +6,14 @@ import { join } from "node:path";
 import { IMAGES_DIR, getMaxBytes, deleteImage } from "../utils/image-store.js";
 import { getImageRefCount } from "./image-refs.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
+import { logger } from "../logger.js";
 
 const GRACE_PERIOD_MS = 30_000;
 
 export function registerImageQuotaCleanup(sdk: ISdk, kv: StateKV): void {
   sdk.registerFunction(
-    {
-      id: "mem::image-quota-cleanup",
-      description: "Background LRU cleanup of image store when disk quota is exceeded",
-    },
+    "mem::image-quota-cleanup",
     async () => {
-      const ctx = getContext();
       const now = Date.now();
 
       return withKeyedLock("system:cleanupLock", async () => {
@@ -58,11 +54,19 @@ export function registerImageQuotaCleanup(sdk: ISdk, kv: StateKV): void {
           }
 
           await withKeyedLock(`imgRef:${f.filePath}`, async () => {
-            let refCount = 0;
+            let refCount: number;
             try {
               refCount = await getImageRefCount(kv, f.filePath);
             } catch (err) {
-              ctx.logger.error(`[agentmemory] Failed to read refCount for ${f.filePath}:`, err);
+              // Fail-closed: if we cannot determine refCount we must NOT
+              // delete the image. Previously we let refCount fall through
+              // to the default 0 and evicted, which risks deleting
+              // still-referenced images on transient KV errors.
+              logger.error("Failed to read refCount; skipping eviction", {
+                filePath: f.filePath,
+                error: err instanceof Error ? err.message : String(err),
+              });
+              return;
             }
 
             if (refCount > 0) {
@@ -81,7 +85,7 @@ export function registerImageQuotaCleanup(sdk: ISdk, kv: StateKV): void {
 
         if (evicted > 0) {
           const freedMb = (freedBytes / (1024 * 1024)).toFixed(1);
-          ctx.logger.info("[agentmemory] Image quota cleanup complete", { evicted, freedMb });
+          logger.info("Image quota cleanup complete", { evicted, freedMb });
         }
 
         return { success: true, evicted, freedBytes };
