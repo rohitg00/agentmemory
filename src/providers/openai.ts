@@ -11,7 +11,6 @@ export class OpenAIProvider implements MemoryProvider {
     private model: string,
     private maxTokens: number,
     private baseUrl: string,
-    private extraHeaders: Record<string, string> = {},
     private timeoutMs: number = 60_000,
   ) {}
 
@@ -53,7 +52,6 @@ export class OpenAIProvider implements MemoryProvider {
         ...(this.apiKey && this.apiKey !== "no-key-required"
           ? { Authorization: `Bearer ${this.apiKey}` }
           : {}),
-        ...this.extraHeaders,
       },
       body: JSON.stringify(body),
     });
