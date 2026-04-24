@@ -12,6 +12,7 @@ export class OpenAIProvider implements MemoryProvider {
     private maxTokens: number,
     private baseUrl: string,
     private extraHeaders: Record<string, string> = {},
+    private timeoutMs: number = 60_000,
   ) {}
 
   async compress(systemPrompt: string, userPrompt: string): Promise<string> {
@@ -31,6 +32,7 @@ export class OpenAIProvider implements MemoryProvider {
     const url = `${base}${path}`;
     const response = await fetch(url, {
       method: "POST",
+      signal: AbortSignal.timeout(this.timeoutMs),
       headers: {
         "Content-Type": "application/json",
         ...(this.apiKey && this.apiKey !== "no-key-required"
