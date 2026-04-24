@@ -30,6 +30,21 @@ export class OpenAIProvider implements MemoryProvider {
     const base = this.baseUrl.replace(/\/+$/, "");
     const path = base.endsWith("/v1") ? "/chat/completions" : "/v1/chat/completions";
     const url = `${base}${path}`;
+    const isReasoningModel = this.model.startsWith("o1-") || this.model.startsWith("o3-");
+    const body: Record<string, any> = {
+      model: this.model,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+    };
+
+    if (isReasoningModel) {
+      body.max_completion_tokens = this.maxTokens;
+    } else {
+      body.max_tokens = this.maxTokens;
+    }
+
     const response = await fetch(url, {
       method: "POST",
       signal: AbortSignal.timeout(this.timeoutMs),
@@ -40,14 +55,7 @@ export class OpenAIProvider implements MemoryProvider {
           : {}),
         ...this.extraHeaders,
       },
-      body: JSON.stringify({
-        model: this.model,
-        max_tokens: this.maxTokens,
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
-        ],
-      }),
+      body: JSON.stringify(body),
     });
 
     if (!response.ok) {

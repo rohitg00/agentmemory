@@ -162,6 +162,29 @@ describe("OpenAIProvider implementation", () => {
       })
     );
   });
+
+  it("uses max_completion_tokens for reasoning models", async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        choices: [{ message: { content: "mock reasoning response" } }],
+      }),
+    });
+    global.fetch = mockFetch;
+
+    const provider = new OpenAIProvider(
+      "openai",
+      "test-key",
+      "o1-mini",
+      500,
+      "https://api.openai.com"
+    );
+    await provider.compress("system", "user");
+
+    const body = JSON.parse((mockFetch.mock.calls[0][1] as RequestInit).body as string);
+    expect(body.max_completion_tokens).toBe(500);
+    expect(body.max_tokens).toBeUndefined();
+  });
 });
 
 describe("OpenAIEmbeddingProvider implementation", () => {
