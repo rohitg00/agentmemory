@@ -73,16 +73,11 @@ if (portIdx !== -1 && args[portIdx + 1]) {
 const skipEngine = args.includes("--no-engine");
 
 function getRestPort(): number {
-  const portIdx = args.indexOf("--port");
-  if (portIdx !== -1 && args[portIdx + 1]) {
-    const parsed = parseInt(args[portIdx + 1] || "", 10);
-    if (parsed > 0) return parsed;
-  }
   const url = process.env["AGENTMEMORY_URL"];
   if (url) {
     try {
-      const u = new URL(url);
-      if (u.port) return parseInt(u.port, 10);
+      const parsed = new URL(url).port;
+      if (parsed) return parseInt(parsed, 10);
     } catch {}
   }
   return parseInt(process.env["III_REST_PORT"] || "3111", 10) || 3111;
@@ -406,6 +401,15 @@ async function main() {
   await import("./index.js");
 }
 
+async function apiFetch<T = unknown>(base: string, path: string, timeoutMs = 5000): Promise<T | null> {
+  try {
+    const res = await fetch(`${base}/agentmemory/${path}`, { signal: AbortSignal.timeout(timeoutMs) });
+    return (await res.json()) as T;
+  } catch {
+    return null;
+  }
+}
+
 async function runStatus() {
   const port = getRestPort();
   const base = getBaseUrl();
@@ -420,11 +424,11 @@ async function runStatus() {
 
   try {
     const [healthRes, sessionsRes, graphRes, memoriesRes, flagsRes] = await Promise.all([
-      fetch(`${base}/agentmemory/health`, { signal: AbortSignal.timeout(5000) }).then((r) => r.json()).catch(() => null),
-      fetch(`${base}/agentmemory/sessions`, { signal: AbortSignal.timeout(5000) }).then((r) => r.json()).catch(() => null),
-      fetch(`${base}/agentmemory/graph/stats`, { signal: AbortSignal.timeout(5000) }).then((r) => r.json()).catch(() => null),
-      fetch(`${base}/agentmemory/export`, { signal: AbortSignal.timeout(5000) }).then((r) => r.json()).catch(() => null),
-      fetch(`${base}/agentmemory/config/flags`, { signal: AbortSignal.timeout(5000) }).then((r) => r.json()).catch(() => null),
+      apiFetch<any>(base, "health"),
+      apiFetch<any>(base, "sessions"),
+      apiFetch<any>(base, "graph/stats"),
+      apiFetch<any>(base, "export"),
+      apiFetch<any>(base, "config/flags"),
     ]);
 
     const h = healthRes?.health;
@@ -485,13 +489,20 @@ async function runStatus() {
   }
 }
 
+type DoctorCheck = { name: string; ok: boolean; hint?: string };
+
+function formatChecks(checks: DoctorCheck[]): string {
+  return checks
+    .map((c) => `${c.ok ? "✓" : "✗"} ${c.name}${c.hint ? `\n   ${c.hint}` : ""}`)
+    .join("\n");
+}
+
 async function runDoctor() {
   p.intro("agentmemory doctor");
   const base = getBaseUrl();
-  const port = getRestPort();
-  const checks: { name: string; ok: boolean; hint?: string }[] = [];
+  const viewerPort = getRestPort() + 2;
+  const checks: DoctorCheck[] = [];
 
-  // 1. Server reachable
   const serverUp = await isEngineRunning();
   checks.push({
     name: "Server reachable",
@@ -500,59 +511,51 @@ async function runDoctor() {
   });
 
   if (!serverUp) {
-    checks.forEach((c) => p.log[c.ok ? "success" : "error"](`${c.ok ? "✓" : "✗"} ${c.name}${c.hint ? ` — ${c.hint}` : ""}`));
+    p.note(formatChecks(checks), "server unreachable");
     process.exit(1);
   }
 
   const [health, flags, graph] = await Promise.all([
-    fetch(`${base}/agentmemory/health`, { signal: AbortSignal.timeout(3000) }).then((r) => r.json()).catch(() => null),
-    fetch(`${base}/agentmemory/config/flags`, { signal: AbortSignal.timeout(3000) }).then((r) => r.json()).catch(() => null),
-    fetch(`${base}/agentmemory/graph/stats`, { signal: AbortSignal.timeout(3000) }).then((r) => r.json()).catch(() => null),
+    apiFetch<any>(base, "health", 3000),
+    apiFetch<any>(base, "config/flags", 3000),
+    apiFetch<any>(base, "graph/stats", 3000),
   ]);
 
-  // 2. Health status
-  checks.push({
-    name: "Health status",
-    ok: health?.status === "healthy",
-    hint: health?.status === "healthy" ? undefined : `Status: ${health?.status || "unknown"}`,
-  });
+  const viewerUp = await fetch(`http://localhost:${viewerPort}`, { signal: AbortSignal.timeout(2000) })
+    .then((r) => r.ok)
+    .catch(() => false);
 
-  // 3. Viewer reachable
-  const viewerPort = port + 2;
-  const viewerUp = await fetch(`http://localhost:${viewerPort}`, { signal: AbortSignal.timeout(2000) }).then((r) => r.ok).catch(() => false);
-  checks.push({
-    name: "Viewer reachable",
-    ok: viewerUp,
-    hint: viewerUp ? undefined : `Port ${viewerPort} not responding`,
-  });
-
-  // 4. LLM provider
   const hasLlm = flags?.provider === "llm";
-  checks.push({
-    name: "LLM provider",
-    ok: hasLlm,
-    hint: hasLlm ? undefined : "export ANTHROPIC_API_KEY=sk-ant-... (or GEMINI/OPENROUTER/MINIMAX) then restart",
-  });
-
-  // 5. Embedding provider
   const hasEmbed = flags?.embeddingProvider === "embeddings";
-  checks.push({
-    name: "Embedding provider",
-    ok: hasEmbed,
-    hint: hasEmbed ? undefined : "Running BM25-only. Add OPENAI_API_KEY / VOYAGE_API_KEY / COHERE_API_KEY / OLLAMA_HOST for semantic recall",
-  });
-
-  // 6. Flag states
-  (flags?.flags || []).forEach((f: { key: string; enabled: boolean; label: string; enableHow: string }) => {
-    checks.push({
-      name: `${f.label}`,
-      ok: f.enabled,
-      hint: f.enabled ? undefined : f.enableHow,
-    });
-  });
-
-  // 7. Graph has data
   const graphHas = (graph?.totalNodes || 0) > 0;
+
+  checks.push(
+    {
+      name: "Health status",
+      ok: health?.status === "healthy",
+      hint: health?.status === "healthy" ? undefined : `Status: ${health?.status || "unknown"}`,
+    },
+    {
+      name: "Viewer reachable",
+      ok: viewerUp,
+      hint: viewerUp ? undefined : `Port ${viewerPort} not responding`,
+    },
+    {
+      name: "LLM provider",
+      ok: hasLlm,
+      hint: hasLlm ? undefined : "export ANTHROPIC_API_KEY=sk-ant-... (or GEMINI/OPENROUTER/MINIMAX) then restart",
+    },
+    {
+      name: "Embedding provider",
+      ok: hasEmbed,
+      hint: hasEmbed ? undefined : "Running BM25-only. Add OPENAI_API_KEY / VOYAGE_API_KEY / COHERE_API_KEY / OLLAMA_HOST for semantic recall",
+    },
+  );
+
+  for (const f of (flags?.flags || []) as { label: string; enabled: boolean; enableHow: string }[]) {
+    checks.push({ name: f.label, ok: f.enabled, hint: f.enabled ? undefined : f.enableHow });
+  }
+
   checks.push({
     name: "Knowledge graph populated",
     ok: graphHas,
@@ -561,13 +564,7 @@ async function runDoctor() {
 
   const passed = checks.filter((c) => c.ok).length;
   const total = checks.length;
-  const lines = checks.map((c) => {
-    const icon = c.ok ? "✓" : "✗";
-    const hint = c.hint ? `\n   ${c.hint}` : "";
-    return `${icon} ${c.name}${hint}`;
-  });
-
-  p.note(lines.join("\n"), `${passed}/${total} checks passing`);
+  p.note(formatChecks(checks), `${passed}/${total} checks passing`);
 
   if (passed === total) {
     p.outro("✓ All checks passed. agentmemory is healthy.");

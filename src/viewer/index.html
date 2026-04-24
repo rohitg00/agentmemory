@@ -3339,15 +3339,18 @@
       var pills = '';
       if (warnCount) pills += '<span class="flag-pill">' + warnCount + ' off</span>';
       if (infoCount) pills += '<span class="flag-pill info">' + infoCount + ' note</span>';
-      var safeDesc = function(s) { return String(s).replace(/[<>&"]/g, function(c) { return {'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]; }); };
-      var safeCode = function(s) { return String(s).replace(/[<>&]/g, function(c) { return {'<':'&lt;','>':'&gt;','&':'&amp;'}[c]; }); };
+      var escHtml = function(s) {
+        return String(s).replace(/[<>&"]/g, function(c) {
+          return { '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c];
+        });
+      };
       var listHtml = banners.map(function(b) {
         return '<div class="flag-banner ' + b.kind + '" data-flag="' + b.dismissKey + '">' +
           '<span class="flag-icon">' + b.icon + '</span>' +
           '<div class="flag-body">' +
             '<div class="flag-title">' + b.title + ' <code>' + b.keyLabel + '</code></div>' +
-            '<div class="flag-desc">' + safeDesc(b.desc) + '</div>' +
-            '<code class="flag-enable">' + safeCode(b.enable) + '</code>' +
+            '<div class="flag-desc">' + escHtml(b.desc) + '</div>' +
+            '<code class="flag-enable">' + escHtml(b.enable) + '</code>' +
             (b.docs ? ' <a class="empty-link" href="' + b.docs + '" target="_blank" rel="noopener">Learn more &rarr;</a>' : '') +
           '</div>' +
           '<button class="flag-close" data-dismiss-flag="' + b.dismissKey + '" aria-label="Dismiss">&times;</button>' +
