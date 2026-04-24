@@ -21,6 +21,8 @@ describe("createEmbeddingProvider", () => {
     process.env["OLLAMA_EMBEDDING_MODEL"] = "";
     process.env["LMSTUDIO_EMBEDDING_BASE_URL"] = "";
     process.env["LMSTUDIO_EMBEDDING_MODEL"] = "";
+    process.env["VLLM_EMBEDDING_BASE_URL"] = "";
+    process.env["VLLM_EMBEDDING_MODEL"] = "";
   });
 
   afterEach(() => {
