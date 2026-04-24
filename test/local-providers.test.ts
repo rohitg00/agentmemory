@@ -28,8 +28,11 @@ describe("OpenAI Family Providers", () => {
     process.env["MINIMAX_API_KEY"] = "";
     process.env["EMBEDDING_PROVIDER"] = "";
     process.env["LMSTUDIO_EMBEDDING_BASE_URL"] = "";
+    process.env["LMSTUDIO_EMBEDDING_MODEL"] = "";
     process.env["VLLM_EMBEDDING_BASE_URL"] = "";
+    process.env["VLLM_EMBEDDING_MODEL"] = "";
     process.env["OLLAMA_EMBEDDING_BASE_URL"] = "";
+    process.env["OLLAMA_EMBEDDING_MODEL"] = "";
   });
 
   afterEach(() => {
@@ -100,10 +103,17 @@ describe("OpenAI Family Providers", () => {
     providers.forEach((p) => {
       it(`creates OpenAIEmbeddingProvider for ${p}`, () => {
         // Set necessary env vars for detection/creation
-        if (p === "openai") process.env["OPENAI_API_KEY"] = "sk-test";
-        else if (p === "lmstudio") process.env["LMSTUDIO_EMBEDDING_BASE_URL"] = "http://localhost:1234";
-        else if (p === "ollama") process.env["OLLAMA_EMBEDDING_BASE_URL"] = "http://localhost:11434";
-        else if (p === "vllm") process.env["VLLM_EMBEDDING_BASE_URL"] = "http://localhost:8000";
+        if (p === "openai") {
+          process.env["OPENAI_API_KEY"] = "sk-test";
+        } else if (p === "lmstudio") {
+          process.env["LMSTUDIO_EMBEDDING_BASE_URL"] = "http://localhost:1234";
+          process.env["LMSTUDIO_EMBEDDING_MODEL"] = "test-model";
+        } else if (p === "ollama") {
+          process.env["OLLAMA_EMBEDDING_BASE_URL"] = "http://localhost:11434";
+        } else if (p === "vllm") {
+          process.env["VLLM_EMBEDDING_BASE_URL"] = "http://localhost:8000";
+          process.env["VLLM_EMBEDDING_MODEL"] = "test-model";
+        }
 
         const provider = createEmbeddingProvider();
         expect(provider).toBeInstanceOf(OpenAIEmbeddingProvider);
