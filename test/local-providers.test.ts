@@ -46,6 +46,13 @@ describe("OpenAI Family Providers", () => {
       expect(config.provider.provider).toBe("openai");
     });
 
+    it("does not detect openai provider with bare base URL", () => {
+      process.env["OPENAI_BASE_URL"] = "https://my-proxy.com";
+      const config = loadConfig();
+      // Should fall back to noop or next available
+      expect(config.provider.provider).not.toBe("openai");
+    });
+
     it("detects lmstudio provider", () => {
       process.env["LMSTUDIO_BASE_URL"] = "http://localhost:1234";
       const config = loadConfig();

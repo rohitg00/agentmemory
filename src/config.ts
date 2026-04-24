@@ -84,7 +84,7 @@ function detectProvider(env: Record<string, string>): ProviderConfig {
     };
   }
 
-  if (hasRealValue(env["OPENAI_API_KEY"]) || hasRealValue(env["OPENAI_BASE_URL"])) {
+  if (hasRealValue(env["OPENAI_API_KEY"])) {
     return {
       provider: "openai",
       model: env["OPENAI_MODEL"] || "gpt-4o",
