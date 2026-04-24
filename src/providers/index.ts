@@ -92,13 +92,6 @@ function createBaseProvider(config: ProviderConfig): MemoryProvider {
         config.maxTokens,
         config.baseURL || "http://localhost:1234",
       );
-    case "openrouter":
-      return new OpenRouterProvider(
-        requireEnvVar("OPENROUTER_API_KEY"),
-        config.model,
-        config.maxTokens,
-        "https://openrouter.ai/api/v1/chat/completions",
-      );
     case "minimax":
       return new MinimaxProvider(
         requireEnvVar("MINIMAX_API_KEY"),
@@ -120,14 +113,20 @@ function createBaseProvider(config: ProviderConfig): MemoryProvider {
           "GEMINI_API_KEY (or GOOGLE_API_KEY) is required for the gemini provider",
         );
       }
-      return new OpenAIProvider(
-        "gemini",
+      return new OpenRouterProvider(
         geminiKey,
         config.model,
         config.maxTokens,
         "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
       );
     }
+    case "openrouter":
+      return new OpenRouterProvider(
+        requireEnvVar("OPENROUTER_API_KEY"),
+        config.model,
+        config.maxTokens,
+        "https://openrouter.ai/api/v1/chat/completions",
+      );
     case "noop":
       return new NoopProvider();
     case "agent-sdk":

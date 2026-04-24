@@ -11,13 +11,13 @@ export class OpenRouterProvider implements MemoryProvider {
     apiKey: string,
     model: string,
     maxTokens: number,
-    baseUrl = "https://openrouter.ai/api/v1/chat/completions",
+    baseUrl: string,
   ) {
-    this.name = "openrouter";
     this.apiKey = apiKey;
     this.model = model;
     this.maxTokens = maxTokens;
     this.baseUrl = baseUrl;
+    this.name = baseUrl.includes("openrouter") ? "openrouter" : "gemini";
   }
 
   async compress(systemPrompt: string, userPrompt: string): Promise<string> {
@@ -35,10 +35,11 @@ export class OpenRouterProvider implements MemoryProvider {
     const response = await fetch(this.baseUrl, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${this.apiKey}`,
         "Content-Type": "application/json",
-        "HTTP-Referer": "https://github.com/rohitg00/agentmemory",
-        "X-Title": "agentmemory",
+        Authorization: `Bearer ${this.apiKey}`,
+        ...(this.baseUrl.includes("openrouter")
+          ? { "HTTP-Referer": "https://github.com/rohitg00/agentmemory" }
+          : {}),
       },
       body: JSON.stringify({
         model: this.model,
@@ -52,16 +53,17 @@ export class OpenRouterProvider implements MemoryProvider {
 
     if (!response.ok) {
       const text = await response.text();
-      throw new Error(`OpenRouter API error (${response.status}): ${text}`);
+      throw new Error(`${this.name} API error (${response.status}): ${text}`);
     }
 
-    const data = (await response.json()) as {
-      choices?: Array<{ message?: { content?: string } }>;
-    };
-    const content = data.choices?.[0]?.message?.content;
+    const data = (await response.json()) as Record<string, unknown>;
+    const choices = data.choices as
+      | Array<{ message: { content: string } }>
+      | undefined;
+    const content = choices?.[0]?.message?.content;
     if (!content) {
       throw new Error(
-        `OpenRouter returned unexpected response: ${JSON.stringify(data).slice(0, 200)}`,
+        `${this.name} returned unexpected response: ${JSON.stringify(data).slice(0, 200)}`,
       );
     }
     return content;
