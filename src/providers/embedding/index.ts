@@ -44,7 +44,7 @@ export function createEmbeddingProvider(): EmbeddingProvider | null {
       return new OpenAIEmbeddingProvider(
         "no-key-required",
         getEnvVar("OLLAMA_EMBEDDING_BASE_URL") || "http://localhost:11434",
-        getEnvVar("OLLAMA_EMBEDDING_MODEL") || "llama3",
+        getEnvVar("OLLAMA_EMBEDDING_MODEL") || "nomic-embed-text",
       );
     case "lmstudio":
       return new OpenAIEmbeddingProvider(
