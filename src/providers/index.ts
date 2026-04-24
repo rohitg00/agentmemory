@@ -7,6 +7,7 @@ import { AgentSDKProvider } from "./agent-sdk.js";
 import { AnthropicProvider } from "./anthropic.js";
 import { MinimaxProvider } from "./minimax.js";
 import { OpenAIProvider } from "./openai.js";
+import { OpenRouterProvider } from "./openrouter.js";
 import { ResilientProvider } from "./resilient.js";
 import { FallbackChainProvider } from "./fallback-chain.js";
 import { getEnvVar } from "../config.js";
@@ -91,13 +92,10 @@ function createBaseProvider(config: ProviderConfig): MemoryProvider {
         config.baseURL || "http://localhost:1234/v1/chat/completions",
       );
     case "openrouter":
-      return new OpenAIProvider(
-        "openrouter",
+      return new OpenRouterProvider(
         requireEnvVar("OPENROUTER_API_KEY"),
         config.model,
         config.maxTokens,
-        "https://openrouter.ai/api/v1/chat/completions",
-        { "HTTP-Referer": "https://github.com/rohitg00/agentmemory" },
       );
     case "minimax":
       return new MinimaxProvider(

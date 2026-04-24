@@ -13,6 +13,7 @@ function requireEnvVar(key: string): string {
 
 import { GeminiEmbeddingProvider } from "./gemini.js";
 import { OpenAIEmbeddingProvider } from "./openai.js";
+import { OpenRouterEmbeddingProvider } from "./openrouter.js";
 import { VoyageEmbeddingProvider } from "./voyage.js";
 import { CohereEmbeddingProvider } from "./cohere.js";
 import { LocalEmbeddingProvider } from "./local.js";
@@ -60,10 +61,9 @@ export function createEmbeddingProvider(): EmbeddingProvider | null {
     case "cohere":
       return new CohereEmbeddingProvider(getEnvVar("COHERE_API_KEY")!);
     case "openrouter":
-      return new OpenAIEmbeddingProvider(
+      return new OpenRouterEmbeddingProvider(
         requireEnvVar("OPENROUTER_API_KEY"),
-        "https://openrouter.ai/api/v1/embeddings",
-        getEnvVar("OPENROUTER_EMBEDDING_MODEL") || "openai/text-embedding-3-small",
+        getEnvVar("OPENROUTER_EMBEDDING_MODEL"),
       );
     case "local":
       return new LocalEmbeddingProvider();
