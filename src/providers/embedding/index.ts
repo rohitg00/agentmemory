@@ -47,17 +47,20 @@ export function createEmbeddingProvider(): EmbeddingProvider | null {
         getEnvVar("OLLAMA_EMBEDDING_MODEL") || "nomic-embed-text",
       );
     case "lmstudio":
-      return new OpenAIEmbeddingProvider(
-        "no-key-required",
-        getEnvVar("LMSTUDIO_EMBEDDING_BASE_URL") || "http://localhost:1234",
-        getEnvVar("LMSTUDIO_EMBEDDING_MODEL"),
-      );
+      {
+        const base = getEnvVar("LMSTUDIO_EMBEDDING_BASE_URL") || "http://localhost:1234";
+        const model = getEnvVar("LMSTUDIO_EMBEDDING_MODEL");
+        if (!model) throw new Error("LMSTUDIO_EMBEDDING_MODEL is required for the lmstudio embedding provider");
+        return new OpenAIEmbeddingProvider("no-key-required", base, model);
+      }
     case "vllm":
-      return new OpenAIEmbeddingProvider(
-        "no-key-required",
-        getEnvVar("VLLM_EMBEDDING_BASE_URL"),
-        getEnvVar("VLLM_EMBEDDING_MODEL"),
-      );
+      {
+        const base = getEnvVar("VLLM_EMBEDDING_BASE_URL");
+        const model = getEnvVar("VLLM_EMBEDDING_MODEL");
+        if (!base) throw new Error("VLLM_EMBEDDING_BASE_URL is required for the vllm embedding provider");
+        if (!model) throw new Error("VLLM_EMBEDDING_MODEL is required for the vllm embedding provider");
+        return new OpenAIEmbeddingProvider("no-key-required", base, model);
+      }
     case "voyage":
       return new VoyageEmbeddingProvider(getEnvVar("VOYAGE_API_KEY")!);
     case "cohere":
