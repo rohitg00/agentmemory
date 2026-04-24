@@ -48,6 +48,7 @@ describe("FilesystemWatcher", () => {
     });
     w.start();
     try {
+      await wait(100);
       writeFileSync(join(root, "notes.md"), "hello world\n");
       await wait(1500);
       expect(captured.length).toBeGreaterThanOrEqual(1);
