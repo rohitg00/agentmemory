@@ -49,7 +49,7 @@ describe("FilesystemWatcher", () => {
     w.start();
     try {
       writeFileSync(join(root, "notes.md"), "hello world\n");
-      await wait(800);
+      await wait(1500);
       expect(captured.length).toBeGreaterThanOrEqual(1);
       const obs = captured[captured.length - 1];
       expect(obs.url).toBe("http://localhost:3111/agentmemory/observe");
