@@ -57,7 +57,7 @@ export function createEmbeddingProvider(): EmbeddingProvider | null {
     case "cohere":
       return new CohereEmbeddingProvider(getEnvVar("COHERE_API_KEY")!);
     case "openrouter":
-      return new OpenRouterEmbeddingProvider(getEnvVar("OPENROUTER_API_KEY"));
+      return new OpenRouterEmbeddingProvider(getEnvVar("OPENROUTER_API_KEY")!);
     case "local":
       return new LocalEmbeddingProvider();
     default:
