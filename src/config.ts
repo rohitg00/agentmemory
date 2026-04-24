@@ -214,6 +214,8 @@ export function detectEmbeddingProvider(
     return "ollama";
   if (source["LMSTUDIO_EMBEDDING_BASE_URL"] || source["LMSTUDIO_EMBEDDING_MODEL"])
     return "lmstudio";
+  if (source["VLLM_EMBEDDING_BASE_URL"] || source["VLLM_EMBEDDING_MODEL"])
+    return "vllm";
   return null;
 }
 

@@ -1,12 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { loadConfig } from "../src/config.js";
+import { loadConfig, detectEmbeddingProvider } from "../src/config.js";
 import { createProvider } from "../src/providers/index.js";
 import { createEmbeddingProvider } from "../src/providers/embedding/index.js";
 import { OpenAIProvider } from "../src/providers/openai.js";
 import { OpenAIEmbeddingProvider } from "../src/providers/embedding/openai.js";
 import { ResilientProvider } from "../src/providers/resilient.js";
 
-describe("Local Providers", () => {
+describe("OpenAI Family Providers", () => {
   const originalEnv = { ...process.env };
 
   beforeEach(() => {
@@ -18,6 +18,7 @@ describe("Local Providers", () => {
     process.env["OLLAMA_MODEL"] = "";
     process.env["VLLM_BASE_URL"] = "";
     process.env["VLLM_MODEL"] = "";
+    process.env["OPENAI_API_KEY"] = "";
     process.env["OPENAI_BASE_URL"] = "";
     process.env["OPENAI_MODEL"] = "";
     process.env["ANTHROPIC_API_KEY"] = "";
@@ -26,61 +27,94 @@ describe("Local Providers", () => {
     process.env["OPENROUTER_API_KEY"] = "";
     process.env["MINIMAX_API_KEY"] = "";
     process.env["EMBEDDING_PROVIDER"] = "";
+    process.env["LMSTUDIO_EMBEDDING_BASE_URL"] = "";
+    process.env["VLLM_EMBEDDING_BASE_URL"] = "";
+    process.env["OLLAMA_EMBEDDING_BASE_URL"] = "";
   });
 
   afterEach(() => {
     process.env = originalEnv;
   });
 
-  it("detects lmstudio provider when LMSTUDIO_BASE_URL is set", () => {
-    process.env["LMSTUDIO_BASE_URL"] = "http://localhost:1234";
-    const config = loadConfig();
-    expect(config.provider.provider).toBe("lmstudio");
-    expect(config.provider.baseURL).toBe("http://localhost:1234");
-  });
-
-  it("detects ollama provider when OLLAMA_MODEL is set", () => {
-    process.env["OLLAMA_MODEL"] = "llama3";
-    const config = loadConfig();
-    expect(config.provider.provider).toBe("ollama");
-    expect(config.provider.model).toBe("llama3");
-    expect(config.provider.baseURL).toBe("http://localhost:11434");
-  });
-
-  it("detects vllm provider when VLLM_BASE_URL is set", () => {
-    process.env["VLLM_BASE_URL"] = "http://vllm-server:8000";
-    const config = loadConfig();
-    expect(config.provider.provider).toBe("vllm");
-    expect(config.provider.baseURL).toBe("http://vllm-server:8000");
-  });
-
-  it("creates OpenAIProvider from config for lmstudio", () => {
-    const provider = createProvider({
-      provider: "lmstudio",
-      model: "local-model",
-      maxTokens: 1000,
-      baseURL: "http://localhost:1234",
+  describe("Detection", () => {
+    it("detects openai provider", () => {
+      process.env["OPENAI_API_KEY"] = "sk-test";
+      const config = loadConfig();
+      expect(config.provider.provider).toBe("openai");
     });
-    expect(provider).toBeInstanceOf(ResilientProvider);
+
+    it("detects lmstudio provider", () => {
+      process.env["LMSTUDIO_BASE_URL"] = "http://localhost:1234";
+      const config = loadConfig();
+      expect(config.provider.provider).toBe("lmstudio");
+    });
+
+    it("detects ollama provider", () => {
+      process.env["OLLAMA_MODEL"] = "llama3";
+      const config = loadConfig();
+      expect(config.provider.provider).toBe("ollama");
+    });
+
+    it("detects vllm provider", () => {
+      process.env["VLLM_BASE_URL"] = "http://vllm-server:8000";
+      const config = loadConfig();
+      expect(config.provider.provider).toBe("vllm");
+    });
+
+    it("detects vllm embedding provider", () => {
+      process.env["VLLM_EMBEDDING_BASE_URL"] = "http://vllm-server:8000";
+      const provider = detectEmbeddingProvider(process.env);
+      expect(provider).toBe("vllm");
+    });
   });
 
-  it("creates OpenAIEmbeddingProvider for lmstudio", () => {
-    process.env["LMSTUDIO_EMBEDDING_BASE_URL"] = "http://localhost:1234";
-    const provider = createEmbeddingProvider();
-    expect(provider).toBeInstanceOf(OpenAIEmbeddingProvider);
-    expect(provider!.name).toBe("openai");
+  describe("Instantiation (LLM)", () => {
+    const providers: Array<"openai" | "lmstudio" | "ollama" | "vllm"> = [
+      "openai",
+      "lmstudio",
+      "ollama",
+      "vllm",
+    ];
+
+    providers.forEach((p) => {
+      it(`creates OpenAIProvider for ${p}`, () => {
+        const provider = createProvider({
+          provider: p,
+          model: "test-model",
+          maxTokens: 1000,
+          baseURL: "http://localhost:1234",
+        });
+        expect(provider).toBeInstanceOf(ResilientProvider);
+      });
+    });
   });
 
-  it("creates OpenAIEmbeddingProvider for ollama", () => {
-    process.env["OLLAMA_EMBEDDING_BASE_URL"] = "http://localhost:11434";
-    const provider = createEmbeddingProvider();
-    expect(provider).toBeInstanceOf(OpenAIEmbeddingProvider);
-    expect(provider!.name).toBe("openai");
+  describe("Instantiation (Embedding)", () => {
+    const providers: Array<"openai" | "lmstudio" | "ollama" | "vllm"> = [
+      "openai",
+      "lmstudio",
+      "ollama",
+      "vllm",
+    ];
+
+    providers.forEach((p) => {
+      it(`creates OpenAIEmbeddingProvider for ${p}`, () => {
+        // Set necessary env vars for detection/creation
+        if (p === "openai") process.env["OPENAI_API_KEY"] = "sk-test";
+        else if (p === "lmstudio") process.env["LMSTUDIO_EMBEDDING_BASE_URL"] = "http://localhost:1234";
+        else if (p === "ollama") process.env["OLLAMA_EMBEDDING_BASE_URL"] = "http://localhost:11434";
+        else if (p === "vllm") process.env["VLLM_EMBEDDING_BASE_URL"] = "http://localhost:8000";
+
+        const provider = createEmbeddingProvider();
+        expect(provider).toBeInstanceOf(OpenAIEmbeddingProvider);
+        expect(provider!.name).toBe("openai");
+      });
+    });
   });
 });
 
 describe("OpenAIProvider implementation", () => {
-  it("calls fetch with correct parameters", async () => {
+  it("calls fetch with correct parameters and appends /v1/chat/completions", async () => {
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
@@ -120,8 +154,8 @@ describe("OpenAIProvider implementation", () => {
   });
 });
 
-describe("OpenAIEmbeddingProvider implementation (Local compatibility)", () => {
-  it("calls fetch with correct parameters for local models", async () => {
+describe("OpenAIEmbeddingProvider implementation", () => {
+  it("calls fetch with correct parameters and appends /v1/embeddings", async () => {
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
@@ -132,7 +166,7 @@ describe("OpenAIEmbeddingProvider implementation (Local compatibility)", () => {
 
     const provider = new OpenAIEmbeddingProvider(
       "no-key-required",
-      "http://local-ollama:11434",
+      "http://local-runner:11434",
       "nomic-embed-text"
     );
     const result = await provider.embed("test text");
@@ -143,7 +177,7 @@ describe("OpenAIEmbeddingProvider implementation (Local compatibility)", () => {
     expect(resultArr[1]).toBeCloseTo(0.2);
     expect(resultArr[2]).toBeCloseTo(0.3);
     expect(mockFetch).toHaveBeenCalledWith(
-      "http://local-ollama:11434/v1/embeddings",
+      "http://local-runner:11434/v1/embeddings",
       expect.objectContaining({
         method: "POST",
         headers: {

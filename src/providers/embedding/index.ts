@@ -52,6 +52,12 @@ export function createEmbeddingProvider(): EmbeddingProvider | null {
         getEnvVar("LMSTUDIO_EMBEDDING_BASE_URL") || "http://localhost:1234",
         getEnvVar("LMSTUDIO_EMBEDDING_MODEL"),
       );
+    case "vllm":
+      return new OpenAIEmbeddingProvider(
+        "no-key-required",
+        getEnvVar("VLLM_EMBEDDING_BASE_URL"),
+        getEnvVar("VLLM_EMBEDDING_MODEL"),
+      );
     case "voyage":
       return new VoyageEmbeddingProvider(getEnvVar("VOYAGE_API_KEY")!);
     case "cohere":
