@@ -89,6 +89,18 @@ function getBaseUrl(): string {
   return `http://localhost:${getRestPort()}`;
 }
 
+function getViewerUrl(): string {
+  const envUrl = process.env["AGENTMEMORY_VIEWER_URL"];
+  if (envUrl) return envUrl.replace(/\/+$/, "");
+  try {
+    const u = new URL(getBaseUrl());
+    const vPort = (parseInt(u.port || "3111", 10) || 3111) + 2;
+    return `${u.protocol}//${u.hostname}:${vPort}`;
+  } catch {
+    return `http://localhost:${getRestPort() + 2}`;
+  }
+}
+
 async function isEngineRunning(): Promise<boolean> {
   try {
     await fetch(`${getBaseUrl()}/`, {
@@ -435,8 +447,8 @@ async function runStatus() {
     const status = healthRes?.status || "unknown";
     const version = healthRes?.version || "?";
     const sessions = Array.isArray(sessionsRes?.sessions) ? sessionsRes.sessions.length : 0;
-    const nodes = graphRes?.nodes || 0;
-    const edges = graphRes?.edges || 0;
+    const nodes = Number(graphRes?.totalNodes ?? graphRes?.nodes ?? graphRes?.nodeCount ?? 0);
+    const edges = Number(graphRes?.totalEdges ?? graphRes?.edges ?? graphRes?.edgeCount ?? 0);
     const cb = healthRes?.circuitBreaker?.state || "closed";
     const heapMB = h?.memory ? Math.round(h.memory.heapUsed / 1048576) : 0;
     const uptime = h?.uptimeSeconds ? Math.round(h.uptimeSeconds) : 0;
@@ -459,7 +471,7 @@ async function runStatus() {
       `Circuit:      ${cb}`,
       `Heap:         ${heapMB} MB`,
       `Uptime:       ${uptime}s`,
-      `Viewer:       http://localhost:${port + 2}`,
+      `Viewer:       ${getViewerUrl()}`,
     ];
 
     if (obsCount > 0) {
@@ -500,7 +512,7 @@ function formatChecks(checks: DoctorCheck[]): string {
 async function runDoctor() {
   p.intro("agentmemory doctor");
   const base = getBaseUrl();
-  const viewerPort = getRestPort() + 2;
+  const viewerUrl = getViewerUrl();
   const checks: DoctorCheck[] = [];
 
   const serverUp = await isEngineRunning();
@@ -521,13 +533,14 @@ async function runDoctor() {
     apiFetch<any>(base, "graph/stats", 3000),
   ]);
 
-  const viewerUp = await fetch(`http://localhost:${viewerPort}`, { signal: AbortSignal.timeout(2000) })
+  const viewerUp = await fetch(viewerUrl, { signal: AbortSignal.timeout(2000) })
     .then((r) => r.ok)
     .catch(() => false);
 
   const hasLlm = flags?.provider === "llm";
   const hasEmbed = flags?.embeddingProvider === "embeddings";
-  const graphHas = (graph?.totalNodes || 0) > 0;
+  const graphNodeCount = Number(graph?.totalNodes ?? graph?.nodes ?? graph?.nodeCount ?? 0);
+  const graphHas = graphNodeCount > 0;
 
   checks.push(
     {
@@ -538,7 +551,7 @@ async function runDoctor() {
     {
       name: "Viewer reachable",
       ok: viewerUp,
-      hint: viewerUp ? undefined : `Port ${viewerPort} not responding`,
+      hint: viewerUp ? undefined : `${viewerUrl} not responding`,
     },
     {
       name: "LLM provider",
@@ -804,7 +817,7 @@ async function runDemo() {
     `Notice: searching "database performance optimization"`,
     `found the N+1 query fix — keyword matching can't do that.`,
     "",
-    `Viewer:        http://localhost:${port + 2}`,
+    `Viewer:        ${getViewerUrl()}`,
     `Clean up with: curl -X DELETE "${base}/agentmemory/sessions?project=${demoProject}"`,
   ];
 
@@ -1038,7 +1051,7 @@ async function runImportJsonl(): Promise<void> {
       `imported ${json.imported ?? 0} file(s), ${json.observations ?? 0} observation(s) across ${json.sessionIds?.length || 0} session(s)`,
     );
     if (json.sessionIds && json.sessionIds.length > 0) {
-      p.log.info(`View at http://localhost:${port + 2} → Replay tab`);
+      p.log.info(`View at ${getViewerUrl()} → Replay tab`);
     }
   } catch (err) {
     spinner.stop("failed");

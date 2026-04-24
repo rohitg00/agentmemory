@@ -13,6 +13,7 @@ import {
   isConsolidationEnabled,
   isAutoCompressEnabled,
   isContextInjectionEnabled,
+  detectEmbeddingProvider,
 } from "../config.js";
 
 type Response = {
@@ -51,6 +52,36 @@ function requireConfiguredSecret(
     status_code: 503,
     body: { error: `${feature} requires AGENTMEMORY_SECRET` },
   };
+}
+
+function flagDisabledResponse(opts: {
+  error: string;
+  flag: string;
+  enableHow: string;
+  docsHref: string;
+}): Response {
+  return {
+    status_code: 503,
+    body: opts,
+  };
+}
+
+function graphDisabledResponse(): Response {
+  return flagDisabledResponse({
+    error: "Knowledge graph not enabled",
+    flag: "GRAPH_EXTRACTION_ENABLED",
+    enableHow: "Set GRAPH_EXTRACTION_ENABLED=true and restart. Requires an LLM provider key.",
+    docsHref: "https://github.com/rohitg00/agentmemory#knowledge-graph",
+  });
+}
+
+function consolidationDisabledResponse(): Response {
+  return flagDisabledResponse({
+    error: "Consolidation pipeline not enabled",
+    flag: "CONSOLIDATION_ENABLED",
+    enableHow: "Set CONSOLIDATION_ENABLED=true and restart. Requires an LLM provider key.",
+    docsHref: "https://github.com/rohitg00/agentmemory#consolidation",
+  });
 }
 
 function asNonEmptyString(value: unknown): string | null {
@@ -119,10 +150,12 @@ export function registerApiTriggers(
   });
 
   sdk.registerFunction("api::config-flags",
-    async (): Promise<Response> => {
+    async (req: ApiRequest): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
       const env = process.env;
-      const provider = env["ANTHROPIC_API_KEY"] || env["GEMINI_API_KEY"] || env["OPENROUTER_API_KEY"] || env["MINIMAX_API_KEY"] ? "llm" : "noop";
-      const embeddingProvider = env["OPENAI_API_KEY"] || env["VOYAGE_API_KEY"] || env["COHERE_API_KEY"] || env["OLLAMA_HOST"] ? "embeddings" : "none";
+      const providerKind = env["ANTHROPIC_API_KEY"] || env["GEMINI_API_KEY"] || env["OPENROUTER_API_KEY"] || env["MINIMAX_API_KEY"] ? "llm" : "noop";
+      const embeddingProvider = detectEmbeddingProvider() ? "embeddings" : "none";
       const flags = [
         {
           key: "GRAPH_EXTRACTION_ENABLED",
@@ -173,7 +206,7 @@ export function registerApiTriggers(
         status_code: 200,
         body: {
           version: VERSION,
-          provider,
+          provider: providerKind,
           embeddingProvider,
           flags,
         },
@@ -183,7 +216,11 @@ export function registerApiTriggers(
   sdk.registerTrigger({
     type: "http",
     function_id: "api::config-flags",
-    config: { api_path: "/agentmemory/config/flags", http_method: "GET" },
+    config: {
+      api_path: "/agentmemory/config/flags",
+      http_method: "GET",
+      middleware_function_ids: ["middleware::api-auth"],
+    },
   });
 
   sdk.registerFunction("api::health", 
@@ -1019,15 +1056,7 @@ export function registerApiTriggers(
         const result = await sdk.trigger({ function_id: "mem::graph-query", payload: req.body || {} });
         return { status_code: 200, body: result };
       } catch {
-        return {
-          status_code: 404,
-          body: {
-            error: "Knowledge graph not enabled",
-            flag: "GRAPH_EXTRACTION_ENABLED",
-            enableHow: "Set GRAPH_EXTRACTION_ENABLED=true and restart. Requires an LLM provider key.",
-            docsHref: "https://github.com/rohitg00/agentmemory#knowledge-graph",
-          },
-        };
+        return graphDisabledResponse();
       }
     },
   );
@@ -1045,15 +1074,7 @@ export function registerApiTriggers(
         const result = await sdk.trigger({ function_id: "mem::graph-stats", payload: {} });
         return { status_code: 200, body: result };
       } catch {
-        return {
-          status_code: 404,
-          body: {
-            error: "Knowledge graph not enabled",
-            flag: "GRAPH_EXTRACTION_ENABLED",
-            enableHow: "Set GRAPH_EXTRACTION_ENABLED=true and restart. Requires an LLM provider key.",
-            docsHref: "https://github.com/rohitg00/agentmemory#knowledge-graph",
-          },
-        };
+        return graphDisabledResponse();
       }
     },
   );
@@ -1080,15 +1101,7 @@ export function registerApiTriggers(
         const result = await sdk.trigger({ function_id: "mem::graph-extract", payload: req.body });
         return { status_code: 200, body: result };
       } catch {
-        return {
-          status_code: 404,
-          body: {
-            error: "Knowledge graph not enabled",
-            flag: "GRAPH_EXTRACTION_ENABLED",
-            enableHow: "Set GRAPH_EXTRACTION_ENABLED=true and restart. Requires an LLM provider key.",
-            docsHref: "https://github.com/rohitg00/agentmemory#knowledge-graph",
-          },
-        };
+        return graphDisabledResponse();
       }
     },
   );
@@ -1107,15 +1120,7 @@ export function registerApiTriggers(
          });
         return { status_code: 200, body: result };
       } catch {
-        return {
-          status_code: 404,
-          body: {
-            error: "Consolidation pipeline not enabled",
-            flag: "CONSOLIDATION_ENABLED",
-            enableHow: "Set CONSOLIDATION_ENABLED=true and restart. Requires an LLM provider key.",
-            docsHref: "https://github.com/rohitg00/agentmemory#consolidation",
-          },
-        };
+        return consolidationDisabledResponse();
       }
     },
   );
