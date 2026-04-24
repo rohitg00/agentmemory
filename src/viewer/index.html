@@ -576,6 +576,78 @@
     }
     .empty-state .empty-icon { font-size: 36px; margin-bottom: 10px; opacity: 0.4; }
     .empty-state p { font-size: 14px; font-family: var(--font-body); font-style: italic; }
+    .empty-state .empty-title { font-size: 16px; font-weight: 600; font-style: normal; color: var(--ink-muted); margin-bottom: 8px; }
+    .empty-state .empty-lead { font-style: normal; font-size: 14px; color: var(--ink-muted); max-width: 520px; margin: 0 auto 14px; line-height: 1.5; }
+    .empty-state pre.empty-cmd {
+      display: inline-block; margin: 10px auto 12px; padding: 10px 14px;
+      background: var(--bg-alt); border: 1px solid var(--border);
+      border-radius: 4px; font-family: var(--font-mono); font-size: 12px;
+      color: var(--ink); text-align: left; font-style: normal; white-space: pre;
+    }
+    .empty-state .empty-link { color: var(--accent); text-decoration: underline; font-size: 13px; font-style: normal; }
+
+    /* Feature flag banner system — compact collapsed by default */
+    .flag-banners { padding: 0 0 10px 0; }
+    .flag-summary {
+      display: flex; align-items: center; gap: 12px;
+      padding: 8px 14px; border-radius: 4px;
+      border: 1px solid var(--border);
+      background: var(--bg-subtle);
+      font-family: var(--font-ui); font-size: 12px;
+      color: var(--ink-muted);
+      cursor: pointer; user-select: none;
+    }
+    .flag-summary:hover { background: var(--bg-alt); }
+    .flag-summary .flag-count { color: var(--ink); font-weight: 600; }
+    .flag-summary .flag-pill {
+      display: inline-block; padding: 1px 8px; border-radius: 10px;
+      background: #f59e0b20; color: #d97706; font-size: 11px; font-weight: 600;
+      margin-right: 6px;
+    }
+    .flag-summary .flag-pill.info { background: var(--border-light); color: var(--ink-muted); }
+    .flag-summary .flag-toggle { margin-left: auto; font-size: 11px; opacity: 0.7; }
+    .flag-list {
+      display: none; flex-direction: column; gap: 6px;
+      margin-top: 6px;
+    }
+    .flag-list.open { display: flex; }
+    .flag-banner {
+      display: flex; align-items: flex-start; gap: 10px;
+      padding: 10px 14px; border-radius: 3px;
+      border: 1px solid var(--border);
+      background: var(--bg-subtle);
+      font-family: var(--font-ui); font-size: 12px;
+    }
+    .flag-banner.warn { border-left: 3px solid #f59e0b; }
+    .flag-banner.info { border-left: 3px solid var(--ink-muted); }
+    .flag-banner .flag-icon { flex-shrink: 0; font-size: 14px; line-height: 1.3; }
+    .flag-banner .flag-body { flex: 1; min-width: 0; }
+    .flag-banner .flag-title { font-weight: 600; color: var(--ink); margin-bottom: 2px; font-size: 12px; }
+    .flag-banner .flag-title code { font-family: var(--font-mono); font-size: 10px; color: var(--ink-muted); font-weight: 400; margin-left: 4px; }
+    .flag-banner .flag-desc { color: var(--ink-muted); margin-bottom: 4px; line-height: 1.4; font-size: 12px; }
+    .flag-banner .flag-enable {
+      display: block; margin-top: 2px; padding: 5px 8px;
+      background: var(--bg); border: 1px solid var(--border); border-radius: 3px;
+      font-family: var(--font-mono); font-size: 10px; color: var(--ink);
+      white-space: pre-wrap; word-break: break-all;
+    }
+    .flag-banner .flag-close {
+      background: none; border: none; color: var(--ink-faint); cursor: pointer;
+      font-size: 16px; line-height: 1; padding: 0 4px; font-family: inherit;
+    }
+    .flag-banner .flag-close:hover { color: var(--ink); }
+
+    /* Viewer footer */
+    .viewer-footer {
+      margin-top: 48px; padding: 16px 0 24px;
+      border-top: 1px solid var(--border-light);
+      display: flex; align-items: center; gap: 10px;
+      font-family: var(--font-ui); font-size: 11px;
+      color: var(--ink-faint); letter-spacing: 0.05em;
+    }
+    .viewer-footer a { color: var(--ink-muted); text-decoration: none; }
+    .viewer-footer a:hover { color: var(--ink); text-decoration: underline; }
+    .viewer-footer .footer-sep { color: var(--ink-faint); opacity: 0.5; }
 
     .loading { color: var(--ink-faint); padding: 20px; text-align: center; font-style: italic; font-family: var(--font-body); }
     .empty { color: var(--ink-muted); padding: 24px; text-align: center; font-family: var(--font-body); font-style: italic; border: 1px dashed var(--border); }
@@ -814,6 +886,8 @@
     <button data-tab="replay">Replay</button>
   </div>
 
+  <div id="flag-banners" class="flag-banners"></div>
+
   <div id="view-dashboard" class="view active"></div>
   <div id="view-graph" class="view"></div>
   <div id="view-memories" class="view"></div>
@@ -830,6 +904,16 @@
   <div id="modal-overlay" class="modal-overlay">
     <div class="modal" id="modal"></div>
   </div>
+
+  <footer id="viewer-footer" class="viewer-footer">
+    <span>agentmemory viewer · <span id="footer-version">loading...</span></span>
+    <span class="footer-sep">·</span>
+    <a href="https://github.com/rohitg00/agentmemory" target="_blank" rel="noopener">github</a>
+    <span class="footer-sep">·</span>
+    <a href="https://github.com/rohitg00/agentmemory#readme" target="_blank" rel="noopener">docs</a>
+    <span class="footer-sep">·</span>
+    <a id="footer-feedback" href="#" target="_blank" rel="noopener">report issue &rarr;</a>
+  </footer>
 
   <script nonce="__AGENTMEMORY_VIEWER_NONCE__">
     var params = new URLSearchParams(window.location.search);
@@ -903,6 +987,7 @@
       crystals: { loaded: false, items: [], search: '', lessonMap: {} },
       profile: { loaded: false, projects: [], selectedProject: '', data: null },
       replay: { loaded: false, sessions: [], selectedId: '', timeline: null, cursor: 0, playing: false, speed: 1, timer: null, startAt: 0, offsetAt: 0 },
+      flagsConfig: null,
       ws: null
     };
 
@@ -1040,7 +1125,18 @@
       var cb = h.circuitBreaker || null;
       var workers = snap.workers || [];
 
-      var html = '<div class="stats-grid">';
+      var html = '';
+      // First-run hero: empty dashboard = guided next step
+      if (d.sessions.length === 0) {
+        html += '<div class="card" style="margin-bottom:14px;padding:24px 28px;background:var(--bg-subtle);border-left:3px solid var(--accent);">' +
+          '<div style="font-family:var(--font-ui);font-size:11px;letter-spacing:0.15em;text-transform:uppercase;color:var(--accent);font-weight:700;margin-bottom:8px;">First run &rarr; magical moment in 10 seconds</div>' +
+          '<div style="font-family:var(--font-display,Lora,Georgia,serif);font-size:22px;font-weight:700;color:var(--ink);margin-bottom:8px;">Seed sample data + prove semantic recall works</div>' +
+          '<div style="font-size:13px;color:var(--ink-muted);margin-bottom:12px;line-height:1.5;max-width:640px;">agentmemory is running but hasn&rsquo;t seen any sessions yet. Run the demo command in a second terminal: it seeds 3 realistic coding sessions and proves the hybrid search finds semantically-related memories that keyword search would miss.</div>' +
+          '<pre style="display:inline-block;margin:0;padding:10px 14px;background:var(--bg);border:1px solid var(--border);border-radius:4px;font-family:var(--font-mono);font-size:12px;color:var(--ink);">npx @agentmemory/agentmemory demo</pre>' +
+          '<div style="margin-top:10px;"><a class="empty-link" href="https://github.com/rohitg00/agentmemory#quick-start" target="_blank" rel="noopener" style="font-size:12px;">Or: wire up your real agent &rarr;</a></div>' +
+          '</div>';
+      }
+      html += '<div class="stats-grid">';
       html += '<div class="stat-card"><div class="label">Sessions</div><div class="value">' + d.sessions.length + '</div><div class="sub">' + activeSessions + ' active</div></div>';
       html += '<div class="stat-card"><div class="label">Memories</div><div class="value">' + d.memories.length + '</div><div class="sub">latest versions</div></div>';
       var lessonCount = (d.lessons || []).length;
@@ -1961,7 +2057,13 @@
       html += '</select></div>';
 
       if (filtered.length === 0) {
-        html += '<div class="empty-state"><div class="empty-icon">&#128218;</div><p>No memories found</p><p style="font-size:12px;color:var(--ink-faint);font-style:italic;">Save facts with the <code>memory_remember</code> MCP tool during Claude Code sessions.</p></div>';
+        html += '<div class="empty-state">' +
+          '<div class="empty-icon">&#128218;</div>' +
+          '<div class="empty-title">No memories yet</div>' +
+          '<div class="empty-lead">Memories are the distilled facts agentmemory keeps across sessions &mdash; things like file paths, architectural decisions, and user preferences. Hooks capture them automatically during coding sessions; you can also save one directly.</div>' +
+          '<pre class="empty-cmd">memory_remember {\n  title: "auth uses jose middleware",\n  content: "src/middleware/auth.ts handles JWT validation",\n  type: "architecture"\n}</pre>' +
+          '<div><a class="empty-link" href="https://github.com/rohitg00/agentmemory#memories" target="_blank" rel="noopener">Memory types &rarr;</a></div>' +
+          '</div>';
       } else {
         html += '<table><tr><th>Title</th><th>Type</th><th>Strength</th><th>Version</th><th>Updated</th><th>Actions</th></tr>';
         filtered.forEach(function(m) {
@@ -2583,7 +2685,13 @@
       html += '</div>';
 
       if (items.length === 0) {
-        html += '<div class="empty-state"><div class="empty-icon">&#128161;</div><p>No lessons yet</p><p style="font-size:12px;color:var(--ink-faint);font-style:italic;">Import a Claude Code JSONL (Replay tab → Import JSONL) or save manually via <code>memory_lesson_save</code>.</p></div>';
+        html += '<div class="empty-state">' +
+          '<div class="empty-icon">&#128161;</div>' +
+          '<div class="empty-title">No lessons yet</div>' +
+          '<div class="empty-lead">Lessons are confidence-scored pattern observations &mdash; things you corrected once that the agent should never do again. They persist across projects.</div>' +
+          '<pre class="empty-cmd"># Save a lesson explicitly\nmemory_lesson_save { rule, reason, confidence }\n\n# Or: Replay tab &rarr; Import JSONL auto-extracts lessons\n# from your past Claude Code sessions</pre>' +
+          '<div><a class="empty-link" href="https://github.com/rohitg00/agentmemory#lessons" target="_blank" rel="noopener">Lesson decay &amp; scoring &rarr;</a></div>' +
+          '</div>';
       } else {
         html += '<table><thead><tr><th>Lesson</th><th>Confidence</th><th>Reinforcements</th><th>Source</th><th>Project</th><th>Updated</th></tr></thead><tbody>';
         items.forEach(function(l) {
@@ -2642,7 +2750,14 @@
       html += '</div>';
 
       if (items.length === 0) {
-        html += '<div class="empty-state"><div class="empty-icon">&#9745;</div><p>No actions yet</p><p style="font-size:12px;color:var(--ink-faint);font-style:italic;">Create actions via memory_action_create MCP tool or POST /agentmemory/actions</p></div>';
+        html += '<div class="empty-state">' +
+          '<div class="empty-icon">&#9745;</div>' +
+          '<div class="empty-title">No actions tracked yet</div>' +
+          '<div class="empty-lead">Actions are follow-ups the agent surfaced during a session: <em>decisions to revisit</em>, <em>files to inspect</em>, <em>tasks blocked on input</em>. They show up here with status pending &rarr; active &rarr; done/blocked so nothing slips through between sessions.</div>' +
+          '<div class="empty-lead" style="margin-top:0;">Three ways to create them:</div>' +
+          '<pre class="empty-cmd"># 1. MCP tool (from any agent)\nmemory_action_create { title, description, priority }\n\n# 2. Curl\ncurl -X POST http://localhost:3111/agentmemory/actions \\\n  -H \'Content-Type: application/json\' \\\n  -d \'{"title":"ship v1","priority":"high"}\'\n\n# 3. Hooks auto-extract from long session bodies</pre>' +
+          '<div><a class="empty-link" href="https://github.com/rohitg00/agentmemory#actions" target="_blank" rel="noopener">Action lifecycle docs &rarr;</a></div>' +
+          '</div>';
       } else {
         html += '<table><thead><tr><th>Title</th><th>Status</th><th>Priority</th><th>Tags</th><th>Frontier</th><th>Updated</th></tr></thead><tbody>';
         items = items.slice().sort(function(a, b) { return (b.priority || 0) - (a.priority || 0); });
@@ -2716,7 +2831,13 @@
       html += '</div>';
 
       if (items.length === 0) {
-        html += '<div class="empty-state"><div class="empty-icon">&#128142;</div><p>No crystals yet</p><p style="font-size:12px;color:var(--ink-faint);font-style:italic;">Crystals auto-generate from JSONL imports, or call <code>memory_crystallize</code> on a session.</p></div>';
+        html += '<div class="empty-state">' +
+          '<div class="empty-icon">&#128142;</div>' +
+          '<div class="empty-title">No crystals yet</div>' +
+          '<div class="empty-lead">Crystals are compressed action digests &mdash; the 3-line summary of what happened in a session. Generated from long conversations to give the next session fast context without re-reading everything.</div>' +
+          '<pre class="empty-cmd"># Auto: import a JSONL transcript\n#   Replay tab &rarr; Import JSONL\n\n# Manual: crystallize a specific session\nmemory_crystallize { sessionId }</pre>' +
+          '<div><a class="empty-link" href="https://github.com/rohitg00/agentmemory#crystals" target="_blank" rel="noopener">Crystal pipeline &rarr;</a></div>' +
+          '</div>';
       } else {
         items.forEach(function(c) {
           html += '<div class="card" style="margin-bottom:12px;border-left:3px solid var(--accent);">';
@@ -3153,6 +3274,148 @@
         switchTab(e.target.dataset.tab);
       }
     });
+
+    // --- Feature flag banners ---------------------------------------------
+    var FLAG_DISMISS_KEY = 'agentmemory.viewer.flags.dismissed.v1';
+    function loadDismissedFlags() {
+      try {
+        var raw = localStorage.getItem(FLAG_DISMISS_KEY);
+        return raw ? JSON.parse(raw) : {};
+      } catch (_) { return {}; }
+    }
+    function saveDismissedFlags(d) {
+      try { localStorage.setItem(FLAG_DISMISS_KEY, JSON.stringify(d)); } catch (_) {}
+    }
+    function renderFlagBanners(cfg) {
+      var host = document.getElementById('flag-banners');
+      if (!host) return;
+      var dismissed = loadDismissedFlags();
+      var banners = [];
+      // Per-flag banner (only for off flags, affecting current tab or dashboard)
+      (cfg.flags || []).forEach(function(f) {
+        if (f.enabled) return;
+        if (dismissed[f.key]) return;
+        var tabsAffected = (f.affects || []).map(function(t) { return t.toLowerCase(); });
+        if (tabsAffected.length && tabsAffected.indexOf(state.activeTab) === -1 && state.activeTab !== 'dashboard') return;
+        banners.push({
+          kind: 'warn',
+          icon: '&#9888;',
+          title: f.label,
+          keyLabel: f.key,
+          desc: f.description + (f.needsLlm ? ' Requires an LLM provider key (ANTHROPIC_API_KEY, GEMINI_API_KEY, etc.).' : ''),
+          enable: f.enableHow,
+          docs: f.docsHref,
+          dismissKey: f.key,
+        });
+      });
+      if (cfg.provider === 'noop' && !dismissed['__provider_noop']) {
+        banners.unshift({
+          kind: 'warn',
+          icon: '&#128274;',
+          title: 'No LLM provider key set',
+          keyLabel: 'ANTHROPIC_API_KEY',
+          desc: 'Compression, summarization, and graph extraction stay disabled until a key is provided.',
+          enable: 'export ANTHROPIC_API_KEY=sk-ant-...\n# then restart: npx @agentmemory/agentmemory',
+          docs: 'https://github.com/rohitg00/agentmemory#quick-start',
+          dismissKey: '__provider_noop',
+        });
+      }
+      if (cfg.embeddingProvider === 'none' && !dismissed['__embedding_none']) {
+        banners.push({
+          kind: 'info',
+          icon: '&#9881;',
+          title: 'Running in BM25-only mode',
+          keyLabel: 'OPENAI_API_KEY',
+          desc: 'Semantic vector search is off. BM25 keyword search is active and good for exact matches.',
+          enable: 'export OPENAI_API_KEY=sk-...\n# or VOYAGE_API_KEY, COHERE_API_KEY, OLLAMA_HOST',
+          docs: 'https://github.com/rohitg00/agentmemory#embedding-providers',
+          dismissKey: '__embedding_none',
+        });
+      }
+      if (banners.length === 0) { host.innerHTML = ''; return; }
+      var warnCount = banners.filter(function(b) { return b.kind === 'warn'; }).length;
+      var infoCount = banners.filter(function(b) { return b.kind === 'info'; }).length;
+      var expanded = host.getAttribute('data-expanded') === '1';
+      var pills = '';
+      if (warnCount) pills += '<span class="flag-pill">' + warnCount + ' off</span>';
+      if (infoCount) pills += '<span class="flag-pill info">' + infoCount + ' note</span>';
+      var safeDesc = function(s) { return String(s).replace(/[<>&"]/g, function(c) { return {'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]; }); };
+      var safeCode = function(s) { return String(s).replace(/[<>&]/g, function(c) { return {'<':'&lt;','>':'&gt;','&':'&amp;'}[c]; }); };
+      var listHtml = banners.map(function(b) {
+        return '<div class="flag-banner ' + b.kind + '" data-flag="' + b.dismissKey + '">' +
+          '<span class="flag-icon">' + b.icon + '</span>' +
+          '<div class="flag-body">' +
+            '<div class="flag-title">' + b.title + ' <code>' + b.keyLabel + '</code></div>' +
+            '<div class="flag-desc">' + safeDesc(b.desc) + '</div>' +
+            '<code class="flag-enable">' + safeCode(b.enable) + '</code>' +
+            (b.docs ? ' <a class="empty-link" href="' + b.docs + '" target="_blank" rel="noopener">Learn more &rarr;</a>' : '') +
+          '</div>' +
+          '<button class="flag-close" data-dismiss-flag="' + b.dismissKey + '" aria-label="Dismiss">&times;</button>' +
+        '</div>';
+      }).join('');
+      host.innerHTML = '<div class="flag-summary" data-action="toggle-flags">' +
+          pills +
+          '<span class="flag-count">Feature flags</span>' +
+          '<span style="color:var(--ink-faint);">— click to ' + (expanded ? 'collapse' : 'expand') + '</span>' +
+          '<span class="flag-toggle">' + (expanded ? '&#9650;' : '&#9660;') + '</span>' +
+        '</div>' +
+        '<div class="flag-list' + (expanded ? ' open' : '') + '" id="flag-list">' + listHtml + '</div>';
+    }
+    async function fetchFlags() {
+      var res = await apiGet('config/flags');
+      if (!res) return;
+      state.flagsConfig = res;
+      renderFlagBanners(res);
+      updateFooter(res);
+    }
+    function updateFooter(cfg) {
+      var vEl = document.getElementById('footer-version');
+      if (vEl) vEl.textContent = 'v' + (cfg.version || '?');
+      var fbEl = document.getElementById('footer-feedback');
+      if (fbEl) {
+        var flagSummary = (cfg.flags || []).map(function(f) { return f.key + '=' + (f.enabled ? 'on' : 'off'); }).join(', ');
+        var body = encodeURIComponent(
+          '**Version:** ' + (cfg.version || '?') + '\n' +
+          '**Provider:** ' + (cfg.provider || '?') + '\n' +
+          '**Embedding:** ' + (cfg.embeddingProvider || '?') + '\n' +
+          '**Flags:** ' + flagSummary + '\n' +
+          '**User agent:** ' + navigator.userAgent + '\n\n' +
+          '### What went wrong\n\n' +
+          '(describe the issue)\n\n' +
+          '### Steps to reproduce\n\n' +
+          '1. \n2. \n3. \n'
+        );
+        fbEl.href = 'https://github.com/rohitg00/agentmemory/issues/new?title=' +
+          encodeURIComponent('[viewer] ') + '&body=' + body;
+      }
+    }
+    document.addEventListener('click', function(e) {
+      if (!(e.target instanceof Element)) return;
+      var btn = e.target.closest('[data-dismiss-flag]');
+      if (btn) {
+        e.stopPropagation();
+        var key = btn.getAttribute('data-dismiss-flag');
+        var d = loadDismissedFlags();
+        d[key] = true;
+        saveDismissedFlags(d);
+        if (state.flagsConfig) renderFlagBanners(state.flagsConfig);
+        return;
+      }
+      var toggle = e.target.closest('[data-action="toggle-flags"]');
+      if (toggle) {
+        var host = document.getElementById('flag-banners');
+        var cur = host.getAttribute('data-expanded') === '1';
+        host.setAttribute('data-expanded', cur ? '0' : '1');
+        if (state.flagsConfig) renderFlagBanners(state.flagsConfig);
+      }
+    });
+    // Re-render banners when switching tabs so tab-specific banners appear
+    var _origSwitchTab = switchTab;
+    switchTab = function(tab) {
+      _origSwitchTab(tab);
+      if (state.flagsConfig) renderFlagBanners(state.flagsConfig);
+    };
+    fetchFlags();
     document.addEventListener('click', function(e) {
       if (!(e.target instanceof Element)) return;
       var target = e.target.closest('[data-action]');

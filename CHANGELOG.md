@@ -6,6 +6,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.9.3] — 2026-04-24
+
+Developer-experience patch. Every disabled feature flag is now visible in the viewer, the CLI, and REST error responses, so devs no longer hit empty tabs wondering whether the install is broken or just opt-in. Adds a `doctor` command that diagnoses the whole stack in one shot and a first-run hero in the viewer that points at the magical-moment `demo` command.
+
+### Added
+
+- **`agentmemory doctor` command.** Runs 10 diagnostic checks in one shot: server reachability, health status, viewer port, LLM provider, embedding provider, four feature flag states, and whether the knowledge graph has data. Every failing check includes a concrete hint with the exact env var or command to fix it. Mirrors the shape of the new viewer feature-flag banners.
+- **`/agentmemory/config/flags` REST endpoint.** Returns `{ version, provider, embeddingProvider, flags[] }` with per-flag `{ key, label, enabled, default, affects, needsLlm, description, enableHow, docsHref }`. Used by the viewer banner, CLI status/doctor, and anyone who wants to introspect config without parsing logs.
+- **Viewer feature-flag banner system.** Compact collapsible summary row at the top of every tab (`⚠ 3 off · ⚙ 1 note · Feature flags — click to expand`). Expanded view shows per-flag card with description, exact enable command, docs link, and dismiss button. Dismissed state persists per-flag in localStorage so banners stay out of the way once acknowledged. Banners filter by the current tab's `affects` list.
+- **Viewer first-run hero card.** When `sessions.length === 0`, dashboard renders an orange-accent card titled "First run → magical moment in 10 seconds" with `npx @agentmemory/agentmemory demo` as the next step. Removes the dead-empty dashboard that used to greet fresh installs.
+- **Viewer footer with preset issue report.** `agentmemory viewer · v{version} · github · docs · report issue →`. The feedback link opens a GitHub issue pre-filled with version, provider name, embedding provider, flag state, and user-agent — so the first message on an issue already contains the diagnostic context that used to take three back-and-forths.
+- **Richer empty states on Actions, Memories, Lessons, Crystals tabs.** Each now has a titled lead explaining what the tab is for, why it's empty, three concrete ways to populate it (MCP tool, curl, hook), and a docs link. The old one-liners ("No actions yet. Create actions via memory_action_create MCP tool") assumed too much context.
+- **`status` command shows flag state.** New section in the output block lists provider (`✓ llm` / `✗ noop`), embedding provider (`✓ embeddings` / `bm25-only`), and each flag with a tick/cross. Parity with the viewer banner.
+- **`AGENTMEMORY_URL` environment variable honored by CLI.** `status`, `doctor`, and related health checks now respect `AGENTMEMORY_URL=http://host:port` and extract the port from it. Previously documented but silently ignored; `--port N` was the only way to override.
+- **Website install section promotes `demo` to step 2.** `npx @agentmemory/agentmemory demo` now appears between "start server" and "open viewer" on agent-memory.dev. The magical-moment command is on the critical path of the three-step install, not tucked into the README.
+- **Website version auto-derived from repo package.json.** `gen-meta.mjs` picks up `src/version.ts` on `prebuild` and writes `website/lib/generated-meta.json`. Removes the stale-version drift that showed `v0.9.1` on the landing page after `v0.9.2` shipped.
+
+### Changed
+
+- **REST "feature not enabled" errors now return structured bodies.** Graph extraction (3 endpoints) and consolidation pipeline (1 endpoint) used to return `{ error: "Knowledge graph not enabled" }`. Now return `{ error, flag, enableHow, docsHref }` matching the viewer banner contract. Curl users get the same fix guidance as UI users.
+- **Website install title: `THREE STEPS` → `THREE COMMANDS`.** Matches the new three-command install (`npx agentmemory`, `agentmemory demo`, `open viewer`).
+
+### Fixed
+
+- **Viewer banner scroll blocker.** Initial banner implementation rendered four full-height banner cards stacked above the dashboard, pushing all stats off-screen. Replaced with compact collapsible summary that takes ~40px of vertical space by default and only expands on click.
+
+[0.9.3]: https://github.com/rohitg00/agentmemory/compare/v0.9.2...v0.9.3
+
 ## [0.9.2] — 2026-04-22
 
 Safety + import-pipeline patch. Kills the infinite Stop-hook recursion loop that burned Claude Pro tokens on unkeyed installs, repairs every empty viewer tab after `import-jsonl`, derives lessons and crystals automatically from imported sessions, and opens up OpenAI-compatible embedding endpoints.

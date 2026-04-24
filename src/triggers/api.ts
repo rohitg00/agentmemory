@@ -8,6 +8,12 @@ import type { ResilientProvider } from "../providers/resilient.js";
 import { VERSION } from "../version.js";
 import { timingSafeCompare } from "../auth.js";
 import { renderViewerDocument } from "../viewer/document.js";
+import {
+  isGraphExtractionEnabled,
+  isConsolidationEnabled,
+  isAutoCompressEnabled,
+  isContextInjectionEnabled,
+} from "../config.js";
 
 type Response = {
   status_code: number;
@@ -100,7 +106,7 @@ export function registerApiTriggers(
     },
   );
 
-  sdk.registerFunction("api::liveness", 
+  sdk.registerFunction("api::liveness",
     async (): Promise<Response> => ({
       status_code: 200,
       body: { status: "ok", service: "agentmemory" },
@@ -110,6 +116,74 @@ export function registerApiTriggers(
     type: "http",
     function_id: "api::liveness",
     config: { api_path: "/agentmemory/livez", http_method: "GET" },
+  });
+
+  sdk.registerFunction("api::config-flags",
+    async (): Promise<Response> => {
+      const env = process.env;
+      const provider = env["ANTHROPIC_API_KEY"] || env["GEMINI_API_KEY"] || env["OPENROUTER_API_KEY"] || env["MINIMAX_API_KEY"] ? "llm" : "noop";
+      const embeddingProvider = env["OPENAI_API_KEY"] || env["VOYAGE_API_KEY"] || env["COHERE_API_KEY"] || env["OLLAMA_HOST"] ? "embeddings" : "none";
+      const flags = [
+        {
+          key: "GRAPH_EXTRACTION_ENABLED",
+          label: "Knowledge graph extraction",
+          enabled: isGraphExtractionEnabled(),
+          default: false,
+          affects: ["Graph", "Dashboard"],
+          needsLlm: true,
+          description: "Extracts entities and relations from observations into a knowledge graph.",
+          enableHow: "Set GRAPH_EXTRACTION_ENABLED=true and provide an LLM key, then restart.",
+          docsHref: "https://github.com/rohitg00/agentmemory#knowledge-graph",
+        },
+        {
+          key: "CONSOLIDATION_ENABLED",
+          label: "Memory consolidation",
+          enabled: isConsolidationEnabled(),
+          default: false,
+          affects: ["Dashboard", "Memories", "Crystals"],
+          needsLlm: true,
+          description: "Periodically summarizes sessions into semantic facts + procedures.",
+          enableHow: "Set CONSOLIDATION_ENABLED=true and provide an LLM key, then restart.",
+          docsHref: "https://github.com/rohitg00/agentmemory#consolidation",
+        },
+        {
+          key: "AGENTMEMORY_AUTO_COMPRESS",
+          label: "LLM-powered observation compression",
+          enabled: isAutoCompressEnabled(),
+          default: false,
+          affects: ["Memories", "Timeline"],
+          needsLlm: true,
+          description: "Every observation is compressed by the LLM for richer summaries (costs tokens). OFF uses zero-LLM synthetic compression.",
+          enableHow: "Set AGENTMEMORY_AUTO_COMPRESS=true and provide an LLM key.",
+          docsHref: "https://github.com/rohitg00/agentmemory/issues/138",
+        },
+        {
+          key: "AGENTMEMORY_INJECT_CONTEXT",
+          label: "In-conversation context injection",
+          enabled: isContextInjectionEnabled(),
+          default: false,
+          affects: ["Hooks"],
+          needsLlm: false,
+          description: "Hooks write recalled context into Claude Code's conversation. OFF captures in the background without injecting.",
+          enableHow: "Set AGENTMEMORY_INJECT_CONTEXT=true and restart.",
+          docsHref: "https://github.com/rohitg00/agentmemory/issues/143",
+        },
+      ];
+      return {
+        status_code: 200,
+        body: {
+          version: VERSION,
+          provider,
+          embeddingProvider,
+          flags,
+        },
+      };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::config-flags",
+    config: { api_path: "/agentmemory/config/flags", http_method: "GET" },
   });
 
   sdk.registerFunction("api::health", 
@@ -947,7 +1021,12 @@ export function registerApiTriggers(
       } catch {
         return {
           status_code: 404,
-          body: { error: "Knowledge graph not enabled" },
+          body: {
+            error: "Knowledge graph not enabled",
+            flag: "GRAPH_EXTRACTION_ENABLED",
+            enableHow: "Set GRAPH_EXTRACTION_ENABLED=true and restart. Requires an LLM provider key.",
+            docsHref: "https://github.com/rohitg00/agentmemory#knowledge-graph",
+          },
         };
       }
     },
@@ -968,7 +1047,12 @@ export function registerApiTriggers(
       } catch {
         return {
           status_code: 404,
-          body: { error: "Knowledge graph not enabled" },
+          body: {
+            error: "Knowledge graph not enabled",
+            flag: "GRAPH_EXTRACTION_ENABLED",
+            enableHow: "Set GRAPH_EXTRACTION_ENABLED=true and restart. Requires an LLM provider key.",
+            docsHref: "https://github.com/rohitg00/agentmemory#knowledge-graph",
+          },
         };
       }
     },
@@ -998,7 +1082,12 @@ export function registerApiTriggers(
       } catch {
         return {
           status_code: 404,
-          body: { error: "Knowledge graph not enabled" },
+          body: {
+            error: "Knowledge graph not enabled",
+            flag: "GRAPH_EXTRACTION_ENABLED",
+            enableHow: "Set GRAPH_EXTRACTION_ENABLED=true and restart. Requires an LLM provider key.",
+            docsHref: "https://github.com/rohitg00/agentmemory#knowledge-graph",
+          },
         };
       }
     },
@@ -1020,7 +1109,12 @@ export function registerApiTriggers(
       } catch {
         return {
           status_code: 404,
-          body: { error: "Consolidation pipeline not enabled" },
+          body: {
+            error: "Consolidation pipeline not enabled",
+            flag: "CONSOLIDATION_ENABLED",
+            enableHow: "Set CONSOLIDATION_ENABLED=true and restart. Requires an LLM provider key.",
+            docsHref: "https://github.com/rohitg00/agentmemory#consolidation",
+          },
         };
       }
     },
