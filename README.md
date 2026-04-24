@@ -803,7 +803,7 @@ Create `~/.agentmemory/.env`:
 # MINIMAX_API_KEY=...
 # OPENAI_API_KEY=sk-...
 # OLLAMA_MODEL=llama3
-# LMSTUDIO_BASE_URL=http://localhost:1234/v1/chat/completions
+# LMSTUDIO_BASE_URL=http://localhost:1234
 # Opt-in Claude-subscription fallback (spawns @anthropic-ai/claude-agent-sdk);
 # leave OFF unless you understand the Stop-hook recursion risk (#149 follow-up):
 # AGENTMEMORY_ALLOW_AGENT_SDK=true
@@ -816,7 +816,7 @@ Create `~/.agentmemory/.env`:
 # OPENAI_EMBEDDING_MODEL=text-embedding-3-small
 # OPENAI_EMBEDDING_DIMENSIONS=1536        # Required when the model is not in the known-models table
 # OLLAMA_EMBEDDING_MODEL=nomic-embed-text
-# LMSTUDIO_EMBEDDING_BASE_URL=http://localhost:1234/v1/embeddings
+# LMSTUDIO_EMBEDDING_BASE_URL=http://localhost:1234
 
 # Search tuning
 # BM25_WEIGHT=0.4
