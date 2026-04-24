@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createEmbeddingProvider } from "../src/providers/embedding/index.js";
 import { GeminiEmbeddingProvider } from "../src/providers/embedding/gemini.js";
 import { OpenAIEmbeddingProvider } from "../src/providers/embedding/openai.js";
+import { OpenRouterEmbeddingProvider } from "../src/providers/embedding/openrouter.js";
 import * as config from "../src/config.js";
 
 describe("createEmbeddingProvider", () => {
@@ -43,6 +44,13 @@ describe("createEmbeddingProvider", () => {
     const provider = createEmbeddingProvider();
     expect(provider).toBeInstanceOf(OpenAIEmbeddingProvider);
     expect(provider!.name).toBe("openai");
+  });
+
+  it("returns OpenRouterEmbeddingProvider when OPENROUTER_API_KEY is set", () => {
+    process.env["OPENROUTER_API_KEY"] = "test-key-789";
+    const provider = createEmbeddingProvider();
+    expect(provider).toBeInstanceOf(OpenRouterEmbeddingProvider);
+    expect(provider!.name).toBe("openrouter");
   });
 
   it("detects lmstudio embedding provider when LMSTUDIO_EMBEDDING_BASE_URL is set", () => {

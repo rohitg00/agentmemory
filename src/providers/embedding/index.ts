@@ -1,21 +1,10 @@
 import type { EmbeddingProvider } from "../../types.js";
 import { detectEmbeddingProvider, getEnvVar } from "../../config.js";
-
-function requireEnvVar(key: string): string {
-  const value = getEnvVar(key);
-  if (!value) {
-    throw new Error(
-      `Missing required environment variable: ${key}. Set it in ~/.agentmemory/.env or as an environment variable.`,
-    );
-  }
-  return value;
-}
-
 import { GeminiEmbeddingProvider } from "./gemini.js";
 import { OpenAIEmbeddingProvider } from "./openai.js";
-import { OpenRouterEmbeddingProvider } from "./openrouter.js";
 import { VoyageEmbeddingProvider } from "./voyage.js";
 import { CohereEmbeddingProvider } from "./cohere.js";
+import { OpenRouterEmbeddingProvider } from "./openrouter.js";
 import { LocalEmbeddingProvider } from "./local.js";
 import { ClipEmbeddingProvider } from "./clip.js";
 
@@ -24,6 +13,7 @@ export {
   OpenAIEmbeddingProvider,
   VoyageEmbeddingProvider,
   CohereEmbeddingProvider,
+  OpenRouterEmbeddingProvider,
   LocalEmbeddingProvider,
   ClipEmbeddingProvider,
 };
@@ -67,10 +57,7 @@ export function createEmbeddingProvider(): EmbeddingProvider | null {
     case "cohere":
       return new CohereEmbeddingProvider(getEnvVar("COHERE_API_KEY")!);
     case "openrouter":
-      return new OpenRouterEmbeddingProvider(
-        requireEnvVar("OPENROUTER_API_KEY"),
-        getEnvVar("OPENROUTER_EMBEDDING_MODEL"),
-      );
+      return new OpenRouterEmbeddingProvider(getEnvVar("OPENROUTER_API_KEY"));
     case "local":
       return new LocalEmbeddingProvider();
     default:
