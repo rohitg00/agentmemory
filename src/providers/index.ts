@@ -82,7 +82,7 @@ function createBaseProvider(config: ProviderConfig): MemoryProvider {
         "no-key-required",
         config.model,
         config.maxTokens,
-        config.baseURL!,
+        config.baseURL || "http://localhost:8000",
       );
     case "lmstudio":
       return new OpenAIProvider(
