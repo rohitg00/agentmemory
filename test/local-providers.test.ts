@@ -124,6 +124,10 @@ describe("OpenAI Family Providers", () => {
 });
 
 describe("OpenAIProvider implementation", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it("calls fetch with correct parameters and appends /v1/chat/completions", async () => {
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
@@ -131,7 +135,7 @@ describe("OpenAIProvider implementation", () => {
         choices: [{ message: { content: "mock response" } }],
       }),
     });
-    global.fetch = mockFetch;
+    vi.stubGlobal("fetch", mockFetch);
 
     const provider = new OpenAIProvider(
       "test-provider",
@@ -147,17 +151,18 @@ describe("OpenAIProvider implementation", () => {
       "http://test-url/v1/chat/completions",
       expect.objectContaining({
         method: "POST",
+        signal: expect.any(AbortSignal),
         headers: {
           "Content-Type": "application/json",
           "Authorization": "Bearer test-key",
         },
         body: JSON.stringify({
           model: "test-model",
-          max_tokens: 100,
           messages: [
             { role: "system", content: "system" },
             { role: "user", content: "user" },
           ],
+          max_tokens: 100,
         }),
       })
     );
@@ -170,7 +175,7 @@ describe("OpenAIProvider implementation", () => {
         choices: [{ message: { content: "mock reasoning response" } }],
       }),
     });
-    global.fetch = mockFetch;
+    vi.stubGlobal("fetch", mockFetch);
 
     const provider = new OpenAIProvider(
       "openai",
@@ -188,6 +193,10 @@ describe("OpenAIProvider implementation", () => {
 });
 
 describe("OpenAIEmbeddingProvider implementation", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it("calls fetch with correct parameters and appends /v1/embeddings", async () => {
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
@@ -195,7 +204,7 @@ describe("OpenAIEmbeddingProvider implementation", () => {
         data: [{ embedding: [0.1, 0.2, 0.3] }],
       }),
     });
-    global.fetch = mockFetch;
+    vi.stubGlobal("fetch", mockFetch);
 
     const provider = new OpenAIEmbeddingProvider(
       "no-key-required",
