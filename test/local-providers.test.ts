@@ -197,6 +197,28 @@ describe("OpenAIProvider implementation", () => {
     expect(body.max_completion_tokens).toBe(500);
     expect(body.max_tokens).toBeUndefined();
   });
+
+  it("detects reasoning models with prefixes, in case of proxies", async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        choices: [{ message: { content: "mock reasoning response" } }],
+      }),
+    });
+    vi.stubGlobal("fetch", mockFetch);
+
+    const provider = new OpenAIProvider(
+      "openai",
+      "test-key",
+      "openai/o1-mini",
+      500,
+      "https://api.openai.com"
+    );
+    await provider.compress("system", "user");
+
+    const body = JSON.parse((mockFetch.mock.calls[0][1] as RequestInit).body as string);
+    expect(body.max_completion_tokens).toBe(500);
+  });
 });
 
 describe("OpenAIEmbeddingProvider implementation", () => {

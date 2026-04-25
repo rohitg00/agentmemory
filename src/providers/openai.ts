@@ -29,7 +29,11 @@ export class OpenAIProvider implements MemoryProvider {
     const base = this.baseUrl.replace(/\/+$/, "");
     const path = base.endsWith("/v1") ? "/chat/completions" : "/v1/chat/completions";
     const url = `${base}${path}`;
-    const isReasoningModel = this.model.startsWith("o1-") || this.model.startsWith("o3-");
+    
+    // Detect reasoning models (o1, o3, etc) which require max_completion_tokens.
+    // We check for the pattern o1- or o3- anywhere in the string to handle prefixes.
+    const isReasoningModel = /\bo[13]-/.test(this.model);
+    
     const body: Record<string, any> = {
       model: this.model,
       messages: [
