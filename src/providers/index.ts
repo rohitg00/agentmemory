@@ -63,7 +63,7 @@ function createBaseProvider(config: ProviderConfig): MemoryProvider {
     case "openai":
       return new OpenAIProvider(
         "openai",
-        getEnvVar("OPENAI_API_KEY") || "no-key-required",
+        getEnvVar("OPENAI_API_KEY") || null,
         config.model,
         config.maxTokens,
         config.baseURL || "https://api.openai.com",
@@ -71,7 +71,7 @@ function createBaseProvider(config: ProviderConfig): MemoryProvider {
     case "ollama":
       return new OpenAIProvider(
         "ollama",
-        "no-key-required",
+        null,
         config.model,
         config.maxTokens,
         config.baseURL || "http://localhost:11434",
@@ -79,7 +79,7 @@ function createBaseProvider(config: ProviderConfig): MemoryProvider {
     case "vllm":
       return new OpenAIProvider(
         "vllm",
-        "no-key-required",
+        null,
         config.model,
         config.maxTokens,
         config.baseURL || "http://localhost:8000",
@@ -87,7 +87,7 @@ function createBaseProvider(config: ProviderConfig): MemoryProvider {
     case "lmstudio":
       return new OpenAIProvider(
         "lmstudio",
-        "no-key-required",
+        null,
         config.model,
         config.maxTokens,
         config.baseURL || "http://localhost:1234",

@@ -7,7 +7,7 @@ import type { MemoryProvider } from "../types.js";
 export class OpenAIProvider implements MemoryProvider {
   constructor(
     public name: string,
-    private apiKey: string,
+    private apiKey: string | null,
     private model: string,
     private maxTokens: number,
     private baseUrl: string,
@@ -44,15 +44,17 @@ export class OpenAIProvider implements MemoryProvider {
       body.max_tokens = this.maxTokens;
     }
 
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+    if (this.apiKey) {
+      headers.Authorization = `Bearer ${this.apiKey}`;
+    }
+
     const response = await fetch(url, {
       method: "POST",
       signal: AbortSignal.timeout(this.timeoutMs),
-      headers: {
-        "Content-Type": "application/json",
-        ...(this.apiKey && this.apiKey !== "no-key-required"
-          ? { Authorization: `Bearer ${this.apiKey}` }
-          : {}),
-      },
+      headers,
       body: JSON.stringify(body),
     });
 

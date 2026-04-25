@@ -48,52 +48,18 @@ function hasRealValue(v: string | undefined): v is string {
 function detectProvider(env: Record<string, string>): ProviderConfig {
   const maxTokens = parseInt(env["MAX_TOKENS"] || "4096", 10);
 
-  // MiniMax: Anthropic-compatible API, requires raw fetch to avoid SDK stainless headers
-  if (hasRealValue(env["MINIMAX_API_KEY"])) {
-    return {
-      provider: "minimax",
-      model: env["MINIMAX_MODEL"] || "MiniMax-M2.7",
-      maxTokens,
-    };
-  }
+  const explicitProvider = env["AGENTMEMORY_PROVIDER"];
 
-  if (hasRealValue(env["LMSTUDIO_BASE_URL"]) || hasRealValue(env["LMSTUDIO_MODEL"])) {
-    return {
-      provider: "lmstudio",
-      model: env["LMSTUDIO_MODEL"] || "local-model",
-      maxTokens,
-      baseURL: env["LMSTUDIO_BASE_URL"],
-    };
-  }
-
-  if (hasRealValue(env["OLLAMA_BASE_URL"]) || hasRealValue(env["OLLAMA_MODEL"])) {
-    return {
-      provider: "ollama",
-      model: env["OLLAMA_MODEL"] || "llama3",
-      maxTokens,
-      baseURL: env["OLLAMA_BASE_URL"] || "http://localhost:11434",
-    };
-  }
-
-  if (hasRealValue(env["VLLM_BASE_URL"]) || hasRealValue(env["VLLM_MODEL"])) {
-    return {
-      provider: "vllm",
-      model: env["VLLM_MODEL"] || "local-model",
-      maxTokens,
-      baseURL: env["VLLM_BASE_URL"],
-    };
-  }
-
-  if (hasRealValue(env["OPENAI_API_KEY"])) {
+  if (explicitProvider === "openai" || (!explicitProvider && hasRealValue(env["OPENAI_API_KEY"]))) {
     return {
       provider: "openai",
-      model: env["OPENAI_MODEL"] || "gpt-4o",
+      model: env["OPENAI_MODEL"] || "openai-default",
       maxTokens,
       baseURL: env["OPENAI_BASE_URL"] || "https://api.openai.com",
     };
   }
 
-  if (hasRealValue(env["ANTHROPIC_API_KEY"])) {
+  if (explicitProvider === "anthropic" || (!explicitProvider && hasRealValue(env["ANTHROPIC_API_KEY"]))) {
     return {
       provider: "anthropic",
       model: env["ANTHROPIC_MODEL"] || "claude-sonnet-4-20250514",
@@ -101,7 +67,8 @@ function detectProvider(env: Record<string, string>): ProviderConfig {
       baseURL: env["ANTHROPIC_BASE_URL"],
     };
   }
-  if (hasRealValue(env["GEMINI_API_KEY"]) || hasRealValue(env["GOOGLE_API_KEY"])) {
+
+  if (explicitProvider === "gemini" || (!explicitProvider && (hasRealValue(env["GEMINI_API_KEY"]) || hasRealValue(env["GOOGLE_API_KEY"])))) {
     if (!hasRealValue(env["GEMINI_API_KEY"]) && hasRealValue(env["GOOGLE_API_KEY"])) {
       process.stderr.write(
         "[agentmemory] GOOGLE_API_KEY detected — treating as GEMINI_API_KEY. " +
@@ -114,11 +81,48 @@ function detectProvider(env: Record<string, string>): ProviderConfig {
       maxTokens,
     };
   }
-  if (hasRealValue(env["OPENROUTER_API_KEY"])) {
+
+  if (explicitProvider === "openrouter" || (!explicitProvider && hasRealValue(env["OPENROUTER_API_KEY"]))) {
     return {
       provider: "openrouter",
       model: env["OPENROUTER_MODEL"] || "anthropic/claude-sonnet-4-20250514",
       maxTokens,
+    };
+  }
+
+  // Local/Compatible providers (moved after legacy ones to avoid flipping existing users)
+  if (explicitProvider === "minimax" || (!explicitProvider && hasRealValue(env["MINIMAX_API_KEY"]))) {
+    return {
+      provider: "minimax",
+      model: env["MINIMAX_MODEL"] || "MiniMax-M2.7",
+      maxTokens,
+    };
+  }
+
+  if (explicitProvider === "lmstudio" || (!explicitProvider && (hasRealValue(env["LMSTUDIO_BASE_URL"]) || hasRealValue(env["LMSTUDIO_MODEL"])))) {
+    return {
+      provider: "lmstudio",
+      model: env["LMSTUDIO_MODEL"] || "local-model",
+      maxTokens,
+      baseURL: env["LMSTUDIO_BASE_URL"],
+    };
+  }
+
+  if (explicitProvider === "ollama" || (!explicitProvider && (hasRealValue(env["OLLAMA_BASE_URL"]) || hasRealValue(env["OLLAMA_MODEL"])))) {
+    return {
+      provider: "ollama",
+      model: env["OLLAMA_MODEL"] || "llama3",
+      maxTokens,
+      baseURL: env["OLLAMA_BASE_URL"] || "http://localhost:11434",
+    };
+  }
+
+  if (explicitProvider === "vllm" || (!explicitProvider && (hasRealValue(env["VLLM_BASE_URL"]) || hasRealValue(env["VLLM_MODEL"])))) {
+    return {
+      provider: "vllm",
+      model: env["VLLM_MODEL"] || "local-model",
+      maxTokens,
+      baseURL: env["VLLM_BASE_URL"],
     };
   }
 

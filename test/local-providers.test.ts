@@ -214,7 +214,7 @@ describe("OpenAIEmbeddingProvider implementation", () => {
     vi.stubGlobal("fetch", mockFetch);
 
     const provider = new OpenAIEmbeddingProvider(
-      "no-key-required",
+      null,
       "http://local-runner:11434",
       "nomic-embed-text"
     );

@@ -46,13 +46,12 @@ function resolveDimensions(model: string, override: string | undefined): number 
 export class OpenAIEmbeddingProvider implements EmbeddingProvider {
   readonly name = "openai";
   readonly dimensions: number;
-  private apiKey: string;
+  private apiKey: string | null;
   private baseUrl: string;
   private model: string;
 
-  constructor(apiKey?: string, baseUrl?: string, model?: string) {
-    this.apiKey = apiKey || getEnvVar("OPENAI_API_KEY") || "";
-    if (!this.apiKey) throw new Error("OPENAI_API_KEY is required");
+  constructor(apiKey?: string | null, baseUrl?: string, model?: string) {
+    this.apiKey = apiKey !== undefined ? apiKey : (getEnvVar("OPENAI_API_KEY") || null);
     this.baseUrl =
       baseUrl || getEnvVar("OPENAI_BASE_URL") || DEFAULT_BASE_URL;
     this.model =
@@ -70,14 +69,16 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
 
   async embedBatch(texts: string[]): Promise<Float32Array[]> {
     const url = `${this.baseUrl}/v1/embeddings`;
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+    if (this.apiKey) {
+      headers.Authorization = `Bearer ${this.apiKey}`;
+    }
+
     const response = await fetch(url, {
       method: "POST",
-      headers: {
-        ...(this.apiKey && this.apiKey !== "no-key-required"
-          ? { Authorization: `Bearer ${this.apiKey}` }
-          : {}),
-        "Content-Type": "application/json",
-      },
+      headers,
       body: JSON.stringify({
         model: this.model,
         input: texts,

@@ -36,13 +36,13 @@ export function createEmbeddingProvider(): EmbeddingProvider | null {
       return new GeminiEmbeddingProvider(getEnvVar("GEMINI_API_KEY")!);
     case "openai":
       return new OpenAIEmbeddingProvider(
-        getEnvVar("OPENAI_API_KEY"),
+        getEnvVar("OPENAI_API_KEY") || null,
         getEnvVar("OPENAI_EMBEDDING_BASE_URL"),
         getEnvVar("OPENAI_EMBEDDING_MODEL"),
       );
     case "ollama":
       return new OpenAIEmbeddingProvider(
-        "no-key-required",
+        null,
         getEnvVar("OLLAMA_EMBEDDING_BASE_URL") || "http://localhost:11434",
         getEnvVar("OLLAMA_EMBEDDING_MODEL") || "nomic-embed-text",
       );
@@ -51,7 +51,7 @@ export function createEmbeddingProvider(): EmbeddingProvider | null {
         const base = getEnvVar("LMSTUDIO_EMBEDDING_BASE_URL") || "http://localhost:1234";
         const model = getEnvVar("LMSTUDIO_EMBEDDING_MODEL");
         if (!model) throw new Error("LMSTUDIO_EMBEDDING_MODEL is required for the lmstudio embedding provider");
-        return new OpenAIEmbeddingProvider("no-key-required", base, model);
+        return new OpenAIEmbeddingProvider(null, base, model);
       }
     case "vllm":
       {
@@ -59,7 +59,7 @@ export function createEmbeddingProvider(): EmbeddingProvider | null {
         const model = getEnvVar("VLLM_EMBEDDING_MODEL");
         if (!base) throw new Error("VLLM_EMBEDDING_BASE_URL is required for the vllm embedding provider");
         if (!model) throw new Error("VLLM_EMBEDDING_MODEL is required for the vllm embedding provider");
-        return new OpenAIEmbeddingProvider("no-key-required", base, model);
+        return new OpenAIEmbeddingProvider(null, base, model);
       }
     case "voyage":
       return new VoyageEmbeddingProvider(getEnvVar("VOYAGE_API_KEY")!);

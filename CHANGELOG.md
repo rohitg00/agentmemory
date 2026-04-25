@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- `OpenAIEmbeddingProvider` constructor now accepts optional `baseUrl` + `model` args; env vars remain fallback.
+- `OpenAIProvider` and `OpenAIEmbeddingProvider` now support `null` API keys to better support local-only providers (Ollama, LM Studio, vLLM).
+- Provider detection order updated to prioritize legacy providers (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`) over new local auto-detection to prevent silent behavior flips.
+- Added `AGENTMEMORY_PROVIDER` environment variable to explicitly select a provider and skip auto-detection.
+- Default OpenAI model changed from `gpt-4o` to `openai-default` to avoid hardcoded pricing/capability assumptions.
+
 ## [0.9.2] — 2026-04-22
 
 Safety + import-pipeline patch. Kills the infinite Stop-hook recursion loop that burned Claude Pro tokens on unkeyed installs, repairs every empty viewer tab after `import-jsonl`, derives lessons and crystals automatically from imported sessions, and opens up OpenAI-compatible embedding endpoints.

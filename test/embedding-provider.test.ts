@@ -96,9 +96,10 @@ describe("OpenAIEmbeddingProvider", () => {
     expect(provider.dimensions).toBe(1536);
   });
 
-  it("throws when no API key is provided", () => {
+  it("does not throw when no API key is provided", () => {
     delete process.env["OPENAI_API_KEY"];
-    expect(() => new OpenAIEmbeddingProvider()).toThrow("OPENAI_API_KEY is required");
+    const provider = new OpenAIEmbeddingProvider();
+    expect(provider).toBeInstanceOf(OpenAIEmbeddingProvider);
   });
 
   it("respects OPENAI_BASE_URL env var", async () => {
