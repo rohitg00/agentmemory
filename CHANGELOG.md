@@ -14,7 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   - **vLLM**: `VLLM_BASE_URL` and `VLLM_MODEL`.
   Auto-detection now supports these local endpoints while ensuring existing legacy keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`) remain prioritized for stable upgrades.
 - **`AGENTMEMORY_PROVIDER` environment variable.** Allows explicit selection of the LLM provider (e.g., `AGENTMEMORY_PROVIDER=ollama`), bypassing auto-detection and supporting setups with multiple keys.
-- **Improved `OpenAIEmbeddingProvider` flexibility.** The constructor now accepts optional `baseUrl` and `model` overrides, enabling direct instantiation for custom OpenAI-compatible embedding proxies.
+- **Improved `OpenAIEmbeddingProvider` flexibility.** The constructor now accepts optional `baseUrl` and `model` overrides, enabling direct instantiation for custom OpenAI-compatible embedding proxies. Environment variables remain as fallback.
 
 ### Changed
 
