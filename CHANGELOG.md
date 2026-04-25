@@ -6,13 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **Support for local OpenAI-compatible providers.** Full support for Ollama, vLLM, and LM Studio as first-class providers. Added new configuration variables:
+  - **Ollama**: `OLLAMA_BASE_URL` (default: `http://localhost:11434`) and `OLLAMA_MODEL`.
+  - **LM Studio**: `LMSTUDIO_BASE_URL` and `LMSTUDIO_MODEL`.
+  - **vLLM**: `VLLM_BASE_URL` and `VLLM_MODEL`.
+  Auto-detection now supports these local endpoints while ensuring existing legacy keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`) remain prioritized for stable upgrades.
+- **`AGENTMEMORY_PROVIDER` environment variable.** Allows explicit selection of the LLM provider (e.g., `AGENTMEMORY_PROVIDER=ollama`), bypassing auto-detection and supporting setups with multiple keys.
+- **Improved `OpenAIEmbeddingProvider` flexibility.** The constructor now accepts optional `baseUrl` and `model` overrides, enabling direct instantiation for custom OpenAI-compatible embedding proxies.
+
 ### Changed
 
-- `OpenAIEmbeddingProvider` constructor now accepts optional `baseUrl` + `model` args; env vars remain fallback.
-- `OpenAIProvider` and `OpenAIEmbeddingProvider` now support `null` API keys to better support local-only providers (Ollama, LM Studio, vLLM).
-- Provider detection order updated to prioritize legacy providers (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`) over new local auto-detection to prevent silent behavior flips.
-- Added `AGENTMEMORY_PROVIDER` environment variable to explicitly select a provider and skip auto-detection.
-- Default OpenAI model changed from `gpt-4o` to `openai-default` to avoid hardcoded pricing/capability assumptions.
+- **Provider detection order and MiniMax priority.** Detection order updated to prioritize legacy providers (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`) over local auto-detection. `MiniMax` detection now also honors this priority and supports `MINIMAX_MODEL`.
+- **`OpenAIProvider` and `OpenAIEmbeddingProvider` key handling.** Both now support `null` API keys to natively support local-only endpoints that don't require an `Authorization` header.
+- **Neutral OpenAI default model.** The OpenAI provider now defaults to `openai-default` instead of a specific commercial model to avoid opinionated pricing or capability assumptions in the library core.
 
 ## [0.9.3] — 2026-04-24
 
