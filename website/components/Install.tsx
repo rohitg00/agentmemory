@@ -17,7 +17,12 @@ const SIMPLE: Cmd[] = [
     hint: "RUNS ON :3111 · VIEWER ON :3113",
   },
   {
-    label: "2. OPEN THE LIVE VIEWER",
+    label: "2. SEE SEMANTIC RECALL INSTANTLY",
+    cmd: "npx @agentmemory/agentmemory demo",
+    hint: "SEEDS 3 SESSIONS · PROVES HYBRID SEARCH WORKS",
+  },
+  {
+    label: "3. OPEN THE LIVE VIEWER",
     cmd: "open http://localhost:3113",
     hint: "SESSIONS · MEMORIES · GRAPH · HEALTH",
   },
@@ -62,7 +67,7 @@ export function Install() {
       <header className="section-head">
         <span className="section-eyebrow">SHIP IT</span>
         <h2 id="install-title" className="section-title">
-          THREE STEPS.<br />ANY AGENT.
+          THREE COMMANDS.<br />ANY AGENT.
         </h2>
         <p className="section-lede">
           RUNS ON YOUR MACHINE. DATA STAYS LOCAL. BRING YOUR CLAUDE SUBSCRIPTION

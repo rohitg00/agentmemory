@@ -30,7 +30,8 @@ Usage: agentmemory [command] [options]
 
 Commands:
   (default)          Start agentmemory worker
-  status             Show connection status, memory count, and health
+  status             Show connection status, memory count, flags, and health
+  doctor             Run diagnostic checks (server, flags, graph, providers)
   demo               Seed sample sessions and show recall in action
   upgrade            Upgrade local deps + iii runtime (best effort)
   mcp                Start standalone MCP server (no engine required)
@@ -43,10 +44,15 @@ Options:
   --no-engine        Skip auto-starting iii-engine
   --port <N>         Override REST port (default: 3111)
 
+Environment:
+  AGENTMEMORY_URL    Full REST base URL (e.g. http://localhost:3111).
+                     Honored by status, doctor, and MCP shim commands.
+
 Quick start:
   npx @agentmemory/agentmemory          # start with local iii-engine or Docker
-  npx @agentmemory/agentmemory status   # check health
-  npx @agentmemory/agentmemory demo     # try it in 30 seconds (needs server running)
+  npx @agentmemory/agentmemory demo     # see semantic recall in 30 seconds
+  npx @agentmemory/agentmemory doctor   # diagnose config + feature flags
+  npx @agentmemory/agentmemory status   # health + memory count + flags
   npx @agentmemory/agentmemory upgrade  # upgrade agentmemory + iii runtime
   npx @agentmemory/agentmemory mcp      # standalone MCP server (no engine)
   npx @agentmemory/mcp                  # same as above (shim package)
@@ -67,12 +73,37 @@ if (portIdx !== -1 && args[portIdx + 1]) {
 const skipEngine = args.includes("--no-engine");
 
 function getRestPort(): number {
+  const url = process.env["AGENTMEMORY_URL"];
+  if (url) {
+    try {
+      const parsed = new URL(url).port;
+      if (parsed) return parseInt(parsed, 10);
+    } catch {}
+  }
   return parseInt(process.env["III_REST_PORT"] || "3111", 10) || 3111;
+}
+
+function getBaseUrl(): string {
+  const url = process.env["AGENTMEMORY_URL"];
+  if (url) return url.replace(/\/+$/, "");
+  return `http://localhost:${getRestPort()}`;
+}
+
+function getViewerUrl(): string {
+  const envUrl = process.env["AGENTMEMORY_VIEWER_URL"];
+  if (envUrl) return envUrl.replace(/\/+$/, "");
+  try {
+    const u = new URL(getBaseUrl());
+    const vPort = (parseInt(u.port || "3111", 10) || 3111) + 2;
+    return `${u.protocol}//${u.hostname}:${vPort}`;
+  } catch {
+    return `http://localhost:${getRestPort() + 2}`;
+  }
 }
 
 async function isEngineRunning(): Promise<boolean> {
   try {
-    await fetch(`http://localhost:${getRestPort()}/`, {
+    await fetch(`${getBaseUrl()}/`, {
       signal: AbortSignal.timeout(2000),
     });
     return true;
@@ -83,7 +114,7 @@ async function isEngineRunning(): Promise<boolean> {
 
 async function isAgentmemoryReady(): Promise<boolean> {
   try {
-    const res = await fetch(`http://localhost:${getRestPort()}/agentmemory/livez`, {
+    const res = await fetch(`${getBaseUrl()}/agentmemory/livez`, {
       signal: AbortSignal.timeout(2000),
     });
     return res.ok;
@@ -382,32 +413,42 @@ async function main() {
   await import("./index.js");
 }
 
+async function apiFetch<T = unknown>(base: string, path: string, timeoutMs = 5000): Promise<T | null> {
+  try {
+    const res = await fetch(`${base}/agentmemory/${path}`, { signal: AbortSignal.timeout(timeoutMs) });
+    return (await res.json()) as T;
+  } catch {
+    return null;
+  }
+}
+
 async function runStatus() {
   const port = getRestPort();
-  const base = `http://localhost:${port}`;
+  const base = getBaseUrl();
   p.intro("agentmemory status");
 
   const up = await isEngineRunning();
   if (!up) {
-    p.log.error(`Not running — no response on port ${port}`);
+    p.log.error(`Not running — no response at ${base}`);
     p.log.info("Start with: npx @agentmemory/agentmemory");
     process.exit(1);
   }
 
   try {
-    const [healthRes, sessionsRes, graphRes, memoriesRes] = await Promise.all([
-      fetch(`${base}/agentmemory/health`, { signal: AbortSignal.timeout(5000) }).then((r) => r.json()).catch(() => null),
-      fetch(`${base}/agentmemory/sessions`, { signal: AbortSignal.timeout(5000) }).then((r) => r.json()).catch(() => null),
-      fetch(`${base}/agentmemory/graph/stats`, { signal: AbortSignal.timeout(5000) }).then((r) => r.json()).catch(() => null),
-      fetch(`${base}/agentmemory/export`, { signal: AbortSignal.timeout(5000) }).then((r) => r.json()).catch(() => null),
+    const [healthRes, sessionsRes, graphRes, memoriesRes, flagsRes] = await Promise.all([
+      apiFetch<any>(base, "health"),
+      apiFetch<any>(base, "sessions"),
+      apiFetch<any>(base, "graph/stats"),
+      apiFetch<any>(base, "export"),
+      apiFetch<any>(base, "config/flags"),
     ]);
 
     const h = healthRes?.health;
     const status = healthRes?.status || "unknown";
     const version = healthRes?.version || "?";
     const sessions = Array.isArray(sessionsRes?.sessions) ? sessionsRes.sessions.length : 0;
-    const nodes = graphRes?.nodes || 0;
-    const edges = graphRes?.edges || 0;
+    const nodes = Number(graphRes?.totalNodes ?? graphRes?.nodes ?? graphRes?.nodeCount ?? 0);
+    const edges = Number(graphRes?.totalEdges ?? graphRes?.edges ?? graphRes?.edgeCount ?? 0);
     const cb = healthRes?.circuitBreaker?.state || "closed";
     const heapMB = h?.memory ? Math.round(h.memory.heapUsed / 1048576) : 0;
     const uptime = h?.uptimeSeconds ? Math.round(h.uptimeSeconds) : 0;
@@ -419,7 +460,7 @@ async function runStatus() {
     const tokensSaved = estFullTokens - estInjectedTokens;
     const pctSaved = estFullTokens > 0 ? Math.round((tokensSaved / estFullTokens) * 100) : 0;
 
-    p.log.success(`Connected — v${version} on port ${port}`);
+    p.log.success(`Connected — v${version} at ${base}`);
 
     const lines = [
       `Health:       ${status === "healthy" ? "✓ healthy" : status}`,
@@ -430,7 +471,7 @@ async function runStatus() {
       `Circuit:      ${cb}`,
       `Heap:         ${heapMB} MB`,
       `Uptime:       ${uptime}s`,
-      `Viewer:       http://localhost:${port + 2}`,
+      `Viewer:       ${getViewerUrl()}`,
     ];
 
     if (obsCount > 0) {
@@ -440,9 +481,108 @@ async function runStatus() {
       lines.push(`  Injected:     ~${estInjectedTokens.toLocaleString()} tokens`);
     }
 
+    if (flagsRes) {
+      const provider = flagsRes.provider === "llm" ? "✓ llm" : "✗ noop (no key)";
+      const embed = flagsRes.embeddingProvider === "embeddings" ? "✓ embeddings" : "bm25-only";
+      const flagRows = (flagsRes.flags || []).map((f: { key: string; enabled: boolean; label: string }) =>
+        `  ${f.enabled ? "✓" : "✗"} ${f.key.padEnd(32)} ${f.label}`
+      );
+      lines.push("");
+      lines.push(`Provider:     ${provider}`);
+      lines.push(`Embeddings:   ${embed}`);
+      lines.push(`Flags:`);
+      flagRows.forEach((r: string) => lines.push(r));
+    }
+
     p.note(lines.join("\n"), "agentmemory");
   } catch (err) {
     p.log.error(err instanceof Error ? err.message : String(err));
+    process.exit(1);
+  }
+}
+
+type DoctorCheck = { name: string; ok: boolean; hint?: string };
+
+function formatChecks(checks: DoctorCheck[]): string {
+  return checks
+    .map((c) => `${c.ok ? "✓" : "✗"} ${c.name}${c.hint ? `\n   ${c.hint}` : ""}`)
+    .join("\n");
+}
+
+async function runDoctor() {
+  p.intro("agentmemory doctor");
+  const base = getBaseUrl();
+  const viewerUrl = getViewerUrl();
+  const checks: DoctorCheck[] = [];
+
+  const serverUp = await isEngineRunning();
+  checks.push({
+    name: "Server reachable",
+    ok: serverUp,
+    hint: serverUp ? undefined : `Start with: npx @agentmemory/agentmemory (tried ${base})`,
+  });
+
+  if (!serverUp) {
+    p.note(formatChecks(checks), "server unreachable");
+    process.exit(1);
+  }
+
+  const [health, flags, graph] = await Promise.all([
+    apiFetch<any>(base, "health", 3000),
+    apiFetch<any>(base, "config/flags", 3000),
+    apiFetch<any>(base, "graph/stats", 3000),
+  ]);
+
+  const viewerUp = await fetch(viewerUrl, { signal: AbortSignal.timeout(2000) })
+    .then((r) => r.ok)
+    .catch(() => false);
+
+  const hasLlm = flags?.provider === "llm";
+  const hasEmbed = flags?.embeddingProvider === "embeddings";
+  const graphNodeCount = Number(graph?.totalNodes ?? graph?.nodes ?? graph?.nodeCount ?? 0);
+  const graphHas = graphNodeCount > 0;
+
+  checks.push(
+    {
+      name: "Health status",
+      ok: health?.status === "healthy",
+      hint: health?.status === "healthy" ? undefined : `Status: ${health?.status || "unknown"}`,
+    },
+    {
+      name: "Viewer reachable",
+      ok: viewerUp,
+      hint: viewerUp ? undefined : `${viewerUrl} not responding`,
+    },
+    {
+      name: "LLM provider",
+      ok: hasLlm,
+      hint: hasLlm ? undefined : "export ANTHROPIC_API_KEY=sk-ant-... (or GEMINI/OPENROUTER/MINIMAX) then restart",
+    },
+    {
+      name: "Embedding provider",
+      ok: hasEmbed,
+      hint: hasEmbed ? undefined : "Running BM25-only. Add OPENAI_API_KEY / VOYAGE_API_KEY / COHERE_API_KEY / OLLAMA_HOST for semantic recall",
+    },
+  );
+
+  for (const f of (flags?.flags || []) as { label: string; enabled: boolean; enableHow: string }[]) {
+    checks.push({ name: f.label, ok: f.enabled, hint: f.enabled ? undefined : f.enableHow });
+  }
+
+  checks.push({
+    name: "Knowledge graph populated",
+    ok: graphHas,
+    hint: graphHas ? undefined : "Graph is empty. Run a session with GRAPH_EXTRACTION_ENABLED=true, or POST /agentmemory/graph/extract",
+  });
+
+  const passed = checks.filter((c) => c.ok).length;
+  const total = checks.length;
+  p.note(formatChecks(checks), `${passed}/${total} checks passing`);
+
+  if (passed === total) {
+    p.outro("✓ All checks passed. agentmemory is healthy.");
+  } else {
+    p.outro(`${total - passed} issue(s) — follow hints above to fix.`);
     process.exit(1);
   }
 }
@@ -677,7 +817,7 @@ async function runDemo() {
     `Notice: searching "database performance optimization"`,
     `found the N+1 query fix — keyword matching can't do that.`,
     "",
-    `Viewer:        http://localhost:${port + 2}`,
+    `Viewer:        ${getViewerUrl()}`,
     `Clean up with: curl -X DELETE "${base}/agentmemory/sessions?project=${demoProject}"`,
   ];
 
@@ -911,7 +1051,7 @@ async function runImportJsonl(): Promise<void> {
       `imported ${json.imported ?? 0} file(s), ${json.observations ?? 0} observation(s) across ${json.sessionIds?.length || 0} session(s)`,
     );
     if (json.sessionIds && json.sessionIds.length > 0) {
-      p.log.info(`View at http://localhost:${port + 2} → Replay tab`);
+      p.log.info(`View at ${getViewerUrl()} → Replay tab`);
     }
   } catch (err) {
     spinner.stop("failed");
@@ -926,6 +1066,7 @@ async function runImportJsonl(): Promise<void> {
 
 const commands: Record<string, () => Promise<void>> = {
   status: runStatus,
+  doctor: runDoctor,
   demo: runDemo,
   upgrade: runUpgrade,
   mcp: runMcp,
