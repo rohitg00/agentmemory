@@ -206,7 +206,13 @@ async function findJsonlFiles(
 ): Promise<{ files: string[]; truncated: boolean; discovered: number }> {
   const out: string[] = [];
   let discovered = 0;
+  // Cap how far we walk past the user's requested limit. We keep counting
+  // beyond `limit` so we can report `truncated`/`discovered` accurately,
+  // but we stop the walk well before million-file trees can lock the
+  // 30s function timeout.
+  const traversalCap = Math.max(limit * 10, 10_000);
   async function walk(dir: string) {
+    if (discovered >= traversalCap) return;
     let names: string[];
     try {
       names = await readdir(dir);
@@ -214,6 +220,7 @@ async function findJsonlFiles(
       return;
     }
     for (const name of names) {
+      if (discovered >= traversalCap) return;
       const full = join(dir, name);
       let st;
       try {
@@ -299,7 +306,14 @@ export function registerReplayFunctions(sdk: ISdk, kv: StateKV): void {
         return { success: false, error: "path not found" };
       }
 
-      const maxFiles = data.maxFiles && data.maxFiles > 0 ? data.maxFiles : 200;
+      const MAX_FILES_DEFAULT = 200;
+      const MAX_FILES_UPPER_BOUND = 1000;
+      const maxFiles =
+        Number.isInteger(data.maxFiles) &&
+        (data.maxFiles as number) > 0 &&
+        (data.maxFiles as number) <= MAX_FILES_UPPER_BOUND
+          ? (data.maxFiles as number)
+          : MAX_FILES_DEFAULT;
       let files: string[] = [];
       let truncated = false;
       let discovered = 0;

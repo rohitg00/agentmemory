@@ -36,7 +36,7 @@ Commands:
   upgrade            Upgrade local deps + iii runtime (best effort)
   mcp                Start standalone MCP server (no engine required)
   import-jsonl [p]   Import Claude Code JSONL transcripts (default: ~/.claude/projects)
-                     Use --max-files <N> to override the 200-file scan cap (default: 200)
+                     Use --max-files <N> or --max-files=<N> to override the 200-file scan cap (default: 200)
 
 Options:
   --help, -h         Show this help
@@ -961,21 +961,36 @@ async function runMcp(): Promise<void> {
 }
 
 async function runImportJsonl(): Promise<void> {
-  const nonFlagArgs = args.slice(1).filter((a) => !a.startsWith("-"));
-  const pathArg = nonFlagArgs[0];
-
   let maxFiles: number | undefined;
-  const flagIdx = args.findIndex((a) => a === "--max-files");
-  if (flagIdx !== -1 && args[flagIdx + 1]) {
-    const parsed = parseInt(args[flagIdx + 1]!, 10);
-    if (!Number.isNaN(parsed) && parsed > 0) maxFiles = parsed;
-  } else {
-    const eqArg = args.find((a) => a.startsWith("--max-files="));
-    if (eqArg) {
-      const parsed = parseInt(eqArg.slice("--max-files=".length), 10);
-      if (!Number.isNaN(parsed) && parsed > 0) maxFiles = parsed;
+  const tail = args.slice(1);
+  const positional: string[] = [];
+  for (let i = 0; i < tail.length; i++) {
+    const a = tail[i]!;
+    if (a === "--max-files") {
+      const raw = tail[i + 1];
+      const parsed = raw !== undefined ? parseInt(raw, 10) : NaN;
+      if (Number.isInteger(parsed) && parsed > 0) {
+        maxFiles = parsed;
+      } else if (raw !== undefined) {
+        p.log.warn(`Ignoring --max-files ${raw}: expected a positive integer.`);
+      }
+      i++;
+      continue;
     }
+    if (a.startsWith("--max-files=")) {
+      const raw = a.slice("--max-files=".length);
+      const parsed = parseInt(raw, 10);
+      if (Number.isInteger(parsed) && parsed > 0) {
+        maxFiles = parsed;
+      } else {
+        p.log.warn(`Ignoring --max-files=${raw}: expected a positive integer.`);
+      }
+      continue;
+    }
+    if (a.startsWith("-")) continue;
+    positional.push(a);
   }
+  const pathArg = positional[0];
 
   const port = getRestPort();
   const base = `http://localhost:${port}`;
