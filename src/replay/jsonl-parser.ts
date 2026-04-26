@@ -90,7 +90,7 @@ export function parseJsonlText(text: string, fallbackSessionId?: string): Parsed
     }
   }
 
-  let sessionId = fallbackSessionId || "";
+  let sessionId = "";
   let cwd = "";
   let firstTs = "";
   let lastTs = "";
@@ -164,7 +164,7 @@ export function parseJsonlText(text: string, fallbackSessionId?: string): Parsed
     }
   }
 
-  const effectiveSessionId = sessionId || generateId("sess");
+  const effectiveSessionId = sessionId || fallbackSessionId || generateId("sess");
   for (const obs of observations) {
     if (obs.sessionId === "imported") obs.sessionId = effectiveSessionId;
   }

@@ -200,10 +200,13 @@ async function loadObservations(
   return rows.map((r) => (isRawShape(r) ? r : rawFromCompressed(r as CompressedObservation)));
 }
 
-async function findJsonlFiles(root: string, limit = 200): Promise<string[]> {
+async function findJsonlFiles(
+  root: string,
+  limit = 200,
+): Promise<{ files: string[]; truncated: boolean; discovered: number }> {
   const out: string[] = [];
+  let discovered = 0;
   async function walk(dir: string) {
-    if (out.length >= limit) return;
     let names: string[];
     try {
       names = await readdir(dir);
@@ -211,7 +214,6 @@ async function findJsonlFiles(root: string, limit = 200): Promise<string[]> {
       return;
     }
     for (const name of names) {
-      if (out.length >= limit) return;
       const full = join(dir, name);
       let st;
       try {
@@ -223,12 +225,13 @@ async function findJsonlFiles(root: string, limit = 200): Promise<string[]> {
       if (st.isDirectory()) {
         await walk(full);
       } else if (st.isFile() && name.endsWith(".jsonl")) {
-        out.push(full);
+        discovered++;
+        if (out.length < limit) out.push(full);
       }
     }
   }
   await walk(root);
-  return out;
+  return { files: out, truncated: discovered > out.length, discovered };
 }
 
 export function registerReplayFunctions(sdk: ISdk, kv: StateKV): void {
@@ -267,6 +270,9 @@ export function registerReplayFunctions(sdk: ISdk, kv: StateKV): void {
           imported: number;
           sessionIds: string[];
           observations: number;
+          discovered: number;
+          truncated: boolean;
+          maxFiles: number;
         }
       | { success: false; error: string }
     > => {
@@ -293,17 +299,32 @@ export function registerReplayFunctions(sdk: ISdk, kv: StateKV): void {
         return { success: false, error: "path not found" };
       }
 
+      const maxFiles = data.maxFiles && data.maxFiles > 0 ? data.maxFiles : 200;
       let files: string[] = [];
+      let truncated = false;
+      let discovered = 0;
       if (stat.isDirectory()) {
-        files = await findJsonlFiles(abs, data.maxFiles || 200);
+        const found = await findJsonlFiles(abs, maxFiles);
+        files = found.files;
+        truncated = found.truncated;
+        discovered = found.discovered;
       } else if (stat.isFile() && abs.endsWith(".jsonl")) {
         files = [abs];
+        discovered = 1;
       } else {
         return { success: false, error: "path must be a .jsonl file or directory" };
       }
 
       if (files.length === 0) {
-        return { success: true, imported: 0, sessionIds: [], observations: 0 };
+        return {
+          success: true,
+          imported: 0,
+          sessionIds: [],
+          observations: 0,
+          discovered,
+          truncated,
+          maxFiles,
+        };
       }
 
       const sessionIds: string[] = [];
@@ -399,6 +420,9 @@ export function registerReplayFunctions(sdk: ISdk, kv: StateKV): void {
         imported: files.length,
         sessionIds,
         observations: observationCount,
+        discovered,
+        truncated,
+        maxFiles,
       };
     },
   );

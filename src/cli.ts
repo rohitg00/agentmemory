@@ -36,6 +36,7 @@ Commands:
   upgrade            Upgrade local deps + iii runtime (best effort)
   mcp                Start standalone MCP server (no engine required)
   import-jsonl [p]   Import Claude Code JSONL transcripts (default: ~/.claude/projects)
+                     Use --max-files <N> to override the 200-file scan cap (default: 200)
 
 Options:
   --help, -h         Show this help
@@ -962,6 +963,20 @@ async function runMcp(): Promise<void> {
 async function runImportJsonl(): Promise<void> {
   const nonFlagArgs = args.slice(1).filter((a) => !a.startsWith("-"));
   const pathArg = nonFlagArgs[0];
+
+  let maxFiles: number | undefined;
+  const flagIdx = args.findIndex((a) => a === "--max-files");
+  if (flagIdx !== -1 && args[flagIdx + 1]) {
+    const parsed = parseInt(args[flagIdx + 1]!, 10);
+    if (!Number.isNaN(parsed) && parsed > 0) maxFiles = parsed;
+  } else {
+    const eqArg = args.find((a) => a.startsWith("--max-files="));
+    if (eqArg) {
+      const parsed = parseInt(eqArg.slice("--max-files=".length), 10);
+      if (!Number.isNaN(parsed) && parsed > 0) maxFiles = parsed;
+    }
+  }
+
   const port = getRestPort();
   const base = `http://localhost:${port}`;
 
@@ -990,6 +1005,7 @@ async function runImportJsonl(): Promise<void> {
 
   const body: Record<string, unknown> = {};
   if (pathArg) body["path"] = pathArg;
+  if (maxFiles !== undefined) body["maxFiles"] = maxFiles;
 
   const headers: Record<string, string> = { "content-type": "application/json" };
   const secret = process.env["AGENTMEMORY_SECRET"];
@@ -1013,6 +1029,9 @@ async function runImportJsonl(): Promise<void> {
       imported?: number;
       sessionIds?: string[];
       observations?: number;
+      discovered?: number;
+      truncated?: boolean;
+      maxFiles?: number;
     } = {};
     if (text.length > 0) {
       try {
@@ -1050,6 +1069,15 @@ async function runImportJsonl(): Promise<void> {
     spinner.stop(
       `imported ${json.imported ?? 0} file(s), ${json.observations ?? 0} observation(s) across ${json.sessionIds?.length || 0} session(s)`,
     );
+    if (json.truncated) {
+      const cap = json.maxFiles ?? 200;
+      const skipped = (json.discovered ?? 0) - (json.imported ?? 0);
+      p.log.warn(
+        `Hit the ${cap}-file scan cap; ${skipped} of ${json.discovered ?? "?"} discovered file(s) were skipped. ` +
+          `Re-run with --max-files=<N> (e.g. --max-files=${Math.max((json.discovered ?? cap) + 100, cap * 2)}) ` +
+          `or batch by subdirectory.`,
+      );
+    }
     if (json.sessionIds && json.sessionIds.length > 0) {
       p.log.info(`View at ${getViewerUrl()} → Replay tab`);
     }

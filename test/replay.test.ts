@@ -58,6 +58,45 @@ describe("parseJsonlText", () => {
     const out = parseJsonlText("");
     expect(out.observations).toHaveLength(0);
   });
+
+  it("prefers the file's sessionId over the fallback", () => {
+    const text = [
+      JSON.stringify({
+        type: "user",
+        sessionId: "real-session-from-file",
+        timestamp: "2026-01-01T00:00:00.000Z",
+        message: { role: "user", content: [{ type: "text", text: "hi" }] },
+      }),
+    ].join("\n");
+    const out = parseJsonlText(text, "fallback-should-be-ignored");
+    expect(out.sessionId).toBe("real-session-from-file");
+    for (const obs of out.observations) {
+      expect(obs.sessionId).toBe("real-session-from-file");
+    }
+  });
+
+  it("returns the same sessionId across repeated parses of one file", () => {
+    const text = JSON.stringify({
+      type: "user",
+      sessionId: "stable-id",
+      timestamp: "2026-01-01T00:00:00.000Z",
+      message: { role: "user", content: [{ type: "text", text: "hi" }] },
+    });
+    const a = parseJsonlText(text, "fb-1");
+    const b = parseJsonlText(text, "fb-2");
+    expect(a.sessionId).toBe("stable-id");
+    expect(b.sessionId).toBe("stable-id");
+  });
+
+  it("uses the fallback only when the file has no sessionId", () => {
+    const text = JSON.stringify({
+      type: "user",
+      timestamp: "2026-01-01T00:00:00.000Z",
+      message: { role: "user", content: [{ type: "text", text: "hi" }] },
+    });
+    const out = parseJsonlText(text, "fb-used");
+    expect(out.sessionId).toBe("fb-used");
+  });
 });
 
 describe("projectTimeline", () => {
