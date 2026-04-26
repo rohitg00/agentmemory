@@ -45,7 +45,7 @@ http://localhost:3113 to watch memories being captured live.
 If I want deeper integration — pre-LLM context injection, turn-level
 capture, memory-write mirroring to MEMORY.md, and system prompt block
 injection — copy `integrations/hermes` from the agentmemory repo to
-`~/.hermes/plugins/memory/agentmemory` instead. That gives me the
+`~/.hermes/plugins/agentmemory` instead. That gives me the
 6-hook memory provider plugin on top of the MCP server.
 ```
 
@@ -75,7 +75,7 @@ npx @agentmemory/agentmemory
 Copy this folder to your Hermes plugins directory:
 
 ```bash
-cp -r integrations/hermes ~/.hermes/plugins/memory/agentmemory
+cp -r integrations/hermes ~/.hermes/plugins/agentmemory
 ```
 
 Start the agentmemory server:
