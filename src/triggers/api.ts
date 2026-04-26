@@ -1323,7 +1323,7 @@ export function registerApiTriggers(
     config: { api_path: "/agentmemory/snapshot/restore", http_method: "POST" },
   });
 
-  sdk.registerFunction("api::memories", 
+  sdk.registerFunction("api::memories",
     async (req: ApiRequest): Promise<Response> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
@@ -1337,6 +1337,27 @@ export function registerApiTriggers(
     type: "http",
     function_id: "api::memories",
     config: { api_path: "/agentmemory/memories", http_method: "GET" },
+  });
+
+  sdk.registerFunction("api::memory-by-id",
+    async (req: ApiRequest): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const id = req.path_params?.["id"];
+      if (!id || typeof id !== "string") {
+        return { status_code: 400, body: { error: "id path parameter is required" } };
+      }
+      const memory = await kv.get<import("../types.js").Memory>(KV.memories, id);
+      if (!memory) {
+        return { status_code: 404, body: { error: `memory not found: ${id}` } };
+      }
+      return { status_code: 200, body: { memory } };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::memory-by-id",
+    config: { api_path: "/agentmemory/memories/:id", http_method: "GET" },
   });
 
   sdk.registerFunction("api::semantic-list",
