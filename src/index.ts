@@ -104,6 +104,25 @@ function hasGetMeter(
   );
 }
 
+// Top-level safety net for iii-engine invocation timeouts (issue #204).
+// Under sustained write load (e.g. Claude Code hooks across many
+// projects) `state::set` can occasionally exceed the SDK's 30s timeout.
+// We don't want one such timeout to terminate the long-lived memory
+// service — the rejection is surfaced to the relevant call site via
+// .catch() where it matters; everything else is logged-and-continued.
+// Throttle logs to avoid spamming on bursts.
+let lastUnhandledLogAt = 0;
+process.on("unhandledRejection", (reason) => {
+  const now = Date.now();
+  if (now - lastUnhandledLogAt < 60_000) return;
+  lastUnhandledLogAt = now;
+  const r = reason as { code?: string; function_id?: string; message?: string };
+  console.warn(
+    `[agentmemory] unhandledRejection (suppressed):`,
+    r?.code ? `${r.code} ${r.function_id ?? ""} ${r.message ?? ""}`.trim() : reason,
+  );
+});
+
 async function main() {
   const config = loadConfig();
   const embeddingConfig = loadEmbeddingConfig();

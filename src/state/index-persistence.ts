@@ -2,11 +2,14 @@ import { SearchIndex } from "./search-index.js";
 import { VectorIndex } from "./vector-index.js";
 import type { StateKV } from "./kv.js";
 import { KV } from "./schema.js";
+import { logger } from "../logger.js";
 
 const DEBOUNCE_MS = 5000;
+const FAILURE_LOG_THROTTLE_MS = 60_000;
 
 export class IndexPersistence {
   private timer: ReturnType<typeof setTimeout> | null = null;
+  private lastFailureLogAt = 0;
 
   constructor(
     private kv: StateKV,
@@ -16,7 +19,13 @@ export class IndexPersistence {
 
   scheduleSave(): void {
     if (this.timer) clearTimeout(this.timer);
-    this.timer = setTimeout(() => this.save(), DEBOUNCE_MS);
+    // setTimeout discards the returned promise, so any rejection inside
+    // save() would surface as unhandledRejection and crash the process
+    // under sustained iii-engine write timeouts (issue #204). Funnel
+    // rejections through logFailure() instead.
+    this.timer = setTimeout(() => {
+      this.save().catch((err) => this.logFailure(err));
+    }, DEBOUNCE_MS);
   }
 
   async save(): Promise<void> {
@@ -24,9 +33,13 @@ export class IndexPersistence {
       clearTimeout(this.timer);
       this.timer = null;
     }
-    await this.kv.set(KV.bm25Index, "data", this.bm25.serialize());
-    if (this.vector && this.vector.size > 0) {
-      await this.kv.set(KV.bm25Index, "vectors", this.vector.serialize());
+    try {
+      await this.kv.set(KV.bm25Index, "data", this.bm25.serialize());
+      if (this.vector && this.vector.size > 0) {
+        await this.kv.set(KV.bm25Index, "vectors", this.vector.serialize());
+      }
+    } catch (err) {
+      this.logFailure(err);
     }
   }
 
@@ -59,5 +72,24 @@ export class IndexPersistence {
       clearTimeout(this.timer);
       this.timer = null;
     }
+  }
+
+  private logFailure(err: unknown): void {
+    const now = Date.now();
+    // Throttle: persistence failures under load arrive in bursts
+    // (iii-engine queue pressure). Logging every debounce flush adds
+    // noise without information.
+    if (now - this.lastFailureLogAt < FAILURE_LOG_THROTTLE_MS) return;
+    this.lastFailureLogAt = now;
+    const code = (err as { code?: string })?.code;
+    const message = err instanceof Error ? err.message : String(err);
+    logger.warn("index persistence: failed to save BM25/vector index", {
+      code,
+      message,
+      hint:
+        code === "TIMEOUT"
+          ? "iii-engine state::set timed out; recent index updates remain in memory and will retry on the next debounce flush"
+          : undefined,
+    });
   }
 }
