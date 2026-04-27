@@ -8,6 +8,7 @@ import type { ResilientProvider } from "../providers/resilient.js";
 import { VERSION } from "../version.js";
 import { timingSafeCompare } from "../auth.js";
 import { renderViewerDocument } from "../viewer/document.js";
+import { MAX_FILES_UPPER_BOUND } from "../functions/replay.js";
 import {
   isGraphExtractionEnabled,
   isConsolidationEnabled,
@@ -486,13 +487,20 @@ export function registerApiTriggers(
         payload.path = body.path.trim();
       }
       if (body.maxFiles !== undefined) {
-        if (!Number.isInteger(body.maxFiles) || (body.maxFiles as number) < 1) {
+        const n = body.maxFiles as number;
+        if (
+          !Number.isInteger(n) ||
+          n < 1 ||
+          n > MAX_FILES_UPPER_BOUND
+        ) {
           return {
             status_code: 400,
-            body: { error: "maxFiles must be a positive integer" },
+            body: {
+              error: `maxFiles must be an integer between 1 and ${MAX_FILES_UPPER_BOUND}`,
+            },
           };
         }
-        payload.maxFiles = body.maxFiles as number;
+        payload.maxFiles = n;
       }
       const result = await sdk.trigger({
         function_id: "mem::replay::import-jsonl",

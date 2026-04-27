@@ -36,7 +36,8 @@ Commands:
   upgrade            Upgrade local deps + iii runtime (best effort)
   mcp                Start standalone MCP server (no engine required)
   import-jsonl [p]   Import Claude Code JSONL transcripts (default: ~/.claude/projects)
-                     Use --max-files <N> or --max-files=<N> to override the 200-file scan cap (default: 200)
+                     --max-files <N> | --max-files=<N>: override scan cap (default 200, max 1000;
+                     out-of-range is rejected; for trees >1000 files, batch by subdirectory)
 
 Options:
   --help, -h         Show this help
@@ -961,6 +962,11 @@ async function runMcp(): Promise<void> {
 }
 
 async function runImportJsonl(): Promise<void> {
+  // Long-form flags that take a value. Their value tokens must be
+  // consumed alongside the flag so they don't leak into positional
+  // args (e.g. `--port 3112 import-jsonl` would otherwise turn
+  // 3112 into pathArg).
+  const VALUE_FLAGS = new Set(["--port", "--tools"]);
   let maxFiles: number | undefined;
   const tail = args.slice(1);
   const positional: string[] = [];
@@ -985,6 +991,10 @@ async function runImportJsonl(): Promise<void> {
       } else {
         p.log.warn(`Ignoring --max-files=${raw}: expected a positive integer.`);
       }
+      continue;
+    }
+    if (VALUE_FLAGS.has(a)) {
+      i++;
       continue;
     }
     if (a.startsWith("-")) continue;
@@ -1046,7 +1056,9 @@ async function runImportJsonl(): Promise<void> {
       observations?: number;
       discovered?: number;
       truncated?: boolean;
+      traversalCapped?: boolean;
       maxFiles?: number;
+      maxFilesUpperBound?: number;
     } = {};
     if (text.length > 0) {
       try {
@@ -1086,12 +1098,30 @@ async function runImportJsonl(): Promise<void> {
     );
     if (json.truncated) {
       const cap = json.maxFiles ?? 200;
-      const skipped = (json.discovered ?? 0) - (json.imported ?? 0);
-      p.log.warn(
-        `Hit the ${cap}-file scan cap; ${skipped} of ${json.discovered ?? "?"} discovered file(s) were skipped. ` +
-          `Re-run with --max-files=<N> (e.g. --max-files=${Math.max((json.discovered ?? cap) + 100, cap * 2)}) ` +
-          `or batch by subdirectory.`,
-      );
+      const upper = json.maxFilesUpperBound ?? 1000;
+      const discovered = json.discovered ?? 0;
+      const skipped = discovered - (json.imported ?? 0);
+      const discoveredLabel = json.traversalCapped
+        ? `${discovered}+ (traversal halted at safety cap)`
+        : String(discovered);
+      const baseMsg = `Hit the ${cap}-file scan cap; ${skipped} of ${discoveredLabel} discovered file(s) were skipped.`;
+      // If we already saw more than the server's hard cap (or the
+      // walker stopped early), bumping --max-files won't help on its
+      // own — recommend batching by subdirectory.
+      if (discovered > upper || json.traversalCapped) {
+        p.log.warn(
+          `${baseMsg} Tree exceeds the server's --max-files limit of ${upper}; ` +
+            `batch by subdirectory (run import-jsonl once per project under ~/.claude/projects).`,
+        );
+      } else {
+        const suggested = Math.min(
+          Math.max((discovered || cap) + 100, cap * 2),
+          upper,
+        );
+        p.log.warn(
+          `${baseMsg} Re-run with --max-files=${suggested} (max ${upper}) or batch by subdirectory.`,
+        );
+      }
     }
     if (json.sessionIds && json.sessionIds.length > 0) {
       p.log.info(`View at ${getViewerUrl()} → Replay tab`);
