@@ -6,9 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.9.4] — 2026-04-29
+
+Bug-fix patch. Fixes a silent gap where the knowledge graph never auto-populated despite `GRAPH_EXTRACTION_ENABLED=true`, and adds a doctor check that detects when Claude Code fails to load plugin hooks.
+
 ### Fixed
 
 - **`mem::graph-extract` now auto-fires at session end.** When `GRAPH_EXTRACTION_ENABLED=true`, the function was registered and the REST endpoint was live, but no internal caller invoked it — the graph KV stayed empty unless users manually `POST`ed to `/agentmemory/graph/extract`. `event::session::stopped` now triggers it (fire-and-forget, idempotent via existing node/edge merge keys), so enabling the flag actually populates the graph. README pipeline diagram updated to show graph extraction at the Stop/SessionEnd phase rather than implying it runs per PostToolUse. (#210)
+
+### Added
+
+- **`agentmemory doctor` detects Claude Code plugin-hook load state.** Scans `~/.claude/debug/latest` for the `Loaded hooks from standard location for plugin agentmemory` line. Surfaces the silent failure mode where the plugin is enabled but Claude Code never registered the hooks — users previously got no signal, hooks just silently did nothing. Hint points at reinstall + session restart and the CC version floor (>= 2.1.x). Skips silently when `~/.claude/debug` is absent. (refs #212)
+
+[0.9.4]: https://github.com/rohitg00/agentmemory/compare/v0.9.3...v0.9.4
 
 ## [0.9.3] — 2026-04-24
 
