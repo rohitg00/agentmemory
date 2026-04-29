@@ -44,7 +44,7 @@ async function main() {
       method: "POST",
       headers: authHeaders(),
       body: JSON.stringify({ sessionId }),
-      signal: AbortSignal.timeout(30000),
+      signal: AbortSignal.timeout(120000), // Increased from 30s to 120s
     });
   } catch {
     // summarize is best-effort
