@@ -1,10 +1,7 @@
 #!/usr/bin/env node
+import { t as isSdkChildContext } from "./sdk-guard-DI1NUOS9.mjs";
+
 //#region src/hooks/subagent-start.ts
-function isSdkChildContext(payload) {
-	if (process.env["AGENTMEMORY_SDK_CHILD"] === "1") return true;
-	if (!payload || typeof payload !== "object") return false;
-	return payload.entrypoint === "sdk-ts";
-}
 const REST_URL = process.env["AGENTMEMORY_URL"] || "http://localhost:3111";
 const SECRET = process.env["AGENTMEMORY_SECRET"] || "";
 function authHeaders() {
@@ -23,24 +20,23 @@ async function main() {
 	}
 	if (isSdkChildContext(data)) return;
 	const sessionId = data.session_id || "unknown";
-	try {
-		await fetch(`${REST_URL}/agentmemory/observe`, {
-			method: "POST",
-			headers: authHeaders(),
-			body: JSON.stringify({
-				hookType: "subagent_start",
-				sessionId,
-				project: data.cwd || process.cwd(),
-				cwd: data.cwd || process.cwd(),
-				timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-				data: {
-					agent_id: data.agent_id,
-					agent_type: data.agent_type
-				}
-			}),
-			signal: AbortSignal.timeout(2e3)
-		});
-	} catch {}
+	const project = data.cwd || process.cwd();
+	fetch(`${REST_URL}/agentmemory/observe`, {
+		method: "POST",
+		headers: authHeaders(),
+		body: JSON.stringify({
+			hookType: "subagent_start",
+			sessionId,
+			project,
+			cwd: project,
+			timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+			data: {
+				agent_id: data.agent_id,
+				agent_type: data.agent_type
+			}
+		}),
+		signal: AbortSignal.timeout(800)
+	}).catch(() => {});
 }
 main();
 

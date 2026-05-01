@@ -1,10 +1,6 @@
 #!/usr/bin/env node
 
-function isSdkChildContext(payload: unknown): boolean {
-  if (process.env["AGENTMEMORY_SDK_CHILD"] === "1") return true;
-  if (!payload || typeof payload !== "object") return false;
-  return (payload as { entrypoint?: unknown }).entrypoint === "sdk-ts";
-}
+import { isSdkChildContext } from "./sdk-guard.js";
 
 const REST_URL = process.env["AGENTMEMORY_URL"] || "http://localhost:3111";
 const SECRET = process.env["AGENTMEMORY_SECRET"] || "";
@@ -31,27 +27,28 @@ async function main() {
   if (isSdkChildContext(data)) return;
 
   const sessionId = (data.session_id as string) || "unknown";
+  const project = (data.cwd as string) || process.cwd();
 
-  try {
-    await fetch(`${REST_URL}/agentmemory/observe`, {
-      method: "POST",
-      headers: authHeaders(),
-      body: JSON.stringify({
-        hookType: "subagent_start",
-        sessionId,
-        project: data.cwd || process.cwd(),
-        cwd: data.cwd || process.cwd(),
-        timestamp: new Date().toISOString(),
-        data: {
-          agent_id: data.agent_id,
-          agent_type: data.agent_type,
-        },
-      }),
-      signal: AbortSignal.timeout(2000),
-    });
-  } catch {
-    // fire and forget
-  }
+  // Fire-and-forget: this is purely passive telemetry; nothing reads the
+  // response. The previous code carried a "fire and forget" comment in
+  // the catch block but actually awaited the request, which propagated
+  // REST latency into every Task/Agent dispatch.
+  fetch(`${REST_URL}/agentmemory/observe`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({
+      hookType: "subagent_start",
+      sessionId,
+      project,
+      cwd: project,
+      timestamp: new Date().toISOString(),
+      data: {
+        agent_id: data.agent_id,
+        agent_type: data.agent_type,
+      },
+    }),
+    signal: AbortSignal.timeout(800),
+  }).catch(() => {});
 }
 
 main();
