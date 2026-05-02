@@ -181,7 +181,7 @@ async function main() {
   initMetrics(meterAccessor as ((name: string) => import("@opentelemetry/api").Meter) | undefined);
 
   registerPrivacyFunction(sdk);
-  registerObserveFunction(sdk, kv, dedupMap, config.maxObservationsPerSession);
+  registerObserveFunction(sdk, kv, dedupMap, config.maxObservationsPerSession, vectorIndex, embeddingProvider);
   registerImageQuotaCleanup(sdk, kv);
   registerVisionSearchFunctions(sdk, kv, imageEmbeddingProvider);
   if (isSlotsEnabled()) {
