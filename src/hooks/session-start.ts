@@ -1,6 +1,16 @@
 #!/usr/bin/env node
 
-import { isSdkChildContext } from "./sdk-guard.js";
+// Inlined SDK-child guard (matches the convention of other hook scripts —
+// see e.g. stop.ts, subagent-stop.ts). Importing a shared helper across
+// multiple hook entries causes tsdown to emit a hash-named shared chunk
+// (sdk-guard-<HASH>.mjs), which is not stable across rebuilds and breaks
+// the compiled .mjs imports with ERR_MODULE_NOT_FOUND. Inlining sidesteps
+// that — every hook is a fully self-contained file.
+function isSdkChildContext(payload: unknown): boolean {
+  if (process.env["AGENTMEMORY_SDK_CHILD"] === "1") return true;
+  if (!payload || typeof payload !== "object") return false;
+  return (payload as { entrypoint?: unknown }).entrypoint === "sdk-ts";
+}
 
 // Session-start hook.
 //
