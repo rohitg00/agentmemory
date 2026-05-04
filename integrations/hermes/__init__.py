@@ -1,7 +1,7 @@
 """
 agentmemory memory provider for Hermes Agent.
 
-Drop this folder into ~/.hermes/plugins/memory/agentmemory/
+Drop this folder into ~/.hermes/plugins/agentmemory/
 or install via: hermes plugin install agentmemory
 
 Requires agentmemory server running: npx @agentmemory/agentmemory
@@ -91,7 +91,7 @@ class AgentMemoryProvider(MemoryProvider):
         if not _validate_url(base):
             return False
         try:
-            req = Request(f"{base}/", method="GET")
+            req = Request(f"{base}/agentmemory/health", method="GET")
             with urlopen(req, timeout=2):
                 return True
         except Exception:
