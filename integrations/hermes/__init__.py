@@ -91,9 +91,8 @@ class AgentMemoryProvider(MemoryProvider):
         if not _validate_url(base):
             return False
         try:
-            req = Request(f"{base}/", method="GET")
-            with urlopen(req, timeout=2):
-                return True
+            health = _api(base, "health", method="GET")
+            return bool(health and health.get("status") in ("healthy", "ok"))
         except Exception:
             return False
 
