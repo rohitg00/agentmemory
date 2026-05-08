@@ -198,7 +198,7 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
         if (info.role === "user") {
           const sid = (info.sessionID as string) || activeSessionId;
           if (sid) {
-            await observe(sid, "user_prompt_submit", {
+            await observe(sid, "prompt_submit", {
               agent: info.agent ?? null,
               model: info.model ?? null,
               system: ((info.system as string) || "").slice(0, 1000),
@@ -441,7 +441,7 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
       const textParts = parts.filter((p: any) => p.type === "text" && !p.synthetic && !p.ignored);
       const userText = textParts.map((p: any) => p.text || "").join("\n");
 
-      await observe(sid, "user_prompt_submit", {
+      await observe(sid, "prompt_submit", {
         agent: input.agent ?? null,
         model: input.model ?? null,
         variant: input.variant ?? null,
