@@ -166,17 +166,64 @@ System prompt = [OpenCode instructions] + [memory context] + [file enrichment] +
 | Coverage | Edit/Write/Read/Glob/Grep only | Edit/Write/Read/Glob/Grep only |
 | What gets injected | `<agentmemory-file-context>` + bug memories | Identical `/enrich` response |
 
+## MEMORY.md vs AGENTS.md: how context flows
+
+Claude Code and OpenCode take fundamentally different approaches to injecting memory context into the agent's system prompt.
+
+### Claude Code: file-backed bridge (two-hop)
+
+```
+agentmemory  ──write──▶  MEMORY.md  ──read──▶  Claude system prompt
+```
+
+- The `claude-bridge/sync` endpoint serializes agentmemory observations into a `MEMORY.md` file in the project root
+- Claude Code reads `MEMORY.md` on session start and prepends it to the system prompt
+- **Sync is periodic** — sessions only get fresh context when the bridge last ran (session end, pre-compact)
+- **Coupling**: memory data lives in a git-trackable file, visible to CI, team members, and other tools
+
+### OpenCode: direct injection (one-hop)
+
+```
+agentmemory  ──push──▶  OpenCode system prompt
+```
+
+- `experimental.chat.system.transform` calls `/context` at runtime and pushes the response directly into `output.system[]`
+- **Always current** — context is fetched at session start (once) and before file-touching turns (per-batch)
+- **No file intermediary** — no stale copies, no merge conflicts, no disk I/O
+- `AGENTS.md` is a static instruction file for project conventions, coding standards, and tool guidance — agentmemory does not read or write it
+
+### Tradeoffs
+
+| Dimension | Claude (MEMORY.md bridge) | OpenCode (direct injection) |
+|---|---|---|
+| Freshness | Stale between syncs | Always current (fetched at call time) |
+| Visibility | Human-readable file in repo | In-memory injection only |
+| Simplicity | Two moving parts (bridge + file) | One step (API → system prompt) |
+| Team sharing | File is git-trackable, CI-friendly | Memory shared via agentmemory server API |
+| Integration | Any tool can read MEMORY.md | Requires OpenCode plugin SDK |
+
+### Why OpenCode goes direct
+
+agentmemory already persists everything in SQLite (`data/state_store.db`). Adding an intermediate MEMORY.md file would duplicate data, introduce sync lag, and require the model to re-parse structured context from markdown. Direct injection delivers the same data with lower latency and zero staleness — the agent always sees what agentmemory knows right now.
+
 ## Slash commands
 
 - `/recall <query>` — Search past observations and lessons
 - `/remember <text>` — Save an insight to long-term memory
 
+## Session instruction injection
+
+Agentmemory usage instructions are injected into the system prompt on the first turn of every session via `experimental.chat.system.transform` (alongside memory context from `/context`). This is functionally equivalent to Claude Code's skills mechanism — the agent learns which `agentmemory_memory_*` tools to use and when, without needing separate skill invocations.
+
 ## What's not covered (vs Claude Code plugin)
 
 | Claude feature | Reason |
 |---|---|
-| SubagentStop | No explicit subtask-completion event; stop boundary is inferred from the observation timeline by the memory system |
+| SubagentStop | OpenCode's `SubtaskPart` type has no completion/result fields; subtask lifecycle ends are not exposed as distinct events in the OpenCode SDK |
 | TaskCompleted | No team/teammate concept in OpenCode; `todo.updated` captures task state changes as a partial equivalent |
 | Stop | `session.compacted` event handler exists; `experimental.session.compacting` injection hook defined in SDK but Go binary (v1.14.41) doesn't wire it — will auto-activate when upstream implements it |
+| Skills (remember/recall/forget/session-history) | Covered by injected system instructions via `experimental.chat.system.transform` — agent receives usage guidance on first turn |
+| Consolidation pipeline (crystals/auto + consolidate-pipeline) | Now called on `session.deleted` — mirrors Claude's `CONSOLIDATION_ENABLED=true` behavior |
+| Claude MEMORY.md bridge | OpenCode-specific; OpenCode uses its own AGENTS.md mechanism, not Claude's MEMORY.md |
 
 All other Claude Code hooks have direct or pipeline equivalents in this plugin. 12 of 12 Claude hook types covered.

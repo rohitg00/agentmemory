@@ -28,7 +28,7 @@ async function postJson(path: string, body: Record<string, unknown>): Promise<un
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(5000),
     });
-    return res.ok ? res.json() : null;
+    return res.ok ? await res.json() : null;
   } catch (e) {
     if (DEBUG) console.error(`[agentmemory] POST ${path} failed:`, (e as Error).message);
     return null;
@@ -57,6 +57,46 @@ const stashedFiles = new Set<string>();
 const seenSubtaskIds = new Map<string, Set<string>>();
 const seenToolCallIds = new Map<string, Set<string>>();
 const contextInjectedSessions = new Set<string>();
+
+const AGENTMEMORY_INSTRUCTIONS = `<agentmemory-instructions>
+You have access to agentmemory for persistent cross-session memory. Use these tools proactively.
+
+CORE TOOLS:
+
+memory_save — Save an insight, decision, or fact to long-term memory.
+  Required: content (text), concepts (2-5 comma-separated keywords), type (pattern/preference/architecture/bug/workflow/fact)
+  Optional: files (comma-separated paths)
+  Use when: user says "remember this", after discovering a bug, after making an architectural decision, after learning a project convention.
+
+memory_recall — Search past observations by keywords.
+  Use when: user says "recall", "what did we do", "do you remember", or needs context from past sessions.
+
+memory_smart_search — Hybrid semantic+keyword search with progressive disclosure.
+  Use when: you need the most relevant past context, fuzzy/conceptual searches, or recall doesn't find what you need.
+
+memory_sessions — List recent sessions with status and observation counts.
+  Use when: user asks about session/past history, "what did we work on".
+
+memory_file_history — Get past observations about specific files (across all sessions).
+  Use when: you're about to edit a file and want to know its history, common pitfalls, or past edits.
+
+memory_lesson_save — Save a lesson learned (what worked, what to avoid).
+  Use when: you discover a pattern that could help future sessions avoid mistakes.
+
+memory_lesson_recall — Search lessons by query. Returns lessons sorted by confidence.
+  Use when: before making a decision, check if past lessons apply.
+
+memory_governance_delete — Delete specific memories. Requires explicit user confirmation.
+  Use when: user says "forget this", "delete that memory".
+
+memory_patterns — Detect recurring patterns across sessions.
+  Use when: you want to understand project-level trends over time.
+
+memory_consolidate — Run the 4-tier memory consolidation pipeline.
+  Use when: you want to compress and organize accumulated session observations.
+
+All tools are prefixed with \`agentmemory_\`. Tool results are JSON. Always check what was returned before presenting to the user.
+</agentmemory-instructions>`;
 
 function extractFilePaths(args: Record<string, unknown>): string[] {
   const files: string[] = [];
@@ -174,6 +214,8 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
         const sid = props.info?.id || props.sessionID || activeSessionId;
         if (sid) {
           await post("/session/end", { sessionId: sid });
+          post("/crystals/auto", { olderThanDays: 0 });
+          post("/consolidate-pipeline", { tier: "all", force: true });
           if (sid === activeSessionId) activeSessionId = null;
           stashedFiles.clear();
           seenSubtaskIds.delete(sid);
@@ -500,6 +542,7 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
       if (!sid) return;
 
       if (!contextInjectedSessions.has(sid)) {
+        output.system.push(AGENTMEMORY_INSTRUCTIONS);
         const result = await postJson("/context", {
           sessionId: sid,
           project: projectPath,
@@ -508,8 +551,8 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
           if (Array.isArray(output.system)) {
             output.system.push((result as any).context);
           }
-          contextInjectedSessions.add(sid);
         }
+        contextInjectedSessions.add(sid);
       }
 
       if (stashedFiles.size === 0) return;
