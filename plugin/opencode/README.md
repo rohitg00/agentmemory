@@ -150,7 +150,7 @@ Restart OpenCode or open a new session. The plugin auto-captures everything.
 
 2. **File enrichment** (every turn with stashed files): calls `/agentmemory/enrich` with files stashed by `tool.execute.before`, `file.edited`, and `message.part.updated` (file parts). File-specific context (past observations, related bugs, semantic search) is injected into the system prompt.
 
-```
+```text
 System prompt = [OpenCode instructions] + [memory context] + [file enrichment] + [user message]
                                         ^                 ^
                                first turn only         every file-touching turn
