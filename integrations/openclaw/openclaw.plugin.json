@@ -1,0 +1,27 @@
+{
+  "id": "agentmemory",
+  "kind": "memory",
+  "name": "agentmemory",
+  "description": "Persistent cross-session memory for OpenClaw via agentmemory.",
+  "version": "0.9.4",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "enabled": { "type": "boolean" },
+      "base_url": { "type": "string" },
+      "token_budget": { "type": "number" },
+      "min_confidence": { "type": "number" },
+      "fallback_on_error": { "type": "boolean" },
+      "timeout_ms": { "type": "number" }
+    }
+  },
+  "uiHints": {
+    "enabled": { "label": "Enabled" },
+    "base_url": { "label": "Base URL", "help": "agentmemory REST server base URL" },
+    "token_budget": { "label": "Token Budget", "help": "Approximate context budget to inject before the agent starts" },
+    "min_confidence": { "label": "Min Confidence" },
+    "fallback_on_error": { "label": "Fallback On Error" },
+    "timeout_ms": { "label": "Timeout (ms)" }
+  }
+}

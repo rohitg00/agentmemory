@@ -1,0 +1,5 @@
+{
+  "name": "agentmemory-pi-extension",
+  "private": true,
+  "type": "module"
+}
