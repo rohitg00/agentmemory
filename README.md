@@ -43,7 +43,8 @@
   <a href="#how-it-works">How It Works</a> &bull;
   <a href="#mcp-server">MCP</a> &bull;
   <a href="#real-time-viewer">Viewer</a> &bull;
-  <a href="#iii-console--trace-level-engine-inspection">iii Console</a> &bull;
+  <a href="#iii-console">iii Console</a> &bull;
+  <a href="#powered-by-iii">Powered by iii</a> &bull;
   <a href="#configuration">Config</a> &bull;
   <a href="#api">API</a>
 </p>
@@ -724,9 +725,15 @@ open http://localhost:3113
 
 The viewer server binds to `127.0.0.1` by default. The REST-served `/agentmemory/viewer` endpoint follows the normal `AGENTMEMORY_SECRET` bearer-token rules. CSP headers use a per-response script nonce and disable inline handler attributes (`script-src-attr 'none'`).
 
-### iii console — trace-level engine inspection
+---
 
-agentmemory runs on the [iii engine](https://iii.dev), so the official [iii console](https://iii.dev/docs/console) gives you OpenTelemetry traces, the raw key/value state store, the stream monitor, and a direct function invoker for every piece of memory machinery. Use it to watch a `memory.search` call hit BM25 → embeddings → reranker in real time, replay a hook invocation, or poke individual functions without going through MCP.
+<h2 id="iii-console"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/section-viewer.svg"><img src="assets/tags/section-viewer.svg" alt="iii Console" height="32" /></picture></h2>
+
+The viewer at `:3113` shows what your agent **remembered**. The [iii console](https://iii.dev/docs/console) shows what your agent **did** — every memory op as an OpenTelemetry trace, every KV entry editable, every function invocable, every stream tappable. Two windows on the same memory: one product-shaped, one engine-shaped.
+
+Watch a `memory_smart_search` fire and see the BM25 scan → embedding lookup → RRF fusion → reranker as a waterfall. Edit a stuck consolidation timer in the KV browser. Replay a `PostToolUse` hook with a tweaked payload. Pin the WebSocket stream and watch observations land live.
+
+agentmemory ships this for free because every function, trigger, state scope, and stream is an iii primitive — nothing custom, nothing to instrument.
 
 <p align="center">
   <img src="assets/iii-console/dashboard.png" alt="iii console dashboard — system counters, application flow, registered triggers, live WebSocket status" width="720" />
@@ -773,6 +780,53 @@ Then open `http://localhost:3114`.
 If you want to export to Jaeger/Honeycomb/Grafana Tempo instead, change `exporter: memory` to `exporter: otlp` and set the collector endpoint per iii's observability docs.
 
 > **Heads-up:** no auth is enforced on the console itself — keep it bound to `127.0.0.1` (the default) and never expose it publicly.
+
+---
+
+<h2 id="powered-by-iii"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/section-architecture.svg"><img src="assets/tags/section-architecture.svg" alt="Powered by iii" height="32" /></picture></h2>
+
+agentmemory is **already a running [iii](https://iii.dev) instance**. Functions, triggers, KV state, streams, OTEL traces — all of it is iii primitives. You didn't install Postgres, Redis, Express, pm2, or Prometheus, because iii replaces them.
+
+That means one more command extends agentmemory with an entire new capability — no rewrite, no glue, no new server.
+
+### Extend agentmemory with one command
+
+```bash
+iii worker add iii-pubsub          # fan memory writes out to every connected instance
+iii worker add iii-cron            # scheduled consolidation, decay sweeps, snapshot rotation
+iii worker add iii-queue           # durable retries for embedding + compression jobs
+iii worker add iii-observability   # OTEL traces on every memory op (default on)
+iii worker add iii-sandbox         # run recalled code inside an isolated microVM
+iii worker add iii-database        # swap in a SQL-backed state adapter
+iii worker add mcp                 # generic MCP host alongside the agentmemory MCP
+```
+
+Each `iii worker add` registers new functions and triggers into the same engine agentmemory is already running on. The viewer and console pick them up immediately — no reload, no glue code, no new container.
+
+| `iii worker add` | What you get on top of agentmemory |
+|---|---|
+| [`iii-pubsub`](https://workers.iii.dev/workers/iii-pubsub) | Multi-instance memory: every `remember` fans out, every `search` reads the union |
+| [`iii-cron`](https://workers.iii.dev/workers/iii-cron) | Scheduled lifecycle — nightly consolidation, weekly snapshots, decay on a fixed clock |
+| [`iii-queue`](https://workers.iii.dev/workers/iii-queue) | Durable retries: failed embedding + compression jobs survive restart, no lost observations |
+| [`iii-observability`](https://workers.iii.dev/workers/iii-observability) | OTEL traces, metrics, logs on every function — wired in `iii-config.yaml` from day one |
+| [`iii-sandbox`](https://workers.iii.dev/workers/iii-sandbox) | Code that came out of `memory_recall` runs inside a throwaway VM, not your shell |
+| [`iii-database`](https://workers.iii.dev/workers/iii-database) | SQL-backed state adapter when you outgrow the in-memory KV defaults |
+| [`mcp`](https://workers.iii.dev/workers/mcp) | Stand up extra MCP servers next to agentmemory's, share the same engine |
+
+Full registry: [workers.iii.dev](https://workers.iii.dev). Every worker there composes through the same primitives agentmemory uses — and the agentmemory you already have is one of them.
+
+### What iii replaces
+
+| Traditional stack | agentmemory uses |
+|---|---|
+| Express.js / Fastify | iii HTTP Triggers |
+| SQLite / Postgres + pgvector | iii KV State + in-memory vector index |
+| SSE / Socket.io | iii Streams (WebSocket) |
+| pm2 / systemd | iii engine worker supervision |
+| Prometheus / Grafana | iii OTEL + health monitor |
+| Custom plugin systems | `iii worker add <name>` |
+
+**118 source files · ~21,800 LOC · 800 tests · 123 functions · 34 KV scopes** — all on three primitives. No `agentmemory plugin install`. The plugin system is iii itself.
 
 ---
 
@@ -911,25 +965,6 @@ Full endpoint list: [`src/triggers/api.ts`](src/triggers/api.ts)
 </details>
 
 ---
-
-<h2 id="architecture"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/section-architecture.svg"><img src="assets/tags/section-architecture.svg" alt="Architecture" height="32" /></picture></h2>
-
-Built on [iii-engine](https://iii.dev)'s three primitives — no Express, no Postgres, no Redis.
-
-**118 source files · ~21,800 LOC · 800 tests · 123 functions · 34 KV scopes**
-
-<details>
-<summary>What iii-engine replaces</summary>
-
-| Traditional stack | agentmemory uses |
-|---|---|
-| Express.js / Fastify | iii HTTP Triggers |
-| SQLite / Postgres + pgvector | iii KV State + in-memory vector index |
-| SSE / Socket.io | iii Streams (WebSocket) |
-| pm2 / systemd | iii-engine worker management |
-| Prometheus / Grafana | iii OTEL + health monitor |
-
-</details>
 
 <h2 id="development"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/section-development.svg"><img src="assets/tags/section-development.svg" alt="Development" height="32" /></picture></h2>
 
