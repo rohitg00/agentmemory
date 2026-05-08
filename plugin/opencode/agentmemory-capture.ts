@@ -64,6 +64,12 @@ function stashFor(sid: string): Set<string> {
   return s;
 }
 
+function pruneSessionMaps(sid: string): void {
+  stashedFiles.delete(sid);
+  seenSubtaskIds.delete(sid);
+  seenToolCallIds.delete(sid);
+}
+
 const AGENTMEMORY_INSTRUCTIONS = `<agentmemory-instructions>
 You have access to agentmemory for persistent cross-session memory. Use these tools proactively.
 
@@ -171,6 +177,7 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
         if (!sid || !status) return;
         if (status.type === "idle") {
           await post("/summarize", { sessionId: sid });
+          pruneSessionMaps(sid);
         }
         await observe(sid, "session_status", {
           status_type: status.type,
@@ -424,8 +431,9 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
 
       // ── file.edited ──
       if (type === "file.edited") {
-        if (activeSessionId && typeof props.file === "string" && props.file.length > 0) {
-          const stash = stashFor(activeSessionId);
+        const sid = props.sessionID || activeSessionId;
+        if (sid && typeof props.file === "string" && props.file.length > 0) {
+          const stash = stashFor(sid);
           stash.add(props.file);
           if (stash.size > MAX_STASHED_FILES) {
             const keep = [...stash].slice(-MAX_STASHED_FILES);
@@ -531,10 +539,11 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
     // ── tool.execute.before ──
     "tool.execute.before": async (input, output) => {
       if (!FILE_TOOLS.has(input.tool)) return;
-      if (!activeSessionId) return;
+      const sid = input.sessionID || activeSessionId;
+      if (!sid) return;
       const args = output.args as Record<string, unknown> | undefined;
       if (!args) return;
-      const stash = stashFor(activeSessionId);
+      const stash = stashFor(sid);
       for (const fp of extractFilePaths(args)) {
         stash.add(fp);
       }
@@ -551,9 +560,9 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
       if (!sid) return;
 
       if (!contextInjectedSessions.has(sid)) {
-        contextInjectedSessions.add(sid);
         if (!Array.isArray(output.system)) return;
         output.system.push(AGENTMEMORY_INSTRUCTIONS);
+        contextInjectedSessions.add(sid);
         const result = await postJson("/context", {
           sessionId: sid,
           project: projectPath,
