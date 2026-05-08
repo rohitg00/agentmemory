@@ -1984,4 +1984,50 @@ export function registerApiTriggers(
     return { status_code: 200, body: result };
   });
   sdk.registerTrigger({ type: "http", function_id: "api::insight-search", config: { api_path: "/agentmemory/insights/search", http_method: "POST" } });
+
+  sdk.registerFunction({ id: "api::outline-build" }, async (req: ApiRequest) => {
+    const denied = checkAuth(req, secret);
+    if (denied) return denied;
+    const body = (req.body as Record<string, unknown>) || {};
+    if (typeof body.path !== "string" || !body.path.trim()) {
+      return { status_code: 400, body: { error: "path is required" } };
+    }
+    const result = await sdk.trigger("mem::outline-build", {
+      path: body.path,
+      artifact_id: typeof body.artifact_id === "string" ? body.artifact_id : undefined,
+    });
+    return { status_code: 200, body: result };
+  });
+  sdk.registerTrigger({ type: "http", function_id: "api::outline-build", config: { api_path: "/agentmemory/outline/build", http_method: "POST" } });
+
+  sdk.registerFunction({ id: "api::outline-get" }, async (req: ApiRequest) => {
+    const denied = checkAuth(req, secret);
+    if (denied) return denied;
+    const params = req.query_params || {};
+    const artifact_id = typeof params.artifact_id === "string" ? params.artifact_id : undefined;
+    if (!artifact_id) {
+      return { status_code: 400, body: { error: "artifact_id is required" } };
+    }
+    const result = await sdk.trigger("mem::outline-get", { artifact_id });
+    return { status_code: 200, body: result };
+  });
+  sdk.registerTrigger({ type: "http", function_id: "api::outline-get", config: { api_path: "/agentmemory/outline", http_method: "GET" } });
+
+  sdk.registerFunction({ id: "api::outline-section" }, async (req: ApiRequest) => {
+    const denied = checkAuth(req, secret);
+    if (denied) return denied;
+    const body = (req.body as Record<string, unknown>) || {};
+    if (typeof body.artifact_id !== "string" || !body.artifact_id.trim()) {
+      return { status_code: 400, body: { error: "artifact_id is required" } };
+    }
+    if (typeof body.node_id !== "string" || !body.node_id.trim()) {
+      return { status_code: 400, body: { error: "node_id is required" } };
+    }
+    const result = await sdk.trigger("mem::outline-section", {
+      artifact_id: body.artifact_id,
+      node_id: body.node_id,
+    });
+    return { status_code: 200, body: result };
+  });
+  sdk.registerTrigger({ type: "http", function_id: "api::outline-section", config: { api_path: "/agentmemory/outline/section", http_method: "POST" } });
 }

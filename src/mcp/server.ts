@@ -971,6 +971,41 @@ export function registerMcpEndpoints(
             return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(insightListResult, null, 2) }] } };
           }
 
+          case "memory_build_outline": {
+            if (typeof args.path !== "string" || !args.path.trim()) {
+              return { status_code: 400, body: { error: "path is required" } };
+            }
+            const outlineBuildResult = await sdk.trigger("mem::outline-build", {
+              path: args.path,
+              artifact_id: typeof args.artifact_id === "string" ? args.artifact_id : undefined,
+            });
+            return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(outlineBuildResult, null, 2) }] } };
+          }
+
+          case "memory_get_outline": {
+            if (typeof args.artifact_id !== "string" || !args.artifact_id.trim()) {
+              return { status_code: 400, body: { error: "artifact_id is required" } };
+            }
+            const outlineGetResult = await sdk.trigger("mem::outline-get", {
+              artifact_id: args.artifact_id,
+            });
+            return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(outlineGetResult, null, 2) }] } };
+          }
+
+          case "memory_get_section": {
+            if (typeof args.artifact_id !== "string" || !args.artifact_id.trim()) {
+              return { status_code: 400, body: { error: "artifact_id is required" } };
+            }
+            if (typeof args.node_id !== "string" || !args.node_id.trim()) {
+              return { status_code: 400, body: { error: "node_id is required" } };
+            }
+            const outlineSectionResult = await sdk.trigger("mem::outline-section", {
+              artifact_id: args.artifact_id,
+              node_id: args.node_id,
+            });
+            return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(outlineSectionResult, null, 2) }] } };
+          }
+
           case "memory_obsidian_export": {
             const exportTypes = typeof args.types === "string" && args.types.trim()
               ? args.types.split(",").map((t: string) => t.trim()).filter(Boolean)

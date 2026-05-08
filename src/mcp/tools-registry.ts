@@ -748,6 +748,63 @@ export const V070_TOOLS: McpToolDef[] = [
   },
 ];
 
+export const V089_OUTLINE_TOOLS: McpToolDef[] = [
+  {
+    name: "memory_get_outline",
+    description:
+      "Get the hierarchical outline of a long markdown artifact (CLAUDE.md, brief, audit). Returns a tree of headings with line ranges so an agent can navigate to a specific section without loading the whole file.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        artifact_id: {
+          type: "string",
+          description: "Absolute file path (or stable id) of the artifact",
+        },
+      },
+      required: ["artifact_id"],
+    },
+  },
+  {
+    name: "memory_get_section",
+    description:
+      "Get the raw markdown text of a specific section (by node_id) of a previously outlined artifact. Returns just the lines covered by the heading and its children.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        artifact_id: {
+          type: "string",
+          description: "Absolute file path (or stable id) used at build time",
+        },
+        node_id: {
+          type: "string",
+          description:
+            "Outline node id, e.g. '1.2.3' from memory_get_outline result",
+        },
+      },
+      required: ["artifact_id", "node_id"],
+    },
+  },
+  {
+    name: "memory_build_outline",
+    description:
+      "Parse a markdown file and store its hierarchical outline in the KV. Call this once per artifact (or after edits) before memory_get_outline / memory_get_section.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        path: {
+          type: "string",
+          description: "Absolute path to the markdown file",
+        },
+        artifact_id: {
+          type: "string",
+          description: "Optional stable id (defaults to path)",
+        },
+      },
+      required: ["path"],
+    },
+  },
+];
+
 export const V073_TOOLS: McpToolDef[] = [
   {
     name: "memory_reflect",
@@ -794,7 +851,7 @@ const ESSENTIAL_TOOLS = new Set([
 ]);
 
 export function getAllTools(): McpToolDef[] {
-  return [...CORE_TOOLS, ...V040_TOOLS, ...V050_TOOLS, ...V051_TOOLS, ...V061_TOOLS, ...V070_TOOLS, ...V073_TOOLS];
+  return [...CORE_TOOLS, ...V040_TOOLS, ...V050_TOOLS, ...V051_TOOLS, ...V061_TOOLS, ...V070_TOOLS, ...V073_TOOLS, ...V089_OUTLINE_TOOLS];
 }
 
 export function getVisibleTools(): McpToolDef[] {
