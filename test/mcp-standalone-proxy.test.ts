@@ -28,18 +28,22 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
     resetHandleForTests();
     globalThis.fetch = originalFetch;
     delete process.env["AGENTMEMORY_URL"];
+    delete process.env["AGENTMEMORY_SECRET"];
   });
 
-  it("proxies memory_sessions to GET /agentmemory/sessions when server is up", async () => {
-    const calls: Array<{ url: string; method: string }> = [];
+  it("proxies any tool call to POST /agentmemory/mcp/call", async () => {
+    const calls: Array<{ url: string; method: string; body?: unknown }> = [];
     installFetch((url, init) => {
-      calls.push({ url, method: init?.method || "GET" });
+      const parsed = init?.body ? JSON.parse(init.body as string) : undefined;
+      calls.push({ url, method: init?.method || "GET", body: parsed });
       if (url.endsWith("/agentmemory/livez")) {
         return new Response("ok", { status: 200 });
       }
-      if (url.includes("/agentmemory/sessions")) {
+      if (url.endsWith("/agentmemory/mcp/call")) {
         return new Response(
-          JSON.stringify({ sessions: [{ id: "sess-1", observations: 69 }] }),
+          JSON.stringify({
+            content: [{ type: "text", text: JSON.stringify({ sessions: [{ id: "sess-1" }] }) }],
+          }),
           { status: 200, headers: { "content-type": "application/json" } },
         );
       }
@@ -50,59 +54,34 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
     const body = JSON.parse(res.content[0].text);
     expect(body.sessions).toHaveLength(1);
     expect(body.sessions[0].id).toBe("sess-1");
-    expect(calls.find((c) => c.url.includes("/sessions"))).toBeDefined();
+
+    const mcpCall = calls.find((c) => c.url.endsWith("/agentmemory/mcp/call"));
+    expect(mcpCall).toBeDefined();
+    expect(mcpCall!.method).toBe("POST");
+    expect((mcpCall!.body as Record<string, unknown>).name).toBe("memory_sessions");
+    expect((mcpCall!.body as Record<string, unknown>).arguments).toEqual({ limit: 5 });
   });
 
-  it("proxies memory_smart_search to POST /agentmemory/smart-search", async () => {
+  it("proxies non-IMPLEMENTED_TOOLS tools to POST /agentmemory/mcp/call", async () => {
     installFetch((url, init) => {
       if (url.endsWith("/agentmemory/livez")) return new Response("ok", { status: 200 });
-      if (url.endsWith("/agentmemory/smart-search")) {
+      if (url.endsWith("/agentmemory/mcp/call")) {
         const body = JSON.parse((init?.body as string) || "{}");
         return new Response(
           JSON.stringify({
-            mode: "compact",
-            query: body.query,
-            results: [{ id: "m1", score: 0.9 }],
+            content: [{
+              type: "text",
+              text: JSON.stringify({ tool: body.name, query: body.arguments.query }),
+            }],
           }),
           { status: 200 },
         );
       }
       return new Response("", { status: 404 });
     });
-    const res = await handleToolCall("memory_smart_search", { query: "auth bug", limit: 5 });
+    const res = await handleToolCall("memory_crystallize", { actionIds: "a,b" });
     const body = JSON.parse(res.content[0].text);
-    expect(body.query).toBe("auth bug");
-    expect(body.results[0].id).toBe("m1");
-  });
-
-  it("local fallback returns the same shape as proxy for memory_smart_search", async () => {
-    installFetch(() => {
-      throw new Error("ECONNREFUSED");
-    });
-    const localKv = new InMemoryKV(undefined);
-    await handleToolCall("memory_save", { content: "shape-check entry" }, localKv);
-    const res = await handleToolCall("memory_smart_search", { query: "shape" }, localKv);
-    const body = JSON.parse(res.content[0].text);
-    expect(body).toHaveProperty("mode", "compact");
-    expect(Array.isArray(body.results)).toBe(true);
-    expect(body.results[0].content).toBe("shape-check entry");
-  });
-
-  it("attaches Bearer token on the proxied tool request, not just the probe", async () => {
-    process.env["AGENTMEMORY_SECRET"] = "s3cret";
-    const authByPath = new Map<string, string | undefined>();
-    installFetch((url, init) => {
-      const auth = (init?.headers as Record<string, string> | undefined)?.[
-        "authorization"
-      ];
-      const u = new URL(url);
-      authByPath.set(u.pathname, auth);
-      if (url.endsWith("/agentmemory/livez")) return new Response("ok", { status: 200 });
-      return new Response(JSON.stringify({ sessions: [] }), { status: 200 });
-    });
-    await handleToolCall("memory_sessions", {});
-    expect(authByPath.get("/agentmemory/livez")).toBe("Bearer s3cret");
-    expect(authByPath.get("/agentmemory/sessions")).toBe("Bearer s3cret");
+    expect(body.tool).toBe("memory_crystallize");
   });
 
   it("falls back to local InMemoryKV when server is unreachable", async () => {
@@ -121,7 +100,7 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
   it("invalidates the handle on proxy failure, so the next call re-probes", async () => {
     let probeCount = 0;
     let serverUp = true;
-    installFetch((url) => {
+    installFetch((url, init) => {
       if (url.endsWith("/agentmemory/livez")) {
         probeCount++;
         return serverUp ? new Response("ok", { status: 200 }) : new Response("", { status: 500 });
@@ -136,18 +115,55 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
     expect(probeCount).toBe(2);
   });
 
-  it("does not retry local after a validation error", async () => {
-    const fetchFn = installFetch((url) => {
+  it("attaches Bearer token on the proxied tool request and probe", async () => {
+    process.env["AGENTMEMORY_SECRET"] = "s3cret";
+    const authByPath = new Map<string, string | undefined>();
+    installFetch((url, init) => {
+      const auth = (init?.headers as Record<string, string> | undefined)?.[
+        "authorization"
+      ];
+      const u = new URL(url);
+      authByPath.set(u.pathname, auth);
       if (url.endsWith("/agentmemory/livez")) return new Response("ok", { status: 200 });
-      return new Response("{}", { status: 200 });
+      return new Response(
+        JSON.stringify({ content: [{ type: "text", text: "{}" }] }),
+        { status: 200 },
+      );
+    });
+    await handleToolCall("memory_sessions", {});
+    expect(authByPath.get("/agentmemory/livez")).toBe("Bearer s3cret");
+    expect(authByPath.get("/agentmemory/mcp/call")).toBe("Bearer s3cret");
+  });
+
+  it("in proxy mode, delegates validation to the server (no local validation error)", async () => {
+    installFetch((url, init) => {
+      if (url.endsWith("/agentmemory/livez")) return new Response("ok", { status: 200 });
+      if (url.endsWith("/agentmemory/mcp/call")) {
+        return new Response(
+          JSON.stringify({
+            content: [{ type: "text", text: JSON.stringify({ proxied: true }) }],
+          }),
+          { status: 200 },
+        );
+      }
+      return new Response("", { status: 404 });
     });
     const localKv = new InMemoryKV(undefined);
-    await expect(
-      handleToolCall("memory_save", { content: "" }, localKv),
-    ).rejects.toThrow("content is required");
-    const remembersCalled = fetchFn.mock.calls.some(([url]) =>
-      String(url).endsWith("/agentmemory/remember"),
-    );
-    expect(remembersCalled).toBe(false);
+    const result = await handleToolCall("memory_save", { content: "" }, localKv);
+    const body = JSON.parse(result.content[0].text);
+    expect(body.proxied).toBe(true);
+  });
+
+  it("local fallback returns the same shape as expected for memory_smart_search", async () => {
+    installFetch(() => {
+      throw new Error("ECONNREFUSED");
+    });
+    const localKv = new InMemoryKV(undefined);
+    await handleToolCall("memory_save", { content: "shape-check entry" }, localKv);
+    const res = await handleToolCall("memory_smart_search", { query: "shape" }, localKv);
+    const body = JSON.parse(res.content[0].text);
+    expect(body).toHaveProperty("mode", "compact");
+    expect(Array.isArray(body.results)).toBe(true);
+    expect(body.results[0].content).toBe("shape-check entry");
   });
 });

@@ -19,6 +19,11 @@ vi.mock("../src/config.js", () => ({
   getStandalonePersistPath: vi.fn(() => "/tmp/test-standalone.json"),
 }));
 
+vi.mock("../src/mcp/rest-proxy.js", () => ({
+  resolveHandle: vi.fn(async () => ({ mode: "local" })),
+  invalidateHandle: vi.fn(),
+}));
+
 import {
   getAllTools,
   CORE_TOOLS,
@@ -403,5 +408,56 @@ describe("handleToolCall", () => {
     const parsed = JSON.parse(result.content[0].text);
     expect(parsed.deleted).toBe(1);
     expect(parsed.requested).toBe(2);
+  });
+
+  it("in proxy mode, tools outside IMPLEMENTED_TOOLS are forwarded to server", async () => {
+    const { resolveHandle } = await import("../src/mcp/rest-proxy.js");
+    vi.mocked(resolveHandle).mockResolvedValueOnce({
+      mode: "proxy",
+      baseUrl: "http://fake:9999",
+      call: vi.fn().mockResolvedValue({
+        content: [{ type: "text", text: '{"ok":true}' }],
+      }),
+    } as any);
+
+    const kv = new InMemoryKV();
+    const result = await handleToolCall("memory_crystallize", { actionIds: "a,b" }, kv);
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.ok).toBe(true);
+  });
+
+  it("in proxy mode, tools/call sends correct name + arguments payload", async () => {
+    const { resolveHandle } = await import("../src/mcp/rest-proxy.js");
+    const callSpy = vi.fn().mockResolvedValue({
+      content: [{ type: "text", text: '{"done":true}' }],
+    });
+    vi.mocked(resolveHandle).mockResolvedValueOnce({
+      mode: "proxy",
+      baseUrl: "http://fake:9999",
+      call: callSpy,
+    } as any);
+
+    const kv = new InMemoryKV();
+    await handleToolCall("memory_reflect", { maxClusters: 5 }, kv);
+    expect(callSpy).toHaveBeenCalledWith("/agentmemory/mcp/call", expect.objectContaining({
+      method: "POST",
+    }));
+    const body = JSON.parse(callSpy.mock.calls[0][1].body);
+    expect(body.name).toBe("memory_reflect");
+    expect(body.arguments.maxClusters).toBe(5);
+  });
+
+  it("in local mode, tools outside IMPLEMENTED_TOOLS still throw", async () => {
+    const kv = new InMemoryKV();
+    await expect(
+      handleToolCall("memory_crystallize", { actionIds: "a,b" }, kv),
+    ).rejects.toThrow("Unknown tool: memory_crystallize");
+  });
+
+  it("in local mode, IMPLEMENTED_TOOLS tools still work", async () => {
+    const kv = new InMemoryKV();
+    const result = await handleToolCall("memory_sessions", { limit: 5 }, kv);
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed).toHaveProperty("sessions");
   });
 });

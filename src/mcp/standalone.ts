@@ -10,7 +10,6 @@ import {
   resolveHandle,
   invalidateHandle,
   type Handle,
-  type ProxyHandle,
 } from "./rest-proxy.js";
 
 const IMPLEMENTED_TOOLS = new Set([
@@ -142,61 +141,6 @@ function validate(toolName: string, args: Record<string, unknown>): Validated {
   }
 }
 
-async function handleProxy(
-  v: Validated,
-  handle: ProxyHandle,
-): Promise<{ content: Array<{ type: string; text: string }> }> {
-  switch (v.tool) {
-    case "memory_save": {
-      const result = await handle.call("/agentmemory/remember", {
-        method: "POST",
-        body: JSON.stringify({
-          content: v.content,
-          type: v.type,
-          concepts: v.concepts,
-          files: v.files,
-        }),
-      });
-      return textResponse(result);
-    }
-    case "memory_recall":
-    case "memory_smart_search": {
-      const result = await handle.call("/agentmemory/smart-search", {
-        method: "POST",
-        body: JSON.stringify({ query: v.query, limit: v.limit }),
-      });
-      return textResponse(result, true);
-    }
-    case "memory_sessions": {
-      const result = await handle.call(
-        `/agentmemory/sessions?limit=${v.limit}`,
-        { method: "GET" },
-      );
-      return textResponse(result, true);
-    }
-    case "memory_governance_delete": {
-      const result = await handle.call("/agentmemory/governance/memories", {
-        method: "POST",
-        body: JSON.stringify({ memoryIds: v.memoryIds, reason: v.reason }),
-      });
-      return textResponse(result);
-    }
-    case "memory_export": {
-      const result = await handle.call("/agentmemory/export", { method: "GET" });
-      return textResponse(result, true);
-    }
-    case "memory_audit": {
-      const result = await handle.call(
-        `/agentmemory/audit?limit=${v.limit}`,
-        { method: "GET" },
-      );
-      return textResponse(result, true);
-    }
-    default:
-      throw new Error(`Unknown tool: ${v.tool}`);
-  }
-}
-
 async function handleLocal(
   v: Validated,
   kvInstance: InMemoryKV,
@@ -298,12 +242,20 @@ export async function handleToolCall(
   args: Record<string, unknown>,
   kvInstance: InMemoryKV = kv,
 ): Promise<{ content: Array<{ type: string; text: string }> }> {
-  const validated = validate(toolName, args);
   const handle = await resolveHandle();
   announceMode(handle);
+
   if (handle.mode === "proxy") {
     try {
-      return await handleProxy(validated, handle);
+      const result = await handle.call("/agentmemory/mcp/call", {
+        method: "POST",
+        body: JSON.stringify({ name: toolName, arguments: args }),
+      });
+      const content = (result as { content?: Array<{ type: string; text: string }> })?.content;
+      if (Array.isArray(content)) {
+        return { content };
+      }
+      return textResponse(result);
     } catch (err) {
       process.stderr.write(
         `[@agentmemory/mcp] proxy call failed for ${toolName}: ${err instanceof Error ? err.message : String(err)}; invalidating handle and falling back to local KV\n`,
@@ -311,6 +263,8 @@ export async function handleToolCall(
       invalidateHandle();
     }
   }
+
+  const validated = validate(toolName, args);
   return handleLocal(validated, kvInstance);
 }
 
@@ -329,10 +283,27 @@ const transport = createStdioTransport(async (method, params) => {
     case "notifications/initialized":
       return {};
 
-    case "tools/list":
+    case "tools/list": {
+      const handle = await resolveHandle();
+      announceMode(handle);
+      if (handle.mode === "proxy") {
+        try {
+          const result = await handle.call("/agentmemory/mcp/tools");
+          const tools = (result as { tools?: unknown[] })?.tools;
+          if (Array.isArray(tools)) return { tools };
+          process.stderr.write(
+            `[@agentmemory/mcp] tools/list proxy returned unexpected shape; falling back to local list\n`,
+          );
+        } catch (err) {
+          process.stderr.write(
+            `[@agentmemory/mcp] tools/list proxy failed: ${err instanceof Error ? err.message : String(err)}; falling back to local list\n`,
+          );
+        }
+      }
       return {
         tools: getVisibleTools().filter((t) => IMPLEMENTED_TOOLS.has(t.name)),
       };
+    }
 
     case "tools/call": {
       const toolName = params.name as string;
