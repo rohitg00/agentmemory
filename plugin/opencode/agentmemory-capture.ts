@@ -7,13 +7,13 @@ const MAX_STASHED_FILES = 20;
 
 const DEBUG = process.env.OPENCODE_AGENTMEMORY_DEBUG === "1";
 
-async function post(path: string, body: Record<string, unknown>): Promise<void> {
+async function post(path: string, body: Record<string, unknown>, timeoutMs = 5000): Promise<void> {
   try {
     await fetch(`${API}/agentmemory${path}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(5000),
+      signal: AbortSignal.timeout(timeoutMs),
     });
   } catch (e) {
     if (DEBUG) console.error(`[agentmemory] POST ${path} failed:`, (e as Error).message);
@@ -53,10 +53,16 @@ async function observe(
 let activeSessionId: string | null = null;
 let pendingConfig: Record<string, unknown> | null = null;
 let projectPath: string | null = null;
-const stashedFiles = new Set<string>();
+const stashedFiles = new Map<string, Set<string>>();
 const seenSubtaskIds = new Map<string, Set<string>>();
 const seenToolCallIds = new Map<string, Set<string>>();
 const contextInjectedSessions = new Set<string>();
+
+function stashFor(sid: string): Set<string> {
+  let s = stashedFiles.get(sid);
+  if (!s) { s = new Set<string>(); stashedFiles.set(sid, s); }
+  return s;
+}
 
 const AGENTMEMORY_INSTRUCTIONS = `<agentmemory-instructions>
 You have access to agentmemory for persistent cross-session memory. Use these tools proactively.
@@ -95,7 +101,7 @@ memory_patterns — Detect recurring patterns across sessions.
 memory_consolidate — Run the 4-tier memory consolidation pipeline.
   Use when: you want to compress and organize accumulated session observations.
 
-All tools are prefixed with \`agentmemory_\`. Tool results are JSON. Always check what was returned before presenting to the user.
+All memory tools start with \`agentmemory_memory_\`. Use the exact names as they appear in your tool list. Tool results are JSON. Always check what was returned before presenting to the user.
 </agentmemory-instructions>`;
 
 function extractFilePaths(args: Record<string, unknown>): string[] {
@@ -136,8 +142,8 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
       if (type === "session.created") {
         const info = props.info as Record<string, unknown> | undefined;
         activeSessionId = (info?.id as string) || props.sessionID || null;
-        stashedFiles.clear();
         if (activeSessionId) {
+          stashedFiles.set(activeSessionId, new Set());
           seenSubtaskIds.set(activeSessionId, new Set());
           seenToolCallIds.set(activeSessionId, new Set());
           contextInjectedSessions.delete(activeSessionId);
@@ -214,8 +220,8 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
         const sid = props.info?.id || props.sessionID || activeSessionId;
         if (sid) {
           await post("/session/end", { sessionId: sid });
-          post("/crystals/auto", { olderThanDays: 0 });
-          post("/consolidate-pipeline", { tier: "all", force: true });
+          post("/crystals/auto", { olderThanDays: 7 }, 30000);
+          post("/consolidate-pipeline", { tier: "all", force: true }, 30000);
           if (sid === activeSessionId) activeSessionId = null;
           stashedFiles.clear();
           seenSubtaskIds.delete(sid);
@@ -377,7 +383,7 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
 
         if (part.type === "file") {
           const filename = (part as any).filename || (part as any).url || null;
-          if (filename) stashedFiles.add(filename);
+          if (filename) stashFor(sid).add(filename);
           return;
         }
 
@@ -419,11 +425,12 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
       // ── file.edited ──
       if (type === "file.edited") {
         if (activeSessionId && typeof props.file === "string" && props.file.length > 0) {
-          stashedFiles.add(props.file);
-          if (stashedFiles.size > MAX_STASHED_FILES) {
-            const keep = [...stashedFiles].slice(-MAX_STASHED_FILES);
-            stashedFiles.clear();
-            for (const f of keep) stashedFiles.add(f);
+          const stash = stashFor(activeSessionId);
+          stash.add(props.file);
+          if (stash.size > MAX_STASHED_FILES) {
+            const keep = [...stash].slice(-MAX_STASHED_FILES);
+            stash.clear();
+            for (const f of keep) stash.add(f);
           }
         }
       }
@@ -489,7 +496,7 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
         .filter((p: any) => p.type === "file")
         .map((p: any) => p.filename || p.url)
         .filter(Boolean);
-      for (const f of files) stashedFiles.add(f);
+      for (const f of files) stashFor(sid).add(f);
 
       const textParts = parts.filter((p: any) => p.type === "text" && !p.synthetic && !p.ignored);
       const userText = textParts.map((p: any) => p.text || "").join("\n");
@@ -524,15 +531,17 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
     // ── tool.execute.before ──
     "tool.execute.before": async (input, output) => {
       if (!FILE_TOOLS.has(input.tool)) return;
+      if (!activeSessionId) return;
       const args = output.args as Record<string, unknown> | undefined;
       if (!args) return;
+      const stash = stashFor(activeSessionId);
       for (const fp of extractFilePaths(args)) {
-        stashedFiles.add(fp);
+        stash.add(fp);
       }
-      if (stashedFiles.size > MAX_STASHED_FILES) {
-        const keep = [...stashedFiles].slice(-MAX_STASHED_FILES);
-        stashedFiles.clear();
-        for (const f of keep) stashedFiles.add(f);
+      if (stash.size > MAX_STASHED_FILES) {
+        const keep = [...stash].slice(-MAX_STASHED_FILES);
+        stash.clear();
+        for (const f of keep) stash.add(f);
       }
     },
 
@@ -542,21 +551,22 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
       if (!sid) return;
 
       if (!contextInjectedSessions.has(sid)) {
+        contextInjectedSessions.add(sid);
+        if (!Array.isArray(output.system)) return;
         output.system.push(AGENTMEMORY_INSTRUCTIONS);
         const result = await postJson("/context", {
           sessionId: sid,
           project: projectPath,
         });
-        if (result && typeof result === "object" && (result as any).context) {
-          if (Array.isArray(output.system)) {
-            output.system.push((result as any).context);
-          }
+        const ctx = (result as any)?.context;
+        if (typeof ctx === "string" && ctx.length > 0) {
+          output.system.push(ctx);
         }
-        contextInjectedSessions.add(sid);
       }
 
-      if (stashedFiles.size === 0) return;
-      const files = [...stashedFiles].slice(0, 10);
+      const stash = stashFor(sid);
+      if (stash.size === 0) return;
+      const files = [...stash].slice(0, 10);
 
       const enrichResult = await postJson("/enrich", {
         sessionId: sid,
@@ -564,11 +574,12 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
         toolName: "enrich_inject",
       });
 
-      if (enrichResult && typeof enrichResult === "object" && (enrichResult as any).context) {
+      const enrichCtx = (enrichResult as any)?.context;
+      if (typeof enrichCtx === "string" && enrichCtx.length > 0) {
         if (Array.isArray(output.system)) {
-          output.system.push((enrichResult as any).context);
+          output.system.push(enrichCtx);
         }
-        for (const f of files) stashedFiles.delete(f);
+        for (const f of files) stash.delete(f);
       }
     },
 
@@ -581,9 +592,10 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
         sessionId: sid,
         project: projectPath,
       });
-      if (result && typeof result === "object" && (result as any).context) {
+      const ctx = (result as any)?.context;
+      if (typeof ctx === "string" && ctx.length > 0) {
         if (Array.isArray(output.context)) {
-          output.context.push((result as any).context);
+          output.context.push(ctx);
         }
       }
     },
