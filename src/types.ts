@@ -809,3 +809,22 @@ export interface DecayConfig {
     cold: number;
   };
 }
+
+export interface OutlineNode {
+  node_id: string;
+  title: string;
+  level: number;
+  line_start: number;
+  line_end: number;
+  summary?: string;
+  children: OutlineNode[];
+}
+
+export interface Outline {
+  artifact_id: string;
+  title: string;
+  generated_at: string;
+  source_mtime: string;
+  source_size: number;
+  nodes: OutlineNode[];
+}

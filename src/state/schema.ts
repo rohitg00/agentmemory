@@ -41,6 +41,7 @@ export const KV = {
   latentEmbeddings: (obsId: string) => `mem:latent:${obsId}`,
   retentionScores: "mem:retention",
   accessLog: "mem:access",
+  outlines: "mem:outlines",
 } as const;
 
 export const STREAM = {
