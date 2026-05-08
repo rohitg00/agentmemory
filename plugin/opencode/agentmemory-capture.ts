@@ -155,7 +155,7 @@ function extractErrorMessage(err: unknown): string {
 }
 
 export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
-  projectPath = ctx.worktree || ctx.project?.id || null;
+  projectPath = ctx.worktree || ctx.project?.id || process.cwd();
 
   return {
     event: async ({ event }) => {
@@ -166,12 +166,11 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
       if (type === "session.created") {
         const info = props.info as Record<string, unknown> | undefined;
         activeSessionId = (info?.id as string) || props.sessionID || null;
-        if (activeSessionId) {
-          stashedFiles.set(activeSessionId, new Set());
-          seenSubtaskIds.delete(activeSessionId);
-          seenToolCallIds.delete(activeSessionId);
-          contextInjectedSessions.delete(activeSessionId);
-        }
+        if (!activeSessionId) return;
+        stashedFiles.set(activeSessionId, new Set());
+        seenSubtaskIds.delete(activeSessionId);
+        seenToolCallIds.delete(activeSessionId);
+        contextInjectedSessions.delete(activeSessionId);
         await post("/session/start", {
           sessionId: activeSessionId,
           title: info?.title ?? null,
@@ -261,7 +260,7 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
       if (type === "session.error") {
         const sid = props.sessionID || activeSessionId;
         if (sid) {
-          await observe(sid, "post_tool_use_failure", {
+          await observe(sid, "post_tool_failure", {
             tool_name: "session.error",
             tool_input: "",
             tool_output: safeSlice(props.error, 8000),
@@ -275,7 +274,7 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
         if (!info) return;
 
         if (info.role === "user") {
-          const sid = (info.id as string) || (info.sessionID as string) || activeSessionId;
+          const sid = props.sessionID || (info.sessionID as string) || activeSessionId;
           if (sid) {
             await observe(sid, "prompt_submit", {
               agent: info.agent ?? null,
@@ -288,7 +287,7 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
         }
 
         if (info.role === "assistant") {
-          const sid = (info.id as string) || (info.sessionID as string) || activeSessionId;
+          const sid = props.sessionID || (info.sessionID as string) || activeSessionId;
           if (!sid) return;
           const tokens = info.tokens as Record<string, unknown> | undefined;
           const error = info.error ? extractErrorMessage(info.error) : null;
@@ -359,8 +358,9 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
             if (callSet.has(callId)) return;
             callSet.add(callId);
             const st = state as Record<string, unknown>;
-            const startTime = ((st.time as any)?.start as number) || 0;
-            const endTime = ((st.time as any)?.end as number) || 0;
+            const rawTime = (st.time as any) || {};
+            const startTime = typeof rawTime.start === "number" ? rawTime.start : null;
+            const endTime = typeof rawTime.end === "number" ? rawTime.end : null;
             await observe(sid, "post_tool_use", {
               tool_name: toolName,
               call_id: callId,
@@ -368,7 +368,7 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
               tool_output: safeSlice(st.output, 8000),
               title: st.title ?? null,
               metadata: st.metadata || {},
-              duration_ms: endTime - startTime ?? null,
+              duration_ms: (startTime != null && endTime != null) ? endTime - startTime : null,
               attachments: Array.isArray(st.attachments)
                 ? (st.attachments as Array<Record<string, unknown>>).map(a => a.filename || a.url)
                 : [],
@@ -378,14 +378,15 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
             if (callSet.has(callId)) return;
             callSet.add(callId);
             const st = state as Record<string, unknown>;
-            const startTime = ((st.time as any)?.start as number) || 0;
-            const endTime = ((st.time as any)?.end as number) || 0;
-            await observe(sid, "post_tool_use_failure", {
+            const rawTime = (st.time as any) || {};
+            const startTime = typeof rawTime.start === "number" ? rawTime.start : null;
+            const endTime = typeof rawTime.end === "number" ? rawTime.end : null;
+            await observe(sid, "post_tool_failure", {
               tool_name: toolName,
               call_id: callId,
               tool_input: safeSlice(st.input, 4000),
               tool_output: safeSlice(st.error, 8000),
-              duration_ms: endTime - startTime ?? null,
+              duration_ms: (startTime != null && endTime != null) ? endTime - startTime : null,
             });
           }
           return;
@@ -594,7 +595,6 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
       if (!contextInjectedSessions.has(sid)) {
         if (!Array.isArray(output.system)) return;
         output.system.push(AGENTMEMORY_INSTRUCTIONS);
-        contextInjectedSessions.add(sid);
         const result = await postJson("/context", {
           sessionId: sid,
           project: projectPath,
@@ -603,6 +603,7 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
         if (typeof ctx === "string" && ctx.length > 0) {
           output.system.push(ctx);
         }
+        contextInjectedSessions.add(sid);
       }
 
       const stash = stashFor(sid);
