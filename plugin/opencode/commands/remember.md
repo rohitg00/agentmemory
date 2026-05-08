@@ -2,7 +2,7 @@ Explicitly save an insight, decision, or learning to agentmemory for future sess
 
 ## Usage
 
-```
+```text
 /remember [what to remember]
 ```
 

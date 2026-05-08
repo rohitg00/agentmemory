@@ -24,7 +24,7 @@ async function postJson(path: string, body: Record<string, unknown>): Promise<un
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(5000),
     });
-    return res.ok ? res.json() : null;
+    return res.ok ? await res.json() : null;
   } catch {
     return null;
   }
@@ -47,10 +47,26 @@ async function observe(
 
 let activeSessionId: string | null = null;
 let projectPath: string | null = null;
-const stashedFiles = new Set<string>();
-const seenSubtaskIds = new Set<string>();
+const sessionStash = new Map<string, Set<string>>();
+const sessionSubtasks = new Map<string, Set<string>>();
+const sessionToolCalls = new Map<string, Set<string>>();
 const contextInjectedSessions = new Set<string>();
-const seenToolCallIds = new Set<string>();
+
+function stashFor(sid: string): Set<string> {
+  let s = sessionStash.get(sid);
+  if (!s) { s = new Set<string>(); sessionStash.set(sid, s); }
+  return s;
+}
+function subtasksFor(sid: string): Set<string> {
+  let s = sessionSubtasks.get(sid);
+  if (!s) { s = new Set<string>(); sessionSubtasks.set(sid, s); }
+  return s;
+}
+function toolCallsFor(sid: string): Set<string> {
+  let s = sessionToolCalls.get(sid);
+  if (!s) { s = new Set<string>(); sessionToolCalls.set(sid, s); }
+  return s;
+}
 
 const AGENTMEMORY_INSTRUCTIONS = `<agentmemory-instructions>
 You have access to agentmemory for persistent cross-session memory. Use these tools proactively.
@@ -130,10 +146,10 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
       if (type === "session.created") {
         const info = props.info as Record<string, unknown> | undefined;
         activeSessionId = (info?.id as string) || props.sessionID || null;
-        stashedFiles.clear();
-        seenSubtaskIds.clear();
-        seenToolCallIds.clear();
         if (activeSessionId) {
+          stashFor(activeSessionId).clear();
+          subtasksFor(activeSessionId).clear();
+          toolCallsFor(activeSessionId).clear();
           contextInjectedSessions.delete(activeSessionId);
         }
         await post("/session/start", {
@@ -213,9 +229,9 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
           post("/crystals/auto", { olderThanDays: 0 });
           post("/consolidate-pipeline", { tier: "all", force: true });
           if (sid === activeSessionId) activeSessionId = null;
-          stashedFiles.clear();
-          seenSubtaskIds.clear();
-          seenToolCallIds.clear();
+          sessionStash.delete(sid);
+          sessionSubtasks.delete(sid);
+          sessionToolCalls.delete(sid);
           contextInjectedSessions.delete(sid);
         }
       }
@@ -296,8 +312,8 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
         if (!sid) return;
 
         if (part.type === "subtask") {
-          if (seenSubtaskIds.has(part.id as string)) return;
-          seenSubtaskIds.add(part.id as string);
+          if (subtasksFor(sid).has(part.id as string)) return;
+          subtasksFor(sid).add(part.id as string);
           await observe(sid, "subagent_start", {
             subtask_id: part.id,
             agent: part.agent,
@@ -314,8 +330,8 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
           const toolName = part.tool as string;
 
           if (state.status === "completed") {
-            if (seenToolCallIds.has(callId)) return;
-            seenToolCallIds.add(callId);
+            if (toolCallsFor(sid).has(callId)) return;
+            toolCallsFor(sid).add(callId);
             const st = state as Record<string, unknown>;
             const startTime = ((st.time as any)?.start as number) || 0;
             const endTime = ((st.time as any)?.end as number) || 0;
@@ -332,8 +348,8 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
                 : [],
             });
           } else if (state.status === "error") {
-            if (seenToolCallIds.has(callId)) return;
-            seenToolCallIds.add(callId);
+            if (toolCallsFor(sid).has(callId)) return;
+            toolCallsFor(sid).add(callId);
             const st = state as Record<string, unknown>;
             const startTime = ((st.time as any)?.start as number) || 0;
             const endTime = ((st.time as any)?.end as number) || 0;
@@ -370,7 +386,7 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
 
         if (part.type === "file") {
           const filename = (part as any).filename || (part as any).url || null;
-          if (filename) stashedFiles.add(filename);
+          if (filename) stashFor(sid).add(filename);
           return;
         }
 
@@ -413,7 +429,7 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
       if (type === "file.edited") {
         const sid = activeSessionId;
         if (sid) {
-          stashedFiles.add(props.file as string);
+          stashFor(sid).add(props.file as string);
         }
       }
 
@@ -478,7 +494,7 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
         .filter((p: any) => p.type === "file")
         .map((p: any) => p.filename || p.url)
         .filter(Boolean);
-      for (const f of files) stashedFiles.add(f);
+      for (const f of files) stashFor(sid).add(f);
 
       const textParts = parts.filter((p: any) => p.type === "text" && !p.synthetic && !p.ignored);
       const userText = textParts.map((p: any) => p.text || "").join("\n");
@@ -515,13 +531,15 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
       if (!FILE_TOOLS.has(input.tool)) return;
       const args = output.args as Record<string, unknown> | undefined;
       if (!args) return;
+      if (!activeSessionId) return;
       for (const fp of extractFilePaths(args)) {
-        stashedFiles.add(fp);
+        stashFor(activeSessionId).add(fp);
       }
-      if (stashedFiles.size > MAX_STASHED_FILES) {
-        const keep = [...stashedFiles].slice(-MAX_STASHED_FILES);
-        stashedFiles.clear();
-        for (const f of keep) stashedFiles.add(f);
+      const stash = stashFor(activeSessionId);
+      if (stash.size > MAX_STASHED_FILES) {
+        const keep = [...stash].slice(-MAX_STASHED_FILES);
+        stash.clear();
+        for (const f of keep) stash.add(f);
       }
     },
 
@@ -542,9 +560,10 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
         }
       }
 
-      if (stashedFiles.size === 0) return;
-      const files = [...stashedFiles].slice(0, 10);
-      stashedFiles.clear();
+      const stash = stashFor(sid);
+      if (stash.size === 0) return;
+      const files = [...stash].slice(0, 10);
+      stash.clear();
 
       const enrichResult = await postJson("/enrich", {
         sessionId: sid,

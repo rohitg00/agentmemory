@@ -150,7 +150,7 @@ Restart OpenCode or open a new session. The plugin auto-captures everything.
 
 2. **File enrichment** (every turn with stashed files): calls `/agentmemory/enrich` with files stashed by `tool.execute.before`, `file.edited`, and `message.part.updated` (file parts). File-specific context (past observations, related bugs, semantic search) is injected into the system prompt.
 
-```
+```text
 System prompt = [OpenCode instructions] + [memory context] + [file enrichment] + [user message]
                                         ^                 ^
                                first turn only         every file-touching turn
@@ -172,7 +172,7 @@ Claude Code and OpenCode take fundamentally different approaches to injecting me
 
 ### Claude Code: file-backed bridge (two-hop)
 
-```
+```text
 agentmemory  ──write──▶  MEMORY.md  ──read──▶  Claude system prompt
 ```
 
@@ -183,7 +183,7 @@ agentmemory  ──write──▶  MEMORY.md  ──read──▶  Claude system
 
 ### OpenCode: direct injection (one-hop)
 
-```
+```text
 agentmemory  ──push──▶  OpenCode system prompt
 ```
 
@@ -213,7 +213,7 @@ agentmemory already persists everything in SQLite (`data/state_store.db`). Addin
 
 ## Session instruction injection
 
-Agentmemory usage instructions are injected into the system prompt on the first turn of every session via `experimental.chat.system.transform` (alongside memory context from `/context`). This is functionally equivalent to Claude Code's skills mechanism — the agent learns which `agentmemory_memory_*` tools to use and when, without needing separate skill invocations.
+Agentmemory usage instructions are injected into the system prompt on the first turn of every session via `experimental.chat.system.transform` (alongside memory context from `/context`). This is functionally equivalent to Claude Code's skills mechanism — the agent learns which `agentmemory_*` tools to use and when, without needing separate skill invocations.
 
 ## What's not covered (vs Claude Code plugin)
 

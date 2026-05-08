@@ -2,7 +2,7 @@ Search past session observations and lessons for relevant context. Wrap the `mem
 
 ## Usage
 
-```
+```text
 /recall [query]
 ```
 
