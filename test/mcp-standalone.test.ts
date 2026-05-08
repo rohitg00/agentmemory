@@ -460,4 +460,18 @@ describe("handleToolCall", () => {
     const parsed = JSON.parse(result.content[0].text);
     expect(parsed).toHaveProperty("sessions");
   });
+
+  it("in proxy mode, non-IMPLEMENTED_TOOLS tool proxy failure rethrows with proxy error", async () => {
+    const { resolveHandle } = await import("../src/mcp/rest-proxy.js");
+    vi.mocked(resolveHandle).mockResolvedValueOnce({
+      mode: "proxy",
+      baseUrl: "http://fake:9999",
+      call: vi.fn().mockRejectedValue(new Error("ECONNREFUSED")),
+    } as any);
+
+    const kv = new InMemoryKV();
+    await expect(
+      handleToolCall("memory_crystallize", { actionIds: "a,b" }, kv),
+    ).rejects.toThrow("proxy call failed for memory_crystallize: ECONNREFUSED");
+  });
 });

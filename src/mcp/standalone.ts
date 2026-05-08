@@ -257,10 +257,15 @@ export async function handleToolCall(
       }
       return textResponse(result);
     } catch (err) {
-      process.stderr.write(
-        `[@agentmemory/mcp] proxy call failed for ${toolName}: ${err instanceof Error ? err.message : String(err)}; invalidating handle and falling back to local KV\n`,
-      );
       invalidateHandle();
+      if (!IMPLEMENTED_TOOLS.has(toolName)) {
+        throw new Error(
+          `proxy call failed for ${toolName}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+      process.stderr.write(
+        `[@agentmemory/mcp] proxy call failed for ${toolName}: ${err instanceof Error ? err.message : String(err)}; falling back to local KV\n`,
+      );
     }
   }
 
