@@ -37,7 +37,7 @@ Anything not on this list that a contributor wants to pursue is welcome — open
 
 ### Planned
 - [ ] **GitHub connector** (`@agentmemory/github-watcher`) — sync issues, PRs, discussions as observations. Shares the `POST /agentmemory/observe` wire format with the filesystem connector.
-- [ ] **OpenCode hook bus** (#156) — if upstream ships hook events, wire them; otherwise ship a REST-polling adapter.
+- [x] **OpenCode hook bus** (#156) — wired 22 hooks covering all 12 Claude Code hook types: session lifecycle (create/idle/status/compacted/update/diff/delete/error), messages & prompts (chat.message, message.updated user+assistant, message.removed), tool capture (before + rich ToolPart lifecycle in message.part.updated), memory injection (context + enrich via system.transform), part tracking (subtask, step-finish, reasoning, file, patch, compaction, agent, retry), file enrichment pipeline (stash via tool.execute.before + file.edited + file parts), permissions (updated + replied), task tracking (todo.updated w/ priority), commands (command.executed), config & model tracking (config + chat.params). Plus 2 slash commands (recall/remember). See `plugin/opencode/`.
 - [ ] **Session replay UI** in the real-time viewer — scrub the timeline, inspect per-observation payloads.
 - [ ] **Benchmark harness in CI** — keep the 95.2% R@5 number honest across releases by re-running LongMemEval-S on every minor tag.
 

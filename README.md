@@ -84,7 +84,7 @@ agentmemory works with any agent that supports hooks, MCP, or REST API. All agen
 <td align="center" width="12.5%">
 <a href="https://github.com/opencode-ai/opencode"><img src="https://github.com/opencode-ai.png?size=120" alt="OpenCode" width="48" height="48" /></a><br/>
 <strong>OpenCode</strong><br/>
-<sub>MCP server</sub>
+<sub>22 hooks + MCP + plugin</sub>
 </td>
 <td align="center" width="12.5%">
 <a href="https://github.com/openai/codex"><img src="https://github.com/openai.png?size=120" alt="Codex CLI" width="48" height="48" /></a><br/>
@@ -393,7 +393,7 @@ Then add the MCP config for your agent:
 | **Gemini CLI** | `gemini mcp add agentmemory npx -y @agentmemory/mcp --scope user` |
 | **Codex CLI** | `codex mcp add agentmemory -- npx -y @agentmemory/mcp` or add `[mcp_servers.agentmemory]` to `.codex/config.toml` |
 | **pi** | Copy [`integrations/pi`](integrations/pi/) to `~/.pi/agent/extensions/agentmemory` and restart pi |
-| **OpenCode** | Add to `opencode.json`: `{"mcp": {"agentmemory": {"type": "local", "command": ["npx", "-y", "@agentmemory/mcp"], "enabled": true}}}` |
+| **OpenCode** | Add to `opencode.json`: `{"mcp": {"agentmemory": {"type": "local", "command": ["npx", "-y", "@agentmemory/mcp"], "enabled": true}}}` + copy `plugin/opencode/` for 22 auto-capture hooks |
 | **Hermes Agent** | Add to `~/.hermes/config.yaml` with `memory.provider: agentmemory` or use the [memory provider plugin](integrations/hermes/) |
 | **Cline / Goose / Kilo Code** | Add MCP server in settings |
 | **Claude Desktop** | Add to `claude_desktop_config.json`: `{"mcpServers": {"agentmemory": {"command": "npx", "args": ["-y", "@agentmemory/mcp"]}}}` |
@@ -712,8 +712,16 @@ OpenCode (`opencode.json`):
       "command": ["npx", "-y", "@agentmemory/mcp"],
       "enabled": true
     }
-  }
+  },
+  "plugin": ["./plugins/agentmemory-capture.ts"]
 }
+```
+
+Copy the plugin file from the repo:
+```bash
+mkdir -p ~/.config/opencode/plugins
+cp plugin/opencode/agentmemory-capture.ts ~/.config/opencode/plugins/
+cp plugin/opencode/commands/*.md ~/.config/opencode/commands/
 ```
 
 ---
