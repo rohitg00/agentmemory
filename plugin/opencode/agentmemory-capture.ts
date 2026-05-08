@@ -6,12 +6,19 @@ const FILE_KEYS = ["filePath", "file_path", "path", "file", "pattern"];
 const MAX_STASHED_FILES = 20;
 
 const DEBUG = process.env.OPENCODE_AGENTMEMORY_DEBUG === "1";
+const SECRET = process.env.AGENTMEMORY_SECRET || "";
+
+function authHeaders(): Record<string, string> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (SECRET) headers["Authorization"] = `Bearer ${SECRET}`;
+  return headers;
+}
 
 async function post(path: string, body: Record<string, unknown>, timeoutMs = 5000): Promise<void> {
   try {
     await fetch(`${API}/agentmemory${path}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: authHeaders(),
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(timeoutMs),
     });
@@ -24,7 +31,7 @@ async function postJson(path: string, body: Record<string, unknown>): Promise<un
   try {
     const res = await fetch(`${API}/agentmemory${path}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: authHeaders(),
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(5000),
     });
@@ -194,7 +201,6 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
         if (!sid || !status) return;
         if (status.type === "idle") {
           await post("/summarize", { sessionId: sid });
-          pruneSessionMaps(sid);
         }
         await observe(sid, "session_status", {
           status_type: status.type,
@@ -272,19 +278,6 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
       if (type === "message.updated") {
         const info = props.info as Record<string, unknown> | undefined;
         if (!info) return;
-
-        if (info.role === "user") {
-          const sid = props.sessionID || (info.sessionID as string) || activeSessionId;
-          if (sid) {
-            await observe(sid, "prompt_submit", {
-              agent: info.agent ?? null,
-              model: info.model ?? null,
-              system: safeSlice(info.system, 1000),
-              tools: info.tools ?? null,
-              summary: info.summary ?? null,
-            });
-          }
-        }
 
         if (info.role === "assistant") {
           const sid = props.sessionID || (info.sessionID as string) || activeSessionId;
