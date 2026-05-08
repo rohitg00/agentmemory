@@ -171,6 +171,23 @@ describe("withDimensionGuard", () => {
     return provider;
   }
 
+  it("preserves the wrapped provider's prototype so instanceof keeps working", async () => {
+    class FakeProvider implements EmbeddingProvider {
+      readonly name = "fake-class";
+      readonly dimensions = 4;
+      async embed(): Promise<Float32Array> {
+        return new Float32Array([1, 2, 3, 4]);
+      }
+      async embedBatch(): Promise<Float32Array[]> {
+        return [new Float32Array([1, 2, 3, 4])];
+      }
+    }
+    const guarded = withDimensionGuard(new FakeProvider());
+    expect(guarded).toBeInstanceOf(FakeProvider);
+    expect(guarded.name).toBe("fake-class");
+    expect(guarded.dimensions).toBe(4);
+  });
+
   it("passes through vectors that match the declared dimensions", async () => {
     const guarded = withDimensionGuard(
       fakeProvider({
