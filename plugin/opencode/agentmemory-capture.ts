@@ -223,7 +223,7 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
           post("/crystals/auto", { olderThanDays: 7 }, 30000);
           post("/consolidate-pipeline", { tier: "all", force: true }, 30000);
           if (sid === activeSessionId) activeSessionId = null;
-          stashedFiles.clear();
+          stashedFiles.delete(sid);
           seenSubtaskIds.delete(sid);
           seenToolCallIds.delete(sid);
           contextInjectedSessions.delete(sid);
