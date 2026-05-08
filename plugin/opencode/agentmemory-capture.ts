@@ -5,6 +5,8 @@ const FILE_TOOLS = new Set(["Read", "Write", "Edit", "Glob", "Grep"]);
 const FILE_KEYS = ["filePath", "file_path", "path", "file", "pattern"];
 const MAX_STASHED_FILES = 20;
 
+const DEBUG = process.env.OPENCODE_AGENTMEMORY_DEBUG === "1";
+
 async function post(path: string, body: Record<string, unknown>): Promise<void> {
   try {
     await fetch(`${API}/agentmemory${path}`, {
@@ -13,7 +15,9 @@ async function post(path: string, body: Record<string, unknown>): Promise<void> 
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(5000),
     });
-  } catch {}
+  } catch (e) {
+    if (DEBUG) console.error(`[agentmemory] POST ${path} failed:`, (e as Error).message);
+  }
 }
 
 async function postJson(path: string, body: Record<string, unknown>): Promise<unknown | null> {
@@ -25,7 +29,8 @@ async function postJson(path: string, body: Record<string, unknown>): Promise<un
       signal: AbortSignal.timeout(5000),
     });
     return res.ok ? res.json() : null;
-  } catch {
+  } catch (e) {
+    if (DEBUG) console.error(`[agentmemory] POST ${path} failed:`, (e as Error).message);
     return null;
   }
 }
@@ -46,11 +51,12 @@ async function observe(
 }
 
 let activeSessionId: string | null = null;
+let pendingConfig: Record<string, unknown> | null = null;
 let projectPath: string | null = null;
 const stashedFiles = new Set<string>();
-const seenSubtaskIds = new Set<string>();
+const seenSubtaskIds = new Map<string, Set<string>>();
+const seenToolCallIds = new Map<string, Set<string>>();
 const contextInjectedSessions = new Set<string>();
-const seenToolCallIds = new Set<string>();
 
 function extractFilePaths(args: Record<string, unknown>): string[] {
   const files: string[] = [];
@@ -79,7 +85,7 @@ function extractErrorMessage(err: unknown): string {
 }
 
 export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
-  projectPath = ctx.project?.id || ctx.worktree || null;
+  projectPath = ctx.worktree || ctx.project?.id || null;
 
   return {
     event: async ({ event }) => {
@@ -91,9 +97,9 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
         const info = props.info as Record<string, unknown> | undefined;
         activeSessionId = (info?.id as string) || props.sessionID || null;
         stashedFiles.clear();
-        seenSubtaskIds.clear();
-        seenToolCallIds.clear();
         if (activeSessionId) {
+          seenSubtaskIds.set(activeSessionId, new Set());
+          seenToolCallIds.set(activeSessionId, new Set());
           contextInjectedSessions.delete(activeSessionId);
         }
         await post("/session/start", {
@@ -104,15 +110,13 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
           project: projectPath,
           cwd: projectPath,
         });
-      }
-
-      // ── session.idle ──
-      if (type === "session.idle") {
-        const sid = props.sessionID || activeSessionId;
-        if (sid) {
-          await post("/summarize", { sessionId: sid });
+        if (pendingConfig && activeSessionId) {
+          await observe(activeSessionId, "config_loaded", pendingConfig);
+          pendingConfig = null;
         }
       }
+
+      // ── session.idle ── (summarize handled in session.status idle branch)
 
       // ── session.status ──
       if (type === "session.status") {
@@ -172,8 +176,8 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
           await post("/session/end", { sessionId: sid });
           if (sid === activeSessionId) activeSessionId = null;
           stashedFiles.clear();
-          seenSubtaskIds.clear();
-          seenToolCallIds.clear();
+          seenSubtaskIds.delete(sid);
+          seenToolCallIds.delete(sid);
           contextInjectedSessions.delete(sid);
         }
       }
@@ -229,8 +233,8 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
             },
             finish: info.finish ?? null,
             error,
-            duration_ms: info.time
-              ? ((info.time as any).completed || 0) - ((info.time as any).created || 0)
+            duration_ms: (info.time && typeof (info.time as any).completed === "number")
+              ? (info.time as any).completed - ((info.time as any).created || 0)
               : null,
           });
         }
@@ -254,8 +258,9 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
         if (!sid) return;
 
         if (part.type === "subtask") {
-          if (seenSubtaskIds.has(part.id as string)) return;
-          seenSubtaskIds.add(part.id as string);
+          const subtaskSet = seenSubtaskIds.get(sid);
+          if (subtaskSet?.has(part.id as string)) return;
+          if (subtaskSet) subtaskSet.add(part.id as string);
           await observe(sid, "subagent_start", {
             subtask_id: part.id,
             agent: part.agent,
@@ -272,15 +277,16 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
           const toolName = part.tool as string;
 
           if (state.status === "completed") {
-            if (seenToolCallIds.has(callId)) return;
-            seenToolCallIds.add(callId);
+            const callSet = seenToolCallIds.get(sid);
+            if (callSet?.has(callId)) return;
+            if (callSet) callSet.add(callId);
             const st = state as Record<string, unknown>;
             const startTime = ((st.time as any)?.start as number) || 0;
             const endTime = ((st.time as any)?.end as number) || 0;
             await observe(sid, "post_tool_use", {
               tool_name: toolName,
               call_id: callId,
-              tool_input: JSON.stringify(st.input).slice(0, 4000),
+              tool_input: (JSON.stringify(st.input ?? null) ?? "").slice(0, 4000),
               tool_output: ((st.output as string) || "").slice(0, 8000),
               title: st.title ?? null,
               metadata: st.metadata || {},
@@ -290,15 +296,16 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
                 : [],
             });
           } else if (state.status === "error") {
-            if (seenToolCallIds.has(callId)) return;
-            seenToolCallIds.add(callId);
+            const callSet = seenToolCallIds.get(sid);
+            if (callSet?.has(callId)) return;
+            if (callSet) callSet.add(callId);
             const st = state as Record<string, unknown>;
             const startTime = ((st.time as any)?.start as number) || 0;
             const endTime = ((st.time as any)?.end as number) || 0;
             await observe(sid, "post_tool_use_failure", {
               tool_name: toolName,
               call_id: callId,
-              tool_input: JSON.stringify(st.input).slice(0, 4000),
+              tool_input: (JSON.stringify(st.input ?? null) ?? "").slice(0, 4000),
               tool_output: ((st.error as string) || "").slice(0, 8000),
               duration_ms: endTime - startTime || null,
             });
@@ -369,9 +376,13 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
 
       // ── file.edited ──
       if (type === "file.edited") {
-        const sid = activeSessionId;
-        if (sid) {
-          stashedFiles.add(props.file as string);
+        if (activeSessionId && typeof props.file === "string" && props.file.length > 0) {
+          stashedFiles.add(props.file);
+          if (stashedFiles.size > MAX_STASHED_FILES) {
+            const keep = [...stashedFiles].slice(-MAX_STASHED_FILES);
+            stashedFiles.clear();
+            for (const f of keep) stashedFiles.add(f);
+          }
         }
       }
 
@@ -489,19 +500,20 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
       if (!sid) return;
 
       if (!contextInjectedSessions.has(sid)) {
-        contextInjectedSessions.add(sid);
         const result = await postJson("/context", {
           sessionId: sid,
           project: projectPath,
         });
         if (result && typeof result === "object" && (result as any).context) {
-          output.system.push((result as any).context);
+          if (Array.isArray(output.system)) {
+            output.system.push((result as any).context);
+          }
+          contextInjectedSessions.add(sid);
         }
       }
 
       if (stashedFiles.size === 0) return;
       const files = [...stashedFiles].slice(0, 10);
-      stashedFiles.clear();
 
       const enrichResult = await postJson("/enrich", {
         sessionId: sid,
@@ -510,7 +522,10 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
       });
 
       if (enrichResult && typeof enrichResult === "object" && (enrichResult as any).context) {
-        output.system.push((enrichResult as any).context);
+        if (Array.isArray(output.system)) {
+          output.system.push((enrichResult as any).context);
+        }
+        for (const f of files) stashedFiles.delete(f);
       }
     },
 
@@ -524,22 +539,33 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
         project: projectPath,
       });
       if (result && typeof result === "object" && (result as any).context) {
-        output.context.push((result as any).context);
+        if (Array.isArray(output.context)) {
+          output.context.push((result as any).context);
+        }
       }
     },
 
     // ── config ──
     config: async (input) => {
+      const payload: Record<string, unknown> = {
+        theme: input.theme ?? null,
+        model: input.model ?? null,
+        autoupdate: input.autoupdate ?? null,
+        agents: typeof input.agent === "object" && input.agent !== null && !Array.isArray(input.agent)
+          ? Object.keys(input.agent as Record<string, unknown>)
+          : Array.isArray(input.agent) ? input.agent : [],
+        mcp_servers: typeof input.mcp === "object" && input.mcp !== null && !Array.isArray(input.mcp)
+          ? Object.keys(input.mcp as Record<string, unknown>)
+          : Array.isArray(input.mcp) ? input.mcp : [],
+        providers: typeof input.provider === "object" && input.provider !== null && !Array.isArray(input.provider)
+          ? Object.keys(input.provider as Record<string, unknown>)
+          : Array.isArray(input.provider) ? input.provider : [],
+        permission: input.permission ?? null,
+      };
       if (activeSessionId) {
-        await observe(activeSessionId, "config_loaded", {
-          theme: input.theme ?? null,
-          model: input.model ?? null,
-          autoupdate: input.autoupdate ?? null,
-          agents: input.agent ? Object.keys(input.agent as Record<string, unknown>) : [],
-          mcp_servers: input.mcp ? Object.keys(input.mcp as Record<string, unknown>) : [],
-          providers: input.provider ? Object.keys(input.provider as Record<string, unknown>) : [],
-          permission: input.permission ?? null,
-        });
+        await observe(activeSessionId, "config_loaded", payload);
+      } else {
+        pendingConfig = payload;
       }
     },
   };
