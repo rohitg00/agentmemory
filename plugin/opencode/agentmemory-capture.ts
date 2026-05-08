@@ -64,6 +64,18 @@ function stashFor(sid: string): Set<string> {
   return s;
 }
 
+function subtaskSetFor(sid: string): Set<string> {
+  let s = seenSubtaskIds.get(sid);
+  if (!s) { s = new Set<string>(); seenSubtaskIds.set(sid, s); }
+  return s;
+}
+
+function toolCallSetFor(sid: string): Set<string> {
+  let s = seenToolCallIds.get(sid);
+  if (!s) { s = new Set<string>(); seenToolCallIds.set(sid, s); }
+  return s;
+}
+
 function pruneSessionMaps(sid: string): void {
   stashedFiles.delete(sid);
   seenSubtaskIds.delete(sid);
@@ -150,8 +162,8 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
         activeSessionId = (info?.id as string) || props.sessionID || null;
         if (activeSessionId) {
           stashedFiles.set(activeSessionId, new Set());
-          seenSubtaskIds.set(activeSessionId, new Set());
-          seenToolCallIds.set(activeSessionId, new Set());
+          seenSubtaskIds.delete(activeSessionId);
+          seenToolCallIds.delete(activeSessionId);
           contextInjectedSessions.delete(activeSessionId);
         }
         await post("/session/start", {
@@ -224,17 +236,19 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
 
       // ── session.deleted ──
       if (type === "session.deleted") {
-        const sid = props.info?.id || props.sessionID || activeSessionId;
-        if (sid) {
-          await post("/session/end", { sessionId: sid });
-          post("/crystals/auto", { olderThanDays: 7 }, 30000);
-          post("/consolidate-pipeline", { tier: "all", force: true }, 30000);
-          if (sid === activeSessionId) activeSessionId = null;
-          stashedFiles.delete(sid);
-          seenSubtaskIds.delete(sid);
-          seenToolCallIds.delete(sid);
-          contextInjectedSessions.delete(sid);
+        const sid = props.info?.id || props.sessionID;
+        if (!sid) {
+          if (DEBUG) console.error("[agentmemory] session.deleted with no session ID");
+          return;
         }
+        await post("/session/end", { sessionId: sid });
+        post("/crystals/auto", { olderThanDays: 7 }, 30000);
+        post("/consolidate-pipeline", { tier: "all", force: true }, 30000);
+        if (sid === activeSessionId) activeSessionId = null;
+        stashedFiles.delete(sid);
+        seenSubtaskIds.delete(sid);
+        seenToolCallIds.delete(sid);
+        contextInjectedSessions.delete(sid);
       }
 
       // ── session.error ──
@@ -313,9 +327,9 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
         if (!sid) return;
 
         if (part.type === "subtask") {
-          const subtaskSet = seenSubtaskIds.get(sid);
-          if (subtaskSet?.has(part.id as string)) return;
-          if (subtaskSet) subtaskSet.add(part.id as string);
+          const subtaskSet = subtaskSetFor(sid);
+          if (subtaskSet.has(part.id as string)) return;
+          subtaskSet.add(part.id as string);
           await observe(sid, "subagent_start", {
             subtask_id: part.id,
             agent: part.agent,
@@ -332,9 +346,9 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
           const toolName = part.tool as string;
 
           if (state.status === "completed") {
-            const callSet = seenToolCallIds.get(sid);
-            if (callSet?.has(callId)) return;
-            if (callSet) callSet.add(callId);
+            const callSet = toolCallSetFor(sid);
+            if (callSet.has(callId)) return;
+            callSet.add(callId);
             const st = state as Record<string, unknown>;
             const startTime = ((st.time as any)?.start as number) || 0;
             const endTime = ((st.time as any)?.end as number) || 0;
@@ -351,9 +365,9 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
                 : [],
             });
           } else if (state.status === "error") {
-            const callSet = seenToolCallIds.get(sid);
-            if (callSet?.has(callId)) return;
-            if (callSet) callSet.add(callId);
+            const callSet = toolCallSetFor(sid);
+            if (callSet.has(callId)) return;
+            callSet.add(callId);
             const st = state as Record<string, unknown>;
             const startTime = ((st.time as any)?.start as number) || 0;
             const endTime = ((st.time as any)?.end as number) || 0;
@@ -504,7 +518,15 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
         .filter((p: any) => p.type === "file")
         .map((p: any) => p.filename || p.url)
         .filter(Boolean);
-      for (const f of files) stashFor(sid).add(f);
+      for (const f of files) {
+        const stash = stashFor(sid);
+        stash.add(f);
+        if (stash.size > MAX_STASHED_FILES) {
+          const keep = [...stash].slice(-MAX_STASHED_FILES);
+          stash.clear();
+          for (const k of keep) stash.add(k);
+        }
+      }
 
       const textParts = parts.filter((p: any) => p.type === "text" && !p.synthetic && !p.ignored);
       const userText = textParts.map((p: any) => p.text || "").join("\n");
@@ -521,6 +543,7 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
 
     // ── chat.params ──
     "chat.params": async (input, output) => {
+      if (!input.model || !output) return;
       const sid = input.sessionID || activeSessionId;
       if (!sid) return;
       await observe(sid, "llm_params", {
