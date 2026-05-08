@@ -748,31 +748,41 @@ agentmemory ships this for free because every function, trigger, state scope, an
   <em>Dashboard: functions, triggers, workers, streams, live flow graph. Screenshot from <a href="https://iii.dev/docs/console">iii.dev/docs/console</a>.</em>
 </p>
 
-**Install once:**
-
-```bash
-curl -fsSL https://install.iii.dev/console/main/install.sh | sh
-```
+**Already installed.** The console ships with `iii` — no separate installer.
 
 **Launch alongside agentmemory:**
 
 ```bash
-# The agentmemory viewer already holds port 3113, so run the console on 3114.
-iii-console --port 3114 --engine-port 3111 --ws-port 3112
+# agentmemory viewer holds port 3113, so run the console on 3114.
+# Engine REST (3111), WebSocket (3112), and bridge (49134) defaults match agentmemory.
+iii console --port 3114
 ```
 
-Then open `http://localhost:3114`.
+Then open `http://localhost:3114`. Add `--enable-flow` for the experimental architecture-graph page.
+
+Override engine endpoints only if you've moved them:
+
+```bash
+iii console --port 3114 \
+  --engine-port 3111 \
+  --ws-port 3112 \
+  --bridge-port 49134
+```
 
 **What you can do from the console:**
 
 | Page | Use it to |
 |------|-----------|
-| **Functions** | Invoke any of agentmemory's ~33 functions directly with a JSON payload — handy for testing `memory.recall`, `memory.consolidate`, `graph.query` without wiring a client. |
-| **Triggers** | Replay HTTP triggers (the agentmemory REST endpoints), fire the consolidation cron manually, or emit queue events. |
-| **States** | Browse the KV store — sessions, memory slots, lifecycle timers, embeddings index — and edit values in place. |
-| **Streams** | Watch live memory writes, hook events, and observation updates as they flow through iii's WebSocket stream. |
+| **Workers** | See every connected worker and its live metrics — including the agentmemory worker itself. |
+| **Functions** | Invoke any of agentmemory's functions directly with a JSON payload — handy for testing `memory.recall`, `memory.consolidate`, `graph.query` without wiring a client. |
+| **Triggers** | Replay HTTP, cron, event, and state triggers — fire the consolidation cron manually, retry an HTTP route, emit a state change. |
+| **States** | KV browser with full CRUD — sessions, memory slots, lifecycle timers, embeddings index — edit values in place. |
+| **Streams** | Live WebSocket monitor for memory writes, hook events, and observation updates as they flow through iii streams. |
+| **Queues** | Durable queue topics + dead-letter management. Replay or drop failed embedding / compression jobs. |
 | **Traces** | OpenTelemetry waterfall / flame / service-breakdown views. Filter by `trace_id` to see exactly which functions, DB calls, and embedding requests a single `memory.search` produced. |
-| **Logs** | Structured OTEL logs correlated to trace/span IDs. |
+| **Logs** | Structured OTEL logs filtered and correlated to trace/span IDs. |
+| **Config** | Runtime configuration — see exactly which workers, providers, and ports your engine is running with. |
+| **Flow** | (Optional, `--enable-flow`) Interactive architecture graph of every worker, trigger, and stream. |
 
 <p align="center">
   <img src="assets/iii-console/traces-waterfall.png" alt="iii console trace waterfall view showing per-span duration" width="720" />
