@@ -789,6 +789,8 @@ async function seedDemoSession(
     const payload = {
       hookType: "post_tool_use",
       sessionId: session.id,
+      project,
+      cwd: project,
       timestamp: new Date().toISOString(),
       data: {
         tool_name: obs.toolName,
