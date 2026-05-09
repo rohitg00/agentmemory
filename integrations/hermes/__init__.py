@@ -38,13 +38,13 @@ except ImportError:
         def get_config_schema(self) -> list[dict]: return []
         def save_config(self, values: dict, hermes_home: str) -> None: pass
         def system_prompt_block(self) -> str: return ""
-        def prefetch(self, query: str) -> str: return ""
-        def queue_prefetch(self, query: str) -> None: pass
-        def sync_turn(self, user: str, assistant: str) -> None: pass
-        def on_session_end(self, messages: list) -> None: pass
-        def on_pre_compress(self, messages: list) -> None: pass
-        def on_memory_write(self, action: str, target: str, content: str) -> None: pass
-        def shutdown(self) -> None: pass
+        def prefetch(self, query: str, **kwargs: Any) -> str: return ""
+        def queue_prefetch(self, query: str, **kwargs: Any) -> None: pass
+        def sync_turn(self, user: str, assistant: str, **kwargs: Any) -> None: pass
+        def on_session_end(self, messages: list, **kwargs: Any) -> None: pass
+        def on_pre_compress(self, messages: list, **kwargs: Any) -> None: pass
+        def on_memory_write(self, action: str, target: str, content: str, **kwargs: Any) -> None: pass
+        def shutdown(self, **kwargs: Any) -> None: pass
 
 
 DEFAULT_BASE_URL = "http://localhost:3111"
@@ -138,7 +138,7 @@ class AgentMemoryProvider(MemoryProvider):
             return result["context"]
         return ""
 
-    def prefetch(self, query: str) -> str:
+    def prefetch(self, query: str, **kwargs: Any) -> str:
         result = _api(self._base, "smart-search", {
             "query": query,
             "limit": 5,
@@ -155,7 +155,7 @@ class AgentMemoryProvider(MemoryProvider):
                 lines.append(f"- {title}: {narrative[:200]}")
         return "\n".join(lines) if lines else ""
 
-    def queue_prefetch(self, query: str) -> None:
+    def queue_prefetch(self, query: str, **kwargs: Any) -> None:
         _api_bg(self._base, "smart-search", {"query": query, "limit": 3})
 
     def get_tool_schemas(self) -> list[dict]:
@@ -248,10 +248,10 @@ class AgentMemoryProvider(MemoryProvider):
 
         return {"error": f"Unknown tool: {name}"}
 
-    def sync_turn(self, user: str, assistant: str) -> None:
+    def sync_turn(self, user: str, assistant: str, **kwargs: Any) -> None:
         _api_bg(self._base, "observe", {
             "hookType": "post_tool_use",
-            "sessionId": self._session_id,
+            "sessionId": kwargs.get("session_id", self._session_id),
             "project": self._project,
             "cwd": self._project,
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
@@ -262,14 +262,14 @@ class AgentMemoryProvider(MemoryProvider):
             },
         })
 
-    def on_session_end(self, messages: list) -> None:
+    def on_session_end(self, messages: list, **kwargs: Any) -> None:
         _api(self._base, "session/end", {
-            "sessionId": self._session_id,
+            "sessionId": kwargs.get("session_id", self._session_id),
         })
 
-    def on_pre_compress(self, messages: list) -> None:
+    def on_pre_compress(self, messages: list, **kwargs: Any) -> None:
         result = _api(self._base, "context", {
-            "sessionId": self._session_id,
+            "sessionId": kwargs.get("session_id", self._session_id),
             "project": self._project,
         })
         if result and result.get("context"):
@@ -278,14 +278,14 @@ class AgentMemoryProvider(MemoryProvider):
                 "content": f"[agentmemory context before compaction]\n{result['context']}",
             })
 
-    def on_memory_write(self, action: str, target: str, content: str) -> None:
+    def on_memory_write(self, action: str, target: str, content: str, **kwargs: Any) -> None:
         if action in ("add", "update") and content:
             _api_bg(self._base, "remember", {
                 "content": content,
                 "type": "fact",
             })
 
-    def shutdown(self) -> None:
+    def shutdown(self, **kwargs: Any) -> None:
         pass
 
 
