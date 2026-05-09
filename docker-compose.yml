@@ -1,6 +1,11 @@
 services:
   iii-engine:
-    image: iiidev/iii:latest
+    # Pinned to v0.11.2. v0.11.6 has a regression where engine-internal
+    # cron/http trigger registrations fail validation, causing the
+    # agentmemory worker to drop into an EPIPE reconnect loop and BM25
+    # search to return empty after save. Bump only after compat is
+    # verified end-to-end against a fresh agentmemory install.
+    image: iiidev/iii:0.11.2
     ports:
       - "127.0.0.1:49134:49134"
       - "127.0.0.1:3111:3111"
