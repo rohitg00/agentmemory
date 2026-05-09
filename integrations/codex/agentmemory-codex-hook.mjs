@@ -11,6 +11,10 @@
 const REST_URL = process.env.AGENTMEMORY_URL || "http://localhost:3111";
 const SECRET = process.env.AGENTMEMORY_SECRET || "";
 const INJECT_CONTEXT = process.env.AGENTMEMORY_CODEX_INJECT_CONTEXT !== "false";
+const REST_TIMEOUT_MS = positiveIntEnv(
+  process.env.AGENTMEMORY_CODEX_REST_TIMEOUT_MS,
+  4000,
+);
 const MAX_TOOL_OUTPUT_CHARS = positiveIntEnv(
   process.env.AGENTMEMORY_CODEX_MAX_TOOL_OUTPUT,
   8000,
@@ -53,7 +57,7 @@ function truncate(value, maxChars) {
   return `${text.slice(0, maxChars)}\n...[truncated ${text.length - maxChars} chars]`;
 }
 
-async function post(path, body, timeoutMs = 4000) {
+async function post(path, body, timeoutMs = REST_TIMEOUT_MS) {
   const response = await fetch(`${REST_URL}${path}`, {
     method: "POST",
     headers: authHeaders(),

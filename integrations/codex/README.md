@@ -29,6 +29,11 @@ On Windows, the full server also needs either Docker Desktop or the prebuilt
 `iii.exe` runtime described in the main README. Standalone MCP works without
 the full server, but automatic hooks need the REST API.
 
+> **API stability:** Codex hook event names and payload fields are still evolving.
+> This integration was smoke-tested against Codex Desktop `26.429.8261.0` and
+> Codex CLI `0.128.0` on Windows. If a newer Codex release changes hook payloads,
+> keep the MCP config and update only the hook bridge mapping.
+
 ## 1. Add the MCP server
 
 Add this to `~/.codex/config.toml`:
@@ -185,6 +190,24 @@ The bridge maps Codex hook events to agentmemory observations:
 The bridge truncates large tool outputs before sending them to the REST API.
 It never throws or blocks Codex if agentmemory is unavailable.
 
+## Custom server URL and auth
+
+The hook bridge reads the same environment variables as the other agentmemory
+integrations:
+
+```bash
+AGENTMEMORY_URL=http://localhost:3111
+AGENTMEMORY_SECRET=your-secret
+```
+
+Set `AGENTMEMORY_URL` when the server is not on `localhost:3111`. Set
+`AGENTMEMORY_SECRET` when the agentmemory REST API requires bearer auth; the hook
+will send `Authorization: Bearer <secret>` on every request.
+
+For shared or corporate deployments, set these variables in the shell or launch
+environment that starts Codex. The script intentionally writes no debug output
+to stdout, because Codex hook stdout may become user-visible context.
+
 ## Context injection
 
 By default, `SessionStart` writes recalled agentmemory context back to Codex as
@@ -199,6 +222,7 @@ You can also tune capture size:
 ```bash
 AGENTMEMORY_CODEX_MAX_TOOL_OUTPUT=8000
 AGENTMEMORY_CODEX_MAX_ASSISTANT_MESSAGE=12000
+AGENTMEMORY_CODEX_REST_TIMEOUT_MS=4000
 ```
 
 ## Verify
