@@ -336,10 +336,43 @@ async function main() {
     );
   }
   if (loaded?.vector && vectorIndex && loaded.vector.size > 0) {
-    vectorIndex.restoreFrom(loaded.vector);
-    console.log(
-      `[agentmemory] Loaded persisted vector index (${vectorIndex.size} vectors)`,
-    );
+    // Persisted vectors carry whatever dimension the provider had when
+    // they were written. If the active provider declares a different
+    // dimension (model swap, provider switch, model upgrade), restoring
+    // the old vectors would silently mix dimensions: cosineSimilarity
+    // returns 0 on cross-dim pairs, so the old observations stop matching
+    // anything and recall degrades without an error. Refuse to load.
+    // Same defense the live-write path got from #248.
+    const persistedDim = loaded.vector.firstDimensions();
+    const activeDim = embeddingProvider?.dimensions ?? 0;
+    if (persistedDim > 0 && activeDim > 0 && persistedDim !== activeDim) {
+      const dropStale =
+        process.env["AGENTMEMORY_DROP_STALE_INDEX"] === "true";
+      if (dropStale) {
+        console.warn(
+          `[agentmemory] Persisted vector index has dimension ${persistedDim} but ` +
+            `active provider (${embeddingProvider?.name}) declares ${activeDim}. ` +
+            `AGENTMEMORY_DROP_STALE_INDEX=true is set — discarding the persisted ` +
+            `vectors. Live observations will rebuild the index over time.`,
+        );
+      } else {
+        throw new Error(
+          `[agentmemory] Refusing to start: persisted vector index has dimension ` +
+            `${persistedDim}, but the active provider (${embeddingProvider?.name}) ` +
+            `declares ${activeDim}. Loading would silently corrupt search ` +
+            `(cross-dimension cosine returns 0). Choose one:\n` +
+            `  - Re-embed the existing index against the new provider, then start.\n` +
+            `  - Set AGENTMEMORY_DROP_STALE_INDEX=true to discard the persisted ` +
+            `vectors and rebuild from live observations.\n` +
+            `  - Switch the embedding provider back to the one that wrote the index.`,
+        );
+      }
+    } else {
+      vectorIndex.restoreFrom(loaded.vector);
+      console.log(
+        `[agentmemory] Loaded persisted vector index (${vectorIndex.size} vectors)`,
+      );
+    }
   }
 
   const needsRebuild = bm25Index.size === 0;

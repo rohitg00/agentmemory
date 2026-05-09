@@ -66,6 +66,17 @@ export class VectorIndex {
     return this.vectors.size;
   }
 
+  // Dimension of any stored vector, or 0 if the index is empty. All vectors
+  // in a single index are expected to share the same dimension; the first
+  // entry is representative because the live-write path is gated by the
+  // dimension guard in src/providers/embedding/index.ts.
+  firstDimensions(): number {
+    for (const entry of this.vectors.values()) {
+      return entry.embedding.length;
+    }
+    return 0;
+  }
+
   clear(): void {
     this.vectors.clear();
   }
