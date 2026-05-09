@@ -338,29 +338,44 @@ async function main() {
   if (loaded?.vector && vectorIndex && loaded.vector.size > 0) {
     // Persisted vectors carry whatever dimension the provider had when
     // they were written. If the active provider declares a different
-    // dimension (model swap, provider switch, model upgrade), restoring
-    // the old vectors would silently mix dimensions: cosineSimilarity
-    // returns 0 on cross-dim pairs, so the old observations stop matching
-    // anything and recall degrades without an error. Refuse to load.
-    // Same defense the live-write path got from #248.
-    const persistedDim = loaded.vector.firstDimensions();
+    // dimension — or if the on-disk index contains a mix of dimensions
+    // (legacy indexes written before the live-API guard in this PR) —
+    // restoring would silently corrupt search: cosineSimilarity returns
+    // 0 on cross-dim pairs, so affected observations stop matching
+    // anything and recall degrades without an error. Walk every stored
+    // vector instead of trusting the first; refuse to load if anything
+    // is off.
     const activeDim = embeddingProvider?.dimensions ?? 0;
-    if (persistedDim > 0 && activeDim > 0 && persistedDim !== activeDim) {
+    const { mismatches, seenDimensions } =
+      activeDim > 0
+        ? loaded.vector.validateDimensions(activeDim)
+        : { mismatches: [], seenDimensions: new Set<number>() };
+
+    if (mismatches.length > 0) {
+      const sample = mismatches
+        .slice(0, 5)
+        .map((m) => `${m.obsId} (dim=${m.dim})`)
+        .join(", ");
+      const distinct = Array.from(seenDimensions).sort((a, b) => a - b).join(", ");
       const dropStale =
         process.env["AGENTMEMORY_DROP_STALE_INDEX"] === "true";
       if (dropStale) {
         console.warn(
-          `[agentmemory] Persisted vector index has dimension ${persistedDim} but ` +
-            `active provider (${embeddingProvider?.name}) declares ${activeDim}. ` +
+          `[agentmemory] Persisted vector index has ${mismatches.length} of ` +
+            `${loaded.vector.size} vectors with the wrong dimension. Active ` +
+            `provider (${embeddingProvider?.name}) declares ${activeDim}; ` +
+            `dimensions seen on disk: ${distinct}. ` +
             `AGENTMEMORY_DROP_STALE_INDEX=true is set — discarding the persisted ` +
             `vectors. Live observations will rebuild the index over time.`,
         );
       } else {
         throw new Error(
-          `[agentmemory] Refusing to start: persisted vector index has dimension ` +
-            `${persistedDim}, but the active provider (${embeddingProvider?.name}) ` +
-            `declares ${activeDim}. Loading would silently corrupt search ` +
-            `(cross-dimension cosine returns 0). Choose one:\n` +
+          `[agentmemory] Refusing to start: persisted vector index has ` +
+            `${mismatches.length} of ${loaded.vector.size} vectors with the ` +
+            `wrong dimension. Active provider (${embeddingProvider?.name}) ` +
+            `declares ${activeDim}; dimensions seen on disk: ${distinct}. ` +
+            `First mismatched obsIds: ${sample}. Loading would silently corrupt ` +
+            `search (cross-dimension cosine returns 0). Choose one:\n` +
             `  - Re-embed the existing index against the new provider, then start.\n` +
             `  - Set AGENTMEMORY_DROP_STALE_INDEX=true to discard the persisted ` +
             `vectors and rebuild from live observations.\n` +
