@@ -36,6 +36,23 @@ const shared = {
   ] as const,
 };
 
+// Each hook is built in its own single-entry pass with `codeSplitting: false`
+// so all of its deps (including small shared helpers like sdk-guard-internal)
+// are inlined into the hook's own .mjs. With a multi-entry build, rolldown
+// extracts any helper imported by 2+ hooks into a hash-named shared chunk
+// (e.g. `sdk-guard-internal-<HASH>.mjs`). That chunk breaks downstream
+// installs that copy hooks file-by-file (ERR_MODULE_NOT_FOUND when the
+// chunk isn't shipped alongside) and churns the plugin/scripts diff on
+// every rebuild.
+const hookBuild = (entry: string, outDir: string) => ({
+  entry: [entry],
+  outDir,
+  ...shared,
+  clean: false as const,
+  sourcemap: false as const,
+  outputOptions: { codeSplitting: false as const },
+});
+
 export default defineConfig([
   {
     entry: ["src/index.ts"],
@@ -60,18 +77,6 @@ export default defineConfig([
     clean: false,
     sourcemap: false,
   },
-  {
-    entry: hookEntries,
-    outDir: "dist/hooks",
-    ...shared,
-    clean: false,
-    sourcemap: false,
-  },
-  {
-    entry: hookEntries,
-    outDir: "plugin/scripts",
-    ...shared,
-    clean: false,
-    sourcemap: false,
-  },
+  ...hookEntries.map((e) => hookBuild(e, "dist/hooks")),
+  ...hookEntries.map((e) => hookBuild(e, "plugin/scripts")),
 ]);

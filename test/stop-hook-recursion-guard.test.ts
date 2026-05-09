@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { isSdkChildContext } from "../src/hooks/sdk-guard.js";
+import { isSdkChildContext } from "../src/hooks/sdk-guard-internal.js";
 import { NoopProvider } from "../src/providers/noop.js";
 
 describe("isSdkChildContext — Stop hook recursion guard", () => {
