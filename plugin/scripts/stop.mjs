@@ -1,10 +1,13 @@
 #!/usr/bin/env node
-//#region src/hooks/stop.ts
+//#region src/hooks/sdk-guard-internal.ts
 function isSdkChildContext(payload) {
 	if (process.env["AGENTMEMORY_SDK_CHILD"] === "1") return true;
 	if (!payload || typeof payload !== "object") return false;
 	return payload.entrypoint === "sdk-ts";
 }
+
+//#endregion
+//#region src/hooks/stop.ts
 const REST_URL = process.env["AGENTMEMORY_URL"] || "http://localhost:3111";
 const SECRET = process.env["AGENTMEMORY_SECRET"] || "";
 function authHeaders() {
