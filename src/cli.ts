@@ -88,6 +88,13 @@ if (hostIdx !== -1 && args[hostIdx + 1]) {
 
 const skipEngine = args.includes("--no-engine");
 
+function isLoopbackHost(host: string): boolean {
+  if (host === "localhost" || host === "::1" || host === "::ffff:127.0.0.1") {
+    return true;
+  }
+  return host.startsWith("127.");
+}
+
 function getRestPort(): number {
   const url = process.env["AGENTMEMORY_URL"];
   if (url) {
@@ -259,7 +266,7 @@ async function startEngine(): Promise<boolean> {
   if (iiiBin && configPath) {
     const hostOverride = process.env["AGENTMEMORY_HOST"];
     const effectiveConfig =
-      hostOverride && hostOverride !== "127.0.0.1"
+      hostOverride && !isLoopbackHost(hostOverride)
         ? patchIiiConfigHost(configPath, hostOverride)
         : configPath;
     const s = p.spinner();
@@ -303,7 +310,7 @@ async function startEngine(): Promise<boolean> {
   if (iiiBin && configPath) {
     const hostOverride = process.env["AGENTMEMORY_HOST"];
     const effectiveConfig =
-      hostOverride && hostOverride !== "127.0.0.1"
+      hostOverride && !isLoopbackHost(hostOverride)
         ? patchIiiConfigHost(configPath, hostOverride)
         : configPath;
     const s = p.spinner();
@@ -377,11 +384,13 @@ async function main() {
   p.intro("agentmemory");
 
   const hostOverride = process.env["AGENTMEMORY_HOST"];
-  if (hostOverride && hostOverride !== "127.0.0.1") {
+  if (hostOverride && !isLoopbackHost(hostOverride)) {
     const secret = process.env["AGENTMEMORY_SECRET"];
     if (!secret) {
-      p.log.warn(
-        `Binding to ${hostOverride} without AGENTMEMORY_SECRET exposes your memory store to the network. Set AGENTMEMORY_SECRET in ~/.agentmemory/.env for authentication.`,
+      console.warn(
+        `[agentmemory] WARNING: bound to ${hostOverride} with no AGENTMEMORY_SECRET set.\n` +
+          `              Anyone on the network can write to memory and read observations.\n` +
+          `              Set AGENTMEMORY_SECRET, or bind to 127.0.0.1 (the default).`,
       );
     }
   }
