@@ -11,12 +11,19 @@
 const REST_URL = process.env.AGENTMEMORY_URL || "http://localhost:3111";
 const SECRET = process.env.AGENTMEMORY_SECRET || "";
 const INJECT_CONTEXT = process.env.AGENTMEMORY_CODEX_INJECT_CONTEXT !== "false";
-const MAX_TOOL_OUTPUT_CHARS = Number(
-  process.env.AGENTMEMORY_CODEX_MAX_TOOL_OUTPUT || 8000,
+const MAX_TOOL_OUTPUT_CHARS = positiveIntEnv(
+  process.env.AGENTMEMORY_CODEX_MAX_TOOL_OUTPUT,
+  8000,
 );
-const MAX_ASSISTANT_MESSAGE_CHARS = Number(
-  process.env.AGENTMEMORY_CODEX_MAX_ASSISTANT_MESSAGE || 12000,
+const MAX_ASSISTANT_MESSAGE_CHARS = positiveIntEnv(
+  process.env.AGENTMEMORY_CODEX_MAX_ASSISTANT_MESSAGE,
+  12000,
 );
+
+function positiveIntEnv(value, fallback) {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
 
 function authHeaders() {
   const headers = { "Content-Type": "application/json" };
@@ -57,10 +64,10 @@ async function post(path, body, timeoutMs = 4000) {
   return response.json().catch(() => null);
 }
 
-async function observe(data, hookType, observedData) {
+async function observe(data, sessionId, hookType, observedData) {
   return post("/agentmemory/observe", {
     hookType,
-    sessionId: data.session_id || "unknown",
+    sessionId,
     project: projectFrom(data),
     cwd: projectFrom(data),
     timestamp: new Date().toISOString(),
@@ -69,10 +76,12 @@ async function observe(data, hookType, observedData) {
 }
 
 function sessionStartContext(context) {
+  const text =
+    typeof context === "string" ? context : JSON.stringify(context, null, 2);
   return {
     hookSpecificOutput: {
       hookEventName: "SessionStart",
-      additionalContext: context,
+      additionalContext: text,
     },
   };
 }
@@ -99,7 +108,7 @@ async function main() {
     }
 
     if (event === "UserPromptSubmit") {
-      await observe(data, "prompt_submit", {
+      await observe(data, sessionId, "prompt_submit", {
         prompt: data.prompt,
         turn_id: data.turn_id,
         model: data.model,
@@ -108,7 +117,7 @@ async function main() {
     }
 
     if (event === "PreToolUse") {
-      await observe(data, "pre_tool_use", {
+      await observe(data, sessionId, "pre_tool_use", {
         tool_name: data.tool_name,
         tool_input: data.tool_input,
         tool_use_id: data.tool_use_id,
@@ -118,7 +127,7 @@ async function main() {
     }
 
     if (event === "PostToolUse") {
-      await observe(data, "post_tool_use", {
+      await observe(data, sessionId, "post_tool_use", {
         tool_name: data.tool_name,
         tool_input: data.tool_input,
         tool_output: truncate(data.tool_response, MAX_TOOL_OUTPUT_CHARS),
@@ -129,7 +138,7 @@ async function main() {
     }
 
     if (event === "Stop") {
-      await observe(data, "stop", {
+      await observe(data, sessionId, "stop", {
         last_assistant_message: truncate(
           data.last_assistant_message,
           MAX_ASSISTANT_MESSAGE_CHARS,
