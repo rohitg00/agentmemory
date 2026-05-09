@@ -5,7 +5,10 @@ services:
     # agentmemory worker to drop into an EPIPE reconnect loop and BM25
     # search to return empty after save. Bump only after compat is
     # verified end-to-end against a fresh agentmemory install.
-    image: iiidev/iii:0.11.2
+    #
+    # Override per-shell or via .env file:
+    #   AGENTMEMORY_III_VERSION=0.11.7 docker compose up
+    image: iiidev/iii:${AGENTMEMORY_III_VERSION:-0.11.2}
     ports:
       - "127.0.0.1:49134:49134"
       - "127.0.0.1:3111:3111"

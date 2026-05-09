@@ -415,7 +415,7 @@ This starts agentmemory with a local `iii-engine` if `iii` is already installed,
 
 Install `iii-engine` manually. **agentmemory currently pins `iii-engine` to `v0.11.2`** — `v0.11.6` ships a regression where engine-internal cron/http triggers fail validation and the agentmemory worker drops into an EPIPE reconnect loop. Override with `AGENTMEMORY_III_VERSION=<version>` once compat is verified manually.
 
-- **macOS arm64:** `curl -fsSL https://github.com/iii-hq/iii/releases/download/iii/v0.11.2/iii-aarch64-apple-darwin.tar.gz | tar -xz -C ~/.local/bin && chmod +x ~/.local/bin/iii`
+- **macOS arm64:** `mkdir -p ~/.local/bin && curl -fsSL https://github.com/iii-hq/iii/releases/download/iii/v0.11.2/iii-aarch64-apple-darwin.tar.gz | tar -xz -C ~/.local/bin && chmod +x ~/.local/bin/iii`
 - **macOS x64:** swap `aarch64-apple-darwin` for `x86_64-apple-darwin`
 - **Linux x64:** swap for `x86_64-unknown-linux-gnu`
 - **Linux arm64:** swap for `aarch64-unknown-linux-gnu`

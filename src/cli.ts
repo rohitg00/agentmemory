@@ -356,7 +356,7 @@ function installInstructions(): string[] {
     ];
   }
   const linuxInstall = releaseUrl
-    ? `  A) curl -fsSL "${releaseUrl}" | tar -xz -C ~/.local/bin && chmod +x ~/.local/bin/iii`
+    ? `  A) mkdir -p ~/.local/bin && curl -fsSL "${releaseUrl}" | tar -xz -C ~/.local/bin && chmod +x ~/.local/bin/iii`
     : `  A) Manual download from https://github.com/iii-hq/iii/releases/tag/iii%2Fv${IIPINNED_VERSION}`;
   return [
     `agentmemory requires the \`iii-engine\` runtime, pinned to v${IIPINNED_VERSION}. Pick one:`,
@@ -1042,9 +1042,22 @@ async function runUpgrade() {
     }
     if (upgradeEngine === true) {
       const releaseUrl = iiiReleaseUrl();
+      const asset = iiiReleaseAsset();
+      const isZipAsset = asset?.endsWith(".zip") === true;
       if (!releaseUrl) {
         p.log.warn(
           `iii-engine binary not available for ${platform()}/${process.arch}. Use Docker (\`docker pull iiidev/iii:${IIPINNED_VERSION}\`) or download manually from https://github.com/iii-hq/iii/releases/tag/iii%2Fv${IIPINNED_VERSION}.`,
+        );
+      } else if (IS_WINDOWS || isZipAsset) {
+        // Windows ships a .zip, not a tarball, and the rest of this
+        // branch assumes sh + tar -xz + chmod. Skip the auto-installer
+        // there and point at the manual flow / Docker fallback. Same
+        // guidance as installInstructions().
+        p.log.info(
+          `Skipping auto-install on ${platform()} — the ${asset} asset isn't tar-compatible. Install manually:\n` +
+            `  1. Download ${releaseUrl}\n` +
+            `  2. Extract iii.exe and place it on PATH (e.g. %USERPROFILE%\\.local\\bin)\n` +
+            `Or use Docker: docker pull iiidev/iii:${IIPINNED_VERSION}`,
         );
       } else {
         // Pinned to IIPINNED_VERSION rather than `install.iii.dev/iii/main`,
