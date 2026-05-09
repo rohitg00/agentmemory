@@ -6,6 +6,53 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.9.5] — 2026-05-09
+
+Bug-fix patch focused on **search recall correctness** and **plugin compatibility**. Pins `iii-engine` to v0.11.2 because v0.11.6 ships a regression that breaks the agentmemory worker. Adds a hard guard against silent vector-index corruption, fixes BM25 indexing for memories saved via `memory_save`, and lands four Hermes plugin fixes that make the memory provider actually usable end-to-end.
+
+If you've been seeing `memory_smart_search` return empty results for memories you just saved, this release fixes that. If you've been hitting `hermes memory status` reporting "not available" against a healthy systemd-managed install, this release fixes that too.
+
+### Fixed
+
+- **BM25 search now indexes memories saved via `memory_save`.** `mem::remember` was writing to `KV.memories` but never calling `getSearchIndex().add()`, so `memory_smart_search` and `memory_recall` returned empty for everything saved through that path — for **every** version since v0.9.0. Synthesizes a `CompressedObservation` from the saved Memory (title + content + concepts + files) and adds it to BM25 right after the durable write. `rebuildIndex()` now walks `KV.memories` so a fresh rebuild covers the full corpus, and a startup backfill retroactively indexes pre-existing memories on first start after upgrade — no manual reindex required. New `SearchIndex.has(id)` is the idempotency gate. (#258, closes [#257](https://github.com/rohitg00/agentmemory/issues/257) — thanks @Nizar-BenHamida for the precise repro and log capture)
+
+- **Embedding providers no longer silently corrupt the vector index when an API returns wrong-dimension vectors.** `cosineSimilarity` returns `0` on length mismatch instead of throwing, so a wrong-size vector got stored, never matched anything, and the corresponding memory became invisible without a single log line. `withDimensionGuard()` now wraps every embedding provider at the factory boundary in `src/providers/embedding/index.ts` — `embed()`, `embedBatch()` (per-vector, indexed errors like `embedBatch[3]`), and `embedImage()` all throw a descriptive error when the returned `Float32Array` length doesn't match `provider.dimensions`. The persistence-restore path got the same defense: `IndexPersistence.load()` now refuses to start when persisted vectors mismatch the active provider, with an actionable error spelling out the recovery paths (re-embed / `AGENTMEMORY_DROP_STALE_INDEX=true` / switch back). (#248, closes [#247](https://github.com/rohitg00/agentmemory/issues/247) and [#256](https://github.com/rohitg00/agentmemory/issues/256) — thanks @AmmarSaleh50 for the issue analysis, the fix PR, and the test coverage)
+
+- **Hermes plugin: `handle_tool_call` now returns JSON strings, not raw Python dicts.** Hermes stores the return value as the tool result `content` field in session history. Anthropic-protocol providers reject non-string content with a 400 on the next request — once triggered, every subsequent request in the affected session 400s until the session JSON is hand-cleaned. Wrapped all four return paths (`memory_recall`, `memory_save`, `memory_search`, unknown-tool) in `json.dumps()` and tightened the return-type annotation `Any → str` on both the abstract base and the concrete class. Matches the contract that `src/mcp/standalone.ts` already honors. (#255, closes [#254](https://github.com/rohitg00/agentmemory/issues/254) — thanks @KyoMio for the Anthropic-protocol-specific repro)
+
+- **Hermes plugin: `hermes memory status` now reflects the real service state on systemd / launchd installs.** When agentmemory runs as an external service whose runtime config lives in `~/.agentmemory/.env`, those values never reach the Hermes CLI shell. Hermes status reads `os.environ` against `get_config_schema()`'s `env_var` keys, finds them unset, and reports the plugin as "not available" — even though the service is healthy. The plugin now preloads `~/.agentmemory/.env` at import time using `os.environ.setdefault`, bridging the agentmemory-managed and Hermes-managed config source-of-truths. Anything explicitly exported in the shell still wins. Best-effort: malformed / absent file is silently skipped. Both `~/.agentmemory/.env` and `$XDG_CONFIG_HOME/agentmemory/.env` are checked. (#253, closes [#250](https://github.com/rohitg00/agentmemory/issues/250) — thanks @OptionalCoin for the systemd repro and tracing it to env-source divergence)
+
+- **Hermes plugin: memory provider hooks accept passthrough kwargs.** Hermes calls memory provider hooks with extra context kwargs (e.g. `session_id`) at runtime that the existing strict signatures rejected with `sync_turn() got an unexpected keyword argument 'session_id'`. Hooks "succeeded" from Hermes's perspective but every conversation turn silently failed sync. Added `**kwargs: Any` to `sync_turn`, `on_session_end`, `on_pre_compress`, `on_memory_write`, `prefetch`, `queue_prefetch`, and `shutdown`. Where Hermes passes `session_id`, the patch prefers it over the cached `self._session_id` so multi-session gateway contexts route to the right session. Same change applied to the abstract `MemoryProvider` fallback for the import-error path. (#252, closes [#249](https://github.com/rohitg00/agentmemory/issues/249) — thanks @OptionalCoin for the precise log analysis)
+
+- **`agentmemory demo` now actually seeds observations.** `seedDemoSession` posted to `/agentmemory/observe` without `project` and `cwd`, which the API requires as non-empty strings, so every observation 400'd and the demo silently reported "Seeded 0 observations across 3 sessions". Two-line fix: re-stage `project` + `cwd` into the observe payload alongside `sessionId`. The smart-search queries the demo prints will now return real hits. (#251, closes [#229](https://github.com/rohitg00/agentmemory/issues/229) — thanks @seishonagon for the precise root-cause analysis)
+
+- **LLM compression / summarization timeouts increased.** Larger sessions were hitting the 120s consolidation timeout under heavier workloads, leaving partial state. Bumped per-step ceilings to give slow providers (esp. local models) room to finish. (#213 — thanks @xuli500177)
+
+- **`pi` / OpenClaw / Hermes integration fixes.** Tested round-trip fixes across the three integration plugins to keep them aligned with the latest hooks contract. (#230 — thanks @deepmroot)
+
+### Changed
+
+- **`iii-engine` pinned to v0.11.2 across every install path.** v0.11.6 introduces a new architecture where workers run inside sandboxed microVMs registered via `iii worker add`. agentmemory still uses the older `iii-exec watch + node dist/index.mjs` worker model from `iii-config.yaml`, which doesn't pass the new engine's stricter trigger validation cleanly — the worker drops into an EPIPE reconnect loop and recall stops working. Pinning to v0.11.2 (the last engine that runs agentmemory's current architecture cleanly) until we refactor agentmemory to register itself via `iii worker add` and run inside the new sandbox model.
+  - `src/cli.ts` auto-installer downloads `github.com/iii-hq/iii/releases/download/iii/v0.11.2/iii-<arch>.tar.gz` directly. Per-arch coverage: darwin arm64/x64, linux x64/arm64/armv7, win32 x64/arm64.
+  - Docker fallback pulls `iiidev/iii:0.11.2` instead of `:latest`.
+  - `docker-compose.yml` uses `image: iiidev/iii:${AGENTMEMORY_III_VERSION:-0.11.2}` so the override env var actually takes effect for compose users.
+  - Install instructions and Windows guide updated to point at the v0.11.2 release page.
+  - **Escape hatch:** `AGENTMEMORY_III_VERSION=<version>` overrides the pin for users who've moved to the sandbox model manually.
+  - Windows ZIP path detection in `runUpgrade` so the auto-installer doesn't try to pipe a `.zip` through `tar -xz`. (#260)
+  - **Follow-up tracked separately:** refactor agentmemory to register as a sandboxed worker via `iii worker add` so the pin can be lifted.
+
+- **README documents how to extend agentmemory with `iii worker add`.** New "Powered by iii" section maps each `iii worker add <name>` to a concrete agentmemory capability — multi-instance memory, scheduled consolidation, durable retries on embeddings, sandboxed code exec, SQL state, extra MCP host. Lists only workers actually published to [workers.iii.dev](https://workers.iii.dev) with direct links. (#242)
+
+- **README iii Console section corrected.** The console ships with `iii` as a subcommand; there's no separate installer. Replaced the bogus `curl install.iii.dev/console/main/install.sh` line, simplified the launch command to `iii console --port 3114`, and added the missing console pages to the capability table (Workers, Queues, Config, Flow). Replaced the dashboard screenshot with the Workers page so users see real agentmemory instances connected. (#243)
+
+### Notes
+
+If you're upgrading from <0.9.5 and have an existing vector index on disk, the new dim-guard will refuse to load if your active embedding provider declares a different dimension than what's persisted. This is the intended safe default — set `AGENTMEMORY_DROP_STALE_INDEX=true` to discard and rebuild from live observations, or re-embed against the new provider before starting.
+
+If you've been on `iii-engine` v0.11.6 and noticed search returning empty after save, install agentmemory 0.9.5 fresh (or run `npx @agentmemory/agentmemory upgrade`) to pull pinned engine v0.11.2. v0.11.6 brings a new sandbox-everything-via-`iii worker add` model that agentmemory hasn't been refactored for yet — that work is tracked as a follow-up; this release just keeps existing users unblocked.
+
+[0.9.5]: https://github.com/rohitg00/agentmemory/compare/v0.9.4...v0.9.5
+
 ## [0.9.4] — 2026-04-29
 
 Bug-fix patch. Fixes a silent gap where the knowledge graph never auto-populated despite `GRAPH_EXTRACTION_ENABLED=true`, and adds a doctor check that detects when Claude Code fails to load plugin hooks.

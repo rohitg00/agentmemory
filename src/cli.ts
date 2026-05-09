@@ -20,12 +20,14 @@ const IS_VERBOSE = args.includes("--verbose") || args.includes("-v");
 
 // Pinned iii-engine version. The unpinned `install.iii.dev/iii/main/install.sh`
 // script tracks `latest`, which made every fresh agentmemory install pull
-// engine 0.11.6 — and 0.11.6 has a regression where its internal cron/http
-// trigger registrations fail validation, the worker drops into an EPIPE
-// reconnect loop, and BM25 search returns empty after save (visible to users
-// as "demo can't reach worker" and recall always-empty). Override env var
-// AGENTMEMORY_III_VERSION lets early adopters move forward when a fixed
-// engine ships, without us cutting another agentmemory release.
+// engine 0.11.6 — and 0.11.6 introduces a new sandbox-everything-via-
+// `iii worker add` worker model that agentmemory hasn't been refactored
+// for yet (we still use the old `iii-exec watch` config-file model). The
+// architectural mismatch surfaces as EPIPE reconnect loops and empty
+// search results after save. Pin to v0.11.2 — the last engine that runs
+// agentmemory's current worker model cleanly — until the refactor lands.
+// Override env var AGENTMEMORY_III_VERSION lets users on the sandbox
+// model already point at a newer engine without us cutting a release.
 const IIPINNED_VERSION =
   process.env["AGENTMEMORY_III_VERSION"] || "0.11.2";
 
@@ -370,8 +372,11 @@ function installInstructions(): string[] {
     "  npx @agentmemory/agentmemory mcp",
     "",
     "Docs: https://iii.dev/docs",
-    `Why pinned: agentmemory hits a regression in iii v0.11.6. Override with`,
-    `AGENTMEMORY_III_VERSION=<version> if you've verified compat manually.`,
+    `Why pinned: iii v0.11.6 introduces the new sandbox-everything model`,
+    `(\`iii worker add\` registration). agentmemory still uses the older`,
+    `iii-exec config-file worker model and needs a refactor before it`,
+    `runs cleanly under the new engine. Override with`,
+    `AGENTMEMORY_III_VERSION=<version> when you've migrated manually.`,
   ];
 }
 
