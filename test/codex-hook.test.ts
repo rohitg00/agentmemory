@@ -10,6 +10,7 @@ const HOOK_PATH = join(
   "codex",
   "agentmemory-codex-hook.mjs",
 );
+const HOOK_WATCHDOG_MS = 5000;
 
 type HookResult = {
   stdout: string;
@@ -63,6 +64,10 @@ function runHook(
       },
       stdio: ["pipe", "pipe", "pipe"],
     });
+    const watchdog = setTimeout(() => {
+      child.kill("SIGKILL");
+      reject(new Error(`hook subprocess timed out after ${HOOK_WATCHDOG_MS}ms`));
+    }, HOOK_WATCHDOG_MS);
 
     let stdout = "";
     let stderr = "";
@@ -72,8 +77,12 @@ function runHook(
     child.stderr.on("data", (chunk) => {
       stderr += chunk.toString();
     });
-    child.on("error", reject);
+    child.on("error", (err) => {
+      clearTimeout(watchdog);
+      reject(err);
+    });
     child.on("close", (exitCode) => {
+      clearTimeout(watchdog);
       resolve({ stdout, stderr, exitCode, tookMs: Date.now() - start });
     });
 
