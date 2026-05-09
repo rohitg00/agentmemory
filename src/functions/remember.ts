@@ -1,11 +1,32 @@
 import { TriggerAction, type ISdk } from "iii-sdk";
-import type { Memory } from "../types.js";
+import type { CompressedObservation, Memory } from "../types.js";
 import { KV, generateId, jaccardSimilarity } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
 import { deleteAccessLog } from "./access-tracker.js";
 import { recordAudit } from "./audit.js";
+import { getSearchIndex } from "./search.js";
 import { logger } from "../logger.js";
+
+// SearchIndex is built around CompressedObservation. Memories carry the
+// same searchable text (title + content + concepts + files) so we wrap
+// them in the observation shape before indexing. Type is normalized to
+// "decision" so memories are still distinguishable in result metadata
+// without colliding with observation enums (file_read, command_run, etc).
+function memoryAsIndexable(memory: Memory): CompressedObservation {
+  return {
+    id: memory.id,
+    sessionId: memory.sessionIds[0] ?? "memory",
+    timestamp: memory.createdAt,
+    type: "decision",
+    title: memory.title,
+    facts: [memory.content],
+    narrative: memory.content,
+    concepts: memory.concepts,
+    files: memory.files,
+    importance: memory.strength,
+  };
+}
 
 export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
   sdk.registerFunction("mem::remember", 
@@ -96,6 +117,20 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
           await kv.set(KV.memories, supersededMemory.id, supersededMemory);
         }
         await kv.set(KV.memories, memory.id, memory);
+
+        // Without this, mem::remember persists the row but the BM25
+        // index never sees it, so memory_smart_search and memory_recall
+        // return empty even seconds after save (#257). Use try/catch so
+        // an indexing failure doesn't block the save itself — the
+        // restart-time rebuild will pick the memory up either way.
+        try {
+          getSearchIndex().add(memoryAsIndexable(memory));
+        } catch (err) {
+          logger.warn("Failed to index saved memory into BM25", {
+            memId: memory.id,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
 
         if (supersededId) {
           await sdk.trigger({

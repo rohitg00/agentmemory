@@ -19,6 +19,7 @@ import {
   createImageEmbeddingProvider,
 } from "./providers/index.js";
 import { StateKV } from "./state/kv.js";
+import { KV } from "./state/schema.js";
 import { VectorIndex } from "./state/vector-index.js";
 import { HybridSearch } from "./state/hybrid-search.js";
 import { IndexPersistence } from "./state/index-persistence.js";
@@ -399,9 +400,50 @@ async function main() {
     });
     if (indexCount > 0) {
       console.log(
-        `[agentmemory] Search index rebuilt: ${indexCount} observations`,
+        `[agentmemory] Search index rebuilt: ${indexCount} entries`,
       );
       indexPersistence.scheduleSave();
+    }
+  } else {
+    // Backfill memories into BM25 for users upgrading from <0.9.5: prior
+    // versions of mem::remember never indexed memories, so the persisted
+    // BM25 covers observations only and `memory_smart_search` returns
+    // empty for everything saved via memory_save (#257). Walk KV.memories
+    // and add the ones missing from the restored index. Idempotent on
+    // re-runs because SearchIndex.has() short-circuits already-indexed
+    // ids.
+    try {
+      const memories = await kv.list<import("./types.js").Memory>(KV.memories);
+      let backfilled = 0;
+      for (const memory of memories) {
+        if (memory.isLatest === false) continue;
+        if (!memory.title || !memory.content) continue;
+        if (bm25Index.has(memory.id)) continue;
+        bm25Index.add({
+          id: memory.id,
+          sessionId: memory.sessionIds[0] ?? "memory",
+          timestamp: memory.createdAt,
+          type: "decision",
+          title: memory.title,
+          facts: [memory.content],
+          narrative: memory.content,
+          concepts: memory.concepts,
+          files: memory.files,
+          importance: memory.strength,
+        });
+        backfilled++;
+      }
+      if (backfilled > 0) {
+        console.log(
+          `[agentmemory] Backfilled ${backfilled} memories into BM25 (legacy gap before #257)`,
+        );
+        indexPersistence.scheduleSave();
+      }
+    } catch (err) {
+      console.warn(
+        `[agentmemory] Failed to backfill memories into BM25:`,
+        err,
+      );
     }
   }
 

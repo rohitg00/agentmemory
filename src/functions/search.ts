@@ -1,10 +1,31 @@
 import type { ISdk } from 'iii-sdk'
-import type { CompactSearchResult, CompressedObservation, SearchResult, Session } from '../types.js'
+import type { CompactSearchResult, CompressedObservation, Memory, SearchResult, Session } from '../types.js'
 import { KV } from '../state/schema.js'
 import { StateKV } from '../state/kv.js'
 import { SearchIndex } from '../state/search-index.js'
 import { recordAccessBatch } from './access-tracker.js'
 import { logger } from "../logger.js";
+
+// Memories share the same searchable fields as observations (title +
+// content + concepts + files), so we wrap them in the observation shape
+// before indexing. Type is normalized to "decision" to keep memories
+// distinguishable in result metadata. Mirrors the helper in
+// functions/remember.ts; kept inline here to avoid a circular import
+// (remember.ts imports from this file).
+function memoryAsIndexable(memory: Memory): CompressedObservation {
+  return {
+    id: memory.id,
+    sessionId: memory.sessionIds[0] ?? "memory",
+    timestamp: memory.createdAt,
+    type: "decision",
+    title: memory.title,
+    facts: [memory.content],
+    narrative: memory.content,
+    concepts: memory.concepts,
+    files: memory.files,
+    importance: memory.strength,
+  };
+}
 
 let index: SearchIndex | null = null
 
@@ -17,10 +38,29 @@ export async function rebuildIndex(kv: StateKV): Promise<number> {
   const idx = getSearchIndex()
   idx.clear()
 
-  const sessions = await kv.list<Session>(KV.sessions)
-  if (!sessions.length) return 0
-
   let count = 0
+
+  // Memories live in their own KV scope outside per-session observation
+  // scopes, so they need a separate walk. Without this, mem::remember
+  // entries vanish from BM25 on every restart even after the live-write
+  // fix in remember.ts (#257).
+  try {
+    const memories = await kv.list<Memory>(KV.memories)
+    for (const memory of memories) {
+      if (memory.isLatest === false) continue
+      if (!memory.title || !memory.content) continue
+      idx.add(memoryAsIndexable(memory))
+      count++
+    }
+  } catch (err) {
+    logger.warn('rebuildIndex: failed to load memories', {
+      error: err instanceof Error ? err.message : String(err),
+    })
+  }
+
+  const sessions = await kv.list<Session>(KV.sessions)
+  if (!sessions.length) return count
+
   const obsPerSession: CompressedObservation[][] = []
   const failedSessions: string[] = []
   for (let batch = 0; batch < sessions.length; batch += 10) {
