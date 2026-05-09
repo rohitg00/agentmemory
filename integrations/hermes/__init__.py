@@ -50,6 +50,46 @@ except ImportError:
 DEFAULT_BASE_URL = "http://localhost:3111"
 TIMEOUT = 5
 
+# agentmemory's documented runtime config lives at ~/.agentmemory/.env.
+# When agentmemory is launched as a systemd user service (or any other
+# process manager that loads that file directly), those values never
+# reach an interactive shell. `hermes memory status` then reads
+# os.environ in the Hermes CLI process, finds AGENTMEMORY_URL /
+# AGENTMEMORY_SECRET unset, and reports the plugin as "Missing" even
+# though the service is healthy and live sessions can use it (#250).
+#
+# Preload the file at plugin-import time using os.environ.setdefault so
+# we never override anything the user explicitly set in the shell. The
+# preload is best-effort and silent on any failure (file absent,
+# unreadable, malformed) — the plugin falls back to its existing default
+# (http://localhost:3111) and Hermes status reflects that.
+def _preload_agentmemory_dotenv() -> None:
+    candidates: list[Path] = []
+    home = os.environ.get("HOME")
+    if home:
+        candidates.append(Path(home) / ".agentmemory" / ".env")
+    xdg_config = os.environ.get("XDG_CONFIG_HOME")
+    if xdg_config:
+        candidates.append(Path(xdg_config) / "agentmemory" / ".env")
+    for path in candidates:
+        try:
+            if not path.is_file():
+                continue
+            for raw in path.read_text(encoding="utf-8").splitlines():
+                line = raw.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, _, value = line.partition("=")
+                key = key.strip()
+                value = value.strip().strip('"').strip("'")
+                if key:
+                    os.environ.setdefault(key, value)
+        except (OSError, UnicodeDecodeError):
+            continue
+
+
+_preload_agentmemory_dotenv()
+
 
 def _validate_url(base: str) -> bool:
     from urllib.parse import urlparse
