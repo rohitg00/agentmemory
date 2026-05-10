@@ -1,13 +1,6 @@
-import type { ISdk } from "iii-sdk";
-import type { Memory, CompressedObservation, Session } from "../types.js";
-import { KV } from "../state/schema.js";
-import { StateKV } from "../state/kv.js";
-import { recordAudit } from "./audit.js";
-import { deleteAccessLog } from "./access-tracker.js";
-import { logger } from "../logger.js";
+// ... (existing imports and constants)
 
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
-const CONTRADICTION_THRESHOLD = 0.9;
+const SIMILARITY_MERGE_THRESHOLD = 0.85;
 
 interface AutoForgetResult {
   ttlExpired: string[];
@@ -16,24 +9,77 @@ interface AutoForgetResult {
     memoryB: string;
     similarity: number;
   }>;
+  redundant: string[]; // New: Tracks merged/redundant memories
   lowValueObs: string[];
   dryRun: boolean;
 }
 
 export function registerAutoForgetFunction(sdk: ISdk, kv: StateKV): void {
-  sdk.registerFunction("mem::auto-forget", 
+  sdk.registerFunction("mem::auto-forget",
     async (data: { dryRun?: boolean }): Promise<AutoForgetResult> => {
       const dryRun = data?.dryRun ?? false;
       const now = Date.now();
       const { decrementImageRef } = await import("./image-refs.js");
 
-      const result: AutoForgetResult = {
-        ttlExpired: [],
-        contradictions: [],
-        lowValueObs: [],
-        dryRun,
+      const result: AutoForgetResult = { 
+        ttlExpired: [], 
+        contradictions: [], 
+        redundant: [],
+        lowValueObs: [], 
+        dryRun 
       };
 
+      // Fetch all active memories for the session
+      const memories = await kv.getMany<Memory>(KV.MEMORIES);
+
+      for (let i = 0; i < memories.length; i++) {
+        const memA = memories[i];
+
+        // 1. TTL Expiry Logic
+        if (memA.metadata?.expiresAt && now > memA.metadata.expiresAt) {
+          result.ttlExpired.push(memA.id);
+          continue;
+        }
+
+        // 2. Conflict & Redundancy Detection
+        for (let j = i + 1; j < memories.length; j++) {
+          const memB = memories[j];
+          const similarity = await sdk.vector.similarity(memA.embedding, memB.embedding);
+
+          if (similarity > CONTRADICTION_THRESHOLD) {
+            // Check if they actually contradict (logic assumed handled by SDK or LLM)
+            const isContradictory = await sdk.llm.checkContradiction(memA.content, memB.content);
+            if (isContradictory) {
+              result.contradictions.push({ memoryA: memA.id, memoryB: memB.id, similarity });
+            } else if (similarity > SIMILARITY_MERGE_THRESHOLD) {
+              // Feature: Identify redundant memories for consolidation
+              result.redundant.push(memB.id);
+            }
+          }
+        }
+      }
+
+      // Execution Phase (if not dryRun)
+      if (!dryRun) {
+        const idsToDelete = [...result.ttlExpired, ...result.redundant];
+        
+        for (const id of idsToDelete) {
+          await kv.delete(KV.MEMORIES, id);
+          await deleteAccessLog(id);
+          await recordAudit(sdk, "memory_auto_forgotten", { id, reason: "cleanup" });
+          
+          // Cleanup associated assets
+          const mem = memories.find(m => m.id === id);
+          if (mem?.imageId) await decrementImageRef(mem.imageId);
+        }
+        
+        logger.info(`Auto-forget complete. Removed ${idsToDelete.length} memories.`);
+      }
+
+      return result;
+    }
+  );
+}
       const memories = await kv.list<Memory>(KV.memories);
       const deletedIds = new Set<string>();
       for (const mem of memories) {
