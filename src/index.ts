@@ -138,7 +138,11 @@ async function main() {
   const imageEmbeddingProvider = createImageEmbeddingProvider();
 
   console.log(`[agentmemory] Starting worker v${VERSION}...`);
-  console.log(`[agentmemory] Engine: ${config.engineUrl}`);
+  const engineDisplayUrl = config.engineUrl.includes("@")
+    ? config.engineUrl.replace(/\/\/[^@]+@/, "//***@")
+    : config.engineUrl;
+  console.log(`[agentmemory] Engine: ${engineDisplayUrl}`);
+
   console.log(
     `[agentmemory] Provider: ${config.provider.provider} (${config.provider.model})`,
   );

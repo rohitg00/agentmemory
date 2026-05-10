@@ -51,7 +51,8 @@ export function registerMcpEndpoints(
     if (!sec) return null;
     const auth =
       req.headers?.["authorization"] || req.headers?.["Authorization"];
-    if (typeof auth !== "string" || !timingSafeCompare(auth, `Bearer ${sec}`)) {
+    const match = typeof auth === "string" ? auth.match(/^bearer\s+(.+)$/i) : null;
+    if (!match || !timingSafeCompare(match[1], sec)) {
       return { status_code: 401, body: { error: "unauthorized" } };
     }
     return null;

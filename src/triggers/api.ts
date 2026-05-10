@@ -36,10 +36,8 @@ function checkAuth(
 ): Response | null {
   if (!secret) return null;
   const auth = req.headers?.["authorization"] || req.headers?.["Authorization"];
-  if (
-    typeof auth !== "string" ||
-    !timingSafeCompare(auth, `Bearer ${secret}`)
-  ) {
+  const match = typeof auth === "string" ? auth.match(/^bearer\s+(.+)$/i) : null;
+  if (!match || !timingSafeCompare(match[1], secret)) {
     return { status_code: 401, body: { error: "unauthorized" } };
   }
   return null;
@@ -126,10 +124,8 @@ export function registerApiTriggers(
       if (!secret) return { action: "continue" };
       const headers = input?.request?.headers || {};
       const auth = headers["authorization"] || headers["Authorization"];
-      if (
-        typeof auth !== "string" ||
-        !timingSafeCompare(auth, `Bearer ${secret}`)
-      ) {
+      const match = typeof auth === "string" ? auth.match(/^bearer\s+(.+)$/i) : null;
+      if (!match || !timingSafeCompare(match[1], secret)) {
         return {
           action: "respond",
           response: { status_code: 401, body: { error: "unauthorized" } },

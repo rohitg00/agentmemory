@@ -5,6 +5,7 @@ import {
   type ServerResponse,
 } from "node:http";
 import { renderViewerDocument } from "./document.js";
+import { timingSafeCompare } from "../auth.js";
 
 const ALLOWED_ORIGINS = (
   process.env.VIEWER_ALLOWED_ORIGINS ||
@@ -58,6 +59,15 @@ function readBody(req: IncomingMessage): Promise<string> {
   });
 }
 
+/**
+ * Starts the memory viewer server.
+ * @param port The port to listen on.
+ * @param _kv The KV store instance.
+ * @param _sdk The SDK instance.
+ * @param secret Optional authorization secret.
+ * @param restPort Optional port of the REST API to proxy to.
+ * @returns The HTTP server instance.
+ */
 export function startViewerServer(
   port: number,
   _kv: unknown,
@@ -104,10 +114,20 @@ export function startViewerServer(
       return;
     }
 
+    if (secret) {
+      const auth = req.headers["authorization"];
+      const match = typeof auth === "string" ? auth.match(/^bearer\s+(.+)$/i) : null;
+      if (!match || !timingSafeCompare(match[1], secret)) {
+        json(res, 401, { error: "unauthorized" }, req);
+        return;
+      }
+    }
+
     try {
       await proxyToRestApi(resolvedRestPort, pathname, qs, method, req, res, secret);
     } catch (err) {
-      console.error(`[viewer] proxy error on ${method} ${pathname}:`, err);
+      const safePath = pathname.replace(/[\r\n]/g, " ");
+      console.error(`[viewer] proxy error on ${method} ${safePath}:`, err);
       json(res, 502, { error: "upstream error" }, req);
     }
   });

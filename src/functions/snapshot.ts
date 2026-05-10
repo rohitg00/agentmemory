@@ -1,7 +1,7 @@
 import type { ISdk } from "iii-sdk";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { existsSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync, readFileSync, constants, openSync, closeSync } from "node:fs";
 import { join } from "node:path";
 import type {
   SnapshotMeta,
@@ -75,12 +75,17 @@ export function registerSnapshotFunction(
           accessLogs,
         };
 
-        writeFileSync(
-          join(snapshotDir, "state.json"),
-          JSON.stringify(state, null, 2),
-          "utf-8",
+        const stateContent = JSON.stringify(state, null, 2);
+        const statePath = join(snapshotDir, "state.json");
+        const fd = openSync(
+          statePath,
+          constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | constants.O_NOFOLLOW,
         );
-
+        try {
+          writeFileSync(fd, stateContent, "utf-8");
+        } finally {
+          closeSync(fd);
+        }
         await gitExec(snapshotDir, ["add", "."]);
 
         const message = data?.message || `Snapshot ${ts}`;

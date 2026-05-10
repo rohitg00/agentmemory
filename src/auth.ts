@@ -4,9 +4,10 @@ const hmacKey = randomBytes(32);
 export const VIEWER_NONCE_PLACEHOLDER = "__AGENTMEMORY_VIEWER_NONCE__";
 
 export function timingSafeCompare(a: string, b: string): boolean {
-  const hmacA = createHmac("sha256", hmacKey).update(a).digest();
-  const hmacB = createHmac("sha256", hmacKey).update(b).digest();
-  return timingSafeEqual(hmacA, hmacB);
+  const bufA = Buffer.from(a);
+  const bufB = Buffer.from(b);
+  if (bufA.length !== bufB.length) return false;
+  return timingSafeEqual(bufA, bufB);
 }
 
 export function createViewerNonce(): string {

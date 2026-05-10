@@ -30,9 +30,18 @@ vi.mock("node:fs", () => ({
   readFileSync: vi
     .fn()
     .mockReturnValue('{"version":"0.4.0","sessions":[],"memories":[]}'),
+  constants: {
+    O_WRONLY: 1,
+    O_CREAT: 2,
+    O_TRUNC: 4,
+    O_NOFOLLOW: 8,
+  },
+  openSync: vi.fn().mockReturnValue(123),
+  closeSync: vi.fn(),
 }));
 
 import { registerSnapshotFunction } from "../src/functions/snapshot.js";
+import { openSync, closeSync, writeFileSync } from "node:fs";
 import type { Session, Memory, SnapshotMeta } from "../src/types.js";
 
 function mockKV() {
@@ -123,8 +132,10 @@ describe("Snapshot Functions", () => {
     expect(result.snapshot.message).toBe("Test snapshot");
     expect(result.snapshot.stats.sessions).toBe(1);
     expect(result.snapshot.stats.memories).toBe(1);
-  });
-
+    expect(openSync).toHaveBeenCalled();
+    expect(writeFileSync).toHaveBeenCalledWith(123, expect.any(String), "utf-8");
+    expect(closeSync).toHaveBeenCalledWith(123);
+    });
   it("snapshot-list returns snapshots from git log", async () => {
     const result = (await sdk.trigger("mem::snapshot-list", {})) as {
       snapshots: Array<{
