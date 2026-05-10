@@ -3,11 +3,10 @@ import { VectorIndex } from "./vector-index.js";
 import type {
   EmbeddingProvider,
   HybridSearchResult,
-  CompressedObservation,
   QueryExpansion,
 } from "../types.js";
 import type { StateKV } from "./kv.js";
-import { KV } from "./schema.js";
+import { resolveIndexedObservation } from "./search-documents.js";
 import {
   GraphRetrieval,
   type GraphRetrievalResult,
@@ -288,9 +287,7 @@ export class HybridSearch {
     const sliced = results.slice(0, limit);
     const observations = await Promise.all(
       sliced.map((r) =>
-        this.kv
-          .get<CompressedObservation>(KV.observations(r.sessionId), r.obsId)
-          .catch(() => null),
+        resolveIndexedObservation(this.kv, r.sessionId, r.obsId),
       ),
     );
     const enriched: HybridSearchResult[] = [];

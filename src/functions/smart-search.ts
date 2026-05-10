@@ -6,6 +6,7 @@ import type {
 } from "../types.js";
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
+import { resolveIndexedObservation } from "../state/search-documents.js";
 import { recordAccessBatch } from "./access-tracker.js";
 import { logger } from "../logger.js";
 
@@ -99,11 +100,12 @@ async function findObservation(
   sessionIdHint?: string,
 ): Promise<CompressedObservation | null> {
   if (sessionIdHint) {
-    const obs = await kv
-      .get<CompressedObservation>(KV.observations(sessionIdHint), obsId)
-      .catch(() => null);
+    const obs = await resolveIndexedObservation(kv, sessionIdHint, obsId);
     if (obs) return obs;
   }
+
+  const memory = await resolveIndexedObservation(kv, "memory", obsId);
+  if (memory) return memory;
 
   const sessions = await kv.list<{ id: string }>(KV.sessions);
   for (let i = 0; i < sessions.length; i += 5) {

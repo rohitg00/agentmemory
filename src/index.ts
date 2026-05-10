@@ -20,6 +20,7 @@ import {
 } from "./providers/index.js";
 import { StateKV } from "./state/kv.js";
 import { KV } from "./state/schema.js";
+import { memoryAsIndexable } from "./state/search-documents.js";
 import { VectorIndex } from "./state/vector-index.js";
 import { HybridSearch } from "./state/hybrid-search.js";
 import { IndexPersistence } from "./state/index-persistence.js";
@@ -419,18 +420,7 @@ async function main() {
         if (memory.isLatest === false) continue;
         if (!memory.title || !memory.content) continue;
         if (bm25Index.has(memory.id)) continue;
-        bm25Index.add({
-          id: memory.id,
-          sessionId: memory.sessionIds[0] ?? "memory",
-          timestamp: memory.createdAt,
-          type: "decision",
-          title: memory.title,
-          facts: [memory.content],
-          narrative: memory.content,
-          concepts: memory.concepts,
-          files: memory.files,
-          importance: memory.strength,
-        });
+        bm25Index.add(memoryAsIndexable(memory));
         backfilled++;
       }
       if (backfilled > 0) {

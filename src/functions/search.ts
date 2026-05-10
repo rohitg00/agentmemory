@@ -3,29 +3,9 @@ import type { CompactSearchResult, CompressedObservation, Memory, SearchResult, 
 import { KV } from '../state/schema.js'
 import { StateKV } from '../state/kv.js'
 import { SearchIndex } from '../state/search-index.js'
+import { memoryAsIndexable, resolveIndexedObservation } from '../state/search-documents.js'
 import { recordAccessBatch } from './access-tracker.js'
 import { logger } from "../logger.js";
-
-// Memories share the same searchable fields as observations (title +
-// content + concepts + files), so we wrap them in the observation shape
-// before indexing. Type is normalized to "decision" to keep memories
-// distinguishable in result metadata. Mirrors the helper in
-// functions/remember.ts; kept inline here to avoid a circular import
-// (remember.ts imports from this file).
-function memoryAsIndexable(memory: Memory): CompressedObservation {
-  return {
-    id: memory.id,
-    sessionId: memory.sessionIds[0] ?? "memory",
-    timestamp: memory.createdAt,
-    type: "decision",
-    title: memory.title,
-    facts: [memory.content],
-    narrative: memory.content,
-    concepts: memory.concepts,
-    files: memory.files,
-    importance: memory.strength,
-  };
-}
 
 let index: SearchIndex | null = null
 
@@ -167,7 +147,7 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
       // Second pass: load observations in parallel.
       const obsResults = await Promise.all(
         candidates.map((r) =>
-          kv.get<CompressedObservation>(KV.observations(r.sessionId), r.obsId)
+          resolveIndexedObservation(kv, r.sessionId, r.obsId)
         )
       )
       const enriched: SearchResult[] = []
