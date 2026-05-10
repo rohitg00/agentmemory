@@ -201,6 +201,9 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
         if (!sid || !status) return;
         if (status.type === "idle") {
           await post("/summarize", { sessionId: sid });
+          if (process.env["CONSOLIDATION_ENABLED"] === "true") {
+            post("/crystals/auto", { olderThanDays: 0 }, 30000);
+          }
         }
         await observe(sid, "session_status", {
           status_type: status.type,
@@ -214,6 +217,9 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
         const sid = props.sessionID || activeSessionId;
         if (sid) {
           await post("/summarize", { sessionId: sid });
+          if (process.env["CONSOLIDATION_ENABLED"] === "true") {
+            post("/crystals/auto", { olderThanDays: 0 }, 30000);
+          }
           await observe(sid, "session_compacted", {});
         }
       }
