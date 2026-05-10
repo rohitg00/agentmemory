@@ -36,7 +36,7 @@ export class RemoteUnreachableError extends Error {
     public readonly probeTimeoutMs: number,
   ) {
     super(
-      `AGENTMEMORY_REMOTE_REQUIRED is set but ${url}/agentmemory/livez did not respond within ${probeTimeoutMs}ms. ` +
+      `AGENTMEMORY_REMOTE_REQUIRED is set but ${url}/agentmemory/livez probe failed (timeout, network error, or non-2xx; timeout=${probeTimeoutMs}ms). ` +
         `Either raise AGENTMEMORY_LIVEZ_TIMEOUT_MS, fix backend connectivity, or unset AGENTMEMORY_REMOTE_REQUIRED to allow local-mode fallback.`,
     );
     this.name = "RemoteUnreachableError";

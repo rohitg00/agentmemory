@@ -932,7 +932,7 @@ Create `~/.agentmemory/.env`:
                                     # Recommended for production multi-
                                     # machine setups where a silent
                                     # fallback can land memories in the
-                                    # wrong store without warning.
+                                    # wrong store if the warning is missed.
 # AGENTMEMORY_LIVEZ_TIMEOUT_MS=500  # Timeout for the /agentmemory/livez
                                     # probe at startup. Raise it on
                                     # high-latency networks (Tailscale
