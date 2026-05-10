@@ -1,7 +1,12 @@
 import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 import { handleToolCall } from "../src/mcp/standalone.js";
-import { resetHandleForTests } from "../src/mcp/rest-proxy.js";
+import {
+  RemoteUnreachableError,
+  resetHandleForTests,
+  resolveHandle,
+} from "../src/mcp/rest-proxy.js";
 import { InMemoryKV } from "../src/mcp/in-memory-kv.js";
+import { logger } from "../src/logger.js";
 
 type FetchMock = ReturnType<typeof vi.fn>;
 
@@ -290,5 +295,73 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
     } finally {
       delete process.env["AGENTMEMORY_PROBE_TIMEOUT_MS"];
     }
+  });
+});
+
+describe("@agentmemory/mcp standalone — remote-required + livez timeout opt-ins", () => {
+  const originalFetch = globalThis.fetch;
+
+  beforeEach(() => {
+    resetHandleForTests();
+    process.env["AGENTMEMORY_URL"] = BASE;
+    delete process.env["AGENTMEMORY_SECRET"];
+    delete process.env["AGENTMEMORY_REMOTE_REQUIRED"];
+    delete process.env["AGENTMEMORY_LIVEZ_TIMEOUT_MS"];
+  });
+
+  afterEach(() => {
+    resetHandleForTests();
+    globalThis.fetch = originalFetch;
+    delete process.env["AGENTMEMORY_URL"];
+    delete process.env["AGENTMEMORY_REMOTE_REQUIRED"];
+    delete process.env["AGENTMEMORY_LIVEZ_TIMEOUT_MS"];
+    vi.restoreAllMocks();
+  });
+
+  it("respects AGENTMEMORY_LIVEZ_TIMEOUT_MS — slow /livez aborts and falls back to local", async () => {
+    process.env["AGENTMEMORY_LIVEZ_TIMEOUT_MS"] = "10";
+    let abortFired = false;
+    const fn = vi.fn(
+      (_url: string | URL, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => {
+            abortFired = true;
+            reject(new DOMException("aborted", "AbortError"));
+          });
+          // Never resolves on its own — only the abort path completes the promise.
+        }),
+    );
+    (globalThis as { fetch: typeof fetch }).fetch = fn as unknown as typeof fetch;
+
+    const handle = await resolveHandle();
+    expect(handle.mode).toBe("local");
+    expect(abortFired).toBe(true);
+  });
+
+  it("emits a warn on silent local fallback when REMOTE_REQUIRED is unset", async () => {
+    const warn = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
+    installFetch(() => {
+      throw new Error("ECONNREFUSED");
+    });
+
+    const handle = await resolveHandle();
+    expect(handle.mode).toBe("local");
+    expect(warn).toHaveBeenCalledTimes(1);
+    const [msg, fields] = warn.mock.calls[0];
+    expect(msg).toMatch(/agentmemory backend unreachable/i);
+    expect(fields).toMatchObject({ url: BASE });
+  });
+
+  it("throws RemoteUnreachableError when AGENTMEMORY_REMOTE_REQUIRED=1 and probe fails", async () => {
+    process.env["AGENTMEMORY_REMOTE_REQUIRED"] = "1";
+    const warn = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
+    installFetch(() => {
+      throw new Error("ECONNREFUSED");
+    });
+
+    await expect(resolveHandle()).rejects.toBeInstanceOf(RemoteUnreachableError);
+    // The fail-loud path explicitly does not write a warn line — the thrown
+    // error is the signal, not a log scan.
+    expect(warn).not.toHaveBeenCalled();
   });
 });
