@@ -7,6 +7,7 @@ import type {
   Memory,
   QueryExpansion,
 } from "../types.js";
+import { memoryToObservation } from "./memory-utils.js";
 import type { StateKV } from "./kv.js";
 import { KV } from "./schema.js";
 import {
@@ -320,19 +321,4 @@ export class HybridSearch {
     }
     return enriched;
   }
-}
-
-function memoryToObservation(memory: Memory): CompressedObservation {
-  return {
-    id: memory.id,
-    sessionId: memory.sessionIds[0] ?? "memory",
-    timestamp: memory.createdAt,
-    type: "decision",
-    title: memory.title,
-    facts: [memory.content],
-    narrative: memory.content,
-    concepts: memory.concepts,
-    files: memory.files,
-    importance: memory.strength,
-  };
 }

@@ -3,29 +3,9 @@ import type { CompactSearchResult, CompressedObservation, Memory, SearchResult, 
 import { KV } from '../state/schema.js'
 import { StateKV } from '../state/kv.js'
 import { SearchIndex } from '../state/search-index.js'
+import { memoryToObservation } from '../state/memory-utils.js'
 import { recordAccessBatch } from './access-tracker.js'
 import { logger } from "../logger.js";
-
-// Memories share the same searchable fields as observations (title +
-// content + concepts + files), so we wrap them in the observation shape
-// before indexing. Type is normalized to "decision" to keep memories
-// distinguishable in result metadata. Mirrors the helper in
-// functions/remember.ts; kept inline here to avoid a circular import
-// (remember.ts imports from this file).
-function memoryAsIndexable(memory: Memory): CompressedObservation {
-  return {
-    id: memory.id,
-    sessionId: memory.sessionIds[0] ?? "memory",
-    timestamp: memory.createdAt,
-    type: "decision",
-    title: memory.title,
-    facts: [memory.content],
-    narrative: memory.content,
-    concepts: memory.concepts,
-    files: memory.files,
-    importance: memory.strength,
-  };
-}
 
 let index: SearchIndex | null = null
 
@@ -49,7 +29,7 @@ export async function rebuildIndex(kv: StateKV): Promise<number> {
     for (const memory of memories) {
       if (memory.isLatest === false) continue
       if (!memory.title || !memory.content) continue
-      idx.add(memoryAsIndexable(memory))
+      idx.add(memoryToObservation(memory))
       count++
     }
   } catch (err) {
@@ -177,7 +157,7 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
           const mem = await kv
             .get<Memory>(KV.memories, r.obsId)
             .catch(() => null)
-          return mem ? memoryAsIndexable(mem) : null
+          return mem ? memoryToObservation(mem) : null
         })
       )
       const enriched: SearchResult[] = []
