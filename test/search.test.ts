@@ -4,7 +4,7 @@ vi.mock("../src/logger.js", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
-import { registerSearchFunction } from "../src/functions/search.js";
+import { registerSearchFunction, getSearchIndex, rebuildIndex } from "../src/functions/search.js";
 import { KV } from "../src/state/schema.js";
 import type { CompressedObservation, Session } from "../src/types.js";
 
@@ -97,6 +97,9 @@ describe("mem::search", () => {
 
     await kv.set(KV.observations("ses_1"), obsA.id, obsA);
     await kv.set(KV.observations("ses_1"), obsB.id, obsB);
+
+    // Module-level SearchIndex singleton would leak across tests; reset.
+    getSearchIndex().clear();
   });
 
   it("returns full format by default", async () => {
@@ -146,5 +149,37 @@ describe("mem::search", () => {
     await expect(
       sdk.trigger("mem::search", { query: "auth", format: "verbose" }),
     ).rejects.toThrow("format must be one of");
+  });
+
+  it("surfaces saved memories from KV.memories (#265)", async () => {
+    // mem::remember persists to KV.memories under a synthetic sessionId
+    // ("memory") that has no corresponding KV.observations entry. mem::search
+    // must fall back to KV.memories or memory_recall returns empty.
+    await kv.set(KV.memories, "mem_x1", {
+      id: "mem_x1",
+      createdAt: "2026-02-01T00:00:00Z",
+      updatedAt: "2026-02-01T00:00:00Z",
+      type: "fact",
+      title: "Pineapple belongs on pizza",
+      content: "Pineapple belongs on pizza for testing fallback path.",
+      concepts: ["pineapple", "pizza"],
+      files: [],
+      sessionIds: [],
+      strength: 7,
+      version: 1,
+      isLatest: true,
+    });
+    // Force the rebuild to pick up the new memory (mem::search only
+    // rebuilds on first call when idx.size === 0).
+    await rebuildIndex(kv as never);
+
+    const result = (await sdk.trigger("mem::search", {
+      query: "pineapple pizza",
+      format: "compact",
+    })) as { results: Array<{ obsId: string; title: string }> };
+
+    const hit = result.results.find((r) => r.obsId === "mem_x1");
+    expect(hit).toBeDefined();
+    expect(hit?.title).toBe("Pineapple belongs on pizza");
   });
 });

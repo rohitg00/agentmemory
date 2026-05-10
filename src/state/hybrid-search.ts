@@ -4,6 +4,7 @@ import type {
   EmbeddingProvider,
   HybridSearchResult,
   CompressedObservation,
+  Memory,
   QueryExpansion,
 } from "../types.js";
 import type { StateKV } from "./kv.js";
@@ -287,11 +288,20 @@ export class HybridSearch {
   ): Promise<HybridSearchResult[]> {
     const sliced = results.slice(0, limit);
     const observations = await Promise.all(
-      sliced.map((r) =>
-        this.kv
+      sliced.map(async (r) => {
+        const obs = await this.kv
           .get<CompressedObservation>(KV.observations(r.sessionId), r.obsId)
-          .catch(() => null),
-      ),
+          .catch(() => null);
+        if (obs) return obs;
+        // Fallback: indexed entry may originate from mem::remember, which
+        // writes to KV.memories with a synthetic sessionId ("memory" or the
+        // memory's first associated session). Coerce the Memory record into
+        // a CompressedObservation so search/recall surface saved memories.
+        const mem = await this.kv
+          .get<Memory>(KV.memories, r.obsId)
+          .catch(() => null);
+        return mem ? memoryToObservation(mem) : null;
+      }),
     );
     const enriched: HybridSearchResult[] = [];
     for (let i = 0; i < sliced.length; i++) {
@@ -310,4 +320,19 @@ export class HybridSearch {
     }
     return enriched;
   }
+}
+
+function memoryToObservation(memory: Memory): CompressedObservation {
+  return {
+    id: memory.id,
+    sessionId: memory.sessionIds[0] ?? "memory",
+    timestamp: memory.createdAt,
+    type: "decision",
+    title: memory.title,
+    facts: [memory.content],
+    narrative: memory.content,
+    concepts: memory.concepts,
+    files: memory.files,
+    importance: memory.strength,
+  };
 }

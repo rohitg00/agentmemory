@@ -164,11 +164,21 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
         candidates.push(r)
       }
 
-      // Second pass: load observations in parallel.
+      // Second pass: load observations in parallel. Fall back to
+      // KV.memories when the observation lookup misses — entries indexed
+      // via mem::remember live in the memories scope under a synthetic
+      // sessionId, so the observation key never exists (#265).
       const obsResults = await Promise.all(
-        candidates.map((r) =>
-          kv.get<CompressedObservation>(KV.observations(r.sessionId), r.obsId)
-        )
+        candidates.map(async (r) => {
+          const obs = await kv
+            .get<CompressedObservation>(KV.observations(r.sessionId), r.obsId)
+            .catch(() => null)
+          if (obs) return obs
+          const mem = await kv
+            .get<Memory>(KV.memories, r.obsId)
+            .catch(() => null)
+          return mem ? memoryAsIndexable(mem) : null
+        })
       )
       const enriched: SearchResult[] = []
       for (let i = 0; i < candidates.length; i++) {
