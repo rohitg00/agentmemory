@@ -223,7 +223,7 @@ Agentmemory usage instructions are injected into the system prompt on the first 
 | TaskCompleted | No team/teammate concept in OpenCode; `todo.updated` captures task state changes as a partial equivalent |
 | Stop | `session.compacted` event handler exists; `experimental.session.compacting` injection hook defined in SDK but Go binary (v1.14.41) doesn't wire it — will auto-activate when upstream implements it |
 | Skills (remember/recall/forget/session-history) | Covered by injected system instructions via `experimental.chat.system.transform` — agent receives usage guidance on first turn |
-| Consolidation pipeline (crystals/auto + consolidate-pipeline) | Now called on `session.deleted` — mirrors Claude's `CONSOLIDATION_ENABLED=true` behavior |
+| Consolidation pipeline (crystals/auto + consolidate-pipeline) | Called on `session.deleted` **and** `experimental.session.compacting` when `CONSOLIDATION_ENABLED=true` env var is set; uses `olderThanDays: 0` (crystallize all done work in the session) — mirrors Claude's `CONSOLIDATION_ENABLED=true` behavior |
 | Claude MEMORY.md bridge | OpenCode-specific; OpenCode uses its own AGENTS.md mechanism, not Claude's MEMORY.md |
 
 All other Claude Code hooks have direct or pipeline equivalents in this plugin. 12 of 12 Claude hook types covered.

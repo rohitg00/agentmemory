@@ -253,8 +253,10 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
           return;
         }
         await post("/session/end", { sessionId: sid });
-        post("/crystals/auto", { olderThanDays: 7 }, 30000);
-        post("/consolidate-pipeline", { tier: "all", force: true }, 30000);
+        if (process.env["CONSOLIDATION_ENABLED"] === "true") {
+          post("/crystals/auto", { olderThanDays: 0 }, 30000);
+          post("/consolidate-pipeline", { tier: "all", force: true }, 30000);
+        }
         if (sid === activeSessionId) activeSessionId = null;
         stashedFiles.delete(sid);
         seenSubtaskIds.delete(sid);
@@ -632,6 +634,10 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
         if (Array.isArray(output.context)) {
           output.context.push(ctx);
         }
+      }
+
+      if (process.env["CONSOLIDATION_ENABLED"] === "true") {
+        post("/crystals/auto", { olderThanDays: 0 }, 30000);
       }
     },
 
