@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 vi.mock("../src/logger.js", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
@@ -26,6 +26,7 @@ import {
 } from "../src/mcp/tools-registry.js";
 import { InMemoryKV } from "../src/mcp/in-memory-kv.js";
 import { handleToolCall } from "../src/mcp/standalone.js";
+import { resetHandleForTests } from "../src/mcp/rest-proxy.js";
 import { writeFileSync } from "node:fs";
 
 describe("Tools Registry", () => {
@@ -120,8 +121,19 @@ describe("InMemoryKV", () => {
 });
 
 describe("handleToolCall", () => {
+  const originalFetch = globalThis.fetch;
+
   beforeEach(() => {
+    resetHandleForTests();
+    globalThis.fetch = vi.fn(async () => {
+      throw new Error("ECONNREFUSED");
+    }) as unknown as typeof fetch;
     vi.mocked(writeFileSync).mockClear();
+  });
+
+  afterEach(() => {
+    resetHandleForTests();
+    globalThis.fetch = originalFetch;
   });
 
   it("memory_save persists to disk immediately after saving", async () => {

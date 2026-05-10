@@ -5,19 +5,27 @@ import {
 } from "../src/providers/embedding/index.js";
 import { GeminiEmbeddingProvider } from "../src/providers/embedding/gemini.js";
 import { OpenAIEmbeddingProvider } from "../src/providers/embedding/openai.js";
+import { OllamaEmbeddingProvider } from "../src/providers/embedding/ollama.js";
 import type { EmbeddingProvider } from "../src/types.js";
+
+function clearEnv(key: string): void {
+  process.env[key] = "";
+}
 
 describe("createEmbeddingProvider", () => {
   const originalEnv = { ...process.env };
 
   beforeEach(() => {
     process.env = { ...originalEnv };
-    delete process.env["GEMINI_API_KEY"];
-    delete process.env["OPENAI_API_KEY"];
-    delete process.env["VOYAGE_API_KEY"];
-    delete process.env["COHERE_API_KEY"];
-    delete process.env["OPENROUTER_API_KEY"];
-    delete process.env["EMBEDDING_PROVIDER"];
+    clearEnv("GEMINI_API_KEY");
+    clearEnv("OPENAI_API_KEY");
+    clearEnv("VOYAGE_API_KEY");
+    clearEnv("COHERE_API_KEY");
+    clearEnv("OPENROUTER_API_KEY");
+    clearEnv("EMBEDDING_PROVIDER");
+    clearEnv("OLLAMA_BASE_URL");
+    clearEnv("OLLAMA_EMBEDDING_MODEL");
+    clearEnv("OLLAMA_EMBEDDING_DIMENSIONS");
   });
 
   afterEach(() => {
@@ -50,6 +58,26 @@ describe("createEmbeddingProvider", () => {
     const provider = createEmbeddingProvider();
     expect(provider).toBeInstanceOf(OpenAIEmbeddingProvider);
   });
+
+  it("returns OllamaEmbeddingProvider when EMBEDDING_PROVIDER is ollama", () => {
+    process.env["EMBEDDING_PROVIDER"] = "ollama";
+    const provider = createEmbeddingProvider();
+    expect(provider).toBeInstanceOf(OllamaEmbeddingProvider);
+    expect(provider!.name).toBe("ollama");
+  });
+
+  it("auto-detects Ollama when Ollama embedding env vars are set", () => {
+    process.env["OLLAMA_EMBEDDING_MODEL"] = "nomic-embed-text:latest";
+    const provider = createEmbeddingProvider();
+    expect(provider).toBeInstanceOf(OllamaEmbeddingProvider);
+  });
+
+  it("allows Ollama embeddings to override Gemini key auto-detection", () => {
+    process.env["GEMINI_API_KEY"] = "test-key-123";
+    process.env["EMBEDDING_PROVIDER"] = "ollama";
+    const provider = createEmbeddingProvider();
+    expect(provider).toBeInstanceOf(OllamaEmbeddingProvider);
+  });
 });
 
 describe("OpenAIEmbeddingProvider", () => {
@@ -57,9 +85,9 @@ describe("OpenAIEmbeddingProvider", () => {
 
   beforeEach(() => {
     process.env = { ...originalEnv };
-    delete process.env["OPENAI_BASE_URL"];
-    delete process.env["OPENAI_EMBEDDING_MODEL"];
-    delete process.env["OPENAI_EMBEDDING_DIMENSIONS"];
+    clearEnv("OPENAI_BASE_URL");
+    clearEnv("OPENAI_EMBEDDING_MODEL");
+    clearEnv("OPENAI_EMBEDDING_DIMENSIONS");
   });
 
   afterEach(() => {
@@ -73,7 +101,7 @@ describe("OpenAIEmbeddingProvider", () => {
   });
 
   it("throws when no API key is provided", () => {
-    delete process.env["OPENAI_API_KEY"];
+    clearEnv("OPENAI_API_KEY");
     expect(() => new OpenAIEmbeddingProvider()).toThrow("OPENAI_API_KEY is required");
   });
 
@@ -150,6 +178,93 @@ describe("OpenAIEmbeddingProvider", () => {
     process.env["OPENAI_EMBEDDING_DIMENSIONS"] = "0";
     expect(() => new OpenAIEmbeddingProvider("test-key")).toThrow(
       /OPENAI_EMBEDDING_DIMENSIONS must be a positive integer/,
+    );
+  });
+});
+
+describe("OllamaEmbeddingProvider", () => {
+  const originalEnv = { ...process.env };
+
+  beforeEach(() => {
+    process.env = { ...originalEnv };
+    clearEnv("OLLAMA_BASE_URL");
+    clearEnv("OLLAMA_EMBEDDING_MODEL");
+    clearEnv("OLLAMA_EMBEDDING_DIMENSIONS");
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+  });
+
+  it("uses local Ollama defaults", () => {
+    const provider = new OllamaEmbeddingProvider();
+    expect(provider.name).toBe("ollama");
+    expect(provider.dimensions).toBe(768);
+  });
+
+  it("posts embeddings to the native Ollama endpoint", async () => {
+    process.env["OLLAMA_BASE_URL"] = "http://ollama.local:11434";
+    const provider = new OllamaEmbeddingProvider();
+
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ embeddings: [[0.1, 0.2, 0.3]] }), { status: 200 }),
+    );
+
+    await provider.embed("hello");
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "http://ollama.local:11434/api/embed",
+      expect.objectContaining({
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    const body = JSON.parse((fetchSpy.mock.calls[0][1] as RequestInit).body as string);
+    expect(body).toEqual({
+      model: "nomic-embed-text:latest",
+      input: ["hello"],
+    });
+
+    fetchSpy.mockRestore();
+  });
+
+  it("respects OLLAMA_EMBEDDING_MODEL env var", async () => {
+    process.env["OLLAMA_EMBEDDING_MODEL"] = "mxbai-embed-large:latest";
+    const provider = new OllamaEmbeddingProvider();
+    expect(provider.dimensions).toBe(1024);
+
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ embeddings: [[0.1, 0.2, 0.3]] }), { status: 200 }),
+    );
+
+    await provider.embed("hello");
+    const body = JSON.parse((fetchSpy.mock.calls[0][1] as RequestInit).body as string);
+    expect(body.model).toBe("mxbai-embed-large:latest");
+
+    fetchSpy.mockRestore();
+  });
+
+  it("OLLAMA_EMBEDDING_DIMENSIONS overrides the model-derived dimensions", () => {
+    process.env["OLLAMA_EMBEDDING_MODEL"] = "mxbai-embed-large:latest";
+    process.env["OLLAMA_EMBEDDING_DIMENSIONS"] = "768";
+    const provider = new OllamaEmbeddingProvider();
+    expect(provider.dimensions).toBe(768);
+  });
+
+  it("rejects invalid OLLAMA_EMBEDDING_DIMENSIONS values", () => {
+    process.env["OLLAMA_EMBEDDING_DIMENSIONS"] = "not-a-number";
+    expect(() => new OllamaEmbeddingProvider()).toThrow(
+      /OLLAMA_EMBEDDING_DIMENSIONS must be a positive integer/,
+    );
+
+    process.env["OLLAMA_EMBEDDING_DIMENSIONS"] = "-5";
+    expect(() => new OllamaEmbeddingProvider()).toThrow(
+      /OLLAMA_EMBEDDING_DIMENSIONS must be a positive integer/,
+    );
+
+    process.env["OLLAMA_EMBEDDING_DIMENSIONS"] = "0";
+    expect(() => new OllamaEmbeddingProvider()).toThrow(
+      /OLLAMA_EMBEDDING_DIMENSIONS must be a positive integer/,
     );
   });
 });

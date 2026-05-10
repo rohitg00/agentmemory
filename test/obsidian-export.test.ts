@@ -1,4 +1,5 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { join, resolve } from "node:path";
 
 vi.mock("../src/logger.js", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
@@ -18,6 +19,10 @@ vi.mock("node:fs/promises", () => ({
 
 import { registerObsidianExportFunction } from "../src/functions/obsidian-export.js";
 import type { Memory, Lesson, Crystal, Session } from "../src/types.js";
+
+function pathEndsWith(path: string, ...segments: string[]): boolean {
+  return path.endsWith(join(...segments));
+}
 
 function mockKV() {
   const store = new Map<string, Map<string, unknown>>();
@@ -121,7 +126,8 @@ function makeSession(id: string): Session {
 describe("Obsidian Export", () => {
   let sdk: ReturnType<typeof mockSdk>;
   let kv: ReturnType<typeof mockKV>;
-  const exportRoot = "/tmp/agentmemory-export-root";
+  const exportRoot = resolve("/tmp/agentmemory-export-root");
+  const originalExportRoot = process.env.AGENTMEMORY_EXPORT_ROOT;
 
   beforeEach(() => {
     process.env.AGENTMEMORY_EXPORT_ROOT = exportRoot;
@@ -130,6 +136,14 @@ describe("Obsidian Export", () => {
     writtenFiles.clear();
     createdDirs.clear();
     registerObsidianExportFunction(sdk as never, kv as never);
+  });
+
+  afterEach(() => {
+    if (originalExportRoot === undefined) {
+      delete process.env.AGENTMEMORY_EXPORT_ROOT;
+    } else {
+      process.env.AGENTMEMORY_EXPORT_ROOT = originalExportRoot;
+    }
   });
 
   it("creates directories and MOC.md with empty data", async () => {
@@ -164,7 +178,7 @@ describe("Obsidian Export", () => {
     expect(result.exported.memories).toBe(1);
 
     const memFile = [...writtenFiles.entries()].find(([k]) =>
-      k.includes("memories/mem_001.md"),
+      pathEndsWith(k, "memories", "mem_001.md"),
     );
     expect(memFile).toBeDefined();
     const content = memFile![1];
@@ -186,7 +200,7 @@ describe("Obsidian Export", () => {
     expect(result.exported.lessons).toBe(1);
 
     const lsnFile = [...writtenFiles.entries()].find(([k]) =>
-      k.includes("lessons/lsn_001.md"),
+      pathEndsWith(k, "lessons", "lsn_001.md"),
     );
     expect(lsnFile).toBeDefined();
     const content = lsnFile![1];
@@ -202,7 +216,7 @@ describe("Obsidian Export", () => {
     await sdk.trigger("mem::obsidian-export", {});
 
     const crysFile = [...writtenFiles.entries()].find(([k]) =>
-      k.includes("crystals/crys_001.md"),
+      pathEndsWith(k, "crystals", "crys_001.md"),
     );
     expect(crysFile).toBeDefined();
     expect(crysFile![1]).toContain("[[act_1]]");
@@ -223,18 +237,18 @@ describe("Obsidian Export", () => {
 
   it("respects custom vaultDir", async () => {
     await sdk.trigger("mem::obsidian-export", {
-      vaultDir: "/tmp/agentmemory-export-root/test-vault",
+      vaultDir: join(exportRoot, "test-vault"),
     });
 
     const hasCustomPath = [...createdDirs].some((d) =>
-      d.startsWith("/tmp/agentmemory-export-root/test-vault"),
+      d.startsWith(join(exportRoot, "test-vault")),
     );
     expect(hasCustomPath).toBe(true);
   });
 
   it("rejects vaultDir outside the export root", async () => {
     const result = (await sdk.trigger("mem::obsidian-export", {
-      vaultDir: "/tmp/outside-root",
+      vaultDir: resolve("/tmp/outside-root"),
     })) as { success: boolean; error: string };
 
     expect(result.success).toBe(false);

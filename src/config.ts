@@ -185,6 +185,13 @@ export function detectEmbeddingProvider(
   const forced = source["EMBEDDING_PROVIDER"];
   if (forced) return forced;
 
+  if (
+    hasRealValue(source["OLLAMA_BASE_URL"]) ||
+    hasRealValue(source["OLLAMA_EMBEDDING_MODEL"]) ||
+    hasRealValue(source["OLLAMA_EMBEDDING_DIMENSIONS"])
+  ) {
+    return "ollama";
+  }
   if (source["GEMINI_API_KEY"]) return "gemini";
   if (source["OPENAI_API_KEY"]) return "openai";
   if (source["VOYAGE_API_KEY"]) return "voyage";

@@ -2,6 +2,7 @@ import type { EmbeddingProvider } from "../../types.js";
 import { detectEmbeddingProvider, getEnvVar } from "../../config.js";
 import { GeminiEmbeddingProvider } from "./gemini.js";
 import { OpenAIEmbeddingProvider } from "./openai.js";
+import { OllamaEmbeddingProvider } from "./ollama.js";
 import { VoyageEmbeddingProvider } from "./voyage.js";
 import { CohereEmbeddingProvider } from "./cohere.js";
 import { OpenRouterEmbeddingProvider } from "./openrouter.js";
@@ -11,6 +12,7 @@ import { ClipEmbeddingProvider } from "./clip.js";
 export {
   GeminiEmbeddingProvider,
   OpenAIEmbeddingProvider,
+  OllamaEmbeddingProvider,
   VoyageEmbeddingProvider,
   CohereEmbeddingProvider,
   OpenRouterEmbeddingProvider,
@@ -36,6 +38,8 @@ export function createEmbeddingProvider(): EmbeddingProvider | null {
       return withDimensionGuard(new GeminiEmbeddingProvider(getEnvVar("GEMINI_API_KEY")!));
     case "openai":
       return withDimensionGuard(new OpenAIEmbeddingProvider(getEnvVar("OPENAI_API_KEY")!));
+    case "ollama":
+      return withDimensionGuard(new OllamaEmbeddingProvider());
     case "voyage":
       return withDimensionGuard(new VoyageEmbeddingProvider(getEnvVar("VOYAGE_API_KEY")!));
     case "cohere":

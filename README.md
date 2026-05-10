@@ -885,6 +885,10 @@ Create `~/.agentmemory/.env`:
 
 # Embedding provider (auto-detected, or override)
 # EMBEDDING_PROVIDER=local
+# EMBEDDING_PROVIDER=ollama
+# OLLAMA_BASE_URL=http://localhost:11434
+# OLLAMA_EMBEDDING_MODEL=nomic-embed-text:latest
+# OLLAMA_EMBEDDING_DIMENSIONS=768          # nomic-embed-text=768, mxbai-embed-large=1024
 # VOYAGE_API_KEY=...
 # OPENAI_API_KEY=sk-...
 # OPENAI_BASE_URL=https://api.openai.com   # Override for Azure / vLLM / LM Studio / proxies
