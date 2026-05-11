@@ -67,8 +67,8 @@ export function registerPatternsFunction(sdk: ISdk, kv: StateKV): void {
       for (const [pair, count] of fileCoOccurrences) {
         if (count < 3) continue;
         const [fileA, fileB] = pair.split("::");
-        const sessionsA = fileSessionMap.get(fileA) || new Set();
-        const sessionsB = fileSessionMap.get(fileB) || new Set();
+        const sessionsA = fileSessionMap.get(fileA)!;
+        const sessionsB = fileSessionMap.get(fileB)!;
         const commonSessions = [...sessionsA].filter((s) => sessionsB.has(s));
 
         patterns.push({

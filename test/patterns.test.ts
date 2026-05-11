@@ -63,4 +63,45 @@ describe("registerPatternsFunction", () => {
 
     await expect(callbacks.get("mem::patterns")({})).resolves.toEqual({ patterns: [] });
   });
+
+  it("ignores sessions without usable observations and skips weak rule candidates", async () => {
+    const data = new Map<string, unknown[]>([
+      [
+        KV.sessions,
+        [
+          { id: "empty", project: "/repo" },
+          { id: "nofiles", project: "/repo" },
+          { id: "one", project: "/repo" },
+          { id: "two", project: "/repo" },
+          { id: "three", project: "/repo" },
+        ],
+      ],
+      [KV.observations("empty"), []],
+      [KV.observations("nofiles"), [{ type: "file_edit", title: "note" }]],
+      [KV.observations("one"), [{ type: "file_edit", files: ["a.ts", "b.ts", "c.ts", "d.ts"], title: "edit" }]],
+      [KV.observations("two"), [{ type: "file_edit", files: ["a.ts", "b.ts", "c.ts", "d.ts"], title: "edit" }]],
+      [
+        KV.observations("three"),
+        [
+          { type: "file_edit", files: ["a.ts", "b.ts"], title: "edit" },
+          { type: "error", files: [], title: "Transient" },
+          { type: "error", files: [], title: "Transient" },
+        ],
+      ],
+    ]);
+    const callbacks = new Map<string, any>();
+    const sdk = {
+      registerFunction: vi.fn((id: string, cb: any) => callbacks.set(id, cb)),
+      trigger: vi.fn(async ({ function_id, payload }) => callbacks.get(function_id)(payload)),
+    };
+
+    registerPatternsFunction(sdk as any, makeKv(data) as any);
+
+    const patterns = await callbacks.get("mem::patterns")({ project: "/repo" });
+    expect(patterns.patterns).toEqual([
+      expect.objectContaining({ type: "co_change", frequency: 3 }),
+      expect.objectContaining({ type: "error_repeat", frequency: 2 }),
+    ]);
+    await expect(callbacks.get("mem::generate-rules")({ project: "/repo" })).resolves.toEqual({ rules: [] });
+  });
 });

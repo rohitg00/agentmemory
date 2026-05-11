@@ -78,4 +78,24 @@ describe("MetricsStore", () => {
     ]);
     expect(kv.list).toHaveBeenCalledWith(KV.metrics);
   });
+
+  it("reads through to kv when a metric is not cached", async () => {
+    const persisted = {
+      functionId: "mem::cold",
+      totalCalls: 1,
+      successCount: 1,
+      failureCount: 0,
+      avgLatencyMs: 42,
+      avgQualityScore: 0,
+    };
+    const kv = {
+      get: vi.fn().mockResolvedValue(persisted),
+      set: vi.fn(),
+      list: vi.fn(),
+    };
+    const store = new MetricsStore(kv as any);
+
+    await expect(store.get("mem::cold")).resolves.toBe(persisted);
+    expect(kv.get).toHaveBeenCalledWith(KV.metrics, "mem::cold");
+  });
 });
