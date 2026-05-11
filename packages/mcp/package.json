@@ -1,6 +1,6 @@
 {
   "name": "@agentmemory/mcp",
-  "version": "0.9.6",
+  "version": "0.9.7",
   "description": "Standalone MCP server for agentmemory — thin shim that re-exposes @agentmemory/agentmemory's MCP entrypoint",
   "type": "module",
   "bin": {

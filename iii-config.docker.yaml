@@ -13,7 +13,7 @@ workers:
         name: kv
         config:
           store_method: file_based
-          file_path: ./data/state_store.db
+          file_path: /data/state_store.db
   - name: iii-queue
     config:
       adapter:
@@ -34,7 +34,7 @@ workers:
         name: kv
         config:
           store_method: file_based
-          file_path: ./data/stream_store
+          file_path: /data/stream_store
   - name: iii-observability
     config:
       enabled: true

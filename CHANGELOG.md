@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.9.7] — 2026-05-11
+
+Three small follow-ups to v0.9.6 reported live by [@jcalfee](https://github.com/jcalfee) on [#234](https://github.com/rohitg00/agentmemory/issues/234): the `@agentmemory/mcp` shim silently degraded to a 7-tool local fallback for sandboxed MCP clients (Flatpak VS Codeium / Roo Code) because its 500 ms `livez` probe failed inside the sandbox network namespace and the catch swallowed the error; the Docker compose stack persisted state to an ephemeral container path instead of the named volume; and a `which iii` lookup leaked a "no iii in $PATH" line to the CLI banner.
+
+### Fixed
+
+- **`@agentmemory/mcp` standalone shim now surfaces probe failures and ships an escape hatch for sandboxed clients.** The `livez` probe in `src/mcp/rest-proxy.ts` used a 500 ms timeout and silently swallowed every failure; sandboxed clients (Flatpak VS Codeium spawning the shim from inside its bubblewrap network namespace, Snap-packaged editors, restrictive container runtimes) hit a connection failure on the probe, fell back to the 7-tool `IMPLEMENTED_TOOLS` set, and had no log line explaining why. The probe now writes the URL, HTTP status (or thrown reason), and the active timeout to `stderr` on every failure, the default timeout is raised to 2000 ms, `AGENTMEMORY_PROBE_TIMEOUT_MS` overrides it for slow loopbacks, and `AGENTMEMORY_FORCE_PROXY=1` skips the probe entirely and trusts `AGENTMEMORY_URL` — the right escape hatch when the shim is reachable to the server via a known route but can't see the host's `localhost`. (closes [#234](https://github.com/rohitg00/agentmemory/issues/234) follow-up, thanks [@jcalfee](https://github.com/jcalfee) for the host-vs-Flatpak repro)
+
+- **Docker compose stack no longer loses state on `docker compose down`.** `iii-config.docker.yaml` configured `iii-state` and `iii-stream` with relative `file_path: ./data/...`, which the engine resolves against its container `WORKDIR=/home/nonroot` — not the `/data` mount where the named `iii-data` volume lives. State and stream stores were written to the ephemeral container layer and discarded on every container restart, so memories, BM25 index, and stream backlog vanished. Both paths are now absolute (`/data/state_store.db` and `/data/stream_store`), routing writes through the named volume as the compose file always intended. Existing users need a one-time `docker compose down -v` to clear the old empty volume layout before the upgrade.
+
+- **CLI banner no longer leaks `which: no iii in $PATH` when iii isn't installed.** `whichBinary()` in `src/cli.ts` called `execFileSync("which", ["iii"])` with default stdio, which inherits the child's `stderr` to the parent process — and GNU `which` writes "no iii in (...)" to `stderr` (with exit 1) on miss. The catch swallowed the throw but the stderr line had already drained into the user's terminal between the `agentmemory` banner and the "iii-engine ready" line. `stdio: ["ignore", "pipe", "pipe"]` now captures both streams. Pure cosmetic, no behavior change.
+
+- **Docker compose stack now caps engine container log size at 30 MB total.** [@satabd](https://github.com/satabd) reported the `iiidev/iii:0.11.2` engine container filling a host disk with a 129 GB `<container-id>-json.log` when the engine fell into a crash/restart spam loop ([#278](https://github.com/rohitg00/agentmemory/issues/278)). The compose service now sets `logging.driver: json-file` with `max-size: 10m` and `max-file: 3`, so unbounded engine stdout/stderr can no longer eat the host's disk. The upstream engine spam itself is filed against `iiidev/iii` — this is the compose-side guardrail.
+
+### Changed
+
+- `@agentmemory/mcp` package version bumped from 0.9.6 → 0.9.7 to lockstep with the main package.
+
 ## [0.9.6] — 2026-05-10
 
 Three reliability fixes that close field-reported regressions in v0.9.5: search/recall returns saved memories again, the standalone MCP shim no longer caps non-Claude clients at a 7-tool subset, and the Claude Code session/subagent hooks no longer block agent startup for up to five seconds against a slow or unreachable REST server.

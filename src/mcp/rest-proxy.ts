@@ -1,7 +1,19 @@
 const DEFAULT_URL = "http://localhost:3111";
-const HEALTH_PROBE_TIMEOUT_MS = 500;
+const DEFAULT_HEALTH_PROBE_TIMEOUT_MS = 2_000;
 const CALL_TIMEOUT_MS = 15_000;
 const LOCAL_MODE_TTL_MS = 30_000;
+
+function probeTimeoutMs(): number {
+  const raw = process.env["AGENTMEMORY_PROBE_TIMEOUT_MS"];
+  if (!raw) return DEFAULT_HEALTH_PROBE_TIMEOUT_MS;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : DEFAULT_HEALTH_PROBE_TIMEOUT_MS;
+}
+
+function forceProxy(): boolean {
+  const raw = process.env["AGENTMEMORY_FORCE_PROXY"];
+  return raw === "1" || raw === "true";
+}
 
 export interface ProxyHandle {
   mode: "proxy";
@@ -29,14 +41,23 @@ function authHeader(): Record<string, string> {
 }
 
 async function probe(url: string): Promise<boolean> {
+  const timeout = probeTimeoutMs();
   try {
     const res = await fetch(`${url}/agentmemory/livez`, {
       method: "GET",
       headers: authHeader(),
-      signal: AbortSignal.timeout(HEALTH_PROBE_TIMEOUT_MS),
+      signal: AbortSignal.timeout(timeout),
     });
+    if (!res.ok) {
+      process.stderr.write(
+        `[@agentmemory/mcp] livez probe ${url}/agentmemory/livez -> ${res.status} ${res.statusText}; falling back to local InMemoryKV (set AGENTMEMORY_FORCE_PROXY=1 to skip the probe)\n`,
+      );
+    }
     return res.ok;
-  } catch {
+  } catch (err) {
+    process.stderr.write(
+      `[@agentmemory/mcp] livez probe ${url}/agentmemory/livez failed in ${timeout}ms: ${err instanceof Error ? err.message : String(err)}; falling back to local InMemoryKV (set AGENTMEMORY_FORCE_PROXY=1 to skip the probe, or raise AGENTMEMORY_PROBE_TIMEOUT_MS)\n`,
+    );
     return false;
   }
 }
@@ -58,8 +79,14 @@ export async function resolveHandle(): Promise<Handle> {
   }
   if (probeInFlight) return probeInFlight;
   const url = baseUrl();
+  const skipProbe = forceProxy();
   probeInFlight = (async () => {
-    const up = await probe(url);
+    const up = skipProbe ? true : await probe(url);
+    if (skipProbe) {
+      process.stderr.write(
+        `[@agentmemory/mcp] AGENTMEMORY_FORCE_PROXY set; skipping livez probe and trusting ${url}\n`,
+      );
+    }
     if (up) {
       const handle: ProxyHandle = {
         mode: "proxy",

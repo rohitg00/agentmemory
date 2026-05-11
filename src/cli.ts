@@ -183,7 +183,10 @@ function findIiiConfig(): string {
 function whichBinary(name: string): string | null {
   const cmd = IS_WINDOWS ? "where" : "which";
   try {
-    const out = execFileSync(cmd, [name], { encoding: "utf-8" });
+    const out = execFileSync(cmd, [name], {
+      encoding: "utf-8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
     const first = out
       .split(/\r?\n/)
       .map((line) => line.trim())

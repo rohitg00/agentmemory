@@ -19,6 +19,11 @@ services:
       - iii-data:/data
       - ./iii-config.docker.yaml:/app/config.yaml:ro
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
   iii-data:

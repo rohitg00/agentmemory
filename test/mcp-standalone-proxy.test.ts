@@ -197,4 +197,72 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
     );
     expect(remembersCalled).toBe(false);
   });
+
+  it("AGENTMEMORY_FORCE_PROXY=1 skips livez probe and trusts the server", async () => {
+    process.env["AGENTMEMORY_FORCE_PROXY"] = "1";
+    const calls: string[] = [];
+    installFetch((url, init) => {
+      calls.push(url);
+      if (url.endsWith("/agentmemory/livez")) {
+        throw new Error("probe should be skipped");
+      }
+      if (url.endsWith("/agentmemory/remember")) {
+        return new Response(JSON.stringify({ id: "m-1", action: "created" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return new Response("not found", { status: 404 });
+    });
+    try {
+      await handleToolCall("memory_save", { content: "force-proxy" });
+      expect(calls.some((u) => u.endsWith("/agentmemory/livez"))).toBe(false);
+      expect(calls.some((u) => u.endsWith("/agentmemory/remember"))).toBe(true);
+    } finally {
+      delete process.env["AGENTMEMORY_FORCE_PROXY"];
+    }
+  });
+
+  it("logs probe failure to stderr so sandboxed clients can diagnose silently dropped tools", async () => {
+    installFetch((url) => {
+      if (url.endsWith("/agentmemory/livez")) {
+        throw new Error("ECONNREFUSED 127.0.0.1:3111");
+      }
+      return new Response("not found", { status: 404 });
+    });
+    const writes: string[] = [];
+    const origWrite = process.stderr.write.bind(process.stderr);
+    process.stderr.write = ((chunk: string | Uint8Array) => {
+      writes.push(typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8"));
+      return true;
+    }) as typeof process.stderr.write;
+    try {
+      const localKv = new InMemoryKV(undefined);
+      await handleToolCall("memory_save", { content: "diag" }, localKv);
+    } finally {
+      process.stderr.write = origWrite;
+    }
+    const joined = writes.join("");
+    expect(joined).toMatch(/livez probe .* failed/);
+    expect(joined).toMatch(/AGENTMEMORY_FORCE_PROXY/);
+  });
+
+  it("AGENTMEMORY_PROBE_TIMEOUT_MS overrides the default probe timeout", async () => {
+    process.env["AGENTMEMORY_PROBE_TIMEOUT_MS"] = "50";
+    let probeStarted = 0;
+    installFetch((url) => {
+      if (url.endsWith("/agentmemory/livez")) {
+        probeStarted++;
+        return new Response("ok", { status: 200 });
+      }
+      return new Response("not found", { status: 404 });
+    });
+    try {
+      const localKv = new InMemoryKV(undefined);
+      await handleToolCall("memory_save", { content: "timeout-knob" }, localKv);
+      expect(probeStarted).toBe(1);
+    } finally {
+      delete process.env["AGENTMEMORY_PROBE_TIMEOUT_MS"];
+    }
+  });
 });
