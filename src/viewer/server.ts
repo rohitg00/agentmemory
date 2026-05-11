@@ -13,6 +13,55 @@ const ALLOWED_ORIGINS = (
   .split(",")
   .map((o) => o.trim());
 
+// Hosts the viewer will accept in the Host header. Restricting this is the
+// defence against DNS rebinding: a browser visiting `attacker.com` whose
+// authoritative DNS rebinds to 127.0.0.1 hits the viewer's listening socket
+// directly, the Origin header reads `http://attacker.com` (same-origin from
+// the browser's perspective on a same-port attacker page, so no preflight
+// fires), and the request body is whatever the page wants. The viewer
+// proxies it to the local REST API with the AGENTMEMORY_SECRET bearer
+// attached, so the response stream is fully privileged. Rejecting any Host
+// not in this allowlist closes that path before the proxy runs.
+//
+// Explicit override via VIEWER_ALLOWED_HOSTS for the rare case of a
+// reverse-proxy in front of the viewer; defaults are computed from the
+// listen port at server-create time.
+const ALLOWED_HOSTS_OVERRIDE = (process.env.VIEWER_ALLOWED_HOSTS || "")
+  .split(",")
+  .map((h) => h.trim().toLowerCase())
+  .filter(Boolean);
+
+export function buildAllowedHosts(
+  origins: string[],
+  listenPort: number,
+): Set<string> {
+  const hosts = new Set<string>();
+  for (const o of origins) {
+    try {
+      const parsed = new URL(o);
+      if (parsed.host) hosts.add(parsed.host.toLowerCase());
+    } catch {
+      // Skip invalid origin entries — the existing CORS path already
+      // tolerates them by simply not matching; mirror that here.
+    }
+  }
+  hosts.add(`localhost:${listenPort}`);
+  hosts.add(`127.0.0.1:${listenPort}`);
+  hosts.add(`[::1]:${listenPort}`);
+  for (const h of ALLOWED_HOSTS_OVERRIDE) hosts.add(h);
+  return hosts;
+}
+
+export function isHostAllowed(
+  headerHost: string | string[] | undefined,
+  allowed: Set<string>,
+): boolean {
+  if (typeof headerHost !== "string") return false;
+  const lower = headerHost.toLowerCase().trim();
+  if (!lower) return false;
+  return allowed.has(lower);
+}
+
 function corsHeaders(req: IncomingMessage): Record<string, string> {
   const origin = req.headers.origin || "";
   const allowed = ALLOWED_ORIGINS.includes(origin)
@@ -69,8 +118,26 @@ export function startViewerServer(
 ): Server {
   const resolvedRestPort = restPort ?? port - 2;
   const requestedPort = port;
+  // Computed lazily on first request — `port` may be 0 here (OS-assigned)
+  // or the EADDRINUSE retry loop below may bump us to a different port,
+  // so we read the actual bound port from server.address() on first hit.
+  let allowedHosts: Set<string> | null = null;
 
   const server = createServer(async (req, res) => {
+    if (!allowedHosts) {
+      const addr = server.address();
+      const actualPort =
+        addr && typeof addr === "object" && "port" in addr
+          ? (addr.port as number)
+          : port;
+      allowedHosts = buildAllowedHosts(ALLOWED_ORIGINS, actualPort);
+    }
+    if (!isHostAllowed(req.headers.host, allowedHosts)) {
+      res.writeHead(403, { "Content-Type": "text/plain" });
+      res.end("forbidden host");
+      return;
+    }
+
     const raw = req.url || "/";
     const qIdx = raw.indexOf("?");
     const pathname = qIdx >= 0 ? raw.slice(0, qIdx) : raw;
