@@ -395,7 +395,7 @@ Then add the MCP config for your agent:
 | **Cursor** | Add to `~/.cursor/mcp.json`: `{"mcpServers": {"agentmemory": {"command": "npx", "args": ["-y", "@agentmemory/mcp"]}}}` |
 | **OpenClaw** | Add to MCP config: `{"mcpServers": {"agentmemory": {"command": "npx", "args": ["-y", "@agentmemory/mcp"]}}}` or use the [memory plugin](integrations/openclaw/) |
 | **Gemini CLI** | `gemini mcp add agentmemory npx -y @agentmemory/mcp --scope user` |
-| **Codex CLI** | `codex mcp add agentmemory -- npx -y @agentmemory/mcp` or add `[mcp_servers.agentmemory]` to `.codex/config.toml` |
+| **Codex CLI / Desktop** | `codex mcp add agentmemory -- npx -y @agentmemory/mcp` or add `[mcp_servers.agentmemory]` to `~/.codex/config.toml`. For Claude Code-style automatic capture, see [`integrations/codex/`](integrations/codex/). |
 | **pi** | Copy [`integrations/pi`](integrations/pi/) to `~/.pi/agent/extensions/agentmemory` and restart pi |
 | **OpenCode** | Add to `opencode.json`: `{"mcp": {"agentmemory": {"type": "local", "command": ["npx", "-y", "@agentmemory/mcp"], "enabled": true}}}` |
 | **Hermes Agent** | Add to `~/.hermes/config.yaml` with `memory.provider: agentmemory` or use the [memory provider plugin](integrations/hermes/) |
