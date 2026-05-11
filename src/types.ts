@@ -839,7 +839,6 @@ export interface RetentionScore {
   reinforcementBoost: number;
   lastAccessed: string;
   accessCount: number;
-  source?: "episodic" | "semantic";
 }
 
 export interface DecayConfig {
