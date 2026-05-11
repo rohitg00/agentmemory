@@ -8,6 +8,7 @@ import type {
 import { KV, generateId } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { recordAudit } from "./audit.js";
+import { logger } from "../logger.js";
 
 const CONSOLIDATION_SYSTEM = `You are a memory consolidation engine. Given a set of related observations from coding sessions, synthesize them into a single long-term memory.
 
@@ -26,7 +27,6 @@ Output XML:
 </memory>`;
 
 import { getXmlTag, getXmlChildren } from "../prompts/xml.js";
-import { logger } from "../logger.js";
 
 function parseMemoryXml(
   xml: string,
@@ -60,6 +60,41 @@ function parseMemoryXml(
     version: 1,
     isLatest: true,
   };
+}
+
+const lessonableTypes = new Set(["architecture", "workflow", "pattern", "bug"]);
+
+async function saveConsolidationLesson(
+  sdk: ISdk,
+  memoryId: string,
+  mType: string,
+  title: string,
+  content: string,
+  context: string,
+  project?: string,
+): Promise<void> {
+  if (!lessonableTypes.has(mType)) return;
+  const truncated = content.length > 500 ? content.slice(0, 500) + "…" : content;
+  try {
+    await sdk.trigger({
+      function_id: "mem::lesson-save",
+      payload: {
+        content: `[${mType}] ${title}: ${truncated}`,
+        context,
+        confidence: 0.6,
+        project,
+        tags: [mType, "consolidated"],
+        source: "consolidation",
+        sourceIds: [memoryId],
+      },
+    });
+  } catch (err) {
+    logger.warn("Failed to save lesson from consolidation", {
+      memoryId,
+      type: mType,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
 }
 
 export function registerConsolidateFunction(
@@ -189,6 +224,16 @@ export function registerConsolidateFunction(
             });
             existingTitles.add(evolved.title.toLowerCase());
             consolidated++;
+
+            await saveConsolidationLesson(
+              sdk,
+              evolved.id,
+              parsed.type,
+              parsed.title,
+              parsed.content,
+              `Evolved from concept group: ${concept}`,
+              data.project,
+            );
           } else {
             const memory: Memory = {
               id: generateId("mem"),
@@ -206,6 +251,16 @@ export function registerConsolidateFunction(
             });
             existingTitles.add(memory.title.toLowerCase());
             consolidated++;
+
+            await saveConsolidationLesson(
+              sdk,
+              memory.id,
+              parsed.type,
+              parsed.title,
+              parsed.content,
+              `Created from concept group: ${concept}`,
+              data.project,
+            );
           }
         } catch (err) {
           logger.warn("Consolidation failed for concept", {

@@ -1106,6 +1106,37 @@ export function registerMcpEndpoints(
             return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(lessonRecallResult, null, 2) }] } };
           }
 
+          case "memory_lesson_list": {
+            const project = typeof args.project === "string" ? args.project : undefined;
+            const source =
+              typeof args.source === "string" &&
+              ["manual", "crystal", "consolidation"].includes(args.source)
+                ? args.source
+                : undefined;
+            const minConfidence =
+              typeof args.minConfidence === "number" ? args.minConfidence : undefined;
+            const limit =
+              typeof args.limit === "number" && args.limit > 0 ? args.limit : 50;
+            const lessonListResult = await sdk.trigger({
+              function_id: "mem::lesson-list",
+              payload: { project, source, minConfidence, limit },
+            });
+            return {
+              status_code: 200,
+              body: { content: [{ type: "text", text: JSON.stringify(lessonListResult, null, 2) }] },
+            };
+          }
+
+          case "memory_lesson_strengthen": {
+            if (typeof args.lessonId !== "string" || !args.lessonId.trim()) {
+              return { status_code: 400, body: { error: "lessonId is required" } };
+            }
+            const lessonStrengthenResult = await sdk.trigger({ function_id: "mem::lesson-strengthen", payload: {
+              lessonId: args.lessonId,
+            } });
+            return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(lessonStrengthenResult, null, 2) }] } };
+          }
+
           case "memory_reflect": {
             const reflectResult = await sdk.trigger({ function_id: "mem::reflect", payload: {
               project: args.project,

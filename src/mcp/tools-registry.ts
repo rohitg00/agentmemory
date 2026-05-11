@@ -767,6 +767,38 @@ export const V070_TOOLS: McpToolDef[] = [
     },
   },
   {
+    name: "memory_lesson_list",
+    description:
+      "List all lessons, optionally filtered by project, source, or minimum confidence. Use to browse or review stored lessons.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        project: { type: "string", description: "Filter by project" },
+        source: {
+          type: "string",
+          description: "Filter by source: 'manual', 'crystal', or 'consolidation'",
+        },
+        minConfidence: {
+          type: "number",
+          description: "Minimum confidence threshold (default 0)",
+        },
+        limit: { type: "number", description: "Max results (default 50)" },
+      },
+    },
+  },
+  {
+    name: "memory_lesson_strengthen",
+    description:
+      "Boost the confidence of an existing lesson by its ID. Use when a lesson is particularly relevant or verified.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        lessonId: { type: "string", description: "The ID of the lesson to strengthen" },
+      },
+      required: ["lessonId"],
+    },
+  },
+  {
     name: "memory_obsidian_export",
     description:
       "Export memories, lessons, and crystals as Obsidian-compatible Markdown files with YAML frontmatter and wikilinks for graph view.",

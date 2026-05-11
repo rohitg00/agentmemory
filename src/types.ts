@@ -510,6 +510,7 @@ export interface AuditEntry {
     | "lesson_save"
     | "lesson_recall"
     | "lesson_strengthen"
+    | "lesson_list"
     | "obsidian_export"
     | "reflect"
     | "insight_search"

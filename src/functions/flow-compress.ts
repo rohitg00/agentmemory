@@ -1,8 +1,9 @@
 import type { ISdk } from "iii-sdk";
 import type { StateKV } from "../state/kv.js";
-import { KV, generateId } from "../state/schema.js";
+import { KV, generateId, fingerprintId } from "../state/schema.js";
 import type { Action, ActionEdge, RoutineRun, MemoryProvider } from "../types.js";
 import { recordAudit } from "./audit.js";
+import { logger } from "../logger.js";
 
 const FLOW_COMPRESS_SYSTEM = `You are a workflow summarizer. Given a completed action chain, produce a concise summary capturing:
 1. The overall goal and outcome
@@ -110,6 +111,37 @@ export function registerFlowCompressFunction(
           actionCount: doneActions.length,
           project: data.project,
         });
+
+        if (summary.lesson) {
+          const lessonContent = summary.lesson.trim();
+          const lessonFp = fingerprintId("lsn", lessonContent.toLowerCase());
+          const existingLesson = await kv.get<{ id: string; deleted?: boolean }>(
+            KV.lessons,
+            lessonFp,
+          );
+          if (!existingLesson || existingLesson.deleted) {
+            await sdk
+              .trigger({
+                function_id: "mem::lesson-save",
+                payload: {
+                  content: lessonContent,
+                  context: summary.goal || summary.outcome || "",
+                  confidence: 0.6,
+                  project: data.project,
+                  tags: [],
+                  source: "consolidation",
+                  sourceIds: [memory.id],
+                },
+              })
+              .catch((err) => {
+              logger.warn("Failed to save lesson from flow-compress", {
+                memoryId: memory.id,
+                lesson: lessonContent.slice(0, 50),
+                error: err instanceof Error ? err.message : String(err),
+              });
+            });
+          }
+        }
 
         return {
           success: true,
