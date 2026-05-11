@@ -22,6 +22,32 @@ args    = ["-y", "@agentmemory/mcp"]
 [mcp_servers.agentmemory.env]
 AGENTMEMORY_URL = "http://localhost:3111"`;
 
+const OPENCODE_JSON = `{
+  "mcp": {
+    "agentmemory": {
+      "type": "local",
+      "command": ["npx", "-y", "@agentmemory/mcp"],
+      "enabled": true,
+      "environment": {
+        "AGENTMEMORY_URL": "http://localhost:3111"
+      }
+    }
+  }
+}`;
+
+const VSCODE_MCP_JSON = `{
+  "servers": {
+    "agentmemory": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@agentmemory/mcp"],
+      "env": {
+        "AGENTMEMORY_URL": "http://localhost:3111"
+      }
+    }
+  }
+}`;
+
 const CLAUDE_CODE_CMD = `claude mcp add agentmemory -- npx -y @agentmemory/mcp`;
 
 const HERMES_YAML = `plugins:
@@ -243,7 +269,7 @@ export function AgentInstall() {
         <div className={styles.snippetCol}>
           <Snippet
             title="UNIVERSAL MCP JSON"
-            hint="WORKS FOR CLAUDE DESKTOP · CURSOR · CLINE · WINDSURF · GEMINI CLI · OPENCODE"
+            hint="WORKS FOR CLAUDE DESKTOP · CURSOR · CLINE · ROO CODE · WINDSURF · GEMINI CLI — MERGE INTO EXISTING mcpServers"
             body={UNIVERSAL_JSON}
           />
         </div>
@@ -254,11 +280,26 @@ export function AgentInstall() {
         aria-expanded={showMore}
         onClick={() => setShowMore((v) => !v)}
       >
-        {showMore ? "— HIDE OTHER SHAPES" : "+ HERMES · OPENCLAW · MORE"}
+        {showMore ? "— HIDE OTHER SHAPES" : "+ OPENCODE · VS CODE · CODEX · HERMES · OPENCLAW"}
       </button>
 
       {showMore && (
         <div className={styles.moreGrid}>
+          <Snippet
+            title="OPENCODE"
+            hint="opencode.json — different shape (mcp key, command as array)"
+            body={OPENCODE_JSON}
+          />
+          <Snippet
+            title="VS CODE (mcp.json)"
+            hint=".vscode/mcp.json — uses servers key, not mcpServers"
+            body={VSCODE_MCP_JSON}
+          />
+          <Snippet
+            title="CODEX CLI (TOML)"
+            hint="~/.codex/config.toml"
+            body={CODEX_TOML}
+          />
           <Snippet
             title="HERMES"
             hint="integrations/hermes — plugin.yaml"
@@ -268,11 +309,6 @@ export function AgentInstall() {
             title="OPENCLAW"
             hint="integrations/openclaw — plugin.yaml"
             body={OPENCLAW_YAML}
-          />
-          <Snippet
-            title="CODEX CLI (TOML)"
-            hint="~/.codex/config.toml"
-            body={CODEX_TOML}
           />
         </div>
       )}

@@ -345,13 +345,16 @@ Install agentmemory: run `npx @agentmemory/agentmemory` in a separate terminal t
 <summary><b>OpenClaw (paste this prompt)</b></summary>
 
 ```
-Install agentmemory for OpenClaw. Run `npx @agentmemory/agentmemory` in a separate terminal to start the memory server on localhost:3111. Then add this to my OpenClaw MCP config so agentmemory is available with all 43 memory tools:
+Install agentmemory for OpenClaw. Run `npx @agentmemory/agentmemory` in a separate terminal to start the memory server on localhost:3111. Then add this to my OpenClaw MCP config so agentmemory is available with all 51 memory tools:
 
 {
   "mcpServers": {
     "agentmemory": {
       "command": "npx",
-      "args": ["-y", "@agentmemory/mcp"]
+      "args": ["-y", "@agentmemory/mcp"],
+      "env": {
+        "AGENTMEMORY_URL": "http://localhost:3111"
+      }
     }
   }
 }
@@ -367,7 +370,7 @@ Full guide: [`integrations/openclaw/`](integrations/openclaw/)
 <summary><b>Hermes Agent (paste this prompt)</b></summary>
 
 ```
-Install agentmemory for Hermes. Run `npx @agentmemory/agentmemory` in a separate terminal to start the memory server on localhost:3111. Then add this to ~/.hermes/config.yaml so Hermes can use agentmemory as an MCP server with all 43 memory tools:
+Install agentmemory for Hermes. Run `npx @agentmemory/agentmemory` in a separate terminal to start the memory server on localhost:3111. Then add this to ~/.hermes/config.yaml so Hermes can use agentmemory as an MCP server with all 51 memory tools:
 
 mcp_servers:
   agentmemory:
@@ -388,21 +391,37 @@ Full guide: [`integrations/hermes/`](integrations/hermes/)
 
 Start the memory server: `npx @agentmemory/agentmemory`
 
-Then add the MCP config for your agent:
+The agentmemory entry is the **same MCP server block** across every host that uses the `mcpServers` shape (Cursor, Claude Desktop, Cline, Roo Code, Windsurf, Gemini CLI, OpenClaw):
 
-| Agent | Setup |
-|---|---|
-| **Cursor** | Add to `~/.cursor/mcp.json`: `{"mcpServers": {"agentmemory": {"command": "npx", "args": ["-y", "@agentmemory/mcp"]}}}` |
-| **OpenClaw** | Add to MCP config: `{"mcpServers": {"agentmemory": {"command": "npx", "args": ["-y", "@agentmemory/mcp"]}}}` or use the [memory plugin](integrations/openclaw/) |
-| **Gemini CLI** | `gemini mcp add agentmemory npx -y @agentmemory/mcp --scope user` |
-| **Codex CLI** | `codex mcp add agentmemory -- npx -y @agentmemory/mcp` or add `[mcp_servers.agentmemory]` to `.codex/config.toml` |
-| **pi** | Copy [`integrations/pi`](integrations/pi/) to `~/.pi/agent/extensions/agentmemory` and restart pi |
-| **OpenCode** | Add to `opencode.json`: `{"mcp": {"agentmemory": {"type": "local", "command": ["npx", "-y", "@agentmemory/mcp"], "enabled": true}}}` |
-| **Hermes Agent** | Add to `~/.hermes/config.yaml` with `memory.provider: agentmemory` or use the [memory provider plugin](integrations/hermes/) |
-| **Cline / Goose / Kilo Code** | Add MCP server in settings |
-| **Claude Desktop** | Add to `claude_desktop_config.json`: `{"mcpServers": {"agentmemory": {"command": "npx", "args": ["-y", "@agentmemory/mcp"]}}}` |
-| **Aider** | REST API: `curl -X POST http://localhost:3111/agentmemory/smart-search -d '{"query": "auth"}'` |
-| **Any agent (32+)** | `npx skillkit install agentmemory` |
+```json
+"agentmemory": {
+  "command": "npx",
+  "args": ["-y", "@agentmemory/mcp"],
+  "env": {
+    "AGENTMEMORY_URL": "http://localhost:3111"
+  }
+}
+```
+
+**Merge this entry into the existing `mcpServers` object** in the host's config file — don't replace the file. If the file already has other servers, add `agentmemory` next to them as another key inside `mcpServers`. If `mcpServers` is missing entirely, paste the block inside `{ "mcpServers": { ... } }`.
+
+| Agent | Config file | Notes |
+|---|---|---|
+| **Cursor** | `~/.cursor/mcp.json` | Merge into `mcpServers`. One-click deeplink also available on the website. |
+| **Claude Desktop** | `claude_desktop_config.json` (Application Support) | Merge into `mcpServers`. Restart Claude Desktop after editing. |
+| **Cline / Roo Code / Kilo Code** | Cline MCP settings (Settings UI → MCP Servers → Edit) | Same `mcpServers` block. |
+| **Windsurf** | `~/.codeium/windsurf/mcp_config.json` | Same `mcpServers` block. |
+| **Gemini CLI** | `~/.gemini/settings.json` | `gemini mcp add agentmemory npx -y @agentmemory/mcp --scope user` (auto-merges). |
+| **OpenClaw** | OpenClaw MCP config | Same `mcpServers` block, or use the deeper [memory plugin](integrations/openclaw/). |
+| **Codex CLI** | `.codex/config.toml` | TOML shape: `codex mcp add agentmemory -- npx -y @agentmemory/mcp`, or add `[mcp_servers.agentmemory]` manually. |
+| **OpenCode** | `opencode.json` | Different shape — top-level `mcp` key, command as array: `{"mcp": {"agentmemory": {"type": "local", "command": ["npx", "-y", "@agentmemory/mcp"], "enabled": true}}}`. |
+| **pi** | `~/.pi/agent/extensions/agentmemory` | Copy [`integrations/pi`](integrations/pi/) and restart pi. |
+| **Hermes Agent** | `~/.hermes/config.yaml` | Use the deeper [memory provider plugin](integrations/hermes/) with `memory.provider: agentmemory`. |
+| **Goose** | Goose MCP settings UI | Same `mcpServers` block. |
+| **Aider** | n/a | Talk to the REST API directly: `curl -X POST http://localhost:3111/agentmemory/smart-search -d '{"query": "auth"}'`. |
+| **Any agent (32+)** | n/a | `npx skillkit install agentmemory` auto-detects the host and merges. |
+
+**Sandboxed MCP clients** (Flatpak / Snap / restrictive containers) that can't reach the host's `localhost`: also set `"AGENTMEMORY_FORCE_PROXY": "1"` in the `env` block, and point `AGENTMEMORY_URL` at a route the sandbox can actually reach (e.g. your LAN IP). See [#234](https://github.com/rohitg00/agentmemory/issues/234) for the diagnostic walkthrough.
 
 ### From source
 
@@ -701,17 +720,22 @@ npx -y @agentmemory/mcp                # shim package alias
 
 Or add to your agent's MCP config:
 
-Most agents (Cursor, Claude Desktop, Cline, etc.):
+Most agents (Cursor, Claude Desktop, Cline, Roo Code, Windsurf, Gemini CLI):
 ```json
 {
   "mcpServers": {
     "agentmemory": {
       "command": "npx",
-      "args": ["-y", "@agentmemory/mcp"]
+      "args": ["-y", "@agentmemory/mcp"],
+      "env": {
+        "AGENTMEMORY_URL": "http://localhost:3111"
+      }
     }
   }
 }
 ```
+
+Merge the `agentmemory` entry into your host's existing `mcpServers` object rather than replacing the file. For sandboxed clients that can't reach the host's `localhost`, add `"AGENTMEMORY_FORCE_PROXY": "1"` to the env block and set `AGENTMEMORY_URL` to a route the sandbox can reach.
 
 OpenCode (`opencode.json`):
 ```json
