@@ -247,6 +247,32 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
     expect(joined).toMatch(/AGENTMEMORY_FORCE_PROXY/);
   });
 
+  it("local fallback tools/list returns all 7 IMPLEMENTED_TOOLS regardless of AGENTMEMORY_TOOLS env (#234)", async () => {
+    const { handleToolsList } = await import("../src/mcp/standalone.js");
+    installFetch(() => {
+      throw new Error("ECONNREFUSED");
+    });
+    delete process.env["AGENTMEMORY_TOOLS"];
+    const before = await handleToolsList();
+    const beforeTools = before.tools as Array<{ name: string }>;
+    expect(beforeTools.map((t) => t.name).sort()).toEqual([
+      "memory_audit",
+      "memory_export",
+      "memory_governance_delete",
+      "memory_recall",
+      "memory_save",
+      "memory_sessions",
+      "memory_smart_search",
+    ]);
+    expect(beforeTools).toHaveLength(7);
+
+    resetHandleForTests();
+    process.env["AGENTMEMORY_TOOLS"] = "core";
+    const core = await handleToolsList();
+    expect((core.tools as unknown[]).length).toBe(7);
+    delete process.env["AGENTMEMORY_TOOLS"];
+  });
+
   it("AGENTMEMORY_PROBE_TIMEOUT_MS overrides the default probe timeout", async () => {
     process.env["AGENTMEMORY_PROBE_TIMEOUT_MS"] = "50";
     let probeStarted = 0;

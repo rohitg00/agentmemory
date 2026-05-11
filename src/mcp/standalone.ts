@@ -2,7 +2,7 @@
 
 import { InMemoryKV } from "./in-memory-kv.js";
 import { createStdioTransport } from "./transport.js";
-import { getVisibleTools } from "./tools-registry.js";
+import { getAllTools } from "./tools-registry.js";
 import { getStandalonePersistPath } from "../config.js";
 import { VERSION } from "../version.js";
 import { generateId } from "../state/schema.js";
@@ -354,6 +354,57 @@ export async function handleToolCall(
   return handleLocal(validated, kvInstance);
 }
 
+export async function handleToolsList(): Promise<{ tools: unknown[] }> {
+  const debug = process.env["AGENTMEMORY_DEBUG"] === "1" || process.env["AGENTMEMORY_DEBUG"] === "true";
+  const handle = await resolveHandle();
+  announceMode(handle);
+  if (debug) {
+    process.stderr.write(
+      `[@agentmemory/mcp] tools/list: handle.mode=${handle.mode}${handle.mode === "proxy" ? ` baseUrl=${handle.baseUrl}` : ""}\n`,
+    );
+  }
+  if (handle.mode === "proxy") {
+    try {
+      const remote = (await handle.call("/agentmemory/mcp/tools", {
+        method: "GET",
+      })) as { tools?: unknown } | null;
+      if (debug) {
+        const shape = remote === null
+          ? "null"
+          : typeof remote !== "object"
+            ? typeof remote
+            : `keys=${Object.keys(remote as object).join(",")} toolsType=${Array.isArray((remote as { tools?: unknown }).tools) ? `array(len=${((remote as { tools: unknown[] }).tools).length})` : typeof (remote as { tools?: unknown }).tools}`;
+        process.stderr.write(
+          `[@agentmemory/mcp] tools/list: remote response shape: ${shape}\n`,
+        );
+      }
+      if (remote && Array.isArray(remote.tools)) {
+        if (debug) {
+          process.stderr.write(
+            `[@agentmemory/mcp] tools/list: returning ${remote.tools.length} tools from server\n`,
+          );
+        }
+        return { tools: remote.tools };
+      }
+      process.stderr.write(
+        `[@agentmemory/mcp] tools/list: server returned unexpected shape (no .tools array); falling back to local IMPLEMENTED_TOOLS list. Set AGENTMEMORY_DEBUG=1 to inspect response.\n`,
+      );
+    } catch (err) {
+      process.stderr.write(
+        `[@agentmemory/mcp] tools/list proxy failed: ${err instanceof Error ? err.message : String(err)}; falling back to local list\n`,
+      );
+      invalidateHandle();
+    }
+  }
+  const fallback = getAllTools().filter((t) => IMPLEMENTED_TOOLS.has(t.name));
+  if (debug) {
+    process.stderr.write(
+      `[@agentmemory/mcp] tools/list: returning ${fallback.length} local fallback tools (${fallback.map((t) => t.name).join(",")})\n`,
+    );
+  }
+  return { tools: fallback };
+}
+
 const transport = createStdioTransport(async (method, params) => {
   switch (method) {
     case "initialize":
@@ -369,56 +420,8 @@ const transport = createStdioTransport(async (method, params) => {
     case "notifications/initialized":
       return {};
 
-    case "tools/list": {
-      const debug = process.env["AGENTMEMORY_DEBUG"] === "1" || process.env["AGENTMEMORY_DEBUG"] === "true";
-      const handle = await resolveHandle();
-      announceMode(handle);
-      if (debug) {
-        process.stderr.write(
-          `[@agentmemory/mcp] tools/list: handle.mode=${handle.mode}${handle.mode === "proxy" ? ` baseUrl=${handle.baseUrl}` : ""}\n`,
-        );
-      }
-      if (handle.mode === "proxy") {
-        try {
-          const remote = (await handle.call("/agentmemory/mcp/tools", {
-            method: "GET",
-          })) as { tools?: unknown } | null;
-          if (debug) {
-            const shape = remote === null
-              ? "null"
-              : typeof remote !== "object"
-                ? typeof remote
-                : `keys=${Object.keys(remote as object).join(",")} toolsType=${Array.isArray((remote as { tools?: unknown }).tools) ? `array(len=${((remote as { tools: unknown[] }).tools).length})` : typeof (remote as { tools?: unknown }).tools}`;
-            process.stderr.write(
-              `[@agentmemory/mcp] tools/list: remote response shape: ${shape}\n`,
-            );
-          }
-          if (remote && Array.isArray(remote.tools)) {
-            if (debug) {
-              process.stderr.write(
-                `[@agentmemory/mcp] tools/list: returning ${remote.tools.length} tools from server\n`,
-              );
-            }
-            return { tools: remote.tools };
-          }
-          process.stderr.write(
-            `[@agentmemory/mcp] tools/list: server returned unexpected shape (no .tools array); falling back to local IMPLEMENTED_TOOLS list. Set AGENTMEMORY_DEBUG=1 to inspect response.\n`,
-          );
-        } catch (err) {
-          process.stderr.write(
-            `[@agentmemory/mcp] tools/list proxy failed: ${err instanceof Error ? err.message : String(err)}; falling back to local list\n`,
-          );
-          invalidateHandle();
-        }
-      }
-      const fallback = getVisibleTools().filter((t) => IMPLEMENTED_TOOLS.has(t.name));
-      if (debug) {
-        process.stderr.write(
-          `[@agentmemory/mcp] tools/list: returning ${fallback.length} local fallback tools (${fallback.map((t) => t.name).join(",")})\n`,
-        );
-      }
-      return { tools: fallback };
-    }
+    case "tools/list":
+      return handleToolsList();
 
     case "tools/call": {
       const toolName = params.name as string;
