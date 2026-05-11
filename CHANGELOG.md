@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.9.8] — 2026-05-11
+
+Single-line follow-up to v0.9.7's MCP shim work. v0.9.7 surfaced probe failures, added an `AGENTMEMORY_FORCE_PROXY=1` escape hatch, and shipped `AGENTMEMORY_DEBUG=1` — but the *local-mode* `tools/list` branch was still returning only 4 tools when an agentmemory server was unreachable, not the documented 7-tool `IMPLEMENTED_TOOLS` set the shim's `InMemoryKV` actually backs. v0.9.8 fixes that.
+
+### Fixed
+
+- **`@agentmemory/mcp` local-mode `tools/list` now exposes all 7 `IMPLEMENTED_TOOLS`, not the 4-tool intersection with `ESSENTIAL_TOOLS`.** The local-fallback branch in `src/mcp/standalone.ts` filtered `getVisibleTools()` through `IMPLEMENTED_TOOLS`, but `getVisibleTools()` honors the shim process's own `AGENTMEMORY_TOOLS` env var (unset → "core" → 8 `ESSENTIAL_TOOLS`). The intersection of `ESSENTIAL_TOOLS` (8) and `IMPLEMENTED_TOOLS` (7) is exactly 4 tools: `memory_save`, `memory_recall`, `memory_smart_search`, `memory_sessions`. Those four were the only ones MCP clients saw when no agentmemory server was reachable — even though the shim's `InMemoryKV` implements all seven (the four above plus `memory_export`, `memory_audit`, `memory_governance_delete`). The filter source was wrong: the shim dispatches by `IMPLEMENTED_TOOLS`, not by `ESSENTIAL_TOOLS`, so a server-tier env var should never have shaped the shim's local-fallback list. Switched to `getAllTools().filter((t) => IMPLEMENTED_TOOLS.has(t.name))`, which picks the same 7 names from the unfiltered universe regardless of `AGENTMEMORY_TOOLS`. Refactored the `tools/list` handler into an exported `handleToolsList()` for direct testability, and added a regression test asserting the local-fallback path returns exactly the 7 names under both unset and `core` modes. Verified live via stdio against a downed server: shim now returns 7 names (was 4). (#283, closes [#234](https://github.com/rohitg00/agentmemory/issues/234))
+
+### Changed
+
+- `@agentmemory/mcp` package version bumped from 0.9.7 → 0.9.8 to lockstep with the main package.
+
 ## [0.9.7] — 2026-05-11
 
 Four follow-up fixes to v0.9.6 reported live by [@jcalfee](https://github.com/jcalfee) ([#234](https://github.com/rohitg00/agentmemory/issues/234)) and [@satabd](https://github.com/satabd) ([#278](https://github.com/rohitg00/agentmemory/issues/278)): the `@agentmemory/mcp` shim gained probe diagnostics and an escape hatch for clients that can reach the server via a non-default route, the Docker compose stack now persists state across `docker compose down` (the volume binding was unused due to a working-directory mismatch in the engine config), a cosmetic `which iii` stderr leak was suppressed, and the engine container's log output is now bounded so a crash/restart spam loop can no longer fill the host disk.
