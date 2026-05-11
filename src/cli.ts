@@ -1120,6 +1120,34 @@ async function runMcp(): Promise<void> {
   await import("./mcp/standalone.js");
 }
 
+async function runInstall(): Promise<void> {
+  const target = args[1];
+  const global = args.includes("--global");
+  const rootIdx = args.indexOf("--project-root");
+  const projectRoot = rootIdx !== -1 && args[rootIdx + 1] ? args[rootIdx + 1] : undefined;
+
+  if (!target) {
+    p.log.error(
+      "Usage: agentmemory install <opencode|cursor|codex|roo|kilo|pi|openclaw|hermes> [--global] [--project-root <path>]",
+    );
+    process.exit(1);
+  }
+
+  const { installTarget } = await import("./installers.js");
+  const result = installTarget(target as never, { global, projectRoot });
+  p.note(
+    [
+      `Target: ${result.target}`,
+      `Files:`,
+      ...result.filesWritten.map((f) => `  - ${f}`),
+      "",
+      `Notes:`,
+      ...result.notes.map((n) => `  - ${n}`),
+    ].join("\n"),
+    "agentmemory install",
+  );
+}
+
 async function runImportJsonl(): Promise<void> {
   // Long-form flags that take a value. Their value tokens must be
   // consumed alongside the flag so they don't leak into positional
@@ -1301,6 +1329,7 @@ const commands: Record<string, () => Promise<void>> = {
   doctor: runDoctor,
   demo: runDemo,
   upgrade: runUpgrade,
+  install: runInstall,
   mcp: runMcp,
   "import-jsonl": runImportJsonl,
 };

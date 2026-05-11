@@ -3,6 +3,8 @@ import { defineConfig } from "tsdown";
 const hookEntries = [
   "src/hooks/session-start.ts",
   "src/hooks/prompt-submit.ts",
+  "src/hooks/cursor.ts",
+  "src/hooks/codex.ts",
   "src/hooks/pre-tool-use.ts",
   "src/hooks/post-tool-use.ts",
   "src/hooks/post-tool-failure.ts",
