@@ -34,6 +34,8 @@ import {
   registerSearchFunction,
   rebuildIndex,
   getSearchIndex,
+  setVectorIndex,
+  setEmbeddingProvider,
 } from "./functions/search.js";
 import { registerContextFunction } from "./functions/context.js";
 import { registerSummarizeFunction } from "./functions/summarize.js";
@@ -175,6 +177,9 @@ async function main() {
   const dedupMap = new DedupMap();
 
   const vectorIndex = embeddingProvider ? new VectorIndex() : null;
+
+  setVectorIndex(vectorIndex);
+  setEmbeddingProvider(embeddingProvider);
 
   const meterAccessor = hasGetMeter(sdk)
     ? (sdk.getMeter.bind(sdk) as (name: string) => unknown)

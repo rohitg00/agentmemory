@@ -15,7 +15,7 @@ import {
 } from "../prompts/compression.js";
 import { VISION_DESCRIPTION_PROMPT } from "../prompts/vision.js";
 import { getXmlTag, getXmlChildren } from "../prompts/xml.js";
-import { getSearchIndex } from "./search.js";
+import { getSearchIndex, getVectorIndex, getEmbeddingProvider } from "./search.js";
 import { CompressOutputSchema } from "../eval/schemas.js";
 import { validateOutput } from "../eval/validator.js";
 import { scoreCompression } from "../eval/quality.js";
@@ -174,6 +174,20 @@ export function registerCompressFunction(
         );
 
         getSearchIndex().add(compressed);
+
+        try {
+          const vi = getVectorIndex();
+          const ep = getEmbeddingProvider();
+          if (vi && ep) {
+            const embedding = await ep.embed(compressed.title + ' ' + (compressed.narrative || ''));
+            vi.add(compressed.id, compressed.sessionId, embedding);
+          }
+        } catch (err) {
+          logger.warn("Failed to vector-index compressed observation", {
+            obsId: compressed.id,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
 
         const streamResults = await Promise.allSettled([
           sdk.trigger({
