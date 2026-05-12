@@ -4,7 +4,10 @@ const CALL_TIMEOUT_MS = 15_000;
 const LOCAL_MODE_TTL_MS = 30_000;
 
 function probeTimeoutMs(): number {
-  const raw = process.env["AGENTMEMORY_PROBE_TIMEOUT_MS"];
+  // AGENTMEMORY_LIVEZ_TIMEOUT_MS is the B1 name (documented in client-setup); AGENTMEMORY_PROBE_TIMEOUT_MS is upstream's name
+  const raw =
+    process.env["AGENTMEMORY_LIVEZ_TIMEOUT_MS"] ??
+    process.env["AGENTMEMORY_PROBE_TIMEOUT_MS"];
   if (!raw) return DEFAULT_HEALTH_PROBE_TIMEOUT_MS;
   const n = Number(raw);
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : DEFAULT_HEALTH_PROBE_TIMEOUT_MS;
@@ -27,6 +30,19 @@ export interface LocalHandle {
 
 export type Handle = ProxyHandle | LocalHandle;
 
+export class RemoteUnreachableError extends Error {
+  constructor(
+    public readonly url: string,
+    public readonly probeTimeoutMs: number,
+  ) {
+    super(
+      `AGENTMEMORY_REMOTE_REQUIRED is set but ${url}/agentmemory/livez probe failed (timeout, network error, or non-2xx; timeout=${probeTimeoutMs}ms). ` +
+        `Either raise AGENTMEMORY_LIVEZ_TIMEOUT_MS, fix backend connectivity, or unset AGENTMEMORY_REMOTE_REQUIRED to allow local-mode fallback.`,
+    );
+    this.name = "RemoteUnreachableError";
+  }
+}
+
 let cached: Handle | null = null;
 let cachedAt = 0;
 let probeInFlight: Promise<Handle> | null = null;
@@ -38,6 +54,13 @@ function baseUrl(): string {
 function authHeader(): Record<string, string> {
   const secret = process.env["AGENTMEMORY_SECRET"];
   return secret ? { authorization: `Bearer ${secret}` } : {};
+}
+
+function remoteRequired(): boolean {
+  const raw = process.env["AGENTMEMORY_REMOTE_REQUIRED"];
+  if (!raw) return false;
+  const v = raw.toLowerCase();
+  return v === "1" || v === "true" || v === "yes" || v === "on";
 }
 
 async function probe(url: string): Promise<boolean> {
@@ -56,7 +79,7 @@ async function probe(url: string): Promise<boolean> {
     return res.ok;
   } catch (err) {
     process.stderr.write(
-      `[@agentmemory/mcp] livez probe ${url}/agentmemory/livez failed in ${timeout}ms: ${err instanceof Error ? err.message : String(err)}; falling back to local InMemoryKV (set AGENTMEMORY_FORCE_PROXY=1 to skip the probe, or raise AGENTMEMORY_PROBE_TIMEOUT_MS)\n`,
+      `[@agentmemory/mcp] livez probe ${url}/agentmemory/livez failed in ${timeout}ms: ${err instanceof Error ? err.message : String(err)}; falling back to local InMemoryKV (set AGENTMEMORY_FORCE_PROXY=1 to skip the probe, or raise AGENTMEMORY_LIVEZ_TIMEOUT_MS)\n`,
     );
     return false;
   }
@@ -114,6 +137,12 @@ export async function resolveHandle(): Promise<Handle> {
       cachedAt = Date.now();
       return handle;
     }
+    if (remoteRequired()) {
+      throw new RemoteUnreachableError(url, probeTimeoutMs());
+    }
+    process.stderr.write(
+      `[@agentmemory/mcp] agentmemory backend unreachable; falling back to in-memory local mode (url=${url}, probeTimeoutMs=${probeTimeoutMs()}). Set AGENTMEMORY_REMOTE_REQUIRED=1 to fail loud, or AGENTMEMORY_LIVEZ_TIMEOUT_MS=N to allow more probe time.\n`,
+    );
     const local: LocalHandle = { mode: "local" };
     cached = local;
     cachedAt = Date.now();

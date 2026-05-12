@@ -923,6 +923,23 @@ Create `~/.agentmemory/.env`:
 # Auth
 # AGENTMEMORY_SECRET=your-secret
 
+# Remote backend resilience (relevant when AGENTMEMORY_URL points at a
+# self-hosted server rather than the default localhost). Both default off.
+# AGENTMEMORY_REMOTE_REQUIRED=1     # Fail loud (RemoteUnreachableError)
+                                    # when the /agentmemory/livez probe
+                                    # fails, instead of silently falling
+                                    # back to in-memory local mode.
+                                    # Recommended for production multi-
+                                    # machine setups where a silent
+                                    # fallback can land memories in the
+                                    # wrong store if the warning is missed.
+# AGENTMEMORY_LIVEZ_TIMEOUT_MS=500  # Timeout for the /agentmemory/livez
+                                    # probe at startup. Raise it on
+                                    # high-latency networks (Tailscale
+                                    # across regions, slow container
+                                    # boots) where the 500 ms default
+                                    # trips the fallback path.
+
 # Ports (defaults: 3111 API, 3113 viewer)
 # III_REST_PORT=3111
 

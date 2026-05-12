@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added (TotalZack/agentmemory fork — B1 patch, pending upstream PR #273)
+
+- **`AGENTMEMORY_REMOTE_REQUIRED` env var** — when set to `1` / `true` / `yes` / `on`, the standalone MCP shim refuses to fall back to in-memory local mode if the `/agentmemory/livez` probe fails at startup. Throws a structured `RemoteUnreachableError` instead. Default off, so existing users see no behavior change. Recommended for production multi-machine deployments.
+- **`AGENTMEMORY_LIVEZ_TIMEOUT_MS` env var** — overrides the probe timeout (alias for upstream's `AGENTMEMORY_PROBE_TIMEOUT_MS`; takes precedence). Default 2000 ms (same as upstream since v0.9.7). Useful on high-latency networks (Tailscale across regions, slow Coolify boots) where the default trips the silent-fallback path even when the backend is healthy.
+- **Visible stderr line on silent local fallback** — when `AGENTMEMORY_URL` points at a remote backend but the `/livez` probe fails and `REMOTE_REQUIRED` is unset, the shim now emits a warning on stderr (with `url`, `probeTimeoutMs`, and a hint at the two env vars).
+
 ## [0.9.9] — 2026-05-11
 
 Two field-reported regressions closed: pinned memory slots never reached SessionStart context (the `renderPinnedContext` and `listPinnedSlots` helpers shipped in v0.7 had no callers), and the MiniMax compression provider read its base URL straight off `process.env`, missing `~/.agentmemory/.env` values that the rest of agentmemory loads through the shared merged-env path.
