@@ -6,8 +6,22 @@
   <strong>
     Your coding agent remembers everything. No more re-explaining.
     Built on <a href="https://github.com/iii-hq/iii">iii engine</a>
-  </strong></br>
-  Persistent memory for Claude Code, Cursor, Gemini CLI, Codex CLI, pi, OpenCode, and any MCP client.
+  </strong><br/>
+  Persistent memory for Claude Code, Cursor, Gemini CLI, Codex CLI, Hermes, OpenClaw, pi, OpenCode, and any MCP client.
+</p>
+
+<p align="center">
+  <a href="https://trendshift.io/repositories/25123" target="_blank"><img src="https://trendshift.io/api/badge/repositories/25123" alt="rohitg00/agentmemory | Trendshift" width="250" height="55"/></a>
+</p>
+
+<p align="center">
+  <a href="https://star-history.com/#rohitg00/agentmemory&Date">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=rohitg00/agentmemory&type=Date&theme=dark" />
+      <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=rohitg00/agentmemory&type=Date" />
+      <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=rohitg00/agentmemory&type=Date" width="720" />
+    </picture>
+  </a>
 </p>
 
 <p align="center">
@@ -15,7 +29,7 @@
 </p>
 
 <p align="center">
-  <strong>The gist extends Karpathy's LLM Wiki pattern with confidence scoring, lifecycle, knowledge graphs, and hybrid search.<br/> agentmemory is the implementation.</strong>
+  <em>The gist extends Karpathy's LLM Wiki pattern with confidence scoring, lifecycle, knowledge graphs, and hybrid search — agentmemory is the implementation.</em>
 </p>
 
 <p align="center">
