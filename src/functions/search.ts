@@ -3,15 +3,35 @@ import type { CompactSearchResult, CompressedObservation, Memory, SearchResult, 
 import { KV } from '../state/schema.js'
 import { StateKV } from '../state/kv.js'
 import { SearchIndex } from '../state/search-index.js'
+import { VectorIndex } from '../state/vector-index.js'
+import type { EmbeddingProvider } from '../types.js'
 import { memoryToObservation } from '../state/memory-utils.js'
 import { recordAccessBatch } from './access-tracker.js'
 import { logger } from "../logger.js";
 
 let index: SearchIndex | null = null
+let vectorIndex: VectorIndex | null = null
+let currentEmbeddingProvider: EmbeddingProvider | null = null
 
 export function getSearchIndex(): SearchIndex {
   if (!index) index = new SearchIndex()
   return index
+}
+
+export function setVectorIndex(idx: VectorIndex | null): void {
+  vectorIndex = idx
+}
+
+export function getVectorIndex(): VectorIndex | null {
+  return vectorIndex
+}
+
+export function setEmbeddingProvider(provider: EmbeddingProvider | null): void {
+  currentEmbeddingProvider = provider
+}
+
+export function getEmbeddingProvider(): EmbeddingProvider | null {
+  return currentEmbeddingProvider
 }
 
 export async function rebuildIndex(kv: StateKV): Promise<number> {
@@ -30,6 +50,12 @@ export async function rebuildIndex(kv: StateKV): Promise<number> {
       if (memory.isLatest === false) continue
       if (!memory.title || !memory.content) continue
       idx.add(memoryToObservation(memory))
+      if (vectorIndex && currentEmbeddingProvider) {
+        try {
+          const embedding = await currentEmbeddingProvider.embed(memory.title + ' ' + memory.content)
+          vectorIndex.add(memory.id, memory.sessionIds[0] ?? 'memory', embedding)
+        } catch {}
+      }
       count++
     }
   } catch (err) {
@@ -64,6 +90,12 @@ export async function rebuildIndex(kv: StateKV): Promise<number> {
     for (const obs of observations) {
       if (obs.title && obs.narrative) {
         idx.add(obs)
+        if (vectorIndex && currentEmbeddingProvider) {
+          try {
+            const embedding = await currentEmbeddingProvider.embed(obs.title + ' ' + obs.narrative)
+            vectorIndex.add(obs.id, obs.sessionId, embedding)
+          } catch {}
+        }
         count++
       }
     }
