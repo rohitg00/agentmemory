@@ -127,6 +127,7 @@ What the plugin does:
 
 - recalls relevant long-term memory before the agent starts
 - captures completed conversation turns after the agent finishes
+- registers a memory capability/runtime so `plugins.slots.memory = "agentmemory"` is accepted by current OpenClaw memory-slot builds
 - shares the same backend with Claude Code, Codex CLI, Gemini CLI, Hermes, pi, and other agents
 
 ## Troubleshooting
@@ -136,6 +137,10 @@ What the plugin does:
 **Connection refused on port 3111** — the agentmemory server is not running. Start it with `npx @agentmemory/agentmemory`.
 
 **No memories returned** — open `http://localhost:3113` and verify observations are being captured.
+
+**Memory slot shows unavailable even though the plugin loads** — your OpenClaw build may require an explicit memory capability/runtime registration for memory-slot plugins. This integration now registers that capability directly via the OpenClaw memory-core runtime API.
+
+**Docker startup fails before the server is ready** — some environments expose standalone `docker-compose` but not `docker compose`, and some do not have a reachable Docker daemon. In those cases, installing local `iii` 0.11.2 is a more reliable startup path than Docker.
 
 ## See also
 
