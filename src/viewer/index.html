@@ -924,14 +924,30 @@
 
   <script nonce="__AGENTMEMORY_VIEWER_NONCE__">
     var params = new URLSearchParams(window.location.search);
-    var viewerPort = params.get('port') || window.location.port || '3113';
-    var iiiPort = parseInt(viewerPort);
-    if (iiiPort === 3111) viewerPort = '3113';
-    var REST = window.location.protocol + '//' + window.location.hostname + ':' + viewerPort;
+    var paramPort = params.get('port');
+    var locPort = window.location.port;
     var wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    var wsPort = params.get('wsPort') || String(parseInt(viewerPort) - 1);
-    var WS_URL = wsProto + '//' + window.location.hostname + ':' + wsPort;
-    var WS_DIRECT_URL = wsProto + '//' + window.location.hostname + ':' + wsPort + '/stream/mem-live/viewer';
+    var REST, WS_URL, WS_DIRECT_URL, wsPort;
+    if (paramPort) {
+      var resolvedPort = parseInt(paramPort) === 3111 ? '3113' : paramPort;
+      REST = window.location.protocol + '//' + window.location.hostname + ':' + resolvedPort;
+      wsPort = params.get('wsPort') || String(parseInt(resolvedPort) - 1);
+      WS_URL = wsProto + '//' + window.location.hostname + ':' + wsPort;
+      WS_DIRECT_URL = WS_URL + '/stream/mem-live/viewer';
+    } else if (locPort) {
+      var resolvedPort = parseInt(locPort) === 3111 ? '3113' : locPort;
+      REST = window.location.protocol + '//' + window.location.hostname + ':' + resolvedPort;
+      wsPort = params.get('wsPort') || String(parseInt(resolvedPort) - 1);
+      WS_URL = wsProto + '//' + window.location.hostname + ':' + wsPort;
+      WS_DIRECT_URL = WS_URL + '/stream/mem-live/viewer';
+    } else {
+      REST = window.location.origin;
+      wsPort = params.get('wsPort');
+      WS_URL = wsPort
+        ? wsProto + '//' + window.location.hostname + ':' + wsPort
+        : wsProto + '//' + window.location.host;
+      WS_DIRECT_URL = WS_URL + '/stream/mem-live/viewer';
+    }
 
     var dateEl = document.getElementById('dateline');
     if (dateEl) dateEl.textContent = new Date().toLocaleDateString('en-US', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' });

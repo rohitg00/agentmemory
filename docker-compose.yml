@@ -1,4 +1,18 @@
 services:
+  # One-shot init container: docker creates named volumes root:root mode
+  # 755, but the iii-engine image is distroless and runs as UID 65532
+  # with no `chown` of its own. Without this, /data is unwritable, the
+  # engine silently buffers in RAM, and state evaporates on every
+  # restart — the exact symptom v0.9.7's working-directory fix set out
+  # to solve. Runs once at compose-up and exits.
+  iii-init:
+    image: busybox:1.36
+    user: "0:0"
+    volumes:
+      - iii-data:/data
+    entrypoint: ["sh", "-c", "chown -R 65532:65532 /data && chmod 755 /data"]
+    restart: "no"
+
   iii-engine:
     # Pinned to v0.11.2 — the last engine that runs agentmemory's current
     # worker model cleanly. v0.11.6 introduces a new sandbox-everything-
@@ -10,6 +24,10 @@ services:
     # Override per-shell or via .env file:
     #   AGENTMEMORY_III_VERSION=0.11.7 docker compose up
     image: iiidev/iii:${AGENTMEMORY_III_VERSION:-0.11.2}
+    user: "65532:65532"
+    depends_on:
+      iii-init:
+        condition: service_completed_successfully
     ports:
       - "127.0.0.1:49134:49134"
       - "127.0.0.1:3111:3111"

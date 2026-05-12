@@ -168,7 +168,7 @@ export function registerContextFunction(
       usedTokens += estimateTokens(header) + estimateTokens(footer);
 
       for (const block of blocks) {
-        if (usedTokens + block.tokens > budget) break;
+        if (usedTokens + block.tokens > budget) continue;
         selected.push(block.content);
         usedTokens += block.tokens;
         if (block.sourceIds && block.sourceIds.length > 0) {
