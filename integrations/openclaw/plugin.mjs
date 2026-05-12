@@ -123,7 +123,10 @@ const plugin = {
 
     if (typeof api.registerMemoryCapability === "function") {
       api.registerMemoryCapability({
-        promptBuilder: () => [
+        // OpenClaw passes { availableTools: Set<string>, citationsMode? }. We
+        // don't currently branch on tool availability, but accept the params
+        // object so the signature matches MemoryPromptSectionBuilder exactly.
+        promptBuilder: (_params) => [
           "Long-term memory provider: agentmemory (external REST service on " +
             client.baseUrl +
             ").",
