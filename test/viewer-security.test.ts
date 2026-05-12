@@ -9,6 +9,7 @@ describe("viewer document security", () => {
 
     expect(rendered.csp).toContain("script-src 'nonce-");
     expect(rendered.csp).toContain("script-src-attr 'none'");
+    expect(rendered.csp).toContain("img-src 'self' data:");
     expect(rendered.csp).not.toContain("script-src 'unsafe-inline'");
     expect(rendered.html).toContain("<script nonce=\"");
     expect(rendered.html).not.toContain("__AGENTMEMORY_VIEWER_NONCE__");

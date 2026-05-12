@@ -24,7 +24,7 @@ export function buildViewerCsp(nonce: string): string {
     "script-src-attr 'none'",
     "style-src 'unsafe-inline'",
     "connect-src 'self' http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:* wss://localhost:* wss://127.0.0.1:*",
-    "img-src 'self'",
+    "img-src 'self' data:",
     "font-src 'self'",
   ].join("; ");
 }
