@@ -127,9 +127,18 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
       const sessionCache = new Map<string, Session | null>()
       const loadSession = async (sessionId: string): Promise<Session | null> => {
         if (sessionCache.has(sessionId)) return sessionCache.get(sessionId)!
-        const s = await kv.get<Session>(KV.sessions, sessionId)
-        sessionCache.set(sessionId, s ?? null)
-        return s ?? null
+        try {
+          const s = await kv.get<Session>(KV.sessions, sessionId)
+          sessionCache.set(sessionId, s ?? null)
+          return s ?? null
+        } catch (err) {
+          logger.warn('search: failed to load session attribution', {
+            sessionId,
+            error: err instanceof Error ? err.message : String(err),
+          })
+          sessionCache.set(sessionId, null)
+          return null
+        }
       }
 
       // First pass: filter by session (sequential — benefits from session cache).

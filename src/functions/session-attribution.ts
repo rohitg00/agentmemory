@@ -44,6 +44,7 @@ export function sessionAttributionLabel(session: Session | null | undefined): st
   const model = sessionModel(session);
   const source = sessionSource(session);
   if (client) parts.push(role ? `${client}/${role}` : client);
+  else if (role) parts.push(role);
   if (model) parts.push(model);
   if (source) parts.push(`source:${source}`);
   if (session.startedAt) parts.push(session.startedAt);
