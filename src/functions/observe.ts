@@ -1,5 +1,5 @@
 import { TriggerAction, type ISdk } from "iii-sdk";
-import type { RawObservation, HookPayload } from "../types.js";
+import type { RawObservation, HookPayload, EmbeddingProvider } from "../types.js";
 import { KV, STREAM, generateId } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { stripPrivateData } from "./privacy.js";
@@ -8,6 +8,7 @@ import { withKeyedLock } from "../state/keyed-mutex.js";
 import { isAutoCompressEnabled } from "../config.js";
 import { buildSyntheticCompression } from "./compress-synthetic.js";
 import { getSearchIndex } from "./search.js";
+import { VectorIndex } from "../state/vector-index.js";
 import { logger } from "../logger.js";
 
 export function extractImage(d: unknown): string | undefined {
@@ -38,6 +39,8 @@ export function registerObserveFunction(
   kv: StateKV,
   dedupMap?: DedupMap,
   maxObservationsPerSession?: number,
+  vectorIndex?: VectorIndex | null,
+  embeddingProvider?: EmbeddingProvider | null,
 ): void {
   sdk.registerFunction("mem::observe", 
     async (payload: HookPayload) => {
@@ -238,6 +241,18 @@ export function registerObserveFunction(
             synthetic,
           );
           getSearchIndex().add(synthetic);
+          if (vectorIndex && embeddingProvider) {
+            try {
+              const narrative = (synthetic.title || "") + " " + (synthetic.narrative || "");
+              const vec = await embeddingProvider.embed(narrative);
+              vectorIndex.add(obsId, payload.sessionId, vec);
+            } catch (err) {
+              logger.warn("Vector auto-index failed for observation", {
+                obsId,
+                error: err instanceof Error ? err.message : String(err),
+              });
+            }
+          }
           await sdk.trigger({
             function_id: "stream::set",
             payload: {
