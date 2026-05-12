@@ -495,6 +495,46 @@
       color: var(--ink-muted);
       font-family: var(--font-mono);
     }
+    .session-identity {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      margin: 7px 0 4px;
+    }
+    .session-identity .badge {
+      font-size: 8px;
+      letter-spacing: 0.06em;
+      max-width: 260px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .session-identity-panel {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+    .session-kv {
+      border: 1px solid var(--border-light);
+      background: var(--bg-alt);
+      padding: 8px 10px;
+      min-width: 0;
+    }
+    .session-kv .kv-label {
+      font-size: 9px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--ink-muted);
+      font-family: var(--font-ui);
+      margin-bottom: 4px;
+    }
+    .session-kv .kv-value {
+      font-size: 12px;
+      color: var(--ink);
+      font-family: var(--font-mono);
+      overflow-wrap: anywhere;
+    }
 
     .detail-panel {
       background: var(--bg);
@@ -1032,6 +1072,65 @@
       if (!s) return '';
       return s.length > n ? s.slice(0, n) + '...' : s;
     }
+    function isPlainObject(v) {
+      return v && typeof v === 'object' && !Array.isArray(v);
+    }
+    function stringifyMetaValue(v) {
+      if (v === null || v === undefined) return '';
+      if (typeof v === 'string') return v;
+      if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+      try { return JSON.stringify(v); } catch { return String(v); }
+    }
+    function sessionAgent(s) {
+      return isPlainObject(s && s.agent) ? s.agent : {};
+    }
+    function sessionModel(s) {
+      var agent = sessionAgent(s);
+      return agent.model || s.model || '';
+    }
+    function sessionAgentLabel(s) {
+      var agent = sessionAgent(s);
+      var parts = [];
+      if (agent.client) parts.push(agent.client);
+      if (agent.agentType) parts.push(agent.agentType);
+      if (agent.sessionSource) parts.push(agent.sessionSource);
+      return parts.join(' / ');
+    }
+    function renderSessionIdentityBadges(s) {
+      var agent = sessionAgent(s);
+      var model = sessionModel(s);
+      var html = '';
+      if (agent.client) html += '<span class="badge badge-cyan" title="Agent client">' + esc(agent.client) + '</span>';
+      if (agent.agentType) html += '<span class="badge badge-purple" title="Agent role">' + esc(agent.agentType) + '</span>';
+      if (agent.sessionSource) html += '<span class="badge badge-muted" title="Session source">' + esc(agent.sessionSource) + '</span>';
+      if (model) html += '<span class="badge badge-blue" title="Model">' + esc(model) + '</span>';
+      return html ? '<div class="session-identity">' + html + '</div>' : '';
+    }
+    function metadataEntries(metadata, limit) {
+      if (!isPlainObject(metadata)) return [];
+      return Object.keys(metadata).sort().slice(0, limit || 12).map(function(k) {
+        return { key: k, value: stringifyMetaValue(metadata[k]) };
+      }).filter(function(entry) { return entry.value !== ''; });
+    }
+    function renderSessionIdentityPanel(s) {
+      var agent = sessionAgent(s);
+      var model = sessionModel(s);
+      var entries = [];
+      if (agent.client) entries.push({ key: 'agent', value: agent.client });
+      if (agent.agentType) entries.push({ key: 'role', value: agent.agentType });
+      if (model) entries.push({ key: 'model', value: model });
+      if (agent.sessionSource) entries.push({ key: 'source', value: agent.sessionSource });
+      metadataEntries(s.metadata, 6).forEach(function(entry) {
+        entries.push({ key: 'meta: ' + entry.key, value: entry.value });
+      });
+      if (entries.length === 0) return '';
+      var html = '<div class="session-identity-panel">';
+      entries.forEach(function(entry) {
+        html += '<div class="session-kv"><div class="kv-label">' + esc(entry.key) + '</div><div class="kv-value">' + esc(truncate(entry.value, 120)) + '</div></div>';
+      });
+      html += '</div>';
+      return html;
+    }
     function debounce(fn, ms) {
       var t;
       return function() {
@@ -1248,10 +1347,12 @@
         html += '<div class="empty-state"><p>No sessions yet. Start a coding session with agentmemory hooks enabled.</p></div>';
       } else {
         var recent = d.sessions.slice().sort(function(a, b) { return (b.startedAt || '').localeCompare(a.startedAt || ''); }).slice(0, 5);
-        html += '<table><tr><th>Project</th><th>Status</th><th>Obs</th><th>Started</th></tr>';
+        html += '<table><tr><th>Project</th><th>Agent</th><th>Status</th><th>Obs</th><th>Started</th></tr>';
         recent.forEach(function(s) {
           var statusBadge = s.status === 'active' ? 'badge-green' : s.status === 'completed' ? 'badge-blue' : 'badge-muted';
+          var agentLabel = sessionAgentLabel(s) || sessionModel(s) || '-';
           html += '<tr><td style="color:var(--ink);font-weight:500;">' + esc(s.project ? s.project.split('/').pop() : s.id.slice(0,8)) + '</td>';
+          html += '<td style="font-family:var(--font-mono);font-size:11px;color:var(--ink-muted);">' + esc(truncate(agentLabel, 38)) + '</td>';
           html += '<td><span class="badge ' + statusBadge + '">' + esc(s.status) + '</span></td>';
           html += '<td style="color:var(--ink-muted);font-family:var(--font-mono);font-size:12px;">' + (s.observationCount || 0) + '</td>';
           html += '<td style="font-family:var(--font-mono);font-size:11px;color:var(--ink-faint);">' + esc(shortTime(s.startedAt)) + '</td></tr>';
@@ -2546,9 +2647,9 @@
           if (preview) {
             html += '<div class="session-preview" style="font-size:13px;color:var(--ink);margin:4px 0;line-height:1.4;">' + esc(truncate(preview, 140)) + '</div>';
           }
+          html += renderSessionIdentityBadges(s);
           html += '<div class="session-meta">' + esc(s.id.slice(0, 12)) + ' &middot; ' + esc(formatTime(s.startedAt));
           html += ' &middot; ' + (s.observationCount || 0) + ' obs';
-          if (s.model) html += ' &middot; ' + esc(s.model);
           html += '</div></div>';
         });
       }
@@ -2605,6 +2706,8 @@
         html += '<div style="padding:10px 12px;margin-bottom:12px;background:var(--bg-alt);border-left:3px solid var(--accent);font-size:13px;line-height:1.5;color:var(--ink);">' + esc(truncate(preview, 600)) + '</div>';
       }
 
+      html += renderSessionIdentityPanel(s);
+
       html += '<div style="display:grid;grid-template-columns:repeat(4, 1fr);gap:10px;margin-bottom:14px;">';
       html += '<div class="card" style="padding:10px;"><div style="font-size:10px;letter-spacing:0.08em;color:var(--ink-muted);">OBSERVATIONS</div><div style="font-size:20px;font-weight:600;">' + obs.length + '</div></div>';
       html += '<div class="card" style="padding:10px;"><div style="font-size:10px;letter-spacing:0.08em;color:var(--ink-muted);">TOOLS USED</div><div style="font-size:20px;font-weight:600;">' + Object.keys(toolCounts).length + '</div></div>';
@@ -2650,6 +2753,10 @@
       html += '<div><span style="color:var(--ink-muted);">started:</span> ' + esc(formatTime(s.startedAt)) + '</div>';
       if (s.endedAt) html += '<div><span style="color:var(--ink-muted);">ended:</span> ' + esc(formatTime(s.endedAt)) + '</div>';
       if (s.model) html += '<div><span style="color:var(--ink-muted);">model:</span> ' + esc(s.model) + '</div>';
+      if (s.agent) html += '<div><span style="color:var(--ink-muted);">agent:</span> ' + esc(JSON.stringify(s.agent)) + '</div>';
+      metadataEntries(s.metadata, 20).forEach(function(entry) {
+        html += '<div><span style="color:var(--ink-muted);">metadata.' + esc(entry.key) + ':</span> ' + esc(entry.value) + '</div>';
+      });
       if (s.tags && s.tags.length) html += '<div><span style="color:var(--ink-muted);">tags:</span> ' + s.tags.map(esc).join(', ') + '</div>';
       html += '</div></div>';
 
