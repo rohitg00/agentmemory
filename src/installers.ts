@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync, cpSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 export type InstallTarget =
   | "opencode"
@@ -41,7 +42,7 @@ function writeJson(path: string, value: unknown): void {
 }
 
 function packageRootFromCliDist(): string {
-  return resolve(dirname(new URL(import.meta.url).pathname), "..");
+  return resolve(dirname(fileURLToPath(import.meta.url)), "..");
 }
 
 function commandScript(packageRoot: string, rel: string): string {
@@ -97,23 +98,29 @@ function generateOpenCodePlugin(packageRoot: string): string {
   const postToolScript = commandScript(packageRoot, "post-tool-use.mjs");
   const stopScript = commandScript(packageRoot, "session-end.mjs");
   return `export const AgentmemoryPlugin = async ({ $ }) => ({
+  let sessionId = '';
+  const getSessionId = () => {
+    if (!sessionId) sessionId = 'opencode-' + Date.now().toString(36);
+    return sessionId;
+  };
   event: async ({ event }) => {
     if (event.type === 'session.created') {
-      await $\`${sessionStartScript}\`.stdin(JSON.stringify({ session_id: 'opencode-' + Date.now().toString(36), cwd: process.cwd() })).quiet().nothrow();
+      sessionId = getSessionId();
+      await $\`${sessionStartScript}\`.stdin(JSON.stringify({ session_id: sessionId, cwd: process.cwd() })).quiet().nothrow();
     } else if (event.type === 'session.idle') {
-      await $\`${stopScript}\`.stdin(JSON.stringify({ session_id: 'opencode-' + Date.now().toString(36), cwd: process.cwd() })).quiet().nothrow();
+      await $\`${stopScript}\`.stdin(JSON.stringify({ session_id: getSessionId(), cwd: process.cwd() })).quiet().nothrow();
     } else if (event.type === 'file.edited') {
-      await $\`${postToolScript}\`.stdin(JSON.stringify({ session_id: 'opencode-' + Date.now().toString(36), cwd: process.cwd(), tool_name: 'OpenCodeEdit', tool_input: { file_path: event.properties?.path ?? '' }, tool_output: 'file edited' })).quiet().nothrow();
+      await $\`${postToolScript}\`.stdin(JSON.stringify({ session_id: getSessionId(), cwd: process.cwd(), tool_name: 'OpenCodeEdit', tool_input: { file_path: event.properties?.path ?? '' }, tool_output: 'file edited' })).quiet().nothrow();
     } else if (event.type === 'command.executed') {
-      await $\`${postToolScript}\`.stdin(JSON.stringify({ session_id: 'opencode-' + Date.now().toString(36), cwd: process.cwd(), tool_name: 'Bash', tool_input: { command: event.properties?.command ?? '' }, tool_output: 'command executed' })).quiet().nothrow();
+      await $\`${postToolScript}\`.stdin(JSON.stringify({ session_id: getSessionId(), cwd: process.cwd(), tool_name: 'Bash', tool_input: { command: event.properties?.command ?? '' }, tool_output: 'command executed' })).quiet().nothrow();
     }
   },
   'tool.execute.after': async (input, output) => {
-    await $\`${postToolScript}\`.stdin(JSON.stringify({ session_id: 'opencode-' + Date.now().toString(36), cwd: process.cwd(), tool_name: input.tool, tool_input: input.args, tool_output: output })).quiet().nothrow();
+    await $\`${postToolScript}\`.stdin(JSON.stringify({ session_id: getSessionId(), cwd: process.cwd(), tool_name: input.tool, tool_input: input.args, tool_output: output })).quiet().nothrow();
   },
   'chat.message': async (_input, output) => {
     if (output?.message) {
-      await $\`${promptScript}\`.stdin(JSON.stringify({ session_id: 'opencode-' + Date.now().toString(36), cwd: process.cwd(), prompt: output.message })).quiet().nothrow();
+      await $\`${promptScript}\`.stdin(JSON.stringify({ session_id: getSessionId(), cwd: process.cwd(), prompt: output.message })).quiet().nothrow();
     }
   }
 });

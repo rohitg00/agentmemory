@@ -96,6 +96,7 @@ async function main(): Promise<void> {
   const sid = sessionId(payload);
   const root = projectRoot(payload);
   const event = inferEvent(payload);
+  const timestamp = new Date().toISOString();
 
   switch (event) {
     case "sessionStart":
@@ -107,7 +108,7 @@ async function main(): Promise<void> {
         sessionId: sid,
         project: root,
         cwd: root,
-        timestamp: new Date().toISOString(),
+        timestamp,
         data: { prompt: payload.prompt || "" },
       });
       return;
@@ -117,7 +118,7 @@ async function main(): Promise<void> {
         sessionId: sid,
         project: root,
         cwd: root,
-        timestamp: new Date().toISOString(),
+        timestamp,
         data: {
           tool_name: "CursorEdit",
           tool_input: {
@@ -136,7 +137,7 @@ async function main(): Promise<void> {
         sessionId: sid,
         project: root,
         cwd: root,
-        timestamp: new Date().toISOString(),
+        timestamp,
         data: {
           tool_name: "Bash",
           tool_input: { command: payload.command || "" },
@@ -151,7 +152,7 @@ async function main(): Promise<void> {
         sessionId: sid,
         project: root,
         cwd: root,
-        timestamp: new Date().toISOString(),
+        timestamp,
         data: {
           tool_name: payload.mcp_tool_name || payload.mcp_server_name || "MCP",
           tool_input: payload.mcp_tool_input || {},

@@ -38,6 +38,7 @@ async function main(): Promise<void> {
   const sid = payload.session_id || `codex-${Date.now().toString(36)}`;
   const root = payload.cwd || process.cwd();
   const event = payload.hook_event_name || "";
+  const timestamp = new Date().toISOString();
 
   try {
     if (event === "SessionStart") {
@@ -65,7 +66,7 @@ async function main(): Promise<void> {
           sessionId: sid,
           project: root,
           cwd: root,
-          timestamp: new Date().toISOString(),
+          timestamp,
           data: { prompt: payload.prompt || "" },
         }),
         signal: AbortSignal.timeout(3000),
@@ -82,7 +83,7 @@ async function main(): Promise<void> {
           sessionId: sid,
           project: root,
           cwd: root,
-          timestamp: new Date().toISOString(),
+          timestamp,
           data: {
             tool_name: payload.tool_name || "tool",
             tool_input: payload.tool_input || {},

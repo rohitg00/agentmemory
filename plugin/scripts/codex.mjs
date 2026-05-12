@@ -22,6 +22,7 @@ async function main() {
 	const sid = payload.session_id || `codex-${Date.now().toString(36)}`;
 	const root = payload.cwd || process.cwd();
 	const event = payload.hook_event_name || "";
+	const timestamp = (/* @__PURE__ */ new Date()).toISOString();
 	try {
 		if (event === "SessionStart") {
 			const res = await fetch(`${REST_URL}/agentmemory/session/start`, {
@@ -49,7 +50,7 @@ async function main() {
 					sessionId: sid,
 					project: root,
 					cwd: root,
-					timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+					timestamp,
 					data: { prompt: payload.prompt || "" }
 				}),
 				signal: AbortSignal.timeout(3e3)
@@ -65,7 +66,7 @@ async function main() {
 					sessionId: sid,
 					project: root,
 					cwd: root,
-					timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+					timestamp,
 					data: {
 						tool_name: payload.tool_name || "tool",
 						tool_input: payload.tool_input || {},

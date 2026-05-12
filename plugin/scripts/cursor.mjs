@@ -60,7 +60,9 @@ async function main() {
 	if (!payload) return;
 	const sid = sessionId(payload);
 	const root = projectRoot(payload);
-	switch (inferEvent(payload)) {
+	const event = inferEvent(payload);
+	const timestamp = (/* @__PURE__ */ new Date()).toISOString();
+	switch (event) {
 		case "sessionStart":
 			await postSessionStart({
 				sessionId: sid,
@@ -74,7 +76,7 @@ async function main() {
 				sessionId: sid,
 				project: root,
 				cwd: root,
-				timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+				timestamp,
 				data: { prompt: payload.prompt || "" }
 			});
 			return;
@@ -84,7 +86,7 @@ async function main() {
 				sessionId: sid,
 				project: root,
 				cwd: root,
-				timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+				timestamp,
 				data: {
 					tool_name: "CursorEdit",
 					tool_input: {
@@ -103,7 +105,7 @@ async function main() {
 				sessionId: sid,
 				project: root,
 				cwd: root,
-				timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+				timestamp,
 				data: {
 					tool_name: "Bash",
 					tool_input: { command: payload.command || "" },
@@ -118,7 +120,7 @@ async function main() {
 				sessionId: sid,
 				project: root,
 				cwd: root,
-				timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+				timestamp,
 				data: {
 					tool_name: payload.mcp_tool_name || payload.mcp_server_name || "MCP",
 					tool_input: payload.mcp_tool_input || {},
