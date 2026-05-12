@@ -223,7 +223,7 @@ export class SearchIndex {
 
   private tokenize(text: string): string[] {
     return text
-      .replace(/[^\w\s/.\-_]/g, " ")
+      .replace(/[^\p{L}\p{N}\s/.\\-_]/gu, " ")
       .split(/\s+/)
       .filter((t) => t.length > 1)
       .map((t) => stem(t));
