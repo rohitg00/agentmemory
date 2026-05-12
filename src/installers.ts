@@ -28,10 +28,49 @@ function writeText(path: string, content: string): void {
   writeFileSync(path, content, "utf8");
 }
 
+function stripJsonComments(input: string): string {
+  let output = "";
+  let inString = false;
+  let escaped = false;
+  for (let i = 0; i < input.length; i += 1) {
+    const ch = input[i]!;
+    const next = input[i + 1]!;
+    if (inString) {
+      output += ch;
+      if (escaped) {
+        escaped = false;
+      } else if (ch === "\\") {
+        escaped = true;
+      } else if (ch === '"') {
+        inString = false;
+      }
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+      output += ch;
+      continue;
+    }
+    if (ch === "/" && next === "/") {
+      while (i < input.length && input[i] !== "\n") i += 1;
+      if (i < input.length) output += "\n";
+      continue;
+    }
+    if (ch === "/" && next === "*") {
+      i += 2;
+      while (i < input.length && !(input[i] === "*" && input[i + 1] === "/")) i += 1;
+      i += 1;
+      continue;
+    }
+    output += ch;
+  }
+  return output;
+}
+
 function readJson(path: string): Record<string, unknown> {
   if (!existsSync(path)) return {};
   try {
-    return JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
+    return JSON.parse(stripJsonComments(readFileSync(path, "utf8"))) as Record<string, unknown>;
   } catch {
     return {};
   }
@@ -39,6 +78,13 @@ function readJson(path: string): Record<string, unknown> {
 
 function writeJson(path: string, value: unknown): void {
   writeText(path, JSON.stringify(value, null, 2));
+}
+
+function chooseExistingPath(candidates: string[], fallback: string): string {
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) return candidate;
+  }
+  return fallback;
 }
 
 function packageRootFromCliDist(): string {
@@ -58,23 +104,6 @@ function mergeCursorMcp(configPath: string): void {
     env: { AGENTMEMORY_URL: "http://localhost:3111" },
   };
   current.mcpServers = mcpServers;
-  writeJson(configPath, current);
-}
-
-function mergeCursorHooks(configPath: string, packageRoot: string): void {
-  const current = readJson(configPath);
-  const hooks = (current.hooks as Record<string, unknown>) || {};
-  const script = commandScript(packageRoot, "cursor.mjs");
-  const entry = [{ command: script }];
-  hooks.sessionStart = entry;
-  hooks.beforeSubmitPrompt = entry;
-  hooks.afterFileEdit = entry;
-  hooks.afterShellExecution = entry;
-  hooks.afterMCPExecution = entry;
-  hooks.preCompact = entry;
-  hooks.stop = entry;
-  current.version = 1;
-  current.hooks = hooks;
   writeJson(configPath, current);
 }
 
@@ -163,6 +192,20 @@ function mergeGenericMcpJson(configPath: string): void {
   writeJson(configPath, current);
 }
 
+function mergeKiloConfig(configPath: string): void {
+  const current = readJson(configPath);
+  const mcp = (current.mcp as Record<string, unknown>) || {};
+  mcp.agentmemory = {
+    type: "local",
+    command: ["npx", "-y", "@agentmemory/mcp"],
+    environment: { AGENTMEMORY_URL: "http://localhost:3111" },
+    enabled: true,
+  };
+  current.mcp = mcp;
+  current.$schema = current.$schema || "https://kilocode.ai/config.schema.json";
+  writeJson(configPath, current);
+}
+
 function ensureArraySetting(configPath: string, key: string, value: string): void {
   const current = readJson(configPath);
   const arr = Array.isArray(current[key]) ? [...(current[key] as string[])] : [];
@@ -185,7 +228,10 @@ export function installTarget(target: InstallTarget, opts?: { projectRoot?: stri
   switch (target) {
     case "opencode": {
       const pluginPath = join(projectRoot, ".opencode", "plugins", "agentmemory.js");
-      const configPath = join(projectRoot, "opencode.json");
+      const configPath = chooseExistingPath(
+        [join(projectRoot, "opencode.jsonc"), join(projectRoot, "opencode.json")],
+        join(projectRoot, "opencode.json"),
+      );
       writeText(pluginPath, generateOpenCodePlugin(packageRoot));
       mergeOpenCodeConfig(configPath);
       filesWritten.push(pluginPath, configPath);
@@ -194,13 +240,12 @@ export function installTarget(target: InstallTarget, opts?: { projectRoot?: stri
     }
     case "cursor": {
       const root = opts?.global ? join(homedir(), ".cursor") : join(projectRoot, ".cursor");
-      const hooksPath = join(root, "hooks.json");
       const mcpPath = join(root, "mcp.json");
-      mergeCursorHooks(hooksPath, packageRoot);
       mergeCursorMcp(mcpPath);
-      filesWritten.push(hooksPath, mcpPath);
-      notes.push("Installed Cursor hooks + MCP config.");
-      notes.push("Roo/Kilo inside Cursor still use their own MCP configs; install those separately.");
+      filesWritten.push(mcpPath);
+      notes.push("Installed Cursor MCP config.");
+      notes.push("Cursor does not expose a first-class lifecycle hook system like Claude Code; for automatic capture use the existing filesystem watcher or a host-specific extension/plugin layer.");
+      notes.push("Roo/Kilo inside Cursor still use their own configs; install those separately.");
       break;
     }
     case "codex": {
@@ -221,10 +266,14 @@ export function installTarget(target: InstallTarget, opts?: { projectRoot?: stri
       break;
     }
     case "kilo": {
-      const path = join(projectRoot, ".kilocode", "mcp.json");
-      mergeGenericMcpJson(path);
+      const path = chooseExistingPath(
+        [join(projectRoot, "kilo.jsonc"), join(projectRoot, ".kilo", "kilo.jsonc")],
+        join(projectRoot, ".kilo", "kilo.jsonc"),
+      );
+      mergeKiloConfig(path);
       filesWritten.push(path);
-      notes.push("Installed Kilo Code MCP config. Kilo has no native lifecycle hooks; use Cursor hooks separately if desired.");
+      notes.push("Installed Kilo Code MCP config inside kilo.jsonc.");
+      notes.push("Kilo has no native lifecycle hooks; use the filesystem watcher for best-available automatic capture.");
       break;
     }
     case "pi": {

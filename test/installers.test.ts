@@ -28,12 +28,10 @@ describe("installTarget", () => {
     expect(config.mcp.agentmemory.command).toEqual(["npx", "-y", "@agentmemory/mcp"]);
   });
 
-  it("writes Cursor hooks and MCP config", () => {
+  it("writes Cursor MCP config", () => {
     const root = tempRoot();
     installTarget("cursor", { projectRoot: root });
-    const hooks = JSON.parse(readFileSync(join(root, ".cursor", "hooks.json"), "utf8"));
     const mcp = JSON.parse(readFileSync(join(root, ".cursor", "mcp.json"), "utf8"));
-    expect(hooks.hooks.sessionStart[0].command).toContain("cursor.mjs");
     expect(mcp.mcpServers.agentmemory.command).toBe("npx");
   });
 
@@ -47,13 +45,68 @@ describe("installTarget", () => {
     expect(config).toContain("[mcp_servers.agentmemory]");
   });
 
-  it("writes Roo and Kilo MCP configs", () => {
+  it("writes Roo MCP config and Kilo JSONC config", () => {
     const root = tempRoot();
     installTarget("roo", { projectRoot: root });
     installTarget("kilo", { projectRoot: root });
     const roo = JSON.parse(readFileSync(join(root, ".roo", "mcp.json"), "utf8"));
-    const kilo = JSON.parse(readFileSync(join(root, ".kilocode", "mcp.json"), "utf8"));
+    const kilo = JSON.parse(readFileSync(join(root, ".kilo", "kilo.jsonc"), "utf8")) as Record<string, any>;
     expect(roo.mcpServers.agentmemory.command).toBe("npx");
-    expect(kilo.mcpServers.agentmemory.command).toBe("npx");
+    expect(kilo.mcp.agentmemory.command).toEqual(["npx", "-y", "@agentmemory/mcp"]);
+  });
+
+  it("preserves JSONC-based existing server entries when merging", () => {
+    const root = tempRoot();
+    const cursorDir = join(root, ".cursor");
+    const kiloDir = join(root, ".kilo");
+    require("node:fs").mkdirSync(cursorDir, { recursive: true });
+    require("node:fs").mkdirSync(kiloDir, { recursive: true });
+    require("node:fs").writeFileSync(
+      join(cursorDir, "mcp.json"),
+      '{\n  // comment\n  "mcpServers": {\n    "existing": {"command": "foo"}\n  }\n}\n',
+      "utf8",
+    );
+    require("node:fs").writeFileSync(
+      join(kiloDir, "kilo.jsonc"),
+      '{\n  // comment\n  "mcp": {\n    "existing": {"type": "local", "command": ["foo"]}\n  }\n}\n',
+      "utf8",
+    );
+
+    installTarget("cursor", { projectRoot: root });
+    installTarget("kilo", { projectRoot: root });
+
+    const cursor = JSON.parse(readFileSync(join(cursorDir, "mcp.json"), "utf8")) as Record<string, any>;
+    const kilo = JSON.parse(readFileSync(join(kiloDir, "kilo.jsonc"), "utf8")) as Record<string, any>;
+    expect(cursor.mcpServers.existing.command).toBe("foo");
+    expect(cursor.mcpServers.agentmemory.command).toBe("npx");
+    expect(kilo.mcp.existing.command).toEqual(["foo"]);
+    expect(kilo.mcp.agentmemory.command).toEqual(["npx", "-y", "@agentmemory/mcp"]);
+  });
+
+  it("reuses native .jsonc paths when they already exist", () => {
+    const root = tempRoot();
+    require("node:fs").writeFileSync(
+      join(root, "opencode.jsonc"),
+      '{\n  // comment\n  "mcp": {"existing": {"type": "local", "command": ["foo"]}}\n}\n',
+      "utf8",
+    );
+    require("node:fs").mkdirSync(join(root, ".kilo"), { recursive: true });
+    require("node:fs").writeFileSync(
+      join(root, "kilo.jsonc"),
+      '{\n  // comment\n  "mcp": {"existing": {"type": "local", "command": ["foo"]}}\n}\n',
+      "utf8",
+    );
+
+    const opencode = installTarget("opencode", { projectRoot: root });
+    const kilo = installTarget("kilo", { projectRoot: root });
+
+    expect(opencode.filesWritten.some((p) => p.endsWith("opencode.jsonc"))).toBe(true);
+    expect(kilo.filesWritten.some((p) => p.endsWith("kilo.jsonc"))).toBe(true);
+    expect(JSON.parse(readFileSync(join(root, "opencode.jsonc"), "utf8"))).toMatchObject({
+      mcp: { existing: { command: ["foo"] }, agentmemory: { enabled: true } },
+    });
+    expect(JSON.parse(readFileSync(join(root, "kilo.jsonc"), "utf8"))).toMatchObject({
+      mcp: { existing: { command: ["foo"] }, agentmemory: { enabled: true } },
+    });
   });
 });
