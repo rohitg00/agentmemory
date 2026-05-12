@@ -9,6 +9,8 @@
  * Start it with: npx @agentmemory/agentmemory
  */
 
+import { memoryRuntime } from "openclaw/extensions/memory-core/runtime-api";
+
 const DEFAULT_BASE_URL = "http://localhost:3111";
 const DEFAULT_TIMEOUT_MS = 5000;
 
@@ -104,6 +106,13 @@ function createClient(cfg, api) {
   return { postJson, baseUrl };
 }
 
+function buildPromptSection() {
+  return [
+    "Long-term memory provider: agentmemory.",
+    "Use recalled agentmemory context when it is relevant, but do not treat it as authoritative if it conflicts with newer workspace files or explicit user instructions."
+  ];
+}
+
 const plugin = {
   id: "agentmemory",
   name: "agentmemory",
@@ -119,6 +128,11 @@ const plugin = {
       timeout_ms: api.pluginConfig?.timeout_ms || DEFAULT_TIMEOUT_MS,
     };
     const client = createClient(cfg, api);
+
+    api.registerMemoryCapability({
+      promptBuilder: buildPromptSection,
+      runtime: memoryRuntime,
+    });
 
     api.on("before_agent_start", async (event) => {
       if (!cfg.enabled) return;
