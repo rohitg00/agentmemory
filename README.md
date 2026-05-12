@@ -224,6 +224,13 @@ You explain the same architecture every session. You re-discover the same bugs. 
 npx @agentmemory/agentmemory
 ```
 
+By default, agentmemory stores iii-engine state outside the repository you start it from: `~/Library/Application Support/agentmemory` on macOS, `$XDG_DATA_HOME/agentmemory` or `~/.local/share/agentmemory` on Linux, and `%APPDATA%\agentmemory` on Windows. To choose a location, pass `--data-dir <path>` or set `AGENTMEMORY_DATA_DIR`:
+
+```bash
+npx @agentmemory/agentmemory --data-dir ~/.agentmemory-projects/main
+AGENTMEMORY_DATA_DIR=~/.agentmemory-projects/main npx @agentmemory/agentmemory
+```
+
 Latest release notes: [CHANGELOG.md](CHANGELOG.md).
 
 ---
