@@ -9,7 +9,14 @@ import { logger } from "../logger.js";
 export function registerEventTriggers(sdk: ISdk, kv: StateKV): void {
   sdk.registerFunction(
     "event::session::started",
-    async (data: { sessionId: string; project: string; cwd: string }) => {
+    async (data: {
+      sessionId: string;
+      project: string;
+      cwd: string;
+      model?: string;
+      agent?: Session["agent"];
+      metadata?: Session["metadata"];
+    }) => {
       const session: Session = {
         id: data.sessionId,
         project: data.project,
@@ -17,6 +24,9 @@ export function registerEventTriggers(sdk: ISdk, kv: StateKV): void {
         startedAt: new Date().toISOString(),
         status: "active",
         observationCount: 0,
+        ...(data.model ? { model: data.model } : {}),
+        ...(data.agent ? { agent: data.agent } : {}),
+        ...(data.metadata ? { metadata: data.metadata } : {}),
       };
       await kv.set(KV.sessions, data.sessionId, session);
       const contextResult = await sdk.trigger<

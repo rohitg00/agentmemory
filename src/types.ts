@@ -7,10 +7,21 @@ export interface Session {
   status: "active" | "completed" | "abandoned";
   observationCount: number;
   model?: string;
+  agent?: AgentIdentity;
+  metadata?: SessionMetadata;
   tags?: string[];
   firstPrompt?: string;
   summary?: string;
 }
+
+export interface AgentIdentity {
+  client: string;
+  model?: string;
+  agentType?: string;
+  sessionSource?: string;
+}
+
+export type SessionMetadata = Record<string, unknown>;
 
 export interface RawObservation {
   id: string;

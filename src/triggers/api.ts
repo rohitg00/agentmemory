@@ -9,6 +9,7 @@ import { VERSION } from "../version.js";
 import { timingSafeCompare } from "../auth.js";
 import { renderViewerDocument } from "../viewer/document.js";
 import { MAX_FILES_UPPER_BOUND } from "../functions/replay.js";
+import { normalizeSessionMetadata } from "../functions/session-metadata.js";
 import {
   isGraphExtractionEnabled,
   isConsolidationEnabled,
@@ -523,6 +524,7 @@ export function registerApiTriggers(
       const sessionId = asNonEmptyString(body.sessionId);
       const project = asNonEmptyString(body.project);
       const cwd = asNonEmptyString(body.cwd);
+      const metadata = normalizeSessionMetadata(body);
       if (!sessionId || !project || !cwd) {
         return {
           status_code: 400,
@@ -531,6 +533,9 @@ export function registerApiTriggers(
           },
         };
       }
+      if (metadata.error) {
+        return { status_code: 400, body: { error: metadata.error } };
+      }
       const session: Session = {
         id: sessionId,
         project,
@@ -538,6 +543,9 @@ export function registerApiTriggers(
         startedAt: new Date().toISOString(),
         status: "active",
         observationCount: 0,
+        ...(metadata.model ? { model: metadata.model } : {}),
+        ...(metadata.agent ? { agent: metadata.agent } : {}),
+        ...(metadata.metadata ? { metadata: metadata.metadata } : {}),
       };
       await kv.set(KV.sessions, sessionId, session);
       const contextResult = await sdk.trigger<
