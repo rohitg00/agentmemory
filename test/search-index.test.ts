@@ -125,4 +125,32 @@ describe("SearchIndex", () => {
     expect(results[0].obsId).toBe("obs_both");
     expect(results[0].score).toBeGreaterThan(results[1].score);
   });
+
+  it("indexes and finds Cyrillic text", () => {
+    index.add(
+      makeObs({
+        id: "obs_cyrillic",
+        title: "Проверка памяти",
+        narrative: "Тестируем поиск по кириллице",
+        concepts: ["тест", "память"],
+      }),
+    );
+    const results = index.search("память");
+    expect(results.length).toBe(1);
+    expect(results[0].obsId).toBe("obs_cyrillic");
+  });
+
+  it("tokenizes mixed ASCII and Cyrillic queries", () => {
+    index.add(
+      makeObs({
+        id: "obs_mixed",
+        title: "JWT middleware настройка",
+        narrative: "Configured JWT with русские комментарии",
+        concepts: ["auth", "jwt", "настройка"],
+      }),
+    );
+    const results = index.search("JWT настройка");
+    expect(results.length).toBe(1);
+    expect(results[0].obsId).toBe("obs_mixed");
+  });
 });
