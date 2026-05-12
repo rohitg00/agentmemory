@@ -175,3 +175,48 @@ describe("mem::context — pinned slot injection", () => {
     });
   });
 });
+
+describe("mem::context — session attribution", () => {
+  it("labels recalled session context with agent identity", async () => {
+    delete process.env["AGENTMEMORY_SLOTS"];
+    const kv = mockKV();
+    const handler = wireContext(kv);
+
+    await kv.set(KV.sessions, "ses_prev", {
+      id: "ses_prev",
+      project: "/tmp/proj",
+      cwd: "/tmp/proj",
+      startedAt: "2026-05-12T12:00:00Z",
+      status: "completed",
+      observationCount: 1,
+      model: "claude-sonnet-4-6",
+      agent: {
+        client: "claude-code",
+        model: "claude-sonnet-4-6",
+        agentType: "planner",
+        sessionSource: "startup",
+      },
+    });
+    await kv.set(KV.observations("ses_prev"), "obs_1", {
+      id: "obs_1",
+      sessionId: "ses_prev",
+      timestamp: "2026-05-12T12:01:00Z",
+      type: "decision",
+      title: "Auth decision",
+      facts: [],
+      narrative: "Use jose middleware for JWT verification.",
+      concepts: ["auth"],
+      files: ["src/auth.ts"],
+      importance: 8,
+    });
+
+    const result = await handler({
+      sessionId: "ses_current",
+      project: "/tmp/proj",
+    });
+
+    expect(result.context).toContain("claude-code/planner");
+    expect(result.context).toContain("claude-sonnet-4-6");
+    expect(result.context).toContain("Auth decision");
+  });
+});

@@ -50,11 +50,43 @@ describe("normalizeSessionMetadata", () => {
     });
   });
 
+  it("normalizes common agent role and source aliases", () => {
+    const explicit = normalizeSessionMetadata({
+      agent: {
+        client: "codex",
+        role: "worker",
+        source: "handoff-resume",
+      },
+    });
+    const topLevel = normalizeSessionMetadata({
+      agentClient: "opencode",
+      agent_type: "local-inference",
+      source: "manual",
+    });
+
+    expect(explicit.agent).toEqual({
+      client: "codex",
+      agentType: "worker",
+      sessionSource: "handoff-resume",
+    });
+    expect(topLevel.agent).toEqual({
+      client: "opencode",
+      agentType: "local-inference",
+      sessionSource: "manual",
+    });
+  });
+
   it("rejects malformed metadata and agent payloads", () => {
     expect(normalizeSessionMetadata({ metadata: "bad" })).toEqual({
       error: "metadata must be an object when provided",
     });
+    expect(normalizeSessionMetadata({ metadata: null })).toEqual({
+      error: "metadata must be an object when provided",
+    });
     expect(normalizeSessionMetadata({ agent: [] })).toEqual({
+      error: "agent must be an object when provided",
+    });
+    expect(normalizeSessionMetadata({ agent: null })).toEqual({
       error: "agent must be an object when provided",
     });
     expect(normalizeSessionMetadata({ agent: { model: "missing-client" } })).toEqual({

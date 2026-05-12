@@ -15,7 +15,8 @@ function asNonEmptyString(value: unknown): string | undefined {
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined | null {
-  if (value === undefined || value === null) return undefined;
+  if (value === undefined) return undefined;
+  if (value === null) return null;
   if (typeof value !== "object" || Array.isArray(value)) return null;
   return value as Record<string, unknown>;
 }
@@ -55,8 +56,13 @@ export function normalizeSessionMetadata(
     }
 
     const agentModel = asNonEmptyString(rawAgent["model"]) || model;
-    const agentType = asNonEmptyString(rawAgent["agentType"]);
-    const sessionSource = asNonEmptyString(rawAgent["sessionSource"]);
+    const agentType =
+      asNonEmptyString(rawAgent["agentType"]) ||
+      asNonEmptyString(rawAgent["role"]) ||
+      asNonEmptyString(rawAgent["agent_type"]);
+    const sessionSource =
+      asNonEmptyString(rawAgent["sessionSource"]) ||
+      asNonEmptyString(rawAgent["source"]);
 
     agent = {
       client,
@@ -66,8 +72,13 @@ export function normalizeSessionMetadata(
     };
   } else {
     const client = asNonEmptyString(body["agentClient"]);
-    const agentType = asNonEmptyString(body["agentType"]);
-    const sessionSource = asNonEmptyString(body["sessionSource"]);
+    const agentType =
+      asNonEmptyString(body["agentType"]) ||
+      asNonEmptyString(body["role"]) ||
+      asNonEmptyString(body["agent_type"]);
+    const sessionSource =
+      asNonEmptyString(body["sessionSource"]) ||
+      asNonEmptyString(body["source"]);
 
     if (client || agentType || sessionSource) {
       agent = {

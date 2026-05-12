@@ -66,6 +66,16 @@ describe("mem::search", () => {
       startedAt: "2026-01-01T00:00:00Z",
       status: "completed",
       observationCount: 2,
+      model: "claude-sonnet-4-6",
+      agent: {
+        client: "claude-code",
+        model: "claude-sonnet-4-6",
+        agentType: "planner",
+        sessionSource: "startup",
+      },
+      metadata: {
+        taskType: "auth-review",
+      },
     };
     await kv.set(KV.sessions, session.id, session);
 
@@ -105,22 +115,34 @@ describe("mem::search", () => {
   it("returns full format by default", async () => {
     const result = (await sdk.trigger("mem::search", {
       query: "auth middleware",
-    })) as { format: string; results: Array<{ observation: CompressedObservation }> };
+    })) as { format: string; results: Array<{ observation: CompressedObservation; session?: { agent?: { client?: string } } }> };
 
     expect(result.format).toBe("full");
     expect(result.results).toHaveLength(1);
     expect(result.results[0]?.observation.id).toBe("obs_a");
+    expect(result.results[0]?.session?.agent?.client).toBe("claude-code");
   });
 
   it("returns compact format when requested", async () => {
     const result = (await sdk.trigger("mem::search", {
       query: "auth",
       format: "compact",
-    })) as { format: string; results: Array<{ obsId: string; title: string }> };
+    })) as { format: string; results: Array<{ obsId: string; title: string; session?: { model?: string } }> };
 
     expect(result.format).toBe("compact");
     expect(result.results[0]?.obsId).toBe("obs_a");
     expect(result.results[0]?.title).toBe("Auth middleware decision");
+    expect(result.results[0]?.session?.model).toBe("claude-sonnet-4-6");
+  });
+
+  it("includes session attribution in narrative output", async () => {
+    const result = (await sdk.trigger("mem::search", {
+      query: "auth",
+      format: "narrative",
+    })) as { text: string };
+
+    expect(result.text).toContain("Source: claude-code/planner");
+    expect(result.text).toContain("claude-sonnet-4-6");
   });
 
   it("returns narrative text and respects token budget", async () => {

@@ -1088,21 +1088,33 @@
       var agent = sessionAgent(s);
       return agent.model || s.model || '';
     }
+    function sessionAgentRole(s) {
+      var agent = sessionAgent(s);
+      return agent.agentType || agent.role || agent.agent_type || '';
+    }
+    function sessionAgentSource(s) {
+      var agent = sessionAgent(s);
+      return agent.sessionSource || agent.source || '';
+    }
     function sessionAgentLabel(s) {
       var agent = sessionAgent(s);
+      var role = sessionAgentRole(s);
+      var source = sessionAgentSource(s);
       var parts = [];
       if (agent.client) parts.push(agent.client);
-      if (agent.agentType) parts.push(agent.agentType);
-      if (agent.sessionSource) parts.push(agent.sessionSource);
+      if (role) parts.push(role);
+      if (source) parts.push(source);
       return parts.join(' / ');
     }
     function renderSessionIdentityBadges(s) {
       var agent = sessionAgent(s);
       var model = sessionModel(s);
+      var role = sessionAgentRole(s);
+      var source = sessionAgentSource(s);
       var html = '';
       if (agent.client) html += '<span class="badge badge-cyan" title="Agent client">' + esc(agent.client) + '</span>';
-      if (agent.agentType) html += '<span class="badge badge-purple" title="Agent role">' + esc(agent.agentType) + '</span>';
-      if (agent.sessionSource) html += '<span class="badge badge-muted" title="Session source">' + esc(agent.sessionSource) + '</span>';
+      if (role) html += '<span class="badge badge-purple" title="Agent role">' + esc(role) + '</span>';
+      if (source) html += '<span class="badge badge-muted" title="Session source">' + esc(source) + '</span>';
       if (model) html += '<span class="badge badge-blue" title="Model">' + esc(model) + '</span>';
       return html ? '<div class="session-identity">' + html + '</div>' : '';
     }
@@ -1115,11 +1127,13 @@
     function renderSessionIdentityPanel(s) {
       var agent = sessionAgent(s);
       var model = sessionModel(s);
+      var role = sessionAgentRole(s);
+      var source = sessionAgentSource(s);
       var entries = [];
       if (agent.client) entries.push({ key: 'agent', value: agent.client });
-      if (agent.agentType) entries.push({ key: 'role', value: agent.agentType });
+      if (role) entries.push({ key: 'role', value: role });
       if (model) entries.push({ key: 'model', value: model });
-      if (agent.sessionSource) entries.push({ key: 'source', value: agent.sessionSource });
+      if (source) entries.push({ key: 'source', value: source });
       metadataEntries(s.metadata, 6).forEach(function(entry) {
         entries.push({ key: 'meta: ' + entry.key, value: entry.value });
       });

@@ -1047,6 +1047,10 @@ distinguish which client, model, or agent role created a session:
 }
 ```
 
+Recall and context results include compact session attribution, so agents can see
+which client/model/role produced a retrieved observation instead of receiving an
+opaque session ID only.
+
 ---
 
 <h2 id="development"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/section-development.svg"><img src="assets/tags/section-development.svg" alt="Development" height="32" /></picture></h2>

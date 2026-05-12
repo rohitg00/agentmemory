@@ -16,6 +16,7 @@ import {
   listPinnedSlots,
   renderPinnedContext,
 } from "./slots.js";
+import { formatSessionHeading } from "./session-attribution.js";
 
 function estimateTokens(text: string): number {
   return Math.ceil(text.length / 3);
@@ -113,7 +114,7 @@ export function registerContextFunction(
       for (let i = 0; i < sessions.length; i++) {
         const summary = summariesPerSession[i];
         if (summary) {
-          const content = `## ${summary.title}\n${summary.narrative}\nDecisions: ${summary.keyDecisions.join("; ")}\nFiles: ${summary.filesModified.join(", ")}`;
+          const content = `## ${summary.title}\nSource: ${formatSessionHeading(sessions[i])}\n${summary.narrative}\nDecisions: ${summary.keyDecisions.join("; ")}\nFiles: ${summary.filesModified.join(", ")}`;
           blocks.push({
             type: "summary",
             content,
@@ -147,7 +148,7 @@ export function registerContextFunction(
           const items = top
             .map((o) => `- [${o.type}] ${o.title}: ${o.narrative}`)
             .join("\n");
-          const content = `## Session ${sessions[i].id.slice(0, 8)} (${sessions[i].startedAt})\n${items}`;
+          const content = `## ${formatSessionHeading(sessions[i])}\n${items}`;
           blocks.push({
             type: "observation",
             content,
