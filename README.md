@@ -15,13 +15,7 @@
 </p>
 
 <p align="center">
-  <a href="https://star-history.com/#rohitg00/agentmemory&Date">
-    <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=rohitg00/agentmemory&type=Date&theme=dark" />
-      <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=rohitg00/agentmemory&type=Date" />
-      <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=rohitg00/agentmemory&type=Date" width="720" />
-    </picture>
-  </a>
+  <a href="https://star-history.com/#rohitg00/agentmemory&Date"><img src="https://api.star-history.com/svg?repos=rohitg00/agentmemory&type=Date" alt="Stargazers over time" width="720" /></a>
 </p>
 
 <p align="center">
