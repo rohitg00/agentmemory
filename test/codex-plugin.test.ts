@@ -67,6 +67,7 @@ describe("Codex plugin manifest (developers.openai.com/codex/plugins)", () => {
     expect(events).toContain("UserPromptSubmit");
     expect(events).toContain("PreToolUse");
     expect(events).toContain("PostToolUse");
+    expect(events).toContain("PreCompact");
     expect(events).toContain("Stop");
   });
 
