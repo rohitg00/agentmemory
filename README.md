@@ -107,7 +107,7 @@ agentmemory works with any agent that supports hooks, MCP, or REST API. All agen
 <td align="center" width="12.5%">
 <a href="https://github.com/openai/codex"><img src="https://github.com/openai.png?size=120" alt="Codex CLI" width="48" height="48" /></a><br/>
 <strong>Codex CLI</strong><br/>
-<sub>MCP server</sub>
+<sub>6 hooks + MCP + skills</sub>
 </td>
 <td align="center" width="12.5%">
 <a href="https://github.com/cline/cline"><img src="https://github.com/cline.png?size=120" alt="Cline" width="48" height="48" /></a><br/>
@@ -355,6 +355,25 @@ Implementation details live in `src/cli.ts` (see `runUpgrade` around the `src/cl
 Install agentmemory: run `npx @agentmemory/agentmemory` in a separate terminal to start the memory server. Then run `/plugin marketplace add rohitg00/agentmemory` and `/plugin install agentmemory` — the plugin registers all 12 hooks, 4 skills, AND auto-wires the `@agentmemory/mcp` stdio server via its `.mcp.json`, so you get 51 MCP tools (memory_smart_search, memory_save, memory_sessions, memory_governance_delete, etc.) without any extra config step. Verify with `curl http://localhost:3111/agentmemory/health`. The real-time viewer is at http://localhost:3113.
 ```
 
+### Codex CLI (Codex plugin platform)
+
+```bash
+# 1. start the memory server in a separate terminal
+npx @agentmemory/agentmemory
+
+# 2. register the agentmemory marketplace and install the plugin
+codex plugin marketplace add rohitg00/agentmemory
+codex plugin install agentmemory
+```
+
+The Codex plugin ships from the same `plugin/` directory as the Claude Code plugin. It registers:
+
+- `@agentmemory/mcp` as an MCP server (all 51 tools when `AGENTMEMORY_TOOLS=all`)
+- 6 lifecycle hooks: `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PreCompact`, `Stop`
+- 4 skills: `/recall`, `/remember`, `/session-history`, `/forget`
+
+Codex's hook engine injects `CLAUDE_PLUGIN_ROOT` into hook subprocesses (per [`codex-rs/hooks/src/engine/discovery.rs`](https://github.com/openai/codex/blob/main/codex-rs/hooks/src/engine/discovery.rs)), so the same hook scripts work across both hosts without duplication. Subagent / SessionEnd / Notification / TaskCompleted / PostToolUseFailure events are Claude-Code-only and are not registered for Codex.
+
 <details>
 <summary><b>OpenClaw (paste this prompt)</b></summary>
 
@@ -427,7 +446,8 @@ The agentmemory entry is the **same MCP server block** across every host that us
 | **Windsurf** | `~/.codeium/windsurf/mcp_config.json` | Same `mcpServers` block. |
 | **Gemini CLI** | `~/.gemini/settings.json` | `gemini mcp add agentmemory npx -y @agentmemory/mcp --scope user` (auto-merges). |
 | **OpenClaw** | OpenClaw MCP config | Same `mcpServers` block, or use the deeper [memory plugin](integrations/openclaw/). |
-| **Codex CLI** | `.codex/config.toml` | TOML shape: `codex mcp add agentmemory -- npx -y @agentmemory/mcp`, or add `[mcp_servers.agentmemory]` manually. |
+| **Codex CLI (MCP only)** | `.codex/config.toml` | TOML shape: `codex mcp add agentmemory -- npx -y @agentmemory/mcp`, or add `[mcp_servers.agentmemory]` manually. |
+| **Codex CLI (full plugin)** | Codex plugin marketplace | `codex plugin marketplace add rohitg00/agentmemory` then `codex plugin install agentmemory`. Registers MCP + 6 lifecycle hooks (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PreCompact, Stop) + 4 skills. |
 | **OpenCode** | `opencode.json` | Different shape — top-level `mcp` key, command as array: `{"mcp": {"agentmemory": {"type": "local", "command": ["npx", "-y", "@agentmemory/mcp"], "enabled": true}}}`. |
 | **pi** | `~/.pi/agent/extensions/agentmemory` | Copy [`integrations/pi`](integrations/pi/) and restart pi. |
 | **Hermes Agent** | `~/.hermes/config.yaml` | Use the deeper [memory provider plugin](integrations/hermes/) with `memory.provider: agentmemory`. |
