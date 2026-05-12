@@ -217,6 +217,28 @@ describe("Sentinels Functions", () => {
       expect(result.error).toContain("pattern config requires");
     });
 
+    it("returns error for pattern config with invalid regex syntax", async () => {
+      const result = (await sdk.trigger("mem::sentinel-create", {
+        name: "bad-regex",
+        type: "pattern",
+        config: { pattern: "(" },
+      })) as { success: boolean; error: string };
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("valid regex");
+    });
+
+    it("returns error for pattern config with nested quantifiers", async () => {
+      const result = (await sdk.trigger("mem::sentinel-create", {
+        name: "redos-pattern",
+        type: "pattern",
+        config: { pattern: "(a+)+$" },
+      })) as { success: boolean; error: string };
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("unsafe regex");
+    });
+
     it("returns error for webhook config missing path", async () => {
       const result = (await sdk.trigger("mem::sentinel-create", {
         name: "bad-webhook",
@@ -622,6 +644,28 @@ describe("Sentinels Functions", () => {
       expect(result.success).toBe(true);
       expect(result.triggered).toEqual([]);
       expect(result.checkedCount).toBe(0);
+    });
+
+    it("skips legacy pattern sentinels with invalid regex syntax", async () => {
+      await kv.set("mem:sentinels", "snl_legacy_invalid", {
+        id: "snl_legacy_invalid",
+        name: "legacy-invalid",
+        type: "pattern",
+        status: "watching",
+        config: { pattern: "(" },
+        createdAt: new Date().toISOString(),
+        linkedActionIds: [],
+      });
+
+      const result = (await sdk.trigger("mem::sentinel-check", {})) as {
+        success: boolean;
+        triggered: string[];
+        checkedCount: number;
+      };
+
+      expect(result.success).toBe(true);
+      expect(result.triggered).toEqual([]);
+      expect(result.checkedCount).toBe(1);
     });
   });
 });
