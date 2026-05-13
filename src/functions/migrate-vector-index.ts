@@ -51,9 +51,13 @@ export async function migrateVectorIndex(
   const failedSessions: string[] = [];
 
   // --- Memories phase ----------------------------------------------------
+  // textMems is declared outside the try so the catch can attribute the
+  // batch-level failure to the correct number of missed embeddings (the
+  // size of the batch we were about to embed), not a flat +1.
+  let textMems: Memory[] = [];
   try {
     const memories = await kv.list<Memory>(KV.memories);
-    const textMems = memories.filter(
+    textMems = memories.filter(
       (m) => m.isLatest !== false && m.title && m.content && m.content.trim() !== "",
     );
     const texts = textMems.map((m) => m.title + " " + m.content);
@@ -74,10 +78,17 @@ export async function migrateVectorIndex(
       }
     }
   } catch (err) {
+    // If kv.list threw before textMems was populated, the batch size is
+    // unknown — count as +1 (something failed but we don't know what).
+    // If embedBatch threw, textMems.length is the real number of missed
+    // memories. Caller relying on `failed` for retry math needs this
+    // attribution to be accurate.
+    const missed = textMems.length > 0 ? textMems.length : 1;
     logger.warn("migrateVectorIndex: failed to re-embed memories", {
+      missed,
       error: err instanceof Error ? err.message : String(err),
     });
-    failed++;
+    failed += missed;
   }
 
   // --- Observations phase (per-session isolation) ------------------------
@@ -94,6 +105,12 @@ export async function migrateVectorIndex(
       error: err instanceof Error ? err.message : String(err),
     });
     failed++;
+    // Distinguish a list-sessions failure (catastrophic: no sessions
+    // could be enumerated) from a per-session failure (one specific id
+    // threw). Without the marker the caller sees failed=N + an empty
+    // failedSessions list and can't tell apart "0 sessions, all OK"
+    // from "kv.list itself blew up".
+    failedSessions.push("<sessions-list-failed>");
     return { success: false, totalProcessed: processed, failed, vectorSize: newIndex.size, failedSessions };
   }
 
