@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **`benchmark/load-100k.ts` load harness** ([#346](https://github.com/rohitg00/agentmemory/issues/346)). Hand-rolled, dependency-free harness that seeds N synthetic memories against a local daemon at `http://localhost:3111` and records p50 / p90 / p99 latency + throughput for `POST /agentmemory/remember`, `POST /agentmemory/smart-search`, and `GET /agentmemory/memories?latest=true` across the matrix N ∈ {1k, 10k, 100k} × concurrency C ∈ {1, 10, 100}. Content drawn from a seedable `mulberry32` PRNG so re-running against the same build produces the same seed corpus. Results land in `benchmark/results/load-100k-<short-git-sha>.json` (schema-versioned). Wired as `npm run bench:load`. See `benchmark/README.md` for the matrix and env knobs.
+
+### Performance
+
+- This is the placeholder for per-release p50 / p90 / p99 numbers from `benchmark/load-100k.ts`. Each release should land a `benchmark/results/load-100k-<sha>.json` and reference the headline p99 here. Format suggestion: one bullet per (N, C) cell that materially regressed or improved versus the previous release. p99 is the capacity-planning number; p50 + throughput are context. See [`benchmark/README.md`](benchmark/README.md) for how to reproduce.
+
 ## [0.9.12] — 2026-05-13
 
 Four landed PRs since v0.9.11 — one type-correctness fix, one search-quality fix (BM25 unicode + vector-index live-write), one viewer hardening (CSP-clean fonts + load-error surface), and one integrations security hardening (bearer token over plaintext HTTP).

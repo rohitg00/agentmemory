@@ -24,7 +24,8 @@
     "test": "vitest run --exclude test/integration.test.ts",
     "test:watch": "vitest --exclude test/integration.test.ts",
     "test:integration": "vitest run test/integration.test.ts",
-    "test:all": "vitest run"
+    "test:all": "vitest run",
+    "bench:load": "node --import tsx benchmark/load-100k.ts"
   },
   "keywords": [
     "ai",
