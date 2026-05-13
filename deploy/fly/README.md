@@ -18,24 +18,35 @@ logs exactly once.
 
 ## One-time setup
 
+Pick a unique Fly app name first — `agentmemory` itself is likely taken.
+Every command below references `$APP`, so set it once and the rest of the
+flow stays consistent:
+
 ```bash
 # 1. Install flyctl: https://fly.io/docs/flyctl/install/
-# 2. From this directory:
-fly launch --copy-config --no-deploy --name agentmemory
+# 2. Pick your unique app name (and matching volume name):
+export APP="agentmemory-$(whoami)"     # or any other globally-unique name
+export VOLUME="${APP//-/_}_data"       # Fly volume names can't contain '-'
 
-# 3. Create the volume in the same region as the app:
-fly volumes create agentmemory_data --region iad --size 1
+# 3. From this directory:
+fly launch --copy-config --no-deploy --name "$APP"
 
-# 4. Deploy:
-fly deploy
+# 4. Create the volume in the same region as the app:
+fly volumes create "$VOLUME" --region iad --size 1
+
+# 5. Deploy:
+fly deploy --app "$APP"
 ```
+
+If `fly launch` reports the name is taken, pick another value for `$APP`,
+re-export, and re-run.
 
 ## Capture the HMAC secret
 
 Right after the first deploy succeeds:
 
 ```bash
-fly logs --app agentmemory | grep -A1 AGENTMEMORY_SECRET=
+fly logs --app "$APP" | grep -A1 AGENTMEMORY_SECRET=
 ```
 
 You will see exactly one line of the form `AGENTMEMORY_SECRET=<64 hex chars>`.
@@ -45,7 +56,7 @@ etc.). The secret is never printed again on subsequent boots.
 ## Verify the deployment
 
 ```bash
-curl https://agentmemory.fly.dev/agentmemory/livez
+curl "https://$APP.fly.dev/agentmemory/livez"
 # {"status":"ok"}
 ```
 
@@ -56,7 +67,7 @@ For an authenticated call, your client must send `Authorization: Bearer <secret>
 The viewer port is intentionally not exposed publicly. Tunnel to it:
 
 ```bash
-fly proxy 3113:3113 --app agentmemory
+fly proxy 3113:3113 --app "$APP"
 # then open http://localhost:3113
 ```
 
@@ -67,11 +78,11 @@ laptop — the v0.9.12 plaintext-bearer guard stays satisfied.
 ## Rotate the HMAC secret
 
 ```bash
-fly ssh console --app agentmemory
+fly ssh console --app "$APP"
 rm /data/.hmac
 exit
 fly machine restart <machine-id>
-fly logs --app agentmemory | grep AGENTMEMORY_SECRET=
+fly logs --app "$APP" | grep AGENTMEMORY_SECRET=
 ```
 
 Update every client with the new secret. Old tokens stop working
@@ -80,13 +91,13 @@ immediately.
 ## Back up `/data`
 
 ```bash
-fly ssh console --app agentmemory -C "tar czf - /data" > agentmemory-$(date +%Y%m%d).tar.gz
+fly ssh console --app "$APP" -C "tar czf - /data" > "$APP-$(date +%Y%m%d).tar.gz"
 ```
 
 To restore on a fresh machine:
 
 ```bash
-cat agentmemory-YYYYMMDD.tar.gz | fly ssh console --app agentmemory -C "tar xzf - -C /"
+cat "$APP-YYYYMMDD.tar.gz" | fly ssh console --app "$APP" -C "tar xzf - -C /"
 fly machine restart <machine-id>
 ```
 

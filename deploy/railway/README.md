@@ -63,7 +63,11 @@ For an authenticated call, your client must send `Authorization: Bearer <secret>
 
 Railway only exposes the single public port from your service's
 `PORT` env var (which we map to 3111). The viewer stays bound to
-localhost inside the container. To reach it, use `railway ssh`:
+localhost inside the container. `railway ssh` is an interactive shell
+only — it does not support `-L`-style port forwarding, so reach the
+viewer with one of the following.
+
+**Quick in-container check:**
 
 ```bash
 railway ssh --service agentmemory
@@ -71,12 +75,17 @@ railway ssh --service agentmemory
 curl http://localhost:3113
 ```
 
-For a usable browser session, run a local proxy through `railway ssh`:
+**Browser session — option A (TCP Proxy, recommended):** in the Railway
+dashboard, open the service's *Settings → Networking* tab and add a
+**TCP Proxy** for container port `3113`. Railway returns a public
+host/port pair you can hit directly from your browser. Pair it with the
+HMAC bearer-auth header so the viewer is not anonymously reachable.
 
-```bash
-railway ssh --service agentmemory -- -L 3113:localhost:3113
-# now http://localhost:3113 in your browser hits the in-container viewer
-```
+**Browser session — option B (in-container sshd):** add an `openssh-server`
+process to the image and start it from `entrypoint.sh` on a fixed port,
+expose that port through a second Railway TCP Proxy, then use a native
+`ssh -L 3113:localhost:3113 <proxy-host> -p <proxy-port>` from your laptop.
+This is the heavier path; option A is what most users will want.
 
 ## Rotate the HMAC secret
 
