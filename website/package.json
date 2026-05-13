@@ -20,7 +20,7 @@
     "postcss": "^8.5.10"
   },
   "devDependencies": {
-    "@types/node": "22.10.2",
+    "@types/node": "25.7.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "typescript": "5.7.2"
