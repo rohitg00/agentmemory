@@ -7,7 +7,7 @@
       "enabled": true,
       "action": {
         "type": "command",
-        "command": "node ${FACTORY_PLUGIN_ROOT}/scripts/session-start.mjs"
+        "command": "node \"${FACTORY_PLUGIN_ROOT}/scripts/session-start.mjs\""
       }
     },
     {
@@ -17,7 +17,7 @@
       "enabled": true,
       "action": {
         "type": "command",
-        "command": "node ${FACTORY_PLUGIN_ROOT}/scripts/prompt-submit.mjs"
+        "command": "node \"${FACTORY_PLUGIN_ROOT}/scripts/prompt-submit.mjs\""
       }
     },
     {
@@ -30,7 +30,7 @@
       },
       "action": {
         "type": "command",
-        "command": "node ${FACTORY_PLUGIN_ROOT}/scripts/pre-tool-use.mjs"
+        "command": "node \"${FACTORY_PLUGIN_ROOT}/scripts/pre-tool-use.mjs\""
       }
     },
     {
@@ -40,7 +40,7 @@
       "enabled": true,
       "action": {
         "type": "command",
-        "command": "node ${FACTORY_PLUGIN_ROOT}/scripts/post-tool-use.mjs"
+        "command": "node \"${FACTORY_PLUGIN_ROOT}/scripts/post-tool-use.mjs\""
       }
     },
     {
@@ -50,7 +50,7 @@
       "enabled": true,
       "action": {
         "type": "command",
-        "command": "node ${FACTORY_PLUGIN_ROOT}/scripts/post-tool-failure.mjs"
+        "command": "node \"${FACTORY_PLUGIN_ROOT}/scripts/post-tool-failure.mjs\""
       }
     },
     {
@@ -60,7 +60,7 @@
       "enabled": true,
       "action": {
         "type": "command",
-        "command": "node ${FACTORY_PLUGIN_ROOT}/scripts/pre-compact.mjs"
+        "command": "node \"${FACTORY_PLUGIN_ROOT}/scripts/pre-compact.mjs\""
       }
     },
     {
@@ -70,7 +70,7 @@
       "enabled": true,
       "action": {
         "type": "command",
-        "command": "node ${FACTORY_PLUGIN_ROOT}/scripts/subagent-start.mjs"
+        "command": "node \"${FACTORY_PLUGIN_ROOT}/scripts/subagent-start.mjs\""
       }
     },
     {
@@ -80,7 +80,7 @@
       "enabled": true,
       "action": {
         "type": "command",
-        "command": "node ${FACTORY_PLUGIN_ROOT}/scripts/subagent-stop.mjs"
+        "command": "node \"${FACTORY_PLUGIN_ROOT}/scripts/subagent-stop.mjs\""
       }
     },
     {
@@ -90,7 +90,7 @@
       "enabled": true,
       "action": {
         "type": "command",
-        "command": "node ${FACTORY_PLUGIN_ROOT}/scripts/notification.mjs"
+        "command": "node \"${FACTORY_PLUGIN_ROOT}/scripts/notification.mjs\""
       }
     },
     {
@@ -100,7 +100,7 @@
       "enabled": true,
       "action": {
         "type": "command",
-        "command": "node ${FACTORY_PLUGIN_ROOT}/scripts/task-completed.mjs"
+        "command": "node \"${FACTORY_PLUGIN_ROOT}/scripts/task-completed.mjs\""
       }
     },
     {
@@ -110,7 +110,7 @@
       "enabled": true,
       "action": {
         "type": "command",
-        "command": "node ${FACTORY_PLUGIN_ROOT}/scripts/stop.mjs"
+        "command": "node \"${FACTORY_PLUGIN_ROOT}/scripts/stop.mjs\""
       }
     },
     {
@@ -120,7 +120,7 @@
       "enabled": true,
       "action": {
         "type": "command",
-        "command": "node ${FACTORY_PLUGIN_ROOT}/scripts/session-end.mjs"
+        "command": "node \"${FACTORY_PLUGIN_ROOT}/scripts/session-end.mjs\""
       }
     }
   ]
