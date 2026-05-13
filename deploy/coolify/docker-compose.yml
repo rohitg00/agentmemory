@@ -1,0 +1,31 @@
+services:
+  agentmemory:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        AGENTMEMORY_VERSION: "0.9.12"
+        III_VERSION: "0.11.2"
+    restart: unless-stopped
+    environment:
+      AGENTMEMORY_REQUIRE_HTTPS: "1"
+      AGENTMEMORY_HMAC_FILE: /data/.hmac
+      AGENTMEMORY_DATA_DIR: /data
+    ports:
+      - "3111:3111"
+    volumes:
+      - agentmemory-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:3111/agentmemory/livez || exit 1"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  agentmemory-data:

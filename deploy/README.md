@@ -10,9 +10,10 @@ plaintext-bearer guard fires loud on any non-loopback misconfiguration.
 
 | Platform | Pitch | Cost floor |
 |----------|-------|------------|
-| [fly.io](./fly/README.md) | Single machine with auto-stop. Cheapest idle cost; cold-start on first request after sleep. | ~$0.15/month at full idle |
-| [Railway](./railway/README.md) | Push from GitHub, volume in the dashboard. Easiest dashboard flow. | $5/month (Hobby plan flat fee) |
+| [fly.io](./fly/README.md) | Single machine with auto-stop. Cheapest idle cost on a managed host; cold-start on first request after sleep. | ~$0.15/month at full idle |
+| [Railway](./railway/README.md) | Push from GitHub, volume in the dashboard. Easiest managed dashboard flow. | $5/month (Hobby plan flat fee) |
 | [Render](./render/README.md) | Blueprint-driven; persistent disk attaches automatically. Most "set it and forget it." | $7.25/month (Starter web + 1 GB disk) |
+| [Coolify](./coolify/README.md) | Self-hosted on your own VPS. Same Docker Compose stack, you own the host and the data. | VPS cost only (Hetzner CX22 ~€3.79/month) |
 
 ## What every template guarantees
 
@@ -39,6 +40,9 @@ plaintext-bearer guard fires loud on any non-loopback misconfiguration.
   monthly bill.
 - Pick **Render** if you want the most "set it and forget it"
   Blueprint flow with automatic disk snapshots on paid plans.
+- Pick **Coolify** if you already run a VPS and want a self-hosted
+  control plane — same Docker Compose stack, no third-party host has
+  your memories.
 
 All three give you the same agentmemory API at the same port (3111)
 with the same auth model. Migrating between them later is a `tar` of

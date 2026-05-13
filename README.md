@@ -555,6 +555,9 @@ cost floors) live in [`deploy/`](./deploy/README.md):
   volume in the dashboard.
 - [`deploy/render`](./deploy/render/README.md) — Blueprint flow,
   automatic disk snapshots on paid plans.
+- [`deploy/coolify`](./deploy/coolify/README.md) — self-hosted on your
+  own VPS via [Coolify](https://coolify.io/self-hosted); same Docker
+  Compose stack, you own the host and the data.
 
 Only port `3111` is published. The viewer on `3113` stays bound to
 loopback inside the container — every template's README documents the
