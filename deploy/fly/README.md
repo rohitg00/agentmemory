@@ -1,0 +1,111 @@
+# Deploy agentmemory on fly.io
+
+This template runs agentmemory on a single fly.io machine with a 1 GB
+persistent volume mounted at `/data`. The HMAC secret is generated on
+first boot and persisted to the volume — you capture it from the deploy
+logs exactly once.
+
+## What you get
+
+- A public HTTPS endpoint serving the agentmemory REST API on port 3111
+- A 1 GB Fly Volume at `/data` for memories, BM25 index, and stream backlog
+- `auto_stop_machines = "stop"` and `min_machines_running = 0` — the
+  machine sleeps when idle, so cost floor approaches $0 for low traffic
+- HTTP healthcheck at `/agentmemory/livez` every 30 s
+- `AGENTMEMORY_REQUIRE_HTTPS=1` by default — clients that try to send
+  the bearer token over plaintext HTTP will refuse, matching the
+  v0.9.12 guard
+
+## One-time setup
+
+```bash
+# 1. Install flyctl: https://fly.io/docs/flyctl/install/
+# 2. From this directory:
+fly launch --copy-config --no-deploy --name agentmemory
+
+# 3. Create the volume in the same region as the app:
+fly volumes create agentmemory_data --region iad --size 1
+
+# 4. Deploy:
+fly deploy
+```
+
+## Capture the HMAC secret
+
+Right after the first deploy succeeds:
+
+```bash
+fly logs --app agentmemory | grep -A1 AGENTMEMORY_SECRET=
+```
+
+You will see exactly one line of the form `AGENTMEMORY_SECRET=<64 hex chars>`.
+Copy it into your client environment (`~/.bashrc`, Claude Desktop config,
+etc.). The secret is never printed again on subsequent boots.
+
+## Verify the deployment
+
+```bash
+curl https://agentmemory.fly.dev/agentmemory/livez
+# {"status":"ok"}
+```
+
+For an authenticated call, your client must send `Authorization: Bearer <secret>`.
+
+## Viewer access (port 3113 stays internal)
+
+The viewer port is intentionally not exposed publicly. Tunnel to it:
+
+```bash
+fly proxy 3113:3113 --app agentmemory
+# then open http://localhost:3113
+```
+
+`fly proxy` opens an mTLS WireGuard channel to the machine, so the
+viewer's bearer token still has to ride a loopback connection on your
+laptop — the v0.9.12 plaintext-bearer guard stays satisfied.
+
+## Rotate the HMAC secret
+
+```bash
+fly ssh console --app agentmemory
+rm /data/.hmac
+exit
+fly machine restart <machine-id>
+fly logs --app agentmemory | grep AGENTMEMORY_SECRET=
+```
+
+Update every client with the new secret. Old tokens stop working
+immediately.
+
+## Back up `/data`
+
+```bash
+fly ssh console --app agentmemory -C "tar czf - /data" > agentmemory-$(date +%Y%m%d).tar.gz
+```
+
+To restore on a fresh machine:
+
+```bash
+cat agentmemory-YYYYMMDD.tar.gz | fly ssh console --app agentmemory -C "tar xzf - -C /"
+fly machine restart <machine-id>
+```
+
+## Cost floor and egress
+
+- Idle (machine stopped): the volume costs ~$0.15/GB/month. A 1 GB
+  volume is roughly $0.15/month.
+- Active (machine running on `shared-cpu-1x` with 512 MB): about
+  $1.94/month if it ran 24/7; in practice `auto_stop_machines` keeps
+  that well under $1.
+- Outbound bandwidth: 100 GB/month free on the Hobby plan, then $0.02/GB
+  in North America / Europe.
+
+See <https://fly.io/docs/about/pricing/> for the up-to-date rate card.
+
+## Known caveats
+
+- The volume lives in one region. To survive a region outage, create a
+  second volume in another region and update `primary_region` after the
+  failover, or take snapshots with `fly volumes snapshots create`.
+- The first deploy needs a published `rohitghumare64/agentmemory:latest`
+  image. Multi-arch (amd64 + arm64) so it works on either fly.io VM type.

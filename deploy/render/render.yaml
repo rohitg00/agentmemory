@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: agentmemory
+    runtime: docker
+    plan: starter
+    dockerfilePath: ./deploy/render/Dockerfile
+    dockerContext: ./deploy/render
+    healthCheckPath: /agentmemory/livez
+    autoDeploy: false
+    disk:
+      name: data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: AGENTMEMORY_REQUIRE_HTTPS
+        value: "1"
+      - key: AGENTMEMORY_HMAC_FILE
+        value: /data/.hmac
+      - key: AGENTMEMORY_DATA_DIR
+        value: /data
