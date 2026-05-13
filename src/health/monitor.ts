@@ -1,39 +1,38 @@
-import type { ISdk } from "iii-sdk";
-import type { HealthSnapshot } from "../types.js";
-import type { StateKV } from "../state/kv.js";
-import { KV } from "../state/schema.js";
-import { evaluateHealth } from "./thresholds.js";
+    const endMark = performance.now();
+    const eventLoopLag = endMark - startMark;
 
-export function registerHealthMonitor(
-  sdk: ISdk,
-  kv: StateKV,
-): { stop: () => void } {
-  let connectionState = "connected";
-  let prevCpuUsage = process.cpuUsage();
-  let prevCpuTime = Date.now();
+    const snapshot: HealthSnapshot = {
+      cpuUsage: cpuPercent,
+      memoryRss: mem.rss / 1024 / 1024,
+      memoryHeapUsed: mem.heapUsed / 1024 / 1024,
+      eventLoopLag,
+      uptime,
+      connectionState,
+      timestamp: now,
+    };
 
-  if (typeof sdk.on === "function") {
-    sdk.on("connection_state", (state?: unknown) => {
-      connectionState = state as string;
-    });
+    const status = evaluateHealth(snapshot);
+    
+    // Feature: Persistence & State-Aware Alerting
+    const lastStatus = await kv.get(KV.LAST_HEALTH_STATUS);
+    if (status.isCritical && lastStatus !== "critical") {
+      sdk.emit?.("health_alert", { snapshot, status });
+    }
+
+    await kv.set(KV.LATEST_HEALTH, snapshot);
+    await kv.set(KV.LAST_HEALTH_STATUS, status.level);
+
+    return snapshot;
   }
 
-  async function collectHealth(): Promise<HealthSnapshot> {
-    const mem = process.memoryUsage();
-    const currentCpu = process.cpuUsage();
-    const now = Date.now();
-    const uptime = process.uptime();
-
-    const elapsedMs = now - prevCpuTime;
-    const userDelta = currentCpu.user - prevCpuUsage.user;
-    const systemDelta = currentCpu.system - prevCpuUsage.system;
-    const cpuPercent =
-      elapsedMs > 0 ? ((userDelta + systemDelta) / 1000 / elapsedMs) * 100 : 0;
-    prevCpuUsage = currentCpu;
-    prevCpuTime = now;
-
-    const startMark = performance.now();
-    await new Promise((resolve) => setImmediate(resolve));
+  const interval = setInterval(collectHealth, 5000);
+  return { 
+    stop: () => {
+      clearInterval(interval);
+      sdk.emit?.("monitor_stopped", { at: Date.now() });
+    } 
+  };
+}
     const eventLoopLagMs = performance.now() - startMark;
 
     let workers: HealthSnapshot["workers"] = [];
