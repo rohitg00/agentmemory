@@ -6,8 +6,6 @@ const CJK_RE = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=H
 const HAN_RE = /\p{Script=Han}/u;
 const KANA_RE = /[\p{Script=Hiragana}\p{Script=Katakana}]/u;
 const HANGUL_RE = /\p{Script=Hangul}/u;
-const HAN_KANA_RUN_RE = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]+/gu;
-const HANGUL_RUN_RE = /\p{Script=Hangul}+/gu;
 const CJK_RUN_RE = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]+/gu;
 const HANGUL_BLOCK_RE = /[가-힯]+/g;
 
@@ -131,23 +129,32 @@ export function segmentCjk(text: string): string[] {
   if (!hasCjk(text)) return [text];
 
   const out: string[] = [];
+  let cursor = 0;
 
-  for (const m of text.matchAll(HAN_KANA_RUN_RE)) {
+  for (const m of text.matchAll(CJK_RUN_RE)) {
+    const start = m.index ?? 0;
     const run = m[0];
-    if (KANA_RE.test(run)) {
+    const end = start + run.length;
+
+    if (start > cursor) {
+      const piece = text.slice(cursor, start).trim();
+      if (piece) out.push(piece);
+    }
+
+    if (HANGUL_RE.test(run)) {
+      out.push(...segmentHangul(run));
+    } else if (KANA_RE.test(run)) {
       out.push(...segmentKana(run));
     } else {
       out.push(...segmentHan(run));
     }
+
+    cursor = end;
   }
 
-  for (const m of text.matchAll(HANGUL_RUN_RE)) {
-    out.push(...segmentHangul(m[0]));
-  }
-
-  for (const piece of text.split(CJK_RUN_RE)) {
-    const p = piece.trim();
-    if (p) out.push(p);
+  if (cursor < text.length) {
+    const trailing = text.slice(cursor).trim();
+    if (trailing) out.push(trailing);
   }
 
   return out;

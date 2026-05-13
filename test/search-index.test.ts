@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { SearchIndex } from "../src/state/search-index.js";
+import { segmentCjk } from "../src/state/cjk-segmenter.js";
 import type { CompressedObservation } from "../src/types.js";
 
 function makeObs(
@@ -200,5 +201,18 @@ describe("SearchIndex", () => {
     const hit = results.find((r) => r.obsId === "obs_ko");
     expect(hit).toBeDefined();
     expect(hit!.score).toBeGreaterThan(0);
+  });
+
+  it("preserves source order across mixed CJK and non-CJK runs", () => {
+    expect(segmentCjk("hello 项目 world")).toEqual(["hello", "项目", "world"]);
+    expect(segmentCjk("abc 메모리 def 项目 ghi")).toEqual([
+      "abc",
+      "메모리",
+      "def",
+      "项目",
+      "ghi",
+    ]);
+    expect(segmentCjk("leading 项目")).toEqual(["leading", "项目"]);
+    expect(segmentCjk("项目 trailing")).toEqual(["项目", "trailing"]);
   });
 });
