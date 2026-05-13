@@ -946,7 +946,7 @@
   </div>
 
   <div class="tab-bar" id="tab-bar">
-    <button class="active" data-tab="dashboard">Dashboard</button>
+    <button class="active" data-tab="dashboard" aria-current="page">Dashboard</button>
     <button data-tab="graph">Graph</button>
     <button data-tab="memories">Memories</button>
     <button data-tab="timeline">Timeline</button>
@@ -1176,7 +1176,13 @@
       }
       state.activeTab = tab;
       document.querySelectorAll('.tab-bar button').forEach(function(b) {
-        b.classList.toggle('active', b.dataset.tab === tab);
+        var isActive = b.dataset.tab === tab;
+        b.classList.toggle('active', isActive);
+        if (isActive) {
+          b.setAttribute('aria-current', 'page');
+        } else {
+          b.removeAttribute('aria-current');
+        }
       });
       document.querySelectorAll('.view').forEach(function(v) {
         v.classList.toggle('active', v.id === 'view-' + tab);
@@ -2412,7 +2418,7 @@
         html += '<div class="obs-head">';
         html += '<div class="obs-title-row">';
         html += '<span class="obs-type-icon">' + icon + '</span>';
-        html += '<span class="obs-title">' + esc(title) + '</span>';
+        html += '<span class="obs-title" title="' + esc(title) + '">' + esc(title) + '</span>';
         if (isRaw) html += '<span class="badge badge-muted" style="font-size:8px;margin-left:4px;">raw</span>';
         html += '</div>';
         html += '<div class="obs-meta">';
@@ -3417,6 +3423,7 @@
 
     document.querySelectorAll('[data-tab-link]').forEach(function(link) {
       link.addEventListener('click', function(e) {
+        if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
         e.preventDefault();
         switchTab(link.getAttribute('data-tab-link'));
       });
