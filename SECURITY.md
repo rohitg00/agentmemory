@@ -42,7 +42,7 @@ In scope:
 - The `@agentmemory/mcp` standalone MCP server.
 - The `@agentmemory/fs-watcher` connector.
 - First-party integrations under `integrations/` (`hermes/`, `openclaw/`, `filesystem-watcher/`).
-- The Claude Code plugin under `plugin/`.
+- Plugins under `plugin/` (Claude Code, Codex CLI, Factory Droids).
 
 Out of scope:
 

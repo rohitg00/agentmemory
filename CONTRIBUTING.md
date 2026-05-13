@@ -71,7 +71,7 @@ PRs with commits lacking sign-off will not merge.
 | `src/health/` | Liveness + readiness + alert thresholds. |
 | `src/state/` | KV schema, keyed mutex, access log. |
 | `integrations/` | First-party plugins: `hermes/`, `openclaw/`, `filesystem-watcher/`. |
-| `plugin/` | Claude Code plugin (`agentmemory@agentmemory`). |
+| `plugin/` | Claude Code / Codex CLI / Factory Droids plugin (`agentmemory@agentmemory`). |
 | `website/` | Marketing site (Next.js 16). |
 | `test/` | Vitest test suite. |
 

@@ -7,7 +7,7 @@
     Your coding agent remembers everything. No more re-explaining.
     Built on <a href="https://github.com/iii-hq/iii">iii engine</a>
   </strong><br/>
-  Persistent memory for Claude Code, Cursor, Gemini CLI, Codex CLI, Hermes, OpenClaw, pi, OpenCode, and any MCP client.
+  Persistent memory for Claude Code, Cursor, Gemini CLI, Codex CLI, Factory Droids, Hermes, OpenClaw, pi, OpenCode, and any MCP client.
 </p>
 
 <p align="center">
@@ -152,15 +152,15 @@ agentmemory works with any agent that supports hooks, MCP, or REST API. All agen
 <sub>AgentSDKProvider</sub>
 </td>
 <td align="center" width="12.5%">
-<img src="https://img.shields.io/badge/104-endpoints-1f6feb?style=flat-square" alt="REST API" width="48" /><br/>
-<strong>Any agent</strong><br/>
-<sub>REST API</sub>
+<a href="https://factory.ai"><img src="https://github.com/factory.png?size=120" alt="Factory Droids" width="48" height="48" /></a><br/>
+<strong>Factory Droids</strong><br/>
+<sub>12 hooks + MCP + skills</sub>
 </td>
 </tr>
 </table>
 
 <p align="center">
-  <sub>Works with <strong>any</strong> agent that speaks MCP or HTTP. One server, memories shared across all of them.</sub>
+  <sub>Works with <strong>any</strong> agent that speaks MCP or HTTP (including REST-only agents like Aider). One server, memories shared across all of them.</sub>
 </p>
 
 ---
@@ -374,6 +374,24 @@ The Codex plugin ships from the same `plugin/` directory as the Claude Code plug
 
 Codex's hook engine injects `CLAUDE_PLUGIN_ROOT` into hook subprocesses (per [`codex-rs/hooks/src/engine/discovery.rs`](https://github.com/openai/codex/blob/main/codex-rs/hooks/src/engine/discovery.rs)), so the same hook scripts work across both hosts without duplication. Subagent / SessionEnd / Notification / TaskCompleted / PostToolUseFailure events are Claude-Code-only and are not registered for Codex.
 
+### Factory Droids (Factory plugin marketplace)
+
+```bash
+# 1. start the memory server in a separate terminal
+npx @agentmemory/agentmemory
+
+# 2. install the plugin via the Factory marketplace
+droid plugin install agentmemory
+```
+
+The Factory plugin ships from the `plugin/.factory-plugin/` directory. It registers:
+
+- `@agentmemory/mcp` as an MCP server (all 51 tools via `plugin/.mcp.json`)
+- 12 lifecycle hooks: `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `PreCompact`, `SubagentStart`, `SubagentStop`, `Notification`, `TaskCompleted`, `Stop`, `SessionEnd`
+- 4 skills: `/recall`, `/remember`, `/session-history`, `/forget`
+
+Factory's hook engine injects `FACTORY_PLUGIN_ROOT` into hook subprocesses, so the same `plugin/scripts/` hook scripts work across Claude Code, Codex, and Factory Droids without duplication.
+
 <details>
 <summary><b>OpenClaw (paste this prompt)</b></summary>
 
@@ -448,6 +466,7 @@ The agentmemory entry is the **same MCP server block** across every host that us
 | **OpenClaw** | OpenClaw MCP config | Same `mcpServers` block, or use the deeper [memory plugin](integrations/openclaw/). |
 | **Codex CLI (MCP only)** | `.codex/config.toml` | TOML shape: `codex mcp add agentmemory -- npx -y @agentmemory/mcp`, or add `[mcp_servers.agentmemory]` manually. |
 | **Codex CLI (full plugin)** | Codex plugin marketplace | `codex plugin marketplace add rohitg00/agentmemory` then `codex plugin install agentmemory`. Registers MCP + 6 lifecycle hooks (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PreCompact, Stop) + 4 skills. |
+| **Factory Droids** | Factory plugin marketplace | `droid plugin install agentmemory`. Registers MCP + 12 lifecycle hooks (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PostToolUseFailure, PreCompact, SubagentStart, SubagentStop, Notification, TaskCompleted, Stop, SessionEnd) + 4 skills via `plugin/.factory-plugin/`. |
 | **OpenCode** | `opencode.json` | Different shape — top-level `mcp` key, command as array: `{"mcp": {"agentmemory": {"type": "local", "command": ["npx", "-y", "@agentmemory/mcp"], "enabled": true}}}`. |
 | **pi** | `~/.pi/agent/extensions/agentmemory` | Copy [`integrations/pi`](integrations/pi/) and restart pi. |
 | **Hermes Agent** | `~/.hermes/config.yaml` | Use the deeper [memory provider plugin](integrations/hermes/) with `memory.provider: agentmemory`. |
