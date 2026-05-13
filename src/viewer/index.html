@@ -4,7 +4,14 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>agentmemory viewer</title>
-  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700;900&family=Lora:wght@400;500;600&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <!-- Removed Google Fonts <link> in #323: the viewer CSP is strict
+       (default-src 'none', style-src 'unsafe-inline', font-src 'self')
+       and external stylesheets from fonts.googleapis.com were blocked,
+       producing console CSP violations that some browsers (Windows
+       Edge in particular) escalate into broader script-execution
+       issues. System-font fallbacks are already declared on every
+       --font-* CSS variable below, so the viewer renders fine with
+       Georgia / system serif / system sans / system mono. -->
   <style>
     :root {
       --bg: #F9F9F7;
@@ -1107,30 +1114,50 @@
     async function loadDashboard() {
       var el = document.getElementById('view-dashboard');
       el.innerHTML = '<div class="loading">Loading dashboard...</div>';
-      var results = await Promise.all([
-        apiGet('health'),
-        apiGet('sessions'),
-        apiGet('memories?latest=true'),
-        apiGet('graph/stats'),
-        apiGet('audit?limit=5'),
-        apiGet('semantic'),
-        apiGet('procedural'),
-        apiGet('relations'),
-        apiGet('lessons'),
-        apiGet('crystals')
-      ]);
-      state.dashboard.health = results[0];
-      state.dashboard.sessions = (results[1] && results[1].sessions) || [];
-      state.dashboard.memories = (results[2] && results[2].memories) || [];
-      state.dashboard.graphStats = results[3];
-      state.dashboard.recentAudit = (results[4] && results[4].entries) || [];
-      state.dashboard.semantic = (results[5] && results[5].facts) || (results[5] && results[5].semantic) || [];
-      state.dashboard.procedural = (results[6] && results[6].procedures) || (results[6] && results[6].procedural) || [];
-      state.dashboard.lessons = (results[8] && results[8].lessons) || [];
-      state.dashboard.crystals = (results[9] && results[9].crystals) || [];
-      state.dashboard.relations = (results[7] && results[7].relations) || [];
-      state.dashboard.loaded = true;
-      renderDashboard();
+      try {
+        var results = await Promise.all([
+          apiGet('health'),
+          apiGet('sessions'),
+          apiGet('memories?latest=true'),
+          apiGet('graph/stats'),
+          apiGet('audit?limit=5'),
+          apiGet('semantic'),
+          apiGet('procedural'),
+          apiGet('relations'),
+          apiGet('lessons'),
+          apiGet('crystals')
+        ]);
+        state.dashboard.health = results[0];
+        state.dashboard.sessions = (results[1] && results[1].sessions) || [];
+        state.dashboard.memories = (results[2] && results[2].memories) || [];
+        state.dashboard.graphStats = results[3];
+        state.dashboard.recentAudit = (results[4] && results[4].entries) || [];
+        state.dashboard.semantic = (results[5] && results[5].facts) || (results[5] && results[5].semantic) || [];
+        state.dashboard.procedural = (results[6] && results[6].procedures) || (results[6] && results[6].procedural) || [];
+        state.dashboard.lessons = (results[8] && results[8].lessons) || [];
+        state.dashboard.crystals = (results[9] && results[9].crystals) || [];
+        state.dashboard.relations = (results[7] && results[7].relations) || [];
+        state.dashboard.loaded = true;
+        renderDashboard();
+      } catch (err) {
+        // Without this catch, any uncaught error in the await Promise.all
+        // or the renderDashboard call leaves the dashboard stuck on
+        // "Loading dashboard..." forever with no indication to the user
+        // (#323). apiGet() already swallows network/HTTP errors and
+        // returns null, but renderDashboard can still throw on shape
+        // surprises (CSP-blocked event handler binding, undefined fields).
+        // Surface the error in the panel + log full detail to console.
+        var msg = (err && err.message) ? err.message : String(err);
+        console.error('[viewer] loadDashboard failed:', err);
+        el.innerHTML =
+          '<div class="loading" style="color:var(--accent);">' +
+          'Dashboard failed to load: ' + msg +
+          '<br><br><span style="font-size:12px;color:var(--ink-muted);">' +
+          'Check the browser console for the full error. If you see CSP ' +
+          'violations, please open an issue with the agentmemory version ' +
+          '(top-right of the viewer) and the violation text.' +
+          '</span></div>';
+      }
     }
 
     function renderDashboard() {
