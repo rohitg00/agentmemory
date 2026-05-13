@@ -222,11 +222,26 @@ export class SearchIndex {
   }
 
   private tokenize(text: string): string[] {
-    return text
+    const terms = text
       .replace(/[^\w\s/.\-_]/g, " ")
       .split(/\s+/)
       .filter((t) => t.length > 1)
       .map((t) => stem(t));
+
+    // CJK character bigrams: for languages without word boundaries
+    // (Chinese, Japanese, Korean), extract overlapping 2-character
+    // sequences so queries like "人工智能" match "人工" and "智能".
+    const cjkRange = /[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]+/g;
+    let match: RegExpExecArray | null;
+    while ((match = cjkRange.exec(text)) !== null) {
+      const segment = match[0];
+      for (let i = 0; i < segment.length - 1; i++) {
+        const bigram = segment.substring(i, i + 2);
+        terms.push(stem(bigram));
+      }
+    }
+
+    return terms;
   }
 
   private getSortedTerms(): string[] {
