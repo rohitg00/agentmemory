@@ -57,11 +57,11 @@ describe("vector index population on remember", () => {
       _texts.map(() => new Float32Array([0.1, 0.2, 0.3])),
   };
 
-  let vi: VectorIndex;
+  let vectorIndex: VectorIndex;
 
   beforeEach(() => {
-    vi = new VectorIndex();
-    setVectorIndex(vi);
+    vectorIndex = new VectorIndex();
+    setVectorIndex(vectorIndex);
     setEmbeddingProvider(mockEmbedder);
   });
 
@@ -81,7 +81,7 @@ describe("vector index population on remember", () => {
     });
 
     expect((result as { success: boolean }).success).toBe(true);
-    expect(vi.size).toBe(1);
+    expect(vectorIndex.size).toBe(1);
   });
 
   it("calls vectorIndex.add() with short content (0% similarity dedup)", async () => {
@@ -98,7 +98,7 @@ describe("vector index population on remember", () => {
       payload: { content: "Second completely different memory", type: "fact" },
     });
 
-    expect(vi.size).toBe(2);
+    expect(vectorIndex.size).toBe(2);
   });
 
   it("handles missing embedder gracefully (vectorIndex stays null)", async () => {

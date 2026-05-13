@@ -9,18 +9,48 @@ export interface MigrateVectorIndexResult {
   totalProcessed: number;
   failed: number;
   vectorSize: number;
+  failedSessions: string[];
 }
 
+// Validate one embedding's shape against the provider's declared dimensions
+// before pushing it into the index. Mirrors the symmetric guard in
+// search.ts::vectorIndexAddGuarded — without this, a misconfigured
+// provider returning the wrong-length Float32Array would silently corrupt
+// the rebuilt index (per #248).
+function isValidEmbedding(
+  embedding: Float32Array,
+  provider: EmbeddingProvider,
+  context: { kind: "memory" | "observation"; id: string },
+): boolean {
+  if (embedding.length !== provider.dimensions) {
+    logger.warn("migrateVectorIndex: dimension mismatch — skipping", {
+      kind: context.kind,
+      id: context.id,
+      provider: provider.name,
+      expected: provider.dimensions,
+      received: embedding.length,
+    });
+    return false;
+  }
+  return true;
+}
+
+// Rebuilds a fresh VectorIndex against `newProvider`, re-embedding every
+// memory and per-session observation in `kv`. Each phase (memories +
+// per-session observations) is isolated — a single session that throws
+// on kv.list or embedBatch increments `failed` and appends to
+// `failedSessions`, but the migration continues. Returns a structured
+// result the caller can inspect to decide whether to swap the index in.
 export async function migrateVectorIndex(
   kv: StateKV,
-  oldIndex: VectorIndex,
   newProvider: EmbeddingProvider,
 ): Promise<MigrateVectorIndexResult> {
   const newIndex = new VectorIndex();
   let failed = 0;
   let processed = 0;
+  const failedSessions: string[] = [];
 
-  // Re-embed memories
+  // --- Memories phase ----------------------------------------------------
   try {
     const memories = await kv.list<Memory>(KV.memories);
     const textMems = memories.filter(
@@ -31,6 +61,10 @@ export async function migrateVectorIndex(
     if (texts.length > 0) {
       const embeddings = await newProvider.embedBatch(texts);
       for (let i = 0; i < textMems.length; i++) {
+        if (!isValidEmbedding(embeddings[i], newProvider, { kind: "memory", id: textMems[i].id })) {
+          failed++;
+          continue;
+        }
         newIndex.add(
           textMems[i].id,
           textMems[i].sessionIds[0] ?? "memory",
@@ -46,30 +80,56 @@ export async function migrateVectorIndex(
     failed++;
   }
 
-  // Re-embed observations
+  // --- Observations phase (per-session isolation) ------------------------
+  // Without per-session try/catch, one bad session (kv.list throws,
+  // embedBatch rejects, etc.) would abort every later session and silently
+  // truncate the migration. Each session now has its own boundary; failures
+  // increment `failed`, append the session id to failedSessions, and the
+  // loop moves on.
+  let sessions: Array<{ id: string }>;
   try {
-    const sessions = await kv.list<{ id: string }>(KV.sessions);
-    for (const session of sessions) {
+    sessions = await kv.list<{ id: string }>(KV.sessions);
+  } catch (err) {
+    logger.warn("migrateVectorIndex: failed to list sessions", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    failed++;
+    return { success: false, totalProcessed: processed, failed, vectorSize: newIndex.size, failedSessions };
+  }
+
+  for (const session of sessions) {
+    try {
       const observations = await kv.list<CompressedObservation>(
         KV.observations(session.id),
       );
       const textObs = observations.filter((o) => o.title);
-      const texts = textObs.map((o) => o.title! + " " + (o.narrative || ""));
+      const texts = textObs.map((o) => o.title + " " + (o.narrative || ""));
+      if (texts.length === 0) continue;
 
-      if (texts.length > 0) {
-        const embeddings = await newProvider.embedBatch(texts);
-        for (let i = 0; i < textObs.length; i++) {
-          newIndex.add(textObs[i].id, textObs[i].sessionId, embeddings[i]);
-          processed++;
+      const embeddings = await newProvider.embedBatch(texts);
+      for (let i = 0; i < textObs.length; i++) {
+        if (!isValidEmbedding(embeddings[i], newProvider, { kind: "observation", id: textObs[i].id })) {
+          failed++;
+          continue;
         }
+        newIndex.add(textObs[i].id, textObs[i].sessionId, embeddings[i]);
+        processed++;
       }
+    } catch (err) {
+      logger.warn("migrateVectorIndex: failed to re-embed session", {
+        sessionId: session.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      failed++;
+      failedSessions.push(session.id);
     }
-  } catch (err) {
-    logger.warn("migrateVectorIndex: failed to re-embed observations", {
-      error: err instanceof Error ? err.message : String(err),
-    });
-    failed++;
   }
 
-  return { success: failed === 0, totalProcessed: processed, failed, vectorSize: newIndex.size };
+  return {
+    success: failed === 0,
+    totalProcessed: processed,
+    failed,
+    vectorSize: newIndex.size,
+    failedSessions,
+  };
 }

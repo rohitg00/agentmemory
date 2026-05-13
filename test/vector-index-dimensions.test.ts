@@ -76,9 +76,6 @@ describe("migrateVectorIndex", () => {
   }
 
   it("re-embeds observations with new provider dimensions", async () => {
-    const oldIndex = new VectorIndex();
-    oldIndex.add("obs_1", "ses_1", new Float32Array([0.1, 0.2, 0.3]));
-
     const kv = mockKV();
     await kv.set("mem:sessions", "ses_1", { id: "ses_1" });
     await kv.set("mem:obs:ses_1", "obs_1", {
@@ -94,7 +91,7 @@ describe("migrateVectorIndex", () => {
       importance: 5,
     });
 
-    const result = await migrateVectorIndex(kv as never, oldIndex, newProvider);
+    const result = await migrateVectorIndex(kv as never, newProvider);
     expect(result.success).toBe(true);
     expect(result.totalProcessed).toBe(1);
     expect(result.vectorSize).toBe(1);
@@ -102,7 +99,6 @@ describe("migrateVectorIndex", () => {
   });
 
   it("re-embeds memories with new provider dimensions", async () => {
-    const oldIndex = new VectorIndex();
     const kv = mockKV();
     await kv.set("mem:memories", "mem_1", {
       id: "mem_1",
@@ -119,16 +115,15 @@ describe("migrateVectorIndex", () => {
       isLatest: true,
     });
 
-    const result = await migrateVectorIndex(kv as never, oldIndex, newProvider);
+    const result = await migrateVectorIndex(kv as never, newProvider);
     expect(result.totalProcessed).toBe(1);
     expect(result.vectorSize).toBe(1);
   });
 
   it("handles empty KV gracefully", async () => {
-    const oldIndex = new VectorIndex();
     const kv = mockKV();
 
-    const result = await migrateVectorIndex(kv as never, oldIndex, newProvider);
+    const result = await migrateVectorIndex(kv as never, newProvider);
     expect(result.success).toBe(true);
     expect(result.totalProcessed).toBe(0);
     expect(result.vectorSize).toBe(0);
