@@ -25,7 +25,7 @@ describe("Factory Droids plugin manifest", () => {
     }>(manifestPath);
     expect(manifest.name).toBe("agentmemory");
     expect(manifest.name).toMatch(/^[a-z][a-z0-9-]*$/);
-    expect(manifest.version).toMatch(/^\d+\.\d+\.\d+/);
+    expect(manifest.version).toMatch(/^\d+\.\d+\.\d+(-[a-zA-Z0-9.-]+)?(\+[a-zA-Z0-9.-]+)?$/);
     expect(manifest.factoryVersion).toBeDefined();
     expect(manifest.skills).toBeDefined();
     expect(manifest.mcpServers).toBeDefined();
