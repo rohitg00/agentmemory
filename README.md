@@ -457,6 +457,30 @@ The agentmemory entry is the **same MCP server block** across every host that us
 
 **Sandboxed MCP clients** (Flatpak / Snap / restrictive containers) that can't reach the host's `localhost`: also set `"AGENTMEMORY_FORCE_PROXY": "1"` in the `env` block, and point `AGENTMEMORY_URL` at a route the sandbox can actually reach (e.g. your LAN IP). See [#234](https://github.com/rohitg00/agentmemory/issues/234) for the diagnostic walkthrough.
 
+### Programmatic access (Python / Rust / Node)
+
+agentmemory registers its core operations as iii functions (`mem::remember`, `mem::observe`, `mem::context`, `mem::smart-search`, `mem::forget`). Any language with an iii SDK can call them directly over `ws://localhost:49134` — no separate REST client per language.
+
+```bash
+pip install iii-sdk         # Python
+cargo add iii-sdk           # Rust
+npm  install iii-sdk        # Node
+```
+
+```python
+from iii import register_worker
+
+iii = register_worker("ws://localhost:49134")
+iii.connect()
+
+iii.trigger({
+    "function_id": "mem::smart-search",
+    "payload": {"project": "demo", "query": "how do tokens refresh"},
+})
+```
+
+Worked example: [`examples/python/`](examples/python/) (quickstart + observation/recall flow). REST on `:3111` remains available for hosts without an iii runtime.
+
 ### From source
 
 ```bash
