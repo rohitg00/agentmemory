@@ -173,7 +173,16 @@ export function registerCompressFunction(
           compressed,
         );
 
-        getSearchIndex().add(compressed);
+        try {
+          getSearchIndex().add(compressed);
+        } catch (err) {
+          logger.warn("Failed to index compressed observation into BM25", {
+            obsId: compressed.id,
+            sessionId: compressed.sessionId,
+            title: compressed.title,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
 
         await vectorIndexAddGuarded(
           compressed.id,

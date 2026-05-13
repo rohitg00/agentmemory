@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 vi.mock("../src/logger.js", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
@@ -57,12 +57,22 @@ describe("vector index population on remember", () => {
       _texts.map(() => new Float32Array([0.1, 0.2, 0.3])),
   };
 
+  let vi: VectorIndex;
+
+  beforeEach(() => {
+    vi = new VectorIndex();
+    setVectorIndex(vi);
+    setEmbeddingProvider(mockEmbedder);
+  });
+
+  afterEach(() => {
+    setVectorIndex(null);
+    setEmbeddingProvider(null);
+  });
+
   it("calls vectorIndex.add() when remember saves a memory", async () => {
     const sdk = mockSdk();
     const kv = mockKV();
-    const vi = new VectorIndex();
-    setVectorIndex(vi);
-    setEmbeddingProvider(mockEmbedder);
     registerRememberFunction(sdk as never, kv as never);
 
     const result = await sdk.trigger({
@@ -71,46 +81,33 @@ describe("vector index population on remember", () => {
     });
 
     expect((result as { success: boolean }).success).toBe(true);
-    // Vector index should have one entry after remember
     expect(vi.size).toBe(1);
-
-    // Cleanup
-    setVectorIndex(null);
-    setEmbeddingProvider(null);
   });
 
   it("calls vectorIndex.add() with short content (0% similarity dedup)", async () => {
     const sdk = mockSdk();
     const kv = mockKV();
-    const vi = new VectorIndex();
-    setVectorIndex(vi);
-    setEmbeddingProvider(mockEmbedder);
     registerRememberFunction(sdk as never, kv as never);
 
-    // Save first memory
     await sdk.trigger({
       function_id: "mem::remember",
       payload: { content: "First unique memory", type: "fact" },
     });
-
-    // Save second (different content, no dedup)
     await sdk.trigger({
       function_id: "mem::remember",
       payload: { content: "Second completely different memory", type: "fact" },
     });
 
     expect(vi.size).toBe(2);
-
-    setVectorIndex(null);
-    setEmbeddingProvider(null);
   });
 
   it("handles missing embedder gracefully (vectorIndex stays null)", async () => {
-    const sdk = mockSdk();
-    const kv = mockKV();
-    // Don't set the embedder — should not crash
+    // Override beforeEach setup: this case wants null state explicitly.
     setVectorIndex(null);
     setEmbeddingProvider(null);
+
+    const sdk = mockSdk();
+    const kv = mockKV();
     registerRememberFunction(sdk as never, kv as never);
 
     const result = await sdk.trigger({
@@ -119,11 +116,6 @@ describe("vector index population on remember", () => {
     });
 
     expect((result as { success: boolean }).success).toBe(true);
-
-    const vi = getVectorIndex();
-    // The remember function initializes the SearchIndex singleton but doesn't
-    // touch vectorIndex when it's null — and no setVectorIndex was called.
-    // getVectorIndex() returns whatever was set, which is null here.
-    expect(vi).toBeNull();
+    expect(getVectorIndex()).toBeNull();
   });
 });

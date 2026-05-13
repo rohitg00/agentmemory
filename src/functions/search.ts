@@ -90,6 +90,12 @@ export async function rebuildIndex(kv: StateKV): Promise<number> {
   const idx = getSearchIndex()
   idx.clear()
 
+  // BM25 clear above wipes stale doc entries; the vector index has the
+  // symmetric concern — memories/observations deleted between runs
+  // would leave orphan embeddings here forever. Clear both before the
+  // repopulation loops run, so BM25 and vector stay in sync.
+  vectorIndex?.clear()
+
   let count = 0
 
   // Memories live in their own KV scope outside per-session observation

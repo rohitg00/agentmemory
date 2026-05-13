@@ -96,8 +96,8 @@ describe("migrateVectorIndex", () => {
 
     const result = await migrateVectorIndex(kv as never, oldIndex, newProvider);
     expect(result.success).toBe(true);
-    expect(result.totalProcessed).toBeGreaterThan(0);
-    expect(result.vectorSize).toBeGreaterThan(0);
+    expect(result.totalProcessed).toBe(1);
+    expect(result.vectorSize).toBe(1);
     expect(result.failed).toBe(0);
   });
 

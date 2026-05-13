@@ -24,9 +24,9 @@ export async function migrateVectorIndex(
   try {
     const memories = await kv.list<Memory>(KV.memories);
     const textMems = memories.filter(
-      (m) => m.isLatest !== false && m.title,
+      (m) => m.isLatest !== false && m.title && m.content && m.content.trim() !== "",
     );
-    const texts = textMems.map((m) => m.title! + " " + m.content);
+    const texts = textMems.map((m) => m.title + " " + m.content);
 
     if (texts.length > 0) {
       const embeddings = await newProvider.embedBatch(texts);
@@ -71,5 +71,5 @@ export async function migrateVectorIndex(
     failed++;
   }
 
-  return { success: true, totalProcessed: processed, failed, vectorSize: newIndex.size };
+  return { success: failed === 0, totalProcessed: processed, failed, vectorSize: newIndex.size };
 }
