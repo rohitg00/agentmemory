@@ -191,4 +191,58 @@ describe("configFromEnv", () => {
     const cfg = configFromEnv({});
     expect(cfg.roots).toEqual([]);
   });
+
+  it("loads watcher settings from ~/.agentmemory/.env", () => {
+    const home = tempDir();
+    try {
+      mkdirSync(join(home, ".agentmemory"), { recursive: true });
+      writeFileSync(
+        join(home, ".agentmemory", ".env"),
+        [
+          "AGENTMEMORY_FS_WATCH_DIRS=/srv/project,/srv/notes",
+          "AGENTMEMORY_URL=http://agentmemory:3111",
+          "AGENTMEMORY_SECRET=from-file",
+          "AGENTMEMORY_PROJECT=central",
+          "AGENTMEMORY_FS_WATCH_ALLOW_BINARY=1",
+        ].join("\n"),
+      );
+
+      const cfg = configFromEnv({ HOME: home });
+
+      expect(cfg.roots).toEqual(["/srv/project", "/srv/notes"]);
+      expect(cfg.baseUrl).toBe("http://agentmemory:3111");
+      expect(cfg.secret).toBe("from-file");
+      expect(cfg.project).toBe("central");
+      expect(cfg.allowBinary).toBe(true);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it("lets explicit env override ~/.agentmemory/.env", () => {
+    const home = tempDir();
+    try {
+      mkdirSync(join(home, ".agentmemory"), { recursive: true });
+      writeFileSync(
+        join(home, ".agentmemory", ".env"),
+        [
+          "AGENTMEMORY_FS_WATCH_DIRS=/srv/project",
+          "AGENTMEMORY_URL=http://agentmemory:3111",
+          "AGENTMEMORY_SECRET=from-file",
+        ].join("\n"),
+      );
+
+      const cfg = configFromEnv({
+        HOME: home,
+        AGENTMEMORY_URL: "http://override:3111",
+        AGENTMEMORY_SECRET: "from-env",
+      });
+
+      expect(cfg.roots).toEqual(["/srv/project"]);
+      expect(cfg.baseUrl).toBe("http://override:3111");
+      expect(cfg.secret).toBe("from-env");
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
 });

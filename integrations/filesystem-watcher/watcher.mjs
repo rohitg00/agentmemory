@@ -1,4 +1,10 @@
-import { watch, promises as fsp, statSync } from "node:fs";
+import {
+  watch,
+  promises as fsp,
+  statSync,
+  existsSync,
+  readFileSync,
+} from "node:fs";
 import { resolve, relative, join, extname, sep, basename } from "node:path";
 import { randomBytes } from "node:crypto";
 
@@ -28,6 +34,50 @@ const DEFAULT_IGNORE = [
 
 const MAX_PREVIEW_BYTES = 4096;
 const DEBOUNCE_MS = 500;
+
+function parseEnvFile(content) {
+  const vars = {};
+  for (const line of content.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const eqIdx = trimmed.indexOf("=");
+    if (eqIdx === -1) continue;
+    const key = trimmed.slice(0, eqIdx).trim();
+    if (!key) continue;
+    let val = trimmed.slice(eqIdx + 1).trim();
+    const quoteChar = val[0] === '"' || val[0] === "'" ? val[0] : "";
+    if (quoteChar) {
+      const closeIdx = val.indexOf(quoteChar, 1);
+      val = closeIdx === -1 ? val.slice(1) : val.slice(1, closeIdx);
+    } else {
+      const hashIdx = val.indexOf(" #");
+      if (hashIdx !== -1) val = val.slice(0, hashIdx).trim();
+    }
+    vars[key] = val;
+  }
+  return vars;
+}
+
+function loadAgentMemoryEnv(env) {
+  const candidates = [];
+  const home = env.HOME || env.USERPROFILE;
+  if (home) candidates.push(join(home, ".agentmemory", ".env"));
+  if (env.XDG_CONFIG_HOME) {
+    candidates.push(join(env.XDG_CONFIG_HOME, "agentmemory", ".env"));
+  }
+
+  const fileEnv = {};
+  for (const path of candidates) {
+    try {
+      if (existsSync(path)) {
+        Object.assign(fileEnv, parseEnvFile(readFileSync(path, "utf-8")));
+      }
+    } catch {
+      // Keep watcher startup best-effort; explicit process env and defaults still apply.
+    }
+  }
+  return fileEnv;
+}
 
 export class FilesystemWatcher {
   constructor(config = {}) {
@@ -206,23 +256,24 @@ export class FilesystemWatcher {
 
 // Small helper used by tests and bin.mjs to parse env.
 export function configFromEnv(env = process.env) {
-  const roots = (env.AGENTMEMORY_FS_WATCH_DIRS || "")
+  const merged = { ...loadAgentMemoryEnv(env), ...env };
+  const roots = (merged.AGENTMEMORY_FS_WATCH_DIRS || "")
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
-  const extraIgnore = (env.AGENTMEMORY_FS_WATCH_IGNORE || "")
+  const extraIgnore = (merged.AGENTMEMORY_FS_WATCH_IGNORE || "")
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean)
     .map((s) => new RegExp(s));
   return {
     roots,
-    baseUrl: env.AGENTMEMORY_URL,
-    secret: env.AGENTMEMORY_SECRET,
-    project: env.AGENTMEMORY_PROJECT || null,
-    sessionId: env.AGENTMEMORY_SESSION_ID || null,
+    baseUrl: merged.AGENTMEMORY_URL,
+    secret: merged.AGENTMEMORY_SECRET,
+    project: merged.AGENTMEMORY_PROJECT || null,
+    sessionId: merged.AGENTMEMORY_SESSION_ID || null,
     ignorePatterns: extraIgnore,
-    allowBinary: env.AGENTMEMORY_FS_WATCH_ALLOW_BINARY === "1",
+    allowBinary: merged.AGENTMEMORY_FS_WATCH_ALLOW_BINARY === "1",
   };
 }
 
