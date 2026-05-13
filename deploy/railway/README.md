@@ -127,6 +127,7 @@ See <https://railway.com/pricing> for the current rate card.
 
 - Railway volumes do not auto-snapshot. Take your own backups (above)
   or use the dashboard's manual snapshot feature.
-- The published image `rohitghumare64/agentmemory:latest` should be
-  multi-arch (amd64 + arm64). Railway currently runs amd64 only, so
-  amd64 must be present.
+- The Dockerfile builds on Railway's builder on every deploy. First
+  deploy is ~2 minutes; cached layers make subsequent rebuilds quick.
+  Pin `AGENTMEMORY_VERSION` / `III_VERSION` build args in the
+  service's *Variables* tab to lock a specific release.

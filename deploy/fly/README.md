@@ -118,5 +118,9 @@ See <https://fly.io/docs/about/pricing/> for the up-to-date rate card.
 - The volume lives in one region. To survive a region outage, create a
   second volume in another region and update `primary_region` after the
   failover, or take snapshots with `fly volumes snapshots create`.
-- The first deploy needs a published `rohitghumare64/agentmemory:latest`
-  image. Multi-arch (amd64 + arm64) so it works on either fly.io VM type.
+- The Dockerfile builds in the Fly Builder on every deploy — first
+  deploy takes ~2 minutes while npm + the iii binary download. Cached
+  layers shrink subsequent rebuilds to under 30 seconds.
+- Bump `AGENTMEMORY_VERSION` or `III_VERSION` in the Dockerfile to
+  upgrade. `fly deploy --build-arg AGENTMEMORY_VERSION=<x>` also works
+  for a one-off without editing the file.

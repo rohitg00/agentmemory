@@ -1,11 +1,12 @@
 # One-click deploy templates
 
 Stand up agentmemory on managed infrastructure without rolling your own
-Docker host. Each template extends the published image
-`rohitghumare64/agentmemory:latest`, mounts persistent storage at
-`/data`, generates an HMAC secret on first boot, and defaults
-`AGENTMEMORY_REQUIRE_HTTPS=1` so the v0.9.12 plaintext-bearer guard
-fires loud on any non-loopback misconfiguration.
+Docker host. Each template ships a self-contained Dockerfile that pulls
+`@agentmemory/agentmemory` from npm at build time and bundles the
+`iii-engine` binary alongside it — no pre-published image required.
+Storage mounts at `/data`, an HMAC secret is generated on first boot,
+and `AGENTMEMORY_REQUIRE_HTTPS=1` is baked in so the v0.9.12
+plaintext-bearer guard fires loud on any non-loopback misconfiguration.
 
 | Platform | Pitch | Cost floor |
 |----------|-------|------------|
@@ -15,8 +16,8 @@ fires loud on any non-loopback misconfiguration.
 
 ## What every template guarantees
 
-- **Volume mounted at `/data`.** Matches the path the distroless
-  agentmemory image has used since v0.9.10.
+- **Volume mounted at `/data`.** Matches the path the engine has used
+  since v0.9.10.
 - **HMAC secret generated on first boot** via `openssl rand -hex 32`,
   written to `/data/.hmac` with `chmod 600`, and printed to stdout
   exactly once so the operator can capture it from the deploy logs.
@@ -25,11 +26,10 @@ fires loud on any non-loopback misconfiguration.
 - **Only port 3111 is exposed publicly.** The viewer on port 3113
   stays bound to the container's localhost. Reach it via SSH tunnel
   (see each platform's README).
-- **`AGENTMEMORY_REQUIRE_HTTPS=1`** baked in. Integration clients
-  (Hermes, OpenClaw, pi) will refuse to send a bearer token over
-  plaintext HTTP to a non-loopback host — if a TLS termination
-  upstream gets misconfigured, the client fails loud instead of
-  silently leaking the secret.
+- **`AGENTMEMORY_REQUIRE_HTTPS=1`** baked in. Integration plugins will
+  refuse to send a bearer token over plaintext HTTP to a non-loopback
+  host — if a TLS termination upstream gets misconfigured, the client
+  fails loud instead of silently leaking the secret.
 
 ## Pick a platform
 

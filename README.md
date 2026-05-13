@@ -531,11 +531,13 @@ npx -y @agentmemory/mcp
 
 <h2 id="deploy">Deploy</h2>
 
-One-click templates for managed hosts. Each one extends the published
-`rohitghumare64/agentmemory:latest` image, mounts persistent storage at
-`/data`, generates an HMAC secret on first boot, and ships
-`AGENTMEMORY_REQUIRE_HTTPS=1` by default so bearer-auth integrations
-refuse to send tokens over plaintext HTTP to a non-loopback host.
+One-click templates for managed hosts. Each one ships a self-contained
+Dockerfile that pulls `@agentmemory/agentmemory` from npm and bundles
+the `iii-engine` binary at build time — no pre-published image
+required. Persistent storage mounts at `/data`, an HMAC secret is
+generated on first boot, and `AGENTMEMORY_REQUIRE_HTTPS=1` is baked in
+so bearer-auth integrations refuse to send tokens over plaintext HTTP
+to a non-loopback host.
 
 <p>
   <a href="https://fly.io/launch?repo=https://github.com/rohitg00/agentmemory&path=deploy/fly"><img src="https://img.shields.io/badge/Deploy%20to-fly.io-8b5cf6?style=for-the-badge&logo=fly.io&logoColor=white" alt="Deploy to fly.io" /></a>

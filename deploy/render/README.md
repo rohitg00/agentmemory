@@ -34,8 +34,9 @@ in the service settings. Future deploys are a single curl call:
 curl "https://api.render.com/deploy/srv-XXYYZZ?key=AABBCC"
 ```
 
-To roll out a specific image tag rather than rebuilding from the
-Dockerfile, append `&imgURL=docker.io%2Frohitghumare64%2Fagentmemory%3A<tag>`.
+To pin a specific `@agentmemory/agentmemory` release, set the
+`AGENTMEMORY_VERSION` build arg in the service's *Environment* tab
+before the next deploy. Same for `III_VERSION`.
 
 ## Capture the HMAC secret
 
@@ -102,5 +103,5 @@ See <https://render.com/pricing> for the current rate card.
 - Render restarts the service on every deploy. The HMAC secret survives
   because it lives on the disk, but expect a 10–30 s gap of 502s
   during rollouts.
-- The published image `rohitghumare64/agentmemory:latest` must include
-  amd64 (Render does not run arm64 web services as of writing).
+- Render runs amd64 only for web services. The Dockerfile selects the
+  matching iii binary automatically via `uname -m`.
