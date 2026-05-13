@@ -126,30 +126,30 @@ describe("SearchIndex", () => {
     expect(results[0].score).toBeGreaterThan(results[1].score);
   });
 
-  it("indexes and finds Cyrillic text", () => {
+  it("indexes and finds non-ASCII (Greek) text", () => {
     index.add(
       makeObs({
-        id: "obs_cyrillic",
-        title: "Проверка памяти",
-        narrative: "Тестируем поиск по кириллице",
-        concepts: ["тест", "память"],
+        id: "obs_greek",
+        title: "Προβολή μνήμης",
+        narrative: "Δοκιμάζουμε αναζήτηση σε ελληνικά",
+        concepts: ["δοκιμή", "μνήμη"],
       }),
     );
-    const results = index.search("память");
+    const results = index.search("μνήμη");
     expect(results.length).toBe(1);
-    expect(results[0].obsId).toBe("obs_cyrillic");
+    expect(results[0].obsId).toBe("obs_greek");
   });
 
-  it("tokenizes mixed ASCII and Cyrillic queries", () => {
+  it("tokenizes mixed ASCII and non-ASCII (Greek) queries", () => {
     index.add(
       makeObs({
         id: "obs_mixed",
-        title: "JWT middleware настройка",
-        narrative: "Configured JWT with русские комментарии",
-        concepts: ["auth", "jwt", "настройка"],
+        title: "JWT middleware ρύθμιση",
+        narrative: "Configured JWT with ελληνικά σχόλια",
+        concepts: ["auth", "jwt", "ρύθμιση"],
       }),
     );
-    const results = index.search("JWT настройка");
+    const results = index.search("JWT ρύθμιση");
     expect(results.length).toBe(1);
     expect(results[0].obsId).toBe("obs_mixed");
   });
