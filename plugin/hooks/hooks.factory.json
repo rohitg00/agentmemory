@@ -1,0 +1,127 @@
+{
+  "hooks": [
+    {
+      "name": "session-start",
+      "event": "SessionStart",
+      "description": "Initialize session and inject context",
+      "enabled": true,
+      "action": {
+        "type": "command",
+        "command": "node ${FACTORY_PLUGIN_ROOT}/scripts/session-start.mjs"
+      }
+    },
+    {
+      "name": "user-prompt-submit",
+      "event": "UserPromptSubmit",
+      "description": "Capture user prompts",
+      "enabled": true,
+      "action": {
+        "type": "command",
+        "command": "node ${FACTORY_PLUGIN_ROOT}/scripts/prompt-submit.mjs"
+      }
+    },
+    {
+      "name": "pre-tool-use",
+      "event": "PreToolUse",
+      "description": "Capture tool intent",
+      "enabled": true,
+      "conditions": {
+        "toolNames": ["Edit", "Write", "Read", "Glob", "Grep", "bash", "run_command", "edit_file", "write_file"]
+      },
+      "action": {
+        "type": "command",
+        "command": "node ${FACTORY_PLUGIN_ROOT}/scripts/pre-tool-use.mjs"
+      }
+    },
+    {
+      "name": "post-tool-use",
+      "event": "PostToolUse",
+      "description": "Capture tool output",
+      "enabled": true,
+      "action": {
+        "type": "command",
+        "command": "node ${FACTORY_PLUGIN_ROOT}/scripts/post-tool-use.mjs"
+      }
+    },
+    {
+      "name": "post-tool-use-failure",
+      "event": "PostToolUseFailure",
+      "description": "Capture tool errors",
+      "enabled": true,
+      "action": {
+        "type": "command",
+        "command": "node ${FACTORY_PLUGIN_ROOT}/scripts/post-tool-failure.mjs"
+      }
+    },
+    {
+      "name": "pre-compact",
+      "event": "PreCompact",
+      "description": "Hook before memory compaction",
+      "enabled": true,
+      "action": {
+        "type": "command",
+        "command": "node ${FACTORY_PLUGIN_ROOT}/scripts/pre-compact.mjs"
+      }
+    },
+    {
+      "name": "subagent-start",
+      "event": "SubagentStart",
+      "description": "Capture subagent execution",
+      "enabled": true,
+      "action": {
+        "type": "command",
+        "command": "node ${FACTORY_PLUGIN_ROOT}/scripts/subagent-start.mjs"
+      }
+    },
+    {
+      "name": "subagent-stop",
+      "event": "SubagentStop",
+      "description": "Capture subagent completion",
+      "enabled": true,
+      "action": {
+        "type": "command",
+        "command": "node ${FACTORY_PLUGIN_ROOT}/scripts/subagent-stop.mjs"
+      }
+    },
+    {
+      "name": "notification",
+      "event": "Notification",
+      "description": "Capture notifications",
+      "enabled": true,
+      "action": {
+        "type": "command",
+        "command": "node ${FACTORY_PLUGIN_ROOT}/scripts/notification.mjs"
+      }
+    },
+    {
+      "name": "task-completed",
+      "event": "TaskCompleted",
+      "description": "Capture task completion",
+      "enabled": true,
+      "action": {
+        "type": "command",
+        "command": "node ${FACTORY_PLUGIN_ROOT}/scripts/task-completed.mjs"
+      }
+    },
+    {
+      "name": "stop",
+      "event": "Stop",
+      "description": "Capture stop events",
+      "enabled": true,
+      "action": {
+        "type": "command",
+        "command": "node ${FACTORY_PLUGIN_ROOT}/scripts/stop.mjs"
+      }
+    },
+    {
+      "name": "session-end",
+      "event": "SessionEnd",
+      "description": "Consolidate memory at end of session",
+      "enabled": true,
+      "action": {
+        "type": "command",
+        "command": "node ${FACTORY_PLUGIN_ROOT}/scripts/session-end.mjs"
+      }
+    }
+  ]
+}
