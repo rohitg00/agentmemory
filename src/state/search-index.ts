@@ -1,6 +1,7 @@
 import type { CompressedObservation } from "../types.js";
 import { stem } from "./stemmer.js";
 import { getSynonyms } from "./synonyms.js";
+import { segmentCjk, hasCjk } from "./cjk-segmenter.js";
 
 interface IndexEntry {
   obsId: string;
@@ -222,11 +223,19 @@ export class SearchIndex {
   }
 
   private tokenize(text: string): string[] {
-    return text
-      .replace(/[^\p{L}\p{N}\s/.\\-_]/gu, " ")
-      .split(/\s+/)
-      .filter((t) => t.length > 1)
-      .map((t) => stem(t));
+    const cleaned = text.replace(/[^\p{L}\p{N}\s/.\\-_]/gu, " ");
+    const out: string[] = [];
+    for (const raw of cleaned.split(/\s+/)) {
+      if (raw.length < 2) continue;
+      if (hasCjk(raw)) {
+        for (const seg of segmentCjk(raw)) {
+          if (seg.length >= 1) out.push(seg);
+        }
+      } else {
+        out.push(stem(raw));
+      }
+    }
+    return out;
   }
 
   private getSortedTerms(): string[] {

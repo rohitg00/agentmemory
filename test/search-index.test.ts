@@ -153,4 +153,52 @@ describe("SearchIndex", () => {
     expect(results.length).toBe(1);
     expect(results[0].obsId).toBe("obs_mixed");
   });
+
+  it("segments Chinese (Han) text into words", () => {
+    index.add(
+      makeObs({
+        id: "obs_zh",
+        title: "项目记忆存储",
+        narrative: "我们正在测试中文分词",
+        concepts: ["项目", "记忆"],
+      }),
+    );
+    const results = index.search("项目");
+    expect(results.length).toBeGreaterThan(0);
+    const hit = results.find((r) => r.obsId === "obs_zh");
+    expect(hit).toBeDefined();
+    expect(hit!.score).toBeGreaterThan(0);
+  });
+
+  it("segments Japanese (kana + kanji) text into words", () => {
+    index.add(
+      makeObs({
+        id: "obs_ja",
+        title: "プロジェクト記憶",
+        narrative: "日本語の分かち書きをテストしています",
+        concepts: ["プロジェクト", "記憶"],
+      }),
+    );
+    const results = index.search("プロジェクト");
+    expect(results.length).toBeGreaterThan(0);
+    const hit = results.find((r) => r.obsId === "obs_ja");
+    expect(hit).toBeDefined();
+    expect(hit!.score).toBeGreaterThan(0);
+  });
+
+  it("segments Korean (Hangul) syllable blocks into words", () => {
+    index.add(
+      makeObs({
+        id: "obs_ko",
+        title: "프로젝트 메모리 저장소",
+        narrative: "한국어 검색을 테스트합니다",
+        concepts: ["프로젝트", "메모리"],
+      }),
+    );
+    const results = index.search("메모리");
+    expect(results.length).toBeGreaterThan(0);
+    const hit = results.find((r) => r.obsId === "obs_ko");
+    expect(hit).toBeDefined();
+    expect(hit!.score).toBeGreaterThan(0);
+  });
 });
