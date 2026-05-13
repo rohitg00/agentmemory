@@ -28,6 +28,43 @@ const DEFAULT_IGNORE = [
 
 const MAX_PREVIEW_BYTES = 4096;
 const DEBOUNCE_MS = 500;
+const REDACTED = "[REDACTED]";
+
+function isDotEnvPath(path) {
+  const name = basename(path).toLowerCase();
+  return name === ".env" || name.startsWith(".env.");
+}
+
+function isSensitiveKey(key) {
+  const normalized = key.replace(/[^a-z0-9]/gi, "").toLowerCase();
+  return [
+    "apikey",
+    "accesstoken",
+    "accesskey",
+    "authorization",
+    "bearer",
+    "clientsecret",
+    "password",
+    "passwd",
+    "privatekey",
+    "pwd",
+    "secret",
+    "token",
+  ].some((needle) => normalized.includes(needle));
+}
+
+function redactSensitiveLine(line) {
+  const assignment = line.match(/^(\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_.-]*)\s*([=:])\s*)(.*)$/);
+  if (assignment && isSensitiveKey(assignment[2])) {
+    const bearer = assignment[3] === ":" ? assignment[4].match(/^(Bearer\s+).+/i) : null;
+    return `${assignment[1]}${bearer ? bearer[1] : ""}${REDACTED}`;
+  }
+  return line.replace(/\b(Bearer\s+)[A-Za-z0-9._~+/=-]{8,}\b/gi, `$1${REDACTED}`);
+}
+
+function redactSensitivePreview(preview) {
+  return preview.split("\n").map(redactSensitiveLine).join("\n");
+}
 
 export class FilesystemWatcher {
   constructor(config = {}) {
@@ -54,7 +91,7 @@ export class FilesystemWatcher {
   isTextFile(path) {
     if (this.allowBinary) return true;
     const ext = extname(path).toLowerCase();
-    return TEXT_EXTENSIONS.has(ext);
+    return TEXT_EXTENSIONS.has(ext) || isDotEnvPath(path);
   }
 
   async readPreview(path) {
@@ -121,6 +158,7 @@ export class FilesystemWatcher {
     let preview = null;
     if (exists && this.isTextFile(absPath)) {
       preview = await this.readPreview(absPath);
+      if (preview !== null) preview = redactSensitivePreview(preview);
     }
     const truncated = exists && size > MAX_PREVIEW_BYTES;
     const payload = {
