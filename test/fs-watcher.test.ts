@@ -171,6 +171,31 @@ describe("FilesystemWatcher", () => {
     expect(content).not.toContain("live-token-value");
   });
 
+  it("redacts quoted JSON-style sensitive keys before sending observations", async () => {
+    writeFileSync(
+      join(root, "settings.json"),
+      [
+        '{',
+        '  "api_key": "json-preview-secret",',
+        '  "public_flag": "enabled"',
+        '}',
+      ].join("\n"),
+    );
+    const w = new FilesystemWatcher({
+      roots: [root],
+      baseUrl: "http://localhost:3111",
+      logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+    });
+
+    await w.flush(root, "settings.json");
+
+    expect(captured).toHaveLength(1);
+    const content = (captured[0].body as { data: { content: string } }).data.content;
+    expect(content).toContain('"api_key": [REDACTED]');
+    expect(content).toContain('"public_flag": "enabled"');
+    expect(content).not.toContain("json-preview-secret");
+  });
+
   it("redacts bearer tokens from regular text previews before sending observations", async () => {
     writeFileSync(join(root, "request.txt"), "Authorization: Bearer plaintext-token-value\n");
     const w = new FilesystemWatcher({

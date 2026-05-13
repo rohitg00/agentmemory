@@ -54,7 +54,9 @@ function isSensitiveKey(key) {
 }
 
 function redactSensitiveLine(line) {
-  const assignment = line.match(/^(\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_.-]*)\s*([=:])\s*)(.*)$/);
+  const assignment = line.match(
+    /^(\s*(?:export\s+)?["']?([A-Za-z_][A-Za-z0-9_.-]*)["']?\s*([=:])\s*)(.*)$/,
+  );
   if (assignment && isSensitiveKey(assignment[2])) {
     const bearer = assignment[3] === ":" ? assignment[4].match(/^(Bearer\s+).+/i) : null;
     return `${assignment[1]}${bearer ? bearer[1] : ""}${REDACTED}`;
