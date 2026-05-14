@@ -8,11 +8,9 @@ services:
         III_VERSION: "0.11.2"
     restart: unless-stopped
     environment:
-      AGENTMEMORY_REQUIRE_HTTPS: "1"
-      AGENTMEMORY_HMAC_FILE: /data/.hmac
-      AGENTMEMORY_DATA_DIR: /data
-    ports:
-      - "3111:3111"
+      - SERVICE_FQDN_AGENTMEMORY_3111
+    expose:
+      - "3111"
     volumes:
       - agentmemory-data:/data
     healthcheck:

@@ -12,9 +12,9 @@ logs exactly once.
 - `auto_stop_machines = "stop"` and `min_machines_running = 0` — the
   machine sleeps when idle, so cost floor approaches $0 for low traffic
 - HTTP healthcheck at `/agentmemory/livez` every 30 s
-- `AGENTMEMORY_REQUIRE_HTTPS=1` by default — clients that try to send
-  the bearer token over plaintext HTTP will refuse, matching the
-  v0.9.12 guard
+- The HMAC bearer secret is generated on first boot inside the
+  container and persisted to `/data/.hmac` (chmod 600); the operator
+  copies it from the deploy logs once.
 
 ## One-time setup
 

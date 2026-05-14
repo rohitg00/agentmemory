@@ -12,9 +12,9 @@ services:
       mountPath: /data
       sizeGB: 1
     envVars:
-      - key: AGENTMEMORY_REQUIRE_HTTPS
-        value: "1"
-      - key: AGENTMEMORY_HMAC_FILE
-        value: /data/.hmac
-      - key: AGENTMEMORY_DATA_DIR
-        value: /data
+      - key: PORT
+        value: "3111"
+      - key: AGENTMEMORY_VERSION
+        value: "0.9.12"
+      - key: III_VERSION
+        value: "0.11.2"

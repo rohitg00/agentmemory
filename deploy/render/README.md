@@ -8,14 +8,20 @@ logs exactly once.
 ## What you get
 
 - A public HTTPS endpoint serving the agentmemory REST API on port 3111
+  (Render injects `PORT` defaulting to 10000; we override it to 3111
+  via `envVars` so the published port matches the container's bind)
 - A 1 GB persistent disk at `/data` for memories, BM25 index, and
   stream backlog
 - Render healthcheck against `/agentmemory/livez`
-- `AGENTMEMORY_REQUIRE_HTTPS=1` by default — clients that try to send
-  the bearer token over plaintext HTTP refuse, matching the v0.9.12
-  guard
+- The HMAC bearer secret is generated on first boot inside the
+  container and persisted to `/data/.hmac` (chmod 600); the operator
+  copies it from the deploy logs once.
 
 ## Deploy via Render Blueprint
+
+Render's one-click deploy button only auto-detects `render.yaml` at the
+repository root, which the agentmemory repo keeps clean. Use the
+dashboard's manual Blueprint flow instead:
 
 1. Push the `deploy/render/` directory to a Git provider Render can
    reach (a fork of `rohitg00/agentmemory` works).

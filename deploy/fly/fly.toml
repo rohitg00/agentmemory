@@ -39,11 +39,6 @@ primary_region = "iad"
     method = "GET"
     path = "/agentmemory/livez"
 
-[env]
-  AGENTMEMORY_REQUIRE_HTTPS = "1"
-  AGENTMEMORY_HMAC_FILE = "/data/.hmac"
-  AGENTMEMORY_DATA_DIR = "/data"
-
 [[vm]]
   size = "shared-cpu-1x"
   memory = "512mb"

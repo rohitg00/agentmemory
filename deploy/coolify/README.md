@@ -8,16 +8,16 @@ provisioning, log aggregation, and the deploy webhook for you.
 
 ## What you get
 
-- A public HTTPS endpoint serving the agentmemory REST API on port 3111
-  (Coolify proxies TLS via Traefik or Caddy, your choice in the
-  instance settings)
+- A public HTTPS endpoint serving the agentmemory REST API behind
+  Coolify's built-in Traefik/Caddy proxy. The container port (`3111`)
+  is exposed to the proxy network only — never bound to the host — so
+  TLS termination and domain routing stay under proxy control.
 - A persistent Docker volume backing `/data` for memories, BM25 index,
-  and stream backlog
-- An HTTP health-check at `/agentmemory/livez` configured directly in
-  the Dockerfile (`HEALTHCHECK` directive) — Coolify reuses it for
-  rolling-deploy decisions
-- `AGENTMEMORY_REQUIRE_HTTPS=1` baked in so integration plugins refuse
-  to send the bearer token over plaintext HTTP to a non-loopback host
+  and stream backlog. Coolify auto-prefixes the volume name with the
+  application's UUID so the data survives redeploys.
+- An HTTP health-check at `/agentmemory/livez` declared in the
+  Dockerfile (`HEALTHCHECK` directive). Coolify reuses it for
+  rolling-deploy decisions.
 
 ## One-time setup
 
@@ -30,12 +30,17 @@ provisioning, log aggregation, and the deploy webhook for you.
 3. **Build Pack**: select *Docker Compose*.
 4. **Base Directory**: `deploy/coolify`
 5. **Compose Path**: `docker-compose.yml`
-6. Click **Save** then **Deploy**.
+6. Click **Save**, then on the application settings screen set a
+   **Domain** in the form `https://<your-fqdn>:3111` (the `:3111`
+   suffix tells Coolify's proxy which container port to forward to;
+   it still serves over 443/80 publicly).
+7. Click **Deploy**.
 
 That's it. Coolify clones the repo, builds the Dockerfile under
 `deploy/coolify/`, provisions the `agentmemory-data` named volume on
 the host, attaches Traefik (or Caddy) for the public domain, and starts
-the service.
+the service. The container is reachable only through the proxy — there
+is no published host port.
 
 ## Capture the HMAC secret
 

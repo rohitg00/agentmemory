@@ -11,9 +11,12 @@ deploy logs and copy it into your client.
 - A persistent Railway Volume at `/data` for memories, BM25 index, and
   stream backlog
 - Railway healthcheck against `/agentmemory/livez`
-- `AGENTMEMORY_REQUIRE_HTTPS=1` by default — clients that try to send
-  the bearer token over plaintext HTTP refuse, matching the v0.9.12
-  guard
+- The HMAC bearer secret is generated on first boot inside the
+  container and persisted to `/data/.hmac` (chmod 600); the operator
+  copies it from the deploy logs once.
+- The deploy uses `requiredMountPath: /data` so Railway refuses to
+  start the service if no volume is attached at that path — first
+  deploy must create the volume from the dashboard.
 
 ## Deploy via Railway dashboard
 
