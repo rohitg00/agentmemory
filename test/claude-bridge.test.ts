@@ -9,6 +9,14 @@ vi.mock("node:fs", () => ({
   readFileSync: vi.fn(),
   writeFileSync: vi.fn(),
   mkdirSync: vi.fn(),
+  constants: {
+    O_WRONLY: 1,
+    O_CREAT: 2,
+    O_TRUNC: 4,
+    O_NOFOLLOW: 8,
+  },
+  openSync: vi.fn().mockReturnValue(123),
+  closeSync: vi.fn(),
 }));
 
 vi.mock("node:path", async () => ({
@@ -17,7 +25,7 @@ vi.mock("node:path", async () => ({
 }));
 
 import { registerClaudeBridgeFunction } from "../src/functions/claude-bridge.js";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, openSync, closeSync } from "node:fs";
 import type { ClaudeBridgeConfig, Memory } from "../src/types.js";
 
 function mockKV() {
@@ -148,8 +156,11 @@ describe("Claude Bridge Functions", () => {
 
     expect(result.success).toBe(true);
     expect(result.path).toBe("/tmp/.claude/MEMORY.md");
-    expect(writeFileSync).toHaveBeenCalled();
+    expect(openSync).toHaveBeenCalled();
+    expect(writeFileSync).toHaveBeenCalledWith(123, expect.any(String), "utf-8");
+    expect(closeSync).toHaveBeenCalledWith(123);
     const writtenContent = vi.mocked(writeFileSync).mock.calls[0][1] as string;
+
     expect(writtenContent).toContain("Auth pattern");
   });
 

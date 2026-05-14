@@ -1,5 +1,5 @@
 import type { ISdk } from "iii-sdk";
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, existsSync, constants, openSync, closeSync } from "node:fs";
 import { dirname } from "node:path";
 import type { Memory, ClaudeBridgeConfig } from "../types.js";
 import { KV } from "../state/schema.js";
@@ -139,8 +139,15 @@ export function registerClaudeBridgeFunction(
         if (!existsSync(dir)) {
           mkdirSync(dir, { recursive: true });
         }
-        writeFileSync(config.memoryFilePath, md, "utf-8");
-
+        const fd = openSync(
+          config.memoryFilePath,
+          constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | constants.O_NOFOLLOW,
+        );
+        try {
+          writeFileSync(fd, md, "utf-8");
+        } finally {
+          closeSync(fd);
+        }
         await recordAudit(kv, "export", "mem::claude-bridge-sync", [], {
           path: config.memoryFilePath,
           memoryCount: latestMemories.length,
