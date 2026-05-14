@@ -5,12 +5,15 @@ export function fetchWithTimeout(
   init: RequestInit,
   timeoutMs?: number,
 ): Promise<Response> {
-  const ms =
+  const parsed =
     timeoutMs ??
-    parseInt(getEnvVar("AGENTMEMORY_LLM_TIMEOUT_MS") ?? "60000", 10);
+    Number.parseInt(getEnvVar("AGENTMEMORY_LLM_TIMEOUT_MS") ?? "60000", 10);
+  const ms = Number.isFinite(parsed) && parsed > 0 ? parsed : 60000;
+
   const ctl = new AbortController();
+  const signal = init.signal
+    ? AbortSignal.any([init.signal, ctl.signal])
+    : ctl.signal;
   const t = setTimeout(() => ctl.abort(), ms);
-  return fetch(url, { ...init, signal: ctl.signal }).finally(() =>
-    clearTimeout(t),
-  );
+  return fetch(url, { ...init, signal }).finally(() => clearTimeout(t));
 }
