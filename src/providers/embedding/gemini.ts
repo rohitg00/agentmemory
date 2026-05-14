@@ -55,11 +55,23 @@ export class GeminiEmbeddingProvider implements EmbeddingProvider {
   }
 }
 
+let zeroNormWarned = false;
+
 function l2Normalize(vec: Float32Array): Float32Array {
   let sum = 0;
   for (let i = 0; i < vec.length; i++) sum += vec[i]! * vec[i]!;
   const norm = Math.sqrt(sum);
-  if (norm === 0) return vec;
+  if (norm === 0) {
+    if (!zeroNormWarned) {
+      zeroNormWarned = true;
+      process.stderr.write(
+        `[agentmemory] warn: gemini-embedding-001 returned a zero-norm ` +
+          `embedding (length=${vec.length}); leaving it un-normalized. ` +
+          `Subsequent zero-norm vectors will not be reported.\n`,
+      );
+    }
+    return vec;
+  }
   for (let i = 0; i < vec.length; i++) vec[i] = vec[i]! / norm;
   return vec;
 }
