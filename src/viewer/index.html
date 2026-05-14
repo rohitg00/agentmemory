@@ -1039,6 +1039,23 @@
       if (!s) return '';
       return s.length > n ? s.slice(0, n) + '...' : s;
     }
+    function sessionId(s) {
+      return s && s.id !== undefined && s.id !== null ? String(s.id) : '';
+    }
+    function shortSessionId(s, n) {
+      var id = sessionId(s);
+      return id ? id.slice(0, n || 8) : '';
+    }
+    function sessionDisplayName(s) {
+      var project = s && s.project ? String(s.project).split('/').pop() : '';
+      if (project) return project;
+      return shortSessionId(s, 8) || 'Unknown session';
+    }
+    function sessionLabel(s) {
+      var id = shortSessionId(s, 8);
+      var name = sessionDisplayName(s);
+      return id ? name + ' (' + id + ')' : name + ' (missing id)';
+    }
     function debounce(fn, ms) {
       var t;
       return function() {
@@ -1278,7 +1295,7 @@
         html += '<table><tr><th>Project</th><th>Status</th><th>Obs</th><th>Started</th></tr>';
         recent.forEach(function(s) {
           var statusBadge = s.status === 'active' ? 'badge-green' : s.status === 'completed' ? 'badge-blue' : 'badge-muted';
-          html += '<tr><td style="color:var(--ink);font-weight:500;">' + esc(s.project ? s.project.split('/').pop() : s.id.slice(0,8)) + '</td>';
+          html += '<tr><td style="color:var(--ink);font-weight:500;">' + esc(sessionDisplayName(s)) + '</td>';
           html += '<td><span class="badge ' + statusBadge + '">' + esc(s.status) + '</span></td>';
           html += '<td style="color:var(--ink-muted);font-family:var(--font-mono);font-size:12px;">' + (s.observationCount || 0) + '</td>';
           html += '<td style="font-family:var(--font-mono);font-size:11px;color:var(--ink-faint);">' + esc(shortTime(s.startedAt)) + '</td></tr>';
@@ -2204,8 +2221,9 @@
       var html = '<div class="toolbar">';
       html += '<select id="tl-session"><option value="">Select session</option>';
       sessions.sort(function(a, b) { return (b.startedAt || '').localeCompare(a.startedAt || ''); }).forEach(function(s) {
-        var label = (s.project ? s.project.split('/').pop() : s.id.slice(0,8)) + ' (' + s.id.slice(0,8) + ')';
-        html += '<option value="' + esc(s.id) + '"' + (state.timeline.sessionId === s.id ? ' selected' : '') + '>' + esc(label) + '</option>';
+        var id = sessionId(s);
+        var disabled = id ? '' : ' disabled';
+        html += '<option value="' + esc(id) + '"' + (id && state.timeline.sessionId === id ? ' selected' : '') + disabled + '>' + esc(sessionLabel(s)) + '</option>';
       });
       html += '</select>';
       html += '<select id="tl-importance"><option value="0">All importance</option>';
@@ -2421,8 +2439,8 @@
       var sorted = sessions.slice().sort(function(a, b) { return (b.startedAt || '').localeCompare(a.startedAt || ''); });
       var recentSessions = sorted.slice(0, 5);
 
-      var obsResults = await Promise.all(recentSessions.map(function(s) {
-        return apiGet('observations?sessionId=' + encodeURIComponent(s.id));
+      var obsResults = await Promise.all(recentSessions.filter(function(s) { return sessionId(s); }).map(function(s) {
+        return apiGet('observations?sessionId=' + encodeURIComponent(sessionId(s)));
       }));
       obsResults.forEach(function(r) {
         if (r && r.observations) allObs = allObs.concat(r.observations);
@@ -2565,15 +2583,16 @@
       } else {
         items.forEach(function(s) {
           var statusBadge = s.status === 'active' ? 'badge-green' : s.status === 'completed' ? 'badge-blue' : 'badge-muted';
-          var selected = state.sessions.selectedId === s.id;
-          html += '<div class="session-item' + (selected ? ' selected' : '') + '" data-action="select-session" data-session-id="' + esc(s.id) + '">';
-          html += '<div class="session-top"><span class="session-project">' + esc(s.project ? s.project.split('/').pop() : 'Unknown') + '</span>';
+          var id = sessionId(s);
+          var selected = id && state.sessions.selectedId === id;
+          html += '<div class="session-item' + (selected ? ' selected' : '') + '"' + (id ? ' data-action="select-session" data-session-id="' + esc(id) + '"' : '') + '>';
+          html += '<div class="session-top"><span class="session-project">' + esc(sessionDisplayName(s)) + '</span>';
           html += '<span class="badge ' + statusBadge + '">' + esc(s.status) + '</span></div>';
           var preview = s.firstPrompt || s.summary || '';
           if (preview) {
             html += '<div class="session-preview" style="font-size:13px;color:var(--ink);margin:4px 0;line-height:1.4;">' + esc(truncate(preview, 140)) + '</div>';
           }
-          html += '<div class="session-meta">' + esc(s.id.slice(0, 12)) + ' &middot; ' + esc(formatTime(s.startedAt));
+          html += '<div class="session-meta">' + esc(shortSessionId(s, 12) || 'missing id') + ' &middot; ' + esc(formatTime(s.startedAt));
           html += ' &middot; ' + (s.observationCount || 0) + ' obs';
           if (s.model) html += ' &middot; ' + esc(s.model);
           html += '</div></div>';
@@ -2672,7 +2691,8 @@
 
       html += '<div class="card" style="margin-bottom:12px;"><div class="card-title">Metadata</div>';
       html += '<div style="font-size:12px;font-family:var(--font-mono);margin-top:8px;line-height:1.7;">';
-      html += '<div><span style="color:var(--ink-muted);">id:</span> ' + esc(s.id) + '</div>';
+      var detailId = sessionId(s);
+      html += '<div><span style="color:var(--ink-muted);">id:</span> ' + esc(detailId || 'missing id') + '</div>';
       html += '<div><span style="color:var(--ink-muted);">cwd:</span> ' + esc(s.cwd || '-') + '</div>';
       html += '<div><span style="color:var(--ink-muted);">started:</span> ' + esc(formatTime(s.startedAt)) + '</div>';
       if (s.endedAt) html += '<div><span style="color:var(--ink-muted);">ended:</span> ' + esc(formatTime(s.endedAt)) + '</div>';
@@ -2681,10 +2701,14 @@
       html += '</div></div>';
 
       html += '<div style="display:flex;gap:8px;">';
-      if (s.status === 'active') {
-        html += '<button class="btn btn-danger" data-action="end-session" data-session-id="' + esc(s.id) + '">End Session</button>';
+      if (detailId && s.status === 'active') {
+        html += '<button class="btn btn-danger" data-action="end-session" data-session-id="' + esc(detailId) + '">End Session</button>';
       }
-      html += '<button class="btn btn-primary" data-action="summarize-session" data-session-id="' + esc(s.id) + '">Summarize</button>';
+      if (detailId) {
+        html += '<button class="btn btn-primary" data-action="summarize-session" data-session-id="' + esc(detailId) + '">Summarize</button>';
+      } else {
+        html += '<button class="btn btn-primary" disabled>Summarize unavailable</button>';
+      }
       html += '</div></div>';
       panel.innerHTML = html;
     }
@@ -3587,8 +3611,9 @@
       var el = document.getElementById('view-replay');
       var sessions = state.replay.sessions || [];
       var options = '<option value="">— pick a session —</option>' + sessions.map(function(s) {
-        var label = (s.project || 'unknown') + ' · ' + (s.id || '').slice(0, 8) + ' · ' + (s.observationCount || 0) + ' obs';
-        return '<option value="' + esc(s.id) + '"' + (s.id === state.replay.selectedId ? ' selected' : '') + '>' + esc(label) + '</option>';
+        var id = sessionId(s);
+        var label = sessionDisplayName(s) + ' · ' + (shortSessionId(s, 8) || 'missing id') + ' · ' + (s.observationCount || 0) + ' obs';
+        return '<option value="' + esc(id) + '"' + (id && id === state.replay.selectedId ? ' selected' : '') + (id ? '' : ' disabled') + '>' + esc(label) + '</option>';
       }).join('');
 
       var tl = state.replay.timeline;
