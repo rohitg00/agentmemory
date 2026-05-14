@@ -1,12 +1,20 @@
 services:
+  init:
+    # chown the named volume to uid 1000 so the (non-root) agentmemory
+    # container can write /data.
+    image: busybox:1.36
+    user: "0:0"
+    volumes:
+      - agentmemory-data:/data
+    entrypoint: ["sh", "-c", "chown -R 1000:1000 /data && chmod 755 /data"]
+    restart: "no"
+
   agentmemory:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      args:
-        AGENTMEMORY_VERSION: "0.9.12"
-        III_VERSION: "0.11.2"
-        III_SDK_VERSION: "0.11.2"
+    # Pin to a semver tag for reproducible deploys; bump deliberately.
+    image: ghcr.io/rohitg00/agentmemory:0.9.12
+    depends_on:
+      init:
+        condition: service_completed_successfully
     restart: unless-stopped
     environment:
       - SERVICE_FQDN_AGENTMEMORY_3111

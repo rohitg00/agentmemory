@@ -1,10 +1,7 @@
 {
   "$schema": "https://railway.com/railway.schema.json",
-  "build": {
-    "builder": "DOCKERFILE",
-    "dockerfilePath": "deploy/railway/Dockerfile"
-  },
   "deploy": {
+    "image": "ghcr.io/rohitg00/agentmemory:latest",
     "numReplicas": 1,
     "healthcheckPath": "/agentmemory/livez",
     "healthcheckTimeout": 30,
