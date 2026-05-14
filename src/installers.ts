@@ -34,7 +34,7 @@ function stripJsonComments(input: string): string {
   let escaped = false;
   for (let i = 0; i < input.length; i += 1) {
     const ch = input[i]!;
-    const next = input[i + 1]!;
+    const next = i + 1 < input.length ? input[i + 1] : undefined;
     if (inString) {
       output += ch;
       if (escaped) {
@@ -51,15 +51,22 @@ function stripJsonComments(input: string): string {
       output += ch;
       continue;
     }
-    if (ch === "/" && next === "/") {
+    if (next && ch === "/" && next === "/") {
       while (i < input.length && input[i] !== "\n") i += 1;
       if (i < input.length) output += "\n";
       continue;
     }
-    if (ch === "/" && next === "*") {
+    if (next && ch === "/" && next === "*") {
       i += 2;
-      while (i < input.length && !(input[i] === "*" && input[i + 1] === "/")) i += 1;
-      i += 1;
+      while (i < input.length) {
+        const curr = input[i];
+        const following = i + 1 < input.length ? input[i + 1] : undefined;
+        if (curr === "*" && following === "/") {
+          i += 1;
+          break;
+        }
+        i += 1;
+      }
       continue;
     }
     output += ch;
@@ -126,12 +133,13 @@ function generateOpenCodePlugin(packageRoot: string): string {
   const promptScript = commandScript(packageRoot, "prompt-submit.mjs");
   const postToolScript = commandScript(packageRoot, "post-tool-use.mjs");
   const stopScript = commandScript(packageRoot, "session-end.mjs");
-  return `export const AgentmemoryPlugin = async ({ $ }) => ({
+  return `export const AgentmemoryPlugin = async ({ $ }) => {
   let sessionId = '';
   const getSessionId = () => {
     if (!sessionId) sessionId = 'opencode-' + Date.now().toString(36);
     return sessionId;
   };
+  return {
   event: async ({ event }) => {
     if (event.type === 'session.created') {
       sessionId = getSessionId();
@@ -152,7 +160,8 @@ function generateOpenCodePlugin(packageRoot: string): string {
       await $\`${promptScript}\`.stdin(JSON.stringify({ session_id: getSessionId(), cwd: process.cwd(), prompt: output.message })).quiet().nothrow();
     }
   }
-});
+  };
+};
 `;
 }
 

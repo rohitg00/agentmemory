@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { installTarget } from "../src/installers.js";
@@ -59,14 +59,14 @@ describe("installTarget", () => {
     const root = tempRoot();
     const cursorDir = join(root, ".cursor");
     const kiloDir = join(root, ".kilo");
-    require("node:fs").mkdirSync(cursorDir, { recursive: true });
-    require("node:fs").mkdirSync(kiloDir, { recursive: true });
-    require("node:fs").writeFileSync(
+    mkdirSync(cursorDir, { recursive: true });
+    mkdirSync(kiloDir, { recursive: true });
+    writeFileSync(
       join(cursorDir, "mcp.json"),
       '{\n  // comment\n  "mcpServers": {\n    "existing": {"command": "foo"}\n  }\n}\n',
       "utf8",
     );
-    require("node:fs").writeFileSync(
+    writeFileSync(
       join(kiloDir, "kilo.jsonc"),
       '{\n  // comment\n  "mcp": {\n    "existing": {"type": "local", "command": ["foo"]}\n  }\n}\n',
       "utf8",
@@ -85,13 +85,13 @@ describe("installTarget", () => {
 
   it("reuses native .jsonc paths when they already exist", () => {
     const root = tempRoot();
-    require("node:fs").writeFileSync(
+    writeFileSync(
       join(root, "opencode.jsonc"),
       '{\n  // comment\n  "mcp": {"existing": {"type": "local", "command": ["foo"]}}\n}\n',
       "utf8",
     );
-    require("node:fs").mkdirSync(join(root, ".kilo"), { recursive: true });
-    require("node:fs").writeFileSync(
+    mkdirSync(join(root, ".kilo"), { recursive: true });
+    writeFileSync(
       join(root, "kilo.jsonc"),
       '{\n  // comment\n  "mcp": {"existing": {"type": "local", "command": ["foo"]}}\n}\n',
       "utf8",
