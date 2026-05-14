@@ -18,3 +18,5 @@ services:
         value: "0.9.12"
       - key: III_VERSION
         value: "0.11.2"
+      - key: III_SDK_VERSION
+        value: "0.11.2"

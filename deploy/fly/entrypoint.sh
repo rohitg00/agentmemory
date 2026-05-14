@@ -18,7 +18,7 @@ set -eu
 DATA_DIR="${AGENTMEMORY_DATA_DIR:-/data}"
 HMAC_FILE="${AGENTMEMORY_HMAC_FILE:-/data/.hmac}"
 RUN_AS="node:node"
-III_CONFIG="/usr/local/lib/node_modules/@agentmemory/agentmemory/dist/iii-config.yaml"
+III_CONFIG="/opt/agentmemory/node_modules/@agentmemory/agentmemory/dist/iii-config.yaml"
 
 mkdir -p "$DATA_DIR"
 chown -R "$RUN_AS" "$DATA_DIR"
