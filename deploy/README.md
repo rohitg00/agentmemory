@@ -50,7 +50,51 @@ exec'ing the agentmemory CLI.
   control plane — same Docker Compose stack, no third-party host has
   your memories.
 
-All three give you the same agentmemory API at the same port (3111)
+All four give you the same agentmemory API at the same port (3111)
 with the same auth model. Migrating between them later is a `tar` of
 `/data` and a re-import — see each platform's README for the exact
 commands.
+
+## Optional: LLM + embedding provider keys
+
+Every template runs out of the box without any LLM or embedding key —
+search falls back to BM25-only mode and synthetic (zero-LLM)
+compression keeps memories indexable. To unlock LLM-powered
+compression and hybrid (BM25 + vector) recall, add one of the
+following to your platform's environment variables (Fly:
+`flyctl secrets set`; Railway / Render / Coolify: dashboard
+*Variables / Environment* tab):
+
+| Variable                  | Purpose                                                  |
+|---------------------------|----------------------------------------------------------|
+| `ANTHROPIC_API_KEY`       | LLM-backed compression + summarization                   |
+| `GEMINI_API_KEY`          | LLM provider alternative                                 |
+| `OPENROUTER_API_KEY`      | LLM provider alternative                                 |
+| `OPENAI_API_KEY`          | Embedding provider (text-embedding-3-small by default)   |
+| `VOYAGE_API_KEY`          | Embedding provider alternative                           |
+| `AGENTMEMORY_AUTO_COMPRESS=true` | Run LLM compression on every observation batch    |
+| `AGENTMEMORY_INJECT_CONTEXT=true` | Inject recalled memories back into agent prompts |
+
+The defaults are intentionally conservative: provider keys default to
+absent (no third-party calls), `AGENTMEMORY_AUTO_COMPRESS` is off,
+and `AGENTMEMORY_INJECT_CONTEXT` is off. Opt in only after you've
+confirmed your provider quota can absorb the workload.
+
+## Cold-start budget
+
+Measured against fly.io's `iad` region with a 1 GB volume:
+
+```
+machine image prepared :  5.1 s
+volume mount + format  :  2.5 s
+firecracker boot       :  1.0 s
+entrypoint + chown     :  0.5 s
+iii-engine ready       :  3.0 s
+agentmemory worker reg :  2.0 s
+─────────────────────────────────
+healthcheck passes     : ~9-10 s
+```
+
+Every template's health-check `grace_period` (or compose
+`start_period`) is set to 30 s for a 3x safety margin. Tune lower
+once you've measured your own platform's image-pull characteristics.

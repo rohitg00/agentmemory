@@ -119,8 +119,14 @@ See <https://fly.io/docs/about/pricing/> for the up-to-date rate card.
   second volume in another region and update `primary_region` after the
   failover, or take snapshots with `fly volumes snapshots create`.
 - The Dockerfile builds in the Fly Builder on every deploy — first
-  deploy takes ~2 minutes while npm + the iii binary download. Cached
-  layers shrink subsequent rebuilds to under 30 seconds.
+  build is ~30 seconds; cached layers shrink rebuilds to under 10
+  seconds. Image is ~114 MB.
+- First deploy lands on a **shared IPv4 + dedicated IPv6** by default
+  (free). If you need a dedicated IPv4 for legacy clients without SNI,
+  run `fly ips allocate-v4 --app "$APP"` — costs $2/month.
+- Cold-start (from machine launch to passing `/agentmemory/livez`) is
+  ~9 seconds measured. `grace_period = "30s"` on the health check
+  gives a 3x safety margin.
 - Bump `AGENTMEMORY_VERSION` or `III_VERSION` in the Dockerfile to
   upgrade. `fly deploy --build-arg AGENTMEMORY_VERSION=<x>` also works
   for a one-off without editing the file.

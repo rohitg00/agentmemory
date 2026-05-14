@@ -35,7 +35,7 @@ primary_region = "iad"
   [[http_service.checks]]
     interval = "30s"
     timeout = "5s"
-    grace_period = "10s"
+    grace_period = "30s"
     method = "GET"
     path = "/agentmemory/livez"
 
