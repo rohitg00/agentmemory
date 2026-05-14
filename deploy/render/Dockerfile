@@ -25,7 +25,8 @@ RUN printf '{"name":"agentmemory-deploy","version":"1.0.0","private":true,"overr
  && npm install "@agentmemory/agentmemory@${AGENTMEMORY_VERSION}" --omit=optional --no-fund --no-audit \
  && ln -s /opt/agentmemory/node_modules/.bin/agentmemory /usr/local/bin/agentmemory
 
-ENV AGENTMEMORY_III_VERSION=${III_VERSION}
+ENV AGENTMEMORY_III_VERSION=${III_VERSION} \
+    TINI_SUBREAPER=1
 
 COPY --chmod=0755 entrypoint.sh /usr/local/bin/agentmemory-entrypoint.sh
 
