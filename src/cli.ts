@@ -473,7 +473,13 @@ async function main() {
 
 async function apiFetch<T = unknown>(base: string, path: string, timeoutMs = 5000): Promise<T | null> {
   try {
-    const res = await fetch(`${base}/agentmemory/${path}`, { signal: AbortSignal.timeout(timeoutMs) });
+    const headers: Record<string, string> = {};
+    const secret = process.env["AGENTMEMORY_SECRET"];
+    if (secret) headers["Authorization"] = `Bearer ${secret}`;
+    const res = await fetch(`${base}/agentmemory/${path}`, {
+      signal: AbortSignal.timeout(timeoutMs),
+      headers,
+    });
     return (await res.json()) as T;
   } catch {
     return null;
