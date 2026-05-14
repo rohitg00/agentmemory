@@ -1013,6 +1013,13 @@ Create `~/.agentmemory/.env`:
 # OPENAI_EMBEDDING_MODEL=text-embedding-3-small
 # OPENAI_EMBEDDING_DIMENSIONS=1536        # Required when the model is not in the known-models table
 
+# Outbound LLM / embedding timeout
+# AGENTMEMORY_LLM_TIMEOUT_MS=60000       # Default: 60 000 ms (60 s). Applies to every
+                                          # raw-fetch provider (Gemini, OpenRouter, MiniMax,
+                                          # OpenAI/Cohere/Voyage/OpenRouter embedding).
+                                          # Increase for slow networks or large batch calls;
+                                          # decrease to fail-fast on rate-limit holds.
+
 # Search tuning
 # BM25_WEIGHT=0.4
 # VECTOR_WEIGHT=0.6

@@ -1,5 +1,6 @@
 import type { EmbeddingProvider } from "../../types.js";
 import { getEnvVar } from "../../config.js";
+import { fetchWithTimeout } from "../_fetch.js";
 
 const BATCH_LIMIT = 100;
 const MODEL = "models/gemini-embedding-001";
@@ -25,7 +26,7 @@ export class GeminiEmbeddingProvider implements EmbeddingProvider {
 
     for (let i = 0; i < texts.length; i += BATCH_LIMIT) {
       const chunk = texts.slice(i, i + BATCH_LIMIT);
-      const response = await fetch(`${API_BASE}?key=${this.apiKey}`, {
+      const response = await fetchWithTimeout(`${API_BASE}?key=${this.apiKey}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

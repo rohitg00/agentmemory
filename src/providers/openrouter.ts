@@ -1,4 +1,5 @@
 import type { MemoryProvider } from "../types.js";
+import { fetchWithTimeout } from "./_fetch.js";
 
 export class OpenRouterProvider implements MemoryProvider {
   name: string;
@@ -32,7 +33,7 @@ export class OpenRouterProvider implements MemoryProvider {
     systemPrompt: string,
     userPrompt: string,
   ): Promise<string> {
-    const response = await fetch(this.baseUrl, {
+    const response = await fetchWithTimeout(this.baseUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

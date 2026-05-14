@@ -1,5 +1,6 @@
 import type { EmbeddingProvider } from "../../types.js";
 import { getEnvVar } from "../../config.js";
+import { fetchWithTimeout } from "../_fetch.js";
 
 const DEFAULT_BASE_URL = "https://api.openai.com";
 const DEFAULT_MODEL = "text-embedding-3-small";
@@ -70,7 +71,7 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
 
   async embedBatch(texts: string[]): Promise<Float32Array[]> {
     const url = `${this.baseUrl}/v1/embeddings`;
-    const response = await fetch(url, {
+    const response = await fetchWithTimeout(url, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${this.apiKey}`,
