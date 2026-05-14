@@ -1,4 +1,5 @@
 import { MemoryGraph } from "./MemoryGraph";
+import { GitHubStarButton } from "./GitHubStarButton";
 import { getProjectMeta } from "@/lib/meta";
 import styles from "./Hero.module.css";
 
@@ -27,6 +28,7 @@ export function Hero() {
           <a href="#live" className="btn btn--ghost">
             SEE IT MOVE
           </a>
+          <GitHubStarButton repo="rohitg00/agentmemory" />
         </div>
       </div>
     </section>

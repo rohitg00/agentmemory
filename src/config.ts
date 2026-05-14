@@ -76,7 +76,7 @@ function detectProvider(env: Record<string, string>): ProviderConfig {
     }
     return {
       provider: "gemini",
-      model: env["GEMINI_MODEL"] || "gemini-2.0-flash",
+      model: env["GEMINI_MODEL"] || "gemini-2.5-flash",
       maxTokens,
     };
   }

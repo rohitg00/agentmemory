@@ -7,7 +7,7 @@ import { DedupMap } from "./dedup.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
 import { isAutoCompressEnabled } from "../config.js";
 import { buildSyntheticCompression } from "./compress-synthetic.js";
-import { getSearchIndex } from "./search.js";
+import { getSearchIndex, vectorIndexAddGuarded } from "./search.js";
 import { logger } from "../logger.js";
 
 export function extractImage(d: unknown): string | undefined {
@@ -238,6 +238,12 @@ export function registerObserveFunction(
             synthetic,
           );
           getSearchIndex().add(synthetic);
+          await vectorIndexAddGuarded(
+            synthetic.id,
+            synthetic.sessionId,
+            synthetic.title + " " + (synthetic.narrative || ""),
+            { kind: "synthetic", logId: synthetic.id },
+          );
           await sdk.trigger({
             function_id: "stream::set",
             payload: {

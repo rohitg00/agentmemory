@@ -2,6 +2,7 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "typebox";
 import path from "node:path";
 import crypto from "node:crypto";
+import { createPlaintextBearerAuthGuard } from "./security.js";
 
 type TextBlock = { type?: string; text?: string };
 type AssistantMessage = { role?: string; content?: unknown };
@@ -29,6 +30,7 @@ type HealthResponse = {
 };
 
 const DEFAULT_URL = process.env.AGENTMEMORY_URL || "http://localhost:3111";
+const guardPlaintextBearerAuth = createPlaintextBearerAuthGuard();
 const TOOL_GUIDANCE = [
   "agentmemory is available for cross-session memory.",
   "Use memory_search to recall prior decisions, preferences, bugs, and workflows.",
@@ -92,8 +94,10 @@ async function callAgentMemory<T>(
   const method = options?.method || "POST";
   const url = `${baseUrl}/agentmemory/${pathname.replace(/^\/+/, "")}`;
   const headers: Record<string, string> = {};
+  const secret = process.env.AGENTMEMORY_SECRET;
+  guardPlaintextBearerAuth(baseUrl, secret);
   if (options?.body !== undefined) headers["Content-Type"] = "application/json";
-  if (process.env.AGENTMEMORY_SECRET) headers.Authorization = `Bearer ${process.env.AGENTMEMORY_SECRET}`;
+  if (secret) headers.Authorization = `Bearer ${secret}`;
 
   try {
     const response = await fetch(url, {
@@ -109,6 +113,12 @@ async function callAgentMemory<T>(
 }
 
 export default function agentmemoryExtension(pi: ExtensionAPI) {
+  if (process.env.AGENTMEMORY_REQUIRE_HTTPS === "1") {
+    guardPlaintextBearerAuth(
+      normalizeBaseUrl(process.env.AGENTMEMORY_URL || DEFAULT_URL),
+      process.env.AGENTMEMORY_SECRET,
+    );
+  }
   let sessionId = `ephemeral-${crypto.randomUUID().slice(0, 8)}`;
   let currentProject = process.cwd();
   let lastPrompt = "";
