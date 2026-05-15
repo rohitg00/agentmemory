@@ -5,6 +5,7 @@ import type {
 } from "../types.js";
 import { AgentSDKProvider } from "./agent-sdk.js";
 import { AnthropicProvider } from "./anthropic.js";
+import { KimiForCodingProvider } from "./kimi-for-coding.js";
 import { MinimaxProvider } from "./minimax.js";
 import { NoopProvider } from "./noop.js";
 import { OpenRouterProvider } from "./openrouter.js";
@@ -12,7 +13,10 @@ import { ResilientProvider } from "./resilient.js";
 import { FallbackChainProvider } from "./fallback-chain.js";
 import { getEnvVar } from "../config.js";
 
-export { createEmbeddingProvider, createImageEmbeddingProvider } from "./embedding/index.js";
+export {
+  createEmbeddingProvider,
+  createImageEmbeddingProvider,
+} from "./embedding/index.js";
 
 function requireEnvVar(key: string): string {
   const value = getEnvVar(key);
@@ -93,6 +97,12 @@ function createBaseProvider(config: ProviderConfig): MemoryProvider {
         config.model,
         config.maxTokens,
         "https://openrouter.ai/api/v1/chat/completions",
+      );
+    case "kimi-for-coding":
+      return new KimiForCodingProvider(
+        requireEnvVar("KIMI_API_KEY"),
+        config.model,
+        config.maxTokens,
       );
     case "noop":
       return new NoopProvider();

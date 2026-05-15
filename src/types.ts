@@ -129,7 +129,7 @@ export interface ProviderConfig {
   baseURL?: string;
 }
 
-export type ProviderType = "agent-sdk" | "anthropic" | "gemini" | "openrouter" | "minimax" | "noop";
+export type ProviderType = "agent-sdk" | "anthropic" | "gemini" | "openrouter" | "minimax" | "kimi-for-coding" | "noop";
 
 export interface MemoryProvider {
   name: string;
