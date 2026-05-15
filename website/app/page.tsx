@@ -1,6 +1,7 @@
 import { ScrollProgress } from "@/components/ScrollProgress";
 import { Nav } from "@/components/Nav";
 import { Hero } from "@/components/Hero";
+import { FeaturedIn } from "@/components/FeaturedIn";
 import { Stats } from "@/components/Stats";
 import { Primitives } from "@/components/Primitives";
 import { Features } from "@/components/Features";
@@ -20,6 +21,7 @@ export default function Page() {
       <Nav />
       <main id="top">
         <Hero />
+        <FeaturedIn />
         <Stats
           mcpTools={meta.mcpTools}
           hooks={meta.hooks}
