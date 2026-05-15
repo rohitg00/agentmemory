@@ -36,6 +36,51 @@ interface EvictionStats {
   dryRun: boolean;
 }
 
+function triggerRecoveredSession(result: unknown): boolean {
+  if (!result || typeof result !== "object") return false;
+  if (!("success" in result)) return true;
+  return (result as { success?: unknown }).success !== false;
+}
+
+async function recoverStaleSession(
+  sdk: ISdk,
+  sessionId: string,
+): Promise<boolean> {
+  try {
+    const result = await sdk.trigger({
+      function_id: "event::session::stopped",
+      payload: { sessionId },
+    });
+    if (!triggerRecoveredSession(result)) {
+      logger.warn("Stale session recovery failed", {
+        sessionId,
+        result,
+      });
+      return false;
+    }
+    return true;
+  } catch (err) {
+    logger.warn("Stale session recovery failed", {
+      sessionId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return false;
+  }
+}
+
+async function runRecoveredSessionConsolidation(sdk: ISdk): Promise<void> {
+  try {
+    await sdk.trigger({
+      function_id: "mem::consolidate-pipeline",
+      payload: { tier: "all" },
+    });
+  } catch (err) {
+    logger.warn("Recovered session consolidation failed", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
 export function registerEvictFunction(sdk: ISdk, kv: StateKV): void {
   sdk.registerFunction("mem::evict", 
     async (data: { dryRun?: boolean }): Promise<EvictionStats> => {
@@ -57,6 +102,7 @@ export function registerEvictFunction(sdk: ISdk, kv: StateKV): void {
         dryRun,
       };
 
+      let recoveredStaleSessions = 0;
       const sessions = await kv.list<Session>(KV.sessions).catch(() => []);
       const summaries = await kv
         .list<SessionSummary>(KV.summaries)
@@ -71,6 +117,24 @@ export function registerEvictFunction(sdk: ISdk, kv: StateKV): void {
           if (dryRun) {
             stats.staleSessions++;
           } else {
+            const observations = await kv
+              .list<CompressedObservation>(KV.observations(session.id))
+              .catch((err) => {
+                logger.warn("Stale session observation scan failed", {
+                  sessionId: session.id,
+                  error: err instanceof Error ? err.message : String(err),
+                });
+                return null;
+              });
+            if (!observations) continue;
+
+            const hasCompressedObservations = observations.some((o) => o.title);
+            if (hasCompressedObservations) {
+              const recovered = await recoverStaleSession(sdk, session.id);
+              if (!recovered) continue;
+              recoveredStaleSessions++;
+            }
+
             try {
               await kv.delete(KV.sessions, session.id);
               stats.staleSessions++;
@@ -89,6 +153,10 @@ export function registerEvictFunction(sdk: ISdk, kv: StateKV): void {
             });
           }
         }
+      }
+
+      if (!dryRun && recoveredStaleSessions > 0) {
+        await runRecoveredSessionConsolidation(sdk);
       }
 
       const projectObs = new Map<string, CompressedObservation[]>();
