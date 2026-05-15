@@ -65,6 +65,18 @@ function createBaseProvider(config: ProviderConfig): MemoryProvider {
         config.model,
         config.maxTokens,
       );
+    case "openai": {
+      const openaiKey = requireEnvVar("OPENAI_API_KEY");
+      const openaiBase =
+        getEnvVar("OPENAI_BASE_URL") ||
+        "https://api.openai.com/v1/chat/completions";
+      return new OpenRouterProvider(
+        openaiKey,
+        config.model,
+        config.maxTokens,
+        openaiBase,
+      );
+    }
     case "anthropic":
       return new AnthropicProvider(
         requireEnvVar("ANTHROPIC_API_KEY"),

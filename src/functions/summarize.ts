@@ -80,7 +80,7 @@ export function registerSummarizeFunction(
           success: false,
           error: "no_provider",
           reason:
-            "No LLM provider key set; Summarize is a no-op. Set ANTHROPIC_API_KEY (or GEMINI/OPENROUTER/MINIMAX) in ~/.agentmemory/.env to enable.",
+            "No LLM provider key set; Summarize is a no-op. Set ANTHROPIC_API_KEY (or OPENAI/GEMINI/OPENROUTER/MINIMAX) in ~/.agentmemory/.env to enable.",
         };
       }
 

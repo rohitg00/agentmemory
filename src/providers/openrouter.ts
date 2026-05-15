@@ -17,7 +17,11 @@ export class OpenRouterProvider implements MemoryProvider {
     this.model = model;
     this.maxTokens = maxTokens;
     this.baseUrl = baseUrl;
-    this.name = baseUrl.includes("openrouter") ? "openrouter" : "gemini";
+    this.name = baseUrl.includes("openrouter")
+      ? "openrouter"
+      : baseUrl.includes("generativelanguage")
+        ? "gemini"
+        : "openai";
   }
 
   async compress(systemPrompt: string, userPrompt: string): Promise<string> {

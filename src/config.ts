@@ -59,6 +59,16 @@ function detectProvider(env: Record<string, string>): ProviderConfig {
     };
   }
 
+  // OpenAI-compatible: uses OpenRouterProvider with custom base URL
+  if (hasRealValue(env["OPENAI_API_KEY"])) {
+    return {
+      provider: "openai",
+      model: env["OPENAI_MODEL"] || "gpt-4o-mini",
+      maxTokens,
+      baseURL: env["OPENAI_BASE_URL"] || "https://api.openai.com/v1/chat/completions",
+    };
+  }
+
   if (hasRealValue(env["ANTHROPIC_API_KEY"])) {
     return {
       provider: "anthropic",
@@ -92,7 +102,7 @@ function detectProvider(env: Record<string, string>): ProviderConfig {
   if (!allowAgentSdk) {
     process.stderr.write(
       "[agentmemory] No LLM provider key found " +
-        "(ANTHROPIC_API_KEY, GEMINI_API_KEY, OPENROUTER_API_KEY, MINIMAX_API_KEY). " +
+        "(ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, OPENROUTER_API_KEY, MINIMAX_API_KEY). " +
         "LLM-backed compression and summarization are DISABLED — using no-op provider. " +
         "This is the safe default: the agent-sdk fallback used to spawn Claude Agent SDK " +
         "child sessions which inherit Claude Code's plugin hooks and cause infinite Stop-hook " +
@@ -153,6 +163,7 @@ export function detectLlmProviderKind(): "llm" | "noop" {
   const env = getMergedEnv();
   if (
     hasRealValue(env["ANTHROPIC_API_KEY"]) ||
+    hasRealValue(env["OPENAI_API_KEY"]) ||
     hasRealValue(env["GEMINI_API_KEY"]) ||
     hasRealValue(env["GOOGLE_API_KEY"]) ||
     hasRealValue(env["OPENROUTER_API_KEY"]) ||
@@ -288,6 +299,7 @@ export function getStandalonePersistPath(): string {
 
 const VALID_PROVIDERS = new Set([
   "anthropic",
+  "openai",
   "gemini",
   "openrouter",
   "agent-sdk",
