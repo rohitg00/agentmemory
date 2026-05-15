@@ -73,6 +73,7 @@ Usage: agentmemory [command] [options]
 
 Commands:
   (default)          Start agentmemory worker
+  init               Copy bundled .env.example to ~/.agentmemory/.env if absent
   status             Show connection status, memory count, flags, and health
   doctor             Run diagnostic checks (server, flags, graph, providers)
   demo               Seed sample sessions and show recall in action
@@ -895,6 +896,67 @@ async function runDemoSearch(base: string, query: string): Promise<SearchResult>
   };
 }
 
+// Locate the .env.example shipped with the npm package. The CLI builds to
+// `dist/cli.mjs`, with the template installed at the package root one level
+// up (`files: ['.env.example', ...]` in package.json). Fall back to the
+// repo root when running from a source checkout.
+function findEnvExample(): string | null {
+  const candidates = [
+    join(__dirname, "..", ".env.example"),
+    join(__dirname, ".env.example"),
+    join(process.cwd(), ".env.example"),
+  ];
+  for (const c of candidates) {
+    if (existsSync(c)) return c;
+  }
+  return null;
+}
+
+async function runInit() {
+  p.intro("agentmemory init");
+  const target = join(homedir(), ".agentmemory", ".env");
+  const template = findEnvExample();
+  if (!template) {
+    p.log.error(
+      "Could not locate .env.example in the package. Re-install with: npm i -g @agentmemory/agentmemory",
+    );
+    process.exit(1);
+  }
+  if (existsSync(target)) {
+    p.log.warn(`${target} already exists — leaving it untouched.`);
+    p.log.info(
+      `Compare against the latest template: diff ${target} ${template}`,
+    );
+    p.outro("Nothing changed.");
+    return;
+  }
+  const dir = dirname(target);
+  try {
+    // Lazy-load fs/promises so the cold-start cost only hits the init path.
+    const { mkdir, copyFile } = await import("node:fs/promises");
+    await mkdir(dir, { recursive: true });
+    await copyFile(template, target);
+  } catch (err) {
+    p.log.error(
+      `Failed to copy template: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    process.exit(1);
+  }
+  p.log.success(`Wrote ${target}`);
+  p.note(
+    [
+      "All keys are commented out by default. Uncomment the ones you want.",
+      "",
+      "Common next steps:",
+      "  1. Pick an LLM provider key (ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY / etc.)",
+      "  2. Run `npx @agentmemory/agentmemory doctor` to verify the daemon sees them",
+      "  3. Run `npx @agentmemory/agentmemory` to start the worker",
+    ].join("\n"),
+    "Next steps",
+  );
+  p.outro(`Edit ${target} and you're set.`);
+}
+
 async function runDemo() {
   const port = getRestPort();
   const base = `http://localhost:${port}`;
@@ -1297,6 +1359,7 @@ async function runImportJsonl(): Promise<void> {
 }
 
 const commands: Record<string, () => Promise<void>> = {
+  init: runInit,
   status: runStatus,
   doctor: runDoctor,
   demo: runDemo,
