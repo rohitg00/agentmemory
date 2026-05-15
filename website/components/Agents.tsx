@@ -25,6 +25,16 @@ const FEATURED: Agent[] = [
     sub: "FIRST-CLASS PLUGIN",
   },
   {
+    id: "codex",
+    name: "Codex CLI",
+    from: "OpenAI",
+    logo: "https://github.com/openai.png",
+    accent: "#10A37F",
+    href: "https://github.com/openai/codex",
+    pitch: "6 hooks + MCP · native plugin",
+    sub: "NATIVE PLUGIN",
+  },
+  {
     id: "openclaw",
     name: "OpenClaw",
     from: "openclaw",
@@ -45,14 +55,24 @@ const FEATURED: Agent[] = [
     sub: "FIRST-PARTY INTEGRATION",
   },
   {
-    id: "codex",
-    name: "Codex CLI",
-    from: "OpenAI",
-    logo: "https://github.com/openai.png",
-    accent: "#10A37F",
-    href: "https://github.com/openai/codex",
-    pitch: "TOML mcp_servers · one-liner",
-    sub: "MCP NATIVE",
+    id: "pi",
+    name: "pi",
+    from: "pi",
+    logo: "https://raw.githubusercontent.com/rohitg00/agentmemory/main/assets/agents/pi.svg",
+    accent: "#FF6B35",
+    href: "https://github.com/rohitg00/agentmemory/tree/main/integrations/pi",
+    pitch: "Native plugin + MCP",
+    sub: "NATIVE PLUGIN",
+  },
+  {
+    id: "openhuman",
+    name: "OpenHuman",
+    from: "tinyhumansai",
+    logo: "https://raw.githubusercontent.com/tinyhumansai/openhuman/main/app/src-tauri/icons/128x128.png",
+    accent: "#9b5cf6",
+    href: "https://github.com/tinyhumansai/openhuman",
+    pitch: "Native Memory trait backend (Rust)",
+    sub: "NATIVE BACKEND",
   },
 ];
 
@@ -204,11 +224,12 @@ export function Agents() {
       <header className="section-head">
         <span className="section-eyebrow">WORKS WITH</span>
         <h2 id="agents-title" className="section-title">
-          FOUR FIRST-PARTY.<br />REST MCP-NATIVE.
+          SIX FIRST-PARTY.<br />REST MCP-NATIVE.
         </h2>
         <p className="section-lede">
-          AGENTMEMORY SHIPS PLUGINS FOR CLAUDE CODE, OPENCLAW, HERMES, AND
-          CODEX. EVERY OTHER MCP CLIENT GETS IT FOR FREE.
+          NATIVE PLUGINS FOR CLAUDE CODE, CODEX CLI, OPENCLAW, HERMES, PI, AND
+          OPENHUMAN. EVERY OTHER MCP CLIENT GETS IT FOR FREE. `agentmemory
+          connect &lt;agent&gt;` AUTO-WIRES THEM ALL.
         </p>
       </header>
 

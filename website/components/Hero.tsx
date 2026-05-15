@@ -23,7 +23,7 @@ export function Hero() {
         </p>
         <div className={styles.cta}>
           <a href="#install" className="btn btn--accent">
-            START IN 60 SECONDS
+            START IN 30 SECONDS
           </a>
           <a href="#live" className="btn btn--ghost">
             SEE IT MOVE
