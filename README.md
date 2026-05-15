@@ -100,7 +100,7 @@ agentmemory works with any agent that supports hooks, MCP, or REST API. All agen
 <sub>native plugin + MCP</sub>
 </td>
 <td align="center" width="12.5%">
-<a href="integrations/pi/"><img src="https://github.com/inflection-ai.png?size=120" alt="pi" width="48" height="48" /></a><br/>
+<a href="integrations/pi/"><img src="assets/agents/pi.svg" alt="pi" width="48" height="48" /></a><br/>
 <strong>pi</strong><br/>
 <sub>native plugin + MCP</sub>
 </td>
