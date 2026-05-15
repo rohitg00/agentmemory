@@ -133,7 +133,8 @@ Commands:
                      --force bypasses the Docker-heuristic guard and signals
                      whatever pidfile+lsof report on the REST port (use when
                      the engine was started natively but state file is missing).
-  mcp                Start standalone MCP server (no engine required)
+  mcp                Start standalone MCP shim — opt-in surface for MCP-only clients
+                     (Cursor, Gemini CLI, etc). REST always available at :3111.
   import-jsonl [p]   Import Claude Code JSONL transcripts (default: ~/.claude/projects)
                      --max-files <N> | --max-files=<N>: override scan cap (default 200, max 1000;
                      out-of-range is rejected; for trees >1000 files, batch by subdirectory)

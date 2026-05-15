@@ -56,6 +56,8 @@ export const adapter: ConnectAdapter = {
   name: "codex",
   displayName: "Codex CLI",
   docs: "https://github.com/rohitg00/agentmemory#codex-cli-codex-plugin-platform",
+  protocolNote:
+    "→ Using MCP. Hooks are also available — see docs/codex.md.",
 
   detect(): boolean {
     return existsSync(CODEX_DIR);

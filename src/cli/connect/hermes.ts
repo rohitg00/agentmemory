@@ -12,6 +12,8 @@ export const adapter: ConnectAdapter = {
   name: "hermes",
   displayName: "Hermes Agent",
   docs: DOCS,
+  protocolNote:
+    "→ Using MCP. Hooks are also available — see docs/hermes.md.",
 
   detect(): boolean {
     return existsSync(HERMES_DIR);

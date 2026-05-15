@@ -461,7 +461,10 @@ async function main() {
     `Ready. ${embeddingProvider ? "Triple-stream (BM25+Vector+Graph)" : "BM25+Graph"} search active.`,
   );
   bootLog(
-    `Endpoints: 107 REST + ${getAllTools().length} MCP tools + 6 MCP resources + 3 MCP prompts`,
+    `REST API: 107 endpoints at http://localhost:${config.restPort}/agentmemory/*`,
+  );
+  bootLog(
+    `MCP surface (opt-in via \`npx @agentmemory/mcp\`): ${getAllTools().length} tools · 6 resources · 3 prompts`,
   );
 
   const viewerPort = config.restPort + 2;

@@ -11,6 +11,8 @@ export const adapter: ConnectAdapter = {
   name: "openhuman",
   displayName: "OpenHuman",
   docs: DOCS,
+  protocolNote:
+    "→ Using native hooks (REST API at :3111). MCP not required.",
 
   detect(): boolean {
     return existsSync(OPENHUMAN_DIR);

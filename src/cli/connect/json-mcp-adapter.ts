@@ -18,6 +18,7 @@ export type JsonMcpAdapterConfig = {
   detectDir: string;
   configPath: string;
   docs?: string;
+  protocolNote?: string;
 };
 
 type McpEntry = typeof AGENTMEMORY_MCP_BLOCK;
@@ -41,6 +42,9 @@ export function createJsonMcpAdapter(
     name: config.name,
     displayName: config.displayName,
     ...(config.docs !== undefined && { docs: config.docs }),
+    ...(config.protocolNote !== undefined && {
+      protocolNote: config.protocolNote,
+    }),
 
     detect(): boolean {
       return existsSync(config.detectDir);

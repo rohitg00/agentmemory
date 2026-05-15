@@ -12,6 +12,8 @@ export const adapter: ConnectAdapter = {
   name: "pi",
   displayName: "pi",
   docs: DOCS,
+  protocolNote:
+    "→ Using native hooks (REST API at :3111). MCP not required.",
 
   detect(): boolean {
     return existsSync(PI_DIR);

@@ -34,6 +34,8 @@ export const adapter: ConnectAdapter = {
   name: "claude-code",
   displayName: "Claude Code",
   docs: "https://github.com/rohitg00/agentmemory#claude-code-one-block-paste-it",
+  protocolNote:
+    "→ Using MCP. Hooks are also available — see docs/claude-code.md.",
 
   detect(): boolean {
     return existsSync(CLAUDE_DIR);
