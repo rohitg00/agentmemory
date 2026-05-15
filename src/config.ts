@@ -182,8 +182,14 @@ export function detectEmbeddingProvider(
   env?: Record<string, string>,
 ): string | null {
   const source = env ?? getMergedEnv();
-  const forced = source["EMBEDDING_PROVIDER"];
-  if (forced) return forced;
+const forced = source["AGENTMEMORY_EMBEDDING_PROVIDER"] || source["EMBEDDING_PROVIDER"];
+
+if (forced) {
+
+  if (forced === "xenova" || forced === "transformers") return "local";
+  
+  return forced;
+}
 
   if (source["GEMINI_API_KEY"]) return "gemini";
   if (source["OPENAI_API_KEY"]) return "openai";
