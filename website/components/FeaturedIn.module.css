@@ -34,10 +34,10 @@
 }
 .row {
   display: grid;
-  grid-template-columns: repeat(3, minmax(220px, 1fr));
+  grid-template-columns: minmax(220px, 1fr) minmax(240px, 1.3fr) minmax(220px, 1fr);
   gap: 24px;
   width: 100%;
-  max-width: 980px;
+  max-width: 1000px;
   align-items: stretch;
 }
 .cell {
@@ -78,8 +78,15 @@
 .badgeImg {
   width: 100%;
   height: auto;
-  max-width: 250px;
+  max-width: 260px;
+  max-height: 60px;
+  object-fit: contain;
   display: block;
+}
+.invertLogo {
+  filter: invert(1) brightness(1.05);
+  max-height: 64px;
+  max-width: 280px;
 }
 .meta {
   display: flex;

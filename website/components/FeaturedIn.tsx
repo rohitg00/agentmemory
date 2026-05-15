@@ -25,8 +25,9 @@ const ITEMS: Feature[] = [
     name: "Agentic AI Foundation",
     sub: "Linux Foundation backed",
     href: "https://aaif.io/",
-    logo: "https://aaif.io/wp-content/uploads/2025/12/cropped-favicon.png",
+    logo: "/featured/aaif-logo.png",
     logoAlt: "Agentic AI Foundation logo",
+    badge: true,
   },
   {
     name: "Trendshift",
@@ -54,6 +55,7 @@ export function FeaturedIn() {
                 href={it.href}
                 target="_blank"
                 rel="noopener"
+                aria-label={`${it.name} — ${it.sub}`}
               >
                 <Image
                   src={it.logo}
@@ -61,7 +63,11 @@ export function FeaturedIn() {
                   width={250}
                   height={55}
                   unoptimized
-                  className={styles.badgeImg}
+                  className={
+                    it.logo.startsWith("/featured/aaif")
+                      ? `${styles.badgeImg} ${styles.invertLogo}`
+                      : styles.badgeImg
+                  }
                 />
                 <span className={styles.sub}>{it.sub}</span>
               </a>
