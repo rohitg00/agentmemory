@@ -903,24 +903,46 @@ export function registerApiTriggers(
     ): Promise<Response> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const query = asNonEmptyString(body.query);
       if (
-        !req.body?.query &&
-        (!req.body?.expandIds || req.body.expandIds.length === 0)
+        body.expandIds !== undefined &&
+        (!Array.isArray(body.expandIds) ||
+          !body.expandIds.every((id) => typeof id === "string"))
       ) {
+        return {
+          status_code: 400,
+          body: { error: "expandIds must be an array of strings" },
+        };
+      }
+      const hasExpandIds = Array.isArray(body.expandIds) && body.expandIds.length > 0;
+      if (!query && !hasExpandIds) {
         return {
           status_code: 400,
           body: { error: "query or expandIds is required" },
         };
       }
-      // Validate up front so a bad time range produces a 400 before the
-      // hybrid search runs (issue #392). Skipped for the expandIds-only
-      // path because that branch loads observations by id, not by score,
-      // and the caller has already chosen exactly which ones to fetch.
-      if (req.body?.query && (req.body.start_time || req.body.end_time)) {
+      const limit = parseOptionalPositiveInt(body.limit);
+      if (limit === null) {
+        return {
+          status_code: 400,
+          body: { error: "limit must be a positive integer" },
+        };
+      }
+      if (!query && (body.start_time !== undefined || body.end_time !== undefined)) {
+        return {
+          status_code: 400,
+          body: {
+            error: "start_time and end_time require query for smart search",
+            code: "invalid_time_range",
+          },
+        };
+      }
+      if (query && (body.start_time !== undefined || body.end_time !== undefined)) {
         try {
           parseTimeRange({
-            start_time: req.body.start_time,
-            end_time: req.body.end_time,
+            start_time: body.start_time,
+            end_time: body.end_time,
           });
         } catch (err) {
           if (err instanceof TimeRangeError) {
@@ -932,7 +954,19 @@ export function registerApiTriggers(
           throw err;
         }
       }
-      const result = await sdk.trigger({ function_id: "mem::smart-search", payload: req.body });
+      const payload: {
+        query?: string;
+        expandIds?: string[];
+        limit?: number;
+        start_time?: string;
+        end_time?: string;
+      } = {};
+      if (query) payload.query = query;
+      if (hasExpandIds) payload.expandIds = body.expandIds as string[];
+      if (limit !== undefined) payload.limit = limit;
+      if (typeof body.start_time === "string") payload.start_time = body.start_time;
+      if (typeof body.end_time === "string") payload.end_time = body.end_time;
+      const result = await sdk.trigger({ function_id: "mem::smart-search", payload });
       return { status_code: 200, body: result };
     },
   );

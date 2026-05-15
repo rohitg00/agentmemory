@@ -258,6 +258,30 @@ describe("filterSessionsByTime", () => {
     expect(out.map((s) => s.id)).toEqual(["s3", "s2", "s1"]);
   });
 
+  it("excludes a session ending exactly at the window start", () => {
+    const range = parseTimeRange({
+      start_time: "2026-05-01T00:00:00Z",
+      end_time: "2026-05-07T23:59:59Z",
+    });
+    const out = filterSessionsByTime(
+      [
+        {
+          id: "touches_left_edge",
+          startedAt: "2026-04-30T00:00:00Z",
+          endedAt: "2026-05-01T00:00:00Z",
+        },
+        {
+          id: "overlaps_left_edge",
+          startedAt: "2026-04-30T00:00:00Z",
+          endedAt: "2026-05-01T00:00:01Z",
+        },
+      ],
+      range,
+    );
+
+    expect(out.map((s) => s.id)).toEqual(["overlaps_left_edge"]);
+  });
+
   it("treats an active session (no endedAt) as still running for the window check", () => {
     const range = parseTimeRange({
       start_time: "2026-05-07T00:00:00Z",
@@ -265,6 +289,34 @@ describe("filterSessionsByTime", () => {
     });
     const out = filterSessionsByTime(sessions, range);
     expect(out.map((s) => s.id)).toContain("s3");
+  });
+
+  it("captures now once for active or malformed-ended sessions", () => {
+    const nowSpy = vi.spyOn(Date, "now").mockReturnValue(
+      Date.parse("2026-05-10T00:00:00Z"),
+    );
+    try {
+      const range = parseTimeRange({
+        start_time: "2026-05-09T00:00:00Z",
+        end_time: "2026-05-11T00:00:00Z",
+      });
+      const out = filterSessionsByTime(
+        [
+          { id: "active", startedAt: "2026-05-01T00:00:00Z" },
+          {
+            id: "bad_end",
+            startedAt: "2026-05-01T00:00:00Z",
+            endedAt: "bad-date",
+          },
+        ],
+        range,
+      );
+
+      expect(out.map((s) => s.id).sort()).toEqual(["active", "bad_end"]);
+      expect(nowSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      nowSpy.mockRestore();
+    }
   });
 });
 
@@ -306,6 +358,67 @@ describe("api::sessions time-range surface", () => {
     expect(result.status_code).toBe(400);
     expect(result.body.code).toBe("not_a_string");
     expect(result.body.error).toMatch(/start_time must be an ISO 8601 string/);
+  });
+});
+
+describe("api::smart-search time-range surface", () => {
+  it("passes only whitelisted fields to mem::smart-search", async () => {
+    const sdk = mockSdk();
+    const kv = mockKV();
+    let captured: Record<string, unknown> | null = null;
+    sdk.overrideTrigger("mem::smart-search", async (payload: Record<string, unknown>) => {
+      captured = payload;
+      return { mode: "compact", results: [] };
+    });
+    registerApiTriggers(sdk as never, kv as never);
+
+    const fn = sdk.getFunction("api::smart-search")!;
+    const result = (await fn(
+      makeReq({
+        query: " auth ",
+        expandIds: ["obs_1"],
+        limit: 7,
+        start_time: "2026-05-01T00:00:00Z",
+        end_time: "2026-05-07T23:59:59Z",
+        ignored: true,
+      }),
+    )) as { status_code: number };
+
+    expect(result.status_code).toBe(200);
+    expect(captured).toEqual({
+      query: "auth",
+      expandIds: ["obs_1"],
+      limit: 7,
+      start_time: "2026-05-01T00:00:00Z",
+      end_time: "2026-05-07T23:59:59Z",
+    });
+  });
+
+  it("rejects time bounds on expandIds-only smart search", async () => {
+    const sdk = mockSdk();
+    const kv = mockKV();
+    let hits = 0;
+    sdk.overrideTrigger("mem::smart-search", async () => {
+      hits++;
+      return { mode: "expanded", results: [] };
+    });
+    registerApiTriggers(sdk as never, kv as never);
+
+    const fn = sdk.getFunction("api::smart-search")!;
+    const result = (await fn(
+      makeReq({
+        expandIds: ["obs_1"],
+        start_time: "2026-05-01T00:00:00Z",
+      }),
+    )) as {
+      status_code: number;
+      body: { code?: string; error?: string };
+    };
+
+    expect(result.status_code).toBe(400);
+    expect(result.body.code).toBe("invalid_time_range");
+    expect(result.body.error).toMatch(/require query/);
+    expect(hits).toBe(0);
   });
 });
 

@@ -100,11 +100,8 @@ interface Validated {
   limit?: number;
   memoryIds?: string[];
   reason?: string;
-  // Issue #392: optional ISO 8601 time-range filter forwarded as the
-  // already-validated raw strings (so the proxy URL can include them
-  // without re-parsing) plus the parsed numeric form for local fallback.
-  startTime?: string;
-  endTime?: string;
+  startTimeIso?: string;
+  endTimeIso?: string;
   timeRange?: TimeRange | null;
 }
 
@@ -142,8 +139,8 @@ function validate(toolName: string, args: Record<string, unknown>): Validated {
         if (err instanceof TimeRangeError) throw new Error(err.message);
         throw err;
       }
-      if (typeof args["start_time"] === "string") v.startTime = args["start_time"].trim();
-      if (typeof args["end_time"] === "string") v.endTime = args["end_time"].trim();
+      if (typeof args["start_time"] === "string") v.startTimeIso = args["start_time"].trim();
+      if (typeof args["end_time"] === "string") v.endTimeIso = args["end_time"].trim();
       return v;
     }
     case "memory_sessions": {
@@ -157,8 +154,8 @@ function validate(toolName: string, args: Record<string, unknown>): Validated {
         if (err instanceof TimeRangeError) throw new Error(err.message);
         throw err;
       }
-      if (typeof args["start_time"] === "string") v.startTime = args["start_time"].trim();
-      if (typeof args["end_time"] === "string") v.endTime = args["end_time"].trim();
+      if (typeof args["start_time"] === "string") v.startTimeIso = args["start_time"].trim();
+      if (typeof args["end_time"] === "string") v.endTimeIso = args["end_time"].trim();
       return v;
     }
     case "memory_governance_delete": {
@@ -203,8 +200,8 @@ async function handleProxy(
         body: JSON.stringify({
           query: v.query,
           limit: v.limit,
-          start_time: v.startTime,
-          end_time: v.endTime,
+          start_time: v.startTimeIso,
+          end_time: v.endTimeIso,
         }),
       });
       return textResponse(result, true);
@@ -212,8 +209,8 @@ async function handleProxy(
     case "memory_sessions": {
       const params = new URLSearchParams();
       if (v.limit !== undefined) params.set("limit", String(v.limit));
-      if (v.startTime) params.set("start_time", v.startTime);
-      if (v.endTime) params.set("end_time", v.endTime);
+      if (v.startTimeIso) params.set("start_time", v.startTimeIso);
+      if (v.endTimeIso) params.set("end_time", v.endTimeIso);
       const qs = params.toString();
       const result = await handle.call(
         `/agentmemory/sessions${qs ? `?${qs}` : ""}`,
@@ -289,15 +286,12 @@ async function handleLocal(
           .toLowerCase();
         return query.split(/\s+/).every((word) => text.includes(word));
       });
-      // Apply optional ISO time filter against the memory's createdAt
-      // (matches how the server-side mem::search surfaces memories via
-      // memoryToObservation, which uses createdAt as the timestamp).
-      const inRange = v.timeRange
+      const memoriesInTimeRange = v.timeRange
         ? matched.filter((m) =>
             inTimeRange(typeof m["createdAt"] === "string" ? (m["createdAt"] as string) : undefined, v.timeRange ?? null),
           )
         : matched;
-      return textResponse({ mode: "compact", results: inRange.slice(0, limit) }, true);
+      return textResponse({ mode: "compact", results: memoriesInTimeRange.slice(0, limit) }, true);
     }
 
     case "memory_sessions": {

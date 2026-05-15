@@ -108,6 +108,7 @@ export function filterSessionsByTime<T extends { startedAt: string; endedAt?: st
 ): T[] {
   if (!range) return [...sessions].sort(byStartedAtDesc);
 
+  const nowMs = Date.now();
   const filtered: T[] = [];
   for (const s of sessions) {
     if (typeof s.startedAt !== "string" || s.startedAt.length === 0) continue;
@@ -116,13 +117,13 @@ export function filterSessionsByTime<T extends { startedAt: string; endedAt?: st
     let endMs: number;
     if (typeof s.endedAt === "string" && s.endedAt.length > 0) {
       const parsed = Date.parse(s.endedAt);
-      endMs = Number.isNaN(parsed) ? Date.now() : parsed;
+      endMs = Number.isNaN(parsed) ? nowMs : parsed;
     } else {
       // Active sessions have no endedAt; treat as "still running".
-      endMs = Date.now();
+      endMs = nowMs;
     }
     // Half-open lifetime overlap with closed [start, end] window.
-    if (range.start !== undefined && endMs < range.start) continue;
+    if (range.start !== undefined && endMs <= range.start) continue;
     if (range.end !== undefined && startMs > range.end) continue;
     filtered.push(s);
   }

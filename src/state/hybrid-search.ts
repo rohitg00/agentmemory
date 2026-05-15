@@ -235,9 +235,9 @@ export class HybridSearch {
 
     combined.sort((a, b) => b.combinedScore - a.combinedScore);
 
-    // Bump retrieval depth + diversify cap + rerank window when a time
-    // range is set so the post-enrichment filter has enough headroom to
-    // surface `limit` matches even when the window is narrow.
+    // Bump retrieval depth + diversify cap when a time range is set so
+    // the post-enrichment filter has enough headroom to surface `limit`
+    // matches even when the window is narrow.
     const retrievalDepth = timeRange
       ? Math.max(limit * candidateMultiplier, 100)
       : Math.max(limit, 20);
