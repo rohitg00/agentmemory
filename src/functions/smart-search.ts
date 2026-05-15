@@ -7,18 +7,29 @@ import type {
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { recordAccessBatch } from "./access-tracker.js";
+import {
+  parseTimeRange,
+  TimeRangeError,
+  type TimeRange,
+} from "../state/time-filter.js";
 import { logger } from "../logger.js";
 
 export function registerSmartSearchFunction(
   sdk: ISdk,
   kv: StateKV,
-  searchFn: (query: string, limit: number) => Promise<HybridSearchResult[]>,
+  searchFn: (
+    query: string,
+    limit: number,
+    options?: { timeRange?: TimeRange | null },
+  ) => Promise<HybridSearchResult[]>,
 ): void {
   sdk.registerFunction("mem::smart-search", 
     async (data: {
       query?: string;
       expandIds?: Array<string | { obsId: string; sessionId: string }>;
       limit?: number;
+      start_time?: string;
+      end_time?: string;
     }) => {
 
       if (data.expandIds && data.expandIds.length > 0) {
@@ -67,8 +78,21 @@ export function registerSmartSearchFunction(
         return { mode: "compact", results: [], error: "query is required" };
       }
 
+      let timeRange: TimeRange | null;
+      try {
+        timeRange = parseTimeRange({
+          start_time: data.start_time,
+          end_time: data.end_time,
+        });
+      } catch (err) {
+        if (err instanceof TimeRangeError) {
+          return { mode: "compact", results: [], error: err.message };
+        }
+        throw err;
+      }
+
       const limit = Math.max(1, Math.min(data.limit ?? 20, 100));
-      const hybridResults = await searchFn(data.query, limit);
+      const hybridResults = await searchFn(data.query, limit, { timeRange });
 
       const compact: CompactSearchResult[] = hybridResults.map((r) => ({
         obsId: r.observation.id,
@@ -87,6 +111,7 @@ export function registerSmartSearchFunction(
       logger.info("Smart search compact", {
         query: data.query,
         results: compact.length,
+        hasTimeRange: !!timeRange,
       });
       return { mode: "compact", results: compact };
     },

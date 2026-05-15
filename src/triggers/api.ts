@@ -17,6 +17,11 @@ import {
   detectEmbeddingProvider,
   detectLlmProviderKind,
 } from "../config.js";
+import {
+  filterSessionsByTime,
+  parseTimeRange,
+  TimeRangeError,
+} from "../state/time-filter.js";
 
 type Response = {
   status_code: number;
@@ -344,6 +349,8 @@ export function registerApiTriggers(
         cwd?: string;
         format?: string;
         token_budget?: number;
+        start_time?: string;
+        end_time?: string;
       }>,
     ): Promise<Response> => {
       const body = (req.body ?? {}) as Record<string, unknown>;
@@ -381,6 +388,19 @@ export function registerApiTriggers(
           body: { error: "token_budget must be a positive integer" },
         };
       }
+      // Validate start_time/end_time up front so callers get a clean 400
+      // before the underlying mem::search runs (issue #392).
+      try {
+        parseTimeRange({
+          start_time: body.start_time,
+          end_time: body.end_time,
+        });
+      } catch (err) {
+        if (err instanceof TimeRangeError) {
+          return { status_code: 400, body: { error: err.message, code: err.code } };
+        }
+        throw err;
+      }
       const payload = {
         query: body.query.trim(),
         limit: body.limit as number | undefined,
@@ -391,6 +411,8 @@ export function registerApiTriggers(
             ? body.format.trim().toLowerCase()
             : undefined,
         token_budget: body.token_budget as number | undefined,
+        start_time: typeof body.start_time === "string" ? body.start_time : undefined,
+        end_time: typeof body.end_time === "string" ? body.end_time : undefined,
       };
       const result = await sdk.trigger({ function_id: "mem::search", payload: payload });
       return { status_code: 200, body: result };
@@ -613,7 +635,42 @@ export function registerApiTriggers(
     async (req: ApiRequest): Promise<Response> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
-      const sessions = await kv.list<Session>(KV.sessions);
+
+      // Optional ISO 8601 time-range + limit filtering (issue #392).
+      // Both bounds are inclusive; sessions whose lifetime overlaps the
+      // window are returned in descending startedAt order.
+      const startRaw = req.query_params?.["start_time"];
+      const endRaw = req.query_params?.["end_time"];
+      const limitRaw = req.query_params?.["limit"];
+
+      let timeRange;
+      try {
+        timeRange = parseTimeRange({
+          start_time: typeof startRaw === "string" ? startRaw : undefined,
+          end_time: typeof endRaw === "string" ? endRaw : undefined,
+        });
+      } catch (err) {
+        if (err instanceof TimeRangeError) {
+          return { status_code: 400, body: { error: err.message, code: err.code } };
+        }
+        throw err;
+      }
+
+      let limit: number | undefined;
+      if (limitRaw !== undefined && limitRaw !== "") {
+        const parsed = parseOptionalInt(limitRaw);
+        if (parsed === undefined || !Number.isInteger(parsed) || parsed < 1) {
+          return {
+            status_code: 400,
+            body: { error: "limit must be a positive integer" },
+          };
+        }
+        limit = Math.min(parsed, 1000);
+      }
+
+      let sessions = await kv.list<Session>(KV.sessions);
+      sessions = filterSessionsByTime(sessions, timeRange);
+      if (limit !== undefined) sessions = sessions.slice(0, limit);
       return { status_code: 200, body: { sessions } };
     },
   );
@@ -836,7 +893,13 @@ export function registerApiTriggers(
 
   sdk.registerFunction("api::smart-search", 
     async (
-      req: ApiRequest<{ query?: string; expandIds?: string[]; limit?: number }>,
+      req: ApiRequest<{
+        query?: string;
+        expandIds?: string[];
+        limit?: number;
+        start_time?: string;
+        end_time?: string;
+      }>,
     ): Promise<Response> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
@@ -848,6 +911,26 @@ export function registerApiTriggers(
           status_code: 400,
           body: { error: "query or expandIds is required" },
         };
+      }
+      // Validate up front so a bad time range produces a 400 before the
+      // hybrid search runs (issue #392). Skipped for the expandIds-only
+      // path because that branch loads observations by id, not by score,
+      // and the caller has already chosen exactly which ones to fetch.
+      if (req.body?.query && (req.body.start_time || req.body.end_time)) {
+        try {
+          parseTimeRange({
+            start_time: req.body.start_time,
+            end_time: req.body.end_time,
+          });
+        } catch (err) {
+          if (err instanceof TimeRangeError) {
+            return {
+              status_code: 400,
+              body: { error: err.message, code: err.code },
+            };
+          }
+          throw err;
+        }
       }
       const result = await sdk.trigger({ function_id: "mem::smart-search", payload: req.body });
       return { status_code: 200, body: result };

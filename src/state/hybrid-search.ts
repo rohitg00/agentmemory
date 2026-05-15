@@ -16,6 +16,7 @@ import {
 } from "../functions/graph-retrieval.js";
 import { extractEntitiesFromQuery } from "../functions/query-expansion.js";
 import { rerank } from "./reranker.js";
+import { inTimeRange, type TimeRange } from "./time-filter.js";
 
 const RRF_K = 60;
 
@@ -35,14 +36,19 @@ export class HybridSearch {
     this.graphRetrieval = new GraphRetrieval(kv);
   }
 
-  async search(query: string, limit = 20): Promise<HybridSearchResult[]> {
-    return this.tripleStreamSearch(query, limit);
+  async search(
+    query: string,
+    limit = 20,
+    options: { timeRange?: TimeRange | null } = {},
+  ): Promise<HybridSearchResult[]> {
+    return this.tripleStreamSearch(query, limit, undefined, options.timeRange ?? null);
   }
 
   async searchWithExpansion(
     query: string,
     limit: number,
     expansion: QueryExpansion,
+    options: { timeRange?: TimeRange | null } = {},
   ): Promise<HybridSearchResult[]> {
     const allQueries = [
       query,
@@ -56,7 +62,9 @@ export class HybridSearch {
     ];
 
     const resultSets = await Promise.all(
-      allQueries.map((q) => this.tripleStreamSearch(q, limit, allEntities)),
+      allQueries.map((q) =>
+        this.tripleStreamSearch(q, limit, allEntities, options.timeRange ?? null),
+      ),
     );
 
     const merged = new Map<string, HybridSearchResult>();
@@ -78,8 +86,15 @@ export class HybridSearch {
     query: string,
     limit: number,
     entityHints?: string[],
+    timeRange: TimeRange | null = null,
   ): Promise<HybridSearchResult[]> {
-    const bm25Results = this.bm25.search(query, limit * 2);
+    // When a time range is set, over-fetch from each retrieval stream and
+    // expand the diversification window so the post-enrichment timestamp
+    // filter still has enough candidates to fill the requested limit
+    // without collapsing recall on a narrow window. Mirrors the
+    // project/cwd over-fetch in mem::search (issue #392).
+    const candidateMultiplier = timeRange ? 5 : 2;
+    const bm25Results = this.bm25.search(query, limit * candidateMultiplier);
 
     let vectorResults: Array<{
       obsId: string;
@@ -91,7 +106,7 @@ export class HybridSearch {
     if (this.vector && this.embeddingProvider && this.vector.size > 0) {
       try {
         queryEmbedding = await this.embeddingProvider.embed(query);
-        vectorResults = this.vector.search(queryEmbedding, limit * 2);
+        vectorResults = this.vector.search(queryEmbedding, limit * candidateMultiplier);
       } catch {
         // fall through to BM25-only
       }
@@ -107,7 +122,7 @@ export class HybridSearch {
         graphResults = await this.graphRetrieval.searchByEntities(
           entities,
           2,
-          limit,
+          timeRange ? limit * candidateMultiplier : limit,
         );
       } catch {
         // graph search is best-effort
@@ -220,10 +235,22 @@ export class HybridSearch {
 
     combined.sort((a, b) => b.combinedScore - a.combinedScore);
 
-    const retrievalDepth = Math.max(limit, 20);
+    // Bump retrieval depth + diversify cap + rerank window when a time
+    // range is set so the post-enrichment filter has enough headroom to
+    // surface `limit` matches even when the window is narrow.
+    const retrievalDepth = timeRange
+      ? Math.max(limit * candidateMultiplier, 100)
+      : Math.max(limit, 20);
     const rerankWindow = 20;
-    const diversified = this.diversifyBySession(combined, retrievalDepth);
-    const enriched = await this.enrichResults(diversified, retrievalDepth);
+    const diversified = this.diversifyBySession(
+      combined,
+      retrievalDepth,
+      timeRange ? 5 : 3,
+    );
+    const enrichedRaw = await this.enrichResults(diversified, retrievalDepth);
+    const enriched = timeRange
+      ? enrichedRaw.filter((r) => inTimeRange(r.observation.timestamp, timeRange))
+      : enrichedRaw;
 
     if (this.rerankEnabled && enriched.length > 1) {
       try {

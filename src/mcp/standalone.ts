@@ -12,6 +12,13 @@ import {
   type Handle,
   type ProxyHandle,
 } from "./rest-proxy.js";
+import {
+  filterSessionsByTime,
+  inTimeRange,
+  parseTimeRange,
+  TimeRangeError,
+  type TimeRange,
+} from "../state/time-filter.js";
 
 const IMPLEMENTED_TOOLS = new Set([
   "memory_save",
@@ -91,6 +98,12 @@ interface Validated {
   limit?: number;
   memoryIds?: string[];
   reason?: string;
+  // Issue #392: optional ISO 8601 time-range filter forwarded as the
+  // already-validated raw strings (so the proxy URL can include them
+  // without re-parsing) plus the parsed numeric form for local fallback.
+  startTime?: string;
+  endTime?: string;
+  timeRange?: TimeRange | null;
 }
 
 function validate(toolName: string, args: Record<string, unknown>): Validated {
@@ -118,10 +131,32 @@ function validate(toolName: string, args: Record<string, unknown>): Validated {
       }
       v.query = query.trim();
       v.limit = parseLimit(args["limit"]);
+      try {
+        v.timeRange = parseTimeRange({
+          start_time: args["start_time"],
+          end_time: args["end_time"],
+        });
+      } catch (err) {
+        if (err instanceof TimeRangeError) throw new Error(err.message);
+        throw err;
+      }
+      if (typeof args["start_time"] === "string") v.startTime = args["start_time"].trim();
+      if (typeof args["end_time"] === "string") v.endTime = args["end_time"].trim();
       return v;
     }
     case "memory_sessions": {
       v.limit = parseLimit(args["limit"], 20);
+      try {
+        v.timeRange = parseTimeRange({
+          start_time: args["start_time"],
+          end_time: args["end_time"],
+        });
+      } catch (err) {
+        if (err instanceof TimeRangeError) throw new Error(err.message);
+        throw err;
+      }
+      if (typeof args["start_time"] === "string") v.startTime = args["start_time"].trim();
+      if (typeof args["end_time"] === "string") v.endTime = args["end_time"].trim();
       return v;
     }
     case "memory_governance_delete": {
@@ -163,13 +198,23 @@ async function handleProxy(
     case "memory_smart_search": {
       const result = await handle.call("/agentmemory/smart-search", {
         method: "POST",
-        body: JSON.stringify({ query: v.query, limit: v.limit }),
+        body: JSON.stringify({
+          query: v.query,
+          limit: v.limit,
+          start_time: v.startTime,
+          end_time: v.endTime,
+        }),
       });
       return textResponse(result, true);
     }
     case "memory_sessions": {
+      const params = new URLSearchParams();
+      if (v.limit !== undefined) params.set("limit", String(v.limit));
+      if (v.startTime) params.set("start_time", v.startTime);
+      if (v.endTime) params.set("end_time", v.endTime);
+      const qs = params.toString();
       const result = await handle.call(
-        `/agentmemory/sessions?limit=${v.limit}`,
+        `/agentmemory/sessions${qs ? `?${qs}` : ""}`,
         { method: "GET" },
       );
       return textResponse(result, true);
@@ -229,29 +274,37 @@ async function handleLocal(
       const limit = v.limit ?? DEFAULT_LIMIT;
       const all =
         await kvInstance.list<Record<string, unknown>>("mem:memories");
-      const results = all
-        .filter((m) => {
-          const text = [
-            typeof m["title"] === "string" ? m["title"] : "",
-            typeof m["content"] === "string" ? m["content"] : "",
-            Array.isArray(m["files"]) ? m["files"].join(" ") : "",
-            Array.isArray(m["concepts"]) ? m["concepts"].join(" ") : "",
-            Array.isArray(m["sessionIds"]) ? m["sessionIds"].join(" ") : "",
-            typeof m["id"] === "string" ? m["id"] : "",
-          ]
-            .join(" ")
-            .toLowerCase();
-          return query.split(/\s+/).every((word) => text.includes(word));
-        })
-        .slice(0, limit);
-      return textResponse({ mode: "compact", results }, true);
+      const matched = all.filter((m) => {
+        const text = [
+          typeof m["title"] === "string" ? m["title"] : "",
+          typeof m["content"] === "string" ? m["content"] : "",
+          Array.isArray(m["files"]) ? m["files"].join(" ") : "",
+          Array.isArray(m["concepts"]) ? m["concepts"].join(" ") : "",
+          Array.isArray(m["sessionIds"]) ? m["sessionIds"].join(" ") : "",
+          typeof m["id"] === "string" ? m["id"] : "",
+        ]
+          .join(" ")
+          .toLowerCase();
+        return query.split(/\s+/).every((word) => text.includes(word));
+      });
+      // Apply optional ISO time filter against the memory's createdAt
+      // (matches how the server-side mem::search surfaces memories via
+      // memoryToObservation, which uses createdAt as the timestamp).
+      const inRange = v.timeRange
+        ? matched.filter((m) =>
+            inTimeRange(typeof m["createdAt"] === "string" ? (m["createdAt"] as string) : undefined, v.timeRange ?? null),
+          )
+        : matched;
+      return textResponse({ mode: "compact", results: inRange.slice(0, limit) }, true);
     }
 
     case "memory_sessions": {
       const sessions =
         await kvInstance.list<Record<string, unknown>>("mem:sessions");
       const limit = v.limit ?? 20;
-      return textResponse({ sessions: sessions.slice(0, limit) }, true);
+      const sessionsTyped = sessions as Array<{ startedAt: string; endedAt?: string }>;
+      const filtered = filterSessionsByTime(sessionsTyped, v.timeRange ?? null);
+      return textResponse({ sessions: filtered.slice(0, limit) }, true);
     }
 
     case "memory_governance_delete": {

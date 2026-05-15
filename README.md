@@ -708,6 +708,22 @@ Fused with Reciprocal Rank Fusion (RRF, k=60) and session-diversified (max 3 res
 
 BM25 tokenizes Greek, Cyrillic, Hebrew, Arabic, and accented Latin out of the box. For Chinese / Japanese / Korean memories, install the optional segmenters (`npm install @node-rs/jieba tiny-segmenter`) to split CJK runs into word-level tokens; without them, agentmemory soft-falls to whole-run tokenization and prints a one-time hint on stderr.
 
+### Time-range filtering
+
+`memory_recall`, `memory_smart_search`, and `memory_sessions` all accept optional ISO 8601 `start_time` / `end_time` bounds (both inclusive). Use them to answer "what did I work on last week?" without falling back to keyword guessing.
+
+```bash
+# All sessions whose lifetime overlapped May 1–7
+curl -s "http://localhost:3111/agentmemory/sessions?start_time=2026-05-01T00:00:00Z&end_time=2026-05-07T23:59:59Z&limit=50" | jq
+
+# Recall against a specific window
+curl -s -X POST http://localhost:3111/agentmemory/smart-search \
+  -H "content-type: application/json" \
+  -d '{"query":"auth refactor","start_time":"2026-05-01T00:00:00Z","end_time":"2026-05-07T23:59:59Z"}'
+```
+
+The same arguments work via MCP tool calls (`memory_smart_search`, `memory_recall`, `memory_sessions`). For sessions, the filter checks lifetime overlap with the window — a session that started April 30 and ended May 2 still matches `2026-05-01..2026-05-07`. Active (no `endedAt`) sessions are treated as still running. Bad input (unparseable date or `start_time > end_time`) is rejected with a 400 / `code: invalid_time_range` before the search runs, so you don't pay for retrieval on a malformed window.
+
 ### Embedding providers
 
 agentmemory auto-detects your provider. For best results, install local embeddings (free):
@@ -740,13 +756,13 @@ npm install @xenova/transformers
 
 | Tool | Description |
 |------|-------------|
-| `memory_recall` | Search past observations |
+| `memory_recall` | Search past observations (optional `start_time` / `end_time` for ISO 8601 time-range filter) |
 | `memory_compress_file` | Compress markdown files while preserving structure |
 | `memory_save` | Save an insight, decision, or pattern |
 | `memory_patterns` | Detect recurring patterns |
-| `memory_smart_search` | Hybrid semantic + keyword search |
+| `memory_smart_search` | Hybrid semantic + keyword search (optional `start_time` / `end_time` time-range filter) |
 | `memory_file_history` | Past observations about specific files |
-| `memory_sessions` | List recent sessions |
+| `memory_sessions` | List recent sessions (optional `start_time` / `end_time` / `limit` — sessions whose lifetime overlaps the window, most-recent first) |
 | `memory_timeline` | Chronological observations |
 | `memory_profile` | Project profile (concepts, files, patterns) |
 | `memory_export` | Export all memory data |
@@ -1094,8 +1110,10 @@ Create `~/.agentmemory/.env`:
 | `GET` | `/agentmemory/health` | Health check (always public) |
 | `POST` | `/agentmemory/session/start` | Start session + get context |
 | `POST` | `/agentmemory/session/end` | End session |
+| `GET` | `/agentmemory/sessions` | List sessions (`?start_time=&end_time=&limit=` — ISO 8601 time-range filter, lifetime overlap, most-recent first) |
 | `POST` | `/agentmemory/observe` | Capture observation |
-| `POST` | `/agentmemory/smart-search` | Hybrid search |
+| `POST` | `/agentmemory/search` | Keyword search (BM25); accepts `start_time` / `end_time` for ISO 8601 time-range filter |
+| `POST` | `/agentmemory/smart-search` | Hybrid search; accepts `start_time` / `end_time` for ISO 8601 time-range filter |
 | `POST` | `/agentmemory/context` | Generate context |
 | `POST` | `/agentmemory/remember` | Save to long-term memory |
 | `POST` | `/agentmemory/forget` | Delete observations |

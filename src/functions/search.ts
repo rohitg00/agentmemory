@@ -7,6 +7,7 @@ import { VectorIndex } from '../state/vector-index.js'
 import type { EmbeddingProvider } from '../types.js'
 import { memoryToObservation } from '../state/memory-utils.js'
 import { recordAccessBatch } from './access-tracker.js'
+import { inTimeRange, parseTimeRange, TimeRangeError } from '../state/time-filter.js'
 import { logger } from "../logger.js";
 
 let index: SearchIndex | null = null
@@ -171,6 +172,8 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
       cwd?: string
       format?: string
       token_budget?: number
+      start_time?: string
+      end_time?: string
     }) => {
       const idx = getSearchIndex()
 
@@ -201,14 +204,32 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
         tokenBudget = data.token_budget
       }
 
+      // Optional time-range filter (issue #392). Mirrors the project/cwd
+      // filter pattern below: we over-fetch from the index when active and
+      // drop out-of-range observations in the candidate pass so recall@K
+      // doesn't collapse on narrow windows.
+      let timeRange: ReturnType<typeof parseTimeRange>
+      try {
+        timeRange = parseTimeRange({
+          start_time: data.start_time,
+          end_time: data.end_time,
+        })
+      } catch (err) {
+        if (err instanceof TimeRangeError) {
+          throw new Error(`mem::search: ${err.message}`)
+        }
+        throw err
+      }
+
       if (idx.size === 0) {
         const count = await rebuildIndex(kv)
         logger.info('Search index rebuilt', { entries: count })
       }
 
-      // When filtering by project/cwd, over-fetch from the index so the
-      // post-filter still has a chance of returning `effectiveLimit` results.
-      const filtering = !!(projectFilter || cwdFilter)
+      // When filtering by project/cwd or a time range, over-fetch from the
+      // index so the post-filter still has a chance of returning
+      // `effectiveLimit` results.
+      const filtering = !!(projectFilter || cwdFilter || timeRange)
       const fetchLimit = filtering ? Math.max(effectiveLimit * 10, 100) : effectiveLimit
       const results = idx.search(query, fetchLimit)
 
@@ -223,9 +244,16 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
 
       // First pass: filter by session (sequential — benefits from session cache).
       const candidates: typeof results = []
+      // When a time range is active we cannot decide membership at the
+      // candidate stage (timestamp lives on the observation, not the
+      // BM25 index entry), so collect a larger pool here and let the
+      // post-enrichment filter trim it.
+      const candidateCap = timeRange
+        ? Math.max(effectiveLimit * 10, 100)
+        : effectiveLimit
       for (const r of results) {
-        if (candidates.length >= effectiveLimit) break
-        if (filtering) {
+        if (candidates.length >= candidateCap) break
+        if (projectFilter || cwdFilter) {
           const s = await loadSession(r.sessionId)
           if (!s) continue
           if (projectFilter && s.project !== projectFilter) continue
@@ -253,13 +281,14 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
       const enriched: SearchResult[] = []
       for (let i = 0; i < candidates.length; i++) {
         const obs = obsResults[i]
-        if (obs) {
-          enriched.push({
-            observation: obs,
-            score: candidates[i].score,
-            sessionId: candidates[i].sessionId,
-          })
-        }
+        if (!obs) continue
+        if (timeRange && !inTimeRange(obs.timestamp, timeRange)) continue
+        enriched.push({
+          observation: obs,
+          score: candidates[i].score,
+          sessionId: candidates[i].sessionId,
+        })
+        if (enriched.length >= effectiveLimit) break
       }
 
       void recordAccessBatch(
@@ -339,6 +368,7 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
         results: packed.items.length,
         hasProjectFilter: !!projectFilter,
         hasCwdFilter: !!cwdFilter,
+        hasTimeRange: !!timeRange,
       })
       return {
         format,

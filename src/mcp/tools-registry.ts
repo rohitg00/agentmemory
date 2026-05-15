@@ -32,6 +32,16 @@ export const CORE_TOOLS: McpToolDef[] = [
           type: "number",
           description: "Optional token budget to trim returned results",
         },
+        start_time: {
+          type: "string",
+          description:
+            "Optional ISO 8601 lower bound (inclusive). Only return observations on or after this time. Example: 2026-05-01T00:00:00Z",
+        },
+        end_time: {
+          type: "string",
+          description:
+            "Optional ISO 8601 upper bound (inclusive). Only return observations on or before this time. Example: 2026-05-07T23:59:59Z",
+        },
       },
       required: ["query"],
     },
@@ -107,12 +117,30 @@ export const CORE_TOOLS: McpToolDef[] = [
   {
     name: "memory_sessions",
     description:
-      "List recent sessions with their status and observation counts.",
-    inputSchema: { type: "object", properties: {} },
+      "List recent sessions with their status and observation counts. Optionally filter by an ISO 8601 time window (sessions whose lifetime overlaps the window are returned, most-recent first).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        start_time: {
+          type: "string",
+          description:
+            "Optional ISO 8601 lower bound (inclusive). Sessions ending before this are excluded. Example: 2026-05-01T00:00:00Z",
+        },
+        end_time: {
+          type: "string",
+          description:
+            "Optional ISO 8601 upper bound (inclusive). Sessions starting after this are excluded. Example: 2026-05-07T23:59:59Z",
+        },
+        limit: {
+          type: "number",
+          description: "Max sessions to return (default 50, max 1000)",
+        },
+      },
+    },
   },
   {
     name: "memory_smart_search",
-    description: "Hybrid semantic+keyword search with progressive disclosure.",
+    description: "Hybrid semantic+keyword search with progressive disclosure. Optionally filter by an ISO 8601 time window over observation timestamps.",
     inputSchema: {
       type: "object",
       properties: {
@@ -122,6 +150,16 @@ export const CORE_TOOLS: McpToolDef[] = [
           description: "Comma-separated observation IDs to expand",
         },
         limit: { type: "number", description: "Max results (default 10)" },
+        start_time: {
+          type: "string",
+          description:
+            "Optional ISO 8601 lower bound (inclusive). Only return observations on or after this time.",
+        },
+        end_time: {
+          type: "string",
+          description:
+            "Optional ISO 8601 upper bound (inclusive). Only return observations on or before this time.",
+        },
       },
       required: ["query"],
     },
