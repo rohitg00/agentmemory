@@ -1,5 +1,6 @@
 import type { MemoryProvider } from '../types.js'
 import { getEnvVar } from '../config.js'
+import { fetchWithLlmTimeout } from './fetch-timeout.js'
 
 /**
  * MiniMax provider using raw fetch to call MiniMax's Anthropic-compatible API.
@@ -40,7 +41,7 @@ export class MinimaxProvider implements MemoryProvider {
 
   private async call(systemPrompt: string, userPrompt: string): Promise<string> {
     const url = `${this.baseUrl}/v1/messages`
-    const response = await fetch(url, {
+    const response = await fetchWithLlmTimeout(this.name, url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
