@@ -33,3 +33,5 @@ export function createPlaintextBearerAuthGuard(
     }
   };
 }
+
+export const guardPlaintextBearerAuth = createPlaintextBearerAuthGuard();
