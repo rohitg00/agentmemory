@@ -85,11 +85,6 @@ agentmemory works with any agent that supports hooks, MCP, or REST API. All agen
 <sub>native plugin + 6 hooks + MCP</sub>
 </td>
 <td align="center" width="12.5%">
-<a href="https://github.com/tinyhumansai/openhuman"><img src="https://raw.githubusercontent.com/tinyhumansai/openhuman/main/app/src-tauri/icons/128x128.png" alt="OpenHuman" width="48" height="48" /></a><br/>
-<strong>OpenHuman</strong><br/>
-<sub>native Memory trait backend</sub>
-</td>
-<td align="center" width="12.5%">
 <a href="integrations/openclaw/"><img src="https://github.com/openclaw.png?size=120" alt="OpenClaw" width="48" height="48" /></a><br/>
 <strong>OpenClaw</strong><br/>
 <sub>native plugin + MCP</sub>
@@ -103,6 +98,11 @@ agentmemory works with any agent that supports hooks, MCP, or REST API. All agen
 <a href="integrations/pi/"><img src="assets/agents/pi.svg" alt="pi" width="48" height="48" /></a><br/>
 <strong>pi</strong><br/>
 <sub>native plugin + MCP</sub>
+</td>
+<td align="center" width="12.5%">
+<a href="https://github.com/tinyhumansai/openhuman"><img src="https://raw.githubusercontent.com/tinyhumansai/openhuman/main/app/src-tauri/icons/128x128.png" alt="OpenHuman" width="48" height="48" /></a><br/>
+<strong>OpenHuman</strong><br/>
+<sub>native Memory trait backend</sub>
 </td>
 <td align="center" width="12.5%">
 <a href="https://cursor.com"><img src="https://www.freelogovectors.net/wp-content/uploads/2025/06/cursor-logo-freelogovectors.net_.png" alt="Cursor" width="48" height="48" /></a><br/>
