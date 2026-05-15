@@ -29,7 +29,8 @@ const RUNTIME_ONLY = new Set([
   "AGENTMEMORY_SDK_CHILD",
 ]);
 
-// Walk src/ for .ts / .mts / .mjs files (excluding test/).
+// Walk src/ for .ts / .mts / .mjs / .js files (excluding `.d.ts` declarations
+// and dotfile dirs / node_modules). test/ lives outside src/ so it never enters.
 function walk(dir) {
   const out = [];
   for (const entry of readdirSync(dir)) {

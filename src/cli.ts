@@ -896,10 +896,8 @@ async function runDemoSearch(base: string, query: string): Promise<SearchResult>
   };
 }
 
-// Locate the .env.example shipped with the npm package. The CLI builds to
-// `dist/cli.mjs`, with the template installed at the package root one level
-// up (`files: ['.env.example', ...]` in package.json). Fall back to the
-// repo root when running from a source checkout.
+// Prefer the packaged `.env.example` (next to `dist/cli.mjs`); fall back to
+// the repo root when running from a source checkout.
 function findEnvExample(): string | null {
   const candidates = [
     join(__dirname, "..", ".env.example"),
@@ -922,21 +920,27 @@ async function runInit() {
     );
     process.exit(1);
   }
-  if (existsSync(target)) {
-    p.log.warn(`${target} already exists — leaving it untouched.`);
-    p.log.info(
-      `Compare against the latest template: diff ${target} ${template}`,
-    );
-    p.outro("Nothing changed.");
-    return;
-  }
   const dir = dirname(target);
+  const { mkdir, copyFile } = await import("node:fs/promises");
+  const { constants: fsConstants } = await import("node:fs");
   try {
-    // Lazy-load fs/promises so the cold-start cost only hits the init path.
-    const { mkdir, copyFile } = await import("node:fs/promises");
     await mkdir(dir, { recursive: true });
-    await copyFile(template, target);
+    // COPYFILE_EXCL collapses the exists-check + copy into one syscall —
+    // an existsSync(target) + copyFile() pair races with a parallel init
+    // (or any other process touching ~/.agentmemory/.env between the two
+    // calls) and would silently overwrite a config the operator just
+    // wrote. EEXIST out of copyFile is the only "already configured"
+    // signal we trust.
+    await copyFile(template, target, fsConstants.COPYFILE_EXCL);
   } catch (err) {
+    if ((err as NodeJS.ErrnoException)?.code === "EEXIST") {
+      p.log.warn(`${target} already exists — leaving it untouched.`);
+      p.log.info(
+        `Compare against the latest template: diff ${target} ${template}`,
+      );
+      p.outro("Nothing changed.");
+      return;
+    }
     p.log.error(
       `Failed to copy template: ${err instanceof Error ? err.message : String(err)}`,
     );
