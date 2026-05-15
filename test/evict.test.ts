@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import type { CompressedObservation, Session } from "../src/types.js";
+import type {
+  CompressedObservation,
+  RawObservation,
+  Session,
+} from "../src/types.js";
 import { registerEvictFunction } from "../src/functions/evict.js";
 import { KV } from "../src/state/schema.js";
 
@@ -40,7 +44,18 @@ function makeObservation(sessionId: string): CompressedObservation {
   };
 }
 
-function mockKV(store: Store) {
+function makeRawObservation(sessionId: string): RawObservation {
+  return {
+    id: "raw_1",
+    sessionId,
+    timestamp: daysAgo(31),
+    hookType: "post_tool_use",
+    toolName: "Edit",
+    raw: { file_path: "src/state/kv.ts" },
+  };
+}
+
+function mockKV(store: Store, listFailures: Set<string> = new Set()) {
   return {
     get: async <T>(scope: string, key: string): Promise<T | null> =>
       (store.get(scope)?.get(key) as T) ?? null,
@@ -53,6 +68,9 @@ function mockKV(store: Store) {
       store.get(scope)?.delete(key);
     },
     list: async <T>(scope: string): Promise<T[]> => {
+      if (listFailures.has(scope)) {
+        throw new Error(`list failed for ${scope}`);
+      }
       const entries = store.get(scope);
       return entries ? (Array.from(entries.values()) as T[]) : [];
     },
@@ -78,16 +96,25 @@ function mockSdk() {
   };
 }
 
-function storeForObservedSession(sessionId: string): Store {
+function storeForObservations(
+  sessionId: string,
+  observations: Array<CompressedObservation | RawObservation>,
+): Store {
   const session = makeSession(sessionId);
-  const observation = makeObservation(sessionId);
   return new Map([
     [KV.sessions, new Map([[session.id, session]])],
     [KV.summaries, new Map()],
-    [KV.observations(session.id), new Map([[observation.id, observation]])],
+    [
+      KV.observations(session.id),
+      new Map(observations.map((observation) => [observation.id, observation])),
+    ],
     [KV.config, new Map()],
     [KV.audit, new Map()],
   ]);
+}
+
+function storeForObservedSession(sessionId: string): Store {
+  return storeForObservations(sessionId, [makeObservation(sessionId)]);
 }
 
 describe("mem::evict stale sessions", () => {
@@ -116,6 +143,12 @@ describe("mem::evict stale sessions", () => {
 
     expect(result.staleSessions).toBe(1);
     expect(await kv.get(KV.sessions, sessionId)).toBeNull();
+    const audits = await kv.list<{
+      details: { reason: string };
+    }>(KV.audit);
+    expect(audits[0].details.reason).toBe(
+      "stale_session_recovered_then_evicted",
+    );
     expect(calls.map((call) => call.function_id)).toContain(
       "event::session::stopped",
     );
@@ -150,6 +183,58 @@ describe("mem::evict stale sessions", () => {
     );
     expect(calls.map((call) => call.function_id)).not.toContain(
       "mem::consolidate-pipeline",
+    );
+  });
+
+  it("keeps a stale session when observation scanning fails", async () => {
+    const sessionId = "ses_scan_failed";
+    const store = storeForObservedSession(sessionId);
+    const kv = mockKV(store, new Set([KV.observations(sessionId)]));
+    const { sdk, calls } = mockSdk();
+
+    registerEvictFunction(sdk as never, kv as never);
+    sdk.registerFunction("event::session::stopped", () => ({
+      success: true,
+    }));
+
+    const result = (await sdk.trigger({
+      function_id: "mem::evict",
+      payload: {},
+    })) as { staleSessions: number };
+
+    expect(result.staleSessions).toBe(0);
+    expect(await kv.get(KV.sessions, sessionId)).toMatchObject({
+      id: sessionId,
+    });
+    expect(calls.map((call) => call.function_id)).not.toContain(
+      "event::session::stopped",
+    );
+  });
+
+  it("keeps a stale session that only has raw observations", async () => {
+    const sessionId = "ses_raw_only";
+    const store = storeForObservations(sessionId, [
+      makeRawObservation(sessionId),
+    ]);
+    const kv = mockKV(store);
+    const { sdk, calls } = mockSdk();
+
+    registerEvictFunction(sdk as never, kv as never);
+    sdk.registerFunction("event::session::stopped", () => ({
+      success: true,
+    }));
+
+    const result = (await sdk.trigger({
+      function_id: "mem::evict",
+      payload: {},
+    })) as { staleSessions: number };
+
+    expect(result.staleSessions).toBe(0);
+    expect(await kv.get(KV.sessions, sessionId)).toMatchObject({
+      id: sessionId,
+    });
+    expect(calls.map((call) => call.function_id)).not.toContain(
+      "event::session::stopped",
     );
   });
 });
