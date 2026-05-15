@@ -6,6 +6,51 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.9.15] — 2026-05-15
+
+DevEx overhaul. Four PRs landed simultaneously rebuilding the first-run experience to SkillKit-grade polish: splash banner + interactive agent grid + provider picker + smart-defaults preferences, `agentmemory connect <agent>` to automate native-plugin install for 8 agents, interactive `doctor` v2 with Fix/Skip/More/Quit prompts and a `--all` auto-fix flag, `agentmemory remove` for clean uninstall with destruction-plan confirmation, plus five silent-killer fixes around viewer port collisions, engine version-mismatch detection, `stop --force` override, adopt-on-attach state recording, and an npx-to-global-install hint.
+
+### Added
+
+- **Splash banner + onboarding wizard** ([PR #403](https://github.com/rohitg00/agentmemory/pull/403)). Terminal-width-aware ASCII (full at ≥120 cols, compact at 80–119, single-line below 80), `NO_COLOR`-aware. First-run flow: multi-select 8 native-plugin agents + 8 MCP-server agents (`⟁ Claude Code`, `◫ Cursor`, `◎ Codex`, `✦ Gemini CLI`, `⬡ OpenCode`, etc), single-select LLM provider (Anthropic / OpenAI / Gemini / OpenRouter / MiniMax / BM25-only), seeds `~/.agentmemory/.env` with the chosen provider's `*_API_KEY=` line commented. Subsequent runs skip the splash.
+
+- **`~/.agentmemory/preferences.json`** (PR #403). Schema-versioned JSON with `{ lastAgent, lastAgents, lastProvider, skipSplash, skipNpxHint, firstRunAt }`. Atomic write via `.tmp` + rename, graceful defaults on read failure. Exports `isFirstRun()`, `readPrefs()`, `writePrefs()`, `resetPrefs()`.
+
+- **`agentmemory connect <agent>` command** ([PR #402](https://github.com/rohitg00/agentmemory/pull/402)). Automates native-plugin install for `claude-code`, `codex`, `cursor`, `gemini-cli`, `openclaw` (end-to-end working) plus stubs for `hermes`, `pi`, `openhuman` (which print manual-install hints until deeper YAML/TS adapters land). Each adapter: detect → backup the agent's existing config to `~/.agentmemory/backups/<agent>-<timestamp>.<ext>` → merge → re-read & verify → idempotent on re-run. Supports `--dry-run`, `--force`, `--all`. Interactive picker when run without an agent argument.
+
+- **`agentmemory remove` command** ([PR #406](https://github.com/rohitg00/agentmemory/pull/406)). Tears down everything agentmemory installed: pidfile + state file + preferences + backups + `~/.local/bin/iii` (only when it matches the version we installed) + any agent connections. Asks separately for `.env` (holds API keys) and for the memory data dir. Requires two confirmations by default. Supports `--force`, `--keep-data`.
+
+- **`agentmemory doctor` v2** (PR #406). Replaces the passive reporter with an interactive fixer. Each diagnostic prints problem + cause + fix-preview, then offers Fix / Skip / More / Quit. Checks: missing `.env`, missing LLM key, engine version mismatch, viewer port unreachable, stale pidfile, empty API keys, iii on PATH outside `~/.local/bin/iii`. New flags: `--all` (apply every fix, for CI), `--dry-run` (show plan only).
+
+- **`agentmemory stop --force`** ([PR #405](https://github.com/rohitg00/agentmemory/pull/405)). Bypasses the Docker-compose heuristic refusal so engines started before v0.9.14 (which had no state file) can be torn down without a hand-rolled `lsof | xargs kill -9`.
+
+- **`--reset` flag**. Wipes preferences and re-runs the onboarding wizard (PR #403).
+
+- **`--verbose` / `AGENTMEMORY_VERBOSE=1`**. Restores the pre-v0.9.15 25-line `[agentmemory] X` engine-boot log stream for debugging (PR #403). Default is muted to a single ready-line.
+
+### Changed
+
+- **First-run output trimmed from 30+ lines to ~10**. The `[agentmemory] Worker v0.9.x` boot log stream is now buffered behind a `bootLog` shim (`src/logger.ts`) and only surfaces when `--verbose` is passed. The default surface is the splash banner, the onboarding prompts (first run only), a single engine spinner, and a one-line ready hint: `Memory ready on :3111 · viewer on http://localhost:3113 · try: agentmemory demo`.
+
+- **`isEngineRunning()` short-circuit now adopts the engine** ([PR #405](https://github.com/rohitg00/agentmemory/pull/405)). When the CLI finds an existing engine on `:3111`, it now writes `~/.agentmemory/iii.pid` (resolved via `lsof -i :PORT -sTCP:LISTEN -t`) and `~/.agentmemory/engine-state.json` (`{kind:"native", configPath, attached:true}`) if neither exists. Closes the migration gap where pre-v0.9.14 engines could not be stopped via `agentmemory stop` because no state file was written by the older code.
+
+- **Viewer port auto-bump** (PR #405). When `:3113` is taken, the viewer now retries 3114 → 3115 → … up to 3122 before failing loud. Pre-fix behaviour was a silent `Viewer port 3113 already in use, skipping viewer.` which left users staring at the previous run's stale viewer.
+
+- **Engine version-mismatch warning** (PR #405). When the iii binary on PATH (or attached engine) is not the pinned `IIPINNED_VERSION` (currently v0.11.2), the CLI now prints a clearly-labelled `p.log.warn` with the override path (`AGENTMEMORY_III_VERSION=...` env var or downgrade curl one-liner). Pre-fix was silent acceptance — v0.11.6 on PATH led to undebuggable EPIPE loops.
+
+- **npx PATH hint** (PR #405). After the engine is ready, runs invoked via `npx` get one extra line: `Tip: install globally for the bare \`agentmemory\` command: npm install -g @agentmemory/agentmemory`. Suppressible via `preferences.skipNpxHint`.
+
+### Fixed
+
+- `lsof -i :PORT -t` was returning client PIDs alongside the LISTEN-socket owner (already fixed in v0.9.14 via the `-sTCP:LISTEN` flag + `process.pid` filter; called out here so anyone bisecting the wave knows the LISTEN flag is what stopped the CLI from killing itself).
+
+### Infrastructure
+
+- New modules: `src/cli/splash.ts`, `src/cli/preferences.ts`, `src/cli/onboarding.ts`, `src/cli/connect/{index,types,claude-code,codex,cursor,gemini-cli,openclaw,hermes,pi,openhuman,json-mcp-adapter}.ts`, `src/cli/doctor-diagnostics.ts`, `src/cli/remove-plan.ts`, `src/logger.ts` (bootLog shim).
+- New tests: `test/preferences.test.ts` (7), `test/cli-connect.test.ts` (13), `test/cli-doctor-fixes.test.ts` (18), `test/cli-remove.test.ts` (13). 944 tests passing, 10 pre-existing `mcp-standalone.test.ts` failures unrelated to this wave.
+
+[0.9.15]: https://github.com/rohitg00/agentmemory/compare/v0.9.14...v0.9.15
+
 ## [0.9.14] — 2026-05-15
 
 CLI bootstrap rework so `npx @agentmemory/agentmemory` stops failing on Rancher Desktop and other Docker-shim daemons. The native iii-engine binary is now the first-class start path; Docker becomes opt-in. Also ships `agentmemory stop` so engines started in the background can be torn down without `lsof | xargs kill`. README agents grid reorders OpenHuman next to the other native-integration agents.
