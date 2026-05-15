@@ -32,10 +32,6 @@ function asNumber(value: unknown, fallback?: number): number | undefined {
   return fallback;
 }
 
-function asOptionalTimeBound(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
-}
-
 function parseCsvList(value: unknown): string[] {
   if (typeof value === "string") {
     return value.split(",").map((v) => v.trim()).filter(Boolean);
@@ -138,8 +134,8 @@ export function registerMcpEndpoints(
               limit: typeof args.limit === "number" ? args.limit : 10,
               format,
               token_budget: tokenBudget,
-              start_time: asOptionalTimeBound(args.start_time),
-              end_time: asOptionalTimeBound(args.end_time),
+              start_time: asNonEmptyString(args.start_time),
+              end_time: asNonEmptyString(args.end_time),
             } });
             const text =
               format === "narrative" &&
@@ -321,8 +317,8 @@ export function registerMcpEndpoints(
                 query: args.query,
                 expandIds,
                 limit,
-                start_time: asOptionalTimeBound(args.start_time),
-                end_time: asOptionalTimeBound(args.end_time),
+                start_time: asNonEmptyString(args.start_time),
+                end_time: asNonEmptyString(args.end_time),
               },
             });
             return {
