@@ -53,6 +53,7 @@
 </p>
 
 <p align="center">
+  <a href="#install">Install</a> &bull;
   <a href="#quick-start">Quick Start</a> &bull;
   <a href="#benchmarks">Benchmarks</a> &bull;
   <a href="#vs-competitors">vs Competitors</a> &bull;
@@ -65,6 +66,27 @@
   <a href="#configuration">Config</a> &bull;
   <a href="#api">API</a>
 </p>
+
+---
+
+## Install
+
+```bash
+npm install -g @agentmemory/agentmemory     # once — bare `agentmemory` on PATH
+agentmemory                                  # start the memory server on :3111
+agentmemory demo                             # seed sample sessions + prove recall
+agentmemory connect claude-code              # wire your agent (also: codex, cursor, gemini-cli, ...)
+```
+
+Or via `npx` (no install):
+
+```bash
+npx @agentmemory/agentmemory
+```
+
+Heads-up — npx caches per version. If a bare `npx @agentmemory/agentmemory` serves an older release, force the latest with `npx -y @agentmemory/agentmemory@latest`, or clear the cache once with `rm -rf ~/.npm/_npx`. The first npx run from v0.9.16+ prompts to install globally inline so the bare `agentmemory` command works everywhere afterwards.
+
+Full options at [Quick Start](#quick-start) below. Agent-specific wiring at [Works with every agent](#works-with-every-agent).
 
 ---
 

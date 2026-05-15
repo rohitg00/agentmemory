@@ -12,19 +12,19 @@ interface Cmd {
 
 const SIMPLE: Cmd[] = [
   {
-    label: "1. START THE MEMORY SERVER",
-    cmd: "npx @agentmemory/agentmemory",
+    label: "1. INSTALL ONCE",
+    cmd: "npm install -g @agentmemory/agentmemory",
+    hint: "PUTS `agentmemory` ON YOUR PATH · OR USE npx",
+  },
+  {
+    label: "2. START THE MEMORY SERVER",
+    cmd: "agentmemory",
     hint: "RUNS ON :3111 · VIEWER ON :3113",
   },
   {
-    label: "2. SEE SEMANTIC RECALL INSTANTLY",
-    cmd: "npx @agentmemory/agentmemory demo",
+    label: "3. SEE SEMANTIC RECALL INSTANTLY",
+    cmd: "agentmemory demo",
     hint: "SEEDS 3 SESSIONS · PROVES HYBRID SEARCH WORKS",
-  },
-  {
-    label: "3. OPEN THE LIVE VIEWER",
-    cmd: "open http://localhost:3113",
-    hint: "SESSIONS · MEMORIES · GRAPH · HEALTH",
   },
 ];
 
@@ -67,11 +67,12 @@ export function Install() {
       <header className="section-head">
         <span className="section-eyebrow">SHIP IT</span>
         <h2 id="install-title" className="section-title">
-          THREE COMMANDS.<br />ANY AGENT.
+          ONE INSTALL.<br />ANY AGENT.
         </h2>
         <p className="section-lede">
           RUNS ON YOUR MACHINE. DATA STAYS LOCAL. BRING YOUR CLAUDE SUBSCRIPTION
-          — OR POINT IT AT ANTHROPIC, GEMINI, MINIMAX, OR OPENROUTER.
+          — OR POINT IT AT ANTHROPIC, GEMINI, MINIMAX, OR OPENROUTER. PREFER NPX?
+          USE <code>npx @agentmemory/agentmemory</code> INSTEAD OF STEP 1.
         </p>
       </header>
       <div className={styles.cards}>
