@@ -37,16 +37,29 @@ export class OpenAIProvider implements MemoryProvider {
   }
 
   private buildRequestUrl(): string {
-    const path = this.isAzure() ? "chat/completions" : "v1/chat/completions";
     const url = new URL(this.baseUrl);
-    url.pathname = `${url.pathname.replace(/\/+$/, "")}/${path}`;
+    const pathname = url.pathname.replace(/\/+$/, "");
 
     if (this.isAzure()) {
+      if (!pathname.endsWith("/chat/completions")) {
+        url.pathname = `${pathname}/chat/completions`;
+      }
+
       const apiVersion =
         getEnvVar("AZURE_OPENAI_API_VERSION") ||
         url.searchParams.get("api-version") ||
         DEFAULT_AZURE_API_VERSION;
       url.searchParams.set("api-version", apiVersion);
+
+      return url.toString();
+    }
+
+    if (pathname.endsWith("/chat/completions")) {
+      url.pathname = pathname;
+    } else if (pathname.endsWith("/v1")) {
+      url.pathname = `${pathname}/chat/completions`;
+    } else {
+      url.pathname = `${pathname}/v1/chat/completions`;
     }
 
     return url.toString();
