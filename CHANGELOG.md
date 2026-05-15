@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **Time-range filtering on `memory_recall`, `memory_smart_search`, and `memory_sessions`** ([#392](https://github.com/rohitg00/agentmemory/issues/392)). All three tools now accept optional ISO 8601 `start_time` / `end_time` arguments (both inclusive) so agents can answer "what did I work on last week?" without keyword guessing. `memory_sessions` also gains a `limit` parameter (default 50, max 1000) and now sorts by `startedAt` descending. Sessions are matched by lifetime overlap with the window — a session that started Apr 30 and ended May 2 still matches `2026-05-01..2026-05-07`; active sessions (no `endedAt`) are treated as still running. Bad input (unparseable date or `start_time > end_time`) returns a 400 with `code: invalid_time_range` *before* retrieval runs.
+  - REST: `POST /agentmemory/search`, `POST /agentmemory/smart-search` accept `start_time` / `end_time` in the body. `GET /agentmemory/sessions` accepts `?start_time=&end_time=&limit=`.
+  - MCP server: `memory_recall`, `memory_smart_search`, `memory_sessions` schemas extended; the same arguments are forwarded to `mem::search` / `mem::smart-search`.
+  - MCP shim (`@agentmemory/mcp`): proxy mode forwards the new arguments to the running server; the local `InMemoryKV` fallback applies the filter against `memory.createdAt` (recall) and `session.startedAt` / `endedAt` (sessions).
+  - Search/recall over-fetches (10× in `mem::search`, 5× in `HybridSearch`) and bumps the diversify-by-session cap to 5/session when a time range is set, so recall@K does not collapse on narrow windows. `mem::search` filtering by `project` / `cwd` is unchanged.
+
 ## [0.9.15] — 2026-05-15
 
 DevEx overhaul. Four PRs landed simultaneously rebuilding the first-run experience to SkillKit-grade polish: splash banner + interactive agent grid + provider picker + smart-defaults preferences, `agentmemory connect <agent>` to automate native-plugin install for 8 agents, interactive `doctor` v2 with Fix/Skip/More/Quit prompts and a `--all` auto-fix flag, `agentmemory remove` for clean uninstall with destruction-plan confirmation, plus five silent-killer fixes around viewer port collisions, engine version-mismatch detection, `stop --force` override, adopt-on-attach state recording, and an npx-to-global-install hint.

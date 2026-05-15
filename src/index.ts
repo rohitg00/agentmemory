@@ -320,8 +320,8 @@ async function main() {
     graphWeight,
   );
 
-  registerSmartSearchFunction(sdk, kv, (query, limit) =>
-    hybridSearch.search(query, limit),
+  registerSmartSearchFunction(sdk, kv, (query, limit, options) =>
+    hybridSearch.search(query, limit, options),
   );
 
   registerApiTriggers(sdk, kv, secret, metricsStore, provider);

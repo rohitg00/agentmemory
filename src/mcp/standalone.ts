@@ -12,6 +12,13 @@ import {
   type Handle,
   type ProxyHandle,
 } from "./rest-proxy.js";
+import {
+  filterSessionsByTime,
+  inTimeRange,
+  parseTimeRange,
+  TimeRangeError,
+  type TimeRange,
+} from "../state/time-filter.js";
 
 const IMPLEMENTED_TOOLS = new Set([
   "memory_save",
@@ -64,11 +71,13 @@ function normalizeList(value: unknown): string[] {
 
 const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 100;
-function parseLimit(raw: unknown, fallback = DEFAULT_LIMIT): number {
+const DEFAULT_SESSION_LIMIT = 50;
+const MAX_SESSION_LIMIT = 1000;
+function parseLimit(raw: unknown, fallback = DEFAULT_LIMIT, max = MAX_LIMIT): number {
   if (typeof raw !== "number" && typeof raw !== "string") return fallback;
   const n = Number(raw);
   if (!Number.isFinite(n) || n <= 0) return fallback;
-  return Math.min(Math.floor(n), MAX_LIMIT);
+  return Math.min(Math.floor(n), max);
 }
 
 function textResponse(payload: unknown, pretty = false): {
@@ -91,6 +100,9 @@ interface Validated {
   limit?: number;
   memoryIds?: string[];
   reason?: string;
+  startTimeIso?: string;
+  endTimeIso?: string;
+  timeRange?: TimeRange | null;
 }
 
 function validate(toolName: string, args: Record<string, unknown>): Validated {
@@ -118,10 +130,32 @@ function validate(toolName: string, args: Record<string, unknown>): Validated {
       }
       v.query = query.trim();
       v.limit = parseLimit(args["limit"]);
+      try {
+        v.timeRange = parseTimeRange({
+          start_time: args["start_time"],
+          end_time: args["end_time"],
+        });
+      } catch (err) {
+        if (err instanceof TimeRangeError) throw new Error(err.message);
+        throw err;
+      }
+      if (typeof args["start_time"] === "string") v.startTimeIso = args["start_time"].trim();
+      if (typeof args["end_time"] === "string") v.endTimeIso = args["end_time"].trim();
       return v;
     }
     case "memory_sessions": {
-      v.limit = parseLimit(args["limit"], 20);
+      v.limit = parseLimit(args["limit"], DEFAULT_SESSION_LIMIT, MAX_SESSION_LIMIT);
+      try {
+        v.timeRange = parseTimeRange({
+          start_time: args["start_time"],
+          end_time: args["end_time"],
+        });
+      } catch (err) {
+        if (err instanceof TimeRangeError) throw new Error(err.message);
+        throw err;
+      }
+      if (typeof args["start_time"] === "string") v.startTimeIso = args["start_time"].trim();
+      if (typeof args["end_time"] === "string") v.endTimeIso = args["end_time"].trim();
       return v;
     }
     case "memory_governance_delete": {
@@ -163,13 +197,23 @@ async function handleProxy(
     case "memory_smart_search": {
       const result = await handle.call("/agentmemory/smart-search", {
         method: "POST",
-        body: JSON.stringify({ query: v.query, limit: v.limit }),
+        body: JSON.stringify({
+          query: v.query,
+          limit: v.limit,
+          start_time: v.startTimeIso,
+          end_time: v.endTimeIso,
+        }),
       });
       return textResponse(result, true);
     }
     case "memory_sessions": {
+      const params = new URLSearchParams();
+      if (v.limit !== undefined) params.set("limit", String(v.limit));
+      if (v.startTimeIso) params.set("start_time", v.startTimeIso);
+      if (v.endTimeIso) params.set("end_time", v.endTimeIso);
+      const qs = params.toString();
       const result = await handle.call(
-        `/agentmemory/sessions?limit=${v.limit}`,
+        `/agentmemory/sessions${qs ? `?${qs}` : ""}`,
         { method: "GET" },
       );
       return textResponse(result, true);
@@ -229,29 +273,34 @@ async function handleLocal(
       const limit = v.limit ?? DEFAULT_LIMIT;
       const all =
         await kvInstance.list<Record<string, unknown>>("mem:memories");
-      const results = all
-        .filter((m) => {
-          const text = [
-            typeof m["title"] === "string" ? m["title"] : "",
-            typeof m["content"] === "string" ? m["content"] : "",
-            Array.isArray(m["files"]) ? m["files"].join(" ") : "",
-            Array.isArray(m["concepts"]) ? m["concepts"].join(" ") : "",
-            Array.isArray(m["sessionIds"]) ? m["sessionIds"].join(" ") : "",
-            typeof m["id"] === "string" ? m["id"] : "",
-          ]
-            .join(" ")
-            .toLowerCase();
-          return query.split(/\s+/).every((word) => text.includes(word));
-        })
-        .slice(0, limit);
-      return textResponse({ mode: "compact", results }, true);
+      const matched = all.filter((m) => {
+        const text = [
+          typeof m["title"] === "string" ? m["title"] : "",
+          typeof m["content"] === "string" ? m["content"] : "",
+          Array.isArray(m["files"]) ? m["files"].join(" ") : "",
+          Array.isArray(m["concepts"]) ? m["concepts"].join(" ") : "",
+          Array.isArray(m["sessionIds"]) ? m["sessionIds"].join(" ") : "",
+          typeof m["id"] === "string" ? m["id"] : "",
+        ]
+          .join(" ")
+          .toLowerCase();
+        return query.split(/\s+/).every((word) => text.includes(word));
+      });
+      const memoriesInTimeRange = v.timeRange
+        ? matched.filter((m) =>
+            inTimeRange(typeof m["createdAt"] === "string" ? (m["createdAt"] as string) : undefined, v.timeRange ?? null),
+          )
+        : matched;
+      return textResponse({ mode: "compact", results: memoriesInTimeRange.slice(0, limit) }, true);
     }
 
     case "memory_sessions": {
       const sessions =
         await kvInstance.list<Record<string, unknown>>("mem:sessions");
-      const limit = v.limit ?? 20;
-      return textResponse({ sessions: sessions.slice(0, limit) }, true);
+      const limit = v.limit ?? DEFAULT_SESSION_LIMIT;
+      const sessionsTyped = sessions as Array<{ startedAt: string; endedAt?: string }>;
+      const filtered = filterSessionsByTime(sessionsTyped, v.timeRange ?? null);
+      return textResponse({ sessions: filtered.slice(0, limit) }, true);
     }
 
     case "memory_governance_delete": {

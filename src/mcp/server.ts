@@ -10,6 +10,11 @@ import type {
 } from "../types.js";
 import { getVisibleTools } from "./tools-registry.js";
 import { timingSafeCompare } from "../auth.js";
+import {
+  filterSessionsByTime,
+  parseTimeRange,
+  TimeRangeError,
+} from "../state/time-filter.js";
 
 type McpResponse = {
   status_code: number;
@@ -112,11 +117,25 @@ export function registerMcpEndpoints(
                 body: { error: "token_budget must be a positive integer" },
               };
             }
+            // Validate time range up front for a clean 400 (issue #392).
+            try {
+              parseTimeRange({
+                start_time: args.start_time,
+                end_time: args.end_time,
+              });
+            } catch (err) {
+              if (err instanceof TimeRangeError) {
+                return { status_code: 400, body: { error: err.message, code: err.code } };
+              }
+              throw err;
+            }
             const result = await sdk.trigger({ function_id: "mem::search", payload: {
               query: args.query,
               limit: typeof args.limit === "number" ? args.limit : 10,
               format,
               token_budget: tokenBudget,
+              start_time: asNonEmptyString(args.start_time),
+              end_time: asNonEmptyString(args.end_time),
             } });
             const text =
               format === "narrative" &&
@@ -237,15 +256,39 @@ export function registerMcpEndpoints(
           }
 
           case "memory_sessions": {
-            const sessions = await kv.list(KV.sessions);
-            return {
-              status_code: 200,
-              body: {
-                content: [
-                  { type: "text", text: JSON.stringify({ sessions }, null, 2) },
-                ],
-              },
-            };
+            try {
+              const timeRange = parseTimeRange({
+                start_time: args.start_time,
+                end_time: args.end_time,
+              });
+              let limit = 50;
+              if (args.limit !== undefined) {
+                const parsed = asNumber(args.limit);
+                if (parsed === undefined || !Number.isInteger(parsed) || parsed < 1) {
+                  return {
+                    status_code: 400,
+                    body: { error: "limit must be a positive integer" },
+                  };
+                }
+                limit = Math.min(parsed, 1000);
+              }
+              let sessions = await kv.list<Session>(KV.sessions);
+              sessions = filterSessionsByTime(sessions, timeRange);
+              sessions = sessions.slice(0, limit);
+              return {
+                status_code: 200,
+                body: {
+                  content: [
+                    { type: "text", text: JSON.stringify({ sessions }, null, 2) },
+                  ],
+                },
+              };
+            } catch (err) {
+              if (err instanceof TimeRangeError) {
+                return { status_code: 400, body: { error: err.message, code: err.code } };
+              }
+              throw err;
+            }
           }
 
           case "memory_smart_search": {
@@ -257,12 +300,25 @@ export function registerMcpEndpoints(
             }
             const expandIds = parseCsvList(args.expandIds).slice(0, 20);
             const limit = Math.max(1, Math.min(100, asNumber(args.limit, 10) ?? 10));
+            try {
+              parseTimeRange({
+                start_time: args.start_time,
+                end_time: args.end_time,
+              });
+            } catch (err) {
+              if (err instanceof TimeRangeError) {
+                return { status_code: 400, body: { error: err.message, code: err.code } };
+              }
+              throw err;
+            }
             const result = await sdk.trigger({
               function_id: "mem::smart-search",
               payload: {
                 query: args.query,
                 expandIds,
                 limit,
+                start_time: asNonEmptyString(args.start_time),
+                end_time: asNonEmptyString(args.end_time),
               },
             });
             return {
