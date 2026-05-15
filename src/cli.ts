@@ -6,7 +6,16 @@ import {
   spawnSync,
   type ChildProcess,
 } from "node:child_process";
-import { existsSync, readdirSync, readFileSync, readlinkSync, statSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  readlinkSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { join, dirname, delimiter as PATH_DELIMITER } from "node:path";
 import { fileURLToPath } from "node:url";
 import { homedir, platform } from "node:os";
@@ -78,6 +87,7 @@ Commands:
   doctor             Run diagnostic checks (server, flags, graph, providers)
   demo               Seed sample sessions and show recall in action
   upgrade            Upgrade local deps + iii runtime (best effort)
+  stop               Stop the running iii-engine started by this CLI
   mcp                Start standalone MCP server (no engine required)
   import-jsonl [p]   Import Claude Code JSONL transcripts (default: ~/.claude/projects)
                      --max-files <N> | --max-files=<N>: override scan cap (default 200, max 1000;
@@ -91,8 +101,11 @@ Options:
   --port <N>         Override REST port (default: 3111)
 
 Environment:
-  AGENTMEMORY_URL    Full REST base URL (e.g. http://localhost:3111).
-                     Honored by status, doctor, and MCP shim commands.
+  AGENTMEMORY_URL              Full REST base URL (e.g. http://localhost:3111).
+                               Honored by status, doctor, and MCP shim commands.
+  AGENTMEMORY_USE_DOCKER=1     Prefer the bundled docker-compose path over the
+                               native iii-engine binary on first run.
+  AGENTMEMORY_III_VERSION      Override pinned iii-engine version (default ${IIPINNED_VERSION}).
 
 Quick start:
   npx @agentmemory/agentmemory          # start with local iii-engine or Docker
@@ -212,6 +225,99 @@ function fallbackIiiPaths(): string[] {
   return [join(home, ".local", "bin", "iii"), "/usr/local/bin/iii"];
 }
 
+function iiiBinVersion(binPath: string): string | null {
+  try {
+    const out = execFileSync(binPath, ["--version"], {
+      encoding: "utf-8",
+      stdio: ["ignore", "pipe", "ignore"],
+      timeout: 3000,
+    });
+    const match = out.match(/(\d+\.\d+\.\d+(?:[-+][\w.]+)?)/);
+    return match ? match[1]! : null;
+  } catch {
+    return null;
+  }
+}
+
+function enginePidfilePath(): string {
+  return join(homedir(), ".agentmemory", "iii.pid");
+}
+
+function writeEnginePidfile(pid: number): void {
+  try {
+    const pidPath = enginePidfilePath();
+    mkdirSync(dirname(pidPath), { recursive: true });
+    writeFileSync(pidPath, `${pid}\n`, { encoding: "utf-8" });
+  } catch (err) {
+    vlog(`writeEnginePidfile: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+function readEnginePidfile(): number | null {
+  try {
+    const pidStr = readFileSync(enginePidfilePath(), "utf-8").trim();
+    const pid = parseInt(pidStr, 10);
+    return Number.isFinite(pid) && pid > 0 ? pid : null;
+  } catch {
+    return null;
+  }
+}
+
+function clearEnginePidfile(): void {
+  try {
+    unlinkSync(enginePidfilePath());
+  } catch {}
+}
+
+async function runIiiInstaller(): Promise<{ ok: boolean; binPath: string | null }> {
+  const releaseUrl = iiiReleaseUrl();
+  const asset = iiiReleaseAsset();
+  const isZipAsset = asset?.endsWith(".zip") === true;
+
+  if (!releaseUrl) {
+    p.log.warn(
+      `iii-engine binary not available for ${platform()}/${process.arch}. Use Docker (\`docker pull iiidev/iii:${IIPINNED_VERSION}\`) or download manually from https://github.com/iii-hq/iii/releases/tag/iii%2Fv${IIPINNED_VERSION}.`,
+    );
+    return { ok: false, binPath: null };
+  }
+
+  if (IS_WINDOWS || isZipAsset) {
+    p.log.info(
+      `Auto-install unavailable on ${platform()} — ${asset} isn't tar-compatible. Install manually:\n` +
+        `  1. Download ${releaseUrl}\n` +
+        `  2. Extract iii.exe and place it on PATH (e.g. %USERPROFILE%\\.local\\bin)\n` +
+        `Or use Docker: docker pull iiidev/iii:${IIPINNED_VERSION}`,
+    );
+    return { ok: false, binPath: null };
+  }
+
+  const shBin = whichBinary("sh");
+  const curlBin = whichBinary("curl");
+  if (!shBin || !curlBin) {
+    p.log.warn("curl or sh not found. Cannot auto-install iii-engine.");
+    return { ok: false, binPath: null };
+  }
+
+  const binDir = join(homedir(), ".local", "bin");
+  const binPath = join(binDir, "iii");
+  const installCmd = [
+    `mkdir -p "${binDir}"`,
+    `curl -fsSL "${releaseUrl}" | tar -xz -C "${binDir}"`,
+    `chmod +x "${binPath}"`,
+  ].join(" && ");
+  const installerOk = runCommand(shBin, ["-c", installCmd], {
+    label: `Installing iii-engine v${IIPINNED_VERSION} (pinned)`,
+    optional: true,
+  });
+  if (!installerOk) {
+    p.log.warn(
+      `iii-engine installer failed. Fallbacks: Docker (\`docker pull iiidev/iii:${IIPINNED_VERSION}\`) or download manually from https://github.com/iii-hq/iii/releases/tag/iii%2Fv${IIPINNED_VERSION}.`,
+    );
+    return { ok: false, binPath: null };
+  }
+  return { ok: true, binPath };
+}
+
 type StartupFailure = {
   kind: "no-engine" | "no-docker-compose" | "engine-crashed" | "docker-crashed";
   stderr?: string;
@@ -235,6 +341,10 @@ function spawnEngineBackground(
     stdio: ["ignore", "ignore", "pipe"],
     windowsHide: true,
   });
+  const isDocker = label.includes("Docker");
+  if (!isDocker && typeof child.pid === "number") {
+    writeEnginePidfile(child.pid);
+  }
   const stderrChunks: Buffer[] = [];
   let stderrBytes = 0;
   const MAX_STDERR_CAPTURE = 16 * 1024;
@@ -250,7 +360,7 @@ function spawnEngineBackground(
     if (abnormal) {
       const stderr = Buffer.concat(stderrChunks).toString("utf-8");
       startupFailure = {
-        kind: label.includes("Docker") ? "docker-crashed" : "engine-crashed",
+        kind: isDocker ? "docker-crashed" : "engine-crashed",
         stderr:
           stderr.trim() ||
           (signal
@@ -262,10 +372,19 @@ function spawnEngineBackground(
       if (IS_VERBOSE && stderr.trim()) {
         p.log.error(`engine stderr:\n${stderr}`);
       }
+      if (!isDocker) clearEnginePidfile();
     }
   });
   child.unref();
   return child;
+}
+
+function startIiiBin(iiiBin: string, configPath: string): boolean {
+  const s = p.spinner();
+  s.start(`Starting iii-engine: ${iiiBin}`);
+  spawnEngineBackground(iiiBin, ["--config", configPath], "iii-engine");
+  s.stop("iii-engine process started");
+  return true;
 }
 
 async function startEngine(): Promise<boolean> {
@@ -273,12 +392,24 @@ async function startEngine(): Promise<boolean> {
   let iiiBin = whichBinary("iii");
   vlog(`iii binary: ${iiiBin ?? "(not on PATH)"}, config: ${configPath || "(not found)"}`);
 
-  if (iiiBin && configPath) {
-    const s = p.spinner();
-    s.start(`Starting iii-engine: ${iiiBin}`);
-    spawnEngineBackground(iiiBin, ["--config", configPath], "iii-engine");
-    s.stop("iii-engine process started");
-    return true;
+  if (iiiBin && configPath) return startIiiBin(iiiBin, configPath);
+
+  for (const iiiPath of fallbackIiiPaths()) {
+    if (existsSync(iiiPath)) {
+      const v = iiiBinVersion(iiiPath);
+      vlog(`fallback iii at ${iiiPath} reports version: ${v ?? "unknown"}`);
+      p.log.info(`Found iii at: ${iiiPath}${v ? ` (v${v})` : ""}`);
+      process.env["PATH"] = `${dirname(iiiPath)}${PATH_DELIMITER}${process.env["PATH"] ?? ""}`;
+      iiiBin = iiiPath;
+      break;
+    }
+  }
+
+  if (iiiBin && configPath) return startIiiBin(iiiBin, configPath);
+
+  if (!configPath) {
+    startupFailure = { kind: "no-engine" };
+    return false;
   }
 
   const dockerBin = whichBinary("docker");
@@ -291,7 +422,74 @@ async function startEngine(): Promise<boolean> {
   const composeFile = dockerComposeCandidates.find((c) => existsSync(c));
   vlog(`docker-compose.yml: ${composeFile ?? "(not found)"}`);
 
-  if (dockerBin && composeFile) {
+  const dockerOptIn =
+    process.env["AGENTMEMORY_USE_DOCKER"] === "1" ||
+    process.env["AGENTMEMORY_USE_DOCKER"] === "true";
+  const interactive = !!process.stdin.isTTY && !process.env["CI"];
+
+  type Choice = "install" | "docker" | "manual";
+  let choice: Choice;
+
+  if (dockerOptIn && dockerBin && composeFile) {
+    choice = "docker";
+  } else if (!interactive) {
+    choice = "install";
+    p.log.info("Non-interactive environment detected — auto-installing iii-engine.");
+  } else {
+    p.log.warn(`iii-engine binary not found locally.`);
+    const options: { value: Choice; label: string; hint?: string }[] = [
+      {
+        value: "install",
+        label: `Install iii v${IIPINNED_VERSION} to ~/.local/bin (~6MB, ~5s)`,
+        hint: "recommended",
+      },
+    ];
+    if (dockerBin && composeFile) {
+      options.push({ value: "docker", label: "Use Docker compose", hint: "advanced" });
+    }
+    options.push({ value: "manual", label: "Show manual install steps and exit" });
+
+    const picked = await p.select<Choice>({
+      message: "How would you like to start iii-engine?",
+      options,
+      initialValue: "install",
+    });
+    if (p.isCancel(picked)) {
+      startupFailure = { kind: "no-engine" };
+      return false;
+    }
+    choice = picked;
+  }
+
+  if (choice === "manual") {
+    startupFailure = { kind: "no-engine" };
+    return false;
+  }
+
+  if (choice === "install") {
+    const result = await runIiiInstaller();
+    if (result.ok && result.binPath) {
+      process.env["PATH"] = `${dirname(result.binPath)}${PATH_DELIMITER}${process.env["PATH"] ?? ""}`;
+      iiiBin = result.binPath;
+      return startIiiBin(iiiBin, configPath);
+    }
+    if (dockerBin && composeFile && interactive) {
+      const fallback = await p.confirm({
+        message: "Auto-install failed. Try Docker compose instead?",
+        initialValue: true,
+      });
+      if (p.isCancel(fallback) || fallback !== true) {
+        startupFailure = { kind: "no-engine" };
+        return false;
+      }
+      choice = "docker";
+    } else {
+      startupFailure = { kind: "no-engine" };
+      return false;
+    }
+  }
+
+  if (choice === "docker" && dockerBin && composeFile) {
     const s = p.spinner();
     s.start("Starting iii-engine via Docker...");
     spawnEngineBackground(
@@ -303,27 +501,10 @@ async function startEngine(): Promise<boolean> {
     return true;
   }
 
-  for (const iiiPath of fallbackIiiPaths()) {
-    if (existsSync(iiiPath)) {
-      p.log.info(`Found iii at: ${iiiPath}`);
-      process.env["PATH"] = `${dirname(iiiPath)}${PATH_DELIMITER}${process.env["PATH"] ?? ""}`;
-      iiiBin = iiiPath;
-      break;
-    }
-  }
-
-  if (iiiBin && configPath) {
-    const s = p.spinner();
-    s.start(`Starting iii-engine: ${iiiBin}`);
-    spawnEngineBackground(iiiBin, ["--config", configPath], "iii-engine");
-    s.stop("iii-engine process started");
-    return true;
-  }
-
-  if (!iiiBin && (!dockerBin || !composeFile)) {
-    startupFailure = { kind: "no-engine" };
-  } else if (!composeFile && dockerBin) {
+  if (!composeFile && dockerBin) {
     startupFailure = { kind: "no-docker-compose" };
+  } else {
+    startupFailure = { kind: "no-engine" };
   }
   return false;
 }
@@ -341,46 +522,37 @@ function installInstructions(): string[] {
   const releaseUrl = iiiReleaseUrl();
   if (IS_WINDOWS) {
     return [
-      `agentmemory requires the \`iii-engine\` runtime, pinned to v${IIPINNED_VERSION}. Pick one:`,
+      `agentmemory needs iii-engine v${IIPINNED_VERSION}. Pick one:`,
       "",
       "  A) Download the prebuilt Windows binary:",
       `     1. Open https://github.com/iii-hq/iii/releases/tag/iii%2Fv${IIPINNED_VERSION}`,
-      `     2. Download iii-x86_64-pc-windows-msvc.zip`,
-      "        (or iii-aarch64-pc-windows-msvc.zip on ARM)",
-      "     3. Extract iii.exe and either add its folder to PATH",
-      "        or move it to %USERPROFILE%\\.local\\bin\\iii.exe",
+      `     2. Download iii-x86_64-pc-windows-msvc.zip (or iii-aarch64-pc-windows-msvc.zip on ARM)`,
+      "     3. Extract iii.exe to %USERPROFILE%\\.local\\bin\\iii.exe (or add to PATH)",
       "     4. Re-run: npx @agentmemory/agentmemory",
       "",
-      "  B) Docker Desktop:",
-      "     1. Install Docker Desktop for Windows",
-      `     2. docker pull iiidev/iii:${IIPINNED_VERSION}`,
-      "     3. Start Docker Desktop (engine must be running)",
-      "     4. Re-run: npx @agentmemory/agentmemory",
+      `  B) Docker: docker pull iiidev/iii:${IIPINNED_VERSION}`,
+      "     Re-run with AGENTMEMORY_USE_DOCKER=1 npx @agentmemory/agentmemory",
       "",
-      "Or skip the engine entirely for standalone MCP:",
-      "  npx @agentmemory/agentmemory mcp",
+      "Or skip the engine entirely (standalone MCP):  npx @agentmemory/agentmemory mcp",
+      "",
+      "Docs: https://iii.dev/docs",
     ];
   }
   const linuxInstall = releaseUrl
-    ? `  A) mkdir -p ~/.local/bin && curl -fsSL "${releaseUrl}" | tar -xz -C ~/.local/bin && chmod +x ~/.local/bin/iii`
-    : `  A) Manual download from https://github.com/iii-hq/iii/releases/tag/iii%2Fv${IIPINNED_VERSION}`;
+    ? `  A) curl -fsSL "${releaseUrl}" | tar -xz -C ~/.local/bin && chmod +x ~/.local/bin/iii`
+    : `  A) Manual download: https://github.com/iii-hq/iii/releases/tag/iii%2Fv${IIPINNED_VERSION}`;
   return [
-    `agentmemory requires the \`iii-engine\` runtime, pinned to v${IIPINNED_VERSION}. Pick one:`,
+    `agentmemory needs iii-engine v${IIPINNED_VERSION}. Pick one:`,
     "",
     linuxInstall,
-    `     (installs iii v${IIPINNED_VERSION} into ~/.local/bin/iii)`,
+    "     Then re-run: npx @agentmemory/agentmemory",
     "",
-    `  B) Docker: \`docker pull iiidev/iii:${IIPINNED_VERSION}\``,
+    `  B) Docker: docker pull iiidev/iii:${IIPINNED_VERSION}`,
+    "     Re-run with AGENTMEMORY_USE_DOCKER=1 npx @agentmemory/agentmemory",
     "",
-    "Or skip the engine entirely for standalone MCP:",
-    "  npx @agentmemory/agentmemory mcp",
+    "Or skip the engine entirely (standalone MCP):  npx @agentmemory/agentmemory mcp",
     "",
     "Docs: https://iii.dev/docs",
-    `Why pinned: iii v0.11.6 introduces the new sandbox-everything model`,
-    `(\`iii worker add\` registration). agentmemory still uses the older`,
-    `iii-exec config-file worker model and needs a refactor before it`,
-    `runs cleanly under the new engine. Override with`,
-    `AGENTMEMORY_III_VERSION=<version> when you've migrated manually.`,
   ];
 }
 
@@ -1103,61 +1275,18 @@ async function runUpgrade() {
     p.log.warn("No package.json in current directory. Skipping JS dependency upgrade.");
   }
 
-  const shBin = whichBinary("sh");
-  const curlBin = whichBinary("curl");
-  if (shBin && curlBin) {
-    const upgradeEngine = await p.confirm({
-      message: "Re-run the iii-engine install script (curl | sh)?",
-      initialValue: true,
-    });
-    if (p.isCancel(upgradeEngine)) {
-      p.cancel("Cancelled.");
-      return process.exit(0);
-    }
-    if (upgradeEngine === true) {
-      const releaseUrl = iiiReleaseUrl();
-      const asset = iiiReleaseAsset();
-      const isZipAsset = asset?.endsWith(".zip") === true;
-      if (!releaseUrl) {
-        p.log.warn(
-          `iii-engine binary not available for ${platform()}/${process.arch}. Use Docker (\`docker pull iiidev/iii:${IIPINNED_VERSION}\`) or download manually from https://github.com/iii-hq/iii/releases/tag/iii%2Fv${IIPINNED_VERSION}.`,
-        );
-      } else if (IS_WINDOWS || isZipAsset) {
-        // Windows ships a .zip, not a tarball, and the rest of this
-        // branch assumes sh + tar -xz + chmod. Skip the auto-installer
-        // there and point at the manual flow / Docker fallback. Same
-        // guidance as installInstructions().
-        p.log.info(
-          `Skipping auto-install on ${platform()} — the ${asset} asset isn't tar-compatible. Install manually:\n` +
-            `  1. Download ${releaseUrl}\n` +
-            `  2. Extract iii.exe and place it on PATH (e.g. %USERPROFILE%\\.local\\bin)\n` +
-            `Or use Docker: docker pull iiidev/iii:${IIPINNED_VERSION}`,
-        );
-      } else {
-        // Pinned to IIPINNED_VERSION rather than `install.iii.dev/iii/main`,
-        // which would track `latest` and re-pull the broken 0.11.6 build.
-        const homeDir = homedir();
-        const binDir = join(homeDir, ".local", "bin");
-        const installCmd = [
-          `mkdir -p "${binDir}"`,
-          `curl -fsSL "${releaseUrl}" | tar -xz -C "${binDir}"`,
-          `chmod +x "${binDir}/iii"`,
-        ].join(" && ");
-        const installerOk = runCommand(shBin, ["-c", installCmd], {
-          label: `Installing iii-engine v${IIPINNED_VERSION} (pinned)`,
-          optional: true,
-        });
-        if (!installerOk) {
-          p.log.warn(
-            `iii-engine installer failed. Fallbacks: Docker (\`docker pull iiidev/iii:${IIPINNED_VERSION}\`) or download manually from https://github.com/iii-hq/iii/releases/tag/iii%2Fv${IIPINNED_VERSION}.`,
-          );
-        }
-      }
-    } else {
-      p.log.info("Skipped iii-engine installer.");
-    }
+  const upgradeEngine = await p.confirm({
+    message: "Re-run the iii-engine install script (curl | sh)?",
+    initialValue: true,
+  });
+  if (p.isCancel(upgradeEngine)) {
+    p.cancel("Cancelled.");
+    return process.exit(0);
+  }
+  if (upgradeEngine === true) {
+    await runIiiInstaller();
   } else {
-    p.log.warn("curl or sh not found. Skipping iii-engine installer.");
+    p.log.info("Skipped iii-engine installer.");
   }
 
   if (dockerBin) {
@@ -1180,6 +1309,109 @@ async function runUpgrade() {
     ].join("\n"),
     "agentmemory upgrade",
   );
+}
+
+function pidAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return (err as NodeJS.ErrnoException)?.code === "EPERM";
+  }
+}
+
+async function signalAndWait(
+  pid: number,
+  initialSignal: NodeJS.Signals,
+  timeoutMs: number,
+): Promise<boolean> {
+  try {
+    process.kill(pid, initialSignal);
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException)?.code;
+    if (code === "ESRCH") return true;
+    if (code === "EPERM") {
+      p.log.warn(`No permission to signal pid ${pid}. Try: kill ${pid}`);
+      return false;
+    }
+    vlog(`${initialSignal} ${pid}: ${err instanceof Error ? err.message : String(err)}`);
+    return false;
+  }
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (!pidAlive(pid)) return true;
+    await new Promise((r) => setTimeout(r, 200));
+  }
+  if (!pidAlive(pid)) return true;
+  try {
+    process.kill(pid, "SIGKILL");
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException)?.code === "ESRCH") return true;
+    vlog(`SIGKILL ${pid}: ${err instanceof Error ? err.message : String(err)}`);
+    return false;
+  }
+  await new Promise((r) => setTimeout(r, 200));
+  return !pidAlive(pid);
+}
+
+function findEnginePidsByPort(port: number): number[] {
+  if (IS_WINDOWS) return [];
+  const lsof = whichBinary("lsof");
+  if (!lsof) return [];
+  try {
+    const out = execFileSync(lsof, ["-i", `:${port}`, "-t"], {
+      encoding: "utf-8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    return out
+      .split(/\s+/)
+      .map((s) => parseInt(s, 10))
+      .filter((n) => Number.isFinite(n) && n > 0);
+  } catch (err) {
+    vlog(`lsof :${port}: ${err instanceof Error ? err.message : String(err)}`);
+    return [];
+  }
+}
+
+async function runStop(): Promise<void> {
+  p.intro("agentmemory stop");
+  const port = getRestPort();
+  const running = await isEngineRunning();
+  if (!running) {
+    p.log.info(`No engine responding on port ${port}.`);
+    clearEnginePidfile();
+    p.outro("Nothing to stop.");
+    return;
+  }
+
+  const candidates = new Set<number>();
+  const pidfilePid = readEnginePidfile();
+  if (pidfilePid) candidates.add(pidfilePid);
+  for (const pid of findEnginePidsByPort(port)) candidates.add(pid);
+
+  if (candidates.size === 0) {
+    p.log.error(
+      `Could not locate engine process. Try:\n  ${IS_WINDOWS ? "netstat -ano | findstr :" + port : "lsof -i :" + port + " -t | xargs kill -9"}`,
+    );
+    clearEnginePidfile();
+    process.exit(1);
+  }
+
+  let allStopped = true;
+  for (const pid of candidates) {
+    const s = p.spinner();
+    s.start(`Stopping iii-engine (pid ${pid})...`);
+    const ok = await signalAndWait(pid, "SIGTERM", 3000);
+    s.stop(ok ? `Stopped pid ${pid}` : `Failed to stop pid ${pid}`);
+    if (!ok) allStopped = false;
+  }
+
+  clearEnginePidfile();
+  if (!allStopped) {
+    p.log.error("One or more engine processes survived SIGKILL. Investigate with `ps`.");
+    process.exit(1);
+  }
+  p.outro("Stopped. Memories persisted to disk; restart anytime with: npx @agentmemory/agentmemory");
 }
 
 async function runMcp(): Promise<void> {
@@ -1368,6 +1600,7 @@ const commands: Record<string, () => Promise<void>> = {
   doctor: runDoctor,
   demo: runDemo,
   upgrade: runUpgrade,
+  stop: runStop,
   mcp: runMcp,
   "import-jsonl": runImportJsonl,
 };
