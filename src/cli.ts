@@ -243,6 +243,14 @@ function enginePidfilePath(): string {
   return join(homedir(), ".agentmemory", "iii.pid");
 }
 
+function engineStatePath(): string {
+  return join(homedir(), ".agentmemory", "engine-state.json");
+}
+
+type EngineState =
+  | { kind: "native"; configPath: string }
+  | { kind: "docker"; composeFile: string };
+
 function writeEnginePidfile(pid: number): void {
   try {
     const pidPath = enginePidfilePath();
@@ -267,6 +275,44 @@ function clearEnginePidfile(): void {
   try {
     unlinkSync(enginePidfilePath());
   } catch {}
+}
+
+function writeEngineState(state: EngineState): void {
+  try {
+    const statePath = engineStatePath();
+    mkdirSync(dirname(statePath), { recursive: true });
+    writeFileSync(statePath, `${JSON.stringify(state)}\n`, { encoding: "utf-8" });
+  } catch (err) {
+    vlog(`writeEngineState: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+function readEngineState(): EngineState | null {
+  try {
+    const raw = readFileSync(engineStatePath(), "utf-8");
+    const parsed = JSON.parse(raw) as Partial<EngineState>;
+    if (parsed && (parsed.kind === "native" || parsed.kind === "docker")) {
+      return parsed as EngineState;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function clearEngineState(): void {
+  try {
+    unlinkSync(engineStatePath());
+  } catch {}
+}
+
+function discoverComposeFile(): string | null {
+  const candidates = [
+    join(__dirname, "..", "docker-compose.yml"),
+    join(__dirname, "docker-compose.yml"),
+    join(process.cwd(), "docker-compose.yml"),
+  ];
+  return candidates.find((c) => existsSync(c)) ?? null;
 }
 
 async function runIiiInstaller(): Promise<{ ok: boolean; binPath: string | null }> {
@@ -373,6 +419,7 @@ function spawnEngineBackground(
         p.log.error(`engine stderr:\n${stderr}`);
       }
       if (!isDocker) clearEnginePidfile();
+      clearEngineState();
     }
   });
   child.unref();
@@ -382,6 +429,7 @@ function spawnEngineBackground(
 function startIiiBin(iiiBin: string, configPath: string): boolean {
   const s = p.spinner();
   s.start(`Starting iii-engine: ${iiiBin}`);
+  writeEngineState({ kind: "native", configPath });
   spawnEngineBackground(iiiBin, ["--config", configPath], "iii-engine");
   s.stop("iii-engine process started");
   return true;
@@ -492,6 +540,7 @@ async function startEngine(): Promise<boolean> {
   if (choice === "docker" && dockerBin && composeFile) {
     const s = p.spinner();
     s.start("Starting iii-engine via Docker...");
+    writeEngineState({ kind: "docker", composeFile });
     spawnEngineBackground(
       dockerBin,
       ["compose", "-f", composeFile, "up", "-d"],
@@ -1358,42 +1407,112 @@ function findEnginePidsByPort(port: number): number[] {
   if (IS_WINDOWS) return [];
   const lsof = whichBinary("lsof");
   if (!lsof) return [];
+  // -sTCP:LISTEN restricts to listening server sockets only. Without
+  // this, lsof also returns client-side PIDs (any process with an
+  // active TCP connection to :port), which includes the agentmemory
+  // CLI itself thanks to the keep-alive fetch in isEngineRunning().
+  // signalAndWait would then SIGKILL its own parent — exit code 137.
+  const selfPid = process.pid;
   try {
-    const out = execFileSync(lsof, ["-i", `:${port}`, "-t"], {
+    const out = execFileSync(lsof, ["-i", `:${port}`, "-sTCP:LISTEN", "-t"], {
       encoding: "utf-8",
       stdio: ["ignore", "pipe", "ignore"],
     });
     return out
       .split(/\s+/)
       .map((s) => parseInt(s, 10))
-      .filter((n) => Number.isFinite(n) && n > 0);
+      .filter((n) => Number.isFinite(n) && n > 0 && n !== selfPid);
   } catch (err) {
     vlog(`lsof :${port}: ${err instanceof Error ? err.message : String(err)}`);
     return [];
   }
 }
 
+async function stopDockerEngine(composeFile: string, port: number): Promise<void> {
+  const dockerBin = whichBinary("docker");
+  if (!dockerBin) {
+    p.log.error(
+      `Engine was started via Docker compose, but \`docker\` is no longer on PATH. Stop it manually:\n  docker compose -f ${composeFile} down`,
+    );
+    process.exit(1);
+  }
+  if (!existsSync(composeFile)) {
+    p.log.error(
+      `Engine state references ${composeFile}, but the file is gone. Stop it manually:\n  docker compose down  (from the dir holding the original docker-compose.yml)`,
+    );
+    process.exit(1);
+  }
+  const ok = runCommand(dockerBin, ["compose", "-f", composeFile, "down"], {
+    label: `docker compose -f ${composeFile} down`,
+  });
+  clearEnginePidfile();
+  clearEngineState();
+  if (!ok) {
+    p.log.error(
+      `docker compose down failed. The engine may still be running on :${port}. Inspect with:\n  docker compose -f ${composeFile} ps`,
+    );
+    process.exit(1);
+  }
+  p.outro("Stopped. Memories persisted to disk; restart anytime with: npx @agentmemory/agentmemory");
+}
+
 async function runStop(): Promise<void> {
   p.intro("agentmemory stop");
   const port = getRestPort();
+  const state = readEngineState();
   const running = await isEngineRunning();
-  if (!running) {
-    p.log.info(`No engine responding on port ${port}.`);
-    clearEnginePidfile();
-    p.outro("Nothing to stop.");
+
+  if (state?.kind === "docker") {
+    if (!running) {
+      p.log.info(`No engine responding on port ${port}.`);
+      clearEnginePidfile();
+      clearEngineState();
+      p.outro("Nothing to stop.");
+      return;
+    }
+    await stopDockerEngine(state.composeFile, port);
     return;
   }
 
-  const candidates = new Set<number>();
+  const portPids = findEnginePidsByPort(port);
   const pidfilePid = readEnginePidfile();
+
+  if (!running) {
+    if (portPids.length === 0 && pidfilePid === null) {
+      clearEnginePidfile();
+      clearEngineState();
+      p.outro("Nothing to stop.");
+      return;
+    }
+    const survivors = new Set<number>(portPids);
+    if (pidfilePid) survivors.add(pidfilePid);
+    p.log.warn(
+      `Engine not responding on :${port}, but ${survivors.size} process(es) still hold the port or pidfile: ${[...survivors].join(", ")}`,
+    );
+    p.log.info(
+      `Preserving ~/.agentmemory/iii.pid. Investigate before manual cleanup:\n  ps -p ${[...survivors].join(",")} -o pid,ppid,comm,etime\n  ${IS_WINDOWS ? "netstat -ano | findstr :" + port : "lsof -i :" + port}`,
+    );
+    process.exit(1);
+  }
+
+  if (!state) {
+    const compose = discoverComposeFile();
+    if (compose && pidfilePid === null) {
+      p.log.error(
+        `Engine is running on :${port} but no pidfile or state file is present. It may have been started via Docker compose by a different shell. Refusing to signal host PIDs.\n\nStop it with:\n  docker compose -f ${compose} down\n\nOr re-run with AGENTMEMORY_USE_DOCKER=1 to record state next time.`,
+      );
+      process.exit(1);
+    }
+  }
+
+  const candidates = new Set<number>();
   if (pidfilePid) candidates.add(pidfilePid);
-  for (const pid of findEnginePidsByPort(port)) candidates.add(pid);
+  for (const pid of portPids) candidates.add(pid);
 
   if (candidates.size === 0) {
     p.log.error(
       `Could not locate engine process. Try:\n  ${IS_WINDOWS ? "netstat -ano | findstr :" + port : "lsof -i :" + port + " -t | xargs kill -9"}`,
     );
-    clearEnginePidfile();
     process.exit(1);
   }
 
@@ -1407,6 +1526,7 @@ async function runStop(): Promise<void> {
   }
 
   clearEnginePidfile();
+  clearEngineState();
   if (!allStopped) {
     p.log.error("One or more engine processes survived SIGKILL. Investigate with `ps`.");
     process.exit(1);
