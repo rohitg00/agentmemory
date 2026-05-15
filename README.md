@@ -986,6 +986,7 @@ agentmemory auto-detects from your environment. No API key needed if you have a 
 | Provider | Config | Notes |
 |----------|--------|-------|
 | **No-op (default)** | No config needed | LLM-backed compress/summarize is DISABLED. Synthetic BM25 compression + recall still work. See `AGENTMEMORY_ALLOW_AGENT_SDK` below if you used to rely on the Claude-subscription fallback. |
+| OpenAI-compatible | `OPENAI_API_KEY` | OpenAI, Azure OpenAI deployment URLs, DeepSeek, SiliconFlow, vLLM, LM Studio, Ollama-compatible proxies |
 | Anthropic API | `ANTHROPIC_API_KEY` | Per-token billing |
 | MiniMax | `MINIMAX_API_KEY` | Anthropic-compatible |
 | Gemini | `GEMINI_API_KEY` | Also enables embeddings |
@@ -998,6 +999,10 @@ Create `~/.agentmemory/.env`:
 
 ```env
 # LLM provider (pick one — default is the no-op provider: no LLM calls)
+# OPENAI_API_KEY=sk-...
+# OPENAI_MODEL=gpt-4o-mini
+# OPENAI_BASE_URL=https://api.openai.com   # Override for Azure / DeepSeek / SiliconFlow / vLLM / LM Studio / Ollama / proxies
+# AZURE_OPENAI_API_VERSION=2024-10-21      # Azure OpenAI data-plane API version for deployment URLs
 # ANTHROPIC_API_KEY=sk-ant-...
 # ANTHROPIC_BASE_URL=...              # Optional: Anthropic-compatible proxy / Azure
 # GEMINI_API_KEY=...
@@ -1010,8 +1015,6 @@ Create `~/.agentmemory/.env`:
 # Embedding provider (auto-detected, or override)
 # EMBEDDING_PROVIDER=local
 # VOYAGE_API_KEY=...
-# OPENAI_API_KEY=sk-...
-# OPENAI_BASE_URL=https://api.openai.com   # Override for Azure / vLLM / LM Studio / proxies
 # OPENAI_EMBEDDING_MODEL=text-embedding-3-small
 # OPENAI_EMBEDDING_DIMENSIONS=1536        # Required when the model is not in the known-models table
 

@@ -7,6 +7,7 @@ import { AgentSDKProvider } from "./agent-sdk.js";
 import { AnthropicProvider } from "./anthropic.js";
 import { MinimaxProvider } from "./minimax.js";
 import { NoopProvider } from "./noop.js";
+import { OpenAIProvider } from "./openai.js";
 import { OpenRouterProvider } from "./openrouter.js";
 import { ResilientProvider } from "./resilient.js";
 import { FallbackChainProvider } from "./fallback-chain.js";
@@ -59,6 +60,13 @@ export function createFallbackProvider(
 
 function createBaseProvider(config: ProviderConfig): MemoryProvider {
   switch (config.provider) {
+    case "openai":
+      return new OpenAIProvider(
+        requireEnvVar("OPENAI_API_KEY"),
+        config.model,
+        config.maxTokens,
+        config.baseURL,
+      );
     case "minimax":
       return new MinimaxProvider(
         requireEnvVar("MINIMAX_API_KEY"),
