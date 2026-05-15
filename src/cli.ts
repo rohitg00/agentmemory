@@ -872,18 +872,43 @@ async function waitForAgentmemoryReady(timeoutMs: number): Promise<boolean> {
   return false;
 }
 
+// Derive a host string for the streams/engine WebSocket lines from
+// the configured engine URL (`III_ENGINE_URL`) or REST base
+// (`AGENTMEMORY_URL`) so a remote-bind setup like
+// `III_ENGINE_URL=ws://my-host:49134` doesn't print misleading
+// localhost addresses. Falls back to localhost.
+function getEngineHost(): string {
+  for (const envKey of ["III_ENGINE_URL", "AGENTMEMORY_URL"]) {
+    const raw = process.env[envKey];
+    if (!raw) continue;
+    try {
+      const parsed = new URL(raw);
+      if (parsed.hostname) return parsed.hostname;
+    } catch {}
+  }
+  return "localhost";
+}
+
 function printReadyHint(consoleState: IiiConsoleState): void {
-  const restUrl = `http://localhost:${getRestPort()}`;
+  // REST goes through getBaseUrl which already honors AGENTMEMORY_URL
+  // for full host+protocol overrides. Streams/Engine are derived from
+  // III_ENGINE_URL so a remote bind reads correctly in the panel.
+  const restUrl = getBaseUrl();
   const viewerUrl = getViewerUrl();
-  const streamUrl = `ws://localhost:${getStreamPort()}`;
-  const engineUrl = `ws://localhost:${getEnginePort()}`;
+  const engineHost = getEngineHost();
+  const streamUrl = `ws://${engineHost}:${getStreamPort()}`;
+  const engineUrl = `ws://${engineHost}:${getEnginePort()}`;
+
   const consoleLine =
     consoleState.kind === "installed"
       ? // We can't safely probe iii-console's port (default 3113
         // collides with our viewer) so we surface the binary location
-        // and let the user start it on a port of their choice.
-        `iii console  ${consoleState.binPath}  (run: iii-console -p <port>)`
-      : `iii console  (run: ${III_CONSOLE_INSTALL_CMD})`;
+        // and let the user start it on a port of their choice. Use
+        // the detected binary path so `(run: ...)` is executable as-
+        // is, even when the binary isn't on PATH under the bare
+        // name `iii-console`.
+        `iii console  ${consoleState.binPath}  (run: ${consoleState.binPath} -p <port>)`
+      : `iii console  (install: ${III_CONSOLE_INSTALL_CMD})`;
 
   const lines = [
     `REST API     ${restUrl}`,
@@ -896,7 +921,16 @@ function printReadyHint(consoleState: IiiConsoleState): void {
   // used elsewhere in this CLI for "Troubleshooting" / "Setup
   // required" blocks, so the visual language stays consistent.
   p.note(lines.join("\n"), `agentmemory v${VERSION}`);
-  process.stdout.write("\nTry: agentmemory demo\n");
+
+  // Pick a runnable form for the suggested next-step. Users invoked
+  // via `npx` don't have the bare `agentmemory` command on PATH yet
+  // (unless they accepted the global-install prompt and the npm bin
+  // dir was already on PATH in this shell), so we suggest the npx
+  // form for them; everyone else gets the global form.
+  const demoCommand = isInvokedViaNpx()
+    ? "npx @agentmemory/agentmemory demo"
+    : "agentmemory demo";
+  process.stdout.write(`\nTry: ${demoCommand}\n`);
 }
 
 async function main() {
