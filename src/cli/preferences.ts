@@ -45,6 +45,14 @@ export interface Prefs {
   // tradeoff" toggle. Kept on the schema so we don't have to bump
   // schemaVersion when we ship the flag.
   skipNpxHint: boolean;
+  // Set to true when the user declines the "install agentmemory
+  // globally?" prompt on first npx run. We never ask again on this
+  // machine so the prompt stays a one-time DX nudge, not a nag.
+  skipGlobalInstall: boolean;
+  // Set to true when the user declines the "install iii console?"
+  // prompt. iii console is first-class engine UI but optional at the
+  // install step — once the user says no, we stop asking.
+  skipConsoleInstall: boolean;
   // ISO timestamp of the first time onboarding completed. Set once,
   // never updated, so we can show "you joined agentmemory N days ago"
   // copy in /status later without keeping a separate file.
@@ -58,6 +66,8 @@ const DEFAULTS: Prefs = {
   lastProvider: null,
   skipSplash: false,
   skipNpxHint: false,
+  skipGlobalInstall: false,
+  skipConsoleInstall: false,
   firstRunAt: null,
 };
 

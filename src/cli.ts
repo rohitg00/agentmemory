@@ -199,11 +199,45 @@ function getViewerUrl(): string {
   if (envUrl) return envUrl.replace(/\/+$/, "");
   try {
     const u = new URL(getBaseUrl());
-    const vPort = (parseInt(u.port || "3111", 10) || 3111) + 2;
+    const vPort =
+      parseInt(process.env["III_VIEWER_PORT"] || "", 10) ||
+      (parseInt(u.port || "3111", 10) || 3111) + 2;
     return `${u.protocol}//${u.hostname}:${vPort}`;
   } catch {
-    return `http://localhost:${getRestPort() + 2}`;
+    const vPort =
+      parseInt(process.env["III_VIEWER_PORT"] || "", 10) ||
+      getRestPort() + 2;
+    return `http://localhost:${vPort}`;
   }
+}
+
+// WebSocket streams port. Engine writes here; the SDK and viewer
+// subscribe. Honors both `III_STREAM_PORT` (the singular name the
+// engine docs use post-0.11) and `III_STREAMS_PORT` (the name our
+// own config.ts has used since 0.7) so a single source of truth in
+// either form lights up the ready panel.
+function getStreamPort(): number {
+  return (
+    parseInt(process.env["III_STREAM_PORT"] || "", 10) ||
+    parseInt(process.env["III_STREAMS_PORT"] || "", 10) ||
+    3112
+  );
+}
+
+// Bridge WebSocket port — the iii engine's internal worker bus.
+// Defaults to 49134 (engine convention) and is overridable via
+// `III_ENGINE_PORT` or the legacy `III_ENGINE_URL=ws://host:port`.
+function getEnginePort(): number {
+  const explicit = parseInt(process.env["III_ENGINE_PORT"] || "", 10);
+  if (explicit) return explicit;
+  const url = process.env["III_ENGINE_URL"];
+  if (url) {
+    try {
+      const parsed = new URL(url).port;
+      if (parsed) return parseInt(parsed, 10);
+    } catch {}
+  }
+  return 49134;
 }
 
 async function isEngineRunning(): Promise<boolean> {
@@ -296,7 +330,7 @@ function warnIfEngineVersionMismatch(iiiBinPath: string | null | undefined): voi
     ? `curl -fsSL https://github.com/iii-hq/iii/releases/download/iii/v${IIPINNED_VERSION}/${asset} | tar -xz -C ~/.local/bin`
     : `download v${IIPINNED_VERSION} from https://github.com/iii-hq/iii/releases/tag/iii%2Fv${IIPINNED_VERSION}`;
   p.log.warn(
-    `iii-engine on PATH is v${detected} but agentmemory v0.9.14+ pins v${IIPINNED_VERSION}. Set AGENTMEMORY_III_VERSION=${detected} to silence, or downgrade with: \`${downloadHint}\``,
+    `iii-engine on PATH is v${detected} but agentmemory v${VERSION} pins v${IIPINNED_VERSION}. Set AGENTMEMORY_III_VERSION=${detected} to silence, or downgrade with: \`${downloadHint}\``,
   );
 }
 
@@ -385,24 +419,125 @@ function isInvokedViaNpx(): boolean {
   return false;
 }
 
-function shouldSkipNpxHint(): boolean {
-  try {
-    const prefsPath = join(homedir(), ".agentmemory", "preferences.json");
-    if (!existsSync(prefsPath)) return false;
-    const raw = readFileSync(prefsPath, "utf-8");
-    const prefs = JSON.parse(raw) as { skipNpxHint?: boolean };
-    return prefs?.skipNpxHint === true;
-  } catch {
-    return false;
+// First-run global-install prompt. Replaces the previous passive
+// `p.log.info` hint that users ignored — typing `agentmemory stop`
+// in a new shell would then 404 with `command not found`. We now
+// ask once, persist the answer in preferences, and never ask again.
+async function maybeOfferGlobalInstall(): Promise<void> {
+  if (!isInvokedViaNpx()) return;
+  if (!process.stdin.isTTY) return;
+  if (process.env["CI"]) return;
+  const prefs = readPrefs();
+  if (prefs.skipGlobalInstall || prefs.skipNpxHint) return;
+
+  const answer = await p.confirm({
+    message:
+      "Install agentmemory globally so the bare `agentmemory` command works in any shell? [Y/n]",
+    initialValue: true,
+  });
+  if (p.isCancel(answer)) {
+    // Treat Ctrl+C as "not now" rather than "never". Don't persist.
+    return;
+  }
+  if (answer === false) {
+    writePrefs({ skipGlobalInstall: true });
+    p.log.info(
+      "Skipped. Re-run via `npx @agentmemory/agentmemory` or install later with: npm install -g @agentmemory/agentmemory",
+    );
+    return;
+  }
+
+  const npmBin = whichBinary("npm");
+  if (!npmBin) {
+    p.log.warn(
+      "npm not found on PATH. Install manually: npm install -g @agentmemory/agentmemory",
+    );
+    return;
+  }
+  const ok = runCommand(
+    npmBin,
+    ["install", "-g", `@agentmemory/agentmemory@${VERSION}`],
+    { label: `Installing @agentmemory/agentmemory@${VERSION} globally` },
+  );
+  if (ok) {
+    p.log.success(
+      "Installed globally. `agentmemory stop` etc. will now work in new shells.",
+    );
+    // Persist so we never re-prompt even if the user happens to npx
+    // again from a CI-less TTY.
+    writePrefs({ skipGlobalInstall: true });
+  } else {
+    p.log.warn(
+      "Global install failed. Try manually: npm install -g @agentmemory/agentmemory",
+    );
   }
 }
 
-function maybeEmitNpxHint(): void {
-  if (!isInvokedViaNpx()) return;
-  if (shouldSkipNpxHint()) return;
-  p.log.info(
-    "Tip: install globally for the bare `agentmemory` command:\n  npm install -g @agentmemory/agentmemory",
-  );
+// iii-console install state.
+//   "installed" — `iii-console` is on PATH or at `~/.local/bin/iii-console`
+//   "missing"   — binary not found anywhere we look
+// We deliberately do NOT probe the console's HTTP port: the binary
+// being on disk is the signal we care about (it's not auto-started by
+// agentmemory and its default port 3113 collides with our viewer, so
+// "is it listening?" is the wrong question at boot time).
+type IiiConsoleState =
+  | { kind: "installed"; binPath: string }
+  | { kind: "missing" };
+
+function detectIiiConsole(): IiiConsoleState {
+  const onPath = whichBinary("iii-console");
+  if (onPath) return { kind: "installed", binPath: onPath };
+  const fallback = IS_WINDOWS
+    ? join(process.env["USERPROFILE"] ?? "", ".local", "bin", "iii-console.exe")
+    : join(homedir(), ".local", "bin", "iii-console");
+  if (fallback && existsSync(fallback)) {
+    return { kind: "installed", binPath: fallback };
+  }
+  return { kind: "missing" };
+}
+
+const III_CONSOLE_INSTALL_CMD =
+  "curl -fsSL https://install.iii.dev/console/main/install.sh | sh";
+
+async function ensureIiiConsole(): Promise<IiiConsoleState> {
+  const state = detectIiiConsole();
+  if (state.kind === "installed") return state;
+
+  // Non-interactive contexts get the panel hint but no prompt.
+  if (!process.stdin.isTTY || process.env["CI"]) return state;
+  const prefs = readPrefs();
+  if (prefs.skipConsoleInstall) return state;
+
+  const answer = await p.confirm({
+    message:
+      "iii console gives engine-level visibility (workers, functions, queues, traces). Install now?",
+    initialValue: true,
+  });
+  if (p.isCancel(answer)) return state;
+  if (answer === false) {
+    writePrefs({ skipConsoleInstall: true });
+    return state;
+  }
+
+  const shBin = whichBinary("sh");
+  const curlBin = whichBinary("curl");
+  if (!shBin || !curlBin) {
+    p.log.warn(
+      `curl or sh not found. Install manually:\n  ${III_CONSOLE_INSTALL_CMD}`,
+    );
+    return state;
+  }
+  const ok = runCommand(shBin, ["-c", III_CONSOLE_INSTALL_CMD], {
+    label: "Installing iii console",
+  });
+  if (!ok) {
+    p.log.warn(
+      `iii console install failed. Re-run manually:\n  ${III_CONSOLE_INSTALL_CMD}`,
+    );
+    return state;
+  }
+  // Re-detect rather than trust install-script output paths.
+  return detectIiiConsole();
 }
 
 function adoptRunningEngine(): void {
@@ -737,13 +872,31 @@ async function waitForAgentmemoryReady(timeoutMs: number): Promise<boolean> {
   return false;
 }
 
-function printReadyHint(): void {
-  const port = getRestPort();
-  const viewer = getViewerUrl();
-  const hint = `Memory ready on :${port} · viewer on ${viewer} · try: agentmemory demo`;
-  // Use plain stdout (not p.outro) so the hint isn't decorated with
-  // clack's closing line — it reads as a status, not an end-of-flow.
-  process.stdout.write("\n" + hint + "\n");
+function printReadyHint(consoleState: IiiConsoleState): void {
+  const restUrl = `http://localhost:${getRestPort()}`;
+  const viewerUrl = getViewerUrl();
+  const streamUrl = `ws://localhost:${getStreamPort()}`;
+  const engineUrl = `ws://localhost:${getEnginePort()}`;
+  const consoleLine =
+    consoleState.kind === "installed"
+      ? // We can't safely probe iii-console's port (default 3113
+        // collides with our viewer) so we surface the binary location
+        // and let the user start it on a port of their choice.
+        `iii console  ${consoleState.binPath}  (run: iii-console -p <port>)`
+      : `iii console  (run: ${III_CONSOLE_INSTALL_CMD})`;
+
+  const lines = [
+    `REST API     ${restUrl}`,
+    `Viewer       ${viewerUrl}`,
+    `Streams      ${streamUrl}`,
+    `Engine       ${engineUrl}`,
+    consoleLine,
+  ];
+  // p.note renders a bordered panel with a title — same affordance
+  // used elsewhere in this CLI for "Troubleshooting" / "Setup
+  // required" blocks, so the visual language stays consistent.
+  p.note(lines.join("\n"), `agentmemory v${VERSION}`);
+  process.stdout.write("\nTry: agentmemory demo\n");
 }
 
 async function main() {
@@ -770,7 +923,11 @@ async function main() {
   if (skipEngine) {
     if (IS_VERBOSE) p.log.info("Skipping engine check (--no-engine)");
     await import("./index.js");
-    if (await waitForAgentmemoryReady(15000)) printReadyHint();
+    if (await waitForAgentmemoryReady(15000)) {
+      const consoleState = await ensureIiiConsole();
+      await maybeOfferGlobalInstall();
+      printReadyHint(consoleState);
+    }
     return;
   }
 
@@ -780,9 +937,12 @@ async function main() {
       whichBinary("iii") ?? fallbackIiiPaths().find((p) => existsSync(p)) ?? null;
     warnIfEngineVersionMismatch(attachedBin);
     adoptRunningEngine();
-    maybeEmitNpxHint();
     await import("./index.js");
-    if (await waitForAgentmemoryReady(15000)) printReadyHint();
+    if (await waitForAgentmemoryReady(15000)) {
+      const consoleState = await ensureIiiConsole();
+      await maybeOfferGlobalInstall();
+      printReadyHint(consoleState);
+    }
     return;
   }
 
@@ -850,9 +1010,12 @@ async function main() {
   }
 
   s.stop("iii-engine is ready");
-  maybeEmitNpxHint();
   await import("./index.js");
-  if (await waitForAgentmemoryReady(15000)) printReadyHint();
+  if (await waitForAgentmemoryReady(15000)) {
+    const consoleState = await ensureIiiConsole();
+    await maybeOfferGlobalInstall();
+    printReadyHint(consoleState);
+  }
   // Mark splash as something to skip on subsequent runs. This is a
   // no-op if onboarding already flipped the flag (idempotent merge).
   writePrefs({ skipSplash: true });
