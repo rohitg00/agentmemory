@@ -77,17 +77,32 @@ agentmemory works with any agent that supports hooks, MCP, or REST API. All agen
 <td align="center" width="12.5%">
 <a href="https://claude.com/product/claude-code"><img src="https://matthiasroder.com/content/images/2026/01/Claude.png?size=120" alt="Claude Code" width="48" height="48" /></a><br/>
 <strong>Claude Code</strong><br/>
-<sub>12 hooks + MCP + skills</sub>
+<sub>native plugin + 12 hooks + MCP</sub>
+</td>
+<td align="center" width="12.5%">
+<a href="https://github.com/openai/codex"><img src="https://github.com/openai.png?size=120" alt="Codex CLI" width="48" height="48" /></a><br/>
+<strong>Codex CLI</strong><br/>
+<sub>native plugin + 6 hooks + MCP</sub>
+</td>
+<td align="center" width="12.5%">
+<a href="https://github.com/tinyhumansai/openhuman"><img src="https://raw.githubusercontent.com/tinyhumansai/openhuman/main/app/src-tauri/icons/128x128.png" alt="OpenHuman" width="48" height="48" /></a><br/>
+<strong>OpenHuman</strong><br/>
+<sub>native Memory trait backend</sub>
 </td>
 <td align="center" width="12.5%">
 <a href="integrations/openclaw/"><img src="https://github.com/openclaw.png?size=120" alt="OpenClaw" width="48" height="48" /></a><br/>
 <strong>OpenClaw</strong><br/>
-<sub>MCP + <a href="integrations/openclaw/">plugin</a></sub>
+<sub>native plugin + MCP</sub>
 </td>
 <td align="center" width="12.5%">
 <a href="integrations/hermes/"><img src="https://github.com/NousResearch.png?size=120" alt="Hermes" width="48" height="48" /></a><br/>
 <strong>Hermes</strong><br/>
-<sub>MCP + <a href="integrations/hermes/">plugin</a></sub>
+<sub>native plugin + MCP</sub>
+</td>
+<td align="center" width="12.5%">
+<a href="integrations/pi/"><img src="https://github.com/inflection-ai.png?size=120" alt="pi" width="48" height="48" /></a><br/>
+<strong>pi</strong><br/>
+<sub>native plugin + MCP</sub>
 </td>
 <td align="center" width="12.5%">
 <a href="https://cursor.com"><img src="https://www.freelogovectors.net/wp-content/uploads/2025/06/cursor-logo-freelogovectors.net_.png" alt="Cursor" width="48" height="48" /></a><br/>
@@ -99,23 +114,18 @@ agentmemory works with any agent that supports hooks, MCP, or REST API. All agen
 <strong>Gemini CLI</strong><br/>
 <sub>MCP server</sub>
 </td>
+</tr>
+<tr>
 <td align="center" width="12.5%">
 <a href="https://github.com/opencode-ai/opencode"><img src="https://github.com/opencode-ai.png?size=120" alt="OpenCode" width="48" height="48" /></a><br/>
 <strong>OpenCode</strong><br/>
 <sub>MCP server</sub>
 </td>
 <td align="center" width="12.5%">
-<a href="https://github.com/openai/codex"><img src="https://github.com/openai.png?size=120" alt="Codex CLI" width="48" height="48" /></a><br/>
-<strong>Codex CLI</strong><br/>
-<sub>6 hooks + MCP + skills</sub>
-</td>
-<td align="center" width="12.5%">
 <a href="https://github.com/cline/cline"><img src="https://github.com/cline.png?size=120" alt="Cline" width="48" height="48" /></a><br/>
 <strong>Cline</strong><br/>
 <sub>MCP server</sub>
 </td>
-</tr>
-<tr>
 <td align="center" width="12.5%">
 <a href="https://github.com/block/goose"><img src="https://github.com/block.png?size=120" alt="Goose" width="48" height="48" /></a><br/>
 <strong>Goose</strong><br/>
@@ -145,16 +155,6 @@ agentmemory works with any agent that supports hooks, MCP, or REST API. All agen
 <a href="https://github.com/RooCodeInc/Roo-Code"><img src="https://github.com/RooCodeInc.png?size=120" alt="Roo Code" width="48" height="48" /></a><br/>
 <strong>Roo Code</strong><br/>
 <sub>MCP server</sub>
-</td>
-<td align="center" width="12.5%">
-<a href="https://github.com/anthropics/claude-agent-sdk-typescript"><img src="https://github.com/anthropics.png?size=120" alt="Claude SDK" width="48" height="48" /></a><br/>
-<strong>Claude SDK</strong><br/>
-<sub>AgentSDKProvider</sub>
-</td>
-<td align="center" width="12.5%">
-<img src="https://img.shields.io/badge/104-endpoints-1f6feb?style=flat-square" alt="REST API" width="48" /><br/>
-<strong>Any agent</strong><br/>
-<sub>REST API</sub>
 </td>
 </tr>
 </table>

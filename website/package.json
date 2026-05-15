@@ -13,17 +13,17 @@
   },
   "dependencies": {
     "next": "^16.2.6",
-    "react": "^19.2.5",
-    "react-dom": "^19.2.5"
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6"
   },
   "overrides": {
     "postcss": "^8.5.10"
   },
   "devDependencies": {
-    "@types/node": "22.10.2",
+    "@types/node": "^25.7.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
-    "typescript": "5.7.2"
+    "typescript": "^6.0.3"
   },
   "engines": {
     "node": ">=20"
