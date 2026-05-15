@@ -15,6 +15,8 @@ import {
   getSearchIndex,
 } from "../src/functions/search.js";
 import { registerSmartSearchFunction } from "../src/functions/smart-search.js";
+import { registerApiTriggers } from "../src/triggers/api.js";
+import { registerMcpEndpoints } from "../src/mcp/server.js";
 import { KV } from "../src/state/schema.js";
 import type {
   CompressedObservation,
@@ -47,6 +49,7 @@ function mockKV() {
 
 function mockSdk() {
   const functions = new Map<string, Function>();
+  const triggerOverrides = new Map<string, Function>();
   return {
     registerFunction: (idOrOpts: string | { id: string }, handler: Function) => {
       const id = typeof idOrOpts === "string" ? idOrOpts : idOrOpts.id;
@@ -59,10 +62,36 @@ function mockSdk() {
     ) => {
       const id = typeof idOrInput === "string" ? idOrInput : idOrInput.function_id;
       const payload = typeof idOrInput === "string" ? data : idOrInput.payload;
+      if (triggerOverrides.has(id)) {
+        return triggerOverrides.get(id)!(payload);
+      }
       const fn = functions.get(id);
       if (!fn) throw new Error(`No function: ${id}`);
       return fn(payload);
     },
+    overrideTrigger: (id: string, handler: Function) => {
+      triggerOverrides.set(id, handler);
+    },
+    getFunction: (id: string) => functions.get(id),
+  };
+}
+
+function makeReq(body?: unknown, query_params: Record<string, unknown> = {}) {
+  return {
+    body,
+    headers: {},
+    query_params,
+  };
+}
+
+function testSession(id: string, minute: number): Session {
+  return {
+    id,
+    project: "demo",
+    cwd: "/tmp/demo",
+    startedAt: new Date(Date.UTC(2026, 0, 1, 0, minute)).toISOString(),
+    status: "completed",
+    observationCount: 0,
   };
 }
 
@@ -236,6 +265,104 @@ describe("filterSessionsByTime", () => {
     });
     const out = filterSessionsByTime(sessions, range);
     expect(out.map((s) => s.id)).toContain("s3");
+  });
+});
+
+// ---------- REST / MCP sessions surface ----------
+
+describe("api::sessions time-range surface", () => {
+  it("defaults memory_sessions to 50 results", async () => {
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerApiTriggers(sdk as never, kv as never);
+
+    for (let i = 0; i < 60; i++) {
+      const session = testSession(`ses_${i}`, i);
+      await kv.set(KV.sessions, session.id, session);
+    }
+
+    const fn = sdk.getFunction("api::sessions")!;
+    const result = (await fn(makeReq())) as {
+      status_code: number;
+      body: { sessions: Session[] };
+    };
+
+    expect(result.status_code).toBe(200);
+    expect(result.body.sessions).toHaveLength(50);
+    expect(result.body.sessions[0].id).toBe("ses_59");
+  });
+
+  it("rejects non-string time bounds instead of ignoring them", async () => {
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerApiTriggers(sdk as never, kv as never);
+
+    const fn = sdk.getFunction("api::sessions")!;
+    const result = (await fn(makeReq(undefined, { start_time: 123 }))) as {
+      status_code: number;
+      body: { code?: string; error?: string };
+    };
+
+    expect(result.status_code).toBe(400);
+    expect(result.body.code).toBe("not_a_string");
+    expect(result.body.error).toMatch(/start_time must be an ISO 8601 string/);
+  });
+});
+
+describe("MCP time-range surface", () => {
+  it("defaults memory_sessions to 50 results", async () => {
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerMcpEndpoints(sdk as never, kv as never);
+
+    for (let i = 0; i < 60; i++) {
+      const session = testSession(`ses_${i}`, i);
+      await kv.set(KV.sessions, session.id, session);
+    }
+
+    const fn = sdk.getFunction("mcp::tools::call")!;
+    const result = (await fn(
+      makeReq({ name: "memory_sessions", arguments: {} }),
+    )) as {
+      status_code: number;
+      body: { content: Array<{ text: string }> };
+    };
+    const body = JSON.parse(result.body.content[0].text);
+
+    expect(result.status_code).toBe(200);
+    expect(body.sessions).toHaveLength(50);
+    expect(body.sessions[0].id).toBe("ses_59");
+  });
+
+  it("rejects non-string time bounds for time-aware tools", async () => {
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerMcpEndpoints(sdk as never, kv as never);
+    sdk.overrideTrigger("mem::search", async () => {
+      throw new Error("mem::search should not run");
+    });
+    sdk.overrideTrigger("mem::smart-search", async () => {
+      throw new Error("mem::smart-search should not run");
+    });
+
+    const fn = sdk.getFunction("mcp::tools::call")!;
+    const calls = [
+      { name: "memory_recall", args: { query: "auth", start_time: 123 } },
+      { name: "memory_smart_search", args: { query: "auth", end_time: 123 } },
+      { name: "memory_sessions", args: { start_time: 123 } },
+    ];
+
+    for (const call of calls) {
+      const result = (await fn(
+        makeReq({ name: call.name, arguments: call.args }),
+      )) as {
+        status_code: number;
+        body: { code?: string; error?: string };
+      };
+      expect(result.status_code).toBe(400);
+      expect(result.body.code).toBe("not_a_string");
+      expect(result.body.error).toMatch(/must be an ISO 8601 string/);
+    }
   });
 });
 

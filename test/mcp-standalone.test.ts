@@ -309,6 +309,27 @@ describe("handleToolCall", () => {
     expect(parsed.sessions).toHaveLength(2);
   });
 
+  it("memory_sessions defaults to 50 and caps at 1000", async () => {
+    const kv = new InMemoryKV();
+    for (let i = 0; i < 1005; i++) {
+      await kv.set("mem:sessions", `ses_${i}`, {
+        id: `ses_${i}`,
+        project: "demo",
+        startedAt: new Date(Date.UTC(2026, 0, 1, 0, i)).toISOString(),
+      });
+    }
+
+    const defaultResult = await handleToolCall("memory_sessions", {}, kv);
+    expect(JSON.parse(defaultResult.content[0].text).sessions).toHaveLength(50);
+
+    const hugeResult = await handleToolCall(
+      "memory_sessions",
+      { limit: 99999 },
+      kv,
+    );
+    expect(JSON.parse(hugeResult.content[0].text).sessions).toHaveLength(1000);
+  });
+
   it("parseLimit clamps bad/malicious limit values to a safe range", async () => {
     const kv = new InMemoryKV();
     for (let i = 0; i < 150; i++) {

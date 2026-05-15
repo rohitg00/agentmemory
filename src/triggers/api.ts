@@ -646,8 +646,8 @@ export function registerApiTriggers(
       let timeRange;
       try {
         timeRange = parseTimeRange({
-          start_time: typeof startRaw === "string" ? startRaw : undefined,
-          end_time: typeof endRaw === "string" ? endRaw : undefined,
+          start_time: startRaw,
+          end_time: endRaw,
         });
       } catch (err) {
         if (err instanceof TimeRangeError) {
@@ -656,7 +656,7 @@ export function registerApiTriggers(
         throw err;
       }
 
-      let limit: number | undefined;
+      let limit = 50;
       if (limitRaw !== undefined && limitRaw !== "") {
         const parsed = parseOptionalInt(limitRaw);
         if (parsed === undefined || !Number.isInteger(parsed) || parsed < 1) {
@@ -670,7 +670,7 @@ export function registerApiTriggers(
 
       let sessions = await kv.list<Session>(KV.sessions);
       sessions = filterSessionsByTime(sessions, timeRange);
-      if (limit !== undefined) sessions = sessions.slice(0, limit);
+      sessions = sessions.slice(0, limit);
       return { status_code: 200, body: { sessions } };
     },
   );

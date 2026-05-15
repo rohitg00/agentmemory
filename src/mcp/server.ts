@@ -32,6 +32,10 @@ function asNumber(value: unknown, fallback?: number): number | undefined {
   return fallback;
 }
 
+function asOptionalTimeBound(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
 function parseCsvList(value: unknown): string[] {
   if (typeof value === "string") {
     return value.split(",").map((v) => v.trim()).filter(Boolean);
@@ -120,8 +124,8 @@ export function registerMcpEndpoints(
             // Validate time range up front for a clean 400 (issue #392).
             try {
               parseTimeRange({
-                start_time: typeof args.start_time === "string" ? args.start_time : undefined,
-                end_time: typeof args.end_time === "string" ? args.end_time : undefined,
+                start_time: args.start_time,
+                end_time: args.end_time,
               });
             } catch (err) {
               if (err instanceof TimeRangeError) {
@@ -134,8 +138,8 @@ export function registerMcpEndpoints(
               limit: typeof args.limit === "number" ? args.limit : 10,
               format,
               token_budget: tokenBudget,
-              start_time: typeof args.start_time === "string" ? args.start_time : undefined,
-              end_time: typeof args.end_time === "string" ? args.end_time : undefined,
+              start_time: asOptionalTimeBound(args.start_time),
+              end_time: asOptionalTimeBound(args.end_time),
             } });
             const text =
               format === "narrative" &&
@@ -258,10 +262,10 @@ export function registerMcpEndpoints(
           case "memory_sessions": {
             try {
               const timeRange = parseTimeRange({
-                start_time: typeof args.start_time === "string" ? args.start_time : undefined,
-                end_time: typeof args.end_time === "string" ? args.end_time : undefined,
+                start_time: args.start_time,
+                end_time: args.end_time,
               });
-              let limit: number | undefined;
+              let limit = 50;
               if (args.limit !== undefined) {
                 const parsed = asNumber(args.limit);
                 if (parsed === undefined || !Number.isInteger(parsed) || parsed < 1) {
@@ -274,7 +278,7 @@ export function registerMcpEndpoints(
               }
               let sessions = await kv.list<Session>(KV.sessions);
               sessions = filterSessionsByTime(sessions, timeRange);
-              if (limit !== undefined) sessions = sessions.slice(0, limit);
+              sessions = sessions.slice(0, limit);
               return {
                 status_code: 200,
                 body: {
@@ -302,8 +306,8 @@ export function registerMcpEndpoints(
             const limit = Math.max(1, Math.min(100, asNumber(args.limit, 10) ?? 10));
             try {
               parseTimeRange({
-                start_time: typeof args.start_time === "string" ? args.start_time : undefined,
-                end_time: typeof args.end_time === "string" ? args.end_time : undefined,
+                start_time: args.start_time,
+                end_time: args.end_time,
               });
             } catch (err) {
               if (err instanceof TimeRangeError) {
@@ -317,8 +321,8 @@ export function registerMcpEndpoints(
                 query: args.query,
                 expandIds,
                 limit,
-                start_time: typeof args.start_time === "string" ? args.start_time : undefined,
-                end_time: typeof args.end_time === "string" ? args.end_time : undefined,
+                start_time: asOptionalTimeBound(args.start_time),
+                end_time: asOptionalTimeBound(args.end_time),
               },
             });
             return {

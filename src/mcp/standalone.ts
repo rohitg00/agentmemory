@@ -71,11 +71,13 @@ function normalizeList(value: unknown): string[] {
 
 const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 100;
-function parseLimit(raw: unknown, fallback = DEFAULT_LIMIT): number {
+const DEFAULT_SESSION_LIMIT = 50;
+const MAX_SESSION_LIMIT = 1000;
+function parseLimit(raw: unknown, fallback = DEFAULT_LIMIT, max = MAX_LIMIT): number {
   if (typeof raw !== "number" && typeof raw !== "string") return fallback;
   const n = Number(raw);
   if (!Number.isFinite(n) || n <= 0) return fallback;
-  return Math.min(Math.floor(n), MAX_LIMIT);
+  return Math.min(Math.floor(n), max);
 }
 
 function textResponse(payload: unknown, pretty = false): {
@@ -145,7 +147,7 @@ function validate(toolName: string, args: Record<string, unknown>): Validated {
       return v;
     }
     case "memory_sessions": {
-      v.limit = parseLimit(args["limit"], 20);
+      v.limit = parseLimit(args["limit"], DEFAULT_SESSION_LIMIT, MAX_SESSION_LIMIT);
       try {
         v.timeRange = parseTimeRange({
           start_time: args["start_time"],
@@ -301,7 +303,7 @@ async function handleLocal(
     case "memory_sessions": {
       const sessions =
         await kvInstance.list<Record<string, unknown>>("mem:sessions");
-      const limit = v.limit ?? 20;
+      const limit = v.limit ?? DEFAULT_SESSION_LIMIT;
       const sessionsTyped = sessions as Array<{ startedAt: string; endedAt?: string }>;
       const filtered = filterSessionsByTime(sessionsTyped, v.timeRange ?? null);
       return textResponse({ sessions: filtered.slice(0, limit) }, true);
