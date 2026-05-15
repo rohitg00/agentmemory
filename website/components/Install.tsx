@@ -14,7 +14,7 @@ const SIMPLE: Cmd[] = [
   {
     label: "1. INSTALL ONCE",
     cmd: "npm install -g @agentmemory/agentmemory",
-    hint: "PUTS `agentmemory` ON YOUR PATH · OR USE npx",
+    hint: "PUTS `agentmemory` ON YOUR PATH · STEPS 2/3 NEED THIS",
   },
   {
     label: "2. START THE MEMORY SERVER",
@@ -27,6 +27,12 @@ const SIMPLE: Cmd[] = [
     hint: "SEEDS 3 SESSIONS · PROVES HYBRID SEARCH WORKS",
   },
 ];
+
+const NPX_FALLBACK: Cmd = {
+  label: "PREFER ZERO-INSTALL? USE NPX",
+  cmd: "npx @agentmemory/agentmemory",
+  hint: "REPLACES STEPS 1+2 · USES NPX CACHE — SEE README FOR CAVEAT",
+};
 
 function CopyBox({ label, cmd, hint }: Cmd) {
   const [copied, setCopied] = useState(false);
@@ -71,14 +77,14 @@ export function Install() {
         </h2>
         <p className="section-lede">
           RUNS ON YOUR MACHINE. DATA STAYS LOCAL. BRING YOUR CLAUDE SUBSCRIPTION
-          — OR POINT IT AT ANTHROPIC, GEMINI, MINIMAX, OR OPENROUTER. PREFER NPX?
-          USE <code>npx @agentmemory/agentmemory</code> INSTEAD OF STEP 1.
+          — OR POINT IT AT ANTHROPIC, GEMINI, MINIMAX, OR OPENROUTER.
         </p>
       </header>
       <div className={styles.cards}>
         {SIMPLE.map((c) => (
           <CopyBox key={c.cmd} {...c} />
         ))}
+        <CopyBox {...NPX_FALLBACK} />
         <AgentInstall />
       </div>
       <div className={styles.cta}>
