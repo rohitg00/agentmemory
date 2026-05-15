@@ -87,12 +87,19 @@ function detectProvider(env: Record<string, string>): ProviderConfig {
       maxTokens,
     };
   }
+  if (hasRealValue(env["KIMI_FOR_CODING_API_KEY"])) {
+    return {
+      provider: "kimi-for-coding",
+      model: env["KIMI_FOR_CODING_MODEL"] || "kimi-for-coding",
+      maxTokens,
+    };
+  }
 
   const allowAgentSdk = env["AGENTMEMORY_ALLOW_AGENT_SDK"] === "true";
   if (!allowAgentSdk) {
     process.stderr.write(
       "[agentmemory] No LLM provider key found " +
-        "(ANTHROPIC_API_KEY, GEMINI_API_KEY, OPENROUTER_API_KEY, MINIMAX_API_KEY). " +
+        "(ANTHROPIC_API_KEY, GEMINI_API_KEY, OPENROUTER_API_KEY, MINIMAX_API_KEY, KIMI_FOR_CODING_API_KEY). " +
         "LLM-backed compression and summarization are DISABLED — using no-op provider. " +
         "This is the safe default: the agent-sdk fallback used to spawn Claude Agent SDK " +
         "child sessions which inherit Claude Code's plugin hooks and cause infinite Stop-hook " +
@@ -156,7 +163,8 @@ export function detectLlmProviderKind(): "llm" | "noop" {
     hasRealValue(env["GEMINI_API_KEY"]) ||
     hasRealValue(env["GOOGLE_API_KEY"]) ||
     hasRealValue(env["OPENROUTER_API_KEY"]) ||
-    hasRealValue(env["MINIMAX_API_KEY"])
+    hasRealValue(env["MINIMAX_API_KEY"]) ||
+    hasRealValue(env["KIMI_FOR_CODING_API_KEY"])
   ) {
     return "llm";
   }
@@ -292,6 +300,7 @@ const VALID_PROVIDERS = new Set([
   "openrouter",
   "agent-sdk",
   "minimax",
+  "kimi-for-coding",
 ]);
 
 export function loadFallbackConfig(): FallbackConfig {
