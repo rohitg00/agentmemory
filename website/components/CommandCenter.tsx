@@ -45,7 +45,7 @@ const PANELS: Record<
       "agentmemory runs on the iii engine, so the official iii console gives engine-level visibility: every function call, every worker, every queue, every trace. From v0.9.16 the agentmemory CLI prompts to install iii console alongside the engine. Launch on :3114 so the viewer keeps :3113.",
     bullets: [
       "REGISTERED FUNCTIONS · INVOKE ANY DIRECTLY WITH JSON",
-      "107 HTTP ENDPOINTS · REPLAY ANY REST CALL",
+      "121 HTTP ENDPOINTS · REPLAY ANY REST CALL",
       "WEBSOCKET STREAM MONITOR · WATCH FRAMES LIVE",
       "OTEL EXPORTER = MEMORY (DEFAULT) · TRACES STAY LOCAL",
       "NO AUTH · BIND TO 127.0.0.1 ONLY",

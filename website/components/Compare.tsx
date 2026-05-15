@@ -3,10 +3,10 @@ import styles from "./Compare.module.css";
 const ROWS = [
   ["RETRIEVAL R@5", "95.2%", "81.4%", "73.8%", "78.1%"],
   ["EXTERNAL DEPS", "0", "2 (Qdrant, Neo4j)", "1 (Postgres)", "1 (Neo4j)"],
-  ["REST ENDPOINTS", "107", "—", "—", "—"],
+  ["REST ENDPOINTS", "121", "—", "—", "—"],
   ["MCP TOOLS", "51", "12", "18", "9"],
   ["AUTO-HOOKS", "12", "0", "0", "0"],
-  ["NATIVE PLUGINS", "6 (Claude/Codex/Cursor/Gemini/OpenClaw/Hermes/pi/OpenHuman)", "—", "—", "—"],
+  ["NATIVE PLUGINS", "6 (Claude/Codex/OpenClaw/Hermes/pi/OpenHuman)", "—", "—", "—"],
   ["OPEN SOURCE", "YES (APACHE-2.0)", "YES", "YES", "YES"],
 ];
 

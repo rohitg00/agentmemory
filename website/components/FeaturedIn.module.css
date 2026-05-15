@@ -54,10 +54,15 @@
   transition: border-color 0.12s ease, transform 0.12s ease, background 0.12s ease;
   min-height: 96px;
 }
-.cell:hover {
+.cell:hover,
+.cell:focus-visible {
   border-color: var(--gold);
   transform: translateY(-1px);
   background: #16161a;
+}
+.cell:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
 }
 .cellBadge {
   display: flex;
@@ -65,7 +70,6 @@
   align-items: center;
   justify-content: center;
   gap: 10px;
-  grid-template-columns: none;
   padding: 16px 16px;
 }
 .logo {
