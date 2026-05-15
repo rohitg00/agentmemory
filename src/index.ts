@@ -224,6 +224,10 @@ async function main() {
   if (isGraphExtractionEnabled()) {
     registerGraphFunction(sdk, kv, provider);
     console.log(`[agentmemory] Knowledge graph: extraction enabled`);
+  } else {
+    console.log(
+      `[agentmemory] Knowledge graph: disabled (set GRAPH_EXTRACTION_ENABLED=true in the agentmemory host environment or ~/.agentmemory/.env, then restart)`,
+    );
   }
 
   registerConsolidationPipelineFunction(sdk, kv, provider);

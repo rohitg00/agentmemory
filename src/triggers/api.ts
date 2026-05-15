@@ -77,6 +77,18 @@ function graphDisabledResponse(): Response {
   });
 }
 
+function graphRequestFailedResponse(functionId: string, err: unknown): Response {
+  const message = err instanceof Error ? err.message : String(err);
+  return {
+    status_code: 500,
+    body: {
+      error: "Knowledge graph request failed",
+      functionId,
+      message,
+    },
+  };
+}
+
 function consolidationDisabledResponse(): Response {
   return flagDisabledResponse({
     error: "Consolidation pipeline not enabled",
@@ -1060,11 +1072,13 @@ export function registerApiTriggers(
     ): Promise<Response> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
+      if (!isGraphExtractionEnabled()) return graphDisabledResponse();
+      const functionId = "mem::graph-query";
       try {
-        const result = await sdk.trigger({ function_id: "mem::graph-query", payload: req.body || {} });
+        const result = await sdk.trigger({ function_id: functionId, payload: req.body || {} });
         return { status_code: 200, body: result };
-      } catch {
-        return graphDisabledResponse();
+      } catch (err) {
+        return graphRequestFailedResponse(functionId, err);
       }
     },
   );
@@ -1078,11 +1092,13 @@ export function registerApiTriggers(
     async (req: ApiRequest): Promise<Response> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
+      if (!isGraphExtractionEnabled()) return graphDisabledResponse();
+      const functionId = "mem::graph-stats";
       try {
-        const result = await sdk.trigger({ function_id: "mem::graph-stats", payload: {} });
+        const result = await sdk.trigger({ function_id: functionId, payload: {} });
         return { status_code: 200, body: result };
-      } catch {
-        return graphDisabledResponse();
+      } catch (err) {
+        return graphRequestFailedResponse(functionId, err);
       }
     },
   );
@@ -1096,6 +1112,7 @@ export function registerApiTriggers(
     async (req: ApiRequest<{ observations: unknown[] }>): Promise<Response> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
+      if (!isGraphExtractionEnabled()) return graphDisabledResponse();
       if (
         !Array.isArray(req.body?.observations) ||
         req.body.observations.length === 0
@@ -1105,11 +1122,12 @@ export function registerApiTriggers(
           body: { error: "observations array is required" },
         };
       }
+      const functionId = "mem::graph-extract";
       try {
-        const result = await sdk.trigger({ function_id: "mem::graph-extract", payload: req.body });
+        const result = await sdk.trigger({ function_id: functionId, payload: req.body });
         return { status_code: 200, body: result };
-      } catch {
-        return graphDisabledResponse();
+      } catch (err) {
+        return graphRequestFailedResponse(functionId, err);
       }
     },
   );
