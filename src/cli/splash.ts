@@ -42,17 +42,18 @@ function getTerminalWidth(): number {
 
 const TAGLINE = "Persistent memory for AI coding agents";
 
-// Block-art "agentmemory" lettering. Hand-drawn in box-drawing chars so
-// we don't need a figlet dependency. Each row is 70 columns wide which
-// gives ~25 cols of breathing room on the 120-col tier.
+// "agentmemory" rendered in figlet's standard font (verified output —
+// regenerate via `figlet agentmemory` if you change the wordmark). Each
+// row is exactly 70 columns wide so the banner aligns cleanly inside
+// the 2-col left margin we add below.
 function fullBanner(version: string): string {
   const logo = [
-    "                       _                                                  ",
-    "  __ _  __ _  ___ _ _ | |_ _ __  ___ _ __ ___   ___  _ __ _   _          ",
-    " / _` |/ _` |/ _ \\ '_\\| __| '  \\/ -_) '  \\ _ \\ / _ \\| '__| | | |         ",
-    "| (_| | (_| |  __/ | || |_| | | \\___| | | | | | (_) | |  | |_| |         ",
-    " \\__,_|\\__, |\\___|_|  \\__|_| |_|    |_| |_| |_|\\___/|_|   \\__, |         ",
-    "       |___/                                              |___/          ",
+    "                        _                                             ",
+    "  __ _  __ _  ___ _ __ | |_ _ __ ___   ___ _ __ ___   ___  _ __ _   _ ",
+    " / _` |/ _` |/ _ \\ '_ \\| __| '_ ` _ \\ / _ \\ '_ ` _ \\ / _ \\| '__| | | |",
+    "| (_| | (_| |  __/ | | | |_| | | | | |  __/ | | | | | (_) | |  | |_| |",
+    " \\__,_|\\__, |\\___|_| |_|\\__|_| |_| |_|\\___|_| |_| |_|\\___/|_|   \\__, |",
+    "       |___/                                                    |___/ ",
   ];
   const lines: string[] = ["", ...logo.map((line) => "  " + accent(line))];
   lines.push("");
