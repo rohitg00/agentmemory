@@ -344,8 +344,8 @@ class AgentMemoryProvider(MemoryProvider):
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "data": {
                 "tool_name": "conversation",
-                "input": user[:500],
-                "output": assistant[:2000],
+                "tool_input": user[:500],
+                "tool_output": assistant[:2000],
             },
         })
 
