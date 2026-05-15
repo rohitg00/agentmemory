@@ -33,7 +33,7 @@ export class LocalEmbeddingProvider implements EmbeddingProvider {
   private async getExtractor() {
     if (this.extractor) return this.extractor;
 
-    let transformers: { pipeline: Pipeline };
+    let transformers: { pipeline: Pipeline; env: { allowLocalModels: boolean; allowRemoteModels: boolean } };
     try {
       // @ts-ignore - optional peer dependency
       transformers = await import("@xenova/transformers");
@@ -42,6 +42,10 @@ export class LocalEmbeddingProvider implements EmbeddingProvider {
         "Install @xenova/transformers for local embeddings: npm install @xenova/transformers",
       );
     }
+
+    // Prefer local models to avoid network fetches in air-gapped or proxy environments
+    transformers.env.allowLocalModels = true;
+    transformers.env.allowRemoteModels = false;
 
     this.extractor = await transformers.pipeline(
       "feature-extraction",

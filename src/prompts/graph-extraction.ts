@@ -1,6 +1,8 @@
-export const GRAPH_EXTRACTION_SYSTEM = `You are a knowledge graph extraction engine. Given a compressed observation from a coding session, extract entities and relationships.
+export const GRAPH_EXTRACTION_SYSTEM = `You are a knowledge graph extraction engine. Given compressed observations from a coding session, extract entities and relationships.
 
-Output format (XML):
+CRITICAL: You MUST output exactly the following XML format. Use XML attributes (type, name, source, target, weight) — NEVER use nested child tags like <id>, <name>, <type>, <source>, <target>, <relation>.
+
+Correct format:
 <entities>
   <entity type="file|function|concept|error|decision|pattern|library|person" name="exact name">
     <property key="key">value</property>
@@ -14,7 +16,9 @@ Rules:
 - Extract concrete entities only (real file paths, function names, library names)
 - Use the most specific type available
 - Weight relationships by how strong/direct the connection is
-- If no entities found, output empty tags`;
+- If no entities found, output empty <entities></entities> and <relationships></relationships>
+- NEVER deviate from the attribute-based format shown above`;
+
 
 export function buildGraphExtractionPrompt(
   observations: Array<{
