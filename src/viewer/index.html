@@ -2209,7 +2209,8 @@
 
       if (sessions.length > 0 && !state.timeline.sessionId) {
         var sorted = sessions.slice().sort(function(a, b) { return (b.startedAt || '').localeCompare(a.startedAt || ''); });
-        state.timeline.sessionId = sorted[0].id;
+        var firstSelectable = sorted.find(function(s) { return sessionId(s); });
+        state.timeline.sessionId = firstSelectable ? sessionId(firstSelectable) : '';
       }
 
       renderTimelineToolbar(sessions);
@@ -2613,12 +2614,13 @@
     async function renderSessionDetail() {
       var panel = document.getElementById('session-detail');
       if (!panel) return;
-      var s = state.sessions.items.find(function(x) { return x.id === state.sessions.selectedId; });
-      if (!s) { panel.innerHTML = ''; return; }
+      var s = state.sessions.items.find(function(x) { return sessionId(x) === state.sessions.selectedId; });
+      var id = sessionId(s);
+      if (!s || !id) { panel.innerHTML = ''; return; }
 
       panel.innerHTML = '<div class="detail-panel"><h3>Loading session details…</h3></div>';
 
-      var obsRes = await apiGet('observations?sessionId=' + encodeURIComponent(s.id));
+      var obsRes = await apiGet('observations?sessionId=' + encodeURIComponent(id));
       var obs = (obsRes && obsRes.observations) || [];
 
       var typeCounts = {};

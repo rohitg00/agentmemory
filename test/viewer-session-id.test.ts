@@ -20,22 +20,69 @@ function loadViewerSandbox() {
   if (!scriptMatch) throw new Error("viewer script not found");
 
   const elements = new Map<string, any>();
+  const createMockElement = (id = "") => {
+    const attributes = new Map<string, string>();
+    const classes = new Set<string>();
+    const listeners = new Map<string, Array<(event?: unknown) => void>>();
+    return {
+      id,
+      innerHTML: "",
+      textContent: "",
+      value: "",
+      checked: false,
+      dataset: {},
+      style: {},
+      listeners,
+      classList: {
+        add: (name: string) => classes.add(name),
+        remove: (name: string) => classes.delete(name),
+        contains: (name: string) => classes.has(name),
+        toggle: (name: string, force?: boolean) => {
+          const enabled = force ?? !classes.has(name);
+          if (enabled) classes.add(name);
+          else classes.delete(name);
+          return enabled;
+        },
+      },
+      addEventListener: (type: string, handler: (event?: unknown) => void) => {
+        const current = listeners.get(type) || [];
+        current.push(handler);
+        listeners.set(type, current);
+      },
+      getAttribute: (name: string) => attributes.get(name) ?? null,
+      setAttribute: (name: string, value: unknown) => {
+        attributes.set(name, String(value));
+      },
+      querySelectorAll: () => [],
+    };
+  };
   const getElement = (id: string) => {
-    if (!elements.has(id)) {
-      elements.set(id, {
-        id,
-        innerHTML: "",
-        textContent: "",
-        value: "",
-        dataset: {},
-        style: {},
-        classList: { toggle: () => {} },
-        addEventListener: () => {},
-        getAttribute: () => null,
-        setAttribute: () => {},
-      });
-    }
+    if (!elements.has(id)) elements.set(id, createMockElement(id));
     return elements.get(id);
+  };
+
+  const tabs = [
+    "dashboard",
+    "graph",
+    "memories",
+    "timeline",
+    "sessions",
+    "lessons",
+    "actions",
+    "crystals",
+    "audit",
+    "activity",
+    "profile",
+    "replay",
+  ];
+  const tabButtons = tabs.map((tab) => ({ ...createMockElement(), dataset: { tab } }));
+  const views = tabs.map((tab) => ({ ...createMockElement(`view-${tab}`), id: `view-${tab}` }));
+  const checkboxes = [createMockElement(), createMockElement()].map((el) => ({ ...el, checked: false }));
+  const querySelectorAll = (selector: string) => {
+    if (selector === ".tab-bar button") return tabButtons;
+    if (selector === ".view") return views;
+    if (selector === 'input[type="checkbox"]') return checkboxes;
+    return [];
   };
 
   const document = {
@@ -52,7 +99,7 @@ function loadViewerSandbox() {
       };
     },
     getElementById: getElement,
-    querySelectorAll: () => [],
+    querySelectorAll,
     addEventListener: () => {},
   };
 
@@ -133,5 +180,10 @@ describe("viewer session rendering", () => {
     sandbox.state.sessions.items = sessions;
     expect(() => sandbox.renderSessions()).not.toThrow();
     expect(getElement("view-sessions").innerHTML).toContain("Unknown session");
+
+    const tabButtons = sandbox.document.querySelectorAll(".tab-bar button");
+    expect(tabButtons.length).toBeGreaterThan(0);
+    expect(() => sandbox.switchTab("sessions")).not.toThrow();
+    expect(tabButtons.some((button: any) => button.classList.contains("active"))).toBe(true);
   });
 });
