@@ -6,6 +6,56 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.9.16] — 2026-05-15
+
+Two parallel waves landed back-to-back. (1) DevEx polish on top of v0.9.15's foundation: 5-port ready panel that shows REST/Viewer/Streams/Engine/iii-console in one boxed note, iii-console install probe + auto-install on first run, interactive global-install prompt that replaces the passive npx hint (so `agentmemory stop` actually works in new shells), onboarding wizard now wires every selected agent inline via the same `agentmemory connect` adapter the CLI exposes, plus a memory-share callout so users understand a single server feeds every wired agent. (2) Marketing site refresh against the v0.9.15 surface: new `AS FEATURED IN` bar (AlphaSignal · Agentic AI Foundation · Trendshift), six first-party agents in the featured grid (added pi + OpenHuman), MCP messaging reworded as opt-in surface so REST reads as the primary protocol.
+
+### Added
+
+- **5-port ready panel** ([PR #410](https://github.com/rohitg00/agentmemory/pull/410)). Replaces the single-line `Memory ready on :3111 · viewer on :3113 · try: agentmemory demo` hint with a clack `p.note` panel listing all live endpoints — REST API, Viewer, Streams, Engine, iii console — each derived from the configured env vars (`AGENTMEMORY_URL`, `III_REST_PORT`, `III_VIEWER_PORT`, `III_STREAM_PORT`, `III_ENGINE_URL`) so a remote-bind setup reads correctly, not as hardcoded localhost.
+
+- **iii console install probe + auto-install** (PR #410). New `ensureIiiConsole()` checks for the iii-console binary on PATH or in `~/.local/bin`; if missing, prompts interactively to run `curl -fsSL https://install.iii.dev/console/main/install.sh | sh`. Console is first-class — not optional. On install acceptance the ready panel includes the binary's resolved path and a runnable launch hint (`<binPath> -p <port>`); on decline the panel surfaces the install one-liner.
+
+- **Interactive global-install prompt** (PR #410). Replaces the passive `p.log.info` npx hint with a `p.confirm` on first npx run that runs `npm install -g @agentmemory/agentmemory@<VERSION>` inline. Suppressible via `preferences.skipGlobalInstall` so we never ask twice. Closes the v0.9.15-era footgun where users typed `agentmemory stop` in a new shell and hit `command not found`.
+
+- **Onboarding wires selected agents inline** ([PR #408](https://github.com/rohitg00/agentmemory/pull/408)). After the multi-select agents step in `runOnboarding`, asks `Run \`agentmemory connect <agent>\` for each selected agent now? [Y/n]` and dispatches each through the existing `runAdapter` path used by the explicit `agentmemory connect` command. Successes + failures get bucketed in a summary block (`Wired: claude-code, codex, cursor · Skipped/failed: hermes (manual install required)`). Cancellation prints the explicit per-agent commands for the user to run later.
+
+- **Memory-share callout** (PR #408). Between the agents multi-select and the provider single-select the wizard now prints a verbatim note: `All selected agents share the same memory at :3111. A memory saved by Claude Code is visible to Codex + Cursor instantly.` Closes the most common confusion ("does the same memory work across agents?") we were getting on the v0.9.15 install path.
+
+- **AS FEATURED IN bar on agent-memory.dev**. New `FeaturedIn` component between Hero and Stats. Three cards with real brand marks: AlphaSignal (github.com/Alpha-Signal avatar, links to the AlphaSignal Substack deep-dive), Agentic AI Foundation (self-hosted wordmark, inverted to white-on-dark for the brutalist palette), Trendshift (their official badge endpoint at `trendshift.io/api/badge/repositories/25123` which bakes the live rank + star count into the image). 3-column grid on desktop, 1-column stack on mobile, keyboard-accessible (`:focus-visible` outline).
+
+### Changed
+
+- **MCP messaging reworded as opt-in surface** ([PR #409](https://github.com/rohitg00/agentmemory/pull/409)). The endpoints summary line in `src/index.ts` was foregrounding MCP equally with REST — `Endpoints: 107 REST + 51 MCP tools + 6 MCP resources + 3 MCP prompts`. Users kept reading MCP as compulsory. Now: `REST API: 121 endpoints at http://localhost:<PORT>/agentmemory/*` (primary), plus a second line `MCP surface (opt-in via \`npx @agentmemory/mcp\`): 51 tools · 6 resources · 3 prompts`. Each `connect` adapter additionally prints a protocol-note line above its install summary so the user sees which surface they're wiring (native hooks vs MCP vs both).
+
+- **CLI `--help` mcp subcommand description** (PR #409). Was `Start standalone MCP server (no engine required)`. Now: `Start standalone MCP shim — opt-in surface for MCP-only clients (Cursor, Gemini CLI, etc). REST always available at :3111.`
+
+- **Engine version-mismatch warning copy** (PR #410). The warning that fires when iii on PATH doesn't match `IIPINNED_VERSION` previously said `agentmemory v0.9.14+ pins v0.11.2`. Now reads `agentmemory v${VERSION} pins v${IIPINNED_VERSION}` so the string never lies post-release.
+
+- **CommandCenter — iii console messaging** (PR #415). `iii CONSOLE · OPTIONAL` → `iii CONSOLE · FIRST-CLASS`. Section lede now mentions both UIs (viewer + console) are first-class and installed inline by the CLI on first run. Bullet counts updated: dropped stale `33 functions` and `49 triggers` → `121 HTTP endpoints` (matches `generated-meta.json`).
+
+- **Compare table refreshed** (PR #415). MCP TOOLS row our column 44 → 51. New REST ENDPOINTS row (121) and NATIVE PLUGINS row (6: Claude/Codex/OpenClaw/Hermes/pi/OpenHuman).
+
+- **Agents grid refresh** (PR #415). Featured row expanded from 4 to 6 — added pi and OpenHuman. Codex CLI sub line updated to `NATIVE PLUGIN` (has 6 hooks now, not MCP-only). Section title `FOUR FIRST-PARTY` → `SIX FIRST-PARTY`. Lede mentions `agentmemory connect <agent>`.
+
+- **Hero CTA** (PR #415). `START IN 60 SECONDS` → `START IN 30 SECONDS`. Cold install + engine spawn measured 8-12s on v0.9.15 via the native binary path; 60s was the v0.9.0-era Docker-first claim.
+
+### Fixed
+
+- **CLI no longer kills its own parent process** (PR #410 follow-up via #411). `lsof -i :PORT -t` returns every PID with an active TCP connection — including the CLI's own keep-alive `fetch()` from `isEngineRunning()`. Now restricts to `-sTCP:LISTEN` and filters `process.pid` from the candidate set. The bug used to surface as exit code 137 with state files left stranded.
+
+- **Splash banner ASCII** ([PR #411](https://github.com/rohitg00/agentmemory/pull/411)). The hand-drawn block-art "agentmemory" wordmark in `src/cli/splash.ts` had broken middle glyphs (`_ _` instead of `_ __` around the 'n', merged 'tm/me' segments). Replaced with verified `figlet agentmemory` standard-font output. All 6 rows render at exactly 70 cols, regenerable.
+
+- **README install hoisted to top** (PR #411). Install section was buried at line 306 below benchmarks and comparison tables. Moved a 4-line install block right under the nav anchors at the top with the bare `agentmemory` command leading. Quick-start kept below for the in-depth walkthrough. Adds an npx-cache caveat with three workarounds (`npm install -g`, `npx -y @latest`, manual `rm -rf ~/.npm/_npx` annotated as POSIX-only).
+
+### Infrastructure
+
+- New modules: `src/cli/connect/{index,types,claude-code,codex,cursor,gemini-cli,openclaw,hermes,pi,openhuman,json-mcp-adapter}.ts`, `src/cli/doctor-diagnostics.ts`, `src/cli/remove-plan.ts`, `src/cli/splash.ts`, `src/cli/preferences.ts`, `src/cli/onboarding.ts`, `src/logger.ts` (bootLog shim) — actually shipped in v0.9.15; relisted here only to call out that v0.9.16 keeps every module backward-compatible (no signature breaks on `runOnboarding`, no field removals from `Prefs`).
+- New tests: existing CLI test suites continue at 944+ passing. mcp-standalone pre-existing failures unrelated.
+- Website: new `FeaturedIn` component (~150 LOC across `.tsx` + `.module.css`); `next.config.ts` adds `aaif.io`, `trendshift.io`, `raw.githubusercontent.com` to `remotePatterns`.
+
+[0.9.16]: https://github.com/rohitg00/agentmemory/compare/v0.9.15...v0.9.16
+
 ## [0.9.15] — 2026-05-15
 
 DevEx overhaul. Four PRs landed simultaneously rebuilding the first-run experience to SkillKit-grade polish: splash banner + interactive agent grid + provider picker + smart-defaults preferences, `agentmemory connect <agent>` to automate native-plugin install for 8 agents, interactive `doctor` v2 with Fix/Skip/More/Quit prompts and a `--all` auto-fix flag, `agentmemory remove` for clean uninstall with destruction-plan confirmation, plus five silent-killer fixes around viewer port collisions, engine version-mismatch detection, `stop --force` override, adopt-on-attach state recording, and an npx-to-global-install hint.
