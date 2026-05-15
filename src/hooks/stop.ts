@@ -12,6 +12,23 @@ function isSdkChildContext(payload: unknown): boolean {
 const REST_URL = process.env["AGENTMEMORY_URL"] || "http://localhost:3111";
 const SECRET = process.env["AGENTMEMORY_SECRET"] || "";
 
+function isSecureUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol === "https:") return true;
+    const hostname = parsed.hostname.toLowerCase();
+    if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1") return true;
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+if (SECRET && !isSecureUrl(REST_URL)) {
+  console.error("Error: AGENTMEMORY_SECRET is set but AGENTMEMORY_URL uses insecure http:// protocol. Use https:// or a loopback address.");
+  process.exit(1);
+}
+
 function authHeaders(): Record<string, string> {
   const h: Record<string, string> = { "Content-Type": "application/json" };
   if (SECRET) h["Authorization"] = `Bearer ${SECRET}`;
