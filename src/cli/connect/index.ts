@@ -49,7 +49,7 @@ function parseFlags(args: string[]): {
   return { dryRun, force, all, positional };
 }
 
-async function runAdapter(
+export async function runAdapter(
   adapter: ConnectAdapter,
   opts: ConnectOptions,
 ): Promise<ConnectResult> {
