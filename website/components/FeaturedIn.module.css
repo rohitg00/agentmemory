@@ -1,5 +1,5 @@
 .wrap {
-  padding: 40px 0 48px;
+  padding: 48px 0 56px;
   background: var(--ink);
   border-top: 1px solid var(--charcoal);
   border-bottom: 1px solid var(--charcoal);
@@ -10,7 +10,7 @@
   padding: 0 40px;
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 22px;
   align-items: center;
 }
 .eyebrow {
@@ -28,41 +28,75 @@
 .eyebrow::before,
 .eyebrow::after {
   content: "";
-  flex: 0 0 60px;
+  flex: 0 0 80px;
   height: 1px;
   background: var(--charcoal);
 }
 .row {
   display: grid;
-  grid-template-columns: repeat(3, minmax(180px, 1fr));
+  grid-template-columns: repeat(3, minmax(220px, 1fr));
   gap: 24px;
   width: 100%;
-  max-width: 900px;
+  max-width: 980px;
+  align-items: stretch;
 }
 .cell {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+  position: relative;
+  display: grid;
+  grid-template-columns: 56px 1fr auto;
+  gap: 14px;
+  align-items: center;
   padding: 18px 22px;
   border: 1px solid var(--charcoal);
   background: var(--iron);
   text-decoration: none;
   color: var(--white);
-  transition: border-color 0.12s ease, transform 0.12s ease;
-  min-height: 92px;
-  justify-content: center;
+  transition: border-color 0.12s ease, transform 0.12s ease, background 0.12s ease;
+  min-height: 96px;
 }
 .cell:hover {
   border-color: var(--gold);
   transform: translateY(-1px);
+  background: #16161a;
+}
+.cellBadge {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  grid-template-columns: none;
+  padding: 16px 16px;
+}
+.logo {
+  width: 56px;
+  height: 56px;
+  border-radius: 8px;
+  object-fit: cover;
+  background: var(--ink);
+}
+.badgeImg {
+  width: 100%;
+  height: auto;
+  max-width: 250px;
+  display: block;
+}
+.meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
 }
 .name {
   font-family: var(--font-mono);
-  font-size: 15px;
+  font-size: 14px;
   letter-spacing: 0.6px;
   color: var(--white);
   font-weight: 700;
   text-transform: uppercase;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .sub {
   font-family: var(--font-mono);
@@ -72,23 +106,21 @@
   text-transform: uppercase;
 }
 .arrow {
-  position: absolute;
   font-family: var(--font-mono);
   color: var(--ash);
-  font-size: 13px;
-  top: 14px;
-  right: 16px;
+  font-size: 14px;
+  transition: color 0.12s ease, transform 0.12s ease;
 }
-.cellInner {
-  position: relative;
-  width: 100%;
+.cell:hover .arrow {
+  color: var(--gold);
+  transform: translate(2px, -2px);
 }
 @media (max-width: 720px) {
   .row {
     grid-template-columns: 1fr;
-    max-width: 360px;
+    max-width: 380px;
   }
   .wrap {
-    padding: 32px 0 36px;
+    padding: 32px 0 40px;
   }
 }

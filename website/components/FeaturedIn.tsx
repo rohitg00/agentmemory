@@ -1,9 +1,16 @@
+import Image from "next/image";
 import styles from "./FeaturedIn.module.css";
 
 interface Feature {
   name: string;
   sub: string;
   href: string;
+  logo: string;
+  logoAlt: string;
+  // When the source has its own brand-mark image (e.g. Trendshift's
+  // badge endpoint that bakes the repo's star count into the image),
+  // render it full-width instead of the logo-left text-right layout.
+  badge?: boolean;
 }
 
 const ITEMS: Feature[] = [
@@ -11,16 +18,23 @@ const ITEMS: Feature[] = [
     name: "AlphaSignal",
     sub: "180K technical subscribers",
     href: "https://alphasignalai.substack.com/p/how-agentmemory-works-and-how-to",
+    logo: "https://avatars.githubusercontent.com/u/64016073?s=200&v=4",
+    logoAlt: "AlphaSignal logo",
   },
   {
     name: "Agentic AI Foundation",
     sub: "Linux Foundation backed",
     href: "https://aaif.io/",
+    logo: "https://aaif.io/wp-content/uploads/2025/12/cropped-favicon.png",
+    logoAlt: "Agentic AI Foundation logo",
   },
   {
     name: "Trendshift",
     sub: "Position #19 · NEW 2026",
     href: "https://trendshift.io/repositories/25123",
+    logo: "https://trendshift.io/api/badge/repositories/25123",
+    logoAlt: "Trendshift badge for agentmemory",
+    badge: true,
   },
 ];
 
@@ -32,23 +46,51 @@ export function FeaturedIn() {
           AS FEATURED IN
         </div>
         <div className={styles.row}>
-          {ITEMS.map((it) => (
-            <a
-              key={it.name}
-              className={styles.cell}
-              href={it.href}
-              target="_blank"
-              rel="noopener"
-            >
-              <div className={styles.cellInner}>
+          {ITEMS.map((it) =>
+            it.badge ? (
+              <a
+                key={it.name}
+                className={`${styles.cell} ${styles.cellBadge}`}
+                href={it.href}
+                target="_blank"
+                rel="noopener"
+              >
+                <Image
+                  src={it.logo}
+                  alt={it.logoAlt}
+                  width={250}
+                  height={55}
+                  unoptimized
+                  className={styles.badgeImg}
+                />
+                <span className={styles.sub}>{it.sub}</span>
+              </a>
+            ) : (
+              <a
+                key={it.name}
+                className={styles.cell}
+                href={it.href}
+                target="_blank"
+                rel="noopener"
+              >
+                <Image
+                  src={it.logo}
+                  alt={it.logoAlt}
+                  width={56}
+                  height={56}
+                  unoptimized
+                  className={styles.logo}
+                />
+                <div className={styles.meta}>
+                  <span className={styles.name}>{it.name}</span>
+                  <span className={styles.sub}>{it.sub}</span>
+                </div>
                 <span className={styles.arrow} aria-hidden>
                   ↗
                 </span>
-                <span className={styles.name}>{it.name}</span>
-                <span className={styles.sub}>{it.sub}</span>
-              </div>
-            </a>
-          ))}
+              </a>
+            ),
+          )}
         </div>
       </div>
     </section>
