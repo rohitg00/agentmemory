@@ -7,6 +7,8 @@ const hookEntries = [
   "src/hooks/post-tool-use.ts",
   "src/hooks/post-tool-failure.ts",
   "src/hooks/pre-compact.ts",
+  "src/hooks/post-compact.ts",
+  "src/hooks/permission-request.ts",
   "src/hooks/subagent-start.ts",
   "src/hooks/subagent-stop.ts",
   "src/hooks/notification.ts",

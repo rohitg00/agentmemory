@@ -53,6 +53,27 @@
         ]
       }
     ],
+    "PostCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/scripts/post-compact.mjs"
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/scripts/permission-request.mjs",
+            "statusMessage": "agentmemory: capturing permission request"
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "hooks": [

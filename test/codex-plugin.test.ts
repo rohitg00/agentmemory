@@ -67,8 +67,25 @@ describe("Codex plugin manifest (developers.openai.com/codex/plugins)", () => {
     expect(events).toContain("UserPromptSubmit");
     expect(events).toContain("PreToolUse");
     expect(events).toContain("PostToolUse");
+    expect(events).toContain("PermissionRequest");
     expect(events).toContain("PreCompact");
+    expect(events).toContain("PostCompact");
     expect(events).toContain("Stop");
+  });
+
+  it("Codex parity hooks cover the OpenCode-equivalent lifecycle exposed by Codex", () => {
+    const hooksPath = join(pluginRoot, "hooks/hooks.codex.json");
+    const hooks = readJson<{ hooks: Record<string, unknown> }>(hooksPath);
+    expect(Object.keys(hooks.hooks).sort()).toEqual([
+      "PermissionRequest",
+      "PostCompact",
+      "PostToolUse",
+      "PreCompact",
+      "PreToolUse",
+      "SessionStart",
+      "Stop",
+      "UserPromptSubmit",
+    ]);
   });
 
   it("hook command scripts referenced in hooks.codex.json exist on disk", () => {
