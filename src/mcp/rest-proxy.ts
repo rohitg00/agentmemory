@@ -2,6 +2,29 @@ const DEFAULT_URL = "http://localhost:3111";
 const DEFAULT_HEALTH_PROBE_TIMEOUT_MS = 2_000;
 const CALL_TIMEOUT_MS = 15_000;
 const LOCAL_MODE_TTL_MS = 30_000;
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const RATE_LIMIT_MAX_CALLS = 120;
+const RATE_LIMIT_MAP_MAX_SIZE = 1000;
+
+const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
+
+function rateLimit(key: string): void {
+  const now = Date.now();
+  const entry = rateLimitMap.get(key);
+  if (!entry || now >= entry.resetAt) {
+    rateLimitMap.set(key, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
+  } else {
+    if (entry.count >= RATE_LIMIT_MAX_CALLS) {
+      throw new Error(`Rate limit exceeded: ${RATE_LIMIT_MAX_CALLS} calls per ${RATE_LIMIT_WINDOW_MS / 1000}s`);
+    }
+    entry.count++;
+  }
+  if (rateLimitMap.size > RATE_LIMIT_MAP_MAX_SIZE) {
+    for (const [k, v] of rateLimitMap) {
+      if (now >= v.resetAt) rateLimitMap.delete(k);
+    }
+  }
+}
 
 function probeTimeoutMs(): number {
   const raw = process.env["AGENTMEMORY_PROBE_TIMEOUT_MS"];
@@ -92,6 +115,7 @@ export async function resolveHandle(): Promise<Handle> {
         mode: "proxy",
         baseUrl: url,
         call: async (path, init) => {
+          rateLimit(url);
           const res = await fetch(`${url}${path}`, {
             ...init,
             headers: {
