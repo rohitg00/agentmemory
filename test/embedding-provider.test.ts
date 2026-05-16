@@ -12,11 +12,12 @@ describe("createEmbeddingProvider", () => {
 
   beforeEach(() => {
     process.env = { ...originalEnv };
-    delete process.env["GEMINI_API_KEY"];
-    delete process.env["OPENAI_API_KEY"];
-    delete process.env["VOYAGE_API_KEY"];
-    delete process.env["COHERE_API_KEY"];
-    delete process.env["OPENROUTER_API_KEY"];
+    // Override .env file values by setting empty strings
+    process.env["GEMINI_API_KEY"] = "";
+    process.env["OPENAI_API_KEY"] = "";
+    process.env["VOYAGE_API_KEY"] = "";
+    process.env["COHERE_API_KEY"] = "";
+    process.env["OPENROUTER_API_KEY"] = "";
     delete process.env["EMBEDDING_PROVIDER"];
   });
 

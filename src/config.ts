@@ -83,7 +83,7 @@ function detectProvider(env: Record<string, string>): ProviderConfig {
   if (hasRealValue(env["OPENROUTER_API_KEY"])) {
     return {
       provider: "openrouter",
-      model: env["OPENROUTER_MODEL"] || "anthropic/claude-sonnet-4-20250514",
+      model: env["OPENROUTER_MODEL"] || "ibm-granite/granite-4.1-8b",
       maxTokens,
     };
   }
