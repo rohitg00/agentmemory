@@ -24,6 +24,7 @@ async function cascadeStale(kv: StateKV, memoryId: string): Promise<void> {
   for (const edge of edges) {
     if (!edge.stale && edge.sourceObservationIds.includes(memoryId)) {
       edge.stale = true;
+      edge.updatedAt = now;
       edgeUpdates.push(kv.set(KV.graphEdges, edge.id, edge));
     }
   }
@@ -43,11 +44,12 @@ export function registerGovernanceFunction(sdk: ISdk, kv: StateKV): void {
       }
 
       let deleted = 0;
+      const opTimestamp = new Date().toISOString();
       for (const id of data.memoryIds) {
         const mem = await kv.get<Memory>(KV.memories, id);
         if (mem && !mem.deleted) {
           mem.deleted = true;
-          mem.updatedAt = new Date().toISOString();
+          mem.updatedAt = opTimestamp;
           await kv.set(KV.memories, id, mem);
           await deleteAccessLog(kv, id);
           await cascadeStale(kv, id);
@@ -129,21 +131,26 @@ export function registerGovernanceFunction(sdk: ISdk, kv: StateKV): void {
       const BATCH_SIZE = 50;
       const successfulIds: string[] = [];
       const failures: Array<{ id: string; error: string }> = [];
+      const opTimestamp = new Date().toISOString();
       for (let i = 0; i < candidates.length; i += BATCH_SIZE) {
         const batch = candidates.slice(i, i + BATCH_SIZE);
         const results = await Promise.allSettled(
           batch.map(async (mem) => {
+            if (mem.deleted) return "skipped";
             mem.deleted = true;
-            mem.updatedAt = new Date().toISOString();
+            mem.updatedAt = opTimestamp;
             await kv.set(KV.memories, mem.id, mem);
             await deleteAccessLog(kv, mem.id);
             await cascadeStale(kv, mem.id);
+            return "deleted";
           }),
         );
         results.forEach((result, j) => {
           const mem = batch[j];
-          if (result.status === "fulfilled") {
+          if (result.status === "fulfilled" && result.value === "deleted") {
             successfulIds.push(mem.id);
+          } else if (result.status === "fulfilled") {
+            return;
           } else {
             logger.warn("Governance bulk delete failed", {
               memoryId: mem.id,

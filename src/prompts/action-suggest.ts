@@ -33,19 +33,23 @@ export interface SuggestedAction {
   description: string;
 }
 
-const ACTION_REGEX =
-  /<action\s+title="([^"]+)"\s+priority="([^"]+)"\s+description="([^"]+)"\s*>[\s\S]*?<\/action>/g;
+const ACTION_BLOCK_REGEX = /<action\b([^>]*)>[\s\S]*?<\/action>/g;
+const ACTION_ATTR_REGEX = /\b(title|priority|description)="([^"]*)"/g;
 
 export function parseActionSuggestXml(xml: string): SuggestedAction[] {
   const actions: SuggestedAction[] = [];
   let match;
-  while ((match = ACTION_REGEX.exec(xml)) !== null) {
-    const title = match[1].trim();
-    const parsedPriority = parseInt(match[2], 10);
+  while ((match = ACTION_BLOCK_REGEX.exec(xml)) !== null) {
+    const attrs = new Map<string, string>();
+    for (const attr of match[1].matchAll(ACTION_ATTR_REGEX)) {
+      attrs.set(attr[1], attr[2]);
+    }
+    const title = (attrs.get("title") ?? "").trim();
+    const parsedPriority = parseInt(attrs.get("priority") ?? "", 10);
     const priority = Number.isNaN(parsedPriority)
       ? 5
       : Math.max(1, Math.min(10, parsedPriority));
-    const description = match[3].trim();
+    const description = (attrs.get("description") ?? "").trim();
     if (title && description) {
       actions.push({ title, priority, description });
     }

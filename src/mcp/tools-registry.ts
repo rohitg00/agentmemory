@@ -46,7 +46,6 @@ export const CORE_TOOLS: McpToolDef[] = [
         token_budget: { type: "number", description: "Token budget to trim results" },
         limit: { type: "number", description: "Max results (default 10)" },
       },
-      required: ["query"],
     },
   },
   {
@@ -186,7 +185,7 @@ export const CORE_TOOLS: McpToolDef[] = [
         project: { type: "string", description: "Project context" },
         sketchId: { type: "string", description: "Sketch ID to promote" },
       },
-      required: ["operation", "title"],
+      required: ["operation"],
     },
   },
 ];

@@ -481,21 +481,30 @@ export function registerReflectFunctions(
       insightIds?: string[];
       reason?: string;
     }) => {
-      const ids = data.insightId ? [data.insightId] : (data.insightIds ?? []);
+      const rawIds = [
+        ...(typeof data.insightId === "string" ? [data.insightId] : []),
+        ...(Array.isArray(data.insightIds) ? data.insightIds : []),
+      ];
+      const ids = [...new Set(rawIds.map((id) => id.trim()).filter(Boolean))];
       if (!ids.length) {
         return { success: false, error: "insightId or insightIds is required" };
       }
-      let deleted = 0;
       const now = new Date().toISOString();
-      for (const id of ids) {
-        const insight = await kv.get<Insight>(KV.insights, id);
-        if (insight) {
+      const loaded = await Promise.all(
+        ids.map(async (id) => ({ id, insight: await kv.get<Insight>(KV.insights, id) })),
+      );
+      const toDelete = loaded.filter(
+        (item): item is { id: string; insight: Insight } =>
+          Boolean(item.insight && !item.insight.deleted),
+      );
+      await Promise.all(
+        toDelete.map(({ id, insight }) => {
           insight.deleted = true;
           insight.updatedAt = now;
-          await kv.set(KV.insights, id, insight);
-          deleted++;
-        }
-      }
+          return kv.set(KV.insights, id, insight);
+        }),
+      );
+      const deleted = toDelete.length;
       await recordAudit(kv, "delete", "mem::insight-delete", ids, {
         reason: data.reason || "manual deletion",
         deleted,

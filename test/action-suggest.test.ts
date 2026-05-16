@@ -9,6 +9,7 @@ vi.mock("../src/config.js", () => ({
 }));
 
 import { registerActionSuggestFunction } from "../src/functions/action-suggest.js";
+import { parseActionSuggestXml } from "../src/prompts/action-suggest.js";
 import type { Action, CompressedObservation, MemoryProvider } from "../src/types.js";
 
 function mockKV() {
@@ -137,6 +138,20 @@ describe("Action Suggest Function", () => {
     expect(actions[0].tags).toContain("auto-suggested");
     expect(actions[0].createdBy).toBe("action-suggest");
     expect(actions[0].project).toBe("my-project");
+  });
+
+  it("parses LLM action tags regardless of attribute order", () => {
+    const actions = parseActionSuggestXml(
+      '<action description="Fix the auth race" priority="8" title="Fix auth race"></action>',
+    );
+
+    expect(actions).toEqual([
+      {
+        title: "Fix auth race",
+        priority: 8,
+        description: "Fix the auth race",
+      },
+    ]);
   });
 
   it("creates action for TODO observations", async () => {

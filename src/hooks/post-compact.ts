@@ -17,14 +17,21 @@ function authHeaders(): Record<string, string> {
 
 async function post(path: string, body: Record<string, unknown>, timeoutMs: number): Promise<void> {
   try {
-    await fetch(`${REST_URL}/agentmemory${path}`, {
+    const response = await fetch(`${REST_URL}/agentmemory${path}`, {
       method: "POST",
       headers: authHeaders(),
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(timeoutMs),
     });
-  } catch {
-    // best effort
+    if (!response.ok) {
+      process.stderr.write(
+        `[agentmemory] post-compact POST ${path} failed: ${response.status} ${response.statusText}\n`,
+      );
+    }
+  } catch (err) {
+    process.stderr.write(
+      `[agentmemory] post-compact POST ${path} failed: ${err instanceof Error ? err.message : String(err)}\n`,
+    );
   }
 }
 
@@ -43,7 +50,10 @@ async function main() {
 
   if (isSdkChildContext(data)) return;
 
-  const sessionId = (data.session_id as string) || "unknown";
+  const sessionId = typeof data.session_id === "string" && data.session_id.trim()
+    ? data.session_id.trim()
+    : undefined;
+  if (!sessionId) return;
   const cwd = (data.cwd as string) || process.cwd();
 
   await post("/observe", {

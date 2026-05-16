@@ -172,7 +172,7 @@ Claude Code and OpenCode take fundamentally different approaches to injecting me
 
 ### Claude Code: file-backed bridge (two-hop)
 
-```
+```text
 agentmemory  ──write──▶  MEMORY.md  ──read──▶  Claude system prompt
 ```
 
@@ -183,7 +183,7 @@ agentmemory  ──write──▶  MEMORY.md  ──read──▶  Claude system
 
 ### OpenCode: direct injection (one-hop)
 
-```
+```text
 agentmemory  ──push──▶  OpenCode system prompt
 ```
 

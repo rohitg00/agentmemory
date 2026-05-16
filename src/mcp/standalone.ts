@@ -389,10 +389,13 @@ async function handleLocal(
     }
     case "memory_governance_delete": {
       let deleted = 0;
+      const now = new Date().toISOString();
       for (const id of v.memoryIds || []) {
-        const existing = await kvInstance.get("mem:memories", id);
-        if (existing) {
-          await kvInstance.delete("mem:memories", id);
+        const existing = await kvInstance.get<Record<string, unknown>>("mem:memories", id);
+        if (existing && existing["deleted"] !== true) {
+          existing["deleted"] = true;
+          existing["updatedAt"] = now;
+          await kvInstance.set("mem:memories", id, existing);
           deleted++;
         }
       }

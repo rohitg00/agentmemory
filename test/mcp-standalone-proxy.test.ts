@@ -301,7 +301,10 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
     resetHandleForTests();
     process.env["AGENTMEMORY_TOOLS"] = "core";
     const core = await handleToolsList();
-    expect((core.tools as unknown[]).length).toBe(2);
+    expect((core.tools as Array<{ name: string }>).map((t) => t.name).sort()).toEqual([
+      "memory_search",
+      "memory_store",
+    ]);
     delete process.env["AGENTMEMORY_TOOLS"];
   });
 

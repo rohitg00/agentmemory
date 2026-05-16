@@ -99,7 +99,7 @@ export function registerMcpEndpoints(
           case "memory_file_history":
           case "memory_graph_query":
           case "memory_vision_search": {
-            const scope = (args.scope as string) || "keyword";
+            const scope = (args.scope as string) || (args.operation as string) || "keyword";
             if (scope === "keyword" || name === "memory_recall") {
               if (typeof args.query !== "string" || !args.query.trim()) {
                 return { status_code: 400, body: { error: "query is required" } };
@@ -441,6 +441,21 @@ export function registerMcpEndpoints(
 
           case "crystal":
           case "memory_crystallize": {
+            const rawOp = args.operation === undefined || args.operation === null ? undefined : args.operation;
+            const opVal = asValidatedOperation(rawOp, ["list", "crystallize"]);
+            const operation = opVal || (name === "memory_crystallize" ? "crystallize" : "list");
+            if (operation === "list") {
+              const limit = asNumber(args.limit, 50);
+              if (!Number.isInteger(limit) || (limit ?? 0) <= 0) {
+                return { status_code: 400, body: { error: "limit must be a positive integer" } };
+              }
+              const result = await sdk.trigger({ function_id: "mem::crystal-list", payload: {
+                project: asNonEmptyString(args.project),
+                sessionId: asNonEmptyString(args.sessionId),
+                limit,
+              } });
+              return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] } };
+            }
             if (typeof args.actionIds !== "string" || !args.actionIds.trim()) {
               return { status_code: 400, body: { error: "actionIds is required" } };
             }
@@ -473,18 +488,28 @@ export function registerMcpEndpoints(
               return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] } };
             }
             if (operation === "list" || name === "memory_lesson_list") {
-              const project = typeof args.project === "string" ? args.project : undefined;
-              const source = typeof args.source === "string" && ["manual", "crystal", "consolidation"].includes(args.source) ? args.source : undefined;
-              const minConfidence = typeof args.minConfidence === "number" ? args.minConfidence : undefined;
-              const limit = typeof args.limit === "number" && args.limit > 0 ? args.limit : 50;
+              const project = asNonEmptyString(args.project);
+              const source = asNonEmptyString(args.source);
+              if (source !== undefined && !["manual", "crystal", "consolidation"].includes(source)) {
+                return { status_code: 400, body: { error: "source must be one of: manual, crystal, consolidation" } };
+              }
+              const minConfidence = asNumber(args.minConfidence);
+              if (minConfidence !== undefined && (minConfidence < 0 || minConfidence > 1)) {
+                return { status_code: 400, body: { error: "minConfidence must be between 0 and 1" } };
+              }
+              const limit = asNumber(args.limit, 50);
+              if (!Number.isInteger(limit) || (limit ?? 0) <= 0) {
+                return { status_code: 400, body: { error: "limit must be a positive integer" } };
+              }
               const result = await sdk.trigger({ function_id: "mem::lesson-list", payload: { project, source, minConfidence, limit } });
               return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] } };
             }
             if (operation === "strengthen" || name === "memory_lesson_strengthen") {
-              if (typeof args.lessonId !== "string" || !args.lessonId.trim()) {
+              const lessonId = asNonEmptyString(args.lessonId);
+              if (!lessonId) {
                 return { status_code: 400, body: { error: "lessonId is required" } };
               }
-              const result = await sdk.trigger({ function_id: "mem::lesson-strengthen", payload: { lessonId: args.lessonId } });
+              const result = await sdk.trigger({ function_id: "mem::lesson-strengthen", payload: { lessonId } });
               return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] } };
             }
             return { status_code: 400, body: { error: "Invalid operation" } };
@@ -501,11 +526,19 @@ export function registerMcpEndpoints(
               return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] } };
             }
             if (operation === "delete") {
-              if (typeof args.insightId !== "string" || !args.insightId.trim()) {
-                return { status_code: 400, body: { error: "insightId is required" } };
+              const ids = [
+                ...parseCsvList(args.insightIds),
+                ...parseCsvList(args.insightId),
+              ].slice(0, MAX_IDS);
+              if (ids.length === 0) {
+                return { status_code: 400, body: { error: "insightIds is required" } };
               }
-              const result = await sdk.trigger({ function_id: "mem::insight-delete", payload: { insightId: args.insightId } });
-              return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] } };
+              const results = await Promise.all(
+                ids.map((insightId) =>
+                  sdk.trigger({ function_id: "mem::insight-delete", payload: { insightId, reason: args.reason as string } }),
+                ),
+              );
+              return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify({ success: true, results }, null, 2) }] } };
             }
             return { status_code: 400, body: { error: "Invalid operation" } };
           }
@@ -587,7 +620,8 @@ export function registerMcpEndpoints(
             }
             if (operation === "audit" || name === "memory_audit") {
               try {
-                const result = await sdk.trigger({ function_id: "mem::audit-query", payload: { operation: args.operation as string, limit: typeof args.limit === "number" ? args.limit : 50 } });
+                const auditOperation = asNonEmptyString(args.operation_filter);
+                const result = await sdk.trigger({ function_id: "mem::audit-query", payload: { operation: auditOperation, limit: typeof args.limit === "number" ? args.limit : 50 } });
                 return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] } };
               } catch (err) {
                 return { status_code: 500, body: { content: [{ type: "text", text: "Audit query failed: " + (err instanceof Error ? err.message : String(err)) }], isError: true } };

@@ -180,7 +180,8 @@ export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
           project: data.project,
           source: data.source,
           minConfidence: data.minConfidence,
-          resultCount: lessons.length,
+          resultCount: lessonIds.length,
+          totalMatched: lessons.length,
         });
       } catch {}
 

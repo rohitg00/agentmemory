@@ -14,13 +14,16 @@ function authHeaders() {
 }
 async function post(path, body, timeoutMs) {
 	try {
-		await fetch(`${REST_URL}/agentmemory${path}`, {
+		const response = await fetch(`${REST_URL}/agentmemory${path}`, {
 			method: "POST",
 			headers: authHeaders(),
 			body: JSON.stringify(body),
 			signal: AbortSignal.timeout(timeoutMs)
 		});
-	} catch {}
+		if (!response.ok) process.stderr.write(`[agentmemory] post-compact POST ${path} failed: ${response.status} ${response.statusText}\n`);
+	} catch (err) {
+		process.stderr.write(`[agentmemory] post-compact POST ${path} failed: ${err instanceof Error ? err.message : String(err)}\n`);
+	}
 }
 async function main() {
 	let input = "";
@@ -32,7 +35,8 @@ async function main() {
 		return;
 	}
 	if (isSdkChildContext(data)) return;
-	const sessionId = data.session_id || "unknown";
+	const sessionId = typeof data.session_id === "string" && data.session_id.trim() ? data.session_id.trim() : void 0;
+	if (!sessionId) return;
 	const cwd = data.cwd || process.cwd();
 	await post("/observe", {
 		hookType: "session_compacted",
