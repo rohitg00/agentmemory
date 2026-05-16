@@ -4,7 +4,8 @@ vi.mock("../src/logger.js", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
-import { registerSearchFunction, getSearchIndex, rebuildIndex } from "../src/functions/search.js";
+import { registerSearchFunction, getSearchIndex, rebuildIndex, setVectorIndex, setEmbeddingProvider, getVectorIndex } from "../src/functions/search.js";
+import { VectorIndex } from "../src/state/vector-index.js";
 import { KV } from "../src/state/schema.js";
 import type { CompressedObservation, Session } from "../src/types.js";
 
@@ -181,5 +182,27 @@ describe("mem::search", () => {
     const hit = result.results.find((r) => r.obsId === "mem_x1");
     expect(hit).toBeDefined();
     expect(hit?.title).toBe("Pineapple belongs on pizza");
+  });
+
+  it("rebuildIndex populates the vector index", async () => {
+    const mockEmbedder = {
+      name: "test",
+      dimensions: 3,
+      embed: async (_text: string) => new Float32Array([0.1, 0.2, 0.3]),
+      embedBatch: async (_texts: string[]) =>
+        _texts.map(() => new Float32Array([0.1, 0.2, 0.3])),
+    };
+    setEmbeddingProvider(mockEmbedder);
+    setVectorIndex(new VectorIndex());
+
+    await rebuildIndex(kv as never);
+
+    const vi = getVectorIndex();
+    expect(vi).not.toBeNull();
+    expect(vi!.size).toBeGreaterThan(0);
+
+    // Cleanup
+    setVectorIndex(null);
+    setEmbeddingProvider(null);
   });
 });

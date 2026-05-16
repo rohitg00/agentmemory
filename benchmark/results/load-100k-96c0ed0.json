@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-05-13T19:49:26.116Z",
+  "git_sha": "96c0ed0",
+  "base_url": "http://localhost:3111",
+  "seed": 12648430,
+  "matrix": {
+    "N": [
+      1000
+    ],
+    "C": [
+      10
+    ]
+  },
+  "ops_per_cell": 200,
+  "cells": [
+    {
+      "endpoint": "POST /agentmemory/remember",
+      "N": 1000,
+      "C": 10,
+      "ops": 200,
+      "errors": 0,
+      "wall_ms": 11504.64,
+      "throughput_per_sec": 17.38,
+      "p50_ms": 577.435,
+      "p90_ms": 607.335,
+      "p99_ms": 675.269,
+      "min_ms": 64.46,
+      "max_ms": 683.164
+    },
+    {
+      "endpoint": "POST /agentmemory/smart-search",
+      "N": 1000,
+      "C": 10,
+      "ops": 200,
+      "errors": 0,
+      "wall_ms": 3264.572,
+      "throughput_per_sec": 61.26,
+      "p50_ms": 160.064,
+      "p90_ms": 185.608,
+      "p99_ms": 224.354,
+      "min_ms": 98.498,
+      "max_ms": 251.317
+    },
+    {
+      "endpoint": "GET /agentmemory/memories?latest=true",
+      "N": 1000,
+      "C": 10,
+      "ops": 200,
+      "errors": 0,
+      "wall_ms": 8051.764,
+      "throughput_per_sec": 24.84,
+      "p50_ms": 395.462,
+      "p90_ms": 475.714,
+      "p99_ms": 542.648,
+      "min_ms": 158.79,
+      "max_ms": 635.331
+    }
+  ],
+  "notes": "Single-process load harness. Latency in milliseconds. Throughput is wall-clock ops/sec for the cell (concurrent in-flight = C)."
+}

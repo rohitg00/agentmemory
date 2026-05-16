@@ -34,6 +34,8 @@ import {
   registerSearchFunction,
   rebuildIndex,
   getSearchIndex,
+  setVectorIndex,
+  setEmbeddingProvider,
 } from "./functions/search.js";
 import { registerContextFunction } from "./functions/context.js";
 import { registerSummarizeFunction } from "./functions/summarize.js";
@@ -94,6 +96,7 @@ import { DedupMap } from "./functions/dedup.js";
 import { registerHealthMonitor } from "./health/monitor.js";
 import { initMetrics, OTEL_CONFIG } from "./telemetry/setup.js";
 import { VERSION } from "./version.js";
+import { bootLog } from "./logger.js";
 
 function hasGetMeter(
   sdk: unknown,
@@ -138,27 +141,27 @@ async function main() {
   const embeddingProvider = createEmbeddingProvider();
   const imageEmbeddingProvider = createImageEmbeddingProvider();
 
-  console.log(`[agentmemory] Starting worker v${VERSION}...`);
-  console.log(`[agentmemory] Engine: ${config.engineUrl}`);
-  console.log(
-    `[agentmemory] Provider: ${config.provider.provider} (${config.provider.model})`,
+  bootLog(`Starting worker v${VERSION}...`);
+  bootLog(`Engine: ${config.engineUrl}`);
+  bootLog(
+    `Provider: ${config.provider.provider} (${config.provider.model})`,
   );
   if (embeddingProvider) {
-    console.log(
-      `[agentmemory] Embedding provider: ${embeddingProvider.name} (${embeddingProvider.dimensions} dims)`,
+    bootLog(
+      `Embedding provider: ${embeddingProvider.name} (${embeddingProvider.dimensions} dims)`,
     );
   } else {
-    console.log(`[agentmemory] Embedding provider: none (BM25-only mode)`);
+    bootLog(`Embedding provider: none (BM25-only mode)`);
   }
   if (imageEmbeddingProvider) {
-    console.log(
-      `[agentmemory] Image embedding provider: ${imageEmbeddingProvider.name} (${imageEmbeddingProvider.dimensions} dims) — vision-search active`,
+    bootLog(
+      `Image embedding provider: ${imageEmbeddingProvider.name} (${imageEmbeddingProvider.dimensions} dims) — vision-search active`,
     );
   }
-  console.log(
-    `[agentmemory] REST API: http://localhost:${config.restPort}/agentmemory/*`,
+  bootLog(
+    `REST API: http://localhost:${config.restPort}/agentmemory/*`,
   );
-  console.log(`[agentmemory] Streams: ws://localhost:${config.streamsPort}`);
+  bootLog(`Streams: ws://localhost:${config.streamsPort}`);
 
   const sdk = registerWorker(config.engineUrl, {
     workerName: "agentmemory",
@@ -168,6 +171,18 @@ async function main() {
       serviceVersion: OTEL_CONFIG.serviceVersion,
       metricsExportIntervalMs: OTEL_CONFIG.metricsExportIntervalMs,
     },
+    // Explicit worker telemetry metadata. iii-sdk falls back to
+    // auto-detection (cwd / package.json name / hostname) when this
+    // is omitted, which produces inconsistent values per host —
+    // `agentmemory`, `node`, `npm`, occasionally the user's home
+    // directory basename. Pinning the value here gives every install
+    // the same stable project identifier for downstream attribution
+    // and grouping in the engine's metrics + traces output.
+    telemetry: {
+      project_name: "agentmemory",
+      language: "node",
+      framework: "iii-sdk",
+    },
   });
 
   const kv = new StateKV(sdk);
@@ -176,6 +191,9 @@ async function main() {
   const dedupMap = new DedupMap();
 
   const vectorIndex = embeddingProvider ? new VectorIndex() : null;
+
+  setVectorIndex(vectorIndex);
+  setEmbeddingProvider(embeddingProvider);
 
   const meterAccessor = hasGetMeter(sdk)
     ? (sdk.getMeter.bind(sdk) as (name: string) => unknown)
@@ -212,44 +230,44 @@ async function main() {
   const claudeBridgeConfig = loadClaudeBridgeConfig();
   if (claudeBridgeConfig.enabled) {
     registerClaudeBridgeFunction(sdk, kv, claudeBridgeConfig);
-    console.log(
-      `[agentmemory] Claude bridge: syncing to ${claudeBridgeConfig.memoryFilePath}`,
+    bootLog(
+      `Claude bridge: syncing to ${claudeBridgeConfig.memoryFilePath}`,
     );
   }
 
   if (isGraphExtractionEnabled()) {
     registerGraphFunction(sdk, kv, provider);
-    console.log(`[agentmemory] Knowledge graph: extraction enabled`);
+    bootLog(`Knowledge graph: extraction enabled`);
   }
 
   registerConsolidationPipelineFunction(sdk, kv, provider);
-  console.log(`[agentmemory] Consolidation pipeline: registered (CONSOLIDATION_ENABLED=${isConsolidationEnabled() ? "true" : "false"})`);
+  bootLog(`Consolidation pipeline: registered (CONSOLIDATION_ENABLED=${isConsolidationEnabled() ? "true" : "false"})`);
 
   if (isAutoCompressEnabled()) {
-    console.log(
-      `[agentmemory] WARNING: AGENTMEMORY_AUTO_COMPRESS=true — every PostToolUse observation will be sent to your LLM provider for compression. This spends API tokens proportional to your session tool-use frequency (see #138). Set AGENTMEMORY_AUTO_COMPRESS=false to disable.`,
+    bootLog(
+      `WARNING: AGENTMEMORY_AUTO_COMPRESS=true — every PostToolUse observation will be sent to your LLM provider for compression. This spends API tokens proportional to your session tool-use frequency (see #138). Set AGENTMEMORY_AUTO_COMPRESS=false to disable.`,
     );
   } else {
-    console.log(
-      `[agentmemory] Auto-compress: OFF (default, #138) — observations indexed via zero-LLM synthetic compression. Set AGENTMEMORY_AUTO_COMPRESS=true to opt-in to LLM-powered summaries (uses your API key).`,
+    bootLog(
+      `Auto-compress: OFF (default, #138) — observations indexed via zero-LLM synthetic compression. Set AGENTMEMORY_AUTO_COMPRESS=true to opt-in to LLM-powered summaries (uses your API key).`,
     );
   }
 
   if (isContextInjectionEnabled()) {
-    console.log(
-      `[agentmemory] WARNING: AGENTMEMORY_INJECT_CONTEXT=true — the PreToolUse and SessionStart hooks will inject up to ~4000 chars of memory context into every tool turn. On Claude Pro this burns session tokens proportional to your tool-call frequency (see #143). Set AGENTMEMORY_INJECT_CONTEXT=false to disable.`,
+    bootLog(
+      `WARNING: AGENTMEMORY_INJECT_CONTEXT=true — the PreToolUse and SessionStart hooks will inject up to ~4000 chars of memory context into every tool turn. On Claude Pro this burns session tokens proportional to your tool-call frequency (see #143). Set AGENTMEMORY_INJECT_CONTEXT=false to disable.`,
     );
   } else {
-    console.log(
-      `[agentmemory] Context injection: OFF (default, #143) — hooks capture observations but do not inject context into Claude Code's conversation. Set AGENTMEMORY_INJECT_CONTEXT=true to opt-in (warning: expect your Claude Pro allocation to drain faster).`,
+    bootLog(
+      `Context injection: OFF (default, #143) — hooks capture observations but do not inject context into Claude Code's conversation. Set AGENTMEMORY_INJECT_CONTEXT=true to opt-in (warning: expect your Claude Pro allocation to drain faster).`,
     );
   }
 
   const teamConfig = loadTeamConfig();
   if (teamConfig) {
     registerTeamFunction(sdk, kv, teamConfig);
-    console.log(
-      `[agentmemory] Team memory: ${teamConfig.teamId} (${teamConfig.mode})`,
+    bootLog(
+      `Team memory: ${teamConfig.teamId} (${teamConfig.mode})`,
     );
   }
 
@@ -284,23 +302,23 @@ async function main() {
   registerRetentionFunctions(sdk, kv);
   registerCompressFileFunction(sdk, kv, provider);
   registerReplayFunctions(sdk, kv);
-  console.log(
-    `[agentmemory] v0.6 advanced retrieval: sliding-window, query-expansion, temporal-graph, retention-scoring`,
+  bootLog(
+    `v0.6 advanced retrieval: sliding-window, query-expansion, temporal-graph, retention-scoring`,
   );
-  console.log(
-    `[agentmemory] Orchestration layer: actions, frontier, leases, routines, signals, checkpoints, flow-compress, mesh, branch-aware, sentinels, sketches, crystallize, diagnostics, facets`,
+  bootLog(
+    `Orchestration layer: actions, frontier, leases, routines, signals, checkpoints, flow-compress, mesh, branch-aware, sentinels, sketches, crystallize, diagnostics, facets`,
   );
   if (isSlotsEnabled()) {
-    console.log(
-      `[agentmemory] Slots: enabled (pinned editable memory). Reflect on Stop hook: ${isReflectEnabled() ? "on" : "off"}`,
+    bootLog(
+      `Slots: enabled (pinned editable memory). Reflect on Stop hook: ${isReflectEnabled() ? "on" : "off"}`,
     );
   }
 
   const snapshotConfig = loadSnapshotConfig();
   if (snapshotConfig.enabled) {
     registerSnapshotFunction(sdk, kv, snapshotConfig.dir);
-    console.log(
-      `[agentmemory] Git snapshots: ${snapshotConfig.dir} (every ${snapshotConfig.interval}s)`,
+    bootLog(
+      `Git snapshots: ${snapshotConfig.dir} (every ${snapshotConfig.interval}s)`,
     );
   }
 
@@ -334,8 +352,8 @@ async function main() {
   });
   if (loaded?.bm25 && loaded.bm25.size > 0) {
     bm25Index.restoreFrom(loaded.bm25);
-    console.log(
-      `[agentmemory] Loaded persisted BM25 index (${bm25Index.size} docs)`,
+    bootLog(
+      `Loaded persisted BM25 index (${bm25Index.size} docs)`,
     );
   }
   if (loaded?.vector && vectorIndex && loaded.vector.size > 0) {
@@ -387,8 +405,8 @@ async function main() {
       }
     } else {
       vectorIndex.restoreFrom(loaded.vector);
-      console.log(
-        `[agentmemory] Loaded persisted vector index (${vectorIndex.size} vectors)`,
+      bootLog(
+        `Loaded persisted vector index (${vectorIndex.size} vectors)`,
       );
     }
   }
@@ -401,8 +419,8 @@ async function main() {
       return 0;
     });
     if (indexCount > 0) {
-      console.log(
-        `[agentmemory] Search index rebuilt: ${indexCount} entries`,
+      bootLog(
+        `Search index rebuilt: ${indexCount} entries`,
       );
       indexPersistence.scheduleSave();
     }
@@ -436,8 +454,8 @@ async function main() {
         backfilled++;
       }
       if (backfilled > 0) {
-        console.log(
-          `[agentmemory] Backfilled ${backfilled} memories into BM25 (legacy gap before #257)`,
+        bootLog(
+          `Backfilled ${backfilled} memories into BM25 (legacy gap before #257)`,
         );
         indexPersistence.scheduleSave();
       }
@@ -449,11 +467,18 @@ async function main() {
     }
   }
 
-  console.log(
-    `[agentmemory] Ready. ${embeddingProvider ? "Triple-stream (BM25+Vector+Graph)" : "BM25+Graph"} search active.`,
+  // Ready / Endpoints lines are emitted via `bootLog` so they're
+  // buffered in quiet mode and printed verbatim under --verbose. The
+  // CLI surfaces a compact summary when it sees the worker reach
+  // ready state.
+  bootLog(
+    `Ready. ${embeddingProvider ? "Triple-stream (BM25+Vector+Graph)" : "BM25+Graph"} search active.`,
   );
-  console.log(
-    `[agentmemory] Endpoints: 107 REST + ${getAllTools().length} MCP tools + 6 MCP resources + 3 MCP prompts`,
+  bootLog(
+    `REST API: 121 endpoints at http://localhost:${config.restPort}/agentmemory/*`,
+  );
+  bootLog(
+    `MCP surface (opt-in via \`npx @agentmemory/mcp\`): ${getAllTools().length} tools · 6 resources · 3 prompts`,
   );
 
   const viewerPort = config.restPort + 2;
@@ -475,7 +500,7 @@ async function main() {
       } catch {}
     }, autoForgetIntervalMs);
     autoForgetTimer.unref();
-    console.log(`[agentmemory] Auto-forget: enabled (every ${autoForgetIntervalMs / 60000}m)`);
+    bootLog(`Auto-forget: enabled (every ${autoForgetIntervalMs / 60000}m)`);
   }
 
   if (process.env.LESSON_DECAY_ENABLED !== "false") {
@@ -485,7 +510,7 @@ async function main() {
       } catch {}
     }, 86400000);
     lessonDecayTimer.unref();
-    console.log(`[agentmemory] Lesson decay sweep: enabled (every 24h)`);
+    bootLog(`Lesson decay sweep: enabled (every 24h)`);
   }
 
   if (process.env.INSIGHT_DECAY_ENABLED !== "false") {
@@ -504,7 +529,7 @@ async function main() {
       } catch {}
     }, consolidationIntervalMs);
     consolidationTimer.unref();
-    console.log(`[agentmemory] Auto-consolidation: enabled (every ${consolidationIntervalMs / 60000}m)`);
+    bootLog(`Auto-consolidation: enabled (every ${consolidationIntervalMs / 60000}m)`);
   }
 
   const shutdown = async () => {

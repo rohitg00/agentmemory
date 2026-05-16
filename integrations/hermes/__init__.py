@@ -11,10 +11,12 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import threading
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
+from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 from urllib.error import URLError
 
@@ -49,6 +51,8 @@ except ImportError:
 
 DEFAULT_BASE_URL = "http://localhost:3111"
 TIMEOUT = 5
+LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
+_plaintext_bearer_warned = False
 
 # agentmemory's documented runtime config lives at ~/.agentmemory/.env.
 # When agentmemory is launched as a systemd user service (or any other
@@ -92,9 +96,44 @@ _preload_agentmemory_dotenv()
 
 
 def _validate_url(base: str) -> bool:
-    from urllib.parse import urlparse
     parsed = urlparse(base)
     return parsed.scheme in ("http", "https")
+
+
+def _uses_plaintext_bearer_auth(base: str, secret: str = "") -> bool:
+    if not secret:
+        return False
+    parsed = urlparse(base)
+    return parsed.scheme == "http" and (parsed.hostname or "").lower() not in LOOPBACK_HOSTS
+
+
+def _plaintext_bearer_auth_message(base: str) -> str:
+    return f"agentmemory: AGENTMEMORY_SECRET is configured for plaintext HTTP to {base}. Bearer tokens and memory payloads can be observed on the network; use HTTPS or an SSH tunnel."
+
+
+def _warn_plaintext_bearer_auth(message: str) -> None:
+    print(message, file=sys.stderr)
+
+
+def _check_plaintext_bearer_guard(
+    base: str,
+    secret: str = "",
+    warn: Callable[[str], None] | None = None,
+) -> None:
+    global _plaintext_bearer_warned
+    if not _uses_plaintext_bearer_auth(base, secret):
+        return
+    message = _plaintext_bearer_auth_message(base)
+    if os.environ.get("AGENTMEMORY_REQUIRE_HTTPS") == "1":
+        raise RuntimeError(message)
+    if not _plaintext_bearer_warned:
+        _plaintext_bearer_warned = True
+        (warn or _warn_plaintext_bearer_auth)(message)
+
+
+def _reset_plaintext_bearer_guard_for_tests() -> None:
+    global _plaintext_bearer_warned
+    _plaintext_bearer_warned = False
 
 
 def _api(base: str, path: str, body: dict | None = None, method: str = "POST", secret: str = "") -> dict | None:
@@ -103,6 +142,7 @@ def _api(base: str, path: str, body: dict | None = None, method: str = "POST", s
     url = f"{base}/agentmemory/{path}"
     headers = {"Content-Type": "application/json"}
     auth = secret or os.environ.get("AGENTMEMORY_SECRET", "")
+    _check_plaintext_bearer_guard(base, auth)
     if auth:
         headers["Authorization"] = f"Bearer {auth}"
 
@@ -141,6 +181,8 @@ class AgentMemoryProvider(MemoryProvider):
         self._base = os.environ.get("AGENTMEMORY_URL", DEFAULT_BASE_URL)
         self._session_id = session_id
         self._project = kwargs.get("cwd", os.getcwd())
+        if os.environ.get("AGENTMEMORY_REQUIRE_HTTPS") == "1":
+            _check_plaintext_bearer_guard(self._base, os.environ.get("AGENTMEMORY_SECRET", ""))
 
         _api(self._base, "session/start", {
             "sessionId": session_id,

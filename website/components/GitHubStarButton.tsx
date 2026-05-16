@@ -5,6 +5,12 @@ import styles from "./GitHubStarButton.module.css";
 
 interface Props {
   repo: string;
+  // SSR-fed initial count from Nav's server-side fetch. When present
+  // the badge renders the number on first paint; the client-side
+  // refetch below is a best-effort refresh that only fires if it
+  // succeeds (unauthenticated github.com api is rate-limited to
+  // ~60/hr/IP, which is why the count was invisible before).
+  initialStars?: number;
 }
 
 function formatStars(n: number): string {
@@ -15,8 +21,10 @@ function formatStars(n: number): string {
   return String(n);
 }
 
-export function GitHubStarButton({ repo }: Props) {
-  const [stars, setStars] = useState<number | null>(null);
+export function GitHubStarButton({ repo, initialStars }: Props) {
+  const [stars, setStars] = useState<number | null>(
+    typeof initialStars === "number" ? initialStars : null,
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -52,7 +60,7 @@ export function GitHubStarButton({ repo }: Props) {
           }
         }
       } catch {
-        /* offline / blocked — keep cached or null */
+        /* offline / blocked — keep SSR / cached / null */
       }
     })();
     return () => {
@@ -66,7 +74,7 @@ export function GitHubStarButton({ repo }: Props) {
       target="_blank"
       rel="noopener noreferrer"
       className={`btn btn--ghost ${styles.starBtn}`}
-      aria-label={`Star ${repo} on GitHub`}
+      aria-label={`Star ${repo} on GitHub${stars !== null ? ` — ${stars.toLocaleString()} stars` : ""}`}
     >
       <svg
         aria-hidden

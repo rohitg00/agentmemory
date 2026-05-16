@@ -191,6 +191,18 @@ function validate(toolName: string, args: Record<string, unknown>): Validated {
       }
       return v;
     }
+    case "memory_governance_delete": {
+      const ids = normalizeList(args["memoryIds"]);
+      if (ids.length === 0) throw new Error("memoryIds is required");
+      v.memoryIds = ids;
+      v.reason = (args["reason"] as string) || "plugin skill request";
+      return v;
+    }
+    case "memory_audit": {
+      v.operation = "audit";
+      v.limit = parseLimit(args["limit"], 50);
+      return v;
+    }
     case "memory_profile": {
       v.operation = "profile";
       return v;
@@ -216,8 +228,6 @@ function validate(toolName: string, args: Record<string, unknown>): Validated {
     case "memory_crystallize":
     case "memory_diagnose":
     case "memory_heal":
-    case "memory_audit":
-    case "memory_governance_delete":
     case "memory_obsidian_export":
     case "memory_verify":
     case "memory_lesson_save":
@@ -313,6 +323,24 @@ async function handleProxy(
       const result = await handle.call("/agentmemory/sessions?limit=" + (v.limit ?? 20), { method: "GET" });
       return textResponse(result, true);
     }
+    case "memory_governance_delete": {
+      const result = await handle.call("/agentmemory/governance/memories", {
+        method: "DELETE",
+        body: JSON.stringify({ memoryIds: v.memoryIds, reason: v.reason }),
+      });
+      return textResponse(result);
+    }
+    case "memory_export": {
+      const result = await handle.call("/agentmemory/export", { method: "GET" });
+      return textResponse(result, true);
+    }
+    case "memory_audit": {
+      const result = await handle.call(
+        `/agentmemory/audit?limit=${v.limit}`,
+        { method: "GET" },
+      );
+      return textResponse(result, true);
+    }
     default:
       throw new Error(`Proxy not implemented for: ${v.tool}`);
   }
@@ -358,6 +386,35 @@ async function handleLocal(
     case "memory_sessions": {
       const sessions = await kvInstance.list<Record<string, unknown>>("mem:sessions");
       return textResponse({ sessions: sessions.slice(0, (v.limit ?? 20) as number) }, true);
+    }
+    case "memory_governance_delete": {
+      let deleted = 0;
+      for (const id of v.memoryIds || []) {
+        const existing = await kvInstance.get("mem:memories", id);
+        if (existing) {
+          await kvInstance.delete("mem:memories", id);
+          deleted++;
+        }
+      }
+      kvInstance.persist();
+      return textResponse({
+        deleted,
+        requested: (v.memoryIds || []).length,
+        reason: v.reason,
+      });
+    }
+    case "memory_export": {
+      const memories = await kvInstance.list("mem:memories");
+      const sessions = await kvInstance.list("mem:sessions");
+      return textResponse({ version: VERSION, memories, sessions }, true);
+    }
+    case "memory_audit": {
+      const entries = await kvInstance.list("mem:audit");
+      const limit = v.limit ?? 50;
+      return textResponse(
+        { entries: (entries as Array<Record<string, unknown>>).slice(0, limit) },
+        true,
+      );
     }
     default: {
       throw new Error(`Unknown tool: ${v.tool}`);

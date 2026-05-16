@@ -5,7 +5,7 @@
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  padding: 120px 24px 80px;
+  padding: 110px 24px 72px;
 }
 .vignette {
   position: absolute;
@@ -32,23 +32,24 @@
   text-align: center;
   max-width: 1200px;
   margin: 0 auto;
+  width: 100%;
 }
 
 .chip {
   display: inline-block;
-  padding: 8px 14px;
+  padding: 7px 13px;
   font-size: 12px;
   letter-spacing: 0.96px;
   color: var(--gold-soft);
   border: 1px solid var(--gold-soft);
   text-transform: uppercase;
-  margin-bottom: 28px;
+  margin-bottom: 22px;
 }
 
 .title {
-  font-size: clamp(54px, 12vw, 160px);
+  font-size: clamp(44px, 9vw, 124px);
   font-weight: 900;
-  line-height: 0.92;
+  line-height: 0.94;
   letter-spacing: -0.02em;
   margin: 0;
   text-transform: uppercase;
@@ -79,24 +80,44 @@
 }
 
 .lede {
-  max-width: 780px;
-  margin: 28px auto 40px;
-  font-size: clamp(14px, 1.4vw, 18px);
+  max-width: 720px;
+  margin: 24px auto 32px;
+  font-size: clamp(13px, 1.2vw, 16px);
   letter-spacing: 0.12px;
   color: var(--mist);
   text-transform: uppercase;
-  line-height: 1.56;
+  line-height: 1.6;
 }
 
 .cta {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+}
+.ctaSecondary {
   display: inline-flex;
-  gap: 16px;
+  gap: 12px;
   flex-wrap: wrap;
   justify-content: center;
 }
 
-@media (max-width: 640px) {
+@media (max-width: 760px) {
+  .hero {
+    padding: 96px 18px 56px;
+    min-height: 0;
+  }
   .title {
     flex-direction: column;
+    font-size: clamp(40px, 14vw, 72px);
+  }
+  .lede {
+    margin: 20px auto 24px;
+  }
+  .chip {
+    font-size: 10px;
+    padding: 6px 10px;
+    margin-bottom: 18px;
   }
 }

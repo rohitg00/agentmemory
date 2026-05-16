@@ -1,0 +1,30 @@
+services:
+  agentmemory:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        AGENTMEMORY_VERSION: "0.9.12"
+        III_VERSION: "0.11.2"
+        III_SDK_VERSION: "0.11.2"
+    restart: unless-stopped
+    environment:
+      - SERVICE_FQDN_AGENTMEMORY_3111
+    expose:
+      - "3111"
+    volumes:
+      - agentmemory-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:3111/agentmemory/livez || exit 1"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  agentmemory-data:

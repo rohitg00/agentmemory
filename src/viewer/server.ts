@@ -58,6 +58,8 @@ function readBody(req: IncomingMessage): Promise<string> {
   });
 }
 
+const MAX_VIEWER_PORT_RETRIES = 10;
+
 export function startViewerServer(
   port: number,
   _kv: unknown,
@@ -66,6 +68,7 @@ export function startViewerServer(
   restPort?: number,
 ): Server {
   const resolvedRestPort = restPort ?? port - 2;
+  const requestedPort = port;
 
   const server = createServer(async (req, res) => {
     const raw = req.url || "/";
@@ -112,17 +115,40 @@ export function startViewerServer(
     }
   });
 
+  let attempt = 0;
+  let currentPort = requestedPort;
+
+  const tryListen = (): void => {
+    server.listen(currentPort, "127.0.0.1");
+  };
+
+  server.on("listening", () => {
+    if (currentPort === requestedPort) {
+      console.log(`[agentmemory] Viewer: http://localhost:${currentPort}`);
+    } else {
+      console.log(
+        `[agentmemory] Viewer started on http://localhost:${currentPort} (fallback from ${requestedPort})`,
+      );
+    }
+  });
+
   server.on("error", (err: NodeJS.ErrnoException) => {
+    if (err.code === "EADDRINUSE" && attempt < MAX_VIEWER_PORT_RETRIES) {
+      attempt++;
+      currentPort = requestedPort + attempt;
+      setImmediate(tryListen);
+      return;
+    }
     if (err.code === "EADDRINUSE") {
-      console.warn(`[agentmemory] Viewer port ${port} already in use, skipping viewer.`);
+      console.warn(
+        `[agentmemory] Viewer ports ${requestedPort}-${requestedPort + MAX_VIEWER_PORT_RETRIES} all in use, skipping viewer.`,
+      );
     } else {
       console.error(`[agentmemory] Viewer error:`, err.message);
     }
   });
 
-  server.listen(port, "127.0.0.1", () => {
-    console.log(`[agentmemory] Viewer: http://localhost:${port}`);
-  });
+  tryListen();
 
   return server;
 }

@@ -45,7 +45,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-tools.svg"><img src="assets/tags/stat-tools.svg" alt="13 MCP tools" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-hooks.svg"><img src="assets/tags/stat-hooks.svg" alt="12 auto hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-deps.svg"><img src="assets/tags/stat-deps.svg" alt="0 external DBs" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-tests.svg"><img src="assets/tags/stat-tests.svg" alt="827 tests passing" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-tests.svg"><img src="assets/tags/stat-tests.svg" alt="950+ tests passing" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -53,6 +53,7 @@
 </p>
 
 <p align="center">
+  <a href="#install">Install</a> &bull;
   <a href="#quick-start">Quick Start</a> &bull;
   <a href="#benchmarks">Benchmarks</a> &bull;
   <a href="#vs-competitors">vs Competitors</a> &bull;
@@ -68,6 +69,27 @@
 
 ---
 
+## Install
+
+```bash
+npm install -g @agentmemory/agentmemory     # once — bare `agentmemory` on PATH
+agentmemory                                  # start the memory server on :3111
+agentmemory demo                             # seed sample sessions + prove recall
+agentmemory connect claude-code              # wire your agent (also: codex, cursor, gemini-cli, ...)
+```
+
+Or via `npx` (no install):
+
+```bash
+npx @agentmemory/agentmemory
+```
+
+Heads-up — npx caches per version. If a bare `npx @agentmemory/agentmemory` serves an older release, force the latest with `npx -y @agentmemory/agentmemory@latest`, or clear the cache once with `rm -rf ~/.npm/_npx` (macOS/Linux; on Windows delete `%LOCALAPPDATA%\npm-cache\_npx`). The first npx run from v0.9.16+ prompts to install globally inline so the bare `agentmemory` command works everywhere afterwards.
+
+Full options at [Quick Start](#quick-start) below. Agent-specific wiring at [Works with every agent](#works-with-every-agent).
+
+---
+
 <h2 id="works-with-every-agent"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/section-agents.svg"><img src="assets/tags/section-agents.svg" alt="Works with every agent" height="32" /></picture></h2>
 
 agentmemory works with any agent that supports hooks, MCP, or REST API. All agents share the same memory server.
@@ -77,17 +99,32 @@ agentmemory works with any agent that supports hooks, MCP, or REST API. All agen
 <td align="center" width="12.5%">
 <a href="https://claude.com/product/claude-code"><img src="https://matthiasroder.com/content/images/2026/01/Claude.png?size=120" alt="Claude Code" width="48" height="48" /></a><br/>
 <strong>Claude Code</strong><br/>
-<sub>12 hooks + MCP + skills</sub>
+<sub>native plugin + 12 hooks + MCP</sub>
+</td>
+<td align="center" width="12.5%">
+<a href="https://github.com/openai/codex"><img src="https://github.com/openai.png?size=120" alt="Codex CLI" width="48" height="48" /></a><br/>
+<strong>Codex CLI</strong><br/>
+<sub>native plugin + 6 hooks + MCP</sub>
 </td>
 <td align="center" width="12.5%">
 <a href="integrations/openclaw/"><img src="https://github.com/openclaw.png?size=120" alt="OpenClaw" width="48" height="48" /></a><br/>
 <strong>OpenClaw</strong><br/>
-<sub>MCP + <a href="integrations/openclaw/">plugin</a></sub>
+<sub>native plugin + MCP</sub>
 </td>
 <td align="center" width="12.5%">
 <a href="integrations/hermes/"><img src="https://github.com/NousResearch.png?size=120" alt="Hermes" width="48" height="48" /></a><br/>
 <strong>Hermes</strong><br/>
-<sub>MCP + <a href="integrations/hermes/">plugin</a></sub>
+<sub>native plugin + MCP</sub>
+</td>
+<td align="center" width="12.5%">
+<a href="integrations/pi/"><img src="assets/agents/pi.svg" alt="pi" width="48" height="48" /></a><br/>
+<strong>pi</strong><br/>
+<sub>native plugin + MCP</sub>
+</td>
+<td align="center" width="12.5%">
+<a href="https://github.com/tinyhumansai/openhuman"><img src="https://raw.githubusercontent.com/tinyhumansai/openhuman/main/app/src-tauri/icons/128x128.png" alt="OpenHuman" width="48" height="48" /></a><br/>
+<strong>OpenHuman</strong><br/>
+<sub>native Memory trait backend</sub>
 </td>
 <td align="center" width="12.5%">
 <a href="https://cursor.com"><img src="https://www.freelogovectors.net/wp-content/uploads/2025/06/cursor-logo-freelogovectors.net_.png" alt="Cursor" width="48" height="48" /></a><br/>
@@ -99,6 +136,8 @@ agentmemory works with any agent that supports hooks, MCP, or REST API. All agen
 <strong>Gemini CLI</strong><br/>
 <sub>MCP server</sub>
 </td>
+</tr>
+<tr>
 <td align="center" width="12.5%">
 <a href="https://github.com/opencode-ai/opencode"><img src="https://github.com/opencode-ai.png?size=120" alt="OpenCode" width="48" height="48" /></a><br/>
 <strong>OpenCode</strong><br/>
@@ -114,8 +153,6 @@ agentmemory works with any agent that supports hooks, MCP, or REST API. All agen
 <strong>Cline</strong><br/>
 <sub>MCP server</sub>
 </td>
-</tr>
-<tr>
 <td align="center" width="12.5%">
 <a href="https://github.com/block/goose"><img src="https://github.com/block.png?size=120" alt="Goose" width="48" height="48" /></a><br/>
 <strong>Goose</strong><br/>
@@ -145,16 +182,6 @@ agentmemory works with any agent that supports hooks, MCP, or REST API. All agen
 <a href="https://github.com/RooCodeInc/Roo-Code"><img src="https://github.com/RooCodeInc.png?size=120" alt="Roo Code" width="48" height="48" /></a><br/>
 <strong>Roo Code</strong><br/>
 <sub>MCP server</sub>
-</td>
-<td align="center" width="12.5%">
-<a href="https://github.com/anthropics/claude-agent-sdk-typescript"><img src="https://github.com/anthropics.png?size=120" alt="Claude SDK" width="48" height="48" /></a><br/>
-<strong>Claude SDK</strong><br/>
-<sub>AgentSDKProvider</sub>
-</td>
-<td align="center" width="12.5%">
-<img src="https://img.shields.io/badge/104-endpoints-1f6feb?style=flat-square" alt="REST API" width="48" /><br/>
-<strong>Any agent</strong><br/>
-<sub>REST API</sub>
 </td>
 </tr>
 </table>
@@ -321,6 +348,28 @@ npx @agentmemory/agentmemory demo
 
 Open `http://localhost:3113` to watch the memory build live.
 
+### Recommended: install globally
+
+`npx` caches per-version. If you ran `npx @agentmemory/agentmemory@0.9.14` last week, a bare `npx @agentmemory/agentmemory` may serve the stale 0.9.14 from `~/.npm/_npx/`, not the latest release. Install once and the bare `agentmemory` command works everywhere:
+
+```bash
+npm install -g @agentmemory/agentmemory
+agentmemory                    # start the server (same as the npx form)
+agentmemory stop               # tear it down
+agentmemory remove             # uninstall everything we created
+agentmemory connect claude-code   # wire one agent
+agentmemory doctor             # interactive diagnostics + fix prompts
+```
+
+From v0.9.16 onward, the first npx run prompts you to install globally inline — answer `Y` once and you're set. If you skip, fall back to either of these for a fresh fetch:
+
+```bash
+npx -y @agentmemory/agentmemory@latest                 # forces latest from npm (cross-platform)
+rm -rf ~/.npm/_npx && npx @agentmemory/agentmemory     # macOS/Linux only (POSIX shell)
+```
+
+On Windows / PowerShell, the equivalent cache clear is `Remove-Item -Recurse -Force "$env:LOCALAPPDATA\npm-cache\_npx"` — the `npx -y ...@latest` form above is the cross-platform option.
+
 ### Session Replay
 
 Every session agentmemory records is replayable. Open the viewer, pick the **Replay** tab, and scrub through the timeline: prompts, tool calls, tool results, and responses render as discrete events with play/pause, speed control (0.5×–4×), and keyboard shortcuts (space to toggle, arrows to step).
@@ -459,6 +508,30 @@ The agentmemory entry is the **same MCP server block** across every host that us
 
 **Sandboxed MCP clients** (Flatpak / Snap / restrictive containers) that can't reach the host's `localhost`: also set `"AGENTMEMORY_FORCE_PROXY": "1"` in the `env` block, and point `AGENTMEMORY_URL` at a route the sandbox can actually reach (e.g. your LAN IP). See [#234](https://github.com/rohitg00/agentmemory/issues/234) for the diagnostic walkthrough.
 
+### Programmatic access (Python / Rust / Node)
+
+agentmemory registers its core operations as iii functions (`mem::remember`, `mem::observe`, `mem::context`, `mem::smart-search`, `mem::forget`). Any language with an iii SDK can call them directly over `ws://localhost:49134` — no separate REST client per language.
+
+```bash
+pip install iii-sdk         # Python
+cargo add iii-sdk           # Rust
+npm  install iii-sdk        # Node
+```
+
+```python
+from iii import register_worker
+
+iii = register_worker("ws://localhost:49134")
+iii.connect()
+
+iii.trigger({
+    "function_id": "mem::smart-search",
+    "payload": {"project": "demo", "query": "how do tokens refresh"},
+})
+```
+
+Worked example: [`examples/python/`](examples/python/) (quickstart + observation/recall flow). REST on `:3111` remains available for hosts without an iii runtime.
+
 ### From source
 
 ```bash
@@ -528,6 +601,44 @@ npx -y @agentmemory/mcp
 | Docker fallback skipped even though Docker is installed | Make sure Docker Desktop is actually running (system tray icon) |
 
 > Note: there is no `cargo install iii-engine` — `iii` is not published to crates.io. The only supported install methods are the prebuilt binary above, the upstream `sh` install script (macOS/Linux only), and the Docker image.
+
+---
+
+<h2 id="deploy">Deploy</h2>
+
+One-click templates for managed hosts. Each one ships a self-contained
+Dockerfile that pulls `@agentmemory/agentmemory` from npm and copies
+the iii engine binary in from the official `iiidev/iii` Docker Hub
+image — no pre-built agentmemory image required. Persistent storage
+mounts at `/data`; the first-boot entrypoint overwrites the
+npm-bundled iii config (which binds `127.0.0.1`) with a deploy-tuned
+one that binds `0.0.0.0` and uses absolute `/data` paths, generates
+the HMAC secret, then drops privileges from `root` to `node` via
+`gosu` before exec'ing the agentmemory CLI.
+
+<p>
+  <a href="https://fly.io/launch?repo=https://github.com/rohitg00/agentmemory&path=deploy/fly"><img src="https://img.shields.io/badge/Deploy%20to-fly.io-8b5cf6?style=for-the-badge&logo=fly.io&logoColor=white" alt="Deploy to fly.io" /></a>
+  <a href="https://railway.com/new/template?template=https%3A%2F%2Fgithub.com%2Frohitg00%2Fagentmemory&rootDirectory=deploy%2Frailway"><img src="https://img.shields.io/badge/Deploy%20to-Railway-0B0D0E?style=for-the-badge&logo=railway&logoColor=white" alt="Deploy to Railway" /></a>
+</p>
+
+Render's one-click deploy button requires `render.yaml` at the repository root, which we deliberately keep clean. Use the Render Blueprint flow documented in [`deploy/render/`](./deploy/render/README.md) to point at the in-repo blueprint manually.
+
+Full setup details (HMAC capture, viewer SSH tunnel, rotation, backup,
+cost floors) live in [`deploy/`](./deploy/README.md):
+
+- [`deploy/fly`](./deploy/fly/README.md) — single machine with
+  `auto_stop_machines = "stop"`; cheapest idle.
+- [`deploy/railway`](./deploy/railway/README.md) — Hobby plan flat fee,
+  volume in the dashboard.
+- [`deploy/render`](./deploy/render/README.md) — Blueprint flow,
+  automatic disk snapshots on paid plans.
+- [`deploy/coolify`](./deploy/coolify/README.md) — self-hosted on your
+  own VPS via [Coolify](https://coolify.io/self-hosted); same Docker
+  Compose stack, you own the host and the data.
+
+Only port `3111` is published. The viewer on `3113` stays bound to
+loopback inside the container — every template's README documents the
+SSH-tunnel pattern for reaching it.
 
 ---
 
@@ -646,6 +757,8 @@ Triple-stream retrieval combining three signals:
 
 Fused with Reciprocal Rank Fusion (RRF, k=60) and session-diversified (max 3 results per session).
 
+BM25 tokenizes Greek, Cyrillic, Hebrew, Arabic, and accented Latin out of the box. For Chinese / Japanese / Korean memories, install the optional segmenters (`npm install @node-rs/jieba tiny-segmenter`) to split CJK runs into word-level tokens; without them, agentmemory soft-falls to whole-run tokenization and prints a one-time hint on stderr.
+
 ### Embedding providers
 
 agentmemory auto-detects your provider. For best results, install local embeddings (free):
@@ -657,7 +770,7 @@ npm install @xenova/transformers
 | Provider | Model | Cost | Notes |
 |---|---|---|---|
 | **Local (recommended)** | `all-MiniLM-L6-v2` | Free | Offline, +8pp recall over BM25-only |
-| Gemini | `text-embedding-004` | Free tier | 1500 RPM |
+| Gemini | `gemini-embedding-001` | Free tier | 100+ languages, 768/1536/3072 dims (MRL), 2048-token input. Replaces `text-embedding-004` ([deprecated, shutdown Jan 14, 2026](https://ai.google.dev/gemini-api/docs/deprecations)) |
 | OpenAI | `text-embedding-3-small` | $0.02/1M | Highest quality |
 | Voyage AI | `voyage-code-3` | Paid | Optimized for code |
 | Cohere | `embed-english-v3.0` | Free trial | General purpose |
@@ -668,6 +781,8 @@ npm install @xenova/transformers
 <h2 id="mcp-server"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/section-mcp.svg"><img src="assets/tags/section-mcp.svg" alt="MCP Server" height="32" /></picture></h2>
 
 13 tools, 6 resources, 3 prompts, and 4 skills — the most comprehensive MCP memory toolkit for any agent.
+
+> **MCP shim vs full server:** the published `@agentmemory/mcp` package is a thin shim. It exposes the full 13-tool consolidated surface when it can reach a running agentmemory server via `AGENTMEMORY_URL` (proxy mode). With no server reachable, the shim falls back to a minimal local set (`memory_search`, `memory_store`). The `AGENTMEMORY_TOOLS=core|all` env var is a *server-side* flag — setting it in the shim's `env` block has no effect. If you see only the local fallback tools in Cursor / OpenCode / Gemini CLI, start `npx @agentmemory/agentmemory` (or the Docker stack) and set `AGENTMEMORY_URL=http://localhost:3111`.
 
 ### Consolidated Tools
 
@@ -917,7 +1032,7 @@ Full registry: [workers.iii.dev](https://workers.iii.dev). Every worker there co
 | Prometheus / Grafana | iii OTEL + health monitor |
 | Custom plugin systems | `iii worker add <name>` |
 
-**118 source files · ~21,800 LOC · 800 tests · 123 functions · 34 KV scopes** — all on three primitives. No `agentmemory plugin install`. The plugin system is iii itself.
+**118 source files · ~21,800 LOC · 950+ tests · 123 functions · 34 KV scopes** — all on three primitives. No `agentmemory plugin install`. The plugin system is iii itself.
 
 ---
 
@@ -947,6 +1062,27 @@ Create `~/.agentmemory/.env`:
 # GEMINI_API_KEY=...
 # OPENROUTER_API_KEY=...
 # MINIMAX_API_KEY=...
+# OPENAI_API_KEY=***                       # NOTE: this same key auto-activates BOTH the
+#                                          # OpenAI LLM provider (here) AND the OpenAI
+#                                          # embedding provider (further below). Set
+#                                          # OPENAI_API_KEY_FOR_LLM=false to scope it
+#                                          # to embeddings only.
+# OPENAI_BASE_URL=https://api.openai.com   # Optional: override for Azure / vLLM / LM Studio / proxies
+#                                          # Azure: https://<resource>.openai.azure.com/openai/deployments/<deployment>
+#                                          # Auto-detected from `.openai.azure.com` hostname; uses
+#                                          # api-key header + api-version query param.
+# OPENAI_API_VERSION=2024-08-01-preview    # Optional: Azure api-version query param
+# OPENAI_MODEL=gpt-4o-mini                 # Optional: default model
+# OPENAI_TIMEOUT_MS=60000                  # Optional: outbound fetch timeout (default 60s)
+# OPENAI_REASONING_EFFORT=none             # Optional: "low" | "medium" | "high" | "none"
+#                                          # Honored only by OpenAI's reasoning models (o1, o3,
+#                                          # gpt-*-reasoning) and providers that mirror that
+#                                          # schema (Ollama Cloud thinking models). Standard
+#                                          # chat models reject this field with 400. Set to
+#                                          # "none" for thinking models that return reasoning
+#                                          # but no content.
+# OPENAI_API_KEY_FOR_LLM=false             # Optional: set to false to skip OpenAI auto-detection
+#                                          # for LLM (useful if you only want OpenAI for embeddings)
 # Opt-in Claude-subscription fallback (spawns @anthropic-ai/claude-agent-sdk);
 # leave OFF unless you understand the Stop-hook recursion risk (#149 follow-up):
 # AGENTMEMORY_ALLOW_AGENT_SDK=true
@@ -1028,7 +1164,7 @@ Create `~/.agentmemory/.env`:
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/section-api.svg"><img src="assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-107 endpoints on port `3111`. The REST API binds to `127.0.0.1` by default. Protected endpoints require `Authorization: Bearer <secret>` when `AGENTMEMORY_SECRET` is set, and mesh sync endpoints require `AGENTMEMORY_SECRET` on both peers.
+121 endpoints on port `3111`. The REST API binds to `127.0.0.1` by default. Protected endpoints require `Authorization: Bearer <secret>` when `AGENTMEMORY_SECRET` is set, and mesh sync endpoints require `AGENTMEMORY_SECRET` on both peers.
 
 <details>
 <summary>Key endpoints</summary>
@@ -1062,7 +1198,7 @@ Full endpoint list: [`src/triggers/api.ts`](src/triggers/api.ts)
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 800 tests (~1.7s)
+npm test                  # 950+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 
