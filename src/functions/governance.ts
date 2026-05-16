@@ -6,14 +6,17 @@ import { recordAudit, safeAudit, queryAudit } from "./audit.js";
 import { deleteAccessLog } from "./access-tracker.js";
 import { logger } from "../logger.js";
 
-async function cascadeStale(kv: StateKV, memoryId: string): Promise<void> {
+async function cascadeStale(kv: StateKV, memoryIds: Iterable<string>): Promise<void> {
+  const deletedIds = new Set(memoryIds);
+  if (deletedIds.size === 0) return;
+
   const now = new Date().toISOString();
   const nodes = await kv.list<GraphNode>(KV.graphNodes);
   const edges = await kv.list<GraphEdge>(KV.graphEdges);
 
   const nodeUpdates: Promise<unknown>[] = [];
   for (const node of nodes) {
-    if (!node.stale && node.sourceObservationIds.includes(memoryId)) {
+    if (!node.stale && node.sourceObservationIds.some((id) => deletedIds.has(id))) {
       node.stale = true;
       node.updatedAt = now;
       nodeUpdates.push(kv.set(KV.graphNodes, node.id, node));
@@ -22,7 +25,7 @@ async function cascadeStale(kv: StateKV, memoryId: string): Promise<void> {
 
   const edgeUpdates: Promise<unknown>[] = [];
   for (const edge of edges) {
-    if (!edge.stale && edge.sourceObservationIds.includes(memoryId)) {
+    if (!edge.stale && edge.sourceObservationIds.some((id) => deletedIds.has(id))) {
       edge.stale = true;
       edge.updatedAt = now;
       edgeUpdates.push(kv.set(KV.graphEdges, edge.id, edge));
@@ -52,7 +55,7 @@ export function registerGovernanceFunction(sdk: ISdk, kv: StateKV): void {
           mem.updatedAt = opTimestamp;
           await kv.set(KV.memories, id, mem);
           await deleteAccessLog(kv, id);
-          await cascadeStale(kv, id);
+          await cascadeStale(kv, [id]);
           deleted++;
         }
       }
@@ -141,14 +144,15 @@ export function registerGovernanceFunction(sdk: ISdk, kv: StateKV): void {
             mem.updatedAt = opTimestamp;
             await kv.set(KV.memories, mem.id, mem);
             await deleteAccessLog(kv, mem.id);
-            await cascadeStale(kv, mem.id);
             return "deleted";
           }),
         );
+        const deletedIds = new Set<string>();
         results.forEach((result, j) => {
           const mem = batch[j];
           if (result.status === "fulfilled" && result.value === "deleted") {
             successfulIds.push(mem.id);
+            deletedIds.add(mem.id);
           } else if (result.status === "fulfilled") {
             return;
           } else {
@@ -165,6 +169,7 @@ export function registerGovernanceFunction(sdk: ISdk, kv: StateKV): void {
             });
           }
         });
+        await cascadeStale(kv, deletedIds);
       }
 
       await safeAudit(
