@@ -11,6 +11,7 @@ describe("OpenAIProvider", () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.restoreAllMocks();
     process.env = originalEnv;
   });
@@ -35,6 +36,7 @@ describe("OpenAIProvider", () => {
       "https://api.example.com/v1/chat/completions",
       expect.objectContaining({
         method: "POST",
+        signal: expect.any(AbortSignal),
         headers: {
           "Content-Type": "application/json",
           Authorization: "Bearer test-key",
@@ -71,6 +73,7 @@ describe("OpenAIProvider", () => {
       "https://resource.openai.azure.com/openai/deployments/my-deployment/chat/completions?api-version=2024-10-21",
       expect.objectContaining({
         method: "POST",
+        signal: expect.any(AbortSignal),
         headers: {
           "Content-Type": "application/json",
           "api-key": "azure-key",
@@ -145,5 +148,30 @@ describe("OpenAIProvider", () => {
     expect(fetchSpy.mock.calls[0][0]).toBe(
       "https://gateway.example.com/openai/deployments/deployment/chat/completions?api-version=2024-10-21",
     );
+  });
+
+  it("aborts stalled upstream requests", async () => {
+    vi.useFakeTimers();
+    const provider = new OpenAIProvider(
+      "test-key",
+      "gpt-4o-mini",
+      123,
+      "https://api.example.com",
+    );
+    vi.spyOn(globalThis, "fetch").mockImplementation((_url, init) => {
+      const signal = (init as RequestInit).signal as AbortSignal;
+      return new Promise<Response>((_resolve, reject) => {
+        signal.addEventListener("abort", () => {
+          reject(new DOMException("The operation was aborted.", "AbortError"));
+        });
+      });
+    });
+
+    const expectation = expect(provider.summarize("sys", "user")).rejects.toThrow(
+      "OpenAI API request timed out after 30000ms",
+    );
+
+    await vi.advanceTimersByTimeAsync(30_000);
+    await expectation;
   });
 });

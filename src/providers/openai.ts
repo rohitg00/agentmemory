@@ -3,6 +3,7 @@ import { getEnvVar } from "../config.js";
 
 const DEFAULT_BASE_URL = "https://api.openai.com";
 const DEFAULT_AZURE_API_VERSION = "2024-10-21";
+const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 
 export class OpenAIProvider implements MemoryProvider {
   name = "openai";
@@ -94,11 +95,30 @@ export class OpenAIProvider implements MemoryProvider {
     systemPrompt: string,
     userPrompt: string,
   ): Promise<string> {
-    const response = await fetch(this.buildRequestUrl(), {
-      method: "POST",
-      headers: this.buildHeaders(),
-      body: this.buildBody(systemPrompt, userPrompt),
-    });
+    const controller = new AbortController();
+    const timeout = setTimeout(
+      () => controller.abort(),
+      DEFAULT_REQUEST_TIMEOUT_MS,
+    );
+    let response: Response;
+
+    try {
+      response = await fetch(this.buildRequestUrl(), {
+        method: "POST",
+        headers: this.buildHeaders(),
+        body: this.buildBody(systemPrompt, userPrompt),
+        signal: controller.signal,
+      });
+    } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") {
+        throw new Error(
+          `OpenAI API request timed out after ${DEFAULT_REQUEST_TIMEOUT_MS}ms`,
+        );
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeout);
+    }
 
     if (!response.ok) {
       const text = await response.text();
