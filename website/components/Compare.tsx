@@ -6,7 +6,7 @@ const ROWS = [
   ["REST ENDPOINTS", "121", "—", "—", "—"],
   ["MCP TOOLS", "51", "12", "18", "9"],
   ["AUTO-HOOKS", "12", "0", "0", "0"],
-  ["NATIVE PLUGINS", "6 (Claude/Codex/OpenClaw/Hermes/pi/OpenHuman)", "—", "—", "—"],
+  ["NATIVE PLUGINS", "6", "—", "—", "—"],
   ["OPEN SOURCE", "YES (APACHE-2.0)", "YES", "YES", "YES"],
 ];
 
@@ -16,7 +16,7 @@ export function Compare() {
       <header className="section-head">
         <span className="section-eyebrow">VS.</span>
         <h2 id="cmp-title" className="section-title">
-          AGENTMEMORY VS. THE FIELD.
+          VS. THE FIELD.
         </h2>
         <p className="section-lede">
           NUMBERS STRAIGHT FROM THE LONGMEMEVAL-S BENCHMARK AND EACH PROJECT&apos;S
