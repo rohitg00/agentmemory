@@ -474,4 +474,33 @@ export function registerReflectFunctions(
       return { success: true, decayed, softDeleted, total: items.length };
     },
   );
+
+  sdk.registerFunction("mem::insight-delete",
+    async (data: {
+      insightId?: string;
+      insightIds?: string[];
+      reason?: string;
+    }) => {
+      const ids = data.insightId ? [data.insightId] : (data.insightIds ?? []);
+      if (!ids.length) {
+        return { success: false, error: "insightId or insightIds is required" };
+      }
+      let deleted = 0;
+      const now = new Date().toISOString();
+      for (const id of ids) {
+        const insight = await kv.get<Insight>(KV.insights, id);
+        if (insight) {
+          insight.deleted = true;
+          insight.updatedAt = now;
+          await kv.set(KV.insights, id, insight);
+          deleted++;
+        }
+      }
+      await recordAudit(kv, "delete", "mem::insight-delete", ids, {
+        reason: data.reason || "manual deletion",
+        deleted,
+      });
+      return { success: true, deleted, total: ids.length };
+    },
+  );
 }

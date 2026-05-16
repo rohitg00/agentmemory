@@ -1,13 +1,38 @@
 import type { ISdk } from "iii-sdk";
-import type { Memory, GovernanceFilter, AuditEntry } from "../types.js";
+import type { Memory, GovernanceFilter, AuditEntry, GraphNode, GraphEdge } from "../types.js";
 import { KV } from "../state/schema.js";
 import type { StateKV } from "../state/kv.js";
 import { recordAudit, safeAudit, queryAudit } from "./audit.js";
 import { deleteAccessLog } from "./access-tracker.js";
 import { logger } from "../logger.js";
 
+async function cascadeStale(kv: StateKV, memoryId: string): Promise<void> {
+  const now = new Date().toISOString();
+  const nodes = await kv.list<GraphNode>(KV.graphNodes);
+  const edges = await kv.list<GraphEdge>(KV.graphEdges);
+
+  const nodeUpdates: Promise<unknown>[] = [];
+  for (const node of nodes) {
+    if (!node.stale && node.sourceObservationIds.includes(memoryId)) {
+      node.stale = true;
+      node.updatedAt = now;
+      nodeUpdates.push(kv.set(KV.graphNodes, node.id, node));
+    }
+  }
+
+  const edgeUpdates: Promise<unknown>[] = [];
+  for (const edge of edges) {
+    if (!edge.stale && edge.sourceObservationIds.includes(memoryId)) {
+      edge.stale = true;
+      edgeUpdates.push(kv.set(KV.graphEdges, edge.id, edge));
+    }
+  }
+
+  await Promise.all([...nodeUpdates, ...edgeUpdates]);
+}
+
 export function registerGovernanceFunction(sdk: ISdk, kv: StateKV): void {
-  sdk.registerFunction("mem::governance-delete", 
+  sdk.registerFunction("mem::governance-delete",
     async (data: { memoryIds: string[]; reason?: string }) => {
       if (
         !data.memoryIds ||
@@ -20,9 +45,12 @@ export function registerGovernanceFunction(sdk: ISdk, kv: StateKV): void {
       let deleted = 0;
       for (const id of data.memoryIds) {
         const mem = await kv.get<Memory>(KV.memories, id);
-        if (mem) {
-          await kv.delete(KV.memories, id);
+        if (mem && !mem.deleted) {
+          mem.deleted = true;
+          mem.updatedAt = new Date().toISOString();
+          await kv.set(KV.memories, id, mem);
           await deleteAccessLog(kv, id);
+          await cascadeStale(kv, id);
           deleted++;
         }
       }
@@ -105,8 +133,11 @@ export function registerGovernanceFunction(sdk: ISdk, kv: StateKV): void {
         const batch = candidates.slice(i, i + BATCH_SIZE);
         const results = await Promise.allSettled(
           batch.map(async (mem) => {
-            await kv.delete(KV.memories, mem.id);
+            mem.deleted = true;
+            mem.updatedAt = new Date().toISOString();
+            await kv.set(KV.memories, mem.id, mem);
             await deleteAccessLog(kv, mem.id);
+            await cascadeStale(kv, mem.id);
           }),
         );
         results.forEach((result, j) => {

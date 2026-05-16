@@ -29,6 +29,7 @@ export async function rebuildIndex(kv: StateKV): Promise<number> {
     for (const memory of memories) {
       if (memory.isLatest === false) continue
       if (!memory.title || !memory.content) continue
+      if (memory.deleted) continue
       idx.add(memoryToObservation(memory))
       count++
     }
@@ -157,6 +158,7 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
           const mem = await kv
             .get<Memory>(KV.memories, r.obsId)
             .catch(() => null)
+          if (mem?.deleted) return null
           return mem ? memoryToObservation(mem) : null
         })
       )

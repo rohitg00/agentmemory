@@ -84,6 +84,7 @@ export interface Memory {
   forgetAfter?: string;
   imageRef?: string;
   imageData?: string;
+  deleted?: boolean;
 }
 
 export interface SessionSummary {
@@ -489,6 +490,7 @@ export interface AuditEntry {
     | "export"
     | "action_create"
     | "action_update"
+    | "action_suggest"
     | "lease_acquire"
     | "lease_release"
     | "routine_run"
