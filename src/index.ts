@@ -170,6 +170,18 @@ async function main() {
       serviceVersion: OTEL_CONFIG.serviceVersion,
       metricsExportIntervalMs: OTEL_CONFIG.metricsExportIntervalMs,
     },
+    // Explicit worker telemetry metadata. iii-sdk falls back to
+    // auto-detection (cwd / package.json name / hostname) when this
+    // is omitted, which produces inconsistent values per host —
+    // `agentmemory`, `node`, `npm`, occasionally the user's home
+    // directory basename. Pinning the value here gives every install
+    // the same stable project identifier for downstream attribution
+    // and grouping in the engine's metrics + traces output.
+    telemetry: {
+      project_name: "agentmemory",
+      language: "node",
+      framework: "iii-sdk",
+    },
   });
 
   const kv = new StateKV(sdk);
