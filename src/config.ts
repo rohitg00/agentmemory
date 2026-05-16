@@ -270,6 +270,10 @@ export function isContextInjectionEnabled(): boolean {
   return getMergedEnv()["AGENTMEMORY_INJECT_CONTEXT"] === "true";
 }
 
+export function isActionSuggestEnabled(): boolean {
+  return getMergedEnv()["AGENTMEMORY_ACTION_SUGGEST"] === "true";
+}
+
 export function getConsolidationDecayDays(): number {
   return safeParseInt(getMergedEnv()["CONSOLIDATION_DECAY_DAYS"], 30);
 }
