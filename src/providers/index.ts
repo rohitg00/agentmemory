@@ -5,6 +5,7 @@ import type {
 } from "../types.js";
 import { AgentSDKProvider } from "./agent-sdk.js";
 import { AnthropicProvider } from "./anthropic.js";
+import { AzureOpenAIProvider } from "./azure-openai.js";
 import { MinimaxProvider } from "./minimax.js";
 import { NoopProvider } from "./noop.js";
 import { OpenRouterProvider } from "./openrouter.js";
@@ -94,6 +95,17 @@ function createBaseProvider(config: ProviderConfig): MemoryProvider {
         config.maxTokens,
         "https://openrouter.ai/api/v1/chat/completions",
       );
+    case "azure-openai": {
+      const endpoint = config.baseURL || requireEnvVar("AZURE_OPENAI_ENDPOINT");
+      const apiVersion = getEnvVar("AZURE_OPENAI_API_VERSION");
+      return new AzureOpenAIProvider(
+        requireEnvVar("AZURE_OPENAI_API_KEY"),
+        endpoint,
+        config.model,
+        config.maxTokens,
+        apiVersion || undefined,
+      );
+    }
     case "noop":
       return new NoopProvider();
     case "agent-sdk":

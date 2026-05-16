@@ -3363,9 +3363,9 @@
           kind: 'warn',
           icon: '&#128274;',
           title: 'No LLM provider key set',
-          keyLabel: 'ANTHROPIC_API_KEY',
+          keyLabel: 'ANTHROPIC_API_KEY / AZURE_OPENAI_API_KEY',
           desc: 'Compression, summarization, and graph extraction stay disabled until a key is provided.',
-          enable: 'export ANTHROPIC_API_KEY=sk-ant-...\n# then restart: npx @agentmemory/agentmemory',
+          enable: '# Option A — direct Anthropic key:\nexport ANTHROPIC_API_KEY=sk-ant-...\n\n# Option B — Azure OpenAI:\nexport AZURE_OPENAI_API_KEY=<key>\nexport AZURE_OPENAI_ENDPOINT=https://<resource>.openai.azure.com\nexport AZURE_OPENAI_DEPLOYMENT=<deployment-name>\n\n# then restart: npx @agentmemory/agentmemory',
           docs: 'https://github.com/rohitg00/agentmemory#quick-start',
           dismissKey: '__provider_noop',
         });

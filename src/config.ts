@@ -87,12 +87,25 @@ function detectProvider(env: Record<string, string>): ProviderConfig {
       maxTokens,
     };
   }
+  if (
+    hasRealValue(env["AZURE_OPENAI_API_KEY"]) &&
+    hasRealValue(env["AZURE_OPENAI_ENDPOINT"]) &&
+    hasRealValue(env["AZURE_OPENAI_DEPLOYMENT"])
+  ) {
+    return {
+      provider: "azure-openai",
+      model: env["AZURE_OPENAI_DEPLOYMENT"],
+      maxTokens,
+      baseURL: env["AZURE_OPENAI_ENDPOINT"],
+    };
+  }
 
   const allowAgentSdk = env["AGENTMEMORY_ALLOW_AGENT_SDK"] === "true";
   if (!allowAgentSdk) {
     process.stderr.write(
       "[agentmemory] No LLM provider key found " +
-        "(ANTHROPIC_API_KEY, GEMINI_API_KEY, OPENROUTER_API_KEY, MINIMAX_API_KEY). " +
+        "(ANTHROPIC_API_KEY, GEMINI_API_KEY, OPENROUTER_API_KEY, MINIMAX_API_KEY, " +
+        "or AZURE_OPENAI_API_KEY + AZURE_OPENAI_ENDPOINT + AZURE_OPENAI_DEPLOYMENT). " +
         "LLM-backed compression and summarization are DISABLED — using no-op provider. " +
         "This is the safe default: the agent-sdk fallback used to spawn Claude Agent SDK " +
         "child sessions which inherit Claude Code's plugin hooks and cause infinite Stop-hook " +
@@ -156,7 +169,10 @@ export function detectLlmProviderKind(): "llm" | "noop" {
     hasRealValue(env["GEMINI_API_KEY"]) ||
     hasRealValue(env["GOOGLE_API_KEY"]) ||
     hasRealValue(env["OPENROUTER_API_KEY"]) ||
-    hasRealValue(env["MINIMAX_API_KEY"])
+    hasRealValue(env["MINIMAX_API_KEY"]) ||
+    (hasRealValue(env["AZURE_OPENAI_API_KEY"]) &&
+      hasRealValue(env["AZURE_OPENAI_ENDPOINT"]) &&
+      hasRealValue(env["AZURE_OPENAI_DEPLOYMENT"]))
   ) {
     return "llm";
   }
