@@ -176,7 +176,7 @@ async function handleProxy(
     }
     case "memory_governance_delete": {
       const result = await handle.call("/agentmemory/governance/memories", {
-        method: "POST",
+        method: "DELETE",
         body: JSON.stringify({ memoryIds: v.memoryIds, reason: v.reason }),
       });
       return textResponse(result);
