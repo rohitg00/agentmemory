@@ -1,8 +1,9 @@
 import type { ISdk } from 'iii-sdk'
-import type { CompactSearchResult, CompressedObservation, SearchResult, Session } from '../types.js'
+import type { CompactSearchResult, CompressedObservation, Memory, SearchResult, Session } from '../types.js'
 import { KV } from '../state/schema.js'
 import { StateKV } from '../state/kv.js'
 import { SearchIndex } from '../state/search-index.js'
+import { memoryToObservation } from '../state/memory-utils.js'
 import { recordAccessBatch } from './access-tracker.js'
 import { logger } from "../logger.js";
 
@@ -17,10 +18,29 @@ export async function rebuildIndex(kv: StateKV): Promise<number> {
   const idx = getSearchIndex()
   idx.clear()
 
-  const sessions = await kv.list<Session>(KV.sessions)
-  if (!sessions.length) return 0
-
   let count = 0
+
+  // Memories live in their own KV scope outside per-session observation
+  // scopes, so they need a separate walk. Without this, mem::remember
+  // entries vanish from BM25 on every restart even after the live-write
+  // fix in remember.ts (#257).
+  try {
+    const memories = await kv.list<Memory>(KV.memories)
+    for (const memory of memories) {
+      if (memory.isLatest === false) continue
+      if (!memory.title || !memory.content) continue
+      idx.add(memoryToObservation(memory))
+      count++
+    }
+  } catch (err) {
+    logger.warn('rebuildIndex: failed to load memories', {
+      error: err instanceof Error ? err.message : String(err),
+    })
+  }
+
+  const sessions = await kv.list<Session>(KV.sessions)
+  if (!sessions.length) return count
+
   const obsPerSession: CompressedObservation[][] = []
   const failedSessions: string[] = []
   for (let batch = 0; batch < sessions.length; batch += 10) {
@@ -124,11 +144,21 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
         candidates.push(r)
       }
 
-      // Second pass: load observations in parallel.
+      // Second pass: load observations in parallel. Fall back to
+      // KV.memories when the observation lookup misses — entries indexed
+      // via mem::remember live in the memories scope under a synthetic
+      // sessionId, so the observation key never exists (#265).
       const obsResults = await Promise.all(
-        candidates.map((r) =>
-          kv.get<CompressedObservation>(KV.observations(r.sessionId), r.obsId)
-        )
+        candidates.map(async (r) => {
+          const obs = await kv
+            .get<CompressedObservation>(KV.observations(r.sessionId), r.obsId)
+            .catch(() => null)
+          if (obs) return obs
+          const mem = await kv
+            .get<Memory>(KV.memories, r.obsId)
+            .catch(() => null)
+          return mem ? memoryToObservation(mem) : null
+        })
       )
       const enriched: SearchResult[] = []
       for (let i = 0; i < candidates.length; i++) {

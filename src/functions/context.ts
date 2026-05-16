@@ -5,11 +5,17 @@ import type {
   SessionSummary,
   ContextBlock,
   ProjectProfile,
+  MemorySlot,
 } from "../types.js";
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { recordAccessBatch } from "./access-tracker.js";
 import { logger } from "../logger.js";
+import {
+  isSlotsEnabled,
+  listPinnedSlots,
+  renderPinnedContext,
+} from "./slots.js";
 
 function estimateTokens(text: string): number {
   return Math.ceil(text.length / 3);
@@ -33,9 +39,24 @@ export function registerContextFunction(
       const budget = data.budget || tokenBudget;
       const blocks: ContextBlock[] = [];
 
-      const profile = await kv
-        .get<ProjectProfile>(KV.profiles, data.project)
-        .catch(() => null);
+      const [pinnedSlots, profile] = await Promise.all([
+        isSlotsEnabled()
+          ? listPinnedSlots(kv).catch(() => [] as MemorySlot[])
+          : Promise.resolve([] as MemorySlot[]),
+        kv
+          .get<ProjectProfile>(KV.profiles, data.project)
+          .catch(() => null),
+      ]);
+
+      const slotContent = renderPinnedContext(pinnedSlots);
+      if (slotContent) {
+        blocks.push({
+          type: "memory",
+          content: slotContent,
+          tokens: estimateTokens(slotContent),
+          recency: Date.now(),
+        });
+      }
       if (profile) {
         const profileParts = [];
         if (profile.topConcepts.length > 0) {
@@ -147,7 +168,7 @@ export function registerContextFunction(
       usedTokens += estimateTokens(header) + estimateTokens(footer);
 
       for (const block of blocks) {
-        if (usedTokens + block.tokens > budget) break;
+        if (usedTokens + block.tokens > budget) continue;
         selected.push(block.content);
         usedTokens += block.tokens;
         if (block.sourceIds && block.sourceIds.length > 0) {

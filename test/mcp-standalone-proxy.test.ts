@@ -136,6 +136,53 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
     expect(probeCount).toBe(2);
   });
 
+  it("forwards non-essential tools to /agentmemory/mcp/call (#234)", async () => {
+    const calls: Array<{ url: string; body?: unknown }> = [];
+    installFetch((url, init) => {
+      if (url.endsWith("/agentmemory/livez")) {
+        return new Response("ok", { status: 200 });
+      }
+      if (url.endsWith("/agentmemory/mcp/call")) {
+        const body = init?.body ? JSON.parse(init.body as string) : null;
+        calls.push({ url, body });
+        return new Response(
+          JSON.stringify({
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify({ saved: "lesson_xyz" }),
+              },
+            ],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      return new Response("not found", { status: 404 });
+    });
+
+    const res = await handleToolCall("memory_lesson_save", {
+      title: "Always pin lockfiles",
+      content: "...",
+    });
+    const body = JSON.parse(res.content[0].text);
+    expect(body.saved).toBe("lesson_xyz");
+    expect(calls).toHaveLength(1);
+    expect(calls[0].body).toEqual({
+      name: "memory_lesson_save",
+      arguments: { title: "Always pin lockfiles", content: "..." },
+    });
+  });
+
+  it("rejects non-essential tools when no server is reachable (#234)", async () => {
+    installFetch(() => {
+      throw new Error("ECONNREFUSED");
+    });
+    const localKv = new InMemoryKV(undefined);
+    await expect(
+      handleToolCall("memory_lesson_save", { title: "x" }, localKv),
+    ).rejects.toThrow(/Unknown tool: memory_lesson_save/);
+  });
+
   it("does not retry local after a validation error", async () => {
     const fetchFn = installFetch((url) => {
       if (url.endsWith("/agentmemory/livez")) return new Response("ok", { status: 200 });
@@ -149,5 +196,99 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
       String(url).endsWith("/agentmemory/remember"),
     );
     expect(remembersCalled).toBe(false);
+  });
+
+  it("AGENTMEMORY_FORCE_PROXY=1 skips livez probe and trusts the server", async () => {
+    process.env["AGENTMEMORY_FORCE_PROXY"] = "1";
+    const calls: string[] = [];
+    installFetch((url, init) => {
+      calls.push(url);
+      if (url.endsWith("/agentmemory/livez")) {
+        throw new Error("probe should be skipped");
+      }
+      if (url.endsWith("/agentmemory/remember")) {
+        return new Response(JSON.stringify({ id: "m-1", action: "created" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return new Response("not found", { status: 404 });
+    });
+    try {
+      await handleToolCall("memory_save", { content: "force-proxy" });
+      expect(calls.some((u) => u.endsWith("/agentmemory/livez"))).toBe(false);
+      expect(calls.some((u) => u.endsWith("/agentmemory/remember"))).toBe(true);
+    } finally {
+      delete process.env["AGENTMEMORY_FORCE_PROXY"];
+    }
+  });
+
+  it("logs probe failure to stderr so sandboxed clients can diagnose silently dropped tools", async () => {
+    installFetch((url) => {
+      if (url.endsWith("/agentmemory/livez")) {
+        throw new Error("ECONNREFUSED 127.0.0.1:3111");
+      }
+      return new Response("not found", { status: 404 });
+    });
+    const writes: string[] = [];
+    const origWrite = process.stderr.write.bind(process.stderr);
+    process.stderr.write = ((chunk: string | Uint8Array) => {
+      writes.push(typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8"));
+      return true;
+    }) as typeof process.stderr.write;
+    try {
+      const localKv = new InMemoryKV(undefined);
+      await handleToolCall("memory_save", { content: "diag" }, localKv);
+    } finally {
+      process.stderr.write = origWrite;
+    }
+    const joined = writes.join("");
+    expect(joined).toMatch(/livez probe .* failed/);
+    expect(joined).toMatch(/AGENTMEMORY_FORCE_PROXY/);
+  });
+
+  it("local fallback tools/list returns all 7 IMPLEMENTED_TOOLS regardless of AGENTMEMORY_TOOLS env (#234)", async () => {
+    const { handleToolsList } = await import("../src/mcp/standalone.js");
+    installFetch(() => {
+      throw new Error("ECONNREFUSED");
+    });
+    delete process.env["AGENTMEMORY_TOOLS"];
+    const before = await handleToolsList();
+    const beforeTools = before.tools as Array<{ name: string }>;
+    expect(beforeTools.map((t) => t.name).sort()).toEqual([
+      "memory_audit",
+      "memory_export",
+      "memory_governance_delete",
+      "memory_recall",
+      "memory_save",
+      "memory_sessions",
+      "memory_smart_search",
+    ]);
+    expect(beforeTools).toHaveLength(7);
+
+    resetHandleForTests();
+    process.env["AGENTMEMORY_TOOLS"] = "core";
+    const core = await handleToolsList();
+    expect((core.tools as unknown[]).length).toBe(7);
+    delete process.env["AGENTMEMORY_TOOLS"];
+  });
+
+  it("AGENTMEMORY_PROBE_TIMEOUT_MS overrides the default probe timeout", async () => {
+    process.env["AGENTMEMORY_PROBE_TIMEOUT_MS"] = "50";
+    let probeStarted = 0;
+    installFetch((url) => {
+      if (url.endsWith("/agentmemory/livez")) {
+        probeStarted++;
+        return new Response("ok", { status: 200 });
+      }
+      return new Response("not found", { status: 404 });
+    });
+    try {
+      const localKv = new InMemoryKV(undefined);
+      await handleToolCall("memory_save", { content: "timeout-knob" }, localKv);
+      expect(probeStarted).toBe(1);
+    } finally {
+      delete process.env["AGENTMEMORY_PROBE_TIMEOUT_MS"];
+    }
   });
 });

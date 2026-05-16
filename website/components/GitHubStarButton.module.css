@@ -1,0 +1,30 @@
+.starBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.icon {
+  display: inline-block;
+  flex: 0 0 auto;
+  margin-top: -2px;
+}
+
+.label {
+  letter-spacing: 0.08em;
+}
+
+.count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.5ch;
+  padding: 0 6px;
+  margin-left: 4px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--mist, #cfd2d1);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.85em;
+  letter-spacing: 0.04em;
+}

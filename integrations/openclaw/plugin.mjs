@@ -2,8 +2,9 @@
  * agentmemory plugin for OpenClaw
  *
  * Deeper integration than raw MCP:
- * - recalls relevant memories before the agent starts
- * - captures completed conversation turns after the agent finishes
+ * - claims the plugins.slots.memory slot via api.registerMemoryCapability({ promptBuilder })
+ * - recalls relevant memories before the agent starts (before_agent_start hook)
+ * - captures completed conversation turns after the agent finishes (agent_end hook)
  *
  * Requires the agentmemory server on localhost:3111.
  * Start it with: npx @agentmemory/agentmemory
@@ -119,6 +120,21 @@ const plugin = {
       timeout_ms: api.pluginConfig?.timeout_ms || DEFAULT_TIMEOUT_MS,
     };
     const client = createClient(cfg, api);
+
+    if (typeof api.registerMemoryCapability === "function") {
+      api.registerMemoryCapability({
+        // OpenClaw passes { availableTools: Set<string>, citationsMode? }. We
+        // don't currently branch on tool availability, but accept the params
+        // object so the signature matches MemoryPromptSectionBuilder exactly.
+        promptBuilder: (_params) => [
+          "Long-term memory provider: agentmemory (external REST service on " +
+            client.baseUrl +
+            ").",
+          "agentmemory recalls relevant prior observations before each turn via the before_agent_start hook and captures completed turns via agent_end.",
+          "Treat recalled context as background, not authoritative — prefer current workspace state and explicit user instructions when they conflict.",
+        ],
+      });
+    }
 
     api.on("before_agent_start", async (event) => {
       if (!cfg.enabled) return;

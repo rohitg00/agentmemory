@@ -3,8 +3,10 @@ import type { Memory } from "../types.js";
 import { KV, generateId, jaccardSimilarity } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
+import { memoryToObservation } from "../state/memory-utils.js";
 import { deleteAccessLog } from "./access-tracker.js";
 import { recordAudit } from "./audit.js";
+import { getSearchIndex } from "./search.js";
 import { logger } from "../logger.js";
 
 export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
@@ -96,6 +98,20 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
           await kv.set(KV.memories, supersededMemory.id, supersededMemory);
         }
         await kv.set(KV.memories, memory.id, memory);
+
+        // Without this, mem::remember persists the row but the BM25
+        // index never sees it, so memory_smart_search and memory_recall
+        // return empty even seconds after save (#257). Use try/catch so
+        // an indexing failure doesn't block the save itself — the
+        // restart-time rebuild will pick the memory up either way.
+        try {
+          getSearchIndex().add(memoryToObservation(memory));
+        } catch (err) {
+          logger.warn("Failed to index saved memory into BM25", {
+            memId: memory.id,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
 
         if (supersededId) {
           await sdk.trigger({

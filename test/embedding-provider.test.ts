@@ -1,7 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { createEmbeddingProvider } from "../src/providers/embedding/index.js";
+import {
+  createEmbeddingProvider,
+  withDimensionGuard,
+} from "../src/providers/embedding/index.js";
 import { GeminiEmbeddingProvider } from "../src/providers/embedding/gemini.js";
 import { OpenAIEmbeddingProvider } from "../src/providers/embedding/openai.js";
+import type { EmbeddingProvider } from "../src/types.js";
 
 describe("createEmbeddingProvider", () => {
   const originalEnv = { ...process.env };
@@ -147,5 +151,99 @@ describe("OpenAIEmbeddingProvider", () => {
     expect(() => new OpenAIEmbeddingProvider("test-key")).toThrow(
       /OPENAI_EMBEDDING_DIMENSIONS must be a positive integer/,
     );
+  });
+});
+
+describe("withDimensionGuard", () => {
+  function fakeProvider(opts: {
+    dimensions: number;
+    embed: () => Float32Array;
+    batch?: () => Float32Array[];
+    image?: () => Float32Array;
+  }): EmbeddingProvider {
+    const provider: EmbeddingProvider = {
+      name: "fake",
+      dimensions: opts.dimensions,
+      embed: async () => opts.embed(),
+      embedBatch: async () => opts.batch?.() ?? [opts.embed()],
+    };
+    if (opts.image) provider.embedImage = async () => opts.image!();
+    return provider;
+  }
+
+  it("preserves the wrapped provider's prototype so instanceof keeps working", async () => {
+    class FakeProvider implements EmbeddingProvider {
+      readonly name = "fake-class";
+      readonly dimensions = 4;
+      async embed(): Promise<Float32Array> {
+        return new Float32Array([1, 2, 3, 4]);
+      }
+      async embedBatch(): Promise<Float32Array[]> {
+        return [new Float32Array([1, 2, 3, 4])];
+      }
+    }
+    const guarded = withDimensionGuard(new FakeProvider());
+    expect(guarded).toBeInstanceOf(FakeProvider);
+    expect(guarded.name).toBe("fake-class");
+    expect(guarded.dimensions).toBe(4);
+  });
+
+  it("passes through vectors that match the declared dimensions", async () => {
+    const guarded = withDimensionGuard(
+      fakeProvider({
+        dimensions: 4,
+        embed: () => new Float32Array([1, 2, 3, 4]),
+        batch: () => [new Float32Array([1, 2, 3, 4]), new Float32Array([5, 6, 7, 8])],
+      }),
+    );
+    await expect(guarded.embed("x")).resolves.toEqual(new Float32Array([1, 2, 3, 4]));
+    await expect(guarded.embedBatch(["a", "b"])).resolves.toHaveLength(2);
+  });
+
+  it("throws when embed() returns the wrong dimension", async () => {
+    const guarded = withDimensionGuard(
+      fakeProvider({
+        dimensions: 4,
+        embed: () => new Float32Array([1, 2, 3]),
+      }),
+    );
+    await expect(guarded.embed("x")).rejects.toThrow(
+      /dimension mismatch in fake\.embed: expected 4, got 3/,
+    );
+  });
+
+  it("throws when any vector in embedBatch() returns the wrong dimension", async () => {
+    const guarded = withDimensionGuard(
+      fakeProvider({
+        dimensions: 4,
+        embed: () => new Float32Array([1, 2, 3, 4]),
+        batch: () => [new Float32Array([1, 2, 3, 4]), new Float32Array([1, 2])],
+      }),
+    );
+    await expect(guarded.embedBatch(["a", "b"])).rejects.toThrow(
+      /dimension mismatch in fake\.embedBatch\[1\]: expected 4, got 2/,
+    );
+  });
+
+  it("guards embedImage when present and omits it when absent", async () => {
+    const withImage = withDimensionGuard(
+      fakeProvider({
+        dimensions: 4,
+        embed: () => new Float32Array([1, 2, 3, 4]),
+        image: () => new Float32Array([1, 2]),
+      }),
+    );
+    expect(withImage.embedImage).toBeDefined();
+    await expect(withImage.embedImage!("/tmp/x")).rejects.toThrow(
+      /dimension mismatch in fake\.embedImage: expected 4, got 2/,
+    );
+
+    const withoutImage = withDimensionGuard(
+      fakeProvider({
+        dimensions: 4,
+        embed: () => new Float32Array([1, 2, 3, 4]),
+      }),
+    );
+    expect(withoutImage.embedImage).toBeUndefined();
   });
 });

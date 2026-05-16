@@ -46,6 +46,10 @@ export class SearchIndex {
     this.sortedTerms = null;
   }
 
+  has(id: string): boolean {
+    return this.entries.has(id);
+  }
+
   search(
     query: string,
     limit = 20,

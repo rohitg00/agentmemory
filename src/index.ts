@@ -19,6 +19,7 @@ import {
   createImageEmbeddingProvider,
 } from "./providers/index.js";
 import { StateKV } from "./state/kv.js";
+import { KV } from "./state/schema.js";
 import { VectorIndex } from "./state/vector-index.js";
 import { HybridSearch } from "./state/hybrid-search.js";
 import { IndexPersistence } from "./state/index-persistence.js";
@@ -336,10 +337,58 @@ async function main() {
     );
   }
   if (loaded?.vector && vectorIndex && loaded.vector.size > 0) {
-    vectorIndex.restoreFrom(loaded.vector);
-    console.log(
-      `[agentmemory] Loaded persisted vector index (${vectorIndex.size} vectors)`,
-    );
+    // Persisted vectors carry whatever dimension the provider had when
+    // they were written. If the active provider declares a different
+    // dimension — or if the on-disk index contains a mix of dimensions
+    // (legacy indexes written before the live-API guard in this PR) —
+    // restoring would silently corrupt search: cosineSimilarity returns
+    // 0 on cross-dim pairs, so affected observations stop matching
+    // anything and recall degrades without an error. Walk every stored
+    // vector instead of trusting the first; refuse to load if anything
+    // is off.
+    const activeDim = embeddingProvider?.dimensions ?? 0;
+    const { mismatches, seenDimensions } =
+      activeDim > 0
+        ? loaded.vector.validateDimensions(activeDim)
+        : { mismatches: [], seenDimensions: new Set<number>() };
+
+    if (mismatches.length > 0) {
+      const sample = mismatches
+        .slice(0, 5)
+        .map((m) => `${m.obsId} (dim=${m.dim})`)
+        .join(", ");
+      const distinct = Array.from(seenDimensions).sort((a, b) => a - b).join(", ");
+      const dropStale =
+        process.env["AGENTMEMORY_DROP_STALE_INDEX"] === "true";
+      if (dropStale) {
+        console.warn(
+          `[agentmemory] Persisted vector index has ${mismatches.length} of ` +
+            `${loaded.vector.size} vectors with the wrong dimension. Active ` +
+            `provider (${embeddingProvider?.name}) declares ${activeDim}; ` +
+            `dimensions seen on disk: ${distinct}. ` +
+            `AGENTMEMORY_DROP_STALE_INDEX=true is set — discarding the persisted ` +
+            `vectors. Live observations will rebuild the index over time.`,
+        );
+      } else {
+        throw new Error(
+          `[agentmemory] Refusing to start: persisted vector index has ` +
+            `${mismatches.length} of ${loaded.vector.size} vectors with the ` +
+            `wrong dimension. Active provider (${embeddingProvider?.name}) ` +
+            `declares ${activeDim}; dimensions seen on disk: ${distinct}. ` +
+            `First mismatched obsIds: ${sample}. Loading would silently corrupt ` +
+            `search (cross-dimension cosine returns 0). Choose one:\n` +
+            `  - Re-embed the existing index against the new provider, then start.\n` +
+            `  - Set AGENTMEMORY_DROP_STALE_INDEX=true to discard the persisted ` +
+            `vectors and rebuild from live observations.\n` +
+            `  - Switch the embedding provider back to the one that wrote the index.`,
+        );
+      }
+    } else {
+      vectorIndex.restoreFrom(loaded.vector);
+      console.log(
+        `[agentmemory] Loaded persisted vector index (${vectorIndex.size} vectors)`,
+      );
+    }
   }
 
   const needsRebuild = bm25Index.size === 0;
@@ -351,9 +400,50 @@ async function main() {
     });
     if (indexCount > 0) {
       console.log(
-        `[agentmemory] Search index rebuilt: ${indexCount} observations`,
+        `[agentmemory] Search index rebuilt: ${indexCount} entries`,
       );
       indexPersistence.scheduleSave();
+    }
+  } else {
+    // Backfill memories into BM25 for users upgrading from <0.9.5: prior
+    // versions of mem::remember never indexed memories, so the persisted
+    // BM25 covers observations only and `memory_smart_search` returns
+    // empty for everything saved via memory_save (#257). Walk KV.memories
+    // and add the ones missing from the restored index. Idempotent on
+    // re-runs because SearchIndex.has() short-circuits already-indexed
+    // ids.
+    try {
+      const memories = await kv.list<import("./types.js").Memory>(KV.memories);
+      let backfilled = 0;
+      for (const memory of memories) {
+        if (memory.isLatest === false) continue;
+        if (!memory.title || !memory.content) continue;
+        if (bm25Index.has(memory.id)) continue;
+        bm25Index.add({
+          id: memory.id,
+          sessionId: memory.sessionIds[0] ?? "memory",
+          timestamp: memory.createdAt,
+          type: "decision",
+          title: memory.title,
+          facts: [memory.content],
+          narrative: memory.content,
+          concepts: memory.concepts,
+          files: memory.files,
+          importance: memory.strength,
+        });
+        backfilled++;
+      }
+      if (backfilled > 0) {
+        console.log(
+          `[agentmemory] Backfilled ${backfilled} memories into BM25 (legacy gap before #257)`,
+        );
+        indexPersistence.scheduleSave();
+      }
+    } catch (err) {
+      console.warn(
+        `[agentmemory] Failed to backfill memories into BM25:`,
+        err,
+      );
     }
   }
 

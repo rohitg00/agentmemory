@@ -1,0 +1,22 @@
+{
+  "name": "agentmemory",
+  "interface": {
+    "displayName": "agentmemory"
+  },
+  "plugins": [
+    {
+      "name": "agentmemory",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/rohitg00/agentmemory.git",
+        "path": "./plugin",
+        "ref": "main"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Memory"
+    }
+  ]
+}

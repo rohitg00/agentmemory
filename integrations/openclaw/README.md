@@ -125,13 +125,20 @@ Then enable it in `~/.openclaw/openclaw.json`:
 
 What the plugin does:
 
-- recalls relevant long-term memory before the agent starts
-- captures completed conversation turns after the agent finishes
+- claims the `plugins.slots.memory = "agentmemory"` slot via `api.registerMemoryCapability({ promptBuilder })` so OpenClaw recognises it as the active memory plugin
+- recalls relevant long-term memory before the agent starts (via the `before_agent_start` hook)
+- captures completed conversation turns after the agent finishes (via the `agent_end` hook)
 - shares the same backend with Claude Code, Codex CLI, Gemini CLI, Hermes, pi, and other agents
+
+### Memory runtime (current scope)
+
+The plugin currently registers a `promptBuilder` only — not a full `MemoryPluginRuntime` adapter. OpenClaw's `MemoryRuntimeBackendConfig` type today is `{ backend: "builtin" }` or `{ backend: "qmd" }`; both are openclaw-internal backends that don't fit agentmemory's external REST shape. The hook-driven recall + capture flow above is the working integration path. If you need OpenClaw's in-process memory-runtime APIs (e.g. `getMemorySearchManager`) backed by agentmemory, file an upstream request against `openclaw` for an `"external"` backend type and we'll wire `runtime` here once the contract supports it.
 
 ## Troubleshooting
 
 **Plugin validates but does not load** — make sure the folder contains `package.json`, `openclaw.plugin.json`, and `plugin.mjs`, and that `plugins.slots.memory` is set to `agentmemory`.
+
+**`plugins.slots.memory = "agentmemory"` reports `unavailable`** — upgrade to v0.9.11+. Older versions of this plugin registered hooks but never called `api.registerMemoryCapability(...)`, so the memory-slot machinery did not consider the slot claimed. The current plugin registers a memory capability (prompt builder) at startup, which is the documented OpenClaw API for occupying the slot.
 
 **Connection refused on port 3111** — the agentmemory server is not running. Start it with `npx @agentmemory/agentmemory`.
 

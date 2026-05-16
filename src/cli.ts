@@ -18,6 +18,49 @@ const args = process.argv.slice(2);
 const IS_WINDOWS = platform() === "win32";
 const IS_VERBOSE = args.includes("--verbose") || args.includes("-v");
 
+// Pinned iii-engine version. The unpinned `install.iii.dev/iii/main/install.sh`
+// script tracks `latest`, which made every fresh agentmemory install pull
+// engine 0.11.6 — and 0.11.6 introduces a new sandbox-everything-via-
+// `iii worker add` worker model that agentmemory hasn't been refactored
+// for yet (we still use the old `iii-exec watch` config-file model). The
+// architectural mismatch surfaces as EPIPE reconnect loops and empty
+// search results after save. Pin to v0.11.2 — the last engine that runs
+// agentmemory's current worker model cleanly — until the refactor lands.
+// Override env var AGENTMEMORY_III_VERSION lets users on the sandbox
+// model already point at a newer engine without us cutting a release.
+const IIPINNED_VERSION =
+  process.env["AGENTMEMORY_III_VERSION"] || "0.11.2";
+
+// Map Node platform/arch → the asset name iii-hq/iii ships under
+// https://github.com/iii-hq/iii/releases/download/iii/v<version>/<asset>
+function iiiReleaseAsset(): string | null {
+  const p = platform();
+  const a = process.arch;
+  if (p === "darwin" && a === "arm64")
+    return "iii-aarch64-apple-darwin.tar.gz";
+  if (p === "darwin" && a === "x64")
+    return "iii-x86_64-apple-darwin.tar.gz";
+  if (p === "linux" && a === "x64")
+    return "iii-x86_64-unknown-linux-gnu.tar.gz";
+  if (p === "linux" && a === "arm64")
+    return "iii-aarch64-unknown-linux-gnu.tar.gz";
+  if (p === "linux" && a === "arm")
+    return "iii-armv7-unknown-linux-gnueabihf.tar.gz";
+  if (p === "win32" && a === "x64")
+    return "iii-x86_64-pc-windows-msvc.zip";
+  if (p === "win32" && a === "arm64")
+    return "iii-aarch64-pc-windows-msvc.zip";
+  return null;
+}
+
+function iiiReleaseUrl(): string | null {
+  const asset = iiiReleaseAsset();
+  if (!asset) return null;
+  // Tag name is monorepo-prefixed: `iii/v0.11.2`. Slash is URL-encoded
+  // by GitHub when serving the download path, hence `iii/v...` not `iii%2Fv...`.
+  return `https://github.com/iii-hq/iii/releases/download/iii/v${IIPINNED_VERSION}/${asset}`;
+}
+
 function vlog(msg: string): void {
   if (IS_VERBOSE) p.log.info(`[verbose] ${msg}`);
 }
@@ -140,7 +183,10 @@ function findIiiConfig(): string {
 function whichBinary(name: string): string | null {
   const cmd = IS_WINDOWS ? "where" : "which";
   try {
-    const out = execFileSync(cmd, [name], { encoding: "utf-8" });
+    const out = execFileSync(cmd, [name], {
+      encoding: "utf-8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
     const first = out
       .split(/\r?\n/)
       .map((line) => line.trim())
@@ -291,13 +337,14 @@ async function waitForEngine(timeoutMs: number): Promise<boolean> {
 }
 
 function installInstructions(): string[] {
+  const releaseUrl = iiiReleaseUrl();
   if (IS_WINDOWS) {
     return [
-      "agentmemory requires the `iii-engine` runtime. Pick one:",
+      `agentmemory requires the \`iii-engine\` runtime, pinned to v${IIPINNED_VERSION}. Pick one:`,
       "",
       "  A) Download the prebuilt Windows binary:",
-      "     1. Open https://github.com/iii-hq/iii/releases/latest",
-      "     2. Download iii-x86_64-pc-windows-msvc.zip",
+      `     1. Open https://github.com/iii-hq/iii/releases/tag/iii%2Fv${IIPINNED_VERSION}`,
+      `     2. Download iii-x86_64-pc-windows-msvc.zip`,
       "        (or iii-aarch64-pc-windows-msvc.zip on ARM)",
       "     3. Extract iii.exe and either add its folder to PATH",
       "        or move it to %USERPROFILE%\\.local\\bin\\iii.exe",
@@ -305,25 +352,34 @@ function installInstructions(): string[] {
       "",
       "  B) Docker Desktop:",
       "     1. Install Docker Desktop for Windows",
-      "     2. Start Docker Desktop (engine must be running)",
-      "     3. Re-run: npx @agentmemory/agentmemory",
+      `     2. docker pull iiidev/iii:${IIPINNED_VERSION}`,
+      "     3. Start Docker Desktop (engine must be running)",
+      "     4. Re-run: npx @agentmemory/agentmemory",
       "",
       "Or skip the engine entirely for standalone MCP:",
       "  npx @agentmemory/agentmemory mcp",
     ];
   }
+  const linuxInstall = releaseUrl
+    ? `  A) mkdir -p ~/.local/bin && curl -fsSL "${releaseUrl}" | tar -xz -C ~/.local/bin && chmod +x ~/.local/bin/iii`
+    : `  A) Manual download from https://github.com/iii-hq/iii/releases/tag/iii%2Fv${IIPINNED_VERSION}`;
   return [
-    "agentmemory requires the `iii-engine` runtime. Pick one:",
+    `agentmemory requires the \`iii-engine\` runtime, pinned to v${IIPINNED_VERSION}. Pick one:`,
     "",
-    "  A) curl -fsSL https://install.iii.dev/iii/main/install.sh | sh",
-    "     (installs the prebuilt iii binary into ~/.local/bin/iii)",
+    linuxInstall,
+    `     (installs iii v${IIPINNED_VERSION} into ~/.local/bin/iii)`,
     "",
-    "  B) Docker: install Docker Desktop or docker-ce, then re-run",
+    `  B) Docker: \`docker pull iiidev/iii:${IIPINNED_VERSION}\``,
     "",
     "Or skip the engine entirely for standalone MCP:",
     "  npx @agentmemory/agentmemory mcp",
     "",
     "Docs: https://iii.dev/docs",
+    `Why pinned: iii v0.11.6 introduces the new sandbox-everything model`,
+    `(\`iii worker add\` registration). agentmemory still uses the older`,
+    `iii-exec config-file worker model and needs a refactor before it`,
+    `runs cleanly under the new engine. Override with`,
+    `AGENTMEMORY_III_VERSION=<version> when you've migrated manually.`,
   ];
 }
 
@@ -789,6 +845,8 @@ async function seedDemoSession(
     const payload = {
       hookType: "post_tool_use",
       sessionId: session.id,
+      project,
+      cwd: project,
       timestamp: new Date().toISOString(),
       data: {
         tool_name: obs.toolName,
@@ -991,15 +1049,43 @@ async function runUpgrade() {
       return process.exit(0);
     }
     if (upgradeEngine === true) {
-      const installerOk = runCommand(
-        shBin,
-        ["-c", "curl -fsSL https://install.iii.dev/iii/main/install.sh | sh"],
-        { label: "Upgrading iii-engine via installer", optional: true },
-      );
-      if (!installerOk) {
+      const releaseUrl = iiiReleaseUrl();
+      const asset = iiiReleaseAsset();
+      const isZipAsset = asset?.endsWith(".zip") === true;
+      if (!releaseUrl) {
         p.log.warn(
-          "iii-engine installer failed. Fallbacks: Docker (`docker pull iiidev/iii:latest`) or releases at https://github.com/iii-hq/iii/releases/latest.",
+          `iii-engine binary not available for ${platform()}/${process.arch}. Use Docker (\`docker pull iiidev/iii:${IIPINNED_VERSION}\`) or download manually from https://github.com/iii-hq/iii/releases/tag/iii%2Fv${IIPINNED_VERSION}.`,
         );
+      } else if (IS_WINDOWS || isZipAsset) {
+        // Windows ships a .zip, not a tarball, and the rest of this
+        // branch assumes sh + tar -xz + chmod. Skip the auto-installer
+        // there and point at the manual flow / Docker fallback. Same
+        // guidance as installInstructions().
+        p.log.info(
+          `Skipping auto-install on ${platform()} — the ${asset} asset isn't tar-compatible. Install manually:\n` +
+            `  1. Download ${releaseUrl}\n` +
+            `  2. Extract iii.exe and place it on PATH (e.g. %USERPROFILE%\\.local\\bin)\n` +
+            `Or use Docker: docker pull iiidev/iii:${IIPINNED_VERSION}`,
+        );
+      } else {
+        // Pinned to IIPINNED_VERSION rather than `install.iii.dev/iii/main`,
+        // which would track `latest` and re-pull the broken 0.11.6 build.
+        const homeDir = homedir();
+        const binDir = join(homeDir, ".local", "bin");
+        const installCmd = [
+          `mkdir -p "${binDir}"`,
+          `curl -fsSL "${releaseUrl}" | tar -xz -C "${binDir}"`,
+          `chmod +x "${binDir}/iii"`,
+        ].join(" && ");
+        const installerOk = runCommand(shBin, ["-c", installCmd], {
+          label: `Installing iii-engine v${IIPINNED_VERSION} (pinned)`,
+          optional: true,
+        });
+        if (!installerOk) {
+          p.log.warn(
+            `iii-engine installer failed. Fallbacks: Docker (\`docker pull iiidev/iii:${IIPINNED_VERSION}\`) or download manually from https://github.com/iii-hq/iii/releases/tag/iii%2Fv${IIPINNED_VERSION}.`,
+          );
+        }
       }
     } else {
       p.log.info("Skipped iii-engine installer.");
@@ -1009,8 +1095,8 @@ async function runUpgrade() {
   }
 
   if (dockerBin) {
-    runCommand(dockerBin, ["pull", "iiidev/iii:latest"], {
-      label: "Pulling latest iii Docker image",
+    runCommand(dockerBin, ["pull", `iiidev/iii:${IIPINNED_VERSION}`], {
+      label: `Pulling iii Docker image v${IIPINNED_VERSION} (pinned)`,
       optional: true,
     });
   } else {
