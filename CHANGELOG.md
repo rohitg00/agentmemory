@@ -6,6 +6,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.9.17] — 2026-05-16
+
+OpenAI-compatible LLM provider lands the universal-adapter shape (one provider config covers OpenAI, Azure OpenAI auto-detected by hostname, DeepSeek, SiliconFlow, vLLM, LM Studio, Ollama via `/v1`, plus any future endpoint that mirrors `POST /v1/chat/completions`). Worker registration now pins a stable `project_name` for engine telemetry so attribution reads cleanly across hosts. Comparison section on agent-memory.dev no longer wraps awkwardly after the v0.9.16 refresh.
+
+### Added
+
+- **OpenAI-compatible LLM provider** ([PR #307](https://github.com/rohitg00/agentmemory/pull/307), by @fatinghenji). Six providers behind one config: `OPENAI_API_KEY` + `OPENAI_BASE_URL` + `OPENAI_MODEL`. Closes [#185](https://github.com/rohitg00/agentmemory/issues/185), [#232](https://github.com/rohitg00/agentmemory/issues/232) (Ollama works via `OPENAI_BASE_URL=http://localhost:11434/v1`), [#312](https://github.com/rohitg00/agentmemory/issues/312), and [#240](https://github.com/rohitg00/agentmemory/pull/240) (superseded).
+
+- **Azure OpenAI auto-detection**. `OpenAIProvider` detects `.openai.azure.com` hostnames in the configured base URL at construction time and switches the request shape automatically: drops the `/v1` path prefix (deployment is in the URL), uses `api-key: <KEY>` header instead of `Authorization: Bearer`, appends `api-version=<version>` query param. Default api-version is `2024-08-01-preview`; override via `OPENAI_API_VERSION`. Closes the gap with [PR #219](https://github.com/rohitg00/agentmemory/pull/219).
+
+- **`OPENAI_TIMEOUT_MS` env var** (PR #307). Outbound fetch timeout on the new provider, default 60s, AbortController-bounded with a clear timeout error message that points at the env var. The other raw-fetch providers (anthropic / gemini / openrouter / minimax) share the same gap tracked in [#373](https://github.com/rohitg00/agentmemory/issues/373).
+
+- **`OPENAI_REASONING_EFFORT` passthrough** (PR #307). Forwarded as `reasoning_effort` on the request body for OpenAI reasoning models (`o1`, `o3`, `gpt-*-reasoning`) and providers that mirror that schema (Ollama Cloud thinking models). Standard chat models reject this field with 400 — README documents the caveat. Set to `"none"` for thinking models that return reasoning but no content. The provider also falls back to `message.reasoning` when `message.content` is empty, covering the Ollama Cloud thinking-model shape.
+
+### Changed
+
+- **Worker `telemetry.project_name` pinned to `"agentmemory"`** ([PR #426](https://github.com/rohitg00/agentmemory/pull/426)). `iii-sdk`'s `InitOptions.telemetry.project_name` auto-detects when omitted — falls through cwd → package.json basename → hostname, which produces inconsistent identifiers per host (`agentmemory`, `node`, `npm`, occasionally the user's home dir basename when launched via npx). Pinning the value gives every install the same stable project identifier in the engine's metrics + traces output. Also pins `language: "node"` and `framework: "iii-sdk"` for the same reason.
+
+- **`OPENAI_API_KEY_FOR_LLM=false` opt-out gate** (PR #307, fix pushed via maintainer edit). `detectLlmProviderKind()` now mirrors `detectProvider()`'s existing gate — users who set `OPENAI_API_KEY` only for embeddings (via the `OPENAI_BASE_URL` + `OPENAI_EMBEDDING_MODEL` flow from #186) won't see the LLM auto-activate. The README's `.env` template now leads with an explicit shared-use callout above the LLM section pointing at the opt-out.
+
+- **Compare section on agent-memory.dev** ([PR #427](https://github.com/rohitg00/agentmemory/pull/427)). `AGENTMEMORY VS. THE FIELD.` title → `VS. THE FIELD.` (the eyebrow already reads VS., so the longer version was redundant + wrapped ugly). Added `text-wrap: balance` to `.section-title` globally so any wrapping title breaks at a balanced point. `NATIVE PLUGINS` cell value `6 (Claude/Codex/OpenClaw/Hermes/pi/OpenHuman)` → `6` (agent names already visible in the Agents grid two sections above). Row grid rebalanced (label 1.4fr / agentmemory 1.3fr / competitors 1fr each), added `word-break: break-word` + 24px row padding so cells like `YES (APACHE-2.0)` and `2 (Qdrant, Neo4j)` have breathing room.
+
+### Infrastructure
+
+- Provider factory at `src/providers/index.ts` now dispatches `"openai"` through `createBaseProvider`; type union extended in `src/types.ts:132`. `VALID_PROVIDERS` set in `src/config.ts` includes the new entry so the fallback-chain config accepts it.
+
+[0.9.17]: https://github.com/rohitg00/agentmemory/compare/v0.9.16...v0.9.17
+
 ## [0.9.16] — 2026-05-15
 
 Two parallel waves landed back-to-back. (1) DevEx polish on top of v0.9.15's foundation: 5-port ready panel that shows REST/Viewer/Streams/Engine/iii-console in one boxed note, iii-console install probe + auto-install on first run, interactive global-install prompt that replaces the passive npx hint (so `agentmemory stop` actually works in new shells), onboarding wizard now wires every selected agent inline via the same `agentmemory connect` adapter the CLI exposes, plus a memory-share callout so users understand a single server feeds every wired agent. (2) Marketing site refresh against the v0.9.15 surface: new `AS FEATURED IN` bar (AlphaSignal · Agentic AI Foundation · Trendshift), six first-party agents in the featured grid (added pi + OpenHuman), MCP messaging reworded as opt-in surface so REST reads as the primary protocol.
