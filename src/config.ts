@@ -50,6 +50,16 @@ function hasRealValue(v: string | undefined): v is string {
 function detectProvider(env: Record<string, string>): ProviderConfig {
   const maxTokens = parseInt(env["MAX_TOKENS"] || "4096", 10);
 
+  // OpenAI-compatible: supports OpenAI, DeepSeek, SiliconFlow, Azure, vLLM, LM Studio
+  if (hasRealValue(env["OPENAI_API_KEY"]) && env["OPENAI_API_KEY_FOR_LLM"] !== "false") {
+    return {
+      provider: "openai",
+      model: env["OPENAI_MODEL"] || "gpt-4o-mini",
+      maxTokens,
+      baseURL: env["OPENAI_BASE_URL"],
+    };
+  }
+
   // MiniMax: Anthropic-compatible API, requires raw fetch to avoid SDK stainless headers
   if (hasRealValue(env["MINIMAX_API_KEY"])) {
     return {
@@ -92,7 +102,7 @@ function detectProvider(env: Record<string, string>): ProviderConfig {
   if (!allowAgentSdk) {
     process.stderr.write(
       "[agentmemory] No LLM provider key found " +
-        "(ANTHROPIC_API_KEY, GEMINI_API_KEY, OPENROUTER_API_KEY, MINIMAX_API_KEY). " +
+        "(ANTHROPIC_API_KEY, GEMINI_API_KEY, OPENROUTER_API_KEY, MINIMAX_API_KEY, OPENAI_API_KEY). " +
         "LLM-backed compression and summarization are DISABLED — using no-op provider. " +
         "This is the safe default: the agent-sdk fallback used to spawn Claude Agent SDK " +
         "child sessions which inherit Claude Code's plugin hooks and cause infinite Stop-hook " +
@@ -156,7 +166,9 @@ export function detectLlmProviderKind(): "llm" | "noop" {
     hasRealValue(env["GEMINI_API_KEY"]) ||
     hasRealValue(env["GOOGLE_API_KEY"]) ||
     hasRealValue(env["OPENROUTER_API_KEY"]) ||
-    hasRealValue(env["MINIMAX_API_KEY"])
+    hasRealValue(env["MINIMAX_API_KEY"]) ||
+    (hasRealValue(env["OPENAI_API_KEY"]) &&
+      env["OPENAI_API_KEY_FOR_LLM"] !== "false")
   ) {
     return "llm";
   }
@@ -292,6 +304,7 @@ const VALID_PROVIDERS = new Set([
   "openrouter",
   "agent-sdk",
   "minimax",
+  "openai",
 ]);
 
 export function loadFallbackConfig(): FallbackConfig {

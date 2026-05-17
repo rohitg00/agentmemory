@@ -142,6 +142,7 @@ button {
   letter-spacing: -0.01em;
   margin: 0 0 24px;
   text-transform: uppercase;
+  text-wrap: balance;
 }
 .section-lede {
   max-width: 680px;

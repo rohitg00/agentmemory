@@ -9,7 +9,7 @@ services:
         III_SDK_VERSION: "0.11.2"
     restart: unless-stopped
     environment:
-      - SERVICE_FQDN_AGENTMEMORY_3111
+      SERVICE_FQDN_AGENTMEMORY_3111: ${SERVICE_FQDN_AGENTMEMORY_3111}
     expose:
       - "3111"
     volumes:

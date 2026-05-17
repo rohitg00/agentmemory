@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 vi.mock("../src/logger.js", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
@@ -26,7 +26,29 @@ import {
 } from "../src/mcp/tools-registry.js";
 import { InMemoryKV } from "../src/mcp/in-memory-kv.js";
 import { handleToolCall } from "../src/mcp/standalone.js";
+import {
+  resetHandleForTests,
+  setLivezProbe,
+} from "../src/mcp/rest-proxy.js";
 import { writeFileSync } from "node:fs";
+
+// Issue #449: hard-coded fetch() against :3111 in the livez probe was racing
+// with vitest's mock setup, making this file the "10-11 pre-existing failures"
+// referenced in the last 5 release notes. Stub the probe with an instant
+// ok:false response so the shim takes the deterministic InMemoryKV fallback
+// path on every test. Guard the real network with a fetch trap so any
+// regression that bypasses the DI seam fails loudly instead of timing out.
+const instantLocalFallbackProbe = vi.fn(async () => ({
+  ok: false,
+  status: 0,
+  statusText: "stubbed: forced local fallback",
+}));
+
+const fetchTrap = vi.fn(async (url: unknown) => {
+  throw new Error(
+    `unexpected real fetch() call in mcp-standalone.test.ts: ${String(url)} — the livez probe DI stub should have absorbed this`,
+  );
+});
 
 describe("Tools Registry", () => {
   it("getAllTools returns all tools with unique names", () => {
@@ -120,8 +142,31 @@ describe("InMemoryKV", () => {
 });
 
 describe("handleToolCall", () => {
+  const originalFetch = globalThis.fetch;
+
   beforeEach(() => {
     vi.mocked(writeFileSync).mockClear();
+    instantLocalFallbackProbe.mockClear();
+    fetchTrap.mockClear();
+    // Order matters: resetHandleForTests() restores the default probe and
+    // clears the cached handle. Install the stub AFTER the reset so the
+    // shim's next resolveHandle() call hits the stubbed instant-fail path
+    // instead of the real 2s AbortController fetch.
+    resetHandleForTests();
+    setLivezProbe(instantLocalFallbackProbe);
+    (globalThis as { fetch: typeof fetch }).fetch = fetchTrap as unknown as typeof fetch;
+  });
+
+  afterEach(() => {
+    (globalThis as { fetch: typeof fetch }).fetch = originalFetch;
+    resetHandleForTests();
+  });
+
+  it("livez probe stub is invoked instead of the real fetch (issue #449)", async () => {
+    const kv = new InMemoryKV();
+    await handleToolCall("memory_save", { content: "regression guard" }, kv);
+    expect(instantLocalFallbackProbe).toHaveBeenCalledTimes(1);
+    expect(fetchTrap).not.toHaveBeenCalled();
   });
 
   it("memory_save persists to disk immediately after saving", async () => {

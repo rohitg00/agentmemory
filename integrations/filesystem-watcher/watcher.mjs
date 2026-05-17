@@ -28,6 +28,93 @@ const DEFAULT_IGNORE = [
 
 const MAX_PREVIEW_BYTES = 4096;
 const DEBOUNCE_MS = 500;
+const REDACTED = "[REDACTED]";
+const PEM_BEGIN_RE = /-----BEGIN [A-Z ]*PRIVATE KEY-----/;
+const PEM_END_RE = /-----END [A-Z ]*PRIVATE KEY-----/;
+const JWT_RE = /\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g;
+const JWT_MIN_LEN = 100;
+
+function isDotEnvPath(path) {
+  const name = basename(path).toLowerCase();
+  return name === ".env" || name.startsWith(".env.");
+}
+
+function isSensitiveKey(key) {
+  const normalized = key.replace(/[^a-z0-9]/gi, "").toLowerCase();
+  return [
+    "apikey",
+    "accesstoken",
+    "accesskey",
+    "authorization",
+    "bearer",
+    "clientsecret",
+    "password",
+    "passwd",
+    "privatekey",
+    "pwd",
+    "secret",
+    "token",
+  ].some((needle) => normalized.includes(needle));
+}
+
+function redactJwtTokens(line) {
+  return line.replace(JWT_RE, (match) => (match.length >= JWT_MIN_LEN ? REDACTED : match));
+}
+
+function redactSensitiveLine(line) {
+  if (PEM_BEGIN_RE.test(line) || PEM_END_RE.test(line)) {
+    return line;
+  }
+  const assignment = line.match(
+    /^(\s*(?:export\s+)?["']?([A-Za-z_][A-Za-z0-9_.-]*)["']?\s*([=:])\s*)(.*)$/,
+  );
+  if (assignment && isSensitiveKey(assignment[2])) {
+    const bearer = assignment[3] === ":" ? assignment[4].match(/^(Bearer\s+).+/i) : null;
+    return `${assignment[1]}${bearer ? bearer[1] : ""}${REDACTED}`;
+  }
+  const bearerRedacted = line.replace(
+    /\b(Bearer\s+)[A-Za-z0-9._~+/=-]{8,}\b/gi,
+    `$1${REDACTED}`,
+  );
+  return redactJwtTokens(bearerRedacted);
+}
+
+function redactPemBlocks(preview) {
+  const lines = preview.split("\n");
+  const out = [];
+  let inBlock = false;
+  for (const line of lines) {
+    if (!inBlock) {
+      const beginMatch = line.match(PEM_BEGIN_RE);
+      if (!beginMatch) {
+        out.push(line);
+        continue;
+      }
+      const beginIdx = beginMatch.index;
+      const endMatch = line.match(PEM_END_RE);
+      if (endMatch && endMatch.index > beginIdx) {
+        const before = line.slice(0, beginIdx);
+        const after = line.slice(endMatch.index + endMatch[0].length);
+        out.push(`${before}${beginMatch[0]}${REDACTED}${endMatch[0]}${after}`);
+      } else {
+        out.push(`${line.slice(0, beginIdx)}${beginMatch[0]}`);
+        out.push(REDACTED);
+        inBlock = true;
+      }
+    } else {
+      const endMatch = line.match(PEM_END_RE);
+      if (endMatch) {
+        out.push(`${endMatch[0]}${line.slice(endMatch.index + endMatch[0].length)}`);
+        inBlock = false;
+      }
+    }
+  }
+  return out.join("\n");
+}
+
+function redactSensitivePreview(preview) {
+  return redactPemBlocks(preview).split("\n").map(redactSensitiveLine).join("\n");
+}
 
 export class FilesystemWatcher {
   constructor(config = {}) {
@@ -54,7 +141,7 @@ export class FilesystemWatcher {
   isTextFile(path) {
     if (this.allowBinary) return true;
     const ext = extname(path).toLowerCase();
-    return TEXT_EXTENSIONS.has(ext);
+    return TEXT_EXTENSIONS.has(ext) || isDotEnvPath(path);
   }
 
   async readPreview(path) {
@@ -121,6 +208,7 @@ export class FilesystemWatcher {
     let preview = null;
     if (exists && this.isTextFile(absPath)) {
       preview = await this.readPreview(absPath);
+      if (preview !== null) preview = redactSensitivePreview(preview);
     }
     const truncated = exists && size > MAX_PREVIEW_BYTES;
     const payload = {

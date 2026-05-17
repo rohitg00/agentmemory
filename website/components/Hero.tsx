@@ -1,10 +1,14 @@
 import { MemoryGraph } from "./MemoryGraph";
 import { GitHubStarButton } from "./GitHubStarButton";
+import { HeroNpxCommand } from "./HeroNpxCommand";
+import { FeaturedIn } from "./FeaturedIn";
 import { getProjectMeta } from "@/lib/meta";
+import { fetchRepoStats } from "@/lib/github";
 import styles from "./Hero.module.css";
 
-export function Hero() {
+export async function Hero() {
   const meta = getProjectMeta();
+  const stats = await fetchRepoStats();
   return (
     <section className={styles.hero} aria-labelledby="hero-title">
       <MemoryGraph />
@@ -22,14 +26,18 @@ export function Hero() {
           CAPTURE EVERY SESSION. RECALL IN MILLISECONDS. RUN ANYWHERE.
         </p>
         <div className={styles.cta}>
-          <a href="#install" className="btn btn--accent">
-            START IN 60 SECONDS
-          </a>
-          <a href="#live" className="btn btn--ghost">
-            SEE IT MOVE
-          </a>
-          <GitHubStarButton repo="rohitg00/agentmemory" />
+          <HeroNpxCommand />
+          <div className={styles.ctaSecondary}>
+            <a href="#live" className="btn btn--ghost">
+              SEE IT MOVE
+            </a>
+            <GitHubStarButton
+              repo="rohitg00/agentmemory"
+              initialStars={stats.stars > 0 ? stats.stars : undefined}
+            />
+          </div>
         </div>
+        <FeaturedIn compact />
       </div>
     </section>
   );

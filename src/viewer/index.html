@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>agentmemory viewer</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <!-- Removed Google Fonts <link> in #323: the viewer CSP is strict
        (default-src 'none', style-src 'unsafe-inline', font-src 'self')
        and external stylesheets from fonts.googleapis.com were blocked,
@@ -103,12 +104,21 @@
       align-items: center;
       justify-content: space-between;
       background: var(--bg);
+      flex: 0 0 auto;
+      position: relative;
+      z-index: 3;
     }
     .app-header .brand {
       display: flex;
       align-items: baseline;
       gap: 10px;
+      color: inherit;
+      text-decoration: none;
+      cursor: pointer;
     }
+    .app-header .brand:hover h1,
+    .app-header .brand:focus-visible h1 { color: var(--accent); }
+    .app-header .brand:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
     .app-header .brand h1 {
       font-size: 22px;
       color: var(--ink);
@@ -157,6 +167,9 @@
       border-bottom: 1px solid var(--border-light);
       background: var(--bg);
       overflow-x: auto;
+      flex: 0 0 auto;
+      position: relative;
+      z-index: 2;
     }
     .tab-bar button {
       background: none;
@@ -427,22 +440,46 @@
       margin-bottom: 12px;
       border-left: 3px solid var(--border-light);
       transition: box-shadow 0.15s;
+      min-width: 0;
+      max-width: 100%;
+      overflow: hidden;
     }
     .obs-card:hover { box-shadow: 3px 3px 0px 0px var(--border-light); }
     .obs-card.imp-high { border-left-color: var(--accent); }
     .obs-card.imp-med { border-left-color: var(--yellow); }
     .obs-card.imp-low { border-left-color: var(--green); }
     .obs-card .obs-head {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: start;
+      gap: 12px;
       margin-bottom: 6px;
+    }
+    .obs-card .obs-title-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      min-width: 0;
+    }
+    .obs-card .obs-meta {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex: 0 0 auto;
+      white-space: nowrap;
+    }
+    .obs-card .obs-type-icon {
+      flex: 0 0 auto;
     }
     .obs-card .obs-title {
       font-size: 14px;
       font-weight: 700;
       color: var(--ink);
       font-family: var(--font-display);
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
     .obs-card .obs-time {
       font-size: 10px;
@@ -454,6 +491,14 @@
       font-size: 13px;
       color: var(--ink-muted);
       margin-bottom: 6px;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+    .obs-card pre {
+      max-width: 100%;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      word-break: break-word;
     }
     .obs-card .obs-facts {
       margin: 6px 0 6px 16px;
@@ -470,6 +515,9 @@
       color: var(--blue);
       font-family: var(--font-mono);
       font-weight: 500;
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
     .tag.file-tag { border-color: var(--green); color: var(--green); }
 
@@ -638,7 +686,14 @@
     .empty-state .empty-link { color: var(--accent); text-decoration: underline; font-size: 13px; font-style: normal; }
 
     /* Feature flag banner system — compact collapsed by default */
-    .flag-banners { padding: 0 0 10px 0; }
+    .flag-banners {
+      padding: 0 12px 10px 12px;
+      background: var(--bg);
+      flex: 0 0 auto;
+      position: relative;
+      z-index: 1;
+    }
+    .flag-banners:empty { display: none; }
     button.flag-summary {
       display: flex; align-items: center; gap: 12px;
       padding: 8px 14px; border-radius: 4px;
@@ -649,6 +704,7 @@
       cursor: pointer; user-select: none;
       width: 100%; text-align: left;
       appearance: none;
+      flex: 1 1 auto;
     }
     button.flag-summary:hover,
     button.flag-summary:focus-visible { background: var(--bg-alt); outline: 2px solid var(--border); outline-offset: 1px; }
@@ -663,6 +719,8 @@
     .flag-list {
       display: none; flex-direction: column; gap: 6px;
       margin-top: 6px;
+      max-height: min(30vh, 260px);
+      overflow-y: auto;
     }
     .flag-list.open { display: flex; }
     .flag-banner {
@@ -685,11 +743,13 @@
       font-family: var(--font-mono); font-size: 10px; color: var(--ink);
       white-space: pre-wrap; word-break: break-all;
     }
-    .flag-banner .flag-close {
+    .flag-close {
       background: none; border: none; color: var(--ink-faint); cursor: pointer;
       font-size: 16px; line-height: 1; padding: 0 4px; font-family: inherit;
+      flex: 0 0 auto;
     }
-    .flag-banner .flag-close:hover { color: var(--ink); }
+    .flag-close:hover,
+    .flag-close:focus-visible { color: var(--ink); outline: 2px solid var(--border); outline-offset: 1px; }
 
     /* Viewer footer */
     .viewer-footer {
@@ -851,7 +911,7 @@
 
     .timeline-container { position: relative; padding: 20px 0; }
     .timeline-container::before { content: ''; position: absolute; left: 50%; top: 0; bottom: 0; width: 2px; background: var(--border-light); transform: translateX(-50%); }
-    .timeline-item { position: relative; width: 45%; margin-bottom: 20px; }
+    .timeline-item { position: relative; width: 45%; margin-bottom: 20px; min-width: 0; }
     .timeline-item.tl-left { margin-left: 0; margin-right: auto; text-align: right; padding-right: 30px; }
     .timeline-item.tl-right { margin-left: auto; margin-right: 0; padding-left: 30px; }
     .timeline-dot { position: absolute; width: 12px; height: 12px; border-radius: 50%; top: 16px; z-index: 1; border: 2px solid var(--bg); }
@@ -914,10 +974,10 @@
 </head>
 <body>
   <div class="app-header">
-    <div class="brand">
+    <a class="brand" href="#dashboard" data-tab-link="dashboard" aria-label="Open dashboard">
       <h1>agentmemory</h1>
       <span class="version">v__AGENTMEMORY_VERSION__</span>
-    </div>
+    </a>
     <div class="header-right">
       <span class="dateline" id="dateline"></span>
       <button id="theme-toggle" class="btn" style="font-size:9px;padding:3px 10px;letter-spacing:0.1em;margin-right:8px;" data-action="toggle-theme">DARK</button>
@@ -926,7 +986,7 @@
   </div>
 
   <div class="tab-bar" id="tab-bar">
-    <button class="active" data-tab="dashboard">Dashboard</button>
+    <button class="active" data-tab="dashboard" aria-current="page">Dashboard</button>
     <button data-tab="graph">Graph</button>
     <button data-tab="memories">Memories</button>
     <button data-tab="timeline">Timeline</button>
@@ -1042,6 +1102,7 @@
       task: '&#9745;', other: '&#128196;'
     };
     var CB_STATE_COLORS = { closed: 'badge-green', open: 'badge-red', 'half-open': 'badge-yellow' };
+    var TAB_IDS = ['dashboard', 'graph', 'memories', 'timeline', 'sessions', 'lessons', 'actions', 'crystals', 'audit', 'activity', 'profile', 'replay'];
 
     var state = {
       activeTab: 'dashboard',
@@ -1058,6 +1119,7 @@
       profile: { loaded: false, projects: [], selectedProject: '', data: null },
       replay: { loaded: false, sessions: [], selectedId: '', timeline: null, cursor: 0, playing: false, speed: 1, timer: null, startAt: 0, offsetAt: 0 },
       flagsConfig: null,
+      flagsDismissed: {},
       ws: null
     };
 
@@ -1152,6 +1214,23 @@
       html += '</div>';
       return html;
     }
+    function sessionId(s) {
+      return s && s.id !== undefined && s.id !== null ? String(s.id) : '';
+    }
+    function shortSessionId(s, n) {
+      var id = sessionId(s);
+      return id ? id.slice(0, n || 8) : '';
+    }
+    function sessionDisplayName(s) {
+      var project = s && s.project ? String(s.project).split('/').pop() : '';
+      if (project) return project;
+      return shortSessionId(s, 8) || 'Unknown session';
+    }
+    function sessionLabel(s) {
+      var id = shortSessionId(s, 8);
+      var name = sessionDisplayName(s);
+      return id ? name + ' (' + id + ')' : name + ' (missing id)';
+    }
     function debounce(fn, ms) {
       var t;
       return function() {
@@ -1193,17 +1272,52 @@
       });
     }
 
-    function switchTab(tab) {
+    function normalizeTab(tab) {
+      var normalized = String(tab || '').replace(/^#/, '').toLowerCase();
+      return TAB_IDS.indexOf(normalized) >= 0 ? normalized : 'dashboard';
+    }
+
+    function tabFromRoute() {
+      try {
+        return normalizeTab(decodeURIComponent(window.location.hash.slice(1)));
+      } catch (_) {
+        return 'dashboard';
+      }
+    }
+
+    function updateTabRoute(tab, replace) {
+      var target = '#' + tab;
+      if (window.location.hash === target) return;
+      if (replace) {
+        history.replaceState(null, '', target);
+      } else {
+        history.pushState(null, '', target);
+      }
+    }
+
+    function switchTab(tab, opts) {
+      opts = opts || {};
+      tab = normalizeTab(tab);
       if (state.activeTab === 'replay' && tab !== 'replay' && typeof stopReplayTimer === 'function') {
         stopReplayTimer();
       }
+      if (!opts.skipRoute) {
+        updateTabRoute(tab, !!opts.replaceRoute);
+      }
       state.activeTab = tab;
       document.querySelectorAll('.tab-bar button').forEach(function(b) {
-        b.classList.toggle('active', b.dataset.tab === tab);
+        var isActive = b.dataset.tab === tab;
+        b.classList.toggle('active', isActive);
+        if (isActive) {
+          b.setAttribute('aria-current', 'page');
+        } else {
+          b.removeAttribute('aria-current');
+        }
       });
       document.querySelectorAll('.view').forEach(function(v) {
         v.classList.toggle('active', v.id === 'view-' + tab);
       });
+      if (state.flagsConfig) renderFlagBanners(state.flagsConfig);
       loadTab(tab);
     }
 
@@ -1392,7 +1506,7 @@
         recent.forEach(function(s) {
           var statusBadge = s.status === 'active' ? 'badge-green' : s.status === 'completed' ? 'badge-blue' : 'badge-muted';
           var agentLabel = sessionAgentLabel(s) || sessionModel(s) || '-';
-          html += '<tr><td style="color:var(--ink);font-weight:500;">' + esc(s.project ? s.project.split('/').pop() : s.id.slice(0,8)) + '</td>';
+          html += '<tr><td style="color:var(--ink);font-weight:500;">' + esc(sessionDisplayName(s)) + '</td>';
           html += '<td style="font-family:var(--font-mono);font-size:11px;color:var(--ink-muted);">' + esc(truncate(agentLabel, 38)) + '</td>';
           html += '<td><span class="badge ' + statusBadge + '">' + esc(s.status) + '</span></td>';
           html += '<td style="color:var(--ink-muted);font-family:var(--font-mono);font-size:12px;">' + (s.observationCount || 0) + '</td>';
@@ -2307,7 +2421,8 @@
 
       if (sessions.length > 0 && !state.timeline.sessionId) {
         var sorted = sessions.slice().sort(function(a, b) { return (b.startedAt || '').localeCompare(a.startedAt || ''); });
-        state.timeline.sessionId = sorted[0].id;
+        var firstSelectable = sorted.find(function(s) { return sessionId(s); });
+        state.timeline.sessionId = firstSelectable ? sessionId(firstSelectable) : '';
       }
 
       renderTimelineToolbar(sessions);
@@ -2319,8 +2434,9 @@
       var html = '<div class="toolbar">';
       html += '<select id="tl-session"><option value="">Select session</option>';
       sessions.sort(function(a, b) { return (b.startedAt || '').localeCompare(a.startedAt || ''); }).forEach(function(s) {
-        var label = (s.project ? s.project.split('/').pop() : s.id.slice(0,8)) + ' (' + s.id.slice(0,8) + ')';
-        html += '<option value="' + esc(s.id) + '"' + (state.timeline.sessionId === s.id ? ' selected' : '') + '>' + esc(label) + '</option>';
+        var id = sessionId(s);
+        var disabled = id ? '' : ' disabled';
+        html += '<option value="' + esc(id) + '"' + (id && state.timeline.sessionId === id ? ' selected' : '') + disabled + '>' + esc(sessionLabel(s)) + '</option>';
       });
       html += '</select>';
       html += '<select id="tl-importance"><option value="0">All importance</option>';
@@ -2434,12 +2550,12 @@
 
         html += '<div class="obs-card imp-' + impClass + '" style="border-left-color:' + typeColor + ';text-align:left;">';
         html += '<div class="obs-head">';
-        html += '<div style="display:flex;align-items:center;gap:6px;">';
+        html += '<div class="obs-title-row">';
         html += '<span class="obs-type-icon">' + icon + '</span>';
-        html += '<span class="obs-title">' + esc(title) + '</span>';
+        html += '<span class="obs-title" title="' + esc(title) + '">' + esc(title) + '</span>';
         if (isRaw) html += '<span class="badge badge-muted" style="font-size:8px;margin-left:4px;">raw</span>';
         html += '</div>';
-        html += '<div style="display:flex;align-items:center;gap:8px;">';
+        html += '<div class="obs-meta">';
         if (isCompressed) html += '<span class="obs-importance imp-' + impVal + '" title="Importance: ' + impVal + '/10">' + impVal + '</span>';
         html += '<span class="obs-time">' + esc(shortTime(o.timestamp)) + '</span>';
         html += '</div></div>';
@@ -2536,8 +2652,8 @@
       var sorted = sessions.slice().sort(function(a, b) { return (b.startedAt || '').localeCompare(a.startedAt || ''); });
       var recentSessions = sorted.slice(0, 5);
 
-      var obsResults = await Promise.all(recentSessions.map(function(s) {
-        return apiGet('observations?sessionId=' + encodeURIComponent(s.id));
+      var obsResults = await Promise.all(recentSessions.filter(function(s) { return sessionId(s); }).map(function(s) {
+        return apiGet('observations?sessionId=' + encodeURIComponent(sessionId(s)));
       }));
       obsResults.forEach(function(r) {
         if (r && r.observations) allObs = allObs.concat(r.observations);
@@ -2680,16 +2796,17 @@
       } else {
         items.forEach(function(s) {
           var statusBadge = s.status === 'active' ? 'badge-green' : s.status === 'completed' ? 'badge-blue' : 'badge-muted';
-          var selected = state.sessions.selectedId === s.id;
-          html += '<div class="session-item' + (selected ? ' selected' : '') + '" data-action="select-session" data-session-id="' + esc(s.id) + '">';
-          html += '<div class="session-top"><span class="session-project">' + esc(s.project ? s.project.split('/').pop() : 'Unknown') + '</span>';
+          var id = sessionId(s);
+          var selected = id && state.sessions.selectedId === id;
+          html += '<div class="session-item' + (selected ? ' selected' : '') + '"' + (id ? ' data-action="select-session" data-session-id="' + esc(id) + '"' : '') + '>';
+          html += '<div class="session-top"><span class="session-project">' + esc(sessionDisplayName(s)) + '</span>';
           html += '<span class="badge ' + statusBadge + '">' + esc(s.status) + '</span></div>';
           var preview = s.firstPrompt || s.summary || '';
           if (preview) {
             html += '<div class="session-preview" style="font-size:13px;color:var(--ink);margin:4px 0;line-height:1.4;">' + esc(truncate(preview, 140)) + '</div>';
           }
           html += renderSessionIdentityBadges(s);
-          html += '<div class="session-meta">' + esc(s.id.slice(0, 12)) + ' &middot; ' + esc(formatTime(s.startedAt));
+          html += '<div class="session-meta">' + esc(shortSessionId(s, 12) || 'missing id') + ' &middot; ' + esc(formatTime(s.startedAt));
           html += ' &middot; ' + (s.observationCount || 0) + ' obs';
           html += '</div></div>';
         });
@@ -2709,12 +2826,13 @@
     async function renderSessionDetail() {
       var panel = document.getElementById('session-detail');
       if (!panel) return;
-      var s = state.sessions.items.find(function(x) { return x.id === state.sessions.selectedId; });
-      if (!s) { panel.innerHTML = ''; return; }
+      var s = state.sessions.items.find(function(x) { return sessionId(x) === state.sessions.selectedId; });
+      var id = sessionId(s);
+      if (!s || !id) { panel.innerHTML = ''; return; }
 
       panel.innerHTML = '<div class="detail-panel"><h3>Loading session details…</h3></div>';
 
-      var obsRes = await apiGet('observations?sessionId=' + encodeURIComponent(s.id));
+      var obsRes = await apiGet('observations?sessionId=' + encodeURIComponent(id));
       var obs = (obsRes && obsRes.observations) || [];
 
       var typeCounts = {};
@@ -2789,7 +2907,8 @@
 
       html += '<div class="card" style="margin-bottom:12px;"><div class="card-title">Metadata</div>';
       html += '<div style="font-size:12px;font-family:var(--font-mono);margin-top:8px;line-height:1.7;">';
-      html += '<div><span style="color:var(--ink-muted);">id:</span> ' + esc(s.id) + '</div>';
+      var detailId = sessionId(s);
+      html += '<div><span style="color:var(--ink-muted);">id:</span> ' + esc(detailId || 'missing id') + '</div>';
       html += '<div><span style="color:var(--ink-muted);">cwd:</span> ' + esc(s.cwd || '-') + '</div>';
       html += '<div><span style="color:var(--ink-muted);">started:</span> ' + esc(formatTime(s.startedAt)) + '</div>';
       if (s.endedAt) html += '<div><span style="color:var(--ink-muted);">ended:</span> ' + esc(formatTime(s.endedAt)) + '</div>';
@@ -2802,10 +2921,14 @@
       html += '</div></div>';
 
       html += '<div style="display:flex;gap:8px;">';
-      if (s.status === 'active') {
-        html += '<button class="btn btn-danger" data-action="end-session" data-session-id="' + esc(s.id) + '">End Session</button>';
+      if (detailId && s.status === 'active') {
+        html += '<button class="btn btn-danger" data-action="end-session" data-session-id="' + esc(detailId) + '">End Session</button>';
       }
-      html += '<button class="btn btn-primary" data-action="summarize-session" data-session-id="' + esc(s.id) + '">Summarize</button>';
+      if (detailId) {
+        html += '<button class="btn btn-primary" data-action="summarize-session" data-session-id="' + esc(detailId) + '">Summarize</button>';
+      } else {
+        html += '<button class="btn btn-primary" disabled>Summarize unavailable</button>';
+      }
       html += '</div></div>';
       panel.innerHTML = html;
     }
@@ -3441,26 +3564,39 @@
     }
 
     document.getElementById('tab-bar').addEventListener('click', function(e) {
-      if (e.target.tagName === 'BUTTON' && e.target.dataset.tab) {
-        switchTab(e.target.dataset.tab);
-      }
+      var btn = e.target instanceof Element ? e.target.closest('button[data-tab]') : null;
+      if (btn) switchTab(btn.dataset.tab);
     });
 
-    // --- Feature flag banners ---------------------------------------------
-    var FLAG_DISMISS_KEY = 'agentmemory.viewer.flags.dismissed.v1';
-    function loadDismissedFlags() {
-      try {
-        var raw = localStorage.getItem(FLAG_DISMISS_KEY);
-        return raw ? JSON.parse(raw) : {};
-      } catch (_) { return {}; }
+    document.querySelectorAll('[data-tab-link]').forEach(function(link) {
+      link.addEventListener('click', function(e) {
+        if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+        e.preventDefault();
+        switchTab(link.getAttribute('data-tab-link'));
+      });
+    });
+
+    function syncTabFromRoute() {
+      switchTab(tabFromRoute(), { replaceRoute: true });
     }
-    function saveDismissedFlags(d) {
-      try { localStorage.setItem(FLAG_DISMISS_KEY, JSON.stringify(d)); } catch (_) {}
+    window.addEventListener('hashchange', syncTabFromRoute);
+    window.addEventListener('popstate', syncTabFromRoute);
+
+    // --- Feature flag banners ---------------------------------------------
+    function getDismissedFlags() {
+      if (!state.flagsDismissed) state.flagsDismissed = {};
+      return state.flagsDismissed;
+    }
+    function dismissFlags(keys) {
+      var dismissed = getDismissedFlags();
+      keys.forEach(function(key) {
+        if (key) dismissed[key] = true;
+      });
     }
     function renderFlagBanners(cfg) {
       var host = document.getElementById('flag-banners');
       if (!host) return;
-      var dismissed = loadDismissedFlags();
+      var dismissed = getDismissedFlags();
       var banners = [];
       // Per-flag banner (only for off flags, affecting current tab or dashboard)
       (cfg.flags || []).forEach(function(f) {
@@ -3516,15 +3652,15 @@
         });
       };
       var listHtml = banners.map(function(b) {
-        return '<div class="flag-banner ' + b.kind + '" data-flag="' + b.dismissKey + '">' +
+        return '<div class="flag-banner ' + b.kind + '" data-flag="' + escHtml(b.dismissKey) + '">' +
           '<span class="flag-icon">' + b.icon + '</span>' +
           '<div class="flag-body">' +
-            '<div class="flag-title">' + b.title + ' <code>' + b.keyLabel + '</code></div>' +
+            '<div class="flag-title">' + escHtml(b.title) + ' <code>' + escHtml(b.keyLabel) + '</code></div>' +
             '<div class="flag-desc">' + escHtml(b.desc) + '</div>' +
             '<code class="flag-enable">' + escHtml(b.enable) + '</code>' +
-            (b.docs ? ' <a class="empty-link" href="' + b.docs + '" target="_blank" rel="noopener">Learn more &rarr;</a>' : '') +
+            (b.docs ? ' <a class="empty-link" href="' + escHtml(b.docs) + '" target="_blank" rel="noopener">Learn more &rarr;</a>' : '') +
           '</div>' +
-          '<button class="flag-close" data-dismiss-flag="' + b.dismissKey + '" aria-label="Dismiss">&times;</button>' +
+          '<button type="button" class="flag-close" data-dismiss-flag="' + escHtml(b.dismissKey) + '" aria-label="Dismiss">&times;</button>' +
         '</div>';
       }).join('');
       host.innerHTML = '<button type="button" class="flag-summary" data-action="toggle-flags" aria-expanded="' + (expanded ? 'true' : 'false') + '" aria-controls="flag-list">' +
@@ -3567,11 +3703,10 @@
       if (!(e.target instanceof Element)) return;
       var btn = e.target.closest('[data-dismiss-flag]');
       if (btn) {
+        e.preventDefault();
         e.stopPropagation();
         var key = btn.getAttribute('data-dismiss-flag');
-        var d = loadDismissedFlags();
-        d[key] = true;
-        saveDismissedFlags(d);
+        dismissFlags([key]);
         if (state.flagsConfig) renderFlagBanners(state.flagsConfig);
         return;
       }
@@ -3583,12 +3718,6 @@
         if (state.flagsConfig) renderFlagBanners(state.flagsConfig);
       }
     });
-    // Re-render banners when switching tabs so tab-specific banners appear
-    var _origSwitchTab = switchTab;
-    switchTab = function(tab) {
-      _origSwitchTab(tab);
-      if (state.flagsConfig) renderFlagBanners(state.flagsConfig);
-    };
     fetchFlags();
     document.addEventListener('click', function(e) {
       if (!(e.target instanceof Element)) return;
@@ -3708,8 +3837,9 @@
       var el = document.getElementById('view-replay');
       var sessions = state.replay.sessions || [];
       var options = '<option value="">— pick a session —</option>' + sessions.map(function(s) {
-        var label = (s.project || 'unknown') + ' · ' + (s.id || '').slice(0, 8) + ' · ' + (s.observationCount || 0) + ' obs';
-        return '<option value="' + esc(s.id) + '"' + (s.id === state.replay.selectedId ? ' selected' : '') + '>' + esc(label) + '</option>';
+        var id = sessionId(s);
+        var label = sessionDisplayName(s) + ' · ' + (shortSessionId(s, 8) || 'missing id') + ' · ' + (s.observationCount || 0) + ' obs';
+        return '<option value="' + esc(id) + '"' + (id && id === state.replay.selectedId ? ' selected' : '') + (id ? '' : ' disabled') + '>' + esc(label) + '</option>';
       }).join('');
 
       var tl = state.replay.timeline;
@@ -3899,7 +4029,7 @@
       else if (e.key === 'ArrowRight') { e.preventDefault(); stepReplay(1); }
     });
 
-    loadTab('dashboard');
+    switchTab(tabFromRoute(), { replaceRoute: true });
     connectWs();
     startDashboardAutoRefresh();
   </script>

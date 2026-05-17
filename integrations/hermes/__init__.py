@@ -96,8 +96,17 @@ _preload_agentmemory_dotenv()
 
 
 def _validate_url(base: str) -> bool:
-    parsed = urlparse(base)
-    return parsed.scheme in ("http", "https")
+    if not base:
+        return False
+    try:
+        parsed = urlparse(base)
+        # .port raises ValueError on a non-numeric or out-of-range port
+        _ = parsed.port
+    except ValueError:
+        return False
+    if parsed.scheme not in ("http", "https"):
+        return False
+    return bool(parsed.hostname)
 
 
 def _uses_plaintext_bearer_auth(base: str, secret: str = "") -> bool:
@@ -167,15 +176,9 @@ class AgentMemoryProvider(MemoryProvider):
         return "agentmemory"
 
     def is_available(self) -> bool:
+        # Hermes contract: no network calls in is_available.
         base = os.environ.get("AGENTMEMORY_URL", DEFAULT_BASE_URL)
-        if not _validate_url(base):
-            return False
-        try:
-            req = Request(f"{base}/agentmemory/health", method="GET")
-            with urlopen(req, timeout=2):
-                return True
-        except Exception:
-            return False
+        return _validate_url(base)
 
     def initialize(self, session_id: str, **kwargs: Any) -> None:
         self._base = os.environ.get("AGENTMEMORY_URL", DEFAULT_BASE_URL)
@@ -344,8 +347,8 @@ class AgentMemoryProvider(MemoryProvider):
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "data": {
                 "tool_name": "conversation",
-                "input": user[:500],
-                "output": assistant[:2000],
+                "tool_input": user[:500],
+                "tool_output": assistant[:2000],
             },
         })
 

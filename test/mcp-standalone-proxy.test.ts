@@ -75,6 +75,43 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
     expect(body.results[0].id).toBe("m1");
   });
 
+  it("proxies memory_governance_delete to the DELETE REST endpoint", async () => {
+    const calls: Array<{ url: string; method: string; body?: unknown }> = [];
+    installFetch((url, init) => {
+      const method = init?.method || "GET";
+      if (url.endsWith("/agentmemory/livez")) return new Response("ok", { status: 200 });
+      calls.push({
+        url,
+        method,
+        body: init?.body ? JSON.parse(init.body as string) : undefined,
+      });
+      if (url.endsWith("/agentmemory/governance/memories") && method === "DELETE") {
+        return new Response(JSON.stringify({ success: true, deleted: 2 }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return new Response("method not allowed", { status: 405, statusText: "Method Not Allowed" });
+    });
+
+    const res = await handleToolCall("memory_governance_delete", {
+      memoryIds: "mem_1, mem_2",
+      reason: "cleanup stale test data",
+    });
+
+    expect(JSON.parse(res.content[0].text)).toEqual({ success: true, deleted: 2 });
+    expect(calls).toEqual([
+      {
+        url: `${BASE}/agentmemory/governance/memories`,
+        method: "DELETE",
+        body: {
+          memoryIds: ["mem_1", "mem_2"],
+          reason: "cleanup stale test data",
+        },
+      },
+    ]);
+  });
+
   it("local fallback returns the same shape as proxy for memory_smart_search", async () => {
     installFetch(() => {
       throw new Error("ECONNREFUSED");
