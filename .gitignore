@@ -13,6 +13,8 @@ dist/
 plugin/scripts/*.map
 plugin/scripts/*.d.mts
 data/
+data-*/
+agentmemory-debug/
 .gstack/
 
 # Lock files — never commit (see feedback_no_lockfiles memory)
