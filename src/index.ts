@@ -11,6 +11,7 @@ import {
   isAutoCompressEnabled,
   isConsolidationEnabled,
   isContextInjectionEnabled,
+  isDropStaleIndexEnabled,
 } from "./config.js";
 import {
   createProvider,
@@ -376,8 +377,7 @@ async function main() {
         .map((m) => `${m.obsId} (dim=${m.dim})`)
         .join(", ");
       const distinct = Array.from(seenDimensions).sort((a, b) => a - b).join(", ");
-      const dropStale =
-        process.env["AGENTMEMORY_DROP_STALE_INDEX"] === "true";
+      const dropStale = isDropStaleIndexEnabled();
       if (dropStale) {
         console.warn(
           `[agentmemory] Persisted vector index has ${mismatches.length} of ` +
