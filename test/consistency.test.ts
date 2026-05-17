@@ -74,6 +74,26 @@ describe("Consistency checks", () => {
     }
   });
 
+  it("tools-registry export list stays in sync with MCP handler switch cases", () => {
+    const tools = getAllTools();
+    const server = readText("src/mcp/server.ts");
+
+    const missing = tools
+      .map((t) => t.name)
+      .filter((toolName) => !server.includes(`case \"${toolName}\"`));
+
+    expect(
+      missing,
+      `Missing MCP handler switch cases for tools: ${missing.join(", ")}`,
+    ).toEqual([]);
+  });
+
+  it("REST API path count in index.ts boot log remains accurate", () => {
+    const index = readText("src/index.ts");
+    const expected = `REST API: ${restEndpointCount} endpoints`;
+    expect(index).toContain(expected);
+  });
+
   it("every host-path bind mount in docker-compose.yml is in the published files list (#136)", () => {
     // Regression guard for #136: docker-compose.yml references
     // ./iii-config.docker.yaml as a read-only bind mount, but the file
