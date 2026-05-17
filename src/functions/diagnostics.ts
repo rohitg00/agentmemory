@@ -374,12 +374,21 @@ export function registerDiagnosticsFunction(sdk: ISdk, kv: StateKV): void {
         const live = lessons.filter((l) => !l.deleted);
         let lessonIssues = 0;
         for (const l of live) {
-          if (l.confidence < 0 || l.confidence > 1) {
+          // Number.isFinite rejects NaN / Infinity / non-numbers; a
+          // corrupted row passing those would silently survive the < / >
+          // range check (e.g. NaN < 0 is false, NaN > 1 is false, so the
+          // bad row would be "healthy") and skew memory_lesson_recall's
+          // scoring downstream. Surface as warning.
+          if (
+            !Number.isFinite(l.confidence) ||
+            l.confidence < 0 ||
+            l.confidence > 1
+          ) {
             checks.push({
               name: `lesson-bad-confidence:${l.id}`,
               category: "lessons",
               status: "warn",
-              message: `Lesson ${l.id} has confidence ${l.confidence} (expected 0..1)`,
+              message: `Lesson ${l.id} has confidence ${l.confidence} (expected finite number in 0..1)`,
               fixable: false,
             });
             lessonIssues++;
@@ -400,7 +409,10 @@ export function registerDiagnosticsFunction(sdk: ISdk, kv: StateKV): void {
         const summaries = await kv.list<SessionSummary>(KV.summaries);
         let summaryIssues = 0;
         for (const s of summaries) {
-          if (!s.title || !s.title.trim()) {
+          // typeof guard before .trim() — a corrupted row with title=null
+          // or title=42 would otherwise throw and abort the whole diagnose
+          // run before later categories get checked.
+          if (typeof s.title !== "string" || s.title.trim().length === 0) {
             checks.push({
               name: `summary-missing-title:${s.sessionId}`,
               category: "summaries",
@@ -426,12 +438,16 @@ export function registerDiagnosticsFunction(sdk: ISdk, kv: StateKV): void {
         const semantic = await kv.list<SemanticMemory>(KV.semantic);
         let semanticIssues = 0;
         for (const s of semantic) {
-          if (s.confidence < 0 || s.confidence > 1) {
+          if (
+            !Number.isFinite(s.confidence) ||
+            s.confidence < 0 ||
+            s.confidence > 1
+          ) {
             checks.push({
               name: `semantic-bad-confidence:${s.id}`,
               category: "semantic",
               status: "warn",
-              message: `Semantic fact ${s.id} has confidence ${s.confidence} (expected 0..1)`,
+              message: `Semantic fact ${s.id} has confidence ${s.confidence} (expected finite number in 0..1)`,
               fixable: false,
             });
             semanticIssues++;
@@ -478,7 +494,7 @@ export function registerDiagnosticsFunction(sdk: ISdk, kv: StateKV): void {
         const crystals = await kv.list<Crystal>(KV.crystals);
         let crystalIssues = 0;
         for (const c of crystals) {
-          if (!c.narrative || !c.narrative.trim()) {
+          if (typeof c.narrative !== "string" || c.narrative.trim().length === 0) {
             checks.push({
               name: `crystal-empty-narrative:${c.id}`,
               category: "crystals",
@@ -504,12 +520,16 @@ export function registerDiagnosticsFunction(sdk: ISdk, kv: StateKV): void {
         const insights = await kv.list<Insight>(KV.insights);
         let insightIssues = 0;
         for (const i of insights) {
-          if (i.confidence < 0 || i.confidence > 1) {
+          if (
+            !Number.isFinite(i.confidence) ||
+            i.confidence < 0 ||
+            i.confidence > 1
+          ) {
             checks.push({
               name: `insight-bad-confidence:${i.id}`,
               category: "insights",
               status: "warn",
-              message: `Insight ${i.id} has confidence ${i.confidence} (expected 0..1)`,
+              message: `Insight ${i.id} has confidence ${i.confidence} (expected finite number in 0..1)`,
               fixable: false,
             });
             insightIssues++;
