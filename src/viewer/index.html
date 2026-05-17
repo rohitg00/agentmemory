@@ -103,6 +103,7 @@
       align-items: center;
       justify-content: space-between;
       background: var(--bg);
+      flex-shrink: 0;
     }
     .app-header .brand {
       display: flex;
@@ -157,6 +158,7 @@
       border-bottom: 1px solid var(--border-light);
       background: var(--bg);
       overflow-x: auto;
+      flex-shrink: 0;
     }
     .tab-bar button {
       background: none;
@@ -353,10 +355,13 @@
     .btn-primary { background: var(--ink); color: var(--bg); border-color: var(--ink); }
     .btn-primary:hover { background: var(--ink-secondary); box-shadow: 3px 3px 0px 0px var(--ink-muted); }
 
+    #view-graph {
+      padding: 0;
+      overflow: hidden;
+    }
     .graph-container {
       display: flex;
-      height: calc(100vh - 130px);
-      margin: -24px;
+      height: 100%;
       border-top: 1px solid var(--border-light);
     }
     .graph-canvas-wrap {
@@ -598,7 +603,7 @@
     .empty-state .empty-link { color: var(--accent); text-decoration: underline; font-size: 13px; font-style: normal; }
 
     /* Feature flag banner system — compact collapsed by default */
-    .flag-banners { padding: 0 0 10px 0; }
+    .flag-banners { padding: 0 0 10px 0; flex-shrink: 0; }
     button.flag-summary {
       display: flex; align-items: center; gap: 12px;
       padding: 8px 14px; border-radius: 4px;
@@ -658,6 +663,7 @@
       display: flex; align-items: center; gap: 10px;
       font-family: var(--font-ui); font-size: 11px;
       color: var(--ink-faint); letter-spacing: 0.05em;
+      flex-shrink: 0;
     }
     .viewer-footer a { color: var(--ink-muted); text-decoration: none; }
     .viewer-footer a:hover { color: var(--ink); text-decoration: underline; }
