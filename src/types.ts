@@ -73,6 +73,7 @@ export interface Memory {
   content: string;
   concepts: string[];
   files: string[];
+  tags?: string[];
   sessionIds: string[];
   strength: number;
   version: number;

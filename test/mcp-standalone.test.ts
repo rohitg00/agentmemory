@@ -222,6 +222,26 @@ describe("handleToolCall", () => {
     expect(parsed.results[0].content).toBe("TypeScript is great");
   });
 
+  it("memory_save stores sessionId and tags in local fallback memories", async () => {
+    const kv = new InMemoryKV();
+    const result = await handleToolCall(
+      "memory_save",
+      {
+        content: "Session-tagged standalone memory",
+        sessionId: "ses_local",
+        tags: "ops, local",
+      },
+      kv,
+    );
+    const saved = JSON.parse(result.content[0].text);
+    const mem = await kv.get<{ sessionIds: string[]; tags: string[] }>(
+      "mem:memories",
+      saved.saved,
+    );
+    expect(mem?.sessionIds).toEqual(["ses_local"]);
+    expect(mem?.tags).toEqual(["ops", "local"]);
+  });
+
   it("memory_save accepts concepts/files as arrays (plugin skill format, #139)", async () => {
     const kv = new InMemoryKV();
     const result = await handleToolCall(

@@ -9,6 +9,18 @@ import { recordAudit } from "./audit.js";
 import { getSearchIndex, vectorIndexAddGuarded } from "./search.js";
 import { logger } from "../logger.js";
 
+function normalizeStringList(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => (typeof item === "string" ? item.trim() : ""))
+      .filter(Boolean);
+  }
+  if (typeof value === "string") {
+    return value.split(",").map((item) => item.trim()).filter(Boolean);
+  }
+  return [];
+}
+
 export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
   sdk.registerFunction("mem::remember", 
     async (data: {
@@ -16,6 +28,9 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
       type?: string;
       concepts?: string[];
       files?: string[];
+      sessionId?: string;
+      sessionIds?: string[];
+      tags?: string[];
       ttlDays?: number;
       sourceObservationIds?: string[];
     }) => {
@@ -35,6 +50,12 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
       if (data.sourceObservationIds && !Array.isArray(data.sourceObservationIds)) {
         return { success: false, error: "sourceObservationIds must be an array" };
       }
+      if (data.sessionIds && !Array.isArray(data.sessionIds)) {
+        return { success: false, error: "sessionIds must be an array" };
+      }
+      if (data.tags && !Array.isArray(data.tags)) {
+        return { success: false, error: "tags must be an array" };
+      }
       const validTypes = new Set([
         "pattern",
         "preference",
@@ -48,6 +69,13 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
         : "fact";
 
       const now = new Date().toISOString();
+      const sessionIds = [
+        ...(typeof data.sessionId === "string" && data.sessionId.trim()
+          ? [data.sessionId.trim()]
+          : []),
+        ...normalizeStringList(data.sessionIds),
+      ].filter((id, index, all) => all.indexOf(id) === index);
+      const tags = normalizeStringList(data.tags);
 
       return withKeyedLock("mem:remember", async () => {
         const existingMemories = await kv.list<Memory>(KV.memories);
@@ -78,7 +106,8 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
           content: data.content,
           concepts: data.concepts || [],
           files: data.files || [],
-          sessionIds: [],
+          tags,
+          sessionIds,
           strength: 7,
           version: supersededId ? supersededVersion + 1 : 1,
           parentId: supersededId,
@@ -98,6 +127,19 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
           await kv.set(KV.memories, supersededMemory.id, supersededMemory);
         }
         await kv.set(KV.memories, memory.id, memory);
+
+        await recordAudit(kv, "remember", "mem::remember", [memory.id], {
+          type: memory.type,
+          sessionIds: memory.sessionIds,
+          tags,
+          concepts: memory.concepts,
+          files: memory.files,
+          sourceObservationIds: memory.sourceObservationIds || [],
+          supersededMemoryId: supersededId,
+          version: memory.version,
+          ttlDays: data.ttlDays,
+          forgetAfter: memory.forgetAfter,
+        });
 
         // Without this, mem::remember persists the row but the BM25
         // index never sees it, so memory_smart_search and memory_recall
