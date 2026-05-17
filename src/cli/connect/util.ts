@@ -12,7 +12,7 @@ import * as p from "@clack/prompts";
 
 export const AGENTMEMORY_MCP_BLOCK = {
   command: "npx",
-  args: ["-y", "@agentmemory/mcp"],
+  args: ["-y", "@agentmemory/mcp@0.9.17"],
   env: {
     AGENTMEMORY_URL: "http://localhost:3111",
   },

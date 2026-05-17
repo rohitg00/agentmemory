@@ -105,7 +105,7 @@ describe("agentmemory connect — claude-code adapter (mock filesystem)", () => 
 
     const config = JSON.parse(readFileSync(join(tmpHome, ".claude.json"), "utf-8"));
     expect(config.mcpServers.agentmemory.command).toBe("npx");
-    expect(config.mcpServers.agentmemory.args).toContain("@agentmemory/mcp");
+    expect(config.mcpServers.agentmemory.args).toContain("@agentmemory/mcp@0.9.17");
     expect(config.mcpServers.other.command).toBe("x");
 
     const second = await a.install({ dryRun: false, force: false });
