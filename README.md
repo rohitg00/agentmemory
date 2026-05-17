@@ -1189,6 +1189,14 @@ npm run test:integration  # API tests (requires running services)
 
 **Prerequisites:** Node.js >= 20, [iii-engine](https://iii.dev/docs) or Docker
 
+<h2 id="ecosystem"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/section-license.svg"><img src="assets/tags/section-license.svg" alt="Ecosystem" height="32" /></picture></h2>
+
+Tools and projects built around agentmemory:
+
+| Tool | Description | Author |
+|------|-------------|--------|
+| [OpenClaw Memory Profiler](https://github.com/jingchang0623-crypto/openclaw-memory-profiler) | Analyze Agent memory storage, detect duplicates, generate optimization reports | [妙趣AI](https://miaoquai.com) |
+
 <h2 id="license"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/section-license.svg"><img src="assets/tags/section-license.svg" alt="License" height="32" /></picture></h2>
 
 [Apache-2.0](LICENSE)
