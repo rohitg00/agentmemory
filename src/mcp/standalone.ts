@@ -91,7 +91,12 @@ interface Validated {
   limit?: number;
   memoryIds?: string[];
   reason?: string;
+  format?: string;
+  tokenBudget?: number;
+  expandIds?: string[];
 }
+
+const ALLOWED_FORMATS = new Set(["full", "compact", "narrative"]);
 
 function validate(toolName: string, args: Record<string, unknown>): Validated {
   if (!IMPLEMENTED_TOOLS.has(toolName)) {
@@ -110,7 +115,36 @@ function validate(toolName: string, args: Record<string, unknown>): Validated {
       v.files = normalizeList(args["files"]);
       return v;
     }
-    case "memory_recall":
+    case "memory_recall": {
+      const query = args["query"];
+      if (typeof query !== "string" || !query.trim()) {
+        throw new Error("query is required");
+      }
+      v.query = query.trim();
+      v.limit = parseLimit(args["limit"]);
+      // format: default "full"; the tool schema in tools-registry.ts advertises
+      // this param but the validator previously dropped it (issue #440), so
+      // memory_recall always hit smart-search and returned title-only rows.
+      const rawFormat = args["format"];
+      if (rawFormat !== undefined && typeof rawFormat !== "string") {
+        throw new Error("format must be a string");
+      }
+      const fmt = typeof rawFormat === "string" && rawFormat.trim().length > 0
+        ? rawFormat.trim().toLowerCase()
+        : "full";
+      if (!ALLOWED_FORMATS.has(fmt)) {
+        throw new Error("format must be one of: full, compact, narrative");
+      }
+      v.format = fmt;
+      const tb = args["token_budget"];
+      if (tb !== undefined) {
+        if (typeof tb !== "number" || !Number.isInteger(tb) || tb < 1) {
+          throw new Error("token_budget must be a positive integer");
+        }
+        v.tokenBudget = tb;
+      }
+      return v;
+    }
     case "memory_smart_search": {
       const query = args["query"];
       if (typeof query !== "string" || !query.trim()) {
@@ -118,6 +152,7 @@ function validate(toolName: string, args: Record<string, unknown>): Validated {
       }
       v.query = query.trim();
       v.limit = parseLimit(args["limit"]);
+      v.expandIds = normalizeList(args["expandIds"]);
       return v;
     }
     case "memory_sessions": {
@@ -159,11 +194,32 @@ async function handleProxy(
       });
       return textResponse(result);
     }
-    case "memory_recall":
+    case "memory_recall": {
+      // Hit /agentmemory/search (which honors format/token_budget and returns
+      // full observation bodies), not /agentmemory/smart-search (which is
+      // compact-by-design). Pre-fix both shims pointed at smart-search so
+      // memory_recall callers only ever saw titles + scores. (issue #440)
+      const body: Record<string, unknown> = {
+        query: v.query,
+        limit: v.limit,
+        format: v.format,
+      };
+      if (v.tokenBudget !== undefined) body.token_budget = v.tokenBudget;
+      const result = await handle.call("/agentmemory/search", {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+      return textResponse(result, true);
+    }
     case "memory_smart_search": {
+      const body: Record<string, unknown> = {
+        query: v.query,
+        limit: v.limit,
+      };
+      if ((v.expandIds || []).length > 0) body.expandIds = v.expandIds;
       const result = await handle.call("/agentmemory/smart-search", {
         method: "POST",
-        body: JSON.stringify({ query: v.query, limit: v.limit }),
+        body: JSON.stringify(body),
       });
       return textResponse(result, true);
     }

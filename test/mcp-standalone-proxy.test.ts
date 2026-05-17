@@ -75,6 +75,166 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
     expect(body.results[0].id).toBe("m1");
   });
 
+  it("proxies memory_recall to POST /agentmemory/search (NOT smart-search) with format (#440)", async () => {
+    const calls: Array<{ url: string; method: string; body?: unknown }> = [];
+    installFetch((url, init) => {
+      if (url.endsWith("/agentmemory/livez")) return new Response("ok", { status: 200 });
+      calls.push({
+        url,
+        method: init?.method || "GET",
+        body: init?.body ? JSON.parse(init.body as string) : undefined,
+      });
+      if (url.endsWith("/agentmemory/search")) {
+        return new Response(
+          JSON.stringify({
+            format: "full",
+            results: [
+              {
+                observation: {
+                  id: "obs1",
+                  title: "Chatterbox",
+                  facts: ["fact text"],
+                  narrative: "what happened",
+                  concepts: ["audio", "tts"],
+                },
+              },
+            ],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      return new Response("not found", { status: 404 });
+    });
+
+    const res = await handleToolCall("memory_recall", {
+      query: "chatterbox",
+      limit: 5,
+      format: "full",
+    });
+    const body = JSON.parse(res.content[0].text);
+    expect(body.format).toBe("full");
+    expect(body.results[0].observation.facts).toEqual(["fact text"]);
+    const searchCall = calls.find((c) => c.url.endsWith("/agentmemory/search"));
+    expect(searchCall).toBeDefined();
+    expect(searchCall?.body).toEqual({ query: "chatterbox", limit: 5, format: "full" });
+    // Regression guard: must NOT hit smart-search for memory_recall.
+    expect(calls.find((c) => c.url.endsWith("/agentmemory/smart-search"))).toBeUndefined();
+  });
+
+  it("memory_recall format defaults to 'full' when omitted (#440)", async () => {
+    const calls: Array<{ url: string; body?: Record<string, unknown> }> = [];
+    installFetch((url, init) => {
+      if (url.endsWith("/agentmemory/livez")) return new Response("ok", { status: 200 });
+      if (url.endsWith("/agentmemory/search")) {
+        calls.push({
+          url,
+          body: init?.body ? JSON.parse(init.body as string) : undefined,
+        });
+        return new Response(JSON.stringify({ format: "full", results: [] }), {
+          status: 200,
+        });
+      }
+      return new Response("", { status: 404 });
+    });
+    await handleToolCall("memory_recall", { query: "default-fmt" });
+    expect(calls).toHaveLength(1);
+    expect(calls[0].body?.["format"]).toBe("full");
+    expect(calls[0].body).not.toHaveProperty("token_budget");
+  });
+
+  it("memory_recall passes token_budget through to /agentmemory/search (#440)", async () => {
+    const calls: Array<{ body?: Record<string, unknown> }> = [];
+    installFetch((url, init) => {
+      if (url.endsWith("/agentmemory/livez")) return new Response("ok", { status: 200 });
+      if (url.endsWith("/agentmemory/search")) {
+        calls.push({ body: init?.body ? JSON.parse(init.body as string) : undefined });
+        return new Response(JSON.stringify({ format: "compact", results: [] }), {
+          status: 200,
+        });
+      }
+      return new Response("", { status: 404 });
+    });
+    await handleToolCall("memory_recall", {
+      query: "trim-me",
+      format: "compact",
+      token_budget: 1024,
+    });
+    expect(calls[0].body).toEqual({
+      query: "trim-me",
+      limit: 10,
+      format: "compact",
+      token_budget: 1024,
+    });
+  });
+
+  it("memory_recall rejects unknown format with a descriptive error (#440)", async () => {
+    installFetch(() => new Response("ok", { status: 200 }));
+    await expect(
+      handleToolCall("memory_recall", { query: "x", format: "bogus" }),
+    ).rejects.toThrow(/format must be one of: full, compact, narrative/);
+  });
+
+  it("memory_recall rejects bad token_budget early (#440)", async () => {
+    installFetch(() => new Response("ok", { status: 200 }));
+    await expect(
+      handleToolCall("memory_recall", { query: "x", token_budget: -3 }),
+    ).rejects.toThrow(/token_budget must be a positive integer/);
+    await expect(
+      handleToolCall("memory_recall", { query: "x", token_budget: 1.5 }),
+    ).rejects.toThrow(/token_budget must be a positive integer/);
+    await expect(
+      handleToolCall("memory_recall", { query: "x", token_budget: "100" as unknown as number }),
+    ).rejects.toThrow(/token_budget must be a positive integer/);
+  });
+
+  it("memory_smart_search forwards expandIds to /agentmemory/smart-search (#440)", async () => {
+    const calls: Array<{ body?: Record<string, unknown> }> = [];
+    installFetch((url, init) => {
+      if (url.endsWith("/agentmemory/livez")) return new Response("ok", { status: 200 });
+      if (url.endsWith("/agentmemory/smart-search")) {
+        calls.push({ body: init?.body ? JSON.parse(init.body as string) : undefined });
+        return new Response(
+          JSON.stringify({ mode: "expanded", results: [{ id: "obs-a" }, { id: "obs-b" }] }),
+          { status: 200 },
+        );
+      }
+      return new Response("", { status: 404 });
+    });
+    // Array form
+    await handleToolCall("memory_smart_search", {
+      query: "expand-me",
+      expandIds: ["obs-a", "obs-b"],
+    });
+    expect(calls[0].body).toEqual({
+      query: "expand-me",
+      limit: 10,
+      expandIds: ["obs-a", "obs-b"],
+    });
+    // CSV-string form (mirrors memory_governance_delete CSV ergonomics)
+    await handleToolCall("memory_smart_search", {
+      query: "expand-me",
+      expandIds: "obs-c, obs-d",
+    });
+    expect(calls[1].body?.["expandIds"]).toEqual(["obs-c", "obs-d"]);
+  });
+
+  it("memory_smart_search omits expandIds from payload when empty (#440)", async () => {
+    const calls: Array<{ body?: Record<string, unknown> }> = [];
+    installFetch((url, init) => {
+      if (url.endsWith("/agentmemory/livez")) return new Response("ok", { status: 200 });
+      if (url.endsWith("/agentmemory/smart-search")) {
+        calls.push({ body: init?.body ? JSON.parse(init.body as string) : undefined });
+        return new Response(JSON.stringify({ mode: "compact", results: [] }), {
+          status: 200,
+        });
+      }
+      return new Response("", { status: 404 });
+    });
+    await handleToolCall("memory_smart_search", { query: "no-expand" });
+    expect(calls[0].body).toEqual({ query: "no-expand", limit: 10 });
+    expect(calls[0].body).not.toHaveProperty("expandIds");
+  });
+
   it("proxies memory_governance_delete to the DELETE REST endpoint", async () => {
     const calls: Array<{ url: string; method: string; body?: unknown }> = [];
     installFetch((url, init) => {
