@@ -64,17 +64,26 @@ for bin in curl jq; do
   command -v "$bin" >/dev/null || { echo "missing dependency: $bin" >&2; exit 1; }
 done
 
+# Curl timeout profiles. Metadata reads (livez, sessions list, observations
+# pull for debug dumps) should fail fast and retry transient blips. The LLM
+# work calls (summarize, consolidate) intentionally have no --retry and a
+# wide --max-time: each call can legitimately take minutes for chunked
+# summarize on large sessions, and retrying a half-finished LLM job is
+# expensive both in dollars and in duplicated server-side work.
+META_CURL_OPTS=(--connect-timeout 10 --max-time 30 --retry 2 --retry-delay 1)
+WORK_CURL_OPTS=(--connect-timeout 10 --max-time 1800)
+
 echo "agentmemory backfill — server: $URL"
 [[ "$DRY_RUN" == 1 ]] && echo "DRY RUN: no POSTs will be made."
 
 # --- liveness ---
-if ! curl -fsS "$URL/agentmemory/livez" >/dev/null; then
+if ! curl -fsS "${META_CURL_OPTS[@]}" "$URL/agentmemory/livez" >/dev/null; then
   echo "server not reachable at $URL (try: npx @agentmemory/agentmemory)" >&2
   exit 1
 fi
 
 # --- collect session ids ---
-sessions_json="$(curl -fsS "$URL/agentmemory/sessions")"
+sessions_json="$(curl -fsS "${META_CURL_OPTS[@]}" "$URL/agentmemory/sessions")"
 filter='.sessions[] | select(.status=="completed")'
 if [[ -n "$ONLY_TAG" ]]; then
   filter+=" | select((.tags // []) | index(\"$ONLY_TAG\"))"
@@ -148,13 +157,23 @@ fi
 
 dump_failure() {
   local id="$1" obs="$2" resp="$3"
-  local file="$DEBUG_DIR/${id}.json"
+  # Replace anything outside [A-Za-z0-9._-] with `_` before joining with
+  # DEBUG_DIR. Session IDs from the API are UUIDs in practice, but the
+  # server doesn't enforce that — a hostile or buggy id containing `/` or
+  # `..` would otherwise escape the debug directory.
+  local safe_id
+  safe_id="$(printf '%s' "$id" | tr -c 'A-Za-z0-9._-' '_')"
+  local file="$DEBUG_DIR/${safe_id}.json"
   # Pull the raw observations (what would have gone into the prompt) so the
   # operator can reconstruct the upstream payload locally. We also compute
   # narrative size stats so size-related rejections are immediately visible.
   # Stream observations through stdin (avoids exec-arg overflow on
   # multi-thousand-obs sessions — macOS argv ceiling is ~256k).
-  curl -fsS "$URL/agentmemory/observations?sessionId=$id" \
+  # `--get --data-urlencode` percent-encodes the session id so special
+  # characters can't corrupt the query string.
+  curl -fsS "${META_CURL_OPTS[@]}" --get \
+       --data-urlencode "sessionId=$id" \
+       "$URL/agentmemory/observations" \
     | jq \
         --arg id "$id" \
         --argjson obsCount "$obs" \
@@ -185,11 +204,20 @@ for row in "${rows[@]}"; do
   obs="$(cut -f2 <<<"$row")"
 
   body="$(jq -nc --arg id "$id" '{sessionId:$id}')"
-  resp="$(curl -sS -X POST "$URL/agentmemory/summarize" \
+  resp="$(curl -sS "${WORK_CURL_OPTS[@]}" -X POST "$URL/agentmemory/summarize" \
     -H 'content-type: application/json' --data "$body" || echo '{"success":false,"error":"curl_failed"}')"
-  status="$(jq -r '.success // false' <<<"$resp")"
-  err="$(jq -r '.error // ""' <<<"$resp")"
-  title="$(jq -r '.summary.title // ""' <<<"$resp")"
+  # iii's HTTP layer occasionally returns non-JSON (HTML 5xx, empty body
+  # on timeout, etc.). Validate before parsing so `set -e` doesn't abort
+  # the whole backfill loop on a single bad response.
+  if jq -e . >/dev/null 2>&1 <<<"$resp"; then
+    status="$(jq -r '.success // false' <<<"$resp")"
+    err="$(jq -r '.error // ""' <<<"$resp")"
+    title="$(jq -r '.summary.title // ""' <<<"$resp")"
+  else
+    status="false"
+    err="invalid_json_response"
+    title=""
+  fi
 
   if [[ "$status" == "true" ]]; then
     ok=$(( ok + 1 ))
@@ -220,6 +248,12 @@ fi
 
 echo
 echo "running consolidate-pipeline …"
-resp="$(curl -sS -X POST "$URL/agentmemory/consolidate-pipeline" \
-  -H 'content-type: application/json' --data '{}')"
-echo "$resp" | jq .
+resp="$(curl -sS "${WORK_CURL_OPTS[@]}" -X POST "$URL/agentmemory/consolidate-pipeline" \
+  -H 'content-type: application/json' --data '{}' || echo '{"success":false,"error":"curl_failed"}')"
+if jq -e . >/dev/null 2>&1 <<<"$resp"; then
+  echo "$resp" | jq .
+else
+  echo "consolidate-pipeline returned non-JSON (likely a timeout or upstream error):"
+  printf '%s\n' "$resp" | head -c 500
+  echo
+fi

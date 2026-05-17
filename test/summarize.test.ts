@@ -25,7 +25,7 @@ vi.mock("../src/eval/quality.js", () => ({
   scoreSummary: () => 100,
 }));
 
-vi.mock("./audit.js", () => ({
+vi.mock("../src/functions/audit.js", () => ({
   safeAudit: vi.fn(),
 }));
 
