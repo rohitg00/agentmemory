@@ -75,6 +75,11 @@ fly proxy 3113:3113 --app "$APP"
 viewer's bearer token still has to ride a loopback connection on your
 laptop — the v0.9.12 plaintext-bearer guard stays satisfied.
 
+The deploy image sets `AGENTMEMORY_VIEWER_HOST=::` so the viewer listens
+on the machine's `fly-local-6pn` WireGuard interface as well as loopback.
+Without that override the viewer would bind to `127.0.0.1` only and
+`fly proxy` would reset the connection.
+
 ## Rotate the HMAC secret
 
 ```bash

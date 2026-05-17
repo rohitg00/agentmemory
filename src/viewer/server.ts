@@ -13,6 +13,10 @@ const ALLOWED_ORIGINS = (
   .split(",")
   .map((o) => o.trim());
 
+export function resolveViewerHost(): string {
+  return process.env.AGENTMEMORY_VIEWER_HOST?.trim() || "127.0.0.1";
+}
+
 function corsHeaders(req: IncomingMessage): Record<string, string> {
   const origin = req.headers.origin || "";
   const allowed = ALLOWED_ORIGINS.includes(origin)
@@ -117,9 +121,10 @@ export function startViewerServer(
 
   let attempt = 0;
   let currentPort = requestedPort;
+  const host = resolveViewerHost();
 
   const tryListen = (): void => {
-    server.listen(currentPort, "127.0.0.1");
+    server.listen(currentPort, host);
   };
 
   server.on("listening", () => {
