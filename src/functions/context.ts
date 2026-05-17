@@ -6,6 +6,7 @@ import type {
   ContextBlock,
   ProjectProfile,
   MemorySlot,
+  Lesson,
 } from "../types.js";
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
@@ -39,13 +40,14 @@ export function registerContextFunction(
       const budget = data.budget || tokenBudget;
       const blocks: ContextBlock[] = [];
 
-      const [pinnedSlots, profile] = await Promise.all([
+      const [pinnedSlots, profile, lessons] = await Promise.all([
         isSlotsEnabled()
           ? listPinnedSlots(kv).catch(() => [] as MemorySlot[])
           : Promise.resolve([] as MemorySlot[]),
         kv
           .get<ProjectProfile>(KV.profiles, data.project)
           .catch(() => null),
+        kv.list<Lesson>(KV.lessons).catch(() => [] as Lesson[]),
       ]);
 
       const slotContent = renderPinnedContext(pinnedSlots);
@@ -92,6 +94,42 @@ export function registerContextFunction(
             recency: new Date(profile.updatedAt).getTime(),
           });
         }
+      }
+
+      // Lessons — closes the loop opened by mem::lesson-save / mem::reflect.
+      // Without this block, lessons sit in KV and only surface when the agent
+      // thinks to call memory_lesson_recall. Ranking puts project-scoped
+      // lessons ahead of global ones, then weights by confidence; we cap at
+      // 10 to keep the block bounded since the outer token-budget loop
+      // below will drop the whole block if it doesn't fit. #457.
+      const relevantLessons = lessons
+        .filter((l) => !l.deleted && (!l.project || l.project === data.project))
+        .sort((a, b) => {
+          const scoreA = (a.project === data.project ? 1.5 : 1) * a.confidence;
+          const scoreB = (b.project === data.project ? 1.5 : 1) * b.confidence;
+          return scoreB - scoreA;
+        })
+        .slice(0, 10);
+
+      if (relevantLessons.length > 0) {
+        const items = relevantLessons
+          .map(
+            (l) =>
+              `- (${l.confidence.toFixed(2)}) ${l.content}${l.context ? ` — ${l.context}` : ""}`,
+          )
+          .join("\n");
+        const lessonsContent = `## Lessons Learned\n${items}`;
+        const mostRecent = relevantLessons.reduce((acc, l) => {
+          const t = new Date(l.lastReinforcedAt || l.updatedAt).getTime();
+          return t > acc ? t : acc;
+        }, 0);
+        blocks.push({
+          type: "memory",
+          content: lessonsContent,
+          tokens: estimateTokens(lessonsContent),
+          recency: mostRecent,
+          sourceIds: relevantLessons.map((l) => l.id),
+        });
       }
 
       const allSessions = await kv.list<Session>(KV.sessions);
