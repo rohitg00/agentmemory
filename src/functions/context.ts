@@ -8,6 +8,7 @@ import type {
   MemorySlot,
   Lesson,
 } from "../types.js";
+import { basename } from "node:path";
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { recordAccessBatch } from "./access-tracker.js";
@@ -20,6 +21,18 @@ import {
 
 function estimateTokens(text: string): number {
   return Math.ceil(text.length / 3);
+}
+
+// Hooks fixed in #lesson-visibility-pt2 now send `project` as a basename
+// (matching how mem::replay::import-jsonl and humans calling
+// memory_lesson_save tag their records). Older sessions registered via
+// previous hook versions still have the full cwd stored as `project`,
+// and existing lesson records may use either form. Match on both so the
+// context block isn't silently empty for mixed-vintage stores.
+function projectMatches(project: string | undefined, requested: string): boolean {
+  if (!project) return false;
+  if (project === requested) return true;
+  return basename(project) === basename(requested);
 }
 
 function escapeXmlAttr(s: string): string {
@@ -103,10 +116,15 @@ export function registerContextFunction(
       // 10 to keep the block bounded since the outer token-budget loop
       // below will drop the whole block if it doesn't fit. #457.
       const relevantLessons = lessons
-        .filter((l) => !l.deleted && (!l.project || l.project === data.project))
+        .filter(
+          (l) =>
+            !l.deleted && (!l.project || projectMatches(l.project, data.project)),
+        )
         .sort((a, b) => {
-          const scoreA = (a.project === data.project ? 1.5 : 1) * a.confidence;
-          const scoreB = (b.project === data.project ? 1.5 : 1) * b.confidence;
+          const scoreA =
+            (projectMatches(a.project, data.project) ? 1.5 : 1) * a.confidence;
+          const scoreB =
+            (projectMatches(b.project, data.project) ? 1.5 : 1) * b.confidence;
           return scoreB - scoreA;
         })
         .slice(0, 10);
@@ -134,7 +152,10 @@ export function registerContextFunction(
 
       const allSessions = await kv.list<Session>(KV.sessions);
       const sessions = allSessions
-        .filter((s) => s.project === data.project && s.id !== data.sessionId)
+        .filter(
+          (s) =>
+            projectMatches(s.project, data.project) && s.id !== data.sessionId,
+        )
         .sort(
           (a, b) =>
             new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime(),

@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+import { resolveProject } from "./_project.js";
+
 function isSdkChildContext(payload: unknown): boolean {
   if (process.env["AGENTMEMORY_SDK_CHILD"] === "1") return true;
   if (!payload || typeof payload !== "object") return false;
@@ -32,6 +34,8 @@ async function main() {
   if (data.notification_type !== "permission_prompt") return;
 
   const sessionId = (data.session_id as string) || "unknown";
+  const cwd = (data.cwd as string) || process.cwd();
+  const project = resolveProject(cwd);
 
   try {
     await fetch(`${REST_URL}/agentmemory/observe`, {
@@ -40,8 +44,8 @@ async function main() {
       body: JSON.stringify({
         hookType: "notification",
         sessionId,
-        project: data.cwd || process.cwd(),
-        cwd: data.cwd || process.cwd(),
+        project,
+        cwd,
         timestamp: new Date().toISOString(),
         data: {
           notification_type: data.notification_type,

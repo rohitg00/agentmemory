@@ -223,4 +223,61 @@ describe("mem::context — lessons auto-injection (#457)", () => {
       "use TaskCreate for >5-file work — when working on multi-file refactors",
     );
   });
+
+  describe("project basename fallback (#lesson-visibility-pt2)", () => {
+    it("matches lessons tagged with basename when caller passes the full path", async () => {
+      // Existing data shape: import-jsonl + manual lesson saves use the
+      // basename, while the old session-start hook sent the full cwd path.
+      // Verify mem::context surfaces lessons across both vintages.
+      await seedLesson(kv, {
+        id: "lesson_basename",
+        content: "lesson tagged with basename only",
+        project: "gitops-assistant",
+        confidence: 0.9,
+      });
+
+      const result = await handler({
+        sessionId: "ses_x",
+        project: "/Users/me/work/rootlease/gitops-assistant",
+      });
+
+      expect(result.context).toContain("lesson tagged with basename only");
+    });
+
+    it("matches lessons tagged with full path when caller passes the basename", async () => {
+      await seedLesson(kv, {
+        id: "lesson_fullpath",
+        content: "lesson tagged with full path",
+        project: "/Users/me/work/rootlease/gitops-assistant",
+        confidence: 0.9,
+      });
+
+      const result = await handler({
+        sessionId: "ses_x",
+        project: "gitops-assistant",
+      });
+
+      expect(result.context).toContain("lesson tagged with full path");
+    });
+
+    it("DOES match same-basename projects across different paths (documented behaviour)", async () => {
+      // Cross-store collision intended: /work/foo and /personal/foo share
+      // a basename and the resolver treats them as the same project. This
+      // test documents that behavior so a future tightening (e.g. exact
+      // path required when both forms exist) is a known break.
+      await seedLesson(kv, {
+        id: "lesson_a",
+        content: "lesson for project foo",
+        project: "foo",
+        confidence: 0.9,
+      });
+
+      const result = await handler({
+        sessionId: "ses_x",
+        project: "/wherever/foo",
+      });
+
+      expect(result.context).toContain("lesson for project foo");
+    });
+  });
 });
