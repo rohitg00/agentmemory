@@ -6,7 +6,7 @@ vi.mock("../src/logger.js", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
-import { getAllTools } from "../src/mcp/tools-registry.js";
+import { getAllTools, getVisibleTools } from "../src/mcp/tools-registry.js";
 import { VERSION } from "../src/version.js";
 
 const ROOT = join(import.meta.dirname, "..");
@@ -21,7 +21,12 @@ function countRestApiEndpoints(): number {
 }
 
 describe("Consistency checks", () => {
+  const originalToolMode = process.env["AGENTMEMORY_TOOLS"];
+  delete process.env["AGENTMEMORY_TOOLS"];
   const toolCount = getAllTools().length;
+  const defaultToolCount = getVisibleTools().length;
+  if (originalToolMode === undefined) delete process.env["AGENTMEMORY_TOOLS"];
+  else process.env["AGENTMEMORY_TOOLS"] = originalToolMode;
   const restEndpointCount = countRestApiEndpoints();
 
   it("version.ts matches package.json", () => {
@@ -46,6 +51,31 @@ describe("Consistency checks", () => {
     expect(readme).toMatch(toolCountPattern);
     const toolResourcePattern = new RegExp(`${toolCount}\\s+tools,\\s+6\\s+resources`);
     expect(readme).toMatch(toolResourcePattern);
+  });
+
+  it("integration READMEs mention the current MCP tool count", () => {
+    for (const path of ["integrations/hermes/README.md", "integrations/openclaw/README.md"]) {
+      const text = readText(path);
+      expect(text).toContain(`${toolCount} MCP tools`);
+      expect(text).not.toMatch(/43 MCP tools|43_tools/);
+    }
+  });
+
+  it("env example documents the current default and full MCP tool counts", () => {
+    const envExample = readText(".env.example");
+    expect(envExample).toContain(`core (${defaultToolCount} tools, default) | all (${toolCount} tools)`);
+  });
+
+  it("agent instructions current stats match package version and test scale", () => {
+    const agents = readText("AGENTS.md");
+    expect(agents).toContain(`## Current Stats (v${VERSION})`);
+    expect(agents).toContain("1000+ tests");
+  });
+
+  it("README test-count docs reflect the current test scale", () => {
+    const readme = readText("README.md");
+    expect(readme).toContain("1000+ tests");
+    expect(readme).not.toContain("950+ tests");
   });
 
   it("documented REST endpoint counts match registered API paths", () => {
