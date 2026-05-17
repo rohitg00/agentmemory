@@ -195,7 +195,10 @@ describe("Diagnostics Functions", () => {
       };
 
       expect(result.success).toBe(true);
-      expect(result.summary.pass).toBe(8);
+      // 14 = 8 original (actions, leases, sentinels, sketches, signals,
+      // sessions, memories, mesh) + 6 added in #lesson-visibility
+      // (lessons, summaries, semantic, procedural, crystals, insights).
+      expect(result.summary.pass).toBe(14);
       expect(result.summary.warn).toBe(0);
       expect(result.summary.fail).toBe(0);
       expect(result.summary.fixable).toBe(0);
@@ -634,6 +637,129 @@ describe("Diagnostics Functions", () => {
 
       const unchanged = await kv.get<Action>(KV.actions, blocked.id);
       expect(unchanged!.status).toBe("blocked");
+    });
+  });
+
+  describe("per-store tally categories (#lesson-visibility)", () => {
+    it("lessons category: passes with valid live lessons + ignores tombstoned", async () => {
+      await kv.set(KV.lessons, "lsn_live", {
+        id: "lsn_live", content: "x", context: "", confidence: 0.8,
+        reinforcements: 0, source: "manual", sourceIds: [], tags: [],
+        createdAt: "", updatedAt: "", decayRate: 0.05,
+      });
+      await kv.set(KV.lessons, "lsn_tomb", {
+        id: "lsn_tomb", content: "x", context: "", confidence: 0.5,
+        reinforcements: 0, source: "manual", sourceIds: [], tags: [],
+        createdAt: "", updatedAt: "", decayRate: 0.05, deleted: true,
+      });
+
+      const result = (await sdk.trigger("mem::diagnose", {
+        categories: ["lessons"],
+      })) as { checks: DiagnosticCheck[] };
+
+      const ok = result.checks.find((c) => c.name === "lessons-ok");
+      expect(ok?.status).toBe("pass");
+      expect(ok?.message).toMatch(/All 1 lessons.*1 tombstoned/);
+    });
+
+    it("lessons category: warns on out-of-range confidence", async () => {
+      await kv.set(KV.lessons, "lsn_bad", {
+        id: "lsn_bad", content: "x", context: "", confidence: 1.5,
+        reinforcements: 0, source: "manual", sourceIds: [], tags: [],
+        createdAt: "", updatedAt: "", decayRate: 0.05,
+      });
+
+      const result = (await sdk.trigger("mem::diagnose", {
+        categories: ["lessons"],
+      })) as { checks: DiagnosticCheck[] };
+
+      const warn = result.checks.find((c) => c.name.startsWith("lesson-bad-confidence:"));
+      expect(warn?.status).toBe("warn");
+    });
+
+    it("summaries category: warns on missing title", async () => {
+      await kv.set(KV.summaries, "ses_1", {
+        sessionId: "ses_1", project: "p", createdAt: "", title: "",
+        narrative: "n", keyDecisions: [], filesModified: [], concepts: [],
+        observationCount: 1,
+      });
+
+      const result = (await sdk.trigger("mem::diagnose", {
+        categories: ["summaries"],
+      })) as { checks: DiagnosticCheck[] };
+
+      const warn = result.checks.find((c) => c.name.startsWith("summary-missing-title:"));
+      expect(warn?.status).toBe("warn");
+    });
+
+    it("procedural category: warns on empty steps", async () => {
+      await kv.set(KV.procedural, "proc_1", {
+        id: "proc_1", name: "noop", steps: [], triggerCondition: "x",
+        frequency: 1, sourceSessionIds: [], strength: 0.5,
+        createdAt: "", updatedAt: "",
+      });
+
+      const result = (await sdk.trigger("mem::diagnose", {
+        categories: ["procedural"],
+      })) as { checks: DiagnosticCheck[] };
+
+      const warn = result.checks.find((c) => c.name.startsWith("procedural-empty-steps:"));
+      expect(warn?.status).toBe("warn");
+    });
+
+    it("crystals category: warns on empty narrative", async () => {
+      await kv.set(KV.crystals, "cry_1", {
+        id: "cry_1", narrative: "", keyOutcomes: [], filesAffected: [],
+        lessons: [], sourceActionIds: [], createdAt: "",
+      });
+
+      const result = (await sdk.trigger("mem::diagnose", {
+        categories: ["crystals"],
+      })) as { checks: DiagnosticCheck[] };
+
+      const warn = result.checks.find((c) => c.name.startsWith("crystal-empty-narrative:"));
+      expect(warn?.status).toBe("warn");
+    });
+
+    it("insights category: warns on out-of-range confidence", async () => {
+      await kv.set(KV.insights, "ins_bad", {
+        id: "ins_bad", title: "t", content: "c", confidence: -0.1,
+        reinforcements: 0, sourceConceptCluster: [], sourceMemoryIds: [],
+        sourceLessonIds: [], sourceCrystalIds: [], tags: [],
+        createdAt: "", updatedAt: "", decayRate: 0.05,
+      });
+
+      const result = (await sdk.trigger("mem::diagnose", {
+        categories: ["insights"],
+      })) as { checks: DiagnosticCheck[] };
+
+      const warn = result.checks.find((c) => c.name.startsWith("insight-bad-confidence:"));
+      expect(warn?.status).toBe("warn");
+    });
+
+    it("semantic category: warns on out-of-range confidence", async () => {
+      await kv.set(KV.semantic, "sem_bad", {
+        id: "sem_bad", fact: "f", confidence: 2.0, sourceSessionIds: [],
+        sourceMemoryIds: [], accessCount: 0, lastAccessedAt: "",
+        strength: 0, createdAt: "", updatedAt: "",
+      });
+
+      const result = (await sdk.trigger("mem::diagnose", {
+        categories: ["semantic"],
+      })) as { checks: DiagnosticCheck[] };
+
+      const warn = result.checks.find((c) => c.name.startsWith("semantic-bad-confidence:"));
+      expect(warn?.status).toBe("warn");
+    });
+
+    it("categories filter accepts new categories and skips others", async () => {
+      const result = (await sdk.trigger("mem::diagnose", {
+        categories: ["lessons", "summaries"],
+      })) as { checks: DiagnosticCheck[] };
+
+      expect(result.checks.every((c) => c.category === "lessons" || c.category === "summaries")).toBe(true);
+      expect(result.checks.some((c) => c.category === "lessons")).toBe(true);
+      expect(result.checks.some((c) => c.category === "summaries")).toBe(true);
     });
   });
 });

@@ -252,6 +252,16 @@ export interface CompactSearchResult {
   timestamp: string;
 }
 
+export interface CompactLessonResult {
+  lessonId: string;
+  content: string;
+  confidence: number;
+  score: number;
+  createdAt: string;
+  project?: string;
+  tags: string[];
+}
+
 export interface TimelineEntry {
   observation: CompressedObservation;
   sessionId: string;
