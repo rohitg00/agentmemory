@@ -183,7 +183,13 @@ function resolveTimeout(): number {
 
 function parsePositiveInt(raw: string | null | undefined): number | undefined {
   if (!raw) return undefined;
-  const n = parseInt(raw, 10);
+  const trimmed = raw.trim();
+  // Reject malformed values like "30ms" or "1_000" — parseInt would
+  // silently return 30 / 1, swallowing user typos as valid timeouts.
+  // The regex enforces pure digits (no sign, no trailing units, no
+  // separators) before we hand off to Number.
+  if (!/^\d+$/.test(trimmed)) return undefined;
+  const n = Number(trimmed);
   return Number.isFinite(n) && n > 0 ? n : undefined;
 }
 

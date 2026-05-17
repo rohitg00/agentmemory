@@ -257,4 +257,22 @@ describe("OpenAIProvider timeout env precedence (#446)", () => {
     const ms = (provider as unknown as { timeoutMs: number }).timeoutMs;
     expect(ms).toBe(60_000);
   });
+
+  it("rejects malformed env values like '30ms' or '1_000' (CodeRabbit catch)", () => {
+    // parseInt would have silently returned 30 / 1 for these typos —
+    // strict parse now rejects them and the provider falls back to
+    // the 60 000 ms default so a malformed env doesn't masquerade as
+    // an aggressive bound.
+    // Whitespace-only padding (" 30 ") is legitimate env-var handling — we
+    // trim before validating. The cases below are real typos parseInt would
+    // silently swallow.
+    for (const bad of ["30ms", "1_000", "60s", "30abc", "-30", "0"]) {
+      process.env["OPENAI_TIMEOUT_MS"] = bad;
+      const provider = new OpenAIProvider("test-key", "gpt-4o-mini", 1024);
+      const ms = (provider as unknown as { timeoutMs: number }).timeoutMs;
+      expect(ms).toBe(60_000);
+      delete process.env["OPENAI_TIMEOUT_MS"];
+    }
+  });
 });
+
