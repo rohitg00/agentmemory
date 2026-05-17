@@ -16,10 +16,31 @@ describe("viewer document security", () => {
 
     expect(rendered.csp).toContain("script-src 'nonce-");
     expect(rendered.csp).toContain("script-src-attr 'none'");
-    expect(rendered.csp).toContain("img-src 'self' data:");
+    expect(rendered.csp).toContain("img-src 'self'");
     expect(rendered.csp).not.toContain("script-src 'unsafe-inline'");
     expect(rendered.html).toContain("<script nonce=\"");
     expect(rendered.html).not.toContain("__AGENTMEMORY_VIEWER_NONCE__");
+  });
+
+  it("does not loosen img-src with bare data: URI allowance (#447)", () => {
+    // #313 added `data:` so an inline-SVG favicon could load. #447 reverts
+    // that by self-hosting the favicon at /favicon.svg — `data:` would
+    // also allow any data:image/png;base64,... and (in some browsers)
+    // data:text/html;base64,..., which the viewer never needs.
+    const rendered = renderViewerDocument();
+    expect(rendered.found).toBe(true);
+    if (!rendered.found) return;
+
+    const directives = rendered.csp.split(";").map((d) => d.trim());
+    const imgSrc = directives.find((d) => d.startsWith("img-src"));
+    expect(imgSrc).toBeDefined();
+    expect(imgSrc).toBe("img-src 'self'");
+    expect(imgSrc).not.toContain("data:");
+
+    // Favicon link in the HTML must reference the self-hosted file, not
+    // an inline data: URI — that's what lets the CSP stay tight.
+    expect(rendered.html).toContain('href="/favicon.svg"');
+    expect(rendered.html).not.toContain("data:image/svg+xml");
   });
 
   it("does not contain inline DOM event handlers", () => {
@@ -133,7 +154,7 @@ describe("viewer request handler DNS rebinding defence (e2e)", () => {
     port: number,
     hostHeader: string,
     pathname = "/agentmemory/livez",
-  ): Promise<{ status: number; body: string }> {
+  ): Promise<{ status: number; body: string; headers: Record<string, string | string[] | undefined> }> {
     return new Promise((resolve, reject) => {
       const req = httpRequest(
         {
@@ -149,7 +170,11 @@ describe("viewer request handler DNS rebinding defence (e2e)", () => {
             body += chunk.toString();
           });
           res.on("end", () => {
-            resolve({ status: res.statusCode ?? 0, body });
+            resolve({
+              status: res.statusCode ?? 0,
+              body,
+              headers: res.headers,
+            });
           });
         },
       );
@@ -183,5 +208,19 @@ describe("viewer request handler DNS rebinding defence (e2e)", () => {
     if (res.status === 200) {
       expect(res.body).toContain("agentmemory viewer");
     }
+  });
+
+  it("serves /favicon.svg with image/svg+xml so the tight CSP can drop data: (#447)", async () => {
+    const { port } = await spinUpViewer();
+    const res = await request(port, `localhost:${port}`, "/favicon.svg");
+    expect(res.status).toBe(200);
+    expect(res.headers["content-type"]).toBe("image/svg+xml");
+    expect(res.headers["cache-control"]).toBe("public, max-age=3600");
+    // SVG payload must actually be SVG, not the proxied REST error body.
+    expect(res.body).toMatch(/^<svg\b/);
+    expect(res.body).toContain("</svg>");
+    // Sanity-check the artwork: rounded dark tile + green "AM" lettering.
+    expect(res.body).toContain('fill="#111111"');
+    expect(res.body).toContain(">AM<");
   });
 });

@@ -4,7 +4,29 @@ import {
   type IncomingMessage,
   type ServerResponse,
 } from "node:http";
+import { readFileSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { renderViewerDocument } from "./document.js";
+
+// Self-host the viewer favicon at /favicon.svg instead of an inline
+// data: URI so the viewer CSP can stay tight at `img-src 'self'`.
+// Mirrors loadViewerTemplate() in document.ts — same candidate paths so
+// it resolves both from source (vitest) and from dist/ (npm run start).
+function loadViewerFavicon(): Buffer | null {
+  const base = dirname(fileURLToPath(import.meta.url));
+  const candidates = [
+    join(base, "..", "src", "viewer", "favicon.svg"),
+    join(base, "..", "viewer", "favicon.svg"),
+    join(base, "viewer", "favicon.svg"),
+  ];
+  for (const path of candidates) {
+    try {
+      return readFileSync(path);
+    } catch {}
+  }
+  return null;
+}
 
 const ALLOWED_ORIGINS = (
   process.env.VIEWER_ALLOWED_ORIGINS ||
@@ -171,6 +193,21 @@ export function startViewerServer(
       }
       res.writeHead(404, { "Content-Type": "text/plain" });
       res.end("viewer not found");
+      return;
+    }
+
+    if (method === "GET" && pathname === "/favicon.svg") {
+      const favicon = loadViewerFavicon();
+      if (favicon) {
+        res.writeHead(200, {
+          "Content-Type": "image/svg+xml",
+          "Cache-Control": "public, max-age=3600",
+        });
+        res.end(favicon);
+        return;
+      }
+      res.writeHead(404, { "Content-Type": "text/plain" });
+      res.end("favicon not found");
       return;
     }
 
