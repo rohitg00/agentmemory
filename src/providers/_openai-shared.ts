@@ -104,13 +104,15 @@ export function buildEmbeddingUrl(
   baseUrl: string,
   isAzure: boolean,
   azureApiVersion: string,
+  embeddingPath?: string,
 ): string {
+  const route = embeddingPath ?? "/embeddings";
   if (isAzure) {
     return azureStyleOf(baseUrl) === "legacy"
-      ? legacyAzureUrl(baseUrl, "/embeddings", azureApiVersion)
-      : v1AzureUrl(baseUrl, "/embeddings");
+      ? legacyAzureUrl(baseUrl, route, azureApiVersion)
+      : v1AzureUrl(baseUrl, route);
   }
-  return `${baseUrl}/v1/embeddings`;
+  return embeddingPath ? `${baseUrl}${route}` : `${baseUrl}/v1/embeddings`;
 }
 
 // Azure key-auth uses `api-key: <KEY>`; standard OpenAI-compatible
