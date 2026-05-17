@@ -378,11 +378,23 @@ export async function handleToolsList(): Promise<{ tools: unknown[] }> {
           `[@agentmemory/mcp] tools/list: remote response shape: ${shape}\n`,
         );
       }
-      if (remote && Array.isArray(remote.tools)) {
+if (remote && Array.isArray(remote.tools)) {
         if (debug) {
           process.stderr.write(
             `[@agentmemory/mcp] tools/list: returning ${remote.tools.length} tools from server\n`,
           );
+        }
+        const allTools = getAllTools();
+        if (
+          process.env["AGENTMEMORY_TOOLS"] === "all" &&
+          remote.tools.length < allTools.length
+        ) {
+          if (debug) {
+            process.stderr.write(
+              `[@agentmemory/mcp] tools/list: AGENTMEMORY_TOOLS=all override — returning ${allTools.length} tools instead of ${remote.tools.length} from server\n`,
+            );
+          }
+          return { tools: allTools };
         }
         return { tools: remote.tools };
       }
@@ -396,7 +408,10 @@ export async function handleToolsList(): Promise<{ tools: unknown[] }> {
       invalidateHandle();
     }
   }
-  const fallback = getAllTools().filter((t) => IMPLEMENTED_TOOLS.has(t.name));
+const fallback =
+    process.env["AGENTMEMORY_TOOLS"] === "all"
+      ? getAllTools()
+      : getAllTools().filter((t) => IMPLEMENTED_TOOLS.has(t.name));
   if (debug) {
     process.stderr.write(
       `[@agentmemory/mcp] tools/list: returning ${fallback.length} local fallback tools (${fallback.map((t) => t.name).join(",")})\n`,
