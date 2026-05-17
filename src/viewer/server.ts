@@ -176,7 +176,10 @@ async function proxyToRestApi(
     ? pathname
     : `/agentmemory${pathname.startsWith("/") ? pathname : "/" + pathname}`;
 
-  const upstreamUrl = `http://127.0.0.1:${restPort}${upstreamPath}${qs ? "?" + qs : ""}`;
+  const upstreamBase = (
+    process.env["AGENTMEMORY_URL"] || `http://127.0.0.1:${restPort}`
+  ).replace(/\/+$/, "");
+  const upstreamUrl = `${upstreamBase}${upstreamPath}${qs ? "?" + qs : ""}`;
 
   const headers: Record<string, string> = {};
   if (secret) {
