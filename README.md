@@ -1058,7 +1058,10 @@ Create `~/.agentmemory/.env`:
 #                                          # api-key header + api-version query param.
 # OPENAI_API_VERSION=2024-08-01-preview    # Optional: Azure api-version query param
 # OPENAI_MODEL=gpt-4o-mini                 # Optional: default model
-# OPENAI_TIMEOUT_MS=60000                  # Optional: outbound fetch timeout (default 60s)
+# OPENAI_TIMEOUT_MS=60000                  # Optional: OpenAI-scoped alias for the outbound fetch
+#                                          # timeout. Takes precedence over AGENTMEMORY_LLM_TIMEOUT_MS
+#                                          # for back-compat with v0.9.17. New configs should
+#                                          # prefer the global AGENTMEMORY_LLM_TIMEOUT_MS below.
 # OPENAI_REASONING_EFFORT=none             # Optional: "low" | "medium" | "high" | "none"
 #                                          # Honored only by OpenAI's reasoning models (o1, o3,
 #                                          # gpt-*-reasoning) and providers that mirror that
@@ -1083,7 +1086,11 @@ Create `~/.agentmemory/.env`:
 # Outbound LLM / embedding timeout
 # AGENTMEMORY_LLM_TIMEOUT_MS=60000       # Default: 60 000 ms (60 s). Applies to every
                                           # raw-fetch provider (Gemini, OpenRouter, MiniMax,
-                                          # OpenAI/Cohere/Voyage/OpenRouter embedding).
+                                          # OpenAI LLM, OpenAI/Cohere/Voyage/OpenRouter
+                                          # embedding). For the OpenAI LLM path, the
+                                          # OpenAI-scoped OPENAI_TIMEOUT_MS alias (above)
+                                          # takes precedence when set, for back-compat
+                                          # with v0.9.17.
                                           # Increase for slow networks or large batch calls;
                                           # decrease to fail-fast on rate-limit holds.
 
