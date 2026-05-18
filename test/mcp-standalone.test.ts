@@ -222,6 +222,52 @@ describe("handleToolCall", () => {
     expect(parsed.results[0].content).toBe("TypeScript is great");
   });
 
+  it("memory_recall preserves a safe format option in local fallback (#440)", async () => {
+    const kv = new InMemoryKV();
+    await handleToolCall("memory_save", { content: "TypeScript is great" }, kv);
+
+    const result = await handleToolCall(
+      "memory_recall",
+      { query: "typescript", format: "full" },
+      kv,
+    );
+
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.format).toBe("full");
+    expect(parsed.mode).toBe("full");
+    expect(parsed.results[0].content).toBe("TypeScript is great");
+  });
+
+  it("memory_recall and memory_smart_search forward safe format to smart-search proxy (#440)", async () => {
+    const proxyProbe = vi.fn(async () => ({ ok: true, status: 200 }));
+    setLivezProbe(proxyProbe);
+
+    const proxyFetch = vi.fn(async () =>
+      new Response(JSON.stringify({ results: [] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    (globalThis as { fetch: typeof fetch }).fetch = proxyFetch as unknown as typeof fetch;
+
+    for (const toolName of ["memory_recall", "memory_smart_search"]) {
+      resetHandleForTests();
+      setLivezProbe(proxyProbe);
+      await handleToolCall(
+        toolName,
+        { query: "typescript", limit: 3, format: "full" },
+        new InMemoryKV(),
+      );
+    }
+
+    expect(proxyFetch).toHaveBeenCalledTimes(2);
+    for (const [, init] of proxyFetch.mock.calls) {
+      expect((init as RequestInit).method).toBe("POST");
+      const body = JSON.parse((init as RequestInit).body as string);
+      expect(body).toEqual({ query: "typescript", limit: 3, format: "full" });
+    }
+  });
+
   it("memory_save accepts concepts/files as arrays (plugin skill format, #139)", async () => {
     const kv = new InMemoryKV();
     const result = await handleToolCall(

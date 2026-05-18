@@ -64,11 +64,19 @@ function normalizeList(value: unknown): string[] {
 
 const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 100;
+type SearchFormat = "compact" | "full";
+
 function parseLimit(raw: unknown, fallback = DEFAULT_LIMIT): number {
   if (typeof raw !== "number" && typeof raw !== "string") return fallback;
   const n = Number(raw);
   if (!Number.isFinite(n) || n <= 0) return fallback;
   return Math.min(Math.floor(n), MAX_LIMIT);
+}
+
+function parseSearchFormat(raw: unknown): SearchFormat | undefined {
+  if (typeof raw !== "string") return undefined;
+  const format = raw.trim().toLowerCase();
+  return format === "compact" || format === "full" ? format : undefined;
 }
 
 function textResponse(payload: unknown, pretty = false): {
@@ -89,6 +97,7 @@ interface Validated {
   files?: string[];
   query?: string;
   limit?: number;
+  format?: SearchFormat;
   memoryIds?: string[];
   reason?: string;
 }
@@ -118,6 +127,7 @@ function validate(toolName: string, args: Record<string, unknown>): Validated {
       }
       v.query = query.trim();
       v.limit = parseLimit(args["limit"]);
+      v.format = parseSearchFormat(args["format"]);
       return v;
     }
     case "memory_sessions": {
@@ -161,9 +171,14 @@ async function handleProxy(
     }
     case "memory_recall":
     case "memory_smart_search": {
+      const body: { query?: string; limit?: number; format?: SearchFormat } = {
+        query: v.query,
+        limit: v.limit,
+      };
+      if (v.format) body.format = v.format;
       const result = await handle.call("/agentmemory/smart-search", {
         method: "POST",
-        body: JSON.stringify({ query: v.query, limit: v.limit }),
+        body: JSON.stringify(body),
       });
       return textResponse(result, true);
     }
@@ -227,6 +242,7 @@ async function handleLocal(
     case "memory_smart_search": {
       const query = (v.query || "").toLowerCase();
       const limit = v.limit ?? DEFAULT_LIMIT;
+      const format = v.format ?? "compact";
       const all =
         await kvInstance.list<Record<string, unknown>>("mem:memories");
       const results = all
@@ -244,7 +260,7 @@ async function handleLocal(
           return query.split(/\s+/).every((word) => text.includes(word));
         })
         .slice(0, limit);
-      return textResponse({ mode: "compact", results }, true);
+      return textResponse({ mode: format, format, results }, true);
     }
 
     case "memory_sessions": {
