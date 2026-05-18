@@ -20,6 +20,41 @@ function countRestApiEndpoints(): number {
   return Array.from(src.matchAll(/api_path:\s*["`]/g)).length;
 }
 
+function readYamlStringList(relativePath: string, key: string): string[] {
+  const lines = readText(relativePath).split(/\r?\n/);
+  const values: string[] = [];
+  let inList = false;
+
+  for (const line of lines) {
+    if (line.trim() === `${key}:`) {
+      inList = true;
+      continue;
+    }
+    if (!inList) continue;
+    if (line.trim() && !line.startsWith(" ")) break;
+    const match = line.match(/^\s*-\s+([A-Za-z_][\w]*)\s*$/);
+    if (match) values.push(match[1]!);
+  }
+
+  return values;
+}
+
+function readHermesReadmeHookNames(): string[] {
+  return Array.from(
+    readText("integrations/hermes/README.md").matchAll(/^- `([a-z_][\w]*)\(\)` /gm),
+    (match) => match[1]!,
+  );
+}
+
+function readAgentMemoryProviderMethodNames(): Set<string> {
+  return new Set(
+    Array.from(
+      readText("integrations/hermes/__init__.py").matchAll(/^    def ([a-z_][\w]*)\(/gm),
+      (match) => match[1]!,
+    ),
+  );
+}
+
 describe("Consistency checks", () => {
   const toolCount = getAllTools().length;
   const restEndpointCount = countRestApiEndpoints();
@@ -72,6 +107,25 @@ describe("Consistency checks", () => {
       expect(tool.inputSchema).toBeDefined();
       expect(tool.inputSchema.type).toBe("object");
     }
+  });
+
+  it("Hermes plugin manifest lists all advertised implemented memory hooks (#478)", () => {
+    const manifestHooks = readYamlStringList("integrations/hermes/plugin.yaml", "hooks");
+    const readmeHooks = readHermesReadmeHookNames();
+    const implementedMethods = readAgentMemoryProviderMethodNames();
+
+    expect(readmeHooks).toEqual([
+      "prefetch",
+      "sync_turn",
+      "on_session_end",
+      "on_pre_compress",
+      "on_memory_write",
+      "system_prompt_block",
+    ]);
+    for (const hook of readmeHooks) {
+      expect(implementedMethods.has(hook), `${hook} is advertised but not implemented`).toBe(true);
+    }
+    expect([...manifestHooks].sort()).toEqual([...readmeHooks].sort());
   });
 
   it("every host-path bind mount in docker-compose.yml is in the published files list (#136)", () => {
