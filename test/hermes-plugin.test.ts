@@ -31,14 +31,23 @@ function readHermesPluginHooks(): string[] {
   return hooks;
 }
 
+function isHermesLifecycleHook(methodName: string): boolean {
+  return (
+    methodName === "prefetch" ||
+    methodName === "sync_turn" ||
+    methodName === "system_prompt_block" ||
+    methodName.startsWith("on_")
+  );
+}
+
 function readAgentMemoryProviderHookMethods(): string[] {
   const source = readFileSync("integrations/hermes/__init__.py", "utf8");
   const methods: string[] = [];
-  const hookMethodPattern =
-    /^    def (prefetch|sync_turn|on_session_end|on_pre_compress|on_memory_write|system_prompt_block)\(/gm;
+  const providerMethodPattern = /^    def ([a-z_][a-z0-9_]*)\(/gm;
 
-  for (const match of source.matchAll(hookMethodPattern)) {
-    methods.push(match[1]);
+  for (const match of source.matchAll(providerMethodPattern)) {
+    const methodName = match[1];
+    if (isHermesLifecycleHook(methodName)) methods.push(methodName);
   }
 
   return methods;
@@ -46,9 +55,10 @@ function readAgentMemoryProviderHookMethods(): string[] {
 
 describe("Hermes plugin manifest", () => {
   it("declares every implemented lifecycle hook", () => {
+    const declaredHooks = readHermesPluginHooks();
     const implementedHooks = readAgentMemoryProviderHookMethods();
 
-    expect(implementedHooks).toEqual(expect.arrayContaining(expectedHermesHooks));
-    expect(readHermesPluginHooks()).toEqual(expectedHermesHooks);
+    expect([...declaredHooks].sort()).toEqual([...implementedHooks].sort());
+    expect(declaredHooks).toEqual(expectedHermesHooks);
   });
 });
