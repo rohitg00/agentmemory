@@ -86,6 +86,38 @@ describe("_openai-shared — buildChatUrl", () => {
     );
     expect(new URL(url).pathname).toBe("/openai/deployments/d/chat/completions");
   });
+
+  it("routes through /openai/v1 when the base URL has no /deployments/ segment (Azure v1 GA)", () => {
+    // Azure shipped a v1 URL pattern that mirrors the OpenAI shape:
+    // /openai/v1/chat/completions, deployment passed in the body as
+    // `model`. No api-version query param.
+    const url = buildChatUrl(
+      "https://r.openai.azure.com",
+      true,
+      "2024-08-01-preview", // ignored on v1
+    );
+    const parsed = new URL(url);
+    expect(parsed.pathname).toBe("/openai/v1/chat/completions");
+    expect(parsed.searchParams.get("api-version")).toBeNull();
+  });
+
+  it("strips a trailing /openai or /openai/v1 prefix when composing v1 URLs", () => {
+    // Users may pre-configure OPENAI_BASE_URL with the /openai/v1
+    // suffix already present. We should not double it.
+    const fromOpenai = buildChatUrl(
+      "https://r.openai.azure.com/openai",
+      true,
+      "ignored",
+    );
+    expect(new URL(fromOpenai).pathname).toBe("/openai/v1/chat/completions");
+
+    const fromV1 = buildChatUrl(
+      "https://r.openai.azure.com/openai/v1",
+      true,
+      "ignored",
+    );
+    expect(new URL(fromV1).pathname).toBe("/openai/v1/chat/completions");
+  });
 });
 
 describe("_openai-shared — buildEmbeddingUrl", () => {
@@ -95,7 +127,7 @@ describe("_openai-shared — buildEmbeddingUrl", () => {
     ).toBe("https://api.openai.com/v1/embeddings");
   });
 
-  it("appends /embeddings + api-version for Azure (no /v1/ prefix)", () => {
+  it("appends /embeddings + api-version for Azure legacy (no /v1/ prefix)", () => {
     const url = buildEmbeddingUrl(
       "https://r.openai.azure.com/openai/deployments/embed-deploy",
       true,
@@ -104,6 +136,17 @@ describe("_openai-shared — buildEmbeddingUrl", () => {
     expect(url).toBe(
       "https://r.openai.azure.com/openai/deployments/embed-deploy/embeddings?api-version=2024-08-01-preview",
     );
+  });
+
+  it("routes through /openai/v1/embeddings on Azure v1 (no api-version)", () => {
+    const url = buildEmbeddingUrl(
+      "https://r.openai.azure.com",
+      true,
+      "2024-08-01-preview", // ignored on v1
+    );
+    const parsed = new URL(url);
+    expect(parsed.pathname).toBe("/openai/v1/embeddings");
+    expect(parsed.searchParams.get("api-version")).toBeNull();
   });
 });
 
