@@ -75,6 +75,61 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
     expect(body.results[0].id).toBe("m1");
   });
 
+  it("proxies memory_recall to POST /agentmemory/search and forwards format/token_budget (#507)", async () => {
+    const calls: Array<{ url: string; body?: unknown }> = [];
+    installFetch((url, init) => {
+      if (url.endsWith("/agentmemory/livez")) return new Response("ok", { status: 200 });
+      const body = init?.body ? JSON.parse(init.body as string) : undefined;
+      calls.push({ url, body });
+      if (url.endsWith("/agentmemory/search")) {
+        return new Response(
+          JSON.stringify({
+            mode: "full",
+            facts: [{ id: "m1" }],
+            narrative: "n",
+            concepts: ["c"],
+            files: ["f"],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      return new Response("not found", { status: 404 });
+    });
+    const res = await handleToolCall("memory_recall", {
+      query: "auth bug",
+      limit: 5,
+      format: "full",
+      token_budget: 800,
+    });
+    const body = JSON.parse(res.content[0].text);
+    expect(body.mode).toBe("full");
+    expect(body.facts[0].id).toBe("m1");
+    const searchCall = calls.find((c) => c.url.endsWith("/agentmemory/search"));
+    expect(searchCall).toBeDefined();
+    expect(searchCall?.body).toEqual({
+      query: "auth bug",
+      limit: 5,
+      format: "full",
+      token_budget: 800,
+    });
+    expect(calls.find((c) => c.url.endsWith("/agentmemory/smart-search"))).toBeUndefined();
+  });
+
+  it("memory_recall defaults format to 'full' when omitted (#507)", async () => {
+    let recallBody: Record<string, unknown> | undefined;
+    installFetch((url, init) => {
+      if (url.endsWith("/agentmemory/livez")) return new Response("ok", { status: 200 });
+      if (url.endsWith("/agentmemory/search")) {
+        recallBody = init?.body ? JSON.parse(init.body as string) : undefined;
+        return new Response(JSON.stringify({ mode: "full", facts: [] }), { status: 200 });
+      }
+      return new Response("not found", { status: 404 });
+    });
+    await handleToolCall("memory_recall", { query: "x" });
+    expect(recallBody?.["format"]).toBe("full");
+    expect(recallBody).not.toHaveProperty("token_budget");
+  });
+
   it("proxies memory_governance_delete to the DELETE REST endpoint", async () => {
     const calls: Array<{ url: string; method: string; body?: unknown }> = [];
     installFetch((url, init) => {
