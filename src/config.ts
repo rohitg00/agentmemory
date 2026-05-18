@@ -50,6 +50,25 @@ function hasRealValue(v: string | undefined): v is string {
 function detectProvider(env: Record<string, string>): ProviderConfig {
   const maxTokens = parseInt(env["MAX_TOKENS"] || "4096", 10);
 
+  // Astraflow (UCloud) — OpenAI-compatible, 200+ models
+  // Global endpoint: ASTRAFLOW_API_KEY; China endpoint: ASTRAFLOW_CN_API_KEY
+  if (hasRealValue(env["ASTRAFLOW_API_KEY"])) {
+    return {
+      provider: "astraflow",
+      model: env["ASTRAFLOW_MODEL"] || "gpt-4o-mini",
+      maxTokens,
+      baseURL: "https://api-us-ca.umodelverse.ai/v1",
+    };
+  }
+  if (hasRealValue(env["ASTRAFLOW_CN_API_KEY"])) {
+    return {
+      provider: "astraflow-cn",
+      model: env["ASTRAFLOW_MODEL"] || "gpt-4o-mini",
+      maxTokens,
+      baseURL: "https://api.modelverse.cn/v1",
+    };
+  }
+
   // OpenAI-compatible: supports OpenAI, DeepSeek, SiliconFlow, Azure, vLLM, LM Studio
   if (hasRealValue(env["OPENAI_API_KEY"]) && env["OPENAI_API_KEY_FOR_LLM"] !== "false") {
     return {
@@ -166,6 +185,8 @@ export function detectLlmProviderKind(): "llm" | "noop" {
     hasRealValue(env["GEMINI_API_KEY"]) ||
     hasRealValue(env["GOOGLE_API_KEY"]) ||
     hasRealValue(env["OPENROUTER_API_KEY"]) ||
+    hasRealValue(env["ASTRAFLOW_API_KEY"]) ||
+    hasRealValue(env["ASTRAFLOW_CN_API_KEY"]) ||
     hasRealValue(env["MINIMAX_API_KEY"]) ||
     (hasRealValue(env["OPENAI_API_KEY"]) &&
       env["OPENAI_API_KEY_FOR_LLM"] !== "false")
@@ -305,6 +326,8 @@ const VALID_PROVIDERS = new Set([
   "agent-sdk",
   "minimax",
   "openai",
+  "astraflow",
+  "astraflow-cn",
 ]);
 
 export function loadFallbackConfig(): FallbackConfig {

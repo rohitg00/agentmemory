@@ -109,6 +109,34 @@ function createBaseProvider(config: ProviderConfig): MemoryProvider {
         config.baseURL,
       );
     }
+    case "astraflow": {
+      const astraflowKey = getEnvVar("ASTRAFLOW_API_KEY");
+      if (!astraflowKey) {
+        throw new Error(
+          "ASTRAFLOW_API_KEY is required for the astraflow provider",
+        );
+      }
+      return new OpenAIProvider(
+        astraflowKey,
+        config.model,
+        config.maxTokens,
+        config.baseURL ?? "https://api-us-ca.umodelverse.ai",
+      );
+    }
+    case "astraflow-cn": {
+      const astraflowCnKey = getEnvVar("ASTRAFLOW_CN_API_KEY");
+      if (!astraflowCnKey) {
+        throw new Error(
+          "ASTRAFLOW_CN_API_KEY is required for the astraflow-cn provider",
+        );
+      }
+      return new OpenAIProvider(
+        astraflowCnKey,
+        config.model,
+        config.maxTokens,
+        config.baseURL ?? "https://api.modelverse.cn",
+      );
+    }
     case "noop":
       return new NoopProvider();
     case "agent-sdk":
