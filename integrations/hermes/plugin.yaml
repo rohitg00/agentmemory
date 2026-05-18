@@ -4,6 +4,9 @@ description: "Persistent cross-session memory for Hermes Agent via agentmemory. 
 author: "Rohit Ghumare"
 homepage: "https://github.com/rohitg00/agentmemory"
 hooks:
+  - prefetch
+  - sync_turn
   - on_session_end
   - on_pre_compress
   - on_memory_write
+  - system_prompt_block
