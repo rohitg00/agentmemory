@@ -26,9 +26,22 @@ export function detectAzure(baseUrl: string): boolean {
 // Azure carries the deployment in the URL path; the OpenAI-shape
 // /v1/ prefix is not appended. The api-version query param is
 // mandatory — without it Azure returns a 400.
+//
+// Use the URL API to compose the result instead of string-concat: a
+// baseUrl that already carries query parameters (e.g. a corporate
+// proxy passing through diagnostics tokens) would otherwise have the
+// route path interpolated into the query string, producing a
+// malformed URL. searchParams.set also encodes the api-version
+// correctly without needing manual encodeURIComponent.
 function azureUrl(baseUrl: string, path: string, apiVersion: string): string {
-  const sep = baseUrl.includes("?") ? "&" : "?";
-  return `${baseUrl}${path}${sep}api-version=${encodeURIComponent(apiVersion)}`;
+  const url = new URL(baseUrl);
+  // Join pathnames, normalising the slash boundary between the
+  // existing deployment path and the route path.
+  const existing = url.pathname.replace(/\/+$/, "");
+  const route = path.startsWith("/") ? path : `/${path}`;
+  url.pathname = `${existing}${route}`;
+  url.searchParams.set("api-version", apiVersion);
+  return url.toString();
 }
 
 export function buildChatUrl(

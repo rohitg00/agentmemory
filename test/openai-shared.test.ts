@@ -60,6 +60,32 @@ describe("_openai-shared — buildChatUrl", () => {
     );
     expect(url).toContain("api-version=preview%2Fwith%2Fslashes");
   });
+
+  it("preserves pre-existing query params on the base URL (CodeRabbit catch)", () => {
+    // A corporate proxy or diagnostics endpoint might already carry
+    // query parameters on the base URL. String-concat would have
+    // interpolated the route path into the query string; URL-API
+    // composition keeps the query intact and adds api-version
+    // alongside.
+    const url = buildChatUrl(
+      "https://proxy.example.com/openai/deployments/d?tenant=acme",
+      true,
+      "2024-08-01-preview",
+    );
+    const parsed = new URL(url);
+    expect(parsed.pathname).toBe("/openai/deployments/d/chat/completions");
+    expect(parsed.searchParams.get("tenant")).toBe("acme");
+    expect(parsed.searchParams.get("api-version")).toBe("2024-08-01-preview");
+  });
+
+  it("strips trailing slashes from base path before joining route", () => {
+    const url = buildChatUrl(
+      "https://r.openai.azure.com/openai/deployments/d/",
+      true,
+      "2024-08-01-preview",
+    );
+    expect(new URL(url).pathname).toBe("/openai/deployments/d/chat/completions");
+  });
 });
 
 describe("_openai-shared — buildEmbeddingUrl", () => {
@@ -144,11 +170,11 @@ describe("OpenAIEmbeddingProvider — Azure auto-detection (#371)", () => {
     process.env["OPENAI_API_VERSION"] = "2024-08-01-preview";
 
     let capturedUrl = "";
-    let capturedHeaders: Record<string, string> = {};
+    let capturedHeaders = new Headers();
     vi.spyOn(globalThis, "fetch").mockImplementation(
       async (url: string | URL | Request, init?: RequestInit) => {
         capturedUrl = String(url);
-        capturedHeaders = (init?.headers ?? {}) as Record<string, string>;
+        capturedHeaders = new Headers(init?.headers);
         return new Response(
           JSON.stringify({ data: [{ embedding: [0.1, 0.2, 0.3] }] }),
           { status: 200 },
@@ -162,19 +188,19 @@ describe("OpenAIEmbeddingProvider — Azure auto-detection (#371)", () => {
     expect(capturedUrl).toBe(
       "https://myres.openai.azure.com/openai/deployments/embed-d/embeddings?api-version=2024-08-01-preview",
     );
-    expect(capturedHeaders["api-key"]).toBe("azure-key");
-    expect(capturedHeaders["Authorization"]).toBeUndefined();
+    expect(capturedHeaders.get("api-key")).toBe("azure-key");
+    expect(capturedHeaders.get("Authorization")).toBeNull();
   });
 
   it("uses standard shape when OPENAI_BASE_URL points at api.openai.com", async () => {
     process.env["OPENAI_BASE_URL"] = "https://api.openai.com";
 
     let capturedUrl = "";
-    let capturedHeaders: Record<string, string> = {};
+    let capturedHeaders = new Headers();
     vi.spyOn(globalThis, "fetch").mockImplementation(
       async (url: string | URL | Request, init?: RequestInit) => {
         capturedUrl = String(url);
-        capturedHeaders = (init?.headers ?? {}) as Record<string, string>;
+        capturedHeaders = new Headers(init?.headers);
         return new Response(
           JSON.stringify({ data: [{ embedding: [0.4, 0.5, 0.6] }] }),
           { status: 200 },
@@ -186,7 +212,7 @@ describe("OpenAIEmbeddingProvider — Azure auto-detection (#371)", () => {
     await provider.embedBatch(["hello"]);
 
     expect(capturedUrl).toBe("https://api.openai.com/v1/embeddings");
-    expect(capturedHeaders["Authorization"]).toBe("Bearer sk-test");
-    expect(capturedHeaders["api-key"]).toBeUndefined();
+    expect(capturedHeaders.get("Authorization")).toBe("Bearer sk-test");
+    expect(capturedHeaders.get("api-key")).toBeNull();
   });
 });
