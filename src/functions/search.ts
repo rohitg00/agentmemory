@@ -148,8 +148,17 @@ export async function vectorIndexAddBatchGuarded(
       fail++
       continue
     }
-    vi.add(item.id, item.sessionId, embedding)
-    ok++
+    try {
+      vi.add(item.id, item.sessionId, embedding)
+      ok++
+    } catch (err) {
+      logger.warn("vector-index add batch: index write failed — skipping item", {
+        kind: item.context.kind,
+        id: item.context.logId,
+        error: err instanceof Error ? err.message : String(err),
+      })
+      fail++
+    }
   }
   return { ok, fail }
 }
