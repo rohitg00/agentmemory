@@ -42,7 +42,7 @@ const PANELS: Record<
   console: {
     title: "iii CONSOLE · FIRST-CLASS",
     blurb:
-      "agentmemory runs on the iii engine, so the official iii console gives engine-level visibility: every function call, every worker, every queue, every trace. From v0.9.16 the agentmemory CLI prompts to install iii console alongside the engine. Launch on :3114 so the viewer keeps :3113.",
+      "agentmemory runs on the iii engine, so the official iii console gives engine-level visibility: every function call, every worker, every queue, every trace. Launch on :3114 so the viewer keeps :3113.",
     bullets: [
       "REGISTERED FUNCTIONS · INVOKE ANY DIRECTLY WITH JSON",
       "121 HTTP ENDPOINTS · REPLAY ANY REST CALL",
@@ -52,7 +52,7 @@ const PANELS: Record<
     ],
     img: "/dashboard.png",
     alt: "iii console dashboard",
-    launch: "iii-console --port 3114 --engine-port 3111",
+    launch: "iii console --port 3114 --engine-port 3111",
   },
   state: {
     title: "RAW KV BROWSER",

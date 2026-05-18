@@ -474,40 +474,33 @@ async function maybeOfferGlobalInstall(): Promise<void> {
   }
 }
 
-// iii-console install state.
-//   "installed" — `iii-console` is on PATH or at `~/.local/bin/iii-console`
+// iii console install state.
+//   "installed" — `iii` is on PATH or at `~/.local/bin/iii`
 //   "missing"   — binary not found anywhere we look
-// We deliberately do NOT probe the console's HTTP port: the binary
-// being on disk is the signal we care about (it's not auto-started by
-// agentmemory and its default port 3113 collides with our viewer, so
-// "is it listening?" is the wrong question at boot time).
+// We deliberately do NOT probe the console's HTTP port: the CLI being
+// on disk is the signal we care about (it's not auto-started by
+// agentmemory and its default port 3113 collides with our viewer).
 type IiiConsoleState =
-  | { kind: "installed"; binPath: string }
+  | { kind: "installed"; binPath: string; command: "iii" | "iii-console" }
   | { kind: "missing" };
 
 function detectIiiConsole(): IiiConsoleState {
-  const onPath = whichBinary("iii-console");
-  if (onPath) return { kind: "installed", binPath: onPath };
-  const fallback = IS_WINDOWS
-    ? join(process.env["USERPROFILE"] ?? "", ".local", "bin", "iii-console.exe")
-    : join(homedir(), ".local", "bin", "iii-console");
-  if (fallback && existsSync(fallback)) {
-    return { kind: "installed", binPath: fallback };
+  const iiiOnPath = whichBinary("iii");
+  if (iiiOnPath) return { kind: "installed", binPath: iiiOnPath, command: "iii" };
+  for (const iiiPath of fallbackIiiPaths()) {
+    if (existsSync(iiiPath)) {
+      return { kind: "installed", binPath: iiiPath, command: "iii" };
+    }
+  }
+  const consoleOnPath = whichBinary("iii-console");
+  if (consoleOnPath) {
+    return { kind: "installed", binPath: consoleOnPath, command: "iii-console" };
   }
   return { kind: "missing" };
 }
 
-// install.iii.dev/console/main/install.sh has a bug in its release-tag
-// filter that rejects every stable release for iii-hq/iii: the jq
-// predicate uses `startswith("v")` while the actual tags are
-// `iii/v0.12.0` (slash-prefixed). The `--next` path uses a regex
-// without the startswith constraint and therefore works today,
-// installing the most recent prerelease (e.g. iii/v0.14.0-next.1).
-//
-// Pass `--next` until the upstream fix lands (iii-hq/iii#1652).
-// Switch back to the bare invocation once the script is patched.
 const III_CONSOLE_INSTALL_CMD =
-  "curl -fsSL https://install.iii.dev/console/main/install.sh | bash -s -- --next";
+  "curl -fsSL https://install.iii.dev/iii/main/install.sh | sh";
 
 async function ensureIiiConsole(): Promise<IiiConsoleState> {
   const state = detectIiiConsole();
@@ -520,7 +513,7 @@ async function ensureIiiConsole(): Promise<IiiConsoleState> {
 
   const answer = await p.confirm({
     message:
-      "iii console gives engine-level visibility (workers, functions, queues, traces). Install now?",
+      "iii console gives engine-level visibility (workers, functions, queues, traces). Install iii now?",
     initialValue: true,
   });
   if (p.isCancel(answer)) return state;
@@ -537,12 +530,18 @@ async function ensureIiiConsole(): Promise<IiiConsoleState> {
     );
     return state;
   }
-  const ok = runCommand(shBin, ["-c", III_CONSOLE_INSTALL_CMD], {
-    label: "Installing iii console",
+  const installResult = runCommandWithResult(shBin, ["-c", III_CONSOLE_INSTALL_CMD], {
+    label: "Installing iii",
   });
-  if (!ok) {
+  if (!installResult.ok) {
     p.log.warn(
-      `iii console install failed. Re-run manually:\n  ${III_CONSOLE_INSTALL_CMD}`,
+      [
+        "iii install failed.",
+        `Exit: ${formatCommandExit(installResult)}`,
+        `Output: ${installResult.message}`,
+        "Re-run manually:",
+        `  ${III_CONSOLE_INSTALL_CMD}`,
+      ].join("\n"),
     );
     return state;
   }
@@ -911,13 +910,14 @@ function printReadyHint(consoleState: IiiConsoleState): void {
 
   const consoleLine =
     consoleState.kind === "installed"
-      ? // We can't safely probe iii-console's port (default 3113
+      ? // We can't safely probe iii console's port (default 3113
         // collides with our viewer) so we surface the binary location
-        // and let the user start it on a port of their choice. Use
-        // the detected binary path so `(run: ...)` is executable as-
-        // is, even when the binary isn't on PATH under the bare
-        // name `iii-console`.
-        `iii console  ${consoleState.binPath}  (run: ${consoleState.binPath} -p <port>)`
+        // and let the user start it on a port of their choice.
+        `iii console  ${consoleState.binPath}  (run: ${
+          consoleState.command === "iii"
+            ? `${consoleState.binPath} console -p <port>`
+            : `${consoleState.binPath} -p <port>`
+        })`
       : `iii console  (install: ${III_CONSOLE_INSTALL_CMD})`;
 
   const lines = [
@@ -1916,11 +1916,27 @@ async function runDemo() {
   p.log.success("agentmemory is working. Point your agent at it and get back to coding.");
 }
 
-function runCommand(
+type CommandRunOptions = { cwd?: string; label: string; optional?: boolean };
+type CommandRunSuccess = { ok: true };
+type CommandRunFailure = {
+  ok: false;
+  status: number | null;
+  signal: NodeJS.Signals | null;
+  message: string;
+};
+type CommandRunResult = CommandRunSuccess | CommandRunFailure;
+
+function formatCommandExit(result: CommandRunFailure): string {
+  if (result.status !== null) return `status ${result.status}`;
+  if (result.signal) return `signal ${result.signal}`;
+  return "unknown";
+}
+
+function runCommandWithResult(
   command: string,
   commandArgs: string[],
-  options: { cwd?: string; label: string; optional?: boolean } = { label: "command" },
-): boolean {
+  options: CommandRunOptions = { label: "command" },
+): CommandRunResult {
   const spinner = p.spinner();
   spinner.start(options.label);
   const result = spawnSync(command, commandArgs, {
@@ -1931,22 +1947,36 @@ function runCommand(
 
   if (result.status === 0) {
     spinner.stop(`${options.label} ✓`);
-    return true;
+    return { ok: true };
   }
 
   const stderr = (result.stderr || "").toString().trim();
   const stdout = (result.stdout || "").toString().trim();
-  const msg = stderr || stdout || "unknown error";
+  const msg = result.error?.message || stderr || stdout || "unknown error";
+  const failure: CommandRunFailure = {
+    ok: false,
+    status: result.status ?? null,
+    signal: result.signal ?? null,
+    message: msg.slice(0, 1000),
+  };
 
   if (options.optional) {
     spinner.stop(`${options.label} (skipped)`);
-    p.log.warn(msg.slice(0, 300));
-    return false;
+    p.log.warn(`${formatCommandExit(failure)}: ${failure.message.slice(0, 300)}`);
+    return failure;
   }
 
   spinner.stop(`${options.label} ✗`);
-  p.log.error(msg.slice(0, 300));
-  return false;
+  p.log.error(`${formatCommandExit(failure)}: ${failure.message.slice(0, 300)}`);
+  return failure;
+}
+
+function runCommand(
+  command: string,
+  commandArgs: string[],
+  options: CommandRunOptions = { label: "command" },
+): boolean {
+  return runCommandWithResult(command, commandArgs, options).ok;
 }
 
 async function runUpgrade() {

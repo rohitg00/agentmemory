@@ -59,6 +59,17 @@ describe("Consistency checks", () => {
     expect(index).toContain(`REST API: ${restEndpointCount} endpoints`);
   });
 
+  it("iii console docs use the iii installer and subcommand", () => {
+    const cli = readText("src/cli.ts");
+    const websiteCommandCenter = readText("website/components/CommandCenter.tsx");
+
+    expect(cli).not.toContain("https://install.iii.dev/console/main/install.sh");
+    expect(cli).toContain("https://install.iii.dev/iii/main/install.sh");
+    expect(cli).toContain(" console -p <port>");
+    expect(websiteCommandCenter).not.toContain("iii-console --port");
+    expect(websiteCommandCenter).toContain("iii console --port 3114");
+  });
+
   it("all tool names are unique", () => {
     const tools = getAllTools();
     const names = new Set(tools.map((t) => t.name));
