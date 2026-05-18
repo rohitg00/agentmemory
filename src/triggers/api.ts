@@ -1,5 +1,6 @@
 import type { ISdk, ApiRequest } from "iii-sdk";
-import type { Session, CompressedObservation, HookPayload } from "../types.js";
+import type { Session, CompressedObservation, HookPayload, CommitLink } from "../types.js";
+import { withKeyedLock } from "../state/keyed-mutex.js";
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { getLatestHealth } from "../health/monitor.js";
@@ -612,7 +613,135 @@ export function registerApiTriggers(
     },
   });
 
-  sdk.registerFunction("api::sessions", 
+  sdk.registerFunction("api::session::commit",
+    async (req: ApiRequest): Promise<Response> => {
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const sha = asNonEmptyString(body.sha);
+      if (!sha) {
+        return {
+          status_code: 400,
+          body: { error: "sha is required and must be a non-empty string" },
+        };
+      }
+      const sessionId = asNonEmptyString(body.sessionId) ?? undefined;
+      const branch = asNonEmptyString(body.branch) ?? undefined;
+      const repo = asNonEmptyString(body.repo) ?? undefined;
+      const message = asNonEmptyString(body.message) ?? undefined;
+      const author = asNonEmptyString(body.author) ?? undefined;
+      const authoredAt = asNonEmptyString(body.authoredAt) ?? undefined;
+      const files = Array.isArray(body.files)
+        ? (body.files as unknown[]).filter(
+            (f): f is string => typeof f === "string" && f.length > 0,
+          )
+        : undefined;
+
+      const link = await withKeyedLock(`commit:${sha}`, async () => {
+        const existing = await kv.get<CommitLink>(KV.commits, sha);
+        const sessionSet = new Set<string>(existing?.sessionIds ?? []);
+        if (sessionId) sessionSet.add(sessionId);
+        const merged: CommitLink = {
+          sha,
+          shortSha: existing?.shortSha ?? sha.slice(0, 7),
+          branch: branch ?? existing?.branch,
+          repo: repo ?? existing?.repo,
+          message: message ?? existing?.message,
+          author: author ?? existing?.author,
+          authoredAt: authoredAt ?? existing?.authoredAt,
+          files: files ?? existing?.files,
+          sessionIds: Array.from(sessionSet),
+          linkedAt: existing?.linkedAt ?? new Date().toISOString(),
+        };
+        await kv.set(KV.commits, sha, merged);
+        return merged;
+      });
+
+      if (sessionId) {
+        await withKeyedLock(`session:${sessionId}`, async () => {
+          const session = await kv.get<Session>(KV.sessions, sessionId);
+          if (!session) return;
+          const shaSet = new Set<string>(session.commitShas ?? []);
+          shaSet.add(sha);
+          session.commitShas = Array.from(shaSet);
+          await kv.set(KV.sessions, sessionId, session);
+        });
+      }
+
+      return { status_code: 200, body: { commit: link } };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::session::commit",
+    config: {
+      api_path: "/agentmemory/session/commit",
+      http_method: "POST",
+      middleware_function_ids: ["middleware::api-auth"],
+    },
+  });
+
+  sdk.registerFunction("api::session::by-commit",
+    async (req: ApiRequest): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const sha = asNonEmptyString(req.query_params?.["sha"]);
+      if (!sha) {
+        return {
+          status_code: 400,
+          body: { error: "sha is required and must be a non-empty string" },
+        };
+      }
+      const link = await kv.get<CommitLink>(KV.commits, sha);
+      if (!link) {
+        return {
+          status_code: 404,
+          body: { error: "no sessions linked to this commit" },
+        };
+      }
+      const fetched = await Promise.all(
+        (link.sessionIds ?? []).map((sid) => kv.get<Session>(KV.sessions, sid)),
+      );
+      const sessions = fetched.filter((s): s is Session => s !== null);
+      return { status_code: 200, body: { commit: link, sessions } };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::session::by-commit",
+    config: {
+      api_path: "/agentmemory/session/by-commit",
+      http_method: "GET",
+      middleware_function_ids: ["middleware::api-auth"],
+    },
+  });
+
+  sdk.registerFunction("api::commits",
+    async (req: ApiRequest): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const branch = asNonEmptyString(req.query_params?.["branch"]);
+      const repo = asNonEmptyString(req.query_params?.["repo"]);
+      const rawLimit = parseOptionalInt(req.query_params?.["limit"]);
+      const limit = Math.max(1, Math.min(500, rawLimit ?? 100));
+      const all = await kv.list<CommitLink>(KV.commits);
+      const filtered = all
+        .filter((c) => !branch || c.branch === branch)
+        .filter((c) => !repo || c.repo === repo)
+        .sort((a, b) => ((a.linkedAt ?? "") < (b.linkedAt ?? "") ? 1 : -1))
+        .slice(0, limit);
+      return { status_code: 200, body: { commits: filtered } };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::commits",
+    config: {
+      api_path: "/agentmemory/commits",
+      http_method: "GET",
+      middleware_function_ids: ["middleware::api-auth"],
+    },
+  });
+
+  sdk.registerFunction("api::sessions",
     async (req: ApiRequest): Promise<Response> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;

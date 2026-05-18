@@ -19,3 +19,4 @@ data/
 package-lock.json
 pnpm-lock.yaml
 yarn.lock
+integrations/hermes/__pycache__/

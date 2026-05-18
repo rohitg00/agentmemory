@@ -11,10 +11,12 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import threading
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
+from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 from urllib.error import URLError
 
@@ -34,27 +36,113 @@ except ImportError:
         @abstractmethod
         def get_tool_schemas(self) -> list[dict]: ...
         @abstractmethod
-        def handle_tool_call(self, name: str, args: dict) -> Any: ...
+        def handle_tool_call(self, name: str, args: dict) -> str: ...
         def get_config_schema(self) -> list[dict]: return []
         def save_config(self, values: dict, hermes_home: str) -> None: pass
         def system_prompt_block(self) -> str: return ""
-        def prefetch(self, query: str) -> str: return ""
-        def queue_prefetch(self, query: str) -> None: pass
-        def sync_turn(self, user: str, assistant: str) -> None: pass
-        def on_session_end(self, messages: list) -> None: pass
-        def on_pre_compress(self, messages: list) -> None: pass
-        def on_memory_write(self, action: str, target: str, content: str) -> None: pass
-        def shutdown(self) -> None: pass
+        def prefetch(self, query: str, **kwargs: Any) -> str: return ""
+        def queue_prefetch(self, query: str, **kwargs: Any) -> None: pass
+        def sync_turn(self, user: str, assistant: str, **kwargs: Any) -> None: pass
+        def on_session_end(self, messages: list, **kwargs: Any) -> None: pass
+        def on_pre_compress(self, messages: list, **kwargs: Any) -> None: pass
+        def on_memory_write(self, action: str, target: str, content: str, **kwargs: Any) -> None: pass
+        def shutdown(self, **kwargs: Any) -> None: pass
 
 
 DEFAULT_BASE_URL = "http://localhost:3111"
 TIMEOUT = 5
+LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
+_plaintext_bearer_warned = False
+
+# agentmemory's documented runtime config lives at ~/.agentmemory/.env.
+# When agentmemory is launched as a systemd user service (or any other
+# process manager that loads that file directly), those values never
+# reach an interactive shell. `hermes memory status` then reads
+# os.environ in the Hermes CLI process, finds AGENTMEMORY_URL /
+# AGENTMEMORY_SECRET unset, and reports the plugin as "Missing" even
+# though the service is healthy and live sessions can use it (#250).
+#
+# Preload the file at plugin-import time using os.environ.setdefault so
+# we never override anything the user explicitly set in the shell. The
+# preload is best-effort and silent on any failure (file absent,
+# unreadable, malformed) — the plugin falls back to its existing default
+# (http://localhost:3111) and Hermes status reflects that.
+def _preload_agentmemory_dotenv() -> None:
+    candidates: list[Path] = []
+    home = os.environ.get("HOME")
+    if home:
+        candidates.append(Path(home) / ".agentmemory" / ".env")
+    xdg_config = os.environ.get("XDG_CONFIG_HOME")
+    if xdg_config:
+        candidates.append(Path(xdg_config) / "agentmemory" / ".env")
+    for path in candidates:
+        try:
+            if not path.is_file():
+                continue
+            for raw in path.read_text(encoding="utf-8").splitlines():
+                line = raw.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, _, value = line.partition("=")
+                key = key.strip()
+                value = value.strip().strip('"').strip("'")
+                if key:
+                    os.environ.setdefault(key, value)
+        except (OSError, UnicodeDecodeError):
+            continue
+
+
+_preload_agentmemory_dotenv()
 
 
 def _validate_url(base: str) -> bool:
-    from urllib.parse import urlparse
+    if not base:
+        return False
+    try:
+        parsed = urlparse(base)
+        # .port raises ValueError on a non-numeric or out-of-range port
+        _ = parsed.port
+    except ValueError:
+        return False
+    if parsed.scheme not in ("http", "https"):
+        return False
+    return bool(parsed.hostname)
+
+
+def _uses_plaintext_bearer_auth(base: str, secret: str = "") -> bool:
+    if not secret:
+        return False
     parsed = urlparse(base)
-    return parsed.scheme in ("http", "https")
+    return parsed.scheme == "http" and (parsed.hostname or "").lower() not in LOOPBACK_HOSTS
+
+
+def _plaintext_bearer_auth_message(base: str) -> str:
+    return f"agentmemory: AGENTMEMORY_SECRET is configured for plaintext HTTP to {base}. Bearer tokens and memory payloads can be observed on the network; use HTTPS or an SSH tunnel."
+
+
+def _warn_plaintext_bearer_auth(message: str) -> None:
+    print(message, file=sys.stderr)
+
+
+def _check_plaintext_bearer_guard(
+    base: str,
+    secret: str = "",
+    warn: Callable[[str], None] | None = None,
+) -> None:
+    global _plaintext_bearer_warned
+    if not _uses_plaintext_bearer_auth(base, secret):
+        return
+    message = _plaintext_bearer_auth_message(base)
+    if os.environ.get("AGENTMEMORY_REQUIRE_HTTPS") == "1":
+        raise RuntimeError(message)
+    if not _plaintext_bearer_warned:
+        _plaintext_bearer_warned = True
+        (warn or _warn_plaintext_bearer_auth)(message)
+
+
+def _reset_plaintext_bearer_guard_for_tests() -> None:
+    global _plaintext_bearer_warned
+    _plaintext_bearer_warned = False
 
 
 def _api(base: str, path: str, body: dict | None = None, method: str = "POST", secret: str = "") -> dict | None:
@@ -63,6 +151,7 @@ def _api(base: str, path: str, body: dict | None = None, method: str = "POST", s
     url = f"{base}/agentmemory/{path}"
     headers = {"Content-Type": "application/json"}
     auth = secret or os.environ.get("AGENTMEMORY_SECRET", "")
+    _check_plaintext_bearer_guard(base, auth)
     if auth:
         headers["Authorization"] = f"Bearer {auth}"
 
@@ -87,20 +176,16 @@ class AgentMemoryProvider(MemoryProvider):
         return "agentmemory"
 
     def is_available(self) -> bool:
+        # Hermes contract: no network calls in is_available.
         base = os.environ.get("AGENTMEMORY_URL", DEFAULT_BASE_URL)
-        if not _validate_url(base):
-            return False
-        try:
-            req = Request(f"{base}/agentmemory/health", method="GET")
-            with urlopen(req, timeout=2):
-                return True
-        except Exception:
-            return False
+        return _validate_url(base)
 
     def initialize(self, session_id: str, **kwargs: Any) -> None:
         self._base = os.environ.get("AGENTMEMORY_URL", DEFAULT_BASE_URL)
         self._session_id = session_id
         self._project = kwargs.get("cwd", os.getcwd())
+        if os.environ.get("AGENTMEMORY_REQUIRE_HTTPS") == "1":
+            _check_plaintext_bearer_guard(self._base, os.environ.get("AGENTMEMORY_SECRET", ""))
 
         _api(self._base, "session/start", {
             "sessionId": session_id,
@@ -138,7 +223,7 @@ class AgentMemoryProvider(MemoryProvider):
             return result["context"]
         return ""
 
-    def prefetch(self, query: str) -> str:
+    def prefetch(self, query: str, **kwargs: Any) -> str:
         result = _api(self._base, "smart-search", {
             "query": query,
             "limit": 5,
@@ -155,7 +240,7 @@ class AgentMemoryProvider(MemoryProvider):
                 lines.append(f"- {title}: {narrative[:200]}")
         return "\n".join(lines) if lines else ""
 
-    def queue_prefetch(self, query: str) -> None:
+    def queue_prefetch(self, query: str, **kwargs: Any) -> None:
         _api_bg(self._base, "smart-search", {"query": query, "limit": 3})
 
     def get_tool_schemas(self) -> list[dict]:
@@ -202,14 +287,19 @@ class AgentMemoryProvider(MemoryProvider):
             },
         ]
 
-    def handle_tool_call(self, name: str, args: dict) -> Any:
+    def handle_tool_call(self, name: str, args: dict) -> str:
+        # Hermes stores the return value as the tool result `content` in the
+        # session history. Anthropic-protocol providers reject non-string
+        # content with a 400 on the next request, so always serialize to a
+        # JSON string here — matches what agentmemory's main MCP server does
+        # in src/mcp/standalone.ts (`{ type: "text", text: JSON.stringify(...) }`).
         if name == "memory_recall":
             result = _api(self._base, "search", {
                 "query": args["query"],
                 "limit": args.get("limit", 10),
             })
             if not result:
-                return {"results": []}
+                return json.dumps({"results": []})
             items = []
             for r in result.get("results", []):
                 obs = r.get("observation", r)
@@ -220,14 +310,14 @@ class AgentMemoryProvider(MemoryProvider):
                     "importance": obs.get("importance", 0),
                     "timestamp": obs.get("timestamp", ""),
                 })
-            return {"results": items}
+            return json.dumps({"results": items})
 
         if name == "memory_save":
             result = _api(self._base, "remember", {
                 "content": args["content"],
                 "type": args.get("type", "fact"),
             })
-            return result or {"success": False}
+            return json.dumps(result or {"success": False})
 
         if name == "memory_search":
             result = _api(self._base, "smart-search", {
@@ -235,7 +325,7 @@ class AgentMemoryProvider(MemoryProvider):
                 "limit": args.get("limit", 5),
             })
             if not result:
-                return {"results": []}
+                return json.dumps({"results": []})
             items = []
             for r in result.get("results", []):
                 obs = r.get("observation", r)
@@ -244,32 +334,32 @@ class AgentMemoryProvider(MemoryProvider):
                     "narrative": obs.get("narrative", "")[:300],
                     "score": r.get("combinedScore", r.get("score", 0)),
                 })
-            return {"results": items}
+            return json.dumps({"results": items})
 
-        return {"error": f"Unknown tool: {name}"}
+        return json.dumps({"error": f"Unknown tool: {name}"})
 
-    def sync_turn(self, user: str, assistant: str) -> None:
+    def sync_turn(self, user: str, assistant: str, **kwargs: Any) -> None:
         _api_bg(self._base, "observe", {
             "hookType": "post_tool_use",
-            "sessionId": self._session_id,
+            "sessionId": kwargs.get("session_id", self._session_id),
             "project": self._project,
             "cwd": self._project,
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "data": {
                 "tool_name": "conversation",
-                "input": user[:500],
-                "output": assistant[:2000],
+                "tool_input": user[:500],
+                "tool_output": assistant[:2000],
             },
         })
 
-    def on_session_end(self, messages: list) -> None:
+    def on_session_end(self, messages: list, **kwargs: Any) -> None:
         _api(self._base, "session/end", {
-            "sessionId": self._session_id,
+            "sessionId": kwargs.get("session_id", self._session_id),
         })
 
-    def on_pre_compress(self, messages: list) -> None:
+    def on_pre_compress(self, messages: list, **kwargs: Any) -> None:
         result = _api(self._base, "context", {
-            "sessionId": self._session_id,
+            "sessionId": kwargs.get("session_id", self._session_id),
             "project": self._project,
         })
         if result and result.get("context"):
@@ -278,14 +368,14 @@ class AgentMemoryProvider(MemoryProvider):
                 "content": f"[agentmemory context before compaction]\n{result['context']}",
             })
 
-    def on_memory_write(self, action: str, target: str, content: str) -> None:
+    def on_memory_write(self, action: str, target: str, content: str, **kwargs: Any) -> None:
         if action in ("add", "update") and content:
             _api_bg(self._base, "remember", {
                 "content": content,
                 "type": "fact",
             })
 
-    def shutdown(self) -> None:
+    def shutdown(self, **kwargs: Any) -> None:
         pass
 
 

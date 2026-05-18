@@ -28,7 +28,7 @@ async function main() {
 			method: "POST",
 			headers: authHeaders(),
 			body: JSON.stringify({ sessionId }),
-			signal: AbortSignal.timeout(3e4)
+			signal: AbortSignal.timeout(12e4)
 		});
 	} catch {}
 }

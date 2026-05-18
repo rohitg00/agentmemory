@@ -53,6 +53,7 @@ If you place it under `~/.pi/agent/extensions/agentmemory/`, pi will also auto-d
 |---|---|---|
 | `AGENTMEMORY_URL` | `http://localhost:3111` | agentmemory server URL |
 | `AGENTMEMORY_SECRET` | (none) | Bearer token for protected instances |
+| `AGENTMEMORY_REQUIRE_HTTPS` | (off) | When set to `1`, refuse to send a bearer token over plaintext HTTP to a non-loopback host. Sends the token only when `AGENTMEMORY_URL` is `https://...` or points at `localhost`/`127.0.0.1`/`::1`. With this off, the plugin warns once but still sends. |
 
 ## Smoke test
 

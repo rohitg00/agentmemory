@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: agentmemory
+    runtime: docker
+    plan: starter
+    dockerfilePath: ./deploy/render/Dockerfile
+    dockerContext: ./deploy/render
+    healthCheckPath: /agentmemory/livez
+    autoDeploy: false
+    disk:
+      name: data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: PORT
+        value: "3111"
+      - key: AGENTMEMORY_VERSION
+        value: "0.9.12"
+      - key: III_VERSION
+        value: "0.11.2"
+      - key: III_SDK_VERSION
+        value: "0.11.2"

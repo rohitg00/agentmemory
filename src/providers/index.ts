@@ -7,6 +7,7 @@ import { AgentSDKProvider } from "./agent-sdk.js";
 import { AnthropicProvider } from "./anthropic.js";
 import { MinimaxProvider } from "./minimax.js";
 import { NoopProvider } from "./noop.js";
+import { OpenAIProvider } from "./openai.js";
 import { OpenRouterProvider } from "./openrouter.js";
 import { ResilientProvider } from "./resilient.js";
 import { FallbackChainProvider } from "./fallback-chain.js";
@@ -94,6 +95,20 @@ function createBaseProvider(config: ProviderConfig): MemoryProvider {
         config.maxTokens,
         "https://openrouter.ai/api/v1/chat/completions",
       );
+    case "openai": {
+      const openaiKey = getEnvVar("OPENAI_API_KEY");
+      if (!openaiKey) {
+        throw new Error(
+          "OPENAI_API_KEY is required for the openai provider",
+        );
+      }
+      return new OpenAIProvider(
+        openaiKey,
+        config.model,
+        config.maxTokens,
+        config.baseURL,
+      );
+    }
     case "noop":
       return new NoopProvider();
     case "agent-sdk":

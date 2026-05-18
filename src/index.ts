@@ -19,6 +19,7 @@ import {
   createImageEmbeddingProvider,
 } from "./providers/index.js";
 import { StateKV } from "./state/kv.js";
+import { KV } from "./state/schema.js";
 import { VectorIndex } from "./state/vector-index.js";
 import { HybridSearch } from "./state/hybrid-search.js";
 import { IndexPersistence } from "./state/index-persistence.js";
@@ -33,6 +34,8 @@ import {
   registerSearchFunction,
   rebuildIndex,
   getSearchIndex,
+  setVectorIndex,
+  setEmbeddingProvider,
 } from "./functions/search.js";
 import { registerContextFunction } from "./functions/context.js";
 import { registerSummarizeFunction } from "./functions/summarize.js";
@@ -92,6 +95,7 @@ import { DedupMap } from "./functions/dedup.js";
 import { registerHealthMonitor } from "./health/monitor.js";
 import { initMetrics, OTEL_CONFIG } from "./telemetry/setup.js";
 import { VERSION } from "./version.js";
+import { bootLog } from "./logger.js";
 
 function hasGetMeter(
   sdk: unknown,
@@ -136,27 +140,27 @@ async function main() {
   const embeddingProvider = createEmbeddingProvider();
   const imageEmbeddingProvider = createImageEmbeddingProvider();
 
-  console.log(`[agentmemory] Starting worker v${VERSION}...`);
-  console.log(`[agentmemory] Engine: ${config.engineUrl}`);
-  console.log(
-    `[agentmemory] Provider: ${config.provider.provider} (${config.provider.model})`,
+  bootLog(`Starting worker v${VERSION}...`);
+  bootLog(`Engine: ${config.engineUrl}`);
+  bootLog(
+    `Provider: ${config.provider.provider} (${config.provider.model})`,
   );
   if (embeddingProvider) {
-    console.log(
-      `[agentmemory] Embedding provider: ${embeddingProvider.name} (${embeddingProvider.dimensions} dims)`,
+    bootLog(
+      `Embedding provider: ${embeddingProvider.name} (${embeddingProvider.dimensions} dims)`,
     );
   } else {
-    console.log(`[agentmemory] Embedding provider: none (BM25-only mode)`);
+    bootLog(`Embedding provider: none (BM25-only mode)`);
   }
   if (imageEmbeddingProvider) {
-    console.log(
-      `[agentmemory] Image embedding provider: ${imageEmbeddingProvider.name} (${imageEmbeddingProvider.dimensions} dims) — vision-search active`,
+    bootLog(
+      `Image embedding provider: ${imageEmbeddingProvider.name} (${imageEmbeddingProvider.dimensions} dims) — vision-search active`,
     );
   }
-  console.log(
-    `[agentmemory] REST API: http://localhost:${config.restPort}/agentmemory/*`,
+  bootLog(
+    `REST API: http://localhost:${config.restPort}/agentmemory/*`,
   );
-  console.log(`[agentmemory] Streams: ws://localhost:${config.streamsPort}`);
+  bootLog(`Streams: ws://localhost:${config.streamsPort}`);
 
   const sdk = registerWorker(config.engineUrl, {
     workerName: "agentmemory",
@@ -166,6 +170,18 @@ async function main() {
       serviceVersion: OTEL_CONFIG.serviceVersion,
       metricsExportIntervalMs: OTEL_CONFIG.metricsExportIntervalMs,
     },
+    // Explicit worker telemetry metadata. iii-sdk falls back to
+    // auto-detection (cwd / package.json name / hostname) when this
+    // is omitted, which produces inconsistent values per host —
+    // `agentmemory`, `node`, `npm`, occasionally the user's home
+    // directory basename. Pinning the value here gives every install
+    // the same stable project identifier for downstream attribution
+    // and grouping in the engine's metrics + traces output.
+    telemetry: {
+      project_name: "agentmemory",
+      language: "node",
+      framework: "iii-sdk",
+    },
   });
 
   const kv = new StateKV(sdk);
@@ -174,6 +190,9 @@ async function main() {
   const dedupMap = new DedupMap();
 
   const vectorIndex = embeddingProvider ? new VectorIndex() : null;
+
+  setVectorIndex(vectorIndex);
+  setEmbeddingProvider(embeddingProvider);
 
   const meterAccessor = hasGetMeter(sdk)
     ? (sdk.getMeter.bind(sdk) as (name: string) => unknown)
@@ -210,44 +229,44 @@ async function main() {
   const claudeBridgeConfig = loadClaudeBridgeConfig();
   if (claudeBridgeConfig.enabled) {
     registerClaudeBridgeFunction(sdk, kv, claudeBridgeConfig);
-    console.log(
-      `[agentmemory] Claude bridge: syncing to ${claudeBridgeConfig.memoryFilePath}`,
+    bootLog(
+      `Claude bridge: syncing to ${claudeBridgeConfig.memoryFilePath}`,
     );
   }
 
   if (isGraphExtractionEnabled()) {
     registerGraphFunction(sdk, kv, provider);
-    console.log(`[agentmemory] Knowledge graph: extraction enabled`);
+    bootLog(`Knowledge graph: extraction enabled`);
   }
 
   registerConsolidationPipelineFunction(sdk, kv, provider);
-  console.log(`[agentmemory] Consolidation pipeline: registered (CONSOLIDATION_ENABLED=${isConsolidationEnabled() ? "true" : "false"})`);
+  bootLog(`Consolidation pipeline: registered (CONSOLIDATION_ENABLED=${isConsolidationEnabled() ? "true" : "false"})`);
 
   if (isAutoCompressEnabled()) {
-    console.log(
-      `[agentmemory] WARNING: AGENTMEMORY_AUTO_COMPRESS=true — every PostToolUse observation will be sent to your LLM provider for compression. This spends API tokens proportional to your session tool-use frequency (see #138). Set AGENTMEMORY_AUTO_COMPRESS=false to disable.`,
+    bootLog(
+      `WARNING: AGENTMEMORY_AUTO_COMPRESS=true — every PostToolUse observation will be sent to your LLM provider for compression. This spends API tokens proportional to your session tool-use frequency (see #138). Set AGENTMEMORY_AUTO_COMPRESS=false to disable.`,
     );
   } else {
-    console.log(
-      `[agentmemory] Auto-compress: OFF (default, #138) — observations indexed via zero-LLM synthetic compression. Set AGENTMEMORY_AUTO_COMPRESS=true to opt-in to LLM-powered summaries (uses your API key).`,
+    bootLog(
+      `Auto-compress: OFF (default, #138) — observations indexed via zero-LLM synthetic compression. Set AGENTMEMORY_AUTO_COMPRESS=true to opt-in to LLM-powered summaries (uses your API key).`,
     );
   }
 
   if (isContextInjectionEnabled()) {
-    console.log(
-      `[agentmemory] WARNING: AGENTMEMORY_INJECT_CONTEXT=true — the PreToolUse and SessionStart hooks will inject up to ~4000 chars of memory context into every tool turn. On Claude Pro this burns session tokens proportional to your tool-call frequency (see #143). Set AGENTMEMORY_INJECT_CONTEXT=false to disable.`,
+    bootLog(
+      `WARNING: AGENTMEMORY_INJECT_CONTEXT=true — the PreToolUse and SessionStart hooks will inject up to ~4000 chars of memory context into every tool turn. On Claude Pro this burns session tokens proportional to your tool-call frequency (see #143). Set AGENTMEMORY_INJECT_CONTEXT=false to disable.`,
     );
   } else {
-    console.log(
-      `[agentmemory] Context injection: OFF (default, #143) — hooks capture observations but do not inject context into Claude Code's conversation. Set AGENTMEMORY_INJECT_CONTEXT=true to opt-in (warning: expect your Claude Pro allocation to drain faster).`,
+    bootLog(
+      `Context injection: OFF (default, #143) — hooks capture observations but do not inject context into Claude Code's conversation. Set AGENTMEMORY_INJECT_CONTEXT=true to opt-in (warning: expect your Claude Pro allocation to drain faster).`,
     );
   }
 
   const teamConfig = loadTeamConfig();
   if (teamConfig) {
     registerTeamFunction(sdk, kv, teamConfig);
-    console.log(
-      `[agentmemory] Team memory: ${teamConfig.teamId} (${teamConfig.mode})`,
+    bootLog(
+      `Team memory: ${teamConfig.teamId} (${teamConfig.mode})`,
     );
   }
 
@@ -281,23 +300,23 @@ async function main() {
   registerRetentionFunctions(sdk, kv);
   registerCompressFileFunction(sdk, kv, provider);
   registerReplayFunctions(sdk, kv);
-  console.log(
-    `[agentmemory] v0.6 advanced retrieval: sliding-window, query-expansion, temporal-graph, retention-scoring`,
+  bootLog(
+    `v0.6 advanced retrieval: sliding-window, query-expansion, temporal-graph, retention-scoring`,
   );
-  console.log(
-    `[agentmemory] Orchestration layer: actions, frontier, leases, routines, signals, checkpoints, flow-compress, mesh, branch-aware, sentinels, sketches, crystallize, diagnostics, facets`,
+  bootLog(
+    `Orchestration layer: actions, frontier, leases, routines, signals, checkpoints, flow-compress, mesh, branch-aware, sentinels, sketches, crystallize, diagnostics, facets`,
   );
   if (isSlotsEnabled()) {
-    console.log(
-      `[agentmemory] Slots: enabled (pinned editable memory). Reflect on Stop hook: ${isReflectEnabled() ? "on" : "off"}`,
+    bootLog(
+      `Slots: enabled (pinned editable memory). Reflect on Stop hook: ${isReflectEnabled() ? "on" : "off"}`,
     );
   }
 
   const snapshotConfig = loadSnapshotConfig();
   if (snapshotConfig.enabled) {
     registerSnapshotFunction(sdk, kv, snapshotConfig.dir);
-    console.log(
-      `[agentmemory] Git snapshots: ${snapshotConfig.dir} (every ${snapshotConfig.interval}s)`,
+    bootLog(
+      `Git snapshots: ${snapshotConfig.dir} (every ${snapshotConfig.interval}s)`,
     );
   }
 
@@ -331,15 +350,63 @@ async function main() {
   });
   if (loaded?.bm25 && loaded.bm25.size > 0) {
     bm25Index.restoreFrom(loaded.bm25);
-    console.log(
-      `[agentmemory] Loaded persisted BM25 index (${bm25Index.size} docs)`,
+    bootLog(
+      `Loaded persisted BM25 index (${bm25Index.size} docs)`,
     );
   }
   if (loaded?.vector && vectorIndex && loaded.vector.size > 0) {
-    vectorIndex.restoreFrom(loaded.vector);
-    console.log(
-      `[agentmemory] Loaded persisted vector index (${vectorIndex.size} vectors)`,
-    );
+    // Persisted vectors carry whatever dimension the provider had when
+    // they were written. If the active provider declares a different
+    // dimension — or if the on-disk index contains a mix of dimensions
+    // (legacy indexes written before the live-API guard in this PR) —
+    // restoring would silently corrupt search: cosineSimilarity returns
+    // 0 on cross-dim pairs, so affected observations stop matching
+    // anything and recall degrades without an error. Walk every stored
+    // vector instead of trusting the first; refuse to load if anything
+    // is off.
+    const activeDim = embeddingProvider?.dimensions ?? 0;
+    const { mismatches, seenDimensions } =
+      activeDim > 0
+        ? loaded.vector.validateDimensions(activeDim)
+        : { mismatches: [], seenDimensions: new Set<number>() };
+
+    if (mismatches.length > 0) {
+      const sample = mismatches
+        .slice(0, 5)
+        .map((m) => `${m.obsId} (dim=${m.dim})`)
+        .join(", ");
+      const distinct = Array.from(seenDimensions).sort((a, b) => a - b).join(", ");
+      const dropStale =
+        process.env["AGENTMEMORY_DROP_STALE_INDEX"] === "true";
+      if (dropStale) {
+        console.warn(
+          `[agentmemory] Persisted vector index has ${mismatches.length} of ` +
+            `${loaded.vector.size} vectors with the wrong dimension. Active ` +
+            `provider (${embeddingProvider?.name}) declares ${activeDim}; ` +
+            `dimensions seen on disk: ${distinct}. ` +
+            `AGENTMEMORY_DROP_STALE_INDEX=true is set — discarding the persisted ` +
+            `vectors. Live observations will rebuild the index over time.`,
+        );
+      } else {
+        throw new Error(
+          `[agentmemory] Refusing to start: persisted vector index has ` +
+            `${mismatches.length} of ${loaded.vector.size} vectors with the ` +
+            `wrong dimension. Active provider (${embeddingProvider?.name}) ` +
+            `declares ${activeDim}; dimensions seen on disk: ${distinct}. ` +
+            `First mismatched obsIds: ${sample}. Loading would silently corrupt ` +
+            `search (cross-dimension cosine returns 0). Choose one:\n` +
+            `  - Re-embed the existing index against the new provider, then start.\n` +
+            `  - Set AGENTMEMORY_DROP_STALE_INDEX=true to discard the persisted ` +
+            `vectors and rebuild from live observations.\n` +
+            `  - Switch the embedding provider back to the one that wrote the index.`,
+        );
+      }
+    } else {
+      vectorIndex.restoreFrom(loaded.vector);
+      bootLog(
+        `Loaded persisted vector index (${vectorIndex.size} vectors)`,
+      );
+    }
   }
 
   const needsRebuild = bm25Index.size === 0;
@@ -350,18 +417,66 @@ async function main() {
       return 0;
     });
     if (indexCount > 0) {
-      console.log(
-        `[agentmemory] Search index rebuilt: ${indexCount} observations`,
+      bootLog(
+        `Search index rebuilt: ${indexCount} entries`,
       );
       indexPersistence.scheduleSave();
     }
+  } else {
+    // Backfill memories into BM25 for users upgrading from <0.9.5: prior
+    // versions of mem::remember never indexed memories, so the persisted
+    // BM25 covers observations only and `memory_smart_search` returns
+    // empty for everything saved via memory_save (#257). Walk KV.memories
+    // and add the ones missing from the restored index. Idempotent on
+    // re-runs because SearchIndex.has() short-circuits already-indexed
+    // ids.
+    try {
+      const memories = await kv.list<import("./types.js").Memory>(KV.memories);
+      let backfilled = 0;
+      for (const memory of memories) {
+        if (memory.isLatest === false) continue;
+        if (!memory.title || !memory.content) continue;
+        if (bm25Index.has(memory.id)) continue;
+        bm25Index.add({
+          id: memory.id,
+          sessionId: memory.sessionIds[0] ?? "memory",
+          timestamp: memory.createdAt,
+          type: "decision",
+          title: memory.title,
+          facts: [memory.content],
+          narrative: memory.content,
+          concepts: memory.concepts,
+          files: memory.files,
+          importance: memory.strength,
+        });
+        backfilled++;
+      }
+      if (backfilled > 0) {
+        bootLog(
+          `Backfilled ${backfilled} memories into BM25 (legacy gap before #257)`,
+        );
+        indexPersistence.scheduleSave();
+      }
+    } catch (err) {
+      console.warn(
+        `[agentmemory] Failed to backfill memories into BM25:`,
+        err,
+      );
+    }
   }
 
-  console.log(
-    `[agentmemory] Ready. ${embeddingProvider ? "Triple-stream (BM25+Vector+Graph)" : "BM25+Graph"} search active.`,
+  // Ready / Endpoints lines are emitted via `bootLog` so they're
+  // buffered in quiet mode and printed verbatim under --verbose. The
+  // CLI surfaces a compact summary when it sees the worker reach
+  // ready state.
+  bootLog(
+    `Ready. ${embeddingProvider ? "Triple-stream (BM25+Vector+Graph)" : "BM25+Graph"} search active.`,
   );
-  console.log(
-    `[agentmemory] Endpoints: 107 REST + ${getAllTools().length} MCP tools + 6 MCP resources + 3 MCP prompts`,
+  bootLog(
+    `REST API: 124 endpoints at http://localhost:${config.restPort}/agentmemory/*`,
+  );
+  bootLog(
+    `MCP surface (opt-in via \`npx @agentmemory/mcp\`): ${getAllTools().length} tools · 6 resources · 3 prompts`,
   );
 
   const viewerPort = config.restPort + 2;
@@ -383,7 +498,7 @@ async function main() {
       } catch {}
     }, autoForgetIntervalMs);
     autoForgetTimer.unref();
-    console.log(`[agentmemory] Auto-forget: enabled (every ${autoForgetIntervalMs / 60000}m)`);
+    bootLog(`Auto-forget: enabled (every ${autoForgetIntervalMs / 60000}m)`);
   }
 
   if (process.env.LESSON_DECAY_ENABLED !== "false") {
@@ -393,7 +508,7 @@ async function main() {
       } catch {}
     }, 86400000);
     lessonDecayTimer.unref();
-    console.log(`[agentmemory] Lesson decay sweep: enabled (every 24h)`);
+    bootLog(`Lesson decay sweep: enabled (every 24h)`);
   }
 
   if (process.env.INSIGHT_DECAY_ENABLED !== "false") {
@@ -412,7 +527,7 @@ async function main() {
       } catch {}
     }, consolidationIntervalMs);
     consolidationTimer.unref();
-    console.log(`[agentmemory] Auto-consolidation: enabled (every ${consolidationIntervalMs / 60000}m)`);
+    bootLog(`Auto-consolidation: enabled (every ${consolidationIntervalMs / 60000}m)`);
   }
 
   const shutdown = async () => {

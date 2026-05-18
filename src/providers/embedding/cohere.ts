@@ -1,5 +1,6 @@
 import type { EmbeddingProvider } from "../../types.js";
 import { getEnvVar } from "../../config.js";
+import { fetchWithTimeout } from "../_fetch.js";
 
 const API_URL = "https://api.cohere.ai/v1/embed";
 
@@ -19,7 +20,7 @@ export class CohereEmbeddingProvider implements EmbeddingProvider {
   }
 
   async embedBatch(texts: string[]): Promise<Float32Array[]> {
-    const response = await fetch(API_URL, {
+    const response = await fetchWithTimeout(API_URL, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${this.apiKey}`,

@@ -28,7 +28,7 @@ async function main() {
 			method: "POST",
 			headers: authHeaders(),
 			body: JSON.stringify({ sessionId }),
-			signal: AbortSignal.timeout(5e3)
+			signal: AbortSignal.timeout(3e4)
 		});
 	} catch {}
 	if (process.env["CONSOLIDATION_ENABLED"] === "true") {
@@ -37,7 +37,7 @@ async function main() {
 				method: "POST",
 				headers: authHeaders(),
 				body: JSON.stringify({ olderThanDays: 0 }),
-				signal: AbortSignal.timeout(15e3)
+				signal: AbortSignal.timeout(6e4)
 			});
 		} catch {}
 		try {
@@ -48,7 +48,7 @@ async function main() {
 					tier: "all",
 					force: true
 				}),
-				signal: AbortSignal.timeout(3e4)
+				signal: AbortSignal.timeout(12e4)
 			});
 		} catch {}
 	}
@@ -56,7 +56,7 @@ async function main() {
 		await fetch(`${REST_URL}/agentmemory/claude-bridge/sync`, {
 			method: "POST",
 			headers: authHeaders(),
-			signal: AbortSignal.timeout(5e3)
+			signal: AbortSignal.timeout(3e4)
 		});
 	} catch {}
 }

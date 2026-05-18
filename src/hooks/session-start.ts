@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+// Inlined from ./sdk-guard so each hook bundles to a single self-contained
+// .mjs (matches the pattern used by every other hook entry in tsdown.config).
 function isSdkChildContext(payload: unknown): boolean {
   if (process.env["AGENTMEMORY_SDK_CHILD"] === "1") return true;
   if (!payload || typeof payload !== "object") return false;
@@ -17,6 +19,13 @@ const INJECT_CONTEXT = process.env["AGENTMEMORY_INJECT_CONTEXT"] === "true";
 
 const REST_URL = process.env["AGENTMEMORY_URL"] || "http://localhost:3111";
 const SECRET = process.env["AGENTMEMORY_SECRET"] || "";
+
+// When the server is unreachable a 5s timeout multiplies hard under
+// concurrent fan-out (Slack bots, multi-agent harnesses) and becomes a
+// positive feedback loop that OOM-kills iii-engine (#221). Cap tight on
+// both paths and skip the await entirely when the response is unused.
+const INJECT_TIMEOUT_MS = 1500;
+const REGISTER_TIMEOUT_MS = 800;
 
 function authHeaders(): Record<string, string> {
   const h: Record<string, string> = { "Content-Type": "application/json" };
@@ -43,18 +52,30 @@ async function main() {
     (data.session_id as string) || `ses_${Date.now().toString(36)}`;
   const project = (data.cwd as string) || process.cwd();
 
-  try {
-    const res = await fetch(`${REST_URL}/agentmemory/session/start`, {
-      method: "POST",
-      headers: authHeaders(),
-      body: JSON.stringify({ sessionId, project, cwd: project }),
-      signal: AbortSignal.timeout(5000),
-    });
+  const url = `${REST_URL}/agentmemory/session/start`;
+  const init: RequestInit = {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({ sessionId, project, cwd: project }),
+  };
 
-    // Only write context to stdout when the user has explicitly opted
-    // into injection. Registering the session is cheap and doesn't touch
-    // Claude Code's input token window.
-    if (INJECT_CONTEXT && res.ok) {
+  if (!INJECT_CONTEXT) {
+    // Pure telemetry path: caller never reads the response, so don't
+    // block on it. AbortSignal.timeout caps the wait the event loop
+    // gives the pending socket before exit.
+    fetch(url, {
+      ...init,
+      signal: AbortSignal.timeout(REGISTER_TIMEOUT_MS),
+    }).catch(() => {});
+    return;
+  }
+
+  try {
+    const res = await fetch(url, {
+      ...init,
+      signal: AbortSignal.timeout(INJECT_TIMEOUT_MS),
+    });
+    if (res.ok) {
       const result = (await res.json()) as { context?: string };
       if (result.context) {
         process.stdout.write(result.context);

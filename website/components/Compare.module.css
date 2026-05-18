@@ -11,13 +11,14 @@
 }
 .row {
   display: grid;
-  grid-template-columns: 1.6fr 1fr 1fr 1fr 1fr;
+  grid-template-columns: 1.4fr 1.3fr 1fr 1fr 1fr;
   gap: 16px;
-  padding: 20px 0;
+  padding: 20px 24px;
   border-bottom: 1px solid var(--charcoal);
   align-items: center;
   font-size: 14px;
   letter-spacing: 0.12px;
+  word-break: break-word;
 }
 .row > span {
   color: var(--steel);

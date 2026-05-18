@@ -66,6 +66,29 @@ export class VectorIndex {
     return this.vectors.size;
   }
 
+  // Walks every stored vector and returns the obsIds whose dimension
+  // doesn't match `expected`, plus the set of distinct dimensions seen.
+  // Used by the persistence-restore guard in src/index.ts to refuse
+  // loading any index containing wrong-dimension vectors — including
+  // legacy on-disk indexes written before the live-API dimension guard
+  // existed (where a mid-session provider swap could mix dimensions
+  // inside a single index). Empty `mismatches` plus a single-entry
+  // `seenDimensions` matching `expected` is the only clean state.
+  validateDimensions(
+    expected: number,
+  ): { mismatches: Array<{ obsId: string; dim: number }>; seenDimensions: Set<number> } {
+    const mismatches: Array<{ obsId: string; dim: number }> = [];
+    const seenDimensions = new Set<number>();
+    for (const [obsId, entry] of this.vectors) {
+      const dim = entry.embedding.length;
+      seenDimensions.add(dim);
+      if (dim !== expected) {
+        mismatches.push({ obsId, dim });
+      }
+    }
+    return { mismatches, seenDimensions };
+  }
+
   clear(): void {
     this.vectors.clear();
   }

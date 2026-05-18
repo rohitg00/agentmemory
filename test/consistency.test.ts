@@ -15,8 +15,14 @@ function readText(relativePath: string): string {
   return readFileSync(join(ROOT, relativePath), "utf-8");
 }
 
+function countRestApiEndpoints(): number {
+  const src = readText("src/triggers/api.ts");
+  return Array.from(src.matchAll(/api_path:\s*["`]/g)).length;
+}
+
 describe("Consistency checks", () => {
   const toolCount = getAllTools().length;
+  const restEndpointCount = countRestApiEndpoints();
 
   it("version.ts matches package.json", () => {
     const pkg = JSON.parse(readText("package.json"));
@@ -40,6 +46,17 @@ describe("Consistency checks", () => {
     expect(readme).toMatch(toolCountPattern);
     const toolResourcePattern = new RegExp(`${toolCount}\\s+tools,\\s+6\\s+resources`);
     expect(readme).toMatch(toolResourcePattern);
+  });
+
+  it("documented REST endpoint counts match registered API paths", () => {
+    const readme = readText("README.md");
+    const agents = readText("AGENTS.md");
+    const index = readText("src/index.ts");
+
+    expect(restEndpointCount).toBeGreaterThan(0);
+    expect(readme).toContain(`${restEndpointCount} endpoints on port`);
+    expect(agents).toContain(`${restEndpointCount} REST endpoints`);
+    expect(index).toContain(`REST API: ${restEndpointCount} endpoints`);
   });
 
   it("all tool names are unique", () => {

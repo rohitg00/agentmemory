@@ -142,4 +142,42 @@ describe("HybridSearch", () => {
     const results = await hybrid.search("auth");
     expect(results).toEqual([]);
   });
+
+  it("falls back to KV.memories when an indexed entry is a saved memory (#265)", async () => {
+    // mem::remember writes to KV.memories under the synthetic sessionId
+    // "memory" — the BM25 index sees that synthetic sessionId, but
+    // KV.observations("memory") never has anything.
+    const indexable = makeObs({
+      id: "mem_abc",
+      sessionId: "memory",
+      title: "Test memory for search",
+      narrative: "Test memory for search",
+      concepts: ["test", "search"],
+    });
+    bm25.add(indexable);
+
+    const memory = {
+      id: "mem_abc",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      type: "fact",
+      title: "Test memory for search",
+      content: "Test memory for search",
+      concepts: ["test", "search"],
+      files: [],
+      sessionIds: [],
+      strength: 7,
+      version: 1,
+      isLatest: true,
+    };
+    await kv.set("mem:memories", "mem_abc", memory);
+
+    const hybrid = new HybridSearch(bm25, null, null, kv as never);
+    const results = await hybrid.search("test memory search");
+
+    expect(results.length).toBe(1);
+    expect(results[0].observation.id).toBe("mem_abc");
+    expect(results[0].observation.narrative).toBe("Test memory for search");
+    expect(results[0].observation.concepts).toEqual(["test", "search"]);
+  });
 });
