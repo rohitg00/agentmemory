@@ -1,5 +1,6 @@
 import type { ISdk, ApiRequest } from "iii-sdk";
 import type { Session, CompressedObservation, HookPayload, CommitLink } from "../types.js";
+import { withKeyedLock } from "../state/keyed-mutex.js";
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { getLatestHealth } from "../health/monitor.js";
@@ -631,32 +632,35 @@ export function registerApiTriggers(
           )
         : undefined;
 
-      const existing = await kv.get<CommitLink>(KV.commits, sha);
-      const sessionSet = new Set<string>(existing?.sessionIds ?? []);
-      if (sessionId) sessionSet.add(sessionId);
-
-      const link: CommitLink = {
-        sha,
-        shortSha: existing?.shortSha ?? sha.slice(0, 7),
-        branch: branch ?? existing?.branch,
-        repo: repo ?? existing?.repo,
-        message: message ?? existing?.message,
-        author: author ?? existing?.author,
-        authoredAt: authoredAt ?? existing?.authoredAt,
-        files: files ?? existing?.files,
-        sessionIds: Array.from(sessionSet),
-        linkedAt: existing?.linkedAt ?? new Date().toISOString(),
-      };
-      await kv.set(KV.commits, sha, link);
+      const link = await withKeyedLock(`commit:${sha}`, async () => {
+        const existing = await kv.get<CommitLink>(KV.commits, sha);
+        const sessionSet = new Set<string>(existing?.sessionIds ?? []);
+        if (sessionId) sessionSet.add(sessionId);
+        const merged: CommitLink = {
+          sha,
+          shortSha: existing?.shortSha ?? sha.slice(0, 7),
+          branch: branch ?? existing?.branch,
+          repo: repo ?? existing?.repo,
+          message: message ?? existing?.message,
+          author: author ?? existing?.author,
+          authoredAt: authoredAt ?? existing?.authoredAt,
+          files: files ?? existing?.files,
+          sessionIds: Array.from(sessionSet),
+          linkedAt: existing?.linkedAt ?? new Date().toISOString(),
+        };
+        await kv.set(KV.commits, sha, merged);
+        return merged;
+      });
 
       if (sessionId) {
-        const session = await kv.get<Session>(KV.sessions, sessionId);
-        if (session) {
+        await withKeyedLock(`session:${sessionId}`, async () => {
+          const session = await kv.get<Session>(KV.sessions, sessionId);
+          if (!session) return;
           const shaSet = new Set<string>(session.commitShas ?? []);
           shaSet.add(sha);
           session.commitShas = Array.from(shaSet);
           await kv.set(KV.sessions, sessionId, session);
-        }
+        });
       }
 
       return { status_code: 200, body: { commit: link } };
@@ -690,11 +694,10 @@ export function registerApiTriggers(
           body: { error: "no sessions linked to this commit" },
         };
       }
-      const sessions: Session[] = [];
-      for (const sid of link.sessionIds ?? []) {
-        const s = await kv.get<Session>(KV.sessions, sid);
-        if (s) sessions.push(s);
-      }
+      const fetched = await Promise.all(
+        (link.sessionIds ?? []).map((sid) => kv.get<Session>(KV.sessions, sid)),
+      );
+      const sessions = fetched.filter((s): s is Session => s !== null);
       return { status_code: 200, body: { commit: link, sessions } };
     },
   );

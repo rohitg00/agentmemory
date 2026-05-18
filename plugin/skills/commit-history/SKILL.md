@@ -9,7 +9,7 @@ The user wants a list of agent-linked commits. Filter args: $ARGUMENTS
 
 Parse `$ARGUMENTS` for optional `branch=<name>`, `repo=<url-or-fragment>`, and `limit=<n>` tokens. A bare numeric token becomes the limit. Defaults: no branch filter, no repo filter, limit 100, max 500.
 
-Call the `memory_commits` MCP tool with the parsed filters. If the MCP tool is unavailable, fall back to HTTP: `GET $AGENTMEMORY_URL/agentmemory/commits?branch=<>&repo=<>&limit=<>` with `Authorization: Bearer $AGENTMEMORY_SECRET` when set.
+Call the `memory_commits` MCP tool with the parsed filters. If the MCP tool is unavailable, fall back to HTTP: build `GET $AGENTMEMORY_URL/agentmemory/commits` and append each filter as a URL-encoded query parameter (use `URLSearchParams` or `encodeURIComponent` on `branch`, `repo`, and `limit`) so values containing `?`, `&`, or `#` cannot corrupt the request. Include `Authorization: Bearer $AGENTMEMORY_SECRET` when set.
 
 Render the result as a reverse-chronological list:
 - Short SHA, branch, authored timestamp

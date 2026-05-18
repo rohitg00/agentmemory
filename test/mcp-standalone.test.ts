@@ -68,8 +68,8 @@ describe("Tools Registry", () => {
     }
   });
 
-  it("CORE_TOOLS has 12 items", () => {
-    expect(CORE_TOOLS.length).toBe(12);
+  it("CORE_TOOLS has 14 items", () => {
+    expect(CORE_TOOLS.length).toBe(14);
   });
 
   it("V040_TOOLS has 8 items", () => {

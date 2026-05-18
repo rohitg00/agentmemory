@@ -1215,11 +1215,10 @@ export function registerMcpEndpoints(
               };
             }
             const linkRecord = link as { sessionIds?: string[] };
-            const sessions = [];
-            for (const sid of linkRecord.sessionIds ?? []) {
-              const s = await kv.get(KV.sessions, sid);
-              if (s) sessions.push(s);
-            }
+            const fetched = await Promise.all(
+              (linkRecord.sessionIds ?? []).map((sid) => kv.get(KV.sessions, sid)),
+            );
+            const sessions = fetched.filter((s) => s !== null);
             return {
               status_code: 200,
               body: { content: [{ type: "text", text: JSON.stringify({ commit: link, sessions }, null, 2) }] },

@@ -7,9 +7,9 @@ user-invocable: true
 
 The user wants to resume work. Optional cwd override: $ARGUMENTS
 
-Determine the current project path: use `$ARGUMENTS` if it looks like an absolute path, otherwise the current working directory.
+Determine the current project path: if `$ARGUMENTS` is provided, resolve it to an absolute, normalized path (accept relative inputs, e.g. `path.resolve(process.cwd(), $ARGUMENTS)`); otherwise use the current working directory.
 
-Call the `memory_sessions` MCP tool. From the result, pick the most recent session whose `cwd` matches the project path (or its prefix), preferring sessions with status `completed` over `abandoned`. If nothing matches, fall back to the single most recent session overall.
+Call the `memory_sessions` MCP tool. From the result, pick the most recent session whose normalized `cwd` matches the project path with a directory-boundary check — equality OR `session.cwd.startsWith(projectPath + path.sep)` OR `projectPath.startsWith(session.cwd + path.sep)`. Do NOT use a raw string prefix match: it produces false positives across unrelated repos that share a path prefix (e.g. `/repo-a` vs `/repo-a-staging`). Prefer sessions with status `completed` over `abandoned`. If nothing matches, fall back to the single most recent session overall.
 
 Once a session is selected:
 1. If the session ended on an unanswered user-facing question, surface that question FIRST as the lead. Look for it in `summary` or in the last few observations (type `conversation` with `narrative` ending in `?`).
