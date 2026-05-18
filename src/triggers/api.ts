@@ -92,6 +92,11 @@ function asNonEmptyString(value: unknown): string | null {
   return trimmed ? trimmed : null;
 }
 
+function asSessionPreview(value: unknown, maxLength: number): string | null {
+  const text = asNonEmptyString(value);
+  return text ? text.replace(/\s+/g, " ").slice(0, maxLength) : null;
+}
+
 function parseOptionalFiniteNumber(value: unknown): number | undefined | null {
   if (value === undefined || value === null) return undefined;
   if (typeof value === "number") return Number.isFinite(value) ? value : null;
@@ -517,7 +522,14 @@ export function registerApiTriggers(
 
   sdk.registerFunction("api::session::start",
     async (
-      req: ApiRequest<{ sessionId: string; project: string; cwd: string }>,
+      req: ApiRequest<{
+        sessionId: string;
+        project: string;
+        cwd: string;
+        title?: string;
+        summary?: string;
+        firstPrompt?: string;
+      }>,
     ): Promise<Response> => {
       const body = (req.body ?? {}) as Record<string, unknown>;
       const sessionId = asNonEmptyString(body.sessionId);
@@ -531,6 +543,9 @@ export function registerApiTriggers(
           },
         };
       }
+      const title = asSessionPreview(body.title, 200);
+      const summary = asSessionPreview(body.summary, 300) ?? title;
+      const firstPrompt = asSessionPreview(body.firstPrompt, 200) ?? title;
       const session: Session = {
         id: sessionId,
         project,
@@ -539,6 +554,8 @@ export function registerApiTriggers(
         status: "active",
         observationCount: 0,
       };
+      if (summary) session.summary = summary;
+      if (firstPrompt) session.firstPrompt = firstPrompt;
       await kv.set(KV.sessions, sessionId, session);
       const contextResult = await sdk.trigger<
         { sessionId: string; project: string },

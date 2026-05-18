@@ -1171,7 +1171,7 @@ Create `~/.agentmemory/.env`:
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/agentmemory/health` | Health check (always public) |
-| `POST` | `/agentmemory/session/start` | Start session + get context |
+| `POST` | `/agentmemory/session/start` | Start session + get context; accepts optional `title`, `summary`, and `firstPrompt` labels |
 | `POST` | `/agentmemory/session/end` | End session |
 | `POST` | `/agentmemory/observe` | Capture observation |
 | `POST` | `/agentmemory/smart-search` | Hybrid search |
