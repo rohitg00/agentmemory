@@ -24,7 +24,7 @@ export function resolveProject(cwd?: string): string {
   const explicit = process.env["AGENTMEMORY_PROJECT_NAME"];
   if (explicit && explicit.trim()) return explicit.trim();
 
-  const dir = cwd && cwd.trim() ? cwd : process.cwd();
+  const dir = cwd?.trim() || process.cwd();
 
   try {
     const top = execSync("git rev-parse --show-toplevel", {

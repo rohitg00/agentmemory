@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, basename } from "node:path";
 import { execSync } from "node:child_process";
@@ -42,7 +42,7 @@ describe("resolveProject (#lesson-visibility-pt2)", () => {
     try {
       execSync("git init --quiet", { cwd: tmp });
       const sub = join(tmp, "src", "deep");
-      execSync(`mkdir -p ${sub}`);
+      mkdirSync(sub, { recursive: true });
       // When called from a subdirectory of the repo, project is still the
       // repo basename, not the subdirectory basename. This handles sessions
       // started inside subtrees (e.g. /repo/src/foo).
