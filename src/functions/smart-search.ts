@@ -3,11 +3,13 @@ import type {
   CompactSearchResult,
   CompressedObservation,
   HybridSearchResult,
+  Session,
 } from "../types.js";
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { recordAccessBatch } from "./access-tracker.js";
 import { logger } from "../logger.js";
+import { compactSessionAttribution } from "./session-attribution.js";
 
 export function registerSmartSearchFunction(
   sdk: ISdk,
@@ -35,13 +37,21 @@ export function registerSmartSearchFunction(
           obsId: string;
           sessionId: string;
           observation: CompressedObservation;
+          session?: ReturnType<typeof compactSessionAttribution>;
         }> = [];
 
         const results = await Promise.all(
           items.map(({ obsId, sessionId }) =>
-            findObservation(kv, obsId, sessionId).then((obs) =>
-              obs ? { obsId, sessionId: obs.sessionId, observation: obs } : null,
-            ),
+            findObservation(kv, obsId, sessionId).then(async (obs) => {
+              if (!obs) return null;
+              const session = await loadSession(kv, obs.sessionId);
+              return {
+                obsId,
+                sessionId: obs.sessionId,
+                observation: obs,
+                session: compactSessionAttribution(obs.sessionId, session),
+              };
+            }),
           ),
         );
         for (const r of results) {
@@ -70,14 +80,20 @@ export function registerSmartSearchFunction(
       const limit = Math.max(1, Math.min(data.limit ?? 20, 100));
       const hybridResults = await searchFn(data.query, limit);
 
-      const compact: CompactSearchResult[] = hybridResults.map((r) => ({
-        obsId: r.observation.id,
-        sessionId: r.sessionId,
-        title: r.observation.title,
-        type: r.observation.type,
-        score: r.combinedScore,
-        timestamp: r.observation.timestamp,
-      }));
+      const compact: CompactSearchResult[] = await Promise.all(
+        hybridResults.map(async (r) => {
+          const session = await loadSession(kv, r.sessionId);
+          return {
+            obsId: r.observation.id,
+            sessionId: r.sessionId,
+            session: compactSessionAttribution(r.sessionId, session),
+            title: r.observation.title,
+            type: r.observation.type,
+            score: r.combinedScore,
+            timestamp: r.observation.timestamp,
+          };
+        }),
+      );
 
       void recordAccessBatch(
         kv,
@@ -117,4 +133,11 @@ async function findObservation(
     if (found) return found;
   }
   return null;
+}
+
+async function loadSession(
+  kv: StateKV,
+  sessionId: string,
+): Promise<Session | null> {
+  return kv.get<Session>(KV.sessions, sessionId).catch(() => null);
 }

@@ -105,6 +105,16 @@ describe("Smart Search Function", () => {
       startedAt: "2026-02-01T00:00:00Z",
       status: "completed",
       observationCount: 2,
+      model: "gpt-5.3-codex",
+      agent: {
+        client: "codex",
+        model: "gpt-5.3-codex",
+        agentType: "worker",
+        sessionSource: "handoff-resume",
+      },
+      metadata: {
+        taskType: "feature-pr",
+      },
     };
     await kv.set("mem:sessions", "ses_1", session);
     await kv.set("mem:obs:ses_1", "obs_1", obs1);
@@ -126,17 +136,27 @@ describe("Smart Search Function", () => {
     expect(result.results[0]).toHaveProperty("type");
     expect(result.results[0]).toHaveProperty("score");
     expect(result.results[0]).toHaveProperty("timestamp");
+    expect(result.results[0]?.session?.agent?.client).toBe("codex");
+    expect(result.results[0]?.session?.metadata?.taskType).toBe("feature-pr");
     expect(result.results[0]).not.toHaveProperty("narrative");
   });
 
   it("expand mode returns full observations for given IDs", async () => {
     const result = (await sdk.trigger("mem::smart-search", {
       expandIds: ["obs_1"],
-    })) as { mode: string; results: Array<{ obsId: string; observation: CompressedObservation }> };
+    })) as {
+      mode: string;
+      results: Array<{
+        obsId: string;
+        observation: CompressedObservation;
+        session?: { model?: string };
+      }>;
+    };
 
     expect(result.mode).toBe("expanded");
     expect(result.results.length).toBe(1);
     expect(result.results[0].observation.title).toBe("Auth handler");
+    expect(result.results[0].session?.model).toBe("gpt-5.3-codex");
   });
 
   it("returns error when query is missing and no expandIds", async () => {

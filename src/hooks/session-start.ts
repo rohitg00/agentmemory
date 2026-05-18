@@ -33,6 +33,12 @@ function authHeaders(): Record<string, string> {
   return h;
 }
 
+function nonEmptyString(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
 async function main() {
   let input = "";
   for await (const chunk of process.stdin) {
@@ -51,12 +57,28 @@ async function main() {
   const sessionId =
     (data.session_id as string) || `ses_${Date.now().toString(36)}`;
   const project = (data.cwd as string) || process.cwd();
+  const model = nonEmptyString(data.model);
+  const agentType = nonEmptyString(data.agent_type);
+  const sessionSource = nonEmptyString(data.source);
+
+  const agent = {
+    client: "claude-code",
+    ...(model ? { model } : {}),
+    ...(agentType ? { agentType } : {}),
+    ...(sessionSource ? { sessionSource } : {}),
+  };
 
   const url = `${REST_URL}/agentmemory/session/start`;
   const init: RequestInit = {
     method: "POST",
     headers: authHeaders(),
-    body: JSON.stringify({ sessionId, project, cwd: project }),
+    body: JSON.stringify({
+      sessionId,
+      project,
+      cwd: project,
+      ...(model ? { model } : {}),
+      agent,
+    }),
   };
 
   if (!INJECT_CONTEXT) {

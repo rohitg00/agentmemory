@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { createServer, type Server } from "node:http";
 import { spawn } from "node:child_process";
 import { join } from "node:path";
 
@@ -124,5 +125,62 @@ describe("session-start hook — context injection gate (#143)", () => {
     });
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toBe("");
+  });
+
+  it("sends Claude Code agent identity when registering a session", async () => {
+    const received = await new Promise<Record<string, unknown>>((resolve, reject) => {
+      const server: Server = createServer((req, res) => {
+        let body = "";
+        req.on("data", (chunk) => {
+          body += chunk.toString();
+        });
+        req.on("end", () => {
+          try {
+            resolve(JSON.parse(body) as Record<string, unknown>);
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ context: "" }));
+          } catch (err) {
+            reject(err);
+          } finally {
+            server.close();
+          }
+        });
+      });
+
+      server.listen(0, "127.0.0.1", async () => {
+        const address = server.address();
+        if (!address || typeof address === "string") {
+          reject(new Error("failed to bind test server"));
+          return;
+        }
+        const payload = JSON.stringify({
+          session_id: "ses_test",
+          cwd: "/tmp/fake-project",
+          source: "startup",
+          model: "claude-sonnet-4-6",
+          agent_type: "planner",
+        });
+        const result = await runHook("session-start.mjs", payload, {
+          AGENTMEMORY_INJECT_CONTEXT: "true",
+          AGENTMEMORY_URL: `http://127.0.0.1:${address.port}`,
+        });
+        if (result.exitCode !== 0) {
+          reject(new Error(`hook exited with ${result.exitCode}`));
+        }
+      });
+    });
+
+    expect(received).toMatchObject({
+      sessionId: "ses_test",
+      project: "/tmp/fake-project",
+      cwd: "/tmp/fake-project",
+      model: "claude-sonnet-4-6",
+      agent: {
+        client: "claude-code",
+        model: "claude-sonnet-4-6",
+        agentType: "planner",
+        sessionSource: "startup",
+      },
+    });
   });
 });

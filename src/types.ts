@@ -7,10 +7,21 @@ export interface Session {
   status: "active" | "completed" | "abandoned";
   observationCount: number;
   model?: string;
+  agent?: AgentIdentity;
+  metadata?: SessionMetadata;
   tags?: string[];
   firstPrompt?: string;
   summary?: string;
 }
+
+export interface AgentIdentity {
+  client: string;
+  model?: string;
+  agentType?: string;
+  sessionSource?: string;
+}
+
+export type SessionMetadata = Record<string, unknown>;
 
 export interface RawObservation {
   id: string;
@@ -153,6 +164,20 @@ export interface SearchResult {
   observation: CompressedObservation;
   score: number;
   sessionId: string;
+  session?: SessionAttribution;
+}
+
+export interface SessionAttribution {
+  id: string;
+  project?: string;
+  startedAt?: string;
+  status?: Session["status"];
+  model?: string;
+  agent?: AgentIdentity;
+  agentType?: string;
+  sessionSource?: string;
+  metadata?: SessionMetadata;
+  label?: string;
 }
 
 export interface ContextBlock {
@@ -240,12 +265,14 @@ export interface HybridSearchResult {
   graphScore: number;
   combinedScore: number;
   sessionId: string;
+  session?: SessionAttribution;
   graphContext?: string;
 }
 
 export interface CompactSearchResult {
   obsId: string;
   sessionId: string;
+  session?: SessionAttribution;
   title: string;
   type: ObservationType;
   score: number;

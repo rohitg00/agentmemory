@@ -8,6 +8,7 @@ import type { EmbeddingProvider } from '../types.js'
 import { memoryToObservation } from '../state/memory-utils.js'
 import { recordAccessBatch } from './access-tracker.js'
 import { logger } from "../logger.js";
+import { compactSessionAttribution } from './session-attribution.js'
 
 let index: SearchIndex | null = null
 let vectorIndex: VectorIndex | null = null
@@ -216,9 +217,18 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
       const sessionCache = new Map<string, Session | null>()
       const loadSession = async (sessionId: string): Promise<Session | null> => {
         if (sessionCache.has(sessionId)) return sessionCache.get(sessionId)!
-        const s = await kv.get<Session>(KV.sessions, sessionId)
-        sessionCache.set(sessionId, s ?? null)
-        return s ?? null
+        try {
+          const s = await kv.get<Session>(KV.sessions, sessionId)
+          sessionCache.set(sessionId, s ?? null)
+          return s ?? null
+        } catch (err) {
+          logger.warn('search: failed to load session attribution', {
+            sessionId,
+            error: err instanceof Error ? err.message : String(err),
+          })
+          sessionCache.set(sessionId, null)
+          return null
+        }
       }
 
       // First pass: filter by session (sequential — benefits from session cache).
@@ -250,6 +260,9 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
           return mem ? memoryToObservation(mem) : null
         })
       )
+      const sessionResults = await Promise.all(
+        candidates.map((r) => loadSession(r.sessionId)),
+      )
       const enriched: SearchResult[] = []
       for (let i = 0; i < candidates.length; i++) {
         const obs = obsResults[i]
@@ -258,6 +271,10 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
             observation: obs,
             score: candidates[i].score,
             sessionId: candidates[i].sessionId,
+            session: compactSessionAttribution(
+              candidates[i].sessionId,
+              sessionResults[i],
+            ),
           })
         }
       }
@@ -293,6 +310,7 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
         const compactResults: CompactSearchResult[] = enriched.map((r) => ({
           obsId: r.observation.id,
           sessionId: r.sessionId,
+          session: r.session,
           title: r.observation.title,
           type: r.observation.type,
           score: r.score,
@@ -312,6 +330,7 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
         const narrativeResults = enriched.map((r) => ({
           obsId: r.observation.id,
           sessionId: r.sessionId,
+          session: r.session,
           title: r.observation.title,
           narrative: r.observation.narrative,
           score: r.score,
@@ -319,7 +338,12 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
         }))
         const packed = applyTokenBudget(narrativeResults)
         const text = packed.items
-          .map((r, index) => `${index + 1}. ${r.title}\n${r.narrative}`)
+          .map((r, index) => {
+            const source = r.session?.label
+              ? `\nSource: ${r.session.label}`
+              : `\nSource session: ${r.sessionId}`
+            return `${index + 1}. ${r.title}${source}\n${r.narrative}`
+          })
           .join('\n\n')
         return {
           format,

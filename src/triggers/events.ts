@@ -5,11 +5,23 @@ import { StateKV } from "../state/kv.js";
 import { isReflectEnabled } from "../functions/slots.js";
 import { isGraphExtractionEnabled } from "../config.js";
 import { logger } from "../logger.js";
+import { normalizeSessionMetadata } from "../functions/session-metadata.js";
 
 export function registerEventTriggers(sdk: ISdk, kv: StateKV): void {
   sdk.registerFunction(
     "event::session::started",
-    async (data: { sessionId: string; project: string; cwd: string }) => {
+    async (data: {
+      sessionId: string;
+      project: string;
+      cwd: string;
+      model?: string;
+      agent?: Session["agent"];
+      metadata?: Session["metadata"];
+    }) => {
+      const metadata = normalizeSessionMetadata(data as Record<string, unknown>);
+      if (metadata.error) {
+        logger.warn("Session metadata ignored", { error: metadata.error });
+      }
       const session: Session = {
         id: data.sessionId,
         project: data.project,
@@ -17,6 +29,9 @@ export function registerEventTriggers(sdk: ISdk, kv: StateKV): void {
         startedAt: new Date().toISOString(),
         status: "active",
         observationCount: 0,
+        ...(!metadata.error && metadata.model ? { model: metadata.model } : {}),
+        ...(!metadata.error && metadata.agent ? { agent: metadata.agent } : {}),
+        ...(!metadata.error && metadata.metadata ? { metadata: metadata.metadata } : {}),
       };
       await kv.set(KV.sessions, data.sessionId, session);
       const contextResult = await sdk.trigger<

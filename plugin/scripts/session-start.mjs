@@ -15,6 +15,11 @@ function authHeaders() {
 	if (SECRET) h["Authorization"] = `Bearer ${SECRET}`;
 	return h;
 }
+function nonEmptyString(value) {
+	if (typeof value !== "string") return void 0;
+	const trimmed = value.trim();
+	return trimmed.length > 0 ? trimmed : void 0;
+}
 async function main() {
 	let input = "";
 	for await (const chunk of process.stdin) input += chunk;
@@ -27,6 +32,15 @@ async function main() {
 	if (isSdkChildContext(data)) return;
 	const sessionId = data.session_id || `ses_${Date.now().toString(36)}`;
 	const project = data.cwd || process.cwd();
+	const model = nonEmptyString(data.model);
+	const agentType = nonEmptyString(data.agent_type);
+	const sessionSource = nonEmptyString(data.source);
+	const agent = {
+		client: "claude-code",
+		...model ? { model } : {},
+		...agentType ? { agentType } : {},
+		...sessionSource ? { sessionSource } : {}
+	};
 	const url = `${REST_URL}/agentmemory/session/start`;
 	const init = {
 		method: "POST",
@@ -34,7 +48,9 @@ async function main() {
 		body: JSON.stringify({
 			sessionId,
 			project,
-			cwd: project
+			cwd: project,
+			...model ? { model } : {},
+			agent
 		})
 	};
 	if (!INJECT_CONTEXT) {

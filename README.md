@@ -710,7 +710,7 @@ Memories decay over time (Ebbinghaus curve). Frequently accessed memories streng
 
 | Hook | Captures |
 |------|----------|
-| `SessionStart` | Project path, session ID |
+| `SessionStart` | Project path, session ID, model, agent identity |
 | `UserPromptSubmit` | User prompts (privacy-filtered) |
 | `PreToolUse` | File access patterns + enriched context |
 | `PostToolUse` | Tool name, input, output |
@@ -1189,6 +1189,32 @@ Create `~/.agentmemory/.env`:
 Full endpoint list: [`src/triggers/api.ts`](src/triggers/api.ts)
 
 </details>
+
+`POST /agentmemory/session/start` accepts optional session metadata so teams can
+distinguish which client, model, or agent role created a session:
+
+```json
+{
+  "sessionId": "ses_123",
+  "project": "/repo",
+  "cwd": "/repo",
+  "model": "claude-sonnet-4-6",
+  "agent": {
+    "client": "claude-code",
+    "model": "claude-sonnet-4-6",
+    "agentType": "planner",
+    "sessionSource": "startup"
+  },
+  "metadata": {
+    "taskType": "refactor",
+    "agentVersion": "2.1.0"
+  }
+}
+```
+
+Recall and context results include compact session attribution, so agents can see
+which client/model/role produced a retrieved observation instead of receiving an
+opaque session ID only.
 
 ---
 
