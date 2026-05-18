@@ -1204,6 +1204,44 @@ export function registerMcpEndpoints(
             };
           }
 
+          case "memory_commit_lookup": {
+            const sha = asNonEmptyString(args.sha);
+            if (!sha) return { status_code: 400, body: { error: "sha required" } };
+            const link = await kv.get(KV.commits, sha);
+            if (!link) {
+              return {
+                status_code: 200,
+                body: { content: [{ type: "text", text: JSON.stringify({ commit: null, sessions: [] }, null, 2) }] },
+              };
+            }
+            const linkRecord = link as { sessionIds?: string[] };
+            const sessions = [];
+            for (const sid of linkRecord.sessionIds ?? []) {
+              const s = await kv.get(KV.sessions, sid);
+              if (s) sessions.push(s);
+            }
+            return {
+              status_code: 200,
+              body: { content: [{ type: "text", text: JSON.stringify({ commit: link, sessions }, null, 2) }] },
+            };
+          }
+
+          case "memory_commits": {
+            const branch = typeof args.branch === "string" ? args.branch : undefined;
+            const repo = typeof args.repo === "string" ? args.repo : undefined;
+            const limit = Math.max(1, Math.min(500, asNumber(args.limit, 100) ?? 100));
+            const all = await kv.list(KV.commits);
+            const filtered = (all as Array<{ branch?: string; repo?: string; linkedAt?: string }>)
+              .filter((c) => !branch || c.branch === branch)
+              .filter((c) => !repo || c.repo === repo)
+              .sort((a, b) => ((a.linkedAt ?? "") < (b.linkedAt ?? "") ? 1 : -1))
+              .slice(0, limit);
+            return {
+              status_code: 200,
+              body: { content: [{ type: "text", text: JSON.stringify({ commits: filtered }, null, 2) }] },
+            };
+          }
+
           default:
             return {
               status_code: 400,

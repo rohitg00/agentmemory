@@ -10,6 +10,20 @@ export interface Session {
   tags?: string[];
   firstPrompt?: string;
   summary?: string;
+  commitShas?: string[];
+}
+
+export interface CommitLink {
+  sha: string;
+  shortSha: string;
+  branch?: string;
+  repo?: string;
+  message?: string;
+  author?: string;
+  authoredAt?: string;
+  files?: string[];
+  sessionIds: string[];
+  linkedAt: string;
 }
 
 export interface RawObservation {
