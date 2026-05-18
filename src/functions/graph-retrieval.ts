@@ -292,6 +292,14 @@ export class GraphRetrieval {
       }
     }
 
+    // Drop the startNode's own entry before returning: callers
+    // (searchByEntities, expandFromChunks) score start-node
+    // observations via a dedicated fallback loop with score=1.0. If
+    // we leave it in here, the start-path (length 1, no edges) goes
+    // through the generic path-scoring loop first — pathLength=1 +
+    // empty edgeWeights makes avgWeight fall to 0.5, the obs get
+    // marked visited, and the score=1.0 fallback becomes dead code.
+    pathTo.delete(startNode.id);
     return Array.from(pathTo.values());
   }
 }

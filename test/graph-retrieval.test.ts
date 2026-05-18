@@ -251,6 +251,29 @@ describe("GraphRetrieval", () => {
     expect(Number.isFinite(weak!.score)).toBe(true);
   });
 
+  it("scores startNode observations at 1.0 via the fallback path, not 0.5 via the path-scoring loop (#328 review)", async () => {
+    // Regression for a bug surfaced by inline review on #463: if the
+    // traversal includes a length-1 path for the startNode itself,
+    // the generic path-scoring loop in searchByEntities computes
+    // avgWeight=0.5 (empty edgeWeights → fallback) and pathLength=1,
+    // yielding score=0.5, then marks the obs as visited. The
+    // dedicated score=1.0 fallback loop for startNode obs is then
+    // skipped via the visitedObs guard — dead code.
+    const nodes = [
+      makeNode("n1", "React", "library", ["obs_root"]),
+      makeNode("n2", "Hook", "concept", ["obs_neighbor"]),
+    ];
+    const edges = [makeEdge("e1", "n1", "n2", "uses", 0.8)];
+    const kv = mockKV(nodes, edges);
+    const retrieval = new GraphRetrieval(kv as never);
+
+    const results = await retrieval.searchByEntities(["React"], 2);
+    const root = results.find((r) => r.obsId === "obs_root");
+    expect(root).toBeDefined();
+    expect(root!.score).toBe(1.0);
+    expect(root!.pathLength).toBe(0);
+  });
+
   it("respects maxDepth bound (Dijkstra stops at edge-count depth)", async () => {
     // Chain n1 -> n2 -> n3 -> n4. With maxDepth=2 we should reach n3
     // but not n4 — edge-count semantics preserved from the old BFS.
