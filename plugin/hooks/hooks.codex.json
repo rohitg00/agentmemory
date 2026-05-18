@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/scripts/session-start.mjs",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/session-start.mjs\"",
             "statusMessage": "agentmemory: loading session context"
           }
         ]
@@ -16,7 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/scripts/prompt-submit.mjs",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/prompt-submit.mjs\"",
             "statusMessage": "agentmemory: recalling relevant memories"
           }
         ]
@@ -28,7 +28,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/scripts/pre-tool-use.mjs"
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/pre-tool-use.mjs\""
           }
         ]
       }
@@ -38,7 +38,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/scripts/post-tool-use.mjs"
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/post-tool-use.mjs\""
           }
         ]
       }
@@ -48,7 +48,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/scripts/pre-compact.mjs"
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/pre-compact.mjs\""
           }
         ]
       }
@@ -58,7 +58,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/scripts/stop.mjs"
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/stop.mjs\""
           }
         ]
       }
