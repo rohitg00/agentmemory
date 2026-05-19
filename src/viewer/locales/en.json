@@ -18,12 +18,14 @@
     "memories": "Memories",
     "lessons": "Lessons",
     "crystals": "Crystals",
+    "edges_count": "{n} edges",
     "graph_nodes": "Graph Nodes",
     "health": "Health",
     "function_calls": "Function Calls",
     "circuit_breaker": "Circuit Breaker",
     "circuit_breaker_details": "Circuit Breaker Details",
     "token_savings": "Token Savings",
+    "token_savings_sub": "~{tokens} tokens · {cost} saved",
     "system_resources": "System Resources",
     "recent_sessions": "Recent Sessions",
     "recent_activity": "Recent Activity",
@@ -106,6 +108,8 @@
     "all_filter": "All ({n})",
     "observations_shown": "{n} observations shown",
     "no_observations": "No observations",
+    "no_obs_filter_suffix": " match the filter ({n} total)",
+    "no_obs_session_suffix": " for this session",
     "select_placeholder": "Select session",
     "importance_all": "All importance",
     "prev": "Prev",
@@ -128,6 +132,7 @@
     "search_placeholder": "Search actions...",
     "all_statuses": "All statuses",
     "empty_title": "No actions tracked yet",
+    "three_ways_intro": "Three ways to create them:",
     "empty_body": "Actions are follow-ups the agent surfaced during a session: decisions to revisit, files to inspect, tasks blocked on input. They show up here with status pending → active → done/blocked so nothing slips through between sessions.",
     "col_title": "Title",
     "col_status": "Status",
@@ -147,7 +152,8 @@
   },
   "audit": {
     "all_operations": "All operations",
-    "empty": "No audit entries yet"
+    "empty": "No audit entries yet",
+    "empty_body": "Audit entries are created by governance operations (delete, evolve, consolidate)."
   },
   "activity": {
     "heatmap": "Activity Heatmap (Past Year)",

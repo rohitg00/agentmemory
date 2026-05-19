@@ -1396,7 +1396,7 @@
       var crystalCount = (d.crystals || []).length;
       html += '<div class="stat-card"><div class="label">' + t('dashboard.lessons') + '</div><div class="value">' + lessonCount + '</div><div class="sub">' + t('dashboard.confidence_scored') + '</div></div>';
       html += '<div class="stat-card"><div class="label">' + t('dashboard.crystals') + '</div><div class="value">' + crystalCount + '</div><div class="sub">' + t('dashboard.action_digests') + '</div></div>';
-      html += '<div class="stat-card"><div class="label">' + t('dashboard.graph_nodes') + '</div><div class="value">' + nodeCount + '</div><div class="sub">' + edgeCount + ' edges</div></div>';
+      html += '<div class="stat-card"><div class="label">' + t('dashboard.graph_nodes') + '</div><div class="value">' + nodeCount + '</div><div class="sub">' + t('dashboard.edges_count', { n: edgeCount }) + '</div></div>';
       html += '<div class="stat-card"><div class="label">' + t('dashboard.health') + '</div><div class="value"><div class="health-bar"><span class="health-dot ' + dotClass + '"></span> ' + esc(healthStatus) + '</div></div>';
       html += '<div class="sub">' + esc(snap.connectionState || 'unknown') + '</div></div>';
       var totalCalls = fMetrics.reduce(function(a, m) { return a + (m.totalCalls || 0); }, 0);
@@ -1417,7 +1417,7 @@
       var costDollars = tokensSaved / 1000 * 0.3;
       var costCents = Math.round(costDollars * 100);
       var costStr = costCents >= 100 ? '$' + (costCents / 100).toFixed(2) : costCents + 'ct';
-      html += '<div class="stat-card"><div class="label">' + t('dashboard.token_savings') + '</div><div class="value">' + savings + '%</div><div class="sub">~' + tokensSaved.toLocaleString() + ' tokens · ' + costStr + ' saved</div></div>';
+      html += '<div class="stat-card"><div class="label">' + t('dashboard.token_savings') + '</div><div class="value">' + savings + '%</div><div class="sub">' + t('dashboard.token_savings_sub', { tokens: tokensSaved.toLocaleString(), cost: costStr }) + '</div></div>';
       html += '</div>';
 
       if (snap.memory || snap.cpu) {
@@ -2483,7 +2483,7 @@
       html += '</div>';
 
       if (paged.length === 0) {
-        html += '<div class="empty-state"><div class="empty-icon">&#128337;</div><p>' + t('timeline.no_observations') + (obs.length > 0 ? ' match the filter (' + obs.length + ' total)' : ' for this session') + '</p></div>';
+        html += '<div class="empty-state"><div class="empty-icon">&#128337;</div><p>' + t('timeline.no_observations') + (obs.length > 0 ? t('timeline.no_obs_filter_suffix', { n: obs.length }) : t('timeline.no_obs_session_suffix')) + '</p></div>';
         content.innerHTML = html;
         return;
       }
@@ -3018,7 +3018,7 @@
           '<div class="empty-icon">&#9745;</div>' +
           '<div class="empty-title">' + t('actions.empty_title') + '</div>' +
           '<div class="empty-lead">' + t('actions.empty_body') + '</div>' +
-          '<div class="empty-lead" style="margin-top:0;">Three ways to create them:</div>' +
+          '<div class="empty-lead" style="margin-top:0;">' + t('actions.three_ways_intro') + '</div>' +
           '<pre class="empty-cmd"># 1. MCP tool (from any agent)\nmemory_action_create { title, description, priority }\n\n# 2. Curl\ncurl -X POST http://localhost:3111/agentmemory/actions \\\n  -H \'Content-Type: application/json\' \\\n  -d \'{"title":"ship v1","priority":"high"}\'\n\n# 3. Hooks auto-extract from long session bodies</pre>' +
           '<div><a class="empty-link" href="https://github.com/rohitg00/agentmemory#actions" target="_blank" rel="noopener">Action lifecycle docs &rarr;</a></div>' +
           '</div>';
@@ -3193,7 +3193,7 @@
 
       html += '<div class="card">';
       if (filtered.length === 0) {
-        html += '<div class="empty-state"><div class="empty-icon">&#128220;</div><p>' + t('audit.empty') + '</p><p style="font-size:12px;color:var(--ink-faint);font-style:italic;">Audit entries are created by governance operations (delete, evolve, consolidate).</p></div>';
+        html += '<div class="empty-state"><div class="empty-icon">&#128220;</div><p>' + t('audit.empty') + '</p><p style="font-size:12px;color:var(--ink-faint);font-style:italic;">' + t('audit.empty_body') + '</p></div>';
       } else {
         filtered.forEach(function(a, idx) {
           var badgeClass = OP_BADGES[a.operation] || 'badge-muted';

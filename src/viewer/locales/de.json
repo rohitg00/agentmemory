@@ -18,12 +18,14 @@
     "memories": "Erinnerungen",
     "lessons": "Lektionen",
     "crystals": "Kristalle",
+    "edges_count": "{n} Kanten",
     "graph_nodes": "Graph-Knoten",
     "health": "Status",
     "function_calls": "Funktionsaufrufe",
     "circuit_breaker": "Schutzschalter",
     "circuit_breaker_details": "Schutzschalter-Details",
     "token_savings": "Token-Ersparnis",
+    "token_savings_sub": "~{tokens} Tokens · {cost} gespart",
     "system_resources": "Systemressourcen",
     "recent_sessions": "Letzte Sitzungen",
     "recent_activity": "Letzte Aktivität",
@@ -106,6 +108,8 @@
     "all_filter": "Alle ({n})",
     "observations_shown": "{n} Beobachtungen angezeigt",
     "no_observations": "Keine Beobachtungen",
+    "no_obs_filter_suffix": " entsprechen dem Filter ({n} insgesamt)",
+    "no_obs_session_suffix": " für diese Sitzung",
     "select_placeholder": "Sitzung wählen",
     "importance_all": "Alle Wichtigkeitsstufen",
     "prev": "Zurück",
@@ -128,6 +132,7 @@
     "search_placeholder": "Aktionen suchen…",
     "all_statuses": "Alle Status",
     "empty_title": "Noch keine Aktionen erfasst",
+    "three_ways_intro": "Drei Wege, sie zu erstellen:",
     "empty_body": "Aktionen sind Folgeaufgaben, die der Agent während einer Sitzung identifiziert hat: Entscheidungen zur Überprüfung, zu inspizierende Dateien, auf Eingabe wartende Aufgaben. Sie erscheinen hier mit Status ausstehend → aktiv → erledigt/blockiert, damit zwischen Sitzungen nichts verloren geht.",
     "col_title": "Titel",
     "col_status": "Status",
@@ -147,7 +152,8 @@
   },
   "audit": {
     "all_operations": "Alle Operationen",
-    "empty": "Noch keine Audit-Einträge"
+    "empty": "Noch keine Audit-Einträge",
+    "empty_body": "Audit-Einträge werden durch Governance-Operationen erzeugt (löschen, evolvieren, konsolidieren)."
   },
   "activity": {
     "heatmap": "Aktivitäts-Heatmap (Letztes Jahr)",
