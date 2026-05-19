@@ -497,17 +497,8 @@ function detectIiiConsole(): IiiConsoleState {
   return { kind: "missing" };
 }
 
-// install.iii.dev/console/main/install.sh has a bug in its release-tag
-// filter that rejects every stable release for iii-hq/iii: the jq
-// predicate uses `startswith("v")` while the actual tags are
-// `iii/v0.12.0` (slash-prefixed). The `--next` path uses a regex
-// without the startswith constraint and therefore works today,
-// installing the most recent prerelease (e.g. iii/v0.14.0-next.1).
-//
-// Pass `--next` until the upstream fix lands (iii-hq/iii#1652).
-// Switch back to the bare invocation once the script is patched.
 const III_CONSOLE_INSTALL_CMD =
-  "curl -fsSL https://install.iii.dev/console/main/install.sh | bash -s -- --next";
+  "curl -fsSL https://install.iii.dev/console/main/install.sh | sh";
 
 async function ensureIiiConsole(): Promise<IiiConsoleState> {
   const state = detectIiiConsole();
