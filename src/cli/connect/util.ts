@@ -26,6 +26,17 @@ export const AGENTMEMORY_MCP_BLOCK = {
   },
 };
 
+export const AGENTMEMORY_COPILOT_MCP_BLOCK = {
+  type: "local" as const,
+  command: "npx",
+  args: ["-y", "@agentmemory/mcp"],
+  env: {
+    AGENTMEMORY_URL: "${AGENTMEMORY_URL}",
+    AGENTMEMORY_SECRET: "${AGENTMEMORY_SECRET}",
+  },
+  tools: ["*"],
+};
+
 export function backupsDir(): string {
   return join(homedir(), ".agentmemory", "backups");
 }

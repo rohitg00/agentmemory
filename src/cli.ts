@@ -117,8 +117,9 @@ Usage: agentmemory [command] [options]
 Commands:
   (default)          Start agentmemory worker
   init               Copy bundled .env.example to ~/.agentmemory/.env if absent
-  connect [agent]    Wire agentmemory into an installed agent (claude-code, codex,
-                     cursor, gemini-cli, openclaw, hermes, pi, openhuman).
+  connect [agent]    Wire agentmemory into an installed agent (claude-code,
+                     copilot-cli, codex, cursor, gemini-cli, openclaw,
+                     hermes, pi, openhuman).
                      No arg = interactive picker. --all wires every detected agent.
                      --dry-run shows what would change. --force re-installs.
   status             Show connection status, memory count, flags, and health

@@ -2,6 +2,7 @@ import { platform } from "node:os";
 import * as p from "@clack/prompts";
 import type { ConnectAdapter, ConnectOptions, ConnectResult } from "./types.js";
 import { adapter as claudeCode } from "./claude-code.js";
+import { adapter as copilotCli } from "./copilot-cli.js";
 import { adapter as codex } from "./codex.js";
 import { adapter as cursor } from "./cursor.js";
 import { adapter as geminiCli } from "./gemini-cli.js";
@@ -12,6 +13,7 @@ import { adapter as pi } from "./pi.js";
 
 export const ADAPTERS: readonly ConnectAdapter[] = [
   claudeCode,
+  copilotCli,
   codex,
   cursor,
   geminiCli,
