@@ -408,6 +408,9 @@ npx @agentmemory/agentmemory
 # 2. register the agentmemory marketplace and install the plugin
 codex plugin marketplace add rohitg00/agentmemory
 codex plugin install agentmemory
+
+# 3. activate config-layer hooks for automatic capture
+agentmemory connect codex
 ```
 
 The Codex plugin ships from the same `plugin/` directory as the Claude Code plugin. It registers:
@@ -416,7 +419,7 @@ The Codex plugin ships from the same `plugin/` directory as the Claude Code plug
 - 6 lifecycle hooks: `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PreCompact`, `Stop`
 - 4 skills: `/recall`, `/remember`, `/session-history`, `/forget`
 
-Codex's hook engine injects `CLAUDE_PLUGIN_ROOT` into hook subprocesses (per [`codex-rs/hooks/src/engine/discovery.rs`](https://github.com/openai/codex/blob/main/codex-rs/hooks/src/engine/discovery.rs)), so the same hook scripts work across both hosts without duplication. Subagent / SessionEnd / Notification / TaskCompleted / PostToolUseFailure events are Claude-Code-only and are not registered for Codex.
+Current Codex builds discover hooks from config-layer files such as `~/.codex/hooks.json`; plugin-local hooks may install successfully without being dispatched. `agentmemory connect codex` writes both the MCP entry and an absolute-path hook fallback into `~/.codex/hooks.json` (including on Windows), so real Codex sessions create observations even while plugin-local hook discovery is still settling upstream. Subagent / SessionEnd / Notification / TaskCompleted / PostToolUseFailure events are Claude-Code-only and are not registered for Codex.
 
 <details>
 <summary><b>OpenClaw (paste this prompt)</b></summary>
@@ -492,7 +495,7 @@ The agentmemory entry is the **same MCP server block** across every host that us
 | **Gemini CLI** | `~/.gemini/settings.json` | `gemini mcp add agentmemory npx -y @agentmemory/mcp --scope user` (auto-merges). |
 | **OpenClaw** | OpenClaw MCP config | Same `mcpServers` block, or use the deeper [memory plugin](integrations/openclaw/). |
 | **Codex CLI (MCP only)** | `.codex/config.toml` | TOML shape: `codex mcp add agentmemory -- npx -y @agentmemory/mcp`, or add `[mcp_servers.agentmemory]` manually. |
-| **Codex CLI (full plugin)** | Codex plugin marketplace | `codex plugin marketplace add rohitg00/agentmemory` then `codex plugin install agentmemory`. Registers MCP + 6 lifecycle hooks (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PreCompact, Stop) + 4 skills. |
+| **Codex CLI (full plugin)** | Codex plugin marketplace + `~/.codex/hooks.json` | `codex plugin marketplace add rohitg00/agentmemory`, `codex plugin install agentmemory`, then `agentmemory connect codex`. The connect step adds config-layer hooks for automatic capture on Codex versions that do not dispatch plugin-local hooks yet. |
 | **OpenCode (MCP only)** | `opencode.json` | Different shape — top-level `mcp` key, command as array: `{"mcp": {"agentmemory": {"type": "local", "command": ["npx", "-y", "@agentmemory/mcp"], "enabled": true}}}`. |
 | **OpenCode (full plugin)** | `plugin/opencode/` | 22 auto-capture hooks covering session lifecycle, messages, tools, errors. Two slash commands (`/recall`, `/remember`). Copy `plugin/opencode/` into your OpenCode workspace and add the plugin entry to `opencode.json`. See [`plugin/opencode/README.md`](plugin/opencode/README.md) for the full hook table + gap analysis. |
 | **pi** | `~/.pi/agent/extensions/agentmemory` | Copy [`integrations/pi`](integrations/pi/) and restart pi. |
