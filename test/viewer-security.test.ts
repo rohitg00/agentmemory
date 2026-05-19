@@ -52,6 +52,17 @@ describe("viewer document security", () => {
     expect(rendered.html).not.toContain("onmouseover=");
     expect(rendered.html).not.toContain("onmouseout=");
   });
+
+  it("injects the locale bundle inside the existing nonced <script> (not a new tag)", () => {
+    const rendered = renderViewerDocument();
+    expect(rendered.found).toBe(true);
+    if (!rendered.found) return;
+    // Locale assignment must live inside the same nonced script tag
+    // that holds the viewer code — no separate tag, no external fetch.
+    expect(rendered.html).toMatch(
+      /<script nonce="[^"]+">[\s\S]*window\.__AM_LOCALE__/
+    );
+  });
 });
 
 describe("viewer host allowlist (DNS rebinding defence)", () => {

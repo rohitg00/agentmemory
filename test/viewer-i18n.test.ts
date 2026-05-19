@@ -64,3 +64,44 @@ describe("viewer i18n: bundle building", () => {
     expect(bundle.fallback).toEqual({});
   });
 });
+
+import { renderViewerDocument } from "../src/viewer/document.js";
+
+describe("viewer i18n: document injection", () => {
+  const orig = process.env["VIEWER_LANGUAGE"];
+  afterEach(() => {
+    if (orig === undefined) delete process.env["VIEWER_LANGUAGE"];
+    else process.env["VIEWER_LANGUAGE"] = orig;
+  });
+
+  it("injects lang and messages when VIEWER_LANGUAGE=de", () => {
+    process.env["VIEWER_LANGUAGE"] = "de";
+    const r = renderViewerDocument();
+    expect(r.found).toBe(true);
+    if (!r.found) return;
+    expect(r.html).toContain('"lang":"de"');
+    expect(r.html).toContain('"messages"');
+    expect(r.html).toContain('"fallback"');
+  });
+
+  it("strips the __AGENTMEMORY_LOCALE__ placeholder completely", () => {
+    process.env["VIEWER_LANGUAGE"] = "en";
+    const r = renderViewerDocument();
+    expect(r.found).toBe(true);
+    if (!r.found) return;
+    expect(r.html).not.toContain("__AGENTMEMORY_LOCALE__");
+  });
+
+  it("escapes < inside injected JSON to prevent script-tag breakout", () => {
+    process.env["VIEWER_LANGUAGE"] = "en";
+    const r = renderViewerDocument();
+    expect(r.found).toBe(true);
+    if (!r.found) return;
+    // After injection there must be no </script literal anywhere in the JSON payload
+    const match = r.html.match(/window\.__AM_LOCALE__\s*=\s*([^;]+);/);
+    expect(match).toBeTruthy();
+    if (match) {
+      expect(match[1]).not.toContain("</script");
+    }
+  });
+});
