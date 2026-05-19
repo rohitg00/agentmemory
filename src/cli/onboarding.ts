@@ -36,6 +36,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 // where they overlap; the rest fall back to the generic `◇`.
 const NATIVE_AGENTS: { value: string; label: string; glyph: string }[] = [
   { value: "claude-code", label: "Claude Code", glyph: "⟁" },
+  { value: "copilot-cli", label: "GitHub Copilot CLI", glyph: "◈" },
   { value: "codex", label: "Codex", glyph: "◎" },
   { value: "openhuman", label: "OpenHuman", glyph: "◇" },
   { value: "openclaw", label: "OpenClaw", glyph: "◇" },
@@ -67,7 +68,7 @@ const PROVIDERS: { value: string; label: string; envKey: string | null }[] = [
   { value: "skip", label: "Skip — BM25-only mode (no LLM key)", envKey: null },
 ];
 
-function buildAgentOptions(): { value: string; label: string; hint?: string }[] {
+export function buildAgentOptions(): { value: string; label: string; hint?: string }[] {
   return [
     ...NATIVE_AGENTS.map((a) => ({
       value: a.value,
@@ -166,7 +167,7 @@ export async function runOnboarding(): Promise<OnboardingResult> {
       [
         "━ how this works ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
         "All selected agents share the same memory at :3111.",
-        "A memory saved by Claude Code is visible to Codex + Cursor instantly.",
+        "A memory saved by Claude Code is visible to Copilot + Codex + Cursor instantly.",
         "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
       ].join("\n"),
     );
