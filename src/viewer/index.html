@@ -1068,7 +1068,7 @@
       activeTab: 'dashboard',
       dashboard: { loaded: false, health: null, sessions: [], memories: [], graphStats: null, recentAudit: [], lessons: [], crystals: [] },
       graph: { loaded: false, nodes: [], edges: [], stats: null, filters: {}, selectedNode: null },
-      memories: { loaded: false, items: [], search: '', typeFilter: '' },
+      memories: { loaded: false, items: [], search: '', typeFilter: '', backendResults: null, searchMode: 'local', searching: false },
       timeline: { loaded: false, observations: [], sessionId: '', minImportance: 0, page: 0, pageSize: 50 },
       sessions: { loaded: false, items: [], selectedId: null },
       audit: { loaded: false, entries: [], opFilter: '' },
@@ -2190,17 +2190,66 @@
       renderMemories();
     }
 
+    // Detect whether a string contains CJK characters (Chinese/Japanese/Korean)
+    function hasCjkChars(str) {
+      return /[\u2E80-\u9FFF\uF900-\uFAFF\uFE30-\uFE4F\u3040-\u309F\u30A0-\u30FF\uAC00-\uD7AF]/.test(str);
+    }
+
+    // Determine if query should use backend search (CJK or length >= 3)
+    function shouldUseBackendSearch(query) {
+      if (!query || query.trim().length === 0) return false;
+      if (hasCjkChars(query)) return true;
+      return query.trim().length >= 3;
+    }
+
+    // Perform backend-powered search via /agentmemory/search
+    async function backendMemorySearch(query) {
+      state.memories.searching = true;
+      state.memories.searchMode = 'backend';
+      renderMemories();
+      try {
+        var result = await apiPost('search', { query: query, limit: 50, format: 'full' });
+        var memories = [];
+        if (result && result.results) {
+          memories = result.results.map(function(r) {
+            return r.memory || r;
+          });
+        } else if (result && result.memories) {
+          memories = result.memories;
+        }
+        state.memories.backendResults = memories;
+      } catch (err) {
+        console.warn('[viewer] Backend search failed, falling back to local:', err);
+        state.memories.backendResults = null;
+        state.memories.searchMode = 'local';
+      }
+      state.memories.searching = false;
+      renderMemories();
+    }
+
     function renderMemories() {
       var el = document.getElementById('view-memories');
       var items = state.memories.items;
-      var search = state.memories.search.toLowerCase();
+      var search = state.memories.search;
+      var searchLower = search.toLowerCase();
       var typeFilter = state.memories.typeFilter;
+      var useBackend = state.memories.searchMode === 'backend' && state.memories.backendResults !== null;
 
-      var filtered = items.filter(function(m) {
-        if (typeFilter && m.type !== typeFilter) return false;
-        if (search && !(m.title || '').toLowerCase().includes(search) && !(m.content || '').toLowerCase().includes(search)) return false;
-        return true;
-      });
+      var filtered;
+      if (useBackend && search) {
+        // Use backend search results, still apply type filter locally
+        filtered = state.memories.backendResults.filter(function(m) {
+          if (typeFilter && m.type !== typeFilter) return false;
+          return true;
+        });
+      } else {
+        // Local filtering (fallback or empty query)
+        filtered = items.filter(function(m) {
+          if (typeFilter && m.type !== typeFilter) return false;
+          if (searchLower && !(m.title || '').toLowerCase().includes(searchLower) && !(m.content || '').toLowerCase().includes(searchLower)) return false;
+          return true;
+        });
+      }
 
       var types = {};
       items.forEach(function(m) { types[m.type] = true; });
@@ -2213,21 +2262,35 @@
       html += '</div></div>';
 
       html += '<div class="toolbar">';
-      html += '<input type="text" id="mem-search" placeholder="Search memories..." value="' + esc(state.memories.search) + '">';
+      html += '<input type="text" id="mem-search" placeholder="Search memories (supports CJK)..." value="' + esc(state.memories.search) + '">';
+      // Search mode indicator
+      var modeLabel = state.memories.searching ? 'Searching...' : (useBackend ? 'Backend (BM25+vector)' : 'Local filter');
+      var modeColor = useBackend ? 'var(--green)' : 'var(--ink-faint)';
+      html += '<span id="mem-search-mode" style="font-size:10px;color:' + modeColor + ';margin-left:8px;white-space:nowrap;">' + modeLabel + '</span>';
       html += '<select id="mem-type-filter"><option value="">All types</option>';
       typeOptions.forEach(function(t) {
         html += '<option value="' + esc(t) + '"' + (typeFilter === t ? ' selected' : '') + '>' + esc(t) + '</option>';
       });
       html += '</select></div>';
 
-      if (filtered.length === 0) {
-        html += '<div class="empty-state">' +
-          '<div class="empty-icon">&#128218;</div>' +
-          '<div class="empty-title">No memories yet</div>' +
-          '<div class="empty-lead">Memories are the distilled facts agentmemory keeps across sessions &mdash; things like file paths, architectural decisions, and user preferences. Hooks capture them automatically during coding sessions; you can also save one directly.</div>' +
-          '<pre class="empty-cmd">memory_remember {\n  title: "auth uses jose middleware",\n  content: "src/middleware/auth.ts handles JWT validation",\n  type: "architecture"\n}</pre>' +
-          '<div><a class="empty-link" href="https://github.com/rohitg00/agentmemory#memories" target="_blank" rel="noopener">Memory types &rarr;</a></div>' +
-          '</div>';
+      if (state.memories.searching) {
+        html += '<div class="loading">Searching...</div>';
+      } else if (filtered.length === 0) {
+        if (search) {
+          html += '<div class="empty-state">' +
+            '<div class="empty-icon">&#128269;</div>' +
+            '<div class="empty-title">No results for "' + esc(truncate(search, 30)) + '"</div>' +
+            '<div class="empty-lead">Try different keywords or clear the search.</div>' +
+            '</div>';
+        } else {
+          html += '<div class="empty-state">' +
+            '<div class="empty-icon">&#128218;</div>' +
+            '<div class="empty-title">No memories yet</div>' +
+            '<div class="empty-lead">Memories are the distilled facts agentmemory keeps across sessions &mdash; things like file paths, architectural decisions, and user preferences. Hooks capture them automatically during coding sessions; you can also save one directly.</div>' +
+            '<pre class="empty-cmd">memory_remember {\n  title: "auth uses jose middleware",\n  content: "src/middleware/auth.ts handles JWT validation",\n  type: "architecture"\n}</pre>' +
+            '<div><a class="empty-link" href="https://github.com/rohitg00/agentmemory#memories" target="_blank" rel="noopener">Memory types &rarr;</a></div>' +
+            '</div>';
+        }
       } else {
         html += '<table><tr><th>Title</th><th>Type</th><th>Strength</th><th>Version</th><th>Updated</th><th>Actions</th></tr>';
         filtered.forEach(function(m) {
@@ -2239,8 +2302,8 @@
           html += '<tr>';
           var preview = (m.content || '').split('\n').slice(0, 2).join(' ').trim();
           var previewHtml = esc(truncate(preview, 150));
-          if (search && search.length > 2) {
-            var re = new RegExp('(' + search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
+          if (searchLower && searchLower.length > 1) {
+            var re = new RegExp('(' + searchLower.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
             previewHtml = previewHtml.replace(re, '<mark>$1</mark>');
           }
           html += '<td><span style="color:var(--ink);font-weight:600;">' + esc(truncate(m.title, 50)) + '</span>';
@@ -2263,12 +2326,19 @@
 
       el.innerHTML = html;
 
+      // IME-safe search binding with backend search support
       var searchInput = document.getElementById('mem-search');
       if (searchInput) {
+        var composing = false;
+        searchInput.addEventListener('compositionstart', function() { composing = true; });
+        searchInput.addEventListener('compositionend', function() {
+          composing = false;
+          handleMemSearch(this.value);
+        });
         searchInput.addEventListener('input', debounce(function() {
-          state.memories.search = this.value;
-          renderMemories();
-        }, 200));
+          if (composing) return;
+          handleMemSearch(this.value);
+        }, 300));
       }
       var typeSelect = document.getElementById('mem-type-filter');
       if (typeSelect) {
@@ -2276,6 +2346,17 @@
           state.memories.typeFilter = this.value;
           renderMemories();
         });
+      }
+    }
+
+    function handleMemSearch(value) {
+      state.memories.search = value;
+      if (shouldUseBackendSearch(value)) {
+        backendMemorySearch(value);
+      } else {
+        state.memories.searchMode = 'local';
+        state.memories.backendResults = null;
+        renderMemories();
       }
     }
 
