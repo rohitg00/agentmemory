@@ -40,8 +40,8 @@ export const adapter: ConnectAdapter = {
       "Hermes manual install",
     );
     return {
-      kind: "stub",
-      reason: "yaml-merge-not-implemented",
+      kind: "manual",
+      reason: "Hermes requires manual YAML configuration",
     };
   },
 };
