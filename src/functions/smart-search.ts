@@ -1,6 +1,5 @@
 import type { ISdk } from "iii-sdk";
 import type {
-  CompactSearchResult,
   CompressedObservation,
   HybridSearchResult,
 } from "../types.js";
@@ -19,6 +18,7 @@ export function registerSmartSearchFunction(
       query?: string;
       expandIds?: Array<string | { obsId: string; sessionId: string }>;
       limit?: number;
+      format?: string;
     }) => {
 
       if (data.expandIds && data.expandIds.length > 0) {
@@ -68,27 +68,49 @@ export function registerSmartSearchFunction(
       }
 
       const limit = Math.max(1, Math.min(data.limit ?? 20, 100));
+      const format = typeof data.format === "string" ? data.format : "compact";
+      if (!["full", "compact", "narrative"].includes(format)) {
+        return { mode: format, results: [], error: "format must be one of 'full', 'compact', or 'narrative'" };
+      }
       const hybridResults = await searchFn(data.query, limit);
 
-      const compact: CompactSearchResult[] = hybridResults.map((r) => ({
-        obsId: r.observation.id,
-        sessionId: r.sessionId,
-        title: r.observation.title,
-        type: r.observation.type,
-        score: r.combinedScore,
-        timestamp: r.observation.timestamp,
-      }));
+      let results: Array<Record<string, unknown>>;
+      if (format === "full") {
+        results = hybridResults.map((r) => ({
+          observation: r.observation,
+          sessionId: r.sessionId,
+          score: r.combinedScore,
+        }));
+      } else if (format === "narrative") {
+        results = hybridResults.map((r) => ({
+          obsId: r.observation.id,
+          sessionId: r.sessionId,
+          title: r.observation.title,
+          narrative: r.observation.narrative,
+          score: r.combinedScore,
+          timestamp: r.observation.timestamp,
+        }));
+      } else {
+        results = hybridResults.map((r) => ({
+          obsId: r.observation.id,
+          sessionId: r.sessionId,
+          title: r.observation.title,
+          type: r.observation.type,
+          score: r.combinedScore,
+          timestamp: r.observation.timestamp,
+        }));
+      }
 
       void recordAccessBatch(
         kv,
-        compact.map((r) => r.obsId),
+        hybridResults.map((r) => r.observation.id),
       );
 
-      logger.info("Smart search compact", {
+      logger.info("Smart search " + format, {
         query: data.query,
-        results: compact.length,
+        results: results.length,
       });
-      return { mode: "compact", results: compact };
+      return { mode: format, results };
     },
   );
 }
