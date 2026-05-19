@@ -17,6 +17,11 @@ import {
   listPinnedSlots,
   renderPinnedContext,
 } from "./slots.js";
+import {
+  expandProjectAliases,
+  projectValueMatches,
+  sessionMatchesProjectAliases,
+} from "./project-identity.js";
 
 function estimateTokens(text: string): number {
   return Math.ceil(text.length / 3);
@@ -30,6 +35,22 @@ function escapeXmlAttr(s: string): string {
     .replace(/>/g, "&gt;");
 }
 
+async function loadProjectProfile(
+  kv: StateKV,
+  project: string,
+  projectAliases: ReadonlySet<string>,
+): Promise<ProjectProfile | null> {
+  const exact = await kv
+    .get<ProjectProfile>(KV.profiles, project)
+    .catch(() => null);
+  if (exact) return exact;
+
+  const profiles = await kv.list<ProjectProfile>(KV.profiles).catch(() => []);
+  return (
+    profiles.find((p) => projectValueMatches(p.project, projectAliases)) ?? null
+  );
+}
+
 export function registerContextFunction(
   sdk: ISdk,
   kv: StateKV,
@@ -39,14 +60,22 @@ export function registerContextFunction(
     async (data: { sessionId: string; project: string; budget?: number }) => {
       const budget = data.budget || tokenBudget;
       const blocks: ContextBlock[] = [];
+      const currentSession = await kv
+        .get<Session>(KV.sessions, data.sessionId)
+        .catch(() => null);
+      const projectAliases = new Set(
+        expandProjectAliases(
+          data.project,
+          currentSession?.project,
+          currentSession?.cwd,
+        ),
+      );
 
       const [pinnedSlots, profile, lessons] = await Promise.all([
         isSlotsEnabled()
           ? listPinnedSlots(kv).catch(() => [] as MemorySlot[])
           : Promise.resolve([] as MemorySlot[]),
-        kv
-          .get<ProjectProfile>(KV.profiles, data.project)
-          .catch(() => null),
+        loadProjectProfile(kv, data.project, projectAliases),
         kv.list<Lesson>(KV.lessons).catch(() => [] as Lesson[]),
       ]);
 
@@ -103,10 +132,18 @@ export function registerContextFunction(
       // 10 to keep the block bounded since the outer token-budget loop
       // below will drop the whole block if it doesn't fit. #457.
       const relevantLessons = lessons
-        .filter((l) => !l.deleted && (!l.project || l.project === data.project))
+        .filter(
+          (l) =>
+            !l.deleted &&
+            (!l.project || projectValueMatches(l.project, projectAliases)),
+        )
         .sort((a, b) => {
-          const scoreA = (a.project === data.project ? 1.5 : 1) * a.confidence;
-          const scoreB = (b.project === data.project ? 1.5 : 1) * b.confidence;
+          const scoreA =
+            (projectValueMatches(a.project, projectAliases) ? 1.5 : 1) *
+            a.confidence;
+          const scoreB =
+            (projectValueMatches(b.project, projectAliases) ? 1.5 : 1) *
+            b.confidence;
           return scoreB - scoreA;
         })
         .slice(0, 10);
@@ -134,7 +171,11 @@ export function registerContextFunction(
 
       const allSessions = await kv.list<Session>(KV.sessions);
       const sessions = allSessions
-        .filter((s) => s.project === data.project && s.id !== data.sessionId)
+        .filter(
+          (s) =>
+            s.id !== data.sessionId &&
+            sessionMatchesProjectAliases(s, projectAliases),
+        )
         .sort(
           (a, b) =>
             new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime(),

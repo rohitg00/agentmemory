@@ -18,6 +18,7 @@ import {
   detectEmbeddingProvider,
   detectLlmProviderKind,
 } from "../config.js";
+import { resolveProjectIdentity } from "../functions/project-identity.js";
 
 type Response = {
   status_code: number;
@@ -533,10 +534,11 @@ export function registerApiTriggers(
         };
       }
       const title = typeof body.title === "string" ? body.title.trim() : undefined;
+      const identity = await resolveProjectIdentity({ project, cwd });
       const session: Session = {
         id: sessionId,
-        project,
-        cwd,
+        project: identity.project,
+        cwd: identity.cwd,
         startedAt: new Date().toISOString(),
         status: "active",
         observationCount: 0,
@@ -547,7 +549,10 @@ export function registerApiTriggers(
       const contextResult = await sdk.trigger<
         { sessionId: string; project: string },
         { context: string }
-      >({ function_id: "mem::context", payload: { sessionId, project } });
+      >({
+        function_id: "mem::context",
+        payload: { sessionId, project: identity.project },
+      });
       return {
         status_code: 200,
         body: { session, context: contextResult.context },

@@ -8,6 +8,7 @@ import type { EmbeddingProvider } from '../types.js'
 import { memoryToObservation } from '../state/memory-utils.js'
 import { recordAccessBatch } from './access-tracker.js'
 import { logger } from "../logger.js";
+import { expandProjectAliases, sessionMatchesProjectAliases } from './project-identity.js'
 
 let index: SearchIndex | null = null
 let vectorIndex: VectorIndex | null = null
@@ -189,6 +190,9 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
       }
       const projectFilter = typeof data.project === 'string' && data.project.length > 0 ? data.project : undefined
       const cwdFilter = typeof data.cwd === 'string' && data.cwd.length > 0 ? data.cwd : undefined
+      const projectAliases = projectFilter
+        ? new Set(expandProjectAliases(projectFilter, cwdFilter))
+        : undefined
       const format = typeof data.format === 'string' ? data.format : 'full'
       if (!['full', 'compact', 'narrative'].includes(format)) {
         throw new Error("mem::search: format must be one of 'full', 'compact', or 'narrative'")
@@ -228,7 +232,9 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
         if (filtering) {
           const s = await loadSession(r.sessionId)
           if (!s) continue
-          if (projectFilter && s.project !== projectFilter) continue
+          if (projectAliases && !sessionMatchesProjectAliases(s, projectAliases)) {
+            continue
+          }
           if (cwdFilter && s.cwd !== cwdFilter) continue
         }
         candidates.push(r)

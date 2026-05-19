@@ -5,15 +5,20 @@ import { StateKV } from "../state/kv.js";
 import { isReflectEnabled } from "../functions/slots.js";
 import { isGraphExtractionEnabled } from "../config.js";
 import { logger } from "../logger.js";
+import { resolveProjectIdentity } from "../functions/project-identity.js";
 
 export function registerEventTriggers(sdk: ISdk, kv: StateKV): void {
   sdk.registerFunction(
     "event::session::started",
     async (data: { sessionId: string; project: string; cwd: string }) => {
-      const session: Session = {
-        id: data.sessionId,
+      const identity = await resolveProjectIdentity({
         project: data.project,
         cwd: data.cwd,
+      });
+      const session: Session = {
+        id: data.sessionId,
+        project: identity.project,
+        cwd: identity.cwd,
         startedAt: new Date().toISOString(),
         status: "active",
         observationCount: 0,
@@ -24,7 +29,7 @@ export function registerEventTriggers(sdk: ISdk, kv: StateKV): void {
         { context: string }
       >({
         function_id: "mem::context",
-        payload: { sessionId: data.sessionId, project: data.project },
+        payload: { sessionId: data.sessionId, project: identity.project },
       });
       return { session, context: contextResult.context };
     },

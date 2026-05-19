@@ -3,7 +3,7 @@ import type { StateKV } from "../state/kv.js";
 import { KV } from "../state/schema.js";
 import type { Session } from "../types.js";
 import { execFile } from "node:child_process";
-import { resolve } from "node:path";
+import { detectGitProject } from "./project-identity.js";
 
 function execAsync(
   cmd: string,
@@ -26,41 +26,22 @@ export function registerBranchAwareFunction(sdk: ISdk, kv: StateKV): void {
       }
 
       try {
-        const gitDir = await execAsync(
-          "git",
-          ["rev-parse", "--git-dir"],
-          data.cwd,
-        );
-        const commonDir = await execAsync(
-          "git",
-          ["rev-parse", "--git-common-dir"],
-          data.cwd,
-        );
-        const branch = await execAsync(
-          "git",
-          ["rev-parse", "--abbrev-ref", "HEAD"],
-          data.cwd,
-        ).catch(() => "detached");
-
-        const topLevel = await execAsync(
-          "git",
-          ["rev-parse", "--show-toplevel"],
-          data.cwd,
-        );
-
-        const isWorktree = resolve(data.cwd, gitDir) !== resolve(data.cwd, commonDir);
-        const mainRepoRoot = isWorktree
-          ? resolve(data.cwd, commonDir, "..")
-          : topLevel;
+        const git = await detectGitProject(data.cwd);
+        if (!git) {
+          return {
+            success: true,
+            isWorktree: false,
+            branch: null,
+            topLevel: data.cwd,
+            mainRepoRoot: data.cwd,
+            gitDir: null,
+            commonDir: null,
+          };
+        }
 
         return {
           success: true,
-          isWorktree,
-          branch,
-          topLevel,
-          mainRepoRoot,
-          gitDir: resolve(data.cwd, gitDir),
-          commonDir: resolve(data.cwd, commonDir),
+          ...git,
         };
       } catch {
         return {
