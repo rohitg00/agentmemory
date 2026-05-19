@@ -991,6 +991,54 @@
 
   <script nonce="__AGENTMEMORY_VIEWER_NONCE__">
     window.__AM_LOCALE__ = __AGENTMEMORY_LOCALE__;
+    // i18n: resolve t(key, vars) against window.__AM_LOCALE__.messages with
+    // a flat fallback to .fallback (server-loaded en.json for non-en locales).
+    // Missing keys return the key itself so they show up during development.
+    (function () {
+      const bundle = window.__AM_LOCALE__ || { lang: "en", messages: {}, fallback: {} };
+
+      function getPath(obj, path) {
+        return path.split(".").reduce(function (o, k) {
+          return o && typeof o === "object" && k in o ? o[k] : undefined;
+        }, obj);
+      }
+
+      function interpolate(str, vars) {
+        if (!vars || typeof str !== "string") return str;
+        return str.replace(/\{(\w+)\}/g, function (_, k) {
+          return Object.prototype.hasOwnProperty.call(vars, k) ? String(vars[k]) : "{" + k + "}";
+        });
+      }
+
+      window.t = function (key, vars) {
+        const v = getPath(bundle.messages, key);
+        if (typeof v === "string") return interpolate(v, vars);
+        const fb = getPath(bundle.fallback, key);
+        if (typeof fb === "string") return interpolate(fb, vars);
+        return key;
+      };
+
+      function applyI18n(root) {
+        root.querySelectorAll("[data-i18n]").forEach(function (el) {
+          el.textContent = window.t(el.getAttribute("data-i18n"));
+        });
+        root.querySelectorAll("[data-i18n-attr]").forEach(function (el) {
+          el.getAttribute("data-i18n-attr").split(",").forEach(function (pair) {
+            const idx = pair.indexOf(":");
+            if (idx === -1) return;
+            const attr = pair.slice(0, idx).trim();
+            const key = pair.slice(idx + 1).trim();
+            el.setAttribute(attr, window.t(key));
+          });
+        });
+      }
+
+      window.applyI18n = applyI18n;
+      document.addEventListener("DOMContentLoaded", function () {
+        document.documentElement.lang = bundle.lang || "en";
+        applyI18n(document);
+      });
+    })();
     var params = new URLSearchParams(window.location.search);
     var paramPort = params.get('port');
     var locPort = window.location.port;

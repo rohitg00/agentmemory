@@ -105,3 +105,54 @@ describe("viewer i18n: document injection", () => {
     }
   });
 });
+
+describe("viewer i18n: t() helper semantics (simulated)", () => {
+  function tFactory(messages: Record<string, unknown>, fallback: Record<string, unknown>) {
+    function getPath(obj: unknown, path: string): unknown {
+      return path.split(".").reduce<unknown>((o, k) => {
+        if (o && typeof o === "object" && k in (o as Record<string, unknown>)) {
+          return (o as Record<string, unknown>)[k];
+        }
+        return undefined;
+      }, obj);
+    }
+    function interpolate(str: string, vars?: Record<string, unknown>): string {
+      if (!vars) return str;
+      return str.replace(/\{(\w+)\}/g, (_, k) =>
+        Object.prototype.hasOwnProperty.call(vars, k) ? String(vars[k]) : "{" + k + "}"
+      );
+    }
+    return (key: string, vars?: Record<string, unknown>) => {
+      const v = getPath(messages, key);
+      if (typeof v === "string") return interpolate(v, vars);
+      const fb = getPath(fallback, key);
+      if (typeof fb === "string") return interpolate(fb, vars);
+      return key;
+    };
+  }
+
+  it("returns messages value when present", () => {
+    const t = tFactory({ nav: { dashboard: "Übersicht" } }, { nav: { dashboard: "Dashboard" } });
+    expect(t("nav.dashboard")).toBe("Übersicht");
+  });
+
+  it("falls back to en when missing in target locale", () => {
+    const t = tFactory({}, { nav: { dashboard: "Dashboard" } });
+    expect(t("nav.dashboard")).toBe("Dashboard");
+  });
+
+  it("returns the key when missing in both", () => {
+    const t = tFactory({}, {});
+    expect(t("nav.dashboard")).toBe("nav.dashboard");
+  });
+
+  it("interpolates {placeholder} from vars", () => {
+    const t = tFactory({ msg: "Hi {who}" }, {});
+    expect(t("msg", { who: "Chris" })).toBe("Hi Chris");
+  });
+
+  it("leaves placeholder literal when var missing", () => {
+    const t = tFactory({ msg: "Hi {who}" }, {});
+    expect(t("msg")).toBe("Hi {who}");
+  });
+});
