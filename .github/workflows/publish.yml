@@ -11,19 +11,14 @@ on:
         default: "agentmemory,mcp,fs-watcher"
 
 # Workflow-level permissions stay minimal — only `contents: read`
-# is required to check out the repo. Write scopes (`id-token: write`
-# for npm provenance, `packages: write` for the GH Packages mirror)
-# are granted per-job below so neither job inherits a scope it
-# doesn't need.
+# is required to check out the repo. `id-token: write` is granted on
+# the publish job for npm's --provenance Sigstore OIDC mint.
 permissions:
   contents: read
 
 jobs:
   publish:
     runs-on: ubuntu-latest
-    # `id-token: write` is required for npm publish --provenance to
-    # mint a Sigstore OIDC token on this run. Scoped to this job only
-    # so the GH Packages mirror job doesn't inherit it.
     permissions:
       contents: read
       id-token: write
@@ -127,49 +122,3 @@ jobs:
           done
           echo "ERROR: fs-watcher never propagated after 2 minutes" >&2
           exit 1
-
-  publish-github-packages:
-    # Mirror the same artifacts to GitHub Packages so the repo's
-    # right-sidebar "Packages" widget surfaces them. Scoped to
-    # @rohitg00 since GH Packages requires the org/user to match the
-    # repo owner. Public npm registry remains the canonical install
-    # source; this is purely a discovery surface on the repo page.
-    needs: publish
-    runs-on: ubuntu-latest
-    # `packages: write` only here — the public-npm publish job
-    # doesn't need it. `contents: read` for the checkout.
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          # Same posture as the publish job — no push back to the
-          # repo, so don't persist the token to `.git/config`.
-          persist-credentials: false
-
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 22
-          registry-url: https://npm.pkg.github.com
-          scope: "@rohitg00"
-
-      - run: npm install --package-lock-only --legacy-peer-deps --no-audit --no-fund
-      - run: npm ci --legacy-peer-deps --no-audit --no-fund
-      - run: npm run build
-
-      - name: Publish @rohitg00/agentmemory to GitHub Packages
-        run: |
-          VERSION=$(node -p "require('./package.json').version")
-          # Save original package.json, rewrite scope for GH Packages,
-          # publish, restore. Avoids a permanent scope change in main.
-          cp package.json package.json.bak
-          node -e "const p=require('./package.json');p.name='@rohitg00/agentmemory';p.publishConfig={registry:'https://npm.pkg.github.com'};require('fs').writeFileSync('package.json',JSON.stringify(p,null,2));"
-          if npm view "@rohitg00/agentmemory@$VERSION" version --registry=https://npm.pkg.github.com >/dev/null 2>&1; then
-            echo "GH Packages version already published, skipping"
-          else
-            npm publish --access public || echo "GH Packages publish failed (non-fatal)"
-          fi
-          mv package.json.bak package.json
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
