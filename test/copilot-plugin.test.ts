@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync, existsSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { createServer } from "node:http";
+import { spawn } from "node:child_process";
 
 const repoRoot = resolve(__dirname, "..");
 const pluginRoot = join(repoRoot, "plugin");
@@ -10,25 +12,25 @@ function readJson<T = unknown>(path: string): T {
 }
 
 const SUPPORTED_COPILOT_EVENTS = new Set([
-  "SessionStart",
-  "UserPromptSubmit",
-  "PreToolUse",
-  "PostToolUse",
-  "PostToolUseFailure",
-  "PreCompact",
-  "Stop",
-  "SessionEnd",
-  "SubagentStart",
-  "SubagentStop",
-  "Notification",
+  "sessionStart",
+  "userPromptSubmitted",
+  "preToolUse",
+  "postToolUse",
+  "postToolUseFailure",
+  "preCompact",
+  "agentStop",
+  "sessionEnd",
+  "subagentStart",
+  "subagentStop",
+  "notification",
 ]);
 
 const REQUIRED_MINIMUM_EVENTS = [
-  "SessionStart",
-  "UserPromptSubmit",
-  "PreToolUse",
-  "PostToolUse",
-  "Stop",
+  "sessionStart",
+  "userPromptSubmitted",
+  "preToolUse",
+  "postToolUse",
+  "agentStop",
 ];
 
 const KNOWN_SKILL_DIRS = [
@@ -42,9 +44,9 @@ const KNOWN_SKILL_DIRS = [
   "commit-history",
 ];
 
-describe("Copilot plugin manifest (plugin/.plugin/plugin.json)", () => {
+describe("Copilot plugin manifest (plugin/plugin.json)", () => {
   it("manifest exists with kebab-case name, version, and required fields", () => {
-    const manifestPath = join(pluginRoot, ".plugin/plugin.json");
+    const manifestPath = join(pluginRoot, "plugin.json");
     expect(existsSync(manifestPath)).toBe(true);
     const manifest = readJson<{
       name: string;
@@ -65,24 +67,24 @@ describe("Copilot plugin manifest (plugin/.plugin/plugin.json)", () => {
   it("manifest version matches main package.json", () => {
     const pkgVer = readJson<{ version: string }>(join(repoRoot, "package.json")).version;
     const pluginVer = readJson<{ version: string }>(
-      join(pluginRoot, ".plugin/plugin.json"),
+      join(pluginRoot, "plugin.json"),
     ).version;
     expect(pluginVer).toBe(pkgVer);
   });
 
   it("all referenced manifest paths resolve to existing files / directories", () => {
     const manifest = readJson<{ skills: string; mcpServers: string; hooks: string }>(
-      join(pluginRoot, ".plugin/plugin.json"),
+      join(pluginRoot, "plugin.json"),
     );
-    const manifestDir = join(pluginRoot, ".plugin");
+    const manifestDir = pluginRoot;
     expect(existsSync(resolve(manifestDir, manifest.skills))).toBe(true);
     expect(existsSync(resolve(manifestDir, manifest.mcpServers))).toBe(true);
     expect(existsSync(resolve(manifestDir, manifest.hooks))).toBe(true);
   });
 
   it("skills path resolves and contains all known skill directories", () => {
-    const manifest = readJson<{ skills: string }>(join(pluginRoot, ".plugin/plugin.json"));
-    const manifestDir = join(pluginRoot, ".plugin");
+    const manifest = readJson<{ skills: string }>(join(pluginRoot, "plugin.json"));
+    const manifestDir = pluginRoot;
     const skillsPath = resolve(manifestDir, manifest.skills);
     for (const skill of KNOWN_SKILL_DIRS) {
       expect(
@@ -160,10 +162,10 @@ describe("Copilot hooks config (hooks/hooks.copilot.json)", () => {
 
   it("PreToolUse entry has the correct matcher", () => {
     const config = loadHooks();
-    const preToolEntries = config.hooks["PreToolUse"];
+    const preToolEntries = config.hooks["preToolUse"];
     expect(preToolEntries).toBeDefined();
-    const withMatcher = preToolEntries.find((e) => e.matcher === "Edit|Write|Read|Glob|Grep");
-    expect(withMatcher, "PreToolUse must have matcher Edit|Write|Read|Glob|Grep").toBeDefined();
+    const withMatcher = preToolEntries.find((e) => e.matcher === "edit|create|view|glob|grep");
+    expect(withMatcher, "PreToolUse must have matcher edit|create|view|glob|grep").toBeDefined();
   });
 
   it("every handler has type === 'command' and exactly one of command/bash/powershell", () => {
@@ -196,5 +198,154 @@ describe("Copilot hooks config (hooks/hooks.copilot.json)", () => {
     for (const rel of scriptRefs) {
       expect(existsSync(join(pluginRoot, rel)), `missing hook script: ${rel}`).toBe(true);
     }
+  });
+});
+
+describe("Copilot hook scripts", () => {
+  type ObservedRequest = { path: string; body: Record<string, unknown> };
+
+  async function runHook(
+    script: string,
+    payload: Record<string, unknown>,
+    env: Record<string, string> = {},
+  ): Promise<{ requests: ObservedRequest[]; stdout: string }> {
+    const requests: ObservedRequest[] = [];
+    const server = createServer((req, res) => {
+      let raw = "";
+      req.on("data", (chunk) => {
+        raw += chunk;
+      });
+      req.on("end", () => {
+        requests.push({
+          path: req.url ?? "",
+          body: raw ? (JSON.parse(raw) as Record<string, unknown>) : {},
+        });
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ context: "remembered context" }));
+      });
+    });
+
+    await new Promise<void>((resolveServer) => {
+      server.listen(0, "127.0.0.1", resolveServer);
+    });
+
+    const address = server.address();
+    if (!address || typeof address === "string") {
+      server.close();
+      throw new Error("test server did not bind to a TCP port");
+    }
+
+    try {
+      const child = spawn(process.execPath, [join(pluginRoot, script)], {
+        env: {
+          ...process.env,
+          AGENTMEMORY_URL: `http://127.0.0.1:${address.port}`,
+          AGENTMEMORY_SECRET: "",
+          ...env,
+        },
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+      let stdout = "";
+      let stderr = "";
+      child.stdout.on("data", (chunk) => {
+        stdout += chunk;
+      });
+      child.stderr.on("data", (chunk) => {
+        stderr += chunk;
+      });
+      child.stdin.end(JSON.stringify(payload));
+
+      const exitCode = await new Promise<number | null>((resolveExit, reject) => {
+        const timeout = setTimeout(() => {
+          child.kill();
+          reject(new Error(`hook ${script} timed out`));
+        }, 5000);
+        child.on("error", reject);
+        child.on("close", (code) => {
+          clearTimeout(timeout);
+          resolveExit(code);
+        });
+      });
+
+      expect(exitCode, stderr).toBe(0);
+      return { requests, stdout };
+    } finally {
+      await new Promise<void>((resolveClose) => {
+        server.close(() => resolveClose());
+      });
+    }
+  }
+
+  it("session-start accepts Copilot camelCase sessionId", async () => {
+    const result = await runHook(
+      "scripts/session-start.mjs",
+      { sessionId: "copilot-session", cwd: "C:\\repo" },
+      { AGENTMEMORY_INJECT_CONTEXT: "true" },
+    );
+
+    expect(result.stdout).toBe("remembered context");
+    expect(result.requests[0]?.path).toBe("/agentmemory/session/start");
+    expect(result.requests[0]?.body).toMatchObject({
+      sessionId: "copilot-session",
+      project: "C:\\repo",
+      cwd: "C:\\repo",
+    });
+  });
+
+  it("prompt-submit accepts Copilot camelCase prompt payload", async () => {
+    const result = await runHook("scripts/prompt-submit.mjs", {
+      sessionId: "copilot-session",
+      cwd: "C:\\repo",
+      userPrompt: "remember this prompt",
+    });
+
+    expect(result.requests[0]?.path).toBe("/agentmemory/observe");
+    expect(result.requests[0]?.body).toMatchObject({
+      hookType: "prompt_submit",
+      sessionId: "copilot-session",
+      data: { prompt: "remember this prompt" },
+    });
+  });
+
+  it("post-tool-failure accepts Copilot camelCase tool and error payloads", async () => {
+    const result = await runHook("scripts/post-tool-failure.mjs", {
+      sessionId: "copilot-session",
+      cwd: "C:\\repo",
+      toolName: "edit",
+      toolArgs: { filePath: "src/index.ts" },
+      errorMessage: "failed",
+    });
+
+    expect(result.requests[0]?.path).toBe("/agentmemory/observe");
+    expect(result.requests[0]?.body).toMatchObject({
+      hookType: "post_tool_failure",
+      sessionId: "copilot-session",
+      data: {
+        tool_name: "edit",
+        tool_input: JSON.stringify({ filePath: "src/index.ts" }),
+        error: "failed",
+      },
+    });
+  });
+
+  it("notification accepts Copilot camelCase notificationType", async () => {
+    const result = await runHook("scripts/notification.mjs", {
+      sessionId: "copilot-session",
+      cwd: "C:\\repo",
+      notificationType: "permission_prompt",
+      title: "Tool approval",
+      message: "Approve edit",
+    });
+
+    expect(result.requests[0]?.path).toBe("/agentmemory/observe");
+    expect(result.requests[0]?.body).toMatchObject({
+      hookType: "notification",
+      sessionId: "copilot-session",
+      data: {
+        notification_type: "permission_prompt",
+        title: "Tool approval",
+        message: "Approve edit",
+      },
+    });
   });
 });

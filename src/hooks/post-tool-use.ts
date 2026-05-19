@@ -30,9 +30,11 @@ async function main() {
 
   if (isSdkChildContext(data)) return;
 
-  const sessionId = (data.session_id as string) || "unknown";
+  const sessionId = ((data.session_id || data.sessionId) as string) || "unknown";
+  const toolName = data.tool_name ?? data.toolName;
+  const toolInput = data.tool_input ?? data.toolArgs;
 
-  const { imageData, cleanOutput } = extractImageData(data.tool_output);
+  const { imageData, cleanOutput } = extractImageData(toolOutput(data));
 
   try {
     await fetch(`${REST_URL}/agentmemory/observe`, {
@@ -45,8 +47,8 @@ async function main() {
         cwd: data.cwd || process.cwd(),
         timestamp: new Date().toISOString(),
         data: {
-          tool_name: data.tool_name,
-          tool_input: data.tool_input,
+          tool_name: toolName,
+          tool_input: toolInput,
           tool_output: truncate(cleanOutput, 8000),
           ...(imageData ? { image_data: imageData } : {}),
         },
@@ -55,6 +57,16 @@ async function main() {
     });
   } catch {
   }
+}
+
+function toolOutput(data: Record<string, unknown>): unknown {
+  if (data.tool_output !== undefined) return data.tool_output;
+  const result = data.tool_result ?? data.toolResult;
+  if (typeof result === "object" && result !== null) {
+    const obj = result as Record<string, unknown>;
+    return obj.text_result_for_llm ?? obj.textResultForLlm ?? result;
+  }
+  return result;
 }
 
 function isBase64Image(val: unknown): val is string {

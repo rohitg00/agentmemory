@@ -433,7 +433,7 @@ agentmemory connect copilot-cli
 copilot plugin install rohitg00/agentmemory:plugin
 ```
 
-`agentmemory connect copilot-cli` merges `mcpServers.agentmemory` into `~/.copilot/mcp-config.json` and preserves existing servers. Copilot picks up the MCP server on next launch or after `/mcp`. Install the plugin as well when you want the full hook/skill experience.
+`agentmemory connect copilot-cli` merges `mcpServers.agentmemory` into `~/.copilot/mcp-config.json` (or `$COPILOT_HOME/mcp-config.json` when `COPILOT_HOME` is set) and preserves existing servers. This adapter is Windows-safe even though other `connect` adapters still require manual Windows setup. Copilot picks up the MCP server on next launch or after `/mcp`. Install the plugin as well when you want the full hook/skill experience.
 
 <details>
 <summary><b>OpenClaw (paste this prompt)</b></summary>

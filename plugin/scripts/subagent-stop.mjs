@@ -22,7 +22,9 @@ async function main() {
 		return;
 	}
 	if (isSdkChildContext(data)) return;
-	const sessionId = data.session_id || "unknown";
+	const sessionId = data.session_id || data.sessionId || "unknown";
+	const agentId = data.agent_id ?? data.agentName;
+	const agentType = data.agent_type ?? data.agentDisplayName ?? data.agentName;
 	const lastMsg = typeof data.last_assistant_message === "string" ? data.last_assistant_message.slice(0, 4e3) : "";
 	try {
 		await fetch(`${REST_URL}/agentmemory/observe`, {
@@ -35,8 +37,8 @@ async function main() {
 				cwd: data.cwd || process.cwd(),
 				timestamp: (/* @__PURE__ */ new Date()).toISOString(),
 				data: {
-					agent_id: data.agent_id,
-					agent_type: data.agent_type,
+					agent_id: agentId,
+					agent_type: agentType,
 					last_message: lastMsg
 				}
 			}),

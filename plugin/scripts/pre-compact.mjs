@@ -22,7 +22,7 @@ async function main() {
 		return;
 	}
 	if (isSdkChildContext(data)) return;
-	const sessionId = data.session_id || "unknown";
+	const sessionId = data.session_id || data.sessionId || "unknown";
 	const project = data.cwd || process.cwd();
 	if (process.env["CLAUDE_MEMORY_BRIDGE"] === "true") try {
 		await fetch(`${REST_URL}/agentmemory/claude-bridge/sync`, {

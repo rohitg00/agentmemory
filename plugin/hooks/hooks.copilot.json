@@ -1,68 +1,68 @@
 {
   "version": 1,
   "hooks": {
-    "SessionStart": [
+    "sessionStart": [
       {
         "type": "command",
         "command": "node ${COPILOT_PLUGIN_ROOT}/scripts/session-start.mjs"
       }
     ],
-    "UserPromptSubmit": [
+    "userPromptSubmitted": [
       {
         "type": "command",
         "command": "node ${COPILOT_PLUGIN_ROOT}/scripts/prompt-submit.mjs"
       }
     ],
-    "PreToolUse": [
+    "preToolUse": [
       {
         "type": "command",
-        "matcher": "Edit|Write|Read|Glob|Grep",
+        "matcher": "edit|create|view|glob|grep",
         "command": "node ${COPILOT_PLUGIN_ROOT}/scripts/pre-tool-use.mjs"
       }
     ],
-    "PostToolUse": [
+    "postToolUse": [
       {
         "type": "command",
         "command": "node ${COPILOT_PLUGIN_ROOT}/scripts/post-tool-use.mjs"
       }
     ],
-    "PostToolUseFailure": [
+    "postToolUseFailure": [
       {
         "type": "command",
         "command": "node ${COPILOT_PLUGIN_ROOT}/scripts/post-tool-failure.mjs"
       }
     ],
-    "PreCompact": [
+    "preCompact": [
       {
         "type": "command",
         "command": "node ${COPILOT_PLUGIN_ROOT}/scripts/pre-compact.mjs"
       }
     ],
-    "Stop": [
+    "agentStop": [
       {
         "type": "command",
         "command": "node ${COPILOT_PLUGIN_ROOT}/scripts/stop.mjs"
       }
     ],
-    "SessionEnd": [
+    "sessionEnd": [
       {
         "type": "command",
         "command": "node ${COPILOT_PLUGIN_ROOT}/scripts/session-end.mjs"
       }
     ],
-    "SubagentStart": [
+    "subagentStart": [
       {
         "type": "command",
         "command": "node ${COPILOT_PLUGIN_ROOT}/scripts/subagent-start.mjs"
       }
     ],
-    "SubagentStop": [
+    "subagentStop": [
       {
         "type": "command",
         "command": "node ${COPILOT_PLUGIN_ROOT}/scripts/subagent-stop.mjs"
       }
     ],
-    "Notification": [
+    "notification": [
       {
         "type": "command",
         "command": "node ${COPILOT_PLUGIN_ROOT}/scripts/notification.mjs"

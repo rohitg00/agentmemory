@@ -10,6 +10,17 @@ import {
 } from "../src/cli/connect/index.js";
 import type { ConnectAdapter } from "../src/cli/connect/types.js";
 
+const EXPECTED_COPILOT_MCP_COMMAND =
+  process.platform === "win32"
+    ? {
+        command: process.env["ComSpec"] || process.env["COMSPEC"] || "cmd.exe",
+        args: ["/d", "/s", "/c", "npx", "-y", "@agentmemory/mcp"],
+      }
+    : {
+        command: "npx",
+        args: ["-y", "@agentmemory/mcp"],
+      };
+
 describe("agentmemory connect — dispatcher", () => {
   it("resolves every known agent by lowercase name", () => {
     for (const name of knownAgents()) {
@@ -185,13 +196,17 @@ describe("agentmemory connect — copilot-cli adapter (mock filesystem)", () => 
   let tmpHome: string;
   let originalHome: string | undefined;
   let originalUserprofile: string | undefined;
+  let originalCopilotHome: string | undefined;
+  let importCounter = 0;
 
   beforeEach(() => {
     tmpHome = mkdtempSync(join(tmpdir(), "am-connect-"));
     originalHome = process.env["HOME"];
     originalUserprofile = process.env["USERPROFILE"];
+    originalCopilotHome = process.env["COPILOT_HOME"];
     process.env["HOME"] = tmpHome;
     process.env["USERPROFILE"] = tmpHome;
+    delete process.env["COPILOT_HOME"];
     vi.resetModules();
   });
 
@@ -201,12 +216,17 @@ describe("agentmemory connect — copilot-cli adapter (mock filesystem)", () => 
     if (originalUserprofile !== undefined)
       process.env["USERPROFILE"] = originalUserprofile;
     else delete process.env["USERPROFILE"];
+    if (originalCopilotHome !== undefined)
+      process.env["COPILOT_HOME"] = originalCopilotHome;
+    else delete process.env["COPILOT_HOME"];
     rmSync(tmpHome, { recursive: true, force: true });
     vi.resetModules();
   });
 
   async function loadAdapter(): Promise<ConnectAdapter> {
-    const mod = await import("../src/cli/connect/copilot-cli.js?t=" + Date.now());
+    const mod = await import(
+      "../src/cli/connect/copilot-cli.js?t=" + Date.now() + "-" + importCounter++
+    );
     return (mod as { adapter: ConnectAdapter }).adapter;
   }
 
@@ -229,8 +249,7 @@ describe("agentmemory connect — copilot-cli adapter (mock filesystem)", () => 
     );
     expect(config.mcpServers.agentmemory).toEqual({
       type: "local",
-      command: "npx",
-      args: ["-y", "@agentmemory/mcp"],
+      ...EXPECTED_COPILOT_MCP_COMMAND,
       env: {
         AGENTMEMORY_URL: "${AGENTMEMORY_URL}",
         AGENTMEMORY_SECRET: "${AGENTMEMORY_SECRET}",
@@ -240,6 +259,21 @@ describe("agentmemory connect — copilot-cli adapter (mock filesystem)", () => 
 
     const second = await a.install({ dryRun: false, force: false });
     expect(second.kind).toBe("already-wired");
+  });
+
+  it("honors COPILOT_HOME when locating mcp-config.json", async () => {
+    const customCopilotHome = join(tmpHome, "custom-copilot-home");
+    process.env["COPILOT_HOME"] = customCopilotHome;
+    require("node:fs").mkdirSync(customCopilotHome, { recursive: true });
+
+    const a = await loadAdapter();
+    expect(a.detect()).toBe(true);
+
+    const result = await a.install({ dryRun: false, force: false });
+    expect(result.kind).toBe("installed");
+    expect(result.mutatedPath).toBe(join(customCopilotHome, "mcp-config.json"));
+    expect(existsSync(join(customCopilotHome, "mcp-config.json"))).toBe(true);
+    expect(existsSync(join(tmpHome, ".copilot", "mcp-config.json"))).toBe(false);
   });
 
   it("install() preserves unrelated top-level keys and mcpServers entries", async () => {
@@ -261,7 +295,9 @@ describe("agentmemory connect — copilot-cli adapter (mock filesystem)", () => 
     );
     expect(config.otherTopLevel).toEqual({ keep: true });
     expect(config.mcpServers.other).toEqual({ type: "local", command: "other" });
-    expect(config.mcpServers.agentmemory.command).toBe("npx");
+    expect(config.mcpServers.agentmemory.command).toBe(
+      EXPECTED_COPILOT_MCP_COMMAND.command,
+    );
   });
 
   it("install() writes env passthrough block for AGENTMEMORY_URL + AGENTMEMORY_SECRET", async () => {
@@ -287,8 +323,7 @@ describe("agentmemory connect — copilot-cli adapter (mock filesystem)", () => 
         mcpServers: {
           agentmemory: {
             type: "local",
-            command: "npx",
-            args: ["-y", "@agentmemory/mcp"],
+            ...EXPECTED_COPILOT_MCP_COMMAND,
             env: {
               AGENTMEMORY_URL: "${AGENTMEMORY_URL}",
               AGENTMEMORY_SECRET: "${AGENTMEMORY_SECRET}",

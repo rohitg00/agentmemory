@@ -29,9 +29,12 @@ async function main() {
   }
 
   if (isSdkChildContext(data)) return;
-  if (data.is_interrupt) return;
+  if (data.is_interrupt || data.isInterrupt) return;
 
-  const sessionId = (data.session_id as string) || "unknown";
+  const sessionId = ((data.session_id || data.sessionId) as string) || "unknown";
+  const toolName = data.tool_name ?? data.toolName;
+  const toolInput = data.tool_input ?? data.toolArgs;
+  const error = data.error ?? data.errorMessage;
 
   try {
     await fetch(`${REST_URL}/agentmemory/observe`, {
@@ -44,15 +47,15 @@ async function main() {
         cwd: data.cwd || process.cwd(),
         timestamp: new Date().toISOString(),
         data: {
-          tool_name: data.tool_name,
+          tool_name: toolName,
           tool_input:
-            typeof data.tool_input === "string"
-              ? data.tool_input.slice(0, 4000)
-              : JSON.stringify(data.tool_input ?? "").slice(0, 4000),
+            typeof toolInput === "string"
+              ? toolInput.slice(0, 4000)
+              : JSON.stringify(toolInput ?? "").slice(0, 4000),
           error:
-            typeof data.error === "string"
-              ? data.error.slice(0, 4000)
-              : JSON.stringify(data.error ?? "").slice(0, 4000),
+            typeof error === "string"
+              ? error.slice(0, 4000)
+              : JSON.stringify(error ?? "").slice(0, 4000),
         },
       }),
       signal: AbortSignal.timeout(3000),

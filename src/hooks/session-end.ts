@@ -30,7 +30,7 @@ async function main() {
 
   if (isSdkChildContext(data)) return;
 
-  const sessionId = (data.session_id as string) || "unknown";
+  const sessionId = ((data.session_id || data.sessionId) as string) || "unknown";
 
   try {
     await fetch(`${REST_URL}/agentmemory/session/end`, {

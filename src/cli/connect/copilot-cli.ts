@@ -13,7 +13,7 @@ import {
   writeJsonAtomic,
 } from "./util.js";
 
-const COPILOT_DIR = join(homedir(), ".copilot");
+const COPILOT_DIR = process.env["COPILOT_HOME"] || join(homedir(), ".copilot");
 const COPILOT_MCP_JSON = join(COPILOT_DIR, "mcp-config.json");
 
 type CopilotMcpEntry = typeof AGENTMEMORY_COPILOT_MCP_BLOCK;

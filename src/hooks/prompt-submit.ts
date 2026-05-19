@@ -30,7 +30,7 @@ async function main() {
 
   if (isSdkChildContext(data)) return;
 
-  const sessionId = (data.session_id as string) || "unknown";
+  const sessionId = ((data.session_id || data.sessionId) as string) || "unknown";
 
   try {
     await fetch(`${REST_URL}/agentmemory/observe`, {
@@ -42,7 +42,7 @@ async function main() {
         project: data.cwd || process.cwd(),
         cwd: data.cwd || process.cwd(),
         timestamp: new Date().toISOString(),
-        data: { prompt: data.prompt },
+        data: { prompt: data.prompt ?? data.userPrompt },
       }),
       signal: AbortSignal.timeout(3000),
     });

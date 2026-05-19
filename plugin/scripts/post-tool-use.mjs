@@ -22,8 +22,10 @@ async function main() {
 		return;
 	}
 	if (isSdkChildContext(data)) return;
-	const sessionId = data.session_id || "unknown";
-	const { imageData, cleanOutput } = extractImageData(data.tool_output);
+	const sessionId = data.session_id || data.sessionId || "unknown";
+	const toolName = data.tool_name ?? data.toolName;
+	const toolInput = data.tool_input ?? data.toolArgs;
+	const { imageData, cleanOutput } = extractImageData(toolOutput(data));
 	try {
 		await fetch(`${REST_URL}/agentmemory/observe`, {
 			method: "POST",
@@ -35,8 +37,8 @@ async function main() {
 				cwd: data.cwd || process.cwd(),
 				timestamp: (/* @__PURE__ */ new Date()).toISOString(),
 				data: {
-					tool_name: data.tool_name,
-					tool_input: data.tool_input,
+					tool_name: toolName,
+					tool_input: toolInput,
 					tool_output: truncate(cleanOutput, 8e3),
 					...imageData ? { image_data: imageData } : {}
 				}
@@ -44,6 +46,15 @@ async function main() {
 			signal: AbortSignal.timeout(3e3)
 		});
 	} catch {}
+}
+function toolOutput(data) {
+	if (data.tool_output !== void 0) return data.tool_output;
+	const result = data.tool_result ?? data.toolResult;
+	if (typeof result === "object" && result !== null) {
+		const obj = result;
+		return obj.text_result_for_llm ?? obj.textResultForLlm ?? result;
+	}
+	return result;
 }
 function isBase64Image(val) {
 	return typeof val === "string" && (val.startsWith("data:image/") || val.startsWith("iVBORw0KGgo") || val.startsWith("/9j/"));
