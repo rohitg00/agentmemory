@@ -1,5 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import {
+  createMessageParser,
+  formatResponse,
   processLine,
   type JsonRpcResponse,
   type RequestHandler,
@@ -225,5 +227,49 @@ describe("processLine — id type validation (JSON-RPC §4)", () => {
     expect(c.out).toHaveLength(1);
     expect(c.out[0].id).toBe("abc-123");
     expect(c.out[0].result).toEqual({ method: "ping" });
+  });
+});
+
+describe("stdio framing", () => {
+  it("parses Content-Length framed MCP messages split across chunks", () => {
+    const messages: string[] = [];
+    const parser = createMessageParser((message) => messages.push(message));
+    const body = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize" });
+    const framed = `Content-Length: ${Buffer.byteLength(body, "utf8")}\r\n\r\n${body}`;
+
+    parser.push(framed.slice(0, 12));
+    parser.push(framed.slice(12));
+
+    expect(messages).toEqual([body]);
+    expect(parser.isFramed()).toBe(true);
+  });
+
+  it("parses newline-delimited JSON for existing clients", () => {
+    const messages: string[] = [];
+    const parser = createMessageParser((message) => messages.push(message));
+    const first = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" });
+    const second = JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" });
+
+    parser.push(`${first}\n${second}\n`);
+
+    expect(messages).toEqual([first, second]);
+    expect(parser.isFramed()).toBe(false);
+  });
+
+  it("formats responses with Content-Length framing when requested", () => {
+    const response: JsonRpcResponse = {
+      jsonrpc: "2.0",
+      id: 1,
+      result: { ok: true },
+    };
+    const formatted = formatResponse(response, true);
+
+    expect(Array.isArray(formatted)).toBe(true);
+    if (!Array.isArray(formatted)) throw new Error("expected framed response");
+    const header = formatted[0].toString("ascii");
+    const body = formatted[1].toString("utf8");
+
+    expect(header).toBe(`Content-Length: ${Buffer.byteLength(body, "utf8")}\r\n\r\n`);
+    expect(JSON.parse(body)).toEqual(response);
   });
 });
