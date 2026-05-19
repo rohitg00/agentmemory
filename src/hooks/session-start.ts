@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+import { agentmemoryEnv } from "./env.js";
+
 // Inlined from ./sdk-guard so each hook bundles to a single self-contained
 // .mjs (matches the pattern used by every other hook entry in tsdown.config).
 function isSdkChildContext(payload: unknown): boolean {
@@ -15,10 +17,10 @@ function isSdkChildContext(payload: unknown): boolean {
 // project context to stdout — which Claude Code prepends to the very first
 // turn — when AGENTMEMORY_INJECT_CONTEXT=true. Default off as of 0.8.10
 // (#143); see pre-tool-use.ts for the full explanation.
-const INJECT_CONTEXT = process.env["AGENTMEMORY_INJECT_CONTEXT"] === "true";
+const INJECT_CONTEXT = agentmemoryEnv("AGENTMEMORY_INJECT_CONTEXT") === "true";
 
 const REST_URL = process.env["AGENTMEMORY_URL"] || "http://localhost:3111";
-const SECRET = process.env["AGENTMEMORY_SECRET"] || "";
+const SECRET = agentmemoryEnv("AGENTMEMORY_SECRET");
 
 // When the server is unreachable a 5s timeout multiplies hard under
 // concurrent fan-out (Slack bots, multi-agent harnesses) and becomes a

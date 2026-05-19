@@ -2,6 +2,7 @@
 
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { agentmemoryEnv } from "./env.js";
 
 const exec = promisify(execFile);
 
@@ -12,7 +13,7 @@ function isSdkChildContext(payload: unknown): boolean {
 }
 
 const REST_URL = process.env["AGENTMEMORY_URL"] || "http://localhost:3111";
-const SECRET = process.env["AGENTMEMORY_SECRET"] || "";
+const SECRET = agentmemoryEnv("AGENTMEMORY_SECRET");
 const TIMEOUT_MS = 1500;
 
 function authHeaders(): Record<string, string> {

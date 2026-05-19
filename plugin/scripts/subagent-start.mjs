@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import { t as agentmemoryEnv } from "./env-DODO3jxN.mjs";
+
 //#region src/hooks/subagent-start.ts
 function isSdkChildContext(payload) {
 	if (process.env["AGENTMEMORY_SDK_CHILD"] === "1") return true;
@@ -6,7 +8,7 @@ function isSdkChildContext(payload) {
 	return payload.entrypoint === "sdk-ts";
 }
 const REST_URL = process.env["AGENTMEMORY_URL"] || "http://localhost:3111";
-const SECRET = process.env["AGENTMEMORY_SECRET"] || "";
+const SECRET = agentmemoryEnv("AGENTMEMORY_SECRET");
 const TIMEOUT_MS = 800;
 function authHeaders() {
 	const h = { "Content-Type": "application/json" };

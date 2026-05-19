@@ -41,6 +41,7 @@ import {
 import { renderSplash } from "./cli/splash.js";
 import { isFirstRun, readPrefs, resetPrefs, writePrefs } from "./cli/preferences.js";
 import { runOnboarding } from "./cli/onboarding.js";
+import { getEnvVar } from "./config.js";
 import { setBootVerbose } from "./logger.js";
 import { VERSION } from "./version.js";
 
@@ -1067,17 +1068,23 @@ async function main() {
 
 async function apiFetch<T = unknown>(base: string, path: string, timeoutMs = 5000): Promise<T | null> {
   try {
-    const headers: Record<string, string> = {};
-    const secret = process.env["AGENTMEMORY_SECRET"];
-    if (secret) headers["Authorization"] = `Bearer ${secret}`;
     const res = await fetch(`${base}/agentmemory/${path}`, {
       signal: AbortSignal.timeout(timeoutMs),
-      headers,
+      headers: agentmemoryAuthHeaders(),
     });
     return (await res.json()) as T;
   } catch {
     return null;
   }
+}
+
+function agentmemoryAuthHeaders(
+  base?: Record<string, string>,
+): Record<string, string> {
+  const headers = { ...(base ?? {}) };
+  const secret = getEnvVar("AGENTMEMORY_SECRET");
+  if (secret) headers["Authorization"] = `Bearer ${secret}`;
+  return headers;
 }
 
 async function runStatus() {
@@ -1691,7 +1698,7 @@ async function postJson<T = unknown>(
   try {
     const res = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: agentmemoryAuthHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(timeoutMs),
     });
@@ -1709,7 +1716,7 @@ async function postJsonStrict<T = unknown>(
 ): Promise<T | null> {
   const res = await fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: agentmemoryAuthHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(timeoutMs),
   });
@@ -1751,7 +1758,7 @@ async function seedDemoSession(
     try {
       const res = await fetch(url, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: agentmemoryAuthHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify(payload),
         signal: AbortSignal.timeout(5000),
       });
@@ -2292,9 +2299,7 @@ async function runImportJsonl(): Promise<void> {
   if (pathArg) body["path"] = pathArg;
   if (maxFiles !== undefined) body["maxFiles"] = maxFiles;
 
-  const headers: Record<string, string> = { "content-type": "application/json" };
-  const secret = process.env["AGENTMEMORY_SECRET"];
-  if (secret) headers["authorization"] = `Bearer ${secret}`;
+  const headers = agentmemoryAuthHeaders({ "content-type": "application/json" });
 
   p.log.info(`Importing JSONL from ${pathArg || "~/.claude/projects"}…`);
   const spinner = p.spinner();

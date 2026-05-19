@@ -1,6 +1,10 @@
 import { describe, it, expect } from "vitest";
 import { spawn } from "node:child_process";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { createServer, type Server } from "node:http";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { AddressInfo } from "node:net";
 
 const HOOKS_DIR = join(import.meta.dirname, "..", "plugin", "scripts");
 
@@ -51,6 +55,29 @@ function runHook(
 
     child.stdin.write(stdin);
     child.stdin.end();
+  });
+}
+
+function makeAgentmemoryHome(envContent: string): string {
+  const home = mkdtempSync(join(tmpdir(), "agentmemory-hook-"));
+  mkdirSync(join(home, ".agentmemory"), { recursive: true });
+  writeFileSync(join(home, ".agentmemory", ".env"), envContent);
+  return home;
+}
+
+function listen(server: Server): Promise<string> {
+  return new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address() as AddressInfo;
+      resolve(`http://127.0.0.1:${address.port}`);
+    });
+  });
+}
+
+function closeServer(server: Server): Promise<void> {
+  return new Promise((resolve, reject) => {
+    server.close((err) => (err ? reject(err) : resolve()));
   });
 }
 
@@ -108,6 +135,39 @@ describe("pre-tool-use hook — context injection gate (#143)", () => {
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toBe("");
   });
+
+  it("honors AGENTMEMORY_INJECT_CONTEXT and AGENTMEMORY_SECRET from ~/.agentmemory/.env", async () => {
+    const home = makeAgentmemoryHome(
+      "AGENTMEMORY_INJECT_CONTEXT=true\nAGENTMEMORY_SECRET=file-secret\n",
+    );
+    let authHeader: string | undefined;
+    const server = createServer((req, res) => {
+      authHeader = req.headers.authorization;
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({ context: "remembered context" }));
+    });
+    const baseUrl = await listen(server);
+
+    try {
+      const payload = JSON.stringify({
+        session_id: "ses_test",
+        tool_name: "Read",
+        tool_input: { file_path: "src/foo.ts" },
+      });
+      const result = await runHook("pre-tool-use.mjs", payload, {
+        HOME: home,
+        USERPROFILE: home,
+        AGENTMEMORY_URL: baseUrl,
+      });
+
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toBe("remembered context");
+      expect(authHeader).toBe("Bearer file-secret");
+    } finally {
+      await closeServer(server);
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("session-start hook — context injection gate (#143)", () => {
@@ -124,5 +184,37 @@ describe("session-start hook — context injection gate (#143)", () => {
     });
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toBe("");
+  });
+});
+
+describe("prompt-submit hook — auth env fallback (#518)", () => {
+  it("adds Bearer auth from ~/.agentmemory/.env when the shell env omits AGENTMEMORY_SECRET", async () => {
+    const home = makeAgentmemoryHome("AGENTMEMORY_SECRET=file-secret\n");
+    let authHeader: string | undefined;
+    const server = createServer((req, res) => {
+      authHeader = req.headers.authorization;
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({ observationId: "obs_test" }));
+    });
+    const baseUrl = await listen(server);
+
+    try {
+      const payload = JSON.stringify({
+        session_id: "ses_test",
+        cwd: "/tmp/fake-project",
+        prompt: "capture this",
+      });
+      const result = await runHook("prompt-submit.mjs", payload, {
+        HOME: home,
+        USERPROFILE: home,
+        AGENTMEMORY_URL: baseUrl,
+      });
+
+      expect(result.exitCode).toBe(0);
+      expect(authHeader).toBe("Bearer file-secret");
+    } finally {
+      await closeServer(server);
+      rmSync(home, { recursive: true, force: true });
+    }
   });
 });
