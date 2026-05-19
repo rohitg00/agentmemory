@@ -164,8 +164,13 @@ describe("Copilot hooks config (hooks/hooks.copilot.json)", () => {
     const config = loadHooks();
     const preToolEntries = config.hooks["preToolUse"];
     expect(preToolEntries).toBeDefined();
-    const withMatcher = preToolEntries.find((e) => e.matcher === "edit|create|view|glob|grep");
-    expect(withMatcher, "PreToolUse must have matcher edit|create|view|glob|grep").toBeDefined();
+    const withMatcher = preToolEntries.find(
+      (e) => e.matcher === "edit|write|create|read|view|glob|grep",
+    );
+    expect(
+      withMatcher,
+      "PreToolUse must have matcher edit|write|create|read|view|glob|grep",
+    ).toBeDefined();
   });
 
   it("every handler has type === 'command' and exactly one of command/bash/powershell", () => {
@@ -174,7 +179,7 @@ describe("Copilot hooks config (hooks/hooks.copilot.json)", () => {
       for (const handler of entries) {
         expect(handler.type, `${event} handler type`).toBe("command");
         const commandFields = [handler.command, handler.bash, handler.powershell].filter(
-          (v) => v !== undefined,
+          (v): v is string => typeof v === "string" && v.trim().length > 0,
         );
         expect(
           commandFields.length,

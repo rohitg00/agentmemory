@@ -32,7 +32,11 @@ async function main() {
   const notificationType = data.notification_type ?? data.notificationType;
   if (notificationType !== "permission_prompt") return;
 
-  const sessionId = ((data.session_id || data.sessionId) as string) || "unknown";
+  const rawSessionId = data.session_id ?? data.sessionId;
+  const sessionId =
+    typeof rawSessionId === "string" && rawSessionId.length > 0
+      ? rawSessionId
+      : "unknown";
 
   try {
     await fetch(`${REST_URL}/agentmemory/observe`, {

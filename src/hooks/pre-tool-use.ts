@@ -53,14 +53,22 @@ async function main() {
   const toolName =
     typeof data.tool_name === "string"
       ? data.tool_name
-      : (data.toolName as string);
+      : typeof data.toolName === "string"
+        ? data.toolName
+        : undefined;
   if (!toolName) return;
 
   const normalizedToolName = toolName.toLowerCase();
   const fileTools = ["edit", "write", "create", "read", "view", "glob", "grep"];
   if (!fileTools.includes(normalizedToolName)) return;
 
-  const toolInput = (data.tool_input || data.toolArgs || {}) as Record<string, unknown>;
+  const rawToolInput = data.tool_input ?? data.toolArgs;
+  const toolInput =
+    typeof rawToolInput === "object" &&
+    rawToolInput !== null &&
+    !Array.isArray(rawToolInput)
+      ? (rawToolInput as Record<string, unknown>)
+      : {};
   const files: string[] = [];
   const fileKeys =
     normalizedToolName === "grep"

@@ -16,7 +16,7 @@
     "preToolUse": [
       {
         "type": "command",
-        "matcher": "edit|create|view|glob|grep",
+        "matcher": "edit|write|create|read|view|glob|grep",
         "command": "node ${COPILOT_PLUGIN_ROOT}/scripts/pre-tool-use.mjs"
       }
     ],

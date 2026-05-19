@@ -24,7 +24,7 @@ async function main() {
 		return;
 	}
 	if (isSdkChildContext(data)) return;
-	const toolName = typeof data.tool_name === "string" ? data.tool_name : data.toolName;
+	const toolName = typeof data.tool_name === "string" ? data.tool_name : typeof data.toolName === "string" ? data.toolName : void 0;
 	if (!toolName) return;
 	const normalizedToolName = toolName.toLowerCase();
 	if (![
@@ -36,7 +36,8 @@ async function main() {
 		"glob",
 		"grep"
 	].includes(normalizedToolName)) return;
-	const toolInput = data.tool_input || data.toolArgs || {};
+	const rawToolInput = data.tool_input ?? data.toolArgs;
+	const toolInput = typeof rawToolInput === "object" && rawToolInput !== null && !Array.isArray(rawToolInput) ? rawToolInput : {};
 	const files = [];
 	const fileKeys = normalizedToolName === "grep" ? ["path", "file"] : [
 		"file_path",

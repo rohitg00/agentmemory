@@ -39,8 +39,8 @@ async function main() {
   if (isSdkChildContext(data)) return;
 
   const sessionId = ((data.session_id || data.sessionId) as string) || "unknown";
-  const agentId = data.agent_id ?? data.agentName;
-  const agentType = data.agent_type ?? data.agentDisplayName ?? data.agentName;
+  const agentId = data.agent_id || data.agentName;
+  const agentType = data.agent_type || data.agentDisplayName || data.agentName;
 
   fetch(`${REST_URL}/agentmemory/observe`, {
     method: "POST",

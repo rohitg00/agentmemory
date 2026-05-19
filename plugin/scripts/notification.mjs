@@ -24,7 +24,8 @@ async function main() {
 	if (isSdkChildContext(data)) return;
 	const notificationType = data.notification_type ?? data.notificationType;
 	if (notificationType !== "permission_prompt") return;
-	const sessionId = data.session_id || data.sessionId || "unknown";
+	const rawSessionId = data.session_id ?? data.sessionId;
+	const sessionId = typeof rawSessionId === "string" && rawSessionId.length > 0 ? rawSessionId : "unknown";
 	try {
 		await fetch(`${REST_URL}/agentmemory/observe`, {
 			method: "POST",

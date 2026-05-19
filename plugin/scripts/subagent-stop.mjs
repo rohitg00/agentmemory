@@ -23,8 +23,8 @@ async function main() {
 	}
 	if (isSdkChildContext(data)) return;
 	const sessionId = data.session_id || data.sessionId || "unknown";
-	const agentId = data.agent_id ?? data.agentName;
-	const agentType = data.agent_type ?? data.agentDisplayName ?? data.agentName;
+	const agentId = data.agent_id || data.agentName;
+	const agentType = data.agent_type || data.agentDisplayName || data.agentName;
 	const lastMsg = typeof data.last_assistant_message === "string" ? data.last_assistant_message.slice(0, 4e3) : "";
 	try {
 		await fetch(`${REST_URL}/agentmemory/observe`, {
