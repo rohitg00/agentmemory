@@ -916,6 +916,17 @@ open http://localhost:3113
 
 The viewer server binds to `127.0.0.1` by default. The REST-served `/agentmemory/viewer` endpoint follows the normal `AGENTMEMORY_SECRET` bearer-token rules. CSP headers use a per-response script nonce and disable inline handler attributes (`script-src-attr 'none'`).
 
+### Viewer language
+
+The viewer UI defaults to English. Switch it via `.env`:
+
+```bash
+# .env
+VIEWER_LANGUAGE=de
+```
+
+Restart agentmemory to apply. Built-in locales: `en`, `de`. Missing keys fall back to English. To contribute a new language, copy `src/viewer/locales/en.json`, translate the values, and open a PR — no code changes required. See [Contributing a translation](CONTRIBUTING.md#contributing-a-translation).
+
 ---
 
 <h2 id="iii-console"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/section-viewer.svg"><img src="assets/tags/section-viewer.svg" alt="iii Console" height="32" /></picture></h2>
@@ -1159,6 +1170,9 @@ Create `~/.agentmemory/.env`:
 # AGENTMEMORY_EXPORT_ROOT=~/.agentmemory
 # CLAUDE_MEMORY_BRIDGE=false
 # SNAPSHOT_ENABLED=false
+
+# Viewer language
+# VIEWER_LANGUAGE=en   # Viewer UI language. Built-in: en, de. Drop src/viewer/locales/<lang>.json to add more. Falls back to en for missing keys.
 
 # Team
 # TEAM_ID=
