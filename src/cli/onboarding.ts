@@ -83,6 +83,15 @@ export function buildAgentOptions(): { value: string; label: string; hint?: stri
   ];
 }
 
+export function getInitialAgentValues(
+  env: Record<string, string | undefined> = process.env,
+): string[] {
+  if (env["COPILOT_CLI"] === "1" || env["COPILOT_AGENT_SESSION_ID"]) {
+    return ["copilot-cli"];
+  }
+  return ["claude-code"];
+}
+
 // Mirror src/cli.ts findEnvExample so onboarding ships the same .env
 // skeleton whether called directly or via `agentmemory init`. We
 // duplicate (rather than import) so the onboarding module doesn't
@@ -154,7 +163,7 @@ export async function runOnboarding(): Promise<OnboardingResult> {
     message: "Which agents will use agentmemory? (space to toggle, enter to confirm)",
     options: buildAgentOptions(),
     required: false,
-    initialValues: ["claude-code"],
+    initialValues: getInitialAgentValues(),
   });
   if (p.isCancel(agentsPicked)) {
     p.cancel("Setup cancelled. Re-run any time with: agentmemory --reset");
