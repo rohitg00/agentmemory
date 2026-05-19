@@ -43,10 +43,10 @@
 }
 .row {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) minmax(240px, 1.3fr) minmax(220px, 1fr);
-  gap: 24px;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 20px;
   width: 100%;
-  max-width: 1000px;
+  max-width: 1100px;
   align-items: stretch;
 }
 .cell {
@@ -135,7 +135,13 @@
   color: var(--gold);
   transform: translate(2px, -2px);
 }
-@media (max-width: 720px) {
+@media (max-width: 980px) {
+  .row {
+    grid-template-columns: repeat(2, 1fr);
+    max-width: 720px;
+  }
+}
+@media (max-width: 540px) {
   .row {
     grid-template-columns: 1fr;
     max-width: 380px;

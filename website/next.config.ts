@@ -23,6 +23,7 @@ const config: NextConfig = {
       { protocol: "https", hostname: "www.freelogovectors.net" },
       { protocol: "https", hostname: "aaif.io" },
       { protocol: "https", hostname: "trendshift.io" },
+      { protocol: "https", hostname: "api.producthunt.com" },
     ],
   },
 };

@@ -1,14 +1,10 @@
 import styles from "./Testimonials.module.css";
 
-// PH launch post for agentmemory. The featured.svg badge endpoint
-// renders the live upvote count + day-rank server-side, so the
-// number on the page stays current without any client refresh.
-// Replace the post_id if a future launch shifts to a new post.
-const PH_POST_ID = 773058;
-const PH_POST_URL = "https://www.producthunt.com/posts/agent-memory-dev";
+// PH launch discussion thread for agentmemory — every testimonial in
+// this section is a verbatim quote from that thread. The live
+// upvote badge lives in <FeaturedIn /> at the top of the page.
 const PH_DISCUSSION_URL =
   "https://www.producthunt.com/p/agent-memory-dev/how-do-you-found-agentmemory-so-far-happy-to-help";
-const PH_BADGE_URL = `https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=${PH_POST_ID}&theme=dark`;
 
 // "Use cases" — quotes that describe how a builder is using
 // agentmemory in production. Each one carries an explicit
@@ -79,25 +75,6 @@ export function Testimonials() {
       aria-labelledby="testimonials-title"
     >
       <div className={styles.inner}>
-        <div className={styles.badgeRow}>
-          <a
-            href={PH_POST_URL}
-            target="_blank"
-            rel="noopener"
-            aria-label="Featured on Product Hunt"
-            className={styles.badgeLink}
-          >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={PH_BADGE_URL}
-              alt="Featured on Product Hunt — live upvote count"
-              width={250}
-              height={54}
-              className={styles.badge}
-            />
-          </a>
-        </div>
-
         <div id="testimonials-title" className={styles.eyebrow}>
           BUILDERS USING AGENTMEMORY
         </div>

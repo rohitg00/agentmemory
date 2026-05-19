@@ -12,27 +12,6 @@
   gap: 20px;
   align-items: center;
 }
-.badgeRow {
-  margin-bottom: 8px;
-}
-.badgeLink {
-  display: inline-block;
-  transition: transform 0.12s ease, opacity 0.12s ease;
-}
-.badgeLink:hover,
-.badgeLink:focus-visible {
-  transform: translateY(-2px);
-  opacity: 0.92;
-}
-.badgeLink:focus-visible {
-  outline: 2px solid var(--gold);
-  outline-offset: 4px;
-}
-.badge {
-  width: 250px;
-  height: 54px;
-  display: block;
-}
 .eyebrow {
   font-family: var(--font-mono);
   font-size: 11px;

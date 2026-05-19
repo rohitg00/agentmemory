@@ -532,6 +532,7 @@ export function registerApiTriggers(
           },
         };
       }
+      const title = typeof body.title === "string" ? body.title.trim() : undefined;
       const session: Session = {
         id: sessionId,
         project,
@@ -539,6 +540,8 @@ export function registerApiTriggers(
         startedAt: new Date().toISOString(),
         status: "active",
         observationCount: 0,
+        ...(title ? { summary: title.slice(0, 200) } : {}),
+        ...(title ? { firstPrompt: title.slice(0, 200) } : {}),
       };
       await kv.set(KV.sessions, sessionId, session);
       const contextResult = await sdk.trigger<
