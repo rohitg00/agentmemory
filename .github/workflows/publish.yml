@@ -10,20 +10,30 @@ on:
         required: false
         default: "agentmemory,mcp,fs-watcher"
 
-# `packages: write` lets the second job push a mirror to GitHub
-# Packages' npm registry, which is what makes the package surface
-# in the repo's right-sidebar "Packages" widget. The public npm
-# registry itself doesn't feed that widget.
+# Workflow-level permissions stay minimal — only `contents: read`
+# is required to check out the repo. Write scopes (`id-token: write`
+# for npm provenance, `packages: write` for the GH Packages mirror)
+# are granted per-job below so neither job inherits a scope it
+# doesn't need.
 permissions:
   contents: read
-  id-token: write
-  packages: write
 
 jobs:
   publish:
     runs-on: ubuntu-latest
+    # `id-token: write` is required for npm publish --provenance to
+    # mint a Sigstore OIDC token on this run. Scoped to this job only
+    # so the GH Packages mirror job doesn't inherit it.
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v6
+        with:
+          # Don't persist the GITHUB_TOKEN to .git/config — the
+          # publish steps don't push back to the repo, so the token
+          # only needs to live in memory for this checkout.
+          persist-credentials: false
 
       - uses: actions/setup-node@v6
         with:
@@ -126,8 +136,17 @@ jobs:
     # source; this is purely a discovery surface on the repo page.
     needs: publish
     runs-on: ubuntu-latest
+    # `packages: write` only here — the public-npm publish job
+    # doesn't need it. `contents: read` for the checkout.
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@v6
+        with:
+          # Same posture as the publish job — no push back to the
+          # repo, so don't persist the token to `.git/config`.
+          persist-credentials: false
 
       - uses: actions/setup-node@v6
         with:
