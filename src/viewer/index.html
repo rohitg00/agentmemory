@@ -1039,6 +1039,13 @@
         applyI18n(document);
       });
     })();
+    // Expose t() as a module-scope var so it is reachable as a plain
+    // identifier inside render functions (needed for the VM sandbox used
+    // by viewer unit tests where window !== globalThis).
+    var t = window.t;
+    // te(namespace, rawValue) — translate an enum display value; falls back to
+    // the raw string if the key is absent from the active locale bundle.
+    function te(ns, val) { var k = ns + '.' + val; var r = t(k); return r === k ? val : r; }
     var params = new URLSearchParams(window.location.search);
     var paramPort = params.get('port');
     var locPort = window.location.port;
@@ -1072,7 +1079,7 @@
     function applyTheme(dark, persist) {
       document.documentElement.dataset.theme = dark ? 'dark' : 'light';
       var btn = document.getElementById('theme-toggle');
-      if (btn) btn.textContent = dark ? 'LIGHT' : 'DARK';
+      if (btn) btn.textContent = dark ? t('buttons.light') : t('buttons.dark');
       if (persist) localStorage.setItem('agentmemory-theme', dark ? 'dark' : 'light');
     }
     window.toggleTheme = function() { applyTheme(!isDarkMode(), true); };
@@ -1309,7 +1316,7 @@
 
     async function loadDashboard() {
       var el = document.getElementById('view-dashboard');
-      el.innerHTML = '<div class="loading">Loading dashboard...</div>';
+      el.innerHTML = '<div class="loading">' + t('loading.dashboard') + '</div>';
       try {
         var results = await Promise.all([
           apiGet('health'),
@@ -1375,29 +1382,29 @@
       // First-run hero: empty dashboard = guided next step
       if (d.sessions.length === 0) {
         html += '<div class="card" style="margin-bottom:14px;padding:24px 28px;background:var(--bg-subtle);border-left:3px solid var(--accent);">' +
-          '<div style="font-family:var(--font-ui);font-size:11px;letter-spacing:0.15em;text-transform:uppercase;color:var(--accent);font-weight:700;margin-bottom:8px;">First run &rarr; magical moment in 10 seconds</div>' +
-          '<div style="font-family:var(--font-display,Lora,Georgia,serif);font-size:22px;font-weight:700;color:var(--ink);margin-bottom:8px;">Seed sample data + prove semantic recall works</div>' +
-          '<div style="font-size:13px;color:var(--ink-muted);margin-bottom:12px;line-height:1.5;max-width:640px;">agentmemory is running but hasn&rsquo;t seen any sessions yet. Run the demo command in a second terminal: it seeds 3 realistic coding sessions and proves the hybrid search finds semantically-related memories that keyword search would miss.</div>' +
+          '<div style="font-family:var(--font-ui);font-size:11px;letter-spacing:0.15em;text-transform:uppercase;color:var(--accent);font-weight:700;margin-bottom:8px;">' + t('dashboard.first_run.headline') + '</div>' +
+          '<div style="font-family:var(--font-display,Lora,Georgia,serif);font-size:22px;font-weight:700;color:var(--ink);margin-bottom:8px;">' + t('dashboard.first_run.subhead') + '</div>' +
+          '<div style="font-size:13px;color:var(--ink-muted);margin-bottom:12px;line-height:1.5;max-width:640px;">' + t('dashboard.first_run.body') + '</div>' +
           '<pre style="display:inline-block;margin:0;padding:10px 14px;background:var(--bg);border:1px solid var(--border);border-radius:4px;font-family:var(--font-mono);font-size:12px;color:var(--ink);">npx @agentmemory/agentmemory demo</pre>' +
-          '<div style="margin-top:10px;"><a class="empty-link" href="https://github.com/rohitg00/agentmemory#quick-start" target="_blank" rel="noopener" style="font-size:12px;">Or: wire up your real agent &rarr;</a></div>' +
+          '<div style="margin-top:10px;"><a class="empty-link" href="https://github.com/rohitg00/agentmemory#quick-start" target="_blank" rel="noopener" style="font-size:12px;">' + t('dashboard.first_run.cta') + '</a></div>' +
           '</div>';
       }
       html += '<div class="stats-grid">';
-      html += '<div class="stat-card"><div class="label">Sessions</div><div class="value">' + d.sessions.length + '</div><div class="sub">' + activeSessions + ' active</div></div>';
-      html += '<div class="stat-card"><div class="label">Memories</div><div class="value">' + d.memories.length + '</div><div class="sub">latest versions</div></div>';
+      html += '<div class="stat-card"><div class="label">' + t('dashboard.sessions') + '</div><div class="value">' + d.sessions.length + '</div><div class="sub">' + t('dashboard.active_sessions', { n: activeSessions }) + '</div></div>';
+      html += '<div class="stat-card"><div class="label">' + t('dashboard.memories') + '</div><div class="value">' + d.memories.length + '</div><div class="sub">' + t('dashboard.latest_versions') + '</div></div>';
       var lessonCount = (d.lessons || []).length;
       var crystalCount = (d.crystals || []).length;
-      html += '<div class="stat-card"><div class="label">Lessons</div><div class="value">' + lessonCount + '</div><div class="sub">confidence-scored</div></div>';
-      html += '<div class="stat-card"><div class="label">Crystals</div><div class="value">' + crystalCount + '</div><div class="sub">action digests</div></div>';
-      html += '<div class="stat-card"><div class="label">Graph Nodes</div><div class="value">' + nodeCount + '</div><div class="sub">' + edgeCount + ' edges</div></div>';
-      html += '<div class="stat-card"><div class="label">Health</div><div class="value"><div class="health-bar"><span class="health-dot ' + dotClass + '"></span> ' + esc(healthStatus) + '</div></div>';
+      html += '<div class="stat-card"><div class="label">' + t('dashboard.lessons') + '</div><div class="value">' + lessonCount + '</div><div class="sub">' + t('dashboard.confidence_scored') + '</div></div>';
+      html += '<div class="stat-card"><div class="label">' + t('dashboard.crystals') + '</div><div class="value">' + crystalCount + '</div><div class="sub">' + t('dashboard.action_digests') + '</div></div>';
+      html += '<div class="stat-card"><div class="label">' + t('dashboard.graph_nodes') + '</div><div class="value">' + nodeCount + '</div><div class="sub">' + edgeCount + ' edges</div></div>';
+      html += '<div class="stat-card"><div class="label">' + t('dashboard.health') + '</div><div class="value"><div class="health-bar"><span class="health-dot ' + dotClass + '"></span> ' + esc(healthStatus) + '</div></div>';
       html += '<div class="sub">' + esc(snap.connectionState || 'unknown') + '</div></div>';
       var totalCalls = fMetrics.reduce(function(a, m) { return a + (m.totalCalls || 0); }, 0);
-      html += '<div class="stat-card"><div class="label">Function Calls</div><div class="value">' + totalCalls + '</div><div class="sub">' + fMetrics.length + ' functions tracked</div></div>';
+      html += '<div class="stat-card"><div class="label">' + t('dashboard.function_calls') + '</div><div class="value">' + totalCalls + '</div><div class="sub">' + t('dashboard.functions_tracked', { n: fMetrics.length }) + '</div></div>';
       if (cb) {
         var cbClass = cb.state === 'closed' ? 'cb-closed' : cb.state === 'open' ? 'cb-open' : 'cb-half-open';
-        html += '<div class="stat-card"><div class="label">Circuit Breaker</div><div class="value"><span class="cb-indicator ' + cbClass + '">' + esc(cb.state) + '</span></div>';
-        html += '<div class="sub">' + (cb.failures || 0) + ' failures</div></div>';
+        html += '<div class="stat-card"><div class="label">' + t('dashboard.circuit_breaker') + '</div><div class="value"><span class="cb-indicator ' + cbClass + '">' + esc(cb.state) + '</span></div>';
+        html += '<div class="sub">' + t('dashboard.failures', { n: cb.failures || 0 }) + '</div></div>';
       }
       var totalObs = d.sessions.reduce(function(a, s) { return a + (s.observationCount || 0); }, 0);
       var tokenBudget = parseInt(new URLSearchParams(window.location.search).get('tokenBudget') || '2000', 10) || 2000;
@@ -1410,11 +1417,11 @@
       var costDollars = tokensSaved / 1000 * 0.3;
       var costCents = Math.round(costDollars * 100);
       var costStr = costCents >= 100 ? '$' + (costCents / 100).toFixed(2) : costCents + 'ct';
-      html += '<div class="stat-card"><div class="label">Token Savings</div><div class="value">' + savings + '%</div><div class="sub">~' + tokensSaved.toLocaleString() + ' tokens · ' + costStr + ' saved</div></div>';
+      html += '<div class="stat-card"><div class="label">' + t('dashboard.token_savings') + '</div><div class="value">' + savings + '%</div><div class="sub">~' + tokensSaved.toLocaleString() + ' tokens · ' + costStr + ' saved</div></div>';
       html += '</div>';
 
       if (snap.memory || snap.cpu) {
-        html += '<div class="card" style="margin-bottom:16px"><div class="card-title">System Resources</div>';
+        html += '<div class="card" style="margin-bottom:16px"><div class="card-title">' + t('dashboard.system_resources') + '</div>';
         if (snap.memory) {
           var heapUsed = Math.round((snap.memory.heapUsed || 0) / 1024 / 1024);
           var heapTotal = Math.round((snap.memory.heapTotal || 0) / 1024 / 1024);
@@ -1422,34 +1429,34 @@
           var heapPct = heapTotal > 0 ? Math.round((heapUsed / heapTotal) * 100) : 0;
           var rssAboveFloor = rss >= 512;
           var heapColor = (heapPct > 80 && rssAboveFloor) ? 'var(--red)' : (heapPct > 60 && rssAboveFloor) ? 'var(--yellow)' : 'var(--green)';
-          html += '<div class="gauge"><span class="gauge-label">Heap</span><div class="gauge-bar"><div class="gauge-fill" style="width:' + heapPct + '%;background:' + heapColor + '"></div></div><span class="gauge-value">' + heapUsed + ' / ' + heapTotal + ' MB</span></div>';
-          html += '<div class="gauge"><span class="gauge-label">RSS</span><div class="gauge-bar"><div class="gauge-fill" style="width:' + Math.min(100, Math.round(rss / 512 * 100)) + '%;background:var(--blue)"></div></div><span class="gauge-value">' + rss + ' MB</span></div>';
+          html += '<div class="gauge"><span class="gauge-label">' + t('dashboard.gauge_heap') + '</span><div class="gauge-bar"><div class="gauge-fill" style="width:' + heapPct + '%;background:' + heapColor + '"></div></div><span class="gauge-value">' + heapUsed + ' / ' + heapTotal + ' MB</span></div>';
+          html += '<div class="gauge"><span class="gauge-label">' + t('dashboard.gauge_rss') + '</span><div class="gauge-bar"><div class="gauge-fill" style="width:' + Math.min(100, Math.round(rss / 512 * 100)) + '%;background:var(--blue)"></div></div><span class="gauge-value">' + rss + ' MB</span></div>';
           if (snap.memory.external) {
             var ext = Math.round(snap.memory.external / 1024 / 1024);
-            html += '<div class="gauge"><span class="gauge-label">External</span><div class="gauge-bar"><div class="gauge-fill" style="width:' + Math.min(100, Math.round(ext / 128 * 100)) + '%;background:var(--purple)"></div></div><span class="gauge-value">' + ext + ' MB</span></div>';
+            html += '<div class="gauge"><span class="gauge-label">' + t('dashboard.gauge_external') + '</span><div class="gauge-bar"><div class="gauge-fill" style="width:' + Math.min(100, Math.round(ext / 128 * 100)) + '%;background:var(--purple)"></div></div><span class="gauge-value">' + ext + ' MB</span></div>';
           }
         }
         if (snap.cpu) {
           var cpuPct = snap.cpu.percent || 0;
           var cpuColor = cpuPct > 80 ? 'var(--red)' : cpuPct > 50 ? 'var(--yellow)' : 'var(--green)';
-          html += '<div class="gauge"><span class="gauge-label">CPU</span><div class="gauge-bar"><div class="gauge-fill" style="width:' + Math.min(100, cpuPct) + '%;background:' + cpuColor + '"></div></div><span class="gauge-value">' + cpuPct.toFixed(1) + '%</span></div>';
+          html += '<div class="gauge"><span class="gauge-label">' + t('dashboard.gauge_cpu') + '</span><div class="gauge-bar"><div class="gauge-fill" style="width:' + Math.min(100, cpuPct) + '%;background:' + cpuColor + '"></div></div><span class="gauge-value">' + cpuPct.toFixed(1) + '%</span></div>';
         }
         if (snap.eventLoopLagMs !== undefined) {
           var lag = snap.eventLoopLagMs;
           var lagColor = lag > 100 ? 'var(--red)' : lag > 20 ? 'var(--yellow)' : 'var(--green)';
-          html += '<div class="gauge"><span class="gauge-label">Event Loop</span><div class="gauge-bar"><div class="gauge-fill" style="width:' + Math.min(100, lag) + '%;background:' + lagColor + '"></div></div><span class="gauge-value">' + lag.toFixed(1) + ' ms</span></div>';
+          html += '<div class="gauge"><span class="gauge-label">' + t('dashboard.gauge_event_loop') + '</span><div class="gauge-bar"><div class="gauge-fill" style="width:' + Math.min(100, lag) + '%;background:' + lagColor + '"></div></div><span class="gauge-value">' + lag.toFixed(1) + ' ms</span></div>';
         }
         if (snap.uptimeSeconds) {
           var mins = Math.floor(snap.uptimeSeconds / 60);
           var hrs = Math.floor(mins / 60);
           var upStr = hrs > 0 ? hrs + 'h ' + (mins % 60) + 'm' : mins + 'm';
-          html += '<div style="font-size:10px;color:var(--ink-faint);margin-top:6px;font-family:var(--font-mono);letter-spacing:0.04em;">UPTIME: ' + upStr + '</div>';
+          html += '<div style="font-size:10px;color:var(--ink-faint);margin-top:6px;font-family:var(--font-mono);letter-spacing:0.04em;">' + t('dashboard.uptime').toUpperCase() + ': ' + upStr + '</div>';
         }
         html += '</div>';
       }
 
       if (snap.alerts && snap.alerts.length > 0) {
-        html += '<div class="card" style="margin-bottom:16px;border-color:var(--accent);border-width:2px;"><div class="card-title" style="color:var(--accent);border-bottom-color:var(--accent);">Alerts (' + snap.alerts.length + ')</div>';
+        html += '<div class="card" style="margin-bottom:16px;border-color:var(--accent);border-width:2px;"><div class="card-title" style="color:var(--accent);border-bottom-color:var(--accent);">' + t('dashboard.alerts') + ' (' + snap.alerts.length + ')</div>';
         snap.alerts.forEach(function(al) {
           html += '<div style="font-size:12px;color:var(--accent);padding:4px 0;border-bottom:1px solid var(--border-light);font-family:var(--font-ui);">' + esc(al) + '</div>';
         });
@@ -1457,7 +1464,7 @@
       }
 
       if (snap.notes && snap.notes.length > 0) {
-        html += '<div class="card" style="margin-bottom:16px;"><div class="card-title" style="color:var(--ink-muted);">Notes (' + snap.notes.length + ')</div>';
+        html += '<div class="card" style="margin-bottom:16px;"><div class="card-title" style="color:var(--ink-muted);">' + t('dashboard.notes') + ' (' + snap.notes.length + ')</div>';
         snap.notes.forEach(function(n) {
           html += '<div style="font-size:12px;color:var(--ink-muted);padding:4px 0;border-bottom:1px solid var(--border-light);font-family:var(--font-ui);">' + esc(n) + '</div>';
         });
@@ -1466,16 +1473,16 @@
 
       html += '<div class="two-col">';
 
-      html += '<div class="card"><div class="card-title">Recent Sessions</div>';
+      html += '<div class="card"><div class="card-title">' + t('dashboard.recent_sessions') + '</div>';
       if (d.sessions.length === 0) {
-        html += '<div class="empty-state"><p>No sessions yet. Start a coding session with agentmemory hooks enabled.</p></div>';
+        html += '<div class="empty-state"><p>' + t('dashboard.no_sessions_hero') + '</p></div>';
       } else {
         var recent = d.sessions.slice().sort(function(a, b) { return (b.startedAt || '').localeCompare(a.startedAt || ''); }).slice(0, 5);
-        html += '<table><tr><th>Project</th><th>Status</th><th>Obs</th><th>Started</th></tr>';
+        html += '<table><tr><th>' + t('table.project') + '</th><th>' + t('table.status') + '</th><th>' + t('table.obs') + '</th><th>' + t('table.started') + '</th></tr>';
         recent.forEach(function(s) {
           var statusBadge = s.status === 'active' ? 'badge-green' : s.status === 'completed' ? 'badge-blue' : 'badge-muted';
           html += '<tr><td style="color:var(--ink);font-weight:500;">' + esc(sessionDisplayName(s)) + '</td>';
-          html += '<td><span class="badge ' + statusBadge + '">' + esc(s.status) + '</span></td>';
+          html += '<td><span class="badge ' + statusBadge + '">' + esc(te('status', s.status)) + '</span></td>';
           html += '<td style="color:var(--ink-muted);font-family:var(--font-mono);font-size:12px;">' + (s.observationCount || 0) + '</td>';
           html += '<td style="font-family:var(--font-mono);font-size:11px;color:var(--ink-faint);">' + esc(shortTime(s.startedAt)) + '</td></tr>';
         });
@@ -1483,9 +1490,9 @@
       }
       html += '</div>';
 
-      html += '<div class="card"><div class="card-title">Recent Activity</div>';
+      html += '<div class="card"><div class="card-title">' + t('dashboard.recent_activity') + '</div>';
       if (d.recentAudit.length === 0) {
-        html += '<div class="empty-state"><p>No activity recorded yet</p></div>';
+        html += '<div class="empty-state"><p>' + t('dashboard.no_activity') + '</p></div>';
       } else {
         d.recentAudit.forEach(function(a) {
           var badgeClass = OP_BADGES[a.operation] || 'badge-muted';
@@ -1503,8 +1510,8 @@
 
       if (fMetrics.length > 0) {
         var sorted = fMetrics.slice().sort(function(a, b) { return (b.totalCalls || 0) - (a.totalCalls || 0); });
-        html += '<div class="card" style="margin-top:16px"><div class="card-title">Function Metrics (OTel)</div>';
-        html += '<table class="metric-table"><tr><th>Function</th><th style="text-align:right">Calls</th><th style="text-align:right">Success</th><th style="text-align:right">Fail</th><th style="text-align:right">Avg Latency</th><th style="text-align:right">Quality</th></tr>';
+        html += '<div class="card" style="margin-top:16px"><div class="card-title">' + t('dashboard.function_metrics') + '</div>';
+        html += '<table class="metric-table"><tr><th>' + t('table.function') + '</th><th style="text-align:right">' + t('table.calls') + '</th><th style="text-align:right">' + t('table.success') + '</th><th style="text-align:right">' + t('table.fail') + '</th><th style="text-align:right">' + t('table.avg_latency') + '</th><th style="text-align:right">' + t('table.quality') + '</th></tr>';
         sorted.forEach(function(m) {
           var successRate = m.totalCalls > 0 ? Math.round((m.successCount / m.totalCalls) * 100) : 0;
           var rateColor = successRate >= 95 ? 'var(--green)' : successRate >= 80 ? 'var(--yellow)' : 'var(--red)';
@@ -1522,23 +1529,23 @@
       }
 
       if (workers.length > 0) {
-        html += '<div class="card" style="margin-top:16px"><div class="card-title">Workers</div>';
+        html += '<div class="card" style="margin-top:16px"><div class="card-title">' + t('dashboard.workers') + '</div>';
         workers.forEach(function(w) {
           var statusClass = w.status === 'running' ? 'running' : w.status === 'starting' ? 'starting' : 'stopped';
           html += '<div class="worker-row"><span class="worker-dot ' + statusClass + '"></span>';
           html += '<span style="color:var(--ink);font-weight:600;font-family:var(--font-ui);font-size:12px;">' + esc(w.name) + '</span>';
-          html += '<span class="badge ' + (w.status === 'running' ? 'badge-green' : 'badge-muted') + '">' + esc(w.status) + '</span>';
+          html += '<span class="badge ' + (w.status === 'running' ? 'badge-green' : 'badge-muted') + '">' + esc(te('status', w.status)) + '</span>';
           html += '<span style="font-size:10px;color:var(--ink-faint);font-family:var(--font-mono);">' + esc(w.id) + '</span></div>';
         });
         html += '</div>';
       }
 
       if (cb && cb.state !== 'closed') {
-        html += '<div class="card" style="margin-top:16px;border-color:var(--accent);border-width:2px;"><div class="card-title" style="color:var(--accent);">Circuit Breaker Details</div>';
-        html += '<div class="detail-row"><div class="dl">State</div><div class="dv"><span class="cb-indicator ' + (cb.state === 'open' ? 'cb-open' : 'cb-half-open') + '">' + esc(cb.state) + '</span></div></div>';
-        html += '<div class="detail-row"><div class="dl">Failures</div><div class="dv" style="color:var(--accent);font-family:var(--font-mono);">' + (cb.failures || 0) + '</div></div>';
-        if (cb.lastFailureAt) html += '<div class="detail-row"><div class="dl">Last Failure</div><div class="dv" style="font-family:var(--font-mono);font-size:12px;">' + esc(formatTime(cb.lastFailureAt)) + '</div></div>';
-        if (cb.openedAt) html += '<div class="detail-row"><div class="dl">Opened At</div><div class="dv" style="font-family:var(--font-mono);font-size:12px;">' + esc(formatTime(cb.openedAt)) + '</div></div>';
+        html += '<div class="card" style="margin-top:16px;border-color:var(--accent);border-width:2px;"><div class="card-title" style="color:var(--accent);">' + t('dashboard.circuit_breaker_details') + '</div>';
+        html += '<div class="detail-row"><div class="dl">' + t('dashboard.cb_state') + '</div><div class="dv"><span class="cb-indicator ' + (cb.state === 'open' ? 'cb-open' : 'cb-half-open') + '">' + esc(cb.state) + '</span></div></div>';
+        html += '<div class="detail-row"><div class="dl">' + t('dashboard.cb_failures') + '</div><div class="dv" style="color:var(--accent);font-family:var(--font-mono);">' + (cb.failures || 0) + '</div></div>';
+        if (cb.lastFailureAt) html += '<div class="detail-row"><div class="dl">' + t('dashboard.cb_last_failure') + '</div><div class="dv" style="font-family:var(--font-mono);font-size:12px;">' + esc(formatTime(cb.lastFailureAt)) + '</div></div>';
+        if (cb.openedAt) html += '<div class="detail-row"><div class="dl">' + t('dashboard.cb_opened_at') + '</div><div class="dv" style="font-family:var(--font-mono);font-size:12px;">' + esc(formatTime(cb.openedAt)) + '</div></div>';
         html += '</div>';
       }
 
@@ -1549,9 +1556,9 @@
       html += '<hr class="section-rule">';
       html += '<div class="two-col">';
 
-      html += '<div class="card"><div class="card-title">Semantic Memory</div>';
+      html += '<div class="card"><div class="card-title">' + t('dashboard.semantic_memory') + '</div>';
       if (semFacts.length === 0) {
-        html += '<div style="font-size:13px;color:var(--ink-faint);font-style:italic;">No semantic facts yet. Observations will be consolidated into semantic memories over time.</div>';
+        html += '<div style="font-size:13px;color:var(--ink-faint);font-style:italic;">' + t('dashboard.no_semantic_facts') + '</div>';
       } else {
           semFacts.slice(0, 5).forEach(function(f) {
             var conf = typeof f.confidence === 'number' ? Math.round(f.confidence * 100) : null;
@@ -1567,15 +1574,15 @@
         }
         html += '</div>';
 
-        html += '<div class="card"><div class="card-title">Procedural Memory</div>';
+        html += '<div class="card"><div class="card-title">' + t('dashboard.procedural_memory') + '</div>';
       if (procItems.length === 0) {
-        html += '<div style="font-size:13px;color:var(--ink-faint);font-style:italic;">No procedures yet. Repeated patterns will be extracted as procedures.</div>';
+        html += '<div style="font-size:13px;color:var(--ink-faint);font-style:italic;">' + t('dashboard.no_procedures') + '</div>';
       } else {
           procItems.slice(0, 5).forEach(function(p) {
             html += '<div class="procedure-item">';
             html += '<div style="font-weight:600;color:var(--ink);font-family:var(--font-display);font-size:13px;">' + esc(p.name || p.title || 'Procedure') + '</div>';
-            if (p.trigger || p.triggerCondition) html += '<div style="font-size:11px;color:var(--ink-faint);font-family:var(--font-mono);margin-top:2px;">Trigger: ' + esc(p.trigger || p.triggerCondition) + '</div>';
-            if (p.frequency) html += '<div style="font-size:11px;color:var(--ink-faint);margin-top:2px;">Freq: ' + p.frequency + '</div>';
+            if (p.trigger || p.triggerCondition) html += '<div style="font-size:11px;color:var(--ink-faint);font-family:var(--font-mono);margin-top:2px;">' + t('dashboard.proc_trigger') + ' ' + esc(p.trigger || p.triggerCondition) + '</div>';
+            if (p.frequency) html += '<div style="font-size:11px;color:var(--ink-faint);margin-top:2px;">' + t('dashboard.proc_freq') + ' ' + p.frequency + '</div>';
             if (p.steps && p.steps.length > 0) {
               html += '<ol class="procedure-steps">';
               p.steps.slice(0, 4).forEach(function(s) { html += '<li>' + esc(typeof s === 'string' ? s : s.description || s.action || JSON.stringify(s)) + '</li>'; });
@@ -1589,14 +1596,14 @@
 
       html += '</div>';
 
-      html += '<div class="card" style="margin-top:16px;"><div class="card-title">Consolidation Status</div>';
-      html += '<div class="consolidation-row"><span class="cl">Semantic facts</span><span class="cv">' + semFacts.length + '</span></div>';
-      html += '<div class="consolidation-row"><span class="cl">Procedures</span><span class="cv">' + procItems.length + '</span></div>';
-      html += '<div class="consolidation-row"><span class="cl">Relations</span><span class="cv">' + relItems.length + '</span></div>';
+      html += '<div class="card" style="margin-top:16px;"><div class="card-title">' + t('dashboard.consolidation_status') + '</div>';
+      html += '<div class="consolidation-row"><span class="cl">' + t('dashboard.semantic_facts') + '</span><span class="cv">' + semFacts.length + '</span></div>';
+      html += '<div class="consolidation-row"><span class="cl">' + t('dashboard.procedures') + '</span><span class="cv">' + procItems.length + '</span></div>';
+      html += '<div class="consolidation-row"><span class="cl">' + t('dashboard.relations') + '</span><span class="cv">' + relItems.length + '</span></div>';
       html += '</div>';
 
       if (relItems.length > 0) {
-        html += '<div class="card" style="margin-top:16px;"><div class="card-title">Memory Relations</div>';
+        html += '<div class="card" style="margin-top:16px;"><div class="card-title">' + t('dashboard.memory_relations') + '</div>';
         relItems.slice(0, 8).forEach(function(r) {
           var relType = r.type || r.relationType || 'related';
           var badgeClass = relType === 'supersedes' ? 'badge-red' : relType === 'extends' ? 'badge-green' : relType === 'contradicts' ? 'badge-yellow' : 'badge-muted';
@@ -1609,8 +1616,8 @@
         html += '</div>';
       }
 
-      html += '<div style="text-align:center;margin-top:20px;"><button class="btn btn-primary" data-action="refresh-dashboard">Refresh</button>';
-      html += '<span style="font-size:10px;color:var(--ink-faint);margin-left:10px;font-family:var(--font-mono);text-transform:uppercase;letter-spacing:0.08em;">Auto-refresh 30s</span></div>';
+      html += '<div style="text-align:center;margin-top:20px;"><button class="btn btn-primary" data-action="refresh-dashboard">' + t('buttons.refresh') + '</button>';
+      html += '<span style="font-size:10px;color:var(--ink-faint);margin-left:10px;font-family:var(--font-mono);text-transform:uppercase;letter-spacing:0.08em;">' + t('dashboard.auto_refresh') + '</span></div>';
 
       el.innerHTML = html;
     }
@@ -1645,7 +1652,7 @@
 
       if (state.graph.nodes.length === 0) {
         var sb = document.getElementById('graph-sidebar');
-        if (sb) sb.innerHTML = '<h3>Graph</h3><p style="font-size:12px;color:var(--ink-faint);margin:8px 0;font-style:italic;">No graph data yet. Building from observations and memories...</p>';
+        if (sb) sb.innerHTML = '<h3>' + t('nav.graph') + '</h3><p style="font-size:12px;color:var(--ink-faint);margin:8px 0;font-style:italic;">' + t('graph.no_data') + '</p>';
         var buildResult = await apiPost('graph/build', {});
         if (buildResult && buildResult.success && buildResult.nodes > 0) {
           var freshResults = await Promise.all([
@@ -1681,22 +1688,22 @@
       var nodeCount = gs.totalNodes !== undefined ? gs.totalNodes : (gs.nodes !== undefined ? gs.nodes : (gs.nodeCount || state.graph.nodes.length));
       var edgeCount = gs.totalEdges !== undefined ? gs.totalEdges : (gs.edges !== undefined ? gs.edges : (gs.edgeCount || state.graph.edges.length));
 
-      var html = '<input type="text" class="graph-search" id="graph-search" placeholder="Search nodes...">';
+      var html = '<input type="text" class="graph-search" id="graph-search" placeholder="' + t('graph.search_placeholder') + '">';
 
-      html += '<h3 style="margin-top:16px;font-size:10px;text-transform:uppercase;letter-spacing:0.12em;color:var(--ink-muted);font-family:var(--font-ui);font-weight:700;">Graph Stats</h3>';
+      html += '<h3 style="margin-top:16px;font-size:10px;text-transform:uppercase;letter-spacing:0.12em;color:var(--ink-muted);font-family:var(--font-ui);font-weight:700;">' + t('graph.stats') + '</h3>';
       html += '<div style="display:flex;gap:20px;margin:10px 0 16px;padding:12px;background:var(--bg-alt);border:1px solid var(--border-light);border-radius:4px;">';
-      html += '<div style="text-align:center;flex:1;"><span style="font-size:28px;font-weight:900;font-family:var(--font-display);color:var(--ink);line-height:1;">' + nodeCount + '</span><div style="font-size:8px;color:var(--ink-faint);text-transform:uppercase;letter-spacing:0.12em;font-family:var(--font-ui);font-weight:600;margin-top:4px;">Nodes</div></div>';
+      html += '<div style="text-align:center;flex:1;"><span style="font-size:28px;font-weight:900;font-family:var(--font-display);color:var(--ink);line-height:1;">' + nodeCount + '</span><div style="font-size:8px;color:var(--ink-faint);text-transform:uppercase;letter-spacing:0.12em;font-family:var(--font-ui);font-weight:600;margin-top:4px;">' + t('graph.nodes') + '</div></div>';
       html += '<div style="width:1px;background:var(--border-light);"></div>';
-      html += '<div style="text-align:center;flex:1;"><span style="font-size:28px;font-weight:900;font-family:var(--font-display);color:var(--ink);line-height:1;">' + edgeCount + '</span><div style="font-size:8px;color:var(--ink-faint);text-transform:uppercase;letter-spacing:0.12em;font-family:var(--font-ui);font-weight:600;margin-top:4px;">Edges</div></div>';
+      html += '<div style="text-align:center;flex:1;"><span style="font-size:28px;font-weight:900;font-family:var(--font-display);color:var(--ink);line-height:1;">' + edgeCount + '</span><div style="font-size:8px;color:var(--ink-faint);text-transform:uppercase;letter-spacing:0.12em;font-family:var(--font-ui);font-weight:600;margin-top:4px;">' + t('graph.edges') + '</div></div>';
       html += '</div>';
 
-      html += '<h3 style="margin-top:12px;font-size:10px;text-transform:uppercase;letter-spacing:0.12em;color:var(--ink-muted);font-family:var(--font-ui);font-weight:700;">Filter by Type</h3>';
+      html += '<h3 style="margin-top:12px;font-size:10px;text-transform:uppercase;letter-spacing:0.12em;color:var(--ink-muted);font-family:var(--font-ui);font-weight:700;">' + t('graph.filter_by_type') + '</h3>';
       Object.keys(state.graph.filters).forEach(function(type) {
         var color = NODE_COLORS[type] || '#666666';
-        html += '<label class="filter-item"><input type="checkbox" checked data-type="' + esc(type) + '"><span class="filter-dot" style="background:' + color + '"></span>' + esc(type) + '</label>';
+        html += '<label class="filter-item"><input type="checkbox" checked data-type="' + esc(type) + '"><span class="filter-dot" style="background:' + color + '"></span>' + esc(te('graph.node_types', type)) + '</label>';
       });
 
-      html += '<div class="graph-legend"><h3>Legend</h3>';
+      html += '<div class="graph-legend"><h3>' + t('graph.legend') + '</h3>';
       var shapeLabels = { rect: '&#9645;', circle: '&#9679;', diamond: '&#9670;', hexagon: '&#11042;' };
       var shownShapes = {};
       Object.keys(NODE_COLORS).forEach(function(type) {
@@ -1705,11 +1712,11 @@
         var key = type;
         if (shownShapes[key]) return;
         shownShapes[key] = true;
-        html += '<div class="graph-legend-item"><span class="graph-legend-shape" style="color:' + color + ';font-size:14px;">' + (shapeLabels[shape] || '&#9679;') + '</span><span>' + esc(type) + '</span></div>';
+        html += '<div class="graph-legend-item"><span class="graph-legend-shape" style="color:' + color + ';font-size:14px;">' + (shapeLabels[shape] || '&#9679;') + '</span><span>' + esc(te('graph.node_types', type)) + '</span></div>';
       });
       html += '</div>';
 
-      html += '<button class="btn" style="margin-top:14px;width:100%;font-size:11px;padding:8px;letter-spacing:0.06em;transition:all 0.15s ease;" data-action="rebuild-graph">↻ Rebuild Graph</button>';
+      html += '<button class="btn" style="margin-top:14px;width:100%;font-size:11px;padding:8px;letter-spacing:0.06em;transition:all 0.15s ease;" data-action="rebuild-graph">↻ ' + t('graph.rebuild') + '</button>';
       html += '<div id="selected-node-panel"></div>';
       var __focus = captureSearchFocus(['graph-search']);
       sb.innerHTML = html;
@@ -1832,7 +1839,7 @@
           if (hoverNode && !graphSim.dragNode && !isPanning) {
             var conns = graphSim.edges.filter(function(ed) { return ed.sourceNodeId === hoverNode.id || ed.targetNodeId === hoverNode.id; }).length;
             var ttHtml = '<div class="tt-name">' + esc(hoverNode.name) + '</div>';
-            ttHtml += '<div class="tt-type" style="color:' + (NODE_COLORS[hoverNode.type] || '#666') + '">' + esc(hoverNode.type) + '</div>';
+            ttHtml += '<div class="tt-type" style="color:' + (NODE_COLORS[hoverNode.type] || '#666') + '">' + esc(te('graph.node_types', hoverNode.type)) + '</div>';
             if (hoverNode.properties) {
               var propKeys = Object.keys(hoverNode.properties).slice(0, 3);
               propKeys.forEach(function(k) {
@@ -1895,15 +1902,15 @@
       var color = NODE_COLORS[simNode.type] || '#666666';
       var html = '<div class="selected-node-info">';
       html += '<h4 style="color:' + color + '">' + esc(simNode.name) + '</h4>';
-      html += '<div class="prop">Type: ' + esc(simNode.type) + '</div>';
+      html += '<div class="prop">' + t('graph.node_type_label') + ': ' + esc(te('graph.node_types', simNode.type)) + '</div>';
       if (simNode.properties) {
         Object.keys(simNode.properties).forEach(function(k) {
           html += '<div class="prop">' + esc(k) + ': ' + esc(truncate(simNode.properties[k], 50)) + '</div>';
         });
       }
       var conns = graphSim.edges.filter(function(e) { return e.sourceNodeId === simNode.id || e.targetNodeId === simNode.id; }).length;
-      html += '<div class="prop">Connections: ' + conns + '</div>';
-      html += '<button class="btn btn-primary" style="margin-top:8px;width:100%;" data-action="expand-node" data-node-id="' + esc(simNode.id) + '">Expand neighbors</button>';
+      html += '<div class="prop">' + t('graph.node_connections') + ': ' + conns + '</div>';
+      html += '<button class="btn btn-primary" style="margin-top:8px;width:100%;" data-action="expand-node" data-node-id="' + esc(simNode.id) + '">' + t('graph.expand_neighbors') + '</button>';
       html += '</div>';
       panel.innerHTML = html;
     }
@@ -2000,7 +2007,7 @@
 
     async function rebuildGraph() {
       var sb = document.getElementById('graph-sidebar');
-      if (sb) sb.innerHTML = '<h3>Graph</h3><p style="font-size:12px;color:var(--ink-faint);font-style:italic;">Rebuilding graph from observations...</p>';
+      if (sb) sb.innerHTML = '<h3>' + t('nav.graph') + '</h3><p style="font-size:12px;color:var(--ink-faint);font-style:italic;">' + t('graph.rebuilding') + '</p>';
       await apiPost('graph/build', {});
       state.graph.loaded = false;
       loadGraph();
@@ -2256,15 +2263,15 @@
         ctx.fillStyle = '#999999';
         ctx.font = '14px Lora, Georgia, serif';
         ctx.textAlign = 'center';
-        ctx.fillText('No graph data yet.', w / 2, h / 2 - 16);
+        ctx.fillText(t('graph.canvas_empty'), w / 2, h / 2 - 16);
         ctx.font = '12px Inter, sans-serif';
-        ctx.fillText('Set GRAPH_EXTRACTION_ENABLED=true to enable knowledge graph extraction.', w / 2, h / 2 + 8);
+        ctx.fillText(t('graph.canvas_enable_hint'), w / 2, h / 2 + 8);
       }
     }
 
     async function loadMemories() {
       var el = document.getElementById('view-memories');
-      el.innerHTML = '<div class="loading">Loading memories...</div>';
+      el.innerHTML = '<div class="loading">' + t('loading.memories') + '</div>';
       var result = await apiGet('memories?latest=true');
       state.memories.items = (result && result.memories) || [];
       state.memories.loaded = true;
@@ -2289,13 +2296,13 @@
 
       var html = '<div class="card" style="margin-bottom:12px;padding:12px;background:var(--bg-subtle);">';
       html += '<div style="font-size:13px;color:var(--ink-muted);line-height:1.5;">';
-      html += '<strong>Memories</strong> are durable facts, architecture notes, conventions, and lessons saved via <code>memory_remember</code> MCP tool or the <code>/agentmemory/remember</code> endpoint. They survive across sessions and supersede each other as v1, v2, etc. ';
-      html += '<span style="color:var(--ink-faint);">Shown: ' + items.length + ' total.</span>';
+      html += t('memories.title_intro', { tool: '<code>memory_remember</code>', endpoint: '<code>/agentmemory/remember</code>' }) + ' ';
+      html += '<span style="color:var(--ink-faint);">' + t('memories.shown_total', { n: items.length }) + '</span>';
       html += '</div></div>';
 
       html += '<div class="toolbar">';
-      html += '<input type="text" id="mem-search" placeholder="Search memories..." value="' + esc(state.memories.search) + '">';
-      html += '<select id="mem-type-filter"><option value="">All types</option>';
+      html += '<input type="text" id="mem-search" placeholder="' + t('memories.search_placeholder') + '" value="' + esc(state.memories.search) + '">';
+      html += '<select id="mem-type-filter"><option value="">' + t('memories.all_types') + '</option>';
       typeOptions.forEach(function(t) {
         html += '<option value="' + esc(t) + '"' + (typeFilter === t ? ' selected' : '') + '>' + esc(t) + '</option>';
       });
@@ -2304,13 +2311,13 @@
       if (filtered.length === 0) {
         html += '<div class="empty-state">' +
           '<div class="empty-icon">&#128218;</div>' +
-          '<div class="empty-title">No memories yet</div>' +
-          '<div class="empty-lead">Memories are the distilled facts agentmemory keeps across sessions &mdash; things like file paths, architectural decisions, and user preferences. Hooks capture them automatically during coding sessions; you can also save one directly.</div>' +
+          '<div class="empty-title">' + t('memories.empty_title') + '</div>' +
+          '<div class="empty-lead">' + t('memories.empty_body') + '</div>' +
           '<pre class="empty-cmd">memory_remember {\n  title: "auth uses jose middleware",\n  content: "src/middleware/auth.ts handles JWT validation",\n  type: "architecture"\n}</pre>' +
           '<div><a class="empty-link" href="https://github.com/rohitg00/agentmemory#memories" target="_blank" rel="noopener">Memory types &rarr;</a></div>' +
           '</div>';
       } else {
-        html += '<table><tr><th>Title</th><th>Type</th><th>Strength</th><th>Version</th><th>Updated</th><th>Actions</th></tr>';
+        html += '<table><tr><th>' + t('memories.col_title') + '</th><th>' + t('memories.col_type') + '</th><th>' + t('memories.col_strength') + '</th><th>' + t('memories.col_version') + '</th><th>' + t('memories.col_updated') + '</th><th>' + t('memories.col_actions') + '</th></tr>';
         filtered.forEach(function(m) {
           var badgeClass = TYPE_BADGES[m.type] || 'badge-muted';
           var rawStrength = m.strength || 0;
@@ -2332,11 +2339,11 @@
             html += '</div>';
           }
           html += '</td>';
-          html += '<td><span class="badge ' + badgeClass + '">' + esc(m.type) + '</span></td>';
+          html += '<td><span class="badge ' + badgeClass + '">' + esc(te('types', m.type)) + '</span></td>';
           html += '<td><div class="strength-bar"><div class="fill" style="width:' + strength + '%;background:' + barColor + '"></div></div> <span style="font-size:10px;color:var(--ink-faint);font-family:var(--font-mono);">' + strength + '%</span></td>';
           html += '<td style="color:var(--ink-muted);font-family:var(--font-mono);font-size:12px;">v' + (m.version || 1) + '</td>';
           html += '<td style="font-size:11px;color:var(--ink-faint);font-family:var(--font-mono);">' + esc(formatTime(m.updatedAt)) + '</td>';
-          html += '<td><button class="btn btn-danger" style="font-size:9px;padding:2px 8px;" data-action="delete-memory" data-memory-id="' + esc(m.id) + '" data-memory-title="' + esc(m.title || '') + '">Delete</button></td>';
+          html += '<td><button class="btn btn-danger" style="font-size:9px;padding:2px 8px;" data-action="delete-memory" data-memory-id="' + esc(m.id) + '" data-memory-title="' + esc(m.title || '') + '">' + t('buttons.delete') + '</button></td>';
           html += '</tr>';
         });
         html += '</table>';
@@ -2362,7 +2369,7 @@
     function deleteMemory(id, title) {
       var modal = document.getElementById('modal');
       var overlay = document.getElementById('modal-overlay');
-      modal.innerHTML = '<h3>Delete Memory</h3><p>Are you sure you want to delete "' + esc(title) + '"? This action cannot be undone.</p><div class="modal-actions"><button class="btn" data-action="close-modal">Cancel</button><button class="btn btn-danger" data-action="confirm-delete-memory" data-memory-id="' + esc(id) + '">Delete</button></div>';
+      modal.innerHTML = '<h3>' + t('modal.delete_memory_title') + '</h3><p>' + t('modal.delete_memory_confirm', { title: esc(title) }) + '</p><div class="modal-actions"><button class="btn" data-action="close-modal">' + t('buttons.cancel') + '</button><button class="btn btn-danger" data-action="confirm-delete-memory" data-memory-id="' + esc(id) + '">' + t('buttons.delete_memory') + '</button></div>';
       overlay.classList.add('open');
     }
 
@@ -2379,7 +2386,7 @@
 
     async function loadTimeline() {
       var el = document.getElementById('view-timeline');
-      el.innerHTML = '<div class="loading">Loading timeline...</div>';
+      el.innerHTML = '<div class="loading">' + t('loading.timeline') + '</div>';
       var sessResult = await apiGet('sessions');
       var sessions = (sessResult && sessResult.sessions) || [];
       state.timeline.loaded = true;
@@ -2397,14 +2404,14 @@
     function renderTimelineToolbar(sessions) {
       var el = document.getElementById('view-timeline');
       var html = '<div class="toolbar">';
-      html += '<select id="tl-session"><option value="">Select session</option>';
+      html += '<select id="tl-session"><option value="">' + t('timeline.select_placeholder') + '</option>';
       sessions.sort(function(a, b) { return (b.startedAt || '').localeCompare(a.startedAt || ''); }).forEach(function(s) {
         var id = sessionId(s);
         var disabled = id ? '' : ' disabled';
         html += '<option value="' + esc(id) + '"' + (id && state.timeline.sessionId === id ? ' selected' : '') + disabled + '>' + esc(sessionLabel(s)) + '</option>';
       });
       html += '</select>';
-      html += '<select id="tl-importance"><option value="0">All importance</option>';
+      html += '<select id="tl-importance"><option value="0">' + t('timeline.importance_all') + '</option>';
       for (var i = 1; i <= 9; i++) {
         html += '<option value="' + i + '"' + (state.timeline.minImportance === i ? ' selected' : '') + '>&ge; ' + i + '</option>';
       }
@@ -2427,10 +2434,10 @@
       var content = document.getElementById('tl-content');
       if (!content) return;
       if (!state.timeline.sessionId) {
-        content.innerHTML = '<div class="empty-state"><div class="empty-icon">&#128337;</div><p>Select a session to view observations</p></div>';
+        content.innerHTML = '<div class="empty-state"><div class="empty-icon">&#128337;</div><p>' + t('sessions.select_to_view') + '</p></div>';
         return;
       }
-      content.innerHTML = '<div class="loading">Loading observations...</div>';
+      content.innerHTML = '<div class="loading">' + t('loading.observations') + '</div>';
       var result = await apiGet('observations?sessionId=' + encodeURIComponent(state.timeline.sessionId));
       state.timeline.observations = (result && result.observations) || [];
       renderObservations();
@@ -2468,7 +2475,7 @@
       var totalPages = Math.ceil(filtered.length / pageSize);
 
       var html = '<div class="type-chips">';
-      html += '<span class="type-chip' + (!tlTypeFilter ? ' active' : '') + '" data-action="timeline-filter" data-type-filter="">All (' + obs.length + ')</span>';
+      html += '<span class="type-chip' + (!tlTypeFilter ? ' active' : '') + '" data-action="timeline-filter" data-type-filter="">' + t('timeline.all_filter', { n: obs.length }) + '</span>';
       typeList.forEach(function(t) {
         var color = OBS_TYPE_COLORS[t] || '#666666';
         html += '<span class="type-chip' + (tlTypeFilter === t ? ' active' : '') + '" data-action="timeline-filter" data-type-filter="' + esc(t) + '" style="' + (tlTypeFilter === t ? 'background:' + color + ';border-color:' + color + ';' : 'border-color:' + color + ';color:' + color + ';') + '">' + esc(t.replace(/_/g, ' ')) + ' (' + typeCounts[t] + ')</span>';
@@ -2476,12 +2483,12 @@
       html += '</div>';
 
       if (paged.length === 0) {
-        html += '<div class="empty-state"><div class="empty-icon">&#128337;</div><p>No observations' + (obs.length > 0 ? ' match the filter (' + obs.length + ' total)' : ' for this session') + '</p></div>';
+        html += '<div class="empty-state"><div class="empty-icon">&#128337;</div><p>' + t('timeline.no_observations') + (obs.length > 0 ? ' match the filter (' + obs.length + ' total)' : ' for this session') + '</p></div>';
         content.innerHTML = html;
         return;
       }
 
-      html += '<div style="font-size:11px;color:var(--ink-faint);margin-bottom:16px;font-family:var(--font-mono);text-transform:uppercase;letter-spacing:0.06em;">' + filtered.length + ' observations shown</div>';
+      html += '<div style="font-size:11px;color:var(--ink-faint);margin-bottom:16px;font-family:var(--font-mono);text-transform:uppercase;letter-spacing:0.06em;">' + t('timeline.observations_shown', { n: filtered.length }) + '</div>';
 
       html += '<div class="timeline-container">';
 
@@ -2583,9 +2590,9 @@
 
       if (totalPages > 1) {
         html += '<div class="pagination">';
-        if (page > 0) html += '<button class="btn" data-action="timeline-page" data-page="' + (page - 1) + '">Prev</button>';
-        html += '<span style="color:var(--ink-faint);font-size:12px;padding:6px;font-family:var(--font-mono);">Page ' + (page + 1) + ' of ' + totalPages + ' (' + filtered.length + ' total)</span>';
-        if (page < totalPages - 1) html += '<button class="btn" data-action="timeline-page" data-page="' + (page + 1) + '">Next</button>';
+        if (page > 0) html += '<button class="btn" data-action="timeline-page" data-page="' + (page - 1) + '">' + t('timeline.prev') + '</button>';
+        html += '<span style="color:var(--ink-faint);font-size:12px;padding:6px;font-family:var(--font-mono);">' + t('timeline.page_of', { page: page + 1, total: totalPages, n: filtered.length }) + '</span>';
+        if (page < totalPages - 1) html += '<button class="btn" data-action="timeline-page" data-page="' + (page + 1) + '">' + t('timeline.next') + '</button>';
         html += '</div>';
       }
 
@@ -2605,7 +2612,7 @@
 
     async function loadActivity() {
       var el = document.getElementById('view-activity');
-      el.innerHTML = '<div class="loading">Loading activity...</div>';
+      el.innerHTML = '<div class="loading">' + t('loading.activity') + '</div>';
       var results = await Promise.all([
         apiGet('sessions'),
         apiGet('audit?limit=200')
@@ -2640,7 +2647,7 @@
 
       var html = '';
 
-      html += '<div class="card"><div class="card-title">Activity Heatmap (Past Year)</div>';
+      html += '<div class="card"><div class="card-title">' + t('activity.heatmap') + '</div>';
       var dayCounts = {};
       obs.forEach(function(o) {
         try {
@@ -2678,13 +2685,13 @@
         }
       }
       html += '</div></div>';
-      html += '<div style="display:flex;align-items:center;gap:4px;margin-top:8px;font-size:10px;color:var(--ink-faint);font-family:var(--font-mono);justify-content:flex-end;">Less ';
+      html += '<div style="display:flex;align-items:center;gap:4px;margin-top:8px;font-size:10px;color:var(--ink-faint);font-family:var(--font-mono);justify-content:flex-end;">' + t('activity.legend_less') + ' ';
       html += '<div class="heatmap-cell" style="display:inline-block;"></div>';
       html += '<div class="heatmap-cell level-1" style="display:inline-block;"></div>';
       html += '<div class="heatmap-cell level-2" style="display:inline-block;"></div>';
       html += '<div class="heatmap-cell level-3" style="display:inline-block;"></div>';
       html += '<div class="heatmap-cell level-4" style="display:inline-block;"></div>';
-      html += ' More</div>';
+      html += ' ' + t('activity.legend_more') + '</div>';
       html += '</div>';
 
       var typeCounts = {};
@@ -2697,9 +2704,9 @@
 
       html += '<div class="two-col" style="margin-top:16px;">';
 
-      html += '<div class="card"><div class="card-title">Type Breakdown</div>';
+      html += '<div class="card"><div class="card-title">' + t('activity.type_breakdown') + '</div>';
       if (typeList.length === 0) {
-        html += '<div style="font-size:13px;color:var(--ink-faint);font-style:italic;">No observations yet</div>';
+        html += '<div style="font-size:13px;color:var(--ink-faint);font-style:italic;">' + t('activity.no_observations') + '</div>';
       } else {
         html += '<div class="bar-chart">';
         typeList.slice(0, 12).forEach(function(t) {
@@ -2711,10 +2718,10 @@
       }
       html += '</div>';
 
-      html += '<div class="card"><div class="card-title">Activity Feed</div>';
+      html += '<div class="card"><div class="card-title">' + t('activity.feed') + '</div>';
       var sortedObs = obs.slice().sort(function(a, b) { return (b.timestamp || '').localeCompare(a.timestamp || ''); });
       if (sortedObs.length === 0) {
-        html += '<div style="font-size:13px;color:var(--ink-faint);font-style:italic;">No recent activity</div>';
+        html += '<div style="font-size:13px;color:var(--ink-faint);font-style:italic;">' + t('activity.no_recent') + '</div>';
       } else {
         sortedObs.slice(0, 20).forEach(function(o) {
           var type = o.type || TOOL_TYPE_MAP[o.toolName] || 'other';
@@ -2742,7 +2749,7 @@
 
     async function loadSessions() {
       var el = document.getElementById('view-sessions');
-      el.innerHTML = '<div class="loading">Loading sessions...</div>';
+      el.innerHTML = '<div class="loading">' + t('loading.sessions') + '</div>';
       var result = await apiGet('sessions');
       state.sessions.items = (result && result.sessions) || [];
       state.sessions.loaded = true;
@@ -2757,7 +2764,7 @@
 
       var html = '<div class="session-list">';
       if (items.length === 0) {
-        html += '<div class="empty-state"><div class="empty-icon">&#128466;</div><p>No sessions</p></div>';
+        html += '<div class="empty-state"><div class="empty-icon">&#128466;</div><p>' + t('sessions.empty') + '</p></div>';
       } else {
         items.forEach(function(s) {
           var statusBadge = s.status === 'active' ? 'badge-green' : s.status === 'completed' ? 'badge-blue' : 'badge-muted';
@@ -2765,7 +2772,7 @@
           var selected = id && state.sessions.selectedId === id;
           html += '<div class="session-item' + (selected ? ' selected' : '') + '"' + (id ? ' data-action="select-session" data-session-id="' + esc(id) + '"' : '') + '>';
           html += '<div class="session-top"><span class="session-project">' + esc(sessionDisplayName(s)) + '</span>';
-          html += '<span class="badge ' + statusBadge + '">' + esc(s.status) + '</span></div>';
+          html += '<span class="badge ' + statusBadge + '">' + esc(te('status', s.status)) + '</span></div>';
           var preview = s.firstPrompt || s.summary || '';
           if (preview) {
             html += '<div class="session-preview" style="font-size:13px;color:var(--ink);margin:4px 0;line-height:1.4;">' + esc(truncate(preview, 140)) + '</div>';
@@ -2795,7 +2802,7 @@
       var id = sessionId(s);
       if (!s || !id) { panel.innerHTML = ''; return; }
 
-      panel.innerHTML = '<div class="detail-panel"><h3>Loading session details…</h3></div>';
+      panel.innerHTML = '<div class="detail-panel"><h3>' + t('loading.session_details') + '</h3></div>';
 
       var obsRes = await apiGet('observations?sessionId=' + encodeURIComponent(id));
       var obs = (obsRes && obsRes.observations) || [];
@@ -2822,8 +2829,8 @@
 
       var html = '<div class="detail-panel">';
       html += '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;">';
-      html += '<h3 style="margin:0;">Session · ' + esc(s.project || 'Unknown') + '</h3>';
-      html += '<span class="badge ' + (s.status === 'active' ? 'badge-green' : 'badge-blue') + '">' + esc(s.status) + '</span>';
+      html += '<h3 style="margin:0;">' + t('sessions.detail_prefix') + esc(s.project || 'Unknown') + '</h3>';
+      html += '<span class="badge ' + (s.status === 'active' ? 'badge-green' : 'badge-blue') + '">' + esc(te('status', s.status)) + '</span>';
       html += '</div>';
 
       if (preview) {
@@ -2831,16 +2838,16 @@
       }
 
       html += '<div style="display:grid;grid-template-columns:repeat(4, 1fr);gap:10px;margin-bottom:14px;">';
-      html += '<div class="card" style="padding:10px;"><div style="font-size:10px;letter-spacing:0.08em;color:var(--ink-muted);">OBSERVATIONS</div><div style="font-size:20px;font-weight:600;">' + obs.length + '</div></div>';
-      html += '<div class="card" style="padding:10px;"><div style="font-size:10px;letter-spacing:0.08em;color:var(--ink-muted);">TOOLS USED</div><div style="font-size:20px;font-weight:600;">' + Object.keys(toolCounts).length + '</div></div>';
-      html += '<div class="card" style="padding:10px;"><div style="font-size:10px;letter-spacing:0.08em;color:var(--ink-muted);">FILES TOUCHED</div><div style="font-size:20px;font-weight:600;">' + fileSet.size + '</div></div>';
-      html += '<div class="card" style="padding:10px;"><div style="font-size:10px;letter-spacing:0.08em;color:var(--ink-muted);">DURATION</div><div style="font-size:20px;font-weight:600;">' + esc(durationLabel) + '</div></div>';
+      html += '<div class="card" style="padding:10px;"><div style="font-size:10px;letter-spacing:0.08em;color:var(--ink-muted);">' + t('sessions.col_observations') + '</div><div style="font-size:20px;font-weight:600;">' + obs.length + '</div></div>';
+      html += '<div class="card" style="padding:10px;"><div style="font-size:10px;letter-spacing:0.08em;color:var(--ink-muted);">' + t('sessions.col_tools_used') + '</div><div style="font-size:20px;font-weight:600;">' + Object.keys(toolCounts).length + '</div></div>';
+      html += '<div class="card" style="padding:10px;"><div style="font-size:10px;letter-spacing:0.08em;color:var(--ink-muted);">' + t('sessions.col_files_touched') + '</div><div style="font-size:20px;font-weight:600;">' + fileSet.size + '</div></div>';
+      html += '<div class="card" style="padding:10px;"><div style="font-size:10px;letter-spacing:0.08em;color:var(--ink-muted);">' + t('sessions.col_duration') + '</div><div style="font-size:20px;font-weight:600;">' + esc(durationLabel) + '</div></div>';
       html += '</div>';
 
       var topTools = Object.keys(toolCounts).sort(function(a, b) { return toolCounts[b] - toolCounts[a]; }).slice(0, 10);
       if (topTools.length > 0) {
         var maxC = toolCounts[topTools[0]] || 1;
-        html += '<div class="card" style="margin-bottom:12px;"><div class="card-title">Tool Invocations</div>';
+        html += '<div class="card" style="margin-bottom:12px;"><div class="card-title">' + t('sessions.tool_invocations') + '</div>';
         html += '<div class="bar-chart" style="margin-top:8px;">';
         topTools.forEach(function(t) {
           var pct = Math.round((toolCounts[t] / maxC) * 100);
@@ -2851,7 +2858,7 @@
 
       var typeKeys = Object.keys(typeCounts).sort(function(a, b) { return typeCounts[b] - typeCounts[a]; });
       if (typeKeys.length > 0) {
-        html += '<div class="card" style="margin-bottom:12px;"><div class="card-title">Activity Breakdown</div>';
+        html += '<div class="card" style="margin-bottom:12px;"><div class="card-title">' + t('sessions.activity_breakdown') + '</div>';
         html += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;">';
         typeKeys.forEach(function(t) {
           html += '<span class="badge badge-muted" style="font-family:var(--font-mono);">' + esc(t.replace(/_/g, ' ')) + ' · ' + typeCounts[t] + '</span>';
@@ -2861,14 +2868,14 @@
 
       if (fileSet.size > 0) {
         var filesArr = Array.from(fileSet).slice(0, 30);
-        html += '<div class="card" style="margin-bottom:12px;"><div class="card-title">Files</div>';
+        html += '<div class="card" style="margin-bottom:12px;"><div class="card-title">' + t('sessions.files') + '</div>';
         html += '<div style="font-size:12px;font-family:var(--font-mono);line-height:1.6;margin-top:8px;">';
         filesArr.forEach(function(f) { html += '<div>&#8226; ' + esc(f) + '</div>'; });
         if (fileSet.size > 30) html += '<div style="color:var(--ink-faint);">+' + (fileSet.size - 30) + ' more</div>';
         html += '</div></div>';
       }
 
-      html += '<div class="card" style="margin-bottom:12px;"><div class="card-title">Metadata</div>';
+      html += '<div class="card" style="margin-bottom:12px;"><div class="card-title">' + t('sessions.metadata') + '</div>';
       html += '<div style="font-size:12px;font-family:var(--font-mono);margin-top:8px;line-height:1.7;">';
       var detailId = sessionId(s);
       html += '<div><span style="color:var(--ink-muted);">id:</span> ' + esc(detailId || 'missing id') + '</div>';
@@ -2881,12 +2888,12 @@
 
       html += '<div style="display:flex;gap:8px;">';
       if (detailId && s.status === 'active') {
-        html += '<button class="btn btn-danger" data-action="end-session" data-session-id="' + esc(detailId) + '">End Session</button>';
+        html += '<button class="btn btn-danger" data-action="end-session" data-session-id="' + esc(detailId) + '">' + t('sessions.end_session') + '</button>';
       }
       if (detailId) {
-        html += '<button class="btn btn-primary" data-action="summarize-session" data-session-id="' + esc(detailId) + '">Summarize</button>';
+        html += '<button class="btn btn-primary" data-action="summarize-session" data-session-id="' + esc(detailId) + '">' + t('sessions.summarize') + '</button>';
       } else {
-        html += '<button class="btn btn-primary" disabled>Summarize unavailable</button>';
+        html += '<button class="btn btn-primary" disabled>' + t('sessions.summarize_unavailable') + '</button>';
       }
       html += '</div></div>';
       panel.innerHTML = html;
@@ -2900,16 +2907,16 @@
 
     async function summarizeSession(id, btn) {
       if (!btn) return;
-      btn.textContent = 'Summarizing...';
+      btn.textContent = t('sessions.summarizing');
       btn.disabled = true;
       await apiPost('summarize', { sessionId: id });
-      btn.textContent = 'Done';
-      setTimeout(function() { btn.textContent = 'Summarize'; btn.disabled = false; }, 2000);
+      btn.textContent = t('sessions.summarize_done');
+      setTimeout(function() { btn.textContent = t('sessions.summarize'); btn.disabled = false; }, 2000);
     }
 
     async function loadLessons() {
       var el = document.getElementById('view-lessons');
-      el.innerHTML = '<div class="loading">Loading lessons...</div>';
+      el.innerHTML = '<div class="loading">' + t('loading.lessons') + '</div>';
       var result = await apiGet('lessons');
       state.lessons.items = (result && result.lessons) || [];
       state.lessons.loaded = true;
@@ -2929,24 +2936,24 @@
 
       var html = '<div class="card" style="margin-bottom:12px;padding:12px;background:var(--bg-subtle);">';
       html += '<div style="font-size:13px;color:var(--ink-muted);line-height:1.5;">';
-      html += '<strong>Lessons</strong> are portable heuristics — short imperative rules (always/never/prefer/avoid) extracted from past work. Auto-surface from JSONL imports (low confidence, tag <code>auto-import</code>), get reinforced when the agent applies them, and decay if unused. Higher confidence = more battle-tested.';
+      html += t('lessons.description');
       html += '</div></div>';
 
       html += '<div style="display:flex;gap:8px;margin-bottom:12px;">';
-      html += '<input id="lessons-search" class="search-input" type="text" placeholder="Search lessons..." value="' + esc(state.lessons.search) + '" style="flex:1" />';
+      html += '<input id="lessons-search" class="search-input" type="text" placeholder="' + t('lessons.search_placeholder') + '" value="' + esc(state.lessons.search) + '" style="flex:1" />';
       html += '<span style="font-size:12px;color:var(--ink-faint);align-self:center;">' + items.length + ' lessons</span>';
       html += '</div>';
 
       if (items.length === 0) {
         html += '<div class="empty-state">' +
           '<div class="empty-icon">&#128161;</div>' +
-          '<div class="empty-title">No lessons yet</div>' +
-          '<div class="empty-lead">Lessons are confidence-scored pattern observations &mdash; things you corrected once that the agent should never do again. They persist across projects.</div>' +
+          '<div class="empty-title">' + t('lessons.empty_title') + '</div>' +
+          '<div class="empty-lead">' + t('lessons.empty_body') + '</div>' +
           '<pre class="empty-cmd"># Save a lesson explicitly\nmemory_lesson_save { rule, reason, confidence }\n\n# Or: Replay tab &rarr; Import JSONL auto-extracts lessons\n# from your past Claude Code sessions</pre>' +
           '<div><a class="empty-link" href="https://github.com/rohitg00/agentmemory#lessons" target="_blank" rel="noopener">Lesson decay &amp; scoring &rarr;</a></div>' +
           '</div>';
       } else {
-        html += '<table><thead><tr><th>Lesson</th><th>Confidence</th><th>Reinforcements</th><th>Source</th><th>Project</th><th>Updated</th></tr></thead><tbody>';
+        html += '<table><thead><tr><th>' + t('lessons.col_lesson') + '</th><th>' + t('lessons.col_confidence') + '</th><th>' + t('lessons.col_reinforcements') + '</th><th>' + t('lessons.col_source') + '</th><th>' + t('lessons.col_project') + '</th><th>' + t('lessons.col_updated') + '</th></tr></thead><tbody>';
         items.forEach(function(l) {
           var confPct = Math.round(l.confidence * 100);
           var confColor = confPct >= 70 ? 'var(--green)' : confPct >= 40 ? 'var(--yellow)' : 'var(--red)';
@@ -2971,7 +2978,7 @@
 
     async function loadActions() {
       var el = document.getElementById('view-actions');
-      el.innerHTML = '<div class="loading">Loading actions...</div>';
+      el.innerHTML = '<div class="loading">' + t('loading.actions') + '</div>';
       var results = await Promise.all([apiGet('actions'), apiGet('frontier')]);
       state.actions.items = (results[0] && results[0].actions) || [];
       state.actions.frontier = (results[1] && (results[1].frontier || results[1].actions)) || [];
@@ -2996,9 +3003,9 @@
       }
 
       var html = '<div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">';
-      html += '<input id="actions-search" class="search-input" type="text" placeholder="Search actions..." value="' + esc(state.actions.search) + '" style="flex:1;min-width:200px" />';
+      html += '<input id="actions-search" class="search-input" type="text" placeholder="' + t('actions.search_placeholder') + '" value="' + esc(state.actions.search) + '" style="flex:1;min-width:200px" />';
       html += '<select id="actions-status-filter" style="padding:4px 8px;font-size:12px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--ink);">';
-      html += '<option value="">All statuses</option>';
+      html += '<option value="">' + t('actions.all_statuses') + '</option>';
       ['pending','active','done','blocked','cancelled'].forEach(function(s) {
         html += '<option value="' + s + '"' + (statusFilter === s ? ' selected' : '') + '>' + s + '</option>';
       });
@@ -3009,14 +3016,14 @@
       if (items.length === 0) {
         html += '<div class="empty-state">' +
           '<div class="empty-icon">&#9745;</div>' +
-          '<div class="empty-title">No actions tracked yet</div>' +
-          '<div class="empty-lead">Actions are follow-ups the agent surfaced during a session: <em>decisions to revisit</em>, <em>files to inspect</em>, <em>tasks blocked on input</em>. They show up here with status pending &rarr; active &rarr; done/blocked so nothing slips through between sessions.</div>' +
+          '<div class="empty-title">' + t('actions.empty_title') + '</div>' +
+          '<div class="empty-lead">' + t('actions.empty_body') + '</div>' +
           '<div class="empty-lead" style="margin-top:0;">Three ways to create them:</div>' +
           '<pre class="empty-cmd"># 1. MCP tool (from any agent)\nmemory_action_create { title, description, priority }\n\n# 2. Curl\ncurl -X POST http://localhost:3111/agentmemory/actions \\\n  -H \'Content-Type: application/json\' \\\n  -d \'{"title":"ship v1","priority":"high"}\'\n\n# 3. Hooks auto-extract from long session bodies</pre>' +
           '<div><a class="empty-link" href="https://github.com/rohitg00/agentmemory#actions" target="_blank" rel="noopener">Action lifecycle docs &rarr;</a></div>' +
           '</div>';
       } else {
-        html += '<table><thead><tr><th>Title</th><th>Status</th><th>Priority</th><th>Tags</th><th>Frontier</th><th>Updated</th></tr></thead><tbody>';
+        html += '<table><thead><tr><th>' + t('actions.col_title') + '</th><th>' + t('actions.col_status') + '</th><th>' + t('actions.col_priority') + '</th><th>' + t('actions.col_tags') + '</th><th>' + t('actions.col_frontier') + '</th><th>' + t('actions.col_updated') + '</th></tr></thead><tbody>';
         items = items.slice().sort(function(a, b) { return (b.priority || 0) - (a.priority || 0); });
         items.forEach(function(a) {
           var statusClass = a.status === 'done' ? 'badge-green' : a.status === 'active' ? 'badge-blue' : a.status === 'blocked' ? 'badge-red' : a.status === 'cancelled' ? 'badge-red' : 'badge-yellow';
@@ -3025,7 +3032,7 @@
           html += '<td style="max-width:350px;"><strong>' + esc(a.title) + '</strong>';
           if (a.description) html += '<div style="font-size:11px;color:var(--ink-faint);margin-top:2px;">' + esc(truncate(a.description, 80)) + '</div>';
           html += '</td>';
-          html += '<td><span class="badge ' + statusClass + '">' + esc(a.status) + '</span></td>';
+          html += '<td><span class="badge ' + statusClass + '">' + esc(te('status', a.status)) + '</span></td>';
           html += '<td style="text-align:center;font-weight:600;">' + (a.priority || '-') + '</td>';
           html += '<td style="font-size:11px;color:var(--ink-muted);">' + (a.tags || []).map(esc).join(', ') + '</td>';
           html += '<td style="text-align:center;">' + (isFrontier ? '&#9889;' : '') + '</td>';
@@ -3046,7 +3053,7 @@
 
     async function loadCrystals() {
       var el = document.getElementById('view-crystals');
-      el.innerHTML = '<div class="loading">Loading crystals...</div>';
+      el.innerHTML = '<div class="loading">' + t('loading.crystals') + '</div>';
       var results = await Promise.all([apiGet('crystals'), apiGet('lessons')]);
       state.crystals.items = (results[0] && results[0].crystals) || [];
       var lessonMap = {};
@@ -3085,19 +3092,19 @@
 
       var html = '<div class="card" style="margin-bottom:12px;padding:12px;background:var(--bg-subtle);">';
       html += '<div style="font-size:13px;color:var(--ink-muted);line-height:1.5;">';
-      html += '<strong>Crystals</strong> are frozen snapshots of completed work. Each crystal captures one session\'s narrative, the tools invoked (key outcomes), files touched, and lessons surfaced — a replayable summary you keep after raw observations are pruned. Auto-created on JSONL import or via <code>memory_crystallize</code>.';
+      html += t('crystals.description');
       html += '</div></div>';
 
       html += '<div style="display:flex;gap:8px;margin-bottom:12px;">';
-      html += '<input id="crystals-search" class="search-input" type="text" placeholder="Search crystals..." value="' + esc(state.crystals.search) + '" style="flex:1" />';
+      html += '<input id="crystals-search" class="search-input" type="text" placeholder="' + t('crystals.search_placeholder') + '" value="' + esc(state.crystals.search) + '" style="flex:1" />';
       html += '<span style="font-size:12px;color:var(--ink-faint);align-self:center;">' + items.length + ' crystals</span>';
       html += '</div>';
 
       if (items.length === 0) {
         html += '<div class="empty-state">' +
           '<div class="empty-icon">&#128142;</div>' +
-          '<div class="empty-title">No crystals yet</div>' +
-          '<div class="empty-lead">Crystals are compressed action digests &mdash; the 3-line summary of what happened in a session. Generated from long conversations to give the next session fast context without re-reading everything.</div>' +
+          '<div class="empty-title">' + t('crystals.empty_title') + '</div>' +
+          '<div class="empty-lead">' + t('crystals.empty_body') + '</div>' +
           '<pre class="empty-cmd"># Auto: import a JSONL transcript\n#   Replay tab &rarr; Import JSONL\n\n# Manual: crystallize a specific session\nmemory_crystallize { sessionId }</pre>' +
           '<div><a class="empty-link" href="https://github.com/rohitg00/agentmemory#crystals" target="_blank" rel="noopener">Crystal pipeline &rarr;</a></div>' +
           '</div>';
@@ -3118,7 +3125,7 @@
           if (pillRow.length) html += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">' + pillRow.join('') + '</div>';
 
           if (c.keyOutcomes && c.keyOutcomes.length > 0) {
-            html += '<div style="margin:10px 0;"><div style="font-size:10px;letter-spacing:0.08em;color:var(--ink-muted);margin-bottom:4px;">TOOLS USED</div>';
+            html += '<div style="margin:10px 0;"><div style="font-size:10px;letter-spacing:0.08em;color:var(--ink-muted);margin-bottom:4px;">' + t('crystals.tools_used') + '</div>';
             html += '<div style="display:flex;gap:4px;flex-wrap:wrap;">';
             c.keyOutcomes.forEach(function(o) {
               html += '<span class="badge" style="background:var(--bg-alt);color:var(--ink);font-family:var(--font-mono);">' + esc(o) + '</span>';
@@ -3127,7 +3134,7 @@
           }
 
           if (c.filesAffected && c.filesAffected.length > 0) {
-            html += '<div style="margin:10px 0;"><div style="font-size:10px;letter-spacing:0.08em;color:var(--ink-muted);margin-bottom:4px;">FILES TOUCHED</div>';
+            html += '<div style="margin:10px 0;"><div style="font-size:10px;letter-spacing:0.08em;color:var(--ink-muted);margin-bottom:4px;">' + t('crystals.files_touched') + '</div>';
             html += '<div style="font-size:12px;font-family:var(--font-mono);color:var(--ink);line-height:1.6;">';
             c.filesAffected.slice(0, 10).forEach(function(f) {
               html += '<div>&#8226; ' + esc(f) + '</div>';
@@ -3137,7 +3144,7 @@
           }
 
           if (c.lessons && c.lessons.length > 0) {
-            html += '<div style="margin:10px 0;"><div style="font-size:10px;letter-spacing:0.08em;color:var(--ink-muted);margin-bottom:4px;">LESSONS SURFACED</div>';
+            html += '<div style="margin:10px 0;"><div style="font-size:10px;letter-spacing:0.08em;color:var(--ink-muted);margin-bottom:4px;">' + t('crystals.lessons_surfaced') + '</div>';
             c.lessons.slice(0, 8).forEach(function(lid) {
               var content = lessonMap[lid] ? lessonMap[lid].content : lid;
               html += '<div style="font-size:12px;padding:4px 8px;margin:2px 0;background:var(--bg-alt);border-radius:3px;color:var(--ink);line-height:1.4;">&#128161; ' + esc(content) + '</div>';
@@ -3159,7 +3166,7 @@
 
     async function loadAudit() {
       var el = document.getElementById('view-audit');
-      el.innerHTML = '<div class="loading">Loading audit log...</div>';
+      el.innerHTML = '<div class="loading">' + t('loading.audit') + '</div>';
       var result = await apiGet('audit?limit=100');
       state.audit.entries = (result && result.entries) || [];
       state.audit.loaded = true;
@@ -3178,7 +3185,7 @@
       var filtered = opFilter ? entries.filter(function(e) { return e.operation === opFilter; }) : entries;
 
       var html = '<div class="toolbar">';
-      html += '<select id="audit-op-filter"><option value="">All operations</option>';
+      html += '<select id="audit-op-filter"><option value="">' + t('audit.all_operations') + '</option>';
       opList.forEach(function(op) {
         html += '<option value="' + esc(op) + '"' + (opFilter === op ? ' selected' : '') + '>' + esc(op) + '</option>';
       });
@@ -3186,7 +3193,7 @@
 
       html += '<div class="card">';
       if (filtered.length === 0) {
-        html += '<div class="empty-state"><div class="empty-icon">&#128220;</div><p>No audit entries yet</p><p style="font-size:12px;color:var(--ink-faint);font-style:italic;">Audit entries are created by governance operations (delete, evolve, consolidate).</p></div>';
+        html += '<div class="empty-state"><div class="empty-icon">&#128220;</div><p>' + t('audit.empty') + '</p><p style="font-size:12px;color:var(--ink-faint);font-style:italic;">Audit entries are created by governance operations (delete, evolve, consolidate).</p></div>';
       } else {
         filtered.forEach(function(a, idx) {
           var badgeClass = OP_BADGES[a.operation] || 'badge-muted';
@@ -3221,7 +3228,7 @@
 
     async function loadProfile() {
       var el = document.getElementById('view-profile');
-      el.innerHTML = '<div class="loading">Loading profile...</div>';
+      el.innerHTML = '<div class="loading">' + t('loading.profile') + '</div>';
       var sessResult = await apiGet('sessions');
       var sessions = (sessResult && sessResult.sessions) || [];
 
@@ -3243,7 +3250,7 @@
       var html = '<div class="toolbar">';
       html += '<select id="profile-project">';
       if (state.profile.projects.length === 0) {
-        html += '<option value="">No projects</option>';
+        html += '<option value="">' + t('profile.no_projects') + '</option>';
       } else {
         state.profile.projects.forEach(function(p) {
           html += '<option value="' + esc(p) + '"' + (state.profile.selectedProject === p ? ' selected' : '') + '>' + esc(p) + '</option>';
@@ -3262,7 +3269,7 @@
     async function loadProfileData() {
       var content = document.getElementById('profile-content');
       if (!content || !state.profile.selectedProject) return;
-      content.innerHTML = '<div class="loading">Loading profile data...</div>';
+      content.innerHTML = '<div class="loading">' + t('loading.profile_data') + '</div>';
       var result = await apiGet('profile?project=' + encodeURIComponent(state.profile.selectedProject));
       state.profile.data = (result && result.profile) ? result.profile : result;
       renderProfile();
@@ -3274,16 +3281,16 @@
       var p = state.profile.data;
 
       if (!p) {
-        content.innerHTML = '<div class="empty-state"><div class="empty-icon">&#128203;</div><p>No profile data for this project</p></div>';
+        content.innerHTML = '<div class="empty-state"><div class="empty-icon">&#128203;</div><p>' + t('profile.no_data') + '</p></div>';
         return;
       }
 
       var html = '<div class="two-col">';
 
-      html += '<div class="card"><div class="card-title">Top Concepts</div>';
+      html += '<div class="card"><div class="card-title">' + t('profile.top_concepts') + '</div>';
       var concepts = p.topConcepts || [];
       if (concepts.length === 0) {
-        html += '<div style="font-size:13px;color:var(--ink-faint);font-style:italic;">No concepts yet</div>';
+        html += '<div style="font-size:13px;color:var(--ink-faint);font-style:italic;">' + t('profile.no_concepts') + '</div>';
       } else {
         var maxC = Math.max.apply(null, concepts.map(function(c) { return c.frequency; })) || 1;
         html += '<div class="bar-chart">';
@@ -3295,10 +3302,10 @@
       }
       html += '</div>';
 
-      html += '<div class="card"><div class="card-title">Top Files</div>';
+      html += '<div class="card"><div class="card-title">' + t('profile.top_files') + '</div>';
       var files = p.topFiles || [];
       if (files.length === 0) {
-        html += '<div style="font-size:13px;color:var(--ink-faint);font-style:italic;">No files yet</div>';
+        html += '<div style="font-size:13px;color:var(--ink-faint);font-style:italic;">' + t('profile.no_files') + '</div>';
       } else {
         var maxF = Math.max.apply(null, files.map(function(f) { return f.frequency; })) || 1;
         html += '<div class="bar-chart">';
@@ -3312,10 +3319,10 @@
 
       html += '</div>';
 
-      html += '<div class="card" style="margin-top:16px;"><div class="card-title">Conventions</div>';
+      html += '<div class="card" style="margin-top:16px;"><div class="card-title">' + t('profile.conventions') + '</div>';
       var conventions = p.conventions || [];
       if (conventions.length === 0) {
-        html += '<div style="font-size:13px;color:var(--ink-faint);font-style:italic;">No conventions detected yet</div>';
+        html += '<div style="font-size:13px;color:var(--ink-faint);font-style:italic;">' + t('profile.no_conventions') + '</div>';
       } else {
         html += '<ul style="padding-left:16px;">';
         conventions.forEach(function(c) { html += '<li style="font-size:13px;color:var(--ink-muted);margin-bottom:4px;">' + esc(c) + '</li>'; });
@@ -3324,14 +3331,14 @@
       html += '</div>';
 
       if (p.summary) {
-        html += '<div class="card" style="margin-top:16px;"><div class="card-title">Project Summary</div>';
+        html += '<div class="card" style="margin-top:16px;"><div class="card-title">' + t('profile.project_summary') + '</div>';
         html += '<p style="font-size:13px;color:var(--ink-muted);line-height:1.7;">' + esc(p.summary) + '</p></div>';
       }
 
-      var stats = '<div class="card" style="margin-top:16px;"><div class="card-title">Project Stats</div>';
-      stats += '<div class="detail-row"><div class="dl">Sessions</div><div class="dv" style="font-family:var(--font-mono);">' + (p.sessionCount || 0) + '</div></div>';
-      stats += '<div class="detail-row"><div class="dl">Total Obs</div><div class="dv" style="font-family:var(--font-mono);">' + (p.totalObservations || 0) + '</div></div>';
-      stats += '<div class="detail-row"><div class="dl">Updated</div><div class="dv" style="font-family:var(--font-mono);font-size:12px;">' + esc(formatTime(p.updatedAt)) + '</div></div>';
+      var stats = '<div class="card" style="margin-top:16px;"><div class="card-title">' + t('profile.project_stats') + '</div>';
+      stats += '<div class="detail-row"><div class="dl">' + t('profile.stat_sessions') + '</div><div class="dv" style="font-family:var(--font-mono);">' + (p.sessionCount || 0) + '</div></div>';
+      stats += '<div class="detail-row"><div class="dl">' + t('profile.stat_total_obs') + '</div><div class="dv" style="font-family:var(--font-mono);">' + (p.totalObservations || 0) + '</div></div>';
+      stats += '<div class="detail-row"><div class="dl">' + t('profile.stat_updated') + '</div><div class="dv" style="font-family:var(--font-mono);font-size:12px;">' + esc(formatTime(p.updatedAt)) + '</div></div>';
       stats += '</div>';
 
       content.innerHTML = html + stats;
@@ -3433,7 +3440,7 @@
               }
             }));
           }
-          setWsStatus('live', 'connected');
+          setWsStatus(t('status.live'), 'connected');
         };
         ws.onmessage = function(e) {
           if (state.ws !== ws) return;
@@ -3794,7 +3801,7 @@
 
     async function loadReplay() {
       var el = document.getElementById('view-replay');
-      el.innerHTML = '<div class="loading">Loading sessions…</div>';
+      el.innerHTML = '<div class="loading">' + t('loading.replay') + '</div>';
       var res = await apiGet('replay/sessions');
       state.replay.sessions = (res && res.sessions) || [];
       state.replay.loaded = true;
@@ -3823,19 +3830,19 @@
       el.innerHTML =
         '<div class="toolbar">' +
           '<select id="replay-session-select">' + options + '</select>' +
-          '<button data-action="replay-refresh">Refresh</button>' +
+          '<button data-action="replay-refresh">' + t('replay.refresh') + '</button>' +
           '<span class="sep"></span>' +
-          '<input type="text" id="replay-import-path" placeholder="~/.claude/projects or file.jsonl" style="width:280px">' +
-          '<button data-action="replay-import">Import JSONL</button>' +
+          '<input type="text" id="replay-import-path" placeholder="' + t('replay.import_placeholder') + '" style="width:280px">' +
+          '<button data-action="replay-import">' + t('replay.import_button') + '</button>' +
         '</div>' +
         (hasTl
           ? '<div class="replay-controls">' +
-              '<button data-action="replay-step" data-dir="-1" title="Previous (←)">◀</button>' +
-              '<button data-action="replay-toggle-play" title="Play/Pause (Space)">' + (state.replay.playing ? '❚❚ Pause' : '▶ Play') + '</button>' +
-              '<button data-action="replay-step" data-dir="1" title="Next (→)">▶</button>' +
-              '<button data-action="replay-reset" title="Reset">⟲</button>' +
+              '<button data-action="replay-step" data-dir="-1" title="' + t('replay.prev') + '">◀</button>' +
+              '<button data-action="replay-toggle-play" title="Play/Pause (Space)">' + (state.replay.playing ? t('replay.pause') : t('replay.play')) + '</button>' +
+              '<button data-action="replay-step" data-dir="1" title="' + t('replay.next') + '">▶</button>' +
+              '<button data-action="replay-reset" title="' + t('replay.reset') + '">⟲</button>' +
               '<span class="sep"></span>' +
-              '<span>Speed</span>' +
+              '<span>' + t('replay.speed') + '</span>' +
               ['0.5', '1', '2', '4'].map(function(sp) {
                 var active = Math.abs(state.replay.speed - parseFloat(sp)) < 0.01;
                 return '<button data-action="replay-speed" data-speed="' + sp + '"' + (active ? ' class="active"' : '') + '>' + sp + '×</button>';
@@ -3857,14 +3864,14 @@
               '</div>' +
               '<div class="replay-detail">' + renderReplayDetail(cursorEvent) + '</div>' +
             '</div>'
-          : '<div class="empty">Pick a session to replay, or import Claude Code JSONL transcripts from ~/.claude/projects.</div>');
+          : '<div class="empty">' + t('replay.no_session') + '</div>');
 
       var sel = document.getElementById('replay-session-select');
       if (sel) sel.addEventListener('change', function() { selectReplaySession(sel.value); });
     }
 
     function renderReplayDetail(ev) {
-      if (!ev) return '<div class="empty">No event selected.</div>';
+      if (!ev) return '<div class="empty">' + t('replay.no_event') + '</div>';
       var blocks = [];
       blocks.push('<div class="replay-detail-header"><b>' + esc(ev.label) + '</b> <span class="muted">' + esc(ev.kind) + '</span></div>');
       if (ev.ts) blocks.push('<div class="muted">' + esc(formatTime(ev.ts)) + '</div>');
@@ -3872,15 +3879,15 @@
         blocks.push('<pre class="replay-body">' + esc(ev.body) + '</pre>');
       }
       if (ev.toolName) {
-        blocks.push('<div class="replay-tool"><b>Tool:</b> ' + esc(ev.toolName) + '</div>');
+        blocks.push('<div class="replay-tool"><b>' + t('replay.detail_tool') + '</b> ' + esc(ev.toolName) + '</div>');
       }
       if (ev.toolInput !== undefined && ev.toolInput !== null) {
         var inp = typeof ev.toolInput === 'string' ? ev.toolInput : JSON.stringify(ev.toolInput, null, 2);
-        blocks.push('<div class="replay-tool-block"><b>Input</b><pre>' + esc(truncate(inp, 4000)) + '</pre></div>');
+        blocks.push('<div class="replay-tool-block"><b>' + t('replay.detail_input') + '</b><pre>' + esc(truncate(inp, 4000)) + '</pre></div>');
       }
       if (ev.toolOutput !== undefined && ev.toolOutput !== null) {
         var out = typeof ev.toolOutput === 'string' ? ev.toolOutput : JSON.stringify(ev.toolOutput, null, 2);
-        blocks.push('<div class="replay-tool-block"><b>Output</b><pre>' + esc(truncate(out, 4000)) + '</pre></div>');
+        blocks.push('<div class="replay-tool-block"><b>' + t('replay.detail_output') + '</b><pre>' + esc(truncate(out, 4000)) + '</pre></div>');
       }
       return blocks.join('');
     }
@@ -3894,7 +3901,7 @@
       state.replay.playing = false;
       if (!sessionId) { renderReplay(); return; }
       var el = document.getElementById('view-replay');
-      el.innerHTML = '<div class="loading">Loading replay…</div>';
+      el.innerHTML = '<div class="loading">' + t('loading.replay') + '</div>';
       var res = await apiGet('replay/load?sessionId=' + encodeURIComponent(sessionId));
       if (res && res.success && res.timeline) {
         state.replay.timeline = res.timeline;
@@ -3983,7 +3990,7 @@
       if (pathVal) body.path = pathVal;
       var el = document.getElementById('view-replay');
       var prior = el.innerHTML;
-      el.innerHTML = '<div class="loading">Importing JSONL…</div>';
+      el.innerHTML = '<div class="loading">' + t('replay.importing') + '</div>';
       var res = await apiPost('replay/import-jsonl', body);
       if (!res || res.success === false) {
         el.innerHTML = prior;
