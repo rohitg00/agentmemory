@@ -38,7 +38,6 @@
   <a href="https://github.com/rohitg00/agentmemory/actions"><img src="https://img.shields.io/github/actions/workflow/status/rohitg00/agentmemory/ci.yml?label=tests&style=for-the-badge&logo=github" alt="CI" /></a>
   <a href="https://github.com/rohitg00/agentmemory/blob/main/LICENSE"><img src="https://img.shields.io/github/license/rohitg00/agentmemory?color=blue&style=for-the-badge" alt="License" /></a>
   <a href="https://github.com/rohitg00/agentmemory/stargazers"><img src="https://img.shields.io/github/stars/rohitg00/agentmemory?style=for-the-badge&color=yellow&logo=github" alt="Stars" /></a>
-  <a href="https://github.com/sponsors/rohitg00"><img src="https://img.shields.io/badge/sponsor-rohitg00-EA4AAA?style=for-the-badge&logo=githubsponsors&logoColor=white" alt="Sponsor rohitg00 on GitHub Sponsors" /></a>
 </p>
 
 <p align="center">
