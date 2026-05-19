@@ -29,10 +29,11 @@ describe("agentmemory connect — dispatcher", () => {
     expect(resolveAdapter("")).toBeNull();
   });
 
-  it("ships exactly the 8 agents specified by the spec", () => {
+  it("ships exactly the 9 agents specified by the spec", () => {
     expect(knownAgents().sort()).toEqual(
       [
         "claude-code",
+        "copilot-cli",
         "codex",
         "cursor",
         "gemini-cli",
@@ -42,7 +43,7 @@ describe("agentmemory connect — dispatcher", () => {
         "pi",
       ].sort(),
     );
-    expect(ADAPTERS.length).toBe(8);
+    expect(ADAPTERS.length).toBe(9);
   });
 
   it("every adapter exposes detect() and install()", () => {
@@ -175,7 +176,169 @@ describe("agentmemory connect — claude-code adapter (mock filesystem)", () => 
     if (result.kind === "installed") {
       expect(result.backupPath).toBeDefined();
       expect(existsSync(result.backupPath!)).toBe(true);
-      expect(result.backupPath!).toContain(".agentmemory/backups");
+      expect(result.backupPath!).toContain(join(".agentmemory", "backups"));
+    }
+  });
+});
+
+describe("agentmemory connect — copilot-cli adapter (mock filesystem)", () => {
+  let tmpHome: string;
+  let originalHome: string | undefined;
+  let originalUserprofile: string | undefined;
+
+  beforeEach(() => {
+    tmpHome = mkdtempSync(join(tmpdir(), "am-connect-"));
+    originalHome = process.env["HOME"];
+    originalUserprofile = process.env["USERPROFILE"];
+    process.env["HOME"] = tmpHome;
+    process.env["USERPROFILE"] = tmpHome;
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    if (originalHome !== undefined) process.env["HOME"] = originalHome;
+    else delete process.env["HOME"];
+    if (originalUserprofile !== undefined)
+      process.env["USERPROFILE"] = originalUserprofile;
+    else delete process.env["USERPROFILE"];
+    rmSync(tmpHome, { recursive: true, force: true });
+    vi.resetModules();
+  });
+
+  async function loadAdapter(): Promise<ConnectAdapter> {
+    const mod = await import("../src/cli/connect/copilot-cli.js?t=" + Date.now());
+    return (mod as { adapter: ConnectAdapter }).adapter;
+  }
+
+  it("detect() returns false when ~/.copilot doesn't exist", async () => {
+    const a = await loadAdapter();
+    expect(a.detect()).toBe(false);
+  });
+
+  it("install() writes mcpServers.agentmemory into ~/.copilot/mcp-config.json and is idempotent", async () => {
+    require("node:fs").mkdirSync(join(tmpHome, ".copilot"), { recursive: true });
+
+    const a = await loadAdapter();
+    expect(a.detect()).toBe(true);
+
+    const first = await a.install({ dryRun: false, force: false });
+    expect(first.kind).toBe("installed");
+
+    const config = JSON.parse(
+      readFileSync(join(tmpHome, ".copilot", "mcp-config.json"), "utf-8"),
+    );
+    expect(config.mcpServers.agentmemory).toEqual({
+      type: "local",
+      command: "npx",
+      args: ["-y", "@agentmemory/mcp"],
+      env: {
+        AGENTMEMORY_URL: "${AGENTMEMORY_URL}",
+        AGENTMEMORY_SECRET: "${AGENTMEMORY_SECRET}",
+      },
+      tools: ["*"],
+    });
+
+    const second = await a.install({ dryRun: false, force: false });
+    expect(second.kind).toBe("already-wired");
+  });
+
+  it("install() preserves unrelated top-level keys and mcpServers entries", async () => {
+    require("node:fs").mkdirSync(join(tmpHome, ".copilot"), { recursive: true });
+    writeFileSync(
+      join(tmpHome, ".copilot", "mcp-config.json"),
+      JSON.stringify({
+        otherTopLevel: { keep: true },
+        mcpServers: { other: { type: "local", command: "other" } },
+      }),
+    );
+
+    const a = await loadAdapter();
+    const result = await a.install({ dryRun: false, force: false });
+    expect(result.kind).toBe("installed");
+
+    const config = JSON.parse(
+      readFileSync(join(tmpHome, ".copilot", "mcp-config.json"), "utf-8"),
+    );
+    expect(config.otherTopLevel).toEqual({ keep: true });
+    expect(config.mcpServers.other).toEqual({ type: "local", command: "other" });
+    expect(config.mcpServers.agentmemory.command).toBe("npx");
+  });
+
+  it("install() writes env passthrough block for AGENTMEMORY_URL + AGENTMEMORY_SECRET", async () => {
+    require("node:fs").mkdirSync(join(tmpHome, ".copilot"), { recursive: true });
+
+    const a = await loadAdapter();
+    const result = await a.install({ dryRun: false, force: false });
+    expect(result.kind).toBe("installed");
+
+    const config = JSON.parse(
+      readFileSync(join(tmpHome, ".copilot", "mcp-config.json"), "utf-8"),
+    );
+    const entry = config.mcpServers.agentmemory;
+    expect(entry.env.AGENTMEMORY_URL).toBe("${AGENTMEMORY_URL}");
+    expect(entry.env.AGENTMEMORY_SECRET).toBe("${AGENTMEMORY_SECRET}");
+  });
+
+  it("install() with --force rewrites even when already wired", async () => {
+    require("node:fs").mkdirSync(join(tmpHome, ".copilot"), { recursive: true });
+    writeFileSync(
+      join(tmpHome, ".copilot", "mcp-config.json"),
+      JSON.stringify({
+        mcpServers: {
+          agentmemory: {
+            type: "local",
+            command: "npx",
+            args: ["-y", "@agentmemory/mcp"],
+            env: {
+              AGENTMEMORY_URL: "${AGENTMEMORY_URL}",
+              AGENTMEMORY_SECRET: "${AGENTMEMORY_SECRET}",
+            },
+            tools: ["memory_save"],
+          },
+        },
+      }),
+    );
+
+    const a = await loadAdapter();
+    const result = await a.install({ dryRun: false, force: true });
+    expect(result.kind).toBe("installed");
+
+    const config = JSON.parse(
+      readFileSync(join(tmpHome, ".copilot", "mcp-config.json"), "utf-8"),
+    );
+    expect(config.mcpServers.agentmemory.tools).toEqual(["*"]);
+  });
+
+  it("install() with --dry-run does not mutate the file", async () => {
+    require("node:fs").mkdirSync(join(tmpHome, ".copilot"), { recursive: true });
+    const before = JSON.stringify({ mcpServers: {} });
+    writeFileSync(join(tmpHome, ".copilot", "mcp-config.json"), before);
+
+    const a = await loadAdapter();
+    const result = await a.install({ dryRun: true, force: false });
+    expect(result.kind).toBe("installed");
+
+    const after = readFileSync(
+      join(tmpHome, ".copilot", "mcp-config.json"),
+      "utf-8",
+    );
+    expect(after).toBe(before);
+  });
+
+  it("install() creates a backup file when config pre-exists", async () => {
+    require("node:fs").mkdirSync(join(tmpHome, ".copilot"), { recursive: true });
+    writeFileSync(
+      join(tmpHome, ".copilot", "mcp-config.json"),
+      JSON.stringify({ mcpServers: {} }),
+    );
+
+    const a = await loadAdapter();
+    const result = await a.install({ dryRun: false, force: false });
+    expect(result.kind).toBe("installed");
+    if (result.kind === "installed") {
+      expect(result.backupPath).toBeDefined();
+      expect(existsSync(result.backupPath!)).toBe(true);
+      expect(result.backupPath!).toContain(join(".agentmemory", "backups"));
     }
   });
 });
