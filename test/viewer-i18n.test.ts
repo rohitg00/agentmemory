@@ -106,6 +106,16 @@ describe("viewer i18n: document injection", () => {
   });
 });
 
+describe("viewer i18n: structural parity en ↔ de", () => {
+  it("de.json has every top-level key that en.json has", () => {
+    const en = loadLocale("en");
+    const de = loadLocale("de");
+    for (const key of Object.keys(en)) {
+      expect(de[key], `missing top-level key '${key}' in de.json`).toBeDefined();
+    }
+  });
+});
+
 describe("viewer i18n: t() helper semantics (simulated)", () => {
   function tFactory(messages: Record<string, unknown>, fallback: Record<string, unknown>) {
     function getPath(obj: unknown, path: string): unknown {
