@@ -75,6 +75,52 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
     expect(body.results[0].id).toBe("m1");
   });
 
+  it("proxies memory_recall to /agentmemory/search with format options (#507)", async () => {
+    const calls: Array<{ url: string; body?: unknown }> = [];
+    installFetch((url, init) => {
+      if (url.endsWith("/agentmemory/livez")) return new Response("ok", { status: 200 });
+      calls.push({
+        url,
+        body: init?.body ? JSON.parse(init.body as string) : undefined,
+      });
+      if (url.endsWith("/agentmemory/search")) {
+        return new Response(
+          JSON.stringify({
+            format: "narrative",
+            text: "1. Deployment runbook\nUse the blue/green deploy script.",
+            results: [],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      return new Response("not found", { status: 404 });
+    });
+
+    const res = await handleToolCall("memory_recall", {
+      query: "deploy scripts",
+      limit: 3,
+      format: "narrative",
+      token_budget: 80,
+    });
+
+    expect(JSON.parse(res.content[0].text)).toEqual({
+      format: "narrative",
+      text: "1. Deployment runbook\nUse the blue/green deploy script.",
+      results: [],
+    });
+    expect(calls).toEqual([
+      {
+        url: `${BASE}/agentmemory/search`,
+        body: {
+          query: "deploy scripts",
+          limit: 3,
+          format: "narrative",
+          token_budget: 80,
+        },
+      },
+    ]);
+  });
+
   it("proxies memory_governance_delete to the DELETE REST endpoint", async () => {
     const calls: Array<{ url: string; method: string; body?: unknown }> = [];
     installFetch((url, init) => {
@@ -150,9 +196,9 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
     await handleToolCall("memory_save", { content: "local only" }, localKv);
     const recall = await handleToolCall("memory_recall", { query: "local" }, localKv);
     const out = JSON.parse(recall.content[0].text);
-    expect(out.mode).toBe("compact");
+    expect(out.format).toBe("full");
     expect(out.results).toHaveLength(1);
-    expect(out.results[0].content).toBe("local only");
+    expect(out.results[0].observation.narrative).toBe("local only");
   });
 
   it("invalidates the handle on proxy failure, so the next call re-probes", async () => {

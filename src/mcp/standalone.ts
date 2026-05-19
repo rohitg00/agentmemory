@@ -71,6 +71,18 @@ function parseLimit(raw: unknown, fallback = DEFAULT_LIMIT): number {
   return Math.min(Math.floor(n), MAX_LIMIT);
 }
 
+function parseTokenBudget(raw: unknown): number | undefined {
+  if (raw === undefined) return undefined;
+  if (typeof raw !== "number" && typeof raw !== "string") {
+    throw new Error("token_budget must be a positive integer");
+  }
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < 1) {
+    throw new Error("token_budget must be a positive integer");
+  }
+  return n;
+}
+
 function textResponse(payload: unknown, pretty = false): {
   content: Array<{ type: string; text: string }>;
 } {
@@ -89,8 +101,42 @@ interface Validated {
   files?: string[];
   query?: string;
   limit?: number;
+  format?: "full" | "compact" | "narrative";
+  tokenBudget?: number;
   memoryIds?: string[];
   reason?: string;
+}
+
+type LocalMemory = Record<string, unknown>;
+
+function localMemoryMatches(memory: LocalMemory, queryWords: string[]): boolean {
+  const text = [
+    typeof memory["title"] === "string" ? memory["title"] : "",
+    typeof memory["content"] === "string" ? memory["content"] : "",
+    Array.isArray(memory["files"]) ? memory["files"].join(" ") : "",
+    Array.isArray(memory["concepts"]) ? memory["concepts"].join(" ") : "",
+    Array.isArray(memory["sessionIds"]) ? memory["sessionIds"].join(" ") : "",
+    typeof memory["id"] === "string" ? memory["id"] : "",
+  ]
+    .join(" ")
+    .toLowerCase();
+  return queryWords.every((word) => text.includes(word));
+}
+
+async function searchLocalMemories(
+  kvInstance: InMemoryKV,
+  v: Validated,
+): Promise<LocalMemory[]> {
+  const queryWords = (v.query || "").toLowerCase().split(/\s+/);
+  const limit = v.limit ?? DEFAULT_LIMIT;
+  const all = await kvInstance.list<LocalMemory>("mem:memories");
+  return all
+    .filter((memory) => localMemoryMatches(memory, queryWords))
+    .slice(0, limit);
+}
+
+function firstSessionId(memory: LocalMemory): unknown {
+  return Array.isArray(memory["sessionIds"]) ? memory["sessionIds"][0] : undefined;
 }
 
 function validate(toolName: string, args: Record<string, unknown>): Validated {
@@ -118,6 +164,17 @@ function validate(toolName: string, args: Record<string, unknown>): Validated {
       }
       v.query = query.trim();
       v.limit = parseLimit(args["limit"]);
+      if (toolName === "memory_recall") {
+        const format =
+          typeof args["format"] === "string"
+            ? args["format"].trim().toLowerCase()
+            : "full";
+        if (!["full", "compact", "narrative"].includes(format)) {
+          throw new Error("format must be one of: full, compact, narrative");
+        }
+        v.format = format as Validated["format"];
+        v.tokenBudget = parseTokenBudget(args["token_budget"]);
+      }
       return v;
     }
     case "memory_sessions": {
@@ -159,7 +216,19 @@ async function handleProxy(
       });
       return textResponse(result);
     }
-    case "memory_recall":
+    case "memory_recall": {
+      const body: Record<string, unknown> = {
+        query: v.query,
+        limit: v.limit,
+        format: v.format ?? "full",
+      };
+      if (v.tokenBudget !== undefined) body["token_budget"] = v.tokenBudget;
+      const result = await handle.call("/agentmemory/search", {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+      return textResponse(result, true);
+    }
     case "memory_smart_search": {
       const result = await handle.call("/agentmemory/smart-search", {
         method: "POST",
@@ -223,28 +292,75 @@ async function handleLocal(
       return textResponse({ saved: id });
     }
 
-    case "memory_recall":
     case "memory_smart_search": {
-      const query = (v.query || "").toLowerCase();
-      const limit = v.limit ?? DEFAULT_LIMIT;
-      const all =
-        await kvInstance.list<Record<string, unknown>>("mem:memories");
-      const results = all
-        .filter((m) => {
-          const text = [
-            typeof m["title"] === "string" ? m["title"] : "",
-            typeof m["content"] === "string" ? m["content"] : "",
-            Array.isArray(m["files"]) ? m["files"].join(" ") : "",
-            Array.isArray(m["concepts"]) ? m["concepts"].join(" ") : "",
-            Array.isArray(m["sessionIds"]) ? m["sessionIds"].join(" ") : "",
-            typeof m["id"] === "string" ? m["id"] : "",
-          ]
-            .join(" ")
-            .toLowerCase();
-          return query.split(/\s+/).every((word) => text.includes(word));
-        })
-        .slice(0, limit);
+      const results = await searchLocalMemories(kvInstance, v);
       return textResponse({ mode: "compact", results }, true);
+    }
+
+    case "memory_recall": {
+      const matches = await searchLocalMemories(kvInstance, v);
+
+      const format = v.format ?? "full";
+      if (format === "compact") {
+        return textResponse(
+          {
+            format,
+            results: matches.map((m) => ({
+              obsId: m["id"],
+              sessionId: firstSessionId(m),
+              title: m["title"],
+              type: m["type"],
+              score: 1,
+              timestamp: m["updatedAt"] || m["createdAt"],
+            })),
+          },
+          true,
+        );
+      }
+
+      if (format === "narrative") {
+        const results = matches.map((m) => ({
+          obsId: m["id"],
+          sessionId: firstSessionId(m),
+          title: m["title"],
+          narrative: m["content"],
+          score: 1,
+          timestamp: m["updatedAt"] || m["createdAt"],
+        }));
+        return textResponse(
+          {
+            format,
+            results,
+            text: results
+              .map(
+                (r, index) =>
+                  `${index + 1}. ${String(r.title || r.obsId)}\n${String(r.narrative || "")}`,
+              )
+              .join("\n\n"),
+          },
+          true,
+        );
+      }
+
+      return textResponse(
+        {
+          format,
+          results: matches.map((m) => ({
+            observation: {
+              id: m["id"],
+              type: m["type"],
+              title: m["title"],
+              narrative: m["content"],
+              concepts: m["concepts"],
+              files: m["files"],
+              timestamp: m["updatedAt"] || m["createdAt"],
+            },
+            score: 1,
+            sessionId: firstSessionId(m),
+          })),
+        },
+        true,
+      );
     }
 
     case "memory_sessions": {
