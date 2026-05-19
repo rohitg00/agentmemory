@@ -93,7 +93,11 @@ type HooksJson = {
 
 function shellQuote(value: string): string {
   if (platform() === "win32") {
-    return `"${value.replace(/"/g, '\\"')}"`;
+    const escaped = value
+      .replace(/"/g, '\\"')
+      .replace(/%/g, "%%")
+      .replace(/[\^&<>|!]/g, "^$&");
+    return `"${escaped}"`;
   }
   return `'${value.replace(/'/g, "'\\''")}'`;
 }
@@ -245,14 +249,16 @@ function parseHooksJson(text: string, path: string): HooksJson {
   }
 }
 
+function isAgentmemoryHookHandler(handler: HookHandler): boolean {
+  const command = handler.command ?? "";
+  return (
+    command.toLowerCase().includes("agentmemory") &&
+    AGENTMEMORY_HOOK_SCRIPTS.some((script) => command.includes(script))
+  );
+}
+
 function isAgentmemoryHookEntry(entry: HookEntry): boolean {
-  return (entry.hooks ?? []).some((handler) => {
-    const command = handler.command ?? "";
-    return (
-      command.toLowerCase().includes("agentmemory") &&
-      AGENTMEMORY_HOOK_SCRIPTS.some((script) => command.includes(script))
-    );
-  });
+  return (entry.hooks ?? []).some(isAgentmemoryHookHandler);
 }
 
 function mergeHooksJson(existing: HooksJson, pluginRoot: string): HooksJson {
@@ -261,7 +267,12 @@ function mergeHooksJson(existing: HooksJson, pluginRoot: string): HooksJson {
     existing.hooks && typeof existing.hooks === "object" ? existing.hooks : {};
   for (const [event, entries] of Object.entries(existingHooks)) {
     nextHooks[event] = Array.isArray(entries)
-      ? entries.filter((entry) => !isAgentmemoryHookEntry(entry))
+      ? entries
+          .map((entry) => ({
+            ...entry,
+            hooks: entry.hooks.filter((hook) => !isAgentmemoryHookHandler(hook)),
+          }))
+          .filter((entry) => entry.hooks.length > 0)
       : [];
   }
 

@@ -1,5 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -91,7 +98,7 @@ describe("agentmemory connect — claude-code adapter (mock filesystem)", () => 
 
   it("install() writes mcpServers.agentmemory into ~/.claude.json and is idempotent", async () => {
     const claudeDir = join(tmpHome, ".claude");
-    require("node:fs").mkdirSync(claudeDir, { recursive: true });
+    mkdirSync(claudeDir, { recursive: true });
     writeFileSync(
       join(tmpHome, ".claude.json"),
       JSON.stringify({ mcpServers: { other: { command: "x" } } }),
@@ -119,7 +126,7 @@ describe("agentmemory connect — claude-code adapter (mock filesystem)", () => 
     // and remote without the user needing to add a duplicate config
     // that triggers a /doctor duplicate-server warning.
     const claudeDir = join(tmpHome, ".claude");
-    require("node:fs").mkdirSync(claudeDir, { recursive: true });
+    mkdirSync(claudeDir, { recursive: true });
     writeFileSync(join(tmpHome, ".claude.json"), JSON.stringify({}));
 
     const a = await loadAdapter();
@@ -134,7 +141,7 @@ describe("agentmemory connect — claude-code adapter (mock filesystem)", () => 
   });
 
   it("install() with --force re-writes even when already wired", async () => {
-    require("node:fs").mkdirSync(join(tmpHome, ".claude"), { recursive: true });
+    mkdirSync(join(tmpHome, ".claude"), { recursive: true });
     writeFileSync(
       join(tmpHome, ".claude.json"),
       JSON.stringify({
@@ -150,7 +157,7 @@ describe("agentmemory connect — claude-code adapter (mock filesystem)", () => 
   });
 
   it("install() with --dry-run does not mutate the file", async () => {
-    require("node:fs").mkdirSync(join(tmpHome, ".claude"), { recursive: true });
+    mkdirSync(join(tmpHome, ".claude"), { recursive: true });
     const before = JSON.stringify({ mcpServers: {} });
     writeFileSync(join(tmpHome, ".claude.json"), before);
 
@@ -163,7 +170,7 @@ describe("agentmemory connect — claude-code adapter (mock filesystem)", () => 
   });
 
   it("install() creates a backup file under ~/.agentmemory/backups/", async () => {
-    require("node:fs").mkdirSync(join(tmpHome, ".claude"), { recursive: true });
+    mkdirSync(join(tmpHome, ".claude"), { recursive: true });
     writeFileSync(
       join(tmpHome, ".claude.json"),
       JSON.stringify({ mcpServers: {} }),
@@ -210,7 +217,7 @@ describe("agentmemory connect — codex adapter (mock filesystem)", () => {
   }
 
   function mkdirCodex(): void {
-    require("node:fs").mkdirSync(join(tmpHome, ".codex"), { recursive: true });
+    mkdirSync(join(tmpHome, ".codex"), { recursive: true });
   }
 
   function writeInstalledCodexPlugin(): string {
@@ -218,9 +225,9 @@ describe("agentmemory connect — codex adapter (mock filesystem)", () => {
       tmpHome,
       ".codex/plugins/cache/agentmemory/agentmemory/0.9.20",
     );
-    require("node:fs").mkdirSync(join(root, ".codex-plugin"), { recursive: true });
-    require("node:fs").mkdirSync(join(root, "hooks"), { recursive: true });
-    require("node:fs").mkdirSync(join(root, "scripts"), { recursive: true });
+    mkdirSync(join(root, ".codex-plugin"), { recursive: true });
+    mkdirSync(join(root, "hooks"), { recursive: true });
+    mkdirSync(join(root, "scripts"), { recursive: true });
     writeFileSync(
       join(root, ".codex-plugin/plugin.json"),
       JSON.stringify({ name: "agentmemory" }),
@@ -329,6 +336,39 @@ describe("agentmemory connect — codex adapter (mock filesystem)", () => {
     );
     expect(commands).toContain("echo keep-me");
     expect(commands.some((command) => command.includes("prompt-submit.mjs"))).toBe(true);
+  });
+
+  it("install() deduplicates stale agentmemory hook entries while preserving unrelated hooks", async () => {
+    mkdirCodex();
+    writeFileSync(
+      join(tmpHome, ".codex/hooks.json"),
+      JSON.stringify({
+        hooks: {
+          UserPromptSubmit: [
+            {
+              hooks: [
+                { type: "command", command: "echo keep-me" },
+                { type: "command", command: "node /old/agentmemory/path/prompt-submit.mjs" },
+                { type: "command", command: "node /old/agentmemory/path/prompt-submit.mjs" },
+              ],
+            },
+          ],
+        },
+      }),
+    );
+
+    const a = await loadAdapter();
+    const result = await a.install({ dryRun: false, force: false });
+    expect(result.kind).toBe("installed");
+
+    const hooks = JSON.parse(
+      readFileSync(join(tmpHome, ".codex/hooks.json"), "utf-8"),
+    ) as { hooks: Record<string, Array<{ hooks: Array<{ command: string }> }>> };
+    const commands = hooks.hooks.UserPromptSubmit.flatMap((entry) =>
+      entry.hooks.map((hook) => hook.command),
+    );
+    expect(commands).toContain("echo keep-me");
+    expect(commands.filter((command) => command.includes("prompt-submit.mjs"))).toHaveLength(1);
   });
 
   it("install() is idempotent once MCP and hooks are both wired", async () => {
