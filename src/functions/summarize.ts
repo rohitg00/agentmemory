@@ -248,6 +248,44 @@ export function registerSummarizeFunction(
         return { success: false, error: "session_not_found" };
       }
 
+      // Fresh-summary dedup: Stop hooks fire summarize on every assistant
+      // turn. For chatty sessions that produce one summary every few
+      // seconds, re-running the full LLM-driven summarize is wasted work
+      // — observation deltas at sub-minute granularity rarely justify
+      // re-summarizing. If an existing summary is younger than the
+      // window below, skip without LLM work. Tunable via
+      // SUMMARIZE_DEDUP_WINDOW_MS (default 90s, set to 0 to disable).
+      const dedupRaw = process.env["SUMMARIZE_DEDUP_WINDOW_MS"];
+      const dedupWindowMs =
+        dedupRaw !== undefined && Number.isFinite(Number(dedupRaw))
+          ? Math.max(0, Number(dedupRaw))
+          : 90_000;
+      if (dedupWindowMs > 0) {
+        const existing = await kv
+          .get<SessionSummary>(KV.summaries, sessionId)
+          .catch(() => null);
+        if (existing && existing.createdAt) {
+          const ageMs = Date.now() - Date.parse(existing.createdAt);
+          if (Number.isFinite(ageMs) && ageMs >= 0 && ageMs < dedupWindowMs) {
+            logger.info("Summarize skipped — fresh summary present", {
+              sessionId,
+              ageMs,
+              dedupWindowMs,
+            });
+            const latencyMs = Date.now() - startMs;
+            if (metricsStore) {
+              await metricsStore.record("mem::summarize", latencyMs, true);
+            }
+            return {
+              success: true,
+              skipped: "fresh",
+              ageMs,
+              summary: existing,
+            };
+          }
+        }
+      }
+
       const observations = await kv.list<CompressedObservation>(
         KV.observations(sessionId),
       );
