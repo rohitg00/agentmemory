@@ -1,6 +1,8 @@
 import { execFile } from "node:child_process";
 import { basename, resolve, sep } from "node:path";
 
+const GIT_IDENTITY_TIMEOUT_MS = 500;
+
 export interface GitProjectInfo {
   isWorktree: boolean;
   branch: string | null;
@@ -17,16 +19,17 @@ export interface ProjectIdentity {
   git?: GitProjectInfo;
 }
 
-function execAsync(
-  cmd: string,
-  args: string[],
-  cwd: string,
-): Promise<string> {
+function execAsync(cmd: string, args: string[], cwd: string): Promise<string> {
   return new Promise((resolveOutput, reject) => {
-    execFile(cmd, args, { cwd, timeout: 5000 }, (err, stdout) => {
-      if (err) reject(err);
-      else resolveOutput(stdout.trim());
-    });
+    execFile(
+      cmd,
+      args,
+      { cwd, timeout: GIT_IDENTITY_TIMEOUT_MS },
+      (err, stdout) => {
+        if (err) reject(err);
+        else resolveOutput(stdout.trim());
+      },
+    );
   });
 }
 
@@ -98,9 +101,8 @@ export function sessionMatchesProjectAliases(
 
   for (const alias of aliases) {
     if (!looksLikePath(alias)) continue;
-    const prefix = alias.endsWith("/") || alias.endsWith("\\")
-      ? alias
-      : `${alias}${sep}`;
+    const prefix =
+      alias.endsWith("/") || alias.endsWith("\\") ? alias : `${alias}${sep}`;
     if (session.cwd.startsWith(prefix)) return true;
   }
 
@@ -111,22 +113,21 @@ export async function detectGitProject(
   cwd: string,
 ): Promise<GitProjectInfo | null> {
   try {
-    const gitDir = await execAsync("git", ["rev-parse", "--git-dir"], cwd);
-    const commonDir = await execAsync(
-      "git",
-      ["rev-parse", "--git-common-dir"],
-      cwd,
-    );
-    const branch = await execAsync(
-      "git",
-      ["rev-parse", "--abbrev-ref", "HEAD"],
-      cwd,
-    ).catch(() => "detached");
-    const topLevel = await execAsync(
-      "git",
-      ["rev-parse", "--show-toplevel"],
-      cwd,
-    );
+    const [gitDir, commonDir, branch, topLevel] = (
+      await execAsync(
+        "git",
+        [
+          "rev-parse",
+          "--git-dir",
+          "--git-common-dir",
+          "--abbrev-ref",
+          "HEAD",
+          "--show-toplevel",
+        ],
+        cwd,
+      )
+    ).split(/\r?\n/);
+    if (!gitDir || !commonDir || !topLevel) return null;
 
     const gitDirPath = resolve(cwd, gitDir);
     const commonDirPath = resolve(cwd, commonDir);
@@ -135,7 +136,7 @@ export async function detectGitProject(
 
     return {
       isWorktree,
-      branch,
+      branch: branch || null,
       topLevel,
       mainRepoRoot,
       gitDir: gitDirPath,
@@ -150,7 +151,8 @@ export async function resolveProjectIdentity(input: {
   project?: string | null;
   cwd?: string | null;
 }): Promise<ProjectIdentity> {
-  const cwd = cleanValue(input.cwd) ?? cleanValue(input.project) ?? process.cwd();
+  const cwd =
+    cleanValue(input.cwd) ?? cleanValue(input.project) ?? process.cwd();
   const requestedProject = cleanValue(input.project) ?? cwd;
   const git = await detectGitProject(cwd);
   const project = git?.mainRepoRoot ?? requestedProject;
