@@ -806,21 +806,18 @@ npm install @xenova/transformers
 ### 53 Tools
 
 <details>
-<summary>Core tools (always available)</summary>
+<summary>Default tools (AGENTMEMORY_TOOLS=core)</summary>
 
 | Tool | Description |
 |------|-------------|
 | `memory_recall` | Search past observations |
-| `memory_compress_file` | Compress markdown files while preserving structure |
 | `memory_save` | Save an insight, decision, or pattern |
-| `memory_patterns` | Detect recurring patterns |
-| `memory_smart_search` | Hybrid semantic + keyword search |
-| `memory_file_history` | Past observations about specific files |
 | `memory_sessions` | List recent sessions |
-| `memory_timeline` | Chronological observations |
-| `memory_profile` | Project profile (concepts, files, patterns) |
-| `memory_export` | Export all memory data |
-| `memory_relations` | Query relationship graph |
+| `memory_smart_search` | Hybrid semantic + keyword search |
+| `memory_consolidate` | Run 4-tier consolidation |
+| `memory_diagnose` | Health diagnostics |
+| `memory_lesson_save` | Save reusable lessons |
+| `memory_reflect` | Synthesize lessons from memories |
 
 </details>
 
