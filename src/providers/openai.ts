@@ -83,12 +83,13 @@ export class OpenAIProvider implements MemoryProvider {
     const url = buildChatUrl(this.baseUrl, this.isAzure, this.azureApiVersion);
     const body: Record<string, unknown> = {
       model: this.model,
-      max_tokens: this.maxTokens,
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
       ],
     };
+    body[usesMaxCompletionTokens(this.model) ? "max_completion_tokens" : "max_tokens"] =
+      this.maxTokens;
     if (this.reasoningEffort) {
       body.reasoning_effort = this.reasoningEffort;
     }
@@ -173,3 +174,6 @@ function parsePositiveInt(raw: string | null | undefined): number | undefined {
   return Number.isFinite(n) && n > 0 ? n : undefined;
 }
 
+function usesMaxCompletionTokens(model: string): boolean {
+  return /^gpt-5(?:[.-]|$)/i.test(model);
+}

@@ -296,4 +296,28 @@ describe("OpenAIProvider — Azure OpenAI aliases", () => {
       "https://myres.openai.azure.com/openai/deployments/gpt-5.4-mini/chat/completions?api-version=2025-04-01-preview",
     );
   });
+
+  it("uses max_completion_tokens for GPT-5 deployments", async () => {
+    let capturedBody: Record<string, unknown> = {};
+    vi.spyOn(globalThis, "fetch").mockImplementation(
+      async (_url: string | URL | Request, init?: RequestInit) => {
+        capturedBody = JSON.parse(String(init?.body));
+        return new Response(
+          JSON.stringify({ choices: [{ message: { content: "summary" } }] }),
+          { status: 200 },
+        );
+      },
+    );
+
+    const provider = new OpenAIProvider(
+      "azure-key",
+      "gpt-5.4-mini",
+      256,
+      "https://myres.openai.azure.com",
+    );
+    await provider.summarize("system", "user");
+
+    expect(capturedBody.max_completion_tokens).toBe(256);
+    expect(capturedBody.max_tokens).toBeUndefined();
+  });
 });
