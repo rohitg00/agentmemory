@@ -1,7 +1,8 @@
 import { execFile } from "node:child_process";
 import { basename, resolve, sep } from "node:path";
 
-const GIT_IDENTITY_TIMEOUT_MS = 500;
+const DEFAULT_GIT_IDENTITY_TIMEOUT_MS = 500;
+const GIT_IDENTITY_TIMEOUT_ENV = "AGENTMEMORY_GIT_IDENTITY_TIMEOUT_MS";
 
 export interface GitProjectInfo {
   isWorktree: boolean;
@@ -19,12 +20,23 @@ export interface ProjectIdentity {
   git?: GitProjectInfo;
 }
 
+const gitProjectCache = new Map<string, GitProjectInfo>();
+
+function gitIdentityTimeoutMs(): number {
+  const raw = process.env[GIT_IDENTITY_TIMEOUT_ENV];
+  if (!raw) return DEFAULT_GIT_IDENTITY_TIMEOUT_MS;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0
+    ? parsed
+    : DEFAULT_GIT_IDENTITY_TIMEOUT_MS;
+}
+
 function execAsync(cmd: string, args: string[], cwd: string): Promise<string> {
   return new Promise((resolveOutput, reject) => {
     execFile(
       cmd,
       args,
-      { cwd, timeout: GIT_IDENTITY_TIMEOUT_MS },
+      { cwd, timeout: gitIdentityTimeoutMs() },
       (err, stdout) => {
         if (err) reject(err);
         else resolveOutput(stdout.trim());
@@ -46,6 +58,40 @@ function looksLikePath(value: string): boolean {
     value.includes("/") ||
     value.includes("\\")
   );
+}
+
+function pathKey(value: string): string {
+  return resolve(value);
+}
+
+function rememberGitProject(cwd: string, git: GitProjectInfo): void {
+  for (const key of [
+    cwd,
+    git.topLevel,
+    git.mainRepoRoot,
+    git.gitDir,
+    git.commonDir,
+  ]) {
+    gitProjectCache.set(pathKey(key), git);
+  }
+}
+
+function cachedGitProject(cwd: string): GitProjectInfo | null {
+  const target = pathKey(cwd);
+  const exact = gitProjectCache.get(target);
+  if (exact) return exact;
+
+  let best: { key: string; git: GitProjectInfo } | null = null;
+  for (const [key, git] of gitProjectCache) {
+    const prefix = key.endsWith(sep) ? key : `${key}${sep}`;
+    if (!target.startsWith(prefix)) continue;
+    if (!best || key.length > best.key.length) best = { key, git };
+  }
+  return best?.git ?? null;
+}
+
+function normalizeBranch(branch: string | undefined): string | null {
+  return branch && branch !== "HEAD" ? branch : null;
 }
 
 export function expandProjectAliases(
@@ -134,16 +180,18 @@ export async function detectGitProject(
     const isWorktree = gitDirPath !== commonDirPath;
     const mainRepoRoot = isWorktree ? resolve(commonDirPath, "..") : topLevel;
 
-    return {
+    const git = {
       isWorktree,
-      branch: branch || null,
+      branch: normalizeBranch(branch),
       topLevel,
       mainRepoRoot,
       gitDir: gitDirPath,
       commonDir: commonDirPath,
     };
+    rememberGitProject(cwd, git);
+    return git;
   } catch {
-    return null;
+    return cachedGitProject(cwd);
   }
 }
 
@@ -154,7 +202,7 @@ export async function resolveProjectIdentity(input: {
   const cwd =
     cleanValue(input.cwd) ?? cleanValue(input.project) ?? process.cwd();
   const requestedProject = cleanValue(input.project) ?? cwd;
-  const git = await detectGitProject(cwd);
+  const git = (await detectGitProject(cwd)) ?? cachedGitProject(cwd);
   const project = git?.mainRepoRoot ?? requestedProject;
 
   return {
