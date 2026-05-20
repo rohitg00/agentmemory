@@ -5,9 +5,15 @@ import { fileURLToPath } from "node:url";
 export type Locale = Record<string, unknown>;
 
 const FALLBACK_LANG = "en";
+// BCP-47 primary subtag: 2-3 ASCII letters. Anything richer is normalized down
+// to the primary subtag by resolveViewerLanguage() before reaching loadLocale,
+// so this also serves as a path-traversal guard at the boundary.
+const VALID_LANG = /^[a-z]{2,3}$/i;
 const cache = new Map<string, Locale>();
+let resolvedLocalesDir: string | null = null;
 
 function localesDir(): string {
+  if (resolvedLocalesDir !== null) return resolvedLocalesDir;
   const base = dirname(fileURLToPath(import.meta.url));
   for (const candidate of [
     join(base, "..", "src", "viewer", "locales"),
@@ -16,15 +22,21 @@ function localesDir(): string {
   ]) {
     try {
       readdirSync(candidate);
+      resolvedLocalesDir = candidate;
       return candidate;
     } catch {
       // candidate path does not exist; try next
     }
   }
+  resolvedLocalesDir = "";
   return "";
 }
 
 export function loadLocale(lang: string): Locale {
+  if (!VALID_LANG.test(lang)) {
+    cache.set(lang, {});
+    return {};
+  }
   if (cache.has(lang)) return cache.get(lang)!;
   const dir = localesDir();
   if (!dir) {

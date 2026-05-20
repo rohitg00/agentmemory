@@ -49,6 +49,21 @@ describe("viewer i18n: locale loading", () => {
     expect(en["dashboard"]).toBeDefined();
     expect(en["memories"]).toBeDefined();
   });
+
+  it("rejects path-traversal sequences without filesystem access", () => {
+    expect(loadLocale("../etc/passwd")).toEqual({});
+    expect(loadLocale("../../secret")).toEqual({});
+    expect(loadLocale("en/../en")).toEqual({});
+    expect(loadLocale("..\\windows\\system32")).toEqual({});
+  });
+
+  it("rejects non-language inputs (numbers, separators, empty)", () => {
+    expect(loadLocale("")).toEqual({});
+    expect(loadLocale("123")).toEqual({});
+    expect(loadLocale("en-US")).toEqual({});
+    expect(loadLocale("a")).toEqual({});
+    expect(loadLocale("abcd")).toEqual({});
+  });
 });
 
 describe("viewer i18n: bundle building", () => {
@@ -104,15 +119,84 @@ describe("viewer i18n: document injection", () => {
       expect(match[1]).not.toContain("</script");
     }
   });
+
+  it("ships an HTML-escaping t() so malicious translations cannot inject markup", () => {
+    process.env["VIEWER_LANGUAGE"] = "en";
+    const r = renderViewerDocument();
+    expect(r.found).toBe(true);
+    if (!r.found) return;
+    expect(r.html).toContain("function escI18n");
+    expect(r.html).toMatch(/window\.t\s*=\s*function[\s\S]*escI18n/);
+  });
+
+  it("ships a data-i18n-attr allowlist that excludes script-execution attributes", () => {
+    process.env["VIEWER_LANGUAGE"] = "en";
+    const r = renderViewerDocument();
+    expect(r.found).toBe(true);
+    if (!r.found) return;
+    expect(r.html).toContain("SAFE_I18N_ATTRS");
+    expect(r.html).toMatch(/SAFE_I18N_ATTRS\.has\(attr\)/);
+    // Allowlist must not silently grow to include dangerous attributes
+    const block = r.html.match(/SAFE_I18N_ATTRS\s*=\s*new Set\(\[([^\]]+)\]/);
+    expect(block).toBeTruthy();
+    if (block) {
+      const list = block[1];
+      expect(list).not.toMatch(/"href"|"src"|"srcset"|"action"|"formaction"|"on[a-z]+"/);
+    }
+  });
 });
 
 describe("viewer i18n: structural parity en ↔ de", () => {
+  function leafPaths(obj: unknown, prefix = ""): string[] {
+    if (!obj || typeof obj !== "object") return [];
+    const out: string[] = [];
+    for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
+      const path = prefix ? `${prefix}.${k}` : k;
+      if (typeof v === "string") out.push(path);
+      else if (v && typeof v === "object") out.push(...leafPaths(v, path));
+    }
+    return out;
+  }
+
   it("de.json has every top-level key that en.json has", () => {
     const en = loadLocale("en");
     const de = loadLocale("de");
     for (const key of Object.keys(en)) {
       expect(de[key], `missing top-level key '${key}' in de.json`).toBeDefined();
     }
+  });
+
+  it("de.json covers every nested leaf path from en.json", () => {
+    const enPaths = leafPaths(loadLocale("en"));
+    const dePaths = new Set(leafPaths(loadLocale("de")));
+    const missing = enPaths.filter((p) => !dePaths.has(p));
+    expect(missing, `de.json missing ${missing.length} nested key(s)`).toEqual([]);
+  });
+
+  it("de.json preserves every {placeholder} marker from en.json", () => {
+    const en = loadLocale("en");
+    const de = loadLocale("de");
+    const enFlat: Record<string, string> = {};
+    const deFlat: Record<string, string> = {};
+    function flat(o: unknown, p: string, out: Record<string, string>): void {
+      if (!o || typeof o !== "object") return;
+      for (const [k, v] of Object.entries(o as Record<string, unknown>)) {
+        const path = p ? `${p}.${k}` : k;
+        if (typeof v === "string") out[path] = v;
+        else if (v && typeof v === "object") flat(v, path, out);
+      }
+    }
+    flat(en, "", enFlat);
+    flat(de, "", deFlat);
+    const mismatches: string[] = [];
+    for (const [path, enVal] of Object.entries(enFlat)) {
+      const deVal = deFlat[path];
+      if (!deVal) continue;
+      const enMarkers = (enVal.match(/\{\w+\}/g) || []).sort().join(",");
+      const deMarkers = (deVal.match(/\{\w+\}/g) || []).sort().join(",");
+      if (enMarkers !== deMarkers) mismatches.push(`${path}: en=${enMarkers} de=${deMarkers}`);
+    }
+    expect(mismatches, `placeholder mismatches: ${mismatches.join("; ")}`).toEqual([]);
   });
 });
 

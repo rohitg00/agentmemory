@@ -1010,7 +1010,31 @@
         });
       }
 
+      // HTML-escape translation values before any interpolation. Translations
+      // arrive via community PRs; escaping at the t() boundary stops a
+      // malicious translation from injecting markup at the ~200 sites that
+      // concatenate t() output into innerHTML. Interpolation vars are NOT
+      // escaped — that allows hardcoded HTML fragments (e.g. <code>…</code>
+      // in memories.title_intro) to render. Never pass user-controlled
+      // strings as vars.
+      function escI18n(s) {
+        return s.replace(/[&<>"']/g, function (c) {
+          return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+        });
+      }
+
       window.t = function (key, vars) {
+        const v = getPath(bundle.messages, key);
+        if (typeof v === "string") return interpolate(escI18n(v), vars);
+        const fb = getPath(bundle.fallback, key);
+        if (typeof fb === "string") return interpolate(escI18n(fb), vars);
+        return key;
+      };
+
+      // tRaw() returns the unescaped translation, for callers that assign to
+      // textContent or setAttribute on safe attributes — those APIs treat the
+      // string literally and would otherwise display "&amp;" literals.
+      window.tRaw = function (key, vars) {
         const v = getPath(bundle.messages, key);
         if (typeof v === "string") return interpolate(v, vars);
         const fb = getPath(bundle.fallback, key);
@@ -1018,9 +1042,17 @@
         return key;
       };
 
+      // SAFE attributes for data-i18n-attr. Never extend this list to include
+      // href, src, srcset, action, formaction, or any on* event handler —
+      // those would let a malicious translation become script execution.
+      const SAFE_I18N_ATTRS = new Set([
+        "placeholder", "title", "alt",
+        "aria-label", "aria-labelledby", "aria-describedby", "aria-roledescription",
+      ]);
+
       function applyI18n(root) {
         root.querySelectorAll("[data-i18n]").forEach(function (el) {
-          el.textContent = window.t(el.getAttribute("data-i18n"));
+          el.textContent = window.tRaw(el.getAttribute("data-i18n"));
         });
         root.querySelectorAll("[data-i18n-attr]").forEach(function (el) {
           el.getAttribute("data-i18n-attr").split(",").forEach(function (pair) {
@@ -1028,7 +1060,8 @@
             if (idx === -1) return;
             const attr = pair.slice(0, idx).trim();
             const key = pair.slice(idx + 1).trim();
-            el.setAttribute(attr, window.t(key));
+            if (!SAFE_I18N_ATTRS.has(attr)) return;
+            el.setAttribute(attr, window.tRaw(key));
           });
         });
       }
@@ -1079,7 +1112,7 @@
     function applyTheme(dark, persist) {
       document.documentElement.dataset.theme = dark ? 'dark' : 'light';
       var btn = document.getElementById('theme-toggle');
-      if (btn) btn.textContent = dark ? t('buttons.light') : t('buttons.dark');
+      if (btn) btn.textContent = dark ? tRaw('buttons.light') : tRaw('buttons.dark');
       if (persist) localStorage.setItem('agentmemory-theme', dark ? 'dark' : 'light');
     }
     window.toggleTheme = function() { applyTheme(!isDarkMode(), true); };
@@ -2907,11 +2940,11 @@
 
     async function summarizeSession(id, btn) {
       if (!btn) return;
-      btn.textContent = t('sessions.summarizing');
+      btn.textContent = tRaw('sessions.summarizing');
       btn.disabled = true;
       await apiPost('summarize', { sessionId: id });
-      btn.textContent = t('sessions.summarize_done');
-      setTimeout(function() { btn.textContent = t('sessions.summarize'); btn.disabled = false; }, 2000);
+      btn.textContent = tRaw('sessions.summarize_done');
+      setTimeout(function() { btn.textContent = tRaw('sessions.summarize'); btn.disabled = false; }, 2000);
     }
 
     async function loadLessons() {
