@@ -52,7 +52,7 @@ describe("eval scaffold", () => {
     const row = scoreQuestion(q, ranked, 5, "test", 12);
     expect(row.hit).toBe(true);
     expect(row.recallAtK).toBe(1);
-    expect(row.precisionAtK).toBeCloseTo(2 / 4);
+    expect(row.precisionAtK).toBeCloseTo(2 / 5);
     expect(row.topGoldRank).toBe(2);
   });
 

@@ -20,9 +20,14 @@ export function loadLongMemEval(path: string, limit?: number): Question[] {
   const slice = typeof limit === "number" ? raw.slice(0, limit) : raw;
   const questions: Question[] = [];
   for (const r of slice) {
+    if (r.haystack_session_ids.length !== r.haystack_sessions.length) {
+      throw new Error(
+        `LongMemEval row ${r.question_id}: haystack_session_ids (${r.haystack_session_ids.length}) and haystack_sessions (${r.haystack_sessions.length}) length mismatch`,
+      );
+    }
     const haystack: Session[] = r.haystack_session_ids.map((id, i) => ({
       id,
-      content: flattenSession(r.haystack_sessions[i] ?? []),
+      content: flattenSession(r.haystack_sessions[i]),
     }));
     questions.push({
       id: r.question_id,

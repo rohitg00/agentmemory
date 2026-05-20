@@ -44,8 +44,26 @@ async function main(): Promise<void> {
     process.exit(2);
   }
   const k = Number(opts.k);
-  const limit = opts.limit ? Number(opts.limit) : undefined;
-  const perType = opts.stratify ? Number(opts.stratify) : undefined;
+  if (!Number.isInteger(k) || k <= 0) {
+    console.error(`--k must be a positive integer, got: ${opts.k}`);
+    process.exit(2);
+  }
+  let limit: number | undefined;
+  if (opts.limit !== undefined) {
+    limit = Number(opts.limit);
+    if (!Number.isInteger(limit) || limit <= 0) {
+      console.error(`--limit must be a positive integer, got: ${opts.limit}`);
+      process.exit(2);
+    }
+  }
+  let perType: number | undefined;
+  if (opts.stratify !== undefined) {
+    perType = Number(opts.stratify);
+    if (!Number.isInteger(perType) || perType <= 0) {
+      console.error(`--stratify must be a positive integer, got: ${opts.stratify}`);
+      process.exit(2);
+    }
+  }
   const adapterNames = opts.adapters.split(",").map((s) => s.trim()).filter(Boolean);
   for (const a of adapterNames) {
     if (!ADAPTERS[a]) {
@@ -72,16 +90,19 @@ async function main(): Promise<void> {
     for (const q of questions) {
       const t0 = performance.now();
       const state = await adapter.init(q.haystack);
-      const ranked = await adapter.query(q.question, state, k);
-      const latencyMs = performance.now() - t0;
-      const row = scoreQuestion(q, ranked, k, adapter.name, latencyMs);
-      rows.push(row);
-      appendFileSync(ndjsonPath, JSON.stringify(row) + "\n");
-      if (adapter.teardown) await adapter.teardown(state);
-      const mark = row.hit ? "+" : "-";
-      console.log(
-        `  ${mark} ${q.id} [${q.type}] R@${k}=${row.recallAtK.toFixed(2)} (${Math.round(latencyMs)}ms)`,
-      );
+      try {
+        const ranked = await adapter.query(q.question, state, k);
+        const latencyMs = performance.now() - t0;
+        const row = scoreQuestion(q, ranked, k, adapter.name, latencyMs);
+        rows.push(row);
+        appendFileSync(ndjsonPath, JSON.stringify(row) + "\n");
+        const mark = row.hit ? "+" : "-";
+        console.log(
+          `  ${mark} ${q.id} [${q.type}] R@${k}=${row.recallAtK.toFixed(2)} (${Math.round(latencyMs)}ms)`,
+        );
+      } finally {
+        if (adapter.teardown) await adapter.teardown(state);
+      }
     }
   }
 

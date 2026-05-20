@@ -37,7 +37,7 @@
   {
     "id": "sess-008",
     "timestamp": "2026-04-15T10:30:00Z",
-    "content": "[user] schema migration for run_history table needs zero-downtime\n[assistant] two-phase migration. phase 1: add nullable new column + dual-write. phase 2: backfill + flip reads. phase 3: drop old column. avoids ALTER TABLE locks. ran on staging, took 4s for 2M rows."
+    "content": "[user] schema migration for run_history table needs zero-downtime\n[assistant] three-phase migration. phase 1: add nullable new column + dual-write. phase 2: backfill + flip reads. phase 3: drop old column. avoids ALTER TABLE locks. ran on staging, took 4s for 2M rows."
   },
   {
     "id": "sess-009",

@@ -26,11 +26,12 @@ source eval/scripts/sandbox.sh
 npm run eval:coding-life -- --adapters grep,agentmemory
 ```
 
-Requires iii v0.11.2 on PATH (agentmemory pin). If you already have a different version installed:
+Requires iii v0.11.2 on PATH (agentmemory pin). If you already have a different version installed, install the pinned build into `~/.local/bin` and make sure that directory comes first on `PATH`:
 
 ```sh
-rm "$(which iii)"
+mkdir -p ~/.local/bin
 curl -fsSL https://github.com/iii-hq/iii/releases/download/iii/v0.11.2/iii-aarch64-apple-darwin.tar.gz | tar -xz -C ~/.local/bin
+export PATH="$HOME/.local/bin:$PATH"  # add to ~/.zshrc or ~/.bashrc for persistence
 ```
 
 ## Quickstart
@@ -66,7 +67,7 @@ OPENAI_API_KEY=sk-... LONGMEMEVAL_PATH=~/datasets/longmemeval/longmemeval_s.json
 
 ## Repo layout
 
-```
+```text
 eval/
 ├── README.md
 ├── runner/

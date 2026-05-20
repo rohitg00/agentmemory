@@ -28,6 +28,10 @@ if [[ ! -f "$REPO_ROOT/dist/index.mjs" ]]; then
   exit 1
 fi
 
+if [[ -z "${SANDBOX_ROOT:-}" || "$SANDBOX_ROOT" == "/" || "$SANDBOX_ROOT" != /tmp/* ]]; then
+  echo "refusing to wipe SANDBOX_ROOT='$SANDBOX_ROOT' — must be non-empty and under /tmp/" >&2
+  exit 1
+fi
 rm -rf "$SANDBOX_ROOT"
 mkdir -p "$SANDBOX_ROOT/data" "$SANDBOX_ROOT/.agentmemory"
 

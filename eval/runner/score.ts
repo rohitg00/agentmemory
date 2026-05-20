@@ -10,7 +10,7 @@ export function scoreQuestion(
   const topK = ranked.slice(0, k).map((r) => r.sessionId);
   const gold = new Set(q.goldSessionIds);
   const hits = topK.filter((id) => gold.has(id)).length;
-  const precisionAtK = topK.length === 0 ? 0 : hits / topK.length;
+  const precisionAtK = k > 0 ? hits / k : 0;
   const recallAtK = gold.size === 0 ? 0 : hits / gold.size;
   const hit = hits > 0;
   let topGoldRank: number | null = null;

@@ -35,6 +35,10 @@ function parse(): CliOptions {
 async function main(): Promise<void> {
   const opts = parse();
   const k = Number(opts.k);
+  if (!Number.isInteger(k) || k <= 0) {
+    console.error(`--k must be a positive integer, got: ${opts.k}`);
+    process.exit(2);
+  }
   const sessions = JSON.parse(
     readFileSync(resolve(opts.data, "sessions.json"), "utf8"),
   ) as Session[];
@@ -63,19 +67,22 @@ async function main(): Promise<void> {
     const adapter = ADAPTERS[adapterName];
     console.log(`\n== ${adapter.name} ==`);
     const state = await adapter.init(sessions);
-    for (const q of questions) {
-      const t0 = performance.now();
-      const ranked = await adapter.query(q.question, state, k);
-      const latencyMs = performance.now() - t0;
-      const row = scoreQuestion(q, ranked, k, adapter.name, latencyMs);
-      rows.push(row);
-      appendFileSync(ndjsonPath, JSON.stringify(row) + "\n");
-      const mark = row.hit ? "+" : "-";
-      console.log(
-        `  ${mark} ${q.id} [${q.type}] R@${k}=${row.recallAtK.toFixed(2)} (${Math.round(latencyMs)}ms)`,
-      );
+    try {
+      for (const q of questions) {
+        const t0 = performance.now();
+        const ranked = await adapter.query(q.question, state, k);
+        const latencyMs = performance.now() - t0;
+        const row = scoreQuestion(q, ranked, k, adapter.name, latencyMs);
+        rows.push(row);
+        appendFileSync(ndjsonPath, JSON.stringify(row) + "\n");
+        const mark = row.hit ? "+" : "-";
+        console.log(
+          `  ${mark} ${q.id} [${q.type}] R@${k}=${row.recallAtK.toFixed(2)} (${Math.round(latencyMs)}ms)`,
+        );
+      }
+    } finally {
+      if (adapter.teardown) await adapter.teardown(state);
     }
-    if (adapter.teardown) await adapter.teardown(state);
   }
 
   const agg = aggregate(rows);

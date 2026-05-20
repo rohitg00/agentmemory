@@ -78,8 +78,11 @@ export const agentmemoryAdapter: Adapter<AgentMemoryState> = {
     const ranked: RankedDoc[] = [];
     const seen = new Set<string>();
     for (const row of rows) {
-      const memId = row.obsId ?? row.id ?? row.observationId;
-      const sessionId = memId ? state.observationToSession.get(memId) : undefined;
+      let sessionId = row.sessionId;
+      if (!sessionId) {
+        const memId = row.obsId ?? row.id ?? row.observationId;
+        sessionId = memId ? state.observationToSession.get(memId) : undefined;
+      }
       if (!sessionId || seen.has(sessionId)) continue;
       seen.add(sessionId);
       ranked.push({ sessionId, score: row.score ?? 0 });

@@ -38,8 +38,24 @@ async function embedBatch(texts: string[], apiKey: string): Promise<Float32Array
     throw new Error(`OpenAI batch embed failed: ${res.status} ${await res.text()}`);
   }
   const data = (await res.json()) as { data: Array<{ embedding: number[]; index: number }> };
+  if (!Array.isArray(data.data) || data.data.length !== texts.length) {
+    throw new Error(
+      `OpenAI batch embed: expected ${texts.length} embeddings, got ${data.data?.length ?? 0}`,
+    );
+  }
   const out = new Array<Float32Array>(texts.length);
   for (const row of data.data) {
+    if (
+      !Number.isInteger(row.index) ||
+      row.index < 0 ||
+      row.index >= texts.length ||
+      out[row.index] !== undefined
+    ) {
+      throw new Error(`OpenAI batch embed: invalid or duplicate index ${row.index}`);
+    }
+    if (!Array.isArray(row.embedding) || row.embedding.length === 0) {
+      throw new Error(`OpenAI batch embed: empty embedding at index ${row.index}`);
+    }
     out[row.index] = Float32Array.from(row.embedding);
   }
   return out;
