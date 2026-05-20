@@ -3,6 +3,15 @@ import { registerContextFunction } from "../src/functions/context.js";
 import type { StateKV } from "../src/state/kv.js";
 import { KV } from "../src/state/schema.js";
 import type { Lesson, Session, SessionSummary } from "../src/types.js";
+import type { ISdk } from "iii-sdk";
+
+vi.mock("iii-sdk", () => ({
+  TriggerAction: {
+    Enqueue: vi.fn(),
+    Void: vi.fn(),
+  },
+  registerWorker: vi.fn(),
+}));
 
 function mockKV() {
   const store = new Map<string, Map<string, unknown>>();
@@ -30,11 +39,12 @@ type ContextHandler = (data: {
 
 function wireContext(kv: ReturnType<typeof mockKV>) {
   let handler: ContextHandler | undefined;
+  const registerFunction = vi.fn((id: string, cb: ContextHandler) => {
+    if (id === "mem::context") handler = cb;
+  });
   const sdk = {
-    registerFunction: vi.fn((id: string, cb: ContextHandler) => {
-      if (id === "mem::context") handler = cb;
-    }),
-  } as unknown as import("iii-sdk").ISdk;
+    registerFunction,
+  } as unknown as ISdk;
   registerContextFunction(sdk, kv as unknown as StateKV, 4000);
   if (!handler) throw new Error("mem::context not registered");
   return handler;
