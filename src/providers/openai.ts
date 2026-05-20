@@ -91,7 +91,7 @@ export class OpenAIProvider implements MemoryProvider {
     // gitops-assistant's llm_engine.py:6207-6260, which has a
     // documented "$7 Qwen3-32B incident" from missing this signal).
     const disableThinking =
-      (process.env["AGENTMEMORY_DISABLE_THINKING"] || "").toLowerCase() === "true";
+      (getEnvVar("AGENTMEMORY_DISABLE_THINKING") || "").toLowerCase() === "true";
     const effectiveSystemPrompt = disableThinking
       ? `/no_think\n\n${systemPrompt}`
       : systemPrompt;
