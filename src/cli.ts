@@ -1966,8 +1966,8 @@ async function runUpgrade() {
         label: "Refreshing dependencies (pnpm install)",
       });
       requireSuccess(installOk, "pnpm install");
-      runCommand(pnpmBin, ["up", "iii-sdk@latest"], {
-        label: "Upgrading iii-sdk to latest",
+      runCommand(pnpmBin, ["up", "iii-sdk@0.11.2"], {
+        label: "Pinning iii-sdk@0.11.2 (see #555)",
         optional: true,
       });
     } else if (npmBin) {
@@ -1975,8 +1975,8 @@ async function runUpgrade() {
         label: "Refreshing dependencies (npm install)",
       });
       requireSuccess(installOk, "npm install");
-      runCommand(npmBin, ["install", "iii-sdk@latest"], {
-        label: "Upgrading iii-sdk to latest",
+      runCommand(npmBin, ["install", "iii-sdk@0.11.2"], {
+        label: "Pinning iii-sdk@0.11.2 (see #555)",
         optional: true,
       });
     } else {
