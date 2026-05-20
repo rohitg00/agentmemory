@@ -1967,7 +1967,7 @@ async function runUpgrade() {
       });
       requireSuccess(installOk, "pnpm install");
       runCommand(pnpmBin, ["up", "iii-sdk@0.11.2"], {
-        label: "Pinning iii-sdk@0.11.2 (see #555)",
+        label: "Pinning iii-sdk@0.11.2",
         optional: true,
       });
     } else if (npmBin) {
@@ -1976,7 +1976,7 @@ async function runUpgrade() {
       });
       requireSuccess(installOk, "npm install");
       runCommand(npmBin, ["install", "iii-sdk@0.11.2"], {
-        label: "Pinning iii-sdk@0.11.2 (see #555)",
+        label: "Pinning iii-sdk@0.11.2",
         optional: true,
       });
     } else {
