@@ -32,7 +32,11 @@ async function main() {
 
   const sessionId = (data.session_id as string) || "unknown";
 
-  const { imageData, cleanOutput } = extractImageData(data.tool_output);
+  // Claude Code's PostToolUse payload uses `tool_response`; fall back to
+  // `tool_output` for older integrations that may use the legacy field name.
+  const { imageData, cleanOutput } = extractImageData(
+    data.tool_response ?? data.tool_output,
+  );
 
   try {
     await fetch(`${REST_URL}/agentmemory/observe`, {
