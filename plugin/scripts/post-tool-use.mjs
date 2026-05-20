@@ -23,7 +23,8 @@ async function main() {
 	}
 	if (isSdkChildContext(data)) return;
 	const sessionId = data.session_id || "unknown";
-	const { imageData, cleanOutput } = extractImageData(data.tool_output);
+	const toolOutput = data.tool_response ?? data.tool_output;
+	const { imageData, cleanOutput } = extractImageData(toolOutput);
 	try {
 		await fetch(`${REST_URL}/agentmemory/observe`, {
 			method: "POST",
