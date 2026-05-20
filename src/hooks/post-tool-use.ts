@@ -32,7 +32,15 @@ async function main() {
 
   const sessionId = (data.session_id as string) || "unknown";
 
-  const { imageData, cleanOutput } = extractImageData(data.tool_output);
+  // Claude Code's actual PostToolUse payload uses `tool_response`, not
+  // `tool_output` — without this fallback, cleanOutput is always
+  // undefined and mem::compress silently fails XML validation on every
+  // real tool call (Rex57 caught this in #561). Keep `tool_output` as a
+  // legacy fallback so any older integration still using the deprecated
+  // field name continues to work.
+  const { imageData, cleanOutput } = extractImageData(
+    data.tool_response ?? data.tool_output,
+  );
 
   // Fire-and-forget + force-exit; see src/hooks/stop.ts for rationale.
   fetch(`${REST_URL}/agentmemory/observe`, {
