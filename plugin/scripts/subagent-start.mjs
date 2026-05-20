@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import { t as resolveProject } from "./_project--Krf34Q5.mjs";
+
 //#region src/hooks/subagent-start.ts
 function isSdkChildContext(payload) {
 	if (process.env["AGENTMEMORY_SDK_CHILD"] === "1") return true;
@@ -24,14 +26,16 @@ async function main() {
 	}
 	if (isSdkChildContext(data)) return;
 	const sessionId = data.session_id || "unknown";
+	const cwd = typeof data.cwd === "string" && data.cwd.length > 0 ? data.cwd : process.cwd();
+	const project = resolveProject(cwd);
 	fetch(`${REST_URL}/agentmemory/observe`, {
 		method: "POST",
 		headers: authHeaders(),
 		body: JSON.stringify({
 			hookType: "subagent_start",
 			sessionId,
-			project: data.cwd || process.cwd(),
-			cwd: data.cwd || process.cwd(),
+			project,
+			cwd,
 			timestamp: (/* @__PURE__ */ new Date()).toISOString(),
 			data: {
 				agent_id: data.agent_id,

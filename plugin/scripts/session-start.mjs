@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import { t as resolveProject } from "./_project--Krf34Q5.mjs";
+
 //#region src/hooks/session-start.ts
 function isSdkChildContext(payload) {
 	if (process.env["AGENTMEMORY_SDK_CHILD"] === "1") return true;
@@ -26,7 +28,8 @@ async function main() {
 	}
 	if (isSdkChildContext(data)) return;
 	const sessionId = data.session_id || `ses_${Date.now().toString(36)}`;
-	const project = data.cwd || process.cwd();
+	const cwd = typeof data.cwd === "string" && data.cwd.length > 0 ? data.cwd : process.cwd();
+	const project = resolveProject(cwd);
 	const url = `${REST_URL}/agentmemory/session/start`;
 	const init = {
 		method: "POST",
@@ -34,7 +37,7 @@ async function main() {
 		body: JSON.stringify({
 			sessionId,
 			project,
-			cwd: project
+			cwd
 		})
 	};
 	if (!INJECT_CONTEXT) {

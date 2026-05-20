@@ -68,4 +68,37 @@ describe("resolveProject (#lesson-visibility-pt2)", () => {
     expect(typeof v).toBe("string");
     expect(v.length).toBeGreaterThan(0);
   });
+
+  // Maintainer asked for stricter assertion on the same-basename
+  // collision case: two distinct ancestor paths with the same leaf
+  // directory name MUST both resolve to that shared basename — not
+  // just to equal-but-arbitrary strings. This is the property that
+  // makes lessons + sessions cross-reference correctly when a user
+  // has e.g. ~/work/foo and ~/scratch/foo open in different Codex
+  // worktrees.
+  it("same-basename collision: distinct paths resolve to the shared basename", () => {
+    const root1 = mkdtempSync(join(tmpdir(), "am-proj-collision-a-"));
+    const root2 = mkdtempSync(join(tmpdir(), "am-proj-collision-b-"));
+    try {
+      const sharedName = "shared-leaf-name-9c2f";
+      const path1 = join(root1, sharedName);
+      const path2 = join(root2, sharedName);
+      mkdirSync(path1);
+      mkdirSync(path2);
+      expect(resolveProject(path1)).toBe(sharedName);
+      expect(resolveProject(path2)).toBe(sharedName);
+    } finally {
+      rmSync(root1, { recursive: true, force: true });
+      rmSync(root2, { recursive: true, force: true });
+    }
+  });
+
+  it("non-string cwd (object, number, null) falls back to process.cwd()", () => {
+    const baseline = resolveProject(process.cwd());
+    // The resolver typing widened to `unknown` so a runtime guard
+    // protects against malformed JSON (data.cwd as {} / 42 / null).
+    expect(resolveProject({} as unknown)).toBe(baseline);
+    expect(resolveProject(42 as unknown)).toBe(baseline);
+    expect(resolveProject(null as unknown)).toBe(baseline);
+  });
 });

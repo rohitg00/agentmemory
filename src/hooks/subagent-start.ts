@@ -41,7 +41,10 @@ async function main() {
   if (isSdkChildContext(data)) return;
 
   const sessionId = (data.session_id as string) || "unknown";
-  const cwd = (data.cwd as string) || process.cwd();
+  const cwd =
+    typeof data.cwd === "string" && data.cwd.length > 0
+      ? data.cwd
+      : process.cwd();
   const project = resolveProject(cwd);
 
   fetch(`${REST_URL}/agentmemory/observe`, {

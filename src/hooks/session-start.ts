@@ -52,7 +52,10 @@ async function main() {
 
   const sessionId =
     (data.session_id as string) || `ses_${Date.now().toString(36)}`;
-  const cwd = (data.cwd as string) || process.cwd();
+  const cwd =
+    typeof data.cwd === "string" && data.cwd.length > 0
+      ? data.cwd
+      : process.cwd();
   // Project name is the short identifier the rest of the system keys off
   // (imported sessions, memory_lesson_save, memory_lesson_recall all use
   // basenames). See ./_project.ts for the resolution order.

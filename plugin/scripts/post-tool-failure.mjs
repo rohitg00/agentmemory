@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import { t as resolveProject } from "./_project--Krf34Q5.mjs";
+
 //#region src/hooks/post-tool-failure.ts
 function isSdkChildContext(payload) {
 	if (process.env["AGENTMEMORY_SDK_CHILD"] === "1") return true;
@@ -24,6 +26,8 @@ async function main() {
 	if (isSdkChildContext(data)) return;
 	if (data.is_interrupt) return;
 	const sessionId = data.session_id || "unknown";
+	const cwd = typeof data.cwd === "string" && data.cwd.length > 0 ? data.cwd : process.cwd();
+	const project = resolveProject(cwd);
 	try {
 		await fetch(`${REST_URL}/agentmemory/observe`, {
 			method: "POST",
@@ -31,8 +35,8 @@ async function main() {
 			body: JSON.stringify({
 				hookType: "post_tool_failure",
 				sessionId,
-				project: data.cwd || process.cwd(),
-				cwd: data.cwd || process.cwd(),
+				project,
+				cwd,
 				timestamp: (/* @__PURE__ */ new Date()).toISOString(),
 				data: {
 					tool_name: data.tool_name,
