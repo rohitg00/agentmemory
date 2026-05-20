@@ -8,10 +8,18 @@ import {
   logAlreadyWired,
   logBackup,
   logInstalled,
+  readJsonSafe,
+  writeJsonAtomic,
 } from "./util.js";
+import {
+  buildMergedHooks,
+  findPluginRoot,
+  type HookManifest,
+} from "./codex-hooks.js";
 
 const CODEX_DIR = join(homedir(), ".codex");
 const CODEX_TOML = join(CODEX_DIR, "config.toml");
+const CODEX_HOOKS = join(CODEX_DIR, "hooks.json");
 
 const TOML_BLOCK = `[mcp_servers.agentmemory]
 command = "npx"
@@ -57,7 +65,7 @@ export const adapter: ConnectAdapter = {
   displayName: "Codex CLI",
   docs: "https://github.com/rohitg00/agentmemory#codex-cli-codex-plugin-platform",
   protocolNote:
-    "→ Using MCP. Hooks are also available — see docs/codex.md.",
+    "→ Using MCP. Hooks ship via the Codex plugin; on Codex Desktop, also pass --with-hooks to install the global hooks.json workaround for openai/codex#16430.",
 
   detect(): boolean {
     return existsSync(CODEX_DIR);
@@ -77,6 +85,7 @@ export const adapter: ConnectAdapter = {
       p.log.info(
         `[dry-run] Would ${wired ? "rewrite" : "append"} [mcp_servers.agentmemory] in ${CODEX_TOML}`,
       );
+      if (opts.withHooks) installCodexHooks(opts);
       return { kind: "installed", mutatedPath: CODEX_TOML };
     }
 
@@ -105,6 +114,16 @@ export const adapter: ConnectAdapter = {
     p.log.info(
       "Codex picks up MCP servers on next launch. For the deeper plugin install, run: codex plugin marketplace add rohitg00/agentmemory && codex plugin install agentmemory",
     );
+
+    if (opts.withHooks) {
+      const hookResult = installCodexHooks(opts);
+      if (hookResult.kind === "skipped") {
+        p.log.warn(
+          `Codex hooks fallback skipped: ${hookResult.reason}. MCP wiring still applied.`,
+        );
+      }
+    }
+
     return {
       kind: "installed",
       mutatedPath: CODEX_TOML,
@@ -112,3 +131,50 @@ export const adapter: ConnectAdapter = {
     };
   },
 };
+
+/**
+ * Install the global `~/.codex/hooks.json` fallback. See
+ * `codex-hooks.ts` for context (openai/codex#16430). Returns a result
+ * describing the side effect for the caller's summary; failures here do
+ * not roll back the MCP wiring.
+ */
+function installCodexHooks(opts: ConnectOptions): ConnectResult {
+  let pluginRoot: string;
+  try {
+    pluginRoot = findPluginRoot();
+  } catch (err) {
+    return {
+      kind: "skipped",
+      reason: err instanceof Error ? err.message : String(err),
+    };
+  }
+
+  const existing = readJsonSafe<HookManifest>(CODEX_HOOKS);
+  const merged = buildMergedHooks(existing, pluginRoot);
+
+  if (opts.dryRun) {
+    p.log.info(
+      `[dry-run] Would ${existing ? "merge" : "create"} ${CODEX_HOOKS} with ${Object.keys(merged.hooks).length} event(s)`,
+    );
+    return { kind: "installed", mutatedPath: CODEX_HOOKS };
+  }
+
+  let backupPath: string | undefined;
+  if (existsSync(CODEX_HOOKS)) {
+    backupPath = backupFile(CODEX_HOOKS, "codex-hooks", "json");
+    logBackup(backupPath);
+  }
+
+  writeJsonAtomic(CODEX_HOOKS, merged);
+
+  logInstalled("Codex hooks (workaround for openai/codex#16430)", CODEX_HOOKS);
+  p.log.info(
+    "User-scope hooks reference absolute paths under the bundled plugin/ dir. Re-run `agentmemory connect codex --with-hooks` after upgrading agentmemory to refresh them.",
+  );
+
+  return {
+    kind: "installed",
+    mutatedPath: CODEX_HOOKS,
+    ...(backupPath !== undefined && { backupPath }),
+  };
+}
