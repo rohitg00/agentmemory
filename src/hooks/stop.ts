@@ -39,16 +39,25 @@ async function main() {
 
   const sessionId = (data.session_id as string) || "unknown";
 
-  try {
-    await fetch(`${REST_URL}/agentmemory/summarize`, {
-      method: "POST",
-      headers: authHeaders(),
-      body: JSON.stringify({ sessionId }),
-      signal: AbortSignal.timeout(120000), // Increased from 30s to 120s
-    });
-  } catch {
+  // Fire-and-forget: don't block the Stop hook (and therefore Claude
+  // Code's next-prompt boundary) on the daemon's summarize work, which
+  // can run minutes per turn on long sessions / slow LLM providers.
+  //
+  // Subtlety: dropping the `await` is NOT enough. Node keeps the event
+  // loop alive waiting for any pending fetch() to settle, so without an
+  // explicit exit the script still hangs until the AbortSignal.timeout
+  // fires (~120s on slow providers). The unref'd setTimeout below
+  // forcibly exits 500ms after firing the request, which is plenty of
+  // time for the POST to flush to the local daemon's socket buffer.
+  fetch(`${REST_URL}/agentmemory/summarize`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({ sessionId }),
+    signal: AbortSignal.timeout(120000),
+  }).catch(() => {
     // summarize is best-effort
-  }
+  });
+  setTimeout(() => process.exit(0), 500).unref();
 }
 
 main();

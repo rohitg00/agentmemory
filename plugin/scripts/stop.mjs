@@ -23,14 +23,15 @@ async function main() {
 	}
 	if (isSdkChildContext(data)) return;
 	const sessionId = data.session_id || "unknown";
-	try {
-		await fetch(`${REST_URL}/agentmemory/summarize`, {
-			method: "POST",
-			headers: authHeaders(),
-			body: JSON.stringify({ sessionId }),
-			signal: AbortSignal.timeout(12e4)
-		});
-	} catch {}
+	// Fire-and-forget; setTimeout below force-exits so Node doesn't
+	// keep the event loop alive waiting for the fetch. See src/hooks/stop.ts.
+	fetch(`${REST_URL}/agentmemory/summarize`, {
+		method: "POST",
+		headers: authHeaders(),
+		body: JSON.stringify({ sessionId }),
+		signal: AbortSignal.timeout(12e4)
+	}).catch(() => {});
+	setTimeout(() => process.exit(0), 500).unref();
 }
 main();
 
