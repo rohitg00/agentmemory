@@ -33,10 +33,13 @@ async function main() {
   if (isSdkChildContext(data)) return;
 
   const sessionId = (data.session_id as string) || "unknown";
-  const cwd =
-    typeof data.cwd === "string" && data.cwd.length > 0
-      ? data.cwd
-      : process.cwd();
+  // Trim before the length check so a whitespace-only `data.cwd`
+  // (e.g. `"   "` from a misformed JSON payload) falls back to
+  // process.cwd() instead of being forwarded as-is. CodeRabbit caught
+  // this in the #475 re-review on session-start.ts:58 and
+  // post-tool-failure.ts:40.
+  const trimmedCwd = typeof data.cwd === "string" ? data.cwd.trim() : "";
+  const cwd = trimmedCwd || process.cwd();
   const project = resolveProject(cwd);
   const lastMsg =
     typeof data.last_assistant_message === "string"

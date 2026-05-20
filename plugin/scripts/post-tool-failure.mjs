@@ -26,7 +26,7 @@ async function main() {
 	if (isSdkChildContext(data)) return;
 	if (data.is_interrupt) return;
 	const sessionId = data.session_id || "unknown";
-	const cwd = typeof data.cwd === "string" && data.cwd.length > 0 ? data.cwd : process.cwd();
+	const cwd = (typeof data.cwd === "string" ? data.cwd.trim() : "") || process.cwd();
 	const project = resolveProject(cwd);
 	try {
 		await fetch(`${REST_URL}/agentmemory/observe`, {

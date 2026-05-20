@@ -52,10 +52,13 @@ async function main() {
 
   const sessionId =
     (data.session_id as string) || `ses_${Date.now().toString(36)}`;
-  const cwd =
-    typeof data.cwd === "string" && data.cwd.length > 0
-      ? data.cwd
-      : process.cwd();
+  // Trim before the length check so a whitespace-only `data.cwd`
+  // (e.g. `"   "` from a misformed JSON payload) falls back to
+  // process.cwd() instead of being forwarded as-is. CodeRabbit caught
+  // this in the #475 re-review on session-start.ts:58 and
+  // post-tool-failure.ts:40.
+  const trimmedCwd = typeof data.cwd === "string" ? data.cwd.trim() : "";
+  const cwd = trimmedCwd || process.cwd();
   // Project name is the short identifier the rest of the system keys off
   // (imported sessions, memory_lesson_save, memory_lesson_recall all use
   // basenames). See ./_project.ts for the resolution order.

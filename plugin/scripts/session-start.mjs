@@ -28,7 +28,7 @@ async function main() {
 	}
 	if (isSdkChildContext(data)) return;
 	const sessionId = data.session_id || `ses_${Date.now().toString(36)}`;
-	const cwd = typeof data.cwd === "string" && data.cwd.length > 0 ? data.cwd : process.cwd();
+	const cwd = (typeof data.cwd === "string" ? data.cwd.trim() : "") || process.cwd();
 	const project = resolveProject(cwd);
 	const url = `${REST_URL}/agentmemory/session/start`;
 	const init = {
