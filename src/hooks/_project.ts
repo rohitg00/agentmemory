@@ -20,11 +20,15 @@
 import { execSync } from "node:child_process";
 import { basename } from "node:path";
 
-export function resolveProject(cwd?: string): string {
+export function resolveProject(cwd?: unknown): string {
   const explicit = process.env["AGENTMEMORY_PROJECT_NAME"];
   if (explicit && explicit.trim()) return explicit.trim();
 
-  const dir = cwd?.trim() || process.cwd();
+  // Defensive: hook stdin is untyped JSON, so `data.cwd` may arrive as
+  // a non-string (object/number/null) — guard before calling `.trim()`.
+  // Whitespace-only strings also fall through to `process.cwd()`.
+  const trimmed = typeof cwd === "string" ? cwd.trim() : "";
+  const dir = trimmed || process.cwd();
 
   try {
     const top = execSync("git rev-parse --show-toplevel", {
