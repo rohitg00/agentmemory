@@ -60,6 +60,7 @@ async function main() {
 }
 
 function toolOutput(data: Record<string, unknown>): unknown {
+  if (data.tool_response !== undefined) return data.tool_response;
   if (data.tool_output !== undefined) return data.tool_output;
   const result = data.tool_result ?? data.toolResult;
   if (typeof result === "object" && result !== null) {

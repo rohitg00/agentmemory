@@ -6,6 +6,48 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.9.21] — 2026-05-19
+
+Quality + integration wave. Headline: native OpenCode plugin with full Claude Code hook parity ([#237](https://github.com/rohitg00/agentmemory/pull/237) by [@cl0ckt0wer](https://github.com/cl0ckt0wer)). Ten more PRs alongside: `memory_recall` returning the wrong shape, env-file `AGENTMEMORY_DROP_STALE_INDEX` silently ignored, hook scripts crashing on Windows usernames with spaces, viewer search inputs interrupting CJK IME composition, large sessions silently failing at the LLM context limit, lessons invisible to smart-search, Hermes plugin manifest missing hooks, cli onboarding crashing in non-TTY contexts, rebuildIndex blocking boot on large corpora, 25h embed-loop bottleneck during rebuild, and the v0.9.19 iii-console installer workaround can come out now that upstream is fixed.
+
+### Added
+
+- **OpenCode plugin with 22 auto-capture hooks** ([PR #237](https://github.com/rohitg00/agentmemory/pull/237) by [@cl0ckt0wer](https://github.com/cl0ckt0wer), closes [#236](https://github.com/rohitg00/agentmemory/issues/236) + [#244](https://github.com/rohitg00/agentmemory/issues/244)). Complete OpenCode plugin in `plugin/opencode/` matching Claude Code hook parity. Covers session lifecycle (8 hooks), messages (3), tool lifecycle (2), part tracking, permissions, task tracking, plus a two-layer enrichment pipeline (memory context on first turn, file enrichment on subsequent turns) and two slash commands (`/recall`, `/remember`). Full gap analysis in `plugin/opencode/README.md`.
+
+### Fixed
+
+- **`memory_recall` endpoint + format/token_budget forwarding** ([PR #516](https://github.com/rohitg00/agentmemory/pull/516) by [@serhiizghama](https://github.com/serhiizghama), closes [#507](https://github.com/rohitg00/agentmemory/issues/507) + [#440](https://github.com/rohitg00/agentmemory/issues/440)). MCP `memory_recall` always returned compact mode and dropped `format` + `token_budget` params. Two root causes fixed: standalone shim routed through `/agentmemory/smart-search` instead of `/agentmemory/search`, and the local-fallback path didn't read either param. Now routes correctly, forwards both params end-to-end, defaults `format` to `"full"` matching the MCP schema.
+
+- **env-file `AGENTMEMORY_DROP_STALE_INDEX` flag now honored** ([PR #461](https://github.com/rohitg00/agentmemory/pull/461) by [@honor2030](https://github.com/honor2030), closes [#456](https://github.com/rohitg00/agentmemory/issues/456)). Setting the flag in `~/.agentmemory/.env` was silently ignored because the boot path read `process.env` directly. New `isDropStaleIndexEnabled()` helper reads merged env. Combined with [#455](https://github.com/rohitg00/agentmemory/issues/455) + [#469](https://github.com/rohitg00/agentmemory/issues/469) reports, this is the unblock path for the stale-index server-crash recovery loop.
+
+- **Windows hook scripts quote plugin paths correctly** ([PR #487](https://github.com/rohitg00/agentmemory/pull/487) by [@honor2030](https://github.com/honor2030), closes [#477](https://github.com/rohitg00/agentmemory/issues/477)). Hook command strings referenced `${CLAUDE_PLUGIN_ROOT}/scripts/*.mjs` without quotes — Windows users with spaces in their username had every hook crash. Quotes added + regression test.
+
+- **Viewer search inputs honor IME composition** ([PR #517](https://github.com/rohitg00/agentmemory/pull/517) by [@jonathanzhan1975](https://github.com/jonathanzhan1975)). CJK users typing in the viewer's search inputs hit mid-character interruption — every keystroke fired the `oninput=` re-render handler, breaking IME composition mid-syllable. New `bindImeSafeSearch` helper defers re-render until `compositionend`.
+
+- **Chunk large sessions to fit LLM context window** ([PR #472](https://github.com/rohitg00/agentmemory/pull/472) by [@efenex](https://github.com/efenex)). Sessions with >7000 observations silently failed at the LLM provider's context limit — the consolidation pipeline silently skipped the session. New chunking splits oversized sessions across multiple compress calls + restitches the narrative via a `REDUCE_SYSTEM` prompt. Legacy single-call path preserved when obs count is under the chunk size. Backfill script under `scripts/` for users hitting the pre-fix bug.
+
+- **Surface lessons in smart-search + diagnose tally** ([PR #473](https://github.com/rohitg00/agentmemory/pull/473) by [@efenex](https://github.com/efenex)). Closes the lesson round-trip with [#458](https://github.com/rohitg00/agentmemory/pull/458) (lessons auto-injected into `mem::context`): lessons are now also returned alongside hybrid search results in a separate `lessons` field on `smart-search`, and the `diagnose` health surface tallies per-store counts so the trust-shock pattern (save succeeds, recall empty, diagnose says 0) goes away.
+
+- **Declare all Hermes plugin hooks** ([PR #486](https://github.com/rohitg00/agentmemory/pull/486) by [@honor2030](https://github.com/honor2030)). The Hermes `plugin.yaml` manifest only declared 3 of the 6 implemented hooks. All 6 now declared (`prefetch`, `sync_turn`, `on_session_end`, `on_pre_compress`, `on_memory_write`, `system_prompt_block`).
+
+- **`rebuildIndex` non-blocking on boot** ([PR #500](https://github.com/rohitg00/agentmemory/pull/500) by [@efenex](https://github.com/efenex)). Boot path previously `await`-ed `rebuildIndex(kv)`, so the viewer + later boot steps stalled — on large corpora this was 25h+ of blocked startup. Replaced with `void rebuildIndex(kv).then(...).catch(...)` so the rebuild runs in the background.
+
+- **Batched embed calls in `rebuildIndex` (25h → 3h on large corpora)** ([PR #504](https://github.com/rohitg00/agentmemory/pull/504) by [@efenex](https://github.com/efenex)). The rebuild loop made one embed call per observation, paying full HTTP RTT per item. New `vectorIndexAddBatchGuarded` helper batches embeds (default 32, configurable via `REBUILD_EMBED_BATCH_SIZE`) and try/catches per-item failures. Measured 25h → 3h on a 250k-observation corpus.
+
+- **CLI skips onboarding prompts without a tty** ([PR #491](https://github.com/rohitg00/agentmemory/pull/491) by [@honor2030](https://github.com/honor2030)). Onboarding prompts crashed in non-interactive contexts (CI, `docker run -d`, piped input). New guard short-circuits with sensible defaults when stdin/stdout aren't TTYs or `CI=1`.
+
+### Changed
+
+- **Drop iii-console installer `--next` workaround** ([PR #546](https://github.com/rohitg00/agentmemory/pull/546)). v0.9.19 routed first-run iii-console install through `bash -s -- --next` to dodge an upstream tag-prefix bug at [iii-hq/iii#1652](https://github.com/iii-hq/iii/issues/1652). Upstream [iii-hq/iii#1660](https://github.com/iii-hq/iii/pull/1660) shipped 2026-05-19; `install.iii.dev/console/main/install.sh` is a CDN proxy serving upstream main HEAD so the fix is live without an iii release tag. Reverted to canonical bare `curl ... | sh`.
+
+### Infrastructure
+
+- 95 test files (was 92), **1067 tests pass** (was 1038) on `chore(release): v0.9.21`.
+- Bundles 11 PRs: 1 contributor feature + 9 bug fixes across MCP / hooks / viewer / summarize / lessons / Hermes / rebuildIndex / CLI + 1 upstream-installer revert.
+- New contributors landing first PRs this release: [@cl0ckt0wer](https://github.com/cl0ckt0wer), [@serhiizghama](https://github.com/serhiizghama), [@jonathanzhan1975](https://github.com/jonathanzhan1975).
+
+[0.9.21]: https://github.com/rohitg00/agentmemory/compare/v0.9.20...v0.9.21
+
 ## [0.9.20] — 2026-05-18
 
 Hotfix: revert the Codex Stop → session-end chain shipped in v0.9.19.

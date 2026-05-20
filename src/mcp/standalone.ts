@@ -89,6 +89,8 @@ interface Validated {
   files?: string[];
   query?: string;
   limit?: number;
+  format?: string;
+  tokenBudget?: number;
   memoryIds?: string[];
   reason?: string;
 }
@@ -118,6 +120,17 @@ function validate(toolName: string, args: Record<string, unknown>): Validated {
       }
       v.query = query.trim();
       v.limit = parseLimit(args["limit"]);
+      const fmt = args["format"];
+      if (typeof fmt === "string" && fmt.trim()) {
+        v.format = fmt.trim().toLowerCase();
+      }
+      const budget = args["token_budget"];
+      if (typeof budget === "number" && Number.isFinite(budget) && budget > 0) {
+        v.tokenBudget = Math.floor(budget);
+      } else if (typeof budget === "string" && budget.trim()) {
+        const n = Number(budget);
+        if (Number.isFinite(n) && n > 0) v.tokenBudget = Math.floor(n);
+      }
       return v;
     }
     case "memory_sessions": {
@@ -159,11 +172,26 @@ async function handleProxy(
       });
       return textResponse(result);
     }
-    case "memory_recall":
+    case "memory_recall": {
+      const body: Record<string, unknown> = {
+        query: v.query,
+        limit: v.limit,
+        format: v.format ?? "full",
+      };
+      if (v.tokenBudget != null) body["token_budget"] = v.tokenBudget;
+      const result = await handle.call("/agentmemory/search", {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+      return textResponse(result, true);
+    }
     case "memory_smart_search": {
+      const body: Record<string, unknown> = { query: v.query, limit: v.limit };
+      if (v.format != null) body["format"] = v.format;
+      if (v.tokenBudget != null) body["token_budget"] = v.tokenBudget;
       const result = await handle.call("/agentmemory/smart-search", {
         method: "POST",
-        body: JSON.stringify({ query: v.query, limit: v.limit }),
+        body: JSON.stringify(body),
       });
       return textResponse(result, true);
     }

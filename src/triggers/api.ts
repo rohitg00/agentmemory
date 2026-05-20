@@ -9,6 +9,7 @@ import type { ResilientProvider } from "../providers/resilient.js";
 import { VERSION } from "../version.js";
 import { timingSafeCompare } from "../auth.js";
 import { renderViewerDocument } from "../viewer/document.js";
+import { getBoundViewerPort, getViewerSkipped } from "../viewer/server.js";
 import { MAX_FILES_UPPER_BOUND } from "../functions/replay.js";
 import {
   isGraphExtractionEnabled,
@@ -143,7 +144,7 @@ export function registerApiTriggers(
   sdk.registerFunction("api::liveness",
     async (): Promise<Response> => ({
       status_code: 200,
-      body: { status: "ok", service: "agentmemory" },
+      body: { status: "ok", service: "agentmemory", viewerPort: getBoundViewerPort(), viewerSkipped: getViewerSkipped() },
     }),
   );
   sdk.registerTrigger({
@@ -244,6 +245,8 @@ export function registerApiTriggers(
           health: health || null,
           functionMetrics,
           circuitBreaker,
+          viewerPort: getBoundViewerPort(),
+          viewerSkipped: getViewerSkipped(),
         },
       };
     },

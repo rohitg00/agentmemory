@@ -9,6 +9,29 @@ function readJson<T = unknown>(path: string): T {
   return JSON.parse(readFileSync(path, "utf-8")) as T;
 }
 
+type HookHandler = { type: string; command: string };
+type HookEntry = { hooks: HookHandler[] };
+
+function hookCommands(path: string): string[] {
+  const manifest = readJson<{ hooks: Record<string, HookEntry[]> }>(path);
+  return Object.values(manifest.hooks).flatMap((entries) =>
+    entries.flatMap((entry) => entry.hooks.map((handler) => handler.command)),
+  );
+}
+
+describe("Plugin hook manifests", () => {
+  it("quote plugin script paths so roots with spaces stay intact", () => {
+    for (const manifest of ["hooks.json", "hooks.codex.json"]) {
+      const commands = hookCommands(join(pluginRoot, "hooks", manifest));
+      expect(commands.length, `${manifest} should contain hook commands`).toBeGreaterThan(0);
+
+      for (const command of commands) {
+        expect(command).toMatch(/^node "\$\{CLAUDE_PLUGIN_ROOT\}\/scripts\/[^\s"]+\.mjs"$/);
+      }
+    }
+  });
+});
+
 describe("Codex plugin manifest (developers.openai.com/codex/plugins)", () => {
   it("ships .codex-plugin/plugin.json with kebab-case name + version + references", () => {
     const manifestPath = join(pluginRoot, ".codex-plugin/plugin.json");
@@ -72,8 +95,6 @@ describe("Codex plugin manifest (developers.openai.com/codex/plugins)", () => {
   });
 
   it("hook command scripts referenced in hooks.codex.json exist on disk", () => {
-    type HookHandler = { type: string; command: string };
-    type HookEntry = { hooks: HookHandler[] };
     const hooks = readJson<{ hooks: Record<string, HookEntry[]> }>(
       join(pluginRoot, "hooks/hooks.codex.json"),
     );
@@ -81,7 +102,7 @@ describe("Codex plugin manifest (developers.openai.com/codex/plugins)", () => {
     for (const entries of Object.values(hooks.hooks)) {
       for (const entry of entries) {
         for (const handler of entry.hooks) {
-          const match = handler.command.match(/\$\{CLAUDE_PLUGIN_ROOT\}\/(scripts\/[^\s]+)/);
+          const match = handler.command.match(/\$\{CLAUDE_PLUGIN_ROOT\}\/(scripts\/[^\s"]+)/);
           if (match) scriptRefs.add(match[1]);
         }
       }

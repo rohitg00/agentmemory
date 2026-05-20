@@ -48,6 +48,7 @@ async function main() {
 	} catch {}
 }
 function toolOutput(data) {
+	if (data.tool_response !== void 0) return data.tool_response;
 	if (data.tool_output !== void 0) return data.tool_output;
 	const result = data.tool_result ?? data.toolResult;
 	if (typeof result === "object" && result !== null) {
