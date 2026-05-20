@@ -36,44 +36,46 @@ async function runHook(payload: Record<string, unknown>) {
     server.listen(0, "127.0.0.1", resolve);
   });
 
-  const address = server.address();
-  if (!address || typeof address === "string") {
-    throw new Error("test server did not bind to a TCP port");
+  try {
+    const address = server.address();
+    if (!address || typeof address === "string") {
+      throw new Error("test server did not bind to a TCP port");
+    }
+
+    const result = await new Promise<{
+      exitCode: number | null;
+      stderr: string;
+      stdout: string;
+    }>((resolve, reject) => {
+      const child = spawn(process.execPath, [HOOK], {
+        env: {
+          PATH: process.env["PATH"] ?? "",
+          AGENTMEMORY_URL: `http://127.0.0.1:${address.port}`,
+        },
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+
+      let stdout = "";
+      let stderr = "";
+      child.stdout.on("data", (chunk) => {
+        stdout += chunk.toString();
+      });
+      child.stderr.on("data", (chunk) => {
+        stderr += chunk.toString();
+      });
+      child.on("error", reject);
+      child.on("close", (exitCode) => {
+        resolve({ exitCode, stderr, stdout });
+      });
+      child.stdin.end(JSON.stringify(payload));
+    });
+
+    return { ...result, received };
+  } finally {
+    await new Promise<void>((resolve, reject) => {
+      server.close((err) => (err ? reject(err) : resolve()));
+    });
   }
-
-  const result = await new Promise<{
-    exitCode: number | null;
-    stderr: string;
-    stdout: string;
-  }>((resolve, reject) => {
-    const child = spawn(process.execPath, [HOOK], {
-      env: {
-        PATH: process.env["PATH"] ?? "",
-        AGENTMEMORY_URL: `http://127.0.0.1:${address.port}`,
-      },
-      stdio: ["pipe", "pipe", "pipe"],
-    });
-
-    let stdout = "";
-    let stderr = "";
-    child.stdout.on("data", (chunk) => {
-      stdout += chunk.toString();
-    });
-    child.stderr.on("data", (chunk) => {
-      stderr += chunk.toString();
-    });
-    child.on("error", reject);
-    child.on("close", (exitCode) => {
-      resolve({ exitCode, stderr, stdout });
-    });
-    child.stdin.end(JSON.stringify(payload));
-  });
-
-  await new Promise<void>((resolve, reject) => {
-    server.close((err) => (err ? reject(err) : resolve()));
-  });
-
-  return { ...result, received };
 }
 
 describe("post-tool-use hook", () => {
