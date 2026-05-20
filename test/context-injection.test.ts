@@ -221,7 +221,9 @@ describe("prompt-submit hook — auth env fallback (#518)", () => {
   it("respects an explicitly empty shell AGENTMEMORY_SECRET over ~/.agentmemory/.env", async () => {
     const home = makeAgentmemoryHome("AGENTMEMORY_SECRET=file-secret\n");
     let authHeader: string | undefined;
+    let requestCount = 0;
     const server = createServer((req, res) => {
+      requestCount += 1;
       authHeader = req.headers.authorization;
       res.setHeader("content-type", "application/json");
       res.end(JSON.stringify({ observationId: "obs_test" }));
@@ -242,6 +244,7 @@ describe("prompt-submit hook — auth env fallback (#518)", () => {
       });
 
       expect(result.exitCode).toBe(0);
+      expect(requestCount).toBe(1);
       expect(authHeader).toBeUndefined();
     } finally {
       await closeServer(server);
