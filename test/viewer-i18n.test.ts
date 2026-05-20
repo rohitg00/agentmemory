@@ -64,6 +64,15 @@ describe("viewer i18n: locale loading", () => {
     expect(loadLocale("a")).toEqual({});
     expect(loadLocale("abcd")).toEqual({});
   });
+
+  it("normalizes mixed-case input to find the lowercase locale file", () => {
+    const en = loadLocale("en");
+    expect(en["nav"]).toBeDefined();
+    // EN and " en " and En should all resolve to the same loaded bundle
+    expect(loadLocale("EN")).toEqual(en);
+    expect(loadLocale("En")).toEqual(en);
+    expect(loadLocale("  en  ")).toEqual(en);
+  });
 });
 
 describe("viewer i18n: bundle building", () => {
@@ -142,6 +151,8 @@ describe("viewer i18n: document injection", () => {
     if (block) {
       const list = block[1];
       expect(list).not.toMatch(/"href"|"src"|"srcset"|"action"|"formaction"|"on[a-z]+"/);
+      // IDREF ARIA attributes must reference element IDs, not free text.
+      expect(list).not.toMatch(/"aria-labelledby"|"aria-describedby"/);
     }
   });
 });
@@ -191,7 +202,9 @@ describe("viewer i18n: structural parity en ↔ de", () => {
     const mismatches: string[] = [];
     for (const [path, enVal] of Object.entries(enFlat)) {
       const deVal = deFlat[path];
-      if (!deVal) continue;
+      // Skip only when the de key is genuinely missing; empty-string
+      // translations must still be checked for placeholder parity.
+      if (typeof deVal !== "string") continue;
       const enMarkers = (enVal.match(/\{\w+\}/g) || []).sort().join(",");
       const deMarkers = (deVal.match(/\{\w+\}/g) || []).sort().join(",");
       if (enMarkers !== deMarkers) mismatches.push(`${path}: en=${enMarkers} de=${deMarkers}`);

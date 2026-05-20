@@ -7,8 +7,9 @@ export type Locale = Record<string, unknown>;
 const FALLBACK_LANG = "en";
 // BCP-47 primary subtag: 2-3 ASCII letters. Anything richer is normalized down
 // to the primary subtag by resolveViewerLanguage() before reaching loadLocale,
-// so this also serves as a path-traversal guard at the boundary.
-const VALID_LANG = /^[a-z]{2,3}$/i;
+// so this also serves as a path-traversal guard at the boundary. Applied
+// after lang is lowercased in loadLocale.
+const VALID_LANG = /^[a-z]{2,3}$/;
 const cache = new Map<string, Locale>();
 let resolvedLocalesDir: string | null = null;
 
@@ -33,23 +34,26 @@ function localesDir(): string {
 }
 
 export function loadLocale(lang: string): Locale {
-  if (!VALID_LANG.test(lang)) {
-    cache.set(lang, {});
+  // Normalize before validate/cache/file so loadLocale("EN") and loadLocale(" en ")
+  // both resolve to en.json with a single cache entry.
+  const normalized = lang.trim().toLowerCase();
+  if (!VALID_LANG.test(normalized)) {
+    cache.set(normalized, {});
     return {};
   }
-  if (cache.has(lang)) return cache.get(lang)!;
+  if (cache.has(normalized)) return cache.get(normalized)!;
   const dir = localesDir();
   if (!dir) {
-    cache.set(lang, {});
+    cache.set(normalized, {});
     return {};
   }
   try {
-    const text = readFileSync(join(dir, `${lang}.json`), "utf-8");
+    const text = readFileSync(join(dir, `${normalized}.json`), "utf-8");
     const data = JSON.parse(text) as Locale;
-    cache.set(lang, data);
+    cache.set(normalized, data);
     return data;
   } catch {
-    cache.set(lang, {});
+    cache.set(normalized, {});
     return {};
   }
 }

@@ -1045,9 +1045,11 @@
       // SAFE attributes for data-i18n-attr. Never extend this list to include
       // href, src, srcset, action, formaction, or any on* event handler —
       // those would let a malicious translation become script execution.
+      // IDREF ARIA attributes (aria-labelledby, aria-describedby) are also
+      // excluded because they must reference element IDs, not free text.
       const SAFE_I18N_ATTRS = new Set([
         "placeholder", "title", "alt",
-        "aria-label", "aria-labelledby", "aria-describedby", "aria-roledescription",
+        "aria-label", "aria-roledescription",
       ]);
 
       function applyI18n(root) {
@@ -1072,10 +1074,11 @@
         applyI18n(document);
       });
     })();
-    // Expose t() as a module-scope var so it is reachable as a plain
-    // identifier inside render functions (needed for the VM sandbox used
-    // by viewer unit tests where window !== globalThis).
+    // Expose t() and tRaw() as module-scope vars so they are reachable as
+    // plain identifiers inside render functions (needed for the VM sandbox
+    // used by viewer unit tests where window !== globalThis).
     var t = window.t;
+    var tRaw = window.tRaw;
     // te(namespace, rawValue) — translate an enum display value; falls back to
     // the raw string if the key is absent from the active locale bundle.
     function te(ns, val) { var k = ns + '.' + val; var r = t(k); return r === k ? val : r; }
