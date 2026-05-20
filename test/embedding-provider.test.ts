@@ -58,6 +58,8 @@ describe("OpenAIEmbeddingProvider", () => {
   beforeEach(() => {
     process.env = { ...originalEnv };
     delete process.env["OPENAI_BASE_URL"];
+    delete process.env["OPENAI_EMBEDDING_BASE_URL"];
+    delete process.env["OPENAI_EMBEDDING_API_KEY"];
     delete process.env["OPENAI_EMBEDDING_MODEL"];
     delete process.env["OPENAI_EMBEDDING_DIMENSIONS"];
   });
