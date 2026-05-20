@@ -36,11 +36,11 @@ function readAgentmemoryEnvFile() {
 }
 function agentmemoryEnv(key) {
 	const processValue = process.env[key];
-	if (processValue) return processValue;
+	if (processValue !== void 0) return processValue;
 	cachedEnv ??= readAgentmemoryEnvFile();
-	return cachedEnv[key] || "";
+	return cachedEnv[key] ?? "";
 }
 
 //#endregion
 export { agentmemoryEnv as t };
-//# sourceMappingURL=env-DODO3jxN.mjs.map
+//# sourceMappingURL=env-B0rzso6b.mjs.map

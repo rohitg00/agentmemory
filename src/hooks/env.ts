@@ -38,7 +38,7 @@ function readAgentmemoryEnvFile(): Record<string, string> {
 
 export function agentmemoryEnv(key: string): string {
   const processValue = process.env[key];
-  if (processValue) return processValue;
+  if (processValue !== undefined) return processValue;
   cachedEnv ??= readAgentmemoryEnvFile();
-  return cachedEnv[key] || "";
+  return cachedEnv[key] ?? "";
 }

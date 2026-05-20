@@ -217,4 +217,35 @@ describe("prompt-submit hook — auth env fallback (#518)", () => {
       rmSync(home, { recursive: true, force: true });
     }
   });
+
+  it("respects an explicitly empty shell AGENTMEMORY_SECRET over ~/.agentmemory/.env", async () => {
+    const home = makeAgentmemoryHome("AGENTMEMORY_SECRET=file-secret\n");
+    let authHeader: string | undefined;
+    const server = createServer((req, res) => {
+      authHeader = req.headers.authorization;
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({ observationId: "obs_test" }));
+    });
+    const baseUrl = await listen(server);
+
+    try {
+      const payload = JSON.stringify({
+        session_id: "ses_test",
+        cwd: "/tmp/fake-project",
+        prompt: "capture this",
+      });
+      const result = await runHook("prompt-submit.mjs", payload, {
+        HOME: home,
+        USERPROFILE: home,
+        AGENTMEMORY_URL: baseUrl,
+        AGENTMEMORY_SECRET: "",
+      });
+
+      expect(result.exitCode).toBe(0);
+      expect(authHeader).toBeUndefined();
+    } finally {
+      await closeServer(server);
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
 });

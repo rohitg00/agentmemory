@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { t as agentmemoryEnv } from "./env-DODO3jxN.mjs";
+import { t as agentmemoryEnv } from "./env-B0rzso6b.mjs";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
