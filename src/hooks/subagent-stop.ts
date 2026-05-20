@@ -36,27 +36,25 @@ async function main() {
       ? data.last_assistant_message.slice(0, 4000)
       : "";
 
-  try {
-    await fetch(`${REST_URL}/agentmemory/observe`, {
-      method: "POST",
-      headers: authHeaders(),
-      body: JSON.stringify({
-        hookType: "subagent_stop",
-        sessionId,
-        project: data.cwd || process.cwd(),
-        cwd: data.cwd || process.cwd(),
-        timestamp: new Date().toISOString(),
-        data: {
-          agent_id: data.agent_id,
-          agent_type: data.agent_type,
-          last_message: lastMsg,
-        },
-      }),
-      signal: AbortSignal.timeout(2000),
-    });
-  } catch {
-    // fire and forget
-  }
+  // Fire-and-forget + force-exit; see src/hooks/stop.ts for rationale.
+  fetch(`${REST_URL}/agentmemory/observe`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({
+      hookType: "subagent_stop",
+      sessionId,
+      project: data.cwd || process.cwd(),
+      cwd: data.cwd || process.cwd(),
+      timestamp: new Date().toISOString(),
+      data: {
+        agent_id: data.agent_id,
+        agent_type: data.agent_type,
+        last_message: lastMsg,
+      },
+    }),
+    signal: AbortSignal.timeout(2000),
+  }).catch(() => {});
+  setTimeout(() => process.exit(0), 500).unref();
 }
 
 main();

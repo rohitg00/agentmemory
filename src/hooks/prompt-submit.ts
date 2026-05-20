@@ -32,23 +32,21 @@ async function main() {
 
   const sessionId = (data.session_id as string) || "unknown";
 
-  try {
-    await fetch(`${REST_URL}/agentmemory/observe`, {
-      method: "POST",
-      headers: authHeaders(),
-      body: JSON.stringify({
-        hookType: "prompt_submit",
-        sessionId,
-        project: data.cwd || process.cwd(),
-        cwd: data.cwd || process.cwd(),
-        timestamp: new Date().toISOString(),
-        data: { prompt: data.prompt },
-      }),
-      signal: AbortSignal.timeout(3000),
-    });
-  } catch {
-    // fire and forget
-  }
+  // Fire-and-forget + force-exit; see src/hooks/stop.ts for rationale.
+  fetch(`${REST_URL}/agentmemory/observe`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({
+      hookType: "prompt_submit",
+      sessionId,
+      project: data.cwd || process.cwd(),
+      cwd: data.cwd || process.cwd(),
+      timestamp: new Date().toISOString(),
+      data: { prompt: data.prompt },
+    }),
+    signal: AbortSignal.timeout(3000),
+  }).catch(() => {});
+  setTimeout(() => process.exit(0), 500).unref();
 }
 
 main();

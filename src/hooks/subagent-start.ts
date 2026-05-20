@@ -56,6 +56,10 @@ async function main() {
     }),
     signal: AbortSignal.timeout(TIMEOUT_MS),
   }).catch(() => {});
+  // Dropping `await` alone wasn't enough — Node keeps the event loop alive
+  // for the pending fetch. Force-exit so this hook never blocks Claude
+  // Code while the daemon (or its LLM provider) is slow.
+  setTimeout(() => process.exit(0), 500).unref();
 }
 
 main();

@@ -33,33 +33,31 @@ async function main() {
 
   const sessionId = (data.session_id as string) || "unknown";
 
-  try {
-    await fetch(`${REST_URL}/agentmemory/observe`, {
-      method: "POST",
-      headers: authHeaders(),
-      body: JSON.stringify({
-        hookType: "post_tool_failure",
-        sessionId,
-        project: data.cwd || process.cwd(),
-        cwd: data.cwd || process.cwd(),
-        timestamp: new Date().toISOString(),
-        data: {
-          tool_name: data.tool_name,
-          tool_input:
-            typeof data.tool_input === "string"
-              ? data.tool_input.slice(0, 4000)
-              : JSON.stringify(data.tool_input ?? "").slice(0, 4000),
-          error:
-            typeof data.error === "string"
-              ? data.error.slice(0, 4000)
-              : JSON.stringify(data.error ?? "").slice(0, 4000),
-        },
-      }),
-      signal: AbortSignal.timeout(3000),
-    });
-  } catch {
-    // fire and forget
-  }
+  // Fire-and-forget + force-exit; see src/hooks/stop.ts for rationale.
+  fetch(`${REST_URL}/agentmemory/observe`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({
+      hookType: "post_tool_failure",
+      sessionId,
+      project: data.cwd || process.cwd(),
+      cwd: data.cwd || process.cwd(),
+      timestamp: new Date().toISOString(),
+      data: {
+        tool_name: data.tool_name,
+        tool_input:
+          typeof data.tool_input === "string"
+            ? data.tool_input.slice(0, 4000)
+            : JSON.stringify(data.tool_input ?? "").slice(0, 4000),
+        error:
+          typeof data.error === "string"
+            ? data.error.slice(0, 4000)
+            : JSON.stringify(data.error ?? "").slice(0, 4000),
+      },
+    }),
+    signal: AbortSignal.timeout(3000),
+  }).catch(() => {});
+  setTimeout(() => process.exit(0), 500).unref();
 }
 
 main();
