@@ -297,6 +297,8 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
           type: r.observation.type,
           score: r.score,
           timestamp: r.observation.timestamp,
+          external_id: r.observation.external_id,
+          metadata: r.observation.metadata,
         }))
         const packed = applyTokenBudget(compactResults)
         return {
@@ -316,6 +318,8 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
           narrative: r.observation.narrative,
           score: r.score,
           timestamp: r.observation.timestamp,
+          external_id: r.observation.external_id,
+          metadata: r.observation.metadata,
         }))
         const packed = applyTokenBudget(narrativeResults)
         const text = packed.items

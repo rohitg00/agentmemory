@@ -75,6 +75,14 @@ export const CORE_TOOLS: McpToolDef[] = [
           type: "string",
           description: "Comma-separated relevant file paths",
         },
+        external_id: {
+          type: "string",
+          description: "Optional stable source identifier for imported memories",
+        },
+        metadata: {
+          type: "object",
+          description: "Optional caller-provided metadata to return with retrieval results",
+        },
       },
       required: ["content"],
     },

@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Optional `external_id` and metadata passthrough for saved memories and retrieval results, intended for import/export, deduplication, observability, debugging, and deterministic evaluation workflows.
+
 ## [0.9.20] — 2026-05-18
 
 Hotfix: revert the Codex Stop → session-end chain shipped in v0.9.19.

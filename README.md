@@ -527,6 +527,23 @@ iii.trigger({
 
 Worked example: [`examples/python/`](examples/python/) (quickstart + observation/recall flow). REST on `:3111` remains available for hosts without an iii runtime.
 
+When importing memories from another system, callers can optionally attach a stable `external_id` and metadata. These fields are stored with the memory and returned in search results, so integrations can map retrieved memories back to their source records:
+
+```bash
+curl -X POST http://localhost:3111/agentmemory/remember \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "content": "The auth service rotates refresh tokens on every use.",
+    "external_id": "source-system:memory-42",
+    "metadata": { "source": "import", "conversation_id": "conv-1", "turn_index": 3 }
+  }'
+
+curl -X POST http://localhost:3111/agentmemory/search \
+  -H 'Content-Type: application/json' \
+  -d '{"query":"refresh tokens"}'
+# Results include observation.id plus observation.external_id and observation.metadata when present.
+```
+
 ### From source
 
 ```bash

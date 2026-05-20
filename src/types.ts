@@ -58,6 +58,8 @@ export interface CompressedObservation {
   imageData?: string;
   imageDescription?: string;
   modality?: "text" | "image" | "mixed";
+  external_id?: string;
+  metadata?: Record<string, unknown>;
 
 }
 
@@ -98,6 +100,8 @@ export interface Memory {
   forgetAfter?: string;
   imageRef?: string;
   imageData?: string;
+  external_id?: string;
+  metadata?: Record<string, unknown>;
 }
 
 export interface SessionSummary {
@@ -264,6 +268,8 @@ export interface CompactSearchResult {
   type: ObservationType;
   score: number;
   timestamp: string;
+  external_id?: string;
+  metadata?: Record<string, unknown>;
 }
 
 export interface TimelineEntry {

@@ -93,6 +93,13 @@ function asNonEmptyString(value: unknown): string | null {
   return trimmed ? trimmed : null;
 }
 
+function asMetadataRecord(value: unknown): Record<string, unknown> | undefined {
+  if (typeof value === "object" && value !== null && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  return undefined;
+}
+
 function parseOptionalFiniteNumber(value: unknown): number | undefined | null {
   if (value === undefined || value === null) return undefined;
   if (typeof value === "number") return Number.isFinite(value) ? value : null;
@@ -842,6 +849,8 @@ export function registerApiTriggers(
         type?: string;
         concepts?: string[];
         files?: string[];
+        external_id?: string;
+        metadata?: Record<string, unknown>;
       }>,
     ): Promise<Response> => {
       const authErr = checkAuth(req, secret);
@@ -853,7 +862,15 @@ export function registerApiTriggers(
       ) {
         return { status_code: 400, body: { error: "content is required" } };
       }
-      const result = await sdk.trigger({ function_id: "mem::remember", payload: req.body });
+      const payload = {
+        content: req.body.content,
+        type: req.body.type,
+        concepts: req.body.concepts,
+        files: req.body.files,
+        external_id: asNonEmptyString(req.body.external_id) ?? undefined,
+        metadata: asMetadataRecord(req.body.metadata),
+      };
+      const result = await sdk.trigger({ function_id: "mem::remember", payload });
       return { status_code: 201, body: result };
     },
   );

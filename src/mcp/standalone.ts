@@ -87,6 +87,8 @@ interface Validated {
   type?: string;
   concepts?: string[];
   files?: string[];
+  external_id?: string;
+  metadata?: Record<string, unknown>;
   query?: string;
   limit?: number;
   format?: string;
@@ -110,6 +112,12 @@ function validate(toolName: string, args: Record<string, unknown>): Validated {
       v.type = (args["type"] as string) || "fact";
       v.concepts = normalizeList(args["concepts"]);
       v.files = normalizeList(args["files"]);
+      if (typeof args["external_id"] === "string" && args["external_id"].trim()) {
+        v.external_id = args["external_id"].trim();
+      }
+      if (typeof args["metadata"] === "object" && args["metadata"] !== null && !Array.isArray(args["metadata"])) {
+        v.metadata = args["metadata"] as Record<string, unknown>;
+      }
       return v;
     }
     case "memory_recall":
@@ -168,6 +176,8 @@ async function handleProxy(
           type: v.type,
           concepts: v.concepts,
           files: v.files,
+          external_id: v.external_id,
+          metadata: v.metadata,
         }),
       });
       return textResponse(result);
@@ -246,6 +256,8 @@ async function handleLocal(
         version: 1,
         isLatest: true,
         sessionIds: [],
+        external_id: v.external_id,
+        metadata: v.metadata,
       });
       kvInstance.persist();
       return textResponse({ saved: id });

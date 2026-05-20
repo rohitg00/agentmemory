@@ -39,6 +39,13 @@ function parseCsvList(value: unknown): string[] {
   return [];
 }
 
+function asMetadataRecord(value: unknown): Record<string, unknown> | undefined {
+  if (typeof value === "object" && value !== null && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  return undefined;
+}
+
 export function registerMcpEndpoints(
   sdk: ISdk,
   kv: StateKV,
@@ -172,11 +179,15 @@ export function registerMcpEndpoints(
                 ? args.files.split(",").map((f: string) => f.trim()).filter(Boolean)
                 : [];
 
+            const external_id = asNonEmptyString(args.external_id);
+            const metadata = asMetadataRecord(args.metadata);
             const result = await sdk.trigger({ function_id: "mem::remember", payload: {
               content: args.content,
               type,
               concepts,
               files,
+              external_id,
+              metadata,
             } });
             return {
               status_code: 200,

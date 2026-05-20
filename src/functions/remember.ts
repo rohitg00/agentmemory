@@ -9,6 +9,10 @@ import { recordAudit } from "./audit.js";
 import { getSearchIndex, vectorIndexAddGuarded } from "./search.js";
 import { logger } from "../logger.js";
 
+function isMetadataRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
   sdk.registerFunction("mem::remember", 
     async (data: {
@@ -18,6 +22,8 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
       files?: string[];
       ttlDays?: number;
       sourceObservationIds?: string[];
+      external_id?: string;
+      metadata?: Record<string, unknown>;
     }) => {
       if (
         !data.content ||
@@ -34,6 +40,12 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
       }
       if (data.sourceObservationIds && !Array.isArray(data.sourceObservationIds)) {
         return { success: false, error: "sourceObservationIds must be an array" };
+      }
+      if (data.external_id !== undefined && typeof data.external_id !== "string") {
+        return { success: false, error: "external_id must be a string" };
+      }
+      if (data.metadata !== undefined && !isMetadataRecord(data.metadata)) {
+        return { success: false, error: "metadata must be an object" };
       }
       const validTypes = new Set([
         "pattern",
@@ -88,6 +100,9 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
           ),
           isLatest: true,
         };
+
+        if (data.external_id) memory.external_id = data.external_id;
+        if (data.metadata) memory.metadata = data.metadata;
 
         if (data.ttlDays && typeof data.ttlDays === "number" && data.ttlDays > 0) {
           memory.forgetAfter = new Date(Date.now() + data.ttlDays * 86400000).toISOString();
