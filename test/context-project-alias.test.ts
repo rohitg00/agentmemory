@@ -37,14 +37,17 @@ type ContextHandler = (data: {
   budget?: number;
 }) => Promise<{ context: string; blocks: number; tokens: number }>;
 
+const registerFunction = vi.fn();
+const sdk = {
+  registerFunction,
+} as unknown as ISdk;
+
 function wireContext(kv: ReturnType<typeof mockKV>) {
   let handler: ContextHandler | undefined;
-  const registerFunction = vi.fn((id: string, cb: ContextHandler) => {
+  registerFunction.mockReset();
+  registerFunction.mockImplementation((id: string, cb: ContextHandler) => {
     if (id === "mem::context") handler = cb;
   });
-  const sdk = {
-    registerFunction,
-  } as unknown as ISdk;
   registerContextFunction(sdk, kv as unknown as StateKV, 4000);
   if (!handler) throw new Error("mem::context not registered");
   return handler;
