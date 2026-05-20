@@ -1400,7 +1400,9 @@ async function passiveServerChecks(): Promise<DoctorCheck[]> {
     {
       name: "LLM provider",
       ok: hasLlm,
-      hint: hasLlm ? undefined : "set ANTHROPIC_API_KEY (or AZURE_OPENAI/GEMINI/OPENROUTER/MINIMAX) in ~/.agentmemory/.env",
+      hint: hasLlm
+        ? undefined
+        : "set ANTHROPIC_API_KEY, AZURE_OPENAI_API_KEY + AZURE_OPENAI_ENDPOINT + AZURE_OPENAI_DEPLOYMENT, OPENAI_API_KEY, GEMINI_API_KEY, OPENROUTER_API_KEY, or MINIMAX_API_KEY in ~/.agentmemory/.env",
     },
     {
       name: "Embedding provider",

@@ -5,6 +5,7 @@ import { createProvider } from "../src/providers/index.js";
 
 const ORIGINAL_OPENAI_KEY = process.env["OPENAI_API_KEY"];
 const ORIGINAL_AZURE_KEY = process.env["AZURE_OPENAI_API_KEY"];
+const ORIGINAL_OPENAI_BASE = process.env["OPENAI_BASE_URL"];
 
 describe("Azure OpenAI config detection", () => {
   afterEach(() => {
@@ -12,6 +13,8 @@ describe("Azure OpenAI config detection", () => {
     else process.env["OPENAI_API_KEY"] = ORIGINAL_OPENAI_KEY;
     if (ORIGINAL_AZURE_KEY === undefined) delete process.env["AZURE_OPENAI_API_KEY"];
     else process.env["AZURE_OPENAI_API_KEY"] = ORIGINAL_AZURE_KEY;
+    if (ORIGINAL_OPENAI_BASE === undefined) delete process.env["OPENAI_BASE_URL"];
+    else process.env["OPENAI_BASE_URL"] = ORIGINAL_OPENAI_BASE;
     vi.restoreAllMocks();
   });
 
@@ -74,6 +77,31 @@ describe("Azure OpenAI config detection", () => {
     );
 
     await createProvider(config).summarize("system", "user");
+
+    expect(capturedHeaders.get("api-key")).toBe("azure-openai-key");
+    expect(capturedHeaders.get("Authorization")).toBeNull();
+  });
+
+  it("uses the Azure key when OPENAI_BASE_URL points to Azure", async () => {
+    process.env["OPENAI_API_KEY"] = "public-openai-key";
+    process.env["AZURE_OPENAI_API_KEY"] = "azure-openai-key";
+    process.env["OPENAI_BASE_URL"] = "https://agentmemory.openai.azure.com";
+    let capturedHeaders = new Headers();
+    vi.spyOn(globalThis, "fetch").mockImplementation(
+      async (_url: string | URL | Request, init?: RequestInit) => {
+        capturedHeaders = new Headers(init?.headers);
+        return new Response(
+          JSON.stringify({ choices: [{ message: { content: "summary" } }] }),
+          { status: 200 },
+        );
+      },
+    );
+
+    await createProvider({
+      provider: "openai",
+      model: "gpt-5.4-mini",
+      maxTokens: 256,
+    }).summarize("system", "user");
 
     expect(capturedHeaders.get("api-key")).toBe("azure-openai-key");
     expect(capturedHeaders.get("Authorization")).toBeNull();

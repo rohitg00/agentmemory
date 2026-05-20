@@ -99,7 +99,8 @@ function createBaseProvider(config: ProviderConfig): MemoryProvider {
     case "openai": {
       const azureKey = getEnvVar("AZURE_OPENAI_API_KEY");
       const standardKey = getEnvVar("OPENAI_API_KEY");
-      const useAzureKey = config.baseURL ? detectAzure(config.baseURL) : false;
+      const effectiveBaseURL = config.baseURL || getEnvVar("OPENAI_BASE_URL");
+      const useAzureKey = effectiveBaseURL ? detectAzure(effectiveBaseURL) : false;
       const openaiKey = useAzureKey
         ? azureKey || standardKey
         : standardKey || azureKey;
