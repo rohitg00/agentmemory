@@ -3,6 +3,7 @@ import { basename, resolve, sep } from "node:path";
 
 const DEFAULT_GIT_IDENTITY_TIMEOUT_MS = 500;
 const GIT_IDENTITY_TIMEOUT_ENV = "AGENTMEMORY_GIT_IDENTITY_TIMEOUT_MS";
+const MAX_GIT_PROJECT_CACHE_KEYS = 512;
 
 export interface GitProjectInfo {
   isWorktree: boolean;
@@ -21,6 +22,20 @@ export interface ProjectIdentity {
 }
 
 const gitProjectCache = new Map<string, GitProjectInfo>();
+
+function touchGitProjectCache(
+  key: string,
+  git: GitProjectInfo,
+): GitProjectInfo {
+  gitProjectCache.delete(key);
+  gitProjectCache.set(key, git);
+  while (gitProjectCache.size > MAX_GIT_PROJECT_CACHE_KEYS) {
+    const oldestKey = gitProjectCache.keys().next().value;
+    if (!oldestKey) break;
+    gitProjectCache.delete(oldestKey);
+  }
+  return git;
+}
 
 function gitIdentityTimeoutMs(): number {
   const raw = process.env[GIT_IDENTITY_TIMEOUT_ENV];
@@ -72,14 +87,14 @@ function rememberGitProject(cwd: string, git: GitProjectInfo): void {
     git.gitDir,
     git.commonDir,
   ]) {
-    gitProjectCache.set(pathKey(key), git);
+    touchGitProjectCache(pathKey(key), git);
   }
 }
 
 function cachedGitProject(cwd: string): GitProjectInfo | null {
   const target = pathKey(cwd);
   const exact = gitProjectCache.get(target);
-  if (exact) return exact;
+  if (exact) return touchGitProjectCache(target, exact);
 
   let best: { key: string; git: GitProjectInfo } | null = null;
   for (const [key, git] of gitProjectCache) {
@@ -87,7 +102,7 @@ function cachedGitProject(cwd: string): GitProjectInfo | null {
     if (!target.startsWith(prefix)) continue;
     if (!best || key.length > best.key.length) best = { key, git };
   }
-  return best?.git ?? null;
+  return best ? touchGitProjectCache(best.key, best.git) : null;
 }
 
 function normalizeBranch(branch: string | undefined): string | null {
