@@ -1400,7 +1400,7 @@ async function passiveServerChecks(): Promise<DoctorCheck[]> {
     {
       name: "LLM provider",
       ok: hasLlm,
-      hint: hasLlm ? undefined : "set ANTHROPIC_API_KEY (or GEMINI/OPENROUTER/MINIMAX) in ~/.agentmemory/.env",
+      hint: hasLlm ? undefined : "set ANTHROPIC_API_KEY (or AZURE_OPENAI/GEMINI/OPENROUTER/MINIMAX) in ~/.agentmemory/.env",
     },
     {
       name: "Embedding provider",
@@ -1835,7 +1835,7 @@ async function runInit() {
       "All keys are commented out by default. Uncomment the ones you want.",
       "",
       "Common next steps:",
-      "  1. Pick an LLM provider key (ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY / etc.)",
+      "  1. Pick an LLM provider key (ANTHROPIC_API_KEY / AZURE_OPENAI_API_KEY / OPENAI_API_KEY / etc.)",
       "  2. Run `npx @agentmemory/agentmemory doctor` to verify the daemon sees them",
       "  3. Run `npx @agentmemory/agentmemory` to start the worker",
     ].join("\n"),

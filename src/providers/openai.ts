@@ -25,12 +25,14 @@ const DEFAULT_TIMEOUT_MS = 60_000;
  *
  * Required env vars:
  *   OPENAI_API_KEY  — API key
+ *   AZURE_OPENAI_API_KEY — Azure OpenAI API key alias for chat completions
  *
  * Optional:
  *   OPENAI_BASE_URL          — base URL without path (default: https://api.openai.com).
  *                              Azure: https://<resource>.openai.azure.com/openai/deployments/<deployment>
  *   OPENAI_MODEL             — model name (default: gpt-4o-mini)
  *   OPENAI_API_VERSION       — Azure api-version query param (default: 2024-08-01-preview)
+ *   AZURE_OPENAI_API_VERSION — Azure-specific alias for OPENAI_API_VERSION
  *   OPENAI_TIMEOUT_MS        — outbound fetch timeout in ms (OpenAI-scoped alias,
  *                              takes precedence over AGENTMEMORY_LLM_TIMEOUT_MS
  *                              for back-compat with the v0.9.17 shipping name).
@@ -63,7 +65,9 @@ export class OpenAIProvider implements MemoryProvider {
     this.reasoningEffort = getEnvVar("OPENAI_REASONING_EFFORT") || undefined;
     this.timeoutMs = resolveTimeout();
     this.azureApiVersion =
-      getEnvVar("OPENAI_API_VERSION") || DEFAULT_AZURE_API_VERSION;
+      getEnvVar("AZURE_OPENAI_API_VERSION") ||
+      getEnvVar("OPENAI_API_VERSION") ||
+      DEFAULT_AZURE_API_VERSION;
     this.isAzure = detectAzure(this.baseUrl);
   }
 

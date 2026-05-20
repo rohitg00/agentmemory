@@ -6,6 +6,7 @@ import {
   detectAzure,
   normalizeBaseUrl,
 } from "../src/providers/_openai-shared.js";
+import { OpenAIProvider } from "../src/providers/openai.js";
 import { OpenAIEmbeddingProvider } from "../src/providers/embedding/openai.js";
 
 describe("_openai-shared — detectAzure", () => {
@@ -257,5 +258,42 @@ describe("OpenAIEmbeddingProvider — Azure auto-detection (#371)", () => {
     expect(capturedUrl).toBe("https://api.openai.com/v1/embeddings");
     expect(capturedHeaders.get("Authorization")).toBe("Bearer sk-test");
     expect(capturedHeaders.get("api-key")).toBeNull();
+  });
+});
+
+describe("OpenAIProvider — Azure OpenAI aliases", () => {
+  const ORIGINAL_AZURE_VERSION = process.env["AZURE_OPENAI_API_VERSION"];
+
+  afterEach(() => {
+    if (ORIGINAL_AZURE_VERSION === undefined)
+      delete process.env["AZURE_OPENAI_API_VERSION"];
+    else process.env["AZURE_OPENAI_API_VERSION"] = ORIGINAL_AZURE_VERSION;
+    vi.restoreAllMocks();
+  });
+
+  it("honors AZURE_OPENAI_API_VERSION for legacy Azure chat completions", async () => {
+    process.env["AZURE_OPENAI_API_VERSION"] = "2025-04-01-preview";
+    let capturedUrl = "";
+    vi.spyOn(globalThis, "fetch").mockImplementation(
+      async (url: string | URL | Request) => {
+        capturedUrl = String(url);
+        return new Response(
+          JSON.stringify({ choices: [{ message: { content: "summary" } }] }),
+          { status: 200 },
+        );
+      },
+    );
+
+    const provider = new OpenAIProvider(
+      "azure-key",
+      "gpt-5.4-mini",
+      256,
+      "https://myres.openai.azure.com/openai/deployments/gpt-5.4-mini",
+    );
+    await provider.summarize("system", "user");
+
+    expect(capturedUrl).toBe(
+      "https://myres.openai.azure.com/openai/deployments/gpt-5.4-mini/chat/completions?api-version=2025-04-01-preview",
+    );
   });
 });
