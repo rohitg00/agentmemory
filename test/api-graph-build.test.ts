@@ -4,54 +4,74 @@ vi.mock("../src/logger.js", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
+vi.mock("iii-sdk", () => ({
+  TriggerAction: {
+    Enqueue: vi.fn(),
+    Void: vi.fn(),
+  },
+  registerWorker: vi.fn(),
+}));
+
 import { registerGraphFunction } from "../src/functions/graph.js";
 import { registerApiTriggers } from "../src/triggers/api.js";
 import { KV } from "../src/state/schema.js";
 import type { CompressedObservation, Memory, Session } from "../src/types.js";
 
-function mockKV() {
+type RegisteredHandler = (payload: unknown) => unknown | Promise<unknown>;
+type RegisteredTrigger = {
+  function_id: string;
+  config?: { api_path?: string };
+};
+
+function createMockKV() {
   const store = new Map<string, Map<string, unknown>>();
   return {
-    get: async <T>(scope: string, key: string): Promise<T | null> => {
+    get: vi.fn(async <T>(scope: string, key: string): Promise<T | null> => {
       return (store.get(scope)?.get(key) as T) ?? null;
-    },
-    set: async <T>(scope: string, key: string, data: T): Promise<T> => {
+    }),
+    set: vi.fn(async <T>(scope: string, key: string, data: T): Promise<T> => {
       if (!store.has(scope)) store.set(scope, new Map());
       store.get(scope)!.set(key, data);
       return data;
-    },
-    delete: async (scope: string, key: string): Promise<void> => {
+    }),
+    delete: vi.fn(async (scope: string, key: string): Promise<void> => {
       store.get(scope)?.delete(key);
-    },
-    list: async <T>(scope: string): Promise<T[]> => {
+    }),
+    list: vi.fn(async <T>(scope: string): Promise<T[]> => {
       const entries = store.get(scope);
       return entries ? (Array.from(entries.values()) as T[]) : [];
-    },
+    }),
   };
 }
 
-function mockSdk() {
-  const functions = new Map<string, Function>();
-  const triggers: Array<{ function_id: string; config?: { api_path?: string } }> = [];
+function createMockSdk() {
+  const functions = new Map<string, RegisteredHandler>();
+  const triggers: RegisteredTrigger[] = [];
   return {
     triggers,
-    registerFunction: (idOrOpts: string | { id: string }, handler: Function) => {
-      const id = typeof idOrOpts === "string" ? idOrOpts : idOrOpts.id;
-      functions.set(id, handler);
-    },
-    registerTrigger: (trigger: { function_id: string; config?: { api_path?: string } }) => {
+    registerFunction: vi.fn(
+      (idOrOpts: string | { id: string }, handler: RegisteredHandler) => {
+        const id = typeof idOrOpts === "string" ? idOrOpts : idOrOpts.id;
+        functions.set(id, handler);
+      },
+    ),
+    registerTrigger: vi.fn((trigger: RegisteredTrigger) => {
       triggers.push(trigger);
-    },
-    trigger: async (
-      idOrInput: string | { function_id: string; payload: unknown },
-      data?: unknown,
-    ) => {
-      const id = typeof idOrInput === "string" ? idOrInput : idOrInput.function_id;
-      const payload = typeof idOrInput === "string" ? data : idOrInput.payload;
-      const fn = functions.get(id);
-      if (!fn) throw new Error(`No function: ${id}`);
-      return fn(payload);
-    },
+    }),
+    trigger: vi.fn(
+      async (
+        idOrInput: string | { function_id: string; payload: unknown },
+        data?: unknown,
+      ) => {
+        const id =
+          typeof idOrInput === "string" ? idOrInput : idOrInput.function_id;
+        const payload =
+          typeof idOrInput === "string" ? data : idOrInput.payload;
+        const fn = functions.get(id);
+        if (!fn) throw new Error(`No function: ${id}`);
+        return fn(payload);
+      },
+    ),
   };
 }
 
@@ -101,8 +121,8 @@ function makeMemory(id: string): Memory {
 
 describe("api::graph-build", () => {
   it("registers POST /agentmemory/graph/build and backfills graph data (#505)", async () => {
-    const sdk = mockSdk();
-    const kv = mockKV();
+    const sdk = createMockSdk();
+    const kv = createMockKV();
     registerGraphFunction(sdk as never, kv as never, mockProvider as never);
     registerApiTriggers(sdk as never, kv as never);
 
@@ -115,7 +135,11 @@ describe("api::graph-build", () => {
       observationCount: 1,
     };
     await kv.set(KV.sessions, session.id, session);
-    await kv.set(KV.observations(session.id), "obs_1", makeObservation("obs_1"));
+    await kv.set(
+      KV.observations(session.id),
+      "obs_1",
+      makeObservation("obs_1"),
+    );
     await kv.set(KV.memories, "mem_1", makeMemory("mem_1"));
 
     const trigger = sdk.triggers.find(
@@ -136,8 +160,8 @@ describe("api::graph-build", () => {
   });
 
   it("validates graph build limit", async () => {
-    const sdk = mockSdk();
-    const kv = mockKV();
+    const sdk = createMockSdk();
+    const kv = createMockKV();
     registerApiTriggers(sdk as never, kv as never);
 
     const response = (await sdk.trigger("api::graph-build", {
@@ -150,8 +174,8 @@ describe("api::graph-build", () => {
   });
 
   it("marks graph build results as truncated when limit cuts off inputs", async () => {
-    const sdk = mockSdk();
-    const kv = mockKV();
+    const sdk = createMockSdk();
+    const kv = createMockKV();
     registerGraphFunction(sdk as never, kv as never, mockProvider as never);
     registerApiTriggers(sdk as never, kv as never);
 
@@ -164,8 +188,16 @@ describe("api::graph-build", () => {
       observationCount: 2,
     };
     await kv.set(KV.sessions, session.id, session);
-    await kv.set(KV.observations(session.id), "obs_1", makeObservation("obs_1"));
-    await kv.set(KV.observations(session.id), "obs_2", makeObservation("obs_2"));
+    await kv.set(
+      KV.observations(session.id),
+      "obs_1",
+      makeObservation("obs_1"),
+    );
+    await kv.set(
+      KV.observations(session.id),
+      "obs_2",
+      makeObservation("obs_2"),
+    );
 
     const response = (await sdk.trigger("api::graph-build", {
       headers: {},
@@ -181,8 +213,8 @@ describe("api::graph-build", () => {
   });
 
   it("fails fast when graph build cannot read storage", async () => {
-    const sdk = mockSdk();
-    const kv = mockKV();
+    const sdk = createMockSdk();
+    const kv = createMockKV();
     const failingKv = {
       ...kv,
       list: vi.fn(async (scope: string): Promise<unknown[]> => {
@@ -206,8 +238,8 @@ describe("api::graph-build", () => {
   });
 
   it("reports extraction failures without hiding partial graph build results", async () => {
-    const sdk = mockSdk();
-    const kv = mockKV();
+    const sdk = createMockSdk();
+    const kv = createMockKV();
     registerApiTriggers(sdk as never, kv as never);
     sdk.registerFunction("mem::graph-extract", async () => {
       throw new Error("provider unavailable");
@@ -222,7 +254,11 @@ describe("api::graph-build", () => {
       observationCount: 1,
     };
     await kv.set(KV.sessions, session.id, session);
-    await kv.set(KV.observations(session.id), "obs_1", makeObservation("obs_1"));
+    await kv.set(
+      KV.observations(session.id),
+      "obs_1",
+      makeObservation("obs_1"),
+    );
 
     const response = (await sdk.trigger("api::graph-build", {
       headers: {},
@@ -247,8 +283,8 @@ describe("api::graph-build", () => {
   });
 
   it("returns the graph disabled response when extraction is not registered", async () => {
-    const sdk = mockSdk();
-    const kv = mockKV();
+    const sdk = createMockSdk();
+    const kv = createMockKV();
     registerApiTriggers(sdk as never, kv as never);
 
     const session: Session = {
@@ -260,7 +296,11 @@ describe("api::graph-build", () => {
       observationCount: 1,
     };
     await kv.set(KV.sessions, session.id, session);
-    await kv.set(KV.observations(session.id), "obs_1", makeObservation("obs_1"));
+    await kv.set(
+      KV.observations(session.id),
+      "obs_1",
+      makeObservation("obs_1"),
+    );
 
     const response = (await sdk.trigger("api::graph-build", {
       headers: {},
