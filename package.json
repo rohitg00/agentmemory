@@ -25,7 +25,9 @@
     "test:watch": "vitest --exclude test/integration.test.ts",
     "test:integration": "vitest run test/integration.test.ts",
     "test:all": "vitest run",
-    "bench:load": "node --import tsx benchmark/load-100k.ts"
+    "bench:load": "node --import tsx benchmark/load-100k.ts",
+    "eval:longmemeval": "tsx eval/runner/longmemeval.ts",
+    "eval:coding-life": "tsx eval/runner/coding-life.ts"
   },
   "keywords": [
     "ai",
@@ -60,7 +62,7 @@
     "@anthropic-ai/sdk": "^0.39.0",
     "@clack/prompts": "^1.2.0",
     "dotenv": "^17.4.2",
-    "iii-sdk": "^0.11.2",
+    "iii-sdk": "0.11.2",
     "zod": "^4.0.0"
   },
   "optionalDependencies": {

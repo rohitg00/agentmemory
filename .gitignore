@@ -13,6 +13,8 @@ dist/
 plugin/scripts/*.map
 plugin/scripts/*.d.mts
 data/
+!eval/data/
+!eval/data/**
 data-*/
 agentmemory-debug/
 .gstack/
@@ -22,3 +24,8 @@ package-lock.json
 pnpm-lock.yaml
 yarn.lock
 integrations/hermes/__pycache__/
+
+# Eval reports (transient; published scorecards live in docs/benchmarks/)
+eval/reports/
+# LongMemEval download is 278MB; fetched on demand
+eval/data/longmemeval/

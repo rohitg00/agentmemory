@@ -195,9 +195,36 @@ function getBaseUrl(): string {
   return `http://localhost:${getRestPort()}`;
 }
 
+let discoveredViewerPort: number | null = null;
+
+export async function discoverViewerPort(): Promise<void> {
+  if (discoveredViewerPort !== null) return;
+  try {
+    const res = await fetch(`${getBaseUrl()}/agentmemory/livez`, {
+      signal: AbortSignal.timeout(1000),
+    });
+    if (res.ok) {
+      const data = await res.json() as { viewerPort?: number | null };
+      if (typeof data.viewerPort === "number") {
+        discoveredViewerPort = data.viewerPort;
+      }
+    }
+  } catch {}
+}
+
 function getViewerUrl(): string {
   const envUrl = process.env["AGENTMEMORY_VIEWER_URL"];
   if (envUrl) return envUrl.replace(/\/+$/, "");
+  
+  if (discoveredViewerPort !== null) {
+    try {
+      const u = new URL(getBaseUrl());
+      return `${u.protocol}//${u.hostname}:${discoveredViewerPort}`;
+    } catch {
+      return `http://localhost:${discoveredViewerPort}`;
+    }
+  }
+  
   try {
     const u = new URL(getBaseUrl());
     const vPort =
@@ -257,7 +284,18 @@ async function isAgentmemoryReady(): Promise<boolean> {
     const res = await fetch(`${getBaseUrl()}/agentmemory/livez`, {
       signal: AbortSignal.timeout(2000),
     });
-    return res.ok;
+    if (!res.ok) return false;
+    try {
+      const data = await res.json() as { viewerPort?: number | null; viewerSkipped?: boolean };
+      if (typeof data.viewerPort === "number") {
+        discoveredViewerPort = data.viewerPort;
+        return true;
+      }
+      if (data.viewerSkipped) return true;
+      return false;
+    } catch {
+      return false;
+    }
   } catch {
     return false;
   }
@@ -1092,6 +1130,9 @@ async function runStatus() {
       apiFetch<any>(base, "config/flags"),
     ]);
 
+    if (typeof healthRes?.viewerPort === "number") {
+      discoveredViewerPort = healthRes.viewerPort;
+    }
     const h = healthRes?.health;
     const status = healthRes?.status || "unknown";
     const version = healthRes?.version || "?";
@@ -1251,6 +1292,7 @@ function buildDoctorEffects(): DoctorEffects {
     iiiBinaryVersion: (binPath: string) => iiiBinVersion(binPath),
     viewerReachable: async (timeoutMs = 2000) => {
       try {
+        await discoverViewerPort();
         const res = await fetch(getViewerUrl(), {
           signal: AbortSignal.timeout(timeoutMs),
         });
@@ -1968,8 +2010,8 @@ async function runUpgrade() {
         label: "Refreshing dependencies (pnpm install)",
       });
       requireSuccess(installOk, "pnpm install");
-      runCommand(pnpmBin, ["up", "iii-sdk@latest"], {
-        label: "Upgrading iii-sdk to latest",
+      runCommand(pnpmBin, ["up", "iii-sdk@0.11.2"], {
+        label: "Pinning iii-sdk@0.11.2",
         optional: true,
       });
     } else if (npmBin) {
@@ -1977,8 +2019,8 @@ async function runUpgrade() {
         label: "Refreshing dependencies (npm install)",
       });
       requireSuccess(installOk, "npm install");
-      runCommand(npmBin, ["install", "iii-sdk@latest"], {
-        label: "Upgrading iii-sdk to latest",
+      runCommand(npmBin, ["install", "iii-sdk@0.11.2"], {
+        label: "Pinning iii-sdk@0.11.2",
         optional: true,
       });
     } else {

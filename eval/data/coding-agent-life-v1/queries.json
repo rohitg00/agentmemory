@@ -1,0 +1,107 @@
+[
+  {
+    "id": "q-001",
+    "type": "single-session-bug",
+    "question": "Where did we land the auth env var precedence fix?",
+    "answer": "PR #11 with SHIPCTL_TOKEN > SHIP_TOKEN > SC_TOKEN precedence",
+    "goldSessionIds": ["sess-001"]
+  },
+  {
+    "id": "q-002",
+    "type": "single-session-infra",
+    "question": "What was the multi-arch Docker fix?",
+    "answer": "Added --platform=$BUILDPLATFORM and BUILDX_PLATFORMS for amd64+arm64",
+    "goldSessionIds": ["sess-002"]
+  },
+  {
+    "id": "q-003",
+    "type": "single-session-refactor",
+    "question": "Where did we consolidate the retry logic?",
+    "answer": "src/retry.rs with exponential backoff base=200ms cap=30s full jitter",
+    "goldSessionIds": ["sess-003"]
+  },
+  {
+    "id": "q-004",
+    "type": "single-session-feature",
+    "question": "Which PR introduced helm chart support?",
+    "answer": "PR #14",
+    "goldSessionIds": ["sess-004"]
+  },
+  {
+    "id": "q-005",
+    "type": "single-session-test",
+    "question": "Which test was flaky on macos and how was it fixed?",
+    "answer": "fs-watcher emits_changekind_file_delete; bumped wait to 1500ms + retry: 2",
+    "goldSessionIds": ["sess-005"]
+  },
+  {
+    "id": "q-006",
+    "type": "single-session-perf",
+    "question": "How did we fix the memory leak?",
+    "answer": "Replaced unbounded HashMap with LruCache cap=10k in src/cache.rs (PR #16)",
+    "goldSessionIds": ["sess-006"]
+  },
+  {
+    "id": "q-007",
+    "type": "single-session-api",
+    "question": "How did we handle the github API rate limit?",
+    "answer": "Conditional requests with If-None-Match etag and 304 caching via http-cache",
+    "goldSessionIds": ["sess-007"]
+  },
+  {
+    "id": "q-008",
+    "type": "single-session-db",
+    "question": "What was the schema migration approach for run_history?",
+    "answer": "Three-phase: nullable column + dual-write, backfill + flip reads, drop old column",
+    "goldSessionIds": ["sess-008"]
+  },
+  {
+    "id": "q-009",
+    "type": "single-session-infra",
+    "question": "How is the docs site deployed?",
+    "answer": "GitHub Actions docs.yml workflow + mdbook build + Cloudflare Pages on shipctl.dev",
+    "goldSessionIds": ["sess-009"]
+  },
+  {
+    "id": "q-010",
+    "type": "single-session-release",
+    "question": "Which PR set up the cross-platform release pipeline?",
+    "answer": "PR #19 with cross-rs for linux and native macos/windows builds",
+    "goldSessionIds": ["sess-010"]
+  },
+  {
+    "id": "q-011",
+    "type": "multi-session-causal",
+    "question": "What was the root cause of the staging incident, and where was it fixed?",
+    "answer": "SHIPCTL_TOKEN unset caused fallback to bad SC_TOKEN; fixed in PR #11 (sess-001) with precedence test; documented in post-mortem (sess-014)",
+    "goldSessionIds": ["sess-001", "sess-014"]
+  },
+  {
+    "id": "q-012",
+    "type": "preference",
+    "question": "Which async runtime does the team prefer for new code?",
+    "answer": "async-std (decided in arch review, not tokio)",
+    "goldSessionIds": ["sess-015"]
+  },
+  {
+    "id": "q-013",
+    "type": "preference",
+    "question": "What are the user's formatting preferences?",
+    "answer": "2-space indent in yaml, tab in rust, rust-analyzer over rls, cargo clippy before commit",
+    "goldSessionIds": ["sess-012"]
+  },
+  {
+    "id": "q-014",
+    "type": "multi-session-review",
+    "question": "What was the race condition Aria fixed in the schema migration?",
+    "answer": "Dual-write step had race when two writers hit same row; Aria added per-row advisory lock",
+    "goldSessionIds": ["sess-008", "sess-013"]
+  },
+  {
+    "id": "q-015",
+    "type": "temporal",
+    "question": "What was shipped on April 8th 2026?",
+    "answer": "Auth env-var precedence fix in PR #11, then started docker arm64 work",
+    "goldSessionIds": ["sess-001", "sess-011"]
+  }
+]
