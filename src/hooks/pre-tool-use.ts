@@ -88,7 +88,11 @@ async function main() {
     }
   }
 
-  const sessionId = ((data.session_id || data.sessionId) as string) || "unknown";
+  const rawSessionId = data.session_id || data.sessionId;
+  const sessionId =
+    typeof rawSessionId === "string" && rawSessionId.length > 0
+      ? rawSessionId
+      : "unknown";
 
   try {
     const res = await fetch(`${REST_URL}/agentmemory/enrich`, {

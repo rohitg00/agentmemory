@@ -297,6 +297,27 @@ describe("Copilot hook scripts", () => {
     });
   });
 
+  it("pre-tool-use narrows Copilot sessionId to strings", async () => {
+    const result = await runHook(
+      "scripts/pre-tool-use.mjs",
+      {
+        sessionId: 123,
+        toolName: "read",
+        toolArgs: { path: "src/index.ts" },
+      },
+      { AGENTMEMORY_INJECT_CONTEXT: "true" },
+    );
+
+    expect(result.stdout).toBe("remembered context");
+    expect(result.requests[0]?.path).toBe("/agentmemory/enrich");
+    expect(result.requests[0]?.body).toMatchObject({
+      sessionId: "unknown",
+      files: ["src/index.ts"],
+      terms: [],
+      toolName: "read",
+    });
+  });
+
   it("prompt-submit accepts Copilot camelCase prompt payload", async () => {
     const result = await runHook("scripts/prompt-submit.mjs", {
       sessionId: "copilot-session",
