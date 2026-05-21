@@ -76,4 +76,30 @@ describe("VectorIndex", () => {
     const results = index.search(new Float32Array([1, 0, 0]));
     expect(results[0].score).toBe(0);
   });
+
+  it("serialize round-trip preserves dimension and values for pooled-buffer sizes", () => {
+    // 384 floats = 1536 bytes, small enough for Node to pool the decoded Buffer.
+    // Without the byteOffset/byteLength fix, deserialized length becomes 2048
+    // and values read from pool offset 0 instead of the slice.
+    const DIM = 384;
+    const vecs = Array.from({ length: 5 }, (_, n) => {
+      const v = new Float32Array(DIM);
+      for (let i = 0; i < DIM; i++) v[i] = n * 1000 + i;
+      return v;
+    });
+
+    vecs.forEach((v, n) => index.add(`obs_${n}`, "ses_1", v));
+    const restored = VectorIndex.deserialize(index.serialize());
+
+    expect(restored.size).toBe(5);
+    // Dimension must be exactly DIM, not 2048 (Buffer.poolSize / 4).
+    const { mismatches } = restored.validateDimensions(DIM);
+    expect(mismatches).toEqual([]);
+    // Each vector must be its own nearest neighbour after reload.
+    for (let n = 0; n < 5; n++) {
+      const results = restored.search(vecs[n], 1);
+      expect(results[0].obsId).toBe(`obs_${n}`);
+      expect(results[0].score).toBeCloseTo(1.0, 4);
+    }
+  });
 });
