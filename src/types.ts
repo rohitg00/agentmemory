@@ -143,7 +143,15 @@ export interface ProviderConfig {
   baseURL?: string;
 }
 
-export type ProviderType = "agent-sdk" | "anthropic" | "gemini" | "openrouter" | "minimax" | "openai" | "noop";
+export type ProviderType =
+  | "agent-sdk"
+  | "codex-sdk"
+  | "anthropic"
+  | "gemini"
+  | "openrouter"
+  | "minimax"
+  | "openai"
+  | "noop";
 
 export interface MemoryProvider {
   name: string;
