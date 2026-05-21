@@ -291,4 +291,131 @@ describe("Smart Search Function", () => {
       expect(result.lessons).toEqual([]);
     });
   });
+
+  describe("insight inclusion (#590)", () => {
+    it("compact mode returns insights array alongside observation results", async () => {
+      sdk.registerFunction("mem::insight-search", async () => ({
+        success: true,
+        insights: [
+          {
+            id: "ins_a",
+            title: "PID 1 masking kills restart policy",
+            content:
+              "When nginx runs as PID 1 with a backgrounded critical process, the supervisor never sees the death.",
+            confidence: 0.95,
+            createdAt: "2026-05-20T13:00:00Z",
+            project: "p",
+            tags: ["loki", "railway"],
+            score: 0.85,
+          },
+          {
+            id: "ins_b",
+            title: "Silent process death",
+            content: "Background processes die invisibly.",
+            confidence: 0.88,
+            createdAt: "2026-05-20T13:01:00Z",
+            project: "p",
+            tags: ["reliability"],
+            score: 0.78,
+          },
+        ],
+      }));
+
+      const result = (await sdk.trigger("mem::smart-search", {
+        query: "process death",
+      })) as { mode: string; results: CompactSearchResult[]; insights?: any[] };
+
+      expect(result.mode).toBe("compact");
+      expect(result.results.length).toBe(2);
+      expect(result.insights).toBeDefined();
+      expect(result.insights!.length).toBe(2);
+      expect(result.insights![0]).toMatchObject({
+        insightId: "ins_a",
+        title: "PID 1 masking kills restart policy",
+        confidence: 0.95,
+        score: 0.85,
+      });
+      expect(result.insights![0].tags).toEqual(["loki", "railway"]);
+    });
+
+    it("compact mode truncates long insight content for preview", async () => {
+      const long = "y".repeat(500);
+      sdk.registerFunction("mem::insight-search", async () => ({
+        success: true,
+        insights: [
+          {
+            id: "ins_long",
+            title: "wordy",
+            content: long,
+            confidence: 0.5,
+            createdAt: "",
+            tags: [],
+            score: 0.4,
+          },
+        ],
+      }));
+
+      const result = (await sdk.trigger("mem::smart-search", {
+        query: "y",
+      })) as { insights: any[] };
+
+      expect(result.insights[0].content.length).toBeLessThan(long.length);
+      expect(result.insights[0].content).toMatch(/…$/);
+    });
+
+    it("includeInsights:false omits the insights array entirely", async () => {
+      const result = (await sdk.trigger("mem::smart-search", {
+        query: "auth",
+        includeInsights: false,
+      })) as { results: CompactSearchResult[]; insights?: unknown };
+
+      expect(result.results.length).toBe(2);
+      expect(result.insights).toBeUndefined();
+    });
+
+    it("forwards project filter to mem::insight-search", async () => {
+      let receivedPayload: any = null;
+      sdk.registerFunction("mem::insight-search", async (payload: any) => {
+        receivedPayload = payload;
+        return { success: true, insights: [] };
+      });
+
+      await sdk.trigger("mem::smart-search", {
+        query: "deploy",
+        project: "compass-app",
+      });
+
+      expect(receivedPayload).toMatchObject({
+        query: "deploy",
+        project: "compass-app",
+      });
+    });
+
+    it("tolerates mem::insight-search failure: returns empty insights, observations unchanged", async () => {
+      sdk.registerFunction("mem::insight-search", async () => {
+        throw new Error("insights store unavailable");
+      });
+
+      const result = (await sdk.trigger("mem::smart-search", {
+        query: "auth",
+      })) as { results: CompactSearchResult[]; insights: any[] };
+
+      expect(result.results.length).toBe(2);
+      expect(result.insights).toEqual([]);
+    });
+
+    it("tolerates non-success insight-search response shape", async () => {
+      sdk.registerFunction("mem::insight-search", async () => ({
+        success: false,
+        error: "query is required",
+      }));
+
+      const result = (await sdk.trigger("mem::smart-search", {
+        query: "auth",
+      })) as { results: CompactSearchResult[]; insights: any[] };
+
+      expect(result.results.length).toBe(2);
+      expect(result.insights).toEqual([]);
+    });
+  });
 });

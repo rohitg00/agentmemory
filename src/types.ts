@@ -276,6 +276,17 @@ export interface CompactLessonResult {
   tags: string[];
 }
 
+export interface CompactInsightResult {
+  insightId: string;
+  title: string;
+  content: string;
+  confidence: number;
+  score: number;
+  createdAt: string;
+  project?: string;
+  tags: string[];
+}
+
 export interface TimelineEntry {
   observation: CompressedObservation;
   sessionId: string;

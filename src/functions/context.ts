@@ -7,6 +7,8 @@ import type {
   ProjectProfile,
   MemorySlot,
   Lesson,
+  Insight,
+  SemanticMemory,
 } from "../types.js";
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
@@ -40,15 +42,20 @@ export function registerContextFunction(
       const budget = data.budget || tokenBudget;
       const blocks: ContextBlock[] = [];
 
-      const [pinnedSlots, profile, lessons] = await Promise.all([
-        isSlotsEnabled()
-          ? listPinnedSlots(kv).catch(() => [] as MemorySlot[])
-          : Promise.resolve([] as MemorySlot[]),
-        kv
-          .get<ProjectProfile>(KV.profiles, data.project)
-          .catch(() => null),
-        kv.list<Lesson>(KV.lessons).catch(() => [] as Lesson[]),
-      ]);
+      const [pinnedSlots, profile, lessons, insights, semanticAll] =
+        await Promise.all([
+          isSlotsEnabled()
+            ? listPinnedSlots(kv).catch(() => [] as MemorySlot[])
+            : Promise.resolve([] as MemorySlot[]),
+          kv
+            .get<ProjectProfile>(KV.profiles, data.project)
+            .catch(() => null),
+          kv.list<Lesson>(KV.lessons).catch(() => [] as Lesson[]),
+          kv.list<Insight>(KV.insights).catch(() => [] as Insight[]),
+          kv
+            .list<SemanticMemory>(KV.semantic)
+            .catch(() => [] as SemanticMemory[]),
+        ]);
 
       const slotContent = renderPinnedContext(pinnedSlots);
       if (slotContent) {
@@ -132,6 +139,44 @@ export function registerContextFunction(
         });
       }
 
+      // Insights — mirrors the lessons round-trip closure. Without this
+      // block, distilled insights produced by mem::reflect sit in KV and
+      // only surface when the agent explicitly calls memory_insight_list,
+      // which agents rarely do unprompted. Same ranking shape as lessons:
+      // project-scoped insights rank above global, then weight by
+      // confidence, cap at 10. #590.
+      const relevantInsights = insights
+        .filter(
+          (i) => !i.deleted && (!i.project || i.project === data.project),
+        )
+        .sort((a, b) => {
+          const scoreA = (a.project === data.project ? 1.5 : 1) * a.confidence;
+          const scoreB = (b.project === data.project ? 1.5 : 1) * b.confidence;
+          return scoreB - scoreA;
+        })
+        .slice(0, 10);
+
+      if (relevantInsights.length > 0) {
+        const items = relevantInsights
+          .map(
+            (i) =>
+              `- (${i.confidence.toFixed(2)}) ${i.title}: ${i.content}`,
+          )
+          .join("\n");
+        const insightsContent = `## Distilled Insights\n${items}`;
+        const mostRecent = relevantInsights.reduce((acc, i) => {
+          const t = new Date(i.lastReinforcedAt || i.updatedAt).getTime();
+          return t > acc ? t : acc;
+        }, 0);
+        blocks.push({
+          type: "memory",
+          content: insightsContent,
+          tokens: estimateTokens(insightsContent),
+          recency: mostRecent,
+          sourceIds: relevantInsights.map((i) => i.id),
+        });
+      }
+
       const allSessions = await kv.list<Session>(KV.sessions);
       const sessions = allSessions
         .filter((s) => s.project === data.project && s.id !== data.sessionId)
@@ -194,6 +239,54 @@ export function registerContextFunction(
             sourceIds: top.map((o) => o.id),
           });
         }
+      }
+
+      // Semantic facts — produced by consolidation-pipeline by clustering
+      // session summaries. They have no direct project field; project
+      // membership is derived from sourceSessionIds. Include a fact when
+      // any source session belongs to the current project, OR when it has
+      // no resolvable source sessions (treat as global cross-project
+      // knowledge). Filter out facts whose sources are entirely in other
+      // projects. Score by strength × confidence × project-relevance boost.
+      const sessionProjectById = new Map<string, string>();
+      for (const s of allSessions) {
+        sessionProjectById.set(s.id, s.project);
+      }
+
+      const relevantSemantic = semanticAll
+        .map((fact) => {
+          const projects = (fact.sourceSessionIds || [])
+            .map((sid) => sessionProjectById.get(sid))
+            .filter((p): p is string => !!p);
+          const matchesProject = projects.includes(data.project);
+          const isGlobal = projects.length === 0;
+          if (!isGlobal && !matchesProject) return null;
+          const boost = matchesProject ? 1.5 : 1;
+          const score = fact.strength * fact.confidence * boost;
+          return { fact, score };
+        })
+        .filter(
+          (x): x is { fact: SemanticMemory; score: number } => x !== null,
+        )
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 10);
+
+      if (relevantSemantic.length > 0) {
+        const items = relevantSemantic
+          .map(({ fact }) => `- (${fact.confidence.toFixed(2)}) ${fact.fact}`)
+          .join("\n");
+        const semanticContent = `## Architectural Facts\n${items}`;
+        const mostRecent = relevantSemantic.reduce((acc, { fact }) => {
+          const t = new Date(fact.updatedAt).getTime();
+          return t > acc ? t : acc;
+        }, 0);
+        blocks.push({
+          type: "memory",
+          content: semanticContent,
+          tokens: estimateTokens(semanticContent),
+          recency: mostRecent,
+          sourceIds: relevantSemantic.map(({ fact }) => fact.id),
+        });
       }
 
       blocks.sort((a, b) => b.recency - a.recency);
