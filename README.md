@@ -34,6 +34,7 @@
 
 <p align="center">
   <a href="https://www.npmjs.com/package/@agentmemory/agentmemory"><img src="https://img.shields.io/npm/v/@agentmemory/agentmemory?color=CB3837&label=npm&style=for-the-badge&logo=npm" alt="npm version" /></a>
+  <a href="https://www.npmjs.com/package/@agentmemory/agentmemory"><img src="https://img.shields.io/npm/dm/@agentmemory/agentmemory?color=CB3837&label=downloads&style=for-the-badge&logo=npm" alt="npm downloads" /></a>
   <a href="https://github.com/rohitg00/agentmemory/actions"><img src="https://img.shields.io/github/actions/workflow/status/rohitg00/agentmemory/ci.yml?label=tests&style=for-the-badge&logo=github" alt="CI" /></a>
   <a href="https://github.com/rohitg00/agentmemory/blob/main/LICENSE"><img src="https://img.shields.io/github/license/rohitg00/agentmemory?color=blue&style=for-the-badge" alt="License" /></a>
   <a href="https://github.com/rohitg00/agentmemory/stargazers"><img src="https://img.shields.io/github/stars/rohitg00/agentmemory?style=for-the-badge&color=yellow&logo=github" alt="Stars" /></a>
@@ -72,10 +73,12 @@
 ## Install
 
 ```bash
-npm install -g @agentmemory/agentmemory     # once — bare `agentmemory` on PATH
-agentmemory                                  # start the memory server on :3111
-agentmemory demo                             # seed sample sessions + prove recall
-agentmemory connect claude-code              # wire your agent (also: codex, cursor, gemini-cli, ...)
+npm install -g @agentmemory/agentmemory          # once — bare `agentmemory` on PATH
+# If you hit EACCES on macOS/Linux system Node installs, retry with:
+# sudo npm install -g @agentmemory/agentmemory
+agentmemory                                      # start the memory server on :3111
+agentmemory demo                                 # seed sample sessions + prove recall
+agentmemory connect claude-code                  # wire your agent (also: codex, cursor, gemini-cli, ...)
 ```
 
 Or via `npx` (no install):
@@ -207,6 +210,15 @@ npx @agentmemory/agentmemory
 
 ### Retrieval Accuracy
 
+**coding-agent-life-v1** (in-house corpus, sandbox-reproducible)
+
+| Adapter | P@5 | R@5 | Top-5 hit rate | p50 latency |
+|---|---|---|---|---|
+| **agentmemory hybrid** | **0.578** | **0.967** | **15 / 15** | 14 ms |
+| grep baseline | 0.267 | 0.967 | 15 / 15 | 0 ms |
+
+100% top-5 hit rate. **2.2×** better precision than the grep baseline on identical input. Full per-type breakdown: [`docs/benchmarks/2026-05-20-coding-agent-life-v1.md`](docs/benchmarks/2026-05-20-coding-agent-life-v1.md).
+
 **LongMemEval-S** (ICLR 2025, 500 questions)
 
 | System | R@5 | R@10 | MRR |
@@ -231,6 +243,8 @@ npx @agentmemory/agentmemory
 </table>
 
 > Embedding model: `all-MiniLM-L6-v2` (local, free, no API key). Full reports: [`benchmark/LONGMEMEVAL.md`](benchmark/LONGMEMEVAL.md), [`benchmark/QUALITY.md`](benchmark/QUALITY.md), [`benchmark/SCALE.md`](benchmark/SCALE.md). Competitor comparison: [`benchmark/COMPARISON.md`](benchmark/COMPARISON.md) — agentmemory vs mem0, Letta, Khoj, claude-mem, Hippo.
+
+**Reproduce locally:** [`eval/README.md`](eval/README.md) — adapter-pluggable harness for LongMemEval `_s` (public 500-Q) + `coding-agent-life-v1` (in-house 15-session corpus). Grep / vector / agentmemory adapters score side-by-side, NDJSON output, published scorecards land in [`docs/benchmarks/`](docs/benchmarks/).
 
 ---
 
@@ -349,6 +363,8 @@ Open `http://localhost:3113` to watch the memory build live.
 
 ```bash
 npm install -g @agentmemory/agentmemory
+# If you hit EACCES on macOS/Linux system Node installs, retry with:
+# sudo npm install -g @agentmemory/agentmemory
 agentmemory                    # start the server (same as the npx form)
 agentmemory stop               # tear it down
 agentmemory remove             # uninstall everything we created
@@ -399,6 +415,8 @@ Implementation details live in `src/cli.ts` (see `runUpgrade` around the `src/cl
 Install agentmemory: run `npx @agentmemory/agentmemory` in a separate terminal to start the memory server. Then run `/plugin marketplace add rohitg00/agentmemory` and `/plugin install agentmemory` — the plugin registers all 12 hooks, 4 skills, AND auto-wires the `@agentmemory/mcp` stdio server via its `.mcp.json`, so you get 53 MCP tools (memory_smart_search, memory_save, memory_sessions, memory_governance_delete, etc.) without any extra config step. Verify with `curl http://localhost:3111/agentmemory/health`. The real-time viewer is at http://localhost:3113.
 ```
 
+For remote or protected deployments, launch Claude Code with `AGENTMEMORY_URL` and `AGENTMEMORY_SECRET` set. The plugin passes both values through to its bundled MCP server; when `AGENTMEMORY_URL` is empty, the MCP shim uses `http://localhost:3111`.
+
 ### Codex CLI (Codex plugin platform)
 
 ```bash
@@ -417,6 +435,18 @@ The Codex plugin ships from the same `plugin/` directory as the Claude Code plug
 - 4 skills: `/recall`, `/remember`, `/session-history`, `/forget`
 
 Codex's hook engine injects `CLAUDE_PLUGIN_ROOT` into hook subprocesses (per [`codex-rs/hooks/src/engine/discovery.rs`](https://github.com/openai/codex/blob/main/codex-rs/hooks/src/engine/discovery.rs)), so the same hook scripts work across both hosts without duplication. Subagent / SessionEnd / Notification / TaskCompleted / PostToolUseFailure events are Claude-Code-only and are not registered for Codex.
+
+#### Codex Desktop: plugin hooks currently silent (workaround available)
+
+`CodexHooks` and `PluginHooks` are both stable + default-enabled in [`codex-rs/features/src/lib.rs`](https://github.com/openai/codex/blob/main/codex-rs/features/src/lib.rs), but Codex Desktop builds currently do not dispatch plugin-local `hooks.json` ([openai/codex#16430](https://github.com/openai/codex/issues/16430)). MCP tools still work; only the lifecycle observations are missing.
+
+Until upstream lands the fix, mirror the same hook commands into the global `~/.codex/hooks.json`:
+
+```bash
+agentmemory connect codex --with-hooks
+```
+
+This adds an idempotent block to `~/.codex/hooks.json` referencing absolute paths to the bundled scripts (no `${CLAUDE_PLUGIN_ROOT}` expansion needed at user-scope). Re-run the same command after upgrading agentmemory to refresh paths. User entries in the same file are preserved; only previous agentmemory entries are replaced.
 
 <details>
 <summary><b>OpenClaw (paste this prompt)</b></summary>
@@ -492,7 +522,7 @@ The agentmemory entry is the **same MCP server block** across every host that us
 | **Gemini CLI** | `~/.gemini/settings.json` | `gemini mcp add agentmemory npx -y @agentmemory/mcp --scope user` (auto-merges). |
 | **OpenClaw** | OpenClaw MCP config | Same `mcpServers` block, or use the deeper [memory plugin](integrations/openclaw/). |
 | **Codex CLI (MCP only)** | `.codex/config.toml` | TOML shape: `codex mcp add agentmemory -- npx -y @agentmemory/mcp`, or add `[mcp_servers.agentmemory]` manually. |
-| **Codex CLI (full plugin)** | Codex plugin marketplace | `codex plugin marketplace add rohitg00/agentmemory` then `codex plugin install agentmemory`. Registers MCP + 6 lifecycle hooks (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PreCompact, Stop) + 4 skills. |
+| **Codex CLI (full plugin)** | Codex plugin marketplace | `codex plugin marketplace add rohitg00/agentmemory` then `codex plugin install agentmemory`. Registers MCP + 6 lifecycle hooks (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PreCompact, Stop) + 4 skills. On Codex Desktop, also run `agentmemory connect codex --with-hooks` until [openai/codex#16430](https://github.com/openai/codex/issues/16430) lands — plugin hooks are currently silent there. |
 | **OpenCode (MCP only)** | `opencode.json` | Different shape — top-level `mcp` key, command as array: `{"mcp": {"agentmemory": {"type": "local", "command": ["npx", "-y", "@agentmemory/mcp"], "enabled": true}}}`. |
 | **OpenCode (full plugin)** | `plugin/opencode/` | 22 auto-capture hooks covering session lifecycle, messages, tools, errors. Two slash commands (`/recall`, `/remember`). Copy `plugin/opencode/` into your OpenCode workspace and add the plugin entry to `opencode.json`. See [`plugin/opencode/README.md`](plugin/opencode/README.md) for the full hook table + gap analysis. |
 | **pi** | `~/.pi/agent/extensions/agentmemory` | Copy [`integrations/pi`](integrations/pi/) and restart pi. |
@@ -1035,7 +1065,7 @@ Full registry: [workers.iii.dev](https://workers.iii.dev). Every worker there co
 
 ### LLM Providers
 
-agentmemory auto-detects from your environment. No API key needed if you have a Claude subscription.
+agentmemory auto-detects from your environment. By default, no LLM calls are made unless you configure a provider or explicitly opt in to the Claude subscription fallback.
 
 | Provider | Config | Notes |
 |----------|--------|-------|
@@ -1045,6 +1075,33 @@ agentmemory auto-detects from your environment. No API key needed if you have a 
 | Gemini | `GEMINI_API_KEY` | Also enables embeddings |
 | OpenRouter | `OPENROUTER_API_KEY` | Any model |
 | Claude subscription fallback | `AGENTMEMORY_ALLOW_AGENT_SDK=true` | Opt-in only. Spawns `@anthropic-ai/claude-agent-sdk` sessions — used to cause unbounded Stop-hook recursion (#149 follow-up) so it is no longer the default. |
+
+### Config File
+
+Put agentmemory runtime configuration in `~/.agentmemory/.env` instead of exporting variables in every shell. If the viewer shows a setup hint like `export ANTHROPIC_API_KEY=...`, copy it into this file as `ANTHROPIC_API_KEY=...` without the `export` prefix, then restart agentmemory.
+
+Process environment variables still work and take precedence over values in the file.
+
+On Windows, the same file lives at `%USERPROFILE%\.agentmemory\.env`:
+
+```powershell
+New-Item -ItemType Directory -Force $HOME\.agentmemory
+notepad $HOME\.agentmemory\.env
+```
+
+To test with a Claude Code Pro/Max subscription instead of an API key, opt in explicitly:
+
+```env
+AGENTMEMORY_ALLOW_AGENT_SDK=true
+AGENTMEMORY_AUTO_COMPRESS=true
+```
+
+Turn on graph or consolidation features in the same file if you want them:
+
+```env
+GRAPH_EXTRACTION_ENABLED=true
+CONSOLIDATION_ENABLED=true
+```
 
 ### Environment Variables
 

@@ -80,6 +80,13 @@ export class OpenAIProvider implements MemoryProvider {
     const body: Record<string, unknown> = {
       model: this.model,
       max_tokens: this.maxTokens,
+      // OpenAI API spec defines `stream` as defaulting to false, so omitting
+      // it should yield a JSON response. Some OpenAI-compatible proxies
+      // (notably 9Router < 0.4.56 — see decolua/9router#1260) default to
+      // text/event-stream when `stream` is absent, which crashes the
+      // `response.json()` call below with `Unexpected token 'd', "data: {"id"...`.
+      // Send it explicitly so non-spec endpoints route to non-streaming too.
+      stream: false,
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },

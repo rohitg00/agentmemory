@@ -1,6 +1,13 @@
 export type ConnectOptions = {
   dryRun: boolean;
   force: boolean;
+  /**
+   * When true, the Codex adapter additionally writes a global
+   * `~/.codex/hooks.json` block referencing absolute paths to bundled hook
+   * scripts. Workaround for openai/codex#16430, which prevents plugin-local
+   * hooks from dispatching on Codex Desktop. No-op for other adapters.
+   */
+  withHooks?: boolean;
 };
 
 export type ConnectAdapter = {

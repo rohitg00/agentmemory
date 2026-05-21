@@ -83,7 +83,10 @@ function parseTokenBudget(raw: unknown): number | undefined {
   return n;
 }
 
-function textResponse(payload: unknown, pretty = false): {
+function textResponse(
+  payload: unknown,
+  pretty = false,
+): {
   content: Array<{ type: string; text: string }>;
 } {
   return {
@@ -101,7 +104,7 @@ interface Validated {
   files?: string[];
   query?: string;
   limit?: number;
-  format?: "full" | "compact" | "narrative";
+  format?: string;
   tokenBudget?: number;
   memoryIds?: string[];
   reason?: string;
@@ -109,7 +112,10 @@ interface Validated {
 
 type LocalMemory = Record<string, unknown>;
 
-function localMemoryMatches(memory: LocalMemory, queryWords: string[]): boolean {
+function localMemoryMatches(
+  memory: LocalMemory,
+  queryWords: string[],
+): boolean {
   const text = [
     typeof memory["title"] === "string" ? memory["title"] : "",
     typeof memory["content"] === "string" ? memory["content"] : "",
@@ -136,7 +142,9 @@ async function searchLocalMemories(
 }
 
 function firstSessionId(memory: LocalMemory): unknown {
-  return Array.isArray(memory["sessionIds"]) ? memory["sessionIds"][0] : undefined;
+  return Array.isArray(memory["sessionIds"])
+    ? memory["sessionIds"][0]
+    : undefined;
 }
 
 function validate(toolName: string, args: Record<string, unknown>): Validated {
@@ -174,6 +182,22 @@ function validate(toolName: string, args: Record<string, unknown>): Validated {
         }
         v.format = format as Validated["format"];
         v.tokenBudget = parseTokenBudget(args["token_budget"]);
+      } else {
+        const fmt = args["format"];
+        if (typeof fmt === "string" && fmt.trim()) {
+          v.format = fmt.trim().toLowerCase();
+        }
+        const budget = args["token_budget"];
+        if (
+          typeof budget === "number" &&
+          Number.isFinite(budget) &&
+          budget > 0
+        ) {
+          v.tokenBudget = Math.floor(budget);
+        } else if (typeof budget === "string" && budget.trim()) {
+          const n = Number(budget);
+          if (Number.isFinite(n) && n > 0) v.tokenBudget = Math.floor(n);
+        }
       }
       return v;
     }
@@ -222,7 +246,7 @@ async function handleProxy(
         limit: v.limit,
         format: v.format ?? "full",
       };
-      if (v.tokenBudget !== undefined) body["token_budget"] = v.tokenBudget;
+      if (v.tokenBudget != null) body["token_budget"] = v.tokenBudget;
       const result = await handle.call("/agentmemory/search", {
         method: "POST",
         body: JSON.stringify(body),
@@ -230,9 +254,12 @@ async function handleProxy(
       return textResponse(result, true);
     }
     case "memory_smart_search": {
+      const body: Record<string, unknown> = { query: v.query, limit: v.limit };
+      if (v.format != null) body["format"] = v.format;
+      if (v.tokenBudget != null) body["token_budget"] = v.tokenBudget;
       const result = await handle.call("/agentmemory/smart-search", {
         method: "POST",
-        body: JSON.stringify({ query: v.query, limit: v.limit }),
+        body: JSON.stringify(body),
       });
       return textResponse(result, true);
     }
@@ -251,14 +278,15 @@ async function handleProxy(
       return textResponse(result);
     }
     case "memory_export": {
-      const result = await handle.call("/agentmemory/export", { method: "GET" });
+      const result = await handle.call("/agentmemory/export", {
+        method: "GET",
+      });
       return textResponse(result, true);
     }
     case "memory_audit": {
-      const result = await handle.call(
-        `/agentmemory/audit?limit=${v.limit}`,
-        { method: "GET" },
-      );
+      const result = await handle.call(`/agentmemory/audit?limit=${v.limit}`, {
+        method: "GET",
+      });
       return textResponse(result, true);
     }
     default:
@@ -471,7 +499,9 @@ export async function handleToolCall(
 }
 
 export async function handleToolsList(): Promise<{ tools: unknown[] }> {
-  const debug = process.env["AGENTMEMORY_DEBUG"] === "1" || process.env["AGENTMEMORY_DEBUG"] === "true";
+  const debug =
+    process.env["AGENTMEMORY_DEBUG"] === "1" ||
+    process.env["AGENTMEMORY_DEBUG"] === "true";
   const handle = await resolveHandle();
   announceMode(handle);
   if (debug) {
@@ -485,11 +515,12 @@ export async function handleToolsList(): Promise<{ tools: unknown[] }> {
         method: "GET",
       })) as { tools?: unknown } | null;
       if (debug) {
-        const shape = remote === null
-          ? "null"
-          : typeof remote !== "object"
-            ? typeof remote
-            : `keys=${Object.keys(remote as object).join(",")} toolsType=${Array.isArray((remote as { tools?: unknown }).tools) ? `array(len=${((remote as { tools: unknown[] }).tools).length})` : typeof (remote as { tools?: unknown }).tools}`;
+        const shape =
+          remote === null
+            ? "null"
+            : typeof remote !== "object"
+              ? typeof remote
+              : `keys=${Object.keys(remote as object).join(",")} toolsType=${Array.isArray((remote as { tools?: unknown }).tools) ? `array(len=${(remote as { tools: unknown[] }).tools.length})` : typeof (remote as { tools?: unknown }).tools}`;
         process.stderr.write(
           `[@agentmemory/mcp] tools/list: remote response shape: ${shape}\n`,
         );

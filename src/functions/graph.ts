@@ -27,12 +27,12 @@ function parseGraphXml(
   const now = new Date().toISOString();
 
   const entityRegex =
-    /<entity\s+type="([^"]+)"\s+name="([^"]+)"[^>]*>([\s\S]*?)<\/entity>/g;
+    /<entity\s+type="([^"]+)"\s+name="([^"]+)"[^>]*(?:\/>|>([\s\S]*?)<\/entity>)/g;
   let match;
   while ((match = entityRegex.exec(xml)) !== null) {
     const type = match[1] as GraphNode["type"];
     const name = match[2];
-    const propsBlock = match[3];
+    const propsBlock = match[3] ?? "";
     const properties: Record<string, string> = {};
 
     const propRegex = /<property\s+key="([^"]+)">([^<]*)<\/property>/g;

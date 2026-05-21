@@ -137,7 +137,31 @@ export interface OnboardingResult {
   provider: string | null;
 }
 
+function shouldSkipInteractiveOnboarding(): boolean {
+  const ci = process.env["CI"];
+  return (
+    process.stdin.isTTY !== true ||
+    process.stdout.isTTY !== true ||
+    (ci !== undefined && ci !== "" && ci !== "0" && ci.toLowerCase() !== "false")
+  );
+}
+
+function writeDefaultOnboardingPrefs(): OnboardingResult {
+  writePrefs({
+    lastAgent: null,
+    lastAgents: [],
+    lastProvider: null,
+    skipSplash: true,
+    firstRunAt: new Date().toISOString(),
+  });
+  return { agents: [], provider: null };
+}
+
 export async function runOnboarding(): Promise<OnboardingResult> {
+  if (shouldSkipInteractiveOnboarding()) {
+    return writeDefaultOnboardingPrefs();
+  }
+
   p.note(
     [
       "Welcome to agentmemory.",

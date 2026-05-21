@@ -164,6 +164,8 @@
 
     .tab-bar {
       display: flex;
+      height: 48px;
+      flex-shrink: 0;
       border-bottom: 1px solid var(--border-light);
       background: var(--bg);
       overflow-x: auto;
@@ -1127,6 +1129,39 @@
       };
     }
 
+    // IME_SAFE_SEARCH_V2
+    function bindImeSafeSearch(input, ms, onSearch) {
+      var composing = false;
+      var justCommitted = false;
+      var run = debounce(function(value) { onSearch(value); }, ms);
+      input.addEventListener('compositionstart', function() { composing = true; });
+      input.addEventListener('compositionend', function() {
+        composing = false;
+        justCommitted = true;
+        onSearch(input.value);
+        setTimeout(function() { justCommitted = false; }, 0);
+      });
+      input.addEventListener('input', function(e) {
+        if (composing || e.isComposing) return;
+        if (justCommitted) return;
+        run(input.value);
+      });
+    }
+    function captureSearchFocus(ids) {
+      var a = document.activeElement;
+      if (!a || ids.indexOf(a.id) < 0) return null;
+      return { id: a.id, start: a.selectionStart, end: a.selectionEnd };
+    }
+    function restoreSearchFocus(focus) {
+      if (!focus) return;
+      var el = document.getElementById(focus.id);
+      if (!el) return;
+      el.focus();
+      if (typeof el.setSelectionRange === 'function') {
+        try { el.setSelectionRange(focus.start, focus.end); } catch (e) {}
+      }
+    }
+
     async function api(path, opts) {
       try {
         var url = REST + '/agentmemory/' + path;
@@ -1629,6 +1664,7 @@
 
       html += '<button class="btn" style="margin-top:14px;width:100%;font-size:11px;padding:8px;letter-spacing:0.06em;transition:all 0.15s ease;" data-action="rebuild-graph">↻ Rebuild Graph</button>';
       html += '<div id="selected-node-panel"></div>';
+      var __focus = captureSearchFocus(['graph-search']);
       sb.innerHTML = html;
 
       sb.querySelectorAll('input[type="checkbox"]').forEach(function(cb) {
@@ -1640,11 +1676,9 @@
 
       var searchInput = document.getElementById('graph-search');
       if (searchInput) {
-        searchInput.addEventListener('input', debounce(function() {
-          graphSearchTerm = this.value.toLowerCase();
-          renderGraph();
-        }, 150));
+        bindImeSafeSearch(searchInput, 200, function(v){ graphSearchTerm = v.toLowerCase(); renderGraph(); });
       }
+      restoreSearchFocus(__focus);
     }
 
     function initGraph() {
@@ -2198,7 +2232,26 @@
 
       var filtered = items.filter(function(m) {
         if (typeFilter && m.type !== typeFilter) return false;
-        if (search && !(m.title || '').toLowerCase().includes(search) && !(m.content || '').toLowerCase().includes(search)) return false;
+        const normalizedSearch = (search || '')
+          .normalize("NFKC")
+          .toLowerCase();
+ 
+        const normalizedTitle = (m.title || '')
+          .normalize("NFKC")
+          .toLowerCase();
+
+        const normalizedContent = (m.content || '')
+          .normalize("NFKC")
+          .toLowerCase();
+
+        if (
+          search &&
+          !normalizedTitle.includes(normalizedSearch) &&
+          !normalizedContent.includes(normalizedSearch)
+        ) {
+        return false;
+        }
+
         return true;
       });
 
@@ -2261,14 +2314,12 @@
         html += '</table>';
       }
 
+      var __focus = captureSearchFocus(['mem-search']);
       el.innerHTML = html;
 
       var searchInput = document.getElementById('mem-search');
       if (searchInput) {
-        searchInput.addEventListener('input', debounce(function() {
-          state.memories.search = this.value;
-          renderMemories();
-        }, 200));
+        bindImeSafeSearch(searchInput, 200, function(v){ state.memories.search = v; renderMemories(); });
       }
       var typeSelect = document.getElementById('mem-type-filter');
       if (typeSelect) {
@@ -2277,6 +2328,7 @@
           renderMemories();
         });
       }
+      restoreSearchFocus(__focus);
     }
 
     function deleteMemory(id, title) {
@@ -2853,7 +2905,7 @@
       html += '</div></div>';
 
       html += '<div style="display:flex;gap:8px;margin-bottom:12px;">';
-      html += '<input class="search-input" type="text" placeholder="Search lessons..." value="' + esc(state.lessons.search) + '" oninput="state.lessons.search=this.value;renderLessons()" style="flex:1" />';
+      html += '<input id="lessons-search" class="search-input" type="text" placeholder="Search lessons..." value="' + esc(state.lessons.search) + '" style="flex:1" />';
       html += '<span style="font-size:12px;color:var(--ink-faint);align-self:center;">' + items.length + ' lessons</span>';
       html += '</div>';
 
@@ -2882,7 +2934,11 @@
         html += '</tbody></table>';
       }
 
+      var __focus = captureSearchFocus(['lessons-search']);
       el.innerHTML = html;
+      var __ls = document.getElementById('lessons-search');
+      if (__ls) bindImeSafeSearch(__ls, 200, function(v){ state.lessons.search = v; renderLessons(); });
+      restoreSearchFocus(__focus);
     }
 
     async function loadActions() {
@@ -2912,8 +2968,8 @@
       }
 
       var html = '<div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">';
-      html += '<input class="search-input" type="text" placeholder="Search actions..." value="' + esc(state.actions.search) + '" oninput="state.actions.search=this.value;renderActions()" style="flex:1;min-width:200px" />';
-      html += '<select style="padding:4px 8px;font-size:12px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--ink);" onchange="state.actions.statusFilter=this.value;renderActions()">';
+      html += '<input id="actions-search" class="search-input" type="text" placeholder="Search actions..." value="' + esc(state.actions.search) + '" style="flex:1;min-width:200px" />';
+      html += '<select id="actions-status-filter" style="padding:4px 8px;font-size:12px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--ink);">';
       html += '<option value="">All statuses</option>';
       ['pending','active','done','blocked','cancelled'].forEach(function(s) {
         html += '<option value="' + s + '"' + (statusFilter === s ? ' selected' : '') + '>' + s + '</option>';
@@ -2951,7 +3007,13 @@
         html += '</tbody></table>';
       }
 
+      var __focus = captureSearchFocus(['actions-search']);
       el.innerHTML = html;
+      var __as = document.getElementById('actions-search');
+      if (__as) bindImeSafeSearch(__as, 200, function(v){ state.actions.search = v; renderActions(); });
+      var __af = document.getElementById('actions-status-filter');
+      if (__af) __af.addEventListener('change', function(){ state.actions.statusFilter = this.value; renderActions(); });
+      restoreSearchFocus(__focus);
     }
 
     async function loadCrystals() {
@@ -2999,7 +3061,7 @@
       html += '</div></div>';
 
       html += '<div style="display:flex;gap:8px;margin-bottom:12px;">';
-      html += '<input class="search-input" type="text" placeholder="Search crystals..." value="' + esc(state.crystals.search) + '" oninput="state.crystals.search=this.value;renderCrystals()" style="flex:1" />';
+      html += '<input id="crystals-search" class="search-input" type="text" placeholder="Search crystals..." value="' + esc(state.crystals.search) + '" style="flex:1" />';
       html += '<span style="font-size:12px;color:var(--ink-faint);align-self:center;">' + items.length + ' crystals</span>';
       html += '</div>';
 
@@ -3060,7 +3122,11 @@
         });
       }
 
+      var __focus = captureSearchFocus(['crystals-search']);
       el.innerHTML = html;
+      var __cs = document.getElementById('crystals-search');
+      if (__cs) bindImeSafeSearch(__cs, 200, function(v){ state.crystals.search = v; renderCrystals(); });
+      restoreSearchFocus(__focus);
     }
 
     async function loadAudit() {

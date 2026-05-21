@@ -1,0 +1,77 @@
+[
+  {
+    "id": "sess-001",
+    "timestamp": "2026-04-08T09:14:00Z",
+    "content": "[user] auth check broken on staging when SHIPCTL_TOKEN unset, falling back to wrong env var\n[assistant] looked at src/auth.rs:42. precedence is SHIPCTL_TOKEN > SHIP_TOKEN > legacy SC_TOKEN. legacy path didn't validate. fixing precedence + adding length check.\n[user] yeah ship it\n[assistant] PR #11 opened with fix + regression test. covers all three env names."
+  },
+  {
+    "id": "sess-002",
+    "timestamp": "2026-04-08T14:30:00Z",
+    "content": "[user] docker build failing for arm64 on M2 runner\n[assistant] missing target in Dockerfile FROM line. need --platform=$BUILDPLATFORM on builder stage. updated Dockerfile + Makefile to set BUILDX_PLATFORMS=linux/amd64,linux/arm64. tested locally on apple silicon, builds clean."
+  },
+  {
+    "id": "sess-003",
+    "timestamp": "2026-04-09T10:02:00Z",
+    "content": "[user] retry logic is duplicated across handlers. consolidate.\n[assistant] extracted retry_with_backoff into src/retry.rs. exponential backoff base=200ms cap=30s jitter=full. all 4 callsites now use it. cuts ~80 lines."
+  },
+  {
+    "id": "sess-004",
+    "timestamp": "2026-04-10T11:45:00Z",
+    "content": "[user] add helm chart support\n[assistant] new subcommand `shipctl helm install`. wraps helm CLI, threads through --namespace and --values. PR #14 has the changes + 12 integration tests. Aria reviewed and approved."
+  },
+  {
+    "id": "sess-005",
+    "timestamp": "2026-04-11T16:20:00Z",
+    "content": "[user] test flake on macos-22 runner. emits_changekind_file_delete keeps failing\n[assistant] fsevents propagation slower on apple silicon, the 800ms wait isn't enough. bumped to 1500ms + describe-level retry: 2. all 15 fs-watcher tests pass now."
+  },
+  {
+    "id": "sess-006",
+    "timestamp": "2026-04-12T09:50:00Z",
+    "content": "[user] memory leak in long-running daemon. RSS grows 5MB/min.\n[assistant] traced to unbounded HashMap in src/cache.rs. swapped for LruCache with 10k cap. RSS stable at 180MB after 6h soak test. PR #16."
+  },
+  {
+    "id": "sess-007",
+    "timestamp": "2026-04-13T13:15:00Z",
+    "content": "[user] github API rate-limiting us when listing PRs. 5000/hr isn't enough during ci\n[assistant] added conditional requests with If-None-Match etag. cache 304 responses. drops actual API calls by ~70%. used http-cache crate."
+  },
+  {
+    "id": "sess-008",
+    "timestamp": "2026-04-15T10:30:00Z",
+    "content": "[user] schema migration for run_history table needs zero-downtime\n[assistant] three-phase migration. phase 1: add nullable new column + dual-write. phase 2: backfill + flip reads. phase 3: drop old column. avoids ALTER TABLE locks. ran on staging, took 4s for 2M rows."
+  },
+  {
+    "id": "sess-009",
+    "timestamp": "2026-04-16T15:40:00Z",
+    "content": "[user] docs site is stale. set up auto-deploy from main\n[assistant] added .github/workflows/docs.yml. mdbook build + cloudflare pages deploy. domain shipctl.dev wired up. preview deploys on PRs."
+  },
+  {
+    "id": "sess-010",
+    "timestamp": "2026-04-17T11:00:00Z",
+    "content": "[user] release pipeline. cut v0.3.0 with binaries for linux/macos/windows\n[assistant] new .github/workflows/release.yml. cross-rs for static linux, native for macos + windows. uploads to gh release + crates.io publish. tag-triggered. PR #19 has the workflow."
+  },
+  {
+    "id": "sess-011",
+    "timestamp": "2026-04-08T17:00:00Z",
+    "content": "[user] standup notes: shipped #11 auth fix this morning. starting on docker arm64 next."
+  },
+  {
+    "id": "sess-012",
+    "timestamp": "2026-04-10T18:30:00Z",
+    "content": "[user] preferences: I like rust analyzer over rls. always run cargo clippy before commit. prefer 2-space indent in yaml but tab in rust."
+  },
+  {
+    "id": "sess-013",
+    "timestamp": "2026-04-15T19:00:00Z",
+    "content": "[assistant] reviewed Aria's PR #18 (schema migration). flagged race condition in dual-write step when two writers hit same row. Aria added per-row advisory lock. lgtm now."
+  },
+  {
+    "id": "sess-014",
+    "timestamp": "2026-04-16T20:10:00Z",
+    "content": "[user] post-mortem from prod incident last week: SHIPCTL_TOKEN was unset in staging, fell back to bad SC_TOKEN which had wrong perms. delivery delayed 40min. action items: (1) precedence test (done in #11), (2) startup validation, (3) alert on auth fallback."
+  },
+  {
+    "id": "sess-015",
+    "timestamp": "2026-04-17T16:45:00Z",
+    "content": "[user] preferences: stick to async-std not tokio for new code. team agreed in arch review."
+  }
+]
