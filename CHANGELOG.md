@@ -6,6 +6,45 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- **PostToolUse hook reads `tool_response`, falls back to `tool_output`** ([PR #561](https://github.com/rohitg00/agentmemory/pull/561) by [@faraz152](https://github.com/faraz152), closes [#539](https://github.com/rohitg00/agentmemory/issues/539)). Claude Code's PostToolUse payload sends the field as `tool_response`, not `tool_output`. The hook was reading the wrong field, so `cleanOutput` was always `undefined`, `mem::compress` consistently failed its XML schema validation (requires `narrative >= 10` chars), and observations from every real Claude Code tool call were dropped. Now reads `tool_response ?? tool_output` so older integrations that emit the legacy field name keep working.
+
+- **iii-sdk pinned to exact `0.11.2`** ([PR #567](https://github.com/rohitg00/agentmemory/pull/567), closes [#555](https://github.com/rohitg00/agentmemory/issues/555)). `iii-sdk@0.11.6` introduced a routing regression — all `/agentmemory/*` routes returned `404` from the iii-engine, even though `0.11.6` satisfied our previous `"^0.11.2"` range. `npm install -g @agentmemory/agentmemory` silently drifted everyone forward after `0.9.21` shipped. Pin removes the caret + also pins `iii-sdk@0.11.2` in `agentmemory setup`'s upgrade flow.
+
+- **OpenAI provider sends explicit `stream: false`** ([PR #526](https://github.com/rohitg00/agentmemory/pull/526) by [@Ptah-CT](https://github.com/Ptah-CT)). Some OpenAI-compatible proxies default to `text/event-stream` when `stream` is absent, which crashes `response.json()` and trips `ResilientProvider`'s circuit breaker, silently disabling LLM-backed compression / summarisation / reflection.
+
+- **Viewer search uses NFKC normalisation for CJK / fullwidth input** ([PR #542](https://github.com/rohitg00/agentmemory/pull/542) by [@kaushalrog](https://github.com/kaushalrog)). Fullwidth characters and ligatures pasted from PDFs were missed by `.includes()`. NFKC normalisation on both sides of the comparison makes search match.
+
+- **Viewer splash shows actual bound viewer port** ([PR #560](https://github.com/rohitg00/agentmemory/pull/560) by [@Tanmay-008](https://github.com/Tanmay-008), closes [#521](https://github.com/rohitg00/agentmemory/issues/521)). `/agentmemory/livez` now returns `viewerPort` + `viewerSkipped`; CLI polls until populated. New fields are additive — existing consumers of `/livez` are unaffected.
+
+- **Viewer tab bar height stable across tab switches** ([PR #325](https://github.com/rohitg00/agentmemory/pull/325) by [@hungtd119](https://github.com/hungtd119), closes [#324](https://github.com/rohitg00/agentmemory/issues/324)). Explicit `height: 48px` on `.tab-bar` prevents scrollbar-induced height shift on tab switch (complements #313's `flex: 0 0 auto`).
+
+- **Graph parser accepts self-closing `<entity .../>` tags** ([PR #494](https://github.com/rohitg00/agentmemory/pull/494) by [@Rex57](https://github.com/Rex57), follow-up regex fix in this release, closes [#492](https://github.com/rohitg00/agentmemory/issues/492)). Real LLM output uses self-closing entity tags for entities without properties; the parser regex required explicit `</entity>` closes and dropped them. Initial fix added an alternation; follow-up made the attribute matcher lazy (`[^>]*?`) so the self-closing branch is reached before the explicit-close branch greedily eats the next entity.
+
+- **Plugin MCP server inherits remote/auth env** ([PR #386](https://github.com/rohitg00/agentmemory/pull/386) by [@LaplaceYoung](https://github.com/LaplaceYoung), closes [#375](https://github.com/rohitg00/agentmemory/issues/375)). `plugin/.mcp.json` now passes `AGENTMEMORY_URL` + `AGENTMEMORY_SECRET` through to the bundled MCP server. Matches the `AGENTMEMORY_MCP_BLOCK` already used by the connect adapters. MCP hosts that expand `${VAR}` (Claude Code, Cursor) inherit shell env; hosts that don't expand (or pass the placeholder literally) still work — the shim now strips literal `${...}` strings and falls back to `http://localhost:3111` (hardening, this release).
+
+- **`@agentmemory/mcp` rejects literal `${VAR}` placeholders** (this release). Defensive guard in `src/mcp/rest-proxy.ts` and `src/mcp/standalone.ts`: any `AGENTMEMORY_URL` / `AGENTMEMORY_SECRET` value of the form `${...}` is treated as unset, so the shim falls back to `http://localhost:3111` instead of trying to fetch from a host literally named `${AGENTMEMORY_URL}`. Future-proofs against MCP hosts that don't expand env-var placeholders.
+
+### Added
+
+- **Pluggable benchmark harness with in-house coding-agent corpus** ([PR #562](https://github.com/rohitg00/agentmemory/pull/562)). New `eval/` directory: 15 fictional coding-agent sessions + 15 hand-graded queries (single-session, multi-session, preference, temporal) plus three adapters (grep, OpenAI embeddings + cosine, agentmemory hybrid). LongMemEval support via `eval/runner/longmemeval.ts`. Sandboxed agentmemory + iii-engine on alt ports via `eval/scripts/sandbox.sh`. No runtime impact on the package — `eval/` is dev-only.
+
+- **`agentmemory connect codex --with-hooks` opt-in flag** ([PR #564](https://github.com/rohitg00/agentmemory/pull/564), closes [#509](https://github.com/rohitg00/agentmemory/issues/509)). Workaround for [openai/codex#16430](https://github.com/openai/codex/issues/16430), which prevents plugin-local `hooks.json` from dispatching on Codex Desktop. Opt-in flag merges the bundled `hooks.codex.json` into `~/.codex/hooks.json` with absolute paths to the bundled scripts. Idempotent (re-install strips previous entries via the resolved script-path prefix; unrelated user hooks survive). MCP wiring is unchanged.
+
+- **Cross-platform CI matrix** ([PR #556](https://github.com/rohitg00/agentmemory/pull/556)). Runs tests on Node 20 + 22 with `paths-ignore` for doc-only changes and per-branch concurrency cancellation.
+
+### Docs
+
+- **README "Config File" section + Windows path + Claude subscription opt-in example** ([PR #321](https://github.com/rohitg00/agentmemory/pull/321) by [@aqilaziz](https://github.com/aqilaziz), closes [#293](https://github.com/rohitg00/agentmemory/issues/293)).
+
+- **README sudo install hint for `EACCES` on system Node** ([PR #454](https://github.com/rohitg00/agentmemory/pull/454) by [@kedar-1](https://github.com/kedar-1)).
+
+### Infrastructure
+
+- 98 test files, **1091 tests pass** on `fix/pre-release-hardening`.
+- All MCP env-var consumers go through a single guarded `resolveEnvOrEmpty()` helper.
+
 ## [0.9.21] — 2026-05-19
 
 Quality + integration wave. Headline: native OpenCode plugin with full Claude Code hook parity ([#237](https://github.com/rohitg00/agentmemory/pull/237) by [@cl0ckt0wer](https://github.com/cl0ckt0wer)). Ten more PRs alongside: `memory_recall` returning the wrong shape, env-file `AGENTMEMORY_DROP_STALE_INDEX` silently ignored, hook scripts crashing on Windows usernames with spaces, viewer search inputs interrupting CJK IME composition, large sessions silently failing at the LLM context limit, lessons invisible to smart-search, Hermes plugin manifest missing hooks, cli onboarding crashing in non-TTY contexts, rebuildIndex blocking boot on large corpora, 25h embed-loop bottleneck during rebuild, and the v0.9.19 iii-console installer workaround can come out now that upstream is fixed.

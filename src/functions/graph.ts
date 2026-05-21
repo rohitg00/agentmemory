@@ -26,8 +26,14 @@ function parseGraphXml(
   const edges: GraphEdge[] = [];
   const now = new Date().toISOString();
 
+  // Lazy `[^>]*?` so the self-closing alternation gets a chance before
+  // greedy attribute matching consumes the trailing `/` and the regex
+  // falls through to the explicit-close branch, which then runs ahead to
+  // the *next* entity's `</entity>` and silently drops a node (#494
+  // follow-up: greedy `[^>]*` was eating the `/` and merging two entity
+  // declarations into one match).
   const entityRegex =
-    /<entity\s+type="([^"]+)"\s+name="([^"]+)"[^>]*(?:\/>|>([\s\S]*?)<\/entity>)/g;
+    /<entity\s+type="([^"]+)"\s+name="([^"]+)"[^>]*?(?:\/>|>([\s\S]*?)<\/entity>)/g;
   let match;
   while ((match = entityRegex.exec(xml)) !== null) {
     const type = match[1] as GraphNode["type"];
