@@ -5,6 +5,7 @@ import type {
 } from "../types.js";
 import { AgentSDKProvider } from "./agent-sdk.js";
 import { AnthropicProvider } from "./anthropic.js";
+import { DeepSeekProvider } from "./deepseek.js";
 import { MinimaxProvider } from "./minimax.js";
 import { NoopProvider } from "./noop.js";
 import { OpenAIProvider } from "./openai.js";
@@ -107,6 +108,20 @@ function createBaseProvider(config: ProviderConfig): MemoryProvider {
         config.model,
         config.maxTokens,
         config.baseURL,
+      );
+    }
+    case "deepseek": {
+      const deepseekKey = getEnvVar("DEEPSEEK_API_KEY");
+      if (!deepseekKey) {
+        throw new Error(
+          "DEEPSEEK_API_KEY is required for the deepseek provider",
+        );
+      }
+      return new DeepSeekProvider(
+        deepseekKey,
+        config.model,
+        config.maxTokens,
+        config.baseURL ?? getEnvVar("DEEPSEEK_BASE_URL") ?? undefined,
       );
     }
     case "noop":
