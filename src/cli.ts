@@ -2333,12 +2333,30 @@ async function runImportJsonl(): Promise<void> {
   const spinner = p.spinner();
   spinner.start("scanning files");
 
+  // Large ~/.claude/projects trees can take >2 min to scan + ingest.
+  // 120s was previously hardcoded, which made the CLI surface a fake
+  // "timeout" while the server kept ingesting in the background. Allow
+  // operators to extend the client-side timeout via env var without
+  // patching the binary. Default stays 120s for backward compatibility.
+  const rawTimeout = process.env["AGENTMEMORY_IMPORT_TIMEOUT_MS"];
+  const importTimeoutMs = (() => {
+    if (!rawTimeout) return 120_000;
+    const parsed = Number.parseInt(rawTimeout, 10);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      p.log.warn(
+        `AGENTMEMORY_IMPORT_TIMEOUT_MS=${rawTimeout} is not a positive integer — falling back to default 120000ms.`,
+      );
+      return 120_000;
+    }
+    return parsed;
+  })();
+
   try {
     const res = await fetch(`${base}/agentmemory/replay/import-jsonl`, {
       method: "POST",
       headers,
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(120_000),
+      signal: AbortSignal.timeout(importTimeoutMs),
     });
     const text = await res.text();
     let json: {
