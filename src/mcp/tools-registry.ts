@@ -206,6 +206,31 @@ export const CORE_TOOLS: McpToolDef[] = [
       required: ["memoryId"],
     },
   },
+  {
+    name: "memory_commit_lookup",
+    description:
+      "Look up the agent session(s) that produced a specific git commit, given its SHA. Returns the commit metadata and linked sessions.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sha: { type: "string", description: "Full git commit SHA" },
+      },
+      required: ["sha"],
+    },
+  },
+  {
+    name: "memory_commits",
+    description:
+      "List recent commits linked to agent sessions, optionally filtered by branch or repo.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        branch: { type: "string", description: "Filter by branch name" },
+        repo: { type: "string", description: "Filter by remote URL" },
+        limit: { type: "number", description: "Max results (default 100, max 500)" },
+      },
+    },
+  },
 ];
 
 export const V040_TOOLS: McpToolDef[] = [

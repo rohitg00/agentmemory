@@ -193,4 +193,102 @@ describe("Smart Search Function", () => {
     } | null;
     expect(log?.count).toBe(1);
   });
+
+  describe("lesson inclusion (#lesson-visibility)", () => {
+    it("compact mode returns lessons array alongside observation results", async () => {
+      sdk.registerFunction("mem::lesson-recall", async (payload: any) => ({
+        success: true,
+        lessons: [
+          { id: "lsn_a", content: "always rebase before push", confidence: 0.9, createdAt: "2026-04-01T00:00:00Z", project: "p", tags: ["git"], score: 0.81 },
+          { id: "lsn_b", content: "never force-push to main", confidence: 0.95, createdAt: "2026-04-02T00:00:00Z", project: "p", tags: ["git"], score: 0.76 },
+        ],
+      }));
+
+      const result = (await sdk.trigger("mem::smart-search", {
+        query: "rebase",
+      })) as { mode: string; results: CompactSearchResult[]; lessons?: any[] };
+
+      expect(result.mode).toBe("compact");
+      expect(result.results.length).toBe(2); // observations unchanged
+      expect(result.lessons).toBeDefined();
+      expect(result.lessons!.length).toBe(2);
+      expect(result.lessons![0]).toMatchObject({
+        lessonId: "lsn_a",
+        confidence: 0.9,
+        score: 0.81,
+      });
+      expect(result.lessons![0].tags).toEqual(["git"]);
+    });
+
+    it("compact mode truncates long lesson content for preview", async () => {
+      const long = "x".repeat(500);
+      sdk.registerFunction("mem::lesson-recall", async () => ({
+        success: true,
+        lessons: [{ id: "lsn_long", content: long, confidence: 0.5, createdAt: "", tags: [], score: 0.4 }],
+      }));
+
+      const result = (await sdk.trigger("mem::smart-search", {
+        query: "x",
+      })) as { lessons: any[] };
+
+      expect(result.lessons[0].content.length).toBeLessThan(long.length);
+      expect(result.lessons[0].content).toMatch(/…$/);
+    });
+
+    it("includeLessons:false omits the lessons array entirely", async () => {
+      // No lesson-recall handler registered — would throw if invoked.
+      const result = (await sdk.trigger("mem::smart-search", {
+        query: "auth",
+        includeLessons: false,
+      })) as { mode: string; results: CompactSearchResult[]; lessons?: unknown };
+
+      expect(result.results.length).toBe(2);
+      expect(result.lessons).toBeUndefined();
+    });
+
+    it("forwards project filter to mem::lesson-recall", async () => {
+      let receivedPayload: any = null;
+      sdk.registerFunction("mem::lesson-recall", async (payload: any) => {
+        receivedPayload = payload;
+        return { success: true, lessons: [] };
+      });
+
+      await sdk.trigger("mem::smart-search", {
+        query: "rebase",
+        project: "gitops-assistant",
+      });
+
+      expect(receivedPayload).toMatchObject({
+        query: "rebase",
+        project: "gitops-assistant",
+      });
+    });
+
+    it("tolerates mem::lesson-recall failure: returns empty lessons, observations unchanged", async () => {
+      sdk.registerFunction("mem::lesson-recall", async () => {
+        throw new Error("lessons store unavailable");
+      });
+
+      const result = (await sdk.trigger("mem::smart-search", {
+        query: "auth",
+      })) as { results: CompactSearchResult[]; lessons: any[] };
+
+      expect(result.results.length).toBe(2);
+      expect(result.lessons).toEqual([]);
+    });
+
+    it("tolerates non-success lesson-recall response shape", async () => {
+      sdk.registerFunction("mem::lesson-recall", async () => ({
+        success: false,
+        error: "query is required",
+      }));
+
+      const result = (await sdk.trigger("mem::smart-search", {
+        query: "auth",
+      })) as { results: CompactSearchResult[]; lessons: any[] };
+
+      expect(result.results.length).toBe(2);
+      expect(result.lessons).toEqual([]);
+    });
+  });
 });

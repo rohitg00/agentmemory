@@ -1,0 +1,12 @@
+{
+  "name": "agentmemory-capture",
+  "version": "0.9.20",
+  "description": "OpenCode plugin for agentmemory — full Claude Code hook parity: session lifecycle (create/idle/status/compacted/update/diff/delete/error), messages & prompts (chat.message, message.updated user+assistant, message.removed), tool lifecycle (ToolPart states with timing), part tracking (subtask, step-finish, reasoning, file, patch, compaction, agent, retry), file enrichment pipeline, permissions, task tracking (w/ priority), commands, config & model tracking. 22 hooks, 2 slash commands.",
+  "author": {
+    "name": "Rohit Ghumare",
+    "url": "https://github.com/rohitg00"
+  },
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/rohitg00/agentmemory",
+  "repository": "https://github.com/rohitg00/agentmemory"
+}

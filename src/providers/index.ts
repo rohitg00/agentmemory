@@ -5,9 +5,9 @@ import type {
 } from "../types.js";
 import { AgentSDKProvider } from "./agent-sdk.js";
 import { AnthropicProvider } from "./anthropic.js";
-import { AzureOpenAIProvider } from "./azure-openai.js";
 import { MinimaxProvider } from "./minimax.js";
 import { NoopProvider } from "./noop.js";
+import { OpenAIProvider } from "./openai.js";
 import { OpenRouterProvider } from "./openrouter.js";
 import { ResilientProvider } from "./resilient.js";
 import { FallbackChainProvider } from "./fallback-chain.js";
@@ -95,15 +95,30 @@ function createBaseProvider(config: ProviderConfig): MemoryProvider {
         config.maxTokens,
         "https://openrouter.ai/api/v1/chat/completions",
       );
-    case "azure-openai": {
-      const endpoint = config.baseURL || requireEnvVar("AZURE_OPENAI_ENDPOINT");
-      const apiVersion = getEnvVar("AZURE_OPENAI_API_VERSION");
-      return new AzureOpenAIProvider(
-        requireEnvVar("AZURE_OPENAI_API_KEY"),
-        endpoint,
+    case "openai": {
+      const openaiKey = getEnvVar("OPENAI_API_KEY");
+      if (!openaiKey) {
+        throw new Error(
+          "OPENAI_API_KEY is required for the openai provider",
+        );
+      }
+      return new OpenAIProvider(
+        openaiKey,
         config.model,
         config.maxTokens,
-        apiVersion || undefined,
+        config.baseURL,
+      );
+    }
+    case "azure-openai": {
+      // Routes through OpenAIProvider — detectAzure() and detectFoundry()
+      // handle Azure OpenAI (.openai.azure.com) and Azure AI Foundry (/anthropic)
+      // URL patterns automatically. Env vars: AZURE_OPENAI_API_KEY,
+      // AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_DEPLOYMENT.
+      return new OpenAIProvider(
+        requireEnvVar("AZURE_OPENAI_API_KEY"),
+        config.model || requireEnvVar("AZURE_OPENAI_DEPLOYMENT"),
+        config.maxTokens,
+        config.baseURL || requireEnvVar("AZURE_OPENAI_ENDPOINT"),
       );
     }
     case "noop":

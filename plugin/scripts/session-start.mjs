@@ -56,7 +56,7 @@ async function main() {
 	} catch {}
 }
 main();
-
 //#endregion
-export {  };
+export {};
+
 //# sourceMappingURL=session-start.mjs.map

@@ -46,6 +46,7 @@ export const KV = {
   slots: "mem:slots",
   globalSlots: "mem:slots:global",
   state: "mem:state",
+  commits: "mem:commits",
 } as const;
 
 export const STREAM = {

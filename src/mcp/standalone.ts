@@ -32,6 +32,17 @@ const SERVER_INFO = {
 const kv = new InMemoryKV(getStandalonePersistPath());
 let modeAnnounced = false;
 
+function displayAgentmemoryUrl(): string {
+  // Match the literal-placeholder guard in rest-proxy.ts so log lines
+  // don't show `${AGENTMEMORY_URL}` when an MCP host passed the
+  // placeholder through unexpanded.
+  const raw = process.env["AGENTMEMORY_URL"];
+  if (!raw || (raw.startsWith("${") && raw.endsWith("}"))) {
+    return "http://localhost:3111";
+  }
+  return raw;
+}
+
 function announceMode(handle: Handle): void {
   if (modeAnnounced) return;
   modeAnnounced = true;
@@ -41,7 +52,7 @@ function announceMode(handle: Handle): void {
     );
   } else {
     process.stderr.write(
-      `[@agentmemory/mcp] no server reachable at ${process.env["AGENTMEMORY_URL"] || "http://localhost:3111"}; falling back to local InMemoryKV\n`,
+      `[@agentmemory/mcp] no server reachable at ${displayAgentmemoryUrl()}; falling back to local InMemoryKV\n`,
     );
   }
 }
@@ -89,6 +100,8 @@ interface Validated {
   files?: string[];
   query?: string;
   limit?: number;
+  format?: string;
+  tokenBudget?: number;
   memoryIds?: string[];
   reason?: string;
 }
@@ -118,6 +131,17 @@ function validate(toolName: string, args: Record<string, unknown>): Validated {
       }
       v.query = query.trim();
       v.limit = parseLimit(args["limit"]);
+      const fmt = args["format"];
+      if (typeof fmt === "string" && fmt.trim()) {
+        v.format = fmt.trim().toLowerCase();
+      }
+      const budget = args["token_budget"];
+      if (typeof budget === "number" && Number.isFinite(budget) && budget > 0) {
+        v.tokenBudget = Math.floor(budget);
+      } else if (typeof budget === "string" && budget.trim()) {
+        const n = Number(budget);
+        if (Number.isFinite(n) && n > 0) v.tokenBudget = Math.floor(n);
+      }
       return v;
     }
     case "memory_sessions": {
@@ -159,11 +183,26 @@ async function handleProxy(
       });
       return textResponse(result);
     }
-    case "memory_recall":
+    case "memory_recall": {
+      const body: Record<string, unknown> = {
+        query: v.query,
+        limit: v.limit,
+        format: v.format ?? "full",
+      };
+      if (v.tokenBudget != null) body["token_budget"] = v.tokenBudget;
+      const result = await handle.call("/agentmemory/search", {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+      return textResponse(result, true);
+    }
     case "memory_smart_search": {
+      const body: Record<string, unknown> = { query: v.query, limit: v.limit };
+      if (v.format != null) body["format"] = v.format;
+      if (v.tokenBudget != null) body["token_budget"] = v.tokenBudget;
       const result = await handle.call("/agentmemory/smart-search", {
         method: "POST",
-        body: JSON.stringify({ query: v.query, limit: v.limit }),
+        body: JSON.stringify(body),
       });
       return textResponse(result, true);
     }
@@ -176,7 +215,7 @@ async function handleProxy(
     }
     case "memory_governance_delete": {
       const result = await handle.call("/agentmemory/governance/memories", {
-        method: "POST",
+        method: "DELETE",
         body: JSON.stringify({ memoryIds: v.memoryIds, reason: v.reason }),
       });
       return textResponse(result);

@@ -32,7 +32,9 @@ async function main() {
 
   const sessionId = (data.session_id as string) || "unknown";
 
-  const { imageData, cleanOutput } = extractImageData(data.tool_output);
+  const { imageData, cleanOutput } = extractImageData(
+    data.tool_response ?? data.tool_output,
+  );
 
   try {
     await fetch(`${REST_URL}/agentmemory/observe`, {

@@ -10,12 +10,398 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - **Azure OpenAI provider.** New `AZURE_OPENAI_API_KEY` / `AZURE_OPENAI_ENDPOINT` / `AZURE_OPENAI_DEPLOYMENT` env vars wire up an Azure-hosted LLM for compress/summarize. Supports both standard Azure OpenAI deployments (`{resource}.openai.azure.com`) and Azure AI Foundry Anthropic deployments (`{resource}.services.ai.azure.com/anthropic`) — endpoint format auto-detected.
 - **Azure AI Foundry (Anthropic) endpoint support.** When `AZURE_OPENAI_ENDPOINT` contains `/anthropic`, the provider switches to the Anthropic Messages API format (`x-api-key` header, `anthropic-version`, top-level `system` field) instead of the Azure OpenAI chat completions format. No extra config needed — the endpoint path is the signal.
-- **Corporate proxy support for Azure provider.** Node.js 18+ built-in `fetch` ignores `HTTP_PROXY`/`HTTPS_PROXY`, causing DNS failures in corporate networks. The Azure provider now detects these env vars and tunnels through an HTTP CONNECT proxy via `tunnel-agent` + `node-fetch`, so it works out of the box on enterprise networks without custom CA hacks.
+- **Corporate proxy support.** `HTTP_PROXY`/`HTTPS_PROXY` env vars now tunnel all outbound LLM+embedding requests through an HTTP CONNECT proxy via `node-fetch`, covering corporate networks where Node.js 18+ built-in `fetch` ignores proxy env vars.
 
 ### Fixed
 
 - **Viewer tab bar crush.** Tab bar no longer overflows and crushes the content area when many sessions are open.
 - **Graph canvas sizing.** Knowledge graph canvas now fills the available viewport height correctly instead of rendering as a zero-height element.
+### Fixed
+
+- **PostToolUse hook reads `tool_response`, falls back to `tool_output`** ([PR #561](https://github.com/rohitg00/agentmemory/pull/561) by [@faraz152](https://github.com/faraz152), closes [#539](https://github.com/rohitg00/agentmemory/issues/539)). Claude Code's PostToolUse payload sends the field as `tool_response`, not `tool_output`. The hook was reading the wrong field, so `cleanOutput` was always `undefined`, `mem::compress` consistently failed its XML schema validation (requires `narrative >= 10` chars), and observations from every real Claude Code tool call were dropped. Now reads `tool_response ?? tool_output` so older integrations that emit the legacy field name keep working.
+
+- **iii-sdk pinned to exact `0.11.2`** ([PR #567](https://github.com/rohitg00/agentmemory/pull/567), closes [#555](https://github.com/rohitg00/agentmemory/issues/555)). `iii-sdk@0.11.6` introduced a routing regression — all `/agentmemory/*` routes returned `404` from the iii-engine, even though `0.11.6` satisfied our previous `"^0.11.2"` range. `npm install -g @agentmemory/agentmemory` silently drifted everyone forward after `0.9.21` shipped. Pin removes the caret + also pins `iii-sdk@0.11.2` in `agentmemory setup`'s upgrade flow.
+
+- **OpenAI provider sends explicit `stream: false`** ([PR #526](https://github.com/rohitg00/agentmemory/pull/526) by [@Ptah-CT](https://github.com/Ptah-CT)). Some OpenAI-compatible proxies default to `text/event-stream` when `stream` is absent, which crashes `response.json()` and trips `ResilientProvider`'s circuit breaker, silently disabling LLM-backed compression / summarisation / reflection.
+
+- **Viewer search uses NFKC normalisation for CJK / fullwidth input** ([PR #542](https://github.com/rohitg00/agentmemory/pull/542) by [@kaushalrog](https://github.com/kaushalrog)). Fullwidth characters and ligatures pasted from PDFs were missed by `.includes()`. NFKC normalisation on both sides of the comparison makes search match.
+
+- **Viewer splash shows actual bound viewer port** ([PR #560](https://github.com/rohitg00/agentmemory/pull/560) by [@Tanmay-008](https://github.com/Tanmay-008), closes [#521](https://github.com/rohitg00/agentmemory/issues/521)). `/agentmemory/livez` now returns `viewerPort` + `viewerSkipped`; CLI polls until populated. New fields are additive — existing consumers of `/livez` are unaffected.
+
+- **Viewer tab bar height stable across tab switches** ([PR #325](https://github.com/rohitg00/agentmemory/pull/325) by [@hungtd119](https://github.com/hungtd119), closes [#324](https://github.com/rohitg00/agentmemory/issues/324)). Explicit `height: 48px` on `.tab-bar` prevents scrollbar-induced height shift on tab switch (complements #313's `flex: 0 0 auto`).
+
+- **Graph parser accepts self-closing `<entity .../>` tags** ([PR #494](https://github.com/rohitg00/agentmemory/pull/494) by [@Rex57](https://github.com/Rex57), follow-up regex fix in this release, closes [#492](https://github.com/rohitg00/agentmemory/issues/492)). Real LLM output uses self-closing entity tags for entities without properties; the parser regex required explicit `</entity>` closes and dropped them. Initial fix added an alternation; follow-up made the attribute matcher lazy (`[^>]*?`) so the self-closing branch is reached before the explicit-close branch greedily eats the next entity.
+
+- **Plugin MCP server inherits remote/auth env** ([PR #386](https://github.com/rohitg00/agentmemory/pull/386) by [@LaplaceYoung](https://github.com/LaplaceYoung), closes [#375](https://github.com/rohitg00/agentmemory/issues/375)). `plugin/.mcp.json` now passes `AGENTMEMORY_URL` + `AGENTMEMORY_SECRET` through to the bundled MCP server. Matches the `AGENTMEMORY_MCP_BLOCK` already used by the connect adapters. MCP hosts that expand `${VAR}` (Claude Code, Cursor) inherit shell env; hosts that don't expand (or pass the placeholder literally) still work — the shim now strips literal `${...}` strings and falls back to `http://localhost:3111` (hardening, this release).
+
+- **`@agentmemory/mcp` rejects literal `${VAR}` placeholders** (this release). Defensive guard in `src/mcp/rest-proxy.ts` and `src/mcp/standalone.ts`: any `AGENTMEMORY_URL` / `AGENTMEMORY_SECRET` value of the form `${...}` is treated as unset, so the shim falls back to `http://localhost:3111` instead of trying to fetch from a host literally named `${AGENTMEMORY_URL}`. Future-proofs against MCP hosts that don't expand env-var placeholders.
+
+### Added
+
+- **Pluggable benchmark harness with in-house coding-agent corpus** ([PR #562](https://github.com/rohitg00/agentmemory/pull/562)). New `eval/` directory: 15 fictional coding-agent sessions + 15 hand-graded queries (single-session, multi-session, preference, temporal) plus three adapters (grep, OpenAI embeddings + cosine, agentmemory hybrid). LongMemEval support via `eval/runner/longmemeval.ts`. Sandboxed agentmemory + iii-engine on alt ports via `eval/scripts/sandbox.sh`. No runtime impact on the package — `eval/` is dev-only.
+
+- **`agentmemory connect codex --with-hooks` opt-in flag** ([PR #564](https://github.com/rohitg00/agentmemory/pull/564), closes [#509](https://github.com/rohitg00/agentmemory/issues/509)). Workaround for [openai/codex#16430](https://github.com/openai/codex/issues/16430), which prevents plugin-local `hooks.json` from dispatching on Codex Desktop. Opt-in flag merges the bundled `hooks.codex.json` into `~/.codex/hooks.json` with absolute paths to the bundled scripts. Idempotent (re-install strips previous entries via the resolved script-path prefix; unrelated user hooks survive). MCP wiring is unchanged.
+
+- **Cross-platform CI matrix** ([PR #556](https://github.com/rohitg00/agentmemory/pull/556)). Runs tests on Node 20 + 22 with `paths-ignore` for doc-only changes and per-branch concurrency cancellation.
+
+### Docs
+
+- **README "Config File" section + Windows path + Claude subscription opt-in example** ([PR #321](https://github.com/rohitg00/agentmemory/pull/321) by [@aqilaziz](https://github.com/aqilaziz), closes [#293](https://github.com/rohitg00/agentmemory/issues/293)).
+
+- **README sudo install hint for `EACCES` on system Node** ([PR #454](https://github.com/rohitg00/agentmemory/pull/454) by [@kedar-1](https://github.com/kedar-1)).
+
+### Infrastructure
+
+- 98 test files, **1091 tests pass** on `fix/pre-release-hardening`.
+- All MCP env-var consumers go through a single guarded `resolveEnvOrEmpty()` helper.
+
+## [0.9.21] — 2026-05-19
+
+Quality + integration wave. Headline: native OpenCode plugin with full Claude Code hook parity ([#237](https://github.com/rohitg00/agentmemory/pull/237) by [@cl0ckt0wer](https://github.com/cl0ckt0wer)). Ten more PRs alongside: `memory_recall` returning the wrong shape, env-file `AGENTMEMORY_DROP_STALE_INDEX` silently ignored, hook scripts crashing on Windows usernames with spaces, viewer search inputs interrupting CJK IME composition, large sessions silently failing at the LLM context limit, lessons invisible to smart-search, Hermes plugin manifest missing hooks, cli onboarding crashing in non-TTY contexts, rebuildIndex blocking boot on large corpora, 25h embed-loop bottleneck during rebuild, and the v0.9.19 iii-console installer workaround can come out now that upstream is fixed.
+
+### Added
+
+- **OpenCode plugin with 22 auto-capture hooks** ([PR #237](https://github.com/rohitg00/agentmemory/pull/237) by [@cl0ckt0wer](https://github.com/cl0ckt0wer), closes [#236](https://github.com/rohitg00/agentmemory/issues/236) + [#244](https://github.com/rohitg00/agentmemory/issues/244)). Complete OpenCode plugin in `plugin/opencode/` matching Claude Code hook parity. Covers session lifecycle (8 hooks), messages (3), tool lifecycle (2), part tracking, permissions, task tracking, plus a two-layer enrichment pipeline (memory context on first turn, file enrichment on subsequent turns) and two slash commands (`/recall`, `/remember`). Full gap analysis in `plugin/opencode/README.md`.
+
+### Fixed
+
+- **`memory_recall` endpoint + format/token_budget forwarding** ([PR #516](https://github.com/rohitg00/agentmemory/pull/516) by [@serhiizghama](https://github.com/serhiizghama), closes [#507](https://github.com/rohitg00/agentmemory/issues/507) + [#440](https://github.com/rohitg00/agentmemory/issues/440)). MCP `memory_recall` always returned compact mode and dropped `format` + `token_budget` params. Two root causes fixed: standalone shim routed through `/agentmemory/smart-search` instead of `/agentmemory/search`, and the local-fallback path didn't read either param. Now routes correctly, forwards both params end-to-end, defaults `format` to `"full"` matching the MCP schema.
+
+- **env-file `AGENTMEMORY_DROP_STALE_INDEX` flag now honored** ([PR #461](https://github.com/rohitg00/agentmemory/pull/461) by [@honor2030](https://github.com/honor2030), closes [#456](https://github.com/rohitg00/agentmemory/issues/456)). Setting the flag in `~/.agentmemory/.env` was silently ignored because the boot path read `process.env` directly. New `isDropStaleIndexEnabled()` helper reads merged env. Combined with [#455](https://github.com/rohitg00/agentmemory/issues/455) + [#469](https://github.com/rohitg00/agentmemory/issues/469) reports, this is the unblock path for the stale-index server-crash recovery loop.
+
+- **Windows hook scripts quote plugin paths correctly** ([PR #487](https://github.com/rohitg00/agentmemory/pull/487) by [@honor2030](https://github.com/honor2030), closes [#477](https://github.com/rohitg00/agentmemory/issues/477)). Hook command strings referenced `${CLAUDE_PLUGIN_ROOT}/scripts/*.mjs` without quotes — Windows users with spaces in their username had every hook crash. Quotes added + regression test.
+
+- **Viewer search inputs honor IME composition** ([PR #517](https://github.com/rohitg00/agentmemory/pull/517) by [@jonathanzhan1975](https://github.com/jonathanzhan1975)). CJK users typing in the viewer's search inputs hit mid-character interruption — every keystroke fired the `oninput=` re-render handler, breaking IME composition mid-syllable. New `bindImeSafeSearch` helper defers re-render until `compositionend`.
+
+- **Chunk large sessions to fit LLM context window** ([PR #472](https://github.com/rohitg00/agentmemory/pull/472) by [@efenex](https://github.com/efenex)). Sessions with >7000 observations silently failed at the LLM provider's context limit — the consolidation pipeline silently skipped the session. New chunking splits oversized sessions across multiple compress calls + restitches the narrative via a `REDUCE_SYSTEM` prompt. Legacy single-call path preserved when obs count is under the chunk size. Backfill script under `scripts/` for users hitting the pre-fix bug.
+
+- **Surface lessons in smart-search + diagnose tally** ([PR #473](https://github.com/rohitg00/agentmemory/pull/473) by [@efenex](https://github.com/efenex)). Closes the lesson round-trip with [#458](https://github.com/rohitg00/agentmemory/pull/458) (lessons auto-injected into `mem::context`): lessons are now also returned alongside hybrid search results in a separate `lessons` field on `smart-search`, and the `diagnose` health surface tallies per-store counts so the trust-shock pattern (save succeeds, recall empty, diagnose says 0) goes away.
+
+- **Declare all Hermes plugin hooks** ([PR #486](https://github.com/rohitg00/agentmemory/pull/486) by [@honor2030](https://github.com/honor2030)). The Hermes `plugin.yaml` manifest only declared 3 of the 6 implemented hooks. All 6 now declared (`prefetch`, `sync_turn`, `on_session_end`, `on_pre_compress`, `on_memory_write`, `system_prompt_block`).
+
+- **`rebuildIndex` non-blocking on boot** ([PR #500](https://github.com/rohitg00/agentmemory/pull/500) by [@efenex](https://github.com/efenex)). Boot path previously `await`-ed `rebuildIndex(kv)`, so the viewer + later boot steps stalled — on large corpora this was 25h+ of blocked startup. Replaced with `void rebuildIndex(kv).then(...).catch(...)` so the rebuild runs in the background.
+
+- **Batched embed calls in `rebuildIndex` (25h → 3h on large corpora)** ([PR #504](https://github.com/rohitg00/agentmemory/pull/504) by [@efenex](https://github.com/efenex)). The rebuild loop made one embed call per observation, paying full HTTP RTT per item. New `vectorIndexAddBatchGuarded` helper batches embeds (default 32, configurable via `REBUILD_EMBED_BATCH_SIZE`) and try/catches per-item failures. Measured 25h → 3h on a 250k-observation corpus.
+
+- **CLI skips onboarding prompts without a tty** ([PR #491](https://github.com/rohitg00/agentmemory/pull/491) by [@honor2030](https://github.com/honor2030)). Onboarding prompts crashed in non-interactive contexts (CI, `docker run -d`, piped input). New guard short-circuits with sensible defaults when stdin/stdout aren't TTYs or `CI=1`.
+
+### Changed
+
+- **Drop iii-console installer `--next` workaround** ([PR #546](https://github.com/rohitg00/agentmemory/pull/546)). v0.9.19 routed first-run iii-console install through `bash -s -- --next` to dodge an upstream tag-prefix bug at [iii-hq/iii#1652](https://github.com/iii-hq/iii/issues/1652). Upstream [iii-hq/iii#1660](https://github.com/iii-hq/iii/pull/1660) shipped 2026-05-19; `install.iii.dev/console/main/install.sh` is a CDN proxy serving upstream main HEAD so the fix is live without an iii release tag. Reverted to canonical bare `curl ... | sh`.
+
+### Infrastructure
+
+- 95 test files (was 92), **1067 tests pass** (was 1038) on `chore(release): v0.9.21`.
+- Bundles 11 PRs: 1 contributor feature + 9 bug fixes across MCP / hooks / viewer / summarize / lessons / Hermes / rebuildIndex / CLI + 1 upstream-installer revert.
+- New contributors landing first PRs this release: [@cl0ckt0wer](https://github.com/cl0ckt0wer), [@serhiizghama](https://github.com/serhiizghama), [@jonathanzhan1975](https://github.com/jonathanzhan1975).
+
+[0.9.21]: https://github.com/rohitg00/agentmemory/compare/v0.9.20...v0.9.21
+
+## [0.9.20] — 2026-05-18
+
+Hotfix: revert the Codex Stop → session-end chain shipped in v0.9.19.
+
+### Fixed
+
+- **Revert Codex Stop hook session-end chain** ([PR #501](https://github.com/rohitg00/agentmemory/pull/501) by [@Rex57](https://github.com/Rex57), reverts v0.9.19's [#495](https://github.com/rohitg00/agentmemory/pull/495), re-opens [#493](https://github.com/rohitg00/agentmemory/issues/493)). Post-merge field-testing surfaced the underlying issue: Codex `Stop` fires before the overall conversation is truly finished — multiple Stops bracket each assistant turn within one session. Chaining `session-end.mjs` from Stop marked sessions completed too early, with later observations still arriving against an `endedAt`-stamped record. Restored to summarize-only Stop; the SessionEnd-shaped solution stays open as [#493](https://github.com/rohitg00/agentmemory/issues/493).
+
+[0.9.20]: https://github.com/rohitg00/agentmemory/compare/v0.9.19...v0.9.20
+
+## [0.9.19] — 2026-05-18
+
+Feature + hardening wave. Sessions now link to the git commits they shipped (forward + reverse lookup, REST + MCP surfaces). OpenAI provider transport collapses into one shared module with auto-detected Azure URL style (legacy `/openai/deployments/<dep>` and v1 `/openai/v1` both supported). Graph retrieval switches from BFS to Dijkstra over the weighted edge graph. Codex Stop hook chains session-end. Plugin MCP server inherits `AGENTMEMORY_URL` / `AGENTMEMORY_SECRET` from the shell. Point fix routes the bundled iii-console installer around an upstream tag-prefix bug. 1007+ tests pass.
+
+### Added
+
+- **Session-to-commit linking** ([PR #498](https://github.com/rohitg00/agentmemory/pull/498)). New `KV.commits` namespace keyed by full SHA holds `CommitLink` records (sha, shortSha, branch, repo, message, author, authoredAt, files, sessionIds). `Session.commitShas[]` provides the forward back-reference. REST: `POST /agentmemory/session/commit` upserts links (merges `sessionIds` on re-link, preserves `linkedAt`); `GET /agentmemory/commits/:sha` and `GET /agentmemory/commits` round-trip. MCP: `memory_commit_lookup` and `memory_commits` tools. Post-commit hook auto-captures the link on every commit in the working directory. Closes the loop on "what session wrote this code" / "what commits did this session ship" without leaving agentmemory.
+
+- **Azure OpenAI v1 URL pattern auto-detection** ([PR #462](https://github.com/rohitg00/agentmemory/pull/462), closes [#371](https://github.com/rohitg00/agentmemory/issues/371)). Both the LLM and embedding providers now route through `_openai-shared.ts` and auto-detect Azure URL style:
+  - `OPENAI_BASE_URL=https://r.openai.azure.com/openai/deployments/<dep>` → legacy URL pattern, `api-version` query param via `OPENAI_API_VERSION` (default `2024-08-01-preview`).
+  - `OPENAI_BASE_URL=https://r.openai.azure.com` (bare host, or `/openai`, or `/openai/v1`) → v1 GA pattern, `/openai/v1/<route>`, deployment name carried in the request body as `model`.
+  - Net effect: Azure embeddings work for the first time (LLM-side Azure shipped in v0.9.17; embedding was still hardcoded to `/v1/embeddings` + Bearer). Closes [#199](https://github.com/rohitg00/agentmemory/issues/199) (consolidation) as superseded.
+
+### Changed
+
+- **Graph retrieval: BFS → Dijkstra over weighted edges** ([PR #463](https://github.com/rohitg00/agentmemory/pull/463), closes [#328](https://github.com/rohitg00/agentmemory/issues/328) filed by [@Tanmay-008](https://github.com/Tanmay-008) with benchmark numbers showing the BFS edge-count semantics + O(n) `Array.shift()` profile). Memory graph edges carry weights 0.1–1.0; BFS visited by edge-count regardless, so a one-hop weak edge ranked the same as a two-hop strong chain. Dijkstra over `cost = 1/max(weight, 0.01)` selects weight-optimal paths instead. Adjacency map built once in O(V+E) and min-heap dequeue at O(log V) replace the prior O(V·E) + O(n) `Array.shift()` profile. `maxDepth` semantics preserved (still edge-count bound). The `startNode` path is excluded from returned paths so the dedicated `score=1.0` fallback loop in `searchByEntities` fires as designed (regression catch from the inline review).
+
+- **Codex Stop hook chains session-end** ([PR #495](https://github.com/rohitg00/agentmemory/pull/495) by [@Rex57](https://github.com/Rex57), fixes [#493](https://github.com/rohitg00/agentmemory/issues/493) also filed by [@Rex57](https://github.com/Rex57)). `hooks.codex.json` Stop now runs `stop.mjs` followed by `session-end.mjs`. Codex doesn't ship a separate `SessionEnd` lifecycle event, so the session would otherwise stay open after the user terminated the Codex session. Tests assert both commands appear in the Stop chain.
+
+- **Plugin MCP entry inherits shell env via passthrough** ([PR #460](https://github.com/rohitg00/agentmemory/pull/460), closes [#375](https://github.com/rohitg00/agentmemory/issues/375) filed by [@anthony-spruyt](https://github.com/anthony-spruyt)). `plugin/.mcp.json` and `AGENTMEMORY_MCP_BLOCK` (the template `agentmemory connect <agent>` writes into `~/.claude.json`, `~/.cursor/mcp.json`, etc.) now declare `env: { AGENTMEMORY_URL: "${AGENTMEMORY_URL}", AGENTMEMORY_SECRET: "${AGENTMEMORY_SECRET}" }`. The MCP host substitutes shell values at server launch. When the vars are unset, the host passes empty strings; the standalone shim's `process.env["AGENTMEMORY_URL"] || "http://localhost:3111"` falls back to localhost. One wired entry now covers both local and remote (k8s / reverse-proxied) deployments without `/doctor` "duplicate server" warnings.
+
+### Fixed
+
+- **`ensureIiiConsole()` install path** (`src/cli.ts`). The upstream `install.iii.dev/console/main/install.sh` script's jq predicate filters releases with `startswith("v")` while `iii-hq/iii` tags as `iii/v0.12.0`. The script bails with `no stable iii release found` on every fresh install. Switched the install command to `curl ... | bash -s -- --next` until upstream patches the script — the `--next` codepath uses a regex on `-next.` without the buggy `startswith` constraint, so it succeeds against the same tag set. Inline comment documents the upstream bug + revert condition.
+
+### Infrastructure
+
+- 91 test files, 1007 tests pass on `chore(release): v0.9.19`.
+- Bundles five PRs ([#460](https://github.com/rohitg00/agentmemory/pull/460), [#462](https://github.com/rohitg00/agentmemory/pull/462), [#463](https://github.com/rohitg00/agentmemory/pull/463), [#495](https://github.com/rohitg00/agentmemory/pull/495), [#498](https://github.com/rohitg00/agentmemory/pull/498)) plus the inline iii-console installer workaround into one patch release.
+
+[0.9.19]: https://github.com/rohitg00/agentmemory/compare/v0.9.18...v0.9.19
+
+## [0.9.18] — 2026-05-17
+
+Hardening + DX wave. Five fixes land together: lessons now flow into the auto-inject context payload (closes a half-finished loop from earlier releases — see #381 / #457), the viewer drops `data:` from its `img-src` CSP by self-hosting its favicon, the filesystem watcher redacts PEM private-key blocks and standalone JWTs before transport, the mcp-standalone livez probe gets a dependency-injection seam that kills a flaky test, and the OpenAI timeout precedence is documented + tightened (strict integer parse, `OPENAI_TIMEOUT_MS` keeps its v0.9.17 meaning as an alias of the global `AGENTMEMORY_LLM_TIMEOUT_MS`). 1007/1007 tests pass.
+
+### Added
+
+- **Lessons auto-injected into `mem::context` payload** ([PR #458](https://github.com/rohitg00/agentmemory/pull/458), closes [#457](https://github.com/rohitg00/agentmemory/issues/457), surfaced in discussion [#381](https://github.com/rohitg00/agentmemory/discussions/381)). Lessons were generated + stored but only retrievable via an explicit `memory_lesson_recall` MCP call — agents rarely thought to invoke it, so the loop was half-done. `mem::context` now reads `KV.lessons` alongside slots + profile, ranks by `(project-relevance × confidence)` (project-scoped lessons get a 1.5× boost), filters tombstoned + cross-project entries, caps at top-10, and emits a `## Lessons Learned` block competing fairly for the token budget. Block recency tracks the most-recent `lastReinforcedAt || updatedAt`, so hot lessons survive when budget tightens.
+
+- **Self-hosted viewer favicon** ([PR #452](https://github.com/rohitg00/agentmemory/pull/452), closes [#447](https://github.com/rohitg00/agentmemory/issues/447)). The viewer's inline-SVG `data:` favicon (added in #313) required `data:` in `img-src` — a broader allowance than the viewer actually needed. The favicon now lives at `/favicon.svg` served by the viewer with `Content-Type: image/svg+xml` and `Cache-Control: public, max-age=3600`; build script copies the asset into `dist/viewer/` alongside `index.html`. CSP reverts to bare `img-src 'self'`.
+
+### Changed
+
+- **`OPENAI_TIMEOUT_MS` is now an alias of `AGENTMEMORY_LLM_TIMEOUT_MS`** ([PR #453](https://github.com/rohitg00/agentmemory/pull/453), closes [#446](https://github.com/rohitg00/agentmemory/issues/446)). v0.9.17 shipped `OPENAI_TIMEOUT_MS` as the OpenAI-scoped knob, then [PR #379](https://github.com/rohitg00/agentmemory/pull/379) introduced the global `AGENTMEMORY_LLM_TIMEOUT_MS` shared across all raw-fetch providers. The OpenAI provider now resolves them in precedence order: `OPENAI_TIMEOUT_MS` → `AGENTMEMORY_LLM_TIMEOUT_MS` → `60_000ms` default. v0.9.17 configs keep working unchanged; new configs should prefer the global. The provider's request also moved onto the shared `fetchWithTimeout` helper that owns AbortController + `clearTimeout` cleanup for every raw-fetch path (minimax, openrouter, gemini, embedding providers).
+
+- **Strict integer parse for timeout env vars** (PR #453, CodeRabbit catch). `parsePositiveInt` rejects values like `"30ms"`, `"1_000"`, `"60s"`, `"30abc"`, `"-30"`, `"0"` via `/^\d+$/` (after trim) instead of letting `parseInt`'s lenience silently swallow trailing units / underscores / signs as a number. Malformed values fall back to the 60s default with no surprise truncation.
+
+### Fixed
+
+- **Filesystem watcher redacts PEM private-key blocks + standalone JWTs in previews** ([PR #450](https://github.com/rohitg00/agentmemory/pull/450), closes [#448](https://github.com/rohitg00/agentmemory/issues/448)). Continues the redaction surface opened in [PR #332](https://github.com/rohitg00/agentmemory/pull/332). PEM blocks (`-----BEGIN ... PRIVATE KEY-----` through `-----END ... PRIVATE KEY-----`, including encrypted, RSA, EC, DSA, OpenSSH, PGP variants) get a state-machine pass that replaces the whole block with a single `[REDACTED ... PRIVATE KEY]` marker; standalone JWT-shaped tokens (three base64url segments separated by dots, length ≥ ~32 chars) are masked to their last 4 chars. Both run before any transport-layer write.
+
+- **mcp-standalone livez probe DI seam kills the test flake** ([PR #451](https://github.com/rohitg00/agentmemory/pull/451), closes [#449](https://github.com/rohitg00/agentmemory/issues/449)). The standalone shim's livez probe used a fixed `fetch` against `localhost:3111` which made the test suite depend on no other agentmemory instance running on the host. New `setLivezProbe()` injection seam lets tests provide a deterministic probe; default behaviour for production users is unchanged.
+
+### Infrastructure
+
+- 91 test files (was 90), 1007 tests (was 992). New `test/context-lessons.test.ts` (8 cases) covers lessons-auto-inject inclusion, empty-state no-op, project ranking, cross-project isolation, soft-delete skip, top-10 cap, confidence rendering, optional `context` string append.
+
+- Bundled the four follow-up issues filed during the v0.9.17 audit wave ([#446](https://github.com/rohitg00/agentmemory/issues/446), [#447](https://github.com/rohitg00/agentmemory/issues/447), [#448](https://github.com/rohitg00/agentmemory/issues/448), [#449](https://github.com/rohitg00/agentmemory/issues/449)) plus the cross-project lesson-injection gap surfaced in discussion [#381](https://github.com/rohitg00/agentmemory/discussions/381) into a single patch release — no behaviour changes for existing users beyond the hardening above.
+
+[0.9.18]: https://github.com/rohitg00/agentmemory/compare/v0.9.17...v0.9.18
+
+## [0.9.17] — 2026-05-16
+
+OpenAI-compatible LLM provider lands the universal-adapter shape (one provider config covers OpenAI, Azure OpenAI auto-detected by hostname, DeepSeek, SiliconFlow, vLLM, LM Studio, Ollama via `/v1`, plus any future endpoint that mirrors `POST /v1/chat/completions`). Worker registration now pins a stable `project_name` for engine telemetry so attribution reads cleanly across hosts. Comparison section on agent-memory.dev no longer wraps awkwardly after the v0.9.16 refresh.
+
+### Added
+
+- **OpenAI-compatible LLM provider** ([PR #307](https://github.com/rohitg00/agentmemory/pull/307), by @fatinghenji). Six providers behind one config: `OPENAI_API_KEY` + `OPENAI_BASE_URL` + `OPENAI_MODEL`. Closes [#185](https://github.com/rohitg00/agentmemory/issues/185), [#232](https://github.com/rohitg00/agentmemory/issues/232) (Ollama works via `OPENAI_BASE_URL=http://localhost:11434/v1`), [#312](https://github.com/rohitg00/agentmemory/issues/312), and [#240](https://github.com/rohitg00/agentmemory/pull/240) (superseded).
+
+- **Azure OpenAI auto-detection**. `OpenAIProvider` detects `.openai.azure.com` hostnames in the configured base URL at construction time and switches the request shape automatically: drops the `/v1` path prefix (deployment is in the URL), uses `api-key: <KEY>` header instead of `Authorization: Bearer`, appends `api-version=<version>` query param. Default api-version is `2024-08-01-preview`; override via `OPENAI_API_VERSION`. Closes the gap with [PR #219](https://github.com/rohitg00/agentmemory/pull/219).
+
+- **`OPENAI_TIMEOUT_MS` env var** (PR #307). Outbound fetch timeout on the new provider, default 60s, AbortController-bounded with a clear timeout error message that points at the env var. The other raw-fetch providers (anthropic / gemini / openrouter / minimax) share the same gap tracked in [#373](https://github.com/rohitg00/agentmemory/issues/373).
+
+- **`OPENAI_REASONING_EFFORT` passthrough** (PR #307). Forwarded as `reasoning_effort` on the request body for OpenAI reasoning models (`o1`, `o3`, `gpt-*-reasoning`) and providers that mirror that schema (Ollama Cloud thinking models). Standard chat models reject this field with 400 — README documents the caveat. Set to `"none"` for thinking models that return reasoning but no content. The provider also falls back to `message.reasoning` when `message.content` is empty, covering the Ollama Cloud thinking-model shape.
+
+### Changed
+
+- **Worker `telemetry.project_name` pinned to `"agentmemory"`** ([PR #426](https://github.com/rohitg00/agentmemory/pull/426)). `iii-sdk`'s `InitOptions.telemetry.project_name` auto-detects when omitted — falls through cwd → package.json basename → hostname, which produces inconsistent identifiers per host (`agentmemory`, `node`, `npm`, occasionally the user's home dir basename when launched via npx). Pinning the value gives every install the same stable project identifier in the engine's metrics + traces output. Also pins `language: "node"` and `framework: "iii-sdk"` for the same reason.
+
+- **`OPENAI_API_KEY_FOR_LLM=false` opt-out gate** (PR #307, fix pushed via maintainer edit). `detectLlmProviderKind()` now mirrors `detectProvider()`'s existing gate — users who set `OPENAI_API_KEY` only for embeddings (via the `OPENAI_BASE_URL` + `OPENAI_EMBEDDING_MODEL` flow from #186) won't see the LLM auto-activate. The README's `.env` template now leads with an explicit shared-use callout above the LLM section pointing at the opt-out.
+
+- **Compare section on agent-memory.dev** ([PR #427](https://github.com/rohitg00/agentmemory/pull/427)). `AGENTMEMORY VS. THE FIELD.` title → `VS. THE FIELD.` (the eyebrow already reads VS., so the longer version was redundant + wrapped ugly). Added `text-wrap: balance` to `.section-title` globally so any wrapping title breaks at a balanced point. `NATIVE PLUGINS` cell value `6 (Claude/Codex/OpenClaw/Hermes/pi/OpenHuman)` → `6` (agent names already visible in the Agents grid two sections above). Row grid rebalanced (label 1.4fr / agentmemory 1.3fr / competitors 1fr each), added `word-break: break-word` + 24px row padding so cells like `YES (APACHE-2.0)` and `2 (Qdrant, Neo4j)` have breathing room.
+
+### Infrastructure
+
+- Provider factory at `src/providers/index.ts` now dispatches `"openai"` through `createBaseProvider`; type union extended in `src/types.ts:132`. `VALID_PROVIDERS` set in `src/config.ts` includes the new entry so the fallback-chain config accepts it.
+
+[0.9.17]: https://github.com/rohitg00/agentmemory/compare/v0.9.16...v0.9.17
+
+## [0.9.16] — 2026-05-15
+
+Two parallel waves landed back-to-back. (1) DevEx polish on top of v0.9.15's foundation: 5-port ready panel that shows REST/Viewer/Streams/Engine/iii-console in one boxed note, iii-console install probe + auto-install on first run, interactive global-install prompt that replaces the passive npx hint (so `agentmemory stop` actually works in new shells), onboarding wizard now wires every selected agent inline via the same `agentmemory connect` adapter the CLI exposes, plus a memory-share callout so users understand a single server feeds every wired agent. (2) Marketing site refresh against the v0.9.15 surface: new `AS FEATURED IN` bar (AlphaSignal · Agentic AI Foundation · Trendshift), six first-party agents in the featured grid (added pi + OpenHuman), MCP messaging reworded as opt-in surface so REST reads as the primary protocol.
+
+### Added
+
+- **5-port ready panel** ([PR #410](https://github.com/rohitg00/agentmemory/pull/410)). Replaces the single-line `Memory ready on :3111 · viewer on :3113 · try: agentmemory demo` hint with a clack `p.note` panel listing all live endpoints — REST API, Viewer, Streams, Engine, iii console — each derived from the configured env vars (`AGENTMEMORY_URL`, `III_REST_PORT`, `III_VIEWER_PORT`, `III_STREAM_PORT`, `III_ENGINE_URL`) so a remote-bind setup reads correctly, not as hardcoded localhost.
+
+- **iii console install probe + auto-install** (PR #410). New `ensureIiiConsole()` checks for the iii-console binary on PATH or in `~/.local/bin`; if missing, prompts interactively to run `curl -fsSL https://install.iii.dev/console/main/install.sh | sh`. Console is first-class — not optional. On install acceptance the ready panel includes the binary's resolved path and a runnable launch hint (`<binPath> -p <port>`); on decline the panel surfaces the install one-liner.
+
+- **Interactive global-install prompt** (PR #410). Replaces the passive `p.log.info` npx hint with a `p.confirm` on first npx run that runs `npm install -g @agentmemory/agentmemory@<VERSION>` inline. Suppressible via `preferences.skipGlobalInstall` so we never ask twice. Closes the v0.9.15-era footgun where users typed `agentmemory stop` in a new shell and hit `command not found`.
+
+- **Onboarding wires selected agents inline** ([PR #408](https://github.com/rohitg00/agentmemory/pull/408)). After the multi-select agents step in `runOnboarding`, asks `Run \`agentmemory connect <agent>\` for each selected agent now? [Y/n]` and dispatches each through the existing `runAdapter` path used by the explicit `agentmemory connect` command. Successes + failures get bucketed in a summary block (`Wired: claude-code, codex, cursor · Skipped/failed: hermes (manual install required)`). Cancellation prints the explicit per-agent commands for the user to run later.
+
+- **Memory-share callout** (PR #408). Between the agents multi-select and the provider single-select the wizard now prints a verbatim note: `All selected agents share the same memory at :3111. A memory saved by Claude Code is visible to Codex + Cursor instantly.` Closes the most common confusion ("does the same memory work across agents?") we were getting on the v0.9.15 install path.
+
+- **AS FEATURED IN bar on agent-memory.dev**. New `FeaturedIn` component between Hero and Stats. Three cards with real brand marks: AlphaSignal (github.com/Alpha-Signal avatar, links to the AlphaSignal Substack deep-dive), Agentic AI Foundation (self-hosted wordmark, inverted to white-on-dark for the brutalist palette), Trendshift (their official badge endpoint at `trendshift.io/api/badge/repositories/25123` which bakes the live rank + star count into the image). 3-column grid on desktop, 1-column stack on mobile, keyboard-accessible (`:focus-visible` outline).
+
+### Changed
+
+- **MCP messaging reworded as opt-in surface** ([PR #409](https://github.com/rohitg00/agentmemory/pull/409)). The endpoints summary line in `src/index.ts` was foregrounding MCP equally with REST — `Endpoints: 107 REST + 51 MCP tools + 6 MCP resources + 3 MCP prompts`. Users kept reading MCP as compulsory. Now: `REST API: 121 endpoints at http://localhost:<PORT>/agentmemory/*` (primary), plus a second line `MCP surface (opt-in via \`npx @agentmemory/mcp\`): 51 tools · 6 resources · 3 prompts`. Each `connect` adapter additionally prints a protocol-note line above its install summary so the user sees which surface they're wiring (native hooks vs MCP vs both).
+
+- **CLI `--help` mcp subcommand description** (PR #409). Was `Start standalone MCP server (no engine required)`. Now: `Start standalone MCP shim — opt-in surface for MCP-only clients (Cursor, Gemini CLI, etc). REST always available at :3111.`
+
+- **Engine version-mismatch warning copy** (PR #410). The warning that fires when iii on PATH doesn't match `IIPINNED_VERSION` previously said `agentmemory v0.9.14+ pins v0.11.2`. Now reads `agentmemory v${VERSION} pins v${IIPINNED_VERSION}` so the string never lies post-release.
+
+- **CommandCenter — iii console messaging** (PR #415). `iii CONSOLE · OPTIONAL` → `iii CONSOLE · FIRST-CLASS`. Section lede now mentions both UIs (viewer + console) are first-class and installed inline by the CLI on first run. Bullet counts updated: dropped stale `33 functions` and `49 triggers` → `121 HTTP endpoints` (matches `generated-meta.json`).
+
+- **Compare table refreshed** (PR #415). MCP TOOLS row our column 44 → 51. New REST ENDPOINTS row (121) and NATIVE PLUGINS row (6: Claude/Codex/OpenClaw/Hermes/pi/OpenHuman).
+
+- **Agents grid refresh** (PR #415). Featured row expanded from 4 to 6 — added pi and OpenHuman. Codex CLI sub line updated to `NATIVE PLUGIN` (has 6 hooks now, not MCP-only). Section title `FOUR FIRST-PARTY` → `SIX FIRST-PARTY`. Lede mentions `agentmemory connect <agent>`.
+
+- **Hero CTA** (PR #415). `START IN 60 SECONDS` → `START IN 30 SECONDS`. Cold install + engine spawn measured 8-12s on v0.9.15 via the native binary path; 60s was the v0.9.0-era Docker-first claim.
+
+### Fixed
+
+- **CLI no longer kills its own parent process** (PR #410 follow-up via #411). `lsof -i :PORT -t` returns every PID with an active TCP connection — including the CLI's own keep-alive `fetch()` from `isEngineRunning()`. Now restricts to `-sTCP:LISTEN` and filters `process.pid` from the candidate set. The bug used to surface as exit code 137 with state files left stranded.
+
+- **Splash banner ASCII** ([PR #411](https://github.com/rohitg00/agentmemory/pull/411)). The hand-drawn block-art "agentmemory" wordmark in `src/cli/splash.ts` had broken middle glyphs (`_ _` instead of `_ __` around the 'n', merged 'tm/me' segments). Replaced with verified `figlet agentmemory` standard-font output. All 6 rows render at exactly 70 cols, regenerable.
+
+- **README install hoisted to top** (PR #411). Install section was buried at line 306 below benchmarks and comparison tables. Moved a 4-line install block right under the nav anchors at the top with the bare `agentmemory` command leading. Quick-start kept below for the in-depth walkthrough. Adds an npx-cache caveat with three workarounds (`npm install -g`, `npx -y @latest`, manual `rm -rf ~/.npm/_npx` annotated as POSIX-only).
+
+### Infrastructure
+
+- New modules: `src/cli/connect/{index,types,claude-code,codex,cursor,gemini-cli,openclaw,hermes,pi,openhuman,json-mcp-adapter}.ts`, `src/cli/doctor-diagnostics.ts`, `src/cli/remove-plan.ts`, `src/cli/splash.ts`, `src/cli/preferences.ts`, `src/cli/onboarding.ts`, `src/logger.ts` (bootLog shim) — actually shipped in v0.9.15; relisted here only to call out that v0.9.16 keeps every module backward-compatible (no signature breaks on `runOnboarding`, no field removals from `Prefs`).
+- New tests: existing CLI test suites continue at 944+ passing. mcp-standalone pre-existing failures unrelated.
+- Website: new `FeaturedIn` component (~150 LOC across `.tsx` + `.module.css`); `next.config.ts` adds `aaif.io`, `trendshift.io`, `raw.githubusercontent.com` to `remotePatterns`.
+
+[0.9.16]: https://github.com/rohitg00/agentmemory/compare/v0.9.15...v0.9.16
+
+## [0.9.15] — 2026-05-15
+
+DevEx overhaul. Four PRs landed simultaneously rebuilding the first-run experience to SkillKit-grade polish: splash banner + interactive agent grid + provider picker + smart-defaults preferences, `agentmemory connect <agent>` to automate native-plugin install for 8 agents, interactive `doctor` v2 with Fix/Skip/More/Quit prompts and a `--all` auto-fix flag, `agentmemory remove` for clean uninstall with destruction-plan confirmation, plus five silent-killer fixes around viewer port collisions, engine version-mismatch detection, `stop --force` override, adopt-on-attach state recording, and an npx-to-global-install hint.
+
+### Added
+
+- **Splash banner + onboarding wizard** ([PR #403](https://github.com/rohitg00/agentmemory/pull/403)). Terminal-width-aware ASCII (full at ≥120 cols, compact at 80–119, single-line below 80), `NO_COLOR`-aware. First-run flow: multi-select 8 native-plugin agents + 8 MCP-server agents (`⟁ Claude Code`, `◫ Cursor`, `◎ Codex`, `✦ Gemini CLI`, `⬡ OpenCode`, etc), single-select LLM provider (Anthropic / OpenAI / Gemini / OpenRouter / MiniMax / BM25-only), seeds `~/.agentmemory/.env` with the chosen provider's `*_API_KEY=` line commented. Subsequent runs skip the splash.
+
+- **`~/.agentmemory/preferences.json`** (PR #403). Schema-versioned JSON with `{ lastAgent, lastAgents, lastProvider, skipSplash, skipNpxHint, firstRunAt }`. Atomic write via `.tmp` + rename, graceful defaults on read failure. Exports `isFirstRun()`, `readPrefs()`, `writePrefs()`, `resetPrefs()`.
+
+- **`agentmemory connect <agent>` command** ([PR #402](https://github.com/rohitg00/agentmemory/pull/402)). Automates native-plugin install for `claude-code`, `codex`, `cursor`, `gemini-cli`, `openclaw` (end-to-end working) plus stubs for `hermes`, `pi`, `openhuman` (which print manual-install hints until deeper YAML/TS adapters land). Each adapter: detect → backup the agent's existing config to `~/.agentmemory/backups/<agent>-<timestamp>.<ext>` → merge → re-read & verify → idempotent on re-run. Supports `--dry-run`, `--force`, `--all`. Interactive picker when run without an agent argument.
+
+- **`agentmemory remove` command** ([PR #406](https://github.com/rohitg00/agentmemory/pull/406)). Tears down everything agentmemory installed: pidfile + state file + preferences + backups + `~/.local/bin/iii` (only when it matches the version we installed) + any agent connections. Asks separately for `.env` (holds API keys) and for the memory data dir. Requires two confirmations by default. Supports `--force`, `--keep-data`.
+
+- **`agentmemory doctor` v2** (PR #406). Replaces the passive reporter with an interactive fixer. Each diagnostic prints problem + cause + fix-preview, then offers Fix / Skip / More / Quit. Checks: missing `.env`, missing LLM key, engine version mismatch, viewer port unreachable, stale pidfile, empty API keys, iii on PATH outside `~/.local/bin/iii`. New flags: `--all` (apply every fix, for CI), `--dry-run` (show plan only).
+
+- **`agentmemory stop --force`** ([PR #405](https://github.com/rohitg00/agentmemory/pull/405)). Bypasses the Docker-compose heuristic refusal so engines started before v0.9.14 (which had no state file) can be torn down without a hand-rolled `lsof | xargs kill -9`.
+
+- **`--reset` flag**. Wipes preferences and re-runs the onboarding wizard (PR #403).
+
+- **`--verbose` / `AGENTMEMORY_VERBOSE=1`**. Restores the pre-v0.9.15 25-line `[agentmemory] X` engine-boot log stream for debugging (PR #403). Default is muted to a single ready-line.
+
+### Changed
+
+- **First-run output trimmed from 30+ lines to ~10**. The `[agentmemory] Worker v0.9.x` boot log stream is now buffered behind a `bootLog` shim (`src/logger.ts`) and only surfaces when `--verbose` is passed. The default surface is the splash banner, the onboarding prompts (first run only), a single engine spinner, and a one-line ready hint: `Memory ready on :3111 · viewer on http://localhost:3113 · try: agentmemory demo`.
+
+- **`isEngineRunning()` short-circuit now adopts the engine** ([PR #405](https://github.com/rohitg00/agentmemory/pull/405)). When the CLI finds an existing engine on `:3111`, it now writes `~/.agentmemory/iii.pid` (resolved via `lsof -i :PORT -sTCP:LISTEN -t`) and `~/.agentmemory/engine-state.json` (`{kind:"native", configPath, attached:true}`) if neither exists. Closes the migration gap where pre-v0.9.14 engines could not be stopped via `agentmemory stop` because no state file was written by the older code.
+
+- **Viewer port auto-bump** (PR #405). When `:3113` is taken, the viewer now retries 3114 → 3115 → … up to 3122 before failing loud. Pre-fix behaviour was a silent `Viewer port 3113 already in use, skipping viewer.` which left users staring at the previous run's stale viewer.
+
+- **Engine version-mismatch warning** (PR #405). When the iii binary on PATH (or attached engine) is not the pinned `IIPINNED_VERSION` (currently v0.11.2), the CLI now prints a clearly-labelled `p.log.warn` with the override path (`AGENTMEMORY_III_VERSION=...` env var or downgrade curl one-liner). Pre-fix was silent acceptance — v0.11.6 on PATH led to undebuggable EPIPE loops.
+
+- **npx PATH hint** (PR #405). After the engine is ready, runs invoked via `npx` get one extra line: `Tip: install globally for the bare \`agentmemory\` command: npm install -g @agentmemory/agentmemory`. Suppressible via `preferences.skipNpxHint`.
+
+### Fixed
+
+- `lsof -i :PORT -t` was returning client PIDs alongside the LISTEN-socket owner (already fixed in v0.9.14 via the `-sTCP:LISTEN` flag + `process.pid` filter; called out here so anyone bisecting the wave knows the LISTEN flag is what stopped the CLI from killing itself).
+
+### Infrastructure
+
+- New modules: `src/cli/splash.ts`, `src/cli/preferences.ts`, `src/cli/onboarding.ts`, `src/cli/connect/{index,types,claude-code,codex,cursor,gemini-cli,openclaw,hermes,pi,openhuman,json-mcp-adapter}.ts`, `src/cli/doctor-diagnostics.ts`, `src/cli/remove-plan.ts`, `src/logger.ts` (bootLog shim).
+- New tests: `test/preferences.test.ts` (7), `test/cli-connect.test.ts` (13), `test/cli-doctor-fixes.test.ts` (18), `test/cli-remove.test.ts` (13). 944 tests passing, 10 pre-existing `mcp-standalone.test.ts` failures unrelated to this wave.
+
+[0.9.15]: https://github.com/rohitg00/agentmemory/compare/v0.9.14...v0.9.15
+
+## [0.9.14] — 2026-05-15
+
+CLI bootstrap rework so `npx @agentmemory/agentmemory` stops failing on Rancher Desktop and other Docker-shim daemons. The native iii-engine binary is now the first-class start path; Docker becomes opt-in. Also ships `agentmemory stop` so engines started in the background can be torn down without `lsof | xargs kill`. README agents grid reorders OpenHuman next to the other native-integration agents.
+
+### Added
+
+- **`agentmemory stop` command** ([PR #396](https://github.com/rohitg00/agentmemory/pull/396)). Reads `~/.agentmemory/iii.pid` first, falls back to `lsof -i :PORT -sTCP:LISTEN -t`, sends `SIGTERM`, waits 3s, escalates to `SIGKILL`. iii-engine doesn't currently handle `SIGTERM` cleanly so the SIGKILL escalation is what actually frees the port. State file (`~/.agentmemory/engine-state.json`) records whether the engine was started natively or via `docker compose up -d`, so `stop` runs `docker compose -f <file> down` for Docker engines instead of signaling the host's Docker socket proxy by accident.
+
+- **`AGENTMEMORY_USE_DOCKER=1` env var**. Opt-in path for users who want the bundled `docker-compose.yml` to keep handling iii-engine lifecycle. Without it, the CLI prefers the native binary in `~/.local/bin/iii`. Documented in `npx @agentmemory/agentmemory --help`.
+
+### Changed
+
+- **`startEngine()` fallback order rewritten** ([PR #396](https://github.com/rohitg00/agentmemory/pull/396)). New tier order: (1) `iii` on PATH, (2) `~/.local/bin/iii` or other fallback paths, (3) interactive clack `p.select` with three choices — auto-install the pinned v0.11.2 binary, use Docker compose, or print manual install instructions and exit, (4) Docker compose only via explicit opt-in or the post-install failure fallback, (5) fail-loud with install instructions. CI / non-TTY environments auto-pick install. The Docker fallback was tier 2 and silently fired on every cold start; on Rancher Desktop `docker compose up -d` returns 0 even when the daemon's pull silently fails, which is what produced the "engine started but REST never responded" misdiagnoses we've been seeing this week.
+
+- **Installer logic extracted from `runUpgrade` into `runIiiInstaller()`**. Both first-run and `agentmemory upgrade` now share the same pinned-v0.11.2 curl-and-tar path. The pre-v0.9.14 installer only ran on `npx @agentmemory/agentmemory upgrade`, so first-time users never auto-installed.
+
+- **`installInstructions()` copy reordered**. The curl one-liner now leads (path A), Docker is path B with the `AGENTMEMORY_USE_DOCKER=1` env-var hint. The historical "Why pinned" rationale moved out of the failure note (it's still in the source comment for anyone debugging the pin choice).
+
+- **README agents grid reordered** ([PR #397](https://github.com/rohitg00/agentmemory/pull/397)). Row 1 is now Claude Code → Codex CLI → OpenClaw → Hermes → pi → OpenHuman → Cursor → Gemini CLI. OpenHuman moved from slot 3 to slot 6 so the native-Memory-trait callout reads cleanly alongside the other native-integration agents.
+
+### Fixed
+
+- **CLI no longer kills its own parent process**. `lsof -i :PORT -t` returns every PID with an active TCP connection to the port, including the CLI's own keep-alive `fetch()` from `isEngineRunning()`. Without a LISTEN filter, `agentmemory stop` would SIGKILL itself — exit code 137, state files never cleaned up. Now filters to `-sTCP:LISTEN` and drops `process.pid` from the candidate set.
+
+- **`agentmemory stop` no longer clears the pidfile when a stale process holds the port**. The HTTP probe can fail while the engine is hung, paused, or in a half-closed state. The pre-fix behaviour cleared the pidfile and printed "Nothing to stop" — the next run would silently start a second engine on a port that the first engine still owns. Now preserves the pidfile and surfaces the live PIDs with `ps -p` + `lsof` hints so the operator can investigate before manual cleanup.
+
+- **Docker-started engines stop safely**. The pre-fix code called `findEnginePidsByPort` and signaled whatever held :3111. When the engine was started via `docker compose up -d`, that's the host's Docker socket proxy (`com.docker.backend`, `vmnetd`), not the engine — killing it took down Docker Desktop networking for every other container. The new state file lets `runStop` detect Docker-managed engines and run `docker compose down` instead.
+
+### Infrastructure
+
+- Engine process now writes both `~/.agentmemory/iii.pid` and `~/.agentmemory/engine-state.json` at spawn. State file is cleared on clean shutdown or abnormal exit; pidfile is preserved when stale PIDs hold the port so the operator can investigate.
+
+[0.9.14]: https://github.com/rohitg00/agentmemory/compare/v0.9.13...v0.9.14
+
+## [0.9.13] — 2026-05-15
+
+Six PRs landed since v0.9.12 — `.env.example` discovery shipped (#372), CJK BM25 tokenizer landed (#344 / PR #362), `benchmark/load-100k.ts` load harness landed (#346 / PR #363), one-click deploy templates for fly.io / Railway / Render / Coolify added (#343 / PR #361), Gemini provider defaults moved to current GA models (#246 + #368 / PR #370), and the in-tree Python ecosystem story switched from a duplicate REST client to a one-page `iii-sdk` example (#342 / PR #364). Plus 14 Dependabot security advisories closed via Next.js + PostCSS bumps.
+
+### Added
+
+- **`.env.example` at repo root + bundled in the npm tarball** ([#372](https://github.com/rohitg00/agentmemory/issues/372), closes [#47](https://github.com/rohitg00/agentmemory/issues/47), [#293](https://github.com/rohitg00/agentmemory/issues/293), partial [#233](https://github.com/rohitg00/agentmemory/issues/233)). Every env var actually read by `src/` is now documented in one place, grouped by surface (LLM provider, embedding provider, auth, search tuning, behaviour flags, CLI runtime, ports, iii engine pin, Claude Code bridge, Obsidian export). Every line is commented out by default so the file ships as a config template, not a config. The npm package now lists `.env.example` in its `files` field so `npm i -g @agentmemory/agentmemory` carries it.
+
+- **`agentmemory init` command**. Copies the bundled `.env.example` to `~/.agentmemory/.env` if that file doesn't already exist; refuses to overwrite an existing config and prints a diff command pointing at the latest template. Wired into the CLI help block alongside `status` / `doctor` / `demo` / `upgrade` / `mcp` / `import-jsonl`.
+
+- **CI sync-checker for `.env.example`** (`scripts/check-env-example.mjs`). Walks every `.ts` / `.mts` / `.mjs` / `.js` file under `src/`, extracts `process.env["KEY"]` / `env["KEY"]` / `getMergedEnv()["KEY"]` / `getEnvVar("KEY")` references, and fails CI when `src/` reads an env var the template doesn't document (or vice versa). Plugged into `.github/workflows/ci.yml` after `npm test`. Initial bootstrap: 60 keys in sync.
+
+- **CJK tokenizer for BM25 search** ([#344](https://github.com/rohitg00/agentmemory/issues/344), PR [#362](https://github.com/rohitg00/agentmemory/pull/362)). New `src/state/cjk-segmenter.ts` detects CJK input by Unicode block and routes to `@node-rs/jieba` (Chinese, native, no model download), `tiny-segmenter` (Japanese, pure JS, ~25 KB), or rule-based syllable-block split (Korean). Both segmenters declared in `optionalDependencies` so the base install stays lean; soft-fail with a one-time stderr hint when the dep is missing. Order-preserving single-pass tokenization across mixed CJK + non-CJK runs (regression test for `"abc 메모리 def 项目 ghi"` returns `["abc","메모리","def","项目","ghi"]`).
+
+- **`benchmark/load-100k.ts` load harness** ([#346](https://github.com/rohitg00/agentmemory/issues/346), PR [#363](https://github.com/rohitg00/agentmemory/pull/363)). Hand-rolled, dependency-free harness that seeds N synthetic memories against a local daemon at `http://localhost:3111` and records p50 / p90 / p99 latency + throughput for `POST /agentmemory/remember`, `POST /agentmemory/smart-search`, and `GET /agentmemory/memories?latest=true` across the matrix N ∈ {1k, 10k, 100k} × concurrency C ∈ {1, 10, 100}. Content drawn from a seedable `mulberry32` PRNG so re-running against the same build produces the same seed corpus. Results land in `benchmark/results/load-100k-<short-git-sha>.json`. Wired as `npm run bench:load`.
+
+- **One-click deploy templates** for fly.io, Railway, Render, and Coolify ([#343](https://github.com/rohitg00/agentmemory/issues/343), PR [#361](https://github.com/rohitg00/agentmemory/pull/361)). Each template under `deploy/<platform>/` ships a multi-stage Dockerfile that `COPY --from=iiidev/iii:0.11.2`s the engine binary into a `node:22-slim` runtime, npm-installs `@agentmemory/agentmemory` under `/opt/agentmemory` with `iii-sdk` pinned via `package.json` overrides (avoids the caret-resolves-to-0.11.6 drift), and runs an entrypoint that rewrites the bundled `iii-config.yaml` to bind `0.0.0.0` + use absolute `/data` paths, chowns the platform-mounted volume to `node:node` via `gosu`, generates a first-boot HMAC secret, and exec's the agentmemory CLI as the unprivileged `node` user under `tini` (with `TINI_SUBREAPER=1`). Verified end-to-end on fly.io (machine in `iad`, 1 GB volume, healthcheck passing).
+
+- **`examples/python/`** quickstart + observation/recall flow showing `iii-sdk` (Python) calling `mem::remember` / `mem::smart-search` / `mem::context` directly over `ws://localhost:49134` ([#342](https://github.com/rohitg00/agentmemory/issues/342), PR [#364](https://github.com/rohitg00/agentmemory/pull/364)). Replaces a duplicate-transport Python REST client (initial PR #360, closed) with a single-SDK story — the same `iii-sdk` install (`pip install iii-sdk` / `cargo add iii-sdk` / `npm install iii-sdk`) talks to every agentmemory function from any language.
+
+### Changed
+
+- **Gemini provider defaults bumped to current GA models** (PR [#370](https://github.com/rohitg00/agentmemory/pull/370), closes [#368](https://github.com/rohitg00/agentmemory/pull/368), [#246](https://github.com/rohitg00/agentmemory/pull/246)). LLM default `gemini-2.0-flash` → `gemini-2.5-flash` (the moving `gemini-flash-latest` alias was rejected — release behaviour should be deterministic). Embedding default `text-embedding-004` → `gemini-embedding-001` (the previous default is deprecated and shuts down 2026-01-14 per `ai.google.dev/gemini-api/docs/deprecations`). Three implementation details ride along: (1) URL path `:batchEmbedContent` → `:batchEmbedContents`, (2) every request now sends `outputDimensionality: 768` so the returned vectors match `GeminiEmbeddingProvider.dimensions = 768` and the index-restore dim guard from #248 — no reindex needed, (3) returned vectors are L2-normalized before the result-array push because `gemini-embedding-001` does **not** normalize by default unlike `text-embedding-004` and without this the downstream cosine-similarity math silently collapses recall. `l2Normalize` warns once on a zero-norm embedding so operators can correlate index quality dips with upstream regressions.
+
+### Security
+
+- **14 open Dependabot advisories closed via Next.js + PostCSS bumps** (PR [#348](https://github.com/rohitg00/agentmemory/pull/348)). Closed: 13 Next.js advisories (middleware/proxy bypass + SSRF on WebSocket upgrades + DoS via connection exhaustion + CSP-nonce XSS + image-opt DoS + RSC cache poisoning + beforeInteractive XSS + segment-prefetch routes) by bumping the website's Next.js to `^16.2.6`. Plus the PostCSS XSS-via-unescaped-`</style>` advisory closed by pinning to `^8.5.10` via `overrides` in `website/package.json`. Verified `npm audit --omit=dev` returns 0 and `npm run build` clean on Next 16.2.6. Dependabot now runs weekly against six update streams (npm × 5 paths + github-actions) per the new `.github/dependabot.yml`.
+
+### Contributors
+
+External contributors landed this release:
+
+- [@fatinghenji](https://github.com/fatinghenji) — pre-cleanup work on the OpenAI-compatible LLM provider (PR #240 / PR #307); the universal-adapter shape will land in the next minor once branch maintenance catches up.
+- [@AmmarSaleh50](https://github.com/AmmarSaleh50) — Gemini embedding migration with L2-norm + 768-dim plumbing (PR #246, folded into #370).
+- [@yut304](https://github.com/yut304) — Gemini LLM default deprecation fix (PR #368, folded into #370).
+
+Thanks also to the issue reporters whose precise repros drove the search-quality + viewer + config-template work this cycle.
+
+## [0.9.12] — 2026-05-13
+
+Four landed PRs since v0.9.11 — one type-correctness fix, one search-quality fix (BM25 unicode + vector-index live-write), one viewer hardening (CSP-clean fonts + load-error surface), and one integrations security hardening (bearer token over plaintext HTTP).
+
+### Fixed
+
+- **BM25 tokenizer now indexes non-ASCII (Greek, accented Latin, Hebrew, Arabic) and the vector index is actually populated at runtime** ([#327](https://github.com/rohitg00/agentmemory/pull/327), closes [#295](https://github.com/rohitg00/agentmemory/issues/295)). `src/state/search-index.ts` previously stripped every non-ASCII character via `\w` (JS `\w` is ASCII-only), so non-English search returned empty results across the board. Regex replaced with `/[^\p{L}\p{N}\s/.\\-_]/gu` — keeps Unicode letters/numbers, preserves underscore (matters for `memory_recall`-style identifiers), keeps existing path/separator handling. Separately, `VectorIndex.add()` had **zero callers** anywhere in `src/` — the vector index was loaded from disk at startup and never updated at runtime, so hybrid search returned stale results forever. New `vectorIndexAddGuarded()` helper in `src/functions/search.ts` wires `vectorIndex.add()` into `remember.ts`, `observe.ts` synthetic-compression branch, `compress.ts` post-LLM compression, and the cold-start `rebuildIndex()` walk — with a per-write dimension guard (symmetric to the persistence-load guard from #248), 16k-char input clipping (so an oversized memory can't 400 the embed call), and consistent stderr logging that no longer swallows embed failures. `migrateVectorIndex()` utility re-embeds every memory + per-session observation against a new provider when dimensions change; per-session try/catch isolation so one bad session can't abort the whole migration; structured `failedSessions[]` result with a `"<sessions-list-failed>"` sentinel that distinguishes a catastrophic list-failure from per-session failures. Soft-fail throughout: a downed embedder never breaks an upstream save. Live-tested end-to-end against Greek fixtures (thanks @nik1t7n for the original repro on Cyrillic content; test fixtures swapped to Greek before merge).
+
+  **CJK caveat preserved**: this fix recovers Greek, Cyrillic, accented Latin, Hebrew, Arabic, and other space-delimited scripts. CJK languages without spaces between characters still tokenize as a single sentence-long token — separate concern, needs a segmenter (PR #224 area).
+
+- **`@agentmemory/mcp` standalone shim's `RetentionScore` type no longer declares `source` twice** ([#326](https://github.com/rohitg00/agentmemory/pull/326), closes [#277](https://github.com/rohitg00/agentmemory/issues/277)). `src/types.ts:835` and `:842` both declared `source?: "episodic" | "semantic"` on `RetentionScore`. TypeScript silently accepts duplicate property declarations when the types are identical, so the build never errored — but the documented JSDoc on the first declaration (the #124 back-compat note explaining `undefined` should probe both scopes) was effectively shadowed by the duplicate. Removed the second declaration; grep confirmed no caller writes `source` twice on the same `RetentionScore` row, so the cleanup is a pure type-correctness fix with no runtime change. Thanks @cl0ckt0wer for the precise file:line trace.
+
+- **Viewer dashboard no longer sticks on "Loading dashboard…" when the page loads** ([#335](https://github.com/rohitg00/agentmemory/pull/335), closes [#323](https://github.com/rohitg00/agentmemory/issues/323)). Two narrow fixes from @hem57's Windows repro: (1) removed the `<link rel="stylesheet">` to `fonts.googleapis.com` — the viewer's strict CSP (`default-src 'none'`, `style-src 'unsafe-inline'`, `font-src 'self'`) blocks external stylesheet origins by design, so every page load logged a CSP violation for the font CSS and another for each blocked font file; system-font fallbacks were already declared on every `--font-*` CSS variable so dropping the external `<link>` is a clean swap. (2) Wrapped `loadDashboard()` body in a `try/catch` that renders the error inline ("Dashboard failed to load: <reason>") instead of leaving the placeholder text up forever — future "stuck Loading" reports now come with concrete error messages instead of just a screenshot of the placeholder.
+
+- **Integrations (hermes / openclaw / pi) now warn when sending the bearer token over plaintext HTTP to a non-loopback host** ([#315](https://github.com/rohitg00/agentmemory/pull/315), closes [#275](https://github.com/rohitg00/agentmemory/issues/275)). Symmetric guard across all three plugin runtimes (Python / mjs / TypeScript): a request that would attach `Authorization: Bearer <secret>` to a `http://<non-loopback>:port` URL now logs a one-time stderr warning telling the operator the token is observable on the wire. Loopback hosts (`localhost`, `127.0.0.1`, `::1`) and `https://` URLs are exempt. New env knob `AGENTMEMORY_REQUIRE_HTTPS=1` escalates the warning to a hard refusal — the plugin throws before any request is sent, so a misconfigured deployment can fail loudly instead of leaking the bearer once. Edge cases verified by 13 tests: IPv6 `[::1]` loopback, RFC1918 LAN IPs (`192.168.x.x` / `10.x.x.x` warn — NOT loopback), lookalike hostnames (`localhost.evil.com` warns), no-secret short-circuit (guard never fires when no bearer would be sent), https-with-secret silent. Thanks [@mvanhorn](https://github.com/mvanhorn) for the cross-runtime implementation.
+
+### Changed
+
+- `@agentmemory/mcp` package version bumped from 0.9.11 → 0.9.12 to lockstep with the main package.
+
+## [0.9.11] — 2026-05-13
+
+Three additions on top of v0.9.10: OpenAI Codex got a plugin platform and agentmemory now ships a Codex manifest + marketplace alongside the existing Claude Code one (so `codex plugin marketplace add rohitg00/agentmemory` installs MCP + 6 hooks + 4 skills in one step); the OpenClaw integration now actually claims the `plugins.slots.memory` slot via `registerMemoryCapability` (older builds advertised the slot via manifest `kind` but never declared the capability so the slot reported `unavailable`); and the marketing website's hero CTA row now ships a live "Star on GitHub" button.
+
+### Added
+
+- **Codex plugin support** ([#311](https://github.com/rohitg00/agentmemory/pull/311)). `plugin/.codex-plugin/plugin.json` Codex manifest pointing at the same shared `.mcp.json` + `skills/` directory the Claude Code manifest uses, plus a Codex-shaped `plugin/hooks/hooks.codex.json` that registers exactly the events Codex's hook engine supports (`SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PreCompact`, `Stop`) and drops the Claude-Code-only ones (`SubagentStart`, `SubagentStop`, `SessionEnd`, `Notification`, `TaskCompleted`, `PostToolUseFailure`). Verified against `codex-rs/hooks/src/engine/discovery.rs` that Codex injects `CLAUDE_PLUGIN_ROOT` into hook subprocesses for OOTB compat with existing Claude Code plugin scripts — so the same `${CLAUDE_PLUGIN_ROOT}/scripts/...` references work on both hosts. `.codex-plugin/marketplace.json` at the repo root publishes the plugin via the Codex marketplace API (`git-subdir` source pointing at `./plugin`), so end users run `codex plugin marketplace add rohitg00/agentmemory && codex plugin install agentmemory` once and get MCP + lifecycle hooks + 4 skills (`/recall`, `/remember`, `/session-history`, `/forget`).
+
+- **`Star on GitHub` button in the website hero CTA row** ([#316](https://github.com/rohitg00/agentmemory/pull/316)). Adds a ghost-style `GitHubStarButton` component next to `START IN 60 SECONDS` and `SEE IT MOVE` with inline SVG star icon, `STAR` label, and a live stargazer count fetched once on mount from `api.github.com/repos/rohitg00/agentmemory`. Count is cached in `localStorage` for 30 minutes per repo. Graceful degradation: if the API is unreachable / rate-limited / blocked, the button still renders without the count. No new dependencies.
+
+### Fixed
+
+- **OpenClaw `plugins.slots.memory = "agentmemory"` now reports as available, not `unavailable`** ([#310](https://github.com/rohitg00/agentmemory/pull/310)). On OpenClaw `2026.4.9+`, the integration declared `"kind": "memory"` in its manifest and wired `before_agent_start` / `agent_end` hooks but **never called `api.registerMemoryCapability(...)`** — so OpenClaw's memory-slot machinery saw no claim on the slot even though the hooks and REST API worked end-to-end. The fix lands `api.registerMemoryCapability({ promptBuilder })` at register time when the host exposes it, with the `promptBuilder` accepting the documented `{ availableTools, citationsMode? }` params and emitting a three-line block identifying agentmemory as the active provider. Older OpenClaw builds without the capability API still load via the existing hook-only path (`typeof api.registerMemoryCapability === "function"` guard). The PR does **not** ship a `MemoryPluginRuntime` adapter because OpenClaw's current `MemoryRuntimeBackendConfig` type is exactly `{ backend: "builtin" } | { backend: "qmd"; ... }` — both in-process backends that don't fit an external REST shape. Verified against `openclaw@2026.5.7`'s `plugin-sdk/src/plugins/types.d.ts` and `memory-state.d.ts` declarations directly. (closes the bug premise originally surfaced in the closed PR #302, which had attempted the same goal but with an import path that wasn't in the package's `exports` map and a symbol that didn't exist in any released openclaw version.)
+
+### Changed
+
+- `@agentmemory/mcp` package version bumped from 0.9.10 → 0.9.11 to lockstep with the main package.
+- README now distinguishes **Codex CLI (MCP only)** from **Codex CLI (full plugin)** in the per-host install table and lists the marketplace install command for the latter.
 ## [0.9.10] — 2026-05-12
 
 Three deployment-shape fixes reported live by [@flamerged](https://github.com/flamerged) ([#299](https://github.com/rohitg00/agentmemory/issues/299), [#301](https://github.com/rohitg00/agentmemory/issues/301)): the v0.9.7 docker-compose persistence fix was incomplete because the distroless engine runs as UID 65532 but `docker volume create` initializes the named volume mountpoint as `root:root mode 755`; the viewer's port-detection JS hardcoded `'3113'` so any reverse-proxy fronting on port 80/443 returned an empty dashboard; and the `mem::context` budget loop short-circuited the entire selection on the first oversized block — pinning a large slot could starve all other context blocks even when smaller ones would have fit.

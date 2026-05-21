@@ -17,9 +17,13 @@ const config: NextConfig = {
     remotePatterns: [
       { protocol: "https", hostname: "github.com" },
       { protocol: "https", hostname: "avatars.githubusercontent.com" },
+      { protocol: "https", hostname: "raw.githubusercontent.com" },
       { protocol: "https", hostname: "matthiasroder.com" },
       { protocol: "https", hostname: "exafunction.github.io" },
       { protocol: "https", hostname: "www.freelogovectors.net" },
+      { protocol: "https", hostname: "aaif.io" },
+      { protocol: "https", hostname: "trendshift.io" },
+      { protocol: "https", hostname: "api.producthunt.com" },
     ],
   },
 };

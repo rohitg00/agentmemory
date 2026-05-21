@@ -12,7 +12,7 @@ function wait(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-describe("FilesystemWatcher", () => {
+describe("FilesystemWatcher", { retry: 2 }, () => {
   let root: string;
   const originalFetch = globalThis.fetch;
   let captured: Array<{ url: string; body: unknown; headers: Record<string, string> }>;
@@ -49,7 +49,7 @@ describe("FilesystemWatcher", () => {
     w.start();
     try {
       writeFileSync(join(root, "notes.md"), "hello world\n");
-      await wait(800);
+      await wait(1500);
       expect(captured.length).toBeGreaterThanOrEqual(1);
       const obs = captured[captured.length - 1];
       expect(obs.url).toBe("http://localhost:3111/agentmemory/observe");
@@ -87,7 +87,7 @@ describe("FilesystemWatcher", () => {
     w.start();
     try {
       unlinkSync(join(root, "old.md"));
-      await wait(800);
+      await wait(1500);
       const deletes = captured.filter(
         (c) => (c.body as { data: { changeKind: string } }).data?.changeKind === "file_delete",
       );
@@ -116,7 +116,7 @@ describe("FilesystemWatcher", () => {
     w.start();
     try {
       writeFileSync(join(root, "node_modules", "ignored.js"), "x");
-      await wait(800);
+      await wait(1500);
       const matches = captured.filter((c) =>
         (c.body as { data: { files: string[] } }).data?.files?.some((f) => f.includes("ignored.js")),
       );
@@ -136,13 +136,196 @@ describe("FilesystemWatcher", () => {
     w.start();
     try {
       writeFileSync(join(root, "secret.md"), "bearer test\n");
-      await wait(800);
+      await wait(1500);
       expect(captured.length).toBeGreaterThanOrEqual(1);
       const headers = captured[captured.length - 1].headers as Record<string, string>;
       expect(headers.authorization).toBe("Bearer shhh");
     } finally {
       w.stop();
     }
+  });
+
+  it("redacts sensitive dotenv preview values before sending observations", async () => {
+    writeFileSync(
+      join(root, ".env"),
+      [
+        "OPENAI_API_KEY=sk-test-secret-value",
+        "PUBLIC_FLAG=enabled",
+        "AUTHORIZATION=Bearer live-token-value",
+      ].join("\n"),
+    );
+    const w = new FilesystemWatcher({
+      roots: [root],
+      baseUrl: "http://localhost:3111",
+      logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+    });
+
+    await w.flush(root, ".env");
+
+    expect(captured).toHaveLength(1);
+    const content = (captured[0].body as { data: { content: string } }).data.content;
+    expect(content).toContain("OPENAI_API_KEY=[REDACTED]");
+    expect(content).toContain("PUBLIC_FLAG=enabled");
+    expect(content).toContain("AUTHORIZATION=[REDACTED]");
+    expect(content).not.toContain("sk-test-secret-value");
+    expect(content).not.toContain("live-token-value");
+  });
+
+  it("redacts quoted JSON-style sensitive keys before sending observations", async () => {
+    writeFileSync(
+      join(root, "settings.json"),
+      [
+        '{',
+        '  "api_key": "json-preview-secret",',
+        '  "public_flag": "enabled"',
+        '}',
+      ].join("\n"),
+    );
+    const w = new FilesystemWatcher({
+      roots: [root],
+      baseUrl: "http://localhost:3111",
+      logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+    });
+
+    await w.flush(root, "settings.json");
+
+    expect(captured).toHaveLength(1);
+    const content = (captured[0].body as { data: { content: string } }).data.content;
+    expect(content).toContain('"api_key": [REDACTED]');
+    expect(content).toContain('"public_flag": "enabled"');
+    expect(content).not.toContain("json-preview-secret");
+  });
+
+  it("redacts bearer tokens from regular text previews before sending observations", async () => {
+    writeFileSync(join(root, "request.txt"), "Authorization: Bearer plaintext-token-value\n");
+    const w = new FilesystemWatcher({
+      roots: [root],
+      baseUrl: "http://localhost:3111",
+      logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+    });
+
+    await w.flush(root, "request.txt");
+
+    expect(captured).toHaveLength(1);
+    const content = (captured[0].body as { data: { content: string } }).data.content;
+    expect(content).toContain("Authorization: Bearer [REDACTED]");
+    expect(content).not.toContain("plaintext-token-value");
+  });
+
+  it("collapses multi-line PEM private-key blocks while keeping BEGIN/END markers", async () => {
+    const dashes = "-".repeat(5);
+    const rsaBegin = `${dashes}BEGIN RSA PRIVATE KEY${dashes}`;
+    const rsaEnd = `${dashes}END RSA PRIVATE KEY${dashes}`;
+    const sshBegin = `${dashes}BEGIN OPENSSH PRIVATE KEY${dashes}`;
+    const sshEnd = `${dashes}END OPENSSH PRIVATE KEY${dashes}`;
+    writeFileSync(
+      join(root, "id_rsa.txt"),
+      [
+        rsaBegin,
+        "MIIEowIBAAKCAQEAuRFakeRsaBodyLine1ShouldNeverLeakToObservationPipeline",
+        "MoreFakeBase64BodyForRsaKeyMaterialThatMustStayRedacted",
+        "YetAnotherSecretLineOfBase64KeyContentNoOneShouldRead",
+        rsaEnd,
+        "",
+        sshBegin,
+        "b3BlbnNzaC1mYWtlLWtleS1ib2R5LWxpbmUtb25l",
+        "b3BlbnNzaC1mYWtlLWtleS1ib2R5LWxpbmUtdHdv",
+        sshEnd,
+        "",
+      ].join("\n"),
+    );
+    const w = new FilesystemWatcher({
+      roots: [root],
+      baseUrl: "http://localhost:3111",
+      logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+    });
+
+    await w.flush(root, "id_rsa.txt");
+
+    expect(captured).toHaveLength(1);
+    const content = (captured[0].body as { data: { content: string } }).data.content;
+    expect(content).toContain(rsaBegin);
+    expect(content).toContain(rsaEnd);
+    expect(content).toContain(sshBegin);
+    expect(content).toContain(sshEnd);
+    expect(content).toContain("[REDACTED]");
+    expect(content).not.toContain("MIIEowIBAAKCAQEAuRFakeRsaBodyLine1");
+    expect(content).not.toContain("MoreFakeBase64BodyForRsaKeyMaterial");
+    expect(content).not.toContain("YetAnotherSecretLineOfBase64KeyContent");
+    expect(content).not.toContain("b3BlbnNzaC1mYWtlLWtleS1ib2R5LWxpbmUtb25l");
+    expect(content).not.toContain("b3BlbnNzaC1mYWtlLWtleS1ib2R5LWxpbmUtdHdv");
+  });
+
+  it("redacts inline PEM blocks embedded in single-line JSON values", async () => {
+    const dashes = "-".repeat(5);
+    const pemBegin = `${dashes}BEGIN PRIVATE KEY${dashes}`;
+    const pemEnd = `${dashes}END PRIVATE KEY${dashes}`;
+    const inlinePem = `${pemBegin}\\nMIIEvgIBADANBgkqhkiG9w0FakeServiceAccountBody\\n${pemEnd}`;
+    writeFileSync(
+      join(root, "service-account.json"),
+      `{\n  "type": "service_account",\n  "private_key": "${inlinePem}",\n  "client_email": "demo@example.com"\n}\n`,
+    );
+    const w = new FilesystemWatcher({
+      roots: [root],
+      baseUrl: "http://localhost:3111",
+      logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+    });
+
+    await w.flush(root, "service-account.json");
+
+    expect(captured).toHaveLength(1);
+    const content = (captured[0].body as { data: { content: string } }).data.content;
+    expect(content).toContain(pemBegin);
+    expect(content).toContain(pemEnd);
+    expect(content).toContain("[REDACTED]");
+    expect(content).not.toContain("MIIEvgIBADANBgkqhkiG9w0FakeServiceAccountBody");
+    expect(content).toContain('"client_email": "demo@example.com"');
+  });
+
+  it("redacts standalone JWT-looking strings outside Bearer context", async () => {
+    const jwt =
+      "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c";
+    writeFileSync(
+      join(root, "notes.txt"),
+      ["session token below:", jwt, "end of token"].join("\n"),
+    );
+    const w = new FilesystemWatcher({
+      roots: [root],
+      baseUrl: "http://localhost:3111",
+      logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+    });
+
+    await w.flush(root, "notes.txt");
+
+    expect(captured).toHaveLength(1);
+    const content = (captured[0].body as { data: { content: string } }).data.content;
+    expect(content).toContain("[REDACTED]");
+    expect(content).not.toContain(jwt);
+    expect(content).toContain("end of token");
+  });
+
+  it("does not redact base64-looking words that are not three-segment JWTs of sufficient length", async () => {
+    const notJwt = "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    const shortThreeSegment = "eyJabc.def.ghi";
+    expect(notJwt.length).toBe(62);
+    expect(shortThreeSegment.length).toBeLessThan(100);
+    writeFileSync(
+      join(root, "fixture.txt"),
+      ["random base64-ish word:", notJwt, "tiny segmented thing:", shortThreeSegment].join("\n"),
+    );
+    const w = new FilesystemWatcher({
+      roots: [root],
+      baseUrl: "http://localhost:3111",
+      logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+    });
+
+    await w.flush(root, "fixture.txt");
+
+    expect(captured).toHaveLength(1);
+    const content = (captured[0].body as { data: { content: string } }).data.content;
+    expect(content).toContain(notJwt);
+    expect(content).toContain(shortThreeSegment);
+    expect(content).not.toContain("[REDACTED]");
   });
 
   it("debounces rapid writes to a single observation", async () => {

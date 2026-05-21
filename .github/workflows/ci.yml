@@ -1,20 +1,63 @@
 name: CI
 
+# `paths-ignore` keeps doc-only / website / README / CHANGELOG churn from
+# burning runner minutes. Source / config / workflow changes always run.
+# `workflow_dispatch` gives a manual re-run button for flake debugging.
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - "README.md"
+      - "CHANGELOG.md"
+      - "AGENTS.md"
+      - "ROADMAP.md"
+      - "website/**"
+      - "docs/**"
+      - "assets/**"
+      - "deploy/**/README.md"
+      - "**/*.md"
+      - "**/*.mdx"
   pull_request:
     branches: [main]
+    paths-ignore:
+      - "README.md"
+      - "CHANGELOG.md"
+      - "AGENTS.md"
+      - "ROADMAP.md"
+      - "website/**"
+      - "docs/**"
+      - "assets/**"
+      - "deploy/**/README.md"
+      - "**/*.md"
+      - "**/*.mdx"
+  workflow_dispatch:
+
+# Cancel in-flight PR runs when a force-push lands. Keep push runs to
+# protect against partial state on main.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
+      # Don't bail the whole matrix on one cell's failure — we want to
+      # see whether the same failure reproduces across OSes (e.g.
+      # whether a flake is platform-specific or universal).
+      fail-fast: false
       matrix:
+        # Windows held back: test/obsidian-export.test.ts has hardcoded
+        # POSIX paths (`/tmp/...`) that fail on D:\ drive runners.
+        # src/functions/obsidian-export.ts needs os.tmpdir() + path.join
+        # rework before Windows can be added back. Tracked as follow-up.
+        os: [ubuntu-latest, macos-latest]
         node-version: [20, 22]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
         with:
           node-version: ${{ matrix.node-version }}
       # Two-step install: generate a lockfile in-runner with

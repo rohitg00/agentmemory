@@ -10,17 +10,27 @@ on:
         required: false
         default: "agentmemory,mcp,fs-watcher"
 
+# Workflow-level permissions stay minimal — only `contents: read`
+# is required to check out the repo. `id-token: write` is granted on
+# the publish job for npm's --provenance Sigstore OIDC mint.
 permissions:
   contents: read
-  id-token: write
 
 jobs:
   publish:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
+        with:
+          # Don't persist the GITHUB_TOKEN to .git/config — the
+          # publish steps don't push back to the repo, so the token
+          # only needs to live in memory for this checkout.
+          persist-credentials: false
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org
