@@ -5,15 +5,82 @@ import type {
   GraphQueryResult,
   CompressedObservation,
   MemoryProvider,
+  Session,
+  Memory,
 } from "../types.js";
 import { KV, generateId } from "../state/schema.js";
 import type { StateKV } from "../state/kv.js";
+import { memoryToObservation } from "../state/memory-utils.js";
+import { getGraphBatchSize } from "../config.js";
 import {
   GRAPH_EXTRACTION_SYSTEM,
   buildGraphExtractionPrompt,
 } from "../prompts/graph-extraction.js";
 import { recordAudit } from "./audit.js";
 import { logger } from "../logger.js";
+
+export type GraphBuildOptions = {
+  dryRun?: boolean;
+  source?: "observations" | "memories" | "all";
+  force?: boolean;
+  batchSize?: number;
+  sessionId?: string;
+  includeActiveSessions?: boolean;
+  latestMemoriesOnly?: boolean;
+  limit?: number;
+  offset?: number;
+};
+
+export type GraphBuildResult = {
+  success: boolean;
+  dryRun: boolean;
+  source: "observations" | "memories" | "all";
+  sessionsScanned: number;
+  memoriesScanned: number;
+  observationsFound: number;
+  observationsEligible: number;
+  observationsSkippedExisting: number;
+  observationsSelected: number;
+  batchesPlanned: number;
+  batchesProcessed: number;
+  nodes: number;
+  edges: number;
+  nodesAdded: number;
+  edgesAdded: number;
+  errors: Array<{ batch: number; error: string }>;
+};
+
+function isGraphBuildSource(value: unknown): value is GraphBuildOptions["source"] {
+  return value === "observations" || value === "memories" || value === "all";
+}
+
+function isEligibleObservation(value: unknown): value is CompressedObservation {
+  const obs = value as Partial<CompressedObservation>;
+  return (
+    typeof obs.id === "string" &&
+    obs.id.trim().length > 0 &&
+    typeof obs.title === "string" &&
+    obs.title.trim().length > 0 &&
+    typeof obs.narrative === "string" &&
+    typeof obs.type === "string" &&
+    Array.isArray(obs.concepts) &&
+    Array.isArray(obs.files)
+  );
+}
+
+function collectProcessedSourceIds(
+  nodes: GraphNode[],
+  edges: GraphEdge[],
+): Set<string> {
+  const ids = new Set<string>();
+  for (const node of nodes) {
+    for (const id of node.sourceObservationIds || []) ids.add(id);
+  }
+  for (const edge of edges) {
+    for (const id of edge.sourceObservationIds || []) ids.add(id);
+  }
+  return ids;
+}
 
 function parseGraphXml(
   xml: string,
@@ -84,6 +151,167 @@ export function registerGraphFunction(
   kv: StateKV,
   provider: MemoryProvider,
 ): void {
+  sdk.registerFunction("mem::graph-build",
+    async (data: GraphBuildOptions = {}): Promise<GraphBuildResult> => {
+      const source = isGraphBuildSource(data.source) ? data.source : "all";
+      const dryRun = data.dryRun !== false;
+      const force = data.force === true;
+      const includeActiveSessions = data.includeActiveSessions === true;
+      const latestMemoriesOnly = data.latestMemoriesOnly !== false;
+      const parsedBatchSize =
+        typeof data.batchSize === "number"
+          ? data.batchSize
+          : getGraphBatchSize();
+      const batchSize = Math.max(
+        1,
+        Math.min(50, Number.isFinite(parsedBatchSize) ? parsedBatchSize : 8),
+      );
+      const offset =
+        typeof data.offset === "number" && Number.isFinite(data.offset)
+          ? Math.max(0, Math.floor(data.offset))
+          : 0;
+      const limit =
+        typeof data.limit === "number" && Number.isFinite(data.limit)
+          ? Math.max(0, Math.floor(data.limit))
+          : undefined;
+
+      const existingNodes = await kv.list<GraphNode>(KV.graphNodes);
+      const existingEdges = await kv.list<GraphEdge>(KV.graphEdges);
+      const processedIds = force
+        ? new Set<string>()
+        : collectProcessedSourceIds(existingNodes, existingEdges);
+
+      const observations: CompressedObservation[] = [];
+      let sessionsScanned = 0;
+      let memoriesScanned = 0;
+      let observationsFound = 0;
+
+      if (source === "observations" || source === "all") {
+        const allSessions = await kv.list<Session>(KV.sessions);
+        const sessions = allSessions.filter((s) => {
+          if (data.sessionId && s.id !== data.sessionId) return false;
+          if (!includeActiveSessions && s.status === "active") return false;
+          return true;
+        });
+        sessionsScanned = sessions.length;
+
+        for (const session of sessions) {
+          const sessionObservations = await kv
+            .list<CompressedObservation>(KV.observations(session.id))
+            .catch(() => []);
+          observationsFound += sessionObservations.length;
+          observations.push(...sessionObservations.filter(isEligibleObservation));
+        }
+      }
+
+      if (!data.sessionId && (source === "memories" || source === "all")) {
+        const allMemories = await kv.list<Memory>(KV.memories);
+        const memories = latestMemoriesOnly
+          ? allMemories.filter((m) => m.isLatest)
+          : allMemories;
+        memoriesScanned = memories.length;
+        observationsFound += memories.length;
+        observations.push(
+          ...memories
+            .map((memory) => memoryToObservation(memory))
+            .filter(isEligibleObservation),
+        );
+      }
+
+      observations.sort((a, b) =>
+        String(a.timestamp || "").localeCompare(String(b.timestamp || "")),
+      );
+      const eligible = observations.filter((observation) => {
+        if (force) return true;
+        return !processedIds.has(observation.id);
+      });
+      const selected = eligible.slice(
+        offset,
+        limit === undefined ? undefined : offset + limit,
+      );
+      const batches: CompressedObservation[][] = [];
+      for (let i = 0; i < selected.length; i += batchSize) {
+        batches.push(selected.slice(i, i + batchSize));
+      }
+
+      const result: GraphBuildResult = {
+        success: true,
+        dryRun,
+        source,
+        sessionsScanned,
+        memoriesScanned,
+        observationsFound,
+        observationsEligible: eligible.length,
+        observationsSkippedExisting: observations.length - eligible.length,
+        observationsSelected: selected.length,
+        batchesPlanned: batches.length,
+        batchesProcessed: 0,
+        nodes: existingNodes.length,
+        edges: existingEdges.length,
+        nodesAdded: 0,
+        edgesAdded: 0,
+        errors: [],
+      };
+
+      if (dryRun) return result;
+
+      for (let i = 0; i < batches.length; i++) {
+        try {
+          const extracted = (await sdk.trigger({
+            function_id: "mem::graph-extract",
+            payload: { observations: batches[i] },
+          })) as {
+            success?: boolean;
+            nodesAdded?: number;
+            edgesAdded?: number;
+            nodesCreated?: number;
+            edgesCreated?: number;
+            error?: string;
+          };
+          if (extracted?.success === false) {
+            result.errors.push({
+              batch: i,
+              error: extracted.error || "graph extraction failed",
+            });
+            continue;
+          }
+          result.batchesProcessed++;
+          result.nodesAdded += extracted?.nodesCreated ?? extracted?.nodesAdded ?? 0;
+          result.edgesAdded += extracted?.edgesCreated ?? extracted?.edgesAdded ?? 0;
+        } catch (err) {
+          result.errors.push({
+            batch: i,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+
+      result.success = result.errors.length === 0;
+      const [nodes, edges] = await Promise.all([
+        kv.list<GraphNode>(KV.graphNodes),
+        kv.list<GraphEdge>(KV.graphEdges),
+      ]);
+      result.nodes = nodes.length;
+      result.edges = edges.length;
+      await recordAudit(
+        kv,
+        "observe",
+        "mem::graph-build",
+        selected.map((observation) => observation.id),
+        {
+          source,
+          dryRun,
+          force,
+          batches: result.batchesProcessed,
+          nodes: result.nodes,
+          edges: result.edges,
+          errors: result.errors.length,
+        },
+      );
+      return result;
+    },
+  );
+
   sdk.registerFunction("mem::graph-extract", 
     async (data: { observations: CompressedObservation[] }) => {
       if (!data.observations || data.observations.length === 0) {
@@ -111,6 +339,11 @@ export function registerGraphFunction(
 
         const existingNodes = await kv.list<GraphNode>(KV.graphNodes);
         const existingEdges = await kv.list<GraphEdge>(KV.graphEdges);
+        const resolvedNodeIds = new Map<string, string>();
+        let nodesCreated = 0;
+        let nodesUpdated = 0;
+        let edgesCreated = 0;
+        let edgesUpdated = 0;
 
         for (const node of nodes) {
           const existing = existingNodes.find(
@@ -127,13 +360,28 @@ export function registerGraphFunction(
             await kv.set(KV.graphNodes, existing.id, merged);
             const idx = existingNodes.findIndex((n) => n.id === existing.id);
             if (idx !== -1) existingNodes[idx] = merged;
+            resolvedNodeIds.set(`${node.type}:${node.name}`, existing.id);
+            nodesUpdated++;
           } else {
             await kv.set(KV.graphNodes, node.id, node);
             existingNodes.push(node);
+            resolvedNodeIds.set(`${node.type}:${node.name}`, node.id);
+            nodesCreated++;
           }
         }
 
         for (const edge of edges) {
+          const sourceParsedNode = nodes.find((n) => n.id === edge.sourceNodeId);
+          const targetParsedNode = nodes.find((n) => n.id === edge.targetNodeId);
+          const sourceNodeId = sourceParsedNode
+            ? resolvedNodeIds.get(`${sourceParsedNode.type}:${sourceParsedNode.name}`)
+            : edge.sourceNodeId;
+          const targetNodeId = targetParsedNode
+            ? resolvedNodeIds.get(`${targetParsedNode.type}:${targetParsedNode.name}`)
+            : edge.targetNodeId;
+          if (!sourceNodeId || !targetNodeId) continue;
+          edge.sourceNodeId = sourceNodeId;
+          edge.targetNodeId = targetNodeId;
           const edgeKey = `${edge.sourceNodeId}|${edge.targetNodeId}|${edge.type}`;
           const existingEdge = existingEdges.find(
             (e) => `${e.sourceNodeId}|${e.targetNodeId}|${e.type}` === edgeKey,
@@ -143,9 +391,11 @@ export function registerGraphFunction(
               ...new Set([...existingEdge.sourceObservationIds, ...obsIds]),
             ];
             await kv.set(KV.graphEdges, existingEdge.id, existingEdge);
+            edgesUpdated++;
           } else {
             await kv.set(KV.graphEdges, edge.id, edge);
             existingEdges.push(edge);
+            edgesCreated++;
           }
         }
 
@@ -162,6 +412,12 @@ export function registerGraphFunction(
           success: true,
           nodesAdded: nodes.length,
           edgesAdded: edges.length,
+          nodesParsed: nodes.length,
+          edgesParsed: edges.length,
+          nodesCreated,
+          nodesUpdated,
+          edgesCreated,
+          edgesUpdated,
         };
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);

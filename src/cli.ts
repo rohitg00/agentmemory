@@ -138,6 +138,11 @@ Commands:
   import-jsonl [p]   Import Claude Code JSONL transcripts (default: ~/.claude/projects)
                      --max-files <N> | --max-files=<N>: override scan cap (default 200, max 1000;
                      out-of-range is rejected; for trees >1000 files, batch by subdirectory)
+  graph-build        Backfill the knowledge graph from stored observations.
+                     Defaults to dry-run. Use --apply to write graph nodes/edges.
+                     --source observations|memories|all --batch-size <N>
+                     --session-id <id> --limit <N> --offset <N>
+                     Apply without --limit/--offset resumes in chunks to avoid long request timeouts.
 
 Options:
   --help, -h         Show this help
@@ -1740,9 +1745,12 @@ async function postJsonStrict<T = unknown>(
   body: unknown,
   timeoutMs = 5000,
 ): Promise<T | null> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const secret = process.env["AGENTMEMORY_SECRET"];
+  if (secret) headers["Authorization"] = `Bearer ${secret}`;
   const res = await fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers,
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(timeoutMs),
   });
@@ -1752,6 +1760,35 @@ async function postJsonStrict<T = unknown>(
     throw new Error(`POST ${url} failed: ${res.status} ${res.statusText}${suffix}`);
   }
   return (await res.json().catch(() => null)) as T | null;
+}
+
+function optionValue(name: string): string | undefined {
+  const eq = args.find((a) => a.startsWith(`${name}=`));
+  if (eq) return eq.slice(name.length + 1);
+  const idx = args.indexOf(name);
+  return idx !== -1 ? args[idx + 1] : undefined;
+}
+
+function positiveIntOption(name: string): number | undefined {
+  const raw = optionValue(name);
+  if (raw === undefined) return undefined;
+  const parsed = parseInt(raw, 10);
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    p.log.error(`${name} expects a positive integer`);
+    process.exit(1);
+  }
+  return parsed;
+}
+
+function nonNegativeIntOption(name: string): number | undefined {
+  const raw = optionValue(name);
+  if (raw === undefined) return undefined;
+  const parsed = parseInt(raw, 10);
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    p.log.error(`${name} expects a non-negative integer`);
+    process.exit(1);
+  }
+  return parsed;
 }
 
 async function seedDemoSession(
@@ -2430,6 +2467,165 @@ async function runImportJsonl(): Promise<void> {
   }
 }
 
+async function runGraphBuild(): Promise<void> {
+  const port = getRestPort();
+  const base = getBaseUrl();
+  const dryRun = !args.includes("--apply");
+  const body: Record<string, unknown> = {
+    dryRun,
+  };
+  const batchSize = positiveIntOption("--batch-size");
+  const limit = positiveIntOption("--limit");
+  const offset = nonNegativeIntOption("--offset");
+  const sessionId = optionValue("--session-id");
+  const source = optionValue("--source");
+  if (source && !["observations", "memories", "all"].includes(source)) {
+    p.log.error("--source expects one of: observations, memories, all");
+    process.exit(1);
+  }
+  if (batchSize !== undefined) body["batchSize"] = batchSize;
+  if (limit !== undefined) body["limit"] = limit;
+  if (offset !== undefined) body["offset"] = offset;
+  if (sessionId) body["sessionId"] = sessionId;
+  if (source) body["source"] = source;
+  if (args.includes("--include-active")) body["includeActiveSessions"] = true;
+  if (args.includes("--force")) body["force"] = true;
+
+  p.intro(`agentmemory graph-build${dryRun ? " (dry-run)" : " (apply)"}`);
+
+  let probeOk = false;
+  let probeDetail = "";
+  try {
+    const probe = await fetch(`${base}/agentmemory/livez`, {
+      signal: AbortSignal.timeout(2000),
+    });
+    probeOk = probe.ok;
+    if (!probeOk) probeDetail = `HTTP ${probe.status}`;
+  } catch (err) {
+    probeDetail = err instanceof Error ? err.message : String(err);
+  }
+  if (!probeOk) {
+    p.log.error(
+      `agentmemory livez probe failed on port ${port}: ${probeDetail || "unreachable"}. Start it with \`npx @agentmemory/agentmemory\` first.`,
+    );
+    process.exit(1);
+  }
+
+  const spinner = p.spinner();
+  spinner.start(dryRun ? "planning graph backfill" : "building graph");
+  try {
+    type GraphBuildCliResult = {
+      success?: boolean;
+      dryRun?: boolean;
+      source?: string;
+      sessionsScanned?: number;
+      memoriesScanned?: number;
+      observationsFound?: number;
+      observationsEligible?: number;
+      observationsSkippedExisting?: number;
+      observationsSelected?: number;
+      batchesPlanned?: number;
+      batchesProcessed?: number;
+      nodes?: number;
+      edges?: number;
+      nodesAdded?: number;
+      edgesAdded?: number;
+      errors?: Array<{ batch: number; error: string }>;
+    };
+    let result: GraphBuildCliResult | null;
+    if (
+      !dryRun &&
+      limit === undefined &&
+      offset === undefined &&
+      !sessionId &&
+      !args.includes("--force")
+    ) {
+      const chunkLimit = 20;
+      let chunk = 0;
+      let totalSelected = 0;
+      let totalBatchesPlanned = 0;
+      let totalBatchesProcessed = 0;
+      let totalNodesAdded = 0;
+      let totalEdgesAdded = 0;
+      let last: GraphBuildCliResult | null = null;
+      let failure: GraphBuildCliResult | null = null;
+      for (;;) {
+        chunk++;
+        spinner.message(`building graph chunk ${chunk}`);
+        const next = await postJsonStrict<GraphBuildCliResult>(
+          `${base}/agentmemory/graph/build`,
+          { ...body, limit: chunkLimit },
+          300_000,
+        );
+        if (!next?.success) {
+          failure = next;
+          break;
+        }
+        last = next;
+        totalSelected += next.observationsSelected ?? 0;
+        totalBatchesPlanned += next.batchesPlanned ?? 0;
+        totalBatchesProcessed += next.batchesProcessed ?? 0;
+        totalNodesAdded += next.nodesAdded ?? 0;
+        totalEdgesAdded += next.edgesAdded ?? 0;
+        if ((next.observationsSelected ?? 0) === 0) break;
+      }
+      result = failure ?? (last
+        ? {
+            ...last,
+            observationsSelected: totalSelected,
+            batchesPlanned: totalBatchesPlanned,
+            batchesProcessed: totalBatchesProcessed,
+            nodesAdded: totalNodesAdded,
+            edgesAdded: totalEdgesAdded,
+          }
+        : null);
+    } else {
+      result = await postJsonStrict<GraphBuildCliResult>(
+        `${base}/agentmemory/graph/build`,
+        body,
+        dryRun ? 120_000 : 300_000,
+      );
+    }
+    spinner.stop(dryRun ? "plan ready" : "build finished");
+
+    if (!result?.success) {
+      p.log.error(`Graph build failed${result?.errors?.length ? ` (${result.errors.length} batch error(s))` : ""}`);
+      for (const err of result?.errors || []) {
+        p.log.error(`batch ${err.batch}: ${err.error}`);
+      }
+      process.exit(1);
+    }
+
+    p.note(
+      [
+        `Mode: ${result.dryRun ? "dry-run" : "apply"}`,
+        `Source: ${result.source ?? "all"}`,
+        `Sessions scanned: ${result.sessionsScanned ?? 0}`,
+        `Memories scanned: ${result.memoriesScanned ?? 0}`,
+        `Source items found: ${result.observationsFound ?? 0}`,
+        `Eligible items: ${result.observationsEligible ?? result.observationsSelected ?? 0}`,
+        `Skipped existing: ${result.observationsSkippedExisting ?? 0}`,
+        `Observations selected: ${result.observationsSelected ?? 0}`,
+        `Batches planned: ${result.batchesPlanned ?? 0}`,
+        `Batches processed: ${result.batchesProcessed ?? 0}`,
+        `Nodes created: ${result.nodesAdded ?? 0}`,
+        `Edges created: ${result.edgesAdded ?? 0}`,
+        `Graph now: ${result.nodes ?? 0} nodes, ${result.edges ?? 0} edges`,
+      ].join("\n"),
+      "graph backfill",
+    );
+
+    if (dryRun) {
+      p.log.info("Re-run with --apply to call mem::graph-extract and write graph data.");
+    }
+    p.outro("Done.");
+  } catch (err) {
+    spinner.stop("failed");
+    p.log.error(err instanceof Error ? err.message : String(err));
+    process.exit(1);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // `agentmemory remove` — clean uninstall.
 //
@@ -2583,6 +2779,7 @@ const commands: Record<string, () => Promise<void>> = {
   remove: runRemove,
   mcp: runMcp,
   "import-jsonl": runImportJsonl,
+  "graph-build": runGraphBuild,
 };
 
 const handler = commands[args[0] ?? ""] ?? main;

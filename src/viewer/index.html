@@ -1598,9 +1598,17 @@
 
       if (state.graph.nodes.length === 0) {
         var sb = document.getElementById('graph-sidebar');
-        if (sb) sb.innerHTML = '<h3>Graph</h3><p style="font-size:12px;color:var(--ink-faint);margin:8px 0;font-style:italic;">No graph data yet. Building from observations and memories...</p>';
-        var buildResult = await apiPost('graph/build', {});
-        if (buildResult && buildResult.success && buildResult.nodes > 0) {
+        if (sb) sb.innerHTML = '<h3>Graph</h3><p style="font-size:12px;color:var(--ink-faint);margin:8px 0;font-style:italic;">No graph data yet. Checking stored observations and memories...</p>';
+        var buildResult = await apiPost('graph/build', { dryRun: true });
+        if (sb && buildResult && buildResult.success) {
+          sb.innerHTML = '<h3>Graph</h3>' +
+            '<p style="font-size:12px;color:var(--ink-faint);margin:8px 0;font-style:italic;">No graph data yet.</p>' +
+            '<div style="font-size:11px;line-height:1.7;color:var(--ink-muted);border-top:1px solid var(--border-light);border-bottom:1px solid var(--border-light);padding:8px 0;margin:8px 0;">' +
+            graphBuildSummary(buildResult) +
+            '</div>' +
+            '<button class="btn" style="margin-top:8px;width:100%;font-size:11px;padding:8px;letter-spacing:0.06em;" data-action="rebuild-graph">↻ Rebuild Graph</button>';
+        }
+        if (buildResult && buildResult.success && buildResult.dryRun === false && buildResult.nodesAdded > 0) {
           var freshResults = await Promise.all([
             apiPost('graph/query', {}),
             apiGet('graph/stats')
@@ -1951,10 +1959,51 @@
       graphSim.raf = requestAnimationFrame(runSimulation);
     }
 
+    function graphBuildSummary(result) {
+      return [
+        '<div><strong>Source</strong> ' + esc(result.source || 'all') + '</div>',
+        '<div><strong>Memories</strong> ' + (result.memoriesScanned || 0) + '</div>',
+        '<div><strong>Sessions</strong> ' + (result.sessionsScanned || 0) + '</div>',
+        '<div><strong>Eligible</strong> ' + (result.observationsEligible || 0) + '</div>',
+        '<div><strong>Skipped</strong> ' + (result.observationsSkippedExisting || 0) + '</div>',
+        '<div><strong>Batches</strong> ' + (result.batchesPlanned || 0) + '</div>'
+      ].join('');
+    }
+
     async function rebuildGraph() {
       var sb = document.getElementById('graph-sidebar');
-      if (sb) sb.innerHTML = '<h3>Graph</h3><p style="font-size:12px;color:var(--ink-faint);font-style:italic;">Rebuilding graph from observations...</p>';
-      await apiPost('graph/build', {});
+      if (sb) sb.innerHTML = '<h3>Graph</h3><p style="font-size:12px;color:var(--ink-faint);font-style:italic;">Checking graph backfill plan...</p>';
+      var plan = await apiPost('graph/build', { dryRun: true, source: 'all', batchSize: 5 });
+      if (!plan || !plan.success) {
+        if (sb) sb.innerHTML = '<h3>Graph</h3><p style="font-size:12px;color:var(--danger);font-style:italic;">Graph rebuild plan failed.</p>';
+        return;
+      }
+      if ((plan.observationsSelected || 0) === 0) {
+        if (sb) sb.innerHTML = '<h3>Graph</h3><p style="font-size:12px;color:var(--ink-faint);font-style:italic;">Graph is already up to date.</p>';
+        return;
+      }
+      var ok = window.confirm(
+        'Build graph from ' + (plan.observationsSelected || 0) +
+        ' stored observations/memories in ' + (plan.batchesPlanned || 0) +
+        ' batches? This writes graph nodes and edges.'
+      );
+      if (!ok) {
+        renderGraphSidebar();
+        return;
+      }
+      var totalSelected = 0;
+      var totalBatches = 0;
+      for (var chunk = 1; ; chunk++) {
+        if (sb) sb.innerHTML = '<h3>Graph</h3><p style="font-size:12px;color:var(--ink-faint);font-style:italic;">Building graph chunk ' + chunk + '...</p><p style="font-size:11px;color:var(--ink-muted);line-height:1.7;">Processed ' + totalSelected + ' source item(s), ' + totalBatches + ' batch(es).</p>';
+        var result = await apiPost('graph/build', { dryRun: false, source: 'all', limit: 20, batchSize: 5 });
+        if (!result || !result.success) {
+          if (sb) sb.innerHTML = '<h3>Graph</h3><p style="font-size:12px;color:var(--danger);font-style:italic;">Graph rebuild failed. Try again to resume from completed items.</p>';
+          return;
+        }
+        totalSelected += result.observationsSelected || 0;
+        totalBatches += result.batchesProcessed || 0;
+        if ((result.observationsSelected || 0) === 0) break;
+      }
       state.graph.loaded = false;
       loadGraph();
     }

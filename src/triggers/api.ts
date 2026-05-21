@@ -1254,6 +1254,93 @@ export function registerApiTriggers(
     config: { api_path: "/agentmemory/graph/extract", http_method: "POST" },
   });
 
+  sdk.registerFunction("api::graph-build",
+    async (
+      req: ApiRequest<{
+        dryRun?: boolean;
+        source?: string;
+        force?: boolean;
+        batchSize?: number;
+        sessionId?: string;
+        includeActiveSessions?: boolean;
+        latestMemoriesOnly?: boolean;
+        limit?: number;
+        offset?: number;
+      }>,
+    ): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      try {
+        const body = req.body || {};
+        const queryBatchSize = parseOptionalPositiveInt(req.query_params?.["batchSize"]);
+        const queryLimit = parseOptionalPositiveInt(req.query_params?.["limit"]);
+        const queryOffset = parseOptionalInt(req.query_params?.["offset"]);
+        if (queryBatchSize === null || queryLimit === null) {
+          return {
+            status_code: 400,
+            body: { error: "batchSize and limit must be positive integers" },
+          };
+        }
+        if (queryOffset !== undefined && queryOffset < 0) {
+          return {
+            status_code: 400,
+            body: { error: "offset must be a non-negative integer" },
+          };
+        }
+        const dryRun =
+          req.query_params?.["dryRun"] === "false"
+            ? false
+            : req.query_params?.["dryRun"] === "true"
+              ? true
+              : body.dryRun;
+        const source =
+          req.query_params?.["source"] ||
+          (typeof body.source === "string" ? body.source : undefined);
+        const result = await sdk.trigger({
+          function_id: "mem::graph-build",
+          payload: {
+            ...body,
+            dryRun,
+            source,
+            batchSize:
+              queryBatchSize ?? body.batchSize,
+            limit: queryLimit ?? body.limit,
+            offset: queryOffset ?? body.offset,
+            sessionId:
+              asNonEmptyString(req.query_params?.["sessionId"]) ??
+              body.sessionId,
+            force:
+              req.query_params?.["force"] === "true"
+                ? true
+                : req.query_params?.["force"] === "false"
+                  ? false
+                  : body.force,
+            includeActiveSessions:
+              req.query_params?.["includeActiveSessions"] === "true"
+                ? true
+                : req.query_params?.["includeActiveSessions"] === "false"
+                  ? false
+                  : body.includeActiveSessions,
+            latestMemoriesOnly:
+              req.query_params?.["latestMemoriesOnly"] === "true"
+                ? true
+                : req.query_params?.["latestMemoriesOnly"] === "false"
+                  ? false
+                  : body.latestMemoriesOnly,
+          },
+        });
+        return { status_code: 200, body: result };
+      } catch {
+        return graphDisabledResponse();
+      }
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::graph-build",
+    config: { api_path: "/agentmemory/graph/build", http_method: "POST" },
+  });
+
   sdk.registerFunction("api::consolidate-pipeline", 
     async (req: ApiRequest<{ tier?: string }>): Promise<Response> => {
       const authErr = checkAuth(req, secret);
