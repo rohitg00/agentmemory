@@ -21,6 +21,10 @@ function getAutoProxy(): ReturnType<typeof buildProxyFetch> {
   return _cachedProxyFetch;
 }
 
+/**
+ * Wraps fetch with a timeout and optional proxy-aware fetch function.
+ * Auto-detects HTTPS_PROXY/HTTP_PROXY env vars when fetchFn is not provided.
+ */
 export function fetchWithTimeout(
   url: string,
   init: RequestInit,

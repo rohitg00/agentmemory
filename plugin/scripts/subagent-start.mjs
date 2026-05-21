@@ -42,7 +42,7 @@ async function main() {
 	}).catch(() => {});
 }
 main();
-
 //#endregion
-export {  };
+export {};
+
 //# sourceMappingURL=subagent-start.mjs.map

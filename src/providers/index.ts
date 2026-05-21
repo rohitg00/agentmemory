@@ -25,10 +25,15 @@ function requireEnvVar(key: string): string {
   return value;
 }
 
+/** Creates a resilient provider wrapping the configured base provider. */
 export function createProvider(config: ProviderConfig): ResilientProvider {
   return new ResilientProvider(createBaseProvider(config));
 }
 
+/**
+ * Creates a provider with ordered fallback chain. Falls back to createProvider
+ * when no fallback entries are configured or available.
+ */
 export function createFallbackProvider(
   config: ProviderConfig,
   fallbackConfig: FallbackConfig,
