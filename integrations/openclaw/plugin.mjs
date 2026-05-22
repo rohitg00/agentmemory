@@ -60,6 +60,29 @@ function latestUserText(messages) {
   return "";
 }
 
+function asNonEmptyString(value) {
+  return typeof value === "string" && value.trim() ? value.trim() : "";
+}
+
+function deriveProject(event) {
+  const candidates = [
+    event?.project,
+    event?.session?.project,
+    event?.workspace?.project,
+    event?.agent?.project,
+    event?.metadata?.project,
+    event?.context?.project,
+    event?.cwd,
+    event?.session?.cwd,
+    event?.workspace?.cwd,
+  ];
+  for (const value of candidates) {
+    const text = asNonEmptyString(value);
+    if (text) return text;
+  }
+  return "";
+}
+
 function formatResults(results) {
   if (!Array.isArray(results) || results.length === 0) return "";
   return results
@@ -179,9 +202,11 @@ const plugin = {
       if (!cfg.enabled) return;
       const prompt = typeof event?.prompt === "string" ? event.prompt.trim() : "";
       if (!prompt) return;
+      const project = deriveProject(event);
       const result = await client.postJson("/agentmemory/smart-search", {
         query: prompt,
         limit: 5,
+        ...(project ? { project } : {}),
       });
       const block = formatResults(result?.results || []);
       if (!block) return;
@@ -200,9 +225,12 @@ const plugin = {
         event.sessionKey ||
         event.runId ||
         `openclaw-${Date.now()}`;
+      const project = deriveProject(event);
       await client.postJson("/agentmemory/observe", {
         hookType: "post_tool_use",
         sessionId,
+        project: project || sessionId,
+        cwd: project || sessionId,
         timestamp: new Date().toISOString(),
         data: {
           tool_name: "conversation",
