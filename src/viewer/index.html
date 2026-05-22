@@ -1260,22 +1260,58 @@
       }
     }
 
+    function escapeHtml(value) {
+      return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function dashboardErrorBanner(error) {
+      if (!error) return '';
+      var detail = error.allFailed
+        ? 'agentmemory worker appears down — restart the worker service'
+        : 'Some dashboard endpoints failed: ' + error.failedEndpoints.join(', ');
+      return '<div class="card" style="border:2px solid var(--accent);margin-bottom:16px;background:var(--bg-subtle);">' +
+        '<div style="font-family:var(--font-ui);font-size:11px;letter-spacing:0.12em;text-transform:uppercase;color:var(--accent);font-weight:700;margin-bottom:6px;">Dashboard data unavailable</div>' +
+        '<div style="font-size:14px;color:var(--ink);font-weight:700;margin-bottom:4px;">' + escapeHtml(detail) + '</div>' +
+        '<div style="font-size:12px;color:var(--ink-muted);font-family:var(--font-mono);">Failed: ' + escapeHtml(error.failedEndpoints.join(', ')) + '</div>' +
+        '</div>';
+    }
+
     async function loadDashboard() {
       var el = document.getElementById('view-dashboard');
       el.innerHTML = '<div class="loading">Loading dashboard...</div>';
       try {
-        var results = await Promise.all([
-          apiGet('health'),
-          apiGet('sessions'),
-          apiGet('memories?latest=true'),
-          apiGet('graph/stats'),
-          apiGet('audit?limit=5'),
-          apiGet('semantic'),
-          apiGet('procedural'),
-          apiGet('relations'),
-          apiGet('lessons'),
-          apiGet('crystals')
-        ]);
+        var endpoints = [
+          { name: 'health', path: 'health' },
+          { name: 'sessions', path: 'sessions' },
+          { name: 'memories', path: 'memories?latest=true' },
+          { name: 'graph/stats', path: 'graph/stats' },
+          { name: 'audit', path: 'audit?limit=5' },
+          { name: 'semantic', path: 'semantic' },
+          { name: 'procedural', path: 'procedural' },
+          { name: 'relations', path: 'relations' },
+          { name: 'lessons', path: 'lessons' },
+          { name: 'crystals', path: 'crystals' }
+        ];
+        var results = await Promise.all(endpoints.map(function(endpoint) {
+          return apiGet(endpoint.path);
+        }));
+        var failedEndpoints = endpoints.filter(function(endpoint, idx) {
+          return results[idx] === null;
+        }).map(function(endpoint) { return endpoint.name; });
+        state.dashboard.loadError = failedEndpoints.length > 0 ? {
+          allFailed: failedEndpoints.length === endpoints.length,
+          failedEndpoints: failedEndpoints
+        } : null;
+        if (state.dashboard.loadError && state.dashboard.loadError.allFailed) {
+          state.dashboard.loaded = true;
+          el.innerHTML = dashboardErrorBanner(state.dashboard.loadError);
+          return;
+        }
         state.dashboard.health = results[0];
         state.dashboard.sessions = (results[1] && results[1].sessions) || [];
         state.dashboard.memories = (results[2] && results[2].memories) || [];
@@ -1324,7 +1360,7 @@
       var cb = h.circuitBreaker || null;
       var workers = snap.workers || [];
 
-      var html = '';
+      var html = dashboardErrorBanner(d.loadError);
       // First-run hero: empty dashboard = guided next step
       if (d.sessions.length === 0) {
         html += '<div class="card" style="margin-bottom:14px;padding:24px 28px;background:var(--bg-subtle);border-left:3px solid var(--accent);">' +
