@@ -6,7 +6,13 @@ const API_URL = "https://api.voyageai.com/v1/embeddings";
 
 export class VoyageEmbeddingProvider implements EmbeddingProvider {
   readonly name = "voyage";
-  readonly dimensions = 1024;
+  // Respect VOYAGE_EMBEDDING_MODEL + VOYAGE_OUTPUT_DIMENSION env vars instead of hardcoding model + dims.
+  // Voyage 3 supports {256, 512, 1024, 2048} via output_dimension. Default behavior preserved when envs unset.
+  readonly model = getEnvVar("VOYAGE_EMBEDDING_MODEL") || "voyage-code-3";
+  readonly dimensions = parseInt(
+    getEnvVar("VOYAGE_OUTPUT_DIMENSION") || "1024",
+    10,
+  );
   private apiKey: string;
 
   constructor(apiKey?: string) {
@@ -20,17 +26,19 @@ export class VoyageEmbeddingProvider implements EmbeddingProvider {
   }
 
   async embedBatch(texts: string[]): Promise<Float32Array[]> {
+    const body: Record<string, unknown> = {
+      model: this.model,
+      input: texts,
+      input_type: "document",
+    };
+    if (this.dimensions !== 1024) body.output_dimension = this.dimensions;
     const response = await fetchWithTimeout(API_URL, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${this.apiKey}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        model: "voyage-code-3",
-        input: texts,
-        input_type: "document",
-      }),
+      body: JSON.stringify(body),
     });
 
     if (!response.ok) {
