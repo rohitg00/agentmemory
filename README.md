@@ -73,10 +73,12 @@
 ## Install
 
 ```bash
-npm install -g @agentmemory/agentmemory     # once — bare `agentmemory` on PATH
-agentmemory                                  # start the memory server on :3111
-agentmemory demo                             # seed sample sessions + prove recall
-agentmemory connect claude-code              # wire your agent (also: codex, cursor, gemini-cli, ...)
+npm install -g @agentmemory/agentmemory          # once — bare `agentmemory` on PATH
+# If you hit EACCES on macOS/Linux system Node installs, retry with:
+# sudo npm install -g @agentmemory/agentmemory
+agentmemory                                      # start the memory server on :3111
+agentmemory demo                                 # seed sample sessions + prove recall
+agentmemory connect claude-code                  # wire your agent (also: codex, cursor, gemini-cli, ...)
 ```
 
 Or via `npx` (no install):
@@ -361,6 +363,8 @@ Open `http://localhost:3113` to watch the memory build live.
 
 ```bash
 npm install -g @agentmemory/agentmemory
+# If you hit EACCES on macOS/Linux system Node installs, retry with:
+# sudo npm install -g @agentmemory/agentmemory
 agentmemory                    # start the server (same as the npx form)
 agentmemory stop               # tear it down
 agentmemory remove             # uninstall everything we created
@@ -422,6 +426,7 @@ agentmemory connect claude-code --with-hooks
 ```
 
 This merges the same hook commands into `~/.claude/settings.json` with absolute paths resolved to the bundled `plugin/` directory of the currently installed `@agentmemory/agentmemory` package. Re-run the command after upgrading agentmemory to refresh the paths. User entries in the same file are preserved; only previous agentmemory entries are replaced. Using the `/plugin install` path remains the recommended approach.
+For remote or protected deployments, launch Claude Code with `AGENTMEMORY_URL` and `AGENTMEMORY_SECRET` set. The plugin passes both values through to its bundled MCP server; when `AGENTMEMORY_URL` is empty, the MCP shim uses `http://localhost:3111`.
 
 ### Codex CLI (Codex plugin platform)
 
@@ -1071,7 +1076,7 @@ Full registry: [workers.iii.dev](https://workers.iii.dev). Every worker there co
 
 ### LLM Providers
 
-agentmemory auto-detects from your environment. No API key needed if you have a Claude subscription.
+agentmemory auto-detects from your environment. By default, no LLM calls are made unless you configure a provider or explicitly opt in to the Claude subscription fallback.
 
 | Provider | Config | Notes |
 |----------|--------|-------|
@@ -1081,6 +1086,33 @@ agentmemory auto-detects from your environment. No API key needed if you have a 
 | Gemini | `GEMINI_API_KEY` | Also enables embeddings |
 | OpenRouter | `OPENROUTER_API_KEY` | Any model |
 | Claude subscription fallback | `AGENTMEMORY_ALLOW_AGENT_SDK=true` | Opt-in only. Spawns `@anthropic-ai/claude-agent-sdk` sessions — used to cause unbounded Stop-hook recursion (#149 follow-up) so it is no longer the default. |
+
+### Config File
+
+Put agentmemory runtime configuration in `~/.agentmemory/.env` instead of exporting variables in every shell. If the viewer shows a setup hint like `export ANTHROPIC_API_KEY=...`, copy it into this file as `ANTHROPIC_API_KEY=...` without the `export` prefix, then restart agentmemory.
+
+Process environment variables still work and take precedence over values in the file.
+
+On Windows, the same file lives at `%USERPROFILE%\.agentmemory\.env`:
+
+```powershell
+New-Item -ItemType Directory -Force $HOME\.agentmemory
+notepad $HOME\.agentmemory\.env
+```
+
+To test with a Claude Code Pro/Max subscription instead of an API key, opt in explicitly:
+
+```env
+AGENTMEMORY_ALLOW_AGENT_SDK=true
+AGENTMEMORY_AUTO_COMPRESS=true
+```
+
+Turn on graph or consolidation features in the same file if you want them:
+
+```env
+GRAPH_EXTRACTION_ENABLED=true
+CONSOLIDATION_ENABLED=true
+```
 
 ### Environment Variables
 

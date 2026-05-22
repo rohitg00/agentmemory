@@ -69,6 +69,24 @@ describe("Codex plugin manifest (developers.openai.com/codex/plugins)", () => {
     expect(existsSync(join(pluginRoot, manifest.hooks))).toBe(true);
   });
 
+  it("plugin MCP server inherits remote agentmemory environment overrides", () => {
+    const mcp = readJson<{
+      mcpServers: Record<
+        string,
+        {
+          command: string;
+          args: string[];
+          env?: Record<string, string>;
+        }
+      >;
+    }>(join(pluginRoot, ".mcp.json"));
+
+    expect(mcp.mcpServers.agentmemory?.env).toMatchObject({
+      AGENTMEMORY_URL: "${AGENTMEMORY_URL}",
+      AGENTMEMORY_SECRET: "${AGENTMEMORY_SECRET}",
+    });
+  });
+
   it("hooks.codex.json contains only events Codex supports (no Subagent / SessionEnd / Notification / TaskCompleted / PostToolUseFailure)", () => {
     const hooksPath = join(pluginRoot, "hooks/hooks.codex.json");
     const hooks = readJson<{ hooks: Record<string, unknown> }>(hooksPath);

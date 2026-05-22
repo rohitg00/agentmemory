@@ -106,6 +106,32 @@ describe("Graph Functions", () => {
     expect(edges[0].type).toBe("uses");
   });
 
+  it("graph-extract accepts self-closing entity tags", async () => {
+    mockProvider.compress.mockResolvedValueOnce(`<entities>
+<entity type="file" name="src/index.ts"/>
+<entity type="function" name="main"><property key="lang">typescript</property></entity>
+</entities>
+<relationships>
+<relationship type="uses" source="src/index.ts" target="main" weight="0.9"/>
+</relationships>`);
+
+    const result = (await sdk.trigger("mem::graph-extract", {
+      observations: [testObs],
+    })) as { success: boolean; nodesAdded: number; edgesAdded: number };
+
+    expect(result.success).toBe(true);
+    expect(result.nodesAdded).toBe(2);
+    expect(result.edgesAdded).toBe(1);
+
+    const nodes = await kv.list<GraphNode>("mem:graph:nodes");
+    expect(nodes.some((n) => n.name === "src/index.ts")).toBe(true);
+    expect(nodes.some((n) => n.name === "main")).toBe(true);
+
+    const edges = await kv.list<GraphEdge>("mem:graph:edges");
+    expect(edges).toHaveLength(1);
+    expect(edges[0].type).toBe("uses");
+  });
+
   it("graph-query with search returns matching nodes", async () => {
     await sdk.trigger("mem::graph-extract", { observations: [testObs] });
 
