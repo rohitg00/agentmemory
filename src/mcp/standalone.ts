@@ -418,6 +418,17 @@ export async function handleToolsList(): Promise<{ tools: unknown[] }> {
         );
       }
       if (remote && Array.isArray(remote.tools)) {
+        if (
+          process.env["AGENTMEMORY_TOOLS"] === "all" &&
+          remote.tools.length < getAllTools().length
+        ) {
+          if (debug) {
+            process.stderr.write(
+              `[@agentmemory/mcp] tools/list: remote returned ${remote.tools.length} tools; AGENTMEMORY_TOOLS=all so returning ${getAllTools().length} bundled tool definitions\n`,
+            );
+          }
+          return { tools: getAllTools() };
+        }
         if (debug) {
           process.stderr.write(
             `[@agentmemory/mcp] tools/list: returning ${remote.tools.length} tools from server\n`,

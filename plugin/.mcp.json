@@ -5,7 +5,8 @@
       "args": ["-y", "@agentmemory/mcp"],
       "env": {
         "AGENTMEMORY_URL": "${AGENTMEMORY_URL}",
-        "AGENTMEMORY_SECRET": "${AGENTMEMORY_SECRET}"
+        "AGENTMEMORY_SECRET": "${AGENTMEMORY_SECRET}",
+        "AGENTMEMORY_TOOLS": "all"
       }
     }
   }

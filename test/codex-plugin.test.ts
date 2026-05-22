@@ -84,6 +84,7 @@ describe("Codex plugin manifest (developers.openai.com/codex/plugins)", () => {
     expect(mcp.mcpServers.agentmemory?.env).toMatchObject({
       AGENTMEMORY_URL: "${AGENTMEMORY_URL}",
       AGENTMEMORY_SECRET: "${AGENTMEMORY_SECRET}",
+      AGENTMEMORY_TOOLS: "all",
     });
   });
 

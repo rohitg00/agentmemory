@@ -2,6 +2,7 @@ import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 import { handleToolCall } from "../src/mcp/standalone.js";
 import { resetHandleForTests } from "../src/mcp/rest-proxy.js";
 import { InMemoryKV } from "../src/mcp/in-memory-kv.js";
+import { getAllTools } from "../src/mcp/tools-registry.js";
 
 type FetchMock = ReturnType<typeof vi.fn>;
 
@@ -28,6 +29,7 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
     resetHandleForTests();
     globalThis.fetch = originalFetch;
     delete process.env["AGENTMEMORY_URL"];
+    delete process.env["AGENTMEMORY_TOOLS"];
   });
 
   it("proxies memory_sessions to GET /agentmemory/sessions when server is up", async () => {
@@ -263,6 +265,27 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
       name: "memory_lesson_save",
       arguments: { title: "Always pin lockfiles", content: "..." },
     });
+  });
+
+  it("keeps all bundled tools visible when shim requests all but server lists core only (#400)", async () => {
+    process.env["AGENTMEMORY_TOOLS"] = "all";
+    const { handleToolsList } = await import("../src/mcp/standalone.js");
+    const coreOnly = getAllTools().slice(0, 8);
+    installFetch((url) => {
+      if (url.endsWith("/agentmemory/livez")) return new Response("ok", { status: 200 });
+      if (url.endsWith("/agentmemory/mcp/tools")) {
+        return new Response(JSON.stringify({ tools: coreOnly }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return new Response("not found", { status: 404 });
+    });
+
+    const listed = await handleToolsList();
+    const tools = listed.tools as Array<{ name: string }>;
+    expect(tools).toHaveLength(getAllTools().length);
+    expect(tools.map((t) => t.name)).toContain("memory_lesson_save");
   });
 
   it("rejects non-essential tools when no server is reachable (#234)", async () => {
