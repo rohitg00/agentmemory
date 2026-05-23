@@ -159,6 +159,10 @@ export function getEnvVar(key: string): string | undefined {
   return getMergedEnv()[key];
 }
 
+export function isDropStaleIndexEnabled(): boolean {
+  return getMergedEnv()["AGENTMEMORY_DROP_STALE_INDEX"] === "true";
+}
+
 export function detectLlmProviderKind(): "llm" | "noop" {
   const env = getMergedEnv();
   if (

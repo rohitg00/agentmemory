@@ -1,5 +1,6 @@
 import type { EmbeddingProvider } from "../../types.js";
 import { getEnvVar } from "../../config.js";
+import { fetchWithTimeout } from "../_fetch.js";
 
 const API_URL = "https://openrouter.ai/api/v1/embeddings";
 
@@ -23,7 +24,7 @@ export class OpenRouterEmbeddingProvider implements EmbeddingProvider {
   }
 
   async embedBatch(texts: string[]): Promise<Float32Array[]> {
-    const response = await fetch(API_URL, {
+    const response = await fetchWithTimeout(API_URL, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${this.apiKey}`,

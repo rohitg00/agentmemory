@@ -37,6 +37,14 @@ const ITEMS: Feature[] = [
     logoAlt: "Trendshift badge for agentmemory",
     badge: true,
   },
+  {
+    name: "Product Hunt",
+    sub: "Live upvote count",
+    href: "https://www.producthunt.com/products/agent-memory-dev?embed=true&utm_source=badge-featured&utm_medium=badge&utm_campaign=badge-agentmemory",
+    logo: "https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1144164&theme=neutral",
+    logoAlt: "Featured on Product Hunt — live upvote count",
+    badge: true,
+  },
 ];
 
 interface FeaturedInProps {

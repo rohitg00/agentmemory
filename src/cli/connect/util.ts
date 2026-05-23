@@ -10,11 +10,19 @@ import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 import * as p from "@clack/prompts";
 
+// Env values use ${VAR} expansion so the wired MCP entry inherits
+// AGENTMEMORY_URL / AGENTMEMORY_SECRET from the user's shell. When the
+// vars are unset, the host (Claude Code, Cursor, etc.) substitutes an
+// empty string; the standalone shim treats empty as missing and falls
+// back to http://localhost:3111. This lets a single wired entry serve
+// both local and remote (Kubernetes / reverse-proxied) deployments
+// without doctor-warning duplicates (#375).
 export const AGENTMEMORY_MCP_BLOCK = {
   command: "npx",
-  args: ["-y", "@agentmemory/mcp@0.9.17"],
+  args: ["-y", "@agentmemory/mcp@0.9.21"],
   env: {
-    AGENTMEMORY_URL: "http://localhost:3111",
+    AGENTMEMORY_URL: "${AGENTMEMORY_URL}",
+    AGENTMEMORY_SECRET: "${AGENTMEMORY_SECRET}",
   },
 };
 

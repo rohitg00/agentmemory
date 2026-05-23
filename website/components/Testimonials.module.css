@@ -1,0 +1,221 @@
+.wrap {
+  padding: 96px 0 96px;
+  background: var(--ink);
+  border-top: 1px solid var(--charcoal);
+}
+.inner {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 0 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  align-items: center;
+}
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 2.4px;
+  color: var(--ash);
+  text-transform: uppercase;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+}
+.eyebrow::before,
+.eyebrow::after {
+  content: "";
+  flex: 0 0 60px;
+  height: 1px;
+  background: var(--charcoal);
+}
+.title {
+  font-family: var(--font-display, var(--font-mono));
+  font-size: clamp(40px, 6vw, 64px);
+  letter-spacing: -0.02em;
+  line-height: 1;
+  color: var(--white);
+  text-align: center;
+  text-transform: uppercase;
+  font-weight: 800;
+  margin: 0;
+}
+.accent {
+  color: var(--gold);
+}
+.lede {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  letter-spacing: 0.4px;
+  color: var(--steel);
+  text-align: center;
+  margin: 0 0 8px;
+  max-width: 560px;
+}
+.sectionLabel {
+  align-self: flex-start;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 2.4px;
+  color: var(--gold);
+  text-transform: uppercase;
+  margin-top: 32px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--charcoal);
+  width: 100%;
+}
+
+/* Featured use-case cards — 2-column, larger, includes a tag chip. */
+.useCases {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 24px;
+  width: 100%;
+}
+.useCaseCard {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 32px 30px 24px;
+  border: 1px solid var(--charcoal);
+  background: var(--iron);
+  text-decoration: none;
+  color: var(--white);
+  transition: border-color 0.12s ease, transform 0.12s ease,
+    background 0.12s ease;
+  min-height: 240px;
+}
+.useCaseCard:hover,
+.useCaseCard:focus-visible {
+  border-color: var(--gold);
+  transform: translateY(-2px);
+  background: #16161a;
+}
+.useCaseCard:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+.useCaseTag {
+  display: inline-block;
+  align-self: flex-start;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 1.4px;
+  color: var(--gold);
+  text-transform: uppercase;
+  border: 1px solid var(--gold);
+  padding: 5px 10px;
+  background: rgba(255, 192, 0, 0.06);
+}
+.useCaseQuote {
+  font-family: var(--font-sans, system-ui);
+  font-size: 17px;
+  line-height: 1.55;
+  color: var(--white);
+  margin: 0;
+  flex: 1;
+}
+
+/* Endorsement cards — 4 columns, smaller. */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 18px;
+  width: 100%;
+}
+.card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 24px 22px 20px;
+  border: 1px solid var(--charcoal);
+  background: var(--iron);
+  text-decoration: none;
+  color: var(--white);
+  transition: border-color 0.12s ease, transform 0.12s ease,
+    background 0.12s ease;
+  min-height: 200px;
+}
+.card:hover,
+.card:focus-visible {
+  border-color: var(--gold);
+  transform: translateY(-2px);
+  background: #16161a;
+}
+.card:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+.quoteMark {
+  font-family: var(--font-display, serif);
+  font-size: 32px;
+  line-height: 0;
+  color: var(--gold);
+  display: inline;
+  margin-right: 4px;
+  vertical-align: -4px;
+}
+.useCaseCard .quoteMark {
+  font-size: 40px;
+  vertical-align: -6px;
+}
+.quote {
+  font-family: var(--font-sans, system-ui);
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--white);
+  margin: 0;
+  flex: 1;
+}
+.author {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--charcoal);
+}
+.name {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.6px;
+  color: var(--white);
+  text-transform: uppercase;
+  font-weight: 700;
+}
+.source {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.8px;
+  color: var(--ash);
+  text-transform: uppercase;
+  transition: color 0.12s ease;
+}
+.card:hover .source,
+.useCaseCard:hover .source {
+  color: var(--gold);
+}
+
+@media (max-width: 980px) {
+  .useCases {
+    grid-template-columns: 1fr;
+  }
+  .grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+@media (max-width: 640px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+  .wrap {
+    padding: 64px 0 64px;
+  }
+  .badge {
+    width: 220px;
+    height: 47px;
+  }
+}
