@@ -854,7 +854,7 @@ npm install @xenova/transformers
 | `memory_claude_bridge_sync` | Sync with MEMORY.md |
 | `memory_team_share` | Share with team members |
 | `memory_team_feed` | Recent shared items |
-| `memory_audit` | Audit trail of operations |
+| `memory_audit` | Audit trail of operations; pass `receipt: true` for privacy-safe hashed receipts |
 | `memory_governance_delete` | Delete with audit trail |
 | `memory_snapshot_create` | Git-versioned snapshot |
 | `memory_action_create` | Create work items with dependencies |
@@ -1262,7 +1262,7 @@ Create `~/.agentmemory/.env`:
 | `POST` | `/agentmemory/import` | Import from JSON |
 | `POST` | `/agentmemory/graph/query` | Knowledge graph query |
 | `POST` | `/agentmemory/team/share` | Share with team |
-| `GET` | `/agentmemory/audit` | Audit trail |
+| `GET` | `/agentmemory/audit` | Audit trail; add `?receipt=true` for privacy-safe hashed receipts |
 
 Full endpoint list: [`src/triggers/api.ts`](src/triggers/api.ts)
 

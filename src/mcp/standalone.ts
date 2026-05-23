@@ -6,6 +6,8 @@ import { getAllTools } from "./tools-registry.js";
 import { getStandalonePersistPath } from "../config.js";
 import { VERSION } from "../version.js";
 import { generateId } from "../state/schema.js";
+import { buildAuditReceipt } from "../functions/audit.js";
+import type { AuditEntry } from "../types.js";
 import {
   resolveHandle,
   invalidateHandle,
@@ -104,6 +106,7 @@ interface Validated {
   tokenBudget?: number;
   memoryIds?: string[];
   reason?: string;
+  receipt?: boolean;
 }
 
 function validate(toolName: string, args: Record<string, unknown>): Validated {
@@ -159,6 +162,7 @@ function validate(toolName: string, args: Record<string, unknown>): Validated {
       return v;
     case "memory_audit": {
       v.limit = parseLimit(args["limit"], 50);
+      v.receipt = args["receipt"] === true;
       return v;
     }
     default:
@@ -225,8 +229,10 @@ async function handleProxy(
       return textResponse(result, true);
     }
     case "memory_audit": {
+      const qs = new URLSearchParams({ limit: String(v.limit) });
+      if (v.receipt) qs.set("receipt", "true");
       const result = await handle.call(
-        `/agentmemory/audit?limit=${v.limit}`,
+        `/agentmemory/audit?${qs.toString()}`,
         { method: "GET" },
       );
       return textResponse(result, true);
@@ -319,10 +325,9 @@ async function handleLocal(
     case "memory_audit": {
       const entries = await kvInstance.list("mem:audit");
       const limit = v.limit ?? 50;
+      const selected = (entries as AuditEntry[]).slice(0, limit);
       return textResponse(
-        {
-          entries: (entries as Array<Record<string, unknown>>).slice(0, limit),
-        },
+        v.receipt ? { receipt: buildAuditReceipt(selected) } : { entries: selected },
         true,
       );
     }

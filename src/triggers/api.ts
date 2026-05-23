@@ -10,6 +10,8 @@ import { VERSION } from "../version.js";
 import { timingSafeCompare } from "../auth.js";
 import { renderViewerDocument } from "../viewer/document.js";
 import { getBoundViewerPort, getViewerSkipped } from "../viewer/server.js";
+import { buildAuditReceipt } from "../functions/audit.js";
+import type { AuditEntry } from "../types.js";
 import { MAX_FILES_UPPER_BOUND } from "../functions/replay.js";
 import {
   isGraphExtractionEnabled,
@@ -1348,7 +1350,13 @@ export function registerApiTriggers(
       const entries = await sdk.trigger({ function_id: "mem::audit-query", payload: {
         operation: req.query_params?.["operation"],
         limit: parsedLimit ?? 50,
-      } });
+      } }) as AuditEntry[];
+      if (req.query_params?.["receipt"] === "true") {
+        return {
+          status_code: 200,
+          body: { receipt: buildAuditReceipt(entries), success: true },
+        };
+      }
       return { status_code: 200, body: { entries, success: true } };
     },
   );

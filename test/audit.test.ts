@@ -4,7 +4,7 @@ vi.mock("../src/logger.js", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
-import { recordAudit, queryAudit } from "../src/functions/audit.js";
+import { buildAuditReceipt, recordAudit, queryAudit } from "../src/functions/audit.js";
 
 function mockKV() {
   const store = new Map<string, Map<string, unknown>>();
@@ -103,4 +103,39 @@ describe("Audit Functions", () => {
     const entries = await queryAudit(kv as never, { limit: 3 });
     expect(entries.length).toBe(3);
   });
+  it("buildAuditReceipt hashes ids and omits raw details", async () => {
+    const entry = await recordAudit(
+      kv as never,
+      "remember",
+      "mem::remember",
+      ["mem_private_customer_ticket"],
+      {
+        content: "customer secret should not be exported",
+        path: "/private/work/customer",
+        count: 1,
+      },
+      0.91,
+      "user-private-email@example.com",
+    );
+
+    const receipt = buildAuditReceipt([entry]);
+    const serialized = JSON.stringify(receipt);
+
+    expect(receipt.schema).toBe("agentmemory.audit.receipt.v1");
+    expect(receipt.entryCount).toBe(1);
+    expect(receipt.privacy).toEqual({
+      rawTargetIdsIncluded: false,
+      rawDetailsIncluded: false,
+      rawUserIdsIncluded: false,
+    });
+    expect(receipt.entries[0].targetCount).toBe(1);
+    expect(receipt.entries[0].targetIdHashes[0]).toMatch(/^sha256:/);
+    expect(receipt.entries[0].detailKeys).toEqual(["content", "count", "path"]);
+    expect(receipt.entries[0].userIdHash).toMatch(/^sha256:/);
+    expect(serialized).not.toContain("mem_private_customer_ticket");
+    expect(serialized).not.toContain("customer secret should not be exported");
+    expect(serialized).not.toContain("/private/work/customer");
+    expect(serialized).not.toContain("user-private-email@example.com");
+  });
+
 });

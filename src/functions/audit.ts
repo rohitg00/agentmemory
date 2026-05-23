@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { AuditEntry } from "../types.js";
 import { KV, generateId } from "../state/schema.js";
 import type { StateKV } from "../state/kv.js";
@@ -30,6 +31,64 @@ import { logger } from "../logger.js";
 //
 // When adding a new deletion path, add an explicit recordAudit call
 // BEFORE kv.delete(...) and match one of the two shapes above.
+
+
+export interface AuditReceiptEntry {
+  auditIdHash: string;
+  timestamp: string;
+  operation: AuditEntry["operation"];
+  functionId: string;
+  targetCount: number;
+  targetIdHashes: string[];
+  detailKeys: string[];
+  qualityScore?: number;
+  userIdHash?: string;
+}
+
+export interface AuditReceipt {
+  schema: "agentmemory.audit.receipt.v1";
+  generatedAt: string;
+  privacy: {
+    rawTargetIdsIncluded: false;
+    rawDetailsIncluded: false;
+    rawUserIdsIncluded: false;
+  };
+  entryCount: number;
+  entries: AuditReceiptEntry[];
+}
+
+function digest(value: string): string {
+  return `sha256:${createHash("sha256").update(value).digest("hex")}`;
+}
+
+function safeDetailKeys(details: Record<string, unknown> | undefined): string[] {
+  if (!details) return [];
+  return Object.keys(details).sort();
+}
+
+export function buildAuditReceipt(entries: AuditEntry[]): AuditReceipt {
+  return {
+    schema: "agentmemory.audit.receipt.v1",
+    generatedAt: new Date().toISOString(),
+    privacy: {
+      rawTargetIdsIncluded: false,
+      rawDetailsIncluded: false,
+      rawUserIdsIncluded: false,
+    },
+    entryCount: entries.length,
+    entries: entries.map((entry) => ({
+      auditIdHash: digest(entry.id),
+      timestamp: entry.timestamp,
+      operation: entry.operation,
+      functionId: entry.functionId,
+      targetCount: entry.targetIds.length,
+      targetIdHashes: entry.targetIds.map(digest),
+      detailKeys: safeDetailKeys(entry.details),
+      qualityScore: entry.qualityScore,
+      userIdHash: entry.userId ? digest(entry.userId) : undefined,
+    })),
+  };
+}
 
 export async function recordAudit(
   kv: StateKV,
