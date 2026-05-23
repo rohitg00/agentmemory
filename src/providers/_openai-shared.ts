@@ -31,14 +31,51 @@ export const DEFAULT_AZURE_API_VERSION = "2024-08-01-preview";
 
 type AzureStyle = "legacy" | "v1";
 
-// Azure resource URLs land at <resource>.openai.azure.com.
+/**
+ * Returns true when baseUrl targets an Azure OpenAI or Azure AI Services endpoint.
+ * Three hostname patterns cover classic Azure OpenAI, AI Foundry, and Cognitive Services.
+ */
 export function detectAzure(baseUrl: string): boolean {
   try {
     const u = new URL(baseUrl);
-    return u.hostname.endsWith(".openai.azure.com");
+    return (
+      u.hostname.endsWith(".openai.azure.com") ||
+      u.hostname.endsWith(".services.ai.azure.com") ||
+      u.hostname.endsWith(".cognitiveservices.azure.com")
+    );
   } catch {
     return false;
   }
+}
+
+/**
+ * Returns true when baseUrl targets an Azure AI Foundry Anthropic endpoint.
+ * Foundry uses the Anthropic Messages API format, not OpenAI chat completions.
+ */
+export function detectFoundry(baseUrl: string): boolean {
+  try {
+    const u = new URL(baseUrl);
+    return u.pathname.includes("/anthropic");
+  } catch {
+    return baseUrl.includes("/anthropic");
+  }
+}
+
+/** Normalizes a Foundry base URL to end with `/v1/messages`, avoiding double-appending. */
+export function buildFoundryUrl(baseUrl: string): string {
+  const normalized = baseUrl.replace(/\/+$/, "");
+  if (normalized.endsWith("/v1/messages")) return normalized;
+  if (normalized.endsWith("/v1")) return `${normalized}/messages`;
+  return `${normalized}/v1/messages`;
+}
+
+/** Returns Anthropic Messages API auth headers required by Azure AI Foundry. */
+export function buildFoundryHeaders(apiKey: string): Record<string, string> {
+  return {
+    "Content-Type": "application/json",
+    "x-api-key": apiKey,
+    "anthropic-version": "2023-06-01",
+  };
 }
 
 // Pick the Azure URL style off the base URL's path shape. We only
@@ -87,6 +124,7 @@ function v1AzureUrl(baseUrl: string, path: string): string {
   return url.toString();
 }
 
+/** Builds the chat completions URL, routing through the correct Azure or OpenAI path. */
 export function buildChatUrl(
   baseUrl: string,
   isAzure: boolean,
@@ -100,6 +138,7 @@ export function buildChatUrl(
   return `${baseUrl}/v1/chat/completions`;
 }
 
+/** Builds the embeddings URL, routing through the correct Azure or OpenAI path. */
 export function buildEmbeddingUrl(
   baseUrl: string,
   isAzure: boolean,
@@ -113,10 +152,11 @@ export function buildEmbeddingUrl(
   return `${baseUrl}/v1/embeddings`;
 }
 
-// Azure key-auth uses `api-key: <KEY>`; standard OpenAI-compatible
-// endpoints use `Authorization: Bearer <KEY>`. Azure also accepts
-// Bearer when AAD-auth is configured upstream, but the api-key path
-// is the default and what our config block documents.
+/**
+ * Returns request auth headers. Azure uses `api-key`; OpenAI-compatible
+ * endpoints use `Authorization: Bearer`. Azure also accepts Bearer with AAD,
+ * but `api-key` is the default for AZURE_OPENAI_API_KEY configs.
+ */
 export function buildAuthHeaders(
   apiKey: string,
   isAzure: boolean,
@@ -133,6 +173,7 @@ export function buildAuthHeaders(
   };
 }
 
+/** Strips trailing slashes from the base URL, falling back to the OpenAI default. */
 export function normalizeBaseUrl(raw: string | undefined): string {
   return (raw || DEFAULT_OPENAI_BASE_URL).replace(/\/+$/, "");
 }

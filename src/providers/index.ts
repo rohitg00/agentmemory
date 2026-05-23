@@ -25,10 +25,15 @@ function requireEnvVar(key: string): string {
   return value;
 }
 
+/** Creates a resilient provider wrapping the configured base provider. */
 export function createProvider(config: ProviderConfig): ResilientProvider {
   return new ResilientProvider(createBaseProvider(config));
 }
 
+/**
+ * Creates a provider with ordered fallback chain. Falls back to createProvider
+ * when no fallback entries are configured or available.
+ */
 export function createFallbackProvider(
   config: ProviderConfig,
   fallbackConfig: FallbackConfig,
@@ -107,6 +112,18 @@ function createBaseProvider(config: ProviderConfig): MemoryProvider {
         config.model,
         config.maxTokens,
         config.baseURL,
+      );
+    }
+    case "azure-openai": {
+      // Routes through OpenAIProvider — detectAzure() and detectFoundry()
+      // handle Azure OpenAI (.openai.azure.com) and Azure AI Foundry (/anthropic)
+      // URL patterns automatically. Env vars: AZURE_OPENAI_API_KEY,
+      // AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_DEPLOYMENT.
+      return new OpenAIProvider(
+        requireEnvVar("AZURE_OPENAI_API_KEY"),
+        config.model || requireEnvVar("AZURE_OPENAI_DEPLOYMENT"),
+        config.maxTokens,
+        config.baseURL || requireEnvVar("AZURE_OPENAI_ENDPOINT"),
       );
     }
     case "noop":
