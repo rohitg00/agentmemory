@@ -173,4 +173,13 @@ describe("Audit Functions", () => {
     expect(serialized).not.toContain("mem_legacy");
   });
 
+  it("buildAuditReceipt requires an HMAC key", async () => {
+    const entry = await recordAudit(kv as never, "observe", "mem::test", ["mem_1"], {});
+    delete process.env.AGENTMEMORY_RECEIPT_HMAC_KEY;
+
+    expect(() => buildAuditReceipt([entry])).toThrow(
+      "AGENTMEMORY_RECEIPT_HMAC_KEY is required to generate audit receipts",
+    );
+  });
+
 });
