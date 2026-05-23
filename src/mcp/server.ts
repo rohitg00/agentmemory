@@ -164,20 +164,20 @@ export function registerMcpEndpoints(
             }
             const type = (args.type as string) || "fact";
             const concepts =
-              typeof args.concepts === "string"
-                ? args.concepts.split(",").map((c: string) => c.trim()).filter(Boolean)
-                : [];
-            const files =
-              typeof args.files === "string"
-                ? args.files.split(",").map((f: string) => f.trim()).filter(Boolean)
-                : [];
+              parseCsvList(args.concepts);
+            const files = parseCsvList(args.files);
+            const tags = parseCsvList(args.tags);
+            const sessionId = asNonEmptyString(args.sessionId);
 
-            const result = await sdk.trigger({ function_id: "mem::remember", payload: {
+            const payload: Record<string, unknown> = {
               content: args.content,
               type,
               concepts,
               files,
-            } });
+            };
+            if (sessionId) payload.sessionId = sessionId;
+            if (tags.length > 0) payload.tags = tags;
+            const result = await sdk.trigger({ function_id: "mem::remember", payload });
             return {
               status_code: 200,
               body: {

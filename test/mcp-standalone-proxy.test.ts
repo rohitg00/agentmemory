@@ -167,6 +167,39 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
     ]);
   });
 
+  it("standalone proxy preserves memory_save sessionId and tags in the REST body", async () => {
+    let rememberBody: unknown;
+    installFetch((url, init) => {
+      if (url.endsWith("/agentmemory/livez")) return new Response("ok", { status: 200 });
+      if (url.endsWith("/agentmemory/remember")) {
+        rememberBody = JSON.parse((init?.body as string) || "{}");
+        return new Response(JSON.stringify({ success: true, memory: { id: "mem_1" } }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return new Response("not found", { status: 404 });
+    });
+
+    await handleToolCall("memory_save", {
+      content: "Remember release procedure",
+      type: "workflow",
+      concepts: "release, deploy",
+      files: ["docs/release.md"],
+      sessionId: "ses_proxy",
+      tags: "ops, prod",
+    });
+
+    expect(rememberBody).toEqual({
+      content: "Remember release procedure",
+      type: "workflow",
+      concepts: ["release", "deploy"],
+      files: ["docs/release.md"],
+      sessionId: "ses_proxy",
+      tags: ["ops", "prod"],
+    });
+  });
+
   it("local fallback returns the same shape as proxy for memory_smart_search", async () => {
     installFetch(() => {
       throw new Error("ECONNREFUSED");

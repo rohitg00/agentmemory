@@ -45,6 +45,50 @@ function mockSdk() {
   };
 }
 
+describe("mem::remember audit attribution", () => {
+  it("emits an audit row with session and tag attribution when a memory is saved", async () => {
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerRememberFunction(sdk as never, kv as never);
+
+    const result = await sdk.trigger({
+      function_id: "mem::remember",
+      payload: {
+        content: "Persist the deployment runbook",
+        type: "workflow",
+        concepts: ["deploy", "runbook"],
+        files: ["docs/deploy.md"],
+        sessionId: "ses_123",
+        tags: ["ops", "prod"],
+        sourceObservationIds: ["obs_1"],
+      },
+    });
+    const memory = (result as { memory: { id: string; sessionIds: string[] } }).memory;
+    expect(memory.sessionIds).toEqual(["ses_123"]);
+
+    const auditRows = await kv.list<{
+      operation: string;
+      functionId: string;
+      targetIds: string[];
+      details: Record<string, unknown>;
+    }>("mem:audit");
+    expect(auditRows).toHaveLength(1);
+    const [row] = auditRows;
+    expect(row.operation).toBe("remember");
+    expect(row.functionId).toBe("mem::remember");
+    expect(row.targetIds).toEqual([memory.id]);
+    expect(row.details).toMatchObject({
+      type: "workflow",
+      sessionIds: ["ses_123"],
+      tags: ["ops", "prod"],
+      concepts: ["deploy", "runbook"],
+      files: ["docs/deploy.md"],
+      sourceObservationIds: ["obs_1"],
+      version: 1,
+    });
+  });
+});
+
 describe("mem::forget audit coverage (issue #125)", () => {
   it("emits a single audit row when a memory is forgotten", async () => {
     const sdk = mockSdk();

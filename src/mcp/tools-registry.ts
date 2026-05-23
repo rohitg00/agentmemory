@@ -75,6 +75,14 @@ export const CORE_TOOLS: McpToolDef[] = [
           type: "string",
           description: "Comma-separated relevant file paths",
         },
+        sessionId: {
+          type: "string",
+          description: "Session ID to attribute this saved memory to",
+        },
+        tags: {
+          type: "string",
+          description: "Comma-separated tags for audit and filtering context",
+        },
       },
       required: ["content"],
     },
