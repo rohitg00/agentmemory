@@ -1,3 +1,5 @@
+import { getEnvVar } from "../config.js";
+
 export type McpToolDef = {
   name: string;
   description: string;
@@ -942,7 +944,7 @@ export function getAllTools(): McpToolDef[] {
 }
 
 export function getVisibleTools(): McpToolDef[] {
-  const mode = process.env["AGENTMEMORY_TOOLS"] || "core";
+  const mode = getEnvVar("AGENTMEMORY_TOOLS") || "core";
   if (mode === "all") return getAllTools();
   return getAllTools().filter((t) => ESSENTIAL_TOOLS.has(t.name));
 }
