@@ -201,6 +201,9 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
         if (!sid || !status) return;
         if (status.type === "idle") {
           await post("/summarize", { sessionId: sid });
+          if (process.env["CONSOLIDATION_ENABLED"] === "true") {
+            post("/crystals/auto", { olderThanDays: 0 }, 30000);
+          }
         }
         await observe(sid, "session_status", {
           status_type: status.type,
@@ -214,6 +217,9 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
         const sid = props.sessionID || activeSessionId;
         if (sid) {
           await post("/summarize", { sessionId: sid });
+          if (process.env["CONSOLIDATION_ENABLED"] === "true") {
+            post("/crystals/auto", { olderThanDays: 0 }, 30000);
+          }
           await observe(sid, "session_compacted", {});
         }
       }
@@ -253,8 +259,10 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
           return;
         }
         await post("/session/end", { sessionId: sid });
-        post("/crystals/auto", { olderThanDays: 7 }, 30000);
-        post("/consolidate-pipeline", { tier: "all", force: true }, 30000);
+        if (process.env["CONSOLIDATION_ENABLED"] === "true") {
+          post("/crystals/auto", { olderThanDays: 0 }, 30000);
+          post("/consolidate-pipeline", { tier: "all", force: true }, 30000);
+        }
         if (sid === activeSessionId) activeSessionId = null;
         stashedFiles.delete(sid);
         seenSubtaskIds.delete(sid);
@@ -632,6 +640,10 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
         if (Array.isArray(output.context)) {
           output.context.push(ctx);
         }
+      }
+
+      if (process.env["CONSOLIDATION_ENABLED"] === "true") {
+        post("/crystals/auto", { olderThanDays: 0 }, 30000);
       }
     },
 

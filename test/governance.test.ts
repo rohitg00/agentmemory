@@ -77,7 +77,7 @@ describe("Governance Functions", () => {
     await kv.set("mem:memories", "mem_3", makeMemory("mem_3", "pattern"));
   });
 
-  it("governance-delete removes specified memories", async () => {
+  it("governance-delete soft-deletes specified memories", async () => {
     const result = (await sdk.trigger("mem::governance-delete", {
       memoryIds: ["mem_1"],
       reason: "outdated",
@@ -88,7 +88,12 @@ describe("Governance Functions", () => {
     expect(result.total).toBe(1);
 
     const remaining = await kv.list("mem:memories");
-    expect(remaining.length).toBe(2);
+    expect(remaining.length).toBe(3);
+    const deleted = remaining.find((m: any) => m.id === "mem_1");
+    expect(deleted).toBeDefined();
+    expect((deleted as any).deleted).toBe(true);
+    const surviving = remaining.filter((m: any) => m.id !== "mem_1");
+    expect(surviving.length).toBe(2);
   });
 
   it("governance-delete handles non-existent IDs gracefully", async () => {
@@ -104,17 +109,25 @@ describe("Governance Functions", () => {
     expect(remaining.length).toBe(3);
   });
 
-  it("governance-bulk deletes by type filter", async () => {
+it("governance-bulk soft-deletes by type filter", async () => {
     const result = (await sdk.trigger("mem::governance-bulk", {
       type: ["pattern"],
-    })) as { success: boolean; deleted: number };
+    })) as { success: boolean; deleted: number; failed: number };
 
     expect(result.success).toBe(true);
     expect(result.deleted).toBe(2);
+    expect(result.failed).toBe(0);
 
     const remaining = await kv.list<Memory>("mem:memories");
-    expect(remaining.length).toBe(1);
-    expect(remaining[0].type).toBe("bug");
+    expect(remaining.length).toBe(3);
+    const activeMemories = remaining.filter((m: Memory) => !m.deleted);
+    expect(activeMemories.length).toBe(1);
+    expect(activeMemories[0].type).toBe("bug");
+    const deletedMemories = remaining.filter((m: Memory) => m.deleted);
+    expect(deletedMemories.length).toBe(2);
+    for (const m of deletedMemories) {
+      expect(m.type).toBe("pattern");
+    }
   });
 
   it("governance-bulk respects dryRun", async () => {
@@ -144,5 +157,49 @@ describe("Governance Functions", () => {
     expect(entries.length).toBe(1);
     expect(entries[0].operation).toBe("delete");
     expect(entries[0].functionId).toBe("mem::governance-delete");
+  });
+
+  it("governance-delete is idempotent", async () => {
+    const r1 = (await sdk.trigger("mem::governance-delete", {
+      memoryIds: ["mem_1"],
+      reason: "first",
+    })) as { success: boolean; deleted: number; total: number };
+
+    expect(r1.success).toBe(true);
+    expect(r1.deleted).toBe(1);
+
+    const r2 = (await sdk.trigger("mem::governance-delete", {
+      memoryIds: ["mem_1"],
+      reason: "second",
+    })) as { success: boolean; deleted: number; total: number };
+
+    expect(r2.success).toBe(true);
+    expect(r2.deleted).toBe(0);
+    expect(r2.total).toBe(1);
+
+    const remaining = await kv.list<Memory>("mem:memories");
+    expect(remaining.length).toBe(3);
+    const mem1 = remaining.find((m: Memory) => m.id === "mem_1");
+    expect(mem1?.deleted).toBe(true);
+  });
+
+  it("governance-bulk creates audit entry", async () => {
+    const entriesBefore = (await sdk.trigger("mem::audit-query", {})) as AuditEntry[];
+
+    await sdk.trigger("mem::governance-bulk", { type: ["bug"] });
+
+    const entriesAfter = (await sdk.trigger("mem::audit-query", {})) as AuditEntry[];
+    const bulkEntries = entriesAfter.filter((e: AuditEntry) => e.functionId === "mem::governance-bulk");
+    expect(bulkEntries.length).toBe(1);
+    expect(bulkEntries[0].operation).toBe("delete");
+    expect(bulkEntries[0].targetIds).toContain("mem_2");
+  });
+
+  it("soft-delete excludes from active memory listing", async () => {
+    await sdk.trigger("mem::governance-delete", { memoryIds: ["mem_1", "mem_3"] });
+
+    const active = (await kv.list<Memory>("mem:memories")).filter((m: Memory) => !m.deleted);
+    expect(active.length).toBe(1);
+    expect(active[0].type).toBe("bug");
   });
 });

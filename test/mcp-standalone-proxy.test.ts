@@ -348,20 +348,18 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
     const before = await handleToolsList();
     const beforeTools = before.tools as Array<{ name: string }>;
     expect(beforeTools.map((t) => t.name).sort()).toEqual([
-      "memory_audit",
-      "memory_export",
-      "memory_governance_delete",
-      "memory_recall",
-      "memory_save",
-      "memory_sessions",
-      "memory_smart_search",
+      "memory_search",
+      "memory_store",
     ]);
-    expect(beforeTools).toHaveLength(7);
+    expect(beforeTools).toHaveLength(2);
 
     resetHandleForTests();
     process.env["AGENTMEMORY_TOOLS"] = "core";
     const core = await handleToolsList();
-    expect((core.tools as unknown[]).length).toBe(7);
+    expect((core.tools as Array<{ name: string }>).map((t) => t.name).sort()).toEqual([
+      "memory_search",
+      "memory_store",
+    ]);
     delete process.env["AGENTMEMORY_TOOLS"];
   });
 

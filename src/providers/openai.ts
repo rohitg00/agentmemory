@@ -146,7 +146,6 @@ export class OpenAIProvider implements MemoryProvider {
     );
   }
 }
-
 // Resolves the outbound-fetch timeout for the OpenAI LLM path.
 // Precedence (preserving v0.9.17 behaviour):
 //   1. OPENAI_TIMEOUT_MS       — OpenAI-scoped alias (back-compat)
@@ -175,4 +174,3 @@ function parsePositiveInt(raw: string | null | undefined): number | undefined {
   const n = Number(trimmed);
   return Number.isFinite(n) && n > 0 ? n : undefined;
 }
-

@@ -19,7 +19,7 @@ import * as p from "@clack/prompts";
 // without doctor-warning duplicates (#375).
 export const AGENTMEMORY_MCP_BLOCK = {
   command: "npx",
-  args: ["-y", "@agentmemory/mcp"],
+  args: ["-y", "@agentmemory/mcp@0.9.21"],
   env: {
     AGENTMEMORY_URL: "${AGENTMEMORY_URL}",
     AGENTMEMORY_SECRET: "${AGENTMEMORY_SECRET}",

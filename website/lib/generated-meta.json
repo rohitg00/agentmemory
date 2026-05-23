@@ -1,6 +1,6 @@
 {
   "version": "0.9.20",
-  "mcpTools": 53,
+  "mcpTools": 15,
   "hooks": 12,
   "restEndpoints": 124,
   "testsPassing": 1055,

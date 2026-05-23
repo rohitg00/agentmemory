@@ -10,200 +10,182 @@ export type McpToolDef = {
 
 export const CORE_TOOLS: McpToolDef[] = [
   {
-    name: "memory_recall",
+    name: "memory_search",
     description:
-      "Search past session observations for relevant context. Use when you need to recall what happened in previous sessions, find past decisions, or look up how a file was modified before.",
+      "Multi-scope search across memories. scope: keyword (BM25), semantic (embeddings), file (file path history), time (chronological), graph (knowledge graph), image (CLIP). operation: backward-compatible alias (recall, smart_search, timeline, file_history, graph_query, image_search). Use scope for new code.",
     inputSchema: {
       type: "object",
       properties: {
-        query: {
+        operation: {
           type: "string",
-          description: "Search query (keywords, file names, concepts)",
+          description: "Alias for scope: recall, smart_search, timeline, file_history, graph_query, image_search",
         },
-        limit: {
-          type: "number",
-          description: "Max results to return (default 10)",
-        },
-        format: {
+        scope: {
           type: "string",
-          description: "Result format: full, compact, or narrative (default full)",
+          description: "keyword (default), semantic, file, time, graph, image",
         },
-        token_budget: {
-          type: "number",
-          description: "Optional token budget to trim returned results",
-        },
-      },
-      required: ["query"],
-    },
-  },
-  {
-    name: "memory_compress_file",
-    description:
-      "Compress a markdown file to reduce token usage while preserving headings, URLs, and code blocks. Creates a .original.md backup before writing.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        filePath: {
-          type: "string",
-          description: "Path to the markdown file to compress",
-        },
-      },
-      required: ["filePath"],
-    },
-  },
-  {
-    name: "memory_save",
-    description:
-      "Explicitly save an important insight, decision, or pattern to long-term memory.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        content: {
-          type: "string",
-          description: "The insight or decision to remember",
-        },
-        type: {
-          type: "string",
-          description:
-            "Memory type: pattern, preference, architecture, bug, workflow, or fact",
-        },
-        concepts: {
-          type: "string",
-          description: "Comma-separated key concepts",
-        },
-        files: {
-          type: "string",
-          description: "Comma-separated relevant file paths",
-        },
-      },
-      required: ["content"],
-    },
-  },
-  {
-    name: "memory_file_history",
-    description: "Get past observations about specific files.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        files: { type: "string", description: "Comma-separated file paths" },
-        sessionId: {
-          type: "string",
-          description: "Current session ID to exclude",
-        },
-      },
-      required: ["files"],
-    },
-  },
-  {
-    name: "memory_patterns",
-    description: "Detect recurring patterns across sessions.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        project: { type: "string", description: "Project path to analyze" },
-      },
-    },
-  },
-  {
-    name: "memory_sessions",
-    description:
-      "List recent sessions with their status and observation counts.",
-    inputSchema: { type: "object", properties: {} },
-  },
-  {
-    name: "memory_smart_search",
-    description: "Hybrid semantic+keyword search with progressive disclosure.",
-    inputSchema: {
-      type: "object",
-      properties: {
         query: { type: "string", description: "Search query" },
-        expandIds: {
-          type: "string",
-          description: "Comma-separated observation IDs to expand",
-        },
+        files: { type: "string", description: "Comma-separated file paths (file scope)" },
+        sessionId: { type: "string", description: "Session ID to exclude" },
+        anchor: { type: "string", description: "Anchor: ISO date or keyword (time scope)" },
+        before: { type: "number", description: "Observations before anchor (default 5)" },
+        after: { type: "number", description: "Observations after anchor (default 5)" },
+        startNodeId: { type: "string", description: "Starting node ID (graph scope)" },
+        nodeType: { type: "string", description: "Filter by node type (graph scope)" },
+        maxDepth: { type: "number", description: "Max BFS depth (graph scope, default 3)" },
+        memoryId: { type: "string", description: "Memory ID for relations (keyword scope)" },
+        maxHops: { type: "number", description: "Max traversal depth (default 2)" },
+        minConfidence: { type: "number", description: "Min confidence 0-1" },
+        queryText: { type: "string", description: "Text query (image scope)" },
+        queryImageRef: { type: "string", description: "Path to stored image (image scope)" },
+        queryImageBase64: { type: "string", description: "Base64 image or data URL (image scope)" },
+        topK: { type: "number", description: "Max results (default 10, max 50)" },
+        expandIds: { type: "string", description: "Comma-separated IDs to expand (semantic scope)" },
+        project: { type: "string", description: "Project path (time/graph scope)" },
+        format: { type: "string", description: "Result format: full, compact, narrative" },
+        token_budget: { type: "number", description: "Token budget to trim results" },
         limit: { type: "number", description: "Max results (default 10)" },
       },
-      required: ["query"],
     },
   },
   {
-    name: "memory_vision_search",
+    name: "memory_store",
     description:
-      "Cross-modal image search via CLIP embeddings. Pass queryText to find screenshots matching a description, or queryImageBase64/queryImageRef to find similar images. Requires AGENTMEMORY_IMAGE_EMBEDDINGS=true.",
+      "Save and manage memories. operation: save (store a new memory), compress_file (compress a markdown file with .original.md backup), export (export all data as JSON), consolidate (run 4-tier pipeline: episodic/semantic/procedural), claude_bridge (sync with Claude Code MEMORY.md), mesh_sync (sync with peer instances).",
     inputSchema: {
       type: "object",
       properties: {
-        queryText: { type: "string", description: "Text query (e.g. 'login form with error banner')" },
-        queryImageRef: { type: "string", description: "Absolute path to a stored image to match against" },
-        queryImageBase64: { type: "string", description: "Raw base64 image bytes or data URL" },
-        topK: { type: "number", description: "Max results (default 10, max 50)" },
-        sessionId: { type: "string", description: "Filter to a single session" },
-      },
-    },
-  },
-  {
-    name: "memory_timeline",
-    description: "Chronological observations around an anchor point.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        anchor: {
+        operation: {
           type: "string",
-          description: "Anchor point: ISO date or keyword",
+          description: "save, compress_file, export, consolidate, claude_bridge, mesh_sync",
         },
-        project: { type: "string", description: "Filter by project path" },
-        before: {
-          type: "number",
-          description: "Observations before anchor (default 5)",
+        content: { type: "string", description: "Memory content (save operation)" },
+        type: {
+          type: "string",
+          description: "Memory type: pattern, preference, architecture, bug, workflow, fact (save operation)",
         },
-        after: {
-          type: "number",
-          description: "Observations after anchor (default 5)",
-        },
+        concepts: { type: "string", description: "Comma-separated key concepts (save operation)" },
+        files: { type: "string", description: "Comma-separated relevant file paths (save operation)" },
+        filePath: { type: "string", description: "Path to markdown file (compress_file operation)" },
+        direction: { type: "string", description: "'read' or 'write' (claude_bridge operation)" },
+        tier: { type: "string", description: "Target tier: episodic, semantic, or procedural (consolidate operation)" },
+        peerId: { type: "string", description: "Specific peer ID (mesh_sync, omit for all)" },
+        direction2: { type: "string", description: "push, pull, or both (mesh_sync operation)" },
       },
-      required: ["anchor"],
+      required: ["operation"],
     },
   },
   {
     name: "memory_profile",
-    description: "User/project profile with top concepts and file patterns.",
+    description: "User/project profile with top concepts, file patterns, and conventions.",
     inputSchema: {
       type: "object",
       properties: {
         project: { type: "string", description: "Project path" },
-        refresh: {
-          type: "string",
-          description: "Set to 'true' to force rebuild",
-        },
+        refresh: { type: "string", description: "Set to 'true' to force rebuild" },
       },
       required: ["project"],
     },
   },
   {
-    name: "memory_export",
-    description: "Export all memory data as JSON.",
-    inputSchema: { type: "object", properties: {} },
-  },
-  {
-    name: "memory_relations",
-    description: "Query the memory relationship graph.",
+    name: "task",
+    description:
+      "Create and update tasks/actions. operation: create (new task with optional parent/dependency edges), update (change status/priority/details, set status='done' to complete), routine_run (instantiate a frozen workflow routine).",
     inputSchema: {
       type: "object",
       properties: {
-        memoryId: {
-          type: "string",
-          description: "Memory ID to find relations for",
-        },
-        maxHops: {
-          type: "number",
-          description: "Max traversal depth (default 2)",
-        },
-        minConfidence: {
-          type: "number",
-          description: "Min confidence (0-1, default 0)",
-        },
+        operation: { type: "string", description: "create, update, or routine_run" },
+        title: { type: "string", description: "Task title" },
+        description: { type: "string", description: "Detailed description" },
+        priority: { type: "number", description: "Priority 1-10 (10 highest)" },
+        project: { type: "string", description: "Project path" },
+        tags: { type: "string", description: "Comma-separated tags" },
+        parentId: { type: "string", description: "Parent task ID for hierarchical tasks" },
+        requires: { type: "string", description: "Comma-separated task IDs that must complete before this" },
+        actionId: { type: "string", description: "Task ID to update (update operation)" },
+        status: { type: "string", description: "New status: pending, active, done, blocked, cancelled" },
+        result: { type: "string", description: "Outcome description (when completing)" },
+        routineId: { type: "string", description: "Routine template ID (routine_run operation)" },
+        initiatedBy: { type: "string", description: "Agent starting the run" },
       },
-      required: ["memoryId"],
+      required: ["operation"],
+    },
+  },
+  {
+    name: "task_plan",
+    description:
+      "Plan and coordinate task work. operation: next (single most important task by priority+urgency), frontier (all unblocked tasks ranked), lease_acquire (claim a task with TTL), lease_release (finish and unblock dependents), lease_renew (extend TTL).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        operation: { type: "string", description: "next, frontier, lease_acquire, lease_release, or lease_renew" },
+        project: { type: "string", description: "Filter by project" },
+        agentId: { type: "string", description: "Current agent ID for priority scoring" },
+        actionId: { type: "string", description: "Task ID (lease operations)" },
+        result: { type: "string", description: "Result when releasing (marks task done)" },
+        ttlMs: { type: "number", description: "Lease duration in ms (default 10min, max 1hr)" },
+        limit: { type: "number", description: "Max results (frontier, default 20)" },
+      },
+      required: ["operation"],
+    },
+  },
+  {
+    name: "signal",
+    description:
+      "Send a message to another agent or broadcast, or read messages. operation: send (post a message with optional threading), read (retrieve messages for an agent, marks as read). Supports typed messages: info, request, response, alert, handoff.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        operation: { type: "string", description: "send or read" },
+        from: { type: "string", description: "Sender agent ID (send operation)" },
+        to: { type: "string", description: "Recipient agent ID (omit for broadcast)" },
+        content: { type: "string", description: "Message content" },
+        type: { type: "string", description: "info, request, response, alert, handoff" },
+        replyTo: { type: "string", description: "Signal ID to reply to (auto-threads)" },
+        agentId: { type: "string", description: "Agent to read messages for (read operation)" },
+        unreadOnly: { type: "string", description: "Set to 'true' for unread only" },
+        threadId: { type: "string", description: "Filter by conversation thread" },
+        limit: { type: "number", description: "Max messages (read operation, default 50)" },
+      },
+      required: ["operation"],
+    },
+  },
+  {
+    name: "checkpoint",
+    description:
+      "Manage external checkpoints (CI, approval, deploy status) and event-driven sentinels. operation: create (make a checkpoint gating tasks), resolve (mark passed/failed, unblocks dependents), list (show checkpoints), sentinel_create (event-driven watch), sentinel_trigger (fire a sentinel externally).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        operation: { type: "string", description: "create, resolve, list, sentinel_create, or sentinel_trigger" },
+        name: { type: "string", description: "Checkpoint/sentinel name (create)" },
+        checkpointId: { type: "string", description: "Checkpoint ID (resolve)" },
+        status: { type: "string", description: "passed or failed (resolve)" },
+        type: { type: "string", description: "ci, approval, deploy, external, timer, webhook, threshold, pattern, custom" },
+        linkedActionIds: { type: "string", description: "Comma-separated task IDs this gates" },
+        sentinelId: { type: "string", description: "Sentinel ID (sentinel_trigger)" },
+        result: { type: "string", description: "JSON result payload (sentinel_trigger)" },
+        config: { type: "string", description: "JSON config (sentinel_create): timer:{durationMs}, threshold:{metric,operator,value}, pattern:{pattern}, webhook:{path}" },
+        expiresInMs: { type: "number", description: "Auto-expire after ms" },
+      },
+      required: ["operation"],
+    },
+  },
+  {
+    name: "sketch",
+    description:
+      "Manage ephemeral action graphs for exploratory work. operation: create (make a new sketch that auto-expires), promote (commit ephemeral actions as permanent). Sketches let you explore before committing.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        operation: { type: "string", description: "create or promote" },
+        title: { type: "string", description: "Sketch title" },
+        description: { type: "string", description: "What this sketch explores" },
+        expiresInMs: { type: "number", description: "TTL in ms (default 1 hour)" },
+        project: { type: "string", description: "Project context" },
+        sketchId: { type: "string", description: "Sketch ID to promote" },
+      },
+      required: ["operation"],
     },
   },
   {
@@ -235,709 +217,121 @@ export const CORE_TOOLS: McpToolDef[] = [
 
 export const V040_TOOLS: McpToolDef[] = [
   {
-    name: "memory_claude_bridge_sync",
+    name: "crystal",
     description:
-      "Sync memory state to/from Claude Code's native MEMORY.md file.",
+      "Crystallize completed task chains into compact narrative digests via LLM summarization, or list existing crystals. operation: list (show existing crystals), crystallize (compress task chains into narrative with key outcomes, files, and lessons).",
     inputSchema: {
       type: "object",
       properties: {
-        direction: {
-          type: "string",
-          description:
-            "'read' to import from MEMORY.md, 'write' to export to MEMORY.md",
-        },
-      },
-      required: ["direction"],
-    },
-  },
-  {
-    name: "memory_graph_query",
-    description: "Query the knowledge graph for entities and relationships.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        startNodeId: {
-          type: "string",
-          description: "Starting node ID for traversal",
-        },
-        nodeType: { type: "string", description: "Filter by node type" },
-        maxDepth: {
-          type: "number",
-          description: "Max BFS depth (default 3, max 5)",
-        },
-        query: { type: "string", description: "Search nodes by name" },
-      },
-    },
-  },
-  {
-    name: "memory_consolidate",
-    description:
-      "Run the 4-tier memory consolidation pipeline (working -> episodic -> semantic -> procedural).",
-    inputSchema: {
-      type: "object",
-      properties: {
-        tier: {
-          type: "string",
-          description: "Target tier: episodic, semantic, or procedural",
-        },
-      },
-    },
-  },
-  {
-    name: "memory_team_share",
-    description: "Share a memory or observation with team members.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        itemId: {
-          type: "string",
-          description: "ID of memory or observation to share",
-        },
-        itemType: {
-          type: "string",
-          description: "Type: observation, memory, or pattern",
-        },
-      },
-      required: ["itemId", "itemType"],
-    },
-  },
-  {
-    name: "memory_team_feed",
-    description: "Get recent shared items from all team members.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        limit: { type: "number", description: "Max items (default 20)" },
-      },
-    },
-  },
-  {
-    name: "memory_audit",
-    description: "View the audit trail of memory operations.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        operation: { type: "string", description: "Filter by operation type" },
-        limit: { type: "number", description: "Max entries (default 50)" },
-      },
-    },
-  },
-  {
-    name: "memory_governance_delete",
-    description: "Delete specific memories with audit trail.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        memoryIds: {
-          type: "string",
-          description: "Comma-separated memory IDs to delete",
-        },
-        reason: { type: "string", description: "Reason for deletion" },
-      },
-      required: ["memoryIds"],
-    },
-  },
-  {
-    name: "memory_snapshot_create",
-    description: "Create a git-versioned snapshot of current memory state.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        message: { type: "string", description: "Snapshot description" },
-      },
-    },
-  },
-];
-
-export const V050_TOOLS: McpToolDef[] = [
-  {
-    name: "memory_action_create",
-    description:
-      "Create an actionable work item with typed dependencies. Actions track what agents need to do and how work items relate to each other.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        title: { type: "string", description: "Action title" },
-        description: {
-          type: "string",
-          description: "Detailed description of the work",
-        },
-        priority: {
-          type: "number",
-          description: "Priority 1-10 (10 highest)",
-        },
-        project: { type: "string", description: "Project path" },
-        tags: {
-          type: "string",
-          description: "Comma-separated tags",
-        },
-        parentId: {
-          type: "string",
-          description: "Parent action ID for hierarchical actions",
-        },
-        requires: {
-          type: "string",
-          description:
-            "Comma-separated action IDs that must complete before this",
-        },
-      },
-      required: ["title"],
-    },
-  },
-  {
-    name: "memory_action_update",
-    description:
-      "Update an action's status, priority, or details. Set status to 'done' to complete it and unblock dependent actions.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        actionId: { type: "string", description: "Action ID to update" },
-        status: {
-          type: "string",
-          description: "New status: pending, active, done, blocked, cancelled",
-        },
-        result: {
-          type: "string",
-          description: "Outcome description (when completing)",
-        },
-        priority: { type: "number", description: "New priority 1-10" },
-      },
-      required: ["actionId"],
-    },
-  },
-  {
-    name: "memory_frontier",
-    description:
-      "Get all unblocked actions ranked by priority and urgency. Returns the frontier of actionable work with no unsatisfied dependencies.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        project: { type: "string", description: "Filter by project" },
-        agentId: {
-          type: "string",
-          description: "Agent ID to check lease conflicts",
-        },
-        limit: { type: "number", description: "Max results (default 20)" },
-      },
-    },
-  },
-  {
-    name: "memory_next",
-    description:
-      "Get the single most important next action to work on. Combines dependency resolution, priority, and recency into a score.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        project: { type: "string", description: "Filter by project" },
-        agentId: { type: "string", description: "Current agent ID" },
-      },
-    },
-  },
-  {
-    name: "memory_lease",
-    description:
-      "Acquire, release, or renew an exclusive lease on an action. Prevents multiple agents from working on the same thing.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        actionId: { type: "string", description: "Action ID" },
-        agentId: { type: "string", description: "Agent claiming the action" },
-        operation: {
-          type: "string",
-          description: "acquire, release, or renew",
-        },
-        result: {
-          type: "string",
-          description: "Result when releasing (marks action done)",
-        },
-        ttlMs: {
-          type: "number",
-          description: "Lease duration in ms (default 10min, max 1hr)",
-        },
-      },
-      required: ["actionId", "agentId", "operation"],
-    },
-  },
-  {
-    name: "memory_routine_run",
-    description:
-      "Instantiate a frozen workflow routine, creating actions for each step with proper dependencies.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        routineId: { type: "string", description: "Routine template ID" },
+        operation: { type: "string", description: "list or crystallize" },
+        actionIds: { type: "string", description: "Comma-separated completed task IDs to crystallize" },
         project: { type: "string", description: "Project context" },
-        initiatedBy: { type: "string", description: "Agent starting the run" },
+        sessionId: { type: "string", description: "Session context" },
+        limit: { type: "number", description: "Max results (list operation, default 50)" },
       },
-      required: ["routineId"],
     },
   },
   {
-    name: "memory_signal_send",
+    name: "lesson",
     description:
-      "Send a message to another agent or broadcast. Supports threading, typed messages, and TTL expiration.",
+      "Manage learned lessons with confidence scores. Scores strengthen when reinforced, decay when unused. Duplicate content auto-strengthens existing lesson. operation: save, recall (search), list (browse), strengthen (boost confidence).",
     inputSchema: {
       type: "object",
       properties: {
-        from: { type: "string", description: "Sender agent ID" },
-        to: {
-          type: "string",
-          description: "Recipient agent ID (omit for broadcast)",
-        },
-        content: { type: "string", description: "Message content" },
-        type: {
-          type: "string",
-          description: "Message type: info, request, response, alert, handoff",
-        },
-        replyTo: {
-          type: "string",
-          description: "Signal ID to reply to (auto-threads)",
-        },
-      },
-      required: ["from", "content"],
-    },
-  },
-  {
-    name: "memory_signal_read",
-    description:
-      "Read messages for an agent. Marks delivered messages as read.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        agentId: { type: "string", description: "Agent to read messages for" },
-        unreadOnly: {
-          type: "string",
-          description: "Set to 'true' for unread only",
-        },
-        threadId: {
-          type: "string",
-          description: "Filter by conversation thread",
-        },
-        limit: { type: "number", description: "Max messages (default 50)" },
-      },
-      required: ["agentId"],
-    },
-  },
-  {
-    name: "memory_checkpoint",
-    description:
-      "Create or resolve an external checkpoint (CI result, approval, deploy status) that gates action progress.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        operation: {
-          type: "string",
-          description: "create, resolve, or list",
-        },
-        name: { type: "string", description: "Checkpoint name (for create)" },
-        checkpointId: {
-          type: "string",
-          description: "Checkpoint ID (for resolve)",
-        },
-        status: {
-          type: "string",
-          description: "passed or failed (for resolve)",
-        },
-        type: {
-          type: "string",
-          description: "Checkpoint type: ci, approval, deploy, external, timer",
-        },
-        linkedActionIds: {
-          type: "string",
-          description:
-            "Comma-separated action IDs this checkpoint gates (for create)",
-        },
+        operation: { type: "string", description: "save, recall, list, or strengthen" },
+        content: { type: "string", description: "The lesson learned (save operation)" },
+        context: { type: "string", description: "When/where this lesson applies (save operation)" },
+        confidence: { type: "number", description: "Initial confidence 0.0-1.0 (save, default 0.5)" },
+        project: { type: "string", description: "Project this lesson is about" },
+        tags: { type: "string", description: "Comma-separated tags (save operation)" },
+        query: { type: "string", description: "Search query (recall operation)" },
+        minConfidence: { type: "number", description: "Minimum confidence (recall/list operations)" },
+        limit: { type: "number", description: "Max results (default 10)" },
+        source: { type: "string", description: "Filter by source: 'manual', 'crystal', 'consolidation' (list operation)" },
+        lessonId: { type: "string", description: "Lesson ID (strengthen operation)" },
       },
       required: ["operation"],
     },
   },
   {
-    name: "memory_mesh_sync",
+    name: "insight",
     description:
-      "Sync memories and actions with peer agentmemory instances for multi-agent collaboration.",
+      "Manage synthesized insights derived from memory patterns via LLM traversal and concept clustering. operation: list (show insights sorted by confidence), delete (soft-delete with audit trail). Insights are higher-order observations.",
     inputSchema: {
       type: "object",
       properties: {
-        peerId: {
-          type: "string",
-          description: "Specific peer ID (omit for all)",
-        },
-        direction: {
-          type: "string",
-          description: "push, pull, or both (default both)",
-        },
-      },
-    },
-  },
-];
-
-export const V051_TOOLS: McpToolDef[] = [
-  {
-    name: "memory_sentinel_create",
-    description:
-      "Create an event-driven sentinel that watches for conditions (webhook, timer, threshold, pattern, approval) and auto-unblocks gated actions when triggered.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        name: { type: "string", description: "Sentinel name" },
-        type: {
-          type: "string",
-          description: "Type: webhook, timer, threshold, pattern, approval, custom",
-        },
-        config: {
-          type: "string",
-          description: "JSON config (timer: {durationMs}, threshold: {metric,operator,value}, pattern: {pattern}, webhook: {path})",
-        },
-        linkedActionIds: {
-          type: "string",
-          description: "Comma-separated action IDs to gate",
-        },
-        expiresInMs: { type: "number", description: "Auto-expire after ms" },
-      },
-      required: ["name", "type"],
-    },
-  },
-  {
-    name: "memory_sentinel_trigger",
-    description:
-      "Externally fire a sentinel, providing an optional result payload. Unblocks any gated actions.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        sentinelId: { type: "string", description: "Sentinel ID to trigger" },
-        result: { type: "string", description: "JSON result payload" },
-      },
-      required: ["sentinelId"],
-    },
-  },
-  {
-    name: "memory_sketch_create",
-    description:
-      "Create an ephemeral action graph for exploratory work. Auto-expires after TTL. Can be promoted to permanent actions or discarded.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        title: { type: "string", description: "Sketch title" },
-        description: { type: "string", description: "What this sketch explores" },
-        expiresInMs: { type: "number", description: "TTL in ms (default 1 hour)" },
-        project: { type: "string", description: "Project context" },
-      },
-      required: ["title"],
-    },
-  },
-  {
-    name: "memory_sketch_promote",
-    description:
-      "Promote a sketch's ephemeral actions to permanent actions. Makes the exploratory work official.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        sketchId: { type: "string", description: "Sketch ID to promote" },
-        project: { type: "string", description: "Override project for promoted actions" },
-      },
-      required: ["sketchId"],
-    },
-  },
-  {
-    name: "memory_crystallize",
-    description:
-      "Compress completed action chains into compact crystal digests using LLM summarization. Extracts narrative, key outcomes, files affected, and lessons.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        actionIds: {
-          type: "string",
-          description: "Comma-separated completed action IDs to crystallize",
-        },
-        project: { type: "string", description: "Project context" },
-        sessionId: { type: "string", description: "Session context" },
-      },
-      required: ["actionIds"],
-    },
-  },
-  {
-    name: "memory_diagnose",
-    description:
-      "Run health checks across all subsystems (actions, leases, sentinels, sketches, signals, sessions, memories, mesh). Identifies stuck, orphaned, and inconsistent state.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        categories: {
-          type: "string",
-          description: "Comma-separated categories to check (default all)",
-        },
-      },
-    },
-  },
-  {
-    name: "memory_heal",
-    description:
-      "Auto-fix all fixable issues found by diagnostics. Unblocks stuck actions, expires stale leases, cleans up orphaned data.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        categories: {
-          type: "string",
-          description: "Comma-separated categories to heal (default all)",
-        },
-        dryRun: {
-          type: "string",
-          description: "Set to 'true' for dry run (report but don't fix)",
-        },
-      },
-    },
-  },
-  {
-    name: "memory_facet_tag",
-    description:
-      "Attach a structured tag (dimension:value) to an action, memory, or observation for multi-dimensional categorization.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        targetId: { type: "string", description: "ID of the target to tag" },
-        targetType: {
-          type: "string",
-          description: "Type: action, memory, or observation",
-        },
-        dimension: { type: "string", description: "Tag dimension (e.g., priority, team, status)" },
-        value: { type: "string", description: "Tag value (e.g., urgent, backend, reviewed)" },
-      },
-      required: ["targetId", "targetType", "dimension", "value"],
-    },
-  },
-  {
-    name: "memory_facet_query",
-    description:
-      "Query targets by facet tags with AND/OR logic. Find all actions tagged priority:urgent AND team:backend.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        matchAll: {
-          type: "string",
-          description: "Comma-separated dimension:value pairs (AND logic)",
-        },
-        matchAny: {
-          type: "string",
-          description: "Comma-separated dimension:value pairs (OR logic)",
-        },
-        targetType: {
-          type: "string",
-          description: "Filter by type: action, memory, or observation",
-        },
-      },
-    },
-  },
-];
-
-export const V061_TOOLS: McpToolDef[] = [
-  {
-    name: "memory_verify",
-    description:
-      "Verify a memory or observation by tracing its citation chain back to source observations and session context. Returns provenance information including confidence scores.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        id: {
-          type: "string",
-          description: "Memory ID or observation ID to verify",
-        },
-      },
-      required: ["id"],
-    },
-  },
-];
-
-export const V070_TOOLS: McpToolDef[] = [
-  {
-    name: "memory_lesson_save",
-    description:
-      "Save a lesson learned from this session. Lessons have confidence scores that strengthen when reinforced and decay when not used. Duplicate content auto-strengthens the existing lesson.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        content: {
-          type: "string",
-          description: "The lesson learned (what worked, what to avoid, when to use X approach)",
-        },
-        context: {
-          type: "string",
-          description: "When/where this lesson applies",
-        },
-        confidence: {
-          type: "number",
-          description: "Initial confidence 0.0-1.0 (default 0.5)",
-        },
-        project: { type: "string", description: "Project this lesson is about" },
-        tags: { type: "string", description: "Comma-separated tags" },
-      },
-      required: ["content"],
-    },
-  },
-  {
-    name: "memory_lesson_recall",
-    description:
-      "Search lessons by query. Returns lessons sorted by confidence and recency. Use to check what the agent has learned before making decisions.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        query: { type: "string", description: "Search query" },
+        operation: { type: "string", description: "list or delete" },
         project: { type: "string", description: "Filter by project" },
-        minConfidence: {
-          type: "number",
-          description: "Minimum confidence threshold (default 0.1)",
-        },
-        limit: { type: "number", description: "Max results (default 10)" },
-      },
-      required: ["query"],
-    },
-  },
-  {
-    name: "memory_obsidian_export",
-    description:
-      "Export memories, lessons, and crystals as Obsidian-compatible Markdown files with YAML frontmatter and wikilinks for graph view.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        vaultDir: {
-          type: "string",
-          description: "Output directory (default ~/.agentmemory/vault/)",
-        },
-        types: {
-          type: "string",
-          description: "Comma-separated types to export: memories,lessons,crystals,sessions (default all)",
-        },
-      },
-    },
-  },
-];
-
-export const V073_TOOLS: McpToolDef[] = [
-  {
-    name: "memory_reflect",
-    description:
-      "Traverse the knowledge graph, group related memories by concept clusters, and synthesize higher-order insights via LLM. Returns new and reinforced insights.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        project: { type: "string", description: "Filter by project" },
-        maxClusters: {
-          type: "number",
-          description: "Max concept clusters to process (default 10, max 20)",
-        },
-      },
-    },
-  },
-  {
-    name: "memory_insight_list",
-    description:
-      "List synthesized insights — higher-order observations derived from patterns across memories, lessons, and crystals.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        project: { type: "string", description: "Filter by project" },
-        minConfidence: {
-          type: "number",
-          description: "Minimum confidence threshold (default 0)",
-        },
+        minConfidence: { type: "number", description: "Minimum confidence threshold (default 0)" },
         limit: { type: "number", description: "Max results (default 50)" },
+        insightIds: { type: "string", description: "Comma-separated insight IDs to delete" },
+        reason: { type: "string", description: "Reason for deletion" },
       },
+      required: ["operation"],
     },
   },
-];
-
-export const V010_SLOTS_TOOLS: McpToolDef[] = [
   {
-    name: "memory_slot_list",
+    name: "slot",
     description:
-      "List all memory slots (pinned + project + global). Slots are editable, size-limited memory units the agent can read and modify across sessions.",
-    inputSchema: { type: "object", properties: {} },
-  },
-  {
-    name: "memory_slot_get",
-    description: "Read a single slot by label.",
+      "Manage memory slots — editable, size-limited memory units readable/writable across sessions. operation: list (show all slots), get (read one by label), create (make new, reject on duplicate), append (add text, fails 413 if over limit), replace (replace content), delete (remove slot). Pinned slots auto-inject into context.",
     inputSchema: {
       type: "object",
       properties: {
-        label: { type: "string", description: "Slot label (e.g. 'persona', 'pending_items')" },
-      },
-      required: ["label"],
-    },
-  },
-  {
-    name: "memory_slot_create",
-    description: "Create a new slot. Reject if a slot with the same label already exists.",
-    inputSchema: {
-      type: "object",
-      properties: {
+        operation: { type: "string", description: "list, get, create, append, replace, or delete" },
         label: { type: "string", description: "Slot label — lowercase, starts with letter, [a-z0-9_]" },
-        content: { type: "string", description: "Initial content (default empty)" },
-        sizeLimit: { type: "number", description: "Max chars (default 2000, hard cap 20000)" },
-        description: { type: "string", description: "What this slot is for" },
-        pinned: { type: "string", description: "'false' to exclude from context injection; default true" },
-        scope: { type: "string", description: "'project' (default) or 'global' (shared across projects)" },
+        content: { type: "string", description: "Initial or new content (create/replace operation)" },
+        text: { type: "string", description: "Text to append (append operation)" },
+        sizeLimit: { type: "number", description: "Max chars (create operation, default 2000, hard cap 20000)" },
+        description: { type: "string", description: "What this slot is for (create operation)" },
+        pinned: { type: "string", description: "'false' to exclude from context injection (create, default true)" },
+        scope: { type: "string", description: "'project' (default) or 'global' (create operation)" },
       },
-      required: ["label"],
+      required: ["operation"],
     },
   },
   {
-    name: "memory_slot_append",
+    name: "admin",
     description:
-      "Append text to an existing slot. Fails with 413 if the append would exceed the slot's sizeLimit — agent must compact via memory_slot_replace first.",
+      "Admin and governance operations. operation: diagnose (health checks across all subsystems), heal (auto-fix issues, dryRun supported), audit (view audit trail), delete (soft-delete memories or insights, use entityType to route), consolidate (run pipeline), mesh (sync with peers), obsidian (export to Obsidian vault with YAML frontmatter), verify (trace citation chain back to source observations).",
     inputSchema: {
       type: "object",
       properties: {
-        label: { type: "string", description: "Slot label" },
-        text: { type: "string", description: "Text to append" },
+        operation: { type: "string", description: "diagnose, heal, audit, delete, consolidate, mesh, obsidian, or verify" },
+        categories: { type: "string", description: "Comma-separated categories (diagnose/heal operations)" },
+        dryRun: { type: "string", description: "Set to 'true' for dry run (heal operation)" },
+        operation_filter: { type: "string", description: "Filter by operation type (audit operation)" },
+        limit: { type: "number", description: "Max entries (audit operation, default 50)" },
+        entityType: { type: "string", description: "'memory' or 'insight' (delete operation only)" },
+        memoryIds: { type: "string", description: "Comma-separated memory IDs to delete" },
+        insightIds: { type: "string", description: "Comma-separated insight IDs to delete" },
+        reason: { type: "string", description: "Reason for deletion (delete operation)" },
+        tier: { type: "string", description: "Target tier (consolidate operation)" },
+        peerId: { type: "string", description: "Specific peer ID (mesh operation, omit for all)" },
+        direction: { type: "string", description: "push, pull, or both (mesh operation)" },
+        vaultDir: { type: "string", description: "Output directory (obsidian operation, default ~/.agentmemory/vault/)" },
+        types: { type: "string", description: "Comma-separated types: memories,lessons,crystals,sessions (obsidian operation)" },
+        id: { type: "string", description: "Memory/insight ID to verify (verify operation)" },
       },
-      required: ["label", "text"],
-    },
-  },
-  {
-    name: "memory_slot_replace",
-    description: "Replace slot content in place. Fails if content exceeds sizeLimit.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        label: { type: "string", description: "Slot label" },
-        content: { type: "string", description: "New full content" },
-      },
-      required: ["label", "content"],
-    },
-  },
-  {
-    name: "memory_slot_delete",
-    description: "Delete a slot. Seeded default slots can be deleted unless marked readOnly.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        label: { type: "string", description: "Slot label" },
-      },
-      required: ["label"],
+      required: ["operation"],
     },
   },
 ];
 
 const ESSENTIAL_TOOLS = new Set([
-  "memory_save",
-  "memory_recall",
-  "memory_consolidate",
-  "memory_smart_search",
-  "memory_sessions",
-  "memory_diagnose",
-  "memory_lesson_save",
-  "memory_reflect",
+  "memory_search",
+  "memory_store",
+  "memory_profile",
+  "task",
+  "task_plan",
+  "signal",
+  "lesson",
+  "insight",
 ]);
 
 export function getAllTools(): McpToolDef[] {
   return [
     ...CORE_TOOLS,
     ...V040_TOOLS,
-    ...V050_TOOLS,
-    ...V051_TOOLS,
-    ...V061_TOOLS,
-    ...V070_TOOLS,
-    ...V073_TOOLS,
-    ...V010_SLOTS_TOOLS,
   ];
 }
 

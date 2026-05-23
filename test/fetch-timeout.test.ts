@@ -73,7 +73,6 @@ describe("fetchWithTimeout", () => {
     return p;
   });
 });
-
 // ─────────────────────────────────────────────────────────────
 // Provider hang regression tests
 // Each provider must call fetchWithTimeout, which honours the
@@ -275,4 +274,3 @@ describe("OpenAIProvider timeout env precedence (#446)", () => {
     }
   });
 });
-

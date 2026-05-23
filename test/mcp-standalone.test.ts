@@ -53,27 +53,34 @@ const fetchTrap = vi.fn(async (url: unknown) => {
 describe("Tools Registry", () => {
   it("getAllTools returns all tools with unique names", () => {
     const tools = getAllTools();
-    expect(tools.length).toBeGreaterThanOrEqual(41);
+    expect(tools.length).toBeGreaterThanOrEqual(13);
     const names = new Set(tools.map((t) => t.name));
     expect(names.size).toBe(tools.length);
     for (const required of [
-      "memory_verify",
-      "memory_lesson_save",
-      "memory_lesson_recall",
-      "memory_obsidian_export",
-      "memory_save",
-      "memory_recall",
+      "memory_search",
+      "memory_store",
+      "memory_profile",
+      "task",
+      "task_plan",
+      "signal",
+      "checkpoint",
+      "sketch",
+      "crystal",
+      "lesson",
+      "insight",
+      "slot",
+      "admin",
     ]) {
       expect(tools.some((t) => t.name === required)).toBe(true);
     }
   });
 
-  it("CORE_TOOLS has 14 items", () => {
-    expect(CORE_TOOLS.length).toBe(14);
+  it("CORE_TOOLS has 10 items", () => {
+    expect(CORE_TOOLS.length).toBe(10);
   });
 
-  it("V040_TOOLS has 8 items", () => {
-    expect(V040_TOOLS.length).toBe(8);
+  it("V040_TOOLS has 5 items", () => {
+    expect(V040_TOOLS.length).toBe(5);
   });
 
   it("all tools have required name, description, inputSchema fields", () => {
@@ -87,6 +94,19 @@ describe("Tools Registry", () => {
       expect(tool.inputSchema).toBeDefined();
       expect(tool.inputSchema.type).toBe("object");
       expect(tool.inputSchema.properties).toBeDefined();
+    }
+  });
+
+  it("all consolidated tools have 'operation' param", () => {
+    const consolidatedTools = [
+      "memory_search", "memory_store", "task", "task_plan", "signal",
+      "checkpoint", "sketch", "crystal", "lesson", "insight", "slot", "admin",
+    ];
+    const tools = getAllTools();
+    for (const name of consolidatedTools) {
+      const tool = tools.find((t) => t.name === name);
+      expect(tool).toBeDefined();
+      expect(tool!.inputSchema.properties.operation).toBeDefined();
     }
   });
 });
@@ -169,11 +189,11 @@ describe("handleToolCall", () => {
     expect(fetchTrap).not.toHaveBeenCalled();
   });
 
-  it("memory_save persists to disk immediately after saving", async () => {
+  it("memory_store save persists to disk immediately after saving", async () => {
     const kv = new InMemoryKV("/tmp/test-handle.json");
     const result = await handleToolCall(
-      "memory_save",
-      { content: "Test memory content" },
+      "memory_store",
+      { operation: "save", content: "Test memory content" },
       kv,
     );
     const parsed = JSON.parse(result.content[0].text);
@@ -185,35 +205,34 @@ describe("handleToolCall", () => {
     );
   });
 
-  it("memory_save without persist path does not call writeFileSync", async () => {
+  it("memory_store save without persist path does not call writeFileSync", async () => {
     const kv = new InMemoryKV();
-    await handleToolCall("memory_save", { content: "No persist path" }, kv);
+    await handleToolCall("memory_store", { operation: "save", content: "No persist path" }, kv);
     expect(writeFileSync).not.toHaveBeenCalled();
   });
 
-  it("memory_save throws when content is missing", async () => {
+  it("memory_store save throws when content is missing", async () => {
     const kv = new InMemoryKV();
     await expect(
-      handleToolCall("memory_save", {}, kv),
+      handleToolCall("memory_store", { operation: "save" }, kv),
     ).rejects.toThrow("content is required");
   });
 
-  it("memory_save rejects non-string content safely (no runtime TypeError)", async () => {
+  it("memory_store save rejects non-string content safely (no runtime TypeError)", async () => {
     const kv = new InMemoryKV();
-    // These would have crashed on .trim() before the type-guard fix.
     for (const bogus of [42, {}, [], null, undefined, true]) {
       await expect(
-        handleToolCall("memory_save", { content: bogus }, kv),
+        handleToolCall("memory_store", { operation: "save", content: bogus }, kv),
       ).rejects.toThrow("content is required");
     }
   });
 
-  it("memory_recall returns matching memories", async () => {
+  it("memory_search returns matching memories", async () => {
     const kv = new InMemoryKV();
-    await handleToolCall("memory_save", { content: "TypeScript is great" }, kv);
-    await handleToolCall("memory_save", { content: "Python is also great" }, kv);
+    await handleToolCall("memory_store", { operation: "save", content: "TypeScript is great" }, kv);
+    await handleToolCall("memory_store", { operation: "save", content: "Python is also great" }, kv);
     const result = await handleToolCall(
-      "memory_recall",
+      "memory_search",
       { query: "typescript" },
       kv,
     );
@@ -222,11 +241,12 @@ describe("handleToolCall", () => {
     expect(parsed.results[0].content).toBe("TypeScript is great");
   });
 
-  it("memory_save accepts concepts/files as arrays (plugin skill format, #139)", async () => {
+  it("memory_store save accepts concepts/files as arrays (plugin skill format, #139)", async () => {
     const kv = new InMemoryKV();
     const result = await handleToolCall(
-      "memory_save",
+      "memory_store",
       {
+        operation: "save",
         content: "Use HMAC for API auth",
         concepts: ["hmac", "api-auth", "security"],
         files: ["src/auth.ts", "src/middleware.ts"],
@@ -242,11 +262,12 @@ describe("handleToolCall", () => {
     expect(mem?.files).toEqual(["src/auth.ts", "src/middleware.ts"]);
   });
 
-  it("memory_save still accepts concepts/files as comma-separated strings (legacy)", async () => {
+  it("memory_store save still accepts concepts/files as comma-separated strings (legacy)", async () => {
     const kv = new InMemoryKV();
     const result = await handleToolCall(
-      "memory_save",
+      "memory_store",
       {
+        operation: "save",
         content: "JWT refresh rotation",
         concepts: "jwt, refresh, rotation",
         files: "src/auth.ts",
@@ -262,20 +283,20 @@ describe("handleToolCall", () => {
     expect(mem?.files).toEqual(["src/auth.ts"]);
   });
 
-  it("memory_smart_search falls back to substring match in the standalone shim (#139)", async () => {
+  it("memory_search falls back to substring match in the standalone shim (#139)", async () => {
     const kv = new InMemoryKV();
     await handleToolCall(
-      "memory_save",
-      { content: "Use bcrypt for password hashing" },
+      "memory_store",
+      { operation: "save", content: "Use bcrypt for password hashing" },
       kv,
     );
     await handleToolCall(
-      "memory_save",
-      { content: "Use argon2id for new projects" },
+      "memory_store",
+      { operation: "save", content: "Use argon2id for new projects" },
       kv,
     );
     const result = await handleToolCall(
-      "memory_smart_search",
+      "memory_search",
       { query: "bcrypt", limit: 5 },
       kv,
     );
@@ -284,38 +305,38 @@ describe("handleToolCall", () => {
     expect(parsed.results[0].content).toBe("Use bcrypt for password hashing");
   });
 
-  it("memory_smart_search rejects empty query to prevent match-all in forget flow (#139)", async () => {
+  it("memory_search rejects empty query to prevent match-all in forget flow (#139)", async () => {
     const kv = new InMemoryKV();
-    await handleToolCall("memory_save", { content: "anything" }, kv);
+    await handleToolCall("memory_store", { operation: "save", content: "anything" }, kv);
     await expect(
-      handleToolCall("memory_smart_search", {}, kv),
+      handleToolCall("memory_search", {}, kv),
     ).rejects.toThrow("query is required");
     await expect(
-      handleToolCall("memory_smart_search", { query: "" }, kv),
+      handleToolCall("memory_search", { query: "" }, kv),
     ).rejects.toThrow("query is required");
     await expect(
-      handleToolCall("memory_smart_search", { query: "   " }, kv),
+      handleToolCall("memory_search", { query: "   " }, kv),
     ).rejects.toThrow("query is required");
   });
 
-  it("memory_smart_search searches files and concepts, not just title/content (#139)", async () => {
+  it("memory_search searches files and concepts, not just title/content (#139)", async () => {
     const kv = new InMemoryKV();
     await handleToolCall(
-      "memory_save",
+      "memory_store",
       {
+        operation: "save",
         content: "generic note",
         concepts: ["oauth", "token-rotation"],
         files: ["src/auth/refresh.ts"],
       },
       kv,
     );
-    await handleToolCall("memory_save", { content: "unrelated" }, kv);
+    await handleToolCall("memory_store", { operation: "save", content: "unrelated" }, kv);
 
-    // Find by file path
     const byFile = JSON.parse(
       (
         await handleToolCall(
-          "memory_smart_search",
+          "memory_search",
           { query: "src/auth/refresh.ts" },
           kv,
         )
@@ -324,11 +345,10 @@ describe("handleToolCall", () => {
     expect(byFile.results).toHaveLength(1);
     expect(byFile.results[0].files).toContain("src/auth/refresh.ts");
 
-    // Find by concept
     const byConcept = JSON.parse(
       (
         await handleToolCall(
-          "memory_smart_search",
+          "memory_search",
           { query: "token-rotation" },
           kv,
         )
@@ -357,96 +377,37 @@ describe("handleToolCall", () => {
   it("parseLimit clamps bad/malicious limit values to a safe range", async () => {
     const kv = new InMemoryKV();
     for (let i = 0; i < 150; i++) {
-      await handleToolCall("memory_save", { content: `mem ${i}` }, kv);
+      await handleToolCall("memory_store", { operation: "save", content: `mem ${i}` }, kv);
     }
 
-    // Negative / NaN / Infinity / string / object — all should fall back
-    // to the default (10) for memory_smart_search.
     for (const bogus of [-1, NaN, Infinity, "abc", {}, true]) {
       const r = await handleToolCall(
-        "memory_smart_search",
+        "memory_search",
         { query: "mem", limit: bogus },
         kv,
       );
       expect(JSON.parse(r.content[0].text).results).toHaveLength(10);
     }
 
-    // An absurdly large limit gets clamped to MAX_LIMIT (100).
     const huge = await handleToolCall(
-      "memory_smart_search",
+      "memory_search",
       { query: "mem", limit: 99999 },
       kv,
     );
     expect(JSON.parse(huge.content[0].text).results).toHaveLength(100);
   });
 
-  it("memory_governance_delete removes memories by id array (#139)", async () => {
-    const kv = new InMemoryKV();
-    const a = JSON.parse(
-      (await handleToolCall("memory_save", { content: "one" }, kv)).content[0]
-        .text,
-    );
-    const b = JSON.parse(
-      (await handleToolCall("memory_save", { content: "two" }, kv)).content[0]
-        .text,
-    );
-    const c = JSON.parse(
-      (await handleToolCall("memory_save", { content: "three" }, kv)).content[0]
-        .text,
-    );
-    const result = await handleToolCall(
-      "memory_governance_delete",
-      { memoryIds: [a.saved, c.saved] },
-      kv,
-    );
-    const parsed = JSON.parse(result.content[0].text);
-    expect(parsed.deleted).toBe(2);
-    expect(parsed.requested).toBe(2);
-
-    const remaining = await kv.list<Record<string, unknown>>("mem:memories");
-    expect(remaining).toHaveLength(1);
-    expect((remaining[0] as { id: string }).id).toBe(b.saved);
-  });
-
-  it("memory_governance_delete accepts CSV-string memoryIds too", async () => {
-    const kv = new InMemoryKV();
-    const saved = JSON.parse(
-      (await handleToolCall("memory_save", { content: "x" }, kv)).content[0]
-        .text,
-    );
-    const result = await handleToolCall(
-      "memory_governance_delete",
-      { memoryIds: saved.saved, reason: "test csv" },
-      kv,
-    );
-    const parsed = JSON.parse(result.content[0].text);
-    expect(parsed.deleted).toBe(1);
-    expect(parsed.reason).toBe("test csv");
-  });
-
-  it("memory_governance_delete throws when memoryIds is missing or empty", async () => {
+  it("slot get requires label", async () => {
     const kv = new InMemoryKV();
     await expect(
-      handleToolCall("memory_governance_delete", {}, kv),
-    ).rejects.toThrow("memoryIds is required");
-    await expect(
-      handleToolCall("memory_governance_delete", { memoryIds: [] }, kv),
-    ).rejects.toThrow("memoryIds is required");
+      handleToolCall("slot", { operation: "get" }, kv),
+    ).rejects.toThrow("label is required");
   });
 
-  it("memory_governance_delete silently skips unknown ids", async () => {
+  it("insight delete requires insightIds", async () => {
     const kv = new InMemoryKV();
-    const saved = JSON.parse(
-      (await handleToolCall("memory_save", { content: "real" }, kv)).content[0]
-        .text,
-    );
-    const result = await handleToolCall(
-      "memory_governance_delete",
-      { memoryIds: [saved.saved, "mem_does_not_exist"] },
-      kv,
-    );
-    const parsed = JSON.parse(result.content[0].text);
-    expect(parsed.deleted).toBe(1);
-    expect(parsed.requested).toBe(2);
+    await expect(
+      handleToolCall("insight", { operation: "delete" }, kv),
+    ).rejects.toThrow("insightIds is required for delete");
   });
 });

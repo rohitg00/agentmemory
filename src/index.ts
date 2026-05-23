@@ -60,6 +60,7 @@ import { registerTeamFunction } from "./functions/team.js";
 import { registerGovernanceFunction } from "./functions/governance.js";
 import { registerSnapshotFunction } from "./functions/snapshot.js";
 import { registerActionsFunction } from "./functions/actions.js";
+import { registerActionSuggestFunction } from "./functions/action-suggest.js";
 import { registerFrontierFunction } from "./functions/frontier.js";
 import { registerLeasesFunction } from "./functions/leases.js";
 import { registerRoutinesFunction } from "./functions/routines.js";
@@ -274,6 +275,7 @@ async function main() {
   registerGovernanceFunction(sdk, kv);
 
   registerActionsFunction(sdk, kv);
+  registerActionSuggestFunction(sdk, kv, provider);
   registerFrontierFunction(sdk, kv);
   registerLeasesFunction(sdk, kv);
   registerRoutinesFunction(sdk, kv);

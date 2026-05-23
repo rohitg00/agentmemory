@@ -474,4 +474,42 @@ export function registerReflectFunctions(
       return { success: true, decayed, softDeleted, total: items.length };
     },
   );
+
+  sdk.registerFunction("mem::insight-delete",
+    async (data: {
+      insightId?: string;
+      insightIds?: string[];
+      reason?: string;
+    }) => {
+      const rawIds = [
+        ...(typeof data.insightId === "string" ? [data.insightId] : []),
+        ...(Array.isArray(data.insightIds) ? data.insightIds : []),
+      ];
+      const ids = [...new Set(rawIds.map((id) => id.trim()).filter(Boolean))];
+      if (!ids.length) {
+        return { success: false, error: "insightId or insightIds is required" };
+      }
+      const now = new Date().toISOString();
+      const loaded = await Promise.all(
+        ids.map(async (id) => ({ id, insight: await kv.get<Insight>(KV.insights, id) })),
+      );
+      const toDelete = loaded.filter(
+        (item): item is { id: string; insight: Insight } =>
+          Boolean(item.insight && !item.insight.deleted),
+      );
+      await Promise.all(
+        toDelete.map(({ id, insight }) => {
+          insight.deleted = true;
+          insight.updatedAt = now;
+          return kv.set(KV.insights, id, insight);
+        }),
+      );
+      const deleted = toDelete.length;
+      await recordAudit(kv, "delete", "mem::insight-delete", ids, {
+        reason: data.reason || "manual deletion",
+        deleted,
+      });
+      return { success: true, deleted, total: ids.length };
+    },
+  );
 }

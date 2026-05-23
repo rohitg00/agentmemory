@@ -93,7 +93,7 @@ function detectProvider(env: Record<string, string>): ProviderConfig {
   if (hasRealValue(env["OPENROUTER_API_KEY"])) {
     return {
       provider: "openrouter",
-      model: env["OPENROUTER_MODEL"] || "anthropic/claude-sonnet-4-20250514",
+      model: env["OPENROUTER_MODEL"] || "ibm-granite/granite-4.1-8b",
       maxTokens,
     };
   }
@@ -284,6 +284,10 @@ export function isAutoCompressEnabled(): boolean {
 // with AGENTMEMORY_INJECT_CONTEXT=true and get a loud startup warning.
 export function isContextInjectionEnabled(): boolean {
   return getMergedEnv()["AGENTMEMORY_INJECT_CONTEXT"] === "true";
+}
+
+export function isActionSuggestEnabled(): boolean {
+  return getMergedEnv()["AGENTMEMORY_ACTION_SUGGEST"] === "true";
 }
 
 export function getConsolidationDecayDays(): number {

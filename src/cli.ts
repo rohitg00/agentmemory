@@ -215,7 +215,7 @@ export async function discoverViewerPort(): Promise<void> {
 function getViewerUrl(): string {
   const envUrl = process.env["AGENTMEMORY_VIEWER_URL"];
   if (envUrl) return envUrl.replace(/\/+$/, "");
-  
+
   if (discoveredViewerPort !== null) {
     try {
       const u = new URL(getBaseUrl());
@@ -224,7 +224,7 @@ function getViewerUrl(): string {
       return `http://localhost:${discoveredViewerPort}`;
     }
   }
-  
+
   try {
     const u = new URL(getBaseUrl());
     const vPort =

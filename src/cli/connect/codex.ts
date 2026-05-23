@@ -23,7 +23,7 @@ const CODEX_HOOKS = join(CODEX_DIR, "hooks.json");
 
 const TOML_BLOCK = `[mcp_servers.agentmemory]
 command = "npx"
-args = ["-y", "@agentmemory/mcp"]
+args = ["-y", "@agentmemory/mcp@0.9.21"]
 
 [mcp_servers.agentmemory.env]
 AGENTMEMORY_URL = "http://localhost:3111"

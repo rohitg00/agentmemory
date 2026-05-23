@@ -174,6 +174,17 @@ export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
 
       lessons.sort((a, b) => b.confidence - a.confidence);
 
+      const lessonIds = lessons.slice(0, limit).map((l) => l.id);
+      try {
+        await recordAudit(kv, "lesson_list", "mem::lesson-list", lessonIds, {
+          project: data.project,
+          source: data.source,
+          minConfidence: data.minConfidence,
+          resultCount: lessonIds.length,
+          totalMatched: lessons.length,
+        });
+      } catch {}
+
       return { success: true, lessons: lessons.slice(0, limit) };
     },
   );
