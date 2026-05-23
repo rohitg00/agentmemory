@@ -540,6 +540,12 @@ async function main() {
 
   const shutdown = async () => {
     console.log(`\n[agentmemory] Shutting down...`);
+    const timeoutMs = parseInt(process.env["AGENTMEMORY_SHUTDOWN_TIMEOUT_MS"] || "10000", 10);
+    const forceExit = setTimeout(() => {
+      console.warn(`[agentmemory] Shutdown timed out after ${timeoutMs}ms, forcing exit`);
+      process.exit(0);
+    }, timeoutMs);
+    forceExit.unref();
     healthMonitor.stop();
     dedupMap.stop();
     indexPersistence.stop();
@@ -548,6 +554,7 @@ async function main() {
       console.warn(`[agentmemory] Failed to save index on shutdown:`, err);
     });
     await sdk.shutdown();
+    clearTimeout(forceExit);
     process.exit(0);
   };
   process.on("SIGINT", shutdown);
