@@ -4,6 +4,7 @@ import type {
   CompactSearchResult,
   CompressedObservation,
   HybridSearchResult,
+  Insight,
   Lesson,
 } from "../types.js";
 import { KV } from "../state/schema.js";
@@ -81,15 +82,16 @@ export function registerSmartSearchFunction(
       const lessonLimit = Math.min(limit, 10);
       const includeLessons = data.includeLessons !== false;
 
-      // Run observation hybrid-search and lesson recall in parallel so the
-      // extra lesson lookup adds no wallclock when the underlying calls
-      // can overlap. Lesson recall is best-effort: if mem::lesson-recall
+      // Run observation hybrid-search, lesson recall, and insight recall
+      // in parallel so the extra lookups add no wallclock when the
+      // underlying calls can overlap. All are best-effort: if a call
       // fails or returns unexpected shape, log + fall back to empty.
-      const [hybridResults, lessons] = await Promise.all([
+      const [hybridResults, lessons, insights] = await Promise.all([
         searchFn(data.query, limit),
         includeLessons
           ? recallLessons(sdk, data.query, lessonLimit, data.project)
           : Promise.resolve([]),
+        recallInsights(sdk, data.query, lessonLimit, data.project),
       ]);
 
       const compact: CompactSearchResult[] = hybridResults.map((r) => ({
@@ -110,13 +112,16 @@ export function registerSmartSearchFunction(
         query: data.query,
         results: compact.length,
         lessons: lessons.length,
+        insights: insights.length,
       });
       const response: {
         mode: "compact";
         results: CompactSearchResult[];
         lessons?: CompactLessonResult[];
+        insights?: CompactLessonResult[];
       } = { mode: "compact", results: compact };
       if (includeLessons) response.lessons = lessons;
+      if (insights.length > 0) response.insights = insights;
       return response;
     },
   );
@@ -148,6 +153,38 @@ async function recallLessons(
     }));
   } catch (err) {
     logger.warn("Smart search: mem::lesson-recall failed; returning empty lesson list", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return [];
+  }
+}
+
+async function recallInsights(
+  sdk: ISdk,
+  query: string,
+  limit: number,
+  project?: string,
+): Promise<CompactLessonResult[]> {
+  try {
+    const result = (await sdk.trigger({
+      function_id: "mem::insight-search",
+      payload: { query, limit, project, minConfidence: 0.3 },
+    })) as { success?: boolean; insights?: Array<Insight & { score?: number }> };
+    if (!result?.success || !Array.isArray(result.insights)) return [];
+    return result.insights.map((i) => ({
+      lessonId: i.id,
+      content:
+        i.content.length > LESSON_CONTENT_PREVIEW_CHARS
+          ? i.content.slice(0, LESSON_CONTENT_PREVIEW_CHARS) + "…"
+          : i.content,
+      confidence: i.confidence,
+      score: i.score ?? i.confidence,
+      createdAt: i.createdAt,
+      project: i.project,
+      tags: i.tags ?? [],
+    }));
+  } catch (err) {
+    logger.warn("Smart search: mem::insight-search failed; returning empty insight list", {
       error: err instanceof Error ? err.message : String(err),
     });
     return [];
