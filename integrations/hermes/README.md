@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/MCP-43_tools-1f6feb?style=flat-square" alt="43 MCP tools" />
+  <img src="https://img.shields.io/badge/MCP-51_tools-1f6feb?style=flat-square" alt="51 MCP tools" />
   <img src="https://img.shields.io/badge/Hooks-6_lifecycle-1f6feb?style=flat-square" alt="6 lifecycle hooks" />
   <img src="https://img.shields.io/badge/R@5-95.2%25-00875f?style=flat-square" alt="95.2% R@5" />
   <img src="https://img.shields.io/badge/Self--hosted-yes-00875f?style=flat-square" alt="Self-hosted" />
@@ -70,7 +70,7 @@ memory:
   provider: agentmemory
 ```
 
-This gives Hermes access to all 43 MCP tools and enables the agentmemory memory provider. Start the server separately:
+This gives Hermes access to all 51 MCP tools and enables the agentmemory memory provider. Start the server separately:
 
 ```bash
 npx @agentmemory/agentmemory
