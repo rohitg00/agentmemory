@@ -7,6 +7,7 @@ import type {
   ProjectProfile,
   MemorySlot,
   Lesson,
+  Insight,
 } from "../types.js";
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
@@ -40,7 +41,7 @@ export function registerContextFunction(
       const budget = data.budget || tokenBudget;
       const blocks: ContextBlock[] = [];
 
-      const [pinnedSlots, profile, lessons] = await Promise.all([
+      const [pinnedSlots, profile, lessons, insights] = await Promise.all([
         isSlotsEnabled()
           ? listPinnedSlots(kv).catch(() => [] as MemorySlot[])
           : Promise.resolve([] as MemorySlot[]),
@@ -48,6 +49,7 @@ export function registerContextFunction(
           .get<ProjectProfile>(KV.profiles, data.project)
           .catch(() => null),
         kv.list<Lesson>(KV.lessons).catch(() => [] as Lesson[]),
+        kv.list<Insight>(KV.insights).catch(() => [] as Insight[]),
       ]);
 
       const slotContent = renderPinnedContext(pinnedSlots);
@@ -129,6 +131,36 @@ export function registerContextFunction(
           tokens: estimateTokens(lessonsContent),
           recency: mostRecent,
           sourceIds: relevantLessons.map((l) => l.id),
+        });
+      }
+
+      // Insights — higher-order reflections synthesised from patterns
+      // across memories, lessons, and crystals by mem::reflect. Capped at
+      // 8 to keep the block bounded; token-budget loop below drops the
+      // block if it doesn't fit. #457
+      const relevantInsights = insights
+        .filter((i) => !i.deleted && (!i.project || i.project === data.project))
+        .sort((a, b) => b.confidence - a.confidence)
+        .slice(0, 8);
+
+      if (relevantInsights.length > 0) {
+        const items = relevantInsights
+          .map(
+            (i) =>
+              `- (${i.confidence.toFixed(2)}) ${i.title}: ${i.content.slice(0, 160)}`,
+          )
+          .join("\n");
+        const insightsContent = `## Insights\n${items}`;
+        const mostRecentI = relevantInsights.reduce((acc, i) => {
+          const t = new Date(i.lastReinforcedAt || i.updatedAt).getTime();
+          return t > acc ? t : acc;
+        }, 0);
+        blocks.push({
+          type: "memory",
+          content: insightsContent,
+          tokens: estimateTokens(insightsContent),
+          recency: mostRecentI,
+          sourceIds: relevantInsights.map((i) => i.id),
         });
       }
 
