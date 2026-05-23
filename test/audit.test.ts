@@ -118,6 +118,7 @@ describe("Audit Functions", () => {
       "user-private-email@example.com",
     );
 
+    process.env.AGENTMEMORY_RECEIPT_HMAC_KEY = "test-receipt-hmac-key";
     const receipt = buildAuditReceipt([entry]);
     const serialized = JSON.stringify(receipt);
 
@@ -127,11 +128,13 @@ describe("Audit Functions", () => {
       rawTargetIdsIncluded: false,
       rawDetailsIncluded: false,
       rawUserIdsIncluded: false,
+      hashAlgorithm: "hmac-sha256",
+      hmacKeySource: "AGENTMEMORY_RECEIPT_HMAC_KEY",
     });
     expect(receipt.entries[0].targetCount).toBe(1);
-    expect(receipt.entries[0].targetIdHashes[0]).toMatch(/^sha256:/);
+    expect(receipt.entries[0].targetIdHashes[0]).toMatch(/^hmac-sha256:/);
     expect(receipt.entries[0].detailKeys).toEqual(["content", "count", "path"]);
-    expect(receipt.entries[0].userIdHash).toMatch(/^sha256:/);
+    expect(receipt.entries[0].userIdHash).toMatch(/^hmac-sha256:/);
     expect(serialized).not.toContain("mem_private_customer_ticket");
     expect(serialized).not.toContain("customer secret should not be exported");
     expect(serialized).not.toContain("/private/work/customer");

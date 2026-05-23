@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHmac } from "node:crypto";
 import type { AuditEntry } from "../types.js";
 import { KV, generateId } from "../state/schema.js";
 import type { StateKV } from "../state/kv.js";
@@ -52,21 +52,33 @@ export interface AuditReceipt {
     rawTargetIdsIncluded: false;
     rawDetailsIncluded: false;
     rawUserIdsIncluded: false;
+    hashAlgorithm: "hmac-sha256";
+    hmacKeySource: "AGENTMEMORY_RECEIPT_HMAC_KEY";
   };
   entryCount: number;
   entries: AuditReceiptEntry[];
 }
 
-function digest(value: string): string {
-  return `sha256:${createHash("sha256").update(value).digest("hex")}`;
+function receiptHmacKey(): string {
+  const key = process.env.AGENTMEMORY_RECEIPT_HMAC_KEY;
+  if (!key) {
+    throw new Error("AGENTMEMORY_RECEIPT_HMAC_KEY is required to generate audit receipts");
+  }
+  return key;
 }
 
-function safeDetailKeys(details: Record<string, unknown> | undefined): string[] {
-  if (!details) return [];
+function digest(value: string, key: string): string {
+  return `hmac-sha256:${createHmac("sha256", key).update(value).digest("hex")}`;
+}
+
+function safeDetailKeys(details: unknown): string[] {
+  if (!details || typeof details !== "object" || Array.isArray(details)) return [];
   return Object.keys(details).sort();
 }
 
 export function buildAuditReceipt(entries: AuditEntry[]): AuditReceipt {
+  const hmacKey = receiptHmacKey();
+
   return {
     schema: "agentmemory.audit.receipt.v1",
     generatedAt: new Date().toISOString(),
@@ -74,18 +86,20 @@ export function buildAuditReceipt(entries: AuditEntry[]): AuditReceipt {
       rawTargetIdsIncluded: false,
       rawDetailsIncluded: false,
       rawUserIdsIncluded: false,
+      hashAlgorithm: "hmac-sha256",
+      hmacKeySource: "AGENTMEMORY_RECEIPT_HMAC_KEY",
     },
     entryCount: entries.length,
     entries: entries.map((entry) => ({
-      auditIdHash: digest(entry.id),
+      auditIdHash: digest(entry.id, hmacKey),
       timestamp: entry.timestamp,
       operation: entry.operation,
       functionId: entry.functionId,
       targetCount: entry.targetIds.length,
-      targetIdHashes: entry.targetIds.map(digest),
+      targetIdHashes: entry.targetIds.map((targetId) => digest(targetId, hmacKey)),
       detailKeys: safeDetailKeys(entry.details),
       qualityScore: entry.qualityScore,
-      userIdHash: entry.userId ? digest(entry.userId) : undefined,
+      userIdHash: entry.userId ? digest(entry.userId, hmacKey) : undefined,
     })),
   };
 }
