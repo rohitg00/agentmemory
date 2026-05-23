@@ -1,10 +1,11 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 vi.mock("../src/logger.js", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
 import { buildAuditReceipt, recordAudit, queryAudit } from "../src/functions/audit.js";
+import type { AuditEntry } from "../src/types.js";
 
 function mockKV() {
   const store = new Map<string, Map<string, unknown>>();
@@ -29,9 +30,19 @@ function mockKV() {
 
 describe("Audit Functions", () => {
   let kv: ReturnType<typeof mockKV>;
+  let previousReceiptHmacKey: string | undefined;
 
   beforeEach(() => {
     kv = mockKV();
+    previousReceiptHmacKey = process.env.AGENTMEMORY_RECEIPT_HMAC_KEY;
+  });
+
+  afterEach(() => {
+    if (previousReceiptHmacKey === undefined) {
+      delete process.env.AGENTMEMORY_RECEIPT_HMAC_KEY;
+      return;
+    }
+    process.env.AGENTMEMORY_RECEIPT_HMAC_KEY = previousReceiptHmacKey;
   });
 
   it("recordAudit creates an entry with proper fields", async () => {
@@ -132,13 +143,34 @@ describe("Audit Functions", () => {
       hmacKeySource: "AGENTMEMORY_RECEIPT_HMAC_KEY",
     });
     expect(receipt.entries[0].targetCount).toBe(1);
+    expect(receipt.entries[0].auditIdHash).toMatch(/^hmac-sha256:/);
     expect(receipt.entries[0].targetIdHashes[0]).toMatch(/^hmac-sha256:/);
     expect(receipt.entries[0].detailKeys).toEqual(["content", "count", "path"]);
     expect(receipt.entries[0].userIdHash).toMatch(/^hmac-sha256:/);
+    expect(serialized).not.toContain(entry.id);
     expect(serialized).not.toContain("mem_private_customer_ticket");
     expect(serialized).not.toContain("customer secret should not be exported");
     expect(serialized).not.toContain("/private/work/customer");
     expect(serialized).not.toContain("user-private-email@example.com");
+  });
+
+  it("buildAuditReceipt handles malformed legacy details safely", async () => {
+    process.env.AGENTMEMORY_RECEIPT_HMAC_KEY = "test-receipt-hmac-key";
+    const baseEntry = await recordAudit(kv as never, "observe", "mem::legacy", ["mem_legacy"], {});
+    const legacyEntry = {
+      ...baseEntry,
+      id: "aud_malformed_legacy",
+      details: null,
+    } as unknown as AuditEntry;
+
+    const receipt = buildAuditReceipt([legacyEntry]);
+    const serialized = JSON.stringify(receipt);
+
+    expect(receipt.entries[0].detailKeys).toEqual([]);
+    expect(receipt.entries[0].auditIdHash).toMatch(/^hmac-sha256:/);
+    expect(receipt.privacy.rawDetailsIncluded).toBe(false);
+    expect(serialized).not.toContain("aud_malformed_legacy");
+    expect(serialized).not.toContain("mem_legacy");
   });
 
 });
