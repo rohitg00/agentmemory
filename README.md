@@ -441,7 +441,7 @@ codex plugin add agentmemory@agentmemory
 
 The Codex plugin ships from the same `plugin/` directory as the Claude Code plugin. It registers:
 
-- `@agentmemory/mcp` as an MCP server (proxies all 51 tools when `AGENTMEMORY_URL` points at a running agentmemory server; falls back to 7 tools locally when no server is reachable)
+- `@agentmemory/mcp` as an MCP server (proxies all 53 tools when `AGENTMEMORY_URL` points at a running agentmemory server; falls back to 7 tools locally when no server is reachable)
 - 6 lifecycle hooks: `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PreCompact`, `Stop`
 - 4 skills: `/recall`, `/remember`, `/session-history`, `/forget`
 
@@ -463,7 +463,7 @@ This adds an idempotent block to `~/.codex/hooks.json` referencing absolute path
 <summary><b>OpenClaw (paste this prompt)</b></summary>
 
 ```
-Install agentmemory for OpenClaw. Run `npx @agentmemory/agentmemory` in a separate terminal to start the memory server on localhost:3111. Then add this to my OpenClaw MCP config so agentmemory is available with all 51 memory tools:
+Install agentmemory for OpenClaw. Run `npx @agentmemory/agentmemory` in a separate terminal to start the memory server on localhost:3111. Then add this to my OpenClaw MCP config so agentmemory is available with all 53 memory tools:
 
 {
   "mcpServers": {
@@ -488,7 +488,7 @@ Full guide: [`integrations/openclaw/`](integrations/openclaw/)
 <summary><b>Hermes Agent (paste this prompt)</b></summary>
 
 ```
-Install agentmemory for Hermes. Run `npx @agentmemory/agentmemory` in a separate terminal to start the memory server on localhost:3111. Then add this to ~/.hermes/config.yaml so Hermes can use agentmemory as an MCP server with all 51 memory tools:
+Install agentmemory for Hermes. Run `npx @agentmemory/agentmemory` in a separate terminal to start the memory server on localhost:3111. Then add this to ~/.hermes/config.yaml so Hermes can use agentmemory as an MCP server with all 53 memory tools:
 
 mcp_servers:
   agentmemory:
@@ -818,31 +818,28 @@ npm install @xenova/transformers
 
 53 tools, 6 resources, 3 prompts, and 4 skills — the most comprehensive MCP memory toolkit for any agent.
 
-> **MCP shim vs full server:** the published `@agentmemory/mcp` package is a thin shim. It exposes the full 51-tool surface **only when it can reach a running agentmemory server** via `AGENTMEMORY_URL` (proxy mode). With no server reachable, the shim falls back to a 7-tool local set (`memory_save`, `memory_recall`, `memory_smart_search`, `memory_sessions`, `memory_export`, `memory_audit`, `memory_governance_delete`). The `AGENTMEMORY_TOOLS=core|all` env var is a *server-side* flag — setting it in the shim's `env` block has no effect. If you see only 7 tools in Cursor / OpenCode / Gemini CLI, start `npx @agentmemory/agentmemory` (or the Docker stack) and set `AGENTMEMORY_URL=http://localhost:3111`.
+> **MCP shim vs full server:** the published `@agentmemory/mcp` package is a thin shim. It exposes the full 53-tool surface **only when it can reach a running agentmemory server** via `AGENTMEMORY_URL` (proxy mode). With no server reachable, the shim falls back to a 7-tool local set (`memory_save`, `memory_recall`, `memory_smart_search`, `memory_sessions`, `memory_export`, `memory_audit`, `memory_governance_delete`). The `AGENTMEMORY_TOOLS=core|all` env var is a *server-side* flag — setting it in the shim's `env` block has no effect. If you see only 7 tools in Cursor / OpenCode / Gemini CLI, start `npx @agentmemory/agentmemory` (or the Docker stack) and set `AGENTMEMORY_URL=http://localhost:3111`.
 
-### 51 Tools
+### 53 Tools
 
 <details>
-<summary>Core tools (always available)</summary>
+<summary>Default tools (AGENTMEMORY_TOOLS=core)</summary>
 
 | Tool | Description |
 |------|-------------|
 | `memory_recall` | Search past observations |
-| `memory_compress_file` | Compress markdown files while preserving structure |
 | `memory_save` | Save an insight, decision, or pattern |
-| `memory_patterns` | Detect recurring patterns |
-| `memory_smart_search` | Hybrid semantic + keyword search |
-| `memory_file_history` | Past observations about specific files |
 | `memory_sessions` | List recent sessions |
-| `memory_timeline` | Chronological observations |
-| `memory_profile` | Project profile (concepts, files, patterns) |
-| `memory_export` | Export all memory data |
-| `memory_relations` | Query relationship graph |
+| `memory_smart_search` | Hybrid semantic + keyword search |
+| `memory_consolidate` | Run 4-tier consolidation |
+| `memory_diagnose` | Health diagnostics |
+| `memory_lesson_save` | Save reusable lessons |
+| `memory_reflect` | Synthesize lessons from memories |
 
 </details>
 
 <details>
-<summary>Extended tools (51 total — set AGENTMEMORY_TOOLS=all)</summary>
+<summary>Extended tools (53 total — set AGENTMEMORY_TOOLS=all)</summary>
 
 | Tool | Description |
 |------|-------------|
@@ -1233,7 +1230,7 @@ Create `~/.agentmemory/.env`:
 # USER_ID=
 # TEAM_MODE=private
 
-# Tool visibility: "core" (8 tools) or "all" (51 tools)
+# Tool visibility: "core" (8 tools) or "all" (53 tools)
 # AGENTMEMORY_TOOLS=core
 ```
 
