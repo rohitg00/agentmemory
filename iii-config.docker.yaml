@@ -46,7 +46,8 @@ workers:
       logs_console_output: true
   - name: iii-exec
     config:
+      # See iii-config.yaml: watch the shipped artifact, not the source.
       watch:
-        - src/**/*.ts
+        - dist/**/*.mjs
       exec:
         - node dist/index.mjs

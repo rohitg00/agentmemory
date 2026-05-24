@@ -46,7 +46,11 @@ workers:
       logs_console_output: true
   - name: iii-exec
     config:
+      # Watch the shipped artifact, not the source tree. The npm package
+      # ships only `dist/` — `src/**/*.ts` resolves to nothing for end
+      # users, and on some platforms an empty watch glob causes iii-exec
+      # to abort startup before it ever spawns the node child.
       watch:
-        - src/**/*.ts
+        - dist/**/*.mjs
       exec:
         - node dist/index.mjs
