@@ -183,20 +183,17 @@ function validate(toolName: string, args: Record<string, unknown>): Validated {
         v.format = format as Validated["format"];
         v.tokenBudget = parseTokenBudget(args["token_budget"]);
       } else {
-        const fmt = args["format"];
-        if (typeof fmt === "string" && fmt.trim()) {
-          v.format = fmt.trim().toLowerCase();
-        }
         const budget = args["token_budget"];
         if (
           typeof budget === "number" &&
-          Number.isFinite(budget) &&
-          budget > 0
+          Number.isFinite(budget)
         ) {
-          v.tokenBudget = Math.floor(budget);
+          const floorN = Math.floor(budget);
+          if (floorN > 0) v.tokenBudget = floorN;
         } else if (typeof budget === "string" && budget.trim()) {
           const n = Number(budget);
-          if (Number.isFinite(n) && n > 0) v.tokenBudget = Math.floor(n);
+          const floorN = Math.floor(n);
+          if (Number.isFinite(n) && floorN > 0) v.tokenBudget = floorN;
         }
       }
       return v;

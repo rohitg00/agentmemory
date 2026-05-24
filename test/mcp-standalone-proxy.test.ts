@@ -56,11 +56,13 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
   });
 
   it("proxies memory_smart_search to POST /agentmemory/smart-search", async () => {
+    const calls: Array<{ url: string; body?: unknown }> = [];
     installFetch((url, init) => {
       if (url.endsWith("/agentmemory/livez"))
         return new Response("ok", { status: 200 });
       if (url.endsWith("/agentmemory/smart-search")) {
         const body = JSON.parse((init?.body as string) || "{}");
+        calls.push({ url, body });
         return new Response(
           JSON.stringify({
             mode: "compact",
@@ -75,10 +77,13 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
     const res = await handleToolCall("memory_smart_search", {
       query: "auth bug",
       limit: 5,
+      format: "narrative",
+      token_budget: 0.5,
     });
     const body = JSON.parse(res.content[0].text);
     expect(body.query).toBe("auth bug");
     expect(body.results[0].id).toBe("m1");
+    expect(calls[0]?.body).toEqual({ query: "auth bug", limit: 5 });
   });
 
   it("proxies memory_recall to POST /agentmemory/search and forwards format/token_budget (#507)", async () => {
