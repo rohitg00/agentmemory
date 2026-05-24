@@ -131,8 +131,10 @@ Commands:
   upgrade            Upgrade local deps + iii runtime (best effort)
   stop [--force]     Stop the running iii-engine started by this CLI.
                      --force bypasses the Docker-heuristic guard and signals
-                     whatever pidfile+lsof report on the REST port (use when
-                     the engine was started natively but state file is missing).
+                     whatever pidfile + lsof/netstat report on the REST port.
+                     Also forces SIGTERM/SIGKILL when the engine is wedged
+                     (REST port listening but unresponsive) so a fresh start
+                     is not blocked by stale state.
   mcp                Start standalone MCP shim — opt-in surface for MCP-only clients
                      (Cursor, Gemini CLI, etc). REST always available at :3111.
   import-jsonl [p]   Import Claude Code JSONL transcripts (default: ~/.claude/projects)
@@ -2107,16 +2109,66 @@ async function signalAndWait(
   return !pidAlive(pid);
 }
 
+// Pure parser for `netstat -ano` output. Returns the PID of every process
+// LISTENING on `port` (IPv4 + IPv6), excluding `selfPid`. Exported so the
+// parser can be tested without spawning netstat.
+export function parseNetstatListeningPids(
+  output: string,
+  port: number,
+  selfPid: number,
+): number[] {
+  // Sample line shapes we accept (netstat -ano on en-US and localized hosts):
+  //   TCP    0.0.0.0:3111           0.0.0.0:0              LISTENING       39672
+  //   TCP    [::]:3111              [::]:0                 LISTENING       39672
+  //   TCP    127.0.0.1:3111         0.0.0.0:0              LISTENING       39672
+  // Some locales translate "LISTENING" (e.g. "ABHÖREN" on de-DE). The PID
+  // is always the last whitespace-separated token, so we key off the local
+  // address column + the absence of a remote address state we treat as
+  // non-listening. We use a positive check on TCP-prefixed lines whose
+  // local-address suffix is exactly ":<port>" and whose foreign address is
+  // an unspecified peer (":0" or "[::]:0").
+  const pids = new Set<number>();
+  const portSuffix = `:${port}`;
+  for (const rawLine of output.split(/\r?\n/)) {
+    const trimmed = rawLine.trim();
+    if (!trimmed.toUpperCase().startsWith("TCP")) continue;
+    const tokens = trimmed.split(/\s+/);
+    // Expected layout: [proto, local, foreign, state, pid]
+    if (tokens.length < 5) continue;
+    const local = tokens[1] ?? "";
+    const foreign = tokens[2] ?? "";
+    if (local.slice(local.lastIndexOf(":")) !== portSuffix) continue;
+    // A listening socket has an unspecified peer endpoint.
+    const isListening = foreign === "0.0.0.0:0" || foreign === "[::]:0" || foreign === "*:*";
+    if (!isListening) continue;
+    const pid = parseInt(tokens[tokens.length - 1] ?? "", 10);
+    if (Number.isFinite(pid) && pid > 0 && pid !== selfPid) pids.add(pid);
+  }
+  return [...pids];
+}
+
 function findEnginePidsByPort(port: number): number[] {
-  if (IS_WINDOWS) return [];
-  const lsof = whichBinary("lsof");
-  if (!lsof) return [];
-  // -sTCP:LISTEN restricts to listening server sockets only. Without
-  // this, lsof also returns client-side PIDs (any process with an
-  // active TCP connection to :port), which includes the agentmemory
+  // -sTCP:LISTEN on unix and the local/foreign + LISTENING heuristic on
+  // Windows both restrict matches to listening server sockets. Without
+  // this, lsof / netstat also report client-side PIDs (any process with
+  // an active TCP connection to :port), which includes the agentmemory
   // CLI itself thanks to the keep-alive fetch in isEngineRunning().
   // signalAndWait would then SIGKILL its own parent — exit code 137.
   const selfPid = process.pid;
+  if (IS_WINDOWS) {
+    try {
+      const out = execFileSync("netstat.exe", ["-ano", "-p", "TCP"], {
+        encoding: "utf-8",
+        stdio: ["ignore", "pipe", "ignore"],
+      });
+      return parseNetstatListeningPids(out, port, selfPid);
+    } catch (err) {
+      vlog(`netstat :${port}: ${err instanceof Error ? err.message : String(err)}`);
+      return [];
+    }
+  }
+  const lsof = whichBinary("lsof");
+  if (!lsof) return [];
   try {
     const out = execFileSync(lsof, ["-i", `:${port}`, "-sTCP:LISTEN", "-t"], {
       encoding: "utf-8",
@@ -2191,13 +2243,39 @@ async function runStop(): Promise<void> {
     }
     const survivors = new Set<number>(portPids);
     if (pidfilePid) survivors.add(pidfilePid);
+    if (!force) {
+      p.log.warn(
+        `Engine not responding on :${port}, but ${survivors.size} process(es) still hold the port or pidfile: ${[...survivors].join(", ")}`,
+      );
+      p.log.info(
+        `Preserving ~/.agentmemory/iii.pid. Rerun with --force to signal these PIDs, or inspect them first:\n  ps -p ${[...survivors].join(",")} -o pid,ppid,comm,etime\n  ${IS_WINDOWS ? "netstat -ano | findstr :" + port : "lsof -i :" + port}`,
+      );
+      process.exit(1);
+    }
+    // --force on an unresponsive engine: the user already told us they want
+    // these PIDs gone. SIGTERM/SIGKILL them and clear the pidfile so the next
+    // start is not refused by a stale-state guard.
     p.log.warn(
-      `Engine not responding on :${port}, but ${survivors.size} process(es) still hold the port or pidfile: ${[...survivors].join(", ")}`,
+      `--force: signaling ${survivors.size} unresponsive process(es) on :${port}: ${[...survivors].join(", ")}`,
     );
-    p.log.info(
-      `Preserving ~/.agentmemory/iii.pid. Investigate before manual cleanup:\n  ps -p ${[...survivors].join(",")} -o pid,ppid,comm,etime\n  ${IS_WINDOWS ? "netstat -ano | findstr :" + port : "lsof -i :" + port}`,
-    );
-    process.exit(1);
+    let allStopped = true;
+    for (const pid of survivors) {
+      const s = p.spinner();
+      s.start(`Stopping pid ${pid}...`);
+      const ok = await signalAndWait(pid, "SIGTERM", 3000);
+      s.stop(ok ? `Stopped pid ${pid}` : `Failed to stop pid ${pid}`);
+      if (!ok) allStopped = false;
+    }
+    clearEnginePidfile();
+    clearEngineState();
+    if (!allStopped) {
+      p.log.error(
+        `One or more processes survived SIGKILL. Inspect with ${IS_WINDOWS ? "Task Manager / Get-Process" : "ps"}.`,
+      );
+      process.exit(1);
+    }
+    p.outro("Stopped. Memories persisted to disk; restart anytime with: npx @agentmemory/agentmemory");
+    return;
   }
 
   if (!state) {
