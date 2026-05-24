@@ -26,19 +26,22 @@ function parseGraphXml(
   const edges: GraphEdge[] = [];
   const now = new Date().toISOString();
 
-  // Lazy `[^>]*?` so the self-closing alternation gets a chance before
-  // greedy attribute matching consumes the trailing `/` and the regex
-  // falls through to the explicit-close branch, which then runs ahead to
-  // the *next* entity's `</entity>` and silently drops a node (#494
-  // follow-up: greedy `[^>]*` was eating the `/` and merging two entity
-  // declarations into one match).
-  const entityRegex =
-    /<entity\s+type="([^"]+)"\s+name="([^"]+)"[^>]*?(?:\/>|>([\s\S]*?)<\/entity>)/g;
-  let match;
-  while ((match = entityRegex.exec(xml)) !== null) {
-    const type = match[1] as GraphNode["type"];
-    const name = match[2];
-    const propsBlock = match[3] ?? "";
+  const parseAttrs = (raw: string): Record<string, string> => {
+    const attrs: Record<string, string> = {};
+    const attrRegex = /([A-Za-z_][\w:-]*)="([^"]*)"/g;
+    let attrMatch;
+    while ((attrMatch = attrRegex.exec(raw)) !== null) {
+      attrs[attrMatch[1]] = attrMatch[2];
+    }
+    return attrs;
+  };
+
+  const addNode = (rawAttrs: string, propsBlock = ""): void => {
+    const attrs = parseAttrs(rawAttrs);
+    const type = attrs.type as GraphNode["type"] | undefined;
+    const name = attrs.name;
+    if (!type || !name) return;
+
     const properties: Record<string, string> = {};
 
     const propRegex = /<property\s+key="([^"]+)">([^<]*)<\/property>/g;
@@ -55,15 +58,27 @@ function parseGraphXml(
       sourceObservationIds: observationIds,
       createdAt: now,
     });
+  };
+
+  const entityRegex = /<entity\b([^>]*[^/])>([\s\S]*?)<\/entity>/g;
+  let match;
+  while ((match = entityRegex.exec(xml)) !== null) {
+    addNode(match[1], match[2]);
   }
 
-  const relRegex =
-    /<relationship\s+type="([^"]+)"\s+source="([^"]+)"\s+target="([^"]+)"\s+weight="([^"]+)"\s*\/>/g;
+  const selfClosingEntityRegex = /<entity\b([^>]*)\/>/g;
+  while ((match = selfClosingEntityRegex.exec(xml)) !== null) {
+    addNode(match[1]);
+  }
+
+  const relRegex = /<relationship\b([^>]*)\/>/g;
   while ((match = relRegex.exec(xml)) !== null) {
-    const type = match[1] as GraphEdge["type"];
-    const sourceName = match[2];
-    const targetName = match[3];
-    const parsedWeight = parseFloat(match[4]);
+    const attrs = parseAttrs(match[1]);
+    const type = attrs.type as GraphEdge["type"] | undefined;
+    const sourceName = attrs.source;
+    const targetName = attrs.target;
+    if (!type || !sourceName || !targetName) continue;
+    const parsedWeight = parseFloat(attrs.weight ?? "0.5");
     const weight = Number.isNaN(parsedWeight) ? 0.5 : parsedWeight;
 
     const sourceNode = nodes.find((n) => n.name === sourceName);
