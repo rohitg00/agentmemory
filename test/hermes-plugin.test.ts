@@ -61,4 +61,11 @@ describe("Hermes plugin manifest", () => {
     expect([...declaredHooks].sort()).toEqual([...implementedHooks].sort());
     expect(declaredHooks).toEqual(expectedHermesHooks);
   });
+
+  it("preloads AGENTMEMORY_URL default at import time (#520)", () => {
+    const source = readFileSync("integrations/hermes/__init__.py", "utf8");
+    expect(source).toMatch(
+      /os\.environ\.setdefault\(\s*["']AGENTMEMORY_URL["']\s*,\s*DEFAULT_BASE_URL\s*\)/,
+    );
+  });
 });
