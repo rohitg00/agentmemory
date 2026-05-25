@@ -375,6 +375,9 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
             continue;
           }
         }
+        if (!Array.isArray(memory.sessionIds)) {
+          memory.sessionIds = [];
+        }
         await kv.set(KV.memories, memory.id, memory);
         stats.memories++;
       }
