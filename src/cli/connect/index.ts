@@ -9,6 +9,7 @@ import { adapter as hermes } from "./hermes.js";
 import { adapter as openclaw } from "./openclaw.js";
 import { adapter as openhuman } from "./openhuman.js";
 import { adapter as pi } from "./pi.js";
+import { adapter as kilo } from "./kilo.js";
 
 export const ADAPTERS: readonly ConnectAdapter[] = [
   claudeCode,
@@ -19,6 +20,7 @@ export const ADAPTERS: readonly ConnectAdapter[] = [
   hermes,
   pi,
   openhuman,
+  kilo,
 ];
 
 export function resolveAdapter(name: string): ConnectAdapter | null {
