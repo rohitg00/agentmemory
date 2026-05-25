@@ -81,7 +81,7 @@ function truncate(value, max) {
 	return value;
 }
 main();
-
 //#endregion
-export {  };
+export {};
+
 //# sourceMappingURL=post-tool-use.mjs.map

@@ -109,6 +109,18 @@ function createBaseProvider(config: ProviderConfig): MemoryProvider {
         config.baseURL,
       );
     }
+    case "azure-openai": {
+      // Routes through OpenAIProvider — detectAzure() and detectFoundry()
+      // handle Azure OpenAI (.openai.azure.com) and Azure AI Foundry (/anthropic)
+      // URL patterns automatically. Env vars: AZURE_OPENAI_API_KEY,
+      // AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_DEPLOYMENT.
+      return new OpenAIProvider(
+        requireEnvVar("AZURE_OPENAI_API_KEY"),
+        config.model || requireEnvVar("AZURE_OPENAI_DEPLOYMENT"),
+        config.maxTokens,
+        config.baseURL || requireEnvVar("AZURE_OPENAI_ENDPOINT"),
+      );
+    }
     case "noop":
       return new NoopProvider();
     case "agent-sdk":

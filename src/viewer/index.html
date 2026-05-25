@@ -368,10 +368,13 @@
     .btn-primary { background: var(--ink); color: var(--bg); border-color: var(--ink); }
     .btn-primary:hover { background: var(--ink-secondary); box-shadow: 3px 3px 0px 0px var(--ink-muted); }
 
+    #view-graph {
+      padding: 0;
+      overflow: hidden;
+    }
     .graph-container {
       display: flex;
-      height: calc(100vh - 130px);
-      margin: -24px;
+      height: 100%;
       border-top: 1px solid var(--border-light);
     }
     .graph-canvas-wrap {
@@ -720,6 +723,7 @@
       display: flex; align-items: center; gap: 10px;
       font-family: var(--font-ui); font-size: 11px;
       color: var(--ink-faint); letter-spacing: 0.05em;
+      flex-shrink: 0;
     }
     .viewer-footer a { color: var(--ink-muted); text-decoration: none; }
     .viewer-footer a:hover { color: var(--ink); text-decoration: underline; }
@@ -3565,9 +3569,9 @@
           kind: 'warn',
           icon: '&#128274;',
           title: 'No LLM provider key set',
-          keyLabel: 'ANTHROPIC_API_KEY',
+          keyLabel: 'ANTHROPIC_API_KEY / AZURE_OPENAI_API_KEY',
           desc: 'Compression, summarization, and graph extraction stay disabled until a key is provided.',
-          enable: 'export ANTHROPIC_API_KEY=sk-ant-...\n# then restart: npx @agentmemory/agentmemory',
+          enable: '# Option A — direct Anthropic key:\nexport ANTHROPIC_API_KEY=sk-ant-...\n\n# Option B — Azure OpenAI:\nexport AZURE_OPENAI_API_KEY=<key>\nexport AZURE_OPENAI_ENDPOINT=https://<resource>.openai.azure.com\nexport AZURE_OPENAI_DEPLOYMENT=<deployment-name>\n\n# then restart: npx @agentmemory/agentmemory',
           docs: 'https://github.com/rohitg00/agentmemory#quick-start',
           dismissKey: '__provider_noop',
         });

@@ -1,11 +1,15 @@
 import type { MemoryProvider } from "../types.js";
 import { getEnvVar } from "../config.js";
 import { fetchWithTimeout } from "./_fetch.js";
+import { buildProxyFetch } from "./_proxy.js";
 import {
   DEFAULT_AZURE_API_VERSION,
   buildAuthHeaders,
   buildChatUrl,
+  buildFoundryHeaders,
+  buildFoundryUrl,
   detectAzure,
+  detectFoundry,
   normalizeBaseUrl,
 } from "./_openai-shared.js";
 
@@ -53,7 +57,9 @@ export class OpenAIProvider implements MemoryProvider {
   private reasoningEffort?: string;
   private timeoutMs: number;
   private isAzure: boolean;
+  private isFoundry: boolean;
   private azureApiVersion: string;
+  private proxyFetch: ((url: string, init: unknown) => Promise<Response>) | undefined;
 
   constructor(apiKey: string, model: string, maxTokens: number, baseURL?: string) {
     this.apiKey = apiKey;
@@ -65,6 +71,8 @@ export class OpenAIProvider implements MemoryProvider {
     this.azureApiVersion =
       getEnvVar("OPENAI_API_VERSION") || DEFAULT_AZURE_API_VERSION;
     this.isAzure = detectAzure(this.baseUrl);
+    this.isFoundry = detectFoundry(this.baseUrl);
+    this.proxyFetch = buildProxyFetch("openai");
   }
 
   async compress(systemPrompt: string, userPrompt: string): Promise<string> {
@@ -76,6 +84,48 @@ export class OpenAIProvider implements MemoryProvider {
   }
 
   private async call(systemPrompt: string, userPrompt: string): Promise<string> {
+    if (this.isFoundry) {
+      return this.callFoundry(systemPrompt, userPrompt);
+    }
+    return this.callOpenAI(systemPrompt, userPrompt);
+  }
+
+  // Azure AI Foundry (Anthropic) endpoint — uses Anthropic Messages API format.
+  private async callFoundry(systemPrompt: string, userPrompt: string): Promise<string> {
+    const url = buildFoundryUrl(this.baseUrl);
+    const body = {
+      model: this.model,
+      max_tokens: this.maxTokens,
+      system: systemPrompt,
+      messages: [{ role: "user", content: userPrompt }],
+    };
+    let response: Response;
+    try {
+      response = await fetchWithTimeout(
+        url,
+        { method: "POST", headers: buildFoundryHeaders(this.apiKey), body: JSON.stringify(body) },
+        this.timeoutMs,
+        this.proxyFetch,
+      );
+    } catch (err) {
+      if (err instanceof Error && err.name === "AbortError") {
+        throw new Error(`Azure AI Foundry request timed out after ${this.timeoutMs}ms`);
+      }
+      throw err;
+    }
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`Azure AI Foundry error (${response.status}): ${text}`);
+    }
+    const data = (await response.json()) as {
+      content?: Array<{ type: string; text: string }>;
+    };
+    const text = data.content?.find((b) => b.type === "text")?.text;
+    if (text) return text;
+    throw new Error(`Azure AI Foundry unexpected response: ${JSON.stringify(data).slice(0, 200)}`);
+  }
+
+  private async callOpenAI(systemPrompt: string, userPrompt: string): Promise<string> {
     const url = buildChatUrl(this.baseUrl, this.isAzure, this.azureApiVersion);
     const body: Record<string, unknown> = {
       model: this.model,
@@ -96,12 +146,6 @@ export class OpenAIProvider implements MemoryProvider {
       body.reasoning_effort = this.reasoningEffort;
     }
 
-    // Bound the request via the shared fetchWithTimeout helper, which
-    // owns the AbortController + clearTimeout cleanup for every raw-fetch
-    // provider (minimax, openrouter, gemini, openrouter-embed, etc.).
-    // OPENAI_TIMEOUT_MS keeps its v0.9.17 meaning (OpenAI-scoped alias,
-    // takes precedence); when unset we fall through to
-    // AGENTMEMORY_LLM_TIMEOUT_MS and finally the 60s default. See #446.
     let response: Response;
     try {
       response = await fetchWithTimeout(
@@ -112,6 +156,7 @@ export class OpenAIProvider implements MemoryProvider {
           body: JSON.stringify(body),
         },
         this.timeoutMs,
+        this.proxyFetch,
       );
     } catch (err) {
       const aborted = err instanceof Error && err.name === "AbortError";
@@ -175,4 +220,3 @@ function parsePositiveInt(raw: string | null | undefined): number | undefined {
   const n = Number(trimmed);
   return Number.isFinite(n) && n > 0 ? n : undefined;
 }
-

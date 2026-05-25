@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **Azure OpenAI provider.** New `AZURE_OPENAI_API_KEY` / `AZURE_OPENAI_ENDPOINT` / `AZURE_OPENAI_DEPLOYMENT` env vars wire up an Azure-hosted LLM for compress/summarize. Supports both standard Azure OpenAI deployments (`{resource}.openai.azure.com`) and Azure AI Foundry Anthropic deployments (`{resource}.services.ai.azure.com/anthropic`) — endpoint format auto-detected.
+- **Azure AI Foundry (Anthropic) endpoint support.** When `AZURE_OPENAI_ENDPOINT` contains `/anthropic`, the provider switches to the Anthropic Messages API format (`x-api-key` header, `anthropic-version`, top-level `system` field) instead of the Azure OpenAI chat completions format. No extra config needed — the endpoint path is the signal.
+- **Corporate proxy support.** `HTTP_PROXY`/`HTTPS_PROXY` env vars now tunnel all outbound LLM+embedding requests through an HTTP CONNECT proxy via `node-fetch`, covering corporate networks where Node.js 18+ built-in `fetch` ignores proxy env vars.
+
+### Fixed
+
+- **Viewer tab bar crush.** Tab bar no longer overflows and crushes the content area when many sessions are open.
+- **Graph canvas sizing.** Knowledge graph canvas now fills the available viewport height correctly instead of rendering as a zero-height element.
 ### Fixed
 
 - **PostToolUse hook reads `tool_response`, falls back to `tool_output`** ([PR #561](https://github.com/rohitg00/agentmemory/pull/561) by [@faraz152](https://github.com/faraz152), closes [#539](https://github.com/rohitg00/agentmemory/issues/539)). Claude Code's PostToolUse payload sends the field as `tool_response`, not `tool_output`. The hook was reading the wrong field, so `cleanOutput` was always `undefined`, `mem::compress` consistently failed its XML schema validation (requires `narrative >= 10` chars), and observations from every real Claude Code tool call were dropped. Now reads `tool_response ?? tool_output` so older integrations that emit the legacy field name keep working.
@@ -392,7 +402,6 @@ Three additions on top of v0.9.10: OpenAI Codex got a plugin platform and agentm
 
 - `@agentmemory/mcp` package version bumped from 0.9.10 → 0.9.11 to lockstep with the main package.
 - README now distinguishes **Codex CLI (MCP only)** from **Codex CLI (full plugin)** in the per-host install table and lists the marketplace install command for the latter.
-
 ## [0.9.10] — 2026-05-12
 
 Three deployment-shape fixes reported live by [@flamerged](https://github.com/flamerged) ([#299](https://github.com/rohitg00/agentmemory/issues/299), [#301](https://github.com/rohitg00/agentmemory/issues/301)): the v0.9.7 docker-compose persistence fix was incomplete because the distroless engine runs as UID 65532 but `docker volume create` initializes the named volume mountpoint as `root:root mode 755`; the viewer's port-detection JS hardcoded `'3113'` so any reverse-proxy fronting on port 80/443 returned an empty dashboard; and the `mem::context` budget loop short-circuited the entire selection on the first oversized block — pinning a large slot could starve all other context blocks even when smaller ones would have fit.

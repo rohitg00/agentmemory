@@ -1087,6 +1087,8 @@ agentmemory auto-detects from your environment. By default, no LLM calls are mad
 | MiniMax | `MINIMAX_API_KEY` | Anthropic-compatible |
 | Gemini | `GEMINI_API_KEY` | Also enables embeddings |
 | OpenRouter | `OPENROUTER_API_KEY` | Any model |
+| Azure OpenAI | `AZURE_OPENAI_API_KEY` + `AZURE_OPENAI_ENDPOINT` + `AZURE_OPENAI_DEPLOYMENT` | Standard Azure OpenAI deployments (`{resource}.openai.azure.com`) |
+| Azure AI Foundry (Anthropic) | `AZURE_OPENAI_API_KEY` + `AZURE_OPENAI_ENDPOINT` (with `/anthropic` path) + `AZURE_OPENAI_DEPLOYMENT` | Anthropic Claude deployed via Azure AI Foundry (`{resource}.services.ai.azure.com/anthropic`). Auto-detected by endpoint path. |
 | Claude subscription fallback | `AGENTMEMORY_ALLOW_AGENT_SDK=true` | Opt-in only. Spawns `@anthropic-ai/claude-agent-sdk` sessions — used to cause unbounded Stop-hook recursion (#149 follow-up) so it is no longer the default. |
 
 ### Config File
@@ -1134,23 +1136,18 @@ Create `~/.agentmemory/.env`:
 #                                          # to embeddings only.
 # OPENAI_BASE_URL=https://api.openai.com   # Optional: override for Azure / vLLM / LM Studio / proxies
 #                                          # Azure: https://<resource>.openai.azure.com/openai/deployments/<deployment>
-#                                          # Auto-detected from `.openai.azure.com` hostname; uses
-#                                          # api-key header + api-version query param.
 # OPENAI_API_VERSION=2024-08-01-preview    # Optional: Azure api-version query param
 # OPENAI_MODEL=gpt-4o-mini                 # Optional: default model
-# OPENAI_TIMEOUT_MS=60000                  # Optional: OpenAI-scoped alias for the outbound fetch
-#                                          # timeout. Takes precedence over AGENTMEMORY_LLM_TIMEOUT_MS
-#                                          # for back-compat with v0.9.17. New configs should
-#                                          # prefer the global AGENTMEMORY_LLM_TIMEOUT_MS below.
+# OPENAI_TIMEOUT_MS=60000                  # Optional: OpenAI-scoped fetch timeout
 # OPENAI_REASONING_EFFORT=none             # Optional: "low" | "medium" | "high" | "none"
-#                                          # Honored only by OpenAI's reasoning models (o1, o3,
-#                                          # gpt-*-reasoning) and providers that mirror that
-#                                          # schema (Ollama Cloud thinking models). Standard
-#                                          # chat models reject this field with 400. Set to
-#                                          # "none" for thinking models that return reasoning
-#                                          # but no content.
-# OPENAI_API_KEY_FOR_LLM=false             # Optional: set to false to skip OpenAI auto-detection
-#                                          # for LLM (useful if you only want OpenAI for embeddings)
+# OPENAI_API_KEY_FOR_LLM=false             # Optional: skip OpenAI auto-detection for LLM
+# Azure OpenAI / Azure AI Foundry (alternative to OPENAI_API_KEY)
+# AZURE_OPENAI_API_KEY=...
+# AZURE_OPENAI_ENDPOINT=https://<resource>.openai.azure.com          # Standard Azure OpenAI
+# AZURE_OPENAI_ENDPOINT=https://<resource>.services.ai.azure.com/anthropic  # Azure AI Foundry (Anthropic)
+# AZURE_OPENAI_DEPLOYMENT=<deployment-name>
+# AZURE_OPENAI_API_VERSION=2024-08-01-preview                        # Optional, Azure OpenAI only
+# Note: set HTTPS_PROXY / HTTP_PROXY if in a corporate network — proxy auto-detected.
 # Opt-in Claude-subscription fallback (spawns @anthropic-ai/claude-agent-sdk);
 # leave OFF unless you understand the Stop-hook recursion risk (#149 follow-up):
 # AGENTMEMORY_ALLOW_AGENT_SDK=true

@@ -31,14 +31,49 @@ export const DEFAULT_AZURE_API_VERSION = "2024-08-01-preview";
 
 type AzureStyle = "legacy" | "v1";
 
-// Azure resource URLs land at <resource>.openai.azure.com.
+// Azure resource URLs land at one of three hostnames depending on resource type:
+//   .openai.azure.com          — classic Azure OpenAI
+//   .services.ai.azure.com     — Azure AI Services / AI Foundry OpenAI deployments
+//   .cognitiveservices.azure.com — Cognitive Services unified endpoint
 export function detectAzure(baseUrl: string): boolean {
   try {
     const u = new URL(baseUrl);
-    return u.hostname.endsWith(".openai.azure.com");
+    return (
+      u.hostname.endsWith(".openai.azure.com") ||
+      u.hostname.endsWith(".services.ai.azure.com") ||
+      u.hostname.endsWith(".cognitiveservices.azure.com")
+    );
   } catch {
     return false;
   }
+}
+
+// Azure AI Foundry Anthropic endpoints contain `/anthropic` in the path.
+// These use the Anthropic Messages API format instead of OpenAI chat completions.
+export function detectFoundry(baseUrl: string): boolean {
+  try {
+    const u = new URL(baseUrl);
+    return u.pathname.includes("/anthropic");
+  } catch {
+    return baseUrl.includes("/anthropic");
+  }
+}
+
+// Foundry URL: normalize to end with `/v1/messages`, avoiding double-append.
+export function buildFoundryUrl(baseUrl: string): string {
+  const normalized = baseUrl.replace(/\/+$/, "");
+  if (normalized.endsWith("/v1/messages")) return normalized;
+  if (normalized.endsWith("/v1")) return `${normalized}/messages`;
+  return `${normalized}/v1/messages`;
+}
+
+// Foundry uses x-api-key + anthropic-version headers (Anthropic Messages API format).
+export function buildFoundryHeaders(apiKey: string): Record<string, string> {
+  return {
+    "Content-Type": "application/json",
+    "x-api-key": apiKey,
+    "anthropic-version": "2023-06-01",
+  };
 }
 
 // Pick the Azure URL style off the base URL's path shape. We only

@@ -46,7 +46,7 @@ async function main() {
 	} catch {}
 }
 main();
-
 //#endregion
-export {  };
+export {};
+
 //# sourceMappingURL=task-completed.mjs.map
