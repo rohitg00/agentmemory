@@ -71,6 +71,42 @@ describe("VectorIndex", () => {
     expect(results[0].sessionId).toBe("ses_1");
   });
 
+  it("preserves vector dimensions when Buffer uses a pooled ArrayBuffer", () => {
+    const embedding = new Float32Array([0.1, 0.2, 0.3]);
+    const pooled = Buffer.from(
+      Buffer.from(embedding.buffer).toString("base64"),
+      "base64",
+    );
+    expect(pooled.buffer.byteLength).toBeGreaterThan(pooled.byteLength);
+
+    const restored = VectorIndex.deserialize(
+      JSON.stringify([
+        [
+          "obs_pooled",
+          {
+            embedding: pooled.toString("base64"),
+            sessionId: "ses_1",
+          },
+        ],
+      ]),
+    );
+
+    expect(restored.validateDimensions(3).mismatches).toEqual([]);
+    expect(restored.search(embedding)[0].obsId).toBe("obs_pooled");
+  });
+
+  it("serializes only the active Float32Array slice", () => {
+    const backing = new Float32Array([99, 1, 0, 0, 99]);
+    index.add("obs_slice", "ses_1", backing.subarray(1, 4));
+
+    const restored = VectorIndex.deserialize(index.serialize());
+
+    expect(restored.validateDimensions(3).mismatches).toEqual([]);
+    expect(restored.search(new Float32Array([1, 0, 0]))[0].obsId).toBe(
+      "obs_slice",
+    );
+  });
+
   it("handles zero vectors without error", () => {
     index.add("obs_zero", "ses_1", new Float32Array([0, 0, 0]));
     const results = index.search(new Float32Array([1, 0, 0]));
