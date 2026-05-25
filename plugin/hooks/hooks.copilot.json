@@ -1,0 +1,97 @@
+{
+  "version": 1,
+  "hooks": {
+    "SessionStart": [
+      {
+        "type": "command",
+        "bash": "agentmemory-hook session-start",
+        "powershell": "agentmemory-hook session-start",
+        "env": {
+          "AGENTMEMORY_INJECT_CONTEXT": "true"
+        },
+        "timeoutSec": 10
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "type": "command",
+        "bash": "agentmemory-hook prompt-submit",
+        "powershell": "agentmemory-hook prompt-submit",
+        "timeoutSec": 10
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "edit|create|view|glob|grep",
+        "type": "command",
+        "bash": "agentmemory-hook pre-tool-use",
+        "powershell": "agentmemory-hook pre-tool-use",
+        "timeoutSec": 5
+      }
+    ],
+    "PostToolUse": [
+      {
+        "type": "command",
+        "bash": "agentmemory-hook post-tool-use",
+        "powershell": "agentmemory-hook post-tool-use",
+        "timeoutSec": 5
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "type": "command",
+        "bash": "agentmemory-hook post-tool-failure",
+        "powershell": "agentmemory-hook post-tool-failure",
+        "timeoutSec": 5
+      }
+    ],
+    "PreCompact": [
+      {
+        "type": "command",
+        "bash": "agentmemory-hook pre-compact",
+        "powershell": "agentmemory-hook pre-compact",
+        "timeoutSec": 5
+      }
+    ],
+    "SubagentStart": [
+      {
+        "type": "command",
+        "bash": "agentmemory-hook subagent-start",
+        "powershell": "agentmemory-hook subagent-start",
+        "timeoutSec": 5
+      }
+    ],
+    "SubagentStop": [
+      {
+        "type": "command",
+        "bash": "agentmemory-hook subagent-stop",
+        "powershell": "agentmemory-hook subagent-stop",
+        "timeoutSec": 5
+      }
+    ],
+    "Notification": [
+      {
+        "type": "command",
+        "bash": "agentmemory-hook notification",
+        "powershell": "agentmemory-hook notification",
+        "timeoutSec": 5
+      }
+    ],
+    "Stop": [
+      {
+        "type": "command",
+        "bash": "agentmemory-hook stop",
+        "powershell": "agentmemory-hook stop",
+        "timeoutSec": 10
+      }
+    ],
+    "SessionEnd": [
+      {
+        "type": "command",
+        "bash": "agentmemory-hook session-end",
+        "powershell": "agentmemory-hook session-end",
+        "timeoutSec": 10
+      }
+    ]
+  }
+}

@@ -15,6 +15,13 @@ function authHeaders() {
 	if (SECRET) h["Authorization"] = `Bearer ${SECRET}`;
 	return h;
 }
+function isConnectionRefused(err) {
+	if (!(err instanceof Error)) return false;
+	return (typeof err.cause === "object" && err.cause !== null && "code" in err.cause ? String(err.cause["code"] ?? "") : "") === "ECONNREFUSED" || err.message.includes("ECONNREFUSED");
+}
+function logServerHint() {
+	process.stderr.write(`agentmemory: server not reachable at ${REST_URL}. Start it with: agentmemory\n`);
+}
 async function main() {
 	let input = "";
 	for await (const chunk of process.stdin) input += chunk;
@@ -41,7 +48,9 @@ async function main() {
 		fetch(url, {
 			...init,
 			signal: AbortSignal.timeout(REGISTER_TIMEOUT_MS)
-		}).catch(() => {});
+		}).catch((err) => {
+			if (isConnectionRefused(err)) logServerHint();
+		});
 		return;
 	}
 	try {
@@ -53,7 +62,9 @@ async function main() {
 			const result = await res.json();
 			if (result.context) process.stdout.write(result.context);
 		}
-	} catch {}
+	} catch (err) {
+		if (isConnectionRefused(err)) logServerHint();
+	}
 }
 main();
 

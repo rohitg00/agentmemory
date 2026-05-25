@@ -2,6 +2,7 @@ import { platform } from "node:os";
 import * as p from "@clack/prompts";
 import type { ConnectAdapter, ConnectOptions, ConnectResult } from "./types.js";
 import { adapter as claudeCode } from "./claude-code.js";
+import { adapter as copilotCli } from "./copilot-cli.js";
 import { adapter as codex } from "./codex.js";
 import { adapter as cursor } from "./cursor.js";
 import { adapter as geminiCli } from "./gemini-cli.js";
@@ -12,6 +13,7 @@ import { adapter as pi } from "./pi.js";
 
 export const ADAPTERS: readonly ConnectAdapter[] = [
   claudeCode,
+  copilotCli,
   codex,
   cursor,
   geminiCli,
@@ -33,23 +35,37 @@ export function knownAgents(): string[] {
 function parseFlags(args: string[]): {
   dryRun: boolean;
   force: boolean;
+  remove: boolean;
   all: boolean;
   withHooks: boolean;
+  withShimAbsolute: boolean;
   positional: string[];
 } {
   const positional: string[] = [];
   let dryRun = false;
   let force = false;
+  let remove = false;
   let all = false;
   let withHooks = false;
+  let withShimAbsolute = false;
   for (const a of args) {
     if (a === "--dry-run") dryRun = true;
     else if (a === "--force") force = true;
+    else if (a === "--remove") remove = true;
     else if (a === "--all") all = true;
     else if (a === "--with-hooks") withHooks = true;
+    else if (a === "--with-shim-absolute") withShimAbsolute = true;
     else if (!a.startsWith("-")) positional.push(a);
   }
-  return { dryRun, force, all, withHooks, positional };
+  return {
+    dryRun,
+    force,
+    remove,
+    all,
+    withHooks,
+    withShimAbsolute,
+    positional,
+  };
 }
 
 export async function runAdapter(
@@ -77,17 +93,35 @@ export async function runAdapter(
 }
 
 export async function runConnect(args: string[]): Promise<void> {
-  if (platform() === "win32") {
+  const {
+    dryRun,
+    force,
+    remove,
+    all,
+    withHooks,
+    withShimAbsolute,
+    positional,
+  } = parseFlags(args);
+  const requested = positional.map((name) => name.toLowerCase());
+  const allowWindowsCopilotOnly =
+    !all && requested.length === 1 && requested[0] === "copilot-cli";
+
+  if (platform() === "win32" && !allowWindowsCopilotOnly) {
     p.intro("agentmemory connect");
     p.log.warn(
-      "Windows: automated `connect` is not supported yet. See https://github.com/rohitg00/agentmemory#other-agents for manual install steps.",
+      "Windows: automated `connect` currently supports only `copilot-cli`. See https://github.com/rohitg00/agentmemory#other-agents for manual install steps for other agents.",
     );
     p.outro("Windows: manual install required — see docs");
     return;
   }
 
-  const { dryRun, force, all, withHooks, positional } = parseFlags(args);
-  const opts: ConnectOptions = { dryRun, force, withHooks };
+  const opts: ConnectOptions = {
+    dryRun,
+    force,
+    remove,
+    withHooks,
+    withShimAbsolute,
+  };
 
   p.intro("agentmemory connect");
 
@@ -156,6 +190,8 @@ function summarize(
     switch (result.kind) {
       case "installed":
         return `  ✓ ${name}${result.mutatedPath ? ` → ${result.mutatedPath}` : ""}`;
+      case "removed":
+        return `  ✓ ${name} (removed${result.mutatedPath ? ` → ${result.mutatedPath}` : ""})`;
       case "already-wired":
         return `  ✓ ${name} (already wired)`;
       case "stub":

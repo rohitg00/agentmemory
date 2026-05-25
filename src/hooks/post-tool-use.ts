@@ -1,5 +1,8 @@
 #!/usr/bin/env node
 
+import { fileURLToPath } from "node:url";
+import { pickRawToolOutput } from "./post-tool-use-util.js";
+
 function isSdkChildContext(payload: unknown): boolean {
   if (process.env["AGENTMEMORY_SDK_CHILD"] === "1") return true;
   if (!payload || typeof payload !== "object") return false;
@@ -32,9 +35,7 @@ async function main() {
 
   const sessionId = (data.session_id as string) || "unknown";
 
-  const { imageData, cleanOutput } = extractImageData(
-    data.tool_response ?? data.tool_output,
-  );
+  const { imageData, cleanOutput } = extractImageData(pickRawToolOutput(data));
 
   try {
     await fetch(`${REST_URL}/agentmemory/observe`, {
@@ -57,6 +58,7 @@ async function main() {
     });
   } catch {
   }
+
 }
 
 function isBase64Image(val: unknown): val is string {
@@ -104,4 +106,6 @@ function truncate(value: unknown, max: number): unknown {
   return value;
 }
 
-main();
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  void main();
+}

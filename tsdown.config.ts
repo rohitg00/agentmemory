@@ -48,7 +48,7 @@ export default defineConfig([
     banner: { js: "#!/usr/bin/env node" },
   },
   {
-    entry: ["src/cli.ts"],
+    entry: ["src/cli.ts", "src/hook-shim.ts"],
     outDir: "dist",
     ...shared,
     clean: false,

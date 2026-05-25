@@ -1,6 +1,7 @@
 export type ConnectOptions = {
   dryRun: boolean;
   force: boolean;
+  remove?: boolean;
   /**
    * When true, the Codex adapter additionally writes a global
    * `~/.codex/hooks.json` block referencing absolute paths to bundled hook
@@ -8,6 +9,12 @@ export type ConnectOptions = {
    * hooks from dispatching on Codex Desktop. No-op for other adapters.
    */
   withHooks?: boolean;
+  /**
+   * When true, adapters that install hook command manifests should write
+   * absolute `node "<path>/script.mjs"` commands instead of relying on
+   * `agentmemory-hook` being on PATH. Currently used by copilot-cli.
+   */
+  withShimAbsolute?: boolean;
 };
 
 export type ConnectAdapter = {
@@ -27,6 +34,7 @@ export type ConnectAdapter = {
 
 export type ConnectResult =
   | { kind: "installed"; mutatedPath?: string; backupPath?: string }
+  | { kind: "removed"; mutatedPath?: string }
   | { kind: "already-wired"; mutatedPath?: string }
   | { kind: "stub"; reason: string }
   | { kind: "skipped"; reason: string };

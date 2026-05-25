@@ -29,10 +29,11 @@ describe("agentmemory connect — dispatcher", () => {
     expect(resolveAdapter("")).toBeNull();
   });
 
-  it("ships exactly the 8 agents specified by the spec", () => {
+  it("ships exactly the 9 agents specified by the spec", () => {
     expect(knownAgents().sort()).toEqual(
       [
         "claude-code",
+        "copilot-cli",
         "codex",
         "cursor",
         "gemini-cli",
@@ -42,7 +43,7 @@ describe("agentmemory connect — dispatcher", () => {
         "pi",
       ].sort(),
     );
-    expect(ADAPTERS.length).toBe(8);
+    expect(ADAPTERS.length).toBe(9);
   });
 
   it("every adapter exposes detect() and install()", () => {
@@ -182,8 +183,89 @@ describe("agentmemory connect — claude-code adapter (mock filesystem)", () => 
     if (result.kind === "installed") {
       expect(result.backupPath).toBeDefined();
       expect(existsSync(result.backupPath!)).toBe(true);
-      expect(result.backupPath!).toContain(".agentmemory/backups");
+      expect(result.backupPath!).toMatch(/[\\\/]\.agentmemory[\\\/]backups[\\\/]/);
     }
+  });
+});
+
+describe("agentmemory connect — copilot-cli adapter (mock filesystem)", () => {
+  let tmpHome: string;
+  let originalHome: string | undefined;
+  let originalUserprofile: string | undefined;
+
+  beforeEach(() => {
+    tmpHome = mkdtempSync(join(tmpdir(), "am-copilot-connect-"));
+    originalHome = process.env["HOME"];
+    originalUserprofile = process.env["USERPROFILE"];
+    process.env["HOME"] = tmpHome;
+    process.env["USERPROFILE"] = tmpHome;
+    delete process.env["COPILOT_HOME"];
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    if (originalHome !== undefined) process.env["HOME"] = originalHome;
+    else delete process.env["HOME"];
+    if (originalUserprofile !== undefined)
+      process.env["USERPROFILE"] = originalUserprofile;
+    else delete process.env["USERPROFILE"];
+    rmSync(tmpHome, { recursive: true, force: true });
+    vi.resetModules();
+  });
+
+  async function loadAdapter(): Promise<ConnectAdapter> {
+    const mod = await import("../src/cli/connect/copilot-cli.js?t=" + Date.now());
+    return (mod as { adapter: ConnectAdapter }).adapter;
+  }
+
+  it("install() writes both hooks and mcp config, then remove() cleans both", async () => {
+    const a = await loadAdapter();
+    const installResult = await a.install({
+      dryRun: false,
+      force: false,
+      remove: false,
+      withShimAbsolute: false,
+    });
+    expect(installResult.kind).toBe("installed");
+
+    const hooksPath = join(tmpHome, ".copilot", "hooks", "agentmemory.json");
+    const mcpPath = join(tmpHome, ".copilot", "mcp-config.json");
+    expect(existsSync(hooksPath)).toBe(true);
+    expect(existsSync(mcpPath)).toBe(true);
+
+    const hooks = JSON.parse(readFileSync(hooksPath, "utf-8"));
+    expect(hooks.version).toBe(1);
+    expect(hooks.hooks.SessionStart[0].bash).toContain("agentmemory-hook session-start");
+
+    const mcp = JSON.parse(readFileSync(mcpPath, "utf-8"));
+    expect(mcp.mcpServers.agentmemory.command).toBe("npx");
+    expect(mcp.mcpServers.agentmemory.args).toContain("@agentmemory/mcp");
+
+    const removeResult = await a.install({
+      dryRun: false,
+      force: false,
+      remove: true,
+    });
+    expect(removeResult.kind).toBe("removed");
+    expect(existsSync(hooksPath)).toBe(false);
+    const mcpAfter = JSON.parse(readFileSync(mcpPath, "utf-8"));
+    expect(mcpAfter.mcpServers.agentmemory).toBeUndefined();
+  });
+
+  it("install() with withShimAbsolute writes absolute node script commands", async () => {
+    const a = await loadAdapter();
+    const result = await a.install({
+      dryRun: false,
+      force: false,
+      withShimAbsolute: true,
+    });
+    expect(result.kind).toBe("installed");
+
+    const hooksPath = join(tmpHome, ".copilot", "hooks", "agentmemory.json");
+    const hooks = JSON.parse(readFileSync(hooksPath, "utf-8"));
+    const sessionStart = hooks.hooks.SessionStart[0];
+    expect(sessionStart.bash).toMatch(/^node ".*\/plugin\/scripts\/session-start\.mjs"$/);
+    expect(sessionStart.powershell).toBe(sessionStart.bash);
   });
 });
 

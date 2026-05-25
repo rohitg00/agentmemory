@@ -33,6 +33,27 @@ function authHeaders(): Record<string, string> {
   return h;
 }
 
+function isConnectionRefused(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  const code =
+    typeof (err as { cause?: unknown }).cause === "object" &&
+    (err as { cause?: unknown }).cause !== null &&
+    "code" in ((err as { cause?: unknown }).cause as Record<string, unknown>)
+      ? String(
+          (((err as { cause?: unknown }).cause as Record<string, unknown>)["code"] as
+            | string
+            | undefined) ?? "",
+        )
+      : "";
+  return code === "ECONNREFUSED" || err.message.includes("ECONNREFUSED");
+}
+
+function logServerHint(): void {
+  process.stderr.write(
+    `agentmemory: server not reachable at ${REST_URL}. Start it with: agentmemory\n`,
+  );
+}
+
 async function main() {
   let input = "";
   for await (const chunk of process.stdin) {
@@ -66,7 +87,9 @@ async function main() {
     fetch(url, {
       ...init,
       signal: AbortSignal.timeout(REGISTER_TIMEOUT_MS),
-    }).catch(() => {});
+    }).catch((err) => {
+      if (isConnectionRefused(err)) logServerHint();
+    });
     return;
   }
 
@@ -81,7 +104,8 @@ async function main() {
         process.stdout.write(result.context);
       }
     }
-  } catch {
+  } catch (err) {
+    if (isConnectionRefused(err)) logServerHint();
     // silently fail -- don't block Claude Code startup
   }
 }

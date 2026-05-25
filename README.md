@@ -461,6 +461,17 @@ agentmemory connect codex --with-hooks
 
 This adds an idempotent block to `~/.codex/hooks.json` referencing absolute paths to the bundled scripts (no `${CLAUDE_PLUGIN_ROOT}` expansion needed at user-scope). Re-run the same command after upgrading agentmemory to refresh paths. User entries in the same file are preserved; only previous agentmemory entries are replaced.
 
+### GitHub Copilot CLI
+
+```bash
+npm install -g @agentmemory/agentmemory
+agentmemory                            # start server
+agentmemory connect copilot-cli        # wire hooks + MCP
+# restart copilot so it picks up the new hooks
+```
+
+Copilot reloads hooks only on process start, so wiring changes do not apply to already-running sessions. For customization details, see the official hooks docs: https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/use-hooks.
+
 <details>
 <summary><b>OpenClaw (paste this prompt)</b></summary>
 
@@ -536,6 +547,7 @@ The agentmemory entry is the **same MCP server block** across every host that us
 | **OpenClaw** | OpenClaw MCP config | Same `mcpServers` block, or use the deeper [memory plugin](integrations/openclaw/). |
 | **Codex CLI (MCP only)** | `.codex/config.toml` | TOML shape: `codex mcp add agentmemory -- npx -y @agentmemory/mcp`, or add `[mcp_servers.agentmemory]` manually. |
 | **Codex CLI (full plugin)** | Codex plugin marketplace | `codex plugin marketplace add rohitg00/agentmemory` then `codex plugin add agentmemory@agentmemory`. Registers MCP + 6 lifecycle hooks (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PreCompact, Stop) + 4 skills. On Codex Desktop, also run `agentmemory connect codex --with-hooks` until [openai/codex#16430](https://github.com/openai/codex/issues/16430) lands — plugin hooks are currently silent there. |
+| **Copilot CLI** | `~/.copilot/hooks/agentmemory.json` + `~/.copilot/mcp-config.json` | Use `agentmemory connect copilot-cli`. Restart `copilot` after connect/remove so hook changes load. |
 | **OpenCode (MCP only)** | `opencode.json` | Different shape — top-level `mcp` key, command as array: `{"mcp": {"agentmemory": {"type": "local", "command": ["npx", "-y", "@agentmemory/mcp"], "enabled": true}}}`. |
 | **OpenCode (full plugin)** | `plugin/opencode/` | 22 auto-capture hooks covering session lifecycle, messages, tools, errors. Two slash commands (`/recall`, `/remember`). Copy `plugin/opencode/` into your OpenCode workspace and add the plugin entry to `opencode.json`. See [`plugin/opencode/README.md`](plugin/opencode/README.md) for the full hook table + gap analysis. |
 | **pi** | `~/.pi/agent/extensions/agentmemory` | Copy [`integrations/pi`](integrations/pi/) and restart pi. |
