@@ -17,7 +17,11 @@ describe("OpenCode plugin auto-context injection (#431)", () => {
     expect(plugin).toMatch(
       /postJson\(["']\/session\/start["']/,
     );
-    expect(plugin).toMatch(/startContextCache\.set\(activeSessionId/);
+    // Snapshot `activeSessionId` into a local before the await so the cached
+    // context binds to the session that opened it, not a later one.
+    expect(plugin).toMatch(
+      /const\s+sessionId\s*=\s*activeSessionId[\s\S]*?startContextCache\.set\(sessionId/,
+    );
   });
 
   it("chat.system.transform reads cached context first, falls back to /context", () => {

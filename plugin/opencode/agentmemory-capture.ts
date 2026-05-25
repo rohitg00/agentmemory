@@ -184,8 +184,12 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
         seenSubtaskIds.delete(activeSessionId);
         seenToolCallIds.delete(activeSessionId);
         contextInjectedSessions.delete(activeSessionId);
+        // Snapshot the session id locally — `activeSessionId` is mutable
+        // and another `session.created` event during the await could
+        // rebind it, causing context to be cached against the wrong key.
+        const sessionId = activeSessionId;
         const startResult = await postJson("/session/start", {
-          sessionId: activeSessionId,
+          sessionId,
           title: info?.title ?? null,
           parentID: info?.parentID ?? null,
           version: info?.version ?? null,
@@ -195,11 +199,11 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
         // #431: cache the context returned at session/start so the
         // chat.system.transform hook injects it without a second fetch.
         const startCtx = (startResult as any)?.context;
-        if (activeSessionId && typeof startCtx === "string" && startCtx.length > 0) {
-          startContextCache.set(activeSessionId, startCtx);
+        if (typeof startCtx === "string" && startCtx.length > 0) {
+          startContextCache.set(sessionId, startCtx);
         }
-        if (pendingConfig && activeSessionId) {
-          await observe(activeSessionId, "config_loaded", pendingConfig);
+        if (pendingConfig) {
+          await observe(sessionId, "config_loaded", pendingConfig);
           pendingConfig = null;
         }
       }

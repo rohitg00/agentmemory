@@ -2178,6 +2178,7 @@ async function stopDockerEngine(composeFile: string, port: number): Promise<void
   });
   clearEnginePidfile();
   clearEngineState();
+  clearWorkerPidfile();
   if (!ok) {
     p.log.error(
       `docker compose down failed. The engine may still be running on :${port}. Inspect with:\n  docker compose -f ${composeFile} ps`,
@@ -2199,6 +2200,7 @@ async function runStop(): Promise<void> {
       p.log.info(`No engine responding on port ${port}.`);
       clearEnginePidfile();
       clearEngineState();
+      clearWorkerPidfile();
       p.outro("Nothing to stop.");
       return;
     }
@@ -2208,21 +2210,44 @@ async function runStop(): Promise<void> {
 
   const portPids = findEnginePidsByPort(port);
   const pidfilePid = readEnginePidfile();
+  // #640 + #474: read the worker pid up front so the engine-down branch
+  // can still reap an orphaned worker process (the common failure mode
+  // where a wrapper script kept the worker alive across engine restarts).
+  const workerPid = readWorkerPidfile();
 
   if (!running) {
-    if (portPids.length === 0 && pidfilePid === null) {
+    if (portPids.length === 0 && pidfilePid === null && workerPid === null) {
       clearEnginePidfile();
       clearEngineState();
+      clearWorkerPidfile();
       p.outro("Nothing to stop.");
+      return;
+    }
+    if (workerPid !== null && portPids.length === 0 && pidfilePid === null) {
+      // Engine already gone but worker is lingering — reap it directly
+      // instead of preserving for manual cleanup.
+      const s = p.spinner();
+      s.start(`Stopping orphaned agentmemory worker (pid ${workerPid})...`);
+      const ok = await signalAndWait(workerPid, "SIGTERM", 3000);
+      s.stop(ok ? `Stopped worker pid ${workerPid}` : `Failed to stop worker pid ${workerPid}`);
+      clearEnginePidfile();
+      clearEngineState();
+      clearWorkerPidfile();
+      if (!ok) {
+        p.log.error(`Worker pid ${workerPid} survived SIGKILL. Investigate with \`ps\`.`);
+        process.exit(1);
+      }
+      p.outro("Stopped orphaned worker. Memories persisted to disk.");
       return;
     }
     const survivors = new Set<number>(portPids);
     if (pidfilePid) survivors.add(pidfilePid);
+    if (workerPid) survivors.add(workerPid);
     p.log.warn(
       `Engine not responding on :${port}, but ${survivors.size} process(es) still hold the port or pidfile: ${[...survivors].join(", ")}`,
     );
     p.log.info(
-      `Preserving ~/.agentmemory/iii.pid. Investigate before manual cleanup:\n  ps -p ${[...survivors].join(",")} -o pid,ppid,comm,etime\n  ${IS_WINDOWS ? "netstat -ano | findstr :" + port : "lsof -i :" + port}`,
+      `Preserving ~/.agentmemory/iii.pid + worker.pid. Investigate before manual cleanup:\n  ps -p ${[...survivors].join(",")} -o pid,ppid,comm,etime\n  ${IS_WINDOWS ? "netstat -ano | findstr :" + port : "lsof -i :" + port}`,
     );
     process.exit(1);
   }
@@ -2250,8 +2275,8 @@ async function runStop(): Promise<void> {
   // #640 + #474: stop must also reap the agentmemory worker process
   // (`node dist/index.mjs`). If only the engine is killed, the worker can
   // survive (detached spawn / signal not propagated) and reconnect to the
-  // next engine as a duplicate registration.
-  const workerPid = readWorkerPidfile();
+  // next engine as a duplicate registration. workerPid was read above so
+  // the engine-down branch could also reap orphans.
   const workerCandidates = new Set<number>();
   if (workerPid) workerCandidates.add(workerPid);
 

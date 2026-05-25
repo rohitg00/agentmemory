@@ -232,12 +232,13 @@ export function registerObserveFunction(
             typeof raw.userPrompt === "string"
               ? raw.userPrompt.replace(/\s+/g, " ").trim().slice(0, 200)
               : undefined;
+          const ts = new Date().toISOString();
           await kv.set(KV.sessions, payload.sessionId, {
             id: payload.sessionId,
             project: payload.project,
             cwd: payload.cwd,
-            startedAt: payload.timestamp ?? new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
+            startedAt: payload.timestamp ?? ts,
+            updatedAt: ts,
             status: "active",
             observationCount: 1,
             ...(trimmedPrompt && trimmedPrompt.length > 0

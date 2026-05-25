@@ -1581,7 +1581,13 @@
       }, 30000);
     }
 
-    var graphSim = { nodes: [], edges: [], running: false, canvas: null, ctx: null, raf: null, panX: 0, panY: 0, zoom: 1, dragNode: null, mouseX: 0, mouseY: 0, tickCount: 0 };
+    var graphSim = { nodes: [], edges: [], running: false, canvas: null, ctx: null, raf: null, panX: 0, panY: 0, zoom: 1, dragNode: null, mouseX: 0, mouseY: 0, tickCount: 0, quietTicks: 0 };
+    function wakeGraphSim() {
+      graphSim.quietTicks = 0;
+      if (graphSim.running && !graphSim.raf) {
+        graphSim.raf = requestAnimationFrame(runSimulation);
+      }
+    }
 
     async function loadGraph() {
       var el = document.getElementById('view-graph');
@@ -1761,10 +1767,7 @@
         lastMX = e.clientX;
         lastMY = e.clientY;
         // #563: wake the simulation if it parked itself after settling
-        graphSim.quietTicks = 0;
-        if (graphSim.running && !graphSim.raf) {
-          graphSim.raf = requestAnimationFrame(runSimulation);
-        }
+        wakeGraphSim();
       });
       canvas.addEventListener('mousemove', function(e) {
         var dx = e.clientX - lastMX;
@@ -1821,6 +1824,9 @@
         e.preventDefault();
         var factor = e.deltaY > 0 ? 0.9 : 1.1;
         graphSim.zoom = Math.max(0.1, Math.min(5, graphSim.zoom * factor));
+        // #563: zoom is visually meaningless if the rAF loop is parked —
+        // wake the simulation so the next frame redraws at the new scale.
+        wakeGraphSim();
       }, { passive: false });
       canvas.addEventListener('dblclick', function(e) {
         var c = canvasCoords(e);
@@ -1835,6 +1841,7 @@
     window.zoomGraph = function(dir) {
       var factor = dir > 0 ? 1.25 : 0.8;
       graphSim.zoom = Math.max(0.1, Math.min(5, graphSim.zoom * factor));
+      wakeGraphSim();
     };
     window.recenterGraph = function() {
       graphSim.zoom = 1;
@@ -1844,6 +1851,7 @@
         graphSim.panX = cw / 2;
         graphSim.panY = ch / 2;
       }
+      wakeGraphSim();
     };
 
     function selectGraphNode(simNode) {
