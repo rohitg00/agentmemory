@@ -143,7 +143,7 @@ Options:
   --help, -h         Show this help
   --verbose, -v      Show engine stderr, boot log, and diagnostic info
   --reset            Wipe ~/.agentmemory/preferences.json and re-run onboarding
-  --tools all|core   Tool visibility (default: core = 7 tools)
+  --tools all|core   Tool visibility (default: all = 51 tools; core = 8 essentials)
   --no-engine        Skip auto-starting iii-engine
   --port <N>         Override REST port (default: 3111)
 

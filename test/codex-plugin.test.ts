@@ -81,10 +81,15 @@ describe("Codex plugin manifest (developers.openai.com/codex/plugins)", () => {
       >;
     }>(join(pluginRoot, ".mcp.json"));
 
-    expect(mcp.mcpServers.agentmemory?.env).toMatchObject({
-      AGENTMEMORY_URL: "${AGENTMEMORY_URL}",
-      AGENTMEMORY_SECRET: "${AGENTMEMORY_SECRET}",
-    });
+    // #510: env interpolation must include defaults so Claude Code (and
+    // any other MCP host that fails parse on unset ${VAR}) doesn't drop
+    // the server silently when the user hasn't exported the var.
+    expect(mcp.mcpServers.agentmemory?.env?.AGENTMEMORY_URL).toMatch(
+      /\$\{AGENTMEMORY_URL:-/,
+    );
+    expect(mcp.mcpServers.agentmemory?.env?.AGENTMEMORY_SECRET).toMatch(
+      /\$\{AGENTMEMORY_SECRET:-/,
+    );
   });
 
   it("hooks.codex.json contains only events Codex supports (no Subagent / SessionEnd / Notification / TaskCompleted / PostToolUseFailure)", () => {
