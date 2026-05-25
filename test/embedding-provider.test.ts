@@ -58,6 +58,7 @@ describe("OpenAIEmbeddingProvider", () => {
   beforeEach(() => {
     process.env = { ...originalEnv };
     delete process.env["OPENAI_BASE_URL"];
+    delete process.env["OPENAI_EMBEDDING_PATH"];
     delete process.env["OPENAI_EMBEDDING_MODEL"];
     delete process.env["OPENAI_EMBEDDING_DIMENSIONS"];
   });
@@ -88,6 +89,42 @@ describe("OpenAIEmbeddingProvider", () => {
     await provider.embed("hello");
     expect(fetchSpy).toHaveBeenCalledWith(
       "https://my-proxy.example.com/v1/embeddings",
+      expect.any(Object),
+    );
+
+    fetchSpy.mockRestore();
+  });
+
+  it("respects OPENAI_EMBEDDING_PATH for OpenAI-compatible servers with custom routes", async () => {
+    process.env["OPENAI_BASE_URL"] = "http://localhost:11434/v1/";
+    process.env["OPENAI_EMBEDDING_PATH"] = "/embeddings";
+    const provider = new OpenAIEmbeddingProvider("test-key");
+
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ data: [{ embedding: [0.1, 0.2, 0.3] }] }), { status: 200 }),
+    );
+
+    await provider.embed("hello");
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "http://localhost:11434/v1/embeddings",
+      expect.any(Object),
+    );
+
+    fetchSpy.mockRestore();
+  });
+
+  it("normalizes OPENAI_EMBEDDING_PATH without a leading slash", async () => {
+    process.env["OPENAI_BASE_URL"] = "http://localhost:11434/v1/";
+    process.env["OPENAI_EMBEDDING_PATH"] = "embeddings";
+    const provider = new OpenAIEmbeddingProvider("test-key");
+
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ data: [{ embedding: [0.1, 0.2, 0.3] }] }), { status: 200 }),
+    );
+
+    await provider.embed("hello");
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "http://localhost:11434/v1/embeddings",
       expect.any(Object),
     );
 

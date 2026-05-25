@@ -37,6 +37,12 @@ function resolveDimensions(model: string, override: string | undefined): number 
   return MODEL_DIMENSIONS[model] ?? DEFAULT_DIMENSIONS;
 }
 
+function normalizeEmbeddingPath(path: string | null | undefined): string | undefined {
+  const trimmed = path?.trim();
+  if (!trimmed) return undefined;
+  return trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+}
+
 /**
  * OpenAI-compatible embedding provider.
  *
@@ -54,6 +60,7 @@ function resolveDimensions(model: string, override: string | undefined): number 
  *   OPENAI_BASE_URL           — base URL without path (default: https://api.openai.com).
  *                               Azure: https://<resource>.openai.azure.com/openai/deployments/<deployment>
  *   OPENAI_API_VERSION        — Azure api-version query param (default: 2024-08-01-preview)
+ *   OPENAI_EMBEDDING_PATH     — embedding endpoint path override for OpenAI-compatible servers
  *   OPENAI_EMBEDDING_MODEL    — model name (default: text-embedding-3-small)
  *   OPENAI_EMBEDDING_DIMENSIONS — override reported dimensions (required for
  *                                 custom / self-hosted models not in the
@@ -64,6 +71,7 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
   readonly dimensions: number;
   private apiKey: string;
   private baseUrl: string;
+  private embeddingPath: string | undefined;
   private model: string;
   private isAzure: boolean;
   private azureApiVersion: string;
@@ -72,6 +80,7 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
     this.apiKey = apiKey || getEnvVar("OPENAI_API_KEY") || "";
     if (!this.apiKey) throw new Error("OPENAI_API_KEY is required");
     this.baseUrl = normalizeBaseUrl(getEnvVar("OPENAI_BASE_URL"));
+    this.embeddingPath = normalizeEmbeddingPath(getEnvVar("OPENAI_EMBEDDING_PATH"));
     this.model = getEnvVar("OPENAI_EMBEDDING_MODEL") || DEFAULT_MODEL;
     this.dimensions = resolveDimensions(
       this.model,
@@ -92,6 +101,7 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
       this.baseUrl,
       this.isAzure,
       this.azureApiVersion,
+      this.embeddingPath,
     );
     const response = await fetchWithTimeout(url, {
       method: "POST",
