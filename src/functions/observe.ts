@@ -214,6 +214,36 @@ export function registerObserveFunction(
             }
           }
           await kv.update(KV.sessions, payload.sessionId, updates);
+        } else if (
+          typeof payload.project === "string" &&
+          payload.project.trim().length > 0 &&
+          typeof payload.cwd === "string" &&
+          payload.cwd.trim().length > 0
+        ) {
+          // #638: OpenCode (and any plugin that skips POST /session/start)
+          // can fire observations before the session record exists. Without
+          // an implicit create, those observations stack up but
+          // `memory_sessions` never lists them, and summarize bails with
+          // "Session not found for summarize". Create the session now from
+          // the observation payload — but only when project + cwd are
+          // present (HookPayload contract). Older test payloads without
+          // those fields keep their original no-op behaviour.
+          const trimmedPrompt =
+            typeof raw.userPrompt === "string"
+              ? raw.userPrompt.replace(/\s+/g, " ").trim().slice(0, 200)
+              : undefined;
+          await kv.set(KV.sessions, payload.sessionId, {
+            id: payload.sessionId,
+            project: payload.project,
+            cwd: payload.cwd,
+            startedAt: payload.timestamp ?? new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            status: "active",
+            observationCount: 1,
+            ...(trimmedPrompt && trimmedPrompt.length > 0
+              ? { firstPrompt: trimmedPrompt }
+              : {}),
+          });
         }
 
         // Per-observation LLM compression is opt-in as of 0.8.8 (#138).

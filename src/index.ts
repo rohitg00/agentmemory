@@ -97,6 +97,33 @@ import { registerHealthMonitor } from "./health/monitor.js";
 import { initMetrics, OTEL_CONFIG } from "./telemetry/setup.js";
 import { VERSION } from "./version.js";
 import { bootLog } from "./logger.js";
+import { mkdirSync, writeFileSync, unlinkSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { homedir } from "node:os";
+
+// #640 + #474: the worker process (this file) is spawned by iii-exec
+// inside the engine. When `agentmemory stop` kills only the engine pid,
+// this worker can survive (detached spawn, signal not propagated, or a
+// wrapper script keeps it running) and reconnects to the next engine as
+// a duplicate worker. Write the worker pid alongside iii.pid so
+// `agentmemory stop` can reap us too.
+function workerPidfilePath(): string {
+  return join(homedir(), ".agentmemory", "worker.pid");
+}
+function writeWorkerPidfile(): void {
+  try {
+    const p = workerPidfilePath();
+    mkdirSync(dirname(p), { recursive: true });
+    writeFileSync(p, `${process.pid}\n`, { encoding: "utf-8" });
+  } catch {
+    // best-effort; stop still has the engine pidfile + port scan fallback
+  }
+}
+function clearWorkerPidfile(): void {
+  try {
+    unlinkSync(workerPidfilePath());
+  } catch {}
+}
 
 function hasGetMeter(
   sdk: unknown,
@@ -184,6 +211,8 @@ async function main() {
       framework: "iii-sdk",
     },
   });
+
+  writeWorkerPidfile();
 
   const kv = new StateKV(sdk);
   const secret = getEnvVar("AGENTMEMORY_SECRET");
@@ -548,6 +577,7 @@ async function main() {
       console.warn(`[agentmemory] Failed to save index on shutdown:`, err);
     });
     await sdk.shutdown();
+    clearWorkerPidfile();
     process.exit(0);
   };
   process.on("SIGINT", shutdown);

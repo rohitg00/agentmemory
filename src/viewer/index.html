@@ -1267,7 +1267,7 @@
         var results = await Promise.all([
           apiGet('health'),
           apiGet('sessions'),
-          apiGet('memories?latest=true'),
+          apiGet('memories?latest=true&limit=500'),
           apiGet('graph/stats'),
           apiGet('audit?limit=5'),
           apiGet('semantic'),
@@ -1581,7 +1581,7 @@
       }, 30000);
     }
 
-    var graphSim = { nodes: [], edges: [], running: false, canvas: null, ctx: null, raf: null, panX: 0, panY: 0, zoom: 1, dragNode: null, mouseX: 0, mouseY: 0 };
+    var graphSim = { nodes: [], edges: [], running: false, canvas: null, ctx: null, raf: null, panX: 0, panY: 0, zoom: 1, dragNode: null, mouseX: 0, mouseY: 0, tickCount: 0 };
 
     async function loadGraph() {
       var el = document.getElementById('view-graph');
@@ -1760,6 +1760,11 @@
         }
         lastMX = e.clientX;
         lastMY = e.clientY;
+        // #563: wake the simulation if it parked itself after settling
+        graphSim.quietTicks = 0;
+        if (graphSim.running && !graphSim.raf) {
+          graphSim.raf = requestAnimationFrame(runSimulation);
+        }
       });
       canvas.addEventListener('mousemove', function(e) {
         var dx = e.clientX - lastMX;
@@ -1900,10 +1905,19 @@
       var nodes = graphSim.nodes;
       var edges = graphSim.edges;
       var nodeCount = nodes.length;
-      var damping = 0.9;
-      var repulsion = nodeCount > 100 ? 2000 : nodeCount > 50 ? 1200 : 800;
+      graphSim.tickCount = (graphSim.tickCount || 0) + 1;
+      // #563: dense graphs (>1000 nodes) used to oscillate forever
+      // because the per-node force pile-up exceeded what 0.9 damping
+      // could bleed off each tick. Tick-decay tightens damping over
+      // time so the layout actually settles; a per-node velocity cap
+      // prevents any single node from being launched off-screen by an
+      // accumulated kick before damping catches up.
+      var coolBoost = Math.min(0.4, graphSim.tickCount / 1500);
+      var damping = 0.9 - coolBoost;
+      var repulsion = nodeCount > 1000 ? 3000 : nodeCount > 100 ? 2000 : nodeCount > 50 ? 1200 : 800;
       var attraction = nodeCount > 100 ? 0.002 : 0.005;
-      var centerGravity = nodeCount > 100 ? 0.005 : 0.01;
+      var centerGravity = nodeCount > 1000 ? 0.012 : nodeCount > 100 ? 0.005 : 0.01;
+      var velocityCap = nodeCount > 1000 ? 6 : nodeCount > 200 ? 12 : 24;
 
       var nodeMap = {};
       nodes.forEach(function(n) { nodeMap[n.id] = n; });
@@ -1923,8 +1937,14 @@
         }
         fx -= n.x * centerGravity;
         fy -= n.y * centerGravity;
-        n.vx = (n.vx + fx) * damping;
-        n.vy = (n.vy + fy) * damping;
+        var nvx = (n.vx + fx) * damping;
+        var nvy = (n.vy + fy) * damping;
+        // Velocity cap (#563): keep any single node from being launched
+        // off-screen by a one-tick force spike.
+        if (nvx > velocityCap) nvx = velocityCap; else if (nvx < -velocityCap) nvx = -velocityCap;
+        if (nvy > velocityCap) nvy = velocityCap; else if (nvy < -velocityCap) nvy = -velocityCap;
+        n.vx = nvx;
+        n.vy = nvy;
       }
 
       edges.forEach(function(e) {
@@ -1941,13 +1961,28 @@
         if (graphSim.dragNode !== t) { t.vx -= fx; t.vy -= fy; }
       });
 
+      var totalKineticEnergy = 0;
       nodes.forEach(function(n) {
         if (graphSim.dragNode === n) return;
         n.x += n.vx;
         n.y += n.vy;
+        totalKineticEnergy += n.vx * n.vx + n.vy * n.vy;
       });
 
+      // #563: park the simulation when the layout is quiet to save CPU.
+      // Pick up again when a drag/interaction wakes the loop.
+      var rmsVelocity = nodes.length > 0 ? Math.sqrt(totalKineticEnergy / nodes.length) : 0;
+      if (rmsVelocity < 0.05 && graphSim.tickCount > 60 && !graphSim.dragNode) {
+        graphSim.quietTicks = (graphSim.quietTicks || 0) + 1;
+      } else {
+        graphSim.quietTicks = 0;
+      }
+
       renderGraph();
+      if (graphSim.quietTicks > 30) {
+        graphSim.raf = null;
+        return;
+      }
       graphSim.raf = requestAnimationFrame(runSimulation);
     }
 
@@ -2218,8 +2253,12 @@
     async function loadMemories() {
       var el = document.getElementById('view-memories');
       el.innerHTML = '<div class="loading">Loading memories...</div>';
-      var result = await apiGet('memories?latest=true');
+      // #544: cap at 2000 so the viewer remains responsive on large
+      // corpora. Older endpoints returned the full unbounded list which
+      // hit the iii invocation timeout and the UI fell through to 0.
+      var result = await apiGet('memories?latest=true&limit=2000');
       state.memories.items = (result && result.memories) || [];
+      state.memories.total = (result && typeof result.total === 'number') ? result.total : state.memories.items.length;
       state.memories.loaded = true;
       renderMemories();
     }

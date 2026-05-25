@@ -1039,11 +1039,30 @@ export function registerApiTriggers(
     config: { api_path: "/agentmemory/profile", http_method: "GET" },
   });
 
-  sdk.registerFunction("api::export", 
+  sdk.registerFunction("api::export",
     async (req: ApiRequest): Promise<Response> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
-      const result = await sdk.trigger({ function_id: "mem::export", payload: {} });
+      // #544: mem::export already supports maxSessions/offset internally,
+      // but the HTTP endpoint hardcoded an empty payload — so /export on a
+      // real corpus (40 sessions × 34K observations × 8K memories) hit the
+      // iii engine invocation timeout and `agentmemory status` reported 0.
+      // Pass through the query-string pagination so callers can chunk.
+      const rawMax = req.query_params?.["maxSessions"];
+      const rawOffset = req.query_params?.["offset"];
+      const payload: { maxSessions?: number; offset?: number } = {};
+      if (typeof rawMax === "string") {
+        const n = Number(rawMax);
+        if (Number.isInteger(n) && n > 0) payload.maxSessions = n;
+      }
+      if (typeof rawOffset === "string") {
+        const n = Number(rawOffset);
+        if (Number.isInteger(n) && n >= 0) payload.offset = n;
+      }
+      const result = await sdk.trigger({
+        function_id: "mem::export",
+        payload,
+      });
       return { status_code: 200, body: result };
     },
   );
@@ -1473,7 +1492,48 @@ export function registerApiTriggers(
       const memories = await kv.list<import("../types.js").Memory>(KV.memories);
       const latest = req.query_params?.["latest"] === "true";
       const filtered = latest ? memories.filter((m) => m.isLatest) : memories;
-      return { status_code: 200, body: { memories: filtered } };
+
+      // #544: viewer + `agentmemory status` were hitting this endpoint to
+      // count memories. On a real corpus (8K+ memories) the unbounded
+      // response either timed out at the iii engine boundary ("Invocation
+      // stopped") or arrived too large for the viewer to render — so the
+      // UI showed 0 memories despite a healthy store. Two opt-in modes:
+      //   ?count=true       — totals only, no payload
+      //   ?limit=N&offset=M — page slice (default unlimited for back-compat)
+      if (req.query_params?.["count"] === "true") {
+        return {
+          status_code: 200,
+          body: {
+            total: memories.length,
+            latestCount: memories.filter((m) => m.isLatest).length,
+          },
+        };
+      }
+
+      const rawLimit = req.query_params?.["limit"];
+      const rawOffset = req.query_params?.["offset"];
+      const parsedLimit =
+        typeof rawLimit === "string" ? Number(rawLimit) : Number.NaN;
+      const parsedOffset =
+        typeof rawOffset === "string" ? Number(rawOffset) : Number.NaN;
+      const limit =
+        Number.isInteger(parsedLimit) && parsedLimit > 0
+          ? Math.min(parsedLimit, 5000)
+          : undefined;
+      const offset =
+        Number.isInteger(parsedOffset) && parsedOffset >= 0 ? parsedOffset : 0;
+      const sliced =
+        limit !== undefined ? filtered.slice(offset, offset + limit) : filtered;
+
+      return {
+        status_code: 200,
+        body: {
+          memories: sliced,
+          total: filtered.length,
+          offset,
+          limit: limit ?? null,
+        },
+      };
     },
   );
   sdk.registerTrigger({

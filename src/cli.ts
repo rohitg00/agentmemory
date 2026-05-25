@@ -411,6 +411,33 @@ function clearEnginePidfile(): void {
   } catch {}
 }
 
+// Worker pidfile (#640, #474): the agentmemory worker process
+// (`node dist/index.mjs`) is spawned by iii-exec inside the engine. When
+// `agentmemory stop` kills only the engine pid, the worker can survive
+// (detached spawn, signal not propagated, or kept alive by a wrapper
+// script). On the next start, the orphaned worker reconnects to the new
+// engine and shows up as a duplicate registration. We write the worker
+// pid from src/index.ts on boot so stop can find and reap it.
+function workerPidfilePath(): string {
+  return join(homedir(), ".agentmemory", "worker.pid");
+}
+
+function readWorkerPidfile(): number | null {
+  try {
+    const pidStr = readFileSync(workerPidfilePath(), "utf-8").trim();
+    const pid = parseInt(pidStr, 10);
+    return Number.isFinite(pid) && pid > 0 ? pid : null;
+  } catch {
+    return null;
+  }
+}
+
+function clearWorkerPidfile(): void {
+  try {
+    unlinkSync(workerPidfilePath());
+  } catch {}
+}
+
 function writeEngineState(state: EngineState): void {
   try {
     const statePath = engineStatePath();
@@ -2220,7 +2247,15 @@ async function runStop(): Promise<void> {
   if (pidfilePid) candidates.add(pidfilePid);
   for (const pid of portPids) candidates.add(pid);
 
-  if (candidates.size === 0) {
+  // #640 + #474: stop must also reap the agentmemory worker process
+  // (`node dist/index.mjs`). If only the engine is killed, the worker can
+  // survive (detached spawn / signal not propagated) and reconnect to the
+  // next engine as a duplicate registration.
+  const workerPid = readWorkerPidfile();
+  const workerCandidates = new Set<number>();
+  if (workerPid) workerCandidates.add(workerPid);
+
+  if (candidates.size === 0 && workerCandidates.size === 0) {
     p.log.error(
       `Could not locate engine process. Try:\n  ${IS_WINDOWS ? "netstat -ano | findstr :" + port : "lsof -i :" + port + " -t | xargs kill -9"}`,
     );
@@ -2235,11 +2270,20 @@ async function runStop(): Promise<void> {
     s.stop(ok ? `Stopped pid ${pid}` : `Failed to stop pid ${pid}`);
     if (!ok) allStopped = false;
   }
+  for (const pid of workerCandidates) {
+    if (candidates.has(pid)) continue;
+    const s = p.spinner();
+    s.start(`Stopping agentmemory worker (pid ${pid})...`);
+    const ok = await signalAndWait(pid, "SIGTERM", 3000);
+    s.stop(ok ? `Stopped worker pid ${pid}` : `Failed to stop worker pid ${pid}`);
+    if (!ok) allStopped = false;
+  }
 
   clearEnginePidfile();
   clearEngineState();
+  clearWorkerPidfile();
   if (!allStopped) {
-    p.log.error("One or more engine processes survived SIGKILL. Investigate with `ps`.");
+    p.log.error("One or more processes survived SIGKILL. Investigate with `ps`.");
     process.exit(1);
   }
   p.outro("Stopped. Memories persisted to disk; restart anytime with: npx @agentmemory/agentmemory");

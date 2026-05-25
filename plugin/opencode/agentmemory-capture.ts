@@ -64,6 +64,12 @@ const stashedFiles = new Map<string, Set<string>>();
 const seenSubtaskIds = new Map<string, Set<string>>();
 const seenToolCallIds = new Map<string, Set<string>>();
 const contextInjectedSessions = new Set<string>();
+// #431: cache the context returned by POST /session/start so the chat
+// system-transform hook can inject it without a second /context fetch.
+// Auto-injection now happens at session.created (immediately) AND at
+// the first prompt_submit (fallback for older OpenCode builds that
+// don't implement experimental.chat.system.transform).
+const startContextCache = new Map<string, string>();
 
 function stashFor(sid: string): Set<string> {
   let s = stashedFiles.get(sid);
@@ -178,7 +184,7 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
         seenSubtaskIds.delete(activeSessionId);
         seenToolCallIds.delete(activeSessionId);
         contextInjectedSessions.delete(activeSessionId);
-        await post("/session/start", {
+        const startResult = await postJson("/session/start", {
           sessionId: activeSessionId,
           title: info?.title ?? null,
           parentID: info?.parentID ?? null,
@@ -186,6 +192,12 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
           project: projectPath,
           cwd: projectPath,
         });
+        // #431: cache the context returned at session/start so the
+        // chat.system.transform hook injects it without a second fetch.
+        const startCtx = (startResult as any)?.context;
+        if (activeSessionId && typeof startCtx === "string" && startCtx.length > 0) {
+          startContextCache.set(activeSessionId, startCtx);
+        }
         if (pendingConfig && activeSessionId) {
           await observe(activeSessionId, "config_loaded", pendingConfig);
           pendingConfig = null;
@@ -257,6 +269,7 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
         post("/consolidate-pipeline", { tier: "all", force: true }, 30000);
         if (sid === activeSessionId) activeSessionId = null;
         stashedFiles.delete(sid);
+        startContextCache.delete(sid);
         seenSubtaskIds.delete(sid);
         seenToolCallIds.delete(sid);
         contextInjectedSessions.delete(sid);
@@ -588,11 +601,19 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
       if (!contextInjectedSessions.has(sid)) {
         if (!Array.isArray(output.system)) return;
         output.system.push(AGENTMEMORY_INSTRUCTIONS);
-        const result = await postJson("/context", {
-          sessionId: sid,
-          project: projectPath,
-        });
-        const ctx = (result as any)?.context;
+        // #431: prefer the context already fetched at session.created;
+        // fall back to a fresh /context call if the cache missed (e.g.
+        // session resumed across plugin reloads).
+        let ctx = startContextCache.get(sid);
+        if (typeof ctx !== "string" || ctx.length === 0) {
+          const result = await postJson("/context", {
+            sessionId: sid,
+            project: projectPath,
+          });
+          ctx = (result as any)?.context;
+        } else {
+          startContextCache.delete(sid);
+        }
         if (typeof ctx === "string" && ctx.length > 0) {
           output.system.push(ctx);
         }
