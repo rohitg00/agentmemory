@@ -30,6 +30,7 @@ function registerPlugin() {
 
 describe("OpenClaw plugin project scoping", () => {
   const originalFetch = globalThis.fetch;
+  const originalAgentMemorySecret = process.env["AGENTMEMORY_SECRET"];
 
   beforeEach(() => {
     delete process.env["AGENTMEMORY_SECRET"];
@@ -37,6 +38,11 @@ describe("OpenClaw plugin project scoping", () => {
 
   afterEach(() => {
     globalThis.fetch = originalFetch;
+    if (originalAgentMemorySecret === undefined) {
+      delete process.env["AGENTMEMORY_SECRET"];
+    } else {
+      process.env["AGENTMEMORY_SECRET"] = originalAgentMemorySecret;
+    }
   });
 
   it("passes event project into smart-search when available", async () => {
