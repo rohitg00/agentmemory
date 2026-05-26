@@ -227,7 +227,9 @@ class AgentMemoryProvider(MemoryProvider):
 
     def is_available(self) -> bool:
         # Hermes contract: no network calls in is_available.
-        base = _resolve_base_url()
+        hermes_home = getattr(self, "_hermes_home", None)
+        saved_config = _load_saved_config(hermes_home) if hermes_home else None
+        base = _resolve_base_url(saved_config)
         return _validate_url(base)
 
     def initialize(self, session_id: str, **kwargs: Any) -> None:
