@@ -233,11 +233,21 @@ export function startViewerServer(
     }
   });
 
+  const host = process.env["AGENTMEMORY_VIEWER_HOST"] || "127.0.0.1";
+  // Wildcard/loopback binds aren't directly navigable (0.0.0.0, ::) or
+  // unnecessarily verbose (127.0.0.1, ::1) — show "localhost" instead.
+  const isLocal =
+    host === "0.0.0.0" ||
+    host === "::" ||
+    host === "127.0.0.1" ||
+    host === "::1";
+  const displayHost = isLocal ? "localhost" : host;
+
   let attempt = 0;
   let currentPort = requestedPort;
 
   const tryListen = (): void => {
-    server.listen(currentPort, "127.0.0.1");
+    server.listen(currentPort, host);
   };
 
   server.on("listening", () => {
@@ -248,10 +258,10 @@ export function startViewerServer(
         : currentPort;
     viewerSkipped = false;
     if (currentPort === requestedPort) {
-      console.log(`[agentmemory] Viewer: http://localhost:${currentPort}`);
+      console.log(`[agentmemory] Viewer: http://${displayHost}:${currentPort}`);
     } else {
       console.log(
-        `[agentmemory] Viewer started on http://localhost:${currentPort} (fallback from ${requestedPort})`,
+        `[agentmemory] Viewer started on http://${displayHost}:${currentPort} (fallback from ${requestedPort})`,
       );
     }
   });
@@ -294,7 +304,10 @@ async function proxyToRestApi(
     ? pathname
     : `/agentmemory${pathname.startsWith("/") ? pathname : "/" + pathname}`;
 
-  const upstreamUrl = `http://127.0.0.1:${restPort}${upstreamPath}${qs ? "?" + qs : ""}`;
+  const upstreamBase = (
+    process.env["AGENTMEMORY_URL"] || `http://127.0.0.1:${restPort}`
+  ).replace(/\/+$/, "");
+  const upstreamUrl = `${upstreamBase}${upstreamPath}${qs ? "?" + qs : ""}`;
 
   const headers: Record<string, string> = {};
   if (secret) {

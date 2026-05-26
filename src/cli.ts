@@ -150,9 +150,14 @@ Options:
 Environment:
   AGENTMEMORY_URL              Full REST base URL (e.g. http://localhost:3111).
                                Honored by status, doctor, and MCP shim commands.
+  AGENTMEMORY_VIEWER_HOST      Viewer bind host (default 127.0.0.1).
+                               Set to 0.0.0.0 to expose outside loopback.
   AGENTMEMORY_USE_DOCKER=1     Prefer the bundled docker-compose path over the
                                native iii-engine binary on first run.
   AGENTMEMORY_III_VERSION      Override pinned iii-engine version (default ${IIPINNED_VERSION}).
+  AGENTMEMORY_III_CONFIG       Override iii-engine config file. Accepts a full
+                               path or a bare filename resolved against the
+                               bundled config dirs (e.g. iii-config.docker.yaml).
 
 Quick start:
   npx @agentmemory/agentmemory          # start with local iii-engine or Docker
@@ -302,12 +307,12 @@ async function isAgentmemoryReady(): Promise<boolean> {
 }
 
 function findIiiConfig(): string {
-  const candidates = [
-    join(__dirname, "iii-config.yaml"),
-    join(__dirname, "..", "iii-config.yaml"),
-    join(process.cwd(), "iii-config.yaml"),
-  ];
-  for (const c of candidates) {
+  const override = process.env["AGENTMEMORY_III_CONFIG"];
+  if (override && existsSync(override)) return override;
+
+  const name = override || "iii-config.yaml";
+  for (const dir of [__dirname, join(__dirname, ".."), process.cwd()]) {
+    const c = join(dir, name);
     if (existsSync(c)) return c;
   }
   return "";

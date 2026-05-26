@@ -1259,6 +1259,15 @@ Create `~/.agentmemory/.env`:
 # Ports (defaults: 3111 API, 3113 viewer)
 # III_REST_PORT=3111
 
+# Bind hosts. Default 127.0.0.1; set to 0.0.0.0 to expose to other
+# hosts (containers, LAN). Pair with AGENTMEMORY_SECRET when exposing.
+# AGENTMEMORY_VIEWER_HOST=127.0.0.1   # viewer (:3113) bind
+# AGENTMEMORY_III_CONFIG=iii-config.yaml
+#   Override the iii-engine config file. Accepts a full path or a
+#   bare filename resolved against the bundled config dirs. Use
+#   `iii-config.docker.yaml` (ships in the package, host: 0.0.0.0)
+#   for container deployments.
+
 # Features
 # AGENTMEMORY_AUTO_COMPRESS=false  # OFF by default (#138). When on,
                                    # every PostToolUse hook calls your
