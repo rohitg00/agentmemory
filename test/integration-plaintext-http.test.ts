@@ -207,4 +207,130 @@ assert calls == [], calls
     });
     expect(result.status, result.stderr || result.stdout).toBe(0);
   });
+
+  it("uses saved Hermes config for runtime URL and secret when env vars are absent", () => {
+    const script = String.raw`
+import importlib.util
+import os
+from pathlib import Path
+
+for key in ("AGENTMEMORY_SECRET", "AGENTMEMORY_URL", "AGENTMEMORY_REQUIRE_HTTPS"):
+    os.environ.pop(key, None)
+
+spec = importlib.util.spec_from_file_location("agentmemory_hermes", "integrations/hermes/__init__.py")
+mod = importlib.util.module_from_spec(spec)
+assert spec.loader is not None
+spec.loader.exec_module(mod)
+
+provider = mod.AgentMemoryProvider()
+hermes_home = Path(os.environ["HOME"]) / "custom-hermes"
+hermes_home.mkdir()
+provider.save_config({"url": "http://10.0.0.5:3111", "secret": "saved-secret"}, str(hermes_home))
+
+calls = []
+def fake_api(base, path, body=None, method="POST", secret=""):
+    calls.append({"base": base, "path": path, "secret": secret})
+    return {}
+
+mod._api = fake_api
+assert provider.is_available() is True
+provider.initialize("session-658", hermes_home=str(hermes_home), cwd="/tmp/project")
+
+assert provider._base == "http://10.0.0.5:3111", provider._base
+assert provider._secret == "saved-secret", provider._secret
+assert calls[0]["base"] == "http://10.0.0.5:3111", calls
+assert calls[0]["secret"] == "saved-secret", calls
+`;
+    const result = spawnSync("python3", ["-c", script], {
+      cwd: process.cwd(),
+      env: { ...process.env, HOME: home },
+      encoding: "utf8",
+    });
+    expect(result.status, result.stderr || result.stdout).toBe(0);
+  });
+
+  it("lets env URL and secret override saved Hermes config", () => {
+    const script = String.raw`
+import importlib.util
+import os
+from pathlib import Path
+
+for key in ("AGENTMEMORY_SECRET", "AGENTMEMORY_URL", "AGENTMEMORY_REQUIRE_HTTPS"):
+    os.environ.pop(key, None)
+os.environ["AGENTMEMORY_URL"] = "https://env.example"
+os.environ["AGENTMEMORY_SECRET"] = "env-secret"
+
+spec = importlib.util.spec_from_file_location("agentmemory_hermes", "integrations/hermes/__init__.py")
+mod = importlib.util.module_from_spec(spec)
+assert spec.loader is not None
+spec.loader.exec_module(mod)
+
+provider = mod.AgentMemoryProvider()
+hermes_home = Path(os.environ["HOME"]) / "custom-hermes"
+hermes_home.mkdir()
+provider.save_config({"url": "http://10.0.0.5:3111", "secret": "saved-secret"}, str(hermes_home))
+
+calls = []
+def fake_api(base, path, body=None, method="POST", secret=""):
+    calls.append({"base": base, "path": path, "secret": secret})
+    return {}
+
+mod._api = fake_api
+provider.initialize("session-658", hermes_home=str(hermes_home), cwd="/tmp/project")
+
+assert provider._base == "https://env.example", provider._base
+assert provider._secret == "env-secret", provider._secret
+assert calls[0]["base"] == "https://env.example", calls
+assert calls[0]["secret"] == "env-secret", calls
+`;
+    const result = spawnSync("python3", ["-c", script], {
+      cwd: process.cwd(),
+      env: { ...process.env, HOME: home },
+      encoding: "utf8",
+    });
+    expect(result.status, result.stderr || result.stdout).toBe(0);
+  });
+
+  it("falls back safely when saved Hermes config is malformed", () => {
+    const script = String.raw`
+import importlib.util
+import os
+from pathlib import Path
+
+for key in ("AGENTMEMORY_SECRET", "AGENTMEMORY_URL", "AGENTMEMORY_REQUIRE_HTTPS"):
+    os.environ.pop(key, None)
+
+spec = importlib.util.spec_from_file_location("agentmemory_hermes", "integrations/hermes/__init__.py")
+mod = importlib.util.module_from_spec(spec)
+assert spec.loader is not None
+spec.loader.exec_module(mod)
+
+provider = mod.AgentMemoryProvider()
+default_hermes_home = Path(os.environ["HOME"]) / ".hermes"
+default_hermes_home.mkdir()
+provider.save_config({"url": "http://10.0.0.5:3111", "secret": "saved-secret"}, str(default_hermes_home))
+hermes_home = Path(os.environ["HOME"]) / "custom-hermes"
+hermes_home.mkdir()
+(hermes_home / "agentmemory.json").write_text("{not json", encoding="utf-8")
+
+calls = []
+def fake_api(base, path, body=None, method="POST", secret=""):
+    calls.append({"base": base, "path": path, "secret": secret})
+    return {}
+
+mod._api = fake_api
+provider.initialize("session-658", hermes_home=str(hermes_home), cwd="/tmp/project")
+
+assert provider._base == "http://localhost:3111", provider._base
+assert provider._secret == "", provider._secret
+assert calls[0]["base"] == "http://localhost:3111", calls
+assert calls[0]["secret"] == "", calls
+`;
+    const result = spawnSync("python3", ["-c", script], {
+      cwd: process.cwd(),
+      env: { ...process.env, HOME: home },
+      encoding: "utf8",
+    });
+    expect(result.status, result.stderr || result.stdout).toBe(0);
+  });
 });

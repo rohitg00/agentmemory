@@ -53,6 +53,7 @@ DEFAULT_BASE_URL = "http://localhost:3111"
 TIMEOUT = 5
 LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
 _plaintext_bearer_warned = False
+_agentmemory_url_from_env_or_dotenv = False
 
 # agentmemory's documented runtime config lives at ~/.agentmemory/.env.
 # When agentmemory is launched as a systemd user service (or any other
@@ -68,6 +69,7 @@ _plaintext_bearer_warned = False
 # unreadable, malformed) — the plugin falls back to its existing default
 # (http://localhost:3111) and Hermes status reflects that.
 def _preload_agentmemory_dotenv() -> None:
+    global _agentmemory_url_from_env_or_dotenv
     candidates: list[Path] = []
     home = os.environ.get("HOME")
     if home:
@@ -90,6 +92,7 @@ def _preload_agentmemory_dotenv() -> None:
                     os.environ.setdefault(key, value)
         except (OSError, UnicodeDecodeError):
             continue
+    _agentmemory_url_from_env_or_dotenv = "AGENTMEMORY_URL" in os.environ
     # Guarantee AGENTMEMORY_URL is set so `hermes memory status` never
     # reports it as Missing when a user runs agentmemory at the default
     # localhost:3111 (or via systemd with the URL line commented out in
@@ -98,6 +101,48 @@ def _preload_agentmemory_dotenv() -> None:
 
 
 _preload_agentmemory_dotenv()
+
+
+def _hermes_config_path(hermes_home: str | None = None) -> Path | None:
+    if hermes_home:
+        return Path(hermes_home) / "agentmemory.json"
+    home = os.environ.get("HOME")
+    if not home:
+        return None
+    return Path(home) / ".hermes" / "agentmemory.json"
+
+
+def _load_saved_config(hermes_home: str | None = None) -> dict:
+    config_path = _hermes_config_path(hermes_home)
+    if not config_path:
+        return {}
+    try:
+        data = json.loads(config_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _saved_config_value(config: dict, key: str) -> str:
+    value = config.get(key)
+    return value.strip() if isinstance(value, str) else ""
+
+
+def _resolve_base_url(saved_config: dict | None = None) -> str:
+    env_url = os.environ.get("AGENTMEMORY_URL", "")
+    if _agentmemory_url_from_env_or_dotenv and env_url:
+        return env_url
+    config = saved_config if saved_config is not None else _load_saved_config()
+    saved_url = _saved_config_value(config, "url")
+    return saved_url or env_url or DEFAULT_BASE_URL
+
+
+def _resolve_secret(saved_config: dict | None = None) -> str:
+    env_secret = os.environ.get("AGENTMEMORY_SECRET", "")
+    if env_secret:
+        return env_secret
+    config = saved_config if saved_config is not None else _load_saved_config()
+    return _saved_config_value(config, "secret")
 
 
 def _validate_url(base: str) -> bool:
@@ -169,8 +214,8 @@ def _api(base: str, path: str, body: dict | None = None, method: str = "POST", s
         return None
 
 
-def _api_bg(base: str, path: str, body: dict | None = None) -> None:
-    t = threading.Thread(target=_api, args=(base, path, body), daemon=True)
+def _api_bg(base: str, path: str, body: dict | None = None, secret: str = "") -> None:
+    t = threading.Thread(target=_api, args=(base, path, body), kwargs={"secret": secret}, daemon=True)
     t.start()
 
 
@@ -182,21 +227,24 @@ class AgentMemoryProvider(MemoryProvider):
 
     def is_available(self) -> bool:
         # Hermes contract: no network calls in is_available.
-        base = os.environ.get("AGENTMEMORY_URL", DEFAULT_BASE_URL)
+        base = _resolve_base_url()
         return _validate_url(base)
 
     def initialize(self, session_id: str, **kwargs: Any) -> None:
-        self._base = os.environ.get("AGENTMEMORY_URL", DEFAULT_BASE_URL)
+        hermes_home = kwargs.get("hermes_home") or getattr(self, "_hermes_home", None)
+        saved_config = _load_saved_config(hermes_home)
+        self._base = _resolve_base_url(saved_config)
+        self._secret = _resolve_secret(saved_config)
         self._session_id = session_id
         self._project = kwargs.get("cwd", os.getcwd())
         if os.environ.get("AGENTMEMORY_REQUIRE_HTTPS") == "1":
-            _check_plaintext_bearer_guard(self._base, os.environ.get("AGENTMEMORY_SECRET", ""))
+            _check_plaintext_bearer_guard(self._base, self._secret)
 
         _api(self._base, "session/start", {
             "sessionId": session_id,
             "project": self._project,
             "cwd": self._project,
-        })
+        }, secret=self._secret)
 
     def get_config_schema(self) -> list[dict]:
         return [
@@ -216,6 +264,7 @@ class AgentMemoryProvider(MemoryProvider):
         ]
 
     def save_config(self, values: dict, hermes_home: str) -> None:
+        self._hermes_home = hermes_home
         config_path = Path(hermes_home) / "agentmemory.json"
         config_path.write_text(json.dumps(values, indent=2))
 
@@ -223,7 +272,7 @@ class AgentMemoryProvider(MemoryProvider):
         result = _api(self._base, "context", {
             "sessionId": self._session_id,
             "project": self._project,
-        })
+        }, secret=self._secret)
         if result and result.get("context"):
             return result["context"]
         return ""
@@ -232,7 +281,7 @@ class AgentMemoryProvider(MemoryProvider):
         result = _api(self._base, "smart-search", {
             "query": query,
             "limit": 5,
-        })
+        }, secret=self._secret)
         if not result or not result.get("results"):
             return ""
 
@@ -246,7 +295,7 @@ class AgentMemoryProvider(MemoryProvider):
         return "\n".join(lines) if lines else ""
 
     def queue_prefetch(self, query: str, **kwargs: Any) -> None:
-        _api_bg(self._base, "smart-search", {"query": query, "limit": 3})
+        _api_bg(self._base, "smart-search", {"query": query, "limit": 3}, secret=self._secret)
 
     def get_tool_schemas(self) -> list[dict]:
         return [
@@ -302,7 +351,7 @@ class AgentMemoryProvider(MemoryProvider):
             result = _api(self._base, "search", {
                 "query": args["query"],
                 "limit": args.get("limit", 10),
-            })
+            }, secret=self._secret)
             if not result:
                 return json.dumps({"results": []})
             items = []
@@ -321,14 +370,14 @@ class AgentMemoryProvider(MemoryProvider):
             result = _api(self._base, "remember", {
                 "content": args["content"],
                 "type": args.get("type", "fact"),
-            })
+            }, secret=self._secret)
             return json.dumps(result or {"success": False})
 
         if name == "memory_search":
             result = _api(self._base, "smart-search", {
                 "query": args["query"],
                 "limit": args.get("limit", 5),
-            })
+            }, secret=self._secret)
             if not result:
                 return json.dumps({"results": []})
             items = []
@@ -355,18 +404,18 @@ class AgentMemoryProvider(MemoryProvider):
                 "tool_input": user[:500],
                 "tool_output": assistant[:2000],
             },
-        })
+        }, secret=self._secret)
 
     def on_session_end(self, messages: list, **kwargs: Any) -> None:
         _api(self._base, "session/end", {
             "sessionId": kwargs.get("session_id", self._session_id),
-        })
+        }, secret=self._secret)
 
     def on_pre_compress(self, messages: list, **kwargs: Any) -> None:
         result = _api(self._base, "context", {
             "sessionId": kwargs.get("session_id", self._session_id),
             "project": self._project,
-        })
+        }, secret=self._secret)
         if result and result.get("context"):
             messages.insert(0, {
                 "role": "user",
@@ -378,7 +427,7 @@ class AgentMemoryProvider(MemoryProvider):
             _api_bg(self._base, "remember", {
                 "content": content,
                 "type": "fact",
-            })
+            }, secret=self._secret)
 
     def shutdown(self, **kwargs: Any) -> None:
         pass
