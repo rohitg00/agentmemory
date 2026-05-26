@@ -1,11 +1,11 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 
-// #563: viewer graph kept bouncing on >1000 nodes because damping
+// viewer graph kept bouncing on >1000 nodes because damping
 // alone could not bleed off the per-frame force pile-up. Cool-down
 // adds tick-decayed damping, a per-node velocity cap, and parks the
 // raf loop when total kinetic energy drops below an epsilon.
-describe("viewer graph cool-down (#563)", () => {
+describe("viewer graph cool-down", () => {
   const viewer = readFileSync("src/viewer/index.html", "utf-8");
 
   it("tracks a tickCount that grows each simulation step", () => {

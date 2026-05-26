@@ -30,7 +30,7 @@ describe("agentmemory connect — dispatcher", () => {
   });
 
   it("ships the supported agent list", () => {
-    // Bumped to 11 with Qwen Code (#647), Antigravity (#614), Kiro (#618).
+    // Bumped to 11 after adding Qwen Code + Antigravity + Kiro.
     expect(knownAgents().sort()).toEqual(
       [
         "antigravity",
@@ -133,7 +133,7 @@ describe("agentmemory connect — claude-code adapter (mock filesystem)", () => 
     const config = JSON.parse(readFileSync(join(tmpHome, ".claude.json"), "utf-8"));
     const entry = config.mcpServers.agentmemory;
     expect(entry.env).toBeDefined();
-    // #510: env interpolation must carry a default so Claude Code
+    // env interpolation must carry a default so Claude Code
     // doesn't silently drop the server when the user hasn't exported
     // AGENTMEMORY_URL / AGENTMEMORY_SECRET. Defaults match the
     // documented runtime (localhost:3111, no auth, all tools).

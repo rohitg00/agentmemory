@@ -941,7 +941,7 @@ export function getAllTools(): McpToolDef[] {
   ];
 }
 
-// #553: default switched from "core" (8 essential tools) to "all"
+// default switched from "core" (8 essential tools) to "all"
 // (full 51-tool surface). README and plugin manifests have always
 // advertised 51 tools "in proxy mode"; the old default left OpenCode /
 // Claude Code users seeing 8 with no indication the other 43 existed.

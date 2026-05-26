@@ -28,7 +28,7 @@ export function registerSmartSearchFunction(
       limit?: number;
       project?: string;
       includeLessons?: boolean;
-      // #554: optional per-call agent filter for runtimes routing many
+      // optional per-call agent filter for runtimes routing many
       // roles through one server. "*" opts out of the env-default
       // scope and returns hits from every agent.
       agentId?: string;

@@ -101,7 +101,6 @@ export function buildSyntheticCompression(
   };
   if (raw.modality) result.modality = raw.modality;
   if (raw.imageData) result.imageData = raw.imageData;
-  // #554: carry the role through synthetic compression too.
   if (raw.agentId) result.agentId = raw.agentId;
   return result;
 }

@@ -71,7 +71,7 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
           }
         }
 
-        // #554: stamp the agent role on the memory so future recall can
+        // stamp the agent role on the memory so future recall can
         // filter by agent. Request body wins (multi-agent runtimes
         // explicitly tagging at write time), env AGENT_ID fallback,
         // none → memory is unscoped (legacy behavior).

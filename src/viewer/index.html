@@ -1766,7 +1766,7 @@
         }
         lastMX = e.clientX;
         lastMY = e.clientY;
-        // #563: wake the simulation if it parked itself after settling
+        // wake the simulation if it parked itself after settling
         wakeGraphSim();
       });
       canvas.addEventListener('mousemove', function(e) {
@@ -1824,7 +1824,7 @@
         e.preventDefault();
         var factor = e.deltaY > 0 ? 0.9 : 1.1;
         graphSim.zoom = Math.max(0.1, Math.min(5, graphSim.zoom * factor));
-        // #563: zoom is visually meaningless if the rAF loop is parked —
+        // zoom is visually meaningless if the rAF loop is parked —
         // wake the simulation so the next frame redraws at the new scale.
         wakeGraphSim();
       }, { passive: false });
@@ -1914,7 +1914,7 @@
       var edges = graphSim.edges;
       var nodeCount = nodes.length;
       graphSim.tickCount = (graphSim.tickCount || 0) + 1;
-      // #563: dense graphs (>1000 nodes) used to oscillate forever
+      // dense graphs (>1000 nodes) used to oscillate forever
       // because the per-node force pile-up exceeded what 0.9 damping
       // could bleed off each tick. Tick-decay tightens damping over
       // time so the layout actually settles; a per-node velocity cap
@@ -1977,7 +1977,7 @@
         totalKineticEnergy += n.vx * n.vx + n.vy * n.vy;
       });
 
-      // #563: park the simulation when the layout is quiet to save CPU.
+      // park the simulation when the layout is quiet to save CPU.
       // Pick up again when a drag/interaction wakes the loop.
       var rmsVelocity = nodes.length > 0 ? Math.sqrt(totalKineticEnergy / nodes.length) : 0;
       if (rmsVelocity < 0.05 && graphSim.tickCount > 60 && !graphSim.dragNode) {
@@ -2261,7 +2261,7 @@
     async function loadMemories() {
       var el = document.getElementById('view-memories');
       el.innerHTML = '<div class="loading">Loading memories...</div>';
-      // #544: cap at 2000 so the viewer remains responsive on large
+      // cap at 2000 so the viewer remains responsive on large
       // corpora. Older endpoints returned the full unbounded list which
       // hit the iii invocation timeout and the UI fell through to 0.
       var result = await apiGet('memories?latest=true&limit=2000');

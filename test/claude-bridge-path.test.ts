@@ -3,7 +3,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { loadClaudeBridgeConfig } from "../src/config.js";
 
-// #625: bridge path must match Claude Code's slug convention exactly:
+// bridge path must match Claude Code's slug convention exactly:
 //   ~/.claude/projects/<slug>/MEMORY.md
 // where <slug> replaces every / and \ with - and KEEPS any leading -.
 // The previous code stripped the leading - and added a /memory/

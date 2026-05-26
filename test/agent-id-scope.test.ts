@@ -4,7 +4,7 @@ vi.mock("../src/logger.js", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
-// #554: AGENT_ID scope for multi-agent memory isolation.
+// AGENT_ID scope for multi-agent memory isolation.
 
 describe("loadAgentScope (#554)", () => {
   const ORIG = process.env["AGENT_ID"];

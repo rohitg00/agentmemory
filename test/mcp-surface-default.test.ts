@@ -5,7 +5,7 @@ import {
   getVisibleTools,
 } from "../src/mcp/tools-registry.js";
 
-// #553: plugin manifests and README advertise 51 MCP tools. The old
+// plugin manifests and README advertise 51 MCP tools. The old
 // default was AGENTMEMORY_TOOLS=core which silently capped the surface
 // at 8 essentials with no indication the other 43 existed. Default
 // flipped to "all"; the lean set is still accessible via

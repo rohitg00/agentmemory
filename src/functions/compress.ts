@@ -165,7 +165,6 @@ export function registerCompressFunction(
           ...(hasImage ? { modality: data.raw.modality } : {}),
           ...(imageDescription ? { imageDescription } : {}),
           ...(data.raw.imageData ? { imageRef: data.raw.imageData } : {}),
-          // #554: carry the role through LLM compression too.
           ...(data.raw.agentId ? { agentId: data.raw.agentId } : {}),
         };
 

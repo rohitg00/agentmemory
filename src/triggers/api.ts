@@ -538,7 +538,7 @@ export function registerApiTriggers(
         };
       }
       const title = typeof body.title === "string" ? body.title.trim() : undefined;
-      // #554: allow session/start to override AGENT_ID from request body
+      // allow session/start to override AGENT_ID from request body
       // (multi-agent runtimes that route many roles through one server
       // process). Falls back to the AGENT_ID env on the server.
       const requestAgentId =
@@ -1082,7 +1082,7 @@ export function registerApiTriggers(
     async (req: ApiRequest): Promise<Response> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
-      // #544: mem::export already supports maxSessions/offset internally,
+      // mem::export already supports maxSessions/offset internally,
       // but the HTTP endpoint hardcoded an empty payload — so /export on a
       // real corpus (40 sessions × 34K observations × 8K memories) hit the
       // iii engine invocation timeout and `agentmemory status` reported 0.
@@ -1530,7 +1530,7 @@ export function registerApiTriggers(
       if (authErr) return authErr;
       const memories = await kv.list<import("../types.js").Memory>(KV.memories);
       const latest = req.query_params?.["latest"] === "true";
-      // #554: agentId filter. Request param wins, env AGENT_ID (when
+      // agentId filter. Request param wins, env AGENT_ID (when
       // scope=isolated) is the fallback. Shared mode keeps the tag but
       // does not restrict the list endpoint. Pass agentId=* to opt out
       // of the env scope entirely. includeOrphans=true surfaces
@@ -1556,7 +1556,7 @@ export function registerApiTriggers(
         );
       }
 
-      // #544: viewer + `agentmemory status` were hitting this endpoint to
+      // viewer + `agentmemory status` were hitting this endpoint to
       // count memories. On a real corpus (8K+ memories) the unbounded
       // response either timed out at the iii engine boundary ("Invocation
       // stopped") or arrived too large for the viewer to render — so the

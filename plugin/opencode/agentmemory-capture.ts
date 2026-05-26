@@ -64,7 +64,7 @@ const stashedFiles = new Map<string, Set<string>>();
 const seenSubtaskIds = new Map<string, Set<string>>();
 const seenToolCallIds = new Map<string, Set<string>>();
 const contextInjectedSessions = new Set<string>();
-// #431: cache the context returned by POST /session/start so the chat
+// cache the context returned by POST /session/start so the chat
 // system-transform hook can inject it without a second /context fetch.
 // Auto-injection now happens at session.created (immediately) AND at
 // the first prompt_submit (fallback for older OpenCode builds that
@@ -196,7 +196,7 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
           project: projectPath,
           cwd: projectPath,
         });
-        // #431: cache the context returned at session/start so the
+        // cache the context returned at session/start so the
         // chat.system.transform hook injects it without a second fetch.
         const startCtx = (startResult as any)?.context;
         if (typeof startCtx === "string" && startCtx.length > 0) {
@@ -605,7 +605,7 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
       if (!contextInjectedSessions.has(sid)) {
         if (!Array.isArray(output.system)) return;
         output.system.push(AGENTMEMORY_INSTRUCTIONS);
-        // #431: prefer the context already fetched at session.created;
+        // prefer the context already fetched at session.created;
         // fall back to a fresh /context call if the cache missed (e.g.
         // session resumed across plugin reloads).
         let ctx = startContextCache.get(sid);

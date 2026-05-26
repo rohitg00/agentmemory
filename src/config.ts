@@ -95,7 +95,7 @@ function detectProvider(env: Record<string, string>): ProviderConfig {
   if (hasRealValue(env["OPENROUTER_API_KEY"])) {
     const model =
       env["OPENROUTER_MODEL"] || "anthropic/claude-sonnet-4-20250514";
-    // #613: warn when the configured OpenRouter model is in the
+    // warn when the configured OpenRouter model is in the
     // premium tier and likely to burn money on background compression.
     // Captured workload data shows ~$5/35h on claude-sonnet-4 vs
     // ~$0.46/35h on deepseek-v4-pro for the same compression mix.
@@ -241,7 +241,7 @@ export function loadClaudeBridgeConfig(): ClaudeBridgeConfig {
   const lineBudget = safeParseInt(env["CLAUDE_MEMORY_LINE_BUDGET"], 200);
   let memoryFilePath = "";
   if (enabled && projectPath) {
-    // #625: Claude Code stores MEMORY.md at
+    // Claude Code stores MEMORY.md at
     //   ~/.claude/projects/<slug>/MEMORY.md
     // where <slug> is the project path with `/` and `\` swapped for `-`.
     // The leading `-` from an absolute POSIX path is preserved (Claude
@@ -269,7 +269,7 @@ export function loadTeamConfig(): TeamConfig | null {
   return { teamId, userId, mode };
 }
 
-// #554: optional AGENT_ID env for multi-agent memory isolation.
+// optional AGENT_ID env for multi-agent memory isolation.
 // Returns null when unset so memory stays unscoped (legacy behavior).
 // Trimmed + length-capped to keep KV writes well-formed.
 //

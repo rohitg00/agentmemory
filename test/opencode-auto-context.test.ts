@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 
-// #431: OpenCode plugin needs zero-config memory injection. Plugin
+// OpenCode plugin needs zero-config memory injection. Plugin
 // already wires experimental.chat.system.transform; this PR threads
 // the /session/start context through a cache so injection happens
 // without a second /context fetch and is documented as the

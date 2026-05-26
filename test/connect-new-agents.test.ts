@@ -3,16 +3,15 @@ import { mkdtempSync, mkdirSync, rmSync, readFileSync, existsSync } from "node:f
 import { tmpdir, platform } from "node:os";
 import { join } from "node:path";
 
-// #647 / #614 / #618: connect adapters for Qwen Code, Antigravity, and
-// Kiro. Each writes the canonical agentmemory MCP block (npx
-// @agentmemory/mcp + env defaults from PR #650) into the agent's
-// documented config path.
+// Connect adapters for Qwen Code, Antigravity, and Kiro. Each writes
+// the canonical MCP block (npx @agentmemory/mcp + env defaults) into
+// the agent's documented config path.
 
 function freshHome(): string {
   return mkdtempSync(join(tmpdir(), "am-connect-"));
 }
 
-describe("connect: Qwen Code (#647)", () => {
+describe("connect: Qwen Code", () => {
   let home: string;
   const ORIG = process.env["HOME"];
   beforeEach(() => {
@@ -50,7 +49,7 @@ describe("connect: Qwen Code (#647)", () => {
   });
 });
 
-describe("connect: Antigravity (#614)", () => {
+describe("connect: Antigravity", () => {
   let home: string;
   const ORIG = process.env["HOME"];
   beforeEach(() => {
@@ -83,7 +82,7 @@ describe("connect: Antigravity (#614)", () => {
   });
 });
 
-describe("connect: Kiro (#618)", () => {
+describe("connect: Kiro", () => {
   let home: string;
   const ORIG = process.env["HOME"];
   beforeEach(() => {
