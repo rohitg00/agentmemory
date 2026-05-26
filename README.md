@@ -130,7 +130,7 @@ agentmemory works with any agent that supports hooks, MCP, or REST API. All agen
 <sub>native Memory trait backend</sub>
 </td>
 <td align="center" width="12.5%">
-<a href="https://cursor.com"><img src="https://github.com/getcursor.png?size=120" alt="Cursor" width="48" height="48" /></a><br/>
+<a href="https://cursor.com"><picture><source media="(prefers-color-scheme: dark)" srcset="https://svgl.app/library/cursor_dark.svg"><img src="https://svgl.app/library/cursor_light.svg" alt="Cursor" width="48" height="48" /></picture></a><br/>
 <strong>Cursor</strong><br/>
 <sub>MCP server</sub>
 </td>
@@ -142,7 +142,7 @@ agentmemory works with any agent that supports hooks, MCP, or REST API. All agen
 </tr>
 <tr>
 <td align="center" width="12.5%">
-<a href="https://github.com/opencode-ai/opencode"><img src="https://github.com/opencode-ai.png?size=120" alt="OpenCode" width="48" height="48" /></a><br/>
+<a href="https://github.com/opencode-ai/opencode"><picture><source media="(prefers-color-scheme: dark)" srcset="https://svgl.app/library/opencode-dark.svg"><img src="https://svgl.app/library/opencode.svg" alt="OpenCode" width="48" height="48" /></picture></a><br/>
 <strong>OpenCode</strong><br/>
 <sub>22 hooks + MCP + plugin</sub>
 </td>
@@ -172,7 +172,7 @@ agentmemory works with any agent that supports hooks, MCP, or REST API. All agen
 <sub>MCP server</sub>
 </td>
 <td align="center" width="12.5%">
-<a href="https://windsurf.com"><img src="https://github.com/Exafunction.png?size=120" alt="Windsurf" width="48" height="48" /></a><br/>
+<a href="https://windsurf.com"><picture><source media="(prefers-color-scheme: dark)" srcset="https://svgl.app/library/windsurf-dark.svg"><img src="https://svgl.app/library/windsurf-light.svg" alt="Windsurf" width="48" height="48" /></picture></a><br/>
 <strong>Windsurf</strong><br/>
 <sub>MCP server</sub>
 </td>
