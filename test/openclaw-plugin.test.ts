@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 type Capability = {
   promptBuilder?: (params: {
@@ -24,6 +24,14 @@ function makeApi(overrides: Partial<FakeApi> = {}): FakeApi {
     ...overrides,
   };
 }
+
+const originalAgentmemoryAgentId = process.env.AGENTMEMORY_AGENT_ID;
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  if (originalAgentmemoryAgentId === undefined) delete process.env.AGENTMEMORY_AGENT_ID;
+  else process.env.AGENTMEMORY_AGENT_ID = originalAgentmemoryAgentId;
+});
 
 describe("openclaw plugin — memory capability registration (closes #286 follow-up)", () => {
   it("calls api.registerMemoryCapability with a promptBuilder when the host supports it", async () => {
@@ -58,5 +66,53 @@ describe("openclaw plugin — memory capability registration (closes #286 follow
     const capability = (api.registerMemoryCapability as ReturnType<typeof vi.fn>).mock.calls[0][0] as Capability;
     const lines = capability.promptBuilder?.({ availableTools: new Set() }) ?? [];
     expect(lines.join("\n")).toMatch(/memory\.internal:9999/);
+  });
+
+  it("passes AGENTMEMORY_AGENT_ID to before_agent_start smart-search", async () => {
+    process.env.AGENTMEMORY_AGENT_ID = "openclaw-profile";
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => ({ results: [] }),
+    } as Response);
+
+    const mod = await import("../integrations/openclaw/plugin.mjs");
+    const plugin = (mod as unknown as { default: { register(api: FakeApi): void } }).default;
+    const api = makeApi();
+    plugin.register(api);
+
+    const handler = (api.on as ReturnType<typeof vi.fn>).mock.calls.find(
+      ([event]) => event === "before_agent_start",
+    )?.[1] as (event: { prompt: string }) => Promise<unknown>;
+    await handler({ prompt: "auth issue" });
+
+    const body = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
+    expect(body.agentId).toBe("openclaw-profile");
+  });
+
+  it("passes AGENTMEMORY_AGENT_ID to agent_end observe", async () => {
+    process.env.AGENTMEMORY_AGENT_ID = "openclaw-profile";
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => ({}),
+    } as Response);
+
+    const mod = await import("../integrations/openclaw/plugin.mjs");
+    const plugin = (mod as unknown as { default: { register(api: FakeApi): void } }).default;
+    const api = makeApi();
+    plugin.register(api);
+
+    const handler = (api.on as ReturnType<typeof vi.fn>).mock.calls.find(
+      ([event]) => event === "agent_end",
+    )?.[1] as (event: Record<string, unknown>) => Promise<unknown>;
+    await handler({
+      success: true,
+      messages: [
+        { role: "user", content: "remember this" },
+        { role: "assistant", content: "saved" },
+      ],
+    });
+
+    const body = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
+    expect(body.agentId).toBe("openclaw-profile");
   });
 });

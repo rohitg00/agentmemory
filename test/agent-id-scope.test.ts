@@ -8,13 +8,17 @@ vi.mock("../src/logger.js", () => ({
 
 describe("loadAgentScope (#554)", () => {
   const ORIG = process.env["AGENT_ID"];
+  const ORIG_AGENTMEMORY = process.env["AGENTMEMORY_AGENT_ID"];
   beforeEach(() => {
     vi.resetModules();
     delete process.env["AGENT_ID"];
+    delete process.env["AGENTMEMORY_AGENT_ID"];
   });
   afterEach(() => {
     if (ORIG === undefined) delete process.env["AGENT_ID"];
     else process.env["AGENT_ID"] = ORIG;
+    if (ORIG_AGENTMEMORY === undefined) delete process.env["AGENTMEMORY_AGENT_ID"];
+    else process.env["AGENTMEMORY_AGENT_ID"] = ORIG_AGENTMEMORY;
   });
 
   it("returns null when AGENT_ID is unset", async () => {
@@ -28,6 +32,14 @@ describe("loadAgentScope (#554)", () => {
     const { loadAgentScope, getAgentId } = await import("../src/config.js");
     expect(loadAgentScope()).toEqual({ agentId: "architect", mode: "shared" });
     expect(getAgentId()).toBe("architect");
+  });
+
+  it("prefers AGENTMEMORY_AGENT_ID over AGENT_ID", async () => {
+    process.env["AGENT_ID"] = "server-default";
+    process.env["AGENTMEMORY_AGENT_ID"] = "integration-profile";
+    const { loadAgentScope, getAgentId } = await import("../src/config.js");
+    expect(loadAgentScope()).toEqual({ agentId: "integration-profile", mode: "shared" });
+    expect(getAgentId()).toBe("integration-profile");
   });
 
   it("trims whitespace and rejects empty after trim", async () => {

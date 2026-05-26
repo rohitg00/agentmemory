@@ -281,7 +281,9 @@ export function loadAgentScope(): {
   mode: "shared" | "isolated";
 } | null {
   const env = getMergedEnv();
-  const raw = env["AGENT_ID"];
+  const raw = hasRealValue(env["AGENTMEMORY_AGENT_ID"])
+    ? env["AGENTMEMORY_AGENT_ID"]
+    : env["AGENT_ID"];
   if (!raw) return null;
   const agentId = raw.trim().slice(0, 128);
   if (!agentId) return null;
