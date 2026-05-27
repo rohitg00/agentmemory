@@ -48,26 +48,25 @@ async function main() {
 	if (isSdkChildContext(data)) return;
 	const sessionId = data.session_id || "unknown";
 	const { imageData, cleanOutput } = extractImageData(data.tool_response ?? data.tool_output);
-	try {
-		await fetch(`${REST_URL}/agentmemory/observe`, {
-			method: "POST",
-			headers: authHeaders(),
-			body: JSON.stringify({
-				hookType: "post_tool_use",
-				sessionId,
-				project: resolveProject(data.cwd),
-				cwd: data.cwd || process.cwd(),
-				timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-				data: {
-					tool_name: data.tool_name,
-					tool_input: data.tool_input,
-					tool_output: truncate(cleanOutput, 8e3),
-					...imageData ? { image_data: imageData } : {}
-				}
-			}),
-			signal: AbortSignal.timeout(3e3)
-		});
-	} catch {}
+	fetch(`${REST_URL}/agentmemory/observe`, {
+		method: "POST",
+		headers: authHeaders(),
+		body: JSON.stringify({
+			hookType: "post_tool_use",
+			sessionId,
+			project: resolveProject(data.cwd),
+			cwd: data.cwd || process.cwd(),
+			timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+			data: {
+				tool_name: data.tool_name,
+				tool_input: data.tool_input,
+				tool_output: truncate(cleanOutput, 8e3),
+				...imageData ? { image_data: imageData } : {}
+			}
+		}),
+		signal: AbortSignal.timeout(3e3)
+	}).catch(() => {});
+	setTimeout(() => process.exit(0), 500).unref();
 }
 function isBase64Image(val) {
 	return typeof val === "string" && (val.startsWith("data:image/") || val.startsWith("iVBORw0KGgo") || val.startsWith("/9j/"));

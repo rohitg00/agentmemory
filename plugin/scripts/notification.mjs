@@ -48,25 +48,24 @@ async function main() {
 	if (isSdkChildContext(data)) return;
 	if (data.notification_type !== "permission_prompt") return;
 	const sessionId = data.session_id || "unknown";
-	try {
-		await fetch(`${REST_URL}/agentmemory/observe`, {
-			method: "POST",
-			headers: authHeaders(),
-			body: JSON.stringify({
-				hookType: "notification",
-				sessionId,
-				project: resolveProject(data.cwd),
-				cwd: data.cwd || process.cwd(),
-				timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-				data: {
-					notification_type: data.notification_type,
-					title: data.title,
-					message: data.message
-				}
-			}),
-			signal: AbortSignal.timeout(2e3)
-		});
-	} catch {}
+	fetch(`${REST_URL}/agentmemory/observe`, {
+		method: "POST",
+		headers: authHeaders(),
+		body: JSON.stringify({
+			hookType: "notification",
+			sessionId,
+			project: resolveProject(data.cwd),
+			cwd: data.cwd || process.cwd(),
+			timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+			data: {
+				notification_type: data.notification_type,
+				title: data.title,
+				message: data.message
+			}
+		}),
+		signal: AbortSignal.timeout(2e3)
+	}).catch(() => {});
+	setTimeout(() => process.exit(0), 500).unref();
 }
 main();
 

@@ -48,25 +48,24 @@ async function main() {
 	if (isSdkChildContext(data)) return;
 	const sessionId = data.session_id || "unknown";
 	const lastMsg = typeof data.last_assistant_message === "string" ? data.last_assistant_message.slice(0, 4e3) : "";
-	try {
-		await fetch(`${REST_URL}/agentmemory/observe`, {
-			method: "POST",
-			headers: authHeaders(),
-			body: JSON.stringify({
-				hookType: "subagent_stop",
-				sessionId,
-				project: resolveProject(data.cwd),
-				cwd: data.cwd || process.cwd(),
-				timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-				data: {
-					agent_id: data.agent_id,
-					agent_type: data.agent_type,
-					last_message: lastMsg
-				}
-			}),
-			signal: AbortSignal.timeout(2e3)
-		});
-	} catch {}
+	fetch(`${REST_URL}/agentmemory/observe`, {
+		method: "POST",
+		headers: authHeaders(),
+		body: JSON.stringify({
+			hookType: "subagent_stop",
+			sessionId,
+			project: resolveProject(data.cwd),
+			cwd: data.cwd || process.cwd(),
+			timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+			data: {
+				agent_id: data.agent_id,
+				agent_type: data.agent_type,
+				last_message: lastMsg
+			}
+		}),
+		signal: AbortSignal.timeout(2e3)
+	}).catch(() => {});
+	setTimeout(() => process.exit(0), 500).unref();
 }
 main();
 

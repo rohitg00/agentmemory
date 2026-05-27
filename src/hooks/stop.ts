@@ -39,34 +39,25 @@ async function main() {
 
   const sessionId = (data.session_id as string) || "unknown";
 
-  try {
-    await fetch(`${REST_URL}/agentmemory/summarize`, {
-      method: "POST",
-      headers: authHeaders(),
-      body: JSON.stringify({ sessionId }),
-      signal: AbortSignal.timeout(120000), // Increased from 30s to 120s
-    });
-  } catch {
-    // summarize is best-effort
-  }
+  fetch(`${REST_URL}/agentmemory/summarize`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({ sessionId }),
+    signal: AbortSignal.timeout(120000),
+  }).catch(() => {});
 
-  // Claude Code fires a separate `SessionEnd` hook that closes the
-  // viewer session lifecycle. Codex does not have a SessionEnd event,
-  // so the only signal we get when a Codex session ends is this Stop
-  // hook (#493). Always best-effort POST /agentmemory/session/end here
-  // so the viewer shows `completed` for Codex sessions; for Claude Code
-  // this is a harmless idempotent second call (session-end.mjs runs on
-  // SessionEnd and sets the same fields).
-  try {
-    await fetch(`${REST_URL}/agentmemory/session/end`, {
-      method: "POST",
-      headers: authHeaders(),
-      body: JSON.stringify({ sessionId }),
-      signal: AbortSignal.timeout(5000),
-    });
-  } catch {
-    // session/end is best-effort
-  }
+  // Codex has no SessionEnd event, so this Stop hook is the only signal
+  // we get to close out the viewer session. For Claude Code this is a
+  // harmless idempotent second call (session-end runs on SessionEnd and
+  // sets the same fields).
+  fetch(`${REST_URL}/agentmemory/session/end`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({ sessionId }),
+    signal: AbortSignal.timeout(5000),
+  }).catch(() => {});
+
+  setTimeout(() => process.exit(0), 500).unref();
 }
 
 main();

@@ -47,27 +47,26 @@ async function main() {
 	}
 	if (isSdkChildContext(data)) return;
 	const sessionId = data.session_id || "unknown";
-	try {
-		await fetch(`${REST_URL}/agentmemory/observe`, {
-			method: "POST",
-			headers: authHeaders(),
-			body: JSON.stringify({
-				hookType: "task_completed",
-				sessionId,
-				project: resolveProject(data.cwd),
-				cwd: data.cwd || process.cwd(),
-				timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-				data: {
-					task_id: data.task_id,
-					task_subject: data.task_subject,
-					task_description: typeof data.task_description === "string" ? data.task_description.slice(0, 2e3) : "",
-					teammate_name: data.teammate_name,
-					team_name: data.team_name
-				}
-			}),
-			signal: AbortSignal.timeout(2e3)
-		});
-	} catch {}
+	fetch(`${REST_URL}/agentmemory/observe`, {
+		method: "POST",
+		headers: authHeaders(),
+		body: JSON.stringify({
+			hookType: "task_completed",
+			sessionId,
+			project: resolveProject(data.cwd),
+			cwd: data.cwd || process.cwd(),
+			timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+			data: {
+				task_id: data.task_id,
+				task_subject: data.task_subject,
+				task_description: typeof data.task_description === "string" ? data.task_description.slice(0, 2e3) : "",
+				teammate_name: data.teammate_name,
+				team_name: data.team_name
+			}
+		}),
+		signal: AbortSignal.timeout(2e3)
+	}).catch(() => {});
+	setTimeout(() => process.exit(0), 500).unref();
 }
 main();
 
