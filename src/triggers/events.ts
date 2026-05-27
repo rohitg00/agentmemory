@@ -63,10 +63,13 @@ export function registerEventTriggers(sdk: ISdk, kv: StateKV): void {
         );
         const compressed = observations.filter((o) => o.title);
         if (compressed.length > 0) {
-          sdk.triggerVoid("mem::graph-extract", { observations: compressed });
+          await sdk.trigger({
+            function_id: "mem::graph-extract",
+            payload: { observations: compressed },
+          });
         }
       } catch (err) {
-        logger.warn("graph-extract triggerVoid failed", {
+        logger.warn("graph-extract trigger failed", {
           sessionId: data.sessionId,
           error: err instanceof Error ? err.message : String(err),
         });

@@ -587,10 +587,19 @@ export function registerApiTriggers(
           body: { error: "sessionId is required and must be a non-empty string" },
         };
       }
-      await kv.update(KV.sessions, sessionId, [
-        { type: "set", path: "endedAt", value: new Date().toISOString() },
-        { type: "set", path: "status", value: "completed" },
-      ]);
+      await withKeyedLock(`session:end:${sessionId}`, async () => {
+        const session = await kv.get<Session>(KV.sessions, sessionId);
+        if (session?.status !== "completed") {
+          await sdk.trigger({
+            function_id: "event::session::stopped",
+            payload: { sessionId },
+          });
+        }
+        await kv.update(KV.sessions, sessionId, [
+          { type: "set", path: "endedAt", value: new Date().toISOString() },
+          { type: "set", path: "status", value: "completed" },
+        ]);
+      });
       return { status_code: 200, body: { success: true } };
     },
   );
