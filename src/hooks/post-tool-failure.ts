@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { resolveProject } from "./_project.js";
 
 function isSdkChildContext(payload: unknown): boolean {
   if (process.env["AGENTMEMORY_SDK_CHILD"] === "1") return true;
@@ -40,8 +41,8 @@ async function main() {
       body: JSON.stringify({
         hookType: "post_tool_failure",
         sessionId,
-        project: data.cwd || process.cwd(),
-        cwd: data.cwd || process.cwd(),
+        project: resolveProject(data.cwd as string | undefined),
+        cwd: (data.cwd as string | undefined) || process.cwd(),
         timestamp: new Date().toISOString(),
         data: {
           tool_name: data.tool_name,

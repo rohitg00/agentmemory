@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { resolveProject } from "./_project.js";
 
 // Inlined from ./sdk-guard so each hook bundles to a single self-contained
 // .mjs (matches the pattern used by every other hook entry in tsdown.config).
@@ -46,8 +47,8 @@ async function main() {
     body: JSON.stringify({
       hookType: "subagent_start",
       sessionId,
-      project: data.cwd || process.cwd(),
-      cwd: data.cwd || process.cwd(),
+      project: resolveProject(data.cwd as string | undefined),
+      cwd: (data.cwd as string | undefined) || process.cwd(),
       timestamp: new Date().toISOString(),
       data: {
         agent_id: data.agent_id,

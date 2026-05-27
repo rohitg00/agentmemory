@@ -52,6 +52,7 @@ async function main() {
 		if (typeof pattern === "string" && pattern.length > 0) terms.push(pattern);
 	}
 	const sessionId = data.session_id || "unknown";
+	const project = typeof data.project === "string" && data.project.trim().length > 0 ? data.project.trim() : void 0;
 	try {
 		const res = await fetch(`${REST_URL}/agentmemory/enrich`, {
 			method: "POST",
@@ -60,7 +61,8 @@ async function main() {
 				sessionId,
 				files,
 				terms,
-				toolName
+				toolName,
+				...project !== void 0 && { project }
 			}),
 			signal: AbortSignal.timeout(2e3)
 		});
