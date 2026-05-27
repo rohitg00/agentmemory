@@ -658,7 +658,9 @@ export interface AuditEntry {
     | "slot_create"
     | "slot_delete"
     | "slot_reflect"
-    | "policy_update";
+    | "policy_update"
+    | "write_candidate"
+    | "readback_verify";
   userId?: string;
   functionId: string;
   targetIds: string[];
