@@ -15,6 +15,22 @@ import {
 import { recordAudit } from "./audit.js";
 import { logger } from "../logger.js";
 
+// Parse all key="value" pairs from a tag's attribute string, in any
+// order. The previous parser hard-coded attribute order
+// (type before name on <entity>, type/source/target/weight on
+// <relationship>) and silently dropped nodes/edges when the upstream
+// LLM emitted attributes in a different order — Codex in particular
+// likes to lead with `name=` (#635).
+function parseAttrs(raw: string): Record<string, string> {
+  const attrs: Record<string, string> = {};
+  const attrRegex = /([A-Za-z_][\w:-]*)="([^"]*)"/g;
+  let m;
+  while ((m = attrRegex.exec(raw)) !== null) {
+    attrs[m[1]] = m[2];
+  }
+  return attrs;
+}
+
 function parseGraphXml(
   xml: string,
   observationIds: string[],
@@ -26,27 +42,25 @@ function parseGraphXml(
   const edges: GraphEdge[] = [];
   const now = new Date().toISOString();
 
-  // Lazy `[^>]*?` so the self-closing alternation gets a chance before
-  // greedy attribute matching consumes the trailing `/` and the regex
-  // falls through to the explicit-close branch, which then runs ahead to
-  // the *next* entity's `</entity>` and silently drops a node (#494
-  // follow-up: greedy `[^>]*` was eating the `/` and merging two entity
-  // declarations into one match).
-  const entityRegex =
-    /<entity\s+type="([^"]+)"\s+name="([^"]+)"[^>]*?(?:\/>|>([\s\S]*?)<\/entity>)/g;
-  let match;
-  while ((match = entityRegex.exec(xml)) !== null) {
-    const type = match[1] as GraphNode["type"];
-    const name = match[2];
-    const propsBlock = match[3] ?? "";
-    const properties: Record<string, string> = {};
+  // Two passes because <entity> can be self-closing or have a body
+  // (<property> children). The self-closing form needs `[^>]*[^/]` on
+  // the attr group so the trailing `/` isn't swallowed into the match
+  // (root cause of #494). The explicit-close form picks up the
+  // property block.
+  const entitySelfClose = /<entity\b([^>]*?)\/>/g;
+  const entityWithBody = /<entity\b([^>]*[^/])>([\s\S]*?)<\/entity>/g;
 
+  const addEntity = (rawAttrs: string, propsBlock = ""): void => {
+    const attrs = parseAttrs(rawAttrs);
+    const type = attrs["type"] as GraphNode["type"] | undefined;
+    const name = attrs["name"];
+    if (!type || !name) return;
+    const properties: Record<string, string> = {};
     const propRegex = /<property\s+key="([^"]+)">([^<]*)<\/property>/g;
     let propMatch;
     while ((propMatch = propRegex.exec(propsBlock)) !== null) {
       properties[propMatch[1]] = propMatch[2];
     }
-
     nodes.push({
       id: generateId("gn"),
       type,
@@ -55,31 +69,38 @@ function parseGraphXml(
       sourceObservationIds: observationIds,
       createdAt: now,
     });
+  };
+
+  let match;
+  while ((match = entitySelfClose.exec(xml)) !== null) {
+    addEntity(match[1]);
+  }
+  while ((match = entityWithBody.exec(xml)) !== null) {
+    addEntity(match[1], match[2]);
   }
 
-  const relRegex =
-    /<relationship\s+type="([^"]+)"\s+source="([^"]+)"\s+target="([^"]+)"\s+weight="([^"]+)"\s*\/>/g;
+  const relRegex = /<relationship\b([^>]*?)\/>/g;
   while ((match = relRegex.exec(xml)) !== null) {
-    const type = match[1] as GraphEdge["type"];
-    const sourceName = match[2];
-    const targetName = match[3];
-    const parsedWeight = parseFloat(match[4]);
-    const weight = Number.isNaN(parsedWeight) ? 0.5 : parsedWeight;
+    const attrs = parseAttrs(match[1]);
+    const type = attrs["type"] as GraphEdge["type"] | undefined;
+    const sourceName = attrs["source"];
+    const targetName = attrs["target"];
+    if (!type || !sourceName || !targetName) continue;
+    const parsedWeight = parseFloat(attrs["weight"] ?? "");
+    const weight = Number.isFinite(parsedWeight) ? parsedWeight : 0.5;
 
     const sourceNode = nodes.find((n) => n.name === sourceName);
     const targetNode = nodes.find((n) => n.name === targetName);
-
-    if (sourceNode && targetNode) {
-      edges.push({
-        id: generateId("ge"),
-        type,
-        sourceNodeId: sourceNode.id,
-        targetNodeId: targetNode.id,
-        weight: Math.max(0, Math.min(1, weight)),
-        sourceObservationIds: observationIds,
-        createdAt: now,
-      });
-    }
+    if (!sourceNode || !targetNode) continue;
+    edges.push({
+      id: generateId("ge"),
+      type,
+      sourceNodeId: sourceNode.id,
+      targetNodeId: targetNode.id,
+      weight: Math.max(0, Math.min(1, weight)),
+      sourceObservationIds: observationIds,
+      createdAt: now,
+    });
   }
 
   return { nodes, edges };

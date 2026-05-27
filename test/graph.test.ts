@@ -132,6 +132,36 @@ describe("Graph Functions", () => {
     expect(edges[0].type).toBe("uses");
   });
 
+  it("graph-extract tolerates reordered attributes (#635)", async () => {
+    // Codex CLI's LLM tends to emit attribute order name→type and
+    // source→target→type rather than the hard-coded type-first /
+    // type/source/target/weight sequence the old parser required.
+    mockProvider.compress.mockResolvedValueOnce(`<entities>
+<entity name="src/index.ts" type="file"/>
+<entity name="main" type="function"><property key="lang">typescript</property></entity>
+</entities>
+<relationships>
+<relationship source="src/index.ts" target="main" type="uses" weight="0.9"/>
+</relationships>`);
+
+    const result = (await sdk.trigger("mem::graph-extract", {
+      observations: [testObs],
+    })) as { success: boolean; nodesAdded: number; edgesAdded: number };
+
+    expect(result.success).toBe(true);
+    expect(result.nodesAdded).toBe(2);
+    expect(result.edgesAdded).toBe(1);
+
+    const nodes = await kv.list<GraphNode>("mem:graph:nodes");
+    expect(nodes.find((n) => n.name === "src/index.ts")?.type).toBe("file");
+    expect(nodes.find((n) => n.name === "main")?.type).toBe("function");
+
+    const edges = await kv.list<GraphEdge>("mem:graph:edges");
+    expect(edges).toHaveLength(1);
+    expect(edges[0].type).toBe("uses");
+    expect(edges[0].weight).toBeCloseTo(0.9, 5);
+  });
+
   it("graph-query with search returns matching nodes", async () => {
     await sdk.trigger("mem::graph-extract", { observations: [testObs] });
 
