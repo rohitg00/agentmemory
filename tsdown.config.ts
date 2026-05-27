@@ -61,12 +61,8 @@ export default defineConfig([
     clean: false,
     sourcemap: false,
   },
-  // Per-entry hook configs (one defineConfig object per hook) so each hook
-  // bundles into a fully self-contained .mjs with no shared hashed chunks.
-  // Bundling all 13 entries in one config caused tsdown to hoist shared
-  // helpers (e.g. ./_project.ts) into a hashed chunk that changed on every
-  // rebuild and got committed by accident. Keep DRY in source via imports,
-  // emit standalone .mjs per hook.
+  // One entry per config block prevents tsdown from hoisting shared
+  // helpers into hashed chunks across hooks.
   ...hookEntries.map((entry) => ({
     entry: [entry],
     outDir: "dist/hooks",
