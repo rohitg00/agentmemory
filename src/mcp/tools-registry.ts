@@ -305,6 +305,10 @@ export const V040_TOOLS: McpToolDef[] = [
           type: "string",
           description: "Type: observation, memory, or pattern",
         },
+        userId: {
+          type: "string",
+          description: "User identity for this operation. Overrides AGENTMEMORY_USER_ID env when set.",
+        },
       },
       required: ["itemId", "itemType"],
     },
@@ -316,6 +320,10 @@ export const V040_TOOLS: McpToolDef[] = [
       type: "object",
       properties: {
         limit: { type: "number", description: "Max items (default 20)" },
+        userId: {
+          type: "string",
+          description: "User identity for this operation. Overrides AGENTMEMORY_USER_ID env when set.",
+        },
       },
     },
   },
