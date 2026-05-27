@@ -1,5 +1,11 @@
 import type { ISdk, ApiRequest } from "iii-sdk";
-import type { Session, CompressedObservation, HookPayload, CommitLink } from "../types.js";
+import type {
+  Session,
+  CompressedObservation,
+  HookPayload,
+  CommitLink,
+  MemoryWriteCandidate,
+} from "../types.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
@@ -113,6 +119,186 @@ function parseOptionalPositiveInt(value: unknown): number | undefined | null {
   if (parsed === undefined || parsed === null) return parsed;
   if (!Number.isInteger(parsed) || parsed < 1) return null;
   return parsed;
+}
+
+function badRequest(error: string): Response {
+  return { status_code: 400, body: { error } };
+}
+
+function requestBody(req: ApiRequest): Record<string, unknown> {
+  if (!req.body || typeof req.body !== "object" || Array.isArray(req.body)) {
+    return {};
+  }
+  return req.body as Record<string, unknown>;
+}
+
+function addOptionalString(
+  payload: Record<string, unknown>,
+  field: string,
+  value: unknown,
+): Response | null {
+  if (value === undefined || value === null || value === "") return null;
+  const text = asNonEmptyString(value);
+  if (!text) return badRequest(`${field} must be a non-empty string`);
+  payload[field] = text;
+  return null;
+}
+
+function parseStringArrayField(
+  value: unknown,
+  field: string,
+): string[] | Response | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) return badRequest(`${field} must be an array of strings`);
+  const strings: string[] = [];
+  for (const item of value) {
+    const text = asNonEmptyString(item);
+    if (!text) return badRequest(`${field} must be an array of non-empty strings`);
+    strings.push(text);
+  }
+  return strings;
+}
+
+function isResponse(value: unknown): value is Response {
+  return !!value && typeof value === "object" && "status_code" in value;
+}
+
+function parsePolicyUpdatePayload(body: Record<string, unknown>): Record<string, unknown> | Response {
+  const payload: Record<string, unknown> = {};
+
+  if (body.queryExpansions !== undefined) {
+    if (!Array.isArray(body.queryExpansions)) {
+      return badRequest("queryExpansions must be an array");
+    }
+    const rules: Record<string, unknown>[] = [];
+    for (const raw of body.queryExpansions) {
+      if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+        return badRequest("queryExpansions must contain objects");
+      }
+      const rule = raw as Record<string, unknown>;
+      const id = asNonEmptyString(rule.id);
+      const trigger = asNonEmptyString(rule.trigger);
+      if (!id || !trigger) {
+        return badRequest("query expansion id and trigger are required strings");
+      }
+      const expansions = parseStringArrayField(rule.expansions ?? [], "expansions");
+      if (isResponse(expansions)) return expansions;
+      const sanitized: Record<string, unknown> = { id, trigger, expansions };
+      if (rule.scope !== undefined) {
+        if (rule.scope !== "global" && rule.scope !== "project") {
+          return badRequest("query expansion scope must be global or project");
+        }
+        sanitized.scope = rule.scope;
+      }
+      const project = asNonEmptyString(rule.project);
+      if (project) sanitized.project = project;
+      if (rule.enabled !== undefined) {
+        if (typeof rule.enabled !== "boolean") {
+          return badRequest("query expansion enabled must be boolean");
+        }
+        sanitized.enabled = rule.enabled;
+      }
+      rules.push(sanitized);
+    }
+    payload.queryExpansions = rules;
+  }
+
+  if (body.writePolicy !== undefined) {
+    if (!body.writePolicy || typeof body.writePolicy !== "object" || Array.isArray(body.writePolicy)) {
+      return badRequest("writePolicy must be an object");
+    }
+    const raw = body.writePolicy as Record<string, unknown>;
+    const writePolicy: Record<string, unknown> = {};
+    if (raw.mode !== undefined) {
+      if (raw.mode !== "shadow" && raw.mode !== "limited_auto" && raw.mode !== "disabled") {
+        return badRequest("writePolicy.mode must be shadow, limited_auto, or disabled");
+      }
+      writePolicy.mode = raw.mode;
+    }
+    const threshold = parseOptionalFiniteNumber(raw.autoWriteThreshold);
+    if (threshold === null) {
+      return badRequest("writePolicy.autoWriteThreshold must be a finite number");
+    }
+    if (threshold !== undefined) writePolicy.autoWriteThreshold = threshold;
+    const allowedAutoTypes = parseStringArrayField(
+      raw.allowedAutoTypes,
+      "writePolicy.allowedAutoTypes",
+    );
+    if (isResponse(allowedAutoTypes)) return allowedAutoTypes;
+    if (allowedAutoTypes !== undefined) writePolicy.allowedAutoTypes = allowedAutoTypes;
+    if (raw.neverAutoWriteShared !== undefined) {
+      if (typeof raw.neverAutoWriteShared !== "boolean") {
+        return badRequest("writePolicy.neverAutoWriteShared must be boolean");
+      }
+      writePolicy.neverAutoWriteShared = raw.neverAutoWriteShared;
+    }
+    payload.writePolicy = writePolicy;
+  }
+
+  if (body.preflightRules !== undefined) {
+    if (!Array.isArray(body.preflightRules)) {
+      return badRequest("preflightRules must be an array");
+    }
+    const rules: Record<string, unknown>[] = [];
+    for (const raw of body.preflightRules) {
+      if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+        return badRequest("preflightRules must contain objects");
+      }
+      const rule = raw as Record<string, unknown>;
+      const id = asNonEmptyString(rule.id);
+      const tool = asNonEmptyString(rule.tool);
+      const taskType = asNonEmptyString(rule.taskType);
+      if (!id || !tool || !taskType) {
+        return badRequest("preflight rule id, tool, and taskType are required strings");
+      }
+      const triggerPatterns = parseStringArrayField(
+        rule.triggerPatterns ?? [],
+        "triggerPatterns",
+      );
+      if (isResponse(triggerPatterns)) return triggerPatterns;
+      const sanitized: Record<string, unknown> = {
+        id,
+        tool,
+        taskType,
+        triggerPatterns,
+      };
+      if (rule.decision !== undefined) {
+        if (
+          rule.decision !== "allow" &&
+          rule.decision !== "warn" &&
+          rule.decision !== "block"
+        ) {
+          return badRequest("preflight rule decision must be allow, warn, or block");
+        }
+        sanitized.decision = rule.decision;
+      }
+      if (rule.enabled !== undefined) {
+        if (typeof rule.enabled !== "boolean") {
+          return badRequest("preflight rule enabled must be boolean");
+        }
+        sanitized.enabled = rule.enabled;
+      }
+      rules.push(sanitized);
+    }
+    payload.preflightRules = rules;
+  }
+
+  return payload;
+}
+
+function parseListPayload(
+  params: Record<string, unknown>,
+  fields: string[],
+): Record<string, unknown> | Response {
+  const payload: Record<string, unknown> = {};
+  for (const field of fields) {
+    const err = addOptionalString(payload, field, params[field]);
+    if (err) return err;
+  }
+  const limit = parseOptionalPositiveInt(params.limit);
+  if (limit === null) return badRequest("limit must be a positive integer");
+  if (limit !== undefined) payload.limit = limit;
+  return payload;
 }
 
 export function registerApiTriggers(
@@ -814,6 +1000,234 @@ export function registerApiTriggers(
     type: "http",
     function_id: "api::observations",
     config: { api_path: "/agentmemory/observations", http_method: "GET" },
+  });
+
+  sdk.registerFunction("api::policy-get", async (req: ApiRequest): Promise<Response> => {
+    const authErr = checkAuth(req, secret);
+    if (authErr) return authErr;
+    const result = await sdk.trigger({ function_id: "mem::policy-get", payload: {} });
+    return { status_code: 200, body: result };
+  });
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::policy-get",
+    config: { api_path: "/agentmemory/policy", http_method: "GET" },
+  });
+
+  sdk.registerFunction("api::policy-update", async (req: ApiRequest): Promise<Response> => {
+    const authErr = checkAuth(req, secret);
+    if (authErr) return authErr;
+    const payload = parsePolicyUpdatePayload(requestBody(req));
+    if (isResponse(payload)) return payload;
+    const result = await sdk.trigger({ function_id: "mem::policy-update", payload });
+    return { status_code: 200, body: result };
+  });
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::policy-update",
+    config: { api_path: "/agentmemory/policy", http_method: "POST" },
+  });
+
+  sdk.registerFunction(
+    "api::policy-expand-query",
+    async (req: ApiRequest): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const body = requestBody(req);
+      const query = asNonEmptyString(body.query);
+      if (!query) {
+        return badRequest("query is required and must be a non-empty string");
+      }
+      const payload: Record<string, unknown> = { query };
+      const projectErr = addOptionalString(payload, "project", body.project);
+      if (projectErr) return projectErr;
+      const maxQueries = parseOptionalPositiveInt(body.maxQueries);
+      if (maxQueries === null) return badRequest("maxQueries must be a positive integer");
+      if (maxQueries !== undefined) payload.maxQueries = maxQueries;
+      const result = await sdk.trigger({
+        function_id: "mem::policy-expand-query",
+        payload,
+      });
+      return { status_code: 200, body: result };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::policy-expand-query",
+    config: {
+      api_path: "/agentmemory/policy/expand-query",
+      http_method: "POST",
+    },
+  });
+
+  sdk.registerFunction(
+    "api::write-candidates-generate",
+    async (req: ApiRequest): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const body = requestBody(req);
+      const sourceText = asNonEmptyString(body.sourceText);
+      if (!sourceText) {
+        return badRequest("sourceText is required and must be a non-empty string");
+      }
+      const payload: Record<string, unknown> = { sourceText };
+      for (const field of ["sessionId", "observationId", "project", "agentId"]) {
+        const err = addOptionalString(payload, field, body[field]);
+        if (err) return err;
+      }
+      const result = await sdk.trigger({
+        function_id: "mem::write-candidates-generate",
+        payload,
+      });
+      return { status_code: 200, body: result };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::write-candidates-generate",
+    config: {
+      api_path: "/agentmemory/write-candidates/generate",
+      http_method: "POST",
+    },
+  });
+
+  sdk.registerFunction(
+    "api::write-candidates-list",
+    async (req: ApiRequest): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const params = req.query_params || {};
+      const payload = parseListPayload(params, ["project", "agentId"]);
+      if (isResponse(payload)) return payload;
+      const status = params.status as unknown;
+      if (status !== undefined && status !== "") {
+        if (
+          status !== "shadow" &&
+          status !== "approved" &&
+          status !== "rejected" &&
+          status !== "written" &&
+          status !== "readback_failed"
+        ) {
+          return badRequest(
+            "status must be shadow, approved, rejected, written, or readback_failed",
+          );
+        }
+        payload.status = status satisfies MemoryWriteCandidate["status"];
+      }
+      const result = await sdk.trigger({
+        function_id: "mem::write-candidates-list",
+        payload,
+      });
+      return { status_code: 200, body: result };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::write-candidates-list",
+    config: {
+      api_path: "/agentmemory/write-candidates",
+      http_method: "GET",
+    },
+  });
+
+  sdk.registerFunction(
+    "api::write-candidates-review",
+    async (req: ApiRequest): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const body = requestBody(req);
+      const candidateId = asNonEmptyString(body.candidateId);
+      if (!candidateId) {
+        return badRequest("candidateId is required and must be a non-empty string");
+      }
+      if (body.decision !== "approve" && body.decision !== "reject") {
+        return badRequest("decision must be approve or reject");
+      }
+      const payload: Record<string, unknown> = {
+        candidateId,
+        decision: body.decision,
+      };
+      const reasonErr = addOptionalString(payload, "reason", body.reason);
+      if (reasonErr) return reasonErr;
+      const result = await sdk.trigger({
+        function_id: "mem::write-candidates-review",
+        payload,
+      });
+      return { status_code: 200, body: result };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::write-candidates-review",
+    config: {
+      api_path: "/agentmemory/write-candidates/review",
+      http_method: "POST",
+    },
+  });
+
+  sdk.registerFunction(
+    "api::readback-verify",
+    async (req: ApiRequest): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const body = requestBody(req);
+      const payload: Record<string, unknown> = {};
+      const candidateErr = addOptionalString(payload, "candidateId", body.candidateId);
+      if (candidateErr) return candidateErr;
+      const memoryErr = addOptionalString(payload, "memoryId", body.memoryId);
+      if (memoryErr) return memoryErr;
+      if (!payload.candidateId && !payload.memoryId) {
+        return badRequest("candidateId or memoryId is required");
+      }
+      const queries = parseStringArrayField(body.queries, "queries");
+      if (isResponse(queries)) return queries;
+      if (queries !== undefined) payload.queries = queries;
+      const limit = parseOptionalPositiveInt(body.limit);
+      if (limit === null) return badRequest("limit must be a positive integer");
+      if (limit !== undefined) payload.limit = limit;
+      if (body.mode !== undefined) {
+        if (body.mode !== "search" && body.mode !== "smart-search") {
+          return badRequest("mode must be search or smart-search");
+        }
+        payload.mode = body.mode;
+      }
+      const result = await sdk.trigger({
+        function_id: "mem::readback-verify",
+        payload,
+      });
+      return { status_code: 200, body: result };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::readback-verify",
+    config: {
+      api_path: "/agentmemory/readback/verify",
+      http_method: "POST",
+    },
+  });
+
+  sdk.registerFunction(
+    "api::readback-list",
+    async (req: ApiRequest): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const payload = parseListPayload(req.query_params || {}, [
+        "candidateId",
+        "memoryId",
+      ]);
+      if (isResponse(payload)) return payload;
+      const result = await sdk.trigger({
+        function_id: "mem::readback-list",
+        payload,
+      });
+      return { status_code: 200, body: result };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::readback-list",
+    config: { api_path: "/agentmemory/readback", http_method: "GET" },
   });
 
   sdk.registerFunction("api::file-context", 

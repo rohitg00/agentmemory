@@ -234,6 +234,108 @@ export interface MemorySlot {
   updatedAt: string;
 }
 
+export interface QueryExpansionRule {
+  id: string;
+  trigger: string;
+  expansions: string[];
+  scope?: "global" | "project";
+  project?: string;
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MemoryWritePolicy {
+  mode: "shadow" | "limited_auto" | "disabled";
+  autoWriteThreshold: number;
+  allowedAutoTypes: MemoryWriteCandidate["memoryType"][];
+  neverAutoWriteShared: boolean;
+}
+
+export interface PreflightRule {
+  id: string;
+  tool: string;
+  taskType: string;
+  triggerPatterns: string[];
+  decision: "allow" | "warn" | "block";
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MemoryPolicy {
+  id: "default";
+  updatedAt: string;
+  queryExpansions: QueryExpansionRule[];
+  writePolicy: MemoryWritePolicy;
+  preflightRules: PreflightRule[];
+}
+
+export interface MemoryWriteCandidate {
+  id: string;
+  sessionId?: string;
+  observationId?: string;
+  project?: string;
+  agentId?: string;
+  scope: "global" | "project" | "agent";
+  createdAt: string;
+  sourceText: string;
+  evidenceQuote: string;
+  subject: string;
+  predicate: string;
+  value: string;
+  memoryType:
+    | "fact"
+    | "preference"
+    | "architecture"
+    | "bug"
+    | "workflow"
+    | "lesson"
+    | "procedural_rule"
+    | "credential_route"
+    | "temporary"
+    | "ignore";
+  confidence: number;
+  importance: number;
+  target: "memory" | "lesson" | "slot" | "review" | "ignore";
+  requiresReview: boolean;
+  reason: string;
+  readbackQueries: string[];
+  status: "shadow" | "approved" | "rejected" | "written" | "readback_failed";
+}
+
+export interface ReadbackResult {
+  id: string;
+  candidateId?: string;
+  memoryId?: string;
+  createdAt: string;
+  queries: Array<{
+    query: string;
+    topIds: string[];
+    matched: boolean;
+  }>;
+  passed: boolean;
+  failureReason?: string;
+}
+
+export interface PolicySuggestion {
+  id: string;
+  lessonId?: string;
+  createdAt: string;
+  type:
+    | "query_expansion"
+    | "preflight"
+    | "context_disclosure"
+    | "slot"
+    | "memory_only";
+  confidence: number;
+  scope: "global" | "project";
+  project?: string;
+  proposal: Record<string, unknown>;
+  status: "proposed" | "approved" | "rejected" | "applied";
+  reasoning: string;
+}
+
 export interface EmbeddingProvider {
   name: string;
   dimensions: number;
@@ -555,7 +657,10 @@ export interface AuditEntry {
     | "slot_replace"
     | "slot_create"
     | "slot_delete"
-    | "slot_reflect";
+    | "slot_reflect"
+    | "policy_update"
+    | "write_candidate"
+    | "readback_verify";
   userId?: string;
   functionId: string;
   targetIds: string[];
