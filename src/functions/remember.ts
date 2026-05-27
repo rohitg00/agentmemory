@@ -142,7 +142,7 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
         }
         await vectorIndexAddGuarded(
           memory.id,
-          memory.sessionIds[0] ?? "memory",
+          memory.sessionIds?.[0] ?? "memory",
           memory.title + " " + memory.content,
           { kind: "memory", logId: memory.id },
         );

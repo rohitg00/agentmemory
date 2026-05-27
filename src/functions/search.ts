@@ -261,7 +261,7 @@ export async function rebuildIndex(kv: StateKV): Promise<number> {
       idx.add(memoryToObservation(memory))
       await enqueue({
         id: memory.id,
-        sessionId: memory.sessionIds[0] ?? 'memory',
+        sessionId: memory.sessionIds?.[0] ?? 'memory',
         text: memory.title + ' ' + memory.content,
         context: { kind: "memory", logId: memory.id },
       })

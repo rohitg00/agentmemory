@@ -482,7 +482,7 @@ async function main() {
         if (bm25Index.has(memory.id)) continue;
         bm25Index.add({
           id: memory.id,
-          sessionId: memory.sessionIds[0] ?? "memory",
+          sessionId: memory.sessionIds?.[0] ?? "memory",
           timestamp: memory.createdAt,
           type: "decision",
           title: memory.title,
