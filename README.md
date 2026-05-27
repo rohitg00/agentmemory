@@ -997,7 +997,7 @@ The viewer at `:3113` shows what your agent **remembered**. The [iii console](ht
 
 Watch a `memory_smart_search` fire and see the BM25 scan → embedding lookup → RRF fusion → reranker as a waterfall. Edit a stuck consolidation timer in the KV browser. Replay a `PostToolUse` hook with a tweaked payload. Pin the WebSocket stream and watch observations land live.
 
-agentmemory ships this for free because every function, trigger, state scope, and stream is an iii primitive — nothing custom, nothing to instrument.
+agentmemory ships this for free because every function call and trigger fires through iii — nothing custom, nothing to instrument.
 
 <p align="center">
   <img src="assets/iii-console/workers.png" alt="iii console Workers page — connected workers including agentmemory instances with live function counts and runtime metadata" width="720" />
@@ -1059,7 +1059,7 @@ If you want to export to Jaeger/Honeycomb/Grafana Tempo instead, change `exporte
 
 <h2 id="powered-by-iii"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/section-architecture.svg"><img src="assets/tags/section-architecture.svg" alt="Powered by iii" height="32" /></picture></h2>
 
-agentmemory is **already a running [iii](https://iii.dev) instance**. Functions, triggers, KV state, streams, OTEL traces — all of it is iii primitives. You didn't install Postgres, Redis, Express, pm2, or Prometheus, because iii replaces them.
+agentmemory is **already a running [iii](https://iii.dev) instance**. Three primitives — worker, function, trigger — compose the runtime; KV state, streams, and OTEL traces come from iii-state, iii-stream, and iii-observability workers that ship with iii. You didn't install Postgres, Redis, Express, pm2, or Prometheus, because iii replaces them.
 
 That means one more command extends agentmemory with an entire new capability.
 

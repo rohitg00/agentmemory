@@ -60,11 +60,11 @@ export function Primitives() {
   }, []);
 
   return (
-    <section className={styles.wrap} id="primitives" aria-labelledby="prim-title">
+    <section className={styles.wrap} id="stack" aria-labelledby="prim-title">
       <header className="section-head">
         <span className="section-eyebrow">THE STACK</span>
         <h2 id="prim-title" className="section-title">
-          THREE PRIMITIVES.
+          THREE LAYERS.
           <br />
           NO FRAMEWORK TAX.
         </h2>
