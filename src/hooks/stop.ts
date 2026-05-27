@@ -53,7 +53,7 @@ async function main() {
     signal: AbortSignal.timeout(5000),
   }).catch(() => {});
 
-  setTimeout(() => process.exit(0), 500).unref();
+  setTimeout(() => process.exit(0), 1500).unref();
 }
 
 main();
