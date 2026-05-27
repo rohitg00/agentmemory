@@ -47,6 +47,10 @@ export const KV = {
   globalSlots: "mem:slots:global",
   state: "mem:state",
   commits: "mem:commits",
+  memoryPolicy: "mem:policy",
+  writeCandidates: "mem:write-candidates",
+  readbackResults: "mem:readback",
+  policySuggestions: "mem:policy-suggestions",
 } as const;
 
 export const STREAM = {
