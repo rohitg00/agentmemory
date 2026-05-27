@@ -30,7 +30,6 @@ describe("agentmemory connect — dispatcher", () => {
   });
 
   it("ships the supported agent list", () => {
-    // Bumped to 11 after adding Qwen Code + Antigravity + Kiro.
     expect(knownAgents().sort()).toEqual(
       [
         "antigravity",
@@ -44,9 +43,10 @@ describe("agentmemory connect — dispatcher", () => {
         "openhuman",
         "pi",
         "qwen",
+        "warp",
       ].sort(),
     );
-    expect(ADAPTERS.length).toBe(11);
+    expect(ADAPTERS.length).toBe(12);
   });
 
   it("every adapter exposes detect() and install()", () => {

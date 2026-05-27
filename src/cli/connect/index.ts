@@ -12,6 +12,7 @@ import { adapter as openclaw } from "./openclaw.js";
 import { adapter as openhuman } from "./openhuman.js";
 import { adapter as pi } from "./pi.js";
 import { adapter as qwen } from "./qwen.js";
+import { adapter as warp } from "./warp.js";
 
 export const ADAPTERS: readonly ConnectAdapter[] = [
   claudeCode,
@@ -21,6 +22,7 @@ export const ADAPTERS: readonly ConnectAdapter[] = [
   qwen,
   antigravity,
   kiro,
+  warp,
   openclaw,
   hermes,
   pi,

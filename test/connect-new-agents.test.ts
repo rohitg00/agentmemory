@@ -114,16 +114,52 @@ describe("connect: Kiro", () => {
   });
 });
 
-describe("connect: all three agents registered in ADAPTERS", () => {
+describe("connect: Warp", () => {
+  let home: string;
+  const ORIG = process.env["HOME"];
+  beforeEach(() => {
+    home = freshHome();
+    vi.resetModules();
+    process.env["HOME"] = home;
+  });
+  afterEach(() => {
+    process.env["HOME"] = ORIG;
+    rmSync(home, { recursive: true, force: true });
+  });
+
+  it("does not detect when ~/.warp/ is absent", async () => {
+    const { adapter } = await import("../src/cli/connect/warp.js");
+    expect(adapter.detect()).toBe(false);
+  });
+
+  it("writes mcpServers.agentmemory to ~/.warp/.mcp.json", async () => {
+    mkdirSync(join(home, ".warp"), { recursive: true });
+    const { adapter } = await import("../src/cli/connect/warp.js");
+    expect(adapter.detect()).toBe(true);
+    const result = await adapter.install({ dryRun: false, force: false });
+    expect(result.kind).toBe("installed");
+    const cfgPath = join(home, ".warp", ".mcp.json");
+    expect(existsSync(cfgPath)).toBe(true);
+    const cfg = JSON.parse(readFileSync(cfgPath, "utf-8"));
+    expect(cfg.mcpServers.agentmemory.command).toBe("npx");
+    expect(cfg.mcpServers.agentmemory.args).toContain("@agentmemory/mcp");
+    expect(cfg.mcpServers.agentmemory.env.AGENTMEMORY_URL).toMatch(
+      /\$\{AGENTMEMORY_URL:-/,
+    );
+  });
+});
+
+describe("connect: all four agents registered in ADAPTERS", () => {
   beforeEach(() => {
     vi.resetModules();
   });
 
-  it("knownAgents includes qwen, antigravity, kiro", async () => {
+  it("knownAgents includes qwen, antigravity, kiro, warp", async () => {
     const { knownAgents } = await import("../src/cli/connect/index.js");
     const agents = knownAgents();
     expect(agents).toContain("qwen");
     expect(agents).toContain("antigravity");
     expect(agents).toContain("kiro");
+    expect(agents).toContain("warp");
   });
 });
