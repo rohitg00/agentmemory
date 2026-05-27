@@ -196,6 +196,8 @@ agentmemory works with any agent that supports hooks, MCP, or REST API. All agen
 <strong>Roo Code</strong><br/>
 <sub>MCP server</sub>
 </td>
+</tr>
+<tr>
 <td align="center" width="12.5%">
 <a href="https://www.warp.dev"><img src="https://github.com/warpdotdev.png?size=120" alt="Warp" width="48" height="48" /></a><br/>
 <strong>Warp</strong><br/>

@@ -1,17 +1,14 @@
-import { homedir, platform } from "node:os";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { createJsonMcpAdapter } from "./json-mcp-adapter.js";
 
 // Zed stores its settings (including MCP servers) under "context_servers"
-// in settings.json — NOT "mcpServers". macOS uses
-// ~/.config/zed/settings.json by default; Zed also reads from
-// ~/Library/Application Support/Zed/settings.json on macOS but the
-// XDG path is the documented primary. Linux: ~/.config/zed/settings.json.
-// Source: zed.dev/docs/ai/mcp
-const isMac = platform() === "darwin";
-const zedConfigDir = isMac
-  ? join(homedir(), ".config", "zed")
-  : join(homedir(), ".config", "zed");
+// in settings.json — NOT "mcpServers". User config lives at
+// ~/.config/zed/settings.json on all platforms (Zed uses the XDG path
+// even on macOS; ~/Library/Application Support/Zed/ holds runtime data
+// like the database + cached language servers, not the config).
+// Source: zed.dev/docs/ai/mcp + zed.dev/docs/configuring-zed
+const zedConfigDir = join(homedir(), ".config", "zed");
 
 export const adapter = createJsonMcpAdapter({
   name: "zed",

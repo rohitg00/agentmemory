@@ -88,10 +88,11 @@ export const adapter: ConnectAdapter = {
     // Branch 1: yaml present — refuse to silently mutate user's yaml
     // config (preserving comments/anchors needs a proper parser).
     if (yamlExists) {
-      const manual = `\nAdd this to ~/.continue/config.yaml under mcpServers:\n\n${renderFreshYaml()
+      const indented = renderFreshYaml()
         .split("\n")
         .map((l) => (l ? `  ${l}` : l))
-        .join("\n")}`;
+        .join("\n");
+      const manual = `\nMerge this block into ~/.continue/config.yaml (the snippet already includes the top-level mcpServers key — if your config already has a mcpServers list, append the agentmemory entry to it instead of duplicating the key):\n\n${indented}`;
       p.log.info(
         `Continue: ${YAML_PATH} already exists. Manual edit needed.${manual}`,
       );
