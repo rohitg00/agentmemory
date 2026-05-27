@@ -31,6 +31,14 @@ async function main() {
 			signal: AbortSignal.timeout(12e4)
 		});
 	} catch {}
+	try {
+		await fetch(`${REST_URL}/agentmemory/session/end`, {
+			method: "POST",
+			headers: authHeaders(),
+			body: JSON.stringify({ sessionId }),
+			signal: AbortSignal.timeout(5e3)
+		});
+	} catch {}
 }
 main();
 

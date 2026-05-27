@@ -6,7 +6,8 @@ import { withKeyedLock } from "../state/keyed-mutex.js";
 import { memoryToObservation } from "../state/memory-utils.js";
 import { deleteAccessLog } from "./access-tracker.js";
 import { recordAudit } from "./audit.js";
-import { getSearchIndex, vectorIndexAddGuarded } from "./search.js";
+import { getSearchIndex, vectorIndexAddGuarded, vectorIndexRemove, flushIndexSave } from "./search.js";
+import { getAgentId } from "../config.js";
 import { logger } from "../logger.js";
 
 export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
@@ -18,6 +19,7 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
       files?: string[];
       ttlDays?: number;
       sourceObservationIds?: string[];
+      agentId?: string;
     }) => {
       if (
         !data.content ||
@@ -69,6 +71,14 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
           }
         }
 
+        // stamp the agent role on the memory so future recall can
+        // filter by agent. Request body wins (multi-agent runtimes
+        // explicitly tagging at write time), env AGENT_ID fallback,
+        // none → memory is unscoped (legacy behavior).
+        const callAgentId =
+          typeof data.agentId === "string" && data.agentId.trim().length > 0
+            ? data.agentId.trim().slice(0, 128)
+            : getAgentId();
         const memory: Memory = {
           id: generateId("mem"),
           createdAt: now,
@@ -87,6 +97,7 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
             (id): id is string => typeof id === "string" && id.length > 0,
           ),
           isLatest: true,
+          ...(callAgentId ? { agentId: callAgentId } : {}),
         };
 
         if (data.ttlDays && typeof data.ttlDays === "number" && data.ttlDays > 0) {
@@ -157,6 +168,8 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
           await decrementImageRef(kv, sdk, mem.imageRef);
         }
         await deleteAccessLog(kv, data.memoryId);
+        getSearchIndex().remove(data.memoryId);
+        vectorIndexRemove(data.memoryId);
         deletedMemoryIds.push(data.memoryId);
         deleted++;
       }
@@ -176,6 +189,8 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
           if (obs?.imageRef && obs.imageRef !== obs.imageData) {
             await decrementImageRef(kv, sdk, obs.imageRef);
           }
+          getSearchIndex().remove(obsId);
+          vectorIndexRemove(obsId);
           deletedObservationIds.push(obsId);
           deleted++;
         }
@@ -195,6 +210,8 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
           if (obs.imageRef && obs.imageRef !== obs.imageData) {
             await decrementImageRef(kv, sdk, obs.imageRef);
           }
+          getSearchIndex().remove(obs.id);
+          vectorIndexRemove(obs.id);
           deletedObservationIds.push(obs.id);
           deleted++;
         }
@@ -205,6 +222,7 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
       }
 
       if (deleted > 0) {
+        await flushIndexSave();
         await recordAudit(
           kv,
           "forget",

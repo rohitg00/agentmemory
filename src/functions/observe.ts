@@ -8,6 +8,7 @@ import { withKeyedLock } from "../state/keyed-mutex.js";
 import { isAutoCompressEnabled } from "../config.js";
 import { buildSyntheticCompression } from "./compress-synthetic.js";
 import { getSearchIndex, vectorIndexAddGuarded } from "./search.js";
+import { getAgentId } from "../config.js";
 import { logger } from "../logger.js";
 
 export function extractImage(d: unknown): string | undefined {
@@ -133,6 +134,22 @@ export function registerObserveFunction(
           }
         }
 
+        // Existing session is the source of truth for agentId (even
+        // undefined). Env AGENT_ID only fires when no session row
+        // exists yet — otherwise an unscoped session would get
+        // retroactively scoped by a later AGENT_ID export.
+        const existingSession = await kv.get<{
+          agentId?: string;
+          observationCount?: number;
+          firstPrompt?: string;
+        }>(KV.sessions, payload.sessionId);
+        const inheritedAgentId = existingSession
+          ? existingSession.agentId
+          : getAgentId();
+        if (inheritedAgentId) {
+          raw.agentId = inheritedAgentId;
+        }
+
         if (pendingImageData && (pendingImageData.startsWith("data:image/") || pendingImageData.startsWith("iVBORw0KGgo") || pendingImageData.startsWith("/9j/"))) {
           const { saveImageToDisk } = await import("../utils/image-store.js");
           const { filePath, bytesWritten } = await saveImageToDisk(pendingImageData);
@@ -190,10 +207,7 @@ export function registerObserveFunction(
           action: TriggerAction.Void(),
         });
 
-        const session = await kv.get<{ observationCount?: number; firstPrompt?: string }>(
-          KV.sessions,
-          payload.sessionId,
-        );
+        const session = existingSession;
         if (session) {
           const updates: Array<{ type: "set"; path: string; value: unknown }> = [
             { type: "set", path: "updatedAt", value: new Date().toISOString() },
@@ -214,6 +228,38 @@ export function registerObserveFunction(
             }
           }
           await kv.update(KV.sessions, payload.sessionId, updates);
+        } else if (
+          typeof payload.project === "string" &&
+          payload.project.trim().length > 0 &&
+          typeof payload.cwd === "string" &&
+          payload.cwd.trim().length > 0
+        ) {
+          // OpenCode (and any plugin that skips POST /session/start)
+          // can fire observations before the session record exists. Without
+          // an implicit create, those observations stack up but
+          // `memory_sessions` never lists them, and summarize bails with
+          // "Session not found for summarize". Create the session now from
+          // the observation payload — but only when project + cwd are
+          // present (HookPayload contract). Older test payloads without
+          // those fields keep their original no-op behaviour.
+          const trimmedPrompt =
+            typeof raw.userPrompt === "string"
+              ? raw.userPrompt.replace(/\s+/g, " ").trim().slice(0, 200)
+              : undefined;
+          const ts = new Date().toISOString();
+          await kv.set(KV.sessions, payload.sessionId, {
+            id: payload.sessionId,
+            project: payload.project,
+            cwd: payload.cwd,
+            startedAt: payload.timestamp ?? ts,
+            updatedAt: ts,
+            status: "active",
+            observationCount: 1,
+            ...(inheritedAgentId ? { agentId: inheritedAgentId } : {}),
+            ...(trimmedPrompt && trimmedPrompt.length > 0
+              ? { firstPrompt: trimmedPrompt }
+              : {}),
+          });
         }
 
         // Per-observation LLM compression is opt-in as of 0.8.8 (#138).

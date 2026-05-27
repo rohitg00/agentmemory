@@ -143,7 +143,7 @@ Options:
   --help, -h         Show this help
   --verbose, -v      Show engine stderr, boot log, and diagnostic info
   --reset            Wipe ~/.agentmemory/preferences.json and re-run onboarding
-  --tools all|core   Tool visibility (default: core = 7 tools)
+  --tools all|core   Tool visibility (default: all = 51 tools; core = 8 essentials)
   --no-engine        Skip auto-starting iii-engine
   --port <N>         Override REST port (default: 3111)
 
@@ -195,9 +195,36 @@ function getBaseUrl(): string {
   return `http://localhost:${getRestPort()}`;
 }
 
+let discoveredViewerPort: number | null = null;
+
+export async function discoverViewerPort(): Promise<void> {
+  if (discoveredViewerPort !== null) return;
+  try {
+    const res = await fetch(`${getBaseUrl()}/agentmemory/livez`, {
+      signal: AbortSignal.timeout(1000),
+    });
+    if (res.ok) {
+      const data = await res.json() as { viewerPort?: number | null };
+      if (typeof data.viewerPort === "number") {
+        discoveredViewerPort = data.viewerPort;
+      }
+    }
+  } catch {}
+}
+
 function getViewerUrl(): string {
   const envUrl = process.env["AGENTMEMORY_VIEWER_URL"];
   if (envUrl) return envUrl.replace(/\/+$/, "");
+  
+  if (discoveredViewerPort !== null) {
+    try {
+      const u = new URL(getBaseUrl());
+      return `${u.protocol}//${u.hostname}:${discoveredViewerPort}`;
+    } catch {
+      return `http://localhost:${discoveredViewerPort}`;
+    }
+  }
+  
   try {
     const u = new URL(getBaseUrl());
     const vPort =
@@ -257,7 +284,18 @@ async function isAgentmemoryReady(): Promise<boolean> {
     const res = await fetch(`${getBaseUrl()}/agentmemory/livez`, {
       signal: AbortSignal.timeout(2000),
     });
-    return res.ok;
+    if (!res.ok) return false;
+    try {
+      const data = await res.json() as { viewerPort?: number | null; viewerSkipped?: boolean };
+      if (typeof data.viewerPort === "number") {
+        discoveredViewerPort = data.viewerPort;
+        return true;
+      }
+      if (data.viewerSkipped) return true;
+      return false;
+    } catch {
+      return false;
+    }
   } catch {
     return false;
   }
@@ -370,6 +408,33 @@ function readEnginePidfile(): number | null {
 function clearEnginePidfile(): void {
   try {
     unlinkSync(enginePidfilePath());
+  } catch {}
+}
+
+// Worker pidfile (#640, #474): the agentmemory worker process
+// (`node dist/index.mjs`) is spawned by iii-exec inside the engine. When
+// `agentmemory stop` kills only the engine pid, the worker can survive
+// (detached spawn, signal not propagated, or kept alive by a wrapper
+// script). On the next start, the orphaned worker reconnects to the new
+// engine and shows up as a duplicate registration. We write the worker
+// pid from src/index.ts on boot so stop can find and reap it.
+function workerPidfilePath(): string {
+  return join(homedir(), ".agentmemory", "worker.pid");
+}
+
+function readWorkerPidfile(): number | null {
+  try {
+    const pidStr = readFileSync(workerPidfilePath(), "utf-8").trim();
+    const pid = parseInt(pidStr, 10);
+    return Number.isFinite(pid) && pid > 0 ? pid : null;
+  } catch {
+    return null;
+  }
+}
+
+function clearWorkerPidfile(): void {
+  try {
+    unlinkSync(workerPidfilePath());
   } catch {}
 }
 
@@ -497,17 +562,8 @@ function detectIiiConsole(): IiiConsoleState {
   return { kind: "missing" };
 }
 
-// install.iii.dev/console/main/install.sh has a bug in its release-tag
-// filter that rejects every stable release for iii-hq/iii: the jq
-// predicate uses `startswith("v")` while the actual tags are
-// `iii/v0.12.0` (slash-prefixed). The `--next` path uses a regex
-// without the startswith constraint and therefore works today,
-// installing the most recent prerelease (e.g. iii/v0.14.0-next.1).
-//
-// Pass `--next` until the upstream fix lands (iii-hq/iii#1652).
-// Switch back to the bare invocation once the script is patched.
 const III_CONSOLE_INSTALL_CMD =
-  "curl -fsSL https://install.iii.dev/console/main/install.sh | bash -s -- --next";
+  "curl -fsSL https://install.iii.dev/console/main/install.sh | sh";
 
 async function ensureIiiConsole(): Promise<IiiConsoleState> {
   const state = detectIiiConsole();
@@ -1101,6 +1157,9 @@ async function runStatus() {
       apiFetch<any>(base, "config/flags"),
     ]);
 
+    if (typeof healthRes?.viewerPort === "number") {
+      discoveredViewerPort = healthRes.viewerPort;
+    }
     const h = healthRes?.health;
     const status = healthRes?.status || "unknown";
     const version = healthRes?.version || "?";
@@ -1260,6 +1319,7 @@ function buildDoctorEffects(): DoctorEffects {
     iiiBinaryVersion: (binPath: string) => iiiBinVersion(binPath),
     viewerReachable: async (timeoutMs = 2000) => {
       try {
+        await discoverViewerPort();
         const res = await fetch(getViewerUrl(), {
           signal: AbortSignal.timeout(timeoutMs),
         });
@@ -1975,8 +2035,8 @@ async function runUpgrade() {
         label: "Refreshing dependencies (pnpm install)",
       });
       requireSuccess(installOk, "pnpm install");
-      runCommand(pnpmBin, ["up", "iii-sdk@latest"], {
-        label: "Upgrading iii-sdk to latest",
+      runCommand(pnpmBin, ["up", "iii-sdk@0.11.2"], {
+        label: "Pinning iii-sdk@0.11.2",
         optional: true,
       });
     } else if (npmBin) {
@@ -1984,8 +2044,8 @@ async function runUpgrade() {
         label: "Refreshing dependencies (npm install)",
       });
       requireSuccess(installOk, "npm install");
-      runCommand(npmBin, ["install", "iii-sdk@latest"], {
-        label: "Upgrading iii-sdk to latest",
+      runCommand(npmBin, ["install", "iii-sdk@0.11.2"], {
+        label: "Pinning iii-sdk@0.11.2",
         optional: true,
       });
     } else {
@@ -2118,6 +2178,7 @@ async function stopDockerEngine(composeFile: string, port: number): Promise<void
   });
   clearEnginePidfile();
   clearEngineState();
+  clearWorkerPidfile();
   if (!ok) {
     p.log.error(
       `docker compose down failed. The engine may still be running on :${port}. Inspect with:\n  docker compose -f ${composeFile} ps`,
@@ -2139,6 +2200,7 @@ async function runStop(): Promise<void> {
       p.log.info(`No engine responding on port ${port}.`);
       clearEnginePidfile();
       clearEngineState();
+      clearWorkerPidfile();
       p.outro("Nothing to stop.");
       return;
     }
@@ -2148,21 +2210,44 @@ async function runStop(): Promise<void> {
 
   const portPids = findEnginePidsByPort(port);
   const pidfilePid = readEnginePidfile();
+  // #640 + #474: read the worker pid up front so the engine-down branch
+  // can still reap an orphaned worker process (the common failure mode
+  // where a wrapper script kept the worker alive across engine restarts).
+  const workerPid = readWorkerPidfile();
 
   if (!running) {
-    if (portPids.length === 0 && pidfilePid === null) {
+    if (portPids.length === 0 && pidfilePid === null && workerPid === null) {
       clearEnginePidfile();
       clearEngineState();
+      clearWorkerPidfile();
       p.outro("Nothing to stop.");
+      return;
+    }
+    if (workerPid !== null && portPids.length === 0 && pidfilePid === null) {
+      // Engine already gone but worker is lingering — reap it directly
+      // instead of preserving for manual cleanup.
+      const s = p.spinner();
+      s.start(`Stopping orphaned agentmemory worker (pid ${workerPid})...`);
+      const ok = await signalAndWait(workerPid, "SIGTERM", 3000);
+      s.stop(ok ? `Stopped worker pid ${workerPid}` : `Failed to stop worker pid ${workerPid}`);
+      clearEnginePidfile();
+      clearEngineState();
+      clearWorkerPidfile();
+      if (!ok) {
+        p.log.error(`Worker pid ${workerPid} survived SIGKILL. Investigate with \`ps\`.`);
+        process.exit(1);
+      }
+      p.outro("Stopped orphaned worker. Memories persisted to disk.");
       return;
     }
     const survivors = new Set<number>(portPids);
     if (pidfilePid) survivors.add(pidfilePid);
+    if (workerPid) survivors.add(workerPid);
     p.log.warn(
       `Engine not responding on :${port}, but ${survivors.size} process(es) still hold the port or pidfile: ${[...survivors].join(", ")}`,
     );
     p.log.info(
-      `Preserving ~/.agentmemory/iii.pid. Investigate before manual cleanup:\n  ps -p ${[...survivors].join(",")} -o pid,ppid,comm,etime\n  ${IS_WINDOWS ? "netstat -ano | findstr :" + port : "lsof -i :" + port}`,
+      `Preserving ~/.agentmemory/iii.pid + worker.pid. Investigate before manual cleanup:\n  ps -p ${[...survivors].join(",")} -o pid,ppid,comm,etime\n  ${IS_WINDOWS ? "netstat -ano | findstr :" + port : "lsof -i :" + port}`,
     );
     process.exit(1);
   }
@@ -2187,7 +2272,15 @@ async function runStop(): Promise<void> {
   if (pidfilePid) candidates.add(pidfilePid);
   for (const pid of portPids) candidates.add(pid);
 
-  if (candidates.size === 0) {
+  // #640 + #474: stop must also reap the agentmemory worker process
+  // (`node dist/index.mjs`). If only the engine is killed, the worker can
+  // survive (detached spawn / signal not propagated) and reconnect to the
+  // next engine as a duplicate registration. workerPid was read above so
+  // the engine-down branch could also reap orphans.
+  const workerCandidates = new Set<number>();
+  if (workerPid) workerCandidates.add(workerPid);
+
+  if (candidates.size === 0 && workerCandidates.size === 0) {
     p.log.error(
       `Could not locate engine process. Try:\n  ${IS_WINDOWS ? "netstat -ano | findstr :" + port : "lsof -i :" + port + " -t | xargs kill -9"}`,
     );
@@ -2202,11 +2295,20 @@ async function runStop(): Promise<void> {
     s.stop(ok ? `Stopped pid ${pid}` : `Failed to stop pid ${pid}`);
     if (!ok) allStopped = false;
   }
+  for (const pid of workerCandidates) {
+    if (candidates.has(pid)) continue;
+    const s = p.spinner();
+    s.start(`Stopping agentmemory worker (pid ${pid})...`);
+    const ok = await signalAndWait(pid, "SIGTERM", 3000);
+    s.stop(ok ? `Stopped worker pid ${pid}` : `Failed to stop worker pid ${pid}`);
+    if (!ok) allStopped = false;
+  }
 
   clearEnginePidfile();
   clearEngineState();
+  clearWorkerPidfile();
   if (!allStopped) {
-    p.log.error("One or more engine processes survived SIGKILL. Investigate with `ps`.");
+    p.log.error("One or more processes survived SIGKILL. Investigate with `ps`.");
     process.exit(1);
   }
   p.outro("Stopped. Memories persisted to disk; restart anytime with: npx @agentmemory/agentmemory");

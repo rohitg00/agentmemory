@@ -49,6 +49,24 @@ async function main() {
   } catch {
     // summarize is best-effort
   }
+
+  // Claude Code fires a separate `SessionEnd` hook that closes the
+  // viewer session lifecycle. Codex does not have a SessionEnd event,
+  // so the only signal we get when a Codex session ends is this Stop
+  // hook (#493). Always best-effort POST /agentmemory/session/end here
+  // so the viewer shows `completed` for Codex sessions; for Claude Code
+  // this is a harmless idempotent second call (session-end.mjs runs on
+  // SessionEnd and sets the same fields).
+  try {
+    await fetch(`${REST_URL}/agentmemory/session/end`, {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ sessionId }),
+      signal: AbortSignal.timeout(5000),
+    });
+  } catch {
+    // session/end is best-effort
+  }
 }
 
 main();

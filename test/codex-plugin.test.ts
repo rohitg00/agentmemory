@@ -9,6 +9,29 @@ function readJson<T = unknown>(path: string): T {
   return JSON.parse(readFileSync(path, "utf-8")) as T;
 }
 
+type HookHandler = { type: string; command: string };
+type HookEntry = { hooks: HookHandler[] };
+
+function hookCommands(path: string): string[] {
+  const manifest = readJson<{ hooks: Record<string, HookEntry[]> }>(path);
+  return Object.values(manifest.hooks).flatMap((entries) =>
+    entries.flatMap((entry) => entry.hooks.map((handler) => handler.command)),
+  );
+}
+
+describe("Plugin hook manifests", () => {
+  it("quote plugin script paths so roots with spaces stay intact", () => {
+    for (const manifest of ["hooks.json", "hooks.codex.json"]) {
+      const commands = hookCommands(join(pluginRoot, "hooks", manifest));
+      expect(commands.length, `${manifest} should contain hook commands`).toBeGreaterThan(0);
+
+      for (const command of commands) {
+        expect(command).toMatch(/^node "\$\{CLAUDE_PLUGIN_ROOT\}\/scripts\/[^\s"]+\.mjs"$/);
+      }
+    }
+  });
+});
+
 describe("Codex plugin manifest (developers.openai.com/codex/plugins)", () => {
   it("ships .codex-plugin/plugin.json with kebab-case name + version + references", () => {
     const manifestPath = join(pluginRoot, ".codex-plugin/plugin.json");
@@ -46,6 +69,29 @@ describe("Codex plugin manifest (developers.openai.com/codex/plugins)", () => {
     expect(existsSync(join(pluginRoot, manifest.hooks))).toBe(true);
   });
 
+  it("plugin MCP server inherits remote agentmemory environment overrides", () => {
+    const mcp = readJson<{
+      mcpServers: Record<
+        string,
+        {
+          command: string;
+          args: string[];
+          env?: Record<string, string>;
+        }
+      >;
+    }>(join(pluginRoot, ".mcp.json"));
+
+    // env interpolation must include defaults so Claude Code (and
+    // any other MCP host that fails parse on unset ${VAR}) doesn't drop
+    // the server silently when the user hasn't exported the var.
+    expect(mcp.mcpServers.agentmemory?.env?.AGENTMEMORY_URL).toMatch(
+      /\$\{AGENTMEMORY_URL:-/,
+    );
+    expect(mcp.mcpServers.agentmemory?.env?.AGENTMEMORY_SECRET).toMatch(
+      /\$\{AGENTMEMORY_SECRET:-/,
+    );
+  });
+
   it("hooks.codex.json contains only events Codex supports (no Subagent / SessionEnd / Notification / TaskCompleted / PostToolUseFailure)", () => {
     const hooksPath = join(pluginRoot, "hooks/hooks.codex.json");
     const hooks = readJson<{ hooks: Record<string, unknown> }>(hooksPath);
@@ -72,8 +118,6 @@ describe("Codex plugin manifest (developers.openai.com/codex/plugins)", () => {
   });
 
   it("hook command scripts referenced in hooks.codex.json exist on disk", () => {
-    type HookHandler = { type: string; command: string };
-    type HookEntry = { hooks: HookHandler[] };
     const hooks = readJson<{ hooks: Record<string, HookEntry[]> }>(
       join(pluginRoot, "hooks/hooks.codex.json"),
     );
@@ -81,7 +125,7 @@ describe("Codex plugin manifest (developers.openai.com/codex/plugins)", () => {
     for (const entries of Object.values(hooks.hooks)) {
       for (const entry of entries) {
         for (const handler of entry.hooks) {
-          const match = handler.command.match(/\$\{CLAUDE_PLUGIN_ROOT\}\/(scripts\/[^\s]+)/);
+          const match = handler.command.match(/\$\{CLAUDE_PLUGIN_ROOT\}\/(scripts\/[^\s"]+)/);
           if (match) scriptRefs.add(match[1]);
         }
       }

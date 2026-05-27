@@ -50,6 +50,32 @@ Out of scope:
 - `iii-sdk` upstream — report to the iii project.
 - The marketing site under `website/` unless the issue affects user security (XSS against visitors, credential leak in build output).
 
+## Supply-chain stance
+
+agentmemory ships pre-built artifacts in the npm tarball — `dist/` is bundled at publish time, not built from `node_modules` at install time. The package's runtime dependency tree is intentionally small (6 production deps: `@anthropic-ai/sdk`, `@anthropic-ai/claude-agent-sdk`, `@clack/prompts`, `dotenv`, `iii-sdk`, `zod`) plus an optional set guarded behind `optionalDependencies` for embeddings.
+
+**No lockfile is committed** (#540). The reasoning:
+
+- The npm tarball ships pre-built `dist/` — fresh installs don't compile from source, so no lockfile is consulted at the user's install step.
+- The lockfile only affects contributor-local builds. Pinning it would shift the supply-chain attack surface from "what npm resolves today" to "what was resolved when the lockfile was last regenerated," which is a different tradeoff, not strictly better.
+- We use SemVer ranges (`^x.y.z`) on the published deps so security patches reach users without a re-release.
+
+If you ship agentmemory inside a hardened pipeline that requires reproducible installs, the recommended path is:
+
+1. `npm install --legacy-peer-deps` against the published tarball in a controlled environment.
+2. `npm shrinkwrap` to produce a versioned `npm-shrinkwrap.json` that travels with your deployment.
+3. Audit `node_modules/` once at that point and republish internally.
+
+CI runs `npm install --package-lock-only --legacy-peer-deps --no-audit --no-fund` then `npm ci` against that generated lockfile, so every test job builds against a fully resolved tree. The lockfile is regenerated on each CI run rather than checked in, which keeps the published tarball aligned with whatever SemVer-compatible patch level was current at release time.
+
+Supply-chain monitoring we already do:
+
+- Dependabot opens PRs for every minor/patch bump on the production dep list (visible in the open PRs).
+- Every PR runs the full test suite on ubuntu-latest + macos-latest, Node 20 + 22, before any merge.
+- `optionalDependencies` (`@xenova/transformers`, `onnxruntime-node`, etc.) are guarded by `try { await import("...") } catch` so a missing or compromised optional dep cannot break the core runtime path.
+
+If you find a malicious package in our dep tree, file via the GHSA flow at the top of this document — that's the fastest path to a fixed release on npm.
+
 ## Past advisories
 
 See the [`.github/security-advisories/`](./.github/security-advisories) directory for advisory drafts. Published advisories (with assigned GHSA IDs) live at <https://github.com/rohitg00/agentmemory/security/advisories>.

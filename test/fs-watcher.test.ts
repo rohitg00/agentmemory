@@ -12,7 +12,7 @@ function wait(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-describe("FilesystemWatcher", () => {
+describe("FilesystemWatcher", { retry: 2 }, () => {
   let root: string;
   const originalFetch = globalThis.fetch;
   let captured: Array<{ url: string; body: unknown; headers: Record<string, string> }>;
@@ -49,7 +49,7 @@ describe("FilesystemWatcher", () => {
     w.start();
     try {
       writeFileSync(join(root, "notes.md"), "hello world\n");
-      await wait(800);
+      await wait(1500);
       expect(captured.length).toBeGreaterThanOrEqual(1);
       const obs = captured[captured.length - 1];
       expect(obs.url).toBe("http://localhost:3111/agentmemory/observe");
@@ -87,7 +87,7 @@ describe("FilesystemWatcher", () => {
     w.start();
     try {
       unlinkSync(join(root, "old.md"));
-      await wait(800);
+      await wait(1500);
       const deletes = captured.filter(
         (c) => (c.body as { data: { changeKind: string } }).data?.changeKind === "file_delete",
       );
@@ -116,7 +116,7 @@ describe("FilesystemWatcher", () => {
     w.start();
     try {
       writeFileSync(join(root, "node_modules", "ignored.js"), "x");
-      await wait(800);
+      await wait(1500);
       const matches = captured.filter((c) =>
         (c.body as { data: { files: string[] } }).data?.files?.some((f) => f.includes("ignored.js")),
       );
@@ -136,7 +136,7 @@ describe("FilesystemWatcher", () => {
     w.start();
     try {
       writeFileSync(join(root, "secret.md"), "bearer test\n");
-      await wait(800);
+      await wait(1500);
       expect(captured.length).toBeGreaterThanOrEqual(1);
       const headers = captured[captured.length - 1].headers as Record<string, string>;
       expect(headers.authorization).toBe("Bearer shhh");

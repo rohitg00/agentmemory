@@ -11,6 +11,7 @@ import {
   isAutoCompressEnabled,
   isConsolidationEnabled,
   isContextInjectionEnabled,
+  isDropStaleIndexEnabled,
 } from "./config.js";
 import {
   createProvider,
@@ -36,6 +37,7 @@ import {
   getSearchIndex,
   setVectorIndex,
   setEmbeddingProvider,
+  setIndexPersistence,
 } from "./functions/search.js";
 import { registerContextFunction } from "./functions/context.js";
 import { registerSummarizeFunction } from "./functions/summarize.js";
@@ -96,6 +98,33 @@ import { registerHealthMonitor } from "./health/monitor.js";
 import { initMetrics, OTEL_CONFIG } from "./telemetry/setup.js";
 import { VERSION } from "./version.js";
 import { bootLog } from "./logger.js";
+import { mkdirSync, writeFileSync, unlinkSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { homedir } from "node:os";
+
+// #640 + #474: the worker process (this file) is spawned by iii-exec
+// inside the engine. When `agentmemory stop` kills only the engine pid,
+// this worker can survive (detached spawn, signal not propagated, or a
+// wrapper script keeps it running) and reconnects to the next engine as
+// a duplicate worker. Write the worker pid alongside iii.pid so
+// `agentmemory stop` can reap us too.
+function workerPidfilePath(): string {
+  return join(homedir(), ".agentmemory", "worker.pid");
+}
+function writeWorkerPidfile(): void {
+  try {
+    const p = workerPidfilePath();
+    mkdirSync(dirname(p), { recursive: true });
+    writeFileSync(p, `${process.pid}\n`, { encoding: "utf-8" });
+  } catch {
+    // best-effort; stop still has the engine pidfile + port scan fallback
+  }
+}
+function clearWorkerPidfile(): void {
+  try {
+    unlinkSync(workerPidfilePath());
+  } catch {}
+}
 
 function hasGetMeter(
   sdk: unknown,
@@ -183,6 +212,8 @@ async function main() {
       framework: "iii-sdk",
     },
   });
+
+  writeWorkerPidfile();
 
   const kv = new StateKV(sdk);
   const secret = getEnvVar("AGENTMEMORY_SECRET");
@@ -343,6 +374,11 @@ async function main() {
   const healthMonitor = registerHealthMonitor(sdk, kv);
 
   const indexPersistence = new IndexPersistence(kv, bm25Index, vectorIndex);
+  // Wire the persistence hook so delete paths can flush BM25/vector
+  // index mutations to disk. Without this, an in-memory remove can be
+  // lost across a hard process exit and the persisted snapshot
+  // restores the deleted entry at next boot.
+  setIndexPersistence(indexPersistence);
 
   const loaded = await indexPersistence.load().catch((err) => {
     console.warn(`[agentmemory] Failed to load persisted index:`, err);
@@ -376,8 +412,7 @@ async function main() {
         .map((m) => `${m.obsId} (dim=${m.dim})`)
         .join(", ");
       const distinct = Array.from(seenDimensions).sort((a, b) => a - b).join(", ");
-      const dropStale =
-        process.env["AGENTMEMORY_DROP_STALE_INDEX"] === "true";
+      const dropStale = isDropStaleIndexEnabled();
       if (dropStale) {
         console.warn(
           `[agentmemory] Persisted vector index has ${mismatches.length} of ` +
@@ -412,16 +447,24 @@ async function main() {
   const needsRebuild = bm25Index.size === 0;
 
   if (needsRebuild) {
-    const indexCount = await rebuildIndex(kv).catch((err) => {
-      console.warn(`[agentmemory] Failed to rebuild search index:`, err);
-      return 0;
-    });
-    if (indexCount > 0) {
-      bootLog(
-        `Search index rebuilt: ${indexCount} entries`,
-      );
-      indexPersistence.scheduleSave();
-    }
+    // Fire-and-forget. rebuildIndex iterates every observation across
+    // every session and AWAITS an embedding-provider call per record.
+    // On a large corpus + rate-limited embedding endpoint that can
+    // take HOURS; awaiting it here blocks every subsequent boot step
+    // (including startViewerServer below, leaving the viewer port
+    // unbound for the duration). The index lazily fills in over time
+    // and search degrades gracefully — partial coverage > no viewer
+    // for hours. Errors still surface via the inner .catch.
+    void rebuildIndex(kv)
+      .then((indexCount) => {
+        if (indexCount > 0) {
+          bootLog(`Search index rebuilt: ${indexCount} entries`);
+          indexPersistence.scheduleSave();
+        }
+      })
+      .catch((err) => {
+        console.warn(`[agentmemory] Failed to rebuild search index:`, err);
+      });
   } else {
     // Backfill memories into BM25 for users upgrading from <0.9.5: prior
     // versions of mem::remember never indexed memories, so the persisted
@@ -540,6 +583,7 @@ async function main() {
       console.warn(`[agentmemory] Failed to save index on shutdown:`, err);
     });
     await sdk.shutdown();
+    clearWorkerPidfile();
     process.exit(0);
   };
   process.on("SIGINT", shutdown);

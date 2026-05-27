@@ -14,6 +14,7 @@ import {
   normalizeAccessLog,
 } from "./access-tracker.js";
 import { recordAudit } from "./audit.js";
+import { getSearchIndex, vectorIndexRemove, flushIndexSave } from "./search.js";
 import { logger } from "../logger.js";
 
 const DEFAULT_DECAY: DecayConfig = {
@@ -370,6 +371,8 @@ export function registerRetentionFunctions(
           await kv.delete(scope, candidate.memoryId);
           await kv.delete(KV.retentionScores, candidate.memoryId);
           await deleteAccessLog(kv, candidate.memoryId);
+          getSearchIndex().remove(candidate.memoryId);
+          vectorIndexRemove(candidate.memoryId);
           evicted++;
           evictedIds.push(candidate.memoryId);
           if (resolvedSource === "semantic") evictedSemantic++;
@@ -386,6 +389,7 @@ export function registerRetentionFunctions(
       // one record per invocation — per-candidate audits would flood
       // the audit log during normal eviction sweeps.
       if (evicted > 0) {
+        await flushIndexSave();
         await recordAudit(kv, "delete", "mem::retention-evict", evictedIds, {
           threshold,
           evicted,

@@ -90,6 +90,11 @@ def _preload_agentmemory_dotenv() -> None:
                     os.environ.setdefault(key, value)
         except (OSError, UnicodeDecodeError):
             continue
+    # Guarantee AGENTMEMORY_URL is set so `hermes memory status` never
+    # reports it as Missing when a user runs agentmemory at the default
+    # localhost:3111 (or via systemd with the URL line commented out in
+    # ~/.agentmemory/.env because it matches the default). #520.
+    os.environ.setdefault("AGENTMEMORY_URL", DEFAULT_BASE_URL)
 
 
 _preload_agentmemory_dotenv()
