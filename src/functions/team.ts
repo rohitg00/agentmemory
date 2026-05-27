@@ -9,6 +9,7 @@ import { KV, generateId } from "../state/schema.js";
 import type { StateKV } from "../state/kv.js";
 import { recordAudit } from "./audit.js";
 import { logger } from "../logger.js";
+import { resolveTeamId, resolveUserId } from "../config.js";
 
 const VALID_ITEM_TYPES = new Set(["memory", "pattern", "observation"]);
 
@@ -23,6 +24,7 @@ export function registerTeamFunction(
       itemType: "memory" | "pattern" | "observation";
       sessionId?: string;
       project?: string;
+      userId?: string;
     }) => {
       if (!data) {
         return { success: false, error: "payload required" };
@@ -50,9 +52,16 @@ export function registerTeamFunction(
         return { success: false, error: "Item not found" };
       }
 
+      const teamId = resolveTeamId() ?? config.teamId;
+      // Private mode: force sharedBy to the configured userId.
+      // Prevents impersonation — users can only share as themselves.
+      const userId = config.mode === "private"
+        ? config.userId
+        : (resolveUserId(data.userId) ?? config.userId);
+
       const shared: TeamSharedItem = {
         id: generateId("ts"),
-        sharedBy: config.userId,
+        sharedBy: userId,
         sharedAt: new Date().toISOString(),
         type: data.itemType,
         content,
@@ -60,16 +69,16 @@ export function registerTeamFunction(
         visibility: "shared",
       };
 
-      await kv.set(KV.teamShared(config.teamId), shared.id, shared);
+      await kv.set(KV.teamShared(teamId), shared.id, shared);
 
       await recordAudit(kv, "share", "mem::team-share", [data.itemId], {
-        teamId: config.teamId,
-        userId: config.userId,
+        teamId,
+        userId,
         itemType: data.itemType,
       });
 
       logger.info("Team share", {
-        teamId: config.teamId,
+        teamId,
         itemId: data.itemId,
       });
       return { success: true, sharedItem: shared };
@@ -77,11 +86,19 @@ export function registerTeamFunction(
   );
 
   sdk.registerFunction("mem::team-feed", 
-    async (data?: { limit?: number }) => {
+    async (data?: { limit?: number; userId?: string }) => {
       const limit = data?.limit ?? 20;
-      const items = await kv.list<TeamSharedItem>(KV.teamShared(config.teamId));
+      const teamId = resolveTeamId() ?? config.teamId;
+      const items = await kv.list<TeamSharedItem>(KV.teamShared(teamId));
 
-      const filtered = items.filter((i) => i.visibility === "shared");
+      let filtered = items.filter((i) => i.visibility === "shared");
+
+      // Private mode: only show items shared by the configured user.
+      // Body userId is ignored — prevents reading other users' items.
+      if (config.mode === "private") {
+        filtered = filtered.filter((i) => i.sharedBy === config.userId);
+      }
+
       const sorted = filtered
         .sort(
           (a, b) =>
@@ -93,8 +110,15 @@ export function registerTeamFunction(
     },
   );
 
-  sdk.registerFunction("mem::team-profile",  async () => {
-    const items = await kv.list<TeamSharedItem>(KV.teamShared(config.teamId));
+  sdk.registerFunction("mem::team-profile",  async (data?: { userId?: string }) => {
+    const teamId = resolveTeamId() ?? config.teamId;
+    let items = await kv.list<TeamSharedItem>(KV.teamShared(teamId));
+
+    // Private mode: only profile the configured user's activity.
+    // Body userId is ignored — prevents reading other users' profiles.
+    if (config.mode === "private") {
+      items = items.filter((i) => i.sharedBy === config.userId);
+    }
 
     const members = [...new Set(items.map((i) => i.sharedBy))];
 
@@ -132,7 +156,7 @@ export function registerTeamFunction(
       .map(([file, frequency]) => ({ file, frequency }));
 
     const profile: TeamProfile = {
-      teamId: config.teamId,
+      teamId,
       members,
       topConcepts,
       topFiles,
@@ -141,14 +165,14 @@ export function registerTeamFunction(
       updatedAt: new Date().toISOString(),
     };
 
-    await kv.set(KV.teamProfile(config.teamId), "profile", profile);
+    await kv.set(KV.teamProfile(teamId), "profile", profile);
     await recordAudit(
       kv,
       "share",
       "mem::team-profile",
       ["profile"],
       {
-        teamId: config.teamId,
+        teamId,
         members: members.length,
         totalSharedItems: items.length,
       },
