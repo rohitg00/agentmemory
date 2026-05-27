@@ -8,6 +8,7 @@ import type { MetricsStore } from "../eval/metrics-store.js";
 import type { ResilientProvider } from "../providers/resilient.js";
 import { VERSION } from "../version.js";
 import { timingSafeCompare } from "../auth.js";
+import { isSlotsEnabled, isReflectEnabled } from "../functions/slots.js";
 import { renderViewerDocument } from "../viewer/document.js";
 import { getBoundViewerPort, getViewerSkipped } from "../viewer/server.js";
 import { MAX_FILES_UPPER_BOUND } from "../functions/replay.js";
@@ -87,6 +88,24 @@ function consolidationDisabledResponse(): Response {
     flag: "CONSOLIDATION_ENABLED",
     enableHow: "Set CONSOLIDATION_ENABLED=true and restart. Requires an LLM provider key.",
     docsHref: "https://github.com/rohitg00/agentmemory#consolidation",
+  });
+}
+
+function slotsDisabledResponse(): Response {
+  return flagDisabledResponse({
+    error: "Memory slots not enabled",
+    flag: "AGENTMEMORY_SLOTS",
+    enableHow: "Set AGENTMEMORY_SLOTS=true (in ~/.agentmemory/.env or the shell) and restart.",
+    docsHref: "https://github.com/rohitg00/agentmemory#memory-slots",
+  });
+}
+
+function reflectDisabledResponse(): Response {
+  return flagDisabledResponse({
+    error: "Slot reflection not enabled",
+    flag: "AGENTMEMORY_REFLECT",
+    enableHow: "Set AGENTMEMORY_REFLECT=true (in ~/.agentmemory/.env or the shell) and restart. Requires AGENTMEMORY_SLOTS=true.",
+    docsHref: "https://github.com/rohitg00/agentmemory#memory-slots",
   });
 }
 
@@ -1741,6 +1760,7 @@ export function registerApiTriggers(
   sdk.registerFunction("api::slot-list", async (req: ApiRequest): Promise<Response> => {
     const authErr = checkAuth(req, secret);
     if (authErr) return authErr;
+    if (!isSlotsEnabled()) return slotsDisabledResponse();
     const result = await sdk.trigger({ function_id: "mem::slot-list", payload: {} });
     return { status_code: 200, body: result };
   });
@@ -1753,6 +1773,7 @@ export function registerApiTriggers(
   sdk.registerFunction("api::slot-get", async (req: ApiRequest): Promise<Response> => {
     const authErr = checkAuth(req, secret);
     if (authErr) return authErr;
+    if (!isSlotsEnabled()) return slotsDisabledResponse();
     const label = asNonEmptyString(req.query_params?.["label"]);
     if (!label) return { status_code: 400, body: { error: "label query param required" } };
     const result = await sdk.trigger({ function_id: "mem::slot-get", payload: { label } });
@@ -1771,6 +1792,7 @@ export function registerApiTriggers(
   sdk.registerFunction("api::slot-create", async (req: ApiRequest): Promise<Response> => {
     const authErr = checkAuth(req, secret);
     if (authErr) return authErr;
+    if (!isSlotsEnabled()) return slotsDisabledResponse();
     const body = (req.body ?? {}) as Record<string, unknown>;
     const label = asNonEmptyString(body["label"]);
     if (!label) return { status_code: 400, body: { error: "label required" } };
@@ -1820,6 +1842,7 @@ export function registerApiTriggers(
   sdk.registerFunction("api::slot-append", async (req: ApiRequest): Promise<Response> => {
     const authErr = checkAuth(req, secret);
     if (authErr) return authErr;
+    if (!isSlotsEnabled()) return slotsDisabledResponse();
     const body = (req.body ?? {}) as Record<string, unknown>;
     const label = asNonEmptyString(body["label"]);
     const text = typeof body["text"] === "string" ? body["text"] : null;
@@ -1842,6 +1865,7 @@ export function registerApiTriggers(
   sdk.registerFunction("api::slot-replace", async (req: ApiRequest): Promise<Response> => {
     const authErr = checkAuth(req, secret);
     if (authErr) return authErr;
+    if (!isSlotsEnabled()) return slotsDisabledResponse();
     const body = (req.body ?? {}) as Record<string, unknown>;
     const label = asNonEmptyString(body["label"]);
     const content = body["content"];
@@ -1866,6 +1890,7 @@ export function registerApiTriggers(
   sdk.registerFunction("api::slot-delete", async (req: ApiRequest): Promise<Response> => {
     const authErr = checkAuth(req, secret);
     if (authErr) return authErr;
+    if (!isSlotsEnabled()) return slotsDisabledResponse();
     const label = asNonEmptyString(req.query_params?.["label"]);
     if (!label) return { status_code: 400, body: { error: "label query param required" } };
     const result = await sdk.trigger({ function_id: "mem::slot-delete", payload: { label } });
@@ -1884,6 +1909,8 @@ export function registerApiTriggers(
   sdk.registerFunction("api::slot-reflect", async (req: ApiRequest): Promise<Response> => {
     const authErr = checkAuth(req, secret);
     if (authErr) return authErr;
+    if (!isSlotsEnabled()) return slotsDisabledResponse();
+    if (!isReflectEnabled()) return reflectDisabledResponse();
     const body = (req.body ?? {}) as Record<string, unknown>;
     const sessionId = asNonEmptyString(body["sessionId"]);
     if (!sessionId) return { status_code: 400, body: { error: "sessionId required" } };
