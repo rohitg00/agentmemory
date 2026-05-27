@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { formatCompact } from "@/lib/format";
 import styles from "./MobileNavToggle.module.css";
 
@@ -17,6 +18,11 @@ export function MobileNavToggle({
   stars: number;
 }) {
   const [open, setOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -31,6 +37,58 @@ export function MobileNavToggle({
     };
   }, [open]);
 
+  // The parent <header> uses `backdrop-filter`, which establishes a containing
+  // block for fixed descendants — that would clip the sheet to the header
+  // strip. Portal it to <body> so `position: fixed; inset: 0` covers the
+  // viewport instead.
+  const sheet = (
+    <div
+      className={`${styles.sheet} ${open ? styles.sheetOpen : ""}`}
+      aria-hidden={!open}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) setOpen(false);
+      }}
+    >
+      <nav className={styles.panel} aria-label="Site navigation">
+        <ul className={styles.list}>
+          {sections.map((s) => (
+            <li key={s.href}>
+              <a href={s.href} onClick={() => setOpen(false)}>
+                {s.label}
+              </a>
+            </li>
+          ))}
+        </ul>
+        <div className={styles.foot}>
+          <a
+            href="https://github.com/rohitg00/agentmemory"
+            target="_blank"
+            rel="noopener"
+            onClick={() => setOpen(false)}
+          >
+            GITHUB · {formatCompact(stars)}★
+          </a>
+          <a
+            href="https://www.npmjs.com/package/@agentmemory/agentmemory"
+            target="_blank"
+            rel="noopener"
+            onClick={() => setOpen(false)}
+          >
+            NPM
+          </a>
+          <a
+            href="https://github.com/rohitg00/agentmemory/blob/main/CHANGELOG.md"
+            target="_blank"
+            rel="noopener"
+            onClick={() => setOpen(false)}
+          >
+            CHANGELOG
+          </a>
+        </div>
+      </nav>
+    </div>
+  );
+
   return (
     <>
       <button
@@ -44,51 +102,7 @@ export function MobileNavToggle({
         <span className={`${styles.bar} ${open ? styles.bar3 : ""}`} />
       </button>
 
-      <div
-        className={`${styles.sheet} ${open ? styles.sheetOpen : ""}`}
-        aria-hidden={!open}
-        onClick={(e) => {
-          if (e.target === e.currentTarget) setOpen(false);
-        }}
-      >
-        <nav className={styles.panel} aria-label="Site navigation">
-          <ul className={styles.list}>
-            {sections.map((s) => (
-              <li key={s.href}>
-                <a href={s.href} onClick={() => setOpen(false)}>
-                  {s.label}
-                </a>
-              </li>
-            ))}
-          </ul>
-          <div className={styles.foot}>
-            <a
-              href="https://github.com/rohitg00/agentmemory"
-              target="_blank"
-              rel="noopener"
-              onClick={() => setOpen(false)}
-            >
-              GITHUB · {formatCompact(stars)}★
-            </a>
-            <a
-              href="https://www.npmjs.com/package/@agentmemory/agentmemory"
-              target="_blank"
-              rel="noopener"
-              onClick={() => setOpen(false)}
-            >
-              NPM
-            </a>
-            <a
-              href="https://github.com/rohitg00/agentmemory/blob/main/CHANGELOG.md"
-              target="_blank"
-              rel="noopener"
-              onClick={() => setOpen(false)}
-            >
-              CHANGELOG
-            </a>
-          </div>
-        </nav>
-      </div>
+      {mounted ? createPortal(sheet, document.body) : null}
     </>
   );
 }
