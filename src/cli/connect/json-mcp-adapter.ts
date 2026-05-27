@@ -22,6 +22,9 @@ export type JsonMcpAdapterConfig = {
   // Wrapper key under which servers live. Default "mcpServers".
   // Zed uses "context_servers"; otherwise same shape.
   wrapperKey?: string;
+  // Extra fields merged into the agentmemory entry. Droid requires
+  // type: "stdio"; other hosts ignore unknown fields.
+  extraEntryFields?: Record<string, unknown>;
 };
 
 type McpEntry = typeof AGENTMEMORY_MCP_BLOCK;
@@ -79,7 +82,10 @@ export function createJsonMcpAdapter(
         mkdirSync(dirname(config.configPath), { recursive: true });
       }
 
-      servers["agentmemory"] = AGENTMEMORY_MCP_BLOCK;
+      servers["agentmemory"] = {
+        ...AGENTMEMORY_MCP_BLOCK,
+        ...(config.extraEntryFields ?? {}),
+      };
       next[wrapperKey] = servers;
       writeJsonAtomic(config.configPath, next);
 

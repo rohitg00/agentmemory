@@ -199,7 +199,7 @@ describe("connect: Droid (Factory.ai)", () => {
     expect(adapter.detect()).toBe(false);
   });
 
-  it("writes mcpServers.agentmemory to ~/.factory/mcp.json", async () => {
+  it("writes mcpServers.agentmemory to ~/.factory/mcp.json with type:stdio", async () => {
     mkdirSync(join(home, ".factory"), { recursive: true });
     const { adapter } = await import("../src/cli/connect/droid.js");
     expect(adapter.detect()).toBe(true);
@@ -210,6 +210,8 @@ describe("connect: Droid (Factory.ai)", () => {
     );
     expect(cfg.mcpServers.agentmemory.command).toBe("npx");
     expect(cfg.mcpServers.agentmemory.args).toContain("@agentmemory/mcp");
+    // Droid requires `type` per its documented schema
+    expect(cfg.mcpServers.agentmemory.type).toBe("stdio");
   });
 });
 
@@ -264,10 +266,30 @@ describe("connect: Continue.dev", () => {
     expect(adapter.detect()).toBe(false);
   });
 
-  it("writes mcpServers array with agentmemory entry to ~/.continue/config.json", async () => {
+  it("creates config.yaml from scratch when neither yaml nor json exists", async () => {
     mkdirSync(join(home, ".continue"), { recursive: true });
     const { adapter } = await import("../src/cli/connect/continue.js");
     expect(adapter.detect()).toBe(true);
+    const result = await adapter.install({ dryRun: false, force: false });
+    expect(result.kind).toBe("installed");
+    const yamlPath = join(home, ".continue", "config.yaml");
+    expect(existsSync(yamlPath)).toBe(true);
+    expect(existsSync(join(home, ".continue", "config.json"))).toBe(false);
+    const yaml = readFileSync(yamlPath, "utf-8");
+    expect(yaml).toContain("mcpServers:");
+    expect(yaml).toContain("name: agentmemory");
+    expect(yaml).toContain("@agentmemory/mcp");
+    expect(yaml).toContain("AGENTMEMORY_URL");
+  });
+
+  it("modifies existing legacy config.json", async () => {
+    mkdirSync(join(home, ".continue"), { recursive: true });
+    const { writeFileSync } = await import("node:fs");
+    writeFileSync(
+      join(home, ".continue", "config.json"),
+      JSON.stringify({ models: [], mcpServers: [] }),
+    );
+    const { adapter } = await import("../src/cli/connect/continue.js");
     const result = await adapter.install({ dryRun: false, force: false });
     expect(result.kind).toBe("installed");
     const cfg = JSON.parse(
@@ -279,6 +301,25 @@ describe("connect: Continue.dev", () => {
     );
     expect(entry.command).toBe("npx");
     expect(entry.args).toContain("@agentmemory/mcp");
+  });
+
+  it("returns stub when config.yaml already exists (refuses silent yaml mutation)", async () => {
+    mkdirSync(join(home, ".continue"), { recursive: true });
+    const { writeFileSync } = await import("node:fs");
+    writeFileSync(
+      join(home, ".continue", "config.yaml"),
+      "models: []\nmcpServers:\n  - name: existing\n    command: noop\n",
+    );
+    const { adapter } = await import("../src/cli/connect/continue.js");
+    const result = await adapter.install({ dryRun: false, force: false });
+    expect(result.kind).toBe("stub");
+    // user's yaml must be untouched
+    const yaml = readFileSync(
+      join(home, ".continue", "config.yaml"),
+      "utf-8",
+    );
+    expect(yaml).toContain("existing");
+    expect(yaml).not.toContain("agentmemory");
   });
 });
 

@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import * as p from "@clack/prompts";
@@ -13,14 +13,16 @@ import {
   writeJsonAtomic,
 } from "./util.js";
 
-// Continue.dev writes its config as ~/.continue/config.json (or .yaml).
-// Schema diverges from Claude Code: `mcpServers` is an ARRAY of named
-// entries, not an object keyed by name. We target the JSON form so we
-// don't need a YAML dependency; users on YAML config can convert with
-// `continue config migrate` or wire manually.
-// Source: github.com/continuedev/continue/blob/main/docs/customize/deep-dives/mcp.mdx
+// Continue.dev v1+ prefers ~/.continue/config.yaml; config.json is
+// deprecated and ignored when yaml is present. Three branches:
+//   - config.yaml exists → emit stub with manual edit instructions
+//     (no YAML dep in tree; preserving comments/anchors safely needs it)
+//   - config.json exists → modify it (legacy path still loaded when no yaml)
+//   - neither → create config.yaml from scratch (no merge risk)
+// Source: docs.continue.dev/reference/yaml-migration
 const CONTINUE_DIR = join(homedir(), ".continue");
-const CONFIG_PATH = join(CONTINUE_DIR, "config.json");
+const YAML_PATH = join(CONTINUE_DIR, "config.yaml");
+const JSON_PATH = join(CONTINUE_DIR, "config.json");
 
 type ContinueEntry = {
   name: string;
@@ -29,7 +31,7 @@ type ContinueEntry = {
   env?: Record<string, string>;
 };
 
-type ContinueConfig = {
+type ContinueJsonConfig = {
   mcpServers?: ContinueEntry[];
   [key: string]: unknown;
 };
@@ -48,68 +50,113 @@ function entryIsAgentmemory(entry: ContinueEntry | undefined): boolean {
   return entry.name === "agentmemory" && entry.args.includes("@agentmemory/mcp");
 }
 
+// Minimal YAML emitter for the agentmemory entry. Quotes string values
+// that contain ${ ... } expansion to keep parsers happy. Only used when
+// creating a fresh config.yaml — never when modifying an existing one.
+function renderFreshYaml(): string {
+  const e = buildEntry();
+  const envLines = Object.entries(e.env ?? {})
+    .map(([k, v]) => `      ${k}: "${v}"`)
+    .join("\n");
+  return [
+    "mcpServers:",
+    `  - name: ${e.name}`,
+    `    command: ${e.command}`,
+    "    args:",
+    ...e.args.map((a) => `      - "${a}"`),
+    "    env:",
+    envLines,
+    "",
+  ].join("\n");
+}
+
 export const adapter: ConnectAdapter = {
   name: "continue",
   displayName: "Continue",
   docs: "https://github.com/rohitg00/agentmemory#other-agents",
   protocolNote:
-    "→ Using MCP via ~/.continue/config.json (array form). YAML config users: add the same block under `mcpServers:` in config.yaml.",
+    "→ Using MCP via ~/.continue/config.yaml (preferred) or config.json (legacy, only when no yaml).",
 
   detect(): boolean {
     return existsSync(CONTINUE_DIR);
   },
 
   async install(opts: ConnectOptions): Promise<ConnectResult> {
-    const existing = readJsonSafe<ContinueConfig>(CONFIG_PATH);
-    const next: ContinueConfig = existing ? { ...existing } : {};
-    const servers = Array.isArray(next.mcpServers)
-      ? [...next.mcpServers]
-      : [];
+    const yamlExists = existsSync(YAML_PATH);
+    const jsonExists = existsSync(JSON_PATH);
 
-    const idx = servers.findIndex((s) => s?.name === "agentmemory");
-    const alreadyHas = idx >= 0 && entryIsAgentmemory(servers[idx]);
-    if (alreadyHas && !opts.force) {
-      logAlreadyWired("Continue", CONFIG_PATH);
-      return { kind: "already-wired", mutatedPath: CONFIG_PATH };
-    }
-
-    if (opts.dryRun) {
+    // Branch 1: yaml present — refuse to silently mutate user's yaml
+    // config (preserving comments/anchors needs a proper parser).
+    if (yamlExists) {
+      const manual = `\nAdd this to ~/.continue/config.yaml under mcpServers:\n\n${renderFreshYaml()
+        .split("\n")
+        .map((l) => (l ? `  ${l}` : l))
+        .join("\n")}`;
       p.log.info(
-        `[dry-run] Would ${alreadyHas ? "overwrite" : "add"} mcpServers[agentmemory] in ${CONFIG_PATH}`,
+        `Continue: ${YAML_PATH} already exists. Manual edit needed.${manual}`,
       );
-      return { kind: "installed", mutatedPath: CONFIG_PATH };
+      return { kind: "stub", reason: "config.yaml-needs-manual-edit" };
     }
 
-    let backupPath: string | undefined;
-    if (existsSync(CONFIG_PATH)) {
-      backupPath = backupFile(CONFIG_PATH, "continue");
+    // Branch 2: legacy json present — modify in place.
+    if (jsonExists) {
+      const existing = readJsonSafe<ContinueJsonConfig>(JSON_PATH);
+      const next: ContinueJsonConfig = existing ? { ...existing } : {};
+      const servers = Array.isArray(next.mcpServers)
+        ? [...next.mcpServers]
+        : [];
+
+      const idx = servers.findIndex((s) => s?.name === "agentmemory");
+      const alreadyHas = idx >= 0 && entryIsAgentmemory(servers[idx]);
+      if (alreadyHas && !opts.force) {
+        logAlreadyWired("Continue", JSON_PATH);
+        return { kind: "already-wired", mutatedPath: JSON_PATH };
+      }
+
+      if (opts.dryRun) {
+        p.log.info(
+          `[dry-run] Would ${alreadyHas ? "overwrite" : "add"} mcpServers[agentmemory] in ${JSON_PATH}`,
+        );
+        return { kind: "installed", mutatedPath: JSON_PATH };
+      }
+
+      const backupPath = backupFile(JSON_PATH, "continue");
       logBackup(backupPath);
-    } else {
-      mkdirSync(dirname(CONFIG_PATH), { recursive: true });
-    }
 
-    const entry = buildEntry();
-    if (idx >= 0) servers[idx] = entry;
-    else servers.push(entry);
-    next.mcpServers = servers;
-    writeJsonAtomic(CONFIG_PATH, next);
+      const entry = buildEntry();
+      if (idx >= 0) servers[idx] = entry;
+      else servers.push(entry);
+      next.mcpServers = servers;
+      writeJsonAtomic(JSON_PATH, next);
 
-    const verify = readJsonSafe<ContinueConfig>(CONFIG_PATH);
-    const verifyEntry = verify?.mcpServers?.find(
-      (s) => s?.name === "agentmemory",
-    );
-    if (!entryIsAgentmemory(verifyEntry)) {
-      p.log.error(
-        `Verification failed: ${CONFIG_PATH} did not contain mcpServers[agentmemory] after write.`,
+      const verify = readJsonSafe<ContinueJsonConfig>(JSON_PATH);
+      const verifyEntry = verify?.mcpServers?.find(
+        (s) => s?.name === "agentmemory",
       );
-      return { kind: "skipped", reason: "verification-failed" };
+      if (!entryIsAgentmemory(verifyEntry)) {
+        p.log.error(
+          `Verification failed: ${JSON_PATH} did not contain mcpServers[agentmemory] after write.`,
+        );
+        return { kind: "skipped", reason: "verification-failed" };
+      }
+
+      logInstalled("Continue (legacy config.json)", JSON_PATH);
+      return {
+        kind: "installed",
+        mutatedPath: JSON_PATH,
+        backupPath,
+      };
     }
 
-    logInstalled("Continue", CONFIG_PATH);
-    return {
-      kind: "installed",
-      mutatedPath: CONFIG_PATH,
-      ...(backupPath !== undefined && { backupPath }),
-    };
+    // Branch 3: neither exists — create config.yaml from scratch (modern path).
+    if (opts.dryRun) {
+      p.log.info(`[dry-run] Would create ${YAML_PATH} with agentmemory entry`);
+      return { kind: "installed", mutatedPath: YAML_PATH };
+    }
+
+    mkdirSync(dirname(YAML_PATH), { recursive: true });
+    writeFileSync(YAML_PATH, renderFreshYaml(), "utf-8");
+    logInstalled("Continue", YAML_PATH);
+    return { kind: "installed", mutatedPath: YAML_PATH };
   },
 };
