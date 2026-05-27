@@ -375,10 +375,7 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
             continue;
           }
         }
-        // Imported JSONL may carry malformed Memory entries with sessionIds
-        // missing entirely (older exports, hand-edited dumps). Normalise to
-        // an empty array so downstream readers can rely on the field being
-        // present.
+        // Older exports + hand-edited dumps can omit this field.
         if (!Array.isArray(memory.sessionIds)) {
           memory.sessionIds = [];
         }
