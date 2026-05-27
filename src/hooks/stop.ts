@@ -46,10 +46,6 @@ async function main() {
     signal: AbortSignal.timeout(120000),
   }).catch(() => {});
 
-  // Codex has no SessionEnd event, so this Stop hook is the only signal
-  // we get to close out the viewer session. For Claude Code this is a
-  // harmless idempotent second call (session-end runs on SessionEnd and
-  // sets the same fields).
   fetch(`${REST_URL}/agentmemory/session/end`, {
     method: "POST",
     headers: authHeaders(),
