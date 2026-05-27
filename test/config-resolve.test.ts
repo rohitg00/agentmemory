@@ -10,9 +10,10 @@ describe("resolveTeamId", () => {
   });
 
   afterEach(() => {
-    for (const [k, v] of Object.entries(originalEnv)) {
-      process.env[k] = v;
-    }
+    Object.keys(process.env).forEach((k) => {
+      if (!(k in originalEnv)) delete process.env[k];
+    });
+    Object.assign(process.env, originalEnv);
   });
 
   it("returns TEAM_ID from env", () => {
@@ -34,9 +35,10 @@ describe("resolveUserId", () => {
   });
 
   afterEach(() => {
-    for (const [k, v] of Object.entries(originalEnv)) {
-      process.env[k] = v;
-    }
+    Object.keys(process.env).forEach((k) => {
+      if (!(k in originalEnv)) delete process.env[k];
+    });
+    Object.assign(process.env, originalEnv);
   });
 
   it("returns override when provided", () => {

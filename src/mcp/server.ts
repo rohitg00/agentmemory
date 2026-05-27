@@ -530,7 +530,7 @@ export function registerMcpEndpoints(
                   content: [
                     {
                       type: "text",
-                      text: "Team memory not enabled. Set TEAM_ID and AGENTMEMORY_USER_ID",
+                      text: "Team memory not enabled. Set TEAM_ID and AGENTMEMORY_USER_ID (or USER_ID as a fallback)",
                     },
                   ],
                 },
@@ -563,7 +563,7 @@ export function registerMcpEndpoints(
                   content: [
                     {
                       type: "text",
-                      text: "Team memory not enabled. Set TEAM_ID and AGENTMEMORY_USER_ID",
+                      text: "Team memory not enabled. Set TEAM_ID and AGENTMEMORY_USER_ID (or USER_ID as a fallback)",
                     },
                   ],
                 },

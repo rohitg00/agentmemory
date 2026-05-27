@@ -269,15 +269,11 @@ export function loadTeamConfig(): TeamConfig | null {
   return { teamId, userId, mode };
 }
 
-// resolveTeamId: TEAM_ID is server-level config, no per-request override.
 export function resolveTeamId(): string | undefined {
   const env = getMergedEnv();
   return env["TEAM_ID"] || undefined;
 }
 
-// resolveUserId: AGENTMEMORY_USER_ID is per-integration config.
-// Request body values win over env when present.
-// Trimmed + length-capped to match agentId conventions.
 export function resolveUserId(override?: string): string | undefined {
   const raw = override?.trim().slice(0, 128);
   if (raw) return raw;

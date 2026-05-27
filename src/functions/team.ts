@@ -165,6 +165,8 @@ export function registerTeamFunction(
       updatedAt: new Date().toISOString(),
     };
 
+    const auditActor = resolveUserId(data?.userId) ?? config.userId;
+
     await kv.set(KV.teamProfile(teamId), "profile", profile);
     await recordAudit(
       kv,
@@ -177,7 +179,7 @@ export function registerTeamFunction(
         totalSharedItems: items.length,
       },
       undefined,
-      config.userId,
+      auditActor,
     );
     return profile;
   });
