@@ -563,7 +563,7 @@ function detectIiiConsole(): IiiConsoleState {
 }
 
 const III_CONSOLE_INSTALL_CMD =
-  "curl -fsSL https://install.iii.dev/console/main/install.sh | sh";
+  "curl -fsSL https://install.iii.dev/iii/main/install.sh | sh";
 
 async function ensureIiiConsole(): Promise<IiiConsoleState> {
   const state = detectIiiConsole();
