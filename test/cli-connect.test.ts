@@ -34,8 +34,11 @@ describe("agentmemory connect — dispatcher", () => {
       [
         "antigravity",
         "claude-code",
+        "cline",
         "codex",
+        "continue",
         "cursor",
+        "droid",
         "gemini-cli",
         "hermes",
         "kiro",
@@ -44,9 +47,10 @@ describe("agentmemory connect — dispatcher", () => {
         "pi",
         "qwen",
         "warp",
+        "zed",
       ].sort(),
     );
-    expect(ADAPTERS.length).toBe(12);
+    expect(ADAPTERS.length).toBe(16);
   });
 
   it("every adapter exposes detect() and install()", () => {

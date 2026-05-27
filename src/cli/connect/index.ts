@@ -3,8 +3,11 @@ import * as p from "@clack/prompts";
 import type { ConnectAdapter, ConnectOptions, ConnectResult } from "./types.js";
 import { adapter as antigravity } from "./antigravity.js";
 import { adapter as claudeCode } from "./claude-code.js";
+import { adapter as cline } from "./cline.js";
 import { adapter as codex } from "./codex.js";
+import { adapter as continueDev } from "./continue.js";
 import { adapter as cursor } from "./cursor.js";
+import { adapter as droid } from "./droid.js";
 import { adapter as geminiCli } from "./gemini-cli.js";
 import { adapter as hermes } from "./hermes.js";
 import { adapter as kiro } from "./kiro.js";
@@ -13,6 +16,7 @@ import { adapter as openhuman } from "./openhuman.js";
 import { adapter as pi } from "./pi.js";
 import { adapter as qwen } from "./qwen.js";
 import { adapter as warp } from "./warp.js";
+import { adapter as zed } from "./zed.js";
 
 export const ADAPTERS: readonly ConnectAdapter[] = [
   claudeCode,
@@ -23,6 +27,10 @@ export const ADAPTERS: readonly ConnectAdapter[] = [
   antigravity,
   kiro,
   warp,
+  cline,
+  continueDev,
+  zed,
+  droid,
   openclaw,
   hermes,
   pi,

@@ -19,13 +19,13 @@ export type JsonMcpAdapterConfig = {
   configPath: string;
   docs?: string;
   protocolNote?: string;
+  // Wrapper key under which servers live. Default "mcpServers".
+  // Zed uses "context_servers"; otherwise same shape.
+  wrapperKey?: string;
 };
 
 type McpEntry = typeof AGENTMEMORY_MCP_BLOCK;
-type McpConfig = {
-  mcpServers?: Record<string, McpEntry>;
-  [key: string]: unknown;
-};
+type McpConfig = Record<string, unknown>;
 
 function entryMatches(entry: unknown): boolean {
   if (!entry || typeof entry !== "object") return false;
@@ -38,6 +38,7 @@ function entryMatches(entry: unknown): boolean {
 export function createJsonMcpAdapter(
   config: JsonMcpAdapterConfig,
 ): ConnectAdapter {
+  const wrapperKey = config.wrapperKey ?? "mcpServers";
   return {
     name: config.name,
     displayName: config.displayName,
@@ -54,7 +55,7 @@ export function createJsonMcpAdapter(
       const existing = readJsonSafe<McpConfig>(config.configPath);
       const next: McpConfig = existing ? { ...existing } : {};
       const servers: Record<string, McpEntry> = {
-        ...((next.mcpServers as Record<string, McpEntry>) ?? {}),
+        ...((next[wrapperKey] as Record<string, McpEntry>) ?? {}),
       };
 
       const alreadyHas = entryMatches(servers["agentmemory"]);
@@ -65,7 +66,7 @@ export function createJsonMcpAdapter(
 
       if (opts.dryRun) {
         p.log.info(
-          `[dry-run] Would ${alreadyHas ? "overwrite" : "add"} mcpServers.agentmemory in ${config.configPath}`,
+          `[dry-run] Would ${alreadyHas ? "overwrite" : "add"} ${wrapperKey}.agentmemory in ${config.configPath}`,
         );
         return { kind: "installed", mutatedPath: config.configPath };
       }
@@ -79,13 +80,16 @@ export function createJsonMcpAdapter(
       }
 
       servers["agentmemory"] = AGENTMEMORY_MCP_BLOCK;
-      next.mcpServers = servers;
+      next[wrapperKey] = servers;
       writeJsonAtomic(config.configPath, next);
 
       const verify = readJsonSafe<McpConfig>(config.configPath);
-      if (!entryMatches(verify?.mcpServers?.["agentmemory"])) {
+      const verifyServers = verify?.[wrapperKey] as
+        | Record<string, McpEntry>
+        | undefined;
+      if (!entryMatches(verifyServers?.["agentmemory"])) {
         p.log.error(
-          `Verification failed: ${config.configPath} did not contain mcpServers.agentmemory after write.`,
+          `Verification failed: ${config.configPath} did not contain ${wrapperKey}.agentmemory after write.`,
         );
         return { kind: "skipped", reason: "verification-failed" };
       }

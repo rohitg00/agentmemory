@@ -149,17 +149,158 @@ describe("connect: Warp", () => {
   });
 });
 
-describe("connect: all four agents registered in ADAPTERS", () => {
+describe("connect: Cline", () => {
+  let home: string;
+  const ORIG = process.env["HOME"];
+  beforeEach(() => {
+    home = freshHome();
+    vi.resetModules();
+    process.env["HOME"] = home;
+  });
+  afterEach(() => {
+    process.env["HOME"] = ORIG;
+    rmSync(home, { recursive: true, force: true });
+  });
+
+  it("does not detect when ~/.cline/ is absent", async () => {
+    const { adapter } = await import("../src/cli/connect/cline.js");
+    expect(adapter.detect()).toBe(false);
+  });
+
+  it("writes mcpServers.agentmemory to ~/.cline/mcp.json", async () => {
+    mkdirSync(join(home, ".cline"), { recursive: true });
+    const { adapter } = await import("../src/cli/connect/cline.js");
+    expect(adapter.detect()).toBe(true);
+    const result = await adapter.install({ dryRun: false, force: false });
+    expect(result.kind).toBe("installed");
+    const cfg = JSON.parse(
+      readFileSync(join(home, ".cline", "mcp.json"), "utf-8"),
+    );
+    expect(cfg.mcpServers.agentmemory.command).toBe("npx");
+    expect(cfg.mcpServers.agentmemory.args).toContain("@agentmemory/mcp");
+  });
+});
+
+describe("connect: Droid (Factory.ai)", () => {
+  let home: string;
+  const ORIG = process.env["HOME"];
+  beforeEach(() => {
+    home = freshHome();
+    vi.resetModules();
+    process.env["HOME"] = home;
+  });
+  afterEach(() => {
+    process.env["HOME"] = ORIG;
+    rmSync(home, { recursive: true, force: true });
+  });
+
+  it("does not detect when ~/.factory/ is absent", async () => {
+    const { adapter } = await import("../src/cli/connect/droid.js");
+    expect(adapter.detect()).toBe(false);
+  });
+
+  it("writes mcpServers.agentmemory to ~/.factory/mcp.json", async () => {
+    mkdirSync(join(home, ".factory"), { recursive: true });
+    const { adapter } = await import("../src/cli/connect/droid.js");
+    expect(adapter.detect()).toBe(true);
+    const result = await adapter.install({ dryRun: false, force: false });
+    expect(result.kind).toBe("installed");
+    const cfg = JSON.parse(
+      readFileSync(join(home, ".factory", "mcp.json"), "utf-8"),
+    );
+    expect(cfg.mcpServers.agentmemory.command).toBe("npx");
+    expect(cfg.mcpServers.agentmemory.args).toContain("@agentmemory/mcp");
+  });
+});
+
+describe("connect: Zed", () => {
+  let home: string;
+  const ORIG = process.env["HOME"];
+  beforeEach(() => {
+    home = freshHome();
+    vi.resetModules();
+    process.env["HOME"] = home;
+  });
+  afterEach(() => {
+    process.env["HOME"] = ORIG;
+    rmSync(home, { recursive: true, force: true });
+  });
+
+  it("does not detect when ~/.config/zed/ is absent", async () => {
+    const { adapter } = await import("../src/cli/connect/zed.js");
+    expect(adapter.detect()).toBe(false);
+  });
+
+  it("writes context_servers.agentmemory to ~/.config/zed/settings.json", async () => {
+    mkdirSync(join(home, ".config", "zed"), { recursive: true });
+    const { adapter } = await import("../src/cli/connect/zed.js");
+    expect(adapter.detect()).toBe(true);
+    const result = await adapter.install({ dryRun: false, force: false });
+    expect(result.kind).toBe("installed");
+    const cfg = JSON.parse(
+      readFileSync(join(home, ".config", "zed", "settings.json"), "utf-8"),
+    );
+    expect(cfg.context_servers.agentmemory.command).toBe("npx");
+    expect(cfg.context_servers.agentmemory.args).toContain("@agentmemory/mcp");
+    expect(cfg.mcpServers).toBeUndefined();
+  });
+});
+
+describe("connect: Continue.dev", () => {
+  let home: string;
+  const ORIG = process.env["HOME"];
+  beforeEach(() => {
+    home = freshHome();
+    vi.resetModules();
+    process.env["HOME"] = home;
+  });
+  afterEach(() => {
+    process.env["HOME"] = ORIG;
+    rmSync(home, { recursive: true, force: true });
+  });
+
+  it("does not detect when ~/.continue/ is absent", async () => {
+    const { adapter } = await import("../src/cli/connect/continue.js");
+    expect(adapter.detect()).toBe(false);
+  });
+
+  it("writes mcpServers array with agentmemory entry to ~/.continue/config.json", async () => {
+    mkdirSync(join(home, ".continue"), { recursive: true });
+    const { adapter } = await import("../src/cli/connect/continue.js");
+    expect(adapter.detect()).toBe(true);
+    const result = await adapter.install({ dryRun: false, force: false });
+    expect(result.kind).toBe("installed");
+    const cfg = JSON.parse(
+      readFileSync(join(home, ".continue", "config.json"), "utf-8"),
+    );
+    expect(Array.isArray(cfg.mcpServers)).toBe(true);
+    const entry = cfg.mcpServers.find(
+      (s: { name: string }) => s.name === "agentmemory",
+    );
+    expect(entry.command).toBe("npx");
+    expect(entry.args).toContain("@agentmemory/mcp");
+  });
+});
+
+describe("connect: all eight new agents registered in ADAPTERS", () => {
   beforeEach(() => {
     vi.resetModules();
   });
 
-  it("knownAgents includes qwen, antigravity, kiro, warp", async () => {
+  it("knownAgents includes qwen, antigravity, kiro, warp, cline, continue, zed, droid", async () => {
     const { knownAgents } = await import("../src/cli/connect/index.js");
     const agents = knownAgents();
-    expect(agents).toContain("qwen");
-    expect(agents).toContain("antigravity");
-    expect(agents).toContain("kiro");
-    expect(agents).toContain("warp");
+    for (const name of [
+      "qwen",
+      "antigravity",
+      "kiro",
+      "warp",
+      "cline",
+      "continue",
+      "zed",
+      "droid",
+    ]) {
+      expect(agents).toContain(name);
+    }
   });
 });
