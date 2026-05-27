@@ -231,7 +231,9 @@
     "closed": "CLOSED",
     "open": "OPEN",
     "live": "live",
-    "live_updates_off": "live updates off"
+    "live_updates_off": "live updates off",
+    "polling": "polling · {seconds}s",
+    "connecting": "connecting..."
   },
   "types": {
     "architecture": "architecture",

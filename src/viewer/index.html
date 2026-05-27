@@ -3400,7 +3400,7 @@
 
     function startPolling() {
       if (pollTimer) return;
-      setWsStatus('polling · ' + (POLL_INTERVAL_MS / 1000) + 's', 'disconnected');
+      setWsStatus(t('status.polling', { seconds: POLL_INTERVAL_MS / 1000 }), 'disconnected');
       var tick = 0;
       pollTimer = setInterval(function() {
         tick++;
@@ -3500,7 +3500,7 @@
           }
           wsRetries++;
           if (wsRetries < WS_MAX_RETRIES) {
-            setWsStatus('connecting...', 'disconnected');
+            setWsStatus(t('status.connecting'), 'disconnected');
             wsReconnectTimer = setTimeout(connectWs, 2000 + Math.min(wsRetries * 1000, 8000));
           } else {
             startPolling();

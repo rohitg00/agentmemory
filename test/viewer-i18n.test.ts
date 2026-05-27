@@ -36,6 +36,11 @@ describe("viewer i18n: language resolution", () => {
     process.env["VIEWER_LANGUAGE"] = "EN";
     expect(resolveViewerLanguage()).toBe("en");
   });
+
+  it("normalizes zh-CN to zh", () => {
+    process.env["VIEWER_LANGUAGE"] = "zh-CN";
+    expect(resolveViewerLanguage()).toBe("zh");
+  });
 });
 
 describe("viewer i18n: locale loading", () => {
@@ -48,6 +53,12 @@ describe("viewer i18n: locale loading", () => {
     expect(en["nav"]).toBeDefined();
     expect(en["dashboard"]).toBeDefined();
     expect(en["memories"]).toBeDefined();
+  });
+
+  it("loads zh.json for Simplified Chinese viewer labels", () => {
+    const zh = loadLocale("zh");
+    expect((zh["nav"] as Record<string, string>)["dashboard"]).toBe("仪表盘");
+    expect((zh["timeline"] as Record<string, string>)["select_placeholder"]).toBe("选择会话");
   });
 
   it("rejects path-traversal sequences without filesystem access", () => {
@@ -87,6 +98,13 @@ describe("viewer i18n: bundle building", () => {
     expect(bundle.lang).toBe("en");
     expect(bundle.fallback).toEqual({});
   });
+
+  it("canonicalizes regional language tags before loading the bundle", () => {
+    const bundle = buildLocaleBundle(" zh-CN ");
+    expect(bundle.lang).toBe("zh");
+    expect((bundle.messages["nav"] as Record<string, string>)["dashboard"]).toBe("仪表盘");
+    expect(bundle.fallback).toEqual(loadLocale("en"));
+  });
 });
 
 import { renderViewerDocument } from "../src/viewer/document.js";
@@ -106,6 +124,15 @@ describe("viewer i18n: document injection", () => {
     expect(r.html).toContain('"lang":"de"');
     expect(r.html).toContain('"messages"');
     expect(r.html).toContain('"fallback"');
+  });
+
+  it("injects zh messages when VIEWER_LANGUAGE=zh-CN", () => {
+    process.env["VIEWER_LANGUAGE"] = "zh-CN";
+    const r = renderViewerDocument();
+    expect(r.found).toBe(true);
+    if (!r.found) return;
+    expect(r.html).toContain('"lang":"zh"');
+    expect(r.html).toContain("仪表盘");
   });
 
   it("strips the __AGENTMEMORY_LOCALE__ placeholder completely", () => {
@@ -155,9 +182,20 @@ describe("viewer i18n: document injection", () => {
       expect(list).not.toMatch(/"aria-labelledby"|"aria-describedby"/);
     }
   });
+
+  it("localizes runtime WebSocket status transitions", () => {
+    process.env["VIEWER_LANGUAGE"] = "en";
+    const r = renderViewerDocument();
+    expect(r.found).toBe(true);
+    if (!r.found) return;
+    expect(r.html).toContain("t('status.polling'");
+    expect(r.html).toContain("t('status.connecting'");
+  });
 });
 
-describe("viewer i18n: structural parity en ↔ de", () => {
+describe("viewer i18n: structural parity with en", () => {
+  const targetLocales = ["de", "zh"];
+
   function leafPaths(obj: unknown, prefix = ""): string[] {
     if (!obj || typeof obj !== "object") return [];
     const out: string[] = [];
@@ -169,26 +207,26 @@ describe("viewer i18n: structural parity en ↔ de", () => {
     return out;
   }
 
-  it("de.json has every top-level key that en.json has", () => {
+  it.each(targetLocales)("%s.json has every top-level key that en.json has", (lang) => {
     const en = loadLocale("en");
-    const de = loadLocale("de");
+    const target = loadLocale(lang);
     for (const key of Object.keys(en)) {
-      expect(de[key], `missing top-level key '${key}' in de.json`).toBeDefined();
+      expect(target[key], `missing top-level key '${key}' in ${lang}.json`).toBeDefined();
     }
   });
 
-  it("de.json covers every nested leaf path from en.json", () => {
+  it.each(targetLocales)("%s.json covers every nested leaf path from en.json", (lang) => {
     const enPaths = leafPaths(loadLocale("en"));
-    const dePaths = new Set(leafPaths(loadLocale("de")));
-    const missing = enPaths.filter((p) => !dePaths.has(p));
-    expect(missing, `de.json missing ${missing.length} nested key(s)`).toEqual([]);
+    const targetPaths = new Set(leafPaths(loadLocale(lang)));
+    const missing = enPaths.filter((p) => !targetPaths.has(p));
+    expect(missing, `${lang}.json missing ${missing.length} nested key(s)`).toEqual([]);
   });
 
-  it("de.json preserves every {placeholder} marker from en.json", () => {
+  it.each(targetLocales)("%s.json preserves every {placeholder} marker from en.json", (lang) => {
     const en = loadLocale("en");
-    const de = loadLocale("de");
+    const target = loadLocale(lang);
     const enFlat: Record<string, string> = {};
-    const deFlat: Record<string, string> = {};
+    const targetFlat: Record<string, string> = {};
     function flat(o: unknown, p: string, out: Record<string, string>): void {
       if (!o || typeof o !== "object") return;
       for (const [k, v] of Object.entries(o as Record<string, unknown>)) {
@@ -198,16 +236,16 @@ describe("viewer i18n: structural parity en ↔ de", () => {
       }
     }
     flat(en, "", enFlat);
-    flat(de, "", deFlat);
+    flat(target, "", targetFlat);
     const mismatches: string[] = [];
     for (const [path, enVal] of Object.entries(enFlat)) {
-      const deVal = deFlat[path];
-      // Skip only when the de key is genuinely missing; empty-string
+      const targetVal = targetFlat[path];
+      // Skip only when the target key is genuinely missing; empty-string
       // translations must still be checked for placeholder parity.
-      if (typeof deVal !== "string") continue;
+      if (typeof targetVal !== "string") continue;
       const enMarkers = (enVal.match(/\{\w+\}/g) || []).sort().join(",");
-      const deMarkers = (deVal.match(/\{\w+\}/g) || []).sort().join(",");
-      if (enMarkers !== deMarkers) mismatches.push(`${path}: en=${enMarkers} de=${deMarkers}`);
+      const targetMarkers = (targetVal.match(/\{\w+\}/g) || []).sort().join(",");
+      if (enMarkers !== targetMarkers) mismatches.push(`${path}: en=${enMarkers} ${lang}=${targetMarkers}`);
     }
     expect(mismatches, `placeholder mismatches: ${mismatches.join("; ")}`).toEqual([]);
   });

@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
-- Viewer i18n: `VIEWER_LANGUAGE` env switches viewer UI between shipped locales (`en`, `de`). New locales can be added by dropping a JSON file into `src/viewer/locales/`. Closes #483.
+- Viewer i18n: `VIEWER_LANGUAGE` env switches viewer UI between shipped locales (`en`, `de`, `zh`). New locales ship via PR with JSON files under `src/viewer/locales/`. Closes #483.
 
 ## [0.9.20] — 2026-05-18
 

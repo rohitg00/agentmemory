@@ -231,7 +231,9 @@
     "closed": "GESCHLOSSEN",
     "open": "OFFEN",
     "live": "LIVE",
-    "live_updates_off": "Live-Updates aus"
+    "live_updates_off": "Live-Updates aus",
+    "polling": "Abruf · {seconds}s",
+    "connecting": "Verbindung wird hergestellt…"
   },
   "types": {
     "architecture": "Architektur",

@@ -922,10 +922,10 @@ The viewer UI defaults to English. Switch it via `.env`:
 
 ```bash
 # .env
-VIEWER_LANGUAGE=de
+VIEWER_LANGUAGE=zh
 ```
 
-Restart agentmemory to apply. Built-in locales: `en`, `de`. Missing keys fall back to English. New locales ship via PR against this repo — there is no drop-in location in packaged installs. To contribute, work from a source checkout: copy `src/viewer/locales/en.json` to `<lang>.json`, translate the values, and open a PR — no code changes required. See [Contributing a translation](CONTRIBUTING.md#contributing-a-translation).
+Restart agentmemory to apply. Built-in locales: `en`, `de`, `zh`. Missing keys fall back to English. New locales ship via PR against this repo — there is no drop-in location in packaged installs. To contribute, work from a source checkout: copy `src/viewer/locales/en.json` to `<lang>.json`, translate the values, and open a PR — no code changes required. See [Contributing a translation](CONTRIBUTING.md#contributing-a-translation).
 
 ---
 
@@ -1172,7 +1172,7 @@ Create `~/.agentmemory/.env`:
 # SNAPSHOT_ENABLED=false
 
 # Viewer language
-# VIEWER_LANGUAGE=en   # Viewer UI language. Built-in: en, de. Falls back to en for missing keys. New languages via PR (src/viewer/locales/<lang>.json), see CONTRIBUTING.md.
+# VIEWER_LANGUAGE=en   # Viewer UI language. Built-in: en, de, zh. Falls back to en for missing keys. New languages via PR (src/viewer/locales/<lang>.json), see CONTRIBUTING.md.
 
 # Team
 # TEAM_ID=

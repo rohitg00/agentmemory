@@ -44,7 +44,7 @@ If it's a feature: describe the user problem before the implementation. "I could
 
 1. Copy `src/viewer/locales/en.json` to `src/viewer/locales/<lang>.json` (e.g. `fr.json`, `zh.json`, `ja.json`).
 2. Translate the values. Keep the keys, nesting, and `{placeholder}` markers identical to `en.json`.
-3. `npm test` — the structural parity test in `test/viewer-i18n.test.ts` checks that your file has all top-level keys from `en.json`.
+3. `npm test` — the structural parity test in `test/viewer-i18n.test.ts` checks that your file has every nested leaf key from `en.json`.
 4. Open a PR with `Closes` or `Refs` to any related i18n issue. Sign-off required (DCO).
 
 Missing nested keys at runtime fall back to English, so partial translations are valid — but please aim for completeness.
