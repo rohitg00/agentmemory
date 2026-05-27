@@ -41,6 +41,7 @@ import {
 import { renderSplash } from "./cli/splash.js";
 import { isFirstRun, readPrefs, resetPrefs, writePrefs } from "./cli/preferences.js";
 import { runOnboarding } from "./cli/onboarding.js";
+import { countMemories, countSessionObservations } from "./cli/status-metrics.js";
 import { setBootVerbose } from "./logger.js";
 import { VERSION } from "./version.js";
 
@@ -1153,7 +1154,7 @@ async function runStatus() {
       apiFetch<any>(base, "health"),
       apiFetch<any>(base, "sessions"),
       apiFetch<any>(base, "graph/stats"),
-      apiFetch<any>(base, "export"),
+      apiFetch<any>(base, "memories?count=true"),
       apiFetch<any>(base, "config/flags"),
     ]);
 
@@ -1163,15 +1164,18 @@ async function runStatus() {
     const h = healthRes?.health;
     const status = healthRes?.status || "unknown";
     const version = healthRes?.version || "?";
-    const sessions = Array.isArray(sessionsRes?.sessions) ? sessionsRes.sessions.length : 0;
+    const sessionItems = Array.isArray(sessionsRes?.sessions)
+      ? sessionsRes.sessions
+      : [];
+    const sessions = sessionItems.length;
     const nodes = Number(graphRes?.totalNodes ?? graphRes?.nodes ?? graphRes?.nodeCount ?? 0);
     const edges = Number(graphRes?.totalEdges ?? graphRes?.edges ?? graphRes?.edgeCount ?? 0);
     const cb = healthRes?.circuitBreaker?.state || "closed";
     const heapMB = h?.memory ? Math.round(h.memory.heapUsed / 1048576) : 0;
     const uptime = h?.uptimeSeconds ? Math.round(h.uptimeSeconds) : 0;
 
-    const obsCount = memoriesRes?.observations?.length || 0;
-    const memCount = memoriesRes?.memories?.length || 0;
+    const obsCount = countSessionObservations(sessionItems);
+    const memCount = countMemories(memoriesRes);
     const estFullTokens = obsCount * 80;
     const estInjectedTokens = Math.min(obsCount, 50) * 38;
     const tokensSaved = estFullTokens - estInjectedTokens;
