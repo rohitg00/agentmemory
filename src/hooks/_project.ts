@@ -2,11 +2,10 @@ import { execSync } from "node:child_process";
 import { basename } from "node:path";
 
 // Shared project-name resolver for hook scripts. Hooks that read
-// `data.cwd` directly were sending the full filesystem path as the
-// project field — but native sessions, mem::replay::import-jsonl,
-// and most manual memory_lesson_save calls use the repo basename.
-// The mismatch made auto-injected context filter out the bulk of
-// relevant lessons. See #474.
+// `data.cwd` directly send the full filesystem path as the project
+// field — but native sessions, mem::replay::import-jsonl, and manual
+// memory_lesson_save calls use the repo basename. The mismatch makes
+// auto-injected context filter out the bulk of relevant lessons.
 //
 // Resolution order (first non-empty wins):
 //   1. AGENTMEMORY_PROJECT_NAME env (per-repo escape hatch)
