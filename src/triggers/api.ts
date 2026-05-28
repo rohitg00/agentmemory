@@ -12,6 +12,7 @@ import { isSlotsEnabled, isReflectEnabled } from "../functions/slots.js";
 import { renderViewerDocument } from "../viewer/document.js";
 import { getBoundViewerPort, getViewerSkipped } from "../viewer/server.js";
 import { MAX_FILES_UPPER_BOUND } from "../functions/replay.js";
+import { logger } from "../logger.js";
 import {
   isGraphExtractionEnabled,
   isConsolidationEnabled,
@@ -610,6 +611,11 @@ export function registerApiTriggers(
         { type: "set", path: "endedAt", value: new Date().toISOString() },
         { type: "set", path: "status", value: "completed" },
       ]);
+      // Fan out the session-stopped lifecycle (summarize → slot reflect →
+      // graph extraction) without blocking the HTTP response. The
+      // `agentmemory.session.stopped` topic has no publisher today (#666),
+      // so subscribers in events.ts never fired and graphs stayed empty.
+      sdk.triggerVoid("event::session::stopped", { sessionId });
       return { status_code: 200, body: { success: true } };
     },
   );
@@ -1386,7 +1392,72 @@ export function registerApiTriggers(
     config: { api_path: "/agentmemory/graph/extract", http_method: "POST" },
   });
 
-  sdk.registerFunction("api::consolidate-pipeline", 
+  // Backfill the knowledge graph from existing compressed observations.
+  // Viewer calls this when the graph is empty (#666). Iterates every
+  // session, collects observations that have a `title` (compressed only),
+  // and feeds them through `mem::graph-extract` in batches.
+  sdk.registerFunction("api::graph-build",
+    async (req: ApiRequest<{ batchSize?: number }>): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const batchSize = Math.max(
+        1,
+        Math.min(100, Number((req.body as { batchSize?: number })?.batchSize) || 25),
+      );
+      try {
+        const sessions = await kv.list<Session>(KV.sessions);
+        let totalNodes = 0;
+        let totalEdges = 0;
+        let batchesRun = 0;
+        for (const session of sessions) {
+          const sid = session?.id;
+          if (typeof sid !== "string" || sid.length === 0) continue;
+          const observations = await kv.list<CompressedObservation>(KV.observations(sid));
+          const compressed = observations.filter((o) => o && typeof o.title === "string" && o.title.length > 0);
+          if (compressed.length === 0) continue;
+          for (let i = 0; i < compressed.length; i += batchSize) {
+            const batch = compressed.slice(i, i + batchSize);
+            try {
+              const result = (await sdk.trigger({
+                function_id: "mem::graph-extract",
+                payload: { observations: batch },
+              })) as { success?: boolean; nodesAdded?: number; edgesAdded?: number };
+              if (result?.success) {
+                totalNodes += Number(result.nodesAdded) || 0;
+                totalEdges += Number(result.edgesAdded) || 0;
+              }
+              batchesRun++;
+            } catch (err) {
+              logger.warn("graph-build batch failed", {
+                sessionId: sid,
+                batchIndex: Math.floor(i / batchSize),
+                error: err instanceof Error ? err.message : String(err),
+              });
+            }
+          }
+        }
+        return {
+          status_code: 200,
+          body: {
+            success: true,
+            sessions: sessions.length,
+            batches: batchesRun,
+            nodes: totalNodes,
+            edges: totalEdges,
+          },
+        };
+      } catch {
+        return graphDisabledResponse();
+      }
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::graph-build",
+    config: { api_path: "/agentmemory/graph/build", http_method: "POST" },
+  });
+
+  sdk.registerFunction("api::consolidate-pipeline",
     async (req: ApiRequest<{ tier?: string }>): Promise<Response> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
