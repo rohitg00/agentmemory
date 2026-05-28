@@ -1,10 +1,15 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 vi.mock("../src/logger.js", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
 import { registerGovernanceFunction } from "../src/functions/governance.js";
+import {
+  getSearchIndex,
+  setIndexPersistence,
+} from "../src/functions/search.js";
+import { memoryToObservation } from "../src/state/memory-utils.js";
 import type { Memory, AuditEntry } from "../src/types.js";
 
 function mockKV() {
@@ -131,6 +136,109 @@ describe("Governance Functions", () => {
 
     const remaining = await kv.list("mem:memories");
     expect(remaining.length).toBe(3);
+  });
+
+  // Delete paths must tear down the BM25 index entry and trigger an
+  // IndexPersistence save so a hard process exit can't restore a stale
+  // snapshot at next boot.
+  describe("search index cleanup on delete", () => {
+    function indexedObs(id: string, title: string) {
+      return memoryToObservation({
+        id,
+        createdAt: "2026-02-01T00:00:00Z",
+        updatedAt: "2026-02-01T00:00:00Z",
+        type: "fact",
+        title,
+        content: title,
+        concepts: [],
+        files: [],
+        sessionIds: ["ses_1"],
+        strength: 5,
+        version: 1,
+        isLatest: true,
+      });
+    }
+
+    function mockPersistence() {
+      return {
+        scheduleSave: vi.fn(),
+        save: vi.fn(async () => {}),
+      };
+    }
+
+    beforeEach(() => {
+      // SearchIndex is a module-level singleton — wipe it so cases
+      // don't bleed into each other.
+      getSearchIndex().clear();
+      setIndexPersistence(null);
+    });
+
+    // The persistence singleton is module-scoped; without this reset
+    // the last test's mock would leak into sibling tests in the outer
+    // suite and trigger unexpected spy invocations.
+    afterEach(() => {
+      setIndexPersistence(null);
+    });
+
+    it("governance-delete removes the memory from the search index", async () => {
+      getSearchIndex().add(indexedObs("mem_1", "alpha"));
+      getSearchIndex().add(indexedObs("mem_2", "beta"));
+      expect(getSearchIndex().has("mem_1")).toBe(true);
+
+      await sdk.trigger("mem::governance-delete", {
+        memoryIds: ["mem_1"],
+      });
+
+      expect(getSearchIndex().has("mem_1")).toBe(false);
+      expect(getSearchIndex().has("mem_2")).toBe(true);
+    });
+
+    it("governance-delete flushes persistence immediately", async () => {
+      const persistence = mockPersistence();
+      setIndexPersistence(persistence);
+      getSearchIndex().add(indexedObs("mem_1", "alpha"));
+
+      await sdk.trigger("mem::governance-delete", { memoryIds: ["mem_1"] });
+
+      // Delete paths must use the synchronous save (not the debounced
+      // scheduleSave) so a process exit immediately after delete can't
+      // resurrect the entry on next boot.
+      expect(persistence.save).toHaveBeenCalled();
+    });
+
+    it("governance-delete skips persistence flush when nothing was deleted", async () => {
+      const persistence = mockPersistence();
+      setIndexPersistence(persistence);
+
+      await sdk.trigger("mem::governance-delete", {
+        memoryIds: ["nonexistent_999"],
+      });
+
+      expect(persistence.save).not.toHaveBeenCalled();
+    });
+
+    it("governance-bulk removes deleted memories from the search index", async () => {
+      getSearchIndex().add(indexedObs("mem_1", "alpha"));
+      getSearchIndex().add(indexedObs("mem_2", "beta"));
+      getSearchIndex().add(indexedObs("mem_3", "gamma"));
+
+      await sdk.trigger("mem::governance-bulk", { type: ["pattern"] });
+
+      // mem_1 and mem_3 are type "pattern" per the outer beforeEach.
+      expect(getSearchIndex().has("mem_1")).toBe(false);
+      expect(getSearchIndex().has("mem_3")).toBe(false);
+      expect(getSearchIndex().has("mem_2")).toBe(true);
+    });
+
+    it("governance-bulk flushes persistence immediately", async () => {
+      const persistence = mockPersistence();
+      setIndexPersistence(persistence);
+      getSearchIndex().add(indexedObs("mem_1", "alpha"));
+
+      await sdk.trigger("mem::governance-bulk", { type: ["pattern"] });
+
+      expect(persistence.save).toHaveBeenCalled();
+    });
   });
 
   it("audit-query returns audit entries", async () => {

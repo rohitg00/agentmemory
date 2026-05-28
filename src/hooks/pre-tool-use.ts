@@ -79,12 +79,27 @@ async function main() {
   }
 
   const sessionId = (data.session_id as string) || "unknown";
+  // Only forward an explicit project field. cwd is an absolute filesystem path
+  // and must not be used as a project identifier — memories are scoped by short
+  // project names (e.g. "api", "web"), not paths. Sending a cwd-path as project
+  // would cause all scoped memories to be incorrectly filtered out on the server
+  // because the path never matches the stored project name.
+  const project =
+    typeof data.project === "string" && data.project.trim().length > 0
+      ? data.project.trim()
+      : undefined;
 
   try {
     const res = await fetch(`${REST_URL}/agentmemory/enrich`, {
       method: "POST",
       headers: authHeaders(),
-      body: JSON.stringify({ sessionId, files, terms, toolName }),
+      body: JSON.stringify({
+        sessionId,
+        files,
+        terms,
+        toolName,
+        ...(project !== undefined && { project }),
+      }),
       signal: AbortSignal.timeout(2000),
     });
 

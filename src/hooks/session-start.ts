@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { resolveProject } from "./_project.js";
 
 import { agentmemoryEnv } from "./env.js";
 
@@ -52,13 +53,14 @@ async function main() {
 
   const sessionId =
     (data.session_id as string) || `ses_${Date.now().toString(36)}`;
-  const project = (data.cwd as string) || process.cwd();
+  const cwd = (data.cwd as string) || process.cwd();
+  const project = resolveProject(data.cwd as string | undefined);
 
   const url = `${REST_URL}/agentmemory/session/start`;
   const init: RequestInit = {
     method: "POST",
     headers: authHeaders(),
-    body: JSON.stringify({ sessionId, project, cwd: project }),
+    body: JSON.stringify({ sessionId, project, cwd }),
   };
 
   if (!INJECT_CONTEXT) {

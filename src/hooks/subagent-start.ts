@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { resolveProject } from "./_project.js";
 
 import { agentmemoryEnv } from "./env.js";
 
@@ -48,8 +49,8 @@ async function main() {
     body: JSON.stringify({
       hookType: "subagent_start",
       sessionId,
-      project: data.cwd || process.cwd(),
-      cwd: data.cwd || process.cwd(),
+      project: resolveProject(data.cwd as string | undefined),
+      cwd: (data.cwd as string | undefined) || process.cwd(),
       timestamp: new Date().toISOString(),
       data: {
         agent_id: data.agent_id,
@@ -58,6 +59,7 @@ async function main() {
     }),
     signal: AbortSignal.timeout(TIMEOUT_MS),
   }).catch(() => {});
+  setTimeout(() => process.exit(0), 500).unref();
 }
 
 main();

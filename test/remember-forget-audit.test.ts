@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 vi.mock("../src/logger.js", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
@@ -9,6 +9,12 @@ vi.mock("../src/state/keyed-mutex.js", () => ({
 }));
 
 import { registerRememberFunction } from "../src/functions/remember.js";
+import {
+  getSearchIndex,
+  setIndexPersistence,
+} from "../src/functions/search.js";
+import { memoryToObservation } from "../src/state/memory-utils.js";
+import type { Memory } from "../src/types.js";
 
 function mockKV() {
   const store = new Map<string, Map<string, unknown>>();
@@ -115,5 +121,91 @@ describe("mem::forget audit coverage (issue #125)", () => {
 
     const auditRows = await kv.list("mem:audit");
     expect(auditRows).toHaveLength(0);
+  });
+});
+
+// Delete paths must tear down the BM25 index entry and synchronously
+// flush the persisted snapshot. Without this, a deleted memory keeps
+// occupying limit-capped search result slots, and an in-memory remove
+// would be lost if the process exits before the debounced save fires.
+describe("mem::forget search-index cleanup", () => {
+  function makeMemory(id: string): Memory {
+    return {
+      id,
+      createdAt: "2026-02-01T00:00:00Z",
+      updatedAt: "2026-02-01T00:00:00Z",
+      type: "fact",
+      title: `title ${id}`,
+      content: `content ${id}`,
+      concepts: [],
+      files: [],
+      sessionIds: ["ses_1"],
+      strength: 5,
+      version: 1,
+      isLatest: true,
+    };
+  }
+
+  beforeEach(() => {
+    getSearchIndex().clear();
+    setIndexPersistence(null);
+  });
+
+  afterEach(() => {
+    setIndexPersistence(null);
+  });
+
+  it("removes a forgotten memory from the BM25 index", async () => {
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerRememberFunction(sdk as never, kv as never);
+
+    const mem = makeMemory("mem_a");
+    await kv.set("mem:memories", mem.id, mem);
+    getSearchIndex().add(memoryToObservation(mem));
+    expect(getSearchIndex().has("mem_a")).toBe(true);
+
+    await sdk.trigger({
+      function_id: "mem::forget",
+      payload: { memoryId: "mem_a" },
+    });
+
+    expect(getSearchIndex().has("mem_a")).toBe(false);
+  });
+
+  it("removes forgotten observations from the BM25 index", async () => {
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerRememberFunction(sdk as never, kv as never);
+
+    await kv.set("mem:obs:ses_1", "obs_a", { id: "obs_a" });
+    await kv.set("mem:obs:ses_1", "obs_b", { id: "obs_b" });
+    getSearchIndex().add(memoryToObservation(makeMemory("obs_a")));
+    getSearchIndex().add(memoryToObservation(makeMemory("obs_b")));
+
+    await sdk.trigger({
+      function_id: "mem::forget",
+      payload: { sessionId: "ses_1", observationIds: ["obs_a"] },
+    });
+
+    expect(getSearchIndex().has("obs_a")).toBe(false);
+    expect(getSearchIndex().has("obs_b")).toBe(true);
+  });
+
+  it("flushes persistence immediately when a memory is forgotten", async () => {
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerRememberFunction(sdk as never, kv as never);
+    const persistence = { scheduleSave: vi.fn(), save: vi.fn(async () => {}) };
+    setIndexPersistence(persistence);
+
+    await kv.set("mem:memories", "mem_a", makeMemory("mem_a"));
+
+    await sdk.trigger({
+      function_id: "mem::forget",
+      payload: { memoryId: "mem_a" },
+    });
+
+    expect(persistence.save).toHaveBeenCalled();
   });
 });

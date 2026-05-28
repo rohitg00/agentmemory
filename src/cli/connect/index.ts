@@ -1,20 +1,36 @@
 import { platform } from "node:os";
 import * as p from "@clack/prompts";
 import type { ConnectAdapter, ConnectOptions, ConnectResult } from "./types.js";
+import { adapter as antigravity } from "./antigravity.js";
 import { adapter as claudeCode } from "./claude-code.js";
+import { adapter as cline } from "./cline.js";
 import { adapter as codex } from "./codex.js";
+import { adapter as continueDev } from "./continue.js";
 import { adapter as cursor } from "./cursor.js";
+import { adapter as droid } from "./droid.js";
 import { adapter as geminiCli } from "./gemini-cli.js";
 import { adapter as hermes } from "./hermes.js";
+import { adapter as kiro } from "./kiro.js";
 import { adapter as openclaw } from "./openclaw.js";
 import { adapter as openhuman } from "./openhuman.js";
 import { adapter as pi } from "./pi.js";
+import { adapter as qwen } from "./qwen.js";
+import { adapter as warp } from "./warp.js";
+import { adapter as zed } from "./zed.js";
 
 export const ADAPTERS: readonly ConnectAdapter[] = [
   claudeCode,
   codex,
   cursor,
   geminiCli,
+  qwen,
+  antigravity,
+  kiro,
+  warp,
+  cline,
+  continueDev,
+  zed,
+  droid,
   openclaw,
   hermes,
   pi,
@@ -34,19 +50,22 @@ function parseFlags(args: string[]): {
   dryRun: boolean;
   force: boolean;
   all: boolean;
+  withHooks: boolean;
   positional: string[];
 } {
   const positional: string[] = [];
   let dryRun = false;
   let force = false;
   let all = false;
+  let withHooks = false;
   for (const a of args) {
     if (a === "--dry-run") dryRun = true;
     else if (a === "--force") force = true;
     else if (a === "--all") all = true;
+    else if (a === "--with-hooks") withHooks = true;
     else if (!a.startsWith("-")) positional.push(a);
   }
-  return { dryRun, force, all, positional };
+  return { dryRun, force, all, withHooks, positional };
 }
 
 export async function runAdapter(
@@ -83,8 +102,8 @@ export async function runConnect(args: string[]): Promise<void> {
     return;
   }
 
-  const { dryRun, force, all, positional } = parseFlags(args);
-  const opts: ConnectOptions = { dryRun, force };
+  const { dryRun, force, all, withHooks, positional } = parseFlags(args);
+  const opts: ConnectOptions = { dryRun, force, withHooks };
 
   p.intro("agentmemory connect");
 

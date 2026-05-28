@@ -75,6 +75,14 @@ export const CORE_TOOLS: McpToolDef[] = [
           type: "string",
           description: "Comma-separated relevant file paths",
         },
+        project: {
+          type: "string",
+          description:
+            "Stable canonical project identifier this memory belongs to (e.g. a slug, " +
+            "UUID, or registry key). Must match the value used when the session was " +
+            "started. Do not use filesystem paths or ad-hoc display names — those " +
+            "change across machines and will silently break project scoping.",
+        },
       },
       required: ["content"],
     },
@@ -941,8 +949,13 @@ export function getAllTools(): McpToolDef[] {
   ];
 }
 
+// default switched from "core" (8 essential tools) to "all"
+// (full 51-tool surface). README and plugin manifests have always
+// advertised 51 tools "in proxy mode"; the old default left OpenCode /
+// Claude Code users seeing 8 with no indication the other 43 existed.
+// Users who want the lean essentials can still set AGENTMEMORY_TOOLS=core.
 export function getVisibleTools(): McpToolDef[] {
-  const mode = process.env["AGENTMEMORY_TOOLS"] || "core";
-  if (mode === "all") return getAllTools();
-  return getAllTools().filter((t) => ESSENTIAL_TOOLS.has(t.name));
+  const mode = process.env["AGENTMEMORY_TOOLS"] || "all";
+  if (mode === "core") return getAllTools().filter((t) => ESSENTIAL_TOOLS.has(t.name));
+  return getAllTools();
 }

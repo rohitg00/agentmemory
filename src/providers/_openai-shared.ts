@@ -87,6 +87,34 @@ function v1AzureUrl(baseUrl: string, path: string): string {
   return url.toString();
 }
 
+// Append an OpenAI-compatible route to the base URL without producing
+// a doubled version segment. Three cases:
+//
+//   1. Empty path (just a hostname) — OpenAI default: prepend `/v1/`.
+//        https://api.openai.com → https://api.openai.com/v1/chat/completions
+//   2. Path already ends with `/v1` — provider-documented base, treat
+//      it as the version anchor and append the route directly.
+//        https://api.deepseek.com/v1 → https://api.deepseek.com/v1/chat/completions
+//        (without this, we'd produce /v1/v1/chat/completions and 404. #628)
+//   3. Path ends with any other versioned or path segment — provider
+//      uses a non-OpenAI version scheme (Zhipu /api/paas/v4, others) —
+//      append the route directly, no `/v1/` injected.
+//        https://open.bigmodel.cn/api/paas/v4 → .../v4/chat/completions  (#646)
+function appendOpenAIRoute(baseUrl: string, route: string): string {
+  const trimmedBase = baseUrl.replace(/\/+$/, "");
+  const cleanRoute = route.startsWith("/") ? route : `/${route}`;
+  let pathname: string;
+  try {
+    pathname = new URL(trimmedBase).pathname.replace(/\/+$/, "");
+  } catch {
+    return `${trimmedBase}/v1${cleanRoute}`;
+  }
+  if (pathname === "" || pathname === "/") {
+    return `${trimmedBase}/v1${cleanRoute}`;
+  }
+  return `${trimmedBase}${cleanRoute}`;
+}
+
 export function buildChatUrl(
   baseUrl: string,
   isAzure: boolean,
@@ -97,7 +125,7 @@ export function buildChatUrl(
       ? legacyAzureUrl(baseUrl, "/chat/completions", azureApiVersion)
       : v1AzureUrl(baseUrl, "/chat/completions");
   }
-  return `${baseUrl}/v1/chat/completions`;
+  return appendOpenAIRoute(baseUrl, "/chat/completions");
 }
 
 export function buildEmbeddingUrl(
@@ -110,7 +138,7 @@ export function buildEmbeddingUrl(
       ? legacyAzureUrl(baseUrl, "/embeddings", azureApiVersion)
       : v1AzureUrl(baseUrl, "/embeddings");
   }
-  return `${baseUrl}/v1/embeddings`;
+  return appendOpenAIRoute(baseUrl, "/embeddings");
 }
 
 // Azure key-auth uses `api-key: <KEY>`; standard OpenAI-compatible

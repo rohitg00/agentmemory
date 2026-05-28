@@ -150,6 +150,49 @@ describe("_openai-shared — buildEmbeddingUrl", () => {
   });
 });
 
+describe("_openai-shared — non-OpenAI base URLs (#628, #646)", () => {
+  it("does not double /v1 when base URL already ends with /v1 (DeepSeek shape, #628)", () => {
+    expect(
+      buildChatUrl("https://api.deepseek.com/v1", false, "2024-08-01-preview"),
+    ).toBe("https://api.deepseek.com/v1/chat/completions");
+    expect(
+      buildEmbeddingUrl("https://api.deepseek.com/v1", false, "2024-08-01-preview"),
+    ).toBe("https://api.deepseek.com/v1/embeddings");
+  });
+
+  it("does not inject /v1 when provider uses non-OpenAI version segment (Zhipu /api/paas/v4, #646)", () => {
+    expect(
+      buildChatUrl(
+        "https://open.bigmodel.cn/api/paas/v4",
+        false,
+        "2024-08-01-preview",
+      ),
+    ).toBe("https://open.bigmodel.cn/api/paas/v4/chat/completions");
+    expect(
+      buildEmbeddingUrl(
+        "https://open.bigmodel.cn/api/paas/v4",
+        false,
+        "2024-08-01-preview",
+      ),
+    ).toBe("https://open.bigmodel.cn/api/paas/v4/embeddings");
+  });
+
+  it("tolerates trailing slash on already-versioned base", () => {
+    expect(
+      buildChatUrl("https://api.deepseek.com/v1/", false, "2024-08-01-preview"),
+    ).toBe("https://api.deepseek.com/v1/chat/completions");
+  });
+
+  it("handles localhost OpenAI-compatible servers with explicit /v1", () => {
+    expect(
+      buildChatUrl("http://localhost:11434/v1", false, "2024-08-01-preview"),
+    ).toBe("http://localhost:11434/v1/chat/completions");
+    expect(
+      buildChatUrl("http://localhost:8000/v1", false, "2024-08-01-preview"),
+    ).toBe("http://localhost:8000/v1/chat/completions");
+  });
+});
+
 describe("_openai-shared — buildAuthHeaders", () => {
   it("emits Authorization: Bearer for standard OpenAI", () => {
     expect(buildAuthHeaders("sk-test", false)).toEqual({

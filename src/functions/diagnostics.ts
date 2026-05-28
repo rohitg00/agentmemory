@@ -7,8 +7,14 @@ import type {
   Action,
   ActionEdge,
   DiagnosticCheck,
+  Insight,
   Lease,
+  Lesson,
   Checkpoint,
+  Crystal,
+  ProceduralMemory,
+  SemanticMemory,
+  SessionSummary,
   Signal,
   Sentinel,
   Sketch,
@@ -25,6 +31,12 @@ const ALL_CATEGORIES = [
   "signals",
   "sessions",
   "memories",
+  "lessons",
+  "summaries",
+  "semantic",
+  "procedural",
+  "crystals",
+  "insights",
   "mesh",
 ];
 
@@ -343,12 +355,224 @@ export function registerDiagnosticsFunction(sdk: ISdk, kv: StateKV): void {
           }
         }
 
+        // Project-coverage check: unscoped memories (no project field) will
+        // appear in every project's context and search results until the
+        // infer-memory-projects migration runs. Surface a count so operators
+        // know the backfill is still pending and can trigger it explicitly.
+        const latestMemories = memories.filter((m) => m.isLatest);
+        const unscopedCount = latestMemories.filter((m) => !m.project).length;
+        if (unscopedCount === 0) {
+          checks.push({
+            name: "memory-project-coverage",
+            category: "memories",
+            status: "pass",
+            message: `All ${latestMemories.length} latest memories have a project scope`,
+            fixable: false,
+          });
+        } else if (unscopedCount <= 10) {
+          checks.push({
+            name: "memory-project-coverage",
+            category: "memories",
+            status: "warn",
+            message: `${unscopedCount} of ${latestMemories.length} latest memories have no project scope — run POST /agentmemory/migrate {"step":"infer-memory-projects"} to backfill`,
+            fixable: true,
+          });
+        } else {
+          checks.push({
+            name: "memory-project-coverage",
+            category: "memories",
+            status: "fail",
+            message: `${unscopedCount} of ${latestMemories.length} latest memories have no project scope — run POST /agentmemory/migrate {"step":"infer-memory-projects"} to backfill`,
+            fixable: true,
+          });
+        }
+
         if (memoryIssues === 0) {
           checks.push({
             name: "memories-ok",
             category: "memories",
             status: "pass",
-            message: `All ${memories.length} memories are consistent`,
+            message: `All ${memories.length} memories are structurally consistent`,
+            fixable: false,
+          });
+        }
+      }
+
+      if (categories.includes("lessons")) {
+        // Counts only live lessons (deleted=true rows are tombstoned).
+        // Catches bad confidence values that would silently break recall
+        // scoring (memory_lesson_recall multiplies by confidence).
+        const lessons = await kv.list<Lesson>(KV.lessons);
+        const live = lessons.filter((l) => !l.deleted);
+        let lessonIssues = 0;
+        for (const l of live) {
+          // Number.isFinite rejects NaN / Infinity / non-numbers; a
+          // corrupted row passing those would silently survive the < / >
+          // range check (e.g. NaN < 0 is false, NaN > 1 is false, so the
+          // bad row would be "healthy") and skew memory_lesson_recall's
+          // scoring downstream. Surface as warning.
+          if (
+            !Number.isFinite(l.confidence) ||
+            l.confidence < 0 ||
+            l.confidence > 1
+          ) {
+            checks.push({
+              name: `lesson-bad-confidence:${l.id}`,
+              category: "lessons",
+              status: "warn",
+              message: `Lesson ${l.id} has confidence ${l.confidence} (expected finite number in 0..1)`,
+              fixable: false,
+            });
+            lessonIssues++;
+          }
+        }
+        if (lessonIssues === 0) {
+          checks.push({
+            name: "lessons-ok",
+            category: "lessons",
+            status: "pass",
+            message: `All ${live.length} lessons are healthy (${lessons.length - live.length} tombstoned)`,
+            fixable: false,
+          });
+        }
+      }
+
+      if (categories.includes("summaries")) {
+        const summaries = await kv.list<SessionSummary>(KV.summaries);
+        let summaryIssues = 0;
+        for (const s of summaries) {
+          // typeof guard before .trim() — a corrupted row with title=null
+          // or title=42 would otherwise throw and abort the whole diagnose
+          // run before later categories get checked.
+          if (typeof s.title !== "string" || s.title.trim().length === 0) {
+            checks.push({
+              name: `summary-missing-title:${s.sessionId}`,
+              category: "summaries",
+              status: "warn",
+              message: `Summary for session ${s.sessionId} has no title`,
+              fixable: false,
+            });
+            summaryIssues++;
+          }
+        }
+        if (summaryIssues === 0) {
+          checks.push({
+            name: "summaries-ok",
+            category: "summaries",
+            status: "pass",
+            message: `All ${summaries.length} session summaries are consistent`,
+            fixable: false,
+          });
+        }
+      }
+
+      if (categories.includes("semantic")) {
+        const semantic = await kv.list<SemanticMemory>(KV.semantic);
+        let semanticIssues = 0;
+        for (const s of semantic) {
+          if (
+            !Number.isFinite(s.confidence) ||
+            s.confidence < 0 ||
+            s.confidence > 1
+          ) {
+            checks.push({
+              name: `semantic-bad-confidence:${s.id}`,
+              category: "semantic",
+              status: "warn",
+              message: `Semantic fact ${s.id} has confidence ${s.confidence} (expected finite number in 0..1)`,
+              fixable: false,
+            });
+            semanticIssues++;
+          }
+        }
+        if (semanticIssues === 0) {
+          checks.push({
+            name: "semantic-ok",
+            category: "semantic",
+            status: "pass",
+            message: `All ${semantic.length} semantic memories are consistent`,
+            fixable: false,
+          });
+        }
+      }
+
+      if (categories.includes("procedural")) {
+        const procedural = await kv.list<ProceduralMemory>(KV.procedural);
+        let proceduralIssues = 0;
+        for (const p of procedural) {
+          if (!Array.isArray(p.steps) || p.steps.length === 0) {
+            checks.push({
+              name: `procedural-empty-steps:${p.id}`,
+              category: "procedural",
+              status: "warn",
+              message: `Procedural memory "${p.name}" (${p.id}) has no steps`,
+              fixable: false,
+            });
+            proceduralIssues++;
+          }
+        }
+        if (proceduralIssues === 0) {
+          checks.push({
+            name: "procedural-ok",
+            category: "procedural",
+            status: "pass",
+            message: `All ${procedural.length} procedural memories are consistent`,
+            fixable: false,
+          });
+        }
+      }
+
+      if (categories.includes("crystals")) {
+        const crystals = await kv.list<Crystal>(KV.crystals);
+        let crystalIssues = 0;
+        for (const c of crystals) {
+          if (typeof c.narrative !== "string" || c.narrative.trim().length === 0) {
+            checks.push({
+              name: `crystal-empty-narrative:${c.id}`,
+              category: "crystals",
+              status: "warn",
+              message: `Crystal ${c.id} has empty narrative`,
+              fixable: false,
+            });
+            crystalIssues++;
+          }
+        }
+        if (crystalIssues === 0) {
+          checks.push({
+            name: "crystals-ok",
+            category: "crystals",
+            status: "pass",
+            message: `All ${crystals.length} crystals are consistent`,
+            fixable: false,
+          });
+        }
+      }
+
+      if (categories.includes("insights")) {
+        const insights = await kv.list<Insight>(KV.insights);
+        let insightIssues = 0;
+        for (const i of insights) {
+          if (
+            !Number.isFinite(i.confidence) ||
+            i.confidence < 0 ||
+            i.confidence > 1
+          ) {
+            checks.push({
+              name: `insight-bad-confidence:${i.id}`,
+              category: "insights",
+              status: "warn",
+              message: `Insight ${i.id} has confidence ${i.confidence} (expected finite number in 0..1)`,
+              fixable: false,
+            });
+            insightIssues++;
+          }
+        }
+        if (insightIssues === 0) {
+          checks.push({
+            name: "insights-ok",
+            category: "insights",
+            status: "pass",
+            message: `All ${insights.length} insights are consistent`,
             fixable: false,
           });
         }

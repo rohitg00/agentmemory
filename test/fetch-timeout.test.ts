@@ -276,3 +276,71 @@ describe("OpenAIProvider timeout env precedence (#446)", () => {
   });
 });
 
+// ─────────────────────────────────────────────────────────────
+// #627 — OpenAI provider must read message.reasoning_content
+// DeepSeek V4 / Qwen3 / GLM / Kimi return reasoning_content (with
+// underscore); only checking `reasoning` left thinking-model output
+// dropped on the floor and tripped the compress circuit breaker.
+// ─────────────────────────────────────────────────────────────
+describe("OpenAIProvider thinking-model fallback (#627)", () => {
+  beforeEach(() => {
+    delete process.env["OPENAI_TIMEOUT_MS"];
+    delete process.env["AGENTMEMORY_LLM_TIMEOUT_MS"];
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function mockOpenAIResponse(body: object): void {
+    vi.spyOn(globalThis, "fetch").mockImplementation(
+      (async () =>
+        new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        })) as typeof fetch,
+    );
+  }
+
+  it("returns reasoning_content when content is empty (DeepSeek V4 / Qwen3 shape)", async () => {
+    mockOpenAIResponse({
+      choices: [
+        {
+          message: {
+            content: "",
+            reasoning_content: "thinking-mode output",
+          },
+        },
+      ],
+    });
+    const provider = new OpenAIProvider("test-key", "gpt-4o-mini", 1024);
+    const out = await provider.compress("system", "user");
+    expect(out).toBe("thinking-mode output");
+  });
+
+  it("still returns reasoning (no underscore) for older o-series shape", async () => {
+    mockOpenAIResponse({
+      choices: [{ message: { content: "", reasoning: "older shape" } }],
+    });
+    const provider = new OpenAIProvider("test-key", "gpt-4o-mini", 1024);
+    const out = await provider.compress("system", "user");
+    expect(out).toBe("older shape");
+  });
+
+  it("content wins over both reasoning fields when present", async () => {
+    mockOpenAIResponse({
+      choices: [
+        {
+          message: {
+            content: "real content",
+            reasoning: "ignore",
+            reasoning_content: "also ignore",
+          },
+        },
+      ],
+    });
+    const provider = new OpenAIProvider("test-key", "gpt-4o-mini", 1024);
+    const out = await provider.compress("system", "user");
+    expect(out).toBe("real content");
+  });
+});
+

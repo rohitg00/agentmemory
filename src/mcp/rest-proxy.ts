@@ -31,12 +31,26 @@ let cached: Handle | null = null;
 let cachedAt = 0;
 let probeInFlight: Promise<Handle> | null = null;
 
+// `${VAR}`-style placeholders ship in plugin/.mcp.json so MCP hosts that
+// expand them (Claude Code, Cursor) substitute the user's shell value.
+// Hosts that DON'T expand pass the literal string `"${AGENTMEMORY_URL}"`
+// through to our subprocess — that string is truthy, defeats the `||`
+// fallback, and would have us POST to `${AGENTMEMORY_URL}/agentmemory/...`
+// (DNS failure). Strip any literal placeholder we see so the fallback
+// engages instead.
+export function resolveEnvOrEmpty(name: string): string {
+  const raw = process.env[name];
+  if (!raw) return "";
+  if (raw.startsWith("${") && raw.endsWith("}")) return "";
+  return raw;
+}
+
 function baseUrl(): string {
-  return (process.env["AGENTMEMORY_URL"] || DEFAULT_URL).replace(/\/+$/, "");
+  return (resolveEnvOrEmpty("AGENTMEMORY_URL") || DEFAULT_URL).replace(/\/+$/, "");
 }
 
 function authHeader(): Record<string, string> {
-  const secret = process.env["AGENTMEMORY_SECRET"];
+  const secret = resolveEnvOrEmpty("AGENTMEMORY_SECRET");
   return secret ? { authorization: `Bearer ${secret}` } : {};
 }
 

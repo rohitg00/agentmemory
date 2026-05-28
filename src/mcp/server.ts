@@ -172,11 +172,17 @@ export function registerMcpEndpoints(
                 ? args.files.split(",").map((f: string) => f.trim()).filter(Boolean)
                 : [];
 
+            const project =
+              typeof args.project === "string" && args.project.trim().length > 0
+                ? args.project.trim()
+                : undefined;
+
             const result = await sdk.trigger({ function_id: "mem::remember", payload: {
               content: args.content,
               type,
               concepts,
               files,
+              ...(project !== undefined && { project }),
             } });
             return {
               status_code: 200,
