@@ -2265,8 +2265,15 @@
       // corpora. Older endpoints returned the full unbounded list which
       // hit the iii invocation timeout and the UI fell through to 0.
       var result = await apiGet('memories?latest=true&limit=2000');
-      state.memories.items = (result && result.memories) || [];
-      state.memories.total = (result && typeof result.total === 'number') ? result.total : state.memories.items.length;
+      var items = (result && result.memories) || [];
+      // Newest first — server returns KV-insertion order.
+      items.sort(function(a, b) {
+        var ac = (a && a.createdAt) || (a && a.updatedAt) || '';
+        var bc = (b && b.createdAt) || (b && b.updatedAt) || '';
+        return bc.localeCompare(ac);
+      });
+      state.memories.items = items;
+      state.memories.total = (result && typeof result.total === 'number') ? result.total : items.length;
       state.memories.loaded = true;
       renderMemories();
     }
