@@ -1229,11 +1229,11 @@ AGENTMEMORY_ALLOW_AGENT_SDK=true
 AGENTMEMORY_AUTO_COMPRESS=true
 ```
 
-Turn on graph or consolidation features in the same file if you want them:
+Consolidation (graph nodes, lessons, crystals) is on by default whenever an LLM provider is configured. Explicitly opt out with `CONSOLIDATION_ENABLED=false` if you want LLM-free operation. Graph extraction is a separate flag:
 
 ```env
 GRAPH_EXTRACTION_ENABLED=true
-CONSOLIDATION_ENABLED=true
+# CONSOLIDATION_ENABLED=false   # opt out of auto-consolidation
 ```
 
 ### Environment Variables
@@ -1343,7 +1343,7 @@ Create `~/.agentmemory/.env`:
                                    # Observations are still captured via
                                    # PostToolUse regardless of this flag.
 # GRAPH_EXTRACTION_ENABLED=false
-# CONSOLIDATION_ENABLED=true
+# CONSOLIDATION_ENABLED=false   # on by default when an LLM provider is configured
 # LESSON_DECAY_ENABLED=true
 # OBSIDIAN_AUTO_EXPORT=false
 # AGENTMEMORY_EXPORT_ROOT=~/.agentmemory

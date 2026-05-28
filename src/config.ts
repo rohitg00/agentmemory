@@ -323,7 +323,26 @@ export function getGraphBatchSize(): number {
 }
 
 export function isConsolidationEnabled(): boolean {
-  return getMergedEnv()["CONSOLIDATION_ENABLED"] === "true";
+  const env = getMergedEnv();
+  const explicit = env["CONSOLIDATION_ENABLED"];
+  if (explicit === "false" || explicit === "0") return false;
+  if (explicit === "true" || explicit === "1") return true;
+  return hasLLMProviderConfigured(env);
+}
+
+function hasLLMProviderConfigured(env: Record<string, string | undefined>): boolean {
+  const provider = (env["AGENTMEMORY_PROVIDER"] || "").toLowerCase();
+  if (provider === "noop") return false;
+  return Boolean(
+    env["ANTHROPIC_API_KEY"] ||
+      env["OPENAI_API_KEY"] ||
+      env["OPENROUTER_API_KEY"] ||
+      env["GEMINI_API_KEY"] ||
+      env["GOOGLE_API_KEY"] ||
+      env["MINIMAX_API_KEY"] ||
+      env["OPENAI_BASE_URL"] ||
+      provider === "agent-sdk",
+  );
 }
 
 // Per-observation LLM compression is OFF by default as of 0.8.8 (see #138).
