@@ -5,6 +5,7 @@ import type {
 } from "../types.js";
 import { AgentSDKProvider } from "./agent-sdk.js";
 import { AnthropicProvider } from "./anthropic.js";
+import { CodexSDKProvider } from "./codex-sdk.js";
 import { MinimaxProvider } from "./minimax.js";
 import { NoopProvider } from "./noop.js";
 import { OpenAIProvider } from "./openai.js";
@@ -111,6 +112,8 @@ function createBaseProvider(config: ProviderConfig): MemoryProvider {
     }
     case "noop":
       return new NoopProvider();
+    case "codex-sdk":
+      return new CodexSDKProvider(config.model, config.maxTokens);
     case "agent-sdk":
     default:
       return new AgentSDKProvider();
