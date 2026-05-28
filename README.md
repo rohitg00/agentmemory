@@ -93,7 +93,8 @@ npm install -g @agentmemory/agentmemory          # once — bare `agentmemory` o
 # sudo npm install -g @agentmemory/agentmemory
 agentmemory                                      # start the memory server on :3111
 agentmemory demo                                 # seed sample sessions + prove recall
-agentmemory connect claude-code                  # wire your agent (also: copilot-cli, codex, cursor, gemini-cli, ...)
+agentmemory connect claude-code                  # wire MCP into your agent (also: copilot-cli, codex, cursor, gemini-cli, ...)
+npx skills add rohitg00/agentmemory -y           # install 8 native skills so your agent knows when to use the tools
 ```
 
 Or via `npx` (no install):
@@ -549,6 +550,25 @@ Full guide: [`integrations/hermes/`](integrations/hermes/)
 ### Other agents
 
 Start the memory server: `npx @agentmemory/agentmemory`
+
+#### Native skills via `npx skills add` (50+ agents)
+
+agentmemory ships 8 skills (`remember`, `recall`, `recap`, `handoff`, `forget`, `commit-context`, `commit-history`, `session-history`) in the Claude-Code-style `<dir>/SKILL.md` format. The [`skills`](https://npmjs.com/package/skills) CLI by vercel-labs auto-installs them into the calling agent's native skill directory across 50+ agents (Claude Code, Cursor, Cline, Continue, Droid, Warp, Codex, Antigravity, Kiro, OpenCode, Goose, Roo, Trae, Windsurf, and more):
+
+```bash
+npx skills add rohitg00/agentmemory -y          # auto-detects the calling agent
+npx skills add rohitg00/agentmemory -y -a warp  # explicit agent
+npx skills add rohitg00/agentmemory -y -a '*'   # install to every installed agent
+```
+
+This is **complementary** to `agentmemory connect <agent>`:
+
+- `agentmemory connect <agent>` writes the MCP server config so the tools are available.
+- `npx skills add rohitg00/agentmemory` installs the skills so the agent knows when to call them.
+
+For the few agents the skills CLI doesn't cover yet (Zed v1.3.x and below), drop the 8 SKILL.md files under the agent's native skill directory yourself — same format works everywhere.
+
+#### Standard MCP block
 
 The agentmemory entry is the **same MCP server block** across every host that uses the `mcpServers` shape (Cursor, Claude Desktop, Cline, Roo Code, Windsurf, Gemini CLI, OpenClaw):
 

@@ -192,5 +192,15 @@ function summarize(
       `${stubs.length} agent(s) require manual install — see docs links above.`,
     );
   }
+
+  const wiredAny = results.some(
+    (r) => r.result.kind === "installed" || r.result.kind === "already-wired",
+  );
+  if (wiredAny) {
+    p.log.info(
+      "Next: install agentmemory's 8 skills into the same agent(s) so they know when to call the tools:\n  npx skills add rohitg00/agentmemory -y",
+    );
+  }
+
   p.outro("Restart any wired agent (or open a new session) to pick up agentmemory.");
 }
