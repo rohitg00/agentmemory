@@ -8,6 +8,7 @@ const ENV_KEYS = [
   "AGENTMEMORY_PROVIDER",
   "ANTHROPIC_API_KEY",
   "OPENAI_API_KEY",
+  "OPENAI_API_KEY_FOR_LLM",
   "OPENROUTER_API_KEY",
   "GEMINI_API_KEY",
   "GOOGLE_API_KEY",
@@ -99,6 +100,12 @@ describe("isConsolidationEnabled default behavior", () => {
 
   it("AGENTMEMORY_PROVIDER=noop returns false even with API key set", async () => {
     writeEnv("AGENTMEMORY_PROVIDER=noop\nANTHROPIC_API_KEY=sk-test-123");
+    const cfg = await freshConfig();
+    expect(cfg.isConsolidationEnabled()).toBe(false);
+  });
+
+  it("OPENAI_API_KEY_FOR_LLM=false scopes the key to embeddings only", async () => {
+    writeEnv("OPENAI_API_KEY=sk-test-123\nOPENAI_API_KEY_FOR_LLM=false");
     const cfg = await freshConfig();
     expect(cfg.isConsolidationEnabled()).toBe(false);
   });

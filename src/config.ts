@@ -333,9 +333,12 @@ export function isConsolidationEnabled(): boolean {
 function hasLLMProviderConfigured(env: Record<string, string | undefined>): boolean {
   const provider = (env["AGENTMEMORY_PROVIDER"] || "").toLowerCase();
   if (provider === "noop") return false;
+  const openaiKeyForLlm =
+    env["OPENAI_API_KEY"] &&
+    (env["OPENAI_API_KEY_FOR_LLM"] || "").toLowerCase() !== "false";
   return Boolean(
     env["ANTHROPIC_API_KEY"] ||
-      env["OPENAI_API_KEY"] ||
+      openaiKeyForLlm ||
       env["OPENROUTER_API_KEY"] ||
       env["GEMINI_API_KEY"] ||
       env["GOOGLE_API_KEY"] ||
