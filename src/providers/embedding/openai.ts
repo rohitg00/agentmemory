@@ -48,7 +48,7 @@ function resolveDimensions(model: string, override: string | undefined): number 
  * `api-key` header instead of `Authorization: Bearer`.
  *
  * Required env vars:
- *   OPENAI_API_KEY               — API key (fallback for OPENAI_EMBEDDING_API_KEY)
+ *   OPENAI_API_KEY               — Fallback API key when OPENAI_EMBEDDING_API_KEY is unset
  *
  * Optional:
  *   OPENAI_BASE_URL              — base URL without path (default: https://api.openai.com).

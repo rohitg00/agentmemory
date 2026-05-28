@@ -1261,6 +1261,8 @@ Create `~/.agentmemory/.env`:
 # VOYAGE_API_KEY=...
 # OPENAI_API_KEY=sk-...
 # OPENAI_BASE_URL=https://api.openai.com   # Override for Azure / vLLM / LM Studio / proxies
+# OPENAI_EMBEDDING_API_KEY=sk-...          # Optional: embedding-specific key; takes precedence over OPENAI_API_KEY
+# OPENAI_EMBEDDING_BASE_URL=https://api.openai.com  # Optional: embedding-specific base URL; takes precedence over OPENAI_BASE_URL
 # OPENAI_EMBEDDING_MODEL=text-embedding-3-small
 # OPENAI_EMBEDDING_DIMENSIONS=1536        # Required when the model is not in the known-models table
 
