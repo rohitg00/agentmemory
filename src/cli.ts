@@ -41,6 +41,7 @@ import {
 import { renderSplash } from "./cli/splash.js";
 import { isFirstRun, readPrefs, resetPrefs, writePrefs } from "./cli/preferences.js";
 import { runOnboarding } from "./cli/onboarding.js";
+import { resolveIiiConfigPath } from "./cli/iii-config.js";
 import { setBootVerbose } from "./logger.js";
 import { VERSION } from "./version.js";
 
@@ -151,7 +152,9 @@ Environment:
   AGENTMEMORY_URL              Full REST base URL (e.g. http://localhost:3111).
                                Honored by status, doctor, and MCP shim commands.
   AGENTMEMORY_USE_DOCKER=1     Prefer the bundled docker-compose path over the
-                               native iii-engine binary on first run.
+                                native iii-engine binary on first run.
+  AGENTMEMORY_III_CONFIG       Full path to iii-config.yaml. Overrides cwd,
+                                ~/.agentmemory, and bundled config lookup.
   AGENTMEMORY_III_VERSION      Override pinned iii-engine version (default ${IIPINNED_VERSION}).
 
 Quick start:
@@ -302,23 +305,13 @@ async function isAgentmemoryReady(): Promise<boolean> {
 }
 
 function findIiiConfig(): string {
-  // Precedence (user-overridable wins): explicit env > project cwd >
-  // ~/.agentmemory/ > bundled. The bundled config used to win
-  // unconditionally, so users hitting the observability log-feedback
-  // loop (#519) had no way to drop a tamer config in place without
-  // editing node_modules.
-  const envPath = process.env["AGENTMEMORY_III_CONFIG"];
-  const candidates = [
-    ...(envPath ? [envPath] : []),
-    join(process.cwd(), "iii-config.yaml"),
-    join(homedir(), ".agentmemory", "iii-config.yaml"),
-    join(__dirname, "iii-config.yaml"),
-    join(__dirname, "..", "iii-config.yaml"),
-  ];
-  for (const c of candidates) {
-    if (existsSync(c)) return c;
-  }
-  return "";
+  return resolveIiiConfigPath({
+    envPath: process.env["AGENTMEMORY_III_CONFIG"],
+    cwd: process.cwd(),
+    home: homedir(),
+    packageDir: __dirname,
+    exists: existsSync,
+  });
 }
 
 function whichBinary(name: string): string | null {
@@ -1216,7 +1209,9 @@ async function runStatus() {
       lines.push(`Provider:     ${provider}`);
       lines.push(`Embeddings:   ${embed}`);
       lines.push(`Flags:`);
-      flagRows.forEach((r: string) => lines.push(r));
+      flagRows.forEach((r: string) => {
+        lines.push(r);
+      });
     }
 
     p.note(lines.join("\n"), "agentmemory");
