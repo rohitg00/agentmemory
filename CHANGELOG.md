@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [0.9.23] — 2026-05-28
 
-Bug-fix + integration wave. GitHub Copilot CLI joins the supported agent matrix with plugin + hooks + MCP coverage. Three silent DX bugs fixed end-to-end: graph extraction never fired on session end, `agentmemory status` reported zero memories, consolidation defaulted off even with an LLM provider configured. Five additional adapters and a clearer local-LLM story for Ollama / LM Studio users.
+Bug-fix + integration wave. GitHub Copilot CLI joins the supported agent matrix with plugin + hooks + MCP coverage. Three silent DX bugs fixed end-to-end: graph extraction never fired on session end, `agentmemory status` reported zero memories, consolidation defaulted off even with an LLM provider configured. Five additional adapters and a clearer local-LLM story for Ollama / LM Studio users. `agentmemory connect` now points users at `npx skills add` for the native-skills install path (50+ agents).
 
 ### Added
 
@@ -16,6 +16,7 @@ Bug-fix + integration wave. GitHub Copilot CLI joins the supported agent matrix 
 - **Five new MCP adapters** ([PR #677](https://github.com/rohitg00/agentmemory/pull/677)). Warp, Cline, Continue, Zed, and Droid. `createJsonMcpAdapter` extended with `wrapperKey` (Zed uses `context_servers` instead of `mcpServers`) and `extraEntryFields` (Droid requires `type: "stdio"`). `ADAPTERS` count: 11 → 17.
 - **`/agentmemory/graph/build` endpoint** ([PR #698](https://github.com/rohitg00/agentmemory/pull/698)). Backfills the knowledge graph from existing compressed observations across every session in configurable batches. Wires up the viewer's "Build Graph" button that previously returned 404.
 - **11 README translations + language picker** ([PR #675](https://github.com/rohitg00/agentmemory/pull/675)). zh-CN, zh-TW, ja-JP, ko-KR, es-ES, pt-BR, fr-FR, de-DE, ru-RU, tr-TR, hi-IN.
+- **`npx skills add` hint in connect output** ([PR #709](https://github.com/rohitg00/agentmemory/pull/709)). After a successful `agentmemory connect <agent>`, the CLI now prints the matching `npx skills add rohitg00/agentmemory -y` command so users get the native-skills install alongside MCP wiring. The [`skills`](https://npmjs.com/package/skills) CLI covers 50+ agents including the 5 added in PR #677. README "Other agents" section gains a dedicated subsection explaining the two-step pattern (`connect` writes MCP config, `skills add` installs the 8 SKILL.md files into the agent's native skill directory).
 
 ### Changed
 
@@ -35,6 +36,7 @@ Bug-fix + integration wave. GitHub Copilot CLI joins the supported agent matrix 
 - **Slots HTTP triggers return 503 not 500** ([PR #682](https://github.com/rohitg00/agentmemory/pull/682), closes [#678](https://github.com/rohitg00/agentmemory/issues/678)). Feature-flag-disabled responses now use the documented 503 shape with `enableHow` + `docsHref`. `.env` propagation fixed (now reads via `getEnvVar()` not raw `process.env`).
 - **`agentmemory doctor` points to correct iii install URL** ([PR #681](https://github.com/rohitg00/agentmemory/pull/681)).
 - **Separate `OPENAI_EMBEDDING_BASE_URL` + `OPENAI_EMBEDDING_API_KEY`** ([PR #503](https://github.com/rohitg00/agentmemory/pull/503)). Lets users route embeddings and LLM calls to different OpenAI-compatible endpoints (e.g. cloud OpenAI for embeddings + local LM Studio for LLM, or vice versa).
+- **Viewer Memories tab sorts newest first** ([PR #701](https://github.com/rohitg00/agentmemory/pull/701), closes [#674](https://github.com/rohitg00/agentmemory/issues/674)). Memories list rendered in KV-insertion order, hiding just-saved entries at the bottom of long lists. `loadMemories()` now sorts on `createdAt` desc (fallback `updatedAt`) before items reach state — matches the `localeCompare` pattern Sessions / Metrics tabs already use.
 
 ### Docs
 
@@ -45,7 +47,7 @@ Bug-fix + integration wave. GitHub Copilot CLI joins the supported agent matrix 
 
 - Hook scripts now bundle per-entry instead of sharing chunks, so `plugin/scripts/_project-*.mjs` hashed artifacts no longer churn the diff on every build.
 - `AGENTS.md` "Hook Scripts" section documents the two patterns (context-injecting vs telemetry-only) and the 500ms / 1500ms exit-delay rule for single vs multi-fetch hooks.
-- Test suite: 1278 → 1296 (+18 new tests covering project basename resolver, fire-and-forget wiring, consolidation default behavior, session-end → graph extraction, and the graph-build endpoint).
+- Test suite: 1271 → 1291 (+20 new tests covering project basename resolver, fire-and-forget wiring, consolidation default behavior, session-end → graph extraction, the graph-build endpoint, and the viewer memories sort).
 
 [0.9.23]: https://github.com/rohitg00/agentmemory/compare/v0.9.22...v0.9.23
 
