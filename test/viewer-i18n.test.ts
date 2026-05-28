@@ -105,6 +105,13 @@ describe("viewer i18n: bundle building", () => {
     expect((bundle.messages["nav"] as Record<string, string>)["dashboard"]).toBe("仪表盘");
     expect(bundle.fallback).toEqual(loadLocale("en"));
   });
+
+  it("hard-falls back the bundle language to en for invalid normalized input", () => {
+    const bundle = buildLocaleBundle("../zh");
+    expect(bundle.lang).toBe("en");
+    expect((bundle.messages["nav"] as Record<string, string>)["dashboard"]).toBe("Dashboard");
+    expect(bundle.fallback).toEqual({});
+  });
 });
 
 import { renderViewerDocument } from "../src/viewer/document.js";

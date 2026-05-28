@@ -97,7 +97,10 @@ export interface LocaleBundle {
  * zh-CN while the browser receives the same primary tag used for file loading.
  */
 export function buildLocaleBundle(lang: string): LocaleBundle {
-  const normalized = normalizeLanguageTag(lang);
+  let normalized = normalizeLanguageTag(lang);
+  if (!VALID_LANG.test(normalized)) {
+    normalized = FALLBACK_LANG;
+  }
   const messages = loadLocale(normalized);
   const fallback = normalized === FALLBACK_LANG ? {} : loadLocale(FALLBACK_LANG);
   return { lang: normalized, messages, fallback };

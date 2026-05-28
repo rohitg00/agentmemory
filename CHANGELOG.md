@@ -6,10 +6,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
-### Added
-
-- Viewer i18n: `VIEWER_LANGUAGE` env switches viewer UI between shipped locales (`en`, `de`, `zh`). New locales ship via PR with JSON files under `src/viewer/locales/`. Closes #483.
-
 ## [0.9.22] — 2026-05-26
 
 Stability + ecosystem wave. Three install-broken bugs (`npm install` ERESOLVE, non-OpenAI base URLs, broken Claude bridge path) closed. Six runtime bugs from active users fixed end-to-end. Three new agent integrations (Qwen Code, Antigravity, Kiro). New `AGENT_ID` scope for multi-agent setups. Port mapping documented.
