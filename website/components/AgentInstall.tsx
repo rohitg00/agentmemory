@@ -49,6 +49,8 @@ const VSCODE_MCP_JSON = `{
 }`;
 
 const CLAUDE_CODE_CMD = `claude mcp add agentmemory -- npx -y @agentmemory/mcp`;
+const COPILOT_CLI_CMD = `agentmemory connect copilot-cli`;
+const WARP_CMD = `agentmemory connect warp`;
 
 const HERMES_YAML = `plugins:
   - name: agentmemory
@@ -223,6 +225,27 @@ export function AgentInstall() {
       sub: "COPY CMD",
     },
     {
+      id: "copilot-cli",
+      label: "COPILOT CLI",
+      kind: "copy",
+      copyText: COPILOT_CLI_CMD,
+      sub: "COPY CMD",
+    },
+    {
+      id: "codex",
+      label: "CODEX CLI",
+      kind: "copy",
+      copyText: CODEX_TOML,
+      sub: "COPY TOML",
+    },
+    {
+      id: "warp",
+      label: "WARP",
+      kind: "copy",
+      copyText: WARP_CMD,
+      sub: "COPY CMD",
+    },
+    {
       id: "claude-desktop",
       label: "CLAUDE DESKTOP",
       kind: "copy",
@@ -235,13 +258,6 @@ export function AgentInstall() {
       kind: "copy",
       copyText: UNIVERSAL_JSON,
       sub: "COPY JSON",
-    },
-    {
-      id: "codex",
-      label: "CODEX CLI",
-      kind: "copy",
-      copyText: CODEX_TOML,
-      sub: "COPY TOML",
     },
   ];
 
@@ -269,7 +285,7 @@ export function AgentInstall() {
         <div className={styles.snippetCol}>
           <Snippet
             title="UNIVERSAL MCP JSON"
-            hint="WORKS FOR CLAUDE DESKTOP · CURSOR · CLINE · ROO CODE · WINDSURF · GEMINI CLI — MERGE INTO EXISTING mcpServers"
+            hint="WORKS FOR CLAUDE DESKTOP · CURSOR · CLINE · ROO · WINDSURF · GEMINI · WARP · DROID · KIRO · ANTIGRAVITY · QWEN — MERGE INTO EXISTING mcpServers"
             body={UNIVERSAL_JSON}
           />
         </div>
@@ -280,7 +296,7 @@ export function AgentInstall() {
         aria-expanded={showMore}
         onClick={() => setShowMore((v) => !v)}
       >
-        {showMore ? "— HIDE OTHER SHAPES" : "+ OPENCODE · VS CODE · CODEX · HERMES · OPENCLAW"}
+        {showMore ? "— HIDE OTHER SHAPES" : "+ OPENCODE · CLINE · CONTINUE · ZED · DROID · QWEN · ANTIGRAVITY · KIRO · HERMES · OPENCLAW · VS CODE"}
       </button>
 
       {showMore && (
