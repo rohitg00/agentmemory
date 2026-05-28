@@ -1,8 +1,15 @@
 import type { ISdk, ApiRequest } from "iii-sdk";
-import type { Session, CompressedObservation, HookPayload, CommitLink } from "../types.js";
+import type {
+  Session,
+  CompressedObservation,
+  HookPayload,
+  CommitLink,
+  Memory,
+} from "../types.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
+import { memoryToObservation } from "../state/memory-utils.js";
 import { getLatestHealth } from "../health/monitor.js";
 import type { MetricsStore } from "../eval/metrics-store.js";
 import type { ResilientProvider } from "../providers/resilient.js";
@@ -22,12 +29,17 @@ import {
   getAgentId,
   isAgentScopeIsolated,
 } from "../config.js";
+import { logger } from "../logger.js";
 
 type Response = {
   status_code: number;
   headers?: Record<string, string>;
   body: unknown;
 };
+
+const GRAPH_BUILD_DEFAULT_LIMIT = 200;
+const GRAPH_BUILD_MAX_LIMIT = 500;
+const GRAPH_BUILD_BATCH_SIZE = 20;
 
 function parseOptionalInt(raw: unknown): number | undefined {
   if (raw === undefined || raw === null || raw === "") return undefined;
@@ -132,6 +144,80 @@ function parseOptionalPositiveInt(value: unknown): number | undefined | null {
   if (parsed === undefined || parsed === null) return parsed;
   if (!Number.isInteger(parsed) || parsed < 1) return null;
   return parsed;
+}
+
+function messageFromError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function isMissingGraphExtractFunction(error: unknown): boolean {
+  const message = messageFromError(error).toLowerCase();
+  return (
+    message.includes("mem::graph-extract") &&
+    (message.includes("no function") ||
+      message.includes("not registered") ||
+      message.includes("not found") ||
+      message.includes("unknown function"))
+  );
+}
+
+async function collectGraphBuildObservations(
+  kv: StateKV,
+  limit: number,
+): Promise<{ observations: CompressedObservation[]; truncated: boolean }> {
+  const observations: CompressedObservation[] = [];
+  const seen = new Set<string>();
+
+  const list = async <T>(scope: string): Promise<T[]> => {
+    try {
+      return await kv.list<T>(scope);
+    } catch (error) {
+      logger.error("Graph build KV list failed", {
+        scope,
+        error: messageFromError(error),
+      });
+      throw error;
+    }
+  };
+
+  const pushObservation = (obs: CompressedObservation | null | undefined) => {
+    if (!obs?.id || seen.has(obs.id) || observations.length >= limit) return;
+    if (!obs.title || !obs.narrative) return;
+    seen.add(obs.id);
+    observations.push(obs);
+  };
+
+  const sessions = await list<Session>(KV.sessions);
+  for (let i = 0; i < sessions.length && observations.length < limit; i += 10) {
+    const chunk = sessions.slice(i, i + 10);
+    const perSession = await Promise.all(
+      chunk.map((session) =>
+        list<CompressedObservation>(KV.observations(session.id)),
+      ),
+    );
+    for (const sessionObservations of perSession) {
+      for (const obs of sessionObservations) {
+        pushObservation(obs);
+        if (observations.length >= limit) break;
+      }
+      if (observations.length >= limit) break;
+    }
+  }
+
+  const memories = await list<Memory>(KV.memories);
+  for (const memory of memories) {
+    if (observations.length >= limit) break;
+    if (memory.isLatest === false) continue;
+    pushObservation(memoryToObservation(memory));
+  }
+
+  const availableCount =
+    sessions.reduce((sum, session) => sum + (session.observationCount || 0), 0) +
+    memories.filter((memory) => memory.isLatest !== false).length;
+  return {
+    observations,
+    truncated: availableCount > observations.length,
+  };
 }
 
 export function registerApiTriggers(
@@ -1384,6 +1470,128 @@ export function registerApiTriggers(
     type: "http",
     function_id: "api::graph-extract",
     config: { api_path: "/agentmemory/graph/extract", http_method: "POST" },
+  });
+
+  sdk.registerFunction("api::graph-build",
+    async (
+      req: ApiRequest<{
+        limit?: number | string;
+      }>,
+    ): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+
+      const parsedLimit = parseOptionalPositiveInt(req.body?.limit);
+      if (parsedLimit === null) {
+        return {
+          status_code: 400,
+          body: { error: "limit must be a positive integer" },
+        };
+      }
+      const limit = Math.min(
+        parsedLimit ?? GRAPH_BUILD_DEFAULT_LIMIT,
+        GRAPH_BUILD_MAX_LIMIT,
+      );
+
+      let collected: {
+        observations: CompressedObservation[];
+        truncated: boolean;
+      };
+      try {
+        collected = await collectGraphBuildObservations(kv, limit);
+      } catch (error) {
+        return {
+          status_code: 500,
+          body: {
+            success: false,
+            observationsProcessed: 0,
+            nodesAdded: 0,
+            edgesAdded: 0,
+            truncated: false,
+            errors: [
+              `Failed to collect graph inputs: ${messageFromError(error)}`,
+            ],
+          },
+        };
+      }
+
+      if (collected.observations.length === 0) {
+        return {
+          status_code: 200,
+          body: {
+            success: false,
+            observationsProcessed: 0,
+            nodesAdded: 0,
+            edgesAdded: 0,
+            truncated: false,
+            error: "No observations or memories found to build the graph",
+          },
+        };
+      }
+
+      let nodesAdded = 0;
+      let edgesAdded = 0;
+      const errors: string[] = [];
+      for (
+        let i = 0;
+        i < collected.observations.length;
+        i += GRAPH_BUILD_BATCH_SIZE
+      ) {
+        const batch = collected.observations.slice(
+          i,
+          i + GRAPH_BUILD_BATCH_SIZE,
+        );
+        try {
+          const result = (await sdk.trigger({
+            function_id: "mem::graph-extract",
+            payload: { observations: batch },
+          })) as {
+            success?: boolean;
+            nodesAdded?: number;
+            edgesAdded?: number;
+            error?: string;
+          };
+          if (result.success === false) {
+            errors.push(
+              `Batch ${Math.floor(i / GRAPH_BUILD_BATCH_SIZE) + 1}: ${
+                result.error || "graph extraction failed"
+              }`,
+            );
+            continue;
+          }
+          nodesAdded += result.nodesAdded || 0;
+          edgesAdded += result.edgesAdded || 0;
+        } catch (error) {
+          if (isMissingGraphExtractFunction(error)) {
+            return graphDisabledResponse();
+          }
+          const batchNumber = Math.floor(i / GRAPH_BUILD_BATCH_SIZE) + 1;
+          errors.push(
+            `Batch ${batchNumber}: ${messageFromError(error)}`,
+          );
+        }
+      }
+
+      return {
+        status_code: 200,
+        body: {
+          success: errors.length === 0,
+          observationsProcessed: collected.observations.length,
+          batches: Math.ceil(
+            collected.observations.length / GRAPH_BUILD_BATCH_SIZE,
+          ),
+          nodesAdded,
+          edgesAdded,
+          truncated: collected.truncated,
+          ...(errors.length ? { errors } : {}),
+        },
+      };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::graph-build",
+    config: { api_path: "/agentmemory/graph/build", http_method: "POST" },
   });
 
   sdk.registerFunction("api::consolidate-pipeline", 
