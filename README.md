@@ -1268,6 +1268,12 @@ New-Item -ItemType Directory -Force $HOME\.agentmemory
 notepad $HOME\.agentmemory\.env
 ```
 
+#### Engine config (iii-config.yaml)
+
+On first start, agentmemory materializes `~/.agentmemory/config/iii-config.yaml` from the bundled template, rewriting the engine's data paths to absolute locations under `~/.agentmemory/data/`. This keeps the KV state and stream store in a single global location regardless of which directory the CLI is invoked from (without this, the bundled `./data/...` relative paths would land wherever the engine's working directory pointed). The subdir placement also keeps iii's parent-directory config watcher from reloading on every write to sibling files like `preferences.json` or `iii.pid`.
+
+Edit `~/.agentmemory/config/iii-config.yaml` freely — agentmemory only writes it if it doesn't already exist. The resolution order remains: `AGENTMEMORY_III_CONFIG=<path>` env var → `<cwd>/iii-config.yaml` → `~/.agentmemory/config/iii-config.yaml` → legacy `~/.agentmemory/iii-config.yaml` → bundled.
+
 To test with a Claude Code Pro/Max subscription instead of an API key, opt in explicitly:
 
 ```env

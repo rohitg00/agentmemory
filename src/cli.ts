@@ -39,8 +39,9 @@ import {
   type RemoveOptions,
 } from "./cli/remove-plan.js";
 import { renderSplash } from "./cli/splash.js";
-import { isFirstRun, readPrefs, resetPrefs, writePrefs } from "./cli/preferences.js";
+import { isFirstRun, prefsDir, readPrefs, resetPrefs, writePrefs } from "./cli/preferences.js";
 import { runOnboarding } from "./cli/onboarding.js";
+import { materializeUserIiiConfig } from "./cli/iii-config.js";
 import { setBootVerbose } from "./logger.js";
 import { VERSION } from "./version.js";
 
@@ -304,15 +305,22 @@ async function isAgentmemoryReady(): Promise<boolean> {
 
 function findIiiConfig(): string {
   // Precedence (user-overridable wins): explicit env > project cwd >
-  // ~/.agentmemory/ > bundled. The bundled config used to win
-  // unconditionally, so users hitting the observability log-feedback
-  // loop (#519) had no way to drop a tamer config in place without
-  // editing node_modules.
+  // ~/.agentmemory/config/ (materialized) > ~/.agentmemory/ (legacy) >
+  // bundled. The bundled config used to win unconditionally, so users
+  // hitting the observability log-feedback loop (#519) had no way to
+  // drop a tamer config in place without editing node_modules.
+  //
+  // ~/.agentmemory/config/iii-config.yaml is the new materialized
+  // location written by ensureUserIiiConfig(). It anchors data paths
+  // to ~/.agentmemory/data/ regardless of cwd, and the subdir keeps
+  // iii's parent-dir inotify watcher from reloading on every write to
+  // sibling files like preferences.json / iii.pid / worker.pid.
   const envPath = process.env["AGENTMEMORY_III_CONFIG"];
   const candidates = [
     ...(envPath ? [envPath] : []),
     join(process.cwd(), "iii-config.yaml"),
-    join(homedir(), ".agentmemory", "iii-config.yaml"),
+    join(prefsDir(), "config", "iii-config.yaml"),
+    join(prefsDir(), "iii-config.yaml"),
     join(__dirname, "iii-config.yaml"),
     join(__dirname, "..", "iii-config.yaml"),
   ];
@@ -320,6 +328,27 @@ function findIiiConfig(): string {
     if (existsSync(c)) return c;
   }
   return "";
+}
+
+// Locate the bundled iii-config.yaml that ships in the npm package.
+// `dist/iii-config.yaml` lives next to dist/cli.mjs after the build
+// script's `cp iii-config.yaml dist/` step; the `..` candidate covers
+// a source checkout where the file sits at the repo root.
+function findBundledIiiConfig(): string | null {
+  const candidates = [
+    join(__dirname, "iii-config.yaml"),
+    join(__dirname, "..", "iii-config.yaml"),
+  ];
+  return candidates.find(existsSync) ?? null;
+}
+
+function ensureUserIiiConfig(): string | null {
+  return materializeUserIiiConfig({
+    targetDir: join(prefsDir(), "config"),
+    dataDir: join(prefsDir(), "data"),
+    findBundled: findBundledIiiConfig,
+    onWarn: (msg) => vlog(msg),
+  });
 }
 
 function whichBinary(name: string): string | null {
@@ -763,6 +792,12 @@ function startIiiBin(iiiBin: string, configPath: string): boolean {
 }
 
 async function startEngine(): Promise<boolean> {
+  // Materialize ~/.agentmemory/config/iii-config.yaml on first start
+  // so the engine's data paths anchor to ~/.agentmemory/data/ no
+  // matter where the CLI was invoked from. findIiiConfig() picks up
+  // the materialized file via its candidate list. Errors are
+  // swallowed inside the helper.
+  ensureUserIiiConfig();
   const configPath = findIiiConfig();
   let iiiBin = whichBinary("iii");
   vlog(`iii binary: ${iiiBin ?? "(not on PATH)"}, config: ${configPath || "(not found)"}`);
@@ -1908,6 +1943,15 @@ async function runInit() {
     process.exit(1);
   }
   p.log.success(`Wrote ${target}`);
+
+  // Materialize the user-anchored iii-config alongside .env so the
+  // engine's data paths land in ~/.agentmemory/data/ from the very
+  // first start, regardless of which cwd the operator runs from.
+  const iiiConfigPath = ensureUserIiiConfig();
+  if (iiiConfigPath) {
+    p.log.success(`Wrote ${iiiConfigPath}`);
+  }
+
   p.note(
     [
       "All keys are commented out by default. Uncomment the ones you want.",
