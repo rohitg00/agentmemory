@@ -611,11 +611,15 @@ export function registerApiTriggers(
         { type: "set", path: "endedAt", value: new Date().toISOString() },
         { type: "set", path: "status", value: "completed" },
       ]);
-      // Fan out the session-stopped lifecycle (summarize → slot reflect →
-      // graph extraction) without blocking the HTTP response. The
-      // `agentmemory.session.stopped` topic has no publisher today (#666),
-      // so subscribers in events.ts never fired and graphs stayed empty.
-      sdk.triggerVoid("event::session::stopped", { sessionId });
+      // Fan out session-stopped lifecycle (non-blocking).
+      try {
+        sdk.triggerVoid("event::session::stopped", { sessionId });
+      } catch (err) {
+        logger.warn("event::session::stopped triggerVoid failed", {
+          sessionId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
       return { status_code: 200, body: { success: true } };
     },
   );

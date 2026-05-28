@@ -50,7 +50,7 @@ describe("api::graph-build endpoint (#666)", () => {
   });
 
   it("filters observations that have a title (compressed only)", () => {
-    expect(api).toMatch(/o\.title === "string" && o\.title\.length > 0/);
+    expect(api).toMatch(/typeof o\.title === "string" && o\.title\.length > 0/);
   });
 
   it("respects batchSize override with a 100-item upper bound", () => {
@@ -69,8 +69,8 @@ describe("api::graph-build endpoint (#666)", () => {
 describe("agentmemory status no longer depends on /export (#666)", () => {
   const cli = readFileSync("src/cli.ts", "utf-8");
 
-  it("status fetches memories instead of export", () => {
-    expect(cli).toMatch(/apiFetch<any>\(base,\s*"memories"\)/);
+  it("status uses count-only memories endpoint instead of export", () => {
+    expect(cli).toMatch(/apiFetch<any>\(base,\s*"memories\?count=true"\)/);
     expect(cli).not.toMatch(/apiFetch<any>\(base,\s*"export"\)/);
   });
 
@@ -80,7 +80,7 @@ describe("agentmemory status no longer depends on /export (#666)", () => {
     );
   });
 
-  it("status reads memCount from memoriesRes.memories.length", () => {
-    expect(cli).toMatch(/memoriesRes\?\.memories\) \? memoriesRes\.memories\.length : 0/);
+  it("status reads memCount from memoriesRes.latestCount (count endpoint)", () => {
+    expect(cli).toMatch(/memoriesRes\?\.latestCount\s*\?\?\s*memoriesRes\?\.total/);
   });
 });

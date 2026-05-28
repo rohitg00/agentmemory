@@ -1162,7 +1162,7 @@ async function runStatus() {
       apiFetch<any>(base, "health"),
       apiFetch<any>(base, "sessions"),
       apiFetch<any>(base, "graph/stats"),
-      apiFetch<any>(base, "memories"),
+      apiFetch<any>(base, "memories?count=true"),
       apiFetch<any>(base, "config/flags"),
     ]);
 
@@ -1184,7 +1184,7 @@ async function runStatus() {
       (sum: number, s: any) => sum + (Number(s?.observationCount) || 0),
       0,
     );
-    const memCount = Array.isArray(memoriesRes?.memories) ? memoriesRes.memories.length : 0;
+    const memCount = Number(memoriesRes?.latestCount ?? memoriesRes?.total ?? 0) || 0;
     const estFullTokens = obsCount * 80;
     const estInjectedTokens = Math.min(obsCount, 50) * 38;
     const tokensSaved = estFullTokens - estInjectedTokens;
