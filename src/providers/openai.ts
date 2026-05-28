@@ -129,15 +129,19 @@ export class OpenAIProvider implements MemoryProvider {
     }
 
     const data = (await response.json()) as {
-      choices?: Array<{ message?: { content?: string; reasoning?: string } }>;
+      choices?: Array<{
+        message?: { content?: string; reasoning?: string; reasoning_content?: string };
+      }>;
     };
     const message = data.choices?.[0]?.message;
     const content = message?.content;
     if (content) {
       return content;
     }
-    // Fallback: some thinking models return reasoning but no content
-    const reasoning = message?.reasoning;
+    // Fallback: some thinking models return reasoning but no content.
+    // DeepSeek V4 / Qwen3 / GLM / Kimi return `reasoning_content`;
+    // older OpenAI o-series + some compatibles return `reasoning`. #627
+    const reasoning = message?.reasoning ?? message?.reasoning_content;
     if (reasoning) {
       return reasoning;
     }

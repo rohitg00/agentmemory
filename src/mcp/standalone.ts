@@ -32,6 +32,17 @@ const SERVER_INFO = {
 const kv = new InMemoryKV(getStandalonePersistPath());
 let modeAnnounced = false;
 
+function displayAgentmemoryUrl(): string {
+  // Match the literal-placeholder guard in rest-proxy.ts so log lines
+  // don't show `${AGENTMEMORY_URL}` when an MCP host passed the
+  // placeholder through unexpanded.
+  const raw = process.env["AGENTMEMORY_URL"];
+  if (!raw || (raw.startsWith("${") && raw.endsWith("}"))) {
+    return "http://localhost:3111";
+  }
+  return raw;
+}
+
 function announceMode(handle: Handle): void {
   if (modeAnnounced) return;
   modeAnnounced = true;
@@ -41,7 +52,7 @@ function announceMode(handle: Handle): void {
     );
   } else {
     process.stderr.write(
-      `[@agentmemory/mcp] no server reachable at ${process.env["AGENTMEMORY_URL"] || "http://localhost:3111"}; falling back to local InMemoryKV\n`,
+      `[@agentmemory/mcp] no server reachable at ${displayAgentmemoryUrl()}; falling back to local InMemoryKV\n`,
     );
   }
 }

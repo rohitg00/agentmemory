@@ -39,16 +39,21 @@ async function main() {
 
   const sessionId = ((data.session_id || data.sessionId) as string) || "unknown";
 
-  try {
-    await fetch(`${REST_URL}/agentmemory/summarize`, {
-      method: "POST",
-      headers: authHeaders(),
-      body: JSON.stringify({ sessionId }),
-      signal: AbortSignal.timeout(120000), // Increased from 30s to 120s
-    });
-  } catch {
-    // summarize is best-effort
-  }
+  fetch(`${REST_URL}/agentmemory/summarize`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({ sessionId }),
+    signal: AbortSignal.timeout(120000),
+  }).catch(() => {});
+
+  fetch(`${REST_URL}/agentmemory/session/end`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({ sessionId }),
+    signal: AbortSignal.timeout(5000),
+  }).catch(() => {});
+
+  setTimeout(() => process.exit(0), 1500).unref();
 }
 
 main();

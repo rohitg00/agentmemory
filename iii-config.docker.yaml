@@ -40,10 +40,11 @@ workers:
       enabled: true
       service_name: agentmemory
       exporter: memory
-      sampling_ratio: 1.0
+      # See iii-config.yaml for the rationale on 0.1 / console-off (#519).
+      sampling_ratio: 0.1
       metrics_enabled: true
       logs_enabled: true
-      logs_console_output: true
+      logs_console_output: false
   - name: iii-exec
     config:
       watch:

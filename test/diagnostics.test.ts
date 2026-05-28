@@ -195,10 +195,11 @@ describe("Diagnostics Functions", () => {
       };
 
       expect(result.success).toBe(true);
-      // 14 = 8 original (actions, leases, sentinels, sketches, signals,
+      // 15 = 8 original (actions, leases, sentinels, sketches, signals,
       // sessions, memories, mesh) + 6 added in #lesson-visibility
-      // (lessons, summaries, semantic, procedural, crystals, insights).
-      expect(result.summary.pass).toBe(14);
+      // (lessons, summaries, semantic, procedural, crystals, insights) +
+      // 1 added in #memory-project-scope (memory-project-coverage).
+      expect(result.summary.pass).toBe(15);
       expect(result.summary.warn).toBe(0);
       expect(result.summary.fail).toBe(0);
       expect(result.summary.fixable).toBe(0);

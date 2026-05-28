@@ -114,8 +114,11 @@ describe("Copilot MCP config (.mcp.copilot.json)", () => {
     expect(server.type).toBe("local");
     expect(server.command).toBe("npx");
     expect(server.args).toEqual(["-y", "@agentmemory/mcp"]);
-    expect(server.env["AGENTMEMORY_URL"]).toBe("${AGENTMEMORY_URL}");
-    expect(server.env["AGENTMEMORY_SECRET"]).toBe("${AGENTMEMORY_SECRET}");
+    expect(server.env["AGENTMEMORY_URL"]).toBe(
+      "${AGENTMEMORY_URL:-http://localhost:3111}",
+    );
+    expect(server.env["AGENTMEMORY_SECRET"]).toBe("${AGENTMEMORY_SECRET:-}");
+    expect(server.env["AGENTMEMORY_TOOLS"]).toBe("${AGENTMEMORY_TOOLS:-all}");
     expect(server.tools).toContain("*");
   });
 });

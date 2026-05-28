@@ -89,6 +89,81 @@ describe("SearchIndex", () => {
     expect(index.search("auth")).toEqual([]);
   });
 
+  // Regression coverage: deleted docs must not keep occupying result
+  // slots after remove(). Without remove(), a limit-capped search can
+  // return fewer live results than requested because the slot is held
+  // by a doc that no longer exists in storage.
+  describe("remove", () => {
+    it("drops a removed doc from search results", () => {
+      index.add(makeObs({ id: "obs_a", title: "jose for JWT" }));
+      index.add(
+        makeObs({ id: "obs_b", title: "JWT tokens expire after 30 minutes" }),
+      );
+      expect(index.search("jose jwt", 1)[0].obsId).toBe("obs_a");
+
+      index.remove("obs_a");
+
+      // With limit=1, the survivor must now surface instead of getting
+      // masked by the deleted doc's slot.
+      const after = index.search("jose jwt", 1);
+      expect(after).toHaveLength(1);
+      expect(after[0].obsId).toBe("obs_b");
+      expect(index.size).toBe(1);
+    });
+
+    it("is a no-op for unknown ids", () => {
+      index.add(makeObs({ id: "obs_a" }));
+      expect(() => index.remove("does_not_exist")).not.toThrow();
+      expect(index.size).toBe(1);
+      expect(index.search("auth")).toHaveLength(1);
+    });
+
+    it("cleans up empty posting lists and the prefix cache", () => {
+      // unique_concept_xyz appears only in obs_a. After removing obs_a,
+      // a prefix search for "unique_" must NOT surface it from the
+      // sortedTerms cache.
+      index.add(
+        makeObs({
+          id: "obs_a",
+          concepts: ["unique_concept_xyz"],
+        }),
+      );
+      index.add(makeObs({ id: "obs_b", title: "completely different" }));
+      // Prime the sortedTerms cache.
+      expect(index.search("unique_")).toHaveLength(1);
+
+      index.remove("obs_a");
+
+      expect(index.search("unique_concept_xyz")).toEqual([]);
+      expect(index.search("unique_")).toEqual([]);
+    });
+
+    it("keeps scoring consistent after add/remove/add cycles", () => {
+      // totalDocLength bookkeeping desync would skew BM25 normalization
+      // (docLen / avgDocLen). Round-trip add → remove → re-add and
+      // confirm size + retrievability hold.
+      const obs = makeObs({ id: "obs_a" });
+      index.add(obs);
+      expect(index.size).toBe(1);
+      index.remove("obs_a");
+      expect(index.size).toBe(0);
+      index.add(obs);
+      expect(index.size).toBe(1);
+      expect(index.search("auth")[0].obsId).toBe("obs_a");
+    });
+
+    it("survives serialize/deserialize after removes", () => {
+      index.add(makeObs({ id: "obs_a", title: "alpha doc" }));
+      index.add(makeObs({ id: "obs_b", title: "beta doc" }));
+      index.remove("obs_a");
+
+      const restored = SearchIndex.deserialize(index.serialize());
+      expect(restored.size).toBe(1);
+      expect(restored.search("alpha")).toEqual([]);
+      expect(restored.search("beta")).toHaveLength(1);
+    });
+  });
+
   it("returns empty for empty query", () => {
     index.add(makeObs());
     expect(index.search("")).toEqual([]);

@@ -165,6 +165,7 @@ export function registerCompressFunction(
           ...(hasImage ? { modality: data.raw.modality } : {}),
           ...(imageDescription ? { imageDescription } : {}),
           ...(data.raw.imageData ? { imageRef: data.raw.imageData } : {}),
+          ...(data.raw.agentId ? { agentId: data.raw.agentId } : {}),
         };
 
         await kv.set(

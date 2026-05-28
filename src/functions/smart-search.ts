@@ -9,6 +9,7 @@ import type {
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { recordAccessBatch } from "./access-tracker.js";
+import { getAgentId, isAgentScopeIsolated } from "../config.js";
 import { logger } from "../logger.js";
 
 // Compact mode trims each lesson's content for at-a-glance display. The
@@ -27,7 +28,24 @@ export function registerSmartSearchFunction(
       limit?: number;
       project?: string;
       includeLessons?: boolean;
+      // optional per-call agent filter for runtimes routing many
+      // roles through one server. "*" opts out of the env-default
+      // scope and returns hits from every agent.
+      agentId?: string;
     }) => {
+
+      // Compute the agent filter once, up front. Both the expandIds
+      // branch and the hybrid-search branch consult it — otherwise
+      // expandIds becomes a cross-agent leak (#554 follow-up).
+      const isolated = isAgentScopeIsolated();
+      const explicitAgentId =
+        typeof data.agentId === "string" && data.agentId.trim().length > 0
+          ? data.agentId.trim()
+          : undefined;
+      const wildcardAgent = explicitAgentId === "*";
+      const filterAgentId = wildcardAgent
+        ? undefined
+        : explicitAgentId ?? (isolated ? getAgentId() : undefined);
 
       if (data.expandIds && data.expandIds.length > 0) {
         const raw = data.expandIds.slice(0, 20);
@@ -56,19 +74,24 @@ export function registerSmartSearchFunction(
           if (r) expanded.push(r);
         }
 
+        const scoped = filterAgentId
+          ? expanded.filter((e) => e.observation.agentId === filterAgentId)
+          : expanded;
+
         void recordAccessBatch(
           kv,
-          expanded.map((e) => e.observation.id),
+          scoped.map((e) => e.observation.id),
         );
 
         const truncated = data.expandIds.length > raw.length;
         logger.info("Smart search expanded", {
           requested: data.expandIds.length,
           attempted: raw.length,
-          returned: expanded.length,
+          returned: scoped.length,
+          filteredOutOfScope: expanded.length - scoped.length,
           truncated,
         });
-        return { mode: "expanded", results: expanded, truncated };
+        return { mode: "expanded", results: scoped, truncated };
       }
 
       if (!data.query || typeof data.query !== "string" || !data.query.trim()) {
@@ -76,23 +99,35 @@ export function registerSmartSearchFunction(
       }
 
       const limit = Math.max(1, Math.min(data.limit ?? 20, 100));
-      // Cap lesson results at a smaller number than observations: lessons
-      // are denser (curated insights) so 10 is usually plenty for a recall.
+      // Lesson recall stays capped: lessons are denser than raw
+      // observations so 10 covers most recall flows.
       const lessonLimit = Math.min(limit, 10);
       const includeLessons = data.includeLessons !== false;
 
-      // Run observation hybrid-search and lesson recall in parallel so the
-      // extra lesson lookup adds no wallclock when the underlying calls
-      // can overlap. Lesson recall is best-effort: if mem::lesson-recall
-      // fails or returns unexpected shape, log + fall back to empty.
+      // Over-fetch when filtering. Hybrid search can't filter on
+      // agentId (BM25/vector indexes don't carry it), so we ask the
+      // searcher for more hits than we need and trim post-filter. 3×
+      // is a defensible middle ground: enough headroom for a small
+      // workload, capped at 300 so a 100-limit request never asks for
+      // thousands of hits.
+      const overFetchLimit = filterAgentId
+        ? Math.min(limit * 3, 300)
+        : limit;
+
       const [hybridResults, lessons] = await Promise.all([
-        searchFn(data.query, limit),
+        searchFn(data.query, overFetchLimit),
         includeLessons
           ? recallLessons(sdk, data.query, lessonLimit, data.project)
           : Promise.resolve([]),
       ]);
 
-      const compact: CompactSearchResult[] = hybridResults.map((r) => ({
+      const filteredHybrid = filterAgentId
+        ? hybridResults
+            .filter((r) => r.observation.agentId === filterAgentId)
+            .slice(0, limit)
+        : hybridResults.slice(0, limit);
+
+      const compact: CompactSearchResult[] = filteredHybrid.map((r) => ({
         obsId: r.observation.id,
         sessionId: r.sessionId,
         title: r.observation.title,

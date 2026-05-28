@@ -101,5 +101,6 @@ export function buildSyntheticCompression(
   };
   if (raw.modality) result.modality = raw.modality;
   if (raw.imageData) result.imageData = raw.imageData;
+  if (raw.agentId) result.agentId = raw.agentId;
   return result;
 }

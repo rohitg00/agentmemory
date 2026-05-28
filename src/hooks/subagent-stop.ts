@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { resolveProject } from "./_project.js";
 
 function isSdkChildContext(payload: unknown): boolean {
   if (process.env["AGENTMEMORY_SDK_CHILD"] === "1") return true;
@@ -38,27 +39,24 @@ async function main() {
       ? data.last_assistant_message.slice(0, 4000)
       : "";
 
-  try {
-    await fetch(`${REST_URL}/agentmemory/observe`, {
-      method: "POST",
-      headers: authHeaders(),
-      body: JSON.stringify({
-        hookType: "subagent_stop",
-        sessionId,
-        project: data.cwd || process.cwd(),
-        cwd: data.cwd || process.cwd(),
-        timestamp: new Date().toISOString(),
-        data: {
-          agent_id: agentId,
-          agent_type: agentType,
-          last_message: lastMsg,
-        },
-      }),
-      signal: AbortSignal.timeout(2000),
-    });
-  } catch {
-    // fire and forget
-  }
+  fetch(`${REST_URL}/agentmemory/observe`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({
+      hookType: "subagent_stop",
+      sessionId,
+      project: resolveProject(data.cwd as string | undefined),
+      cwd: (data.cwd as string | undefined) || process.cwd(),
+      timestamp: new Date().toISOString(),
+      data: {
+        agent_id: agentId,
+        agent_type: agentType,
+        last_message: lastMsg,
+      },
+    }),
+    signal: AbortSignal.timeout(2000),
+  }).catch(() => {});
+  setTimeout(() => process.exit(0), 500).unref();
 }
 
 main();

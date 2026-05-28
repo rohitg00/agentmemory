@@ -51,6 +51,29 @@ export class SearchIndex {
     return this.entries.has(id);
   }
 
+  remove(id: string): void {
+    const entry = this.entries.get(id);
+    if (!entry) return;
+
+    const termFreq = this.docTermCounts.get(id);
+    if (termFreq) {
+      for (const term of termFreq.keys()) {
+        const postingList = this.invertedIndex.get(term);
+        if (postingList) {
+          postingList.delete(id);
+          if (postingList.size === 0) {
+            this.invertedIndex.delete(term);
+          }
+        }
+      }
+      this.docTermCounts.delete(id);
+    }
+
+    this.totalDocLength = Math.max(0, this.totalDocLength - entry.termCount);
+    this.entries.delete(id);
+    this.sortedTerms = null;
+  }
+
   search(
     query: string,
     limit = 20,

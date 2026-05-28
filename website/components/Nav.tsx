@@ -5,7 +5,7 @@ import { MobileNavToggle } from "./MobileNavToggle";
 import styles from "./Nav.module.css";
 
 const SECTIONS = [
-  { href: "#primitives", label: "STACK" },
+  { href: "#stack", label: "STACK" },
   { href: "#features", label: "FEATURES" },
   { href: "#command-center", label: "CONTROL" },
   { href: "#live", label: "DEMO" },

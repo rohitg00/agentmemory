@@ -93,12 +93,22 @@ async function main() {
     typeof rawSessionId === "string" && rawSessionId.length > 0
       ? rawSessionId
       : "unknown";
+  const project =
+    typeof data.project === "string" && data.project.trim().length > 0
+      ? data.project.trim()
+      : undefined;
 
   try {
     const res = await fetch(`${REST_URL}/agentmemory/enrich`, {
       method: "POST",
       headers: authHeaders(),
-      body: JSON.stringify({ sessionId, files, terms, toolName }),
+      body: JSON.stringify({
+        sessionId,
+        files,
+        terms,
+        toolName,
+        ...(project !== undefined && { project }),
+      }),
       signal: AbortSignal.timeout(2000),
     });
 

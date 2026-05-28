@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { KV, generateId } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import type {
+  Memory,
   Session,
   CompressedObservation,
   SessionSummary,
@@ -17,9 +18,91 @@ function isAllowedPath(dbPath: string): boolean {
   return ALLOWED_DIRS.some((dir) => resolved.startsWith(dir + "/"));
 }
 
+// Infer memory project from the majority project of its associated sessions.
+// Returns { updated, skipped } — safe to run repeatedly (idempotent).
+export async function inferMemoryProjects(
+  kv: StateKV,
+  dryRun = false,
+): Promise<{ updated: number; skipped: number; ambiguous: number }> {
+  const memories = await kv.list<Memory>(KV.memories);
+  const sessionCache = new Map<string, Session | null>();
+
+  const loadSession = async (sid: string): Promise<Session | null> => {
+    if (sessionCache.has(sid)) return sessionCache.get(sid)!;
+    const s = await kv.get<Session>(KV.sessions, sid).catch(() => null);
+    sessionCache.set(sid, s);
+    return s;
+  };
+
+  let updated = 0;
+  let skipped = 0;
+  let ambiguous = 0;
+
+  for (const memory of memories) {
+    if (memory.project) {
+      skipped++;
+      continue;
+    }
+
+    const sessionIds = memory.sessionIds ?? [];
+    if (sessionIds.length === 0) {
+      ambiguous++;
+      continue;
+    }
+
+    const projects: string[] = [];
+    for (const sid of sessionIds) {
+      const session = await loadSession(sid);
+      if (session?.project) projects.push(session.project);
+    }
+
+    if (projects.length === 0) {
+      ambiguous++;
+      continue;
+    }
+
+    // Majority-vote: count frequency of each project value.
+    const freq = new Map<string, number>();
+    for (const p of projects) freq.set(p, (freq.get(p) ?? 0) + 1);
+    const sorted = [...freq.entries()].sort((a, b) => b[1] - a[1]);
+    const [topProject, topCount] = sorted[0];
+
+    // Require a strict majority (> 50%) to avoid misattributing a memory
+    // that was genuinely built from sessions across multiple projects.
+    if (topCount <= projects.length / 2 && sorted.length > 1) {
+      ambiguous++;
+      continue;
+    }
+
+    if (!dryRun) {
+      memory.project = topProject;
+      await kv.set(KV.memories, memory.id, memory);
+    }
+    updated++;
+  }
+
+  logger.info("inferMemoryProjects complete", { updated, skipped, ambiguous, dryRun });
+  return { updated, skipped, ambiguous };
+}
+
 export function registerMigrateFunction(sdk: ISdk, kv: StateKV): void {
-  sdk.registerFunction("mem::migrate", 
-    async (data: { dbPath: string }) => {
+  sdk.registerFunction("mem::migrate",
+    async (data: { dbPath?: string; step?: string; dryRun?: boolean }) => {
+      // In-place KV migration steps (no SQLite dependency).
+      if (data.step === "infer-memory-projects") {
+        const dryRun = data.dryRun ?? false;
+        logger.info("Migration step: infer-memory-projects", { dryRun });
+        const result = await inferMemoryProjects(kv, dryRun);
+        return { success: true, step: "infer-memory-projects", ...result };
+      }
+
+      if (!data.dbPath) {
+        return {
+          success: false,
+          error: "Either step or dbPath is required",
+        };
+      }
+
       logger.info("Migration started", { dbPath: data.dbPath });
 
       if (!isAllowedPath(data.dbPath)) {

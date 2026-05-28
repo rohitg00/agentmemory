@@ -40,21 +40,29 @@ describe("agentmemory connect — dispatcher", () => {
     expect(resolveAdapter("")).toBeNull();
   });
 
-  it("ships exactly the 9 agents specified by the spec", () => {
+  it("ships the supported agent list", () => {
     expect(knownAgents().sort()).toEqual(
       [
+        "antigravity",
         "claude-code",
+        "cline",
         "copilot-cli",
         "codex",
+        "continue",
         "cursor",
+        "droid",
         "gemini-cli",
         "hermes",
+        "kiro",
         "openclaw",
         "openhuman",
         "pi",
+        "qwen",
+        "warp",
+        "zed",
       ].sort(),
     );
-    expect(ADAPTERS.length).toBe(9);
+    expect(ADAPTERS.length).toBe(17);
   });
 
   it("every adapter exposes detect() and install()", () => {
@@ -141,8 +149,15 @@ describe("agentmemory connect — claude-code adapter (mock filesystem)", () => 
     const config = JSON.parse(readFileSync(join(tmpHome, ".claude.json"), "utf-8"));
     const entry = config.mcpServers.agentmemory;
     expect(entry.env).toBeDefined();
-    expect(entry.env.AGENTMEMORY_URL).toBe("${AGENTMEMORY_URL}");
-    expect(entry.env.AGENTMEMORY_SECRET).toBe("${AGENTMEMORY_SECRET}");
+    // env interpolation must carry a default so Claude Code
+    // doesn't silently drop the server when the user hasn't exported
+    // AGENTMEMORY_URL / AGENTMEMORY_SECRET. Defaults match the
+    // documented runtime (localhost:3111, no auth, all tools).
+    expect(entry.env.AGENTMEMORY_URL).toBe(
+      "${AGENTMEMORY_URL:-http://localhost:3111}",
+    );
+    expect(entry.env.AGENTMEMORY_SECRET).toBe("${AGENTMEMORY_SECRET:-}");
+    expect(entry.env.AGENTMEMORY_TOOLS).toBe("${AGENTMEMORY_TOOLS:-all}");
   });
 
   it("install() with --force re-writes even when already wired", async () => {
@@ -251,8 +266,9 @@ describe("agentmemory connect — copilot-cli adapter (mock filesystem)", () => 
       type: "local",
       ...EXPECTED_COPILOT_MCP_COMMAND,
       env: {
-        AGENTMEMORY_URL: "${AGENTMEMORY_URL}",
-        AGENTMEMORY_SECRET: "${AGENTMEMORY_SECRET}",
+        AGENTMEMORY_URL: "${AGENTMEMORY_URL:-http://localhost:3111}",
+        AGENTMEMORY_SECRET: "${AGENTMEMORY_SECRET:-}",
+        AGENTMEMORY_TOOLS: "${AGENTMEMORY_TOOLS:-all}",
       },
       tools: ["*"],
     });
@@ -311,8 +327,11 @@ describe("agentmemory connect — copilot-cli adapter (mock filesystem)", () => 
       readFileSync(join(tmpHome, ".copilot", "mcp-config.json"), "utf-8"),
     );
     const entry = config.mcpServers.agentmemory;
-    expect(entry.env.AGENTMEMORY_URL).toBe("${AGENTMEMORY_URL}");
-    expect(entry.env.AGENTMEMORY_SECRET).toBe("${AGENTMEMORY_SECRET}");
+    expect(entry.env.AGENTMEMORY_URL).toBe(
+      "${AGENTMEMORY_URL:-http://localhost:3111}",
+    );
+    expect(entry.env.AGENTMEMORY_SECRET).toBe("${AGENTMEMORY_SECRET:-}");
+    expect(entry.env.AGENTMEMORY_TOOLS).toBe("${AGENTMEMORY_TOOLS:-all}");
   });
 
   it("install() with --force rewrites even when already wired", async () => {
@@ -325,8 +344,9 @@ describe("agentmemory connect — copilot-cli adapter (mock filesystem)", () => 
             type: "local",
             ...EXPECTED_COPILOT_MCP_COMMAND,
             env: {
-              AGENTMEMORY_URL: "${AGENTMEMORY_URL}",
-              AGENTMEMORY_SECRET: "${AGENTMEMORY_SECRET}",
+              AGENTMEMORY_URL: "${AGENTMEMORY_URL:-http://localhost:3111}",
+              AGENTMEMORY_SECRET: "${AGENTMEMORY_SECRET:-}",
+              AGENTMEMORY_TOOLS: "${AGENTMEMORY_TOOLS:-all}",
             },
             tools: ["memory_save"],
           },

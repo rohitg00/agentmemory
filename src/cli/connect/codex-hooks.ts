@@ -64,9 +64,10 @@ export function findPluginRoot(startUrl: string = import.meta.url): string {
 export function buildMergedHooks(
   existing: HookManifest | null,
   pluginRoot: string,
+  manifestFile = "hooks.codex.json",
 ): HookManifest {
-  const codexManifestPath = join(pluginRoot, "hooks", "hooks.codex.json");
-  const ours = JSON.parse(readFileSync(codexManifestPath, "utf-8")) as HookManifest;
+  const bundledManifestPath = join(pluginRoot, "hooks", manifestFile);
+  const ours = JSON.parse(readFileSync(bundledManifestPath, "utf-8")) as HookManifest;
   const scriptsDir = join(pluginRoot, "scripts");
 
   const out: HookManifest = { hooks: {} };

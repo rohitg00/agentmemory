@@ -34,6 +34,44 @@ export function getEmbeddingProvider(): EmbeddingProvider | null {
   return currentEmbeddingProvider
 }
 
+export function vectorIndexRemove(id: string): void {
+  vectorIndex?.remove(id);
+}
+
+// Persistence sync hook. Without this, index removals only live in
+// memory; a crash/SIGKILL before graceful shutdown reloads a stale
+// snapshot at boot and the deleted entry resurrects in the index.
+// Wired by src/index.ts after IndexPersistence is constructed; no-op
+// until then so unit tests that exercise the delete paths in
+// isolation don't need to wire persistence.
+let indexPersistence: {
+  scheduleSave: () => void;
+  save: () => Promise<void>;
+} | null = null;
+
+export function setIndexPersistence(
+  p: { scheduleSave: () => void; save: () => Promise<void> } | null,
+): void {
+  indexPersistence = p;
+}
+
+export function scheduleIndexSave(): void {
+  indexPersistence?.scheduleSave();
+}
+
+// Synchronous flush variant for delete paths. The debounced
+// scheduleSave is fine for adds (chatty), but a hard process exit
+// inside the 5s debounce window would lose deletes and resurrect
+// removed entries on next boot. Deletes are infrequent enough that
+// awaiting a single write per operation is acceptable. save() catches
+// its own errors via IndexPersistence.logFailure, so this resolves
+// even when persistence fails — callers must not treat a failed
+// flush as a fatal error on the delete itself (the KV delete already
+// committed before this is invoked).
+export async function flushIndexSave(): Promise<void> {
+  await indexPersistence?.save();
+}
+
 // Hard cap on embedding input length. Most providers cap input around
 // 8k tokens (~32k chars at ~4 chars/token). Truncate defensively so a
 // huge memory.content can't 400 the embed call or blow context budget
@@ -223,7 +261,7 @@ export async function rebuildIndex(kv: StateKV): Promise<number> {
       idx.add(memoryToObservation(memory))
       await enqueue({
         id: memory.id,
-        sessionId: memory.sessionIds[0] ?? 'memory',
+        sessionId: memory.sessionIds?.[0] ?? 'memory',
         text: memory.title + ' ' + memory.content,
         context: { kind: "memory", logId: memory.id },
       })
@@ -306,8 +344,8 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
         }
         effectiveLimit = Math.min(data.limit, MAX_LIMIT)
       }
-      const projectFilter = typeof data.project === 'string' && data.project.length > 0 ? data.project : undefined
-      const cwdFilter = typeof data.cwd === 'string' && data.cwd.length > 0 ? data.cwd : undefined
+      const projectFilter = typeof data.project === 'string' && data.project.trim().length > 0 ? data.project.trim() : undefined
+      const cwdFilter = typeof data.cwd === 'string' && data.cwd.trim().length > 0 ? data.cwd.trim() : undefined
       const format = typeof data.format === 'string' ? data.format : 'full'
       if (!['full', 'compact', 'narrative'].includes(format)) {
         throw new Error("mem::search: format must be one of 'full', 'compact', or 'narrative'")
@@ -340,15 +378,52 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
         return s ?? null
       }
 
+      // Cache for memory project lookups. Memories indexed via mem::remember
+      // use a synthetic sessionId ('memory' or the first real sessionId) that
+      // either has no KV.sessions entry or belongs to a different project.
+      // When loadSession returns null we fall through to a KV.memories probe
+      // so project-filtered search can include or exclude them correctly.
+      const memoryProjectCache = new Map<string, string | null>()
+      const loadMemoryProject = async (obsId: string): Promise<string | null> => {
+        if (memoryProjectCache.has(obsId)) return memoryProjectCache.get(obsId)!
+        const mem = await kv.get<Memory>(KV.memories, obsId).catch(() => null)
+        const proj = mem?.project ?? null
+        memoryProjectCache.set(obsId, proj)
+        return proj
+      }
+
       // First pass: filter by session (sequential — benefits from session cache).
+      // Memory entries with a synthetic sessionId take a secondary KV.memories
+      // path so project filtering works correctly for them too.
       const candidates: typeof results = []
       for (const r of results) {
         if (candidates.length >= effectiveLimit) break
         if (filtering) {
           const s = await loadSession(r.sessionId)
-          if (!s) continue
-          if (projectFilter && s.project !== projectFilter) continue
-          if (cwdFilter && s.cwd !== cwdFilter) continue
+          if (s) {
+            if (projectFilter && s.project !== projectFilter) continue
+            if (cwdFilter && s.cwd !== cwdFilter) continue
+          } else {
+            // Session not found. Two cases arrive here:
+            //   1. Synthetic sessionId — memories indexed via mem::remember use
+            //      sessionIds[0] ?? 'memory'. The string 'memory' has no session
+            //      entry; neither does a real sessionId when sessionIds[0] happens
+            //      to be a session from a different lifecycle. Probe KV.memories
+            //      directly to get the memory's own project field.
+            //   2. Deleted session — the session existed when the entry was indexed
+            //      but was since evicted. The KV.memories probe returns null for
+            //      these (they are observations, not memories), so memProject is
+            //      null and the entry passes through as unscoped. This is the safe
+            //      fallback: we lose the ability to filter but never incorrectly
+            //      block a result whose session we can no longer verify.
+            // In both cases, a null memProject means "project unknown — treat as
+            // unscoped and let it through" to preserve backward-compatibility.
+            if (projectFilter) {
+              const memProject = await loadMemoryProject(r.obsId)
+              if (memProject !== null && memProject !== projectFilter) continue
+            }
+            // cwd filter does not apply to unbound entries.
+          }
         }
         candidates.push(r)
       }

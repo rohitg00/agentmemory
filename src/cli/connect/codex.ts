@@ -112,7 +112,7 @@ export const adapter: ConnectAdapter = {
 
     logInstalled("Codex CLI", CODEX_TOML);
     p.log.info(
-      "Codex picks up MCP servers on next launch. For the deeper plugin install, run: codex plugin marketplace add rohitg00/agentmemory && codex plugin install agentmemory",
+      "Codex picks up MCP servers on next launch. For the deeper plugin install, run: codex plugin marketplace add rohitg00/agentmemory && codex plugin add agentmemory@agentmemory",
     );
 
     if (opts.withHooks) {

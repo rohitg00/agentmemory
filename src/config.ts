@@ -19,6 +19,8 @@ function safeParseInt(value: string | undefined, fallback: number): number {
 const DATA_DIR = join(homedir(), ".agentmemory");
 const ENV_FILE = join(DATA_DIR, ".env");
 
+let warnPremiumModelShown = false;
+
 function loadEnvFile(): Record<string, string> {
   if (!existsSync(ENV_FILE)) return {};
   const content = readFileSync(ENV_FILE, "utf-8");
@@ -91,9 +93,32 @@ function detectProvider(env: Record<string, string>): ProviderConfig {
     };
   }
   if (hasRealValue(env["OPENROUTER_API_KEY"])) {
+    const model =
+      env["OPENROUTER_MODEL"] || "anthropic/claude-sonnet-4-20250514";
+    // warn when the configured OpenRouter model is in the
+    // premium tier and likely to burn money on background compression.
+    // Captured workload data shows ~$5/35h on claude-sonnet-4 vs
+    // ~$0.46/35h on deepseek-v4-pro for the same compression mix.
+    // Heuristic match avoids hard-coding a pricing table.
+    if (
+      !warnPremiumModelShown &&
+      /sonnet|opus|gpt-4o(?!.*mini)|gpt-4-turbo/i.test(model) &&
+      env["AGENTMEMORY_SUPPRESS_COST_WARNING"] !== "1" &&
+      env["AGENTMEMORY_SUPPRESS_COST_WARNING"] !== "true"
+    ) {
+      warnPremiumModelShown = true;
+      process.stderr.write(
+        `[agentmemory] OPENROUTER_MODEL=${model} is in the premium tier. ` +
+          `Background compression on this model can cost $5+/day under active use. ` +
+          `Cheaper alternatives with comparable quality for memory compression: ` +
+          `deepseek/deepseek-v4-pro, deepseek/deepseek-chat, qwen/qwen3-coder. ` +
+          `See README "Cost-aware model selection" for the full table. ` +
+          `Set AGENTMEMORY_SUPPRESS_COST_WARNING=1 to silence.\n`,
+      );
+    }
     return {
       provider: "openrouter",
-      model: env["OPENROUTER_MODEL"] || "anthropic/claude-sonnet-4-20250514",
+      model,
       maxTokens,
     };
   }
@@ -216,13 +241,19 @@ export function loadClaudeBridgeConfig(): ClaudeBridgeConfig {
   const lineBudget = safeParseInt(env["CLAUDE_MEMORY_LINE_BUDGET"], 200);
   let memoryFilePath = "";
   if (enabled && projectPath) {
-    const safePath = projectPath.replace(/[/\\]/g, "-").replace(/^-/, "");
+    // Claude Code stores MEMORY.md at
+    //   ~/.claude/projects/<slug>/MEMORY.md
+    // where <slug> is the project path with `/` and `\` swapped for `-`.
+    // The leading `-` from an absolute POSIX path is preserved (Claude
+    // Code keeps it; stripping it produced a slug Claude never reads).
+    // There's also no `memory/` subdirectory — the file sits directly
+    // under the slug dir.
+    const safePath = projectPath.replace(/[/\\]/g, "-");
     memoryFilePath = join(
       homedir(),
       ".claude",
       "projects",
       safePath,
-      "memory",
       "MEMORY.md",
     );
   }
@@ -236,6 +267,38 @@ export function loadTeamConfig(): TeamConfig | null {
   if (!teamId || !userId) return null;
   const mode = env["TEAM_MODE"] === "shared" ? "shared" : "private";
   return { teamId, userId, mode };
+}
+
+// optional AGENT_ID env for multi-agent memory isolation.
+// Returns null when unset so memory stays unscoped (legacy behavior).
+// Trimmed + length-capped to keep KV writes well-formed.
+//
+// Filtering is gated by AGENTMEMORY_AGENT_SCOPE:
+//   "shared"   (default) — tag everything, do not filter recall paths
+//   "isolated"           — tag everything AND filter recall paths
+export function loadAgentScope(): {
+  agentId: string;
+  mode: "shared" | "isolated";
+} | null {
+  const env = getMergedEnv();
+  const raw = env["AGENT_ID"];
+  if (!raw) return null;
+  const agentId = raw.trim().slice(0, 128);
+  if (!agentId) return null;
+  const mode = env["AGENTMEMORY_AGENT_SCOPE"] === "isolated"
+    ? "isolated"
+    : "shared";
+  return { agentId, mode };
+}
+
+export function getAgentId(): string | undefined {
+  return loadAgentScope()?.agentId;
+}
+
+// True only when AGENT_ID is set AND scope=isolated. Recall paths
+// consult this to decide whether to filter.
+export function isAgentScopeIsolated(): boolean {
+  return loadAgentScope()?.mode === "isolated";
 }
 
 export function loadSnapshotConfig(): {

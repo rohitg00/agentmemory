@@ -37,6 +37,7 @@ import {
   getSearchIndex,
   setVectorIndex,
   setEmbeddingProvider,
+  setIndexPersistence,
 } from "./functions/search.js";
 import { registerContextFunction } from "./functions/context.js";
 import { registerSummarizeFunction } from "./functions/summarize.js";
@@ -97,6 +98,33 @@ import { registerHealthMonitor } from "./health/monitor.js";
 import { initMetrics, OTEL_CONFIG } from "./telemetry/setup.js";
 import { VERSION } from "./version.js";
 import { bootLog } from "./logger.js";
+import { mkdirSync, writeFileSync, unlinkSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { homedir } from "node:os";
+
+// #640 + #474: the worker process (this file) is spawned by iii-exec
+// inside the engine. When `agentmemory stop` kills only the engine pid,
+// this worker can survive (detached spawn, signal not propagated, or a
+// wrapper script keeps it running) and reconnects to the next engine as
+// a duplicate worker. Write the worker pid alongside iii.pid so
+// `agentmemory stop` can reap us too.
+function workerPidfilePath(): string {
+  return join(homedir(), ".agentmemory", "worker.pid");
+}
+function writeWorkerPidfile(): void {
+  try {
+    const p = workerPidfilePath();
+    mkdirSync(dirname(p), { recursive: true });
+    writeFileSync(p, `${process.pid}\n`, { encoding: "utf-8" });
+  } catch {
+    // best-effort; stop still has the engine pidfile + port scan fallback
+  }
+}
+function clearWorkerPidfile(): void {
+  try {
+    unlinkSync(workerPidfilePath());
+  } catch {}
+}
 
 function hasGetMeter(
   sdk: unknown,
@@ -184,6 +212,8 @@ async function main() {
       framework: "iii-sdk",
     },
   });
+
+  writeWorkerPidfile();
 
   const kv = new StateKV(sdk);
   const secret = getEnvVar("AGENTMEMORY_SECRET");
@@ -344,6 +374,11 @@ async function main() {
   const healthMonitor = registerHealthMonitor(sdk, kv);
 
   const indexPersistence = new IndexPersistence(kv, bm25Index, vectorIndex);
+  // Wire the persistence hook so delete paths can flush BM25/vector
+  // index mutations to disk. Without this, an in-memory remove can be
+  // lost across a hard process exit and the persisted snapshot
+  // restores the deleted entry at next boot.
+  setIndexPersistence(indexPersistence);
 
   const loaded = await indexPersistence.load().catch((err) => {
     console.warn(`[agentmemory] Failed to load persisted index:`, err);
@@ -447,7 +482,7 @@ async function main() {
         if (bm25Index.has(memory.id)) continue;
         bm25Index.add({
           id: memory.id,
-          sessionId: memory.sessionIds[0] ?? "memory",
+          sessionId: memory.sessionIds?.[0] ?? "memory",
           timestamp: memory.createdAt,
           type: "decision",
           title: memory.title,
@@ -548,6 +583,7 @@ async function main() {
       console.warn(`[agentmemory] Failed to save index on shutdown:`, err);
     });
     await sdk.shutdown();
+    clearWorkerPidfile();
     process.exit(0);
   };
   process.on("SIGINT", shutdown);
