@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { basename } from "node:path";
 
 //#region src/hooks/_project.ts
@@ -7,19 +7,69 @@ function resolveProject(cwd) {
 	const explicit = process.env["AGENTMEMORY_PROJECT_NAME"];
 	if (explicit && explicit.trim()) return explicit.trim();
 	const dir = cwd && cwd.trim() ? cwd : process.cwd();
+	const remote = readGitConfig(dir, "remote.origin.url");
+	if (remote) {
+		const canonical = canonicalizeRemoteUrl(remote);
+		if (canonical) return canonical;
+	}
+	const top = readGitToplevel(dir);
+	if (top) return basename(top);
+	return basename(dir);
+}
+function readGitConfig(cwd, key) {
 	try {
-		const top = execSync("git rev-parse --show-toplevel", {
-			cwd: dir,
+		return execFileSync("git", [
+			"config",
+			"--get",
+			key
+		], {
+			cwd,
 			stdio: [
 				"ignore",
 				"pipe",
 				"ignore"
 			],
 			timeout: 500
-		}).toString().trim();
-		if (top) return basename(top);
-	} catch {}
-	return basename(dir);
+		}).toString().trim() || void 0;
+	} catch {
+		return;
+	}
+}
+function readGitToplevel(cwd) {
+	try {
+		return execFileSync("git", ["rev-parse", "--show-toplevel"], {
+			cwd,
+			stdio: [
+				"ignore",
+				"pipe",
+				"ignore"
+			],
+			timeout: 500
+		}).toString().trim() || void 0;
+	} catch {
+		return;
+	}
+}
+function canonicalizeRemoteUrl(raw) {
+	const url = raw.trim();
+	if (!url) return void 0;
+	let host;
+	let path;
+	const scp = url.match(/^[^@\s/:]+@([^:\s/[\]]+):(.+)$/);
+	if (scp && !url.includes("://")) {
+		host = scp[1];
+		path = scp[2];
+	} else try {
+		const u = new URL(url);
+		host = u.hostname;
+		path = u.pathname;
+	} catch {
+		return;
+	}
+	if (!host || !path) return void 0;
+	path = path.replace(/^\/+/, "").replace(/\/+$/, "").replace(/\.git$/i, "");
+	if (!path) return void 0;
+	return `${host}/${path}`.toLowerCase();
 }
 
 //#endregion

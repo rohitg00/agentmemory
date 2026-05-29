@@ -1,11 +1,6 @@
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { basename } from "node:path";
 
-// Resolution order:
-//   AGENTMEMORY_PROJECT_NAME env
-//   → canonical remote.origin.url (host/owner/repo, normalized)
-//   → git toplevel basename
-//   → cwd basename
 export function resolveProject(cwd?: string): string {
   const explicit = process.env["AGENTMEMORY_PROJECT_NAME"];
   if (explicit && explicit.trim()) return explicit.trim();
@@ -25,7 +20,7 @@ export function resolveProject(cwd?: string): string {
 
 function readGitConfig(cwd: string, key: string): string | undefined {
   try {
-    const out = execSync(`git config --get ${key}`, {
+    const out = execFileSync("git", ["config", "--get", key], {
       cwd,
       stdio: ["ignore", "pipe", "ignore"],
       timeout: 500,
@@ -40,7 +35,7 @@ function readGitConfig(cwd: string, key: string): string | undefined {
 
 function readGitToplevel(cwd: string): string | undefined {
   try {
-    const out = execSync("git rev-parse --show-toplevel", {
+    const out = execFileSync("git", ["rev-parse", "--show-toplevel"], {
       cwd,
       stdio: ["ignore", "pipe", "ignore"],
       timeout: 500,
@@ -60,7 +55,7 @@ function canonicalizeRemoteUrl(raw: string): string | undefined {
   let host: string | undefined;
   let path: string | undefined;
 
-  // SCP-style SSH: user@host:path  (no scheme)
+  // URL parser doesn't recognize SCP-style (user@host:path); match it first.
   const scp = url.match(/^[^@\s/:]+@([^:\s/[\]]+):(.+)$/);
   if (scp && !url.includes("://")) {
     host = scp[1];
