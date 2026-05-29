@@ -61,6 +61,14 @@ setBootVerbose(IS_VERBOSE);
 
 const IS_RESET = args.includes("--reset");
 
+// --version / -V early exit. Print VERSION + exit before any side effects
+// (engine boot, env load, dir mkdir). `-v` is taken by --verbose so we
+// reserve `-V` (capital) for version per POSIX convention.
+if (args.includes("--version") || args.includes("-V")) {
+  process.stdout.write(`${VERSION}\n`);
+  process.exit(0);
+}
+
 // Pinned iii-engine version. The unpinned `install.iii.dev/iii/main/install.sh`
 // script tracks `latest`, which made every fresh agentmemory install pull
 // engine 0.11.6 — and 0.11.6 introduces a new sandbox-everything-via-
@@ -367,19 +375,28 @@ function iiiBinVersion(binPath: string): string | null {
   }
 }
 
-let warnedVersionMismatch = false;
-function warnIfEngineVersionMismatch(iiiBinPath: string | null | undefined): void {
-  if (!iiiBinPath || warnedVersionMismatch) return;
+// Enforce hard-pin on iii-engine version. Soft-warn lets the worker boot
+// against a mismatched engine and crash at runtime (state::list-not-found
+// on v0.13.0+, sandbox-everything trap on v0.11.6+). Refuse to start and
+// point the user at the downgrade command — same escape hatch as before
+// via AGENTMEMORY_III_VERSION, which redefines IIPINNED_VERSION upstream
+// (line 75) so the mismatch check passes for users who knowingly want to
+// run against a different engine.
+function enforceEngineVersionPin(iiiBinPath: string | null | undefined): void {
+  if (!iiiBinPath) return;
   const detected = iiiBinVersion(iiiBinPath);
   if (!detected || detected === IIPINNED_VERSION) return;
-  warnedVersionMismatch = true;
   const asset = iiiReleaseAsset();
   const downloadHint = asset
     ? `curl -fsSL https://github.com/iii-hq/iii/releases/download/iii/v${IIPINNED_VERSION}/${asset} | tar -xz -C ~/.local/bin`
     : `download v${IIPINNED_VERSION} from https://github.com/iii-hq/iii/releases/tag/iii%2Fv${IIPINNED_VERSION}`;
-  p.log.warn(
-    `iii-engine on PATH is v${detected} but agentmemory v${VERSION} pins v${IIPINNED_VERSION}. Set AGENTMEMORY_III_VERSION=${detected} to silence, or downgrade with: \`${downloadHint}\``,
+  p.log.error(
+    `iii-engine on PATH is v${detected} but agentmemory v${VERSION} hard-pins v${IIPINNED_VERSION}. ` +
+      `Engine API drift causes runtime failures (e.g. state::list-not-found on v0.13.0). ` +
+      `Downgrade with: \`${downloadHint}\`. ` +
+      `Or set AGENTMEMORY_III_VERSION=${detected} to override at your own risk.`,
   );
+  process.exit(1);
 }
 
 function enginePidfilePath(): string {
@@ -753,7 +770,7 @@ function spawnEngineBackground(
 }
 
 function startIiiBin(iiiBin: string, configPath: string): boolean {
-  warnIfEngineVersionMismatch(iiiBin);
+  enforceEngineVersionPin(iiiBin);
   const s = p.spinner();
   s.start(`Starting iii-engine: ${iiiBin}`);
   writeEngineState({ kind: "native", configPath });
@@ -1044,7 +1061,7 @@ async function main() {
     if (IS_VERBOSE) p.log.success("iii-engine is running");
     const attachedBin =
       whichBinary("iii") ?? fallbackIiiPaths().find((p) => existsSync(p)) ?? null;
-    warnIfEngineVersionMismatch(attachedBin);
+    enforceEngineVersionPin(attachedBin);
     adoptRunningEngine();
     await import("./index.js");
     if (await waitForAgentmemoryReady(15000)) {

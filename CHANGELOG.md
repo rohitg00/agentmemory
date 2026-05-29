@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.9.24] — 2026-05-29
+
+Hotfix on top of v0.9.23. Two bugs surfaced in the first hour after v0.9.23 hit npm:
+
+### Fixed
+
+- **`agentmemory --version` silently launched the server instead of printing the version string**. `-v` flag was reserved by `--verbose`, and no `--version` literal was handled — falling through to the default `start` command. Now `--version` (and `-V` capital, per POSIX convention) prints `VERSION` and exits 0 before any side effects (engine boot, dir mkdir, env loading).
+- **iii-engine version pin was warn-only, not enforced**. When the engine on `PATH` didn't match agentmemory's pinned version (currently `v0.11.2`), the worker still booted against the mismatched engine and crashed at runtime with cryptic `state::list not found` (v0.13.0) or sandbox-everything traps (v0.11.6). `warnIfEngineVersionMismatch` renamed to `enforceEngineVersionPin` — now `p.log.error`s with the downgrade command and `process.exit(1)`. Override escape hatch via `AGENTMEMORY_III_VERSION=<version>` env unchanged (already redefines `IIPINNED_VERSION` upstream so the comparison passes for users who knowingly run against a different engine).
+
+[0.9.24]: https://github.com/rohitg00/agentmemory/compare/v0.9.23...v0.9.24
+
 ## [0.9.23] — 2026-05-28
 
 Bug-fix + integration wave. GitHub Copilot CLI joins the supported agent matrix with plugin + hooks + MCP coverage. Three silent DX bugs fixed end-to-end: graph extraction never fired on session end, `agentmemory status` reported zero memories, consolidation defaulted off even with an LLM provider configured. Five additional adapters and a clearer local-LLM story for Ollama / LM Studio users. `agentmemory connect` now points users at `npx skills add` for the native-skills install path (50+ agents).
