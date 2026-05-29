@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { execSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { resolveProject } from "../src/hooks/_project.js";
 
 describe("resolveProject — hook project resolver", () => {
@@ -46,25 +46,25 @@ describe("resolveProject — hook project resolver", () => {
   it("ignores empty env override", () => {
     process.env.AGENTMEMORY_PROJECT_NAME = "   ";
     const dir = tmpGitRepoNoRemote("emptyenv-projx");
-    expect(resolveProject(dir)).toBe(dir.split("/").pop());
+    expect(resolveProject(dir)).toBe(basename(dir));
   });
 
   it("returns git toplevel basename when repo has no remote", () => {
     const dir = tmpGitRepoNoRemote("noremote");
-    expect(resolveProject(dir)).toBe(dir.split("/").pop());
+    expect(resolveProject(dir)).toBe(basename(dir));
   });
 
   it("returns git toplevel basename from a nested subdir when no remote", () => {
     const dir = tmpGitRepoNoRemote("nested-noremote");
     const nested = join(dir, "src", "hooks");
     mkdirSync(nested, { recursive: true });
-    expect(resolveProject(nested)).toBe(dir.split("/").pop());
+    expect(resolveProject(nested)).toBe(basename(dir));
   });
 
   it("falls back to basename(cwd) when not in a git repo", () => {
     const dir = mkdtempSync(join(tmpdir(), "amem-noproj-"));
     scratch.push(dir);
-    expect(resolveProject(dir)).toBe(dir.split("/").pop());
+    expect(resolveProject(dir)).toBe(basename(dir));
   });
 
   it("defaults to process.cwd() when no cwd argument given", () => {

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { execSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { resolveProject } from "../src/hooks/_project.js";
 
 function makeRepo(dir: string, remoteUrl?: string) {
@@ -94,14 +94,14 @@ describe("resolveProject — canonical remote URL", () => {
     const dir = mkdtempSync(join(tmpdir(), "amem-noremote-myproj-"));
     scratch.push(dir);
     makeRepo(dir);
-    expect(resolveProject(dir)).toBe(dir.split("/").pop());
+    expect(resolveProject(dir)).toBe(basename(dir));
   });
 
   it("falls back to toplevel basename when remote URL is unparseable", () => {
     const dir = mkdtempSync(join(tmpdir(), "amem-badremote-fallback-"));
     scratch.push(dir);
     makeRepo(dir, "not-a-url");
-    expect(resolveProject(dir)).toBe(dir.split("/").pop());
+    expect(resolveProject(dir)).toBe(basename(dir));
   });
 
   it("resolves remote URL from a nested subdirectory", () => {
