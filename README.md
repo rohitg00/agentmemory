@@ -109,15 +109,17 @@ Full options at [Quick Start](#quick-start) below. Agent-specific wiring at [Wor
 
 ### Nix
 
-For users who already use Nix with flakes, the project provides a dev shell for reproducible development:
+For users who already use Nix with flakes:
 
 ```bash
-# Enter the dev shell
-nix develop github:levonk/agentmemory
+# Run directly from the latest source
+nix run github:levonk/agentmemory
 
-# Build the project
-npm install --legacy-peer-deps
-npm run build
+# Build locally
+nix build github:levonk/agentmemory
+
+# Enter the dev shell for development
+nix develop github:levonk/agentmemory
 ```
 
 ### Devbox
