@@ -26,7 +26,11 @@ export function registerDiskSizeManager(sdk: ISdk, kv: StateKV): void {
         await kv.set<StateScope[typeof DISK_SIZE_KEY]>(KV.state, DISK_SIZE_KEY, newTotal);
 
         if (data.deltaBytes > 0 && newTotal > getMaxBytes()) {
-          sdk.triggerVoid("mem::image-quota-cleanup", {});
+          sdk.trigger({
+            function_id: "mem::image-quota-cleanup",
+            payload: {},
+            action: { type: "void" },
+          });
           logger.info("Disk quota exceeded, cleanup triggered", {
             currentBytes: newTotal,
             maxBytes: getMaxBytes(),

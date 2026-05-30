@@ -11,15 +11,15 @@ import { readFileSync } from "node:fs";
 describe("api::session::end → event::session::stopped (#666)", () => {
   const api = readFileSync("src/triggers/api.ts", "utf-8");
 
-  it("api::session::end calls sdk.triggerVoid('event::session::stopped') after kv.update", () => {
+  it("api::session::end calls sdk.trigger('event::session::stopped') after kv.update", () => {
     expect(api).toMatch(
-      /api::session::end[\s\S]*?kv\.update\(KV\.sessions[\s\S]*?triggerVoid\("event::session::stopped"/,
+      /api::session::end[\s\S]*?kv\.update\(KV\.sessions[\s\S]*?sdk\.trigger\(\s*\{\s*function_id:\s*"event::session::stopped"/,
     );
   });
 
-  it("triggerVoid payload includes sessionId", () => {
+  it("trigger payload includes sessionId", () => {
     expect(api).toMatch(
-      /triggerVoid\("event::session::stopped",\s*\{\s*sessionId\s*\}/,
+      /function_id:\s*"event::session::stopped"[\s\S]*?payload:\s*\{\s*sessionId\s*\}/,
     );
   });
 });

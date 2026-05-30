@@ -75,7 +75,11 @@ export function registerImageQuotaCleanup(sdk: ISdk, kv: StateKV): void {
 
             const { deletedBytes } = await deleteImage(f.filePath);
             if (deletedBytes > 0) {
-              sdk.triggerVoid("mem::disk-size-delta", { deltaBytes: -deletedBytes });
+              sdk.trigger({
+                function_id: "mem::disk-size-delta",
+                payload: { deltaBytes: -deletedBytes },
+                action: { type: "void" },
+              });
               totalToFree -= deletedBytes;
               freedBytes += deletedBytes;
               evicted++;
