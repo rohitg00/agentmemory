@@ -55,7 +55,7 @@ export function Features({ hooks, mcpTools, restEndpoints }: Props) {
       unit: "EXTRACTION",
       title: "KNOWLEDGE GRAPH",
       text:
-        "Entities and relations extracted on compress. Query with /agentmemory/graph. Visualize in the viewer. Temporal edges supported.",
+        "Entities and relations extract after Stop / SessionEnd. /session/end fans out the stopped lifecycle, and the viewer can backfill with /agentmemory/graph/build.",
     },
     {
       k: "MESH",
