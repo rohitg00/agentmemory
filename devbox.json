@@ -1,0 +1,18 @@
+{
+  "$schema": "https://raw.githubusercontent.com/jetify-com/devbox/0.12.0/.schema/devbox.schema.json",
+  "packages": [
+    "nodejs_22",
+    "npm"
+  ],
+  "shell": {
+    "init_hook": [
+      "echo 'Welcome to the agentmemory devbox environment!'"
+    ],
+    "scripts": {
+      "install": "npm install",
+      "build": "npm run build",
+      "test": "npm test",
+      "dev": "npm run dev"
+    }
+  }
+}

@@ -107,6 +107,40 @@ Heads-up — npx caches per version. If a bare `npx @agentmemory/agentmemory` se
 
 Full options at [Quick Start](#quick-start) below. Agent-specific wiring at [Works with every agent](#works-with-every-agent).
 
+### Nix
+
+For users who already use Nix with flakes, the project provides a dev shell for reproducible development:
+
+```bash
+# Enter the dev shell
+nix develop github:levonk/agentmemory
+
+# Build the project
+npm install --legacy-peer-deps
+npm run build
+```
+
+### Devbox
+
+For reproducible development environments, use Devbox:
+
+```bash
+# Install devbox first (if not already installed)
+curl -fsSL https://get.jetify.dev/devbox | bash
+
+# Initialize the environment
+devbox shell
+
+# Build the project
+devbox run build
+```
+
+Or install devbox via Homebrew:
+
+```bash
+brew install jetify-com/devbox/devbox
+```
+
 ---
 
 <h2 id="works-with-every-agent"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/section-agents.svg"><img src="assets/tags/section-agents.svg" alt="Works with every agent" height="32" /></picture></h2>
