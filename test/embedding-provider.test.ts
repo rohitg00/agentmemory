@@ -1,4 +1,33 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+
+// Isolate from the on-disk ~/.agentmemory/.env file. The providers resolve
+// keys through config's getEnvVar/detectEmbeddingProvider, which call the
+// internal getMergedEnv() -> loadEnvFile() and re-read that file every call.
+// A live Voyage/OpenAI-compat key (and OPENAI_EMBEDDING_MODEL /
+// OPENAI_EMBEDDING_DIMENSIONS) would otherwise leak in and break the
+// "returns null when no API keys" and default-dimension assertions.
+// Re-implement only the two env-reading exports so they see process.env
+// alone (equivalent to loadEnvFile() returning {}); keep everything else
+// original.
+vi.mock("../src/config.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/config.js")>();
+  const getEnvVar = (key: string): string | undefined => process.env[key];
+  const detectEmbeddingProvider = (
+    env?: Record<string, string>,
+  ): string | null => {
+    const source = env ?? (process.env as Record<string, string>);
+    const forced = source["EMBEDDING_PROVIDER"];
+    if (forced) return forced;
+    if (source["GEMINI_API_KEY"]) return "gemini";
+    if (source["OPENAI_API_KEY"]) return "openai";
+    if (source["VOYAGE_API_KEY"]) return "voyage";
+    if (source["COHERE_API_KEY"]) return "cohere";
+    if (source["OPENROUTER_API_KEY"]) return "openrouter";
+    return null;
+  };
+  return { ...actual, getEnvVar, detectEmbeddingProvider };
+});
+
 import {
   createEmbeddingProvider,
   withDimensionGuard,
