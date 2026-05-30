@@ -170,6 +170,46 @@ describe("handleToolCall", () => {
     expect(fetchTrap).not.toHaveBeenCalled();
   });
 
+  describe("memory_save project scoping", () => {
+    const original = process.env.AGENTMEMORY_PROJECT_NAME;
+    beforeEach(() => {
+      process.env.AGENTMEMORY_PROJECT_NAME = "test-proj";
+    });
+    afterEach(() => {
+      if (original === undefined) delete process.env.AGENTMEMORY_PROJECT_NAME;
+      else process.env.AGENTMEMORY_PROJECT_NAME = original;
+    });
+
+    it("defaults project to the current project when none is given", async () => {
+      const kv = new InMemoryKV();
+      await handleToolCall("memory_save", { content: "scoped by default" }, kv);
+      const [mem] = await kv.list<Record<string, unknown>>("mem:memories");
+      expect(mem.project).toBe("test-proj");
+    });
+
+    it("stores unscoped (no project) when scope is global", async () => {
+      const kv = new InMemoryKV();
+      await handleToolCall(
+        "memory_save",
+        { content: "cross-project fact", scope: "global" },
+        kv,
+      );
+      const [mem] = await kv.list<Record<string, unknown>>("mem:memories");
+      expect(mem.project).toBeUndefined();
+    });
+
+    it("an explicit project always wins over the default and scope", async () => {
+      const kv = new InMemoryKV();
+      await handleToolCall(
+        "memory_save",
+        { content: "explicitly scoped", project: "other-proj", scope: "global" },
+        kv,
+      );
+      const [mem] = await kv.list<Record<string, unknown>>("mem:memories");
+      expect(mem.project).toBe("other-proj");
+    });
+  });
+
   it("memory_save persists to disk immediately after saving", async () => {
     const kv = new InMemoryKV("/tmp/test-handle.json");
     const result = await handleToolCall(

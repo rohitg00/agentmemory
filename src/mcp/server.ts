@@ -11,6 +11,7 @@ import type {
 import { getVisibleTools } from "./tools-registry.js";
 import { timingSafeCompare } from "../auth.js";
 import { getAgentId, isAgentScopeIsolated } from "../config.js";
+import { resolveProject } from "../hooks/_project.js";
 
 type McpResponse = {
   status_code: number;
@@ -182,7 +183,13 @@ export function registerMcpEndpoints(
                 ? args.files.split(",").map((f: string) => f.trim()).filter(Boolean)
                 : [];
 
-            const project =
+            // Project resolution: an explicit project always wins. Otherwise,
+            // scope === "global" stores the memory unscoped (shared across all
+            // projects), and the default is to scope to the current project so
+            // remembered facts unify with the session's project surfaces
+            // instead of silently landing unscoped. Mirrors the session-start
+            // hook's resolveProject so both paths agree on identity.
+            const explicitProject =
               typeof args.project === "string" && args.project.trim().length > 0
                 ? args.project.trim()
                 : undefined;
@@ -190,6 +197,9 @@ export function registerMcpEndpoints(
               typeof args.agentId === "string" && args.agentId.trim().length > 0
                 ? (args.agentId as string).trim()
                 : undefined;
+            const isGlobal =
+              typeof args.scope === "string" && args.scope.trim().toLowerCase() === "global";
+            const project = explicitProject ?? (isGlobal ? undefined : resolveProject());
 
             const result = await sdk.trigger({ function_id: "mem::remember", payload: {
               content: args.content,
