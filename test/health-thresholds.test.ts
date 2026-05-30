@@ -44,7 +44,12 @@ describe("evaluateHealth memory severity", () => {
         external: 0,
       },
     });
-    const { status, alerts } = evaluateHealth(s);
+    // memory_critical now also requires a real-pressure signal (absolute RSS
+    // ceiling or low system-free RAM), not heap fullness alone. Supply a low
+    // absolute-RSS ceiling so the 1100MB RSS trips it deterministically.
+    const { status, alerts } = evaluateHealth(s, {
+      memoryCriticalRssBytes: 1024 * 1024 * 1024,
+    });
     expect(status).toBe("critical");
     expect(alerts.some((a) => a.startsWith("memory_critical_"))).toBe(true);
   });
@@ -89,8 +94,14 @@ describe("evaluateHealth memory severity", () => {
         external: 0,
       },
     });
-    const loose = evaluateHealth(s, { memoryRssFloorBytes: 10 * 1024 * 1024 });
+    // A low RSS floor makes RSS "above floor"; pair it with a low absolute-RSS
+    // ceiling so the real-pressure gate also trips and the result is critical.
+    const loose = evaluateHealth(s, {
+      memoryRssFloorBytes: 10 * 1024 * 1024,
+      memoryCriticalRssBytes: 10 * 1024 * 1024,
+    });
     expect(loose.status).toBe("critical");
+    // A high RSS floor keeps RSS below the floor, so it never reaches critical.
     const strict = evaluateHealth(s, { memoryRssFloorBytes: 1024 * 1024 * 1024 });
     expect(strict.status).toBe("healthy");
   });
