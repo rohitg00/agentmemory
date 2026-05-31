@@ -19,7 +19,6 @@ describe("loadSystemdCredentials", () => {
       if (!(k in savedEnv)) delete process.env[k];
     }
     Object.assign(process.env, savedEnv);
-    delete process.env["CREDENTIALS_DIRECTORY"];
   });
 
   it("populates process.env from credential files and trims a trailing newline", () => {
