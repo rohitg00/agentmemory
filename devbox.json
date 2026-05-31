@@ -5,6 +5,11 @@
     "npm",
     "git"
   ],
+  "hooks": {
+    "on_create": [
+      "[ -d node_modules ] || npm install"
+    ]
+  },
   "shell": {
     "init_hook": [
       "echo 'Welcome to the agentmemory devbox environment!'"
