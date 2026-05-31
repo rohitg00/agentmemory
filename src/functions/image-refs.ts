@@ -1,4 +1,4 @@
-import type { ISdk } from "iii-sdk";
+import { TriggerAction, type ISdk } from "iii-sdk";
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { deleteImage, touchImage } from "../utils/image-store.js";
@@ -28,7 +28,7 @@ export async function decrementImageRef(kv: StateKV, sdk: ISdk, filePath: string
         sdk.trigger({
           function_id: "mem::disk-size-delta",
           payload: { deltaBytes: -deletedBytes },
-          action: { type: "void" },
+          action: TriggerAction.Void(),
         });
       }
     } else {

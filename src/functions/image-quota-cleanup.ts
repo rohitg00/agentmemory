@@ -1,4 +1,4 @@
-import type { ISdk } from "iii-sdk";
+import { TriggerAction, type ISdk } from "iii-sdk";
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { readdir, stat } from "node:fs/promises";
@@ -78,7 +78,7 @@ export function registerImageQuotaCleanup(sdk: ISdk, kv: StateKV): void {
               sdk.trigger({
                 function_id: "mem::disk-size-delta",
                 payload: { deltaBytes: -deletedBytes },
-                action: { type: "void" },
+                action: TriggerAction.Void(),
               });
               totalToFree -= deletedBytes;
               freedBytes += deletedBytes;

@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs";
 // fix the `event::session::stopped` handler in events.ts was a dead
 // subscriber — no code published `agentmemory.session.stopped`, so graph
 // nodes / lessons / crystals never materialized despite the handler
-// existing. Direct triggerVoid keeps the HTTP response fast (kv.update
+// existing. Direct trigger with void action keeps the HTTP response fast (kv.update
 // runs synchronously, downstream pipeline fan-outs without blocking).
 describe("api::session::end → event::session::stopped (#666)", () => {
   const api = readFileSync("src/triggers/api.ts", "utf-8");

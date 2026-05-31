@@ -159,7 +159,7 @@ export function registerObserveFunction(
           sdk.trigger({
             function_id: "mem::disk-size-delta",
             payload: { deltaBytes: bytesWritten },
-            action: { type: "void" },
+            action: TriggerAction.Void(),
           });
           if (process.env["AGENTMEMORY_IMAGE_EMBEDDINGS"] === "true") {
             sdk.trigger({
@@ -169,7 +169,7 @@ export function registerObserveFunction(
                 sessionId: payload.sessionId,
                 observationId: obsId,
               },
-              action: { type: "void" },
+              action: TriggerAction.Void(),
             });
           }
         }
@@ -186,7 +186,7 @@ export function registerObserveFunction(
               sdk.trigger({
                 function_id: "mem::disk-size-delta",
                 payload: { deltaBytes: -deletedBytes },
-                action: { type: "void" },
+                action: TriggerAction.Void(),
               });
             }
           }

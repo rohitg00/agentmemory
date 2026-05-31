@@ -167,8 +167,8 @@ describe("End-to-End Multimodal Flow", () => {
 describe("Disk Size Manager", () => {
   it("should increment disk size and trigger cleanup when over quota", async () => {
     const localKv = mockKV() as any;
-    const localTriggerVoid = vi.fn();
-    const localSdk = { triggerVoid: localTriggerVoid } as any;
+    const localTrigger = vi.fn();
+    const localSdk = { trigger: localTrigger } as any;
 
     let managerCallback: any = null;
     const sdkMocker = {
@@ -191,7 +191,7 @@ describe("Disk Size Manager", () => {
     expect(res2.success).toBe(true);
     expect(res2.currentTotal).toBe(3000);
 
-    expect(localTriggerVoid).not.toHaveBeenCalled();
+    expect(localTrigger).not.toHaveBeenCalled();
   });
 
   it("should trigger cleanup when total exceeds max bytes", async () => {

@@ -51,7 +51,7 @@ export function registerEventTriggers(sdk: ISdk, kv: StateKV): void {
         sdk.trigger({
           function_id: "mem::slot-reflect",
           payload: { sessionId: data.sessionId },
-          action: { type: "void" },
+          action: TriggerAction.Void(),
         });
       } catch (err) {
         logger.warn("slot-reflect trigger failed", {
@@ -70,7 +70,7 @@ export function registerEventTriggers(sdk: ISdk, kv: StateKV): void {
           sdk.trigger({
             function_id: "mem::graph-extract",
             payload: { observations: compressed },
-            action: { type: "void" },
+            action: TriggerAction.Void(),
           });
         }
       } catch (err) {

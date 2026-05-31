@@ -1,4 +1,4 @@
-import type { ISdk } from "iii-sdk";
+import { TriggerAction, type ISdk } from "iii-sdk";
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { getMaxBytes } from "../utils/image-store.js";
@@ -29,7 +29,11 @@ export function registerDiskSizeManager(sdk: ISdk, kv: StateKV): void {
           sdk.trigger({
             function_id: "mem::image-quota-cleanup",
             payload: {},
-            action: { type: "void" },
+            action: TriggerAction.Void(),
+          }).catch((err) => {
+            logger.error("Failed to trigger image-quota-cleanup", {
+              error: err instanceof Error ? err.message : String(err),
+            });
           });
           logger.info("Disk quota exceeded, cleanup triggered", {
             currentBytes: newTotal,
