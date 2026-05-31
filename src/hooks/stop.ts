@@ -46,12 +46,17 @@ async function main() {
     signal: AbortSignal.timeout(120000),
   }).catch(() => {});
 
-  fetch(`${REST_URL}/agentmemory/session/end`, {
-    method: "POST",
-    headers: authHeaders(),
-    body: JSON.stringify({ sessionId }),
-    signal: AbortSignal.timeout(5000),
-  }).catch(() => {});
+  // TODO(codex-session-end): Codex does not fire a separate SessionEnd event,
+  // so its Stop hook was the only signal to close the session lifecycle.
+  // We removed the /session/end call here because Claude Code (and other agents)
+  // fire Stop after every assistant turn, causing premature session completion.
+  // Re-add once a reliable Codex identifier is available in the hook payload.
+  // fetch(`${REST_URL}/agentmemory/session/end`, {
+  //   method: "POST",
+  //   headers: authHeaders(),
+  //   body: JSON.stringify({ sessionId }),
+  //   signal: AbortSignal.timeout(5000),
+  // }).catch(() => {});
 
   setTimeout(() => process.exit(0), 1500).unref();
 }
