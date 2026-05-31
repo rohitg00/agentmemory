@@ -7,7 +7,7 @@
   ],
   "hooks": {
     "on_create": [
-      "[ -d node_modules ] || npm install"
+      "[ -d node_modules ] || npm install --legacy-peer-deps"
     ]
   },
   "shell": {
@@ -15,7 +15,7 @@
       "echo 'Welcome to the agentmemory devbox environment!'"
     ],
     "scripts": {
-      "install": "npm install",
+      "install": "npm install --legacy-peer-deps",
       "build": "npm run build",
       "test": "npm test",
       "dev": "npm run dev"

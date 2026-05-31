@@ -133,6 +133,9 @@ curl -fsSL https://get.jetify.dev/devbox | bash
 # Initialize the environment
 devbox shell
 
+# Install dependencies
+devbox run install
+
 # Build the project
 devbox run build
 ```
