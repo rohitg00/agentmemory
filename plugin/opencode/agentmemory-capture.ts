@@ -168,7 +168,7 @@ function extractErrorMessage(err: unknown): string {
 }
 
 export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
-  projectPath = ctx.worktree || ctx.project?.id || process.cwd();
+  projectPath = ctx.worktree || ctx.project?.worktree || ctx.directory || process.cwd();
 
   return {
     event: async ({ event }) => {
@@ -188,13 +188,14 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
         // and another `session.created` event during the await could
         // rebind it, causing context to be cached against the wrong key.
         const sessionId = activeSessionId;
+        const sessionProject = (info?.directory as string) || projectPath;
         const startResult = await postJson("/session/start", {
           sessionId,
           title: info?.title ?? null,
           parentID: info?.parentID ?? null,
           version: info?.version ?? null,
-          project: projectPath,
-          cwd: projectPath,
+          project: sessionProject,
+          cwd: sessionProject,
         });
         // cache the context returned at session/start so the
         // chat.system.transform hook injects it without a second fetch.
