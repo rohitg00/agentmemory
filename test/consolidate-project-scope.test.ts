@@ -268,3 +268,102 @@ describe("mem::consolidate — cross-project existingMatch guard", () => {
     expect(memories[0].project).toBeUndefined();
   });
 });
+
+describe("mem::consolidate — within-run same-title dedup (issue #747)", () => {
+  async function seedGroup(
+    kv: ReturnType<typeof makeMockKV>,
+    sessionId: string,
+    concept: string,
+    count = 3,
+  ) {
+    for (let i = 0; i < count; i++) {
+      const o = makeObs(`${concept}_${i}`, sessionId, concept);
+      await kv.set(KV.observations(sessionId), o.id, o);
+    }
+  }
+
+  it("two concept groups resolving to the same title in one run yield one active memory with an intact parent chain", async () => {
+    const sdk = makeMockSdk();
+    const kv = makeMockKV();
+    // The provider returns the SAME title regardless of concept, so both
+    // concept groups synthesize a colliding title within a single run.
+    const provider = makeProvider("Shared Title");
+
+    const session = makeSession("s1", "api");
+    await kv.set(KV.sessions, session.id, session);
+    await seedGroup(kv, "s1", "auth");
+    await seedGroup(kv, "s1", "login");
+
+    registerConsolidateFunction(sdk as never, kv as never, provider as never);
+    await sdk.trigger("mem::consolidate", { project: "api", minObservations: 1 });
+
+    const memories = await kv.list<Memory>(KV.memories);
+
+    // Exactly one active memory for the colliding title (pre-fix: 2).
+    const active = memories.filter(
+      (m) => m.isLatest && m.title.toLowerCase() === "shared title",
+    );
+    expect(active).toHaveLength(1);
+
+    // Exactly one parentless root for the title (pre-fix: 2 orphaned roots).
+    const roots = memories.filter(
+      (m) => m.title.toLowerCase() === "shared title" && !m.parentId,
+    );
+    expect(roots).toHaveLength(1);
+
+    // The second group evolved the first rather than duplicating it.
+    expect(memories).toHaveLength(2);
+    const superseded = memories.find((m) => !m.isLatest);
+    expect(superseded).toBeDefined();
+    expect(active[0].parentId).toBe(superseded!.id);
+    expect(active[0].supersedes).toContain(superseded!.id);
+    expect(active[0].version).toBe(2);
+
+    // No orphans: every non-latest memory has exactly one successor.
+    const nonLatest = memories.filter((m) => !m.isLatest);
+    for (const old of nonLatest) {
+      const successors = memories.filter((m) => m.parentId === old.id);
+      expect(successors).toHaveLength(1);
+    }
+  });
+
+  it("three concept groups resolving to the same title in one run still yield exactly one active memory in a linear chain", async () => {
+    const sdk = makeMockSdk();
+    const kv = makeMockKV();
+    const provider = makeProvider("Shared Title");
+
+    const session = makeSession("s1", "api");
+    await kv.set(KV.sessions, session.id, session);
+    await seedGroup(kv, "s1", "auth");
+    await seedGroup(kv, "s1", "login");
+    await seedGroup(kv, "s1", "session");
+
+    registerConsolidateFunction(sdk as never, kv as never, provider as never);
+    await sdk.trigger("mem::consolidate", { project: "api", minObservations: 1 });
+
+    const memories = await kv.list<Memory>(KV.memories);
+
+    // Still exactly one active memory; guards the in-place-replace subtlety
+    // (a naive append would let the 3rd group re-match a superseded row).
+    const active = memories.filter(
+      (m) => m.isLatest && m.title.toLowerCase() === "shared title",
+    );
+    expect(active).toHaveLength(1);
+
+    const roots = memories.filter(
+      (m) => m.title.toLowerCase() === "shared title" && !m.parentId,
+    );
+    expect(roots).toHaveLength(1);
+
+    // Linear chain of three versions: one root, two superseded each with
+    // exactly one successor.
+    expect(memories).toHaveLength(3);
+    expect(active[0].version).toBe(3);
+    const nonLatest = memories.filter((m) => !m.isLatest);
+    expect(nonLatest).toHaveLength(2);
+    for (const old of nonLatest) {
+      const successors = memories.filter((m) => m.parentId === old.id);
+      expect(successors).toHaveLength(1);
+    }
+  });
+});

@@ -112,9 +112,6 @@ export function registerConsolidateFunction(
 
       let consolidated = 0;
       const existingMemories = await kv.list<Memory>(KV.memories);
-      const existingTitles = new Set(
-        existingMemories.map((m) => m.title.toLowerCase()),
-      );
 
       const MAX_LLM_CALLS = 10;
       let llmCallCount = 0;
@@ -202,7 +199,15 @@ export function registerConsolidateFunction(
               newId: evolved.id,
               concept,
             });
-            existingTitles.add(evolved.title.toLowerCase());
+            // Keep the in-memory snapshot live so later concept groups in this
+            // same run see the evolved memory. Replace the matched predecessor
+            // in place rather than appending: the title match above does not
+            // filter on isLatest, so leaving the now-superseded row in the array
+            // would let a later same-title group re-match it and create a second
+            // latest memory (the duplicate/orphan bug, #747).
+            const matchIdx = existingMemories.indexOf(existingMatch);
+            if (matchIdx >= 0) existingMemories[matchIdx] = evolved;
+            else existingMemories.push(evolved);
             consolidated++;
           } else {
             const memory: Memory = {
@@ -220,7 +225,10 @@ export function registerConsolidateFunction(
               action: "create_memory",
               concept,
             });
-            existingTitles.add(memory.title.toLowerCase());
+            // Keep the in-memory snapshot live so a later concept group in this
+            // same run that synthesizes the same title evolves this memory
+            // instead of creating a duplicate (#747).
+            existingMemories.push(memory);
             consolidated++;
           }
         } catch (err) {
