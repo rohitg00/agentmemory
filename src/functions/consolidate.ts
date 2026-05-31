@@ -62,6 +62,25 @@ function parseMemoryXml(
   };
 }
 
+/**
+ * Mirrors a freshly written memory into the in-run snapshot so later concept
+ * groups dedup against it. A superseded predecessor is replaced in place rather
+ * than appended: the dedup match keys on title alone, so a lingering superseded
+ * row would be re-matched by a later same-title group and spawn a second latest
+ * memory (#747).
+ */
+function reflectMemoryInSnapshot(
+  snapshot: Memory[],
+  memory: Memory,
+  supersededMemory?: Memory,
+): void {
+  const supersededIdx = supersededMemory
+    ? snapshot.indexOf(supersededMemory)
+    : -1;
+  if (supersededIdx >= 0) snapshot[supersededIdx] = memory;
+  else snapshot.push(memory);
+}
+
 export function registerConsolidateFunction(
   sdk: ISdk,
   kv: StateKV,
@@ -199,15 +218,7 @@ export function registerConsolidateFunction(
               newId: evolved.id,
               concept,
             });
-            // Keep the in-memory snapshot live so later concept groups in this
-            // same run see the evolved memory. Replace the matched predecessor
-            // in place rather than appending: the title match above does not
-            // filter on isLatest, so leaving the now-superseded row in the array
-            // would let a later same-title group re-match it and create a second
-            // latest memory (the duplicate/orphan bug, #747).
-            const matchIdx = existingMemories.indexOf(existingMatch);
-            if (matchIdx >= 0) existingMemories[matchIdx] = evolved;
-            else existingMemories.push(evolved);
+            reflectMemoryInSnapshot(existingMemories, evolved, existingMatch);
             consolidated++;
           } else {
             const memory: Memory = {
@@ -225,10 +236,7 @@ export function registerConsolidateFunction(
               action: "create_memory",
               concept,
             });
-            // Keep the in-memory snapshot live so a later concept group in this
-            // same run that synthesizes the same title evolves this memory
-            // instead of creating a duplicate (#747).
-            existingMemories.push(memory);
+            reflectMemoryInSnapshot(existingMemories, memory);
             consolidated++;
           }
         } catch (err) {
