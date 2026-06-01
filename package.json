@@ -59,10 +59,10 @@
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.142",
-    "@anthropic-ai/sdk": "^0.93.0",
+    "@anthropic-ai/sdk": "^0.100.1",
     "@clack/prompts": "^1.2.0",
     "dotenv": "^17.4.2",
-    "iii-sdk": "0.11.2",
+    "iii-sdk": "0.17.0",
     "zod": "^4.0.0"
   },
   "optionalDependencies": {
@@ -74,7 +74,7 @@
   },
   "devDependencies": {
     "@types/node": "^25.7.0",
-    "tsdown": "^0.20.3",
+    "tsdown": "^0.22.1",
     "tsx": "^4.19.0",
     "typescript": "^6.0.3",
     "vitest": "^4.1.6"
