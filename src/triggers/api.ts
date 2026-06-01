@@ -1,4 +1,4 @@
-import type { ISdk, ApiRequest } from "iii-sdk";
+import { TriggerAction, type ISdk, type ApiRequest } from "iii-sdk";
 import type { Session, CompressedObservation, HookPayload, CommitLink } from "../types.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
 import { KV } from "../state/schema.js";
@@ -613,9 +613,13 @@ export function registerApiTriggers(
       ]);
       // Fan out session-stopped lifecycle (non-blocking).
       try {
-        sdk.triggerVoid("event::session::stopped", { sessionId });
+        sdk.trigger({
+          function_id: "event::session::stopped",
+          payload: { sessionId },
+          action: TriggerAction.Void(),
+        });
       } catch (err) {
-        logger.warn("event::session::stopped triggerVoid failed", {
+        logger.warn("event::session::stopped trigger failed", {
           sessionId,
           error: err instanceof Error ? err.message : String(err),
         });
