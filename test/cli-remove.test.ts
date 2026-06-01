@@ -115,7 +115,7 @@ describe("buildRemovePlan", () => {
       ctx({ localBinIiiVersion: "9.9.9" }),
       { force: false, keepData: false },
     );
-    const item = plan.find((p) => p.id === "local-bin-iii")!;
+    const item = plan.find((p) => p.id === "legacy-local-bin-iii")!;
     expect(item.applicable).toBe(true);
     expect(item.alwaysAsk).toBe(true);
   });
@@ -126,7 +126,7 @@ describe("buildRemovePlan", () => {
       ctx({ localBinIiiVersion: "0.11.2" }),
       { force: false, keepData: false },
     );
-    const item = plan.find((p) => p.id === "local-bin-iii")!;
+    const item = plan.find((p) => p.id === "legacy-local-bin-iii")!;
     expect(item.applicable).toBe(true);
     expect(item.alwaysAsk).toBe(false);
     expect(item.description).toContain("matches pinned");
@@ -134,7 +134,18 @@ describe("buildRemovePlan", () => {
 
   it("local-bin/iii absent: no plan entry created", () => {
     const plan = buildRemovePlan(ctx(), { force: false, keepData: false });
-    expect(plan.find((p) => p.id === "local-bin-iii")).toBeUndefined();
+    expect(plan.find((p) => p.id === "legacy-local-bin-iii")).toBeUndefined();
+    expect(plan.find((p) => p.id === "private-bin-iii")).toBeUndefined();
+  });
+
+  it("private ~/.agentmemory/bin/iii is removed without prompt", () => {
+    touch(".agentmemory/bin/iii", "fakebin");
+    const plan = buildRemovePlan(ctx(), { force: false, keepData: false });
+    const item = plan.find((p) => p.id === "private-bin-iii")!;
+    expect(item).toBeDefined();
+    expect(item.applicable).toBe(true);
+    expect(item.alwaysAsk).toBe(false);
+    expect(item.description).toContain("private install");
   });
 });
 

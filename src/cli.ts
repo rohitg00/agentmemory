@@ -347,18 +347,45 @@ function whichBinary(name: string): string | null {
   }
 }
 
+// Private install location agentmemory manages itself. Sits under the
+// agentmemory state dir (~/.agentmemory/bin) so the pinned engine stays
+// isolated from a user-managed iii on PATH or in ~/.local/bin. #752: a
+// fresh box with iii 0.16.1 already on PATH refused to boot because the
+// hard-pin enforcer told users to overwrite their global install with
+// v0.11.2. Private install resolves the conflict without touching their
+// existing iii.
+function agentmemoryBinDir(): string {
+  if (IS_WINDOWS) {
+    const userProfile = process.env["USERPROFILE"];
+    if (!userProfile) return join(homedir(), ".agentmemory", "bin");
+    return join(userProfile, ".agentmemory", "bin");
+  }
+  return join(homedir(), ".agentmemory", "bin");
+}
+
+function privateIiiPath(): string {
+  return join(agentmemoryBinDir(), IS_WINDOWS ? "iii.exe" : "iii");
+}
+
 function fallbackIiiPaths(): string[] {
   if (IS_WINDOWS) {
     const userProfile = process.env["USERPROFILE"];
-    if (!userProfile) return [];
-    return [
-      join(userProfile, ".local", "bin", "iii.exe"),
-      join(userProfile, "bin", "iii.exe"),
-    ];
+    const paths = [privateIiiPath()];
+    if (userProfile) {
+      paths.push(
+        join(userProfile, ".local", "bin", "iii.exe"),
+        join(userProfile, "bin", "iii.exe"),
+      );
+    }
+    return paths;
   }
   const home = process.env["HOME"];
-  if (!home) return ["/usr/local/bin/iii"];
-  return [join(home, ".local", "bin", "iii"), "/usr/local/bin/iii"];
+  const paths = [privateIiiPath()];
+  if (home) {
+    paths.push(join(home, ".local", "bin", "iii"));
+  }
+  paths.push("/usr/local/bin/iii");
+  return paths;
 }
 
 function iiiBinVersion(binPath: string): string | null {
@@ -375,28 +402,37 @@ function iiiBinVersion(binPath: string): string | null {
   }
 }
 
-// Enforce hard-pin on iii-engine version. Soft-warn lets the worker boot
-// against a mismatched engine and crash at runtime (state::list-not-found
-// on v0.13.0+, sandbox-everything trap on v0.11.6+). Refuse to start and
-// point the user at the downgrade command — same escape hatch as before
-// via AGENTMEMORY_III_VERSION, which redefines IIPINNED_VERSION upstream
-// (line 75) so the mismatch check passes for users who knowingly want to
-// run against a different engine.
-function enforceEngineVersionPin(iiiBinPath: string | null | undefined): void {
-  if (!iiiBinPath) return;
+// Resolve a compatible iii binary for the pinned engine version.
+//
+// Soft-warn lets the worker boot against a mismatched engine and crash at
+// runtime (state::list-not-found on v0.13.0+, sandbox-everything trap on
+// v0.11.6+). Hard-pin without a fallback leaves the user stuck — they
+// either downgrade their global iii (breaking other consumers) or set
+// AGENTMEMORY_III_VERSION and hope it works.
+//
+// Instead: when the candidate iii on PATH is the wrong version, prefer
+// the private install under ~/.agentmemory/bin/iii. If the private copy
+// is missing or also mismatched, the caller installs the pinned version
+// there before retrying. AGENTMEMORY_III_VERSION still overrides
+// IIPINNED_VERSION upstream so users who knowingly want a different
+// engine can opt in.
+function resolveCompatibleIii(iiiBinPath: string | null | undefined): string | null {
+  if (!iiiBinPath) return null;
   const detected = iiiBinVersion(iiiBinPath);
-  if (!detected || detected === IIPINNED_VERSION) return;
-  const asset = iiiReleaseAsset();
-  const downloadHint = asset
-    ? `curl -fsSL https://github.com/iii-hq/iii/releases/download/iii/v${IIPINNED_VERSION}/${asset} | tar -xz -C ~/.local/bin`
-    : `download v${IIPINNED_VERSION} from https://github.com/iii-hq/iii/releases/tag/iii%2Fv${IIPINNED_VERSION}`;
-  p.log.error(
-    `iii-engine on PATH is v${detected} but agentmemory v${VERSION} hard-pins v${IIPINNED_VERSION}. ` +
-      `Engine API drift causes runtime failures (e.g. state::list-not-found on v0.13.0). ` +
-      `Downgrade with: \`${downloadHint}\`. ` +
-      `Or set AGENTMEMORY_III_VERSION=${detected} to override at your own risk.`,
-  );
-  process.exit(1);
+  if (!detected || detected === IIPINNED_VERSION) return iiiBinPath;
+
+  const privatePath = privateIiiPath();
+  if (iiiBinPath !== privatePath && existsSync(privatePath)) {
+    const privateVersion = iiiBinVersion(privatePath);
+    if (privateVersion === IIPINNED_VERSION) {
+      vlog(
+        `PATH iii v${detected} mismatches pin v${IIPINNED_VERSION}; using private install at ${privatePath}.`,
+      );
+      return privatePath;
+    }
+  }
+
+  return null;
 }
 
 function enginePidfilePath(): string {
@@ -687,8 +723,8 @@ async function runIiiInstaller(): Promise<{ ok: boolean; binPath: string | null 
     return { ok: false, binPath: null };
   }
 
-  const binDir = join(homedir(), ".local", "bin");
-  const binPath = join(binDir, "iii");
+  const binDir = agentmemoryBinDir();
+  const binPath = privateIiiPath();
   const installCmd = [
     `mkdir -p "${binDir}"`,
     `curl -fsSL "${releaseUrl}" | tar -xz -C "${binDir}"`,
@@ -770,7 +806,6 @@ function spawnEngineBackground(
 }
 
 function startIiiBin(iiiBin: string, configPath: string): boolean {
-  enforceEngineVersionPin(iiiBin);
   const s = p.spinner();
   s.start(`Starting iii-engine: ${iiiBin}`);
   writeEngineState({ kind: "native", configPath });
@@ -779,25 +814,48 @@ function startIiiBin(iiiBin: string, configPath: string): boolean {
   return true;
 }
 
+// Find a pinned-compatible iii path from a list of candidates. Returns
+// the first candidate whose --version matches the pin, OR returns the
+// private install path if it exists and matches, OR null if no candidate
+// is compatible. Caller (startEngine) auto-installs the pin to the
+// private path when this returns null.
+function pickCompatibleIii(candidates: Array<string | null | undefined>): string | null {
+  for (const c of candidates) {
+    if (!c) continue;
+    const resolved = resolveCompatibleIii(c);
+    if (resolved) return resolved;
+  }
+  return null;
+}
+
 async function startEngine(): Promise<boolean> {
   const configPath = findIiiConfig();
-  let iiiBin = whichBinary("iii");
-  vlog(`iii binary: ${iiiBin ?? "(not on PATH)"}, config: ${configPath || "(not found)"}`);
+  const pathIii = whichBinary("iii");
+  vlog(`iii binary: ${pathIii ?? "(not on PATH)"}, config: ${configPath || "(not found)"}`);
 
-  if (iiiBin && configPath) return startIiiBin(iiiBin, configPath);
-
-  for (const iiiPath of fallbackIiiPaths()) {
-    if (existsSync(iiiPath)) {
-      const v = iiiBinVersion(iiiPath);
-      vlog(`fallback iii at ${iiiPath} reports version: ${v ?? "unknown"}`);
-      p.log.info(`Found iii at: ${iiiPath}${v ? ` (v${v})` : ""}`);
-      process.env["PATH"] = `${dirname(iiiPath)}${PATH_DELIMITER}${process.env["PATH"] ?? ""}`;
-      iiiBin = iiiPath;
-      break;
-    }
+  const fallbacks = fallbackIiiPaths().filter((p) => existsSync(p));
+  for (const f of fallbacks) {
+    const v = iiiBinVersion(f);
+    vlog(`fallback iii at ${f} reports version: ${v ?? "unknown"}`);
   }
 
-  if (iiiBin && configPath) return startIiiBin(iiiBin, configPath);
+  let iiiBin = pickCompatibleIii([pathIii, ...fallbacks]);
+
+  if (iiiBin && configPath) {
+    if (iiiBin !== pathIii) {
+      p.log.info(`Using iii at: ${iiiBin} (v${IIPINNED_VERSION})`);
+      process.env["PATH"] = `${dirname(iiiBin)}${PATH_DELIMITER}${process.env["PATH"] ?? ""}`;
+    }
+    return startIiiBin(iiiBin, configPath);
+  }
+
+  if (pathIii && !iiiBin) {
+    const detected = iiiBinVersion(pathIii);
+    vlog(
+      `iii on PATH is v${detected ?? "unknown"}, pin is v${IIPINNED_VERSION}. ` +
+        `Will install pinned engine to ${privateIiiPath()}.`,
+    );
+  }
 
   if (!configPath) {
     startupFailure = { kind: "no-engine" };
@@ -822,8 +880,20 @@ async function startEngine(): Promise<boolean> {
   type Choice = "install" | "docker" | "manual";
   let choice: Choice;
 
+  // Wrong-version iii on PATH is a configuration trap: any prompt would
+  // confuse the user since they already "have iii installed". Skip the
+  // prompt and auto-install pinned engine to the private location.
+  const pathIiiMismatch = pathIii !== null && resolveCompatibleIii(pathIii) === null;
+
   if (dockerOptIn && dockerBin && composeFile) {
     choice = "docker";
+  } else if (pathIiiMismatch) {
+    choice = "install";
+    const detected = iiiBinVersion(pathIii!);
+    p.log.info(
+      `iii on PATH is v${detected ?? "unknown"} but agentmemory pins v${IIPINNED_VERSION}. ` +
+        `Installing pinned engine to ~/.agentmemory/bin (leaves your existing iii untouched).`,
+    );
   } else if (!interactive) {
     choice = "install";
     p.log.info("Non-interactive environment detected — auto-installing iii-engine.");
@@ -832,7 +902,7 @@ async function startEngine(): Promise<boolean> {
     const options: { value: Choice; label: string; hint?: string }[] = [
       {
         value: "install",
-        label: `Install iii v${IIPINNED_VERSION} to ~/.local/bin (~6MB, ~5s)`,
+        label: `Install iii v${IIPINNED_VERSION} to ~/.agentmemory/bin (~6MB, ~5s)`,
         hint: "recommended",
       },
     ];
@@ -932,7 +1002,7 @@ function installInstructions(): string[] {
     ];
   }
   const linuxInstall = releaseUrl
-    ? `  A) curl -fsSL "${releaseUrl}" | tar -xz -C ~/.local/bin && chmod +x ~/.local/bin/iii`
+    ? `  A) mkdir -p ~/.agentmemory/bin && curl -fsSL "${releaseUrl}" | tar -xz -C ~/.agentmemory/bin && chmod +x ~/.agentmemory/bin/iii`
     : `  A) Manual download: https://github.com/iii-hq/iii/releases/tag/iii%2Fv${IIPINNED_VERSION}`;
   return [
     `agentmemory needs iii-engine v${IIPINNED_VERSION}. Pick one:`,
@@ -1061,7 +1131,20 @@ async function main() {
     if (IS_VERBOSE) p.log.success("iii-engine is running");
     const attachedBin =
       whichBinary("iii") ?? fallbackIiiPaths().find((p) => existsSync(p)) ?? null;
-    enforceEngineVersionPin(attachedBin);
+    if (attachedBin) {
+      const detected = iiiBinVersion(attachedBin);
+      if (detected && detected !== IIPINNED_VERSION) {
+        p.log.error(
+          `Attached iii-engine appears to be v${detected} (from ${attachedBin}) ` +
+            `but agentmemory v${VERSION} hard-pins v${IIPINNED_VERSION}. ` +
+            `Engine API drift causes runtime failures (e.g. state::list-not-found on v0.13.0+). ` +
+            `Stop the running engine (\`agentmemory stop --force\`) and re-run \`agentmemory\` ` +
+            `to install the pinned engine into ~/.agentmemory/bin without touching ${attachedBin}. ` +
+            `Or set AGENTMEMORY_III_VERSION=${detected} to override at your own risk.`,
+        );
+        process.exit(1);
+      }
+    }
     adoptRunningEngine();
     await import("./index.js");
     if (await waitForAgentmemoryReady(15000)) {
@@ -1345,7 +1428,7 @@ function buildDoctorEffects(): DoctorEffects {
       return pidAlive(pid);
     },
     findIiiBinary: () => whichBinary("iii"),
-    localBinIiiPath: () => join(homedir(), ".local", "bin", IS_WINDOWS ? "iii.exe" : "iii"),
+    localBinIiiPath: () => privateIiiPath(),
     iiiBinaryVersion: (binPath: string) => iiiBinVersion(binPath),
     viewerReachable: async (timeoutMs = 2000) => {
       try {
