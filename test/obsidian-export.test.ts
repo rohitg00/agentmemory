@@ -297,4 +297,27 @@ describe("Obsidian Export", () => {
     expect(result.success).toBe(true);
     expect(result.errors).toBeUndefined();
   });
+
+  it("skips malformed records without ids instead of failing the export", async () => {
+    await kv.set("mem:memories", "orphan-memory", { ...makeMemory("mem_missing"), id: undefined } as any);
+    await kv.set("mem:lessons", "orphan-lesson", { ...makeLesson("lsn_missing"), id: undefined } as any);
+    await kv.set("mem:crystals", "orphan-crystal", { ...makeCrystal("crys_missing"), id: undefined } as any);
+    await kv.set("mem:sessions", "orphan-session", { ...makeSession("ses_missing"), id: undefined } as any);
+    await kv.set("mem:sessions", "valid-session", makeSession("ses_valid"));
+
+    const result = (await sdk.trigger("mem::obsidian-export", {})) as {
+      success: boolean;
+      exported: Record<string, number>;
+      errors?: unknown[];
+    };
+
+    expect(result.success).toBe(true);
+    expect(result.exported.memories).toBe(0);
+    expect(result.exported.lessons).toBe(0);
+    expect(result.exported.crystals).toBe(0);
+    expect(result.exported.sessions).toBe(1);
+    expect(result.errors).toBeUndefined();
+    expect([...writtenFiles.keys()].some((path) => path.includes("undefined.md"))).toBe(false);
+    expect([...writtenFiles.keys()].some((path) => path.includes("sessions/ses_valid.md"))).toBe(true);
+  });
 });
