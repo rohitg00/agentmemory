@@ -45,6 +45,14 @@ export function registerEventTriggers(sdk: ISdk, kv: StateKV): void {
   });
 
   sdk.registerFunction("event::session::stopped", async (data: { sessionId: string }) => {
+    // Check if session exists before attempting to summarize
+    const session = await kv.get(KV.sessions, data.sessionId);
+    if (!session) {
+      logger.info("Skipping summarize for non-existent session", { sessionId: data.sessionId });
+      return { success: false, error: "session_not_found" };
+    }
+    
+    // Only summarize if session exists
     const summary = await sdk.trigger({ function_id: "mem::summarize", payload: data });
     if (isReflectEnabled()) {
       try {
