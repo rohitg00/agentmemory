@@ -27,6 +27,7 @@ async function post(path: string, body: Record<string, unknown>, timeoutMs = 500
   }
 }
 
+/** POST JSON to the agentmemory daemon and parse the JSON response. Returns null on failure. */
 async function postJson(path: string, body: Record<string, unknown>): Promise<unknown | null> {
   try {
     const res = await fetch(`${API}/agentmemory${path}`, {
@@ -167,6 +168,14 @@ function extractErrorMessage(err: unknown): string {
   return String(err ?? "");
 }
 
+/**
+ * Agentmemory capture plugin for OpenCode.
+ *
+ * Captures session events (session.created, tool.use, etc.) and forwards them
+ * to the agentmemory daemon for persistent memory storage. The plugin determines
+ * the project path from the workspace context at init time, with per-session
+ * override from the `session.created` event's directory field.
+ */
 export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
   projectPath = ctx.worktree || ctx.project?.worktree || ctx.directory || process.cwd();
 
@@ -188,7 +197,13 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
         // and another `session.created` event during the await could
         // rebind it, causing context to be cached against the wrong key.
         const sessionId = activeSessionId;
-        const sessionProject = (info?.directory as string) || projectPath;
+        // Use session-specific directory if available and valid;
+        // fall back to the init-time projectPath otherwise.
+        // Runtime validation (typeof + length) avoids sending invalid
+        // values to the /session/start backend.
+        const sessionProject = (typeof info?.directory === 'string' && info.directory.length > 0) 
+          ? info.directory 
+          : projectPath;
         const startResult = await postJson("/session/start", {
           sessionId,
           title: info?.title ?? null,
