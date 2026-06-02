@@ -268,6 +268,7 @@ export interface CompactSearchResult {
   type: ObservationType;
   score: number;
   timestamp: string;
+  tier?: "observation";
 }
 
 export interface CompactLessonResult {
@@ -278,6 +279,18 @@ export interface CompactLessonResult {
   createdAt: string;
   project?: string;
   tags: string[];
+}
+
+export type HighOrderTier = "semantic" | "procedural" | "crystal" | "insight";
+
+export interface CompactHighOrderResult {
+  id: string;
+  tier: HighOrderTier;
+  content: string;
+  score: number;
+  confidence: number;
+  project?: string;
+  createdAt: string;
 }
 
 export interface TimelineEntry {
@@ -457,6 +470,8 @@ export interface SemanticMemory {
   strength: number;
   createdAt: string;
   updatedAt: string;
+  embedding?: string;
+  embeddingModel?: string;
 }
 
 export interface ProceduralMemory {
@@ -473,6 +488,8 @@ export interface ProceduralMemory {
   strength: number;
   createdAt: string;
   updatedAt: string;
+  embedding?: string;
+  embeddingModel?: string;
 }
 
 export interface TeamConfig {
@@ -744,6 +761,8 @@ export interface Crystal {
   sessionId?: string;
   project?: string;
   createdAt: string;
+  embedding?: string;
+  embeddingModel?: string;
 }
 
 export interface Lesson {
@@ -782,6 +801,8 @@ export interface Insight {
   lastDecayedAt?: string;
   decayRate: number;
   deleted?: boolean;
+  embedding?: string;
+  embeddingModel?: string;
 }
 
 export interface DiagnosticCheck {

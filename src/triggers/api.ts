@@ -1107,7 +1107,19 @@ export function registerApiTriggers(
           body: { error: "query or expandIds is required" },
         };
       }
-      const result = await sdk.trigger({ function_id: "mem::smart-search", payload: req.body });
+      const body = req.body as Record<string, unknown>;
+      const result = await sdk.trigger({
+        function_id: "mem::smart-search",
+        payload: {
+          ...(body.query !== undefined && { query: body.query }),
+          ...(body.expandIds !== undefined && { expandIds: body.expandIds }),
+          ...(body.limit !== undefined && { limit: body.limit }),
+          ...(body.project !== undefined && { project: body.project }),
+          ...(body.includeLessons !== undefined && { includeLessons: body.includeLessons }),
+          ...(body.includeHighOrder !== undefined && { includeHighOrder: body.includeHighOrder }),
+          ...(body.agentId !== undefined && { agentId: body.agentId }),
+        },
+      });
       return { status_code: 200, body: result };
     },
   );
@@ -1115,6 +1127,20 @@ export function registerApiTriggers(
     type: "http",
     function_id: "api::smart-search",
     config: { api_path: "/agentmemory/smart-search", http_method: "POST" },
+  });
+
+  sdk.registerFunction("api::backfill-high-order", 
+    async (req: ApiRequest): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const result = await sdk.trigger({ function_id: "mem::backfill-embeddings::high-order", payload: {} });
+      return { status_code: 200, body: result };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::backfill-high-order",
+    config: { api_path: "/agentmemory/backfill/high-order", http_method: "POST" },
   });
 
   sdk.registerFunction("api::timeline", 

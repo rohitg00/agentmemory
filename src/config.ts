@@ -375,6 +375,20 @@ export function getConsolidationDecayDays(): number {
   return safeParseInt(getMergedEnv()["CONSOLIDATION_DECAY_DAYS"], 30);
 }
 
+export function isHighOrderSearchEnabled(): boolean {
+  const env = getMergedEnv();
+  const explicit = env["AGENTMEMORY_HIGH_ORDER_SEARCH"];
+  if (explicit === "false" || explicit === "0") return false;
+  if (explicit === "true" || explicit === "1") return true;
+  return isConsolidationEnabled();
+}
+
+export function getHighOrderConfidenceFloor(): number {
+  const env = getMergedEnv();
+  const raw = parseFloat(env["AGENTMEMORY_SMART_SEARCH_CONFIDENCE_FLOOR"] || "0.3");
+  return Number.isFinite(raw) && raw >= 0 && raw <= 1 ? raw : 0.3;
+}
+
 export function isStandaloneMcp(): boolean {
   return getMergedEnv()["STANDALONE_MCP"] === "true";
 }

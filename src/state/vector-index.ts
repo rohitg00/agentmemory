@@ -5,13 +5,13 @@
 // pool. Same risk on the encode side if the input Float32Array is itself
 // a sliced view. Reported as a phantom "2048 dimensions on disk" crash
 // in #455 / #469 / #584 / #587.
-function float32ToBase64(arr: Float32Array): string {
+export function float32ToBase64(arr: Float32Array): string {
   return Buffer.from(arr.buffer, arr.byteOffset, arr.byteLength).toString(
     "base64",
   );
 }
 
-function base64ToFloat32(b64: string): Float32Array {
+export function base64ToFloat32(b64: string): Float32Array {
   const buf = Buffer.from(b64, "base64");
   return new Float32Array(
     buf.buffer,

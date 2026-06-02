@@ -1,15 +1,21 @@
 import type { ISdk } from "iii-sdk";
 import type {
+  CompactHighOrderResult,
   CompactLessonResult,
   CompactSearchResult,
   CompressedObservation,
+  Crystal,
   HybridSearchResult,
+  Insight,
   Lesson,
+  ProceduralMemory,
+  SemanticMemory,
 } from "../types.js";
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { recordAccessBatch } from "./access-tracker.js";
-import { getAgentId, isAgentScopeIsolated } from "../config.js";
+import { getAgentId, isAgentScopeIsolated, isHighOrderSearchEnabled, getHighOrderConfidenceFloor } from "../config.js";
+import { searchHighOrderTiers } from "./high-order-search.js";
 import { logger } from "../logger.js";
 
 // Compact mode trims each lesson's content for at-a-glance display. The
@@ -28,9 +34,7 @@ export function registerSmartSearchFunction(
       limit?: number;
       project?: string;
       includeLessons?: boolean;
-      // optional per-call agent filter for runtimes routing many
-      // roles through one server. "*" opts out of the env-default
-      // scope and returns hits from every agent.
+      includeHighOrder?: boolean;
       agentId?: string;
     }) => {
 
@@ -57,6 +61,27 @@ export function registerSmartSearchFunction(
           return null;
         }).filter((item): item is NonNullable<typeof item> => item !== null);
 
+        const highOrderItems: Array<{ tier: string; id: string; data: unknown }> = [];
+        const obsItems: typeof items = [];
+
+        for (const item of items) {
+          if (item.obsId.startsWith("sem_")) {
+            const entry = await kv.get<SemanticMemory>(KV.semantic, item.obsId).catch(() => null);
+            if (entry) highOrderItems.push({ tier: "semantic", id: entry.id, data: entry });
+          } else if (item.obsId.startsWith("proc_") || item.obsId.startsWith("skill_")) {
+            const entry = await kv.get<ProceduralMemory>(KV.procedural, item.obsId).catch(() => null);
+            if (entry) highOrderItems.push({ tier: "procedural", id: entry.id, data: entry });
+          } else if (item.obsId.startsWith("crys_")) {
+            const entry = await kv.get<Crystal>(KV.crystals, item.obsId).catch(() => null);
+            if (entry) highOrderItems.push({ tier: "crystal", id: entry.id, data: entry });
+          } else if (item.obsId.startsWith("ins_")) {
+            const entry = await kv.get<Insight>(KV.insights, item.obsId).catch(() => null);
+            if (entry && !entry.deleted) highOrderItems.push({ tier: "insight", id: entry.id, data: entry });
+          } else {
+            obsItems.push(item);
+          }
+        }
+
         const expanded: Array<{
           obsId: string;
           sessionId: string;
@@ -64,7 +89,7 @@ export function registerSmartSearchFunction(
         }> = [];
 
         const results = await Promise.all(
-          items.map(({ obsId, sessionId }) =>
+          obsItems.map(({ obsId, sessionId }) =>
             findObservation(kv, obsId, sessionId).then((obs) =>
               obs ? { obsId, sessionId: obs.sessionId, observation: obs } : null,
             ),
@@ -87,11 +112,12 @@ export function registerSmartSearchFunction(
         logger.info("Smart search expanded", {
           requested: data.expandIds.length,
           attempted: raw.length,
-          returned: scoped.length,
+          returned: scoped.length + highOrderItems.length,
           filteredOutOfScope: expanded.length - scoped.length,
+          highOrderExpanded: highOrderItems.length,
           truncated,
         });
-        return { mode: "expanded", results: scoped, truncated };
+        return { mode: "expanded", results: scoped, highOrder: highOrderItems, truncated };
       }
 
       if (!data.query || typeof data.query !== "string" || !data.query.trim()) {
@@ -99,27 +125,38 @@ export function registerSmartSearchFunction(
       }
 
       const limit = Math.max(1, Math.min(data.limit ?? 20, 100));
-      // Lesson recall stays capped: lessons are denser than raw
-      // observations so 10 covers most recall flows.
       const lessonLimit = Math.min(limit, 10);
       const includeLessons = data.includeLessons !== false;
 
-      // Over-fetch when filtering. Hybrid search can't filter on
-      // agentId (BM25/vector indexes don't carry it), so we ask the
-      // searcher for more hits than we need and trim post-filter. 3×
-      // is a defensible middle ground: enough headroom for a small
-      // workload, capped at 300 so a 100-limit request never asks for
-      // thousands of hits.
+      const includeHighOrder = data.includeHighOrder !== false
+        && isHighOrderSearchEnabled()
+        && !filterAgentId;
+
       const overFetchLimit = filterAgentId
         ? Math.min(limit * 3, 300)
         : limit;
 
-      const [hybridResults, lessons] = await Promise.all([
+      const [hybridResults, lessons, highOrderResponse] = await Promise.all([
         searchFn(data.query, overFetchLimit),
         includeLessons
           ? recallLessons(sdk, data.query, lessonLimit, data.project)
           : Promise.resolve([]),
+        includeHighOrder
+          ? searchHighOrderTiers(kv, data.query, {
+              confidenceFloor: getHighOrderConfidenceFloor(),
+              project: data.project,
+              limit: Math.min(limit, 20),
+            })
+          : Promise.resolve({ results: [], needsBackfill: false }),
       ]);
+
+      const highOrderResults = Array.isArray(highOrderResponse) ? highOrderResponse : highOrderResponse.results;
+      const needsBackfill = Array.isArray(highOrderResponse) ? false : highOrderResponse.needsBackfill;
+
+      if (needsBackfill) {
+        // Trigger background backfill fire-and-forget
+        sdk.trigger({ function_id: "mem::backfill-embeddings::high-order", payload: {} }).catch(() => {});
+      }
 
       const filteredHybrid = filterAgentId
         ? hybridResults
@@ -145,13 +182,18 @@ export function registerSmartSearchFunction(
         query: data.query,
         results: compact.length,
         lessons: lessons.length,
+        highOrder: highOrderResults.length,
       });
       const response: {
         mode: "compact";
         results: CompactSearchResult[];
         lessons?: CompactLessonResult[];
+        highOrder?: CompactHighOrderResult[];
       } = { mode: "compact", results: compact };
       if (includeLessons) response.lessons = lessons;
+      if (includeHighOrder && highOrderResults.length > 0) {
+        response.highOrder = highOrderResults;
+      }
       return response;
     },
   );

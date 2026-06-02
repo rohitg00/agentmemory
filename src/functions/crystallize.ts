@@ -3,6 +3,10 @@ import type { StateKV } from "../state/kv.js";
 import { KV, generateId } from "../state/schema.js";
 import type { Action, ActionEdge, Crystal, MemoryProvider } from "../types.js";
 
+import { getEmbeddingProvider } from "./search.js";
+import { float32ToBase64 } from "../state/vector-index.js";
+import { logger } from "../logger.js";
+
 interface CrystalDigest {
   narrative: string;
   keyOutcomes: string[];
@@ -52,6 +56,7 @@ export function registerCrystallizeFunction(
       );
 
       const prompt = buildChainText(actions, relevantEdges);
+      const ep = getEmbeddingProvider();
 
       try {
         const response = await provider.summarize(CRYSTALLIZE_SYSTEM, prompt);
@@ -68,6 +73,16 @@ export function registerCrystallizeFunction(
           project: data.project,
           createdAt: new Date().toISOString(),
         };
+
+        if (ep) {
+          try {
+            const text = `${crystal.narrative} ${crystal.lessons.join(" ")}`;
+            crystal.embedding = float32ToBase64(await ep.embed(text));
+            crystal.embeddingModel = ep.name;
+          } catch (e) {
+            logger.warn("Failed to embed new crystal", { error: String(e) });
+          }
+        }
 
         await kv.set(KV.crystals, crystal.id, crystal);
 

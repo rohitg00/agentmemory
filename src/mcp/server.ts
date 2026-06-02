@@ -269,6 +269,7 @@ export function registerMcpEndpoints(
                 query: args.query,
                 expandIds,
                 limit,
+                includeHighOrder: args.includeHighOrder !== "false",
               },
             });
             return {
