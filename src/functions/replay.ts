@@ -406,7 +406,10 @@ export function registerReplayFunctions(sdk: ISdk, kv: StateKV): void {
           if (!existing.firstPrompt && firstPrompt) {
             existing.firstPrompt = firstPrompt;
           }
-          await kv.set(KV.sessions, existing.id, existing);
+          // Re-key on parsed.sessionId (the key we fetched with), not existing.id:
+          // a stored record missing `id` makes existing.id undefined, which drops the
+          // `key` from the state::set payload and aborts the entire import.
+          await kv.set(KV.sessions, parsed.sessionId, existing);
         } else {
           const session: Session = {
             id: parsed.sessionId,
