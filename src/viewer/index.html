@@ -829,6 +829,44 @@
       justify-content: flex-end;
       gap: 8px;
     }
+    .toast-region {
+      position: fixed;
+      right: 18px;
+      bottom: 18px;
+      z-index: 220;
+      width: min(360px, calc(100vw - 32px));
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      pointer-events: none;
+    }
+    .toast {
+      background: var(--bg);
+      border: 2px solid var(--border);
+      border-left: 4px solid var(--accent);
+      box-shadow: 5px 5px 0px 0px var(--border);
+      padding: 12px 14px;
+      color: var(--ink);
+      font-family: var(--font-ui);
+      pointer-events: auto;
+    }
+    .toast-title {
+      margin-bottom: 4px;
+      color: var(--accent);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+    .toast-message {
+      color: var(--ink-muted);
+      font-size: 12px;
+      line-height: 1.45;
+      word-break: break-word;
+    }
+    @media (max-width: 480px) {
+      .toast-region { left: 12px; right: 12px; bottom: 12px; width: auto; }
+    }
     .selected-node-info {
       margin-top: 16px;
       padding-top: 16px;
@@ -980,6 +1018,8 @@
   <div id="modal-overlay" class="modal-overlay">
     <div class="modal" id="modal"></div>
   </div>
+
+  <div id="toast-region" class="toast-region" role="status" aria-live="polite" aria-atomic="false"></div>
 
   <footer id="viewer-footer" class="viewer-footer">
     <span>agentmemory viewer · <span id="footer-version">loading...</span></span>
@@ -1162,20 +1202,63 @@
       }
     }
 
+    var API_TIMEOUT_MS = 10000;
+    var API_ERROR_TOAST_COOLDOWN_MS = 5000;
+    var lastApiErrorToastAt = 0;
+    var toastSeq = 0;
+
+    function showToast(title, message) {
+      var host = document.getElementById('toast-region');
+      if (!host) return;
+      var id = 'toast-' + (++toastSeq);
+      host.setAttribute('data-toast-id', id);
+      host.innerHTML =
+        '<div class="toast toast-error" role="alert">' +
+        '<div class="toast-title">' + esc(title) + '</div>' +
+        '<div class="toast-message">' + esc(message) + '</div>' +
+        '</div>';
+      setTimeout(function() {
+        if (host.getAttribute('data-toast-id') === id) host.innerHTML = '';
+      }, 7000);
+    }
+
+    function showApiErrorToast(path, fetchOpts, detail) {
+      var now = Date.now();
+      if (now - lastApiErrorToastAt < API_ERROR_TOAST_COOLDOWN_MS) return;
+      lastApiErrorToastAt = now;
+      var method = ((fetchOpts && fetchOpts.method) || 'GET').toUpperCase();
+      showToast('Backend API error', method + ' /agentmemory/' + path + ' - ' + detail);
+    }
+
     async function api(path, opts) {
+      var timeoutId = null;
+      var fetchOpts = null;
       try {
         var url = REST + '/agentmemory/' + path;
         var headers = Object.assign({ 'Cache-Control': 'no-cache' }, (opts && opts.headers) || {});
-        var fetchOpts = Object.assign({}, opts || {}, { headers: headers });
+        fetchOpts = Object.assign({}, opts || {}, { headers: headers });
+        if (typeof AbortController !== 'undefined') {
+          var controller = new AbortController();
+          timeoutId = setTimeout(function() { controller.abort(); }, API_TIMEOUT_MS);
+          fetchOpts.signal = controller.signal;
+        }
         var res = await fetch(url, fetchOpts);
         if (!res.ok) {
-          console.warn('[viewer] API ' + (fetchOpts.method || 'GET') + ' ' + path + ' returned ' + res.status);
+          var statusText = res.status + (res.statusText ? ' ' + res.statusText : '');
+          console.warn('[viewer] API ' + (fetchOpts.method || 'GET') + ' ' + path + ' returned ' + statusText);
+          showApiErrorToast(path, fetchOpts, 'HTTP ' + statusText);
           return null;
         }
         return await res.json();
       } catch (err) {
+        var detail = (err && err.name === 'AbortError')
+          ? 'timed out after ' + (API_TIMEOUT_MS / 1000) + 's'
+          : ((err && err.message) ? err.message : String(err || 'request failed'));
         console.warn('[viewer] API error on ' + path + ':', err);
+        showApiErrorToast(path, fetchOpts || opts || {}, detail);
         return null;
+      } finally {
+        if (timeoutId) clearTimeout(timeoutId);
       }
     }
     async function apiGet(path) { return api(path); }
@@ -1260,9 +1343,14 @@
       }
     }
 
-    async function loadDashboard() {
+    async function loadDashboard(opts) {
+      opts = opts || {};
       var el = document.getElementById('view-dashboard');
-      el.innerHTML = '<div class="loading">Loading dashboard...</div>';
+      var preserveScroll = !!opts.preserveScroll;
+      var priorScrollTop = preserveScroll ? el.scrollTop : 0;
+      if (!preserveScroll || !el.innerHTML) {
+        el.innerHTML = '<div class="loading">Loading dashboard...</div>';
+      }
       try {
         var results = await Promise.all([
           apiGet('health'),
@@ -1288,6 +1376,7 @@
         state.dashboard.relations = (results[7] && results[7].relations) || [];
         state.dashboard.loaded = true;
         renderDashboard();
+        if (preserveScroll) el.scrollTop = priorScrollTop;
       } catch (err) {
         // Without this catch, any uncaught error in the await Promise.all
         // or the renderDashboard call leaves the dashboard stuck on
@@ -1571,7 +1660,7 @@
     var dashboardTimer = null;
     function refreshDashboard() {
       state.dashboard.loaded = false;
-      loadDashboard();
+      return loadDashboard({ preserveScroll: true });
     }
     function startDashboardAutoRefresh() {
       if (dashboardTimer) clearInterval(dashboardTimer);
@@ -3388,8 +3477,7 @@
       pollTimer = setInterval(function() {
         tick++;
         if (state.activeTab === 'dashboard') {
-          state.dashboard.loaded = false;
-          loadDashboard();
+          refreshDashboard();
         } else if (state.activeTab === 'memories') {
           state.memories.loaded = false;
           loadMemories();
@@ -3553,8 +3641,7 @@
         }
       }
       if (state.activeTab === 'dashboard') {
-        state.dashboard.loaded = false;
-        loadDashboard();
+        refreshDashboard();
       }
       if (state.activeTab === 'activity' && msg.observation) {
         state.activity.observations.unshift(msg.observation);

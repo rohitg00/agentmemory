@@ -24,12 +24,22 @@ function loadViewerSandbox() {
     const attributes = new Map<string, string>();
     const classes = new Set<string>();
     const listeners = new Map<string, Array<(event?: unknown) => void>>();
+    let innerHTML = "";
     return {
       id,
-      innerHTML: "",
+      get innerHTML() {
+        return innerHTML;
+      },
+      set innerHTML(value: unknown) {
+        innerHTML = String(value ?? "");
+        if (id === "view-dashboard" && innerHTML.includes("Loading dashboard")) {
+          this.scrollTop = 0;
+        }
+      },
       textContent: "",
       value: "",
       checked: false,
+      scrollTop: 0,
       dataset: {},
       style: {},
       listeners,
@@ -184,6 +194,79 @@ describe("viewer session rendering", () => {
 
     expect(() => sandbox.renderDashboard()).not.toThrow();
     expect(getElement("view-dashboard").innerHTML).toContain("Unknown session");
+  });
+
+  it("preserves dashboard scroll position during refresh", async () => {
+    const { sandbox, getElement } = loadViewerSandbox();
+    const dashboard = getElement("view-dashboard");
+
+    sandbox.state.dashboard.loaded = true;
+    dashboard.innerHTML = "<div>existing dashboard</div>";
+    dashboard.scrollTop = 240;
+
+    await sandbox.refreshDashboard();
+
+    expect(dashboard.scrollTop).toBe(240);
+  });
+
+  it("shows a toast when a viewer API request returns an HTTP error", async () => {
+    const { sandbox, getElement } = loadViewerSandbox();
+    sandbox.fetch = async () => ({
+      ok: false,
+      status: 503,
+      statusText: "Service Unavailable",
+      json: async () => ({}),
+    });
+
+    await sandbox.apiGet("health");
+
+    const toast = getElement("toast-region").innerHTML;
+    expect(toast).toContain("Backend API error");
+    expect(toast).toContain("GET /agentmemory/health");
+    expect(toast).toContain("503 Service Unavailable");
+  });
+
+  it("shows a toast when a viewer API request cannot reach the backend", async () => {
+    const { sandbox, getElement } = loadViewerSandbox();
+    sandbox.fetch = async () => {
+      throw new Error("connect ECONNREFUSED");
+    };
+
+    await sandbox.apiGet("health");
+
+    const toast = getElement("toast-region").innerHTML;
+    expect(toast).toContain("Backend API error");
+    expect(toast).toContain("GET /agentmemory/health");
+    expect(toast).toContain("connect ECONNREFUSED");
+  });
+
+  it("shows a toast when a viewer API request times out", async () => {
+    const { sandbox, getElement } = loadViewerSandbox();
+    sandbox.AbortController = function AbortController() {
+      this.signal = { aborted: false };
+      this.abort = () => {
+        this.signal.aborted = true;
+      };
+    };
+    sandbox.setTimeout = (fn: () => void, ms?: number) => {
+      if (ms === 10000) fn();
+      return 1;
+    };
+    sandbox.fetch = async (_url: string, opts: { signal?: { aborted: boolean } }) => {
+      if (opts.signal?.aborted) {
+        const err = new Error("aborted");
+        err.name = "AbortError";
+        throw err;
+      }
+      return { ok: true, json: async () => ({}) };
+    };
+
+    await sandbox.apiGet("health");
+
+    const toast = getElement("toast-region").innerHTML;
+    expect(toast).toContain("Backend API error");
+    expect(toast).toContain("GET /agentmemory/health");
+    expect(toast).toContain("timed out after 10s");
   });
 
   it("does not throw when timeline and sessions tabs receive sessions missing ids", () => {
