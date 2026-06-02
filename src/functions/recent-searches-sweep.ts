@@ -2,7 +2,7 @@ import type { ISdk } from "iii-sdk";
 import type { StateKV } from "../state/kv.js";
 import { KV } from "../state/schema.js";
 import { logger } from "../logger.js";
-import { getFollowupStats } from "./smart-search.js";
+import { getFollowupStats, type RecentSearch } from "./smart-search.js";
 import { getFollowupWindowSeconds } from "../config.js";
 
 // #771: TTL sweep for the followup-rate diagnostic scope. `recentSearches`
@@ -10,11 +10,6 @@ import { getFollowupWindowSeconds } from "../config.js";
 // when sessions go idle. Hourly sweep deletes rows whose last update is
 // older than the retention window.
 const RETENTION_MS = 24 * 60 * 60 * 1000;
-
-interface RecentSearchRow {
-  sessionId?: string;
-  at?: number;
-}
 
 export function registerRecentSearchesSweepFunction(
   sdk: ISdk,
@@ -25,7 +20,7 @@ export function registerRecentSearchesSweepFunction(
     async (): Promise<{ success: true; swept: number; skipped: number }> => {
       const cutoff = Date.now() - RETENTION_MS;
       const rows = await kv
-        .list<RecentSearchRow>(KV.recentSearches)
+        .list<Partial<RecentSearch>>(KV.recentSearches)
         .catch(() => []);
       let swept = 0;
       let skipped = 0;

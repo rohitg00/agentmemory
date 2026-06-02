@@ -8,6 +8,7 @@ import {
   registerSmartSearchFunction,
   getFollowupStats,
   resetFollowupStatsForTests,
+  flushPendingFollowups,
 } from "../src/functions/smart-search.js";
 import { registerRecentSearchesSweepFunction } from "../src/functions/recent-searches-sweep.js";
 import { KV } from "../src/state/schema.js";
@@ -55,7 +56,12 @@ function mockSdk(kv: ReturnType<typeof mockKV>) {
         if (id === "mem::lesson-recall") return { success: true, lessons: [] };
         throw new Error(`No function: ${id}`);
       }
-      return fn(payload);
+      const result = await fn(payload);
+      // smart-search now runs followup detection off the critical
+      // response path; drain it before returning so test assertions
+      // see consistent state.
+      if (id === "mem::smart-search") await flushPendingFollowups();
+      return result;
     },
   } as any;
   void kv;
@@ -236,6 +242,29 @@ describe("Smart-search followup-rate diagnostic (#771)", () => {
     expect(result.swept).toBe(1);
     expect(await kv.get(KV.recentSearches, "ses_fresh")).not.toBeNull();
     expect(await kv.get(KV.recentSearches, "ses_stale")).toBeNull();
+  });
+
+  it("skips detection when current results are empty (retrieval failure, not reader failure)", async () => {
+    searchResults = [makeHit("obs_a"), makeHit("obs_b")];
+    await sdk.trigger("mem::smart-search", {
+      query: "first",
+      sessionId: "ses_1",
+    });
+
+    // Empty result set on the next call. Without the empty-skip guard
+    // the empty-vs-prior comparison would be vacuously "disjoint" and
+    // inflate the rate. Skip detection entirely.
+    searchResults = [];
+    await sdk.trigger("mem::smart-search", {
+      query: "second",
+      sessionId: "ses_1",
+    });
+
+    const stats = getFollowupStats();
+    // Only the first call counts as agent-initiated; the empty-result
+    // second call is skipped entirely.
+    expect(stats.agentInitiatedSearches).toBe(1);
+    expect(stats.followupWithinWindow).toBe(0);
   });
 
   it("followup-stats function returns the configured window and live counts", async () => {

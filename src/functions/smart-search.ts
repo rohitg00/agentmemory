@@ -8,6 +8,7 @@ import type {
 } from "../types.js";
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
+import { withKeyedLock } from "../state/keyed-mutex.js";
 import { recordAccessBatch } from "./access-tracker.js";
 import {
   getAgentId,
@@ -22,7 +23,7 @@ import { getCounters } from "../telemetry/setup.js";
 // search inside the window had a disjoint result set. sessionId is
 // duplicated into the row so the hourly sweep can delete by it
 // (StateKV.list returns values only).
-interface RecentSearch {
+export interface RecentSearch {
   sessionId: string;
   query: string;
   resultIds: string[];
@@ -38,6 +39,12 @@ const followupStats = {
   agentInitiatedSearches: 0,
 };
 
+// Tracks the in-flight detection promises so tests (and shutdown
+// flushes) can wait for all queued lock bodies to drain. The Set adds
+// when a detection is queued and removes when it settles; size === 0
+// means no pending detections.
+const pendingFollowups = new Set<Promise<void>>();
+
 export function getFollowupStats(): {
   followupWithinWindow: number;
   agentInitiatedSearches: number;
@@ -48,6 +55,12 @@ export function getFollowupStats(): {
     ...followupStats,
     rate: total > 0 ? followupStats.followupWithinWindow / total : 0,
   };
+}
+
+export async function flushPendingFollowups(): Promise<void> {
+  // Snapshot the current pending set; new detections queued after the
+  // snapshot run in a fresh batch.
+  await Promise.all(Array.from(pendingFollowups));
 }
 
 export function resetFollowupStatsForTests(): void {
@@ -201,20 +214,42 @@ export function registerSmartSearchFunction(
       if (
         data.sessionId &&
         typeof data.sessionId === "string" &&
-        data.source !== "viewer"
+        data.source !== "viewer" &&
+        compact.length > 0
       ) {
+        // Skip detection when retrieval returned nothing: an empty
+        // result set is a retrieval failure, not a reader-failure
+        // signal. Counting it as "disjoint from prior" would inflate
+        // the rate every time search returns no hits.
         followupStats.agentInitiatedSearches++;
-        // Awaited (not fire-and-forget) so the kv.set commits before the
-        // next smart-search call from the same session reads its prior
-        // row. Cost: one kv.get + one kv.set per agent-initiated search.
-        try {
-          await detectFollowup(kv, data.sessionId, data.query, compact);
-        } catch (err) {
-          logger.warn("Smart search followup detection failed", {
-            sessionId: data.sessionId,
-            error: err instanceof Error ? err.message : String(err),
+        // Off the critical response path. The withKeyedLock(sessionId)
+        // call serializes detection per session, so two rapid
+        // back-to-back searches from the same agent still see ordered
+        // prior-row writes — the second call's lock body queues
+        // behind the first's. Other sessions run in parallel.
+        const sessionIdForFollowup = data.sessionId;
+        const queryForFollowup = data.query;
+        const compactForFollowup = compact;
+        const detection = withKeyedLock(
+          `recent-searches:${sessionIdForFollowup}`,
+          () =>
+            detectFollowup(
+              kv,
+              sessionIdForFollowup,
+              queryForFollowup,
+              compactForFollowup,
+            ),
+        )
+          .catch((err) => {
+            logger.warn("Smart search followup detection failed", {
+              sessionId: sessionIdForFollowup,
+              error: err instanceof Error ? err.message : String(err),
+            });
+          })
+          .finally(() => {
+            pendingFollowups.delete(detection);
           });
-        }
+        pendingFollowups.add(detection);
       }
 
       logger.info("Smart search compact", {
