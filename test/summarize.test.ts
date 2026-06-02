@@ -233,7 +233,9 @@ Done.`,
 
   it("retries the final summarize call when the provider throws", async () => {
     let calls = 0;
-    const provider: MemoryProvider & { calls: any[] } = {
+    const provider: MemoryProvider & {
+      calls: Array<{ system: string; user: string }>;
+    } = {
       name: "test",
       calls: [],
       compress: async () => "",
