@@ -113,13 +113,13 @@ For users who already use Nix with flakes:
 
 ```bash
 # Run directly from the latest source
-nix run github:levonk/agentmemory
+nix run github:rohitg00/agentmemory
 
 # Build locally
-nix build github:levonk/agentmemory
+nix build github:rohitg00/agentmemory
 
 # Enter the dev shell for development
-nix develop github:levonk/agentmemory
+nix develop github:rohitg00/agentmemory
 ```
 
 ### Devbox

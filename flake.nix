@@ -28,7 +28,7 @@
 
           meta = {
             description = "Persistent memory for AI coding agents, powered by iii-engine's three primitives";
-            homepage = "https://github.com/levonk/agentmemory";
+            homepage = "https://github.com/rohitg00/agentmemory";
             license = pkgs.lib.licenses.asl20;
             mainProgram = "agentmemory";
           };
