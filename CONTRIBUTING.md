@@ -40,6 +40,15 @@ If it's a feature: describe the user problem before the implementation. "I could
 - Address review feedback in new commits (do not force-push to the same branch). Maintainers may squash on merge.
 - A maintainer will merge when tests pass, CodeRabbit is green, and any review comments are addressed.
 
+## Contributing a translation
+
+1. Copy `src/viewer/locales/en.json` to `src/viewer/locales/<lang>.json` (e.g. `fr.json`, `zh.json`, `ja.json`).
+2. Translate the values. Keep the keys, nesting, and `{placeholder}` markers identical to `en.json`.
+3. `npm test` — the structural parity test in `test/viewer-i18n.test.ts` checks that your file has every nested leaf key from `en.json`.
+4. Open a PR with `Closes` or `Refs` to any related i18n issue. Sign-off required (DCO).
+
+Missing nested keys at runtime fall back to English, so partial translations are valid — but please aim for completeness.
+
 ## Developer Certificate of Origin
 
 Every commit must carry a `Signed-off-by` trailer stating you have the right to submit the contribution under Apache-2.0. The full text of the DCO is at <https://developercertificate.org>.

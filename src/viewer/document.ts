@@ -3,10 +3,12 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   VIEWER_NONCE_PLACEHOLDER,
+  VIEWER_LOCALE_PLACEHOLDER,
   createViewerNonce,
   buildViewerCsp,
 } from "../auth.js";
 import { VERSION } from "../version.js";
+import { buildLocaleBundle, resolveViewerLanguage } from "./locales.js";
 
 const VIEWER_VERSION_PLACEHOLDER = "__AGENTMEMORY_VERSION__";
 
@@ -34,9 +36,16 @@ export function renderViewerDocument():
   }
 
   const nonce = createViewerNonce();
+  const bundle = buildLocaleBundle(resolveViewerLanguage());
+  // Escape < so a translation containing "</script" cannot break out
+  // of the inline <script>.
+  const localeJson = JSON.stringify(bundle).replace(/</g, "\\u003c");
+
   const html = template
     .replaceAll(VIEWER_NONCE_PLACEHOLDER, nonce)
-    .replaceAll(VIEWER_VERSION_PLACEHOLDER, VERSION);
+    .replaceAll(VIEWER_VERSION_PLACEHOLDER, VERSION)
+    .replaceAll(VIEWER_LOCALE_PLACEHOLDER, localeJson);
+
   return {
     found: true,
     html,
