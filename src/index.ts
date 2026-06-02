@@ -28,7 +28,11 @@ import { registerPrivacyFunction } from "./functions/privacy.js";
 import { registerObserveFunction } from "./functions/observe.js";
 import { registerImageQuotaCleanup } from "./functions/image-quota-cleanup.js";
 import { registerVisionSearchFunctions } from "./functions/vision-search.js";
-import { registerSlotsFunctions, isSlotsEnabled, isReflectEnabled } from "./functions/slots.js";
+import {
+  registerSlotsFunctions,
+  isSlotsEnabled,
+  isReflectEnabled,
+} from "./functions/slots.js";
 import { registerDiskSizeManager } from "./functions/disk-size-manager.js";
 import { registerCompressFunction } from "./functions/compress.js";
 import {
@@ -152,7 +156,9 @@ process.on("unhandledRejection", (reason) => {
   const r = reason as { code?: string; function_id?: string; message?: string };
   console.warn(
     `[agentmemory] unhandledRejection (suppressed):`,
-    r?.code ? `${r.code} ${r.function_id ?? ""} ${r.message ?? ""}`.trim() : reason,
+    r?.code
+      ? `${r.code} ${r.function_id ?? ""} ${r.message ?? ""}`.trim()
+      : reason,
   );
 });
 
@@ -171,9 +177,7 @@ async function main() {
 
   bootLog(`Starting worker v${VERSION}...`);
   bootLog(`Engine: ${config.engineUrl}`);
-  bootLog(
-    `Provider: ${config.provider.provider} (${config.provider.model})`,
-  );
+  bootLog(`Provider: ${config.provider.provider} (${config.provider.model})`);
   if (embeddingProvider) {
     bootLog(
       `Embedding provider: ${embeddingProvider.name} (${embeddingProvider.dimensions} dims)`,
@@ -186,9 +190,7 @@ async function main() {
       `Image embedding provider: ${imageEmbeddingProvider.name} (${imageEmbeddingProvider.dimensions} dims) — vision-search active`,
     );
   }
-  bootLog(
-    `REST API: http://localhost:${config.restPort}/agentmemory/*`,
-  );
+  bootLog(`REST API: http://localhost:${config.restPort}/agentmemory/*`);
   bootLog(`Streams: ws://localhost:${config.streamsPort}`);
 
   const sdk = registerWorker(config.engineUrl, {
@@ -229,147 +231,187 @@ async function main() {
     ? (sdk.getMeter.bind(sdk) as (name: string) => unknown)
     : undefined;
 
-  initMetrics(meterAccessor as ((name: string) => import("@opentelemetry/api").Meter) | undefined);
-
-  registerPrivacyFunction(sdk);
-  registerObserveFunction(sdk, kv, dedupMap, config.maxObservationsPerSession);
-  registerImageQuotaCleanup(sdk, kv);
-  registerVisionSearchFunctions(sdk, kv, imageEmbeddingProvider);
-  if (isSlotsEnabled()) {
-    registerSlotsFunctions(sdk, kv);
-  }
-  registerDiskSizeManager(sdk, kv);
-  registerCompressFunction(sdk, kv, provider, metricsStore);
-  registerSearchFunction(sdk, kv);
-  registerContextFunction(sdk, kv, config.tokenBudget);
-  registerSummarizeFunction(sdk, kv, provider, metricsStore);
-  registerMigrateFunction(sdk, kv);
-  registerFileIndexFunction(sdk, kv);
-  registerConsolidateFunction(sdk, kv, provider);
-  registerPatternsFunction(sdk, kv);
-  registerRememberFunction(sdk, kv);
-  registerEvictFunction(sdk, kv);
-
-  registerRelationsFunction(sdk, kv);
-  registerTimelineFunction(sdk, kv);
-  registerProfileFunction(sdk, kv);
-  registerAutoForgetFunction(sdk, kv);
-  registerExportImportFunction(sdk, kv);
-  registerEnrichFunction(sdk, kv);
-
-  const claudeBridgeConfig = loadClaudeBridgeConfig();
-  if (claudeBridgeConfig.enabled) {
-    registerClaudeBridgeFunction(sdk, kv, claudeBridgeConfig);
-    bootLog(
-      `Claude bridge: syncing to ${claudeBridgeConfig.memoryFilePath}`,
-    );
-  }
-
-  if (isGraphExtractionEnabled()) {
-    registerGraphFunction(sdk, kv, provider);
-    bootLog(`Knowledge graph: extraction enabled`);
-  }
-
-  registerConsolidationPipelineFunction(sdk, kv, provider);
-  bootLog(`Consolidation pipeline: registered (CONSOLIDATION_ENABLED=${isConsolidationEnabled() ? "true" : "false"})`);
-
-  if (isAutoCompressEnabled()) {
-    bootLog(
-      `WARNING: AGENTMEMORY_AUTO_COMPRESS=true — every PostToolUse observation will be sent to your LLM provider for compression. This spends API tokens proportional to your session tool-use frequency (see #138). Set AGENTMEMORY_AUTO_COMPRESS=false to disable.`,
-    );
-  } else {
-    bootLog(
-      `Auto-compress: OFF (default, #138) — observations indexed via zero-LLM synthetic compression. Set AGENTMEMORY_AUTO_COMPRESS=true to opt-in to LLM-powered summaries (uses your API key).`,
-    );
-  }
-
-  if (isContextInjectionEnabled()) {
-    bootLog(
-      `WARNING: AGENTMEMORY_INJECT_CONTEXT=true — the PreToolUse and SessionStart hooks will inject up to ~4000 chars of memory context into every tool turn. On Claude Pro this burns session tokens proportional to your tool-call frequency (see #143). Set AGENTMEMORY_INJECT_CONTEXT=false to disable.`,
-    );
-  } else {
-    bootLog(
-      `Context injection: OFF (default, #143) — hooks capture observations but do not inject context into Claude Code's conversation. Set AGENTMEMORY_INJECT_CONTEXT=true to opt-in (warning: expect your Claude Pro allocation to drain faster).`,
-    );
-  }
-
-  const teamConfig = loadTeamConfig();
-  if (teamConfig) {
-    registerTeamFunction(sdk, kv, teamConfig);
-    bootLog(
-      `Team memory: ${teamConfig.teamId} (${teamConfig.mode})`,
-    );
-  }
-
-  registerGovernanceFunction(sdk, kv);
-
-  registerActionsFunction(sdk, kv);
-  registerFrontierFunction(sdk, kv);
-  registerLeasesFunction(sdk, kv);
-  registerRoutinesFunction(sdk, kv);
-  registerSignalsFunction(sdk, kv);
-  registerCheckpointsFunction(sdk, kv);
-  registerMeshFunction(sdk, kv, secret);
-  registerBranchAwareFunction(sdk, kv);
-  registerFlowCompressFunction(sdk, kv, provider);
-  registerSentinelsFunction(sdk, kv);
-  registerSketchesFunction(sdk, kv);
-  registerCrystallizeFunction(sdk, kv, provider);
-  registerDiagnosticsFunction(sdk, kv);
-  registerFacetsFunction(sdk, kv);
-  registerVerifyFunction(sdk, kv);
-  registerLessonsFunctions(sdk, kv);
-  registerObsidianExportFunction(sdk, kv);
-  registerReflectFunctions(sdk, kv, provider);
-  registerWorkingMemoryFunctions(sdk, kv, config.tokenBudget);
-  registerSkillExtractFunctions(sdk, kv, provider);
-  registerCascadeFunction(sdk, kv);
-
-  registerSlidingWindowFunction(sdk, kv, provider);
-  registerQueryExpansionFunction(sdk, provider);
-  registerTemporalGraphFunctions(sdk, kv, provider);
-  registerRetentionFunctions(sdk, kv);
-  registerCompressFileFunction(sdk, kv, provider);
-  registerReplayFunctions(sdk, kv);
-  bootLog(
-    `v0.6 advanced retrieval: sliding-window, query-expansion, temporal-graph, retention-scoring`,
+  initMetrics(
+    meterAccessor as
+      | ((name: string) => import("@opentelemetry/api").Meter)
+      | undefined,
   );
-  bootLog(
-    `Orchestration layer: actions, frontier, leases, routines, signals, checkpoints, flow-compress, mesh, branch-aware, sentinels, sketches, crystallize, diagnostics, facets`,
-  );
-  if (isSlotsEnabled()) {
-    bootLog(
-      `Slots: enabled (pinned editable memory). Reflect on Stop hook: ${isReflectEnabled() ? "on" : "off"}`,
-    );
-  }
 
-  const snapshotConfig = loadSnapshotConfig();
-  if (snapshotConfig.enabled) {
-    registerSnapshotFunction(sdk, kv, snapshotConfig.dir);
-    bootLog(
-      `Git snapshots: ${snapshotConfig.dir} (every ${snapshotConfig.interval}s)`,
-    );
-  }
-
+  // Hoist bm25Index so IndexPersistence + restoreFrom + rebuild loop (all after the
+  // registerAllFunctions closure below) can see it. The inner declaration inside the
+  // closure shadows this but resolves to the same singleton from getSearchIndex().
   const bm25Index = getSearchIndex();
-  const graphWeight = parseFloat(getEnvVar("AGENTMEMORY_GRAPH_WEIGHT") || "0.3");
-  const hybridSearch = new HybridSearch(
-    bm25Index,
-    vectorIndex,
-    embeddingProvider,
-    kv,
-    embeddingConfig.bm25Weight,
-    embeddingConfig.vectorWeight,
-    graphWeight,
-  );
 
-  registerSmartSearchFunction(sdk, kv, (query, limit) =>
-    hybridSearch.search(query, limit),
-  );
+  // Wrap register* block in a re-runnable function so it can replay on iii reconnect.
+  // Without this, when iii restarts (and unregisters all /agentmemory/* routes during
+  // its startup cleanup), the warm AM worker stays connected but has zero registered
+  // routes — livez 404 → MCP shim falls to local-fallback mode permanently.
+  const registerAllFunctions = (): void => {
+    registerPrivacyFunction(sdk);
+    registerObserveFunction(
+      sdk,
+      kv,
+      dedupMap,
+      config.maxObservationsPerSession,
+    );
+    registerImageQuotaCleanup(sdk, kv);
+    registerVisionSearchFunctions(sdk, kv, imageEmbeddingProvider);
+    if (isSlotsEnabled()) {
+      registerSlotsFunctions(sdk, kv);
+    }
+    registerDiskSizeManager(sdk, kv);
+    registerCompressFunction(sdk, kv, provider, metricsStore);
+    registerSearchFunction(sdk, kv);
+    registerContextFunction(sdk, kv, config.tokenBudget);
+    registerSummarizeFunction(sdk, kv, provider, metricsStore);
+    registerMigrateFunction(sdk, kv);
+    registerFileIndexFunction(sdk, kv);
+    registerConsolidateFunction(sdk, kv, provider);
+    registerPatternsFunction(sdk, kv);
+    registerRememberFunction(sdk, kv);
+    registerEvictFunction(sdk, kv);
 
-  registerApiTriggers(sdk, kv, secret, metricsStore, provider);
-  registerEventTriggers(sdk, kv);
-  registerMcpEndpoints(sdk, kv, secret);
+    registerRelationsFunction(sdk, kv);
+    registerTimelineFunction(sdk, kv);
+    registerProfileFunction(sdk, kv);
+    registerAutoForgetFunction(sdk, kv);
+    registerExportImportFunction(sdk, kv);
+    registerEnrichFunction(sdk, kv);
+
+    const claudeBridgeConfig = loadClaudeBridgeConfig();
+    if (claudeBridgeConfig.enabled) {
+      registerClaudeBridgeFunction(sdk, kv, claudeBridgeConfig);
+      bootLog(`Claude bridge: syncing to ${claudeBridgeConfig.memoryFilePath}`);
+    }
+
+    if (isGraphExtractionEnabled()) {
+      registerGraphFunction(sdk, kv, provider);
+      bootLog(`Knowledge graph: extraction enabled`);
+    }
+
+    registerConsolidationPipelineFunction(sdk, kv, provider);
+    bootLog(
+      `Consolidation pipeline: registered (CONSOLIDATION_ENABLED=${isConsolidationEnabled() ? "true" : "false"})`,
+    );
+
+    if (isAutoCompressEnabled()) {
+      bootLog(
+        `WARNING: AGENTMEMORY_AUTO_COMPRESS=true — every PostToolUse observation will be sent to your LLM provider for compression. This spends API tokens proportional to your session tool-use frequency (see #138). Set AGENTMEMORY_AUTO_COMPRESS=false to disable.`,
+      );
+    } else {
+      bootLog(
+        `Auto-compress: OFF (default, #138) — observations indexed via zero-LLM synthetic compression. Set AGENTMEMORY_AUTO_COMPRESS=true to opt-in to LLM-powered summaries (uses your API key).`,
+      );
+    }
+
+    if (isContextInjectionEnabled()) {
+      bootLog(
+        `WARNING: AGENTMEMORY_INJECT_CONTEXT=true — the PreToolUse and SessionStart hooks will inject up to ~4000 chars of memory context into every tool turn. On Claude Pro this burns session tokens proportional to your tool-call frequency (see #143). Set AGENTMEMORY_INJECT_CONTEXT=false to disable.`,
+      );
+    } else {
+      bootLog(
+        `Context injection: OFF (default, #143) — hooks capture observations but do not inject context into Claude Code's conversation. Set AGENTMEMORY_INJECT_CONTEXT=true to opt-in (warning: expect your Claude Pro allocation to drain faster).`,
+      );
+    }
+
+    const teamConfig = loadTeamConfig();
+    if (teamConfig) {
+      registerTeamFunction(sdk, kv, teamConfig);
+      bootLog(`Team memory: ${teamConfig.teamId} (${teamConfig.mode})`);
+    }
+
+    registerGovernanceFunction(sdk, kv);
+
+    registerActionsFunction(sdk, kv);
+    registerFrontierFunction(sdk, kv);
+    registerLeasesFunction(sdk, kv);
+    registerRoutinesFunction(sdk, kv);
+    registerSignalsFunction(sdk, kv);
+    registerCheckpointsFunction(sdk, kv);
+    registerMeshFunction(sdk, kv, secret);
+    registerBranchAwareFunction(sdk, kv);
+    registerFlowCompressFunction(sdk, kv, provider);
+    registerSentinelsFunction(sdk, kv);
+    registerSketchesFunction(sdk, kv);
+    registerCrystallizeFunction(sdk, kv, provider);
+    registerDiagnosticsFunction(sdk, kv);
+    registerFacetsFunction(sdk, kv);
+    registerVerifyFunction(sdk, kv);
+    registerLessonsFunctions(sdk, kv);
+    registerObsidianExportFunction(sdk, kv);
+    registerReflectFunctions(sdk, kv, provider);
+    registerWorkingMemoryFunctions(sdk, kv, config.tokenBudget);
+    registerSkillExtractFunctions(sdk, kv, provider);
+    registerCascadeFunction(sdk, kv);
+
+    registerSlidingWindowFunction(sdk, kv, provider);
+    registerQueryExpansionFunction(sdk, provider);
+    registerTemporalGraphFunctions(sdk, kv, provider);
+    registerRetentionFunctions(sdk, kv);
+    registerCompressFileFunction(sdk, kv, provider);
+    registerReplayFunctions(sdk, kv);
+    bootLog(
+      `v0.6 advanced retrieval: sliding-window, query-expansion, temporal-graph, retention-scoring`,
+    );
+    bootLog(
+      `Orchestration layer: actions, frontier, leases, routines, signals, checkpoints, flow-compress, mesh, branch-aware, sentinels, sketches, crystallize, diagnostics, facets`,
+    );
+    if (isSlotsEnabled()) {
+      bootLog(
+        `Slots: enabled (pinned editable memory). Reflect on Stop hook: ${isReflectEnabled() ? "on" : "off"}`,
+      );
+    }
+
+    const snapshotConfig = loadSnapshotConfig();
+    if (snapshotConfig.enabled) {
+      registerSnapshotFunction(sdk, kv, snapshotConfig.dir);
+      bootLog(
+        `Git snapshots: ${snapshotConfig.dir} (every ${snapshotConfig.interval}s)`,
+      );
+    }
+
+    const bm25Index = getSearchIndex();
+    const graphWeight = parseFloat(
+      getEnvVar("AGENTMEMORY_GRAPH_WEIGHT") || "0.3",
+    );
+    const hybridSearch = new HybridSearch(
+      bm25Index,
+      vectorIndex,
+      embeddingProvider,
+      kv,
+      embeddingConfig.bm25Weight,
+      embeddingConfig.vectorWeight,
+      graphWeight,
+    );
+
+    registerSmartSearchFunction(sdk, kv, (query, limit) =>
+      hybridSearch.search(query, limit),
+    );
+
+    registerApiTriggers(sdk, kv, secret, metricsStore, provider);
+    registerEventTriggers(sdk, kv);
+    registerMcpEndpoints(sdk, kv, secret);
+  }; // end registerAllFunctions
+  registerAllFunctions();
+  // On iii reconnect after disconnect, replay registrations so /agentmemory/* HTTP
+  // routes survive iii restarts. iii-sdk's own reconnect logic doesn't currently
+  // re-send registerFunction/registerTrigger payloads (#mcp-shim-regression).
+  if (typeof sdk.on === "function") {
+    let _prevConnState: string = "connected";
+    sdk.on("connection_state", (state: string) => {
+      if (_prevConnState !== "connected" && state === "connected") {
+        bootLog("iii reconnected — re-registering all functions/triggers");
+        try {
+          registerAllFunctions();
+        } catch (err) {
+          process.stderr.write(
+            `[agentmemory] re-registration on reconnect failed: ${err instanceof Error ? err.message : String(err)}\n`,
+          );
+        }
+      }
+      _prevConnState = state;
+    });
+  }
 
   const healthMonitor = registerHealthMonitor(sdk, kv);
 
@@ -386,9 +428,7 @@ async function main() {
   });
   if (loaded?.bm25 && loaded.bm25.size > 0) {
     bm25Index.restoreFrom(loaded.bm25);
-    bootLog(
-      `Loaded persisted BM25 index (${bm25Index.size} docs)`,
-    );
+    bootLog(`Loaded persisted BM25 index (${bm25Index.size} docs)`);
   }
   if (loaded?.vector && vectorIndex && loaded.vector.size > 0) {
     // Persisted vectors carry whatever dimension the provider had when
@@ -411,7 +451,9 @@ async function main() {
         .slice(0, 5)
         .map((m) => `${m.obsId} (dim=${m.dim})`)
         .join(", ");
-      const distinct = Array.from(seenDimensions).sort((a, b) => a - b).join(", ");
+      const distinct = Array.from(seenDimensions)
+        .sort((a, b) => a - b)
+        .join(", ");
       const dropStale = isDropStaleIndexEnabled();
       if (dropStale) {
         console.warn(
@@ -438,9 +480,7 @@ async function main() {
       }
     } else {
       vectorIndex.restoreFrom(loaded.vector);
-      bootLog(
-        `Loaded persisted vector index (${vectorIndex.size} vectors)`,
-      );
+      bootLog(`Loaded persisted vector index (${vectorIndex.size} vectors)`);
     }
   }
 
@@ -501,10 +541,7 @@ async function main() {
         indexPersistence.scheduleSave();
       }
     } catch (err) {
-      console.warn(
-        `[agentmemory] Failed to backfill memories into BM25:`,
-        err,
-      );
+      console.warn(`[agentmemory] Failed to backfill memories into BM25:`, err);
     }
   }
 
@@ -531,13 +568,22 @@ async function main() {
     config.restPort,
   );
 
-  const autoForgetIntervalMs = parseInt(process.env.AUTO_FORGET_INTERVAL_MS || "3600000", 10);
-  const consolidationIntervalMs = parseInt(process.env.CONSOLIDATION_INTERVAL_MS || "7200000", 10);
+  const autoForgetIntervalMs = parseInt(
+    process.env.AUTO_FORGET_INTERVAL_MS || "3600000",
+    10,
+  );
+  const consolidationIntervalMs = parseInt(
+    process.env.CONSOLIDATION_INTERVAL_MS || "7200000",
+    10,
+  );
 
   if (process.env.AUTO_FORGET_ENABLED !== "false") {
     const autoForgetTimer = setInterval(async () => {
       try {
-        await sdk.trigger({ function_id: "mem::auto-forget", payload: { dryRun: false } });
+        await sdk.trigger({
+          function_id: "mem::auto-forget",
+          payload: { dryRun: false },
+        });
       } catch {}
     }, autoForgetIntervalMs);
     autoForgetTimer.unref();
@@ -547,7 +593,10 @@ async function main() {
   if (process.env.LESSON_DECAY_ENABLED !== "false") {
     const lessonDecayTimer = setInterval(async () => {
       try {
-        await sdk.trigger({ function_id: "mem::lesson-decay-sweep", payload: {} });
+        await sdk.trigger({
+          function_id: "mem::lesson-decay-sweep",
+          payload: {},
+        });
       } catch {}
     }, 86400000);
     lessonDecayTimer.unref();
@@ -557,7 +606,10 @@ async function main() {
   if (process.env.INSIGHT_DECAY_ENABLED !== "false") {
     const insightDecayTimer = setInterval(async () => {
       try {
-        await sdk.trigger({ function_id: "mem::insight-decay-sweep", payload: {} });
+        await sdk.trigger({
+          function_id: "mem::insight-decay-sweep",
+          payload: {},
+        });
       } catch {}
     }, 86400000);
     insightDecayTimer.unref();
@@ -566,11 +618,16 @@ async function main() {
   if (isConsolidationEnabled()) {
     const consolidationTimer = setInterval(async () => {
       try {
-        await sdk.trigger({ function_id: "mem::consolidate-pipeline", payload: {} });
+        await sdk.trigger({
+          function_id: "mem::consolidate-pipeline",
+          payload: {},
+        });
       } catch {}
     }, consolidationIntervalMs);
     consolidationTimer.unref();
-    bootLog(`Auto-consolidation: enabled (every ${consolidationIntervalMs / 60000}m)`);
+    bootLog(
+      `Auto-consolidation: enabled (every ${consolidationIntervalMs / 60000}m)`,
+    );
   }
 
   const shutdown = async () => {
