@@ -19,8 +19,9 @@ data-*/
 agentmemory-debug/
 .gstack/
 
-# Lock files are generally not committed, except package-lock.json which is
-# required for Nix buildNpmPackage reproducibility.
+# Lock files — never commit (see feedback_no_lockfiles memory)
+# Except package-lock.json which is required for Nix buildNpmPackage reproducibility.
+!package-lock.json
 pnpm-lock.yaml
 yarn.lock
 flake.lock
