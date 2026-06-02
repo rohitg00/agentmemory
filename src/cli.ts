@@ -34,7 +34,7 @@ import {
 import {
   buildRemovePlan,
   formatPlan,
-  localBinIii,
+  legacyLocalBinIii,
   type ConnectManifest,
   type RemoveOptions,
 } from "./cli/remove-plan.js";
@@ -419,14 +419,15 @@ function iiiBinVersion(binPath: string): string | null {
 function resolveCompatibleIii(iiiBinPath: string | null | undefined): string | null {
   if (!iiiBinPath) return null;
   const detected = iiiBinVersion(iiiBinPath);
-  if (!detected || detected === IIPINNED_VERSION) return iiiBinPath;
+  if (detected && detected === IIPINNED_VERSION) return iiiBinPath;
 
   const privatePath = privateIiiPath();
   if (iiiBinPath !== privatePath && existsSync(privatePath)) {
     const privateVersion = iiiBinVersion(privatePath);
     if (privateVersion === IIPINNED_VERSION) {
+      const reason = detected ? `v${detected} mismatches pin` : "probe failed";
       vlog(
-        `PATH iii v${detected} mismatches pin v${IIPINNED_VERSION}; using private install at ${privatePath}.`,
+        `iii at ${iiiBinPath} ${reason} v${IIPINNED_VERSION}; using private install at ${privatePath}.`,
       );
       return privatePath;
     }
@@ -444,7 +445,7 @@ function engineStatePath(): string {
 }
 
 type EngineState =
-  | { kind: "native"; configPath: string; attached?: boolean }
+  | { kind: "native"; configPath: string; attached?: boolean; binPath?: string }
   | { kind: "docker"; composeFile: string };
 
 function writeEnginePidfile(pid: number): void {
@@ -808,7 +809,7 @@ function spawnEngineBackground(
 function startIiiBin(iiiBin: string, configPath: string): boolean {
   const s = p.spinner();
   s.start(`Starting iii-engine: ${iiiBin}`);
-  writeEngineState({ kind: "native", configPath });
+  writeEngineState({ kind: "native", configPath, binPath: iiiBin });
   spawnEngineBackground(iiiBin, ["--config", configPath], "iii-engine");
   s.stop("iii-engine process started");
   return true;
@@ -1129,8 +1130,20 @@ async function main() {
 
   if (await isEngineRunning()) {
     if (IS_VERBOSE) p.log.success("iii-engine is running");
+    // Prefer the binary path persisted at launch time over whatever's on
+    // PATH now. PATH lookups misfire when a global iii install gets added
+    // after agentmemory started (or when the running engine was launched
+    // from a path that's no longer first on PATH).
+    const persisted = readEngineState();
+    const persistedBin =
+      persisted?.kind === "native" && persisted.binPath && existsSync(persisted.binPath)
+        ? persisted.binPath
+        : null;
     const attachedBin =
-      whichBinary("iii") ?? fallbackIiiPaths().find((p) => existsSync(p)) ?? null;
+      persistedBin ??
+      whichBinary("iii") ??
+      fallbackIiiPaths().find((p) => existsSync(p)) ??
+      null;
     if (attachedBin) {
       const detected = iiiBinVersion(attachedBin);
       if (detected && detected !== IIPINNED_VERSION) {
@@ -2634,7 +2647,7 @@ function loadConnectManifest(home: string): ConnectManifest | null {
 }
 
 function probeLocalBinIiiVersion(home: string): string | null {
-  const path = localBinIii(home);
+  const path = legacyLocalBinIii(home);
   if (!existsSync(path)) return null;
   return iiiBinVersion(path);
 }

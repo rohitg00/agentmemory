@@ -90,16 +90,22 @@ export function dataDir(home: string): string {
   return join(home, ".agentmemory", "data");
 }
 
+// Platform-aware binary name. Windows requires the .exe suffix or the
+// existsSync probe misses the installed binary.
+function iiiBinFile(): string {
+  return process.platform === "win32" ? "iii.exe" : "iii";
+}
+
 // Legacy install location. Older agentmemory versions wrote the pinned iii
 // engine here. Kept so `agentmemory remove` can still clean up after them.
 export function legacyLocalBinIii(home: string): string {
-  return join(home, ".local", "bin", "iii");
+  return join(home, ".local", "bin", iiiBinFile());
 }
 
 // Current private install location. Lives under ~/.agentmemory/ so it
 // stays isolated from any user-managed iii on PATH.
 export function privateIiiBin(home: string): string {
-  return join(home, ".agentmemory", "bin", "iii");
+  return join(home, ".agentmemory", "bin", iiiBinFile());
 }
 
 // Back-compat shim for any caller still importing the old name.
