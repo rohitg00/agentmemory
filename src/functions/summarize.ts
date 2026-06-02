@@ -112,23 +112,34 @@ async function summarizeFinalXmlWithRetry(
 ): Promise<string> {
   let response = "";
   for (let attempt = 1; attempt <= 2; attempt++) {
-    response = await provider.summarize(system, prompt);
-    if (
-      parseSummaryXml(
-        response,
-        context.sessionId,
-        context.project,
-        context.observationCount,
-      )
-    ) {
-      return response;
+    try {
+      response = await provider.summarize(system, prompt);
+      if (
+        parseSummaryXml(
+          response,
+          context.sessionId,
+          context.project,
+          context.observationCount,
+        )
+      ) {
+        return response;
+      }
+      logger.warn("Final summary parse failed", {
+        sessionId: context.sessionId,
+        attempt,
+        mode: context.mode,
+        chunks: context.chunks,
+      });
+    } catch (err) {
+      logger.warn("Final summary LLM call failed", {
+        sessionId: context.sessionId,
+        attempt,
+        mode: context.mode,
+        chunks: context.chunks,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      if (attempt === 2) throw err;
     }
-    logger.warn("Final summary parse failed", {
-      sessionId: context.sessionId,
-      attempt,
-      mode: context.mode,
-      chunks: context.chunks,
-    });
   }
   return response;
 }

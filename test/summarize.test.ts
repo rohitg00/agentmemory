@@ -231,6 +231,33 @@ Done.`,
     expect(stored?.title).toBe("Retried final summary");
   });
 
+  it("retries the final summarize call when the provider throws", async () => {
+    let calls = 0;
+    const provider: MemoryProvider & { calls: any[] } = {
+      name: "test",
+      calls: [],
+      compress: async () => "",
+      summarize: async (system: string, user: string) => {
+        provider.calls.push({ system, user });
+        calls += 1;
+        if (calls === 1) throw new Error("transient provider failure");
+        return summaryXml({ title: "Recovered final summary" });
+      },
+    };
+    const { handler, kv } = await setupHandler({
+      sessionId: "ses_final_throw_retry",
+      obsCount: 10,
+      provider,
+    });
+
+    const result: any = await handler({ sessionId: "ses_final_throw_retry" });
+
+    expect(result.success).toBe(true);
+    expect(provider.calls).toHaveLength(2);
+    const stored: any = await kv.get("summaries", "ses_final_throw_retry");
+    expect(stored?.title).toBe("Recovered final summary");
+  });
+
   it("large session map-reduces: N chunk calls + 1 reduce call", async () => {
     process.env.SUMMARIZE_CHUNK_SIZE = "100";
     process.env.SUMMARIZE_CHUNK_CONCURRENCY = "1"; // serial keeps call ordering deterministic
