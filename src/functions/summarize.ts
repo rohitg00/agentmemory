@@ -35,6 +35,14 @@ const CHUNK_CONCURRENCY_DEFAULT = 6;
 // Bail on the merged summary if more than this fraction of chunks fail
 // to parse — a half-blind narrative is worse than a clean error.
 const MAX_SKIP_RATIO = 0.5;
+const SUMMARY_BLOCK_RE = /<summary\b[^>]*>[\s\S]*?<\/summary>/i;
+
+function normalizeSummaryXml(raw: string): string {
+  const fenced = raw.match(/```(?:xml)?\s*([\s\S]*?)```/i);
+  const candidate = fenced?.[1] ?? raw;
+  const summaryBlock = candidate.match(SUMMARY_BLOCK_RE);
+  return (summaryBlock?.[0] ?? candidate).trim();
+}
 
 function getChunkSize(): number {
   const raw = process.env.SUMMARIZE_CHUNK_SIZE;
@@ -90,6 +98,41 @@ async function summarizeChunkWithRetry(
   return null;
 }
 
+async function summarizeFinalXmlWithRetry(
+  provider: MemoryProvider,
+  system: string,
+  prompt: string,
+  context: {
+    sessionId: string;
+    project: string;
+    observationCount: number;
+    mode: "single" | "chunked";
+    chunks: number;
+  },
+): Promise<string> {
+  let response = "";
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    response = await provider.summarize(system, prompt);
+    if (
+      parseSummaryXml(
+        response,
+        context.sessionId,
+        context.project,
+        context.observationCount,
+      )
+    ) {
+      return response;
+    }
+    logger.warn("Final summary parse failed", {
+      sessionId: context.sessionId,
+      attempt,
+      mode: context.mode,
+      chunks: context.chunks,
+    });
+  }
+  return response;
+}
+
 // Returns the final summary XML string. For sessions ≤ chunk size, this is
 // a single LLM call (legacy behavior). For larger sessions, observations
 // are split into chunks processed in parallel batches, each chunk retried
@@ -108,9 +151,17 @@ async function produceSummaryXml(
 }> {
   const chunkSize = getChunkSize();
   if (compressed.length <= chunkSize) {
-    const response = await provider.summarize(
+    const response = await summarizeFinalXmlWithRetry(
+      provider,
       SUMMARY_SYSTEM,
       buildSummaryPrompt(compressed),
+      {
+        sessionId,
+        project,
+        observationCount: compressed.length,
+        mode: "single",
+        chunks: 1,
+      },
     );
     return { response, mode: "single", chunks: 1 };
   }
@@ -177,9 +228,17 @@ async function produceSummaryXml(
       obsRangeEnd: Math.min((originalIdx + 1) * chunkSize, compressed.length),
     };
   });
-  const response = await provider.summarize(
+  const response = await summarizeFinalXmlWithRetry(
+    provider,
     REDUCE_SYSTEM,
     buildReducePrompt(reduceInput),
+    {
+      sessionId,
+      project,
+      observationCount: compressed.length,
+      mode: "chunked",
+      chunks: chunks.length,
+    },
   );
   return { response, mode: "chunked", chunks: chunks.length, skipped };
 }
@@ -190,6 +249,7 @@ function parseSummaryXml(
   project: string,
   obsCount: number,
 ): SessionSummary | null {
+  xml = normalizeSummaryXml(xml);
   const title = getXmlTag(xml, "title");
   if (!title) return null;
 

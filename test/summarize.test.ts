@@ -182,6 +182,55 @@ describe("mem::summarize chunking", () => {
     expect(stored?.title).toBe("Small session");
   });
 
+  it("extracts the summary block from fenced output with surrounding text", async () => {
+    const provider = makeProvider([
+      `Here is the summary draft:
+<title>Ignore this stray title</title>
+
+\`\`\`xml
+${summaryXml({
+  title: "Fenced session",
+  narrative: "fenced narrative",
+  decisions: ["kept"],
+})}
+\`\`\`
+
+Done.`,
+    ]);
+    const { handler, kv } = await setupHandler({
+      sessionId: "ses_fenced",
+      obsCount: 10,
+      provider,
+    });
+
+    const result: any = await handler({ sessionId: "ses_fenced" });
+
+    expect(result.success).toBe(true);
+    const stored: any = await kv.get("summaries", "ses_fenced");
+    expect(stored?.title).toBe("Fenced session");
+    expect(stored?.narrative).toBe("fenced narrative");
+    expect(stored?.keyDecisions).toEqual(["kept"]);
+  });
+
+  it("retries the final summarize response when XML parsing fails", async () => {
+    const provider = makeProvider([
+      "<summary><narrative>missing title</narrative></summary>",
+      summaryXml({ title: "Retried final summary" }),
+    ]);
+    const { handler, kv } = await setupHandler({
+      sessionId: "ses_final_retry",
+      obsCount: 10,
+      provider,
+    });
+
+    const result: any = await handler({ sessionId: "ses_final_retry" });
+
+    expect(result.success).toBe(true);
+    expect(provider.calls).toHaveLength(2);
+    const stored: any = await kv.get("summaries", "ses_final_retry");
+    expect(stored?.title).toBe("Retried final summary");
+  });
+
   it("large session map-reduces: N chunk calls + 1 reduce call", async () => {
     process.env.SUMMARIZE_CHUNK_SIZE = "100";
     process.env.SUMMARIZE_CHUNK_CONCURRENCY = "1"; // serial keeps call ordering deterministic
