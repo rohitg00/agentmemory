@@ -127,9 +127,13 @@ export const CORE_TOOLS: McpToolDef[] = [
         query: { type: "string", description: "Search query" },
         expandIds: {
           type: "string",
-          description: "Comma-separated observation IDs to expand",
+          description: "Comma-separated IDs to expand (observations, sem_*, proc_*, crys_*, ins_*)",
         },
         limit: { type: "number", description: "Max results (default 10)" },
+        includeHighOrder: {
+          type: "string",
+          description: "Set to 'false' to exclude high-order memory tiers (semantic, procedural, crystals, insights) from results. Default: enabled.",
+        },
       },
       required: ["query"],
     },

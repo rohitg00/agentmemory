@@ -17,7 +17,8 @@ import {
 import { recordAudit } from "./audit.js";
 import { getConsolidationDecayDays, isConsolidationEnabled } from "../config.js";
 import { logger } from "../logger.js";
-
+import { getEmbeddingProvider } from "./search.js";
+import { float32ToBase64 } from "../state/vector-index.js";
 function applyDecay(
   items: Array<{
     strength: number;
@@ -93,6 +94,8 @@ export function registerConsolidationPipelineFunction(
               const confidence = Number.isNaN(parsedConf) ? 0.5 : parsedConf;
               const fact = match[2].trim();
 
+              const ep = getEmbeddingProvider();
+              
               const existing = existingSemantic.find(
                 (s) => s.fact.toLowerCase() === fact.toLowerCase(),
               );
@@ -101,6 +104,14 @@ export function registerConsolidationPipelineFunction(
                 existing.lastAccessedAt = now;
                 existing.updatedAt = now;
                 existing.confidence = Math.max(existing.confidence, confidence);
+                if (!existing.embedding && ep) {
+                  try {
+                    existing.embedding = float32ToBase64(await ep.embed(existing.fact));
+                    existing.embeddingModel = ep.name;
+                  } catch (e) {
+                    logger.warn("Failed to embed existing semantic fact", { id: existing.id, error: String(e) });
+                  }
+                }
                 await kv.set(KV.semantic, existing.id, existing);
               } else {
                 const sem: SemanticMemory = {
@@ -115,6 +126,14 @@ export function registerConsolidationPipelineFunction(
                   createdAt: now,
                   updatedAt: now,
                 };
+                if (ep) {
+                  try {
+                    sem.embedding = float32ToBase64(await ep.embed(sem.fact));
+                    sem.embeddingModel = ep.name;
+                  } catch (e) {
+                    logger.warn("Failed to embed new semantic fact", { error: String(e) });
+                  }
+                }
                 await kv.set(KV.semantic, sem.id, sem);
                 newFacts++;
               }
@@ -187,6 +206,8 @@ export function registerConsolidationPipelineFunction(
                 steps.push(stepMatch[1].trim());
               }
 
+              const ep = getEmbeddingProvider();
+
               const existing = existingProcs.find(
                 (p) => p.name.toLowerCase() === name.toLowerCase(),
               );
@@ -194,6 +215,15 @@ export function registerConsolidationPipelineFunction(
                 existing.frequency++;
                 existing.updatedAt = now;
                 existing.strength = Math.min(1, existing.strength + 0.1);
+                if (!existing.embedding && ep) {
+                  try {
+                    const text = `${existing.name} ${existing.triggerCondition} ${existing.steps.join(" ")}`;
+                    existing.embedding = float32ToBase64(await ep.embed(text));
+                    existing.embeddingModel = ep.name;
+                  } catch (e) {
+                    logger.warn("Failed to embed existing procedural skill", { id: existing.id, error: String(e) });
+                  }
+                }
                 await kv.set(KV.procedural, existing.id, existing);
               } else {
                 const proc: ProceduralMemory = {
@@ -207,6 +237,15 @@ export function registerConsolidationPipelineFunction(
                   createdAt: now,
                   updatedAt: now,
                 };
+                if (ep) {
+                  try {
+                    const text = `${proc.name} ${proc.triggerCondition} ${proc.steps.join(" ")}`;
+                    proc.embedding = float32ToBase64(await ep.embed(text));
+                    proc.embeddingModel = ep.name;
+                  } catch (e) {
+                    logger.warn("Failed to embed new procedural skill", { error: String(e) });
+                  }
+                }
                 await kv.set(KV.procedural, proc.id, proc);
                 newProcs++;
               }

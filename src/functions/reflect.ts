@@ -12,6 +12,9 @@ import type {
 } from "../types.js";
 import { recordAudit } from "./audit.js";
 import { REFLECT_SYSTEM, buildReflectPrompt } from "../prompts/reflect.js";
+import { getEmbeddingProvider } from "./search.js";
+import { float32ToBase64 } from "../state/vector-index.js";
+import { logger } from "../logger.js";
 
 interface ConceptCluster {
   concepts: string[];
@@ -278,9 +281,19 @@ export function registerReflectFunctions(
 
             const fp = fingerprintId("ins", content.trim().toLowerCase());
             const existing = await kv.get<Insight>(KV.insights, fp);
+            const ep = getEmbeddingProvider();
 
             if (existing && !existing.deleted) {
               reinforceInsight(existing);
+              if (!existing.embedding && ep) {
+                try {
+                  const text = `${existing.title} ${existing.content}`;
+                  existing.embedding = float32ToBase64(await ep.embed(text));
+                  existing.embeddingModel = ep.name;
+                } catch (e) {
+                  logger.warn("Failed to embed existing insight", { id: existing.id, error: String(e) });
+                }
+              }
               await kv.set(KV.insights, existing.id, existing);
               reinforced++;
             } else {
@@ -301,6 +314,15 @@ export function registerReflectFunctions(
                 updatedAt: now,
                 decayRate: 0.05,
               };
+              if (ep) {
+                try {
+                  const text = `${insight.title} ${insight.content}`;
+                  insight.embedding = float32ToBase64(await ep.embed(text));
+                  insight.embeddingModel = ep.name;
+                } catch (e) {
+                  logger.warn("Failed to embed new insight", { error: String(e) });
+                }
+              }
               await kv.set(KV.insights, insight.id, insight);
               newInsights++;
             }

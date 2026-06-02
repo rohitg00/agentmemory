@@ -4,6 +4,17 @@ vi.mock("../src/logger.js", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
+vi.mock("../src/config.js", async (importOriginal) => {
+  const actual = await importOriginal() as Record<string, unknown>;
+  return {
+    ...actual,
+    isHighOrderSearchEnabled: vi.fn().mockReturnValue(false),
+    getHighOrderConfidenceFloor: vi.fn().mockReturnValue(0.3),
+    isAgentScopeIsolated: vi.fn().mockReturnValue(false),
+    getAgentId: vi.fn().mockReturnValue(undefined),
+  };
+});
+
 import { registerSmartSearchFunction } from "../src/functions/smart-search.js";
 import type {
   CompressedObservation,
@@ -289,6 +300,169 @@ describe("Smart Search Function", () => {
 
       expect(result.results.length).toBe(2);
       expect(result.lessons).toEqual([]);
+    });
+  });
+
+  describe("high-order tier integration", () => {
+    beforeEach(async () => {
+      const { isHighOrderSearchEnabled, getHighOrderConfidenceFloor } = await import("../src/config.js");
+      vi.mocked(isHighOrderSearchEnabled).mockReturnValue(true);
+      vi.mocked(getHighOrderConfidenceFloor).mockReturnValue(0.3);
+
+      sdk.registerFunction("mem::lesson-recall", async () => ({
+        success: true,
+        lessons: [],
+      }));
+    });
+
+    it("compact mode includes highOrder results when enabled", async () => {
+      await kv.set("mem:semantic", "sem_1", {
+        id: "sem_1",
+        fact: "auth handler uses JWT tokens for authentication",
+        confidence: 0.9,
+        strength: 0.8,
+        sourceSessionIds: [],
+        sourceMemoryIds: [],
+        accessCount: 1,
+        lastAccessedAt: "2026-01-01T00:00:00Z",
+        createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-01T00:00:00Z",
+      });
+
+      const result = (await sdk.trigger("mem::smart-search", {
+        query: "auth",
+      })) as { results: any[]; highOrder?: any[] };
+
+      expect(result.highOrder).toBeDefined();
+      expect(result.highOrder!.length).toBeGreaterThan(0);
+      expect(result.highOrder![0].tier).toBe("semantic");
+    });
+
+    it("includeHighOrder=false excludes high-order results", async () => {
+      await kv.set("mem:semantic", "sem_1", {
+        id: "sem_1",
+        fact: "auth handler uses JWT tokens",
+        confidence: 0.9,
+        strength: 0.8,
+        sourceSessionIds: [],
+        sourceMemoryIds: [],
+        accessCount: 1,
+        lastAccessedAt: "2026-01-01T00:00:00Z",
+        createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-01T00:00:00Z",
+      });
+
+      const result = (await sdk.trigger("mem::smart-search", {
+        query: "auth",
+        includeHighOrder: false,
+      })) as { results: any[]; highOrder?: any[] };
+
+      expect(result.highOrder).toBeUndefined();
+    });
+
+    it("empty high-order tiers produce no highOrder field", async () => {
+      const result = (await sdk.trigger("mem::smart-search", {
+        query: "something unique with no match",
+      })) as { results: any[]; highOrder?: any[] };
+
+      expect(result.highOrder).toBeUndefined();
+    });
+
+    it("expandIds dispatches sem_ prefix to semantic KV", async () => {
+      await kv.set("mem:semantic", "sem_test", {
+        id: "sem_test",
+        fact: "test semantic fact",
+        confidence: 0.9,
+        strength: 0.8,
+        sourceSessionIds: [],
+        sourceMemoryIds: [],
+        accessCount: 1,
+        lastAccessedAt: "2026-01-01T00:00:00Z",
+        createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-01T00:00:00Z",
+      });
+
+      const result = (await sdk.trigger("mem::smart-search", {
+        query: "test",
+        expandIds: ["sem_test"],
+      })) as { mode: string; results: any[]; highOrder?: any[] };
+
+      expect(result.mode).toBe("expanded");
+      expect(result.highOrder).toBeDefined();
+      expect(result.highOrder!.length).toBe(1);
+      expect(result.highOrder![0].tier).toBe("semantic");
+      expect(result.highOrder![0].id).toBe("sem_test");
+    });
+
+    it("expandIds dispatches crys_ prefix to crystals KV", async () => {
+      await kv.set("mem:crystals", "crys_test", {
+        id: "crys_test",
+        narrative: "test crystal narrative",
+        keyOutcomes: ["outcome1"],
+        filesAffected: [],
+        lessons: ["lesson1"],
+        sourceActionIds: [],
+        project: "test-project",
+        createdAt: "2026-01-01T00:00:00Z",
+      });
+
+      const result = (await sdk.trigger("mem::smart-search", {
+        query: "test",
+        expandIds: ["crys_test"],
+      })) as { mode: string; results: any[]; highOrder?: any[] };
+
+      expect(result.highOrder!.length).toBe(1);
+      expect(result.highOrder![0].tier).toBe("crystal");
+    });
+
+    it("expandIds skips deleted insights", async () => {
+      await kv.set("mem:insights", "ins_del", {
+        id: "ins_del",
+        title: "deleted insight",
+        content: "should be skipped",
+        confidence: 0.9,
+        reinforcements: 1,
+        sourceConceptCluster: [],
+        sourceMemoryIds: [],
+        sourceLessonIds: [],
+        sourceCrystalIds: [],
+        tags: [],
+        createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-01T00:00:00Z",
+        decayRate: 0.02,
+        deleted: true,
+      });
+
+      const result = (await sdk.trigger("mem::smart-search", {
+        query: "test",
+        expandIds: ["ins_del"],
+      })) as { mode: string; results: any[]; highOrder?: any[] };
+
+      expect(result.highOrder!.length).toBe(0);
+    });
+
+    it("mixed expandIds returns both observations and high-order", async () => {
+      await kv.set("mem:semantic", "sem_mix", {
+        id: "sem_mix",
+        fact: "mixed test fact",
+        confidence: 0.9,
+        strength: 0.8,
+        sourceSessionIds: [],
+        sourceMemoryIds: [],
+        accessCount: 1,
+        lastAccessedAt: "2026-01-01T00:00:00Z",
+        createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-01T00:00:00Z",
+      });
+
+      const result = (await sdk.trigger("mem::smart-search", {
+        query: "test",
+        expandIds: ["obs_1", "sem_mix"],
+      })) as { mode: string; results: any[]; highOrder?: any[] };
+
+      expect(result.mode).toBe("expanded");
+      expect(result.results.length).toBe(1);
+      expect(result.highOrder!.length).toBe(1);
     });
   });
 });
