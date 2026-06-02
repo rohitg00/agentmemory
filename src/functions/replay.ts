@@ -406,7 +406,17 @@ export function registerReplayFunctions(sdk: ISdk, kv: StateKV): void {
           if (!existing.firstPrompt && firstPrompt) {
             existing.firstPrompt = firstPrompt;
           }
-          await kv.set(KV.sessions, existing.id, existing);
+          // #775: re-key on parsed.sessionId, not existing.id. Older
+          // session rows may be missing the `id` field; existing.id
+          // would then be undefined, JSON.stringify would drop the
+          // `key` from the state::set payload, and the engine would
+          // reject the call with `missing field \`key\``. Because the
+          // rejection aborts the whole import handler, a single
+          // legacy row killed the entire batch. parsed.sessionId is
+          // always populated (parseJsonlText has a three-level
+          // fallback) and is what we just used to read the row.
+          if (!existing.id) existing.id = parsed.sessionId;
+          await kv.set(KV.sessions, parsed.sessionId, existing);
         } else {
           const session: Session = {
             id: parsed.sessionId,

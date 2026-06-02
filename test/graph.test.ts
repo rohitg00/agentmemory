@@ -214,4 +214,168 @@ describe("Graph Functions", () => {
     expect(result.success).toBe(false);
     expect(result.error).toContain("No observations");
   });
+
+  // #753: an unbounded {} body used to materialize every node+edge in
+  // one payload, which exceeded the iii state response channel on
+  // large corpora (11k+ nodes) and returned HTTP 500 "Invocation
+  // stopped". The fix caps the page at DEFAULT_GRAPH_QUERY_LIMIT (500)
+  // and surfaces totalNodes / totalEdges so callers know it was
+  // truncated.
+  it("caps an unbounded graph-query body to a default page and reports totals", async () => {
+    // Seed a graph with more nodes than the default page size.
+    const NODE_COUNT = 1200;
+    for (let i = 0; i < NODE_COUNT; i++) {
+      const node: GraphNode = {
+        id: `n_${i.toString().padStart(4, "0")}`,
+        type: "concept",
+        name: `node-${i}`,
+        properties: {},
+        firstSeen: "2026-01-01T00:00:00Z",
+        lastSeen: "2026-01-01T00:00:00Z",
+        observationCount: 1,
+      } as GraphNode;
+      await kv.set("mem:graph:nodes", node.id, node);
+    }
+    // A few edges among the first 50 nodes so high-degree ranking has
+    // something to grade.
+    for (let i = 0; i < 50; i++) {
+      const edge: GraphEdge = {
+        id: `e_${i}`,
+        type: "related_to",
+        sourceNodeId: `n_${i.toString().padStart(4, "0")}`,
+        targetNodeId: `n_${((i + 1) % 50).toString().padStart(4, "0")}`,
+        weight: 1,
+        evidence: [],
+        firstSeen: "2026-01-01T00:00:00Z",
+        lastSeen: "2026-01-01T00:00:00Z",
+      } as GraphEdge;
+      await kv.set("mem:graph:edges", edge.id, edge);
+    }
+
+    const unbounded = (await sdk.trigger(
+      "mem::graph-query",
+      {},
+    )) as GraphQueryResult;
+
+    expect(unbounded.totalNodes).toBe(NODE_COUNT);
+    expect(unbounded.nodes.length).toBe(500);
+    expect(unbounded.truncated).toBe(true);
+    expect(unbounded.limit).toBe(500);
+    expect(unbounded.offset).toBe(0);
+    // The 50 connected nodes should be on the first page since the
+    // default ranks by degree.
+    const connectedOnPage = unbounded.nodes.filter((n) => /^n_00[0-4]\d$/.test(n.id));
+    expect(connectedOnPage.length).toBe(50);
+  });
+
+  it("honors limit and offset for paged graph-query traversal", async () => {
+    for (let i = 0; i < 50; i++) {
+      const node: GraphNode = {
+        id: `p_${i.toString().padStart(3, "0")}`,
+        type: "concept",
+        name: `node-${i}`,
+        properties: {},
+        firstSeen: "2026-01-01T00:00:00Z",
+        lastSeen: "2026-01-01T00:00:00Z",
+        observationCount: 1,
+      } as GraphNode;
+      await kv.set("mem:graph:nodes", node.id, node);
+    }
+
+    const page1 = (await sdk.trigger("mem::graph-query", {
+      limit: 10,
+      offset: 0,
+    })) as GraphQueryResult;
+    const page2 = (await sdk.trigger("mem::graph-query", {
+      limit: 10,
+      offset: 10,
+    })) as GraphQueryResult;
+
+    expect(page1.nodes.length).toBe(10);
+    expect(page2.nodes.length).toBe(10);
+    expect(page1.totalNodes).toBe(50);
+    expect(page2.totalNodes).toBe(50);
+    expect(page1.truncated).toBe(true);
+    // The two pages must not overlap.
+    const overlap = page1.nodes.filter((n) =>
+      page2.nodes.some((p) => p.id === n.id),
+    );
+    expect(overlap.length).toBe(0);
+  });
+
+  it("clamps an explicit limit above the cap to the cap value", async () => {
+    for (let i = 0; i < 10; i++) {
+      await kv.set("mem:graph:nodes", `c_${i}`, {
+        id: `c_${i}`,
+        type: "concept",
+        name: `n-${i}`,
+        properties: {},
+        firstSeen: "2026-01-01T00:00:00Z",
+        lastSeen: "2026-01-01T00:00:00Z",
+        observationCount: 1,
+      });
+    }
+
+    const huge = (await sdk.trigger("mem::graph-query", {
+      limit: 999999,
+    })) as GraphQueryResult;
+    expect(huge.limit).toBeLessThanOrEqual(5000);
+    expect(huge.nodes.length).toBe(10);
+    expect(huge.truncated).toBe(false);
+  });
+
+  it("paginate excludes edges whose endpoints fall outside the page", async () => {
+    for (let i = 0; i < 60; i++) {
+      await kv.set("mem:graph:nodes", `x_${i.toString().padStart(3, "0")}`, {
+        id: `x_${i.toString().padStart(3, "0")}`,
+        type: "concept",
+        name: `n-${i}`,
+        properties: {},
+        firstSeen: "2026-01-01T00:00:00Z",
+        lastSeen: "2026-01-01T00:00:00Z",
+        observationCount: 1,
+      });
+    }
+    // Make the first 10 nodes a tightly connected cluster so they
+    // rank highest by degree and land on the page deterministically.
+    for (let i = 0; i < 10; i++) {
+      const next = (i + 1) % 10;
+      await kv.set("mem:graph:edges", `cluster_${i}`, {
+        id: `cluster_${i}`,
+        type: "related_to",
+        sourceNodeId: `x_${i.toString().padStart(3, "0")}`,
+        targetNodeId: `x_${next.toString().padStart(3, "0")}`,
+        weight: 1,
+        evidence: [],
+        firstSeen: "2026-01-01T00:00:00Z",
+        lastSeen: "2026-01-01T00:00:00Z",
+      });
+    }
+    // Cross-page edge: source in the high-degree cluster (on page),
+    // target is an isolated node (degree 1; cluster nodes have
+    // degree 2 so the target ranks below the cap).
+    await kv.set("mem:graph:edges", "cross", {
+      id: "cross",
+      type: "related_to",
+      sourceNodeId: "x_005",
+      targetNodeId: "x_055",
+      weight: 1,
+      evidence: [],
+      firstSeen: "2026-01-01T00:00:00Z",
+      lastSeen: "2026-01-01T00:00:00Z",
+    });
+
+    const page = (await sdk.trigger("mem::graph-query", {
+      limit: 10,
+      offset: 0,
+    })) as GraphQueryResult;
+    // The cross-page edge should not appear in the page response —
+    // otherwise the viewer renders a dangling line to a node it
+    // doesn't have.
+    expect(page.edges.find((e) => e.id === "cross")).toBeUndefined();
+    // Cluster edges among page nodes ARE present.
+    expect(page.edges.filter((e) => e.id.startsWith("cluster_")).length).toBe(10);
+    // totalEdges counts every edge in the full result universe.
+    expect(page.totalEdges).toBe(11);
+  });
 });

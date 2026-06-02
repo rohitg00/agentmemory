@@ -1,4 +1,4 @@
-import type { ISdk, ApiRequest } from "iii-sdk";
+import { TriggerAction, type ISdk, type ApiRequest } from "iii-sdk";
 import type { Session, CompressedObservation, HookPayload, CommitLink } from "../types.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
 import { KV } from "../state/schema.js";
@@ -613,9 +613,13 @@ export function registerApiTriggers(
       ]);
       // Fan out session-stopped lifecycle (non-blocking).
       try {
-        sdk.triggerVoid("event::session::stopped", { sessionId });
+        sdk.trigger({
+          function_id: "event::session::stopped",
+          payload: { sessionId },
+          action: TriggerAction.Void(),
+        });
       } catch (err) {
-        logger.warn("event::session::stopped triggerVoid failed", {
+        logger.warn("event::session::stopped trigger failed", {
           sessionId,
           error: err instanceof Error ? err.message : String(err),
         });
@@ -1092,9 +1096,18 @@ export function registerApiTriggers(
     config: { api_path: "/agentmemory/evict", http_method: "POST" },
   });
 
-  sdk.registerFunction("api::smart-search", 
+  sdk.registerFunction("api::smart-search",
     async (
-      req: ApiRequest<{ query?: string; expandIds?: string[]; limit?: number }>,
+      req: ApiRequest<{
+        query?: string;
+        expandIds?: Array<string | { obsId: string; sessionId: string }>;
+        limit?: number;
+        project?: string;
+        includeLessons?: boolean;
+        agentId?: string;
+        sessionId?: string;
+        source?: string;
+      }>,
     ): Promise<Response> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
@@ -1107,7 +1120,27 @@ export function registerApiTriggers(
           body: { error: "query or expandIds is required" },
         };
       }
-      const result = await sdk.trigger({ function_id: "mem::smart-search", payload: req.body });
+      // #771: route the X-Agentmemory-Source header into the payload so
+      // the followup-rate diagnostic can skip viewer-originated calls.
+      // Body wins if both are set (advanced callers explicitly override).
+      const headers = (req.headers || {}) as Record<string, string | string[] | undefined>;
+      const sourceHeader = headers["x-agentmemory-source"] ?? headers["X-Agentmemory-Source"];
+      const sourceFromHeader = Array.isArray(sourceHeader) ? sourceHeader[0] : sourceHeader;
+      // Whitelist payload fields explicitly — REST endpoints never pass
+      // the raw request body through to sdk.trigger (AGENTS.md security
+      // section). Drops unknown fields so a misbehaving client can't
+      // inject downstream-only options.
+      const payload = {
+        query: req.body?.query,
+        expandIds: req.body?.expandIds,
+        limit: req.body?.limit,
+        project: req.body?.project,
+        includeLessons: req.body?.includeLessons,
+        agentId: req.body?.agentId,
+        sessionId: req.body?.sessionId,
+        source: req.body?.source ?? sourceFromHeader,
+      };
+      const result = await sdk.trigger({ function_id: "mem::smart-search", payload });
       return { status_code: 200, body: result };
     },
   );
@@ -1115,6 +1148,38 @@ export function registerApiTriggers(
     type: "http",
     function_id: "api::smart-search",
     config: { api_path: "/agentmemory/smart-search", http_method: "POST" },
+  });
+
+  // #771: read-back endpoint for the followup-rate diagnostic. Returns
+  // a directional signal — overcounts on legitimate query refinement —
+  // so help text + the CLI status line carry the same caveat.
+  sdk.registerFunction("api::diagnostic-followup",
+    async (req: ApiRequest): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const result = await sdk.trigger({
+        function_id: "mem::diagnostic::followup-stats",
+        payload: {},
+      });
+      return {
+        status_code: 200,
+        body: {
+          ...(result as Record<string, unknown>),
+          caveat:
+            "Directional signal: overcounts on legitimate query refinement. " +
+            "Tune via AGENTMEMORY_FOLLOWUP_WINDOW_SECONDS.",
+        },
+      };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::diagnostic-followup",
+    config: {
+      api_path: "/agentmemory/diagnostics/followup",
+      http_method: "GET",
+      middleware_function_ids: ["middleware::api-auth"],
+    },
   });
 
   sdk.registerFunction("api::timeline", 
@@ -1326,19 +1391,31 @@ export function registerApiTriggers(
     },
   });
 
-  sdk.registerFunction("api::graph-query", 
+  sdk.registerFunction("api::graph-query",
     async (
       req: ApiRequest<{
         startNodeId?: string;
         nodeType?: string;
         maxDepth?: number;
         query?: string;
+        limit?: number;
+        offset?: number;
       }>,
     ): Promise<Response> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
+      // Whitelist payload fields explicitly; AGENTS.md security rule:
+      // REST endpoints never pass raw req.body through to sdk.trigger.
+      const payload = {
+        startNodeId: req.body?.startNodeId,
+        nodeType: req.body?.nodeType,
+        maxDepth: req.body?.maxDepth,
+        query: req.body?.query,
+        limit: req.body?.limit,
+        offset: req.body?.offset,
+      };
       try {
-        const result = await sdk.trigger({ function_id: "mem::graph-query", payload: req.body || {} });
+        const result = await sdk.trigger({ function_id: "mem::graph-query", payload });
         return { status_code: 200, body: result };
       } catch {
         return graphDisabledResponse();

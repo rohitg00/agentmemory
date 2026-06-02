@@ -48,9 +48,13 @@ export function registerEventTriggers(sdk: ISdk, kv: StateKV): void {
     const summary = await sdk.trigger({ function_id: "mem::summarize", payload: data });
     if (isReflectEnabled()) {
       try {
-        sdk.triggerVoid("mem::slot-reflect", { sessionId: data.sessionId });
+        sdk.trigger({
+          function_id: "mem::slot-reflect",
+          payload: { sessionId: data.sessionId },
+          action: TriggerAction.Void(),
+        });
       } catch (err) {
-        logger.warn("slot-reflect triggerVoid failed", {
+        logger.warn("slot-reflect trigger failed", {
           sessionId: data.sessionId,
           error: err instanceof Error ? err.message : String(err),
         });
@@ -63,10 +67,14 @@ export function registerEventTriggers(sdk: ISdk, kv: StateKV): void {
         );
         const compressed = observations.filter((o) => o.title);
         if (compressed.length > 0) {
-          sdk.triggerVoid("mem::graph-extract", { observations: compressed });
+          sdk.trigger({
+            function_id: "mem::graph-extract",
+            payload: { observations: compressed },
+            action: TriggerAction.Void(),
+          });
         }
       } catch (err) {
-        logger.warn("graph-extract triggerVoid failed", {
+        logger.warn("graph-extract trigger failed", {
           sessionId: data.sessionId,
           error: err instanceof Error ? err.message : String(err),
         });

@@ -64,7 +64,6 @@ function mockSdk() {
       if (fn) return fn(payload);
       return null;
     },
-    triggerVoid: () => {},
   };
 }
 

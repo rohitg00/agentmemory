@@ -6,6 +6,39 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.9.25] — 2026-06-03
+
+Bug-fix wave closing every breaking regression reported against 0.9.24, plus a feature lane (graph pagination + smart-search followup diagnostic + obsidian-export hardening + sharded index persistence). Eleven issues closed. No breaking changes; drop-in upgrade.
+
+### Fixed
+
+- **Cross-provider fallback always 404'd and tripped the circuit breaker** ([#778](https://github.com/rohitg00/agentmemory/issues/778), [PR #791](https://github.com/rohitg00/agentmemory/pull/791)). `createFallbackProvider` copied the primary provider's `model` into every fallback config. With OpenAI primary + Gemini fallback, Gemini was called with `gpt-4o-mini` and 404'd on every call, tripping the circuit breaker and blocking downstream LLM ops. Each fallback now resolves its own env-driven default (`OPENAI_MODEL` / `GEMINI_MODEL` / `ANTHROPIC_MODEL` / `MINIMAX_MODEL` / `OPENROUTER_MODEL`).
+- **`import-jsonl` aborted entire batch on legacy session row missing `id`** ([#775](https://github.com/rohitg00/agentmemory/issues/775), [PR #791](https://github.com/rohitg00/agentmemory/pull/791)). Existing-session branch re-keyed on `existing.id` which could be undefined for older rows. `JSON.stringify` dropped the key from the `state::set` payload, the engine returned `missing field \`key\``, and the rejection aborted the whole handler. Now re-keys on `parsed.sessionId` and backfills `existing.id`.
+- **`parseSummaryXml` silently dropped summaries wrapped in markdown fences** ([#783](https://github.com/rohitg00/agentmemory/issues/783), [PR #791](https://github.com/rohitg00/agentmemory/pull/791)). DeepSeek / GPT / occasionally Anthropic responses wrap structured XML in ` ```xml ... ``` ` fences with optional conversational text. The raw payload went straight to the tag regex and returned `parse_failed`. New `stripXmlWrappers()` peels markdown fences + pre/postamble; final-merge parse path retries once on failure (matching chunk-level behavior).
+- **`sdk.triggerVoid is not a function` on iii-sdk 0.11.2** ([#758](https://github.com/rohitg00/agentmemory/issues/758), [#726](https://github.com/rohitg00/agentmemory/issues/726), [PR #773](https://github.com/rohitg00/agentmemory/pull/773)). iii-sdk 0.11.2 removed `triggerVoid` in favor of `trigger({ action: TriggerAction.Void() })`. Nine call sites still used the removed API; six ran without try/catch and threw `TypeError`, breaking image lifecycle, disk-quota cleanup, vision embeddings, and observation write paths.
+- **pi integration recorded every observation as "No content provided"** ([#759](https://github.com/rohitg00/agentmemory/issues/759), [PR #772](https://github.com/rohitg00/agentmemory/pull/772)). pi sent `data.input` / `data.output` but `observe.ts` reads `data.tool_input` / `data.tool_output`. Field-name mismatch left `raw.toolInput` / `raw.toolOutput` undefined; the compress pipeline produced empty observations.
+- **Fresh global install refused to boot when PATH iii didn't match the runtime pin** ([#752](https://github.com/rohitg00/agentmemory/issues/752), [PR #774](https://github.com/rohitg00/agentmemory/pull/774)). The hard-pin enforcer told users to overwrite their global iii with v0.11.2, but the v0.11.2 release ships only `iii` (not `iii-init` / `iii-worker`) on some platforms. agentmemory now installs to `~/.agentmemory/bin/` and auto-falls-back to it when PATH iii mismatches the pin. User's existing iii install stays untouched.
+- **`mem::obsidian-export` HTTP 500 `[object Object]` on any record missing `id`** ([#729](https://github.com/rohitg00/agentmemory/issues/729), [PR #780](https://github.com/rohitg00/agentmemory/pull/780)). `sanitize(undefined.id)` threw outside the per-record try and escaped the whole handler. Four-layer hardening: id filter, safe-array / safe-string / safe-timestamp normalizers, outer try/catch, fail-safe session sort.
+- **Concurrent agent-sdk summarize chunks failed with `too_many_chunks_skipped`** ([#781](https://github.com/rohitg00/agentmemory/issues/781), [PR #782](https://github.com/rohitg00/agentmemory/pull/782)). `AGENTMEMORY_SDK_CHILD` recursion guard mutated `process.env` globally; concurrent chunks under `Promise.all` saw the marker and returned empty. Recursion guard now scoped to `AsyncLocalStorage`; the `process.env` marker stays for cross-process hook inheritance, reference-counted so overlapping calls don't race.
+- **Viewer #graph tab blank on large graphs** ([#753](https://github.com/rohitg00/agentmemory/issues/753), [PR #789](https://github.com/rohitg00/agentmemory/pull/789)). `POST /agentmemory/graph/query` with `{}` on an 11k+ node corpus returned HTTP 500 `Invocation stopped`. `graph/query` now accepts `limit` / `offset`, applies a default cap (500) ranked by node degree, restricts page edges to in-page endpoints, and returns `totalNodes` / `totalEdges` / `truncated`. The viewer issues a bounded initial query, distinguishes server-error from empty-corpus, renders an actionable error banner with Retry.
+
+### Added
+
+- **Sharded BM25/vector index persistence with manifest commit/rollback** ([#762](https://github.com/rohitg00/agentmemory/issues/762), [PR #764](https://github.com/rohitg00/agentmemory/pull/764), contributed by [@Rokurolize](https://github.com/Rokurolize)). Large BM25/vector snapshots used to save as monolithic strings and failed past the iii state size ceiling. Each snapshot now writes as bounded shards under a generation-scoped prefix, with a manifest published only after all shards commit. Rollback on shard-write failure, fail-closed on length mismatch, legacy snapshot load preserved for downgrade compat. 957 LOC + 25 tests covering rollback / partial-commit / fail-closed paths.
+- **Smart-search followup-rate diagnostic** ([#771](https://github.com/rohitg00/agentmemory/issues/771), [PR #786](https://github.com/rohitg00/agentmemory/pull/786)). Disambiguates retrieval bugs from reader bugs. When an agent issues a second `smart-search` within `AGENTMEMORY_FOLLOWUP_WINDOW_SECONDS` (default 30s) and the new result set has zero overlap with the prior one, counts as a directional "first results didn't satisfy" signal. OTEL counter `agentmemory.smart_search.followup_within_window_total`, `GET /agentmemory/diagnostics/followup` REST endpoint, `agentmemory status` surface, viewer-source exclusion via `X-Agentmemory-Source: viewer` header.
+
+### Changed
+
+- **Dependency bumps + zero `npm audit` vulnerabilities** ([PR #779](https://github.com/rohitg00/agentmemory/pull/779)). `@anthropic-ai/sdk` 0.93 → 0.100.1, `tsdown` 0.20.3 → 0.21.10 (stays on Node 20 floor), `@types/node` 25.7 → 25.9, website `next` 16.2.6 → 16.2.7 + React 19.2.7. `iii-sdk` stays pinned at 0.11.2. Transitive vulns closed via overrides: `qs ^6.15.2`, `ws ^8.21.0`, `protobufjs ^7.5.8`. `npm audit` root + website: 8 → **0**.
+- **REST endpoint count: 125 → 126** (new `/agentmemory/diagnostics/followup`).
+
+### Infrastructure
+
+- 1379 tests passing (up from 1314 in v0.9.24). 13 new test files covering the regressions + features above.
+- Removed `website/package-lock.json` from git tracking; root `.gitignore` already forbade lockfiles.
+
+[0.9.25]: https://github.com/rohitg00/agentmemory/compare/v0.9.24...v0.9.25
+
 ## [0.9.24] — 2026-05-29
 
 Hotfix on top of v0.9.23. Two bugs surfaced in the first hour after v0.9.23 hit npm:

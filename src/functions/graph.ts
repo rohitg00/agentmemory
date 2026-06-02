@@ -15,6 +15,81 @@ import {
 import { recordAudit } from "./audit.js";
 import { logger } from "../logger.js";
 
+// #753: keep the response payload below the iii state channel ceiling.
+// 500 nodes + their incident edges hold well under the limit on the
+// reported 11k-node / 28k-edge corpus, and 5,000 is the upper bound a
+// caller can request explicitly. Tuned conservatively because edges
+// fan out faster than nodes.
+const DEFAULT_GRAPH_QUERY_LIMIT = 500;
+const MAX_GRAPH_QUERY_LIMIT = 5000;
+
+function resolvePagination(
+  rawLimit: number | undefined,
+  rawOffset: number | undefined,
+): { limit: number; offset: number } {
+  const requested = typeof rawLimit === "number" && Number.isFinite(rawLimit)
+    ? Math.floor(rawLimit)
+    : DEFAULT_GRAPH_QUERY_LIMIT;
+  const limit = Math.max(1, Math.min(requested, MAX_GRAPH_QUERY_LIMIT));
+  const offset = Math.max(
+    0,
+    typeof rawOffset === "number" && Number.isFinite(rawOffset)
+      ? Math.floor(rawOffset)
+      : 0,
+  );
+  return { limit, offset };
+}
+
+// Score nodes by incident-edge count so the default-cap page surfaces
+// the densest part of the graph rather than an arbitrary KV scan order.
+function rankByDegree(nodes: GraphNode[], edges: GraphEdge[]): GraphNode[] {
+  const degree = new Map<string, number>();
+  for (const edge of edges) {
+    degree.set(edge.sourceNodeId, (degree.get(edge.sourceNodeId) ?? 0) + 1);
+    degree.set(edge.targetNodeId, (degree.get(edge.targetNodeId) ?? 0) + 1);
+  }
+  return [...nodes].sort((a, b) => (degree.get(b.id) ?? 0) - (degree.get(a.id) ?? 0));
+}
+
+function paginate(
+  nodes: GraphNode[],
+  allEdges: GraphEdge[],
+  depth: number,
+  limit: number,
+  offset: number,
+): GraphQueryResult {
+  const totalNodes = nodes.length;
+  const pageNodes = nodes.slice(offset, offset + limit);
+  const pageNodeIds = new Set(pageNodes.map((n) => n.id));
+  // Edges restricted to the page so the response payload scales with
+  // `limit`, not with the global edge count. An edge is included only
+  // when BOTH endpoints land in the page — half-edges to nodes outside
+  // the page would render as dangling links in the viewer.
+  const pageEdges = allEdges.filter(
+    (e) => pageNodeIds.has(e.sourceNodeId) && pageNodeIds.has(e.targetNodeId),
+  );
+  // Total edges (for the same node universe). Counted unbounded so the
+  // viewer can show "showing X of Y" without re-querying.
+  const universeIds = new Set(nodes.map((n) => n.id));
+  const totalEdges = allEdges.reduce(
+    (count, e) =>
+      universeIds.has(e.sourceNodeId) && universeIds.has(e.targetNodeId)
+        ? count + 1
+        : count,
+    0,
+  );
+  return {
+    nodes: pageNodes,
+    edges: pageEdges,
+    depth,
+    totalNodes,
+    totalEdges,
+    truncated: totalNodes > pageNodes.length,
+    limit,
+    offset,
+  };
+}
+
 // Parse all key="value" pairs from a tag's attribute string, in any
 // order. The previous parser hard-coded attribute order
 // (type before name on <entity>, type/source/target/weight on
@@ -198,16 +273,25 @@ export function registerGraphFunction(
     },
   );
 
-  sdk.registerFunction("mem::graph-query", 
+  // #753: every branch now applies a default cap and reports the
+  // unbounded `total*` counts. Before this change, an unfiltered POST
+  // /graph/query body (`{}`) on a corpus with ~10k+ nodes serialized
+  // to a payload large enough that the iii state response channel
+  // rejected it with HTTP 500 "Invocation stopped", leaving the viewer
+  // graph tab silently blank.
+  sdk.registerFunction("mem::graph-query",
     async (data: {
       startNodeId?: string;
       nodeType?: string;
       maxDepth?: number;
       query?: string;
+      limit?: number;
+      offset?: number;
     }): Promise<GraphQueryResult> => {
       const allNodes = (await kv.list<GraphNode>(KV.graphNodes)).filter((n) => !n.stale);
       const allEdges = (await kv.list<GraphEdge>(KV.graphEdges)).filter((e) => !e.stale);
       const maxDepth = Math.min(data.maxDepth || 3, 5);
+      const { limit, offset } = resolvePagination(data.limit, data.offset);
 
       if (data.query) {
         const lower = data.query.toLowerCase();
@@ -218,11 +302,7 @@ export function registerGraphFunction(
               (v) => typeof v === "string" && v.toLowerCase().includes(lower),
             ),
         );
-        const nodeIds = new Set(matchingNodes.map((n) => n.id));
-        const relatedEdges = allEdges.filter(
-          (e) => nodeIds.has(e.sourceNodeId) || nodeIds.has(e.targetNodeId),
-        );
-        return { nodes: matchingNodes, edges: relatedEdges, depth: 0 };
+        return paginate(matchingNodes, allEdges, 0, limit, offset);
       }
 
       if (data.startNodeId) {
@@ -264,14 +344,18 @@ export function registerGraphFunction(
           }
         }
 
-        return { nodes: resultNodes, edges: resultEdges, depth: maxDepth };
+        return paginate(resultNodes, resultEdges, maxDepth, limit, offset);
       }
 
       let filtered = allNodes;
       if (data.nodeType) {
         filtered = allNodes.filter((n) => n.type === data.nodeType);
       }
-      return { nodes: filtered, edges: allEdges, depth: 0 };
+      // Empty-body / nodeType-only branch is the path the viewer hits
+      // on tab load. Page by the most-connected nodes first so the
+      // truncated view conveys the densest part of the graph (#753).
+      const ranked = rankByDegree(filtered, allEdges);
+      return paginate(ranked, allEdges, 0, limit, offset);
     },
   );
 

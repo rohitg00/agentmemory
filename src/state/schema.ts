@@ -47,6 +47,9 @@ export const KV = {
   globalSlots: "mem:slots:global",
   state: "mem:state",
   commits: "mem:commits",
+  // #771: tracks the most recent smart-search call per session, used by
+  // the followup-rate diagnostic. Key = sessionId. TTL-swept hourly.
+  recentSearches: "mem:recent-searches",
 } as const;
 
 export const STREAM = {

@@ -322,6 +322,20 @@ export function getGraphBatchSize(): number {
   return safeParseInt(getMergedEnv()["GRAPH_EXTRACTION_BATCH_SIZE"], 10);
 }
 
+// #771: window for the smart-search followup-rate diagnostic. A second
+// search arriving within this many seconds (with disjoint results)
+// counts as a "follow-up" — a directional signal that the first result
+// set didn't satisfy. Long values overcount (legitimate refinement
+// looks like a follow-up); short values undercount.
+const FOLLOWUP_WINDOW_DEFAULT_SECONDS = 30;
+
+export function getFollowupWindowSeconds(): number {
+  return safeParseInt(
+    getMergedEnv()["AGENTMEMORY_FOLLOWUP_WINDOW_SECONDS"],
+    FOLLOWUP_WINDOW_DEFAULT_SECONDS,
+  );
+}
+
 export function isConsolidationEnabled(): boolean {
   const env = getMergedEnv();
   const explicit = env["CONSOLIDATION_ENABLED"];
