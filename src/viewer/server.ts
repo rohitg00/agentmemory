@@ -29,6 +29,10 @@ function loadViewerFavicon(): Buffer | null {
   return null;
 }
 
+// Favicon is static — load once at module init instead of one synchronous
+// disk read per /favicon.svg request.
+const VIEWER_FAVICON: Buffer | null = loadViewerFavicon();
+
 const ALLOWED_ORIGINS = (
   process.env.VIEWER_ALLOWED_ORIGINS ||
   "http://localhost:3111,http://localhost:3113,http://127.0.0.1:3111,http://127.0.0.1:3113"
@@ -48,8 +52,11 @@ const ALLOWED_ORIGINS = (
 //
 // Explicit override via VIEWER_ALLOWED_HOSTS for the rare case of a
 // reverse-proxy in front of the viewer; defaults are computed from the
-// listen port at server-create time. Read at call time so tests and
-// runtime overrides can rotate the value without a module reload.
+// listen port at server-create time. Read on each call (no module-level
+// caching) so tests can rotate the env var between startViewerServer()
+// and the first request. Note: `buildAllowedHosts` only re-runs on a
+// cache miss for the in-process `allowedHosts` set, so production env
+// changes after the first request require a restart.
 function readAllowedHostsOverride(): string[] {
   return (process.env.VIEWER_ALLOWED_HOSTS || "")
     .split(",")
@@ -278,13 +285,12 @@ export function startViewerServer(
     }
 
     if (method === "GET" && pathname === "/favicon.svg") {
-      const favicon = loadViewerFavicon();
-      if (favicon) {
+      if (VIEWER_FAVICON) {
         res.writeHead(200, {
           "Content-Type": "image/svg+xml",
           "Cache-Control": "public, max-age=3600",
         });
-        res.end(favicon);
+        res.end(VIEWER_FAVICON);
         return;
       }
       res.writeHead(404, { "Content-Type": "text/plain" });
@@ -321,23 +327,27 @@ export function startViewerServer(
 
   server.on("listening", () => {
     const addr = server.address();
-    boundViewerPort =
+    // `currentPort` is the value passed to `listen()` and stays 0 for
+    // ephemeral-port callers (tests, port=0). `server.address()` exposes
+    // the OS-assigned port — log that so the startup line is accurate.
+    const actualPort =
       addr && typeof addr === "object" && "port" in addr
         ? addr.port
         : currentPort;
+    boundViewerPort = actualPort;
     viewerSkipped = false;
     if (inboundSecret !== null) {
       const allowedHosts = readAllowedHostsOverride().join(", ");
       console.log(
-        `[agentmemory] Viewer: http://localhost:${currentPort} (bound to ${host}; inbound Bearer required; allowed Host headers: ${allowedHosts})`,
+        `[agentmemory] Viewer: http://localhost:${actualPort} (bound to ${host}; inbound Bearer required; allowed Host headers: ${allowedHosts})`,
       );
       return;
     }
-    if (currentPort === requestedPort) {
-      console.log(`[agentmemory] Viewer: http://localhost:${currentPort}`);
+    if (actualPort === requestedPort) {
+      console.log(`[agentmemory] Viewer: http://localhost:${actualPort}`);
     } else {
       console.log(
-        `[agentmemory] Viewer started on http://localhost:${currentPort} (fallback from ${requestedPort})`,
+        `[agentmemory] Viewer started on http://localhost:${actualPort} (fallback from ${requestedPort})`,
       );
     }
   });

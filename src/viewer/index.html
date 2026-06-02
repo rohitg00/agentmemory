@@ -1218,9 +1218,9 @@
         '<div class="viewer-auth-panel">' +
           '<div>' +
             '<div class="viewer-auth-title">Viewer authorization required</div>' +
-            '<div class="viewer-auth-desc">Enter <code>AGENTMEMORY_SECRET</code> to unlock viewer API access.</div>' +
+            '<div id="viewer-auth-desc" class="viewer-auth-desc">Enter <code>AGENTMEMORY_SECRET</code> to unlock viewer API access.</div>' +
           '</div>' +
-          '<input id="viewer-auth-token" type="password" autocomplete="off" spellcheck="false" placeholder="AGENTMEMORY_SECRET" />' +
+          '<input id="viewer-auth-token" type="password" autocomplete="off" spellcheck="false" aria-label="AGENTMEMORY_SECRET" aria-describedby="viewer-auth-desc" placeholder="AGENTMEMORY_SECRET" />' +
           '<button class="btn" data-action="save-viewer-token">Unlock</button>' +
         '</div>';
       var input = document.getElementById('viewer-auth-token');
@@ -3795,6 +3795,11 @@
         if (token) {
           setViewerToken(token);
           hideViewerAuthPrompt();
+          // Re-fetch config/flags so the footer version + flag banners
+          // refresh without a full page reload; fetchFlags() only runs
+          // during bootstrap and would otherwise stay stale until the
+          // user reloads.
+          fetchFlags();
           if (state[state.activeTab] && typeof state[state.activeTab] === 'object') {
             state[state.activeTab].loaded = false;
           }

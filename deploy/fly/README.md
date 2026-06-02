@@ -87,7 +87,7 @@ The entrypoint sets `AGENTMEMORY_VIEWER_HOST=::` **only when it detects
 Fly's runtime variables** (`FLY_APP_NAME` / `FLY_ALLOC_ID`). That makes
 the viewer listen on the machine's `fly-local-6pn` WireGuard interface
 as well as loopback so `fly proxy` can reach it. The same branch
-preseeds `VIEWER_ALLOWED_HOSTS=localhost:3113,127.0.0.1:3113,[::1]:3113`,
+pre-seeds `VIEWER_ALLOWED_HOSTS=localhost:3113,127.0.0.1:3113,[::1]:3113`,
 which are the Host headers `fly proxy 3113:3113` actually emits on
 your laptop.
 
