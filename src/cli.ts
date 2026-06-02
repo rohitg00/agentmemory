@@ -82,6 +82,21 @@ if (args.includes("--version") || args.includes("-V")) {
 const IIPINNED_VERSION =
   process.env["AGENTMEMORY_III_VERSION"] || "0.11.2";
 
+// How long the wrapper waits for iii-engine's REST API to start responding
+// before giving up and printing the "REST API never responded" error.
+// The default 15s is too tight on Windows: iii spawns the `iii-exec` worker
+// (`node dist/index.mjs`), which has to reconnect over WebSocket and
+// register HTTP triggers before the REST surface answers — and Windows cold
+// node startup + native deps regularly push that past 15s. Bumping to 60s
+// makes Windows installs work out of the box; AGENTMEMORY_READY_TIMEOUT_MS
+// lets users tune it further (e.g. CI containers, slow disks).
+const READY_TIMEOUT_MS = (() => {
+  const raw = process.env["AGENTMEMORY_READY_TIMEOUT_MS"];
+  if (!raw) return 60000;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 60000;
+})();
+
 // Map Node platform/arch → the asset name iii-hq/iii ships under
 // https://github.com/iii-hq/iii/releases/download/iii/v<version>/<asset>
 function iiiReleaseAsset(): string | null {
@@ -162,6 +177,10 @@ Environment:
   AGENTMEMORY_USE_DOCKER=1     Prefer the bundled docker-compose path over the
                                native iii-engine binary on first run.
   AGENTMEMORY_III_VERSION      Override pinned iii-engine version (default ${IIPINNED_VERSION}).
+  AGENTMEMORY_READY_TIMEOUT_MS How long to wait for iii-engine's REST API to
+                               come up before giving up (default 60000).
+                               Raise on slow disks / CI; lower for fast-fail
+                               smoke tests.
 
 Quick start:
   npx @agentmemory/agentmemory          # start with local iii-engine or Docker
@@ -1090,10 +1109,10 @@ async function main() {
   const s = p.spinner();
   s.start("Waiting for iii-engine to be ready...");
 
-  const ready = await waitForEngine(15000);
+  const ready = await waitForEngine(READY_TIMEOUT_MS);
   if (!ready) {
     const port = getRestPort();
-    s.stop("iii-engine did not become ready within 15s");
+    s.stop(`iii-engine did not become ready within ${Math.round(READY_TIMEOUT_MS / 1000)}s`);
 
     if (startupFailure?.kind === "engine-crashed" || startupFailure?.kind === "docker-crashed") {
       p.log.error("The iii-engine process crashed on startup.");
@@ -1441,10 +1460,12 @@ function buildDoctorEffects(): DoctorEffects {
       try {
         const started = await startEngine();
         if (!started) return { ok: false, message: "startEngine() returned false" };
-        const ready = await waitForEngine(15000);
+        const ready = await waitForEngine(READY_TIMEOUT_MS);
         return {
           ok: ready,
-          message: ready ? "Engine ready" : "Engine did not become ready within 15s",
+          message: ready
+            ? "Engine ready"
+            : `Engine did not become ready within ${Math.round(READY_TIMEOUT_MS / 1000)}s`,
         };
       } catch (err) {
         return {

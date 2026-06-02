@@ -162,7 +162,11 @@ export function loadConfig(): AgentMemoryConfig {
   const provider = detectProvider(env);
 
   return {
-    engineUrl: env["III_ENGINE_URL"] || "ws://localhost:49134",
+    // Use 127.0.0.1 (not "localhost") so we force IPv4. On Windows,
+    // `localhost` prefers IPv6 (::1) but iii-engine binds IPv4 only, so
+    // resolving via "localhost" leads to an ECONNREFUSED reconnect loop
+    // and the iii-exec worker never registers its HTTP triggers.
+    engineUrl: env["III_ENGINE_URL"] || "ws://127.0.0.1:49134",
     restPort: parseInt(env["III_REST_PORT"] || "3111", 10) || 3111,
     streamsPort: parseInt(env["III_STREAMS_PORT"] || "3112", 10) || 3112,
     provider,
