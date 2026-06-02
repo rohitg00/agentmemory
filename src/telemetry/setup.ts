@@ -39,6 +39,19 @@ interface Counters {
   auditLog: Counter;
   snapshotCreate: Counter;
   governanceDelete: Counter;
+  // #771: smart-search follow-up proxy. Incremented when a session
+  // issues a second smart-search inside the configured window AND the
+  // new result set has zero overlap with the previous one (a
+  // directional signal for "the first results didn't satisfy"). Treat
+  // as directional, not absolute — legitimate query refinement counts
+  // here too.
+  smartSearchFollowupWithinWindow: Counter;
+  // #771: benchmark-mode counter. Incremented by the benchmark scorer
+  // when judge_correct === false AND the gold-evidence-IDs are a
+  // subset of the retrieved-context-IDs (reader missed the answer
+  // despite retrieval being correct). Never incremented by core in
+  // live use; reserved here so dashboards keep a stable name.
+  readerFailureWithEvidence: Counter;
 }
 
 interface Histograms {
@@ -81,6 +94,8 @@ const COUNTER_NAMES: Array<[keyof Counters, string]> = [
   ["auditLog", "audit.log"],
   ["snapshotCreate", "snapshot.create"],
   ["governanceDelete", "governance.delete"],
+  ["smartSearchFollowupWithinWindow", "smart_search.followup_within_window_total"],
+  ["readerFailureWithEvidence", "reader_failure_with_evidence_total"],
 ];
 
 const HISTOGRAM_NAMES: Array<[keyof Histograms, string]> = [
@@ -91,6 +106,24 @@ const HISTOGRAM_NAMES: Array<[keyof Histograms, string]> = [
   ["embeddingLatency", "embedding.latency_ms"],
   ["vectorSearchLatency", "vector_search.latency_ms"],
 ];
+
+// Accessors so functions outside `initMetrics`'s closure can record into
+// the same counter / histogram instances after init. Before init both
+// return no-op fallbacks so call sites stay safe in tests and during
+// the boot window.
+export function getCounters(): Counters {
+  if (counters) return counters;
+  return Object.fromEntries(
+    COUNTER_NAMES.map(([key]) => [key, NOOP_COUNTER]),
+  ) as unknown as Counters;
+}
+
+export function getHistograms(): Histograms {
+  if (histograms) return histograms;
+  return Object.fromEntries(
+    HISTOGRAM_NAMES.map(([key]) => [key, NOOP_HISTOGRAM]),
+  ) as unknown as Histograms;
+}
 
 export function initMetrics(getMeter?: (name: string) => Meter): {
   counters: Counters;

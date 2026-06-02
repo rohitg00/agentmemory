@@ -1096,9 +1096,15 @@ export function registerApiTriggers(
     config: { api_path: "/agentmemory/evict", http_method: "POST" },
   });
 
-  sdk.registerFunction("api::smart-search", 
+  sdk.registerFunction("api::smart-search",
     async (
-      req: ApiRequest<{ query?: string; expandIds?: string[]; limit?: number }>,
+      req: ApiRequest<{
+        query?: string;
+        expandIds?: string[];
+        limit?: number;
+        sessionId?: string;
+        source?: string;
+      }>,
     ): Promise<Response> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
@@ -1111,7 +1117,17 @@ export function registerApiTriggers(
           body: { error: "query or expandIds is required" },
         };
       }
-      const result = await sdk.trigger({ function_id: "mem::smart-search", payload: req.body });
+      // #771: route the X-Agentmemory-Source header into the payload so
+      // the followup-rate diagnostic can skip viewer-originated calls.
+      // Body wins if both are set (advanced callers explicitly override).
+      const headers = (req.headers || {}) as Record<string, string | string[] | undefined>;
+      const sourceHeader = headers["x-agentmemory-source"] ?? headers["X-Agentmemory-Source"];
+      const sourceFromHeader = Array.isArray(sourceHeader) ? sourceHeader[0] : sourceHeader;
+      const payload = {
+        ...req.body,
+        source: req.body?.source ?? sourceFromHeader,
+      };
+      const result = await sdk.trigger({ function_id: "mem::smart-search", payload });
       return { status_code: 200, body: result };
     },
   );
@@ -1119,6 +1135,38 @@ export function registerApiTriggers(
     type: "http",
     function_id: "api::smart-search",
     config: { api_path: "/agentmemory/smart-search", http_method: "POST" },
+  });
+
+  // #771: read-back endpoint for the followup-rate diagnostic. Returns
+  // a directional signal — overcounts on legitimate query refinement —
+  // so help text + the CLI status line carry the same caveat.
+  sdk.registerFunction("api::diagnostic-followup",
+    async (req: ApiRequest): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const result = await sdk.trigger({
+        function_id: "mem::diagnostic::followup-stats",
+        payload: {},
+      });
+      return {
+        status_code: 200,
+        body: {
+          ...(result as Record<string, unknown>),
+          caveat:
+            "Directional signal: overcounts on legitimate query refinement. " +
+            "Tune via AGENTMEMORY_FOLLOWUP_WINDOW_SECONDS.",
+        },
+      };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::diagnostic-followup",
+    config: {
+      api_path: "/agentmemory/diagnostics/followup",
+      http_method: "GET",
+      middleware_function_ids: ["middleware::api-auth"],
+    },
   });
 
   sdk.registerFunction("api::timeline", 

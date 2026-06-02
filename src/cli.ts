@@ -162,6 +162,9 @@ Environment:
   AGENTMEMORY_USE_DOCKER=1     Prefer the bundled docker-compose path over the
                                native iii-engine binary on first run.
   AGENTMEMORY_III_VERSION      Override pinned iii-engine version (default ${IIPINNED_VERSION}).
+  AGENTMEMORY_FOLLOWUP_WINDOW_SECONDS
+                               Window (seconds) for the smart-search follow-up diagnostic
+                               (default 30). Long values overcount, short values undercount.
 
 Quick start:
   npx @agentmemory/agentmemory          # start with local iii-engine or Docker
@@ -1271,12 +1274,13 @@ async function runStatus() {
   }
 
   try {
-    const [healthRes, sessionsRes, graphRes, memoriesRes, flagsRes] = await Promise.all([
+    const [healthRes, sessionsRes, graphRes, memoriesRes, flagsRes, followupRes] = await Promise.all([
       apiFetch<any>(base, "health"),
       apiFetch<any>(base, "sessions"),
       apiFetch<any>(base, "graph/stats"),
       apiFetch<any>(base, "memories?count=true"),
       apiFetch<any>(base, "config/flags"),
+      apiFetch<any>(base, "diagnostics/followup"),
     ]);
 
     if (typeof healthRes?.viewerPort === "number") {
@@ -1335,6 +1339,16 @@ async function runStatus() {
       lines.push(`Embeddings:   ${embed}`);
       lines.push(`Flags:`);
       flagRows.forEach((r: string) => lines.push(r));
+    }
+
+    if (followupRes && Number.isFinite(followupRes.agentInitiatedSearches)) {
+      const total = Number(followupRes.agentInitiatedSearches) || 0;
+      const hits = Number(followupRes.followupWithinWindow) || 0;
+      const pct = total > 0 ? Math.round((hits / total) * 100) : 0;
+      lines.push("");
+      lines.push(
+        `Followup rate: ${hits}/${total} (${pct}%) within ${followupRes.windowSeconds}s — directional, may overcount on refinement`,
+      );
     }
 
     p.note(lines.join("\n"), "agentmemory");
