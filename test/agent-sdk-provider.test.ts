@@ -5,9 +5,15 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 // before the first await. With the guard scoped to AsyncLocalStorage,
 // each sibling runs in its own context and receives the real SDK result.
 
-const queryCalls: Array<{ systemPrompt: string; userPrompt: string }> = [];
-let mockResult: string | ((systemPrompt: string, userPrompt: string) => string) =
-  "<result>ok</result>";
+// vi.mock is hoisted above module-scope `const`/`let`, so the factory's
+// closure can't safely reference non-hoisted bindings. Use vi.hoisted to
+// declare the mock's mutable state alongside the mock itself.
+const state = vi.hoisted(() => ({
+  queryCalls: [] as Array<{ systemPrompt: string; userPrompt: string }>,
+  mockResult: "<result>ok</result>" as
+    | string
+    | ((systemPrompt: string, userPrompt: string) => string),
+}));
 
 vi.mock("@anthropic-ai/claude-agent-sdk", () => ({
   query: ({
@@ -17,12 +23,12 @@ vi.mock("@anthropic-ai/claude-agent-sdk", () => ({
     prompt: string;
     options: { systemPrompt: string };
   }) => {
-    queryCalls.push({ systemPrompt: options.systemPrompt, userPrompt: prompt });
-    const value =
-      typeof mockResult === "function"
-        ? mockResult(options.systemPrompt, prompt)
-        : mockResult;
+    state.queryCalls.push({ systemPrompt: options.systemPrompt, userPrompt: prompt });
     async function* gen() {
+      const value =
+        typeof state.mockResult === "function"
+          ? await state.mockResult(options.systemPrompt, prompt)
+          : state.mockResult;
       yield { type: "result", result: value } as { type: "result"; result: string };
     }
     return gen();
@@ -33,8 +39,8 @@ import { AgentSDKProvider } from "../src/providers/agent-sdk.js";
 
 describe("AgentSDKProvider recursion guard (#781)", () => {
   beforeEach(() => {
-    queryCalls.length = 0;
-    mockResult = "<result>ok</result>";
+    state.queryCalls.length = 0;
+    state.mockResult = "<result>ok</result>";
     delete process.env.AGENTMEMORY_SDK_CHILD;
   });
 
@@ -58,8 +64,8 @@ describe("AgentSDKProvider recursion guard (#781)", () => {
       "<result>ok</result>",
       "<result>ok</result>",
     ]);
-    expect(queryCalls.length).toBe(4);
-    expect(queryCalls.map((c) => c.userPrompt)).toEqual([
+    expect(state.queryCalls.length).toBe(4);
+    expect(state.queryCalls.map((c) => c.userPrompt)).toEqual([
       "chunk 1",
       "chunk 2",
       "chunk 3",
@@ -79,14 +85,14 @@ describe("AgentSDKProvider recursion guard (#781)", () => {
     expect(a).toBe("<result>ok</result>");
     expect(b).toBe("<result>ok</result>");
     expect(c).toBe("<result>ok</result>");
-    expect(queryCalls.length).toBe(3);
+    expect(state.queryCalls.length).toBe(3);
   });
 
   it("sets AGENTMEMORY_SDK_CHILD=1 while inside the SDK call (so spawned subprocesses inherit it)", async () => {
     const provider = new AgentSDKProvider();
     let observedEnv: string | undefined;
 
-    mockResult = (sysPrompt, _userPrompt) => {
+    state.mockResult = (sysPrompt, _userPrompt) => {
       observedEnv = process.env.AGENTMEMORY_SDK_CHILD;
       return `<result>${sysPrompt}</result>`;
     };
@@ -106,11 +112,40 @@ describe("AgentSDKProvider recursion guard (#781)", () => {
     expect(process.env.AGENTMEMORY_SDK_CHILD).toBe("prev-value");
   });
 
+  it("keeps AGENTMEMORY_SDK_CHILD=1 for the full overlap of concurrent calls", async () => {
+    const provider = new AgentSDKProvider();
+    // Allow the calls to overlap: each call records the env value it
+    // saw, then a tick later records it again. With a refcounted guard
+    // both observations on both calls should see "1"; with the old
+    // per-call snapshot one call's restore would null the env while
+    // the sibling is still mid-flight.
+    const observations: Array<{ id: string; phase: string; env: string | undefined }> = [];
+
+    state.mockResult = async (sysPrompt, _user) => {
+      observations.push({ id: sysPrompt, phase: "enter", env: process.env.AGENTMEMORY_SDK_CHILD });
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      observations.push({ id: sysPrompt, phase: "exit", env: process.env.AGENTMEMORY_SDK_CHILD });
+      return `<result>${sysPrompt}</result>`;
+    };
+
+    await Promise.all([
+      provider.summarize("a", "x"),
+      provider.summarize("b", "y"),
+      provider.summarize("c", "z"),
+    ]);
+
+    expect(observations.length).toBe(6);
+    for (const o of observations) {
+      expect(o.env).toBe("1");
+    }
+    expect(process.env.AGENTMEMORY_SDK_CHILD).toBeUndefined();
+  });
+
   it("genuine re-entry (an inner call inside the same async tree) still degrades to empty", async () => {
     const provider = new AgentSDKProvider();
     let innerResult = "not-set";
 
-    mockResult = async (_sys, _user) => {
+    state.mockResult = async (_sys, _user) => {
       // Simulate the SDK callback re-entering the provider while the
       // outer call is still active. The ALS frame is active here, so
       // the inner call must return "" to break the recursion.

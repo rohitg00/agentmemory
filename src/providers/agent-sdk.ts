@@ -22,6 +22,16 @@ import type { MemoryProvider } from '../types.js'
 //     callback to /summarize. ALS does not cross process boundaries.
 const sdkChildContext = new AsyncLocalStorage<true>()
 
+// Module-level refcount for the process.env marker. A per-call snapshot
+// races across overlapping calls: A saves prev=undef, B saves prev="1",
+// A's finally restores undef while B is still mid-flight (so any child
+// process B spawns won't inherit the marker), and B's finally restores
+// "1" — leaking the marker into the global env after the last caller.
+// Reference-count instead so only the first entrant snapshots the
+// original value and only the last exit restores it.
+let sdkActiveCount = 0
+let sdkOriginalEnv: string | undefined
+
 type ClaudeAgentSdkModule = typeof import('@anthropic-ai/claude-agent-sdk')
 
 export class AgentSDKProvider implements MemoryProvider {
@@ -67,12 +77,13 @@ export class AgentSDKProvider implements MemoryProvider {
       // Mark spawned subprocesses (the SDK's underlying Claude session
       // + its hook scripts) as SDK children via process.env. Hook scripts
       // run in separate processes and read process.env to short-circuit
-      // their REST callbacks. The set/restore window is the duration of
-      // the SDK call. Concurrent in-process siblings all want the value
-      // to be "1" during their respective SDK calls anyway, so the
-      // race on the global is benign for the env-inheritance purpose.
-      const prev = process.env.AGENTMEMORY_SDK_CHILD
-      process.env.AGENTMEMORY_SDK_CHILD = '1'
+      // their REST callbacks. Reference-counted so overlapping calls
+      // don't race each other into restoring stale values.
+      if (sdkActiveCount === 0) {
+        sdkOriginalEnv = process.env.AGENTMEMORY_SDK_CHILD
+        process.env.AGENTMEMORY_SDK_CHILD = '1'
+      }
+      sdkActiveCount++
 
       try {
         const { query } = await this.loadSdk()
@@ -94,10 +105,14 @@ export class AgentSDKProvider implements MemoryProvider {
         }
         return result
       } finally {
-        if (prev === undefined) {
-          delete process.env.AGENTMEMORY_SDK_CHILD
-        } else {
-          process.env.AGENTMEMORY_SDK_CHILD = prev
+        sdkActiveCount--
+        if (sdkActiveCount === 0) {
+          if (sdkOriginalEnv === undefined) {
+            delete process.env.AGENTMEMORY_SDK_CHILD
+          } else {
+            process.env.AGENTMEMORY_SDK_CHILD = sdkOriginalEnv
+          }
+          sdkOriginalEnv = undefined
         }
       }
     })
