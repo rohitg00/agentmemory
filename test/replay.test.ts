@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { parseJsonlText } from "../src/replay/jsonl-parser.js";
 import { projectTimeline } from "../src/replay/timeline.js";
+import { registerReplayFunctions } from "../src/functions/replay.js";
+import { KV } from "../src/state/schema.js";
 
 const fx = (name: string) =>
   readFileSync(join(__dirname, "fixtures/jsonl", name), "utf-8");
@@ -143,3 +147,77 @@ describe("projectTimeline", () => {
   });
 });
 
+function mockKV() {
+  const store = new Map<string, Map<string, unknown>>();
+  return {
+    get: async <T>(scope: string, key: string): Promise<T | null> => {
+      return (store.get(scope)?.get(key) as T) ?? null;
+    },
+    set: async <T>(scope: string, key: string, data: T): Promise<T> => {
+      if (key === undefined) throw new Error("missing field `key`");
+      if (!store.has(scope)) store.set(scope, new Map());
+      store.get(scope)!.set(key, data);
+      return data;
+    },
+    list: async <T>(scope: string): Promise<T[]> => {
+      const entries = store.get(scope);
+      return entries ? (Array.from(entries.values()) as T[]) : [];
+    },
+    store,
+  };
+}
+
+function mockSdk() {
+  const functions = new Map<string, Function>();
+  return {
+    registerFunction: (idOrOpts: string | { id: string }, handler: Function) => {
+      const id = typeof idOrOpts === "string" ? idOrOpts : idOrOpts.id;
+      functions.set(id, handler);
+    },
+    trigger: async (idOrInput: string | { function_id: string; payload: unknown }, data?: unknown) => {
+      const id = typeof idOrInput === "string" ? idOrInput : idOrInput.function_id;
+      const payload = typeof idOrInput === "string" ? data : idOrInput.payload;
+      const fn = functions.get(id);
+      if (!fn) throw new Error(`No function: ${id}`);
+      return fn(payload);
+    },
+  };
+}
+
+describe("mem::replay::import-jsonl", () => {
+  it("updates malformed existing sessions using the parsed session id", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "agentmemory-replay-"));
+    try {
+      const file = join(dir, "session.jsonl");
+      await writeFile(file, fx("basic.jsonl"), "utf-8");
+
+      const kv = mockKV();
+      await kv.set(KV.sessions, "sess-basic", {
+        project: "project",
+        cwd: "/Users/alice/project",
+        startedAt: "2026-04-17T09:00:00.000Z",
+        endedAt: "2026-04-17T09:00:00.000Z",
+        status: "active",
+        observationCount: 1,
+      });
+      const sdk = mockSdk();
+      registerReplayFunctions(sdk as never, kv as never);
+
+      const result = await sdk.trigger("mem::replay::import-jsonl", { path: file });
+
+      expect(result).toMatchObject({
+        success: true,
+        imported: 1,
+        sessionIds: ["sess-basic"],
+        observations: 2,
+      });
+      const updated = kv.store.get(KV.sessions)?.get("sess-basic") as { id?: string; observationCount?: number; status?: string; tags?: string[] };
+      expect(updated.id).toBe("sess-basic");
+      expect(updated.observationCount).toBe(3);
+      expect(updated.status).toBe("completed");
+      expect(updated.tags).toContain("jsonl-import");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});

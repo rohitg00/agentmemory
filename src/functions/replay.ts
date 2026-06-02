@@ -393,6 +393,7 @@ export function registerReplayFunctions(sdk: ISdk, kv: StateKV): void {
 
         const existing = await kv.get<Session>(KV.sessions, parsed.sessionId);
         if (existing) {
+          if (!existing.id) existing.id = parsed.sessionId;
           existing.observationCount =
             (existing.observationCount || 0) + parsed.observations.length;
           if (parsed.endedAt > (existing.endedAt || "")) {
@@ -406,7 +407,7 @@ export function registerReplayFunctions(sdk: ISdk, kv: StateKV): void {
           if (!existing.firstPrompt && firstPrompt) {
             existing.firstPrompt = firstPrompt;
           }
-          await kv.set(KV.sessions, existing.id, existing);
+          await kv.set(KV.sessions, parsed.sessionId, existing);
         } else {
           const session: Session = {
             id: parsed.sessionId,
