@@ -6,20 +6,27 @@ import { readFileSync } from "node:fs";
 // fix the `event::session::stopped` handler in events.ts was a dead
 // subscriber — no code published `agentmemory.session.stopped`, so graph
 // nodes / lessons / crystals never materialized despite the handler
-// existing. Direct triggerVoid keeps the HTTP response fast (kv.update
-// runs synchronously, downstream pipeline fan-outs without blocking).
+// existing. Direct fire-and-forget trigger keeps the HTTP response fast
+// (kv.update runs synchronously, downstream pipeline fan-outs without
+// blocking).
 describe("api::session::end → event::session::stopped (#666)", () => {
   const api = readFileSync("src/triggers/api.ts", "utf-8");
 
-  it("api::session::end calls sdk.triggerVoid('event::session::stopped') after kv.update", () => {
+  it("api::session::end fires event::session::stopped after kv.update", () => {
     expect(api).toMatch(
-      /api::session::end[\s\S]*?kv\.update\(KV\.sessions[\s\S]*?triggerVoid\("event::session::stopped"/,
+      /api::session::end[\s\S]*?kv\.update\(KV\.sessions[\s\S]*?function_id:\s*"event::session::stopped"/,
     );
   });
 
-  it("triggerVoid payload includes sessionId", () => {
+  it("event::session::stopped trigger payload includes sessionId", () => {
     expect(api).toMatch(
-      /triggerVoid\("event::session::stopped",\s*\{\s*sessionId\s*\}/,
+      /function_id:\s*"event::session::stopped",\s*payload:\s*\{\s*sessionId\s*\}/,
+    );
+  });
+
+  it("event::session::stopped uses TriggerAction.Void for fire-and-forget", () => {
+    expect(api).toMatch(
+      /function_id:\s*"event::session::stopped"[\s\S]*?action:\s*TriggerAction\.Void\(\)/,
     );
   });
 });

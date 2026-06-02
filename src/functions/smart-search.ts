@@ -8,9 +8,65 @@ import type {
 } from "../types.js";
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
+import { withKeyedLock } from "../state/keyed-mutex.js";
 import { recordAccessBatch } from "./access-tracker.js";
-import { getAgentId, isAgentScopeIsolated } from "../config.js";
+import {
+  getAgentId,
+  isAgentScopeIsolated,
+  getFollowupWindowSeconds,
+} from "../config.js";
 import { logger } from "../logger.js";
+import { getCounters } from "../telemetry/setup.js";
+
+// #771: smart-search followup-rate diagnostic. Stored per session as
+// the most recent search payload, used to detect whether the next
+// search inside the window had a disjoint result set. sessionId is
+// duplicated into the row so the hourly sweep can delete by it
+// (StateKV.list returns values only).
+export interface RecentSearch {
+  sessionId: string;
+  query: string;
+  resultIds: string[];
+  at: number;
+}
+
+// Module-scope counter mirror so `mem::diagnostic::followup-stats` can
+// read the rate back without going through the OTEL collector. The
+// OTEL counter is still the canonical export; this is an in-process
+// convenience for `agentmemory status` + tests.
+const followupStats = {
+  followupWithinWindow: 0,
+  agentInitiatedSearches: 0,
+};
+
+// Tracks the in-flight detection promises so tests (and shutdown
+// flushes) can wait for all queued lock bodies to drain. The Set adds
+// when a detection is queued and removes when it settles; size === 0
+// means no pending detections.
+const pendingFollowups = new Set<Promise<void>>();
+
+export function getFollowupStats(): {
+  followupWithinWindow: number;
+  agentInitiatedSearches: number;
+  rate: number;
+} {
+  const total = followupStats.agentInitiatedSearches;
+  return {
+    ...followupStats,
+    rate: total > 0 ? followupStats.followupWithinWindow / total : 0,
+  };
+}
+
+export async function flushPendingFollowups(): Promise<void> {
+  // Snapshot the current pending set; new detections queued after the
+  // snapshot run in a fresh batch.
+  await Promise.all(Array.from(pendingFollowups));
+}
+
+export function resetFollowupStatsForTests(): void {
+  followupStats.followupWithinWindow = 0;
+  followupStats.agentInitiatedSearches = 0;
+}
 
 // Compact mode trims each lesson's content for at-a-glance display. The
 // full content is fetched via memory_lesson_recall when the caller needs it.
@@ -32,6 +88,13 @@ export function registerSmartSearchFunction(
       // roles through one server. "*" opts out of the env-default
       // scope and returns hits from every agent.
       agentId?: string;
+      // #771: session anchor for the followup-rate diagnostic. The
+      // API trigger fills this from req.body / headers; direct
+      // sdk.trigger callers can pass it explicitly.
+      sessionId?: string;
+      // #771: marks viewer-originated searches so the diagnostic
+      // ignores them — only agent-initiated re-queries should count.
+      source?: string;
     }) => {
 
       // Compute the agent filter once, up front. Both the expandIds
@@ -141,6 +204,54 @@ export function registerSmartSearchFunction(
         compact.map((r) => r.obsId),
       );
 
+      // #771: followup-rate diagnostic. Only fires for agent-initiated
+      // searches that carry a sessionId — viewer-originated searches
+      // (source === "viewer") and direct-sdk callers without a session
+      // anchor are skipped. The result-set comparison uses obsIds: a
+      // disjoint set under the window suggests the previous call's
+      // results were not used, which is our directional proxy for
+      // reader-failure-with-evidence.
+      if (
+        data.sessionId &&
+        typeof data.sessionId === "string" &&
+        data.source !== "viewer" &&
+        compact.length > 0
+      ) {
+        // Skip detection when retrieval returned nothing: an empty
+        // result set is a retrieval failure, not a reader-failure
+        // signal. Counting it as "disjoint from prior" would inflate
+        // the rate every time search returns no hits.
+        followupStats.agentInitiatedSearches++;
+        // Off the critical response path. The withKeyedLock(sessionId)
+        // call serializes detection per session, so two rapid
+        // back-to-back searches from the same agent still see ordered
+        // prior-row writes — the second call's lock body queues
+        // behind the first's. Other sessions run in parallel.
+        const sessionIdForFollowup = data.sessionId;
+        const queryForFollowup = data.query;
+        const compactForFollowup = compact;
+        const detection = withKeyedLock(
+          `recent-searches:${sessionIdForFollowup}`,
+          () =>
+            detectFollowup(
+              kv,
+              sessionIdForFollowup,
+              queryForFollowup,
+              compactForFollowup,
+            ),
+        )
+          .catch((err) => {
+            logger.warn("Smart search followup detection failed", {
+              sessionId: sessionIdForFollowup,
+              error: err instanceof Error ? err.message : String(err),
+            });
+          })
+          .finally(() => {
+            pendingFollowups.delete(detection);
+          });
+        pendingFollowups.add(detection);
+      }
+
       logger.info("Smart search compact", {
         query: data.query,
         results: compact.length,
@@ -187,6 +298,46 @@ async function recallLessons(
     });
     return [];
   }
+}
+
+async function detectFollowup(
+  kv: StateKV,
+  sessionId: string,
+  query: string,
+  compact: CompactSearchResult[],
+): Promise<void> {
+  const now = Date.now();
+  const windowMs = Math.max(1, getFollowupWindowSeconds()) * 1000;
+  const currentIds = compact.map((r) => r.obsId);
+  const current: RecentSearch = { sessionId, query, resultIds: currentIds, at: now };
+
+  const prior = await kv
+    .get<RecentSearch>(KV.recentSearches, sessionId)
+    .catch(() => null);
+
+  await kv.set(KV.recentSearches, sessionId, current);
+
+  if (!prior || typeof prior.at !== "number") return;
+  if (now - prior.at > windowMs) return;
+  // Same query inside the window is a retry, not a follow-up; skip so a
+  // duplicate request from a flaky client doesn't inflate the metric.
+  if (typeof prior.query === "string" && prior.query === query) return;
+
+  const priorIds = Array.isArray(prior.resultIds) ? prior.resultIds : [];
+  const priorSet = new Set(priorIds);
+  const hasOverlap = currentIds.some((id) => priorSet.has(id));
+  if (hasOverlap) return;
+
+  getCounters().smartSearchFollowupWithinWindow.add(1);
+  followupStats.followupWithinWindow++;
+  logger.info("Smart search followup detected", {
+    sessionId,
+    windowSeconds: Math.round(windowMs / 1000),
+    priorQuery: prior.query,
+    nextQuery: query,
+    priorResultCount: priorIds.length,
+    nextResultCount: currentIds.length,
+  });
 }
 
 async function findObservation(

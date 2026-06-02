@@ -297,4 +297,137 @@ describe("Obsidian Export", () => {
     expect(result.success).toBe(true);
     expect(result.errors).toBeUndefined();
   });
+
+  // #729: any record missing an id used to crash `sanitize(undefined.id)`
+  // outside the per-record try, escaping the handler entirely and
+  // returning HTTP 500 `{"error":"[object Object]"}` with zero files
+  // written. The hardened loops filter id-less records and the outer
+  // try/catch keeps thrown errors from ever reaching the HTTP serializer.
+  it("skips records that are missing an id and keeps exporting the rest", async () => {
+    await kv.set("mem:memories", "orphan-memory", { ...makeMemory("mem_missing"), id: undefined } as any);
+    await kv.set("mem:lessons", "orphan-lesson", { ...makeLesson("lsn_missing"), id: undefined } as any);
+    await kv.set("mem:crystals", "orphan-crystal", { ...makeCrystal("crys_missing"), id: undefined } as any);
+    await kv.set("mem:sessions", "orphan-session", { ...makeSession("ses_missing"), id: undefined } as any);
+    await kv.set("mem:sessions", "valid-session", makeSession("ses_valid"));
+
+    const result = (await sdk.trigger("mem::obsidian-export", {})) as {
+      success: boolean;
+      exported: Record<string, number>;
+      errors?: unknown[];
+    };
+
+    expect(result.success).toBe(true);
+    expect(result.exported.memories).toBe(0);
+    expect(result.exported.lessons).toBe(0);
+    expect(result.exported.crystals).toBe(0);
+    expect(result.exported.sessions).toBe(1);
+    expect(result.errors).toBeUndefined();
+    expect([...writtenFiles.keys()].some((path) => path.includes("undefined.md"))).toBe(false);
+    expect([...writtenFiles.keys()].some((path) => path.includes("sessions/ses_valid.md"))).toBe(true);
+  });
+
+  it("tolerates malformed startedAt timestamps when sorting sessions", async () => {
+    await kv.set("mem:sessions", "ses_recent", { ...makeSession("ses_recent"), startedAt: "2026-04-02T00:00:00Z" });
+    await kv.set("mem:sessions", "ses_bad", { ...makeSession("ses_bad"), startedAt: "not-a-date" } as any);
+    await kv.set("mem:sessions", "ses_undef", { ...makeSession("ses_undef"), startedAt: undefined } as any);
+
+    const result = (await sdk.trigger("mem::obsidian-export", {})) as {
+      success: boolean;
+      exported: Record<string, number>;
+    };
+
+    expect(result.success).toBe(true);
+    expect(result.exported.sessions).toBe(3);
+  });
+
+  it("exports memories whose optional array fields are missing or null", async () => {
+    const incomplete = {
+      ...makeMemory("mem_incomplete"),
+      concepts: undefined,
+      files: null,
+      relatedIds: null,
+      supersedes: undefined,
+    } as any;
+    await kv.set("mem:memories", incomplete.id, incomplete);
+
+    const result = (await sdk.trigger("mem::obsidian-export", {})) as {
+      success: boolean;
+      exported: Record<string, number>;
+    };
+
+    expect(result.success).toBe(true);
+    expect(result.exported.memories).toBe(1);
+
+    const memFile = [...writtenFiles.entries()].find(([k]) =>
+      k.includes("memories/mem_incomplete.md"),
+    );
+    expect(memFile).toBeDefined();
+    const content = memFile![1];
+    expect(content).toContain("# Memory mem_incomplete");
+    expect(content).not.toContain("## Related");
+    expect(content).not.toContain("## Supersedes");
+  });
+
+  it("falls back to the id when title / content / narrative are missing", async () => {
+    await kv.set("mem:memories", "mem_no_title", {
+      ...makeMemory("mem_no_title"),
+      title: undefined,
+      content: undefined,
+    } as any);
+    await kv.set("mem:lessons", "lsn_no_content", {
+      ...makeLesson("lsn_no_content"),
+      content: undefined,
+    } as any);
+    await kv.set("mem:crystals", "crys_no_narr", {
+      ...makeCrystal("crys_no_narr"),
+      narrative: undefined,
+    } as any);
+
+    const result = (await sdk.trigger("mem::obsidian-export", {})) as {
+      success: boolean;
+      exported: Record<string, number>;
+    };
+
+    expect(result.success).toBe(true);
+    expect(result.exported.memories).toBe(1);
+    expect(result.exported.lessons).toBe(1);
+    expect(result.exported.crystals).toBe(1);
+
+    const memFile = [...writtenFiles.entries()].find(([k]) =>
+      k.includes("memories/mem_no_title.md"),
+    );
+    expect(memFile![1]).toContain("# mem_no_title");
+
+    const lsnFile = [...writtenFiles.entries()].find(([k]) =>
+      k.includes("lessons/lsn_no_content.md"),
+    );
+    expect(lsnFile![1]).toContain("# Lesson: lsn_no_content");
+
+    const crysFile = [...writtenFiles.entries()].find(([k]) =>
+      k.includes("crystals/crys_no_narr.md"),
+    );
+    expect(crysFile![1]).toContain("# Crystal: crys_no_narr");
+  });
+
+  it("never throws out to the engine — returns {success: false, error: <string>} on internal failure", async () => {
+    // Force mkdir to throw to simulate an unexpected runtime error so we
+    // can assert the outer try/catch turns it into a serializable error.
+    const fsModule = await import("node:fs/promises");
+    const original = fsModule.mkdir;
+    (fsModule.mkdir as any) = vi.fn(async () => {
+      throw new TypeError("simulated disk failure");
+    });
+
+    try {
+      const result = (await sdk.trigger("mem::obsidian-export", {})) as {
+        success: boolean;
+        error?: string;
+      };
+      expect(result.success).toBe(false);
+      expect(typeof result.error).toBe("string");
+      expect(result.error).toContain("simulated disk failure");
+    } finally {
+      (fsModule.mkdir as any) = original;
+    }
+  });
 });

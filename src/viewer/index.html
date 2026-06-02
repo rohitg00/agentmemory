@@ -713,6 +713,46 @@
     .flag-close:hover,
     .flag-close:focus-visible { color: var(--ink); outline: 2px solid var(--border); outline-offset: 1px; }
 
+    .viewer-auth {
+      display: none;
+      padding: 0 24px 10px 24px;
+      background: var(--bg);
+      flex: 0 0 auto;
+      position: relative;
+      z-index: 1;
+    }
+    .viewer-auth.open { display: block; }
+    .viewer-auth-panel {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(180px, 320px) auto;
+      gap: 10px;
+      align-items: center;
+      width: min(960px, 100%);
+      max-width: 960px;
+      padding: 10px 14px;
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--accent);
+      background: var(--bg-subtle);
+      font-family: var(--font-ui);
+      font-size: 12px;
+    }
+    .viewer-auth-title { font-weight: 600; color: var(--ink); margin-bottom: 2px; }
+    .viewer-auth-desc { color: var(--ink-muted); line-height: 1.4; }
+    .viewer-auth-desc code { font-family: var(--font-mono); font-size: 10px; color: var(--ink); }
+    .viewer-auth input {
+      width: 100%;
+      min-width: 0;
+      padding: 7px 9px;
+      border: 1px solid var(--border);
+      background: var(--bg);
+      color: var(--ink);
+      font-family: var(--font-mono);
+      font-size: 12px;
+    }
+    @media (max-width: 900px) {
+      .viewer-auth-panel { grid-template-columns: 1fr; }
+    }
+
     /* Viewer footer */
     .viewer-footer {
       margin-top: 48px; padding: 16px 0 24px;
@@ -963,6 +1003,7 @@
   </div>
 
   <div id="flag-banners" class="flag-banners"></div>
+  <div id="viewer-auth" class="viewer-auth"></div>
 
   <div id="view-dashboard" class="view active"></div>
   <div id="view-graph" class="view"></div>
@@ -1065,11 +1106,12 @@
     };
     var CB_STATE_COLORS = { closed: 'badge-green', open: 'badge-red', 'half-open': 'badge-yellow' };
     var TAB_IDS = ['dashboard', 'graph', 'memories', 'timeline', 'sessions', 'lessons', 'actions', 'crystals', 'audit', 'activity', 'profile', 'replay'];
+    var VIEWER_TOKEN_STORAGE_KEY = 'agentmemory-viewer-token';
 
     var state = {
       activeTab: 'dashboard',
       dashboard: { loaded: false, health: null, sessions: [], memories: [], graphStats: null, recentAudit: [], lessons: [], crystals: [] },
-      graph: { loaded: false, nodes: [], edges: [], stats: null, filters: {}, selectedNode: null },
+      graph: { loaded: false, nodes: [], edges: [], stats: null, filters: {}, selectedNode: null, queryError: null, truncated: false, totalNodes: 0, totalEdges: 0 },
       memories: { loaded: false, items: [], search: '', typeFilter: '' },
       timeline: { loaded: false, observations: [], sessionId: '', minImportance: 0, page: 0, pageSize: 50 },
       sessions: { loaded: false, items: [], selectedId: null },
@@ -1161,17 +1203,54 @@
         try { el.setSelectionRange(focus.start, focus.end); } catch (e) {}
       }
     }
+    function getViewerToken() {
+      try { return sessionStorage.getItem(VIEWER_TOKEN_STORAGE_KEY) || ''; } catch (_) { return ''; }
+    }
+    function setViewerToken(token) {
+      try {
+        if (token) sessionStorage.setItem(VIEWER_TOKEN_STORAGE_KEY, token);
+        else sessionStorage.removeItem(VIEWER_TOKEN_STORAGE_KEY);
+      } catch (_) {}
+    }
+    function showViewerAuthPrompt() {
+      var host = document.getElementById('viewer-auth');
+      if (!host) return;
+      host.classList.add('open');
+      host.innerHTML =
+        '<div class="viewer-auth-panel">' +
+          '<div>' +
+            '<div class="viewer-auth-title">Viewer authorization required</div>' +
+            '<div id="viewer-auth-desc" class="viewer-auth-desc">Enter <code>AGENTMEMORY_SECRET</code> to unlock viewer API access.</div>' +
+          '</div>' +
+          '<input id="viewer-auth-token" type="password" autocomplete="off" spellcheck="false" aria-label="AGENTMEMORY_SECRET" aria-describedby="viewer-auth-desc" placeholder="AGENTMEMORY_SECRET" />' +
+          '<button class="btn" data-action="save-viewer-token">Unlock</button>' +
+        '</div>';
+      var input = document.getElementById('viewer-auth-token');
+      if (input && typeof input.focus === 'function') input.focus();
+    }
+    function hideViewerAuthPrompt() {
+      var host = document.getElementById('viewer-auth');
+      if (!host) return;
+      host.classList.remove('open');
+      host.innerHTML = '';
+    }
 
     async function api(path, opts) {
       try {
         var url = REST + '/agentmemory/' + path;
         var headers = Object.assign({ 'Cache-Control': 'no-cache' }, (opts && opts.headers) || {});
+        var viewerToken = getViewerToken();
+        if (viewerToken && !headers.Authorization && !headers.authorization) {
+          headers.Authorization = 'Bearer ' + viewerToken;
+        }
         var fetchOpts = Object.assign({}, opts || {}, { headers: headers });
         var res = await fetch(url, fetchOpts);
         if (!res.ok) {
+          if (res.status === 401) showViewerAuthPrompt();
           console.warn('[viewer] API ' + (fetchOpts.method || 'GET') + ' ' + path + ' returned ' + res.status);
           return null;
         }
+        hideViewerAuthPrompt();
         return await res.json();
       } catch (err) {
         console.warn('[viewer] API error on ' + path + ':', err);
@@ -1589,31 +1668,61 @@
       }
     }
 
+    // #753: previously POST'd `{}` and let the engine return the full
+    // graph. On 10k+ nodes the payload exceeded the iii state channel
+    // limit and the engine returned HTTP 500, leaving the tab blank
+    // with no signal. Now we pass an explicit `limit`, distinguish
+    // server error from empty-corpus, and render an actionable banner
+    // when the request itself fails instead of falling silent.
+    var GRAPH_INITIAL_LIMIT = 500;
+
     async function loadGraph() {
       var el = document.getElementById('view-graph');
       el.innerHTML = '<div class="graph-container"><div class="graph-canvas-wrap"><canvas id="graph-canvas"></canvas><div class="graph-controls"><button title="Zoom In" data-action="zoom-graph" data-dir="1">+</button><button title="Zoom Out" data-action="zoom-graph" data-dir="-1">&minus;</button><div class="ctrl-divider"></div><button title="Recenter" data-action="recenter-graph">⌖</button></div><div class="graph-tooltip" id="graph-tooltip"></div></div><div class="graph-sidebar" id="graph-sidebar"></div></div>';
 
       var results = await Promise.all([
-        apiPost('graph/query', {}),
+        apiPost('graph/query', { limit: GRAPH_INITIAL_LIMIT }),
         apiGet('graph/stats')
       ]);
-      var queryResult = results[0] || { nodes: [], edges: [] };
+      var queryResult = results[0];
+      if (queryResult === null) {
+        // api() returns null only on non-2xx or a transport error; an
+        // empty graph would come back as { nodes: [], edges: [] }.
+        // Surface as an error state so #753-class failures don't read
+        // as "no data yet" — and so "Rebuild Graph" stays available.
+        state.graph.queryError = 'graph/query failed (check server logs for HTTP error)';
+        state.graph.nodes = [];
+        state.graph.edges = [];
+        state.graph.stats = results[1] || {};
+        state.graph.loaded = true;
+        renderGraphSidebar();
+        return;
+      }
+      state.graph.queryError = null;
       state.graph.nodes = queryResult.nodes || [];
       state.graph.edges = queryResult.edges || [];
+      state.graph.truncated = queryResult.truncated === true;
+      state.graph.totalNodes = typeof queryResult.totalNodes === 'number' ? queryResult.totalNodes : state.graph.nodes.length;
+      state.graph.totalEdges = typeof queryResult.totalEdges === 'number' ? queryResult.totalEdges : state.graph.edges.length;
       state.graph.stats = results[1] || {};
 
-      if (state.graph.nodes.length === 0) {
+      if (state.graph.nodes.length === 0 && (state.graph.stats.totalNodes || state.graph.stats.nodes || 0) === 0) {
         var sb = document.getElementById('graph-sidebar');
         if (sb) sb.innerHTML = '<h3>Graph</h3><p style="font-size:12px;color:var(--ink-faint);margin:8px 0;font-style:italic;">No graph data yet. Building from observations and memories...</p>';
         var buildResult = await apiPost('graph/build', {});
         if (buildResult && buildResult.success && buildResult.nodes > 0) {
           var freshResults = await Promise.all([
-            apiPost('graph/query', {}),
+            apiPost('graph/query', { limit: GRAPH_INITIAL_LIMIT }),
             apiGet('graph/stats')
           ]);
-          var freshQuery = freshResults[0] || { nodes: [], edges: [] };
-          state.graph.nodes = freshQuery.nodes || [];
-          state.graph.edges = freshQuery.edges || [];
+          var freshQuery = freshResults[0];
+          if (freshQuery) {
+            state.graph.nodes = freshQuery.nodes || [];
+            state.graph.edges = freshQuery.edges || [];
+            state.graph.truncated = freshQuery.truncated === true;
+            state.graph.totalNodes = typeof freshQuery.totalNodes === 'number' ? freshQuery.totalNodes : state.graph.nodes.length;
+            state.graph.totalEdges = typeof freshQuery.totalEdges === 'number' ? freshQuery.totalEdges : state.graph.edges.length;
+          }
           state.graph.stats = freshResults[1] || {};
         }
       }
@@ -1640,7 +1749,26 @@
       var nodeCount = gs.totalNodes !== undefined ? gs.totalNodes : (gs.nodes !== undefined ? gs.nodes : (gs.nodeCount || state.graph.nodes.length));
       var edgeCount = gs.totalEdges !== undefined ? gs.totalEdges : (gs.edges !== undefined ? gs.edges : (gs.edgeCount || state.graph.edges.length));
 
-      var html = '<input type="text" class="graph-search" id="graph-search" placeholder="Search nodes...">';
+      var html = '';
+
+      // #753: error banner stays above the search box so a failed
+      // graph/query doesn't read as "0 nodes".
+      if (state.graph.queryError) {
+        html += '<div style="margin:8px 0;padding:10px 12px;border:1px solid var(--accent);background:var(--bg-alt);font-size:12px;color:var(--ink);line-height:1.4;">';
+        html += '<div style="font-weight:600;margin-bottom:4px;">Graph query failed</div>';
+        html += '<div style="font-size:11px;color:var(--ink-muted);">' + esc(state.graph.queryError) + '</div>';
+        html += '<button class="btn" data-action="rebuild-graph" style="margin-top:8px;font-size:11px;">Retry</button>';
+        html += '</div>';
+      } else if (state.graph.truncated) {
+        // #753: surface the cap so operators know they're not seeing
+        // the whole graph. Densest-first ranking on the server makes
+        // this the meaningful subset, not an arbitrary head.
+        html += '<div style="margin:8px 0;padding:10px 12px;border:1px solid var(--border);background:var(--bg-alt);font-size:11px;color:var(--ink-muted);line-height:1.4;">';
+        html += 'Showing ' + state.graph.nodes.length + ' of ' + state.graph.totalNodes + ' nodes (most-connected first). The full graph is too large to render at once.';
+        html += '</div>';
+      }
+
+      html += '<input type="text" class="graph-search" id="graph-search" placeholder="Search nodes...">';
 
       html += '<h3 style="margin-top:16px;font-size:10px;text-transform:uppercase;letter-spacing:0.12em;color:var(--ink-muted);font-family:var(--font-ui);font-weight:700;">Graph Stats</h3>';
       html += '<div style="display:flex;gap:20px;margin:10px 0 16px;padding:12px;background:var(--bg-alt);border:1px solid var(--border-light);border-radius:4px;">';
@@ -3764,6 +3892,24 @@
       if (action === 'confirm-delete-memory') {
         var memoryId = target.getAttribute('data-memory-id');
         if (memoryId) confirmDeleteMemory(memoryId);
+        return;
+      }
+      if (action === 'save-viewer-token') {
+        var tokenInput = document.getElementById('viewer-auth-token');
+        var token = tokenInput ? tokenInput.value.trim() : '';
+        if (token) {
+          setViewerToken(token);
+          hideViewerAuthPrompt();
+          // Re-fetch config/flags so the footer version + flag banners
+          // refresh without a full page reload; fetchFlags() only runs
+          // during bootstrap and would otherwise stay stale until the
+          // user reloads.
+          fetchFlags();
+          if (state[state.activeTab] && typeof state[state.activeTab] === 'object') {
+            state[state.activeTab].loaded = false;
+          }
+          loadTab(state.activeTab);
+        }
         return;
       }
       if (action === 'timeline-filter') {
