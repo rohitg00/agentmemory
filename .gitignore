@@ -23,6 +23,8 @@ agentmemory-debug/
 # required for Nix buildNpmPackage reproducibility.
 pnpm-lock.yaml
 yarn.lock
+flake.lock
+devbox.lock
 
 # Nix build result symlinks
 /result
