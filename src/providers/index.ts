@@ -25,6 +25,54 @@ function requireEnvVar(key: string): string {
   return value;
 }
 
+function providerDefaultConfig(
+  provider: FallbackConfig["providers"][number],
+  maxTokens: number,
+): ProviderConfig {
+  switch (provider) {
+    case "openai":
+      return {
+        provider,
+        model: getEnvVar("OPENAI_MODEL") || "gpt-4o-mini",
+        maxTokens,
+        baseURL: getEnvVar("OPENAI_BASE_URL"),
+      };
+    case "minimax":
+      return {
+        provider,
+        model: getEnvVar("MINIMAX_MODEL") || "MiniMax-M2.7",
+        maxTokens,
+      };
+    case "anthropic":
+      return {
+        provider,
+        model: getEnvVar("ANTHROPIC_MODEL") || "claude-sonnet-4-20250514",
+        maxTokens,
+        baseURL: getEnvVar("ANTHROPIC_BASE_URL"),
+      };
+    case "gemini":
+      return {
+        provider,
+        model: getEnvVar("GEMINI_MODEL") || "gemini-2.5-flash",
+        maxTokens,
+      };
+    case "openrouter":
+      return {
+        provider,
+        model:
+          getEnvVar("OPENROUTER_MODEL") ||
+          "anthropic/claude-sonnet-4-20250514",
+        maxTokens,
+      };
+    case "agent-sdk":
+      return {
+        provider,
+        model: "agent-sdk",
+        maxTokens,
+      };
+  }
+}
+
 export function createProvider(config: ProviderConfig): ResilientProvider {
   return new ResilientProvider(createBaseProvider(config));
 }
@@ -41,11 +89,7 @@ export function createFallbackProvider(
   for (const providerType of fallbackConfig.providers) {
     if (providerType === config.provider) continue;
     try {
-      const fbConfig: ProviderConfig = {
-        provider: providerType,
-        model: config.model,
-        maxTokens: config.maxTokens,
-      };
+      const fbConfig = providerDefaultConfig(providerType, config.maxTokens);
       providers.push(createBaseProvider(fbConfig));
     } catch {
       // skip unavailable fallback providers
