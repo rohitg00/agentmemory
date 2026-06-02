@@ -12,7 +12,8 @@ app = "agentmemory"
 primary_region = "iad"
 
 [build]
-  dockerfile = "Dockerfile"
+  # Pin to a semver tag for reproducible deploys; bump deliberately.
+  image = "ghcr.io/rohitg00/agentmemory:0.9.12"
 
 [[mounts]]
   source = "agentmemory_data"

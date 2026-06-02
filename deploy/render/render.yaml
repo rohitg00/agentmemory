@@ -1,10 +1,10 @@
 services:
   - type: web
     name: agentmemory
-    runtime: docker
+    runtime: image
     plan: starter
-    dockerfilePath: ./deploy/render/Dockerfile
-    dockerContext: ./deploy/render
+    image:
+      url: ghcr.io/rohitg00/agentmemory:latest
     healthCheckPath: /agentmemory/livez
     autoDeploy: false
     disk:
@@ -14,9 +14,3 @@ services:
     envVars:
       - key: PORT
         value: "3111"
-      - key: AGENTMEMORY_VERSION
-        value: "0.9.12"
-      - key: III_VERSION
-        value: "0.11.2"
-      - key: III_SDK_VERSION
-        value: "0.11.2"
