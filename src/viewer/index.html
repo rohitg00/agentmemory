@@ -1824,6 +1824,10 @@
       var previousPanX = graphSim.panX;
       var previousPanY = graphSim.panY;
       var previousZoom = graphSim.zoom;
+      if (graphSim.raf) {
+        cancelAnimationFrame(graphSim.raf);
+        graphSim.raf = null;
+      }
       if (graphSim.resizeHandler) {
         window.removeEventListener('resize', graphSim.resizeHandler);
       }

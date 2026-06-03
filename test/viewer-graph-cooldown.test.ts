@@ -48,4 +48,10 @@ describe("viewer graph cool-down", () => {
     expect(viewer).toMatch(/graphSim\.panX\s*=\s*previousPanX/);
     expect(viewer).toMatch(/graphSim\.zoom\s*=\s*previousZoom/);
   });
+
+  it("cancels any in-flight animation frame before restarting the graph loop", () => {
+    expect(viewer).toMatch(/if\s*\(graphSim\.raf\)/);
+    expect(viewer).toMatch(/cancelAnimationFrame\(graphSim\.raf\)/);
+    expect(viewer).toMatch(/graphSim\.raf\s*=\s*null/);
+  });
 });
