@@ -43,6 +43,23 @@ describe("createEmbeddingProvider", () => {
     expect(provider!.name).toBe("openai");
   });
 
+  it("passes OPENAI_EMBEDDING_API_KEY to OpenAIEmbeddingProvider when set", async () => {
+    process.env["OPENAI_API_KEY"] = "text-llm-key";
+    process.env["OPENAI_EMBEDDING_API_KEY"] = "embedding-key";
+    const provider = createEmbeddingProvider();
+
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ data: [{ embedding: new Array(1536).fill(0.1) }] }), { status: 200 }),
+    );
+
+    await provider!.embed("hello");
+    expect(fetchSpy.mock.calls[0][1]?.headers).toMatchObject({
+      Authorization: "Bearer embedding-key",
+    });
+
+    fetchSpy.mockRestore();
+  });
+
   it("EMBEDDING_PROVIDER override takes precedence", () => {
     process.env["GEMINI_API_KEY"] = "test-key-123";
     process.env["OPENAI_API_KEY"] = "test-key-456";
