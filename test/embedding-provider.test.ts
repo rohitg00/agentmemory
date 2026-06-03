@@ -5,6 +5,7 @@ import {
 } from "../src/providers/embedding/index.js";
 import { GeminiEmbeddingProvider } from "../src/providers/embedding/gemini.js";
 import { OpenAIEmbeddingProvider } from "../src/providers/embedding/openai.js";
+import { OpenRouterEmbeddingProvider } from "../src/providers/embedding/openrouter.js";
 import type { EmbeddingProvider } from "../src/types.js";
 
 describe("createEmbeddingProvider", () => {
@@ -154,6 +155,85 @@ describe("OpenAIEmbeddingProvider", () => {
     expect(() => new OpenAIEmbeddingProvider("test-key")).toThrow(
       /OPENAI_EMBEDDING_DIMENSIONS must be a positive integer/,
     );
+  });
+});
+
+describe("OpenRouterEmbeddingProvider", () => {
+  const envKeys = [
+    "OPENROUTER_API_KEY",
+    "OPENROUTER_EMBEDDING_MODEL",
+    "OPENROUTER_EMBEDDING_DIMENSIONS",
+  ] as const;
+  const originalEnv = new Map<string, string | undefined>();
+
+  beforeEach(() => {
+    for (const key of envKeys) {
+      originalEnv.set(key, process.env[key]);
+      delete process.env[key];
+    }
+  });
+
+  afterEach(() => {
+    for (const key of envKeys) {
+      const value = originalEnv.get(key);
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    originalEnv.clear();
+    vi.restoreAllMocks();
+  });
+
+  it("uses default dimensions when OPENROUTER_EMBEDDING_DIMENSIONS is unset", () => {
+    const provider = new OpenRouterEmbeddingProvider("test-key");
+    expect(provider.dimensions).toBe(1536);
+  });
+
+  it("uses OPENROUTER_EMBEDDING_DIMENSIONS and sends it to OpenRouter", async () => {
+    process.env["OPENROUTER_EMBEDDING_DIMENSIONS"] = "1024";
+    process.env["OPENROUTER_EMBEDDING_MODEL"] = "perplexity/pplx-embed-v1-0.6b";
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ data: [{ embedding: [0.1, 0.2] }] }), {
+        status: 200,
+      }),
+    );
+
+    const provider = new OpenRouterEmbeddingProvider("test-key");
+    expect(provider.dimensions).toBe(1024);
+    await provider.embed("hello");
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const body = JSON.parse((fetchSpy.mock.calls[0][1] as RequestInit).body as string) as {
+      model: string;
+      dimensions: number;
+    };
+    expect(body.model).toBe("perplexity/pplx-embed-v1-0.6b");
+    expect(body.dimensions).toBe(1024);
+  });
+
+  it("does not send dimensions when OPENROUTER_EMBEDDING_DIMENSIONS is unset", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ data: [{ embedding: [0.1, 0.2] }] }), {
+        status: 200,
+      }),
+    );
+
+    const provider = new OpenRouterEmbeddingProvider("test-key");
+    await provider.embed("hello");
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const body = JSON.parse((fetchSpy.mock.calls[0][1] as RequestInit).body as string) as {
+      dimensions?: number;
+    };
+    expect(body.dimensions).toBeUndefined();
+  });
+
+  it("rejects invalid OPENROUTER_EMBEDDING_DIMENSIONS values", () => {
+    for (const bad of ["not-a-number", "-5", "0"]) {
+      process.env["OPENROUTER_EMBEDDING_DIMENSIONS"] = bad;
+      expect(() => new OpenRouterEmbeddingProvider("test-key")).toThrow(
+        /OPENROUTER_EMBEDDING_DIMENSIONS must be a positive integer/,
+      );
+    }
   });
 });
 
