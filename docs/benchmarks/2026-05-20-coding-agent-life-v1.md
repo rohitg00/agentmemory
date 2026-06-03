@@ -1,16 +1,5 @@
-# 2026-05-20 — coding-agent-life-v1 (v0.9.21)
+# 2026-05-20 — coding-agent-life-v1 (v0.9.26)
 
-> **Note — 2026-06-03 (#796):** the original numbers in this scorecard
-> (P@5 = 0.578 / 0.267) were generated **before** the score-denominator
-> fix in [PR #562](https://github.com/rohitg00/agentmemory/pull/562)
-> landed (P@K denominator: `topK.length` → `k`). On the current scoring
-> formula they are mathematically impossible — at K=5 on a corpus with
-> 1-2 gold sessions per question the absolute P@5 ceiling is **0.240**.
-> Numbers below have been corrected; recall, hit rate, latency, and the
-> qualitative finding (hybrid edges grep on recall + per-type, ties on
-> aggregate at this corpus size) all stand.
-
-**Commit:** `main` (re-scored 2026-06-03 on v0.9.26)
 **Bench:** coding-agent-life-v1 (15 sessions, 15 queries)
 **N:** 15
 **K:** 5
