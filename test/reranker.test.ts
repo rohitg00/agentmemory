@@ -82,7 +82,35 @@ describe("reranker", () => {
     expect(reranked[0].rerankPosition).toBe(1);
   });
 
-  it("isRerankerAvailable reflects the loaded pipeline", () => {
+  it("isRerankerAvailable reflects the loaded pipeline", async () => {
+    const results = [
+      {
+        observation: {
+          id: "o1",
+          title: "Availability",
+          narrative: "strong-match availability result",
+        },
+        bm25Score: 0.5,
+        vectorScore: 0.6,
+        graphScore: 0,
+        combinedScore: 0.8,
+        sessionId: "s1",
+      },
+      {
+        observation: {
+          id: "o2",
+          title: "Second",
+          narrative: "weak-match second result",
+        },
+        bm25Score: 0.3,
+        vectorScore: 0.4,
+        graphScore: 0,
+        combinedScore: 0.5,
+        sessionId: "s1",
+      },
+    ] as any;
+
+    await rerank("test query", results);
     expect(isRerankerAvailable()).toBe(true);
   });
 
