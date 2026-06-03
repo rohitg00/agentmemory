@@ -325,17 +325,18 @@ async function filterExpandedByProject(
   sessionId: string;
   observation: CompressedObservation;
 }>> {
-  const scoped: Array<{
-    obsId: string;
-    sessionId: string;
-    observation: CompressedObservation;
-  }> = [];
-  for (const item of expanded) {
-    if (await observationMatchesProject(kv, item.observation.id, item.sessionId, project)) {
-      scoped.push(item);
-    }
-  }
-  return scoped;
+  const matches = await Promise.all(
+    expanded.map(async (item) => ({
+      item,
+      matches: await observationMatchesProject(
+        kv,
+        item.observation.id,
+        item.sessionId,
+        project,
+      ),
+    })),
+  );
+  return matches.filter((m) => m.matches).map((m) => m.item);
 }
 
 async function filterHybridByProject(
@@ -343,13 +344,18 @@ async function filterHybridByProject(
   results: HybridSearchResult[],
   project: string,
 ): Promise<HybridSearchResult[]> {
-  const scoped: HybridSearchResult[] = [];
-  for (const result of results) {
-    if (await observationMatchesProject(kv, result.observation.id, result.sessionId, project)) {
-      scoped.push(result);
-    }
-  }
-  return scoped;
+  const matches = await Promise.all(
+    results.map(async (result) => ({
+      result,
+      matches: await observationMatchesProject(
+        kv,
+        result.observation.id,
+        result.sessionId,
+        project,
+      ),
+    })),
+  );
+  return matches.filter((m) => m.matches).map((m) => m.result);
 }
 
 async function observationMatchesProject(
