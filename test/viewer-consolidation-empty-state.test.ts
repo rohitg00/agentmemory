@@ -16,6 +16,8 @@ describe("viewer consolidation empty states", () => {
     expect(html).toContain("Procedures are waiting for repeated patterns");
     expect(html).toContain("patterns seen in 2+ sessions");
 
+    expect(html).toContain("Insights are waiting for enough signals");
+
     expect(html).toContain("Lessons require an explicit save");
     expect(html).toContain("mem::lesson-save");
 
