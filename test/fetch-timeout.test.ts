@@ -223,6 +223,24 @@ describe("OpenRouterProvider reasoning options", () => {
       "reasoning content fallback",
     );
   });
+
+  it("prefers reasoning over reasoning_content when both are present", async () => {
+    mockChatResponse({
+      content: "",
+      reasoning: "explicit reasoning",
+      reasoning_content: "fallback reasoning",
+    });
+    const provider = new OpenRouterProvider(
+      "test-key",
+      "moonshotai/kimi-k2.6",
+      1024,
+      "https://openrouter.ai/api/v1/chat/completions",
+    );
+
+    await expect(provider.compress("system", "user")).resolves.toBe(
+      "explicit reasoning",
+    );
+  });
 });
 
 describe("Provider hang regression — GeminiEmbeddingProvider", () => {
