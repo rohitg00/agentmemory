@@ -629,7 +629,7 @@ function detectIiiConsole(): IiiConsoleState {
 }
 
 const III_CONSOLE_INSTALL_CMD =
-  "curl -fsSL https://install.iii.dev/iii/main/install.sh | sh";
+  "curl -fsSL https://install.iii.dev/iii/main/install.sh | bash";
 
 async function ensureIiiConsole(): Promise<IiiConsoleState> {
   const state = detectIiiConsole();
@@ -651,15 +651,15 @@ async function ensureIiiConsole(): Promise<IiiConsoleState> {
     return state;
   }
 
-  const shBin = whichBinary("sh");
+  const bashBin = whichBinary("bash");
   const curlBin = whichBinary("curl");
-  if (!shBin || !curlBin) {
+  if (!bashBin || !curlBin) {
     p.log.warn(
-      `curl or sh not found. Install manually:\n  ${III_CONSOLE_INSTALL_CMD}`,
+      `curl or bash not found. Install manually:\n  ${III_CONSOLE_INSTALL_CMD}`,
     );
     return state;
   }
-  const ok = runCommand(shBin, ["-c", III_CONSOLE_INSTALL_CMD], {
+  const ok = runCommand(bashBin, ["-lc", III_CONSOLE_INSTALL_CMD], {
     label: "Installing iii console",
   });
   if (!ok) {
