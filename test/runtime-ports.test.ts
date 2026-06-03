@@ -33,6 +33,17 @@ describe("runtime port derivation (#750)", () => {
     expect(env.AGENTMEMORY_VIEWER_PORT).toBe("4400");
   });
 
+  it("ignores --port values that would overflow derived sibling ports", () => {
+    const env: NodeJS.ProcessEnv = {};
+    applyPortFlag(["--port", "65533"], env);
+
+    expect(env.III_REST_PORT).toBeUndefined();
+    expect(env.III_STREAMS_PORT).toBeUndefined();
+    expect(env.AGENTMEMORY_VIEWER_PORT).toBeUndefined();
+    expect(env.III_ENGINE_PORT).toBeUndefined();
+    expect(env.III_ENGINE_URL).toBeUndefined();
+  });
+
   it("renders a runtime iii config with derived ports without changing bundled defaults", () => {
     const nativeConfig = readFileSync("iii-config.yaml", "utf-8");
     const rendered = renderRuntimeIiiConfig(nativeConfig, {

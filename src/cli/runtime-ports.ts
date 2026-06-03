@@ -45,8 +45,6 @@ export function applyPortFlag(args: string[], env: NodeJS.ProcessEnv = process.e
   const restPort = parsePort(args[portIdx + 1]);
   if (!restPort) return;
 
-  env["III_REST_PORT"] = String(restPort);
-
   if (restPort === DEFAULT_REST_PORT) return;
 
   const streamPort = restPort + 1;
@@ -54,6 +52,7 @@ export function applyPortFlag(args: string[], env: NodeJS.ProcessEnv = process.e
   const enginePort = restPort + 3;
   if (enginePort > 65535) return;
 
+  env["III_REST_PORT"] = String(restPort);
   setIfUnset(env, "III_STREAMS_PORT", streamPort);
   setIfUnset(env, "III_STREAM_PORT", streamPort);
   setIfUnset(env, "AGENTMEMORY_VIEWER_PORT", viewerPort);
