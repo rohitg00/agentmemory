@@ -53,11 +53,13 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
     expect(calls.find((c) => c.url.includes("/sessions"))).toBeDefined();
   });
 
-  it("proxies memory_smart_search to POST /agentmemory/smart-search", async () => {
+  it("proxies memory_smart_search to POST /agentmemory/smart-search with project", async () => {
+    const calls: Array<{ url: string; body?: unknown }> = [];
     installFetch((url, init) => {
       if (url.endsWith("/agentmemory/livez")) return new Response("ok", { status: 200 });
       if (url.endsWith("/agentmemory/smart-search")) {
         const body = JSON.parse((init?.body as string) || "{}");
+        calls.push({ url, body });
         return new Response(
           JSON.stringify({
             mode: "compact",
@@ -69,10 +71,19 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
       }
       return new Response("", { status: 404 });
     });
-    const res = await handleToolCall("memory_smart_search", { query: "auth bug", limit: 5 });
+    const res = await handleToolCall("memory_smart_search", {
+      query: "auth bug",
+      limit: 5,
+      project: "alpha",
+    });
     const body = JSON.parse(res.content[0].text);
     expect(body.query).toBe("auth bug");
     expect(body.results[0].id).toBe("m1");
+    expect(calls[0]?.body).toEqual({
+      query: "auth bug",
+      limit: 5,
+      project: "alpha",
+    });
   });
 
   it("proxies memory_recall to POST /agentmemory/search and forwards format/token_budget (#507)", async () => {
@@ -100,6 +111,7 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
       limit: 5,
       format: "full",
       token_budget: 800,
+      project: "alpha",
     });
     const body = JSON.parse(res.content[0].text);
     expect(body.mode).toBe("full");
@@ -111,6 +123,7 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
       limit: 5,
       format: "full",
       token_budget: 800,
+      project: "alpha",
     });
     expect(calls.find((c) => c.url.endsWith("/agentmemory/smart-search"))).toBeUndefined();
   });

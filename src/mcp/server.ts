@@ -117,6 +117,9 @@ export function registerMcpEndpoints(
               limit: typeof args.limit === "number" ? args.limit : 10,
               format,
               token_budget: tokenBudget,
+              ...(typeof args.project === "string" && args.project.trim().length > 0
+                ? { project: args.project.trim() }
+                : {}),
             } });
             const text =
               format === "narrative" &&
@@ -269,6 +272,9 @@ export function registerMcpEndpoints(
                 query: args.query,
                 expandIds,
                 limit,
+                ...(typeof args.project === "string" && args.project.trim().length > 0
+                  ? { project: args.project.trim() }
+                  : {}),
               },
             });
             return {

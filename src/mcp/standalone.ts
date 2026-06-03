@@ -102,6 +102,7 @@ interface Validated {
   limit?: number;
   format?: string;
   tokenBudget?: number;
+  project?: string;
   memoryIds?: string[];
   reason?: string;
 }
@@ -121,6 +122,10 @@ function validate(toolName: string, args: Record<string, unknown>): Validated {
       v.type = (args["type"] as string) || "fact";
       v.concepts = normalizeList(args["concepts"]);
       v.files = normalizeList(args["files"]);
+      const project = args["project"];
+      if (typeof project === "string" && project.trim()) {
+        v.project = project.trim();
+      }
       return v;
     }
     case "memory_recall":
@@ -134,6 +139,10 @@ function validate(toolName: string, args: Record<string, unknown>): Validated {
       const fmt = args["format"];
       if (typeof fmt === "string" && fmt.trim()) {
         v.format = fmt.trim().toLowerCase();
+      }
+      const project = args["project"];
+      if (typeof project === "string" && project.trim()) {
+        v.project = project.trim();
       }
       const budget = args["token_budget"];
       if (typeof budget === "number" && Number.isFinite(budget) && budget > 0) {
@@ -179,6 +188,7 @@ async function handleProxy(
           type: v.type,
           concepts: v.concepts,
           files: v.files,
+          ...(v.project !== undefined && { project: v.project }),
         }),
       });
       return textResponse(result);
@@ -190,6 +200,7 @@ async function handleProxy(
         format: v.format ?? "full",
       };
       if (v.tokenBudget != null) body["token_budget"] = v.tokenBudget;
+      if (v.project != null) body["project"] = v.project;
       const result = await handle.call("/agentmemory/search", {
         method: "POST",
         body: JSON.stringify(body),
@@ -200,6 +211,7 @@ async function handleProxy(
       const body: Record<string, unknown> = { query: v.query, limit: v.limit };
       if (v.format != null) body["format"] = v.format;
       if (v.tokenBudget != null) body["token_budget"] = v.tokenBudget;
+      if (v.project != null) body["project"] = v.project;
       const result = await handle.call("/agentmemory/smart-search", {
         method: "POST",
         body: JSON.stringify(body),
@@ -257,6 +269,7 @@ async function handleLocal(
         version: 1,
         isLatest: true,
         sessionIds: [],
+        ...(v.project !== undefined && { project: v.project }),
       });
       kvInstance.persist();
       return textResponse({ saved: id });
@@ -270,6 +283,14 @@ async function handleLocal(
         await kvInstance.list<Record<string, unknown>>("mem:memories");
       const results = all
         .filter((m) => {
+          if (
+            v.project &&
+            typeof m["project"] === "string" &&
+            m["project"].trim() &&
+            m["project"].trim() !== v.project
+          ) {
+            return false;
+          }
           const text = [
             typeof m["title"] === "string" ? m["title"] : "",
             typeof m["content"] === "string" ? m["content"] : "",

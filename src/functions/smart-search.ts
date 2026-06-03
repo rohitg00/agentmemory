@@ -5,6 +5,8 @@ import type {
   CompressedObservation,
   HybridSearchResult,
   Lesson,
+  Memory,
+  Session,
 } from "../types.js";
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
@@ -105,6 +107,10 @@ export function registerSmartSearchFunction(
         typeof data.agentId === "string" && data.agentId.trim().length > 0
           ? data.agentId.trim()
           : undefined;
+      const project =
+        typeof data.project === "string" && data.project.trim().length > 0
+          ? data.project.trim()
+          : undefined;
       const wildcardAgent = explicitAgentId === "*";
       const filterAgentId = wildcardAgent
         ? undefined
@@ -137,9 +143,12 @@ export function registerSmartSearchFunction(
           if (r) expanded.push(r);
         }
 
-        const scoped = filterAgentId
+        const agentScoped = filterAgentId
           ? expanded.filter((e) => e.observation.agentId === filterAgentId)
           : expanded;
+        const scoped = project
+          ? await filterExpandedByProject(kv, agentScoped, project)
+          : agentScoped;
 
         void recordAccessBatch(
           kv,
@@ -173,22 +182,25 @@ export function registerSmartSearchFunction(
       // is a defensible middle ground: enough headroom for a small
       // workload, capped at 300 so a 100-limit request never asks for
       // thousands of hits.
-      const overFetchLimit = filterAgentId
+      const overFetchLimit = filterAgentId || project
         ? Math.min(limit * 3, 300)
         : limit;
 
       const [hybridResults, lessons] = await Promise.all([
         searchFn(data.query, overFetchLimit),
         includeLessons
-          ? recallLessons(sdk, data.query, lessonLimit, data.project)
+          ? recallLessons(sdk, data.query, lessonLimit, project)
           : Promise.resolve([]),
       ]);
 
-      const filteredHybrid = filterAgentId
+      const agentFilteredHybrid = filterAgentId
         ? hybridResults
             .filter((r) => r.observation.agentId === filterAgentId)
-            .slice(0, limit)
-        : hybridResults.slice(0, limit);
+        : hybridResults;
+      const projectFilteredHybrid = project
+        ? await filterHybridByProject(kv, agentFilteredHybrid, project)
+        : agentFilteredHybrid;
+      const filteredHybrid = projectFilteredHybrid.slice(0, limit);
 
       const compact: CompactSearchResult[] = filteredHybrid.map((r) => ({
         obsId: r.observation.id,
@@ -298,6 +310,65 @@ async function recallLessons(
     });
     return [];
   }
+}
+
+async function filterExpandedByProject(
+  kv: StateKV,
+  expanded: Array<{
+    obsId: string;
+    sessionId: string;
+    observation: CompressedObservation;
+  }>,
+  project: string,
+): Promise<Array<{
+  obsId: string;
+  sessionId: string;
+  observation: CompressedObservation;
+}>> {
+  const scoped: Array<{
+    obsId: string;
+    sessionId: string;
+    observation: CompressedObservation;
+  }> = [];
+  for (const item of expanded) {
+    if (await observationMatchesProject(kv, item.observation.id, item.sessionId, project)) {
+      scoped.push(item);
+    }
+  }
+  return scoped;
+}
+
+async function filterHybridByProject(
+  kv: StateKV,
+  results: HybridSearchResult[],
+  project: string,
+): Promise<HybridSearchResult[]> {
+  const scoped: HybridSearchResult[] = [];
+  for (const result of results) {
+    if (await observationMatchesProject(kv, result.observation.id, result.sessionId, project)) {
+      scoped.push(result);
+    }
+  }
+  return scoped;
+}
+
+async function observationMatchesProject(
+  kv: StateKV,
+  obsId: string,
+  sessionId: string,
+  project: string,
+): Promise<boolean> {
+  const memory = await kv.get<Memory>(KV.memories, obsId).catch(() => null);
+  if (typeof memory?.project === "string" && memory.project.trim().length > 0) {
+    return memory.project.trim() === project;
+  }
+
+  const session = await kv.get<Session>(KV.sessions, sessionId).catch(() => null);
+  if (typeof session?.project === "string" && session.project.trim().length > 0) {
+    return session.project.trim() === project;
+  }
+
+  return true;
 }
 
 async function detectFollowup(
