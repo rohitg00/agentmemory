@@ -104,6 +104,8 @@ describe("Provider hang regression — OpenRouterProvider (covers Gemini LLM pat
   afterEach(() => {
     vi.restoreAllMocks();
     delete process.env["AGENTMEMORY_LLM_TIMEOUT_MS"];
+    delete process.env["OPENROUTER_REASONING_EFFORT"];
+    delete process.env["OPENROUTER_INCLUDE_REASONING"];
   });
 
   it("compress() aborts after timeout when upstream hangs", async () => {
@@ -114,6 +116,112 @@ describe("Provider hang regression — OpenRouterProvider (covers Gemini LLM pat
       "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
     );
     await expect(provider.compress("system", "user")).rejects.toThrow();
+  });
+});
+
+describe("OpenRouterProvider reasoning options", () => {
+  beforeEach(() => {
+    delete process.env["OPENROUTER_REASONING_EFFORT"];
+    delete process.env["OPENROUTER_INCLUDE_REASONING"];
+    delete process.env["AGENTMEMORY_LLM_TIMEOUT_MS"];
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    delete process.env["OPENROUTER_REASONING_EFFORT"];
+    delete process.env["OPENROUTER_INCLUDE_REASONING"];
+    delete process.env["AGENTMEMORY_LLM_TIMEOUT_MS"];
+  });
+
+  function mockChatResponse(message: {
+    content?: string;
+    reasoning?: string;
+    reasoning_content?: string;
+  }): ReturnType<typeof vi.spyOn> {
+    return vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ choices: [{ message }] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+  }
+
+  function requestBody(fetchSpy: ReturnType<typeof vi.spyOn>): Record<string, unknown> {
+    const init = fetchSpy.mock.calls[0]?.[1] as RequestInit;
+    return JSON.parse(init.body as string) as Record<string, unknown>;
+  }
+
+  it("passes OpenRouter reasoning controls when explicitly enabled", async () => {
+    process.env["OPENROUTER_REASONING_EFFORT"] = "HIGH";
+    process.env["OPENROUTER_INCLUDE_REASONING"] = "TRUE";
+    const fetchSpy = mockChatResponse({ content: "compressed memory" });
+
+    const provider = new OpenRouterProvider(
+      "test-key",
+      "moonshotai/kimi-k2.6",
+      32000,
+      "https://openrouter.ai/api/v1/chat/completions",
+    );
+
+    await expect(provider.compress("system", "user")).resolves.toBe(
+      "compressed memory",
+    );
+    expect(requestBody(fetchSpy)).toMatchObject({
+      model: "moonshotai/kimi-k2.6",
+      max_tokens: 32000,
+      reasoning: { effort: "high" },
+      include_reasoning: true,
+    });
+  });
+
+  it("does not send OpenRouter-only reasoning controls on the Gemini-compatible path", async () => {
+    process.env["OPENROUTER_REASONING_EFFORT"] = "high";
+    process.env["OPENROUTER_INCLUDE_REASONING"] = "true";
+    const fetchSpy = mockChatResponse({ content: "compressed memory" });
+
+    const provider = new OpenRouterProvider(
+      "test-key",
+      "gemini-2.5-flash",
+      1024,
+      "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+    );
+
+    await provider.compress("system", "user");
+    const body = requestBody(fetchSpy);
+    expect(body.reasoning).toBeUndefined();
+    expect(body.include_reasoning).toBeUndefined();
+  });
+
+  it("returns reasoning-only OpenRouter responses when content is empty", async () => {
+    mockChatResponse({ content: "", reasoning_content: "reasoning output" });
+    const provider = new OpenRouterProvider(
+      "test-key",
+      "moonshotai/kimi-k2.6",
+      1024,
+      "https://openrouter.ai/api/v1/chat/completions",
+    );
+
+    await expect(provider.compress("system", "user")).resolves.toBe(
+      "reasoning output",
+    );
+  });
+
+  it("falls through empty reasoning to reasoning_content", async () => {
+    mockChatResponse({
+      content: "",
+      reasoning: "",
+      reasoning_content: "reasoning content fallback",
+    });
+    const provider = new OpenRouterProvider(
+      "test-key",
+      "moonshotai/kimi-k2.6",
+      1024,
+      "https://openrouter.ai/api/v1/chat/completions",
+    );
+
+    await expect(provider.compress("system", "user")).resolves.toBe(
+      "reasoning content fallback",
+    );
   });
 });
 
@@ -343,4 +451,3 @@ describe("OpenAIProvider thinking-model fallback (#627)", () => {
     expect(out).toBe("real content");
   });
 });
-

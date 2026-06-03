@@ -1204,6 +1204,8 @@ OPENAI_MODEL=qwen2.5-coder-7b-instruct         # match the model name from LM St
 
 Reasoning-class models (`o1`-style with `<think>` blocks) can return empty `content` with a `reasoning` field your local server may not surface. If extractions come back blank, switch to a non-reasoning model first. The `OPENAI_REASONING_EFFORT=none` env can also disable thinking on Ollama Cloud thinking models that mirror the OpenAI reasoning schema.
 
+OpenRouter reasoning models can be configured directly with `OPENROUTER_REASONING_EFFORT=xhigh|high|medium|low|minimal|none`. Set `OPENROUTER_INCLUDE_REASONING=true` when you want supported models to return reasoning tokens in the response.
+
 Local embeddings ship out of the box via `@xenova/transformers` — `EMBEDDING_PROVIDER=local` (default) gives you BGE-small entirely on-device. No extra config needed.
 
 ### Cost-aware model selection
@@ -1314,6 +1316,9 @@ Create `~/.agentmemory/.env`:
 # ANTHROPIC_BASE_URL=...              # Optional: Anthropic-compatible proxy / Azure
 # GEMINI_API_KEY=...
 # OPENROUTER_API_KEY=...
+# OPENROUTER_MODEL=anthropic/claude-sonnet-4-20250514
+# OPENROUTER_REASONING_EFFORT=high       # Optional: xhigh | high | medium | low | minimal | none
+# OPENROUTER_INCLUDE_REASONING=true      # Optional: include reasoning tokens when supported
 # MINIMAX_API_KEY=...
 # OPENAI_API_KEY=***                       # NOTE: this same key auto-activates BOTH the
 #                                          # OpenAI LLM provider (here) AND the OpenAI
