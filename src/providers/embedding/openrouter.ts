@@ -69,8 +69,8 @@ export class OpenRouterEmbeddingProvider implements EmbeddingProvider {
 }
 
 function resolveDimensions(raw: string | undefined): number {
-  if (!raw) return 1536;
-  const trimmed = raw.trim();
+  const trimmed = raw?.trim();
+  if (!trimmed) return 1536;
   if (!/^\d+$/.test(trimmed)) {
     throw new Error(DIMENSIONS_ERROR);
   }

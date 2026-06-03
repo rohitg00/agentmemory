@@ -227,6 +227,25 @@ describe("OpenRouterEmbeddingProvider", () => {
     expect(body.dimensions).toBeUndefined();
   });
 
+  it("treats whitespace-only OPENROUTER_EMBEDDING_DIMENSIONS as unset", async () => {
+    process.env["OPENROUTER_EMBEDDING_DIMENSIONS"] = "   ";
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ data: [{ embedding: [0.1, 0.2] }] }), {
+        status: 200,
+      }),
+    );
+
+    const provider = new OpenRouterEmbeddingProvider("test-key");
+    expect(provider.dimensions).toBe(1536);
+    await provider.embed("hello");
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const body = JSON.parse((fetchSpy.mock.calls[0][1] as RequestInit).body as string) as {
+      dimensions?: number;
+    };
+    expect(body.dimensions).toBeUndefined();
+  });
+
   it("rejects invalid OPENROUTER_EMBEDDING_DIMENSIONS values", () => {
     for (const bad of ["not-a-number", "-5", "0"]) {
       process.env["OPENROUTER_EMBEDDING_DIMENSIONS"] = bad;
