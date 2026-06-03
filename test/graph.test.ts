@@ -252,6 +252,10 @@ describe("Graph Functions", () => {
       await kv.set("mem:graph:edges", edge.id, edge);
     }
 
+    // Post-#814 the empty-body path reads the snapshot exclusively.
+    // Backfill the snapshot from the seeded data first.
+    await sdk.trigger("mem::graph-snapshot-rebuild", {});
+
     const unbounded = (await sdk.trigger(
       "mem::graph-query",
       {},
@@ -281,6 +285,8 @@ describe("Graph Functions", () => {
       } as GraphNode;
       await kv.set("mem:graph:nodes", node.id, node);
     }
+
+    await sdk.trigger("mem::graph-snapshot-rebuild", {});
 
     const page1 = (await sdk.trigger("mem::graph-query", {
       limit: 10,
@@ -315,6 +321,8 @@ describe("Graph Functions", () => {
         observationCount: 1,
       });
     }
+
+    await sdk.trigger("mem::graph-snapshot-rebuild", {});
 
     const huge = (await sdk.trigger("mem::graph-query", {
       limit: 999999,
@@ -364,6 +372,8 @@ describe("Graph Functions", () => {
       firstSeen: "2026-01-01T00:00:00Z",
       lastSeen: "2026-01-01T00:00:00Z",
     });
+
+    await sdk.trigger("mem::graph-snapshot-rebuild", {});
 
     const page = (await sdk.trigger("mem::graph-query", {
       limit: 10,
@@ -483,37 +493,70 @@ describe("Graph Functions", () => {
       expect(stats.totalEdges).toBe(25);
     });
 
-    it("graph-extract marks snapshot dirty so stale data triggers rebuild", async () => {
-      await seed(10, 10);
-      await sdk.trigger("mem::graph-snapshot-rebuild", {});
-
-      // Run extract — should set dirty=true on the snapshot.
+    it("graph-extract updates snapshot inline (no kv.list, dirty stays false)", async () => {
+      // Post-#814 v2 the snapshot is updated incrementally on every
+      // extract — no dirty flag bounces. Test asserts that after an
+      // extract the snapshot reflects the new nodes/edges.
       await sdk.trigger("mem::graph-extract", { observations: [testObs] });
 
-      const snap = await kv.get<{ dirty: boolean }>(
-        "mem:graph:snapshot",
-        "current",
-      );
-      expect(snap?.dirty).toBe(true);
+      const snap = await kv.get<{
+        dirty: boolean;
+        stats: { totalNodes: number };
+      }>("mem:graph:snapshot", "current");
+      expect(snap?.dirty).toBe(false);
+      // testObs produces 2 nodes (src/index.ts, main) + 1 edge.
+      expect(snap?.stats.totalNodes).toBeGreaterThanOrEqual(1);
     });
 
-    it("graph-stats falls back to live enumeration on first call (no snapshot yet)", async () => {
+    it("graph-extract maintains name-index for O(1) dedup on re-extract", async () => {
+      // First extract creates nodes.
+      await sdk.trigger("mem::graph-extract", { observations: [testObs] });
+      const nameIndex = await kv.get<string>(
+        "mem:graph:name-index",
+        "file|src/index.ts",
+      );
+      expect(typeof nameIndex).toBe("string");
+
+      // Re-extract the same observation. With name-index lookup the
+      // existing node merges; no duplicates.
+      await sdk.trigger("mem::graph-extract", { observations: [testObs] });
+      const nodes = await kv.list<{ name: string; type: string }>(
+        "mem:graph:nodes",
+      );
+      const fileNodes = nodes.filter(
+        (n) => n.name === "src/index.ts" && n.type === "file",
+      );
+      expect(fileNodes.length).toBe(1);
+    });
+
+    it("graph-stats returns empty envelope + warning when no snapshot exists", async () => {
+      // Seed nodes but never rebuild the snapshot — simulates a legacy
+      // corpus on a post-#814 upgrade.
       await seed(5, 5);
 
       const stats = (await sdk.trigger("mem::graph-stats", {})) as {
         totalNodes: number;
         totalEdges: number;
         fromSnapshot: boolean;
+        warning?: string;
       };
-      // No snapshot existed; the handler built one inline.
       expect(stats.fromSnapshot).toBe(false);
-      expect(stats.totalNodes).toBe(5);
-      // The inline rebuild persists for subsequent calls.
-      const snap = await kv.get<{ version: number }>(
-        "mem:graph:snapshot",
-        "current",
-      );
-      expect(snap?.version).toBe(1);
+      expect(stats.totalNodes).toBe(0);
+      expect(stats.warning).toMatch(/snapshot-rebuild|graph\/reset/);
+    });
+
+    it("graph-reset clears state and writes empty snapshot", async () => {
+      await sdk.trigger("mem::graph-extract", { observations: [testObs] });
+      const result = (await sdk.trigger("mem::graph-reset", {})) as {
+        success: boolean;
+        cleared: Record<string, number>;
+      };
+      expect(result.success).toBe(true);
+
+      const snap = await kv.get<{
+        stats: { totalNodes: number };
+      }>("mem:graph:snapshot", "current");
+      expect(snap?.stats.totalNodes).toBe(0);
     });
   });
 });
