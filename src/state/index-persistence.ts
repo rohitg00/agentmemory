@@ -358,7 +358,7 @@ export class IndexPersistence {
       "manifest",
     );
     if (!manifest.ok) return null;
-    if (manifest.value !== null) {
+    if (manifest.value != null) {
       return this.loadManifestData(manifest.value, label);
     }
 
