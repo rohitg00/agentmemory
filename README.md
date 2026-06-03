@@ -61,7 +61,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-tools.svg"><img src="assets/tags/stat-tools.svg" alt="53 MCP tools" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-hooks.svg"><img src="assets/tags/stat-hooks.svg" alt="12 auto hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-deps.svg"><img src="assets/tags/stat-deps.svg" alt="0 external DBs" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-tests.svg"><img src="assets/tags/stat-tests.svg" alt="950+ tests passing" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-tests.svg"><img src="assets/tags/stat-tests.svg" alt="1,390+ tests passing" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -226,7 +226,9 @@ You explain the same architecture every session. You re-discover the same bugs. 
 npx @agentmemory/agentmemory
 ```
 
-> **New in v0.9.22** — Three new connect adapters (Qwen Code, Antigravity, Kiro), `AGENT_ID` multi-agent isolation with opt-in `AGENTMEMORY_AGENT_SCOPE=isolated` filtering, install ERESOLVE fixed, OpenAI thinking-model output handled, OpenCode auto-context + session creation, viewer graph settles on 1000+ nodes, 22 fixes total. Full notes in [CHANGELOG.md](CHANGELOG.md).
+> **New in v0.9.26** — Hotfix: first-boot crash on missing index manifest ([#797](https://github.com/rohitg00/agentmemory/issues/797)) now self-heals instead of throwing on `manifest.v`.
+>
+> **v0.9.25** — Eleven breaking regressions closed (cross-provider fallback 404, `triggerVoid` removal in iii-sdk 0.11.2, summarize XML in markdown fences, pi `tool_input/tool_output` field mismatch, viewer graph 500 on 11k+ nodes, agent-sdk recursion guard race under `Promise.all`, obsidian-export missing-id crash, iii runtime pin auto-fallback, import-jsonl legacy session re-key). Added: sharded BM25/vector index persistence with manifest commit/rollback ([@Rokurolize](https://github.com/Rokurolize) [#762](https://github.com/rohitg00/agentmemory/issues/762)), smart-search followup-rate diagnostic ([#771](https://github.com/rohitg00/agentmemory/issues/771)). Drop-in upgrade, no breaking changes. Full notes in [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
@@ -242,10 +244,10 @@ npx @agentmemory/agentmemory
 
 | Adapter | P@5 | R@5 | Top-5 hit rate | p50 latency |
 |---|---|---|---|---|
-| **agentmemory hybrid** | **0.578** | **0.967** | **15 / 15** | 14 ms |
-| grep baseline | 0.267 | 0.967 | 15 / 15 | 0 ms |
+| **agentmemory hybrid** | **0.240** | **1.000** | **15 / 15** | 14 ms |
+| grep baseline | 0.227 | 0.967 | 15 / 15 | 0 ms |
 
-100% top-5 hit rate. **2.2×** better precision than the grep baseline on identical input. Full per-type breakdown: [`docs/benchmarks/2026-05-20-coding-agent-life-v1.md`](docs/benchmarks/2026-05-20-coding-agent-life-v1.md).
+100% top-5 hit rate at the **P@5 math ceiling** for this corpus (0.240, see scorecard). Hybrid retrieves every gold session; grep misses 1 of 2 gold on the multi-session temporal query. Lift is **recall + temporal**, not aggregate precision — this benchmark is small + gold-sparse, the larger LongMemEval-S below differentiates better. Full per-type breakdown + correction note: [`docs/benchmarks/2026-05-20-coding-agent-life-v1.md`](docs/benchmarks/2026-05-20-coding-agent-life-v1.md).
 
 **LongMemEval-S** (ICLR 2025, 500 questions)
 
@@ -1139,7 +1141,7 @@ Full registry: [workers.iii.dev](https://workers.iii.dev). Every worker there co
 | Prometheus / Grafana | iii OTEL + health monitor |
 | Custom plugin systems | `iii worker add <name>` |
 
-**118 source files · ~21,800 LOC · 950+ tests · 123 functions · 34 KV scopes** — all on three primitives. No `agentmemory plugin install`. The plugin system is iii itself.
+**174 source files · ~37,800 LOC · 1,390+ tests · 258 functions · 44 KV scopes** — all on three primitives. No `agentmemory plugin install`. The plugin system is iii itself.
 
 ---
 
@@ -1463,7 +1465,7 @@ Full endpoint list: [`src/triggers/api.ts`](src/triggers/api.ts)
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 950+ tests
+npm test                  # 1,390+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 
