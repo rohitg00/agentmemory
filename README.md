@@ -1249,6 +1249,52 @@ Per-call override at the SDK / REST layer: every mutating endpoint (`/session/st
 
 When `AGENT_ID` is unset, memory remains unscoped (legacy behavior, no tags, no filters).
 
+### Multi-user team memory (`USER_ID` + `AGENTMEMORY_USER_ID` + `TEAM_MODE`)
+
+In setups where multiple people share one agentmemory server (small team), `USER_ID` sets the server-level default, while `AGENTMEMORY_USER_ID` overrides it per-integration. `TEAM_MODE` controls whether users can see each other's shared items.
+
+Server `.env`:
+
+```env
+TEAM_ID=acme
+USER_ID=alice               # server-level default
+TEAM_MODE=private
+```
+
+Each integration sets `AGENTMEMORY_USER_ID` in its own `.env` to override the server default:
+
+```env
+# Hermes plugin
+AGENTMEMORY_USER_ID=alice
+
+# OpenClaw plugin
+AGENTMEMORY_USER_ID=alice
+```
+
+MCP clients pass `userId` per-request in tool calls (no env needed):
+
+```json
+{
+  "tool": "memory_team_share",
+  "arguments": {
+    "itemId": "mem_1",
+    "itemType": "memory",
+    "userId": "alice"
+  }
+}
+```
+
+Two modes:
+
+| Mode | Write (team-share) | Read (team-feed, team-profile) | When to use |
+|------|-------------------|-------------------------------|-------------|
+| `shared` (default) | anyone can share as anyone | everyone sees all shared items | Collaborative team with full visibility |
+| `private` | forced to configured userId | only your own items visible | Private workspace — each user sees only their own |
+
+In `private` mode, the body `userId` override is **ignored** for all team operations. This prevents impersonation — users can only share and read as themselves.
+
+Multi-agent + multi-user combined: each integration sets both `AGENT_ID` (which agent) and `AGENTMEMORY_USER_ID` (which person). The agent identity scopes regular memory operations; the user identity scopes team operations.
+
 ### Ports
 
 agentmemory + iii-engine bind four ports by default. If a restart fails with `port in use`, this table tells you which process to look for.
@@ -1418,8 +1464,9 @@ Create `~/.agentmemory/.env`:
 
 # Team
 # TEAM_ID=
-# USER_ID=
+# USER_ID=                  # server-level default userId
 # TEAM_MODE=private
+# AGENTMEMORY_USER_ID=      # per-integration override (set in integration .env, not here)
 
 # Tool visibility: "core" (8 tools, lean fallback) or "all" (53 tools)
 # AGENTMEMORY_TOOLS=core

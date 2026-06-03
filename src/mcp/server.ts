@@ -10,6 +10,7 @@ import type {
 } from "../types.js";
 import { getVisibleTools } from "./tools-registry.js";
 import { timingSafeCompare } from "../auth.js";
+import { resolveUserId } from "../config.js";
 
 type McpResponse = {
   status_code: number;
@@ -505,10 +506,15 @@ export function registerMcpEndpoints(
               };
             }
             try {
-              const result = await sdk.trigger({ function_id: "mem::team-share", payload: {
+              const resolvedUserId = resolveUserId(
+                typeof args.userId === "string" ? args.userId : undefined,
+              );
+              const payload: Record<string, unknown> = {
                 itemId: args.itemId,
                 itemType: args.itemType,
-              } });
+                ...(resolvedUserId ? { userId: resolvedUserId } : {}),
+              };
+              const result = await sdk.trigger({ function_id: "mem::team-share", payload });
               return {
                 status_code: 200,
                 body: {
@@ -524,7 +530,7 @@ export function registerMcpEndpoints(
                   content: [
                     {
                       type: "text",
-                      text: "Team memory not enabled. Set TEAM_ID and USER_ID",
+                      text: "Team memory not enabled. Set TEAM_ID and AGENTMEMORY_USER_ID (or USER_ID as a fallback)",
                     },
                   ],
                 },
@@ -534,9 +540,14 @@ export function registerMcpEndpoints(
 
           case "memory_team_feed": {
             try {
-              const result = await sdk.trigger({ function_id: "mem::team-feed", payload: {
+              const resolvedUserId = resolveUserId(
+                typeof args.userId === "string" ? args.userId : undefined,
+              );
+              const payload: Record<string, unknown> = {
                 limit: typeof args.limit === "number" ? args.limit : 20,
-              } });
+                ...(resolvedUserId ? { userId: resolvedUserId } : {}),
+              };
+              const result = await sdk.trigger({ function_id: "mem::team-feed", payload });
               return {
                 status_code: 200,
                 body: {
@@ -552,7 +563,7 @@ export function registerMcpEndpoints(
                   content: [
                     {
                       type: "text",
-                      text: "Team memory not enabled. Set TEAM_ID and USER_ID",
+                      text: "Team memory not enabled. Set TEAM_ID and AGENTMEMORY_USER_ID (or USER_ID as a fallback)",
                     },
                   ],
                 },

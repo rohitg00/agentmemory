@@ -263,10 +263,21 @@ export function loadClaudeBridgeConfig(): ClaudeBridgeConfig {
 export function loadTeamConfig(): TeamConfig | null {
   const env = getMergedEnv();
   const teamId = env["TEAM_ID"];
-  const userId = env["USER_ID"];
+  const userId = env["AGENTMEMORY_USER_ID"] || env["USER_ID"];
   if (!teamId || !userId) return null;
   const mode = env["TEAM_MODE"] === "shared" ? "shared" : "private";
   return { teamId, userId, mode };
+}
+
+export function resolveTeamId(): string | undefined {
+  const env = getMergedEnv();
+  return env["TEAM_ID"] || undefined;
+}
+
+export function resolveUserId(override?: string): string | undefined {
+  const raw = override?.trim().slice(0, 128);
+  if (raw) return raw;
+  return getMergedEnv()["AGENTMEMORY_USER_ID"] || undefined;
 }
 
 // optional AGENT_ID env for multi-agent memory isolation.
