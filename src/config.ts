@@ -162,7 +162,9 @@ export function loadConfig(): AgentMemoryConfig {
   const provider = detectProvider(env);
 
   return {
-    engineUrl: env["III_ENGINE_URL"] || "ws://localhost:49134",
+    engineUrl:
+      env["III_ENGINE_URL"] ||
+      `ws://localhost:${env["III_ENGINE_PORT"] || env["III_PORT"] || "49134"}`,
     restPort: parseInt(env["III_REST_PORT"] || "3111", 10) || 3111,
     streamsPort: parseInt(env["III_STREAMS_PORT"] || "3112", 10) || 3112,
     provider,

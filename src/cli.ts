@@ -41,6 +41,7 @@ import {
 import { renderSplash } from "./cli/splash.js";
 import { isFirstRun, readPrefs, resetPrefs, writePrefs } from "./cli/preferences.js";
 import { runOnboarding } from "./cli/onboarding.js";
+import { applyPortFlag, renderRuntimeIiiConfig } from "./cli/runtime-ports.js";
 import { setBootVerbose } from "./logger.js";
 import { VERSION } from "./version.js";
 
@@ -180,10 +181,7 @@ if (toolsIdx !== -1 && args[toolsIdx + 1]) {
   process.env["AGENTMEMORY_TOOLS"] = args[toolsIdx + 1];
 }
 
-const portIdx = args.indexOf("--port");
-if (portIdx !== -1 && args[portIdx + 1]) {
-  process.env["III_REST_PORT"] = args[portIdx + 1];
-}
+applyPortFlag(args);
 
 const skipEngine = args.includes("--no-engine");
 
@@ -237,11 +235,13 @@ function getViewerUrl(): string {
   try {
     const u = new URL(getBaseUrl());
     const vPort =
+      parseInt(process.env["AGENTMEMORY_VIEWER_PORT"] || "", 10) ||
       parseInt(process.env["III_VIEWER_PORT"] || "", 10) ||
       (parseInt(u.port || "3111", 10) || 3111) + 2;
     return `${u.protocol}//${u.hostname}:${vPort}`;
   } catch {
     const vPort =
+      parseInt(process.env["AGENTMEMORY_VIEWER_PORT"] || "", 10) ||
       parseInt(process.env["III_VIEWER_PORT"] || "", 10) ||
       getRestPort() + 2;
     return `http://localhost:${vPort}`;
@@ -267,6 +267,8 @@ function getStreamPort(): number {
 function getEnginePort(): number {
   const explicit = parseInt(process.env["III_ENGINE_PORT"] || "", 10);
   if (explicit) return explicit;
+  const iiiPort = parseInt(process.env["III_PORT"] || "", 10);
+  if (iiiPort) return iiiPort;
   const url = process.env["III_ENGINE_URL"];
   if (url) {
     try {
@@ -328,6 +330,19 @@ function findIiiConfig(): string {
     if (existsSync(c)) return c;
   }
   return "";
+}
+
+function prepareRuntimeIiiConfig(configPath: string): string {
+  if (!configPath) return configPath;
+  const raw = readFileSync(configPath, "utf-8");
+  const rendered = renderRuntimeIiiConfig(raw);
+  if (rendered === raw) return configPath;
+
+  const dir = join(homedir(), ".agentmemory");
+  mkdirSync(dir, { recursive: true });
+  const target = join(dir, "iii-runtime-config.yaml");
+  writeFileSync(target, rendered);
+  return target;
 }
 
 function whichBinary(name: string): string | null {
@@ -830,7 +845,7 @@ function pickCompatibleIii(candidates: Array<string | null | undefined>): string
 }
 
 async function startEngine(): Promise<boolean> {
-  const configPath = findIiiConfig();
+  const configPath = prepareRuntimeIiiConfig(findIiiConfig());
   const pathIii = whichBinary("iii");
   vlog(`iii binary: ${pathIii ?? "(not on PATH)"}, config: ${configPath || "(not found)"}`);
 

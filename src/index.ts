@@ -522,7 +522,10 @@ async function main() {
     `MCP surface (opt-in via \`npx @agentmemory/mcp\`): ${getAllTools().length} tools · 6 resources · 3 prompts`,
   );
 
-  const viewerPort = config.restPort + 2;
+  const viewerPort =
+    parseInt(process.env.AGENTMEMORY_VIEWER_PORT || "", 10) ||
+    parseInt(process.env.III_VIEWER_PORT || "", 10) ||
+    config.restPort + 2;
   const viewerServer = startViewerServer(
     viewerPort,
     kv,
