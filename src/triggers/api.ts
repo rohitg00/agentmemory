@@ -1782,6 +1782,31 @@ export function registerApiTriggers(
     config: { api_path: "/agentmemory/memories/:id", http_method: "GET" },
   });
 
+  sdk.registerFunction("api::memory-delete",
+    async (req: ApiRequest): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const id = req.path_params?.["id"];
+      if (!id || typeof id !== "string") {
+        return { status_code: 400, body: { error: "id path parameter is required" } };
+      }
+      const memory = await kv.get<import("../types.js").Memory>(KV.memories, id);
+      if (!memory) {
+        return { status_code: 404, body: { error: `memory not found: ${id}` } };
+      }
+      const result = await sdk.trigger({
+        function_id: "mem::forget",
+        payload: { memoryId: id },
+      });
+      return { status_code: 200, body: result };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::memory-delete",
+    config: { api_path: "/agentmemory/memories/:id", http_method: "DELETE" },
+  });
+
   sdk.registerFunction("api::semantic-list",
     async (req: ApiRequest): Promise<Response> => {
       const authErr = checkAuth(req, secret);
