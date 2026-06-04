@@ -188,6 +188,11 @@ export function isDropStaleIndexEnabled(): boolean {
   return getMergedEnv()["AGENTMEMORY_DROP_STALE_INDEX"] === "true";
 }
 
+export function isProjectIsolationEnabled(): boolean {
+  const raw = getMergedEnv()["AGENTMEMORY_PROJECT_ISOLATION"];
+  return raw === "true" || raw === "1";
+}
+
 export function detectLlmProviderKind(): "llm" | "noop" {
   const env = getMergedEnv();
   if (

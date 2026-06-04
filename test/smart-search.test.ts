@@ -110,6 +110,17 @@ describe("Smart Search Function", () => {
     await kv.set("mem:obs:ses_1", "obs_1", obs1);
     await kv.set("mem:obs:ses_1", "obs_2", obs2);
 
+    const otherSession: Session = {
+      id: "ses_2",
+      project: "other-project",
+      cwd: "/tmp/other",
+      startedAt: "2026-02-01T00:00:00Z",
+      status: "completed",
+      observationCount: 1,
+    };
+    await kv.set("mem:sessions", "ses_2", otherSession);
+    await kv.set("mem:obs:ses_2", "obs_3", makeObs({ id: "obs_3", sessionId: "ses_2", title: "Other project note" }));
+
     const searchFn = async (_query: string, _limit: number) => searchResults;
     registerSmartSearchFunction(sdk as never, kv as never, searchFn);
   });
@@ -192,6 +203,35 @@ describe("Smart Search Function", () => {
       count: number;
     } | null;
     expect(log?.count).toBe(1);
+  });
+
+  it("compact mode filters hybrid results by project", async () => {
+    searchResults = [
+      {
+        observation: makeObs({ id: "obs_1", sessionId: "ses_1", title: "Auth handler" }),
+        bm25Score: 0.8,
+        vectorScore: 0,
+        combinedScore: 0.8,
+        sessionId: "ses_1",
+      },
+      {
+        observation: makeObs({ id: "obs_3", sessionId: "ses_2", title: "Other project note" }),
+        bm25Score: 0.9,
+        vectorScore: 0,
+        combinedScore: 0.9,
+        sessionId: "ses_2",
+      },
+    ];
+
+    const result = (await sdk.trigger("mem::smart-search", {
+      query: "project",
+      project: "my-project",
+    })) as { mode: string; project?: string; results: CompactSearchResult[] };
+
+    expect(result.mode).toBe("compact");
+    expect(result.project).toBe("my-project");
+    expect(result.results).toHaveLength(1);
+    expect(result.results[0].sessionId).toBe("ses_1");
   });
 
   describe("lesson inclusion (#lesson-visibility)", () => {

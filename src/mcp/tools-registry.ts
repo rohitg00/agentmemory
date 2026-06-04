@@ -24,6 +24,10 @@ export const CORE_TOOLS: McpToolDef[] = [
           type: "number",
           description: "Max results to return (default 10)",
         },
+        project: {
+          type: "string",
+          description: "Optional project identifier used to scope recall",
+        },
         format: {
           type: "string",
           description: "Result format: full, compact, or narrative (default full)",
@@ -77,11 +81,7 @@ export const CORE_TOOLS: McpToolDef[] = [
         },
         project: {
           type: "string",
-          description:
-            "Stable canonical project identifier this memory belongs to (e.g. a slug, " +
-            "UUID, or registry key). Must match the value used when the session was " +
-            "started. Do not use filesystem paths or ad-hoc display names — those " +
-            "change across machines and will silently break project scoping.",
+          description: "Optional project identifier used for workspace isolation",
         },
       },
       required: ["content"],
@@ -130,6 +130,10 @@ export const CORE_TOOLS: McpToolDef[] = [
           description: "Comma-separated observation IDs to expand",
         },
         limit: { type: "number", description: "Max results (default 10)" },
+        project: {
+          type: "string",
+          description: "Optional project identifier used to scope search and recall",
+        },
       },
       required: ["query"],
     },

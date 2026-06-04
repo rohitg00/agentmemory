@@ -28,6 +28,7 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
     resetHandleForTests();
     globalThis.fetch = originalFetch;
     delete process.env["AGENTMEMORY_URL"];
+    delete process.env["AGENTMEMORY_PROJECT_NAME"];
   });
 
   it("proxies memory_sessions to GET /agentmemory/sessions when server is up", async () => {
@@ -85,6 +86,7 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
         return new Response(
           JSON.stringify({
             mode: "full",
+            project: "feat-mcp-project-isolation",
             facts: [{ id: "m1" }],
             narrative: "n",
             concepts: ["c"],
@@ -103,6 +105,7 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
     });
     const body = JSON.parse(res.content[0].text);
     expect(body.mode).toBe("full");
+    expect(body.project).toBe("feat-mcp-project-isolation");
     expect(body.facts[0].id).toBe("m1");
     const searchCall = calls.find((c) => c.url.endsWith("/agentmemory/search"));
     expect(searchCall).toBeDefined();
@@ -113,6 +116,60 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
       token_budget: 800,
     });
     expect(calls.find((c) => c.url.endsWith("/agentmemory/smart-search"))).toBeUndefined();
+  });
+
+  it("forwards project to proxied remember/search/smart-search requests", async () => {
+    process.env["AGENTMEMORY_PROJECT_NAME"] = "feat-mcp-project-isolation";
+    const calls: Array<{ url: string; body?: unknown }> = [];
+    installFetch((url, init) => {
+      if (url.endsWith("/agentmemory/livez")) return new Response("ok", { status: 200 });
+      const body = init?.body ? JSON.parse(init.body as string) : undefined;
+      calls.push({ url, body });
+      if (url.endsWith("/agentmemory/remember")) {
+        return new Response(JSON.stringify({ success: true, memory: { id: "mem_1" } }), { status: 200 });
+      }
+      if (url.endsWith("/agentmemory/search")) {
+        return new Response(JSON.stringify({ format: "full", results: [] }), { status: 200 });
+      }
+      if (url.endsWith("/agentmemory/smart-search")) {
+        return new Response(JSON.stringify({ mode: "compact", results: [] }), { status: 200 });
+      }
+      return new Response("not found", { status: 404 });
+    });
+
+    await handleToolCall("memory_save", { content: "scoped memory", files: "src/foo.ts" });
+    await handleToolCall("memory_recall", { query: "scoped" });
+    await handleToolCall("memory_smart_search", { query: "scoped" });
+
+    expect(calls).toEqual([
+      {
+        url: `${BASE}/agentmemory/remember`,
+        body: {
+          content: "scoped memory",
+          type: "fact",
+          concepts: [],
+          files: ["src/foo.ts"],
+          project: "feat-mcp-project-isolation",
+        },
+      },
+      {
+        url: `${BASE}/agentmemory/search`,
+        body: {
+          query: "scoped",
+          limit: 10,
+          format: "full",
+          project: "feat-mcp-project-isolation",
+        },
+      },
+      {
+        url: `${BASE}/agentmemory/smart-search`,
+        body: {
+          query: "scoped",
+          limit: 10,
+          project: "feat-mcp-project-isolation",
+        },
+      },
+    ]);
   });
 
   it("memory_recall defaults format to 'full' when omitted (#507)", async () => {
@@ -208,6 +265,22 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
     expect(out.mode).toBe("compact");
     expect(out.results).toHaveLength(1);
     expect(out.results[0].content).toBe("local only");
+  });
+
+  it("persists the resolved project into local fallback storage", async () => {
+    process.env["AGENTMEMORY_PROJECT_NAME"] = "fallback-project";
+    installFetch(() => {
+      throw new Error("ECONNREFUSED");
+    });
+    const localKv = new InMemoryKV(undefined);
+    await handleToolCall("memory_save", { content: "local scoped entry" }, localKv);
+    const memories = await localKv.list<Record<string, unknown>>("mem:memories");
+    expect(memories).toHaveLength(1);
+    expect(memories[0]?.project).toBe("fallback-project");
+    const recall = await handleToolCall("memory_recall", { query: "local scoped" }, localKv);
+    const body = JSON.parse(recall.content[0].text);
+    expect(body.project).toBe("fallback-project");
+    expect(body.results).toHaveLength(1);
   });
 
   it("invalidates the handle on proxy failure, so the next call re-probes", async () => {

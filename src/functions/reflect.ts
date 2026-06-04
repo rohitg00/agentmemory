@@ -12,6 +12,7 @@ import type {
 } from "../types.js";
 import { recordAudit } from "./audit.js";
 import { REFLECT_SYSTEM, buildReflectPrompt } from "../prompts/reflect.js";
+import { requireProjectScope, projectMatchesScope } from "./project-scope.js";
 
 interface ConceptCluster {
   concepts: string[];
@@ -167,6 +168,7 @@ export function registerReflectFunctions(
 ): void {
   sdk.registerFunction("mem::reflect", 
     async (data: { maxClusters?: number; project?: string }) => {
+      const project = requireProjectScope(data?.project, "mem::reflect");
       const maxClusters = Math.min(data?.maxClusters ?? 10, 20);
       const maxInsightsPerCluster = 5;
       const maxTotal = 50;
@@ -181,8 +183,8 @@ export function registerReflectFunctions(
         ]);
 
       let activeLessons = lessons.filter((l) => !l.deleted);
-      if (data?.project) {
-        activeLessons = activeLessons.filter((l) => l.project === data.project);
+      if (project) {
+        activeLessons = activeLessons.filter((l) => projectMatchesScope(l.project, project));
       }
 
       let conceptClusters = buildGraphClusters(
@@ -212,7 +214,7 @@ export function registerReflectFunctions(
 
         const clusterFacts = semanticMemories.filter((s) => {
           const factTerms = s.fact.toLowerCase().split(/\s+/);
-          return factTerms.some((t) => conceptSet.has(t));
+          return factTerms.some((t) => conceptSet.has(t)) && (!project || projectMatchesScope(s.project, project));
         });
 
         const clusterLessons = activeLessons.filter((l) =>
@@ -227,7 +229,7 @@ export function registerReflectFunctions(
             conceptNames.some((cn) =>
               l.toLowerCase().includes(cn.toLowerCase()),
             ),
-          ),
+          ) && (!project || projectMatchesScope(c.project, project)),
         );
 
         const totalItems =
@@ -295,7 +297,7 @@ export function registerReflectFunctions(
                 sourceMemoryIds: cluster.factIds,
                 sourceLessonIds: cluster.lessonIds,
                 sourceCrystalIds: cluster.crystalIds,
-                project: data?.project,
+                project,
                 tags: conceptNames,
                 createdAt: now,
                 updatedAt: now,
@@ -340,6 +342,7 @@ export function registerReflectFunctions(
       minConfidence?: number;
       limit?: number;
     }) => {
+      const project = requireProjectScope(data?.project, "mem::insight-list");
       const limit = data?.limit ?? 50;
       const minConfidence = data?.minConfidence ?? 0;
       let items = await kv.list<Insight>(KV.insights);
@@ -348,8 +351,8 @@ export function registerReflectFunctions(
         (i) => !i.deleted && i.confidence >= minConfidence,
       );
 
-      if (data?.project) {
-        items = items.filter((i) => i.project === data.project);
+      if (project) {
+        items = items.filter((i) => projectMatchesScope(i.project, project));
       }
 
       items.sort((a, b) => b.confidence - a.confidence);
@@ -369,6 +372,7 @@ export function registerReflectFunctions(
         return { success: false, error: "query is required" };
       }
 
+      const project = requireProjectScope(data.project, "mem::insight-search");
       const query = data.query.toLowerCase();
       const minConfidence = data.minConfidence ?? 0.1;
       const limit = data.limit ?? 10;
@@ -378,8 +382,8 @@ export function registerReflectFunctions(
         (i) => !i.deleted && i.confidence >= minConfidence,
       );
 
-      if (data.project) {
-        items = items.filter((i) => i.project === data.project);
+      if (project) {
+        items = items.filter((i) => projectMatchesScope(i.project, project));
       }
 
       const terms = query.split(/\s+/).filter((t) => t.length > 1);

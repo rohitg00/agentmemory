@@ -8,6 +8,7 @@ import type { EmbeddingProvider } from '../types.js'
 import { memoryToObservation } from '../state/memory-utils.js'
 import { recordAccessBatch } from './access-tracker.js'
 import { logger } from "../logger.js";
+import { requireProjectScope, projectMatchesScope } from "./project-scope.js";
 
 let index: SearchIndex | null = null
 let vectorIndex: VectorIndex | null = null
@@ -344,7 +345,7 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
         }
         effectiveLimit = Math.min(data.limit, MAX_LIMIT)
       }
-      const projectFilter = typeof data.project === 'string' && data.project.trim().length > 0 ? data.project.trim() : undefined
+      const projectFilter = requireProjectScope(data.project, "mem::search")
       const cwdFilter = typeof data.cwd === 'string' && data.cwd.trim().length > 0 ? data.cwd.trim() : undefined
       const format = typeof data.format === 'string' ? data.format : 'full'
       if (!['full', 'compact', 'narrative'].includes(format)) {
@@ -420,7 +421,7 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
             // unscoped and let it through" to preserve backward-compatibility.
             if (projectFilter) {
               const memProject = await loadMemoryProject(r.obsId)
-              if (memProject !== null && memProject !== projectFilter) continue
+              if (!projectMatchesScope(memProject ?? undefined, projectFilter)) continue
             }
             // cwd filter does not apply to unbound entries.
           }
@@ -495,6 +496,7 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
         const packed = applyTokenBudget(compactResults)
         return {
           format,
+          ...(projectFilter !== undefined && { project: projectFilter }),
           results: packed.items,
           tokens_used: packed.used,
           tokens_budget: tokenBudget,
@@ -517,6 +519,7 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
           .join('\n\n')
         return {
           format,
+          ...(projectFilter !== undefined && { project: projectFilter }),
           results: packed.items,
           text,
           tokens_used: packed.used,
@@ -536,6 +539,7 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
       })
       return {
         format,
+        ...(projectFilter !== undefined && { project: projectFilter }),
         results: packed.items,
         tokens_used: packed.used,
         tokens_budget: tokenBudget,

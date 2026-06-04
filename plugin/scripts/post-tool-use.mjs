@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 import { execSync } from "node:child_process";
 import { basename } from "node:path";
-
 //#region src/hooks/_project.ts
 function resolveProject(cwd) {
 	const explicit = process.env["AGENTMEMORY_PROJECT_NAME"];
@@ -21,7 +20,6 @@ function resolveProject(cwd) {
 	} catch {}
 	return basename(dir);
 }
-
 //#endregion
 //#region src/hooks/post-tool-use.ts
 function isSdkChildContext(payload) {
@@ -116,7 +114,7 @@ function truncate(value, max) {
 	return value;
 }
 main();
-
 //#endregion
-export {  };
+export {};
+
 //# sourceMappingURL=post-tool-use.mjs.map

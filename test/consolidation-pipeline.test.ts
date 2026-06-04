@@ -7,6 +7,7 @@ vi.mock("../src/logger.js", () => ({
 vi.mock("../src/config.js", () => ({
   getConsolidationDecayDays: () => 30,
   isConsolidationEnabled: vi.fn(() => true),
+  isProjectIsolationEnabled: () => false,
 }));
 
 import { registerConsolidationPipelineFunction } from "../src/functions/consolidation-pipeline.js";

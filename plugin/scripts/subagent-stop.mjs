@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 import { execSync } from "node:child_process";
 import { basename } from "node:path";
-
 //#region src/hooks/_project.ts
 function resolveProject(cwd) {
 	const explicit = process.env["AGENTMEMORY_PROJECT_NAME"];
@@ -21,7 +20,6 @@ function resolveProject(cwd) {
 	} catch {}
 	return basename(dir);
 }
-
 //#endregion
 //#region src/hooks/subagent-stop.ts
 function isSdkChildContext(payload) {
@@ -70,7 +68,7 @@ async function main() {
 	setTimeout(() => process.exit(0), 500).unref();
 }
 main();
-
 //#endregion
-export {  };
+export {};
+
 //# sourceMappingURL=subagent-stop.mjs.map

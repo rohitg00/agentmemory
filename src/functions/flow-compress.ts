@@ -3,6 +3,7 @@ import type { StateKV } from "../state/kv.js";
 import { KV, generateId } from "../state/schema.js";
 import type { Action, ActionEdge, RoutineRun, MemoryProvider } from "../types.js";
 import { recordAudit } from "./audit.js";
+import { requireProjectScope } from "./project-scope.js";
 
 const FLOW_COMPRESS_SYSTEM = `You are a workflow summarizer. Given a completed action chain, produce a concise summary capturing:
 1. The overall goal and outcome
@@ -26,6 +27,7 @@ export function registerFlowCompressFunction(
 ): void {
   sdk.registerFunction("mem::flow-compress", 
     async (data: { runId?: string; actionIds?: string[]; project?: string }) => {
+      const project = requireProjectScope(data.project, "mem::flow-compress");
       let actionsToCompress: Action[] = [];
 
       if (data.runId) {
@@ -42,10 +44,10 @@ export function registerFlowCompressFunction(
           const action = await kv.get<Action>(KV.actions, id);
           if (action) actionsToCompress.push(action);
         }
-      } else if (data.project) {
+      } else if (project) {
         const allActions = await kv.list<Action>(KV.actions);
         actionsToCompress = allActions.filter(
-          (a) => a.project === data.project && a.status === "done",
+          (a) => a.project === project && a.status === "done",
         );
       } else {
         return {
@@ -96,6 +98,7 @@ export function registerFlowCompressFunction(
           strength: 1.0,
           version: 1,
           isLatest: true,
+          project,
           metadata: {
             flowCompressed: true,
             actionCount: doneActions.length,
@@ -108,7 +111,7 @@ export function registerFlowCompressFunction(
           action: "compress_flow",
           flowCompressed: true,
           actionCount: doneActions.length,
-          project: data.project,
+          project,
         });
 
         return {

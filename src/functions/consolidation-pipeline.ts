@@ -17,6 +17,7 @@ import {
 import { recordAudit } from "./audit.js";
 import { getConsolidationDecayDays, isConsolidationEnabled } from "../config.js";
 import { logger } from "../logger.js";
+import { requireProjectScope, projectMatchesScope } from "./project-scope.js";
 
 function applyDecay(
   items: Array<{
@@ -49,6 +50,7 @@ export function registerConsolidationPipelineFunction(
 ): void {
   sdk.registerFunction("mem::consolidate-pipeline", 
     async (data?: { tier?: string; force?: boolean; project?: string }) => {
+      const project = requireProjectScope(data?.project, "mem::consolidate-pipeline");
       if (!data?.force && !isConsolidationEnabled()) {
         return { success: false, skipped: true, reason: "Consolidation disabled: set CONSOLIDATION_ENABLED=true or configure an LLM provider (ANTHROPIC_API_KEY / OPENAI_API_KEY / OPENROUTER_API_KEY / GEMINI_API_KEY / GOOGLE_API_KEY / MINIMAX_API_KEY / OPENAI_BASE_URL / AGENTMEMORY_PROVIDER=agent-sdk)" };
       }
@@ -59,9 +61,15 @@ export function registerConsolidationPipelineFunction(
       if (tier === "all" || tier === "semantic") {
         const summaries = await kv.list<SessionSummary>(KV.summaries);
         const existingSemantic = await kv.list<SemanticMemory>(KV.semantic);
+        const scopedSummaries = project
+          ? summaries.filter((s) => s.project === project)
+          : summaries;
+        const scopedSemantic = project
+          ? existingSemantic.filter((s) => projectMatchesScope(s.project, project))
+          : existingSemantic;
 
-        if (summaries.length >= 5) {
-          const recentSummaries = summaries
+        if (scopedSummaries.length >= 5) {
+          const recentSummaries = scopedSummaries
             .sort(
               (a, b) =>
                 new Date(b.createdAt).getTime() -
@@ -93,7 +101,7 @@ export function registerConsolidationPipelineFunction(
               const confidence = Number.isNaN(parsedConf) ? 0.5 : parsedConf;
               const fact = match[2].trim();
 
-              const existing = existingSemantic.find(
+              const existing = scopedSemantic.find(
                 (s) => s.fact.toLowerCase() === fact.toLowerCase(),
               );
               if (existing) {
@@ -109,6 +117,7 @@ export function registerConsolidationPipelineFunction(
                   confidence,
                   sourceSessionIds: recentSummaries.map((s) => s.sessionId),
                   sourceMemoryIds: [],
+                  project,
                   accessCount: 1,
                   lastAccessedAt: now,
                   strength: confidence,
@@ -119,7 +128,7 @@ export function registerConsolidationPipelineFunction(
                 newFacts++;
               }
             }
-            results.semantic = { newFacts, totalSummaries: summaries.length };
+            results.semantic = { newFacts, totalSummaries: scopedSummaries.length };
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
             logger.error("Semantic consolidation failed", { error: msg });
@@ -137,7 +146,7 @@ export function registerConsolidationPipelineFunction(
         try {
           const reflectResult = await sdk.trigger({ function_id: "mem::reflect", payload: {
             maxClusters: 10,
-            project: data?.project,
+            project,
           } });
           results.reflect = reflectResult;
         } catch (err) {
@@ -151,6 +160,7 @@ export function registerConsolidationPipelineFunction(
         const memories = await kv.list<Memory>(KV.memories);
         const patterns = memories
           .filter((m) => m.isLatest && m.type === "pattern")
+          .filter((m) => !project || projectMatchesScope(m.project, project))
           .map((m) => ({
             content: m.content,
             frequency: m.sessionIds.length || 1,
@@ -174,6 +184,9 @@ export function registerConsolidationPipelineFunction(
             const existingProcs = await kv.list<ProceduralMemory>(
               KV.procedural,
             );
+            const scopedProcs = project
+              ? existingProcs.filter((p) => projectMatchesScope(p.project, project))
+              : existingProcs;
 
             while ((match = procRegex.exec(response)) !== null) {
               const name = match[1];
@@ -187,7 +200,7 @@ export function registerConsolidationPipelineFunction(
                 steps.push(stepMatch[1].trim());
               }
 
-              const existing = existingProcs.find(
+              const existing = scopedProcs.find(
                 (p) => p.name.toLowerCase() === name.toLowerCase(),
               );
               if (existing) {
@@ -203,6 +216,7 @@ export function registerConsolidationPipelineFunction(
                   triggerCondition: trigger,
                   frequency: 1,
                   sourceSessionIds: [],
+                  project,
                   strength: 0.5,
                   createdAt: now,
                   updatedAt: now,
@@ -230,20 +244,26 @@ export function registerConsolidationPipelineFunction(
 
       if (tier === "all" || tier === "decay") {
         const semantic = await kv.list<SemanticMemory>(KV.semantic);
-        applyDecay(semantic, decayDays);
-        for (const s of semantic) {
+        const scopedSemantic = project
+          ? semantic.filter((s) => projectMatchesScope(s.project, project))
+          : semantic;
+        applyDecay(scopedSemantic, decayDays);
+        for (const s of scopedSemantic) {
           await kv.set(KV.semantic, s.id, s);
         }
 
         const procedural = await kv.list<ProceduralMemory>(KV.procedural);
-        applyDecay(procedural, decayDays);
-        for (const p of procedural) {
+        const scopedProcedural = project
+          ? procedural.filter((p) => projectMatchesScope(p.project, project))
+          : procedural;
+        applyDecay(scopedProcedural, decayDays);
+        for (const p of scopedProcedural) {
           await kv.set(KV.procedural, p.id, p);
         }
 
         results.decay = {
-          semantic: semantic.length,
-          procedural: procedural.length,
+          semantic: scopedSemantic.length,
+          procedural: scopedProcedural.length,
         };
       }
 
