@@ -6,6 +6,36 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.9.27] — 2026-06-04
+
+Two real-world bug fixes reported against v0.9.26 plus a benchmark scorecard correction. No breaking changes; drop-in upgrade.
+
+### Fixed
+
+- **`/graph/query` and `/graph/stats` timed out with `"Invocation stopped"` on large existing corpora** ([#814](https://github.com/rohitg00/agentmemory/issues/814), [PR #816](https://github.com/rohitg00/agentmemory/pull/816)). The v0.9.25 fix from #753 paginated the response but the unbounded `kv.list<GraphNode>` + `kv.list<GraphEdge>` pair still ran on every call. At 75K+ nodes the response payload exceeded the iii heartbeat budget and the worker was declared dead before the new wall-clock timer could fire — caller saw raw `Invocation stopped` regardless. Refactored `mem::graph-extract` to maintain three side-indexes (`graphNameIndex`, `graphEdgeKey`, `graphNodeDegree`) so every extract path is O(1), never O(n). The hot path now reads exclusively from a precomputed top-degree snapshot updated inline on every extract. New `POST /agentmemory/graph/snapshot-rebuild` backfills the snapshot for corpora up to 25K nodes (refuses gracefully above with `tooLarge: true`); new `POST /agentmemory/graph/reset` provides a clean-restart escape hatch for legacy corpora without touching observations / recall / history. Same `kv.list` bottleneck was also blocking `mem::graph-extract` on every observation capture, so the fix immediately speeds up the observation pipeline too.
+- **Multi-instance port collisions on one host** ([#750](https://github.com/rohitg00/agentmemory/issues/750), [PR #815](https://github.com/rohitg00/agentmemory/pull/815)). `--port N` only relocated REST + viewer; streams (3112) and iii engine (49134) stayed hardcoded so a second daemon collided on those WS ports regardless of `--port`. `loadConfig()` now derives streams = REST+1 and engine = REST+46023 (so the canonical 3111 → 3112/49134 default is unchanged, and `--port 3211` → 3212/49234). New `--instance N` shortcut picks a 100-port block: `--instance 1` → 3211/3212/3213/49234. Per-port env overrides (`III_STREAM_PORT`, `III_ENGINE_PORT`, `III_ENGINE_URL`) still win.
+
+### Docs
+
+- **Corrected coding-agent-life-v1 P@5 numbers in the published scorecard** ([#796](https://github.com/rohitg00/agentmemory/issues/796), [PR #805](https://github.com/rohitg00/agentmemory/pull/805)). The original scorecard reported P@5 = 0.578 / 0.267 — generated before [PR #562](https://github.com/rohitg00/agentmemory/pull/562) changed the P@K denominator from `topK.length` to `k`. On the current formula those numbers are mathematically impossible (math ceiling at K=5 on this corpus is 0.240). Re-scored on v0.9.26: hybrid 0.240 / R@5 1.000, grep 0.227 / R@5 0.967. Reframed lift as recall + temporal not aggregate precision; aggregate P@5 saturates on a small / single-gold corpus and can't differentiate top-tier adapters.
+- **README refresh** ([PR #807](https://github.com/rohitg00/agentmemory/pull/807)). v0.9.22 callout → v0.9.26 + v0.9.25 summary. Stats line: 118 files / 950+ tests / 123 functions → 174 / 1,390+ / 258. Corrected the P@5 hero numbers in line with the scorecard correction. `stat-tests.svg` bumped 1171+ → 1390+.
+
+### Added
+
+- **`POST /agentmemory/graph/snapshot-rebuild`** — pays the full enumeration cost once on corpora ≤ 25K nodes, persists a top-degree subgraph + aggregate counts, refuses with `{ success: false, tooLarge: true, totalNodes, ceiling }` above the safe ceiling instead of killing the worker.
+- **`POST /agentmemory/graph/reset`** — clean-restart escape hatch for legacy corpora too large for safe rebuild. Wipes graph state (nodes, edges, name-index, edge-key, degree, history, snapshot) without touching observations. Graph rebuilds incrementally from new extracts.
+- **`--instance N` CLI flag** — multi-daemon convenience. Picks a 100-port block off the 3111 base. Max N=50.
+- **`GraphSnapshot.topDegrees`** — synchronous degree lookup keyed by nodeId, maintained alongside `topNodes` so re-ranking after edge writes runs sync over numbers instead of async kv.get inside the sort comparator.
+- **`GraphQueryResult.fromSnapshot`** + **`GraphQueryResult.warning`** — response fields the viewer can use to surface "served from cache" or "rebuild needed" banners instead of opaque 500s.
+
+### Changed
+
+- **REST endpoint count: 126 → 128**. `POST /agentmemory/graph/snapshot-rebuild` and `POST /agentmemory/graph/reset` added.
+- **`mem::graph-stats`** now reads exclusively from the snapshot. Returns `{ ..., fromSnapshot, warning }` envelope when snapshot is absent; never returns a 500.
+- **`mem::graph-query` empty-body / nodeType-only path** reads exclusively from the snapshot. `startNodeId` / `query` paths keep the live enumeration behind a 6s budget with snapshot-backed fallback on rejection — degrades gracefully above ~25K nodes until a per-node edge index lands.
+
+[0.9.27]: https://github.com/rohitg00/agentmemory/compare/v0.9.26...v0.9.27
+
 ## [0.9.26] — 2026-06-03
 
 Hotfix on top of v0.9.25. The first-run boot crashed for users without a persisted index because the load path didn't handle `undefined` returns from iii-state adapters.
