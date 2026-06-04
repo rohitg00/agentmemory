@@ -327,6 +327,10 @@ export const V040_TOOLS: McpToolDef[] = [
       properties: {
         operation: { type: "string", description: "Filter by operation type" },
         limit: { type: "number", description: "Max entries (default 50)" },
+        receipt: {
+          type: "boolean",
+          description: "Return a privacy-safe receipt with hashed target/user ids and detail keys only",
+        },
       },
     },
   },

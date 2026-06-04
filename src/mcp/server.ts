@@ -10,6 +10,8 @@ import type {
 } from "../types.js";
 import { getVisibleTools } from "./tools-registry.js";
 import { timingSafeCompare } from "../auth.js";
+import { buildAuditReceipt } from "../functions/audit.js";
+import type { AuditEntry } from "../types.js";
 
 type McpResponse = {
   status_code: number;
@@ -565,12 +567,13 @@ export function registerMcpEndpoints(
               const result = await sdk.trigger({ function_id: "mem::audit-query", payload: {
                 operation: args.operation as string,
                 limit: typeof args.limit === "number" ? args.limit : 50,
-              } });
+              } }) as AuditEntry[];
+              const body = args.receipt === true ? buildAuditReceipt(result) : result;
               return {
                 status_code: 200,
                 body: {
                   content: [
-                    { type: "text", text: JSON.stringify(result, null, 2) },
+                    { type: "text", text: JSON.stringify(body, null, 2) },
                   ],
                 },
               };

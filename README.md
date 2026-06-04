@@ -927,7 +927,7 @@ npm install @xenova/transformers
 | `memory_claude_bridge_sync` | Sync with MEMORY.md |
 | `memory_team_share` | Share with team members |
 | `memory_team_feed` | Recent shared items |
-| `memory_audit` | Audit trail of operations |
+| `memory_audit` | Audit trail of operations; pass `receipt: true` for privacy-safe HMAC-hashed receipts (requires `AGENTMEMORY_RECEIPT_HMAC_KEY`) |
 | `memory_governance_delete` | Delete with audit trail |
 | `memory_snapshot_create` | Git-versioned snapshot |
 | `memory_action_create` | Create work items with dependencies |
@@ -1452,7 +1452,9 @@ Create `~/.agentmemory/.env`:
 | `POST` | `/agentmemory/import` | Import from JSON |
 | `POST` | `/agentmemory/graph/query` | Knowledge graph query |
 | `POST` | `/agentmemory/team/share` | Share with team |
-| `GET` | `/agentmemory/audit` | Audit trail |
+| `GET` | `/agentmemory/audit` | Audit trail; add `?receipt=true` for privacy-safe HMAC-hashed receipts |
+
+Audit receipts require `AGENTMEMORY_RECEIPT_HMAC_KEY` when `receipt=true` is requested. The key is used only to derive stable receipt identifiers with HMAC-SHA256 so shared receipts do not expose raw or dictionary-guessable audit, target, or user IDs.
 
 Full endpoint list: [`src/triggers/api.ts`](src/triggers/api.ts)
 
