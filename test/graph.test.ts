@@ -562,12 +562,15 @@ describe("Graph Functions", () => {
     it("graph-reset also wipes composite-key index scopes", async () => {
       await sdk.trigger("mem::graph-extract", { observations: [testObs] });
       // Index entries exist after the extract — name-index keyed by
-      // type|name; degree keyed by nodeId; edge-key by composite.
+      // type|name; degree keyed by nodeId; edge-key by composite
+      // src|tgt|type.
       const nameBefore = await kv.get(
         "mem:graph:name-index",
         "file|src/index.ts",
       );
       expect(nameBefore).not.toBeNull();
+      const edgeKeyBefore = await kv.list("mem:graph:edge-key");
+      expect(edgeKeyBefore.length).toBeGreaterThan(0);
 
       await sdk.trigger("mem::graph-reset", {});
 
@@ -576,6 +579,8 @@ describe("Graph Functions", () => {
         "file|src/index.ts",
       );
       expect(nameAfter).toBeNull();
+      const edgeKeyAfter = await kv.list("mem:graph:edge-key");
+      expect(edgeKeyAfter.length).toBe(0);
       // Same for the per-node degree counter.
       const degree = await kv.list("mem:graph:node-degree");
       expect(degree.length).toBe(0);
@@ -610,6 +615,39 @@ describe("Graph Functions", () => {
       expect(result.warning).toBeTruthy();
       expect(result.warning).toMatch(/budget|enumeration/i);
     }, 10000);
+
+    // CodeRabbit raised that slowKV(setTimeout) doesn't simulate a
+    // blocked event loop. The real production failure is iii rejecting
+    // the trigger with "Invocation stopped" after the worker dies
+    // (heartbeat starvation). A rejecting kv.list mock covers that
+    // catch-path directly without introducing a busy-wait that would
+    // also starve the budget timer and produce a flaky test.
+    function rejectingKV() {
+      const base = mockKV();
+      return {
+        ...base,
+        list: async <T>(_scope: string): Promise<T[]> => {
+          throw new Error("Invocation stopped");
+        },
+      };
+    }
+
+    it("graph-query rejects-from-engine path returns warning envelope (worker-death simulation)", async () => {
+      const rejector = rejectingKV();
+      const localSdk = mockSdk();
+      registerGraphFunction(
+        localSdk as never,
+        rejector as never,
+        mockProvider as never,
+      );
+
+      const result = (await localSdk.trigger("mem::graph-query", {
+        startNodeId: "n_missing",
+      })) as GraphQueryResult;
+
+      expect(result.warning).toBeTruthy();
+      expect(result.nodes).toEqual([]);
+    });
 
     it("graph-snapshot-rebuild refuses corpora past REBUILD_SAFE_NODE_CEILING", async () => {
       // Direct-poke the mock store with > 25K node values so kv.list
