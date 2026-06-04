@@ -64,6 +64,7 @@ function emptySnapshot(): GraphSnapshot {
     version: 1,
     topNodes: [],
     topEdges: [],
+    topDegrees: {},
     stats: {
       totalNodes: 0,
       totalEdges: 0,
@@ -96,11 +97,25 @@ function buildSnapshotFromArrays(
 ): GraphSnapshot {
   const liveNodes = nodes.filter((n) => !n.stale);
   const liveEdges = edges.filter((e) => !e.stale);
-  const ranked = rankByDegree(liveNodes, liveEdges).slice(0, SNAPSHOT_TOP_NODES);
+  // Build the global degree map once so we can both rank by it AND
+  // snapshot the per-top-node values into topDegrees for synchronous
+  // re-sort after incremental edge writes.
+  const degree = new Map<string, number>();
+  for (const e of liveEdges) {
+    degree.set(e.sourceNodeId, (degree.get(e.sourceNodeId) ?? 0) + 1);
+    degree.set(e.targetNodeId, (degree.get(e.targetNodeId) ?? 0) + 1);
+  }
+  const ranked = [...liveNodes]
+    .sort((a, b) => (degree.get(b.id) ?? 0) - (degree.get(a.id) ?? 0))
+    .slice(0, SNAPSHOT_TOP_NODES);
   const rankedIds = new Set(ranked.map((n) => n.id));
   const topEdges = liveEdges.filter(
     (e) => rankedIds.has(e.sourceNodeId) && rankedIds.has(e.targetNodeId),
   );
+  const topDegrees: Record<string, number> = {};
+  for (const n of ranked) {
+    topDegrees[n.id] = degree.get(n.id) ?? 0;
+  }
   const nodesByType: Record<string, number> = {};
   for (const n of liveNodes) {
     nodesByType[n.type] = (nodesByType[n.type] || 0) + 1;
@@ -113,6 +128,7 @@ function buildSnapshotFromArrays(
     version: 1,
     topNodes: ranked,
     topEdges,
+    topDegrees,
     stats: {
       totalNodes: liveNodes.length,
       totalEdges: liveEdges.length,
@@ -197,15 +213,14 @@ async function applyDegreeDelta(
 
   const inTop = snap.topNodes.findIndex((n) => n.id === nodeId);
   if (inTop !== -1) {
-    snap.topNodes.sort((a, b) => {
-      const dA = a.id === nodeId ? next : null;
-      const dB = b.id === nodeId ? next : null;
-      // For nodes other than the changed one we rely on the previous
-      // sort order. Bubble the changed node into its new position.
-      if (dA !== null && dB === null) return -1;
-      if (dB !== null && dA === null) return 1;
-      return 0;
-    });
+    // Cache the new degree in topDegrees so the comparator runs
+    // synchronously over numbers, not async kv.get calls. Re-sort
+    // descending by degree.
+    snap.topDegrees[nodeId] = next;
+    snap.topNodes.sort(
+      (a, b) =>
+        (snap.topDegrees[b.id] ?? 0) - (snap.topDegrees[a.id] ?? 0),
+    );
     return next;
   }
 
@@ -214,22 +229,30 @@ async function applyDegreeDelta(
     const node = await kv.get<GraphNode>(KV.graphNodes, nodeId);
     if (node && !node.stale) {
       snap.topNodes.push(node);
+      snap.topDegrees[node.id] = next;
+      snap.topNodes.sort(
+        (a, b) =>
+          (snap.topDegrees[b.id] ?? 0) - (snap.topDegrees[a.id] ?? 0),
+      );
     }
     return next;
   }
 
-  // topNodes is full; check whether `next` beats the current cutoff.
-  // The cutoff is the degree of the LAST entry in topNodes — which we
-  // don't track explicitly. Read it on demand via the degree map.
-  const tailNodeId = snap.topNodes[snap.topNodes.length - 1]?.id;
-  if (!tailNodeId) return next;
-  const tailDegree =
-    (await kv.get<number>(KV.graphNodeDegree, tailNodeId)) ?? 0;
+  // topNodes is full; the cutoff is the tail's cached degree.
+  const tailEntry = snap.topNodes[snap.topNodes.length - 1];
+  if (!tailEntry) return next;
+  const tailDegree = snap.topDegrees[tailEntry.id] ?? 0;
   if (next > tailDegree) {
     const node = await kv.get<GraphNode>(KV.graphNodes, nodeId);
     if (node && !node.stale) {
-      snap.topNodes.pop();
+      const evicted = snap.topNodes.pop();
+      if (evicted) delete snap.topDegrees[evicted.id];
       snap.topNodes.push(node);
+      snap.topDegrees[node.id] = next;
+      snap.topNodes.sort(
+        (a, b) =>
+          (snap.topDegrees[b.id] ?? 0) - (snap.topDegrees[a.id] ?? 0),
+      );
     }
   }
   return next;
@@ -252,6 +275,7 @@ function mergeNode(
   existing: GraphNode,
   incoming: GraphNode,
   obsIds: string[],
+  capturedAt: string,
 ): GraphNode {
   return {
     ...existing,
@@ -263,7 +287,7 @@ function mergeNode(
       ]),
     ],
     properties: { ...existing.properties, ...incoming.properties },
-    updatedAt: new Date().toISOString(),
+    updatedAt: capturedAt,
   };
 }
 
@@ -294,17 +318,6 @@ function resolvePagination(
       : 0,
   );
   return { limit, offset };
-}
-
-// Score nodes by incident-edge count so the default-cap page surfaces
-// the densest part of the graph rather than an arbitrary KV scan order.
-function rankByDegree(nodes: GraphNode[], edges: GraphEdge[]): GraphNode[] {
-  const degree = new Map<string, number>();
-  for (const edge of edges) {
-    degree.set(edge.sourceNodeId, (degree.get(edge.sourceNodeId) ?? 0) + 1);
-    degree.set(edge.targetNodeId, (degree.get(edge.targetNodeId) ?? 0) + 1);
-  }
-  return [...nodes].sort((a, b) => (degree.get(b.id) ?? 0) - (degree.get(a.id) ?? 0));
 }
 
 function paginate(
@@ -473,6 +486,7 @@ export function registerGraphFunction(
         // dies before merge can complete. Each name-index entry is a
         // single small kv.get/set pair.
         const snap = (await readSnapshot(kv)) ?? emptySnapshot();
+        const capturedAt = new Date().toISOString();
         let newNodeCount = 0;
         let newEdgeCount = 0;
         const newEdgesForTopCheck: GraphEdge[] = [];
@@ -490,7 +504,7 @@ export function registerGraphFunction(
           }
 
           if (existing) {
-            const merged = mergeNode(existing, node, obsIds);
+            const merged = mergeNode(existing, node, obsIds, capturedAt);
             await kv.set(KV.graphNodes, existing.id, merged);
             // Update topNodes entry if present so a stale clone isn't
             // returned from the snapshot fast path.
@@ -510,6 +524,7 @@ export function registerGraphFunction(
               // Degree 0 still beats an empty slot — sit at the tail
               // until edges arrive and promote.
               snap.topNodes.push(node);
+              snap.topDegrees[node.id] = 0;
             }
           }
         }
@@ -556,7 +571,7 @@ export function registerGraphFunction(
         }
 
         if (newNodeCount > 0 || newEdgeCount > 0) {
-          snap.updatedAt = new Date().toISOString();
+          snap.updatedAt = capturedAt;
           snap.dirty = false;
           await kv.set(KV.graphSnapshot, SNAPSHOT_KEY, snap);
         }
@@ -814,7 +829,10 @@ export function registerGraphFunction(
 
       // Backfill the targeted-lookup indexes so post-rebuild
       // graph-extract calls hit the O(1) path instead of falling
-      // through to the (already-removed) full-scope scan.
+      // through to the (already-removed) full-scope scan. Batch
+      // writes via Promise.all to avoid N sequential round-trips —
+      // BATCH_SIZE bounds in-flight writes so we don't open thousands
+      // of concurrent state channels on huge corpora.
       const liveNodes = nodes.filter((n) => !n.stale);
       const liveEdges = edges.filter((e) => !e.stale);
       const degree = new Map<string, number>();
@@ -822,15 +840,26 @@ export function registerGraphFunction(
         degree.set(e.sourceNodeId, (degree.get(e.sourceNodeId) ?? 0) + 1);
         degree.set(e.targetNodeId, (degree.get(e.targetNodeId) ?? 0) + 1);
       }
-      for (const n of liveNodes) {
-        await kv.set(KV.graphNameIndex, nameIndexKey(n.type, n.name), n.id);
-        await kv.set(KV.graphNodeDegree, n.id, degree.get(n.id) ?? 0);
+      const BATCH_SIZE = 100;
+      for (let i = 0; i < liveNodes.length; i += BATCH_SIZE) {
+        const batch = liveNodes.slice(i, i + BATCH_SIZE);
+        await Promise.all(
+          batch.flatMap((n) => [
+            kv.set(KV.graphNameIndex, nameIndexKey(n.type, n.name), n.id),
+            kv.set(KV.graphNodeDegree, n.id, degree.get(n.id) ?? 0),
+          ]),
+        );
       }
-      for (const e of liveEdges) {
-        await kv.set(
-          KV.graphEdgeKey,
-          edgeIndexKey(e.sourceNodeId, e.targetNodeId, e.type),
-          e.id,
+      for (let i = 0; i < liveEdges.length; i += BATCH_SIZE) {
+        const batch = liveEdges.slice(i, i + BATCH_SIZE);
+        await Promise.all(
+          batch.map((e) =>
+            kv.set(
+              KV.graphEdgeKey,
+              edgeIndexKey(e.sourceNodeId, e.targetNodeId, e.type),
+              e.id,
+            ),
+          ),
         );
       }
 
@@ -867,46 +896,96 @@ export function registerGraphFunction(
   // from existing observations).
   sdk.registerFunction("mem::graph-reset", async () => {
     const started = Date.now();
-    const scopes = [
-      KV.graphNodes,
-      KV.graphEdges,
-      KV.graphNameIndex,
-      KV.graphEdgeKey,
-      KV.graphNodeDegree,
-      KV.graphEdgeHistory,
-      KV.graphSnapshot,
-    ] as const;
-    const counts: Record<string, number> = {};
-    for (const scope of scopes) {
-      try {
-        const rows = await withTimeout(
-          kv.list<{ id?: string }>(scope),
-          LIVE_ENUMERATION_BUDGET_MS,
-          `graph-reset list ${scope}`,
-        );
-        counts[scope] = rows.length;
-        for (const row of rows) {
-          // Each scope keys nodes/edges by their `id` or by a
-          // composite string we stored as the key. For the
-          // composite-key scopes (graphNameIndex / graphEdgeKey)
-          // the row value IS the nodeId/edgeId string, not an
-          // object with `.id` — listing returns values only, so we
-          // can't recover the original key from a value. Fall back
-          // to writing an empty snapshot which functions as a
-          // "reset" for the read-path; legacy index entries will
-          // be overwritten lazily by future extracts when the same
-          // (type|name) or (src|tgt|type) is re-derived.
-          if (typeof row === "object" && row !== null && row.id) {
-            await kv.delete(scope, row.id).catch(() => undefined);
-          }
-        }
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        logger.warn(`graph-reset: failed to clear ${scope}`, { error: msg });
-        counts[scope] = -1;
+    const counts: Record<string, number> = {
+      [KV.graphNodes]: 0,
+      [KV.graphEdges]: 0,
+      [KV.graphNameIndex]: 0,
+      [KV.graphEdgeKey]: 0,
+      [KV.graphNodeDegree]: 0,
+      [KV.graphEdgeHistory]: 0,
+      [KV.graphSnapshot]: 0,
+    };
+
+    // Composite-key scopes (graphNameIndex / graphEdgeKey /
+    // graphNodeDegree) store primitives, not objects, so we can't
+    // recover their keys via kv.list (which returns values only). The
+    // only reliable wipe path is to walk the canonical object scopes
+    // (graphNodes / graphEdges) and reconstruct the composite keys
+    // from each node/edge's fields, deleting both the canonical row
+    // AND every derived index entry in lock-step.
+    try {
+      const nodes = await withTimeout(
+        kv.list<GraphNode>(KV.graphNodes),
+        LIVE_ENUMERATION_BUDGET_MS,
+        "graph-reset list graphNodes",
+      );
+      counts[KV.graphNodes] = nodes.length;
+      for (const node of nodes) {
+        if (!node?.id) continue;
+        await Promise.all([
+          kv.delete(KV.graphNodes, node.id).catch(() => undefined),
+          kv
+            .delete(KV.graphNameIndex, nameIndexKey(node.type, node.name))
+            .catch(() => undefined),
+          kv.delete(KV.graphNodeDegree, node.id).catch(() => undefined),
+        ]);
+        counts[KV.graphNameIndex] += 1;
+        counts[KV.graphNodeDegree] += 1;
       }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.warn("graph-reset: graphNodes list failed", { error: msg });
+      counts[KV.graphNodes] = -1;
     }
+
+    try {
+      const edges = await withTimeout(
+        kv.list<GraphEdge>(KV.graphEdges),
+        LIVE_ENUMERATION_BUDGET_MS,
+        "graph-reset list graphEdges",
+      );
+      counts[KV.graphEdges] = edges.length;
+      for (const edge of edges) {
+        if (!edge?.id) continue;
+        await Promise.all([
+          kv.delete(KV.graphEdges, edge.id).catch(() => undefined),
+          kv
+            .delete(
+              KV.graphEdgeKey,
+              edgeIndexKey(edge.sourceNodeId, edge.targetNodeId, edge.type),
+            )
+            .catch(() => undefined),
+        ]);
+        counts[KV.graphEdgeKey] += 1;
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.warn("graph-reset: graphEdges list failed", { error: msg });
+      counts[KV.graphEdges] = -1;
+    }
+
+    // graphEdgeHistory entries also key by id (audit row shape). Best
+    // effort — failures here don't block the reset.
+    try {
+      const history = await withTimeout(
+        kv.list<{ id?: string }>(KV.graphEdgeHistory),
+        LIVE_ENUMERATION_BUDGET_MS,
+        "graph-reset list graphEdgeHistory",
+      );
+      counts[KV.graphEdgeHistory] = history.length;
+      for (const row of history) {
+        if (row?.id) {
+          await kv.delete(KV.graphEdgeHistory, row.id).catch(() => undefined);
+        }
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.warn("graph-reset: graphEdgeHistory list failed", { error: msg });
+      counts[KV.graphEdgeHistory] = -1;
+    }
+
     await kv.set(KV.graphSnapshot, SNAPSHOT_KEY, emptySnapshot());
+    counts[KV.graphSnapshot] = 1;
     const tookMs = Date.now() - started;
     logger.info("Graph state reset", { counts, tookMs });
     return { success: true, cleared: counts, tookMs };

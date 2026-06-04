@@ -469,6 +469,12 @@ export interface GraphSnapshot {
   version: 1;
   topNodes: GraphNode[];
   topEdges: GraphEdge[];
+  // Synchronous degree lookup keyed by nodeId. Maintained alongside
+  // topNodes so re-ranking after an edge write doesn't require an
+  // async kv.get for every top-N entry inside the sort comparator.
+  // Keys are limited to the top-N set; non-top nodes track their
+  // degree in KV.graphNodeDegree only.
+  topDegrees: Record<string, number>;
   stats: {
     totalNodes: number;
     totalEdges: number;

@@ -558,5 +558,94 @@ describe("Graph Functions", () => {
       }>("mem:graph:snapshot", "current");
       expect(snap?.stats.totalNodes).toBe(0);
     });
+
+    it("graph-reset also wipes composite-key index scopes", async () => {
+      await sdk.trigger("mem::graph-extract", { observations: [testObs] });
+      // Index entries exist after the extract — name-index keyed by
+      // type|name; degree keyed by nodeId; edge-key by composite.
+      const nameBefore = await kv.get(
+        "mem:graph:name-index",
+        "file|src/index.ts",
+      );
+      expect(nameBefore).not.toBeNull();
+
+      await sdk.trigger("mem::graph-reset", {});
+
+      const nameAfter = await kv.get(
+        "mem:graph:name-index",
+        "file|src/index.ts",
+      );
+      expect(nameAfter).toBeNull();
+      // Same for the per-node degree counter.
+      const degree = await kv.list("mem:graph:node-degree");
+      expect(degree.length).toBe(0);
+    });
+  });
+
+  // CodeRabbit feedback: cover the timeout-budget fallback path and
+  // the oversized-corpus rebuild refusal. The hot path never enumerates
+  // any more, but the rebuild endpoint AND the BFS / query branches
+  // still call kv.list — both need explicit failure-mode tests.
+  describe("budget + tooLarge guards (#814 v2)", () => {
+    function slowKV(delayMs: number) {
+      const base = mockKV();
+      return {
+        ...base,
+        list: async <T>(scope: string): Promise<T[]> => {
+          await new Promise((r) => setTimeout(r, delayMs));
+          return base.list<T>(scope);
+        },
+      };
+    }
+
+    it("graph-query startNodeId returns warning envelope when enumeration exceeds budget", async () => {
+      const slow = slowKV(7000); // > LIVE_ENUMERATION_BUDGET_MS (6000ms)
+      const localSdk = mockSdk();
+      registerGraphFunction(localSdk as never, slow as never, mockProvider as never);
+
+      const result = (await localSdk.trigger("mem::graph-query", {
+        startNodeId: "n_missing",
+      })) as GraphQueryResult;
+
+      expect(result.warning).toBeTruthy();
+      expect(result.warning).toMatch(/budget|enumeration/i);
+    }, 10000);
+
+    it("graph-snapshot-rebuild refuses corpora past REBUILD_SAFE_NODE_CEILING", async () => {
+      // Direct-poke the mock store with > 25K node values so kv.list
+      // returns them without paying the per-set cost. Each node only
+      // needs id/type/name/stale=false for the rebuild path.
+      const localKv = mockKV();
+      // Walk the implementation detail: mockKV stores entries in a
+      // Map under the scope key. Push directly to that map via the
+      // public `set` API in a tight loop.
+      const COUNT = 25001;
+      const sets: Array<Promise<unknown>> = [];
+      for (let i = 0; i < COUNT; i++) {
+        sets.push(
+          localKv.set("mem:graph:nodes", `bn_${i}`, {
+            id: `bn_${i}`,
+            type: "concept",
+            name: `bulk-${i}`,
+            properties: {},
+            sourceObservationIds: [],
+            createdAt: "2026-01-01T00:00:00Z",
+            stale: false,
+          }),
+        );
+      }
+      await Promise.all(sets);
+
+      const localSdk = mockSdk();
+      registerGraphFunction(localSdk as never, localKv as never, mockProvider as never);
+
+      const result = (await localSdk.trigger(
+        "mem::graph-snapshot-rebuild",
+        {},
+      )) as { success: boolean; tooLarge?: boolean; totalNodes?: number };
+      expect(result.success).toBe(false);
+      expect(result.tooLarge).toBe(true);
+      expect(result.totalNodes).toBeGreaterThanOrEqual(25001);
+    });
   });
 });
