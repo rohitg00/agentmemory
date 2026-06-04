@@ -45,7 +45,7 @@ function defaultModelFor(providerType: ProviderConfig["provider"]): string {
         getEnvVar("OPENROUTER_MODEL") || "anthropic/claude-sonnet-4-20250514"
       );
     case "minimax":
-      return getEnvVar("MINIMAX_MODEL") || "MiniMax-M2.7";
+      return getEnvVar("MINIMAX_MODEL") || "MiniMax-M3";
     case "agent-sdk":
       return "claude-sonnet-4-20250514";
     case "noop":

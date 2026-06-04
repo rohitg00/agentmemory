@@ -155,7 +155,7 @@ describe("Fallback provider model resolution (#778)", () => {
     const openai = captured.find((c) => c.provider === "openai");
     const minimax = captured.find((c) => c.provider === "minimax");
     expect(openai?.model).toBe("gpt-5");
-    expect(minimax?.model).toBe("MiniMax-M2.7");
+    expect(minimax?.model).toBe("MiniMax-M3");
     // Neither inherits the Anthropic model name.
     expect(openai?.model).not.toBe("claude-sonnet-4-20250514");
     expect(minimax?.model).not.toBe("claude-sonnet-4-20250514");
