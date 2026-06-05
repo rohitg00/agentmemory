@@ -190,7 +190,11 @@ export function isDropStaleIndexEnabled(): boolean {
 
 export function isProjectIsolationEnabled(): boolean {
   const raw = getMergedEnv()["AGENTMEMORY_PROJECT_ISOLATION"];
-  return raw === "true" || raw === "1";
+  if (raw === undefined || raw.trim().length === 0) return true;
+  const normalized = raw.trim().toLowerCase();
+  if (["false", "0", "no", "off"].includes(normalized)) return false;
+  if (["true", "1", "yes", "on"].includes(normalized)) return true;
+  return true;
 }
 
 export function detectLlmProviderKind(): "llm" | "noop" {

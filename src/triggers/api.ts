@@ -14,7 +14,10 @@ import { getBoundViewerPort, getViewerSkipped } from "../viewer/server.js";
 import { MAX_FILES_UPPER_BOUND } from "../functions/replay.js";
 import { logger } from "../logger.js";
 import { isProjectIsolationEnabled } from "../config.js";
-import { resolveProjectScope } from "../functions/project-scope.js";
+import {
+  resolveProjectScope,
+  projectRequiredMessage,
+} from "../functions/project-scope.js";
 import {
   isGraphExtractionEnabled,
   isConsolidationEnabled,
@@ -156,7 +159,7 @@ function requireProjectParam(
   const project = resolveProjectScope(value);
   if (isProjectIsolationEnabled() && !project) {
     return {
-      error: `project is required for ${routeName} when AGENTMEMORY_PROJECT_ISOLATION=true`,
+      error: projectRequiredMessage(routeName),
     };
   }
   return { project };

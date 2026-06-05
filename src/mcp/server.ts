@@ -11,7 +11,10 @@ import type {
 import { getVisibleTools } from "./tools-registry.js";
 import { timingSafeCompare } from "../auth.js";
 import { isProjectIsolationEnabled } from "../config.js";
-import { resolveProjectScope } from "../functions/project-scope.js";
+import {
+  resolveProjectScope,
+  projectRequiredMessage,
+} from "../functions/project-scope.js";
 
 type McpResponse = {
   status_code: number;
@@ -52,7 +55,7 @@ function requireProjectArg(
   const project = resolveProjectArg(value);
   if (isProjectIsolationEnabled() && !project) {
     return {
-      error: `project is required for ${toolName} when AGENTMEMORY_PROJECT_ISOLATION=true`,
+      error: projectRequiredMessage(toolName),
     };
   }
   return { project };

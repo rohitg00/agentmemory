@@ -59,13 +59,17 @@ function mockSdk() {
 }
 
 describe("mem::remember — project field stamping", () => {
+  const ORIG_ISOLATION = process.env["AGENTMEMORY_PROJECT_ISOLATION"];
   beforeEach(() => {
+    process.env["AGENTMEMORY_PROJECT_ISOLATION"] = "false";
     getSearchIndex().clear();
     setIndexPersistence(null);
   });
 
   afterEach(() => {
     setIndexPersistence(null);
+    if (ORIG_ISOLATION === undefined) delete process.env["AGENTMEMORY_PROJECT_ISOLATION"];
+    else process.env["AGENTMEMORY_PROJECT_ISOLATION"] = ORIG_ISOLATION;
   });
 
   it("persists project on the saved memory when provided", async () => {
@@ -90,7 +94,7 @@ describe("mem::remember — project field stamping", () => {
     expect(stored?.project).toBe("api");
   });
 
-  it("leaves project undefined when not provided (backward-compat)", async () => {
+  it("leaves project undefined when not provided in global mode (backward-compat)", async () => {
     const sdk = mockSdk();
     const kv = mockKV();
     registerRememberFunction(sdk as never, kv as never);
@@ -132,13 +136,17 @@ describe("mem::remember — project field stamping", () => {
 });
 
 describe("mem::remember — cross-project dedup isolation", () => {
+  const ORIG_ISOLATION = process.env["AGENTMEMORY_PROJECT_ISOLATION"];
   beforeEach(() => {
+    process.env["AGENTMEMORY_PROJECT_ISOLATION"] = "false";
     getSearchIndex().clear();
     setIndexPersistence(null);
   });
 
   afterEach(() => {
     setIndexPersistence(null);
+    if (ORIG_ISOLATION === undefined) delete process.env["AGENTMEMORY_PROJECT_ISOLATION"];
+    else process.env["AGENTMEMORY_PROJECT_ISOLATION"] = ORIG_ISOLATION;
   });
 
   it("does not supersede a memory from a different project even when content is similar", async () => {

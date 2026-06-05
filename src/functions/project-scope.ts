@@ -18,11 +18,13 @@ export function requireProjectScope(
 ): string | undefined {
   const project = resolveProjectScope(value);
   if (isProjectIsolationEnabled() && !project) {
-    throw new Error(
-      `${operation}: project is required when AGENTMEMORY_PROJECT_ISOLATION=true`,
-    );
+    throw new Error(projectRequiredMessage(operation));
   }
   return project;
+}
+
+export function projectRequiredMessage(operation: string): string {
+  return `${operation}: project is required when AGENTMEMORY_PROJECT_ISOLATION is enabled (default); use the repo root folder name, or set AGENTMEMORY_PROJECT_ISOLATION=false to run unscoped.`;
 }
 
 export function projectMatchesScope(

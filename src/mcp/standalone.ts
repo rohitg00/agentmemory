@@ -7,10 +7,14 @@ import { getStandalonePersistPath } from "../config.js";
 import { VERSION } from "../version.js";
 import { generateId } from "../state/schema.js";
 import { isProjectIsolationEnabled } from "../config.js";
-import { resolveProjectScope } from "../functions/project-scope.js";
+import {
+  resolveProjectScope,
+  projectRequiredMessage,
+} from "../functions/project-scope.js";
 import {
   resolveHandle,
   invalidateHandle,
+  resolveEnvOrEmpty,
   type Handle,
   type ProxyHandle,
 } from "./rest-proxy.js";
@@ -77,6 +81,10 @@ function normalizeList(value: unknown): string[] {
 
 const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 100;
+function shouldUseLocalFallback(): boolean {
+  return resolveEnvOrEmpty("AGENTMEMORY_URL").length === 0;
+}
+
 function parseLimit(raw: unknown, fallback = DEFAULT_LIMIT): number {
   if (typeof raw !== "number" && typeof raw !== "string") return fallback;
   const n = Number(raw);
@@ -95,7 +103,7 @@ function requireProjectArg(
   const project = resolveProjectArg(value);
   if (isProjectIsolationEnabled() && !project) {
     return {
-      error: `project is required for ${toolName} when AGENTMEMORY_PROJECT_ISOLATION=true`,
+      error: projectRequiredMessage(toolName),
     };
   }
   return { project };
@@ -443,10 +451,17 @@ export async function handleToolCall(
     try {
       return await handleProxy(validated, handle);
     } catch (err) {
-      process.stderr.write(
-        `[@agentmemory/mcp] proxy call failed for ${toolName}: ${err instanceof Error ? err.message : String(err)}; invalidating handle and falling back to local KV\n`,
-      );
       invalidateHandle();
+      if (shouldUseLocalFallback()) {
+        process.stderr.write(
+          `[@agentmemory/mcp] proxy call failed for ${toolName}: ${err instanceof Error ? err.message : String(err)}; invalidating handle and falling back to local KV\n`,
+        );
+      } else {
+        process.stderr.write(
+          `[@agentmemory/mcp] proxy call failed for ${toolName}: ${err instanceof Error ? err.message : String(err)}; invalidating handle and surfacing the server error\n`,
+        );
+        throw err;
+      }
     }
   }
   return handleLocal(validated, kvInstance);
@@ -488,10 +503,17 @@ export async function handleToolsList(): Promise<{ tools: unknown[] }> {
         `[@agentmemory/mcp] tools/list: server returned unexpected shape (no .tools array); falling back to local IMPLEMENTED_TOOLS list. Set AGENTMEMORY_DEBUG=1 to inspect response.\n`,
       );
     } catch (err) {
-      process.stderr.write(
-        `[@agentmemory/mcp] tools/list proxy failed: ${err instanceof Error ? err.message : String(err)}; falling back to local list\n`,
-      );
       invalidateHandle();
+      if (shouldUseLocalFallback()) {
+        process.stderr.write(
+          `[@agentmemory/mcp] tools/list proxy failed: ${err instanceof Error ? err.message : String(err)}; falling back to local list\n`,
+        );
+      } else {
+        process.stderr.write(
+          `[@agentmemory/mcp] tools/list proxy failed: ${err instanceof Error ? err.message : String(err)}; surfacing the server error\n`,
+        );
+        throw err;
+      }
     }
   }
   const fallback = getAllTools().filter((t) => IMPLEMENTED_TOOLS.has(t.name));

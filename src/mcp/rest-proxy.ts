@@ -12,7 +12,9 @@ function probeTimeoutMs(): number {
 
 function forceProxy(): boolean {
   const raw = process.env["AGENTMEMORY_FORCE_PROXY"];
-  return raw === "1" || raw === "true";
+  if (raw === "0" || raw === "false") return false;
+  if (raw === "1" || raw === "true") return true;
+  return resolveEnvOrEmpty("AGENTMEMORY_URL").length > 0;
 }
 
 export interface ProxyHandle {

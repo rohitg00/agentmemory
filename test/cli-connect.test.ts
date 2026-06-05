@@ -158,6 +158,15 @@ describe("agentmemory connect — claude-code adapter (mock filesystem)", () => 
     );
     expect(entry.env.AGENTMEMORY_SECRET).toBe("${AGENTMEMORY_SECRET:-}");
     expect(entry.env.AGENTMEMORY_TOOLS).toBe("${AGENTMEMORY_TOOLS:-all}");
+    expect(entry.env.AGENTMEMORY_PROJECT_NAME).toBe(
+      "${AGENTMEMORY_PROJECT_NAME:-}",
+    );
+    expect(entry.env.AGENTMEMORY_PROJECT_ISOLATION).toBe(
+      "${AGENTMEMORY_PROJECT_ISOLATION:-true}",
+    );
+    expect(entry.env.AGENTMEMORY_FORCE_PROXY).toBe(
+      "${AGENTMEMORY_FORCE_PROXY:-1}",
+    );
   });
 
   it("install() with --force re-writes even when already wired", async () => {
@@ -270,6 +279,7 @@ describe("agentmemory connect — copilot-cli adapter (mock filesystem)", () => 
         AGENTMEMORY_SECRET: "${AGENTMEMORY_SECRET:-}",
         AGENTMEMORY_TOOLS: "${AGENTMEMORY_TOOLS:-all}",
         AGENTMEMORY_PROJECT_NAME: "${AGENTMEMORY_PROJECT_NAME:-}",
+        AGENTMEMORY_PROJECT_ISOLATION: "${AGENTMEMORY_PROJECT_ISOLATION:-true}",
         AGENTMEMORY_FORCE_PROXY: "${AGENTMEMORY_FORCE_PROXY:-1}",
       },
       tools: ["*"],
@@ -334,6 +344,15 @@ describe("agentmemory connect — copilot-cli adapter (mock filesystem)", () => 
     );
     expect(entry.env.AGENTMEMORY_SECRET).toBe("${AGENTMEMORY_SECRET:-}");
     expect(entry.env.AGENTMEMORY_TOOLS).toBe("${AGENTMEMORY_TOOLS:-all}");
+    expect(entry.env.AGENTMEMORY_PROJECT_NAME).toBe(
+      "${AGENTMEMORY_PROJECT_NAME:-}",
+    );
+    expect(entry.env.AGENTMEMORY_PROJECT_ISOLATION).toBe(
+      "${AGENTMEMORY_PROJECT_ISOLATION:-true}",
+    );
+    expect(entry.env.AGENTMEMORY_FORCE_PROXY).toBe(
+      "${AGENTMEMORY_FORCE_PROXY:-1}",
+    );
   });
 
   it("install() with --force rewrites even when already wired", async () => {
@@ -349,6 +368,9 @@ describe("agentmemory connect — copilot-cli adapter (mock filesystem)", () => 
               AGENTMEMORY_URL: "${AGENTMEMORY_URL:-http://localhost:3111}",
               AGENTMEMORY_SECRET: "${AGENTMEMORY_SECRET:-}",
               AGENTMEMORY_TOOLS: "${AGENTMEMORY_TOOLS:-all}",
+              AGENTMEMORY_PROJECT_NAME: "${AGENTMEMORY_PROJECT_NAME:-}",
+              AGENTMEMORY_PROJECT_ISOLATION: "${AGENTMEMORY_PROJECT_ISOLATION:-true}",
+              AGENTMEMORY_FORCE_PROXY: "${AGENTMEMORY_FORCE_PROXY:-1}",
             },
             tools: ["memory_save"],
           },
@@ -397,6 +419,50 @@ describe("agentmemory connect — copilot-cli adapter (mock filesystem)", () => 
       expect(existsSync(result.backupPath!)).toBe(true);
       expect(result.backupPath!).toContain(join(".agentmemory", "backups"));
     }
+  });
+});
+
+describe("agentmemory connect — codex adapter (mock filesystem)", () => {
+  let tmpHome: string;
+  let originalHome: string | undefined;
+  let originalUserprofile: string | undefined;
+
+  beforeEach(() => {
+    tmpHome = mkdtempSync(join(tmpdir(), "am-connect-"));
+    originalHome = process.env["HOME"];
+    originalUserprofile = process.env["USERPROFILE"];
+    process.env["HOME"] = tmpHome;
+    process.env["USERPROFILE"] = tmpHome;
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    if (originalHome !== undefined) process.env["HOME"] = originalHome;
+    else delete process.env["HOME"];
+    if (originalUserprofile !== undefined)
+      process.env["USERPROFILE"] = originalUserprofile;
+    else delete process.env["USERPROFILE"];
+    rmSync(tmpHome, { recursive: true, force: true });
+    vi.resetModules();
+  });
+
+  it("writes config.toml with strict project isolation enabled by default", async () => {
+    require("node:fs").mkdirSync(join(tmpHome, ".codex"), { recursive: true });
+    const { adapter } = await import("../src/cli/connect/codex.js");
+    expect(adapter.detect()).toBe(true);
+
+    const result = await adapter.install({ dryRun: false, force: false });
+    expect(result.kind).toBe("installed");
+
+    const cfg = readFileSync(join(tmpHome, ".codex", "config.toml"), "utf-8");
+    expect(cfg).toContain("AGENTMEMORY_URL = \"${AGENTMEMORY_URL:-http://localhost:3111}\"");
+    expect(cfg).toContain("AGENTMEMORY_SECRET = \"${AGENTMEMORY_SECRET:-}\"");
+    expect(cfg).toContain("AGENTMEMORY_TOOLS = \"${AGENTMEMORY_TOOLS:-all}\"");
+    expect(cfg).toContain("AGENTMEMORY_PROJECT_NAME = \"${AGENTMEMORY_PROJECT_NAME:-}\"");
+    expect(cfg).toContain(
+      "AGENTMEMORY_PROJECT_ISOLATION = \"${AGENTMEMORY_PROJECT_ISOLATION:-true}\"",
+    );
+    expect(cfg).toContain("AGENTMEMORY_FORCE_PROXY = \"${AGENTMEMORY_FORCE_PROXY:-1}\"");
   });
 });
 

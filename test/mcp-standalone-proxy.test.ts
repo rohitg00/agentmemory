@@ -22,6 +22,7 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
     resetHandleForTests();
     process.env["AGENTMEMORY_URL"] = BASE;
     delete process.env["AGENTMEMORY_SECRET"];
+    process.env["AGENTMEMORY_PROJECT_ISOLATION"] = "false";
   });
 
   afterEach(() => {
@@ -29,6 +30,10 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
     globalThis.fetch = originalFetch;
     delete process.env["AGENTMEMORY_URL"];
     delete process.env["AGENTMEMORY_PROJECT_NAME"];
+    delete process.env["AGENTMEMORY_PROJECT_ISOLATION"];
+    delete process.env["AGENTMEMORY_FORCE_PROXY"];
+    delete process.env["AGENTMEMORY_PROBE_TIMEOUT_MS"];
+    delete process.env["AGENTMEMORY_SECRET"];
   });
 
   it("proxies memory_sessions to GET /agentmemory/sessions when server is up", async () => {
@@ -225,6 +230,7 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
   });
 
   it("local fallback returns the same shape as proxy for memory_smart_search", async () => {
+    delete process.env["AGENTMEMORY_URL"];
     installFetch(() => {
       throw new Error("ECONNREFUSED");
     });
@@ -239,6 +245,7 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
 
   it("attaches Bearer token on the proxied tool request, not just the probe", async () => {
     process.env["AGENTMEMORY_SECRET"] = "s3cret";
+    process.env["AGENTMEMORY_FORCE_PROXY"] = "false";
     const authByPath = new Map<string, string | undefined>();
     installFetch((url, init) => {
       const auth = (init?.headers as Record<string, string> | undefined)?.[
@@ -252,9 +259,11 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
     await handleToolCall("memory_sessions", {});
     expect(authByPath.get("/agentmemory/livez")).toBe("Bearer s3cret");
     expect(authByPath.get("/agentmemory/sessions")).toBe("Bearer s3cret");
+    delete process.env["AGENTMEMORY_FORCE_PROXY"];
   });
 
   it("falls back to local InMemoryKV when server is unreachable", async () => {
+    delete process.env["AGENTMEMORY_URL"];
     installFetch(() => {
       throw new Error("ECONNREFUSED");
     });
@@ -268,6 +277,7 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
   });
 
   it("persists the resolved project into local fallback storage", async () => {
+    delete process.env["AGENTMEMORY_URL"];
     process.env["AGENTMEMORY_PROJECT_NAME"] = "fallback-project";
     installFetch(() => {
       throw new Error("ECONNREFUSED");
@@ -284,21 +294,31 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
   });
 
   it("invalidates the handle on proxy failure, so the next call re-probes", async () => {
-    let probeCount = 0;
+    let rememberCalls = 0;
     let serverUp = true;
     installFetch((url) => {
       if (url.endsWith("/agentmemory/livez")) {
-        probeCount++;
-        return serverUp ? new Response("ok", { status: 200 }) : new Response("", { status: 500 });
+        return new Response("ok", { status: 200 });
       }
-      return new Response("boom", { status: 500, statusText: "Internal Server Error" });
+      if (url.endsWith("/agentmemory/remember")) {
+        rememberCalls++;
+        return serverUp
+          ? new Response(JSON.stringify({ id: "mem-1" }), {
+              status: 200,
+              headers: { "content-type": "application/json" },
+            })
+          : new Response("boom", { status: 500, statusText: "Internal Server Error" });
+      }
+      return new Response("not found", { status: 404 });
     });
     const localKv = new InMemoryKV(undefined);
     await handleToolCall("memory_save", { content: "first fallback" }, localKv);
-    expect(probeCount).toBe(1);
+    expect(rememberCalls).toBe(1);
     serverUp = false;
-    await handleToolCall("memory_save", { content: "second fallback" }, localKv);
-    expect(probeCount).toBe(2);
+    await expect(
+      handleToolCall("memory_save", { content: "second fallback" }, localKv),
+    ).rejects.toThrow("Internal Server Error");
+    expect(rememberCalls).toBe(2);
   });
 
   it("forwards non-essential tools to /agentmemory/mcp/call (#234)", async () => {
@@ -339,6 +359,7 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
   });
 
   it("rejects non-essential tools when no server is reachable (#234)", async () => {
+    delete process.env["AGENTMEMORY_URL"];
     installFetch(() => {
       throw new Error("ECONNREFUSED");
     });
@@ -389,6 +410,7 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
   });
 
   it("logs probe failure to stderr so sandboxed clients can diagnose silently dropped tools", async () => {
+    delete process.env["AGENTMEMORY_URL"];
     installFetch((url) => {
       if (url.endsWith("/agentmemory/livez")) {
         throw new Error("ECONNREFUSED 127.0.0.1:3111");
@@ -414,6 +436,7 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
 
   it("local fallback tools/list returns all 7 IMPLEMENTED_TOOLS regardless of AGENTMEMORY_TOOLS env (#234)", async () => {
     const { handleToolsList } = await import("../src/mcp/standalone.js");
+    delete process.env["AGENTMEMORY_URL"];
     installFetch(() => {
       throw new Error("ECONNREFUSED");
     });
@@ -439,6 +462,7 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
   });
 
   it("AGENTMEMORY_PROBE_TIMEOUT_MS overrides the default probe timeout", async () => {
+    delete process.env["AGENTMEMORY_URL"];
     process.env["AGENTMEMORY_PROBE_TIMEOUT_MS"] = "50";
     let probeStarted = 0;
     installFetch((url) => {

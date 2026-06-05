@@ -116,7 +116,7 @@ describe("project isolation flag", () => {
     process.env["AGENTMEMORY_PROJECT_ISOLATION"] = "false";
     expect(isProjectIsolationEnabled()).toBe(false);
     delete process.env["AGENTMEMORY_PROJECT_ISOLATION"];
-    expect(isProjectIsolationEnabled()).toBe(false);
+    expect(isProjectIsolationEnabled()).toBe(true);
   });
 
   it("uses AGENTMEMORY_PROJECT_NAME as the resolved project under strict mode", async () => {
@@ -135,7 +135,8 @@ describe("project isolation flag", () => {
     expect(result.memory.project).toBe("env-project");
   });
 
-  it("preserves global memory behavior when isolation is off", async () => {
+  it("preserves global memory behavior when isolation is explicitly off", async () => {
+    process.env["AGENTMEMORY_PROJECT_ISOLATION"] = "false";
     const sdk = makeMockSdk();
     const kv = makeMockKV();
     registerRememberFunction(sdk as never, kv as never);
@@ -148,9 +149,7 @@ describe("project isolation flag", () => {
     expect(result.memory.project).toBeUndefined();
   });
 
-  it("rejects writes and reads without a project when isolation is enabled", async () => {
-    process.env["AGENTMEMORY_PROJECT_ISOLATION"] = "true";
-
+  it("rejects writes and reads without a project when isolation is enabled by default", async () => {
     const sdk = makeMockSdk();
     const kv = makeMockKV();
     registerRememberFunction(sdk as never, kv as never);

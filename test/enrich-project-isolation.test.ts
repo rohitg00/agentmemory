@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 vi.mock("../src/logger.js", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
@@ -73,13 +73,20 @@ function makeBugMemory(overrides: Partial<Memory> = {}): Memory {
 describe("mem::enrich — project isolation for bug memories", () => {
   let sdk: ReturnType<typeof mockSdk>;
   let kv: ReturnType<typeof mockKV>;
+  const ORIG_ISOLATION = process.env["AGENTMEMORY_PROJECT_ISOLATION"];
 
   beforeEach(() => {
     sdk = mockSdk();
     kv = mockKV();
+    process.env["AGENTMEMORY_PROJECT_ISOLATION"] = "false";
     registerEnrichFunction(sdk as never, kv as never);
     sdk.overrideTrigger("mem::file-context", async () => ({ context: "" }));
     sdk.overrideTrigger("mem::search", async () => ({ results: [] }));
+  });
+
+  afterEach(() => {
+    if (ORIG_ISOLATION === undefined) delete process.env["AGENTMEMORY_PROJECT_ISOLATION"];
+    else process.env["AGENTMEMORY_PROJECT_ISOLATION"] = ORIG_ISOLATION;
   });
 
   it("does not surface a scoped bug memory when caller project differs", async () => {
@@ -210,9 +217,16 @@ describe("mem::enrich — project isolation for bug memories", () => {
 });
 
 describe("mem::enrich — project forwarded to mem::search", () => {
+  const ORIG_ISOLATION = process.env["AGENTMEMORY_PROJECT_ISOLATION"];
+  afterEach(() => {
+    if (ORIG_ISOLATION === undefined) delete process.env["AGENTMEMORY_PROJECT_ISOLATION"];
+    else process.env["AGENTMEMORY_PROJECT_ISOLATION"] = ORIG_ISOLATION;
+  });
+
   it("passes project to the search trigger when provided", async () => {
     const sdk = mockSdk();
     const kv = mockKV();
+    process.env["AGENTMEMORY_PROJECT_ISOLATION"] = "false";
     registerEnrichFunction(sdk as never, kv as never);
 
     let capturedSearchPayload: Record<string, unknown> = {};
@@ -234,6 +248,7 @@ describe("mem::enrich — project forwarded to mem::search", () => {
   it("does not pass project to search when caller provides none", async () => {
     const sdk = mockSdk();
     const kv = mockKV();
+    process.env["AGENTMEMORY_PROJECT_ISOLATION"] = "false";
     registerEnrichFunction(sdk as never, kv as never);
 
     let capturedSearchPayload: Record<string, unknown> = {};
