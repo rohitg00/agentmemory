@@ -148,6 +148,11 @@ function requireProjectParam(
   value: unknown,
   routeName: string,
 ): { project?: string; error?: string } {
+  if (value !== undefined && typeof value !== "string") {
+    return {
+      error: `project must be a string for ${routeName}`,
+    };
+  }
   const project = resolveProjectScope(value);
   if (isProjectIsolationEnabled() && !project) {
     return {
@@ -888,14 +893,22 @@ export function registerApiTriggers(
       const body = req.body ?? {};
       const sessionId = asNonEmptyString(body.sessionId);
       const files = Array.isArray(body.files)
-        ? body.files
-            .map((file) => (typeof file === "string" ? file.trim() : ""))
-            .filter(Boolean)
-        : [];
-      const payload: { sessionId?: string; files: string[]; project?: string } = {
+        ? body.files.map((file) =>
+            typeof file === "string" ? file.trim() : null,
+          )
+        : null;
+      if (!sessionId || !files || files.length === 0 || files.some((file) => !file)) {
+        return {
+          status_code: 400,
+          body: {
+            error: "sessionId (string) and files (string[]) are required",
+          },
+        };
+      }
+      const payload: { sessionId: string; files: string[]; project?: string } = {
+        sessionId,
         files,
       };
-      if (sessionId) payload.sessionId = sessionId;
       if (project !== undefined) payload.project = project;
       const result = await sdk.trigger({
         function_id: "mem::file-context",
@@ -1648,6 +1661,19 @@ export function registerApiTriggers(
         : undefined;
       if (body.tier !== undefined && tier === undefined) {
         return { status_code: 400, body: { error: "tier must be a non-empty string" } };
+      }
+      const allowedTiers = new Set([
+        "all",
+        "semantic",
+        "reflect",
+        "procedural",
+        "decay",
+      ]);
+      if (tier !== undefined && !allowedTiers.has(tier)) {
+        return {
+          status_code: 400,
+          body: { error: "tier must be one of: all, semantic, reflect, procedural, decay" },
+        };
       }
       if (body.force !== undefined && typeof body.force !== "boolean") {
         return { status_code: 400, body: { error: "force must be a boolean" } };

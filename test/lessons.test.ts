@@ -232,8 +232,18 @@ describe("Lessons", () => {
     });
 
     it("includes legacy unscoped lessons in project filters when isolation is off", async () => {
-      const result = (await sdk.trigger("mem::lesson-list", { project: "/app" })) as { lessons: Lesson[] };
-      expect(result.lessons.length).toBe(3);
+      const originalIsolation = process.env["AGENTMEMORY_PROJECT_ISOLATION"];
+      process.env["AGENTMEMORY_PROJECT_ISOLATION"] = "false";
+      try {
+        const result = (await sdk.trigger("mem::lesson-list", { project: "/app" })) as { lessons: Lesson[] };
+        expect(result.lessons.length).toBe(3);
+      } finally {
+        if (originalIsolation === undefined) {
+          delete process.env["AGENTMEMORY_PROJECT_ISOLATION"];
+        } else {
+          process.env["AGENTMEMORY_PROJECT_ISOLATION"] = originalIsolation;
+        }
+      }
     });
 
     it("filters by source", async () => {
