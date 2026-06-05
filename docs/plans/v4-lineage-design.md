@@ -123,7 +123,7 @@ Notes:
 
 ## Algorithm
 
-```
+```text
 1. Match by channel (parallel):
    a) observation & memory:
       - reuse the existing BM25 index from src/functions/search.ts.

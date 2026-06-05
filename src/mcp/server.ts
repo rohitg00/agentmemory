@@ -358,6 +358,44 @@ export function registerMcpEndpoints(
             };
           }
 
+          case "memory_query": {
+            if (!Array.isArray(args.pipeline)) {
+              return {
+                status_code: 400,
+                body: { error: "pipeline is required for memory_query and must be an array" },
+              };
+            }
+            const payload: Record<string, unknown> = { pipeline: args.pipeline };
+            if (args.options !== undefined) {
+              // typeof [] === "object", so guard against arrays too —
+              // schema requires a plain object. CodeRabbit caught this
+              // on #574.
+              if (
+                typeof args.options !== "object" ||
+                args.options === null ||
+                Array.isArray(args.options)
+              ) {
+                return {
+                  status_code: 400,
+                  body: { error: "options must be an object" },
+                };
+              }
+              payload.options = args.options;
+            }
+            const result = await sdk.trigger({
+              function_id: "mem::query",
+              payload,
+            });
+            return {
+              status_code: 200,
+              body: {
+                content: [
+                  { type: "text", text: JSON.stringify(result, null, 2) },
+                ],
+              },
+            };
+          }
+
           case "memory_vision_search": {
             const queryText = typeof args.queryText === "string" ? args.queryText : undefined;
             const queryImageRef = typeof args.queryImageRef === "string" ? args.queryImageRef : undefined;

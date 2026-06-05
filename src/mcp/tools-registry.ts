@@ -1,9 +1,31 @@
+// Property descriptors mirror the JSON Schema fields we actually emit.
+// Beyond {type, description}, tools (notably memory_query) need nested
+// item schemas (items), discriminated unions (oneOf), nested object
+// shapes (properties + required), and constant/enum constraints. Kept
+// loose enough to express those without forcing every existing tool to
+// adopt the richer shape.
+export type McpPropertySchema = {
+  type?: string | string[];
+  description?: string;
+  items?: McpPropertySchema;
+  properties?: Record<string, McpPropertySchema>;
+  required?: string[];
+  oneOf?: McpPropertySchema[];
+  anyOf?: McpPropertySchema[];
+  allOf?: McpPropertySchema[];
+  const?: unknown;
+  enum?: unknown[];
+  default?: unknown;
+  additionalProperties?: boolean | McpPropertySchema;
+  examples?: unknown[];
+};
+
 export type McpToolDef = {
   name: string;
   description: string;
   inputSchema: {
     type: "object";
-    properties: Record<string, { type: string; description: string }>;
+    properties: Record<string, McpPropertySchema>;
     required?: string[];
   };
 };
@@ -957,6 +979,538 @@ export const V010_SLOTS_TOOLS: McpToolDef[] = [
   },
 ];
 
+// ---------------------------------------------------------------------------
+// memory_query (v5-A) — server-side composable retrieval pipeline.
+// ---------------------------------------------------------------------------
+
+// Reused across every step variant. `in`/`out` route between named
+// streams; default stream name is "_". `id` is an optional debug label
+// echoed back in the per-step trace.
+const QUERY_STEP_BASE_PROPS: Record<string, McpPropertySchema> = {
+  id: { type: "string", description: "Optional debug label echoed in trace." },
+  in: {
+    type: "string",
+    description:
+      "Named input stream (default '_'). For multi-stream consumers like `concat`, send `in` as an array of stream names. Producers usually omit this.",
+  },
+  out: {
+    type: "string",
+    description:
+      "Named output stream (default '_'). Set to fork a producer's results into a sidecar stream that downstream steps can `join` against.",
+  },
+};
+
+// Shared sub-schema for filter predicates. Recursive: predicates compose
+// via `all`/`any`/`not`. Each leaf is `{field, op, value}` with `field`
+// supporting dot-paths against the envelope.
+const QUERY_PREDICATE_SCHEMA: McpPropertySchema = {
+  description:
+    "Filter predicate. Leaf form: {field, op, value}. Compose with {all|any: [Predicate, ...]} or {not: Predicate}. `field` accepts dot-paths against the record envelope (e.g. '_kind', '_session.project', 'type'). `op` values: eq, neq, in, not_in, gt, gte, lt, lte, contains, starts_with, exists, since, until. ISO timestamps required for since/until.",
+  // anyOf so schema-aware models can offer either leaf or composite.
+  anyOf: [
+    {
+      type: "object",
+      properties: {
+        field: { type: "string" },
+        op: {
+          enum: [
+            "eq",
+            "neq",
+            "in",
+            "not_in",
+            "gt",
+            "gte",
+            "lt",
+            "lte",
+            "contains",
+            "starts_with",
+            "exists",
+            "since",
+            "until",
+          ],
+        },
+        value: {},
+      },
+      required: ["field", "op"],
+    },
+    { type: "object", properties: { all: { type: "array" } }, required: ["all"] },
+    { type: "object", properties: { any: { type: "array" } }, required: ["any"] },
+    { type: "object", properties: { not: {} }, required: ["not"] },
+  ],
+};
+
+// Each step variant declares its `op` as a const and lists its
+// op-specific fields alongside the shared `id`/`in`/`out` base. Required
+// fields are explicit so schema-aware tool-use models autocomplete the
+// right shape.
+const QUERY_STEP_SCHEMAS: McpPropertySchema[] = [
+  // ---- Producers ----------------------------------------------------------
+  {
+    type: "object",
+    description: "search — BM25/hybrid observation search. Wraps mem::search.",
+    properties: {
+      ...QUERY_STEP_BASE_PROPS,
+      op: { const: "search" },
+      query: { type: "string" },
+      limit: { type: "number", description: "Max raw hits (default 10)." },
+      format: { enum: ["full", "compact", "narrative"] },
+      token_budget: { type: "number" },
+      maxOut: { type: "number", description: "Post-mapping record cap (default 500)." },
+    },
+    required: ["op", "query"],
+  },
+  {
+    type: "object",
+    description:
+      "smart_search — hybrid BM25+vector+graph with lessons-first ranker. Wraps mem::smart-search.",
+    properties: {
+      ...QUERY_STEP_BASE_PROPS,
+      op: { const: "smart_search" },
+      query: { type: "string" },
+      limit: { type: "number" },
+      project: { type: "string" },
+      includeLessons: { type: "boolean" },
+      maxOut: { type: "number" },
+    },
+    required: ["op", "query"],
+  },
+  {
+    type: "object",
+    description:
+      "lineage — chronologically-ordered hits across observation/memory/lesson/summary channels. Wraps mem::lineage. Use to answer 'when did this term enter the corpus?'.",
+    properties: {
+      ...QUERY_STEP_BASE_PROPS,
+      op: { const: "lineage" },
+      query: { type: "string" },
+      limit: { type: "number" },
+      since: { type: "string", description: "ISO timestamp lower bound." },
+      until: { type: "string", description: "ISO timestamp upper bound." },
+      channels: {
+        type: "array",
+        items: { enum: ["observation", "memory", "lesson", "summary"] },
+      },
+      includeAdjacentTurns: { type: "boolean" },
+      includeGraph: { type: "boolean" },
+      order: { enum: ["asc", "desc"] },
+      maxOut: { type: "number" },
+    },
+    required: ["op", "query"],
+  },
+  {
+    type: "object",
+    description: "lesson_recall — full-text lesson search with confidence decay. Wraps mem::lesson-recall.",
+    properties: {
+      ...QUERY_STEP_BASE_PROPS,
+      op: { const: "lesson_recall" },
+      query: { type: "string" },
+      project: { type: "string" },
+      minConfidence: { type: "number" },
+      limit: { type: "number" },
+      maxOut: { type: "number" },
+    },
+    required: ["op", "query"],
+  },
+  {
+    type: "object",
+    description:
+      "graph_query — BFS the concept graph. Returns graph_node and graph_edge records. Wraps mem::graph-query.",
+    properties: {
+      ...QUERY_STEP_BASE_PROPS,
+      op: { const: "graph_query" },
+      startNodeId: { type: "string" },
+      nodeType: { type: "string" },
+      query: { type: "string" },
+      maxDepth: { type: "number" },
+      maxOut: { type: "number" },
+    },
+    required: ["op"],
+  },
+  {
+    type: "object",
+    description:
+      "facet_query — multi-dimensional tag query (AND/OR). At least one of matchAll/matchAny required. Wraps mem::facet-query.",
+    properties: {
+      ...QUERY_STEP_BASE_PROPS,
+      op: { const: "facet_query" },
+      matchAll: { type: "array", items: { type: "string" } },
+      matchAny: { type: "array", items: { type: "string" } },
+      targetType: { type: "string" },
+      limit: { type: "number" },
+      maxOut: { type: "number" },
+    },
+    required: ["op"],
+  },
+  {
+    type: "object",
+    description: "insight_list — synthesized insights, sorted by confidence. Wraps mem::insight-list.",
+    properties: {
+      ...QUERY_STEP_BASE_PROPS,
+      op: { const: "insight_list" },
+      project: { type: "string" },
+      minConfidence: { type: "number" },
+      limit: { type: "number" },
+      maxOut: { type: "number" },
+    },
+    required: ["op"],
+  },
+  {
+    type: "object",
+    description:
+      "timeline — observations around a temporal/keyword anchor. Wraps mem::timeline.",
+    properties: {
+      ...QUERY_STEP_BASE_PROPS,
+      op: { const: "timeline" },
+      anchor: { type: "string", description: "ISO timestamp or keyword." },
+      project: { type: "string" },
+      before: { type: "number" },
+      after: { type: "number" },
+      maxOut: { type: "number" },
+    },
+    required: ["op", "anchor"],
+  },
+  {
+    type: "object",
+    description: "sessions — list known sessions. Reads KV.sessions directly (no LLM, no scan cost).",
+    properties: {
+      ...QUERY_STEP_BASE_PROPS,
+      op: { const: "sessions" },
+      project: { type: "string", description: "Optional project filter." },
+      maxOut: { type: "number" },
+    },
+    required: ["op"],
+  },
+  {
+    type: "object",
+    description: "frontier — unblocked actions ranked by priority+recency. Wraps mem::frontier.",
+    properties: {
+      ...QUERY_STEP_BASE_PROPS,
+      op: { const: "frontier" },
+      project: { type: "string" },
+      agentId: { type: "string" },
+      limit: { type: "number" },
+      maxOut: { type: "number" },
+    },
+    required: ["op"],
+  },
+  {
+    type: "object",
+    description: "vision_search — CLIP-embedding image+text search. Wraps mem::vision-search.",
+    properties: {
+      ...QUERY_STEP_BASE_PROPS,
+      op: { const: "vision_search" },
+      queryText: { type: "string" },
+      queryImageRef: { type: "string" },
+      queryImageBase64: { type: "string" },
+      topK: { type: "number" },
+      sessionId: { type: "string" },
+      maxOut: { type: "number" },
+    },
+    required: ["op"],
+  },
+  {
+    type: "object",
+    description:
+      "profile — single-record project cohort profile (topConcepts/topFiles/etc.). Wraps mem::profile. Returns ONE envelope with _kind='profile'.",
+    properties: {
+      ...QUERY_STEP_BASE_PROPS,
+      op: { const: "profile" },
+      project: { type: "string" },
+      refresh: { type: "boolean" },
+    },
+    required: ["op", "project"],
+  },
+  // ---- Transformers (pure JS, no I/O) -------------------------------------
+  {
+    type: "object",
+    description: "filter — keep records matching the predicate.",
+    properties: {
+      ...QUERY_STEP_BASE_PROPS,
+      op: { const: "filter" },
+      where: QUERY_PREDICATE_SCHEMA,
+    },
+    required: ["op", "where"],
+  },
+  {
+    type: "object",
+    description: "sort — stable multi-key sort. ISO timestamps compare as time.",
+    properties: {
+      ...QUERY_STEP_BASE_PROPS,
+      op: { const: "sort" },
+      by: {
+        description: "Field path (string) or array of paths for tiebreakers. Dot-paths supported.",
+        anyOf: [{ type: "string" }, { type: "array", items: { type: "string" } }],
+      },
+      dir: { enum: ["asc", "desc"] },
+    },
+    required: ["op", "by"],
+  },
+  {
+    type: "object",
+    description: "limit — keep the first N records.",
+    properties: { ...QUERY_STEP_BASE_PROPS, op: { const: "limit" }, n: { type: "number" } },
+    required: ["op", "n"],
+  },
+  {
+    type: "object",
+    description: "take — alias for limit.",
+    properties: { ...QUERY_STEP_BASE_PROPS, op: { const: "take" }, n: { type: "number" } },
+    required: ["op", "n"],
+  },
+  {
+    type: "object",
+    description: "drop — skip the first N records.",
+    properties: { ...QUERY_STEP_BASE_PROPS, op: { const: "drop" }, n: { type: "number" } },
+    required: ["op", "n"],
+  },
+  {
+    type: "object",
+    description:
+      "project — trim/rename fields. Envelope core (_kind, _id, _source, ...) is always preserved.",
+    properties: {
+      ...QUERY_STEP_BASE_PROPS,
+      op: { const: "project" },
+      fields: {
+        type: "array",
+        items: { type: "string" },
+        description: "Whitelist of field paths to keep beyond envelope core.",
+      },
+      rename: {
+        type: "object",
+        description: "Map of fromPath → toPath. Original field is kept.",
+        additionalProperties: { type: "string" },
+      },
+    },
+    required: ["op"],
+  },
+  {
+    type: "object",
+    description: "distinct — dedup by a field (default '_id').",
+    properties: {
+      ...QUERY_STEP_BASE_PROPS,
+      op: { const: "distinct" },
+      by: { type: "string" },
+    },
+    required: ["op"],
+  },
+  {
+    type: "object",
+    description: "flatten — explode an array-valued field into one row per item.",
+    properties: { ...QUERY_STEP_BASE_PROPS, op: { const: "flatten" }, field: { type: "string" } },
+    required: ["op", "field"],
+  },
+  {
+    type: "object",
+    description:
+      "concat — union two or more named streams. The `in` field MUST be an array of stream names for this op.",
+    properties: {
+      id: QUERY_STEP_BASE_PROPS.id,
+      out: QUERY_STEP_BASE_PROPS.out,
+      op: { const: "concat" },
+      in: { type: "array", items: { type: "string" } },
+    },
+    required: ["op", "in"],
+  },
+  {
+    type: "object",
+    description:
+      "group_by — partition stream by field. Produces _kind='group' records with `members[]`. Pair with top_n_per_group to re-flatten.",
+    properties: { ...QUERY_STEP_BASE_PROPS, op: { const: "group_by" }, by: { type: "string" } },
+    required: ["op", "by"],
+  },
+  {
+    type: "object",
+    description: "top_n_per_group — within each group_by group, sort members and keep top N. Re-flattens.",
+    properties: {
+      ...QUERY_STEP_BASE_PROPS,
+      op: { const: "top_n_per_group" },
+      n: { type: "number" },
+      by: { type: "string", description: "Field to sort within each group (default '_score')." },
+      dir: { enum: ["asc", "desc"] },
+    },
+    required: ["op", "n"],
+  },
+  // ---- Cross-step ---------------------------------------------------------
+  {
+    type: "object",
+    description:
+      "for_each — run a sub-pipeline per record. `into: merge` flattens results; `into: list` wraps each iteration as a _kind='group' record. synthesize/rank_by_relevance/nested for_each are REJECTED inside.",
+    properties: {
+      ...QUERY_STEP_BASE_PROPS,
+      op: { const: "for_each" },
+      do: { type: "array", description: "Sub-pipeline steps." },
+      into: { enum: ["merge", "list"] },
+    },
+    required: ["op", "do"],
+  },
+  {
+    type: "object",
+    description:
+      "join — hash-join two streams on a field. Output emits records of the LEFT shape with an attached `_join.right` (matched right record or null).",
+    properties: {
+      ...QUERY_STEP_BASE_PROPS,
+      op: { const: "join" },
+      right: { type: "string", description: "Name of the right-side stream." },
+      on: {
+        type: "object",
+        properties: {
+          left: { type: "string", description: "Field path on left." },
+          right: { type: "string", description: "Field path on right." },
+        },
+        required: ["left", "right"],
+      },
+      type: { enum: ["inner", "left"] },
+    },
+    required: ["op", "right", "on"],
+  },
+  {
+    type: "object",
+    description:
+      "expand_by_session — for each unique value of `field` (default '_sessionId'), fetch Session + SessionSummary from KV and attach as `_session` + `_summary` on every record. Cached per unique id within the step.",
+    properties: {
+      ...QUERY_STEP_BASE_PROPS,
+      op: { const: "expand_by_session" },
+      field: { type: "string" },
+    },
+    required: ["op"],
+  },
+  // ---- Aggregators (LLM) --------------------------------------------------
+  {
+    type: "object",
+    description:
+      "synthesize — terminal LLM aggregator. Returns {summary, citations[]}. MUST be the last step. One LLM call. Result kind switches to 'synthesis'.",
+    properties: {
+      ...QUERY_STEP_BASE_PROPS,
+      op: { const: "synthesize" },
+      question: { type: "string" },
+      style: { enum: ["answer", "bullets", "timeline"] },
+      maxCitations: { type: "number" },
+    },
+    required: ["op", "question"],
+  },
+  {
+    type: "object",
+    description:
+      "rank_by_relevance — re-score and re-sort records by LLM relevance to `target`. Non-terminal (still emits records). One LLM call.",
+    properties: {
+      ...QUERY_STEP_BASE_PROPS,
+      op: { const: "rank_by_relevance" },
+      target: { type: "string" },
+      topK: { type: "number" },
+    },
+    required: ["op", "target"],
+  },
+];
+
+const QUERY_OPTIONS_SCHEMA: McpPropertySchema = {
+  type: "object",
+  description: "Execution knobs.",
+  properties: {
+    budget: {
+      type: "number",
+      description:
+        "Sum of step cost units (cheap=1, medium=3, expensive=10). Default 30, max 100. Pipeline aborts if exceeded.",
+    },
+    timeoutMs: { type: "number", description: "Default 10000, max 30000. Deadline checked per step." },
+    maxStepOut: { type: "number", description: "Records-per-step cap. Default 500, max 2000." },
+    maxDepth: { type: "number", description: "for_each nesting cap. Default 3, max 5." },
+    dry_run: {
+      type: "boolean",
+      description:
+        "If true, validate the pipeline + return {kind:'dry_run', plan, estimatedCost} without executing any step. Recommended to invoke once with dry_run before paying for a costly pipeline.",
+    },
+  },
+};
+
+// Three literal examples covering simple → multi-stream → terminal-LLM
+// to anchor the LLM's mental model. Echoed in the description so
+// non-schema-aware models see them too.
+const QUERY_EXAMPLES = [
+  {
+    title: "1) Recent decision memories about X (no LLM)",
+    pipeline: [
+      { op: "search", query: "decision about X", limit: 30 },
+      { op: "filter", where: { field: "_kind", op: "eq", value: "memory" } },
+      { op: "sort", by: "_createdAt", dir: "desc" },
+      { op: "limit", n: 5 },
+    ],
+  },
+  {
+    title: "2) Per-project top-2 lineage hits, by score (no LLM)",
+    pipeline: [
+      { op: "lineage", query: "Y", limit: 200 },
+      { op: "filter", where: { field: "_project", op: "exists" } },
+      { op: "group_by", by: "_project" },
+      { op: "top_n_per_group", n: 2, by: "_score", dir: "desc" },
+    ],
+  },
+  {
+    title:
+      "3) Multi-stream join + terminal synthesis (1 LLM call) — recall + lessons over the past 7 days",
+    pipeline: [
+      {
+        op: "lineage",
+        out: "ctx",
+        query: "X",
+        since: "2026-05-12T00:00:00Z",
+        limit: 100,
+      },
+      { op: "lesson_recall", out: "lessons", query: "X", limit: 30 },
+      {
+        op: "join",
+        in: "ctx",
+        right: "lessons",
+        on: { left: "_sessionId", right: "_sessionId" },
+        type: "left",
+      },
+      { op: "rank_by_relevance", target: "explain X", topK: 12 },
+      {
+        op: "synthesize",
+        question: "Explain X in light of recent activity and lessons.",
+        style: "bullets",
+        maxCitations: 10,
+      },
+    ],
+    options: { budget: 50, timeoutMs: 20000 },
+  },
+];
+
+const QUERY_DESCRIPTION = `Run a composable retrieval pipeline in a single MCP call. The pipeline is an array of typed step objects; each step has \`op\` plus op-specific fields. Use this as your FIRST reach for "what do I remember about X" questions — composition is server-side so multi-step recall is one round-trip, not N.
+
+WORKFLOW: invoke once with options.dry_run=true to validate shape + see estimatedCost, then re-invoke without dry_run. Read-only by construction — writers are rejected.
+
+STREAMS: default stream is "_". Most steps thread it implicitly. Use \`out: "name"\` on a producer to fork into a named stream, then \`in: "name"\` (or \`right: "name"\` for join, \`in: ["a","b"]\` for concat) to pull from it.
+
+ENVELOPE: every record normalizes to \`{_kind, _id, _sessionId?, _project?, _createdAt?, _score?, _kindSpecific?, _source, ...rawFields}\`. Legal _kind values: observation, memory, lesson, insight, action, session, summary, timeline_item, graph_node, graph_edge, slot, facet_hit, signal, checkpoint, frontier_entry, vision_hit, profile, group. Predicates and sort use dot-paths (\`_kind\`, \`_session.project\`, \`type\`).
+
+OPS — producers: search, smart_search, lineage, lesson_recall, graph_query, facet_query, insight_list, timeline, sessions, frontier, vision_search, profile. Transformers (pure JS): filter, sort, limit/take/drop, project, distinct, flatten, concat, group_by, top_n_per_group. Cross-step: for_each (synthesize/rank inside REJECTED), join, expand_by_session. Aggregators (LLM): synthesize (must be terminal; switches result.kind → "synthesis"), rank_by_relevance (non-terminal, one LLM call).
+
+LITERAL EXAMPLES:
+${QUERY_EXAMPLES.map(
+  (ex) => `${ex.title}\n${JSON.stringify({ pipeline: ex.pipeline, ...(("options" in ex && ex.options) ? { options: ex.options } : {}) }, null, 2)}`,
+).join("\n\n")}
+
+Options: budget (default 30, max 100), timeoutMs (default 10000, max 30000), maxStepOut (default 500), maxDepth (default 3, max 5), dry_run.`;
+
+export const V020_QUERY_TOOLS: McpToolDef[] = [
+  {
+    name: "memory_query",
+    description: QUERY_DESCRIPTION,
+    inputSchema: {
+      type: "object",
+      properties: {
+        pipeline: {
+          type: "array",
+          description:
+            "Ordered pipeline steps. Each item is a discriminated-union object keyed by `op`. See the per-op schemas (oneOf) for the exact shape of each step.",
+          items: { oneOf: QUERY_STEP_SCHEMAS },
+        },
+        options: QUERY_OPTIONS_SCHEMA,
+      },
+      required: ["pipeline"],
+    },
+  },
+];
+
 export const ESSENTIAL_TOOLS = new Set([
   "memory_save",
   "memory_recall",
@@ -966,6 +1520,7 @@ export const ESSENTIAL_TOOLS = new Set([
   "memory_diagnose",
   "memory_lesson_save",
   "memory_reflect",
+  "memory_query",
 ]);
 
 export function getAllTools(): McpToolDef[] {
@@ -978,6 +1533,7 @@ export function getAllTools(): McpToolDef[] {
     ...V070_TOOLS,
     ...V073_TOOLS,
     ...V010_SLOTS_TOOLS,
+    ...V020_QUERY_TOOLS,
   ];
 }
 

@@ -9,7 +9,7 @@ vi.mock("../src/logger.js", () => ({
 import { getAllTools, ESSENTIAL_TOOLS } from "../src/mcp/tools-registry.js";
 
 const ROOT = join(import.meta.dirname, "..");
-const EXPECTED_TOOL_COUNT = 54;
+const EXPECTED_TOOL_COUNT = 55;
 
 function readText(relativePath: string): string {
   return readFileSync(join(ROOT, relativePath), "utf-8");

@@ -1001,3 +1001,273 @@ export interface StateScope {
 }
 
 export type StateScopeKey = keyof StateScope;
+
+// ---------------------------------------------------------------------------
+// v5-A: mem::query — server-side composable retrieval pipeline
+// ---------------------------------------------------------------------------
+
+export type EnvelopedKind =
+  | "observation"
+  | "memory"
+  | "lesson"
+  | "insight"
+  | "action"
+  | "session"
+  | "summary"
+  | "timeline_item"
+  | "graph_node"
+  | "graph_edge"
+  | "slot"
+  | "facet_hit"
+  | "signal"
+  | "checkpoint"
+  | "frontier_entry"
+  | "vision_hit"
+  | "profile"
+  | "group";
+
+export interface EnvelopedRecord {
+  _kind: EnvelopedKind;
+  _id: string;
+  _sessionId?: string;
+  _project?: string;
+  _createdAt?: string;
+  _score?: number;
+  _kindSpecific?: string;
+  _source: { op: string; stepId?: string };
+  [extra: string]: unknown;
+}
+
+export type PredicateOp =
+  | "eq"
+  | "neq"
+  | "in"
+  | "not_in"
+  | "gt"
+  | "gte"
+  | "lt"
+  | "lte"
+  | "contains"
+  | "starts_with"
+  | "exists"
+  | "since"
+  | "until";
+
+export type Predicate =
+  | { field: string; op: PredicateOp; value?: unknown }
+  | { any: Predicate[] }
+  | { all: Predicate[] }
+  | { not: Predicate };
+
+interface StepBase {
+  id?: string;
+  in?: string | string[];
+  out?: string;
+}
+
+export type PipelineStep =
+  // Producers
+  | (StepBase & {
+      op: "search";
+      query: string;
+      limit?: number;
+      format?: "full" | "compact" | "narrative";
+      token_budget?: number;
+      maxOut?: number;
+    })
+  | (StepBase & {
+      op: "smart_search";
+      query: string;
+      limit?: number;
+      project?: string;
+      includeLessons?: boolean;
+      maxOut?: number;
+    })
+  | (StepBase & {
+      op: "lineage";
+      query: string;
+      limit?: number;
+      since?: string;
+      until?: string;
+      channels?: LineageChannel[];
+      includeAdjacentTurns?: boolean;
+      includeGraph?: boolean;
+      order?: "asc" | "desc";
+      maxOut?: number;
+    })
+  | (StepBase & {
+      op: "lesson_recall";
+      query: string;
+      project?: string;
+      minConfidence?: number;
+      limit?: number;
+      maxOut?: number;
+    })
+  | (StepBase & {
+      op: "graph_query";
+      startNodeId?: string;
+      nodeType?: string;
+      query?: string;
+      maxDepth?: number;
+      maxOut?: number;
+    })
+  | (StepBase & {
+      op: "facet_query";
+      matchAll?: string[];
+      matchAny?: string[];
+      targetType?: string;
+      limit?: number;
+      maxOut?: number;
+    })
+  | (StepBase & {
+      op: "insight_list";
+      project?: string;
+      minConfidence?: number;
+      limit?: number;
+      maxOut?: number;
+    })
+  | (StepBase & {
+      op: "timeline";
+      anchor: string;
+      project?: string;
+      before?: number;
+      after?: number;
+      maxOut?: number;
+    })
+  | (StepBase & {
+      op: "sessions";
+      project?: string;
+      maxOut?: number;
+    })
+  | (StepBase & {
+      op: "frontier";
+      project?: string;
+      agentId?: string;
+      limit?: number;
+      maxOut?: number;
+    })
+  | (StepBase & {
+      op: "vision_search";
+      queryText?: string;
+      queryImageRef?: string;
+      queryImageBase64?: string;
+      topK?: number;
+      sessionId?: string;
+      maxOut?: number;
+    })
+  | (StepBase & {
+      op: "profile";
+      project: string;
+      refresh?: boolean;
+    })
+  // Transformers
+  | (StepBase & { op: "filter"; where: Predicate | Predicate[] })
+  | (StepBase & {
+      op: "sort";
+      by: string | string[];
+      dir?: "asc" | "desc";
+    })
+  | (StepBase & { op: "limit"; n: number })
+  | (StepBase & { op: "take"; n: number })
+  | (StepBase & { op: "drop"; n: number })
+  | (StepBase & {
+      op: "project";
+      fields?: string[];
+      rename?: Record<string, string>;
+    })
+  | (StepBase & { op: "distinct"; by?: string })
+  | (StepBase & { op: "flatten"; field: string })
+  | (StepBase & { op: "concat"; in: string[] })
+  | (StepBase & { op: "group_by"; by: string })
+  | (StepBase & {
+      op: "top_n_per_group";
+      n: number;
+      by?: string;
+      dir?: "asc" | "desc";
+    })
+  // Cross-step
+  | (StepBase & {
+      op: "for_each";
+      do: PipelineStep[];
+      into?: "merge" | "list";
+    })
+  | (StepBase & {
+      op: "join";
+      right: string;
+      on: { left: string; right: string };
+      type?: "inner" | "left";
+    })
+  | (StepBase & { op: "expand_by_session"; field?: string })
+  // Aggregators
+  | (StepBase & {
+      op: "synthesize";
+      question: string;
+      style?: "answer" | "bullets" | "timeline";
+      maxCitations?: number;
+    })
+  | (StepBase & {
+      op: "rank_by_relevance";
+      target: string;
+      topK?: number;
+    });
+
+export type PipelineOpName = PipelineStep["op"];
+
+export interface QueryOptions {
+  budget?: number;
+  timeoutMs?: number;
+  maxStepOut?: number;
+  maxDepth?: number;
+  dry_run?: boolean;
+}
+
+export interface QueryRequest {
+  pipeline: PipelineStep[];
+  options?: QueryOptions;
+}
+
+export interface StepTrace {
+  op: string;
+  stepId?: string;
+  inCount: number;
+  outCount: number;
+  ms: number;
+  costClass: 1 | 3 | 10;
+  llmCalls?: number;
+  warnings?: string[];
+}
+
+export interface QueryCost {
+  totalCostUnits: number;
+  totalMs: number;
+  llmCalls: number;
+  budgetCap: number;
+}
+
+export type QueryResult =
+  | {
+      kind: "records";
+      result: EnvelopedRecord[];
+      trace: StepTrace[];
+      cost: QueryCost;
+      warnings?: string[];
+    }
+  | {
+      kind: "synthesis";
+      result: { summary: string; citations: { kind: EnvelopedKind; id: string }[] };
+      trace: StepTrace[];
+      cost: QueryCost;
+      warnings?: string[];
+    }
+  | {
+      kind: "dry_run";
+      plan: PipelineStep[];
+      estimatedCost: { min: number; max: number };
+      validationErrors?: string[];
+    }
+  | {
+      kind: "error";
+      error: string;
+      trace: StepTrace[];
+      cost: QueryCost;
+    };

@@ -16,7 +16,7 @@ secretly testing several capabilities at once.
 **Definition.** From `docs/architecture.md:308-309` and
 `docs/configuration.md:176-177`:
 
-```
+```text
 analyse_manifest:  vast-qwen36-35b   # Tier 2 — careful generator
 diff_complex:      vast-qwen36-35b
 ```

@@ -32,10 +32,10 @@ describe("MCP tool surface default (#553)", () => {
     expect(getVisibleTools().length).toBe(getAllTools().length);
   });
 
-  it("AGENTMEMORY_TOOLS=core returns the 8 essential tools", () => {
+  it("AGENTMEMORY_TOOLS=core returns the 9 essential tools", () => {
     process.env["AGENTMEMORY_TOOLS"] = "core";
     const names = new Set(getVisibleTools().map((t) => t.name));
-    expect(names.size).toBe(8);
+    expect(names.size).toBe(9);
     for (const t of [
       "memory_save",
       "memory_recall",
@@ -45,6 +45,7 @@ describe("MCP tool surface default (#553)", () => {
       "memory_diagnose",
       "memory_lesson_save",
       "memory_reflect",
+      "memory_query",
     ]) {
       expect(names.has(t)).toBe(true);
     }
