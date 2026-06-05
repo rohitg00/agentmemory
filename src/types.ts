@@ -286,6 +286,58 @@ export interface TimelineEntry {
   relativePosition: number;
 }
 
+export type LineageChannel = "observation" | "memory" | "lesson" | "summary";
+
+export interface TimelineItem {
+  timestamp: string;
+  channel: LineageChannel;
+  id: string;
+  sessionId?: string;
+  project?: string;
+  title: string;
+  type?: string;
+  snippet: string;
+  score: number;
+  // memory-specific
+  sourceFile?: string;
+  memoryType?: Memory["type"];
+  // session enrichment (observation/summary)
+  session?: {
+    id: string;
+    project: string;
+    startedAt: string;
+    firstPrompt?: string;
+  };
+  // observation-only enrichment
+  adjacentTurns?: {
+    previousUserPrompt?: string;
+    previousAssistantSummary?: string;
+  };
+}
+
+export interface LineageGraphNeighbor {
+  name: string;
+  type: GraphNodeType;
+  edges: Array<{
+    kind: GraphEdgeType;
+    neighbor: string;
+    neighborType: GraphNodeType;
+  }>;
+}
+
+export interface LineageResult {
+  query: string;
+  firstMention: {
+    timestamp: string;
+    channel: LineageChannel;
+    sessionId?: string;
+    project?: string;
+  } | null;
+  timeline: TimelineItem[];
+  totalsByChannel: Record<LineageChannel, number>;
+  graphNeighbors?: LineageGraphNeighbor[];
+}
+
 export interface ProjectProfile {
   project: string;
   updatedAt: string;
@@ -608,7 +660,8 @@ export interface AuditEntry {
     | "slot_replace"
     | "slot_create"
     | "slot_delete"
-    | "slot_reflect";
+    | "slot_reflect"
+    | "query";
   userId?: string;
   functionId: string;
   targetIds: string[];

@@ -291,6 +291,73 @@ export function registerMcpEndpoints(
             };
           }
 
+          case "memory_lineage": {
+            if (typeof args.query !== "string" || !args.query.trim()) {
+              return {
+                status_code: 400,
+                body: { error: "query is required for memory_lineage" },
+              };
+            }
+            const channelsProvided = args.channels !== undefined;
+            const channels = parseCsvList(args.channels);
+            const validChannels = channels.filter((c) =>
+              ["observation", "memory", "lesson", "summary"].includes(c),
+            );
+            if (channelsProvided && validChannels.length === 0) {
+              return {
+                status_code: 400,
+                body: {
+                  error:
+                    "channels must contain at least one of: observation, memory, lesson, summary",
+                },
+              };
+            }
+            const payload: Record<string, unknown> = {
+              query: args.query,
+            };
+            const limit = asNumber(args.limit);
+            if (args.limit !== undefined) {
+              if (limit === undefined || !Number.isInteger(limit) || limit < 1) {
+                return {
+                  status_code: 400,
+                  body: { error: "limit must be a positive integer" },
+                };
+              }
+              payload.limit = Math.min(500, limit);
+            }
+            if (typeof args.since === "string") payload.since = args.since;
+            if (typeof args.until === "string") payload.until = args.until;
+            if (validChannels.length > 0) payload.channels = validChannels;
+            if (typeof args.includeAdjacentTurns === "boolean")
+              payload.includeAdjacentTurns = args.includeAdjacentTurns;
+            if (typeof args.includeGraph === "boolean")
+              payload.includeGraph = args.includeGraph;
+            if (args.order !== undefined) {
+              if (
+                typeof args.order !== "string" ||
+                !["asc", "desc"].includes(args.order)
+              ) {
+                return {
+                  status_code: 400,
+                  body: { error: "order must be 'asc' or 'desc'" },
+                };
+              }
+              payload.order = args.order;
+            }
+            const result = await sdk.trigger({
+              function_id: "mem::lineage",
+              payload,
+            });
+            return {
+              status_code: 200,
+              body: {
+                content: [
+                  { type: "text", text: JSON.stringify(result, null, 2) },
+                ],
+              },
+            };
+          }
+
           case "memory_vision_search": {
             const queryText = typeof args.queryText === "string" ? args.queryText : undefined;
             const queryImageRef = typeof args.queryImageRef === "string" ? args.queryImageRef : undefined;

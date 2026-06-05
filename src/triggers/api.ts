@@ -1196,6 +1196,83 @@ export function registerApiTriggers(
       };
     },
   );
+  sdk.registerFunction("api::lineage",
+    async (
+      req: ApiRequest<{
+        query?: string;
+        limit?: number;
+        since?: string;
+        until?: string;
+        channels?: string[];
+        includeAdjacentTurns?: boolean;
+        includeGraph?: boolean;
+        order?: string;
+      }>,
+    ): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      if (typeof body.query !== "string" || !body.query.trim()) {
+        return { status_code: 400, body: { error: "query is required" } };
+      }
+      if (
+        body.limit !== undefined &&
+        (!Number.isInteger(body.limit) || (body.limit as number) < 1)
+      ) {
+        return { status_code: 400, body: { error: "limit must be a positive integer" } };
+      }
+      if (
+        body.channels !== undefined &&
+        (!Array.isArray(body.channels) ||
+          !body.channels.every((c) => typeof c === "string"))
+      ) {
+        return {
+          status_code: 400,
+          body: { error: "channels must be an array of strings" },
+        };
+      }
+      if (
+        body.order !== undefined &&
+        (typeof body.order !== "string" ||
+          !["asc", "desc"].includes(body.order.trim().toLowerCase()))
+      ) {
+        return {
+          status_code: 400,
+          body: { error: "order must be 'asc' or 'desc'" },
+        };
+      }
+      // Whitelisted payload: only forward validated fields, never raw
+      // req.body — caller-controlled keys could otherwise trip
+      // unintended branches in the downstream function. CodeRabbit
+      // caught this on #570.
+      const payload: Record<string, unknown> = { query: body.query };
+      if (body.limit !== undefined) payload.limit = body.limit;
+      if (typeof body.since === "string") payload.since = body.since;
+      if (typeof body.until === "string") payload.until = body.until;
+      if (Array.isArray(body.channels)) payload.channels = body.channels;
+      if (typeof body.includeAdjacentTurns === "boolean")
+        payload.includeAdjacentTurns = body.includeAdjacentTurns;
+      if (typeof body.includeGraph === "boolean")
+        payload.includeGraph = body.includeGraph;
+      if (typeof body.order === "string")
+        payload.order = (body.order as string).trim().toLowerCase();
+      const result = await sdk.trigger({
+        function_id: "mem::lineage",
+        payload,
+      });
+      // mem::lineage returns { error } on validation problems we
+      // didn't catch upstream (e.g. empty trimmed query). Surface as 400.
+      if (
+        result &&
+        typeof result === "object" &&
+        "error" in (result as Record<string, unknown>) &&
+        !("timeline" in (result as Record<string, unknown>))
+      ) {
+        return { status_code: 400, body: result };
+      }
+      return { status_code: 200, body: result };
+    },
+  );
   sdk.registerTrigger({
     type: "http",
     function_id: "api::diagnostic-followup",
@@ -1205,8 +1282,13 @@ export function registerApiTriggers(
       middleware_function_ids: ["middleware::api-auth"],
     },
   });
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::lineage",
+    config: { api_path: "/agentmemory/lineage", http_method: "POST" },
+  });
 
-  sdk.registerFunction("api::timeline", 
+  sdk.registerFunction("api::timeline",
     async (
       req: ApiRequest<{
         anchor: string;

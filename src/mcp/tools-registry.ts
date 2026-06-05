@@ -135,6 +135,38 @@ export const CORE_TOOLS: McpToolDef[] = [
     },
   },
   {
+    name: "memory_lineage",
+    description:
+      "Concept lineage: chronologically-ordered hits for a phrase across observation, memory, lesson, and summary channels. Use to trace when a term first entered the corpus and what surrounded it.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Phrase or term to trace" },
+        limit: { type: "number", description: "Max timeline items (default 50)" },
+        since: { type: "string", description: "ISO 8601 lower bound on timestamp" },
+        until: { type: "string", description: "ISO 8601 upper bound on timestamp" },
+        channels: {
+          type: "string",
+          description:
+            "Comma-separated channels to search: observation,memory,lesson,summary (default all)",
+        },
+        includeAdjacentTurns: {
+          type: "boolean",
+          description: "Attach previous user/assistant turn for observation hits (default true)",
+        },
+        includeGraph: {
+          type: "boolean",
+          description: "Attach graph-edge neighbors for matching nodes (default false)",
+        },
+        order: {
+          type: "string",
+          description: "'asc' (oldest first, default) or 'desc'",
+        },
+      },
+      required: ["query"],
+    },
+  },
+  {
     name: "memory_vision_search",
     description:
       "Cross-modal image search via CLIP embeddings. Pass queryText to find screenshots matching a description, or queryImageBase64/queryImageRef to find similar images. Requires AGENTMEMORY_IMAGE_EMBEDDINGS=true.",
