@@ -10,6 +10,11 @@ import type {
 } from "../types.js";
 import { getVisibleTools } from "./tools-registry.js";
 import { timingSafeCompare } from "../auth.js";
+import { isProjectIsolationEnabled } from "../config.js";
+import {
+  resolveProjectScope,
+  projectRequiredMessage,
+} from "../functions/project-scope.js";
 
 type McpResponse = {
   status_code: number;
@@ -37,6 +42,23 @@ function parseCsvList(value: unknown): string[] {
       .filter(Boolean);
   }
   return [];
+}
+
+function resolveProjectArg(value: unknown): string | undefined {
+  return resolveProjectScope(value);
+}
+
+function requireProjectArg(
+  value: unknown,
+  toolName: string,
+): { project?: string; error?: string } {
+  const project = resolveProjectArg(value);
+  if (isProjectIsolationEnabled() && !project) {
+    return {
+      error: projectRequiredMessage(toolName),
+    };
+  }
+  return { project };
 }
 
 export function registerMcpEndpoints(
@@ -112,9 +134,14 @@ export function registerMcpEndpoints(
                 body: { error: "token_budget must be a positive integer" },
               };
             }
+            const { project, error } = requireProjectArg(args.project, "memory_recall");
+            if (error) {
+              return { status_code: 400, body: { error } };
+            }
             const result = await sdk.trigger({ function_id: "mem::search", payload: {
               query: args.query,
               limit: typeof args.limit === "number" ? args.limit : 10,
+              ...(project !== undefined && { project }),
               format,
               token_budget: tokenBudget,
             } });
@@ -172,10 +199,10 @@ export function registerMcpEndpoints(
                 ? args.files.split(",").map((f: string) => f.trim()).filter(Boolean)
                 : [];
 
-            const project =
-              typeof args.project === "string" && args.project.trim().length > 0
-                ? args.project.trim()
-                : undefined;
+            const { project, error } = requireProjectArg(args.project, "memory_save");
+            if (error) {
+              return { status_code: 400, body: { error } };
+            }
 
             const result = await sdk.trigger({ function_id: "mem::remember", payload: {
               content: args.content,
@@ -199,6 +226,10 @@ export function registerMcpEndpoints(
                 body: { error: "files is required for memory_file_history" },
               };
             }
+            const { project, error } = requireProjectArg(args.project, "memory_file_history");
+            if (error) {
+              return { status_code: 400, body: { error } };
+            }
             const fileList = parseCsvList(args.files);
             if (!fileList.length) {
               return {
@@ -206,9 +237,10 @@ export function registerMcpEndpoints(
                 body: { error: "files must contain at least one valid path" },
               };
             }
-            const payload: { sessionId?: string; files: string[] } = { files: fileList };
+            const payload: { sessionId?: string; files: string[]; project?: string } = { files: fileList };
             const sessionId = asNonEmptyString(args.sessionId);
             if (sessionId) payload.sessionId = sessionId;
+            if (project !== undefined) payload.project = project;
             const result = await sdk.trigger({
               function_id: "mem::file-context",
               payload,
@@ -229,8 +261,12 @@ export function registerMcpEndpoints(
           }
 
           case "memory_patterns": {
+            const { project, error } = requireProjectArg(args.project, "memory_patterns");
+            if (error) {
+              return { status_code: 400, body: { error } };
+            }
             const result = await sdk.trigger({ function_id: "mem::patterns", payload: {
-              project: args.project as string,
+              project,
             } });
             return {
               status_code: 200,
@@ -243,7 +279,13 @@ export function registerMcpEndpoints(
           }
 
           case "memory_sessions": {
-            const sessions = await kv.list(KV.sessions);
+            const { project, error } = requireProjectArg(args.project, "memory_sessions");
+            if (error) {
+              return { status_code: 400, body: { error } };
+            }
+            const sessions = (await kv.list(KV.sessions)).filter((s) =>
+              !project || s.project === project,
+            );
             return {
               status_code: 200,
               body: {
@@ -263,12 +305,17 @@ export function registerMcpEndpoints(
             }
             const expandIds = parseCsvList(args.expandIds).slice(0, 20);
             const limit = Math.max(1, Math.min(100, asNumber(args.limit, 10) ?? 10));
+            const { project, error } = requireProjectArg(args.project, "memory_smart_search");
+            if (error) {
+              return { status_code: 400, body: { error } };
+            }
             const result = await sdk.trigger({
               function_id: "mem::smart-search",
               payload: {
                 query: args.query,
                 expandIds,
                 limit,
+                ...(project !== undefined && { project }),
               },
             });
             return {
@@ -314,9 +361,13 @@ export function registerMcpEndpoints(
                 body: { error: "anchor is required for memory_timeline" },
               };
             }
+            const { project, error } = requireProjectArg(args.project, "memory_timeline");
+            if (error) {
+              return { status_code: 400, body: { error } };
+            }
             const result = await sdk.trigger({ function_id: "mem::timeline", payload: {
               anchor: args.anchor,
-              project: (args.project as string) || undefined,
+              project,
               before: (args.before as number) || 5,
               after: (args.after as number) || 5,
             } });

@@ -8,6 +8,7 @@ import type {
 import { KV, generateId } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { recordAudit } from "./audit.js";
+import { requireProjectScope } from "./project-scope.js";
 
 const CONSOLIDATION_SYSTEM = `You are a memory consolidation engine. Given a set of related observations from coding sessions, synthesize them into a single long-term memory.
 
@@ -69,11 +70,12 @@ export function registerConsolidateFunction(
 ): void {
   sdk.registerFunction("mem::consolidate", 
     async (data: { project?: string; minObservations?: number }) => {
+      const scopedProject = requireProjectScope(data.project, "mem::consolidate");
       const minObs = data.minObservations ?? 10;
 
       const sessions = await kv.list<Session>(KV.sessions);
-      const filtered = data.project
-        ? sessions.filter((s) => s.project === data.project)
+      const filtered = scopedProject
+        ? sessions.filter((s) => s.project === scopedProject)
         : sessions;
 
       const allObs: Array<CompressedObservation & { sid: string }> = [];
@@ -154,11 +156,6 @@ export function registerConsolidateFunction(
 
           const now = new Date().toISOString();
           const obsIds = [...new Set(top.map((o) => o.id))];
-          const scopedProject =
-            typeof data.project === "string" && data.project.trim().length > 0
-              ? data.project.trim()
-              : undefined;
-
           // A scoped consolidation run must only evolve memories that belong
           // to the same project. Without this guard, two projects that happen
           // to consolidate observations into an identically-titled memory would
@@ -169,7 +166,7 @@ export function registerConsolidateFunction(
           const existingMatch = existingMemories.find(
             (m) =>
               m.title.toLowerCase() === parsed.title.toLowerCase() &&
-              (!scopedProject || !m.project || m.project === scopedProject),
+              (!scopedProject || m.project === scopedProject),
           );
 
           if (existingMatch) {

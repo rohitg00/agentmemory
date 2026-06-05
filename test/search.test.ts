@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../src/logger.js", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
@@ -54,10 +54,12 @@ function mockSdk() {
 describe("mem::search", () => {
   let sdk: ReturnType<typeof mockSdk>;
   let kv: ReturnType<typeof mockKV>;
+  const ORIG_ISOLATION = process.env["AGENTMEMORY_PROJECT_ISOLATION"];
 
   beforeEach(async () => {
     sdk = mockSdk();
     kv = mockKV();
+    process.env["AGENTMEMORY_PROJECT_ISOLATION"] = "false";
     registerSearchFunction(sdk as never, kv as never);
 
     const session: Session = {
@@ -101,6 +103,11 @@ describe("mem::search", () => {
 
     // Module-level SearchIndex singleton would leak across tests; reset.
     getSearchIndex().clear();
+  });
+
+  afterEach(() => {
+    if (ORIG_ISOLATION === undefined) delete process.env["AGENTMEMORY_PROJECT_ISOLATION"];
+    else process.env["AGENTMEMORY_PROJECT_ISOLATION"] = ORIG_ISOLATION;
   });
 
   it("returns full format by default", async () => {

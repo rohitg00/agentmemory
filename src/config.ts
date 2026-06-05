@@ -202,6 +202,15 @@ export function isDropStaleIndexEnabled(): boolean {
   return getMergedEnv()["AGENTMEMORY_DROP_STALE_INDEX"] === "true";
 }
 
+export function isProjectIsolationEnabled(): boolean {
+  const raw = getMergedEnv()["AGENTMEMORY_PROJECT_ISOLATION"];
+  if (raw === undefined || raw.trim().length === 0) return true;
+  const normalized = raw.trim().toLowerCase();
+  if (["false", "0", "no", "off"].includes(normalized)) return false;
+  if (["true", "1", "yes", "on"].includes(normalized)) return true;
+  return true;
+}
+
 export function detectLlmProviderKind(): "llm" | "noop" {
   const env = getMergedEnv();
   if (

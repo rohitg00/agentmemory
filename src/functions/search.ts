@@ -8,6 +8,7 @@ import type { EmbeddingProvider } from '../types.js'
 import { memoryToObservation } from '../state/memory-utils.js'
 import { recordAccessBatch } from './access-tracker.js'
 import { logger } from "../logger.js";
+import { requireProjectScope, projectMatchesScope } from "./project-scope.js";
 
 let index: SearchIndex | null = null
 let vectorIndex: VectorIndex | null = null
@@ -344,7 +345,7 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
         }
         effectiveLimit = Math.min(data.limit, MAX_LIMIT)
       }
-      const projectFilter = typeof data.project === 'string' && data.project.trim().length > 0 ? data.project.trim() : undefined
+      const projectFilter = requireProjectScope(data.project, "mem::search")
       const cwdFilter = typeof data.cwd === 'string' && data.cwd.trim().length > 0 ? data.cwd.trim() : undefined
       const format = typeof data.format === 'string' ? data.format : 'full'
       if (!['full', 'compact', 'narrative'].includes(format)) {
@@ -391,6 +392,12 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
         memoryProjectCache.set(obsId, proj)
         return proj
       }
+      const loadResultProject = async (r: { sessionId: string; obsId: string }): Promise<string | undefined> => {
+        const s = await loadSession(r.sessionId)
+        if (s) return s.project
+        const memProject = await loadMemoryProject(r.obsId)
+        return memProject ?? undefined
+      }
 
       // First pass: filter by session (sequential — benefits from session cache).
       // Memory entries with a synthetic sessionId take a secondary KV.memories
@@ -401,7 +408,7 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
         if (filtering) {
           const s = await loadSession(r.sessionId)
           if (s) {
-            if (projectFilter && s.project !== projectFilter) continue
+            if (projectFilter && !projectMatchesScope(s.project, projectFilter)) continue
             if (cwdFilter && s.cwd !== cwdFilter) continue
           } else {
             // Session not found. Two cases arrive here:
@@ -420,7 +427,7 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
             // unscoped and let it through" to preserve backward-compatibility.
             if (projectFilter) {
               const memProject = await loadMemoryProject(r.obsId)
-              if (memProject !== null && memProject !== projectFilter) continue
+              if (!projectMatchesScope(memProject ?? undefined, projectFilter)) continue
             }
             // cwd filter does not apply to unbound entries.
           }
@@ -444,6 +451,9 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
           return mem ? memoryToObservation(mem) : null
         })
       )
+      const projects = await Promise.all(
+        candidates.map((r) => loadResultProject(r)),
+      )
       const enriched: SearchResult[] = []
       for (let i = 0; i < candidates.length; i++) {
         const obs = obsResults[i]
@@ -452,6 +462,7 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
             observation: obs,
             score: candidates[i].score,
             sessionId: candidates[i].sessionId,
+            project: projects[i],
           })
         }
       }
@@ -487,6 +498,7 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
         const compactResults: CompactSearchResult[] = enriched.map((r) => ({
           obsId: r.observation.id,
           sessionId: r.sessionId,
+          project: r.project,
           title: r.observation.title,
           type: r.observation.type,
           score: r.score,
@@ -495,6 +507,7 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
         const packed = applyTokenBudget(compactResults)
         return {
           format,
+          ...(projectFilter !== undefined && { project: projectFilter }),
           results: packed.items,
           tokens_used: packed.used,
           tokens_budget: tokenBudget,
@@ -506,6 +519,7 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
         const narrativeResults = enriched.map((r) => ({
           obsId: r.observation.id,
           sessionId: r.sessionId,
+          project: r.project,
           title: r.observation.title,
           narrative: r.observation.narrative,
           score: r.score,
@@ -517,6 +531,7 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
           .join('\n\n')
         return {
           format,
+          ...(projectFilter !== undefined && { project: projectFilter }),
           results: packed.items,
           text,
           tokens_used: packed.used,
@@ -527,15 +542,16 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
 
       const packed = applyTokenBudget(enriched)
 
-      // Avoid logging raw cwd/project (host paths). Log only that filters were active.
+      // Emit the project filter when present so logs match the returned payloads.
       logger.info('Search completed', {
         query,
         results: packed.items.length,
-        hasProjectFilter: !!projectFilter,
+        project: projectFilter,
         hasCwdFilter: !!cwdFilter,
       })
       return {
         format,
+        ...(projectFilter !== undefined && { project: projectFilter }),
         results: packed.items,
         tokens_used: packed.used,
         tokens_budget: tokenBudget,

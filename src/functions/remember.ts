@@ -9,6 +9,7 @@ import { recordAudit } from "./audit.js";
 import { getSearchIndex, vectorIndexAddGuarded, vectorIndexRemove, flushIndexSave } from "./search.js";
 import { getAgentId } from "../config.js";
 import { logger } from "../logger.js";
+import { requireProjectScope, projectMatchesScope } from "./project-scope.js";
 
 export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
   sdk.registerFunction("mem::remember", 
@@ -51,13 +52,7 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
         : "fact";
 
       const now = new Date().toISOString();
-      // Normalize project early so every subsequent comparison and storage
-      // operation uses the same cleaned value. Raw data.project must not be
-      // referenced below this point.
-      const project =
-        typeof data.project === "string" && data.project.trim().length > 0
-          ? data.project.trim()
-          : undefined;
+      const project = requireProjectScope(data.project, "mem::remember");
 
       return withKeyedLock("mem:remember", async () => {
         const existingMemories = await kv.list<Memory>(KV.memories);
@@ -68,10 +63,9 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
         for (const existing of existingMemories) {
           if (existing.isLatest === false) continue;
           // Never supersede a memory that belongs to a different project.
-          // Both sides must have an explicit project for the guard to engage;
-          // an unscoped memory (legacy, no project field) is treated as a
-          // wildcard so pre-existing data is not stranded.
-          if (project && existing.project && existing.project !== project) {
+          // Under project isolation, legacy unscoped memories are hidden from
+          // scoped writes so they cannot be evolved by accident.
+          if (project && !projectMatchesScope(existing.project, project)) {
             continue;
           }
           const similarity = jaccardSimilarity(

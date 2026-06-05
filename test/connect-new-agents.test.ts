@@ -46,6 +46,12 @@ describe("connect: Qwen Code", () => {
     expect(cfg.mcpServers.agentmemory.env.AGENTMEMORY_TOOLS).toMatch(
       /\$\{AGENTMEMORY_TOOLS:-all\}/,
     );
+    expect(cfg.mcpServers.agentmemory.env.AGENTMEMORY_PROJECT_NAME).toMatch(
+      /\$\{AGENTMEMORY_PROJECT_NAME:-\}/,
+    );
+    expect(cfg.mcpServers.agentmemory.env.AGENTMEMORY_PROJECT_ISOLATION).toMatch(
+      /\$\{AGENTMEMORY_PROJECT_ISOLATION:-true\}/,
+    );
   });
 });
 
@@ -78,6 +84,9 @@ describe("connect: Antigravity", () => {
     expect(cfg.mcpServers.agentmemory.command).toBe("npx");
     expect(cfg.mcpServers.agentmemory.env.AGENTMEMORY_URL).toMatch(
       /\$\{AGENTMEMORY_URL:-/,
+    );
+    expect(cfg.mcpServers.agentmemory.env.AGENTMEMORY_PROJECT_ISOLATION).toMatch(
+      /\$\{AGENTMEMORY_PROJECT_ISOLATION:-true\}/,
     );
   });
 });
@@ -145,6 +154,9 @@ describe("connect: Warp", () => {
     expect(cfg.mcpServers.agentmemory.args).toContain("@agentmemory/mcp");
     expect(cfg.mcpServers.agentmemory.env.AGENTMEMORY_URL).toMatch(
       /\$\{AGENTMEMORY_URL:-/,
+    );
+    expect(cfg.mcpServers.agentmemory.env.AGENTMEMORY_PROJECT_ISOLATION).toMatch(
+      /\$\{AGENTMEMORY_PROJECT_ISOLATION:-true\}/,
     );
   });
 });
@@ -280,6 +292,7 @@ describe("connect: Continue.dev", () => {
     expect(yaml).toContain("name: agentmemory");
     expect(yaml).toContain("@agentmemory/mcp");
     expect(yaml).toContain("AGENTMEMORY_URL");
+    expect(yaml).toContain("AGENTMEMORY_PROJECT_ISOLATION");
   });
 
   it("modifies existing legacy config.json", async () => {
@@ -301,6 +314,9 @@ describe("connect: Continue.dev", () => {
     );
     expect(entry.command).toBe("npx");
     expect(entry.args).toContain("@agentmemory/mcp");
+    expect(entry.env?.AGENTMEMORY_PROJECT_ISOLATION).toBe(
+      "${AGENTMEMORY_PROJECT_ISOLATION:-true}",
+    );
   });
 
   it("returns stub when config.yaml already exists (refuses silent yaml mutation)", async () => {

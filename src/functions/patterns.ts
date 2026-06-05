@@ -3,6 +3,7 @@ import type { CompressedObservation, Session } from "../types.js";
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { logger } from "../logger.js";
+import { requireProjectScope } from "./project-scope.js";
 
 interface Pattern {
   type: "co_change" | "error_repeat" | "workflow";
@@ -15,11 +16,12 @@ interface Pattern {
 export function registerPatternsFunction(sdk: ISdk, kv: StateKV): void {
   sdk.registerFunction("mem::patterns", 
     async (data: { project?: string }) => {
+      const project = requireProjectScope(data.project, "mem::patterns");
       const patterns: Pattern[] = [];
 
       const sessions = await kv.list<Session>(KV.sessions);
-      const filtered = data.project
-        ? sessions.filter((s) => s.project === data.project)
+      const filtered = project
+        ? sessions.filter((s) => s.project === project)
         : sessions;
 
       const fileCoOccurrences = new Map<string, number>();
@@ -107,10 +109,11 @@ export function registerPatternsFunction(sdk: ISdk, kv: StateKV): void {
 
   sdk.registerFunction("mem::generate-rules", 
     async (data: { project?: string }) => {
+      const project = requireProjectScope(data.project, "mem::generate-rules");
       const result = await sdk.trigger<
         { project?: string },
         { patterns: Pattern[] }
-      >({ function_id: "mem::patterns", payload: data });
+      >({ function_id: "mem::patterns", payload: { project } });
 
       const rules: string[] = [];
 

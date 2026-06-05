@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 vi.mock("../src/logger.js", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
@@ -49,11 +49,18 @@ function mockSdk() {
 describe("Lessons", () => {
   let sdk: ReturnType<typeof mockSdk>;
   let kv: ReturnType<typeof mockKV>;
+  const ORIG_ISOLATION = process.env["AGENTMEMORY_PROJECT_ISOLATION"];
 
   beforeEach(() => {
     sdk = mockSdk();
     kv = mockKV();
+    process.env["AGENTMEMORY_PROJECT_ISOLATION"] = "false";
     registerLessonsFunctions(sdk as never, kv as never);
+  });
+
+  afterEach(() => {
+    if (ORIG_ISOLATION === undefined) delete process.env["AGENTMEMORY_PROJECT_ISOLATION"];
+    else process.env["AGENTMEMORY_PROJECT_ISOLATION"] = ORIG_ISOLATION;
   });
 
   describe("mem::lesson-save", () => {
@@ -107,6 +114,24 @@ describe("Lessons", () => {
       expect(second.lesson.id).toBe(originalId);
       expect(second.lesson.reinforcements).toBe(1);
       expect(second.lesson.confidence).toBeGreaterThan(0.5);
+    });
+
+    it("keeps duplicate lesson content separate across projects", async () => {
+      const first = (await sdk.trigger("mem::lesson-save", {
+        content: "Scope lesson by project",
+        project: "api",
+      })) as { action: string; lesson: Lesson };
+
+      const second = (await sdk.trigger("mem::lesson-save", {
+        content: "Scope lesson by project",
+        project: "web",
+      })) as { action: string; lesson: Lesson };
+
+      expect(first.action).toBe("created");
+      expect(second.action).toBe("created");
+      expect(second.lesson.id).not.toBe(first.lesson.id);
+      expect(first.lesson.project).toBe("api");
+      expect(second.lesson.project).toBe("web");
     });
 
     it("rejects empty content", async () => {
@@ -213,9 +238,19 @@ describe("Lessons", () => {
       expect(result.lessons[2].confidence).toBe(0.3);
     });
 
-    it("filters by project", async () => {
-      const result = (await sdk.trigger("mem::lesson-list", { project: "/app" })) as { lessons: Lesson[] };
-      expect(result.lessons.length).toBe(2);
+    it("includes legacy unscoped lessons in project filters when isolation is off", async () => {
+      const originalIsolation = process.env["AGENTMEMORY_PROJECT_ISOLATION"];
+      process.env["AGENTMEMORY_PROJECT_ISOLATION"] = "false";
+      try {
+        const result = (await sdk.trigger("mem::lesson-list", { project: "/app" })) as { lessons: Lesson[] };
+        expect(result.lessons.length).toBe(3);
+      } finally {
+        if (originalIsolation === undefined) {
+          delete process.env["AGENTMEMORY_PROJECT_ISOLATION"];
+        } else {
+          process.env["AGENTMEMORY_PROJECT_ISOLATION"] = originalIsolation;
+        }
+      }
     });
 
     it("filters by source", async () => {

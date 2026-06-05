@@ -58,16 +58,20 @@ describe("vector index population on remember", () => {
   };
 
   let vectorIndex: VectorIndex;
+  const ORIG_ISOLATION = process.env["AGENTMEMORY_PROJECT_ISOLATION"];
 
   beforeEach(() => {
     vectorIndex = new VectorIndex();
     setVectorIndex(vectorIndex);
     setEmbeddingProvider(mockEmbedder);
+    process.env["AGENTMEMORY_PROJECT_ISOLATION"] = "false";
   });
 
   afterEach(() => {
     setVectorIndex(null);
     setEmbeddingProvider(null);
+    if (ORIG_ISOLATION === undefined) delete process.env["AGENTMEMORY_PROJECT_ISOLATION"];
+    else process.env["AGENTMEMORY_PROJECT_ISOLATION"] = ORIG_ISOLATION;
   });
 
   it("calls vectorIndex.add() when remember saves a memory", async () => {

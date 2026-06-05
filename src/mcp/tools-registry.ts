@@ -24,6 +24,11 @@ export const CORE_TOOLS: McpToolDef[] = [
           type: "number",
           description: "Max results to return (default 10)",
         },
+        project: {
+          type: "string",
+          description:
+            "Project identifier used to scope recall. Required when AGENTMEMORY_PROJECT_ISOLATION is enabled (default); use the repo root folder name.",
+        },
         format: {
           type: "string",
           description: "Result format: full, compact, or narrative (default full)",
@@ -78,10 +83,7 @@ export const CORE_TOOLS: McpToolDef[] = [
         project: {
           type: "string",
           description:
-            "Stable canonical project identifier this memory belongs to (e.g. a slug, " +
-            "UUID, or registry key). Must match the value used when the session was " +
-            "started. Do not use filesystem paths or ad-hoc display names — those " +
-            "change across machines and will silently break project scoping.",
+            "Project identifier used for workspace isolation. Required when AGENTMEMORY_PROJECT_ISOLATION is enabled (default); use the repo root folder name.",
         },
       },
       required: ["content"],
@@ -98,6 +100,11 @@ export const CORE_TOOLS: McpToolDef[] = [
           type: "string",
           description: "Current session ID to exclude",
         },
+        project: {
+          type: "string",
+          description:
+            "Project identifier used to scope file history. Required when AGENTMEMORY_PROJECT_ISOLATION is enabled (default); use the repo root folder name.",
+        },
       },
       required: ["files"],
     },
@@ -108,7 +115,11 @@ export const CORE_TOOLS: McpToolDef[] = [
     inputSchema: {
       type: "object",
       properties: {
-        project: { type: "string", description: "Project path to analyze" },
+        project: {
+          type: "string",
+          description:
+            "Project path to analyze. Required when AGENTMEMORY_PROJECT_ISOLATION is enabled (default); use the repo root folder name.",
+        },
       },
     },
   },
@@ -116,7 +127,16 @@ export const CORE_TOOLS: McpToolDef[] = [
     name: "memory_sessions",
     description:
       "List recent sessions with their status and observation counts.",
-    inputSchema: { type: "object", properties: {} },
+    inputSchema: {
+      type: "object",
+      properties: {
+        project: {
+          type: "string",
+          description:
+            "Project identifier used to filter sessions. Required when AGENTMEMORY_PROJECT_ISOLATION is enabled (default); use the repo root folder name.",
+        },
+      },
+    },
   },
   {
     name: "memory_smart_search",
@@ -130,6 +150,11 @@ export const CORE_TOOLS: McpToolDef[] = [
           description: "Comma-separated observation IDs to expand",
         },
         limit: { type: "number", description: "Max results (default 10)" },
+        project: {
+          type: "string",
+          description:
+            "Project identifier used to scope search and recall. Required when AGENTMEMORY_PROJECT_ISOLATION is enabled (default); use the repo root folder name.",
+        },
       },
       required: ["query"],
     },
@@ -159,7 +184,11 @@ export const CORE_TOOLS: McpToolDef[] = [
           type: "string",
           description: "Anchor point: ISO date or keyword",
         },
-        project: { type: "string", description: "Filter by project path" },
+        project: {
+          type: "string",
+          description:
+            "Filter by project path. Required when AGENTMEMORY_PROJECT_ISOLATION is enabled (default); use the repo root folder name.",
+        },
         before: {
           type: "number",
           description: "Observations before anchor (default 5)",
@@ -178,7 +207,11 @@ export const CORE_TOOLS: McpToolDef[] = [
     inputSchema: {
       type: "object",
       properties: {
-        project: { type: "string", description: "Project path" },
+        project: {
+          type: "string",
+          description:
+            "Project path. Required when AGENTMEMORY_PROJECT_ISOLATION is enabled (default); use the repo root folder name.",
+        },
         refresh: {
           type: "string",
           description: "Set to 'true' to force rebuild",
@@ -374,7 +407,11 @@ export const V050_TOOLS: McpToolDef[] = [
           type: "number",
           description: "Priority 1-10 (10 highest)",
         },
-        project: { type: "string", description: "Project path" },
+        project: {
+          type: "string",
+          description:
+            "Project path. Required when AGENTMEMORY_PROJECT_ISOLATION is enabled (default); use the repo root folder name.",
+        },
         tags: {
           type: "string",
           description: "Comma-separated tags",
@@ -420,7 +457,11 @@ export const V050_TOOLS: McpToolDef[] = [
     inputSchema: {
       type: "object",
       properties: {
-        project: { type: "string", description: "Filter by project" },
+        project: {
+          type: "string",
+          description:
+            "Filter by project. Required when AGENTMEMORY_PROJECT_ISOLATION is enabled (default); use the repo root folder name.",
+        },
         agentId: {
           type: "string",
           description: "Agent ID to check lease conflicts",
@@ -436,7 +477,11 @@ export const V050_TOOLS: McpToolDef[] = [
     inputSchema: {
       type: "object",
       properties: {
-        project: { type: "string", description: "Filter by project" },
+        project: {
+          type: "string",
+          description:
+            "Filter by project. Required when AGENTMEMORY_PROJECT_ISOLATION is enabled (default); use the repo root folder name.",
+        },
         agentId: { type: "string", description: "Current agent ID" },
       },
     },
@@ -474,7 +519,11 @@ export const V050_TOOLS: McpToolDef[] = [
       type: "object",
       properties: {
         routineId: { type: "string", description: "Routine template ID" },
-        project: { type: "string", description: "Project context" },
+        project: {
+          type: "string",
+          description:
+            "Project context. Required when AGENTMEMORY_PROJECT_ISOLATION is enabled (default); use the repo root folder name.",
+        },
         initiatedBy: { type: "string", description: "Agent starting the run" },
       },
       required: ["routineId"],
@@ -628,7 +677,11 @@ export const V051_TOOLS: McpToolDef[] = [
         title: { type: "string", description: "Sketch title" },
         description: { type: "string", description: "What this sketch explores" },
         expiresInMs: { type: "number", description: "TTL in ms (default 1 hour)" },
-        project: { type: "string", description: "Project context" },
+        project: {
+          type: "string",
+          description:
+            "Project context. Required when AGENTMEMORY_PROJECT_ISOLATION is enabled (default); use the repo root folder name.",
+        },
       },
       required: ["title"],
     },
@@ -641,7 +694,11 @@ export const V051_TOOLS: McpToolDef[] = [
       type: "object",
       properties: {
         sketchId: { type: "string", description: "Sketch ID to promote" },
-        project: { type: "string", description: "Override project for promoted actions" },
+        project: {
+          type: "string",
+          description:
+            "Override project for promoted actions. Required when AGENTMEMORY_PROJECT_ISOLATION is enabled (default); use the repo root folder name.",
+        },
       },
       required: ["sketchId"],
     },
@@ -657,7 +714,11 @@ export const V051_TOOLS: McpToolDef[] = [
           type: "string",
           description: "Comma-separated completed action IDs to crystallize",
         },
-        project: { type: "string", description: "Project context" },
+        project: {
+          type: "string",
+          description:
+            "Project context. Required when AGENTMEMORY_PROJECT_ISOLATION is enabled (default); use the repo root folder name.",
+        },
         sessionId: { type: "string", description: "Session context" },
       },
       required: ["actionIds"],
@@ -775,7 +836,11 @@ export const V070_TOOLS: McpToolDef[] = [
           type: "number",
           description: "Initial confidence 0.0-1.0 (default 0.5)",
         },
-        project: { type: "string", description: "Project this lesson is about" },
+        project: {
+          type: "string",
+          description:
+            "Project this lesson is about. Required when AGENTMEMORY_PROJECT_ISOLATION is enabled (default); use the repo root folder name.",
+        },
         tags: { type: "string", description: "Comma-separated tags" },
       },
       required: ["content"],
@@ -789,7 +854,11 @@ export const V070_TOOLS: McpToolDef[] = [
       type: "object",
       properties: {
         query: { type: "string", description: "Search query" },
-        project: { type: "string", description: "Filter by project" },
+        project: {
+          type: "string",
+          description:
+            "Filter by project. Required when AGENTMEMORY_PROJECT_ISOLATION is enabled (default); use the repo root folder name.",
+        },
         minConfidence: {
           type: "number",
           description: "Minimum confidence threshold (default 0.1)",
@@ -827,7 +896,11 @@ export const V073_TOOLS: McpToolDef[] = [
     inputSchema: {
       type: "object",
       properties: {
-        project: { type: "string", description: "Filter by project" },
+        project: {
+          type: "string",
+          description:
+            "Filter by project. Required when AGENTMEMORY_PROJECT_ISOLATION is enabled (default); use the repo root folder name.",
+        },
         maxClusters: {
           type: "number",
           description: "Max concept clusters to process (default 10, max 20)",
@@ -842,7 +915,11 @@ export const V073_TOOLS: McpToolDef[] = [
     inputSchema: {
       type: "object",
       properties: {
-        project: { type: "string", description: "Filter by project" },
+        project: {
+          type: "string",
+          description:
+            "Filter by project. Required when AGENTMEMORY_PROJECT_ISOLATION is enabled (default); use the repo root folder name.",
+        },
         minConfidence: {
           type: "number",
           description: "Minimum confidence threshold (default 0)",

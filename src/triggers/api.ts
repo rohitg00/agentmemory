@@ -13,6 +13,11 @@ import { renderViewerDocument } from "../viewer/document.js";
 import { getBoundViewerPort, getViewerSkipped } from "../viewer/server.js";
 import { MAX_FILES_UPPER_BOUND } from "../functions/replay.js";
 import { logger } from "../logger.js";
+import { isProjectIsolationEnabled } from "../config.js";
+import {
+  resolveProjectScope,
+  projectRequiredMessage,
+} from "../functions/project-scope.js";
 import {
   isGraphExtractionEnabled,
   isConsolidationEnabled,
@@ -133,6 +138,31 @@ function parseOptionalPositiveInt(value: unknown): number | undefined | null {
   if (parsed === undefined || parsed === null) return parsed;
   if (!Number.isInteger(parsed) || parsed < 1) return null;
   return parsed;
+}
+
+function parseOptionalNonNegativeInt(value: unknown): number | undefined | null {
+  const parsed = parseOptionalFiniteNumber(value);
+  if (parsed === undefined || parsed === null) return parsed;
+  const floored = Math.floor(parsed);
+  return floored >= 0 ? floored : null;
+}
+
+function requireProjectParam(
+  value: unknown,
+  routeName: string,
+): { project?: string; error?: string } {
+  if (value !== undefined && typeof value !== "string") {
+    return {
+      error: `project must be a string for ${routeName}`,
+    };
+  }
+  const project = resolveProjectScope(value);
+  if (isProjectIsolationEnabled() && !project) {
+    return {
+      error: projectRequiredMessage(routeName),
+    };
+  }
+  return { project };
 }
 
 export function registerApiTriggers(
@@ -407,10 +437,12 @@ export function registerApiTriggers(
           body: { error: "token_budget must be a positive integer" },
         };
       }
+      const { project, error } = requireProjectParam(body.project, "api::search");
+      if (error) return { status_code: 400, body: { error } };
       const payload = {
         query: body.query.trim(),
         limit: body.limit as number | undefined,
-        project: body.project as string | undefined,
+        project,
         cwd: body.cwd as string | undefined,
         format:
           typeof body.format === "string"
@@ -792,7 +824,11 @@ export function registerApiTriggers(
     async (req: ApiRequest): Promise<Response> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
-      const sessions = await kv.list<Session>(KV.sessions);
+      const { project, error } = requireProjectParam(req.query_params?.["project"], "api::sessions");
+      if (error) return { status_code: 400, body: { error } };
+      const sessions = (await kv.list<Session>(KV.sessions)).filter((s) =>
+        !project || s.project === project,
+      );
       const normalizedAgentId =
         typeof req.query_params?.["agentId"] === "string"
           ? req.query_params["agentId"].trim()
@@ -851,11 +887,36 @@ export function registerApiTriggers(
 
   sdk.registerFunction("api::file-context", 
     async (
-      req: ApiRequest<{ sessionId: string; files: string[] }>,
+      req: ApiRequest<{ sessionId: string; files: string[]; project?: string }>,
     ): Promise<Response> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
-      const result = await sdk.trigger({ function_id: "mem::file-context", payload: req.body });
+      const { project, error } = requireProjectParam(req.body?.project, "api::file-context");
+      if (error) return { status_code: 400, body: { error } };
+      const body = req.body ?? {};
+      const sessionId = asNonEmptyString(body.sessionId);
+      const files = Array.isArray(body.files)
+        ? body.files.map((file) =>
+            typeof file === "string" ? file.trim() : null,
+          )
+        : null;
+      if (!sessionId || !files || files.length === 0 || files.some((file) => !file)) {
+        return {
+          status_code: 400,
+          body: {
+            error: "sessionId (string) and files (string[]) are required",
+          },
+        };
+      }
+      const payload: { sessionId: string; files: string[]; project?: string } = {
+        sessionId,
+        files,
+      };
+      if (project !== undefined) payload.project = project;
+      const result = await sdk.trigger({
+        function_id: "mem::file-context",
+        payload,
+      });
       return { status_code: 200, body: result };
     },
   );
@@ -910,6 +971,8 @@ export function registerApiTriggers(
           body: { error: "project must be a non-empty string" },
         };
       }
+      const { project, error } = requireProjectParam(req.body.project, "api::enrich");
+      if (error) return { status_code: 400, body: { error } };
       const result = await sdk.trigger({
         function_id: "mem::enrich",
         payload: {
@@ -917,7 +980,7 @@ export function registerApiTriggers(
           files: req.body.files,
           ...(req.body.terms !== undefined && { terms: req.body.terms }),
           ...(req.body.toolName !== undefined && { toolName: req.body.toolName }),
-          ...(req.body.project !== undefined && { project: req.body.project }),
+          ...(project !== undefined && { project }),
         },
       });
       return { status_code: 200, body: result };
@@ -956,6 +1019,8 @@ export function registerApiTriggers(
       ) {
         return { status_code: 400, body: { error: "project must be a non-empty string" } };
       }
+      const { project, error } = requireProjectParam(req.body.project, "api::remember");
+      if (error) return { status_code: 400, body: { error } };
       const result = await sdk.trigger({
         function_id: "mem::remember",
         payload: {
@@ -965,7 +1030,7 @@ export function registerApiTriggers(
           ...(req.body.files !== undefined && { files: req.body.files }),
           ...(req.body.ttlDays !== undefined && { ttlDays: req.body.ttlDays }),
           ...(req.body.sourceObservationIds !== undefined && { sourceObservationIds: req.body.sourceObservationIds }),
-          ...(req.body.project !== undefined && { project: req.body.project }),
+          ...(project !== undefined && { project }),
         },
       });
       return { status_code: 201, body: result };
@@ -1009,7 +1074,22 @@ export function registerApiTriggers(
     ): Promise<Response> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
-      const result = await sdk.trigger({ function_id: "mem::consolidate", payload: req.body });
+      const { project, error } = requireProjectParam(req.body?.project, "api::consolidate");
+      if (error) return { status_code: 400, body: { error } };
+      const minObservations = parseOptionalPositiveInt(req.body?.minObservations);
+      if (minObservations === null) {
+        return {
+          status_code: 400,
+          body: { error: "minObservations must be a positive integer" },
+        };
+      }
+      const payload: { project?: string; minObservations?: number } = {};
+      if (project !== undefined) payload.project = project;
+      if (minObservations !== undefined) payload.minObservations = minObservations;
+      const result = await sdk.trigger({
+        function_id: "mem::consolidate",
+        payload,
+      });
       return { status_code: 200, body: result };
     },
   );
@@ -1023,7 +1103,12 @@ export function registerApiTriggers(
     async (req: ApiRequest<{ project?: string }>): Promise<Response> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
-      const result = await sdk.trigger({ function_id: "mem::patterns", payload: req.body });
+      const { project, error } = requireProjectParam(req.body?.project, "api::patterns");
+      if (error) return { status_code: 400, body: { error } };
+      const result = await sdk.trigger({
+        function_id: "mem::patterns",
+        payload: { project },
+      });
       return { status_code: 200, body: result };
     },
   );
@@ -1037,7 +1122,12 @@ export function registerApiTriggers(
     async (req: ApiRequest<{ project?: string }>): Promise<Response> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
-      const result = await sdk.trigger({ function_id: "mem::generate-rules", payload: req.body });
+      const { project, error } = requireProjectParam(req.body?.project, "api::generate-rules");
+      if (error) return { status_code: 400, body: { error } };
+      const result = await sdk.trigger({
+        function_id: "mem::generate-rules",
+        payload: { project },
+      });
       return { status_code: 200, body: result };
     },
   );
@@ -1120,6 +1210,8 @@ export function registerApiTriggers(
           body: { error: "query or expandIds is required" },
         };
       }
+      const { project, error } = requireProjectParam(req.body?.project, "api::smart-search");
+      if (error) return { status_code: 400, body: { error } };
       // #771: route the X-Agentmemory-Source header into the payload so
       // the followup-rate diagnostic can skip viewer-originated calls.
       // Body wins if both are set (advanced callers explicitly override).
@@ -1134,7 +1226,7 @@ export function registerApiTriggers(
         query: req.body?.query,
         expandIds: req.body?.expandIds,
         limit: req.body?.limit,
-        project: req.body?.project,
+        project,
         includeLessons: req.body?.includeLessons,
         agentId: req.body?.agentId,
         sessionId: req.body?.sessionId,
@@ -1196,7 +1288,29 @@ export function registerApiTriggers(
       if (!req.body?.anchor) {
         return { status_code: 400, body: { error: "anchor is required" } };
       }
-      const result = await sdk.trigger({ function_id: "mem::timeline", payload: req.body });
+      const { project, error } = requireProjectParam(req.body?.project, "api::timeline");
+      if (error) return { status_code: 400, body: { error } };
+      const before = parseOptionalNonNegativeInt(req.body.before);
+      const after = parseOptionalNonNegativeInt(req.body.after);
+      if (before === null || after === null) {
+        return {
+          status_code: 400,
+          body: { error: "before and after must be non-negative numbers" },
+        };
+      }
+      const payload: {
+        anchor: string;
+        project?: string;
+        before?: number;
+        after?: number;
+      } = { anchor: String(req.body.anchor) };
+      if (project !== undefined) payload.project = project;
+      if (before !== undefined) payload.before = before;
+      if (after !== undefined) payload.after = after;
+      const result = await sdk.trigger({
+        function_id: "mem::timeline",
+        payload,
+      });
       return { status_code: 200, body: result };
     },
   );
@@ -1590,12 +1704,43 @@ export function registerApiTriggers(
   });
 
   sdk.registerFunction("api::consolidate-pipeline",
-    async (req: ApiRequest<{ tier?: string }>): Promise<Response> => {
+    async (req: ApiRequest<{ tier?: string; force?: boolean; project?: string }>): Promise<Response> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
+      const { project, error } = requireProjectParam(req.body?.project, "api::consolidate-pipeline");
+      if (error) return { status_code: 400, body: { error } };
+      const body = req.body ?? {};
+      const tier = typeof body.tier === "string" && body.tier.trim()
+        ? body.tier.trim()
+        : undefined;
+      if (body.tier !== undefined && tier === undefined) {
+        return { status_code: 400, body: { error: "tier must be a non-empty string" } };
+      }
+      const allowedTiers = new Set([
+        "all",
+        "semantic",
+        "reflect",
+        "procedural",
+        "decay",
+      ]);
+      if (tier !== undefined && !allowedTiers.has(tier)) {
+        return {
+          status_code: 400,
+          body: { error: "tier must be one of: all, semantic, reflect, procedural, decay" },
+        };
+      }
+      if (body.force !== undefined && typeof body.force !== "boolean") {
+        return { status_code: 400, body: { error: "force must be a boolean" } };
+      }
+      const payload: { tier?: string; force?: boolean; project?: string } = {};
+      if (tier !== undefined) payload.tier = tier;
+      if (body.force !== undefined) payload.force = body.force;
+      if (project !== undefined) payload.project = project;
       try {
-        const result = await sdk.trigger({ function_id: "mem::consolidate-pipeline", payload: req.body || {},
-         });
+        const result = await sdk.trigger({
+          function_id: "mem::consolidate-pipeline",
+          payload,
+        });
         return { status_code: 200, body: result };
       } catch {
         return consolidationDisabledResponse();

@@ -16,7 +16,9 @@ vi.mock("../src/mcp/transport.js", () => ({
 }));
 
 vi.mock("../src/config.js", () => ({
+  getEnvVar: () => undefined,
   getStandalonePersistPath: vi.fn(() => "/tmp/test-standalone.json"),
+  isProjectIsolationEnabled: () => false,
 }));
 
 import {
@@ -173,11 +175,12 @@ describe("handleToolCall", () => {
     const kv = new InMemoryKV("/tmp/test-handle.json");
     const result = await handleToolCall(
       "memory_save",
-      { content: "Test memory content" },
+      { content: "Test memory content", project: "demo" },
       kv,
     );
     const parsed = JSON.parse(result.content[0].text);
     expect(parsed.saved).toMatch(/^mem_/);
+    expect(parsed.memory.project).toBe("demo");
     expect(writeFileSync).toHaveBeenCalledWith(
       "/tmp/test-handle.json",
       expect.any(String),

@@ -6,9 +6,15 @@ import { getAllTools } from "./tools-registry.js";
 import { getStandalonePersistPath } from "../config.js";
 import { VERSION } from "../version.js";
 import { generateId } from "../state/schema.js";
+import { isProjectIsolationEnabled } from "../config.js";
+import {
+  resolveProjectScope,
+  projectRequiredMessage,
+} from "../functions/project-scope.js";
 import {
   resolveHandle,
   invalidateHandle,
+  resolveEnvOrEmpty,
   type Handle,
   type ProxyHandle,
 } from "./rest-proxy.js";
@@ -75,11 +81,32 @@ function normalizeList(value: unknown): string[] {
 
 const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 100;
+function shouldUseLocalFallback(): boolean {
+  return resolveEnvOrEmpty("AGENTMEMORY_URL").length === 0;
+}
+
 function parseLimit(raw: unknown, fallback = DEFAULT_LIMIT): number {
   if (typeof raw !== "number" && typeof raw !== "string") return fallback;
   const n = Number(raw);
   if (!Number.isFinite(n) || n <= 0) return fallback;
   return Math.min(Math.floor(n), MAX_LIMIT);
+}
+
+function resolveProjectArg(value: unknown): string | undefined {
+  return resolveProjectScope(value);
+}
+
+function requireProjectArg(
+  value: unknown,
+  toolName: string,
+): { project?: string; error?: string } {
+  const project = resolveProjectArg(value);
+  if (isProjectIsolationEnabled() && !project) {
+    return {
+      error: projectRequiredMessage(toolName),
+    };
+  }
+  return { project };
 }
 
 function textResponse(payload: unknown, pretty = false): {
@@ -98,6 +125,7 @@ interface Validated {
   type?: string;
   concepts?: string[];
   files?: string[];
+  project?: string;
   query?: string;
   limit?: number;
   format?: string;
@@ -121,6 +149,9 @@ function validate(toolName: string, args: Record<string, unknown>): Validated {
       v.type = (args["type"] as string) || "fact";
       v.concepts = normalizeList(args["concepts"]);
       v.files = normalizeList(args["files"]);
+      const { project, error } = requireProjectArg(args["project"], "memory_save");
+      if (error) throw new Error(error);
+      v.project = project;
       return v;
     }
     case "memory_recall":
@@ -131,6 +162,9 @@ function validate(toolName: string, args: Record<string, unknown>): Validated {
       }
       v.query = query.trim();
       v.limit = parseLimit(args["limit"]);
+      const { project, error } = requireProjectArg(args["project"], toolName);
+      if (error) throw new Error(error);
+      v.project = project;
       const fmt = args["format"];
       if (typeof fmt === "string" && fmt.trim()) {
         v.format = fmt.trim().toLowerCase();
@@ -146,6 +180,9 @@ function validate(toolName: string, args: Record<string, unknown>): Validated {
     }
     case "memory_sessions": {
       v.limit = parseLimit(args["limit"], 20);
+      const { project, error } = requireProjectArg(args["project"], "memory_sessions");
+      if (error) throw new Error(error);
+      v.project = project;
       return v;
     }
     case "memory_governance_delete": {
@@ -179,6 +216,7 @@ async function handleProxy(
           type: v.type,
           concepts: v.concepts,
           files: v.files,
+          ...(v.project !== undefined && { project: v.project }),
         }),
       });
       return textResponse(result);
@@ -189,6 +227,7 @@ async function handleProxy(
         limit: v.limit,
         format: v.format ?? "full",
       };
+      if (v.project != null) body["project"] = v.project;
       if (v.tokenBudget != null) body["token_budget"] = v.tokenBudget;
       const result = await handle.call("/agentmemory/search", {
         method: "POST",
@@ -198,6 +237,7 @@ async function handleProxy(
     }
     case "memory_smart_search": {
       const body: Record<string, unknown> = { query: v.query, limit: v.limit };
+      if (v.project != null) body["project"] = v.project;
       if (v.format != null) body["format"] = v.format;
       if (v.tokenBudget != null) body["token_budget"] = v.tokenBudget;
       const result = await handle.call("/agentmemory/smart-search", {
@@ -208,7 +248,7 @@ async function handleProxy(
     }
     case "memory_sessions": {
       const result = await handle.call(
-        `/agentmemory/sessions?limit=${v.limit}`,
+        `/agentmemory/sessions?limit=${v.limit}${v.project ? `&project=${encodeURIComponent(v.project)}` : ""}`,
         { method: "GET" },
       );
       return textResponse(result, true);
@@ -244,7 +284,7 @@ async function handleLocal(
     case "memory_save": {
       const id = generateId("mem");
       const isoNow = new Date().toISOString();
-      await kvInstance.set("mem:memories", id, {
+      const memory = {
         id,
         type: v.type,
         title: (v.content || "").slice(0, 80),
@@ -257,9 +297,11 @@ async function handleLocal(
         version: 1,
         isLatest: true,
         sessionIds: [],
-      });
+        ...(v.project !== undefined && { project: v.project }),
+      };
+      await kvInstance.set("mem:memories", id, memory);
       kvInstance.persist();
-      return textResponse({ saved: id });
+      return textResponse({ saved: id, memory });
     }
 
     case "memory_recall":
@@ -270,6 +312,15 @@ async function handleLocal(
         await kvInstance.list<Record<string, unknown>>("mem:memories");
       const results = all
         .filter((m) => {
+          if (v.project) {
+            const memProject =
+              typeof m["project"] === "string" && m["project"].trim().length > 0
+                ? m["project"].trim()
+                : undefined;
+            if (memProject !== undefined && memProject !== v.project) {
+              return false;
+            }
+          }
           const text = [
             typeof m["title"] === "string" ? m["title"] : "",
             typeof m["content"] === "string" ? m["content"] : "",
@@ -283,14 +334,30 @@ async function handleLocal(
           return query.split(/\s+/).every((word) => text.includes(word));
         })
         .slice(0, limit);
-      return textResponse({ mode: "compact", results }, true);
+      return textResponse(
+        {
+          mode: "compact",
+          ...(v.project !== undefined && { project: v.project }),
+          results,
+        },
+        true,
+      );
     }
 
     case "memory_sessions": {
       const sessions =
         await kvInstance.list<Record<string, unknown>>("mem:sessions");
       const limit = v.limit ?? 20;
-      return textResponse({ sessions: sessions.slice(0, limit) }, true);
+      const filtered = v.project
+        ? sessions.filter((s) => {
+            const sessProject =
+              typeof s["project"] === "string" && s["project"].trim().length > 0
+                ? s["project"].trim()
+                : undefined;
+            return sessProject === v.project;
+          })
+        : sessions;
+      return textResponse({ sessions: filtered.slice(0, limit) }, true);
     }
 
     case "memory_governance_delete": {
@@ -384,10 +451,17 @@ export async function handleToolCall(
     try {
       return await handleProxy(validated, handle);
     } catch (err) {
-      process.stderr.write(
-        `[@agentmemory/mcp] proxy call failed for ${toolName}: ${err instanceof Error ? err.message : String(err)}; invalidating handle and falling back to local KV\n`,
-      );
       invalidateHandle();
+      if (shouldUseLocalFallback()) {
+        process.stderr.write(
+          `[@agentmemory/mcp] proxy call failed for ${toolName}: ${err instanceof Error ? err.message : String(err)}; invalidating handle and falling back to local KV\n`,
+        );
+      } else {
+        process.stderr.write(
+          `[@agentmemory/mcp] proxy call failed for ${toolName}: ${err instanceof Error ? err.message : String(err)}; invalidating handle and surfacing the server error\n`,
+        );
+        throw err;
+      }
     }
   }
   return handleLocal(validated, kvInstance);
@@ -429,10 +503,17 @@ export async function handleToolsList(): Promise<{ tools: unknown[] }> {
         `[@agentmemory/mcp] tools/list: server returned unexpected shape (no .tools array); falling back to local IMPLEMENTED_TOOLS list. Set AGENTMEMORY_DEBUG=1 to inspect response.\n`,
       );
     } catch (err) {
-      process.stderr.write(
-        `[@agentmemory/mcp] tools/list proxy failed: ${err instanceof Error ? err.message : String(err)}; falling back to local list\n`,
-      );
       invalidateHandle();
+      if (shouldUseLocalFallback()) {
+        process.stderr.write(
+          `[@agentmemory/mcp] tools/list proxy failed: ${err instanceof Error ? err.message : String(err)}; falling back to local list\n`,
+        );
+      } else {
+        process.stderr.write(
+          `[@agentmemory/mcp] tools/list proxy failed: ${err instanceof Error ? err.message : String(err)}; surfacing the server error\n`,
+        );
+        throw err;
+      }
     }
   }
   const fallback = getAllTools().filter((t) => IMPLEMENTED_TOOLS.has(t.name));

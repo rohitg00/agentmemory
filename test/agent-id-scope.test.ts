@@ -45,13 +45,17 @@ describe("loadAgentScope (#554)", () => {
 
 describe("mem::remember stamps agentId on the Memory (#554)", () => {
   const ORIG = process.env["AGENT_ID"];
+  const ORIG_ISOLATION = process.env["AGENTMEMORY_PROJECT_ISOLATION"];
   beforeEach(() => {
     vi.resetModules();
     delete process.env["AGENT_ID"];
+    process.env["AGENTMEMORY_PROJECT_ISOLATION"] = "false";
   });
   afterEach(() => {
     if (ORIG === undefined) delete process.env["AGENT_ID"];
     else process.env["AGENT_ID"] = ORIG;
+    if (ORIG_ISOLATION === undefined) delete process.env["AGENTMEMORY_PROJECT_ISOLATION"];
+    else process.env["AGENTMEMORY_PROJECT_ISOLATION"] = ORIG_ISOLATION;
   });
 
   function mockKV() {

@@ -3,6 +3,7 @@ import type { StateKV } from "../state/kv.js";
 import { KV, fingerprintId } from "../state/schema.js";
 import type { Lesson } from "../types.js";
 import { recordAudit } from "./audit.js";
+import { requireProjectScope, projectMatchesScope } from "./project-scope.js";
 
 function reinforceLesson(lesson: Lesson): void {
   const now = new Date().toISOString();
@@ -29,8 +30,12 @@ export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
       if (!data.content?.trim()) {
         return { success: false, error: "content is required" };
       }
+      const project = requireProjectScope(data.project, "mem::lesson-save");
 
-      const fp = fingerprintId("lsn", data.content.trim().toLowerCase());
+      const normalizedContent = data.content.trim().toLowerCase();
+      const fp = project
+        ? fingerprintId("lsn", JSON.stringify([project, normalizedContent]))
+        : fingerprintId("lsn", normalizedContent);
       const existing = await kv.get<Lesson>(KV.lessons, fp);
 
       if (existing && !existing.deleted) {
@@ -69,7 +74,7 @@ export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
         reinforcements: 0,
         source: data.source || "manual",
         sourceIds: data.sourceIds || [],
-        project: data.project,
+        project,
         tags: data.tags || [],
         createdAt: now,
         updatedAt: now,
@@ -97,6 +102,7 @@ export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
         return { success: false, error: "query is required" };
       }
 
+      const project = requireProjectScope(data.project, "mem::lesson-recall");
       const query = data.query.toLowerCase();
       const minConfidence = data.minConfidence ?? 0.1;
       const limit = data.limit ?? 10;
@@ -107,8 +113,8 @@ export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
         (l) => !l.deleted && l.confidence >= minConfidence,
       );
 
-      if (data.project) {
-        lessons = lessons.filter((l) => l.project === data.project);
+      if (project) {
+        lessons = lessons.filter((l) => projectMatchesScope(l.project, project));
       }
 
       const scored = lessons
@@ -159,14 +165,15 @@ export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
     }) => {
       const limit = data.limit ?? 50;
       const minConfidence = data.minConfidence ?? 0;
+      const project = requireProjectScope(data.project, "mem::lesson-list");
       let lessons = await kv.list<Lesson>(KV.lessons);
 
       lessons = lessons.filter(
         (l) => !l.deleted && l.confidence >= minConfidence,
       );
 
-      if (data.project) {
-        lessons = lessons.filter((l) => l.project === data.project);
+      if (project) {
+        lessons = lessons.filter((l) => projectMatchesScope(l.project, project));
       }
       if (data.source) {
         lessons = lessons.filter((l) => l.source === data.source);

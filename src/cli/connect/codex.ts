@@ -21,13 +21,19 @@ const CODEX_DIR = join(homedir(), ".codex");
 const CODEX_TOML = join(CODEX_DIR, "config.toml");
 const CODEX_HOOKS = join(CODEX_DIR, "hooks.json");
 
-const TOML_BLOCK = `[mcp_servers.agentmemory]
-command = "npx"
-args = ["-y", "@agentmemory/mcp"]
-
-[mcp_servers.agentmemory.env]
-AGENTMEMORY_URL = "http://localhost:3111"
-`;
+const TOML_BLOCK = [
+  "[mcp_servers.agentmemory]",
+  'command = "npx"',
+  'args = ["-y", "@agentmemory/mcp"]',
+  "",
+  "[mcp_servers.agentmemory.env]",
+  'AGENTMEMORY_URL = "${AGENTMEMORY_URL:-http://localhost:3111}"',
+  'AGENTMEMORY_SECRET = "${AGENTMEMORY_SECRET:-}"',
+  'AGENTMEMORY_TOOLS = "${AGENTMEMORY_TOOLS:-all}"',
+  'AGENTMEMORY_PROJECT_NAME = "${AGENTMEMORY_PROJECT_NAME:-}"',
+  'AGENTMEMORY_PROJECT_ISOLATION = "${AGENTMEMORY_PROJECT_ISOLATION:-true}"',
+  'AGENTMEMORY_FORCE_PROXY = "${AGENTMEMORY_FORCE_PROXY:-1}"',
+].join("\n");
 
 const SECTION_HEADER = "[mcp_servers.agentmemory]";
 

@@ -3,6 +3,7 @@ import type { Memory } from "../types.js";
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { logger } from "../logger.js";
+import { requireProjectScope, projectMatchesScope } from "./project-scope.js";
 
 const MAX_CONTEXT_LENGTH = 4000;
 
@@ -24,10 +25,7 @@ export function registerEnrichFunction(sdk: ISdk, kv: StateKV): void {
       toolName?: string;
       project?: string;
     }) => {
-      const project =
-        typeof data.project === "string" && data.project.trim().length > 0
-          ? data.project.trim()
-          : undefined;
+      const project = requireProjectScope(data.project, "mem::enrich");
 
       const parts: string[] = [];
 
@@ -72,7 +70,7 @@ export function registerEnrichFunction(sdk: ISdk, kv: StateKV): void {
                 m.type === "bug" &&
                 m.isLatest &&
                 // Guard only when both sides have an explicit project; unscoped memories pass through.
-                (!project || !m.project || m.project === project) &&
+                (!project || projectMatchesScope(m.project, project)) &&
                 m.files.some((f) =>
                   data.files.some((df) => f.includes(df) || df.includes(f)),
                 ),

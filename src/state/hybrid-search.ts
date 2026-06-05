@@ -288,6 +288,30 @@ export class HybridSearch {
     limit: number,
   ): Promise<HybridSearchResult[]> {
     const sliced = results.slice(0, limit);
+    const sessionCache = new Map<string, Session | null>();
+    const memoryProjectCache = new Map<string, string | null>();
+    const loadSession = async (sessionId: string): Promise<Session | null> => {
+      if (sessionCache.has(sessionId)) return sessionCache.get(sessionId)!;
+      const session = await this.kv.get<Session>(KV.sessions, sessionId).catch(() => null);
+      sessionCache.set(sessionId, session);
+      return session;
+    };
+    const loadMemoryProject = async (obsId: string): Promise<string | null> => {
+      if (memoryProjectCache.has(obsId)) return memoryProjectCache.get(obsId)!;
+      const mem = await this.kv.get<Memory>(KV.memories, obsId).catch(() => null);
+      const project =
+        typeof mem?.project === "string" && mem.project.trim().length > 0
+          ? mem.project.trim()
+          : null;
+      memoryProjectCache.set(obsId, project);
+      return project;
+    };
+    const resolveProject = async (obsId: string, sessionId: string): Promise<string | undefined> => {
+      const session = await loadSession(sessionId);
+      if (session) return session.project;
+      const memProject = await loadMemoryProject(obsId);
+      return memProject ?? undefined;
+    };
     const observations = await Promise.all(
       sliced.map(async (r) => {
         const obs = await this.kv
@@ -315,6 +339,7 @@ export class HybridSearch {
           graphScore: sliced[i].graphScore,
           combinedScore: sliced[i].combinedScore,
           sessionId: sliced[i].sessionId,
+          project: await resolveProject(sliced[i].obsId, sliced[i].sessionId),
           graphContext: sliced[i].graphContext,
         });
       }

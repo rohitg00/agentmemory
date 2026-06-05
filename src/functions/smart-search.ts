@@ -5,6 +5,7 @@ import type {
   CompressedObservation,
   HybridSearchResult,
   Lesson,
+  Session,
 } from "../types.js";
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
@@ -17,6 +18,7 @@ import {
 } from "../config.js";
 import { logger } from "../logger.js";
 import { getCounters } from "../telemetry/setup.js";
+import { requireProjectScope, projectMatchesScope } from "./project-scope.js";
 
 // #771: smart-search followup-rate diagnostic. Stored per session as
 // the most recent search payload, used to detect whether the next
@@ -96,6 +98,7 @@ export function registerSmartSearchFunction(
       // ignores them — only agent-initiated re-queries should count.
       source?: string;
     }) => {
+      const project = requireProjectScope(data.project, "mem::smart-search");
 
       // Compute the agent filter once, up front. Both the expandIds
       // branch and the hybrid-search branch consult it — otherwise
@@ -110,6 +113,35 @@ export function registerSmartSearchFunction(
         ? undefined
         : explicitAgentId ?? (isolated ? getAgentId() : undefined);
 
+      const sessionCache = new Map<string, Session | null>();
+      const memoryProjectCache = new Map<string, string | null>();
+      const loadSession = async (sessionId: string): Promise<Session | null> => {
+        if (sessionCache.has(sessionId)) return sessionCache.get(sessionId)!;
+        const s = await kv.get<Session>(KV.sessions, sessionId);
+        sessionCache.set(sessionId, s ?? null);
+        return s ?? null;
+      };
+      const loadMemoryProject = async (obsId: string): Promise<string | null> => {
+        if (memoryProjectCache.has(obsId)) return memoryProjectCache.get(obsId)!;
+        const mem = await kv.get<{ project?: string }>(KV.memories, obsId).catch(() => null);
+        const proj =
+          typeof mem?.project === "string" && mem.project.trim().length > 0
+            ? mem.project.trim()
+            : null;
+        memoryProjectCache.set(obsId, proj);
+        return proj;
+      };
+      const resolveObservationProject = async (
+        obsId: string,
+        sessionId?: string,
+      ): Promise<string | null> => {
+        if (sessionId) {
+          const session = await loadSession(sessionId);
+          if (session) return session.project;
+        }
+        return loadMemoryProject(obsId);
+      };
+
       if (data.expandIds && data.expandIds.length > 0) {
         const raw = data.expandIds.slice(0, 20);
         const items = raw.map((entry) => {
@@ -123,15 +155,25 @@ export function registerSmartSearchFunction(
         const expanded: Array<{
           obsId: string;
           sessionId: string;
+          project?: string;
           observation: CompressedObservation;
         }> = [];
 
         const results = await Promise.all(
-          items.map(({ obsId, sessionId }) =>
-            findObservation(kv, obsId, sessionId).then((obs) =>
-              obs ? { obsId, sessionId: obs.sessionId, observation: obs } : null,
-            ),
-          ),
+          items.map(async ({ obsId, sessionId }) => {
+            const obs = await findObservation(kv, obsId, sessionId, project);
+            if (!obs) return null;
+            const resolvedProject = await resolveObservationProject(
+              obsId,
+              sessionId ?? obs.sessionId,
+            );
+            return {
+              obsId,
+              sessionId: obs.sessionId,
+              project: resolvedProject ?? undefined,
+              observation: obs,
+            };
+          }),
         );
         for (const r of results) {
           if (r) expanded.push(r);
@@ -153,8 +195,14 @@ export function registerSmartSearchFunction(
           returned: scoped.length,
           filteredOutOfScope: expanded.length - scoped.length,
           truncated,
+          project,
         });
-        return { mode: "expanded", results: scoped, truncated };
+        return {
+          mode: "expanded",
+          ...(project !== undefined && { project }),
+          results: scoped,
+          truncated,
+        };
       }
 
       if (!data.query || typeof data.query !== "string" || !data.query.trim()) {
@@ -180,19 +228,44 @@ export function registerSmartSearchFunction(
       const [hybridResults, lessons] = await Promise.all([
         searchFn(data.query, overFetchLimit),
         includeLessons
-          ? recallLessons(sdk, data.query, lessonLimit, data.project)
+          ? recallLessons(sdk, data.query, lessonLimit, project)
           : Promise.resolve([]),
       ]);
 
+      const projectFilteredHybrid = project
+        ? (
+            await Promise.all(
+              hybridResults.map(async (r) => {
+                const session = await loadSession(r.sessionId);
+                if (session) {
+                  return projectMatchesScope(session.project, project) ? r : null;
+                }
+                const memProject = await loadMemoryProject(r.observation.id);
+                if (memProject === null) return null;
+                return projectMatchesScope(memProject, project) ? r : null;
+              }),
+            )
+          ).filter((r): r is HybridSearchResult => r !== null)
+        : hybridResults;
+
       const filteredHybrid = filterAgentId
-        ? hybridResults
+        ? projectFilteredHybrid
             .filter((r) => r.observation.agentId === filterAgentId)
             .slice(0, limit)
-        : hybridResults.slice(0, limit);
+        : projectFilteredHybrid.slice(0, limit);
+
+      const resolvedProjects = await Promise.all(
+        filteredHybrid.map((r) =>
+          r.project !== undefined
+            ? Promise.resolve(r.project)
+            : resolveObservationProject(r.observation.id, r.sessionId),
+        ),
+      );
 
       const compact: CompactSearchResult[] = filteredHybrid.map((r) => ({
         obsId: r.observation.id,
         sessionId: r.sessionId,
+        project: resolvedProjects.shift() ?? undefined,
         title: r.observation.title,
         type: r.observation.type,
         score: r.combinedScore,
@@ -256,12 +329,18 @@ export function registerSmartSearchFunction(
         query: data.query,
         results: compact.length,
         lessons: lessons.length,
+        project,
       });
       const response: {
         mode: "compact";
+        project?: string;
         results: CompactSearchResult[];
         lessons?: CompactLessonResult[];
-      } = { mode: "compact", results: compact };
+      } = {
+        mode: "compact",
+        ...(project !== undefined && { project }),
+        results: compact,
+      };
       if (includeLessons) response.lessons = lessons;
       return response;
     },
@@ -344,17 +423,28 @@ async function findObservation(
   kv: StateKV,
   obsId: string,
   sessionIdHint?: string,
+  project?: string,
 ): Promise<CompressedObservation | null> {
   if (sessionIdHint) {
+    if (project) {
+      const hintedSession = await kv
+        .get<{ project?: string }>(KV.sessions, sessionIdHint)
+        .catch(() => null);
+      if (!hintedSession || !projectMatchesScope(hintedSession.project, project)) {
+        return null;
+      }
+    }
     const obs = await kv
       .get<CompressedObservation>(KV.observations(sessionIdHint), obsId)
       .catch(() => null);
     if (obs) return obs;
   }
 
-  const sessions = await kv.list<{ id: string }>(KV.sessions);
+  const sessions = await kv.list<{ id: string; project?: string }>(KV.sessions);
   for (let i = 0; i < sessions.length; i += 5) {
-    const batch = sessions.slice(i, i + 5);
+    const batch = sessions
+      .slice(i, i + 5)
+      .filter((s) => !project || projectMatchesScope(s.project, project));
     const results = await Promise.all(
       batch.map((s) =>
         kv.get<CompressedObservation>(KV.observations(s.id), obsId).catch(() => null),

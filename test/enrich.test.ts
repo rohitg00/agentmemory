@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 vi.mock("../src/logger.js", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
@@ -78,11 +78,18 @@ function mockSdk() {
 describe("Enrich Function", () => {
   let sdk: ReturnType<typeof mockSdk>;
   let kv: ReturnType<typeof mockKV>;
+  const ORIG_ISOLATION = process.env["AGENTMEMORY_PROJECT_ISOLATION"];
 
   beforeEach(() => {
     sdk = mockSdk();
     kv = mockKV();
+    process.env["AGENTMEMORY_PROJECT_ISOLATION"] = "false";
     registerEnrichFunction(sdk as never, kv as never);
+  });
+
+  afterEach(() => {
+    if (ORIG_ISOLATION === undefined) delete process.env["AGENTMEMORY_PROJECT_ISOLATION"];
+    else process.env["AGENTMEMORY_PROJECT_ISOLATION"] = ORIG_ISOLATION;
   });
 
   it("returns file context and relevant memories", async () => {

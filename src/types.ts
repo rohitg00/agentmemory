@@ -171,6 +171,7 @@ export interface SearchResult {
   observation: CompressedObservation;
   score: number;
   sessionId: string;
+  project?: string;
 }
 
 export interface ContextBlock {
@@ -258,12 +259,14 @@ export interface HybridSearchResult {
   graphScore: number;
   combinedScore: number;
   sessionId: string;
+  project?: string;
   graphContext?: string;
 }
 
 export interface CompactSearchResult {
   obsId: string;
   sessionId: string;
+  project?: string;
   title: string;
   type: ObservationType;
   score: number;
@@ -497,6 +500,7 @@ export interface SemanticMemory {
   confidence: number;
   sourceSessionIds: string[];
   sourceMemoryIds: string[];
+  project?: string;
   accessCount: number;
   lastAccessedAt: string;
   strength: number;
@@ -515,6 +519,7 @@ export interface ProceduralMemory {
   sourceObservationIds?: string[];
   tags?: string[];
   concepts?: string[];
+  project?: string;
   strength: number;
   createdAt: string;
   updatedAt: string;

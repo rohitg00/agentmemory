@@ -5,6 +5,7 @@ import { StateKV } from "../state/kv.js";
 import { recordAudit } from "./audit.js";
 import { recordAccessBatch } from "./access-tracker.js";
 import { logger } from "../logger.js";
+import { requireProjectScope } from "./project-scope.js";
 
 interface FileHistory {
   file: string;
@@ -24,10 +25,12 @@ export function registerFileIndexFunction(sdk: ISdk, kv: StateKV): void {
     async (
       data: { sessionId?: string; files?: string[]; project?: string } | undefined,
     ) => {
+      const normalizedProject = requireProjectScope(
+        data?.project,
+        "mem::file-context",
+      );
       const sessionId =
         data && typeof data.sessionId === "string" ? data.sessionId.trim() : "";
-      const normalizedProject =
-        typeof data?.project === "string" ? data.project.trim() : undefined;
       const files = Array.isArray(data?.files)
         ? data!.files
             .map((file) => (typeof file === "string" ? file.trim() : ""))
