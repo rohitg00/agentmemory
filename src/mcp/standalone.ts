@@ -103,6 +103,7 @@ interface Validated {
   limit?: number;
   format?: string;
   tokenBudget?: number;
+  expandIds?: string[];
   memoryIds?: string[];
   reason?: string;
 }
@@ -142,6 +143,15 @@ function validate(toolName: string, args: Record<string, unknown>): Validated {
       } else if (typeof budget === "string" && budget.trim()) {
         const n = Number(budget);
         if (Number.isFinite(n) && n > 0) v.tokenBudget = Math.floor(n);
+      }
+      // expandIds is smart-search-only progressive disclosure. The tool
+      // schema declares it as a comma-separated string; normalizeList also
+      // accepts a raw array so direct sdk.trigger callers work too. Gate on
+      // the tool name so memory_recall (which shares this branch) never
+      // forwards it.
+      if (toolName === "memory_smart_search") {
+        const expandIds = normalizeList(args["expandIds"]);
+        if (expandIds.length > 0) v.expandIds = expandIds;
       }
       return v;
     }
@@ -201,6 +211,10 @@ async function handleProxy(
       const body: Record<string, unknown> = { query: v.query, limit: v.limit };
       if (v.format != null) body["format"] = v.format;
       if (v.tokenBudget != null) body["token_budget"] = v.tokenBudget;
+      // Send expandIds as an ARRAY: the daemon's /agentmemory/smart-search
+      // schema is `expandIds: z.array(z.string())`. A comma-joined string
+      // fails Zod validation and surfaces as HTTP 500 (issue #440).
+      if (v.expandIds != null) body["expandIds"] = v.expandIds;
       const result = await handle.call("/agentmemory/smart-search", {
         method: "POST",
         body: JSON.stringify(body),
