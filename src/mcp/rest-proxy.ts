@@ -15,6 +15,18 @@ function forceProxy(): boolean {
   return raw === "1" || raw === "true";
 }
 
+/**
+ * When AGENTMEMORY_DISABLE_LOCAL_FALLBACK is set, the shim throws instead of
+ * silently switching to the local InMemoryKV / ~/.agentmemory/standalone.json
+ * store on a server outage. Clients that treat a remote agentmemory server as
+ * the single source of truth use this so an outage surfaces as an error rather
+ * than being masked by a divergent local store.
+ */
+export function disableLocalFallback(): boolean {
+  const raw = process.env["AGENTMEMORY_DISABLE_LOCAL_FALLBACK"];
+  return raw === "1" || raw === "true";
+}
+
 export interface ProxyHandle {
   mode: "proxy";
   baseUrl: string;
@@ -158,6 +170,11 @@ export async function resolveHandle(): Promise<Handle> {
       cached = handle;
       cachedAt = Date.now();
       return handle;
+    }
+    if (disableLocalFallback()) {
+      throw new Error(
+        `agentmemory server unavailable at ${url}; local fallback disabled by AGENTMEMORY_DISABLE_LOCAL_FALLBACK`,
+      );
     }
     const local: LocalHandle = { mode: "local" };
     cached = local;

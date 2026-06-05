@@ -383,4 +383,70 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
       delete process.env["AGENTMEMORY_PROBE_TIMEOUT_MS"];
     }
   });
+
+  it("AGENTMEMORY_DISABLE_LOCAL_FALLBACK=1 throws on proxy-call failure instead of writing locally", async () => {
+    process.env["AGENTMEMORY_DISABLE_LOCAL_FALLBACK"] = "1";
+    installFetch((url) => {
+      if (url.endsWith("/agentmemory/livez")) return new Response("ok", { status: 200 });
+      // The actual tool call fails after a healthy probe.
+      return new Response("boom", { status: 500, statusText: "Internal Server Error" });
+    });
+    const localKv = new InMemoryKV(undefined);
+    try {
+      await expect(
+        handleToolCall("memory_save", { content: "must not be stored locally" }, localKv),
+      ).rejects.toThrow();
+      // The error must NOT have been masked by a silent local write.
+      expect(await localKv.list("mem:memories")).toHaveLength(0);
+    } finally {
+      delete process.env["AGENTMEMORY_DISABLE_LOCAL_FALLBACK"];
+    }
+  });
+
+  it("AGENTMEMORY_DISABLE_LOCAL_FALLBACK=1 throws when the server is unreachable (probe path)", async () => {
+    process.env["AGENTMEMORY_DISABLE_LOCAL_FALLBACK"] = "1";
+    installFetch(() => {
+      throw new Error("ECONNREFUSED");
+    });
+    const localKv = new InMemoryKV(undefined);
+    try {
+      await expect(
+        handleToolCall("memory_save", { content: "x" }, localKv),
+      ).rejects.toThrow(/AGENTMEMORY_DISABLE_LOCAL_FALLBACK/);
+      expect(await localKv.list("mem:memories")).toHaveLength(0);
+    } finally {
+      delete process.env["AGENTMEMORY_DISABLE_LOCAL_FALLBACK"];
+    }
+  });
+
+  it("still falls back to local KV when AGENTMEMORY_DISABLE_LOCAL_FALLBACK is unset (no regression)", async () => {
+    delete process.env["AGENTMEMORY_DISABLE_LOCAL_FALLBACK"];
+    installFetch(() => {
+      throw new Error("ECONNREFUSED");
+    });
+    const localKv = new InMemoryKV(undefined);
+    await handleToolCall("memory_save", { content: "local ok" }, localKv);
+    const recall = await handleToolCall("memory_recall", { query: "local" }, localKv);
+    const out = JSON.parse(recall.content[0].text);
+    expect(out.results).toHaveLength(1);
+    expect(out.results[0].content).toBe("local ok");
+  });
+
+  it("tools/list throws on unexpected remote shape when fallback is disabled", async () => {
+    process.env["AGENTMEMORY_DISABLE_LOCAL_FALLBACK"] = "1";
+    process.env["AGENTMEMORY_FORCE_PROXY"] = "1";
+    const { handleToolsList } = await import("../src/mcp/standalone.js");
+    installFetch((url) => {
+      if (url.endsWith("/agentmemory/mcp/tools")) {
+        return new Response(JSON.stringify({ notTools: true }), { status: 200 });
+      }
+      return new Response("ok", { status: 200 });
+    });
+    try {
+      await expect(handleToolsList()).rejects.toThrow(/unexpected remote shape/);
+    } finally {
+      delete process.env["AGENTMEMORY_DISABLE_LOCAL_FALLBACK"];
+      delete process.env["AGENTMEMORY_FORCE_PROXY"];
+    }
+  });
 });
