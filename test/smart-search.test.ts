@@ -137,17 +137,19 @@ describe("Smart Search Function", () => {
     expect(result.results[0]).toHaveProperty("type");
     expect(result.results[0]).toHaveProperty("score");
     expect(result.results[0]).toHaveProperty("timestamp");
+    expect(result.results[0]).toHaveProperty("project", "my-project");
     expect(result.results[0]).not.toHaveProperty("narrative");
   });
 
   it("expand mode returns full observations for given IDs", async () => {
     const result = (await sdk.trigger("mem::smart-search", {
       expandIds: ["obs_1"],
-    })) as { mode: string; results: Array<{ obsId: string; observation: CompressedObservation }> };
+    })) as { mode: string; results: Array<{ obsId: string; project?: string; observation: CompressedObservation }> };
 
     expect(result.mode).toBe("expanded");
     expect(result.results.length).toBe(1);
     expect(result.results[0].observation.title).toBe("Auth handler");
+    expect(result.results[0].project).toBe("my-project");
   });
 
   it("returns error when query is missing and no expandIds", async () => {

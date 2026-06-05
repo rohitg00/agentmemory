@@ -276,7 +276,7 @@ async function handleLocal(
     case "memory_save": {
       const id = generateId("mem");
       const isoNow = new Date().toISOString();
-      await kvInstance.set("mem:memories", id, {
+      const memory = {
         id,
         type: v.type,
         title: (v.content || "").slice(0, 80),
@@ -290,9 +290,10 @@ async function handleLocal(
         isLatest: true,
         sessionIds: [],
         ...(v.project !== undefined && { project: v.project }),
-      });
+      };
+      await kvInstance.set("mem:memories", id, memory);
       kvInstance.persist();
-      return textResponse({ saved: id });
+      return textResponse({ saved: id, memory });
     }
 
     case "memory_recall":
