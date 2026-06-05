@@ -16,6 +16,7 @@ vi.mock("../src/mcp/transport.js", () => ({
 }));
 
 vi.mock("../src/config.js", () => ({
+  getEnvVar: () => undefined,
   getStandalonePersistPath: vi.fn(() => "/tmp/test-standalone.json"),
   isProjectIsolationEnabled: () => false,
 }));

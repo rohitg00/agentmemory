@@ -98,6 +98,10 @@ export const CORE_TOOLS: McpToolDef[] = [
           type: "string",
           description: "Current session ID to exclude",
         },
+        project: {
+          type: "string",
+          description: "Optional project identifier used to scope file history",
+        },
       },
       required: ["files"],
     },
@@ -116,7 +120,15 @@ export const CORE_TOOLS: McpToolDef[] = [
     name: "memory_sessions",
     description:
       "List recent sessions with their status and observation counts.",
-    inputSchema: { type: "object", properties: {} },
+    inputSchema: {
+      type: "object",
+      properties: {
+        project: {
+          type: "string",
+          description: "Optional project identifier used to filter sessions",
+        },
+      },
+    },
   },
   {
     name: "memory_smart_search",

@@ -1,4 +1,4 @@
-import { isProjectIsolationEnabled } from "../config.js";
+import { getEnvVar, isProjectIsolationEnabled } from "../config.js";
 
 export function resolveProjectScope(value: unknown): string | undefined {
   const explicit =
@@ -6,7 +6,7 @@ export function resolveProjectScope(value: unknown): string | undefined {
       ? value.trim()
       : undefined;
   if (explicit) return explicit;
-  const envProject = process.env["AGENTMEMORY_PROJECT_NAME"];
+  const envProject = getEnvVar("AGENTMEMORY_PROJECT_NAME");
   return typeof envProject === "string" && envProject.trim().length > 0
     ? envProject.trim()
     : undefined;

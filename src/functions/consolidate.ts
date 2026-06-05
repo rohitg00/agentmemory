@@ -8,7 +8,7 @@ import type {
 import { KV, generateId } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { recordAudit } from "./audit.js";
-import { requireProjectScope, projectMatchesScope } from "./project-scope.js";
+import { requireProjectScope } from "./project-scope.js";
 
 const CONSOLIDATION_SYSTEM = `You are a memory consolidation engine. Given a set of related observations from coding sessions, synthesize them into a single long-term memory.
 
@@ -166,7 +166,7 @@ export function registerConsolidateFunction(
           const existingMatch = existingMemories.find(
             (m) =>
               m.title.toLowerCase() === parsed.title.toLowerCase() &&
-              (!scopedProject || projectMatchesScope(m.project, scopedProject)),
+              (!scopedProject || m.project === scopedProject),
           );
 
           if (existingMatch) {

@@ -137,6 +137,13 @@ function parseOptionalPositiveInt(value: unknown): number | undefined | null {
   return parsed;
 }
 
+function parseOptionalNonNegativeInt(value: unknown): number | undefined | null {
+  const parsed = parseOptionalFiniteNumber(value);
+  if (parsed === undefined || parsed === null) return parsed;
+  const floored = Math.floor(parsed);
+  return floored >= 0 ? floored : null;
+}
+
 function requireProjectParam(
   value: unknown,
   routeName: string,
@@ -878,9 +885,21 @@ export function registerApiTriggers(
       if (authErr) return authErr;
       const { project, error } = requireProjectParam(req.body?.project, "api::file-context");
       if (error) return { status_code: 400, body: { error } };
+      const body = req.body ?? {};
+      const sessionId = asNonEmptyString(body.sessionId);
+      const files = Array.isArray(body.files)
+        ? body.files
+            .map((file) => (typeof file === "string" ? file.trim() : ""))
+            .filter(Boolean)
+        : [];
+      const payload: { sessionId?: string; files: string[]; project?: string } = {
+        files,
+      };
+      if (sessionId) payload.sessionId = sessionId;
+      if (project !== undefined) payload.project = project;
       const result = await sdk.trigger({
         function_id: "mem::file-context",
-        payload: { ...req.body, project },
+        payload,
       });
       return { status_code: 200, body: result };
     },
@@ -1041,9 +1060,19 @@ export function registerApiTriggers(
       if (authErr) return authErr;
       const { project, error } = requireProjectParam(req.body?.project, "api::consolidate");
       if (error) return { status_code: 400, body: { error } };
+      const minObservations = parseOptionalPositiveInt(req.body?.minObservations);
+      if (minObservations === null) {
+        return {
+          status_code: 400,
+          body: { error: "minObservations must be a positive integer" },
+        };
+      }
+      const payload: { project?: string; minObservations?: number } = {};
+      if (project !== undefined) payload.project = project;
+      if (minObservations !== undefined) payload.minObservations = minObservations;
       const result = await sdk.trigger({
         function_id: "mem::consolidate",
-        payload: { ...req.body, project },
+        payload,
       });
       return { status_code: 200, body: result };
     },
@@ -1245,9 +1274,26 @@ export function registerApiTriggers(
       }
       const { project, error } = requireProjectParam(req.body?.project, "api::timeline");
       if (error) return { status_code: 400, body: { error } };
+      const before = parseOptionalNonNegativeInt(req.body.before);
+      const after = parseOptionalNonNegativeInt(req.body.after);
+      if (before === null || after === null) {
+        return {
+          status_code: 400,
+          body: { error: "before and after must be non-negative numbers" },
+        };
+      }
+      const payload: {
+        anchor: string;
+        project?: string;
+        before?: number;
+        after?: number;
+      } = { anchor: String(req.body.anchor) };
+      if (project !== undefined) payload.project = project;
+      if (before !== undefined) payload.before = before;
+      if (after !== undefined) payload.after = after;
       const result = await sdk.trigger({
         function_id: "mem::timeline",
-        payload: { ...req.body, project },
+        payload,
       });
       return { status_code: 200, body: result };
     },
@@ -1591,15 +1637,29 @@ export function registerApiTriggers(
   });
 
   sdk.registerFunction("api::consolidate-pipeline",
-    async (req: ApiRequest<{ tier?: string }>): Promise<Response> => {
+    async (req: ApiRequest<{ tier?: string; force?: boolean; project?: string }>): Promise<Response> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
       const { project, error } = requireProjectParam(req.body?.project, "api::consolidate-pipeline");
       if (error) return { status_code: 400, body: { error } };
+      const body = req.body ?? {};
+      const tier = typeof body.tier === "string" && body.tier.trim()
+        ? body.tier.trim()
+        : undefined;
+      if (body.tier !== undefined && tier === undefined) {
+        return { status_code: 400, body: { error: "tier must be a non-empty string" } };
+      }
+      if (body.force !== undefined && typeof body.force !== "boolean") {
+        return { status_code: 400, body: { error: "force must be a boolean" } };
+      }
+      const payload: { tier?: string; force?: boolean; project?: string } = {};
+      if (tier !== undefined) payload.tier = tier;
+      if (body.force !== undefined) payload.force = body.force;
+      if (project !== undefined) payload.project = project;
       try {
         const result = await sdk.trigger({
           function_id: "mem::consolidate-pipeline",
-          payload: { ...(req.body || {}), project },
+          payload,
         });
         return { status_code: 200, body: result };
       } catch {

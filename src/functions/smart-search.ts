@@ -5,6 +5,7 @@ import type {
   CompressedObservation,
   HybridSearchResult,
   Lesson,
+  Session,
 } from "../types.js";
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
@@ -216,7 +217,7 @@ export function registerSmartSearchFunction(
               hybridResults.map(async (r) => {
                 const session = await loadSession(r.sessionId);
                 if (session) {
-                  return session.project === project ? r : null;
+                  return projectMatchesScope(session.project, project) ? r : null;
                 }
                 const memProject = await loadMemoryProject(r.observation.id);
                 if (memProject === null) return null;
@@ -398,7 +399,7 @@ async function findObservation(
       const hintedSession = await kv
         .get<{ project?: string }>(KV.sessions, sessionIdHint)
         .catch(() => null);
-      if (hintedSession && hintedSession.project !== project) {
+      if (!hintedSession || !projectMatchesScope(hintedSession.project, project)) {
         return null;
       }
     }
@@ -412,7 +413,7 @@ async function findObservation(
   for (let i = 0; i < sessions.length; i += 5) {
     const batch = sessions
       .slice(i, i + 5)
-      .filter((s) => !project || s.project === project);
+      .filter((s) => !project || projectMatchesScope(s.project, project));
     const results = await Promise.all(
       batch.map((s) =>
         kv.get<CompressedObservation>(KV.observations(s.id), obsId).catch(() => null),

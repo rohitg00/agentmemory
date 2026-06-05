@@ -109,6 +109,24 @@ describe("Lessons", () => {
       expect(second.lesson.confidence).toBeGreaterThan(0.5);
     });
 
+    it("keeps duplicate lesson content separate across projects", async () => {
+      const first = (await sdk.trigger("mem::lesson-save", {
+        content: "Scope lesson by project",
+        project: "api",
+      })) as { action: string; lesson: Lesson };
+
+      const second = (await sdk.trigger("mem::lesson-save", {
+        content: "Scope lesson by project",
+        project: "web",
+      })) as { action: string; lesson: Lesson };
+
+      expect(first.action).toBe("created");
+      expect(second.action).toBe("created");
+      expect(second.lesson.id).not.toBe(first.lesson.id);
+      expect(first.lesson.project).toBe("api");
+      expect(second.lesson.project).toBe("web");
+    });
+
     it("rejects empty content", async () => {
       const result = (await sdk.trigger("mem::lesson-save", {
         content: "",
@@ -213,9 +231,9 @@ describe("Lessons", () => {
       expect(result.lessons[2].confidence).toBe(0.3);
     });
 
-    it("filters by project", async () => {
+    it("includes legacy unscoped lessons in project filters when isolation is off", async () => {
       const result = (await sdk.trigger("mem::lesson-list", { project: "/app" })) as { lessons: Lesson[] };
-      expect(result.lessons.length).toBe(2);
+      expect(result.lessons.length).toBe(3);
     });
 
     it("filters by source", async () => {

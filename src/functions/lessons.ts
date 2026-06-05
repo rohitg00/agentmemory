@@ -32,7 +32,10 @@ export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
       }
       const project = requireProjectScope(data.project, "mem::lesson-save");
 
-      const fp = fingerprintId("lsn", data.content.trim().toLowerCase());
+      const normalizedContent = data.content.trim().toLowerCase();
+      const fp = project
+        ? fingerprintId("lsn", JSON.stringify([project, normalizedContent]))
+        : fingerprintId("lsn", normalizedContent);
       const existing = await kv.get<Lesson>(KV.lessons, fp);
 
       if (existing && !existing.deleted) {

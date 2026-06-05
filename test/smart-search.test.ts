@@ -179,6 +179,27 @@ describe("Smart Search Function", () => {
     expect(result.results.length).toBe(0);
   });
 
+  it("expand mode does not trust a project-scoped orphan session hint", async () => {
+    await kv.set(
+      "mem:obs:orphan_session",
+      "obs_orphan",
+      makeObs({
+        id: "obs_orphan",
+        sessionId: "orphan_session",
+        title: "Orphan project note",
+      }),
+    );
+
+    const result = (await sdk.trigger("mem::smart-search", {
+      expandIds: [{ obsId: "obs_orphan", sessionId: "orphan_session" }],
+      project: "my-project",
+    })) as { mode: string; project?: string; results: unknown[] };
+
+    expect(result.mode).toBe("expanded");
+    expect(result.project).toBe("my-project");
+    expect(result.results).toHaveLength(0);
+  });
+
   it("compact mode records access for every returned observation id (#119)", async () => {
     await sdk.trigger("mem::smart-search", { query: "auth" });
     // recordAccessBatch is fire-and-forget — let the microtask queue drain.

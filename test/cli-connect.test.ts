@@ -269,6 +269,8 @@ describe("agentmemory connect — copilot-cli adapter (mock filesystem)", () => 
         AGENTMEMORY_URL: "${AGENTMEMORY_URL:-http://localhost:3111}",
         AGENTMEMORY_SECRET: "${AGENTMEMORY_SECRET:-}",
         AGENTMEMORY_TOOLS: "${AGENTMEMORY_TOOLS:-all}",
+        AGENTMEMORY_PROJECT_NAME: "${AGENTMEMORY_PROJECT_NAME:-}",
+        AGENTMEMORY_FORCE_PROXY: "${AGENTMEMORY_FORCE_PROXY:-1}",
       },
       tools: ["*"],
     });

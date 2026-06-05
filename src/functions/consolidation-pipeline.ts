@@ -65,7 +65,7 @@ export function registerConsolidationPipelineFunction(
           ? summaries.filter((s) => s.project === project)
           : summaries;
         const scopedSemantic = project
-          ? existingSemantic.filter((s) => projectMatchesScope(s.project, project))
+          ? existingSemantic.filter((s) => s.project === project)
           : existingSemantic;
 
         if (scopedSummaries.length >= 5) {
@@ -185,7 +185,7 @@ export function registerConsolidationPipelineFunction(
               KV.procedural,
             );
             const scopedProcs = project
-              ? existingProcs.filter((p) => projectMatchesScope(p.project, project))
+              ? existingProcs.filter((p) => p.project === project)
               : existingProcs;
 
             while ((match = procRegex.exec(response)) !== null) {
@@ -245,7 +245,7 @@ export function registerConsolidationPipelineFunction(
       if (tier === "all" || tier === "decay") {
         const semantic = await kv.list<SemanticMemory>(KV.semantic);
         const scopedSemantic = project
-          ? semantic.filter((s) => projectMatchesScope(s.project, project))
+          ? semantic.filter((s) => s.project === project)
           : semantic;
         applyDecay(scopedSemantic, decayDays);
         for (const s of scopedSemantic) {
@@ -254,7 +254,7 @@ export function registerConsolidationPipelineFunction(
 
         const procedural = await kv.list<ProceduralMemory>(KV.procedural);
         const scopedProcedural = project
-          ? procedural.filter((p) => projectMatchesScope(p.project, project))
+          ? procedural.filter((p) => p.project === project)
           : procedural;
         applyDecay(scopedProcedural, decayDays);
         for (const p of scopedProcedural) {

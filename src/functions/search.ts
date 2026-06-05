@@ -402,7 +402,7 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
         if (filtering) {
           const s = await loadSession(r.sessionId)
           if (s) {
-            if (projectFilter && s.project !== projectFilter) continue
+            if (projectFilter && !projectMatchesScope(s.project, projectFilter)) continue
             if (cwdFilter && s.cwd !== cwdFilter) continue
           } else {
             // Session not found. Two cases arrive here:
