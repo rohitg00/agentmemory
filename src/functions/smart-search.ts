@@ -72,6 +72,41 @@ export function resetFollowupStatsForTests(): void {
 // full content is fetched via memory_lesson_recall when the caller needs it.
 const LESSON_CONTENT_PREVIEW_CHARS = 240;
 
+// v4-B: detect "who is X" / "what is X" / "what does X mean" patterns
+// and pull out X so we can boost hits that name the concept directly.
+// BM25 already rewards the exact phrase, but for short named-concept
+// queries (typically 2–4 tokens) the question scaffolding ("who is the")
+// adds noise that depresses true matches relative to broader, busier
+// observations. This is the v4-A "careful generator" regression in
+// docs/plans/v4-lineage-test-case-careful-generator.md, surfacing in
+// smart-search rather than lineage.
+const NAMED_CONCEPT_PATTERNS: RegExp[] = [
+  /^\s*who\s+is\s+(?:the\s+|a\s+|an\s+)?(.+?)\s*\??\s*$/i,
+  /^\s*what\s+is\s+(?:the\s+|a\s+|an\s+)?(.+?)\s*\??\s*$/i,
+  /^\s*what(?:'s|\sis)\s+(?:the\s+|a\s+|an\s+)?(.+?)\s*\??\s*$/i,
+  /^\s*what\s+does\s+(.+?)\s+mean\s*\??\s*$/i,
+  /^\s*who(?:'s|\sis)\s+(?:the\s+|a\s+|an\s+)?(.+?)\s*\??\s*$/i,
+];
+
+export function extractNamedConcept(query: string): string | null {
+  if (!query) return null;
+  for (const re of NAMED_CONCEPT_PATTERNS) {
+    const m = re.exec(query);
+    if (m && m[1]) {
+      const phrase = m[1].trim().replace(/[?.!]+$/, "").trim();
+      // Skip degenerate matches (single very short token like "it",
+      // "this") — those aren't real named concepts.
+      if (phrase.length >= 3 && phrase.split(/\s+/).length <= 6) {
+        return phrase;
+      }
+    }
+  }
+  return null;
+}
+
+const NAMED_CONCEPT_TITLE_BOOST = 2.0;
+const NAMED_CONCEPT_BODY_BOOST = 1.3;
+
 export function registerSmartSearchFunction(
   sdk: ISdk,
   kv: StateKV,
@@ -186,30 +221,72 @@ export function registerSmartSearchFunction(
       const lessonLimit = Math.min(limit, 10);
       const includeLessons = data.includeLessons !== false;
 
-      // Over-fetch when filtering. Hybrid search can't filter on
-      // agentId (BM25/vector indexes don't carry it), so we ask the
-      // searcher for more hits than we need and trim post-filter. 3×
-      // is a defensible middle ground: enough headroom for a small
-      // workload, capped at 300 so a 100-limit request never asks for
-      // thousands of hits.
-      const overFetchLimit = filterAgentId
-        ? Math.min(limit * 3, 300)
-        : limit;
-
-      const [hybridResults, lessons] = await Promise.all([
-        searchFn(data.query, overFetchLimit),
+      // Run observation hybrid-search and lesson recall in parallel so the
+      // extra lesson lookup adds no wallclock when the underlying calls
+      // can overlap. Lesson recall is best-effort: if mem::lesson-recall
+      // fails or returns unexpected shape, log + fall back to empty.
+      // Over-fetch when EITHER a named-concept query (post-rank boost
+      // needs material when BM25 mis-ranks the exact match under
+      // question-scaffolding noise) OR an agentId filter is active
+      // (hybrid search can't filter on agentId — BM25/vector indexes
+      // don't carry it — so we trim post-filter). 3×, capped at 300.
+      const namedConcept = extractNamedConcept(data.query);
+      const searchLimit =
+        namedConcept || filterAgentId ? Math.min(limit * 3, 300) : limit;
+      const [rawHybridResults, rawLessons] = await Promise.all([
+        searchFn(data.query, searchLimit),
         includeLessons
-          ? recallLessons(sdk, data.query, lessonLimit, data.project)
+          ? recallLessons(sdk, data.query, lessonLimit, data.project, namedConcept ?? undefined)
           : Promise.resolve([]),
       ]);
 
-      const filteredHybrid = filterAgentId
-        ? hybridResults
-            .filter((r) => r.observation.agentId === filterAgentId)
-            .slice(0, limit)
-        : hybridResults.slice(0, limit);
+      // Filter by agentId first (hybrid indexes can't), then apply the
+      // named-concept boost on the surviving set, then trim to limit.
+      let workingHybrid = filterAgentId
+        ? rawHybridResults.filter((r) => r.observation.agentId === filterAgentId)
+        : rawHybridResults;
+      let lessons = rawLessons;
+      if (namedConcept) {
+        const phrase = namedConcept.toLowerCase();
+        const boostHybrid = (r: HybridSearchResult): HybridSearchResult => {
+          const title = (r.observation.title || "").toLowerCase();
+          const narrative = (r.observation.narrative || "").toLowerCase();
+          // Multiplicative: title AND narrative both match → 2.0 × 1.3 = 2.6×.
+          // CodeRabbit caught the prior else-if capping dual matches at 2.0×.
+          let mult = 1;
+          if (title.includes(phrase)) mult *= NAMED_CONCEPT_TITLE_BOOST;
+          if (narrative.includes(phrase)) mult *= NAMED_CONCEPT_BODY_BOOST;
+          return mult === 1 ? r : { ...r, combinedScore: r.combinedScore * mult };
+        };
+        workingHybrid = workingHybrid
+          .map(boostHybrid)
+          .sort((a, b) => b.combinedScore - a.combinedScore);
+        // Use boostMatched (set by recallLessons against the full
+        // pre-truncation content) instead of re-scanning the 240-char
+        // preview here. Falls back to scanning preview if boostMatched
+        // is absent (recallLessons called without boostPhrase).
+        lessons = rawLessons
+          .map((l) => {
+            const matched =
+              (l as CompactLessonResult & { boostMatched?: boolean }).boostMatched === true ||
+              (typeof l.content === "string" && l.content.toLowerCase().includes(phrase));
+            if (!matched) return l;
+            return { ...l, score: (l.score ?? 0) * NAMED_CONCEPT_TITLE_BOOST };
+          })
+          .sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+        logger.info("Smart search named-concept boost applied", {
+          query: data.query,
+          concept: namedConcept,
+          boostedHybrid: workingHybrid.filter((r) => {
+            const t = (r.observation.title || "").toLowerCase();
+            const n = (r.observation.narrative || "").toLowerCase();
+            return t.includes(phrase) || n.includes(phrase);
+          }).length,
+        });
+      }
+      const hybridResults = workingHybrid.slice(0, limit);
 
-      const compact: CompactSearchResult[] = filteredHybrid.map((r) => ({
+      const compact: CompactSearchResult[] = hybridResults.map((r) => ({
         obsId: r.observation.id,
         sessionId: r.sessionId,
         title: r.observation.title,
@@ -292,6 +369,7 @@ async function recallLessons(
   query: string,
   limit: number,
   project?: string,
+  boostPhrase?: string,
 ): Promise<CompactLessonResult[]> {
   try {
     const result = (await sdk.trigger({
@@ -299,18 +377,28 @@ async function recallLessons(
       payload: { query, limit, project },
     })) as { success?: boolean; lessons?: Array<Lesson & { score?: number }> };
     if (!result?.success || !Array.isArray(result.lessons)) return [];
-    return result.lessons.map((l) => ({
-      lessonId: l.id,
-      content:
-        l.content.length > LESSON_CONTENT_PREVIEW_CHARS
-          ? l.content.slice(0, LESSON_CONTENT_PREVIEW_CHARS) + "…"
-          : l.content,
-      confidence: l.confidence,
-      score: l.score ?? l.confidence,
-      createdAt: l.createdAt,
-      project: l.project,
-      tags: l.tags ?? [],
-    }));
+    const phraseLower = boostPhrase?.toLowerCase();
+    return result.lessons.map((l) => {
+      // Decide boost match against the FULL pre-truncation content so a
+      // phrase that lives past the 240-char preview window can still
+      // signal relevance. CodeRabbit caught this on #571.
+      const boostMatched = phraseLower
+        ? `${l.content ?? ""} ${l.context ?? ""}`.toLowerCase().includes(phraseLower)
+        : false;
+      return {
+        lessonId: l.id,
+        content:
+          l.content.length > LESSON_CONTENT_PREVIEW_CHARS
+            ? l.content.slice(0, LESSON_CONTENT_PREVIEW_CHARS) + "…"
+            : l.content,
+        confidence: l.confidence,
+        score: l.score ?? l.confidence,
+        createdAt: l.createdAt,
+        project: l.project,
+        tags: l.tags ?? [],
+        boostMatched,
+      };
+    });
   } catch (err) {
     logger.warn("Smart search: mem::lesson-recall failed; returning empty lesson list", {
       error: err instanceof Error ? err.message : String(err),
