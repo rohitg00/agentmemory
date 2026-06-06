@@ -189,6 +189,7 @@ class AgentMemoryProvider(MemoryProvider):
         self._base = os.environ.get("AGENTMEMORY_URL", DEFAULT_BASE_URL)
         self._session_id = session_id
         self._project = kwargs.get("cwd", os.getcwd())
+        self._agent_id = kwargs.get("agent_identity") or os.environ.get("AGENTMEMORY_AGENT_ID")
         if os.environ.get("AGENTMEMORY_REQUIRE_HTTPS") == "1":
             _check_plaintext_bearer_guard(self._base, os.environ.get("AGENTMEMORY_SECRET", ""))
 
@@ -196,6 +197,7 @@ class AgentMemoryProvider(MemoryProvider):
             "sessionId": session_id,
             "project": self._project,
             "cwd": self._project,
+            **({"agentId": self._agent_id} if self._agent_id else {}),
         })
 
     def get_config_schema(self) -> list[dict]:
@@ -321,6 +323,7 @@ class AgentMemoryProvider(MemoryProvider):
             result = _api(self._base, "remember", {
                 "content": args["content"],
                 "type": args.get("type", "fact"),
+                **({"agentId": self._agent_id} if self._agent_id else {}),
             })
             return json.dumps(result or {"success": False})
 
@@ -350,6 +353,7 @@ class AgentMemoryProvider(MemoryProvider):
             "project": self._project,
             "cwd": self._project,
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            **({"agentId": self._agent_id} if self._agent_id else {}),
             "data": {
                 "tool_name": "conversation",
                 "tool_input": user[:500],
@@ -378,6 +382,7 @@ class AgentMemoryProvider(MemoryProvider):
             _api_bg(self._base, "remember", {
                 "content": content,
                 "type": "fact",
+                **({"agentId": self._agent_id} if self._agent_id else {}),
             })
 
     def shutdown(self, **kwargs: Any) -> None:

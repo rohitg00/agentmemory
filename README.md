@@ -1225,9 +1225,11 @@ Quality vs cost tradeoff for memory work: compression is a summarization task wi
 
 Sources: [OpenRouter pricing for Sonnet 4.6](https://openrouter.ai/anthropic/claude-sonnet-4.6/pricing), [DeepSeek V4 Pro](https://openrouter.ai/deepseek/deepseek-v4-pro), [DeepSeek pricing notes](https://api-docs.deepseek.com/quick_start/pricing/).
 
-### Multi-agent memory (`AGENT_ID` + `AGENTMEMORY_AGENT_SCOPE`)
+### Multi-agent memory (`AGENT_ID`, `AGENTMEMORY_AGENT_ID` + `AGENTMEMORY_AGENT_SCOPE`)
 
-In multi-agent setups where several roles share one agentmemory server (architect / developer / reviewer / researcher / support-agent), `AGENT_ID` tags every write with the role that made it. `AGENTMEMORY_AGENT_SCOPE` controls whether recall filters by that tag.
+In multi-agent setups where several roles share one agentmemory server (architect / developer / reviewer / researcher / support-agent), `agentId` tags each write with the role or profile that made it. `AGENTMEMORY_AGENT_SCOPE` controls whether recall filters by that tag.
+
+Use `AGENT_ID` as the server default in `~/.agentmemory/.env`:
 
 ```env
 TEAM_ID=company
@@ -1236,6 +1238,26 @@ AGENT_ID=architect
 AGENTMEMORY_AGENT_SCOPE=isolated  # optional; default "shared"
 ```
 
+Use `AGENTMEMORY_AGENT_ID` in an integration or MCP process env when one agentmemory server is shared by multiple clients and each client should identify itself:
+
+Hermes/OpenClaw respective .env file:
+
+```env
+AGENTMEMORY_AGENT_ID=architect
+```
+
+MCP:
+
+```json
+{
+  "env": {
+    "AGENTMEMORY_AGENT_ID": "reviewer"
+  }
+}
+```
+
+The standalone MCP server reads `AGENTMEMORY_AGENT_ID` and forwards it automatically in `memory_save` and `memory_smart_search`, so MCP clients do not need to add `agentId` to every tool call. Direct integrations that support this env var also forward it in their request bodies. If both `AGENTMEMORY_AGENT_ID` and `AGENT_ID` are present in the same process, `AGENTMEMORY_AGENT_ID` wins.
+
 Two modes:
 
 | Mode | Tag writes | Filter recall | When to use |
@@ -1243,13 +1265,13 @@ Two modes:
 | `shared` (default) | yes | no | Cross-agent context with audit trail. Architect can see what developer noted, but every row records who said it. |
 | `isolated` | yes | yes | Strict separation. Architect never sees developer's observations / memories / sessions. |
 
-What gets tagged when `AGENT_ID` is set: `Session.agentId`, `RawObservation.agentId`, `CompressedObservation.agentId`, `Memory.agentId`. The role flows from `api::session::start` → `mem::observe` → `mem::compress` → KV.
+What gets tagged when an agent id is set: `Session.agentId`, `RawObservation.agentId`, `CompressedObservation.agentId`, `Memory.agentId`. The role flows from `api::session::start` → `mem::observe` → `mem::compress` → KV.
 
-What gets filtered in isolated mode: `mem::smart-search`, `/agentmemory/memories`, `/agentmemory/observations`, `/agentmemory/sessions`. Each endpoint accepts `?agentId=<role>` to override per-request, and `?agentId=*` to opt out of the env scope entirely. `/memories` also accepts `?includeOrphans=true` to surface pre-AGENT_ID memories whose `agentId` is undefined.
+What gets filtered in isolated mode: `mem::smart-search`, `/agentmemory/memories`, `/agentmemory/observations`, `/agentmemory/sessions`. Each endpoint accepts `?agentId=<role>` to override per-request, and `?agentId=*` to opt out of the env scope entirely. `/memories` also accepts `?includeOrphans=true` to surface pre-agent-id memories whose `agentId` is undefined.
 
 Per-call override at the SDK / REST layer: every mutating endpoint (`/session/start`, `/remember`) accepts an `agentId` field in the request body that wins over the env. Useful for runtimes routing many roles through one server process.
 
-When `AGENT_ID` is unset, memory remains unscoped (legacy behavior, no tags, no filters).
+When no agent id is set, memory remains unscoped (legacy behavior, no tags, no filters).
 
 ### Ports
 

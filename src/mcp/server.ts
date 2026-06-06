@@ -10,6 +10,7 @@ import type {
 } from "../types.js";
 import { getVisibleTools } from "./tools-registry.js";
 import { timingSafeCompare } from "../auth.js";
+import { getAgentId } from "../config.js";
 
 type McpResponse = {
   status_code: number;
@@ -177,12 +178,14 @@ export function registerMcpEndpoints(
                 ? args.project.trim()
                 : undefined;
 
+            const agentId = getAgentId();
             const result = await sdk.trigger({ function_id: "mem::remember", payload: {
               content: args.content,
               type,
               concepts,
               files,
               ...(project !== undefined && { project }),
+              ...(agentId ? { agentId } : {}),
             } });
             return {
               status_code: 200,
@@ -263,12 +266,14 @@ export function registerMcpEndpoints(
             }
             const expandIds = parseCsvList(args.expandIds).slice(0, 20);
             const limit = Math.max(1, Math.min(100, asNumber(args.limit, 10) ?? 10));
+            const agentId = getAgentId();
             const result = await sdk.trigger({
               function_id: "mem::smart-search",
               payload: {
                 query: args.query,
                 expandIds,
                 limit,
+                ...(agentId ? { agentId } : {}),
               },
             });
             return {

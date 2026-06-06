@@ -159,6 +159,7 @@ const plugin = {
       timeout_ms: api.pluginConfig?.timeout_ms || DEFAULT_TIMEOUT_MS,
     };
     const client = createClient(cfg, api);
+    const agentId = (process.env.AGENTMEMORY_AGENT_ID || "").trim().slice(0, 128) || undefined;
 
     if (typeof api.registerMemoryCapability === "function") {
       api.registerMemoryCapability({
@@ -182,6 +183,7 @@ const plugin = {
       const result = await client.postJson("/agentmemory/smart-search", {
         query: prompt,
         limit: 5,
+        ...(agentId ? { agentId } : {}),
       });
       const block = formatResults(result?.results || []);
       if (!block) return;
@@ -204,6 +206,7 @@ const plugin = {
         hookType: "post_tool_use",
         sessionId,
         timestamp: new Date().toISOString(),
+        ...(agentId ? { agentId } : {}),
         data: {
           tool_name: "conversation",
           tool_input: userText.slice(0, 1000),
