@@ -43,6 +43,10 @@ import { isFirstRun, readPrefs, resetPrefs, writePrefs } from "./cli/preferences
 import { runOnboarding } from "./cli/onboarding.js";
 import { setBootVerbose } from "./logger.js";
 import { VERSION } from "./version.js";
+import {
+  agentmemoryAuthHeaders,
+  agentmemoryJsonHeaders,
+} from "./cli/http-auth.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
@@ -1273,12 +1277,9 @@ async function main() {
 
 async function apiFetch<T = unknown>(base: string, path: string, timeoutMs = 5000): Promise<T | null> {
   try {
-    const headers: Record<string, string> = {};
-    const secret = process.env["AGENTMEMORY_SECRET"];
-    if (secret) headers["Authorization"] = `Bearer ${secret}`;
     const res = await fetch(`${base}/agentmemory/${path}`, {
       signal: AbortSignal.timeout(timeoutMs),
-      headers,
+      headers: agentmemoryAuthHeaders(),
     });
     return (await res.json()) as T;
   } catch {
@@ -1916,7 +1917,7 @@ async function postJson<T = unknown>(
   try {
     const res = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: agentmemoryJsonHeaders(),
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(timeoutMs),
     });
@@ -1934,7 +1935,7 @@ async function postJsonStrict<T = unknown>(
 ): Promise<T | null> {
   const res = await fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: agentmemoryJsonHeaders(),
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(timeoutMs),
   });
@@ -1976,7 +1977,7 @@ async function seedDemoSession(
     try {
       const res = await fetch(url, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: agentmemoryJsonHeaders(),
         body: JSON.stringify(payload),
         signal: AbortSignal.timeout(5000),
       });
