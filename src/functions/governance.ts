@@ -19,6 +19,7 @@ export function registerGovernanceFunction(sdk: ISdk, kv: StateKV): void {
       }
 
       let deleted = 0;
+      const notFound: string[] = [];
       for (const id of data.memoryIds) {
         const mem = await kv.get<Memory>(KV.memories, id);
         if (mem) {
@@ -27,6 +28,8 @@ export function registerGovernanceFunction(sdk: ISdk, kv: StateKV): void {
           getSearchIndex().remove(id);
           vectorIndexRemove(id);
           deleted++;
+        } else {
+          notFound.push(id);
         }
       }
 
@@ -40,14 +43,24 @@ export function registerGovernanceFunction(sdk: ISdk, kv: StateKV): void {
         {
           reason: data.reason || "manual deletion",
           deleted,
+          ...(notFound.length > 0 ? { notFound } : {}),
         },
       );
 
       logger.info("Governance delete", {
         requested: data.memoryIds.length,
         deleted,
+        notFound: notFound.length,
       });
-      return { success: true, deleted, total: data.memoryIds.length };
+      // success only when every requested ID was actually removed —
+      // a no-op delete reporting success hid real data-retention bugs
+      // (observation IDs passed here never match the memories store).
+      return {
+        success: notFound.length === 0,
+        deleted,
+        total: data.memoryIds.length,
+        ...(notFound.length > 0 ? { notFound } : {}),
+      };
     },
   );
 

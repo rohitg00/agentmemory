@@ -96,17 +96,56 @@ describe("Governance Functions", () => {
     expect(remaining.length).toBe(2);
   });
 
-  it("governance-delete handles non-existent IDs gracefully", async () => {
+  it("governance-delete reports non-existent IDs instead of claiming success (#833)", async () => {
     const result = (await sdk.trigger("mem::governance-delete", {
       memoryIds: ["nonexistent_1", "nonexistent_2"],
-    })) as { success: boolean; deleted: number; total: number };
+    })) as {
+      success: boolean;
+      deleted: number;
+      total: number;
+      notFound?: string[];
+    };
 
-    expect(result.success).toBe(true);
+    expect(result.success).toBe(false);
     expect(result.deleted).toBe(0);
     expect(result.total).toBe(2);
+    expect(result.notFound).toEqual(["nonexistent_1", "nonexistent_2"]);
 
     const remaining = await kv.list("mem:memories");
     expect(remaining.length).toBe(3);
+  });
+
+  it("governance-delete flags partial deletes with the missing IDs (#833)", async () => {
+    const result = (await sdk.trigger("mem::governance-delete", {
+      memoryIds: ["mem_1", "obs_unknown"],
+    })) as {
+      success: boolean;
+      deleted: number;
+      total: number;
+      notFound?: string[];
+    };
+
+    expect(result.success).toBe(false);
+    expect(result.deleted).toBe(1);
+    expect(result.total).toBe(2);
+    expect(result.notFound).toEqual(["obs_unknown"]);
+
+    const remaining = await kv.list("mem:memories");
+    expect(remaining.length).toBe(2);
+  });
+
+  it("governance-delete omits notFound when every ID was deleted", async () => {
+    const result = (await sdk.trigger("mem::governance-delete", {
+      memoryIds: ["mem_1", "mem_2"],
+    })) as {
+      success: boolean;
+      deleted: number;
+      notFound?: string[];
+    };
+
+    expect(result.success).toBe(true);
+    expect(result.deleted).toBe(2);
+    expect(result.notFound).toBeUndefined();
   });
 
   it("governance-bulk deletes by type filter", async () => {
