@@ -11,14 +11,18 @@ The user wants to remove data from agentmemory: $ARGUMENTS
 
 Steps:
 
-1. First search for matching observations with the `memory_smart_search` MCP tool (provided by the agentmemory server this plugin wires up via `.mcp.json`). Use the user's input as the `query` with `limit: 20`.
+1. First search for matching data with the `memory_smart_search` MCP tool (provided by the agentmemory server this plugin wires up via `.mcp.json`). Use the user's input as the `query` with `limit: 20`.
 2. Show the user what was found — session IDs, observation IDs, titles — and ask for explicit confirmation before deleting.
-3. Once confirmed, call `memory_governance_delete` with:
-   - `memoryIds: [<id>, ...]` — an array (or comma-separated string) of the memory IDs returned by the search in step 1
-   - `reason: "<short reason>"` — optional, defaults to `"plugin skill request"`
+3. Once confirmed, pick the tool that matches what is being deleted:
+   - **Observations or sessions** (`obs_*` IDs, `ses_*` IDs) → call `memory_forget` with:
+     - `sessionId: "<ses_*>"` — the session the observations belong to
+     - `observationIds: "<obs_1>,<obs_2>"` — optional; omit it to delete ALL of the session's observations plus the session record and its summary
+   - **Saved memories** (`mem_*` IDs) → call `memory_governance_delete` with:
+     - `memoryIds: [<id>, ...]` — an array (or comma-separated string) of memory IDs
+     - `reason: "<short reason>"` — optional, defaults to `"plugin skill request"`
 
-   If the user wants to drop an entire session's observations, collect every memory ID in that session from the search results and pass them all via `memoryIds`. The standalone MCP doesn't accept a bare `sessionId` argument — it deletes by memory ID only.
-4. Confirm the deletion count back to the user.
+   Do NOT pass observation IDs to `memory_governance_delete` — it only targets the saved-memories store and will report them back in `notFound` without deleting anything.
+4. Confirm the deletion count back to the user from the tool result (`deleted`, `observationsDeleted`, `sessionDeleted`, or `notFound`). If `notFound` is non-empty or `success` is `false`, tell the user which IDs were not deleted instead of reporting success.
 
 **Never delete without explicit user confirmation.** If the MCP tools aren't available, the stdio MCP shim didn't start — tell the user to:
 1. Run `/plugin list` in Claude Code and confirm `agentmemory` shows as enabled.
