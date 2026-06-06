@@ -6,7 +6,9 @@ import { withKeyedLock } from "../state/keyed-mutex.js";
 import { logger } from "../logger.js";
 import type { StateScope, StateScopeKey } from "../types.js";
 
-const DISK_SIZE_KEY: StateScopeKey = "system:currentDiskSize";
+// `satisfies` keeps the literal type so StateScope[typeof DISK_SIZE_KEY]
+// stays `number` even now that StateScope has more than one key.
+const DISK_SIZE_KEY = "system:currentDiskSize" satisfies StateScopeKey;
 
 export function registerDiskSizeManager(sdk: ISdk, kv: StateKV): void {
   sdk.registerFunction(

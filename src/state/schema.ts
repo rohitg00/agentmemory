@@ -57,6 +57,10 @@ export const KV = {
   sentinels: "mem:sentinels",
   crystals: "mem:crystals",
   lessons: "mem:lessons",
+  // #345 Phase 1: concept co-occurrence edges. Key is the canonical
+  // unordered pair `${a}|${b}` (lexicographic), one row per pair —
+  // the Phase 2 traversal adapter treats the graph as undirected.
+  conceptEdges: "mem:concept-edges",
   insights: "mem:insights",
   graphEdgeHistory: "mem:graph:edge-history",
   enrichedChunks: (sessionId: string) => `mem:enriched:${sessionId}`,

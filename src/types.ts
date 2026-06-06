@@ -810,6 +810,23 @@ export interface Lesson {
   deleted?: boolean;
 }
 
+/**
+ * #345 Phase 1 — concept co-occurrence edge. One row per unordered
+ * concept pair, derived whenever a memory (or compressed observation)
+ * carries 2+ concepts. Strength reinforces on repeated co-occurrence
+ * via the same saturation curve lessons use, so the lifecycle profile
+ * stays consistent across surfaces. Traversal lands in Phase 2.
+ */
+export interface ConceptEdge {
+  from: string;
+  to: string;
+  strength: number;
+  lastSeenAt: string;
+  reinforcements: number;
+  createdAt: string;
+  decayRate: number;
+}
+
 export interface Insight {
   id: string;
   title: string;
@@ -939,6 +956,7 @@ export interface DecayConfig {
  */
 export interface StateScope {
   "system:currentDiskSize": number;
+  "migrations:concept-edges-backfill": boolean;
 }
 
 export type StateScopeKey = keyof StateScope;
