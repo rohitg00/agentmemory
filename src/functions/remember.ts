@@ -157,6 +157,24 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
           });
         }
 
+        // #345 Phase 1: concept_edges populate as memories are
+        // remembered. Fire-and-forget — same non-blocking contract as
+        // cascade-update above.
+        if (memory.concepts.length >= 2) {
+          try {
+            await sdk.trigger({
+              function_id: "mem::concept-edges-derive",
+              payload: { concepts: memory.concepts },
+              action: TriggerAction.Void(),
+            });
+          } catch (err) {
+            logger.warn("Non-fatal concept-edge derivation failure", {
+              memId: memory.id,
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }
+        }
+
         logger.info("Memory saved", {
           memId: memory.id,
           type: memory.type,

@@ -192,6 +192,24 @@ export function registerCompressFunction(
           { kind: "observation", logId: compressed.id },
         );
 
+        // #345 Phase 1: derive concept co-occurrence edges from the
+        // freshly extracted concepts[]. Fire-and-forget — edge upkeep
+        // must never block or fail the compression itself.
+        if (compressed.concepts.length >= 2) {
+          try {
+            await sdk.trigger({
+              function_id: "mem::concept-edges-derive",
+              payload: { concepts: compressed.concepts },
+              action: TriggerAction.Void(),
+            });
+          } catch (err) {
+            logger.warn("Non-fatal concept-edge derivation failure", {
+              obsId: compressed.id,
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }
+        }
+
         const streamResults = await Promise.allSettled([
           sdk.trigger({
             function_id: "stream::set",

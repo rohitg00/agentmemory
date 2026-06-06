@@ -46,6 +46,7 @@ import { registerFileIndexFunction } from "./functions/file-index.js";
 import { registerConsolidateFunction } from "./functions/consolidate.js";
 import { registerPatternsFunction } from "./functions/patterns.js";
 import { registerRememberFunction } from "./functions/remember.js";
+import { registerConceptEdgesFunction } from "./functions/concept-edges.js";
 import { registerEvictFunction } from "./functions/evict.js";
 import { registerRelationsFunction } from "./functions/relations.js";
 import { registerTimelineFunction } from "./functions/timeline.js";
@@ -249,6 +250,7 @@ async function main() {
   registerConsolidateFunction(sdk, kv, provider);
   registerPatternsFunction(sdk, kv);
   registerRememberFunction(sdk, kv);
+  registerConceptEdgesFunction(sdk, kv);
   registerEvictFunction(sdk, kv);
 
   registerRelationsFunction(sdk, kv);
@@ -508,6 +510,30 @@ async function main() {
         err,
       );
     }
+  }
+
+  // #345 Phase 1: one-shot backfill of concept_edges from existing
+  // memories' concepts[]. Guarded by a migrations flag in KV.state so
+  // it runs once per deployment; the function itself also
+  // short-circuits when edges already exist, so a crash between
+  // backfill and flag write cannot double-reinforce on the next boot.
+  try {
+    const migrated = await kv.get<
+      import("./types.js").StateScope["migrations:concept-edges-backfill"]
+    >(KV.state, "migrations:concept-edges-backfill");
+    if (migrated !== true) {
+      const result = (await sdk.trigger({
+        function_id: "mem::concept-edges-backfill",
+        payload: {},
+      })) as { memoriesWalked?: number; edgesTouched?: number };
+      if (result?.memoriesWalked) {
+        bootLog(
+          `Concept edges backfilled: ${result.edgesTouched} pairs from ${result.memoriesWalked} memories (#345 Phase 1)`,
+        );
+      }
+    }
+  } catch (err) {
+    console.warn(`[agentmemory] Concept-edges backfill failed:`, err);
   }
 
   // Ready / Endpoints lines are emitted via `bootLog` so they're
