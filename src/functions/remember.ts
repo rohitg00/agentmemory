@@ -258,7 +258,13 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
       }
 
       logger.info("Memory forgotten", { deleted });
-      return { success: true, deleted };
+      return {
+        success: true,
+        deleted,
+        memoriesDeleted: deletedMemoryIds.length,
+        observationsDeleted: deletedObservationIds.length,
+        sessionDeleted: deletedSession,
+      };
     },
   );
 }

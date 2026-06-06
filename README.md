@@ -58,7 +58,7 @@
 <p align="center">
   <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-recall.svg"><img src="assets/tags/stat-recall.svg" alt="95.2% retrieval R@5" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-tokens.svg"><img src="assets/tags/stat-tokens.svg" alt="92% fewer tokens" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-tools.svg"><img src="assets/tags/stat-tools.svg" alt="53 MCP tools" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-tools.svg"><img src="assets/tags/stat-tools.svg" alt="54 MCP tools" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-hooks.svg"><img src="assets/tags/stat-hooks.svg" alt="12 auto hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-deps.svg"><img src="assets/tags/stat-deps.svg" alt="0 external DBs" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-tests.svg"><img src="assets/tags/stat-tests.svg" alt="1,390+ tests passing" height="38" /></picture>
@@ -444,7 +444,7 @@ Implementation details live in `src/cli.ts` (see `runUpgrade` around the `src/cl
 ### Claude Code (one block, paste it)
 
 ```text
-Install agentmemory: run `npx @agentmemory/agentmemory` in a separate terminal to start the memory server. Then run `/plugin marketplace add rohitg00/agentmemory` and `/plugin install agentmemory` — the plugin registers all 12 hooks, 8 skills, AND auto-wires the `@agentmemory/mcp` stdio server via its `.mcp.json`, so you get 53 MCP tools (memory_smart_search, memory_save, memory_sessions, memory_governance_delete, etc.) without any extra config step. Verify with `curl http://localhost:3111/agentmemory/health`. The real-time viewer is at http://localhost:3113.
+Install agentmemory: run `npx @agentmemory/agentmemory` in a separate terminal to start the memory server. Then run `/plugin marketplace add rohitg00/agentmemory` and `/plugin install agentmemory` — the plugin registers all 12 hooks, 8 skills, AND auto-wires the `@agentmemory/mcp` stdio server via its `.mcp.json`, so you get 54 MCP tools (memory_smart_search, memory_save, memory_sessions, memory_governance_delete, etc.) without any extra config step. Verify with `curl http://localhost:3111/agentmemory/health`. The real-time viewer is at http://localhost:3113.
 ```
 
 #### Claude Code without the plugin install (MCP-standalone path)
@@ -473,7 +473,7 @@ codex plugin add agentmemory@agentmemory
 
 The Codex plugin ships from the same `plugin/` directory as the Claude Code plugin. It registers:
 
-- `@agentmemory/mcp` as an MCP server (proxies all 53 tools when `AGENTMEMORY_URL` points at a running agentmemory server; falls back to 7 tools locally when no server is reachable)
+- `@agentmemory/mcp` as an MCP server (proxies all 54 tools when `AGENTMEMORY_URL` points at a running agentmemory server; falls back to 7 tools locally when no server is reachable)
 - 6 lifecycle hooks: `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PreCompact`, `Stop`
 - 8 skills: `/recall`, `/remember`, `/session-history`, `/forget`, `/recap`, `/handoff`, `/commit-context`, `/commit-history`
 
@@ -507,7 +507,7 @@ copilot plugin install rohitg00/agentmemory:plugin
 <summary><b>OpenClaw (paste this prompt)</b></summary>
 
 ```text
-Install agentmemory for OpenClaw. Run `npx @agentmemory/agentmemory` in a separate terminal to start the memory server on localhost:3111. Then add this to my OpenClaw MCP config so agentmemory is available with all 53 memory tools:
+Install agentmemory for OpenClaw. Run `npx @agentmemory/agentmemory` in a separate terminal to start the memory server on localhost:3111. Then add this to my OpenClaw MCP config so agentmemory is available with all 54 memory tools:
 
 {
   "mcpServers": {
@@ -532,7 +532,7 @@ Full guide: [`integrations/openclaw/`](integrations/openclaw/)
 <summary><b>Hermes Agent (paste this prompt)</b></summary>
 
 ```text
-Install agentmemory for Hermes. Run `npx @agentmemory/agentmemory` in a separate terminal to start the memory server on localhost:3111. Then add this to ~/.hermes/config.yaml so Hermes can use agentmemory as an MCP server with all 53 memory tools:
+Install agentmemory for Hermes. Run `npx @agentmemory/agentmemory` in a separate terminal to start the memory server on localhost:3111. Then add this to ~/.hermes/config.yaml so Hermes can use agentmemory as an MCP server with all 54 memory tools:
 
 mcp_servers:
   agentmemory:
@@ -889,9 +889,9 @@ npm install @xenova/transformers
 
 <h2 id="mcp-server"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/section-mcp.svg"><img src="assets/tags/section-mcp.svg" alt="MCP Server" height="32" /></picture></h2>
 
-53 tools, 6 resources, 3 prompts, and 8 skills — the most comprehensive MCP memory toolkit for any agent.
+54 tools, 6 resources, 3 prompts, and 8 skills — the most comprehensive MCP memory toolkit for any agent.
 
-> **MCP shim vs full server:** the published `@agentmemory/mcp` package is a thin shim. It exposes the full 53-tool surface **only when it can reach a running agentmemory server** via `AGENTMEMORY_URL` (proxy mode). With no server reachable, the shim falls back to a 7-tool local set (`memory_save`, `memory_recall`, `memory_smart_search`, `memory_sessions`, `memory_export`, `memory_audit`, `memory_governance_delete`). The `AGENTMEMORY_TOOLS=core|all` env var is a *server-side* flag — setting it in the shim's `env` block has no effect. If you see only 7 tools in Cursor / OpenCode / Gemini CLI, start `npx @agentmemory/agentmemory` (or the Docker stack) and set `AGENTMEMORY_URL=http://localhost:3111`.
+> **MCP shim vs full server:** the published `@agentmemory/mcp` package is a thin shim. It exposes the full 54-tool surface **only when it can reach a running agentmemory server** via `AGENTMEMORY_URL` (proxy mode). With no server reachable, the shim falls back to a 7-tool local set (`memory_save`, `memory_recall`, `memory_smart_search`, `memory_sessions`, `memory_export`, `memory_audit`, `memory_governance_delete`). The `AGENTMEMORY_TOOLS=core|all` env var is a *server-side* flag — setting it in the shim's `env` block has no effect. If you see only 7 tools in Cursor / OpenCode / Gemini CLI, start `npx @agentmemory/agentmemory` (or the Docker stack) and set `AGENTMEMORY_URL=http://localhost:3111`.
 
 ### 53 Tools
 
@@ -1423,7 +1423,7 @@ Create `~/.agentmemory/.env`:
 # USER_ID=
 # TEAM_MODE=private
 
-# Tool visibility: "core" (8 tools, lean fallback) or "all" (53 tools)
+# Tool visibility: "core" (8 tools, lean fallback) or "all" (54 tools)
 # AGENTMEMORY_TOOLS=core
 ```
 
