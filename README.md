@@ -87,6 +87,12 @@
 
 ## Install
 
+Fastest path if you use a coding agent: hand it this one instruction and it installs, wires, and verifies agentmemory end to end.
+
+> Retrieve and follow the instructions at: https://raw.githubusercontent.com/rohitg00/agentmemory/main/INSTALL_FOR_AGENTS.md
+
+On Windows the fast path is WSL2. Native Windows engine setup is manual (about 10 to 20 minutes) and `agentmemory connect` is currently unsupported there. See the [Windows notes](#windows) below for the step-by-step.
+
 ```bash
 npm install -g @agentmemory/agentmemory          # once — bare `agentmemory` on PATH
 # If you hit EACCES on macOS/Linux system Node installs, retry with:

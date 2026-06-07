@@ -25,7 +25,8 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import * as p from "@clack/prompts";
-import { writePrefs } from "./preferences.js";
+import { appendFileSync, readFileSync } from "node:fs";
+import { readPrefs, writePrefs } from "./preferences.js";
 import { resolveAdapter, runAdapter } from "./connect/index.js";
 import type { ConnectResult } from "./connect/types.js";
 
@@ -67,6 +68,14 @@ const PROVIDERS: { value: string; label: string; envKey: string | null }[] = [
   { value: "minimax", label: "MiniMax — minimax-m1", envKey: "MINIMAX_API_KEY" },
   { value: "skip", label: "Skip — BM25-only mode (no LLM key)", envKey: null },
 ];
+
+const PROVIDER_COST_HINTS: Record<string, string> = {
+  anthropic: "rough cost: a fast Haiku-class model keeps compress/consolidate at fractions of a cent per session.",
+  openai: "rough cost: a mini-class model keeps compress/consolidate at fractions of a cent per session.",
+  gemini: "rough cost: a Flash-class model keeps compress/consolidate at fractions of a cent per session.",
+  openrouter: "rough cost: pick a small model; spend tracks your chosen model's per-token price.",
+  minimax: "rough cost: scales with the MiniMax model price per token.",
+};
 
 export function buildAgentOptions(): { value: string; label: string; hint?: string }[] {
   return [
@@ -219,7 +228,16 @@ export async function runOnboarding(): Promise<OnboardingResult> {
   const provider = providerPicked === "skip" ? null : providerPicked;
   const agents = (agentsPicked as string[]) ?? [];
 
+  if (provider) {
+    const hint = PROVIDER_COST_HINTS[provider];
+    if (hint) {
+      p.log.info(hint);
+    }
+  }
+
   const envPath = await seedEnvFile(provider);
+
+  await maybePromptContextInjection(envPath);
 
   writePrefs({
     lastAgent: agents[0] ?? null,
@@ -251,6 +269,54 @@ export async function runOnboarding(): Promise<OnboardingResult> {
   }
 
   return { agents, provider };
+}
+
+function enableInjectContextInEnv(envPath: string | null): boolean {
+  if (!envPath || !existsSync(envPath)) return false;
+  try {
+    const current = readFileSync(envPath, "utf-8");
+    if (/^\s*AGENTMEMORY_INJECT_CONTEXT\s*=\s*true\b/m.test(current)) {
+      return true;
+    }
+    const prefix = current.length > 0 && !current.endsWith("\n") ? "\n" : "";
+    appendFileSync(envPath, `${prefix}AGENTMEMORY_INJECT_CONTEXT=true\n`, { mode: 0o600 });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function maybePromptContextInjection(envPath: string | null): Promise<void> {
+  if (readPrefs().injectContextChosen) return;
+
+  const enable = await p.confirm({
+    message: "Enable automatic context injection so the agent recalls past sessions without being asked? [y/N]",
+    initialValue: false,
+  });
+
+  if (p.isCancel(enable)) {
+    p.cancel("Setup cancelled. Re-run any time with: agentmemory --reset");
+    process.exit(0);
+  }
+
+  p.log.info(
+    "Cost note: injection spends session tokens proportional to tool-call frequency. Default is off.",
+  );
+
+  writePrefs({ injectContextChosen: true });
+
+  if (enable === true) {
+    const wrote = enableInjectContextInEnv(envPath);
+    if (wrote) {
+      p.log.success("Context injection enabled (AGENTMEMORY_INJECT_CONTEXT=true).");
+    } else {
+      p.log.warn(
+        "Could not update ~/.agentmemory/.env. Set AGENTMEMORY_INJECT_CONTEXT=true there to enable it.",
+      );
+    }
+  } else {
+    p.log.info("Context injection left off. Set AGENTMEMORY_INJECT_CONTEXT=true later to enable.");
+  }
 }
 
 async function wireSelectedAgents(agents: string[]): Promise<void> {
