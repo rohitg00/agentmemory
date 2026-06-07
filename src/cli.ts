@@ -2171,6 +2171,10 @@ async function runDemo() {
   } finally {
     await teardown();
   }
+
+  if (serve) {
+    process.exit(0);
+  }
 }
 
 async function runDemoBody(base: string) {
