@@ -19,7 +19,7 @@ memory_commit_lookup { "sha": "9a1b2c3d4e5f60718293a4b5c6d7e8f901234567" }
 
 Expected output:
 
-```
+```text
 9a1b2c3 on main by dev: "rotate refresh tokens"
 Linked session 7f3a9c2 "Auth refresh rework", 14 obs.
 ```

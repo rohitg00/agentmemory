@@ -18,7 +18,7 @@ Pick the most recent session whose `cwd` matches this project, then:
 
 Expected output:
 
-```
+```text
 Resuming 7f3a9c2 "Auth refresh rework".
 Open question: should logout revoke all device tokens or just the current one?
 Next step: decide revoke scope, then update auth/logout.ts.

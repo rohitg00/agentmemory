@@ -28,8 +28,8 @@ Endpoint map by skill:
 | --------------- | --------------------------------------------------------------- |
 | remember        | `POST /agentmemory/remember`                                     |
 | recall          | `POST /agentmemory/smart-search`                                 |
-| recap           | `GET /agentmemory/sessions` + `POST /agentmemory/recall`         |
-| handoff         | `GET /agentmemory/sessions` + `POST /agentmemory/recall`         |
+| recap           | `GET /agentmemory/sessions` + `POST /agentmemory/smart-search`   |
+| handoff         | `GET /agentmemory/sessions` + `POST /agentmemory/smart-search`   |
 | session-history | `GET /agentmemory/sessions`                                      |
 | commit-context  | `GET /agentmemory/session/by-commit?sha=<sha>`                   |
 | commit-history  | `GET /agentmemory/commits` (URL-encode every query param)       |

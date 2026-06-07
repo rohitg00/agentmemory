@@ -14,7 +14,7 @@ memory_sessions { "limit": 20 }
 
 Expected output:
 
-```
+```text
 7f3a9c2 · app · 2026-06-07 09:00 · completed · 14 obs
   - decision: Rotate refresh tokens on every use
 b21d004 · app · 2026-06-05 14:00 · completed · 9 obs

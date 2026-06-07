@@ -8,7 +8,7 @@ agentmemory skills follow one tiered format so they stay skimmable, accurate, an
 
 ## Directory layout
 
-```
+```text
 plugin/skills/<name>/
   SKILL.md      (required, under 100 lines)
   REFERENCE.md  (optional, dense facts; auto-generate data tables)

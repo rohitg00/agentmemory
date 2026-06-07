@@ -63,7 +63,7 @@ Present:
 
 REST fallback for this same call, with encoding:
 
-```
+```http
 GET /agentmemory/commits?branch=release-2.0&limit=100
 ```
 

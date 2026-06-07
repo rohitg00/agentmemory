@@ -21,7 +21,7 @@ memory_governance_delete { "memoryIds": ["abc12345", "def67890"], "reason": "use
 
 Expected output:
 
-```
+```text
 Found 2 matching memories. Confirmed. Deleted 2 memories.
 ```
 

@@ -10,7 +10,7 @@ The Claude Code plugin registers lifecycle hooks so memory is captured automatic
 
 Install the plugin and the hooks register themselves:
 
-```
+```bash
 /plugin marketplace add rohitg00/agentmemory
 /plugin install agentmemory
 ```

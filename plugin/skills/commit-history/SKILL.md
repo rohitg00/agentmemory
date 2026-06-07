@@ -15,7 +15,7 @@ memory_commits { "branch": "main", "limit": 20 }
 
 Expected output:
 
-```
+```text
 9a1b2c3 main 2026-06-07 "rotate refresh tokens" · session 7f3a9c2 (14 obs)
 b21d004 main 2026-06-05 "rate limiter audit"    · session b21d004 (9 obs)
 ```

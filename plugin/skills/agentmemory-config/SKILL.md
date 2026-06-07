@@ -10,7 +10,7 @@ agentmemory reads configuration from the environment and from `~/.agentmemory/.e
 
 Enable richer memory and set a provider key in `~/.agentmemory/.env`:
 
-```
+```env
 ANTHROPIC_API_KEY=sk-ant-...
 AGENTMEMORY_AUTO_COMPRESS=true
 AGENTMEMORY_INJECT_CONTEXT=true

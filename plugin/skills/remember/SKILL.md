@@ -19,7 +19,7 @@ memory_save {
 
 Expected output:
 
-```
+```text
 Saved memory abc12345 with 3 concepts: jwt-refresh-rotation, token-revocation, auth-flow.
 ```
 

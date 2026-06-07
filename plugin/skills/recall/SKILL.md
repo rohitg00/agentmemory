@@ -15,7 +15,7 @@ memory_smart_search { "query": "jwt refresh token rotation", "limit": 10 }
 
 Expected output:
 
-```
+```text
 2 results across 2 sessions.
 [importance 8] decision · "Rotate refresh tokens on every use" (session 7f3a9c21)
 [importance 5] code · "limit.ts counts per-IP" (session b21d004e)

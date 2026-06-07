@@ -17,7 +17,7 @@ Then per surviving session: `memory_recall { "query": "<top concepts>", "limit":
 
 Expected output:
 
-```
+```text
 2026-06-07
   7f3a9c2 · "Auth refresh rework" · 14 obs · completed
     - [8] Rotate refresh tokens on every use
