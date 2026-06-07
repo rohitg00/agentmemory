@@ -43,6 +43,10 @@ import { isFirstRun, readPrefs, resetPrefs, writePrefs } from "./cli/preferences
 import { runOnboarding } from "./cli/onboarding.js";
 import { setBootVerbose } from "./logger.js";
 import { VERSION } from "./version.js";
+import { getAllTools, ESSENTIAL_TOOLS } from "./mcp/tools-registry.js";
+
+const ALL_TOOLS_COUNT = getAllTools().length;
+const CORE_TOOLS_COUNT = getAllTools().filter((t) => ESSENTIAL_TOOLS.has(t.name)).length;
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
@@ -136,7 +140,9 @@ Commands:
                      --dry-run: show what each fix would do, don't execute
   remove             Cleanly uninstall agentmemory (pidfile, state, .env, binaries).
                      --force: skip confirmations · --keep-data: keep memory data
-  demo               Seed sample sessions and show recall in action
+  demo [--serve]     Seed sample sessions and show recall in action.
+                     --serve boots the server, runs the demo, and stops it
+                     in one command (no second terminal).
   upgrade            Upgrade local deps + iii runtime (best effort)
   stop [--force]     Stop the running iii-engine started by this CLI.
                      --force bypasses the Docker-heuristic guard and signals
@@ -152,7 +158,7 @@ Options:
   --help, -h         Show this help
   --verbose, -v      Show engine stderr, boot log, and diagnostic info
   --reset            Wipe ~/.agentmemory/preferences.json and re-run onboarding
-  --tools all|core   Tool visibility (default: all = 51 tools; core = 8 essentials)
+  --tools all|core   Tool visibility (default: all = ${ALL_TOOLS_COUNT} tools; core = ${CORE_TOOLS_COUNT} essentials)
   --no-engine        Skip auto-starting iii-engine
   --port <N>         Override REST port (default: 3111). Streams (N+1), viewer
                      (N+2), and iii engine (N+46023) auto-derive from N so a
@@ -1197,15 +1203,11 @@ async function main() {
     if (attachedBin) {
       const detected = iiiBinVersion(attachedBin);
       if (detected && detected !== IIPINNED_VERSION) {
-        p.log.error(
-          `Attached iii-engine appears to be v${detected} (from ${attachedBin}) ` +
-            `but agentmemory v${VERSION} hard-pins v${IIPINNED_VERSION}. ` +
-            `Engine API drift causes runtime failures (e.g. state::list-not-found on v0.13.0+). ` +
-            `Stop the running engine (\`agentmemory stop --force\`) and re-run \`agentmemory\` ` +
-            `to install the pinned engine into ~/.agentmemory/bin without touching ${attachedBin}. ` +
-            `Or set AGENTMEMORY_III_VERSION=${detected} to override at your own risk.`,
+        p.log.warn(
+          `iii on PATH is v${detected} (from ${attachedBin}) but agentmemory v${VERSION} pins v${IIPINNED_VERSION}. ` +
+            `agentmemory will use its own pinned engine in ~/.agentmemory/bin and leaves ${attachedBin} untouched. ` +
+            `If you want agentmemory to track a different engine, set AGENTMEMORY_III_VERSION=${detected}.`,
         );
-        process.exit(1);
       }
     }
     adoptRunningEngine();
@@ -2100,19 +2102,78 @@ async function runInit() {
   p.outro(`Edit ${target} and you're set.`);
 }
 
+async function startServerForDemo(): Promise<() => Promise<void>> {
+  if (await isAgentmemoryReady()) {
+    return async () => {};
+  }
+
+  const startedEngine = !(await isEngineRunning());
+  if (startedEngine) {
+    const ok = await startEngine();
+    if (!ok) {
+      p.log.error("Could not start iii-engine for the demo.");
+      p.note(installInstructions().join("\n"), "Setup required");
+      process.exit(1);
+    }
+    if (!(await waitForEngine(15000))) {
+      p.log.error("iii-engine did not become ready within 15s.");
+      process.exit(1);
+    }
+  }
+
+  await import("./index.js");
+  if (!(await waitForAgentmemoryReady(15000))) {
+    p.log.error("agentmemory worker did not become ready within 15s.");
+    process.exit(1);
+  }
+
+  return async () => {
+    if (!startedEngine) return;
+    const port = getRestPort();
+    const state = readEngineState();
+    if (state?.kind === "docker") {
+      await stopDockerEngine(state.composeFile, port).catch(() => {});
+      return;
+    }
+    const pids = new Set<number>(findEnginePidsByPort(port));
+    const pidfilePid = readEnginePidfile();
+    if (pidfilePid) pids.add(pidfilePid);
+    for (const pid of pids) {
+      await signalAndWait(pid, "SIGTERM", 3000).catch(() => {});
+    }
+    clearEnginePidfile();
+    clearEngineState();
+    clearWorkerPidfile();
+  };
+}
+
 async function runDemo() {
   const port = getRestPort();
   const base = `http://localhost:${port}`;
   p.intro("agentmemory demo");
 
-  if (!(await isAgentmemoryReady())) {
+  const serve = args.includes("--serve");
+  let teardown: () => Promise<void> = async () => {};
+
+  if (serve) {
+    teardown = await startServerForDemo();
+  } else if (!(await isAgentmemoryReady())) {
     p.log.error(
       `agentmemory worker not reachable on port ${port} (livez probe failed). Something may be on the port but it isn't serving /agentmemory/*.`,
     );
     p.log.info("Start it with: npx @agentmemory/agentmemory");
+    p.log.info("Or run a one-command demo with: npx @agentmemory/agentmemory demo --serve");
     process.exit(1);
   }
 
+  try {
+    await runDemoBody(base);
+  } finally {
+    await teardown();
+  }
+}
+
+async function runDemoBody(base: string) {
   const demoProject = "/tmp/agentmemory-demo";
   const sessions = buildDemoSessions();
 
