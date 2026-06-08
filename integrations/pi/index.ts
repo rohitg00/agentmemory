@@ -33,6 +33,7 @@ function getBaseUrl(): string {
   return (process.env.AGENTMEMORY_URL || "http://localhost:3111").replace(/\/+$/, "");
 }
 const guardPlaintextBearerAuth = createPlaintextBearerAuthGuard();
+const DEFAULT_TIMEOUT_MS = 5000;
 const TOOL_GUIDANCE = [
   "agentmemory is available for cross-session memory.",
   "Use memory_search to recall prior decisions, preferences, bugs, and workflows.",
@@ -110,6 +111,7 @@ async function callAgentMemory<T>(
 ): Promise<T | null> {
   const baseUrl = options?.baseUrl?.replace(/\/+$/, "") || getBaseUrl();
   const method = options?.method || "POST";
+  const timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const url = `${baseUrl}/agentmemory/${pathname.replace(/^\/+/, "")}`;
   const headers: Record<string, string> = {};
   const secret = process.env.AGENTMEMORY_SECRET;
@@ -122,7 +124,7 @@ async function callAgentMemory<T>(
       method,
       headers,
       body: options?.body !== undefined ? JSON.stringify(options.body) : undefined,
-      signal: options?.timeoutMs ? AbortSignal.timeout(options.timeoutMs) : undefined,
+      signal: AbortSignal.timeout(timeoutMs),
     });
     if (!response.ok) return null;
     return (await response.json()) as T;
@@ -309,13 +311,10 @@ export default function agentmemoryExtension(pi: ExtensionAPI) {
     await refreshStatus(ctx);
 
     if (lastHealthOk) {
-      void callAgentMemory("session/start", {
-        body: {
-          sessionId,
-          project: currentProject,
-          cwd: currentProject,
-        },
-        timeoutMs: 800,
+      // Awaited so profiles finish loading before the first smart-search.
+      await callAgentMemory("session/start", {
+        body: { sessionId, project: currentProject, cwd: currentProject },
+        timeoutMs: 2000,
       });
     }
   });
@@ -329,29 +328,34 @@ export default function agentmemoryExtension(pi: ExtensionAPI) {
     lastPrompt = event.prompt?.trim() || "";
     if (!lastPrompt) return;
 
-    // Observe the prompt so the server knows what was asked.
-    trackPost(callAgentMemory("observe", {
-      body: {
-        hookType: "prompt_submit",
-        sessionId,
-        project: currentProject,
-        cwd: currentProject,
-        timestamp: new Date().toISOString(),
-        data: { prompt: lastPrompt },
-      },
-      timeoutMs: 3000,
-    }));
-
-    const result = await callAgentMemory<{ results?: SmartSearchResult[] }>("smart-search", {
-      body: { query: lastPrompt, limit: 5 },
-      timeoutMs: 3000,
-    });
-    const results = result?.results || [];
-    const recallBlock = results.length
-      ? ["Relevant long-term memory from agentmemory:", formatSearchResults(results)].join("\n")
-      : "";
-
+    // Refresh first so a downed backend skips observe + smart-search instead of
+    // paying their timeouts on every prompt.
     await refreshStatus(ctx);
+
+    let recallBlock = "";
+    if (lastHealthOk) {
+      trackPost(callAgentMemory("observe", {
+        body: {
+          hookType: "prompt_submit",
+          sessionId,
+          project: currentProject,
+          cwd: currentProject,
+          timestamp: new Date().toISOString(),
+          data: { prompt: lastPrompt },
+        },
+        timeoutMs: 3000,
+      }));
+
+      const result = await callAgentMemory<{ results?: SmartSearchResult[] }>("smart-search", {
+        body: { query: lastPrompt, limit: 5 },
+        timeoutMs: 3000,
+      });
+      const results = result?.results || [];
+      if (results.length) {
+        recallBlock = ["Relevant long-term memory from agentmemory:", formatSearchResults(results)].join("\n");
+      }
+    }
+
     return {
       systemPrompt: [event.systemPrompt, TOOL_GUIDANCE, recallBlock].filter(Boolean).join("\n\n"),
     };
