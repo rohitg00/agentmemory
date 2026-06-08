@@ -19,6 +19,8 @@ import { validateOutput } from "../eval/validator.js";
 import { scoreSummary } from "../eval/quality.js";
 import type { MetricsStore } from "../eval/metrics-store.js";
 import { safeAudit } from "./audit.js";
+import { buildSyntheticSummary } from "./summarize-synthetic.js";
+import { isAutoCompressEnabled, detectLlmProviderKind } from "../config.js";
 import { logger } from "../logger.js";
 
 // Per-chunk observation budget when a session is too large to fit in one
@@ -260,16 +262,58 @@ export function registerSummarizeFunction(
         return { success: false, error: "no_observations" };
       }
 
-      if (provider.name === "noop") {
-        logger.info("Summarize skipped — no LLM provider configured", {
+      // Zero-LLM synthetic summary. Built deterministically from the
+      // already-compressed observations — no provider call, no token
+      // spend, no circuit-breaker exposure. Used both as the primary
+      // path (auto-compress off / no provider key) and as the graceful
+      // fallback when an enabled LLM provider errors, returns empty, or
+      // produces unparseable output. Keeps recap / handoff /
+      // skill-extract working in every failure mode.
+      const synthesize = async (reason: string) => {
+        const summary = buildSyntheticSummary(
+          compressed,
           sessionId,
+          session.project,
+          session,
+        );
+        const qualityScore = scoreSummary({
+          title: summary.title,
+          narrative: summary.narrative,
+          keyDecisions: summary.keyDecisions,
+          filesModified: summary.filesModified,
+          concepts: summary.concepts,
         });
-        return {
-          success: false,
-          error: "no_provider",
-          reason:
-            "No LLM provider key set; Summarize is a no-op. Set ANTHROPIC_API_KEY (or GEMINI/OPENROUTER/MINIMAX) in ~/.agentmemory/.env to enable.",
-        };
+        await kv.set(KV.summaries, sessionId, summary);
+        await safeAudit(kv, "compress", "mem::summarize", [sessionId], {
+          title: summary.title,
+          observationCount: compressed.length,
+          synthetic: true,
+        });
+        const latencyMs = Date.now() - startMs;
+        if (metricsStore) {
+          await metricsStore.record(
+            "mem::summarize",
+            latencyMs,
+            true,
+            qualityScore,
+          );
+        }
+        logger.info("Session summarized (synthetic, zero-LLM)", {
+          sessionId,
+          title: summary.title,
+          decisions: summary.keyDecisions.length,
+          qualityScore,
+          reason,
+        });
+        return { success: true, summary, qualityScore, synthetic: true };
+      };
+
+      // Primary zero-LLM path: auto-compress opt-out (#138 parity) or no
+      // LLM provider key configured. Never touches the provider.
+      if (!isAutoCompressEnabled() || detectLlmProviderKind() === "noop") {
+        return synthesize(
+          isAutoCompressEnabled() ? "no_provider" : "auto_compress_off",
+        );
       }
 
       try {
@@ -314,19 +358,11 @@ export function registerSummarizeFunction(
         }
 
         if (!response || !response.trim()) {
-          const latencyMs = Date.now() - startMs;
-          if (metricsStore) {
-            await metricsStore.record("mem::summarize", latencyMs, false);
-          }
-          return { success: false, error: "empty_provider_response" };
+          return synthesize("empty_provider_response");
         }
 
         if (!summary) {
-          const latencyMs = Date.now() - startMs;
-          if (metricsStore) {
-            await metricsStore.record("mem::summarize", latencyMs, false);
-          }
-          return { success: false, error: "parse_failed" };
+          return synthesize("parse_failed");
         }
 
         const summaryForValidation = {
@@ -343,15 +379,11 @@ export function registerSummarizeFunction(
         );
 
         if (!validation.valid) {
-          const latencyMs = Date.now() - startMs;
-          if (metricsStore) {
-            await metricsStore.record("mem::summarize", latencyMs, false);
-          }
-          logger.warn("Summary validation failed", {
+          logger.warn("Summary validation failed, falling back to synthetic", {
             sessionId,
             errors: validation.result.errors,
           });
-          return { success: false, error: "validation_failed" };
+          return synthesize("validation_failed");
         }
 
         const qualityScore = scoreSummary(summaryForValidation);
@@ -383,15 +415,11 @@ export function registerSummarizeFunction(
         return { success: true, summary, qualityScore };
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        const latencyMs = Date.now() - startMs;
-        if (metricsStore) {
-          await metricsStore.record("mem::summarize", latencyMs, false);
-        }
-        logger.error("Summarize failed", {
+        logger.warn("Summarize LLM path failed, falling back to synthetic", {
           sessionId,
           error: msg,
         });
-        return { success: false, error: msg };
+        return synthesize("llm_error");
       }
     },
   );
