@@ -3,10 +3,24 @@ import { getEnvVar } from "../../config.js";
 import { fetchWithTimeout } from "../_fetch.js";
 
 const API_URL = "https://openrouter.ai/api/v1/embeddings";
+const DEFAULT_DIMENSIONS = 1536;
+
+function resolveDimensions(override: string | undefined): number {
+  if (override !== undefined && override.trim().length > 0) {
+    const parsed = Number(override);
+    if (!Number.isInteger(parsed) || parsed <= 0) {
+      throw new Error(
+        `OPENROUTER_EMBEDDING_DIMENSIONS must be a positive integer, got: ${override}`,
+      );
+    }
+    return parsed;
+  }
+  return DEFAULT_DIMENSIONS;
+}
 
 export class OpenRouterEmbeddingProvider implements EmbeddingProvider {
   readonly name = "openrouter";
-  readonly dimensions = 1536;
+  readonly dimensions: number;
   private apiKey: string;
   private model: string;
 
@@ -16,6 +30,9 @@ export class OpenRouterEmbeddingProvider implements EmbeddingProvider {
     this.model =
       getEnvVar("OPENROUTER_EMBEDDING_MODEL") ||
       "openai/text-embedding-3-small";
+    this.dimensions = resolveDimensions(
+      getEnvVar("OPENROUTER_EMBEDDING_DIMENSIONS"),
+    );
   }
 
   async embed(text: string): Promise<Float32Array> {
@@ -33,6 +50,7 @@ export class OpenRouterEmbeddingProvider implements EmbeddingProvider {
       body: JSON.stringify({
         model: this.model,
         input: texts,
+        dimensions: this.dimensions,
       }),
     });
 
