@@ -6,12 +6,14 @@
  * - recalls relevant memories before the agent starts (before_agent_start hook)
  * - captures completed conversation turns after the agent finishes (agent_end hook)
  *
- * Requires the agentmemory server on localhost:3111.
- * Start it with: npx @agentmemory/agentmemory
+ * Requires a reachable agentmemory REST server.
  */
 
 const DEFAULT_BASE_URL = "http://localhost:3111";
 const DEFAULT_TIMEOUT_MS = 5000;
+const TURN_DEDUPE_TTL_MS = 10 * 60 * 1000;
+const TURN_DEDUPE_MAX_ENTRIES = 1000;
+const turnDedupeStateKey = Symbol.for("agentmemory.openclaw.turn-dedupe");
 
 const configSchema = {
   type: "object",
@@ -27,23 +29,34 @@ const configSchema = {
 };
 
 function extractText(content) {
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
-  return content
-    .flatMap((block) => {
-      if (!block || typeof block !== "object") return [];
-      if (block.type === "text" && typeof block.text === "string") return [block.text];
-      return [];
-    })
-    .join("\n")
-    .trim();
+  if (typeof content === "string") return content.trim();
+  if (Array.isArray(content)) {
+    return content.map((block) => extractText(block)).filter(Boolean).join("\n").trim();
+  }
+  if (!content || typeof content !== "object") return "";
+  return firstNonEmptyString(
+    extractText(content.text),
+    extractText(content.content),
+    extractText(content.message),
+    extractText(content.output),
+    extractText(content.value),
+  );
+}
+
+function extractStructuredText(value) {
+  return extractText(value);
+}
+
+function messageText(message) {
+  if (!message || typeof message !== "object") return "";
+  return extractStructuredText(message);
 }
 
 function lastAssistantText(messages) {
   for (const message of [...messages].reverse()) {
     if (!message || typeof message !== "object") continue;
     if (message.role !== "assistant") continue;
-    const text = extractText(message.content);
+    const text = messageText(message);
     if (text) return text;
   }
   return "";
@@ -53,10 +66,174 @@ function latestUserText(messages) {
   for (const message of [...messages].reverse()) {
     if (!message || typeof message !== "object") continue;
     if (message.role !== "user") continue;
-    const text = extractText(message.content);
+    const text = messageText(message);
     if (text) return text;
   }
   return "";
+}
+
+function firstNonEmptyString(...values) {
+  for (const value of values) {
+    if (typeof value !== "string") continue;
+    const trimmed = value.trim();
+    if (trimmed) return trimmed;
+  }
+  return "";
+}
+
+function getTurnDedupeState() {
+  const root = globalThis;
+  if (!root[turnDedupeStateKey]) {
+    root[turnDedupeStateKey] = {
+      recalls: new Map(),
+      observations: new Map(),
+    };
+  }
+  return root[turnDedupeStateKey];
+}
+
+function pruneDedupeMap(map) {
+  const cutoff = Date.now() - TURN_DEDUPE_TTL_MS;
+  for (const [key, timestamp] of map.entries()) {
+    if (typeof timestamp !== "number" || timestamp < cutoff) map.delete(key);
+  }
+  while (map.size > TURN_DEDUPE_MAX_ENTRIES) {
+    const oldest = map.keys().next().value;
+    if (oldest === undefined) return;
+    map.delete(oldest);
+  }
+}
+
+function claimDedupe(map, key) {
+  pruneDedupeMap(map);
+  if (map.has(key)) return false;
+  map.set(key, Date.now());
+  return true;
+}
+
+function compactDedupeText(value) {
+  return String(value || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 500);
+}
+
+function resolveProjectContext(event, ctx) {
+  const cwd =
+    firstNonEmptyString(
+      event?.cwd,
+      event?.workspaceDir,
+      ctx?.workspaceDir,
+      process.cwd?.(),
+    ) || "openclaw";
+  return {
+    project: firstNonEmptyString(event?.project, ctx?.project, cwd) || cwd,
+    cwd,
+  };
+}
+
+function isInternalNoReplyTurn(event, ctx, userText, assistantText) {
+  const sessionKey = firstNonEmptyString(
+    event?.sessionKey,
+    ctx?.sessionKey,
+    event?.sessionId,
+    ctx?.sessionId,
+  ).toLowerCase();
+  if (sessionKey.includes("boot")) return true;
+  if (assistantText.trim() === "NO_REPLY") return true;
+  return (
+    userText.includes("<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>>") &&
+    userText.includes("BOOT.md")
+  );
+}
+
+function turnKeys(event, ctx) {
+  const keys = [
+    event?.runId,
+    ctx?.runId,
+    event?.sessionId,
+    ctx?.sessionId,
+    event?.sessionKey,
+    ctx?.sessionKey,
+  ]
+    .filter((value) => typeof value === "string" && value.trim())
+    .map((value) => value.trim());
+  return [...new Set(keys)];
+}
+
+function turnDedupeKey(event, ctx, kind, userText, assistantText = "") {
+  const keys = turnKeys(event, ctx);
+  return [
+    kind,
+    keys.length ? keys.join("|") : "no-turn-key",
+    compactDedupeText(userText),
+    compactDedupeText(assistantText),
+  ].join("::");
+}
+
+function prunePendingTurns(pendingTurns) {
+  if (pendingTurns.size <= 200) return;
+  const cutoff = Date.now() - 60 * 60 * 1000;
+  for (const [key, turn] of pendingTurns.entries()) {
+    if (!turn?.updatedAt || turn.updatedAt < cutoff) pendingTurns.delete(key);
+  }
+}
+
+function readPendingTurn(pendingTurns, event, ctx) {
+  for (const key of turnKeys(event, ctx)) {
+    const turn = pendingTurns.get(key);
+    if (turn) return turn;
+  }
+  return {};
+}
+
+function rememberTurn(pendingTurns, event, ctx, patch) {
+  const keys = turnKeys(event, ctx);
+  if (keys.length === 0) return;
+  const current = readPendingTurn(pendingTurns, event, ctx);
+  const next = { ...current, ...patch, updatedAt: Date.now() };
+  for (const key of keys) pendingTurns.set(key, next);
+  prunePendingTurns(pendingTurns);
+}
+
+function forgetTurn(pendingTurns, event, ctx) {
+  for (const key of turnKeys(event, ctx)) pendingTurns.delete(key);
+}
+
+async function observeConversation(client, event, ctx, userText, assistantText) {
+  if (isInternalNoReplyTurn(event, ctx, userText, assistantText)) {
+    return false;
+  }
+  const dedupe = getTurnDedupeState();
+  if (
+    !claimDedupe(
+      dedupe.observations,
+      turnDedupeKey(event, ctx, "observe", userText, assistantText),
+    )
+  ) {
+    return false;
+  }
+  const projectContext = resolveProjectContext(event, ctx);
+  const sessionId =
+    event?.sessionId ||
+    ctx?.sessionId ||
+    event?.sessionKey ||
+    ctx?.sessionKey ||
+    event?.runId ||
+    ctx?.runId ||
+    `openclaw-${Date.now()}`;
+  await client.postJson("/agentmemory/observe", {
+    hookType: "post_tool_use",
+    sessionId,
+    ...projectContext,
+    timestamp: new Date().toISOString(),
+    data: {
+      tool_name: "conversation",
+      tool_input: userText.slice(0, 1000),
+      tool_output: assistantText.slice(0, 4000),
+    },
+  });
+  return true;
 }
 
 function formatResults(results) {
@@ -77,11 +254,12 @@ function createClient(cfg, api) {
   const baseUrl = String(cfg.base_url || DEFAULT_BASE_URL).replace(/\/+$/, "");
   const timeoutMs = Number(cfg.timeout_ms || DEFAULT_TIMEOUT_MS);
   const fallbackOnError = cfg.fallback_on_error !== false;
-  const secret = process.env.AGENTMEMORY_SECRET;
 
   async function postJson(path, payload) {
+    // OpenClaw's local agentmemory integration uses a loopback Docker-managed
+    // service. Do not read process.env or attach bearer tokens here; that keeps
+    // the plugin out of OpenClaw's environment-harvesting audit path.
     const headers = { "Content-Type": "application/json" };
-    if (secret) headers.Authorization = `Bearer ${secret}`;
     try {
       const res = await fetch(`${baseUrl}${path}`, {
         method: "POST",
@@ -120,6 +298,7 @@ const plugin = {
       timeout_ms: api.pluginConfig?.timeout_ms || DEFAULT_TIMEOUT_MS,
     };
     const client = createClient(cfg, api);
+    const pendingTurns = new Map();
 
     if (typeof api.registerMemoryCapability === "function") {
       api.registerMemoryCapability({
@@ -136,10 +315,15 @@ const plugin = {
       });
     }
 
-    api.on("before_agent_start", async (event) => {
+    api.on("before_agent_start", async (event, ctx) => {
       if (!cfg.enabled) return;
       const prompt = typeof event?.prompt === "string" ? event.prompt.trim() : "";
       if (!prompt) return;
+      rememberTurn(pendingTurns, event, ctx, { prompt });
+      const dedupe = getTurnDedupeState();
+      if (!claimDedupe(dedupe.recalls, turnDedupeKey(event, ctx, "recall", prompt))) {
+        return;
+      }
       const result = await client.postJson("/agentmemory/smart-search", {
         query: prompt,
         limit: 5,
@@ -151,26 +335,63 @@ const plugin = {
       };
     });
 
-    api.on("agent_end", async (event) => {
-      if (!cfg.enabled || !event?.success || !Array.isArray(event.messages)) return;
-      const userText = latestUserText(event.messages);
-      const assistantText = lastAssistantText(event.messages);
-      if (!userText || !assistantText) return;
-      const sessionId =
-        event.sessionId ||
-        event.sessionKey ||
-        event.runId ||
-        `openclaw-${Date.now()}`;
-      await client.postJson("/agentmemory/observe", {
-        hookType: "post_tool_use",
-        sessionId,
-        timestamp: new Date().toISOString(),
-        data: {
-          tool_name: "conversation",
-          tool_input: userText.slice(0, 1000),
-          tool_output: assistantText.slice(0, 4000),
-        },
-      });
+    api.on("llm_output", async (event, ctx) => {
+      if (!cfg.enabled) return;
+      const assistantText = firstNonEmptyString(
+        extractStructuredText(event?.lastAssistant),
+        extractStructuredText(event?.assistantText),
+        extractStructuredText(event?.assistantTexts),
+      );
+      if (!assistantText) return;
+      const pendingTurn = readPendingTurn(pendingTurns, event, ctx);
+      const userText = firstNonEmptyString(
+        event?.prompt,
+        event?.userText,
+        ctx?.prompt,
+        pendingTurn.prompt,
+      );
+      if (userText && !pendingTurn.observed) {
+        const observed = await observeConversation(client, event, ctx, userText, assistantText);
+        if (observed) {
+          rememberTurn(pendingTurns, event, ctx, { assistantText, observed: true });
+          return;
+        }
+      }
+      rememberTurn(pendingTurns, event, ctx, { assistantText });
+    });
+
+    api.on("agent_end", async (event, ctx) => {
+      if (!cfg.enabled) return;
+      if (event?.success === false) {
+        forgetTurn(pendingTurns, event, ctx);
+        return;
+      }
+      const messages = Array.isArray(event?.messages) ? event.messages : [];
+      const pendingTurn = readPendingTurn(pendingTurns, event, ctx);
+      if (pendingTurn.observed) {
+        forgetTurn(pendingTurns, event, ctx);
+        return;
+      }
+      const userText = firstNonEmptyString(
+        latestUserText(messages),
+        event?.prompt,
+        event?.userText,
+        ctx?.prompt,
+        pendingTurn.prompt,
+      );
+      const assistantText = firstNonEmptyString(
+        lastAssistantText(messages),
+        extractStructuredText(event?.lastAssistant),
+        extractStructuredText(event?.assistantText),
+        extractStructuredText(event?.assistantTexts),
+        pendingTurn.assistantText,
+      );
+      if (!userText || !assistantText) {
+        forgetTurn(pendingTurns, event, ctx);
+        return;
+      }
+      await observeConversation(client, event, ctx, userText, assistantText);
+      forgetTurn(pendingTurns, event, ctx);
     });
   },
 };
