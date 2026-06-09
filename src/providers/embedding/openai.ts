@@ -89,7 +89,7 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
     // Separate API key path: caller-passed wins, then OPENAI_EMBEDDING_API_KEY,
     // then fall back to OPENAI_API_KEY. Allows e.g. a placeholder key for
     // local endpoints that ignore Authorization (most do).
-    if (apiKey) {
+    if (apiKey !== undefined) {
       this.apiKey = apiKey;
       this.debugApiKeySource = "constructor";
     } else if (getEnvVar("OPENAI_EMBEDDING_API_KEY")) {
