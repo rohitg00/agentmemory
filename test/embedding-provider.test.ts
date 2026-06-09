@@ -43,6 +43,16 @@ describe("createEmbeddingProvider", () => {
     expect(provider!.name).toBe("openai");
   });
 
+  it("prefers OPENAI_EMBEDDING_API_KEY over OPENAI_API_KEY for OpenAI embeddings", () => {
+    process.env["OPENAI_API_KEY"] = "llm-chat-key";
+    process.env["OPENAI_EMBEDDING_API_KEY"] = "embedding-specific-key";
+    process.env["EMBEDDING_PROVIDER"] = "openai";
+    const provider = createEmbeddingProvider();
+    expect(provider).toBeInstanceOf(OpenAIEmbeddingProvider);
+    // The provider should use the embedding-specific key, not the LLM key
+    expect((provider as OpenAIEmbeddingProvider).apiKey).toBe("embedding-specific-key");
+  });
+
   it("EMBEDDING_PROVIDER override takes precedence", () => {
     process.env["GEMINI_API_KEY"] = "test-key-123";
     process.env["OPENAI_API_KEY"] = "test-key-456";
