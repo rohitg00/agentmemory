@@ -88,7 +88,8 @@ function makeProjectResolver(kv: StateKV) {
   const memoryProjectCache = new Map<string, string | null>();
   return async (sessionId: string, obsId: string): Promise<string | null> => {
     if (!sessionCache.has(sessionId)) {
-      sessionCache.set(sessionId, (await kv.get<Session>(KV.sessions, sessionId)) ?? null);
+      const session = await kv.get<Session>(KV.sessions, sessionId).catch(() => null);
+      sessionCache.set(sessionId, session ?? null);
     }
     const session = sessionCache.get(sessionId)!;
     if (session) return session.project;
@@ -194,12 +195,12 @@ export function registerSmartSearchFunction(
         let scoped = agentScoped;
         if (filterProject) {
           const resolveProject = makeProjectResolver(kv);
-          const kept: typeof expanded = [];
-          for (const e of agentScoped) {
-            const project = await resolveProject(e.sessionId, e.observation.id);
-            if (project === null || project === filterProject) kept.push(e);
-          }
-          scoped = kept;
+          const projects = await Promise.all(
+            agentScoped.map((e) => resolveProject(e.sessionId, e.observation.id)),
+          );
+          scoped = agentScoped.filter(
+            (_e, i) => projects[i] === null || projects[i] === filterProject,
+          );
         }
 
         void recordAccessBatch(
@@ -251,12 +252,12 @@ export function registerSmartSearchFunction(
       let scopedHybrid = agentFiltered;
       if (filterProject) {
         const resolveProject = makeProjectResolver(kv);
-        const kept: HybridSearchResult[] = [];
-        for (const r of agentFiltered) {
-          const project = await resolveProject(r.sessionId, r.observation.id);
-          if (project === null || project === filterProject) kept.push(r);
-        }
-        scopedHybrid = kept;
+        const projects = await Promise.all(
+          agentFiltered.map((r) => resolveProject(r.sessionId, r.observation.id)),
+        );
+        scopedHybrid = agentFiltered.filter(
+          (_r, i) => projects[i] === null || projects[i] === filterProject,
+        );
       }
       const filteredHybrid = scopedHybrid.slice(0, limit);
 
