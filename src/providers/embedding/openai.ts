@@ -82,6 +82,11 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
   private isAzure: boolean;
   private azureApiVersion: string;
 
+  /** Exposes the resolved API key for testing/debugging. */
+  get debugApiKey(): string {
+    return this.apiKey;
+  }
+
   constructor(apiKey?: string) {
     // Separate API key path: caller-passed wins, then OPENAI_EMBEDDING_API_KEY,
     // then fall back to OPENAI_API_KEY. Allows e.g. a placeholder key for
