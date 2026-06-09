@@ -293,17 +293,28 @@ describe("Smart Search Function", () => {
   });
 
   describe("project scoping", () => {
-    function seedTwoProjects() {
+    // Mirror what mem::remember produces: observations indexed under a
+    // synthetic sessionId ("memory") with no KV.sessions row, and the
+    // project carried on the KV.memories record. This exercises the real
+    // resolver path (session miss -> KV.memories lookup) rather than a
+    // synthetic observation that already carries `project`.
+    async function seedTwoProjects() {
       const builderObs = makeObs({
         id: "obs_builder",
-        sessionId: "ses_1",
+        sessionId: "memory",
         title: "Planner model choice",
-        project: "builder",
       });
       const reviewObs = makeObs({
         id: "obs_review",
-        sessionId: "ses_1",
+        sessionId: "memory",
         title: "Reviewer escalation",
+      });
+      await kv.set("mem:memories", "obs_builder", {
+        id: "obs_builder",
+        project: "builder",
+      });
+      await kv.set("mem:memories", "obs_review", {
+        id: "obs_review",
         project: "review",
       });
       searchResults = [
@@ -312,20 +323,20 @@ describe("Smart Search Function", () => {
           bm25Score: 0.8,
           vectorScore: 0,
           combinedScore: 0.8,
-          sessionId: "ses_1",
+          sessionId: "memory",
         },
         {
           observation: reviewObs,
           bm25Score: 0.7,
           vectorScore: 0,
           combinedScore: 0.7,
-          sessionId: "ses_1",
+          sessionId: "memory",
         },
       ];
     }
 
     it("compact mode returns only observations from the requested project", async () => {
-      seedTwoProjects();
+      await seedTwoProjects();
 
       const result = (await sdk.trigger("mem::smart-search", {
         query: "model",
@@ -337,7 +348,7 @@ describe("Smart Search Function", () => {
     });
 
     it("omitting project returns observations from every project", async () => {
-      seedTwoProjects();
+      await seedTwoProjects();
 
       const result = (await sdk.trigger("mem::smart-search", {
         query: "model",

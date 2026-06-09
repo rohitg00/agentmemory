@@ -5,6 +5,8 @@ import type {
   CompressedObservation,
   HybridSearchResult,
   Lesson,
+  Memory,
+  Session,
 } from "../types.js";
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
@@ -71,6 +73,32 @@ export function resetFollowupStatsForTests(): void {
 // Compact mode trims each lesson's content for at-a-glance display. The
 // full content is fetched via memory_lesson_recall when the caller needs it.
 const LESSON_CONTENT_PREVIEW_CHARS = 240;
+
+// Resolve the project a hit belongs to, the same way mem::search does:
+// the session's project when the session exists, otherwise the memory's
+// own project. Entries indexed via mem::remember use a synthetic
+// sessionId ('memory') with no KV.sessions row, so their project lives
+// only on the KV.memories record. Returns null when the project is
+// unknown (no session, no memory record); callers treat null as
+// "unscoped — let it through" to stay backward-compatible, matching
+// search.ts. Both lookups are cached, so a filtered page costs at most
+// one read per distinct session and per distinct unbound observation.
+function makeProjectResolver(kv: StateKV) {
+  const sessionCache = new Map<string, Session | null>();
+  const memoryProjectCache = new Map<string, string | null>();
+  return async (sessionId: string, obsId: string): Promise<string | null> => {
+    if (!sessionCache.has(sessionId)) {
+      sessionCache.set(sessionId, (await kv.get<Session>(KV.sessions, sessionId)) ?? null);
+    }
+    const session = sessionCache.get(sessionId)!;
+    if (session) return session.project;
+    if (!memoryProjectCache.has(obsId)) {
+      const memory = await kv.get<Memory>(KV.memories, obsId).catch(() => null);
+      memoryProjectCache.set(obsId, memory?.project ?? null);
+    }
+    return memoryProjectCache.get(obsId)!;
+  };
+}
 
 export function registerSmartSearchFunction(
   sdk: ISdk,
@@ -160,9 +188,19 @@ export function registerSmartSearchFunction(
           if (r) expanded.push(r);
         }
 
-        const scoped = expanded
-          .filter((e) => !filterAgentId || e.observation.agentId === filterAgentId)
-          .filter((e) => !filterProject || e.observation.project === filterProject);
+        const agentScoped = filterAgentId
+          ? expanded.filter((e) => e.observation.agentId === filterAgentId)
+          : expanded;
+        let scoped = agentScoped;
+        if (filterProject) {
+          const resolveProject = makeProjectResolver(kv);
+          const kept: typeof expanded = [];
+          for (const e of agentScoped) {
+            const project = await resolveProject(e.sessionId, e.observation.id);
+            if (project === null || project === filterProject) kept.push(e);
+          }
+          scoped = kept;
+        }
 
         void recordAccessBatch(
           kv,
@@ -203,14 +241,24 @@ export function registerSmartSearchFunction(
       const [hybridResults, lessons] = await Promise.all([
         searchFn(data.query, overFetchLimit),
         includeLessons
-          ? recallLessons(sdk, data.query, lessonLimit, data.project)
+          ? recallLessons(sdk, data.query, lessonLimit, filterProject)
           : Promise.resolve([]),
       ]);
 
-      const filteredHybrid = hybridResults
-        .filter((r) => !filterAgentId || r.observation.agentId === filterAgentId)
-        .filter((r) => !filterProject || r.observation.project === filterProject)
-        .slice(0, limit);
+      const agentFiltered = filterAgentId
+        ? hybridResults.filter((r) => r.observation.agentId === filterAgentId)
+        : hybridResults;
+      let scopedHybrid = agentFiltered;
+      if (filterProject) {
+        const resolveProject = makeProjectResolver(kv);
+        const kept: HybridSearchResult[] = [];
+        for (const r of agentFiltered) {
+          const project = await resolveProject(r.sessionId, r.observation.id);
+          if (project === null || project === filterProject) kept.push(r);
+        }
+        scopedHybrid = kept;
+      }
+      const filteredHybrid = scopedHybrid.slice(0, limit);
 
       const compact: CompactSearchResult[] = filteredHybrid.map((r) => ({
         obsId: r.observation.id,
