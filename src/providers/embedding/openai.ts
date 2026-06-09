@@ -86,10 +86,7 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
   readonly debugApiKeySource: "constructor" | "OPENAI_EMBEDDING_API_KEY" | "OPENAI_API_KEY";
 
   constructor(apiKey?: string) {
-    // Separate API key path: caller-passed wins, then OPENAI_EMBEDDING_API_KEY,
-    // then fall back to OPENAI_API_KEY. Allows e.g. a placeholder key for
-    // local endpoints that ignore Authorization (most do).
-    if (apiKey) {
+    if (apiKey !== undefined) {
       this.apiKey = apiKey;
       this.debugApiKeySource = "constructor";
     } else if (getEnvVar("OPENAI_EMBEDDING_API_KEY")) {
@@ -107,10 +104,6 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
         "API key is required (via constructor, OPENAI_EMBEDDING_API_KEY, or OPENAI_API_KEY)",
       );
     }
-    // Embedding-specific base URL override; falls back to OPENAI_BASE_URL,
-    // then normalizeBaseUrl's default. The chat-LLM path (src/providers/openai.ts)
-    // still reads only OPENAI_BASE_URL, so setting OPENAI_EMBEDDING_BASE_URL
-    // alone moves embeddings to the new endpoint without affecting chat.
     this.baseUrl = normalizeBaseUrl(
       getEnvVar("OPENAI_EMBEDDING_BASE_URL") || getEnvVar("OPENAI_BASE_URL"),
     );
