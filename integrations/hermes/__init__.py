@@ -374,9 +374,13 @@ class AgentMemoryProvider(MemoryProvider):
             })
 
     def on_memory_write(self, action: str, target: str, content: str, **kwargs: Any) -> None:
-        if action in ("add", "update") and content:
+        # Archive-on-delete: skip add/update (local-only — Hermes MEMORY.md
+        # is the active rulebook, not historical knowledge), sync only remove
+        # (preserve deleted entries as historical knowledge in agentmemory).
+        # See https://github.com/rohitg00/agentmemory/issues/834
+        if action == "remove" and content:
             _api_bg(self._base, "remember", {
-                "content": content,
+                "content": f"[Archived from local memory] {content}",
                 "type": "fact",
             })
 
