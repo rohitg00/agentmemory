@@ -82,20 +82,26 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
   private isAzure: boolean;
   private azureApiVersion: string;
 
-  /** Exposes the resolved API key for testing/debugging. */
-  get debugApiKey(): string {
-    return this.apiKey;
-  }
+  /** Indicates which source the API key was resolved from (for testing/debugging, no secret exposure). */
+  readonly debugApiKeySource: "constructor" | "OPENAI_EMBEDDING_API_KEY" | "OPENAI_API_KEY";
 
   constructor(apiKey?: string) {
     // Separate API key path: caller-passed wins, then OPENAI_EMBEDDING_API_KEY,
     // then fall back to OPENAI_API_KEY. Allows e.g. a placeholder key for
     // local endpoints that ignore Authorization (most do).
-    this.apiKey =
-      apiKey ||
-      getEnvVar("OPENAI_EMBEDDING_API_KEY") ||
-      getEnvVar("OPENAI_API_KEY") ||
-      "";
+    if (apiKey) {
+      this.apiKey = apiKey;
+      this.debugApiKeySource = "constructor";
+    } else if (getEnvVar("OPENAI_EMBEDDING_API_KEY")) {
+      this.apiKey = getEnvVar("OPENAI_EMBEDDING_API_KEY")!;
+      this.debugApiKeySource = "OPENAI_EMBEDDING_API_KEY";
+    } else if (getEnvVar("OPENAI_API_KEY")) {
+      this.apiKey = getEnvVar("OPENAI_API_KEY")!;
+      this.debugApiKeySource = "OPENAI_API_KEY";
+    } else {
+      this.apiKey = "";
+      this.debugApiKeySource = "constructor";
+    }
     if (!this.apiKey) {
       throw new Error(
         "API key is required (via constructor, OPENAI_EMBEDDING_API_KEY, or OPENAI_API_KEY)",

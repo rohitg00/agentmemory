@@ -51,7 +51,7 @@ describe("createEmbeddingProvider", () => {
     const provider = createEmbeddingProvider();
     expect(provider).toBeInstanceOf(OpenAIEmbeddingProvider);
     // The provider should use the embedding-specific key, not the LLM key
-    expect(provider!.debugApiKey).toBe("embedding-specific-key");
+    expect(provider!.debugApiKeySource).toBe("OPENAI_EMBEDDING_API_KEY");
   });
 
   it("EMBEDDING_PROVIDER override takes precedence", () => {
