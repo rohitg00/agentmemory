@@ -115,6 +115,10 @@ export function registerSmartSearchFunction(
       const filterAgentId = wildcardAgent
         ? undefined
         : explicitAgentId ?? envAgentId;
+      const filterProject =
+        typeof data.project === "string" && data.project.trim().length > 0
+          ? data.project.trim()
+          : undefined;
       if (
         isolated &&
         !wildcardAgent &&
@@ -156,9 +160,9 @@ export function registerSmartSearchFunction(
           if (r) expanded.push(r);
         }
 
-        const scoped = filterAgentId
-          ? expanded.filter((e) => e.observation.agentId === filterAgentId)
-          : expanded;
+        const scoped = expanded
+          .filter((e) => !filterAgentId || e.observation.agentId === filterAgentId)
+          .filter((e) => !filterProject || e.observation.project === filterProject);
 
         void recordAccessBatch(
           kv,
@@ -187,12 +191,12 @@ export function registerSmartSearchFunction(
       const includeLessons = data.includeLessons !== false;
 
       // Over-fetch when filtering. Hybrid search can't filter on
-      // agentId (BM25/vector indexes don't carry it), so we ask the
-      // searcher for more hits than we need and trim post-filter. 3×
-      // is a defensible middle ground: enough headroom for a small
-      // workload, capped at 300 so a 100-limit request never asks for
-      // thousands of hits.
-      const overFetchLimit = filterAgentId
+      // agentId or project (BM25/vector indexes carry neither), so we
+      // ask the searcher for more hits than we need and trim
+      // post-filter. 3× is a defensible middle ground: enough headroom
+      // for a small workload, capped at 300 so a 100-limit request
+      // never asks for thousands of hits.
+      const overFetchLimit = filterAgentId || filterProject
         ? Math.min(limit * 3, 300)
         : limit;
 
@@ -203,11 +207,10 @@ export function registerSmartSearchFunction(
           : Promise.resolve([]),
       ]);
 
-      const filteredHybrid = filterAgentId
-        ? hybridResults
-            .filter((r) => r.observation.agentId === filterAgentId)
-            .slice(0, limit)
-        : hybridResults.slice(0, limit);
+      const filteredHybrid = hybridResults
+        .filter((r) => !filterAgentId || r.observation.agentId === filterAgentId)
+        .filter((r) => !filterProject || r.observation.project === filterProject)
+        .slice(0, limit);
 
       const compact: CompactSearchResult[] = filteredHybrid.map((r) => ({
         obsId: r.observation.id,

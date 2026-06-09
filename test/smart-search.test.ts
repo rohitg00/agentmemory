@@ -291,4 +291,63 @@ describe("Smart Search Function", () => {
       expect(result.lessons).toEqual([]);
     });
   });
+
+  describe("project scoping", () => {
+    function seedTwoProjects() {
+      const builderObs = makeObs({
+        id: "obs_builder",
+        sessionId: "ses_1",
+        title: "Planner model choice",
+        project: "builder",
+      });
+      const reviewObs = makeObs({
+        id: "obs_review",
+        sessionId: "ses_1",
+        title: "Reviewer escalation",
+        project: "review",
+      });
+      searchResults = [
+        {
+          observation: builderObs,
+          bm25Score: 0.8,
+          vectorScore: 0,
+          combinedScore: 0.8,
+          sessionId: "ses_1",
+        },
+        {
+          observation: reviewObs,
+          bm25Score: 0.7,
+          vectorScore: 0,
+          combinedScore: 0.7,
+          sessionId: "ses_1",
+        },
+      ];
+    }
+
+    it("compact mode returns only observations from the requested project", async () => {
+      seedTwoProjects();
+
+      const result = (await sdk.trigger("mem::smart-search", {
+        query: "model",
+        project: "builder",
+        includeLessons: false,
+      })) as { results: CompactSearchResult[] };
+
+      expect(result.results.map((r) => r.obsId)).toEqual(["obs_builder"]);
+    });
+
+    it("omitting project returns observations from every project", async () => {
+      seedTwoProjects();
+
+      const result = (await sdk.trigger("mem::smart-search", {
+        query: "model",
+        includeLessons: false,
+      })) as { results: CompactSearchResult[] };
+
+      expect(result.results.map((r) => r.obsId).sort()).toEqual([
+        "obs_builder",
+        "obs_review",
+      ]);
+    });
+  });
 });
