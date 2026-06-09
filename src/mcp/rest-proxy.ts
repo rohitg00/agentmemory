@@ -10,11 +10,17 @@ function probeTimeoutMs(): number {
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : DEFAULT_HEALTH_PROBE_TIMEOUT_MS;
 }
 
+// Node.js timer internals use a signed 32-bit integer; values above this
+// wrap to negative and fire immediately. Cap env overrides to stay safe.
+const MAX_TIMER_MS = 2_147_483_647;
+
 export function callTimeoutMs(): number {
   const raw = process.env["AGENTMEMORY_CALL_TIMEOUT_MS"];
   if (!raw) return DEFAULT_CALL_TIMEOUT_MS;
   const n = Number(raw);
-  return Number.isFinite(n) && n > 0 ? Math.floor(n) : DEFAULT_CALL_TIMEOUT_MS;
+  return Number.isFinite(n) && n > 0
+    ? Math.min(Math.floor(n), MAX_TIMER_MS)
+    : DEFAULT_CALL_TIMEOUT_MS;
 }
 
 function forceProxy(): boolean {

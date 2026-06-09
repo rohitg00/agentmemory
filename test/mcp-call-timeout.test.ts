@@ -54,6 +54,16 @@ describe("callTimeoutMs — AGENTMEMORY_CALL_TIMEOUT_MS env var", () => {
       expect(callTimeoutMs()).toBe(600_000);
     }
   });
+
+  it("clamps values above the Node.js 32-bit timer ceiling to 2 147 483 647", () => {
+    process.env["AGENTMEMORY_CALL_TIMEOUT_MS"] = "9999999999";
+    expect(callTimeoutMs()).toBe(2_147_483_647);
+  });
+
+  it("returns the exact ceiling value when set to 2 147 483 647", () => {
+    process.env["AGENTMEMORY_CALL_TIMEOUT_MS"] = "2147483647";
+    expect(callTimeoutMs()).toBe(2_147_483_647);
+  });
 });
 
 // ─────────────────────────────────────────────────────────────
