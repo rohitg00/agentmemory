@@ -9,6 +9,7 @@ Requires agentmemory server running: npx @agentmemory/agentmemory
 
 from __future__ import annotations
 
+import atexit
 import json
 import os
 import subprocess
@@ -264,11 +265,18 @@ class AgentMemoryProvider(MemoryProvider):
         if os.environ.get("AGENTMEMORY_REQUIRE_HTTPS") == "1":
             _check_plaintext_bearer_guard(self._base, os.environ.get("AGENTMEMORY_SECRET", ""))
 
+        self._session_closed = False
         _api(self._base, "session/start", {
             "sessionId": session_id,
             "project": self._project,
             "cwd": self._cwd,
         })
+        # Not every Hermes host path calls on_session_end()/shutdown() - the
+        # ACP adapter (headless editors/daemons) tears the process down without
+        # them, leaving the session dangling "active" server-side. Close it on
+        # any graceful interpreter exit instead; SIGKILL is the server-side
+        # idle sweep's job.
+        atexit.register(self._close_session)
 
     def get_config_schema(self) -> list[dict]:
         return [
@@ -433,9 +441,26 @@ class AgentMemoryProvider(MemoryProvider):
         })
 
     def on_session_end(self, messages: list, **kwargs: Any) -> None:
-        _api(self._base, "session/end", {
-            "sessionId": kwargs.get("session_id", self._session_id),
-        })
+        self._close_session(kwargs.get("session_id"))
+
+    def _close_session(self, session_id: str | None = None) -> None:
+        """Idempotently end the agentmemory session.
+
+        Every teardown path converges here - on_session_end()/shutdown() on
+        the cli/gateway paths and the atexit hook on the ACP/headless path -
+        so the session is ended exactly once and never left dangling.
+        """
+        if getattr(self, "_session_closed", False):
+            return
+        sid = session_id or getattr(self, "_session_id", None)
+        if not sid or not getattr(self, "_base", None):
+            return
+        self._session_closed = True
+        try:
+            atexit.unregister(self._close_session)
+        except Exception:
+            pass
+        _api(self._base, "session/end", {"sessionId": sid})
 
     def on_pre_compress(self, messages: list, **kwargs: Any) -> None:
         result = _api(self._base, "context", {
@@ -456,7 +481,7 @@ class AgentMemoryProvider(MemoryProvider):
             })
 
     def shutdown(self, **kwargs: Any) -> None:
-        pass
+        self._close_session(kwargs.get("session_id"))
 
 
 def register(ctx: Any) -> None:
