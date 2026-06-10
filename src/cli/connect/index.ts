@@ -200,7 +200,7 @@ function summarize(
   );
   if (wiredAny) {
     p.log.info(
-      "Next: install agentmemory's 8 skills into the same agent(s) so they know when to call the tools:\n  npx skills add rohitg00/agentmemory -y",
+      "Next: install agentmemory's 15 skills into the same agent(s) so they know when to call the tools:\n  npx skills add rohitg00/agentmemory -y",
     );
   }
 

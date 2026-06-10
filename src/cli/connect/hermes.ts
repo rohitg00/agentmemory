@@ -14,7 +14,7 @@ export const adapter: ConnectAdapter = {
   category: "native",
   docs: DOCS,
   protocolNote:
-    "→ Using MCP. Hooks are also available — see docs/hermes.md.",
+    "→ Using MCP. Hooks are also available — see https://github.com/rohitg00/agentmemory/tree/main/integrations/hermes.",
 
   detect(): boolean {
     return existsSync(HERMES_DIR);

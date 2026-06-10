@@ -10,5 +10,5 @@ export const adapter = createJsonMcpAdapter({
   configPath: join(homedir(), ".openclaw", "openclaw.json"),
   docs: "https://github.com/rohitg00/agentmemory/tree/main/integrations/openclaw",
   protocolNote:
-    "→ Using MCP. Hooks are also available — see docs/openclaw.md.",
+    "→ Using MCP. Hooks are also available — see https://github.com/rohitg00/agentmemory/tree/main/integrations/openclaw.",
 });

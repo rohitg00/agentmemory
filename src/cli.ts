@@ -44,6 +44,7 @@ import { runOnboarding } from "./cli/onboarding.js";
 import { setBootVerbose } from "./logger.js";
 import { VERSION } from "./version.js";
 import { getAllTools, ESSENTIAL_TOOLS } from "./mcp/tools-registry.js";
+import { knownAgents } from "./cli/connect/index.js";
 
 const ALL_TOOLS_COUNT = getAllTools().length;
 const CORE_TOOLS_COUNT = getAllTools().filter((t) => ESSENTIAL_TOOLS.has(t.name)).length;
@@ -120,6 +121,22 @@ function vlog(msg: string): void {
   if (IS_VERBOSE) p.log.info(`[verbose] ${msg}`);
 }
 
+function wrapList(items: readonly string[], indent: number, width = 78): string {
+  const lines: string[] = [];
+  let line = "";
+  for (const item of items) {
+    const joined = line ? `${line}, ${item}` : item;
+    if (line && indent + joined.length > width) {
+      lines.push(`${line},`);
+      line = item;
+    } else {
+      line = joined;
+    }
+  }
+  lines.push(line);
+  return lines.join(`\n${" ".repeat(indent)}`);
+}
+
 if (args.includes("--help") || args.includes("-h")) {
   console.log(`
 agentmemory — persistent memory for AI coding agents
@@ -129,9 +146,8 @@ Usage: agentmemory [command] [options]
 Commands:
   (default)          Start agentmemory worker
   init               Copy bundled .env.example to ~/.agentmemory/.env if absent
-  connect [agent]    Wire agentmemory into an installed agent (claude-code,
-                     copilot-cli, codex, cursor, gemini-cli, openclaw,
-                     hermes, pi, openhuman).
+  connect [agent]    Wire agentmemory into an installed agent
+                     (${wrapList(knownAgents(), 21)}).
                      No arg = interactive picker. --all wires every detected agent.
                      --dry-run shows what would change. --force re-installs.
   status             Show connection status, memory count, flags, and health
@@ -191,7 +207,13 @@ Quick start:
 
 const toolsIdx = args.indexOf("--tools");
 if (toolsIdx !== -1 && args[toolsIdx + 1]) {
-  process.env["AGENTMEMORY_TOOLS"] = args[toolsIdx + 1];
+  const toolsMode = args[toolsIdx + 1]!;
+  if (toolsMode !== "all" && toolsMode !== "core") {
+    p.log.warn(
+      `Unknown --tools value "${toolsMode}" (valid: all, core); falling back to all.`,
+    );
+  }
+  process.env["AGENTMEMORY_TOOLS"] = toolsMode;
 }
 
 const portIdx = args.indexOf("--port");
