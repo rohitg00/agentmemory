@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
 import threading
 import time
@@ -19,6 +20,76 @@ from typing import Any, Callable
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 from urllib.error import URLError
+
+
+def _project_from_remote(path: str) -> str:
+    """Repo name from ``git remote get-url origin``, or "" if unavailable.
+
+    Parses both remote forms: ``git@host:owner/repo(.git)`` and
+    ``https://host/owner/repo(.git)`` -> ``repo``.
+    """
+    try:
+        url = subprocess.run(
+            ["git", "-C", path, "remote", "get-url", "origin"],
+            capture_output=True, text=True, timeout=2,
+        ).stdout.strip()
+    except Exception:
+        return ""
+    if not url:
+        return ""
+    url = url.rstrip("/")
+    if url.endswith(".git"):
+        url = url[:-4]
+    seg = url.replace(":", "/").rstrip("/").split("/")
+    return seg[-1] if seg and seg[-1] else ""
+
+
+def _resolve_project(cwd: str) -> str:
+    """Stable project id for memory scoping.
+
+    The session cwd path is not a stable project identity: ephemeral
+    checkouts (git worktrees, CI runners, agent-orchestrator workdirs) put
+    the SAME repo under throwaway paths that often share one basename
+    ("workdir", "workspace", ...), which both fragments a project's memory
+    across paths and cross-bleeds memory between different repos that
+    happen to share a checkout dirname. The git origin remote name is
+    stable across all checkouts of a repo, so prefer it.
+
+    Resolution order:
+      1. AGENTMEMORY_PROJECT_NAME env var (explicit override).
+      2. git origin remote repo name of cwd, or of a direct child repo
+         (covers sessions started one level above the checkout).
+      3. git toplevel basename.
+      4. cwd basename (previous behavior, last resort).
+    """
+    explicit = os.environ.get("AGENTMEMORY_PROJECT_NAME", "").strip()
+    if explicit:
+        return explicit
+    cwd = cwd or os.getcwd()
+    candidates = [cwd]
+    try:
+        for name in sorted(os.listdir(cwd)):
+            sub = os.path.join(cwd, name)
+            if os.path.exists(os.path.join(sub, ".git")):
+                candidates.append(sub)
+    except OSError:
+        pass
+    for cand in candidates:
+        name = _project_from_remote(cand)
+        if name:
+            return name
+    for cand in candidates:
+        try:
+            top = subprocess.run(
+                ["git", "-C", cand, "rev-parse", "--show-toplevel"],
+                capture_output=True, text=True, timeout=2,
+            ).stdout.strip()
+        except Exception:
+            continue
+        if top and os.path.basename(top):
+            return os.path.basename(top)
+    return os.path.basename(cwd.rstrip("/")) or "unknown"
+
 
 try:
     from agent.memory_provider import MemoryProvider
@@ -188,14 +259,15 @@ class AgentMemoryProvider(MemoryProvider):
     def initialize(self, session_id: str, **kwargs: Any) -> None:
         self._base = os.environ.get("AGENTMEMORY_URL", DEFAULT_BASE_URL)
         self._session_id = session_id
-        self._project = kwargs.get("cwd", os.getcwd())
+        self._cwd = kwargs.get("cwd") or os.getcwd()
+        self._project = _resolve_project(self._cwd)
         if os.environ.get("AGENTMEMORY_REQUIRE_HTTPS") == "1":
             _check_plaintext_bearer_guard(self._base, os.environ.get("AGENTMEMORY_SECRET", ""))
 
         _api(self._base, "session/start", {
             "sessionId": session_id,
             "project": self._project,
-            "cwd": self._project,
+            "cwd": self._cwd,
         })
 
     def get_config_schema(self) -> list[dict]:
@@ -302,6 +374,7 @@ class AgentMemoryProvider(MemoryProvider):
             result = _api(self._base, "search", {
                 "query": args["query"],
                 "limit": args.get("limit", 10),
+                "project": self._project,
             })
             if not result:
                 return json.dumps({"results": []})
@@ -321,6 +394,7 @@ class AgentMemoryProvider(MemoryProvider):
             result = _api(self._base, "remember", {
                 "content": args["content"],
                 "type": args.get("type", "fact"),
+                "project": self._project,
             })
             return json.dumps(result or {"success": False})
 
@@ -328,6 +402,7 @@ class AgentMemoryProvider(MemoryProvider):
             result = _api(self._base, "smart-search", {
                 "query": args["query"],
                 "limit": args.get("limit", 5),
+                "project": self._project,
             })
             if not result:
                 return json.dumps({"results": []})
@@ -348,7 +423,7 @@ class AgentMemoryProvider(MemoryProvider):
             "hookType": "post_tool_use",
             "sessionId": kwargs.get("session_id", self._session_id),
             "project": self._project,
-            "cwd": self._project,
+            "cwd": self._cwd,
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "data": {
                 "tool_name": "conversation",
