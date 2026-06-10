@@ -8,7 +8,7 @@ Generated from `src/cli/connect/index.ts`. Do not edit the block below by hand; 
 | Agent | Name | Protocol |
 | --- | --- | --- |
 | Antigravity | `antigravity` | Using MCP via mcp_config.json. Antigravity replaces Gemini CLI (sunset 2026-06-18). |
-| Claude Code | `claude-code` | Using MCP. Hooks are also available, see docs/claude-code.md. |
+| Claude Code | `claude-code` | Using MCP. Hooks are also available, see https://github.com/rohitg00/agentmemory#claude-code-one-block-paste-it. |
 | Cline | `cline` | Using MCP via ~/.cline/mcp.json (CLI). VS Code users: add the same block via Cline Settings → MCP Servers → Edit JSON. |
 | Codex CLI | `codex` | Using MCP. Hooks ship via the Codex plugin; on Codex Desktop, also pass --with-hooks to install the global hooks.json workaround for openai/codex#16430. |
 | Continue | `continue` | Using MCP via ~/.continue/config.yaml (preferred) or config.json (legacy, only when no yaml). |
@@ -16,9 +16,9 @@ Generated from `src/cli/connect/index.ts`. Do not edit the block below by hand; 
 | Cursor | `cursor` | Using MCP (the only protocol Cursor speaks). Memory bridge runs at :3111 underneath. |
 | Droid (Factory.ai) | `droid` | Using MCP via ~/.factory/mcp.json. The `/mcp` slash command inside droid lists configured servers. |
 | Gemini CLI | `gemini-cli` | Using MCP (the only protocol Gemini CLI speaks). Memory bridge runs at :3111 underneath. |
-| Hermes Agent | `hermes` | Using MCP. Hooks are also available, see docs/hermes.md. |
+| Hermes Agent | `hermes` | Using MCP. Hooks are also available, see https://github.com/rohitg00/agentmemory/tree/main/integrations/hermes. |
 | Kiro | `kiro` | Using MCP via ~/.kiro/settings/mcp.json (user-level). Workspace overrides live in .kiro/settings/mcp.json. |
-| OpenClaw | `openclaw` | Using MCP. Hooks are also available, see docs/openclaw.md. |
+| OpenClaw | `openclaw` | Using MCP. Hooks are also available, see https://github.com/rohitg00/agentmemory/tree/main/integrations/openclaw. |
 | OpenCode | `opencode` | Using MCP via ~/.config/opencode/opencode.json (top-level `mcp` key). For full auto-capture, also install the bundled plugin in plugin/opencode/. |
 | OpenHuman | `openhuman` | Using native hooks (REST API at :3111). MCP not required. |
 | pi | `pi` | Using native hooks (REST API at :3111). MCP not required. |
