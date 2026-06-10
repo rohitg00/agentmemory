@@ -1,5 +1,5 @@
 import { TriggerAction, type ISdk, type ApiRequest } from "iii-sdk";
-import type { Session, CompressedObservation, HookPayload, CommitLink } from "../types.js";
+import type { Session, CompressedObservation, HookPayload, CommitLink, SessionSummary } from "../types.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
@@ -823,7 +823,15 @@ export function registerApiTriggers(
       const filtered = filterAgentId
         ? sessions.filter((s) => s.agentId === filterAgentId)
         : sessions;
-      return { status_code: 200, body: { sessions: filtered } };
+      const summaries = await Promise.all(
+        filtered.map((s) =>
+          kv.get<SessionSummary>(KV.summaries, s.id).catch(() => null),
+        ),
+      );
+      const withSummary = filtered.map((s, i) =>
+        summaries[i] ? { ...s, summary: summaries[i] } : s,
+      );
+      return { status_code: 200, body: { sessions: withSummary } };
     },
   );
   sdk.registerTrigger({
