@@ -11,6 +11,7 @@ const DOCS = "https://github.com/rohitg00/agentmemory/tree/main/integrations/her
 export const adapter: ConnectAdapter = {
   name: "hermes",
   displayName: "Hermes Agent",
+  category: "native",
   docs: DOCS,
   protocolNote:
     "→ Using MCP. Hooks are also available — see docs/hermes.md.",

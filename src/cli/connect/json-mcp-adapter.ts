@@ -19,6 +19,10 @@ export type JsonMcpAdapterConfig = {
   configPath: string;
   docs?: string;
   protocolNote?: string;
+  // Integration style for onboarding grouping. Defaults to "mcp" since a
+  // JSON MCP config writer is MCP-only by construction; hosts that also
+  // ship hooks (e.g. OpenClaw) pass "native".
+  category?: "native" | "mcp";
   // Wrapper key under which servers live. Default "mcpServers".
   // Zed uses "context_servers"; otherwise same shape.
   wrapperKey?: string;
@@ -45,6 +49,7 @@ export function createJsonMcpAdapter(
   return {
     name: config.name,
     displayName: config.displayName,
+    category: config.category ?? "mcp",
     ...(config.docs !== undefined && { docs: config.docs }),
     ...(config.protocolNote !== undefined && {
       protocolNote: config.protocolNote,

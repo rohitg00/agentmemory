@@ -74,6 +74,15 @@ describe("agentmemory connect — dispatcher", () => {
       expect(typeof a.displayName).toBe("string");
     }
   });
+
+  it("every adapter declares a category so onboarding never needs a separate list (#872)", () => {
+    for (const a of ADAPTERS) {
+      expect(
+        ["native", "mcp"].includes(a.category as string),
+        `adapter ${a.name} must set category to "native" or "mcp"`,
+      ).toBe(true);
+    }
+  });
 });
 
 describe("agentmemory connect — claude-code adapter (mock filesystem)", () => {

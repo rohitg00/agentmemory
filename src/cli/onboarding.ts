@@ -48,19 +48,6 @@ const AGENT_GLYPH: Record<string, string> = {
   opencode: "⬡",
 };
 
-// Agents wired through a native plugin / lifecycle hooks rather than the
-// MCP server. Cosmetic grouping only; everything still goes through an
-// adapter.
-const NATIVE_AGENTS = new Set([
-  "claude-code",
-  "copilot-cli",
-  "codex",
-  "openhuman",
-  "openclaw",
-  "hermes",
-  "pi",
-]);
-
 const PROVIDERS: { value: string; label: string; envKey: string | null }[] = [
   { value: "anthropic", label: "Anthropic — claude", envKey: "ANTHROPIC_API_KEY" },
   { value: "openai", label: "OpenAI — gpt", envKey: "OPENAI_API_KEY" },
@@ -82,7 +69,7 @@ export function buildAgentOptions(): { value: string; label: string; hint?: stri
   const options = ADAPTERS.map((a) => ({
     value: a.name,
     label: `${AGENT_GLYPH[a.name] ?? "◇"} ${a.displayName}`,
-    hint: NATIVE_AGENTS.has(a.name) ? "native plugin" : "MCP server",
+    hint: a.category === "native" ? "native plugin" : "MCP server",
   }));
   return [
     ...options.filter((o) => o.hint === "native plugin"),
