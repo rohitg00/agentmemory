@@ -1,4 +1,12 @@
+import { buildOutputLanguageInstruction } from "./language.js";
+
 export const COMPRESSION_SYSTEM = `You are a memory compression engine for an AI coding agent. Your job is to extract the essential information from a tool usage observation and compress it into structured data.
+
+${buildOutputLanguageInstruction([
+  "XML tag names",
+  "observation type enum values",
+  "importance numeric scale",
+])}
 
 Output EXACTLY this XML format with no additional text:
 

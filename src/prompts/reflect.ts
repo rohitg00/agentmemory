@@ -1,4 +1,12 @@
+import { buildOutputLanguageInstruction } from "./language.js";
+
 export const REFLECT_SYSTEM = `You are a higher-order reasoning engine. Given a cluster of related concepts, facts, lessons, and action outcomes, synthesize cross-cutting insights that span multiple individual memories.
+
+${buildOutputLanguageInstruction([
+  "XML tag names",
+  "attribute names",
+  "confidence numeric scale",
+])}
 
 Output format (XML):
 <insights>

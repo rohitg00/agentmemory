@@ -1,4 +1,13 @@
+import { buildOutputLanguageInstruction } from "./language.js";
+
+const SUMMARY_LANGUAGE_INSTRUCTION = buildOutputLanguageInstruction([
+  "XML tag names",
+  "file paths",
+]);
+
 export const SUMMARY_SYSTEM = `You are a session summarizer for an AI coding agent's memory system. Given all compressed observations from a coding session, produce a concise session summary.
+
+${SUMMARY_LANGUAGE_INSTRUCTION}
 
 Output EXACTLY this XML format with no additional text:
 
@@ -38,6 +47,8 @@ export function buildSummaryPrompt(observations: Array<{
 }
 
 export const REDUCE_SYSTEM = `You are merging multiple partial summaries of the SAME coding session into one final session summary. The partials are chronological chunks of one continuous session — not separate sessions.
+
+${SUMMARY_LANGUAGE_INSTRUCTION}
 
 Output EXACTLY this XML format with no additional text:
 
