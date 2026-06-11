@@ -1373,6 +1373,17 @@ GRAPH_EXTRACTION_ENABLED=true
 # CONSOLIDATION_ENABLED=false   # opt out of auto-consolidation
 ```
 
+### Engine Config Lookup
+
+agentmemory starts `iii-engine` with the first `iii-config.yaml` it can find in this order:
+
+1. `AGENTMEMORY_III_CONFIG` — explicit full-path override.
+2. `./iii-config.yaml` — the current command directory, useful for source development where relative paths like `./data/state_store.db` should stay inside the repo.
+3. `~/.agentmemory/iii-config.yaml` — user-level runtime override for installed packages.
+4. The bundled npm `iii-config.yaml` — fallback default.
+
+If you want data to live in a stable user directory, put a custom config at `~/.agentmemory/iii-config.yaml` and use absolute paths for `iii-state.config.adapter.config.file_path` and `iii-stream.config.adapter.config.file_path`. On Windows, prefer forward-slash absolute paths such as `C:/Users/you/.agentmemory/data/state_store.db`; do not rely on `~` expansion inside YAML paths.
+
 ### Environment Variables
 
 Create `~/.agentmemory/.env`:
