@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { formatCompact } from "@/lib/format";
 import styles from "./MobileNavToggle.module.css";
@@ -19,6 +19,7 @@ export function MobileNavToggle({
 }) {
   const [open, setOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const toggleRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -34,6 +35,7 @@ export function MobileNavToggle({
     return () => {
       document.removeEventListener("keydown", onKey);
       document.body.style.overflow = "";
+      toggleRef.current?.focus();
     };
   }, [open]);
 
@@ -45,6 +47,7 @@ export function MobileNavToggle({
     <div
       className={`${styles.sheet} ${open ? styles.sheetOpen : ""}`}
       aria-hidden={!open}
+      inert={!open}
       onClick={(e) => {
         if (e.target === e.currentTarget) setOpen(false);
       }}
@@ -63,7 +66,7 @@ export function MobileNavToggle({
           <a
             href="https://github.com/rohitg00/agentmemory"
             target="_blank"
-            rel="noopener"
+            rel="noopener noreferrer"
             onClick={() => setOpen(false)}
           >
             GITHUB · {formatCompact(stars)}★
@@ -71,7 +74,7 @@ export function MobileNavToggle({
           <a
             href="https://www.npmjs.com/package/@agentmemory/agentmemory"
             target="_blank"
-            rel="noopener"
+            rel="noopener noreferrer"
             onClick={() => setOpen(false)}
           >
             NPM
@@ -79,7 +82,7 @@ export function MobileNavToggle({
           <a
             href="https://github.com/rohitg00/agentmemory/blob/main/CHANGELOG.md"
             target="_blank"
-            rel="noopener"
+            rel="noopener noreferrer"
             onClick={() => setOpen(false)}
           >
             CHANGELOG
