@@ -3,6 +3,7 @@ import { loadConfig } from "../src/config.js";
 import { OpenAIProvider } from "../src/providers/openai.js";
 import { OpenRouterProvider } from "../src/providers/openrouter.js";
 import { MinimaxProvider } from "../src/providers/minimax.js";
+import { AnthropicProvider } from "../src/providers/anthropic.js";
 
 const openAiStyleResponse = {
   ok: true,
@@ -25,6 +26,34 @@ function mockFetch(response: Response) {
     },
   };
 }
+
+// The Anthropic SDK consumes the body stream and reads headers, so it needs
+// a fresh real Response per call rather than a reused plain object.
+function mockFetchSdk(body: () => unknown) {
+  const spy = vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
+    return new Response(JSON.stringify(body()), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  });
+  return {
+    sentModel(callIndex = 0): string {
+      const init = spy.mock.calls[callIndex]?.[1] as RequestInit;
+      return (JSON.parse(init.body as string) as { model: string }).model;
+    },
+  };
+}
+
+const anthropicSdkMessage = () => ({
+  id: "msg_test",
+  type: "message",
+  role: "assistant",
+  model: "main-model",
+  content: [{ type: "text", text: "ok" }],
+  stop_reason: "end_turn",
+  stop_sequence: null,
+  usage: { input_tokens: 1, output_tokens: 1 },
+});
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -94,6 +123,78 @@ describe("AGENTMEMORY_COMPRESS_MODEL — compress() uses the override, summarize
     await provider.summarize("sys", "user");
 
     expect(fetched.sentModel(0)).toBe("cheap-model");
+    expect(fetched.sentModel(1)).toBe("main-model");
+  });
+
+  it("OpenRouterProvider without compressModel uses the main model for both", async () => {
+    const fetched = mockFetch(openAiStyleResponse);
+    const provider = new OpenRouterProvider(
+      "test-key",
+      "main-model",
+      4096,
+      "https://openrouter.ai/api/v1/chat/completions",
+    );
+
+    await provider.compress("sys", "user");
+    await provider.summarize("sys", "user");
+
+    expect(fetched.sentModel(0)).toBe("main-model");
+    expect(fetched.sentModel(1)).toBe("main-model");
+  });
+
+  it("MinimaxProvider without compressModel uses the main model for both", async () => {
+    const fetched = mockFetch(anthropicStyleResponse);
+    const provider = new MinimaxProvider("test-key", "main-model", 4096);
+
+    await provider.compress("sys", "user");
+    await provider.summarize("sys", "user");
+
+    expect(fetched.sentModel(0)).toBe("main-model");
+    expect(fetched.sentModel(1)).toBe("main-model");
+  });
+
+  it("gemini path (OpenRouterProvider with Google base URL) routes compress to compressModel", async () => {
+    const fetched = mockFetch(openAiStyleResponse);
+    const provider = new OpenRouterProvider(
+      "test-key",
+      "main-model",
+      4096,
+      "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+      "cheap-model",
+    );
+
+    await provider.compress("sys", "user");
+    await provider.summarize("sys", "user");
+
+    expect(fetched.sentModel(0)).toBe("cheap-model");
+    expect(fetched.sentModel(1)).toBe("main-model");
+  });
+
+  it("AnthropicProvider routes compress to compressModel and summarize to model", async () => {
+    const fetched = mockFetchSdk(anthropicSdkMessage);
+    const provider = new AnthropicProvider(
+      "test-key",
+      "main-model",
+      4096,
+      undefined,
+      "cheap-model",
+    );
+
+    await provider.compress("sys", "user");
+    await provider.summarize("sys", "user");
+
+    expect(fetched.sentModel(0)).toBe("cheap-model");
+    expect(fetched.sentModel(1)).toBe("main-model");
+  });
+
+  it("AnthropicProvider without compressModel uses the main model for both", async () => {
+    const fetched = mockFetchSdk(anthropicSdkMessage);
+    const provider = new AnthropicProvider("test-key", "main-model", 4096);
+
+    await provider.compress("sys", "user");
+    await provider.summarize("sys", "user");
+
+    expect(fetched.sentModel(0)).toBe("main-model");
     expect(fetched.sentModel(1)).toBe("main-model");
   });
 });
