@@ -50,6 +50,7 @@ const AGENT_GLYPH: Record<string, string> = {
 
 const PROVIDERS: { value: string; label: string; envKey: string | null }[] = [
   { value: "anthropic", label: "Anthropic — claude", envKey: "ANTHROPIC_API_KEY" },
+  { value: "azure-openai", label: "Azure OpenAI — deployment", envKey: "AZURE_OPENAI_API_KEY" },
   { value: "openai", label: "OpenAI — gpt", envKey: "OPENAI_API_KEY" },
   { value: "gemini", label: "Google — gemini", envKey: "GEMINI_API_KEY" },
   { value: "openrouter", label: "OpenRouter — multi-model", envKey: "OPENROUTER_API_KEY" },
@@ -243,6 +244,11 @@ export async function runOnboarding(): Promise<OnboardingResult> {
     const envKey = PROVIDERS.find((x) => x.value === provider)?.envKey;
     if (envKey) {
       lines.push(`  Uncomment ${envKey}= in that file to enable ${provider}.`);
+      if (provider === "azure-openai") {
+        lines.push(
+          "  Also set AZURE_OPENAI_ENDPOINT= and AZURE_OPENAI_DEPLOYMENT= for your deployment.",
+        );
+      }
     }
   } else {
     lines.push("  No provider chosen — agentmemory will run in BM25-only mode.");

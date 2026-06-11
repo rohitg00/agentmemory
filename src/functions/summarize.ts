@@ -268,7 +268,7 @@ export function registerSummarizeFunction(
           success: false,
           error: "no_provider",
           reason:
-            "No LLM provider key set; Summarize is a no-op. Set ANTHROPIC_API_KEY (or GEMINI/OPENROUTER/MINIMAX) in ~/.agentmemory/.env to enable.",
+            "No LLM provider key set; Summarize is a no-op. Set ANTHROPIC_API_KEY, AZURE_OPENAI_API_KEY + AZURE_OPENAI_ENDPOINT + AZURE_OPENAI_DEPLOYMENT, OPENAI_API_KEY, GEMINI_API_KEY, OPENROUTER_API_KEY, or MINIMAX_API_KEY in ~/.agentmemory/.env to enable.",
         };
       }
 

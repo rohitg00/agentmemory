@@ -9,6 +9,7 @@ import { MinimaxProvider } from "./minimax.js";
 import { NoopProvider } from "./noop.js";
 import { OpenAIProvider } from "./openai.js";
 import { OpenRouterProvider } from "./openrouter.js";
+import { detectAzure } from "./_openai-shared.js";
 import { ResilientProvider } from "./resilient.js";
 import { FallbackChainProvider } from "./fallback-chain.js";
 import { getEnvVar } from "../config.js";
@@ -130,10 +131,16 @@ function createBaseProvider(config: ProviderConfig): MemoryProvider {
         "https://openrouter.ai/api/v1/chat/completions",
       );
     case "openai": {
-      const openaiKey = getEnvVar("OPENAI_API_KEY");
+      const azureKey = getEnvVar("AZURE_OPENAI_API_KEY");
+      const standardKey = getEnvVar("OPENAI_API_KEY");
+      const effectiveBaseURL = config.baseURL || getEnvVar("OPENAI_BASE_URL");
+      const useAzureKey = effectiveBaseURL ? detectAzure(effectiveBaseURL) : false;
+      const openaiKey = useAzureKey
+        ? azureKey || standardKey
+        : standardKey || azureKey;
       if (!openaiKey) {
         throw new Error(
-          "OPENAI_API_KEY is required for the openai provider",
+          "OPENAI_API_KEY or AZURE_OPENAI_API_KEY is required for the openai provider",
         );
       }
       return new OpenAIProvider(

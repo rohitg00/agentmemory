@@ -1224,6 +1224,7 @@ agentmemory auto-detects from your environment. By default, no LLM calls are mad
 |----------|--------|-------|
 | **No-op (default)** | No config needed | LLM-backed compress/summarize is DISABLED. Synthetic BM25 compression + recall still work. See `AGENTMEMORY_ALLOW_AGENT_SDK` below if you used to rely on the Claude-subscription fallback. |
 | Anthropic API | `ANTHROPIC_API_KEY` | Per-token billing |
+| Azure OpenAI | `AZURE_OPENAI_API_KEY` + `AZURE_OPENAI_ENDPOINT` + `AZURE_OPENAI_DEPLOYMENT` | Uses your Azure OpenAI deployment for compression/summarization. API-key auth only; Microsoft Entra ID / `DefaultAzureCredential` is not wired yet. |
 | MiniMax | `MINIMAX_API_KEY` | Anthropic-compatible |
 | Gemini | `GEMINI_API_KEY` | Also enables embeddings |
 | OpenRouter | `OPENROUTER_API_KEY` | Any model |
@@ -1381,6 +1382,14 @@ Create `~/.agentmemory/.env`:
 # LLM provider (pick one — default is the no-op provider: no LLM calls)
 # ANTHROPIC_API_KEY=sk-ant-...
 # ANTHROPIC_BASE_URL=...              # Optional: Anthropic-compatible proxy / Azure
+# AZURE_OPENAI_API_KEY=...            # API-key auth only
+# AZURE_OPENAI_ENDPOINT=https://<resource>.openai.azure.com
+# AZURE_OPENAI_DEPLOYMENT=gpt-5.4-mini # Azure deployment name passed as the model
+# AZURE_OPENAI_API_VERSION=2025-04-01-preview
+#                                      # Optional: only needed for legacy deployment URLs
+# AZURE_OPENAI_BASE_URL=https://<resource>.openai.azure.com/openai/deployments/<deployment>
+#                                      # Optional: legacy deployment URL. If set, deployment
+#                                      # can be parsed from the URL.
 # GEMINI_API_KEY=...
 # OPENROUTER_API_KEY=...
 # MINIMAX_API_KEY=...
@@ -1389,7 +1398,9 @@ Create `~/.agentmemory/.env`:
 #                                          # embedding provider (further below). Set
 #                                          # OPENAI_API_KEY_FOR_LLM=false to scope it
 #                                          # to embeddings only.
-# OPENAI_BASE_URL=https://api.openai.com   # Optional: override for Azure / vLLM / LM Studio / proxies
+# OPENAI_BASE_URL=https://api.openai.com   # Optional: override for vLLM / LM Studio / proxies.
+#                                          # Prefer AZURE_OPENAI_* above for Azure OpenAI.
+#                                          # Legacy Azure deployments can still use this shape:
 #                                          # Azure: https://<resource>.openai.azure.com/openai/deployments/<deployment>
 #                                          # Auto-detected from `.openai.azure.com` hostname; uses
 #                                          # api-key header + api-version query param.

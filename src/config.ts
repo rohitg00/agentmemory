@@ -49,8 +49,45 @@ function hasRealValue(v: string | undefined): v is string {
   return typeof v === "string" && v.trim().length > 0;
 }
 
-function detectProvider(env: Record<string, string>): ProviderConfig {
+function normalizeAzureEndpoint(endpoint: string): string {
+  return endpoint.replace(/\/+$/, "");
+}
+
+function deploymentFromAzureBaseUrl(baseUrl: string | undefined): string | undefined {
+  if (!hasRealValue(baseUrl)) return undefined;
+  try {
+    const parsed = new URL(baseUrl);
+    const match = parsed.pathname.match(/\/openai\/deployments\/([^/]+)/);
+    return match ? decodeURIComponent(match[1]) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export function detectProviderForEnv(env: Record<string, string>): ProviderConfig {
   const maxTokens = parseInt(env["MAX_TOKENS"] || "4096", 10);
+
+  const azureOpenAiKey = env["AZURE_OPENAI_API_KEY"];
+  const azureOpenAiEndpoint = env["AZURE_OPENAI_ENDPOINT"];
+  const azureOpenAiBaseUrl = env["AZURE_OPENAI_BASE_URL"];
+  const azureOpenAiDeployment =
+    env["AZURE_OPENAI_DEPLOYMENT"] ||
+    env["AZURE_OPENAI_MODEL"] ||
+    deploymentFromAzureBaseUrl(azureOpenAiBaseUrl);
+  if (
+    hasRealValue(azureOpenAiKey) &&
+    (hasRealValue(azureOpenAiEndpoint) || hasRealValue(azureOpenAiBaseUrl)) &&
+    hasRealValue(azureOpenAiDeployment)
+  ) {
+    return {
+      provider: "openai",
+      model: azureOpenAiDeployment,
+      maxTokens,
+      baseURL: hasRealValue(azureOpenAiBaseUrl)
+        ? azureOpenAiBaseUrl
+        : normalizeAzureEndpoint(azureOpenAiEndpoint),
+    };
+  }
 
   // OpenAI-compatible: supports OpenAI, DeepSeek, SiliconFlow, Azure, vLLM, LM Studio
   if (hasRealValue(env["OPENAI_API_KEY"]) && env["OPENAI_API_KEY_FOR_LLM"] !== "false") {
@@ -127,7 +164,7 @@ function detectProvider(env: Record<string, string>): ProviderConfig {
   if (!allowAgentSdk) {
     process.stderr.write(
       "[agentmemory] No LLM provider key found " +
-        "(ANTHROPIC_API_KEY, GEMINI_API_KEY, OPENROUTER_API_KEY, MINIMAX_API_KEY, OPENAI_API_KEY). " +
+        "(ANTHROPIC_API_KEY, AZURE_OPENAI_API_KEY, GEMINI_API_KEY, OPENROUTER_API_KEY, MINIMAX_API_KEY, OPENAI_API_KEY). " +
         "LLM-backed compression and summarization are DISABLED — using no-op provider. " +
         "This is the safe default: the agent-sdk fallback used to spawn Claude Agent SDK " +
         "child sessions which inherit Claude Code's plugin hooks and cause infinite Stop-hook " +
@@ -159,7 +196,7 @@ function detectProvider(env: Record<string, string>): ProviderConfig {
 export function loadConfig(): AgentMemoryConfig {
   const env = getMergedEnv();
 
-  const provider = detectProvider(env);
+  const provider = detectProviderForEnv(env);
 
   // Port quartet: REST is the anchor; streams/engine derive from it
   // unless individually overridden. Default anchor 3111 yields the
@@ -210,6 +247,12 @@ export function detectLlmProviderKind(): "llm" | "noop" {
     hasRealValue(env["GOOGLE_API_KEY"]) ||
     hasRealValue(env["OPENROUTER_API_KEY"]) ||
     hasRealValue(env["MINIMAX_API_KEY"]) ||
+    (hasRealValue(env["AZURE_OPENAI_API_KEY"]) &&
+      (hasRealValue(env["AZURE_OPENAI_ENDPOINT"]) ||
+        hasRealValue(env["AZURE_OPENAI_BASE_URL"])) &&
+      (hasRealValue(env["AZURE_OPENAI_DEPLOYMENT"]) ||
+        hasRealValue(env["AZURE_OPENAI_MODEL"]) ||
+        hasRealValue(deploymentFromAzureBaseUrl(env["AZURE_OPENAI_BASE_URL"])))) ||
     (hasRealValue(env["OPENAI_API_KEY"]) &&
       env["OPENAI_API_KEY_FOR_LLM"] !== "false")
   ) {
