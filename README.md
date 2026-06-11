@@ -1292,6 +1292,15 @@ agentmemory prints a runtime warning when `OPENROUTER_MODEL` matches a premium-t
 
 Quality vs cost tradeoff for memory work: compression is a summarization task with relatively loose quality bars (the agent re-reads the summary, not the user). DeepSeek-V4-Pro / Qwen3-Coder land within rounding error of Sonnet on this task while costing ~10× less. Save the premium-tier models for queries you read directly.
 
+You can also split the workload instead of downgrading everything: `AGENTMEMORY_COMPRESS_MODEL` routes `compress()`-side work (per-observation compression, graph extraction, query expansion — the bulk of background call volume) to a cheaper model while summarization, consolidation synthesis, and reflection stay on your main model.
+
+```env
+OPENAI_MODEL=your-main-model                  # summaries, consolidation, lessons
+AGENTMEMORY_COMPRESS_MODEL=your-cheap-model   # per-observation compression etc.
+```
+
+The value must be a model name valid for the detected provider. It is ignored by the agent-sdk / noop providers and by `FALLBACK_PROVIDERS` chains (model names are provider-specific).
+
 Sources: [OpenRouter pricing for Sonnet 4.6](https://openrouter.ai/anthropic/claude-sonnet-4.6/pricing), [DeepSeek V4 Pro](https://openrouter.ai/deepseek/deepseek-v4-pro), [DeepSeek pricing notes](https://api-docs.deepseek.com/quick_start/pricing/).
 
 ### Multi-agent memory (`AGENT_ID` + `AGENTMEMORY_AGENT_SCOPE`)
@@ -1408,6 +1417,11 @@ Create `~/.agentmemory/.env`:
 #                                          # but no content.
 # OPENAI_API_KEY_FOR_LLM=false             # Optional: set to false to skip OpenAI auto-detection
 #                                          # for LLM (useful if you only want OpenAI for embeddings)
+# Optional cheaper model for compress()-side work only (per-observation
+# compression, graph extraction, query expansion); summaries / consolidation /
+# reflection stay on the main model. Must be valid for the detected provider.
+# AGENTMEMORY_COMPRESS_MODEL=gpt-5.4-nano
+
 # Opt-in Claude-subscription fallback (spawns @anthropic-ai/claude-agent-sdk);
 # leave OFF unless you understand the Stop-hook recursion risk (#149 follow-up):
 # AGENTMEMORY_ALLOW_AGENT_SDK=true

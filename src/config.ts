@@ -51,12 +51,20 @@ function hasRealValue(v: string | undefined): v is string {
 
 function detectProvider(env: Record<string, string>): ProviderConfig {
   const maxTokens = parseInt(env["MAX_TOKENS"] || "4096", 10);
+  // Compression dominates background LLM volume (one call per observation),
+  // so it gets an optional dedicated model while summarize/consolidate/reflect
+  // stay on the main one. Provider-agnostic: the value must be a model name
+  // valid for whichever provider is detected below.
+  const compressModel = hasRealValue(env["AGENTMEMORY_COMPRESS_MODEL"])
+    ? { compressModel: env["AGENTMEMORY_COMPRESS_MODEL"] }
+    : {};
 
   // OpenAI-compatible: supports OpenAI, DeepSeek, SiliconFlow, Azure, vLLM, LM Studio
   if (hasRealValue(env["OPENAI_API_KEY"]) && env["OPENAI_API_KEY_FOR_LLM"] !== "false") {
     return {
       provider: "openai",
       model: env["OPENAI_MODEL"] || "gpt-4o-mini",
+      ...compressModel,
       maxTokens,
       baseURL: env["OPENAI_BASE_URL"],
     };
@@ -67,6 +75,7 @@ function detectProvider(env: Record<string, string>): ProviderConfig {
     return {
       provider: "minimax",
       model: env["MINIMAX_MODEL"] || "MiniMax-M2.7",
+      ...compressModel,
       maxTokens,
     };
   }
@@ -75,6 +84,7 @@ function detectProvider(env: Record<string, string>): ProviderConfig {
     return {
       provider: "anthropic",
       model: env["ANTHROPIC_MODEL"] || "claude-sonnet-4-20250514",
+      ...compressModel,
       maxTokens,
       baseURL: env["ANTHROPIC_BASE_URL"],
     };
@@ -89,6 +99,7 @@ function detectProvider(env: Record<string, string>): ProviderConfig {
     return {
       provider: "gemini",
       model: env["GEMINI_MODEL"] || "gemini-2.5-flash",
+      ...compressModel,
       maxTokens,
     };
   }
@@ -119,6 +130,7 @@ function detectProvider(env: Record<string, string>): ProviderConfig {
     return {
       provider: "openrouter",
       model,
+      ...compressModel,
       maxTokens,
     };
   }
@@ -182,7 +194,7 @@ export function loadConfig(): AgentMemoryConfig {
     provider,
     tokenBudget: safeParseInt(env["TOKEN_BUDGET"], 2000),
     maxObservationsPerSession: safeParseInt(env["MAX_OBS_PER_SESSION"], 500),
-    compressionModel: provider.model,
+    compressionModel: provider.compressModel ?? provider.model,
     dataDir: DATA_DIR,
   };
 }

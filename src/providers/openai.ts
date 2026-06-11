@@ -48,6 +48,7 @@ export class OpenAIProvider implements MemoryProvider {
   name = "openai";
   private apiKey: string;
   private model: string;
+  private compressModel?: string;
   private maxTokens: number;
   private baseUrl: string;
   private reasoningEffort?: string;
@@ -55,9 +56,16 @@ export class OpenAIProvider implements MemoryProvider {
   private isAzure: boolean;
   private azureApiVersion: string;
 
-  constructor(apiKey: string, model: string, maxTokens: number, baseURL?: string) {
+  constructor(
+    apiKey: string,
+    model: string,
+    maxTokens: number,
+    baseURL?: string,
+    compressModel?: string,
+  ) {
     this.apiKey = apiKey;
     this.model = model;
+    this.compressModel = compressModel;
     this.maxTokens = maxTokens;
     this.baseUrl = normalizeBaseUrl(baseURL || getEnvVar("OPENAI_BASE_URL"));
     this.reasoningEffort = getEnvVar("OPENAI_REASONING_EFFORT") || undefined;
@@ -68,17 +76,21 @@ export class OpenAIProvider implements MemoryProvider {
   }
 
   async compress(systemPrompt: string, userPrompt: string): Promise<string> {
-    return this.call(systemPrompt, userPrompt);
+    return this.call(systemPrompt, userPrompt, this.compressModel);
   }
 
   async summarize(systemPrompt: string, userPrompt: string): Promise<string> {
     return this.call(systemPrompt, userPrompt);
   }
 
-  private async call(systemPrompt: string, userPrompt: string): Promise<string> {
+  private async call(
+    systemPrompt: string,
+    userPrompt: string,
+    modelOverride?: string,
+  ): Promise<string> {
     const url = buildChatUrl(this.baseUrl, this.isAzure, this.azureApiVersion);
     const body: Record<string, unknown> = {
-      model: this.model,
+      model: modelOverride ?? this.model,
       max_tokens: this.maxTokens,
       // OpenAI API spec defines `stream` as defaulting to false, so omitting
       // it should yield a JSON response. Some OpenAI-compatible proxies
