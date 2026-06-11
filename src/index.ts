@@ -598,16 +598,18 @@ async function main() {
     await indexPersistence.save().catch((err) => {
       console.warn(`[agentmemory] Failed to save index on shutdown:`, err);
     });
-    // #909 / iii-hq/iii#1835: when the iii engine is already gone, the OTel
-    // exporter retries forever and sdk.shutdown() never resolves, hanging the
-    // process until it's force-killed. Race it against a 3s timeout so we always
-    // reach process.exit(); any un-flushed telemetry is dropped on shutdown.
-    await Promise.race([
-      sdk.shutdown(),
-      new Promise<void>((resolve) => setTimeout(resolve, 3000)),
-    ]).catch((err) => {
-      console.warn(`[agentmemory] sdk.shutdown() timed out or errored:`, err);
+    // #909 / iii-hq/iii#1835: defensive timeout prevents an indefinite hang when
+    // the OTel exporter is stuck retrying; un-flushed telemetry is dropped on exit.
+    const shutdownPromise = sdk.shutdown().catch((err) => {
+      console.warn(`[agentmemory] sdk.shutdown() errored:`, err);
     });
+    const timeoutPromise = new Promise<void>((resolve) =>
+      setTimeout(() => {
+        console.warn(`[agentmemory] sdk.shutdown() exceeded 3s timeout, proceeding to exit`);
+        resolve();
+      }, 3000),
+    );
+    await Promise.race([shutdownPromise, timeoutPromise]);
     clearWorkerPidfile();
     process.exit(0);
   };
