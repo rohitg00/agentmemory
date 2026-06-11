@@ -57,6 +57,11 @@ export interface Prefs {
   // never updated, so we can show "you joined agentmemory N days ago"
   // copy in /status later without keeping a separate file.
   firstRunAt: string | null;
+  // Set to true once the user has answered the context-injection prompt
+  // (either way). We never re-ask after this so the prompt stays a
+  // one-time choice, matching the skipGlobalInstall / skipConsoleInstall
+  // never-nag pattern.
+  injectContextChosen: boolean;
 }
 
 const DEFAULTS: Prefs = {
@@ -69,6 +74,7 @@ const DEFAULTS: Prefs = {
   skipGlobalInstall: false,
   skipConsoleInstall: false,
   firstRunAt: null,
+  injectContextChosen: false,
 };
 
 export function prefsDir(): string {

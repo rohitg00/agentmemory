@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "agentmemory": {
+      "type": "local",
+      "command": "npx",
+      "args": ["-y", "@agentmemory/mcp"],
+      "env": {
+        "AGENTMEMORY_URL": "${AGENTMEMORY_URL:-http://localhost:3111}",
+        "AGENTMEMORY_SECRET": "${AGENTMEMORY_SECRET:-}",
+        "AGENTMEMORY_TOOLS": "${AGENTMEMORY_TOOLS:-all}"
+      },
+      "tools": ["*"]
+    }
+  }
+}

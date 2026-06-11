@@ -1,4 +1,28 @@
 #!/usr/bin/env node
+import { execSync } from "node:child_process";
+import { basename } from "node:path";
+
+//#region src/hooks/_project.ts
+function resolveProject(cwd) {
+	const explicit = process.env["AGENTMEMORY_PROJECT_NAME"];
+	if (explicit && explicit.trim()) return explicit.trim();
+	const dir = cwd && cwd.trim() ? cwd : process.cwd();
+	try {
+		const top = execSync("git rev-parse --show-toplevel", {
+			cwd: dir,
+			stdio: [
+				"ignore",
+				"pipe",
+				"ignore"
+			],
+			timeout: 500
+		}).toString().trim();
+		if (top) return basename(top);
+	} catch {}
+	return basename(dir);
+}
+
+//#endregion
 //#region src/hooks/notification.ts
 function isSdkChildContext(payload) {
 	if (process.env["AGENTMEMORY_SDK_CHILD"] === "1") return true;
@@ -22,27 +46,28 @@ async function main() {
 		return;
 	}
 	if (isSdkChildContext(data)) return;
-	if (data.notification_type !== "permission_prompt") return;
-	const sessionId = data.session_id || "unknown";
-	try {
-		await fetch(`${REST_URL}/agentmemory/observe`, {
-			method: "POST",
-			headers: authHeaders(),
-			body: JSON.stringify({
-				hookType: "notification",
-				sessionId,
-				project: data.cwd || process.cwd(),
-				cwd: data.cwd || process.cwd(),
-				timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-				data: {
-					notification_type: data.notification_type,
-					title: data.title,
-					message: data.message
-				}
-			}),
-			signal: AbortSignal.timeout(2e3)
-		});
-	} catch {}
+	const notificationType = data.notification_type ?? data.notificationType;
+	if (notificationType !== "permission_prompt") return;
+	const rawSessionId = data.session_id ?? data.sessionId;
+	const sessionId = typeof rawSessionId === "string" && rawSessionId.length > 0 ? rawSessionId : "unknown";
+	fetch(`${REST_URL}/agentmemory/observe`, {
+		method: "POST",
+		headers: authHeaders(),
+		body: JSON.stringify({
+			hookType: "notification",
+			sessionId,
+			project: resolveProject(data.cwd),
+			cwd: data.cwd || process.cwd(),
+			timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+			data: {
+				notification_type: notificationType,
+				title: data.title,
+				message: data.message
+			}
+		}),
+		signal: AbortSignal.timeout(2e3)
+	}).catch(() => {});
+	setTimeout(() => process.exit(0), 500).unref();
 }
 main();
 

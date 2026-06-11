@@ -32,6 +32,28 @@ export const AGENTMEMORY_MCP_BLOCK = {
   },
 };
 
+const COPILOT_MCP_COMMAND =
+  process.platform === "win32"
+    ? {
+        command: process.env["ComSpec"] || process.env["COMSPEC"] || "cmd.exe",
+        args: ["/d", "/s", "/c", "npx", "-y", "@agentmemory/mcp"],
+      }
+    : {
+        command: "npx",
+        args: ["-y", "@agentmemory/mcp"],
+      };
+
+export const AGENTMEMORY_COPILOT_MCP_BLOCK = {
+  type: "local" as const,
+  ...COPILOT_MCP_COMMAND,
+  env: {
+    AGENTMEMORY_URL: "${AGENTMEMORY_URL:-http://localhost:3111}",
+    AGENTMEMORY_SECRET: "${AGENTMEMORY_SECRET:-}",
+    AGENTMEMORY_TOOLS: "${AGENTMEMORY_TOOLS:-all}",
+  },
+  tools: ["*"],
+};
+
 export function backupsDir(): string {
   return join(homedir(), ".agentmemory", "backups");
 }

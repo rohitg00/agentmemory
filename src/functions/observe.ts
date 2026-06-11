@@ -156,12 +156,20 @@ export function registerObserveFunction(
           raw.imageData = filePath;
           const { incrementImageRef } = await import("./image-refs.js");
           await incrementImageRef(kv, filePath);
-          sdk.triggerVoid("mem::disk-size-delta", { deltaBytes: bytesWritten });
+          sdk.trigger({
+            function_id: "mem::disk-size-delta",
+            payload: { deltaBytes: bytesWritten },
+            action: TriggerAction.Void(),
+          });
           if (process.env["AGENTMEMORY_IMAGE_EMBEDDINGS"] === "true") {
-            sdk.triggerVoid("mem::vision-embed", {
-              imageRef: filePath,
-              sessionId: payload.sessionId,
-              observationId: obsId,
+            sdk.trigger({
+              function_id: "mem::vision-embed",
+              payload: {
+                imageRef: filePath,
+                sessionId: payload.sessionId,
+                observationId: obsId,
+              },
+              action: TriggerAction.Void(),
             });
           }
         }
@@ -175,7 +183,11 @@ export function registerObserveFunction(
             const { deleteImage } = await import("../utils/image-store.js");
             const { deletedBytes } = await deleteImage(raw.imageData);
             if (deletedBytes > 0) {
-              sdk.triggerVoid("mem::disk-size-delta", { deltaBytes: -deletedBytes });
+              sdk.trigger({
+                function_id: "mem::disk-size-delta",
+                payload: { deltaBytes: -deletedBytes },
+                action: TriggerAction.Void(),
+              });
             }
           }
           throw error;

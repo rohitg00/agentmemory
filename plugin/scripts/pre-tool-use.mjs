@@ -24,18 +24,22 @@ async function main() {
 		return;
 	}
 	if (isSdkChildContext(data)) return;
-	const toolName = data.tool_name;
+	const toolName = typeof data.tool_name === "string" ? data.tool_name : typeof data.toolName === "string" ? data.toolName : void 0;
 	if (!toolName) return;
+	const normalizedToolName = toolName.toLowerCase();
 	if (![
-		"Edit",
-		"Write",
-		"Read",
-		"Glob",
-		"Grep"
-	].includes(toolName)) return;
-	const toolInput = data.tool_input || {};
+		"edit",
+		"write",
+		"create",
+		"read",
+		"view",
+		"glob",
+		"grep"
+	].includes(normalizedToolName)) return;
+	const rawToolInput = data.tool_input ?? data.toolArgs;
+	const toolInput = typeof rawToolInput === "object" && rawToolInput !== null && !Array.isArray(rawToolInput) ? rawToolInput : {};
 	const files = [];
-	const fileKeys = toolName === "Grep" ? ["path", "file"] : [
+	const fileKeys = normalizedToolName === "grep" ? ["path", "file"] : [
 		"file_path",
 		"path",
 		"file",
@@ -47,11 +51,13 @@ async function main() {
 	}
 	if (files.length === 0) return;
 	const terms = [];
-	if (toolName === "Grep" || toolName === "Glob") {
+	if (normalizedToolName === "grep" || normalizedToolName === "glob") {
 		const pattern = toolInput["pattern"];
 		if (typeof pattern === "string" && pattern.length > 0) terms.push(pattern);
 	}
-	const sessionId = data.session_id || "unknown";
+	const rawSessionId = data.session_id || data.sessionId;
+	const sessionId = typeof rawSessionId === "string" && rawSessionId.length > 0 ? rawSessionId : "unknown";
+	const project = typeof data.project === "string" && data.project.trim().length > 0 ? data.project.trim() : void 0;
 	try {
 		const res = await fetch(`${REST_URL}/agentmemory/enrich`, {
 			method: "POST",
@@ -60,7 +66,8 @@ async function main() {
 				sessionId,
 				files,
 				terms,
-				toolName
+				toolName,
+				...project !== void 0 && { project }
 			}),
 			signal: AbortSignal.timeout(2e3)
 		});

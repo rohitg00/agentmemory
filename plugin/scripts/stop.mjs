@@ -22,23 +22,20 @@ async function main() {
 		return;
 	}
 	if (isSdkChildContext(data)) return;
-	const sessionId = data.session_id || "unknown";
-	try {
-		await fetch(`${REST_URL}/agentmemory/summarize`, {
-			method: "POST",
-			headers: authHeaders(),
-			body: JSON.stringify({ sessionId }),
-			signal: AbortSignal.timeout(12e4)
-		});
-	} catch {}
-	try {
-		await fetch(`${REST_URL}/agentmemory/session/end`, {
-			method: "POST",
-			headers: authHeaders(),
-			body: JSON.stringify({ sessionId }),
-			signal: AbortSignal.timeout(5e3)
-		});
-	} catch {}
+	const sessionId = data.session_id || data.sessionId || "unknown";
+	fetch(`${REST_URL}/agentmemory/summarize`, {
+		method: "POST",
+		headers: authHeaders(),
+		body: JSON.stringify({ sessionId }),
+		signal: AbortSignal.timeout(12e4)
+	}).catch(() => {});
+	fetch(`${REST_URL}/agentmemory/session/end`, {
+		method: "POST",
+		headers: authHeaders(),
+		body: JSON.stringify({ sessionId }),
+		signal: AbortSignal.timeout(5e3)
+	}).catch(() => {});
+	setTimeout(() => process.exit(0), 1500).unref();
 }
 main();
 

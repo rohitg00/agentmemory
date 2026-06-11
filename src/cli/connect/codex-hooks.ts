@@ -97,5 +97,12 @@ export function buildMergedHooks(
 }
 
 function isAgentmemoryEntry(entry: HookEntry, scriptsDir: string): boolean {
-  return entry.hooks.some((handler) => handler.command.includes(scriptsDir));
+  const normalizedScriptsDir = normalizePathForCommandMatch(scriptsDir);
+  return entry.hooks.some((handler) =>
+    normalizePathForCommandMatch(handler.command).includes(normalizedScriptsDir),
+  );
+}
+
+function normalizePathForCommandMatch(value: string): string {
+  return value.replace(/\\/g, "/");
 }

@@ -161,10 +161,24 @@ export function loadConfig(): AgentMemoryConfig {
 
   const provider = detectProvider(env);
 
+  // Port quartet: REST is the anchor; streams/engine derive from it
+  // unless individually overridden. Default anchor 3111 yields the
+  // canonical 3112 streams / 49134 engine pair, but `III_REST_PORT=3211`
+  // auto-picks 3212 + 49234 so a second instance doesn't collide (#750).
+  const restPort = parseInt(env["III_REST_PORT"] || "3111", 10) || 3111;
+  const streamsPort =
+    parseInt(env["III_STREAM_PORT"] || env["III_STREAMS_PORT"] || "", 10) ||
+    restPort + 1;
+  const engineUrl =
+    env["III_ENGINE_URL"] ||
+    `ws://localhost:${
+      parseInt(env["III_ENGINE_PORT"] || "", 10) || restPort + 46023
+    }`;
+
   return {
-    engineUrl: env["III_ENGINE_URL"] || "ws://localhost:49134",
-    restPort: parseInt(env["III_REST_PORT"] || "3111", 10) || 3111,
-    streamsPort: parseInt(env["III_STREAMS_PORT"] || "3112", 10) || 3112,
+    engineUrl,
+    restPort,
+    streamsPort,
     provider,
     tokenBudget: safeParseInt(env["TOKEN_BUDGET"], 2000),
     maxObservationsPerSession: safeParseInt(env["MAX_OBS_PER_SESSION"], 500),
@@ -322,8 +336,44 @@ export function getGraphBatchSize(): number {
   return safeParseInt(getMergedEnv()["GRAPH_EXTRACTION_BATCH_SIZE"], 10);
 }
 
+// #771: window for the smart-search followup-rate diagnostic. A second
+// search arriving within this many seconds (with disjoint results)
+// counts as a "follow-up" — a directional signal that the first result
+// set didn't satisfy. Long values overcount (legitimate refinement
+// looks like a follow-up); short values undercount.
+const FOLLOWUP_WINDOW_DEFAULT_SECONDS = 30;
+
+export function getFollowupWindowSeconds(): number {
+  return safeParseInt(
+    getMergedEnv()["AGENTMEMORY_FOLLOWUP_WINDOW_SECONDS"],
+    FOLLOWUP_WINDOW_DEFAULT_SECONDS,
+  );
+}
+
 export function isConsolidationEnabled(): boolean {
-  return getMergedEnv()["CONSOLIDATION_ENABLED"] === "true";
+  const env = getMergedEnv();
+  const explicit = env["CONSOLIDATION_ENABLED"];
+  if (explicit === "false" || explicit === "0") return false;
+  if (explicit === "true" || explicit === "1") return true;
+  return hasLLMProviderConfigured(env);
+}
+
+function hasLLMProviderConfigured(env: Record<string, string | undefined>): boolean {
+  const provider = (env["AGENTMEMORY_PROVIDER"] || "").toLowerCase();
+  if (provider === "noop") return false;
+  const openaiKeyForLlm =
+    env["OPENAI_API_KEY"] &&
+    (env["OPENAI_API_KEY_FOR_LLM"] || "").toLowerCase() !== "false";
+  return Boolean(
+    env["ANTHROPIC_API_KEY"] ||
+      openaiKeyForLlm ||
+      env["OPENROUTER_API_KEY"] ||
+      env["GEMINI_API_KEY"] ||
+      env["GOOGLE_API_KEY"] ||
+      env["MINIMAX_API_KEY"] ||
+      env["OPENAI_BASE_URL"] ||
+      provider === "agent-sdk",
+  );
 }
 
 // Per-observation LLM compression is OFF by default as of 0.8.8 (see #138).

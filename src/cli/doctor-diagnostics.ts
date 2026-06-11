@@ -157,7 +157,7 @@ export type DoctorEffects = {
   pidfileExists: () => boolean;
   /** Resolve the iii binary on PATH; return null if not found. */
   findIiiBinary: () => string | null;
-  /** Path to ~/.local/bin/iii (the location we install to). */
+  /** Path to ~/.agentmemory/bin/iii (the private install location). */
   localBinIiiPath: () => string;
   /** Run `iii --version`; null if it fails. */
   iiiBinaryVersion: (binPath: string) => string | null;
@@ -308,13 +308,14 @@ export function buildDiagnostics(effects: DoctorEffects): Diagnostic[] {
     {
       id: "iii-on-path-not-local-bin",
       message:
-        "iii is on PATH but not in ~/.local/bin/iii (where we install).",
+        "iii is on PATH but not at agentmemory's private install path.",
       fixPreview:
-        "Suggest re-installing the pinned version via the installer — won't touch your PATH.",
+        "Install the pinned version to ~/.agentmemory/bin — won't touch your PATH.",
       moreInfo:
-        "agentmemory's installer writes to ~/.local/bin/iii. When a user-managed iii " +
-        "lives somewhere else (homebrew, cargo, $XDG_BIN) we don't auto-overwrite it. " +
-        "If you want our pinned build, run the installer; otherwise this is informational.",
+        "agentmemory installs its pinned engine to ~/.agentmemory/bin/iii so a " +
+        "user-managed iii on PATH (homebrew, cargo, manual install) stays untouched. " +
+        "When agentmemory needs the pin and PATH doesn't have it, it falls back to the " +
+        "private install. If neither exists, run the installer.",
       manualOnly: true,
       check: async () => {
         const bin = effects.findIiiBinary();
@@ -330,7 +331,7 @@ export function buildDiagnostics(effects: DoctorEffects): Diagnostic[] {
           ok: r.ok,
           message:
             r.message ??
-            "Installer wrote to ~/.local/bin/iii. Your PATH wasn't modified — adjust it yourself if needed.",
+            "Installer wrote to ~/.agentmemory/bin/iii. Your PATH wasn't modified.",
         })),
     },
   ];

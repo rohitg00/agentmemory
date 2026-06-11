@@ -25,8 +25,9 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import * as p from "@clack/prompts";
-import { writePrefs } from "./preferences.js";
-import { resolveAdapter, runAdapter } from "./connect/index.js";
+import { appendFileSync, readFileSync } from "node:fs";
+import { readPrefs, writePrefs } from "./preferences.js";
+import { ADAPTERS, resolveAdapter, runAdapter } from "./connect/index.js";
 import type { ConnectResult } from "./connect/types.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -34,29 +35,18 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 // Native plugin row — these agents ship an agentmemory plugin or
 // first-party integration. Glyphs match SkillKit's published set
 // where they overlap; the rest fall back to the generic `◇`.
-const NATIVE_AGENTS: { value: string; label: string; glyph: string }[] = [
-  { value: "claude-code", label: "Claude Code", glyph: "⟁" },
-  { value: "codex", label: "Codex", glyph: "◎" },
-  { value: "openhuman", label: "OpenHuman", glyph: "◇" },
-  { value: "openclaw", label: "OpenClaw", glyph: "◇" },
-  { value: "hermes", label: "Hermes", glyph: "◇" },
-  { value: "pi", label: "Pi", glyph: "◇" },
-  { value: "cursor", label: "Cursor", glyph: "◫" },
-  { value: "gemini-cli", label: "Gemini CLI", glyph: "✦" },
-];
-
-// MCP-only row — these agents use the MCP server we ship rather than
-// a native plugin.
-const MCP_AGENTS: { value: string; label: string; glyph: string }[] = [
-  { value: "opencode", label: "OpenCode", glyph: "⬡" },
-  { value: "cline", label: "Cline", glyph: "◇" },
-  { value: "goose", label: "Goose", glyph: "◇" },
-  { value: "kilo", label: "Kilo", glyph: "◇" },
-  { value: "aider", label: "Aider", glyph: "◇" },
-  { value: "claude-desktop", label: "Claude Desktop", glyph: "⟁" },
-  { value: "windsurf", label: "Windsurf", glyph: "◇" },
-  { value: "roo", label: "Roo", glyph: "◇" },
-];
+// Display glyph per agent; the agent set itself comes from connect's
+// ADAPTERS (single source of truth) so the picker can never drift from
+// what `agentmemory connect` can actually wire (#872). Unknown adapters
+// fall back to a neutral glyph.
+const AGENT_GLYPH: Record<string, string> = {
+  "claude-code": "⟁",
+  "copilot-cli": "◈",
+  codex: "◎",
+  cursor: "◫",
+  "gemini-cli": "✦",
+  opencode: "⬡",
+};
 
 const PROVIDERS: { value: string; label: string; envKey: string | null }[] = [
   { value: "anthropic", label: "Anthropic — claude", envKey: "ANTHROPIC_API_KEY" },
@@ -67,19 +57,33 @@ const PROVIDERS: { value: string; label: string; envKey: string | null }[] = [
   { value: "skip", label: "Skip — BM25-only mode (no LLM key)", envKey: null },
 ];
 
-function buildAgentOptions(): { value: string; label: string; hint?: string }[] {
+const PROVIDER_COST_HINTS: Record<string, string> = {
+  anthropic: "rough cost: a fast Haiku-class model keeps compress/consolidate at fractions of a cent per session.",
+  openai: "rough cost: a mini-class model keeps compress/consolidate at fractions of a cent per session.",
+  gemini: "rough cost: a Flash-class model keeps compress/consolidate at fractions of a cent per session.",
+  openrouter: "rough cost: pick a small model; spend tracks your chosen model's per-token price.",
+  minimax: "rough cost: scales with the MiniMax model price per token.",
+};
+
+export function buildAgentOptions(): { value: string; label: string; hint?: string }[] {
+  const options = ADAPTERS.map((a) => ({
+    value: a.name,
+    label: `${AGENT_GLYPH[a.name] ?? "◇"} ${a.displayName}`,
+    hint: a.category === "native" ? "native plugin" : "MCP server",
+  }));
   return [
-    ...NATIVE_AGENTS.map((a) => ({
-      value: a.value,
-      label: `${a.glyph} ${a.label}`,
-      hint: "native plugin",
-    })),
-    ...MCP_AGENTS.map((a) => ({
-      value: a.value,
-      label: `${a.glyph} ${a.label}`,
-      hint: "MCP server",
-    })),
+    ...options.filter((o) => o.hint === "native plugin"),
+    ...options.filter((o) => o.hint === "MCP server"),
   ];
+}
+
+export function getInitialAgentValues(
+  env: Record<string, string | undefined> = process.env,
+): string[] {
+  if (env["COPILOT_CLI"] === "1" || env["COPILOT_AGENT_SESSION_ID"]) {
+    return ["copilot-cli"];
+  }
+  return ["claude-code"];
 }
 
 // Mirror src/cli.ts findEnvExample so onboarding ships the same .env
@@ -177,7 +181,7 @@ export async function runOnboarding(): Promise<OnboardingResult> {
     message: "Which agents will use agentmemory? (space to toggle, enter to confirm)",
     options: buildAgentOptions(),
     required: false,
-    initialValues: ["claude-code"],
+    initialValues: getInitialAgentValues(),
   });
   if (p.isCancel(agentsPicked)) {
     p.cancel("Setup cancelled. Re-run any time with: agentmemory --reset");
@@ -190,7 +194,7 @@ export async function runOnboarding(): Promise<OnboardingResult> {
       [
         "━ how this works ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
         "All selected agents share the same memory at :3111.",
-        "A memory saved by Claude Code is visible to Codex + Cursor instantly.",
+        "A memory saved by Claude Code is visible to Copilot + Codex + Cursor instantly.",
         "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
       ].join("\n"),
     );
@@ -209,7 +213,16 @@ export async function runOnboarding(): Promise<OnboardingResult> {
   const provider = providerPicked === "skip" ? null : providerPicked;
   const agents = (agentsPicked as string[]) ?? [];
 
+  if (provider) {
+    const hint = PROVIDER_COST_HINTS[provider];
+    if (hint) {
+      p.log.info(hint);
+    }
+  }
+
   const envPath = await seedEnvFile(provider);
+
+  await maybePromptContextInjection(envPath);
 
   writePrefs({
     lastAgent: agents[0] ?? null,
@@ -241,6 +254,54 @@ export async function runOnboarding(): Promise<OnboardingResult> {
   }
 
   return { agents, provider };
+}
+
+function enableInjectContextInEnv(envPath: string | null): boolean {
+  if (!envPath || !existsSync(envPath)) return false;
+  try {
+    const current = readFileSync(envPath, "utf-8");
+    if (/^\s*AGENTMEMORY_INJECT_CONTEXT\s*=\s*true\b/m.test(current)) {
+      return true;
+    }
+    const prefix = current.length > 0 && !current.endsWith("\n") ? "\n" : "";
+    appendFileSync(envPath, `${prefix}AGENTMEMORY_INJECT_CONTEXT=true\n`, { mode: 0o600 });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function maybePromptContextInjection(envPath: string | null): Promise<void> {
+  if (readPrefs().injectContextChosen) return;
+
+  const enable = await p.confirm({
+    message: "Enable automatic context injection so the agent recalls past sessions without being asked? [y/N]",
+    initialValue: false,
+  });
+
+  if (p.isCancel(enable)) {
+    p.cancel("Setup cancelled. Re-run any time with: agentmemory --reset");
+    process.exit(0);
+  }
+
+  p.log.info(
+    "Cost note: injection spends session tokens proportional to tool-call frequency. Default is off.",
+  );
+
+  writePrefs({ injectContextChosen: true });
+
+  if (enable === true) {
+    const wrote = enableInjectContextInEnv(envPath);
+    if (wrote) {
+      p.log.success("Context injection enabled (AGENTMEMORY_INJECT_CONTEXT=true).");
+    } else {
+      p.log.warn(
+        "Could not update ~/.agentmemory/.env. Set AGENTMEMORY_INJECT_CONTEXT=true there to enable it.",
+      );
+    }
+  } else {
+    p.log.info("Context injection left off. Set AGENTMEMORY_INJECT_CONTEXT=true later to enable.");
+  }
 }
 
 async function wireSelectedAgents(agents: string[]): Promise<void> {

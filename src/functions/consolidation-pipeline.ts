@@ -50,7 +50,7 @@ export function registerConsolidationPipelineFunction(
   sdk.registerFunction("mem::consolidate-pipeline", 
     async (data?: { tier?: string; force?: boolean; project?: string }) => {
       if (!data?.force && !isConsolidationEnabled()) {
-        return { success: false, skipped: true, reason: "CONSOLIDATION_ENABLED is not set to true" };
+        return { success: false, skipped: true, reason: "Consolidation disabled: set CONSOLIDATION_ENABLED=true or configure an LLM provider (ANTHROPIC_API_KEY / OPENAI_API_KEY / OPENROUTER_API_KEY / GEMINI_API_KEY / GOOGLE_API_KEY / MINIMAX_API_KEY / OPENAI_BASE_URL / AGENTMEMORY_PROVIDER=agent-sdk)" };
       }
       const tier = data?.tier || "all";
       const decayDays = getConsolidationDecayDays();

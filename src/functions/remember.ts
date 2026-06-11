@@ -20,6 +20,7 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
       ttlDays?: number;
       sourceObservationIds?: string[];
       agentId?: string;
+      project?: string;
     }) => {
       if (
         !data.content ||
@@ -50,6 +51,13 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
         : "fact";
 
       const now = new Date().toISOString();
+      // Normalize project early so every subsequent comparison and storage
+      // operation uses the same cleaned value. Raw data.project must not be
+      // referenced below this point.
+      const project =
+        typeof data.project === "string" && data.project.trim().length > 0
+          ? data.project.trim()
+          : undefined;
 
       return withKeyedLock("mem:remember", async () => {
         const existingMemories = await kv.list<Memory>(KV.memories);
@@ -59,6 +67,13 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
         const lowerContent = data.content.toLowerCase();
         for (const existing of existingMemories) {
           if (existing.isLatest === false) continue;
+          // Never supersede a memory that belongs to a different project.
+          // Both sides must have an explicit project for the guard to engage;
+          // an unscoped memory (legacy, no project field) is treated as a
+          // wildcard so pre-existing data is not stranded.
+          if (project && existing.project && existing.project !== project) {
+            continue;
+          }
           const similarity = jaccardSimilarity(
             lowerContent,
             existing.content.toLowerCase(),
@@ -79,6 +94,7 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
           typeof data.agentId === "string" && data.agentId.trim().length > 0
             ? data.agentId.trim().slice(0, 128)
             : getAgentId();
+
         const memory: Memory = {
           id: generateId("mem"),
           createdAt: now,
@@ -98,6 +114,7 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
           ),
           isLatest: true,
           ...(callAgentId ? { agentId: callAgentId } : {}),
+          ...(project !== undefined && { project }),
         };
 
         if (data.ttlDays && typeof data.ttlDays === "number" && data.ttlDays > 0) {
@@ -125,7 +142,7 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
         }
         await vectorIndexAddGuarded(
           memory.id,
-          memory.sessionIds[0] ?? "memory",
+          memory.sessionIds?.[0] ?? "memory",
           memory.title + " " + memory.content,
           { kind: "memory", logId: memory.id },
         );
@@ -143,6 +160,7 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
         logger.info("Memory saved", {
           memId: memory.id,
           type: memory.type,
+          project: memory.project,
         });
         return { success: true, memory };
       });

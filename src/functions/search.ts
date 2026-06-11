@@ -8,6 +8,7 @@ import type { EmbeddingProvider } from '../types.js'
 import { memoryToObservation } from '../state/memory-utils.js'
 import { recordAccessBatch } from './access-tracker.js'
 import { logger } from "../logger.js";
+import { getAgentId, isAgentScopeIsolated } from "../config.js";
 
 let index: SearchIndex | null = null
 let vectorIndex: VectorIndex | null = null
@@ -261,7 +262,7 @@ export async function rebuildIndex(kv: StateKV): Promise<number> {
       idx.add(memoryToObservation(memory))
       await enqueue({
         id: memory.id,
-        sessionId: memory.sessionIds[0] ?? 'memory',
+        sessionId: memory.sessionIds?.[0] ?? 'memory',
         text: memory.title + ' ' + memory.content,
         context: { kind: "memory", logId: memory.id },
       })
@@ -328,6 +329,7 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
       cwd?: string
       format?: string
       token_budget?: number
+      agentId?: string
     }) => {
       const idx = getSearchIndex()
 
@@ -344,8 +346,44 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
         }
         effectiveLimit = Math.min(data.limit, MAX_LIMIT)
       }
-      const projectFilter = typeof data.project === 'string' && data.project.length > 0 ? data.project : undefined
-      const cwdFilter = typeof data.cwd === 'string' && data.cwd.length > 0 ? data.cwd : undefined
+      const projectFilter = typeof data.project === 'string' && data.project.trim().length > 0 ? data.project.trim() : undefined
+      const cwdFilter = typeof data.cwd === 'string' && data.cwd.trim().length > 0 ? data.cwd.trim() : undefined
+      // #817: agent-scope isolation. mem::search backs REST /search,
+      // memory_recall and recall_context. Without filtering here a
+      // worker booted with AGENT_ID=B + AGENTMEMORY_AGENT_SCOPE=isolated
+      // could read A's memories — the cross-agent leak the issue
+      // documented. Mirrors the smart-search pattern: wildcard "*"
+      // bypasses, explicit agentId pins, isolated mode falls back to
+      // the worker's own AGENT_ID.
+      //
+      // Fail-closed: if isolated mode is on AND no explicit agentId
+      // is given AND env AGENT_ID is unset, refuse the call rather
+      // than silently dropping the filter. Allowing the call through
+      // with filterAgentId=undefined is the same leak this fix is
+      // supposed to close.
+      const isolated = isAgentScopeIsolated();
+      const explicitAgentId =
+        typeof data.agentId === "string" && data.agentId.trim().length > 0
+          ? data.agentId.trim()
+          : undefined;
+      const wildcardAgent = explicitAgentId === "*";
+      const envAgentId = isolated ? getAgentId() : undefined;
+      const filterAgentId = wildcardAgent
+        ? undefined
+        : explicitAgentId ?? envAgentId;
+      if (
+        isolated &&
+        !wildcardAgent &&
+        !explicitAgentId &&
+        !envAgentId
+      ) {
+        throw new Error(
+          "mem::search: AGENTMEMORY_AGENT_SCOPE=isolated is set but no " +
+            "agent id is available (env AGENT_ID unset and no explicit " +
+            "agentId in the call). Refusing to read cross-agent rows. " +
+            'Pass agentId: "*" to opt in to a wildcard read.',
+        );
+      }
       const format = typeof data.format === 'string' ? data.format : 'full'
       if (!['full', 'compact', 'narrative'].includes(format)) {
         throw new Error("mem::search: format must be one of 'full', 'compact', or 'narrative'")
@@ -365,7 +403,12 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
 
       // When filtering by project/cwd, over-fetch from the index so the
       // post-filter still has a chance of returning `effectiveLimit` results.
-      const filtering = !!(projectFilter || cwdFilter)
+      // Over-fetch whenever ANY post-index filter is active. agentId
+      // is dropped after the observation/memory is loaded (BM25 index
+      // doesn't carry it), so without the over-fetch isolated-mode
+      // queries return underfilled pages when same-agent matches
+      // rank lower than cross-agent ones in the hybrid score.
+      const filtering = !!(projectFilter || cwdFilter || filterAgentId)
       const fetchLimit = filtering ? Math.max(effectiveLimit * 10, 100) : effectiveLimit
       const results = idx.search(query, fetchLimit)
 
@@ -378,15 +421,59 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
         return s ?? null
       }
 
+      // Cache for memory project lookups. Memories indexed via mem::remember
+      // use a synthetic sessionId ('memory' or the first real sessionId) that
+      // either has no KV.sessions entry or belongs to a different project.
+      // When loadSession returns null we fall through to a KV.memories probe
+      // so project-filtered search can include or exclude them correctly.
+      const memoryProjectCache = new Map<string, string | null>()
+      const loadMemoryProject = async (obsId: string): Promise<string | null> => {
+        if (memoryProjectCache.has(obsId)) return memoryProjectCache.get(obsId)!
+        const mem = await kv.get<Memory>(KV.memories, obsId).catch(() => null)
+        const proj = mem?.project ?? null
+        memoryProjectCache.set(obsId, proj)
+        return proj
+      }
+
       // First pass: filter by session (sequential — benefits from session cache).
+      // Memory entries with a synthetic sessionId take a secondary KV.memories
+      // path so project filtering works correctly for them too.
+      //
+      // When agentId filtering is active we can't cap at effectiveLimit
+      // here — the second pass (post-load) is what drops cross-agent
+      // rows, and capping early would underfill the result page. Use
+      // fetchLimit as the upper bound in that case; the final
+      // truncation lives at the end of the second pass.
+      const earlyCap = filterAgentId ? fetchLimit : effectiveLimit
       const candidates: typeof results = []
       for (const r of results) {
-        if (candidates.length >= effectiveLimit) break
+        if (candidates.length >= earlyCap) break
         if (filtering) {
           const s = await loadSession(r.sessionId)
-          if (!s) continue
-          if (projectFilter && s.project !== projectFilter) continue
-          if (cwdFilter && s.cwd !== cwdFilter) continue
+          if (s) {
+            if (projectFilter && s.project !== projectFilter) continue
+            if (cwdFilter && s.cwd !== cwdFilter) continue
+          } else {
+            // Session not found. Two cases arrive here:
+            //   1. Synthetic sessionId — memories indexed via mem::remember use
+            //      sessionIds[0] ?? 'memory'. The string 'memory' has no session
+            //      entry; neither does a real sessionId when sessionIds[0] happens
+            //      to be a session from a different lifecycle. Probe KV.memories
+            //      directly to get the memory's own project field.
+            //   2. Deleted session — the session existed when the entry was indexed
+            //      but was since evicted. The KV.memories probe returns null for
+            //      these (they are observations, not memories), so memProject is
+            //      null and the entry passes through as unscoped. This is the safe
+            //      fallback: we lose the ability to filter but never incorrectly
+            //      block a result whose session we can no longer verify.
+            // In both cases, a null memProject means "project unknown — treat as
+            // unscoped and let it through" to preserve backward-compatibility.
+            if (projectFilter) {
+              const memProject = await loadMemoryProject(r.obsId)
+              if (memProject !== null && memProject !== projectFilter) continue
+            }
+            // cwd filter does not apply to unbound entries.
+          }
         }
         candidates.push(r)
       }
@@ -410,13 +497,18 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
       const enriched: SearchResult[] = []
       for (let i = 0; i < candidates.length; i++) {
         const obs = obsResults[i]
-        if (obs) {
-          enriched.push({
-            observation: obs,
-            score: candidates[i].score,
-            sessionId: candidates[i].sessionId,
-          })
-        }
+        if (!obs) continue
+        // #817: enforce agent-scope after the observation/memory is
+        // loaded. The BM25 index doesn't carry agentId so the filter
+        // happens post-lookup. Wildcard ("*") and no-isolation paths
+        // resolved filterAgentId=undefined upstream and pass through.
+        if (filterAgentId !== undefined && obs.agentId !== filterAgentId) continue
+        if (enriched.length >= effectiveLimit) break
+        enriched.push({
+          observation: obs,
+          score: candidates[i].score,
+          sessionId: candidates[i].sessionId,
+        })
       }
 
       void recordAccessBatch(

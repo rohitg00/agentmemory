@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { resolveProject } from "./_project.js";
 
 function isSdkChildContext(payload: unknown): boolean {
   if (process.env["AGENTMEMORY_SDK_CHILD"] === "1") return true;
@@ -30,25 +31,22 @@ async function main() {
 
   if (isSdkChildContext(data)) return;
 
-  const sessionId = (data.session_id as string) || "unknown";
+  const sessionId = ((data.session_id || data.sessionId) as string) || "unknown";
 
-  try {
-    await fetch(`${REST_URL}/agentmemory/observe`, {
-      method: "POST",
-      headers: authHeaders(),
-      body: JSON.stringify({
-        hookType: "prompt_submit",
-        sessionId,
-        project: data.cwd || process.cwd(),
-        cwd: data.cwd || process.cwd(),
-        timestamp: new Date().toISOString(),
-        data: { prompt: data.prompt },
-      }),
-      signal: AbortSignal.timeout(3000),
-    });
-  } catch {
-    // fire and forget
-  }
+  fetch(`${REST_URL}/agentmemory/observe`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({
+      hookType: "prompt_submit",
+      sessionId,
+      project: resolveProject(data.cwd as string | undefined),
+      cwd: (data.cwd as string | undefined) || process.cwd(),
+      timestamp: new Date().toISOString(),
+      data: { prompt: data.prompt ?? data.userPrompt },
+    }),
+    signal: AbortSignal.timeout(3000),
+  }).catch(() => {});
+  setTimeout(() => process.exit(0), 500).unref();
 }
 
 main();

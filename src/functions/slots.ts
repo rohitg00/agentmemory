@@ -4,6 +4,7 @@ import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
 import { recordAudit } from "./audit.js";
+import { getEnvVar } from "../config.js";
 import { logger } from "../logger.js";
 
 type SlotScope = "project" | "global";
@@ -95,12 +96,14 @@ export const DEFAULT_SLOTS: ReadonlyArray<
   },
 ];
 
+// Read merged env so values loaded from ~/.agentmemory/.env are
+// honoured. process.env alone misses .env-only exports (#678).
 export function isSlotsEnabled(): boolean {
-  return process.env["AGENTMEMORY_SLOTS"] === "true";
+  return getEnvVar("AGENTMEMORY_SLOTS") === "true";
 }
 
 export function isReflectEnabled(): boolean {
-  return process.env["AGENTMEMORY_REFLECT"] === "true";
+  return getEnvVar("AGENTMEMORY_REFLECT") === "true";
 }
 
 function scopeKv(scope: SlotScope): string {

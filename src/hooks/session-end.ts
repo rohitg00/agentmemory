@@ -30,50 +30,40 @@ async function main() {
 
   if (isSdkChildContext(data)) return;
 
-  const sessionId = (data.session_id as string) || "unknown";
+  const sessionId = ((data.session_id || data.sessionId) as string) || "unknown";
 
-  try {
-    await fetch(`${REST_URL}/agentmemory/session/end`, {
-      method: "POST",
-      headers: authHeaders(),
-      body: JSON.stringify({ sessionId }),
-      signal: AbortSignal.timeout(30000), // Increased from 5s
-    });
-  } catch {
-    // best-effort
-  }
+  fetch(`${REST_URL}/agentmemory/session/end`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({ sessionId }),
+    signal: AbortSignal.timeout(30000),
+  }).catch(() => {});
 
   if (process.env["CONSOLIDATION_ENABLED"] === "true") {
-    try {
-      await fetch(`${REST_URL}/agentmemory/crystals/auto`, {
-        method: "POST",
-        headers: authHeaders(),
-        body: JSON.stringify({ olderThanDays: 0 }),
-        signal: AbortSignal.timeout(60000), // Increased from 15s
-      });
-    } catch {}
+    fetch(`${REST_URL}/agentmemory/crystals/auto`, {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ olderThanDays: 0 }),
+      signal: AbortSignal.timeout(60000),
+    }).catch(() => {});
 
-    try {
-      await fetch(`${REST_URL}/agentmemory/consolidate-pipeline`, {
-        method: "POST",
-        headers: authHeaders(),
-        body: JSON.stringify({ tier: "all", force: true }),
-        signal: AbortSignal.timeout(120000), // Increased from 30s
-      });
-    } catch {}
+    fetch(`${REST_URL}/agentmemory/consolidate-pipeline`, {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ tier: "all", force: true }),
+      signal: AbortSignal.timeout(120000),
+    }).catch(() => {});
   }
 
   if (process.env["CLAUDE_MEMORY_BRIDGE"] === "true") {
-    try {
-      await fetch(`${REST_URL}/agentmemory/claude-bridge/sync`, {
-        method: "POST",
-        headers: authHeaders(),
-        signal: AbortSignal.timeout(30000), // Increased from 5s
-      });
-    } catch {
-      // best-effort
-    }
+    fetch(`${REST_URL}/agentmemory/claude-bridge/sync`, {
+      method: "POST",
+      headers: authHeaders(),
+      signal: AbortSignal.timeout(30000),
+    }).catch(() => {});
   }
+
+  setTimeout(() => process.exit(0), 1500).unref();
 }
 
 main();
