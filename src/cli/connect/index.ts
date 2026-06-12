@@ -13,10 +13,10 @@ import { adapter as geminiCli } from "./gemini-cli.js";
 import { adapter as hermes } from "./hermes.js";
 import { adapter as kiro } from "./kiro.js";
 import { adapter as openclaw } from "./openclaw.js";
-import { adapter as opencode } from "./opencode.js";
 import { adapter as openhuman } from "./openhuman.js";
 import { adapter as pi } from "./pi.js";
 import { adapter as qwen } from "./qwen.js";
+import { adapter as qoderClicn } from "./qoder-clicn.js";
 import { adapter as warp } from "./warp.js";
 import { adapter as zed } from "./zed.js";
 
@@ -27,6 +27,7 @@ export const ADAPTERS: readonly ConnectAdapter[] = [
   cursor,
   geminiCli,
   qwen,
+  qoderClicn,
   antigravity,
   kiro,
   warp,
@@ -34,7 +35,6 @@ export const ADAPTERS: readonly ConnectAdapter[] = [
   continueDev,
   zed,
   droid,
-  opencode,
   openclaw,
   hermes,
   pi,
@@ -99,7 +99,9 @@ export async function runAdapter(
 export async function runConnect(args: string[]): Promise<void> {
   const { dryRun, force, all, withHooks, positional } = parseFlags(args);
   const allowWindowsAdapter =
-    positional.length === 1 && positional[0]?.toLowerCase() === "copilot-cli";
+    positional.length === 1 &&
+    (positional[0]?.toLowerCase() === "copilot-cli" ||
+      positional[0]?.toLowerCase() === "qoder-clicn");
   if (platform() === "win32" && !allowWindowsAdapter) {
     p.intro("agentmemory connect");
     p.log.warn(
