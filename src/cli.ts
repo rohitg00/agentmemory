@@ -391,8 +391,14 @@ function writeBunCompatibleConfig(originalPath: string): string {
   const bunPath = join(homedir(), ".agentmemory", "iii-config.bun.yaml");
   mkdirSync(join(homedir(), ".agentmemory"), { recursive: true });
   const runtimeCmd = IS_WINDOWS ? "bun.exe run" : "bun run";
-  const content = readFileSync(originalPath, "utf-8")
-    .replace(/- node dist\/index\.mjs/, `- ${runtimeCmd} src/index.ts`);
+  const original = readFileSync(originalPath, "utf-8");
+  const needle = "- node dist/index.mjs";
+  if (!original.includes(needle)) {
+    throw new Error(
+      `Bun config rewrite failed: expected "${needle}" not found in ${originalPath}`,
+    );
+  }
+  const content = original.replaceAll(needle, `- ${runtimeCmd} src/index.ts`);
   writeFileSync(bunPath, content, "utf-8");
   vlog(`wrote Bun-compatible config: ${bunPath}`);
   return bunPath;
