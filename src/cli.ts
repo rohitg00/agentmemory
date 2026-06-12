@@ -52,6 +52,7 @@ const CORE_TOOLS_COUNT = getAllTools().filter((t) => ESSENTIAL_TOOLS.has(t.name)
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
 const IS_WINDOWS = platform() === "win32";
+const IS_BUN = typeof process.versions.bun === "string";
 const IS_VERBOSE =
   args.includes("--verbose") ||
   args.includes("-v") ||
@@ -386,6 +387,17 @@ function findIiiConfig(): string {
   return "";
 }
 
+function writeBunCompatibleConfig(originalPath: string): string {
+  const bunPath = join(homedir(), ".agentmemory", "iii-config.bun.yaml");
+  mkdirSync(join(homedir(), ".agentmemory"), { recursive: true });
+  const runtimeCmd = IS_WINDOWS ? "bun.exe run" : "bun run";
+  const content = readFileSync(originalPath, "utf-8")
+    .replace(/- node dist\/index\.mjs/, `- ${runtimeCmd} src/index.ts`);
+  writeFileSync(bunPath, content, "utf-8");
+  vlog(`wrote Bun-compatible config: ${bunPath}`);
+  return bunPath;
+}
+
 function whichBinary(name: string): string | null {
   const cmd = IS_WINDOWS ? "where" : "which";
   try {
@@ -450,6 +462,7 @@ function iiiBinVersion(binPath: string): string | null {
       encoding: "utf-8",
       stdio: ["ignore", "pipe", "ignore"],
       timeout: 3000,
+      ...(IS_WINDOWS && IS_BUN ? { shell: true } : {}),
     });
     const match = out.match(/(\d+\.\d+\.\d+(?:[-+][\w.]+)?)/);
     return match ? match[1]! : null;
@@ -844,6 +857,7 @@ function spawnEngineBackground(
     detached: true,
     stdio: ["ignore", "ignore", "pipe"],
     windowsHide: true,
+    ...(IS_WINDOWS && IS_BUN ? { shell: true } : {}),
   });
   const isDocker = label.includes("Docker");
   if (!isDocker && typeof child.pid === "number") {
@@ -908,7 +922,10 @@ function pickCompatibleIii(candidates: Array<string | null | undefined>): string
 }
 
 async function startEngine(): Promise<boolean> {
-  const configPath = findIiiConfig();
+  const originalConfigPath = findIiiConfig();
+  const configPath = (IS_BUN && originalConfigPath)
+    ? writeBunCompatibleConfig(originalConfigPath)
+    : originalConfigPath;
   const pathIii = whichBinary("iii");
   vlog(`iii binary: ${pathIii ?? "(not on PATH)"}, config: ${configPath || "(not found)"}`);
 
