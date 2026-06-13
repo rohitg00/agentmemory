@@ -2739,6 +2739,12 @@ async function runImportJsonl(): Promise<void> {
     spinner.stop(
       `imported ${json.imported ?? 0} file(s), ${json.observations ?? 0} observation(s) across ${json.sessionIds?.length || 0} session(s)`,
     );
+    if(!json.imported || json.imported === 0) {
+      p.log.warn('\n Warning: No valid JSONL session logs were imported.');
+      p.log.info(`Note: Claude Code's default 'cleanupPeriodDays' setting auto-purges logs older than 30 days.`);
+      p.log.info(`If your historical logs were cleaned up by Claude, use the recommended live auto-capture hooks instead:`);
+      p.log.info(`agentmemory connect claude-code --with-hooks\n`);
+    }
     if (json.truncated) {
       const cap = json.maxFiles ?? 200;
       const upper = json.maxFilesUpperBound ?? 1000;
