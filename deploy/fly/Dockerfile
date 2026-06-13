@@ -25,6 +25,13 @@ RUN printf '{"name":"agentmemory-deploy","version":"1.0.0","private":true,"overr
  && npm install "@agentmemory/agentmemory@${AGENTMEMORY_VERSION}" --omit=optional --no-fund --no-audit \
  && ln -s /opt/agentmemory/node_modules/.bin/agentmemory /usr/local/bin/agentmemory
 
+# Local embeddings (Xenova/all-MiniLM-L6-v2, 384-dim). The optional peer dep
+# is omitted by --omit=optional above, so install it explicitly and preload
+# the model weights at build time (no runtime HuggingFace download on cold
+# start, no volume cache needed).
+RUN npm install @xenova/transformers --no-fund --no-audit \
+ && node -e "const {pipeline}=require('@xenova/transformers');pipeline('feature-extraction','Xenova/all-MiniLM-L6-v2').then(()=>console.log('agentmemory: embedding model cached'))"
+
 ENV AGENTMEMORY_III_VERSION=${III_VERSION} \
     TINI_SUBREAPER=1
 
