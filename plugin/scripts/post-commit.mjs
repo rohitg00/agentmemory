@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-
 //#region src/hooks/post-commit.ts
 const exec = promisify(execFile);
 function isSdkChildContext(payload) {
@@ -96,7 +95,7 @@ async function main() {
 	} catch {}
 }
 main();
-
 //#endregion
-export {  };
+export {};
+
 //# sourceMappingURL=post-commit.mjs.map

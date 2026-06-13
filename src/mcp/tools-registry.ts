@@ -32,6 +32,12 @@ export const CORE_TOOLS: McpToolDef[] = [
           type: "number",
           description: "Optional token budget to trim returned results",
         },
+        project: {
+          type: "string",
+          description:
+            "Optional opaque canonical project identifier to restrict recall. Use the same value " +
+            "that session hooks store as project; linked Git worktrees share one git:<hash> value.",
+        },
       },
       required: ["query"],
     },
