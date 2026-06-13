@@ -102,7 +102,7 @@ AgentMemory is a **persistent, queryable memory layer** for AI coding agents. It
 │ gemini      │   │  Vector Index (in-memory)     ←─── vector-index.ts │
 │ openrouter  │   │  HybridSearch                 ←─── hybrid-search.ts│
 │ minimax     │   │  Reranker                     ←─── reranker.ts     │
-│ agent-sdk   │   │  IndexPersistence (disk)      ←─── index-persist.. │
+│ agent-sdk   │   │  IndexPersistence (disk)      ←─── index-persistence.ts │
 │ noop        │   └─────────────────────────────────────────────────────┘
 └─────────────┘
 
@@ -455,7 +455,7 @@ kv.delete(scope: string, key: string): Promise<void>
 | Scope Key | Contents | Access Pattern |
 |-----------|----------|----------------|
 | `mem:sessions` | `Session[]` | list by status, get by id |
-| `mem:obs:{sessionId}` | `RawObservation | CompressedObservation[]` | list all for session |
+| `mem:obs:{sessionId}` | `RawObservation \| CompressedObservation[]` | list all for session |
 | `mem:memories` | `Memory[]` | list all, get by id |
 | `mem:embeddings:{obsId}` | `Float32Array` serialized | get by obs id |
 | `mem:index:bm25` | BM25 inverted index snapshot | single key, loaded on boot |
@@ -687,6 +687,7 @@ Usage: background processing queue for consolidation tasks
 ```typescript
 interface Session {
   id: string                              // UUID v4
+  parentSessionId?: string                // UUID v4 (set for subagent sessions)
   project: string                         // cwd-derived project identifier
   cwd: string                             // working directory
   agentId?: string                        // agent identifier (for multi-agent)
