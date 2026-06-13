@@ -222,6 +222,41 @@ describe("handleToolCall", () => {
     expect(parsed.results[0].content).toBe("TypeScript is great");
   });
 
+  it("local fallback stores and filters memories by project", async () => {
+    const kv = new InMemoryKV();
+
+    await handleToolCall(
+      "memory_save",
+      {
+        content: "main worktree uses jose for auth",
+        project: "git:repo-main",
+      },
+      kv,
+    );
+    await handleToolCall(
+      "memory_save",
+      {
+        content: "other repo uses nextauth cookies",
+        project: "git:repo-other",
+      },
+      kv,
+    );
+
+    const result = await handleToolCall(
+      "memory_recall",
+      {
+        query: "auth",
+        project: "git:repo-main",
+      },
+      kv,
+    );
+
+    const parsed = JSON.parse(result.content[0].text);
+    const text = JSON.stringify(parsed);
+    expect(text).toContain("jose");
+    expect(text).not.toContain("nextauth");
+  });
+
   it("memory_save accepts concepts/files as arrays (plugin skill format, #139)", async () => {
     const kv = new InMemoryKV();
     const result = await handleToolCall(

@@ -160,7 +160,7 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
         logger.info("Memory saved", {
           memId: memory.id,
           type: memory.type,
-          project: memory.project,
+          hasProject: memory.project !== undefined,
         });
         return { success: true, memory };
       });

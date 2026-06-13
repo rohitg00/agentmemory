@@ -1831,6 +1831,13 @@ export function registerApiTriggers(
       if (authErr) return authErr;
       const memories = await kv.list<import("../types.js").Memory>(KV.memories);
       const latest = req.query_params?.["latest"] === "true";
+      const projectFilter =
+        typeof req.query_params?.["project"] === "string" &&
+        req.query_params["project"].trim().length > 0
+          ? req.query_params["project"].trim()
+          : undefined;
+      const includeUnscoped =
+        req.query_params?.["includeUnscoped"] === "true";
       // agentId filter. Request param wins, env AGENT_ID (when
       // scope=isolated) is the fallback. Shared mode keeps the tag but
       // does not restrict the list endpoint. Pass agentId=* to opt out
@@ -1849,6 +1856,13 @@ export function registerApiTriggers(
         ? undefined
         : explicitAgentId ?? (isAgentScopeIsolated() ? getAgentId() : undefined);
       let filtered = latest ? memories.filter((m) => m.isLatest) : memories;
+      if (projectFilter) {
+        filtered = filtered.filter(
+          (m) =>
+            m.project === projectFilter ||
+            (includeUnscoped && m.project === undefined),
+        );
+      }
       if (filterAgentId) {
         filtered = filtered.filter(
           (m) =>

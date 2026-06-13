@@ -22,6 +22,7 @@ vi.mock("iii-sdk", async (importOriginal) => {
 import { vi } from "vitest";
 import { registerRememberFunction } from "../src/functions/remember.js";
 import { getSearchIndex, setIndexPersistence } from "../src/functions/search.js";
+import { logger } from "../src/logger.js";
 
 function mockKV() {
   const store = new Map<string, Map<string, unknown>>();
@@ -128,6 +129,27 @@ describe("mem::remember — project field stamping", () => {
     }) as { success: boolean; memory: { project?: string } };
 
     expect(result.memory.project).toBeUndefined();
+  });
+
+  it("redacts raw project values from memory-save logs", async () => {
+    const sdk = mockSdk();
+    const kv = mockKV();
+    const info = vi.mocked(logger.info);
+    info.mockClear();
+    registerRememberFunction(sdk as never, kv as never);
+
+    await sdk.trigger({
+      function_id: "mem::remember",
+      payload: {
+        content: "path-derived project values stay out of logs",
+        project: "/repo/main",
+      },
+    });
+
+    expect(info).toHaveBeenCalledWith("Memory saved", expect.objectContaining({
+      hasProject: true,
+    }));
+    expect(JSON.stringify(info.mock.calls)).not.toContain("/repo/main");
   });
 });
 
