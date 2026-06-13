@@ -26,6 +26,8 @@ const DEFAULT_IGNORE = [
   /\.lock$/,
 ];
 
+const MAX_IGNORE_PATTERN_LENGTH = 128;
+const MAX_IGNORE_PATTERN_COUNT = 50;
 const MAX_PREVIEW_BYTES = 4096;
 const DEBOUNCE_MS = 500;
 const REDACTED = "[REDACTED]";
@@ -293,6 +295,18 @@ export class FilesystemWatcher {
 }
 
 // Small helper used by tests and bin.mjs to parse env.
+function compileIgnorePattern(pattern, index) {
+  if (pattern.length > MAX_IGNORE_PATTERN_LENGTH) {
+    throw new Error(`AGENTMEMORY_FS_WATCH_IGNORE pattern ${index} is too long`);
+  }
+  try {
+    // Ignore regexes are trusted local operator config, length-limited, and syntax-checked before use.
+    return new RegExp(pattern); // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp
+  } catch {
+    throw new Error(`AGENTMEMORY_FS_WATCH_IGNORE pattern ${index} is invalid`);
+  }
+}
+
 export function configFromEnv(env = process.env) {
   const roots = (env.AGENTMEMORY_FS_WATCH_DIRS || "")
     .split(",")
@@ -301,15 +315,17 @@ export function configFromEnv(env = process.env) {
   const extraIgnore = (env.AGENTMEMORY_FS_WATCH_IGNORE || "")
     .split(",")
     .map((s) => s.trim())
-    .filter(Boolean)
-    .map((s) => new RegExp(s));
+    .filter(Boolean);
+  if (extraIgnore.length > MAX_IGNORE_PATTERN_COUNT) {
+    throw new Error(`AGENTMEMORY_FS_WATCH_IGNORE has too many patterns`);
+  }
   return {
     roots,
     baseUrl: env.AGENTMEMORY_URL,
     secret: env.AGENTMEMORY_SECRET,
     project: env.AGENTMEMORY_PROJECT || null,
     sessionId: env.AGENTMEMORY_SESSION_ID || null,
-    ignorePatterns: extraIgnore,
+    ignorePatterns: extraIgnore.map((s, index) => compileIgnorePattern(s, index + 1)),
     allowBinary: env.AGENTMEMORY_FS_WATCH_ALLOW_BINARY === "1",
   };
 }

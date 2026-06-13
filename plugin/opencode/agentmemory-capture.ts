@@ -23,7 +23,7 @@ async function post(path: string, body: Record<string, unknown>, timeoutMs = 500
       signal: AbortSignal.timeout(timeoutMs),
     });
   } catch (e) {
-    if (DEBUG) console.error(`[agentmemory] POST ${path} failed:`, (e as Error).message);
+    if (DEBUG) console.error("[agentmemory] POST failed:", path, (e as Error).message);
   }
 }
 
@@ -37,7 +37,7 @@ async function postJson(path: string, body: Record<string, unknown>): Promise<un
     });
     return res.ok ? await res.json() : null;
   } catch (e) {
-    if (DEBUG) console.error(`[agentmemory] POST ${path} failed:`, (e as Error).message);
+    if (DEBUG) console.error("[agentmemory] POST failed:", path, (e as Error).message);
     return null;
   }
 }

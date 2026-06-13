@@ -13,6 +13,104 @@ const VALID_TYPES: Sentinel["type"][] = [
   "approval",
   "custom",
 ];
+const MAX_SENTINEL_PATTERN_LENGTH = 128;
+const MAX_SENTINEL_TITLE_MATCH_LENGTH = 256;
+const LOOKAROUND_OPERATORS = ["(?=", "(?!", "(?<=", "(?<!"];
+
+function hasUnescapedQuantifier(pattern: string): boolean {
+  let escaped = false;
+  let inClass = false;
+
+  for (let i = 0; i < pattern.length; i++) {
+    const char = pattern[i];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (char === "\\") {
+      escaped = true;
+      continue;
+    }
+    if (char === "[") {
+      inClass = true;
+      continue;
+    }
+    if (char === "]") {
+      inClass = false;
+      continue;
+    }
+    if (inClass) continue;
+    if (char === "*" || char === "+" || char === "?" || char === "{") return true;
+  }
+
+  return false;
+}
+
+function hasQuantifiedGroup(pattern: string): boolean {
+  let escaped = false;
+  let inClass = false;
+
+  for (let i = 0; i < pattern.length; i++) {
+    const char = pattern[i];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (char === "\\") {
+      escaped = true;
+      continue;
+    }
+    if (char === "[") {
+      inClass = true;
+      continue;
+    }
+    if (char === "]") {
+      inClass = false;
+      continue;
+    }
+    if (inClass || char !== ")") continue;
+
+    const next = pattern[i + 1];
+    if (next === "*" || next === "+" || next === "?" || next === "{") {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function hasUnsafeRegexShape(pattern: string): boolean {
+  if (/\\[1-9]/.test(pattern) || /\\k<[^>]+>/.test(pattern)) return true;
+  if (LOOKAROUND_OPERATORS.some((operator) => pattern.includes(operator))) {
+    return true;
+  }
+  return hasQuantifiedGroup(pattern) || hasUnescapedQuantifier(pattern);
+}
+
+function compileSentinelPattern(pattern: unknown): {
+  regex?: RegExp;
+  error?: string;
+} {
+  if (typeof pattern !== "string") {
+    return { error: "pattern config requires a pattern string" };
+  }
+  const trimmed = pattern.trim();
+  if (!trimmed) {
+    return { error: "pattern config requires a non-empty pattern string" };
+  }
+  if (trimmed.length > MAX_SENTINEL_PATTERN_LENGTH) {
+    return { error: "pattern config pattern is too long" };
+  }
+  if (hasUnsafeRegexShape(trimmed)) {
+    return { error: "pattern config pattern is too complex" };
+  }
+  try {
+    // Pattern is bounded, syntax-checked, disallows regex quantifiers and high-risk constructs, and is only matched against bounded titles.
+    return { regex: new RegExp(trimmed, "i") }; // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp
+  } catch {
+    return { error: "pattern config requires a valid regular expression" };
+  }
+}
 
 export function registerSentinelsFunction(sdk: ISdk, kv: StateKV): void {
   sdk.registerFunction("mem::sentinel-create", 
@@ -58,6 +156,10 @@ export function registerSentinelsFunction(sdk: ISdk, kv: StateKV): void {
             success: false,
             error: "pattern config requires a pattern string",
           };
+        }
+        const compiled = compileSentinelPattern(cfg.pattern);
+        if (compiled.error) {
+          return { success: false, error: compiled.error };
         }
       }
 
@@ -260,8 +362,10 @@ export function registerSentinelsFunction(sdk: ISdk, kv: StateKV): void {
         }
 
         if (sentinel.type === "pattern") {
-          const cfg = sentinel.config as { pattern: string };
-          const regex = new RegExp(cfg.pattern, "i");
+          const cfg = sentinel.config as { pattern?: unknown };
+          const pattern = cfg.pattern;
+          const { regex } = compileSentinelPattern(pattern);
+          if (!regex || typeof pattern !== "string") continue;
           const sessions = await kv.list<Session>(KV.sessions);
           let matchedObs: CompressedObservation | null = null;
 
@@ -275,7 +379,11 @@ export function registerSentinelsFunction(sdk: ISdk, kv: StateKV): void {
                   new Date(o.timestamp).getTime() >=
                   new Date(sentinel.createdAt).getTime(),
               )
-              .find((o) => regex.test(o.title));
+              .find((o) =>
+                regex.test(
+                  String(o.title ?? "").slice(0, MAX_SENTINEL_TITLE_MATCH_LENGTH),
+                ),
+              );
             if (recent) {
               matchedObs = recent;
               break;
@@ -295,7 +403,7 @@ export function registerSentinelsFunction(sdk: ISdk, kv: StateKV): void {
                 fresh.triggeredAt = new Date().toISOString();
                 fresh.result = {
                   reason: "pattern_matched",
-                  pattern: cfg.pattern,
+                  pattern,
                   matchedObservationId: matchedObs!.id,
                   matchedTitle: matchedObs!.title,
                 };

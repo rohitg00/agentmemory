@@ -1,0 +1,3 @@
+# Historical synthetic JWT fixture removed from current tests; this keeps
+# full-history scans passing without rewriting repository history.
+00df540c873566719c412275a66f1afc3fbeb577:test/fs-watcher.test.ts:jwt:287

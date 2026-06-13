@@ -46,34 +46,56 @@ describe("FilesystemWatcher", { retry: 2 }, () => {
       baseUrl: "http://localhost:3111",
       logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
     });
-    w.start();
+    writeFileSync(join(root, "notes.md"), "hello world\n");
+    await w.flush(root, "notes.md");
+
+    expect(captured).toHaveLength(1);
+    const obs = captured[0];
+    expect(obs.url).toBe("http://localhost:3111/agentmemory/observe");
+    const body = obs.body as {
+      hookType: string;
+      sessionId: string;
+      project: string;
+      cwd: string;
+      timestamp: string;
+      data: { changeKind: string; files: string[]; content: string; source: string };
+    };
+    expect(body.hookType).toBe("post_tool_use");
+    expect(typeof body.sessionId).toBe("string");
+    expect(body.sessionId.length).toBeGreaterThan(0);
+    expect(typeof body.project).toBe("string");
+    expect(body.project.length).toBeGreaterThan(0);
+    expect(body.cwd).toBe(root);
+    expect(body.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(body.data.source).toBe("filesystem-watcher");
+    expect(body.data.changeKind).toBe("file_change");
+    expect(body.data.files).toContain("notes.md");
+    expect(body.data.content).toContain("hello world");
+  });
+
+  it("debounces scheduled writes to one flush", async () => {
+    vi.useFakeTimers();
     try {
-      writeFileSync(join(root, "notes.md"), "hello world\n");
-      await wait(1500);
-      expect(captured.length).toBeGreaterThanOrEqual(1);
-      const obs = captured[captured.length - 1];
-      expect(obs.url).toBe("http://localhost:3111/agentmemory/observe");
-      const body = obs.body as {
-        hookType: string;
-        sessionId: string;
-        project: string;
-        cwd: string;
-        timestamp: string;
-        data: { changeKind: string; files: string[]; content: string; source: string };
-      };
-      expect(body.hookType).toBe("post_tool_use");
-      expect(typeof body.sessionId).toBe("string");
-      expect(body.sessionId.length).toBeGreaterThan(0);
-      expect(typeof body.project).toBe("string");
-      expect(body.project.length).toBeGreaterThan(0);
-      expect(body.cwd).toBe(root);
-      expect(body.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T/);
-      expect(body.data.source).toBe("filesystem-watcher");
-      expect(body.data.changeKind).toBe("file_change");
-      expect(body.data.files).toContain("notes.md");
-      expect(body.data.content).toContain("hello world");
+      const w = new FilesystemWatcher({
+        roots: [root],
+        baseUrl: "http://localhost:3111",
+        logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+      });
+      writeFileSync(join(root, "burst.md"), "1\n");
+      w.schedule(root, "burst.md");
+      writeFileSync(join(root, "burst.md"), "2\n");
+      w.schedule(root, "burst.md");
+
+      await vi.advanceTimersByTimeAsync(499);
+      expect(captured).toHaveLength(0);
+
+      await vi.advanceTimersByTimeAsync(1);
+      expect(captured).toHaveLength(1);
+      const body = captured[0].body as { data: { files: string[]; content: string } };
+      expect(body.data.files).toEqual(["burst.md"]);
+      expect(body.data.content).toContain("2");
     } finally {
-      w.stop();
+      vi.useRealTimers();
     }
   });
 
@@ -84,17 +106,13 @@ describe("FilesystemWatcher", { retry: 2 }, () => {
       baseUrl: "http://localhost:3111",
       logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
     });
-    w.start();
-    try {
-      unlinkSync(join(root, "old.md"));
-      await wait(1500);
-      const deletes = captured.filter(
-        (c) => (c.body as { data: { changeKind: string } }).data?.changeKind === "file_delete",
-      );
-      expect(deletes.length).toBeGreaterThanOrEqual(1);
-    } finally {
-      w.stop();
-    }
+    unlinkSync(join(root, "old.md"));
+    await w.flush(root, "old.md");
+
+    const deletes = captured.filter(
+      (c) => (c.body as { data: { changeKind: string } }).data?.changeKind === "file_delete",
+    );
+    expect(deletes).toHaveLength(1);
   });
 
   it("throws if no watched roots could be attached", () => {
@@ -133,16 +151,12 @@ describe("FilesystemWatcher", { retry: 2 }, () => {
       secret: "shhh",
       logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
     });
-    w.start();
-    try {
-      writeFileSync(join(root, "secret.md"), "bearer test\n");
-      await wait(1500);
-      expect(captured.length).toBeGreaterThanOrEqual(1);
-      const headers = captured[captured.length - 1].headers as Record<string, string>;
-      expect(headers.authorization).toBe("Bearer shhh");
-    } finally {
-      w.stop();
-    }
+    writeFileSync(join(root, "secret.md"), "bearer test\n");
+    await w.flush(root, "secret.md");
+
+    expect(captured).toHaveLength(1);
+    const headers = captured[0].headers as Record<string, string>;
+    expect(headers.authorization).toBe("Bearer shhh");
   });
 
   it("redacts sensitive dotenv preview values before sending observations", async () => {
@@ -283,8 +297,13 @@ describe("FilesystemWatcher", { retry: 2 }, () => {
   });
 
   it("redacts standalone JWT-looking strings outside Bearer context", async () => {
-    const jwt =
-      "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c";
+    const jwtSegment = (value: unknown) =>
+      Buffer.from(JSON.stringify(value)).toString("base64url");
+    const jwt = [
+      jwtSegment({ alg: "HS256", typ: "JWT" }),
+      jwtSegment({ sub: "1234567890", name: "John Doe", iat: 1516239022 }),
+      Buffer.from("synthetic signature for watcher redaction test").toString("base64url"),
+    ].join(".");
     writeFileSync(
       join(root, "notes.txt"),
       ["session token below:", jwt, "end of token"].join("\n"),
@@ -368,6 +387,33 @@ describe("configFromEnv", () => {
     expect(cfg.ignorePatterns).toHaveLength(2);
     expect(cfg.ignorePatterns[0].test("abcfoo")).toBe(true);
     expect(cfg.ignorePatterns[1].test("barbaz")).toBe(true);
+  });
+
+  it("reports invalid ignore regex with controlled config context", () => {
+    expect(() =>
+      configFromEnv({
+        AGENTMEMORY_FS_WATCH_DIRS: "/a",
+        AGENTMEMORY_FS_WATCH_IGNORE: "valid,(",
+      }),
+    ).toThrow(/AGENTMEMORY_FS_WATCH_IGNORE pattern 2/);
+  });
+
+  it("reports oversized ignore regex with controlled config context", () => {
+    expect(() =>
+      configFromEnv({
+        AGENTMEMORY_FS_WATCH_DIRS: "/a",
+        AGENTMEMORY_FS_WATCH_IGNORE: "a".repeat(129),
+      }),
+    ).toThrow(/AGENTMEMORY_FS_WATCH_IGNORE pattern 1 is too long/);
+  });
+
+  it("reports too many ignore regexes with controlled config context", () => {
+    expect(() =>
+      configFromEnv({
+        AGENTMEMORY_FS_WATCH_DIRS: "/a",
+        AGENTMEMORY_FS_WATCH_IGNORE: Array.from({ length: 51 }, (_, i) => `p${i}`).join(","),
+      }),
+    ).toThrow(/AGENTMEMORY_FS_WATCH_IGNORE has too many patterns/);
   });
 
   it("returns empty roots when the env var is missing", () => {

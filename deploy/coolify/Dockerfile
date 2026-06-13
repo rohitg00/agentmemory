@@ -29,4 +29,6 @@ EXPOSE 3111
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
   CMD curl -fsS http://127.0.0.1:3111/agentmemory/livez || exit 1
 
+# Entrypoint runs root-only first-boot volume/config/secret setup, then execs the runtime as node via gosu.
+# nosemgrep: dockerfile.security.missing-user-entrypoint.missing-user-entrypoint
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/agentmemory-entrypoint.sh"]

@@ -26,8 +26,9 @@ function inferType(
     .replace(/([a-z])([A-Z])/g, "$1_$2")
     .replace(/[-\s]+/g, "_")
     .toLowerCase();
+  const words = n.split("_").filter(Boolean);
   const hasWord = (word: string) =>
-    new RegExp(`(^|_)${word}(_|$)`).test(n) ||
+    words.includes(word) ||
     n === word ||
     n.endsWith(word) ||
     n.startsWith(word);

@@ -32,4 +32,6 @@ COPY --chmod=0755 entrypoint.sh /usr/local/bin/agentmemory-entrypoint.sh
 
 EXPOSE 3111
 
+# Entrypoint runs root-only first-boot volume/config/secret setup, then execs the runtime as node via gosu.
+# nosemgrep: dockerfile.security.missing-user-entrypoint.missing-user-entrypoint
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/agentmemory-entrypoint.sh"]

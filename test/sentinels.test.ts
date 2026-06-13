@@ -6,7 +6,9 @@ vi.mock("../src/logger.js", () => ({
 
 import { registerSentinelsFunction } from "../src/functions/sentinels.js";
 import { registerActionsFunction } from "../src/functions/actions.js";
-import type { Action, ActionEdge, Sentinel } from "../src/types.js";
+import { registerMcpEndpoints } from "../src/mcp/server.js";
+import { KV } from "../src/state/schema.js";
+import type { Action, ActionEdge, CompressedObservation, Sentinel, Session } from "../src/types.js";
 
 function mockKV() {
   const store = new Map<string, Map<string, unknown>>();
@@ -37,6 +39,7 @@ function mockSdk() {
       functions.set(id, handler);
     },
     registerTrigger: () => {},
+    getFunction: (id: string) => functions.get(id),
     trigger: async (idOrInput: string | { function_id: string; payload: unknown }, data?: unknown) => {
       const id = typeof idOrInput === "string" ? idOrInput : idOrInput.function_id;
       const payload = typeof idOrInput === "string" ? data : idOrInput.payload;
@@ -44,6 +47,14 @@ function mockSdk() {
       if (!fn) throw new Error(`No function: ${id}`);
       return fn(payload);
     },
+  };
+}
+
+function makeMcpReq(body?: unknown, headers?: Record<string, string>) {
+  return {
+    body,
+    headers: headers || {},
+    query_params: {},
   };
 }
 
@@ -215,6 +226,47 @@ describe("Sentinels Functions", () => {
 
       expect(result.success).toBe(false);
       expect(result.error).toContain("pattern config requires");
+    });
+
+    it("rejects invalid pattern regex before persisting it", async () => {
+      const result = (await sdk.trigger("mem::sentinel-create", {
+        name: "bad-pattern",
+        type: "pattern",
+        config: { pattern: "(" },
+      })) as { success: boolean; error: string };
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("valid regular expression");
+      expect(await kv.list<Sentinel>(KV.sentinels)).toHaveLength(0);
+    });
+
+    it("rejects unsafe pattern regex shapes before persisting them", async () => {
+      const unsafePatterns = [
+        "^(a+)+$",
+        "^(a|aa)+$",
+        "(.*a){2,}",
+        "([a-z]+)*",
+        "(error)?",
+        "(?=error)",
+        "error\\1",
+        "\\k<name>",
+        "a++",
+        "^a*a*a*a*a*a*a*a*b$",
+        "a".repeat(129),
+      ];
+
+      for (const pattern of unsafePatterns) {
+        const result = (await sdk.trigger("mem::sentinel-create", {
+          name: `bad-${pattern}`,
+          type: "pattern",
+          config: { pattern },
+        })) as { success: boolean; error: string };
+
+        expect(result.success, pattern).toBe(false);
+        expect(result.error, pattern).toContain("pattern config");
+      }
+
+      expect(await kv.list<Sentinel>(KV.sentinels)).toHaveLength(0);
     });
 
     it("returns error for webhook config missing path", async () => {
@@ -623,5 +675,148 @@ describe("Sentinels Functions", () => {
       expect(result.triggered).toEqual([]);
       expect(result.checkedCount).toBe(0);
     });
+
+    it("triggers pattern sentinel for a safe recent observation title", async () => {
+      const created = (await sdk.trigger("mem::sentinel-create", {
+        name: "error-watcher",
+        type: "pattern",
+        config: { pattern: "error|fail" },
+      })) as { success: boolean; sentinel: Sentinel };
+      const session: Session = {
+        id: "ses_pattern",
+        project: "demo",
+        cwd: "/demo",
+        startedAt: new Date().toISOString(),
+        status: "active",
+        observationCount: 1,
+      };
+      const observation: CompressedObservation = {
+        id: "obs_error",
+        sessionId: session.id,
+        timestamp: new Date(Date.now() + 1000).toISOString(),
+        type: "error",
+        title: "Build error in watcher",
+        facts: [],
+        narrative: "",
+        concepts: [],
+        files: [],
+        importance: 5,
+      };
+      await kv.set(KV.sessions, session.id, session);
+      await kv.set(KV.observations(session.id), observation.id, observation);
+
+      const result = (await sdk.trigger("mem::sentinel-check", {})) as {
+        success: boolean;
+        triggered: string[];
+      };
+
+      expect(result.success).toBe(true);
+      expect(result.triggered).toEqual([created.sentinel.id]);
+    });
+
+    it("skips legacy unsafe pattern sentinels and still processes valid sentinels", async () => {
+      const now = new Date().toISOString();
+      const legacyInvalidSyntax: Sentinel = {
+        id: "snl_invalid_syntax",
+        name: "legacy invalid syntax",
+        type: "pattern",
+        status: "watching",
+        config: { pattern: "(" },
+        createdAt: now,
+        linkedActionIds: [],
+      };
+      const legacyUnsafeShape: Sentinel = {
+        id: "snl_unsafe_shape",
+        name: "legacy unsafe shape",
+        type: "pattern",
+        status: "watching",
+        config: { pattern: "(fail)?" },
+        createdAt: now,
+        linkedActionIds: [],
+      };
+      const legacyMalformed: Sentinel = {
+        id: "snl_malformed",
+        name: "legacy malformed",
+        type: "pattern",
+        status: "watching",
+        config: {},
+        createdAt: now,
+        linkedActionIds: [],
+      };
+      const valid: Sentinel = {
+        id: "snl_valid",
+        name: "valid",
+        type: "pattern",
+        status: "watching",
+        config: { pattern: "error|fail" },
+        createdAt: now,
+        linkedActionIds: [],
+      };
+      const session: Session = {
+        id: "ses_legacy",
+        project: "demo",
+        cwd: "/demo",
+        startedAt: now,
+        status: "active",
+        observationCount: 1,
+      };
+      const observation: CompressedObservation = {
+        id: "obs_fail",
+        sessionId: session.id,
+        timestamp: new Date(Date.now() + 1000).toISOString(),
+        type: "error",
+        title: "Deploy fail",
+        facts: [],
+        narrative: "",
+        concepts: [],
+        files: [],
+        importance: 5,
+      };
+      await kv.set(KV.sentinels, legacyInvalidSyntax.id, legacyInvalidSyntax);
+      await kv.set(KV.sentinels, legacyUnsafeShape.id, legacyUnsafeShape);
+      await kv.set(KV.sentinels, legacyMalformed.id, legacyMalformed);
+      await kv.set(KV.sentinels, valid.id, valid);
+      await kv.set(KV.sessions, session.id, session);
+      await kv.set(KV.observations(session.id), observation.id, observation);
+
+      const result = (await sdk.trigger("mem::sentinel-check", {})) as {
+        success: boolean;
+        triggered: string[];
+        checkedCount: number;
+      };
+
+      expect(result.success).toBe(true);
+      expect(result.checkedCount).toBe(4);
+      expect(result.triggered).toEqual([valid.id]);
+    });
+  });
+});
+
+describe("MCP sentinel create", () => {
+  it("returns failed result for unsafe pattern config through MCP wrapper", async () => {
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerSentinelsFunction(sdk as never, kv as never);
+    registerMcpEndpoints(sdk as never, kv as never);
+
+    const call = sdk.getFunction("mcp::tools::call");
+    expect(call).toBeDefined();
+
+    const result = (await call!(makeMcpReq({
+      name: "memory_sentinel_create",
+      arguments: {
+        name: "unsafe",
+        type: "pattern",
+        config: JSON.stringify({ pattern: "^(a+)+$" }),
+      },
+    }))) as {
+      status_code: number;
+      body: { content: Array<{ text: string }> };
+    };
+
+    expect(result.status_code).toBe(200);
+    const parsed = JSON.parse(result.body.content[0].text);
+    expect(parsed.success).toBe(false);
+    expect(parsed.error).toContain("pattern config");
   });
 });

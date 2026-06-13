@@ -163,7 +163,8 @@ def _api(base: str, path: str, body: dict | None = None, method: str = "POST", s
     data = json.dumps(body).encode() if body else None
     req = Request(url, data=data, headers=headers, method=method)
     try:
-        with urlopen(req, timeout=TIMEOUT) as resp:
+        # Operator-configured base URL is restricted to http/https with hostname, then fixed under /agentmemory; plaintext bearer can be blocked with AGENTMEMORY_REQUIRE_HTTPS.
+        with urlopen(req, timeout=TIMEOUT) as resp:  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
             return json.loads(resp.read().decode())
     except (URLError, TimeoutError, json.JSONDecodeError):
         return None

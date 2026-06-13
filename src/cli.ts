@@ -41,6 +41,7 @@ import {
 import { renderSplash } from "./cli/splash.js";
 import { isFirstRun, readPrefs, resetPrefs, writePrefs } from "./cli/preferences.js";
 import { runOnboarding } from "./cli/onboarding.js";
+import { buildReadyWebSocketUrls } from "./cli/ready-hint.js";
 import { setBootVerbose } from "./logger.js";
 import { VERSION } from "./version.js";
 import { getAllTools, ESSENTIAL_TOOLS } from "./mcp/tools-registry.js";
@@ -299,38 +300,6 @@ function getViewerUrl(): string {
       getRestPort() + 2;
     return `http://localhost:${vPort}`;
   }
-}
-
-// WebSocket streams port. Engine writes here; the SDK and viewer
-// subscribe. Honors both `III_STREAM_PORT` (the singular name the
-// engine docs use post-0.11) and `III_STREAMS_PORT` (the name our
-// own config.ts has used since 0.7) so a single source of truth in
-// either form lights up the ready panel. Falls back to REST+1 so
-// `--port 3211` auto-picks 3212 instead of colliding on 3112 (#750).
-function getStreamPort(): number {
-  return (
-    parseInt(process.env["III_STREAM_PORT"] || "", 10) ||
-    parseInt(process.env["III_STREAMS_PORT"] || "", 10) ||
-    getRestPort() + 1
-  );
-}
-
-// Bridge WebSocket port — the iii engine's internal worker bus.
-// Defaults derived from REST as REST+46023 so the canonical 3111
-// anchor yields 49134 and `--port 3211` auto-picks 49234 without a
-// second-instance collision (#750). Overridable via
-// `III_ENGINE_PORT` or the legacy `III_ENGINE_URL=ws://host:port`.
-function getEnginePort(): number {
-  const explicit = parseInt(process.env["III_ENGINE_PORT"] || "", 10);
-  if (explicit) return explicit;
-  const url = process.env["III_ENGINE_URL"];
-  if (url) {
-    try {
-      const parsed = new URL(url).port;
-      if (parsed) return parseInt(parsed, 10);
-    } catch {}
-  }
-  return getRestPort() + 46023;
 }
 
 async function isEngineRunning(): Promise<boolean> {
@@ -1113,32 +1082,16 @@ async function waitForAgentmemoryReady(timeoutMs: number): Promise<boolean> {
   return false;
 }
 
-// Derive a host string for the streams/engine WebSocket lines from
-// the configured engine URL (`III_ENGINE_URL`) or REST base
-// (`AGENTMEMORY_URL`) so a remote-bind setup like
-// `III_ENGINE_URL=ws://my-host:49134` doesn't print misleading
-// localhost addresses. Falls back to localhost.
-function getEngineHost(): string {
-  for (const envKey of ["III_ENGINE_URL", "AGENTMEMORY_URL"]) {
-    const raw = process.env[envKey];
-    if (!raw) continue;
-    try {
-      const parsed = new URL(raw);
-      if (parsed.hostname) return parsed.hostname;
-    } catch {}
-  }
-  return "localhost";
-}
-
 function printReadyHint(consoleState: IiiConsoleState): void {
   // REST goes through getBaseUrl which already honors AGENTMEMORY_URL
   // for full host+protocol overrides. Streams/Engine are derived from
   // III_ENGINE_URL so a remote bind reads correctly in the panel.
   const restUrl = getBaseUrl();
   const viewerUrl = getViewerUrl();
-  const engineHost = getEngineHost();
-  const streamUrl = `ws://${engineHost}:${getStreamPort()}`;
-  const engineUrl = `ws://${engineHost}:${getEnginePort()}`;
+  const { streamUrl, engineUrl } = buildReadyWebSocketUrls({
+    restPort: getRestPort(),
+    env: process.env,
+  });
 
   const consoleLine =
     consoleState.kind === "installed"
@@ -1333,7 +1286,6 @@ async function apiFetch<T = unknown>(base: string, path: string, timeoutMs = 500
 }
 
 async function runStatus() {
-  const port = getRestPort();
   const base = getBaseUrl();
   p.intro("agentmemory status");
 

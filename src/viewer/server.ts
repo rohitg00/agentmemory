@@ -313,7 +313,7 @@ export function startViewerServer(
     try {
       await proxyToRestApi(resolvedRestPort, pathname, qs, method, req, res, secret);
     } catch (err) {
-      console.error(`[viewer] proxy error on ${method} ${pathname}:`, err);
+      console.error("[viewer] proxy error", { method, pathname, error: err });
       json(res, 502, { error: "upstream error" }, req);
     }
   });
