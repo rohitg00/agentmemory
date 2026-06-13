@@ -4,6 +4,7 @@ import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
 import { recordAudit } from "./audit.js";
+import { stripPrivateData } from "./privacy.js";
 import { getEnvVar } from "../config.js";
 import { logger } from "../logger.js";
 
@@ -243,7 +244,8 @@ export function registerSlotsFunctions(sdk: ISdk, kv: StateKV): void {
       if (sizeLimit === null) {
         return { success: false, error: "sizeLimit must be an integer between 1 and 20000" };
       }
-      const content = typeof data?.content === "string" ? data.content : "";
+      const content =
+        typeof data?.content === "string" ? stripPrivateData(data.content) : "";
       if (content.length > sizeLimit) {
         return { success: false, error: `content exceeds sizeLimit (${content.length} > ${sizeLimit})` };
       }
@@ -282,7 +284,8 @@ export function registerSlotsFunctions(sdk: ISdk, kv: StateKV): void {
     async (data: { label?: string; text?: string }) => {
       const label = validateLabel(data?.label);
       if (!label) return { success: false, error: "label required" };
-      const text = typeof data?.text === "string" ? data.text : "";
+      const text =
+        typeof data?.text === "string" ? stripPrivateData(data.text) : "";
       if (!text) return { success: false, error: "text required" };
       return withKeyedLock(`slot:${label}`, async () => {
         const { slot, scope } = await readSlot(kv, label);
@@ -316,6 +319,7 @@ export function registerSlotsFunctions(sdk: ISdk, kv: StateKV): void {
       const label = validateLabel(data?.label);
       if (!label) return { success: false, error: "label required" };
       if (typeof data?.content !== "string") return { success: false, error: "content required (string)" };
+      data.content = stripPrivateData(data.content);
       return withKeyedLock(`slot:${label}`, async () => {
         const { slot, scope } = await readSlot(kv, label);
         if (!slot) return { success: false, error: "slot not found (use mem::slot-create first)" };

@@ -29,6 +29,7 @@ import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { VERSION } from "../version.js";
 import { recordAudit } from "./audit.js";
+import { scrubRecord } from "./privacy.js";
 import { logger } from "../logger.js";
 
 export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
@@ -262,6 +263,30 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
         summaries: 0,
         skipped: 0,
       };
+
+      // Imports arrive from outside the observe pipeline (hand-edited dumps,
+      // exports from machines running older pattern lists), so re-scrub the
+      // content-bearing collections before any row is written. Collections
+      // keyed only by ids/numbers are skipped — they carry no free text.
+      for (const key of [
+        "sessions",
+        "memories",
+        "summaries",
+        "lessons",
+        "insights",
+        "semanticMemories",
+        "crystals",
+        "sketches",
+      ] as const) {
+        const collection = importData[key];
+        if (Array.isArray(collection)) {
+          (importData as unknown as Record<string, unknown>)[key] =
+            scrubRecord(collection);
+        }
+      }
+      for (const [sessionId, obs] of Object.entries(importData.observations)) {
+        importData.observations[sessionId] = scrubRecord(obs);
+      }
 
       if (strategy === "replace") {
         const existing = await kv.list<Session>(KV.sessions);

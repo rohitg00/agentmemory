@@ -4,6 +4,7 @@ import { KV, generateId } from "../state/schema.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
 import type { Action, ActionEdge, Sketch } from "../types.js";
 import { safeAudit } from "./audit.js";
+import { stripPrivateData } from "./privacy.js";
 
 export function registerSketchesFunction(sdk: ISdk, kv: StateKV): void {
   sdk.registerFunction("mem::sketch-create", 
@@ -21,8 +22,8 @@ export function registerSketchesFunction(sdk: ISdk, kv: StateKV): void {
       const expiresInMs = data.expiresInMs || 3600000;
       const sketch: Sketch = {
         id: generateId("sk"),
-        title: data.title.trim(),
-        description: (data.description || "").trim(),
+        title: stripPrivateData(data.title.trim()),
+        description: stripPrivateData((data.description || "").trim()),
         status: "active",
         actionIds: [],
         project: data.project,
@@ -66,8 +67,8 @@ export function registerSketchesFunction(sdk: ISdk, kv: StateKV): void {
         const now = new Date().toISOString();
         const action: Action = {
           id: generateId("act"),
-          title: data.title.trim(),
-          description: (data.description || "").trim(),
+          title: stripPrivateData(data.title.trim()),
+          description: stripPrivateData((data.description || "").trim()),
           status: "pending",
           priority: Math.max(1, Math.min(10, data.priority || 5)),
           createdAt: now,

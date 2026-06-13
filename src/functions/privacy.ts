@@ -17,6 +17,8 @@ const SECRET_PATTERN_SOURCES = [
   /npm_[A-Za-z0-9]{36}/g,
   /glpat-[A-Za-z0-9\-_]{20,}/g,
   /dop_v1_[A-Za-z0-9]{64}/g,
+  /-----BEGIN (?:RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY(?: BLOCK)?-----[\s\S]*?-----END (?:RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY(?: BLOCK)?-----/g,
+  /(?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|redis|amqps?|mssql):\/\/[^\/\s:@"']+:[^@\s"']+@/gi,
 ];
 
 export function stripPrivateData(input: string): string {
@@ -26,6 +28,24 @@ export function stripPrivateData(input: string): string {
     result = result.replace(pattern, "[REDACTED_SECRET]");
   }
   return result;
+}
+
+/**
+ * Apply stripPrivateData to every string in an arbitrary record, walking
+ * nested objects and arrays. Use this where the content shape is unknown
+ * (imports, team shares, parsed LLM output); for known string fields call
+ * stripPrivateData directly. Returns a scrubbed copy; non-string leaves are
+ * passed through unchanged, so structure can never be corrupted.
+ */
+export function scrubRecord<T>(record: T): T {
+  if (typeof record === "string") return stripPrivateData(record) as T;
+  if (Array.isArray(record)) return record.map(scrubRecord) as T;
+  if (typeof record === "object" && record !== null) {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(record)) out[k] = scrubRecord(v);
+    return out as T;
+  }
+  return record;
 }
 
 export function registerPrivacyFunction(sdk: ISdk): void {

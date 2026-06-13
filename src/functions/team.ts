@@ -8,6 +8,7 @@ import type {
 import { KV, generateId } from "../state/schema.js";
 import type { StateKV } from "../state/kv.js";
 import { recordAudit } from "./audit.js";
+import { scrubRecord } from "./privacy.js";
 import { logger } from "../logger.js";
 
 const VALID_ITEM_TYPES = new Set(["memory", "pattern", "observation"]);
@@ -50,12 +51,18 @@ export function registerTeamFunction(
         return { success: false, error: "Item not found" };
       }
 
+      // Sharing widens the audience from one machine to the whole team.
+      // Re-scrub at this boundary as defense-in-depth: it catches rows
+      // written before a newer secret pattern existed, for the items that
+      // actually get shared.
+      const scrubbedContent = scrubRecord(content);
+
       const shared: TeamSharedItem = {
         id: generateId("ts"),
         sharedBy: config.userId,
         sharedAt: new Date().toISOString(),
         type: data.itemType,
-        content,
+        content: scrubbedContent,
         project: data.project || "",
         visibility: "shared",
       };

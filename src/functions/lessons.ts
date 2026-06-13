@@ -3,6 +3,7 @@ import type { StateKV } from "../state/kv.js";
 import { KV, fingerprintId } from "../state/schema.js";
 import type { Lesson } from "../types.js";
 import { recordAudit } from "./audit.js";
+import { stripPrivateData } from "./privacy.js";
 
 function reinforceLesson(lesson: Lesson): void {
   const now = new Date().toISOString();
@@ -29,6 +30,12 @@ export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
       if (!data.content?.trim()) {
         return { success: false, error: "content is required" };
       }
+
+      // Scrub before fingerprinting so the dedup key reflects the stored
+      // (scrubbed) form — lessons arrive from crystallize output and manual
+      // saves, neither of which passes through the observe pipeline.
+      data.content = stripPrivateData(data.content);
+      if (data.context) data.context = stripPrivateData(data.context);
 
       const fp = fingerprintId("lsn", data.content.trim().toLowerCase());
       const existing = await kv.get<Lesson>(KV.lessons, fp);
