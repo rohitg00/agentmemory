@@ -970,7 +970,7 @@ npm install @xenova/transformers
 | Tool | Description |
 |------|-------------|
 | `memory_recall` | Search past observations |
-| `memory_compress_file` | Compress markdown files while preserving structure |
+| `memory_compress_file` | Compress allowed-root markdown files while preserving structure |
 | `memory_save` | Save an insight, decision, or pattern |
 | `memory_patterns` | Detect recurring patterns |
 | `memory_smart_search` | Hybrid semantic + keyword search |
@@ -1448,6 +1448,11 @@ Create `~/.agentmemory/.env`:
                                    # LLM provider to compress the
                                    # observation — expect significant
                                    # token spend on active sessions.
+# AGENTMEMORY_COMPRESS_FILE_ROOTS=/repo/docs,/Users/me/notes
+                                   # Extra narrow roots allowed for
+                                   # memory_compress_file. Without this,
+                                   # compress-file is limited to the
+                                   # daemon cwd when it is safe.
 # AGENTMEMORY_SLOTS=false          # OFF by default. Editable pinned
                                    # memory slots — persona,
                                    # user_preferences, tool_guidelines,

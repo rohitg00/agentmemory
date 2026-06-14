@@ -14,7 +14,7 @@ agentmemory exposes 53 MCP tools. 8 are in the lean core set (`--tools core` or 
 | `memory_claude_bridge_sync` |  | `direction`*: string | Sync memory state to/from Claude Code's native MEMORY.md file. |
 | `memory_commit_lookup` |  | `sha`*: string | Look up the agent session(s) that produced a specific git commit, given its SHA. Returns the commit metadata and linked sessions. |
 | `memory_commits` |  | `branch`: string, `repo`: string, `limit`: number | List recent commits linked to agent sessions, optionally filtered by branch or repo. |
-| `memory_compress_file` |  | `filePath`*: string | Compress a markdown file to reduce token usage while preserving headings, URLs, and code blocks. Creates a .original.md backup before writing. |
+| `memory_compress_file` |  | `filePath`*: string | Compress an allowed-root markdown file to reduce token usage while preserving headings, URLs, and code blocks. Creates a .original.md backup before writing. |
 | `memory_consolidate` | yes | `tier`: string | Run the 4-tier memory consolidation pipeline (working -> episodic -> semantic -> procedural). |
 | `memory_crystallize` |  | `actionIds`*: string, `project`: string, `sessionId`: string | Compress completed action chains into compact crystal digests using LLM summarization. Extracts narrative, key outcomes, files affected, and lessons. |
 | `memory_diagnose` | yes | `categories`: string | Run health checks across all subsystems (actions, leases, sentinels, sketches, signals, sessions, memories, mesh). Identifies stuck, orphaned, and inconsistent state. |
