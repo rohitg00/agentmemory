@@ -61,8 +61,10 @@ mockDns(["203.0.113.10"]);
   - Public DNS answers allow registration.
   - Any private DNS answer blocks registration.
   - Private, loopback, link-local, unspecified, and IPv4-mapped IP literals are blocked.
-  - Hex-normalized IPv4-mapped IPv6 literals such as `http://[::ffff:c0a8:101]` are blocked.
-  - Public IPv4 and IPv6 literals are allowed, including public boundary addresses adjacent to blocked IPv4 ranges.
+  - Non-public IPv6 special-use literals and DNS answers are blocked, including multicast, site-local, documentation, 6to4, discard-only, local translation, dummy/SRv6 SID, IPv4-compatible, and IPv4-mapped forms.
+  - Hex-normalized IPv4-mapped IPv6 literals such as `https://[::ffff:c0a8:101]` are blocked.
+  - Cleartext `http:` peer URLs are blocked before DNS lookup.
+  - Public IPv4 and IPv6 literals are allowed, including public boundary addresses adjacent to blocked IPv4 ranges and globally reachable IPv6 special-purpose exceptions.
 
 - [ ] Run the focused tests and confirm at least one new test fails before implementation.
 
@@ -85,9 +87,9 @@ function normalizeHost(host: string): string {
 - [ ] Implement IPv4 blocking for loopback `127.0.0.0/8`, unspecified `0.0.0.0`, RFC1918, and link-local `169.254.0.0/16`.
 - [ ] Implement IPv4 blocking for non-global special-use ranges such as CGNAT, benchmarking, documentation, multicast, and reserved ranges.
 
-- [ ] Implement IPv6 blocking for loopback `::1`, unspecified `::`, link-local `fe80::/10`, ULA `fc00::/7`, and IPv4-mapped blocked IPv4 values.
+- [ ] Implement IPv6 prefix matching for loopback `::1`, unspecified `::`, link-local `fe80::/10`, site-local `fec0::/10`, ULA `fc00::/7`, multicast `ff00::/8`, discard-only `100::/64`, local translation `64:ff9b:1::/48`, dummy/SRv6 SID ranges, documentation and transition ranges, IPv4-compatible values, and IPv4-mapped values.
 
-- [ ] Decode IPv4-mapped IPv6 tails in both dotted and hex-normalized forms before applying the IPv4 blocklist.
+- [ ] Decode well-known IPv4/IPv6 translation prefix `64:ff9b::/96` tails in both dotted and hex-normalized forms before applying the IPv4 blocklist.
 
 - [ ] Update `isAllowedUrl()` so hostnames return `false` if DNS lookup rejects or returns no records.
 - [ ] Wrap DNS lookup in a 5 second timeout so hung resolver calls fail closed before registration or sync can stall indefinitely.
@@ -102,7 +104,7 @@ try {
 }
 ```
 
-- [ ] Preserve existing protocol and credentials rejection.
+- [ ] Require `https:` and preserve credentials rejection.
 
 - [ ] Keep the existing sync-time recheck before any push or pull work.
 
@@ -198,6 +200,6 @@ Expected: pass.
 
 ## Self-Review
 
-- Spec coverage: covered DNS failure, private DNS, public DNS, non-global special-use IPv4 ranges, IP literals including hex IPv4-mapped IPv6, sync recheck, push/pull redirect behavior, and residual TOCTOU documentation.
+- Spec coverage: covered DNS failure, private DNS, public DNS, non-global special-use IPv4/IPv6 ranges, public IPv6 exception boundaries, NAT64 private IPv4 embedding, IP literals including hex IPv4-mapped IPv6, HTTPS-only peer URLs, sync recheck, push/pull redirect behavior, and residual TOCTOU documentation.
 - Placeholder scan: no `TBD` or unresolved implementation placeholders remain.
 - Type consistency: tests target current `mockSdk`, `mockKV`, `registerMeshFunction`, and `MeshPeer` patterns already used in `test/mesh.test.ts`.

@@ -242,6 +242,18 @@ describe("Mesh Functions", () => {
       await expect(kv.list<MeshPeer>("mem:mesh")).resolves.toEqual([]);
     });
 
+    it("blocks cleartext HTTP peer URLs before DNS lookup", async () => {
+      const result = (await sdk.trigger("mem::mesh-register", {
+        url: "http://public.example.com",
+        name: "cleartext-peer",
+      })) as { success: boolean; error: string };
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("URL blocked");
+      expect(lookupMock).not.toHaveBeenCalled();
+      await expect(kv.list<MeshPeer>("mem:mesh")).resolves.toEqual([]);
+    });
+
     it("allows hostnames when all DNS answers are public", async () => {
       mockDns(["93.184.216.34", "2606:2800:220:1:248:1893:25c8:1946"]);
 
@@ -279,6 +291,29 @@ describe("Mesh Functions", () => {
     });
 
     it.each([
+      ["64:ff9b::5db8:d822"],
+      ["2001:1::1"],
+      ["2001:1::2"],
+      ["2001:1::3"],
+      ["2001:3::1"],
+      ["2001:4:112::1"],
+      ["2001:20::1"],
+      ["2001:30::1"],
+      ["3fff:1000::1"],
+    ])("allows hostnames when DNS resolves to allowed public IPv6 address %s", async (address) => {
+      mockDns([address]);
+      const url = `https://public-ipv6-${address.replace(/:/g, "-")}.example.com`;
+
+      const result = (await sdk.trigger("mem::mesh-register", {
+        url,
+        name: "public-ipv6-peer",
+      })) as { success: boolean; peer: MeshPeer };
+
+      expect(result.success).toBe(true);
+      expect(result.peer.url).toBe(url);
+    });
+
+    it.each([
       ["127.0.0.1"],
       ["127.1.2.3"],
       ["0.0.0.0"],
@@ -301,6 +336,23 @@ describe("Mesh Functions", () => {
       ["::"],
       ["::1"],
       ["fe80::1"],
+      ["fec0::1"],
+      ["ff02::1"],
+      ["100::1"],
+      ["100:0:0:1::1"],
+      ["64:ff9b:1::1"],
+      ["64:ff9b::192.168.1.1"],
+      ["::ffff:93.184.216.34"],
+      ["2001::1"],
+      ["2001:1::4"],
+      ["2001:2::1"],
+      ["2001:10::1"],
+      ["2001:db8::1"],
+      ["2002::1"],
+      ["3fff::1"],
+      ["3fff:0fff::1"],
+      ["5f00::1"],
+      ["::127.0.0.1"],
       ["fc00::1"],
       ["fd00::1"],
       ["::ffff:127.0.0.1"],
@@ -318,32 +370,49 @@ describe("Mesh Functions", () => {
     });
 
     it.each([
-      ["http://127.0.0.1"],
-      ["http://127.1.2.3"],
-      ["http://0.0.0.0"],
-      ["http://10.0.0.1"],
-      ["http://100.64.0.1"],
-      ["http://100.127.255.255"],
-      ["http://172.16.0.1"],
-      ["http://172.31.255.255"],
-      ["http://192.0.0.1"],
-      ["http://192.0.2.1"],
-      ["http://192.88.99.1"],
-      ["http://192.168.1.1"],
-      ["http://169.254.1.1"],
-      ["http://198.18.0.1"],
-      ["http://198.19.255.255"],
-      ["http://198.51.100.1"],
-      ["http://203.0.113.1"],
-      ["http://224.0.0.1"],
-      ["http://255.255.255.255"],
-      ["http://[::]"],
-      ["http://[::1]"],
-      ["http://[fe80::1]"],
-      ["http://[fc00::1]"],
-      ["http://[fd00::1]"],
-      ["http://[::ffff:127.0.0.1]"],
-      ["http://[::ffff:c0a8:101]"],
+      ["https://127.0.0.1"],
+      ["https://127.1.2.3"],
+      ["https://0.0.0.0"],
+      ["https://10.0.0.1"],
+      ["https://100.64.0.1"],
+      ["https://100.127.255.255"],
+      ["https://172.16.0.1"],
+      ["https://172.31.255.255"],
+      ["https://192.0.0.1"],
+      ["https://192.0.2.1"],
+      ["https://192.88.99.1"],
+      ["https://192.168.1.1"],
+      ["https://169.254.1.1"],
+      ["https://198.18.0.1"],
+      ["https://198.19.255.255"],
+      ["https://198.51.100.1"],
+      ["https://203.0.113.1"],
+      ["https://224.0.0.1"],
+      ["https://255.255.255.255"],
+      ["https://[::]"],
+      ["https://[::1]"],
+      ["https://[fe80::1]"],
+      ["https://[fec0::1]"],
+      ["https://[ff02::1]"],
+      ["https://[100::1]"],
+      ["https://[100:0:0:1::1]"],
+      ["https://[64:ff9b:1::1]"],
+      ["https://[64:ff9b::c0a8:101]"],
+      ["https://[::ffff:5db8:d822]"],
+      ["https://[2001::1]"],
+      ["https://[2001:1::4]"],
+      ["https://[2001:2::1]"],
+      ["https://[2001:10::1]"],
+      ["https://[2001:db8::1]"],
+      ["https://[2002::1]"],
+      ["https://[3fff::1]"],
+      ["https://[3fff:0fff::1]"],
+      ["https://[5f00::1]"],
+      ["https://[::127.0.0.1]"],
+      ["https://[fc00::1]"],
+      ["https://[fd00::1]"],
+      ["https://[::ffff:127.0.0.1]"],
+      ["https://[::ffff:c0a8:101]"],
     ])("blocks blocked IP literal %s", async (url) => {
       const result = (await sdk.trigger("mem::mesh-register", {
         url,
@@ -356,18 +425,28 @@ describe("Mesh Functions", () => {
     });
 
     it.each([
-      ["http://93.184.216.34"],
-      ["http://100.63.255.255"],
-      ["http://100.128.0.0"],
-      ["http://192.0.1.1"],
-      ["http://192.0.3.1"],
-      ["http://192.88.100.1"],
-      ["http://198.17.255.255"],
-      ["http://198.20.0.1"],
-      ["http://198.51.101.1"],
-      ["http://203.0.114.1"],
-      ["http://223.255.255.254"],
-      ["http://[2606:2800:220:1:248:1893:25c8:1946]"],
+      ["https://93.184.216.34"],
+      ["https://100.63.255.255"],
+      ["https://100.128.0.0"],
+      ["https://192.0.1.1"],
+      ["https://192.0.3.1"],
+      ["https://192.88.100.1"],
+      ["https://198.17.255.255"],
+      ["https://198.20.0.1"],
+      ["https://198.51.101.1"],
+      ["https://203.0.114.1"],
+      ["https://223.255.255.254"],
+      ["https://[2606:2800:220:1:248:1893:25c8:1946]"],
+      ["https://[2001:4860:4860::8888]"],
+      ["https://[64:ff9b::5db8:d822]"],
+      ["https://[2001:1::1]"],
+      ["https://[2001:1::2]"],
+      ["https://[2001:1::3]"],
+      ["https://[2001:3::1]"],
+      ["https://[2001:4:112::1]"],
+      ["https://[2001:20::1]"],
+      ["https://[2001:30::1]"],
+      ["https://[3fff:1000::1]"],
     ])("allows public IP literal %s", async (url) => {
       const result = (await sdk.trigger("mem::mesh-register", {
         url,

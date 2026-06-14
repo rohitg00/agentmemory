@@ -52,35 +52,117 @@ function parseHextet(value: string): number | null {
   return Number.parseInt(value, 16);
 }
 
-function decodeIPv4MappedIPv6(ip: string): string | null {
-  const mappedPrefixes = ["::ffff:", "0:0:0:0:0:ffff:"];
-  const prefix = mappedPrefixes.find((candidate) => ip.startsWith(candidate));
-  if (!prefix) return null;
+function ipv4ToHextets(ip: string): number[] | null {
+  const octets = parseIPv4(ip);
+  if (!octets) return null;
+  return [(octets[0] << 8) | octets[1], (octets[2] << 8) | octets[3]];
+}
 
-  const tail = ip.slice(prefix.length);
-  if (isIP(tail) === 4) return tail;
+function parseIPv6Hextets(ip: string): number[] | null {
+  if (isIP(ip) !== 6) return null;
+  const compressed = ip.split("::");
+  if (compressed.length > 2) return null;
 
-  const parts = tail.split(":");
-  if (parts.length !== 2) return null;
+  const parseSide = (side: string): number[] | null => {
+    if (!side) return [];
+    const values: number[] = [];
+    for (const part of side.split(":")) {
+      if (isIP(part) === 4) {
+        const mapped = ipv4ToHextets(part);
+        if (!mapped) return null;
+        values.push(...mapped);
+        continue;
+      }
+      const parsed = parseHextet(part);
+      if (parsed === null) return null;
+      values.push(parsed);
+    }
+    return values;
+  };
 
-  const high = parseHextet(parts[0]);
-  const low = parseHextet(parts[1]);
-  if (high === null || low === null) return null;
+  const left = parseSide(compressed[0]);
+  const right = parseSide(compressed[1] ?? "");
+  if (!left || !right) return null;
+  const zeroCount = compressed.length === 2 ? 8 - left.length - right.length : 0;
+  if (zeroCount < 0) return null;
+  const hextets = [...left, ...Array(zeroCount).fill(0), ...right];
+  return hextets.length === 8 ? hextets : null;
+}
 
+type IPv6Prefix = {
+  hextets: number[];
+  length: number;
+};
+
+function ipv6Prefix(address: string, length: number): IPv6Prefix {
+  const hextets = parseIPv6Hextets(address);
+  if (!hextets) throw new Error(`Invalid IPv6 prefix: ${address}/${length}`);
+  return { hextets, length };
+}
+
+function matchesIPv6Prefix(hextets: number[], prefix: IPv6Prefix): boolean {
+  let remainingBits = prefix.length;
+  for (let index = 0; index < hextets.length; index += 1) {
+    if (remainingBits <= 0) return true;
+    const bits = Math.min(16, remainingBits);
+    const mask = bits === 16 ? 0xffff : (0xffff << (16 - bits)) & 0xffff;
+    if ((hextets[index] & mask) !== (prefix.hextets[index] & mask)) return false;
+    remainingBits -= bits;
+  }
+  return true;
+}
+
+function matchesAnyIPv6Prefix(hextets: number[], prefixes: IPv6Prefix[]): boolean {
+  return prefixes.some((prefix) => matchesIPv6Prefix(hextets, prefix));
+}
+
+function hextetsToIPv4(hextets: number[]): string {
+  const high = hextets[6];
+  const low = hextets[7];
   return `${high >> 8}.${high & 0xff}.${low >> 8}.${low & 0xff}`;
 }
 
+const WELL_KNOWN_IPV4_IPV6_TRANSLATION_PREFIX = ipv6Prefix("64:ff9b::", 96);
+
+const GLOBALLY_REACHABLE_IPV6_SPECIAL_PURPOSE_EXCEPTIONS = [
+  ipv6Prefix("2001:1::1", 128),
+  ipv6Prefix("2001:1::2", 128),
+  ipv6Prefix("2001:1::3", 128),
+  ipv6Prefix("2001:3::", 32),
+  ipv6Prefix("2001:4:112::", 48),
+  ipv6Prefix("2001:20::", 28),
+  ipv6Prefix("2001:30::", 28),
+];
+
+const BLOCKED_IPV6_PREFIXES = [
+  ipv6Prefix("::", 128),
+  ipv6Prefix("::1", 128),
+  ipv6Prefix("::", 96),
+  ipv6Prefix("::ffff:0:0", 96),
+  ipv6Prefix("64:ff9b:1::", 48),
+  ipv6Prefix("100::", 64),
+  ipv6Prefix("100:0:0:1::", 64),
+  ipv6Prefix("2001::", 23),
+  ipv6Prefix("2001:2::", 48),
+  ipv6Prefix("2001:10::", 28),
+  ipv6Prefix("2001:db8::", 32),
+  ipv6Prefix("2002::", 16),
+  ipv6Prefix("3fff::", 20),
+  ipv6Prefix("5f00::", 16),
+  ipv6Prefix("fc00::", 7),
+  ipv6Prefix("fe80::", 10),
+  ipv6Prefix("fec0::", 10),
+  ipv6Prefix("ff00::", 8),
+];
+
 function isBlockedIPv6(ip: string): boolean {
-  if (ip === "::" || ip === "::1") return true;
-
-  const mapped = decodeIPv4MappedIPv6(ip);
-  if (mapped) return isBlockedIPv4(mapped);
-
-  const first = parseHextet(ip.split(":")[0]);
-  if (first === null) return false;
-  if ((first & 0xffc0) === 0xfe80) return true;
-  if ((first & 0xfe00) === 0xfc00) return true;
-  return false;
+  const hextets = parseIPv6Hextets(ip);
+  if (!hextets) return true;
+  if (matchesIPv6Prefix(hextets, WELL_KNOWN_IPV4_IPV6_TRANSLATION_PREFIX)) {
+    return isBlockedIPv4(hextetsToIPv4(hextets));
+  }
+  if (matchesAnyIPv6Prefix(hextets, GLOBALLY_REACHABLE_IPV6_SPECIAL_PURPOSE_EXCEPTIONS)) return false;
+  return matchesAnyIPv6Prefix(hextets, BLOCKED_IPV6_PREFIXES);
 }
 
 function isBlockedNetworkAddress(address: string): boolean {
@@ -108,7 +190,7 @@ async function lookupWithTimeout(host: string): Promise<Awaited<ReturnType<typeo
 async function isAllowedUrl(urlStr: string): Promise<boolean> {
   try {
     const parsed = new URL(urlStr);
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
+    if (parsed.protocol !== "https:") return false;
     if (parsed.username || parsed.password) return false;
     const host = normalizeHost(parsed.hostname);
 

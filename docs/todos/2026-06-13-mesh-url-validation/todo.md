@@ -26,8 +26,10 @@ Acceptance criteria:
 - DNS lookup hangs are bounded and fail closed during registration and sync validation.
 - Any private, loopback, link-local, or unspecified DNS answer blocks registration/sync.
 - Non-global IPv4 special-use ranges are rejected for mesh peers.
-- Public DNS answers and public IP literals remain allowed.
-- Private/link-local/loopback IP literals are rejected, including IPv4-mapped IPv6.
+- Non-global IPv6 special-use ranges are rejected for mesh peers, including private IPv4 embedded in the well-known IPv4/IPv6 translation prefix.
+- Public HTTPS DNS answers and public HTTPS IP literals remain allowed.
+- Cleartext HTTP peer URLs are rejected before DNS lookup.
+- Private/link-local/loopback IP literals are rejected, including IPv4-compatible, IPv4-mapped, and private IPv4/IPv6 translation forms.
 - Sync recheck blocks a peer if DNS changes from public to private before fetch.
 - Existing mesh push behavior still sends the configured Authorization header for allowed peers.
 - Redirects remain rejected by `fetch` configuration.
@@ -57,13 +59,16 @@ Stop conditions:
 | Fail closed on DNS lookup timeout | `npm test -- test/mesh.test.ts` DNS timeout cases | Passed | Prep review added a bounded DNS validation timeout; focused run passed 74/74, including registration and sync recheck timeout coverage |
 | Block private/link-local/loopback DNS answers | `npm test -- test/mesh.test.ts` DNS answer cases | Passed | Final focused run passed 71/71 |
 | Block non-global IPv4 special-use DNS answers | `npm test -- test/mesh.test.ts` DNS answer cases | Passed | Post-commit GStack fix expanded IPv4 special-use coverage; final focused run passed 117/117 |
-| Preserve public DNS and public IP literals | `npm test -- test/mesh.test.ts` positive cases | Passed | Final focused run passed 117/117, including public boundary addresses adjacent to blocked IPv4 ranges |
+| Block non-global IPv6 special-use DNS answers | `npm test -- test/mesh.test.ts` DNS answer cases | Passed | Final review fix added multicast, site-local, documentation, 6to4, discard-only, local translation, dummy/SRv6 SID, IPv4-compatible, and IPv4-mapped coverage; focused run passed 171/171 |
+| Preserve public HTTPS DNS and public HTTPS IP literals | `npm test -- test/mesh.test.ts` positive cases | Passed | Final focused run passed 171/171, including public boundary addresses adjacent to blocked IPv4 ranges, public IPv6 literals, NAT64 with public embedded IPv4, and globally reachable IPv6 special-purpose exceptions |
 | Block private/link-local/loopback IP literals | `npm test -- test/mesh.test.ts` literal cases | Passed | Final focused run passed 71/71 |
 | Block non-global IPv4 special-use literals | `npm test -- test/mesh.test.ts` literal cases | Passed | Final focused run passed 117/117 with CGNAT, benchmarking, documentation, multicast, and reserved ranges |
+| Block non-global IPv6 special-use literals | `npm test -- test/mesh.test.ts` literal cases | Passed | Final focused run passed 171/171 with multicast, site-local, documentation, 6to4, discard-only, local translation, dummy/SRv6 SID, IPv4-compatible, and IPv4-mapped ranges |
+| Reject cleartext HTTP peers before DNS | `npm test -- test/mesh.test.ts` HTTP rejection case | Passed | Red run failed before implementation; final focused run passed 171/171 and asserted DNS was not called |
 | Sync recheck blocks rebinding before fetch | `npm test -- test/mesh.test.ts` sync recheck cases | Passed | Final focused run passed 117/117; fetch was not called when DNS rechecked to `127.0.0.1`, `198.18.0.1`, or timed out |
 | Preserve Authorization header and redirect blocking for allowed sync | Existing and added mesh sync tests | Passed | Push and pull tests assert bearer header plus `redirect: "error"`; redirect rejection tests assert push/pull errors and peer `error` status |
 | Block `.localhost` hostnames without DNS | `npm test -- test/mesh.test.ts` localhost subdomain case | Passed | Prep review added direct coverage for `https://peer.localhost`; focused run passed 73/73 |
-| Build and repo tests still pass | `npm run build`, targeted tests, serial suite | Passed with caveat | `npm run build` exit 0 after final diff. `npm test -- test/mesh.test.ts` passed 117/117. Serial `npm test -- --maxWorkers=1` twice hit unrelated varying timeouts (`auto-compress`, then `auto-forget`); each failed file passed standalone. Earlier serial run passed before prep fixes. |
+| Build and repo tests still pass | `npm run build`, targeted tests, serial suite | Passed with caveat | `npm run build` exit 0 after final diff. `npm test -- test/mesh.test.ts` passed 171/171. Serial `npm test -- --maxWorkers=1` twice hit unrelated varying timeouts (`auto-compress`, then `auto-forget`); each failed file passed standalone. Earlier serial run passed before prep fixes. |
 | Security gate for code/config change | `semgrep scan --config p/default --error --metrics=off .` | Passed | Exit 0, 0 findings, 485 tracked files scanned after final diff |
 
 ## Subagent Ledger
@@ -94,6 +99,14 @@ Stop conditions:
 | Post-review special-use Security/Boundary | `019ec41a-ac47-76a1-9200-bac78eef5faf` | Uncommitted post-review special-use IPv4 diff against `HEAD` | No | `NO FINDINGS` or Critical/Important findings | `NO FINDINGS`; optional public-boundary positive tests suggested | Optional hardening implemented with boundary-positive DNS and literal tests |
 | Post-review special-use Test Coverage | `019ec41a-ae84-72c0-b81c-512762c8e7e3` | Uncommitted post-review special-use IPv4 diff against `HEAD` | No | ACCEPT or Critical/Important findings | Found missing public-boundary positive tests and missing sync special-use recheck coverage | Fixed with boundary-positive DNS/literal tests and `198.18.0.1` sync rebind test |
 | Post-review special-use Test Coverage re-review | `019ec41a-ae84-72c0-b81c-512762c8e7e3` | Updated uncommitted special-use IPv4 diff after coverage fixes | No | ACCEPT or Critical/Important findings | ACCEPT | None |
+| Final branch adversarial implementation review | `019ec421-69db-7292-a9e0-062ae7147ef6` | Final branch diff `refs/heads/main...HEAD` | No | No Critical/Important findings or actionable findings | Found incomplete IPv6 non-public filtering | Fixed with IPv6 hextet normalization, additional IPv6 special-use blocking, and DNS/literal tests |
+| Final branch Security/Privacy lane | `019ec421-6afd-74f0-bea3-84154b6f4877` | Final branch diff `refs/heads/main...HEAD` | No | ACCEPT or Critical/Important findings | Found cleartext HTTP bearer-token exposure | Fixed by requiring `https:` peer URLs and adding HTTP-before-DNS rejection test |
+| Final branch Test Coverage lane | `019ec421-6be2-71e2-b32c-e55f0dc10db6` | Final branch diff `refs/heads/main...HEAD` | No | ACCEPT or Critical/Important findings | ACCEPT after final IPv6/HTTPS fixes | None |
+| Final branch Security/Privacy re-review | `019ec421-6afd-74f0-bea3-84154b6f4877` | Updated diff after final IPv6/HTTPS fixes | No | ACCEPT or Critical/Important findings | ACCEPT | None |
+| Final branch Test Coverage re-review | `019ec421-6be2-71e2-b32c-e55f0dc10db6` | Updated diff after final IPv6/HTTPS fixes | No | ACCEPT or Critical/Important findings | ACCEPT | None |
+| Final branch Maintainability/Integration lane | `019ec421-7361-74a0-a9a0-46e7c744e578` | Final branch diff `refs/heads/main...HEAD` | No | ACCEPT or Critical/Important findings | Found ad hoc IPv6 masks overblocked IANA globally reachable exceptions and missed newer non-global ranges | Fixed with explicit IPv6 prefix matcher, blocked-prefix table, globally reachable exceptions, and boundary tests |
+| Final branch Adversarial implementation re-review | `019ec421-69db-7292-a9e0-062ae7147ef6` | Updated diff after prefix-table and NAT64 fixes | No | ACCEPT or Critical/Important findings | ACCEPT | None; residual fetch-time DNS TOCTOU remains documented |
+| Final branch Maintainability/Integration re-review | `019ec421-7361-74a0-a9a0-46e7c744e578` | Updated diff after prefix-table and NAT64 fixes | No | ACCEPT or Critical/Important findings | ACCEPT | Optional exact upper-boundary tests suggested and added |
 
 ## Progress
 
@@ -107,6 +120,9 @@ Stop conditions:
 - `/prep-merge-to-local-main` created local branch `prep-merge/mesh-url-validation-21ac25a` from detached HEAD after confirming no Git operation state.
 - GStack review ran in local no-fetch mode because the user request forbids fetch/pull. Checklist plus Testing/Maintainability/Security/Performance specialists completed; actionable in-scope findings were fixed or documented.
 - Post-review special-use IPv4 fix received focused read-only Security/Boundary and Test Coverage reviews; coverage findings were fixed with public-boundary allow tests and a sync special-use rebind test, then Test Coverage re-review returned ACCEPT.
+- Final branch review found incomplete IPv6 non-public filtering and cleartext HTTP bearer-token exposure; both were fixed in the mesh URL validation boundary with regression tests.
+- Follow-up final review found NAT64/private-IPv4 embedding and ad hoc IPv6 prefix table gaps; fixed with explicit prefix matching, IANA globally reachable exceptions, and added red/green tests.
+- Final re-reviews for adversarial implementation and maintainability/integration returned ACCEPT. Optional boundary tests for `2001:1::4` and `3fff:0fff::1` were added.
 
 ## Review Triage
 
@@ -123,6 +139,10 @@ Stop conditions:
 | Non-global IPv4 special-use ranges remained allowed | Fixed | Block CGNAT `100.64.0.0/10`, IPv4 special `192.0.0.0/24`, documentation ranges, deprecated 6to4 anycast, benchmarking `198.18.0.0/15`, multicast, and reserved ranges. Add DNS and literal tests. |
 | Public addresses adjacent to newly blocked IPv4 ranges lacked direct positive coverage | Fixed | Add DNS-answer and IP-literal positive tests for boundary public addresses such as `100.63.255.255`, `100.128.0.0`, `192.0.1.1`, `198.20.0.1`, `203.0.114.1`, and `223.255.255.254`. |
 | Special-use IPv4 rebind was not directly covered in sync recheck path | Fixed | Add sync test that registers with public DNS, rechecks to benchmarking range `198.18.0.1`, records peer URL blocked error, skips `fetch`, and sets peer status `error`. |
+| IPv6 non-public filtering was incomplete | Fixed | Normalize IPv6 to hextets and block multicast, site-local, documentation, 6to4, discard-only, IPv4-compatible, and other special ranges. Add DNS and literal tests plus public IPv6 positive literal. |
+| IPv6 blocklist overblocked IANA globally reachable exceptions and missed newer non-global ranges | Fixed | Replace ad hoc masks with explicit IPv6 prefix matching, preserve globally reachable exceptions inside `2001::/23`, narrow documentation blocking to `3fff::/20`, and add tests for `100:0:0:1::/64`, `5f00::/16`, and public exception boundaries. |
+| Well-known IPv4/IPv6 translation prefix could embed private IPv4 targets | Fixed | Decode `64:ff9b::/96` tails and apply the IPv4 blocklist; block `64:ff9b:1::/48`; add DNS and literal tests for private and public embedded IPv4 cases. |
+| Cleartext HTTP peers could receive bearer Authorization during sync | Fixed | Require `https:` peer URLs and add a registration test that rejects `http://public.example.com` before DNS lookup. |
 | Fetch-time DNS TOCTOU remains because `fetch(peer.url)` resolves the hostname after validation | Accepted risk within approved scope | Document as residual. Do not introduce a DNS-pinned/custom HTTP transport in this task because preserving TLS SNI/certificate validation and HTTP semantics would change the network boundary more broadly. |
 | Task record pending verification evidence | Fixed | Update this matrix, progress, and final notes with concrete command results. |
 
@@ -135,6 +155,11 @@ Stop conditions:
 - `npm test -- test/mesh.test.ts` final pre-commit run: passed, 1 file / 74 tests.
 - `npm test -- test/mesh.test.ts` after pre-merge GStack special-use IPv4 fix: passed, 1 file / 96 tests.
 - `npm test -- test/mesh.test.ts` after post-review boundary-positive and sync special-use coverage fixes: passed, 1 file / 117 tests.
+- `npm test -- test/mesh.test.ts` after adding final IPv6/HTTPS regression tests before implementation: failed 17 cases as expected.
+- `npm test -- test/mesh.test.ts` after final IPv6/HTTPS fixes: passed, 1 file / 135 tests.
+- `npm test -- test/mesh.test.ts` after adding IANA IPv6 exception and NAT64 regression tests before implementation: failed 26 cases as expected.
+- `npm test -- test/mesh.test.ts` after final IPv6 prefix-table fixes: passed, 1 file / 167 tests.
+- `npm test -- test/mesh.test.ts` after optional IPv6 boundary tests: passed, 1 file / 171 tests.
 - `git diff --check`: passed after final diff.
 - `npm run build`: passed after final diff; warnings were existing tsdown deprecation/plugin-timing/chunking/chunk-placement warnings.
 - `npm test -- --maxWorkers=1` final run 1: failed only `test/auto-compress.test.ts` timeout in full suite; `npm test -- test/auto-compress.test.ts` passed 8/8 standalone.
@@ -147,14 +172,17 @@ Stop conditions:
 - `semgrep scan --config p/default --error --metrics=off .`: passed after final diff, 0 findings, 485 tracked files scanned.
 - `gitleaks protect --staged --redact`: passed after first explicit task-owned staging; scanned about 36.90 KB and found no leaks.
 - `gitleaks protect --staged --redact`: passed after post-review special-use follow-up staging; scanned about 9.45 KB and found no leaks.
+- `gitleaks protect --staged --redact`: passed after final IPv6/HTTPS hardening staging; scanned about 16 KB and found no leaks.
 
 ## Final Notes
 
 - Security Finding 07 was fixed for DNS-fail-open behavior: DNS lookup errors and empty answers now reject mesh peer URLs.
 - DNS validation now also times out after 5 seconds and fails closed.
-- Hostname DNS answers now fail if any resolved address is private, loopback, link-local, unspecified, ULA, or IPv4-mapped to a blocked IPv4 address.
+- Hostname DNS answers now fail if any resolved address is private, loopback, link-local, unspecified, ULA, IPv4-compatible, IPv4-mapped, or maps to blocked IPv4 through `64:ff9b::/96`.
 - IPv4 special-use ranges that are not appropriate public mesh peer targets are also rejected, including CGNAT, documentation, benchmarking, multicast, and reserved ranges.
-- Public IPv4 addresses adjacent to those blocked ranges remain allowed and are covered for DNS answers and IP literals.
+- IPv6 special-use ranges that are not appropriate public mesh peer targets are also rejected, including multicast, site-local, documentation, 6to4, discard-only, local translation, dummy/SRv6 SID, IPv4-compatible, and IPv4-mapped ranges.
+- Public IPv4 addresses adjacent to those blocked ranges, public IPv6 literals, NAT64 addresses with public embedded IPv4, and globally reachable IPv6 special-purpose exceptions remain allowed and are covered for DNS answers and IP literals.
+- Mesh peer URLs must use `https:` so bearer Authorization is not sent to cleartext HTTP peers.
 - IP literals are normalized before checking, including bracketed IPv6 and hex-normalized IPv4-mapped IPv6.
 - Sync rechecks peer URL before fetch and records an error without calling fetch when DNS rebinds to a blocked address, a special-use address, or DNS validation times out before sync.
 - Push and pull preserve `Authorization: Bearer <meshAuthToken>` for allowed peers and `redirect: "error"`; redirect rejection errors are captured and set peer status to `error`.
