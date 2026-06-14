@@ -3,6 +3,8 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import {
   buildAllowedHosts,
+  getBoundViewerPort,
+  getViewerSkipped,
   isLoopbackHost,
   requireInboundBearer,
   resolveViewerHost,
@@ -176,12 +178,24 @@ describe("startViewerServer host binding", () => {
     await new Promise<void>((resolve) => s.once("listening", () => resolve()));
   }
 
+  async function startUpstream(handler: Parameters<typeof createServer>[0]): Promise<{
+    server: Server;
+    port: number;
+  }> {
+    const upstream = createServer(handler);
+    await new Promise<void>((resolve) => upstream.listen(0, "127.0.0.1", resolve));
+    const addr = upstream.address() as AddressInfo;
+    return { server: upstream, port: addr.port };
+  }
+
   it("binds to 127.0.0.1 by default — preserves loopback-only security", async () => {
     delete process.env.AGENTMEMORY_VIEWER_HOST;
     server = startViewerServer(0, null, null);
     await waitForListening(server);
     const addr = server.address() as AddressInfo;
     expect(addr.address).toBe("127.0.0.1");
+    expect(getBoundViewerPort()).toBe(addr.port);
+    expect(getViewerSkipped()).toBe(false);
   });
 
   it("binds to AGENTMEMORY_VIEWER_HOST when set — covers the deploy/fly fix for #434", async () => {
@@ -280,6 +294,101 @@ describe("startViewerServer host binding", () => {
     // The HTML shell stays unauthenticated so a browser can fetch it;
     // the embedded JS still needs the bearer for the data calls.
     expect(res.status).not.toBe(401);
+  });
+
+  it("answers CORS preflight without proxying to REST or requiring a Bearer", async () => {
+    delete process.env.AGENTMEMORY_VIEWER_HOST;
+    server = startViewerServer(0, null, null, "viewer-secret");
+    await waitForListening(server);
+    const addr = server.address() as AddressInfo;
+
+    const res = await fetch(`http://127.0.0.1:${addr.port}/agentmemory/memories`, {
+      method: "OPTIONS",
+      headers: { Origin: "http://localhost:3113" },
+    });
+
+    expect(res.status).toBe(204);
+    expect(res.headers.get("access-control-allow-methods")).toContain("POST");
+    expect(res.headers.get("access-control-allow-headers")).toContain("Authorization");
+  });
+
+  it("proxies POST bodies to local REST with the configured outbound bearer only", async () => {
+    const forwarded: Array<{
+      authorization: string | undefined;
+      contentType: string | undefined;
+      body: string;
+      url: string | undefined;
+      method: string | undefined;
+    }> = [];
+    const upstream = await startUpstream((req, res) => {
+      let body = "";
+      req.on("data", (chunk: Buffer) => {
+        body += chunk.toString();
+      });
+      req.on("end", () => {
+        forwarded.push({
+          authorization: req.headers.authorization,
+          contentType: req.headers["content-type"],
+          body,
+          url: req.url,
+          method: req.method,
+        });
+        res.writeHead(201, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: true }));
+      });
+    });
+    try {
+      delete process.env.AGENTMEMORY_VIEWER_HOST;
+      server = startViewerServer(0, null, null, "outbound-secret", upstream.port);
+      await waitForListening(server);
+      const addr = server.address() as AddressInfo;
+
+      const res = await fetch(
+        `http://127.0.0.1:${addr.port}/agentmemory/observe?mode=test`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            Origin: "http://localhost:3113",
+          },
+          body: JSON.stringify({ event: "safe" }),
+        },
+      );
+
+      expect(res.status).toBe(201);
+      expect(await res.json()).toEqual({ ok: true });
+      expect(forwarded).toEqual([
+        {
+          authorization: "Bearer outbound-secret",
+          contentType: "application/json",
+          body: JSON.stringify({ event: "safe" }),
+          url: "/agentmemory/observe?mode=test",
+          method: "POST",
+        },
+      ]);
+    } finally {
+      await new Promise<void>((resolve) => upstream.server.close(() => resolve()));
+    }
+  });
+
+  it("returns non-loopback 401 challenges without leaking the expected token", async () => {
+    process.env.AGENTMEMORY_VIEWER_HOST = "0.0.0.0";
+    process.env.VIEWER_ALLOWED_HOSTS = "placeholder";
+    const secret = "viewer-expected-secret";
+    server = startViewerServer(0, null, null, secret);
+    await waitForListening(server);
+    const addr = server.address() as AddressInfo;
+    process.env.VIEWER_ALLOWED_HOSTS = `127.0.0.1:${addr.port}`;
+
+    const res = await fetch(`http://127.0.0.1:${addr.port}/agentmemory/livez`, {
+      headers: { Authorization: "Bearer wrong-secret" },
+    });
+
+    expect(res.status).toBe(401);
+    expect(res.headers.get("www-authenticate")).toBe('Bearer realm="agentmemory-viewer"');
+    const body = await res.text();
+    expect(body).toBe("unauthorized");
+    expect(body).not.toContain(secret);
   });
 
   it("logs non-loopback bind mode and inbound auth requirements", async () => {
