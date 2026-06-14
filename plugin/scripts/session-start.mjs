@@ -50,12 +50,16 @@ function canonicalGitProject(cwd) {
 		return;
 	}
 }
+function resolveCwd(cwd) {
+	if (typeof cwd !== "string") return process.cwd();
+	return cwd.trim().length > 0 ? cwd : process.cwd();
+}
 function resolveProject(cwd) {
 	const explicitId = cleanEnv("AGENTMEMORY_PROJECT_ID");
 	if (explicitId) return explicitId;
 	const explicitName = cleanEnv("AGENTMEMORY_PROJECT_NAME");
 	if (explicitName) return explicitName;
-	const dir = cwd && cwd.trim() ? cwd : process.cwd();
+	const dir = resolveCwd(cwd);
 	return canonicalGitProject(dir) ?? basename(dir);
 }
 //#endregion
@@ -86,7 +90,7 @@ async function main() {
 	}
 	if (isSdkChildContext(data)) return;
 	const sessionId = data.session_id || data.sessionId || `ses_${Date.now().toString(36)}`;
-	const cwd = data.cwd || process.cwd();
+	const cwd = resolveCwd(data.cwd);
 	const project = resolveProject(data.cwd);
 	const url = `${REST_URL}/agentmemory/session/start`;
 	const init = {
