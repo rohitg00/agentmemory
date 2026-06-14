@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+import { resolveProject } from "./_project.js";
+
 function isSdkChildContext(payload: unknown): boolean {
   if (process.env["AGENTMEMORY_SDK_CHILD"] === "1") return true;
   if (!payload || typeof payload !== "object") return false;
@@ -93,10 +95,7 @@ async function main() {
     typeof rawSessionId === "string" && rawSessionId.length > 0
       ? rawSessionId
       : "unknown";
-  const project =
-    typeof data.project === "string" && data.project.trim().length > 0
-      ? data.project.trim()
-      : undefined;
+  const project = resolveProject(data.cwd as string | undefined);
 
   try {
     const res = await fetch(`${REST_URL}/agentmemory/enrich`, {
