@@ -3,7 +3,7 @@
 Task id: `2026-06-13-obsidian-symlink-export`
 Scope: current `agentmemory` worktree
 Branch: `prep-merge/obsidian-symlink-export-21ac25a`
-Status: implemented and verified; staged for local prep-merge commit; no push, deploy, or remote merge performed
+Status: implemented and verified on the local prep-merge branch; no push, deploy, or remote merge performed
 
 ## Sprint Contract
 

@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript ESM, Node `fs/promises`, Node `fs.constants`, Vitest.
 
-Plan status: implemented and verified. The local prep-merge branch is staged for commit; no push, deploy, or remote merge was performed.
+Plan status: implemented and verified on the local prep-merge branch; no push, deploy, or remote merge was performed.
 
 ---
 
