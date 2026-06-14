@@ -4,7 +4,7 @@
 
 **Goal:** Prevent external OpenCode/REST callers from forcing consolidation when the global opt-out is disabled.
 
-Plan status: implemented with targeted verification and accepted pre-merge reviews; build blocked by missing local dependencies.
+Plan status: implemented with targeted verification, accepted pre-merge reviews, and post-review auto-crystallize opt-out fix; build blocked by missing local dependencies.
 
 **Architecture:** Keep the opt-out check in the consolidation function as the final safety control, but only allow trusted in-process callers to use boolean `force: true`. The REST endpoint becomes a whitelist boundary, and OpenCode mirrors the core hook by calling consolidation only when `CONSOLIDATION_ENABLED=true`.
 
@@ -20,6 +20,9 @@ Plan status: implemented with targeted verification and accepted pre-merge revie
 - Modify `src/functions/consolidation-pipeline.ts`: treat only `force === true` as internal override.
 - Modify `src/triggers/api.ts`: whitelist `tier` and `project` before triggering the consolidation function.
 - Modify `plugin/opencode/agentmemory-capture.ts`: gate crystals/consolidation on `CONSOLIDATION_ENABLED === "true"` and omit `force`.
+- Modify `src/functions/crystallize.ts`: gate automatic crystallization on `isConsolidationEnabled()`.
+- Modify `src/triggers/api.ts`: gate and whitelist `/agentmemory/crystals/auto` while preserving `olderThanDays: 0`.
+- Modify `test/crystallize.test.ts`: prove disabled auto-crystallize does not call the provider.
 - Update `docs/todos/2026-06-13-opencode-consolidation-optout/todo.md`: record progress and final verification evidence.
 
 ## Tasks
@@ -67,6 +70,22 @@ Plan status: implemented with targeted verification and accepted pre-merge revie
 - [x] Run GStack-style pre-landing review and independent code review.
 - [x] Record command results, final matrix status, and residual risks in the task record.
 
+### Task 4: Resolve pre-merge auto-crystallize blocker
+
+**Files:**
+- Modify: `src/functions/crystallize.ts`
+- Modify: `src/triggers/api.ts`
+- Modify: `test/crystallize.test.ts`
+- Modify: `test/consolidation-api-boundary.test.ts`
+
+- [x] Add a server-side opt-out gate to `mem::auto-crystallize`.
+- [x] Add a REST opt-out gate to `/agentmemory/crystals/auto`.
+- [x] Whitelist `/crystals/auto` REST payload fields: `olderThanDays`, `project`, and `dryRun`.
+- [x] Preserve the existing session-end `olderThanDays: 0` contract.
+- [x] Add regression tests for disabled automatic crystallization, disabled REST no-trigger behavior, enabled REST whitelisting, and `olderThanDays: 0`.
+- [x] Rerun targeted Vitest, focused code review, Review Implementation, and Codex Security diff scan for the fix surface.
+
 Notes:
 - `npm test -- ...` and `npm run build` were run but could not execute because local `vitest` and `tsdown` are absent. The direct no-install Vitest command passed for the targeted surface.
 - Staged `gitleaks protect --staged --redact` passed before the prep-merge commit; `gitleaks detect --source . --redact --no-color` also passed during implementation verification.
+- A later pre-merge Review Implementation found an adjacent automatic crystallization opt-out gap. The follow-up fix is intentionally scoped to automatic crystallization; manual `memory_crystallize` remains explicit and unchanged.

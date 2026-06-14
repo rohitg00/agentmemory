@@ -1,4 +1,5 @@
 import type { ISdk } from "iii-sdk";
+import { isConsolidationEnabled } from "../config.js";
 import type { StateKV } from "../state/kv.js";
 import { KV, generateId } from "../state/schema.js";
 import type { Action, ActionEdge, Crystal, MemoryProvider } from "../types.js";
@@ -151,6 +152,9 @@ export function registerCrystallizeFunction(
       project?: string;
       dryRun?: boolean;
     }) => {
+      if (!isConsolidationEnabled()) {
+        return { success: false, skipped: true, reason: "Consolidation disabled: set CONSOLIDATION_ENABLED=true or configure an LLM provider (ANTHROPIC_API_KEY / OPENAI_API_KEY / OPENROUTER_API_KEY / GEMINI_API_KEY / GOOGLE_API_KEY / MINIMAX_API_KEY / OPENAI_BASE_URL / AGENTMEMORY_PROVIDER=agent-sdk)" };
+      }
       const olderThanDays = data.olderThanDays ?? 7;
       const dryRun = data.dryRun ?? false;
       const cutoff = Date.now() - olderThanDays * 24 * 60 * 60 * 1000;
