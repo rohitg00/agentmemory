@@ -1,5 +1,6 @@
-import { mkdir, writeFile } from "node:fs/promises";
-import { join, resolve, sep } from "node:path";
+import { constants } from "node:fs";
+import { lstat, mkdir, open, realpath } from "node:fs/promises";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { homedir } from "node:os";
 import type { ISdk } from "iii-sdk";
 import type { StateKV } from "../state/kv.js";
@@ -17,13 +18,113 @@ function getExportRoot(): string {
   return resolve(process.env["AGENTMEMORY_EXPORT_ROOT"] || DEFAULT_EXPORT_ROOT);
 }
 
-function resolveVaultDir(vaultDir?: string): string | null {
+function isInsideRoot(candidate: string, root: string): boolean {
+  const rel = relative(root, candidate);
+  return rel === "" || (rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel));
+}
+
+function resolveVaultDir(vaultDir?: string): { root: string; vaultDir: string } | null {
   const root = getExportRoot();
   const resolved = resolve(vaultDir || join(root, "vault"));
-  if (resolved === root || resolved.startsWith(root + sep)) {
-    return resolved;
+  if (isInsideRoot(resolved, root)) {
+    return { root, vaultDir: resolved };
   }
   return null;
+}
+
+function errnoCode(err: unknown): string | undefined {
+  if (err && typeof err === "object" && "code" in err) {
+    const code = (err as { code?: unknown }).code;
+    return typeof code === "string" ? code : undefined;
+  }
+  return undefined;
+}
+
+async function assertRealDirectory(dir: string): Promise<void> {
+  const stat = await lstat(dir);
+  if (stat.isSymbolicLink()) {
+    throw new Error(`export path cannot contain symlinks: ${dir}`);
+  }
+  if (!stat.isDirectory()) {
+    throw new Error(`export path component is not a directory: ${dir}`);
+  }
+}
+
+async function ensureRealDirectoryInsideRoot(
+  dir: string,
+  root: string,
+  canonicalRoot: string,
+): Promise<string> {
+  const resolvedRoot = resolve(root);
+  const resolvedDir = resolve(dir);
+  if (!isInsideRoot(resolvedDir, resolvedRoot)) {
+    throw new Error(`export path must be inside ${resolvedRoot}`);
+  }
+
+  const segments = relative(resolvedRoot, resolvedDir).split(sep).filter(Boolean);
+  let current = resolvedRoot;
+  for (const segment of segments) {
+    current = join(current, segment);
+    try {
+      await mkdir(current);
+    } catch (err) {
+      if (errnoCode(err) !== "EEXIST") {
+        throw err;
+      }
+    }
+    await assertRealDirectory(current);
+  }
+
+  const canonicalDir = await realpath(resolvedDir);
+  if (!isInsideRoot(canonicalDir, canonicalRoot)) {
+    throw new Error(`export path must stay inside ${canonicalRoot}`);
+  }
+  return canonicalDir;
+}
+
+async function prepareVaultDir(vaultDir?: string): Promise<{
+  root: string;
+  realVaultDir: string;
+  vaultDir: string;
+}> {
+  const resolved = resolveVaultDir(vaultDir);
+  if (!resolved) {
+    throw new Error(`vaultDir must be inside ${getExportRoot()}`);
+  }
+
+  await mkdir(resolved.root, { recursive: true });
+  await assertRealDirectory(resolved.root);
+
+  const canonicalRoot = await realpath(resolved.root);
+  const canonicalVaultDir = await ensureRealDirectoryInsideRoot(
+    resolved.vaultDir,
+    resolved.root,
+    canonicalRoot,
+  );
+
+  return {
+    root: canonicalRoot,
+    realVaultDir: canonicalVaultDir,
+    vaultDir: resolved.vaultDir,
+  };
+}
+
+async function writeExportFile(
+  filepath: string,
+  content: string,
+  root: string,
+): Promise<void> {
+  await ensureRealDirectoryInsideRoot(dirname(filepath), root, root);
+  const fd = await open(
+    filepath,
+    constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | constants.O_NOFOLLOW,
+    0o600,
+  );
+  try {
+    await fd.writeFile(content);
+  } finally {
+    await fd.close();
+  }
 }
 
 function sanitize(name: string): string {
@@ -262,22 +363,25 @@ export function registerObsidianExportFunction(
         }
       }
 
-      const vaultDir = resolveVaultDir(data.vaultDir);
-      if (!vaultDir) {
+      let preparedVault: { root: string; realVaultDir: string; vaultDir: string };
+      try {
+        preparedVault = await prepareVaultDir(data.vaultDir);
+      } catch (err) {
         return {
           success: false,
-          error: `vaultDir must be inside ${getExportRoot()}`,
+          error: err instanceof Error ? err.message : String(err),
         };
       }
+      const { root, realVaultDir, vaultDir } = preparedVault;
       const exportTypes = new Set(
         data.types ?? ["memories", "lessons", "crystals", "sessions"],
       );
 
       const dirs = {
-        memories: join(vaultDir, "memories"),
-        lessons: join(vaultDir, "lessons"),
-        crystals: join(vaultDir, "crystals"),
-        sessions: join(vaultDir, "sessions"),
+        memories: join(realVaultDir, "memories"),
+        lessons: join(realVaultDir, "lessons"),
+        crystals: join(realVaultDir, "crystals"),
+        sessions: join(realVaultDir, "sessions"),
       };
 
       // Outer try/catch keeps the function from ever throwing out to the
@@ -286,7 +390,7 @@ export function registerObsidianExportFunction(
       // worst case is `{success: false, error: <string>}`.
       try {
         await Promise.all(
-          Object.values(dirs).map((dir) => mkdir(dir, { recursive: true })),
+          Object.values(dirs).map((dir) => ensureRealDirectoryInsideRoot(dir, root, root)),
         );
 
         const stats = { memories: 0, lessons: 0, crystals: 0, sessions: 0 };
@@ -309,7 +413,7 @@ export function registerObsidianExportFunction(
           const filename = `${sanitize(m.id)}.md`;
           const filepath = join(dirs.memories, filename);
           try {
-            await writeFile(filepath, memoryToMd(m));
+            await writeExportFile(filepath, memoryToMd(m), root);
             stats.memories++;
             memoryMoc.push(
               `- [[memories/${sanitize(m.id)}|${safeString(m.title, m.id)}]] (${m.type}, strength: ${m.strength ?? 0})`,
@@ -329,7 +433,7 @@ export function registerObsidianExportFunction(
           const filename = `${sanitize(l.id)}.md`;
           const filepath = join(dirs.lessons, filename);
           try {
-            await writeFile(filepath, lessonToMd(l));
+            await writeExportFile(filepath, lessonToMd(l), root);
             stats.lessons++;
             const headline = safeString(l.content).slice(0, 60) || l.id;
             lessonMoc.push(
@@ -348,7 +452,7 @@ export function registerObsidianExportFunction(
           const filename = `${sanitize(c.id)}.md`;
           const filepath = join(dirs.crystals, filename);
           try {
-            await writeFile(filepath, crystalToMd(c));
+            await writeExportFile(filepath, crystalToMd(c), root);
             stats.crystals++;
             const headline = safeString(c.narrative).slice(0, 60) || c.id;
             crystalMoc.push(`- [[crystals/${sanitize(c.id)}|${headline}]]`);
@@ -369,7 +473,7 @@ export function registerObsidianExportFunction(
           const filename = `${sanitize(s.id)}.md`;
           const filepath = join(dirs.sessions, filename);
           try {
-            await writeFile(filepath, sessionToMd(s));
+            await writeExportFile(filepath, sessionToMd(s), root);
             stats.sessions++;
             sessionMoc.push(
               `- [[sessions/${sanitize(s.id)}|${safeString(s.project, "unknown")} (${safeString(s.status, "unknown")})]]`,
@@ -407,7 +511,7 @@ export function registerObsidianExportFunction(
           ...sessionMoc,
         ].join("\n");
 
-        await writeFile(join(vaultDir, "MOC.md"), moc);
+        await writeExportFile(join(realVaultDir, "MOC.md"), moc, root);
 
         await recordAudit(kv, "obsidian_export", "mem::obsidian-export", [], {
           vaultDir,
