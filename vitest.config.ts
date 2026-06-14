@@ -6,7 +6,12 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       all: true,
-      include: ["src/**/*.ts"],
+      include: [
+        "src/**/*.ts",
+        "scripts/skills/**/*.ts",
+        "integrations/pi/security.ts",
+        "integrations/openclaw/plugin.mjs",
+      ],
       exclude: ["src/**/*.d.ts", "src/xenova.d.ts"],
       reportsDirectory: "coverage",
       reporter: ["text", "json-summary", "html"],
