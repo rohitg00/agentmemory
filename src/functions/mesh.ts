@@ -16,17 +16,85 @@ import type {
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
 
-function isPrivateIP(ip: string): boolean {
-  if (ip === "127.0.0.1" || ip === "::1" || ip === "0.0.0.0") return true;
-  if (ip.startsWith("10.") || ip.startsWith("192.168.")) return true;
-  if (/^172\.(1[6-9]|2\d|3[01])\./.test(ip)) return true;
-  if (ip === "169.254.169.254") return true;
-  if (ip.startsWith("fe80:") || ip.startsWith("fc00:") || ip.startsWith("fd")) return true;
-  if (ip.startsWith("::ffff:")) {
-    const v4 = ip.slice(7);
-    return isPrivateIP(v4);
-  }
+const DNS_LOOKUP_TIMEOUT_MS = 5000;
+
+function normalizeHost(host: string): string {
+  const lower = host.toLowerCase();
+  return lower.startsWith("[") && lower.endsWith("]") ? lower.slice(1, -1) : lower;
+}
+
+function parseIPv4(ip: string): number[] | null {
+  if (isIP(ip) !== 4) return null;
+  return ip.split(".").map((part) => Number.parseInt(part, 10));
+}
+
+function isBlockedIPv4(ip: string): boolean {
+  const octets = parseIPv4(ip);
+  if (!octets) return true;
+  const [a, b] = octets;
+  if (a === 0 || a === 10 || a === 127) return true;
+  if (a === 169 && b === 254) return true;
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  if (a === 192 && b === 168) return true;
   return false;
+}
+
+function parseHextet(value: string): number | null {
+  if (!/^[\da-f]{1,4}$/i.test(value)) return null;
+  return Number.parseInt(value, 16);
+}
+
+function decodeIPv4MappedIPv6(ip: string): string | null {
+  const mappedPrefixes = ["::ffff:", "0:0:0:0:0:ffff:"];
+  const prefix = mappedPrefixes.find((candidate) => ip.startsWith(candidate));
+  if (!prefix) return null;
+
+  const tail = ip.slice(prefix.length);
+  if (isIP(tail) === 4) return tail;
+
+  const parts = tail.split(":");
+  if (parts.length !== 2) return null;
+
+  const high = parseHextet(parts[0]);
+  const low = parseHextet(parts[1]);
+  if (high === null || low === null) return null;
+
+  return `${high >> 8}.${high & 0xff}.${low >> 8}.${low & 0xff}`;
+}
+
+function isBlockedIPv6(ip: string): boolean {
+  if (ip === "::" || ip === "::1") return true;
+
+  const mapped = decodeIPv4MappedIPv6(ip);
+  if (mapped) return isBlockedIPv4(mapped);
+
+  const first = parseHextet(ip.split(":")[0]);
+  if (first === null) return false;
+  if ((first & 0xffc0) === 0xfe80) return true;
+  if ((first & 0xfe00) === 0xfc00) return true;
+  return false;
+}
+
+function isBlockedNetworkAddress(address: string): boolean {
+  const ip = normalizeHost(address);
+  const ipVersion = isIP(ip);
+  if (ipVersion === 4) return isBlockedIPv4(ip);
+  if (ipVersion === 6) return isBlockedIPv6(ip);
+  return true;
+}
+
+async function lookupWithTimeout(host: string): Promise<Awaited<ReturnType<typeof lookup>>> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      lookup(host, { all: true }),
+      new Promise<never>((_, reject) => {
+        timeout = setTimeout(() => reject(new Error("DNS lookup timed out")), DNS_LOOKUP_TIMEOUT_MS);
+      }),
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
 }
 
 async function isAllowedUrl(urlStr: string): Promise<boolean> {
@@ -34,17 +102,18 @@ async function isAllowedUrl(urlStr: string): Promise<boolean> {
     const parsed = new URL(urlStr);
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
     if (parsed.username || parsed.password) return false;
-    const host = parsed.hostname.toLowerCase();
+    const host = normalizeHost(parsed.hostname);
 
-    if (host === "localhost") return false;
-    if (isIP(host) && isPrivateIP(host)) return false;
+    if (host === "localhost" || host.endsWith(".localhost")) return false;
+    if (isIP(host) && isBlockedNetworkAddress(host)) return false;
 
     if (!isIP(host)) {
       try {
-        const resolved = await lookup(host, { all: true });
-        if (resolved.some((r) => isPrivateIP(r.address))) return false;
+        const resolved = await lookupWithTimeout(host);
+        if (resolved.length === 0) return false;
+        if (resolved.some((r) => isBlockedNetworkAddress(r.address))) return false;
       } catch {
-        // DNS resolution failed — allow the URL (the actual fetch will fail if unreachable)
+        return false;
       }
     }
 
