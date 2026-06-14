@@ -2,8 +2,8 @@
 
 This template runs agentmemory on a single Railway service with a
 persistent volume mounted at `/data`. The HMAC secret is generated on
-first boot and persisted to the volume — you read it once from the
-deploy logs and copy it into your client.
+first boot and persisted to the volume. Retrieve it through Railway
+shell access; the secret value is not printed to deploy logs.
 
 ## What you get
 
@@ -13,7 +13,7 @@ deploy logs and copy it into your client.
 - Railway healthcheck against `/agentmemory/livez`
 - The HMAC bearer secret is generated on first boot inside the
   container and persisted to `/data/.hmac` (chmod 600); the operator
-  copies it from the deploy logs once.
+  retrieves it through an authenticated Railway shell.
 - The deploy uses `requiredMountPath: /data` so Railway refuses to
   start the service if no volume is attached at that path — first
   deploy must create the volume from the dashboard.
@@ -41,17 +41,18 @@ railway volume add --service agentmemory --mount /data  # attach persistent volu
 railway redeploy                                        # restart with the volume
 ```
 
-## Capture the HMAC secret
+## Retrieve the HMAC secret
 
-After the first deploy succeeds, open the service's **Deploy Logs**:
+After the first deploy succeeds, read the persisted secret from the
+mounted volume:
 
 ```bash
-railway logs --service agentmemory | grep AGENTMEMORY_SECRET=
+railway ssh --service agentmemory -- "cat /data/.hmac"
 ```
 
-You will see exactly one line of the form `AGENTMEMORY_SECRET=<64 hex chars>`.
-Copy it into your client environment. The secret is never printed again
-on subsequent boots.
+Copy the returned value into your client environment. Do not paste it
+into tickets, screenshots, or shared terminals. If an older deployment
+exposed this value in retained logs, rotate it after upgrading.
 
 ## Verify the deployment
 
@@ -97,7 +98,7 @@ railway ssh --service agentmemory
 rm /data/.hmac
 exit
 railway redeploy --service agentmemory
-railway logs --service agentmemory | grep AGENTMEMORY_SECRET=
+railway ssh --service agentmemory -- "cat /data/.hmac"
 ```
 
 Update every client with the new secret. Old tokens stop working

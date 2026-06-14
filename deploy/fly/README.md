@@ -2,8 +2,8 @@
 
 This template runs agentmemory on a single fly.io machine with a 1 GB
 persistent volume mounted at `/data`. The HMAC secret is generated on
-first boot and persisted to the volume — you capture it from the deploy
-logs exactly once.
+first boot and persisted to the volume. Retrieve it through `fly ssh`;
+the secret value is not printed to deploy logs.
 
 ## What you get
 
@@ -14,7 +14,7 @@ logs exactly once.
 - HTTP healthcheck at `/agentmemory/livez` every 30 s
 - The HMAC bearer secret is generated on first boot inside the
   container and persisted to `/data/.hmac` (chmod 600); the operator
-  copies it from the deploy logs once.
+  retrieves it through an authenticated Fly shell.
 
 ## One-time setup
 
@@ -41,25 +41,19 @@ fly deploy --app "$APP"
 If `fly launch` reports the name is taken, pick another value for `$APP`,
 re-export, and re-run.
 
-## Capture the HMAC secret
+## Retrieve the HMAC secret
 
-Right after the first deploy succeeds:
-
-```bash
-fly logs --app "$APP" | grep -A1 AGENTMEMORY_SECRET=
-```
-
-You will see exactly one line of the form `AGENTMEMORY_SECRET=<64 hex chars>`.
-Copy it into your client environment (`~/.bashrc`, Claude Desktop config,
-the viewer unlock prompt, etc.). The secret is never printed again on
-subsequent boots.
-
-If the first-boot log line is no longer available, read the persisted
-secret from the mounted volume:
+After the first deploy succeeds, read the persisted secret from the
+mounted volume:
 
 ```bash
 fly ssh console --app "$APP" -C "sh -lc 'cat /data/.hmac'"
 ```
+
+Copy the returned value into your client environment (`~/.bashrc`,
+Claude Desktop config, the viewer unlock prompt, etc.). Do not paste it
+into tickets, screenshots, or shared terminals. If an older deployment
+exposed this value in retained logs, rotate it after upgrading.
 
 ## Verify the deployment
 
@@ -98,8 +92,7 @@ explicitly set, and every request to `/agentmemory/*` must present
 favicon are still served unauthenticated. If a proxied viewer request
 gets a 401, the browser UI prompts for `AGENTMEMORY_SECRET` and stores
 it in session storage so subsequent viewer API calls include the bearer.
-Use the value printed in the first-boot logs or read `/data/.hmac`
-inside the machine.
+Use the value retrieved from `/data/.hmac` inside the machine.
 
 > **Security warning.** Setting `AGENTMEMORY_VIEWER_HOST=0.0.0.0` or
 > `::` turns the viewer into a network-reachable proxy that signs every
@@ -116,10 +109,10 @@ fly ssh console --app "$APP"
 rm /data/.hmac
 exit
 fly machine restart <machine-id>
-fly logs --app "$APP" | grep AGENTMEMORY_SECRET=
+fly ssh console --app "$APP" -C "sh -lc 'cat /data/.hmac'"
 ```
 
-Update every client with the new secret. Old tokens stop working
+Update every client with the new value. Old tokens stop working
 immediately.
 
 ## Back up `/data`

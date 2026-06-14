@@ -42,13 +42,22 @@ the host, attaches Traefik (or Caddy) for the public domain, and starts
 the service. The container is reachable only through the proxy — there
 is no published host port.
 
-## Capture the HMAC secret
+## Retrieve the HMAC secret
 
-Once the deploy logs show the service is up, open the application's
-**Logs** tab in Coolify and search for `AGENTMEMORY_SECRET=`. You will
-see exactly one line of the form `AGENTMEMORY_SECRET=<64 hex chars>`.
-Copy it into your client environment (`~/.bashrc`, Claude Desktop
-config, etc.). The secret is never printed again on subsequent boots.
+Once the deploy logs show the service is up, read the persisted secret
+from the container through the Coolify host:
+
+```bash
+ssh <user>@<coolify-host>
+docker ps --filter name=agentmemory --format "{{.Names}}"
+docker exec -it <container-name> sh -c "cat /data/.hmac"
+exit
+```
+
+Copy the returned value into your client environment (`~/.bashrc`,
+Claude Desktop config, etc.). Do not paste it into tickets,
+screenshots, or shared terminals. If an older deployment exposed this
+value in retained logs, rotate it after upgrading.
 
 ## Verify the deployment
 
@@ -96,8 +105,9 @@ docker exec -it <container-name> sh -c "rm /data/.hmac"
 exit
 ```
 
-Then click **Redeploy** in the Coolify dashboard. The next boot prints
-a fresh secret to the logs.
+Then click **Redeploy** in the Coolify dashboard and read the new value
+from `/data/.hmac` with the same shell command above. Update every
+client with the new value. Old tokens stop working immediately.
 
 ## Back up `/data`
 
