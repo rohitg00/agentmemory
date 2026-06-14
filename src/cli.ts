@@ -52,6 +52,11 @@ import {
   formatEngineExit,
   planEngineRestart,
 } from "./cli/engine-supervisor.js";
+import {
+  findIiiConfigPath,
+  iiiReleaseAsset,
+  iiiReleaseUrl,
+} from "./cli/build-runtime.js";
 
 const ALL_TOOLS_COUNT = getAllTools().length;
 const CORE_TOOLS_COUNT = getAllTools().filter((t) => ESSENTIAL_TOOLS.has(t.name)).length;
@@ -94,35 +99,7 @@ if (args.includes("--version") || args.includes("-V")) {
 const IIPINNED_VERSION =
   process.env["AGENTMEMORY_III_VERSION"] || "0.11.2";
 
-// Map Node platform/arch → the asset name iii-hq/iii ships under
-// https://github.com/iii-hq/iii/releases/download/iii/v<version>/<asset>
-function iiiReleaseAsset(): string | null {
-  const p = platform();
-  const a = process.arch;
-  if (p === "darwin" && a === "arm64")
-    return "iii-aarch64-apple-darwin.tar.gz";
-  if (p === "darwin" && a === "x64")
-    return "iii-x86_64-apple-darwin.tar.gz";
-  if (p === "linux" && a === "x64")
-    return "iii-x86_64-unknown-linux-gnu.tar.gz";
-  if (p === "linux" && a === "arm64")
-    return "iii-aarch64-unknown-linux-gnu.tar.gz";
-  if (p === "linux" && a === "arm")
-    return "iii-armv7-unknown-linux-gnueabihf.tar.gz";
-  if (p === "win32" && a === "x64")
-    return "iii-x86_64-pc-windows-msvc.zip";
-  if (p === "win32" && a === "arm64")
-    return "iii-aarch64-pc-windows-msvc.zip";
-  return null;
-}
-
-function iiiReleaseUrl(): string | null {
-  const asset = iiiReleaseAsset();
-  if (!asset) return null;
-  // Tag name is monorepo-prefixed: `iii/v0.11.2`. Slash is URL-encoded
-  // by GitHub when serving the download path, hence `iii/v...` not `iii%2Fv...`.
-  return `https://github.com/iii-hq/iii/releases/download/iii/v${IIPINNED_VERSION}/${asset}`;
-}
+const pinnedIiiReleaseUrl = () => iiiReleaseUrl(IIPINNED_VERSION);
 
 function vlog(msg: string): void {
   if (IS_VERBOSE) p.log.info(`[verbose] ${msg}`);
@@ -349,18 +326,7 @@ function findIiiConfig(): string {
   // editing node_modules. Prefer the package-root bundle before the dist
   // copy because dist is cleaned during local builds; iii treats deleting
   // the active config file as a fatal reload error.
-  const envPath = process.env["AGENTMEMORY_III_CONFIG"];
-  const candidates = [
-    ...(envPath ? [envPath] : []),
-    join(process.cwd(), "iii-config.yaml"),
-    join(homedir(), ".agentmemory", "iii-config.yaml"),
-    join(__dirname, "..", "iii-config.yaml"),
-    join(__dirname, "iii-config.yaml"),
-  ];
-  for (const c of candidates) {
-    if (existsSync(c)) return c;
-  }
-  return "";
+  return findIiiConfigPath({ moduleDir: __dirname });
 }
 
 function whichBinary(name: string): string | null {
@@ -751,7 +717,7 @@ function adoptRunningEngine(): void {
 }
 
 async function runIiiInstaller(): Promise<{ ok: boolean; binPath: string | null }> {
-  const releaseUrl = iiiReleaseUrl();
+  const releaseUrl = pinnedIiiReleaseUrl();
   const asset = iiiReleaseAsset();
   const isZipAsset = asset?.endsWith(".zip") === true;
 
@@ -1115,7 +1081,7 @@ async function waitForEngine(timeoutMs: number): Promise<boolean> {
 }
 
 function installInstructions(): string[] {
-  const releaseUrl = iiiReleaseUrl();
+  const releaseUrl = pinnedIiiReleaseUrl();
   if (IS_WINDOWS) {
     return [
       `agentmemory needs iii-engine v${IIPINNED_VERSION}. Pick one:`,
