@@ -20,6 +20,31 @@ function forceProxy(): boolean {
   return raw === "1" || raw === "true";
 }
 
+function envFlag(name: string): boolean {
+  const raw = resolveEnvOrEmpty(name).trim().toLowerCase();
+  return raw === "1" || raw === "true";
+}
+
+export function requireServerMode(): boolean {
+  return (
+    envFlag("AGENTMEMORY_REQUIRE_SERVER") ||
+    envFlag("AGENTMEMORY_DISABLE_LOCAL_FALLBACK")
+  );
+}
+
+export function requireServerModeFlag(): string {
+  if (envFlag("AGENTMEMORY_DISABLE_LOCAL_FALLBACK")) {
+    return "AGENTMEMORY_DISABLE_LOCAL_FALLBACK=1";
+  }
+  return "AGENTMEMORY_REQUIRE_SERVER=1";
+}
+
+export function serverUnreachableError(url: string, detail?: string): Error {
+  return new Error(
+    `agentmemory server unreachable at ${url}; start npx @agentmemory/agentmemory${detail ? ` (${detail})` : ""}`,
+  );
+}
+
 export interface ProxyHandle {
   mode: "proxy";
   baseUrl: string;
@@ -104,17 +129,23 @@ export function setLivezProbe(fn?: LivezProbe): void {
 
 async function probe(url: string): Promise<boolean> {
   const timeout = probeTimeoutMs();
+  const strict = requireServerMode();
+  const strictFlag = requireServerModeFlag();
   try {
     const res = await livezProbe(url, timeout, authHeader());
     if (!res.ok) {
       process.stderr.write(
-        `[@agentmemory/mcp] livez probe ${url}/agentmemory/livez -> ${res.status ?? "?"} ${res.statusText ?? ""}; falling back to local InMemoryKV (set AGENTMEMORY_FORCE_PROXY=1 to skip the probe)\n`,
+        strict
+          ? `[@agentmemory/mcp] livez probe ${url}/agentmemory/livez -> ${res.status ?? "?"} ${res.statusText ?? ""}; local fallback disabled by ${strictFlag}\n`
+          : `[@agentmemory/mcp] livez probe ${url}/agentmemory/livez -> ${res.status ?? "?"} ${res.statusText ?? ""}; falling back to local InMemoryKV (set AGENTMEMORY_FORCE_PROXY=1 to skip the probe)\n`,
       );
     }
     return res.ok;
   } catch (err) {
     process.stderr.write(
-      `[@agentmemory/mcp] livez probe ${url}/agentmemory/livez failed in ${timeout}ms: ${err instanceof Error ? err.message : String(err)}; falling back to local InMemoryKV (set AGENTMEMORY_FORCE_PROXY=1 to skip the probe, or raise AGENTMEMORY_PROBE_TIMEOUT_MS)\n`,
+      strict
+        ? `[@agentmemory/mcp] livez probe ${url}/agentmemory/livez failed in ${timeout}ms: ${err instanceof Error ? err.message : String(err)}; local fallback disabled by ${strictFlag}\n`
+        : `[@agentmemory/mcp] livez probe ${url}/agentmemory/livez failed in ${timeout}ms: ${err instanceof Error ? err.message : String(err)}; falling back to local InMemoryKV (set AGENTMEMORY_FORCE_PROXY=1 to skip the probe, or raise AGENTMEMORY_PROBE_TIMEOUT_MS)\n`,
     );
     return false;
   }
@@ -138,8 +169,15 @@ export async function resolveHandle(): Promise<Handle> {
   if (probeInFlight) return probeInFlight;
   const url = baseUrl();
   const skipProbe = forceProxy();
+  const strict = requireServerMode();
   probeInFlight = (async () => {
     if (!proxyAllowed(url)) {
+      if (strict) {
+        throw serverUnreachableError(
+          url,
+          `local fallback disabled by ${requireServerModeFlag()} and proxy request was blocked before probing`,
+        );
+      }
       const local: LocalHandle = { mode: "local" };
       cached = local;
       cachedAt = Date.now();
@@ -181,6 +219,7 @@ export async function resolveHandle(): Promise<Handle> {
       cachedAt = Date.now();
       return handle;
     }
+    if (strict) throw serverUnreachableError(url);
     const local: LocalHandle = { mode: "local" };
     cached = local;
     cachedAt = Date.now();

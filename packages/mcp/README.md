@@ -36,6 +36,13 @@ npx @agentmemory/agentmemory mcp
 
 Both commands do the same thing.
 
+By default the shim uses `AGENTMEMORY_URL` or `http://localhost:3111` and falls
+back to a small local `~/.agentmemory/standalone.json` store when no server is
+reachable. For central cross-agent memory, set `AGENTMEMORY_REQUIRE_SERVER=1` in
+the MCP server environment so `/agentmemory/livez` failures and proxied tool
+failures return a clear error instead of looking like an empty local memory
+store. `AGENTMEMORY_DISABLE_LOCAL_FALLBACK=1` is accepted as an alias.
+
 ## Why does this package exist?
 
 The original plan in [issue #120](https://github.com/rohitg00/agentmemory/issues/120)

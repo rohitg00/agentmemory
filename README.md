@@ -529,6 +529,8 @@ agentmemory connect claude-code --with-hooks
 This merges the same hook commands into `~/.claude/settings.json` with absolute paths resolved to the bundled `plugin/` directory of the currently installed `@agentmemory/agentmemory` package. Re-run the command after upgrading agentmemory to refresh the paths. User entries in the same file are preserved; only previous agentmemory entries are replaced. Using the `/plugin install` path remains the recommended approach.
 For remote or protected deployments, launch Claude Code with `AGENTMEMORY_URL` and `AGENTMEMORY_SECRET` set. The plugin passes both values through to its bundled MCP server; when `AGENTMEMORY_URL` is empty, the MCP shim uses `http://localhost:3111`.
 
+If agentmemory is your central cross-agent memory instance, add `AGENTMEMORY_REQUIRE_SERVER=1` to the MCP server env block. This makes the shim fail hard when `/agentmemory/livez` or a proxied tool call fails instead of silently switching to the local `~/.agentmemory/standalone.json` fallback. The error tells the host to start `npx @agentmemory/agentmemory`. `AGENTMEMORY_DISABLE_LOCAL_FALLBACK=1` is accepted as an alias.
+
 ### Codex CLI (Codex plugin platform)
 
 ```bash
@@ -542,7 +544,7 @@ codex plugin add agentmemory@agentmemory
 
 The Codex plugin ships from the same `plugin/` directory as the Claude Code plugin. It registers:
 
-- `@agentmemory/mcp` as an MCP server (proxies all 53 tools when `AGENTMEMORY_URL` points at a running agentmemory server; falls back to 7 tools locally when no server is reachable)
+- `@agentmemory/mcp` as an MCP server (proxies all 53 tools when `AGENTMEMORY_URL` points at a running agentmemory server; falls back to 7 tools locally when no server is reachable unless `AGENTMEMORY_REQUIRE_SERVER=1` is set)
 - 6 lifecycle hooks: `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PreCompact`, `Stop`
 - 8 invocable skills: `/recall`, `/remember`, `/session-history`, `/forget`, `/recap`, `/handoff`, `/commit-context`, `/commit-history`, plus 7 reference skills the agent loads on demand (MCP tools, REST API, config, agents, hooks, architecture, and the skill-authoring guide)
 
@@ -656,6 +658,8 @@ The agentmemory entry is the **same MCP server block** across every host that us
 
 **Merge this entry into the existing `mcpServers` object** in the host's config file — don't replace the file. If the file already has other servers, add `agentmemory` next to them as another key inside `mcpServers`. If `mcpServers` is missing entirely, paste the block inside `{ "mcpServers": { ... } }`. The `${VAR}` placeholders inherit `AGENTMEMORY_URL` / `AGENTMEMORY_SECRET` from the shell at MCP-server launch — unset vars pass empty strings and the shim falls back to `http://localhost:3111`. One wired entry covers both local and remote (k8s / reverse-proxied) deployments.
 
+For central memory deployments where an empty local fallback would be misleading, also pass `"AGENTMEMORY_REQUIRE_SERVER": "1"`. With this flag, livez failures and proxy-call failures return a clear MCP error instead of answering from `~/.agentmemory/standalone.json`. `AGENTMEMORY_DISABLE_LOCAL_FALLBACK=1` is accepted as an alias. `AGENTMEMORY_FORCE_PROXY=1` only skips the livez probe; it does not by itself disable local fallback after a proxy call fails.
+
 | Agent | Config file | Notes |
 |---|---|---|
 | **Cursor** | `~/.cursor/mcp.json` | Merge into `mcpServers`. One-click deeplink also available on the website. |
@@ -684,7 +688,7 @@ The agentmemory entry is the **same MCP server block** across every host that us
 | **Aider** | n/a | Talk to the REST API directly: `curl -X POST http://localhost:3111/agentmemory/smart-search -d '{"query": "auth"}'`. |
 | **Any agent (32+)** | n/a | `npx skillkit install agentmemory` auto-detects the host and merges. |
 
-**Sandboxed MCP clients** (Flatpak / Snap / restrictive containers) that can't reach the host's `localhost`: also set `"AGENTMEMORY_FORCE_PROXY": "1"` in the `env` block, and point `AGENTMEMORY_URL` at a route the sandbox can actually reach. If `AGENTMEMORY_SECRET` is set, that route must be HTTPS or a loopback tunnel; the MCP shim refuses to send bearer auth over plaintext HTTP to non-loopback hosts. See [#234](https://github.com/rohitg00/agentmemory/issues/234) for the diagnostic walkthrough.
+**Sandboxed MCP clients** (Flatpak / Snap / restrictive containers) that can't reach the host's `localhost`: also set `"AGENTMEMORY_FORCE_PROXY": "1"` in the `env` block, and point `AGENTMEMORY_URL` at a route the sandbox can actually reach. Add `"AGENTMEMORY_REQUIRE_SERVER": "1"` when the client should fail rather than use the local fallback if that route is still broken. If `AGENTMEMORY_SECRET` is set, that route must be HTTPS or a loopback tunnel; the MCP shim refuses to send bearer auth over plaintext HTTP to non-loopback hosts. See [#234](https://github.com/rohitg00/agentmemory/issues/234) for the diagnostic walkthrough.
 
 ### Programmatic access (Python / Rust / Node)
 
@@ -960,7 +964,7 @@ npm install @xenova/transformers
 
 53 tools, 6 resources, 3 prompts, and 15 skills, the most comprehensive MCP memory toolkit for any agent.
 
-> **MCP shim vs full server:** the published `@agentmemory/mcp` package is a thin shim. It exposes the full 53-tool surface **only when it can reach a running agentmemory server** via `AGENTMEMORY_URL` (proxy mode). With no server reachable, the shim falls back to a 7-tool local set (`memory_save`, `memory_recall`, `memory_smart_search`, `memory_sessions`, `memory_export`, `memory_audit`, `memory_governance_delete`). The `AGENTMEMORY_TOOLS=core|all` env var is a *server-side* flag — setting it in the shim's `env` block has no effect. If you see only 7 tools in Cursor / OpenCode / Gemini CLI, start `npx @agentmemory/agentmemory` (or the Docker stack) and set `AGENTMEMORY_URL=http://localhost:3111`.
+> **MCP shim vs full server:** the published `@agentmemory/mcp` package is a thin shim. It exposes the full 53-tool surface **only when it can reach a running agentmemory server** via `AGENTMEMORY_URL` (proxy mode). With no server reachable, the shim falls back to a 7-tool local set (`memory_save`, `memory_recall`, `memory_smart_search`, `memory_sessions`, `memory_export`, `memory_audit`, `memory_governance_delete`). Set `AGENTMEMORY_REQUIRE_SERVER=1` in the shim's env when that fallback would hide an outage; then livez failures and proxy-call failures return an MCP error instead. The `AGENTMEMORY_TOOLS=core|all` env var is a *server-side* flag — setting it in the shim's `env` block has no effect. If you see only 7 tools in Cursor / OpenCode / Gemini CLI, start `npx @agentmemory/agentmemory` (or the Docker stack) and set `AGENTMEMORY_URL=http://localhost:3111`.
 
 ### 53 Tools
 
@@ -1064,7 +1068,7 @@ Most agents (Cursor, Claude Desktop, Cline, Roo Code, Windsurf, Gemini CLI):
 }
 ```
 
-Merge the `agentmemory` entry into your host's existing `mcpServers` object rather than replacing the file. For sandboxed clients that can't reach the host's `localhost`, add `"AGENTMEMORY_FORCE_PROXY": "1"` to the env block and set `AGENTMEMORY_URL` to a route the sandbox can reach. If `AGENTMEMORY_SECRET` is set, use HTTPS or a loopback tunnel; plaintext HTTP to non-loopback hosts is refused before bearer auth is sent.
+Merge the `agentmemory` entry into your host's existing `mcpServers` object rather than replacing the file. For sandboxed clients that can't reach the host's `localhost`, add `"AGENTMEMORY_FORCE_PROXY": "1"` to the env block and set `AGENTMEMORY_URL` to a route the sandbox can reach. For central cross-agent memory, add `"AGENTMEMORY_REQUIRE_SERVER": "1"` so the shim errors instead of falling back to its local standalone store when the server route breaks. If `AGENTMEMORY_SECRET` is set, use HTTPS or a loopback tunnel; plaintext HTTP to non-loopback hosts is refused before bearer auth is sent.
 
 OpenCode (`opencode.json`):
 ```json

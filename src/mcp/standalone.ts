@@ -9,6 +9,9 @@ import { generateId } from "../state/schema.js";
 import {
   resolveHandle,
   invalidateHandle,
+  requireServerMode,
+  requireServerModeFlag,
+  serverUnreachableError,
   type Handle,
   type ProxyHandle,
 } from "./rest-proxy.js";
@@ -404,8 +407,19 @@ export async function handleToolCall(
     try {
       return await handleProxy(validated, handle);
     } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (requireServerMode()) {
+        process.stderr.write(
+          `[@agentmemory/mcp] proxy call failed for ${toolName}: ${message}; local fallback disabled by ${requireServerModeFlag()}\n`,
+        );
+        invalidateHandle();
+        throw serverUnreachableError(
+          handle.baseUrl,
+          `proxy call failed for ${toolName}: ${message}`,
+        );
+      }
       process.stderr.write(
-        `[@agentmemory/mcp] proxy call failed for ${toolName}: ${err instanceof Error ? err.message : String(err)}; invalidating handle and falling back to local KV\n`,
+        `[@agentmemory/mcp] proxy call failed for ${toolName}: ${message}; invalidating handle and falling back to local KV\n`,
       );
       invalidateHandle();
     }
@@ -445,12 +459,34 @@ export async function handleToolsList(): Promise<{ tools: unknown[] }> {
         }
         return { tools: remote.tools };
       }
+      if (requireServerMode()) {
+        process.stderr.write(
+          `[@agentmemory/mcp] tools/list: server returned unexpected shape (no .tools array); local fallback disabled by ${requireServerModeFlag()}\n`,
+        );
+        invalidateHandle();
+        throw serverUnreachableError(
+          handle.baseUrl,
+          "tools/list returned unexpected response shape",
+        );
+      }
       process.stderr.write(
         `[@agentmemory/mcp] tools/list: server returned unexpected shape (no .tools array); falling back to local IMPLEMENTED_TOOLS list. Set AGENTMEMORY_DEBUG=1 to inspect response.\n`,
       );
     } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (message.startsWith("agentmemory server unreachable at ")) throw err;
+      if (requireServerMode()) {
+        process.stderr.write(
+          `[@agentmemory/mcp] tools/list proxy failed: ${message}; local fallback disabled by ${requireServerModeFlag()}\n`,
+        );
+        invalidateHandle();
+        throw serverUnreachableError(
+          handle.baseUrl,
+          `tools/list proxy failed: ${message}`,
+        );
+      }
       process.stderr.write(
-        `[@agentmemory/mcp] tools/list proxy failed: ${err instanceof Error ? err.message : String(err)}; falling back to local list\n`,
+        `[@agentmemory/mcp] tools/list proxy failed: ${message}; falling back to local list\n`,
       );
       invalidateHandle();
     }
