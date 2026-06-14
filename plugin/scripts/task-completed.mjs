@@ -50,12 +50,16 @@ function canonicalGitProject(cwd) {
 		return;
 	}
 }
+function resolveCwd(cwd) {
+	if (typeof cwd !== "string") return process.cwd();
+	return cwd.trim().length > 0 ? cwd : process.cwd();
+}
 function resolveProject(cwd) {
 	const explicitId = cleanEnv("AGENTMEMORY_PROJECT_ID");
 	if (explicitId) return explicitId;
 	const explicitName = cleanEnv("AGENTMEMORY_PROJECT_NAME");
 	if (explicitName) return explicitName;
-	const dir = cwd && cwd.trim() ? cwd : process.cwd();
+	const dir = resolveCwd(cwd);
 	return canonicalGitProject(dir) ?? basename(dir);
 }
 //#endregion
@@ -90,7 +94,7 @@ async function main() {
 			hookType: "task_completed",
 			sessionId,
 			project: resolveProject(data.cwd),
-			cwd: data.cwd || process.cwd(),
+			cwd: resolveCwd(data.cwd),
 			timestamp: (/* @__PURE__ */ new Date()).toISOString(),
 			data: {
 				task_id: data.task_id,
