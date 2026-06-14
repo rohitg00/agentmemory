@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
-import { resolveProject } from "../src/hooks/_project.js";
+import { resolveCwd, resolveProject } from "../src/hooks/_project.js";
 
 function git(cwd: string, args: string[]): string {
   return execFileSync("git", args, {
@@ -140,7 +140,7 @@ describe("resolveProject — canonical project resolver", () => {
   it("falls back to basename(cwd) when not in a git repo", () => {
     const dir = mkdtempSync(join(tmpdir(), "amem-noproj-"));
     try {
-      expect(resolveProject(dir)).toBe(dir.split("/").pop());
+      expect(resolveProject(dir)).toBe(basename(dir));
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -153,6 +153,20 @@ describe("resolveProject — canonical project resolver", () => {
   it("defaults to process.cwd() when cwd argument is empty", () => {
     expect(resolveProject("")).toBe(canonicalProjectForGitCwd(process.cwd()));
     expect(resolveProject("   ")).toBe(canonicalProjectForGitCwd(process.cwd()));
+  });
+
+  it("preserves non-empty cwd strings exactly", () => {
+    const cwd = join(tmpdir(), " amem-spaced-project ");
+
+    expect(resolveCwd(cwd)).toBe(cwd);
+    expect(resolveCwd("   ")).toBe(process.cwd());
+  });
+
+  it("defaults to process.cwd() when cwd argument is not a string", () => {
+    const expected = canonicalProjectForGitCwd(process.cwd());
+
+    expect(resolveProject({ path: process.cwd() })).toBe(expected);
+    expect(resolveProject(42)).toBe(expected);
   });
 
   it("does not require the fallback directory to exist", () => {
