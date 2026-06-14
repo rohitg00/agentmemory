@@ -1639,7 +1639,7 @@ async function passiveServerChecks(): Promise<DoctorCheck[]> {
       ok: hasEmbed,
       hint: hasEmbed
         ? undefined
-        : "Running BM25-only. Add OPENAI_API_KEY / VOYAGE_API_KEY / COHERE_API_KEY / OLLAMA_HOST",
+        : "Running BM25-only. Set EMBEDDING_PROVIDER=local, or EMBEDDING_PROVIDER=<remote> plus the matching provider key.",
     },
   );
 

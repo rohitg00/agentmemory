@@ -817,11 +817,13 @@ BM25 tokenise nativement le grec, le cyrillique, l'hébreu, l'arabe et le latin 
 
 ### Fournisseurs d'embedding
 
-agentmemory détecte automatiquement votre fournisseur. Pour de meilleurs résultats, installez les embeddings locaux (gratuits) :
+Les embeddings texte sont opt-in. Sans `EMBEDDING_PROVIDER`, la recherche reste en BM25+Graph et agentmemory n'envoie pas le texte des mémoires, observations ou requêtes à un fournisseur d'embeddings. Pour des embeddings locaux, installez le paquet optionnel on-device et définissez `EMBEDDING_PROVIDER=local` :
 
 ```bash
 npm install @xenova/transformers
 ```
+
+Utilisez `EMBEDDING_PROVIDER=local` pour les embeddings locaux, ou `EMBEDDING_PROVIDER=<provider>` plus la clé correspondante pour les embeddings distants.
 
 | Fournisseur | Modèle | Coût | Notes |
 |---|---|---|---|
@@ -1103,7 +1105,7 @@ agentmemory détecte automatiquement depuis votre environnement. Par défaut, au
 | **No-op (par défaut)** | Aucune config nécessaire | Le compress/summarize adossé à un LLM est DÉSACTIVÉ. La compression et le recall BM25 synthétiques fonctionnent toujours. Voir `AGENTMEMORY_ALLOW_AGENT_SDK` ci-dessous si vous comptiez sur le fallback abonnement Claude. |
 | Anthropic API | `ANTHROPIC_API_KEY` | Facturation au token |
 | MiniMax | `MINIMAX_API_KEY` | Compatible Anthropic |
-| Gemini | `GEMINI_API_KEY` | Active aussi les embeddings |
+| Gemini | `GEMINI_API_KEY` | Alternative de fournisseur LLM. Les embeddings nécessitent `EMBEDDING_PROVIDER=gemini`. |
 | OpenRouter | `OPENROUTER_API_KEY` | N'importe quel modèle |
 | Fallback abonnement Claude | `AGENTMEMORY_ALLOW_AGENT_SDK=true` | Opt-in seulement. Engendre des sessions `@anthropic-ai/claude-agent-sdk` — provoquait une récursion non bornée du Stop-hook (suite de #149), il n'est plus l'option par défaut. |
 
@@ -1216,11 +1218,10 @@ Créez `~/.agentmemory/.env` :
 # GEMINI_API_KEY=...
 # OPENROUTER_API_KEY=...
 # MINIMAX_API_KEY=...
-# OPENAI_API_KEY=***                       # NOTE: this same key auto-activates BOTH the
-#                                          # OpenAI LLM provider (here) AND the OpenAI
-#                                          # embedding provider (further below). Set
-#                                          # OPENAI_API_KEY_FOR_LLM=false to scope it
-#                                          # to embeddings only.
+# OPENAI_API_KEY=***                       # OpenAI LLM provider. Text embeddings require
+#                                          # EMBEDDING_PROVIDER=openai as an explicit opt-in.
+#                                          # For embeddings only, set OPENAI_API_KEY_FOR_LLM=false
+#                                          # and EMBEDDING_PROVIDER=openai.
 # OPENAI_BASE_URL=https://api.openai.com   # Optional: override for Azure / vLLM / LM Studio / proxies
 #                                          # Azure: https://<resource>.openai.azure.com/openai/deployments/<deployment>
 #                                          # Auto-detected from `.openai.azure.com` hostname; uses
@@ -1239,12 +1240,13 @@ Créez `~/.agentmemory/.env` :
 #                                          # "none" for thinking models that return reasoning
 #                                          # but no content.
 # OPENAI_API_KEY_FOR_LLM=false             # Optional: set to false to skip OpenAI auto-detection
-#                                          # for LLM (useful if you only want OpenAI for embeddings)
+#                                          # for LLM. Pair with EMBEDDING_PROVIDER=openai if
+#                                          # you only want OpenAI for embeddings.
 # Opt-in Claude-subscription fallback (spawns @anthropic-ai/claude-agent-sdk);
 # leave OFF unless you understand the Stop-hook recursion risk (#149 follow-up):
 # AGENTMEMORY_ALLOW_AGENT_SDK=true
 
-# Embedding provider (auto-detected, or override)
+# Embedding provider (explicit opt-in; default is BM25+Graph with no embeddings)
 # EMBEDDING_PROVIDER=local
 # VOYAGE_API_KEY=...
 # OPENAI_API_KEY=sk-...

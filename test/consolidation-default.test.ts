@@ -104,7 +104,7 @@ describe("isConsolidationEnabled default behavior", () => {
     expect(cfg.isConsolidationEnabled()).toBe(false);
   });
 
-  it("OPENAI_API_KEY_FOR_LLM=false scopes the key to embeddings only", async () => {
+  it("OPENAI_API_KEY_FOR_LLM=false disables OpenAI LLM auto-detection", async () => {
     writeEnv("OPENAI_API_KEY=sk-test-123\nOPENAI_API_KEY_FOR_LLM=false");
     const cfg = await freshConfig();
     expect(cfg.isConsolidationEnabled()).toBe(false);

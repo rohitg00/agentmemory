@@ -3759,9 +3759,9 @@
           kind: 'info',
           icon: '&#9881;',
           title: 'Running in BM25-only mode',
-          keyLabel: 'OPENAI_API_KEY',
+          keyLabel: 'EMBEDDING_PROVIDER',
           desc: 'Semantic vector search is off. BM25 keyword search is active and good for exact matches.',
-          enable: 'export OPENAI_API_KEY=sk-...\n# or VOYAGE_API_KEY, COHERE_API_KEY, OLLAMA_HOST',
+          enable: 'export EMBEDDING_PROVIDER=local\n# or EMBEDDING_PROVIDER=openai plus OPENAI_API_KEY=sk-...',
           docs: 'https://github.com/rohitg00/agentmemory#embedding-providers',
           dismissKey: '__embedding_none',
         });

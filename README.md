@@ -939,7 +939,7 @@ BM25 tokenizes Greek, Cyrillic, Hebrew, Arabic, and accented Latin out of the bo
 
 ### Embedding providers
 
-agentmemory auto-detects your provider. For best results, install local embeddings (free):
+Text embeddings are opt-in. With no `EMBEDDING_PROVIDER`, search stays BM25+Graph and agentmemory does not send memory, observation, or query text to an embedding provider. For local embeddings, install the optional on-device package and set `EMBEDDING_PROVIDER=local`:
 
 ```bash
 npm install @xenova/transformers
@@ -947,12 +947,12 @@ npm install @xenova/transformers
 
 | Provider | Model | Cost | Notes |
 |---|---|---|---|
-| **Local (recommended)** | `all-MiniLM-L6-v2` | Free | Offline, +8pp recall over BM25-only |
-| Gemini | `gemini-embedding-001` | Free tier | 100+ languages, 768/1536/3072 dims (MRL), 2048-token input. Replaces `text-embedding-004` ([deprecated, shutdown Jan 14, 2026](https://ai.google.dev/gemini-api/docs/deprecations)) |
-| OpenAI | `text-embedding-3-small` | $0.02/1M | Highest quality |
-| Voyage AI | `voyage-code-3` | Paid | Optimized for code |
-| Cohere | `embed-english-v3.0` | Free trial | General purpose |
-| OpenRouter | Any model | Varies | Multi-model proxy |
+| **Local (recommended)** | `all-MiniLM-L6-v2` | Free | `EMBEDDING_PROVIDER=local`; offline, +8pp recall over BM25-only |
+| Gemini | `gemini-embedding-001` | Free tier | `EMBEDDING_PROVIDER=gemini` + `GEMINI_API_KEY`; 100+ languages, 768/1536/3072 dims (MRL), 2048-token input. Replaces `text-embedding-004` ([deprecated, shutdown Jan 14, 2026](https://ai.google.dev/gemini-api/docs/deprecations)) |
+| OpenAI | `text-embedding-3-small` | $0.02/1M | `EMBEDDING_PROVIDER=openai` + `OPENAI_API_KEY`; highest quality |
+| Voyage AI | `voyage-code-3` | Paid | `EMBEDDING_PROVIDER=voyage` + `VOYAGE_API_KEY`; optimized for code |
+| Cohere | `embed-english-v3.0` | Free trial | `EMBEDDING_PROVIDER=cohere` + `COHERE_API_KEY`; general purpose |
+| OpenRouter | Any model | Varies | `EMBEDDING_PROVIDER=openrouter` + `OPENROUTER_API_KEY`; multi-model proxy |
 
 ---
 
@@ -1225,7 +1225,7 @@ agentmemory auto-detects from your environment. By default, no LLM calls are mad
 | **No-op (default)** | No config needed | LLM-backed compress/summarize is DISABLED. Synthetic BM25 compression + recall still work. See `AGENTMEMORY_ALLOW_AGENT_SDK` below if you used to rely on the Claude-subscription fallback. |
 | Anthropic API | `ANTHROPIC_API_KEY` | Per-token billing |
 | MiniMax | `MINIMAX_API_KEY` | Anthropic-compatible |
-| Gemini | `GEMINI_API_KEY` | Also enables embeddings |
+| Gemini | `GEMINI_API_KEY` | LLM provider alternative. Embeddings require `EMBEDDING_PROVIDER=gemini`. |
 | OpenRouter | `OPENROUTER_API_KEY` | Any model |
 | OpenAI API | `OPENAI_API_KEY` | Default `gpt-4o-mini`, override with `OPENAI_MODEL` |
 | **Local (Ollama / LM Studio / vLLM / llama.cpp)** | `OPENAI_API_KEY=local` + `OPENAI_BASE_URL=http://localhost:11434/v1` (Ollama) or `http://localhost:1234/v1` (LM Studio) + `OPENAI_MODEL=<your model>` | Anything OpenAI-API-compatible. Zero cost, runs on your hardware. See [Local models](#local-models-ollama-lm-studio-vllm) below. |
@@ -1273,7 +1273,7 @@ OPENAI_MODEL=qwen2.5-coder-7b-instruct         # match the model name from LM St
 
 Reasoning-class models (`o1`-style with `<think>` blocks) can return empty `content` with a `reasoning` field your local server may not surface. If extractions come back blank, switch to a non-reasoning model first. The `OPENAI_REASONING_EFFORT=none` env can also disable thinking on Ollama Cloud thinking models that mirror the OpenAI reasoning schema.
 
-Local embeddings ship out of the box via `@xenova/transformers` — `EMBEDDING_PROVIDER=local` (default) gives you BGE-small entirely on-device. No extra config needed.
+Local embeddings are available via `@xenova/transformers` — set `EMBEDDING_PROVIDER=local` to use `all-MiniLM-L6-v2` entirely on-device. With no `EMBEDDING_PROVIDER`, agentmemory uses BM25+Graph search and does not call a text embedding provider.
 
 ### Cost-aware model selection
 
@@ -1384,11 +1384,10 @@ Create `~/.agentmemory/.env`:
 # GEMINI_API_KEY=...
 # OPENROUTER_API_KEY=...
 # MINIMAX_API_KEY=...
-# OPENAI_API_KEY=***                       # NOTE: this same key auto-activates BOTH the
-#                                          # OpenAI LLM provider (here) AND the OpenAI
-#                                          # embedding provider (further below). Set
-#                                          # OPENAI_API_KEY_FOR_LLM=false to scope it
-#                                          # to embeddings only.
+# OPENAI_API_KEY=***                       # OpenAI LLM provider. Text embeddings require
+#                                          # EMBEDDING_PROVIDER=openai as an explicit opt-in.
+#                                          # For embeddings only, set OPENAI_API_KEY_FOR_LLM=false
+#                                          # and EMBEDDING_PROVIDER=openai.
 # OPENAI_BASE_URL=https://api.openai.com   # Optional: override for Azure / vLLM / LM Studio / proxies
 #                                          # Azure: https://<resource>.openai.azure.com/openai/deployments/<deployment>
 #                                          # Auto-detected from `.openai.azure.com` hostname; uses
@@ -1407,12 +1406,13 @@ Create `~/.agentmemory/.env`:
 #                                          # "none" for thinking models that return reasoning
 #                                          # but no content.
 # OPENAI_API_KEY_FOR_LLM=false             # Optional: set to false to skip OpenAI auto-detection
-#                                          # for LLM (useful if you only want OpenAI for embeddings)
+#                                          # for LLM. Pair with EMBEDDING_PROVIDER=openai if
+#                                          # you only want OpenAI for embeddings.
 # Opt-in Claude-subscription fallback (spawns @anthropic-ai/claude-agent-sdk);
 # leave OFF unless you understand the Stop-hook recursion risk (#149 follow-up):
 # AGENTMEMORY_ALLOW_AGENT_SDK=true
 
-# Embedding provider (auto-detected, or override)
+# Embedding provider (explicit opt-in; default is BM25+Graph with no embeddings)
 # EMBEDDING_PROVIDER=local
 # VOYAGE_API_KEY=...
 # OPENAI_API_KEY=sk-...
