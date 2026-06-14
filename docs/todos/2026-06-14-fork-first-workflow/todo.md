@@ -49,18 +49,30 @@ Known boundaries:
 
 | Change | Verification method | Status | Evidence |
 | --- | --- | --- | --- |
-| ADR baseline initialized | `adr list` | Done | `adr init docs/adr` created `docs/adr/0001-record-architecture-decisions.md`; `.adr-dir` contains `docs/adr`. |
+| ADR baseline initialized | `adr list` | Done | In worktree `/Users/A1538552/.codex/worktrees/f5bb/agentmemory`, `adr list` returned `docs/adr/0001-record-architecture-decisions.md`; `.adr-dir` contains `docs/adr`. |
 | Fork workflow plan written | Plan self-review and `/review-plan` | Done | Revision `fork-first-workflow-plan-r3` accepted by all three review lanes. |
-| Fork-first ADR recorded | `adr list`, ADR content review | Pending | Planned via `adr new "Use fork-first development workflow"`. |
-| Operational recipe documented | `git diff --check`, command review | Pending | Planned under `docs/recipes/fork-workflow.md`. |
-| Local remote convention applied | `git remote -v`, branch config, `git branch -vv` | Pending | Must wait for plan review and implementation approval. |
-| Fork main published | `git push -u origin main:main`, `git status -sb` | Pending | Requires explicit current-turn confirmation before push. |
+| Fork-first ADR recorded | `adr list`, `adr generate toc` | Done | ADR 2 created with `adr new`; TOC generated at `docs/adr/README.md`. |
+| Operational recipe documented | Markdown fence check, exact-content review, command review | Done | Fence check returned `Markdown fences balanced`; exact-content review matched the requested recipe; command review found separate fetch commands, push confirmation gates, upstream PR branch commands, and rerere guidance. |
+| Local remote convention applied | `git remote -v`, branch config, `git branch -vv` | Done | `origin` points to `https://github.com/wbugitlab1/agentmemory.git`, `upstream` points to `https://github.com/rohitg00/agentmemory.git`, and `branch.main.remote` / `branch.main.merge` are `origin` / `refs/heads/main`. |
+| Fork main published | `git push -u origin main:main`, `git rev-list`, `git branch -vv` | Done | User approved the push; at Task 5 completion, `git push -u origin main:main` updated fork `origin/main` from `f6f9e3c` to `cd006e9`, `origin/main...main` returned `0 0`, and `main` tracked `origin/main`. |
 
 ## Progress Notes
 
 - 2026-06-14: User confirmed the fork-first direction and requested `writing-plans`, `/review-plan`, `docs/adr`, and `adr-tools`.
 - 2026-06-14: Read `/Users/A1538552/.agents/instructions/global.md`; it requires durable decisions under `docs/adr/` and recommends `/Users/A1538552/_projects/_tools/adr-tools/src/adr`.
 - 2026-06-14: `docs/adr` and `.adr-dir` were missing; initialized with `/Users/A1538552/_projects/_tools/adr-tools/src/adr init docs/adr`.
+- 2026-06-14: Baseline in worktree `/Users/A1538552/.codex/worktrees/f5bb/agentmemory`: `git status -sb` returned `## fork-implementation`; no tracked source files were modified.
+- 2026-06-14: Baseline remotes matched expected fork-first pre-implementation state: `fork` fetch/push `https://github.com/wbugitlab1/agentmemory.git`; `origin` fetch/push `https://github.com/rohitg00/agentmemory.git`.
+- 2026-06-14: `git worktree list --porcelain` confirmed this worktree at `/Users/A1538552/.codex/worktrees/f5bb/agentmemory` on `refs/heads/fork-implementation` with HEAD `cd006e96cb4069cea0f23cf17b4b7f489b2acb2c`; additional worktrees are user-managed.
+- 2026-06-14: `/Users/A1538552/_projects/_tools/adr-tools/src/adr list` returned `docs/adr/0001-record-architecture-decisions.md`.
+- 2026-06-14: Created ADR 2 with `VISUAL=true EDITOR=true /Users/A1538552/_projects/_tools/adr-tools/src/adr new "Use fork-first development workflow"`, which returned `docs/adr/0002-use-fork-first-development-workflow.md`; generated `docs/adr/README.md`; verified `adr list` returned ADR 1 and ADR 2.
+- 2026-06-14: Final verification for Task 2: `adr list` returned ADR 1 and ADR 2; `git diff --check` passed; `git status -sb --untracked-files=all` showed only the task record plus new ADR 2 and ADR README.
+- 2026-06-14: Task 3 fence check returned `Markdown fences balanced` for `docs/recipes/fork-workflow.md`.
+- 2026-06-14: Task 4 Step 1 gate check in worktree `fork-implementation`: `git status -sb --untracked-files=all` showed only task-owned documentation changes; `git remote -v` still showed `origin` as the original repository and `fork` as the user's fork; `git branch -vv` showed this worktree on `fork-implementation` and `main` checked out in the primary worktree. Stopped before any local Git config change pending explicit current-turn confirmation.
+- 2026-06-14: User confirmed Task 4 local Git config change with "tu es". Ran `git remote rename origin upstream`, `git remote rename fork origin`, `git fetch upstream`, `git fetch origin`, `git config branch.main.remote origin`, and `git config branch.main.merge refs/heads/main`. Verification showed `origin=https://github.com/wbugitlab1/agentmemory.git`, `upstream=https://github.com/rohitg00/agentmemory.git`, `branch.main.remote=origin`, `branch.main.merge=refs/heads/main`, and `main` tracking `origin/main` ahead by 41. No push was performed.
+- 2026-06-14: Task 4 subagent reviews passed. Spec review confirmed the remote/tracking convention and found no Task 4 push marker; quality review confirmed `main` is still 41 commits ahead of `origin/main`, Task 5 remains pending, and no source files changed.
+- 2026-06-14: User confirmed Task 5 push with "yes". Ran `git push -u origin main:main`, which updated fork `origin/main` from `f6f9e3c` to `cd006e9` and set `main` to track `origin/main`. Verification showed `git rev-list --left-right --count origin/main...main` returned `0 0`, `branch.main.remote=origin`, and `branch.main.merge=refs/heads/main`.
+- 2026-06-14: During `/prep-merge-to-local-main`, local `main` had advanced to `1176e5f` with commits `58b68b4` and `1176e5f`; `origin/main` and `fork-implementation` remained at `cd006e9`, so `git rev-list --left-right --count origin/main...main` returned `0 2` before merging local `main` into this branch. This is current prep-merge evidence, not a contradiction of the earlier Task 5 push evidence.
 
 ## Plan Review Ledger
 
@@ -84,3 +96,12 @@ Known boundaries:
 - 2026-06-14: `git status -sb` showed only `.adr-dir`, `docs/adr/`, and `docs/todos/2026-06-14-fork-first-workflow/` as untracked.
 - 2026-06-14: `git diff --check` passed before staging.
 - 2026-06-14: No remote rename, push, upstream merge, or source-code change was performed for this planning commit.
+
+## Final Review Notes
+
+- ADR verification: `/Users/A1538552/_projects/_tools/adr-tools/src/adr list` returned ADR 1 and ADR 2; `/Users/A1538552/_projects/_tools/adr-tools/src/adr generate toc` output listed both records.
+- Documentation verification: `git diff --check` passed for tracked diffs; direct Markdown formatting checks passed for `docs/adr/0002-use-fork-first-development-workflow.md`, `docs/adr/README.md`, `docs/recipes/fork-workflow.md`, and this task record.
+- Git remote verification: `git remote -v` shows `origin=https://github.com/wbugitlab1/agentmemory.git` and `upstream=https://github.com/rohitg00/agentmemory.git`; `branch.main.remote=origin`; `branch.main.merge=refs/heads/main`.
+- Push status: user approved `git push -u origin main:main`; at Task 5 completion, fork `origin/main` matched then-local `main` at `cd006e9` with `git rev-list --left-right --count origin/main...main` returning `0 0`. During prep-merge, current local `main` is `1176e5f`, so it is two commits ahead of `origin/main` and will be merged locally before any future publication decision.
+- Source test status: `npm test` was not run because this implementation changed only documentation and local Git configuration; no source file or upstream merge changed runtime behavior.
+- Residual risks: this worktree is `fork-implementation`, not `main`; the implementation docs are being prepared for a local prep-merge commit before integration. Other existing branches that tracked the old `origin/main` now track `upstream/main` after the remote rename, which is expected for upstream-oriented branches but should be considered before using them.
