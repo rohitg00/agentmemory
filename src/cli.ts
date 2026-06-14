@@ -47,6 +47,11 @@ import { VERSION } from "./version.js";
 import { getAllTools, ESSENTIAL_TOOLS } from "./mcp/tools-registry.js";
 import { knownAgents } from "./cli/connect/index.js";
 import { setupServerLogTee, writeServerLog } from "./cli/server-log.js";
+import {
+  classifyEngineExit,
+  formatEngineExit,
+  planEngineRestart,
+} from "./cli/engine-supervisor.js";
 
 const ALL_TOOLS_COUNT = getAllTools().length;
 const CORE_TOOLS_COUNT = getAllTools().filter((t) => ESSENTIAL_TOOLS.has(t.name)).length;
@@ -800,6 +805,67 @@ type StartupFailure = {
 
 let startupFailure: StartupFailure | null = null;
 
+type StartEngineOptions = {
+  onUnexpectedExit?: (reason: string) => void;
+};
+
+type NativeEngineChildRef = {
+  generation: number;
+  pid: number | null;
+};
+
+let nativeEngineChildGeneration = 0;
+let currentNativeEngineChild: NativeEngineChildRef | null = null;
+
+function rememberNativeEngineChild(child: ChildProcess): NativeEngineChildRef {
+  const ref = {
+    generation: ++nativeEngineChildGeneration,
+    pid: typeof child.pid === "number" ? child.pid : null,
+  };
+  currentNativeEngineChild = ref;
+  if (ref.pid !== null) {
+    writeEnginePidfile(ref.pid);
+  }
+  return ref;
+}
+
+function isCurrentNativeEngineChild(ref: NativeEngineChildRef): boolean {
+  return currentNativeEngineChild?.generation === ref.generation;
+}
+
+function clearNativeEngineTrackingForChild(ref: NativeEngineChildRef): boolean {
+  if (!isCurrentNativeEngineChild(ref)) {
+    vlog(
+      `ignoring stale iii-engine exit for generation ${ref.generation}; current generation is ${currentNativeEngineChild?.generation ?? "none"}`,
+    );
+    return false;
+  }
+  clearEnginePidfile();
+  clearEngineState();
+  currentNativeEngineChild = null;
+  return true;
+}
+
+async function stopNativeEngineChild(
+  ref: NativeEngineChildRef | null,
+  reason: string,
+): Promise<boolean> {
+  if (!ref || !isCurrentNativeEngineChild(ref)) return true;
+  if (ref.pid === null) {
+    logEngineSupervisor(
+      `Cannot stop failed iii-engine restart without a child pid: ${reason}`,
+      "error",
+    );
+    return false;
+  }
+  logEngineSupervisor(`Stopping failed iii-engine restart pid ${ref.pid}: ${reason}`, "warn");
+  const stopped = await signalAndWait(ref.pid, "SIGTERM", 3000);
+  if (stopped) {
+    clearNativeEngineTrackingForChild(ref);
+  }
+  return stopped;
+}
+
 // Spawn a background engine and collect any startup stderr for a short
 // window. The process is unref'd so the CLI parent can exit cleanly; we
 // only care about stderr that shows up BEFORE the health check succeeds,
@@ -808,6 +874,7 @@ function spawnEngineBackground(
   bin: string,
   spawnArgs: string[],
   label: string,
+  options: StartEngineOptions = {},
 ): ChildProcess {
   vlog(`spawn: ${bin} ${spawnArgs.join(" ")}`);
   const child = spawn(bin, spawnArgs, {
@@ -816,9 +883,7 @@ function spawnEngineBackground(
     windowsHide: true,
   });
   const isDocker = label.includes("Docker");
-  if (!isDocker && typeof child.pid === "number") {
-    writeEnginePidfile(child.pid);
-  }
+  const nativeRef = isDocker ? null : rememberNativeEngineChild(child);
   const stderrChunks: Buffer[] = [];
   let stderrBytes = 0;
   const MAX_STDERR_CAPTURE = 16 * 1024;
@@ -833,13 +898,16 @@ function spawnEngineBackground(
     stderrBytes += slice.length;
   });
   child.on("exit", (code, signal) => {
-    const abnormal =
-      (code !== null && code !== 0) || (code === null && signal !== null);
-    if (abnormal) {
+    const exitText = formatEngineExit(code, signal);
+    const classification = classifyEngineExit(code, signal);
+    writeServerLog(`[agentmemory] ${label} exited ${exitText}\n`);
+
+    const ownsNativeTracking = nativeRef
+      ? clearNativeEngineTrackingForChild(nativeRef)
+      : false;
+
+    if (classification === "unexpected") {
       const stderr = Buffer.concat(stderrChunks).toString("utf-8");
-      writeServerLog(
-        `[agentmemory] ${label} exited abnormally code=${code ?? "null"} signal=${signal ?? "null"}\n`,
-      );
       startupFailure = {
         kind: isDocker ? "docker-crashed" : "engine-crashed",
         stderr:
@@ -853,19 +921,26 @@ function spawnEngineBackground(
       if (IS_VERBOSE && stderr.trim()) {
         p.log.error(`engine stderr:\n${stderr}`);
       }
-      if (!isDocker) clearEnginePidfile();
-      clearEngineState();
+      if (isDocker) {
+        clearEngineState();
+      } else if (ownsNativeTracking) {
+        options.onUnexpectedExit?.(`${label} exited ${exitText}`);
+      }
     }
   });
   child.unref();
   return child;
 }
 
-function startIiiBin(iiiBin: string, configPath: string): boolean {
+function startIiiBin(
+  iiiBin: string,
+  configPath: string,
+  options: StartEngineOptions = {},
+): boolean {
   const s = p.spinner();
   s.start(`Starting iii-engine: ${iiiBin}`);
+  spawnEngineBackground(iiiBin, ["--config", configPath], "iii-engine", options);
   writeEngineState({ kind: "native", configPath, binPath: iiiBin });
-  spawnEngineBackground(iiiBin, ["--config", configPath], "iii-engine");
   s.stop("iii-engine process started");
   return true;
 }
@@ -884,7 +959,7 @@ function pickCompatibleIii(candidates: Array<string | null | undefined>): string
   return null;
 }
 
-async function startEngine(): Promise<boolean> {
+async function startEngine(options: StartEngineOptions = {}): Promise<boolean> {
   const configPath = findIiiConfig();
   const pathIii = whichBinary("iii");
   vlog(`iii binary: ${pathIii ?? "(not on PATH)"}, config: ${configPath || "(not found)"}`);
@@ -902,7 +977,7 @@ async function startEngine(): Promise<boolean> {
       p.log.info(`Using iii at: ${iiiBin} (v${IIPINNED_VERSION})`);
       process.env["PATH"] = `${dirname(iiiBin)}${PATH_DELIMITER}${process.env["PATH"] ?? ""}`;
     }
-    return startIiiBin(iiiBin, configPath);
+    return startIiiBin(iiiBin, configPath, options);
   }
 
   if (pathIii && !iiiBin) {
@@ -989,7 +1064,7 @@ async function startEngine(): Promise<boolean> {
     if (result.ok && result.binPath) {
       process.env["PATH"] = `${dirname(result.binPath)}${PATH_DELIMITER}${process.env["PATH"] ?? ""}`;
       iiiBin = result.binPath;
-      return startIiiBin(iiiBin, configPath);
+      return startIiiBin(iiiBin, configPath, options);
     }
     if (dockerBin && composeFile && interactive) {
       const fallback = await p.confirm({
@@ -1135,6 +1210,116 @@ function printReadyHint(consoleState: IiiConsoleState): void {
   process.stdout.write(`\nTry: ${demoCommand}\n`);
 }
 
+let nativeEngineSupervisionEnabled = false;
+let nativeEngineRestartTimer: NodeJS.Timeout | null = null;
+let nativeEngineRestartInProgress = false;
+let nativeEngineUnexpectedExitTimes: number[] = [];
+
+function logEngineSupervisor(message: string, level: "info" | "warn" | "error" = "info"): void {
+  if (level === "error") {
+    p.log.error(message);
+  } else if (level === "warn") {
+    p.log.warn(message);
+  } else {
+    p.log.info(message);
+  }
+}
+
+function scheduleNativeEngineRestart(reason: string): void {
+  if (!nativeEngineSupervisionEnabled) return;
+  if (nativeEngineRestartTimer || nativeEngineRestartInProgress) {
+    logEngineSupervisor(
+      `iii-engine restart already pending; latest unexpected exit: ${reason}`,
+      "warn",
+    );
+    return;
+  }
+
+  const decision = planEngineRestart(nativeEngineUnexpectedExitTimes, Date.now());
+  nativeEngineUnexpectedExitTimes = decision.recentExits;
+
+  if (decision.action === "exhausted") {
+    logEngineSupervisor(
+      `iii-engine exited unexpectedly too often (${decision.maxAttempts} exits within ${Math.round(
+        decision.windowMs / 1000,
+      )}s); stopping agentmemory instead of reconnecting forever.`,
+      "error",
+    );
+    clearWorkerPidfile();
+    process.exit(1);
+  }
+
+  logEngineSupervisor(
+    `iii-engine exited unexpectedly (${reason}); restarting in ${decision.delayMs}ms (attempt ${decision.attempt}/${decision.maxAttempts}).`,
+    "warn",
+  );
+
+  nativeEngineRestartTimer = setTimeout(() => {
+    nativeEngineRestartTimer = null;
+    void restartNativeEngineAfterExit(decision.attempt);
+  }, decision.delayMs);
+}
+
+async function restartNativeEngineAfterExit(attempt: number): Promise<void> {
+  nativeEngineRestartInProgress = true;
+  let retryReason: string | null = null;
+  let failedRestartChild: NativeEngineChildRef | null = null;
+  let stoppedFailedRestartChild = true;
+
+  try {
+    if (await isEngineRunning()) {
+      const workerReady = await waitForAgentmemoryReady(15000);
+      if (workerReady) {
+        logEngineSupervisor(
+          "iii-engine and agentmemory worker are reachable again; restart skipped.",
+        );
+        return;
+      }
+      retryReason = `iii-engine is reachable, but agentmemory worker did not become ready within 15s`;
+      logEngineSupervisor(retryReason, "error");
+    } else {
+      const beforeGeneration = nativeEngineChildGeneration;
+      const started = await startEngine({ onUnexpectedExit: scheduleNativeEngineRestart });
+      failedRestartChild =
+        currentNativeEngineChild && currentNativeEngineChild.generation > beforeGeneration
+          ? currentNativeEngineChild
+          : null;
+
+      if (!started) {
+        retryReason = `restart attempt ${attempt} could not start iii-engine`;
+        logEngineSupervisor(retryReason, "error");
+      } else if (!(await waitForEngine(15000))) {
+        retryReason = `restart attempt ${attempt} did not become ready within 15s`;
+        logEngineSupervisor(retryReason, "error");
+      } else if (!(await waitForAgentmemoryReady(15000))) {
+        retryReason =
+          `restart attempt ${attempt} engine became ready, but agentmemory worker did not become ready within 15s`;
+        logEngineSupervisor(retryReason, "error");
+      } else {
+        logEngineSupervisor(`iii-engine restarted successfully on attempt ${attempt}.`);
+        failedRestartChild = null;
+      }
+    }
+  } finally {
+    if (retryReason) {
+      stoppedFailedRestartChild = await stopNativeEngineChild(failedRestartChild, retryReason);
+    }
+    nativeEngineRestartInProgress = false;
+  }
+
+  if (retryReason) {
+    if (!stoppedFailedRestartChild) {
+      logEngineSupervisor(
+        "Failed iii-engine restart child could not be stopped; stopping agentmemory instead of creating overlapping engines.",
+        "error",
+      );
+      clearWorkerPidfile();
+      process.exit(1);
+    }
+    scheduleNativeEngineRestart(retryReason);
+  }
+}
+
 async function main() {
   setupServerLogTee();
 
@@ -1205,7 +1390,7 @@ async function main() {
     return;
   }
 
-  const started = await startEngine();
+  const started = await startEngine({ onUnexpectedExit: scheduleNativeEngineRestart });
   if (!started) {
     p.log.error("Could not start iii-engine.");
     const lines = installInstructions();
@@ -1269,6 +1454,7 @@ async function main() {
   }
 
   s.stop("iii-engine is ready");
+  nativeEngineSupervisionEnabled = true;
   await import("./index.js");
   if (await waitForAgentmemoryReady(15000)) {
     const consoleState = await ensureIiiConsole();
