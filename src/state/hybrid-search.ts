@@ -16,6 +16,13 @@ import {
 } from "../functions/graph-retrieval.js";
 import { extractEntitiesFromQuery } from "../functions/query-expansion.js";
 import { rerank } from "./reranker.js";
+import {
+  type TemporalDecayParams,
+  DEFAULT_TEMPORAL_DECAY,
+  applyTemporalDecay,
+  effectiveTimestampMs,
+} from "../functions/temporal-decay.js";
+import { type AccessLog } from "../functions/access-tracker.js";
 
 const RRF_K = 60;
 
@@ -31,6 +38,7 @@ export class HybridSearch {
     private vectorWeight = 0.6,
     private graphWeight = 0.3,
     private rerankEnabled = process.env.RERANK_ENABLED === "true",
+    private decayParams: TemporalDecayParams = DEFAULT_TEMPORAL_DECAY,
   ) {
     this.graphRetrieval = new GraphRetrieval(kv);
   }
@@ -225,18 +233,64 @@ export class HybridSearch {
     const diversified = this.diversifyBySession(combined, retrievalDepth);
     const enriched = await this.enrichResults(diversified, retrievalDepth);
 
-    if (this.rerankEnabled && enriched.length > 1) {
+    // Temporal decay reweight. Applied after enrichment (where each result
+    // carries its observation timestamp + importance) and before rerank, so
+    // recency acts as a retrieval prior that shapes which hits enter the
+    // rerank window; the cross-encoder then refines precision within it.
+    // No-op when disabled — guarded inside applyDecayReweight.
+    const decayed = await this.applyDecayReweight(enriched);
+
+    if (this.rerankEnabled && decayed.length > 1) {
       try {
-        const head = enriched.slice(0, rerankWindow);
-        const tail = enriched.slice(rerankWindow);
+        const head = decayed.slice(0, rerankWindow);
+        const tail = decayed.slice(rerankWindow);
         const reranked = await rerank(query, head, rerankWindow);
         return reranked.concat(tail).slice(0, limit);
       } catch {
-        return enriched.slice(0, limit);
+        return decayed.slice(0, limit);
       }
     }
 
-    return enriched.slice(0, limit);
+    return decayed.slice(0, limit);
+  }
+
+  // Multiply each result's combinedScore by its temporal-decay factor and
+  // re-sort. Recency is measured from the later of the observation's
+  // timestamp and its last-access time (reinforcement refreshes recency),
+  // so frequently-recalled memories age from their last touch. A single
+  // batched access-log read keeps this to one extra KV round-trip per query
+  // when enabled, and the whole method short-circuits when it isn't.
+  private async applyDecayReweight(
+    results: HybridSearchResult[],
+  ): Promise<HybridSearchResult[]> {
+    if (!this.decayParams.enabled || results.length === 0) return results;
+
+    const now = Date.now();
+    const accessLogs = await Promise.all(
+      results.map((r) =>
+        this.kv
+          .get<AccessLog>(KV.accessLog, r.observation.id)
+          .catch(() => null),
+      ),
+    );
+
+    const reweighted = results.map((r, i) => {
+      const lastAt = accessLogs[i]?.lastAt || undefined;
+      const effectiveTs = effectiveTimestampMs(
+        r.observation.timestamp,
+        lastAt,
+      );
+      const combinedScore = applyTemporalDecay(
+        r.combinedScore,
+        { effectiveTimestampMs: effectiveTs, importance: r.observation.importance },
+        this.decayParams,
+        now,
+      );
+      return { ...r, combinedScore };
+    });
+
+    reweighted.sort((a, b) => b.combinedScore - a.combinedScore);
+    return reweighted;
   }
 
   private diversifyBySession(
