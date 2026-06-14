@@ -38,16 +38,18 @@ Intended verification:
 - `~/.agentmemory/engine-state.json` and `iii.pid` are absent; `worker.pid` remains.
 - `~/.agentmemory/logs/server.log` is empty and unchanged from Jun 13; the global build containing persistent logging was updated at Jun 14 14:37, after the 14:00 restart.
 - macOS Unified Logs show `iii[95070]` FSEvents errors around 14:21 but no diagnostic crash report for `iii` or `node`.
+- Follow-up incident at 17:01:50 is now reconstructed from `~/.agentmemory/logs/server.log`: iii reload detected a config change and tried to reload `/Users/A1538552/_projects/_tools/agentmemory/dist/iii-config.yaml`; the file was missing, so reload failed with `Config file not found` and iii-engine exited with code 1. That path is volatile because `npm run build` cleans `dist/` before copying `iii-config.yaml` back.
 
 ## Feature / Verification Matrix
 
 | Change | Verification | Status | Evidence |
 | --- | --- | --- | --- |
 | Diagnose runtime failure mode | Terminal paste, ports, pid/state files, Unified Logs | done | Engine gone; worker reconnect loop |
-| Native engine exit supervision | Targeted tests | done | `npm test -- test/engine-supervisor.test.ts test/cli-server-log.test.ts` passed, 18 tests |
+| Native engine exit supervision | Targeted tests | done | `npm test -- test/engine-supervisor.test.ts test/cli-server-log.test.ts` passed, 19 tests |
 | Build/type safety | `npm run build` | done | Passed with existing tsdown/Rolldown warnings |
-| Full regression suite | `npm test` | done | First full run had unrelated transient timeouts; failing files then passed individually/as a group, and rerun passed: 143 files, 1678 tests |
-| Runtime security scan | Semgrep default registry and Codex Security diff scan | done | Semgrep passed repo-wide plus targeted untracked TS files; Codex Security diff scan found 0 reportable findings |
+| Full regression suite | `npm test` | done | A concurrent full run had unrelated timeout/fake-timer failures; the seven failed files then passed as a group, and a standalone rerun passed: 143 files, 1679 tests |
+| Runtime security scan | Semgrep default registry and Codex Security diff scan | done | Semgrep passed targeted changed files and repo-wide; Codex Security diff scan found 0 reportable findings at `/tmp/codex-security-scans/agentmemory/e916237c549a_20260614T172847+0200` |
+| Stable reload config path | Targeted CLI log/config test, build, full tests | done | Package-root bundled `iii-config.yaml` now wins before volatile `dist/iii-config.yaml` while env/cwd/home overrides remain first; `dist/cli.mjs` order was inspected after build |
 
 ## Progress
 
@@ -58,9 +60,13 @@ Intended verification:
 - 2026-06-14: Focused code review found the restart history was cleared after successful restart; fixed so repeated crash-after-ready exits still exhaust within the restart window.
 - 2026-06-14: Adversarial review found restart success only checked the engine root and failed attempts could overlap child processes; fixed by requiring `/agentmemory/livez`, generation-guarding native child cleanup, and stopping failed restart children before rescheduling.
 - 2026-06-14: Final verification rerun: targeted tests, full tests, build, Semgrep, and Codex Security diff scan passed on the current diff.
+- 2026-06-14: New crash log identified a concrete root cause: running iii-engine used `dist/iii-config.yaml` as its watched config, and a local build removed `dist/` long enough for iii reload to fail fatally. Fixed by preferring the stable package-root config path over the volatile dist copy.
+- 2026-06-14: Prep-merge reviews accepted the patch; focused review's minor test-gap was addressed by asserting `AGENTMEMORY_III_CONFIG` remains first in the config precedence chain.
 
 ## Final Review Notes
 
 - Acceptance criteria met.
 - Remaining caveat: the attached 14:00 run cannot be reconstructed from `~/.agentmemory/logs/server.log` because the global build containing the persistent log tee was updated at 14:37; the terminal paste and system logs are the available evidence for that incident.
+- Follow-up caveat resolved for the 17:01 run: persistent logs captured the reload failure and missing `dist/iii-config.yaml`.
+- Runtime caveat: the currently running daemon is not restarted by this task; it will use the fixed package-root config path after it is started with this CLI build.
 - No REST/MCP API, schema, auth, or dependency changes.

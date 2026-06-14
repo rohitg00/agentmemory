@@ -65,6 +65,22 @@ describe("CLI server log persistence", () => {
     expect(body).toMatch(/writeServerLog\(chunk\)/);
   });
 
+  it("uses the package-root bundled iii config before the volatile dist copy", () => {
+    const body = functionBody(cliSource(), "findIiiConfig");
+    const envAt = body.indexOf('process.env["AGENTMEMORY_III_CONFIG"]');
+    const cwdAt = body.indexOf('join(process.cwd(), "iii-config.yaml")');
+    const homeAt = body.indexOf('join(homedir(), ".agentmemory", "iii-config.yaml")');
+    const packageRootAt = body.indexOf('join(__dirname, "..", "iii-config.yaml")');
+    const distAt = body.indexOf('join(__dirname, "iii-config.yaml")');
+
+    expect(envAt).toBeGreaterThanOrEqual(0);
+    expect(cwdAt).toBeGreaterThanOrEqual(0);
+    expect(cwdAt).toBeGreaterThan(envAt);
+    expect(homeAt).toBeGreaterThan(cwdAt);
+    expect(packageRootAt).toBeGreaterThan(homeAt);
+    expect(distAt).toBeGreaterThan(packageRootAt);
+  });
+
   it("logs every engine child exit and supervises only unexpected native exits", () => {
     const body = functionBody(cliSource(), "spawnEngineBackground");
     expect(body).toContain("formatEngineExit(code, signal)");
