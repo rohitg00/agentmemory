@@ -23,6 +23,7 @@
     "migrate": "node dist/functions/migrate.js",
     "lint": "eslint \"src/**/*.{ts,tsx,js,mjs}\" \"test/**/*.ts\" \"scripts/**/*.ts\" \"benchmark/**/*.ts\" \"eval/**/*.ts\" \"integrations/pi/**/*.ts\"",
     "coverage": "vitest run --coverage --exclude test/integration.test.ts",
+    "coverage:cli-hooks": "vitest run --coverage --config vitest.cli-hooks.config.ts",
     "test": "vitest run --exclude test/integration.test.ts",
     "test:watch": "vitest --exclude test/integration.test.ts",
     "test:integration": "vitest run test/integration.test.ts",

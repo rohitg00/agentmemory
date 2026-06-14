@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import cliHooksConfig from "../vitest.cli-hooks.config";
 import vitestConfig from "../vitest.config";
 
 type PackageJson = {
@@ -42,6 +43,9 @@ describe("root quality gates", () => {
     expect(pkg.scripts?.coverage).toBe(
       "vitest run --coverage --exclude test/integration.test.ts",
     );
+    expect(pkg.scripts?.["coverage:cli-hooks"]).toBe(
+      "vitest run --coverage --config vitest.cli-hooks.config.ts",
+    );
   });
 
   it("pins the root lint and coverage dev tools", () => {
@@ -76,6 +80,33 @@ describe("root quality gates", () => {
       functions: 20,
       branches: 15,
       statements: 20,
+    });
+  });
+
+  it("enforces scoped CLI/hooks/connect coverage thresholds", () => {
+    const testConfig = (cliHooksConfig as RootVitestConfig).test;
+    const coverage = testConfig?.coverage;
+
+    expect(testConfig?.testTimeout).toBe(10_000);
+    expect(coverage?.provider).toBe("v8");
+    expect(coverage?.all).toBe(true);
+    expect(coverage?.include).toEqual([
+      "src/cli/ready-hint.ts",
+      "src/cli/remove-plan.ts",
+      "src/cli/connect/codex-hooks.ts",
+      "src/cli/connect/copilot-cli.ts",
+      "src/cli/connect/opencode.ts",
+      "src/cli/connect/util.ts",
+      "src/hooks/_http.ts",
+      "src/hooks/_project.ts",
+      "src/hooks/sdk-guard.ts",
+    ]);
+    expect(coverage?.reportsDirectory).toBe("coverage/cli-hooks");
+    expect(coverage?.thresholds).toEqual({
+      lines: 80,
+      functions: 80,
+      branches: 80,
+      statements: 80,
     });
   });
 
