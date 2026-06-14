@@ -95,7 +95,7 @@ async function callAgentMemory<T>(
   const url = `${baseUrl}/agentmemory/${pathname.replace(/^\/+/, "")}`;
   const headers: Record<string, string> = {};
   const secret = process.env.AGENTMEMORY_SECRET;
-  guardPlaintextBearerAuth(baseUrl, secret);
+  if (!guardPlaintextBearerAuth(baseUrl, secret)) return null;
   if (options?.body !== undefined) headers["Content-Type"] = "application/json";
   if (secret) headers.Authorization = `Bearer ${secret}`;
 

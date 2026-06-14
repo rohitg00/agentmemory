@@ -95,13 +95,14 @@ function plaintextBearerAuthMessage(baseUrl) {
 export function createPlaintextBearerAuthGuard(warn, env) {
   let warned = false;
   return function guardPlaintextBearerAuth(baseUrl, secret) {
-    if (!usesPlaintextBearerAuth(baseUrl, secret)) return;
+    if (!usesPlaintextBearerAuth(baseUrl, secret)) return true;
     const message = plaintextBearerAuthMessage(baseUrl);
     if ((env || process.env).AGENTMEMORY_REQUIRE_HTTPS === "1") throw new Error(message);
     if (!warned) {
       warned = true;
       warn(message);
     }
+    return false;
   };
 }
 
@@ -118,7 +119,7 @@ function createClient(cfg, api) {
   }
 
   async function postJson(path, payload) {
-    guardPlaintextBearerAuth(baseUrl, secret);
+    if (!guardPlaintextBearerAuth(baseUrl, secret)) return null;
     const headers = { "Content-Type": "application/json" };
     if (secret) headers.Authorization = `Bearer ${secret}`;
     try {

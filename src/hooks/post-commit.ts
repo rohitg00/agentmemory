@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { authHeaders, guardedFetch } from "./_http.js";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
@@ -14,12 +15,6 @@ function isSdkChildContext(payload: unknown): boolean {
 const REST_URL = process.env["AGENTMEMORY_URL"] || "http://localhost:3111";
 const SECRET = process.env["AGENTMEMORY_SECRET"] || "";
 const TIMEOUT_MS = 1500;
-
-function authHeaders(): Record<string, string> {
-  const h: Record<string, string> = { "Content-Type": "application/json" };
-  if (SECRET) h["Authorization"] = `Bearer ${SECRET}`;
-  return h;
-}
 
 async function git(args: string[], cwd: string): Promise<string | null> {
   try {
@@ -84,9 +79,9 @@ async function main() {
   };
 
   try {
-    await fetch(`${REST_URL}/agentmemory/session/commit`, {
+    await guardedFetch(REST_URL, "/agentmemory/session/commit", SECRET, {
       method: "POST",
-      headers: authHeaders(),
+      headers: authHeaders(SECRET),
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });

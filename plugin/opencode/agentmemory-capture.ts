@@ -7,6 +7,43 @@ const MAX_STASHED_FILES = 20;
 
 const DEBUG = process.env.OPENCODE_AGENTMEMORY_DEBUG === "1";
 const SECRET = process.env.AGENTMEMORY_SECRET || "";
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
+
+function normalizedHostname(hostname: string): string {
+  return hostname.replace(/^\[|\]$/g, "").toLowerCase();
+}
+
+function usesPlaintextBearerAuth(baseUrl: string, secret?: string): boolean {
+  if (!secret) return false;
+  try {
+    const parsed = new URL(baseUrl);
+    return parsed.protocol === "http:" && !LOOPBACK_HOSTS.has(normalizedHostname(parsed.hostname));
+  } catch {
+    return false;
+  }
+}
+
+function plaintextBearerAuthMessage(baseUrl: string): string {
+  return `agentmemory: AGENTMEMORY_SECRET is configured for plaintext HTTP to ${baseUrl}. Bearer tokens and memory payloads can be observed on the network; use HTTPS or an SSH tunnel.`;
+}
+
+function createPlaintextBearerAuthGuard(
+  warn: (message: string) => void = (message) => console.warn(message),
+): (baseUrl: string, secret?: string) => boolean {
+  let warned = false;
+  return (baseUrl, secret) => {
+    if (!usesPlaintextBearerAuth(baseUrl, secret)) return true;
+    const message = plaintextBearerAuthMessage(baseUrl);
+    if (process.env.AGENTMEMORY_REQUIRE_HTTPS === "1") throw new Error(message);
+    if (!warned) {
+      warned = true;
+      warn(message);
+    }
+    return false;
+  };
+}
+
+const guardPlaintextBearerAuth = createPlaintextBearerAuthGuard();
 
 function authHeaders(): Record<string, string> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
@@ -15,6 +52,7 @@ function authHeaders(): Record<string, string> {
 }
 
 async function post(path: string, body: Record<string, unknown>, timeoutMs = 5000): Promise<void> {
+  if (!guardPlaintextBearerAuth(API, SECRET)) return;
   try {
     await fetch(`${API}/agentmemory${path}`, {
       method: "POST",
@@ -28,6 +66,7 @@ async function post(path: string, body: Record<string, unknown>, timeoutMs = 500
 }
 
 async function postJson(path: string, body: Record<string, unknown>): Promise<unknown | null> {
+  if (!guardPlaintextBearerAuth(API, SECRET)) return null;
   try {
     const res = await fetch(`${API}/agentmemory${path}`, {
       method: "POST",

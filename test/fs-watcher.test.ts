@@ -15,6 +15,7 @@ function wait(ms: number): Promise<void> {
 describe("FilesystemWatcher", { retry: 2 }, () => {
   let root: string;
   const originalFetch = globalThis.fetch;
+  const originalEnv = { ...process.env };
   let captured: Array<{ url: string; body: unknown; headers: Record<string, string> }>;
 
   beforeEach(() => {
@@ -35,6 +36,7 @@ describe("FilesystemWatcher", { retry: 2 }, () => {
 
   afterEach(() => {
     globalThis.fetch = originalFetch;
+    process.env = { ...originalEnv };
     try {
       rmSync(root, { recursive: true, force: true });
     } catch {}
@@ -157,6 +159,40 @@ describe("FilesystemWatcher", { retry: 2 }, () => {
     expect(captured).toHaveLength(1);
     const headers = captured[0].headers as Record<string, string>;
     expect(headers.authorization).toBe("Bearer shhh");
+  });
+
+  it("warns once and skips non-loopback HTTP with a bearer secret", async () => {
+    const warn = vi.fn();
+    const w = new FilesystemWatcher({
+      roots: [root],
+      baseUrl: "http://remote.example:3111",
+      secret: "shhh",
+      logger: { info: vi.fn(), warn, error: vi.fn() },
+    });
+
+    await w.emit({ hookType: "post_tool_use", sessionId: "s1" });
+    await w.emit({ hookType: "post_tool_use", sessionId: "s1" });
+
+    expect(captured).toHaveLength(0);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0][0]).toContain("plaintext HTTP to http://remote.example:3111");
+  });
+
+  it("strict HTTPS mode rejects before filesystem watcher emits", async () => {
+    process.env["AGENTMEMORY_REQUIRE_HTTPS"] = "1";
+    const warn = vi.fn();
+    const w = new FilesystemWatcher({
+      roots: [root],
+      baseUrl: "http://remote.example:3111",
+      secret: "shhh",
+      logger: { info: vi.fn(), warn, error: vi.fn() },
+    });
+
+    await expect(
+      w.emit({ hookType: "post_tool_use", sessionId: "s1" }),
+    ).rejects.toThrow(/plaintext HTTP to http:\/\/remote\.example:3111/);
+    expect(captured).toHaveLength(0);
+    expect(warn).not.toHaveBeenCalled();
   });
 
   it("redacts sensitive dotenv preview values before sending observations", async () => {

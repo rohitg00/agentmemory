@@ -72,6 +72,48 @@ function isSdkChildContext(payload) {
 const INJECT_CONTEXT = process.env["AGENTMEMORY_INJECT_CONTEXT"] === "true";
 const REST_URL = process.env["AGENTMEMORY_URL"] || "http://localhost:3111";
 const SECRET = process.env["AGENTMEMORY_SECRET"] || "";
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
+function normalizedHostname(hostname) {
+	return hostname.replace(/^\[|\]$/g, "").toLowerCase();
+}
+function usesPlaintextBearerAuth(baseUrl, secret) {
+	if (!secret) return false;
+	try {
+		const parsed = new URL(baseUrl);
+		return parsed.protocol === "http:" && !LOOPBACK_HOSTS.has(normalizedHostname(parsed.hostname));
+	} catch {
+		return false;
+	}
+}
+function plaintextBearerAuthMessage(baseUrl) {
+	return `agentmemory: AGENTMEMORY_SECRET is configured for plaintext HTTP to ${baseUrl}. Bearer tokens and memory payloads can be observed on the network; use HTTPS or an SSH tunnel.`;
+}
+function createPlaintextBearerAuthGuard(warn = (message) => console.warn(message)) {
+	let warned = false;
+	return (baseUrl, secret) => {
+		if (!usesPlaintextBearerAuth(baseUrl, secret)) return true;
+		const message = plaintextBearerAuthMessage(baseUrl);
+		if (process.env["AGENTMEMORY_REQUIRE_HTTPS"] === "1") throw new Error(message);
+		if (!warned) {
+			warned = true;
+			warn(message);
+		}
+		return false;
+	};
+}
+const guardPlaintextBearerAuth = createPlaintextBearerAuthGuard((message) => process.stderr.write(`${message}\n`));
+function canSendAuthenticatedRequest(baseUrl, secret) {
+	try {
+		return guardPlaintextBearerAuth(baseUrl, secret);
+	} catch (err) {
+		process.stderr.write(`${err instanceof Error ? err.message : String(err)}\n`);
+		return false;
+	}
+}
+function guardedFetch(baseUrl, path, secret, init) {
+	if (!canSendAuthenticatedRequest(baseUrl, secret)) return void 0;
+	return fetch(`${baseUrl}${path}`, init);
+}
 const INJECT_TIMEOUT_MS = 1500;
 const REGISTER_TIMEOUT_MS = 800;
 function authHeaders() {
@@ -92,7 +134,6 @@ async function main() {
 	const sessionId = data.session_id || data.sessionId || `ses_${Date.now().toString(36)}`;
 	const cwd = resolveCwd(data.cwd);
 	const project = resolveProject(data.cwd);
-	const url = `${REST_URL}/agentmemory/session/start`;
 	const init = {
 		method: "POST",
 		headers: authHeaders(),
@@ -103,17 +144,18 @@ async function main() {
 		})
 	};
 	if (!INJECT_CONTEXT) {
-		fetch(url, {
+		guardedFetch(REST_URL, "/agentmemory/session/start", SECRET, {
 			...init,
 			signal: AbortSignal.timeout(REGISTER_TIMEOUT_MS)
-		}).catch(() => {});
+		})?.catch(() => {});
 		return;
 	}
 	try {
-		const res = await fetch(url, {
+		const res = await guardedFetch(REST_URL, "/agentmemory/session/start", SECRET, {
 			...init,
 			signal: AbortSignal.timeout(INJECT_TIMEOUT_MS)
 		});
+		if (!res) return;
 		if (res.ok) {
 			const result = await res.json();
 			if (result.context) process.stdout.write(result.context);

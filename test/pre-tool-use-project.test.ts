@@ -52,7 +52,7 @@ function runHook(payload: unknown, url: string): Promise<{ code: number | null; 
   return new Promise((resolve, reject) => {
     const child = spawn(
       process.execPath,
-      ["--import", "tsx", "src/hooks/pre-tool-use.ts"],
+      ["plugin/scripts/pre-tool-use.mjs"],
       {
         cwd: process.cwd(),
         env: childEnv(url),

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { authHeaders, guardedFetch } from "./_http.js";
 
 function isSdkChildContext(payload: unknown): boolean {
   if (process.env["AGENTMEMORY_SDK_CHILD"] === "1") return true;
@@ -8,12 +9,6 @@ function isSdkChildContext(payload: unknown): boolean {
 
 const REST_URL = process.env["AGENTMEMORY_URL"] || "http://localhost:3111";
 const SECRET = process.env["AGENTMEMORY_SECRET"] || "";
-
-function authHeaders(): Record<string, string> {
-  const h: Record<string, string> = { "Content-Type": "application/json" };
-  if (SECRET) h["Authorization"] = `Bearer ${SECRET}`;
-  return h;
-}
 
 async function main() {
   let input = "";
@@ -32,35 +27,35 @@ async function main() {
 
   const sessionId = ((data.session_id || data.sessionId) as string) || "unknown";
 
-  fetch(`${REST_URL}/agentmemory/session/end`, {
+  guardedFetch(REST_URL, "/agentmemory/session/end", SECRET, {
     method: "POST",
-    headers: authHeaders(),
+    headers: authHeaders(SECRET),
     body: JSON.stringify({ sessionId }),
     signal: AbortSignal.timeout(30000),
-  }).catch(() => {});
+  })?.catch(() => {});
 
   if (process.env["CONSOLIDATION_ENABLED"] === "true") {
-    fetch(`${REST_URL}/agentmemory/crystals/auto`, {
+    guardedFetch(REST_URL, "/agentmemory/crystals/auto", SECRET, {
       method: "POST",
-      headers: authHeaders(),
+      headers: authHeaders(SECRET),
       body: JSON.stringify({ olderThanDays: 0 }),
       signal: AbortSignal.timeout(60000),
-    }).catch(() => {});
+    })?.catch(() => {});
 
-    fetch(`${REST_URL}/agentmemory/consolidate-pipeline`, {
+    guardedFetch(REST_URL, "/agentmemory/consolidate-pipeline", SECRET, {
       method: "POST",
-      headers: authHeaders(),
+      headers: authHeaders(SECRET),
       body: JSON.stringify({ tier: "all", force: true }),
       signal: AbortSignal.timeout(120000),
-    }).catch(() => {});
+    })?.catch(() => {});
   }
 
   if (process.env["CLAUDE_MEMORY_BRIDGE"] === "true") {
-    fetch(`${REST_URL}/agentmemory/claude-bridge/sync`, {
+    guardedFetch(REST_URL, "/agentmemory/claude-bridge/sync", SECRET, {
       method: "POST",
-      headers: authHeaders(),
+      headers: authHeaders(SECRET),
       signal: AbortSignal.timeout(30000),
-    }).catch(() => {});
+    })?.catch(() => {});
   }
 
   setTimeout(() => process.exit(0), 1500).unref();
