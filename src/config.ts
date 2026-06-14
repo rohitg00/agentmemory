@@ -18,7 +18,13 @@ function safeParseInt(value: string | undefined, fallback: number): number {
 
 function safeParseFloat(value: string | undefined, fallback: number): number {
   if (!value) return fallback;
-  const parsed = parseFloat(value);
+  // Strict parse: parseFloat would accept trailing junk ("0.2oops" -> 0.2),
+  // silently honoring a malformed env value instead of falling back. Number()
+  // rejects partial matches. Guard the empty-after-trim case too, since
+  // Number("") is 0 (not NaN) and a whitespace-only value should fall back.
+  const normalized = value.trim();
+  if (!normalized) return fallback;
+  const parsed = Number(normalized);
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
