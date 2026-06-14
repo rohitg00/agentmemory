@@ -30,6 +30,8 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
     delete process.env["AGENTMEMORY_URL"];
     delete process.env["AGENTMEMORY_SECRET"];
     delete process.env["AGENTMEMORY_FORCE_PROXY"];
+    delete process.env["AGENTMEMORY_REQUIRE_SERVER"];
+    delete process.env["AGENTMEMORY_DISABLE_LOCAL_FALLBACK"];
     delete process.env["AGENTMEMORY_REQUIRE_HTTPS"];
   });
 
@@ -215,6 +217,63 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
     expect(out.results[0].content).toBe("local only");
   });
 
+  it("AGENTMEMORY_REQUIRE_SERVER=1 rejects sessions/export/recall when livez is unreachable", async () => {
+    process.env["AGENTMEMORY_REQUIRE_SERVER"] = "1";
+    const fetchFn = installFetch((url) => {
+      if (url.endsWith("/agentmemory/livez")) {
+        throw new Error("ECONNREFUSED");
+      }
+      return new Response("unexpected", { status: 200 });
+    });
+    const localKv = new InMemoryKV(undefined);
+    await localKv.set("mem:sessions", "ses_local", { id: "ses_local" });
+    await localKv.set("mem:memories", "mem_local", {
+      id: "mem_local",
+      content: "local fallback must not be reported",
+    });
+
+    const requireServerError =
+      /agentmemory server unreachable at http:\/\/localhost:3111; start npx @agentmemory\/agentmemory/;
+    await expect(handleToolCall("memory_sessions", {}, localKv)).rejects.toThrow(
+      requireServerError,
+    );
+    resetHandleForTests();
+    await expect(handleToolCall("memory_export", {}, localKv)).rejects.toThrow(
+      requireServerError,
+    );
+    resetHandleForTests();
+    await expect(
+      handleToolCall("memory_recall", { query: "local" }, localKv),
+    ).rejects.toThrow(requireServerError);
+
+    expect(fetchFn).toHaveBeenCalledTimes(3);
+    expect(
+      fetchFn.mock.calls.every(([url]) =>
+        String(url).endsWith("/agentmemory/livez"),
+      ),
+    ).toBe(true);
+  });
+
+  it("AGENTMEMORY_REQUIRE_SERVER=1 rejects proxy call failures instead of local fallback", async () => {
+    process.env["AGENTMEMORY_REQUIRE_SERVER"] = "1";
+    installFetch((url) => {
+      if (url.endsWith("/agentmemory/livez")) return new Response("ok", { status: 200 });
+      if (url.includes("/agentmemory/sessions")) {
+        return new Response("down", {
+          status: 503,
+          statusText: "Service Unavailable",
+        });
+      }
+      return new Response("unexpected", { status: 200 });
+    });
+    const localKv = new InMemoryKV(undefined);
+    await localKv.set("mem:sessions", "ses_local", { id: "ses_local" });
+
+    await expect(handleToolCall("memory_sessions", {}, localKv)).rejects.toThrow(
+      /agentmemory server unreachable at http:\/\/localhost:3111; start npx @agentmemory\/agentmemory.*proxy call failed for memory_sessions: GET \/agentmemory\/sessions\?limit=20 -> 503 Service Unavailable/s,
+    );
+  });
+
   it("invalidates the handle on proxy failure, so the next call re-probes", async () => {
     let probeCount = 0;
     let serverUp = true;
@@ -320,6 +379,36 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
     }
   });
 
+  it("AGENTMEMORY_FORCE_PROXY=1 alone still preserves compatible local fallback after proxy failure", async () => {
+    process.env["AGENTMEMORY_FORCE_PROXY"] = "1";
+    const calls: string[] = [];
+    installFetch((url) => {
+      calls.push(url);
+      if (url.endsWith("/agentmemory/livez")) {
+        throw new Error("probe should be skipped");
+      }
+      if (url.endsWith("/agentmemory/remember")) {
+        return new Response("server down", {
+          status: 503,
+          statusText: "Service Unavailable",
+        });
+      }
+      return new Response("not found", { status: 404 });
+    });
+    const localKv = new InMemoryKV(undefined);
+
+    const result = await handleToolCall(
+      "memory_save",
+      { content: "force-proxy fallback" },
+      localKv,
+    );
+
+    const saved = JSON.parse(result.content[0].text);
+    expect(saved.saved).toMatch(/^mem_/);
+    expect(calls.some((u) => u.endsWith("/agentmemory/livez"))).toBe(false);
+    expect(calls.some((u) => u.endsWith("/agentmemory/remember"))).toBe(true);
+  });
+
   it("falls back to local mode without probing non-loopback HTTP with a bearer secret", async () => {
     process.env["AGENTMEMORY_URL"] = "http://remote.example:3111";
     process.env["AGENTMEMORY_SECRET"] = "s3cret";
@@ -412,6 +501,25 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
     const core = await handleToolsList();
     expect((core.tools as unknown[]).length).toBe(7);
     delete process.env["AGENTMEMORY_TOOLS"];
+  });
+
+  it("AGENTMEMORY_REQUIRE_SERVER=1 rejects tools/list proxy failures instead of local tool list", async () => {
+    process.env["AGENTMEMORY_REQUIRE_SERVER"] = "1";
+    const { handleToolsList } = await import("../src/mcp/standalone.js");
+    installFetch((url) => {
+      if (url.endsWith("/agentmemory/livez")) return new Response("ok", { status: 200 });
+      if (url.endsWith("/agentmemory/mcp/tools")) {
+        return new Response("down", {
+          status: 503,
+          statusText: "Service Unavailable",
+        });
+      }
+      return new Response("unexpected", { status: 200 });
+    });
+
+    await expect(handleToolsList()).rejects.toThrow(
+      /agentmemory server unreachable at http:\/\/localhost:3111; start npx @agentmemory\/agentmemory.*tools\/list proxy failed: GET \/agentmemory\/mcp\/tools -> 503 Service Unavailable/s,
+    );
   });
 
   it("AGENTMEMORY_PROBE_TIMEOUT_MS overrides the default probe timeout", async () => {
