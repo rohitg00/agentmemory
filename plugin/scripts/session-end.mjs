@@ -1,13 +1,10 @@
 #!/usr/bin/env node
-//#region src/hooks/session-end.ts
-function isSdkChildContext(payload) {
-	if (process.env["AGENTMEMORY_SDK_CHILD"] === "1") return true;
-	if (!payload || typeof payload !== "object") return false;
-	return payload.entrypoint === "sdk-ts";
-}
-const REST_URL = process.env["AGENTMEMORY_URL"] || "http://localhost:3111";
-const SECRET = process.env["AGENTMEMORY_SECRET"] || "";
-const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
+//#region src/security/plaintext-bearer-auth.ts
+const LOOPBACK_HOSTS = new Set([
+	"localhost",
+	"127.0.0.1",
+	"::1"
+]);
 function normalizedHostname(hostname) {
 	return hostname.replace(/^\[|\]$/g, "").toLowerCase();
 }
@@ -23,12 +20,12 @@ function usesPlaintextBearerAuth(baseUrl, secret) {
 function plaintextBearerAuthMessage(baseUrl) {
 	return `agentmemory: AGENTMEMORY_SECRET is configured for plaintext HTTP to ${baseUrl}. Bearer tokens and memory payloads can be observed on the network; use HTTPS or an SSH tunnel.`;
 }
-function createPlaintextBearerAuthGuard(warn = (message) => console.warn(message)) {
+function createPlaintextBearerAuthGuard(warn = (message) => console.warn(message), env) {
 	let warned = false;
 	return (baseUrl, secret) => {
 		if (!usesPlaintextBearerAuth(baseUrl, secret)) return true;
 		const message = plaintextBearerAuthMessage(baseUrl);
-		if (process.env["AGENTMEMORY_REQUIRE_HTTPS"] === "1") throw new Error(message);
+		if ((env || process.env).AGENTMEMORY_REQUIRE_HTTPS === "1") throw new Error(message);
 		if (!warned) {
 			warned = true;
 			warn(message);
@@ -36,7 +33,14 @@ function createPlaintextBearerAuthGuard(warn = (message) => console.warn(message
 		return false;
 	};
 }
+//#endregion
+//#region src/hooks/_http.ts
 const guardPlaintextBearerAuth = createPlaintextBearerAuthGuard((message) => process.stderr.write(`${message}\n`));
+function authHeaders(secret) {
+	const h = { "Content-Type": "application/json" };
+	if (secret) h["Authorization"] = `Bearer ${secret}`;
+	return h;
+}
 function canSendAuthenticatedRequest(baseUrl, secret) {
 	try {
 		return guardPlaintextBearerAuth(baseUrl, secret);
@@ -49,11 +53,15 @@ function guardedFetch(baseUrl, path, secret, init) {
 	if (!canSendAuthenticatedRequest(baseUrl, secret)) return void 0;
 	return fetch(`${baseUrl}${path}`, init);
 }
-function authHeaders() {
-	const h = { "Content-Type": "application/json" };
-	if (SECRET) h["Authorization"] = `Bearer ${SECRET}`;
-	return h;
+//#endregion
+//#region src/hooks/session-end.ts
+function isSdkChildContext(payload) {
+	if (process.env["AGENTMEMORY_SDK_CHILD"] === "1") return true;
+	if (!payload || typeof payload !== "object") return false;
+	return payload.entrypoint === "sdk-ts";
 }
+const REST_URL = process.env["AGENTMEMORY_URL"] || "http://localhost:3111";
+const SECRET = process.env["AGENTMEMORY_SECRET"] || "";
 async function main() {
 	let input = "";
 	for await (const chunk of process.stdin) input += chunk;
@@ -67,20 +75,20 @@ async function main() {
 	const sessionId = data.session_id || data.sessionId || "unknown";
 	guardedFetch(REST_URL, "/agentmemory/session/end", SECRET, {
 		method: "POST",
-		headers: authHeaders(),
+		headers: authHeaders(SECRET),
 		body: JSON.stringify({ sessionId }),
 		signal: AbortSignal.timeout(3e4)
 	})?.catch(() => {});
 	if (process.env["CONSOLIDATION_ENABLED"] === "true") {
 		guardedFetch(REST_URL, "/agentmemory/crystals/auto", SECRET, {
 			method: "POST",
-			headers: authHeaders(),
+			headers: authHeaders(SECRET),
 			body: JSON.stringify({ olderThanDays: 0 }),
 			signal: AbortSignal.timeout(6e4)
 		})?.catch(() => {});
 		guardedFetch(REST_URL, "/agentmemory/consolidate-pipeline", SECRET, {
 			method: "POST",
-			headers: authHeaders(),
+			headers: authHeaders(SECRET),
 			body: JSON.stringify({
 				tier: "all",
 				force: true
@@ -90,7 +98,7 @@ async function main() {
 	}
 	if (process.env["CLAUDE_MEMORY_BRIDGE"] === "true") guardedFetch(REST_URL, "/agentmemory/claude-bridge/sync", SECRET, {
 		method: "POST",
-		headers: authHeaders(),
+		headers: authHeaders(SECRET),
 		signal: AbortSignal.timeout(3e4)
 	})?.catch(() => {});
 	setTimeout(() => process.exit(0), 1500).unref();
