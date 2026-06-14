@@ -155,6 +155,13 @@ function filterByProject<T extends { project?: string }>(
   return items.filter((item) => item.project === filter.project);
 }
 
+function parseOptionalNonNegativeInt(value: unknown): number | undefined | null {
+  const parsed = parseOptionalFiniteNumber(value);
+  if (parsed === undefined || parsed === null) return parsed;
+  if (!Number.isInteger(parsed) || parsed < 0) return null;
+  return parsed;
+}
+
 export function registerApiTriggers(
   sdk: ISdk,
   kv: StateKV,
@@ -1634,12 +1641,18 @@ export function registerApiTriggers(
   });
 
   sdk.registerFunction("api::consolidate-pipeline",
-    async (req: ApiRequest<{ tier?: string }>): Promise<Response> => {
+    async (req: ApiRequest<{ tier?: string; project?: string }>): Promise<Response> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
       try {
-        const result = await sdk.trigger({ function_id: "mem::consolidate-pipeline", payload: req.body || {},
-         });
+        const body = req.body || {};
+        const payload: { tier?: string; project?: string } = {};
+        if (typeof body.tier === "string") payload.tier = body.tier;
+        if (typeof body.project === "string") payload.project = body.project;
+        const result = await sdk.trigger({
+          function_id: "mem::consolidate-pipeline",
+          payload,
+        });
         return { status_code: 200, body: result };
       } catch {
         return consolidationDisabledResponse();
@@ -2992,11 +3005,23 @@ export function registerApiTriggers(
   });
   sdk.registerTrigger({ type: "http", function_id: "api::crystal-list", config: { api_path: "/agentmemory/crystals", http_method: "GET" } });
 
-  sdk.registerFunction("api::auto-crystallize",  async (req: ApiRequest) => {
+  sdk.registerFunction("api::auto-crystallize",  async (req: ApiRequest<{ olderThanDays?: number; project?: string; dryRun?: boolean }>) => {
     const denied = checkAuth(req, secret);
     if (denied) return denied;
-    const body = req.body as Record<string, unknown>;
-    const result = await sdk.trigger({ function_id: "mem::auto-crystallize", payload: body || {} });
+    if (!isConsolidationEnabled()) return consolidationDisabledResponse();
+    const body = req.body || {};
+    const olderThanDays = parseOptionalNonNegativeInt(body.olderThanDays);
+    if (olderThanDays === null) {
+      return {
+        status_code: 400,
+        body: { error: "invalid numeric parameter: olderThanDays" },
+      };
+    }
+    const payload: { olderThanDays?: number; project?: string; dryRun?: boolean } = {};
+    if (olderThanDays !== undefined) payload.olderThanDays = olderThanDays;
+    if (typeof body.project === "string") payload.project = body.project;
+    if (typeof body.dryRun === "boolean") payload.dryRun = body.dryRun;
+    const result = await sdk.trigger({ function_id: "mem::auto-crystallize", payload });
     return { status_code: 200, body: result };
   });
   sdk.registerTrigger({ type: "http", function_id: "api::auto-crystallize", config: { api_path: "/agentmemory/crystals/auto", http_method: "POST" } });

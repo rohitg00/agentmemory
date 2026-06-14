@@ -4,7 +4,12 @@ vi.mock("../src/logger.js", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
+vi.mock("../src/config.js", () => ({
+  isConsolidationEnabled: vi.fn(() => true),
+}));
+
 import { registerCrystallizeFunction } from "../src/functions/crystallize.js";
+import { isConsolidationEnabled } from "../src/config.js";
 import type { Action, Crystal, MemoryProvider } from "../src/types.js";
 
 function mockKV() {
@@ -81,6 +86,7 @@ describe("Crystallize Functions", () => {
     sdk = mockSdk();
     kv = mockKV();
     provider = mockProvider();
+    vi.mocked(isConsolidationEnabled).mockReturnValue(true);
     registerCrystallizeFunction(sdk as never, kv as never, provider);
   });
 
@@ -353,6 +359,26 @@ describe("Crystallize Functions", () => {
   });
 
   describe("mem::auto-crystallize", () => {
+    it("skips automatic crystallization when consolidation is disabled", async () => {
+      vi.mocked(isConsolidationEnabled).mockReturnValue(false);
+      const action = makeAction({
+        id: "act_disabled",
+        status: "done",
+      });
+      await kv.set("mem:actions", action.id, action);
+
+      const result = (await sdk.trigger("mem::auto-crystallize", {})) as {
+        success: boolean;
+        skipped?: boolean;
+        reason?: string;
+      };
+
+      expect(result.success).toBe(false);
+      expect(result.skipped).toBe(true);
+      expect(result.reason).toContain("CONSOLIDATION_ENABLED");
+      expect(provider.summarize).not.toHaveBeenCalled();
+    });
+
     it("returns group summaries in dryRun mode", async () => {
       const action = makeAction({
         id: "act_dry",
