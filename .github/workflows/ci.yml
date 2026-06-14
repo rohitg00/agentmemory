@@ -79,3 +79,4 @@ jobs:
           name: coverage-report
           path: coverage/
           if-no-files-found: error
+          retention-days: 7

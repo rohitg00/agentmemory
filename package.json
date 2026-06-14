@@ -21,7 +21,7 @@
     "dev": "tsx src/index.ts",
     "start": "node dist/cli.mjs",
     "migrate": "node dist/functions/migrate.js",
-    "lint": "eslint \"src/**/*.{ts,tsx,js,mjs}\" \"test/**/*.ts\" \"scripts/**/*.ts\" \"benchmark/**/*.ts\" \"eval/**/*.ts\" \"integrations/pi/**/*.ts\"",
+    "lint": "eslint eslint.config.js vitest.config.ts \"src/**/*.{ts,tsx,js,mjs}\" \"test/**/*.ts\" \"scripts/**/*.ts\" \"benchmark/**/*.ts\" \"eval/**/*.ts\" \"integrations/pi/**/*.ts\"",
     "coverage": "vitest run --coverage --exclude test/integration.test.ts",
     "test": "vitest run --exclude test/integration.test.ts",
     "test:watch": "vitest --exclude test/integration.test.ts",
