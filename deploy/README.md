@@ -70,8 +70,8 @@ following to your platform's environment variables (Fly:
 | `ANTHROPIC_API_KEY`       | LLM-backed compression + summarization                   |
 | `GEMINI_API_KEY`          | LLM provider alternative                                 |
 | `OPENROUTER_API_KEY`      | LLM provider alternative                                 |
-| `OPENAI_API_KEY`          | Embedding provider (text-embedding-3-small by default)   |
-| `VOYAGE_API_KEY`          | Embedding provider alternative                           |
+| `EMBEDDING_PROVIDER=openai` + `OPENAI_API_KEY` | OpenAI embeddings (`text-embedding-3-small` by default) |
+| `EMBEDDING_PROVIDER=voyage` + `VOYAGE_API_KEY` | Voyage embedding provider alternative                  |
 | `AGENTMEMORY_AUTO_COMPRESS=true` | Run LLM compression on every observation batch    |
 | `AGENTMEMORY_INJECT_CONTEXT=true` | Inject recalled memories back into agent prompts |
 

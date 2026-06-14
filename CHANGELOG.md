@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Security
+
+- Remote text embeddings now require an explicit `EMBEDDING_PROVIDER` opt-in. Generic provider keys such as `GEMINI_API_KEY`, `OPENAI_API_KEY`, `VOYAGE_API_KEY`, `COHERE_API_KEY`, or `OPENROUTER_API_KEY` no longer enable embeddings by themselves. Existing key-only installs that want vector search must set `EMBEDDING_PROVIDER=gemini|openai|voyage|cohere|openrouter`, or `EMBEDDING_PROVIDER=local` for on-device embeddings.
+
 ## [0.9.27] — 2026-06-07
 
 Wave release closing several breaking regressions reported against v0.9.26, plus an agent-scope isolation security fix, an iii version-pin audit fix, and a benchmark scorecard correction. No breaking changes; drop-in upgrade.
