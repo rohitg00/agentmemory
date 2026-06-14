@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import {
   createMessageParser,
+  createStdioTransport,
   formatResponse,
   processLine,
   type JsonRpcResponse,
@@ -271,5 +272,134 @@ describe("stdio framing", () => {
 
     expect(header).toBe(`Content-Length: ${Buffer.byteLength(body, "utf8")}\r\n\r\n`);
     expect(JSON.parse(body)).toEqual(response);
+  });
+
+  it("parses LF-delimited Content-Length frames and skips leading blank bytes", () => {
+    const messages: string[] = [];
+    const parser = createMessageParser((message) => messages.push(message));
+    const body = JSON.stringify({ jsonrpc: "2.0", id: "lf", method: "ping" });
+    const framed = `\r\nContent-Length: ${Buffer.byteLength(body, "utf8")}\n\n${body}`;
+
+    parser.push(Buffer.from(framed, "utf8"));
+
+    expect(messages).toEqual([body]);
+    expect(parser.isFramed()).toBe(true);
+  });
+
+  it("logs and skips malformed Content-Length frames without losing later newline JSON", () => {
+    const messages: string[] = [];
+    const errors: string[] = [];
+    const parser = createMessageParser(
+      (message) => messages.push(message),
+      (message) => errors.push(message),
+    );
+    const later = JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list" });
+
+    parser.push(`Content-Length: nope\n\n${later}\n`);
+
+    expect(errors).toEqual(["[mcp-transport] missing Content-Length header\n"]);
+    expect(messages).toEqual([later]);
+    expect(parser.isFramed()).toBe(false);
+  });
+
+  it("waits for the full framed body across multiple chunks", () => {
+    const messages: string[] = [];
+    const parser = createMessageParser((message) => messages.push(message));
+    const body = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize" });
+    const framed = `Content-Length: ${Buffer.byteLength(body, "utf8")}\r\n\r\n${body}`;
+
+    parser.push(framed.slice(0, framed.length - 3));
+    expect(messages).toEqual([]);
+
+    parser.push(framed.slice(framed.length - 3));
+    expect(messages).toEqual([body]);
+  });
+});
+
+describe("createStdioTransport", () => {
+  it("starts, writes newline responses, and unregisters the stdin listener", async () => {
+    let dataListener: ((chunk: Buffer) => void) | undefined;
+    const onSpy = vi.spyOn(process.stdin, "on").mockImplementation((event, listener) => {
+      if (event === "data") dataListener = listener as (chunk: Buffer) => void;
+      return process.stdin;
+    });
+    const offSpy = vi.spyOn(process.stdin, "off").mockReturnValue(process.stdin);
+    const writes: Array<string | Buffer> = [];
+    const writeSpy = vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+      writes.push(chunk as string | Buffer);
+      return true;
+    });
+
+    try {
+      const transport = createStdioTransport(async (method, params) => ({
+        method,
+        params,
+      }));
+      transport.start();
+      dataListener?.(
+        Buffer.from(
+          `${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "ping", params: { ok: true } })}\n`,
+        ),
+      );
+
+      await vi.waitFor(() => {
+        expect(writes).toHaveLength(1);
+      });
+      expect(JSON.parse(writes[0].toString())).toEqual({
+        jsonrpc: "2.0",
+        id: 1,
+        result: { method: "ping", params: { ok: true } },
+      });
+
+      transport.stop();
+      expect(onSpy).toHaveBeenCalledWith("data", expect.any(Function));
+      expect(offSpy).toHaveBeenCalledWith("data", expect.any(Function));
+    } finally {
+      onSpy.mockRestore();
+      offSpy.mockRestore();
+      writeSpy.mockRestore();
+    }
+  });
+
+  it("writes framed responses after receiving framed input", async () => {
+    let dataListener: ((chunk: Buffer) => void) | undefined;
+    const onSpy = vi.spyOn(process.stdin, "on").mockImplementation((event, listener) => {
+      if (event === "data") dataListener = listener as (chunk: Buffer) => void;
+      return process.stdin;
+    });
+    const offSpy = vi.spyOn(process.stdin, "off").mockReturnValue(process.stdin);
+    const writes: Array<string | Buffer> = [];
+    const writeSpy = vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+      writes.push(chunk as string | Buffer);
+      return true;
+    });
+
+    try {
+      const transport = createStdioTransport(async () => ({ ok: true }));
+      transport.start();
+      const body = JSON.stringify({ jsonrpc: "2.0", id: "framed", method: "ping" });
+      dataListener?.(
+        Buffer.from(`Content-Length: ${Buffer.byteLength(body, "utf8")}\r\n\r\n${body}`),
+      );
+
+      await vi.waitFor(() => {
+        expect(writes).toHaveLength(2);
+      });
+      const header = writes[0].toString();
+      const responseBody = writes[1].toString();
+      expect(header).toBe(
+        `Content-Length: ${Buffer.byteLength(responseBody, "utf8")}\r\n\r\n`,
+      );
+      expect(JSON.parse(responseBody)).toEqual({
+        jsonrpc: "2.0",
+        id: "framed",
+        result: { ok: true },
+      });
+      transport.stop();
+    } finally {
+      onSpy.mockRestore();
+      offSpy.mockRestore();
+      writeSpy.mockRestore();
+    }
   });
 });
