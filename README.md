@@ -801,7 +801,7 @@ the HMAC secret, then drops privileges from `root` to `node` via
 
 Render's one-click deploy button requires `render.yaml` at the repository root, which we deliberately keep clean. Use the Render Blueprint flow documented in [`deploy/render/`](./deploy/render/README.md) to point at the in-repo blueprint manually.
 
-Full setup details (HMAC capture, viewer SSH tunnel, rotation, backup,
+Full setup details (HMAC retrieval, viewer SSH tunnel, rotation, backup,
 cost floors) live in [`deploy/`](./deploy/README.md):
 
 - [`deploy/fly`](./deploy/fly/README.md) — single machine with

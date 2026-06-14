@@ -85,10 +85,10 @@ if [ ! -s "$HMAC_FILE" ]; then
   chown "$RUN_AS" "$HMAC_FILE"
   echo "================================================================"
   echo "agentmemory: generated HMAC secret on first boot"
-  echo "AGENTMEMORY_SECRET=$SECRET"
-  echo "Copy this value now. It will not be printed again."
+  echo "agentmemory: secret value intentionally not logged"
   echo "Stored at: $HMAC_FILE (chmod 600)"
-  echo "To rotate: delete $HMAC_FILE on the persistent volume and restart."
+  echo "Retrieve it with the platform shell before configuring clients."
+  echo "To rotate: delete $HMAC_FILE on the persistent volume, restart, then retrieve the new value from the same file."
   echo "================================================================"
 fi
 

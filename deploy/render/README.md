@@ -2,8 +2,8 @@
 
 This template runs agentmemory on a single Render Web Service with a
 persistent disk mounted at `/data`. The HMAC secret is generated on
-first boot and persisted to the disk — you capture it from the deploy
-logs exactly once.
+first boot and persisted to the disk. Retrieve it through Render SSH;
+the secret value is not printed to deploy logs.
 
 ## What you get
 
@@ -15,7 +15,7 @@ logs exactly once.
 - Render healthcheck against `/agentmemory/livez`
 - The HMAC bearer secret is generated on first boot inside the
   container and persisted to `/data/.hmac` (chmod 600); the operator
-  copies it from the deploy logs once.
+  retrieves it through an authenticated Render SSH session.
 
 ## Deploy via Render Blueprint
 
@@ -44,12 +44,18 @@ To pin a specific `@agentmemory/agentmemory` release, set the
 `AGENTMEMORY_VERSION` build arg in the service's *Environment* tab
 before the next deploy. Same for `III_VERSION`.
 
-## Capture the HMAC secret
+## Retrieve the HMAC secret
 
-After the first deploy succeeds, open the service's **Logs** tab and
-search for `AGENTMEMORY_SECRET=`. You will see exactly one line of the
-form `AGENTMEMORY_SECRET=<64 hex chars>`. Copy it into your client
-environment. The secret is never printed again on subsequent boots.
+After the first deploy succeeds, enable SSH for the service and read the
+persisted secret from the mounted disk:
+
+```bash
+ssh srv-XXYYZZ@ssh.<region>.render.com "cat /data/.hmac"
+```
+
+Copy the returned value into your client environment. Do not paste it
+into tickets, screenshots, or shared terminals. If an older deployment
+exposed this value in retained logs, rotate it after upgrading.
 
 ## Verify the deployment
 
@@ -81,8 +87,8 @@ exit
 # trigger a redeploy from the Render dashboard or via the Deploy Hook
 ```
 
-After the redeploy, grab the new secret from the logs and update every
-client. Old tokens stop working immediately.
+After the redeploy, read the new value from `/data/.hmac` through SSH
+and update every client. Old tokens stop working immediately.
 
 ## Back up `/data`
 
