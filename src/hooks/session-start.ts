@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-import { resolveProject } from "./_project.js";
+import { authHeaders, guardedFetch } from "./_http.js";
+import { resolveCwd, resolveProject } from "./_project.js";
 
 // Inlined from ./sdk-guard so each hook bundles to a single self-contained
 // .mjs (matches the pattern used by every other hook entry in tsdown.config).
@@ -28,12 +29,6 @@ const SECRET = process.env["AGENTMEMORY_SECRET"] || "";
 const INJECT_TIMEOUT_MS = 1500;
 const REGISTER_TIMEOUT_MS = 800;
 
-function authHeaders(): Record<string, string> {
-  const h: Record<string, string> = { "Content-Type": "application/json" };
-  if (SECRET) h["Authorization"] = `Bearer ${SECRET}`;
-  return h;
-}
-
 async function main() {
   let input = "";
   for await (const chunk of process.stdin) {
@@ -52,13 +47,12 @@ async function main() {
   const sessionId =
     ((data.session_id || data.sessionId) as string) ||
     `ses_${Date.now().toString(36)}`;
-  const cwd = (data.cwd as string) || process.cwd();
-  const project = resolveProject(data.cwd as string | undefined);
+  const cwd = resolveCwd(data.cwd);
+  const project = resolveProject(data.cwd);
 
-  const url = `${REST_URL}/agentmemory/session/start`;
   const init: RequestInit = {
     method: "POST",
-    headers: authHeaders(),
+    headers: authHeaders(SECRET),
     body: JSON.stringify({ sessionId, project, cwd }),
   };
 
@@ -66,18 +60,19 @@ async function main() {
     // Pure telemetry path: caller never reads the response, so don't
     // block on it. AbortSignal.timeout caps the wait the event loop
     // gives the pending socket before exit.
-    fetch(url, {
+    guardedFetch(REST_URL, "/agentmemory/session/start", SECRET, {
       ...init,
       signal: AbortSignal.timeout(REGISTER_TIMEOUT_MS),
-    }).catch(() => {});
+    })?.catch(() => {});
     return;
   }
 
   try {
-    const res = await fetch(url, {
+    const res = await guardedFetch(REST_URL, "/agentmemory/session/start", SECRET, {
       ...init,
       signal: AbortSignal.timeout(INJECT_TIMEOUT_MS),
     });
+    if (!res) return;
     if (res.ok) {
       const result = (await res.json()) as { context?: string };
       if (result.context) {

@@ -72,6 +72,16 @@ cp plugin/opencode/commands/remember.md ~/.config/opencode/commands/
 
 Restart OpenCode or open a new session. The plugin auto-captures everything.
 
+## Configuration
+
+| Variable | Default | Description |
+|---|---|---|
+| `AGENTMEMORY_URL` | `http://localhost:3111` | agentmemory server URL |
+| `AGENTMEMORY_SECRET` | (none) | Bearer token for protected instances |
+| `AGENTMEMORY_REQUIRE_HTTPS` | (off) | Refuse to send a bearer token over plaintext HTTP to a non-loopback host. With this off, the plugin warns once and skips the unsafe request; with it set to `1`, request handling fails before any request is sent. |
+
+When `AGENTMEMORY_SECRET` is set for a remote server, use `https://` or a loopback tunnel. Plain `http://` is allowed only for `localhost`, `127.0.0.1`, or `::1`.
+
 ## What gets captured
 
 ### Session lifecycle

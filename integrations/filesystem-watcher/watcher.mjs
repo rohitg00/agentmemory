@@ -31,6 +31,7 @@ const MAX_IGNORE_PATTERN_COUNT = 50;
 const MAX_PREVIEW_BYTES = 4096;
 const DEBOUNCE_MS = 500;
 const REDACTED = "[REDACTED]";
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
 const PEM_BEGIN_RE = /-----BEGIN [A-Z ]*PRIVATE KEY-----/;
 const PEM_END_RE = /-----END [A-Z ]*PRIVATE KEY-----/;
 const JWT_RE = /\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g;
@@ -118,6 +119,38 @@ function redactSensitivePreview(preview) {
   return redactPemBlocks(preview).split("\n").map(redactSensitiveLine).join("\n");
 }
 
+function normalizedHostname(hostname) {
+  return hostname.replace(/^\[|\]$/g, "").toLowerCase();
+}
+
+function usesPlaintextBearerAuth(baseUrl, secret) {
+  if (!secret) return false;
+  try {
+    const parsed = new URL(baseUrl);
+    return parsed.protocol === "http:" && !LOOPBACK_HOSTS.has(normalizedHostname(parsed.hostname));
+  } catch {
+    return false;
+  }
+}
+
+function plaintextBearerAuthMessage(baseUrl) {
+  return `agentmemory: AGENTMEMORY_SECRET is configured for plaintext HTTP to ${baseUrl}. Bearer tokens and memory payloads can be observed on the network; use HTTPS or an SSH tunnel.`;
+}
+
+function createPlaintextBearerAuthGuard(warn, env = process.env) {
+  let warned = false;
+  return (baseUrl, secret) => {
+    if (!usesPlaintextBearerAuth(baseUrl, secret)) return true;
+    const message = plaintextBearerAuthMessage(baseUrl);
+    if (env.AGENTMEMORY_REQUIRE_HTTPS === "1") throw new Error(message);
+    if (!warned) {
+      warned = true;
+      warn(message);
+    }
+    return false;
+  };
+}
+
 export class FilesystemWatcher {
   constructor(config = {}) {
     this.roots = (config.roots || []).map((r) => resolve(r));
@@ -132,6 +165,9 @@ export class FilesystemWatcher {
     this.ignore = [...DEFAULT_IGNORE, ...(config.ignorePatterns || [])];
     this.allowBinary = Boolean(config.allowBinary);
     this.logger = config.logger || console;
+    this.guardPlaintextBearerAuth = createPlaintextBearerAuthGuard((message) =>
+      this.logger.warn?.(message),
+    );
     this.watchers = [];
     this.pendingByPath = new Map();
   }
@@ -162,6 +198,7 @@ export class FilesystemWatcher {
   }
 
   async emit(event) {
+    if (!this.guardPlaintextBearerAuth(this.baseUrl, this.secret)) return;
     const headers = { "content-type": "application/json" };
     if (this.secret) headers.authorization = `Bearer ${this.secret}`;
     try {

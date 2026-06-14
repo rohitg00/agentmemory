@@ -53,12 +53,14 @@ describe("OpenClaw plaintext bearer guard", () => {
     expect(warn).not.toHaveBeenCalled();
   });
 
-  it("warns once for non-loopback HTTP with a bearer secret", async () => {
+  it("warns once and skips requests for non-loopback HTTP with a bearer secret", async () => {
+    const fetchMock = mockFetch();
     const { handlers, warn } = registerOpenClaw("http://remote.example:3111");
     await handlers.get("before_agent_start")?.({ prompt: "first" });
     await handlers.get("before_agent_start")?.({ prompt: "second" });
     expect(warn).toHaveBeenCalledTimes(1);
     expect(warn.mock.calls[0][0]).toContain("plaintext HTTP to http://remote.example:3111");
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("keeps HTTPS with a bearer secret silent", async () => {
@@ -81,15 +83,15 @@ describe("pi plaintext bearer guard", () => {
   it("keeps loopback HTTP silent", () => {
     const warn = vi.fn();
     const guard = createPlaintextBearerAuthGuard(warn, {});
-    guard("http://127.0.0.1:3111", "secret");
+    expect(guard("http://127.0.0.1:3111", "secret")).toBe(true);
     expect(warn).not.toHaveBeenCalled();
   });
 
-  it("warns once for non-loopback HTTP with a bearer secret", () => {
+  it("warns once and blocks non-loopback HTTP with a bearer secret", () => {
     const warn = vi.fn();
     const guard = createPlaintextBearerAuthGuard(warn, {});
-    guard("http://remote.example:3111", "secret");
-    guard("http://remote.example:3111", "secret");
+    expect(guard("http://remote.example:3111", "secret")).toBe(false);
+    expect(guard("http://remote.example:3111", "secret")).toBe(false);
     expect(warn).toHaveBeenCalledTimes(1);
     expect(warn.mock.calls[0][0]).toContain("plaintext HTTP to http://remote.example:3111");
   });
@@ -97,7 +99,7 @@ describe("pi plaintext bearer guard", () => {
   it("keeps HTTPS with a bearer secret silent", () => {
     const warn = vi.fn();
     const guard = createPlaintextBearerAuthGuard(warn, {});
-    guard("https://remote.example", "secret");
+    expect(guard("https://remote.example", "secret")).toBe(true);
     expect(warn).not.toHaveBeenCalled();
   });
 
@@ -115,15 +117,15 @@ describe("pi plaintext bearer guard", () => {
   it("treats IPv6 loopback ([::1]) as loopback (URL parser strips brackets)", () => {
     const warn = vi.fn();
     const guard = createPlaintextBearerAuthGuard(warn, {});
-    guard("http://[::1]:3111", "secret");
+    expect(guard("http://[::1]:3111", "secret")).toBe(true);
     expect(warn).not.toHaveBeenCalled();
   });
 
   it("warns for private LAN IPs — RFC1918 ranges are NOT loopback", () => {
     const warn = vi.fn();
     const guard = createPlaintextBearerAuthGuard(warn, {});
-    guard("http://192.168.1.50:3111", "secret");
-    guard("http://10.0.0.42:3111", "secret");
+    expect(guard("http://192.168.1.50:3111", "secret")).toBe(false);
+    expect(guard("http://10.0.0.42:3111", "secret")).toBe(false);
     expect(warn).toHaveBeenCalledTimes(1); // warn-once
     expect(warn.mock.calls[0][0]).toContain("plaintext HTTP to http://192.168.1.50:3111");
   });
@@ -131,16 +133,81 @@ describe("pi plaintext bearer guard", () => {
   it("does not warn when no secret is set — guard only fires when a bearer would actually be sent", () => {
     const warn = vi.fn();
     const guard = createPlaintextBearerAuthGuard(warn, {});
-    guard("http://remote.example:3111", "");
-    guard("http://remote.example:3111", undefined);
+    expect(guard("http://remote.example:3111", "")).toBe(true);
+    expect(guard("http://remote.example:3111", undefined)).toBe(true);
     expect(warn).not.toHaveBeenCalled();
   });
 
   it("treats hostnames that LOOK loopback but aren't (localhost.evil.com) as remote", () => {
     const warn = vi.fn();
     const guard = createPlaintextBearerAuthGuard(warn, {});
-    guard("http://localhost.evil.com:3111", "secret");
+    expect(guard("http://localhost.evil.com:3111", "secret")).toBe(false);
     expect(warn).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("OpenCode plaintext bearer guard", () => {
+  const originalFetch = globalThis.fetch;
+  const originalEnv = { ...process.env };
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    process.env = { ...originalEnv };
+    vi.resetModules();
+  });
+
+  async function loadOpenCodePlugin() {
+    vi.resetModules();
+    const mod = await import("../plugin/opencode/agentmemory-capture.ts");
+    return mod.AgentmemoryCapturePlugin as (ctx: {
+      worktree?: string;
+      project?: { id?: string };
+    }) => Promise<{
+      event: (input: { event: Record<string, unknown> }) => Promise<void>;
+    }>;
+  }
+
+  it("skips session capture for non-loopback HTTP with a bearer secret", async () => {
+    process.env = {
+      ...originalEnv,
+      AGENTMEMORY_URL: "http://remote.example:3111",
+      AGENTMEMORY_SECRET: "secret",
+    };
+    const fetchMock = mockFetch();
+    const pluginFactory = await loadOpenCodePlugin();
+    const plugin = await pluginFactory({ worktree: "/tmp/project" });
+
+    await plugin.event({
+      event: {
+        type: "session.created",
+        properties: { info: { id: "ses-1", title: "remote" } },
+      },
+    });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("allows loopback HTTP with a bearer secret", async () => {
+    process.env = {
+      ...originalEnv,
+      AGENTMEMORY_URL: "http://localhost:3111",
+      AGENTMEMORY_SECRET: "secret",
+    };
+    const fetchMock = mockFetch();
+    const pluginFactory = await loadOpenCodePlugin();
+    const plugin = await pluginFactory({ worktree: "/tmp/project" });
+
+    await plugin.event({
+      event: {
+        type: "session.created",
+        properties: { info: { id: "ses-1", title: "loopback" } },
+      },
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][1]?.headers).toMatchObject({
+      Authorization: "Bearer secret",
+    });
   });
 });
 
@@ -171,18 +238,18 @@ for key in ("AGENTMEMORY_SECRET", "AGENTMEMORY_URL", "AGENTMEMORY_REQUIRE_HTTPS"
 
 warnings = []
 mod._reset_plaintext_bearer_guard_for_tests()
-mod._check_plaintext_bearer_guard("http://localhost:3111", "secret", warnings.append)
+assert mod._check_plaintext_bearer_guard("http://localhost:3111", "secret", warnings.append) is True
 assert warnings == [], warnings
 
 mod._reset_plaintext_bearer_guard_for_tests()
-mod._check_plaintext_bearer_guard("http://remote.example:3111", "secret", warnings.append)
-mod._check_plaintext_bearer_guard("http://remote.example:3111", "secret", warnings.append)
+assert mod._check_plaintext_bearer_guard("http://remote.example:3111", "secret", warnings.append) is False
+assert mod._check_plaintext_bearer_guard("http://remote.example:3111", "secret", warnings.append) is False
 assert len(warnings) == 1, warnings
 assert "plaintext HTTP to http://remote.example:3111" in warnings[0], warnings
 
 warnings = []
 mod._reset_plaintext_bearer_guard_for_tests()
-mod._check_plaintext_bearer_guard("https://remote.example", "secret", warnings.append)
+assert mod._check_plaintext_bearer_guard("https://remote.example", "secret", warnings.append) is True
 assert warnings == [], warnings
 
 calls = []
@@ -191,6 +258,11 @@ def fake_urlopen(req, timeout=0):
     raise AssertionError("request should not be sent")
 
 mod.urlopen = fake_urlopen
+mod._reset_plaintext_bearer_guard_for_tests()
+result = mod._api("http://remote.example:3111", "health", method="GET", secret="secret")
+assert result is None, result
+assert calls == [], calls
+
 os.environ["AGENTMEMORY_REQUIRE_HTTPS"] = "1"
 try:
     mod._api("http://remote.example:3111", "health", method="GET", secret="secret")

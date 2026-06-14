@@ -28,6 +28,9 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
     resetHandleForTests();
     globalThis.fetch = originalFetch;
     delete process.env["AGENTMEMORY_URL"];
+    delete process.env["AGENTMEMORY_SECRET"];
+    delete process.env["AGENTMEMORY_FORCE_PROXY"];
+    delete process.env["AGENTMEMORY_REQUIRE_HTTPS"];
   });
 
   it("proxies memory_sessions to GET /agentmemory/sessions when server is up", async () => {
@@ -315,6 +318,50 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
     } finally {
       delete process.env["AGENTMEMORY_FORCE_PROXY"];
     }
+  });
+
+  it("falls back to local mode without probing non-loopback HTTP with a bearer secret", async () => {
+    process.env["AGENTMEMORY_URL"] = "http://remote.example:3111";
+    process.env["AGENTMEMORY_SECRET"] = "s3cret";
+    const fetchFn = installFetch(() => {
+      throw new Error("request should not be sent");
+    });
+    const localKv = new InMemoryKV(undefined);
+
+    await handleToolCall("memory_save", { content: "local blocked proxy" }, localKv);
+    const res = await handleToolCall("memory_recall", { query: "blocked" }, localKv);
+    const body = JSON.parse(res.content[0].text);
+
+    expect(fetchFn).not.toHaveBeenCalled();
+    expect(body.results[0].content).toBe("local blocked proxy");
+  });
+
+  it("does not let AGENTMEMORY_FORCE_PROXY bypass the plaintext bearer guard", async () => {
+    process.env["AGENTMEMORY_URL"] = "http://remote.example:3111";
+    process.env["AGENTMEMORY_SECRET"] = "s3cret";
+    process.env["AGENTMEMORY_FORCE_PROXY"] = "1";
+    const fetchFn = installFetch(() => {
+      throw new Error("request should not be sent");
+    });
+    const localKv = new InMemoryKV(undefined);
+
+    await handleToolCall("memory_save", { content: "force still blocked" }, localKv);
+
+    expect(fetchFn).not.toHaveBeenCalled();
+  });
+
+  it("strict HTTPS mode rejects before probing non-loopback HTTP with a bearer secret", async () => {
+    process.env["AGENTMEMORY_URL"] = "http://remote.example:3111";
+    process.env["AGENTMEMORY_SECRET"] = "s3cret";
+    process.env["AGENTMEMORY_REQUIRE_HTTPS"] = "1";
+    const fetchFn = installFetch(() => {
+      throw new Error("request should not be sent");
+    });
+
+    await expect(handleToolCall("memory_sessions", {})).rejects.toThrow(
+      /plaintext HTTP to http:\/\/remote\.example:3111/,
+    );
+    expect(fetchFn).not.toHaveBeenCalled();
   });
 
   it("logs probe failure to stderr so sandboxed clients can diagnose silently dropped tools", async () => {

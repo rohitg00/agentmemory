@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { authHeaders, guardedFetch } from "./_http.js";
 import { resolveProject } from "./_project.js";
 
 function isSdkChildContext(payload: unknown): boolean {
@@ -26,12 +27,6 @@ const INJECT_CONTEXT = process.env["AGENTMEMORY_INJECT_CONTEXT"] === "true";
 
 const REST_URL = process.env["AGENTMEMORY_URL"] || "http://localhost:3111";
 const SECRET = process.env["AGENTMEMORY_SECRET"] || "";
-
-function authHeaders(): Record<string, string> {
-  const h: Record<string, string> = { "Content-Type": "application/json" };
-  if (SECRET) h["Authorization"] = `Bearer ${SECRET}`;
-  return h;
-}
 
 async function main() {
   // Default off: exit immediately so we don't even open stdin. This keeps
@@ -98,9 +93,9 @@ async function main() {
   const project = resolveProject(data.cwd as string | undefined);
 
   try {
-    const res = await fetch(`${REST_URL}/agentmemory/enrich`, {
+    const res = await guardedFetch(REST_URL, "/agentmemory/enrich", SECRET, {
       method: "POST",
-      headers: authHeaders(),
+      headers: authHeaders(SECRET),
       body: JSON.stringify({
         sessionId,
         files,
@@ -110,6 +105,7 @@ async function main() {
       }),
       signal: AbortSignal.timeout(2000),
     });
+    if (!res) return;
 
     if (res.ok) {
       const result = (await res.json()) as { context?: string };

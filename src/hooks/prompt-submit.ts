@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-import { resolveProject } from "./_project.js";
+import { authHeaders, guardedFetch } from "./_http.js";
+import { resolveCwd, resolveProject } from "./_project.js";
 
 function isSdkChildContext(payload: unknown): boolean {
   if (process.env["AGENTMEMORY_SDK_CHILD"] === "1") return true;
@@ -9,12 +10,6 @@ function isSdkChildContext(payload: unknown): boolean {
 
 const REST_URL = process.env["AGENTMEMORY_URL"] || "http://localhost:3111";
 const SECRET = process.env["AGENTMEMORY_SECRET"] || "";
-
-function authHeaders(): Record<string, string> {
-  const h: Record<string, string> = { "Content-Type": "application/json" };
-  if (SECRET) h["Authorization"] = `Bearer ${SECRET}`;
-  return h;
-}
 
 async function main() {
   let input = "";
@@ -33,19 +28,19 @@ async function main() {
 
   const sessionId = ((data.session_id || data.sessionId) as string) || "unknown";
 
-  fetch(`${REST_URL}/agentmemory/observe`, {
+  guardedFetch(REST_URL, "/agentmemory/observe", SECRET, {
     method: "POST",
-    headers: authHeaders(),
+    headers: authHeaders(SECRET),
     body: JSON.stringify({
       hookType: "prompt_submit",
       sessionId,
-      project: resolveProject(data.cwd as string | undefined),
-      cwd: (data.cwd as string | undefined) || process.cwd(),
+      project: resolveProject(data.cwd),
+      cwd: resolveCwd(data.cwd),
       timestamp: new Date().toISOString(),
       data: { prompt: data.prompt ?? data.userPrompt },
     }),
     signal: AbortSignal.timeout(3000),
-  }).catch(() => {});
+  })?.catch(() => {});
   setTimeout(() => process.exit(0), 500).unref();
 }
 

@@ -44,8 +44,11 @@ Requires Node.js **>=20 LTS**. Recursive `fs.watch` needs Node 19.1.0+ on Linux;
 | `AGENTMEMORY_FS_WATCH_ALLOW_BINARY` | `0` | `1` to include binary files in the preview read |
 | `AGENTMEMORY_URL` | `http://localhost:3111` | agentmemory server URL |
 | `AGENTMEMORY_SECRET` | — | Bearer token, required if the server has `AGENTMEMORY_SECRET` set |
+| `AGENTMEMORY_REQUIRE_HTTPS` | `0` | `1` to fail before sending a bearer token over non-loopback plaintext HTTP |
 | `AGENTMEMORY_PROJECT` | — | Optional project label attached to each observation |
 | `AGENTMEMORY_SESSION_ID` | — | Optional session id to attribute observations to |
+
+When `AGENTMEMORY_SECRET` is set, remote `http://` URLs are skipped by default so bearer tokens and file-change payloads are not sent over plaintext. Use `https://`, a loopback tunnel, or set `AGENTMEMORY_REQUIRE_HTTPS=1` to fail hard instead of warning once and skipping unsafe emits.
 
 ## Defaults
 

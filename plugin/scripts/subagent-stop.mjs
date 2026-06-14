@@ -50,12 +50,16 @@ function canonicalGitProject(cwd) {
 		return;
 	}
 }
+function resolveCwd(cwd) {
+	if (typeof cwd !== "string") return process.cwd();
+	return cwd.trim().length > 0 ? cwd : process.cwd();
+}
 function resolveProject(cwd) {
 	const explicitId = cleanEnv("AGENTMEMORY_PROJECT_ID");
 	if (explicitId) return explicitId;
 	const explicitName = cleanEnv("AGENTMEMORY_PROJECT_NAME");
 	if (explicitName) return explicitName;
-	const dir = cwd && cwd.trim() ? cwd : process.cwd();
+	const dir = resolveCwd(cwd);
 	return canonicalGitProject(dir) ?? basename(dir);
 }
 //#endregion
@@ -67,6 +71,48 @@ function isSdkChildContext(payload) {
 }
 const REST_URL = process.env["AGENTMEMORY_URL"] || "http://localhost:3111";
 const SECRET = process.env["AGENTMEMORY_SECRET"] || "";
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
+function normalizedHostname(hostname) {
+	return hostname.replace(/^\[|\]$/g, "").toLowerCase();
+}
+function usesPlaintextBearerAuth(baseUrl, secret) {
+	if (!secret) return false;
+	try {
+		const parsed = new URL(baseUrl);
+		return parsed.protocol === "http:" && !LOOPBACK_HOSTS.has(normalizedHostname(parsed.hostname));
+	} catch {
+		return false;
+	}
+}
+function plaintextBearerAuthMessage(baseUrl) {
+	return `agentmemory: AGENTMEMORY_SECRET is configured for plaintext HTTP to ${baseUrl}. Bearer tokens and memory payloads can be observed on the network; use HTTPS or an SSH tunnel.`;
+}
+function createPlaintextBearerAuthGuard(warn = (message) => console.warn(message)) {
+	let warned = false;
+	return (baseUrl, secret) => {
+		if (!usesPlaintextBearerAuth(baseUrl, secret)) return true;
+		const message = plaintextBearerAuthMessage(baseUrl);
+		if (process.env["AGENTMEMORY_REQUIRE_HTTPS"] === "1") throw new Error(message);
+		if (!warned) {
+			warned = true;
+			warn(message);
+		}
+		return false;
+	};
+}
+const guardPlaintextBearerAuth = createPlaintextBearerAuthGuard((message) => process.stderr.write(`${message}\n`));
+function canSendAuthenticatedRequest(baseUrl, secret) {
+	try {
+		return guardPlaintextBearerAuth(baseUrl, secret);
+	} catch (err) {
+		process.stderr.write(`${err instanceof Error ? err.message : String(err)}\n`);
+		return false;
+	}
+}
+function guardedFetch(baseUrl, path, secret, init) {
+	if (!canSendAuthenticatedRequest(baseUrl, secret)) return void 0;
+	return fetch(`${baseUrl}${path}`, init);
+}
 function authHeaders() {
 	const h = { "Content-Type": "application/json" };
 	if (SECRET) h["Authorization"] = `Bearer ${SECRET}`;
@@ -86,14 +132,14 @@ async function main() {
 	const agentId = data.agent_id || data.agentName;
 	const agentType = data.agent_type || data.agentDisplayName || data.agentName;
 	const lastMsg = typeof data.last_assistant_message === "string" ? data.last_assistant_message.slice(0, 4e3) : "";
-	fetch(`${REST_URL}/agentmemory/observe`, {
+	guardedFetch(REST_URL, "/agentmemory/observe", SECRET, {
 		method: "POST",
 		headers: authHeaders(),
 		body: JSON.stringify({
 			hookType: "subagent_stop",
 			sessionId,
 			project: resolveProject(data.cwd),
-			cwd: data.cwd || process.cwd(),
+			cwd: resolveCwd(data.cwd),
 			timestamp: (/* @__PURE__ */ new Date()).toISOString(),
 			data: {
 				agent_id: agentId,
@@ -102,7 +148,7 @@ async function main() {
 			}
 		}),
 		signal: AbortSignal.timeout(2e3)
-	}).catch(() => {});
+	})?.catch(() => {});
 	setTimeout(() => process.exit(0), 500).unref();
 }
 main();

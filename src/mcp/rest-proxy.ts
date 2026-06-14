@@ -1,7 +1,12 @@
+import { createPlaintextBearerAuthGuard } from "../security/plaintext-bearer-auth.js";
+
 const DEFAULT_URL = "http://localhost:3111";
 const DEFAULT_HEALTH_PROBE_TIMEOUT_MS = 2_000;
 const CALL_TIMEOUT_MS = 15_000;
 const LOCAL_MODE_TTL_MS = 30_000;
+const guardPlaintextBearerAuth = createPlaintextBearerAuthGuard((message) =>
+  process.stderr.write(`[@agentmemory/mcp] ${message}\n`),
+);
 
 function probeTimeoutMs(): number {
   const raw = process.env["AGENTMEMORY_PROBE_TIMEOUT_MS"];
@@ -49,9 +54,17 @@ function baseUrl(): string {
   return (resolveEnvOrEmpty("AGENTMEMORY_URL") || DEFAULT_URL).replace(/\/+$/, "");
 }
 
+function secret(): string {
+  return resolveEnvOrEmpty("AGENTMEMORY_SECRET");
+}
+
 function authHeader(): Record<string, string> {
-  const secret = resolveEnvOrEmpty("AGENTMEMORY_SECRET");
-  return secret ? { authorization: `Bearer ${secret}` } : {};
+  const sec = secret();
+  return sec ? { authorization: `Bearer ${sec}` } : {};
+}
+
+function proxyAllowed(url: string): boolean {
+  return guardPlaintextBearerAuth(url, secret());
 }
 
 /**
@@ -126,6 +139,12 @@ export async function resolveHandle(): Promise<Handle> {
   const url = baseUrl();
   const skipProbe = forceProxy();
   probeInFlight = (async () => {
+    if (!proxyAllowed(url)) {
+      const local: LocalHandle = { mode: "local" };
+      cached = local;
+      cachedAt = Date.now();
+      return local;
+    }
     const up = skipProbe ? true : await probe(url);
     if (skipProbe) {
       process.stderr.write(
@@ -137,6 +156,9 @@ export async function resolveHandle(): Promise<Handle> {
         mode: "proxy",
         baseUrl: url,
         call: async (path, init) => {
+          if (!proxyAllowed(url)) {
+            throw new Error(`Blocked plaintext bearer proxy request to ${url}`);
+          }
           const res = await fetch(`${url}${path}`, {
             ...init,
             headers: {

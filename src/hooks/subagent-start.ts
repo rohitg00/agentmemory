@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-import { resolveProject } from "./_project.js";
+import { authHeaders, guardedFetch } from "./_http.js";
+import { resolveCwd, resolveProject } from "./_project.js";
 
 // Inlined from ./sdk-guard so each hook bundles to a single self-contained
 // .mjs (matches the pattern used by every other hook entry in tsdown.config).
@@ -17,12 +18,6 @@ const SECRET = process.env["AGENTMEMORY_SECRET"] || "";
 // slow/unreachable server can't stack onto every concurrent subagent
 // startup (#221).
 const TIMEOUT_MS = 800;
-
-function authHeaders(): Record<string, string> {
-  const h: Record<string, string> = { "Content-Type": "application/json" };
-  if (SECRET) h["Authorization"] = `Bearer ${SECRET}`;
-  return h;
-}
 
 async function main() {
   let input = "";
@@ -43,14 +38,14 @@ async function main() {
   const agentId = data.agent_id || data.agentName;
   const agentType = data.agent_type || data.agentDisplayName || data.agentName;
 
-  fetch(`${REST_URL}/agentmemory/observe`, {
+  guardedFetch(REST_URL, "/agentmemory/observe", SECRET, {
     method: "POST",
-    headers: authHeaders(),
+    headers: authHeaders(SECRET),
     body: JSON.stringify({
       hookType: "subagent_start",
       sessionId,
-      project: resolveProject(data.cwd as string | undefined),
-      cwd: (data.cwd as string | undefined) || process.cwd(),
+      project: resolveProject(data.cwd),
+      cwd: resolveCwd(data.cwd),
       timestamp: new Date().toISOString(),
       data: {
         agent_id: agentId,
@@ -58,7 +53,7 @@ async function main() {
       },
     }),
     signal: AbortSignal.timeout(TIMEOUT_MS),
-  }).catch(() => {});
+  })?.catch(() => {});
   setTimeout(() => process.exit(0), 500).unref();
 }
 

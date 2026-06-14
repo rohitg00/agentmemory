@@ -133,16 +133,17 @@ def _check_plaintext_bearer_guard(
     base: str,
     secret: str = "",
     warn: Callable[[str], None] | None = None,
-) -> None:
+) -> bool:
     global _plaintext_bearer_warned
     if not _uses_plaintext_bearer_auth(base, secret):
-        return
+        return True
     message = _plaintext_bearer_auth_message(base)
     if os.environ.get("AGENTMEMORY_REQUIRE_HTTPS") == "1":
         raise RuntimeError(message)
     if not _plaintext_bearer_warned:
         _plaintext_bearer_warned = True
         (warn or _warn_plaintext_bearer_auth)(message)
+    return False
 
 
 def _reset_plaintext_bearer_guard_for_tests() -> None:
@@ -153,17 +154,19 @@ def _reset_plaintext_bearer_guard_for_tests() -> None:
 def _api(base: str, path: str, body: dict | None = None, method: str = "POST", secret: str = "") -> dict | None:
     if not _validate_url(base):
         return None
+    auth = secret or os.environ.get("AGENTMEMORY_SECRET", "")
+    if not _check_plaintext_bearer_guard(base, auth):
+        return None
+
     url = f"{base}/agentmemory/{path}"
     headers = {"Content-Type": "application/json"}
-    auth = secret or os.environ.get("AGENTMEMORY_SECRET", "")
-    _check_plaintext_bearer_guard(base, auth)
     if auth:
         headers["Authorization"] = f"Bearer {auth}"
 
     data = json.dumps(body).encode() if body else None
     req = Request(url, data=data, headers=headers, method=method)
     try:
-        # Operator-configured base URL is restricted to http/https with hostname, then fixed under /agentmemory; plaintext bearer can be blocked with AGENTMEMORY_REQUIRE_HTTPS.
+        # Operator-configured base URL is restricted to http/https with hostname, then fixed under /agentmemory; plaintext bearer requests are blocked before urlopen.
         with urlopen(req, timeout=TIMEOUT) as resp:  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
             return json.loads(resp.read().decode())
     except (URLError, TimeoutError, json.JSONDecodeError):
