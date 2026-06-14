@@ -46,6 +46,7 @@ import { setBootVerbose } from "./logger.js";
 import { VERSION } from "./version.js";
 import { getAllTools, ESSENTIAL_TOOLS } from "./mcp/tools-registry.js";
 import { knownAgents } from "./cli/connect/index.js";
+import { setupServerLogTee, writeServerLog } from "./cli/server-log.js";
 
 const ALL_TOOLS_COUNT = getAllTools().length;
 const CORE_TOOLS_COUNT = getAllTools().filter((t) => ESSENTIAL_TOOLS.has(t.name)).length;
@@ -811,7 +812,7 @@ function spawnEngineBackground(
   vlog(`spawn: ${bin} ${spawnArgs.join(" ")}`);
   const child = spawn(bin, spawnArgs, {
     detached: true,
-    stdio: ["ignore", "ignore", "pipe"],
+    stdio: ["ignore", "pipe", "pipe"],
     windowsHide: true,
   });
   const isDocker = label.includes("Docker");
@@ -821,7 +822,11 @@ function spawnEngineBackground(
   const stderrChunks: Buffer[] = [];
   let stderrBytes = 0;
   const MAX_STDERR_CAPTURE = 16 * 1024;
+  child.stdout?.on("data", (chunk: Buffer) => {
+    writeServerLog(chunk);
+  });
   child.stderr?.on("data", (chunk: Buffer) => {
+    writeServerLog(chunk);
     if (stderrBytes >= MAX_STDERR_CAPTURE) return;
     const slice = chunk.subarray(0, MAX_STDERR_CAPTURE - stderrBytes);
     stderrChunks.push(slice);
@@ -832,6 +837,9 @@ function spawnEngineBackground(
       (code !== null && code !== 0) || (code === null && signal !== null);
     if (abnormal) {
       const stderr = Buffer.concat(stderrChunks).toString("utf-8");
+      writeServerLog(
+        `[agentmemory] ${label} exited abnormally code=${code ?? "null"} signal=${signal ?? "null"}\n`,
+      );
       startupFailure = {
         kind: isDocker ? "docker-crashed" : "engine-crashed",
         stderr:
@@ -1128,6 +1136,8 @@ function printReadyHint(consoleState: IiiConsoleState): void {
 }
 
 async function main() {
+  setupServerLogTee();
+
   // `--reset` wipes preferences before anything else so the onboarding
   // flow below always runs fresh.
   if (IS_RESET) {
