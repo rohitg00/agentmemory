@@ -99,6 +99,14 @@ Stop conditions:
 - `npx --no-install vitest run --exclude test/integration.test.ts` -> failed due missing runtime dependencies such as `iii-sdk` and `@clack/prompts`; task-focused tests passed.
 - Codex Security diff scan -> no findings, 50/50 refreshed worklist rows have `no_candidate` receipts, report validated and HTML rendered.
 
+## Prep-Merge Post-Merge Verification
+
+- Merged local `main` into `prep-merge/plaintext-bearer-guard-21ac25a` and resolved hook conflicts by keeping both plaintext bearer guards and local-main `resolveCwd` handling.
+- `npx --no-install vitest run test/integration-plaintext-http.test.ts test/hooks-plaintext-http.test.ts test/mcp-standalone-proxy.test.ts test/fs-watcher.test.ts test/hook-project.test.ts test/pre-tool-use-project.test.ts --exclude test/integration.test.ts` -> passed, 6 files / 81 tests.
+- `git diff --check` -> passed after merge resolution.
+- `semgrep scan --config p/default --error --metrics=off --no-git-ignore .` -> passed after merge resolution, 0 findings over 488 scanned targets.
+- `gitleaks detect --source . --redact` -> passed after merge resolution, no leaks; latest run scanned 502 commits and about 8.16 MB.
+
 ## Residual Risks
 
 - Generated hook bundles were updated manually because the build tool was unavailable. A later dependency-installed build should confirm `tsdown` reproduces equivalent bundles from the source hook changes.

@@ -55,17 +55,17 @@ function canonicalGitProject(cwd: string): string | undefined {
   }
 }
 
+export function resolveCwd(cwd?: unknown): string {
+  if (typeof cwd !== "string") return process.cwd();
+  return cwd.trim().length > 0 ? cwd : process.cwd();
+}
+
 // Resolution order:
 // 1. AGENTMEMORY_PROJECT_ID for explicit, agent-independent project scoping.
 // 2. AGENTMEMORY_PROJECT_NAME for backward compatibility.
 // 3. Opaque hash of the Git common-dir parent so linked worktrees share one
 //    project memory without persisting host paths.
 // 4. basename(cwd) for non-Git folders.
-export function resolveCwd(cwd?: unknown): string {
-  if (typeof cwd !== "string") return process.cwd();
-  return cwd.trim().length > 0 ? cwd : process.cwd();
-}
-
 export function resolveProject(cwd?: unknown): string {
   const explicitId = cleanEnv("AGENTMEMORY_PROJECT_ID");
   if (explicitId) return explicitId;
