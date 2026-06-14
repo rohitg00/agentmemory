@@ -87,6 +87,70 @@ function mockSdk() {
   };
 }
 
+function memory(id: string, project?: string): Memory {
+  return {
+    id,
+    createdAt: "2026-03-01T00:00:00Z",
+    updatedAt: "2026-03-02T00:00:00Z",
+    type: "fact",
+    title: id,
+    content: id,
+    concepts: [],
+    files: [],
+    sessionIds: [],
+    strength: 5,
+    version: 1,
+    isLatest: true,
+    ...(project !== undefined && { project }),
+  };
+}
+
+function action(id: string, project?: string): Action {
+  return {
+    id,
+    title: id,
+    description: id,
+    status: "pending",
+    priority: 1,
+    createdAt: "2026-03-01T00:00:00Z",
+    updatedAt: "2026-03-02T00:00:00Z",
+    createdBy: "agent-1",
+    tags: [],
+    sourceObservationIds: [],
+    sourceMemoryIds: [],
+    ...(project !== undefined && { project }),
+  };
+}
+
+function semantic(id: string): SemanticMemory {
+  return {
+    id,
+    fact: id,
+    confidence: 0.9,
+    sourceSessionIds: ["ses_1"],
+    sourceMemoryIds: ["mem_main"],
+    accessCount: 1,
+    lastAccessedAt: "2026-03-01T00:00:00Z",
+    strength: 7,
+    createdAt: "2026-03-01T00:00:00Z",
+    updatedAt: "2026-03-02T00:00:00Z",
+  };
+}
+
+function procedural(id: string): ProceduralMemory {
+  return {
+    id,
+    name: id,
+    steps: ["inspect", "fix"],
+    triggerCondition: "when needed",
+    frequency: 1,
+    sourceSessionIds: ["ses_1"],
+    strength: 7,
+    createdAt: "2026-03-01T00:00:00Z",
+    updatedAt: "2026-03-02T00:00:00Z",
+  };
+}
+
 describe("Mesh Functions", () => {
   let sdk: ReturnType<typeof mockSdk>;
   let kv: ReturnType<typeof mockKV>;
@@ -706,6 +770,364 @@ describe("Mesh Functions", () => {
       expect(fetchMock).not.toHaveBeenCalled();
       const peer = await authedKv.get<MeshPeer>("mem:mesh", regResult.peer.id);
       expect(peer?.status).toBe("error");
+    });
+
+    it("pushes only matching memories and actions for project-scoped peers", async () => {
+      const authedSdk = mockSdk();
+      const authedKv = mockKV();
+      registerMeshFunction(authedSdk as never, authedKv as never, "mesh-secret");
+
+      await authedKv.set("mem:memories", "mem_main", memory("mem_main", "git:repo-main"));
+      await authedKv.set("mem:memories", "mem_other", memory("mem_other", "git:repo-other"));
+      await authedKv.set("mem:memories", "mem_legacy", memory("mem_legacy"));
+      await authedKv.set("mem:actions", "act_main", action("act_main", "git:repo-main"));
+      await authedKv.set("mem:actions", "act_other", action("act_other", "git:repo-other"));
+      await authedKv.set("mem:actions", "act_legacy", action("act_legacy"));
+      await authedKv.set("mem:semantic", "sem_1", semantic("sem_1"));
+      await authedKv.set("mem:procedural", "proc_1", procedural("proc_1"));
+      await authedKv.set("mem:relations", "rel_1", {
+        type: "related",
+        sourceId: "mem_main",
+        targetId: "mem_other",
+        createdAt: "2026-03-02T00:00:00Z",
+      } satisfies MemoryRelation);
+      await authedKv.set("mem:graph:nodes", "node_1", {
+        id: "node_1",
+        type: "concept",
+        name: "Mesh",
+        properties: {},
+        sourceObservationIds: [],
+        createdAt: "2026-03-01T00:00:00Z",
+        updatedAt: "2026-03-02T00:00:00Z",
+      } satisfies GraphNode);
+      await authedKv.set("mem:graph:edges", "edge_1", {
+        id: "edge_1",
+        type: "related_to",
+        sourceNodeId: "node_1",
+        targetNodeId: "node_1",
+        weight: 1,
+        sourceObservationIds: [],
+        createdAt: "2026-03-02T00:00:00Z",
+      } satisfies GraphEdge);
+
+      const fetchMock = vi.fn(async () =>
+        new Response(JSON.stringify({ accepted: 2 }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+      vi.stubGlobal("fetch", fetchMock);
+
+      const regResult = (await authedSdk.trigger("mem::mesh-register", {
+        url: "https://peer-main.example.com",
+        name: "peer-main",
+        sharedScopes: [
+          "memories",
+          "actions",
+          "semantic",
+          "procedural",
+          "relations",
+          "graph:nodes",
+          "graph:edges",
+        ],
+        syncFilter: { project: "git:repo-main" },
+      })) as { success: boolean; peer: MeshPeer };
+
+      const result = (await authedSdk.trigger("mem::mesh-sync", {
+        peerId: regResult.peer.id,
+        direction: "push",
+      })) as { success: boolean; results: Array<{ errors: string[]; pushed: number }> };
+
+      expect(result.success).toBe(true);
+      expect(result.results[0].errors).toEqual([]);
+      expect(result.results[0].pushed).toBe(2);
+      const payload = JSON.parse(fetchMock.mock.calls[0][1].body as string) as {
+        memories?: Memory[];
+        actions?: Action[];
+        semantic?: SemanticMemory[];
+        procedural?: ProceduralMemory[];
+        relations?: MemoryRelation[];
+        graphNodes?: GraphNode[];
+        graphEdges?: GraphEdge[];
+      };
+      expect(payload.memories?.map((m) => m.id)).toEqual(["mem_main"]);
+      expect(payload.actions?.map((a) => a.id)).toEqual(["act_main"]);
+      expect(payload.semantic).toBeUndefined();
+      expect(payload.procedural).toBeUndefined();
+      expect(payload.relations).toBeUndefined();
+      expect(payload.graphNodes).toBeUndefined();
+      expect(payload.graphEdges).toBeUndefined();
+
+      vi.unstubAllGlobals();
+    });
+
+    it("does not treat blank project filters as unscoped mesh sync", async () => {
+      const authedSdk = mockSdk();
+      const authedKv = mockKV();
+      registerMeshFunction(authedSdk as never, authedKv as never, "mesh-secret");
+
+      await authedKv.set("mem:memories", "mem_main", memory("mem_main", "git:repo-main"));
+      await authedKv.set("mem:actions", "act_main", action("act_main", "git:repo-main"));
+      await authedKv.set("mem:semantic", "sem_1", semantic("sem_1"));
+
+      const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+        if (init?.method === "POST") {
+          return new Response(JSON.stringify({ accepted: 0 }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        return new Response(
+          JSON.stringify({
+            memories: [memory("mem_remote_main", "git:repo-main")],
+            actions: [action("act_remote_main", "git:repo-main")],
+            semantic: [semantic("sem_remote")],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      });
+      vi.stubGlobal("fetch", fetchMock);
+
+      const regResult = (await authedSdk.trigger("mem::mesh-register", {
+        url: "https://peer-blank.example.com",
+        name: "peer-blank",
+        syncFilter: { project: "   " },
+      })) as { success: boolean; peer: MeshPeer };
+
+      const result = (await authedSdk.trigger("mem::mesh-sync", {
+        peerId: regResult.peer.id,
+        direction: "both",
+      })) as { success: boolean; results: Array<{ errors: string[]; pulled: number; pushed: number }> };
+
+      expect(result.success).toBe(true);
+      expect(result.results[0].errors).toEqual([]);
+      expect(result.results[0].pushed).toBe(0);
+      expect(result.results[0].pulled).toBe(0);
+      const pushPayload = JSON.parse(fetchMock.mock.calls[0][1].body as string) as {
+        memories?: Memory[];
+        actions?: Action[];
+        semantic?: SemanticMemory[];
+      };
+      expect(pushPayload.memories).toEqual([]);
+      expect(pushPayload.actions).toEqual([]);
+      expect(pushPayload.semantic).toBeUndefined();
+      expect(fetchMock.mock.calls[1][0] as string).toBe(
+        "https://peer-blank.example.com/agentmemory/mesh/export?since=&project=",
+      );
+      expect((await authedKv.list<Memory>("mem:memories")).map((m) => m.id)).toEqual([
+        "mem_main",
+      ]);
+      expect((await authedKv.list<Action>("mem:actions")).map((a) => a.id)).toEqual([
+        "act_main",
+      ]);
+
+      vi.unstubAllGlobals();
+    });
+
+    it("keeps unscoped push payloads unchanged", async () => {
+      const authedSdk = mockSdk();
+      const authedKv = mockKV();
+      registerMeshFunction(authedSdk as never, authedKv as never, "mesh-secret");
+
+      await authedKv.set("mem:memories", "mem_main", memory("mem_main", "git:repo-main"));
+      await authedKv.set("mem:memories", "mem_legacy", memory("mem_legacy"));
+      await authedKv.set("mem:actions", "act_main", action("act_main", "git:repo-main"));
+      await authedKv.set("mem:actions", "act_legacy", action("act_legacy"));
+      await authedKv.set("mem:semantic", "sem_1", semantic("sem_1"));
+      await authedKv.set("mem:procedural", "proc_1", procedural("proc_1"));
+      await authedKv.set("mem:relations", "rel_1", {
+        type: "related",
+        sourceId: "mem_main",
+        targetId: "mem_legacy",
+        createdAt: "2026-03-02T00:00:00Z",
+      } satisfies MemoryRelation);
+      await authedKv.set("mem:graph:nodes", "node_1", {
+        id: "node_1",
+        type: "concept",
+        name: "Mesh",
+        properties: {},
+        sourceObservationIds: [],
+        createdAt: "2026-03-01T00:00:00Z",
+        updatedAt: "2026-03-02T00:00:00Z",
+      } satisfies GraphNode);
+      await authedKv.set("mem:graph:edges", "edge_1", {
+        id: "edge_1",
+        type: "related_to",
+        sourceNodeId: "node_1",
+        targetNodeId: "node_1",
+        weight: 1,
+        sourceObservationIds: [],
+        createdAt: "2026-03-02T00:00:00Z",
+      } satisfies GraphEdge);
+
+      const fetchMock = vi.fn(async () =>
+        new Response(JSON.stringify({ accepted: 9 }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+      vi.stubGlobal("fetch", fetchMock);
+
+      const regResult = (await authedSdk.trigger("mem::mesh-register", {
+        url: "https://peer-all.example.com",
+        name: "peer-all",
+      })) as { success: boolean; peer: MeshPeer };
+
+      await authedSdk.trigger("mem::mesh-sync", {
+        peerId: regResult.peer.id,
+        direction: "push",
+      });
+
+      const payload = JSON.parse(fetchMock.mock.calls[0][1].body as string) as {
+        memories?: Memory[];
+        actions?: Action[];
+        semantic?: SemanticMemory[];
+        procedural?: ProceduralMemory[];
+        relations?: MemoryRelation[];
+        graphNodes?: GraphNode[];
+        graphEdges?: GraphEdge[];
+      };
+      expect(payload.memories?.map((m) => m.id).sort()).toEqual(["mem_legacy", "mem_main"]);
+      expect(payload.actions?.map((a) => a.id).sort()).toEqual(["act_legacy", "act_main"]);
+      expect(payload.semantic?.map((s) => s.id)).toEqual(["sem_1"]);
+      expect(payload.procedural?.map((p) => p.id)).toEqual(["proc_1"]);
+      expect(payload.relations?.map((r) => `${r.sourceId}:${r.targetId}:${r.type}`)).toEqual([
+        "mem_main:mem_legacy:related",
+      ]);
+      expect(payload.graphNodes?.map((n) => n.id)).toEqual(["node_1"]);
+      expect(payload.graphEdges?.map((e) => e.id)).toEqual(["edge_1"]);
+
+      vi.unstubAllGlobals();
+    });
+
+    it("pulls only matching memories and actions for project-scoped peers", async () => {
+      const authedSdk = mockSdk();
+      const authedKv = mockKV();
+      registerMeshFunction(authedSdk as never, authedKv as never, "mesh-secret");
+
+      const fetchMock = vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            memories: [
+              memory("mem_remote_main", "git:repo-main"),
+              memory("mem_remote_other", "git:repo-other"),
+              memory("mem_remote_legacy"),
+            ],
+            actions: [
+              action("act_remote_main", "git:repo-main"),
+              action("act_remote_other", "git:repo-other"),
+              action("act_remote_legacy"),
+            ],
+            semantic: [semantic("sem_remote")],
+            procedural: [procedural("proc_remote")],
+            relations: [
+              {
+                type: "related",
+                sourceId: "mem_remote_main",
+                targetId: "mem_remote_other",
+                createdAt: "2026-03-02T00:00:00Z",
+              } satisfies MemoryRelation,
+            ],
+            graphNodes: [
+              {
+                id: "node_remote",
+                type: "concept",
+                name: "Remote Mesh",
+                properties: {},
+                sourceObservationIds: [],
+                createdAt: "2026-03-01T00:00:00Z",
+                updatedAt: "2026-03-02T00:00:00Z",
+              } satisfies GraphNode,
+            ],
+            graphEdges: [
+              {
+                id: "edge_remote",
+                type: "related_to",
+                sourceNodeId: "node_remote",
+                targetNodeId: "node_remote",
+                weight: 1,
+                sourceObservationIds: [],
+                createdAt: "2026-03-02T00:00:00Z",
+              } satisfies GraphEdge,
+            ],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        ),
+      );
+      vi.stubGlobal("fetch", fetchMock);
+
+      const regResult = (await authedSdk.trigger("mem::mesh-register", {
+        url: "https://peer-pull.example.com",
+        name: "peer-pull",
+        syncFilter: { project: "git:repo-main" },
+      })) as { success: boolean; peer: MeshPeer };
+
+      const result = (await authedSdk.trigger("mem::mesh-sync", {
+        peerId: regResult.peer.id,
+        direction: "pull",
+      })) as { success: boolean; results: Array<{ errors: string[]; pulled: number }> };
+
+      expect(result.success).toBe(true);
+      expect(result.results[0].errors).toEqual([]);
+      expect(result.results[0].pulled).toBe(2);
+      expect(fetchMock.mock.calls[0][0] as string).toContain("project=git%3Arepo-main");
+      expect((await authedKv.list<Memory>("mem:memories")).map((m) => m.id)).toEqual([
+        "mem_remote_main",
+      ]);
+      expect((await authedKv.list<Action>("mem:actions")).map((a) => a.id)).toEqual([
+        "act_remote_main",
+      ]);
+      expect(await authedKv.list<SemanticMemory>("mem:semantic")).toEqual([]);
+      expect(await authedKv.list<ProceduralMemory>("mem:procedural")).toEqual([]);
+      expect(await authedKv.list<MemoryRelation>("mem:relations")).toEqual([]);
+      expect(await authedKv.list<GraphNode>("mem:graph:nodes")).toEqual([]);
+      expect(await authedKv.list<GraphEdge>("mem:graph:edges")).toEqual([]);
+
+      vi.unstubAllGlobals();
+    });
+
+    it("preserves path-prefixed peer URLs when pulling scoped exports", async () => {
+      const authedSdk = mockSdk();
+      const authedKv = mockKV();
+      registerMeshFunction(authedSdk as never, authedKv as never, "mesh-secret");
+
+      const fetchMock = vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            memories: [memory("mem_remote_main", "git:repo-main")],
+            actions: [action("act_remote_main", "git:repo-main")],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        ),
+      );
+      vi.stubGlobal("fetch", fetchMock);
+
+      const regResult = (await authedSdk.trigger("mem::mesh-register", {
+        url: "https://peer-pull.example.com/team-a",
+        name: "peer-pull-prefix",
+        sharedScopes: ["memories", "actions"],
+        syncFilter: { project: "git:repo-main" },
+      })) as { success: boolean; peer: MeshPeer };
+
+      await authedSdk.trigger("mem::mesh-sync", {
+        peerId: regResult.peer.id,
+        direction: "pull",
+      });
+
+      expect(fetchMock.mock.calls[0][0] as string).toBe(
+        "https://peer-pull.example.com/team-a/agentmemory/mesh/export?since=&project=git%3Arepo-main",
+      );
+
+      vi.unstubAllGlobals();
     });
   });
 

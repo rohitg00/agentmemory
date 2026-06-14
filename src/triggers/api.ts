@@ -135,6 +135,26 @@ function parseOptionalPositiveInt(value: unknown): number | undefined | null {
   return parsed;
 }
 
+type ProjectFilter =
+  | { scoped: false; project?: undefined }
+  | { scoped: true; project?: string };
+
+function normalizeProjectFilter(value: unknown): ProjectFilter {
+  if (value === undefined) return { scoped: false };
+  if (typeof value !== "string") return { scoped: true };
+  const trimmed = value.trim();
+  return trimmed ? { scoped: true, project: trimmed } : { scoped: true };
+}
+
+function filterByProject<T extends { project?: string }>(
+  items: T[],
+  filter: ProjectFilter,
+): T[] {
+  if (!filter.scoped) return items;
+  if (!filter.project) return [];
+  return items.filter((item) => item.project === filter.project);
+}
+
 export function registerApiTriggers(
   sdk: ISdk,
   kv: StateKV,
@@ -2701,20 +2721,23 @@ export function registerApiTriggers(
           return { status_code: 400, body: { error: "Invalid 'since' date format" } };
         }
       }
-      const project = req.query_params?.["project"] as string | undefined;
+      const projectFilter = normalizeProjectFilter(req.query_params?.["project"]);
       const sinceTime = since ? new Date(since).getTime() : 0;
       const df = <T>(items: T[], field: "updatedAt" | "createdAt") =>
         items.filter((i) => new Date((i as Record<string, unknown>)[field] as string).getTime() > sinceTime);
-      const memories = await kv.list<import("../types.js").Memory>(KV.memories);
-      let actions = await kv.list<import("../types.js").Action>(KV.actions);
-      if (project) {
-        actions = actions.filter((a) => a.project === project);
-      }
+      const memories = filterByProject(
+        await kv.list<import("../types.js").Memory>(KV.memories),
+        projectFilter,
+      );
+      const actions = filterByProject(
+        await kv.list<import("../types.js").Action>(KV.actions),
+        projectFilter,
+      );
       const body: Record<string, unknown> = {
         memories: df(memories, "updatedAt"),
         actions: df(actions, "updatedAt"),
       };
-      if (!project) {
+      if (!projectFilter.scoped) {
         const semantic = await kv.list<import("../types.js").SemanticMemory>(KV.semantic);
         const procedural = await kv.list<import("../types.js").ProceduralMemory>(KV.procedural);
         const relations = await kv.list<import("../types.js").MemoryRelation>(KV.relations);

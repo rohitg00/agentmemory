@@ -233,6 +233,42 @@ interface MeshSyncPayload {
   graphEdges?: GraphEdge[];
 }
 
+type ProjectFilter =
+  | { scoped: false; project?: undefined }
+  | { scoped: true; project?: string };
+
+function normalizeProjectFilter(project?: string): ProjectFilter {
+  if (project === undefined) return { scoped: false };
+  const trimmed = project.trim();
+  return trimmed ? { scoped: true, project: trimmed } : { scoped: true };
+}
+
+function filterByProject<T extends { project?: string }>(
+  items: T[],
+  filter: ProjectFilter,
+): T[] {
+  if (!filter.scoped) return items;
+  if (!filter.project) return [];
+  return items.filter((item) => item.project === filter.project);
+}
+
+function filterPayloadByProject(
+  data: MeshSyncPayload,
+  filter: ProjectFilter,
+): MeshSyncPayload {
+  if (!filter.scoped) return data;
+  return {
+    ...data,
+    memories: data.memories ? filterByProject(data.memories, filter) : undefined,
+    actions: data.actions ? filterByProject(data.actions, filter) : undefined,
+    semantic: undefined,
+    procedural: undefined,
+    relations: undefined,
+    graphNodes: undefined,
+    graphEdges: undefined,
+  };
+}
+
 async function lwwMergeList<T extends { id: string }>(
   kv: StateKV,
   scope: string,
@@ -401,6 +437,7 @@ export function registerMeshFunction(
         });
 
         const scopes = data.scopes || peer.sharedScopes;
+        const projectFilter = normalizeProjectFilter(peer.syncFilter?.project);
 
         try {
           if (!(await isAllowedUrl(peer.url))) {
@@ -441,8 +478,13 @@ export function registerMeshFunction(
 
           if (direction === "pull" || direction === "both") {
             try {
+              const exportUrl = new URL(`${peer.url}/agentmemory/mesh/export`);
+              exportUrl.searchParams.set("since", peer.lastSyncAt || "");
+              if (projectFilter.scoped) {
+                exportUrl.searchParams.set("project", projectFilter.project ?? "");
+              }
               const response = await fetch(
-                `${peer.url}/agentmemory/mesh/export?since=${peer.lastSyncAt || ""}`,
+                exportUrl.toString(),
                 {
                   headers: {
                     Authorization: `Bearer ${meshAuthToken}`,
@@ -456,7 +498,11 @@ export function registerMeshFunction(
                   memories?: Memory[];
                   actions?: Action[];
                 };
-                result.pulled = await applySyncData(kv, pullData, scopes);
+                result.pulled = await applySyncData(
+                  kv,
+                  filterPayloadByProject(pullData, projectFilter),
+                  scopes,
+                );
               } else {
                 result.errors.push(`pull failed: HTTP ${response.status}`);
               }
@@ -563,21 +609,19 @@ async function collectSyncData(
   const result: MeshSyncPayload = {};
   const parsed = since ? new Date(since).getTime() : 0;
   const sinceTime = Number.isNaN(parsed) ? 0 : parsed;
+  const projectFilter = normalizeProjectFilter(syncFilter?.project);
 
   if (scopes.includes("memories")) {
-    const all = await kv.list<Memory>(KV.memories);
+    const all = filterByProject(await kv.list<Memory>(KV.memories), projectFilter);
     result.memories = deltaFilter(all, sinceTime, "updatedAt");
   }
 
   if (scopes.includes("actions")) {
-    let all = await kv.list<Action>(KV.actions);
-    if (syncFilter?.project) {
-      all = all.filter((a) => a.project === syncFilter.project);
-    }
+    const all = filterByProject(await kv.list<Action>(KV.actions), projectFilter);
     result.actions = deltaFilter(all, sinceTime, "updatedAt");
   }
 
-  const projectScoped = !!syncFilter?.project;
+  const projectScoped = projectFilter.scoped;
 
   if (scopes.includes("semantic") && !projectScoped) {
     const all = await kv.list<SemanticMemory>(KV.semantic);
