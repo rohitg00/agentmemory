@@ -15,7 +15,7 @@ function gitOutput(cwd: string, args: string[]): string {
     cwd,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "ignore"],
-    timeout: 500,
+    timeout: 2_000,
   }).trim();
 }
 
