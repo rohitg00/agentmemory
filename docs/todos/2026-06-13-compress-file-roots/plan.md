@@ -113,6 +113,8 @@ Spec path: none. The source of truth is the delegated user request plus the task
 - Prep-merge code review found repeat-backup compatibility and env-root documentation/behavior mismatch gaps; both were fixed with regression coverage.
 - Prep-merge Review Implementation found a parent-directory swap gap after initial root validation; it was fixed with post-open path and opened-FD canonical root checks plus identity checks and regression coverage.
 - Latest targeted command: `npx --no-install vitest run test/compress-file.test.ts test/compress-file-interfaces.test.ts test/mcp-standalone.test.ts --exclude test/integration.test.ts` -> passed, 58 tests.
+- Post-merge targeted command after merging local `main` into the prep branch: `npx --no-install vitest run test/compress-file.test.ts test/compress-file-interfaces.test.ts test/mcp-standalone.test.ts --exclude test/integration.test.ts` -> passed, 58 tests.
+- Post-merge `semgrep scan --config p/default --error --metrics=off .`, `gitleaks detect --source . --redact --no-color`, and `git diff --check` all passed.
 - `npm test` and `npm run build` were attempted but blocked by missing local npm script binaries (`vitest`, `tsdown`).
 - `npx --no-install vitest run --exclude test/integration.test.ts` was attempted as an equivalent full-suite fallback but unrelated suites failed because local packages such as `iii-sdk`, `@clack/prompts`, and `zod` are missing.
 - `npx --no-install tsc --noEmit` was attempted but TypeScript is not installed in this worktree.

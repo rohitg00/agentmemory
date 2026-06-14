@@ -3,7 +3,7 @@
 Task id: `2026-06-13-compress-file-roots`
 Scope: current agentmemory worktree
 Branch: `prep-merge/compress-file-roots-21ac25a`
-Status: implemented; prep-merge reviews found additional bypass/oracle, parent-swap, and compatibility/doc gaps, all fixed and retested; full repo checks blocked by missing local dependencies
+Status: implemented and committed; prep-merge reviews found additional bypass/oracle, parent-swap, and compatibility/doc gaps, all fixed and retested; local `main` was merged into the prep branch and post-merge checks passed; full repo checks blocked by missing local dependencies
 
 ## Sprint Contract
 
@@ -83,11 +83,17 @@ Stop conditions:
 - A prep-merge code review fix makes `AGENTMEMORY_COMPRESS_FILE_ROOTS` additive to the safe daemon cwd, matching README and `.env.example`.
 - A prep-merge Review Implementation fix revalidates every opened source, backup, and final-write handle against both a fresh canonical path/root check and, when available from the runtime, the opened file descriptor's canonical target before reading or writing content. This covers parent-directory swaps after the initial root proof.
 - `npm run skills:gen` could not run because the local `tsx` binary is missing, so the single generated MCP reference line was updated mechanically from the registry description.
-- Prep branch `prep-merge/compress-file-roots-21ac25a` was created from the detached worktree for local commit/merge preparation. No push, deploy, merge to main, staging, commit, dependency install, or remote state change was performed yet.
+- Prep branch `prep-merge/compress-file-roots-21ac25a` was created from the detached worktree for local commit/merge preparation.
+- Fix commit `8fa4f95b5a81fe978b34301e1bc218f989964dec` was created after `gitleaks protect --staged --redact --no-color` passed.
+- Local `main` at `72b6ff1e78afef47f771ccb76253e29426fa317f` was merged into the prep branch with merge commit `36cbefc3e1c9de31da2b15ef98e69f0b03a2882d`. No merge into `main`, push, deploy, dependency install, or remote state change was performed.
 
 ## Final Verification Evidence
 
 - `npx --no-install vitest run test/compress-file.test.ts test/compress-file-interfaces.test.ts test/mcp-standalone.test.ts --exclude test/integration.test.ts` -> passed, 3 files / 58 tests after prep-merge compatibility, parent-swap, and security fixes.
+- Post-merge `npx --no-install vitest run test/compress-file.test.ts test/compress-file-interfaces.test.ts test/mcp-standalone.test.ts --exclude test/integration.test.ts` -> passed, 3 files / 58 tests after merging local `main` into the prep branch.
+- Post-merge `semgrep scan --config p/default --error --metrics=off .` -> passed, 0 findings on tracked files.
+- Post-merge `gitleaks detect --source . --redact --no-color` -> passed, no leaks found.
+- Post-merge `git diff --check` -> passed.
 - `npx --no-install vitest run test/compress-file.test.ts --exclude test/integration.test.ts` -> passed, 28 tests after root-symlink, outside-root oracle, repeat-backup, additive-env-root, parent-swap, and opened-FD target fixes.
 - Earlier red run: `npx --no-install vitest run test/compress-file.test.ts --exclude test/integration.test.ts` -> failed 6 tests before production code changes, proving out-of-root, parent-realpath escape, read-swap, backup-symlink, and final-write-swap regressions.
 - Post-review red run: `npx --no-install vitest run test/compress-file.test.ts --exclude test/integration.test.ts` -> failed 2 tests before the follow-up fix, proving canonical sensitive-name and backup-parent escape regressions.
