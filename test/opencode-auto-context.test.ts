@@ -34,4 +34,15 @@ describe("OpenCode plugin auto-context injection (#431)", () => {
     const deletedBlock = plugin.slice(plugin.indexOf("session.deleted"));
     expect(deletedBlock).toMatch(/startContextCache\.delete\(sid\)/);
   });
+
+  it("session.deleted does not force consolidation past the global opt-out", () => {
+    const deletedBlock = plugin.slice(plugin.indexOf("session.deleted"));
+    expect(deletedBlock).toMatch(
+      /process\.env\.CONSOLIDATION_ENABLED\s*===\s*["']true["'][\s\S]*?post\(["']\/crystals\/auto["']/,
+    );
+    expect(deletedBlock).toMatch(
+      /process\.env\.CONSOLIDATION_ENABLED\s*===\s*["']true["'][\s\S]*?post\(["']\/consolidate-pipeline["']/,
+    );
+    expect(deletedBlock).not.toMatch(/force:\s*true/);
+  });
 });

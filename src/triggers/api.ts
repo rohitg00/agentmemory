@@ -1614,12 +1614,18 @@ export function registerApiTriggers(
   });
 
   sdk.registerFunction("api::consolidate-pipeline",
-    async (req: ApiRequest<{ tier?: string }>): Promise<Response> => {
+    async (req: ApiRequest<{ tier?: string; project?: string }>): Promise<Response> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
       try {
-        const result = await sdk.trigger({ function_id: "mem::consolidate-pipeline", payload: req.body || {},
-         });
+        const body = req.body || {};
+        const payload: { tier?: string; project?: string } = {};
+        if (typeof body.tier === "string") payload.tier = body.tier;
+        if (typeof body.project === "string") payload.project = body.project;
+        const result = await sdk.trigger({
+          function_id: "mem::consolidate-pipeline",
+          payload,
+        });
         return { status_code: 200, body: result };
       } catch {
         return consolidationDisabledResponse();
