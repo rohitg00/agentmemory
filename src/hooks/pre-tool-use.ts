@@ -95,7 +95,7 @@ async function main() {
     typeof rawSessionId === "string" && rawSessionId.length > 0
       ? rawSessionId
       : "unknown";
-  const project = resolveProject(data.cwd as string | undefined);
+  const project = resolveProject(data.cwd);
 
   try {
     const res = await fetch(`${REST_URL}/agentmemory/enrich`, {
