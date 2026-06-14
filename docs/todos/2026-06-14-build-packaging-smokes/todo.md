@@ -62,10 +62,11 @@ Stop conditions:
 - 2026-06-14: Baseline targeted suite passed: 4 files, 31 tests. Baseline coverage passed: 144 files, 1685 tests; global lines 60.67%, statements 58.82%; `src/cli.ts` and `src/index.ts` were 0%, `src/cli` helper directory statements were 57.47%.
 - 2026-06-14: Red phase: new build/package tests initially failed on missing `src/cli/build-runtime.js`; fixed manifest-shape test helper so only the missing module remained red.
 - 2026-06-14: Green phase: extracted `src/cli/build-runtime.ts` and wired `src/cli.ts` to it; targeted suite passed: 6 files, 42 tests.
-- 2026-06-14: Full verification in progress. `npm run build`, `npm test`, `npm run coverage`, `npm run lint`, `npm run skills:check`, and Semgrep have passed so far.
+- 2026-06-14: Full verification completed. `npm run build`, `npm test`, `npm run coverage`, `npm run lint`, `npm run skills:check`, staged `gitleaks protect --staged --redact`, and Semgrep passed.
 
 ## Review Notes
 
 - Result matches Sprint Contract without changing package publishing, release config, hook behavior, dependencies, or distribution boundaries.
 - No generated `dist` artifacts are staged or intended for commit.
 - OSV was not run because no dependency files, lockfiles, container files, vendored code, or package-manager metadata changed.
+- Final branch: `coverage/build-packaging-smokes`.
