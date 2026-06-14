@@ -255,14 +255,49 @@ describe("Mesh Functions", () => {
     });
 
     it.each([
+      ["100.63.255.255"],
+      ["100.128.0.0"],
+      ["192.0.1.1"],
+      ["192.0.3.1"],
+      ["192.88.100.1"],
+      ["198.17.255.255"],
+      ["198.20.0.1"],
+      ["198.51.101.1"],
+      ["203.0.114.1"],
+      ["223.255.255.254"],
+    ])("allows hostnames when DNS resolves to public boundary address %s", async (address) => {
+      mockDns([address]);
+      const url = `https://public-${address.replace(/\./g, "-")}.example.com`;
+
+      const result = (await sdk.trigger("mem::mesh-register", {
+        url,
+        name: "public-boundary-peer",
+      })) as { success: boolean; peer: MeshPeer };
+
+      expect(result.success).toBe(true);
+      expect(result.peer.url).toBe(url);
+    });
+
+    it.each([
       ["127.0.0.1"],
       ["127.1.2.3"],
       ["0.0.0.0"],
       ["10.0.0.1"],
+      ["100.64.0.1"],
+      ["100.127.255.255"],
       ["172.16.0.1"],
       ["172.31.255.255"],
+      ["192.0.0.1"],
+      ["192.0.2.1"],
+      ["192.88.99.1"],
       ["192.168.1.1"],
       ["169.254.1.1"],
+      ["198.18.0.1"],
+      ["198.19.255.255"],
+      ["198.51.100.1"],
+      ["203.0.113.1"],
+      ["224.0.0.1"],
+      ["255.255.255.255"],
       ["::"],
       ["::1"],
       ["fe80::1"],
@@ -287,10 +322,21 @@ describe("Mesh Functions", () => {
       ["http://127.1.2.3"],
       ["http://0.0.0.0"],
       ["http://10.0.0.1"],
+      ["http://100.64.0.1"],
+      ["http://100.127.255.255"],
       ["http://172.16.0.1"],
       ["http://172.31.255.255"],
+      ["http://192.0.0.1"],
+      ["http://192.0.2.1"],
+      ["http://192.88.99.1"],
       ["http://192.168.1.1"],
       ["http://169.254.1.1"],
+      ["http://198.18.0.1"],
+      ["http://198.19.255.255"],
+      ["http://198.51.100.1"],
+      ["http://203.0.113.1"],
+      ["http://224.0.0.1"],
+      ["http://255.255.255.255"],
       ["http://[::]"],
       ["http://[::1]"],
       ["http://[fe80::1]"],
@@ -311,6 +357,16 @@ describe("Mesh Functions", () => {
 
     it.each([
       ["http://93.184.216.34"],
+      ["http://100.63.255.255"],
+      ["http://100.128.0.0"],
+      ["http://192.0.1.1"],
+      ["http://192.0.3.1"],
+      ["http://192.88.100.1"],
+      ["http://198.17.255.255"],
+      ["http://198.20.0.1"],
+      ["http://198.51.101.1"],
+      ["http://203.0.114.1"],
+      ["http://223.255.255.254"],
       ["http://[2606:2800:220:1:248:1893:25c8:1946]"],
     ])("allows public IP literal %s", async (url) => {
       const result = (await sdk.trigger("mem::mesh-register", {
@@ -513,6 +569,33 @@ describe("Mesh Functions", () => {
       expect(result.success).toBe(true);
       expect(result.results[0].errors).toContain("peer URL blocked: private/local address not allowed");
       expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it("blocks sync and skips fetch when DNS rechecks to a special-use address", async () => {
+      const authedSdk = mockSdk();
+      const authedKv = mockKV();
+      registerMeshFunction(authedSdk as never, authedKv as never, "mesh-secret");
+
+      const fetchMock = vi.fn();
+      vi.stubGlobal("fetch", fetchMock);
+
+      mockDns(["93.184.216.34"]);
+      const regResult = (await authedSdk.trigger("mem::mesh-register", {
+        url: "https://special-use-rebind.example.com",
+        name: "special-use-rebind-peer",
+      })) as { success: boolean; peer: MeshPeer };
+
+      mockDns(["198.18.0.1"]);
+      const result = (await authedSdk.trigger("mem::mesh-sync", {
+        peerId: regResult.peer.id,
+        direction: "push",
+      })) as { success: boolean; results: Array<{ errors: string[] }> };
+
+      expect(result.success).toBe(true);
+      expect(result.results[0].errors).toContain("peer URL blocked: private/local address not allowed");
+      expect(fetchMock).not.toHaveBeenCalled();
+      const peer = await authedKv.get<MeshPeer>("mem:mesh", regResult.peer.id);
+      expect(peer?.status).toBe("error");
     });
 
     it("blocks sync and skips fetch when DNS recheck times out", async () => {

@@ -62,7 +62,7 @@ mockDns(["203.0.113.10"]);
   - Any private DNS answer blocks registration.
   - Private, loopback, link-local, unspecified, and IPv4-mapped IP literals are blocked.
   - Hex-normalized IPv4-mapped IPv6 literals such as `http://[::ffff:c0a8:101]` are blocked.
-  - Public IPv4 and IPv6 literals are allowed.
+  - Public IPv4 and IPv6 literals are allowed, including public boundary addresses adjacent to blocked IPv4 ranges.
 
 - [ ] Run the focused tests and confirm at least one new test fails before implementation.
 
@@ -83,6 +83,7 @@ function normalizeHost(host: string): string {
 ```
 
 - [ ] Implement IPv4 blocking for loopback `127.0.0.0/8`, unspecified `0.0.0.0`, RFC1918, and link-local `169.254.0.0/16`.
+- [ ] Implement IPv4 blocking for non-global special-use ranges such as CGNAT, benchmarking, documentation, multicast, and reserved ranges.
 
 - [ ] Implement IPv6 blocking for loopback `::1`, unspecified `::`, link-local `fe80::/10`, ULA `fc00::/7`, and IPv4-mapped blocked IPv4 values.
 
@@ -108,6 +109,7 @@ try {
 ## Task 3: Add Sync Recheck And Fetch Option Coverage
 
 - [ ] Add a sync test that registers a peer while DNS resolves public, then changes the DNS mock to a private address before `mem::mesh-sync`.
+- [ ] Add a sync test that registers a peer while DNS resolves public, then changes the DNS mock to a non-global special-use IPv4 address before `mem::mesh-sync`.
 - [ ] Add a sync test that registers a peer while DNS resolves public, then makes DNS hang before `mem::mesh-sync` and confirms the validation timeout blocks fetch.
 
 Expected result:
@@ -196,6 +198,6 @@ Expected: pass.
 
 ## Self-Review
 
-- Spec coverage: covered DNS failure, private DNS, public DNS, IP literals including hex IPv4-mapped IPv6, sync recheck, push/pull redirect behavior, and residual TOCTOU documentation.
+- Spec coverage: covered DNS failure, private DNS, public DNS, non-global special-use IPv4 ranges, IP literals including hex IPv4-mapped IPv6, sync recheck, push/pull redirect behavior, and residual TOCTOU documentation.
 - Placeholder scan: no `TBD` or unresolved implementation placeholders remain.
 - Type consistency: tests target current `mockSdk`, `mockKV`, `registerMeshFunction`, and `MeshPeer` patterns already used in `test/mesh.test.ts`.
