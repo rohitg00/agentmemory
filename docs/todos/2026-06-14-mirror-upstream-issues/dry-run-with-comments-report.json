@@ -1,0 +1,44 @@
+{
+  "source": "rohitg00/agentmemory",
+  "target": "wbugitlab1/agentmemory",
+  "state": "all",
+  "mode": "dry-run",
+  "readMode": "public-read",
+  "includeComments": true,
+  "applyConfirmed": false,
+  "credentialedReadsConfirmed": false,
+  "remoteWritesConfirmed": false,
+  "sourceIssueEndpointItems": 0,
+  "sourcePullRequestItemsExcluded": 0,
+  "sourceNonPrIssues": 0,
+  "targetIssueEndpointItems": 0,
+  "targetPullRequestItemsExcluded": 0,
+  "targetNonPrIssues": 0,
+  "targetMirrorCount": 0,
+  "invalidMarkerCount": 0,
+  "duplicateMarkerCount": 0,
+  "plannedActionCounts": {},
+  "plannedActions": [],
+  "appliedActions": [],
+  "failedAction": null,
+  "plannedImportedCommentCount": 0,
+  "missingTargetLabelCount": 0,
+  "labelActionCount": 0,
+  "verification": {
+    "ok": false,
+    "failureCount": 0,
+    "failures": []
+  },
+  "sanitizationCountsAvailable": false,
+  "sanitizationCounts": {
+    "mentions": 0,
+    "references": 0,
+    "closingKeywords": 0
+  },
+  "rateLimitStop": {
+    "operation": "GET /repos/wbugitlab1/agentmemory/issues?state=all&per_page=100",
+    "retryAfterSeconds": null,
+    "message": "GitHub public API rate limit stopped the mirror run."
+  },
+  "errors": []
+}
