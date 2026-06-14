@@ -27,5 +27,7 @@ integrations/hermes/__pycache__/
 
 # Eval reports (transient; published scorecards live in docs/benchmarks/)
 eval/reports/
+# Vitest coverage reports
+coverage/
 # LongMemEval download is 278MB; fetched on demand
 eval/data/longmemeval/
