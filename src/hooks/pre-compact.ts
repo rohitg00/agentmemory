@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { authHeaders, guardedFetch } from "./_http.js";
 import { resolveProject } from "./_project.js";
 
 function isSdkChildContext(payload: unknown): boolean {
@@ -9,12 +10,6 @@ function isSdkChildContext(payload: unknown): boolean {
 
 const REST_URL = process.env["AGENTMEMORY_URL"] || "http://localhost:3111";
 const SECRET = process.env["AGENTMEMORY_SECRET"] || "";
-
-function authHeaders(): Record<string, string> {
-  const h: Record<string, string> = { "Content-Type": "application/json" };
-  if (SECRET) h["Authorization"] = `Bearer ${SECRET}`;
-  return h;
-}
 
 async function main() {
   let input = "";
@@ -36,9 +31,9 @@ async function main() {
 
   if (process.env["CLAUDE_MEMORY_BRIDGE"] === "true") {
     try {
-      await fetch(`${REST_URL}/agentmemory/claude-bridge/sync`, {
+      await guardedFetch(REST_URL, "/agentmemory/claude-bridge/sync", SECRET, {
         method: "POST",
-        headers: authHeaders(),
+        headers: authHeaders(SECRET),
         body: JSON.stringify({}),
         signal: AbortSignal.timeout(5000),
       });
@@ -48,12 +43,13 @@ async function main() {
   }
 
   try {
-    const res = await fetch(`${REST_URL}/agentmemory/context`, {
+    const res = await guardedFetch(REST_URL, "/agentmemory/context", SECRET, {
       method: "POST",
-      headers: authHeaders(),
+      headers: authHeaders(SECRET),
       body: JSON.stringify({ sessionId, project, budget: 1500 }),
       signal: AbortSignal.timeout(5000),
     });
+    if (!res) return;
 
     if (res.ok) {
       const result = (await res.json()) as { context?: string };

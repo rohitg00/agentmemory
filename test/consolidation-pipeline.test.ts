@@ -232,7 +232,7 @@ describe("Consolidation Pipeline", () => {
     vi.mocked(isConsolidationEnabled).mockReturnValue(true);
   });
 
-  it("pipeline proceeds with force=true even when consolidation is disabled", async () => {
+  it("pipeline proceeds with internal boolean force=true even when consolidation is disabled", async () => {
     vi.mocked(isConsolidationEnabled).mockReturnValue(false);
     const provider = {
       name: "test",
@@ -247,6 +247,30 @@ describe("Consolidation Pipeline", () => {
 
     expect(result.success).toBe(true);
     expect(result.results).toBeDefined();
+    vi.mocked(isConsolidationEnabled).mockReturnValue(true);
+  });
+
+  it("pipeline does not treat non-boolean force values as an opt-out bypass", async () => {
+    vi.mocked(isConsolidationEnabled).mockReturnValue(false);
+    const provider = {
+      name: "test",
+      compress: vi.fn(),
+      summarize: vi.fn(),
+    };
+    registerConsolidationPipelineFunction(sdk as never, kv as never, provider as never);
+
+    const result = (await sdk.trigger("mem::consolidate-pipeline", {
+      force: "true" as never,
+    })) as {
+      success: boolean;
+      skipped?: boolean;
+      reason?: string;
+    };
+
+    expect(result.success).toBe(false);
+    expect(result.skipped).toBe(true);
+    expect(result.reason).toContain("CONSOLIDATION_ENABLED");
+    expect(provider.summarize).not.toHaveBeenCalled();
     vi.mocked(isConsolidationEnabled).mockReturnValue(true);
   });
 });

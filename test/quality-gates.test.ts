@@ -19,6 +19,7 @@ type CoverageConfig = {
 
 type RootVitestConfig = {
   test?: {
+    testTimeout?: number;
     coverage?: CoverageConfig;
   };
 };
@@ -60,8 +61,10 @@ describe("root quality gates", () => {
   });
 
   it("enforces root coverage thresholds and reports", () => {
-    const coverage = (vitestConfig as RootVitestConfig).test?.coverage;
+    const testConfig = (vitestConfig as RootVitestConfig).test;
+    const coverage = testConfig?.coverage;
 
+    expect(testConfig?.testTimeout).toBe(10_000);
     expect(coverage?.provider).toBe("v8");
     expect(coverage?.all).toBe(true);
     expect(coverage?.include).toEqual(["src/**/*.ts"]);

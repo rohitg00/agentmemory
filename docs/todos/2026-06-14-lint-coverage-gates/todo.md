@@ -84,3 +84,4 @@ Final review round 1:
 - Test coverage re-review: `ACCEPT`.
 - Security review: `ACCEPT`.
 - Post-fix staged checks: targeted Semgrep over new/changed gate files reported 0 findings, staged Gitleaks reported no leaks, and `git diff --cached --check` passed.
+- Merge-main follow-up: after merging local `main`, the larger suite caused several default 5s Vitest timeouts under parallel load while the same files passed individually and passed as a group with `--testTimeout=10000`. `vitest.config.ts` now sets `testTimeout: 10_000` so the repo-native `npm test` command uses the passing timeout without a CLI override.

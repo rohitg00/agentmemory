@@ -22,11 +22,14 @@ exec'ing the agentmemory CLI.
 
 - **Volume mounted at `/data`.** Matches the path the engine has used
   since v0.9.10.
-- **HMAC secret generated on first boot** via `openssl rand -hex 32`,
-  written to `/data/.hmac` with `chmod 600`, and printed to stdout
-  exactly once so the operator can capture it from the deploy logs.
+- **HMAC secret generated on first boot** via `openssl rand -hex 32`
+  and written to `/data/.hmac` with `chmod 600`. The secret value is
+  never printed to stdout or platform logs; retrieve it through the
+  platform shell or volume access described in each provider README.
   Subsequent boots load the secret from the file. The secret is never
-  committed to a config file or set as a platform env var.
+  committed to a config file or set as a platform env var by default.
+  To manage the value yourself, create `/data/.hmac` with your chosen
+  secret before the service starts.
 - **Only port 3111 is exposed publicly.** The viewer on port 3113
   stays bound to the container's localhost. Reach it via SSH tunnel
   (see each platform's README).
@@ -70,8 +73,8 @@ following to your platform's environment variables (Fly:
 | `ANTHROPIC_API_KEY`       | LLM-backed compression + summarization                   |
 | `GEMINI_API_KEY`          | LLM provider alternative                                 |
 | `OPENROUTER_API_KEY`      | LLM provider alternative                                 |
-| `OPENAI_API_KEY`          | Embedding provider (text-embedding-3-small by default)   |
-| `VOYAGE_API_KEY`          | Embedding provider alternative                           |
+| `EMBEDDING_PROVIDER=openai` + `OPENAI_API_KEY` | OpenAI embeddings (`text-embedding-3-small` by default) |
+| `EMBEDDING_PROVIDER=voyage` + `VOYAGE_API_KEY` | Voyage embedding provider alternative                  |
 | `AGENTMEMORY_AUTO_COMPRESS=true` | Run LLM compression on every observation batch    |
 | `AGENTMEMORY_INJECT_CONTEXT=true` | Inject recalled memories back into agent prompts |
 

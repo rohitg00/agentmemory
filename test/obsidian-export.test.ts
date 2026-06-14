@@ -11,6 +11,17 @@ vi.mock("node:fs/promises", () => ({
   mkdir: vi.fn(async (dir: string) => {
     createdDirs.add(dir);
   }),
+  lstat: vi.fn(async () => ({
+    isDirectory: () => true,
+    isSymbolicLink: () => false,
+  })),
+  realpath: vi.fn(async (path: string) => path),
+  open: vi.fn(async (path: string) => ({
+    writeFile: async (content: string) => {
+      writtenFiles.set(path, content);
+    },
+    close: async () => {},
+  })),
   writeFile: vi.fn(async (path: string, content: string) => {
     writtenFiles.set(path, content);
   }),
@@ -144,7 +155,10 @@ describe("Obsidian Export", () => {
     expect(result.exported.lessons).toBe(0);
     expect(result.exported.crystals).toBe(0);
     expect(result.exported.sessions).toBe(0);
-    expect(createdDirs.size).toBe(4);
+    expect(createdDirs.has(`${exportRoot}/vault/memories`)).toBe(true);
+    expect(createdDirs.has(`${exportRoot}/vault/lessons`)).toBe(true);
+    expect(createdDirs.has(`${exportRoot}/vault/crystals`)).toBe(true);
+    expect(createdDirs.has(`${exportRoot}/vault/sessions`)).toBe(true);
 
     const mocPath = [...writtenFiles.keys()].find((k) => k.endsWith("MOC.md"));
     expect(mocPath).toBeDefined();

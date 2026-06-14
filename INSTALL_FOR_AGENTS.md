@@ -6,7 +6,7 @@ You are a coding agent. Follow this runbook top to bottom to install agentmemory
 
 agentmemory is a local memory server for coding agents. It runs on your machine, exposes a REST API on port 3111 and an MCP server, and stores memories on disk under `~/.agentmemory`. It is built on the iii engine, which agentmemory downloads and manages for you as a pinned binary under `~/.agentmemory/bin`. You do not install iii separately.
 
-Default mode needs no API key and no cloud account. Out of the box it runs hybrid retrieval (BM25 keyword search plus local on-device embeddings), so a full install proves real semantic recall with zero credentials. An LLM provider key is optional and only unlocks richer summaries and auto-injection (see "Optional: richer features").
+Default mode needs no API key and no cloud account. Out of the box it runs BM25 keyword search; text embeddings are optional and explicit (`EMBEDDING_PROVIDER=local` for on-device embeddings or `EMBEDDING_PROVIDER=<remote>` plus that provider's key). An LLM provider key is optional and only unlocks richer summaries and auto-injection (see "Optional: richer features").
 
 ## Prerequisites
 
@@ -124,7 +124,7 @@ These are off by default because they spend tokens. Enable them only if the user
 
 - `AGENTMEMORY_INJECT_CONTEXT=true` makes the SessionStart and PreToolUse hooks inject past memory into the agent's context automatically. Cost: spends session tokens proportional to tool-call frequency.
 - `AGENTMEMORY_AUTO_COMPRESS=true` sends each observation to your LLM provider for a richer summary. Cost: spends API tokens proportional to tool-use frequency. Requires a provider key.
-- Provider key: set one of `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, and similar, in the same file. Without a key, agentmemory stays in zero-LLM mode and still indexes and recalls via BM25 plus local embeddings.
+- Provider key: set one of `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, and similar, in the same file. Without a key, agentmemory stays in zero-LLM mode and still indexes and recalls via BM25. Text embeddings are explicit opt-in via `EMBEDDING_PROVIDER=local` for on-device embeddings or `EMBEDDING_PROVIDER=<remote>` plus that provider's key for remote embeddings.
 
 ## Tool surface
 

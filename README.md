@@ -529,6 +529,8 @@ agentmemory connect claude-code --with-hooks
 This merges the same hook commands into `~/.claude/settings.json` with absolute paths resolved to the bundled `plugin/` directory of the currently installed `@agentmemory/agentmemory` package. Re-run the command after upgrading agentmemory to refresh the paths. User entries in the same file are preserved; only previous agentmemory entries are replaced. Using the `/plugin install` path remains the recommended approach.
 For remote or protected deployments, launch Claude Code with `AGENTMEMORY_URL` and `AGENTMEMORY_SECRET` set. The plugin passes both values through to its bundled MCP server; when `AGENTMEMORY_URL` is empty, the MCP shim uses `http://localhost:3111`.
 
+If agentmemory is your central cross-agent memory instance, add `AGENTMEMORY_REQUIRE_SERVER=1` to the MCP server env block. This makes the shim fail hard when `/agentmemory/livez` or a proxied tool call fails instead of silently switching to the local `~/.agentmemory/standalone.json` fallback. The error tells the host to start `npx @agentmemory/agentmemory`. `AGENTMEMORY_DISABLE_LOCAL_FALLBACK=1` is accepted as an alias.
+
 ### Codex CLI (Codex plugin platform)
 
 ```bash
@@ -542,7 +544,7 @@ codex plugin add agentmemory@agentmemory
 
 The Codex plugin ships from the same `plugin/` directory as the Claude Code plugin. It registers:
 
-- `@agentmemory/mcp` as an MCP server (proxies all 53 tools when `AGENTMEMORY_URL` points at a running agentmemory server; falls back to 7 tools locally when no server is reachable)
+- `@agentmemory/mcp` as an MCP server (proxies all 53 tools when `AGENTMEMORY_URL` points at a running agentmemory server; falls back to 7 tools locally when no server is reachable unless `AGENTMEMORY_REQUIRE_SERVER=1` is set)
 - 6 lifecycle hooks: `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PreCompact`, `Stop`
 - 8 invocable skills: `/recall`, `/remember`, `/session-history`, `/forget`, `/recap`, `/handoff`, `/commit-context`, `/commit-history`, plus 7 reference skills the agent loads on demand (MCP tools, REST API, config, agents, hooks, architecture, and the skill-authoring guide)
 
@@ -656,6 +658,8 @@ The agentmemory entry is the **same MCP server block** across every host that us
 
 **Merge this entry into the existing `mcpServers` object** in the host's config file — don't replace the file. If the file already has other servers, add `agentmemory` next to them as another key inside `mcpServers`. If `mcpServers` is missing entirely, paste the block inside `{ "mcpServers": { ... } }`. The `${VAR}` placeholders inherit `AGENTMEMORY_URL` / `AGENTMEMORY_SECRET` from the shell at MCP-server launch — unset vars pass empty strings and the shim falls back to `http://localhost:3111`. One wired entry covers both local and remote (k8s / reverse-proxied) deployments.
 
+For central memory deployments where an empty local fallback would be misleading, also pass `"AGENTMEMORY_REQUIRE_SERVER": "1"`. With this flag, livez failures and proxy-call failures return a clear MCP error instead of answering from `~/.agentmemory/standalone.json`. `AGENTMEMORY_DISABLE_LOCAL_FALLBACK=1` is accepted as an alias. `AGENTMEMORY_FORCE_PROXY=1` only skips the livez probe; it does not by itself disable local fallback after a proxy call fails.
+
 | Agent | Config file | Notes |
 |---|---|---|
 | **Cursor** | `~/.cursor/mcp.json` | Merge into `mcpServers`. One-click deeplink also available on the website. |
@@ -684,7 +688,7 @@ The agentmemory entry is the **same MCP server block** across every host that us
 | **Aider** | n/a | Talk to the REST API directly: `curl -X POST http://localhost:3111/agentmemory/smart-search -d '{"query": "auth"}'`. |
 | **Any agent (32+)** | n/a | `npx skillkit install agentmemory` auto-detects the host and merges. |
 
-**Sandboxed MCP clients** (Flatpak / Snap / restrictive containers) that can't reach the host's `localhost`: also set `"AGENTMEMORY_FORCE_PROXY": "1"` in the `env` block, and point `AGENTMEMORY_URL` at a route the sandbox can actually reach (e.g. your LAN IP). See [#234](https://github.com/rohitg00/agentmemory/issues/234) for the diagnostic walkthrough.
+**Sandboxed MCP clients** (Flatpak / Snap / restrictive containers) that can't reach the host's `localhost`: also set `"AGENTMEMORY_FORCE_PROXY": "1"` in the `env` block, and point `AGENTMEMORY_URL` at a route the sandbox can actually reach. Add `"AGENTMEMORY_REQUIRE_SERVER": "1"` when the client should fail rather than use the local fallback if that route is still broken. If `AGENTMEMORY_SECRET` is set, that route must be HTTPS or a loopback tunnel; the MCP shim refuses to send bearer auth over plaintext HTTP to non-loopback hosts. See [#234](https://github.com/rohitg00/agentmemory/issues/234) for the diagnostic walkthrough.
 
 ### Programmatic access (Python / Rust / Node)
 
@@ -801,7 +805,7 @@ the HMAC secret, then drops privileges from `root` to `node` via
 
 Render's one-click deploy button requires `render.yaml` at the repository root, which we deliberately keep clean. Use the Render Blueprint flow documented in [`deploy/render/`](./deploy/render/README.md) to point at the in-repo blueprint manually.
 
-Full setup details (HMAC capture, viewer SSH tunnel, rotation, backup,
+Full setup details (HMAC retrieval, viewer SSH tunnel, rotation, backup,
 cost floors) live in [`deploy/`](./deploy/README.md):
 
 - [`deploy/fly`](./deploy/fly/README.md) — single machine with
@@ -939,7 +943,7 @@ BM25 tokenizes Greek, Cyrillic, Hebrew, Arabic, and accented Latin out of the bo
 
 ### Embedding providers
 
-agentmemory auto-detects your provider. For best results, install local embeddings (free):
+Text embeddings are opt-in. With no `EMBEDDING_PROVIDER`, search stays BM25+Graph and agentmemory does not send memory, observation, or query text to an embedding provider. For local embeddings, install the optional on-device package and set `EMBEDDING_PROVIDER=local`:
 
 ```bash
 npm install @xenova/transformers
@@ -947,12 +951,12 @@ npm install @xenova/transformers
 
 | Provider | Model | Cost | Notes |
 |---|---|---|---|
-| **Local (recommended)** | `all-MiniLM-L6-v2` | Free | Offline, +8pp recall over BM25-only |
-| Gemini | `gemini-embedding-001` | Free tier | 100+ languages, 768/1536/3072 dims (MRL), 2048-token input. Replaces `text-embedding-004` ([deprecated, shutdown Jan 14, 2026](https://ai.google.dev/gemini-api/docs/deprecations)) |
-| OpenAI | `text-embedding-3-small` | $0.02/1M | Highest quality |
-| Voyage AI | `voyage-code-3` | Paid | Optimized for code |
-| Cohere | `embed-english-v3.0` | Free trial | General purpose |
-| OpenRouter | Any model | Varies | Multi-model proxy |
+| **Local (recommended)** | `all-MiniLM-L6-v2` | Free | `EMBEDDING_PROVIDER=local`; offline, +8pp recall over BM25-only |
+| Gemini | `gemini-embedding-001` | Free tier | `EMBEDDING_PROVIDER=gemini` + `GEMINI_API_KEY`; 100+ languages, 768/1536/3072 dims (MRL), 2048-token input. Replaces `text-embedding-004` ([deprecated, shutdown Jan 14, 2026](https://ai.google.dev/gemini-api/docs/deprecations)) |
+| OpenAI | `text-embedding-3-small` | $0.02/1M | `EMBEDDING_PROVIDER=openai` + `OPENAI_API_KEY`; highest quality |
+| Voyage AI | `voyage-code-3` | Paid | `EMBEDDING_PROVIDER=voyage` + `VOYAGE_API_KEY`; optimized for code |
+| Cohere | `embed-english-v3.0` | Free trial | `EMBEDDING_PROVIDER=cohere` + `COHERE_API_KEY`; general purpose |
+| OpenRouter | Any model | Varies | `EMBEDDING_PROVIDER=openrouter` + `OPENROUTER_API_KEY`; multi-model proxy |
 
 ---
 
@@ -960,7 +964,7 @@ npm install @xenova/transformers
 
 53 tools, 6 resources, 3 prompts, and 15 skills, the most comprehensive MCP memory toolkit for any agent.
 
-> **MCP shim vs full server:** the published `@agentmemory/mcp` package is a thin shim. It exposes the full 53-tool surface **only when it can reach a running agentmemory server** via `AGENTMEMORY_URL` (proxy mode). With no server reachable, the shim falls back to a 7-tool local set (`memory_save`, `memory_recall`, `memory_smart_search`, `memory_sessions`, `memory_export`, `memory_audit`, `memory_governance_delete`). The `AGENTMEMORY_TOOLS=core|all` env var is a *server-side* flag — setting it in the shim's `env` block has no effect. If you see only 7 tools in Cursor / OpenCode / Gemini CLI, start `npx @agentmemory/agentmemory` (or the Docker stack) and set `AGENTMEMORY_URL=http://localhost:3111`.
+> **MCP shim vs full server:** the published `@agentmemory/mcp` package is a thin shim. It exposes the full 53-tool surface **only when it can reach a running agentmemory server** via `AGENTMEMORY_URL` (proxy mode). With no server reachable, the shim falls back to a 7-tool local set (`memory_save`, `memory_recall`, `memory_smart_search`, `memory_sessions`, `memory_export`, `memory_audit`, `memory_governance_delete`). Set `AGENTMEMORY_REQUIRE_SERVER=1` in the shim's env when that fallback would hide an outage; then livez failures and proxy-call failures return an MCP error instead. The `AGENTMEMORY_TOOLS=core|all` env var is a *server-side* flag — setting it in the shim's `env` block has no effect. If you see only 7 tools in Cursor / OpenCode / Gemini CLI, start `npx @agentmemory/agentmemory` (or the Docker stack) and set `AGENTMEMORY_URL=http://localhost:3111`.
 
 ### 53 Tools
 
@@ -1064,7 +1068,7 @@ Most agents (Cursor, Claude Desktop, Cline, Roo Code, Windsurf, Gemini CLI):
 }
 ```
 
-Merge the `agentmemory` entry into your host's existing `mcpServers` object rather than replacing the file. For sandboxed clients that can't reach the host's `localhost`, add `"AGENTMEMORY_FORCE_PROXY": "1"` to the env block and set `AGENTMEMORY_URL` to a route the sandbox can reach.
+Merge the `agentmemory` entry into your host's existing `mcpServers` object rather than replacing the file. For sandboxed clients that can't reach the host's `localhost`, add `"AGENTMEMORY_FORCE_PROXY": "1"` to the env block and set `AGENTMEMORY_URL` to a route the sandbox can reach. For central cross-agent memory, add `"AGENTMEMORY_REQUIRE_SERVER": "1"` so the shim errors instead of falling back to its local standalone store when the server route breaks. If `AGENTMEMORY_SECRET` is set, use HTTPS or a loopback tunnel; plaintext HTTP to non-loopback hosts is refused before bearer auth is sent.
 
 OpenCode (`opencode.json`):
 ```json
@@ -1225,7 +1229,7 @@ agentmemory auto-detects from your environment. By default, no LLM calls are mad
 | **No-op (default)** | No config needed | LLM-backed compress/summarize is DISABLED. Synthetic BM25 compression + recall still work. See `AGENTMEMORY_ALLOW_AGENT_SDK` below if you used to rely on the Claude-subscription fallback. |
 | Anthropic API | `ANTHROPIC_API_KEY` | Per-token billing |
 | MiniMax | `MINIMAX_API_KEY` | Anthropic-compatible |
-| Gemini | `GEMINI_API_KEY` | Also enables embeddings |
+| Gemini | `GEMINI_API_KEY` | LLM provider alternative. Embeddings require `EMBEDDING_PROVIDER=gemini`. |
 | OpenRouter | `OPENROUTER_API_KEY` | Any model |
 | OpenAI API | `OPENAI_API_KEY` | Default `gpt-4o-mini`, override with `OPENAI_MODEL` |
 | **Local (Ollama / LM Studio / vLLM / llama.cpp)** | `OPENAI_API_KEY=local` + `OPENAI_BASE_URL=http://localhost:11434/v1` (Ollama) or `http://localhost:1234/v1` (LM Studio) + `OPENAI_MODEL=<your model>` | Anything OpenAI-API-compatible. Zero cost, runs on your hardware. See [Local models](#local-models-ollama-lm-studio-vllm) below. |
@@ -1273,7 +1277,7 @@ OPENAI_MODEL=qwen2.5-coder-7b-instruct         # match the model name from LM St
 
 Reasoning-class models (`o1`-style with `<think>` blocks) can return empty `content` with a `reasoning` field your local server may not surface. If extractions come back blank, switch to a non-reasoning model first. The `OPENAI_REASONING_EFFORT=none` env can also disable thinking on Ollama Cloud thinking models that mirror the OpenAI reasoning schema.
 
-Local embeddings ship out of the box via `@xenova/transformers` — `EMBEDDING_PROVIDER=local` (default) gives you BGE-small entirely on-device. No extra config needed.
+Local embeddings are available via `@xenova/transformers` — set `EMBEDDING_PROVIDER=local` to use `all-MiniLM-L6-v2` entirely on-device. With no `EMBEDDING_PROVIDER`, agentmemory uses BM25+Graph search and does not call a text embedding provider.
 
 ### Cost-aware model selection
 
@@ -1384,11 +1388,10 @@ Create `~/.agentmemory/.env`:
 # GEMINI_API_KEY=...
 # OPENROUTER_API_KEY=...
 # MINIMAX_API_KEY=...
-# OPENAI_API_KEY=***                       # NOTE: this same key auto-activates BOTH the
-#                                          # OpenAI LLM provider (here) AND the OpenAI
-#                                          # embedding provider (further below). Set
-#                                          # OPENAI_API_KEY_FOR_LLM=false to scope it
-#                                          # to embeddings only.
+# OPENAI_API_KEY=***                       # OpenAI LLM provider. Text embeddings require
+#                                          # EMBEDDING_PROVIDER=openai as an explicit opt-in.
+#                                          # For embeddings only, set OPENAI_API_KEY_FOR_LLM=false
+#                                          # and EMBEDDING_PROVIDER=openai.
 # OPENAI_BASE_URL=https://api.openai.com   # Optional: override for Azure / vLLM / LM Studio / proxies
 #                                          # Azure: https://<resource>.openai.azure.com/openai/deployments/<deployment>
 #                                          # Auto-detected from `.openai.azure.com` hostname; uses
@@ -1407,12 +1410,13 @@ Create `~/.agentmemory/.env`:
 #                                          # "none" for thinking models that return reasoning
 #                                          # but no content.
 # OPENAI_API_KEY_FOR_LLM=false             # Optional: set to false to skip OpenAI auto-detection
-#                                          # for LLM (useful if you only want OpenAI for embeddings)
+#                                          # for LLM. Pair with EMBEDDING_PROVIDER=openai if
+#                                          # you only want OpenAI for embeddings.
 # Opt-in Claude-subscription fallback (spawns @anthropic-ai/claude-agent-sdk);
 # leave OFF unless you understand the Stop-hook recursion risk (#149 follow-up):
 # AGENTMEMORY_ALLOW_AGENT_SDK=true
 
-# Embedding provider (auto-detected, or override)
+# Embedding provider (explicit opt-in; default is BM25+Graph with no embeddings)
 # EMBEDDING_PROVIDER=local
 # VOYAGE_API_KEY=...
 # OPENAI_API_KEY=sk-...

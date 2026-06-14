@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { authHeaders, guardedFetch } from "./_http.js";
 import { resolveCwd, resolveProject } from "./_project.js";
 
 function isSdkChildContext(payload: unknown): boolean {
@@ -9,12 +10,6 @@ function isSdkChildContext(payload: unknown): boolean {
 
 const REST_URL = process.env["AGENTMEMORY_URL"] || "http://localhost:3111";
 const SECRET = process.env["AGENTMEMORY_SECRET"] || "";
-
-function authHeaders(): Record<string, string> {
-  const h: Record<string, string> = { "Content-Type": "application/json" };
-  if (SECRET) h["Authorization"] = `Bearer ${SECRET}`;
-  return h;
-}
 
 async function main() {
   let input = "";
@@ -39,9 +34,9 @@ async function main() {
       ? data.last_assistant_message.slice(0, 4000)
       : "";
 
-  fetch(`${REST_URL}/agentmemory/observe`, {
+  guardedFetch(REST_URL, "/agentmemory/observe", SECRET, {
     method: "POST",
-    headers: authHeaders(),
+    headers: authHeaders(SECRET),
     body: JSON.stringify({
       hookType: "subagent_stop",
       sessionId,
@@ -55,7 +50,7 @@ async function main() {
       },
     }),
     signal: AbortSignal.timeout(2000),
-  }).catch(() => {});
+  })?.catch(() => {});
   setTimeout(() => process.exit(0), 500).unref();
 }
 

@@ -135,6 +135,33 @@ function parseOptionalPositiveInt(value: unknown): number | undefined | null {
   return parsed;
 }
 
+type ProjectFilter =
+  | { scoped: false; project?: undefined }
+  | { scoped: true; project?: string };
+
+function normalizeProjectFilter(value: unknown): ProjectFilter {
+  if (value === undefined) return { scoped: false };
+  if (typeof value !== "string") return { scoped: true };
+  const trimmed = value.trim();
+  return trimmed ? { scoped: true, project: trimmed } : { scoped: true };
+}
+
+function filterByProject<T extends { project?: string }>(
+  items: T[],
+  filter: ProjectFilter,
+): T[] {
+  if (!filter.scoped) return items;
+  if (!filter.project) return [];
+  return items.filter((item) => item.project === filter.project);
+}
+
+function parseOptionalNonNegativeInt(value: unknown): number | undefined | null {
+  const parsed = parseOptionalFiniteNumber(value);
+  if (parsed === undefined || parsed === null) return parsed;
+  if (!Number.isInteger(parsed) || parsed < 0) return null;
+  return parsed;
+}
+
 export function registerApiTriggers(
   sdk: ISdk,
   kv: StateKV,
@@ -1614,12 +1641,18 @@ export function registerApiTriggers(
   });
 
   sdk.registerFunction("api::consolidate-pipeline",
-    async (req: ApiRequest<{ tier?: string }>): Promise<Response> => {
+    async (req: ApiRequest<{ tier?: string; project?: string }>): Promise<Response> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
       try {
-        const result = await sdk.trigger({ function_id: "mem::consolidate-pipeline", payload: req.body || {},
-         });
+        const body = req.body || {};
+        const payload: { tier?: string; project?: string } = {};
+        if (typeof body.tier === "string") payload.tier = body.tier;
+        if (typeof body.project === "string") payload.project = body.project;
+        const result = await sdk.trigger({
+          function_id: "mem::consolidate-pipeline",
+          payload,
+        });
         return { status_code: 200, body: result };
       } catch {
         return consolidationDisabledResponse();
@@ -2701,20 +2734,23 @@ export function registerApiTriggers(
           return { status_code: 400, body: { error: "Invalid 'since' date format" } };
         }
       }
-      const project = req.query_params?.["project"] as string | undefined;
+      const projectFilter = normalizeProjectFilter(req.query_params?.["project"]);
       const sinceTime = since ? new Date(since).getTime() : 0;
       const df = <T>(items: T[], field: "updatedAt" | "createdAt") =>
         items.filter((i) => new Date((i as Record<string, unknown>)[field] as string).getTime() > sinceTime);
-      const memories = await kv.list<import("../types.js").Memory>(KV.memories);
-      let actions = await kv.list<import("../types.js").Action>(KV.actions);
-      if (project) {
-        actions = actions.filter((a) => a.project === project);
-      }
+      const memories = filterByProject(
+        await kv.list<import("../types.js").Memory>(KV.memories),
+        projectFilter,
+      );
+      const actions = filterByProject(
+        await kv.list<import("../types.js").Action>(KV.actions),
+        projectFilter,
+      );
       const body: Record<string, unknown> = {
         memories: df(memories, "updatedAt"),
         actions: df(actions, "updatedAt"),
       };
-      if (!project) {
+      if (!projectFilter.scoped) {
         const semantic = await kv.list<import("../types.js").SemanticMemory>(KV.semantic);
         const procedural = await kv.list<import("../types.js").ProceduralMemory>(KV.procedural);
         const relations = await kv.list<import("../types.js").MemoryRelation>(KV.relations);
@@ -2969,11 +3005,23 @@ export function registerApiTriggers(
   });
   sdk.registerTrigger({ type: "http", function_id: "api::crystal-list", config: { api_path: "/agentmemory/crystals", http_method: "GET" } });
 
-  sdk.registerFunction("api::auto-crystallize",  async (req: ApiRequest) => {
+  sdk.registerFunction("api::auto-crystallize",  async (req: ApiRequest<{ olderThanDays?: number; project?: string; dryRun?: boolean }>) => {
     const denied = checkAuth(req, secret);
     if (denied) return denied;
-    const body = req.body as Record<string, unknown>;
-    const result = await sdk.trigger({ function_id: "mem::auto-crystallize", payload: body || {} });
+    if (!isConsolidationEnabled()) return consolidationDisabledResponse();
+    const body = req.body || {};
+    const olderThanDays = parseOptionalNonNegativeInt(body.olderThanDays);
+    if (olderThanDays === null) {
+      return {
+        status_code: 400,
+        body: { error: "invalid numeric parameter: olderThanDays" },
+      };
+    }
+    const payload: { olderThanDays?: number; project?: string; dryRun?: boolean } = {};
+    if (olderThanDays !== undefined) payload.olderThanDays = olderThanDays;
+    if (typeof body.project === "string") payload.project = body.project;
+    if (typeof body.dryRun === "boolean") payload.dryRun = body.dryRun;
+    const result = await sdk.trigger({ function_id: "mem::auto-crystallize", payload });
     return { status_code: 200, body: result };
   });
   sdk.registerTrigger({ type: "http", function_id: "api::auto-crystallize", config: { api_path: "/agentmemory/crystals/auto", http_method: "POST" } });

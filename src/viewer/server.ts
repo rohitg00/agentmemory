@@ -217,7 +217,7 @@ export function startViewerServer(
   if (!isLoopbackHost(host)) {
     if (!secret) {
       throw new ViewerConfigError(
-        `AGENTMEMORY_VIEWER_HOST=${host} requires AGENTMEMORY_SECRET to be set so the viewer can validate inbound bearer tokens. To fix: unset AGENTMEMORY_VIEWER_HOST to keep the safe loopback bind, or set AGENTMEMORY_SECRET. For Fly images, it is printed on first boot; see deploy/fly/README.md.`,
+        `AGENTMEMORY_VIEWER_HOST=${host} requires AGENTMEMORY_SECRET to be set so the viewer can validate inbound bearer tokens. To fix: unset AGENTMEMORY_VIEWER_HOST to keep the safe loopback bind, or set AGENTMEMORY_SECRET. For Fly images, retrieve it from /data/.hmac through fly ssh; see deploy/fly/README.md.`,
       );
     }
     if (readAllowedHostsOverride().length === 0) {

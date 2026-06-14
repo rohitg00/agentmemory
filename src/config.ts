@@ -49,6 +49,15 @@ function hasRealValue(v: string | undefined): v is string {
   return typeof v === "string" && v.trim().length > 0;
 }
 
+const EMBEDDING_PROVIDERS = new Set([
+  "local",
+  "gemini",
+  "openai",
+  "voyage",
+  "cohere",
+  "openrouter",
+]);
+
 function detectProvider(env: Record<string, string>): ProviderConfig {
   const maxTokens = parseInt(env["MAX_TOKENS"] || "4096", 10);
 
@@ -237,15 +246,9 @@ export function detectEmbeddingProvider(
   env?: Record<string, string>,
 ): string | null {
   const source = env ?? getMergedEnv();
-  const forced = source["EMBEDDING_PROVIDER"];
-  if (forced) return forced;
-
-  if (source["GEMINI_API_KEY"]) return "gemini";
-  if (source["OPENAI_API_KEY"]) return "openai";
-  if (source["VOYAGE_API_KEY"]) return "voyage";
-  if (source["COHERE_API_KEY"]) return "cohere";
-  if (source["OPENROUTER_API_KEY"]) return "openrouter";
-  return null;
+  const forced = source["EMBEDDING_PROVIDER"]?.trim().toLowerCase();
+  if (!forced || !EMBEDDING_PROVIDERS.has(forced)) return null;
+  return forced;
 }
 
 export function loadClaudeBridgeConfig(): ClaudeBridgeConfig {
