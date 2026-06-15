@@ -53,7 +53,7 @@
 | Regression coverage | Add failing test before production code | Complete | RED: targeted Vitest run failed only the new memory fallback test; expected `mem-a-secret`, received `[]`. |
 | Minimal adapted import | Preserve `Memory.agentId` in `memoryToObservation()` if test proves gap | Complete | Added `agentId: memory.agentId` to `src/state/memory-utils.ts`. |
 | Local neutral documentation | Update this task record | Complete | This file records decision, evidence, verification, and risk notes with neutral IDs. |
-| Merge prep | Run `$prep-merge-to-local-main` | Pending | Not yet reached. |
+| Merge prep | Run `$prep-merge-to-local-main` | Complete | Task commit `a1fd79b` created; local main commit `6c387b4` merged with merge commit `9f639d4`; post-merge targeted tests and `git diff --check` passed. |
 
 ## Progress Notes
 
@@ -70,6 +70,7 @@
 - 2026-06-15: Focused `$requesting-code-review` gate: read-only reviewer returned ACCEPT with no Critical/Important findings. It inspected `src/state/memory-utils.ts`, supporting `src/functions/search.ts`, the regression test, and task-state verification notes.
 - 2026-06-15: `$review-implementation` gate: parent adversarial pass found no blocking findings. A second adversarial subagent was started but did not complete before timeout and was shut down; it is not used as evidence.
 - 2026-06-15: `codex-security:security-diff-scan`: no reportable findings. Final reports written to `/tmp/codex-security-scans/agentmemory/bfde73b_localpatch_20260615T224452/report.md` and `/tmp/codex-security-scans/agentmemory/bfde73b_localpatch_20260615T224452/report.html`. Goal usage: 121096 tokens, about 15 minutes.
+- 2026-06-15: `$prep-merge-to-local-main`: preflight found no Git operation state, no staged changes, clean local main worktree at `6c387b4`, and no overlap between local-main incoming paths and task-owned files. Commit `a1fd79b` was created after staged Gitleaks passed. Local main `6c387b4` was merged into the review branch as merge commit `9f639d4`; no conflicts. Post-merge `git diff --check` and targeted related Vitest run passed.
 
 ## Security Notes
 
