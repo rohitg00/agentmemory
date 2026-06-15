@@ -279,4 +279,179 @@ assert calls == [], calls
     });
     expect(result.status, result.stderr || result.stdout).toBe(0);
   });
+
+  it("uses saved Hermes config for runtime URL and secret when env vars are absent", () => {
+    const script = String.raw`
+import importlib.util
+import os
+import time
+from pathlib import Path
+
+for key in ("AGENTMEMORY_SECRET", "AGENTMEMORY_URL", "AGENTMEMORY_REQUIRE_HTTPS"):
+    os.environ.pop(key, None)
+
+spec = importlib.util.spec_from_file_location("agentmemory_hermes", "integrations/hermes/__init__.py")
+mod = importlib.util.module_from_spec(spec)
+assert spec.loader is not None
+spec.loader.exec_module(mod)
+
+provider = mod.AgentMemoryProvider()
+hermes_home = Path(os.environ["HOME"]) / "custom-hermes"
+hermes_home.mkdir()
+provider.save_config({"url": "https://memory.example", "secret": "saved-secret"}, str(hermes_home))
+
+calls = []
+def fake_api(base, path, body=None, method="POST", secret=""):
+    calls.append({"base": base, "path": path, "secret": secret})
+    return {
+        "context": "saved context",
+        "results": [{"title": "Saved", "narrative": "Configured runtime", "combinedScore": 1}],
+        "success": True,
+    }
+
+mod._api = fake_api
+assert provider.is_available() is True
+provider.initialize("session-658", hermes_home=str(hermes_home), cwd="/tmp/project")
+assert provider.system_prompt_block() == "saved context"
+assert provider.prefetch("saved") == "- Saved: Configured runtime"
+provider.queue_prefetch("saved")
+provider.handle_tool_call("memory_recall", {"query": "saved"})
+provider.handle_tool_call("memory_save", {"content": "saved"})
+provider.handle_tool_call("memory_search", {"query": "saved"})
+provider.sync_turn("user", "assistant")
+provider.on_session_end([])
+messages = []
+provider.on_pre_compress(messages)
+provider.on_memory_write("add", "MEMORY.md", "saved memory")
+time.sleep(0.2)
+
+assert provider._base == "https://memory.example", provider._base
+assert provider._secret == "saved-secret", provider._secret
+assert len(calls) >= 10, calls
+assert all(call["base"] == "https://memory.example" for call in calls), calls
+assert all(call["secret"] == "saved-secret" for call in calls), calls
+assert messages[0]["content"].endswith("saved context"), messages
+`;
+    const result = spawnSync("python3", ["-c", script], {
+      cwd: process.cwd(),
+      env: { ...process.env, HOME: home },
+      encoding: "utf8",
+    });
+    expect(result.status, result.stderr || result.stdout).toBe(0);
+  });
+
+  it("lets env URL and secret override saved Hermes config", () => {
+    const script = String.raw`
+import importlib.util
+import os
+from pathlib import Path
+
+for key in ("AGENTMEMORY_SECRET", "AGENTMEMORY_URL", "AGENTMEMORY_REQUIRE_HTTPS"):
+    os.environ.pop(key, None)
+os.environ["AGENTMEMORY_URL"] = "https://env.example"
+os.environ["AGENTMEMORY_SECRET"] = "env-secret"
+
+spec = importlib.util.spec_from_file_location("agentmemory_hermes", "integrations/hermes/__init__.py")
+mod = importlib.util.module_from_spec(spec)
+assert spec.loader is not None
+spec.loader.exec_module(mod)
+
+provider = mod.AgentMemoryProvider()
+hermes_home = Path(os.environ["HOME"]) / "custom-hermes"
+hermes_home.mkdir()
+provider.save_config({"url": "https://memory.example", "secret": "saved-secret"}, str(hermes_home))
+
+calls = []
+def fake_api(base, path, body=None, method="POST", secret=""):
+    calls.append({"base": base, "path": path, "secret": secret})
+    return {}
+
+mod._api = fake_api
+provider.initialize("session-658", hermes_home=str(hermes_home), cwd="/tmp/project")
+
+assert provider._base == "https://env.example", provider._base
+assert provider._secret == "env-secret", provider._secret
+assert calls[0]["base"] == "https://env.example", calls
+assert calls[0]["secret"] == "env-secret", calls
+`;
+    const result = spawnSync("python3", ["-c", script], {
+      cwd: process.cwd(),
+      env: { ...process.env, HOME: home },
+      encoding: "utf8",
+    });
+    expect(result.status, result.stderr || result.stdout).toBe(0);
+  });
+
+  it("falls back safely when saved Hermes config is malformed", () => {
+    const script = String.raw`
+import importlib.util
+import os
+from pathlib import Path
+
+for key in ("AGENTMEMORY_SECRET", "AGENTMEMORY_URL", "AGENTMEMORY_REQUIRE_HTTPS"):
+    os.environ.pop(key, None)
+
+spec = importlib.util.spec_from_file_location("agentmemory_hermes", "integrations/hermes/__init__.py")
+mod = importlib.util.module_from_spec(spec)
+assert spec.loader is not None
+spec.loader.exec_module(mod)
+
+provider = mod.AgentMemoryProvider()
+hermes_home = Path(os.environ["HOME"]) / "custom-hermes"
+hermes_home.mkdir()
+(hermes_home / "agentmemory.json").write_text("{not json", encoding="utf-8")
+
+calls = []
+def fake_api(base, path, body=None, method="POST", secret=""):
+    calls.append({"base": base, "path": path, "secret": secret})
+    return {}
+
+mod._api = fake_api
+provider.initialize("session-658", hermes_home=str(hermes_home), cwd="/tmp/project")
+
+assert provider._base == "http://localhost:3111", provider._base
+assert provider._secret == "", provider._secret
+assert calls[0]["base"] == "http://localhost:3111", calls
+assert calls[0]["secret"] == "", calls
+`;
+    const result = spawnSync("python3", ["-c", script], {
+      cwd: process.cwd(),
+      env: { ...process.env, HOME: home },
+      encoding: "utf8",
+    });
+    expect(result.status, result.stderr || result.stdout).toBe(0);
+  });
+
+  it("uses the provider Hermes home when checking availability", () => {
+    const script = String.raw`
+import importlib.util
+import os
+from pathlib import Path
+
+for key in ("AGENTMEMORY_SECRET", "AGENTMEMORY_URL", "AGENTMEMORY_REQUIRE_HTTPS"):
+    os.environ.pop(key, None)
+
+spec = importlib.util.spec_from_file_location("agentmemory_hermes", "integrations/hermes/__init__.py")
+mod = importlib.util.module_from_spec(spec)
+assert spec.loader is not None
+spec.loader.exec_module(mod)
+
+provider = mod.AgentMemoryProvider()
+default_hermes_home = Path(os.environ["HOME"]) / ".hermes"
+default_hermes_home.mkdir()
+(default_hermes_home / "agentmemory.json").write_text('{"url":"https://default.example"}', encoding="utf-8")
+
+custom_hermes_home = Path(os.environ["HOME"]) / "custom-hermes"
+custom_hermes_home.mkdir()
+provider.save_config({"url": "not a url"}, str(custom_hermes_home))
+
+assert provider.is_available() is False
+`;
+    const result = spawnSync("python3", ["-c", script], {
+      cwd: process.cwd(),
+      env: { ...process.env, HOME: home },
+      encoding: "utf8",
+    });
+    expect(result.status, result.stderr || result.stdout).toBe(0);
+  });
 });
