@@ -29,7 +29,7 @@
 ```text
 Install agentmemory for OpenClaw. Run `npx @agentmemory/agentmemory` in a separate terminal to start the memory server on localhost:3111.
 
-For zero-code setup, add this MCP server so OpenClaw gets all 43 memory tools:
+For zero-code setup, add this MCP server so OpenClaw gets all 53 memory tools:
 
 {
   "mcpServers": {

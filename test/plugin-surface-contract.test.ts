@@ -19,7 +19,18 @@ function countSkillDirs(): number {
 }
 
 function parseCount(description: string, label: "hooks" | "MCP tools" | "skills"): number {
-  const match = new RegExp(`(\\d+)\\s+${label.replace(" ", "\\s+")}`).exec(description);
+  let match: RegExpExecArray | null = null;
+  switch (label) {
+    case "MCP tools":
+      match = /(\d+)\s+MCP\s+tools/.exec(description);
+      break;
+    case "hooks":
+      match = /(\d+)\s+hooks/.exec(description);
+      break;
+    case "skills":
+      match = /(\d+)\s+skills/.exec(description);
+      break;
+  }
   expect(match, `description should state "${label}" count: ${description}`).not.toBeNull();
   return Number(match![1]);
 }
@@ -84,6 +95,11 @@ describe("Plugin manifest surface counts", () => {
       const text = readFileSync(join(repoRoot, rel), "utf8");
       expect(text, rel).toContain(`MCP-${toolCount}_tools`);
       expect(text, rel).toContain(`alt="${toolCount} MCP tools"`);
+      for (const match of text.matchAll(/(\d+)\s+(?:MCP|memory)\s+tools/g)) {
+        expect(Number(match[1]), `${rel} has stale count in "${match[0]}"`).toBe(
+          toolCount,
+        );
+      }
     }
   });
 });

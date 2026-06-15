@@ -13,6 +13,10 @@ Scope:
 - `integrations/**` for package/plugin/agent surface contracts
 - tests matching `test/*plugin*.test.ts`, `test/*skill*.test.ts`, `test/connect-new-agents.test.ts`, `test/codex-connect-hooks.test.ts`, `test/claude-code-with-hooks.test.ts`, `test/hermes-plugin.test.ts`, `test/openclaw-plugin.test.ts`, `test/copilot-plugin.test.ts`
 
+Coverage boundary:
+- V8 line coverage is applied to deterministic source surfaces that can run in-process (`scripts/skills/**`, `integrations/pi/security.ts`, `integrations/openclaw/plugin.mjs`, and existing `src/**`).
+- Bundled standalone hook scripts under `plugin/scripts/*.mjs` and the published MCP wrapper `packages/mcp/bin.mjs` are packaging artifacts with process/network side effects; they are covered by manifest, packaging, and child-process contract tests instead of direct V8 include targets.
+
 Non-goals:
 - No fetch, pull, push, deploy, publishing, dependency installs, or remote state changes.
 - No MCP tool additions/removals unless a failing contract test exposes stale surface metadata that must be repaired.
@@ -47,11 +51,11 @@ Stop conditions:
 
 | Change | Verification method | Status | Evidence |
 | --- | --- | --- | --- |
-| Include scoped non-`src` surfaces in coverage accounting | `npm run coverage` plus coverage summary inspection | pass | `scripts/skills/**`, `integrations/pi/security.ts`, and `integrations/openclaw/plugin.mjs` now appear in coverage summary. |
+| Include scoped deterministic non-`src` source surfaces in coverage accounting | `npm run coverage` plus coverage summary inspection | pass | `scripts/skills/**`, `integrations/pi/security.ts`, and `integrations/openclaw/plugin.mjs` now appear in coverage summary; bundled hook scripts and the MCP shim remain contract-tested packaging artifacts rather than direct V8 include targets. |
 | Generated skill reference contracts | targeted skill/plugin tests and `npm run skills:check` | pass | `npm run skills:check`; `test/plugin-surface-contract.test.ts` checks autogen blocks and runs generator/check success paths in-process. |
 | Plugin manifest and hook/script packaging contracts | targeted plugin tests | pass | `test/plugin-surface-contract.test.ts`, `test/codex-plugin.test.ts`, `test/copilot-plugin.test.ts`. |
 | MCP package and integration config contracts | targeted plugin/integration tests | pass | `test/plugin-surface-contract.test.ts`, `test/hermes-plugin.test.ts`, `test/openclaw-plugin.test.ts`. |
-| No stale counts across docs/manifests | targeted contract tests and `npm run skills:check` | pass | Plugin descriptions now match 53 tools, 15 skills, and manifest hook counts; Hermes/OpenClaw README MCP badges now match 53 tools. |
+| No stale counts across docs/manifests | targeted contract tests and `npm run skills:check` | pass | Plugin descriptions now match 53 tools, 15 skills, and manifest hook counts; Hermes/OpenClaw README badges and prose counts now match 53 tools. |
 | Full repo health | `npm test`, `npm run build`, `npm run lint`, security scans | pass | `npm test`, `npm run coverage`, `npm run build`, `npm run lint`, `gitleaks protect --staged --redact`, and `semgrep scan --config p/default --error --metrics=off .` passed. |
 
 ## Progress
@@ -63,3 +67,4 @@ Stop conditions:
 - 2026-06-14: Added OpenClaw tests for recall formatting, conversation capture, REST error propagation, and plaintext bearer guard behavior.
 - 2026-06-14: After changes, `npm run coverage` passed. Scoped executable aggregate: 89.56% lines, 83.51% statements, 95.65% functions, 70.95% branches. Branches remain below 80% because the remaining misses are mostly script lint/generator negative filesystem branches; lines/statements/functions meet the target.
 - 2026-06-14: Verification passed: `npm run skills:check`; targeted plugin/skill/connect tests; `npm test`; `npm run coverage`; `npm run build`; `npm run lint`; `gitleaks protect --staged --redact`; `semgrep scan --config p/default --error --metrics=off .`.
+- 2026-06-15: Prep-merge review flagged a stale OpenClaw prose count and ambiguous coverage wording for `plugin/scripts/*.mjs` and `packages/mcp/bin.mjs`. Fixed the stale count, expanded the README prose stale-count contract, and clarified that bundled standalone artifacts are covered by manifest/package/child-process contracts while deterministic source surfaces are V8-instrumented.

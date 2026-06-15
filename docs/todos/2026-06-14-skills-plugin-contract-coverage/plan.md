@@ -41,8 +41,8 @@ Spec path: none. Source of truth is the delegated user request plus repo `AGENTS
 - Modify: `vitest.config.ts`
 
 - [ ] Write a failing targeted coverage run or config inspection showing scoped files are excluded from V8 coverage.
-- [ ] Update coverage `include` to cover `src/**/*.ts`, `scripts/skills/**/*.ts`, `packages/mcp/**/*.mjs`, `plugin/scripts/**/*.mjs`, and integration plugin/config script surfaces that tests can execute deterministically.
-- [ ] Keep generated/build/vendor artifacts excluded.
+- [ ] Update coverage `include` to cover deterministic source surfaces: `src/**/*.ts`, `scripts/skills/**/*.ts`, and integration plugin/config script surfaces that tests can execute in-process.
+- [ ] Keep generated/build/vendor artifacts and bundled standalone hook/MCP wrapper artifacts excluded from V8 line coverage; cover those package/plugin artifacts with manifest, packaging, and child-process contract tests instead.
 - [ ] Run `npm run coverage` and confirm scoped files appear in `coverage/coverage-summary.json`.
 
 ### Task 3: Skill Generator and Reference Contracts
