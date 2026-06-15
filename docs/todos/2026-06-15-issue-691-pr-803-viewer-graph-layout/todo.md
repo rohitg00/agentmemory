@@ -43,7 +43,7 @@ Known boundaries:
 | Preserve graph node layout on reload | Add failing regression assertions, then adapt minimal viewer code | Done | Red: `npm test -- test/viewer-graph-cooldown.test.ts` failed 3 new tests before implementation. Green: same command passed 1 file / 8 tests after implementation. |
 | Preserve graph viewport and avoid duplicate loops/listeners | Add failing regression assertions, then adapt minimal viewer code | Done | `initGraph()` now preserves pan/zoom when previous layout exists, cancels stale rAF, and removes the prior resize listener before adding a new one. |
 | Security review | Manual surface review plus required scanners where available | Done | Manual review found no auth/isolation/data-exfiltration/path/protocol/prompt/supply-chain/hook/persistence change. Semgrep default scan on changed tracked files completed with 0 findings. |
-| Merge prep | Run `$prep-merge-to-local-main` | In progress | Preflight clean except task-owned files and ignored `node_modules/` verification artifact; local main worktree clean at captured main commit. |
+| Merge prep | Run `$prep-merge-to-local-main` | Done | Commit `9b6b4867a03e78ffdbc1f93e7a580a729fc5cb8f` created for implementation. Local main commit `6c387b4efea524db5bf8fe0e923958cbcf0213f1` was already ancestor of HEAD, so merge was a no-op. |
 
 ## PR Review Notes
 
@@ -89,3 +89,11 @@ Security notes:
 Review notes:
 - First read-only implementation review found one important issue: cleanup ran only inside `initGraph()`, so a failed `graph/query` after DOM replacement could leave stale detached-canvas runtime state. Fixed by adding `stopGraphRuntime()` before `loadGraph()` replaces the graph DOM and reusing that helper in `initGraph()`.
 - Second read-only implementation review returned ACCEPT. Residual risk: viewer tests are string-regression assertions rather than browser/runtime behavioral tests; no active rAF or resize listener remains after failed reload.
+
+Merge-prep notes:
+- `$prep-merge-to-local-main` preflight found branch `review/issue-691-pr-803-viewer-graph-layout`, no staged unrelated files, no active merge/rebase/cherry-pick/revert/bisect/sequencer state, no active hooks, no signing config, and clean local `main` worktree at `6c387b4efea524db5bf8fe0e923958cbcf0213f1`.
+- `gitleaks protect --staged --redact` scanned the staged implementation commit payload and found no leaks.
+- Implementation commit: `9b6b4867a03e78ffdbc1f93e7a580a729fc5cb8f`.
+- Local `main` merge: no-op because `refs/heads/main` at `6c387b4efea524db5bf8fe0e923958cbcf0213f1` was already an ancestor of branch HEAD.
+- Post-merge verification: `npm test -- test/viewer-graph-cooldown.test.ts` passed 1 file / 9 tests; `git diff --check HEAD` passed; Semgrep default scan on changed tracked files completed with 0 findings.
+- Preserved local artifact: ignored `node_modules/` exists from local verification dependency installation and is not task source.

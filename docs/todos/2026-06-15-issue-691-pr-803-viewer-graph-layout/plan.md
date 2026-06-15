@@ -18,13 +18,13 @@
 
 ## Tasks
 
-- [ ] Write failing regression assertions in `test/viewer-graph-cooldown.test.ts` for previous layout capture, position reuse, viewport preservation, resize-handler cleanup, and stale animation-frame cancellation.
-- [ ] Run `npm test -- test/viewer-graph-cooldown.test.ts` and confirm the new assertions fail against current code.
-- [ ] Update `graphSim` and `initGraph()` in `src/viewer/index.html` to store a resize handler, cancel any active rAF, remove prior resize listener, preserve pan/zoom when a previous layout exists, and reuse x/y/vx/vy for matching nodes.
-- [ ] Run `npm test -- test/viewer-graph-cooldown.test.ts` and `git diff --check`.
-- [ ] Perform focused manual security review for viewer-only JavaScript changes: no auth bypass, no new network calls, no storage/persistence changes, no user-controlled script execution, no dependency/supply-chain change, no unbounded new work.
-- [ ] Run required security gates that apply to a code change when available, and record unavailable tools or blocked checks.
-- [ ] Update this task record with final decision, verification evidence, caveats, and merge-prep result.
+- [x] Write failing regression assertions in `test/viewer-graph-cooldown.test.ts` for previous layout capture, position reuse, viewport preservation, resize-handler cleanup, and stale animation-frame cancellation.
+- [x] Run `npm test -- test/viewer-graph-cooldown.test.ts` and confirm the new assertions fail against current code.
+- [x] Update `graphSim` and `initGraph()` in `src/viewer/index.html` to store a resize handler, cancel any active rAF, remove prior resize listener, preserve pan/zoom when a previous layout exists, and reuse x/y/vx/vy for matching nodes.
+- [x] Run `npm test -- test/viewer-graph-cooldown.test.ts` and `git diff --check`.
+- [x] Perform focused manual security review for viewer-only JavaScript changes: no auth bypass, no new network calls, no storage/persistence changes, no user-controlled script execution, no dependency/supply-chain change, no unbounded new work.
+- [x] Run required security gates that apply to a code change when available, and record unavailable tools or blocked checks.
+- [x] Update this task record with final decision, verification evidence, caveats, and merge-prep result.
 
 ## Self-Review
 
