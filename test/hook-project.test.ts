@@ -140,7 +140,7 @@ describe("resolveProject — canonical project resolver", () => {
   it("falls back to basename(cwd) when not in a git repo", () => {
     const dir = mkdtempSync(join(tmpdir(), "amem-noproj-"));
     try {
-      expect(resolveProject(dir)).toBe(dir.split("/").pop());
+      expect(resolveProject(dir)).toBe(basename(dir));
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

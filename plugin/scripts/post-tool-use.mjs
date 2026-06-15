@@ -74,7 +74,7 @@ function gitOutput(cwd, args) {
 			"pipe",
 			"ignore"
 		],
-		timeout: 500
+		timeout: 2e3
 	}).trim();
 }
 function realPath(path) {
