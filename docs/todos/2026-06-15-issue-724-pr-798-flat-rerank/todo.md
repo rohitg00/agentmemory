@@ -51,8 +51,8 @@ Stop conditions:
 | Issue-first relevance | Inspect local reranker and hybrid-search paths; reproduce flat scores in a targeted test if needed | complete | Local `src/state/reranker.ts` used text-classification output score as `combinedScore`; targeted test covers constant score preservation. |
 | PR 798 disposition | Public diff inspection; compare against local fork code | complete | PR 798 inspected as untrusted public diff; decision is adapted import. |
 | Minimal implementation, if needed | Focused diff review and targeted tests | complete | Changed `src/state/reranker.ts`, `src/types.ts`, and `test/reranker.test.ts` only. |
-| Security review | Passive security review plus required local scan gates where applicable | in progress | Manual review and Semgrep complete; Gitleaks pending before commit. |
-| Prep merge | Run prep-merge-to-local-main workflow | pending |  |
+| Security review | Passive security review plus required local scan gates where applicable | complete | Manual review, Semgrep, and staged Gitleaks complete; OSV not applicable. |
+| Prep merge | Run prep-merge-to-local-main workflow | complete | Local main commit was already an ancestor of the branch after task commit; merge step was a no-op. |
 
 ## Progress
 
@@ -67,6 +67,12 @@ Stop conditions:
   - `tsc --noEmit`: attempted, but not a valid verification in this worktree because dependencies are not installed locally and module/type resolution fails broadly before isolating this diff.
   - Targeted ESLint via main checkout dependency host: attempted, but files were ignored as outside that checkout base path; not counted as verification.
   - Semgrep default registry scan: pass, 0 findings.
+  - Staged Gitleaks before task commit: pass, no leaks found.
+- Commit:
+  - Task commit `432f7969bbd0e1a6b3992bed86a45f3e6b1a7492` created with only task-owned files.
+- Prep merge:
+  - Local main commit `6c387b4efea524db5bf8fe0e923958cbcf0213f1` was already an ancestor of `HEAD` after the task commit.
+  - Merge command skipped as no-op; no conflicts and no preserved unrelated dirty paths.
 
 ## Review Notes
 
@@ -84,3 +90,6 @@ Stop conditions:
   - `$requesting-code-review`: subagent dispatch not run because available subagent tooling requires an explicit user request for subagents; local focused review performed instead.
   - `$review-implementation`: local adversarial review performed on the same task-owned diff; no blocking findings.
   - `codex-security:security-diff-scan`: skipped because the diff does not touch auth, secrets, dependencies, CI, package-manager/tool config, API contracts, networking, subprocesses, filesystem access, parsers/deserializers, persistence, or protocol handling. Manual security review and Semgrep cover the changed model-scoring path.
+- Final residual risks:
+  - The adapted fix does not change the underlying model/pipeline choice; it prevents flat scores from clobbering retrieval scores but does not make the cross-encoder more discriminative.
+  - Full `npm test` was not run in this worktree because dependencies are not installed locally. Targeted Vitest ran through the main checkout dependency host.
