@@ -93,6 +93,7 @@ import { registerEventTriggers } from "./triggers/events.js";
 import { registerMcpEndpoints } from "./mcp/server.js";
 import { getAllTools } from "./mcp/tools-registry.js";
 import { startViewerServer } from "./viewer/server.js";
+import { shutdownSdkWithTimeout } from "./shutdown.js";
 import { MetricsStore } from "./eval/metrics-store.js";
 import { DedupMap } from "./functions/dedup.js";
 import { registerHealthMonitor } from "./health/monitor.js";
@@ -598,7 +599,7 @@ async function main() {
     await indexPersistence.save().catch((err) => {
       console.warn(`[agentmemory] Failed to save index on shutdown:`, err);
     });
-    await sdk.shutdown();
+    await shutdownSdkWithTimeout(sdk);
     clearWorkerPidfile();
     process.exit(0);
   };
