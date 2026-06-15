@@ -698,6 +698,7 @@ The CLI must support:
 --read-with-gh
 --confirm-credentialed-reads
 --confirm-remote-writes
+--write-delay-ms N
 ```
 
 Rules:
@@ -707,6 +708,7 @@ Rules:
 - `--read-with-gh` requires `--confirm-credentialed-reads`.
 - `--apply` requires `--confirm-credentialed-reads` and `--confirm-remote-writes`.
 - `--apply` requires `--from-report <dry-run-report>`.
+- `--write-delay-ms N` sets the delay between successful write actions. Default is `1000`; use a slower value such as `10000` when resuming after GitHub secondary content-creation limits.
 - Before the first write, apply mode must recompute the current plan from credentialed reads of upstream PRs, target issues, and target labels, then fail if the current stable action IDs, source PR count, target normal issue count, target label count, or plan hash differ from the reviewed dry-run report.
 - `--verify` is read-only and exits nonzero when verification fails.
 - The CLI must not print environment variables, tokens, or `gh auth` output.
@@ -792,6 +794,7 @@ Do not copy upstream PR review comments, issue comments, checks, or reactions in
 Apply write requirements:
 - Write only managed PR-tracker labels and tracker issues; do not close target issues from upstream PR state.
 - Execute remote writes sequentially and wait at least one second between successful remote write actions.
+- If GitHub secondary content-creation limits stop a large apply run, do not retry in a tight loop. Wait for a cooldown, regenerate the dry-run report against current target state, then resume with a slower delay, for example `--write-delay-ms 10000`.
 - Write a checkpoint report after each successful remote write action or successful write batch, and before stopping on any runtime stop condition.
 - Stop without retrying when GitHub returns `403`, `429`, `422`, a `Retry-After` header, secondary-rate-limit text, spam-prevention text, validation text, or abuse-detection text. Record whether the stop is retryable rate limiting, spam/abuse prevention, authentication, permission, validation, or unknown based on safe response metadata. Do not classify every `403` as retryable.
 - After a stop condition, run no further writes. Recovery is an idempotent rerun from a freshly reviewed dry-run report or from a still-matching reviewed report after the recommended wait period.
@@ -930,6 +933,7 @@ node --import tsx scripts/github/track-upstream-prs-as-issues.ts \
   --from-report docs/todos/2026-06-14-track-upstream-prs-as-issues/dry-run-report.json \
   --confirm-credentialed-reads \
   --confirm-remote-writes \
+  --write-delay-ms 10000 \
   --report docs/todos/2026-06-14-track-upstream-prs-as-issues/apply-report.json
 ```
 

@@ -53,12 +53,12 @@ Known boundaries:
 | Change | Verification method | Status | Evidence |
 | --- | --- | --- | --- |
 | PR issue tracker plan | Self-review and `/review-plan` | Done | `upstream-pr-issues-plan-r8` accepted by correctness, GitHub safety, and implementation/test review lanes after consensus refinements from the issue mirror plan. |
-| Durable ADR decision | `adr list`, ADR content review | Pending | Planned via `adr new "Track upstream pull requests as fork issues"`. |
-| Operator workflow docs | Markdown fence check and content review | Pending | Planned in `docs/recipes/upstream-pr-issue-tracking.md`. |
-| Pure planner library | `npm test -- test/upstream-pr-issue-tracker.test.ts` | Pending | Tests planned for marker parsing, dedupe, body generation, decision preservation, and verification. |
-| Dry-run CLI | Dry-run JSON report | Pending | Planned CLI defaults to dry-run and reports all planned writes. |
-| Apply mode | Explicit confirmation plus GitHub API writes | Pending | Must not run without current-turn confirmation. |
-| Verify mode | Verification JSON report | Pending | Must prove exactly one fork issue marker per upstream PR. |
+| Durable ADR decision | `adr list`, ADR content review | Done | `docs/adr/0002-track-upstream-pull-requests-as-fork-issues.md` created with `adr-tools`; `adr list` shows ADR 0001 and 0002. |
+| Operator workflow docs | Markdown fence check and content review | Done | `docs/recipes/upstream-pr-issue-tracking.md`; Markdown fence check printed `Markdown fences balanced`. |
+| Pure planner library | `npm test -- test/upstream-pr-issue-tracker.test.ts` | Done | Red run failed on missing module, then implementation passed with 22 tests. |
+| Dry-run CLI | Dry-run JSON report | Done | Public dry-run wrote `dry-run-report.json`: 536 source PRs, 378 target normal issues, 0 existing PR trackers, 11 create-label actions, 536 create-issue actions, 0 failures, `wroteRemote: false`. |
+| Apply mode | Explicit confirmation plus GitHub API writes | Blocked | User confirmed current-turn apply. GitHub secondary content-creation limits still block the first remaining create action after 500 of 536 PR trackers were created; 36 create actions remain. |
+| Verify mode | Verification JSON report | Blocked | `verify-report.json` generated at `2026-06-15T03:12:32.737Z` reports 500 target PR tracker markers and 36 missing upstream PRs. |
 
 ## Progress Notes
 
@@ -69,6 +69,37 @@ Known boundaries:
 - 2026-06-14: Review revision `upstream-pr-issues-plan-r4` expanded apply confirmation to include credentialed reads of upstream PRs, target issues, and target labels, and added pre-write JSON payload validation before `gh api --input`.
 - 2026-06-14: User asked to compare the normal issue mirror plan for reusable PR-tracker refinements. Subagents reached consensus to adopt public-read headers, PR-scoped apply checkpoint/rate-limit resilience, and aggregate sanitization telemetry for imported upstream PR body text only. The same consensus rejected importing comment mirroring, auto-close, arbitrary upstream label cloning, source `/issues` PR discovery, and overflow-to-comments behavior.
 - 2026-06-14: Fresh `/review-plan` accepted `upstream-pr-issues-plan-r8` after fixes for workflow-section preservation, upstream-authored title/metadata sanitization, validation stop conditions, and malformed/missing section delimiter no-write behavior.
+- 2026-06-15: Started implementation in the current `main` checkout after user asked to execute the plan. Baseline: `main...origin/main [ahead 3]`, `origin` points to `wbugitlab1/agentmemory`, `upstream` points to `rohitg00/agentmemory`, `.adr-dir` is `docs/adr`, `gh version 2.93.0`, Node `v22.22.3`.
+- 2026-06-15: Created ADR 0002 with `adr-tools`, generated `docs/adr/README.md`, and added the operator recipe. ADR date uses the actual creation date, `2026-06-15`.
+- 2026-06-15: Added PR tracker planner and CLI with test-first evidence. Initial test run failed because `scripts/github/upstream-pr-issue-tracker.js` was missing; after implementation `npm test -- test/upstream-pr-issue-tracker.test.ts` passed with 22 tests.
+- 2026-06-15: Public dry-run completed without writes. Report summary: 536 source PRs, 378 target issue endpoint items, 378 target normal issues, 28 target labels, 0 existing PR tracker markers, 11 planned label creates, 536 planned issue creates, 0 failures, sanitization telemetry 182 mentions, 1044 references, 1248 closing keywords.
+- 2026-06-15: First apply attempt stopped before writing because public dry-run and `gh api` reads rendered control characters differently in upstream PR bodies #652 and #502. A credentialed dry-run regenerated the same action counts with the same plan hash as apply.
+- 2026-06-15: Apply created the 11 managed labels and 219 PR tracker issues before the interactive tool session was interrupted. Resume dry-run found 219 existing PR trackers and 317 remaining creates.
+- 2026-06-15: Resume apply created another 281 PR tracker issues and stopped fail-closed at upstream PR #107 due to GitHub secondary content-creation rate limiting (`HTTP 403`, no Retry-After). Fresh resume dry-run now shows 500 existing PR trackers and 36 remaining creates.
+- 2026-06-15: Added `--write-delay-ms` to the PR tracker CLI and documented slower resume after secondary content-creation limits. `npm test -- test/upstream-pr-issue-tracker.test.ts` passed with 22 tests after the change.
+- 2026-06-15: After a 5 minute cooldown, a fresh dry-run still showed 36 remaining creates. Resume with `--write-delay-ms 10000` stopped immediately on the same GitHub secondary content-creation limit at upstream PR #107. No new writes occurred in that retry. Current verify is red only for 36 missing PR tracker markers.
+- 2026-06-15 03:03 UTC: Fresh public verify still reports 500 target PR tracker markers and the same 36 missing upstream PRs. Because the last GitHub secondary-rate-limit failure was at 03:00:43 UTC, do not run a third immediate apply attempt.
+- 2026-06-15 03:12 UTC: User asked to retry. Credentialed dry-run succeeded and still planned 36 create actions plus 500 skips. Apply with `--write-delay-ms 30000` stopped before any write on the same GitHub secondary content-creation limit at upstream PR #107 (`HTTP 403`, no Retry-After). Credentialed verify still reports 500 target PR tracker markers and 36 missing upstream PRs.
+
+## Current Blocker
+
+GitHub has temporarily blocked further issue creation for the authenticated account/repository with a secondary content-creation rate limit. The tracker stopped fail-closed and did not run later writes after the `HTTP 403`.
+
+Current remote state:
+
+- Source PRs: 536
+- Existing fork PR tracker markers: 500
+- Remaining create actions: 36
+- Missing upstream PRs: #107, #106, #105, #103, #102, #101, #99, #97, #95, #93, #83, #82, #81, #80, #79, #78, #77, #76, #74, #73, #72, #71, #70, #69, #68, #67, #10, #9, #8, #7, #6, #5, #4, #3, #2, #1
+- Last failed action: create tracker for upstream PR #107
+- Stop condition: GitHub secondary content-creation rate limit, `HTTP 403`, no `Retry-After`
+
+Next safe resume:
+
+1. Wait for a longer cooldown than 5 minutes.
+2. Regenerate the dry-run report with `--read-with-gh --confirm-credentialed-reads`.
+3. Resume apply with `--write-delay-ms 10000` or slower.
+4. Run verify again and require zero missing markers before marking complete.
 
 ## Plan Review Ledger
 
