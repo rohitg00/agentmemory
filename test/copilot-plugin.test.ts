@@ -377,4 +377,30 @@ describe("Copilot hook scripts", () => {
       },
     });
   });
+
+  it("stop calls summarize but not session/end", async () => {
+    const result = await runHook("scripts/stop.mjs", {
+      sessionId: "copilot-session",
+      cwd: "C:\\repo",
+    });
+
+    expect(result.stdout).toBe("");
+    const paths = result.requests.map((r) => r.path);
+    expect(paths).toContain("/agentmemory/summarize");
+    expect(paths).not.toContain("/agentmemory/session/end");
+  });
+
+  it("codex-stop calls summarize and session/end", async () => {
+    const result = await runHook("scripts/codex-stop.mjs", {
+      sessionId: "codex-session",
+      cwd: "/repo",
+    });
+
+    expect(result.stdout).toBe("");
+    const paths = result.requests.map((r) => r.path);
+    expect(paths).toEqual([
+      "/agentmemory/summarize",
+      "/agentmemory/session/end",
+    ]);
+  });
 });

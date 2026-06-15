@@ -2,9 +2,6 @@
 
 import { authHeaders, guardedFetch } from "./_http.js";
 
-// Inlined — see src/hooks/sdk-guard.ts for canonical version. Kept local
-// per-hook so tsdown does not emit a shared hashed chunk that would churn
-// the diff on every rebuild.
 function isSdkChildContext(payload: unknown): boolean {
   if (process.env["AGENTMEMORY_SDK_CHILD"] === "1") return true;
   if (!payload || typeof payload !== "object") return false;
@@ -27,11 +24,7 @@ async function main() {
     return;
   }
 
-  if (isSdkChildContext(data)) {
-    // Do not summarize from inside a Claude Agent SDK child session;
-    // would re-enter agent-sdk provider and loop (see sdk-guard.ts).
-    return;
-  }
+  if (isSdkChildContext(data)) return;
 
   const sessionId = ((data.session_id || data.sessionId) as string) || "unknown";
 
@@ -40,6 +33,13 @@ async function main() {
     headers: authHeaders(SECRET),
     body: JSON.stringify({ sessionId }),
     signal: AbortSignal.timeout(120000),
+  })?.catch(() => {});
+
+  guardedFetch(REST_URL, "/agentmemory/session/end", SECRET, {
+    method: "POST",
+    headers: authHeaders(SECRET),
+    body: JSON.stringify({ sessionId }),
+    signal: AbortSignal.timeout(5000),
   })?.catch(() => {});
 
   setTimeout(() => process.exit(0), 1500).unref();
