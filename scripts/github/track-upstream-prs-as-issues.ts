@@ -42,6 +42,7 @@ export type PrTrackerCliOptions = {
   report: string | null;
   confirmCredentialedReads: boolean;
   confirmRemoteWrites: boolean;
+  createMissingOnly: boolean;
   writeDelayMs: number;
 };
 
@@ -131,6 +132,7 @@ export function parseCliArgs(args: string[]): PrTrackerCliOptions {
     report: null,
     confirmCredentialedReads: false,
     confirmRemoteWrites: false,
+    createMissingOnly: false,
     writeDelayMs: 1000,
   };
 
@@ -148,6 +150,7 @@ export function parseCliArgs(args: string[]): PrTrackerCliOptions {
     else if (arg === "--read-with-gh") options.readMode = "read-with-gh";
     else if (arg === "--confirm-credentialed-reads") options.confirmCredentialedReads = true;
     else if (arg === "--confirm-remote-writes") options.confirmRemoteWrites = true;
+    else if (arg === "--create-missing-only") options.createMissingOnly = true;
     else if (arg === "--write-delay-ms") options.writeDelayMs = parsePositiveInteger(requireValue(args, ++index, arg), arg);
     else throw new Error(`Unknown argument: ${arg}`);
   }
@@ -168,6 +171,7 @@ export async function runPrTracker(options: {
   report: string;
   confirmCredentialedReads: boolean;
   confirmRemoteWrites: boolean;
+  createMissingOnly?: boolean;
   reader: PrTrackerReader;
   writer?: PrTrackerWriter;
   checkpointReport?: (report: TrackerReport) => Promise<void>;
@@ -183,7 +187,8 @@ export async function runPrTracker(options: {
     targetLabels: inventory.targetLabels,
   });
   const verification = buildVerification(inventory);
-  const report = buildReport(options, inventory, plan.actions, options.mode === "verify" ? verification.failures : plan.failures);
+  const actions = options.createMissingOnly && options.mode !== "verify" ? createMissingOnlyActions(plan.actions) : plan.actions;
+  const report = buildReport(options, inventory, actions, options.mode === "verify" ? verification.failures : plan.failures);
 
   if (options.mode === "verify") {
     await writeJsonReport(options.report, report);
@@ -223,7 +228,7 @@ export async function runPrTracker(options: {
     return report;
   }
 
-  for (const action of plan.actions) {
+  for (const action of actions) {
     const detail = actionDetail(action);
     if (action.type === "skip-issue") {
       report.skippedActions.push(detail);
@@ -267,6 +272,10 @@ export async function runPrTracker(options: {
 
   await writeJsonReport(options.report, report);
   return report;
+}
+
+function createMissingOnlyActions(actions: PlannedPrAction[]): PlannedPrAction[] {
+  return actions.filter((action) => action.type === "create-label" || action.type === "create-issue");
 }
 
 export function createPublicGitHubReader(fetchImpl: typeof fetch = fetch): PrTrackerReader {
@@ -721,6 +730,7 @@ async function main(): Promise<void> {
     report: options.report ?? "pr-tracker-report.json",
     confirmCredentialedReads: options.confirmCredentialedReads,
     confirmRemoteWrites: options.confirmRemoteWrites,
+    createMissingOnly: options.createMissingOnly,
     reader,
     writer,
     writeDelayMs: options.writeDelayMs,
