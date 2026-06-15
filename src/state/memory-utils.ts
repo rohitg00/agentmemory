@@ -20,5 +20,6 @@ export function memoryToObservation(memory: Memory): CompressedObservation {
     concepts: memory.concepts,
     files: memory.files,
     importance: memory.strength,
+    agentId: memory.agentId,
   };
 }
