@@ -51,8 +51,8 @@ Known boundaries:
 | Issue 875 relevance decision | Current code inspection plus targeted reproduction/test | Done | Current fork still checked only PATH for `engine-version-mismatch`; a pinned private install could be present but ignored by a fresh doctor run. |
 | PR 895 fork-fit decision | Public diff inspection plus local comparison | Done | Adapted import: kept the private-install-aware checks and `manualOnly` auto-fix guard; also adjusted dry-run wording for manual-only diagnostics. |
 | Minimal implementation, if warranted | Focused vitest, diff review, security review | Done | Changed `src/cli.ts`, `src/cli/doctor-diagnostics.ts`, and `test/cli-doctor-fixes.test.ts`; focused Vitest passed 24 tests. |
-| Neutral local documentation | Review this task record for banned URL/hash/mention forms | In progress | This record uses neutral IDs and omits external URLs and mention syntax. |
-| Merge prep | `$prep-merge-to-local-main` workflow | Pending |  |
+| Neutral local documentation | Review this task record for banned URL/hash/mention forms | Done | This record uses neutral IDs and omits external URLs and mention syntax. |
+| Merge prep | `$prep-merge-to-local-main` workflow | Done | Local `main` commit `6c387b4efea524db5bf8fe0e923958cbcf0213f1` was merged into this branch with merge commit `6fb4a04a855f0e536dcd7421fafbf8cbe3d7c71d`; no conflicts. |
 
 ## Subagent Ledger
 
@@ -74,6 +74,8 @@ No delegated workstreams yet. If conflict resolution or independent security val
 - 2026-06-15: Security verification: targeted Semgrep over `src/cli.ts` and `src/cli/doctor-diagnostics.ts` passed with 0 findings; repo-wide Semgrep passed with 0 findings across tracked files; full-tree Gitleaks detect passed with no leaks.
 - 2026-06-15: Codex Security diff scan completed for local patch with 2/2 runtime files reviewed, no candidate findings, and final reports at `/tmp/codex-security-scans/agentmemory/bfde73b_20260615T180308Z_local-patch/report.md` and `.html`. Goal usage: 31,825 tokens and 153 seconds.
 - 2026-06-15: Full non-installing Vitest attempt using primary checkout dependencies and this worktree as root failed due environment/module-resolution limitations: many failures were `Cannot find package 'iii-sdk'` or `Cannot find package '@clack/prompts'` from this worktree lacking local dependencies. This is not used as a regression signal for the task-owned change. The attempt created ignored cache `node_modules/.vite/vitest`, classified as a verification artifact and not staged.
+- 2026-06-15: `$prep-merge-to-local-main` preflight found no active Git operation, no staged or unstaged tracked changes, local `main` at `6c387b4efea524db5bf8fe0e923958cbcf0213f1`, and only the pre-existing ignored Vitest cache under `node_modules/`. The local `main` worktree was clean and matched the captured commit.
+- 2026-06-15: Merged captured local `main` commit `6c387b4efea524db5bf8fe0e923958cbcf0213f1` into `review/issues-874-875-pr-895-doctor-engine-checks`, producing merge commit `6fb4a04a855f0e536dcd7421fafbf8cbe3d7c71d`. There were no conflicts. The first sandboxed merge attempt was blocked by Git metadata write permissions on `ORIG_HEAD`; the same local merge command succeeded after filesystem escalation.
 
 ## Review Notes
 
@@ -99,6 +101,11 @@ Verification summary:
 - `semgrep scan --config p/default --error --metrics=off src/cli.ts src/cli/doctor-diagnostics.ts`: passed, 0 findings.
 - `semgrep scan --config p/default --error --metrics=off .`: passed, 0 findings.
 - `gitleaks detect --source . --redact --no-color`: passed, no leaks.
+- Post-merge `/Users/A1538552/_projects/_tools/agentmemory/node_modules/.bin/vitest run --root /Users/A1538552/.codex/worktrees/9361/agentmemory --config /Users/A1538552/_projects/_tools/agentmemory/vitest.config.ts test/cli-doctor-fixes.test.ts test/github-cross-reference-neutralizer.test.ts test/issue-mirror.test.ts test/upstream-pr-issue-tracker.test.ts`: passed, 4 files / 105 tests.
+- Post-merge `git diff --check`: passed.
+- Post-merge `semgrep scan --config p/default --error --metrics=off .`: passed, 0 findings.
+- Post-merge `gitleaks detect --source . --redact --no-color`: passed, no leaks.
+- Post-merge `gitleaks protect --staged --redact --no-color`: passed, no leaks with no staged content.
 - Full non-installing Vitest suite attempt: failed due missing package resolution in this worktree when using external dependencies; focused test remains the task-owned verification.
 
 Review chain notes:

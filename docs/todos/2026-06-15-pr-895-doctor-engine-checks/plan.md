@@ -56,9 +56,9 @@
 
 ## Task 6: Prep Merge To Local Main
 
-- [ ] Invoke `$prep-merge-to-local-main` after implementation/review is stable.
-- [ ] If there are no task-owned changes left to commit or merge, record the no-op/skip evidence.
-- [ ] Include merge-prep result, branch name, verification, and residual risks in the final handoff.
+- [x] Invoke `$prep-merge-to-local-main` after implementation/review is stable.
+- [x] If there are no task-owned changes left to commit before merge, record the no-op/skip evidence.
+- [x] Include merge-prep result, branch name, verification, and residual risks in the final handoff.
 
 ## Self-Review
 
