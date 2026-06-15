@@ -120,6 +120,14 @@ Stop conditions:
 - `$requesting-code-review`: independent read-only reviewer returned ACCEPT with one non-blocking minor UI finding; fixed by removing static `data-i18n` from the dynamic theme toggle.
 - `codex-security:security-diff-scan`: pass, no findings. Markdown report: `/tmp/codex-security-scans/agentmemory/local_patch_20260615215635/report.md`; HTML report: `/tmp/codex-security-scans/agentmemory/local_patch_20260615215635/report.html`.
 - `$prep-merge-to-local-main`: current preflight resolved local `main` to `6c387b4efea524db5bf8fe0e923958cbcf0213f1`; listed main worktree is clean and points at that commit. Incoming local-main paths are unrelated ADR/docs/github tracking changes.
+- Pre-merge commit: `e437d09ee61248323482ec0184eaeae3ff594c32` (`feat(viewer): add Chinese locale support`).
+- Local-main merge commit: `05d8b94f7d45e282f5fc84249796e7c47272bbfd`; merge used captured local `main` commit `6c387b4efea524db5bf8fe0e923958cbcf0213f1` and had no conflicts.
+- Post-merge verification:
+  - `git diff --check`: pass.
+  - `npm test -- test/viewer-i18n.test.ts test/viewer-security.test.ts`: pass, 2 files, 29 tests.
+  - `npm run build`: pass with existing tsdown warnings.
+  - `npm run lint`: pass.
+  - `npm test`: pass, 159 files, 1992 tests after merging local `main`.
 - Task-created local artifact: the untracked `node_modules` symlink used for test execution was removed after explicit approval before staging.
 
 ## Updated Feature / Verification Matrix
@@ -131,11 +139,11 @@ Stop conditions:
 | Viewer document injection | Targeted failing test then implementation | done | Red failure on missing `window.__AM_LOCALE__`; green targeted security/i18n tests passed. |
 | Viewer static/dynamic translation support | Targeted test plus focused source inspection | done | Core chrome/status/auth/dashboard proof surfaces use locale helpers; full dynamic UI coverage remains residual risk. |
 | Chinese locale coverage | Locale parity and `VIEWER_LANGUAGE=zh` tests | done | `zh-CN` canonicalizes to `zh`; rendered document contains Chinese dashboard label; locale parity tests pass. |
-| Security posture | Targeted security tests plus Semgrep/Gitleaks as required | partial | Security tests, Semgrep, OSV, security diff scan, and `git diff --check` passed; staged Gitleaks still pending before commit. |
-| Merge prep | `$prep-merge-to-local-main` | in progress | Preflight passed after local `main` became clean; staging, Gitleaks, commit, local-main merge, and post-merge verification pending. |
+| Security posture | Targeted security tests plus Semgrep/Gitleaks as required | done | Security tests, Semgrep, OSV, security diff scan, staged Gitleaks, and `git diff --check` passed. |
+| Merge prep | `$prep-merge-to-local-main` | done | Task commit created, captured local `main` merged without conflicts, post-merge build/lint/tests passed. |
 
 ## Residual Risk
 
 - Full viewer string coverage is large because `src/viewer/index.html` contains many dynamic HTML builders. The adapted fix should prioritize a safe, testable framework plus core chrome/status/localized Chinese proof rather than importing stale upstream viewer hunks wholesale.
 - This adaptation intentionally localizes the framework and core/proof viewer surfaces, not every existing English string in the 4000-line viewer HTML. A follow-up can expand coverage one view at a time using the same safe helpers and parity tests.
-- Staged Gitleaks and final post-merge verification remain pending until the commit and local-main merge steps complete.
+- No unresolved security findings. Full viewer string localization remains intentionally deferred as product follow-up, not a blocker for Issue 483's Chinese i18n foundation.
