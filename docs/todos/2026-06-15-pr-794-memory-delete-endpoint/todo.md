@@ -56,8 +56,8 @@ Stop conditions:
 | PR 794 review | Public issue/PR JSON and patch inspection | Done | PR adds a direct delete endpoint through `mem::forget`, but is stale against the current fork endpoint count and has narrower boundary coverage than this fork expects. |
 | Adapted endpoint | Targeted code review and tests | Done | Added `api::memory-delete` for `DELETE /agentmemory/memories/:id`; it authenticates, trims/validates id, returns 404 for missing/out-of-scope memories, and dispatches whitelisted `{ memoryId }` to `mem::forget`. |
 | Security review | Manual checklist plus diff scan where required | Done | Manual review and Codex Security diff scan found no reportable finding after fixing the isolated-scope wildcard/override issue. Semgrep completed with 0 findings. |
-| Verification | Targeted tests and diff checks | In progress | `git diff --check` passed. Static endpoint consistency check returned 129 and confirmed docs/log references. `semgrep scan --config p/default --error --metrics=off .` passed with 0 findings. `npm test -- test/api-boundary-coverage.test.ts test/consistency.test.ts` could not run because local `vitest` is missing; exact-version `npx` download was rejected by policy. |
-| Prep merge | Run `prep-merge-to-local-main` | Pending |  |
+| Verification | Targeted tests and diff checks | Done with limitation | `git diff --check` passed before and after staging. Static endpoint consistency check returned 129 and confirmed docs/log references. `semgrep scan --config p/default --error --metrics=off .` passed with 0 findings. `gitleaks protect --staged --redact` passed before commit. `npm test -- test/api-boundary-coverage.test.ts test/consistency.test.ts` could not run because local `vitest` is missing; exact-version `npx` download was rejected by policy. |
+| Prep merge | Run `prep-merge-to-local-main` | Done | Created commit `44e9c4f715fbc1886c41843a2ccdd2d6969fbc38`. Local main commit `6c387b4efea524db5bf8fe0e923958cbcf0213f1` is an ancestor of HEAD, so merge step was a no-op. |
 
 ## Progress Notes
 
@@ -69,3 +69,4 @@ Stop conditions:
 - Review note: adversarial review found that destructive DELETE must not inherit read/list `agentId=*` or caller-supplied cross-agent override behavior in isolated mode. Fixed by using only configured `getAgentId()` for destructive isolated-scope checks and adding tests for plain, wildcard, and explicit cross-agent attempts.
 - Review Implementation rerun: accepted fixed diff with no critical or important findings. Residual uncertainty is limited to unavailable local Vitest execution and the intentional `includeOrphans=true` legacy-memory opt-in.
 - Codex Security report: `/tmp/codex-security-scans/agentmemory/local-patch_20260615T214549Z/report.md` and `/tmp/codex-security-scans/agentmemory/local-patch_20260615T214549Z/report.html`. Goal usage: 174657 tokens, 149 seconds.
+- Commit verification: staged paths were limited to AGENTS.md, README.md, src/index.ts, src/triggers/api.ts, test/api-boundary-coverage.test.ts, and this task record. Post-commit inspection showed only those task-owned files.
