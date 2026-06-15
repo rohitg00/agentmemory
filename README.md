@@ -1296,6 +1296,13 @@ agentmemory prints a runtime warning when `OPENROUTER_MODEL` matches a premium-t
 
 Quality vs cost tradeoff for memory work: compression is a summarization task with relatively loose quality bars (the agent re-reads the summary, not the user). DeepSeek-V4-Pro / Qwen3-Coder land within rounding error of Sonnet on this task while costing ~10× less. Save the premium-tier models for queries you read directly.
 
+Use `AGENTMEMORY_COMPRESS_MODEL` when `provider.compress()` work should move to a cheaper model. `compress()` call sites use that override; `summarize()` call sites keep the main provider model.
+
+```env
+OPENAI_MODEL=your-main-model
+AGENTMEMORY_COMPRESS_MODEL=your-cheap-compression-model
+```
+
 Sources: [OpenRouter pricing for Sonnet 4.6](https://openrouter.ai/anthropic/claude-sonnet-4.6/pricing), [DeepSeek V4 Pro](https://openrouter.ai/deepseek/deepseek-v4-pro), [DeepSeek pricing notes](https://api-docs.deepseek.com/quick_start/pricing/).
 
 ### Multi-agent memory (`AGENT_ID` + `AGENTMEMORY_AGENT_SCOPE`)
@@ -1412,6 +1419,8 @@ Create `~/.agentmemory/.env`:
 # OPENAI_API_KEY_FOR_LLM=false             # Optional: set to false to skip OpenAI auto-detection
 #                                          # for LLM. Pair with EMBEDDING_PROVIDER=openai if
 #                                          # you only want OpenAI for embeddings.
+# AGENTMEMORY_COMPRESS_MODEL=cheap-model   # Optional: provider.compress() model override;
+#                                          # provider.summarize() keeps the provider model.
 # Opt-in Claude-subscription fallback (spawns @anthropic-ai/claude-agent-sdk);
 # leave OFF unless you understand the Stop-hook recursion risk (#149 follow-up):
 # AGENTMEMORY_ALLOW_AGENT_SDK=true
