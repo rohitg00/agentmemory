@@ -46,8 +46,8 @@
 | Review PR 812 and Issue 754 | Public issue/PR reads plus local source inspection | done | Issue calls for gate reasons; PR only changes viewer/test and omits status endpoint/insights surface. |
 | Viewer empty-state guidance | Targeted vm-render test | done | RED: `npm test -- test/viewer-session-id.test.ts` failed on missing gate copy. GREEN: same command passed with 5 tests. |
 | Security review | Manual diff review plus required gates | done | Manual source review found no auth, persistence, dependency, hook, or new public API change; DOM strings use fixed literals or `esc()`. Codex Security diff scan found 0 reportable findings. Semgrep found 0 findings. |
-| Local result documentation | This task record | done | Decision, security review, verification, and prep blocker recorded. |
-| `$prep-merge-to-local-main` | Skill workflow | in progress | Re-run preflight found local `main` clean at `6c387b4efea524db5bf8fe0e923958cbcf0213f1`; task-owned commit/merge workflow resumed. |
+| Local result documentation | This task record | done | Decision, security review, verification, commit, merge, and post-merge verification recorded. |
+| `$prep-merge-to-local-main` | Skill workflow | done | Task-owned commit created, local `main` commit `6c387b4efea524db5bf8fe0e923958cbcf0213f1` merged, and post-merge checks passed. |
 
 ## Progress
 
@@ -77,6 +77,12 @@
   - Local `main` and its primary worktree are both at `6c387b4efea524db5bf8fe0e923958cbcf0213f1`; primary worktree is clean.
   - Incoming local `main` paths are GitHub tracking and neutralization docs/scripts/tests; no overlap with this task's viewer, viewer-test, or task-note paths.
   - Fresh pre-commit verification: targeted viewer tests passed with 20 tests, `git diff --check` passed, and Semgrep passed with 0 findings.
+- Commit and local-main integration:
+  - Task-owned commit: `ccd7b51d43b7b3deaad9c6d03101814646c19c14`.
+  - Staged Gitleaks check passed with no leaks before the task-owned commit.
+  - Local `main` commit `6c387b4efea524db5bf8fe0e923958cbcf0213f1` merged into the review branch with no conflicts.
+  - Merge commit: `0907f42e7cca99e3a3dc6fba6e32a6e2caf08722`.
+  - Post-merge verification passed: targeted viewer tests passed with 20 tests, `git diff --check` passed, and Semgrep passed with 0 findings.
 
 ## Review Notes
 
@@ -84,4 +90,4 @@
 - Current fork already has `/config/flags` and dashboard data that can support static/actionable empty-state guidance without adding public endpoints.
 - Decision: adjusted import. Kept the lightweight viewer guidance from PR 812, added current-fork Insights dashboard guidance, avoided new public REST endpoints, and fixed the touched Crystal command example.
 - Focused code review: no critical or important findings remain. Subagent review was skipped because the current tool policy permits spawning only after an explicit subagent/delegation request; a separate local adversarial pass inspected scope, escaping, existing endpoint validity, and test coverage.
-- Residual risk: none identified for the viewer change before local-main integration; final merge and post-merge verification remain pending.
+- Residual risk: none identified for the viewer change after local-main integration.
