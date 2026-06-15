@@ -50,7 +50,7 @@ Stop conditions:
 | PR 746 decision | Compare public PR diff against local hook architecture | done | Adapted import: keep PR 746's shared-stop removal, but preserve Issue 493 through a Codex-specific stop script. |
 | Minimal code/test update if needed | TDD red/green targeted vitest | done | Red: stop still called `/session/end` and `codex-stop` was missing. Green: focused hook tests pass. |
 | Neutral local documentation | Inspect task record for forbidden URLs/hash issue syntax/mentions | done | `rg` check over this task directory found no GitHub URLs, hash issue syntax, or mentions. |
-| Merge prep | Run `$prep-merge-to-local-main` workflow | pending |  |
+| Merge prep | Run `$prep-merge-to-local-main` workflow | done | Commit `32dcd69297852daf4336eeecb75ae90fd8ce9fb0` created; local `main` commit `6c387b4efea524db5bf8fe0e923958cbcf0213f1` was already an ancestor, so merge was a no-op. |
 
 ## Progress
 
@@ -90,6 +90,12 @@ Stop conditions:
   - `semgrep scan --config p/default --error --metrics=off .` passed with 0 findings over tracked files.
   - `semgrep scan --config p/default --error --metrics=off src/hooks/stop.ts src/hooks/codex-stop.ts plugin/scripts/stop.mjs plugin/scripts/codex-stop.mjs plugin/hooks/hooks.codex.json tsdown.config.ts test/hook-source-smoke.test.ts test/codex-plugin.test.ts test/copilot-plugin.test.ts` passed with 0 findings over task files, including new untracked files.
   - `gitleaks detect --source . --redact --no-color` passed with no leaks found.
+- Prep-merge:
+  - Preflight found no Git operation state and no unrelated dirty paths.
+  - Commit hooks/signing inspection found no active hooks beyond sample hook files and no signing configuration.
+  - Staged only task-owned files; `gitleaks protect --staged --redact --no-color` passed before commit.
+  - Created commit `32dcd69297852daf4336eeecb75ae90fd8ce9fb0` with task-owned code, tests, and task-state files.
+  - Local `main` was captured as `6c387b4efea524db5bf8fe0e923958cbcf0213f1`; branch merge-base was the same commit and `main` was already an ancestor of HEAD, so the merge step was a no-op with no conflicts.
 
 ## Subagent Ledger
 
