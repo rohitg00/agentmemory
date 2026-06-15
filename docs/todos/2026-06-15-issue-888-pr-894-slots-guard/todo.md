@@ -47,8 +47,8 @@ Stop conditions:
 | Reproduce/evaluate Issue 888 against current fork | Inspect MCP slot call path and add failing test before code | done | RED test failed with current 500/unguarded trigger behavior |
 | Minimal MCP slots disabled guard | Targeted MCP surface test | done | GREEN targeted slot disabled test passed |
 | Preserve slot create payload params | Existing payload-shaping test plus targeted run | done | Full MCP server surface test file passed |
-| Neutral local review documentation | Inspect task record diff | done | This task record updated with decision, verification, security notes, and merge-prep blocker |
-| Merge prep | `$prep-merge-to-local-main` workflow | in progress | Resumed after local `main` worktree became clean and advanced |
+| Neutral local review documentation | Inspect task record diff | done | This task record updated with decision, verification, security notes, and merge-prep outcome |
+| Merge prep | `$prep-merge-to-local-main` workflow | done | Task commit and local-main merge completed; post-merge checks passed |
 
 ## Progress
 
@@ -70,6 +70,9 @@ Stop conditions:
 - `$prep-merge-to-local-main` first preflight: branch `review/issue-888-pr-894-slots-guard-errors`; no staged paths; no merge/rebase/cherry-pick/revert/bisect/sequencer state; local `refs/heads/main` resolved to `bfde73b2a12ae1400953cc544a875aba7bcd854f`.
 - `$prep-merge-to-local-main` first attempt blocker: the listed local `main` worktree at `/Users/A1538552/_projects/_tools/agentmemory` had unrelated dirty tracked and untracked paths, so no staging, commit, or local-main merge was performed then.
 - `$prep-merge-to-local-main` resumed preflight: local `main` worktree is clean and matches `refs/heads/main` at `6c387b4efea524db5bf8fe0e923958cbcf0213f1`.
+- Prep task commit: `34f650e4588a0e8b94ed377b694719771692c76c` (`fix(mcp): guard slot tools when disabled`) created after staged diff checks and staged Gitleaks passed.
+- Local `main` merge: `6c387b4efea524db5bf8fe0e923958cbcf0213f1` merged into the branch with merge commit `2fd7d2e8c56ce9ad097f8408d7fb5b281b81f8f9`; no conflicts.
+- Post-merge verification: `git diff --check` passed; `test/mcp-server-surface.test.ts` passed with 108 tests; `semgrep scan --config p/default --error --metrics=off .` passed with 0 findings over 567 tracked files; `gitleaks detect --source . --redact --no-color` passed with no leaks over 564 commits and about 11.66 MB.
 - Final verification: `git diff --check` passed; `test/mcp-server-surface.test.ts` passed with 108 tests using the temporary Vitest config; `gitleaks detect --source . --redact --no-color` passed with no leaks over 536 commits and about 10.10 MB.
 - Verification artifact: ignored `node_modules/.vite` was created by the temporary Vitest startup attempt. It remains in place because deleting generated directories requires explicit current-turn confirmation.
 
