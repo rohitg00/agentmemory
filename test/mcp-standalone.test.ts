@@ -484,4 +484,29 @@ describe("handleToolCall", () => {
     expect(parsed.deleted).toBe(1);
     expect(parsed.requested).toBe(2);
   });
+
+  it("memory_export returns local memories and sessions in fallback mode", async () => {
+    const kv = new InMemoryKV();
+    await handleToolCall("memory_save", { content: "export me" }, kv);
+    await kv.set("mem:sessions", "ses_1", { id: "ses_1", status: "active" });
+
+    const result = await handleToolCall("memory_export", {}, kv);
+    const parsed = JSON.parse(result.content[0].text);
+
+    expect(parsed.version).toBeDefined();
+    expect(parsed.memories).toHaveLength(1);
+    expect(parsed.memories[0].content).toBe("export me");
+    expect(parsed.sessions).toEqual([{ id: "ses_1", status: "active" }]);
+  });
+
+  it("memory_audit returns local audit entries with the requested limit", async () => {
+    const kv = new InMemoryKV();
+    await kv.set("mem:audit", "aud_1", { id: "aud_1" });
+    await kv.set("mem:audit", "aud_2", { id: "aud_2" });
+
+    const result = await handleToolCall("memory_audit", { limit: "1" }, kv);
+    const parsed = JSON.parse(result.content[0].text);
+
+    expect(parsed.entries).toEqual([{ id: "aud_1" }]);
+  });
 });

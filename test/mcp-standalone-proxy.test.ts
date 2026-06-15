@@ -329,6 +329,63 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
     });
   });
 
+  it("wraps non-content generic MCP proxy responses as JSON text", async () => {
+    installFetch((url, init) => {
+      if (url.endsWith("/agentmemory/livez")) return new Response("ok", { status: 200 });
+      if (url.endsWith("/agentmemory/mcp/call")) {
+        const body = JSON.parse((init?.body as string) || "{}");
+        return new Response(
+          JSON.stringify({ proxied: body.name, accepted: true }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      return new Response("not found", { status: 404 });
+    });
+
+    const res = await handleToolCall("memory_lesson_recall", { query: "coverage" });
+
+    expect(JSON.parse(res.content[0].text)).toEqual({
+      proxied: "memory_lesson_recall",
+      accepted: true,
+    });
+  });
+
+  it("proxies memory_export and memory_audit through their dedicated REST endpoints", async () => {
+    const calls: Array<{ url: string; method: string }> = [];
+    installFetch((url, init) => {
+      if (url.endsWith("/agentmemory/livez")) return new Response("ok", { status: 200 });
+      calls.push({ url, method: init?.method || "GET" });
+      if (url.endsWith("/agentmemory/export")) {
+        return new Response(JSON.stringify({ version: "0.9.27", memories: [] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (url.endsWith("/agentmemory/audit?limit=3")) {
+        return new Response(JSON.stringify({ entries: [{ operation: "create" }] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return new Response("not found", { status: 404 });
+    });
+
+    const exported = await handleToolCall("memory_export", {});
+    const audit = await handleToolCall("memory_audit", { limit: 3 });
+
+    expect(JSON.parse(exported.content[0].text)).toEqual({
+      version: "0.9.27",
+      memories: [],
+    });
+    expect(JSON.parse(audit.content[0].text)).toEqual({
+      entries: [{ operation: "create" }],
+    });
+    expect(calls).toEqual([
+      { url: `${BASE}/agentmemory/export`, method: "GET" },
+      { url: `${BASE}/agentmemory/audit?limit=3`, method: "GET" },
+    ]);
+  });
+
   it("rejects non-essential tools when no server is reachable (#234)", async () => {
     installFetch(() => {
       throw new Error("ECONNREFUSED");
@@ -520,6 +577,29 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
     await expect(handleToolsList()).rejects.toThrow(
       /agentmemory server unreachable at http:\/\/localhost:3111; start npx @agentmemory\/agentmemory.*tools\/list proxy failed: GET \/agentmemory\/mcp\/tools -> 503 Service Unavailable/s,
     );
+  });
+
+  it("falls back to local tools/list when the proxy returns an unexpected shape", async () => {
+    process.env["AGENTMEMORY_DEBUG"] = "1";
+    const { handleToolsList } = await import("../src/mcp/standalone.js");
+    installFetch((url) => {
+      if (url.endsWith("/agentmemory/livez")) return new Response("ok", { status: 200 });
+      if (url.endsWith("/agentmemory/mcp/tools")) {
+        return new Response(JSON.stringify({ tools: "not-an-array" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return new Response("unexpected", { status: 200 });
+    });
+    try {
+      const result = await handleToolsList();
+      const names = (result.tools as Array<{ name: string }>).map((t) => t.name);
+      expect(names).toContain("memory_save");
+      expect(names).toHaveLength(7);
+    } finally {
+      delete process.env["AGENTMEMORY_DEBUG"];
+    }
   });
 
   it("AGENTMEMORY_PROBE_TIMEOUT_MS overrides the default probe timeout", async () => {
