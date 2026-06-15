@@ -42,6 +42,10 @@ import { renderSplash } from "./cli/splash.js";
 import { isFirstRun, readPrefs, resetPrefs, writePrefs } from "./cli/preferences.js";
 import { runOnboarding } from "./cli/onboarding.js";
 import { buildReadyWebSocketUrls } from "./cli/ready-hint.js";
+import {
+  applyRuntimePortArgs,
+  renderRuntimeIiiConfig,
+} from "./cli/runtime-ports.js";
 import { setBootVerbose } from "./logger.js";
 import { VERSION } from "./version.js";
 import { getAllTools, ESSENTIAL_TOOLS } from "./mcp/tools-registry.js";
@@ -200,27 +204,7 @@ if (toolsIdx !== -1 && args[toolsIdx + 1]) {
   process.env["AGENTMEMORY_TOOLS"] = toolsMode;
 }
 
-const portIdx = args.indexOf("--port");
-if (portIdx !== -1 && args[portIdx + 1]) {
-  process.env["III_REST_PORT"] = args[portIdx + 1];
-}
-
-// `--instance N` picks a 100-port block off the 3111 base so multiple
-// agentmemory daemons can coexist on one host without env-var
-// gymnastics (#750). `--instance 0` keeps the canonical 3111/3112/3113/49134
-// quartet; `--instance 1` → 3211/3212/3213/49234; etc. REST acts as the
-// anchor — streams/viewer/engine derive from it via fixed offsets below
-// unless an env explicitly pins each one.
-const instanceIdx = args.indexOf("--instance");
-if (instanceIdx !== -1 && args[instanceIdx + 1]) {
-  const n = parseInt(args[instanceIdx + 1] || "", 10);
-  if (Number.isFinite(n) && n >= 0 && n <= 50) {
-    const base = 3111 + n * 100;
-    if (!process.env["III_REST_PORT"]) {
-      process.env["III_REST_PORT"] = String(base);
-    }
-  }
-}
+applyRuntimePortArgs(args);
 
 const skipEngine = args.includes("--no-engine");
 
@@ -327,6 +311,19 @@ function findIiiConfig(): string {
   // copy because dist is cleaned during local builds; iii treats deleting
   // the active config file as a fatal reload error.
   return findIiiConfigPath({ moduleDir: __dirname });
+}
+
+function prepareRuntimeIiiConfig(configPath: string): string {
+  if (!configPath) return configPath;
+  const raw = readFileSync(configPath, "utf-8");
+  const rendered = renderRuntimeIiiConfig(raw);
+  if (rendered === raw) return configPath;
+
+  const dir = join(homedir(), ".agentmemory");
+  mkdirSync(dir, { recursive: true });
+  const target = join(dir, "iii-runtime-config.yaml");
+  writeFileSync(target, rendered);
+  return target;
 }
 
 function whichBinary(name: string): string | null {
@@ -928,7 +925,7 @@ function pickCompatibleIii(candidates: Array<string | null | undefined>): string
 }
 
 async function startEngine(options: StartEngineOptions = {}): Promise<boolean> {
-  const configPath = findIiiConfig();
+  const configPath = prepareRuntimeIiiConfig(findIiiConfig());
   const pathIii = whichBinary("iii");
   vlog(`iii binary: ${pathIii ?? "(not on PATH)"}, config: ${configPath || "(not found)"}`);
 
