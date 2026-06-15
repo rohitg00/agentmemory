@@ -90,8 +90,13 @@ export class GraphRetrieval {
       }
 
       // 2) Hint was empty or wrong — scan known sessions for the obs.
+      // Guard the list like probe() guards its get(): a KV failure here
+      // should degrade to an unresolved sessionId ("") for this obs, not
+      // abort the whole retrieval. Empty array also caches the miss below.
       if (sessions === null) {
-        sessions = await this.kv.list<Session>(KV.sessions);
+        sessions = await this.kv
+          .list<Session>(KV.sessions)
+          .catch(() => [] as Session[]);
       }
       let found: string | null = null;
       for (const session of sessions) {

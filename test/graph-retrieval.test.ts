@@ -465,4 +465,26 @@ describe("GraphRetrieval — sessionId resolution (#656)", () => {
     // No session owns it — graceful empty, not a crash.
     expect(r!.sessionId).toBe("");
   });
+
+  it("degrades gracefully when the sessions list throws (no abort)", async () => {
+    // Legacy node (no sessionId hint) so resolution must hit the scan path.
+    const node = makeNode("n1", "React", "library", ["obs_1"]);
+    const kv = mockKVWithSessions([node], [], [{ id: "sess_a" }], {
+      sess_a: ["obs_1"],
+    });
+    // Fail only the sessions list; node/edge lists still work so retrieval
+    // produces results. Resolution must fall back to an empty sessionId
+    // rather than rejecting the whole retrieval.
+    const originalList = kv.list;
+    kv.list = (async (scope: string) => {
+      if (scope === "mem:sessions") throw new Error("kv down");
+      return originalList(scope);
+    }) as never;
+    const retrieval = new GraphRetrieval(kv as never);
+
+    const results = await retrieval.searchByEntities(["React"]);
+    const r = results.find((x) => x.obsId === "obs_1");
+    expect(r).toBeDefined();
+    expect(r!.sessionId).toBe("");
+  });
 });
