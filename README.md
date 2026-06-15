@@ -956,7 +956,7 @@ npm install @xenova/transformers
 | OpenAI | `text-embedding-3-small` | $0.02/1M | `EMBEDDING_PROVIDER=openai` + `OPENAI_API_KEY`; highest quality |
 | Voyage AI | `voyage-code-3` | Paid | `EMBEDDING_PROVIDER=voyage` + `VOYAGE_API_KEY`; optimized for code |
 | Cohere | `embed-english-v3.0` | Free trial | `EMBEDDING_PROVIDER=cohere` + `COHERE_API_KEY`; general purpose |
-| OpenRouter | Any model | Varies | `EMBEDDING_PROVIDER=openrouter` + `OPENROUTER_API_KEY`; multi-model proxy |
+| OpenRouter | Any model | Varies | `EMBEDDING_PROVIDER=openrouter` + `OPENROUTER_API_KEY`; set `OPENROUTER_EMBEDDING_DIMENSIONS` for non-1536 models |
 
 ---
 
@@ -1423,6 +1423,8 @@ Create `~/.agentmemory/.env`:
 # OPENAI_BASE_URL=https://api.openai.com   # Override for Azure / vLLM / LM Studio / proxies
 # OPENAI_EMBEDDING_MODEL=text-embedding-3-small
 # OPENAI_EMBEDDING_DIMENSIONS=1536        # Required when the model is not in the known-models table
+# OPENROUTER_EMBEDDING_MODEL=openai/text-embedding-3-small
+# OPENROUTER_EMBEDDING_DIMENSIONS=1536    # Required when the OpenRouter model is not 1536-dim
 
 # Outbound LLM / embedding timeout
 # AGENTMEMORY_LLM_TIMEOUT_MS=60000       # Default: 60 000 ms (60 s). Applies to every
