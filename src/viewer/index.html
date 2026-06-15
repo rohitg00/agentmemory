@@ -1660,7 +1660,18 @@
       }, 30000);
     }
 
-    var graphSim = { nodes: [], edges: [], running: false, canvas: null, ctx: null, raf: null, panX: 0, panY: 0, zoom: 1, dragNode: null, mouseX: 0, mouseY: 0, tickCount: 0, quietTicks: 0 };
+    var graphSim = { nodes: [], edges: [], running: false, canvas: null, ctx: null, raf: null, panX: 0, panY: 0, zoom: 1, dragNode: null, mouseX: 0, mouseY: 0, tickCount: 0, quietTicks: 0, resizeHandler: null };
+    function stopGraphRuntime() {
+      graphSim.running = false;
+      if (graphSim.raf) {
+        cancelAnimationFrame(graphSim.raf);
+        graphSim.raf = null;
+      }
+      if (graphSim.resizeHandler) {
+        window.removeEventListener('resize', graphSim.resizeHandler);
+        graphSim.resizeHandler = null;
+      }
+    }
     function wakeGraphSim() {
       graphSim.quietTicks = 0;
       if (graphSim.running && !graphSim.raf) {
@@ -1678,6 +1689,7 @@
 
     async function loadGraph() {
       var el = document.getElementById('view-graph');
+      stopGraphRuntime();
       el.innerHTML = '<div class="graph-container"><div class="graph-canvas-wrap"><canvas id="graph-canvas"></canvas><div class="graph-controls"><button title="Zoom In" data-action="zoom-graph" data-dir="1">+</button><button title="Zoom Out" data-action="zoom-graph" data-dir="-1">&minus;</button><div class="ctrl-divider"></div><button title="Recenter" data-action="recenter-graph">⌖</button></div><div class="graph-tooltip" id="graph-tooltip"></div></div><div class="graph-sidebar" id="graph-sidebar"></div></div>';
 
       var results = await Promise.all([
@@ -1818,6 +1830,13 @@
     function initGraph() {
       var canvas = document.getElementById('graph-canvas');
       if (!canvas) return;
+      var previousLayout = Object.create(null);
+      graphSim.nodes.forEach(function(n) { previousLayout[n.id] = n; });
+      var hadLayout = Object.keys(previousLayout).length > 0;
+      var previousPanX = graphSim.panX;
+      var previousPanY = graphSim.panY;
+      var previousZoom = graphSim.zoom;
+      stopGraphRuntime();
       graphSim.canvas = canvas;
       graphSim.ctx = canvas.getContext('2d');
 
@@ -1830,12 +1849,19 @@
         graphSim.ctx.setTransform(window.devicePixelRatio, 0, 0, window.devicePixelRatio, 0, 0);
       }
       resize();
-      window.addEventListener('resize', resize);
+      graphSim.resizeHandler = resize;
+      window.addEventListener('resize', graphSim.resizeHandler);
 
       var cw = canvas.width / window.devicePixelRatio;
       var ch = canvas.height / window.devicePixelRatio;
-      graphSim.panX = cw / 2;
-      graphSim.panY = ch / 2;
+      if (hadLayout) {
+        graphSim.panX = previousPanX;
+        graphSim.panY = previousPanY;
+        graphSim.zoom = previousZoom;
+      } else {
+        graphSim.panX = cw / 2;
+        graphSim.panY = ch / 2;
+      }
 
       var edgeMap = {};
       state.graph.edges.forEach(function(e) {
@@ -1847,11 +1873,12 @@
         var angle = (2 * Math.PI * i) / Math.max(state.graph.nodes.length, 1);
         var radius = Math.min(cw, ch) * 0.3;
         var deg = edgeMap[n.id] || 0;
+        var previous = previousLayout[n.id];
         return {
           id: n.id, type: n.type, name: n.name, properties: n.properties,
-          x: Math.cos(angle) * radius + (Math.random() - 0.5) * 50,
-          y: Math.sin(angle) * radius + (Math.random() - 0.5) * 50,
-          vx: 0, vy: 0,
+          x: previous ? previous.x : Math.cos(angle) * radius + (Math.random() - 0.5) * 50,
+          y: previous ? previous.y : Math.sin(angle) * radius + (Math.random() - 0.5) * 50,
+          vx: previous ? previous.vx : 0, vy: previous ? previous.vy : 0,
           r: Math.max(8, Math.min(22, 8 + deg * 2.5))
         };
       });
