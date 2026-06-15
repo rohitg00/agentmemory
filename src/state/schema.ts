@@ -37,6 +37,23 @@ export const KV = {
   graphNameIndex: "mem:graph:name-index",
   graphEdgeKey: "mem:graph:edge-key",
   graphNodeDegree: "mem:graph:node-degree",
+  // Read-path side-indexes so graph retrieval never enumerates the full
+  // nodes/edges scopes. Maintained as hints on every write site;
+  // readers verify each hit against the live record (stale flag +
+  // snapshot resetAt) so deletes/wipes need no index cleanup.
+  // - graphNameShards: key `hash(nodeId) % 64` -> Array<{id, name}>.
+  //   The full name catalog is readable as 64 bounded gets, preserving
+  //   substring-match semantics without a kv.list.
+  // - graphAdjacency: key nodeId -> incident edgeId[]. Bounds traversal
+  //   cost by degree x depth instead of total edge count.
+  // - graphObsNodes: key obsId -> nodeId[] linking observations to the
+  //   graph nodes extracted from them.
+  // - graphIndexMeta: readiness marker. Absent = indexes not built;
+  //   readers fall back to full enumeration.
+  graphNameShards: "mem:graph:name-shards",
+  graphAdjacency: "mem:graph:adjacency",
+  graphObsNodes: "mem:graph:obs-nodes",
+  graphIndexMeta: "mem:graph:index-meta",
   semantic: "mem:semantic",
   procedural: "mem:procedural",
   teamShared: (teamId: string) => `mem:team:${teamId}:shared`,

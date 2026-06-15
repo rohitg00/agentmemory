@@ -10,6 +10,18 @@ import type {
 import { KV, generateId } from "../state/schema.js";
 import type { StateKV } from "../state/kv.js";
 import {
+  GRAPH_INDEX_NODE_CEILING,
+  GraphIndexReader,
+  backfillGraphIndexes,
+  clearNameShards,
+  graphIndexesReady,
+  indexGraphEdge,
+  indexGraphNode,
+  linkObservationsToNode,
+  loadNameCatalog,
+  markGraphIndexesReady,
+} from "../state/graph-indexes.js";
+import {
   GRAPH_EXTRACTION_SYSTEM,
   buildGraphExtractionPrompt,
 } from "../prompts/graph-extraction.js";
@@ -179,7 +191,122 @@ function paginateFromSnapshot(
 // extract-driven snapshot is the right approach for those corpora.
 // Operators above the threshold should use mem::graph-reset and let
 // future extracts rebuild incrementally.
-const REBUILD_SAFE_NODE_CEILING = 25000;
+const REBUILD_SAFE_NODE_CEILING = GRAPH_INDEX_NODE_CEILING;
+
+// Bounds the index-served BFS in mem::graph-query so a dense corpus
+// can't expand into an unbounded number of targeted gets. Hitting the
+// cap returns a truncated page with an explanatory warning.
+const TRAVERSAL_VISIT_CAP = 5000;
+
+async function queryViaIndexes(
+  kv: StateKV,
+  query: string,
+  limit: number,
+  offset: number,
+): Promise<GraphQueryResult> {
+  const reader = await GraphIndexReader.open(kv);
+  const lower = query.toLowerCase();
+  const catalog = await loadNameCatalog(kv);
+  const matched = new Map<string, GraphNode>();
+  for (const entry of catalog) {
+    if (!entry.name.toLowerCase().includes(lower)) continue;
+    const node = await reader.getNode(entry.id);
+    if (node) matched.set(node.id, node);
+  }
+
+  const snap = await readSnapshot(kv);
+  let partialPropertyCoverage = false;
+  for (const node of snap?.topNodes ?? []) {
+    if (node.stale || matched.has(node.id)) continue;
+    const propMatch = Object.values(node.properties).some(
+      (v) => typeof v === "string" && v.toLowerCase().includes(lower),
+    );
+    if (propMatch) matched.set(node.id, node);
+  }
+  if (!snap || snap.stats.totalNodes > snap.topNodes.length) {
+    partialPropertyCoverage = true;
+  }
+
+  const nodes = [...matched.values()];
+  const edgeIds = new Set<string>();
+  const edges: GraphEdge[] = [];
+  for (const node of nodes) {
+    for (const edge of await reader.getIncidentEdges(node.id)) {
+      if (edgeIds.has(edge.id)) continue;
+      edgeIds.add(edge.id);
+      edges.push(edge);
+    }
+  }
+
+  const result = paginate(nodes, edges, 0, limit, offset);
+  if (partialPropertyCoverage) {
+    return {
+      ...result,
+      warning:
+        "Property-value matches are served from the top-degree snapshot; " +
+        "nodes outside it are matched by name only.",
+    };
+  }
+  return result;
+}
+
+async function traverseViaIndexes(
+  kv: StateKV,
+  startNodeId: string,
+  nodeType: string | undefined,
+  maxDepth: number,
+  limit: number,
+  offset: number,
+): Promise<GraphQueryResult> {
+  const reader = await GraphIndexReader.open(kv);
+  const visited = new Set<string>();
+  const visitedEdges = new Set<string>();
+  const resultNodes: GraphNode[] = [];
+  const resultEdges: GraphEdge[] = [];
+  const queue: Array<{ nodeId: string; depth: number }> = [
+    { nodeId: startNodeId, depth: 0 },
+  ];
+  let capped = false;
+
+  while (queue.length > 0) {
+    const { nodeId, depth } = queue.shift()!;
+    if (visited.has(nodeId) || depth > maxDepth) continue;
+    if (visited.size >= TRAVERSAL_VISIT_CAP) {
+      capped = true;
+      break;
+    }
+    visited.add(nodeId);
+
+    const node = await reader.getNode(nodeId);
+    if (node && (!nodeType || node.type === nodeType)) {
+      resultNodes.push(node);
+    }
+
+    for (const edge of await reader.getIncidentEdges(nodeId)) {
+      if (!visitedEdges.has(edge.id)) {
+        visitedEdges.add(edge.id);
+        resultEdges.push(edge);
+      }
+      const nextId =
+        edge.sourceNodeId === nodeId ? edge.targetNodeId : edge.sourceNodeId;
+      if (!visited.has(nextId)) {
+        queue.push({ nodeId: nextId, depth: depth + 1 });
+      }
+    }
+  }
+
+  const result = paginate(resultNodes, resultEdges, maxDepth, limit, offset);
+  if (capped) {
+    return {
+      ...result,
+      truncated: true,
+      warning:
+        `Traversal stopped after visiting ${TRAVERSAL_VISIT_CAP} nodes. ` +
+        `Lower maxDepth or start from a lower-degree node for a complete walk.`,
+    };
+  }
+  return result;
+}
 
 function nameIndexKey(type: string, name: string): string {
   return `${type}|${name}`;
@@ -519,6 +646,7 @@ export function registerGraphFunction(
           if (existing) {
             const merged = mergeNode(existing, node, obsIds, capturedAt);
             await kv.set(KV.graphNodes, existing.id, merged);
+            await linkObservationsToNode(kv, existing.id, obsIds);
             // Update topNodes entry if present so a stale clone isn't
             // returned from the snapshot fast path.
             const topIdx = snap.topNodes.findIndex(
@@ -529,6 +657,7 @@ export function registerGraphFunction(
             await kv.set(KV.graphNodes, node.id, node);
             await kv.set(KV.graphNameIndex, indexKey, node.id);
             await kv.set(KV.graphNodeDegree, node.id, 0);
+            await indexGraphNode(kv, node);
             snap.stats.totalNodes += 1;
             snap.stats.nodesByType[node.type] =
               (snap.stats.nodesByType[node.type] ?? 0) + 1;
@@ -575,6 +704,7 @@ export function registerGraphFunction(
           } else {
             await kv.set(KV.graphEdges, edge.id, edge);
             await kv.set(KV.graphEdgeKey, eKey, edge.id);
+            await indexGraphEdge(kv, edge);
             snap.stats.totalEdges += 1;
             snap.stats.edgesByType[edge.type] =
               (snap.stats.edgesByType[edge.type] ?? 0) + 1;
@@ -596,6 +726,7 @@ export function registerGraphFunction(
           snap.updatedAt = capturedAt;
           snap.dirty = false;
           await kv.set(KV.graphSnapshot, SNAPSHOT_KEY, snap);
+          await markGraphIndexesReady(kv);
         }
 
         await recordAudit(kv, "observe", "mem::graph-extract", obsIds, {
@@ -671,10 +802,31 @@ export function registerGraphFunction(
         };
       }
 
-      // Query / startNodeId paths still need broader access. Race the
-      // live enumeration against a wall-clock budget so a long
-      // kv.list doesn't block the worker indefinitely. On timeout the
-      // caller gets a snapshot-backed approximation instead of a 500.
+      // Query / startNodeId paths serve from the read side-indexes
+      // when they have been built (boot backfill, snapshot-rebuild, or
+      // graph-reset). Name matches come from the sharded name catalog
+      // (64 bounded gets) and traversal expands via per-node adjacency
+      // lists, so cost scales with matches x degree instead of corpus
+      // size.
+      if (await graphIndexesReady(kv)) {
+        if (data.query) {
+          return queryViaIndexes(kv, data.query, limit, offset);
+        }
+        return traverseViaIndexes(
+          kv,
+          data.startNodeId!,
+          data.nodeType,
+          maxDepth,
+          limit,
+          offset,
+        );
+      }
+
+      // Without the side-indexes the query / startNodeId paths still
+      // need broader access. Race the live enumeration against a
+      // wall-clock budget so a long kv.list doesn't block the worker
+      // indefinitely. On timeout the caller gets a snapshot-backed
+      // approximation instead of a 500.
       let allNodes: GraphNode[];
       let allEdges: GraphEdge[];
       try {
@@ -928,6 +1080,8 @@ export function registerGraphFunction(
         );
       }
 
+      await backfillGraphIndexes(kv, liveNodes, liveEdges);
+
       const snap = buildSnapshotFromArrays(nodes, edges);
       await kv.set(KV.graphSnapshot, SNAPSHOT_KEY, snap);
       const tookMs = Date.now() - started;
@@ -987,6 +1141,15 @@ export function registerGraphFunction(
       resetAt: new Date().toISOString(),
     };
     await kv.set(KV.graphSnapshot, SNAPSHOT_KEY, resetSnapshot);
+    // The name shards are the only side-index with a bounded, known
+    // key set, so they can be wiped outright. Adjacency / obs-node
+    // hints for pre-reset rows stay on disk; index readers verify
+    // every hit against `resetAt`, so those orphans are never served.
+    // Marking the indexes ready flips retrieval onto the index path,
+    // which (unlike the enumeration fallback) applies the resetAt
+    // filter and therefore stops surfacing pre-reset rows.
+    await clearNameShards(kv);
+    await markGraphIndexesReady(kv);
     const counts: Record<string, number> = {
       [KV.graphSnapshot]: 1,
     };

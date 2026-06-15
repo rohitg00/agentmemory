@@ -12,6 +12,7 @@ import type {
 } from "../types.js";
 import { KV, generateId } from "../state/schema.js";
 import type { StateKV } from "../state/kv.js";
+import { indexGraphNode } from "../state/graph-indexes.js";
 import { recordAudit } from "./audit.js";
 import { VERSION } from "../version.js";
 import { logger } from "../logger.js";
@@ -194,6 +195,7 @@ export function registerSnapshotFunction(
         if (state.graphNodes) {
           for (const node of state.graphNodes) {
             await kv.set(KV.graphNodes, node.id, node);
+            await indexGraphNode(kv, node as unknown as GraphNode);
           }
         }
         if (state.observations) {

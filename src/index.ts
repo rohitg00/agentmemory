@@ -21,6 +21,11 @@ import {
 } from "./providers/index.js";
 import { StateKV } from "./state/kv.js";
 import { KV } from "./state/schema.js";
+import {
+  GRAPH_INDEX_NODE_CEILING,
+  backfillGraphIndexes,
+  graphIndexesReady,
+} from "./state/graph-indexes.js";
 import { VectorIndex } from "./state/vector-index.js";
 import { HybridSearch } from "./state/hybrid-search.js";
 import { IndexPersistence } from "./state/index-persistence.js";
@@ -508,6 +513,36 @@ async function main() {
         err,
       );
     }
+  }
+
+  // Backfill the graph read side-indexes for corpora that predate
+  // them. Mirrors the BM25 memories backfill above: one-time, gated on
+  // the snapshot's recorded node count so we never enumerate a corpus
+  // large enough to starve the worker heartbeat. While the readiness
+  // marker is absent, graph retrieval falls back to full enumeration,
+  // so skipping here is safe (just slower).
+  try {
+    if (!(await graphIndexesReady(kv))) {
+      const graphSnap = await kv.get<import("./types.js").GraphSnapshot>(
+        KV.graphSnapshot,
+        "current",
+      );
+      const totalNodes = graphSnap?.stats?.totalNodes ?? 0;
+      if (graphSnap && totalNodes > 0 && totalNodes <= GRAPH_INDEX_NODE_CEILING) {
+        const [graphNodes, graphEdges] = await Promise.all([
+          kv.list<import("./types.js").GraphNode>(KV.graphNodes),
+          kv.list<import("./types.js").GraphEdge>(KV.graphEdges),
+        ]);
+        await backfillGraphIndexes(
+          kv,
+          graphNodes.filter((n) => !n.stale),
+          graphEdges.filter((e) => !e.stale),
+        );
+        bootLog(`Backfilled graph read indexes (${totalNodes} nodes)`);
+      }
+    }
+  } catch (err) {
+    console.warn(`[agentmemory] Failed to backfill graph indexes:`, err);
   }
 
   // Ready / Endpoints lines are emitted via `bootLog` so they're

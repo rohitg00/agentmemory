@@ -26,6 +26,7 @@ import type {
 } from "../types.js";
 import { normalizeAccessLog } from "./access-tracker.js";
 import { KV } from "../state/schema.js";
+import { indexGraphEdge, indexGraphNode } from "../state/graph-indexes.js";
 import { StateKV } from "../state/kv.js";
 import { VERSION } from "../version.js";
 import { recordAudit } from "./audit.js";
@@ -404,6 +405,7 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
             if (existing) { stats.skipped++; continue; }
           }
           await kv.set(KV.graphNodes, node.id, node);
+          await indexGraphNode(kv, node);
         }
       }
       if (importData.graphEdges) {
@@ -413,6 +415,7 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
             if (existing) { stats.skipped++; continue; }
           }
           await kv.set(KV.graphEdges, edge.id, edge);
+          await indexGraphEdge(kv, edge);
         }
       }
       if (importData.semanticMemories) {
