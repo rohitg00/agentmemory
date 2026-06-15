@@ -1,6 +1,8 @@
 import type {
   GraphNode,
   GraphEdge,
+  Session,
+  CompressedObservation,
 } from "../types.js";
 import { KV } from "../state/schema.js";
 import type { StateKV } from "../state/kv.js";
@@ -40,6 +42,69 @@ function buildGraphContext(
 
 export class GraphRetrieval {
   constructor(private kv: StateKV) {}
+
+  /**
+   * Resolve each result to the session whose KV namespace actually holds
+   * its observation, so HybridSearch.enrichResults can load it via
+   * KV.observations(sessionId) (#656).
+   *
+   * The node-provided `sessionId` is only a hint: a node accumulates
+   * sourceObservationIds across many extracts/sessions but stores a single
+   * (most-recent) session, and legacy pre-#656 nodes store none. So for
+   * every result we VERIFY the obsId actually lives in the hinted session;
+   * on a miss (wrong hint, empty hint, multi-session node) we fall back to
+   * scanning known sessions. This makes the resolution authoritative
+   * rather than trusting a hint that can be stale or shared.
+   *
+   * Cost: the common single-session node confirms in one lookup. Results
+   * sharing an obsId are cached, so repeats are free. Only genuine misses
+   * pay the per-session scan.
+   */
+  private async resolveSessionIds(
+    results: GraphRetrievalResult[],
+  ): Promise<void> {
+    if (results.length === 0) return;
+
+    // obsId -> owning sessionId, or null when no known session holds it
+    // (so an unresolved obsId is scanned at most once, not per result).
+    const resolved = new Map<string, string | null>();
+    let sessions: Session[] | null = null; // lazily listed on first miss
+
+    const probe = async (sessionId: string, obsId: string): Promise<boolean> => {
+      const obs = await this.kv
+        .get<CompressedObservation>(KV.observations(sessionId), obsId)
+        .catch(() => null);
+      return obs !== null;
+    };
+
+    for (const r of results) {
+      if (resolved.has(r.obsId)) {
+        r.sessionId = resolved.get(r.obsId) ?? "";
+        continue;
+      }
+
+      // 1) Trust-but-verify the node's hint first (cheapest path).
+      if (r.sessionId && (await probe(r.sessionId, r.obsId))) {
+        resolved.set(r.obsId, r.sessionId);
+        continue;
+      }
+
+      // 2) Hint was empty or wrong — scan known sessions for the obs.
+      if (sessions === null) {
+        sessions = await this.kv.list<Session>(KV.sessions);
+      }
+      let found: string | null = null;
+      for (const session of sessions) {
+        if (session.id === r.sessionId) continue; // already probed above
+        if (await probe(session.id, r.obsId)) {
+          found = session.id;
+          break;
+        }
+      }
+      resolved.set(r.obsId, found);
+      r.sessionId = found ?? "";
+    }
+  }
 
   async searchByEntities(
     entityNames: string[],
@@ -89,7 +154,7 @@ export class GraphRetrieval {
 
           results.push({
             obsId,
-            sessionId: "",
+            sessionId: lastNode.sessionId ?? "",
             score,
             graphContext: buildGraphContext(path),
             pathLength,
@@ -102,7 +167,7 @@ export class GraphRetrieval {
         visitedObs.add(obsId);
         results.push({
           obsId,
-          sessionId: "",
+          sessionId: startNode.sessionId ?? "",
           score: 1.0,
           graphContext: `[${startNode.type}] ${startNode.name}`,
           pathLength: 0,
@@ -111,7 +176,11 @@ export class GraphRetrieval {
     }
 
     results.sort((a, b) => b.score - a.score);
-    return results.slice(0, maxResults);
+    const top = results.slice(0, maxResults);
+    // Resolve sessions only for the surviving top-K so verification/scan
+    // work never runs for results that get trimmed away.
+    await this.resolveSessionIds(top);
+    return top;
   }
 
   async expandFromChunks(
@@ -142,7 +211,7 @@ export class GraphRetrieval {
 
           results.push({
             obsId,
-            sessionId: "",
+            sessionId: lastNode.sessionId ?? "",
             score,
             graphContext: buildGraphContext(path),
             pathLength,
@@ -152,7 +221,9 @@ export class GraphRetrieval {
     }
 
     results.sort((a, b) => b.score - a.score);
-    return results.slice(0, maxResults);
+    const top = results.slice(0, maxResults);
+    await this.resolveSessionIds(top);
+    return top;
   }
 
   async temporalQuery(
