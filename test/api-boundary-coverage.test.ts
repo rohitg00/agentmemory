@@ -55,7 +55,7 @@ vi.mock("../src/viewer/server.js", () => ({
   getViewerSkipped: vi.fn(() => false),
 }));
 
-import { isConsolidationEnabled } from "../src/config.js";
+import { isAgentScopeIsolated, isConsolidationEnabled } from "../src/config.js";
 import { isSlotsEnabled, isReflectEnabled } from "../src/functions/slots.js";
 import { getLatestHealth } from "../src/health/monitor.js";
 import { renderViewerDocument } from "../src/viewer/document.js";
@@ -346,6 +346,7 @@ describe("REST API boundary coverage", () => {
       "api::snapshot-restore",
       "api::memories",
       "api::memory-by-id",
+      "api::memory-delete",
       "api::semantic-list",
       "api::procedural-list",
       "api::relations-list",
@@ -518,6 +519,7 @@ describe("REST API boundary coverage", () => {
       ["api::memories", req({ query: { latest: "true", project: "git:repo", limit: "1", offset: "0" } }), 200],
       ["api::memories", req({ query: { count: "true", agentId: "agent-env", includeOrphans: "true" } }), 200],
       ["api::memory-by-id", req({ path: { id: "mem_1" } }), 200],
+      ["api::memory-delete", req({ path: { id: "mem_1" } }), 200],
       ["api::semantic-list", req(), 200],
       ["api::procedural-list", req(), 200],
       ["api::relations-list", req(), 200],
@@ -544,6 +546,7 @@ describe("REST API boundary coverage", () => {
       ["api::session::by-commit", req(), "sha"],
       ["api::observations", req(), "sessionId"],
       ["api::memory-by-id", req(), "id path parameter"],
+      ["api::memory-delete", req(), "id path parameter"],
       ["api::import", req(), "exportData"],
       ["api::relations", req({ body: { sourceId: "a" } }), "sourceId"],
       ["api::profile", req(), "project query param"],
@@ -554,6 +557,49 @@ describe("REST API boundary coverage", () => {
       expect(response.status_code, id).toBe(400);
       expect(JSON.stringify(response.body), id).toContain(error);
     }
+  });
+
+  it("DELETE /agentmemory/memories/:id validates id, checks existence, and dispatches a whitelisted forget payload", async () => {
+    const memoryDelete = sdk.getFunction("api::memory-delete")!;
+
+    await expect(memoryDelete(req({ path: { id: "missing" } }))).resolves.toEqual({
+      status_code: 404,
+      body: { error: "memory not found: missing" },
+    });
+    expect(sdk.trigger).not.toHaveBeenCalledWith({
+      function_id: "mem::forget",
+      payload: { memoryId: "missing" },
+    });
+
+    await expect(memoryDelete(req({ path: { id: "   " } }))).resolves.toEqual({
+      status_code: 400,
+      body: { error: "id path parameter is required" },
+    });
+
+    await expect(memoryDelete(req({ path: { id: "mem_1" } }))).resolves.toMatchObject({
+      status_code: 200,
+    });
+    expect(sdk.triggerCalls.at(-1)).toEqual({
+      function_id: "mem::forget",
+      payload: { memoryId: "mem_1" },
+    });
+    expect(kv.delete).not.toHaveBeenCalledWith(KV.memories, "mem_1");
+  });
+
+  it("DELETE /agentmemory/memories/:id honors isolated agent scope before dispatching forget", async () => {
+    vi.mocked(isAgentScopeIsolated).mockReturnValue(true);
+    const memoryDelete = sdk.getFunction("api::memory-delete")!;
+
+    for (const query of [{}, { agentId: "*" }, { agentId: "agent-other" }]) {
+      await expect(memoryDelete(req({ path: { id: "mem_2" }, query }))).resolves.toEqual({
+        status_code: 404,
+        body: { error: "memory not found: mem_2" },
+      });
+    }
+    expect(sdk.trigger).not.toHaveBeenCalledWith({
+      function_id: "mem::forget",
+      payload: { memoryId: "mem_2" },
+    });
   });
 
   it("covers graph, consolidation, team, governance, snapshot, and mesh boundaries", async () => {
