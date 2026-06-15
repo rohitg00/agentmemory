@@ -50,7 +50,7 @@ Stop conditions:
 | Env/dotenv precedence | Targeted tests | done | Direct Python verification showed env URL/secret override saved config |
 | Malformed saved config fallback | Targeted tests | done | Direct Python verification showed malformed saved JSON falls back to default URL and empty secret |
 | Security posture | Manual review plus gates | done | Direct Python verification showed saved remote HTTP + secret is still blocked before request by plaintext bearer guard; diff-scoped Codex Security scan found no reportable candidate |
-| Prep merge to local main | `prep-merge-to-local-main` workflow | pending |  |
+| Prep merge to local main | `prep-merge-to-local-main` workflow | done | Local `main` commit `6c387b4efea524db5bf8fe0e923958cbcf0213f1` was already an ancestor of `HEAD`; merge step was a no-op |
 
 ## Review Notes
 
@@ -60,6 +60,7 @@ Stop conditions:
 - Codex Security diff scan result: no reportable findings. Scan artifacts were written under `/tmp/codex-security-scans/agentmemory/localpatch-6c387b4-20260615T230629Z/`; final markdown report validated successfully and HTML was rendered.
 - Review chain result: passive security orientation found no critical or major issue; simple-code pass made no changes; focused implementation review found no blocking findings; independent subagent review was not used because subagent dispatch was not explicitly authorized in this delegated task.
 - Vitest could not run in this worktree because local `node_modules` are absent and `vitest` is not on PATH. No dependency installation was performed.
+- Prep merge result: preflight clean except ignored `integrations/hermes/__pycache__/` verification artifact; local `main` was already merged, so no merge command was needed.
 
 ## Progress
 
@@ -79,3 +80,4 @@ Stop conditions:
   - `semgrep scan --config p/default --error --metrics=off .` passed with 0 findings.
   - `gitleaks protect --staged --redact` passed with no leaks.
   - `npm test -- test/integration-plaintext-http.test.ts test/hermes-plugin.test.ts` did not run because `vitest` was not installed.
+- Prep status: completed; local `main` was already an ancestor of the branch after the implementation commit.
