@@ -194,6 +194,102 @@ describe("Smart Search Function", () => {
     expect(log?.count).toBe(1);
   });
 
+  it("filters compact observation and memory results by project", async () => {
+    const alphaObs = makeObs({
+      id: "obs_alpha",
+      sessionId: "ses_alpha",
+      title: "Alpha auth handler",
+    });
+    const betaObs = makeObs({
+      id: "obs_beta",
+      sessionId: "ses_beta",
+      title: "Beta auth handler",
+    });
+    const betaMemoryObs = makeObs({
+      id: "mem_beta",
+      sessionId: "ses_alpha",
+      title: "Beta saved memory",
+    });
+
+    await kv.set("mem:sessions", "ses_alpha", {
+      id: "ses_alpha",
+      project: "alpha",
+      cwd: "/tmp/alpha",
+      startedAt: "2026-02-01T00:00:00Z",
+      status: "completed",
+      observationCount: 1,
+    });
+    await kv.set("mem:sessions", "ses_beta", {
+      id: "ses_beta",
+      project: "beta",
+      cwd: "/tmp/beta",
+      startedAt: "2026-02-01T00:00:00Z",
+      status: "completed",
+      observationCount: 1,
+    });
+    await kv.set("mem:memories", "mem_beta", {
+      id: "mem_beta",
+      project: "beta",
+      title: "Beta saved memory",
+    });
+
+    searchResults = [
+      {
+        observation: alphaObs,
+        bm25Score: 1,
+        vectorScore: 0,
+        combinedScore: 1,
+        sessionId: "ses_alpha",
+      },
+      {
+        observation: betaObs,
+        bm25Score: 0.9,
+        vectorScore: 0,
+        combinedScore: 0.9,
+        sessionId: "ses_beta",
+      },
+      {
+        observation: betaMemoryObs,
+        bm25Score: 0.8,
+        vectorScore: 0,
+        combinedScore: 0.8,
+        sessionId: "ses_alpha",
+      },
+    ];
+
+    const result = (await sdk.trigger("mem::smart-search", {
+      query: "auth",
+      project: "alpha",
+    })) as { results: CompactSearchResult[] };
+
+    expect(result.results.map((r) => r.obsId)).toEqual(["obs_alpha"]);
+  });
+
+  it("filters expanded observations by project", async () => {
+    const betaObs = makeObs({
+      id: "obs_beta_expand",
+      sessionId: "ses_beta_expand",
+      title: "Beta expanded auth",
+    });
+    await kv.set("mem:sessions", "ses_beta_expand", {
+      id: "ses_beta_expand",
+      project: "beta",
+      cwd: "/tmp/beta",
+      startedAt: "2026-02-01T00:00:00Z",
+      status: "completed",
+      observationCount: 1,
+    });
+    await kv.set("mem:obs:ses_beta_expand", "obs_beta_expand", betaObs);
+
+    const result = (await sdk.trigger("mem::smart-search", {
+      expandIds: ["obs_1", "obs_beta_expand"],
+      project: "my-project",
+    })) as { mode: string; results: Array<{ obsId: string }> };
+
+    expect(result.mode).toBe("expanded");
+    expect(result.results.map((r) => r.obsId)).toEqual(["obs_1"]);
+  });
+
   describe("lesson inclusion (#lesson-visibility)", () => {
     it("compact mode returns lessons array alongside observation results", async () => {
       sdk.registerFunction("mem::lesson-recall", async (payload: any) => ({

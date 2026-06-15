@@ -278,12 +278,17 @@ export function registerMcpEndpoints(
             }
             const expandIds = parseCsvList(args.expandIds).slice(0, 20);
             const limit = Math.max(1, Math.min(100, asNumber(args.limit, 10) ?? 10));
+            const project =
+              typeof args.project === "string" && args.project.trim().length > 0
+                ? args.project.trim()
+                : undefined;
             const result = await sdk.trigger({
               function_id: "mem::smart-search",
               payload: {
                 query: args.query,
                 expandIds,
                 limit,
+                ...(project !== undefined && { project }),
               },
             });
             return {
