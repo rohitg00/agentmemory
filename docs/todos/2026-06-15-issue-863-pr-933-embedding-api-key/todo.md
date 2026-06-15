@@ -44,7 +44,7 @@ Stop conditions:
 | Import/adapt minimal fix if needed | TDD regression test, minimal source diff | Done | Adapted only PR 933's factory hunk; did not import obsolete auto-detection/docs hunk |
 | Security review | Manual diff review plus required scanner gates where available | Done | Semgrep p/default: 0 findings; Codex Security diff scan: no candidates |
 | Local documentation | Neutral task record and plan | Done | This file and `plan.md` |
-| Merge prep | `$prep-merge-to-local-main` workflow | In progress | Task-owned changes committed; merge with local `main` is next |
+| Merge prep | `$prep-merge-to-local-main` workflow | Done | Task-owned changes committed; local `main` `6c387b4efea524db5bf8fe0e923958cbcf0213f1` merged |
 
 ## Subagent Ledger
 
@@ -65,4 +65,7 @@ No delegated workstreams planned. The scope is small and the immediate blocking 
 - First `$prep-merge-to-local-main` attempt: blocked during Preflight. The local `main` worktree at `/Users/A1538552/_projects/_tools/agentmemory` had dirty unrelated tracked and untracked paths, so the skill required stopping before cleanup, staging, commit, or merge.
 - Retry `$prep-merge-to-local-main`: local `main` worktree is now clean at `6c387b4efea524db5bf8fe0e923958cbcf0213f1`; cleanup/commit and merge prep resumed.
 - Task-owned commit: `f7bf9e6` (`fix: respect openai embedding api key precedence`).
+- Documentation follow-up commit: `f46edc7` (`docs: update embedding key review status`).
+- Local main merge commit: `402c63f`; merged local `main` `6c387b4efea524db5bf8fe0e923958cbcf0213f1`.
+- Post-merge verification: targeted Vitest suite passed with 21 tests; focused ESLint passed; `git diff --check` passed.
 - Verification artifact: `node_modules/.vite/vitest` exists as an ignored local cache from the Vitest invocation. It was not removed because cleanup/deletion was not explicitly authorized in the current turn.

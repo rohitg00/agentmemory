@@ -45,7 +45,7 @@
 
 - [x] Run `$prep-merge-to-local-main`.
 - [x] Task-owned commit was created after retry: `f7bf9e6`.
-- [x] If it is a no-op or blocked, document the reason and evidence.
+- [x] Local `main` was merged after retry: `402c63f`.
 
 ## Self-Review
 
