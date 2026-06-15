@@ -50,7 +50,7 @@ Stop conditions:
 | Implement minimal fork change if needed | TDD red/green on provider model selection | Passed | Added `compressModel` to provider config, raw providers, Anthropic provider, docs, and focused tests. |
 | Security review | Manual security checklist plus required gates | Passed so far | Semgrep default scan: 0 findings. Gitleaks full-tree detect: no leaks. Manual and read-only reviewer passes found no auth, persistence, path, schema, hook, supply-chain, or data-exfiltration broadening beyond explicit LLM model selection. |
 | Local neutral documentation | Update this task note without URLs, mentions, or hash issue references | Passed so far | This file uses neutral IDs only. |
-| Prep merge to local main | Run `$prep-merge-to-local-main` workflow or document no-op/skip | In progress | First prep attempt was blocked by dirty local `main`; second prep attempt continued after local `main` became clean. |
+| Prep merge to local main | Run `$prep-merge-to-local-main` workflow or document no-op/skip | Passed | Local `main` commit `6c387b4efea524db5bf8fe0e923958cbcf0213f1` was merged into the review branch with merge commit `90fd1814acf65d3d9443eec81e67cf7a10e66ba2`; post-merge checks passed. |
 
 ## Progress
 
@@ -74,6 +74,19 @@ Stop conditions:
   - Docs now describe the exact runtime contract: `provider.compress()` call sites use the override and `provider.summarize()` call sites keep the provider model.
   - Fallback model test now captures and asserts `compressModel` is not passed to fallback providers.
 - Final read-only Review Implementation after fixes: no findings, no open questions.
+- Task commit: `b337243718fb4f3c82a1aca8037c833059cf5e62`.
+- `$prep-merge-to-local-main` result:
+  - Pre-merge task commit was already clean when the final prep pass started.
+  - Local `main` worktree was clean at `6c387b4efea524db5bf8fe0e923958cbcf0213f1`.
+  - Merge commit `90fd1814acf65d3d9443eec81e67cf7a10e66ba2` brought that local `main` commit into `review/issue-899-pr-900-compress-model` without conflicts.
+  - Post-merge verification passed:
+    - `/Users/A1538552/_projects/_tools/agentmemory/node_modules/.bin/vitest --config /Users/A1538552/_projects/_tools/agentmemory/vitest.config.ts --root /Users/A1538552/.codex/worktrees/d652/agentmemory run test/compress-model.test.ts test/fallback-model-resolution.test.ts --exclude test/integration.test.ts`: 2 files, 13 tests passed.
+    - `/Users/A1538552/_projects/_tools/agentmemory/node_modules/.bin/vitest --config /Users/A1538552/_projects/_tools/agentmemory/vitest.config.ts --root /Users/A1538552/.codex/worktrees/d652/agentmemory run test/fetch-timeout.test.ts test/minimax-provider.test.ts --exclude test/integration.test.ts`: 2 files, 21 tests passed.
+    - `/Users/A1538552/_projects/_tools/agentmemory/node_modules/.bin/eslint --config /Users/A1538552/_projects/_tools/agentmemory/eslint.config.js src/config.ts src/types.ts src/providers/index.ts src/providers/openai.ts src/providers/openrouter.ts src/providers/minimax.ts src/providers/anthropic.ts test/compress-model.test.ts test/fallback-model-resolution.test.ts`: exit 0.
+    - `git diff --check`: exit 0.
+    - `semgrep scan --config p/default --error --metrics=off .`: 0 findings.
+    - `gitleaks detect --source . --redact`: no leaks found.
+  - Ignored verification artifact remains classified as local cache: `node_modules/.vite/vitest`.
 
 ## Security Notes
 
