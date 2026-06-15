@@ -294,9 +294,12 @@ import {
   buildDecisionLabels,
   buildPrMarker,
   buildTrackerIssueBody,
+  mergeTrackerIssueBody,
   parseExistingPrMarkers,
   planPrIssueActions,
   planPrVerification,
+  sanitizeRenderedGitHubText,
+  sanitizeImportedMarkdownWithTelemetry,
   sanitizeImportedMarkdown,
 } from "../scripts/github/upstream-pr-issue-tracker";
 
@@ -332,6 +335,22 @@ describe("upstream PR issue tracker", () => {
     expect(sanitizeImportedMarkdown("Fixes #12 thanks @team")).not.toContain("@team");
   });
 
+  it("reports sanitization telemetry for imported upstream PR body text only", () => {
+    const result = sanitizeImportedMarkdownWithTelemetry("Fixes #12 thanks @team");
+    expect(result.text).not.toContain("Fixes #12");
+    expect(result.text).not.toContain("@team");
+    expect(result.telemetry).toEqual({
+      neutralizedMentions: 1,
+      neutralizedReferences: 1,
+      neutralizedClosingKeywords: 1,
+    });
+  });
+
+  it("sanitizes upstream-authored titles and rendered metadata", () => {
+    expect(sanitizeRenderedGitHubText("Fixes #12 for @team")).not.toContain("Fixes #12");
+    expect(sanitizeRenderedGitHubText("Fixes #12 for @team")).not.toContain("@team");
+  });
+
   it("builds tracker issue bodies with source metadata and workflow fields", () => {
     const body = buildTrackerIssueBody({
       number: 123,
@@ -355,6 +374,138 @@ describe("upstream PR issue tracker", () => {
     expect(body).toContain("<!-- upstream-pr: rohitg00/agentmemory#123 -->");
     expect(body).toContain("Fork decision");
     expect(body).toContain("Head");
+  });
+
+  it("preserves fork-local workflow fields and notes when refreshing upstream metadata", () => {
+    const existingBody = [
+      "<!-- upstream-pr-managed:start -->",
+      "old upstream metadata",
+      "<!-- upstream-pr-managed:end -->",
+      "<!-- fork-pr-workflow:start -->",
+      "Local branch: `import/pr-123`",
+      "Fork PR: https://github.com/wbugitlab1/agentmemory/pull/77",
+      "Decision: adopt with local changes",
+      "Verification: `npm test -- test/example.test.ts`",
+      "Notes: keep the local API shape",
+      "<!-- fork-pr-workflow:end -->",
+    ].join("\n");
+    const merged = mergeTrackerIssueBody(existingBody, {
+      number: 123,
+      title: "Fix startup safely",
+      state: "open",
+      draft: false,
+      merged: false,
+      html_url: "https://github.com/rohitg00/agentmemory/pull/123",
+      user: { login: "alice" },
+      body: "Updated upstream body",
+      head: { repoFullName: "alice/agentmemory", ref: "fix", sha: "abc2" },
+      base: { ref: "main", sha: "def2" },
+      labels: [],
+      changedFiles: 3,
+      commits: 2,
+      created_at: "2026-06-01T00:00:00Z",
+      updated_at: "2026-06-03T00:00:00Z",
+      closed_at: null,
+      merged_at: null,
+    });
+    expect(merged).toContain("Updated upstream body");
+    expect(merged).toContain("Local branch: `import/pr-123`");
+    expect(merged).toContain("Notes: keep the local API shape");
+  });
+
+  it("rejects malformed workflow delimiters without planning update writes", () => {
+    const plan = planPrIssueActions({
+      sourcePulls: [
+        {
+          number: 123,
+          title: "Fix startup safely",
+          state: "open",
+          draft: false,
+          merged: false,
+          html_url: "https://github.com/rohitg00/agentmemory/pull/123",
+          user: { login: "alice" },
+          body: "Updated upstream body",
+          head: { repoFullName: "alice/agentmemory", ref: "fix", sha: "abc2" },
+          base: { ref: "main", sha: "def2" },
+          labels: [],
+          changedFiles: 3,
+          commits: 2,
+          created_at: "2026-06-01T00:00:00Z",
+          updated_at: "2026-06-03T00:00:00Z",
+          closed_at: null,
+          merged_at: null,
+        },
+      ],
+      targetIssues: [
+        {
+          number: 10,
+          title: "[upstream PR #123] Fix startup",
+          body: [
+            "<!-- upstream-pr: rohitg00/agentmemory#123 -->",
+            "<!-- upstream-pr-managed:start -->",
+            "old upstream metadata",
+            "<!-- fork-pr-workflow:start -->",
+            "Notes: keep this",
+            "<!-- fork-pr-workflow:end -->",
+          ].join("\n"),
+          labels: ["upstream-pr", "decision-candidate"],
+        },
+      ],
+      targetLabels: [],
+    });
+    expect(plan.actions.map((action) => action.type)).not.toContain("update-issue");
+    expect(plan.failures).toContainEqual({
+      type: "malformed-section",
+      targetNumber: 10,
+      reason: "managed section delimiter mismatch",
+    });
+  });
+
+  it("rejects existing tracker issues missing the workflow section", () => {
+    const plan = planPrIssueActions({
+      sourcePulls: [
+        {
+          number: 123,
+          title: "Fix startup safely",
+          state: "open",
+          draft: false,
+          merged: false,
+          html_url: "https://github.com/rohitg00/agentmemory/pull/123",
+          user: { login: "alice" },
+          body: "Updated upstream body",
+          head: { repoFullName: "alice/agentmemory", ref: "fix", sha: "abc2" },
+          base: { ref: "main", sha: "def2" },
+          labels: [],
+          changedFiles: 3,
+          commits: 2,
+          created_at: "2026-06-01T00:00:00Z",
+          updated_at: "2026-06-03T00:00:00Z",
+          closed_at: null,
+          merged_at: null,
+        },
+      ],
+      targetIssues: [
+        {
+          number: 10,
+          title: "[upstream PR #123] Fix startup",
+          body: [
+            "<!-- upstream-pr: rohitg00/agentmemory#123 -->",
+            "<!-- upstream-pr-managed:start -->",
+            "old upstream metadata",
+            "<!-- upstream-pr-managed:end -->",
+            "Notes outside managed sections must not be overwritten",
+          ].join("\n"),
+          labels: ["upstream-pr", "decision-candidate"],
+        },
+      ],
+      targetLabels: [],
+    });
+    expect(plan.actions.map((action) => action.type)).not.toContain("update-issue");
+    expect(plan.failures).toContainEqual({
+      type: "malformed-section",
+      targetNumber: 10,
+      reason: "workflow section missing",
+    });
   });
 
   it("plans create, update, and skip actions without duplicates", () => {
@@ -452,6 +603,16 @@ Create `scripts/github/upstream-pr-issue-tracker.ts` with these exports and beha
 export const SOURCE_REPO = "rohitg00/agentmemory";
 export const TARGET_REPO = "wbugitlab1/agentmemory";
 export const PR_MARKER_PREFIX = "<!-- upstream-pr:";
+export const MANAGED_SECTION_START = "<!-- upstream-pr-managed:start -->";
+export const MANAGED_SECTION_END = "<!-- upstream-pr-managed:end -->";
+export const WORKFLOW_SECTION_START = "<!-- fork-pr-workflow:start -->";
+export const WORKFLOW_SECTION_END = "<!-- fork-pr-workflow:end -->";
+
+export type SanitizationTelemetry = {
+  neutralizedMentions: number;
+  neutralizedReferences: number;
+  neutralizedClosingKeywords: number;
+};
 
 export type SourcePull = {
   number: number;
@@ -495,9 +656,13 @@ Implementation requirements:
 - `buildPrMarker(number)` returns exactly `<!-- upstream-pr: rohitg00/agentmemory#N -->`.
 - `parseExistingPrMarkers(targetIssues)` extracts one marker per target issue, rejects malformed markers, and records duplicate upstream numbers.
 - `sanitizeImportedMarkdown(text)` prevents GitHub notifications and accidental issue-closing/cross-reference effects by neutralizing `@mentions`, `#123` references, and leading closing keywords while preserving readable text.
+- `sanitizeImportedMarkdownWithTelemetry(text)` returns `{ text, telemetry }` using the same sanitization as `sanitizeImportedMarkdown`, with aggregate counts for neutralized mentions, same-repository issue/PR references, and closing keywords.
+- Sanitization telemetry must count only imported upstream PR body text. Do not count generated tracker metadata, markers, source URLs, labels, head/base refs, workflow fields, or fork decision fields as imported Markdown.
+- `sanitizeRenderedGitHubText(text)` neutralizes notification and cross-reference patterns in every upstream-authored string rendered into the target issue title or body, including PR title, author login, labels, head repo/ref, and base ref. This helper does not increment PR-body sanitization telemetry.
 - `buildDecisionLabels(existingLabels, upstreamState, merged, draft)` always includes `upstream-pr`; sets exactly one upstream state label for open/closed/merged; adds `upstream-draft` when draft; preserves existing `decision-*`; adds `decision-candidate` only when no decision label exists.
-- `buildTrackerIssueBody(sourcePull)` includes marker, source URL, author, state, draft, merged, head repo/ref/SHA, base ref/SHA, labels, changed file count, commit count, timestamps, original body, and blank workflow fields for local branch, fork PR, decision, verification, and notes.
-- `planPrIssueActions(input)` filters target `/issues` endpoint items that contain `pull_request`, creates missing managed labels, creates missing target issues, updates existing mirror issue title/body/labels, skips unchanged mirror issues, and never plans writes when duplicate or invalid markers exist.
+- `buildTrackerIssueBody(sourcePull)` creates a new issue body with one managed upstream metadata section between `MANAGED_SECTION_START` and `MANAGED_SECTION_END`, and one fork workflow section between `WORKFLOW_SECTION_START` and `WORKFLOW_SECTION_END`. The managed section includes marker, source URL, sanitized author/title/metadata, state, draft, merged, head repo/ref/SHA, base ref/SHA, labels, changed file count, commit count, timestamps, and sanitized original PR body. The workflow section starts with blank local branch, fork PR, decision, verification, and notes fields.
+- `mergeTrackerIssueBody(existingBody, sourcePull)` refreshes only the managed upstream metadata section while preserving the existing fork workflow section exactly. Existing tracker issues missing any required managed or workflow section delimiter must produce a structured `malformed-section` failure and no update action, because unsectioned manual notes cannot be safely distinguished from generated content. Blank workflow fields are created only for brand-new tracker issue bodies through `buildTrackerIssueBody`. If the existing body has malformed managed/workflow delimiters, `planPrIssueActions` must record an invalid-marker-style failure and plan no write for that issue until a maintainer fixes the body.
+- `planPrIssueActions(input)` filters target `/issues` endpoint items that contain `pull_request`, creates missing managed labels, creates missing target issues, updates existing mirror issue title/body/labels using `mergeTrackerIssueBody`, skips unchanged mirror issues, and never plans writes when duplicate, invalid, or malformed section markers exist.
 - `planPrVerification(input)` returns structured failures for missing, duplicate, invalid, title mismatch, marker mismatch, and missing managed labels.
 
 - [ ] **Step 3: Run planner tests**
@@ -576,10 +741,12 @@ export async function runPrTracker(options: {
   confirmRemoteWrites: boolean;
   reader: PrTrackerReader;
   writer?: PrTrackerWriter;
+  checkpointReport?: (report: TrackerReport) => Promise<void>;
+  sleep?: (milliseconds: number) => Promise<void>;
 }): Promise<TrackerReport>;
 ```
 
-The CLI entrypoint should only parse arguments, construct the appropriate adapters, call `runPrTracker`, write the report, and set exit codes. Tests must exercise `runPrTracker` with fake readers and writers, not the network.
+The CLI entrypoint should only parse arguments, construct the appropriate adapters, call `runPrTracker`, write the report, and set exit codes. Tests must exercise `runPrTracker` with fake readers, fake writers, a fake `checkpointReport`, and an injected `sleep` function instead of the network or real timers.
 
 - [ ] **Step 3: Implement GitHub read adapters**
 
@@ -591,6 +758,8 @@ Implement:
 - `GhGitHubClient`: `execFile("gh", ["api", ...])` for confirmed credentialed reads and writes.
 
 Reader requirements:
+- `PublicGitHubReader` must send `Accept: application/vnd.github+json`, `X-GitHub-Api-Version: 2022-11-28`, and a fixed non-secret `User-Agent` on every public request.
+- `PublicGitHubReader` must not send an `Authorization` header and must not derive headers from environment variables or token-bearing config.
 - `PublicGitHubReader` must follow GitHub `Link` pagination until no `rel=\"next\"` link remains.
 - `GhGitHubClient` must use `gh api --paginate --slurp` for list endpoints and flatten the returned pages.
 - All readers must fail closed on non-2xx responses.
@@ -616,9 +785,16 @@ Comment writes are out of scope for the first implementation. Do not call `POST 
 
 All issue create/update requests that include generated multiline or user-supplied body text must build a temporary JSON payload file and call `gh api --input <payload-file>`. Do not pass body text through argv with `--field body=...`, `-f body=...`, or equivalent.
 
-Before executing `gh api --input <payload-file>`, parse the temporary JSON payload file locally and inspect the generated payload after sanitization. The pre-write check must verify that `title` is a nonempty string, `labels` is an array of strings, `body` is a string, the body contains exactly one expected upstream PR marker for the action, and sanitized imported PR text did not retain raw `@mention`, raw same-repository `#123` reference, or leading issue-closing keyword patterns from the upstream body. Log only a safe summary of the payload path, endpoint, title, label count, marker, body character count, and validation result; do not print the full body. Remove the temporary payload file after the command returns.
+Before executing `gh api --input <payload-file>`, parse the temporary JSON payload file locally and inspect the generated payload after sanitization. The pre-write check must verify that `title` is a nonempty string, `labels` is an array of strings, `body` is a string, the body contains exactly one expected upstream PR marker for the action, and final rendered title/body output did not retain unsafe raw `@mention`, raw same-repository `#123` reference, or leading issue-closing keyword patterns from upstream-authored strings. Log only a safe summary of the payload path, endpoint, title, label count, marker, body character count, and validation result; do not print the full body. Remove the temporary payload file after the command returns.
 
 Do not copy upstream PR review comments, issue comments, checks, or reactions into target issues.
+
+Apply write requirements:
+- Write only managed PR-tracker labels and tracker issues; do not close target issues from upstream PR state.
+- Execute remote writes sequentially and wait at least one second between successful remote write actions.
+- Write a checkpoint report after each successful remote write action or successful write batch, and before stopping on any runtime stop condition.
+- Stop without retrying when GitHub returns `403`, `429`, `422`, a `Retry-After` header, secondary-rate-limit text, spam-prevention text, validation text, or abuse-detection text. Record whether the stop is retryable rate limiting, spam/abuse prevention, authentication, permission, validation, or unknown based on safe response metadata. Do not classify every `403` as retryable.
+- After a stop condition, run no further writes. Recovery is an idempotent rerun from a freshly reviewed dry-run report or from a still-matching reviewed report after the recommended wait period.
 
 - [ ] **Step 5: Implement reports**
 
@@ -640,13 +816,19 @@ Reports must be JSON and include:
   "appliedActions": [],
   "skippedActions": [],
   "failedAction": null,
+  "stopCondition": null,
+  "sanitization": {
+    "neutralizedMentions": 0,
+    "neutralizedReferences": 0,
+    "neutralizedClosingKeywords": 0
+  },
   "failures": [],
   "wroteRemote": false,
   "generatedAt": "2026-06-14T00:00:00.000Z"
 }
 ```
 
-Use a real ISO timestamp at runtime. Every planned action must have a stable action ID derived from action type and upstream PR number, plus target issue number when present. Dry-run reports must set `wroteRemote` to `false`; apply reports must set it to `true` only after the first successful write. Apply mode writes sequentially and stops on the first write failure, recording completed `appliedActions`, `skippedActions`, and the `failedAction` with target issue numbers/URLs and safe error summaries.
+Use a real ISO timestamp at runtime. Every planned action must have a stable action ID derived from action type and upstream PR number, plus target issue number when present. Dry-run reports must set `wroteRemote` to `false`; apply reports must set it to `true` only after the first successful write. Apply mode writes sequentially and stops on the first write failure, recording completed `appliedActions`, `skippedActions`, the `failedAction` with target issue numbers/URLs and safe error summaries, and `stopCondition` with safe metadata: classification, status code, endpoint, retry-after when present, reset time when present, and a redacted message. Sanitization counts are aggregate counts from imported upstream PR body text only.
 
 - [ ] **Step 6: Add CLI smoke tests without network**
 
@@ -659,11 +841,19 @@ Add pure tests around CLI argument parsing by exporting a parser function from `
 - invalid state rejected
 - report path required for apply and verify
 - public reader follows two pages for PRs, target issues, and labels
+- public reader sends `Accept`, `X-GitHub-Api-Version`, and fixed non-secret `User-Agent` headers, and omits `Authorization`
+- unsafe upstream-authored PR titles and metadata are sanitized before being written into target issue titles or bodies
 - target `/issues` endpoint items with `pull_request` are excluded from tracker issue matching
 - dry-run uses fake public reader and zero writer calls
 - verify uses fake reader and zero writer calls
 - apply uses fake writer only after both confirmation flags and matching `--from-report`
 - failed mid-apply writes completed actions and failed action into the report
+- update planning preserves an existing fork workflow section exactly while refreshing upstream metadata
+- malformed, missing, duplicated, or out-of-order managed/workflow section delimiters produce structured report failures, no `update-issue` plan for the affected target issue, and no apply writer call
+- apply calls injected `sleep` between successful remote write actions
+- apply writes checkpoint reports after successful writes and before stop conditions
+- `403`, `429`, `422`, `Retry-After`, secondary-rate-limit, validation, spam-prevention, and abuse-detection responses stop apply without later writes
+- dry-run and apply reports include aggregate sanitization telemetry for imported upstream PR body text only
 - write adapter command construction never passes issue body text through argv
 - write adapter parses and validates the temporary payload file before `gh api --input`, including marker count and sanitized imported-body checks
 
@@ -701,10 +891,10 @@ Expected: command exits 0, performs no writes, and reports source PR count, targ
 Run:
 
 ```bash
-jq '{source, target, mode, state, sourcePulls, targetIssueEndpointItems, targetPullRequestItemsExcluded, targetNormalIssues, wroteRemote, planHash, failureCount: (.failures | length), actionCount: (.plannedActions | length)}' docs/todos/2026-06-14-track-upstream-prs-as-issues/dry-run-report.json
+jq '{source, target, mode, state, sourcePulls, targetIssueEndpointItems, targetPullRequestItemsExcluded, targetNormalIssues, wroteRemote, planHash, sanitization, failureCount: (.failures | length), actionCount: (.plannedActions | length)}' docs/todos/2026-06-14-track-upstream-prs-as-issues/dry-run-report.json
 ```
 
-Expected: `mode` is `dry-run`, `wroteRemote` is `false`, `planHash` is present, and `failureCount` is `0`. If `failureCount` is nonzero, stop and fix or re-plan.
+Expected: `mode` is `dry-run`, `wroteRemote` is `false`, `planHash` is present, `sanitization` is present, and `failureCount` is `0`. If `failureCount` is nonzero, stop and fix or re-plan.
 
 - [ ] **Step 3: Record dry-run evidence**
 
@@ -743,17 +933,17 @@ node --import tsx scripts/github/track-upstream-prs-as-issues.ts \
   --report docs/todos/2026-06-14-track-upstream-prs-as-issues/apply-report.json
 ```
 
-Expected: command exits 0 only if the current plan matches the reviewed dry-run report before the first write. If GitHub returns authentication, permission, rate-limit, spam-prevention, abuse-detection, validation, or secondary-rate-limit errors, stop and record the exact safe error summary. Do not retry writes blindly.
+Expected: command exits 0 only if the current plan matches the reviewed dry-run report before the first write. Apply waits at least one second between successful remote write actions and writes checkpoint reports after successful writes. If GitHub returns authentication, permission, rate-limit, spam-prevention, abuse-detection, validation, secondary-rate-limit errors, `403`, `422`, `429`, or `Retry-After`, stop, write a checkpoint report, record the exact safe error summary and stop classification, and do not run further writes or retry blindly.
 
 - [ ] **Step 3: Inspect apply report**
 
 Run:
 
 ```bash
-jq '{mode, wroteRemote, sourcePulls, targetIssues, targetNormalIssues, planHash, failureCount: (.failures | length), actionCount: (.plannedActions | length), appliedCount: (.appliedActions | length), failedAction}' docs/todos/2026-06-14-track-upstream-prs-as-issues/apply-report.json
+jq '{mode, wroteRemote, sourcePulls, targetIssues, targetNormalIssues, planHash, sanitization, failureCount: (.failures | length), actionCount: (.plannedActions | length), appliedCount: (.appliedActions | length), failedAction, stopCondition}' docs/todos/2026-06-14-track-upstream-prs-as-issues/apply-report.json
 ```
 
-Expected: `mode` is `apply`, `failureCount` is `0`, `failedAction` is `null`, and `wroteRemote` reflects whether writes occurred.
+Expected: `mode` is `apply`, `failureCount` is `0`, `failedAction` is `null`, `stopCondition` is `null`, `sanitization` is present, and `wroteRemote` reflects whether writes occurred.
 
 ## Task 8: Verify Mirror Completeness
 
@@ -799,6 +989,7 @@ Update `docs/todos/2026-06-14-track-upstream-prs-as-issues/todo.md` with:
 - Apply status:
 - Verify report:
 - Remote-write confirmation:
+- Sanitization telemetry:
 - Residual risks:
 ```
 

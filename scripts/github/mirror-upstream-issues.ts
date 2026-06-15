@@ -35,6 +35,8 @@ export type MirrorCliOptions = {
   reportPath: string | null;
   confirmCredentialedReads: boolean;
   confirmRemoteWrites: boolean;
+  writeDelayMs: number;
+  deferComments: boolean;
 };
 
 export type GitHubMirrorClient = {
@@ -141,6 +143,8 @@ export function parseCliArgs(args: string[]): MirrorCliOptions {
     reportPath: null,
     confirmCredentialedReads: false,
     confirmRemoteWrites: false,
+    writeDelayMs: 1000,
+    deferComments: false,
   };
 
   for (let index = 0; index < args.length; index += 1) {
@@ -157,6 +161,8 @@ export function parseCliArgs(args: string[]): MirrorCliOptions {
     else if (arg === "--report") options.reportPath = requireValue(args, ++index, arg);
     else if (arg === "--confirm-credentialed-reads") options.confirmCredentialedReads = true;
     else if (arg === "--confirm-remote-writes") options.confirmRemoteWrites = true;
+    else if (arg === "--write-delay-ms") options.writeDelayMs = parsePositiveInteger(requireValue(args, ++index, arg), arg);
+    else if (arg === "--defer-comments") options.deferComments = true;
     else throw new Error(`Unknown argument: ${arg}`);
   }
 
@@ -194,7 +200,7 @@ export async function runMirrorCli(args: string[], deps: MirrorCliDeps = {}): Pr
       targetCommentsByIssue: inventory.targetCommentsByIssue,
       targetLabels: inventory.targetLabels,
     });
-    const actions = [...labelActions, ...issueActions];
+    const actions = filterDeferredActions([...labelActions, ...issueActions], options);
     fillPlannedReport(report, labelActions, actions, inventory);
 
     if (options.mode === "verify") {
@@ -238,6 +244,11 @@ export async function runMirrorCli(args: string[], deps: MirrorCliDeps = {}): Pr
     await maybeWriteReport(options.reportPath, report, writeReport);
     return { exitCode: 1, report };
   }
+}
+
+function filterDeferredActions(actions: PlannedAction[], options: MirrorCliOptions): PlannedAction[] {
+  if (!options.deferComments) return actions;
+  return actions.filter((action) => action.type !== "create-comment");
 }
 
 export function createPublicGitHubReader(fetchImpl: typeof fetch = fetch): GitHubMirrorClient {
@@ -425,32 +436,32 @@ async function applyActions(
         await client.createLabel(options.target, action.label);
         report.appliedActions.push(actionDetail(action));
         await maybeWriteReport(options.reportPath, report, writeReport);
-        await wait(1000);
+        await wait(options.writeDelayMs);
       } else if (action.type === "create-issue") {
         const created = await client.createIssue(options.target, { title: action.title, body: action.body, labels: action.labels });
         createdTargets.set(action.upstreamNumber, created.number);
         report.appliedActions.push(actionDetail(action, created.number));
         await maybeWriteReport(options.reportPath, report, writeReport);
-        await wait(1000);
+        await wait(options.writeDelayMs);
       } else if (action.type === "update-issue") {
         await client.updateIssue(options.target, action.targetNumber, { title: action.title, body: action.body, labels: action.labels });
         report.appliedActions.push(actionDetail(action));
         await maybeWriteReport(options.reportPath, report, writeReport);
-        await wait(1000);
+        await wait(options.writeDelayMs);
       } else if (action.type === "create-comment") {
         const targetNumber = action.targetNumber ?? createdTargets.get(action.upstreamNumber);
         if (targetNumber === undefined) throw new Error(`Cannot import comment for upstream issue ${action.upstreamNumber}; target issue is unknown.`);
         await client.createComment(options.target, targetNumber, action.body);
         report.appliedActions.push(actionDetail(action, targetNumber));
         await maybeWriteReport(options.reportPath, report, writeReport);
-        await wait(1000);
+        await wait(options.writeDelayMs);
       } else if (action.type === "close-issue") {
         const targetNumber = action.targetNumber ?? createdTargets.get(action.upstreamNumber);
         if (targetNumber === undefined) throw new Error(`Cannot close mirror for upstream issue ${action.upstreamNumber}; target issue is unknown.`);
         await client.updateIssue(options.target, targetNumber, { state: "closed" });
         report.appliedActions.push(actionDetail(action, targetNumber));
         await maybeWriteReport(options.reportPath, report, writeReport);
-        await wait(1000);
+        await wait(options.writeDelayMs);
       }
     } catch (error) {
       report.failedAction = actionDetail(action);
@@ -812,6 +823,12 @@ function sleep(milliseconds: number): Promise<void> {
 function parseState(value: string): IssueState {
   if (value === "open" || value === "closed" || value === "all") return value;
   throw new Error(`Invalid --state value: ${value}`);
+}
+
+function parsePositiveInteger(value: string, flag: string): number {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed <= 0) throw new Error(`${flag} requires a positive integer`);
+  return parsed;
 }
 
 function requireValue(args: string[], index: number, flag: string): string {

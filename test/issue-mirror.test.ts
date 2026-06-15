@@ -656,6 +656,21 @@ describe("issue mirror planner", () => {
     });
     expect(complete.ok).toBe(true);
   });
+
+  it("verification accepts source comment counts that are not returned by the comments endpoint when the summary marker preserves the count", () => {
+    const sourceIssue = issue({ number: 10, comments: 2 });
+    const targetIssue = mirrorTarget(sourceIssue, { number: 510 });
+
+    const verification = planVerification({
+      sourceIssues: [sourceIssue],
+      targetIssues: [targetIssue],
+      sourceCommentsByIssue: new Map([[10, []]]),
+      targetCommentsByIssue: new Map([[510, [comment({ id: 50123, body: buildImportedCommentsSummaryMarker(10, 2) })]]]),
+      targetLabels: [labelBug],
+    });
+
+    expect(verification.ok).toBe(true);
+  });
 });
 
 describe("github mirror CLI", () => {
@@ -909,6 +924,63 @@ describe("github mirror CLI", () => {
       `createComment:${TARGET_REPO}:901:summary`,
       `updateIssue:${TARGET_REPO}:901:closed`,
     ]);
+  });
+
+  it("uses the configured write delay between apply writes", async () => {
+    const sourceIssue = issue({ number: 1, title: "Closed new mirror", state: "closed", comments: 0, closed_at: "2026-01-05T00:00:00Z" });
+    const waits: number[] = [];
+    const client = fakeClient({
+      async listIssues(repo, state) {
+        client.calls.push(`listIssues:${repo}:${state}`);
+        return repo === SOURCE_REPO ? [sourceIssue] : [];
+      },
+      async listLabels(repo) {
+        client.calls.push(`listLabels:${repo}`);
+        return [labelBug];
+      },
+      async createIssue(repo, payload) {
+        client.calls.push(`createIssue:${repo}:${payload.title}`);
+        return mirrorTarget(sourceIssue, { number: 901, title: payload.title, body: payload.body, labels: payload.labels.map((name) => ({ name })) });
+      },
+      async updateIssue(repo, issueNumber, payload) {
+        client.calls.push(`updateIssue:${repo}:${issueNumber}:${payload.state ?? "open"}`);
+        return mirrorTarget(sourceIssue, { number: issueNumber, state: payload.state ?? "open" });
+      },
+    });
+
+    await runMirrorCli(["--apply", "--confirm-credentialed-reads", "--confirm-remote-writes", "--write-delay-ms", "5000"], {
+      ghClient: client,
+      wait: async (milliseconds) => {
+        waits.push(milliseconds);
+      },
+    });
+
+    expect(waits).toEqual([5000, 5000]);
+  });
+
+  it("can defer comment writes while applying close-state updates", async () => {
+    const sourceIssue = issue({ number: 1, title: "Closed mirror", state: "closed", comments: 1, closed_at: "2026-01-05T00:00:00Z" });
+    const sourceComment = comment({ id: 333, body: "Imported" });
+    const targetIssue = mirrorTarget(sourceIssue, { number: 501, state: "open", labels: [labelBug] });
+    const client = mutableMirrorClient({
+      sourceIssues: [sourceIssue],
+      sourceLabels: [labelBug],
+      targetIssues: [targetIssue],
+      targetLabels: [labelBug],
+      sourceCommentsByIssue: new Map([[1, [sourceComment]]]),
+    });
+
+    const result = await runMirrorCli(["--apply", "--confirm-credentialed-reads", "--confirm-remote-writes", "--defer-comments"], {
+      ghClient: client,
+      wait: async () => {},
+    });
+
+    expect(result.report.plannedActionCounts["create-comment"]).toBeUndefined();
+    expect(result.report.plannedActionCounts["close-issue"]).toBe(1);
+    expect(client.calls.filter((call) => call.startsWith("createComment") || call.startsWith("updateIssue"))).toEqual([
+      `updateIssue:${TARGET_REPO}:501:closed`,
+    ]);
+    expect(client.targetIssues[0].state).toBe("closed");
   });
 
   it("applies writes end-to-end and verifies the persisted mirrored issue", async () => {
@@ -1212,6 +1284,12 @@ describe("github mirror CLI", () => {
       readMode: "read-with-gh",
       includeComments: true,
       reportPath: "out.json",
+    });
+    expect(parseCliArgs(["--write-delay-ms", "5000"])).toMatchObject({
+      writeDelayMs: 5000,
+    });
+    expect(parseCliArgs(["--defer-comments"])).toMatchObject({
+      deferComments: true,
     });
   });
 });

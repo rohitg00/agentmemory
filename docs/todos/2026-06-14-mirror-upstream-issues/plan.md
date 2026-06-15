@@ -234,6 +234,8 @@ The CLI must accept:
 --report <path>
 --confirm-credentialed-reads
 --confirm-remote-writes
+--write-delay-ms N
+--defer-comments
 ```
 
 Rules:
@@ -244,6 +246,8 @@ Rules:
 - `--apply` uses `gh api` for source reads, target reads, and target writes.
 - `--verify` performs read-only inventory and exits nonzero if any upstream issue is missing, duplicated, state-mismatched, label-mismatched, body-marker-mismatched, comment-count-mismatched, or otherwise invalid.
 - `--include-comments` is enabled by default for apply; dry-run reports planned imported comment count.
+- `--write-delay-ms N` sets the delay between sequential GitHub writes. Default to at least `1000`; use `10000` for large comment import resumes or after secondary GitHub abuse/rate-limit stops.
+- `--defer-comments` removes `create-comment` actions from the apply plan while still allowing issue, label, update, and close-state actions. Use it only as a fallback after repeated comment POST secondary limits.
 - The CLI must not print tokens or environment values.
 
 - [ ] **Step 2: Implement GitHub API adapter**
@@ -292,6 +296,16 @@ Apply mode must run in this order:
 
 Remote writes must be sequential by default. Wait at least one second between writes. If GitHub returns `403`, `429`, secondary-rate-limit text, or a `Retry-After` header, stop the apply run, record the blocked operation and retry guidance in the report, and resume only by rerunning the idempotent apply command after the wait period.
 
+GitHub can apply secondary comment-write limits while the normal `gh api rate_limit` core quota still has thousands of requests remaining. When comment POSTs hit this limit:
+
+1. Stop immediately and trust the persisted `apply-report.json`; do not retry in a tight loop.
+2. Wait for a cooldown. If GitHub does not provide `Retry-After`, use a longer cooldown than the previous failed attempt.
+3. Resume with a slower delay, for example `--write-delay-ms 10000`.
+4. If comment POSTs remain blocked but issue creation or close-state updates are still pending, run a temporary fallback apply with `--defer-comments --write-delay-ms 5000` to complete non-comment writes.
+5. After the comment cooldown, resume the normal apply without `--defer-comments` and with `--write-delay-ms 10000` until the verify report is clean.
+
+Do not report the mirror as complete after a `--defer-comments` run; it intentionally leaves comment verification failures until the normal comment apply resumes and passes.
+
 - [ ] **Step 4: Implement idempotent comment import**
 
 For each imported source comment chunk, include a stable per-chunk marker in the target comment body:
@@ -307,6 +321,8 @@ Scan existing target comments before planning comment import. If a target issue 
 ```
 
 A retry after partial failure must post only missing chunks, never all comments again.
+
+GitHub issue objects can report a nonzero `comments` count even when the issue comments endpoint returns an empty list for import. Verification must require markers for every actually returned source comment chunk and must require the summary marker to preserve the source issue's reported comment count. It must not fail solely because the reported issue comment count is higher than the number of comments returned by the comments endpoint.
 
 - [ ] **Step 5: Implement imported Markdown sanitization**
 
@@ -450,6 +466,20 @@ npx tsx scripts/github/mirror-upstream-issues.ts --source rohitg00/agentmemory -
 ```
 
 Expected: all missing labels and issue mirrors are created, comments are imported, and closed upstream issues are closed in the fork.
+
+If GitHub secondary comment-write limits stop this command, resume with a longer delay:
+
+```bash
+npx tsx scripts/github/mirror-upstream-issues.ts --source rohitg00/agentmemory --target wbugitlab1/agentmemory --state all --apply --include-comments --read-with-gh --confirm-credentialed-reads --confirm-remote-writes --write-delay-ms 10000 --report docs/todos/2026-06-14-mirror-upstream-issues/apply-report.json
+```
+
+If comment POSTs are still blocked and close-state updates are pending, finish non-comment writes first:
+
+```bash
+npx tsx scripts/github/mirror-upstream-issues.ts --source rohitg00/agentmemory --target wbugitlab1/agentmemory --state all --apply --include-comments --read-with-gh --confirm-credentialed-reads --confirm-remote-writes --defer-comments --write-delay-ms 5000 --report docs/todos/2026-06-14-mirror-upstream-issues/apply-report.json
+```
+
+Then wait for the comment cooldown and rerun the normal delayed apply command without `--defer-comments`.
 
 - [ ] **Step 2: Verify mirror**
 

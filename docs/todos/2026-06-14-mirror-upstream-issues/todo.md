@@ -54,8 +54,8 @@ Intended verification:
 | Issue mirror plan | Plan review via `review-and-implement` | Complete | Phase 1 review accepted revision `mirror-plan-r2`; all High/Medium findings are recorded below as accepted-fixed. |
 | Mirror planner library | `npm test -- test/issue-mirror.test.ts` | Complete | `npm test -- test/issue-mirror.test.ts` passed locally with 24 tests in 205 ms; final spec compliance and code-quality reviews accepted Task 2. |
 | Mirror CLI dry-run | Dry-run report | Complete | Public unauthenticated dry-run passed after fixes: 913 source endpoint items, 536 PR excluded, 377 non-PR issues, 19 labels, 377 create-issue, 232 close-issue, 365 planned imported comments, no errors. |
-| Remote apply | GitHub issue/label/comment/state API writes | Pending | Requires explicit current-turn confirmation before writes. |
-| Final verification | Verify mode and fork API inventory | Pending | Must prove every upstream issue number has exactly one target marker plus matching state, labels, body marker, and comment import markers. |
+| Remote apply | GitHub issue/label/comment/state API writes | Complete | Credentialed apply created 19 labels, 378 mirror issues, 450 import/comment summary actions in the final resume, and 232 close-state updates. GitHub secondary comment limits required delayed resumable runs. |
+| Final verification | Verify mode and fork API inventory | Complete | `verify-report.json` passed: 914 source endpoint items, 536 PR items excluded, 378 source non-PR issues, 378 target non-PR issues, 378 mirror markers, 0 invalid markers, 0 duplicate markers, 0 verification failures. |
 
 ## Progress Notes
 
@@ -72,6 +72,38 @@ Intended verification:
 - 2026-06-14: Final targeted review accepted fixes for planned action execution order, mutable fake-client apply verification, and apply-time rate-limit coverage. `npm test -- test/issue-mirror.test.ts` passed locally with 51 tests.
 - 2026-06-14: Public unauthenticated dry-run with `--include-comments` was attempted and stopped by GitHub public API rate limiting at `GET /repos/rohitg00/agentmemory/issues/871/comments?per_page=100`. No `gh api` or remote writes were run.
 - 2026-06-14: Retried public unauthenticated dry-run with `--include-comments`; GitHub public API rate limit stopped the run at `GET /repos/wbugitlab1/agentmemory/issues?state=all&per_page=100`. Completion now requires explicit current-turn approval for credentialed `gh api` reads and target writes.
+- 2026-06-14: User gave current-turn approval for credentialed GitHub reads and mirror writes. Apply command wrote `docs/todos/2026-06-14-mirror-upstream-issues/apply-report.json`, created 19 target labels, and stopped on the first target issue create for upstream issue #11 because GitHub returned `Issues has been disabled in this repository. (HTTP 410)`. Target mirror count remains 0.
+- 2026-06-14: User approved enabling GitHub Issues in `wbugitlab1/agentmemory`; `gh api /repos/wbugitlab1/agentmemory --method PATCH --field has_issues=true` succeeded and returned `has_issues: true`.
+- 2026-06-14: Apply resumed and created all 377 mirror issues plus 46 comment actions (23 imported comment chunks and 23 summary markers). GitHub then stopped the run with a secondary abuse/rate-limit error at `POST /repos/wbugitlab1/agentmemory/issues/26/comments`; `gh api rate_limit` still showed core quota remaining, so the next attempt should wait before resuming.
+- 2026-06-14: After a 5 minute cooldown, apply resumed and wrote 1 newly discovered issue plus 76 comment actions before GitHub again stopped on a secondary abuse/rate-limit error at `POST /repos/wbugitlab1/agentmemory/issues/69/comments`. The repeated failure mode is fast comment POSTs, not core quota exhaustion. Changed next approach: add and use `--write-delay-ms` so remaining apply writes can run with a slower delay.
+- 2026-06-14: Added `--write-delay-ms` to the mirror CLI after a red test; `npm test -- test/issue-mirror.test.ts` passed with 52 tests.
+- 2026-06-14: Immediate 5 second delayed resume wrote 0 actions and stopped again at the same comment endpoint, which indicates the secondary GitHub comment-write cooldown was still active. Remaining planned work at that point: 450 comments and 232 close-state updates.
+- 2026-06-14: Added `--defer-comments` after a red test so close-state updates can proceed while GitHub comment POSTs are cooled down. `npm test -- test/issue-mirror.test.ts` passed with 53 tests.
+- 2026-06-14: Fallback apply with `--defer-comments --write-delay-ms 5000` wrote all 232 close-state updates without errors. Post-apply verification remains red only because comment imports are still missing.
+- 2026-06-14: Comment resume with `--write-delay-ms 10000` wrote all 450 remaining comment actions without rate-limit errors. Verification then found only two comment-count mismatches for upstream issues #817 and #204; both issue objects report comments, but `GET /repos/rohitg00/agentmemory/issues/{817,204}/comments?per_page=100` returns empty arrays.
+- 2026-06-14: Added verification handling for non-returned source comments: imported markers are compared against actually fetched source comments, while the original source issue `comments` count is preserved by the summary marker. `npm test -- test/issue-mirror.test.ts` passed with 54 tests.
+- 2026-06-14: Final credentialed verify passed with `verification.ok: true`, `failureCount: 0`, `sourceNonPrIssues: 378`, `targetNonPrIssues: 378`, `targetMirrorCount: 378`, `invalidMarkerCount: 0`, `duplicateMarkerCount: 0`, and `plannedActionCounts: { "skip-issue": 378 }`.
+
+## Final Review Notes
+
+- Source issue endpoint items: 914
+- Source pull request items excluded: 536
+- Source issue count: 378
+- Target mirror count: 378
+- Missing mirrors: 0
+- Duplicate markers: 0
+- Invalid markers: 0
+- State mismatches: 0
+- Label mismatches: 0
+- Missing target labels: 0
+- Title/body marker mismatches: 0
+- Comment import status: Complete for all comments returned by GitHub's issue comments endpoint; source issues #817 and #204 report nonzero comment counts but return zero importable comments, so their summary markers preserve the source count.
+- Comment count mismatches: 0 in final verify
+- Sanitized mention/reference counts: 555 mentions, 635 references, 847 closing-keyword hits
+- Rate-limit or partial-apply status: GitHub secondary comment-write limits interrupted fast runs; resumable reports plus `--write-delay-ms 10000` completed the remaining comment writes.
+- Final review status: Passed via `verify-report.json` with `verification.ok: true`
+- Verification commands: `npm test -- test/issue-mirror.test.ts`; `npx tsx scripts/github/mirror-upstream-issues.ts --source rohitg00/agentmemory --target wbugitlab1/agentmemory --state all --verify --read-with-gh --confirm-credentialed-reads --report docs/todos/2026-06-14-mirror-upstream-issues/verify-report.json`
+- Residual risks: GitHub issues were created by the authenticated user and may have generated repository events/notifications; parallel `docs/todos/2026-06-14-track-upstream-prs-as-issues/` changes were not touched.
 
 ## Plan Review Ledger
 

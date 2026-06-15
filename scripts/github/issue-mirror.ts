@@ -516,9 +516,10 @@ export function planVerification(input: VerificationInput): VerificationResult {
       if (!hasMarker) failures.push(`missing imported comment marker for upstream issue ${sourceIssue.number} comment ${chunk.upstreamCommentId}`);
     }
 
+    const expectedImportedCommentIds = new Set(expectedChunks.map((chunk) => chunk.upstreamCommentId));
     const importedCommentIds = new Set(targetMarkers.map((marker) => marker.upstreamCommentId));
-    if (importedCommentIds.size !== sourceIssue.comments) {
-      failures.push(`comment-count mismatch for upstream issue ${sourceIssue.number}: expected ${sourceIssue.comments}, found ${importedCommentIds.size}`);
+    if (importedCommentIds.size !== expectedImportedCommentIds.size) {
+      failures.push(`comment-count mismatch for upstream issue ${sourceIssue.number}: expected ${expectedImportedCommentIds.size}, found ${importedCommentIds.size}`);
     }
     if (sourceIssue.comments > 0) {
       const hasSummary = targetSummaryMarkers.some((marker) => marker.upstreamNumber === sourceIssue.number && marker.count === sourceIssue.comments);

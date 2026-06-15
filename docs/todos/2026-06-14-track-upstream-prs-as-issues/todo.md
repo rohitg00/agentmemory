@@ -52,7 +52,7 @@ Known boundaries:
 
 | Change | Verification method | Status | Evidence |
 | --- | --- | --- | --- |
-| PR issue tracker plan | Self-review and `/review-plan` | Done | `upstream-pr-issues-plan-r4` accepted by correctness, GitHub safety, and implementation/test review lanes. |
+| PR issue tracker plan | Self-review and `/review-plan` | Done | `upstream-pr-issues-plan-r8` accepted by correctness, GitHub safety, and implementation/test review lanes after consensus refinements from the issue mirror plan. |
 | Durable ADR decision | `adr list`, ADR content review | Pending | Planned via `adr new "Track upstream pull requests as fork issues"`. |
 | Operator workflow docs | Markdown fence check and content review | Pending | Planned in `docs/recipes/upstream-pr-issue-tracking.md`. |
 | Pure planner library | `npm test -- test/upstream-pr-issue-tracker.test.ts` | Pending | Tests planned for marker parsing, dedupe, body generation, decision preservation, and verification. |
@@ -67,6 +67,8 @@ Known boundaries:
 - 2026-06-14: A parallel task exists for normal upstream issue mirroring: `docs/todos/2026-06-14-mirror-upstream-issues/`.
 - 2026-06-14: Self-review before the second review round tightened the expected ADR path to `docs/adr/0002-track-upstream-pull-requests-as-fork-issues.md` and added the missing operator workflow docs matrix row.
 - 2026-06-14: Review revision `upstream-pr-issues-plan-r4` expanded apply confirmation to include credentialed reads of upstream PRs, target issues, and target labels, and added pre-write JSON payload validation before `gh api --input`.
+- 2026-06-14: User asked to compare the normal issue mirror plan for reusable PR-tracker refinements. Subagents reached consensus to adopt public-read headers, PR-scoped apply checkpoint/rate-limit resilience, and aggregate sanitization telemetry for imported upstream PR body text only. The same consensus rejected importing comment mirroring, auto-close, arbitrary upstream label cloning, source `/issues` PR discovery, and overflow-to-comments behavior.
+- 2026-06-14: Fresh `/review-plan` accepted `upstream-pr-issues-plan-r8` after fixes for workflow-section preservation, upstream-authored title/metadata sanitization, validation stop conditions, and malformed/missing section delimiter no-write behavior.
 
 ## Plan Review Ledger
 
@@ -82,10 +84,18 @@ Known boundaries:
 | PRPLAN-F5 | Important | feasibility | Apply reports | Reports lacked per-action result status and partial-apply stop data. | Operators could not recover after partial apply. | Add stable action IDs, applied/skipped/failed action report fields, sequential writes, and stop on first write failure. | Fake writer mid-apply failure test. | accepted-fixed | upstream-pr-issues-plan-r2 |
 | GH-APPROVAL-002 | Important | GitHub safety | Apply confirmation and credentialed reads | Apply recomputes the plan from credentialed upstream PR reads plus target issue and label reads, but the r3 prompt only named upstream PR reads. | Apply could perform credentialed target reads without explicit current-turn confirmation. | Revise the exact confirmation prompt and apply rules to authorize credentialed reads of upstream PRs, target issues, and target labels before issue/label writes. | Parser/orchestration test or task evidence showing apply cannot run without confirmation covering credentialed source and target reads plus remote writes. | accepted-fixed | upstream-pr-issues-plan-r4 |
 | GH-BODY-002 | Important | GitHub safety | `gh api --input` payload handling | r3 required a temporary JSON payload file but only required safe summary logging before execution. | Generated body text could contain unsafe markdown, malformed JSON, or unsanitized imported text and still be written. | Require local JSON parse and pre-write payload validation for title, labels, body, expected marker count, and sanitized imported-body patterns before `gh api --input`. | Write-adapter tests parse/validate payload before execution and keep body text out of argv/logs. | accepted-fixed | upstream-pr-issues-plan-r4 |
+| REFINE-A | Minor | consensus | Public GitHub reads | Issue mirror plan requires explicit `Accept`, `X-GitHub-Api-Version`, and non-secret `User-Agent` headers; PR plan only required pagination and fail-closed reads. | Public reads could rely on implicit defaults and be less reproducible. | Require public-read headers and explicitly omit `Authorization`; add fixture tests. | Fake public reader test checks headers and no auth header. | accepted-fixed | upstream-pr-issues-plan-r5 |
+| REFINE-B | Important | consensus | Apply write resilience | Issue mirror plan requires report checkpointing, pacing, and explicit stop conditions; PR plan had sequential writes and stop-on-failure but not checkpoint/pacing detail. | Partial apply or GitHub rate limiting could leave weaker recovery evidence. | Add injected checkpoint report, one-second delay between successful writes, stop-condition metadata, and tests; keep scope to labels/issues only. | Fake writer stop-condition and checkpoint tests. | accepted-fixed | upstream-pr-issues-plan-r5 |
+| REFINE-C | Minor | consensus | Sanitization observability | PR plan sanitizes imported body text but did not report aggregate neutralization counts. | Dry-run/apply reviewers could not see notification/cross-link risk before writes. | Add PR-body-only sanitization telemetry to helper, reports, jq inspections, final notes, and tests. | Planner/report tests assert counts and exclude generated metadata. | accepted-fixed | upstream-pr-issues-plan-r5 |
+| PRPLAN-R5-F1 | Important | correctness | Body generation and updates | Plan promises to preserve manual issue notes, but r5 generated blank workflow fields and updated issue bodies without a merge rule. | Sync updates could overwrite fork-maintainer workflow fields, decision text, verification notes, or local branch/fork PR references. | Add managed/workflow section delimiters, `mergeTrackerIssueBody`, malformed-section failure behavior, and preservation tests. | Fixture update preserves existing fork workflow section exactly while refreshing upstream metadata. | accepted-fixed | upstream-pr-issues-plan-r6 |
+| GH-NOTIFY-001 | Important | GitHub safety | Sanitization scope | r5 sanitization telemetry and validation were scoped to upstream PR body text, but target title/body metadata also contains upstream-authored title, author/ref/label strings. | Unsafe upstream title or metadata could trigger mentions, references, or closing keywords in fork issues. | Sanitize every upstream-authored rendered string in target issue title/body while keeping telemetry PR-body-only. | Tests with unsafe title and metadata prove final payload has no raw mention/reference/closing patterns. | accepted-fixed | upstream-pr-issues-plan-r6 |
+| GH-STOP-001 | Important | GitHub safety | Stop-condition tests | r5 classified validation as a stop type but explicit test list omitted common validation responses such as `422`. | GitHub validation failures could have weaker checkpoint/recovery evidence or allow later writes. | Add `422` and validation text to explicit stop conditions and tests. | Fake writer/adapter test proves validation stop checkpoints report, sets `stopCondition.classification = "validation"`, and prevents later writes. | accepted-fixed | upstream-pr-issues-plan-r6 |
+| PRPLAN-R6-F1 | Important | feasibility | Malformed section delimiter tests | r6 required malformed managed/workflow delimiters to block writes, but tests only covered successful workflow preservation. | Implementation could pass tests while overwriting fork-local notes when delimiters are missing, duplicated, or out of order. | Add malformed delimiter fixture tests proving structured failure, no update action, no apply writer call, and report evidence for maintainer repair. | `npm test -- test/upstream-pr-issue-tracker.test.ts` covers dry-run planning and apply write gating for malformed delimiters. | accepted-fixed | upstream-pr-issues-plan-r7 |
+| PRPLAN-R7-F1 | Important | correctness; GitHub safety | Missing workflow section behavior | r7 test list required missing delimiters to block writes, but `mergeTrackerIssueBody` still allowed existing bodies with no workflow section to get blank workflow fields. | Existing tracker issues with unsectioned manual notes could be silently overwritten during update. | Treat existing tracker issues missing any required managed/workflow delimiter as `malformed-section` no-write failures; create blank workflow fields only for new issue bodies. | Missing managed/workflow section fixtures assert structured failure, no update action, and no apply writer call. | accepted-fixed | upstream-pr-issues-plan-r8 |
 
 ## Plan Review Acceptance
 
-Revision accepted: `upstream-pr-issues-plan-r4`
+Revision accepted: `upstream-pr-issues-plan-r8`
 
 Review lanes:
 - Correctness and missed requirements: accepted.
@@ -95,11 +105,13 @@ Review lanes:
 Local sanity checks:
 - `git diff --check`: passed.
 - Length-aware Markdown fence check for `plan.md` and `todo.md`: passed.
-- Placeholder/stale-term scan on `plan.md`: no actionable stale hits; remaining `--field body=...` and `-f body=...` references are explicit prohibitions.
+- Placeholder/stale-term scan on `plan.md`: no actionable stale hits; remaining historical finding text in the ledger is retained as review evidence.
 
 Residual risks:
 - Apply depends on live GitHub state still matching the reviewed dry-run at confirmation time; the plan mitigates this with `--from-report`, plan hash/action ID drift checks, and fail-before-write behavior.
-- Runtime GitHub permissions and rate limits can still block apply; the plan requires fail-closed handling and safe report metadata.
+- Runtime GitHub permissions, disabled Issues, and rate limits can still block apply; the plan requires fail-closed handling, checkpoint reports, and safe stop-condition metadata.
+- GitHub issue creation and source links can still create repository events and notifications even after sanitization; the apply confirmation must name that risk.
 - Implementation must keep action ID/hash normalization stable across public and credentialed readers.
-- Payload validation must distinguish generated marker metadata from imported upstream PR body text so the required marker does not become a false positive.
+- Payload validation must distinguish generated marker metadata from imported upstream PR body text so the required marker does not become a false positive, while still sanitizing every upstream-authored rendered title/body string.
+- Malformed-section recovery depends on clear report messages so maintainers can repair existing tracker issue bodies without overwriting notes.
 - The adjacent normal-issue mirror task still contains stale remote terminology; this plan explicitly warns not to copy it without correcting `origin` = fork and `upstream` = original.
