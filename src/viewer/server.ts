@@ -396,7 +396,8 @@ async function proxyToRestApi(
   res: ServerResponse,
   secret?: string,
 ): Promise<void> {
-  const upstreamPath = pathname.startsWith("/agentmemory/")
+  const upstreamPath =
+    pathname === "/agentmemory" || pathname.startsWith("/agentmemory/")
     ? pathname
     : `/agentmemory${pathname.startsWith("/") ? pathname : "/" + pathname}`;
 
