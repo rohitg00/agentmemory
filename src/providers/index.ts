@@ -5,6 +5,7 @@ import type {
 } from "../types.js";
 import { AgentSDKProvider } from "./agent-sdk.js";
 import { AnthropicProvider } from "./anthropic.js";
+import { CodexSDKProvider } from "./codex-sdk.js";
 import { MinimaxProvider } from "./minimax.js";
 import { NoopProvider } from "./noop.js";
 import { OpenAIProvider } from "./openai.js";
@@ -48,6 +49,8 @@ function defaultModelFor(providerType: ProviderConfig["provider"]): string {
       return getEnvVar("MINIMAX_MODEL") || "MiniMax-M2.7";
     case "agent-sdk":
       return "claude-sonnet-4-20250514";
+    case "codex-sdk":
+      return getEnvVar("AGENTMEMORY_CODEX_MODEL") || "codex-default";
     case "noop":
     default:
       return "noop";
@@ -145,6 +148,8 @@ function createBaseProvider(config: ProviderConfig): MemoryProvider {
     }
     case "noop":
       return new NoopProvider();
+    case "codex-sdk":
+      return new CodexSDKProvider(config.model, config.maxTokens);
     case "agent-sdk":
     default:
       return new AgentSDKProvider();

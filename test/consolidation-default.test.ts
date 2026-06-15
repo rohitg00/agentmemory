@@ -14,6 +14,7 @@ const ENV_KEYS = [
   "GOOGLE_API_KEY",
   "MINIMAX_API_KEY",
   "OPENAI_BASE_URL",
+  "AGENTMEMORY_ALLOW_CODEX_SDK",
 ];
 
 const ORIGINAL_HOME = process.env["HOME"];
@@ -82,6 +83,12 @@ describe("isConsolidationEnabled default behavior", () => {
 
   it("returns true by default when AGENTMEMORY_PROVIDER=agent-sdk", async () => {
     writeEnv("AGENTMEMORY_PROVIDER=agent-sdk");
+    const cfg = await freshConfig();
+    expect(cfg.isConsolidationEnabled()).toBe(true);
+  });
+
+  it("returns true by default when the Codex SDK fallback is explicitly enabled", async () => {
+    writeEnv("AGENTMEMORY_ALLOW_CODEX_SDK=true");
     const cfg = await freshConfig();
     expect(cfg.isConsolidationEnabled()).toBe(true);
   });
