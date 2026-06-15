@@ -212,9 +212,9 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
     await handleToolCall("memory_save", { content: "local only" }, localKv);
     const recall = await handleToolCall("memory_recall", { query: "local" }, localKv);
     const out = JSON.parse(recall.content[0].text);
-    expect(out.mode).toBe("compact");
+    expect(out.format).toBe("full");
     expect(out.results).toHaveLength(1);
-    expect(out.results[0].content).toBe("local only");
+    expect(out.results[0].observation.narrative).toBe("local only");
   });
 
   it("AGENTMEMORY_REQUIRE_SERVER=1 rejects sessions/export/recall when livez is unreachable", async () => {
@@ -479,7 +479,7 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
     const body = JSON.parse(res.content[0].text);
 
     expect(fetchFn).not.toHaveBeenCalled();
-    expect(body.results[0].content).toBe("local blocked proxy");
+    expect(body.results[0].observation.narrative).toBe("local blocked proxy");
   });
 
   it("does not let AGENTMEMORY_FORCE_PROXY bypass the plaintext bearer guard", async () => {
