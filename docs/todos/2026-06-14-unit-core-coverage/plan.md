@@ -94,6 +94,6 @@ If production code or config changed, also run the repo-documented Semgrep comma
 
 Record final scoped coverage numbers, commands run, caveats, and residual branch gaps if any.
 
-- [ ] **Step 4: Review and commit**
+- [x] **Step 4: Review and commit**
 
 Review `git diff`, stage only scoped files, and commit with a factual Conventional Commit message.

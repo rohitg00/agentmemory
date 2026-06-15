@@ -42,7 +42,7 @@
 | Add unit/core behavior coverage | Targeted `vitest run` commands for changed tests | Complete | `npx vitest run test/unit-core-functions-coverage.test.ts test/image-quota-cleanup.test.ts`: 2 files, 14 tests passed |
 | Prove scoped coverage target | Final `npm run coverage`; compute scoped totals | Complete | Final scoped totals: lines 84.16%, statements 81.68%, functions 80.96%, branches 70.61% |
 | Run repo quality gates | `npm run lint`, `npm test`, security scans required for changed scope | Complete | `npm run lint` passed; `npm test` passed with 146 files and 1699 tests; `npm run coverage` passed with 146 files and 1699 tests; Semgrep passed with 0 findings; staged Gitleaks passed with no leaks |
-| Commit scoped changes | `git status`, staged diff review, commit hash | Pending | Staged diff review and commit pending |
+| Commit scoped changes | `git status`, staged diff review, commit hash | Complete | Committed scoped changes as `79d345d32dc694350da353829097db5654702fa3` (`test: raise unit core coverage`) |
 
 ## Progress Notes
 
@@ -54,6 +54,7 @@
 - 2026-06-14: Final coverage pass before quality gates reported 146 files and 1699 tests passed. Scoped surface final coverage: lines 84.16%, statements 81.68%, functions 80.96%, branches 70.61%.
 - 2026-06-14: Branch coverage remains below 80%. Remaining branch gap is 1,593 uncovered branches across the scoped surface. The largest concrete contributors are broad existing paths in `src/functions/export-import.ts` (136 uncovered branches), `src/functions/diagnostics.ts` (83), `src/functions/replay.ts` (75), `src/functions/temporal-graph.ts` (69), `src/functions/evict.ts` (68), `src/functions/graph.ts` (64), `src/functions/migrate.ts` (59), `src/functions/slots.ts` (57), `src/functions/mesh.ts` (50), and `src/functions/observe.ts` (46). Raising branches above 80 would require a much wider campaign across import/replay/migration/diagnostic and graph paths rather than the focused unit/core coverage lift requested here.
 - 2026-06-14: Quality gates passed before commit: `npm run lint`; `npm test` (146 files, 1699 tests); fresh `npm run coverage` (146 files, 1699 tests); `semgrep scan --config p/default --error --metrics=off .` (514 tracked files scanned, 0 findings); `gitleaks protect --staged --redact` (25.46 KB scanned, no leaks found).
+- 2026-06-14: Committed the scoped task changes as `79d345d32dc694350da353829097db5654702fa3` (`test: raise unit core coverage`).
 
 ## Delegation
 
