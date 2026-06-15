@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/MCP-53_tools-1f6feb?style=flat-square" alt="53 MCP tools" />
+  <img src="https://img.shields.io/badge/MCP-54_tools-1f6feb?style=flat-square" alt="54 MCP tools" />
   <img src="https://img.shields.io/badge/Plugin-22_hooks-1f6feb?style=flat-square" alt="22 hooks" />
   <img src="https://img.shields.io/badge/Commands-2_slash-1f6feb?style=flat-square" alt="2 slash commands" />
   <img src="https://img.shields.io/badge/R@5-95.2%25-00875f?style=flat-square" alt="95.2% R@5" />

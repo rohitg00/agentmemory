@@ -168,8 +168,11 @@ memory_lesson_save — Save a lesson learned (what worked, what to avoid).
 memory_lesson_recall — Search lessons by query. Returns lessons sorted by confidence.
   Use when: before making a decision, check if past lessons apply.
 
-memory_governance_delete — Delete specific memories. Requires explicit user confirmation.
-  Use when: user says "forget this", "delete that memory".
+memory_forget — Delete observations, a whole session, or a single saved memory. Requires explicit user confirmation.
+  Use when: user says "forget this", "delete that observation", or wants a session removed.
+
+memory_governance_delete — Delete specific saved memories. Requires explicit user confirmation.
+  Use when: user gives saved memory IDs to delete.
 
 memory_patterns — Detect recurring patterns across sessions.
   Use when: you want to understand project-level trends over time.

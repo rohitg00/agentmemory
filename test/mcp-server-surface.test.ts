@@ -235,6 +235,12 @@ describe("MCP tools/call validation boundaries", () => {
     ["memory_timeline", {}, "anchor is required for memory_timeline"],
     ["memory_profile", {}, "project is required for memory_profile"],
     ["memory_relations", {}, "memoryId is required for memory_relations"],
+    ["memory_forget", {}, "sessionId or memoryId is required"],
+    [
+      "memory_forget",
+      { observationIds: "obs_1, obs_2" },
+      "observationIds requires sessionId",
+    ],
     ["memory_team_share", {}, "itemId and itemType are required"],
     ["memory_governance_delete", {}, "memoryIds is required"],
     ["memory_action_create", {}, "title is required"],
@@ -449,6 +455,18 @@ describe("MCP tools/call payload shaping", () => {
       payload: { vaultDir: "/tmp/vault", types: ["memories", "lessons"] },
     },
     {
+      name: "memory_forget",
+      args: { sessionId: " ses_1 ", observationIds: " obs_1, obs_2 " },
+      function_id: "mem::forget",
+      payload: { sessionId: "ses_1", observationIds: ["obs_1", "obs_2"] },
+    },
+    {
+      name: "memory_forget",
+      args: { memoryId: " mem_1 " },
+      function_id: "mem::forget",
+      payload: { memoryId: "mem_1" },
+    },
+    {
       name: "memory_slot_create",
       args: {
         label: "notes",
@@ -622,6 +640,7 @@ describe("MCP tools/call fallback and KV-backed behavior", () => {
     ["memory_team_feed", "mem::team-feed", {}, "Team memory not enabled"],
     ["memory_audit", "mem::audit-query", {}, "Audit query failed"],
     ["memory_governance_delete", "mem::governance-delete", { memoryIds: "mem_1" }, "Governance delete failed"],
+    ["memory_forget", "mem::forget", { sessionId: "ses_1" }, "Forget failed"],
     ["memory_snapshot_create", "mem::snapshot-create", {}, "Snapshots not enabled"],
   ])("returns a user-facing fallback when %s support is disabled", async (name, id, args, text) => {
     const h = createHarness();
