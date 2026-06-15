@@ -18,4 +18,4 @@
 - [x] Implement only the minimal bounded shutdown behavior if current fork remains vulnerable.
 - [x] Run targeted tests, lint/type-relevant checks as appropriate, and required security gates.
 - [x] Update this task record with decision, evidence, and caveats.
-- [ ] Update this task record with the prep-merge result.
+- [x] Update this task record with the prep-merge result.

@@ -91,9 +91,17 @@ Stop conditions:
 | Targeted tests | Focused vitest or narrow project-native check | done | `npm test -- test/shutdown.test.ts` passed after RED. |
 | Security review | Manual surface review plus required gates when code changes | done | Manual review plus Semgrep 0 findings. |
 | Local documentation | Task record update without URLs/hash refs/mentions | done | This task record uses neutral IDs. |
-| Prep merge | `prep-merge-to-local-main` workflow | pending |  |
+| Prep merge | `prep-merge-to-local-main` workflow | done | Committed task-owned changes, merged local `main` commit `6c387b4`, no conflicts. |
 
 ## Open Risks
 
 - This is a defensive bound, not the iii-sdk root-cause fix. If SDK shutdown needs longer than 3000 ms for legitimate telemetry flushes, telemetry can be dropped during shutdown.
 - The test verifies the timeout helper, not a real systemd SIGTERM path with a wedged OTel exporter.
+
+## Prep Merge Result
+
+- Task commit: `39c72e0`.
+- Local main merged: `6c387b4`.
+- Merge commit: `85d7f4f`.
+- Conflicts: none.
+- Preserved unrelated dirty paths: none.
