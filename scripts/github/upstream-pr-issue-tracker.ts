@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 
 export const SOURCE_REPO = "rohitg00/agentmemory";
 export const TARGET_REPO = "wbugitlab1/agentmemory";
-export const PR_MARKER_PREFIX = "<!-- upstream-pr:";
+export const PR_MARKER_PREFIX = "<!-- upstream-pr-neutral:";
 export const MANAGED_SECTION_START = "<!-- upstream-pr-managed:start -->";
 export const MANAGED_SECTION_END = "<!-- upstream-pr-managed:end -->";
 export const WORKFLOW_SECTION_START = "<!-- fork-pr-workflow:start -->";
@@ -151,8 +151,9 @@ export const MANAGED_LABELS: ManagedLabel[] = [
   { name: "decision-upstream-merged", color: "6f42c1", description: "Upstream merged before fork action" },
 ];
 
-const prMarkerPattern = /<!--\s*upstream-pr:\s*([^#\s]+)#([0-9]+)\s*-->/g;
-const anyPrMarkerPattern = /<!--\s*upstream-pr:[\s\S]*?-->/g;
+const legacyPrMarkerPattern = /<!--\s*upstream-pr:\s*([^#\s]+)#([0-9]+)\s*-->/g;
+const neutralPrMarkerPattern = /<!--\s*upstream-pr-neutral:\s*source=([^\s]+)\s+number=([0-9]+)\s*-->/g;
+const anyPrMarkerPattern = /<!--\s*upstream-pr(?:-neutral)?:[\s\S]*?-->/g;
 const decisionLabelPattern = /^decision-/;
 const upstreamManagedLabelPattern = /^upstream-(pr|open|closed|merged|draft)$/;
 const issueReferencePattern = /(^|[^\w/])#([0-9]+)\b/g;
@@ -161,7 +162,7 @@ const mentionPattern = /(^|[^A-Za-z0-9_`])@([A-Za-z0-9][A-Za-z0-9-]{0,38})\b/g;
 const closingKeywordPattern = /\b(close|closes|closed|fix|fixes|fixed|resolve|resolves|resolved)\b/gi;
 
 export function buildPrMarker(upstreamNumber: number): string {
-  return `${PR_MARKER_PREFIX} ${SOURCE_REPO}#${upstreamNumber} -->`;
+  return `${PR_MARKER_PREFIX} source=${SOURCE_REPO} number=${upstreamNumber} -->`;
 }
 
 export function sanitizeImportedMarkdown(markdown: string | null): string {
@@ -214,7 +215,7 @@ export function parseExistingPrMarkers(targetIssues: TargetIssue[]): ParseExisti
 
     const body = issue.body ?? "";
     const rawMarkers = Array.from(body.matchAll(anyPrMarkerPattern));
-    const validMarkers = Array.from(body.matchAll(prMarkerPattern)).filter((match) => match[1] === SOURCE_REPO);
+    const validMarkers = parseSourcePrMarkers(body);
     if (rawMarkers.length === 0) continue;
     if (rawMarkers.length > 1) {
       invalidMarkers.push({ targetNumber: issue.number, reason: "multiple upstream PR markers" });
@@ -225,7 +226,7 @@ export function parseExistingPrMarkers(targetIssues: TargetIssue[]): ParseExisti
       continue;
     }
 
-    const upstreamNumber = Number(validMarkers[0][2]);
+    const upstreamNumber = validMarkers[0];
     markers.push({
       upstreamNumber,
       targetNumber: issue.number,
@@ -385,7 +386,9 @@ function buildManagedSection(sourcePull: SourcePull): string {
     MANAGED_SECTION_START,
     buildPrMarker(sourcePull.number),
     "",
-    `Source: ${sourcePull.html_url}`,
+    `Source repository: ${SOURCE_REPO}`,
+    `Source pull request number: ${sourcePull.number}`,
+    "Source URL: intentionally omitted to avoid GitHub cross-references",
     `Title: ${sanitizeRenderedGitHubText(sourcePull.title)}`,
     `Author: ${sanitizeRenderedGitHubText(sourcePull.user?.login ?? "unknown")}`,
     `State: ${sourcePull.state}`,
@@ -462,6 +465,17 @@ function totalSanitization(sourcePulls: SourcePull[]): SanitizationTelemetry {
     total.neutralizedClosingKeywords += telemetry.neutralizedClosingKeywords;
   }
   return total;
+}
+
+function parseSourcePrMarkers(body: string): number[] {
+  return [
+    ...Array.from(body.matchAll(legacyPrMarkerPattern))
+      .filter((match) => match[1] === SOURCE_REPO)
+      .map((match) => Number(match[2])),
+    ...Array.from(body.matchAll(neutralPrMarkerPattern))
+      .filter((match) => match[1] === SOURCE_REPO)
+      .map((match) => Number(match[2])),
+  ];
 }
 
 function planResult(
