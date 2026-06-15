@@ -47,7 +47,7 @@ Stop conditions:
 | OpenRouter dimensions env override | Targeted regression tests | passed | Red: `./node_modules/.bin/vitest run test/embedding-provider.test.ts` failed 3 OpenRouter tests against hardcoded provider. Green: same command passed 25 tests. |
 | Conditional `dimensions` request body | Targeted regression tests | passed | Red/green covered configured and unset/blank request bodies. |
 | Env/docs update | Diff inspection and grep | passed | `rg -n "OPENROUTER_EMBEDDING_(MODEL|DIMENSIONS)|OpenRouter" ...` showed consistent OpenRouter model/dimensions references in `.env.example`, README, provider, and tests. |
-| Security review | Manual scope review plus Semgrep/OSV/Gitleaks gates | partial | Semgrep passed with 0 findings. OSV passed with no issues after `-r --allow-no-lockfiles`, but found no package sources because this repo has no lockfiles in the worktree. Diff-scoped security scan found no candidate finding. Gitleaks pending after staging. |
+| Security review | Manual scope review plus Semgrep/OSV/Gitleaks gates | passed | Semgrep passed with 0 findings. OSV passed with no issues after `-r --allow-no-lockfiles`, but found no package sources because this repo has no lockfiles in the worktree. Diff-scoped security scan found no candidate finding. Staged Gitleaks passed. |
 
 ## Candidate Comparison
 
@@ -76,8 +76,8 @@ Security assessment:
 - [x] Compared public unauthenticated Issue 809 / PR 856 / PR 811 metadata and diffs.
 - [x] Write failing regression tests.
 - [x] Implement minimal provider and docs patch.
-- [ ] Run verification and security gates.
-- [ ] Run prep-merge-to-local-main.
+- [x] Run verification and security gates.
+- [x] Run prep-merge-to-local-main.
 
 ## Commands
 
@@ -93,7 +93,15 @@ Security assessment:
 - `osv-scanner scan source .` failed with no package sources under this OSV CLI.
 - `osv-scanner scan source -r --allow-no-lockfiles .` passed with no issues and no package sources found.
 - Codex Security diff scan, compact local-patch mode: changed files `.env.example`, `README.md`, `src/providers/embedding/openrouter.ts`, `test/embedding-provider.test.ts`; no candidate finding survived discovery. The provider keeps the existing HTTPS OpenRouter URL, existing bearer header path, existing timeout wrapper, and adds only a validated positive integer JSON field when explicitly configured.
+- `gitleaks protect --staged --redact` passed with no leaks.
 - Removed task-owned untracked `node_modules` symlink after test/build/lint verification.
+- Commit `2ee31c4` created the OpenRouter fix.
+- `$prep-merge-to-local-main`: captured local main `6c387b4efea524db5bf8fe0e923958cbcf0213f1`, merged it into the branch with merge commit `4d18790`. Initial sandboxed merge failed before changing state because Git could not create `ORIG_HEAD.lock`; reran the same local merge with sandbox escalation.
+- Post-merge `./node_modules/.bin/vitest run test/embedding-provider.test.ts` passed: 25 tests.
+- Post-merge `npm run build` passed with the same existing tsdown warnings.
+- Post-merge `npm run lint` passed.
+- Post-merge `npm test` passed: 158 test files, 1983 tests.
+- Removed the post-merge verification `node_modules` symlink after checks.
 
 ## Review Notes
 
