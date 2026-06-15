@@ -1,0 +1,2311 @@
+{
+  "source": "rohitg00/agentmemory",
+  "target": "wbugitlab1/agentmemory",
+  "state": "all",
+  "mode": "verify",
+  "readMode": "read-with-gh",
+  "includeComments": false,
+  "applyConfirmed": false,
+  "credentialedReadsConfirmed": true,
+  "remoteWritesConfirmed": false,
+  "sourceIssueEndpointItems": 914,
+  "sourcePullRequestItemsExcluded": 536,
+  "sourceNonPrIssues": 378,
+  "targetIssueEndpointItems": 378,
+  "targetPullRequestItemsExcluded": 0,
+  "targetNonPrIssues": 378,
+  "targetMirrorCount": 378,
+  "invalidMarkerCount": 0,
+  "duplicateMarkerCount": 0,
+  "plannedActionCounts": {
+    "skip-issue": 378
+  },
+  "plannedActions": [
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 11,
+      "targetNumber": 1,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 12,
+      "targetNumber": 2,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 13,
+      "targetNumber": 3,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 14,
+      "targetNumber": 4,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 15,
+      "targetNumber": 5,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 16,
+      "targetNumber": 6,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 17,
+      "targetNumber": 7,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 18,
+      "targetNumber": 8,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 19,
+      "targetNumber": 9,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 20,
+      "targetNumber": 10,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 21,
+      "targetNumber": 11,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 22,
+      "targetNumber": 12,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 23,
+      "targetNumber": 13,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 24,
+      "targetNumber": 14,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 25,
+      "targetNumber": 15,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 26,
+      "targetNumber": 16,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 27,
+      "targetNumber": 17,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 28,
+      "targetNumber": 18,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 29,
+      "targetNumber": 19,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 30,
+      "targetNumber": 20,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 31,
+      "targetNumber": 21,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 32,
+      "targetNumber": 22,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 33,
+      "targetNumber": 23,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 34,
+      "targetNumber": 24,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 35,
+      "targetNumber": 25,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 36,
+      "targetNumber": 26,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 37,
+      "targetNumber": 27,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 38,
+      "targetNumber": 28,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 39,
+      "targetNumber": 29,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 40,
+      "targetNumber": 30,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 41,
+      "targetNumber": 31,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 42,
+      "targetNumber": 32,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 43,
+      "targetNumber": 33,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 44,
+      "targetNumber": 34,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 45,
+      "targetNumber": 35,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 46,
+      "targetNumber": 36,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 47,
+      "targetNumber": 37,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 48,
+      "targetNumber": 38,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 49,
+      "targetNumber": 39,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 50,
+      "targetNumber": 40,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 51,
+      "targetNumber": 41,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 52,
+      "targetNumber": 42,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 53,
+      "targetNumber": 43,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 54,
+      "targetNumber": 44,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 55,
+      "targetNumber": 45,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 56,
+      "targetNumber": 46,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 57,
+      "targetNumber": 47,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 58,
+      "targetNumber": 48,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 59,
+      "targetNumber": 49,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 60,
+      "targetNumber": 50,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 61,
+      "targetNumber": 51,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 62,
+      "targetNumber": 52,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 63,
+      "targetNumber": 53,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 64,
+      "targetNumber": 54,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 65,
+      "targetNumber": 55,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 66,
+      "targetNumber": 56,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 75,
+      "targetNumber": 57,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 84,
+      "targetNumber": 58,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 85,
+      "targetNumber": 59,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 86,
+      "targetNumber": 60,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 87,
+      "targetNumber": 61,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 88,
+      "targetNumber": 62,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 89,
+      "targetNumber": 63,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 90,
+      "targetNumber": 64,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 91,
+      "targetNumber": 65,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 92,
+      "targetNumber": 66,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 94,
+      "targetNumber": 67,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 96,
+      "targetNumber": 68,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 98,
+      "targetNumber": 69,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 100,
+      "targetNumber": 70,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 104,
+      "targetNumber": 71,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 109,
+      "targetNumber": 72,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 110,
+      "targetNumber": 73,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 119,
+      "targetNumber": 74,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 120,
+      "targetNumber": 75,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 124,
+      "targetNumber": 76,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 125,
+      "targetNumber": 77,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 127,
+      "targetNumber": 78,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 129,
+      "targetNumber": 79,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 136,
+      "targetNumber": 80,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 138,
+      "targetNumber": 81,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 139,
+      "targetNumber": 82,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 143,
+      "targetNumber": 83,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 144,
+      "targetNumber": 84,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 147,
+      "targetNumber": 85,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 149,
+      "targetNumber": 86,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 151,
+      "targetNumber": 87,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 156,
+      "targetNumber": 88,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 158,
+      "targetNumber": 89,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 159,
+      "targetNumber": 90,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 170,
+      "targetNumber": 91,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 171,
+      "targetNumber": 92,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 177,
+      "targetNumber": 93,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 181,
+      "targetNumber": 94,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 192,
+      "targetNumber": 95,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 195,
+      "targetNumber": 96,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 196,
+      "targetNumber": 97,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 197,
+      "targetNumber": 98,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 199,
+      "targetNumber": 99,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 200,
+      "targetNumber": 100,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 201,
+      "targetNumber": 101,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 202,
+      "targetNumber": 102,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 203,
+      "targetNumber": 103,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 204,
+      "targetNumber": 104,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 210,
+      "targetNumber": 105,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 212,
+      "targetNumber": 106,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 217,
+      "targetNumber": 107,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 221,
+      "targetNumber": 108,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 229,
+      "targetNumber": 109,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 232,
+      "targetNumber": 110,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 233,
+      "targetNumber": 111,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 234,
+      "targetNumber": 112,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 235,
+      "targetNumber": 113,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 236,
+      "targetNumber": 114,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 244,
+      "targetNumber": 115,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 247,
+      "targetNumber": 116,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 249,
+      "targetNumber": 117,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 250,
+      "targetNumber": 118,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 254,
+      "targetNumber": 119,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 256,
+      "targetNumber": 120,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 257,
+      "targetNumber": 121,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 259,
+      "targetNumber": 122,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 262,
+      "targetNumber": 123,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 263,
+      "targetNumber": 124,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 265,
+      "targetNumber": 125,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 274,
+      "targetNumber": 126,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 275,
+      "targetNumber": 127,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 276,
+      "targetNumber": 128,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 277,
+      "targetNumber": 129,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 278,
+      "targetNumber": 130,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 285,
+      "targetNumber": 131,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 286,
+      "targetNumber": 132,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 293,
+      "targetNumber": 133,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 295,
+      "targetNumber": 134,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 298,
+      "targetNumber": 135,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 299,
+      "targetNumber": 136,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 301,
+      "targetNumber": 137,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 303,
+      "targetNumber": 138,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 308,
+      "targetNumber": 139,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 309,
+      "targetNumber": 140,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 312,
+      "targetNumber": 141,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 320,
+      "targetNumber": 142,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 323,
+      "targetNumber": 143,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 324,
+      "targetNumber": 144,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 328,
+      "targetNumber": 145,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 331,
+      "targetNumber": 146,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 334,
+      "targetNumber": 147,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 336,
+      "targetNumber": 148,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 338,
+      "targetNumber": 149,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 339,
+      "targetNumber": 150,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 340,
+      "targetNumber": 151,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 342,
+      "targetNumber": 152,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 343,
+      "targetNumber": 153,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 344,
+      "targetNumber": 154,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 345,
+      "targetNumber": 155,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 346,
+      "targetNumber": 156,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 347,
+      "targetNumber": 157,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 371,
+      "targetNumber": 158,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 372,
+      "targetNumber": 159,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 373,
+      "targetNumber": 160,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 374,
+      "targetNumber": 161,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 375,
+      "targetNumber": 162,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 392,
+      "targetNumber": 163,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 395,
+      "targetNumber": 164,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 399,
+      "targetNumber": 165,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 400,
+      "targetNumber": 166,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 420,
+      "targetNumber": 167,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 421,
+      "targetNumber": 168,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 422,
+      "targetNumber": 169,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 429,
+      "targetNumber": 170,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 430,
+      "targetNumber": 171,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 431,
+      "targetNumber": 172,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 433,
+      "targetNumber": 173,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 434,
+      "targetNumber": 174,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 436,
+      "targetNumber": 175,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 437,
+      "targetNumber": 176,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 438,
+      "targetNumber": 177,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 439,
+      "targetNumber": 178,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 440,
+      "targetNumber": 179,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 446,
+      "targetNumber": 180,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 447,
+      "targetNumber": 181,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 448,
+      "targetNumber": 182,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 449,
+      "targetNumber": 183,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 455,
+      "targetNumber": 184,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 456,
+      "targetNumber": 185,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 457,
+      "targetNumber": 186,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 466,
+      "targetNumber": 187,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 469,
+      "targetNumber": 188,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 474,
+      "targetNumber": 189,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 476,
+      "targetNumber": 190,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 477,
+      "targetNumber": 191,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 478,
+      "targetNumber": 192,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 479,
+      "targetNumber": 193,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 480,
+      "targetNumber": 194,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 482,
+      "targetNumber": 195,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 483,
+      "targetNumber": 196,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 484,
+      "targetNumber": 197,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 492,
+      "targetNumber": 198,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 493,
+      "targetNumber": 199,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 496,
+      "targetNumber": 200,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 499,
+      "targetNumber": 201,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 505,
+      "targetNumber": 202,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 507,
+      "targetNumber": 203,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 508,
+      "targetNumber": 204,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 509,
+      "targetNumber": 205,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 510,
+      "targetNumber": 206,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 511,
+      "targetNumber": 207,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 512,
+      "targetNumber": 208,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 514,
+      "targetNumber": 209,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 515,
+      "targetNumber": 210,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 518,
+      "targetNumber": 211,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 519,
+      "targetNumber": 212,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 520,
+      "targetNumber": 213,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 521,
+      "targetNumber": 214,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 522,
+      "targetNumber": 215,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 523,
+      "targetNumber": 216,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 524,
+      "targetNumber": 217,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 527,
+      "targetNumber": 218,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 539,
+      "targetNumber": 219,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 540,
+      "targetNumber": 220,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 544,
+      "targetNumber": 221,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 552,
+      "targetNumber": 222,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 553,
+      "targetNumber": 223,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 554,
+      "targetNumber": 224,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 555,
+      "targetNumber": 225,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 557,
+      "targetNumber": 226,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 559,
+      "targetNumber": 227,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 563,
+      "targetNumber": 228,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 565,
+      "targetNumber": 229,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 584,
+      "targetNumber": 230,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 586,
+      "targetNumber": 231,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 587,
+      "targetNumber": 232,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 589,
+      "targetNumber": 233,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 590,
+      "targetNumber": 234,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 593,
+      "targetNumber": 235,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 595,
+      "targetNumber": 236,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 596,
+      "targetNumber": 237,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 600,
+      "targetNumber": 238,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 601,
+      "targetNumber": 239,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 603,
+      "targetNumber": 240,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 605,
+      "targetNumber": 241,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 608,
+      "targetNumber": 242,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 609,
+      "targetNumber": 243,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 613,
+      "targetNumber": 244,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 614,
+      "targetNumber": 245,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 618,
+      "targetNumber": 246,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 620,
+      "targetNumber": 247,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 621,
+      "targetNumber": 248,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 625,
+      "targetNumber": 249,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 627,
+      "targetNumber": 250,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 628,
+      "targetNumber": 251,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 629,
+      "targetNumber": 252,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 631,
+      "targetNumber": 253,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 632,
+      "targetNumber": 254,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 637,
+      "targetNumber": 255,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 638,
+      "targetNumber": 256,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 640,
+      "targetNumber": 257,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 645,
+      "targetNumber": 258,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 646,
+      "targetNumber": 259,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 647,
+      "targetNumber": 260,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 655,
+      "targetNumber": 261,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 656,
+      "targetNumber": 262,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 657,
+      "targetNumber": 263,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 658,
+      "targetNumber": 264,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 661,
+      "targetNumber": 265,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 666,
+      "targetNumber": 266,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 668,
+      "targetNumber": 267,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 669,
+      "targetNumber": 268,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 674,
+      "targetNumber": 269,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 678,
+      "targetNumber": 270,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 680,
+      "targetNumber": 271,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 691,
+      "targetNumber": 272,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 695,
+      "targetNumber": 273,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 700,
+      "targetNumber": 274,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 703,
+      "targetNumber": 275,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 704,
+      "targetNumber": 276,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 705,
+      "targetNumber": 277,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 706,
+      "targetNumber": 278,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 707,
+      "targetNumber": 279,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 708,
+      "targetNumber": 280,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 712,
+      "targetNumber": 281,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 713,
+      "targetNumber": 282,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 714,
+      "targetNumber": 283,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 715,
+      "targetNumber": 284,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 716,
+      "targetNumber": 285,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 718,
+      "targetNumber": 286,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 720,
+      "targetNumber": 287,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 723,
+      "targetNumber": 288,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 724,
+      "targetNumber": 289,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 725,
+      "targetNumber": 290,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 726,
+      "targetNumber": 291,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 728,
+      "targetNumber": 292,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 729,
+      "targetNumber": 293,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 730,
+      "targetNumber": 294,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 732,
+      "targetNumber": 295,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 733,
+      "targetNumber": 296,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 736,
+      "targetNumber": 297,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 737,
+      "targetNumber": 298,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 739,
+      "targetNumber": 299,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 745,
+      "targetNumber": 300,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 747,
+      "targetNumber": 301,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 750,
+      "targetNumber": 302,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 751,
+      "targetNumber": 303,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 752,
+      "targetNumber": 304,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 753,
+      "targetNumber": 305,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 754,
+      "targetNumber": 306,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 758,
+      "targetNumber": 307,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 762,
+      "targetNumber": 308,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 765,
+      "targetNumber": 309,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 766,
+      "targetNumber": 310,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 767,
+      "targetNumber": 311,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 768,
+      "targetNumber": 312,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 769,
+      "targetNumber": 313,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 770,
+      "targetNumber": 314,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 771,
+      "targetNumber": 315,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 775,
+      "targetNumber": 316,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 778,
+      "targetNumber": 317,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 781,
+      "targetNumber": 318,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 783,
+      "targetNumber": 319,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 787,
+      "targetNumber": 320,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 790,
+      "targetNumber": 321,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 796,
+      "targetNumber": 322,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 797,
+      "targetNumber": 323,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 808,
+      "targetNumber": 324,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 809,
+      "targetNumber": 325,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 814,
+      "targetNumber": 326,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 817,
+      "targetNumber": 327,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 819,
+      "targetNumber": 328,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 820,
+      "targetNumber": 329,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 825,
+      "targetNumber": 330,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 826,
+      "targetNumber": 331,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 828,
+      "targetNumber": 332,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 831,
+      "targetNumber": 333,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 833,
+      "targetNumber": 334,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 834,
+      "targetNumber": 335,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 835,
+      "targetNumber": 336,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 839,
+      "targetNumber": 337,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 843,
+      "targetNumber": 338,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 844,
+      "targetNumber": 339,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 850,
+      "targetNumber": 340,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 863,
+      "targetNumber": 341,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 866,
+      "targetNumber": 342,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 868,
+      "targetNumber": 343,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 871,
+      "targetNumber": 344,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 872,
+      "targetNumber": 345,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 873,
+      "targetNumber": 346,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 874,
+      "targetNumber": 347,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 875,
+      "targetNumber": 348,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 876,
+      "targetNumber": 349,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 877,
+      "targetNumber": 350,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 879,
+      "targetNumber": 351,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 880,
+      "targetNumber": 352,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 881,
+      "targetNumber": 353,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 884,
+      "targetNumber": 354,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 888,
+      "targetNumber": 355,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 889,
+      "targetNumber": 356,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 890,
+      "targetNumber": 357,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 899,
+      "targetNumber": 358,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 902,
+      "targetNumber": 359,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 903,
+      "targetNumber": 360,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 905,
+      "targetNumber": 361,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 906,
+      "targetNumber": 362,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 907,
+      "targetNumber": 363,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 908,
+      "targetNumber": 364,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 909,
+      "targetNumber": 365,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 911,
+      "targetNumber": 366,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 912,
+      "targetNumber": 367,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 913,
+      "targetNumber": 368,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 915,
+      "targetNumber": 369,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 918,
+      "targetNumber": 370,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 919,
+      "targetNumber": 371,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 921,
+      "targetNumber": 372,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 924,
+      "targetNumber": 373,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 925,
+      "targetNumber": 374,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 926,
+      "targetNumber": 375,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 930,
+      "targetNumber": 376,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 931,
+      "targetNumber": 377,
+      "reason": "already synchronized"
+    },
+    {
+      "type": "skip-issue",
+      "upstreamNumber": 936,
+      "targetNumber": 378,
+      "reason": "already synchronized"
+    }
+  ],
+  "appliedActions": [],
+  "failedAction": null,
+  "plannedImportedCommentCount": 0,
+  "missingTargetLabelCount": 0,
+  "labelActionCount": 0,
+  "verification": {
+    "ok": true,
+    "failureCount": 0,
+    "failures": []
+  },
+  "sanitizationCountsAvailable": true,
+  "sanitizationCounts": {
+    "mentions": 555,
+    "references": 635,
+    "closingKeywords": 847
+  },
+  "rateLimitStop": null,
+  "errors": []
+}
