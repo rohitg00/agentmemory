@@ -48,6 +48,7 @@ Rules:
 function parseTemporalGraphXml(
   xml: string,
   observationIds: string[],
+  sessionByObsId?: Map<string, string>,
 ): { nodes: GraphNode[]; edges: GraphEdge[] } {
   const nodes: GraphNode[] = [];
   const edges: GraphEdge[] = [];
@@ -74,12 +75,23 @@ function parseTemporalGraphXml(
       aliases.push(propMatch[1]);
     }
 
+    let sessionId: string | undefined;
+    if (sessionByObsId) {
+      for (const obsId of observationIds) {
+        const found = sessionByObsId.get(obsId);
+        if (found) {
+          sessionId = found;
+          break;
+        }
+      }
+    }
     nodes.push({
       id: generateId("gn"),
       type,
       name,
       properties,
       sourceObservationIds: observationIds,
+      ...(sessionId ? { sessionId } : {}),
       createdAt: now,
       aliases: aliases.length > 0 ? aliases : undefined,
     });
@@ -158,6 +170,7 @@ export function registerTemporalGraphFunctions(
     async (data: {
       observations: Array<{
         id: string;
+        sessionId?: string;
         title: string;
         narrative: string;
         concepts: string[];
@@ -184,7 +197,17 @@ export function registerTemporalGraphFunctions(
         );
 
         const obsIds = data.observations.map((o) => o.id);
-        const { nodes, edges } = parseTemporalGraphXml(response, obsIds);
+        const sessionByObsId = new Map<string, string>();
+        for (const observation of data.observations) {
+          if (observation.sessionId) {
+            sessionByObsId.set(observation.id, observation.sessionId);
+          }
+        }
+        const { nodes, edges } = parseTemporalGraphXml(
+          response,
+          obsIds,
+          sessionByObsId,
+        );
 
         const existingNodes = await kv.list<GraphNode>(KV.graphNodes);
         const existingEdges = await kv.list<GraphEdge>(KV.graphEdges);
@@ -206,6 +229,7 @@ export function registerTemporalGraphFunctions(
                 ]),
               ],
               properties: { ...existing.properties, ...node.properties },
+              sessionId: node.sessionId ?? existing.sessionId,
               updatedAt: new Date().toISOString(),
               aliases: [
                 ...new Set([

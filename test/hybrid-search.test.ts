@@ -1,7 +1,11 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { HybridSearch } from "../src/state/hybrid-search.js";
 import { SearchIndex } from "../src/state/search-index.js";
-import type { CompressedObservation, EmbeddingProvider } from "../src/types.js";
+import type {
+  CompressedObservation,
+  EmbeddingProvider,
+  GraphNode,
+} from "../src/types.js";
 
 function makeObs(
   overrides: Partial<CompressedObservation> = {},
@@ -179,5 +183,36 @@ describe("HybridSearch", () => {
     expect(results[0].observation.id).toBe("mem_abc");
     expect(results[0].observation.narrative).toBe("Test memory for search");
     expect(results[0].observation.concepts).toEqual(["test", "search"]);
+  });
+
+  it("keeps graph-only observation hits after enrichment", async () => {
+    const obs = makeObs({
+      id: "obs_graph",
+      sessionId: "ses_graph",
+      title: "React state decision",
+      narrative: "React state should stay local to the component.",
+      concepts: ["react", "state"],
+    });
+    const node: GraphNode = {
+      id: "gn_react",
+      type: "library",
+      name: "React",
+      properties: {},
+      sourceObservationIds: ["obs_graph"],
+      sessionId: "ses_graph",
+      createdAt: new Date().toISOString(),
+    };
+    await kv.set("mem:graph:nodes", node.id, node);
+    await kv.set("mem:sessions", "ses_graph", { id: "ses_graph" });
+    await kv.set("mem:obs:ses_graph", obs.id, obs);
+
+    const hybrid = new HybridSearch(bm25, null, null, kv as never);
+    const results = await hybrid.search("React");
+
+    expect(results.length).toBe(1);
+    expect(results[0].observation.id).toBe("obs_graph");
+    expect(results[0].sessionId).toBe("ses_graph");
+    expect(results[0].graphScore).toBeGreaterThan(0);
+    expect(results[0].graphContext).toContain("React");
   });
 });

@@ -106,6 +106,17 @@ describe("Graph Functions", () => {
     expect(edges[0].type).toBe("uses");
   });
 
+  it("graph-extract stamps nodes with the source observation session", async () => {
+    await sdk.trigger("mem::graph-extract", { observations: [testObs] });
+
+    const nodes = await kv.list<GraphNode>("mem:graph:nodes");
+
+    expect(nodes.length).toBeGreaterThan(0);
+    for (const node of nodes) {
+      expect(node.sessionId).toBe("ses_1");
+    }
+  });
+
   it("graph-extract accepts self-closing entity tags", async () => {
     mockProvider.compress.mockResolvedValueOnce(`<entities>
 <entity type="file" name="src/index.ts"/>

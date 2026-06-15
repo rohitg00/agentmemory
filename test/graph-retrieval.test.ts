@@ -34,6 +34,52 @@ function mockKV(
   };
 }
 
+function mockKVWithSessions(
+  nodes: GraphNode[],
+  edges: GraphEdge[],
+  sessions: Array<{ id: string }>,
+  obsBySession: Record<string, string[]>,
+) {
+  const store = new Map<string, Map<string, unknown>>();
+  const nodesMap = new Map<string, unknown>();
+  for (const n of nodes) nodesMap.set(n.id, n);
+  store.set("mem:graph:nodes", nodesMap);
+
+  const edgesMap = new Map<string, unknown>();
+  for (const e of edges) edgesMap.set(e.id, e);
+  store.set("mem:graph:edges", edgesMap);
+
+  const sessionsMap = new Map<string, unknown>();
+  for (const s of sessions) sessionsMap.set(s.id, s);
+  store.set("mem:sessions", sessionsMap);
+
+  for (const [sessionId, obsIds] of Object.entries(obsBySession)) {
+    const obsMap = new Map<string, unknown>();
+    for (const obsId of obsIds) {
+      obsMap.set(obsId, { id: obsId, sessionId });
+    }
+    store.set(`mem:obs:${sessionId}`, obsMap);
+  }
+
+  return {
+    get: async <T>(scope: string, key: string): Promise<T | null> => {
+      return (store.get(scope)?.get(key) as T) ?? null;
+    },
+    set: async <T>(scope: string, key: string, data: T): Promise<T> => {
+      if (!store.has(scope)) store.set(scope, new Map());
+      store.get(scope)!.set(key, data);
+      return data;
+    },
+    delete: async (scope: string, key: string): Promise<void> => {
+      store.get(scope)?.delete(key);
+    },
+    list: async <T>(scope: string): Promise<T[]> => {
+      const entries = store.get(scope);
+      return entries ? (Array.from(entries.values()) as T[]) : [];
+    },
+  };
+}
+
 function makeNode(
   id: string,
   name: string,
@@ -294,5 +340,76 @@ describe("GraphRetrieval", () => {
     const results = await retrieval.searchByEntities(["Start"], 2);
     expect(results.find((r) => r.obsId === "obs_3")).toBeDefined();
     expect(results.find((r) => r.obsId === "obs_4")).toBeUndefined();
+  });
+
+  it("resolves a verified graph node session hint", async () => {
+    const node = {
+      ...makeNode("n1", "React", "library", ["obs_1"]),
+      sessionId: "sess_abc",
+    };
+    const kv = mockKVWithSessions([node], [], [{ id: "sess_abc" }], {
+      sess_abc: ["obs_1"],
+    });
+    const retrieval = new GraphRetrieval(kv as never);
+
+    const results = await retrieval.searchByEntities(["React"]);
+
+    expect(results[0].obsId).toBe("obs_1");
+    expect(results[0].sessionId).toBe("sess_abc");
+  });
+
+  it("resolves a legacy graph node session by scanning known sessions", async () => {
+    const node = makeNode("n1", "React", "library", ["obs_legacy"]);
+    const kv = mockKVWithSessions(
+      [node],
+      [],
+      [{ id: "sess_other" }, { id: "sess_legacy" }],
+      { sess_other: ["obs_unrelated"], sess_legacy: ["obs_legacy"] },
+    );
+    const retrieval = new GraphRetrieval(kv as never);
+
+    const results = await retrieval.searchByEntities(["React"]);
+
+    expect(results[0].obsId).toBe("obs_legacy");
+    expect(results[0].sessionId).toBe("sess_legacy");
+  });
+
+  it("corrects a stale graph node session hint for older source observations", async () => {
+    const node = {
+      ...makeNode("n1", "React", "library", ["obs_a", "obs_b"]),
+      sessionId: "sess_b",
+    };
+    const kv = mockKVWithSessions(
+      [node],
+      [],
+      [{ id: "sess_a" }, { id: "sess_b" }],
+      { sess_a: ["obs_a"], sess_b: ["obs_b"] },
+    );
+    const retrieval = new GraphRetrieval(kv as never);
+
+    const results = await retrieval.searchByEntities(["React"]);
+    const obsA = results.find((r) => r.obsId === "obs_a");
+    const obsB = results.find((r) => r.obsId === "obs_b");
+
+    expect(obsA?.sessionId).toBe("sess_a");
+    expect(obsB?.sessionId).toBe("sess_b");
+  });
+
+  it("leaves sessionId empty when session scanning fails", async () => {
+    const node = makeNode("n1", "React", "library", ["obs_1"]);
+    const kv = mockKVWithSessions([node], [], [{ id: "sess_a" }], {
+      sess_a: ["obs_1"],
+    });
+    const originalList = kv.list;
+    kv.list = (async (scope: string) => {
+      if (scope === "mem:sessions") throw new Error("session list unavailable");
+      return originalList(scope);
+    }) as never;
+    const retrieval = new GraphRetrieval(kv as never);
+
+    const results = await retrieval.searchByEntities(["React"]);
+
+    expect(results[0].obsId).toBe("obs_1");
+    expect(results[0].sessionId).toBe("");
   });
 });
