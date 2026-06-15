@@ -1,7 +1,9 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { registerMcpEndpoints } from "../src/mcp/server.js";
 import { KV } from "../src/state/schema.js";
+
+const ORIGINAL_SLOTS_FLAG = process.env["AGENTMEMORY_SLOTS"];
 
 type McpResponse = {
   status_code: number;
@@ -125,6 +127,15 @@ function contentText(response: McpResponse): string {
 function parsedContent(response: McpResponse): unknown {
   return JSON.parse(contentText(response));
 }
+
+beforeEach(() => {
+  process.env["AGENTMEMORY_SLOTS"] = "true";
+});
+
+afterEach(() => {
+  if (ORIGINAL_SLOTS_FLAG === undefined) delete process.env["AGENTMEMORY_SLOTS"];
+  else process.env["AGENTMEMORY_SLOTS"] = ORIGINAL_SLOTS_FLAG;
+});
 
 describe("MCP server registration and auth", () => {
   it("registers tools, resources, and prompts endpoints with stable HTTP routes", () => {
@@ -614,6 +625,32 @@ describe("MCP tools/call payload shaping", () => {
 });
 
 describe("MCP tools/call fallback and KV-backed behavior", () => {
+  it.each([
+    ["memory_slot_list", {}],
+    ["memory_slot_get", { label: "notes" }],
+    ["memory_slot_create", { label: "notes" }],
+    ["memory_slot_append", { label: "notes", text: "more" }],
+    ["memory_slot_replace", { label: "notes", content: "new" }],
+    ["memory_slot_delete", { label: "notes" }],
+  ])("returns slot enablement guidance for %s when slots are disabled", async (name, args) => {
+    process.env["AGENTMEMORY_SLOTS"] = "false";
+    const h = createHarness();
+    h.overrideTrigger("mem::slot-list", () => {
+      throw new Error("No function: mem::slot-list");
+    });
+
+    const response = await h.callTool(name, args);
+
+    expect(response.status_code).toBe(200);
+    expect(response.body).toMatchObject({ isError: true });
+    expect(parsedContent(response)).toMatchObject({
+      error: "Memory slots not enabled",
+      flag: "AGENTMEMORY_SLOTS",
+    });
+    expect(contentText(response)).toContain("AGENTMEMORY_SLOTS=true");
+    expect(h.triggerCalls).toHaveLength(0);
+  });
+
   it.each([
     ["memory_claude_bridge_sync", "mem::claude-bridge-read", { direction: "read" }, "Claude bridge not enabled"],
     ["memory_graph_query", "mem::graph-query", { query: "auth" }, "Knowledge graph not enabled"],

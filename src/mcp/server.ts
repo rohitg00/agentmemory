@@ -8,7 +8,8 @@ import type {
   GraphNode,
   GraphEdge,
 } from "../types.js";
-import { getVisibleTools } from "./tools-registry.js";
+import { isSlotsEnabled } from "../functions/slots.js";
+import { getVisibleTools, V010_SLOTS_TOOLS } from "./tools-registry.js";
 import { timingSafeCompare } from "../auth.js";
 import { getAgentId, isAgentScopeIsolated } from "../config.js";
 
@@ -38,6 +39,29 @@ function parseCsvList(value: unknown): string[] {
       .filter(Boolean);
   }
   return [];
+}
+
+const SLOT_TOOL_NAMES = new Set(V010_SLOTS_TOOLS.map((tool) => tool.name));
+
+function slotsDisabledMcpResponse(): McpResponse {
+  return {
+    status_code: 200,
+    body: {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({
+            error: "Memory slots not enabled",
+            flag: "AGENTMEMORY_SLOTS",
+            enableHow:
+              "Set AGENTMEMORY_SLOTS=true (in ~/.agentmemory/.env or the shell) and restart.",
+            docsHref: "https://github.com/rohitg00/agentmemory#memory-slots",
+          }),
+        },
+      ],
+      isError: true,
+    },
+  };
 }
 
 export function registerMcpEndpoints(
@@ -83,6 +107,10 @@ export function registerMcpEndpoints(
       }
 
       const { name, arguments: args = {} } = req.body;
+
+      if (SLOT_TOOL_NAMES.has(name) && !isSlotsEnabled()) {
+        return slotsDisabledMcpResponse();
+      }
 
       try {
         switch (name) {
