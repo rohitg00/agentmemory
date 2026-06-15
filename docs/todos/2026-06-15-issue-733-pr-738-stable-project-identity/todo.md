@@ -33,8 +33,9 @@
 | Import/adapt/no-op decision | Diff comparison plus local tests | Done | Decision: already-fixed for the same-basename collision; defer remote identity as a separate product/migration decision; no PR code imported. |
 | Security review | Diff-scoped security scan | Done | `/tmp/codex-security-scans/agentmemory/pr738-20260615/report.md` reports no candidates; 14 source/runtime rows have ledger receipts. |
 | Local neutral documentation | Update this task record | Done | This file. |
-| Targeted project identity tests | `npm test -- test/hook-project.test.ts test/worktree-project-scope.test.ts` | Done with caveat | Direct run in this worktree failed because `vitest` was unavailable; same command passed in the main checkout at the same commit with 2 files / 17 tests passing. |
-| Diff whitespace checks | `git diff --check` | Done | Passed for this worktree and for the coordinator-list path. |
+| Targeted project identity tests | `npm test -- test/hook-project.test.ts test/worktree-project-scope.test.ts` | Done with caveat | Direct run in this worktree failed because `vitest` was unavailable; same command passed in the main checkout after local-main merge with 2 files / 17 tests passing. |
+| Diff whitespace checks | `git diff --check` | Done | Passed for this worktree after local-main merge and for the coordinator-list path. |
+| Secret scan | `gitleaks detect --source . --redact` | Done | Passed after local-main merge; no leaks found. |
 | Prep merge to local main | Run required skill workflow | Done | Task record committed, local `main` commit `6c387b4efea524db5bf8fe0e923958cbcf0213f1` merged, post-merge status clean. |
 
 ## Progress
@@ -53,7 +54,8 @@
   - `git diff --check` passed in this worktree.
   - `git diff --check -- docs/todos/2026-06-15-pr-issue-fix-review/pr-issue-fix-review-list.md` passed in the coordinator worktree.
   - `npm test -- test/hook-project.test.ts test/worktree-project-scope.test.ts` failed in this worktree before test execution because `vitest` was not installed.
-  - The same targeted test command passed in `/Users/A1538552/_projects/_tools/agentmemory` at the same commit: 2 test files, 17 tests.
+  - The same targeted test command passed in `/Users/A1538552/_projects/_tools/agentmemory` after local-main merge: 2 test files, 17 tests.
+  - `gitleaks detect --source . --redact` passed after local-main merge: no leaks found.
 - Prep-merge-to-local-main:
   - Preflight branch: `review/issue-733-pr-738-stable-project-identity`.
   - `refs/heads/main` resolved to `bfde73b2a12ae1400953cc544a875aba7bcd854f`.
@@ -68,6 +70,7 @@
   - Pre-merge docs commit: `ff1b9c4cee225b1cb3166522c739940a2522722a`.
   - Merge commit: `dc1f64fae52aa00a7583f54a90b4382c62dc0220`.
   - Post-merge `git status --porcelain=v1 -uall` was clean before this final task-record update.
+  - Final prep status before this verification-note update was clean, with branch tip `ca0e4692c874197f83765e8e41d3a88a88e66aa6`.
 
 ## Assumptions
 
