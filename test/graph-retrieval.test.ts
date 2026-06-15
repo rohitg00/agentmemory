@@ -296,3 +296,173 @@ describe("GraphRetrieval", () => {
     expect(results.find((r) => r.obsId === "obs_4")).toBeUndefined();
   });
 });
+
+// Regression coverage for #656: graph results carried sessionId: "" which
+// made HybridSearch.enrichResults look up KV.observations("") and silently
+// drop every graph-retrieved observation. Results must now resolve to the
+// session whose KV namespace actually holds the observation. The resolver
+// trusts-but-verifies the node's sessionId hint and falls back to a scan
+// when the hint is empty (legacy node) or wrong (multi-session node).
+describe("GraphRetrieval — sessionId resolution (#656)", () => {
+  // Mock that serves graph nodes/edges, the sessions list, AND per-session
+  // observation rows, so the resolver's verify + scan paths have real data.
+  function mockKVWithSessions(
+    nodes: GraphNode[],
+    edges: GraphEdge[],
+    sessions: Array<{ id: string }>,
+    obsBySession: Record<string, string[]>,
+  ) {
+    const store = new Map<string, Map<string, unknown>>();
+    const nodesMap = new Map<string, unknown>();
+    for (const n of nodes) nodesMap.set(n.id, n);
+    store.set("mem:graph:nodes", nodesMap);
+    const edgesMap = new Map<string, unknown>();
+    for (const e of edges) edgesMap.set(e.id, e);
+    store.set("mem:graph:edges", edgesMap);
+
+    const sessionsMap = new Map<string, unknown>();
+    for (const s of sessions) sessionsMap.set(s.id, s);
+    store.set("mem:sessions", sessionsMap);
+
+    for (const [sid, obsIds] of Object.entries(obsBySession)) {
+      const obsMap = new Map<string, unknown>();
+      for (const oid of obsIds) obsMap.set(oid, { id: oid, sessionId: sid });
+      store.set(`mem:obs:${sid}`, obsMap);
+    }
+
+    return {
+      get: async <T>(scope: string, key: string): Promise<T | null> =>
+        (store.get(scope)?.get(key) as T) ?? null,
+      set: async <T>(scope: string, key: string, data: T): Promise<T> => {
+        if (!store.has(scope)) store.set(scope, new Map());
+        store.get(scope)!.set(key, data);
+        return data;
+      },
+      delete: async (scope: string, key: string): Promise<void> => {
+        store.get(scope)?.delete(key);
+      },
+      list: async <T>(scope: string): Promise<T[]> => {
+        const entries = store.get(scope);
+        return entries ? (Array.from(entries.values()) as T[]) : [];
+      },
+    };
+  }
+
+  it("resolves a node's sessionId when the hint is verified in KV (start-node path)", async () => {
+    const node: GraphNode = {
+      ...makeNode("n1", "React", "library", ["obs_1"]),
+      sessionId: "sess_abc",
+    };
+    const kv = mockKVWithSessions([node], [], [{ id: "sess_abc" }], {
+      sess_abc: ["obs_1"],
+    });
+    const retrieval = new GraphRetrieval(kv as never);
+
+    const results = await retrieval.searchByEntities(["React"]);
+    expect(results.length).toBeGreaterThan(0);
+    expect(results[0].obsId).toBe("obs_1");
+    // Before the fix this was always "" — the bug.
+    expect(results[0].sessionId).toBe("sess_abc");
+  });
+
+  it("resolves sessionId across a traversed path (last-node path)", async () => {
+    const nodes: GraphNode[] = [
+      { ...makeNode("n1", "React", "library", ["obs_1"]), sessionId: "sess_a" },
+      { ...makeNode("n2", "Hook", "concept", ["obs_2"]), sessionId: "sess_b" },
+    ];
+    const edges = [makeEdge("e1", "n1", "n2", "uses")];
+    const kv = mockKVWithSessions(
+      nodes,
+      edges,
+      [{ id: "sess_a" }, { id: "sess_b" }],
+      { sess_a: ["obs_1"], sess_b: ["obs_2"] },
+    );
+    const retrieval = new GraphRetrieval(kv as never);
+
+    const results = await retrieval.searchByEntities(["React"], 2);
+    const hookResult = results.find((r) => r.obsId === "obs_2");
+    expect(hookResult).toBeDefined();
+    // obs_2 belongs to n2, whose session is sess_b.
+    expect(hookResult!.sessionId).toBe("sess_b");
+  });
+
+  it("resolves sessionId in expandFromChunks", async () => {
+    const nodes: GraphNode[] = [
+      { ...makeNode("n1", "auth.ts", "file", ["obs_1"]), sessionId: "sess_a" },
+      { ...makeNode("n2", "jwt", "concept", ["obs_2"]), sessionId: "sess_b" },
+    ];
+    const edges = [makeEdge("e1", "n1", "n2", "uses")];
+    const kv = mockKVWithSessions(
+      nodes,
+      edges,
+      [{ id: "sess_a" }, { id: "sess_b" }],
+      { sess_a: ["obs_1"], sess_b: ["obs_2"] },
+    );
+    const retrieval = new GraphRetrieval(kv as never);
+
+    const results = await retrieval.expandFromChunks(["obs_1"]);
+    const jwtResult = results.find((r) => r.obsId === "obs_2");
+    expect(jwtResult).toBeDefined();
+    expect(jwtResult!.sessionId).toBe("sess_b");
+  });
+
+  it("backfills sessionId for legacy nodes (no sessionId field) via session scan", async () => {
+    // Legacy node written before #656 — no sessionId. The obs lives in
+    // sess_legacy; the scan fallback must locate it.
+    const node = makeNode("n1", "React", "library", ["obs_legacy"]);
+    expect(node.sessionId).toBeUndefined();
+    const kv = mockKVWithSessions(
+      [node],
+      [],
+      [{ id: "sess_other" }, { id: "sess_legacy" }],
+      { sess_other: ["obs_unrelated"], sess_legacy: ["obs_legacy"] },
+    );
+    const retrieval = new GraphRetrieval(kv as never);
+
+    const results = await retrieval.searchByEntities(["React"]);
+    const r = results.find((x) => x.obsId === "obs_legacy");
+    expect(r).toBeDefined();
+    expect(r!.sessionId).toBe("sess_legacy");
+  });
+
+  it("corrects a stale hint for a multi-session node (verify-then-scan)", async () => {
+    // A node re-observed across two sessions accumulates both obsIds but
+    // stores only the most-recent session (sess_b). obs_a actually lives in
+    // sess_a — trusting the hint blindly would mis-namespace it and drop it
+    // at enrichment. The resolver must verify and re-locate obs_a to sess_a.
+    const node: GraphNode = {
+      ...makeNode("n1", "React", "library", ["obs_a", "obs_b"]),
+      sessionId: "sess_b",
+    };
+    const kv = mockKVWithSessions(
+      [node],
+      [],
+      [{ id: "sess_a" }, { id: "sess_b" }],
+      { sess_a: ["obs_a"], sess_b: ["obs_b"] },
+    );
+    const retrieval = new GraphRetrieval(kv as never);
+
+    const results = await retrieval.searchByEntities(["React"]);
+    const ra = results.find((x) => x.obsId === "obs_a");
+    const rb = results.find((x) => x.obsId === "obs_b");
+    expect(ra).toBeDefined();
+    expect(rb).toBeDefined();
+    // obs_b matches the hint; obs_a is corrected to its true owning session.
+    expect(rb!.sessionId).toBe("sess_b");
+    expect(ra!.sessionId).toBe("sess_a");
+  });
+
+  it("leaves sessionId empty when an obs exists in no session", async () => {
+    const node = makeNode("n1", "React", "library", ["obs_orphan"]);
+    const kv = mockKVWithSessions([node], [], [{ id: "sess_x" }], {
+      sess_x: ["obs_unrelated"],
+    });
+    const retrieval = new GraphRetrieval(kv as never);
+
+    const results = await retrieval.searchByEntities(["React"]);
+    const r = results.find((x) => x.obsId === "obs_orphan");
+    expect(r).toBeDefined();
+    // No session owns it — graceful empty, not a crash.
+    expect(r!.sessionId).toBe("");
+  });
+});
