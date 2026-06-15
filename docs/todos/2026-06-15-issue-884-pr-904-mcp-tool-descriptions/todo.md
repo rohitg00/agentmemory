@@ -31,7 +31,7 @@
 | Fork decision | Compare issue need, PR design, and local architecture | complete | Adapted import. |
 | Minimal implementation, if needed | Focused tests and generated-surface check | complete | Registry descriptions, generated MCP tools reference, and regression test updated. |
 | Security review | MCP/tooling focused scan plus required gates for changed surface | complete | Manual boundary review plus Semgrep and staged Gitleaks found no issues. |
-| prep-merge-to-local-main | Skill workflow result | in progress | Preflight, review chain, staged diff inspection, and staged Gitleaks passed; merge still pending. |
+| prep-merge-to-local-main | Skill workflow result | complete | Task commit created, local main commit merged, post-merge checks passed, and final task-state update recorded. |
 
 ## Assumptions
 
@@ -58,9 +58,20 @@
   - `scripts/skills/check.ts` in temporary copy: passed, 15 skills checked.
   - `semgrep scan --config p/default --error --metrics=off .`: passed, 0 findings.
 - Review-chain note: independent subagent review was not run because the available subagent tool permits spawning only when the user explicitly asks for subagents or delegation. A separate manual adversarial review pass was performed instead.
+- prep-merge-to-local-main:
+  - Task commit: `27df91f`.
+  - Local main commit merged: `6c387b4`.
+  - Merge commit: `7ac29b5`.
+  - Conflicts: none.
+  - Preserved unrelated dirty paths: none.
+  - Post-merge verification:
+    - `git diff --check`: passed in the worktree.
+    - Targeted vitest in temporary copy: `test/mcp-standalone.test.ts`, `test/consistency.test.ts`, `test/tool-count-consistency.test.ts`, `test/mcp-surface-default.test.ts`: 4 files, 47 tests passed.
+    - `scripts/skills/generate.ts --check` in temporary copy: passed.
+    - `scripts/skills/check.ts` in temporary copy: passed, 15 skills checked.
 
 ## Review Notes
 
 - No critical or important findings from the focused implementation review.
 - Residual risk: the actual improvement in model tool-selection behavior is qualitative and was not measured against live LLM calls.
-- prep-merge-to-local-main status: in progress.
+- prep-merge-to-local-main status: complete.
