@@ -49,7 +49,7 @@ Stop conditions:
 | Adapt minimal timeout fix if warranted | Targeted source/config/docs/test diff | done | Added `AGENTMEMORY_CALL_TIMEOUT_MS`, 600-second default, timer clamping, config/docs/tests |
 | Security review for MCP/config surface | Manual review plus diff-scoped security scan where required | done | No reportable findings; scan report under `/tmp/codex-security-scans/agentmemory/bfde73b_2026-06-15-issue-866-pr-867-mcp-timeout/` |
 | Targeted verification | Proxy timeout tests and diff checks | done | Targeted Vitest: 29 passed; `git diff --check`: pass; Semgrep: 0 findings |
-| Final prep merge | `$prep-merge-to-local-main` workflow | pending |  |
+| Final prep merge | `$prep-merge-to-local-main` workflow | done | Pre-merge commit created, local main merged without conflicts, post-merge status clean before final record update |
 
 ## Progress
 
@@ -77,3 +77,10 @@ Stop conditions:
   - `$simple-code` stabilization performed by extracting a small helper for repeated timeout test setup.
   - `$requesting-code-review` subagent dispatch was not available because the runtime only permits subagents when explicitly requested by the user; a focused local requirements/test/integration review found no blockers.
   - `$review-implementation` authoritative review was performed as a local adversarial second pass because no independent subagent was authorized; no findings.
+- `$prep-merge-to-local-main` outcome:
+  - Preflight found no Git operation in progress, no staged changes, no signing config, and only sample hooks.
+  - Main worktree was clean and matched the captured local main commit.
+  - Pre-merge commit created: `39d56de` (`fix: make mcp proxy call timeout configurable`).
+  - First merge attempt was blocked by sandbox permission while creating `ORIG_HEAD.lock`; status remained clean and no merge state was left behind.
+  - Escalated retry merged captured local main commit `6c387b4` without conflicts.
+  - Local main incoming paths did not overlap the timeout task-owned paths.

@@ -116,6 +116,6 @@ Record adapted import, manual security findings, verification evidence, and resi
 
 Run: targeted vitest, `git diff --check`, Semgrep, OSV if applicable, and Gitleaks staged scan before commit if staging occurs.
 
-- [ ] **Step 3: Run `$prep-merge-to-local-main`**
+- [x] **Step 3: Run `$prep-merge-to-local-main`**
 
 Follow the skill workflow exactly and record the outcome.
