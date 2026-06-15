@@ -80,6 +80,10 @@ Stop conditions:
   - Local main was already an ancestor of branch HEAD, so no merge commit was created.
   - No conflicts.
   - Ignored verification artifact present after Vitest: `node_modules/.vite/vitest`; classified as local test cache and left in place.
+- Final post-merge verification:
+  - `git diff --check HEAD` passed.
+  - `/Users/A1538552/_projects/_tools/agentmemory/node_modules/.bin/vitest run --config /tmp/agentmemory-vitest.config.mjs test/consolidate-project-scope.test.ts` passed, 8 tests.
+  - `semgrep scan --config p/default --error --metrics=off src/functions/consolidate.ts test/consolidate-project-scope.test.ts docs/todos/2026-06-16-issue-747-pr-748-consolidation-dedup/todo.md` passed with 0 findings.
 - Review chain:
   - Security-best-practices passive pass: no critical or major issue in touched TypeScript persistence code.
   - Simple-code pass: no cleanup changes; helper kept because it centralizes the create/evolve snapshot update rule.
