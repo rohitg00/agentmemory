@@ -35,7 +35,7 @@
 | Local neutral documentation | Update this task record | Done | This file. |
 | Targeted project identity tests | `npm test -- test/hook-project.test.ts test/worktree-project-scope.test.ts` | Done with caveat | Direct run in this worktree failed because `vitest` was unavailable; same command passed in the main checkout at the same commit with 2 files / 17 tests passing. |
 | Diff whitespace checks | `git diff --check` | Done | Passed for this worktree and for the coordinator-list path. |
-| Prep merge to local main | Run required skill workflow | In progress | Second invocation found local `main` clean at `6c387b4efea524db5bf8fe0e923958cbcf0213f1`; cleanup/commit/merge proceeding. |
+| Prep merge to local main | Run required skill workflow | Done | Task record committed, local `main` commit `6c387b4efea524db5bf8fe0e923958cbcf0213f1` merged, post-merge status clean. |
 
 ## Progress
 
@@ -65,6 +65,9 @@
   - Listed main worktree was clean and at the captured main commit.
   - Incoming main paths were captured under `/var/folders/4j/rfjhcd61565dfct0r8lk4vmm0000gq/T/merge-local-main.HJQe6Y`.
   - Incoming main diff does not touch this task record path.
+  - Pre-merge docs commit: `ff1b9c4cee225b1cb3166522c739940a2522722a`.
+  - Merge commit: `dc1f64fae52aa00a7583f54a90b4382c62dc0220`.
+  - Post-merge `git status --porcelain=v1 -uall` was clean before this final task-record update.
 
 ## Assumptions
 
