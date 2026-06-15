@@ -951,12 +951,14 @@ npm install @xenova/transformers
 
 | Provider | Model | Cost | Notes |
 |---|---|---|---|
-| **Local (recommended)** | `all-MiniLM-L6-v2` | Free | `EMBEDDING_PROVIDER=local`; offline, +8pp recall over BM25-only |
+| **Local (recommended)** | `paraphrase-multilingual-MiniLM-L12-v2` | Free | `EMBEDDING_PROVIDER=local`; override with `LOCAL_EMBEDDING_MODEL`; offline, +8pp recall over BM25-only |
 | Gemini | `gemini-embedding-001` | Free tier | `EMBEDDING_PROVIDER=gemini` + `GEMINI_API_KEY`; 100+ languages, 768/1536/3072 dims (MRL), 2048-token input. Replaces `text-embedding-004` ([deprecated, shutdown Jan 14, 2026](https://ai.google.dev/gemini-api/docs/deprecations)) |
 | OpenAI | `text-embedding-3-small` | $0.02/1M | `EMBEDDING_PROVIDER=openai` + `OPENAI_API_KEY`; highest quality |
 | Voyage AI | `voyage-code-3` | Paid | `EMBEDDING_PROVIDER=voyage` + `VOYAGE_API_KEY`; optimized for code |
 | Cohere | `embed-english-v3.0` | Free trial | `EMBEDDING_PROVIDER=cohere` + `COHERE_API_KEY`; general purpose |
 | OpenRouter | Any model | Varies | `EMBEDDING_PROVIDER=openrouter` + `OPENROUTER_API_KEY`; multi-model proxy |
+
+`LOCAL_EMBEDDING_MODEL` should name a 384-dimensional Xenova feature-extraction model; the embedding dimension guard rejects mismatched vectors instead of silently corrupting the vector index.
 
 ---
 
@@ -1277,7 +1279,7 @@ OPENAI_MODEL=qwen2.5-coder-7b-instruct         # match the model name from LM St
 
 Reasoning-class models (`o1`-style with `<think>` blocks) can return empty `content` with a `reasoning` field your local server may not surface. If extractions come back blank, switch to a non-reasoning model first. The `OPENAI_REASONING_EFFORT=none` env can also disable thinking on Ollama Cloud thinking models that mirror the OpenAI reasoning schema.
 
-Local embeddings are available via `@xenova/transformers` — set `EMBEDDING_PROVIDER=local` to use `all-MiniLM-L6-v2` entirely on-device. With no `EMBEDDING_PROVIDER`, agentmemory uses BM25+Graph search and does not call a text embedding provider.
+Local embeddings are available via `@xenova/transformers` — set `EMBEDDING_PROVIDER=local` to use `paraphrase-multilingual-MiniLM-L12-v2` entirely on-device, or set `LOCAL_EMBEDDING_MODEL` to another 384-dimensional Xenova feature-extraction model. With no `EMBEDDING_PROVIDER`, agentmemory uses BM25+Graph search and does not call a text embedding provider.
 
 ### Cost-aware model selection
 
