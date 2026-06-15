@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
 
 import {
+  MANAGED_LABELS,
   buildDecisionLabels,
   buildPrMarker,
   buildTrackerIssueBody,
@@ -120,13 +121,13 @@ async function withTempReport<T>(body: (path: string) => Promise<T>): Promise<T>
 
 describe("upstream PR issue tracker planner", () => {
   it("builds stable upstream PR markers", () => {
-    expect(buildPrMarker(123)).toBe("<!-- upstream-pr: rohitg00/agentmemory#123 -->");
+    expect(buildPrMarker(123)).toBe("<!-- upstream-pr-neutral: source=rohitg00/agentmemory number=123 -->");
   });
 
   it("parses existing markers and rejects duplicates", () => {
     const parsed = parseExistingPrMarkers([
       { number: 10, title: "[upstream PR #123] Fix", body: "<!-- upstream-pr: rohitg00/agentmemory#123 -->", labels: [] },
-      { number: 11, title: "[upstream PR #123] Dup", body: "<!-- upstream-pr: rohitg00/agentmemory#123 -->", labels: [] },
+      { number: 11, title: "[upstream PR #123] Dup", body: "<!-- upstream-pr-neutral: source=rohitg00/agentmemory number=123 -->", labels: [] },
     ]);
     expect(parsed.duplicates).toEqual([{ upstreamNumber: 123, targetNumbers: [10, 11] }]);
   });
@@ -170,7 +171,12 @@ describe("upstream PR issue tracker planner", () => {
 
   it("builds tracker issue bodies with source metadata and workflow fields", () => {
     const body = buildTrackerIssueBody(pull());
-    expect(body).toContain("<!-- upstream-pr: rohitg00/agentmemory#123 -->");
+    expect(body).toContain("<!-- upstream-pr-neutral: source=rohitg00/agentmemory number=123 -->");
+    expect(body).toContain("Source repository: rohitg00/agentmemory");
+    expect(body).toContain("Source pull request number: 123");
+    expect(body).toContain("Source URL: intentionally omitted to avoid GitHub cross-references");
+    expect(body).not.toContain("https://github.com/rohitg00/agentmemory/pull/123");
+    expect(body).not.toContain("rohitg00/agentmemory#123");
     expect(body).toContain("Fork decision");
     expect(body).toContain("Head");
   });
@@ -295,6 +301,7 @@ describe("upstream PR issue tracker CLI", () => {
   it("parses dry-run defaults and rejects unsafe mode combinations", () => {
     expect(parseCliArgs([])).toMatchObject({ mode: "dry-run", source: SOURCE_REPO, target: TARGET_REPO, state: "all", readMode: "public-read" });
     expect(parseCliArgs(["--write-delay-ms", "5000"])).toMatchObject({ writeDelayMs: 5000 });
+    expect(parseCliArgs(["--create-missing-only"])).toMatchObject({ createMissingOnly: true });
     expect(() => parseCliArgs(["--state", "bad"])).toThrow("Invalid --state");
     expect(() => parseCliArgs(["--read-with-gh"])).toThrow("--read-with-gh requires --confirm-credentialed-reads");
     expect(() => parseCliArgs(["--apply", "--confirm-credentialed-reads", "--confirm-remote-writes", "--report", "x.json"])).toThrow(
@@ -471,6 +478,51 @@ describe("upstream PR issue tracker CLI", () => {
     });
   });
 
+  it("create-missing-only applies creates without refreshing existing tracker issues", async () => {
+    await withTempReport(async (path) => {
+      const labels = MANAGED_LABELS.map((label) => ({ name: label.name }));
+      const reader = fakeReader({
+        pulls: [pull({ title: "Fix startup safely" }), pull({ number: 456, title: "Add recall filter" })],
+        issues: [targetIssue()],
+        labels,
+      });
+
+      const dryRun = await runPrTracker({
+        mode: "dry-run",
+        source: SOURCE_REPO,
+        target: TARGET_REPO,
+        state: "all",
+        report: path,
+        confirmCredentialedReads: false,
+        confirmRemoteWrites: false,
+        createMissingOnly: true,
+        reader,
+      });
+
+      expect(dryRun.plannedActions.map((action) => action.type)).toEqual(["create-issue"]);
+      expect(dryRun.plannedActions[0]).toMatchObject({ type: "create-issue", upstreamNumber: 456 });
+
+      const writer = fakeWriter();
+      const applyReport = await runPrTracker({
+        mode: "apply",
+        source: SOURCE_REPO,
+        target: TARGET_REPO,
+        state: "all",
+        fromReport: path,
+        report: path,
+        confirmCredentialedReads: true,
+        confirmRemoteWrites: true,
+        createMissingOnly: true,
+        reader,
+        writer,
+        sleep: async () => {},
+      });
+
+      expect(writer.calls).toEqual(["createIssue:456"]);
+      expect(applyReport.failures).toEqual([]);
+    });
+  });
+
   it("apply stops on GitHub stop conditions without later writes", async () => {
     await withTempReport(async (path) => {
       const reader = fakeReader({ pulls: [pull()], issues: [], labels: [] });
@@ -538,7 +590,7 @@ describe("upstream PR issue tracker CLI", () => {
       expect(request.args).toContain("--input");
 
       const payload = JSON.parse(await readFile(request.payloadPath, "utf8"));
-      expect(payload.body).toContain("<!-- upstream-pr: rohitg00/agentmemory#123 -->");
+      expect(payload.body).toContain("<!-- upstream-pr-neutral: source=rohitg00/agentmemory number=123 -->");
       expect(payload.body).not.toContain("@team");
       expect(payload.title).not.toContain("@team");
     } finally {
