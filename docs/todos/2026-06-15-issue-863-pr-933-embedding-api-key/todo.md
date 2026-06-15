@@ -44,7 +44,7 @@ Stop conditions:
 | Import/adapt minimal fix if needed | TDD regression test, minimal source diff | Done | Adapted only PR 933's factory hunk; did not import obsolete auto-detection/docs hunk |
 | Security review | Manual diff review plus required scanner gates where available | Done | Semgrep p/default: 0 findings; Codex Security diff scan: no candidates |
 | Local documentation | Neutral task record and plan | Done | This file and `plan.md` |
-| Merge prep | `$prep-merge-to-local-main` workflow | In progress | Retried after local `main` worktree became clean; local `main` is now `6c387b4efea524db5bf8fe0e923958cbcf0213f1` |
+| Merge prep | `$prep-merge-to-local-main` workflow | In progress | Task-owned changes committed; merge with local `main` is next |
 
 ## Subagent Ledger
 
@@ -60,8 +60,9 @@ No delegated workstreams planned. The scope is small and the immediate blocking 
 - Red verification: with the old factory, the new regression test failed because outbound `Authorization` was `Bearer hosted-chat-key`.
 - Green verification: targeted Vitest suite passed with 21 tests using the existing main-checkout Vitest toolchain and config against this worktree.
 - Security evidence: `git diff --check` passed; Semgrep default scan completed with 0 findings; Codex Security diff scan report is under `/tmp/codex-security-scans/agentmemory/issue-863-pr-933-20260615/report.md` and found no candidates.
-- Secret-scan evidence: `gitleaks detect --source . --redact` completed with no leaks. `gitleaks protect --staged --redact` was not applicable because `$prep-merge-to-local-main` blocked before staging.
+- Secret-scan evidence: `gitleaks detect --source . --redact` completed with no leaks. The first `$prep-merge-to-local-main` attempt blocked before staging, so staged protection was not applicable then. On retry, `gitleaks protect --staged --redact` completed with no leaks before the task-owned commit.
 - Limitation: direct `npm test -- test/embedding-provider.test.ts` in this worktree failed before test execution because `vitest` is not installed locally in this worktree.
 - First `$prep-merge-to-local-main` attempt: blocked during Preflight. The local `main` worktree at `/Users/A1538552/_projects/_tools/agentmemory` had dirty unrelated tracked and untracked paths, so the skill required stopping before cleanup, staging, commit, or merge.
 - Retry `$prep-merge-to-local-main`: local `main` worktree is now clean at `6c387b4efea524db5bf8fe0e923958cbcf0213f1`; cleanup/commit and merge prep resumed.
+- Task-owned commit: `f7bf9e6` (`fix: respect openai embedding api key precedence`).
 - Verification artifact: `node_modules/.vite/vitest` exists as an ignored local cache from the Vitest invocation. It was not removed because cleanup/deletion was not explicitly authorized in the current turn.

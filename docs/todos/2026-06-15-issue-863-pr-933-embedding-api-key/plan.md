@@ -44,7 +44,7 @@
 - Existing task-owned changed files only.
 
 - [x] Run `$prep-merge-to-local-main`.
-- [x] Commit/merge hash reporting was not applicable because the skill blocked before staging, commit, or merge.
+- [x] Task-owned commit was created after retry: `f7bf9e6`.
 - [x] If it is a no-op or blocked, document the reason and evidence.
 
 ## Self-Review
