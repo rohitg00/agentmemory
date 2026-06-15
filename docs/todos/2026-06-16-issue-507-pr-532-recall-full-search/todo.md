@@ -42,7 +42,7 @@
 | Import/adapt/reject decision | Compare issue behavior, PR diff, and fork behavior | Done | Decision: adapted import. Keep existing proxy fix, add minimal local fallback format support while preserving project isolation. |
 | Targeted implementation, if needed | Minimal diff plus targeted Vitest | Done | `src/mcp/standalone.ts`, `test/mcp-standalone.test.ts`, `test/mcp-standalone-proxy.test.ts`. |
 | Security review | Manual security analysis plus required diff scan/gates if changed | Done | Security diff scan found no reportable findings; Semgrep found 0 findings. |
-| Prep local-main merge | `$prep-merge-to-local-main` workflow | Pending |  |
+| Prep local-main merge | `$prep-merge-to-local-main` workflow | Done | Local `main` commit `6c387b4efea524db5bf8fe0e923958cbcf0213f1` was already an ancestor of the branch; merge was a no-op. |
 
 ## Progress
 
@@ -76,3 +76,11 @@
 
 - Ignored verification artifacts observed and preserved, not deleted: `node_modules/.vite/`, `integrations/hermes/__pycache__/__init__.cpython-314.pyc`.
 - Build was not run because the project build writes `dist/` artifacts into the worktree.
+
+## Prep Merge Closeout
+
+- Pre-merge task commit: `a6f9e316f83f5a8a19e4e08e6553a1f5bea1f7b2`.
+- Local `main` captured: `6c387b4efea524db5bf8fe0e923958cbcf0213f1`.
+- Merge result: no-op; local `main` was already an ancestor of the task branch.
+- Conflicts: none.
+- Preserved ignored artifacts: `node_modules/.vite/`, `integrations/hermes/__pycache__/__init__.cpython-314.pyc`.
