@@ -77,13 +77,13 @@ function patternedText(length: number): string {
 
 function stripImportedCommentChunk(body: string): string {
   return body.replace(
-    /^<!-- upstream-comment: rohitg00\/agentmemory#[0-9]+ id=[0-9]+ chunk=[0-9]+\/[0-9]+ -->\n\nSource comment: .+\nAuthor: .+\nCreated: .+\nUpdated: .+\n/,
+    /^<!-- upstream-comment-neutral: source=rohitg00\/agentmemory number=[0-9]+ id=[0-9]+ chunk=[0-9]+\/[0-9]+ -->\n\nSource repository: .+\nSource issue number: .+\nSource comment id: .+\nSource URL: .+\nAuthor: .+\nCreated: .+\nUpdated: .+\n/,
     "",
   );
 }
 
 function stripOverflowChunk(body: string): string {
-  return body.replace(/^<!-- upstream-overflow: rohitg00\/agentmemory#[0-9]+ chunk=[0-9]+\/[0-9]+ -->\n\nOverflow from upstream issue #[0-9]+\n\n/, "");
+  return body.replace(/^<!-- upstream-overflow-neutral: source=rohitg00\/agentmemory number=[0-9]+ chunk=[0-9]+\/[0-9]+ -->\n\nOverflow from upstream issue number [0-9]+\n\n/, "");
 }
 
 function mirrorTarget(sourceIssue: GitHubIssue, overrides: Partial<GitHubIssue> = {}): GitHubIssue {
@@ -235,13 +235,13 @@ describe("issue mirror planner", () => {
   });
 
   it("builds the stable upstream issue marker", () => {
-    expect(buildUpstreamMarker(42)).toBe("<!-- upstream-issue: rohitg00/agentmemory#42 -->");
+    expect(buildUpstreamMarker(42)).toBe("<!-- upstream-issue-neutral: source=rohitg00/agentmemory number=42 -->");
   });
 
   it("parses exactly one marker per target issue and reports duplicates", () => {
     const result = parseExistingMirrorMarkers([
       issue({ number: 101, body: `${buildUpstreamMarker(1)}\nBody`, labels: [] }),
-      issue({ number: 102, body: `Body\n${buildUpstreamMarker(2)}`, labels: [] }),
+      issue({ number: 102, body: "Body\n<!-- upstream-issue: rohitg00/agentmemory#2 -->", labels: [] }),
       issue({ number: 103, body: buildUpstreamMarker(2), labels: [] }),
     ]);
 
@@ -268,7 +268,11 @@ describe("issue mirror planner", () => {
   it("builds mirror issue bodies with source metadata, original content, labels, and marker", () => {
     const plan = buildMirrorIssueBody(issue({ labels: [labelBug, labelHelp] }));
 
-    expect(plan.body).toContain("Source: https://github.com/rohitg00/agentmemory/issues/42");
+    expect(plan.body).toContain("Source repository: rohitg00/agentmemory");
+    expect(plan.body).toContain("Source issue number: 42");
+    expect(plan.body).toContain("Source URL: intentionally omitted to avoid GitHub cross-references");
+    expect(plan.body).not.toContain("https://github.com/rohitg00/agentmemory/issues/42");
+    expect(plan.body).not.toContain("rohitg00/agentmemory#42");
     expect(plan.body).toContain("Author: alice");
     expect(plan.body).toContain("State: open");
     expect(plan.body).toContain("Created: 2026-01-01T00:00:00Z");
@@ -278,20 +282,22 @@ describe("issue mirror planner", () => {
     expect(plan.body).toContain(buildUpstreamMarker(42));
   });
 
-  it("preserves the upstream marker and source URL when upstream body text is oversized", () => {
+  it("preserves the upstream marker and neutral source metadata when upstream body text is oversized", () => {
     const oversized = "x".repeat(MAX_ISSUE_BODY_CHARS + 10_000);
     const plan = buildMirrorIssueBody(issue({ body: oversized }));
 
     expect(plan.body.length).toBeLessThanOrEqual(MAX_ISSUE_BODY_CHARS);
     expect(plan.body).toContain(buildUpstreamMarker(42));
-    expect(plan.body).toContain("Source: https://github.com/rohitg00/agentmemory/issues/42");
+    expect(plan.body).toContain("Source issue number: 42");
+    expect(plan.body).not.toContain("https://github.com/rohitg00/agentmemory/issues/42");
     expect(plan.overflowComments.length).toBeGreaterThan(0);
   });
 
   it("adds stable markers to oversized issue-body overflow comments", () => {
     const plan = buildMirrorIssueBody(issue({ body: "x".repeat(MAX_ISSUE_BODY_CHARS + 10_000) }));
 
-    expect(plan.overflowComments[0]).toContain("<!-- upstream-overflow: rohitg00/agentmemory#42 chunk=1/");
+    expect(plan.overflowComments[0]).toContain("<!-- upstream-overflow-neutral: source=rohitg00/agentmemory number=42 chunk=1/");
+    expect(plan.overflowComments[0]).not.toContain("rohitg00/agentmemory#42");
   });
 
   it("sanitizes imported Markdown without making it unreadable", () => {
@@ -333,8 +339,12 @@ describe("issue mirror planner", () => {
   it("emits stable per-source-comment chunk markers", () => {
     const chunks = chunkImportedComments(42, [comment({ id: 123, body: "a".repeat(MAX_COMMENT_CHARS + 1_000) })]);
 
-    expect(chunks[0].body).toContain("<!-- upstream-comment: rohitg00/agentmemory#42 id=123 chunk=1/");
-    expect(chunks[1].body).toContain("<!-- upstream-comment: rohitg00/agentmemory#42 id=123 chunk=2/");
+    expect(chunks[0].body).toContain("<!-- upstream-comment-neutral: source=rohitg00/agentmemory number=42 id=123 chunk=1/");
+    expect(chunks[1].body).toContain("<!-- upstream-comment-neutral: source=rohitg00/agentmemory number=42 id=123 chunk=2/");
+    expect(chunks[0].body).toContain("Source comment id: 123");
+    expect(chunks[0].body).toContain("Source URL: intentionally omitted to avoid GitHub cross-references");
+    expect(chunks[0].body).not.toContain("https://github.com/rohitg00/agentmemory/issues/42#issuecomment-123");
+    expect(chunks[0].body).not.toContain("rohitg00/agentmemory#42");
   });
 
   it("reconstructs imported comment payloads exactly across changing chunk marker lengths", () => {
@@ -1004,7 +1014,7 @@ describe("github mirror CLI", () => {
     expect(client.targetIssues).toEqual([expect.objectContaining({ title: "Closed new mirror", state: "closed", labels: [{ name: "bug" }] })]);
     expect(client.targetCommentsByIssue.get(client.targetIssues[0].number)).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ body: expect.stringContaining("<!-- upstream-comment: rohitg00/agentmemory#1 id=333 chunk=1/1 -->") }),
+        expect.objectContaining({ body: expect.stringContaining("<!-- upstream-comment-neutral: source=rohitg00/agentmemory number=1 id=333 chunk=1/1 -->") }),
         expect.objectContaining({ body: buildImportedCommentsSummaryMarker(1, 1) }),
       ]),
     );
