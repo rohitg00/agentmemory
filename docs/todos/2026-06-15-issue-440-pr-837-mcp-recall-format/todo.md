@@ -41,7 +41,7 @@
 | If needed, forward `memory_smart_search.expandIds` through standalone proxy | Red/green Vitest test | Done | Red: targeted test failed because proxied body lacked `expandIds`. Green: targeted test passed after minimal forwarding. |
 | Preserve `memory_recall` full-format path | Existing regression tests plus targeted rerun | Done | `test/mcp-standalone-proxy.test.ts` passed: 27/27 in temporary dependency copy. |
 | Security review of MCP proxy change | Manual review plus required gates where available | Done | Passive review found no new auth, isolation, filesystem, subprocess, persistence, prompt, dependency, or network-destination surface. Semgrep returned 0 findings. Codex Security diff scan returned no reportable findings. |
-| Merge prep | `prep-merge-to-local-main` workflow | In progress | Initial preflight was blocked by a dirty local `main` worktree. A later explicit prep invocation found local `main` clean at `6c387b4efea524db5bf8fe0e923958cbcf0213f1`; prep resumed. |
+| Merge prep | `prep-merge-to-local-main` workflow | Done | Initial preflight was blocked by a dirty local `main` worktree. A later explicit prep invocation found local `main` clean at `6c387b4efea524db5bf8fe0e923958cbcf0213f1`; task commit was created, local `main` was merged, and post-merge targeted tests passed. |
 
 ## Notes
 
@@ -97,3 +97,7 @@ Adapt PR 837 minimally. Import only the `memory_smart_search.expandIds` standalo
 - Signing config: no commit signing config values were present.
 - Initial local main worktree status: dirty with unrelated paths from another task, so prep stopped before staging, committing, or merging.
 - Resumed local main worktree status: clean at `6c387b4efea524db5bf8fe0e923958cbcf0213f1`.
+- Task commit: `b9cfc733c7edca9a9ae874459e642e54320f5fc5`.
+- Local main merged: `6c387b4efea524db5bf8fe0e923958cbcf0213f1`.
+- Merge commit: `87297778baef1900d6b92045f8d46c8fec41e970`; conflict-free.
+- Post-merge verification: `pnpm exec vitest run --exclude test/integration.test.ts test/mcp-standalone-proxy.test.ts` passed, 27/27 tests, in `/tmp/agentmemory-pr837-postmerge.fQVNIY/repo`.
