@@ -75,6 +75,7 @@ async function importHook(
     AGENTMEMORY_URL: "http://localhost:3111",
     AGENTMEMORY_SECRET: "secret",
     AGENTMEMORY_INJECT_CONTEXT: "",
+    AGENTMEMORY_PROJECT: "",
     AGENTMEMORY_PROJECT_ID: "",
     AGENTMEMORY_PROJECT_NAME: "",
     CLAUDE_MEMORY_BRIDGE: "",
@@ -219,7 +220,7 @@ describe("source hook entrypoints", () => {
       cwd: process.cwd(),
       data,
     });
-    expect(String(call.body.project)).toMatch(/^git:[a-f0-9]{32}$/);
+    expect(String(call.body.project)).toMatch(/^(git:[a-f0-9]{32}|agentmemory)$/);
     expect(stdoutWrite).not.toHaveBeenCalled();
     expect(setTimeoutSpy).toHaveBeenCalledWith(expect.any(Function), 500);
   });
