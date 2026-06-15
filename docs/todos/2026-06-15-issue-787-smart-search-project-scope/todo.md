@@ -49,7 +49,7 @@ Stop conditions:
 | Add regression coverage | `vitest run --root ... --config ... test/smart-search.test.ts test/mcp-project-scope.test.ts test/mcp-surface-default.test.ts` | red | 4 expected failures: smart-search compact project filtering, smart-search expanded project filtering, MCP smart-search project forwarding, and MCP smart-search schema exposure |
 | Apply minimal fork fix | Diff review | done | Added cached KV project matching in `mem::smart-search`, MCP forwarding, tool schema, generated MCP tools reference, and focused tests |
 | Security assessment | Manual boundary review, Semgrep/OSV/Gitleaks gates | done | Semgrep completed with 0 findings; OSV found no package sources because this repo has no lockfile; staged Gitleaks completed with no leaks |
-| Merge prep | `$prep-merge-to-local-main` workflow | pending | Not run yet |
+| Merge prep | `$prep-merge-to-local-main` workflow | done | Task commit `84103e6`, local `main` commit `6c387b4` merged via merge commit `9118c34`; post-merge build, lint, skills check, targeted tests, and full tests passed |
 
 ## Candidate Comparison
 
@@ -118,6 +118,7 @@ Review notes:
 - `osv-scanner scan source .` and `osv-scanner scan source package.json` exited with "No package sources found"; no dependency files or lockfiles changed.
 - `git diff --check` passed.
 - `gitleaks protect --staged --redact` passed with no leaks.
+- `$prep-merge-to-local-main`: local `main` commit `6c387b4` was merged into the branch after a sandbox-blocked first attempt was retried with local Git metadata write approval. No conflicts occurred. Post-merge `npm run build`, `npm run lint`, `npm run skills:check`, targeted tests, and full `npm test` passed; full test result after merge was 158 files and 1982 tests.
 
 ## Progress
 
@@ -126,7 +127,7 @@ Review notes:
 - [x] Write failing regression tests.
 - [x] Implement minimal patch.
 - [x] Run final verification and security gates.
-- [ ] Run `$prep-merge-to-local-main`.
+- [x] Run `$prep-merge-to-local-main`.
 
 ## Residual Risk
 
