@@ -50,7 +50,7 @@ Stop conditions:
 | PR 810 fit | Public read-only diff inspection | Done | PR 810 was relevant but adapted to current OpenRouter `reasoning` request shape instead of importing legacy `include_reasoning` top-level field |
 | Minimal implementation, if needed | Focused unit tests and diff review | Done | `src/providers/openrouter.ts`, `test/fetch-timeout.test.ts`, `.env.example`, and `README.md` changed |
 | Security review | Passive review plus diff-scoped checks when code changes | Done | Semgrep pass and Codex Security diff scan report under `/tmp/codex-security-scans/agentmemory/issue-808-pr-810-openrouter-reasoning/` |
-| Prep merge to local main | `prep-merge-to-local-main` workflow | Pending | Branch created from local main |
+| Prep merge to local main | `prep-merge-to-local-main` workflow | Done | Local main commit `6c387b4efea524db5bf8fe0e923958cbcf0213f1` was already an ancestor of the branch; merge was a no-op |
 
 ## Progress
 
@@ -105,3 +105,11 @@ Stop conditions:
 - A read-only independent subagent review was not run because this environment's subagent tool is restricted to explicit user requests for subagents. A separate manual adversarial pass inspected scope, request/response handling, provider-boundary safety, and verification coverage.
 - `node_modules/` appears as an empty ignored verification artifact after test execution. It is not tracked and was left untouched.
 - Coordinator worklist row for PR 810 was updated in the provided coordinator worktree with the same neutral decision.
+
+## Prep Merge Result
+
+- Pre-merge implementation commit: `d63eaf25fa842a278b025d54a79495a6b0c28a92`.
+- Local main commit checked for merge: `6c387b4efea524db5bf8fe0e923958cbcf0213f1`.
+- Merge result: no-op because local main was already an ancestor of the branch.
+- Conflict resolution: none.
+- Preserved ignored artifact: empty `node_modules/` directory from verification; not tracked and not staged.
