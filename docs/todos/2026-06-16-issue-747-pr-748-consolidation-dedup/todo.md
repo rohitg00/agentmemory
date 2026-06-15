@@ -51,7 +51,7 @@ Stop conditions:
 | PR 748 fork-fit decision | Compare public PR diff to local code and tests | Done | Adapted import: live in-run memory snapshot from PR 748 plus local latest-only guard for existing version chains. |
 | Minimal implementation if needed | Focused code diff and targeted tests | Done | `src/functions/consolidate.ts` updates snapshot after create/evolve and matches only latest memories; `test/consolidate-project-scope.test.ts` adds same-title and latest-version coverage. |
 | Security review | Manual security pass plus required gates when applicable | Done | Passive security review, Codex Security diff scan, and Semgrep found no reportable finding. |
-| Prep merge to local main | Run requested prep-merge-to-local-main workflow | Pending |  |
+| Prep merge to local main | Run requested prep-merge-to-local-main workflow | Done | Pre-merge task commit `b27527fcfb50e89753ada38c7563a08a08231253`; local `main` commit `6c387b4efea524db5bf8fe0e923958cbcf0213f1` was already an ancestor, so merge was a no-op. |
 
 ## Progress
 
@@ -72,6 +72,14 @@ Stop conditions:
   - HTML report: `/tmp/codex-security-scans/agentmemory/20260616_consolidation_dedup/report.html`
   - Deep-review ledger: `/tmp/codex-security-scans/agentmemory/20260616_consolidation_dedup/artifacts/02_discovery/work_ledger.jsonl`
 - Semgrep: `semgrep scan --config p/default --error --metrics=off src/functions/consolidate.ts test/consolidate-project-scope.test.ts docs/todos/2026-06-16-issue-747-pr-748-consolidation-dedup/todo.md` passed with 0 findings.
+- Gitleaks staged scan before commit: `gitleaks protect --staged --redact` passed with no leaks.
+- Commit created: `b27527fcfb50e89753ada38c7563a08a08231253`.
+- Prep merge to local main:
+  - Local main commit: `6c387b4efea524db5bf8fe0e923958cbcf0213f1`.
+  - Branch diff reviewed against local main: task record, consolidation function, and consolidation test.
+  - Local main was already an ancestor of branch HEAD, so no merge commit was created.
+  - No conflicts.
+  - Ignored verification artifact present after Vitest: `node_modules/.vite/vitest`; classified as local test cache and left in place.
 - Review chain:
   - Security-best-practices passive pass: no critical or major issue in touched TypeScript persistence code.
   - Simple-code pass: no cleanup changes; helper kept because it centralizes the create/evolve snapshot update rule.
