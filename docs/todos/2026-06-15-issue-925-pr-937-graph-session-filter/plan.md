@@ -97,3 +97,5 @@ Record decision, security findings, verification evidence, and residual risks.
 - [x] **Step 4: Run `$prep-merge-to-local-main` preflight**
 
 Follow the skill workflow from the current branch. Preflight found no active Git operation, no staged changes, no configured signing, no active commit/merge hooks or hook-manager files, and a local `main` ref at `bfde73b`. The separate main checkout has unrelated uncommitted work and will not be modified. The commit, local-main merge/no-op, and final verification continue from this preflight.
+
+Result: task-owned changes were committed locally. Local `main` was already an ancestor of the review branch, so the merge step was skipped as a no-op. Post-merge/no-op targeted tests and lint passed, and the unignored worktree status was clean.

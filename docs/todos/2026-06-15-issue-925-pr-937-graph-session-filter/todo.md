@@ -56,7 +56,7 @@ Stop conditions:
 | Graph extraction session stamp | Targeted unit test | Done | RED: `graph.test.ts` stamp test failed with undefined `sessionId`. GREEN: targeted graph tests passed, 52 tests. |
 | Hybrid search enrichment | Targeted unit test | Done | Added graph-only hybrid-search regression; targeted graph/hybrid suite passed, 52 tests. |
 | Security review | Manual diff/security analysis plus gates | Done | Semgrep default scan passed with 0 findings; Codex Security diff scan wrote `/tmp/codex-security-scans/agentmemory/bfde73b_20260615T180203Z/report.md` and `.html`, 0 findings. |
-| Merge prep | `$prep-merge-to-local-main` | In progress | Preflight found no active Git operation, no staged changes, no configured signing, no active commit/merge hooks or hook-manager files, and a local `main` ref at `bfde73b`. The separate main checkout has unrelated uncommitted work and will not be modified. Final result will be reported in the handoff. |
+| Merge prep | `$prep-merge-to-local-main` | Done | Preflight found no active Git operation, no staged changes, no configured signing, no active commit/merge hooks or hook-manager files, and a local `main` ref at `bfde73b`. The separate main checkout has unrelated uncommitted work and was not modified. Local `main` was already an ancestor of the review branch after commit, so the merge step was a no-op. Post-merge/no-op checks passed. |
 
 ## Subagent Ledger
 
@@ -78,6 +78,11 @@ No subagents delegated. Subagent tooling exists, but this runtime only permits s
   - Targeted ESLint on touched source/test files passed using the main checkout's installed ESLint/config.
   - `git diff --check` passed.
   - `semgrep scan --config p/default --error --metrics=off .` passed with 0 findings.
+- `$prep-merge-to-local-main` result:
+  - Task-owned changes were committed locally on `review/issue-925-pr-937-graph-search-session-filter`.
+  - Local `main` at `bfde73b` was already an ancestor of the committed branch, so merge was skipped as a no-op.
+  - Post-merge/no-op verification passed: targeted Vitest, targeted ESLint, `git diff --check HEAD~1 HEAD`, and clean unignored worktree status.
+  - The separate main checkout had unrelated uncommitted changes and was not modified.
 
 ## Decision
 
