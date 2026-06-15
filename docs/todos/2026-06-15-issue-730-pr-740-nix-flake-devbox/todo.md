@@ -55,7 +55,7 @@ Stop conditions:
 | Supply-chain/security review | Manual review plus required diff scan if applicable | pass | Codex Security diff scan found no reportable product-security finding; supply-chain/tooling posture is not acceptable for import as-is. |
 | Implementation decision | Local diff inspection | pass | Decision: defer/reject PR 740 as-is. No PR code imported. |
 | Targeted verification | Repo-native checks for touched surface | pass | `rg -n "https?://|#[0-9]+|@[A-Za-z0-9_-]+" docs/todos/2026-06-15-issue-730-pr-740-nix-flake-devbox/todo.md` returned no matches. Security report validator passed. |
-| Prep merge to local main | `$prep-merge-to-local-main` workflow | pending | Pending final branch state. |
+| Prep merge to local main | `$prep-merge-to-local-main` workflow | pass | Local `main` commit `6c387b4efea524db5bf8fe0e923958cbcf0213f1` is already an ancestor of the branch; merge was a no-op. |
 
 ## Progress
 
@@ -72,6 +72,7 @@ Stop conditions:
   - `$simple-code`: no simplification change needed.
   - `$requesting-code-review`: subagent dispatch not available under current tool policy without explicit subagent authorization; performed local focused review instead.
   - `$review-implementation`: local review found no critical, important, or minor actionable findings for the task-owned documentation.
+- 2026-06-15: `$prep-merge-to-local-main` preflight passed. Local main commit `6c387b4efea524db5bf8fe0e923958cbcf0213f1` is already an ancestor of the branch, so merge was a no-op. Final docs verification passed.
 
 ## Review Notes
 
