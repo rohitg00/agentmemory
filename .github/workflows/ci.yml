@@ -67,4 +67,15 @@ jobs:
       - run: npm ci --legacy-peer-deps --no-audit --no-fund
       - run: npm run build
       - run: npm run skills:check
-      - run: npm test
+      - if: ${{ matrix.os == 'ubuntu-latest' && matrix.node-version == 22 }}
+        run: npm run lint
+      - if: ${{ matrix.os == 'ubuntu-latest' && matrix.node-version == 22 }}
+        run: npm run coverage
+      - if: ${{ !(matrix.os == 'ubuntu-latest' && matrix.node-version == 22) }}
+        run: npm test
+      - if: ${{ matrix.os == 'ubuntu-latest' && matrix.node-version == 22 }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/
+          if-no-files-found: error

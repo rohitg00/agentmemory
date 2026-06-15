@@ -77,26 +77,38 @@ describe("FilesystemWatcher", { retry: 2 }, () => {
 
   it("debounces scheduled writes to one flush", async () => {
     vi.useFakeTimers();
+    let w: FilesystemWatcher | undefined;
     try {
-      const w = new FilesystemWatcher({
+      w = new FilesystemWatcher({
         roots: [root],
         baseUrl: "http://localhost:3111",
         logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
       });
+      const flushes: Array<Promise<void>> = [];
+      const flushSpy = vi.spyOn(w, "flush").mockImplementation((rootDir, relPath) => {
+        const flush = FilesystemWatcher.prototype.flush.call(w, rootDir, relPath);
+        flushes.push(flush);
+        return flush;
+      });
+
       writeFileSync(join(root, "burst.md"), "1\n");
       w.schedule(root, "burst.md");
       writeFileSync(join(root, "burst.md"), "2\n");
       w.schedule(root, "burst.md");
 
       await vi.advanceTimersByTimeAsync(499);
+      expect(flushSpy).toHaveBeenCalledTimes(0);
       expect(captured).toHaveLength(0);
 
       await vi.advanceTimersByTimeAsync(1);
+      expect(flushSpy).toHaveBeenCalledTimes(1);
+      await Promise.all(flushes);
       expect(captured).toHaveLength(1);
       const body = captured[0].body as { data: { files: string[]; content: string } };
       expect(body.data.files).toEqual(["burst.md"]);
       expect(body.data.content).toContain("2");
     } finally {
+      w?.stop();
       vi.useRealTimers();
     }
   });
