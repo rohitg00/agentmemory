@@ -49,7 +49,7 @@ Stop conditions:
 | Fork decision | Compare issue need, PR implementation, and local safety constraints | Done | Decision: defer. Issue remains relevant, but PR 784 should not be imported as-is or minimally adapted in this pass. |
 | Implementation, if any | Targeted tests around affected behavior | Not applicable | No production code imported because the candidate is incomplete and security-sensitive. Existing targeted suites passed. |
 | Security review | Manual security checklist plus required gates for any diff | Done | Manual review found no task-owned production diff. PR 784 itself has unresolved risks: partial project scoping, no facet coverage, broad embedding/backfill persistence changes, and background resource usage concerns. |
-| Prep merge | `$prep-merge-to-local-main` workflow | Pending |  |
+| Prep merge | `$prep-merge-to-local-main` workflow | Done | Review note committed, local `main` was already an ancestor of the branch, so merge-local-main was a no-op. |
 
 ## Progress
 
@@ -57,6 +57,8 @@ Stop conditions:
 - 2026-06-15: Coordinator row found pending for `PR 784`, `Issue 770`, `Fork issue 467`.
 - 2026-06-15: Public issue and PR metadata plus public PR diff fetched without credentials.
 - 2026-06-15: Targeted verification passed with the main checkout's installed Vitest config: 7 files / 95 tests.
+- 2026-06-15: `$prep-merge-to-local-main` preflight found no active Git operation, only sample hooks, no signing settings, clean local `main`, and no incoming local-main diff.
+- 2026-06-15: `$prep-merge-to-local-main` committed the review note, then found local `main` was already an ancestor of the branch; merge-local-main was a no-op with no conflicts.
 
 Verification command:
 
