@@ -1435,6 +1435,13 @@ Create `~/.agentmemory/.env`:
                                           # Increase for slow networks or large batch calls;
                                           # decrease to fail-fast on rate-limit holds.
 
+# MCP shim proxy timeout
+# AGENTMEMORY_CALL_TIMEOUT_MS=600000     # Default: 600 000 ms (600 s). Applies to
+                                          # standalone MCP shim calls proxied to the
+                                          # running REST server. Increase only for
+                                          # unusually large consolidation or reflection
+                                          # runs.
+
 # Search tuning
 # BM25_WEIGHT=0.4
 # VECTOR_WEIGHT=0.6

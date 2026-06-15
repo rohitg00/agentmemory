@@ -18,6 +18,30 @@ const BASE = "http://localhost:3111";
 describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
   const originalFetch = globalThis.fetch;
 
+  async function expectProxiedSessionsTimeout(
+    envValue: string,
+    expectedTimeoutMs: number,
+  ): Promise<void> {
+    process.env["AGENTMEMORY_FORCE_PROXY"] = "1";
+    process.env["AGENTMEMORY_CALL_TIMEOUT_MS"] = envValue;
+    const timeoutSpy = vi
+      .spyOn(AbortSignal, "timeout")
+      .mockReturnValue(new AbortController().signal);
+    installFetch((url) => {
+      if (url.endsWith("/agentmemory/sessions")) {
+        return new Response(JSON.stringify({ sessions: [] }), { status: 200 });
+      }
+      return new Response("not found", { status: 404 });
+    });
+    try {
+      await handleToolCall("memory_sessions", {});
+      expect(timeoutSpy).toHaveBeenCalledWith(expectedTimeoutMs);
+    } finally {
+      timeoutSpy.mockRestore();
+      delete process.env["AGENTMEMORY_CALL_TIMEOUT_MS"];
+    }
+  }
+
   beforeEach(() => {
     resetHandleForTests();
     process.env["AGENTMEMORY_URL"] = BASE;
@@ -30,6 +54,7 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
     delete process.env["AGENTMEMORY_URL"];
     delete process.env["AGENTMEMORY_SECRET"];
     delete process.env["AGENTMEMORY_FORCE_PROXY"];
+    delete process.env["AGENTMEMORY_CALL_TIMEOUT_MS"];
     delete process.env["AGENTMEMORY_REQUIRE_SERVER"];
     delete process.env["AGENTMEMORY_DISABLE_LOCAL_FALLBACK"];
     delete process.env["AGENTMEMORY_REQUIRE_HTTPS"];
@@ -619,5 +644,17 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
     } finally {
       delete process.env["AGENTMEMORY_PROBE_TIMEOUT_MS"];
     }
+  });
+
+  it("AGENTMEMORY_CALL_TIMEOUT_MS overrides the default proxied call timeout", async () => {
+    await expectProxiedSessionsTimeout("50", 50);
+  });
+
+  it("malformed AGENTMEMORY_CALL_TIMEOUT_MS uses the default proxied call timeout", async () => {
+    await expectProxiedSessionsTimeout("30s", 600_000);
+  });
+
+  it("oversized AGENTMEMORY_CALL_TIMEOUT_MS is clamped to Node's timer ceiling", async () => {
+    await expectProxiedSessionsTimeout("9999999999", 2_147_483_647);
   });
 });
