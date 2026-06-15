@@ -40,7 +40,7 @@
 | Minimal fork-fit implementation | Focused source diff and targeted vitest | Done | Added `memory_forget` to the MCP registry and handler with argument validation and whitelisted payload dispatch to existing `mem::forget`; updated counts, generated reference, plugin guidance, and targeted tests. |
 | Security review | Manual diff scan, Semgrep, and Codex Security report | Done | No reportable findings. Final scan artifacts: `/tmp/codex-security-scans/agentmemory/bfde73b_20260615T2113/report.md` and `/tmp/codex-security-scans/agentmemory/bfde73b_20260615T2113/report.html`. |
 | Neutral local documentation | Inspect saved task record for neutral IDs and no URLs | Done | This task record uses neutral IDs only and contains no upstream URLs or cross-reference markup. |
-| Prep merge to local main | `$prep-merge-to-local-main` workflow | In progress | Preflight clean for staged/control state; local main captured at `6c387b4efea524db5bf8fe0e923958cbcf0213f1`; no incoming path overlap with task-owned files. |
+| Prep merge to local main | `$prep-merge-to-local-main` workflow | Done | Task commit `8e3b2d6af5cffb7712da809bcdd59b59c9ae3b6a`; merged local main `6c387b4efea524db5bf8fe0e923958cbcf0213f1` with merge commit `91c133cbed9ed05ee8d2b38276d659b55579ccae`; no conflicts. |
 
 ## Progress
 
@@ -71,7 +71,13 @@
   - `$simple-code` cleanup made one readability-only formatting change in the new `memory_forget` handler and preserved behavior/contracts.
   - `$requesting-code-review` and `$review-implementation` were invoked. The environment exposes a subagent tool, but its policy permits spawning only when the user explicitly asks for subagents or parallel agent work; this request did not. A focused local requirements/test/integration review and a separate adversarial local pass found no blocking findings.
   - Fresh post-cleanup verification passed: `npm run skills:check`, `git diff --check`, targeted vitest suite, Semgrep, and stale-count search.
+- `$prep-merge-to-local-main` completed:
+  - Preflight found no staged changes, no Git operation state, no active hooks, no signing config, and a clean local main worktree.
+  - Local main advanced to `6c387b4efea524db5bf8fe0e923958cbcf0213f1`; incoming paths did not overlap the task-owned diff.
+  - Merge command initially hit sandbox metadata permissions, then succeeded after escalation with no conflicts.
+  - Post-merge verification passed: `git diff --check`, `npm run skills:check`, and targeted vitest suite.
+  - The task-created parent-level dependency symlink used for verification was removed after escalation. A repo-local ignored `node_modules/` directory remains classified as a verification artifact; removing ignored directories requires explicit cleanup approval.
 - OSV was not required because no dependency, lockfile, container, vendored code, or third-party package surface changed.
 - Process caveat: the TDD skill was loaded after the initial implementation had already been written, so this task cannot honestly claim a pre-code red phase. Targeted tests were still added and passed.
 - Residual product risk: `mem::forget` keeps its existing return shape and no-op behavior. The adapted import does not add PR 842's more detailed delete breakdown or changed governance-delete no-op semantics.
-- Prep-merge workflow is in progress at this checkpoint.
+- Prep-merge workflow completed successfully.
