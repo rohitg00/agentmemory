@@ -58,7 +58,7 @@ Stop conditions:
 | Security assessment | Manual review plus required scanners if code changes | complete | Semgrep default scan and Gitleaks full-tree detect found no findings. Codex Security diff scan produced no reportable findings and recorded residual no-hard-no-tools caveat. |
 | Implementation, if needed | Failing test first, minimal code, targeted tests | complete | RED tests failed for missing provider/config; GREEN targeted Vitest run passed 23 tests. |
 | Local documentation | Task record and neutral outcome note | complete | README, `.env.example`, and this task record updated without GitHub URLs or mentions in the local outcome. |
-| Merge prep | `$prep-merge-to-local-main` workflow | in progress | Preflight found target branch active, no staged changes, no active hooks/signing config, local `main` clean and ahead of the branch base. |
+| Merge prep | `$prep-merge-to-local-main` workflow | complete | Preflight found target branch active, no active hooks/signing config, local `main` clean and ahead of the branch base. Local `main` merged conflict-free; post-merge targeted Vitest and lint passed. |
 
 ## Progress Notes
 
@@ -73,3 +73,4 @@ Stop conditions:
 - 2026-06-15: `$prep-merge-to-local-main` preflight: target branch active; no staged changes; only task-owned source/doc/test changes plus an untracked local `node_modules` symlink used for tests; no active repository hooks; no commit signing config; local `main` is clean and ahead of the branch base with tracker/documentation changes outside this task's touched code paths.
 - 2026-06-15: Prep review chain: security best-practices review found no critical or major issue beyond the documented Codex CLI no-hard-no-tools residual risk; simplification pass made no further code changes; implementation review found no blocking issue in the task-owned diff; security diff scan already covered the code/security-sensitive changes and produced no reportable findings.
 - 2026-06-15: Re-verified after the last hardening change: targeted Vitest run passed 23 tests; `npm run lint` passed; `semgrep scan --config p/default --error --metrics=off .` passed with 0 findings; `gitleaks detect --source . --redact` passed with no leaks. OSV was not run because no dependency, lockfile, container, vendored, or package-manager surface changed.
+- 2026-06-15: `$prep-merge-to-local-main` result: committed the task-owned diff, ran `gitleaks protect --staged --redact` successfully before the commit, merged local `main` successfully with no conflicts, then reran targeted Vitest and `npm run lint` successfully. Remaining untracked `node_modules` is a local symlink to the main checkout's dependency directory used for test execution and was intentionally not staged.
