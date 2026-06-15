@@ -287,6 +287,12 @@ function mergeNode(
       ]),
     ],
     properties: { ...existing.properties, ...incoming.properties },
+    // Refresh to the newest source's session (#656). The incoming node
+    // is the more recent extract; prefer its sessionId when present so a
+    // node re-observed in a different session points at the live one.
+    // Falls back to the existing value (which may itself be undefined for
+    // pre-#656 nodes — retrieval handles that case).
+    sessionId: incoming.sessionId ?? existing.sessionId,
     updatedAt: capturedAt,
   };
 }
@@ -378,6 +384,11 @@ function parseAttrs(raw: string): Record<string, string> {
 function parseGraphXml(
   xml: string,
   observationIds: string[],
+  // obsId -> sessionId, so each extracted node can record the session
+  // namespace of its source observations (#656). Optional: when omitted
+  // (or an obsId is missing), the node's sessionId is left undefined and
+  // retrieval falls back to a cross-session scan.
+  sessionByObsId?: Map<string, string>,
 ): {
   nodes: GraphNode[];
   edges: GraphEdge[];
@@ -405,12 +416,27 @@ function parseGraphXml(
     while ((propMatch = propRegex.exec(propsBlock)) !== null) {
       properties[propMatch[1]] = propMatch[2];
     }
+    // Resolve the node's sessionId from its source observations. All
+    // observationIds in one extract call share the batch, so the first
+    // resolvable session is representative; merges later refresh it to
+    // the newest source (see mergeNode).
+    let sessionId: string | undefined;
+    if (sessionByObsId) {
+      for (const obsId of observationIds) {
+        const sid = sessionByObsId.get(obsId);
+        if (sid) {
+          sessionId = sid;
+          break;
+        }
+      }
+    }
     nodes.push({
       id: generateId("gn"),
       type,
       name,
       properties,
       sourceObservationIds: observationIds,
+      ...(sessionId !== undefined && { sessionId }),
       createdAt: now,
     });
   };
@@ -478,7 +504,14 @@ export function registerGraphFunction(
         );
 
         const obsIds = data.observations.map((o) => o.id);
-        const { nodes, edges } = parseGraphXml(response, obsIds);
+        // Map each source observation to its session so extracted nodes
+        // can be resolved back to KV.observations(sessionId) at retrieval
+        // time (#656). Skip blanks defensively.
+        const sessionByObsId = new Map<string, string>();
+        for (const o of data.observations) {
+          if (o.sessionId) sessionByObsId.set(o.id, o.sessionId);
+        }
+        const { nodes, edges } = parseGraphXml(response, obsIds, sessionByObsId);
 
         // #814 v2: targeted name-index lookups replace the O(n) scan
         // over `kv.list<GraphNode>(KV.graphNodes)`. At 75K nodes the

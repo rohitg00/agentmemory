@@ -48,6 +48,10 @@ Rules:
 function parseTemporalGraphXml(
   xml: string,
   observationIds: string[],
+  // obsId -> sessionId, so temporal nodes record the session namespace of
+  // their source observations (#656). Optional; absent obsIds leave the
+  // node's sessionId undefined and retrieval falls back to a scan.
+  sessionByObsId?: Map<string, string>,
 ): { nodes: GraphNode[]; edges: GraphEdge[] } {
   const nodes: GraphNode[] = [];
   const edges: GraphEdge[] = [];
@@ -74,12 +78,23 @@ function parseTemporalGraphXml(
       aliases.push(propMatch[1]);
     }
 
+    let sessionId: string | undefined;
+    if (sessionByObsId) {
+      for (const obsId of observationIds) {
+        const sid = sessionByObsId.get(obsId);
+        if (sid) {
+          sessionId = sid;
+          break;
+        }
+      }
+    }
     nodes.push({
       id: generateId("gn"),
       type,
       name,
       properties,
       sourceObservationIds: observationIds,
+      ...(sessionId !== undefined && { sessionId }),
       createdAt: now,
       aliases: aliases.length > 0 ? aliases : undefined,
     });
@@ -158,6 +173,7 @@ export function registerTemporalGraphFunctions(
     async (data: {
       observations: Array<{
         id: string;
+        sessionId?: string;
         title: string;
         narrative: string;
         concepts: string[];
@@ -184,7 +200,17 @@ export function registerTemporalGraphFunctions(
         );
 
         const obsIds = data.observations.map((o) => o.id);
-        const { nodes, edges } = parseTemporalGraphXml(response, obsIds);
+        // Map source observations to their sessions so temporal nodes
+        // resolve back to KV.observations(sessionId) at retrieval (#656).
+        const sessionByObsId = new Map<string, string>();
+        for (const o of data.observations) {
+          if (o.sessionId) sessionByObsId.set(o.id, o.sessionId);
+        }
+        const { nodes, edges } = parseTemporalGraphXml(
+          response,
+          obsIds,
+          sessionByObsId,
+        );
 
         const existingNodes = await kv.list<GraphNode>(KV.graphNodes);
         const existingEdges = await kv.list<GraphEdge>(KV.graphEdges);
@@ -206,6 +232,9 @@ export function registerTemporalGraphFunctions(
                 ]),
               ],
               properties: { ...existing.properties, ...node.properties },
+              // Refresh to the newest source's session (#656); keep the
+              // existing value when this extract couldn't resolve one.
+              sessionId: node.sessionId ?? existing.sessionId,
               updatedAt: new Date().toISOString(),
               aliases: [
                 ...new Set([
