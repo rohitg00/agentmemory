@@ -42,7 +42,7 @@ Potential source and test surface:
 | Compare PR 538 and PR 533 | Public unauthenticated PR patch/diffstat/file inspection | Complete | PR 533 is the smaller endpoint-focused fix. PR 538 is a 9-commit multi-issue bundle with CLI, hooks, build-script, viewer preview/resume, docs/report, and graph function behavior changes. |
 | Decide fork action | Baseline plus candidate comparison | Complete | Adapt minimal behavior only: current fork already fixed the missing route, but latest saved memories were not included as graph-build inputs. Reject broad PR 538 import; do not import PR 533 wholesale. |
 | Apply minimal patch if required | TDD red/green targeted Vitest | Complete | Added failing API-boundary test for `mem_1` in `mem::graph-extract` payload. It failed with only `obs_1`; after patch it passed. |
-| Final verification and prep merge | Targeted checks, required security gates, prep-merge-to-local-main | In progress | Targeted graph/API tests passed 3 files / 51 tests. `npm run build`, `npm run lint`, `npm test`, `git diff --check`, and Semgrep passed. prep-merge pending. |
+| Final verification and prep merge | Targeted checks, required security gates, prep-merge-to-local-main | Complete with caveat | Targeted graph/API tests passed 3 files / 51 tests. `npm run build`, `npm run lint`, `npm test`, `git diff --check`, Semgrep, and staged Gitleaks passed. prep-merge committed task work; merge command skipped because `refs/heads/main` is already ancestor of HEAD and the separate main worktree is dirty. |
 
 ## Progress
 
@@ -55,7 +55,7 @@ Potential source and test surface:
 - [x] Candidate PRs compared.
 - [x] Fork decision recorded.
 - [x] Verification complete.
-- [ ] prep-merge-to-local-main complete.
+- [x] prep-merge-to-local-main complete with caveat: task-owned work committed; no merge command run because local main is already ancestor and the listed main worktree has unrelated dirty work.
 
 ## Review Notes
 
@@ -65,6 +65,10 @@ Potential source and test surface:
 - Security review: The patch keeps the existing auth check, does not add routes or dependencies, does not pass raw request bodies to a new sdk trigger, and preserves loopback REST exposure. To avoid unnecessary cross-project memory inclusion, saved memories are included only when unscoped or when their project matches a scanned session project.
 - Repo consistency: No MCP tool, REST endpoint, version, KV scope, audit operation, plugin exposure, or endpoint count changed. Existing `/agentmemory/graph/build` documentation and count remain valid.
 - Baseline evidence: The new regression test failed before implementation with graph-build payload IDs `obs_1` only; after implementation it passed with `obs_1` and `mem_1`.
+- Simple-code pass: Kept the patch narrow to one REST handler and two existing test files; added a runtime null guard for malformed persisted memory rows; did not add new public parameters or move graph-build into a new architecture.
+- Focused review result: No critical or important issues found. The main residual risk is that graph-build remains a broad all-session backfill endpoint by existing design; this patch avoids broadening saved-memory inclusion beyond unscoped memories or projects already represented by scanned sessions.
+- Security diff review: Auth behavior is unchanged, no secret-bearing output is introduced, no new network/filesystem/subprocess/dependency surface is added, and Semgrep reported 0 findings. A full Codex Security report artifact set was not generated because the environment's subagent tool policy did not allow reviewer delegation without an explicit user subagent request; the diff-scoped security review was performed locally and kept out of staged artifacts.
+- prep-merge-to-local-main result: Commit `69b1615` created for task-owned code/test/task-note changes. `refs/heads/main` at `bfde73b` is already ancestor of the branch, so merge would be a no-op. The listed main worktree has unrelated dirty files, so no merge command was run.
 
 ## Verification Evidence
 
@@ -76,6 +80,7 @@ Potential source and test surface:
 - `git diff --check` passed.
 - `semgrep scan --config p/default --error --metrics=off .` completed with 0 findings.
 - `npm test` passed after the final production-code guard: 157 files / 1974 tests.
+- `gitleaks protect --staged --redact` scanned about 11.50 KB and found no leaks before commit `69b1615`.
 - OSV was not run because no dependency files, lockfiles, container images, vendored code, or package surfaces changed.
 
 ## Delegation Boundaries
