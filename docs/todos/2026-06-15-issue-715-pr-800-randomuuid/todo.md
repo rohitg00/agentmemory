@@ -50,7 +50,7 @@ Stop conditions:
 | PR 800 review | Public PR JSON and diff inspection | complete | PR 800 changes only `src/state/schema.ts`, importing `randomUUID` from `node:crypto` and replacing the global call |
 | Minimal adapted import | Test-first implementation in `test/schema-fingerprint.test.ts` and `src/state/schema.ts` | complete | Added regression test for missing `globalThis.crypto`; imported `randomUUID` from `node:crypto`; preserved ID format |
 | Security review | Manual diff review plus required gates where applicable | complete | Semgrep on changed code/test: 0 findings; Codex Security diff scan: no candidates; no auth/isolation/data-flow/path/protocol/prompt/DoS/supply-chain/hook/persistence boundary weakening found |
-| Merge prep | `$prep-merge-to-local-main` workflow | pending |  |
+| Merge prep | `$prep-merge-to-local-main` workflow | complete | Task commit `7839176`; local main `6c387b4efea524db5bf8fe0e923958cbcf0213f1` already ancestor of HEAD, so merge was a no-op |
 
 ## Subagent Ledger
 
@@ -70,6 +70,10 @@ No subagents used so far. The task is a narrow one-file source change plus one f
 - Codex Security diff scan artifacts: `/tmp/codex-security-scans/agentmemory/6c387b4_20260615T204241Z_issue715_pr800`; discovery reviewed `src/state/schema.ts` and emitted no candidates.
 - `$requesting-code-review` subagent dispatch was skipped because the available subagent tool requires explicit user authorization for subagents; a focused self-review was performed instead.
 - `$review-implementation` adversarial self-pass found no critical, important, or minor findings in the task-owned diff.
+- Staged Gitleaks before commit scanned about 9.50 KB and found no leaks.
+- Created task commit `7839176` with `src/state/schema.ts`, `test/schema-fingerprint.test.ts`, and this task record.
+- `$prep-merge-to-local-main` preflight found local main worktree clean at `6c387b4efea524db5bf8fe0e923958cbcf0213f1`.
+- Merge with local main was a no-op because that commit is already an ancestor of the working branch.
 
 ## Review Notes
 
@@ -84,3 +88,8 @@ Security review notes:
 - DoS/performance: neutral to positive availability impact by removing a missing-global failure mode; random generation cost remains one UUID per ID.
 - Supply chain: no dependency or lockfile changes.
 - Hooks/tooling/persistence: persistence identifiers keep the same format and entropy class.
+
+Final review notes:
+- Decision: adapted import.
+- Relevant diffs: `src/state/schema.ts` imports `randomUUID` from `node:crypto` and uses it in `generateId()`; `test/schema-fingerprint.test.ts` covers missing `globalThis.crypto`; task docs record the review.
+- Residual risk: repo-native Vitest checks could not run in this worktree because dependencies are not installed.
