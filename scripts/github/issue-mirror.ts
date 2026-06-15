@@ -117,32 +117,39 @@ export type VerificationResult = {
   failures: string[];
 };
 
-const issueMarkerPattern = /<!--\s*upstream-issue:\s*([^#\s]+)#([0-9]+)\s*-->/g;
-const anyIssueMarkerPattern = /<!--\s*upstream-issue:[\s\S]*?-->/g;
+const legacyIssueMarkerPattern = /<!--\s*upstream-issue:\s*([^#\s]+)#([0-9]+)\s*-->/g;
+const neutralIssueMarkerPattern = /<!--\s*upstream-issue-neutral:\s*source=([^\s]+)\s+number=([0-9]+)\s*-->/g;
+const anyIssueMarkerPattern = /<!--\s*upstream-issue(?:-neutral)?:[\s\S]*?-->/g;
 const containedSourceIssueNumberPattern = /rohitg00\/agentmemory#([0-9]+)/g;
-const commentMarkerPattern =
+const containedNeutralSourceIssueNumberPattern = /source=rohitg00\/agentmemory\s+number=([0-9]+)/g;
+const legacyCommentMarkerPattern =
   /<!--\s*upstream-comment:\s*([^#\s]+)#([0-9]+)\s+id=([0-9]+)\s+chunk=([0-9]+)\/([0-9]+)\s*-->/g;
-const overflowMarkerPattern = /<!--\s*upstream-overflow:\s*([^#\s]+)#([0-9]+)\s+chunk=([0-9]+)\/([0-9]+)\s*-->/g;
-const importedCommentsSummaryPattern = /<!--\s*upstream-comments-imported:\s*([^#\s]+)#([0-9]+)\s+count=([0-9]+)\s*-->/g;
+const neutralCommentMarkerPattern =
+  /<!--\s*upstream-comment-neutral:\s*source=([^\s]+)\s+number=([0-9]+)\s+id=([0-9]+)\s+chunk=([0-9]+)\/([0-9]+)\s*-->/g;
+const anyCommentMarkerPattern = /<!--\s*upstream-comment(?:-neutral)?:[\s\S]*?-->/g;
+const legacyOverflowMarkerPattern = /<!--\s*upstream-overflow:\s*([^#\s]+)#([0-9]+)\s+chunk=([0-9]+)\/([0-9]+)\s*-->/g;
+const neutralOverflowMarkerPattern = /<!--\s*upstream-overflow-neutral:\s*source=([^\s]+)\s+number=([0-9]+)\s+chunk=([0-9]+)\/([0-9]+)\s*-->/g;
+const legacyImportedCommentsSummaryPattern = /<!--\s*upstream-comments-imported:\s*([^#\s]+)#([0-9]+)\s+count=([0-9]+)\s*-->/g;
+const neutralImportedCommentsSummaryPattern = /<!--\s*upstream-comments-imported-neutral:\s*source=([^\s]+)\s+number=([0-9]+)\s+count=([0-9]+)\s*-->/g;
 
 export function isPullRequestItem(issue: GitHubIssue): boolean {
   return issue.pull_request !== undefined && issue.pull_request !== null;
 }
 
 export function buildUpstreamMarker(upstreamNumber: number): string {
-  return `<!-- upstream-issue: ${SOURCE_REPO}#${upstreamNumber} -->`;
+  return `<!-- upstream-issue-neutral: source=${SOURCE_REPO} number=${upstreamNumber} -->`;
 }
 
 export function buildImportedCommentMarker(upstreamNumber: number, upstreamCommentId: number, chunk: number, totalChunks: number): string {
-  return `<!-- upstream-comment: ${SOURCE_REPO}#${upstreamNumber} id=${upstreamCommentId} chunk=${chunk}/${totalChunks} -->`;
+  return `<!-- upstream-comment-neutral: source=${SOURCE_REPO} number=${upstreamNumber} id=${upstreamCommentId} chunk=${chunk}/${totalChunks} -->`;
 }
 
 export function buildOverflowMarker(upstreamNumber: number, chunk: number, totalChunks: number): string {
-  return `<!-- upstream-overflow: ${SOURCE_REPO}#${upstreamNumber} chunk=${chunk}/${totalChunks} -->`;
+  return `<!-- upstream-overflow-neutral: source=${SOURCE_REPO} number=${upstreamNumber} chunk=${chunk}/${totalChunks} -->`;
 }
 
 export function buildImportedCommentsSummaryMarker(upstreamNumber: number, count: number): string {
-  return `<!-- upstream-comments-imported: ${SOURCE_REPO}#${upstreamNumber} count=${count} -->`;
+  return `<!-- upstream-comments-imported-neutral: source=${SOURCE_REPO} number=${upstreamNumber} count=${count} -->`;
 }
 
 export function sanitizeImportedMarkdown(markdown: string | null): string {
@@ -204,7 +211,7 @@ export function parseExistingMirrorMarkers(targetIssues: GitHubIssue[]): ParseEx
 
     const body = issue.body ?? "";
     const rawMarkers = Array.from(body.matchAll(anyIssueMarkerPattern));
-    const validMarkers = Array.from(body.matchAll(issueMarkerPattern)).filter((match) => match[1] === SOURCE_REPO);
+    const validMarkers = parseSourceNumberMarkers(body, legacyIssueMarkerPattern, neutralIssueMarkerPattern);
 
     if (rawMarkers.length === 0) continue;
     if (rawMarkers.length > 1) {
@@ -220,7 +227,7 @@ export function parseExistingMirrorMarkers(targetIssues: GitHubIssue[]): ParseEx
     }
     if (validMarkers.length === 0) continue;
 
-    const upstreamNumber = Number(validMarkers[0][2]);
+    const upstreamNumber = validMarkers[0];
     mirrors.push({
       upstreamNumber,
       targetNumber: issue.number,
@@ -246,7 +253,9 @@ export function buildMirrorIssueBody(issue: GitHubIssue): MirrorIssueBodyPlan {
   const metadata = [
     buildUpstreamMarker(issue.number),
     "",
-    `Source: ${issue.html_url}`,
+    `Source repository: ${SOURCE_REPO}`,
+    `Source issue number: ${issue.number}`,
+    "Source URL: intentionally omitted to avoid GitHub cross-references",
     `Author: ${issue.user?.login ?? "unknown"}`,
     `State: ${issue.state}`,
     `Created: ${issue.created_at}`,
@@ -268,7 +277,7 @@ export function buildMirrorIssueBody(issue: GitHubIssue): MirrorIssueBodyPlan {
   const retainedBody = sanitizedBody.slice(0, availableBodyChars);
   const overflow = sanitizedBody.slice(availableBodyChars);
   overflowComments.push(
-    ...chunkTextWithHeader(`Overflow from upstream issue #${issue.number}\n\n`, overflow, MAX_COMMENT_CHARS, (chunk, total) =>
+    ...chunkTextWithHeader(`Overflow from upstream issue number ${issue.number}\n\n`, overflow, MAX_COMMENT_CHARS, (chunk, total) =>
       `${buildOverflowMarker(issue.number, chunk, total)}\n\n`,
     ),
   );
@@ -302,7 +311,10 @@ export function chunkImportedComments(upstreamNumber: number, comments: GitHubCo
   for (const sourceComment of comments) {
     const sanitized = sanitizeImportedMarkdown(sourceComment.body);
     const header = [
-      `Source comment: ${sourceComment.html_url}`,
+      `Source repository: ${SOURCE_REPO}`,
+      `Source issue number: ${upstreamNumber}`,
+      `Source comment id: ${sourceComment.id}`,
+      "Source URL: intentionally omitted to avoid GitHub cross-references",
       `Author: ${sourceComment.user?.login ?? "unknown"}`,
       `Created: ${sourceComment.created_at}`,
       `Updated: ${sourceComment.updated_at}`,
@@ -316,7 +328,7 @@ export function chunkImportedComments(upstreamNumber: number, comments: GitHubCo
     firstPassChunks.forEach((body, index) => {
       const chunk = index + 1;
       const marker = buildImportedCommentMarker(upstreamNumber, sourceComment.id, chunk, totalChunks);
-      chunks.push({ upstreamNumber, upstreamCommentId: sourceComment.id, chunk, totalChunks, body: body.replace(commentMarkerPattern, marker) });
+      chunks.push({ upstreamNumber, upstreamCommentId: sourceComment.id, chunk, totalChunks, body: body.replace(anyCommentMarkerPattern, marker) });
     });
   }
 
@@ -549,23 +561,41 @@ function missingImportedCommentsSummary(
 }
 
 function parseImportedCommentMarkers(body: string): ImportedCommentMarker[] {
-  return Array.from(body.matchAll(commentMarkerPattern))
-    .filter((match) => match[1] === SOURCE_REPO)
-    .map((match) => ({
-      upstreamNumber: Number(match[2]),
-      upstreamCommentId: Number(match[3]),
-      chunk: Number(match[4]),
-      totalChunks: Number(match[5]),
-    }));
+  return [
+    ...Array.from(body.matchAll(legacyCommentMarkerPattern))
+      .filter((match) => match[1] === SOURCE_REPO)
+      .map((match) => ({
+        upstreamNumber: Number(match[2]),
+        upstreamCommentId: Number(match[3]),
+        chunk: Number(match[4]),
+        totalChunks: Number(match[5]),
+      })),
+    ...Array.from(body.matchAll(neutralCommentMarkerPattern))
+      .filter((match) => match[1] === SOURCE_REPO)
+      .map((match) => ({
+        upstreamNumber: Number(match[2]),
+        upstreamCommentId: Number(match[3]),
+        chunk: Number(match[4]),
+        totalChunks: Number(match[5]),
+      })),
+  ];
 }
 
 function parseImportedCommentsSummaryMarkers(body: string): Array<{ upstreamNumber: number; count: number }> {
-  return Array.from(body.matchAll(importedCommentsSummaryPattern))
-    .filter((match) => match[1] === SOURCE_REPO)
-    .map((match) => ({
-      upstreamNumber: Number(match[2]),
-      count: Number(match[3]),
-    }));
+  return [
+    ...Array.from(body.matchAll(legacyImportedCommentsSummaryPattern))
+      .filter((match) => match[1] === SOURCE_REPO)
+      .map((match) => ({
+        upstreamNumber: Number(match[2]),
+        count: Number(match[3]),
+      })),
+    ...Array.from(body.matchAll(neutralImportedCommentsSummaryPattern))
+      .filter((match) => match[1] === SOURCE_REPO)
+      .map((match) => ({
+        upstreamNumber: Number(match[2]),
+        count: Number(match[3]),
+      })),
+  ];
 }
 
 function addContainedSourceIssueNumbers(markers: RegExpMatchArray[], target: Set<number>): void {
@@ -573,17 +603,40 @@ function addContainedSourceIssueNumbers(markers: RegExpMatchArray[], target: Set
     for (const upstreamNumber of marker[0].matchAll(containedSourceIssueNumberPattern)) {
       target.add(Number(upstreamNumber[1]));
     }
+    for (const upstreamNumber of marker[0].matchAll(containedNeutralSourceIssueNumberPattern)) {
+      target.add(Number(upstreamNumber[1]));
+    }
   }
 }
 
 function parseOverflowMarkers(body: string): Array<{ upstreamNumber: number; chunk: number; totalChunks: number }> {
-  return Array.from(body.matchAll(overflowMarkerPattern))
-    .filter((match) => match[1] === SOURCE_REPO)
-    .map((match) => ({
-      upstreamNumber: Number(match[2]),
-      chunk: Number(match[3]),
-      totalChunks: Number(match[4]),
-    }));
+  return [
+    ...Array.from(body.matchAll(legacyOverflowMarkerPattern))
+      .filter((match) => match[1] === SOURCE_REPO)
+      .map((match) => ({
+        upstreamNumber: Number(match[2]),
+        chunk: Number(match[3]),
+        totalChunks: Number(match[4]),
+      })),
+    ...Array.from(body.matchAll(neutralOverflowMarkerPattern))
+      .filter((match) => match[1] === SOURCE_REPO)
+      .map((match) => ({
+        upstreamNumber: Number(match[2]),
+        chunk: Number(match[3]),
+        totalChunks: Number(match[4]),
+      })),
+  ];
+}
+
+function parseSourceNumberMarkers(body: string, legacyPattern: RegExp, neutralPattern: RegExp): number[] {
+  return [
+    ...Array.from(body.matchAll(legacyPattern))
+      .filter((match) => match[1] === SOURCE_REPO)
+      .map((match) => Number(match[2])),
+    ...Array.from(body.matchAll(neutralPattern))
+      .filter((match) => match[1] === SOURCE_REPO)
+      .map((match) => Number(match[2])),
+  ];
 }
 
 function missingImportedCommentChunks(
