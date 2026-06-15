@@ -19,10 +19,10 @@ We will track each upstream pull request from `rohitg00/agentmemory` as a normal
 Each mirror issue will contain a stable marker:
 
 ```markdown
-<!-- upstream-pr: rohitg00/agentmemory#123 -->
+<!-- upstream-pr-neutral: source=rohitg00/agentmemory number=123 -->
 ```
 
-The mirror issue body will include upstream PR metadata, source links, head/base commit information, current upstream state, and fork workflow fields. Labels will record upstream state and fork decision state. The tracker will preserve fork-local decision labels and manual notes across syncs.
+The mirror issue body will include upstream PR metadata, neutral source repository and source number fields, head/base commit information, current upstream state, and fork workflow fields. It must not include active GitHub cross-reference syntax for the upstream repository; ADR 0004 governs the neutral marker and URL-omission policy. Labels will record upstream state and fork decision state. The tracker will preserve fork-local decision labels and manual notes across syncs.
 
 The tracker will default to dry-run. Creating or updating fork issues and labels requires explicit current-turn confirmation before execution. Sync comments are out of scope for the first implementation.
 
@@ -33,3 +33,5 @@ The fork gains an owned triage queue for upstream PRs and can decide independent
 The mirror is not a lossless copy of GitHub PR reviews, checks, reactions, projects, assignees, or discussions. Those remain linked to the upstream PR.
 
 The sync tool must be idempotent and marker-based to avoid duplicate issues. It must not auto-close fork tracker issues solely because an upstream PR closed unmerged; fork maintainers make the final decision with fork-local labels.
+
+ADR 0004 supersedes the original autolinking marker/source-link syntax for public mirror content.
