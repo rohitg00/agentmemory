@@ -2,6 +2,7 @@ import { timingSafeEqual, createHmac, randomBytes } from "node:crypto";
 
 const hmacKey = randomBytes(32);
 export const VIEWER_NONCE_PLACEHOLDER = "__AGENTMEMORY_VIEWER_NONCE__";
+export const VIEWER_LOCALE_PLACEHOLDER = "__AGENTMEMORY_LOCALE__";
 
 export function timingSafeCompare(a: string, b: string): boolean {
   const hmacA = createHmac("sha256", hmacKey).update(a).digest();

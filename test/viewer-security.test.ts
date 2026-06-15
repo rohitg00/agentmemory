@@ -52,6 +52,31 @@ describe("viewer document security", () => {
     expect(rendered.html).not.toContain("onmouseover=");
     expect(rendered.html).not.toContain("onmouseout=");
   });
+
+  it("injects the locale bundle inside the existing nonced script", () => {
+    const rendered = renderViewerDocument();
+    expect(rendered.found).toBe(true);
+    if (!rendered.found) return;
+
+    expect(rendered.html).toMatch(
+      /<script nonce="[^"]+">[\s\S]*window\.__AM_LOCALE__/,
+    );
+    expect(rendered.html).not.toContain('<script type="application/json"');
+  });
+
+  it("keeps translated attributes on a conservative allowlist", () => {
+    const rendered = renderViewerDocument();
+    expect(rendered.found).toBe(true);
+    if (!rendered.found) return;
+
+    expect(rendered.html).toContain("SAFE_I18N_ATTRS");
+    const block = rendered.html.match(/SAFE_I18N_ATTRS\s*=\s*new Set\(\[([^\]]+)\]/);
+    expect(block).toBeTruthy();
+    if (!block) return;
+    expect(block[1]).not.toMatch(
+      /['"](?:href|src|srcset|action|formaction|aria-labelledby|aria-describedby|on[a-z]+)['"]/,
+    );
+  });
 });
 
 describe("viewer host allowlist (DNS rebinding defence)", () => {

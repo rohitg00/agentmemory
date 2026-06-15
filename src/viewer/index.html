@@ -976,30 +976,30 @@
 </head>
 <body>
   <div class="app-header">
-    <a class="brand" href="#dashboard" data-tab-link="dashboard" aria-label="Open dashboard">
+    <a class="brand" href="#dashboard" data-tab-link="dashboard" aria-label="Open dashboard" data-i18n-attr="aria-label:nav.open_dashboard">
       <h1>agentmemory</h1>
       <span class="version">v__AGENTMEMORY_VERSION__</span>
     </a>
     <div class="header-right">
       <span class="dateline" id="dateline"></span>
       <button id="theme-toggle" class="btn" style="font-size:9px;padding:3px 10px;letter-spacing:0.1em;margin-right:8px;" data-action="toggle-theme">DARK</button>
-      <span id="ws-status" class="ws-status disconnected">live updates off</span>
+      <span id="ws-status" class="ws-status disconnected" data-i18n="status.live_updates_off">live updates off</span>
     </div>
   </div>
 
   <div class="tab-bar" id="tab-bar">
-    <button class="active" data-tab="dashboard" aria-current="page">Dashboard</button>
-    <button data-tab="graph">Graph</button>
-    <button data-tab="memories">Memories</button>
-    <button data-tab="timeline">Timeline</button>
-    <button data-tab="sessions">Sessions</button>
-    <button data-tab="lessons">Lessons</button>
-    <button data-tab="actions">Actions</button>
-    <button data-tab="crystals">Crystals</button>
-    <button data-tab="audit">Audit</button>
-    <button data-tab="activity">Activity</button>
-    <button data-tab="profile">Profile</button>
-    <button data-tab="replay">Replay</button>
+    <button class="active" data-tab="dashboard" aria-current="page" data-i18n="nav.dashboard">Dashboard</button>
+    <button data-tab="graph" data-i18n="nav.graph">Graph</button>
+    <button data-tab="memories" data-i18n="nav.memories">Memories</button>
+    <button data-tab="timeline" data-i18n="nav.timeline">Timeline</button>
+    <button data-tab="sessions" data-i18n="nav.sessions">Sessions</button>
+    <button data-tab="lessons" data-i18n="nav.lessons">Lessons</button>
+    <button data-tab="actions" data-i18n="nav.actions">Actions</button>
+    <button data-tab="crystals" data-i18n="nav.crystals">Crystals</button>
+    <button data-tab="audit" data-i18n="nav.audit">Audit</button>
+    <button data-tab="activity" data-i18n="nav.activity">Activity</button>
+    <button data-tab="profile" data-i18n="nav.profile">Profile</button>
+    <button data-tab="replay" data-i18n="nav.replay">Replay</button>
   </div>
 
   <div id="flag-banners" class="flag-banners"></div>
@@ -1025,14 +1025,80 @@
   <footer id="viewer-footer" class="viewer-footer">
     <span>agentmemory viewer · <span id="footer-version">loading...</span></span>
     <span class="footer-sep">·</span>
-    <a href="https://github.com/rohitg00/agentmemory" target="_blank" rel="noopener">github</a>
+    <a href="https://github.com/rohitg00/agentmemory" target="_blank" rel="noopener" data-i18n="footer.github">github</a>
     <span class="footer-sep">·</span>
-    <a href="https://github.com/rohitg00/agentmemory#readme" target="_blank" rel="noopener">docs</a>
+    <a href="https://github.com/rohitg00/agentmemory#readme" target="_blank" rel="noopener" data-i18n="footer.docs">docs</a>
     <span class="footer-sep">·</span>
-    <a id="footer-feedback" href="#" target="_blank" rel="noopener">report issue &rarr;</a>
+    <a id="footer-feedback" href="#" target="_blank" rel="noopener" data-i18n="footer.report_issue">report issue &rarr;</a>
   </footer>
 
   <script nonce="__AGENTMEMORY_VIEWER_NONCE__">
+    window.__AM_LOCALE__ = __AGENTMEMORY_LOCALE__;
+    (function () {
+      var bundle = window.__AM_LOCALE__ || { lang: 'en', messages: {}, fallback: {} };
+      function getPath(obj, path) {
+        return String(path || '').split('.').reduce(function (current, key) {
+          return current && typeof current === 'object' && Object.prototype.hasOwnProperty.call(current, key)
+            ? current[key]
+            : undefined;
+        }, obj);
+      }
+      function interpolate(str, vars) {
+        if (!vars || typeof str !== 'string') return str;
+        return str.replace(/\{(\w+)\}/g, function (_, key) {
+          return Object.prototype.hasOwnProperty.call(vars, key) ? escI18n(String(vars[key])) : '{' + key + '}';
+        });
+      }
+      function escI18n(str) {
+        return String(str).replace(/[&<>"']/g, function (char) {
+          return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char];
+        });
+      }
+      window.t = function (key, vars) {
+        var value = getPath(bundle.messages, key);
+        if (typeof value === 'string') return interpolate(escI18n(value), vars);
+        var fallback = getPath(bundle.fallback, key);
+        if (typeof fallback === 'string') return interpolate(escI18n(fallback), vars);
+        return key;
+      };
+      window.tRaw = function (key, vars) {
+        var value = getPath(bundle.messages, key);
+        if (typeof value === 'string') return interpolate(value, vars);
+        var fallback = getPath(bundle.fallback, key);
+        if (typeof fallback === 'string') return interpolate(fallback, vars);
+        return key;
+      };
+      var SAFE_I18N_ATTRS = new Set([
+        'placeholder',
+        'title',
+        'alt',
+        'aria-label',
+        'aria-roledescription',
+      ]);
+      window.applyI18n = function (root) {
+        root.querySelectorAll('[data-i18n]').forEach(function (el) {
+          el.textContent = window.tRaw(el.getAttribute('data-i18n'));
+        });
+        root.querySelectorAll('[data-i18n-attr]').forEach(function (el) {
+          el.getAttribute('data-i18n-attr').split(',').forEach(function (pair) {
+            var idx = pair.indexOf(':');
+            if (idx < 0) return;
+            var attr = pair.slice(0, idx).trim();
+            var key = pair.slice(idx + 1).trim();
+            if (!SAFE_I18N_ATTRS.has(attr)) return;
+            el.setAttribute(attr, window.tRaw(key));
+          });
+        });
+      };
+      document.documentElement.lang = bundle.lang || 'en';
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', function () { window.applyI18n(document); });
+      } else {
+        window.applyI18n(document);
+      }
+    })();
+    var t = window.t;
+    var tRaw = window.tRaw;
     var params = new URLSearchParams(window.location.search);
     var paramPort = params.get('port');
     var locPort = window.location.port;
@@ -1066,7 +1132,7 @@
     function applyTheme(dark, persist) {
       document.documentElement.dataset.theme = dark ? 'dark' : 'light';
       var btn = document.getElementById('theme-toggle');
-      if (btn) btn.textContent = dark ? 'LIGHT' : 'DARK';
+      if (btn) btn.textContent = dark ? tRaw('buttons.light') : tRaw('buttons.dark');
       if (persist) localStorage.setItem('agentmemory-theme', dark ? 'dark' : 'light');
     }
     window.toggleTheme = function() { applyTheme(!isDarkMode(), true); };
@@ -1219,11 +1285,11 @@
       host.innerHTML =
         '<div class="viewer-auth-panel">' +
           '<div>' +
-            '<div class="viewer-auth-title">Viewer authorization required</div>' +
-            '<div id="viewer-auth-desc" class="viewer-auth-desc">Enter <code>AGENTMEMORY_SECRET</code> to unlock viewer API access.</div>' +
+            '<div class="viewer-auth-title">' + t('auth.title') + '</div>' +
+            '<div id="viewer-auth-desc" class="viewer-auth-desc">' + t('auth.description_prefix') + ' <code>AGENTMEMORY_SECRET</code> ' + t('auth.description_suffix') + '</div>' +
           '</div>' +
-          '<input id="viewer-auth-token" type="password" autocomplete="off" spellcheck="false" aria-label="AGENTMEMORY_SECRET" aria-describedby="viewer-auth-desc" placeholder="AGENTMEMORY_SECRET" />' +
-          '<button class="btn" data-action="save-viewer-token">Unlock</button>' +
+          '<input id="viewer-auth-token" type="password" autocomplete="off" spellcheck="false" aria-label="AGENTMEMORY_SECRET" aria-describedby="viewer-auth-desc" placeholder="' + t('auth.placeholder') + '" />' +
+          '<button class="btn" data-action="save-viewer-token">' + t('buttons.unlock') + '</button>' +
         '</div>';
       var input = document.getElementById('viewer-auth-token');
       if (input && typeof input.focus === 'function') input.focus();
@@ -1341,7 +1407,7 @@
 
     async function loadDashboard() {
       var el = document.getElementById('view-dashboard');
-      el.innerHTML = '<div class="loading">Loading dashboard...</div>';
+      el.innerHTML = '<div class="loading">' + t('loading.dashboard') + '</div>';
       try {
         var results = await Promise.all([
           apiGet('health'),
@@ -1379,11 +1445,9 @@
         console.error('[viewer] loadDashboard failed:', err);
         el.innerHTML =
           '<div class="loading" style="color:var(--accent);">' +
-          'Dashboard failed to load: ' + msg +
+          t('dashboard.failed', { message: msg }) +
           '<br><br><span style="font-size:12px;color:var(--ink-muted);">' +
-          'Check the browser console for the full error. If you see CSP ' +
-          'violations, please open an issue with the agentmemory version ' +
-          '(top-right of the viewer) and the violation text.' +
+          t('dashboard.failed_help') +
           '</span></div>';
       }
     }
@@ -3511,7 +3575,7 @@
 
     function startPolling() {
       if (pollTimer) return;
-      setWsStatus('polling · ' + (POLL_INTERVAL_MS / 1000) + 's', 'disconnected');
+      setWsStatus(tRaw('status.polling', { seconds: POLL_INTERVAL_MS / 1000 }), 'disconnected');
       var tick = 0;
       pollTimer = setInterval(function() {
         tick++;
@@ -3587,7 +3651,7 @@
               }
             }));
           }
-          setWsStatus('live', 'connected');
+          setWsStatus(tRaw('status.live'), 'connected');
         };
         ws.onmessage = function(e) {
           if (state.ws !== ws) return;
@@ -3611,7 +3675,7 @@
           }
           wsRetries++;
           if (wsRetries < WS_MAX_RETRIES) {
-            setWsStatus('connecting...', 'disconnected');
+            setWsStatus(tRaw('status.connecting'), 'disconnected');
             wsReconnectTimer = setTimeout(connectWs, 2000 + Math.min(wsRetries * 1000, 8000));
           } else {
             startPolling();
