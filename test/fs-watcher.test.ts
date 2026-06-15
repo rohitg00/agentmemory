@@ -258,6 +258,33 @@ describe("FilesystemWatcher", { retry: 2 }, () => {
     expect(content).not.toContain("json-preview-secret");
   });
 
+  it("redacts YAML-style sensitive keys before sending observations", async () => {
+    writeFileSync(
+      join(root, "config.yaml"),
+      [
+        "service:",
+        "  client_secret: yaml-secret-value",
+        "  public_url: https://example.test",
+        "  nested_api_token: bearer-like-value",
+      ].join("\n"),
+    );
+    const w = new FilesystemWatcher({
+      roots: [root],
+      baseUrl: "http://localhost:3111",
+      logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+    });
+
+    await w.flush(root, "config.yaml");
+
+    expect(captured).toHaveLength(1);
+    const content = (captured[0].body as { data: { content: string } }).data.content;
+    expect(content).toContain("client_secret: [REDACTED]");
+    expect(content).toContain("nested_api_token: [REDACTED]");
+    expect(content).toContain("public_url: https://example.test");
+    expect(content).not.toContain("yaml-secret-value");
+    expect(content).not.toContain("bearer-like-value");
+  });
+
   it("redacts bearer tokens from regular text previews before sending observations", async () => {
     writeFileSync(join(root, "request.txt"), "Authorization: Bearer plaintext-token-value\n");
     const w = new FilesystemWatcher({
@@ -272,6 +299,32 @@ describe("FilesystemWatcher", { retry: 2 }, () => {
     const content = (captured[0].body as { data: { content: string } }).data.content;
     expect(content).toContain("Authorization: Bearer [REDACTED]");
     expect(content).not.toContain("plaintext-token-value");
+  });
+
+  it("redacts token-looking log lines before sending observations", async () => {
+    writeFileSync(
+      join(root, "app-trace.txt"),
+      [
+        "2026-06-14T10:00:00Z INFO request",
+        "Authorization: Bearer log-token-value",
+        "clientSecret=log-client-secret",
+      ].join("\n"),
+    );
+    const w = new FilesystemWatcher({
+      roots: [root],
+      baseUrl: "http://localhost:3111",
+      allowBinary: true,
+      logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+    });
+
+    await w.flush(root, "app-trace.txt");
+
+    expect(captured).toHaveLength(1);
+    const content = (captured[0].body as { data: { content: string } }).data.content;
+    expect(content).toContain("Authorization: Bearer [REDACTED]");
+    expect(content).toContain("clientSecret=[REDACTED]");
+    expect(content).not.toContain("log-token-value");
+    expect(content).not.toContain("log-client-secret");
   });
 
   it("collapses multi-line PEM private-key blocks while keeping BEGIN/END markers", async () => {
@@ -417,6 +470,41 @@ describe("FilesystemWatcher", { retry: 2 }, () => {
       w.stop();
     }
   });
+
+  it("keeps local emit errors free of bearer token values", async () => {
+    const warn = vi.fn();
+    (globalThis as { fetch: typeof fetch }).fetch = (async () => {
+      throw new Error("network down");
+    }) as unknown as typeof fetch;
+    const w = new FilesystemWatcher({
+      roots: [root],
+      baseUrl: "http://localhost:3111",
+      secret: "watcher-secret-token",
+      logger: { info: vi.fn(), warn, error: vi.fn() },
+    });
+
+    await w.emit({ hookType: "post_tool_use", sessionId: "s1" });
+
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0][0]).toContain("observe failed");
+    expect(warn.mock.calls[0][0]).not.toContain("watcher-secret-token");
+  });
+
+  it("returns metadata only for unreadable or non-text previews", async () => {
+    const w = new FilesystemWatcher({
+      roots: [root],
+      baseUrl: "http://localhost:3111",
+      logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+    });
+
+    expect(await w.readPreview(join(root, "missing.txt"))).toBeNull();
+    writeFileSync(join(root, "blob.bin"), Buffer.from([0, 1, 2, 3]));
+    await w.flush(root, "blob.bin");
+
+    expect(captured).toHaveLength(1);
+    const content = (captured[0].body as { data: { content: string } }).data.content;
+    expect(content).toMatch(/^blob\.bin \(4 bytes\)$/);
+  });
 });
 
 describe("configFromEnv", () => {
@@ -467,5 +555,20 @@ describe("configFromEnv", () => {
   it("returns empty roots when the env var is missing", () => {
     const cfg = configFromEnv({});
     expect(cfg.roots).toEqual([]);
+  });
+
+  it("keeps config parsing side-effect free and lets the watcher constructor apply safe defaults", () => {
+    const cfg = configFromEnv({
+      AGENTMEMORY_FS_WATCH_DIRS: "/tmp/demo",
+    });
+    expect(cfg.baseUrl).toBeUndefined();
+    expect(cfg.secret).toBeUndefined();
+    expect(cfg.project).toBeNull();
+    expect(cfg.ignorePatterns).toEqual([]);
+
+    const w = new FilesystemWatcher(cfg);
+    expect(w.baseUrl).toBe("http://localhost:3111");
+    expect(w.secret).toBeUndefined();
+    expect(w.project).toBe("demo");
   });
 });
