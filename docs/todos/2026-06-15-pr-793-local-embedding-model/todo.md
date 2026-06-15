@@ -49,7 +49,7 @@ Stop conditions:
 | Local embedding model configurability | Targeted test, then implementation if needed | complete | Red run via hosted Vitest: 2 new tests failed because the provider still passed `Xenova/all-MiniLM-L6-v2`; green run: `test/embedding-provider.test.ts` 22/22 passed. |
 | Default local model behavior | Targeted test, docs inspection/update if needed | complete | Default changed to `Xenova/paraphrase-multilingual-MiniLM-L12-v2`; Hugging Face public config verified `hidden_size: 384`. |
 | Security review | Manual review plus required scanners where applicable | complete | Semgrep default scan completed with 0 findings. Codex Security diff scan completed with no findings; reports under `/tmp/codex-security-scans/agentmemory/6c387b4_20260615T213735Z/`. |
-| Merge prep | prep-merge-to-local-main workflow | pending |  |
+| Merge prep | prep-merge-to-local-main workflow | complete | Pre-merge commit `06b9925d9d229e7b2e251f3e96745e4fe2ce73dd`; local main commit `6c387b4efea524db5bf8fe0e923958cbcf0213f1` merged as a no-op (`Already up to date`). Post-merge checks passed. |
 
 ## Progress
 
@@ -65,6 +65,12 @@ Stop conditions:
   - `$requesting-code-review`: subagent dispatch skipped because current tool policy only allows subagents after an explicit subagent request; local focused review found no critical or important issue.
   - `$review-implementation`: local adversarial pass found no correctness, scope, boundary, verification, or maintainability blocker.
   - `codex-security:security-diff-scan`: completed with no findings.
+- Prep merge result:
+  - Commit created: `06b9925d9d229e7b2e251f3e96745e4fe2ce73dd`.
+  - Captured local main: `6c387b4efea524db5bf8fe0e923958cbcf0213f1`.
+  - Merge command result: no-op, `Already up to date`.
+  - Post-merge verification: clean status, `git diff --check`, targeted `test/embedding-provider.test.ts` 22/22 passing, Semgrep default scan 0 findings.
+  - Preserved unrelated dirty paths: none in this worktree.
 
 ## Security Notes
 
