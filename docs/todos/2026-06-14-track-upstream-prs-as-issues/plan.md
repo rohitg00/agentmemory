@@ -2,6 +2,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> Historical note: this plan predates ADR 0004. Any examples in this file that use naked GitHub source URLs or `owner/repo#number` source references are stale for future mirror output. Use neutral marker/source metadata from ADR 0004 instead.
+
 **Goal:** Track every upstream pull request from `rohitg00/agentmemory` as a normal issue in `wbugitlab1/agentmemory` so the fork has its own triage and decision backlog.
 
 **Architecture:** Add a fork-local PR tracker with pure planning logic, a dry-run-first GitHub CLI, a durable ADR, and a recipe. The tracker uses stable HTML markers in fork issue bodies for idempotency, preserves manual decision labels and manual issue notes, and performs GitHub writes only in apply mode after explicit current-turn confirmation.

@@ -1,0 +1,19 @@
+{
+  "source": "rohitg00/agentmemory",
+  "target": "wbugitlab1/agentmemory",
+  "mode": "verify",
+  "generatedAt": "2026-06-15T10:17:42.483Z",
+  "scannedIssues": 914,
+  "scannedComments": 572,
+  "issueUpdateCount": 0,
+  "commentUpdateCount": 0,
+  "beforeActiveReferences": 0,
+  "afterActiveReferences": 0,
+  "plannedIssueUpdates": [],
+  "plannedCommentUpdates": [],
+  "appliedIssueUpdates": [],
+  "appliedCommentUpdates": [],
+  "failedUpdate": null,
+  "wroteRemote": false,
+  "errors": []
+}
