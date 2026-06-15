@@ -3,6 +3,8 @@ import {
   findIiiConfigPath,
   iiiReleaseAsset,
   iiiReleaseUrl,
+  renderRuntimeIiiConfig,
+  resolveDataDir,
 } from "../src/cli/build-runtime.js";
 
 describe("CLI build/runtime helpers", () => {
@@ -80,5 +82,66 @@ describe("CLI build/runtime helpers", () => {
         exists: () => false,
       }),
     ).toBe("");
+  });
+
+  it("resolves the engine data dir from flag, env, then platform default outside cwd", () => {
+    expect(
+      resolveDataDir({
+        args: ["--data-dir", "~/flag-state"],
+        env: { AGENTMEMORY_DATA_DIR: "~/env-state" },
+        cwd: "/work/repo",
+        homeDir: "/home/alex",
+      }),
+    ).toEqual({
+      dataDir: "/home/alex/flag-state",
+      source: "flag",
+    });
+
+    expect(
+      resolveDataDir({
+        args: [],
+        env: { AGENTMEMORY_DATA_DIR: "relative-state" },
+        cwd: "/work/repo",
+        homeDir: "/home/alex",
+      }),
+    ).toEqual({
+      dataDir: "/work/repo/relative-state",
+      source: "env",
+    });
+
+    expect(
+      resolveDataDir({
+        args: [],
+        env: {},
+        cwd: "/work/repo",
+        homeDir: "/home/alex",
+      }),
+    ).toEqual({
+      dataDir: "/home/alex/.agentmemory/data",
+      source: "default",
+    });
+  });
+
+  it("renders runtime iii config with absolute state paths under the data dir", () => {
+    const rendered = renderRuntimeIiiConfig(
+      [
+        "workers:",
+        "  - name: iii-state",
+        "    config:",
+        "      adapter:",
+        "        config:",
+        "          file_path: ./data/state_store.db",
+        "  - name: iii-stream",
+        "    config:",
+        "      adapter:",
+        "        config:",
+        "          file_path: ./data/stream_store",
+      ].join("\n"),
+      "/home/alex/.local/share/agentmemory",
+    );
+
+    expect(rendered).toContain("file_path: '/home/alex/.local/share/agentmemory/state_store.db'");
+    expect(rendered).toContain("file_path: '/home/alex/.local/share/agentmemory/stream_store'");
+    expect(rendered).not.toContain("./data/");
   });
 });

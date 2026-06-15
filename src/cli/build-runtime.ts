@@ -1,6 +1,13 @@
 import { existsSync } from "node:fs";
 import { homedir, platform } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
+
+export type DataDirSource = "flag" | "env" | "default";
+
+export type ResolvedDataDir = {
+  dataDir: string;
+  source: DataDirSource;
+};
 
 export function iiiReleaseAsset(
   nodePlatform: NodeJS.Platform = platform(),
@@ -59,4 +66,80 @@ export function findIiiConfigPath({
     if (exists(candidate)) return candidate;
   }
   return "";
+}
+
+function argValue(args: string[], name: string): string | undefined {
+  const prefix = `${name}=`;
+  const inline = args.find((arg) => arg.startsWith(prefix));
+  if (inline) return inline.slice(prefix.length);
+
+  const index = args.indexOf(name);
+  if (index === -1) return undefined;
+  return args[index + 1];
+}
+
+function expandHome(pathValue: string, homeDir: string): string {
+  if (pathValue === "~") return homeDir;
+  if (pathValue.startsWith("~/") || pathValue.startsWith("~\\")) {
+    return join(homeDir, pathValue.slice(2));
+  }
+  return pathValue;
+}
+
+function absolutePath(pathValue: string, cwd: string, homeDir: string): string {
+  const expanded = expandHome(pathValue, homeDir);
+  return isAbsolute(expanded) ? expanded : resolve(cwd, expanded);
+}
+
+function defaultDataDir(homeDir: string): string {
+  return join(homeDir, ".agentmemory", "data");
+}
+
+export function resolveDataDir({
+  args = process.argv.slice(2),
+  env = process.env,
+  cwd = process.cwd(),
+  homeDir = homedir(),
+}: {
+  args?: string[];
+  env?: NodeJS.ProcessEnv;
+  cwd?: string;
+  homeDir?: string;
+} = {}): ResolvedDataDir {
+  const flagValue = argValue(args, "--data-dir");
+  if (flagValue) {
+    return {
+      dataDir: absolutePath(flagValue, cwd, homeDir),
+      source: "flag",
+    };
+  }
+
+  const envValue = env["AGENTMEMORY_DATA_DIR"];
+  if (envValue) {
+    return {
+      dataDir: absolutePath(envValue, cwd, homeDir),
+      source: "env",
+    };
+  }
+
+  return {
+    dataDir: defaultDataDir(homeDir),
+    source: "default",
+  };
+}
+
+function yamlSingleQuoted(value: string): string {
+  return `'${value.replace(/'/g, "''")}'`;
+}
+
+export function renderRuntimeIiiConfig(template: string, dataDir: string): string {
+  return template
+    .replace(
+      "file_path: ./data/state_store.db",
+      `file_path: ${yamlSingleQuoted(join(dataDir, "state_store.db"))}`,
+    )
+    .replace(
+      "file_path: ./data/stream_store",
+      `file_path: ${yamlSingleQuoted(join(dataDir, "stream_store"))}`,
+    );
 }

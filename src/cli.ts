@@ -56,14 +56,19 @@ import {
   findIiiConfigPath,
   iiiReleaseAsset,
   iiiReleaseUrl,
+  renderRuntimeIiiConfig,
+  resolveDataDir,
 } from "./cli/build-runtime.js";
 
 const ALL_TOOLS_COUNT = getAllTools().length;
 const CORE_TOOLS_COUNT = getAllTools().filter((t) => ESSENTIAL_TOOLS.has(t.name)).length;
+const PRIVATE_DIR_MODE = 0o700;
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
 const IS_WINDOWS = platform() === "win32";
+const dataDirResolution = resolveDataDir({ args });
+process.env["AGENTMEMORY_DATA_DIR"] = dataDirResolution.dataDir;
 const IS_VERBOSE =
   args.includes("--verbose") ||
   args.includes("-v") ||
@@ -160,6 +165,7 @@ Options:
   --reset            Wipe ~/.agentmemory/preferences.json and re-run onboarding
   --tools all|core   Tool visibility (default: all = ${ALL_TOOLS_COUNT} tools; core = ${CORE_TOOLS_COUNT} essentials)
   --no-engine        Skip auto-starting iii-engine
+  --data-dir <path>  Store iii-engine state outside the current repo
   --port <N>         Override REST port (default: 3111). Streams (N+1), viewer
                      (N+2), and iii engine (N+46023) auto-derive from N so a
                      single flag relocates the whole quartet.
@@ -172,6 +178,7 @@ Environment:
                                Honored by status, doctor, and MCP shim commands.
   AGENTMEMORY_USE_DOCKER=1     Prefer the bundled docker-compose path over the
                                native iii-engine binary on first run.
+  AGENTMEMORY_DATA_DIR         State directory fallback when --data-dir is not set.
   AGENTMEMORY_III_VERSION      Override pinned iii-engine version (default ${IIPINNED_VERSION}).
   AGENTMEMORY_FOLLOWUP_WINDOW_SECONDS
                                Window (seconds) for the smart-search follow-up diagnostic
@@ -327,6 +334,17 @@ function findIiiConfig(): string {
   // copy because dist is cleaned during local builds; iii treats deleting
   // the active config file as a fatal reload error.
   return findIiiConfigPath({ moduleDir: __dirname });
+}
+
+function writeRuntimeIiiConfig(configPath: string): string {
+  mkdirSync(dataDirResolution.dataDir, { recursive: true, mode: PRIVATE_DIR_MODE });
+  const runtimeConfigPath = join(dataDirResolution.dataDir, "iii-config.yaml");
+  writeFileSync(
+    runtimeConfigPath,
+    renderRuntimeIiiConfig(readFileSync(configPath, "utf-8"), dataDirResolution.dataDir),
+    "utf-8",
+  );
+  return runtimeConfigPath;
 }
 
 function whichBinary(name: string): string | null {
@@ -905,10 +923,11 @@ function startIiiBin(
   configPath: string,
   options: StartEngineOptions = {},
 ): boolean {
+  const runtimeConfigPath = writeRuntimeIiiConfig(configPath);
   const s = p.spinner();
   s.start(`Starting iii-engine: ${iiiBin}`);
-  spawnEngineBackground(iiiBin, ["--config", configPath], "iii-engine", options);
-  writeEngineState({ kind: "native", configPath, binPath: iiiBin });
+  spawnEngineBackground(iiiBin, ["--config", runtimeConfigPath], "iii-engine", options);
+  writeEngineState({ kind: "native", configPath: runtimeConfigPath, binPath: iiiBin });
   s.stop("iii-engine process started");
   return true;
 }
@@ -2725,7 +2744,7 @@ async function runImportJsonl(): Promise<void> {
   // consumed alongside the flag so they don't leak into positional
   // args (e.g. `--port 3112 import-jsonl` would otherwise turn
   // 3112 into pathArg).
-  const VALUE_FLAGS = new Set(["--port", "--tools"]);
+  const VALUE_FLAGS = new Set(["--port", "--tools", "--data-dir"]);
   let maxFiles: number | undefined;
   const tail = args.slice(1);
   const positional: string[] = [];
