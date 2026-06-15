@@ -56,7 +56,7 @@ Known boundaries:
 | Fork decision documented | Task record and coordinator notes if reachable | In progress | Decision: adapted import. Coordinator list update still pending. |
 | Minimal implementation, if needed | TDD red/green targeted tests | Done | Added `test/runtime-ports-render.test.ts`; red run failed because `src/cli/runtime-ports.js` was missing; green focused suite passed 30 tests. |
 | Security review | Diff/manual security review and gates as applicable | Done | Manual review found no auth/data/path/prompt/supply-chain issue; Semgrep scanned 4 changed files with 0 findings. |
-| Merge prep | `$prep-merge-to-local-main` | Pending |  |
+| Merge prep | `$prep-merge-to-local-main` | Done | Committed task change as `00629db`; captured local main `6c387b4efea524db5bf8fe0e923958cbcf0213f1`; merge was a no-op because local main was already an ancestor. |
 
 ## Subagent Ledger
 
@@ -80,6 +80,9 @@ No delegation used yet. If conflict resolution or ambiguous security/implementat
 - 2026-06-15: Simple-code cleanup replaced a nested ternary in `applyRuntimePortArgs` with `runtimePortArg(args)` and wrapped the test helper source read. Focused tests reran with 30 passing tests; `git diff --check` passed.
 - 2026-06-15: Prep preflight showed branch `review/issue-750-pr-795-runtime-ports`, no staged paths, no Git operation state, clean local `main` at `6c387b4efea524db5bf8fe0e923958cbcf0213f1`, no active hooks beyond sample files, and no signing config.
 - 2026-06-15: Staged only task-owned files. `git diff --cached --check` passed and `gitleaks protect --staged --redact` scanned about 22 KB with no leaks.
+- 2026-06-15: Committed task-owned change as `00629db030cec222b384ce92082b1f88c20f3f6d`.
+- 2026-06-15: `$prep-merge-to-local-main` merge step used captured local main `6c387b4efea524db5bf8fe0e923958cbcf0213f1`; Git reported `Already up to date.` after sandbox escalation was needed only to allow Git to update local worktree metadata.
+- 2026-06-15: Post-merge verification passed: clean `git status --porcelain=v1 -uall`, `git diff --check refs/heads/main...HEAD`, and focused Vitest suite with 30 passing tests.
 
 ## Review Notes
 
@@ -113,4 +116,13 @@ Open risks:
 
 ## Final Notes
 
-Pending.
+Decision: adapted import for PR 795 / Issue 750.
+
+Final diff:
+- Added runtime port helper and renderer in `src/cli/runtime-ports.ts`.
+- Wired CLI `--port` / `--instance` handling and native iii-engine startup in `src/cli.ts`.
+- Added regression coverage in `test/runtime-ports-render.test.ts`.
+- Hardened an existing CLI source-inspection test so it reads the current worktree source.
+- Recorded this review in `docs/todos/2026-06-15-issue-750-pr-795-runtime-ports/`.
+
+Prep merge status: completed. Local main was already the branch base, so merge was a no-op. Working branch: `review/issue-750-pr-795-runtime-ports`.
