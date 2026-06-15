@@ -151,7 +151,12 @@ describe("root quality gates", () => {
     expect(testConfig?.testTimeout).toBe(10_000);
     expect(coverage?.provider).toBe("v8");
     expect(coverage?.all).toBe(true);
-    expect(coverage?.include).toEqual(["src/**/*.ts"]);
+    expect(coverage?.include).toEqual([
+      "src/**/*.ts",
+      "scripts/skills/**/*.ts",
+      "integrations/pi/security.ts",
+      "integrations/openclaw/plugin.mjs",
+    ]);
     expect(coverage?.exclude).toEqual(["src/**/*.d.ts", "src/xenova.d.ts"]);
     expect(coverage?.include).not.toContain("vitest.config.ts");
     expect(coverage?.include).not.toContain("eslint.config.js");
