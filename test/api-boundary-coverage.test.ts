@@ -616,6 +616,29 @@ describe("REST API boundary coverage", () => {
     });
   });
 
+  it("includes latest saved memories when graph-build backfills graph inputs", async () => {
+    const response = await sdk.getFunction("api::graph-build")!(
+      req({ body: { batchSize: 10 } }),
+    );
+
+    expect(response.status_code).toBe(200);
+    const graphExtractCalls = sdk.triggerCalls.filter(
+      (call) => call.function_id === "mem::graph-extract",
+    );
+    expect(graphExtractCalls).toHaveLength(1);
+    const payload = graphExtractCalls[0].payload as {
+      observations: Array<{ id: string; sessionId: string; title: string }>;
+    };
+    expect(payload.observations.map((obs) => obs.id)).toEqual([
+      "obs_1",
+      "mem_1",
+    ]);
+    expect(payload.observations.find((obs) => obs.id === "mem_1")).toMatchObject({
+      sessionId: "memory",
+      title: "mem_1",
+    });
+  });
+
   it("covers optional API feature disabled and error response paths", async () => {
     vi.mocked(isSlotsEnabled).mockReturnValue(false);
     await expect(sdk.getFunction("api::slot-list")!(req())).resolves.toMatchObject({

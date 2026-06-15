@@ -33,8 +33,8 @@ describe("api::session::end → event::session::stopped (#666)", () => {
 
 // #666: viewer's "Build Graph" button used to POST /agentmemory/graph/build
 // which returned 404 because the endpoint was never registered. Backfill
-// the knowledge graph from existing compressed observations across every
-// session in batches.
+// the knowledge graph from existing compressed observations and latest saved
+// memories in batches.
 describe("api::graph-build endpoint (#666)", () => {
   const api = readFileSync("src/triggers/api.ts", "utf-8");
 
@@ -56,8 +56,11 @@ describe("api::graph-build endpoint (#666)", () => {
     );
   });
 
-  it("filters observations that have a title (compressed only)", () => {
-    expect(api).toMatch(/typeof o\.title === "string" && o\.title\.length > 0/);
+  it("collects title-bearing observations and latest saved memories", () => {
+    expect(api).toMatch(/const graphInputs: CompressedObservation\[\] = \[\]/);
+    expect(api).toMatch(/typeof observation\.title !== "string" \|\| observation\.title\.length === 0/);
+    expect(api).toMatch(/kv\.list<Memory>\(KV\.memories\)/);
+    expect(api).toMatch(/memoryToObservation\(memory\)/);
   });
 
   it("respects batchSize override with a 100-item upper bound", () => {
