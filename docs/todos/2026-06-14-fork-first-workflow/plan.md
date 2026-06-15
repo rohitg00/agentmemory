@@ -32,7 +32,7 @@
 
 - `.adr-dir`: existing ADR directory pointer created by `adr init docs/adr`; keep content exactly `docs/adr`.
 - `docs/adr/0001-record-architecture-decisions.md`: existing baseline ADR created by `adr-tools`; do not hand-edit unless verification finds corruption.
-- `docs/adr/0002-use-fork-first-development-workflow.md`: new ADR created by `adr new`, then filled with the fork-first decision.
+- `docs/adr/0003-use-fork-first-development-workflow.md`: new ADR created by `adr new`, then filled with the fork-first decision.
 - `docs/adr/README.md`: generated ADR table of contents from `adr generate toc`.
 - `docs/recipes/fork-workflow.md`: operational workflow with commands for daily fork work, upstream sync, and upstream PR preparation.
 - `docs/todos/2026-06-14-fork-first-workflow/todo.md`: task state, evidence, approval gates, and final review notes.
@@ -113,7 +113,7 @@ Update `docs/todos/2026-06-14-fork-first-workflow/todo.md` under `Progress Notes
 ## Task 2: Record Fork-First Decision As An ADR
 
 **Files:**
-- Create: `docs/adr/0002-use-fork-first-development-workflow.md`
+- Create: `docs/adr/0003-use-fork-first-development-workflow.md`
 - Create: `docs/adr/README.md`
 - Modify: `docs/todos/2026-06-14-fork-first-workflow/todo.md`
 
@@ -128,17 +128,17 @@ VISUAL=true EDITOR=true /Users/A1538552/_projects/_tools/adr-tools/src/adr new "
 Expected:
 
 ```text
-docs/adr/0002-use-fork-first-development-workflow.md
+docs/adr/0003-use-fork-first-development-workflow.md
 ```
 
 If the file number is not `0002`, use the path printed by the command in the remaining steps and update this plan before continuing.
 
 - [ ] **Step 2: Replace the generated ADR body with the accepted decision**
 
-Edit `docs/adr/0002-use-fork-first-development-workflow.md` to exactly this content, preserving the actual file number if `adr-tools` produced a different one:
+Edit `docs/adr/0003-use-fork-first-development-workflow.md` to exactly this content, preserving the actual file number if `adr-tools` produced a different one:
 
 ````markdown
-# 2. Use fork-first development workflow
+# 3. Use fork-first development workflow
 
 Date: 2026-06-14
 
@@ -184,7 +184,7 @@ Run:
 /Users/A1538552/_projects/_tools/adr-tools/src/adr generate toc > docs/adr/README.md
 ```
 
-Expected: `docs/adr/README.md` lists ADR 1 and ADR 2.
+Expected: `docs/adr/README.md` lists ADR 1 and ADR 3.
 
 - [ ] **Step 4: Verify ADR list**
 
@@ -198,7 +198,7 @@ Expected output includes:
 
 ```text
 docs/adr/0001-record-architecture-decisions.md
-docs/adr/0002-use-fork-first-development-workflow.md
+docs/adr/0003-use-fork-first-development-workflow.md
 ```
 
 - [ ] **Step 5: Record ADR evidence**
@@ -206,7 +206,7 @@ docs/adr/0002-use-fork-first-development-workflow.md
 Update `docs/todos/2026-06-14-fork-first-workflow/todo.md`:
 
 ````markdown
-| Fork-first ADR recorded | `adr list`, `adr generate toc` | Done | ADR 2 created with `adr new`; TOC generated at `docs/adr/README.md`. |
+| Fork-first ADR recorded | `adr list`, `adr generate toc` | Done | ADR 3 created with `adr new`; TOC generated at `docs/adr/README.md`. |
 ````
 
 ## Task 3: Document Operational Fork Workflow
@@ -503,7 +503,7 @@ Run:
 /Users/A1538552/_projects/_tools/adr-tools/src/adr generate toc
 ```
 
-Expected: ADR 1 and ADR 2 are listed; generated TOC includes both records.
+Expected: ADR 1 and ADR 3 are listed; generated TOC includes both records.
 
 - [ ] **Step 2: Verify documentation formatting**
 
