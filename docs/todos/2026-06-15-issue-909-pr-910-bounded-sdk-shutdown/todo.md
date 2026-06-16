@@ -150,7 +150,7 @@ Intended verification:
 | Avoid image deletion helper import during retention dry-run | RED/GREEN focused Vitest | done | RED failed at `src/functions/retention.ts:307`; GREEN focused test passed, 1 file / 1 selected test. |
 | Keep image-ref module import cheap for non-image eviction | Existing retention suite | done | Full retention rerun first exposed the same timing issue in a semantic eviction test; after lazy `TriggerAction` import, `test/retention.test.ts` passed, 1 file / 16 tests. |
 | Preserve non-dry-run retention eviction behavior | Existing retention suite | done | `corepack pnpm vitest run test/retention.test.ts` passed, 1 file / 16 tests. |
-| Full branch verification after local main merge | Exact `corepack pnpm test` | pending | Initial exact run failed one retention timeout before post-merge fix. |
+| Full branch verification after local main merge | Exact `corepack pnpm test` | done | Final exact run passed: 159 files / 1988 tests. |
 
 ### Post-Merge Fix Review Notes
 
@@ -160,3 +160,4 @@ Intended verification:
 - Focused code review: ACCEPT, no Critical or Important findings.
 - Adversarial implementation review: NO FINDINGS.
 - Passive security-best-practices check: no auth, tenant, schema, network, or new filesystem boundary introduced; existing managed image delete path and disk-size telemetry are preserved.
+- Final exact `corepack pnpm test` passed: 159 files / 1988 tests.
