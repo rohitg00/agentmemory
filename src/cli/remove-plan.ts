@@ -13,6 +13,7 @@
 
 import { existsSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { runtimeConfigPath } from "./engine-launch.js";
 
 export type RemovePlanItem = {
   /** Stable id, used in tests and CLI output. */
@@ -195,6 +196,15 @@ export function buildRemovePlan(
     alwaysAsk: false,
     applicable: !options.keepData && pathExists(backupsDir(home)),
     sizeBytes: -1,
+  });
+
+  plan.push({
+    id: "runtime-config",
+    description: "Delete generated iii-config.runtime.yaml",
+    path: runtimeConfigPath(home),
+    alwaysAsk: false,
+    applicable: pathExists(runtimeConfigPath(home)),
+    sizeBytes: safeSize(runtimeConfigPath(home)),
   });
 
   // Iterate over connect-installed agent symlinks. We always honor these

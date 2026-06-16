@@ -64,6 +64,7 @@ import {
   renderRuntimeIiiConfig as renderRuntimeDataDirIiiConfig,
   resolveDataDir,
 } from "./cli/build-runtime.js";
+import { prepareEngineLaunch } from "./cli/engine-launch.js";
 
 const ALL_TOOLS_COUNT = getAllTools().length;
 const CORE_TOOLS_COUNT = getAllTools().filter((t) => ESSENTIAL_TOOLS.has(t.name)).length;
@@ -783,6 +784,7 @@ let startupFailure: StartupFailure | null = null;
 
 type StartEngineOptions = {
   onUnexpectedExit?: (reason: string) => void;
+  cwd?: string;
 };
 
 type NativeEngineChildRef = {
@@ -852,11 +854,12 @@ function spawnEngineBackground(
   label: string,
   options: StartEngineOptions = {},
 ): ChildProcess {
-  vlog(`spawn: ${bin} ${spawnArgs.join(" ")}`);
+  vlog(`spawn: ${bin} ${spawnArgs.join(" ")}${options.cwd ? ` (cwd: ${options.cwd})` : ""}`);
   const child = spawn(bin, spawnArgs, {
     detached: true,
     stdio: ["ignore", "pipe", "pipe"],
     windowsHide: true,
+    ...(options.cwd ? { cwd: options.cwd } : {}),
   });
   const isDocker = label.includes("Docker");
   const nativeRef = isDocker ? null : rememberNativeEngineChild(child);
@@ -915,8 +918,19 @@ function startIiiBin(
 ): boolean {
   const s = p.spinner();
   s.start(`Starting iii-engine: ${iiiBin}`);
-  spawnEngineBackground(iiiBin, ["--config", configPath], "iii-engine", options);
-  writeEngineState({ kind: "native", configPath, binPath: iiiBin });
+  const launch = prepareEngineLaunch({
+    configPath,
+    home: homedir(),
+    packageDir: __dirname,
+    nodeBin: process.execPath,
+  });
+  spawnEngineBackground(
+    iiiBin,
+    ["--config", launch.configPath],
+    "iii-engine",
+    { ...options, cwd: launch.cwd },
+  );
+  writeEngineState({ kind: "native", configPath: launch.configPath, binPath: iiiBin });
   s.stop("iii-engine process started");
   return true;
 }

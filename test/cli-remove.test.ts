@@ -83,6 +83,15 @@ describe("buildRemovePlan", () => {
     expect(applicable).not.toContain("data-dir");
   });
 
+  it("includes generated runtime config when present", () => {
+    touch(".agentmemory/iii-config.runtime.yaml", "workers: []\n");
+    const plan = buildRemovePlan(ctx(), { force: false, keepData: false });
+    const item = plan.find((p) => p.id === "runtime-config")!;
+    expect(item).toBeDefined();
+    expect(item.applicable).toBe(true);
+    expect(item.alwaysAsk).toBe(false);
+  });
+
   it("data-dir is alwaysAsk even on --force", () => {
     mkdir(".agentmemory/data");
     const plan = buildRemovePlan(ctx(), { force: true, keepData: false });
