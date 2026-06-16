@@ -98,3 +98,32 @@ Stop conditions:
 - Race conditions: no new cross-process locking is introduced; concurrent consolidation runs can still race on the memory store and remain a residual risk outside this scoped import.
 - Performance/DoS: same O(n) title scan remains; helper updates an in-memory array only, with no extra provider calls or storage enumeration.
 - Supply chain/hooks/tooling: no dependency, hook, CI, package-manager, or external-service changes.
+
+## Corrected Merge/Test Run Against Lockfile Main
+
+- Corrected run worktree: `/Users/A1538552/.codex/worktrees/2c09/agentmemory`.
+- Started detached at branch commit `ff65255975d7ea10e4cb7a23e081436e700377d6`; branch ref `review/issue-747-pr-748-consolidation-dedup` was free, so the worktree switched to that branch.
+- Captured local main commit: `d4393d1ab5dd284edee3a17bfbf45825f239c07e`.
+- Main worktree `/Users/A1538552/_projects/_tools/agentmemory` was clean at `d4393d1ab5dd284edee3a17bfbf45825f239c07e`.
+- Pre-merge branch diff against merge base `6c387b4efea524db5bf8fe0e923958cbcf0213f1`: this task record, `src/functions/consolidate.ts`, and `test/consolidate-project-scope.test.ts`.
+- Merge command: `GIT_MERGE_AUTOEDIT=no git merge --ff --no-edit --no-autostash --no-overwrite-ignore --no-rerere-autoupdate d4393d1ab5dd284edee3a17bfbf45825f239c07e`.
+- First merge attempt was blocked by sandbox write restrictions on Git worktree metadata (`ORIG_HEAD.lock`); the same local merge was approved and rerun outside the sandbox.
+- Merge result: merge commit `830766410d22b013e6232030db98f86d2679663f`, parents `ff65255975d7ea10e4cb7a23e081436e700377d6` and `d4393d1ab5dd284edee3a17bfbf45825f239c07e`; no conflicts.
+- Post-merge lockfile state: `pnpm-lock.yaml` present.
+- Dependency setup used the requested sanitized command:
+  `HOME=/tmp/agentmemory-merge-test-issue747-home XDG_CONFIG_HOME=/tmp/agentmemory-merge-test-issue747-xdg NPM_CONFIG_USERCONFIG=/tmp/agentmemory-merge-test-issue747-npmrc PNPM_HOME=/tmp/agentmemory-merge-test-issue747-pnpm-home corepack pnpm install --frozen-lockfile --ignore-scripts --store-dir /tmp/agentmemory-merge-test-pnpm-store`.
+- Install result: passed with pnpm v11.6.0; warning only for missing `dist/cli.mjs` bin target before build.
+- First exact `corepack pnpm test` result: failed with 4 timeout-only failures (`test/agent-id-scope.test.ts`, `test/auto-compress.test.ts`, `test/auto-forget.test.ts`, `test/retention.test.ts`), 1985 passed / 1989 total.
+- Read-only diagnosis subagents:
+  - `agent-id-scope` and `auto-compress`: classified as test robustness / post-merge dependency-materialization timing, not product logic; named tests and full files passed in isolation; handler calls were fast, while cold dynamic imports were slow.
+  - `auto-forget` and `retention`: classified as product performance/test-timeout interaction from eager `image-refs` / `iii-sdk` import; named assertions passed directly and failures were not correctness regressions.
+- Additional local reproduction:
+  - Four-file isolated run failed only `agent-id-scope` and `auto-compress` timeouts, 44 passed / 46 total.
+  - Individual `test/agent-id-scope.test.ts` passed, 15 tests.
+  - Individual `test/auto-compress.test.ts` passed, 8 tests.
+  - A full-suite run while subagents were still active failed with unrelated timing/contention failures and was treated as non-final diagnostic evidence.
+  - Clean final exact `corepack pnpm test` after closing subagents passed: 158 files, 1989 tests, 30.23s.
+- Security gates after lockfile/main integration:
+  - `gitleaks detect --source . --redact` passed, no leaks.
+  - `semgrep scan --config p/default --error --metrics=off .` passed, 0 findings across 573 tracked targets.
+  - `osv-scanner scan source .` failed on the known Medium vulnerability `GHSA-8988-4f7v-96qf` for `@opentelemetry/core@1.30.1` from `pnpm-lock.yaml`; dependencies were not changed without approval.
