@@ -42,6 +42,7 @@ import { renderSplash } from "./cli/splash.js";
 import { isFirstRun, readPrefs, resetPrefs, writePrefs } from "./cli/preferences.js";
 import { runOnboarding } from "./cli/onboarding.js";
 import { buildReadyWebSocketUrls } from "./cli/ready-hint.js";
+import { buildJsonRequestHeaders } from "./cli/http.js";
 import { setBootVerbose } from "./logger.js";
 import { VERSION } from "./version.js";
 import { getAllTools, ESSENTIAL_TOOLS } from "./mcp/tools-registry.js";
@@ -2095,9 +2096,14 @@ async function postJson<T = unknown>(
   timeoutMs = 5000,
 ): Promise<T | null> {
   try {
+    const headers = buildJsonRequestHeaders(url);
+    if (!headers.ok) {
+      process.stderr.write(`${headers.message}\n`);
+      return null;
+    }
     const res = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: headers.headers,
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(timeoutMs),
     });
@@ -2113,9 +2119,11 @@ async function postJsonStrict<T = unknown>(
   body: unknown,
   timeoutMs = 5000,
 ): Promise<T | null> {
+  const headers = buildJsonRequestHeaders(url);
+  if (!headers.ok) throw new Error(headers.message);
   const res = await fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: headers.headers,
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(timeoutMs),
   });
@@ -2155,9 +2163,11 @@ async function seedDemoSession(
     };
 
     try {
+      const headers = buildJsonRequestHeaders(url);
+      if (!headers.ok) throw new Error(headers.message);
       const res = await fetch(url, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: headers.headers,
         body: JSON.stringify(payload),
         signal: AbortSignal.timeout(5000),
       });
