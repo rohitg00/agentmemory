@@ -25,7 +25,7 @@ plugin/skills/<name>/
 
 ## Keep it current
 
-Facts that exist in source (tool names and parameters, REST endpoints, env vars, connect adapters, hook events) are generated, never hand-typed. Edit the source, then run `npm run skills:gen`. CI runs `npm run skills:check` and fails on drift, so generated tables cannot fall behind the code.
+Facts that exist in source (tool names and parameters, REST endpoints, env vars, connect adapters, hook events) are generated, never hand-typed. Edit the source, then run `corepack pnpm run skills:gen`. CI runs `corepack pnpm run skills:check` and fails on drift, so generated tables cannot fall behind the code.
 
 ## Style
 

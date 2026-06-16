@@ -19,9 +19,8 @@ data-*/
 agentmemory-debug/
 .gstack/
 
-# Lock files — never commit (see feedback_no_lockfiles memory)
+# Non-canonical package-manager lockfiles
 package-lock.json
-pnpm-lock.yaml
 yarn.lock
 integrations/hermes/__pycache__/
 
