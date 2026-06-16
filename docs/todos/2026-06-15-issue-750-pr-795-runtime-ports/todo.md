@@ -50,14 +50,14 @@ Known boundaries:
 
 | Change | Verification method | Status | Evidence |
 | --- | --- | --- | --- |
-| Branch and task state established | Git status and task files | In progress | Branch `review/issue-750-pr-795-runtime-ports` created from `6c387b4`; task record created. |
+| Branch and task state established | Git status and task files | Done | Branch `review/issue-750-pr-795-runtime-ports` created from `6c387b4`; 2026-06-16 continuation verified the worktree path and switched detached HEAD back onto the branch before testing. |
 | Issue relevance assessed | Local code/test inspection and reproduction attempt | Done | Current fork already derived worker config from `III_REST_PORT`, but `startEngine()` still passed the static bundled iii config to the engine, so a non-default CLI port could leave worker and engine ports split. |
 | PR 795 reviewed | Public diff inspection and local comparison | Done | PR 795 added a runtime config renderer and port-arg helper, but used a different engine offset and omitted relocated CORS origin rendering. |
 | Fork decision documented | Task record and coordinator notes if reachable | In progress | Decision: adapted import. Coordinator list update still pending. |
 | Minimal implementation, if needed | TDD red/green targeted tests | Done | Added `test/runtime-ports-render.test.ts`; red run failed because `src/cli/runtime-ports.js` was missing; green focused suite passed 30 tests. |
-| Generated skill reference consistency | `pnpm test` generator contract | Done | 2026-06-16 full `pnpm test` initially failed because `AGENTMEMORY_VIEWER_PORT` was missing from `plugin/skills/agentmemory-config/REFERENCE.md`; regenerated the env block and reran full `pnpm test` with 1982 passing tests. |
+| Generated skill reference consistency | `pnpm test` generator contract | Done | 2026-06-16 full `pnpm test` initially failed because `AGENTMEMORY_VIEWER_PORT` was missing from `plugin/skills/agentmemory-config/REFERENCE.md`; regenerated the env block, merged current local `main`, and reran full `pnpm test` with 1990 passing tests. |
 | Security review | Diff/manual security review and gates as applicable | Done | Manual review found no auth/data/path/prompt/supply-chain issue; Semgrep scanned 4 original changed files with 0 findings, and on 2026-06-16 scanned the 2-file generated-reference fix with 0 findings. |
-| Merge prep | `$prep-merge-to-local-main` | In progress | Prior prep committed task change as `00629db` and merged then-local main `6c387b4efea524db5bf8fe0e923958cbcf0213f1` as a no-op. 2026-06-16 prep continuation is running against current local main `d4393d1ab5dd284edee3a17bfbf45825f239c07e`. |
+| Merge prep | `$prep-merge-to-local-main` | Done | Prior prep committed task change as `00629db`; 2026-06-16 prep committed generated-reference fix as `c3e78d9`, then merged current local main `d4393d1ab5dd284edee3a17bfbf45825f239c07e` with merge commit `718ec20`. |
 
 ## Subagent Ledger
 
@@ -98,6 +98,11 @@ Known boundaries:
 - 2026-06-16: `git diff --check` passed; `pnpm run skills:check` passed with `Skill lint passed: 15 skills checked.`
 - 2026-06-16: Focused review subagent accepted the generated-reference fix with no Critical or Important findings; adversarial review subagent reported `NO FINDINGS`.
 - 2026-06-16: Semgrep command `semgrep scan --config p/default --error --metrics=off plugin/skills/agentmemory-config/REFERENCE.md docs/todos/2026-06-15-issue-750-pr-795-runtime-ports/todo.md` completed with 0 findings across 2 files.
+- 2026-06-16: Staged only `docs/todos/2026-06-15-issue-750-pr-795-runtime-ports/todo.md` and `plugin/skills/agentmemory-config/REFERENCE.md`; `git diff --cached --check` passed and `gitleaks protect --staged --redact` scanned about 4.99 KB with no leaks.
+- 2026-06-16: Committed generated-reference fix and updated task notes as `c3e78d9f44104e102b79680b644ab103b8c44249`.
+- 2026-06-16: Merged current local `main` `d4393d1ab5dd284edee3a17bfbf45825f239c07e` into the branch as merge commit `718ec20`; first sandboxed attempt was blocked by Git metadata permissions for `ORIG_HEAD.lock`, then the same merge command succeeded with approved escalation. No conflicts required manual resolution.
+- 2026-06-16: After local-main merge introduced `pnpm-lock.yaml` and `packageManager: pnpm@11.6.0`, reran verification setup as `HOME=/tmp/agentmemory-pnpm-verify.NzDm5D/home XDG_CONFIG_HOME=/tmp/agentmemory-pnpm-verify.NzDm5D/xdg NPM_CONFIG_USERCONFIG=/tmp/agentmemory-pnpm-verify.NzDm5D/empty-npmrc PNPM_HOME=/tmp/agentmemory-pnpm-verify.NzDm5D/pnpm-home pnpm install --frozen-lockfile --ignore-scripts --store-dir /tmp/agentmemory-pnpm-verify.NzDm5D/store`; it used pnpm 11.6.0, passed lockfile supply-chain policy, and only synchronized `node_modules`.
+- 2026-06-16: Post-merge verification passed: clean `git status -sb --untracked-files=all`, `git diff --check refs/heads/main...HEAD`, `pnpm run skills:check`, Semgrep on the final 7-file branch diff with 0 findings, and full `pnpm test` with 159 test files and 1990 tests passing.
 
 ## Review Notes
 
@@ -123,10 +128,10 @@ Focused review:
 - Requirements fit: accepted. The change addresses the remaining native CLI startup gap while preserving the fork's existing `rest + 46023` engine scheme and `--instance` behavior.
 - Test coverage: accepted. New tests cover arg derivation, rendered config ports and CORS origins, explicit override preservation, and CLI start-engine wiring. Existing multi-instance and ready-hint tests still pass.
 - Maintainability/integration: accepted. Port derivation is isolated in `src/cli/runtime-ports.ts`; `src/cli.ts` only delegates arg handling and config preparation. No unrelated refactor was introduced.
-- Review Implementation: no critical or important findings in local adversarial pass. No subagent was spawned because the available subagent tool is restricted to explicit user requests for subagents.
+- Review Implementation: no critical or important findings in local adversarial pass. 2026-06-16 focused review subagent returned `ACCEPT`; adversarial review subagent returned `NO FINDINGS`.
 
 Open risks:
-- Full `npm test`, full lint, and full build were not run in this worktree because dependencies are absent. Focused Vitest ran successfully using the primary checkout's installed dependencies with this worktree as root.
+- Full `pnpm test` passed after local dependency setup. Full lint and full build were not run; targeted `skills:check`, `git diff --check`, Semgrep, Gitleaks staged scan, and full unit tests covered the changed surface.
 - Docker compose port mappings remain static and were not changed; this fix targets native CLI-managed iii-engine startup.
 
 ## Final Notes
@@ -138,6 +143,7 @@ Final diff:
 - Wired CLI `--port` / `--instance` handling and native iii-engine startup in `src/cli.ts`.
 - Added regression coverage in `test/runtime-ports-render.test.ts`.
 - Hardened an existing CLI source-inspection test so it reads the current worktree source.
+- Synced `plugin/skills/agentmemory-config/REFERENCE.md` so generated config references include `AGENTMEMORY_VIEWER_PORT`.
 - Recorded this review in `docs/todos/2026-06-15-issue-750-pr-795-runtime-ports/`.
 
-Prep merge status: completed. Local main was already the branch base, so merge was a no-op. Working branch: `review/issue-750-pr-795-runtime-ports`.
+Prep merge status: completed. Current local main `d4393d1ab5dd284edee3a17bfbf45825f239c07e` was merged into this branch as `718ec20`. Working branch: `review/issue-750-pr-795-runtime-ports`.
