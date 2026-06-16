@@ -47,6 +47,10 @@ import { registerConsolidateFunction } from "./functions/consolidate.js";
 import { registerPatternsFunction } from "./functions/patterns.js";
 import { registerRememberFunction } from "./functions/remember.js";
 import { registerEvictFunction } from "./functions/evict.js";
+import {
+  getEvictSweepIntervalMs,
+  startEvictSweep,
+} from "./functions/evict-scheduler.js";
 import { registerRelationsFunction } from "./functions/relations.js";
 import { registerTimelineFunction } from "./functions/timeline.js";
 import { registerSmartSearchFunction } from "./functions/smart-search.js";
@@ -98,7 +102,7 @@ import { DedupMap } from "./functions/dedup.js";
 import { registerHealthMonitor } from "./health/monitor.js";
 import { initMetrics, OTEL_CONFIG } from "./telemetry/setup.js";
 import { VERSION } from "./version.js";
-import { bootLog } from "./logger.js";
+import { bootLog, logger } from "./logger.js";
 import { mkdirSync, writeFileSync, unlinkSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
@@ -546,6 +550,17 @@ async function main() {
     bootLog(`Auto-forget: enabled (every ${autoForgetIntervalMs / 60000}m)`);
   }
 
+  const evictSweepEnv = {
+    EVICTION_ENABLED: getEnvVar("EVICTION_ENABLED"),
+    EVICTION_INTERVAL_MS: getEnvVar("EVICTION_INTERVAL_MS"),
+  };
+  const evictSweepTimer = startEvictSweep(sdk, logger, evictSweepEnv);
+  if (evictSweepTimer) {
+    bootLog(
+      `Evict sweep: enabled (every ${getEvictSweepIntervalMs(evictSweepEnv) / 60000}m)`,
+    );
+  }
+
   if (process.env.LESSON_DECAY_ENABLED !== "false") {
     const lessonDecayTimer = setInterval(async () => {
       try {
@@ -594,6 +609,7 @@ async function main() {
     healthMonitor.stop();
     dedupMap.stop();
     indexPersistence.stop();
+    if (evictSweepTimer) clearInterval(evictSweepTimer);
     await new Promise<void>((resolve) => viewerServer.close(() => resolve()));
     await indexPersistence.save().catch((err) => {
       console.warn(`[agentmemory] Failed to save index on shutdown:`, err);
