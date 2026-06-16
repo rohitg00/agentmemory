@@ -60,6 +60,15 @@ No delegated workstreams yet. If conflict resolution or independent security val
 
 ## Progress Notes
 
+- 2026-06-16: Reopened this task record for delegated merge-prep verification in `/Users/A1538552/.codex/worktrees/9e13/agentmemory`.
+- 2026-06-16: Started detached at `d0d4eee0fe9674044d62436543ac5ec2c909fa0e` with clean status. `git worktree list --porcelain` showed `review/issues-874-875-pr-895-doctor-engine-checks` was not checked out in another worktree, so this worktree was attached to that existing branch without `--ignore-other-worktrees`.
+- 2026-06-16: Fixed local main target for this run is `d4393d1ab5dd284edee3a17bfbf45825f239c07e`; no fetch, pull, or push is in scope. Initial ancestry check showed that commit is not yet an ancestor of the branch, so it must be integrated locally before dependency setup and tests.
+- 2026-06-16: Intended verification for this run is the user-specified deterministic `corepack pnpm install --frozen-lockfile --ignore-scripts` command with isolated home/config/store paths, followed by exactly `corepack pnpm test` unless `verify-deps-before-run` blocks test startup and requires the allowed one-time config workaround.
+- 2026-06-16: Merged pinned local main commit `d4393d1ab5dd284edee3a17bfbf45825f239c07e` into the branch, producing merge commit `64fb1ff636e6fa7e09586eaa2c5c7d8ddafa745a`. No conflicts occurred. The first sandboxed merge attempt was blocked by worktree Git metadata permissions on `ORIG_HEAD`; the same local merge command succeeded after filesystem escalation.
+- 2026-06-16: Deterministic dependency setup completed with `pnpm v11.6.0` using the requested isolated HOME/XDG/NPM/PNPM/store paths and `--frozen-lockfile --ignore-scripts`. Lockfile supply-chain policy verification passed for 540 entries. The install reported a pre-build bin-link warning for missing `dist/cli.mjs` under `packages/mcp`, but completed successfully.
+- 2026-06-16: Required test command `corepack pnpm test` passed without the `verify-deps-before-run` workaround: 158 test files passed, 1,990 tests passed, duration 24.42s.
+- 2026-06-16: No test failure occurred, so the requested read-only subagent diagnosis step was not used. No post-merge code changes were needed.
+- 2026-06-16: `$prep-merge-to-local-main` was read after the successful merge/test run because this task record had task-owned cleanup updates. For the docs-only cleanup surface, security-best-practices, simple-code, focused review, and implementation review found no code/security issue and no simplification opportunity beyond keeping the record as direct evidence.
 - 2026-06-15: Started in `/Users/A1538552/.codex/worktrees/9361/agentmemory`; repo-local instructions and global workspace instructions are active.
 - 2026-06-15: Initial `git status -sb --untracked-files=all` showed detached HEAD with no dirty paths. Created branch `review/issues-874-875-pr-895-doctor-engine-checks` in this worktree.
 - 2026-06-15: Coordinator worklist row for PR 895, Issue 874, Issue 875, and Fork issue 398 is present with pending/candidate status.
