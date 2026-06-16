@@ -708,7 +708,7 @@ GitHub Copilot in VS Code uses `servers` instead of `mcpServers`. Put this in `.
 }
 ```
 
-Start `npx @agentmemory/agentmemory` in another terminal first when you want the full 53-tool persistent memory server. If the shim cannot reach that server, it falls back to the local 7-tool standalone surface unless you also set `"AGENTMEMORY_REQUIRE_SERVER": "1"` in `env`.
+Start `npx @agentmemory/agentmemory` in another terminal first when you want the full 55-tool persistent memory server. If the shim cannot reach that server, it falls back to the local 7-tool standalone surface unless you also set `"AGENTMEMORY_REQUIRE_SERVER": "1"` in `env`.
 
 **Sandboxed MCP clients** (Flatpak / Snap / restrictive containers) that can't reach the host's `localhost`: also set `"AGENTMEMORY_FORCE_PROXY": "1"` in the `env` block, and point `AGENTMEMORY_URL` at a route the sandbox can actually reach. Add `"AGENTMEMORY_REQUIRE_SERVER": "1"` when the client should fail rather than use the local fallback if that route is still broken. If `AGENTMEMORY_SECRET` is set, that route must be HTTPS or a loopback tunnel; the MCP shim refuses to send bearer auth over plaintext HTTP to non-loopback hosts. See [#234](https://github.com/rohitg00/agentmemory/issues/234) for the diagnostic walkthrough.
 
@@ -1563,7 +1563,7 @@ Create `~/.agentmemory/.env`:
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/section-api.svg"><img src="assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-128 endpoints on port `3111`. The REST API binds to `127.0.0.1` by default. Protected endpoints require `Authorization: Bearer <secret>` when `AGENTMEMORY_SECRET` is set, and mesh sync endpoints require `AGENTMEMORY_SECRET` on both peers.
+129 endpoints on port `3111`. The REST API binds to `127.0.0.1` by default. Protected endpoints require `Authorization: Bearer <secret>` when `AGENTMEMORY_SECRET` is set, and mesh sync endpoints require `AGENTMEMORY_SECRET` on both peers.
 
 <details>
 <summary>Key endpoints</summary>
