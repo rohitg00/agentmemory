@@ -64,7 +64,7 @@ Decision: `defer`. Direct import is rejected as-is. The issue remains a plausibl
 | PR diff and tests review | Public unauthenticated patch inspection and `git apply --check` | Done | Patch touches 21 files across graph/search/API/MCP/viewer/hooks/docs/tests and does not apply to current fork. |
 | Security review | Manual diff-scoped review against local graph/search boundaries | Done | Found unbounded per-query edge and memory enumeration, boot-time full backfill, missing project/agent isolation, stale smart-search result mapping, and broad unrelated hook/viewer churn. |
 | Worklist row | Diff inspection and reference-syntax scan | Done | PR 349 row added with neutral IDs and decision; no URL, hash-number, or mention syntax found. |
-| Prep local main merge readiness | prep-merge-to-local-main | Pending | Corrected rerun is in progress against current local main commit `d4393d1ab5dd284edee3a17bfbf45825f239c07e`; earlier no-op evidence for `60099a31029575412ba6fc27f4ab986196922e56` is stale because local main advanced. |
+| Prep local main merge readiness | prep-merge-to-local-main, deterministic install, and full test suite | Done | Current local main commit `d4393d1ab5dd284edee3a17bfbf45825f239c07e` was integrated by merge commit `028832aef91c7fc5c1816b3b80476f2319a6b90c`; `pnpm-lock.yaml` is present, deterministic pnpm install passed, and `corepack pnpm test` passed 158 files / 1986 tests. |
 
 ## Verification Notes
 
@@ -74,7 +74,9 @@ Decision: `defer`. Direct import is rejected as-is. The issue remains a plausibl
 - `git diff --cached --check` passed before the first docs commit.
 - `gitleaks protect --staged --redact` passed before the first docs commit.
 - Required focused review gates were performed locally. Subagent spawning was not used because the current tool policy only allows spawning when the user explicitly asks for subagents or parallel agent work.
-- 2026-06-16 corrected merge-readiness rerun is pending against current local main commit `d4393d1ab5dd284edee3a17bfbf45825f239c07e`; install and test evidence must be recorded after that merge.
+- 2026-06-16 corrected merge-readiness rerun integrated current local main commit `d4393d1ab5dd284edee3a17bfbf45825f239c07e` by merge commit `028832aef91c7fc5c1816b3b80476f2319a6b90c` after staged merge checks and `gitleaks protect --staged --redact` passed.
+- Deterministic install passed with `HOME=/tmp/agentmemory-merge-test-issue345-home XDG_CONFIG_HOME=/tmp/agentmemory-merge-test-issue345-xdg NPM_CONFIG_USERCONFIG=/tmp/agentmemory-merge-test-issue345-npmrc PNPM_HOME=/tmp/agentmemory-merge-test-issue345-pnpm-home corepack pnpm install --frozen-lockfile --ignore-scripts --store-dir /tmp/agentmemory-merge-test-pnpm-store`; pnpm reported one non-fatal workspace bin warning for missing pre-build `dist/cli.mjs`.
+- `corepack pnpm test` passed: 158 test files and 1986 tests in 25.16s.
 
 ## Subagent Ledger
 
