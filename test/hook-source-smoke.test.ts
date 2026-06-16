@@ -15,6 +15,7 @@ const hookImporters: Record<string, () => Promise<unknown>> = {
   "session-end": () => import("../src/hooks/session-end.js"),
   "session-start": () => import("../src/hooks/session-start.js"),
   stop: () => import("../src/hooks/stop.js"),
+  "codex-stop": () => import("../src/hooks/codex-stop.js"),
   "subagent-start": () => import("../src/hooks/subagent-start.js"),
   "subagent-stop": () => import("../src/hooks/subagent-stop.js"),
   "task-completed": () => import("../src/hooks/task-completed.js"),
@@ -399,8 +400,22 @@ describe("source hook entrypoints", () => {
     expect(setTimeoutSpy).toHaveBeenCalledWith(expect.any(Function), 1500);
   });
 
-  it("stop sends summarize and session-end telemetry without stdout", async () => {
+  it("stop sends summarize telemetry without ending the session", async () => {
     const { fetchMock, stdoutWrite, setTimeoutSpy } = await importHook("stop", {
+      session_id: "s1",
+    });
+    const calls = fetchCalls(fetchMock);
+
+    expect(calls.map((call) => call.url)).toEqual([
+      "http://localhost:3111/agentmemory/summarize",
+    ]);
+    expect(calls[0].body).toEqual({ sessionId: "s1" });
+    expect(stdoutWrite).not.toHaveBeenCalled();
+    expect(setTimeoutSpy).toHaveBeenCalledWith(expect.any(Function), 1500);
+  });
+
+  it("codex stop sends summarize and session-end telemetry without stdout", async () => {
+    const { fetchMock, stdoutWrite, setTimeoutSpy } = await importHook("codex-stop", {
       session_id: "s1",
     });
     const calls = fetchCalls(fetchMock);
@@ -410,6 +425,7 @@ describe("source hook entrypoints", () => {
       "http://localhost:3111/agentmemory/session/end",
     ]);
     expect(calls[0].body).toEqual({ sessionId: "s1" });
+    expect(calls[1].body).toEqual({ sessionId: "s1" });
     expect(stdoutWrite).not.toHaveBeenCalled();
     expect(setTimeoutSpy).toHaveBeenCalledWith(expect.any(Function), 1500);
   });

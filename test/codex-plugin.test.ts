@@ -117,6 +117,19 @@ describe("Codex plugin manifest (developers.openai.com/codex/plugins)", () => {
     expect(events).toContain("Stop");
   });
 
+  it("routes Codex Stop to the Codex-specific lifecycle-closing hook", () => {
+    const hooks = readJson<{ hooks: Record<string, HookEntry[]> }>(
+      join(pluginRoot, "hooks/hooks.codex.json"),
+    );
+    const stopCommands = hooks.hooks["Stop"]?.flatMap((entry) =>
+      entry.hooks.map((handler) => handler.command),
+    );
+
+    expect(stopCommands).toContain(
+      'node "${CLAUDE_PLUGIN_ROOT}/scripts/codex-stop.mjs"',
+    );
+  });
+
   it("hook command scripts referenced in hooks.codex.json exist on disk", () => {
     const hooks = readJson<{ hooks: Record<string, HookEntry[]> }>(
       join(pluginRoot, "hooks/hooks.codex.json"),

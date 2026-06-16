@@ -12,6 +12,7 @@ const hookEntries = [
   "src/hooks/notification.ts",
   "src/hooks/task-completed.ts",
   "src/hooks/stop.ts",
+  "src/hooks/codex-stop.ts",
   "src/hooks/session-end.ts",
   "src/hooks/post-commit.ts",
 ];

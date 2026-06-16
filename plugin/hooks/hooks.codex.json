@@ -58,7 +58,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/stop.mjs\""
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/codex-stop.mjs\""
           }
         ]
       }

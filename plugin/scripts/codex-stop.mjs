@@ -54,7 +54,7 @@ function guardedFetch(baseUrl, path, secret, init) {
 	return fetch(`${baseUrl}${path}`, init);
 }
 //#endregion
-//#region src/hooks/stop.ts
+//#region src/hooks/codex-stop.ts
 function isSdkChildContext(payload) {
 	if (process.env["AGENTMEMORY_SDK_CHILD"] === "1") return true;
 	if (!payload || typeof payload !== "object") return false;
@@ -79,10 +79,14 @@ async function main() {
 		body: JSON.stringify({ sessionId }),
 		signal: AbortSignal.timeout(12e4)
 	})?.catch(() => {});
+	guardedFetch(REST_URL, "/agentmemory/session/end", SECRET, {
+		method: "POST",
+		headers: authHeaders(SECRET),
+		body: JSON.stringify({ sessionId }),
+		signal: AbortSignal.timeout(5e3)
+	})?.catch(() => {});
 	setTimeout(() => process.exit(0), 1500).unref();
 }
 main();
 //#endregion
 export {};
-
-//# sourceMappingURL=stop.mjs.map
