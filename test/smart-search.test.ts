@@ -139,6 +139,24 @@ describe("Smart Search Function", () => {
     expect(result.results[0].observation.title).toBe("Auth handler");
   });
 
+  it("filters expanded observations by time range", async () => {
+    const oldObs = makeObs({
+      id: "obs_old",
+      sessionId: "ses_1",
+      timestamp: "2026-01-31T23:59:59Z",
+      title: "Old auth handler",
+    });
+    await kv.set("mem:obs:ses_1", "obs_old", oldObs);
+
+    const result = (await sdk.trigger("mem::smart-search", {
+      expandIds: ["obs_old", "obs_1"],
+      start_time: "2026-02-01T00:00:00Z",
+    })) as { mode: string; results: Array<{ obsId: string; observation: CompressedObservation }> };
+
+    expect(result.mode).toBe("expanded");
+    expect(result.results.map((r) => r.obsId)).toEqual(["obs_1"]);
+  });
+
   it("returns error when query is missing and no expandIds", async () => {
     const result = (await sdk.trigger("mem::smart-search", {})) as {
       mode: string;
@@ -150,6 +168,16 @@ describe("Smart Search Function", () => {
     expect((result as { results: unknown[] }).results).toEqual([]);
   });
 
+  it("keeps query-required precedence when no expandIds are supplied", async () => {
+    const result = (await sdk.trigger("mem::smart-search", {
+      start_time: "not-a-date",
+    })) as { mode: string; error?: string; results: unknown[] };
+
+    expect(result.mode).toBe("compact");
+    expect(result.error).toBe("query is required");
+    expect(result.results).toEqual([]);
+  });
+
   it("respects limit parameter in compact mode", async () => {
     const result = (await sdk.trigger("mem::smart-search", {
       query: "auth",
@@ -157,6 +185,54 @@ describe("Smart Search Function", () => {
     })) as { mode: string; results: CompactSearchResult[] };
 
     expect(result.results.length).toBeLessThanOrEqual(2);
+  });
+
+  it("filters compact results by inclusive start_time and end_time", async () => {
+    searchResults = [
+      {
+        ...searchResults[0],
+        observation: makeObs({
+          id: "obs_old",
+          timestamp: "2026-01-31T23:59:59Z",
+          title: "old auth",
+        }),
+      },
+      {
+        ...searchResults[1],
+        observation: makeObs({
+          id: "obs_inside",
+          timestamp: "2026-02-01T10:00:00Z",
+          title: "inside auth",
+        }),
+      },
+    ];
+
+    const result = (await sdk.trigger("mem::smart-search", {
+      query: "auth",
+      start_time: "2026-02-01T10:00:00Z",
+      end_time: "2026-02-01T10:00:00Z",
+    })) as { mode: string; results: CompactSearchResult[] };
+
+    expect(result.mode).toBe("compact");
+    expect(result.results.map((r) => r.obsId)).toEqual(["obs_inside"]);
+  });
+
+  it("rejects invalid time ranges before calling the search function", async () => {
+    let calls = 0;
+    registerSmartSearchFunction(sdk as never, kv as never, async () => {
+      calls++;
+      return searchResults;
+    });
+
+    const result = (await sdk.trigger("mem::smart-search", {
+      query: "auth",
+      start_time: "not-a-date",
+    })) as { mode: string; error?: string; results: unknown[] };
+
+    expect(result.mode).toBe("compact");
+    expect(result.results).toEqual([]);
+    expect(result.error).toContain("start_time is not a valid ISO 8601 datetime");
+    expect(calls).toBe(0);
   });
 
   it("expand returns empty for nonexistent observation IDs", async () => {

@@ -38,6 +38,14 @@ export const CORE_TOOLS: McpToolDef[] = [
             "Optional opaque canonical project identifier to restrict recall. Use the same value " +
             "that session hooks store as project; linked Git worktrees share one git:<hash> value.",
         },
+        start_time: {
+          type: "string",
+          description: "Optional inclusive ISO 8601 lower time bound for observation timestamps",
+        },
+        end_time: {
+          type: "string",
+          description: "Optional inclusive ISO 8601 upper time bound for observation timestamps",
+        },
       },
       required: ["query"],
     },
@@ -122,7 +130,20 @@ export const CORE_TOOLS: McpToolDef[] = [
     name: "memory_sessions",
     description:
       "List recent sessions with their status and observation counts.",
-    inputSchema: { type: "object", properties: {} },
+    inputSchema: {
+      type: "object",
+      properties: {
+        start_time: {
+          type: "string",
+          description: "Optional inclusive ISO 8601 lower time bound for session lifetime overlap",
+        },
+        end_time: {
+          type: "string",
+          description: "Optional inclusive ISO 8601 upper time bound for session lifetime overlap",
+        },
+        limit: { type: "number", description: "Optional max sessions to return" },
+      },
+    },
   },
   {
     name: "memory_smart_search",
@@ -136,6 +157,14 @@ export const CORE_TOOLS: McpToolDef[] = [
           description: "Comma-separated observation IDs to expand",
         },
         limit: { type: "number", description: "Max results (default 10)" },
+        start_time: {
+          type: "string",
+          description: "Optional inclusive ISO 8601 lower time bound for observation timestamps",
+        },
+        end_time: {
+          type: "string",
+          description: "Optional inclusive ISO 8601 upper time bound for observation timestamps",
+        },
       },
       required: ["query"],
     },

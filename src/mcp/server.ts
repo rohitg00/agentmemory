@@ -11,6 +11,11 @@ import type {
 import { getVisibleTools } from "./tools-registry.js";
 import { timingSafeCompare } from "../auth.js";
 import { getAgentId, isAgentScopeIsolated } from "../config.js";
+import {
+  filterSessionsByTime,
+  parseTimeRange,
+  TimeRangeError,
+} from "../state/time-filter.js";
 
 type McpResponse = {
   status_code: number;
@@ -38,6 +43,20 @@ function parseCsvList(value: unknown): string[] {
       .filter(Boolean);
   }
   return [];
+}
+
+function parseToolTimeRange(args: Record<string, unknown>): ReturnType<typeof parseTimeRange> {
+  return parseTimeRange({
+    start_time: args.start_time,
+    end_time: args.end_time,
+  });
+}
+
+function timeRangeErrorResponse(err: TimeRangeError): McpResponse {
+  return {
+    status_code: 400,
+    body: { error: err.message, code: err.code },
+  };
 }
 
 export function registerMcpEndpoints(
@@ -125,6 +144,13 @@ export function registerMcpEndpoints(
               typeof args.project === "string" && args.project.trim().length > 0
                 ? args.project.trim()
                 : undefined;
+            let timeRange: ReturnType<typeof parseTimeRange>;
+            try {
+              timeRange = parseToolTimeRange(args);
+            } catch (err) {
+              if (err instanceof TimeRangeError) return timeRangeErrorResponse(err);
+              throw err;
+            }
             const result = await sdk.trigger({ function_id: "mem::search", payload: {
               query: args.query,
               limit: typeof args.limit === "number" ? args.limit : 10,
@@ -132,6 +158,7 @@ export function registerMcpEndpoints(
               token_budget: tokenBudget,
               agentId: recallAgentId,
               ...(project !== undefined && { project }),
+              ...(timeRange ? { start_time: args.start_time, end_time: args.end_time } : {}),
             } });
             const text =
               format === "narrative" &&
@@ -258,12 +285,25 @@ export function registerMcpEndpoints(
           }
 
           case "memory_sessions": {
-            const sessions = await kv.list(KV.sessions);
+            let timeRange: ReturnType<typeof parseTimeRange>;
+            try {
+              timeRange = parseToolTimeRange(args);
+            } catch (err) {
+              if (err instanceof TimeRangeError) return timeRangeErrorResponse(err);
+              throw err;
+            }
+            const sessions = await kv.list<Session>(KV.sessions);
+            const filtered = timeRange ? filterSessionsByTime(sessions, timeRange) : sessions;
+            const limit = asNumber(args.limit);
+            const limited =
+              limit === undefined
+                ? filtered
+                : filtered.slice(0, Math.max(1, Math.min(1000, Math.floor(limit))));
             return {
               status_code: 200,
               body: {
                 content: [
-                  { type: "text", text: JSON.stringify({ sessions }, null, 2) },
+                  { type: "text", text: JSON.stringify({ sessions: limited }, null, 2) },
                 ],
               },
             };
@@ -278,12 +318,20 @@ export function registerMcpEndpoints(
             }
             const expandIds = parseCsvList(args.expandIds).slice(0, 20);
             const limit = Math.max(1, Math.min(100, asNumber(args.limit, 10) ?? 10));
+            let timeRange: ReturnType<typeof parseTimeRange>;
+            try {
+              timeRange = parseToolTimeRange(args);
+            } catch (err) {
+              if (err instanceof TimeRangeError) return timeRangeErrorResponse(err);
+              throw err;
+            }
             const result = await sdk.trigger({
               function_id: "mem::smart-search",
               payload: {
                 query: args.query,
                 expandIds,
                 limit,
+                ...(timeRange ? { start_time: args.start_time, end_time: args.end_time } : {}),
               },
             });
             return {

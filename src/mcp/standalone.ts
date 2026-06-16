@@ -7,6 +7,12 @@ import { getStandalonePersistPath } from "../config.js";
 import { VERSION } from "../version.js";
 import { generateId } from "../state/schema.js";
 import {
+  filterSessionsByTime,
+  inTimeRange,
+  parseTimeRange,
+  type TimeRange,
+} from "../state/time-filter.js";
+import {
   resolveHandle,
   invalidateHandle,
   requireServerMode,
@@ -107,6 +113,9 @@ interface Validated {
   format?: string;
   tokenBudget?: number;
   project?: string;
+  timeRange?: TimeRange | null;
+  startTime?: string;
+  endTime?: string;
   memoryIds?: string[];
   reason?: string;
 }
@@ -155,10 +164,26 @@ function validate(toolName: string, args: Record<string, unknown>): Validated {
       if (typeof project === "string" && project.trim()) {
         v.project = project.trim();
       }
+      v.timeRange = parseTimeRange({
+        start_time: args["start_time"],
+        end_time: args["end_time"],
+      });
+      if (v.timeRange) {
+        v.startTime = typeof args["start_time"] === "string" ? args["start_time"] : undefined;
+        v.endTime = typeof args["end_time"] === "string" ? args["end_time"] : undefined;
+      }
       return v;
     }
     case "memory_sessions": {
       v.limit = parseLimit(args["limit"], 20);
+      v.timeRange = parseTimeRange({
+        start_time: args["start_time"],
+        end_time: args["end_time"],
+      });
+      if (v.timeRange) {
+        v.startTime = typeof args["start_time"] === "string" ? args["start_time"] : undefined;
+        v.endTime = typeof args["end_time"] === "string" ? args["end_time"] : undefined;
+      }
       return v;
     }
     case "memory_governance_delete": {
@@ -206,6 +231,10 @@ async function handleProxy(
       };
       if (v.tokenBudget != null) body["token_budget"] = v.tokenBudget;
       if (v.project != null) body["project"] = v.project;
+      if (v.timeRange) {
+        if (v.startTime !== undefined) body["start_time"] = v.startTime;
+        if (v.endTime !== undefined) body["end_time"] = v.endTime;
+      }
       const result = await handle.call("/agentmemory/search", {
         method: "POST",
         body: JSON.stringify(body),
@@ -217,6 +246,10 @@ async function handleProxy(
       if (v.format != null) body["format"] = v.format;
       if (v.tokenBudget != null) body["token_budget"] = v.tokenBudget;
       if (v.project != null) body["project"] = v.project;
+      if (v.timeRange) {
+        if (v.startTime !== undefined) body["start_time"] = v.startTime;
+        if (v.endTime !== undefined) body["end_time"] = v.endTime;
+      }
       const result = await handle.call("/agentmemory/smart-search", {
         method: "POST",
         body: JSON.stringify(body),
@@ -224,8 +257,13 @@ async function handleProxy(
       return textResponse(result, true);
     }
     case "memory_sessions": {
+      const params = new URLSearchParams({ limit: String(v.limit) });
+      if (v.timeRange) {
+        if (v.startTime !== undefined) params.set("start_time", v.startTime);
+        if (v.endTime !== undefined) params.set("end_time", v.endTime);
+      }
       const result = await handle.call(
-        `/agentmemory/sessions?limit=${v.limit}`,
+        `/agentmemory/sessions?${params.toString()}`,
         { method: "GET" },
       );
       return textResponse(result, true);
@@ -292,6 +330,7 @@ async function handleLocal(
           const project = typeof m["project"] === "string" ? m["project"] : undefined;
           return project === v.project;
         })
+        .filter((m) => inTimeRange(m["createdAt"], v.timeRange ?? null))
         .filter((m) => {
           const text = [
             typeof m["title"] === "string" ? m["title"] : "",
@@ -313,7 +352,10 @@ async function handleLocal(
       const sessions =
         await kvInstance.list<Record<string, unknown>>("mem:sessions");
       const limit = v.limit ?? 20;
-      return textResponse({ sessions: sessions.slice(0, limit) }, true);
+      const filtered = v.timeRange
+        ? filterSessionsByTime(sessions, v.timeRange)
+        : sessions;
+      return textResponse({ sessions: filtered.slice(0, limit) }, true);
     }
 
     case "memory_governance_delete": {

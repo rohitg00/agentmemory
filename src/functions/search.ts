@@ -9,6 +9,7 @@ import { memoryToObservation } from '../state/memory-utils.js'
 import { recordAccessBatch } from './access-tracker.js'
 import { logger } from "../logger.js";
 import { getAgentId, isAgentScopeIsolated } from "../config.js";
+import { inTimeRange, parseTimeRange, TimeRangeError } from "../state/time-filter.js";
 
 let index: SearchIndex | null = null
 let vectorIndex: VectorIndex | null = null
@@ -330,6 +331,8 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
       format?: string
       token_budget?: number
       agentId?: string
+      start_time?: string
+      end_time?: string
     }) => {
       const idx = getSearchIndex()
 
@@ -395,6 +398,18 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
         }
         tokenBudget = data.token_budget
       }
+      let timeRange: ReturnType<typeof parseTimeRange>
+      try {
+        timeRange = parseTimeRange({
+          start_time: data.start_time,
+          end_time: data.end_time,
+        })
+      } catch (err) {
+        if (err instanceof TimeRangeError) {
+          throw new Error(`mem::search: ${err.message}`)
+        }
+        throw err
+      }
 
       if (idx.size === 0) {
         const count = await rebuildIndex(kv)
@@ -408,7 +423,7 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
       // doesn't carry it), so without the over-fetch isolated-mode
       // queries return underfilled pages when same-agent matches
       // rank lower than cross-agent ones in the hybrid score.
-      const filtering = !!(projectFilter || cwdFilter || filterAgentId)
+      const filtering = !!(projectFilter || cwdFilter || filterAgentId || timeRange)
       const fetchLimit = filtering ? Math.max(effectiveLimit * 10, 100) : effectiveLimit
       const results = idx.search(query, fetchLimit)
 
@@ -444,7 +459,7 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
       // rows, and capping early would underfill the result page. Use
       // fetchLimit as the upper bound in that case; the final
       // truncation lives at the end of the second pass.
-      const earlyCap = filterAgentId ? fetchLimit : effectiveLimit
+      const earlyCap = filterAgentId || timeRange ? fetchLimit : effectiveLimit
       const candidates: typeof results = []
       for (const r of results) {
         if (candidates.length >= earlyCap) break
@@ -503,6 +518,7 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
         // happens post-lookup. Wildcard ("*") and no-isolation paths
         // resolved filterAgentId=undefined upstream and pass through.
         if (filterAgentId !== undefined && obs.agentId !== filterAgentId) continue
+        if (timeRange && !inTimeRange(obs.timestamp, timeRange)) continue
         if (enriched.length >= effectiveLimit) break
         enriched.push({
           observation: obs,

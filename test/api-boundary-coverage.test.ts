@@ -480,6 +480,8 @@ describe("REST API boundary coverage", () => {
         format: "COMPACT",
         token_budget: 50,
         agentId: "agent-body",
+        start_time: "2026-06-01T00:00:00Z",
+        end_time: "2026-06-30T23:59:59Z",
         ignored: true,
       },
       query: { agentId: "agent-query" },
@@ -494,7 +496,34 @@ describe("REST API boundary coverage", () => {
         format: "compact",
         token_budget: 50,
         agentId: "agent-body",
+        start_time: "2026-06-01T00:00:00Z",
+        end_time: "2026-06-30T23:59:59Z",
       },
+    });
+
+    await expect(search(req({
+      body: { query: "x", start_time: "not-a-date" },
+    }))).resolves.toMatchObject({
+      status_code: 400,
+      body: { code: "unparseable" },
+    });
+
+    const sessions = sdk.getFunction("api::sessions")!;
+    await expect(sessions(req({
+      query: {
+        start_time: "2026-06-14T00:00:00.000Z",
+        end_time: "2026-06-14T00:00:00.000Z",
+        limit: "1",
+      },
+    }))).resolves.toMatchObject({
+      status_code: 200,
+      body: { sessions: [expect.objectContaining({ id: "ses_1" })] },
+    });
+    await expect(sessions(req({
+      query: { end_time: "2026-06-13T23:59:59.000Z" },
+    }))).resolves.toMatchObject({
+      status_code: 200,
+      body: { sessions: [] },
     });
   });
 
@@ -567,7 +596,7 @@ describe("REST API boundary coverage", () => {
       ["api::generate-rules", req({ body: { project: "git:repo" } }), 200],
       ["api::migrate", req({ body: { step: "audit", dryRun: true } }), 200],
       ["api::evict", req({ body: { dryRun: true } }), 200],
-      ["api::smart-search", req({ body: { query: "api", expandIds: ["obs_1"], limit: 5, project: "git:repo", includeLessons: true, agentId: "agent-env", sessionId: "ses_1" } }), 200],
+      ["api::smart-search", req({ body: { query: "api", expandIds: ["obs_1"], limit: 5, project: "git:repo", includeLessons: true, agentId: "agent-env", sessionId: "ses_1", start_time: "2026-06-01T00:00:00Z", end_time: "2026-06-30T23:59:59Z" } }), 200],
       ["api::diagnostic-followup", req(), 200],
       ["api::timeline", req({ body: { anchor: "2026-06-14", before: 1, after: 1, project: "git:repo" } }), 200],
       ["api::profile", req({ query: { project: "git:repo" } }), 200],
