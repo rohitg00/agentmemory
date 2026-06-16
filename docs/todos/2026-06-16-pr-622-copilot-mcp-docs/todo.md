@@ -66,7 +66,7 @@ Stop conditions:
 | Decide PR 622 fate | Compare Issue 589, PR 622 diff, and current README/CLI config | complete | Adapted import. Public issue reports VS Code Copilot Agent Mode using `servers`; current README covered Copilot CLI but not VS Code Copilot `servers` shape. |
 | Add minimal README guidance if still relevant | `rg` for VS Code Copilot terms and security flags; `git diff --check` | complete | README now documents `.vscode/mcp.json` / VS Code user MCP settings with `servers`, existing env defaults, and 7-vs-53-tool fallback behavior. |
 | Security review | Manual review of docs snippet for secret handling, tool exposure, unsafe commands, fallback behavior | complete | No secret literal, no unsafe shell beyond existing `npx -y @agentmemory/mcp`, no broad file writes, and fail-hard mode remains documented for central deployments. |
-| Merge prep | `$prep-merge-to-local-main` | pending | Pending after implementation and verification. |
+| Merge prep | `$prep-merge-to-local-main` | complete | Local `main` at `6c387b4efea524db5bf8fe0e923958cbcf0213f1` was already an ancestor of the branch, so merge was a no-op. |
 
 ## Decision
 
@@ -77,3 +77,13 @@ Adapted import. PR 622 addresses a real gap for VS Code Copilot users, but its o
 - `rg -n "GitHub Copilot|VS Code|\\.vscode/mcp\\.json|\"servers\"|AGENTMEMORY_REQUIRE_SERVER" README.md` found the new VS Code Copilot row, config block, and fail-hard guidance.
 - `git diff --check` exited 0.
 - `git status -sb --untracked-files=all` showed only `README.md` and this task record directory as task-owned changes.
+- Staged pre-commit checks passed: `git diff --cached --check` exited 0 and `gitleaks protect --staged --redact` found no leaks.
+- `$prep-merge-to-local-main` preflight found local `main` clean at `6c387b4efea524db5bf8fe0e923958cbcf0213f1`; `git merge-base --is-ancestor 6c387b4efea524db5bf8fe0e923958cbcf0213f1 HEAD` exited 0, so the merge step was a no-op.
+
+## Review Notes
+
+- `$security-best-practices`: passive review only; docs-only Markdown diff, no browser runtime code. Checked the JavaScript frontend security reference for secret and unsafe-code-output concerns. No critical or major issue found.
+- `$simple-code`: no cleanup edit made; the README addition is already minimal and stays inside the existing MCP onboarding section.
+- `$requesting-code-review`: independent subagent dispatch skipped because this runtime only permits subagents when the user explicitly requests them. A focused self-review was performed instead.
+- `$review-implementation`: self-review found no blocking finding. Scope is limited to `README.md` and the task record; no runtime config, package metadata, MCP registry, auth, persistence, or dependency behavior changed.
+- `codex-security:security-diff-scan`: full artifact-producing scan not run because the committed change is docs-only and does not alter executable code or repository configuration. Diff-scoped security review covered secret handling, unsafe commands, MCP tool exposure, fallback behavior, and plaintext remote bearer-token guidance; no reportable finding.
