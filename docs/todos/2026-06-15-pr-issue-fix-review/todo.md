@@ -49,13 +49,19 @@ Stop conditions:
 | --- | --- | --- | --- |
 | Issue-first evidence review | Local docs plus unauthenticated public read-only metadata/diff | Passed | Issue text and comment show local provider aliases were ignored; upstream-pr-412 contained useful alias intent plus unrelated and unsafe older diff context. |
 | Adapt provider alias behavior | Focused tests and source inspection | Passed | `src/config.ts` now accepts `AGENTMEMORY_EMBEDDING_PROVIDER` and maps `xenova` or `transformers` to `local`. |
+| Refresh generated config reference | Skill reference generator check and full suite | Passed | Regenerated `plugin/skills/agentmemory-config/REFERENCE.md`; `pnpm exec tsx scripts/skills/generate.ts --check`, focused plugin/provider tests, and `pnpm test` pass. |
 | Preserve remote opt-in privacy boundary | Focused negative tests and security review | Passed | Provider keys alone still return no text embedding provider in `test/embedding-provider.test.ts`; Semgrep and Codex Security diff scan found no findings. |
 | Worklist row update | Diff inspection | Passed | `pr-issue-fix-review-list.md` created with a neutral upstream-pr-412 row. |
 | Prep local main merge readiness | prep-merge-to-local-main | Passed | Local main was the branch base, so merge was a no-op; no conflicts or preserved dirty paths. |
 
 ## Subagent Ledger
 
-No delegated workstreams yet.
+| Workstream | Scope | Edits allowed | Expected output | Result | Residual risk |
+| --- | --- | --- | --- | --- | --- |
+| Full-suite failure diagnosis A | Read-only inspection of failing tests and branch diff | No | Classify failures as product bug, stale test, merge drift, or environment issue | Found only deterministic generated config reference drift; remaining timeouts not reproduced and likely transient full-suite resource pressure. | Resolved by regenerated reference and green full `pnpm test`. |
+| Full-suite failure diagnosis B | Read-only inspection of failing tests, setup, and branch diff | No | Independent failure classification and verification suggestions | Same conclusion: `AGENTMEMORY_EMBEDDING_PROVIDER` changed `src/` but generated config reference was stale; non-generator failures passed in targeted reruns. | Resolved by regenerated reference and green full `pnpm test`. |
+| Focused requirements review | Current task-owned working-tree diff | No | Requirements, coverage, integration, maintainability, and scope-drift review | ACCEPT; no findings. | None identified. |
+| Adversarial implementation review | Current task-owned working-tree diff | No | Correctness, safety, scope, generated-file churn, docs truthfulness, and boundary review | Timed out with no result after two waits; agent was closed and replaced with manual adversarial review. | Manual review found no findings; residual risk is limited to lack of independent adversarial result for the two-file doc/generated diff. |
 
 ## Review Notes
 
@@ -95,3 +101,17 @@ Prep merge closeout:
 - Local main was already an ancestor of the branch after the task commit, so the merge was a no-op.
 - Preserved unrelated dirty paths: none.
 - Conflicts resolved: none.
+
+Follow-up verification on 2026-06-16:
+- Initial `pnpm test` could not start before dependency setup because `vitest` was missing.
+- Local verification setup command: `NPM_CONFIG_USERCONFIG=/private/tmp/agentmemory-empty-npmrc pnpm install --ignore-scripts --lockfile=false`.
+- Setup artifact: ignored `node_modules`; no manifest or lockfile changes.
+- Full `pnpm test` then failed with 9 failures across 7 files.
+- Two read-only diagnosis subagents and a local `--no-file-parallelism` rerun reduced the deterministic branch failure to stale generated config reference docs.
+- Regenerated `plugin/skills/agentmemory-config/REFERENCE.md`.
+- `pnpm exec tsx scripts/skills/generate.ts --check` passed.
+- `pnpm exec vitest run test/plugin-surface-contract.test.ts test/embedding-provider.test.ts --exclude test/integration.test.ts --reporter=verbose` passed with 33 tests.
+- `pnpm test` passed with 158 test files and 1988 tests.
+- Current working tree has no diff in `src/config.ts` or `test/embedding-provider.test.ts`; only task-owned documentation/generated-reference files remain modified.
+- Requirements review subagent returned ACCEPT with no findings.
+- Adversarial review subagent timed out with no result; manual adversarial review inspected the two-file task-owned diff, verified generated count/list consistency, checked task-note evidence for truthfulness, and found no findings.
