@@ -2,6 +2,7 @@
   "name": "agentmemory",
   "version": "0.9.4",
   "type": "module",
+  "packageManager": "pnpm@11.6.0",
   "openclaw": {
     "extensions": [
       "./plugin.mjs"

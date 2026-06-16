@@ -1,0 +1,24 @@
+packages:
+  - "."
+  - "website"
+  - "packages/*"
+  - "integrations/filesystem-watcher"
+  - "integrations/openclaw"
+  - "integrations/pi"
+
+linkWorkspacePackages: true
+preferWorkspacePackages: true
+savePrefix: ""
+minimumReleaseAge: 1440
+minimumReleaseAgeStrict: true
+minimumReleaseAgeIgnoreMissingTime: false
+blockExoticSubdeps: true
+strictDepBuilds: true
+dangerouslyAllowAllBuilds: false
+trustPolicy: no-downgrade
+
+overrides:
+  qs: "^6.15.2"
+  ws: "^8.21.0"
+  protobufjs: "^7.5.8"
+  postcss: "^8.5.10"
