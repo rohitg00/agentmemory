@@ -70,8 +70,8 @@ Stop conditions:
 | Security review | Manual review plus applicable scanners | done | Semgrep scanned `src/viewer/index.html` and `test/viewer-session-id.test.ts`: 0 findings. Codex Security diff scan report written under `/tmp/codex-security-scans/agentmemory/6c387b4_20260616_dashboard_partial_payloads/`: 0 findings. |
 | Neutral local documentation | Update this task record and coordinator decision if appropriate | done | This task record uses neutral IDs only. |
 | Prep merge | Run `$prep-merge-to-local-main` | done | Local `main` at `60099a3` merged successfully; post-merge harness and Semgrep checks passed. |
-| Corrected merge-readiness run | Merge current local `main`, install with frozen pnpm lockfile, run `corepack pnpm test` | in progress | Local `main` at `d4393d1` merged as `2b60bcd`; frozen pnpm install passed; first `corepack pnpm test` had one transient retention dry-run timeout, subsequent exact rerun passed 1,987 tests. |
-| Retention dry-run timing fix | Read-only diagnosis subagents, targeted retention tests, full pnpm test | in progress | Deferred deletion-only `image-refs` import until after `dryRun` return; focused dry-run test passed in 20ms and full `test/retention.test.ts` passed. |
+| Corrected merge-readiness run | Merge current local `main`, install with frozen pnpm lockfile, run `corepack pnpm test` | done | Local `main` at `d4393d1` merged as `2b60bcd`; frozen pnpm install passed; final exact `corepack pnpm test` passed 158 test files and 1,987 tests after rerun. |
+| Retention dry-run timing fix | Read-only diagnosis subagents, targeted retention tests, full pnpm test | done | Deferred deletion-only `image-refs` import until after `dryRun` return; focused dry-run test passed in 20ms, full `test/retention.test.ts` passed, and final exact `corepack pnpm test` passed. |
 
 ## Progress
 
@@ -115,6 +115,12 @@ Stop conditions:
   - Targeted verification after the fix: `corepack pnpm exec vitest run test/retention.test.ts -t "dry-run eviction shows candidates without deleting" --reporter verbose` passed in 20ms for the test; `corepack pnpm exec vitest run test/retention.test.ts --reporter verbose` passed 15 tests.
   - Semgrep full-repo scan passed with 0 findings.
   - OSV scan reported one medium advisory from the merged lockfile: `@opentelemetry/core@1.30.1` via pinned `iii-sdk@0.11.2`, fixed in `2.8.0`; user accepted this risk for the current merge-readiness run rather than broadening dependency scope.
+  - Staged the retention fix and task-record update, ran `git diff --cached --check` and `gitleaks protect --staged --redact`; both passed.
+  - Committed the retention dry-run fix as `603a9e0`.
+  - Re-ran the prep-merge check after the fix; local `main` at `d4393d1` was already an ancestor of `HEAD`, so no additional merge was needed.
+  - Re-ran the required sanitized frozen install command; it passed with `Already up to date`.
+  - A post-fix exact `corepack pnpm test` run exposed hook/project-scope timeout flakes in process-heavy tests. Two read-only diagnostic subagents classified the failures as load-sensitive test behavior unrelated to the retention fix; one subagent reproduced the failing cluster passing with serial file execution, and another exact full-suite run passed in its context.
+  - Final exact `corepack pnpm test` rerun passed 158 test files and 1,987 tests in 45.53s.
 
 ## Review Notes
 
