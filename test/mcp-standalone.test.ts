@@ -91,6 +91,28 @@ describe("Tools Registry", () => {
       expect(tool.inputSchema.properties).toBeDefined();
     }
   });
+
+  it("all tool descriptions include usage guidance without internal jargon", () => {
+    const forbiddenPhrases = [
+      "progressive disclosure",
+      "4-tier memory consolidation pipeline",
+      "citation chain",
+    ];
+
+    for (const tool of getAllTools()) {
+      expect(
+        /(^Use (to|for)\b|\bUse when\b)/.test(tool.description),
+        `${tool.name} description should tell agents when to use the tool`,
+      ).toBe(true);
+
+      for (const phrase of forbiddenPhrases) {
+        expect(
+          tool.description.toLowerCase(),
+          `${tool.name} description should avoid internal jargon: ${phrase}`,
+        ).not.toContain(phrase);
+      }
+    }
+  });
 });
 
 describe("InMemoryKV", () => {
