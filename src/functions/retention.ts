@@ -323,6 +323,8 @@ export function registerRetentionFunctions(
         };
       }
 
+      const { decrementImageRef } = await import("./image-refs.js");
+
       // Branch on source (#124). Pre-0.8.10 rows have no `source` field,
       // and that includes semantic retention rows that were written by
       // the old scorer — so we can't just default to episodic, that
