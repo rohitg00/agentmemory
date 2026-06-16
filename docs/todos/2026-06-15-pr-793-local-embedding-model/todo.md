@@ -50,6 +50,7 @@ Stop conditions:
 | Default local model behavior | Targeted test, docs inspection/update if needed | complete | Default changed to `Xenova/paraphrase-multilingual-MiniLM-L12-v2`; Hugging Face public config verified `hidden_size: 384`. |
 | Security review | Manual review plus required scanners where applicable | complete | Semgrep default scan completed with 0 findings. Codex Security diff scan completed with no findings; reports under `/tmp/codex-security-scans/agentmemory/6c387b4_20260615T213735Z/`. |
 | Merge prep | prep-merge-to-local-main workflow | complete | Pre-merge commit `06b9925d9d229e7b2e251f3e96745e4fe2ce73dd`; local main commit `6c387b4efea524db5bf8fe0e923958cbcf0213f1` merged as a no-op (`Already up to date`). Post-merge checks passed. |
+| Corrected local-main readiness | Merge current local `main`, install with pnpm lockfile, run exact pnpm test | in progress | Local `main` `d4393d1ab5dd284edee3a17bfbf45825f239c07e` merged as `eba795a135ddef93eaa051e87dadda95c8410da8`; frozen pnpm install passed. Initial exact tests exposed full-suite cold-start/hook timing flakes; scoped post-merge fix added and `corepack pnpm test` passed 158 files / 1989 tests before committing the fix. |
 
 ## Progress
 
@@ -71,6 +72,15 @@ Stop conditions:
   - Merge command result: no-op, `Already up to date`.
   - Post-merge verification: clean status, `git diff --check`, targeted `test/embedding-provider.test.ts` 22/22 passing, Semgrep default scan 0 findings.
   - Preserved unrelated dirty paths: none in this worktree.
+- Corrected merge-readiness run:
+  - Worktree started detached at `1ae12d0aa740d45df5ca55b9aa1a954b471ee5e4`; target branch was not attached elsewhere, then switched to `review/issue-725-pr-793-local-embedding-model`.
+  - Captured local main: `d4393d1ab5dd284edee3a17bfbf45825f239c07e`.
+  - Merge result: commit `eba795a135ddef93eaa051e87dadda95c8410da8` merged current local main without conflicts and added `pnpm-lock.yaml` / `pnpm-workspace.yaml`.
+  - Install command passed: `HOME=/tmp/agentmemory-merge-test-issue725-home XDG_CONFIG_HOME=/tmp/agentmemory-merge-test-issue725-xdg NPM_CONFIG_USERCONFIG=/tmp/agentmemory-merge-test-issue725-npmrc PNPM_HOME=/tmp/agentmemory-merge-test-issue725-pnpm-home corepack pnpm install --frozen-lockfile --ignore-scripts --store-dir /tmp/agentmemory-merge-test-pnpm-store`.
+  - Initial exact `corepack pnpm test` failed nondeterministically: first run had three 10s cold-start timeouts plus one hook project fallback assertion; a later exact run had hook subprocess timing failures. Targeted reruns passed, and read-only diagnosis subagents attributed the failures to cold `iii-sdk` import / hook subprocess timing rather than local embedding behavior.
+  - Scoped fix: dry-run retention eviction now returns before loading image-reference cleanup; hook tests assert no stdin wait / no fetch instead of a brittle sub-1s wall-clock, and Copilot hook test timeout remains bounded at 10s.
+  - Red/green evidence: the new dry-run regression test failed before moving the `image-refs` import and passed after the change. Targeted `test/retention.test.ts test/context-injection.test.ts test/copilot-plugin.test.ts` passed 37/37. Full `corepack pnpm test` passed 158 files / 1989 tests before commit.
+  - Review/security: focused reviewers accepted the four-file patch; Semgrep p/default on the four changed files reported 0 findings. Diff-scoped security artifacts are under `/tmp/codex-security-scans/agentmemory/eba795a_post_merge_fix/`.
 
 ## Security Notes
 

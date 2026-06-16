@@ -304,7 +304,6 @@ export function registerRetentionFunctions(
           ? data.maxEvict
           : 50;
       const maxEvict = Math.min(1000, Math.max(0, maxEvictRaw));
-      const { decrementImageRef } = await import("./image-refs.js");
 
       const allScores = await kv.list<RetentionScore>(KV.retentionScores);
       const candidates = allScores
@@ -323,6 +322,8 @@ export function registerRetentionFunctions(
           })),
         };
       }
+
+      const { decrementImageRef } = await import("./image-refs.js");
 
       // Branch on source (#124). Pre-0.8.10 rows have no `source` field,
       // and that includes semantic retention rows that were written by

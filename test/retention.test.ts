@@ -238,6 +238,44 @@ describe("RetentionScoring", () => {
     expect(remaining.length).toBe(2);
   });
 
+  it("dry-run eviction does not load image reference cleanup", async () => {
+    vi.doMock("../src/functions/image-refs.js", () => {
+      throw new Error("image refs should not load during dry-run eviction");
+    });
+    try {
+      const { registerRetentionFunctions } = await import(
+        "../src/functions/retention.js"
+      );
+
+      const sdk = mockSdk();
+      const kv = mockKV();
+      registerRetentionFunctions(sdk as never, kv as never);
+      await kv.set("mem:retention", "mem_evict", {
+        memoryId: "mem_evict",
+        source: "episodic",
+        score: 0.01,
+        salience: 0,
+        temporalDecay: 0,
+        reinforcementBoost: 0,
+        lastAccessed: new Date().toISOString(),
+        accessCount: 0,
+      });
+
+      const dryResult = (await sdk.trigger({
+        function_id: "mem::retention-evict",
+        payload: {
+          threshold: 0.5,
+          dryRun: true,
+        },
+      })) as any;
+
+      expect(dryResult.dryRun).toBe(true);
+      expect(dryResult.wouldEvict).toBe(1);
+    } finally {
+      vi.doUnmock("../src/functions/image-refs.js");
+    }
+  });
+
   it("includes semantic memories in scoring", async () => {
     const { registerRetentionFunctions } = await import(
       "../src/functions/retention.js"

@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { spawn } from "node:child_process";
+import { createServer } from "node:http";
 import { join } from "node:path";
 
 const HOOKS_DIR = join(import.meta.dirname, "..", "plugin", "scripts");
@@ -13,6 +14,7 @@ function runHook(
   scriptName: string,
   stdin: string,
   env: Record<string, string>,
+  options: { endStdin?: boolean; timeoutMs?: number } = {},
 ): Promise<{
   stdout: string;
   stderr: string;
@@ -44,13 +46,21 @@ function runHook(
     child.stderr.on("data", (chunk) => {
       stderr += chunk.toString();
     });
+    const timeout =
+      options.timeoutMs === undefined
+        ? undefined
+        : setTimeout(() => {
+            child.kill();
+            reject(new Error(`${scriptName} timed out`));
+          }, options.timeoutMs);
     child.on("error", reject);
     child.on("close", (exitCode) => {
+      if (timeout) clearTimeout(timeout);
       resolve({ stdout, stderr, exitCode, tookMs: Date.now() - start });
     });
 
-    child.stdin.write(stdin);
-    child.stdin.end();
+    if (stdin.length > 0) child.stdin.write(stdin);
+    if (options.endStdin !== false) child.stdin.end();
   });
 }
 
@@ -82,13 +92,38 @@ describe("pre-tool-use hook — context injection gate (#143)", () => {
   });
 
   it("exits fast when disabled (no stdin consumption, no network fetch)", async () => {
-    // The disabled path must not open stdin or reach for fetch — it
-    // should return immediately. A 250ms budget is generous enough to
-    // account for Node startup on CI while still catching any accidental
-    // fetch round-trip or stdin buffering.
-    const result = await runHook("pre-tool-use.mjs", "", {});
-    expect(result.tookMs).toBeLessThan(1000);
-    expect(result.stdout).toBe("");
+    let requests = 0;
+    const server = createServer((_req, res) => {
+      requests++;
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end("{}");
+    });
+    await new Promise<void>((resolve) => {
+      server.listen(0, "127.0.0.1", resolve);
+    });
+    const address = server.address();
+    if (!address || typeof address === "string") {
+      server.close();
+      throw new Error("test server did not bind to a TCP port");
+    }
+
+    try {
+      // Keep stdin open. If the disabled path accidentally starts reading
+      // stdin, the subprocess will hang until the test timeout kills it.
+      const result = await runHook(
+        "pre-tool-use.mjs",
+        "",
+        { AGENTMEMORY_URL: `http://127.0.0.1:${address.port}` },
+        { endStdin: false, timeoutMs: 5000 },
+      );
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toBe("");
+      expect(requests).toBe(0);
+    } finally {
+      await new Promise<void>((resolve) => {
+        server.close(() => resolve());
+      });
+    }
   });
 
   it("when AGENTMEMORY_INJECT_CONTEXT=true, hook still runs but safely errors on unreachable backend", async () => {
