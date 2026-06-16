@@ -46,7 +46,7 @@ describe("runtime iii port rendering", () => {
     }
   });
 
-  it("renders a runtime iii config for non-default port blocks", () => {
+  it("renders a v0.11-compatible runtime iii config for non-default REST and stream ports", () => {
     const nativeConfig = readFileSync("iii-config.yaml", "utf-8");
 
     const rendered = renderRuntimeIiiConfig(nativeConfig, {
