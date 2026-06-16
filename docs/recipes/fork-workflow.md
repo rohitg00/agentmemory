@@ -28,7 +28,7 @@ git status -sb
 git fetch upstream
 git fetch origin
 git merge upstream/main
-npm test
+corepack pnpm test
 ```
 
 If tests pass and the merge should be published, ask for explicit current-turn confirmation before running:
@@ -46,7 +46,7 @@ git fetch upstream
 git fetch origin
 git switch -c upstream-pr/<short-topic> upstream/main
 git cherry-pick <commit-sha>
-npm test
+corepack pnpm test
 ```
 
 If the upstream PR branch should be published, ask for explicit current-turn confirmation before running:
