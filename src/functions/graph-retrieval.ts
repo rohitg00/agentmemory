@@ -1,6 +1,8 @@
 import type {
+  CompressedObservation,
   GraphNode,
   GraphEdge,
+  Session,
 } from "../types.js";
 import { KV } from "../state/schema.js";
 import type { StateKV } from "../state/kv.js";
@@ -75,6 +77,56 @@ function neighborsFromArrays(
 
 export class GraphRetrieval {
   constructor(private kv: StateKV) {}
+
+  private async resolveSessionIds(
+    results: GraphRetrievalResult[],
+  ): Promise<void> {
+    if (results.length === 0) return;
+
+    const resolved = new Map<string, string | null>();
+    let sessions: Session[] | null = null;
+
+    const hasObservation = async (
+      sessionId: string,
+      obsId: string,
+    ): Promise<boolean> => {
+      const obs = await this.kv
+        .get<CompressedObservation>(KV.observations(sessionId), obsId)
+        .catch(() => null);
+      return obs !== null;
+    };
+
+    for (const result of results) {
+      if (resolved.has(result.obsId)) {
+        result.sessionId = resolved.get(result.obsId) ?? "";
+        continue;
+      }
+
+      if (
+        result.sessionId &&
+        (await hasObservation(result.sessionId, result.obsId))
+      ) {
+        resolved.set(result.obsId, result.sessionId);
+        continue;
+      }
+
+      if (sessions === null) {
+        sessions = await this.kv.list<Session>(KV.sessions).catch(() => []);
+      }
+
+      let foundSessionId: string | null = null;
+      for (const session of sessions) {
+        if (!session.id || session.id === result.sessionId) continue;
+        if (await hasObservation(session.id, result.obsId)) {
+          foundSessionId = session.id;
+          break;
+        }
+      }
+
+      resolved.set(result.obsId, foundSessionId);
+      result.sessionId = foundSessionId ?? "";
+    }
+  }
 
   async searchByEntities(
     entityNames: string[],
@@ -166,7 +218,7 @@ export class GraphRetrieval {
 
           results.push({
             obsId,
-            sessionId: "",
+            sessionId: lastNode.sessionId ?? "",
             score,
             graphContext: buildGraphContext(path),
             pathLength,
@@ -179,7 +231,7 @@ export class GraphRetrieval {
         visitedObs.add(obsId);
         results.push({
           obsId,
-          sessionId: "",
+          sessionId: startNode.sessionId ?? "",
           score: 1.0,
           graphContext: `[${startNode.type}] ${startNode.name}`,
           pathLength: 0,
@@ -188,7 +240,9 @@ export class GraphRetrieval {
     }
 
     results.sort((a, b) => b.score - a.score);
-    return results.slice(0, maxResults);
+    const top = results.slice(0, maxResults);
+    await this.resolveSessionIds(top);
+    return top;
   }
 
   async expandFromChunks(
@@ -261,7 +315,7 @@ export class GraphRetrieval {
 
           results.push({
             obsId,
-            sessionId: "",
+            sessionId: lastNode.sessionId ?? "",
             score,
             graphContext: buildGraphContext(path),
             pathLength,
@@ -271,7 +325,9 @@ export class GraphRetrieval {
     }
 
     results.sort((a, b) => b.score - a.score);
-    return results.slice(0, maxResults);
+    const top = results.slice(0, maxResults);
+    await this.resolveSessionIds(top);
+    return top;
   }
 
   async temporalQuery(

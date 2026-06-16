@@ -414,6 +414,7 @@ function mergeNode(
       ]),
     ],
     properties: { ...existing.properties, ...incoming.properties },
+    sessionId: incoming.sessionId ?? existing.sessionId,
     updatedAt: capturedAt,
   };
 }
@@ -505,6 +506,7 @@ function parseAttrs(raw: string): Record<string, string> {
 function parseGraphXml(
   xml: string,
   observationIds: string[],
+  sessionByObsId?: Map<string, string>,
 ): {
   nodes: GraphNode[];
   edges: GraphEdge[];
@@ -532,12 +534,23 @@ function parseGraphXml(
     while ((propMatch = propRegex.exec(propsBlock)) !== null) {
       properties[propMatch[1]] = propMatch[2];
     }
+    let sessionId: string | undefined;
+    if (sessionByObsId) {
+      for (const obsId of observationIds) {
+        const found = sessionByObsId.get(obsId);
+        if (found) {
+          sessionId = found;
+          break;
+        }
+      }
+    }
     nodes.push({
       id: generateId("gn"),
       type,
       name,
       properties,
       sourceObservationIds: observationIds,
+      ...(sessionId ? { sessionId } : {}),
       createdAt: now,
     });
   };
@@ -605,7 +618,17 @@ export function registerGraphFunction(
         );
 
         const obsIds = data.observations.map((o) => o.id);
-        const { nodes, edges } = parseGraphXml(response, obsIds);
+        const sessionByObsId = new Map<string, string>();
+        for (const observation of data.observations) {
+          if (observation.sessionId) {
+            sessionByObsId.set(observation.id, observation.sessionId);
+          }
+        }
+        const { nodes, edges } = parseGraphXml(
+          response,
+          obsIds,
+          sessionByObsId,
+        );
 
         // #814 v2: targeted name-index lookups replace the O(n) scan
         // over `kv.list<GraphNode>(KV.graphNodes)`. At 75K nodes the

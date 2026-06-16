@@ -394,6 +394,7 @@ export interface GraphNode {
   name: string;
   properties: Record<string, unknown>;
   sourceObservationIds: string[];
+  sessionId?: string;
   createdAt: string;
   updatedAt?: string;
   aliases?: string[];
