@@ -53,18 +53,30 @@ export async function rerank(
   for (const pair of pairs) {
     try {
       const output = await reranker(pair.text);
-      const score = Array.isArray(output) ? output[0]?.score ?? 0 : 0;
+      const rawScore = Array.isArray(output) ? output[0]?.score : undefined;
+      const score =
+        typeof rawScore === "number" && Number.isFinite(rawScore)
+          ? rawScore
+          : pair.result.combinedScore;
       scores.push({ result: pair.result, rerankScore: score });
     } catch {
       scores.push({ result: pair.result, rerankScore: pair.result.combinedScore });
     }
   }
 
+  const distinctScores = new Set(scores.map((s) => s.rerankScore));
+  if (distinctScores.size <= 1) {
+    return candidates.map((result, i) => ({
+      ...result,
+      rerankPosition: i + 1,
+    }));
+  }
+
   scores.sort((a, b) => b.rerankScore - a.rerankScore);
 
   return scores.map((s, i) => ({
     ...s.result,
-    combinedScore: s.rerankScore,
+    rerankScore: s.rerankScore,
     rerankPosition: i + 1,
   }));
 }

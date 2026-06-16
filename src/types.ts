@@ -265,6 +265,7 @@ export interface HybridSearchResult {
   vectorScore: number;
   graphScore: number;
   combinedScore: number;
+  rerankScore?: number;
   sessionId: string;
   graphContext?: string;
 }
