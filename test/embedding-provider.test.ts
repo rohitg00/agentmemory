@@ -218,6 +218,28 @@ describe("createEmbeddingProvider", () => {
     expect(provider!.name).toBe("local");
   });
 
+  it("prefers OPENAI_EMBEDDING_API_KEY over OPENAI_API_KEY for OpenAI embeddings", async () => {
+    const { createEmbeddingProvider } = await freshEmbeddingModule();
+    process.env["EMBEDDING_PROVIDER"] = "openai";
+    process.env["OPENAI_API_KEY"] = "hosted-chat-key";
+    process.env["OPENAI_EMBEDDING_API_KEY"] = "local-embedding-key";
+    process.env["OPENAI_EMBEDDING_DIMENSIONS"] = "3";
+
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({ data: [{ embedding: [0.1, 0.2, 0.3] }] }),
+        { status: 200 },
+      ),
+    );
+
+    const provider = createEmbeddingProvider();
+    await provider!.embed("hello");
+
+    const headers = (fetchSpy.mock.calls[0][1] as RequestInit)
+      .headers as Record<string, string>;
+    expect(headers.Authorization).toBe("Bearer local-embedding-key");
+  });
+
   it("returns null for blank or unknown EMBEDDING_PROVIDER values", async () => {
     const { createEmbeddingProvider } = await freshEmbeddingModule();
 
