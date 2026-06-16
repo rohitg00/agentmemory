@@ -19,6 +19,12 @@ function safeParseInt(value: string | undefined, fallback: number): number {
 const DATA_DIR = join(homedir(), ".agentmemory");
 const ENV_FILE = join(DATA_DIR, ".env");
 
+export const RESOLVED_PATHS = {
+  dataDir: DATA_DIR,
+  envFile: ENV_FILE,
+  envFileExists: (): boolean => existsSync(ENV_FILE),
+};
+
 let warnPremiumModelShown = false;
 
 function loadEnvFile(): Record<string, string> {

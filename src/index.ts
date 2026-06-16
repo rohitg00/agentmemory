@@ -12,6 +12,7 @@ import {
   isConsolidationEnabled,
   isContextInjectionEnabled,
   isDropStaleIndexEnabled,
+  RESOLVED_PATHS,
 } from "./config.js";
 import {
   createProvider,
@@ -104,6 +105,7 @@ import { getAllTools } from "./mcp/tools-registry.js";
 import { startViewerServer } from "./viewer/server.js";
 import { shutdownSdkWithTimeout } from "./shutdown.js";
 import { MetricsStore } from "./eval/metrics-store.js";
+import { handleVectorDimensionMismatch } from "./boot/vector-dim-recovery.js";
 import { DedupMap } from "./functions/dedup.js";
 import { registerHealthMonitor } from "./health/monitor.js";
 import { initMetrics, OTEL_CONFIG } from "./telemetry/setup.js";
@@ -403,49 +405,22 @@ async function main() {
     );
   }
   if (loaded?.vector && vectorIndex && loaded.vector.size > 0) {
-    // Persisted vectors carry whatever dimension the provider had when
-    // they were written. If the active provider declares a different
-    // dimension — or if the on-disk index contains a mix of dimensions
-    // (legacy indexes written before the live-API guard in this PR) —
-    // restoring would silently corrupt search: cosineSimilarity returns
-    // 0 on cross-dim pairs, so affected observations stop matching
-    // anything and recall degrades without an error. Walk every stored
-    // vector instead of trusting the first; refuse to load if anything
-    // is off.
     const activeDim = embeddingProvider?.dimensions ?? 0;
-    const { mismatches, seenDimensions } =
-      activeDim > 0
-        ? loaded.vector.validateDimensions(activeDim)
-        : { mismatches: [], seenDimensions: new Set<number>() };
-
-    if (mismatches.length > 0) {
-      const sample = mismatches
-        .slice(0, 5)
-        .map((m) => `${m.obsId} (dim=${m.dim})`)
-        .join(", ");
-      const distinct = Array.from(seenDimensions).sort((a, b) => a - b).join(", ");
-      const dropStale = isDropStaleIndexEnabled();
-      if (dropStale) {
-        console.warn(
-          `[agentmemory] Persisted vector index has ${mismatches.length} of ` +
-            `${loaded.vector.size} vectors with the wrong dimension. Active ` +
-            `provider (${embeddingProvider?.name}) declares ${activeDim}; ` +
-            `dimensions seen on disk: ${distinct}. ` +
-            `AGENTMEMORY_DROP_STALE_INDEX=true is set — discarding the persisted ` +
-            `vectors. Live observations will rebuild the index over time.`,
-        );
-      } else {
-        throw new Error(
-          `[agentmemory] Refusing to start: persisted vector index has ` +
-            `${mismatches.length} of ${loaded.vector.size} vectors with the ` +
-            `wrong dimension. Active provider (${embeddingProvider?.name}) ` +
-            `declares ${activeDim}; dimensions seen on disk: ${distinct}. ` +
-            `First mismatched obsIds: ${sample}. Loading would silently corrupt ` +
-            `search (cross-dimension cosine returns 0). Choose one:\n` +
-            `  - Re-embed the existing index against the new provider, then start.\n` +
-            `  - Set AGENTMEMORY_DROP_STALE_INDEX=true to discard the persisted ` +
-            `vectors and rebuild from live observations.\n` +
-            `  - Switch the embedding provider back to the one that wrote the index.`,
+    if (activeDim > 0) {
+      const recoveryResult = await handleVectorDimensionMismatch({
+        activeDim,
+        activeProviderName: embeddingProvider?.name ?? "unknown",
+        dataDir: RESOLVED_PATHS.dataDir,
+        dropStale: isDropStaleIndexEnabled(),
+        envFile: RESOLVED_PATHS.envFile,
+        envFileExists: RESOLVED_PATHS.envFileExists(),
+        indexPersistence,
+        loadedVector: loaded.vector,
+        targetVector: vectorIndex,
+      });
+      if (recoveryResult === "clean") {
+        bootLog(
+          `Loaded persisted vector index (${vectorIndex.size} vectors)`,
         );
       }
     } else {
