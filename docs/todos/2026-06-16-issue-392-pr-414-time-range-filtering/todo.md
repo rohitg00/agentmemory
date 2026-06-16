@@ -58,6 +58,11 @@ Stop conditions:
 
 ## Progress
 
+- Corrected merge-readiness run started in worktree `/Users/A1538552/.codex/worktrees/7c6a/agentmemory`.
+- Initial corrected-run preflight found the worktree detached at `5a0d5f4f4ee10cf853935af80dcce8ce95a967b4`; `refs/heads/review/issue-392-pr-414-time-range-filtering` pointed at the same commit and was not attached elsewhere, so the worktree was switched to that branch without `--ignore-other-worktrees`.
+- Corrected-run local `refs/heads/main` is `d4393d1ab5dd284edee3a17bfbf45825f239c07e`.
+- Corrected-run status after branch attach is clean; no staged paths were present.
+- Corrected-run pre-merge lockfile check found no `pnpm-lock.yaml` in the branch snapshot; the user-directed install remains gated on a successful local-main merge adding the lockfile.
 - Read repo-local instructions and current worklist row for PR 414.
 - Confirmed initial detached worktree was clean.
 - Created branch `review/issue-392-pr-414-time-range-filtering`.
