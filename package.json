@@ -19,15 +19,15 @@
   "scripts": {
     "build": "tsdown && (cp iii-config.yaml dist/ 2>/dev/null || true) && (cp iii-config.docker.yaml dist/ 2>/dev/null || true) && (cp docker-compose.yml dist/ 2>/dev/null || true) && (cp .env.example dist/ 2>/dev/null || true) && mkdir -p dist/viewer && cp src/viewer/index.html dist/viewer/ && cp src/viewer/favicon.svg dist/viewer/",
     "dev": "tsx src/index.ts",
-    "start": "node dist/cli.mjs",
-    "migrate": "node dist/functions/migrate.js",
+    "start": "tsx dist/cli.mjs",
+    "migrate": "tsx dist/functions/migrate.js",
     "test": "vitest run --exclude test/integration.test.ts",
     "test:watch": "vitest --exclude test/integration.test.ts",
     "test:integration": "vitest run test/integration.test.ts",
     "test:all": "vitest run",
     "skills:gen": "tsx scripts/skills/generate.ts",
     "skills:check": "tsx scripts/skills/generate.ts --check && tsx scripts/skills/check.ts",
-    "bench:load": "node --import tsx benchmark/load-100k.ts",
+    "bench:load": "tsx benchmark/load-100k.ts",
     "eval:longmemeval": "tsx eval/runner/longmemeval.ts",
     "eval:coding-life": "tsx eval/runner/coding-life.ts"
   },
@@ -87,6 +87,7 @@
     "protobufjs": "^7.5.8"
   },
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=20.0.0",
+    "bun": ">=1.1.0"
   }
 }

@@ -13,8 +13,25 @@ import type {
   GraphNode,
   GraphEdge,
 } from "../types.js";
-import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
+
+// Cross-runtime DNS lookup: Bun has native Bun.dns.lookup(), Node uses
+// node:dns/promises. Both return { address, family } records.
+const IS_BUN = typeof (globalThis as any).Bun?.dns?.lookup === "function";
+
+async function dnsLookup(
+  hostname: string,
+  options?: { all?: boolean },
+): Promise<{ address: string; family: 4 | 6 }[]> {
+  if (IS_BUN) {
+    const results = await (globalThis as any).Bun.dns.lookup(hostname, options);
+    return results.map((r: { address: string; family: 4 | 6 }) => r);
+  }
+  const { lookup } = await import("node:dns/promises");
+  return lookup(hostname, { ...options, all: true }) as Promise<
+    { address: string; family: 4 | 6 }[]
+  >;
+}
 
 function isPrivateIP(ip: string): boolean {
   if (ip === "127.0.0.1" || ip === "::1" || ip === "0.0.0.0") return true;
@@ -41,8 +58,8 @@ async function isAllowedUrl(urlStr: string): Promise<boolean> {
 
     if (!isIP(host)) {
       try {
-        const resolved = await lookup(host, { all: true });
-        if (resolved.some((r) => isPrivateIP(r.address))) return false;
+        const resolved = await dnsLookup(host, { all: true });
+        if (resolved.some((r: { address: string }) => isPrivateIP(r.address))) return false;
       } catch {
         // DNS resolution failed — allow the URL (the actual fetch will fail if unreachable)
       }

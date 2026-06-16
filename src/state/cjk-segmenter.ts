@@ -1,6 +1,7 @@
 import { createRequire } from "node:module";
 
 const cjkRequire = createRequire(import.meta.url);
+const IS_BUN = typeof (globalThis as any).Bun !== "undefined";
 
 const CJK_RE = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
 const HAN_RE = /\p{Script=Han}/u;
@@ -59,7 +60,9 @@ function getJieba(): JiebaInstance | null {
   } catch {
     showHintOnce(
       "jieba",
-      "install @node-rs/jieba to improve Chinese search; falling back to whole-string tokenization",
+      IS_BUN
+        ? "install @node-rs/jieba (or jieba-wasm for WASM) to improve Chinese search; falling back to whole-string tokenization"
+        : "install @node-rs/jieba to improve Chinese search; falling back to whole-string tokenization",
     );
     return null;
   }

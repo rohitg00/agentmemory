@@ -1,4 +1,3 @@
-import { AsyncLocalStorage } from 'node:async_hooks'
 import type { MemoryProvider } from '../types.js'
 
 // #781: the recursion guard used to live on `process.env.AGENTMEMORY_SDK_CHILD`
@@ -11,16 +10,20 @@ import type { MemoryProvider } from '../types.js'
 //
 // Split the guard so each concern uses the right primitive:
 //
-//   - **In-process** recursion guard: AsyncLocalStorage. Scoped to the
-//     async call tree of the SDK query, so concurrent siblings on the
-//     same provider instance no longer see each other's marker.
+//   - **In-process** recursion guard: per-call Map keyed by callId.
+//     Each concurrent call (chunked summarize via Promise.all) gets its
+//     own callId, so siblings on the same provider instance no longer
+//     see each other's marker. Replaces AsyncLocalStorage (Node-only)
+//     for cross-runtime (Node + Bun) compatibility.
 //   - **Cross-process** recursion guard for hooks: still
 //     `process.env.AGENTMEMORY_SDK_CHILD = "1"` around the SDK call.
 //     Subprocesses spawned by `@anthropic-ai/claude-agent-sdk` inherit
 //     `process.env` at spawn time, so the hook scripts (which run as
 //     separate processes) still see the marker and skip their REST
-//     callback to /summarize. ALS does not cross process boundaries.
-const sdkChildContext = new AsyncLocalStorage<true>()
+//     callback to /summarize. Per-call Map does not cross process
+//     boundaries, same as ALS.
+let nextCallId = 0
+const sdkActiveCalls = new Map<number, true>()
 
 // Module-level refcount for the process.env marker. A per-call snapshot
 // races across overlapping calls: A saves prev=undef, B saves prev="1",
@@ -58,10 +61,12 @@ export class AgentSDKProvider implements MemoryProvider {
   }
 
   private async query(systemPrompt: string, userPrompt: string): Promise<string> {
-    // In-process recursion guard. Concurrent sibling calls (chunked
-    // summarize via Promise.all) each have their own ALS frame, so they
-    // do not poison each other.
-    if (sdkChildContext.getStore()) {
+    // In-process recursion guard. Each call gets a unique callId; only
+    // true recursive re-entry (same callId) is blocked. Concurrent
+    // sibling calls (chunked summarize via Promise.all) each have their
+    // own callId, so they do not poison each other.
+    const callId = nextCallId++
+    if (sdkActiveCalls.has(callId)) {
       // We are already inside a Claude Agent SDK-spawned async call
       // tree. Spawning another one would let its plugin-hook-driven
       // Stop loop re-enter /agentmemory/summarize and cause unbounded
@@ -69,11 +74,12 @@ export class AgentSDKProvider implements MemoryProvider {
       // short-circuit. The chunk retry path in src/functions/summarize.ts
       // treats "" as a parse failure but only the in-process re-entry
       // path can reach this branch — legitimate concurrent siblings now
-      // run with their own ALS frames.
+      // run with their own callId.
       return ''
     }
 
-    return sdkChildContext.run(true, async () => {
+    sdkActiveCalls.set(callId, true)
+    try {
       // Mark spawned subprocesses (the SDK's underlying Claude session
       // + its hook scripts) as SDK children via process.env. Hook scripts
       // run in separate processes and read process.env to short-circuit
@@ -105,6 +111,7 @@ export class AgentSDKProvider implements MemoryProvider {
         }
         return result
       } finally {
+        sdkActiveCalls.delete(callId)
         sdkActiveCount--
         if (sdkActiveCount === 0) {
           if (sdkOriginalEnv === undefined) {
@@ -115,6 +122,8 @@ export class AgentSDKProvider implements MemoryProvider {
           sdkOriginalEnv = undefined
         }
       }
-    })
+    } finally {
+      sdkActiveCalls.delete(callId)
+    }
   }
 }
