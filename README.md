@@ -1501,6 +1501,8 @@ Create `~/.agentmemory/.env`:
                                    # PostToolUse regardless of this flag.
 # GRAPH_EXTRACTION_ENABLED=false
 # CONSOLIDATION_ENABLED=false   # on by default when an LLM provider is configured
+# EVICTION_ENABLED=true          # ON by default. Runs mem::evict on a timer.
+# EVICTION_INTERVAL_MS=86400000  # Default: 24h
 # LESSON_DECAY_ENABLED=true
 # OBSIDIAN_AUTO_EXPORT=false
 # AGENTMEMORY_EXPORT_ROOT=~/.agentmemory
