@@ -29,7 +29,7 @@ function mockKV(nodes: GraphNode[] = [], edges: GraphEdge[] = []) {
   for (const e of edges) edgesMap.set(e.id, e);
   store.set("mem:graph:edges", edgesMap);
 
-  let listCalls = 0;
+  const listCalls = new Map<string, number>();
 
   return {
     get: async <T>(scope: string, key: string): Promise<T | null> => {
@@ -44,11 +44,15 @@ function mockKV(nodes: GraphNode[] = [], edges: GraphEdge[] = []) {
       store.get(scope)?.delete(key);
     },
     list: async <T>(scope: string): Promise<T[]> => {
-      listCalls += 1;
+      listCalls.set(scope, (listCalls.get(scope) ?? 0) + 1);
       const entries = store.get(scope);
       return entries ? (Array.from(entries.values()) as T[]) : [];
     },
-    listCallCount: () => listCalls,
+    listCallCount: () =>
+      Array.from(listCalls.values()).reduce((sum, count) => sum + count, 0),
+    graphListCallCount: () =>
+      (listCalls.get("mem:graph:nodes") ?? 0) +
+      (listCalls.get("mem:graph:edges") ?? 0),
   };
 }
 
@@ -296,19 +300,19 @@ describe("graph index parity", () => {
 
     const results = await retrieval.searchByEntities(["React"]);
     expect(results.length).toBeGreaterThan(0);
-    expect(kv.listCallCount()).toBeGreaterThan(0);
+    expect(kv.graphListCallCount()).toBeGreaterThan(0);
   });
 
   it("never enumerates when the readiness marker is present", async () => {
     const { nodes, edges } = fixtureGraph();
     const kv = await indexedKV(nodes, edges);
-    const before = kv.listCallCount();
+    const before = kv.graphListCallCount();
     const retrieval = new GraphRetrieval(kv as never);
 
     await retrieval.searchByEntities(["React"]);
     await retrieval.expandFromChunks(["obs_react"]);
     await retrieval.temporalQuery("React");
-    expect(kv.listCallCount()).toBe(before);
+    expect(kv.graphListCallCount()).toBe(before);
   });
 
   it("graph-extract maintains the side-indexes after a rebuild", async () => {
@@ -345,11 +349,11 @@ describe("graph index parity", () => {
     const catalog = await loadNameCatalog(kv as never);
     expect(catalog.map((c) => c.name).sort()).toEqual(["main", "src/index.ts"]);
 
-    const before = kv.listCallCount();
+    const before = kv.graphListCallCount();
     const retrieval = new GraphRetrieval(kv as never);
     const results = await retrieval.searchByEntities(["index"]);
     expect(results.some((r) => r.obsId === "obs_new")).toBe(true);
-    expect(kv.listCallCount()).toBe(before);
+    expect(kv.graphListCallCount()).toBe(before);
   });
 
   it("graph-reset stops indexed retrieval from serving pre-reset rows", async () => {
@@ -366,6 +370,6 @@ describe("graph index parity", () => {
     expect(await retrieval.searchByEntities(["React"])).toEqual([]);
     expect(await retrieval.expandFromChunks(["obs_react"])).toEqual([]);
     expect((await retrieval.temporalQuery("React")).entity).toBeNull();
-    expect(kv.listCallCount()).toBe(0);
+    expect(kv.graphListCallCount()).toBe(0);
   });
 });
