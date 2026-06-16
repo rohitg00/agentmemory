@@ -58,6 +58,8 @@ const EMBEDDING_PROVIDERS = new Set([
   "openrouter",
 ]);
 
+const LOCAL_EMBEDDING_PROVIDER_ALIASES = new Set(["xenova", "transformers"]);
+
 function detectProvider(env: Record<string, string>): ProviderConfig {
   const maxTokens = parseInt(env["MAX_TOKENS"] || "4096", 10);
 
@@ -246,7 +248,11 @@ export function detectEmbeddingProvider(
   env?: Record<string, string>,
 ): string | null {
   const source = env ?? getMergedEnv();
-  const forced = source["EMBEDDING_PROVIDER"]?.trim().toLowerCase();
+  const rawProvider = hasRealValue(source["EMBEDDING_PROVIDER"])
+    ? source["EMBEDDING_PROVIDER"]
+    : source["AGENTMEMORY_EMBEDDING_PROVIDER"];
+  const forced = rawProvider?.trim().toLowerCase();
+  if (forced && LOCAL_EMBEDDING_PROVIDER_ALIASES.has(forced)) return "local";
   if (!forced || !EMBEDDING_PROVIDERS.has(forced)) return null;
   return forced;
 }

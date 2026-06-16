@@ -11,6 +11,7 @@ const ENV_KEYS = [
   "COHERE_API_KEY",
   "OPENROUTER_API_KEY",
   "EMBEDDING_PROVIDER",
+  "AGENTMEMORY_EMBEDDING_PROVIDER",
   "OPENAI_BASE_URL",
   "OPENAI_EMBEDDING_BASE_URL",
   "OPENAI_EMBEDDING_API_KEY",
@@ -148,6 +149,67 @@ describe("createEmbeddingProvider", () => {
     expect(provider!.name).toBe("openai");
   });
 
+  it("accepts AGENTMEMORY_EMBEDDING_PROVIDER as an explicit provider alias", async () => {
+    const {
+      createEmbeddingProvider,
+      LocalEmbeddingProvider,
+    } = await freshEmbeddingModule();
+    process.env["AGENTMEMORY_EMBEDDING_PROVIDER"] = "local";
+
+    const provider = createEmbeddingProvider();
+
+    expect(provider).toBeInstanceOf(LocalEmbeddingProvider);
+    expect(provider!.name).toBe("local");
+  });
+
+  it("maps local embedding package names to the local provider", async () => {
+    const {
+      createEmbeddingProvider,
+      LocalEmbeddingProvider,
+    } = await freshEmbeddingModule();
+
+    for (const key of ["EMBEDDING_PROVIDER", "AGENTMEMORY_EMBEDDING_PROVIDER"]) {
+      for (const value of ["xenova", "transformers", " Xenova "]) {
+        process.env[key] = value;
+
+        const provider = createEmbeddingProvider();
+
+        expect(provider).toBeInstanceOf(LocalEmbeddingProvider);
+        expect(provider!.name).toBe("local");
+        delete process.env[key];
+      }
+    }
+  });
+
+  it("prefers EMBEDDING_PROVIDER over AGENTMEMORY_EMBEDDING_PROVIDER", async () => {
+    const {
+      createEmbeddingProvider,
+      OpenAIEmbeddingProvider,
+    } = await freshEmbeddingModule();
+    process.env["EMBEDDING_PROVIDER"] = "openai";
+    process.env["AGENTMEMORY_EMBEDDING_PROVIDER"] = "local";
+    process.env["OPENAI_API_KEY"] = "test-key";
+
+    const provider = createEmbeddingProvider();
+
+    expect(provider).toBeInstanceOf(OpenAIEmbeddingProvider);
+    expect(provider!.name).toBe("openai");
+  });
+
+  it("falls back to AGENTMEMORY_EMBEDDING_PROVIDER when EMBEDDING_PROVIDER is blank", async () => {
+    const {
+      createEmbeddingProvider,
+      LocalEmbeddingProvider,
+    } = await freshEmbeddingModule();
+    process.env["EMBEDDING_PROVIDER"] = " ";
+    process.env["AGENTMEMORY_EMBEDDING_PROVIDER"] = "local";
+
+    const provider = createEmbeddingProvider();
+
+    expect(provider).toBeInstanceOf(LocalEmbeddingProvider);
+    expect(provider!.name).toBe("local");
+  });
+
   it("returns null for blank or unknown EMBEDDING_PROVIDER values", async () => {
     const { createEmbeddingProvider } = await freshEmbeddingModule();
 
@@ -157,16 +219,41 @@ describe("createEmbeddingProvider", () => {
       expect(createEmbeddingProvider()).toBeNull();
     }
   });
+
+  it("returns null for blank or unknown AGENTMEMORY_EMBEDDING_PROVIDER values", async () => {
+    const { createEmbeddingProvider } = await freshEmbeddingModule();
+
+    for (const value of [" ", "bogus"]) {
+      process.env["AGENTMEMORY_EMBEDDING_PROVIDER"] = value;
+      process.env["OPENAI_API_KEY"] = "test-key";
+      expect(createEmbeddingProvider()).toBeNull();
+    }
+  });
 });
 
 describe("detectEmbeddingProvider", () => {
-  it("normalizes supported values and rejects unknown values for status paths", async () => {
+  it("normalizes supported values and aliases for status paths", async () => {
     vi.resetModules();
     const { detectEmbeddingProvider } = await import("../src/config.js");
 
     expect(detectEmbeddingProvider({ EMBEDDING_PROVIDER: " OpenAI " })).toBe(
       "openai",
     );
+    expect(
+      detectEmbeddingProvider({ AGENTMEMORY_EMBEDDING_PROVIDER: "xenova" }),
+    ).toBe("local");
+    expect(
+      detectEmbeddingProvider({
+        EMBEDDING_PROVIDER: "openai",
+        AGENTMEMORY_EMBEDDING_PROVIDER: "local",
+      }),
+    ).toBe("openai");
+    expect(
+      detectEmbeddingProvider({
+        EMBEDDING_PROVIDER: " ",
+        AGENTMEMORY_EMBEDDING_PROVIDER: "local",
+      }),
+    ).toBe("local");
     expect(detectEmbeddingProvider({ EMBEDDING_PROVIDER: "bogus" })).toBeNull();
     expect(detectEmbeddingProvider({ EMBEDDING_PROVIDER: " " })).toBeNull();
   });
