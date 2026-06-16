@@ -35,4 +35,35 @@ describe("viewer graph cool-down", () => {
     expect(viewer).toMatch(/graphSim\.quietTicks\s*=\s*0/);
     expect(viewer).toMatch(/if\s*\(graphSim\.running\s*&&\s*!graphSim\.raf\)/);
   });
+
+  it("preserves graph node positions across graph reloads", () => {
+    expect(viewer).toMatch(/var previousLayout = Object\.create\(null\)/);
+    expect(viewer).toMatch(/previousLayout\[n\.id\]\s*=\s*n/);
+    expect(viewer).toMatch(/var previous = previousLayout\[n\.id\]/);
+    expect(viewer).toMatch(/x:\s*previous\s*\?\s*previous\.x\s*:/);
+    expect(viewer).toMatch(/y:\s*previous\s*\?\s*previous\.y\s*:/);
+    expect(viewer).toMatch(/vx:\s*previous\s*\?\s*previous\.vx\s*:/);
+    expect(viewer).toMatch(/vy:\s*previous\s*\?\s*previous\.vy\s*:/);
+  });
+
+  it("keeps the current graph viewport when graph data refreshes", () => {
+    expect(viewer).toMatch(/var previousPanX = graphSim\.panX/);
+    expect(viewer).toMatch(/graphSim\.panX\s*=\s*previousPanX/);
+    expect(viewer).toMatch(/graphSim\.panY\s*=\s*previousPanY/);
+    expect(viewer).toMatch(/graphSim\.zoom\s*=\s*previousZoom/);
+  });
+
+  it("cleans up graph initialization side effects before restarting", () => {
+    expect(viewer).toMatch(/resizeHandler:\s*null/);
+    expect(viewer).toMatch(/function stopGraphRuntime\(\)/);
+    expect(viewer).toMatch(/removeEventListener\('resize',\s*graphSim\.resizeHandler\)/);
+    expect(viewer).toMatch(/cancelAnimationFrame\(graphSim\.raf\)/);
+    expect(viewer).toMatch(/graphSim\.raf\s*=\s*null/);
+  });
+
+  it("stops stale graph runtime before replacing the graph DOM", () => {
+    expect(viewer).toMatch(
+      /async function loadGraph\(\) \{[\s\S]*stopGraphRuntime\(\);[\s\S]*el\.innerHTML/,
+    );
+  });
 });
