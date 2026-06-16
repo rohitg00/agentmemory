@@ -10,6 +10,15 @@ vi.mock("../src/logger.js", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
+const imageRefsImportState = vi.hoisted(() => ({ imported: false }));
+
+vi.mock("../src/functions/image-refs.js", () => {
+  imageRefsImportState.imported = true;
+  return {
+    decrementImageRef: vi.fn(),
+  };
+});
+
 function mockKV(
   memories: Memory[] = [],
   semanticMems: SemanticMemory[] = [],
@@ -208,6 +217,7 @@ describe("RetentionScoring", () => {
   });
 
   it("dry-run eviction shows candidates without deleting", async () => {
+    imageRefsImportState.imported = false;
     const { registerRetentionFunctions } = await import(
       "../src/functions/retention.js"
     );
@@ -233,6 +243,7 @@ describe("RetentionScoring", () => {
 
     expect(dryResult.dryRun).toBe(true);
     expect(dryResult.wouldEvict).toBeGreaterThanOrEqual(0);
+    expect(imageRefsImportState.imported).toBe(false);
 
     const remaining = await kv.list("mem:memories");
     expect(remaining.length).toBe(2);

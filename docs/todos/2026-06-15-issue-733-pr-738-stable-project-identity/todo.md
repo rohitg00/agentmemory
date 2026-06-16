@@ -94,3 +94,23 @@
   - no reportable candidate from PR 738 diff;
   - reviewed auth/isolation, cross-project exposure, remote identity disclosure, subprocess usage, cwd/file handling, MCP schema/payload handling, local persistence rewrite behavior, hook latency, and DoS/performance;
   - residual risks are product/migration risks, not validated vulnerabilities.
+
+## Corrected Merge/Test Run 2026-06-16
+
+- Worktree: `/Users/A1538552/.codex/worktrees/0d45/agentmemory`.
+- Branch: `review/issue-733-pr-738-stable-project-identity`.
+- Start state: clean detached `HEAD` at `b498f3f17404be68a5495596f381661ada69fac3`; branch ref was free and pointed at the same commit, so the worktree was switched to the branch without `--ignore-other-worktrees`.
+- Required local main: `d4393d1ab5dd284edee3a17bfbf45825f239c07e`; main worktree `/Users/A1538552/_projects/_tools/agentmemory` was clean and at that commit.
+- Main integration: merge commit `491ef91d30bf768fac0f2372de4cd3be7c6cfed7`; no conflicts; `pnpm-lock.yaml` and `pnpm-workspace.yaml` came from local main.
+- Install: `HOME=/tmp/agentmemory-merge-test-issue733-home XDG_CONFIG_HOME=/tmp/agentmemory-merge-test-issue733-xdg NPM_CONFIG_USERCONFIG=/tmp/agentmemory-merge-test-issue733-npmrc PNPM_HOME=/tmp/agentmemory-merge-test-issue733-pnpm-home corepack pnpm install --frozen-lockfile --ignore-scripts --store-dir /tmp/agentmemory-merge-test-pnpm-store` exited 0. It warned that `packages/mcp/node_modules/.bin/agentmemory` could not be created because `dist/cli.mjs` did not exist before build.
+- Initial exact test: `corepack pnpm test` ran 158 files / 1986 tests and failed once: `test/retention.test.ts > dry-run eviction shows candidates without deleting` timed out at 10s.
+- Read-only diagnosis: two explorer subagents inspected the failing test, retention implementation, and merge diff. Both found no Retention code/test change from `d4393d1`; they identified the avoidable `image-refs.js` / `iii-sdk` dynamic import before the dry-run return as the likely timeout amplifier under full-suite load.
+- Fix: `mem::retention-evict` now loads `image-refs.js` only after the dry-run early return; `test/retention.test.ts` asserts that dry-run eviction does not load that dependency.
+- TDD evidence: the new targeted assertion failed before the production change with `expected true to be false`, then passed after the import was moved.
+- Targeted verification:
+  - `corepack pnpm exec vitest run test/retention.test.ts -t "dry-run eviction shows candidates without deleting"` passed, 1 test / 14 skipped.
+  - `corepack pnpm exec vitest run test/retention.test.ts` passed, 15 tests.
+  - `git diff --check -- src/functions/retention.ts test/retention.test.ts` passed.
+- Review: focused read-only code-review subagent returned `ACCEPT`.
+- Full verification: a later exact `corepack pnpm test` passed, 158 files / 1986 tests. An intermediate exact rerun failed with five unrelated 10s timeouts in other test files, then the next exact rerun passed without code changes; this is recorded as residual full-suite timing flake evidence.
+- Post-change local-main check: `refs/heads/main` still resolved to `d4393d1ab5dd284edee3a17bfbf45825f239c07e`, and that commit is an ancestor of the branch.
