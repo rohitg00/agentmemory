@@ -718,7 +718,9 @@ Worked example: [`examples/python/`](examples/python/) (quickstart + observation
 
 ```bash
 git clone https://github.com/rohitg00/agentmemory.git && cd agentmemory
-npm install && npm run build && npm start
+corepack pnpm install --frozen-lockfile --ignore-scripts
+corepack pnpm run build
+corepack pnpm start
 ```
 
 This starts agentmemory with a local `iii-engine` if `iii` is already installed, or falls back to Docker Compose if Docker is available. REST, streams, and the viewer bind to `127.0.0.1` by default.
@@ -1542,10 +1544,10 @@ Full endpoint list: [`src/triggers/api.ts`](src/triggers/api.ts)
 <h2 id="development"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/section-development.svg"><img src="assets/tags/section-development.svg" alt="Development" height="32" /></picture></h2>
 
 ```bash
-npm run dev               # Hot reload
-npm run build             # Production build
-npm test                  # 1,423+ tests
-npm run test:integration  # API tests (requires running services)
+corepack pnpm run dev               # Hot reload
+corepack pnpm run build             # Production build
+corepack pnpm test                  # 1,423+ tests
+corepack pnpm run test:integration  # API tests (requires running services)
 ```
 
 **Prerequisites:** Node.js >= 20, [iii-engine](https://iii.dev/docs) or Docker
