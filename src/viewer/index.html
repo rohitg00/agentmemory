@@ -1441,7 +1441,7 @@
 
     async function loadTab(tab) {
       switch(tab) {
-        case 'dashboard': if (!state.dashboard.loaded) await loadDashboard(); break;
+        case 'dashboard': if (!state.dashboard.loaded) await loadDashboardOnce(); break;
         case 'graph': if (!state.graph.loaded) await loadGraph(); break;
         case 'memories': if (!state.memories.loaded) await loadMemories(); break;
         case 'timeline': if (!state.timeline.loaded) await loadTimeline(); break;
@@ -1503,6 +1503,36 @@
           t('dashboard.failed_help') +
           '</span></div>';
       }
+    }
+
+    var dashboardLoadPromise = null;
+    var dashboardRefreshTimer = null;
+    var dashboardRefreshPending = false;
+    var DASHBOARD_REFRESH_DEBOUNCE_MS = 300;
+
+    function loadDashboardOnce() {
+      if (dashboardLoadPromise) {
+        dashboardRefreshPending = true;
+        return dashboardLoadPromise;
+      }
+      dashboardRefreshPending = false;
+      dashboardLoadPromise = loadDashboard().finally(function() {
+        dashboardLoadPromise = null;
+        if (dashboardRefreshPending && state.activeTab === 'dashboard') {
+          dashboardRefreshPending = false;
+          scheduleDashboardRefresh();
+        }
+      });
+      return dashboardLoadPromise;
+    }
+
+    function scheduleDashboardRefresh() {
+      state.dashboard.loaded = false;
+      if (dashboardRefreshTimer) clearTimeout(dashboardRefreshTimer);
+      dashboardRefreshTimer = setTimeout(function() {
+        dashboardRefreshTimer = null;
+        loadDashboardOnce();
+      }, DASHBOARD_REFRESH_DEBOUNCE_MS);
     }
 
     function renderDashboard() {
@@ -1793,7 +1823,11 @@
     var dashboardTimer = null;
     function refreshDashboard() {
       state.dashboard.loaded = false;
-      loadDashboard();
+      if (dashboardRefreshTimer) {
+        clearTimeout(dashboardRefreshTimer);
+        dashboardRefreshTimer = null;
+      }
+      return loadDashboardOnce();
     }
     function startDashboardAutoRefresh() {
       if (dashboardTimer) clearInterval(dashboardTimer);
@@ -3676,6 +3710,7 @@
     var DIRECT_FAILURE_THRESHOLD = 2;
     var pollTimer = null;
     var POLL_INTERVAL_MS = 10000;
+    var WS_SYNC_PROCESS_LIMIT = 500;
 
     function setWsStatus(text, cls) {
       var el = document.getElementById('ws-status');
@@ -3693,8 +3728,7 @@
       pollTimer = setInterval(function() {
         tick++;
         if (state.activeTab === 'dashboard') {
-          state.dashboard.loaded = false;
-          loadDashboard();
+          refreshDashboard();
         } else if (state.activeTab === 'memories') {
           state.memories.loaded = false;
           loadMemories();
@@ -3835,7 +3869,11 @@
         }
       } else if (evt.type === 'sync') {
         var items = Array.isArray(evt.data) ? evt.data : [];
-        items.forEach(function(item) {
+        if (state.activeTab === 'dashboard') {
+          scheduleDashboardRefresh();
+          return;
+        }
+        items.slice(0, WS_SYNC_PROCESS_LIMIT).forEach(function(item) {
           var payload = item.data || item;
           observation = payload.observation || payload;
           if (looksLikeObservation(observation)) {
@@ -3858,8 +3896,7 @@
         }
       }
       if (state.activeTab === 'dashboard') {
-        state.dashboard.loaded = false;
-        loadDashboard();
+        scheduleDashboardRefresh();
       }
       if (state.activeTab === 'activity' && msg.observation) {
         state.activity.observations.unshift(msg.observation);

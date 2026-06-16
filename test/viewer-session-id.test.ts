@@ -84,6 +84,23 @@ function loadViewerSandbox() {
   const tabButtons = tabs.map((tab) => ({ ...createMockElement(), dataset: { tab } }));
   const views = tabs.map((tab) => ({ ...createMockElement(`view-${tab}`), id: `view-${tab}` }));
   const checkboxes = [createMockElement(), createMockElement()].map((el) => ({ ...el, checked: false }));
+  const timers: Array<{ active: boolean; handler: () => void }> = [];
+  const setTimer = (handler: () => void) => {
+    const timer = { active: true, handler };
+    timers.push(timer);
+    return timers.length;
+  };
+  const clearTimer = (id: number) => {
+    const timer = timers[id - 1];
+    if (timer) timer.active = false;
+  };
+  const flushTimers = () => {
+    const pending = timers.splice(0, timers.length);
+    pending.forEach((timer) => {
+      if (timer.active) timer.handler();
+    });
+  };
+  const pendingTimerCount = () => timers.filter((timer) => timer.active).length;
   const querySelectorAll = (selector: string) => {
     if (selector === ".tab-bar button") return tabButtons;
     if (selector === ".view") return views;
@@ -148,10 +165,10 @@ function loadViewerSandbox() {
     navigator: { userAgent: "vitest" },
     Element: function Element() {},
     alert: () => {},
-    setInterval: () => 0,
+    setInterval: setTimer,
     clearInterval: () => {},
-    setTimeout: () => 0,
-    clearTimeout: () => {},
+    setTimeout: setTimer,
+    clearTimeout: clearTimer,
     URLSearchParams,
     Date,
     Math,
@@ -173,7 +190,7 @@ function loadViewerSandbox() {
   vm.createContext(sandbox);
   vm.runInContext(scriptWithoutAutoStart, sandbox);
 
-  return { sandbox, getElement };
+  return { sandbox, getElement, flushTimers, pendingTimerCount };
 }
 
 describe("viewer session rendering", () => {
@@ -271,6 +288,37 @@ describe("viewer session rendering", () => {
     expect(getElement("view-dashboard").innerHTML).not.toContain(
       "Recovered <script>procedure</script>",
     );
+  });
+
+  it("does not start a dashboard reload for every observation in an initial sync backlog", () => {
+    const { sandbox, flushTimers, pendingTimerCount } = loadViewerSandbox();
+    const requests: string[] = [];
+    flushTimers();
+    sandbox.state.activeTab = "dashboard";
+    sandbox.state.dashboard.loaded = true;
+    sandbox.fetch = async (url: string) => {
+      requests.push(url);
+      return { ok: true, json: async () => ({}) };
+    };
+
+    sandbox.handleStreamEvent({
+      event: {
+        type: "sync",
+        data: Array.from({ length: 50 }, (_, i) => ({
+          observation: {
+            id: `obs_backlog_${i}`,
+            timestamp: "2026-06-16T12:00:00.000Z",
+            sessionId: "ses_backlog",
+          },
+        })),
+      },
+    });
+
+    expect(requests).toHaveLength(0);
+    expect(sandbox.state.dashboard.loaded).toBe(false);
+    expect(pendingTimerCount()).toBe(1);
+    flushTimers();
+    expect(requests.length).toBeLessThanOrEqual(11);
   });
 
   it("does not throw when timeline and sessions tabs receive sessions missing ids", () => {
