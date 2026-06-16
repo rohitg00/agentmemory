@@ -4,6 +4,10 @@ vi.mock("../src/logger.js", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
+vi.mock("iii-sdk", () => ({
+  TriggerAction: { Void: () => ({}) },
+}));
+
 function mockKV() {
   const store = new Map<string, Map<string, unknown>>();
   return {
