@@ -1112,7 +1112,7 @@
       activeTab: 'dashboard',
       dashboard: { loaded: false, health: null, sessions: [], memories: [], graphStats: null, recentAudit: [], lessons: [], crystals: [] },
       graph: { loaded: false, nodes: [], edges: [], stats: null, filters: {}, selectedNode: null, queryError: null, truncated: false, totalNodes: 0, totalEdges: 0 },
-      memories: { loaded: false, items: [], search: '', typeFilter: '' },
+      memories: { loaded: false, items: [], search: '', typeFilter: '', total: 0, searching: false, requestId: 0 },
       timeline: { loaded: false, observations: [], sessionId: '', minImportance: 0, page: 0, pageSize: 50 },
       sessions: { loaded: false, items: [], selectedId: null },
       audit: { loaded: false, entries: [], opFilter: '' },
@@ -2386,13 +2386,29 @@
       }
     }
 
-    async function loadMemories() {
+    function buildMemoriesPath() {
+      var params = ['latest=true', 'limit=2000'];
+      var query = state.memories.search.trim();
+      if (query) params.push('q=' + encodeURIComponent(query));
+      return 'memories?' + params.join('&');
+    }
+
+    async function loadMemories(opts) {
+      var keepExisting = opts && opts.keep;
+      var requestId = (state.memories.requestId || 0) + 1;
+      state.memories.requestId = requestId;
+      state.memories.searching = !!keepExisting;
       var el = document.getElementById('view-memories');
-      el.innerHTML = '<div class="loading">Loading memories...</div>';
+      if (keepExisting) {
+        renderMemories();
+      } else {
+        el.innerHTML = '<div class="loading">Loading memories...</div>';
+      }
       // cap at 2000 so the viewer remains responsive on large
       // corpora. Older endpoints returned the full unbounded list which
       // hit the iii invocation timeout and the UI fell through to 0.
-      var result = await apiGet('memories?latest=true&limit=2000');
+      var result = await apiGet(buildMemoriesPath());
+      if (requestId !== state.memories.requestId) return;
       var items = (result && result.memories) || [];
       // Newest first — server returns KV-insertion order.
       items.sort(function(a, b) {
@@ -2403,37 +2419,18 @@
       state.memories.items = items;
       state.memories.total = (result && typeof result.total === 'number') ? result.total : items.length;
       state.memories.loaded = true;
+      state.memories.searching = false;
       renderMemories();
     }
 
     function renderMemories() {
       var el = document.getElementById('view-memories');
       var items = state.memories.items;
-      var search = state.memories.search.toLowerCase();
+      var search = state.memories.search;
       var typeFilter = state.memories.typeFilter;
 
       var filtered = items.filter(function(m) {
         if (typeFilter && m.type !== typeFilter) return false;
-        const normalizedSearch = (search || '')
-          .normalize("NFKC")
-          .toLowerCase();
- 
-        const normalizedTitle = (m.title || '')
-          .normalize("NFKC")
-          .toLowerCase();
-
-        const normalizedContent = (m.content || '')
-          .normalize("NFKC")
-          .toLowerCase();
-
-        if (
-          search &&
-          !normalizedTitle.includes(normalizedSearch) &&
-          !normalizedContent.includes(normalizedSearch)
-        ) {
-        return false;
-        }
-
         return true;
       });
 
@@ -2444,7 +2441,7 @@
       var html = '<div class="card" style="margin-bottom:12px;padding:12px;background:var(--bg-subtle);">';
       html += '<div style="font-size:13px;color:var(--ink-muted);line-height:1.5;">';
       html += '<strong>Memories</strong> are durable facts, architecture notes, conventions, and lessons saved via <code>memory_remember</code> MCP tool or the <code>/agentmemory/remember</code> endpoint. They survive across sessions and supersede each other as v1, v2, etc. ';
-      html += '<span style="color:var(--ink-faint);">Shown: ' + items.length + ' total.</span>';
+      html += '<span style="color:var(--ink-faint);">Shown: ' + items.length + ' of ' + state.memories.total + ' total.</span>';
       html += '</div></div>';
 
       html += '<div class="toolbar">';
@@ -2455,14 +2452,24 @@
       });
       html += '</select></div>';
 
-      if (filtered.length === 0) {
-        html += '<div class="empty-state">' +
-          '<div class="empty-icon">&#128218;</div>' +
-          '<div class="empty-title">No memories yet</div>' +
-          '<div class="empty-lead">Memories are the distilled facts agentmemory keeps across sessions &mdash; things like file paths, architectural decisions, and user preferences. Hooks capture them automatically during coding sessions; you can also save one directly.</div>' +
-          '<pre class="empty-cmd">memory_remember {\n  title: "auth uses jose middleware",\n  content: "src/middleware/auth.ts handles JWT validation",\n  type: "architecture"\n}</pre>' +
-          '<div><a class="empty-link" href="https://github.com/rohitg00/agentmemory#memories" target="_blank" rel="noopener">Memory types &rarr;</a></div>' +
-          '</div>';
+      if (state.memories.searching) {
+        html += '<div class="loading">Searching memories...</div>';
+      } else if (filtered.length === 0) {
+        if (search) {
+          html += '<div class="empty-state">' +
+            '<div class="empty-icon">&#128269;</div>' +
+            '<div class="empty-title">No results for "' + esc(truncate(search, 30)) + '"</div>' +
+            '<div class="empty-lead">Try different keywords or clear the search.</div>' +
+            '</div>';
+        } else {
+          html += '<div class="empty-state">' +
+            '<div class="empty-icon">&#128218;</div>' +
+            '<div class="empty-title">No memories yet</div>' +
+            '<div class="empty-lead">Memories are the distilled facts agentmemory keeps across sessions &mdash; things like file paths, architectural decisions, and user preferences. Hooks capture them automatically during coding sessions; you can also save one directly.</div>' +
+            '<pre class="empty-cmd">memory_remember {\n  title: "auth uses jose middleware",\n  content: "src/middleware/auth.ts handles JWT validation",\n  type: "architecture"\n}</pre>' +
+            '<div><a class="empty-link" href="https://github.com/rohitg00/agentmemory#memories" target="_blank" rel="noopener">Memory types &rarr;</a></div>' +
+            '</div>';
+        }
       } else {
         html += '<table><tr><th>Title</th><th>Type</th><th>Strength</th><th>Version</th><th>Updated</th><th>Actions</th></tr>';
         filtered.forEach(function(m) {
@@ -2501,7 +2508,7 @@
 
       var searchInput = document.getElementById('mem-search');
       if (searchInput) {
-        bindImeSafeSearch(searchInput, 200, function(v){ state.memories.search = v; renderMemories(); });
+        bindImeSafeSearch(searchInput, 200, function(v){ state.memories.search = v; loadMemories({ keep: true }); });
       }
       var typeSelect = document.getElementById('mem-type-filter');
       if (typeSelect) {
