@@ -42,7 +42,7 @@ Potential source and test surface:
 | Compare PR 538 and PR 533 | Public unauthenticated PR patch/diffstat/file inspection | Complete | PR 533 is the smaller endpoint-focused fix. PR 538 is a 9-commit multi-issue bundle with CLI, hooks, build-script, viewer preview/resume, docs/report, and graph function behavior changes. |
 | Decide fork action | Baseline plus candidate comparison | Complete | Adapt minimal behavior only: current fork already fixed the missing route, but latest saved memories were not included as graph-build inputs. Reject broad PR 538 import; do not import PR 533 wholesale. |
 | Apply minimal patch if required | TDD red/green targeted Vitest | Complete | Added failing API-boundary test for `mem_1` in `mem::graph-extract` payload. It failed with only `obs_1`; after patch it passed. |
-| Final verification and prep merge | Targeted checks, required security gates, prep-merge-to-local-main | Complete with caveat | Targeted graph/API tests passed 3 files / 51 tests. `npm run build`, `npm run lint`, `npm test`, `git diff --check`, Semgrep, and staged Gitleaks passed. prep-merge committed task work; merge command skipped because `refs/heads/main` is already ancestor of HEAD and the separate main worktree is dirty. |
+| Final verification and prep merge | Targeted checks, required security gates, prep-merge-to-local-main | Complete | Targeted graph/API tests passed 3 files / 51 tests. `npm run build`, `npm run lint`, `npm test`, `git diff --check`, Semgrep, and staged Gitleaks passed before the first prep pass. Corrected rerun merged local `main` `d4393d1` as `07053e6`, then `corepack pnpm install --frozen-lockfile --ignore-scripts --store-dir /tmp/agentmemory-merge-test-pnpm-store` and `corepack pnpm test` passed. |
 
 ## Progress
 
@@ -56,6 +56,7 @@ Potential source and test surface:
 - [x] Fork decision recorded.
 - [x] Verification complete.
 - [x] prep-merge-to-local-main complete with caveat: task-owned work committed; no merge command run because local main is already ancestor and the listed main worktree has unrelated dirty work.
+- [x] Corrected merge-readiness rerun complete: local `main` `d4393d1` merged into `review/issue-505-pr-538-graph-build-endpoint` as `07053e6`; dependency install and full pnpm test passed.
 
 ## Review Notes
 
@@ -68,7 +69,8 @@ Potential source and test surface:
 - Simple-code pass: Kept the patch narrow to one REST handler and two existing test files; added a runtime null guard for malformed persisted memory rows; did not add new public parameters or move graph-build into a new architecture.
 - Focused review result: No critical or important issues found. The main residual risk is that graph-build remains a broad all-session backfill endpoint by existing design; this patch avoids broadening saved-memory inclusion beyond unscoped memories or projects already represented by scanned sessions.
 - Security diff review: Auth behavior is unchanged, no secret-bearing output is introduced, no new network/filesystem/subprocess/dependency surface is added, and Semgrep reported 0 findings. A full Codex Security report artifact set was not generated because the environment's subagent tool policy did not allow reviewer delegation without an explicit user subagent request; the diff-scoped security review was performed locally and kept out of staged artifacts.
-- prep-merge-to-local-main result: Commit `69b1615` created for task-owned code/test/task-note changes. `refs/heads/main` at `bfde73b` is already ancestor of the branch, so merge would be a no-op. The listed main worktree has unrelated dirty files, so no merge command was run.
+- prep-merge-to-local-main initial result: Commit `69b1615` created for task-owned code/test/task-note changes. `refs/heads/main` at `bfde73b` was already ancestor of the branch, so that earlier merge would have been a no-op. The listed main worktree had unrelated dirty files, so no merge command was run in that first pass.
+- Corrected merge-readiness rerun: Local `main` advanced to `d4393d1`. The main worktree was clean and matched that SHA. The merge created `07053e6` with one clear conflict in `src/triggers/api.ts`; resolution kept both the branch's graph-build memory backfill and main's CJK memory search support by retaining the `SearchIndex` import.
 
 ## Verification Evidence
 
@@ -82,7 +84,10 @@ Potential source and test surface:
 - `npm test` passed after the final production-code guard: 157 files / 1974 tests.
 - `gitleaks protect --staged --redact` scanned about 11.50 KB and found no leaks before commit `69b1615`.
 - OSV was not run because no dependency files, lockfiles, container images, vendored code, or package surfaces changed.
+- Corrected merge-readiness install passed with isolated package-manager environment:
+  `HOME=/tmp/agentmemory-merge-test-issue505-home XDG_CONFIG_HOME=/tmp/agentmemory-merge-test-issue505-xdg NPM_CONFIG_USERCONFIG=/tmp/agentmemory-merge-test-issue505-npmrc PNPM_HOME=/tmp/agentmemory-merge-test-issue505-pnpm-home corepack pnpm install --frozen-lockfile --ignore-scripts --store-dir /tmp/agentmemory-merge-test-pnpm-store`.
+- Corrected merge-readiness test passed: `corepack pnpm test` reported 158 files / 1987 tests.
 
 ## Delegation Boundaries
 
-No subagents are used initially. The immediate work is a bounded issue/PR comparison plus local endpoint verification.
+No subagents were used for the initial implementation. No corrected-rerun subagents were needed because the only merge conflict was a clear import combination and no post-merge test failure occurred.
