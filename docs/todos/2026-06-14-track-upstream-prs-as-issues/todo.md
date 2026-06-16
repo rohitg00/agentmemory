@@ -57,8 +57,8 @@ Known boundaries:
 | Operator workflow docs | Markdown fence check and content review | Done | `docs/recipes/upstream-pr-issue-tracking.md`; Markdown fence check printed `Markdown fences balanced`. |
 | Pure planner library | `npm test -- test/upstream-pr-issue-tracker.test.ts` | Done | Red run failed on missing module, then implementation passed with 22 tests. |
 | Dry-run CLI | Dry-run JSON report | Done | Public dry-run wrote `dry-run-report.json`: 536 source PRs, 378 target normal issues, 0 existing PR trackers, 11 create-label actions, 536 create-issue actions, 0 failures, `wroteRemote: false`. |
-| Apply mode | Explicit confirmation plus GitHub API writes | Blocked | User confirmed current-turn apply. GitHub secondary content-creation limits still block the first remaining create action after 500 of 536 PR trackers were created; 36 create actions remain. |
-| Verify mode | Verification JSON report | Blocked | `verify-report.json` generated at `2026-06-15T03:12:32.737Z` reports 500 target PR tracker markers and 36 missing upstream PRs. |
+| Apply mode | Explicit confirmation plus GitHub API writes | Done | Initial batch apply was blocked by GitHub secondary content-creation limits. Current-turn manual catch-up created neutral fork issues #915 and #916 for upstream PRs #937 and #939 without GitHub cross-reference syntax. |
+| Verify mode | Verification JSON report | Done | Authenticated coverage check after manual catch-up: 538 source PRs, 538 target `upstream-pr` issues, 538 unique upstream mirrors, and no missing, extra, duplicate, or unparsable tracker issues. |
 
 ## Progress Notes
 
@@ -80,26 +80,22 @@ Known boundaries:
 - 2026-06-15: After a 5 minute cooldown, a fresh dry-run still showed 36 remaining creates. Resume with `--write-delay-ms 10000` stopped immediately on the same GitHub secondary content-creation limit at upstream PR #107. No new writes occurred in that retry. Current verify is red only for 36 missing PR tracker markers.
 - 2026-06-15 03:03 UTC: Fresh public verify still reports 500 target PR tracker markers and the same 36 missing upstream PRs. Because the last GitHub secondary-rate-limit failure was at 03:00:43 UTC, do not run a third immediate apply attempt.
 - 2026-06-15 03:12 UTC: User asked to retry. Credentialed dry-run succeeded and still planned 36 create actions plus 500 skips. Apply with `--write-delay-ms 30000` stopped before any write on the same GitHub secondary content-creation limit at upstream PR #107 (`HTTP 403`, no Retry-After). Credentialed verify still reports 500 target PR tracker markers and 36 missing upstream PRs.
+- 2026-06-15 14:51 UTC: User reported the task log was stale and asked to import the two newly missing upstream PRs without GitHub references. Created fork issues #915 and #916 for upstream PRs #937 and #939 using neutral `upstream-pr-neutral` markers, omitted source URLs and `#123` syntax, and verified the created bodies have no GitHub URLs, hash references, mentions, or closing cross-reference syntax. Authenticated coverage check reports 538 source PRs, 538 target `upstream-pr` issues, 538 unique upstream mirrors, and no missing, extra, duplicate, or unparsable tracker issues.
 
-## Current Blocker
+## Current State
 
-GitHub has temporarily blocked further issue creation for the authenticated account/repository with a secondary content-creation rate limit. The tracker stopped fail-closed and did not run later writes after the `HTTP 403`.
+The prior GitHub secondary content-creation blocker is resolved for tracker coverage. The final two missing upstream PRs were imported manually as neutral fork issues after the older task-log verify report became stale.
 
 Current remote state:
 
-- Source PRs: 536
-- Existing fork PR tracker markers: 500
-- Remaining create actions: 36
-- Missing upstream PRs: #107, #106, #105, #103, #102, #101, #99, #97, #95, #93, #83, #82, #81, #80, #79, #78, #77, #76, #74, #73, #72, #71, #70, #69, #68, #67, #10, #9, #8, #7, #6, #5, #4, #3, #2, #1
-- Last failed action: create tracker for upstream PR #107
-- Stop condition: GitHub secondary content-creation rate limit, `HTTP 403`, no `Retry-After`
-
-Next safe resume:
-
-1. Wait for a longer cooldown than 5 minutes.
-2. Regenerate the dry-run report with `--read-with-gh --confirm-credentialed-reads`.
-3. Resume apply with `--write-delay-ms 10000` or slower.
-4. Run verify again and require zero missing markers before marking complete.
+- Source PRs: 538
+- Existing fork PR tracker issues: 538
+- Unique upstream PR mirrors: 538
+- Missing upstream PRs: none
+- Extra tracker issues: none
+- Duplicate tracker issues: none
+- Unparsable tracker issues: none
+- Latest manual catch-up issues: #915 for upstream PR #937 and #916 for upstream PR #939
 
 ## Plan Review Ledger
 
