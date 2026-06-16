@@ -70,6 +70,8 @@ Stop conditions:
 | Security review | Manual review plus applicable scanners | done | Semgrep scanned `src/viewer/index.html` and `test/viewer-session-id.test.ts`: 0 findings. Codex Security diff scan report written under `/tmp/codex-security-scans/agentmemory/6c387b4_20260616_dashboard_partial_payloads/`: 0 findings. |
 | Neutral local documentation | Update this task record and coordinator decision if appropriate | done | This task record uses neutral IDs only. |
 | Prep merge | Run `$prep-merge-to-local-main` | done | Local `main` at `60099a3` merged successfully; post-merge harness and Semgrep checks passed. |
+| Corrected merge-readiness run | Merge current local `main`, install with frozen pnpm lockfile, run `corepack pnpm test` | in progress | Local `main` at `d4393d1` merged as `2b60bcd`; frozen pnpm install passed; first `corepack pnpm test` had one transient retention dry-run timeout, subsequent exact rerun passed 1,987 tests. |
+| Retention dry-run timing fix | Read-only diagnosis subagents, targeted retention tests, full pnpm test | in progress | Deferred deletion-only `image-refs` import until after `dryRun` return; focused dry-run test passed in 20ms and full `test/retention.test.ts` passed. |
 
 ## Progress
 
@@ -101,6 +103,18 @@ Stop conditions:
   - Committed the adapted fix as `fix(viewer): tolerate partial dashboard payloads`.
   - Merged local `main` at `60099a3` into the review branch with the prescribed merge flags.
   - The merge auto-merged `src/viewer/index.html`; post-merge `git diff --check`, the dependency-free dashboard VM harness, and Semgrep all passed.
+- Corrected merge-readiness run:
+  - Switched the detached worktree onto `review/issue-347-pr-365-dashboard-partial-payloads` after confirming the branch was not attached elsewhere.
+  - Merged current local `main` at `d4393d1` into the branch as merge commit `2b60bcd`.
+  - Confirmed `pnpm-lock.yaml` and `pnpm-workspace.yaml` are present after the merge.
+  - Ran the required sanitized frozen install command with temporary `HOME`, `XDG_CONFIG_HOME`, `NPM_CONFIG_USERCONFIG`, `PNPM_HOME`, and `/tmp/agentmemory-merge-test-pnpm-store`; install passed with one pre-build bin warning for missing `dist/cli.mjs`.
+  - First `corepack pnpm test` run failed only `test/retention.test.ts > RetentionScoring > dry-run eviction shows candidates without deleting` by 10s timeout; 1,986 tests passed.
+  - Two read-only diagnostic subagents independently classified the failure as local-main pnpm/runtime drift exposing a latent dry-run timing issue, not a retention semantics regression or conflict error.
+  - Exact `corepack pnpm test` rerun passed 158 test files and 1,987 tests before any retention edit.
+  - Applied a minimal post-merge fix in `src/functions/retention.ts`: defer the deletion-only `image-refs` import until after the `dryRun` return.
+  - Targeted verification after the fix: `corepack pnpm exec vitest run test/retention.test.ts -t "dry-run eviction shows candidates without deleting" --reporter verbose` passed in 20ms for the test; `corepack pnpm exec vitest run test/retention.test.ts --reporter verbose` passed 15 tests.
+  - Semgrep full-repo scan passed with 0 findings.
+  - OSV scan reported one medium advisory from the merged lockfile: `@opentelemetry/core@1.30.1` via pinned `iii-sdk@0.11.2`, fixed in `2.8.0`; user accepted this risk for the current merge-readiness run rather than broadening dependency scope.
 
 ## Review Notes
 
