@@ -3,7 +3,7 @@
 Task id: `2026-06-16-obsidian-export-dir-race`
 Scope: current `agentmemory` worktree
 Branch: `review/issue-244-pr-318-opencode-session-metadata`
-Status: implemented; prep-merge gates in progress
+Status: implemented, committed, and verified after local-main merge prep
 
 ## Sprint Contract
 
@@ -51,7 +51,7 @@ Stop conditions:
 | Prove regression before production fix | Targeted symlink test | Done | RED: `pnpm vitest run test/obsidian-export-symlink.test.ts --testNamePattern "rejects a symlinked export subdirectory"` failed because `vault` contained `crystals`, `lessons`, `memories`, and `sessions` instead of only the pre-existing `memories` symlink. |
 | Remove fail-fast async directory race | Focused test plus code inspection | Done | `src/functions/obsidian-export.ts` now prepares category directories sequentially with `for...of` and `await`, so symlink rejection stops before sibling directory creation starts. |
 | Full suite | `pnpm test` | Done | Passed after fix: 159 test files / 1986 tests. |
-| Prep-merge gates | Prep skill workflow | In progress | Prep skill, review skills, and security diff scan skill loaded; focused reviewers and security scans are running. |
+| Prep-merge gates | Prep skill workflow | Done | Task patch committed as `9a92047`; local `refs/heads/main` at `60099a3` was already an ancestor of `HEAD`, so the local-main merge was a no-op with no conflicts. |
 
 ## Subagent Ledger
 
@@ -85,6 +85,8 @@ Stop conditions:
 - Current diagnosis: product bug with cleanup-flake symptom. The implemented minimal fix avoids fail-fast concurrent directory preparation for export category directories, and the strengthened test proves a symlinked `memories` directory rejection does not create sibling export directories.
 - Prep review status: focused code review reported one important task-state documentation issue, fixed here. Breaker reviewer reported `NO FINDINGS`. Boundary reviewer reported a medium residual TOCTOU risk in the existing validate-then-open filesystem pattern.
 - The boundary reviewer risk is accepted as outside this task's scope: this task does not claim to solve the broader concurrent-parent-swap class. The broader hardening option remains a separate design task.
+- Prep commit `9a92047` contains only the task-owned code, test, and task-state files.
+- Local `refs/heads/main` resolved to `60099a31029575412ba6fc27f4ab986196922e56`; that commit was already an ancestor of `HEAD`, so the local-main merge step was a no-op and produced no conflicts.
 
 ## Verification Evidence
 
@@ -98,6 +100,8 @@ Stop conditions:
 - Neighboring Obsidian verification: `pnpm vitest run test/obsidian-export.test.ts test/obsidian-export-symlink.test.ts` passed, 2 files / 20 tests.
 - Full verification: `pnpm test` passed, 159 files / 1986 tests.
 - Prep local checks so far: `git diff --check` passed; `semgrep scan --config p/default --error --metrics=off src/functions/obsidian-export.ts test/obsidian-export-symlink.test.ts` passed, 0 findings; `gitleaks detect --source . --redact` passed, no leaks.
+- Staged secret scan before commit: `gitleaks protect --staged --redact` passed, no leaks.
+- Local-main merge prep: `git merge-base --is-ancestor 60099a31029575412ba6fc27f4ab986196922e56 HEAD` exited `0`; no merge command was needed because the captured local main commit was already included.
 
 ## Residual Risks
 
