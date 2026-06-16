@@ -220,8 +220,84 @@ describe("handleToolCall", () => {
       kv,
     );
     const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.format).toBe("full");
     expect(parsed.results).toHaveLength(1);
-    expect(parsed.results[0].content).toBe("TypeScript is great");
+    expect(parsed.results[0].observation.narrative).toBe("TypeScript is great");
+  });
+
+  it("memory_recall supports compact and narrative formats in local fallback", async () => {
+    const kv = new InMemoryKV();
+    await handleToolCall(
+      "memory_save",
+      { content: "Store the release checklist in memory" },
+      kv,
+    );
+
+    const compact = JSON.parse(
+      (
+        await handleToolCall(
+          "memory_recall",
+          { query: "release checklist", format: "compact" },
+          kv,
+        )
+      ).content[0].text,
+    );
+    expect(compact.format).toBe("compact");
+    expect(compact.results[0].title).toContain("Store the release checklist");
+    expect(compact.results[0]).not.toHaveProperty("content");
+
+    const narrative = JSON.parse(
+      (
+        await handleToolCall(
+          "memory_recall",
+          { query: "release checklist", format: "narrative" },
+          kv,
+        )
+      ).content[0].text,
+    );
+    expect(narrative.format).toBe("narrative");
+    expect(narrative.text).toContain("Store the release checklist in memory");
+  });
+
+  it("memory_recall preserves project filtering for local fallback formats", async () => {
+    const kv = new InMemoryKV();
+    await handleToolCall(
+      "memory_save",
+      {
+        content: "main repo auth uses jose",
+        project: "git:repo-main",
+      },
+      kv,
+    );
+    await handleToolCall(
+      "memory_save",
+      {
+        content: "other repo auth uses nextauth",
+        project: "git:repo-other",
+      },
+      kv,
+    );
+
+    for (const format of ["full", "compact", "narrative"]) {
+      const result = await handleToolCall(
+        "memory_recall",
+        { query: "auth", project: "git:repo-main", format },
+        kv,
+      );
+      const text = result.content[0].text;
+      expect(text).toContain("jose");
+      expect(text).not.toContain("nextauth");
+    }
+  });
+
+  it("memory_recall rejects invalid local fallback format and token budget values", async () => {
+    const kv = new InMemoryKV();
+    await expect(
+      handleToolCall("memory_recall", { query: "x", format: "verbose" }, kv),
+    ).rejects.toThrow("format must be one of");
+    await expect(
+      handleToolCall("memory_recall", { query: "x", token_budget: 0 }, kv),
+    ).rejects.toThrow("token_budget must be a positive integer");
   });
 
   it("local fallback stores and filters memories by project", async () => {
@@ -455,7 +531,11 @@ describe("handleToolCall", () => {
       kv,
     );
     const parsed = JSON.parse(result.content[0].text);
-    expect(parsed.results.map((m: { id: string }) => m.id)).toEqual(["new"]);
+    expect(
+      parsed.results.map(
+        (m: { observation: { id: string } }) => m.observation.id,
+      ),
+    ).toEqual(["new"]);
   });
 
   it("parseLimit clamps bad/malicious limit values to a safe range", async () => {

@@ -85,11 +85,33 @@ function normalizeList(value: unknown): string[] {
 
 const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 100;
+type RecallFormat = "full" | "compact" | "narrative";
+
 function parseLimit(raw: unknown, fallback = DEFAULT_LIMIT): number {
   if (typeof raw !== "number" && typeof raw !== "string") return fallback;
   const n = Number(raw);
   if (!Number.isFinite(n) || n <= 0) return fallback;
   return Math.min(Math.floor(n), MAX_LIMIT);
+}
+
+function parseRecallFormat(raw: unknown): RecallFormat {
+  const format = typeof raw === "string" ? raw.trim().toLowerCase() : "full";
+  if (!["full", "compact", "narrative"].includes(format)) {
+    throw new Error("format must be one of: full, compact, narrative");
+  }
+  return format as RecallFormat;
+}
+
+function parseTokenBudget(raw: unknown): number | undefined {
+  if (raw === undefined) return undefined;
+  if (typeof raw !== "number" && typeof raw !== "string") {
+    throw new Error("token_budget must be a positive integer");
+  }
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < 1) {
+    throw new Error("token_budget must be a positive integer");
+  }
+  return n;
 }
 
 function textResponse(payload: unknown, pretty = false): {
@@ -121,6 +143,45 @@ interface Validated {
   reason?: string;
 }
 
+type LocalMemory = Record<string, unknown>;
+
+function firstSessionId(memory: LocalMemory): unknown {
+  return Array.isArray(memory["sessionIds"])
+    ? memory["sessionIds"][0]
+    : undefined;
+}
+
+async function searchLocalMemories(
+  kvInstance: InMemoryKV,
+  v: Validated,
+): Promise<LocalMemory[]> {
+  const query = (v.query || "").toLowerCase();
+  const limit = v.limit ?? DEFAULT_LIMIT;
+  const all = await kvInstance.list<LocalMemory>("mem:memories");
+  return all
+    .filter((m) => {
+      if (v.project === undefined) return true;
+      const project =
+        typeof m["project"] === "string" ? m["project"] : undefined;
+      return project === v.project;
+    })
+    .filter((m) => inTimeRange(m["createdAt"], v.timeRange ?? null))
+    .filter((m) => {
+      const text = [
+        typeof m["title"] === "string" ? m["title"] : "",
+        typeof m["content"] === "string" ? m["content"] : "",
+        Array.isArray(m["files"]) ? m["files"].join(" ") : "",
+        Array.isArray(m["concepts"]) ? m["concepts"].join(" ") : "",
+        Array.isArray(m["sessionIds"]) ? m["sessionIds"].join(" ") : "",
+        typeof m["id"] === "string" ? m["id"] : "",
+      ]
+        .join(" ")
+        .toLowerCase();
+      return query.split(/\s+/).every((word) => text.includes(word));
+    })
+    .slice(0, limit);
+}
+
 function validate(toolName: string, args: Record<string, unknown>): Validated {
   if (!IMPLEMENTED_TOOLS.has(toolName)) {
     throw new Error(`Unknown tool: ${toolName}`);
@@ -150,16 +211,25 @@ function validate(toolName: string, args: Record<string, unknown>): Validated {
       }
       v.query = query.trim();
       v.limit = parseLimit(args["limit"]);
-      const fmt = args["format"];
-      if (typeof fmt === "string" && fmt.trim()) {
-        v.format = fmt.trim().toLowerCase();
-      }
-      const budget = args["token_budget"];
-      if (typeof budget === "number" && Number.isFinite(budget) && budget > 0) {
-        v.tokenBudget = Math.floor(budget);
-      } else if (typeof budget === "string" && budget.trim()) {
-        const n = Number(budget);
-        if (Number.isFinite(n) && n > 0) v.tokenBudget = Math.floor(n);
+      if (toolName === "memory_recall") {
+        v.format = parseRecallFormat(args["format"]);
+        v.tokenBudget = parseTokenBudget(args["token_budget"]);
+      } else {
+        const fmt = args["format"];
+        if (typeof fmt === "string" && fmt.trim()) {
+          v.format = fmt.trim().toLowerCase();
+        }
+        const budget = args["token_budget"];
+        if (
+          typeof budget === "number" &&
+          Number.isFinite(budget) &&
+          budget > 0
+        ) {
+          v.tokenBudget = Math.floor(budget);
+        } else if (typeof budget === "string" && budget.trim()) {
+          const n = Number(budget);
+          if (Number.isFinite(n) && n > 0) v.tokenBudget = Math.floor(n);
+        }
       }
       const project = args["project"];
       if (typeof project === "string" && project.trim()) {
@@ -324,34 +394,75 @@ async function handleLocal(
       return textResponse({ saved: id });
     }
 
-    case "memory_recall":
     case "memory_smart_search": {
-      const query = (v.query || "").toLowerCase();
-      const limit = v.limit ?? DEFAULT_LIMIT;
-      const all =
-        await kvInstance.list<Record<string, unknown>>("mem:memories");
-      const results = all
-        .filter((m) => {
-          if (v.project === undefined) return true;
-          const project = typeof m["project"] === "string" ? m["project"] : undefined;
-          return project === v.project;
-        })
-        .filter((m) => inTimeRange(m["createdAt"], v.timeRange ?? null))
-        .filter((m) => {
-          const text = [
-            typeof m["title"] === "string" ? m["title"] : "",
-            typeof m["content"] === "string" ? m["content"] : "",
-            Array.isArray(m["files"]) ? m["files"].join(" ") : "",
-            Array.isArray(m["concepts"]) ? m["concepts"].join(" ") : "",
-            Array.isArray(m["sessionIds"]) ? m["sessionIds"].join(" ") : "",
-            typeof m["id"] === "string" ? m["id"] : "",
-          ]
-            .join(" ")
-            .toLowerCase();
-          return query.split(/\s+/).every((word) => text.includes(word));
-        })
-        .slice(0, limit);
+      const results = await searchLocalMemories(kvInstance, v);
       return textResponse({ mode: "compact", results }, true);
+    }
+
+    case "memory_recall": {
+      const results = await searchLocalMemories(kvInstance, v);
+      const format = v.format ?? "full";
+
+      if (format === "compact") {
+        return textResponse(
+          {
+            format,
+            results: results.map((m) => ({
+              obsId: m["id"],
+              sessionId: firstSessionId(m),
+              title: m["title"],
+              type: m["type"],
+              score: 1,
+              timestamp: m["updatedAt"] || m["createdAt"],
+            })),
+          },
+          true,
+        );
+      }
+
+      if (format === "narrative") {
+        const narrativeResults = results.map((m) => ({
+          obsId: m["id"],
+          sessionId: firstSessionId(m),
+          title: m["title"],
+          narrative: m["content"],
+          score: 1,
+          timestamp: m["updatedAt"] || m["createdAt"],
+        }));
+        return textResponse(
+          {
+            format,
+            results: narrativeResults,
+            text: narrativeResults
+              .map(
+                (r, index) =>
+                  `${index + 1}. ${String(r.title || r.obsId)}\n${String(r.narrative || "")}`,
+              )
+              .join("\n\n"),
+          },
+          true,
+        );
+      }
+
+      return textResponse(
+        {
+          format,
+          results: results.map((m) => ({
+            observation: {
+              id: m["id"],
+              type: m["type"],
+              title: m["title"],
+              narrative: m["content"],
+              concepts: m["concepts"],
+              files: m["files"],
+              timestamp: m["updatedAt"] || m["createdAt"],
+            },
+            score: 1,
+            sessionId: firstSessionId(m),
+          })),
+        },
+        true,
+      );
     }
 
     case "memory_sessions": {
