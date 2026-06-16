@@ -7,7 +7,7 @@ agentmemory is a persistent memory system for AI coding agents, built on iii-eng
 - **Engine**: iii-sdk (WebSocket to iii-engine on port 49134)
 - **State**: File-based SQLite via iii-engine's StateModule (`./data/state_store.db`)
 - **Build**: TypeScript → ESM via tsdown, output to `dist/`
-- **Test**: vitest (`npm test` excludes integration tests)
+- **Test**: vitest (`corepack pnpm test` excludes integration tests)
 
 ## Consistency Rules
 
@@ -109,7 +109,7 @@ Hook scripts in `src/hooks/` are standalone Node.js scripts (no iii-sdk import).
 
 ## Testing
 
-- All tests must pass before PR: `npm test` (950+ tests)
+- All tests must pass before PR: `corepack pnpm test` (950+ tests)
 - Mock pattern: `vi.mock("iii-sdk")` with mock `sdk.trigger`, `kv.get/set/list`
 - Test files go in `test/` with `.test.ts` extension
 - Follow existing patterns in `test/crystallize.test.ts` for function tests
