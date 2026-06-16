@@ -28,6 +28,15 @@ describe("loadEnvFile", () => {
     delete process.env["AGENTMEMORY_DROP_STALE_INDEX"];
     delete process.env["CONSOLIDATION_ENABLED"];
     delete process.env["GRAPH_EXTRACTION_ENABLED"];
+    delete process.env["AGENTMEMORY_ALLOW_CODEX_SDK"];
+    delete process.env["AGENTMEMORY_PREFER_CODEX_SDK"];
+    delete process.env["AGENTMEMORY_CODEX_MODEL"];
+    delete process.env["OPENAI_API_KEY"];
+    delete process.env["MINIMAX_API_KEY"];
+    delete process.env["ANTHROPIC_API_KEY"];
+    delete process.env["GEMINI_API_KEY"];
+    delete process.env["GOOGLE_API_KEY"];
+    delete process.env["OPENROUTER_API_KEY"];
     delete process.env["TOKEN"];
     delete process.env["HASHVAL"];
   });
@@ -88,5 +97,46 @@ describe("loadEnvFile", () => {
     writeEnv("AGENTMEMORY_DROP_STALE_INDEX=true");
     const cfg = await freshConfig();
     expect(cfg.isDropStaleIndexEnabled()).toBe(true);
+  });
+
+  it("detects the opt-in Codex SDK fallback when no provider key exists", async () => {
+    writeEnv(
+      [
+        "AGENTMEMORY_ALLOW_CODEX_SDK=true",
+        "AGENTMEMORY_CODEX_MODEL=gpt-5.4-mini",
+      ].join("\n"),
+    );
+    const cfg = await freshConfig();
+
+    expect(cfg.loadConfig().provider).toMatchObject({
+      provider: "codex-sdk",
+      model: "gpt-5.4-mini",
+    });
+    expect(cfg.detectLlmProviderKind()).toBe("llm");
+  });
+
+  it("prefers API-key providers over the Codex SDK fallback by default", async () => {
+    writeEnv(
+      [
+        "AGENTMEMORY_ALLOW_CODEX_SDK=true",
+        "OPENAI_API_KEY=sk-test",
+      ].join("\n"),
+    );
+    const cfg = await freshConfig();
+
+    expect(cfg.loadConfig().provider.provider).toBe("openai");
+  });
+
+  it("can explicitly prefer the Codex SDK fallback over API-key providers", async () => {
+    writeEnv(
+      [
+        "AGENTMEMORY_ALLOW_CODEX_SDK=true",
+        "AGENTMEMORY_PREFER_CODEX_SDK=true",
+        "OPENAI_API_KEY=sk-test",
+      ].join("\n"),
+    );
+    const cfg = await freshConfig();
+
+    expect(cfg.loadConfig().provider.provider).toBe("codex-sdk");
   });
 });

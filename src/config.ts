@@ -49,6 +49,28 @@ function hasRealValue(v: string | undefined): v is string {
   return typeof v === "string" && v.trim().length > 0;
 }
 
+function buildCodexSdkConfig(
+  env: Record<string, string>,
+  maxTokens: number,
+  preferred: boolean,
+): ProviderConfig {
+  process.stderr.write(
+    "[agentmemory] WARNING: Codex CLI subscription-auth fallback enabled via AGENTMEMORY_ALLOW_CODEX_SDK=true. " +
+      "This shells out to `codex exec` and uses your logged-in Codex/ChatGPT session instead of reading private token files. " +
+      "It is opt-in because it can consume subscription quota/rate limits; AGENTMEMORY_SDK_CHILD and " +
+      `AGENTMEMORY_CODEX_SDK_CHILD are set on the child process so agentmemory hooks short-circuit. ${
+        preferred
+          ? "AGENTMEMORY_PREFER_CODEX_SDK=true is set, so Codex CLI is preferred over API-key providers."
+          : "Prefer a real API key for production."
+      }\n`,
+  );
+  return {
+    provider: "codex-sdk",
+    model: env["AGENTMEMORY_CODEX_MODEL"] || "codex-default",
+    maxTokens,
+  };
+}
+
 const EMBEDDING_PROVIDERS = new Set([
   "local",
   "gemini",
@@ -62,6 +84,12 @@ const LOCAL_EMBEDDING_PROVIDER_ALIASES = new Set(["xenova", "transformers"]);
 
 function detectProvider(env: Record<string, string>): ProviderConfig {
   const maxTokens = parseInt(env["MAX_TOKENS"] || "4096", 10);
+  const allowCodexSdk = env["AGENTMEMORY_ALLOW_CODEX_SDK"] === "true";
+  const preferCodexSdk = env["AGENTMEMORY_PREFER_CODEX_SDK"] === "true";
+
+  if (allowCodexSdk && preferCodexSdk) {
+    return buildCodexSdkConfig(env, maxTokens, true);
+  }
 
   // OpenAI-compatible: supports OpenAI, DeepSeek, SiliconFlow, Azure, vLLM, LM Studio
   if (hasRealValue(env["OPENAI_API_KEY"]) && env["OPENAI_API_KEY_FOR_LLM"] !== "false") {
@@ -134,18 +162,20 @@ function detectProvider(env: Record<string, string>): ProviderConfig {
     };
   }
 
+  if (allowCodexSdk) {
+    return buildCodexSdkConfig(env, maxTokens, false);
+  }
+
   const allowAgentSdk = env["AGENTMEMORY_ALLOW_AGENT_SDK"] === "true";
   if (!allowAgentSdk) {
     process.stderr.write(
       "[agentmemory] No LLM provider key found " +
         "(ANTHROPIC_API_KEY, GEMINI_API_KEY, OPENROUTER_API_KEY, MINIMAX_API_KEY, OPENAI_API_KEY). " +
         "LLM-backed compression and summarization are DISABLED — using no-op provider. " +
-        "This is the safe default: the agent-sdk fallback used to spawn Claude Agent SDK " +
-        "child sessions which inherit Claude Code's plugin hooks and cause infinite Stop-hook " +
-        "recursion (#149 follow-up). To opt in to the agent-sdk fallback anyway, set both " +
-        "AGENTMEMORY_AUTO_COMPRESS=true AND AGENTMEMORY_ALLOW_AGENT_SDK=true — but be aware " +
-        "it will burn your Claude Pro allocation and may still recurse if you use it from " +
-        "inside Claude Code itself.\n",
+        "This is the safe default: subscription-auth fallbacks spawn child agent sessions " +
+        "and can burn quota or recurse through hooks if enabled carelessly. To opt in, set " +
+        "AGENTMEMORY_ALLOW_CODEX_SDK=true for the Codex CLI fallback or " +
+        "AGENTMEMORY_ALLOW_AGENT_SDK=true for the Claude Agent SDK fallback.\n",
     );
     return {
       provider: "noop",
@@ -221,6 +251,7 @@ export function detectLlmProviderKind(): "llm" | "noop" {
     hasRealValue(env["GOOGLE_API_KEY"]) ||
     hasRealValue(env["OPENROUTER_API_KEY"]) ||
     hasRealValue(env["MINIMAX_API_KEY"]) ||
+    env["AGENTMEMORY_ALLOW_CODEX_SDK"] === "true" ||
     (hasRealValue(env["OPENAI_API_KEY"]) &&
       env["OPENAI_API_KEY_FOR_LLM"] !== "false")
   ) {
@@ -381,6 +412,7 @@ function hasLLMProviderConfigured(env: Record<string, string | undefined>): bool
       env["GOOGLE_API_KEY"] ||
       env["MINIMAX_API_KEY"] ||
       env["OPENAI_BASE_URL"] ||
+      env["AGENTMEMORY_ALLOW_CODEX_SDK"] === "true" ||
       provider === "agent-sdk",
   );
 }
@@ -429,6 +461,7 @@ const VALID_PROVIDERS = new Set([
   "gemini",
   "openrouter",
   "agent-sdk",
+  "codex-sdk",
   "minimax",
   "openai",
 ]);
@@ -437,6 +470,7 @@ export function loadFallbackConfig(): FallbackConfig {
   const env = getMergedEnv();
   const raw = env["FALLBACK_PROVIDERS"] || "";
   const allowAgentSdk = env["AGENTMEMORY_ALLOW_AGENT_SDK"] === "true";
+  const allowCodexSdk = env["AGENTMEMORY_ALLOW_CODEX_SDK"] === "true";
   const providers = raw
     .split(",")
     .map((p) => p.trim())
@@ -457,6 +491,16 @@ export function loadFallbackConfig(): FallbackConfig {
             "fallback can spawn Claude Agent SDK child sessions that trigger " +
             "the Stop-hook recursion loop (#149 follow-up). Opt in explicitly " +
             "with AGENTMEMORY_ALLOW_AGENT_SDK=true if this is intentional.\n",
+        );
+        return false;
+      }
+      if (p === "codex-sdk" && !allowCodexSdk) {
+        process.stderr.write(
+          "[agentmemory] Ignoring FALLBACK_PROVIDERS entry 'codex-sdk' " +
+            "(AGENTMEMORY_ALLOW_CODEX_SDK is not 'true'). The Codex CLI " +
+            "fallback spawns a child Codex session and can consume subscription " +
+            "quota. Opt in explicitly with AGENTMEMORY_ALLOW_CODEX_SDK=true " +
+            "if this is intentional.\n",
         );
         return false;
       }
