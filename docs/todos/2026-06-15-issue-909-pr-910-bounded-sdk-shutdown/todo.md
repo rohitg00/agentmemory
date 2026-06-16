@@ -105,3 +105,58 @@ Stop conditions:
 - Merge commit: `85d7f4f`.
 - Conflicts: none.
 - Preserved unrelated dirty paths: none.
+
+## 2026-06-16 Local Main Prep Rerun
+
+- Worktree: `/Users/A1538552/.codex/worktrees/68cb/agentmemory`.
+- Branch: `review/issue-909-pr-910-bounded-sdk-shutdown`.
+- Fixed local main target: `d4393d1ab5dd284edee3a17bfbf45825f239c07e`.
+- Started detached at `175415cd41ecd5e74f1200369c082758cedd609d`; attached the existing branch after confirming it was not listed in another worktree.
+- Merged fixed local main with no conflicts. Merge commit: `5ec9efdbc8b814f2c0396a71db3eb9203b7008b1`.
+- Deterministic dependency setup command passed with isolated `HOME`, `XDG_CONFIG_HOME`, `NPM_CONFIG_USERCONFIG`, `PNPM_HOME`, `--frozen-lockfile`, `--ignore-scripts`, and `/tmp/agentmemory-merge-test-pnpm-store`.
+- Initial exact `corepack pnpm test` failed: 159 files, 1987 tests, one timeout in `test/retention.test.ts` (`dry-run eviction shows candidates without deleting`).
+- Two read-only subagents independently classified the failure as timing/test hardening rather than a merge conflict or shutdown branch bug. Both identified that `mem::retention-evict` imported `image-refs` before returning from dry-run, even though dry-run never deletes images.
+
+### Post-Merge Fix Sprint Contract
+
+Goal: Harden the retention dry-run path so full-suite load does not pay the image deletion helper import cost when no deletion can occur.
+
+Scope:
+- `src/functions/retention.ts`.
+- `src/functions/image-refs.ts`.
+- `test/retention.test.ts`.
+- This task record.
+
+Non-goals:
+- No dependency updates.
+- No changes to non-dry-run eviction semantics.
+- No broader retention refactor or timeout increase.
+
+Acceptance criteria:
+- A regression test fails before the production change and passes after it.
+- Existing retention tests pass.
+- Exact `corepack pnpm test` is rerun after the fix.
+- Required review/security gates are recorded before any post-merge fix commit.
+
+Intended verification:
+- `corepack pnpm vitest run test/retention.test.ts -t "dry-run eviction does not load image deletion helpers"`.
+- `corepack pnpm vitest run test/retention.test.ts`.
+- `corepack pnpm test`.
+
+### Post-Merge Feature / Verification Matrix
+
+| Change | Verification method | Status | Evidence |
+| --- | --- | --- | --- |
+| Avoid image deletion helper import during retention dry-run | RED/GREEN focused Vitest | done | RED failed at `src/functions/retention.ts:307`; GREEN focused test passed, 1 file / 1 selected test. |
+| Keep image-ref module import cheap for non-image eviction | Existing retention suite | done | Full retention rerun first exposed the same timing issue in a semantic eviction test; after lazy `TriggerAction` import, `test/retention.test.ts` passed, 1 file / 16 tests. |
+| Preserve non-dry-run retention eviction behavior | Existing retention suite | done | `corepack pnpm vitest run test/retention.test.ts` passed, 1 file / 16 tests. |
+| Full branch verification after local main merge | Exact `corepack pnpm test` | pending | Initial exact run failed one retention timeout before post-merge fix. |
+
+### Post-Merge Fix Review Notes
+
+- `git diff --check` passed on the touched files.
+- `corepack pnpm exec eslint src/functions/retention.ts src/functions/image-refs.ts test/retention.test.ts` passed.
+- `semgrep scan --config p/default --error --metrics=off src/functions/retention.ts src/functions/image-refs.ts test/retention.test.ts` passed: 3 targets, 210 rules, 0 findings.
+- Focused code review: ACCEPT, no Critical or Important findings.
+- Adversarial implementation review: NO FINDINGS.
+- Passive security-best-practices check: no auth, tenant, schema, network, or new filesystem boundary introduced; existing managed image delete path and disk-size telemetry are preserved.
