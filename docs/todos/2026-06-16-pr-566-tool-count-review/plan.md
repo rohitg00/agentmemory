@@ -62,9 +62,9 @@
 **Files:**
 - Current branch and task-owned docs or metadata diffs.
 
-- [ ] Run `prep-merge-to-local-main` from the current branch.
+- [x] Run `prep-merge-to-local-main` from the current branch.
   Expected: task-owned changes are reviewed, committed if required by the skill, local `main` commit is merged or no-op, and final verification evidence is recorded.
-- [ ] Update `todo.md` with prep result if the skill leaves no task-owned changes or skips commit/merge steps.
+- [x] Update `todo.md` with prep result if the skill leaves no task-owned changes or skips commit/merge steps.
   Expected: handoff can cite decision, verification, security posture, and working branch.
 
 ## Self-Review

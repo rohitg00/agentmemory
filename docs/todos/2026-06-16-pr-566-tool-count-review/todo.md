@@ -51,7 +51,7 @@ Stop conditions:
 | Issue 565 relevance in current fork | Source count plus README/plugin search | Adapted import | `src/mcp/tools-registry.ts` contains 53 `memory_*` tool definitions; README and plugin manifests already advertise 53; `.env.example` and website comparison still advertised 51 before this task. |
 | PR 566 diff fit | Public diff inspection, compared to local files | Adapted import | Public PR 566 diff touches `.env.example`, `README.md`, `plugin/.claude-plugin/plugin.json`, `src/mcp/standalone.ts`, and `website/components/Compare.tsx`; only stale current-fork hunks were imported, with current fork skill counts/default semantics preserved. |
 | Local documentation of decision | Inspect created task record | Complete | This task record uses neutral IDs only: PR 566, Issue 565, Fork issue 586. |
-| Prep merge to local main | `prep-merge-to-local-main` workflow | Pending |  |
+| Prep merge to local main | `prep-merge-to-local-main` workflow | Complete | Task-owned changes committed; local `main` commit `6c387b4efea524db5bf8fe0e923958cbcf0213f1` is already an ancestor of the review branch, so merge was a no-op. |
 
 ## Progress
 
@@ -84,6 +84,12 @@ Stop conditions:
   - Focused implementation review: no critical or important issue; subagent review was not used because the available subagent tool requires explicit user authorization.
   - Codex Security diff scan: completed under `/tmp/codex-security-scans/agentmemory/6c387b4_20260616T003608Z`; no plausible candidates, validation and attack-path phases skipped by rule.
   - Security scan goal usage: 22064 tokens, about 73 seconds.
+- Prep merge to local main:
+  - Preflight found no active Git operation, no staged unrelated paths, no configured commit/merge hooks beyond sample hooks, and no signing configuration.
+  - Main worktree `/Users/A1538552/_projects/_tools/agentmemory` was clean at `6c387b4efea524db5bf8fe0e923958cbcf0213f1`.
+  - Created commit `d290b9cc8a1e8bca1209bb4a8104dcd28d425307` for the adapted import and task record.
+  - `gitleaks protect --staged --redact`: passed before commit.
+  - Local `main` was already an ancestor of `HEAD`; no merge command was needed and no conflicts occurred.
 
 ## Review Notes
 
