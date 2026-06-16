@@ -65,12 +65,8 @@ function indexOfStep(workflow: string, step: string): number {
   return index;
 }
 
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
 function expectTopLevelYamlScalar(yaml: string, key: string, value: string): void {
-  expect(yaml).toMatch(new RegExp(`^${escapeRegExp(key)}: ${escapeRegExp(value)}$`, "m"));
+  expect(yaml.split(/\r?\n/)).toContain(`${key}: ${value}`);
 }
 
 describe("root quality gates", () => {
@@ -299,6 +295,7 @@ describe("root quality gates", () => {
     expectTopLevelYamlScalar(workspace, "trustPolicy", "no-downgrade");
 
     const lockfile = readText("pnpm-lock.yaml");
+    const lockfileLines = lockfile.split(/\r?\n/);
     for (const importer of [
       ".",
       "website",
@@ -307,7 +304,11 @@ describe("root quality gates", () => {
       "integrations/openclaw",
       "integrations/pi",
     ]) {
-      expect(lockfile).toMatch(new RegExp(`^\\s{2}${escapeRegExp(importer)}:`, "m"));
+      expect(
+        lockfileLines.some((line) =>
+          line === `  ${importer}:` || line === `  ${importer}: {}`,
+        ),
+      ).toBe(true);
     }
 
     expect(readText(".gitignore")).not.toMatch(/^pnpm-lock\.yaml$/m);
@@ -318,5 +319,21 @@ describe("root quality gates", () => {
     const mcp = JSON.parse(readText("packages/mcp/package.json")) as PackageJson;
 
     expect(mcp.dependencies?.["@agentmemory/agentmemory"]).toBe("workspace:~");
+  });
+
+  it("keeps the OSV waiver narrow and time-bounded", () => {
+    const configPath = "osv-scanner.toml";
+    expect(existsSync(configPath), "root OSV scanner config is required").toBe(true);
+
+    const config = existsSync(configPath) ? readText(configPath) : "";
+    expect(config.match(/^\[\[IgnoredVulns\]\]$/gm)).toHaveLength(1);
+    expect(config).toMatch(/^id = "GHSA-8988-4f7v-96qf"$/m);
+    expect(config).toMatch(/^ignoreUntil = 2026-07-16$/m);
+    expect(config).toMatch(/iii-sdk@0\.11\.2/);
+    expect(config).toMatch(/@opentelemetry\/core@1\.30\.1/);
+    expect(config).toMatch(/@opentelemetry\/core >=2\.8\.0/);
+    expect(config).not.toMatch(/^\[\[PackageOverrides\]\]$/m);
+    expect(config).not.toMatch(/^ignore = true$/m);
+    expect(config).not.toMatch(/^nameIsRegex = true$/m);
   });
 });

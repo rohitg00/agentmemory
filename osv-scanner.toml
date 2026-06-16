@@ -1,0 +1,4 @@
+[[IgnoredVulns]]
+id = "GHSA-8988-4f7v-96qf"
+ignoreUntil = 2026-07-16
+reason = "Temporary waiver for transitive iii-sdk@0.11.2 -> @opentelemetry/core@1.30.1 (CVE-2026-54285). Forcing @opentelemetry/core >=2.8.0 is not supported by iii-sdk's current OpenTelemetry 1.x stack; track upstream @iii-dev/observability support for OpenTelemetry 2.x before removing this waiver."
