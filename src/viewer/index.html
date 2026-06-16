@@ -1162,6 +1162,15 @@
       var name = sessionDisplayName(s);
       return id ? name + ' (' + id + ')' : name + ' (missing id)';
     }
+    function arrayOrEmpty(value) {
+      return Array.isArray(value) ? value : [];
+    }
+    function firstArray() {
+      for (var i = 0; i < arguments.length; i++) {
+        if (Array.isArray(arguments[i])) return arguments[i];
+      }
+      return [];
+    }
     function debounce(fn, ms) {
       var t;
       return function() {
@@ -1356,15 +1365,15 @@
           apiGet('crystals')
         ]);
         state.dashboard.health = results[0];
-        state.dashboard.sessions = (results[1] && results[1].sessions) || [];
-        state.dashboard.memories = (results[2] && results[2].memories) || [];
+        state.dashboard.sessions = arrayOrEmpty(results[1] && results[1].sessions);
+        state.dashboard.memories = arrayOrEmpty(results[2] && results[2].memories);
         state.dashboard.graphStats = results[3];
-        state.dashboard.recentAudit = (results[4] && results[4].entries) || [];
-        state.dashboard.semantic = (results[5] && results[5].facts) || (results[5] && results[5].semantic) || [];
-        state.dashboard.procedural = (results[6] && results[6].procedures) || (results[6] && results[6].procedural) || [];
-        state.dashboard.lessons = (results[8] && results[8].lessons) || [];
-        state.dashboard.crystals = (results[9] && results[9].crystals) || [];
-        state.dashboard.relations = (results[7] && results[7].relations) || [];
+        state.dashboard.recentAudit = arrayOrEmpty(results[4] && results[4].entries);
+        state.dashboard.semantic = firstArray(results[5] && results[5].facts, results[5] && results[5].semantic);
+        state.dashboard.procedural = firstArray(results[6] && results[6].procedures, results[6] && results[6].procedural);
+        state.dashboard.lessons = arrayOrEmpty(results[8] && results[8].lessons);
+        state.dashboard.crystals = arrayOrEmpty(results[9] && results[9].crystals);
+        state.dashboard.relations = arrayOrEmpty(results[7] && results[7].relations);
         state.dashboard.loaded = true;
         renderDashboard();
       } catch (err) {
@@ -1395,17 +1404,20 @@
       var snap = h.health || {};
       var healthStatus = h.status || 'unknown';
       var dotClass = healthStatus === 'healthy' ? 'healthy' : healthStatus === 'degraded' ? 'degraded' : healthStatus === 'critical' ? 'critical' : '';
-      var activeSessions = d.sessions.filter(function(s) { return s.status === 'active'; }).length;
+      var sessions = arrayOrEmpty(d.sessions).filter(function(s) { return s && typeof s === 'object'; });
+      var memories = arrayOrEmpty(d.memories).filter(function(m) { return m && typeof m === 'object'; });
+      var recentAudit = arrayOrEmpty(d.recentAudit).filter(function(a) { return a && typeof a === 'object'; });
+      var activeSessions = sessions.filter(function(s) { return s.status === 'active'; }).length;
       var gs = d.graphStats || {};
       var nodeCount = gs.totalNodes !== undefined ? gs.totalNodes : (gs.nodes !== undefined ? gs.nodes : (gs.nodeCount || 0));
       var edgeCount = gs.totalEdges !== undefined ? gs.totalEdges : (gs.edges !== undefined ? gs.edges : (gs.edgeCount || 0));
-      var fMetrics = h.functionMetrics || [];
+      var fMetrics = arrayOrEmpty(h.functionMetrics).filter(function(m) { return m && typeof m === 'object'; });
       var cb = h.circuitBreaker || null;
-      var workers = snap.workers || [];
+      var workers = arrayOrEmpty(snap.workers).filter(function(w) { return w && typeof w === 'object'; });
 
       var html = '';
       // First-run hero: empty dashboard = guided next step
-      if (d.sessions.length === 0) {
+      if (sessions.length === 0) {
         html += '<div class="card" style="margin-bottom:14px;padding:24px 28px;background:var(--bg-subtle);border-left:3px solid var(--accent);">' +
           '<div style="font-family:var(--font-ui);font-size:11px;letter-spacing:0.15em;text-transform:uppercase;color:var(--accent);font-weight:700;margin-bottom:8px;">First run &rarr; magical moment in 10 seconds</div>' +
           '<div style="font-family:var(--font-display,Lora,Georgia,serif);font-size:22px;font-weight:700;color:var(--ink);margin-bottom:8px;">Seed sample data + prove semantic recall works</div>' +
@@ -1415,10 +1427,10 @@
           '</div>';
       }
       html += '<div class="stats-grid">';
-      html += '<div class="stat-card"><div class="label">Sessions</div><div class="value">' + d.sessions.length + '</div><div class="sub">' + activeSessions + ' active</div></div>';
-      html += '<div class="stat-card"><div class="label">Memories</div><div class="value">' + d.memories.length + '</div><div class="sub">latest versions</div></div>';
-      var lessonCount = (d.lessons || []).length;
-      var crystalCount = (d.crystals || []).length;
+      html += '<div class="stat-card"><div class="label">Sessions</div><div class="value">' + sessions.length + '</div><div class="sub">' + activeSessions + ' active</div></div>';
+      html += '<div class="stat-card"><div class="label">Memories</div><div class="value">' + memories.length + '</div><div class="sub">latest versions</div></div>';
+      var lessonCount = arrayOrEmpty(d.lessons).length;
+      var crystalCount = arrayOrEmpty(d.crystals).length;
       html += '<div class="stat-card"><div class="label">Lessons</div><div class="value">' + lessonCount + '</div><div class="sub">confidence-scored</div></div>';
       html += '<div class="stat-card"><div class="label">Crystals</div><div class="value">' + crystalCount + '</div><div class="sub">action digests</div></div>';
       html += '<div class="stat-card"><div class="label">Graph Nodes</div><div class="value">' + nodeCount + '</div><div class="sub">' + edgeCount + ' edges</div></div>';
@@ -1431,10 +1443,10 @@
         html += '<div class="stat-card"><div class="label">Circuit Breaker</div><div class="value"><span class="cb-indicator ' + cbClass + '">' + esc(cb.state) + '</span></div>';
         html += '<div class="sub">' + (cb.failures || 0) + ' failures</div></div>';
       }
-      var totalObs = d.sessions.reduce(function(a, s) { return a + (s.observationCount || 0); }, 0);
+      var totalObs = sessions.reduce(function(a, s) { return a + (s.observationCount || 0); }, 0);
       var tokenBudget = parseInt(new URLSearchParams(window.location.search).get('tokenBudget') || '2000', 10) || 2000;
       var estFull = totalObs * 80;
-      var estInjected = d.sessions.length * tokenBudget;
+      var estInjected = sessions.length * tokenBudget;
       var savings = estFull > 0 ? Math.round((1 - estInjected / Math.max(estFull, 1)) * 100) : 0;
       if (savings < 0) savings = 0;
       var tokensSaved = Math.max(0, estFull - estInjected);
@@ -1480,17 +1492,19 @@
         html += '</div>';
       }
 
-      if (snap.alerts && snap.alerts.length > 0) {
-        html += '<div class="card" style="margin-bottom:16px;border-color:var(--accent);border-width:2px;"><div class="card-title" style="color:var(--accent);border-bottom-color:var(--accent);">Alerts (' + snap.alerts.length + ')</div>';
-        snap.alerts.forEach(function(al) {
+      var alerts = arrayOrEmpty(snap.alerts);
+      if (alerts.length > 0) {
+        html += '<div class="card" style="margin-bottom:16px;border-color:var(--accent);border-width:2px;"><div class="card-title" style="color:var(--accent);border-bottom-color:var(--accent);">Alerts (' + alerts.length + ')</div>';
+        alerts.forEach(function(al) {
           html += '<div style="font-size:12px;color:var(--accent);padding:4px 0;border-bottom:1px solid var(--border-light);font-family:var(--font-ui);">' + esc(al) + '</div>';
         });
         html += '</div>';
       }
 
-      if (snap.notes && snap.notes.length > 0) {
-        html += '<div class="card" style="margin-bottom:16px;"><div class="card-title" style="color:var(--ink-muted);">Notes (' + snap.notes.length + ')</div>';
-        snap.notes.forEach(function(n) {
+      var notes = arrayOrEmpty(snap.notes);
+      if (notes.length > 0) {
+        html += '<div class="card" style="margin-bottom:16px;"><div class="card-title" style="color:var(--ink-muted);">Notes (' + notes.length + ')</div>';
+        notes.forEach(function(n) {
           html += '<div style="font-size:12px;color:var(--ink-muted);padding:4px 0;border-bottom:1px solid var(--border-light);font-family:var(--font-ui);">' + esc(n) + '</div>';
         });
         html += '</div>';
@@ -1499,10 +1513,10 @@
       html += '<div class="two-col">';
 
       html += '<div class="card"><div class="card-title">Recent Sessions</div>';
-      if (d.sessions.length === 0) {
+      if (sessions.length === 0) {
         html += '<div class="empty-state"><p>No sessions yet. Start a coding session with agentmemory hooks enabled.</p></div>';
       } else {
-        var recent = d.sessions.slice().sort(function(a, b) { return (b.startedAt || '').localeCompare(a.startedAt || ''); }).slice(0, 5);
+        var recent = sessions.slice().sort(function(a, b) { return (b.startedAt || '').localeCompare(a.startedAt || ''); }).slice(0, 5);
         html += '<table><tr><th>Project</th><th>Status</th><th>Obs</th><th>Started</th></tr>';
         recent.forEach(function(s) {
           var statusBadge = s.status === 'active' ? 'badge-green' : s.status === 'completed' ? 'badge-blue' : 'badge-muted';
@@ -1516,10 +1530,10 @@
       html += '</div>';
 
       html += '<div class="card"><div class="card-title">Recent Activity</div>';
-      if (d.recentAudit.length === 0) {
+      if (recentAudit.length === 0) {
         html += '<div class="empty-state"><p>No activity recorded yet</p></div>';
       } else {
-        d.recentAudit.forEach(function(a) {
+        recentAudit.forEach(function(a) {
           var badgeClass = OP_BADGES[a.operation] || 'badge-muted';
           html += '<div style="padding:6px 0;border-bottom:1px solid var(--border-light);font-size:13px;">';
           html += '<span class="badge ' + badgeClass + '">' + esc(a.operation) + '</span> ';
@@ -1574,9 +1588,9 @@
         html += '</div>';
       }
 
-      var semFacts = d.semantic || [];
-      var procItems = d.procedural || [];
-      var relItems = d.relations || [];
+      var semFacts = arrayOrEmpty(d.semantic).filter(function(f) { return f && typeof f === 'object'; });
+      var procItems = arrayOrEmpty(d.procedural).filter(function(p) { return p && typeof p === 'object'; });
+      var relItems = arrayOrEmpty(d.relations).filter(function(r) { return r && typeof r === 'object'; });
 
       html += '<hr class="section-rule">';
       html += '<div class="two-col">';
@@ -1608,10 +1622,11 @@
             html += '<div style="font-weight:600;color:var(--ink);font-family:var(--font-display);font-size:13px;">' + esc(p.name || p.title || 'Procedure') + '</div>';
             if (p.trigger || p.triggerCondition) html += '<div style="font-size:11px;color:var(--ink-faint);font-family:var(--font-mono);margin-top:2px;">Trigger: ' + esc(p.trigger || p.triggerCondition) + '</div>';
             if (p.frequency) html += '<div style="font-size:11px;color:var(--ink-faint);margin-top:2px;">Freq: ' + p.frequency + '</div>';
-            if (p.steps && p.steps.length > 0) {
+            var steps = arrayOrEmpty(p.steps);
+            if (steps.length > 0) {
               html += '<ol class="procedure-steps">';
-              p.steps.slice(0, 4).forEach(function(s) { html += '<li>' + esc(typeof s === 'string' ? s : s.description || s.action || JSON.stringify(s)) + '</li>'; });
-              if (p.steps.length > 4) html += '<li style="color:var(--ink-faint);font-style:italic;">+ ' + (p.steps.length - 4) + ' more...</li>';
+              steps.slice(0, 4).forEach(function(s) { html += '<li>' + esc(typeof s === 'string' ? s : s.description || s.action || JSON.stringify(s)) + '</li>'; });
+              if (steps.length > 4) html += '<li style="color:var(--ink-faint);font-style:italic;">+ ' + (steps.length - 4) + ' more...</li>';
               html += '</ol>';
             }
             html += '</div>';

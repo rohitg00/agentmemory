@@ -223,6 +223,56 @@ describe("viewer session rendering", () => {
     expect(getElement("view-dashboard").innerHTML).toContain("Unknown session");
   });
 
+  it("does not throw when dashboard collections are partial or malformed", () => {
+    const { sandbox, getElement } = loadViewerSandbox();
+    sandbox.state.dashboard = {
+      loaded: true,
+      health: {
+        status: "healthy",
+        health: {
+          connectionState: "connected",
+          alerts: { malformed: true },
+          notes: "not-an-array",
+          workers: "not-an-array",
+        },
+        functionMetrics: undefined,
+      },
+      sessions: [
+        {
+          status: "completed",
+          observationCount: 2,
+          startedAt: "2026-05-14T03:00:00.000Z",
+        },
+        null,
+        {
+          id: "ses_good",
+          project: "C:/work/app",
+          status: "active",
+          observationCount: 1,
+          startedAt: "2026-05-14T04:00:00.000Z",
+        },
+      ],
+      memories: { malformed: true },
+      graphStats: { nodes: 1, edges: 0 },
+      recentAudit: undefined,
+      lessons: undefined,
+      crystals: undefined,
+      semantic: { malformed: true },
+      procedural: [{ title: "Recovered <script>procedure</script>", steps: undefined }],
+      relations: [{ type: "related" }],
+    };
+
+    expect(() => sandbox.renderDashboard()).not.toThrow();
+    expect(getElement("view-dashboard").innerHTML).toContain("Recent Sessions");
+    expect(getElement("view-dashboard").innerHTML).toContain("Unknown session");
+    expect(getElement("view-dashboard").innerHTML).toContain(
+      "Recovered &lt;script&gt;procedure&lt;/script&gt;",
+    );
+    expect(getElement("view-dashboard").innerHTML).not.toContain(
+      "Recovered <script>procedure</script>",
+    );
+  });
+
   it("does not throw when timeline and sessions tabs receive sessions missing ids", () => {
     const { sandbox, getElement } = loadViewerSandbox();
     const sessions = [{ status: "active", observationCount: 1, startedAt: "2026-05-13T12:00:00Z" }];
