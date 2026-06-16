@@ -60,7 +60,7 @@ Stop conditions:
 | Dependency materialization | Frozen pnpm install with isolated store | Blocked / usable fallback | `corepack pnpm install --frozen-lockfile --store-dir /tmp/agentmemory-pnpm-store` downloaded packages but exited nonzero because hardened pnpm ignored build scripts and wrote placeholder `allowBuilds`; removed the unintended config diff. Existing `node_modules/.bin/vitest` was usable for verification. |
 | Relevance / reproduction | Viewer code inspection plus red regression if bug exists | Done | Current fork still routed every `sync` backlog observation through `routeWsMessage`; while Dashboard was active each routed observation started `loadDashboard()`. Red test with 50 backlog observations produced 550 fetches. Public Issue 609 and PR 623 diff confirmed the same bug class and proposed debounce/cap/in-flight sharing. |
 | Minimal fix | Targeted test goes red then green | Done | Added dashboard backlog regression in `test/viewer-session-id.test.ts`; implemented `loadDashboardOnce()`, debounced dashboard refresh scheduling, dashboard `sync` short-circuit, and non-dashboard `sync` cap in `src/viewer/index.html`. |
-| Final verification | Targeted/full tests and merge-prep workflow if changed | In progress | Targeted tests, full non-integration Vitest, `git diff --check`, Semgrep, and Codex Security diff scan passed. Fresh prep preflight sees clean local `main` worktree at `f58174d3`; commit/merge phase is continuing. |
+| Final verification | Targeted/full tests and merge-prep workflow if changed | Done | Targeted tests, full non-integration Vitest, `git diff --check`, Semgrep, and Codex Security diff scan passed. Prep committed the fix, merged local `main` commit `f58174d3`, and post-merge tests passed. |
 
 ## Progress Notes
 
@@ -87,6 +87,12 @@ Stop conditions:
   - `./node_modules/.bin/vitest run test/memories-pagination.test.ts`
   - `git diff --check`
   - `semgrep scan --config p/default --error --metrics=off src/viewer/index.html test/viewer-session-id.test.ts` (`0 findings`)
+- 2026-06-16: Committed task-owned fix as `afaa7ec6` (`fix(viewer): debounce dashboard backlog refreshes`).
+- 2026-06-16: First local-main merge attempt failed under sandbox because Git could not write `.git/worktrees/agentmemory/ORIG_HEAD.lock`; reran the same captured-SHA merge with approved escalation. Merge commit `17e1c882` merged local `main` commit `f58174d3`.
+- 2026-06-16: Post-merge verification passed:
+  - `git diff --check`
+  - `./node_modules/.bin/vitest run test/viewer-session-id.test.ts test/memories-pagination.test.ts` (`13 passed`)
+  - `./node_modules/.bin/vitest run --exclude test/integration.test.ts` (`169 passed`, `2176 passed`)
 
 ## Review Notes
 
