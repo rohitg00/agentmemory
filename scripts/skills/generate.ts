@@ -36,7 +36,7 @@ function applyBlock(file: string, key: string, body: string): void {
   }
   if (check) {
     if (existing !== next) {
-      console.error(`DRIFT: ${file.replace(ROOT + "/", "")} (AUTOGEN:${key} out of date — run \`npm run skills:gen\`)`);
+      console.error(`DRIFT: ${file.replace(ROOT + "/", "")} (AUTOGEN:${key} out of date — run \`corepack pnpm run skills:gen\`)`);
       process.exitCode = 1;
     }
     return;
@@ -164,7 +164,7 @@ applyBlock(join(SKILLS, "agentmemory-agents", "REFERENCE.md"), "agents", agents(
 applyBlock(join(SKILLS, "agentmemory-hooks", "REFERENCE.md"), "hooks", hooks());
 
 if (check && process.exitCode) {
-  console.error("\nSkill reference docs are stale. Run: npm run skills:gen");
+  console.error("\nSkill reference docs are stale. Run: corepack pnpm run skills:gen");
 } else if (!check) {
   console.log("skills reference generation complete");
 }
