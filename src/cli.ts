@@ -24,6 +24,7 @@ import * as p from "@clack/prompts";
 import { generateId } from "./state/schema.js";
 import {
   buildDiagnostics,
+  canAutoFix,
   dryRunPlan,
   parseEnvFile,
   type Diagnostic,
@@ -1958,11 +1959,14 @@ async function runDoctor() {
     }
     failed++;
     p.log.warn(`${d.id} ✗ ${status.detail ?? ""}`.trim());
-    p.log.info(`why: ${d.fixPreview}`);
 
-    if (d.manualOnly) {
-      p.log.info(`(manual fix only — see "${d.id}" docs)`);
+    if (!canAutoFix(d)) {
+      p.log.info(`manual fix: ${d.fixPreview}`);
+      skipped++;
+      continue;
     }
+
+    p.log.info(`why: ${d.fixPreview}`);
 
     if (applyAll) {
       const r = await applyFixWithReport(d, ctx, false);
