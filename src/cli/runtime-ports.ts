@@ -113,16 +113,10 @@ export function renderRuntimeIiiConfig(
 ): string {
   const ports = configuredRuntimePorts(env);
   let currentWorker = "";
-  let sawTopLevelPort = false;
 
   const lines = config.split(/\r?\n/).map((line) => {
     const worker = line.match(/^\s*-\s+name:\s*([A-Za-z0-9_-]+)\s*$/);
     if (worker) currentWorker = worker[1] ?? "";
-
-    if (/^port:\s*\d+\s*$/.test(line)) {
-      sawTopLevelPort = true;
-      return `port: ${ports.enginePort}`;
-    }
 
     if (currentWorker === "iii-http" && /^\s+allowed_origins:\s*\[.*\]\s*$/.test(line)) {
       const indent = line.match(/^\s*/)?.[0] ?? "";
@@ -141,7 +135,6 @@ export function renderRuntimeIiiConfig(
     return line;
   });
 
-  if (!sawTopLevelPort) lines.unshift(`port: ${ports.enginePort}`, "");
   return lines.join("\n");
 }
 

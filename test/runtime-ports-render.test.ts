@@ -20,7 +20,7 @@ describe("runtime iii port rendering", () => {
     expect(env.III_ENGINE_URL).toBe("ws://localhost:49234");
   });
 
-  it("renders a runtime iii config for non-default port blocks", () => {
+  it("renders a v0.11-compatible runtime iii config for non-default REST and stream ports", () => {
     const nativeConfig = readFileSync("iii-config.yaml", "utf-8");
 
     const rendered = renderRuntimeIiiConfig(nativeConfig, {
@@ -28,7 +28,7 @@ describe("runtime iii port rendering", () => {
     });
 
     expect(nativeConfig).not.toContain("port: 49234");
-    expect(rendered).toContain("port: 49234");
+    expect(rendered.split(/\r?\n/).some((line) => /^port:\s*\d+\s*$/.test(line))).toBe(false);
     expect(rendered).toContain("port: 3211");
     expect(rendered).toContain("port: 3212");
     expect(rendered).toContain("http://localhost:3211");

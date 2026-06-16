@@ -103,6 +103,10 @@ Known boundaries:
 - 2026-06-16: Merged current local `main` `d4393d1ab5dd284edee3a17bfbf45825f239c07e` into the branch as merge commit `718ec20`; first sandboxed attempt was blocked by Git metadata permissions for `ORIG_HEAD.lock`, then the same merge command succeeded with approved escalation. No conflicts required manual resolution.
 - 2026-06-16: After local-main merge introduced `pnpm-lock.yaml` and `packageManager: pnpm@11.6.0`, reran verification setup as `HOME=/tmp/agentmemory-pnpm-verify.NzDm5D/home XDG_CONFIG_HOME=/tmp/agentmemory-pnpm-verify.NzDm5D/xdg NPM_CONFIG_USERCONFIG=/tmp/agentmemory-pnpm-verify.NzDm5D/empty-npmrc PNPM_HOME=/tmp/agentmemory-pnpm-verify.NzDm5D/pnpm-home pnpm install --frozen-lockfile --ignore-scripts --store-dir /tmp/agentmemory-pnpm-verify.NzDm5D/store`; it used pnpm 11.6.0, passed lockfile supply-chain policy, and only synchronized `node_modules`.
 - 2026-06-16: Post-merge verification passed: clean `git status -sb --untracked-files=all`, `git diff --check refs/heads/main...HEAD`, `pnpm run skills:check`, Semgrep on the final 7-file branch diff with 0 findings, and full `pnpm test` with 159 test files and 1990 tests passing.
+- 2026-06-16: Post-merge runtime smoke from the main checkout found a startup regression: `agentmemory` generated `~/.agentmemory/data/iii-config.yaml` with a synthetic top-level `port: 49134`, and the pinned iii v0.11.2 parser rejected it with `unknown field port, expected modules or workers`.
+- 2026-06-16: Root cause traced to `src/cli/runtime-ports.ts` from commit `00629db0`, which inserted or rewrote a top-level engine port in the runtime YAML. Direct checks showed `/Users/A1538552/.agentmemory/bin/iii --port 49234` is not supported, and an isolated `III_URL=ws://localhost:49234` probe still listened on `49134`, so iii v0.11.2 does not expose the engine listen port through either mechanism.
+- 2026-06-16: Added a failing regression assertion that rendered v0.11-compatible runtime configs must not synthesize a top-level `port:` line, then removed the synthetic top-level port rendering. Focused rerun via `corepack pnpm test -- test/runtime-ports-render.test.ts` passed; the package script executed the full non-integration Vitest suite with 169 files and 2175 tests passing.
+- 2026-06-16: Rebuilt `dist/cli.mjs` with `corepack pnpm build` so the local `/Users/A1538552/.local/bin/agentmemory` symlink runs the fixed CLI. Smoke-starting the rebuilt CLI reached `iii-engine is ready`; the generated runtime config now starts with `workers:` and no top-level `port:`.
 
 ## Review Notes
 
@@ -118,7 +122,7 @@ Security review:
 - Auth/isolation: no auth bypass or cross-agent memory filtering changes. Port relocation remains loopback-oriented and only changes local process binding assumptions.
 - Data exposure: no new remote host, API surface, or secret output. CORS origins remain limited to localhost and 127.0.0.1 for the selected REST/viewer ports.
 - Path/file access and persistence: runtime config generation writes to the existing `~/.agentmemory` runtime area at process startup; no user-provided path is accepted by the new renderer.
-- Protocol/schema: generated iii config keeps the existing YAML shape and only rewrites the top-level engine port, iii-http port, iii-stream port, and CORS origin list.
+- Protocol/schema: generated iii config must stay compatible with iii v0.11.2, whose top-level schema accepts `modules` or `workers` but not `port`. Runtime rendering may rewrite `iii-http`, `iii-stream`, and CORS origin values, but must not synthesize an engine-port field in YAML.
 - Prompt/LLM: not touched.
 - DoS/performance: rendering is linear in config file length and occurs once during engine startup.
 - Supply chain: no dependency or lockfile change.
@@ -131,8 +135,9 @@ Focused review:
 - Review Implementation: no critical or important findings in local adversarial pass. 2026-06-16 focused review subagent returned `ACCEPT`; adversarial review subagent returned `NO FINDINGS`.
 
 Open risks:
-- Full `pnpm test` passed after local dependency setup. Full lint and full build were not run; targeted `skills:check`, `git diff --check`, Semgrep, Gitleaks staged scan, and full unit tests covered the changed surface.
+- Fresh pre-commit verification passed on 2026-06-16: `git diff --check`, `corepack pnpm lint`, `corepack pnpm test -- test/runtime-ports-render.test.ts` (169 files / 2175 tests), `corepack pnpm build`, Semgrep `p/default`, and staged Gitleaks.
 - Docker compose port mappings remain static and were not changed; this fix targets native CLI-managed iii-engine startup.
+- The pinned native iii v0.11.2 binary still appears to listen on fixed engine port `49134`; `--port` can safely rewrite REST/stream/viewer config, but the prior claim that it can relocate the native engine listen port is not proven and needs a separate design decision before being advertised as working.
 
 ## Final Notes
 
