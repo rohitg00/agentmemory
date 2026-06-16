@@ -104,7 +104,18 @@ Supply chain, hooks, tooling, persistence:
 - [x] Made fork decision.
 - [x] Added neutral local documentation.
 - [x] Run documentation checks.
-- [ ] Execute `$prep-merge-to-local-main`.
+- [x] Execute `$prep-merge-to-local-main`.
+
+## Prep Merge Result
+
+- Documentation commit: `e03722ec6c09905e7bea248d123f66276ec217a4`.
+- Merged local `main` commit: `60099a31029575412ba6fc27f4ab986196922e56`.
+- Merge result: merge commit created without conflicts.
+- Post-merge checks:
+  - `git diff --check`: no output.
+  - Resolver harness: passed with same-basename repos distinct, linked worktrees shared, legacy override preserved, and opaque `git:` project prefix.
+  - `gitleaks detect --source . --redact`: no leaks found.
+- Full repo-native Vitest remains limited in this worktree because `node_modules` is absent; no dependency install or repo-local dependency symlink was created.
 
 ## Review Notes
 

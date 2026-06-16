@@ -60,7 +60,7 @@ Stop conditions:
 | Security review | Manual source-to-sink review of project key use | Done | Remote-derived keys increase repo metadata disclosure and need migration/backfill policy before default adoption. |
 | Code import | Diff review | Done | No code imported; direct PR shape rejected as-is. |
 | Local documentation | `git diff --check` and diff review | Done | Task record documents decision neutrally; no URL, active issue-reference, or mention matches found. |
-| Merge prep | `$prep-merge-to-local-main` | Pending | Run after documentation and verification are stable. |
+| Merge prep | `$prep-merge-to-local-main` | Done | Documentation commit created, local `main` commit `60099a31029575412ba6fc27f4ab986196922e56` merged without conflicts, post-merge checks passed within noted dependency limits. |
 
 ## Tasks
 
@@ -93,7 +93,7 @@ Stop conditions:
 **Files:**
 - Modify: task record final notes if needed
 
-- [ ] Run required prep-merge preflight.
-- [ ] Commit task-owned documentation if review gates allow it.
-- [ ] Merge captured local `main` if not already an ancestor.
-- [ ] Run post-merge verification or record no-op.
+- [x] Run required prep-merge preflight.
+- [x] Commit task-owned documentation if review gates allow it.
+- [x] Merge captured local `main` if not already an ancestor.
+- [x] Run post-merge verification or record no-op.
