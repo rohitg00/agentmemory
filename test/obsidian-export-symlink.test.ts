@@ -163,6 +163,7 @@ describe("Obsidian Export symlink containment", () => {
     expect(result.success).toBe(false);
     expect(result.error).toMatch(/symlink|inside|real directory/i);
     await expect(readdir(outside)).resolves.toEqual([]);
+    await expect(readdir(vaultDir)).resolves.toEqual(["memories"]);
     expect(await pathExists(join(outside, "mem_subdir.md"))).toBe(false);
   });
 
