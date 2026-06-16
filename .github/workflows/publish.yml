@@ -35,15 +35,15 @@ jobs:
           node-version: 22
           registry-url: https://registry.npmjs.org
 
-      # Two-step install: generate a lockfile in-runner with
-      # --package-lock-only, then install from it with `npm ci`. Gives a
-      # single deterministic dep graph across build / test / publish
-      # within one job — important because publish uses `--provenance`.
-      # Lockfiles are gitignored at the repo level.
-      - run: npm install --package-lock-only --legacy-peer-deps --no-audit --no-fund
-      - run: npm ci --legacy-peer-deps --no-audit --no-fund
-      - run: npm run build
-      - run: npm test
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm run build
+      - run: pnpm test
+      - run: npm pack --dry-run --json
+      - working-directory: packages/mcp
+        run: pnpm pack --dry-run --json
+      - working-directory: integrations/filesystem-watcher
+        run: npm pack --dry-run --json
 
       - name: Publish @agentmemory/agentmemory
         run: |
@@ -76,7 +76,7 @@ jobs:
           if npm view "@agentmemory/mcp@$SHIM_VERSION" version >/dev/null 2>&1; then
             echo "Shim version already published, skipping"
           else
-            npm publish --provenance --access public
+            pnpm publish --provenance --access public --no-git-checks
           fi
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

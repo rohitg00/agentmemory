@@ -2,6 +2,7 @@
   "name": "agentmemory-website",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "pnpm@11.6.0",
   "scripts": {
     "gen-meta": "node scripts/gen-meta.mjs",
     "predev": "node scripts/gen-meta.mjs",
