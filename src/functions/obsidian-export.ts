@@ -389,9 +389,9 @@ export function registerObsidianExportFunction(
       // TypeError as `{"error":"[object Object]"}`. With this guard the
       // worst case is `{success: false, error: <string>}`.
       try {
-        await Promise.all(
-          Object.values(dirs).map((dir) => ensureRealDirectoryInsideRoot(dir, root, root)),
-        );
+        for (const dir of Object.values(dirs)) {
+          await ensureRealDirectoryInsideRoot(dir, root, root);
+        }
 
         const stats = { memories: 0, lessons: 0, crystals: 0, sessions: 0 };
         const errors: ExportError[] = [];
