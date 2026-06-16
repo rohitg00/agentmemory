@@ -1,5 +1,6 @@
 {
   "name": "agentmemory-pi-extension",
   "private": true,
-  "type": "module"
+  "type": "module",
+  "packageManager": "pnpm@11.6.0"
 }
