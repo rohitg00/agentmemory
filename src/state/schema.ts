@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 export const KV = {
   sessions: "mem:sessions",
@@ -82,7 +82,7 @@ export const STREAM = {
 
 export function generateId(prefix: string): string {
   const ts = Date.now().toString(36);
-  const rand = crypto.randomUUID().replace(/-/g, "").slice(0, 12);
+  const rand = randomUUID().replace(/-/g, "").slice(0, 12);
   return `${prefix}_${ts}_${rand}`;
 }
 

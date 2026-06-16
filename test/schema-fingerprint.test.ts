@@ -1,5 +1,23 @@
 import { describe, it, expect } from "vitest";
-import { fingerprintId, KV } from "../src/state/schema.js";
+import { fingerprintId, generateId, KV } from "../src/state/schema.js";
+
+describe("generateId", () => {
+  it("does not depend on globalThis.crypto", () => {
+    const originalCrypto = Object.getOwnPropertyDescriptor(globalThis, "crypto");
+
+    try {
+      expect(Reflect.deleteProperty(globalThis, "crypto")).toBe(true);
+
+      const id = generateId("obs");
+
+      expect(id).toMatch(/^obs_[0-9a-z]+_[0-9a-f]{12}$/);
+    } finally {
+      if (originalCrypto) {
+        Object.defineProperty(globalThis, "crypto", originalCrypto);
+      }
+    }
+  });
+});
 
 describe("fingerprintId", () => {
   it("returns string with correct prefix", () => {
