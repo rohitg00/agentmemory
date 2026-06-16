@@ -101,3 +101,18 @@ Adapt PR 837 minimally. Import only the `memory_smart_search.expandIds` standalo
 - Local main merged: `6c387b4efea524db5bf8fe0e923958cbcf0213f1`.
 - Merge commit: `87297778baef1900d6b92045f8d46c8fec41e970`; conflict-free.
 - Post-merge verification: `pnpm exec vitest run --exclude test/integration.test.ts test/mcp-standalone-proxy.test.ts` passed, 27/27 tests, in `/tmp/agentmemory-pr837-postmerge.fQVNIY/repo`.
+
+## Current Prep-Merge Run
+
+- Worktree: `/Users/A1538552/.codex/worktrees/37c1/agentmemory`
+- Working branch: `review/issue-440-pr-837-mcp-recall-format`
+- Pre-merge status: tracked working tree clean; ignored verification artifacts present from local setup.
+- No task-owned uncommitted changes existed at prep start, so cleanup and pre-merge commit were skipped.
+- Local `main` captured and merged: `60099a31029575412ba6fc27f4ab986196922e56`.
+- Merge commit: `5ac1d63212de93ccd9429a33000d02fc326d6ede`; conflict-free.
+- Pre-merge reviews: focused reviewer accepted the branch diff; adversarial reviewer reported no findings.
+- Codex Security diff scan: `/tmp/codex-security-scans/agentmemory/2f78545e706e_20260616T044736Z/report.md`, no reportable findings.
+- Pre-merge verification before merging local `main`: `git diff --check 6c387b4efea524db5bf8fe0e923958cbcf0213f1...2f78545e706e89dddee78a55869fb4174ef3d253` passed; `pnpm exec vitest run --exclude test/integration.test.ts test/mcp-standalone-proxy.test.ts` passed, 27/27 tests.
+- Post-merge verification: `git diff --check HEAD^1 HEAD` passed; `pnpm test` passed, 158/158 test files and 1984/1984 tests.
+- Security gate after merge: `semgrep scan --config p/default --error --metrics=off .` completed with 0 findings. The final staged Gitleaks gate is reported in the handoff after staging this task-record update.
+- Residual risks: the repo still has no tracked lockfile, dependency resolution is not reproducible, and broad TypeScript compile was not rerun because earlier evidence showed unrelated baseline errors.
