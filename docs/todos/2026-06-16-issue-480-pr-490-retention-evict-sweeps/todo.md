@@ -65,7 +65,7 @@ Stop conditions:
 | Wire worker timer and shutdown cleanup | Source inspection, build, and targeted tests | complete | `npm run build` succeeded; scheduler source test asserts shutdown cleanup handle. |
 | Document neutral outcome | Task record review notes | complete | This task record uses neutral IDs only. |
 | Security review | Manual checklist plus required scanners as available | complete | Semgrep default rules: 0 findings. OSV found no package sources in this lockfile-less checkout with `--allow-no-lockfiles`. Manual review found no new external entrypoint, auth bypass, file access, protocol/schema, prompt/LLM, dependency, hook/tooling, or persistence expansion. |
-| Merge prep | `$prep-merge-to-local-main` | pending |  |
+| Merge prep | `$prep-merge-to-local-main` | complete | Task commit `e450232`; merged local main commit `60099a3` with no conflicts; post-merge targeted tests and lint passed. |
 
 ## Progress
 
@@ -80,7 +80,7 @@ Stop conditions:
 - [x] Add targeted tests.
 - [x] Run verification.
 - [x] Run review/security gates.
-- [ ] Run `$prep-merge-to-local-main`.
+- [x] Run `$prep-merge-to-local-main`.
 
 ## Review Notes
 
@@ -115,3 +115,13 @@ Review-chain evidence:
 - `$requesting-code-review` independent subagent dispatch was not used because the available spawn tool requires an explicit user request for subagents; local focused review found no critical or important findings.
 - `$review-implementation` local adversarial pass found no blocking findings. Evidence inspected: task record, PR 490 diff, `src/functions/evict-scheduler.ts`, `src/index.ts`, README and `.env.example` changes, targeted tests, lint, build, Semgrep, and OSV limitation.
 - `codex-security:security-diff-scan` was treated as a diff-scoped security pass over the changed scheduler/config/docs surface. No reportable candidate found; Semgrep default rules had 0 findings. No scan report artifacts were staged.
+
+Merge-prep evidence:
+- Pre-merge task commit: `e450232`.
+- Local main commit captured and merged: `60099a3`.
+- Merge result: merge commit created by `ort`, no conflicts.
+- Incoming local-main paths did not overlap the task-owned scheduler paths.
+- Post-merge `git diff --check`: passed.
+- Post-merge `npm test -- test/evict-scheduler.test.ts test/evict.test.ts test/api-memories-project.test.ts test/memories-pagination.test.ts`: 4 files, 24 tests passed.
+- Post-merge `npm run lint`: passed.
+- Preserved ignored verification/dependency artifacts: `node_modules/`, `dist/`, and ignored generated plugin script maps/types from `npm run build`.
