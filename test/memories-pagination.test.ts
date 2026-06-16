@@ -38,6 +38,14 @@ describe("memories + export pagination (#544)", () => {
   it("viewer dashboard caps memories?latest fetch with limit", () => {
     const viewer = readFileSync("src/viewer/index.html", "utf-8");
     expect(viewer).toMatch(/memories\?latest=true&limit=500/);
-    expect(viewer).toMatch(/memories\?latest=true&limit=2000/);
+    expect(viewer).toMatch(/'latest=true', 'limit=2000'/);
+  });
+
+  it("viewer Memories search sends non-empty queries to the backend memories endpoint", () => {
+    const viewer = readFileSync("src/viewer/index.html", "utf-8");
+    expect(viewer).toMatch(/function buildMemoriesPath\(\)/);
+    expect(viewer).toMatch(/params\.push\('q='\s*\+\s*encodeURIComponent\(query\)\)/);
+    expect(viewer).toMatch(/apiGet\(buildMemoriesPath\(\)\)/);
+    expect(viewer).toMatch(/bindImeSafeSearch\(searchInput,\s*200,\s*function\(v\)\{\s*state\.memories\.search = v;\s*loadMemories\(\{ keep: true \}\);/);
   });
 });

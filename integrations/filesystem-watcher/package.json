@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "description": "Filesystem connector for agentmemory — emits observations on file changes.",
   "type": "module",
+  "packageManager": "pnpm@11.6.0",
   "bin": {
     "agentmemory-fs-watcher": "./bin.mjs"
   },

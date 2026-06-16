@@ -119,7 +119,7 @@ describe("Package and integration manifests", () => {
     expect(pkg.type).toBe("module");
     expect(pkg.bin["agentmemory-mcp"]).toBe("./bin.mjs");
     expect(pkg.files).toEqual(expect.arrayContaining(["bin.mjs", "README.md", "LICENSE"]));
-    expect(pkg.dependencies["@agentmemory/agentmemory"]).toMatch(/^~/);
+    expect(pkg.dependencies["@agentmemory/agentmemory"]).toBe("workspace:~");
     expect(pkg.publishConfig).toMatchObject({ access: "public", provenance: true });
     expect(existsSync(join(repoRoot, "packages/mcp", pkg.bin["agentmemory-mcp"]))).toBe(true);
   });
