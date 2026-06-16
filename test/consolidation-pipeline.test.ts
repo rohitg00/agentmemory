@@ -11,6 +11,7 @@ vi.mock("../src/config.js", () => ({
 
 import { registerConsolidationPipelineFunction } from "../src/functions/consolidation-pipeline.js";
 import { isConsolidationEnabled } from "../src/config.js";
+import { logger } from "../src/logger.js";
 import type { SessionSummary, Memory, SemanticMemory, ProceduralMemory } from "../src/types.js";
 
 function mockKV() {
@@ -236,6 +237,80 @@ describe("Consolidation Pipeline", () => {
       source: "consolidation",
       sourceIds: [stored[0].id],
     });
+  });
+
+  it("creates scoped lessons when extracted procedures already exist", async () => {
+    const provider = {
+      name: "test",
+      compress: vi.fn(),
+      summarize: vi.fn().mockResolvedValue(
+        `<procedures><procedure name="Scoped Workflow" trigger="when shipping scoped changes"><step>Inspect project scope</step><step>Run targeted tests</step></procedure></procedures>`,
+      ),
+    };
+    sdk.registerFunction("mem::lesson-save", async (payload: Record<string, unknown>) => {
+      await kv.set("mem:lessons", "lsn_existing_proc", payload);
+      return { success: true, action: "created", lesson: payload };
+    });
+    registerConsolidationPipelineFunction(sdk as never, kv as never, provider as never);
+
+    await kv.set("mem:procedural", "proc_existing", {
+      id: "proc_existing",
+      name: "Scoped Workflow",
+      steps: ["Use stale global procedure"],
+      triggerCondition: "when shipping scoped changes",
+      frequency: 1,
+      sourceSessionIds: [],
+      strength: 0.5,
+      createdAt: "2026-01-01T00:00:00Z",
+      updatedAt: "2026-01-01T00:00:00Z",
+    });
+    await kv.set("mem:memories", "api_1", { ...makePattern(1), project: "api" });
+    await kv.set("mem:memories", "api_2", { ...makePattern(2), project: "api" });
+
+    const result = (await sdk.trigger("mem::consolidate-pipeline", {
+      tier: "procedural",
+      project: "api",
+    })) as { success: boolean; results: Record<string, { newProcedures: number }> };
+
+    expect(result.success).toBe(true);
+    expect(result.results.procedural.newProcedures).toBe(0);
+    const lessons = await kv.list<Record<string, unknown>>("mem:lessons");
+    expect(lessons).toHaveLength(1);
+    expect(lessons[0]).toMatchObject({
+      content: "[procedure] Scoped Workflow: Inspect project scope; Run targeted tests",
+      project: "api",
+      sourceIds: ["proc_existing"],
+    });
+  });
+
+  it("keeps procedural extraction successful when lesson save throws", async () => {
+    const provider = {
+      name: "test",
+      compress: vi.fn(),
+      summarize: vi.fn().mockResolvedValue(
+        `<procedures><procedure name="Scoped Workflow" trigger="when shipping scoped changes"><step>Inspect project scope</step></procedure></procedures>`,
+      ),
+    };
+    sdk.registerFunction("mem::lesson-save", async () => {
+      throw new Error("lesson store offline");
+    });
+    registerConsolidationPipelineFunction(sdk as never, kv as never, provider as never);
+
+    await kv.set("mem:memories", "api_1", { ...makePattern(1), project: "api" });
+    await kv.set("mem:memories", "api_2", { ...makePattern(2), project: "api" });
+
+    const result = (await sdk.trigger("mem::consolidate-pipeline", {
+      tier: "procedural",
+      project: "api",
+    })) as { success: boolean; results: Record<string, { newProcedures: number }> };
+
+    expect(result.success).toBe(true);
+    expect(result.results.procedural.newProcedures).toBe(1);
+    expect(await kv.list<ProceduralMemory>("mem:procedural")).toHaveLength(1);
+    expect(logger.warn).toHaveBeenCalledWith(
+      "Failed to save lesson from consolidation pipeline",
+      expect.objectContaining({ error: "lesson store offline" }),
+    );
   });
 
   it("consolidation records an audit entry", async () => {

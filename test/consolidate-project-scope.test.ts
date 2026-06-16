@@ -9,6 +9,7 @@ vi.mock("../src/functions/audit.js", () => ({
 }));
 
 import { registerConsolidateFunction } from "../src/functions/consolidate.js";
+import { logger } from "../src/logger.js";
 import { KV } from "../src/state/schema.js";
 import type { CompressedObservation, Memory, MemoryProvider, Session } from "../src/types.js";
 
@@ -279,6 +280,38 @@ describe("mem::consolidate — cross-project existingMatch guard", () => {
       source: "consolidation",
       sourceIds: [memories[0].id],
     });
+  });
+
+  it("keeps consolidation successful when lesson save throws", async () => {
+    const sdk = makeMockSdk();
+    const kv = makeMockKV();
+    const provider = makeProvider("repeatable auth pattern");
+    sdk.registerFunction("mem::lesson-save", async () => {
+      throw new Error("lesson store offline");
+    });
+
+    const session = makeSession("sess_api", "api");
+    await kv.set(KV.sessions, session.id, session);
+    for (let i = 0; i < 3; i++) {
+      await kv.set(
+        KV.observations(session.id),
+        `obs_${i}`,
+        makeObs(`obs_${i}`, session.id, "auth"),
+      );
+    }
+
+    registerConsolidateFunction(sdk as never, kv as never, provider as never);
+    const result = (await sdk.trigger("mem::consolidate", {
+      project: "api",
+      minObservations: 1,
+    })) as { consolidated: number };
+
+    expect(result.consolidated).toBe(1);
+    expect(await kv.list<Memory>(KV.memories)).toHaveLength(1);
+    expect(logger.warn).toHaveBeenCalledWith(
+      "Failed to save lesson from consolidation",
+      expect.objectContaining({ error: "lesson store offline" }),
+    );
   });
 
   it("leaves project undefined on memories when consolidate is called without a project", async () => {

@@ -1128,6 +1128,18 @@ export function registerMcpEndpoints(
           }
 
           case "memory_lesson_list": {
+            if (args.project !== undefined && typeof args.project !== "string") {
+              return {
+                status_code: 400,
+                body: { error: "project must be a string" },
+              };
+            }
+            if (args.source !== undefined && typeof args.source !== "string") {
+              return {
+                status_code: 400,
+                body: { error: "source must be one of: manual, crystal, consolidation" },
+              };
+            }
             const source = asNonEmptyString(args.source);
             if (
               source !== undefined &&
@@ -1138,6 +1150,15 @@ export function registerMcpEndpoints(
                 body: { error: "source must be one of: manual, crystal, consolidation" },
               };
             }
+            if (
+              args.minConfidence !== undefined &&
+              typeof args.minConfidence !== "number"
+            ) {
+              return {
+                status_code: 400,
+                body: { error: "minConfidence must be a number" },
+              };
+            }
             const minConfidence = asNumber(args.minConfidence);
             if (
               minConfidence !== undefined &&
@@ -1146,6 +1167,12 @@ export function registerMcpEndpoints(
               return {
                 status_code: 400,
                 body: { error: "minConfidence must be between 0 and 1" },
+              };
+            }
+            if (args.limit !== undefined && typeof args.limit !== "number") {
+              return {
+                status_code: 400,
+                body: { error: "limit must be a number" },
               };
             }
             const limit = asNumber(args.limit, 50);

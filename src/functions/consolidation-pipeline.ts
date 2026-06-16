@@ -203,6 +203,16 @@ export function registerConsolidationPipelineFunction(
                 existing.updatedAt = now;
                 existing.strength = Math.min(1, existing.strength + 0.1);
                 await kv.set(KV.procedural, existing.id, existing);
+                await savePipelineLesson(
+                  sdk,
+                  {
+                    ...existing,
+                    name,
+                    steps,
+                    triggerCondition: trigger,
+                  },
+                  scopedProject,
+                );
               } else {
                 const proc: ProceduralMemory = {
                   id: generateId("proc"),
@@ -288,7 +298,7 @@ async function savePipelineLesson(
   const content = `[procedure] ${proc.name}: ${stepText}`;
 
   try {
-    await sdk.trigger({
+    const lessonResult = await sdk.trigger({
       function_id: "mem::lesson-save",
       payload: {
         content,
@@ -300,10 +310,30 @@ async function savePipelineLesson(
         sourceIds: [proc.id],
       },
     });
+    const failure = lessonSaveFailureMessage(lessonResult);
+    if (failure) {
+      logger.warn("Failed to save lesson from consolidation pipeline", {
+        procedureId: proc.id,
+        error: failure,
+      });
+    }
   } catch (err) {
     logger.warn("Failed to save lesson from consolidation pipeline", {
       procedureId: proc.id,
       error: err instanceof Error ? err.message : String(err),
     });
   }
+}
+
+function lessonSaveFailureMessage(result: unknown): string | undefined {
+  if (
+    result &&
+    typeof result === "object" &&
+    "success" in result &&
+    (result as { success?: unknown }).success === false
+  ) {
+    const error = (result as { error?: unknown }).error;
+    return typeof error === "string" ? error : "lesson save returned success=false";
+  }
+  return undefined;
 }

@@ -297,8 +297,28 @@ describe("MCP tools/call validation boundaries", () => {
     ],
     [
       "memory_lesson_list",
+      { project: ["git:repo"] },
+      "project must be a string",
+    ],
+    [
+      "memory_lesson_list",
+      { source: ["manual"] },
+      "source must be one of: manual, crystal, consolidation",
+    ],
+    [
+      "memory_lesson_list",
+      { minConfidence: "0.2" },
+      "minConfidence must be a number",
+    ],
+    [
+      "memory_lesson_list",
       { minConfidence: 2 },
       "minConfidence must be between 0 and 1",
+    ],
+    [
+      "memory_lesson_list",
+      { limit: "3" },
+      "limit must be a number",
     ],
     [
       "memory_lesson_list",
@@ -699,6 +719,28 @@ describe("MCP tools/call fallback and KV-backed behavior", () => {
     expect(h.triggerCalls[0]).toEqual({
       function_id: "mem::lesson-strengthen",
       payload: { lessonId: "lsn_1" },
+    });
+  });
+
+  it("normalizes lesson list payload", async () => {
+    const h = createHarness();
+
+    const response = await h.callTool("memory_lesson_list", {
+      project: " git:repo ",
+      source: "manual",
+      minConfidence: 0.2,
+      limit: 3,
+    });
+
+    expect(response.status_code).toBe(200);
+    expect(h.triggerCalls[0]).toEqual({
+      function_id: "mem::lesson-list",
+      payload: {
+        project: "git:repo",
+        source: "manual",
+        minConfidence: 0.2,
+        limit: 3,
+      },
     });
   });
 

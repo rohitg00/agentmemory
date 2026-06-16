@@ -15,6 +15,33 @@ function reinforceLesson(lesson: Lesson): void {
   lesson.updatedAt = now;
 }
 
+function lessonFingerprint(data: {
+  content: string;
+  project?: string;
+  source?: "crystal" | "manual" | "consolidation";
+}): string {
+  const normalizedContent = data.content.trim().toLowerCase();
+  const source = data.source || "manual";
+  const project = data.project?.trim();
+  return fingerprintId("lsn", [source, project || "", normalizedContent].join("\0"));
+}
+
+function legacyLessonFingerprint(content: string): string {
+  return fingerprintId("lsn", content.trim().toLowerCase());
+}
+
+function sameLessonScope(
+  lesson: Lesson,
+  project: string | undefined,
+  source: "crystal" | "manual" | "consolidation",
+): boolean {
+  return (lesson.project?.trim() || undefined) === project && lesson.source === source;
+}
+
+function mergeStrings(existing: string[], incoming?: string[]): string[] {
+  return [...new Set([...existing, ...(incoming || [])])];
+}
+
 export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
   sdk.registerFunction("mem::lesson-save", 
     async (data: {
@@ -30,14 +57,30 @@ export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
         return { success: false, error: "content is required" };
       }
 
-      const fp = fingerprintId("lsn", data.content.trim().toLowerCase());
-      const existing = await kv.get<Lesson>(KV.lessons, fp);
+      const project = data.project?.trim() || undefined;
+      const source = data.source || "manual";
+      const fp = lessonFingerprint({ ...data, project, source });
+      const legacyFp = legacyLessonFingerprint(data.content);
+      const scopedExisting = await kv.get<Lesson>(KV.lessons, fp);
+      const shouldCheckLegacy = !scopedExisting && fp !== legacyFp;
+      const legacyExisting = shouldCheckLegacy
+        ? await kv.get<Lesson>(KV.lessons, legacyFp)
+        : null;
+      const existing =
+        scopedExisting ||
+        (legacyExisting &&
+        !legacyExisting.deleted &&
+        sameLessonScope(legacyExisting, project, source)
+          ? legacyExisting
+          : null);
 
       if (existing && !existing.deleted) {
         reinforceLesson(existing);
         if (data.context && !existing.context) {
           existing.context = data.context;
         }
+        existing.sourceIds = mergeStrings(existing.sourceIds, data.sourceIds);
+        existing.tags = mergeStrings(existing.tags, data.tags);
         await kv.set(KV.lessons, existing.id, existing);
 
         try {
@@ -67,9 +110,9 @@ export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
         context: data.context?.trim() || "",
         confidence,
         reinforcements: 0,
-        source: data.source || "manual",
+        source,
         sourceIds: data.sourceIds || [],
-        project: data.project,
+        project,
         tags: data.tags || [],
         createdAt: now,
         updatedAt: now,

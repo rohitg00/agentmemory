@@ -83,7 +83,7 @@ async function saveConsolidationLesson(
       : memory.content;
 
   try {
-    await sdk.trigger({
+    const lessonResult = await sdk.trigger({
       function_id: "mem::lesson-save",
       payload: {
         content: `[${memory.type}] ${memory.title}: ${content}`,
@@ -95,6 +95,14 @@ async function saveConsolidationLesson(
         sourceIds: [memory.id],
       },
     });
+    const failure = lessonSaveFailureMessage(lessonResult);
+    if (failure) {
+      logger.warn("Failed to save lesson from consolidation", {
+        memoryId: memory.id,
+        type: memory.type,
+        error: failure,
+      });
+    }
   } catch (err) {
     logger.warn("Failed to save lesson from consolidation", {
       memoryId: memory.id,
@@ -102,6 +110,19 @@ async function saveConsolidationLesson(
       error: err instanceof Error ? err.message : String(err),
     });
   }
+}
+
+function lessonSaveFailureMessage(result: unknown): string | undefined {
+  if (
+    result &&
+    typeof result === "object" &&
+    "success" in result &&
+    (result as { success?: unknown }).success === false
+  ) {
+    const error = (result as { error?: unknown }).error;
+    return typeof error === "string" ? error : "lesson save returned success=false";
+  }
+  return undefined;
 }
 
 export function registerConsolidateFunction(

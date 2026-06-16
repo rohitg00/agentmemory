@@ -5,6 +5,7 @@ vi.mock("../src/logger.js", () => ({
 }));
 
 import { registerLessonsFunctions } from "../src/functions/lessons.js";
+import { fingerprintId } from "../src/state/schema.js";
 import type { Lesson } from "../src/types.js";
 
 function mockKV() {
@@ -107,6 +108,89 @@ describe("Lessons", () => {
       expect(second.lesson.id).toBe(originalId);
       expect(second.lesson.reinforcements).toBe(1);
       expect(second.lesson.confidence).toBeGreaterThan(0.5);
+    });
+
+    it("keeps duplicate content separate across projects", async () => {
+      const first = (await sdk.trigger("mem::lesson-save", {
+        content: "Scope repeated lesson text",
+        project: "api",
+        source: "consolidation",
+      })) as { action: string; lesson: Lesson };
+      const second = (await sdk.trigger("mem::lesson-save", {
+        content: "Scope repeated lesson text",
+        project: "web",
+        source: "consolidation",
+      })) as { action: string; lesson: Lesson };
+
+      expect(first.action).toBe("created");
+      expect(second.action).toBe("created");
+      expect(second.lesson.id).not.toBe(first.lesson.id);
+      expect(second.lesson.project).toBe("web");
+      expect(await kv.list<Lesson>("mem:lessons")).toHaveLength(2);
+    });
+
+    it("strengthens matching legacy content-only lesson IDs", async () => {
+      const content = "Legacy scoped lesson text";
+      const legacyId = fingerprintId("lsn", content.trim().toLowerCase());
+      await kv.set<Lesson>("mem:lessons", legacyId, {
+        id: legacyId,
+        content,
+        context: "old context",
+        confidence: 0.5,
+        reinforcements: 0,
+        source: "consolidation",
+        sourceIds: ["mem_old"],
+        project: "api",
+        tags: ["old"],
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        decayRate: 0.05,
+      });
+
+      const result = (await sdk.trigger("mem::lesson-save", {
+        content,
+        project: "api",
+        source: "consolidation",
+        sourceIds: ["mem_new"],
+        tags: ["new"],
+      })) as { action: string; lesson: Lesson };
+
+      expect(result.action).toBe("strengthened");
+      expect(result.lesson.id).toBe(legacyId);
+      expect(result.lesson.sourceIds).toEqual(["mem_old", "mem_new"]);
+      expect(result.lesson.tags).toEqual(["old", "new"]);
+      expect(await kv.list<Lesson>("mem:lessons")).toHaveLength(1);
+    });
+
+    it("does not strengthen mismatched legacy content-only lesson IDs", async () => {
+      const content = "Legacy mismatched lesson text";
+      const legacyId = fingerprintId("lsn", content.trim().toLowerCase());
+      await kv.set<Lesson>("mem:lessons", legacyId, {
+        id: legacyId,
+        content,
+        context: "old context",
+        confidence: 0.5,
+        reinforcements: 0,
+        source: "consolidation",
+        sourceIds: ["mem_old"],
+        project: "api",
+        tags: ["old"],
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        decayRate: 0.05,
+      });
+
+      const result = (await sdk.trigger("mem::lesson-save", {
+        content,
+      })) as { action: string; lesson: Lesson };
+
+      expect(result.action).toBe("created");
+      expect(result.lesson.id).not.toBe(legacyId);
+      expect(result.lesson.source).toBe("manual");
+      expect(result.lesson.project).toBeUndefined();
+      expect(await kv.list<Lesson>("mem:lessons")).toHaveLength(2);
+      const legacy = await kv.get<Lesson>("mem:lessons", legacyId);
+      expect(legacy?.reinforcements).toBe(0);
     });
 
     it("rejects empty content", async () => {
