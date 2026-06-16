@@ -9,11 +9,17 @@ export function buildReadyWebSocketUrls({
   restPort,
   env = process.env,
 }: ReadyWebSocketOptions): { streamUrl: string; engineUrl: string } {
-  const host = getEngineHost(env);
-  const scheme = getEngineScheme(env);
   return {
-    streamUrl: joinWebSocketUrl(scheme, host, getStreamPort(restPort, env)),
-    engineUrl: joinWebSocketUrl(scheme, host, getEnginePort(restPort, env)),
+    streamUrl: joinWebSocketUrl(
+      getStreamScheme(),
+      getStreamHost(env),
+      getStreamPort(restPort, env),
+    ),
+    engineUrl: joinWebSocketUrl(
+      getEngineScheme(env),
+      getEngineHost(env),
+      getEnginePort(restPort, env),
+    ),
   };
 }
 
@@ -35,7 +41,7 @@ function getEnginePort(restPort: number, env: ReadyHintEnv): number {
       if (parsed) return parseInt(parsed, 10);
     } catch {}
   }
-  return restPort + 46023;
+  return 49134;
 }
 
 function getEngineHost(env: ReadyHintEnv): string {
@@ -48,6 +54,20 @@ function getEngineHost(env: ReadyHintEnv): string {
     } catch {}
   }
   return "localhost";
+}
+
+function getStreamHost(env: ReadyHintEnv): string {
+  const raw = env["AGENTMEMORY_URL"];
+  if (!raw) return "localhost";
+  try {
+    return new URL(raw).hostname || "localhost";
+  } catch {
+    return "localhost";
+  }
+}
+
+function getStreamScheme(): "ws" {
+  return "ws";
 }
 
 function getEngineScheme(env: ReadyHintEnv): "ws" | "wss" {

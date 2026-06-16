@@ -1,5 +1,4 @@
 const DEFAULT_REST_PORT = 3111;
-const ENGINE_PORT_OFFSET = 46023;
 const MAX_PORT = 65535;
 
 type RuntimePortEnv = Partial<Record<string, string>>;
@@ -18,6 +17,12 @@ function parsePort(value: string | undefined): number | null {
   return port;
 }
 
+function parseRestAnchor(value: string | undefined): number | null {
+  const port = parsePort(value);
+  if (!port || !parsePort(String(port + 2))) return null;
+  return port;
+}
+
 function setIfUnset(env: RuntimePortEnv, key: string, value: number | string): void {
   if (!env[key]) env[key] = String(value);
 }
@@ -31,17 +36,12 @@ function parseEngineUrlPort(value: string | undefined): number | null {
   }
 }
 
-function derivedEnginePort(restPort: number): number | null {
-  return parsePort(String(restPort + ENGINE_PORT_OFFSET));
-}
-
 export function configuredRuntimePorts(env: RuntimePortEnv = process.env): RuntimePorts {
-  const restPort = parsePort(env["III_REST_PORT"]) ?? DEFAULT_REST_PORT;
+  const restPort = parseRestAnchor(env["III_REST_PORT"]) ?? DEFAULT_REST_PORT;
   const enginePort =
     parsePort(env["III_ENGINE_PORT"]) ??
     parseEngineUrlPort(env["III_ENGINE_URL"]) ??
-    derivedEnginePort(restPort) ??
-    DEFAULT_REST_PORT + ENGINE_PORT_OFFSET;
+    49134;
 
   return {
     restPort,
@@ -63,30 +63,22 @@ export function applyRuntimePortArgs(
 ): void {
   const restPort = parsePort(runtimePortArg(args) ?? undefined);
   if (!restPort) return;
-  const enginePort = derivedEnginePort(restPort);
-  if (!enginePort) return;
-
-  env["III_REST_PORT"] = String(restPort);
-
   const streamPort =
     parsePort(env["III_STREAM_PORT"]) ??
     parsePort(env["III_STREAMS_PORT"]) ??
-    restPort + 1;
+    parsePort(String(restPort + 1));
   const viewerPort =
     parsePort(env["AGENTMEMORY_VIEWER_PORT"]) ??
     parsePort(env["III_VIEWER_PORT"]) ??
-    restPort + 2;
-  const resolvedEnginePort =
-    parsePort(env["III_ENGINE_PORT"]) ??
-    parseEngineUrlPort(env["III_ENGINE_URL"]) ??
-    enginePort;
+    parsePort(String(restPort + 2));
+  if (!streamPort || !viewerPort) return;
+
+  env["III_REST_PORT"] = String(restPort);
 
   setIfUnset(env, "III_STREAM_PORT", streamPort);
   setIfUnset(env, "III_STREAMS_PORT", streamPort);
   setIfUnset(env, "AGENTMEMORY_VIEWER_PORT", viewerPort);
   setIfUnset(env, "III_VIEWER_PORT", viewerPort);
-  setIfUnset(env, "III_ENGINE_PORT", resolvedEnginePort);
-  setIfUnset(env, "III_ENGINE_URL", `ws://localhost:${resolvedEnginePort}`);
 }
 
 function runtimePortArg(args: string[]): string | null {
@@ -113,15 +105,13 @@ export function renderRuntimeIiiConfig(
 ): string {
   const ports = configuredRuntimePorts(env);
   let currentWorker = "";
-  let sawTopLevelPort = false;
 
-  const lines = config.split(/\r?\n/).map((line) => {
+  const lines = config.split(/\r?\n/).flatMap((line) => {
     const worker = line.match(/^\s*-\s+name:\s*([A-Za-z0-9_-]+)\s*$/);
     if (worker) currentWorker = worker[1] ?? "";
 
     if (/^port:\s*\d+\s*$/.test(line)) {
-      sawTopLevelPort = true;
-      return `port: ${ports.enginePort}`;
+      return [];
     }
 
     if (currentWorker === "iii-http" && /^\s+allowed_origins:\s*\[.*\]\s*$/.test(line)) {
@@ -138,11 +128,10 @@ export function renderRuntimeIiiConfig(
       }
     }
 
-    return line;
+    return [line];
   });
 
-  if (!sawTopLevelPort) lines.unshift(`port: ${ports.enginePort}`, "");
-  return lines.join("\n");
+  return lines.join("\n").replace(/^\n+/, "");
 }
 
 function allowedOrigins(ports: RuntimePorts): string[] {

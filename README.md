@@ -1381,6 +1381,8 @@ agentmemory + iii-engine bind four ports by default. If a restart fails with `po
 | `3113` | agentmemory | Real-time viewer (`http://localhost:3113`) | `AGENTMEMORY_VIEWER_PORT` |
 | `49134` | iii-engine | WebSocket — workers register here, OTel telemetry flows over it | `III_ENGINE_URL` (full URL, default `ws://localhost:49134`) |
 
+`--port <N>` and `--instance <N>` relocate the REST, streams, and viewer ports. The bundled native iii-engine v0.11.2 does not expose a verified CLI/config option for moving its listen port, so the engine WebSocket remains on `49134` unless clients use an explicit `III_ENGINE_URL` or `III_ENGINE_PORT` for an externally managed engine.
+
 Stale-process cleanup when ports stay bound after a crashed run:
 
 ```bash

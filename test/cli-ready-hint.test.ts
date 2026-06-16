@@ -13,14 +13,14 @@ describe("buildReadyWebSocketUrls", () => {
     });
   });
 
-  it("preserves wss display scheme from III_ENGINE_URL", () => {
+  it("preserves wss display scheme from III_ENGINE_URL for the engine only", () => {
     expect(
       buildReadyWebSocketUrls({
         restPort: 3111,
         env: { III_ENGINE_URL: secureWs("engine.example:49134") },
       }),
     ).toEqual({
-      streamUrl: secureWs("engine.example:3112"),
+      streamUrl: insecureWs("localhost:3112"),
       engineUrl: secureWs("engine.example:49134"),
     });
   });
@@ -32,7 +32,7 @@ describe("buildReadyWebSocketUrls", () => {
         env: { III_ENGINE_URL: insecureWs("engine.example:49234") },
       }),
     ).toEqual({
-      streamUrl: insecureWs("engine.example:3212"),
+      streamUrl: insecureWs("localhost:3212"),
       engineUrl: insecureWs("engine.example:49234"),
     });
   });
@@ -45,7 +45,7 @@ describe("buildReadyWebSocketUrls", () => {
       }),
     ).toEqual({
       streamUrl: insecureWs("memory.example:3212"),
-      engineUrl: insecureWs("memory.example:49234"),
+      engineUrl: insecureWs("memory.example:49134"),
     });
   });
 
@@ -61,7 +61,7 @@ describe("buildReadyWebSocketUrls", () => {
         },
       }),
     ).toEqual({
-      streamUrl: secureWs("engine.example:5001"),
+      streamUrl: insecureWs("localhost:5001"),
       engineUrl: secureWs("engine.example:5000"),
     });
   });

@@ -20,7 +20,7 @@ Memories carry content, concepts, files, importance, and timestamps, grouped int
 
 ## Ports
 
-REST is the anchor at 3111. Streams = N+1 (3112), viewer = N+2 (3113), engine = N+46023 (49134). `--instance N` shifts the whole block by N*100.
+REST is the anchor at 3111. Streams = N+1 (3112), viewer = N+2 (3113), and the bundled native iii-engine v0.11.2 listens on its default WebSocket port 49134. `--instance N` shifts REST, streams, and viewer by N*100; it does not relocate the bundled native engine listen port.
 
 ## Viewer
 

@@ -12,7 +12,7 @@ Default mode needs no API key and no cloud account. Out of the box it runs BM25 
 
 - Node.js >= 20 and npm. Check with `node -v`.
 - macOS or Linux for the one-command path. On Windows, use WSL2; native Windows engine setup is manual and `agentmemory connect` is not supported there.
-- Ports 3111 (REST), 3112 (streams), 3113 (viewer), and 49134 (engine) free. Override the whole block with `--port <N>` or `--instance <N>` if any are taken.
+- Ports 3111 (REST), 3112 (streams), 3113 (viewer), and 49134 (engine) free. `--port <N>` or `--instance <N>` relocates REST, streams, and viewer ports; the bundled native iii-engine v0.11.2 still uses engine port 49134.
 
 ## Running non-interactively
 
@@ -46,7 +46,7 @@ The server listens on port 3111 and auto-starts its pinned iii engine on first r
 agentmemory &
 ```
 
-Or in a dedicated terminal, run `agentmemory` in the foreground. To run a second isolated instance, use `agentmemory --instance 1` (relocates the whole port block to 3211/3212/3213/49234).
+Or in a dedicated terminal, run `agentmemory` in the foreground. To move the REST-facing ports away from defaults, use `agentmemory --instance 1` (REST 3211, streams 3212, viewer 3213). The bundled native iii-engine still uses port 49134, so this is not a complete side-by-side native engine relocation.
 
 Wait until it is reachable, then continue:
 
@@ -144,7 +144,7 @@ The MCP server exposes 55 tools by default (`--tools all`). Use `--tools core` (
 - `command not found: agentmemory`: the global bin is not on `PATH`. Use `npx -y @agentmemory/agentmemory@latest`.
 - `EACCES` during global install: retry with `sudo`, or use the npx form.
 - Stale npx version: run `npx -y @agentmemory/agentmemory@latest`, or clear the cache with `rm -rf ~/.npm/_npx` (macOS/Linux).
-- Port already in use: another instance or process holds 3111. Stop it, or relocate with `agentmemory --instance 1`.
+- REST port already in use: another instance or process holds 3111. Stop it, or relocate REST/streams/viewer with `agentmemory --instance 1`. If engine port 49134 is already held by an incompatible process, stop that process before starting the bundled native runtime.
 - Server starts but `livez` never returns 200: re-run with `agentmemory --verbose` to see engine stderr.
 - Engine version warning on start: harmless. agentmemory uses its own pinned engine in `~/.agentmemory/bin` regardless of any `iii` on `PATH`. Set `AGENTMEMORY_III_VERSION` only to override deliberately.
 - Only 7 tools visible in the agent: the MCP shim is in local fallback because it could not reach a server. Start `npx @agentmemory/agentmemory` and ensure `AGENTMEMORY_URL` points at it (default `http://localhost:3111`), then reload MCP.

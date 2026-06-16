@@ -26,12 +26,12 @@ AGENTMEMORY_INJECT_CONTEXT=true
 
 ## Ports
 
-REST is the anchor at 3111. Streams = N+1 (3112), viewer = N+2 (3113), engine = N+46023 (49134). Relocate the whole block with `--port <N>` or `--instance <N>`.
+REST is the anchor at 3111. Streams = N+1 (3112), viewer = N+2 (3113), and the bundled native iii-engine v0.11.2 listens on its default WebSocket port 49134. Use `--port <N>` or `--instance <N>` to relocate REST, streams, and viewer ports; use `III_ENGINE_URL` or `III_ENGINE_PORT` only when clients should connect to an externally managed engine.
 
 ## See also
 
 - agentmemory-rest-api for how the secret is used.
-- agentmemory-architecture for the port quartet rationale.
+- agentmemory-architecture for the runtime port topology.
 
 ## Reference
 

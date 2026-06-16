@@ -31,12 +31,12 @@ By default localhost is open and no auth is needed. When `AGENTMEMORY_SECRET` is
 
 - Save returns `201`, reads return `200`, validation errors return `400`.
 - Handlers whitelist body fields and drop unknown ones, so passing extra keys is safe but ignored.
-- The port is configurable with `--port` or `--instance`; streams, viewer, and engine derive from it.
+- The REST port is configurable with `--port` or `--instance`; streams and viewer derive from it. The bundled native iii-engine WebSocket stays on its default port unless clients use an explicit `III_ENGINE_URL` or `III_ENGINE_PORT`.
 
 ## See also
 
 - agentmemory-mcp-tools for the MCP equivalents.
-- agentmemory-config for the port quartet and the secret.
+- agentmemory-config for ports and the secret.
 
 ## Reference
 

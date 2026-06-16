@@ -173,12 +173,13 @@ Options:
   --tools all|core   Tool visibility (default: all = ${ALL_TOOLS_COUNT} tools; core = ${CORE_TOOLS_COUNT} essentials)
   --no-engine        Skip auto-starting iii-engine
   --data-dir <path>  Store iii-engine state outside the current repo
-  --port <N>         Override REST port (default: 3111). Streams (N+1), viewer
-                     (N+2), and iii engine (N+46023) auto-derive from N so a
-                     single flag relocates the whole quartet.
-  --instance <N>     Shortcut for --port (3111 + N*100) to run multiple
-                     daemons side-by-side without env gymnastics.
-                     --instance 1 -> 3211/3212/3213/49234, etc. (max N=50)
+  --port <N>         Override REST port (default: 3111). Streams (N+1) and
+                     viewer (N+2) auto-derive from N. Native iii v0.11.2
+                     still listens on its default engine port 49134 unless
+                     clients use an explicit III_ENGINE_URL/III_ENGINE_PORT.
+  --instance <N>     Shortcut for --port (3111 + N*100). Relocates REST,
+                     streams, and viewer ports; it does not relocate the
+                     bundled native iii-engine listen port. (max N=50)
 
 Environment:
   AGENTMEMORY_URL              Full REST base URL (e.g. http://localhost:3111).
@@ -1158,8 +1159,9 @@ async function waitForAgentmemoryReady(timeoutMs: number): Promise<boolean> {
 
 function printReadyHint(consoleState: IiiConsoleState): void {
   // REST goes through getBaseUrl which already honors AGENTMEMORY_URL
-  // for full host+protocol overrides. Streams/Engine are derived from
-  // III_ENGINE_URL so a remote bind reads correctly in the panel.
+  // for full host+protocol overrides. Streams follow the REST anchor;
+  // engine display follows explicit III_ENGINE_URL/III_ENGINE_PORT, or
+  // the native iii v0.11.2 default.
   const restUrl = getBaseUrl();
   const viewerUrl = getViewerUrl();
   const { streamUrl, engineUrl } = buildReadyWebSocketUrls({

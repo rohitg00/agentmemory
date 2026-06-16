@@ -16,6 +16,21 @@ function safeParseInt(value: string | undefined, fallback: number): number {
   return Number.isNaN(parsed) ? fallback : parsed;
 }
 
+const MAX_TCP_PORT = 65535;
+
+function parsePort(value: string | undefined): number | null {
+  if (!value) return null;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isInteger(parsed) && parsed >= 1 && parsed <= MAX_TCP_PORT
+    ? parsed
+    : null;
+}
+
+function parseRestAnchor(value: string | undefined, fallback: number): number {
+  const parsed = parsePort(value);
+  return parsed !== null && parsed + 2 <= MAX_TCP_PORT ? parsed : fallback;
+}
+
 const DATA_DIR = join(homedir(), ".agentmemory");
 const ENV_FILE = join(DATA_DIR, ".env");
 
@@ -216,19 +231,17 @@ export function loadConfig(): AgentMemoryConfig {
 
   const provider = detectProvider(env);
 
-  // Port quartet: REST is the anchor; streams/engine derive from it
-  // unless individually overridden. Default anchor 3111 yields the
-  // canonical 3112 streams / 49134 engine pair, but `III_REST_PORT=3211`
-  // auto-picks 3212 + 49234 so a second instance doesn't collide (#750).
-  const restPort = parseInt(env["III_REST_PORT"] || "3111", 10) || 3111;
+  // REST is the anchor for agentmemory's HTTP and streams workers.
+  // Native iii v0.11.2 does not expose a verified engine listen-port
+  // config here, so the engine URL stays on the canonical 49134 unless
+  // an externally managed engine URL/port is explicitly supplied.
+  const restPort = parseRestAnchor(env["III_REST_PORT"], 3111);
   const streamsPort =
-    parseInt(env["III_STREAM_PORT"] || env["III_STREAMS_PORT"] || "", 10) ||
+    parsePort(env["III_STREAM_PORT"] || env["III_STREAMS_PORT"]) ??
     restPort + 1;
   const engineUrl =
     env["III_ENGINE_URL"] ||
-    `ws://localhost:${
-      parseInt(env["III_ENGINE_PORT"] || "", 10) || restPort + 46023
-    }`;
+    `ws://localhost:${parsePort(env["III_ENGINE_PORT"]) ?? 49134}`;
 
   return {
     engineUrl,
