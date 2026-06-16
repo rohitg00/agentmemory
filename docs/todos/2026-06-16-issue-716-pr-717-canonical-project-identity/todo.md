@@ -116,6 +116,7 @@ Supply chain, hooks, tooling, persistence:
   - Resolver harness: passed with same-basename repos distinct, linked worktrees shared, legacy override preserved, and opaque `git:` project prefix.
   - `gitleaks detect --source . --redact`: no leaks found.
 - Full repo-native Vitest remains limited in this worktree because `node_modules` is absent; no dependency install or repo-local dependency symlink was created.
+- Ignored verification artifact: the Vitest startup attempt created `node_modules/.vite/vitest/.../results.json` in this worktree. It is not staged, not tracked, and is reported for cleanup because deleting ignored files needs explicit approval.
 
 ## Review Notes
 
