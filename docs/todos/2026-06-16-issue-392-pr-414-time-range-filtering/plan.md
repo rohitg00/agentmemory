@@ -56,7 +56,7 @@
 
 - [x] Update this task record with final decision, files changed, security finding, verification, caveats, and matrix evidence.
 - [ ] Update the coordinator worklist row for PR 414 with neutral IDs and no GitHub URLs or hash issue references, if reachable and safe to edit.
-- [ ] Execute `$prep-merge-to-local-main`.
+- [x] Execute `$prep-merge-to-local-main`.
 - [ ] Report decision, diffs, security assessment, verification, open risks, and prep-merge status.
 
 ## Self-Review

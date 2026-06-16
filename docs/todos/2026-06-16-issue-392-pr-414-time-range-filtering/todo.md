@@ -52,8 +52,8 @@ Stop conditions:
 | Inspect PR 414 safely | Public read-only issue/PR metadata and fetched diff, treated as untrusted input | done | PR 414 is open and stale/divergent against current fork; direct import would remove current fork fixes including search isolation/index behavior. |
 | Implement minimal fork-fit behavior if warranted | TDD red/green with focused tests | done | Adapted import implemented with a shared time-range helper, REST/MCP/shim validation, recall/smart-search observation filtering, and inclusive session lifetime-overlap filtering. |
 | Security assessment | Manual diff review plus required security gates when code changes | done | Codex Security diff scan report written under `/tmp/codex-security-scans/agentmemory/local_patch_20260616T041300Z`; Semgrep completed with 0 findings after the final cleanup pass. |
-| Neutral local documentation | Update this task record and coordinator worklist if reachable | in progress | Task record updated; coordinator worklist update pending after final prep status. |
-| Prep merge to local main | `$prep-merge-to-local-main` workflow | pending | Must run at end. |
+| Neutral local documentation | Update this task record and coordinator worklist if reachable | in progress | Task record updated with prep evidence; coordinator worklist update pending. |
+| Prep merge to local main | `$prep-merge-to-local-main` workflow | done | Task commit created, local `main` commit `60099a31029575412ba6fc27f4ab986196922e56` merged, post-merge checks recorded. |
 
 ## Progress
 
@@ -72,7 +72,7 @@ Stop conditions:
 
 - No reusable `docs/lessons/` entries were present at task start.
 - The repo has no root package-manager pin or lockfile in this worktree snapshot; use repo-native npm scripts unless later evidence indicates otherwise.
-- `tsc --noEmit` could not be used as a meaningful gate in this worktree because dependencies are not installed here; the command reports missing `node:*`, `iii-sdk`, and test/runtime type packages plus existing type errors. The targeted Vitest command uses the source checkout's existing `node_modules` and passed.
+- `tsc --noEmit` could not be used as a meaningful gate in this worktree because dependencies are not installed here; the command reports missing `node:*`, `iii-sdk`, and test/runtime type packages plus existing type errors. The targeted Vitest command uses the source checkout's existing `node_modules`.
 
 ## Final Decision
 
@@ -96,6 +96,9 @@ Findings:
 - GREEN: targeted Vitest run over `test/search.test.ts`, `test/smart-search.test.ts`, `test/api-boundary-coverage.test.ts`, `test/mcp-server-surface.test.ts`, `test/mcp-standalone.test.ts`, and `test/mcp-standalone-proxy.test.ts` passed with 200 tests.
 - `git diff --check` passed.
 - `semgrep scan --config p/default --error --metrics=off .` passed with 0 findings.
+- Post-merge targeted Vitest over our time-filter files plus `test/memories-pagination.test.ts` passed for 206 tests. The same combined command could not import `test/api-memories-project.test.ts` in this worktree because `src/triggers/api.ts` imports `iii-sdk` and this worktree has no local `node_modules`; setting `NODE_PATH` to the main checkout dependencies did not affect ESM package resolution. This is an environment limitation, not a failing assertion.
+- Post-merge `git diff --check` passed.
+- Post-merge Semgrep passed with 0 findings.
 
 ## Prep Review Notes
 
@@ -104,3 +107,11 @@ Findings:
 - Focused requirements/test/integration review: no blocking finding. The tests cover valid ranges, invalid ranges, open-ended ranges, equality boundaries, agent isolation, REST/MCP boundaries, standalone proxy forwarding, and local fallback behavior.
 - Review Implementation adversarial pass: no blocking finding. Residual risk is that time-range filtering is post-index/post-list, so very large corpora can still pay existing list/search cost; overfetch and limits keep the new work bounded and no storage/query boundary was changed.
 - Subagent-based review lanes were not dispatched because this turn did not explicitly authorize extra subagents under the available tool policy; the review was performed by separate manual passes on the narrowed task-owned diff.
+
+## Prep Merge Notes
+
+- Created task commit `6f249dcf03f04091bc4118385a2f62819ba8a2d7`.
+- Merged captured local `main` commit `60099a31029575412ba6fc27f4ab986196922e56`.
+- Merge was automatic with no manual conflict resolution; `src/triggers/api.ts` was auto-merged with the incoming memory search changes.
+- Initial sandboxed merge failed while writing Git metadata; the identical local merge command succeeded with approved escalation.
+- No unrelated dirty paths were preserved.
