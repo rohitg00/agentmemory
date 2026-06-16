@@ -13,9 +13,9 @@ black + gold design system. Deploys to Vercel with zero config.
 ## Local dev
 
 ```bash
-cd website
-npm install
-npm run dev
+cd ..
+corepack pnpm install --frozen-lockfile --ignore-scripts
+corepack pnpm --dir website run dev
 # open http://localhost:3000
 ```
 
