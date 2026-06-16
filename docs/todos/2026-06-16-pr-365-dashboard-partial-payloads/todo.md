@@ -80,7 +80,7 @@ Stop conditions:
 - Added an adapted minimal implementation instead of applying PR 365 directly.
 - Added a regression case to `test/viewer-session-id.test.ts` for malformed dashboard collections and escaped untrusted procedure text.
 - `npm test -- test/viewer-session-id.test.ts` could not start because this worktree has no `node_modules` and no lockfile; `vitest` was not on PATH.
-- A temporary `npm exec --package vitest@4.1.8` attempt also failed before tests ran because npm tried to build optional `fsevents` and repo `vitest.config.ts` could not resolve `vitest/config` without project-local dependencies.
+- A temporary npm exec attempt with Vitest 4.1.8 also failed before tests ran because npm tried to build optional `fsevents` and repo `vitest.config.ts` could not resolve `vitest/config` without project-local dependencies.
 - Used a dependency-free Node VM harness as the closest reproducible loop:
   - Red: current code threw `Cannot read properties of null (reading 'status')`.
   - Green: adapted code rendered the dashboard, preserved Unknown session fallback, and escaped `Recovered <script>procedure</script>`.
