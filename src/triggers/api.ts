@@ -3,6 +3,7 @@ import type { Session, CompressedObservation, HookPayload, CommitLink, SessionSu
 import { withKeyedLock } from "../state/keyed-mutex.js";
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
+import { SearchIndex } from "../state/search-index.js";
 import { memoryToObservation } from "../state/memory-utils.js";
 import { getLatestHealth } from "../health/monitor.js";
 import type { MetricsStore } from "../eval/metrics-store.js";
@@ -30,6 +31,8 @@ type Response = {
   headers?: Record<string, string>;
   body: unknown;
 };
+
+const MAX_MEMORY_SEARCH_QUERY_CHARS = 500;
 
 function parseOptionalInt(raw: unknown): number | undefined {
   if (raw === undefined || raw === null || raw === "") return undefined;
@@ -115,6 +118,21 @@ function asNonEmptyString(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
   return trimmed ? trimmed : null;
+}
+
+function searchMemoryRows(memories: Memory[], query: string): Memory[] {
+  if (memories.length === 0) return [];
+  const index = new SearchIndex();
+  const byId = new Map<string, Memory>();
+  for (const memory of memories) {
+    if (!memory.id || !memory.title || !memory.content) continue;
+    byId.set(memory.id, memory);
+    index.add(memoryToObservation(memory));
+  }
+  return index
+    .search(query, memories.length)
+    .map((hit) => byId.get(hit.obsId))
+    .filter((memory): memory is Memory => memory !== undefined);
 }
 
 function parseOptionalFiniteNumber(value: unknown): number | undefined | null {
@@ -1890,8 +1908,24 @@ export function registerApiTriggers(
     async (req: ApiRequest): Promise<Response> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
-      const memories = await kv.list<import("../types.js").Memory>(KV.memories);
+      const memories = await kv.list<Memory>(KV.memories);
       const latest = req.query_params?.["latest"] === "true";
+      const memorySearchQuery =
+        typeof req.query_params?.["q"] === "string" &&
+        req.query_params["q"].trim().length > 0
+          ? req.query_params["q"].trim()
+          : undefined;
+      if (
+        memorySearchQuery &&
+        memorySearchQuery.length > MAX_MEMORY_SEARCH_QUERY_CHARS
+      ) {
+        return {
+          status_code: 400,
+          body: {
+            error: `q must be ${MAX_MEMORY_SEARCH_QUERY_CHARS} characters or fewer`,
+          },
+        };
+      }
       const projectFilter =
         typeof req.query_params?.["project"] === "string" &&
         req.query_params["project"].trim().length > 0
@@ -1930,6 +1964,9 @@ export function registerApiTriggers(
             m.agentId === filterAgentId ||
             (includeOrphans && m.agentId === undefined),
         );
+      }
+      if (memorySearchQuery) {
+        filtered = searchMemoryRows(filtered, memorySearchQuery);
       }
 
       // viewer + `agentmemory status` were hitting this endpoint to
