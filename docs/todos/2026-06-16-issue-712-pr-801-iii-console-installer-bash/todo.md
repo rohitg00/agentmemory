@@ -48,7 +48,7 @@ Stop conditions:
 | PR 801 review | Public diff inspection | Complete | PR 801 changes `src/cli.ts` from `sh` to `bash`, adds a text-based regression test, and is open/unmerged. It is stale against the current fork because the local command is now version-pinned and Windows-aware. |
 | Minimal fix if relevant | Targeted unit test and implementation | Complete | Decision: reject as-is / defer. No code import: changing only `sh` to `bash` on the current `iii/main` command does not address the current fork's possible installer-target mismatch, and switching to `console/main` would broaden behavior beyond PR 801. |
 | Security review | Manual diff review plus required gates where available | Complete | No code imported. Reviewed subprocess/network-installer surface: remote `curl | shell`, shell selection, version pin, PATH/file writes, auth/token exposure, persistence via shell rc edits, and DoS/download behavior. No new security exposure introduced by this branch. |
-| Prep merge | `$prep-merge-to-local-main` workflow | Pending |  |
+| Prep merge | `$prep-merge-to-local-main` workflow | Complete | Pre-merge docs commit created, local `main` commit `60099a31029575412ba6fc27f4ab986196922e56` merged without conflicts, post-merge working tree clean. |
 
 ## Progress Notes
 
@@ -60,6 +60,7 @@ Stop conditions:
 - Public PR 801 evidence: one-commit diff changes the old unpinned installer command to `bash`, checks `bash`, runs `bash -lc`, and adds a source-text test. It does not preserve the current fork's version pin or Windows-specific hint, and it does not address the `iii` versus `iii-console` target mismatch.
 - Local issue-first conclusion: the shell incompatibility is real for the Bash-specific `console/main` installer, proven by `dash -c 'set -o pipefail'`, but the current fork path no longer calls that Bash-specific script. The current public `iii/main` installer is POSIX `sh` and contains `set -eu`, so the exact PR 801 change is not justified locally.
 - Decision: reject as-is / defer. A separate, explicitly scoped design should decide whether the prompt should detect `iii`, invoke `iii console`, or call the separate `iii-console` installer. That would change install target and persistence behavior and is broader than PR 801.
+- Prep merge: committed the review note, merged local `main` commit `60099a31029575412ba6fc27f4ab986196922e56` without conflicts, and preserved a clean working tree.
 
 ## Review Notes
 
@@ -76,3 +77,6 @@ Stop conditions:
 - Public `console/main/install.sh` starts with Bash and `set -euo pipefail`; public `iii/main/install.sh` starts with POSIX `sh` and `set -eu`.
 - `git diff --check -- docs/todos/2026-06-16-issue-712-pr-801-iii-console-installer-bash/todo.md` exits 0.
 - Neutral-reference search found no GitHub URLs, hash-issue references, or mentions in this task file.
+- `gitleaks protect --staged --redact` exits 0 before the review-note commit.
+- Post-merge `git diff --check HEAD~1..HEAD` exits 0.
+- `node_modules` is absent, so targeted Vitest checks were not run; no dependency installation was performed.
