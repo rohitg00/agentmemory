@@ -69,7 +69,12 @@ function makeReq(query_params: Record<string, string> = {}) {
   return { body: {}, headers: {}, query_params };
 }
 
-function memory(id: string, content: string, project?: string): Memory {
+function memory(
+  id: string,
+  content: string,
+  project?: string,
+  overrides: Partial<Memory> = {},
+): Memory {
   return {
     id,
     createdAt: "2026-06-13T00:00:00.000Z",
@@ -84,6 +89,7 @@ function memory(id: string, content: string, project?: string): Memory {
     version: 1,
     isLatest: true,
     ...(project !== undefined && { project }),
+    ...overrides,
   };
 }
 
@@ -99,6 +105,27 @@ describe("GET /agentmemory/memories project filter", () => {
     await kv.set(KV.memories, "mem_main", memory("mem_main", "main repo", "git:repo-main"));
     await kv.set(KV.memories, "mem_other", memory("mem_other", "other repo", "git:repo-other"));
     await kv.set(KV.memories, "mem_legacy", memory("mem_legacy", "legacy unscoped"));
+    await kv.set(
+      KV.memories,
+      "mem_zh",
+      memory("mem_zh", "项目记忆存储", "git:repo-main", {
+        concepts: ["项目", "记忆"],
+      }),
+    );
+    await kv.set(
+      KV.memories,
+      "mem_ja",
+      memory("mem_ja", "プロジェクト記憶", "git:repo-main", {
+        concepts: ["プロジェクト", "記憶"],
+      }),
+    );
+    await kv.set(
+      KV.memories,
+      "mem_zh_other",
+      memory("mem_zh_other", "项目记忆存储", "git:repo-other", {
+        concepts: ["项目", "记忆"],
+      }),
+    );
   });
 
   it("filters memories by project", async () => {
@@ -109,8 +136,12 @@ describe("GET /agentmemory/memories project filter", () => {
     };
 
     expect(result.status_code).toBe(200);
-    expect(result.body.total).toBe(1);
-    expect(result.body.memories.map((m) => m.id)).toEqual(["mem_main"]);
+    expect(result.body.total).toBe(3);
+    expect(result.body.memories.map((m) => m.id)).toEqual([
+      "mem_main",
+      "mem_zh",
+      "mem_ja",
+    ]);
   });
 
   it("applies project filter to count mode", async () => {
@@ -121,8 +152,8 @@ describe("GET /agentmemory/memories project filter", () => {
     };
 
     expect(result.status_code).toBe(200);
-    expect(result.body.total).toBe(1);
-    expect(result.body.latestCount).toBe(1);
+    expect(result.body.total).toBe(3);
+    expect(result.body.latestCount).toBe(3);
   });
 
   it("applies project filter before pagination", async () => {
@@ -133,7 +164,7 @@ describe("GET /agentmemory/memories project filter", () => {
     };
 
     expect(result.status_code).toBe(200);
-    expect(result.body.total).toBe(1);
+    expect(result.body.total).toBe(3);
     expect(result.body.limit).toBe(1);
     expect(result.body.offset).toBe(0);
     expect(result.body.memories.map((m) => m.id)).toEqual(["mem_main"]);
@@ -150,10 +181,71 @@ describe("GET /agentmemory/memories project filter", () => {
     };
 
     expect(result.status_code).toBe(200);
-    expect(result.body.total).toBe(2);
+    expect(result.body.total).toBe(4);
     expect(result.body.memories.map((m) => m.id).sort()).toEqual([
+      "mem_ja",
       "mem_legacy",
       "mem_main",
+      "mem_zh",
     ]);
+  });
+
+  it("searches Chinese memories through backend memory indexing", async () => {
+    const fn = sdk.getFunction("api::memories")!;
+    const result = await fn(makeReq({
+      latest: "true",
+      project: "git:repo-main",
+      q: "项目",
+    })) as {
+      status_code: number;
+      body: { memories: Memory[]; total: number };
+    };
+
+    expect(result.status_code).toBe(200);
+    expect(result.body.total).toBe(1);
+    expect(result.body.memories.map((m) => m.id)).toEqual(["mem_zh"]);
+  });
+
+  it("searches Japanese memories through backend memory indexing", async () => {
+    const fn = sdk.getFunction("api::memories")!;
+    const result = await fn(makeReq({
+      latest: "true",
+      project: "git:repo-main",
+      q: "プロジェクト",
+    })) as {
+      status_code: number;
+      body: { memories: Memory[]; total: number };
+    };
+
+    expect(result.status_code).toBe(200);
+    expect(result.body.total).toBe(1);
+    expect(result.body.memories.map((m) => m.id)).toEqual(["mem_ja"]);
+  });
+
+  it("applies project filtering before backend memory search", async () => {
+    const fn = sdk.getFunction("api::memories")!;
+    const result = await fn(makeReq({
+      latest: "true",
+      project: "git:repo-other",
+      q: "项目",
+    })) as {
+      status_code: number;
+      body: { memories: Memory[]; total: number };
+    };
+
+    expect(result.status_code).toBe(200);
+    expect(result.body.total).toBe(1);
+    expect(result.body.memories.map((m) => m.id)).toEqual(["mem_zh_other"]);
+  });
+
+  it("rejects overlong memory search queries", async () => {
+    const fn = sdk.getFunction("api::memories")!;
+    const result = await fn(makeReq({ q: "x".repeat(501) })) as {
+      status_code: number;
+      body: { error: string };
+    };
+
+    expect(result.status_code).toBe(400);
+    expect(result.body.error).toContain("q");
   });
 });
