@@ -3,6 +3,7 @@
   "version": "0.9.27",
   "description": "Standalone MCP server for agentmemory — thin shim that re-exposes @agentmemory/agentmemory's MCP entrypoint",
   "type": "module",
+  "packageManager": "pnpm@11.6.0",
   "bin": {
     "agentmemory-mcp": "./bin.mjs"
   },
@@ -28,7 +29,7 @@
   "homepage": "https://github.com/rohitg00/agentmemory#readme",
   "bugs": "https://github.com/rohitg00/agentmemory/issues",
   "dependencies": {
-    "@agentmemory/agentmemory": "~0.9.0"
+    "@agentmemory/agentmemory": "workspace:~"
   },
   "publishConfig": {
     "access": "public",
