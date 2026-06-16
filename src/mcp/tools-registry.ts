@@ -165,6 +165,11 @@ export const CORE_TOOLS: McpToolDef[] = [
           type: "string",
           description: "Optional inclusive ISO 8601 upper time bound for observation timestamps",
         },
+        project: {
+          type: "string",
+          description:
+            "Optional opaque canonical project identifier to restrict smart search results.",
+        },
       },
       required: ["query"],
     },

@@ -325,6 +325,10 @@ export function registerMcpEndpoints(
               if (err instanceof TimeRangeError) return timeRangeErrorResponse(err);
               throw err;
             }
+            const project =
+              typeof args.project === "string" && args.project.trim().length > 0
+                ? args.project.trim()
+                : undefined;
             const result = await sdk.trigger({
               function_id: "mem::smart-search",
               payload: {
@@ -332,6 +336,7 @@ export function registerMcpEndpoints(
                 expandIds,
                 limit,
                 ...(timeRange ? { start_time: args.start_time, end_time: args.end_time } : {}),
+                ...(project !== undefined && { project }),
               },
             });
             return {

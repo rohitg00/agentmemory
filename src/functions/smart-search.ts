@@ -5,6 +5,8 @@ import type {
   CompressedObservation,
   HybridSearchResult,
   Lesson,
+  Memory,
+  Session,
 } from "../types.js";
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
@@ -73,6 +75,40 @@ export function resetFollowupStatsForTests(): void {
 // full content is fetched via memory_lesson_recall when the caller needs it.
 const LESSON_CONTENT_PREVIEW_CHARS = 240;
 
+function normalizeProject(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0
+    ? value.trim()
+    : undefined;
+}
+
+function makeProjectMatcher(kv: StateKV) {
+  const memoryCache = new Map<string, { found: boolean; project?: string }>();
+  const sessionCache = new Map<string, string | undefined>();
+
+  return async (
+    sessionId: string,
+    obsId: string,
+    project: string,
+  ): Promise<boolean> => {
+    if (!memoryCache.has(obsId)) {
+      const memory = await kv.get<Memory>(KV.memories, obsId).catch(() => null);
+      memoryCache.set(obsId, {
+        found: memory !== null,
+        project: normalizeProject(memory?.project),
+      });
+    }
+    const memory = memoryCache.get(obsId)!;
+    if (memory.found) return memory.project ? memory.project === project : true;
+
+    if (!sessionCache.has(sessionId)) {
+      const session = await kv.get<Session>(KV.sessions, sessionId).catch(() => null);
+      sessionCache.set(sessionId, normalizeProject(session?.project));
+    }
+    const sessionProject = sessionCache.get(sessionId);
+    return sessionProject ? sessionProject === project : true;
+  };
+}
+
 export function registerSmartSearchFunction(
   sdk: ISdk,
   kv: StateKV,
@@ -118,6 +154,7 @@ export function registerSmartSearchFunction(
       const filterAgentId = wildcardAgent
         ? undefined
         : explicitAgentId ?? envAgentId;
+      const filterProject = normalizeProject(data.project);
       if (
         isolated &&
         !wildcardAgent &&
@@ -174,12 +211,22 @@ export function registerSmartSearchFunction(
           if (r) expanded.push(r);
         }
 
-        const scoped = filterAgentId
+        const agentScoped = filterAgentId
           ? expanded.filter((e) => e.observation.agentId === filterAgentId)
           : expanded;
+        let projectScoped = agentScoped;
+        if (filterProject) {
+          const matchesProject = makeProjectMatcher(kv);
+          const projectMatches = await Promise.all(
+            agentScoped.map((e) =>
+              matchesProject(e.sessionId, e.observation.id, filterProject),
+            ),
+          );
+          projectScoped = agentScoped.filter((_e, i) => projectMatches[i]);
+        }
         const timeScoped = timeRange
-          ? scoped.filter((e) => inTimeRange(e.observation.timestamp, timeRange))
-          : scoped;
+          ? projectScoped.filter((e) => inTimeRange(e.observation.timestamp, timeRange))
+          : projectScoped;
 
         void recordAccessBatch(
           kv,
@@ -217,27 +264,36 @@ export function registerSmartSearchFunction(
       const includeLessons = data.includeLessons !== false;
 
       // Over-fetch when filtering. Hybrid search can't filter on
-      // agentId or timestamp inside every retrieval stream, so we ask
+      // agentId, project, or timestamp inside every retrieval stream, so we ask
       // the searcher for more hits than we need and trim post-filter.
-      const overFetchLimit = filterAgentId || timeRange
+      const overFetchLimit = filterAgentId || filterProject || timeRange
         ? Math.min(limit * 10, 500)
         : limit;
 
       const [hybridResults, lessons] = await Promise.all([
         searchFn(data.query, overFetchLimit),
         includeLessons
-          ? recallLessons(sdk, data.query, lessonLimit, data.project)
+          ? recallLessons(sdk, data.query, lessonLimit, filterProject)
           : Promise.resolve([]),
       ]);
 
-      const filteredHybrid = filterAgentId
-        ? hybridResults
-            .filter((r) => r.observation.agentId === filterAgentId)
-            .filter((r) => inTimeRange(r.observation.timestamp, timeRange))
-            .slice(0, limit)
-        : hybridResults
-            .filter((r) => inTimeRange(r.observation.timestamp, timeRange))
-            .slice(0, limit);
+      const agentFilteredHybrid = filterAgentId
+        ? hybridResults.filter((r) => r.observation.agentId === filterAgentId)
+        : hybridResults;
+      let scopedHybrid = agentFilteredHybrid;
+      if (filterProject) {
+        const matchesProject = makeProjectMatcher(kv);
+        const projectMatches = await Promise.all(
+          agentFilteredHybrid.map((r) =>
+            matchesProject(r.sessionId, r.observation.id, filterProject),
+          ),
+        );
+        scopedHybrid = agentFilteredHybrid.filter((_r, i) => projectMatches[i]);
+      }
+      const timeFilteredHybrid = timeRange
+        ? scopedHybrid.filter((r) => inTimeRange(r.observation.timestamp, timeRange))
+        : scopedHybrid;
+      const filteredHybrid = timeFilteredHybrid.slice(0, limit);
 
       const compact: CompactSearchResult[] = filteredHybrid.map((r) => ({
         obsId: r.observation.id,

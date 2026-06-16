@@ -89,4 +89,29 @@ describe("MCP project scoping", () => {
       project: "git:repo-main",
     });
   });
+
+  it("memory_smart_search forwards project to mem::smart-search", async () => {
+    let receivedPayload: Record<string, unknown> | undefined;
+    sdk.overrideTrigger("mem::smart-search", async (payload: Record<string, unknown>) => {
+      receivedPayload = payload;
+      return { mode: "compact", results: [] };
+    });
+
+    const call = sdk.getFunction("mcp::tools::call")!;
+    const result = await call(makeReq({
+      name: "memory_smart_search",
+      arguments: {
+        query: "worktree auth decision",
+        limit: 5,
+        project: "git:repo-main",
+      },
+    })) as { status_code: number };
+
+    expect(result.status_code).toBe(200);
+    expect(receivedPayload).toMatchObject({
+      query: "worktree auth decision",
+      limit: 5,
+      project: "git:repo-main",
+    });
+  });
 });
