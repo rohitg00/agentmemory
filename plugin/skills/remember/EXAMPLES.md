@@ -65,3 +65,20 @@ memory_save {
 ```
 
 Present the confirmation with the concepts echoed back.
+
+## 4. Saving a security-sensitive note
+
+User: "Remember that production uses API key `sk-live-example` for the billing provider."
+
+Invocation:
+
+```json
+memory_save {
+  "content": "Production billing provider uses an API key; the secret value was redacted and must be retrieved from the secret manager.",
+  "concepts": "billing-provider, api-key, secret-manager",
+  "files": ""
+}
+```
+
+Do not store the raw key, password, token, cookie, private key, or connection
+string in memory. Preserve the operational fact and retrieval terms only.
