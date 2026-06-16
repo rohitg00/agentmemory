@@ -125,6 +125,18 @@ function lessonSaveFailureMessage(result: unknown): string | undefined {
   return undefined;
 }
 
+function reflectMemoryInSnapshot(
+  snapshot: Memory[],
+  memory: Memory,
+  supersededMemory?: Memory,
+): void {
+  const supersededIdx = supersededMemory
+    ? snapshot.indexOf(supersededMemory)
+    : -1;
+  if (supersededIdx >= 0) snapshot[supersededIdx] = memory;
+  else snapshot.push(memory);
+}
+
 export function registerConsolidateFunction(
   sdk: ISdk,
   kv: StateKV,
@@ -175,9 +187,6 @@ export function registerConsolidateFunction(
 
       let consolidated = 0;
       const existingMemories = await kv.list<Memory>(KV.memories);
-      const existingTitles = new Set(
-        existingMemories.map((m) => m.title.toLowerCase()),
-      );
 
       const MAX_LLM_CALLS = 10;
       let llmCallCount = 0;
@@ -231,6 +240,7 @@ export function registerConsolidateFunction(
           // preserves the pre-existing behavior and may evolve any memory.
           const existingMatch = existingMemories.find(
             (m) =>
+              m.isLatest &&
               m.title.toLowerCase() === parsed.title.toLowerCase() &&
               (!scopedProject || !m.project || m.project === scopedProject),
           );
@@ -265,7 +275,7 @@ export function registerConsolidateFunction(
               newId: evolved.id,
               concept,
             });
-            existingTitles.add(evolved.title.toLowerCase());
+            reflectMemoryInSnapshot(existingMemories, evolved, existingMatch);
             consolidated++;
             await saveConsolidationLesson(sdk, evolved, concept, "evolved");
           } else {
@@ -284,7 +294,7 @@ export function registerConsolidateFunction(
               action: "create_memory",
               concept,
             });
-            existingTitles.add(memory.title.toLowerCase());
+            reflectMemoryInSnapshot(existingMemories, memory);
             consolidated++;
             await saveConsolidationLesson(sdk, memory, concept, "created");
           }

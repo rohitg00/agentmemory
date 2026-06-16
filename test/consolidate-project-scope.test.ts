@@ -117,6 +117,18 @@ function makeExistingMemory(id: string, title: string, project?: string): Memory
   };
 }
 
+async function seedGroup(
+  kv: ReturnType<typeof makeMockKV>,
+  sessionId: string,
+  concept: string,
+  count = 3,
+) {
+  for (let i = 0; i < count; i++) {
+    const obs = makeObs(`${concept}_${i}`, sessionId, concept);
+    await kv.set(KV.observations(sessionId), obs.id, obs);
+  }
+}
+
 describe("mem::consolidate — cross-project existingMatch guard", () => {
   it("does not evolve a memory from a different project even when titles match", async () => {
     const sdk = makeMockSdk();
@@ -335,5 +347,104 @@ describe("mem::consolidate — cross-project existingMatch guard", () => {
     const memories = await kv.list<Memory>(KV.memories);
     expect(memories).toHaveLength(1);
     expect(memories[0].project).toBeUndefined();
+  });
+});
+
+describe("mem::consolidate — within-run same-title dedup", () => {
+  it("evolves a memory created earlier in the same run when another group resolves to the same title", async () => {
+    const sdk = makeMockSdk();
+    const kv = makeMockKV();
+    const provider = makeProvider("shared title");
+
+    const session = makeSession("sess_api", "api");
+    await kv.set(KV.sessions, session.id, session);
+    await seedGroup(kv, session.id, "auth");
+    await seedGroup(kv, session.id, "login");
+
+    registerConsolidateFunction(sdk as never, kv as never, provider as never);
+    await sdk.trigger("mem::consolidate", { project: "api", minObservations: 1 });
+
+    const memories = await kv.list<Memory>(KV.memories);
+    const sameTitle = memories.filter((m) => m.title.toLowerCase() === "shared title");
+    const latest = sameTitle.filter((m) => m.isLatest);
+    const roots = sameTitle.filter((m) => !m.parentId);
+
+    expect(sameTitle).toHaveLength(2);
+    expect(latest).toHaveLength(1);
+    expect(roots).toHaveLength(1);
+
+    const superseded = sameTitle.find((m) => !m.isLatest);
+    expect(superseded).toBeDefined();
+    expect(latest[0].parentId).toBe(superseded!.id);
+    expect(latest[0].supersedes).toContain(superseded!.id);
+    expect(latest[0].version).toBe(2);
+  });
+
+  it("keeps a three-group same-title collision as one linear version chain", async () => {
+    const sdk = makeMockSdk();
+    const kv = makeMockKV();
+    const provider = makeProvider("shared title");
+
+    const session = makeSession("sess_api", "api");
+    await kv.set(KV.sessions, session.id, session);
+    await seedGroup(kv, session.id, "auth");
+    await seedGroup(kv, session.id, "login");
+    await seedGroup(kv, session.id, "session");
+
+    registerConsolidateFunction(sdk as never, kv as never, provider as never);
+    await sdk.trigger("mem::consolidate", { project: "api", minObservations: 1 });
+
+    const memories = await kv.list<Memory>(KV.memories);
+    const sameTitle = memories.filter((m) => m.title.toLowerCase() === "shared title");
+    const latest = sameTitle.filter((m) => m.isLatest);
+    const roots = sameTitle.filter((m) => !m.parentId);
+    const nonLatest = sameTitle.filter((m) => !m.isLatest);
+
+    expect(sameTitle).toHaveLength(3);
+    expect(latest).toHaveLength(1);
+    expect(roots).toHaveLength(1);
+    expect(nonLatest).toHaveLength(2);
+    expect(latest[0].version).toBe(3);
+
+    for (const memory of nonLatest) {
+      const successors = sameTitle.filter((m) => m.parentId === memory.id);
+      expect(successors).toHaveLength(1);
+    }
+  });
+
+  it("evolves the latest existing version instead of an older same-title root", async () => {
+    const sdk = makeMockSdk();
+    const kv = makeMockKV();
+    const provider = makeProvider("shared title");
+
+    const root = makeExistingMemory("mem_root", "shared title", "api");
+    root.isLatest = false;
+    const current = {
+      ...makeExistingMemory("mem_current", "shared title", "api"),
+      version: 2,
+      parentId: root.id,
+      supersedes: [root.id],
+    };
+    await kv.set(KV.memories, root.id, root);
+    await kv.set(KV.memories, current.id, current);
+
+    const session = makeSession("sess_api", "api");
+    await kv.set(KV.sessions, session.id, session);
+    await seedGroup(kv, session.id, "auth");
+
+    registerConsolidateFunction(sdk as never, kv as never, provider as never);
+    await sdk.trigger("mem::consolidate", { project: "api", minObservations: 1 });
+
+    const memories = await kv.list<Memory>(KV.memories);
+    const sameTitle = memories.filter((m) => m.title.toLowerCase() === "shared title");
+    const latest = sameTitle.filter((m) => m.isLatest);
+
+    expect(sameTitle).toHaveLength(3);
+    expect(latest).toHaveLength(1);
+    expect(latest[0].parentId).toBe(current.id);
+    expect(latest[0].version).toBe(3);
+
+    const storedCurrent = await kv.get<Memory>(KV.memories, current.id);
+    expect(storedCurrent?.isLatest).toBe(false);
   });
 });
