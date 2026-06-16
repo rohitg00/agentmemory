@@ -54,6 +54,7 @@ Stop conditions:
 | Security assessment | Manual diff review plus required security gates when code changes | done | Codex Security diff scan report written under `/tmp/codex-security-scans/agentmemory/local_patch_20260616T041300Z`; Semgrep completed with 0 findings after the final cleanup pass. |
 | Neutral local documentation | Update this task record and coordinator worklist if reachable | in progress | Task record updated with prep evidence; coordinator worklist update pending. |
 | Prep merge to local main | `$prep-merge-to-local-main` workflow | done | Task commit created, local `main` commit `60099a31029575412ba6fc27f4ab986196922e56` merged, post-merge checks recorded. |
+| Post-merge full test drift fix | `pnpm test`, generator contract test, full suite rerun | done | Regenerated the MCP tools reference; generator check, focused contract test, full `pnpm test`, `git diff --check`, Semgrep, security diff scan, and read-only reviews passed. |
 
 ## Progress
 
@@ -67,6 +68,14 @@ Stop conditions:
 - Ran targeted RED tests before production edits; after implementation, targeted tests passed.
 - Ran Codex Security diff scan and Semgrep; no reportable security findings.
 - Ran the prep-required Simple Code pass; changed only smart-search error precedence and inclusive session overlap at the range start, with tests.
+- In follow-up verification worktree `/Users/A1538552/.codex/worktrees/e367/agentmemory`, initial `pnpm test` could not start because `node_modules` was absent (`vitest: command not found`).
+- Materialized only the local verification environment with `env NPM_CONFIG_USERCONFIG=/dev/null pnpm install --ignore-scripts --no-lockfile`; this created `node_modules` and did not create a lockfile or tracked manifest changes.
+- Re-ran `pnpm test`; 1994 tests passed and one generator contract test failed because `plugin/skills/agentmemory-mcp-tools/REFERENCE.md` was stale for the new `start_time`/`end_time` MCP parameters.
+- Dispatched two read-only diagnostic subagents before editing. Both independently concluded the test was valid and the branch needed regenerated MCP tool reference docs, not source behavior or test expectation changes.
+- Ran `pnpm run skills:gen`, updating only `plugin/skills/agentmemory-mcp-tools/REFERENCE.md`.
+- Follow-up checks passed after regeneration: `pnpm exec tsx scripts/skills/generate.ts --check`, focused generated-reference Vitest slice, `pnpm test` with 1995 tests, `git diff --check`, and Semgrep with 0 findings.
+- Codex Security diff scan for this local patch completed with no findings at `/tmp/codex-security-scans/agentmemory/local_patch_20260616T060300Z/report.md` and `/tmp/codex-security-scans/agentmemory/local_patch_20260616T060300Z/report.html`.
+- Focused requirements/test review returned `ACCEPT`; adversarial implementation review returned `NO FINDINGS`.
 
 ## Review Notes
 
@@ -99,6 +108,21 @@ Findings:
 - Post-merge targeted Vitest over our time-filter files plus `test/memories-pagination.test.ts` passed for 206 tests. The same combined command could not import `test/api-memories-project.test.ts` in this worktree because `src/triggers/api.ts` imports `iii-sdk` and this worktree has no local `node_modules`; setting `NODE_PATH` to the main checkout dependencies did not affect ESM package resolution. This is an environment limitation, not a failing assertion.
 - Post-merge `git diff --check` passed.
 - Post-merge Semgrep passed with 0 findings.
+- Follow-up RED: `pnpm test` failed after verification setup with one stale generated reference failure in `test/plugin-surface-contract.test.ts`.
+- Follow-up GREEN: regenerated `plugin/skills/agentmemory-mcp-tools/REFERENCE.md` with `pnpm run skills:gen`.
+- `pnpm exec tsx scripts/skills/generate.ts --check` passed.
+- `pnpm exec vitest run test/plugin-surface-contract.test.ts -t "Generated skill references"` passed with 2 tests and 6 skipped.
+- `pnpm test` passed with 158 test files and 1995 tests.
+- `git diff --check` passed.
+- `semgrep scan --config p/default --error --metrics=off .` passed with 0 findings.
+- Codex Security diff scan over the local two-file patch found no candidates; final reports were written under `/tmp/codex-security-scans/agentmemory/local_patch_20260616T060300Z/`.
+
+## Subagent Ledger
+
+| Workstream | Allowed scope | Edits allowed | Expected output | Result | Residual risk |
+| --- | --- | --- | --- | --- | --- |
+| Generator/test contract diagnosis | `scripts/skills/generate.ts`, `test/plugin-surface-contract.test.ts`, `plugin/skills/agentmemory-mcp-tools/REFERENCE.md`, MCP registry evidence | no | Classify product bug vs stale test vs merge drift vs environment problem | Concluded generated reference docs were stale; test is valid; minimal fix is regeneration. | Low; read-only diagnosis reproduced the drift. |
+| Branch/main/environment diagnosis | Local `main` comparison, branch diff, time-range filtering changes, generated reference artifacts | no | Independent classification and minimal fix recommendation | Concluded branch added MCP parameters without regenerating `REFERENCE.md`; not merge drift or environment after dependencies exist. | Low; agrees with first diagnosis. |
 
 ## Prep Review Notes
 
@@ -107,6 +131,11 @@ Findings:
 - Focused requirements/test/integration review: no blocking finding. The tests cover valid ranges, invalid ranges, open-ended ranges, equality boundaries, agent isolation, REST/MCP boundaries, standalone proxy forwarding, and local fallback behavior.
 - Review Implementation adversarial pass: no blocking finding. Residual risk is that time-range filtering is post-index/post-list, so very large corpora can still pay existing list/search cost; overfetch and limits keep the new work bounded and no storage/query boundary was changed.
 - Subagent-based review lanes were not dispatched because this turn did not explicitly authorize extra subagents under the available tool policy; the review was performed by separate manual passes on the narrowed task-owned diff.
+- Follow-up Security Best Practices passive check: the local patch only updates generated MCP parameter documentation and task-local verification notes; no critical or major issue.
+- Follow-up Simple Code pass: no simplification edit was needed; the patch is generated-reference output plus concise task evidence.
+- Follow-up focused requirements/test review: `ACCEPT`, no findings.
+- Follow-up Review Implementation adversarial pass: `NO FINDINGS`.
+- Follow-up Security diff scan: no findings; report artifacts in `/tmp/codex-security-scans/agentmemory/local_patch_20260616T060300Z/`.
 
 ## Prep Merge Notes
 
