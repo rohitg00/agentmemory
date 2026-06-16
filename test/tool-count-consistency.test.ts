@@ -10,6 +10,16 @@ import { getAllTools, ESSENTIAL_TOOLS } from "../src/mcp/tools-registry.js";
 
 const ROOT = join(import.meta.dirname, "..");
 const EXPECTED_TOOL_COUNT = 53;
+const TOOL_COUNT_SURFACES = [
+  ".env.example",
+  "README.md",
+  "website/components/Compare.tsx",
+  "plugin/plugin.json",
+  "plugin/.claude-plugin/plugin.json",
+  "plugin/.codex-plugin/plugin.json",
+  "plugin/opencode/README.md",
+  "plugin/skills/agentmemory-mcp-tools/REFERENCE.md",
+];
 
 function readText(relativePath: string): string {
   return readFileSync(join(ROOT, relativePath), "utf-8");
@@ -39,6 +49,14 @@ describe("Tool count consistency", () => {
     const readme = readText("README.md");
     expect(readme).toContain(`${EXPECTED_TOOL_COUNT} MCP tools`);
     expect(readme).not.toContain("51 MCP tools");
+  });
+
+  it("metadata surfaces do not advertise stale 51-tool counts", () => {
+    for (const path of TOOL_COUNT_SURFACES) {
+      expect(readText(path), path).not.toMatch(
+        /51 MCP tools|51 tools|51 memory tools|full 51-tool surface|MCP TOOLS", "51"/,
+      );
+    }
   });
 
   it("skill count claims match the plugin/skills directory", () => {
