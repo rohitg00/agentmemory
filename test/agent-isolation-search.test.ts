@@ -32,8 +32,9 @@ import {
   getSearchIndex,
   setIndexPersistence,
 } from "../src/functions/search.js";
+import { memoryToObservation } from "../src/state/memory-utils.js";
 import { KV } from "../src/state/schema.js";
-import type { CompressedObservation, Session, SearchResult } from "../src/types.js";
+import type { CompressedObservation, Memory, Session, SearchResult } from "../src/types.js";
 
 function makeMockKV() {
   const store = new Map<string, Map<string, unknown>>();
@@ -160,6 +161,47 @@ describe("mem::search agent-scope isolation (#817 follow-up)", () => {
       expect(r.observation.agentId).toBe("agent_a");
     }
     expect(result.results.find((r) => r.observation.id === "obs-b-public")).toBeUndefined();
+  });
+
+  it("isolated mode returns same-agent memories indexed through the memory fallback", async () => {
+    configState.isolated = true;
+    configState.agentId = "agent_a";
+    const ownMemory: Memory = {
+      id: "mem-a-secret",
+      createdAt: "2026-01-01T03:00:00Z",
+      updatedAt: "2026-01-01T03:00:00Z",
+      type: "fact",
+      title: "agent A saved memory",
+      content: "SECRET_MARKER saved AAA",
+      concepts: ["secret"],
+      files: [],
+      sessionIds: [],
+      strength: 9,
+      version: 1,
+      sourceObservationIds: [],
+      isLatest: true,
+      agentId: "agent_a",
+    };
+    const otherMemory: Memory = {
+      ...ownMemory,
+      id: "mem-b-secret",
+      title: "agent B saved memory",
+      content: "SECRET_MARKER saved BBB",
+      agentId: "agent_b",
+    };
+    await kv.set(KV.memories, ownMemory.id, ownMemory);
+    await kv.set(KV.memories, otherMemory.id, otherMemory);
+    const idx = getSearchIndex();
+    idx.add(memoryToObservation(ownMemory));
+    idx.add(memoryToObservation(otherMemory));
+
+    const result = (await sdk.trigger("mem::search", {
+      query: "SECRET_MARKER",
+      limit: 10,
+    })) as { results: SearchResult[] };
+
+    expect(result.results.map((r) => r.observation.id)).toEqual(["mem-a-secret"]);
+    expect(result.results[0]?.observation.agentId).toBe("agent_a");
   });
 
   it('isolated mode + agentId: "*" wildcard bypasses and returns both agents', async () => {
