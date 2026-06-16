@@ -36,7 +36,7 @@ jobs:
           registry-url: https://registry.npmjs.org
 
       - run: corepack enable
-      - run: pnpm install --frozen-lockfile
+      - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm run build
       - run: pnpm test
       - run: npm pack --dry-run --json

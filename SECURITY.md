@@ -54,17 +54,17 @@ Out of scope:
 
 agentmemory ships pre-built artifacts in the npm tarball — `dist/` is bundled at publish time, not built from `node_modules` at install time. The package's runtime dependency tree is intentionally small (6 production deps: `@anthropic-ai/sdk`, `@anthropic-ai/claude-agent-sdk`, `@clack/prompts`, `dotenv`, `iii-sdk`, `zod`) plus an optional set guarded behind `optionalDependencies` for embeddings.
 
-This fork commits `pnpm-lock.yaml` for source development and CI. Contributor builds and release jobs install with `pnpm install --frozen-lockfile` so tests, builds, and supply-chain scans run against the same resolved dependency graph.
+This fork commits `pnpm-lock.yaml` for source development and CI. Contributor builds and release jobs install with `pnpm install --frozen-lockfile --ignore-scripts` so tests, builds, and supply-chain scans run against the same resolved dependency graph without automatically running dependency lifecycle scripts.
 
 The npm tarball still ships pre-built `dist/` — fresh installs from the public registry don't compile from source, so npm/npx users consume the published artifact and SemVer dependency ranges as usual.
 
 If you ship agentmemory inside a hardened pipeline that requires reproducible installs, the recommended path is:
 
-1. For source builds from this fork, use `corepack pnpm install --frozen-lockfile`.
+1. For source builds from this fork, use `corepack pnpm install --frozen-lockfile --ignore-scripts`.
 2. For deployments based on the published npm tarball, install in a controlled environment and create deployment-specific lock or shrinkwrap metadata that travels with your deployment.
 3. Audit `node_modules/` once at that point and republish internally.
 
-CI installs from the committed pnpm lockfile with `pnpm install --frozen-lockfile`, so every test job builds against a fully resolved tree that is visible in review.
+CI installs from the committed pnpm lockfile with `pnpm install --frozen-lockfile --ignore-scripts`, so every test job builds against a fully resolved tree that is visible in review without automatically running dependency lifecycle scripts.
 
 Supply-chain monitoring we already do:
 

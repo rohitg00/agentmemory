@@ -18,7 +18,7 @@ Our workspace security policy treats missing lockfiles as a supply-chain risk. I
 
 This fork will use committed lockfiles for JavaScript and TypeScript package surfaces.
 
-The target package manager is `pnpm`. The fork will introduce `pnpm-lock.yaml` for the root project and for any workspace/package layout that is included in the chosen pnpm configuration. `package.json` files that participate in pnpm installs will pin the package manager with a `packageManager` field. CI and publish workflows will install from the committed lockfile with `pnpm install --frozen-lockfile` instead of generating temporary npm lockfiles.
+The target package manager is `pnpm`. The fork will introduce `pnpm-lock.yaml` for the root project and for any workspace/package layout that is included in the chosen pnpm configuration. `package.json` files that participate in pnpm installs will pin the package manager with a `packageManager` field. CI and publish workflows will install from the committed lockfile with `pnpm install --frozen-lockfile --ignore-scripts` instead of generating temporary npm lockfiles.
 
 Internal package relationships that should resolve from the local workspace during source builds will use pnpm workspace dependencies. Packages that use `workspace:` dependencies must be packed or published through pnpm so the published npm artifact receives the normal semver dependency range that npm consumers expect.
 

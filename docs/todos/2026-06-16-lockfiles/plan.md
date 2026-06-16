@@ -43,8 +43,8 @@ The work is still split into checkpoints: metadata first, lockfile generation se
 - `pnpm-lock.yaml`: generate and commit the root workspace lockfile.
 - `.gitignore`: stop ignoring `pnpm-lock.yaml`; keep non-canonical lockfiles ignored.
 - `website/.gitignore`: stop ignoring `pnpm-lock.yaml`; keep non-canonical lockfiles ignored.
-- `.github/workflows/ci.yml`: replace temporary npm lockfile generation with Corepack plus `pnpm install --frozen-lockfile`.
-- `.github/workflows/publish.yml`: replace temporary npm lockfile generation with Corepack plus `pnpm install --frozen-lockfile`; keep `npm publish --provenance` for packages without workspace dependencies and use `pnpm publish --provenance --access public --no-git-checks` for `packages/mcp` so `workspace:` dependencies are rewritten for npm consumers.
+- `.github/workflows/ci.yml`: replace temporary npm lockfile generation with Corepack plus `pnpm install --frozen-lockfile --ignore-scripts`.
+- `.github/workflows/publish.yml`: replace temporary npm lockfile generation with Corepack plus `pnpm install --frozen-lockfile --ignore-scripts`; keep `npm publish --provenance` for packages without workspace dependencies and use `pnpm publish --provenance --access public --no-git-checks` for `packages/mcp` so `workspace:` dependencies are rewritten for npm consumers.
 - `test/quality-gates.test.ts`: update workflow-command assertions so the required CI gates expect pnpm commands and preserved matrix guards.
 - `test/plugin-surface-contract.test.ts`: update the package-surface contract for the MCP shim's source-time `workspace:~` dependency.
 - `README.md`, `website/README.md`, `CONTRIBUTING.md`, `SECURITY.md`, `AGENTS.md`, `docs/recipes/fork-workflow.md`: update active contributor/source workflow guidance from npm-generated lockfiles to committed pnpm lockfiles while preserving npm/npx end-user installation commands.
@@ -458,7 +458,7 @@ with:
 
 ```yaml
       - run: corepack enable
-      - run: pnpm install --frozen-lockfile
+      - run: pnpm install --frozen-lockfile --ignore-scripts
 ```
 
 Then replace only CI script `run:` command values, preserving all existing job structure, matrix entries, and `if:` guards:
@@ -501,7 +501,7 @@ with:
 
 ```yaml
       - run: corepack enable
-      - run: pnpm install --frozen-lockfile
+      - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm run build
       - run: pnpm test
       - run: npm pack --dry-run --json
@@ -523,7 +523,7 @@ This keeps the published artifact npm-compatible while letting pnpm rewrite `wor
 
 Update `test/quality-gates.test.ts` so tests that assert required CI and publish workflow commands expect:
 
-- Corepack plus `pnpm install --frozen-lockfile`
+- Corepack plus `pnpm install --frozen-lockfile --ignore-scripts`
 - `pnpm run lint`, `pnpm run coverage`, `pnpm test`, `pnpm run build`, and `pnpm run skills:check`
 - the existing matrix `if:` guards still present for lint, coverage, and tests
 - root and fs-watcher still using npm publish
@@ -568,7 +568,7 @@ npm install && npm run build && npm start
 with:
 
 ```bash
-corepack pnpm install --frozen-lockfile
+corepack pnpm install --frozen-lockfile --ignore-scripts
 corepack pnpm run build
 corepack pnpm start
 ```
@@ -618,13 +618,13 @@ with:
 
 ```bash
 cd ..
-corepack pnpm install --frozen-lockfile
+corepack pnpm install --frozen-lockfile --ignore-scripts
 corepack pnpm --dir website run dev
 ```
 
 - [ ] **Step 5: Update other active contributor guidance**
 
-Update active source workflow references in `CONTRIBUTING.md`, `SECURITY.md`, `AGENTS.md`, and `docs/recipes/fork-workflow.md` so they use committed `pnpm-lock.yaml`, `corepack pnpm install --frozen-lockfile`, and pnpm script commands for contributor/source workflows. Preserve npm/npx commands when they describe published package consumption or npm registry publication.
+Update active source workflow references in `CONTRIBUTING.md`, `SECURITY.md`, `AGENTS.md`, and `docs/recipes/fork-workflow.md` so they use committed `pnpm-lock.yaml`, `corepack pnpm install --frozen-lockfile --ignore-scripts`, and pnpm script commands for contributor/source workflows. Preserve npm/npx commands when they describe published package consumption or npm registry publication.
 
 - [ ] **Step 6: Update generated skill command text**
 
@@ -664,7 +664,7 @@ Do not rewrite historical `docs/todos/**`, changelog, or release-note records fr
 Run:
 
 ```bash
-corepack pnpm install --frozen-lockfile
+corepack pnpm install --frozen-lockfile --ignore-scripts
 ```
 
 Expected: exits 0 and uses `pnpm-lock.yaml`.

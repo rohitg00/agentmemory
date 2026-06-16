@@ -61,7 +61,7 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
       - run: corepack enable
-      - run: pnpm install --frozen-lockfile
+      - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm run build
       - run: pnpm run skills:check
       - if: ${{ matrix.os == 'ubuntu-latest' && matrix.node-version == 22 }}

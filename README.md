@@ -718,7 +718,7 @@ Worked example: [`examples/python/`](examples/python/) (quickstart + observation
 
 ```bash
 git clone https://github.com/rohitg00/agentmemory.git && cd agentmemory
-corepack pnpm install --frozen-lockfile
+corepack pnpm install --frozen-lockfile --ignore-scripts
 corepack pnpm run build
 corepack pnpm start
 ```

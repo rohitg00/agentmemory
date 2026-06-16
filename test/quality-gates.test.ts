@@ -5,6 +5,7 @@ import eslintConfig from "../eslint.config.js";
 import vitestConfig from "../vitest.config";
 
 type PackageJson = {
+  packageManager?: string;
   scripts?: Record<string, string>;
   devDependencies?: Record<string, string>;
   dependencies?: Record<string, string>;
@@ -56,6 +57,20 @@ function findConfigWithRule(ruleName: string): FlatConfig | undefined {
 
 function ciRunCount(command: string): number {
   return readText(".github/workflows/ci.yml").split(`run: ${command}`).length - 1;
+}
+
+function indexOfStep(workflow: string, step: string): number {
+  const index = workflow.indexOf(step);
+  expect(index, `missing workflow step: ${step}`).toBeGreaterThanOrEqual(0);
+  return index;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function expectTopLevelYamlScalar(yaml: string, key: string, value: string): void {
+  expect(yaml).toMatch(new RegExp(`^${escapeRegExp(key)}: ${escapeRegExp(value)}$`, "m"));
 }
 
 describe("root quality gates", () => {
@@ -209,7 +224,7 @@ describe("root quality gates", () => {
     expect(ciRunCount("pnpm run coverage")).toBe(1);
     expect(ciRunCount("pnpm test")).toBe(1);
     expect(ci).toContain("corepack enable");
-    expect(ci).toContain("pnpm install --frozen-lockfile");
+    expect(ci).toContain("pnpm install --frozen-lockfile --ignore-scripts");
     expect(ci).toContain("pnpm run lint");
     expect(ci).toContain("pnpm run coverage");
     expect(ci).not.toContain("package-lock-only");
@@ -225,18 +240,78 @@ describe("root quality gates", () => {
   it("builds publish artifacts from the committed pnpm lockfile before npm publish", () => {
     const publish = readText(".github/workflows/publish.yml");
 
-    expect(publish).toContain("corepack enable");
-    expect(publish).toContain("pnpm install --frozen-lockfile");
-    expect(publish).toContain("pnpm run build");
-    expect(publish).toContain("pnpm test");
-    expect(publish).toContain("npm pack --dry-run --json");
-    expect(publish).toContain("pnpm pack --dry-run --json");
-    expect(publish).toContain("working-directory: packages/mcp");
-    expect(publish).toContain("working-directory: integrations/filesystem-watcher");
-    expect(publish).toContain("npm publish --provenance --access public");
+    const setup = indexOfStep(publish, "run: corepack enable");
+    const install = indexOfStep(publish, "run: pnpm install --frozen-lockfile --ignore-scripts");
+    const build = indexOfStep(publish, "run: pnpm run build");
+    const test = indexOfStep(publish, "run: pnpm test");
+    const rootPack = indexOfStep(publish, "run: npm pack --dry-run --json");
+    const mcpPack = indexOfStep(
+      publish,
+      "working-directory: packages/mcp\n        run: pnpm pack --dry-run --json",
+    );
+    const fsWatcherPack = indexOfStep(
+      publish,
+      "working-directory: integrations/filesystem-watcher\n        run: npm pack --dry-run --json",
+    );
+    const rootPublish = indexOfStep(publish, "name: Publish @agentmemory/agentmemory");
+    const mcpPublish = indexOfStep(publish, "name: Publish @agentmemory/mcp shim");
+    const fsWatcherPublish = indexOfStep(
+      publish,
+      "name: Publish @agentmemory/fs-watcher connector",
+    );
+    const prePublishSteps = [setup, install, build, test, rootPack, mcpPack, fsWatcherPack];
+    const packSteps = [rootPack, mcpPack, fsWatcherPack];
+    const publishSteps = [rootPublish, mcpPublish, fsWatcherPublish];
+
+    expect(prePublishSteps).toEqual([...prePublishSteps].sort((a, b) => a - b));
+    expect(Math.max(...packSteps)).toBeLessThan(Math.min(...publishSteps));
+    expect(rootPack).toBeLessThan(rootPublish);
+    expect(mcpPack).toBeLessThan(mcpPublish);
+    expect(fsWatcherPack).toBeLessThan(fsWatcherPublish);
     expect(publish).toContain("pnpm publish --provenance --access public --no-git-checks");
     expect(publish).not.toContain("package-lock-only");
     expect(publish).not.toContain("npm ci");
+  });
+
+  it("enforces the committed pnpm lockfile policy", () => {
+    const packageManifests = [
+      "package.json",
+      "website/package.json",
+      "packages/mcp/package.json",
+      "integrations/filesystem-watcher/package.json",
+      "integrations/openclaw/package.json",
+      "integrations/pi/package.json",
+    ];
+
+    for (const path of packageManifests) {
+      const pkg = JSON.parse(readText(path)) as PackageJson;
+      expect(pkg.packageManager, path).toBe("pnpm@11.6.0");
+    }
+
+    const workspace = readText("pnpm-workspace.yaml");
+    expectTopLevelYamlScalar(workspace, "savePrefix", '""');
+    expectTopLevelYamlScalar(workspace, "minimumReleaseAge", "1440");
+    expectTopLevelYamlScalar(workspace, "minimumReleaseAgeStrict", "true");
+    expectTopLevelYamlScalar(workspace, "minimumReleaseAgeIgnoreMissingTime", "false");
+    expectTopLevelYamlScalar(workspace, "blockExoticSubdeps", "true");
+    expectTopLevelYamlScalar(workspace, "strictDepBuilds", "true");
+    expectTopLevelYamlScalar(workspace, "dangerouslyAllowAllBuilds", "false");
+    expectTopLevelYamlScalar(workspace, "trustPolicy", "no-downgrade");
+
+    const lockfile = readText("pnpm-lock.yaml");
+    for (const importer of [
+      ".",
+      "website",
+      "packages/mcp",
+      "integrations/filesystem-watcher",
+      "integrations/openclaw",
+      "integrations/pi",
+    ]) {
+      expect(lockfile).toMatch(new RegExp(`^\\s{2}${escapeRegExp(importer)}:`, "m"));
+    }
+
+    expect(readText(".gitignore")).not.toMatch(/^pnpm-lock\.yaml$/m);
+    expect(readText("website/.gitignore")).not.toMatch(/^pnpm-lock\.yaml$/m);
   });
 
   it("uses a pnpm workspace dependency for the MCP shim source package", () => {

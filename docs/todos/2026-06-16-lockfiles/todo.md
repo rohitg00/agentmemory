@@ -32,7 +32,7 @@ Acceptance criteria:
 - The plan treats pnpm migration and lockfile introduction as one verified change set, with no committed `package-lock.json` intermediate state.
 - Every participating `package.json` pins the same pnpm version.
 - The repository has one committed root `pnpm-lock.yaml` and does not ignore it.
-- CI and publish workflows install from `pnpm-lock.yaml` with `pnpm install --frozen-lockfile`.
+- CI and publish workflows install from `pnpm-lock.yaml` with `pnpm install --frozen-lockfile --ignore-scripts`.
 - Active contributor/source docs no longer describe generated npm lockfiles or npm source workflows, while end-user npm/npx commands remain intact.
 - Functional checks, package dry-runs, OSV, Semgrep, and final staged Gitleaks either pass or have recorded current-turn accepted blockers.
 
@@ -41,7 +41,7 @@ Intended verification:
 - `/Users/A1538552/_projects/_tools/adr-tools/src/adr generate toc`
 - `corepack pnpm --version`
 - `corepack pnpm install --lockfile-only --ignore-scripts`
-- `corepack pnpm install --frozen-lockfile`
+- `corepack pnpm install --frozen-lockfile --ignore-scripts`
 - `corepack pnpm run build`
 - `corepack pnpm run skills:check`
 - `corepack pnpm run lint`
@@ -73,9 +73,9 @@ Known boundaries:
 | Pre-implementation plan review | Four read-only reviewer workstreams | Done | Findings accepted into `plan.md`: all participating manifests get `packageManager`, pnpm hardening goes in `pnpm-workspace.yaml`, `pnpm@11.6.0` satisfies release-age policy, active docs/tests are in scope, and final staged Gitleaks runs after final task notes are staged. |
 | Package-manager metadata | `jq`, `rg`, exact file inspection | Done | Six participating manifests report `pnpm@11.6.0`; `package.json` keeps npm overrides for `qs`, `ws`, and `protobufjs`; `pnpm-workspace.yaml` contains workspace linking, pnpm overrides, and required hardening settings; `.npmrc` is absent; `pnpm-lock.yaml` no longer appears in `.gitignore` or `website/.gitignore`. |
 | Lockfile generation | `corepack pnpm install --lockfile-only --ignore-scripts`, exact importer check | Done | Lockfile generation passed with pnpm 11.6.0 after `packages/mcp` moved to `workspace:~`; exact importer check found `.`, `website`, `packages/mcp`, `integrations/filesystem-watcher`, `integrations/openclaw`, and `integrations/pi`. |
-| Workflow/docs migration | targeted `rg`, `test/quality-gates.test.ts`, generated skill check | Done | Stale source-workflow scan found only expected historical ADR/negative-test/fixture references; `corepack pnpm run skills:check` passed; `corepack pnpm exec vitest run test/quality-gates.test.ts test/plugin-surface-contract.test.ts` passed. |
-| Functional and packaging verification | pnpm build/test/coverage/website checks, npm dry-runs, and pnpm MCP dry-run | Done | `corepack pnpm install --frozen-lockfile --ignore-scripts`, build, lint, full test, coverage, website build, and package dry-runs passed. Normal install without `--ignore-scripts` was not approved by the sandbox reviewer due lifecycle-script credential risk. |
-| Security verification | OSV, Semgrep, `git diff --check`, final staged Gitleaks | Done with accepted OSV risk | `semgrep scan --config p/default --error --metrics=off .`, `git diff --check`, and `gitleaks protect --staged --redact` passed. `osv-scanner scan source .` found GHSA-8988-4f7v-96qf in transitive `@opentelemetry/core@1.30.1` from `iii-sdk@0.11.2`; user accepted this existing transitive risk as a known blocker to track upstream rather than force an unsafe override. |
+| Workflow/docs migration | targeted `rg`, `test/quality-gates.test.ts`, generated skill check | Done | Stale source-workflow scan found only expected historical ADR/negative-test/fixture references; `corepack pnpm run skills:check` passed; post-review `corepack pnpm exec vitest run test/quality-gates.test.ts test/plugin-surface-contract.test.ts` passed. |
+| Functional and packaging verification | pnpm build/test/coverage/website checks, npm dry-runs, and pnpm MCP dry-run | Done | `corepack pnpm install --frozen-lockfile --ignore-scripts`, build, lint, full test, coverage, website build, and package dry-runs passed. A post-review full-test run first hit five 10s timeout failures, the five affected files passed isolated in 2.29s, and a second full `corepack pnpm test` passed 158 files / 1986 tests; `corepack pnpm run coverage` then passed. Normal install without `--ignore-scripts` was not approved by the sandbox reviewer due lifecycle-script credential risk. |
+| Security verification | OSV, Semgrep, `git diff --check`, final staged Gitleaks | Done with accepted OSV risk | `semgrep scan --config p/default --error --metrics=off .`, `git diff --check`, and final `gitleaks protect --staged --redact` passed after post-review changes. `osv-scanner scan source .` found GHSA-8988-4f7v-96qf in transitive `@opentelemetry/core@1.30.1` from `iii-sdk@0.11.2`; user accepted this existing transitive risk as a known blocker to track upstream rather than force an unsafe override. |
 
 ## Progress Notes
 
@@ -98,6 +98,10 @@ Known boundaries:
 - 2026-06-16: Package verification passed: root `npm pack --dry-run --json` produced 165 files, fs-watcher `npm pack --dry-run --json` produced 4 files, and MCP `pnpm pack` produced 4 files with packed dependency rewritten from `workspace:~` to `~0.9.27`.
 - 2026-06-16: Security verification is blocked by OSV finding GHSA-8988-4f7v-96qf in `@opentelemetry/core@1.30.1`, introduced through `iii-sdk@0.11.2`. Semgrep and `git diff --check` passed.
 - 2026-06-16: User accepted GHSA-8988-4f7v-96qf as a known transitive `iii-sdk`/OpenTelemetry risk for this lockfile migration after analysis showed the supported fix requires upstream `iii-sdk`/observability support for OpenTelemetry 2.x; even latest inspected `iii-sdk` still depends on OpenTelemetry 1.x.
+- 2026-06-16: Initial staged secret scan before post-review fixes passed with `gitleaks protect --staged --redact`: no leaks found.
+- 2026-06-16: Pre-merge review found that CI/publish used the unverified lifecycle-script install path, publish dry-run ordering was not asserted, pnpm policy invariants lacked durable tests, and release docs still referenced `package-lock.json` plus an MCP semver source dependency. Updated CI/publish to the verified `--ignore-scripts` install semantics, strengthened `test/quality-gates.test.ts`, and corrected release/source docs.
+- 2026-06-16: Post-fix pre-merge review found two remaining durability gaps: the publish test did not prove all package dry-runs happen before any publish step, and `CONTRIBUTING.md` omitted version-bearing `plugin/plugin.json` from the release checklist. Tightened the publish-order assertions, anchored the pnpm policy checks to top-level YAML keys, and updated the release checklist to 9 release surfaces.
+- 2026-06-16: Post-review verification passed: `corepack pnpm exec vitest run test/quality-gates.test.ts test/plugin-surface-contract.test.ts`, `corepack pnpm run build`, `corepack pnpm run lint`, `corepack pnpm test` after isolating an initial timeout-only full-suite flake, `corepack pnpm run coverage`, `git diff --check`, and `semgrep scan --config p/default --error --metrics=off .`.
 - 2026-06-16: Final staged secret scan passed with `gitleaks protect --staged --redact`: no leaks found.
 
 ## Subagent Ledger
@@ -108,6 +112,10 @@ Known boundaries:
 | Pre-implementation review: architecture/integration | pnpm workspace, package surfaces, CI/publish integration | No | High/Medium findings or `ACCEPT` | Found package-manager pin mismatch and missing npm publish/package dry-run coverage. | Findings accepted; plan keeps npm publish but verifies npm package dry-runs. |
 | Pre-implementation review: verification/security | verification commands, dependency gates, OSV/Semgrep/Gitleaks coverage | No | High/Medium findings or `ACCEPT` | Found Gitleaks ordering gap, pnpm release-age issue, and `.npmrc` hardening ambiguity. | Findings accepted; plan uses `pnpm@11.6.0`, `pnpm-workspace.yaml`, and final staged Gitleaks after final notes. |
 | Pre-implementation review: scope/minimality | scope creep, unnecessary work, fork/upstream boundary | No | High/Medium findings or `ACCEPT` | Found under-scoped active docs/tests and local `corepack enable` side effect. | Findings accepted; plan expands active docs/tests and avoids local `corepack enable`. |
+| Pre-merge review: requirements/scope | Branch diff from local main through lockfile migration | No | Critical/Important findings or `ACCEPT` | Accepted the branch as satisfying the pnpm lockfile and ADR requirements. | No residual blocker from this lane. |
+| Pre-merge review: tests/quality gates | Workflow tests, package-surface tests, pnpm policy gates | No | Critical/Important findings or `ACCEPT` | Found unverified lifecycle-script install path, missing durable publish-order assertion, and missing pnpm policy invariant test coverage. | Findings fixed with `--ignore-scripts` install in CI/publish and stricter quality-gate tests. |
+| Pre-merge review: packaging/integration | CI/publish, package dry-runs, docs release process | No | Critical/Important findings or `ACCEPT` | Found the same CI/publish install-path mismatch and stale release docs. | Findings fixed; release docs now describe pnpm lockfile, `workspace:~`, and pnpm MCP pack/publish rewrite. |
+| Post-fix pre-merge review: durability | Current working-tree post-review diff | No | Critical/Important findings or `ACCEPT` | Found publish-order test gap and release checklist omission of `plugin/plugin.json`. | Findings fixed; targeted tests passed. |
 
 ## Pre-Implementation Review Triage
 
