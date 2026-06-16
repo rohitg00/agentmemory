@@ -51,7 +51,7 @@ Stop conditions:
 | Adapt provider alias behavior | Focused tests and source inspection | Passed | `src/config.ts` now accepts `AGENTMEMORY_EMBEDDING_PROVIDER` and maps `xenova` or `transformers` to `local`. |
 | Preserve remote opt-in privacy boundary | Focused negative tests and security review | Passed | Provider keys alone still return no text embedding provider in `test/embedding-provider.test.ts`; Semgrep and Codex Security diff scan found no findings. |
 | Worklist row update | Diff inspection | Passed | `pr-issue-fix-review-list.md` created with a neutral upstream-pr-412 row. |
-| Prep local main merge readiness | prep-merge-to-local-main | Pending | Not run yet. |
+| Prep local main merge readiness | prep-merge-to-local-main | Passed | Local main was the branch base, so merge was a no-op; no conflicts or preserved dirty paths. |
 
 ## Subagent Ledger
 
@@ -87,3 +87,11 @@ Review chain evidence:
 - Focused requirements review: no critical or important findings. Requirements fit is covered by alias tests, precedence tests, unknown/blank rejection, key-only remote rejection, and issue-first PR rejection notes.
 - Review implementation adversarial pass: no findings. Scope is limited to `src/config.ts`, `test/embedding-provider.test.ts`, and local task notes; no unrelated PR surfaces imported.
 - Independent subagent review was not run because the available subagent tool only permits spawning when the user explicitly asks for subagents or parallel agent work.
+
+Prep merge closeout:
+- Branch was created from local `main` at commit `60099a31029575412ba6fc27f4ab986196922e56`.
+- Local main worktree was clean at the same commit during preflight.
+- No Git operation state, active hooks, signing config, staged unrelated files, or incoming-main path overlaps were present.
+- Local main was already an ancestor of the branch after the task commit, so the merge was a no-op.
+- Preserved unrelated dirty paths: none.
+- Conflicts resolved: none.
