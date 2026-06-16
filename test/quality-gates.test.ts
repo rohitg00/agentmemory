@@ -65,12 +65,8 @@ function indexOfStep(workflow: string, step: string): number {
   return index;
 }
 
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
 function expectTopLevelYamlScalar(yaml: string, key: string, value: string): void {
-  expect(yaml).toMatch(new RegExp(`^${escapeRegExp(key)}: ${escapeRegExp(value)}$`, "m"));
+  expect(yaml.split(/\r?\n/)).toContain(`${key}: ${value}`);
 }
 
 describe("root quality gates", () => {
@@ -164,7 +160,7 @@ describe("root quality gates", () => {
     const testConfig = (vitestConfig as RootVitestConfig).test;
     const coverage = testConfig?.coverage;
 
-    expect(testConfig?.testTimeout).toBe(10_000);
+    expect(testConfig?.testTimeout).toBe(30_000);
     expect(coverage?.provider).toBe("v8");
     expect(coverage?.all).toBe(true);
     expect(coverage?.include).toEqual([
@@ -299,6 +295,7 @@ describe("root quality gates", () => {
     expectTopLevelYamlScalar(workspace, "trustPolicy", "no-downgrade");
 
     const lockfile = readText("pnpm-lock.yaml");
+    const lockfileLines = lockfile.split(/\r?\n/).map((line) => line.trim());
     for (const importer of [
       ".",
       "website",
@@ -307,7 +304,10 @@ describe("root quality gates", () => {
       "integrations/openclaw",
       "integrations/pi",
     ]) {
-      expect(lockfile).toMatch(new RegExp(`^\\s{2}${escapeRegExp(importer)}:`, "m"));
+      expect(
+        lockfileLines.includes(`${importer}:`) ||
+          lockfileLines.includes(`${importer}: {}`),
+      ).toBe(true);
     }
 
     expect(readText(".gitignore")).not.toMatch(/^pnpm-lock\.yaml$/m);

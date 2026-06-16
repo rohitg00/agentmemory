@@ -50,7 +50,7 @@ Stop conditions:
 | Default local model behavior | Targeted test, docs inspection/update if needed | complete | Default changed to `Xenova/paraphrase-multilingual-MiniLM-L12-v2`; Hugging Face public config verified `hidden_size: 384`. |
 | Security review | Manual review plus required scanners where applicable | complete | Semgrep default scan completed with 0 findings. Codex Security diff scan completed with no findings; reports under `/tmp/codex-security-scans/agentmemory/6c387b4_20260615T213735Z/`. |
 | Merge prep | prep-merge-to-local-main workflow | complete | Pre-merge commit `06b9925d9d229e7b2e251f3e96745e4fe2ce73dd`; local main commit `6c387b4efea524db5bf8fe0e923958cbcf0213f1` merged as a no-op (`Already up to date`). Post-merge checks passed. |
-| Corrected local-main readiness | Merge current local `main`, install with pnpm lockfile, run exact pnpm test | complete | Local `main` `d4393d1ab5dd284edee3a17bfbf45825f239c07e` merged as `eba795a135ddef93eaa051e87dadda95c8410da8`; post-merge fix committed as `85583d3ddde8fd9b3f6275ccfdefb7da58430299`; repeat merge was no-op, repeat frozen install passed, and exact `corepack pnpm test` passed 158 files / 1989 tests. |
+| Corrected local-main readiness | Merge current local `main`, install with pnpm lockfile, run exact pnpm test | complete | Local `main` `d4393d1ab5dd284edee3a17bfbf45825f239c07e` merged as `eba795a135ddef93eaa051e87dadda95c8410da8`; post-merge fix committed as `85583d3ddde8fd9b3f6275ccfdefb7da58430299`; final timeout hardening passed focused checks, Semgrep, and exact `corepack pnpm test` with 158 files / 1989 tests before commit. |
 
 ## Progress
 
@@ -85,6 +85,8 @@ Stop conditions:
   - Repeat prep after fix: local main `d4393d1ab5dd284edee3a17bfbf45825f239c07e` was already an ancestor; merge command returned `Already up to date`.
   - Repeat install: same frozen pnpm command completed with `Already up to date` in 483ms.
   - Repeat exact test: `corepack pnpm test` passed 158 test files / 1989 tests in 26.97s.
+  - Final branch-tip retest exposed additional cold-start timeouts in hook/project and module-import-heavy tests plus a quality-gate assertion for the old timeout budget. Follow-up hardening raised Vitest's test timeout to 30s, raised the bounded Git project resolver timeout to 10s in source and checked-in hook scripts, and updated the quality-gate contract while removing dynamic RegExp assertions flagged by Semgrep.
+  - Final focused evidence before commit: failing timeout files passed 40/40; hook/plugin focused tests passed 38/38; quality gates passed 13/13; Semgrep p/default on the final timeout/config patch reported 0 findings; exact `corepack pnpm test` passed 158 files / 1989 tests in 14.80s.
 
 ## Security Notes
 
