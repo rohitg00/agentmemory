@@ -1,14 +1,7 @@
 import type { EmbeddingProvider } from "../../types.js";
-
-// Bun does not support onnxruntime-node (native addon). Force the
-// @xenova/transformers library to use the WASM backend (onnxruntime-web)
-// which ships as an optional dependency and works in Bun.
 const IS_BUN = typeof (globalThis as any).Bun !== "undefined";
-if (IS_BUN) {
-  // Prevent loading the native ONNX runtime backend
-  if (!process.env.ONNX_RUNTIME_BINDING) {
-    process.env.ONNX_RUNTIME_BINDING = "wasm";
-  }
+if (IS_BUN && !process.env.ONNX_RUNTIME_BINDING) {
+  process.env.ONNX_RUNTIME_BINDING = "wasm";
 }
 
 type Pipeline = (

@@ -1,27 +1,16 @@
 import type { MemoryProvider } from '../types.js'
+import { AsyncLocalStorage } from 'node:async_hooks'
 
-// #781: the recursion guard used to live on `process.env.AGENTMEMORY_SDK_CHILD`
-// (#181). #472 then introduced chunked summarize that runs chunks
-// concurrently in the same process via Promise.all. The first chunk
-// flipped the global env to "1" synchronously before its `await`, and
-// every sibling chunk in the same batch immediately bailed out as a
-// "child" — returning "" — so half-plus of the chunks failed to parse
-// and the summarize threw `too_many_chunks_skipped: N/N`.
+// In-process recursion guard: AsyncLocalStorage tracks a callId per async
+// execution context. Concurrent siblings (chunked summarize via Promise.all)
+// get separate contexts and don't block each other. Recursive re-entry
+// (hook -> /summarize -> query within the same call tree) inherits the
+// parent's async context and is detected by checking sdkActiveCalls.
 //
-// Split the guard so each concern uses the right primitive:
-//
-//   - **In-process** recursion guard: per-call Map keyed by callId.
-//     Each concurrent call (chunked summarize via Promise.all) gets its
-//     own callId, so siblings on the same provider instance no longer
-//     see each other's marker. Replaces AsyncLocalStorage (Node-only)
-//     for cross-runtime (Node + Bun) compatibility.
-//   - **Cross-process** recursion guard for hooks: still
-//     `process.env.AGENTMEMORY_SDK_CHILD = "1"` around the SDK call.
-//     Subprocesses spawned by `@anthropic-ai/claude-agent-sdk` inherit
-//     `process.env` at spawn time, so the hook scripts (which run as
-//     separate processes) still see the marker and skip their REST
-//     callback to /summarize. Per-call Map does not cross process
-//     boundaries, same as ALS.
+// Cross-process recursion guard: process.env.AGENTMEMORY_SDK_CHILD = "1"
+// around the SDK call so spawned subprocesses skip their REST callbacks.
+// Reference-counted so overlapping calls don't race on env restore.
+const sdkContext = new AsyncLocalStorage<number>()
 let nextCallId = 0
 const sdkActiveCalls = new Map<number, true>()
 
@@ -61,69 +50,55 @@ export class AgentSDKProvider implements MemoryProvider {
   }
 
   private async query(systemPrompt: string, userPrompt: string): Promise<string> {
-    // In-process recursion guard. Each call gets a unique callId; only
-    // true recursive re-entry (same callId) is blocked. Concurrent
-    // sibling calls (chunked summarize via Promise.all) each have their
-    // own callId, so they do not poison each other.
-    const callId = nextCallId++
-    if (sdkActiveCalls.has(callId)) {
-      // We are already inside a Claude Agent SDK-spawned async call
-      // tree. Spawning another one would let its plugin-hook-driven
-      // Stop loop re-enter /agentmemory/summarize and cause unbounded
-      // recursion (#149 follow-up). Degrade to empty string so callers
-      // short-circuit. The chunk retry path in src/functions/summarize.ts
-      // treats "" as a parse failure but only the in-process re-entry
-      // path can reach this branch — legitimate concurrent siblings now
-      // run with their own callId.
+    const parentCallId = sdkContext.getStore()
+    if (parentCallId !== undefined && sdkActiveCalls.has(parentCallId)) {
       return ''
     }
 
+    const callId = nextCallId++
     sdkActiveCalls.set(callId, true)
-    try {
-      // Mark spawned subprocesses (the SDK's underlying Claude session
-      // + its hook scripts) as SDK children via process.env. Hook scripts
-      // run in separate processes and read process.env to short-circuit
-      // their REST callbacks. Reference-counted so overlapping calls
-      // don't race each other into restoring stale values.
-      if (sdkActiveCount === 0) {
-        sdkOriginalEnv = process.env.AGENTMEMORY_SDK_CHILD
-        process.env.AGENTMEMORY_SDK_CHILD = '1'
-      }
-      sdkActiveCount++
 
+    return sdkContext.run(callId, async () => {
       try {
-        const { query } = await this.loadSdk()
+        if (sdkActiveCount === 0) {
+          sdkOriginalEnv = process.env.AGENTMEMORY_SDK_CHILD
+          process.env.AGENTMEMORY_SDK_CHILD = '1'
+        }
+        sdkActiveCount++
 
-        const messages = query({
-          prompt: userPrompt,
-          options: {
-            systemPrompt,
-            maxTurns: 1,
-            allowedTools: [],
-          },
-        })
+        try {
+          const { query } = await this.loadSdk()
 
-        let result = ''
-        for await (const msg of messages) {
-          if (msg.type === 'result') {
-            result = (msg as any).result ?? ''
+          const messages = query({
+            prompt: userPrompt,
+            options: {
+              systemPrompt,
+              maxTurns: 1,
+              allowedTools: [],
+            },
+          })
+
+          let result = ''
+          for await (const msg of messages) {
+            if (msg.type === 'result') {
+              result = (msg as any).result ?? ''
+            }
+          }
+          return result
+        } finally {
+          sdkActiveCount--
+          if (sdkActiveCount === 0) {
+            if (sdkOriginalEnv === undefined) {
+              delete process.env.AGENTMEMORY_SDK_CHILD
+            } else {
+              process.env.AGENTMEMORY_SDK_CHILD = sdkOriginalEnv
+            }
+            sdkOriginalEnv = undefined
           }
         }
-        return result
       } finally {
         sdkActiveCalls.delete(callId)
-        sdkActiveCount--
-        if (sdkActiveCount === 0) {
-          if (sdkOriginalEnv === undefined) {
-            delete process.env.AGENTMEMORY_SDK_CHILD
-          } else {
-            process.env.AGENTMEMORY_SDK_CHILD = sdkOriginalEnv
-          }
-          sdkOriginalEnv = undefined
-        }
       }
-    } finally {
-      sdkActiveCalls.delete(callId)
-    }
+    })
   }
 }

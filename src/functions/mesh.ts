@@ -15,8 +15,6 @@ import type {
 } from "../types.js";
 import { isIP } from "node:net";
 
-// Cross-runtime DNS lookup: Bun has native Bun.dns.lookup(), Node uses
-// node:dns/promises. Both return { address, family } records.
 const IS_BUN = typeof (globalThis as any).Bun?.dns?.lookup === "function";
 
 async function dnsLookup(
