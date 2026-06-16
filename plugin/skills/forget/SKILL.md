@@ -13,37 +13,48 @@ The user wants to remove data from agentmemory: $ARGUMENTS
 memory_smart_search { "query": "old api key in config", "limit": 20 }
 ```
 
-Show the matches, get a yes, then:
+Show the matches, get a yes, then delete with the tool that matches the ID type:
 
 ```json
-memory_governance_delete { "memoryIds": ["abc12345", "def67890"], "reason": "user privacy request" }
+memory_forget { "sessionId": "ses_123", "observationIds": "obs_1,obs_2" }
+```
+
+or:
+
+```json
+memory_governance_delete { "memoryIds": ["mem_123"], "reason": "user privacy request" }
 ```
 
 Expected output:
 
 ```text
-Found 2 matching memories. Confirmed. Deleted 2 memories.
+Found 2 matching observations. Confirmed. Deleted 2 observations.
 ```
 
 ## Why
 
 This is destructive and irreversible. Show exactly what will be deleted and get
-an explicit yes before calling delete. Delete by memory ID, never a bare session.
+an explicit yes before calling delete. Use `memory_forget` for observations and
+sessions, and `memory_governance_delete` only for saved memories.
 
 ## Workflow
 
 1. Search with `memory_smart_search`, the user's text as `query`, `limit: 20`.
-2. Show what matched: session ids, memory ids, titles. Ask for explicit
+2. Show what matched: session ids, observation ids, memory ids, titles. Ask for explicit
    confirmation. Do not proceed on silence or a vague "sure, whatever".
-3. On confirmation, call `memory_governance_delete` with `memoryIds` (array or
-   comma-separated string) and optional `reason` (default `plugin skill request`).
-4. To drop a whole session, collect every memory id in that session from the
-   search results and pass them all. The MCP does not accept a bare `sessionId`.
-5. Report the deletion count back.
+3. On confirmation, choose the deletion tool:
+   - Observations: call `memory_forget` with `sessionId` and comma-separated
+     `observationIds`.
+   - Whole session: call `memory_forget` with only `sessionId`; this deletes the
+     session's observations, session record, and summary.
+   - Saved memories: call `memory_governance_delete` with `memoryIds` and optional
+     `reason` (default `plugin skill request`).
+4. Do not pass observation IDs to `memory_governance_delete`; it only targets saved memories.
+5. Report the actual deletion count and any failed or missing IDs back.
 
 ## Anti-patterns
 
-WRONG: search returns matches, you immediately call `memory_governance_delete`
+WRONG: search returns matches, you immediately call a delete tool
 without showing them or waiting for a yes.
 
 RIGHT: list the matches, ask "Delete these 2? (yes/no)", and only delete after
@@ -53,7 +64,8 @@ an explicit yes.
 
 - Matches were shown to the user before any delete.
 - An explicit yes was received, not assumed.
-- `memoryIds` holds real ids from the search, never a bare `sessionId`.
+- The selected delete tool matches the ID type being deleted.
+- `memory_forget` includes the correct `sessionId` for observation deletes.
 - Final message states the actual count deleted.
 
 ## See also
@@ -63,4 +75,4 @@ an explicit yes.
 
 ## Troubleshooting
 
-See ../_shared/TROUBLESHOOTING.md if `memory_smart_search` or `memory_governance_delete` is not available.
+See ../_shared/TROUBLESHOOTING.md if `memory_smart_search`, `memory_forget`, or `memory_governance_delete` is not available.

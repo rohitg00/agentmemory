@@ -386,6 +386,30 @@ export const V040_TOOLS: McpToolDef[] = [
     },
   },
   {
+    name: "memory_forget",
+    description:
+      "Delete observations, a whole session, or a single memory with audit trail. " +
+      "Use this for observation and session cleanup; memory_governance_delete only handles saved memories.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sessionId: {
+          type: "string",
+          description:
+            "Session to delete from. Without observationIds or memoryId, removes all observations plus the session record and summary.",
+        },
+        observationIds: {
+          type: "string",
+          description: "Comma-separated observation IDs to delete. Requires sessionId.",
+        },
+        memoryId: {
+          type: "string",
+          description: "Single saved memory ID to delete.",
+        },
+      },
+    },
+  },
+  {
     name: "memory_snapshot_create",
     description: "Create a git-versioned snapshot of current memory state.",
     inputSchema: {

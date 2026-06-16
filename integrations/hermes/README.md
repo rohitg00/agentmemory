@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/MCP-55_tools-1f6feb?style=flat-square" alt="55 MCP tools" />
+  <img src="https://img.shields.io/badge/MCP-56_tools-1f6feb?style=flat-square" alt="56 MCP tools" />
   <img src="https://img.shields.io/badge/Hooks-6_lifecycle-1f6feb?style=flat-square" alt="6 lifecycle hooks" />
   <img src="https://img.shields.io/badge/R@5-95.2%25-00875f?style=flat-square" alt="95.2% R@5" />
   <img src="https://img.shields.io/badge/Self--hosted-yes-00875f?style=flat-square" alt="Self-hosted" />
@@ -30,7 +30,7 @@
 Install agentmemory for Hermes. Run `npx @agentmemory/agentmemory` in a
 separate terminal to start the memory server on localhost:3111. Then
 add this to `~/.hermes/config.yaml` so Hermes can use agentmemory as
-an MCP server with all 55 memory tools:
+an MCP server with all 56 memory tools:
 
 mcp_servers:
   agentmemory:
@@ -70,7 +70,7 @@ memory:
   provider: agentmemory
 ```
 
-This gives Hermes access to all 55 MCP tools and enables the agentmemory memory provider. Start the server separately:
+This gives Hermes access to all 56 MCP tools and enables the agentmemory memory provider. Start the server separately:
 
 ```bash
 npx @agentmemory/agentmemory

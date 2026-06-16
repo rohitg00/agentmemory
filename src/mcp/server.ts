@@ -688,6 +688,50 @@ export function registerMcpEndpoints(
             }
           }
 
+          case "memory_forget": {
+            const sessionId = asNonEmptyString(args.sessionId);
+            const memoryId = asNonEmptyString(args.memoryId);
+            const observationIds = parseCsvList(args.observationIds);
+            if (observationIds.length > 0 && !sessionId) {
+              return {
+                status_code: 400,
+                body: { error: "observationIds requires sessionId" },
+              };
+            }
+            if (!sessionId && !memoryId) {
+              return {
+                status_code: 400,
+                body: { error: "sessionId or memoryId is required" },
+              };
+            }
+            try {
+              const result = await sdk.trigger({
+                function_id: "mem::forget",
+                payload: {
+                  ...(sessionId ? { sessionId } : {}),
+                  ...(observationIds.length > 0 ? { observationIds } : {}),
+                  ...(memoryId ? { memoryId } : {}),
+                },
+              });
+              return {
+                status_code: 200,
+                body: {
+                  content: [
+                    { type: "text", text: JSON.stringify(result, null, 2) },
+                  ],
+                },
+              };
+            } catch {
+              return {
+                status_code: 200,
+                body: {
+                  content: [{ type: "text", text: "Forget failed" }],
+                  isError: true,
+                },
+              };
+            }
+          }
+
           case "memory_snapshot_create": {
             try {
               const result = await sdk.trigger({ function_id: "mem::snapshot-create", payload: {

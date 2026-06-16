@@ -4,7 +4,7 @@ const ROWS = [
   ["RETRIEVAL R@5", "95.2%", "81.4%", "73.8%", "78.1%"],
   ["EXTERNAL DEPS", "0", "2 (Qdrant, Neo4j)", "1 (Postgres)", "1 (Neo4j)"],
   ["REST ENDPOINTS", "121", "—", "—", "—"],
-  ["MCP TOOLS", "55", "12", "18", "9"],
+  ["MCP TOOLS", "56", "12", "18", "9"],
   ["AUTO-HOOKS", "12", "0", "0", "0"],
   ["NATIVE PLUGINS", "6", "—", "—", "—"],
   ["OPEN SOURCE", "YES (APACHE-2.0)", "YES", "YES", "YES"],

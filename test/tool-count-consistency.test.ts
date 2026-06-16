@@ -9,7 +9,7 @@ vi.mock("../src/logger.js", () => ({
 import { getAllTools, ESSENTIAL_TOOLS } from "../src/mcp/tools-registry.js";
 
 const ROOT = join(import.meta.dirname, "..");
-const EXPECTED_TOOL_COUNT = 55;
+const EXPECTED_TOOL_COUNT = 56;
 const TOOL_COUNT_SURFACES = [
   ".env.example",
   "README.md",
@@ -21,7 +21,7 @@ const TOOL_COUNT_SURFACES = [
   "plugin/skills/agentmemory-mcp-tools/REFERENCE.md",
 ];
 const STALE_TOOL_COUNT_PATTERN =
-  /51 MCP tools|51 tools|51 memory tools|full 51-tool surface|MCP TOOLS", "51"|53 MCP tools|53 tools|53 memory tools|full 53-tool surface|MCP TOOLS", "53"/;
+  /51 MCP tools|51 tools|51 memory tools|full 51-tool surface|MCP TOOLS", "51"|53 MCP tools|53 tools|53 memory tools|full 53-tool surface|MCP TOOLS", "53"|54 MCP tools|54 tools|54 memory tools|full 54-tool surface|MCP TOOLS", "54"|55 MCP tools|55 tools|55 memory tools|full 55-tool surface|MCP TOOLS", "55"/;
 
 function readText(relativePath: string): string {
   return readFileSync(join(ROOT, relativePath), "utf-8");
@@ -78,7 +78,7 @@ describe("Tool count consistency", () => {
     }
   });
 
-  it("metadata surfaces do not advertise stale 51- or 53-tool counts", () => {
+  it("metadata surfaces do not advertise stale tool counts", () => {
     for (const path of TOOL_COUNT_SURFACES) {
       expect(readText(path), path).not.toMatch(STALE_TOOL_COUNT_PATTERN);
     }
