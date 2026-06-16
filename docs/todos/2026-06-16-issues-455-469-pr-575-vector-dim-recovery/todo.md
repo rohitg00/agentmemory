@@ -53,7 +53,7 @@ Stop conditions:
 | Minimal local implementation if needed | Red/green targeted test and focused code diff | Passed | RED: new test failed because `src/boot/vector-dim-recovery.ts` did not exist. GREEN: targeted recovery suite passed 3/3 after helper and startup call were added. |
 | Security review | Manual persistence/security checklist plus required scanner gates for code changes | Passed | Manual review complete. Security diff scan completed with no reportable findings; all six review-input paths have work-ledger receipts. |
 | Neutral local documentation | Task record and coordinator list when safely writable | Passed | Task record and coordinator list updated without GitHub URLs, hash issue syntax, or mentions. |
-| Merge prep | `prep-merge-to-local-main` workflow | Pending |  |
+| Merge prep | `prep-merge-to-local-main` workflow | Passed | Commit `d3edd46` created for the adapted import. Local `main` commit `6c387b4` is already an ancestor of the branch, so merge was a no-op. |
 
 ## Progress
 
@@ -93,3 +93,9 @@ Stop conditions:
   - Simple-Code pass removed no unrelated behavior and tightened the helper so explicit drop-stale clears any existing target index before persisting the empty snapshot.
   - Local review-implementation pass found no blocking correctness issue after the stricter target-index test was added.
   - Subagent-backed review was not used because the available subagent tool is restricted to explicit user requests for subagents; deterministic local tests and manual review covered the touched surface.
+- Merge prep:
+  - Staged task-owned files only and ran `gitleaks protect --staged --redact`; no leaks found.
+  - Created commit `d3edd46` with the adapted implementation and task documentation.
+  - Pre-merge branch review found the branch diff limited to the six task-owned files.
+  - Local `main` was clean at `6c387b4`; that commit is already an ancestor of the branch, so the merge step was a no-op and no conflicts were possible.
+  - Post-merge checks passed: `git diff --check HEAD` and the targeted adjacent Vitest suites passed 44/44.
