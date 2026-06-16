@@ -55,12 +55,18 @@ Known boundaries:
 | PR 795 reviewed | Public diff inspection and local comparison | Done | PR 795 added a runtime config renderer and port-arg helper, but used a different engine offset and omitted relocated CORS origin rendering. |
 | Fork decision documented | Task record and coordinator notes if reachable | In progress | Decision: adapted import. Coordinator list update still pending. |
 | Minimal implementation, if needed | TDD red/green targeted tests | Done | Added `test/runtime-ports-render.test.ts`; red run failed because `src/cli/runtime-ports.js` was missing; green focused suite passed 30 tests. |
-| Security review | Diff/manual security review and gates as applicable | Done | Manual review found no auth/data/path/prompt/supply-chain issue; Semgrep scanned 4 changed files with 0 findings. |
-| Merge prep | `$prep-merge-to-local-main` | Done | Committed task change as `00629db`; captured local main `6c387b4efea524db5bf8fe0e923958cbcf0213f1`; merge was a no-op because local main was already an ancestor. |
+| Generated skill reference consistency | `pnpm test` generator contract | Done | 2026-06-16 full `pnpm test` initially failed because `AGENTMEMORY_VIEWER_PORT` was missing from `plugin/skills/agentmemory-config/REFERENCE.md`; regenerated the env block and reran full `pnpm test` with 1982 passing tests. |
+| Security review | Diff/manual security review and gates as applicable | Done | Manual review found no auth/data/path/prompt/supply-chain issue; Semgrep scanned 4 original changed files with 0 findings, and on 2026-06-16 scanned the 2-file generated-reference fix with 0 findings. |
+| Merge prep | `$prep-merge-to-local-main` | In progress | Prior prep committed task change as `00629db` and merged then-local main `6c387b4efea524db5bf8fe0e923958cbcf0213f1` as a no-op. 2026-06-16 prep continuation is running against current local main `d4393d1ab5dd284edee3a17bfbf45825f239c07e`. |
 
 ## Subagent Ledger
 
-No delegation used yet. If conflict resolution or ambiguous security/implementation review requires independent analysis, record each subagent here before relying on it.
+| Workstream | Scope | Edits allowed | Expected output | Result | Residual risk |
+| --- | --- | --- | --- | --- | --- |
+| Generator drift diagnosis A | `test/plugin-surface-contract.test.ts`, `scripts/skills/generate.ts`, `scripts/skills/check.ts`, `plugin/skills/agentmemory-config/REFERENCE.md`, source env scan | No | Classify failing `pnpm test` as branch bug, stale test, merge drift, or environment issue | Classified as product bug in branch: `AGENTMEMORY_VIEWER_PORT` was added in `src/cli/runtime-ports.ts` but the generated config reference stayed at 39 variables. | Did not fetch remote state. |
+| Generator drift diagnosis B | Branch-vs-local-main diff, runtime port files, generated config reference | No | Independently classify the same failure | Classified as product bug in branch, not local-main merge drift or environment issue; local `main` does not contain `AGENTMEMORY_VIEWER_PORT`. | Local `main` may differ from remote because fetch/pull were disallowed. |
+| Focused code review | Current working-tree fix diff | No | Requirements, test coverage, integration, maintainability, task-scope review | ACCEPT: no Critical or Important actionable issue. | Reviewer did not rerun `pnpm test`; main agent did. |
+| Adversarial implementation review | Current working-tree fix diff | No | Correctness, generated drift, boundary/security risk review | NO FINDINGS. Static source/reference comparison reported source count 40, reference count 40, no missing/extra vars. | Reviewer did not fetch/pull or rerun package scripts. |
 
 ## Progress Notes
 
@@ -83,6 +89,15 @@ No delegation used yet. If conflict resolution or ambiguous security/implementat
 - 2026-06-15: Committed task-owned change as `00629db030cec222b384ce92082b1f88c20f3f6d`.
 - 2026-06-15: `$prep-merge-to-local-main` merge step used captured local main `6c387b4efea524db5bf8fe0e923958cbcf0213f1`; Git reported `Already up to date.` after sandbox escalation was needed only to allow Git to update local worktree metadata.
 - 2026-06-15: Post-merge verification passed: clean `git status --porcelain=v1 -uall`, `git diff --check refs/heads/main...HEAD`, and focused Vitest suite with 30 passing tests.
+- 2026-06-16: Worktree `/Users/A1538552/.codex/worktrees/302a/agentmemory` was detached at `c77e113ff795322bbe8b20e13d92d98e99100617`, which matched `refs/heads/review/issue-750-pr-795-runtime-ports`; switched the worktree onto that branch before verification.
+- 2026-06-16: Initial `pnpm test` could not start because `node_modules` was absent and `vitest` was not found. A local verification setup was created with `HOME=/tmp/agentmemory-pnpm-verify.NzDm5D/home XDG_CONFIG_HOME=/tmp/agentmemory-pnpm-verify.NzDm5D/xdg NPM_CONFIG_USERCONFIG=/tmp/agentmemory-pnpm-verify.NzDm5D/empty-npmrc PNPM_HOME=/tmp/agentmemory-pnpm-verify.NzDm5D/pnpm-home pnpm install --no-lockfile --ignore-scripts --store-dir /tmp/agentmemory-pnpm-verify.NzDm5D/store`. It created `node_modules/` and temporary Corepack/pnpm store/config under `/tmp`; no tracked manifest or lockfile changed.
+- 2026-06-16: Full `pnpm test` then failed with 1 test failure in `test/plugin-surface-contract.test.ts`: `scripts/skills/generate.ts --check` reported `plugin/skills/agentmemory-config/REFERENCE.md` `AUTOGEN:env` drift.
+- 2026-06-16: Two read-only diagnostic subagents independently classified the failure as a product bug in this branch: source now scans 40 `AGENTMEMORY_*` variables and the generated reference listed 39, missing only `AGENTMEMORY_VIEWER_PORT`.
+- 2026-06-16: Ran `pnpm run skills:gen` with the same temporary HOME/XDG/npm config. It wrote only `plugin/skills/agentmemory-config/REFERENCE.md`, changing the env count to 40 and adding `AGENTMEMORY_VIEWER_PORT`.
+- 2026-06-16: Post-fix exact verification passed: `HOME=/tmp/agentmemory-pnpm-verify.NzDm5D/home XDG_CONFIG_HOME=/tmp/agentmemory-pnpm-verify.NzDm5D/xdg NPM_CONFIG_USERCONFIG=/tmp/agentmemory-pnpm-verify.NzDm5D/empty-npmrc PNPM_HOME=/tmp/agentmemory-pnpm-verify.NzDm5D/pnpm-home pnpm test` completed with 159 test files and 1982 tests passing.
+- 2026-06-16: `git diff --check` passed; `pnpm run skills:check` passed with `Skill lint passed: 15 skills checked.`
+- 2026-06-16: Focused review subagent accepted the generated-reference fix with no Critical or Important findings; adversarial review subagent reported `NO FINDINGS`.
+- 2026-06-16: Semgrep command `semgrep scan --config p/default --error --metrics=off plugin/skills/agentmemory-config/REFERENCE.md docs/todos/2026-06-15-issue-750-pr-795-runtime-ports/todo.md` completed with 0 findings across 2 files.
 
 ## Review Notes
 
