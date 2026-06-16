@@ -69,7 +69,7 @@ Stop conditions:
 | Minimal dashboard collection tolerance | Red/green viewer regression test | done | Node VM harness failed before fix with `Cannot read properties of null (reading 'status')`; after fix it rendered Recent Sessions, Unknown session, and escaped procedure text. |
 | Security review | Manual review plus applicable scanners | done | Semgrep scanned `src/viewer/index.html` and `test/viewer-session-id.test.ts`: 0 findings. Codex Security diff scan report written under `/tmp/codex-security-scans/agentmemory/6c387b4_20260616_dashboard_partial_payloads/`: 0 findings. |
 | Neutral local documentation | Update this task record and coordinator decision if appropriate | done | This task record uses neutral IDs only. |
-| Prep merge | Run `$prep-merge-to-local-main` | pending |  |
+| Prep merge | Run `$prep-merge-to-local-main` | done | Local `main` at `60099a3` merged successfully; post-merge harness and Semgrep checks passed. |
 
 ## Progress
 
@@ -96,6 +96,11 @@ Stop conditions:
   - Simple-code pass: no further simplification identified without broadening the diff.
   - Requesting-code-review subagent step: skipped because the active tool policy only allows spawning subagents when the user explicitly requests delegation.
   - Review-implementation pass: no findings in the task diff.
+- Ran `$prep-merge-to-local-main`:
+  - Staged task-owned files only and ran `gitleaks protect --staged --redact`: no leaks found.
+  - Committed the adapted fix as `fix(viewer): tolerate partial dashboard payloads`.
+  - Merged local `main` at `60099a3` into the review branch with the prescribed merge flags.
+  - The merge auto-merged `src/viewer/index.html`; post-merge `git diff --check`, the dependency-free dashboard VM harness, and Semgrep all passed.
 
 ## Review Notes
 
