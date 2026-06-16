@@ -251,8 +251,16 @@ describe("RetentionScoring", () => {
       const sdk = mockSdk();
       const kv = mockKV([makeMemory("mem_evict", "fact", 500)]);
       registerRetentionFunctions(sdk as never, kv as never);
-
-      await sdk.trigger({ function_id: "mem::retention-score", payload: {} });
+      await kv.set("mem:retention", "mem_evict", {
+        memoryId: "mem_evict",
+        source: "episodic",
+        score: 0.01,
+        salience: 0,
+        temporalDecay: 0,
+        reinforcementBoost: 0,
+        lastAccessed: new Date().toISOString(),
+        accessCount: 0,
+      });
 
       const dryResult = (await sdk.trigger({
         function_id: "mem::retention-evict",
@@ -263,6 +271,7 @@ describe("RetentionScoring", () => {
       })) as any;
 
       expect(dryResult.dryRun).toBe(true);
+      expect(dryResult.wouldEvict).toBe(1);
       expect(await kv.list("mem:memories")).toHaveLength(1);
     } finally {
       vi.doUnmock("../src/functions/image-refs.js");

@@ -1,4 +1,8 @@
 import type { EmbeddingProvider } from "../../types.js";
+import { getEnvVar } from "../../config.js";
+
+export const DEFAULT_LOCAL_EMBEDDING_MODEL =
+  "Xenova/paraphrase-multilingual-MiniLM-L12-v2";
 
 type Pipeline = (
   task: string,
@@ -43,9 +47,12 @@ export class LocalEmbeddingProvider implements EmbeddingProvider {
       );
     }
 
+    const model =
+      getEnvVar("LOCAL_EMBEDDING_MODEL")?.trim() ||
+      DEFAULT_LOCAL_EMBEDDING_MODEL;
     this.extractor = await transformers.pipeline(
       "feature-extraction",
-      "Xenova/all-MiniLM-L6-v2",
+      model,
     );
     return this.extractor;
   }

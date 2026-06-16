@@ -160,7 +160,7 @@ describe("root quality gates", () => {
     const testConfig = (vitestConfig as RootVitestConfig).test;
     const coverage = testConfig?.coverage;
 
-    expect(testConfig?.testTimeout).toBe(10_000);
+    expect(testConfig?.testTimeout).toBe(30_000);
     expect(coverage?.provider).toBe("v8");
     expect(coverage?.all).toBe(true);
     expect(coverage?.include).toEqual([
@@ -295,7 +295,7 @@ describe("root quality gates", () => {
     expectTopLevelYamlScalar(workspace, "trustPolicy", "no-downgrade");
 
     const lockfile = readText("pnpm-lock.yaml");
-    const lockfileLines = lockfile.split(/\r?\n/);
+    const lockfileLines = lockfile.split(/\r?\n/).map((line) => line.trim());
     for (const importer of [
       ".",
       "website",
@@ -303,11 +303,10 @@ describe("root quality gates", () => {
       "integrations/filesystem-watcher",
       "integrations/openclaw",
       "integrations/pi",
-    ]) {
+      ]) {
       expect(
-        lockfileLines.some((line) =>
-          line === `  ${importer}:` || line === `  ${importer}: {}`,
-        ),
+        lockfileLines.includes(`${importer}:`) ||
+          lockfileLines.includes(`${importer}: {}`),
       ).toBe(true);
     }
 

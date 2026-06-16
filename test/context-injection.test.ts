@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { spawn } from "node:child_process";
+import { createServer } from "node:http";
 import { join } from "node:path";
 
 const HOOKS_DIR = join(import.meta.dirname, "..", "plugin", "scripts");
@@ -93,12 +94,39 @@ describe("pre-tool-use hook — context injection gate (#143)", () => {
     expect(result.exitCode).toBe(0);
   });
 
-  it("exits when disabled without waiting for stdin", async () => {
-    const result = await runHook("pre-tool-use.mjs", "", {}, {
-      endStdin: false,
-      timeoutMs: 5000,
+  it("exits fast when disabled (no stdin consumption, no network fetch)", async () => {
+    let requests = 0;
+    const server = createServer((_req, res) => {
+      requests++;
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end("{}");
     });
-    expect(result.stdout).toBe("");
+    await new Promise<void>((resolve) => {
+      server.listen(0, "127.0.0.1", resolve);
+    });
+    const address = server.address();
+    if (!address || typeof address === "string") {
+      server.close();
+      throw new Error("test server did not bind to a TCP port");
+    }
+
+    try {
+      // Keep stdin open. If the disabled path accidentally starts reading
+      // stdin, the subprocess will hang until the test timeout kills it.
+      const result = await runHook(
+        "pre-tool-use.mjs",
+        "",
+        { AGENTMEMORY_URL: `http://127.0.0.1:${address.port}` },
+        { endStdin: false, timeoutMs: 5000 },
+      );
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toBe("");
+      expect(requests).toBe(0);
+    } finally {
+      await new Promise<void>((resolve) => {
+        server.close(() => resolve());
+      });
+    }
   });
 
   it("when AGENTMEMORY_INJECT_CONTEXT=true, hook still runs but safely errors on unreachable backend", async () => {

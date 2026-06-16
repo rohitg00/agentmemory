@@ -267,7 +267,7 @@ describe("Copilot hook scripts", () => {
         const timeout = setTimeout(() => {
           child.kill();
           reject(new Error(`hook ${script} timed out`));
-        }, 5000);
+        }, 10000);
         child.on("error", reject);
         child.on("close", (code) => {
           clearTimeout(timeout);

@@ -12,6 +12,7 @@ const ENV_KEYS = [
   "OPENROUTER_API_KEY",
   "EMBEDDING_PROVIDER",
   "AGENTMEMORY_EMBEDDING_PROVIDER",
+  "LOCAL_EMBEDDING_MODEL",
   "OPENAI_BASE_URL",
   "OPENAI_EMBEDDING_BASE_URL",
   "OPENAI_EMBEDDING_API_KEY",
@@ -21,6 +22,9 @@ const ENV_KEYS = [
 
 const originalEnv = { ...process.env };
 let sandboxHome: string;
+const localPipelineMock = vi.fn(async () => async (texts: string[]) => ({
+  tolist: () => texts.map(() => Array.from({ length: 384 }, () => 0.1)),
+}));
 
 async function freshEmbeddingModule() {
   vi.resetModules();
@@ -33,11 +37,13 @@ beforeEach(() => {
   process.env["HOME"] = sandboxHome;
   process.env["USERPROFILE"] = sandboxHome;
   for (const key of ENV_KEYS) delete process.env[key];
+  localPipelineMock.mockClear();
 });
 
 afterEach(() => {
   process.env = { ...originalEnv };
   rmSync(sandboxHome, { recursive: true, force: true });
+  vi.doUnmock("@xenova/transformers");
   vi.restoreAllMocks();
 });
 
@@ -228,6 +234,45 @@ describe("createEmbeddingProvider", () => {
       process.env["OPENAI_API_KEY"] = "test-key";
       expect(createEmbeddingProvider()).toBeNull();
     }
+  });
+});
+
+describe("LocalEmbeddingProvider", () => {
+  it("uses the multilingual local embedding model by default", async () => {
+    vi.doMock("@xenova/transformers", () => ({
+      pipeline: localPipelineMock,
+    }));
+    const {
+      LocalEmbeddingProvider,
+    } = await freshEmbeddingModule();
+
+    const provider = new LocalEmbeddingProvider();
+
+    await provider.embed("hello");
+
+    expect(localPipelineMock).toHaveBeenCalledWith(
+      "feature-extraction",
+      "Xenova/paraphrase-multilingual-MiniLM-L12-v2",
+    );
+  });
+
+  it("respects LOCAL_EMBEDDING_MODEL when loading the local extractor", async () => {
+    vi.doMock("@xenova/transformers", () => ({
+      pipeline: localPipelineMock,
+    }));
+    process.env["LOCAL_EMBEDDING_MODEL"] = "Xenova/custom-local-model";
+    const {
+      LocalEmbeddingProvider,
+    } = await freshEmbeddingModule();
+
+    const provider = new LocalEmbeddingProvider();
+
+    await provider.embed("hello");
+
+    expect(localPipelineMock).toHaveBeenCalledWith(
+      "feature-extraction",
+      "Xenova/custom-local-model",
+    );
   });
 });
 
