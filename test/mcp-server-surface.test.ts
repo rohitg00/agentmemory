@@ -493,6 +493,8 @@ describe("MCP tools/call payload shaping", () => {
       token_budget: 400,
       agentId: " codex ",
       project: "git:repo",
+      start_time: "2026-06-01T00:00:00Z",
+      end_time: "2026-06-30T23:59:59Z",
       limit: 3,
     });
 
@@ -508,6 +510,8 @@ describe("MCP tools/call payload shaping", () => {
           token_budget: 400,
           agentId: "codex",
           project: "git:repo",
+          start_time: "2026-06-01T00:00:00Z",
+          end_time: "2026-06-30T23:59:59Z",
         },
       },
     ]);
@@ -678,6 +682,68 @@ describe("MCP tools/call fallback and KV-backed behavior", () => {
 
     expect(response.status_code).toBe(200);
     expect(parsedContent(response)).toEqual({ sessions: [{ id: "ses_1" }] });
+  });
+
+  it("filters memory_sessions by overlapping time range and limit", async () => {
+    const h = createHarness();
+    h.kv.seed(KV.sessions, "old", {
+      id: "old",
+      startedAt: "2026-05-01T00:00:00Z",
+      endedAt: "2026-05-01T01:00:00Z",
+    });
+    h.kv.seed(KV.sessions, "overlap", {
+      id: "overlap",
+      startedAt: "2026-06-01T23:00:00Z",
+      endedAt: "2026-06-02T01:00:00Z",
+    });
+    h.kv.seed(KV.sessions, "inside", {
+      id: "inside",
+      startedAt: "2026-06-03T00:00:00Z",
+      endedAt: "2026-06-03T01:00:00Z",
+    });
+
+    const response = await h.callTool("memory_sessions", {
+      start_time: "2026-06-02T00:00:00Z",
+      end_time: "2026-06-30T00:00:00Z",
+      limit: 1,
+    });
+
+    expect(response.status_code).toBe(200);
+    expect(parsedContent(response)).toEqual({
+      sessions: [expect.objectContaining({ id: "inside" })],
+    });
+  });
+
+  it("rejects invalid time range input for memory tools before dispatch", async () => {
+    const h = createHarness();
+    h.overrideTrigger("mem::search", () => {
+      throw new Error("mem::search should not run");
+    });
+    h.overrideTrigger("mem::smart-search", () => {
+      throw new Error("mem::smart-search should not run");
+    });
+
+    await expect(h.callTool("memory_recall", {
+      query: "auth",
+      start_time: "bad-date",
+    })).resolves.toMatchObject({
+      status_code: 400,
+      body: { code: "unparseable" },
+    });
+    await expect(h.callTool("memory_smart_search", {
+      query: "auth",
+      end_time: 123,
+    })).resolves.toMatchObject({
+      status_code: 400,
+      body: { code: "not_a_string" },
+    });
+    await expect(h.callTool("memory_sessions", {
+      start_time: "2026-06-30T00:00:00Z",
+      end_time: "2026-06-01T00:00:00Z",
+    })).resolves.toMatchObject({
+      status_code: 400,
+      body: { code: "start_after_end" },
+    });
   });
 
   it("returns commit lookup misses and linked sessions from KV", async () => {

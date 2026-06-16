@@ -389,6 +389,73 @@ describe("handleToolCall", () => {
     expect(parsed.sessions).toHaveLength(2);
   });
 
+  it("memory_sessions filters local fallback sessions by time range", async () => {
+    const kv = new InMemoryKV();
+    await kv.set("mem:sessions", "old", {
+      id: "old",
+      startedAt: "2026-01-01T00:00:00Z",
+      endedAt: "2026-01-01T01:00:00Z",
+    });
+    await kv.set("mem:sessions", "boundary", {
+      id: "boundary",
+      startedAt: "2026-01-31T23:00:00Z",
+      endedAt: "2026-02-01T00:00:00Z",
+    });
+    await kv.set("mem:sessions", "inside", {
+      id: "inside",
+      startedAt: "2026-02-01T00:00:00Z",
+      endedAt: "2026-02-01T01:00:00Z",
+    });
+
+    const result = await handleToolCall(
+      "memory_sessions",
+      {
+        start_time: "2026-02-01T00:00:00Z",
+        end_time: "2026-02-01T00:00:00Z",
+      },
+      kv,
+    );
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.sessions.map((s: { id: string }) => s.id)).toEqual([
+      "inside",
+      "boundary",
+    ]);
+  });
+
+  it("memory_recall filters local fallback memories by createdAt", async () => {
+    const kv = new InMemoryKV();
+    await handleToolCall(
+      "memory_save",
+      { content: "auth old", concepts: "auth" },
+      kv,
+    );
+    const [saved] = await kv.list<Record<string, unknown>>("mem:memories");
+    await kv.set("mem:memories", saved.id as string, {
+      ...saved,
+      createdAt: "2026-01-01T00:00:00Z",
+    });
+    await kv.set("mem:memories", "new", {
+      id: "new",
+      title: "auth new",
+      content: "auth new",
+      concepts: ["auth"],
+      files: [],
+      sessionIds: [],
+      createdAt: "2026-02-01T00:00:00Z",
+    });
+
+    const result = await handleToolCall(
+      "memory_recall",
+      {
+        query: "auth",
+        start_time: "2026-02-01T00:00:00Z",
+      },
+      kv,
+    );
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.results.map((m: { id: string }) => m.id)).toEqual(["new"]);
+  });
+
   it("parseLimit clamps bad/malicious limit values to a safe range", async () => {
     const kv = new InMemoryKV();
     for (let i = 0; i < 150; i++) {

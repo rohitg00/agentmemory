@@ -17,6 +17,7 @@ import {
 } from "../config.js";
 import { logger } from "../logger.js";
 import { getCounters } from "../telemetry/setup.js";
+import { inTimeRange, parseTimeRange, TimeRangeError } from "../state/time-filter.js";
 
 // #771: smart-search followup-rate diagnostic. Stored per session as
 // the most recent search payload, used to detect whether the next
@@ -95,6 +96,8 @@ export function registerSmartSearchFunction(
       // #771: marks viewer-originated searches so the diagnostic
       // ignores them — only agent-initiated re-queries should count.
       source?: string;
+      start_time?: string;
+      end_time?: string;
     }) => {
 
       // Compute the agent filter once, up front. Both the expandIds
@@ -129,7 +132,22 @@ export function registerSmartSearchFunction(
         );
       }
 
+      const parseRequestedTimeRange = (): ReturnType<typeof parseTimeRange> =>
+        parseTimeRange({
+          start_time: data.start_time,
+          end_time: data.end_time,
+        });
+
       if (data.expandIds && data.expandIds.length > 0) {
+        let timeRange: ReturnType<typeof parseTimeRange>;
+        try {
+          timeRange = parseRequestedTimeRange();
+        } catch (err) {
+          if (err instanceof TimeRangeError) {
+            return { mode: "compact", results: [], error: err.message };
+          }
+          throw err;
+        }
         const raw = data.expandIds.slice(0, 20);
         const items = raw.map((entry) => {
           if (typeof entry === "string") return { obsId: entry, sessionId: undefined as string | undefined };
@@ -159,25 +177,37 @@ export function registerSmartSearchFunction(
         const scoped = filterAgentId
           ? expanded.filter((e) => e.observation.agentId === filterAgentId)
           : expanded;
+        const timeScoped = timeRange
+          ? scoped.filter((e) => inTimeRange(e.observation.timestamp, timeRange))
+          : scoped;
 
         void recordAccessBatch(
           kv,
-          scoped.map((e) => e.observation.id),
+          timeScoped.map((e) => e.observation.id),
         );
 
         const truncated = data.expandIds.length > raw.length;
         logger.info("Smart search expanded", {
           requested: data.expandIds.length,
           attempted: raw.length,
-          returned: scoped.length,
-          filteredOutOfScope: expanded.length - scoped.length,
+          returned: timeScoped.length,
+          filteredOutOfScope: expanded.length - timeScoped.length,
           truncated,
         });
-        return { mode: "expanded", results: scoped, truncated };
+        return { mode: "expanded", results: timeScoped, truncated };
       }
 
       if (!data.query || typeof data.query !== "string" || !data.query.trim()) {
         return { mode: "compact", results: [], error: "query is required" };
+      }
+      let timeRange: ReturnType<typeof parseTimeRange>;
+      try {
+        timeRange = parseRequestedTimeRange();
+      } catch (err) {
+        if (err instanceof TimeRangeError) {
+          return { mode: "compact", results: [], error: err.message };
+        }
+        throw err;
       }
 
       const limit = Math.max(1, Math.min(data.limit ?? 20, 100));
@@ -187,13 +217,10 @@ export function registerSmartSearchFunction(
       const includeLessons = data.includeLessons !== false;
 
       // Over-fetch when filtering. Hybrid search can't filter on
-      // agentId (BM25/vector indexes don't carry it), so we ask the
-      // searcher for more hits than we need and trim post-filter. 3×
-      // is a defensible middle ground: enough headroom for a small
-      // workload, capped at 300 so a 100-limit request never asks for
-      // thousands of hits.
-      const overFetchLimit = filterAgentId
-        ? Math.min(limit * 3, 300)
+      // agentId or timestamp inside every retrieval stream, so we ask
+      // the searcher for more hits than we need and trim post-filter.
+      const overFetchLimit = filterAgentId || timeRange
+        ? Math.min(limit * 10, 500)
         : limit;
 
       const [hybridResults, lessons] = await Promise.all([
@@ -206,8 +233,11 @@ export function registerSmartSearchFunction(
       const filteredHybrid = filterAgentId
         ? hybridResults
             .filter((r) => r.observation.agentId === filterAgentId)
+            .filter((r) => inTimeRange(r.observation.timestamp, timeRange))
             .slice(0, limit)
-        : hybridResults.slice(0, limit);
+        : hybridResults
+            .filter((r) => inTimeRange(r.observation.timestamp, timeRange))
+            .slice(0, limit);
 
       const compact: CompactSearchResult[] = filteredHybrid.map((r) => ({
         obsId: r.observation.id,

@@ -124,6 +124,91 @@ describe("mem::search", () => {
     expect(result.results[0]?.title).toBe("Auth middleware decision");
   });
 
+  it("filters observations by inclusive start_time and end_time", async () => {
+    const result = (await sdk.trigger("mem::search", {
+      query: "auth ui",
+      format: "compact",
+      start_time: "2026-01-02T00:00:00Z",
+      end_time: "2026-01-02T00:00:00Z",
+    })) as { results: Array<{ obsId: string; timestamp: string }> };
+
+    expect(result.results).toEqual([
+      expect.objectContaining({
+        obsId: "obs_b",
+        timestamp: "2026-01-02T00:00:00Z",
+      }),
+    ]);
+  });
+
+  it("supports open-ended time filters", async () => {
+    const startOnly = (await sdk.trigger("mem::search", {
+      query: "auth ui",
+      format: "compact",
+      start_time: "2026-01-02T00:00:00Z",
+    })) as { results: Array<{ obsId: string }> };
+    const endOnly = (await sdk.trigger("mem::search", {
+      query: "auth ui",
+      format: "compact",
+      end_time: "2026-01-01T00:00:00Z",
+    })) as { results: Array<{ obsId: string }> };
+
+    expect(startOnly.results.map((r) => r.obsId)).toEqual(["obs_b"]);
+    expect(endOnly.results.map((r) => r.obsId)).toEqual(["obs_a"]);
+  });
+
+  it("rejects invalid time ranges", async () => {
+    await expect(
+      sdk.trigger("mem::search", { query: "auth", start_time: "not-a-date" }),
+    ).rejects.toThrow("start_time is not a valid ISO 8601 datetime");
+    await expect(
+      sdk.trigger("mem::search", {
+        query: "auth",
+        start_time: "2026-01-03T00:00:00Z",
+        end_time: "2026-01-01T00:00:00Z",
+      }),
+    ).rejects.toThrow("start_time must be <= end_time");
+  });
+
+  it("keeps agent filtering active when time filtering is used", async () => {
+    await kv.set(KV.observations("ses_1"), "obs_same_agent", {
+      id: "obs_same_agent",
+      sessionId: "ses_1",
+      timestamp: "2026-01-02T00:00:00Z",
+      type: "decision",
+      title: "Auth middleware same agent",
+      facts: ["Same agent auth note"],
+      narrative: "Same agent wrote auth middleware note.",
+      concepts: ["auth"],
+      files: ["src/auth.ts"],
+      importance: 8,
+      agentId: "agent-a",
+    } satisfies CompressedObservation);
+    await kv.set(KV.observations("ses_1"), "obs_other_agent", {
+      id: "obs_other_agent",
+      sessionId: "ses_1",
+      timestamp: "2026-01-02T00:00:00Z",
+      type: "decision",
+      title: "Auth middleware other agent",
+      facts: ["Other agent auth note"],
+      narrative: "Other agent wrote auth middleware note.",
+      concepts: ["auth"],
+      files: ["src/auth.ts"],
+      importance: 8,
+      agentId: "agent-b",
+    } satisfies CompressedObservation);
+    await rebuildIndex(kv as never);
+
+    const result = (await sdk.trigger("mem::search", {
+      query: "auth",
+      format: "compact",
+      start_time: "2026-01-02T00:00:00Z",
+      end_time: "2026-01-02T00:00:00Z",
+      agentId: "agent-a",
+    })) as { results: Array<{ obsId: string }> };
+
+    expect(result.results.map((r) => r.obsId)).toEqual(["obs_same_agent"]);
+  });
+
   it("returns narrative text and respects token budget", async () => {
     const result = (await sdk.trigger("mem::search", {
       query: "auth ui",

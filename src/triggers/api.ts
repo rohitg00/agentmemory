@@ -14,6 +14,11 @@ import { getBoundViewerPort, getViewerSkipped } from "../viewer/server.js";
 import { MAX_FILES_UPPER_BOUND } from "../functions/replay.js";
 import { logger } from "../logger.js";
 import {
+  filterSessionsByTime,
+  parseTimeRange,
+  TimeRangeError,
+} from "../state/time-filter.js";
+import {
   isGraphExtractionEnabled,
   isConsolidationEnabled,
   isAutoCompressEnabled,
@@ -34,6 +39,13 @@ function parseOptionalInt(raw: unknown): number | undefined {
   if (raw === undefined || raw === null || raw === "") return undefined;
   const n = typeof raw === "number" ? raw : parseInt(String(raw), 10);
   return Number.isFinite(n) ? n : undefined;
+}
+
+function timeRangeResponse(err: TimeRangeError): Response {
+  return {
+    status_code: 400,
+    body: { error: err.message, code: err.code },
+  };
 }
 
 function checkAuth(
@@ -398,6 +410,8 @@ export function registerApiTriggers(
         format?: string;
         token_budget?: number;
         agentId?: string;
+        start_time?: string;
+        end_time?: string;
       }>,
     ): Promise<Response> => {
       const body = (req.body ?? {}) as Record<string, unknown>;
@@ -441,6 +455,16 @@ export function registerApiTriggers(
           body: { error: "token_budget must be a positive integer" },
         };
       }
+      let timeRange: ReturnType<typeof parseTimeRange>;
+      try {
+        timeRange = parseTimeRange({
+          start_time: body.start_time,
+          end_time: body.end_time,
+        });
+      } catch (err) {
+        if (err instanceof TimeRangeError) return timeRangeResponse(err);
+        throw err;
+      }
       // #817: propagate agentId so the upstream isolation filter
       // applies. Honors body.agentId (POST body), ?agentId=... query
       // param, or implicit fallback to the worker's AGENT_ID when
@@ -460,6 +484,10 @@ export function registerApiTriggers(
             : undefined,
         token_budget: body.token_budget as number | undefined,
         agentId: bodyAgentId ?? queryAgentId,
+        ...(timeRange ? {
+          start_time: body.start_time as string | undefined,
+          end_time: body.end_time as string | undefined,
+        } : {}),
       };
       const result = await sdk.trigger({ function_id: "mem::search", payload: payload });
       return { status_code: 200, body: result };
@@ -850,12 +878,30 @@ export function registerApiTriggers(
       const filtered = filterAgentId
         ? sessions.filter((s) => s.agentId === filterAgentId)
         : sessions;
+      let timeRange: ReturnType<typeof parseTimeRange>;
+      try {
+        timeRange = parseTimeRange({
+          start_time: req.query_params?.["start_time"],
+          end_time: req.query_params?.["end_time"],
+        });
+      } catch (err) {
+        if (err instanceof TimeRangeError) return timeRangeResponse(err);
+        throw err;
+      }
+      const timeFiltered = timeRange
+        ? filterSessionsByTime(filtered, timeRange)
+        : filtered;
+      const rawLimit = parseOptionalInt(req.query_params?.["limit"]);
+      const limited =
+        rawLimit === undefined
+          ? timeFiltered
+          : timeFiltered.slice(0, Math.max(1, Math.min(1000, rawLimit)));
       const summaries = await Promise.all(
-        filtered.map((s) =>
+        limited.map((s) =>
           kv.get<SessionSummary>(KV.summaries, s.id).catch(() => null),
         ),
       );
-      const withSummary = filtered.map((s, i) =>
+      const withSummary = limited.map((s, i) =>
         summaries[i] ? { ...s, summary: summaries[i] } : s,
       );
       return { status_code: 200, body: { sessions: withSummary } };
@@ -1158,6 +1204,8 @@ export function registerApiTriggers(
         agentId?: string;
         sessionId?: string;
         source?: string;
+        start_time?: string;
+        end_time?: string;
       }>,
     ): Promise<Response> => {
       const authErr = checkAuth(req, secret);
@@ -1177,6 +1225,16 @@ export function registerApiTriggers(
       const headers = (req.headers || {}) as Record<string, string | string[] | undefined>;
       const sourceHeader = headers["x-agentmemory-source"] ?? headers["X-Agentmemory-Source"];
       const sourceFromHeader = Array.isArray(sourceHeader) ? sourceHeader[0] : sourceHeader;
+      let timeRange: ReturnType<typeof parseTimeRange>;
+      try {
+        timeRange = parseTimeRange({
+          start_time: req.body?.start_time,
+          end_time: req.body?.end_time,
+        });
+      } catch (err) {
+        if (err instanceof TimeRangeError) return timeRangeResponse(err);
+        throw err;
+      }
       // Whitelist payload fields explicitly — REST endpoints never pass
       // the raw request body through to sdk.trigger (AGENTS.md security
       // section). Drops unknown fields so a misbehaving client can't
@@ -1190,6 +1248,10 @@ export function registerApiTriggers(
         agentId: req.body?.agentId,
         sessionId: req.body?.sessionId,
         source: req.body?.source ?? sourceFromHeader,
+        ...(timeRange ? {
+          start_time: req.body?.start_time,
+          end_time: req.body?.end_time,
+        } : {}),
       };
       const result = await sdk.trigger({ function_id: "mem::smart-search", payload });
       return { status_code: 200, body: result };
