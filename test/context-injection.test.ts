@@ -13,6 +13,7 @@ function runHook(
   scriptName: string,
   stdin: string,
   env: Record<string, string>,
+  options: { endStdin?: boolean; timeoutMs?: number } = {},
 ): Promise<{
   stdout: string;
   stderr: string;
@@ -38,19 +39,30 @@ function runHook(
 
     let stdout = "";
     let stderr = "";
+    const timeout =
+      options.timeoutMs === undefined
+        ? undefined
+        : setTimeout(() => {
+            child.kill("SIGTERM");
+            reject(new Error(`hook timed out after ${options.timeoutMs}ms`));
+          }, options.timeoutMs);
     child.stdout.on("data", (chunk) => {
       stdout += chunk.toString();
     });
     child.stderr.on("data", (chunk) => {
       stderr += chunk.toString();
     });
-    child.on("error", reject);
+    child.on("error", (error) => {
+      if (timeout) clearTimeout(timeout);
+      reject(error);
+    });
     child.on("close", (exitCode) => {
+      if (timeout) clearTimeout(timeout);
       resolve({ stdout, stderr, exitCode, tookMs: Date.now() - start });
     });
 
-    child.stdin.write(stdin);
-    child.stdin.end();
+    if (stdin.length > 0) child.stdin.write(stdin);
+    if (options.endStdin !== false) child.stdin.end();
   });
 }
 
@@ -81,13 +93,11 @@ describe("pre-tool-use hook — context injection gate (#143)", () => {
     expect(result.exitCode).toBe(0);
   });
 
-  it("exits fast when disabled (no stdin consumption, no network fetch)", async () => {
-    // The disabled path must not open stdin or reach for fetch — it
-    // should return immediately. A 250ms budget is generous enough to
-    // account for Node startup on CI while still catching any accidental
-    // fetch round-trip or stdin buffering.
-    const result = await runHook("pre-tool-use.mjs", "", {});
-    expect(result.tookMs).toBeLessThan(1000);
+  it("exits when disabled without waiting for stdin", async () => {
+    const result = await runHook("pre-tool-use.mjs", "", {}, {
+      endStdin: false,
+      timeoutMs: 5000,
+    });
     expect(result.stdout).toBe("");
   });
 

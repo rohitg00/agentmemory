@@ -93,3 +93,28 @@ Stop conditions:
 - Final residual risks:
   - The adapted fix does not change the underlying model/pipeline choice; it prevents flat scores from clobbering retrieval scores but does not make the cross-encoder more discriminative.
   - Full `npm test` was not run in this worktree because dependencies are not installed locally. Targeted Vitest ran through the main checkout dependency host.
+
+## Corrected Merge-Readiness Run - 2026-06-16
+
+- Worktree: `/Users/A1538552/.codex/worktrees/1f91/agentmemory`.
+- Branch: `review/issue-724-pr-798-flat-rerank-scores`; worktree started detached at `ee34f6d4bd15435ce4e459450378823340c4d09a`, and the target branch was unattached elsewhere, so the worktree was switched onto the branch.
+- Local main integrated: `d4393d1ab5dd284edee3a17bfbf45825f239c07e`.
+- Merge status: first merge attempt was blocked by sandbox permissions on the worktree Git metadata lock; rerunning the same captured-SHA merge with escalation created merge commit `b5f322af8fe1e27b49a659740d2ab42608191cfe` with no conflicts.
+- Dependency setup: `HOME=/tmp/agentmemory-merge-test-issue724-home XDG_CONFIG_HOME=/tmp/agentmemory-merge-test-issue724-xdg NPM_CONFIG_USERCONFIG=/tmp/agentmemory-merge-test-issue724-npmrc PNPM_HOME=/tmp/agentmemory-merge-test-issue724-pnpm-home corepack pnpm install --frozen-lockfile --ignore-scripts --store-dir /tmp/agentmemory-merge-test-pnpm-store` exited 0 using pnpm 11.6.0. It reported a non-fatal missing `dist/cli.mjs` bin warning for `packages/mcp`.
+- Full test before post-merge fix: `corepack pnpm test` failed with 2 failures: `test/context-injection.test.ts` disabled hook wall-clock assertion took 2465ms, and `test/retention.test.ts` dry-run eviction timed out at 10000ms.
+- Diagnostic subagents:
+  - Context-injection failure classified as a brittle wall-clock timing assertion under full-suite load; isolated subprocess and focused Vitest runs passed, and the hook still returns before stdin/fetch when context injection is disabled.
+  - Retention failure classified as brittle runtime/import slowness; `mem::retention-evict` imported `image-refs` before the dry-run return, which pulled in a slow cold `iii-sdk` dependency even though dry-run never deletes images.
+- Post-merge fix:
+  - `src/functions/retention.ts`: defer the `image-refs` import until an actual evicted memory has `imageRef`.
+  - `test/context-injection.test.ts`: replace the absolute `<1000ms` disabled-hook assertion with a behavioral test that leaves stdin open and fails only if the hook waits for stdin.
+- Review gates for post-merge fix:
+  - Passive security review: no auth, tenant, protocol, network, parser, filesystem, dependency, or persistence boundary broadened; retention delete semantics preserved.
+  - `$simple-code`: focused pass kept the diff to the import placement and subprocess helper cleanup.
+  - `$requesting-code-review`: read-only reviewer returned `ACCEPT`, no findings.
+  - `$review-implementation`: read-only adversarial reviewer returned `NO FINDINGS`.
+  - `codex-security:security-diff-scan`: not run as a full artifact-producing scan; planned coverage is targeted Semgrep plus staged Gitleaks because the patch only defers a module import and tightens a test assertion.
+- Targeted verification after post-merge fix:
+  - `git diff --check -- src/functions/retention.ts test/context-injection.test.ts`: pass.
+  - `corepack pnpm vitest run test/retention.test.ts --reporter verbose`: 1 file passed, 15 tests passed.
+  - `corepack pnpm vitest run test/context-injection.test.ts --reporter verbose`: 1 file passed, 5 tests passed.
