@@ -40,8 +40,8 @@ Known boundaries and stop conditions:
 | Issue/PR relevance review | Inspect local auth/CLI/consolidation code and public PR diff | Complete | Public PR diff touches `src/cli.ts` JSON POST helpers; current fork still had unauthenticated `postJson`, `postJsonStrict`, and demo `observe` POST helpers. |
 | Safer CLI JSON auth helper | Red/green targeted Vitest | Complete | `test/cli-http-auth.test.ts` failed before `src/cli/http.ts` existed, then passed after implementation. |
 | Security posture for bearer propagation | Source review plus targeted tests/security gates | Complete | Helper adds bearer only when `AGENTMEMORY_SECRET` exists and blocks plaintext HTTP to non-loopback hosts using the existing plaintext bearer guard logic. Semgrep and Codex Security diff scan found no findings. |
-| Local neutral result documentation | This task record and final handoff | In progress | Decision recorded below without external URLs or mention syntax. |
-| Prep merge to local main | `$prep-merge-to-local-main` workflow | In progress | Preflight found local `main` at `60099a31029575412ba6fc27f4ab986196922e56`; task-owned paths do not overlap incoming main paths. |
+| Local neutral result documentation | This task record and final handoff | Complete | Decision recorded below without external URLs or mention syntax. |
+| Prep merge to local main | `$prep-merge-to-local-main` workflow | Complete | Task commit `406de70bd87cd1d69e3fdec9a89d88f9ddb1d25c`; merged local `main` commit `60099a31029575412ba6fc27f4ab986196922e56`; no conflicts. |
 
 ## Notes
 
@@ -87,3 +87,14 @@ Rationale:
   - `$review-implementation`: local adversarial implementation review found no blocking finding. Residual pre-existing risk: `apiFetch()` can send bearer auth to a plaintext non-loopback `AGENTMEMORY_URL`, but this patch does not introduce or worsen that behavior.
   - `codex-security:security-diff-scan`: completed with 0 findings.
 - Final pre-stage verification: targeted Vitest command passed 4 files / 28 tests; `git diff --check` passed.
+
+## Prep Merge Closeout
+
+- Task commit: `406de70bd87cd1d69e3fdec9a89d88f9ddb1d25c`.
+- Local main merged: `60099a31029575412ba6fc27f4ab986196922e56`.
+- Merge result: no conflicts.
+- Post-merge verification:
+  - Auth-focused targeted Vitest passed: 4 files / 28 tests.
+  - Broad post-merge targeted command including incoming `test/api-memories-project.test.ts` and `test/memories-pagination.test.ts` could not fully run in this worktree because dependency resolution for `iii-sdk` fails without a complete local `node_modules`. Before that failure, 5 files / 34 tests had passed.
+  - `git diff --check HEAD` passed.
+- Verification artifact: ignored `node_modules/.vite/vitest` exists from the Vitest run and is preserved, not staged.
