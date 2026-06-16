@@ -150,8 +150,15 @@ export function registerConsolidationPipelineFunction(
 
       if (tier === "all" || tier === "procedural") {
         const memories = await kv.list<Memory>(KV.memories);
+        const scopedProject =
+          typeof data?.project === "string" && data.project.trim().length > 0
+            ? data.project.trim()
+            : undefined;
         const patterns = memories
-          .filter((m) => m.isLatest && m.type === "pattern")
+          .filter((m) => {
+            if (!m.isLatest || m.type !== "pattern") return false;
+            return scopedProject === undefined || m.project === scopedProject;
+          })
           .map((m) => ({
             content: m.content,
             frequency: m.sessionIds.length || 1,
@@ -196,6 +203,16 @@ export function registerConsolidationPipelineFunction(
                 existing.updatedAt = now;
                 existing.strength = Math.min(1, existing.strength + 0.1);
                 await kv.set(KV.procedural, existing.id, existing);
+                await savePipelineLesson(
+                  sdk,
+                  {
+                    ...existing,
+                    name,
+                    steps,
+                    triggerCondition: trigger,
+                  },
+                  scopedProject,
+                );
               } else {
                 const proc: ProceduralMemory = {
                   id: generateId("proc"),
@@ -209,6 +226,7 @@ export function registerConsolidationPipelineFunction(
                   updatedAt: now,
                 };
                 await kv.set(KV.procedural, proc.id, proc);
+                await savePipelineLesson(sdk, proc, scopedProject);
                 newProcs++;
               }
             }
@@ -268,4 +286,54 @@ export function registerConsolidationPipelineFunction(
       return { success: true, results };
     },
   );
+}
+
+async function savePipelineLesson(
+  sdk: ISdk,
+  proc: ProceduralMemory,
+  project?: string,
+): Promise<void> {
+  const steps = proc.steps.join("; ");
+  const stepText = steps.length > 500 ? `${steps.slice(0, 500)}...` : steps;
+  const content = `[procedure] ${proc.name}: ${stepText}`;
+
+  try {
+    const lessonResult = await sdk.trigger({
+      function_id: "mem::lesson-save",
+      payload: {
+        content,
+        context: proc.triggerCondition,
+        confidence: 0.6,
+        project,
+        tags: ["procedural", "consolidated"],
+        source: "consolidation",
+        sourceIds: [proc.id],
+      },
+    });
+    const failure = lessonSaveFailureMessage(lessonResult);
+    if (failure) {
+      logger.warn("Failed to save lesson from consolidation pipeline", {
+        procedureId: proc.id,
+        error: failure,
+      });
+    }
+  } catch (err) {
+    logger.warn("Failed to save lesson from consolidation pipeline", {
+      procedureId: proc.id,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
+function lessonSaveFailureMessage(result: unknown): string | undefined {
+  if (
+    result &&
+    typeof result === "object" &&
+    "success" in result &&
+    (result as { success?: unknown }).success === false
+  ) {
+    const error = (result as { error?: unknown }).error;
+    return typeof error === "string" ? error : "lesson save returned success=false";
+  }
+  return undefined;
 }

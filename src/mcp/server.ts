@@ -1127,6 +1127,85 @@ export function registerMcpEndpoints(
             return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(lessonRecallResult, null, 2) }] } };
           }
 
+          case "memory_lesson_list": {
+            if (args.project !== undefined && typeof args.project !== "string") {
+              return {
+                status_code: 400,
+                body: { error: "project must be a string" },
+              };
+            }
+            if (args.source !== undefined && typeof args.source !== "string") {
+              return {
+                status_code: 400,
+                body: { error: "source must be one of: manual, crystal, consolidation" },
+              };
+            }
+            const source = asNonEmptyString(args.source);
+            if (
+              source !== undefined &&
+              !["manual", "crystal", "consolidation"].includes(source)
+            ) {
+              return {
+                status_code: 400,
+                body: { error: "source must be one of: manual, crystal, consolidation" },
+              };
+            }
+            if (
+              args.minConfidence !== undefined &&
+              typeof args.minConfidence !== "number"
+            ) {
+              return {
+                status_code: 400,
+                body: { error: "minConfidence must be a number" },
+              };
+            }
+            const minConfidence = asNumber(args.minConfidence);
+            if (
+              minConfidence !== undefined &&
+              (minConfidence < 0 || minConfidence > 1)
+            ) {
+              return {
+                status_code: 400,
+                body: { error: "minConfidence must be between 0 and 1" },
+              };
+            }
+            if (args.limit !== undefined && typeof args.limit !== "number") {
+              return {
+                status_code: 400,
+                body: { error: "limit must be a number" },
+              };
+            }
+            const limit = asNumber(args.limit, 50);
+            if (!Number.isInteger(limit) || limit <= 0) {
+              return {
+                status_code: 400,
+                body: { error: "limit must be a positive integer" },
+              };
+            }
+            const lessonListResult = await sdk.trigger({
+              function_id: "mem::lesson-list",
+              payload: {
+                project: asNonEmptyString(args.project),
+                source,
+                minConfidence,
+                limit,
+              },
+            });
+            return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(lessonListResult, null, 2) }] } };
+          }
+
+          case "memory_lesson_strengthen": {
+            const lessonId = asNonEmptyString(args.lessonId);
+            if (!lessonId) {
+              return { status_code: 400, body: { error: "lessonId is required" } };
+            }
+            const lessonStrengthenResult = await sdk.trigger({
+              function_id: "mem::lesson-strengthen",
+              payload: { lessonId },
+            });
+            return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(lessonStrengthenResult, null, 2) }] } };
+          }
+
           case "memory_reflect": {
             const reflectResult = await sdk.trigger({ function_id: "mem::reflect", payload: {
               project: args.project,

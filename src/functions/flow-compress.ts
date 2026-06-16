@@ -4,6 +4,7 @@ import { KV, generateId } from "../state/schema.js";
 import type { Action, ActionEdge, RoutineRun, MemoryProvider } from "../types.js";
 import { recordAudit } from "./audit.js";
 import { getXmlTag } from "../prompts/xml.js";
+import { logger } from "../logger.js";
 
 const FLOW_COMPRESS_SYSTEM = `You are a workflow summarizer. Given a completed action chain, produce a concise summary capturing:
 1. The overall goal and outcome
@@ -28,6 +29,7 @@ export function registerFlowCompressFunction(
   sdk.registerFunction("mem::flow-compress", 
     async (data: { runId?: string; actionIds?: string[]; project?: string }) => {
       let actionsToCompress: Action[] = [];
+      const requestedProject = data.project?.trim() || undefined;
 
       if (data.runId) {
         const run = await kv.get<RoutineRun>(KV.routineRuns, data.runId);
@@ -43,10 +45,10 @@ export function registerFlowCompressFunction(
           const action = await kv.get<Action>(KV.actions, id);
           if (action) actionsToCompress.push(action);
         }
-      } else if (data.project) {
+      } else if (requestedProject) {
         const allActions = await kv.list<Action>(KV.actions);
         actionsToCompress = allActions.filter(
-          (a) => a.project === data.project && a.status === "done",
+          (a) => a.project === requestedProject && a.status === "done",
         );
       } else {
         return {
@@ -58,6 +60,16 @@ export function registerFlowCompressFunction(
       const doneActions = actionsToCompress.filter(
         (a) => a.status === "done",
       );
+      if (requestedProject) {
+        const mismatched = doneActions.filter((a) => a.project !== requestedProject);
+        if (mismatched.length > 0) {
+          return {
+            success: false,
+            error: "selected actions must match requested project",
+            compressed: 0,
+          };
+        }
+      }
       if (doneActions.length === 0) {
         return {
           success: true,
@@ -83,6 +95,8 @@ export function registerFlowCompressFunction(
         );
         const summary = parseFlowSummary(response);
         const ts = new Date().toISOString();
+        const effectiveProject =
+          requestedProject ?? singleProjectFromActions(doneActions);
 
         const memory = {
           id: generateId("mem"),
@@ -97,6 +111,7 @@ export function registerFlowCompressFunction(
           strength: 1.0,
           version: 1,
           isLatest: true,
+          ...(effectiveProject !== undefined && { project: effectiveProject }),
           metadata: {
             flowCompressed: true,
             actionCount: doneActions.length,
@@ -109,8 +124,38 @@ export function registerFlowCompressFunction(
           action: "compress_flow",
           flowCompressed: true,
           actionCount: doneActions.length,
-          project: data.project,
+          project: effectiveProject,
         });
+
+        if (summary.lesson.trim()) {
+          const lessonContent = truncateLessonContent(summary.lesson.trim());
+          try {
+            const lessonResult = await sdk.trigger({
+              function_id: "mem::lesson-save",
+              payload: {
+                content: lessonContent,
+                context: summary.goal || summary.outcome || "",
+                confidence: 0.6,
+                project: effectiveProject,
+                tags: ["flow-compress"],
+                source: "consolidation",
+                sourceIds: [memory.id],
+              },
+            });
+            const failure = lessonSaveFailureMessage(lessonResult);
+            if (failure) {
+              logger.warn("Failed to save lesson from flow-compress", {
+                memoryId: memory.id,
+                error: failure,
+              });
+            }
+          } catch (err) {
+            logger.warn("Failed to save lesson from flow-compress", {
+              memoryId: memory.id,
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }
+        }
 
         return {
           success: true,
@@ -188,6 +233,30 @@ function formatSummary(s: {
   if (s.discoveries) parts.push(`Discoveries: ${s.discoveries}`);
   if (s.lesson) parts.push(`Lesson: ${s.lesson}`);
   return parts.join("\n\n");
+}
+
+function truncateLessonContent(content: string): string {
+  return content.length > 500 ? `${content.slice(0, 500)}...` : content;
+}
+
+function singleProjectFromActions(actions: Action[]): string | undefined {
+  const projects = new Set(
+    actions.map((a) => a.project?.trim()).filter((p): p is string => Boolean(p)),
+  );
+  return projects.size === 1 ? [...projects][0] : undefined;
+}
+
+function lessonSaveFailureMessage(result: unknown): string | undefined {
+  if (
+    result &&
+    typeof result === "object" &&
+    "success" in result &&
+    (result as { success?: unknown }).success === false
+  ) {
+    const error = (result as { error?: unknown }).error;
+    return typeof error === "string" ? error : "lesson save returned success=false";
+  }
+  return undefined;
 }
 
 function extractConcepts(actions: Action[]): string[] {

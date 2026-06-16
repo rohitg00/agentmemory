@@ -9,7 +9,7 @@ vi.mock("../src/logger.js", () => ({
 import { getAllTools, ESSENTIAL_TOOLS } from "../src/mcp/tools-registry.js";
 
 const ROOT = join(import.meta.dirname, "..");
-const EXPECTED_TOOL_COUNT = 53;
+const EXPECTED_TOOL_COUNT = 55;
 
 function readText(relativePath: string): string {
   return readFileSync(join(ROOT, relativePath), "utf-8");
@@ -38,7 +38,32 @@ describe("Tool count consistency", () => {
   it("README advertises the same tool count as the registry", () => {
     const readme = readText("README.md");
     expect(readme).toContain(`${EXPECTED_TOOL_COUNT} MCP tools`);
+    expect(readme).toContain(`${EXPECTED_TOOL_COUNT} tools`);
     expect(readme).not.toContain("51 MCP tools");
+    expect(readme).not.toContain("53 MCP tools");
+    expect(readme).not.toContain("53 tools");
+  });
+
+  it("README tool-count badges advertise the same count as the registry", () => {
+    for (const path of [
+      "assets/tags/stat-tools.svg",
+      "assets/tags/light/stat-tools.svg",
+    ]) {
+      const asset = readText(path);
+      expect(asset).toContain(`MCP TOOLS: ${EXPECTED_TOOL_COUNT}`);
+      expect(asset).toContain(`>${EXPECTED_TOOL_COUNT}<`);
+      expect(asset).not.toContain("MCP TOOLS: 53");
+      expect(asset).not.toContain(">53<");
+    }
+
+    for (const path of [
+      "assets/tags/section-mcp.svg",
+      "assets/tags/light/section-mcp.svg",
+    ]) {
+      const asset = readText(path);
+      expect(asset).toContain(`${EXPECTED_TOOL_COUNT} tools`);
+      expect(asset).not.toContain("43 tools");
+    }
   });
 
   it("skill count claims match the plugin/skills directory", () => {

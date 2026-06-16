@@ -62,6 +62,69 @@ function parseMemoryXml(
   };
 }
 
+const LESSONABLE_MEMORY_TYPES = new Set<Memory["type"]>([
+  "architecture",
+  "bug",
+  "pattern",
+  "workflow",
+]);
+
+async function saveConsolidationLesson(
+  sdk: ISdk,
+  memory: Memory,
+  concept: string,
+  action: "created" | "evolved",
+): Promise<void> {
+  if (!LESSONABLE_MEMORY_TYPES.has(memory.type)) return;
+
+  const content =
+    memory.content.length > 500
+      ? `${memory.content.slice(0, 500)}...`
+      : memory.content;
+
+  try {
+    const lessonResult = await sdk.trigger({
+      function_id: "mem::lesson-save",
+      payload: {
+        content: `[${memory.type}] ${memory.title}: ${content}`,
+        context: `${action} from consolidation concept group: ${concept}`,
+        confidence: 0.6,
+        project: memory.project,
+        tags: [memory.type, "consolidated"],
+        source: "consolidation",
+        sourceIds: [memory.id],
+      },
+    });
+    const failure = lessonSaveFailureMessage(lessonResult);
+    if (failure) {
+      logger.warn("Failed to save lesson from consolidation", {
+        memoryId: memory.id,
+        type: memory.type,
+        error: failure,
+      });
+    }
+  } catch (err) {
+    logger.warn("Failed to save lesson from consolidation", {
+      memoryId: memory.id,
+      type: memory.type,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
+function lessonSaveFailureMessage(result: unknown): string | undefined {
+  if (
+    result &&
+    typeof result === "object" &&
+    "success" in result &&
+    (result as { success?: unknown }).success === false
+  ) {
+    const error = (result as { error?: unknown }).error;
+    return typeof error === "string" ? error : "lesson save returned success=false";
+  }
+  return undefined;
+}
+
 export function registerConsolidateFunction(
   sdk: ISdk,
   kv: StateKV,
@@ -204,6 +267,7 @@ export function registerConsolidateFunction(
             });
             existingTitles.add(evolved.title.toLowerCase());
             consolidated++;
+            await saveConsolidationLesson(sdk, evolved, concept, "evolved");
           } else {
             const memory: Memory = {
               id: generateId("mem"),
@@ -222,6 +286,7 @@ export function registerConsolidateFunction(
             });
             existingTitles.add(memory.title.toLowerCase());
             consolidated++;
+            await saveConsolidationLesson(sdk, memory, concept, "created");
           }
         } catch (err) {
           logger.warn("Consolidation failed for concept", {

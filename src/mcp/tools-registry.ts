@@ -806,6 +806,38 @@ export const V070_TOOLS: McpToolDef[] = [
     },
   },
   {
+    name: "memory_lesson_list",
+    description:
+      "List saved lessons, optionally filtered by project, source, and confidence. Use to inspect the lesson store without requiring a search query.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        project: { type: "string", description: "Filter by project" },
+        source: {
+          type: "string",
+          description: "Filter by source: manual, crystal, or consolidation",
+        },
+        minConfidence: {
+          type: "number",
+          description: "Minimum confidence threshold (default 0)",
+        },
+        limit: { type: "number", description: "Max results (default 50)" },
+      },
+    },
+  },
+  {
+    name: "memory_lesson_strengthen",
+    description:
+      "Strengthen an existing lesson by ID, increasing confidence and reinforcement count.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        lessonId: { type: "string", description: "Lesson ID to strengthen" },
+      },
+      required: ["lessonId"],
+    },
+  },
+  {
     name: "memory_obsidian_export",
     description:
       "Export memories, lessons, and crystals as Obsidian-compatible Markdown files with YAML frontmatter and wikilinks for graph view.",
@@ -956,8 +988,8 @@ export function getAllTools(): McpToolDef[] {
 }
 
 // default switched from "core" (8 essential tools) to "all"
-// (full 53-tool surface). README and plugin manifests have always
-// advertised 53 tools "in proxy mode"; the old default left OpenCode /
+// (full tool surface). README and plugin manifests have always
+// advertised all tools "in proxy mode"; the old default left OpenCode /
 // Claude Code users seeing 8 with no indication the other tools existed.
 // Users who want the lean essentials can still set AGENTMEMORY_TOOLS=core.
 export function getVisibleTools(): McpToolDef[] {

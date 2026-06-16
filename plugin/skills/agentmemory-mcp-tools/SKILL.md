@@ -18,7 +18,7 @@ Save then recall:
 - Capture: `memory_save`, `memory_observe` flows, `memory_compress_file`.
 - Retrieve: `memory_smart_search`, `memory_recall`, `memory_file_history`, `memory_timeline`, `memory_vision_search`.
 - Sessions and commits: `memory_sessions`, `memory_commits`, `memory_commit_lookup`.
-- Knowledge and graph: `memory_lesson_save`, `memory_lesson_recall`, `memory_graph_query`, `memory_relations`, `memory_patterns`, `memory_crystallize`.
+- Knowledge and graph: `memory_lesson_save`, `memory_lesson_recall`, `memory_lesson_list`, `memory_lesson_strengthen`, `memory_graph_query`, `memory_relations`, `memory_patterns`, `memory_crystallize`.
 - Structured slots: `memory_slot_create`, `memory_slot_append`, `memory_slot_get`, `memory_slot_list`, `memory_slot_replace`, `memory_slot_delete`.
 - Governance and health: `memory_governance_delete`, `memory_audit`, `memory_verify`, `memory_heal`, `memory_diagnose`.
 
