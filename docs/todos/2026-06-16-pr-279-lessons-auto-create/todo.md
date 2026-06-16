@@ -56,7 +56,7 @@ Stop conditions:
 | MCP lesson list/strengthen | Targeted MCP tool test and count/docs checks | Complete | `test/mcp-server-surface.test.ts`, `test/mcp-standalone.test.ts`, count consistency tests, and plugin surface count checks cover new tool definitions/handlers. |
 | Lesson-list audit | Targeted lessons test | Complete | `test/lessons.test.ts` asserts `mem::lesson-list` records `lesson_list` audit entries with returned IDs and filter details. |
 | Security review | Manual review plus required scanners where available | Complete | Passive TypeScript/Node security review found no critical/major issue. Semgrep `p/default` completed with 0 findings. |
-| Merge prep | `$prep-merge-to-local-main` | In progress | Preflight found no active Git operation, no staged files, no executable commit/merge hooks, no signing config, and a clean local `main` with three incoming CJK-search commits. |
+| Merge prep | `$prep-merge-to-local-main` | Complete | Preflight found no active Git operation, no staged files, no executable commit/merge hooks, no signing config, and a clean local `main` with three incoming CJK-search commits. Local `main` merged cleanly into the review branch. |
 
 ## Decision Notes
 
@@ -66,6 +66,7 @@ Stop conditions:
 - `$requesting-code-review` subagent dispatch was skipped because current tool policy only permits spawning subagents when the user explicitly requests subagents. A local focused requirements/integration review and `$review-implementation` self-review found no blocking issues.
 - `$prep-merge-to-local-main` preflight found local `main` at `60099a3`, ahead of this branch base by three CJK-search commits touching `src/triggers/api.ts`, `src/viewer/index.html`, two API/viewer tests, and a separate task note. Those paths do not overlap with this branch's lesson/MCP edits.
 - Git operation-state files were absent before staging. No executable `pre-commit`, `prepare-commit-msg`, `commit-msg`, `post-commit`, `pre-merge-commit`, or `post-merge` hooks were present in the resolved Git hooks directory. No commit signing config was set.
+- The local `main` merge completed without conflicts using Git's `ort` strategy.
 
 ## Verification Evidence
 
@@ -74,4 +75,7 @@ Stop conditions:
 - Plugin surface partial check excluding the in-process generator smoke: 6 passed, 2 skipped by test-name filter.
 - Full plugin-surface test file could not run in this dependency-less worktree because the in-process generator imports bare package dependencies from the worktree path and no local `node_modules` exists. No dependency installation was performed.
 - `semgrep scan --config p/default --error --metrics=off .`: 0 findings, 0 blocking.
+- After merging local `main`, branch-relevant Vitest plus `test/memories-pagination.test.ts`: 10 files, 201 tests passed.
+- After merging local `main`, `semgrep scan --config p/default --error --metrics=off .`: 0 findings, 0 blocking.
+- After merging local `main`, `test/api-memories-project.test.ts` could not run in this dependency-less worktree because it imports `src/triggers/api.ts`, which resolves the bare `iii-sdk` package from the worktree path where no local `node_modules` exists.
 - OSV was not run because this branch does not change dependency, lockfile, container, vendored, or package-manager surfaces.
