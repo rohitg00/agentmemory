@@ -1,0 +1,47 @@
+{
+  "nav": {
+    "open_dashboard": "Open dashboard",
+    "dashboard": "Dashboard",
+    "graph": "Graph",
+    "memories": "Memories",
+    "timeline": "Timeline",
+    "sessions": "Sessions",
+    "lessons": "Lessons",
+    "actions": "Actions",
+    "crystals": "Crystals",
+    "audit": "Audit",
+    "activity": "Activity",
+    "profile": "Profile",
+    "replay": "Replay"
+  },
+  "status": {
+    "live_updates_off": "live updates off",
+    "polling": "polling · {seconds}s",
+    "live": "live",
+    "connecting": "connecting..."
+  },
+  "buttons": {
+    "dark": "DARK",
+    "light": "LIGHT",
+    "unlock": "Unlock"
+  },
+  "loading": {
+    "dashboard": "Loading dashboard...",
+    "session_details": "Loading session details..."
+  },
+  "auth": {
+    "title": "Viewer authorization required",
+    "description_prefix": "Enter",
+    "description_suffix": "to unlock viewer API access.",
+    "placeholder": "AGENTMEMORY_SECRET"
+  },
+  "footer": {
+    "github": "github",
+    "docs": "docs",
+    "report_issue": "report issue →"
+  },
+  "dashboard": {
+    "failed": "Dashboard failed to load: {message}",
+    "failed_help": "Check the browser console for the full error. If you see CSP violations, please open an issue with the agentmemory version (top-right of the viewer) and the violation text."
+  }
+}

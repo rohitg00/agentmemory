@@ -1,0 +1,47 @@
+{
+  "nav": {
+    "open_dashboard": "打开仪表盘",
+    "dashboard": "仪表盘",
+    "graph": "图谱",
+    "memories": "记忆",
+    "timeline": "时间线",
+    "sessions": "会话",
+    "lessons": "经验",
+    "actions": "行动项",
+    "crystals": "结晶",
+    "audit": "审计",
+    "activity": "活动",
+    "profile": "画像",
+    "replay": "回放"
+  },
+  "status": {
+    "live_updates_off": "实时更新关闭",
+    "polling": "轮询 · {seconds}s",
+    "live": "实时",
+    "connecting": "连接中..."
+  },
+  "buttons": {
+    "dark": "深色",
+    "light": "浅色",
+    "unlock": "解锁"
+  },
+  "loading": {
+    "dashboard": "正在加载仪表盘...",
+    "session_details": "正在加载会话详情..."
+  },
+  "auth": {
+    "title": "需要查看器授权",
+    "description_prefix": "输入",
+    "description_suffix": "以解锁查看器 API 访问。",
+    "placeholder": "AGENTMEMORY_SECRET"
+  },
+  "footer": {
+    "github": "GitHub",
+    "docs": "文档",
+    "report_issue": "报告问题 →"
+  },
+  "dashboard": {
+    "failed": "仪表盘加载失败：{message}",
+    "failed_help": "请查看浏览器控制台中的完整错误。如果看到 CSP 违规，请附上 agentmemory 版本（查看器右上角）和违规文本提交问题。"
+  }
+}
