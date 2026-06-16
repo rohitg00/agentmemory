@@ -304,7 +304,6 @@ export function registerRetentionFunctions(
           ? data.maxEvict
           : 50;
       const maxEvict = Math.min(1000, Math.max(0, maxEvictRaw));
-      const { decrementImageRef } = await import("./image-refs.js");
 
       const allScores = await kv.list<RetentionScore>(KV.retentionScores);
       const candidates = allScores
@@ -336,6 +335,9 @@ export function registerRetentionFunctions(
       let evictedEpisodic = 0;
       let evictedSemantic = 0;
       const evictedIds: string[] = [];
+      let decrementImageRef:
+        | typeof import("./image-refs.js").decrementImageRef
+        | undefined;
       for (const candidate of candidates) {
         try {
           let scope: string | null = null;
@@ -366,6 +368,8 @@ export function registerRetentionFunctions(
 
           const mem = await kv.get<Memory>(scope, candidate.memoryId);
           if (mem && mem.imageRef) {
+            decrementImageRef ??= (await import("./image-refs.js"))
+              .decrementImageRef;
             await decrementImageRef(kv, sdk, mem.imageRef);
           }
           await kv.delete(scope, candidate.memoryId);
