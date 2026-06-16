@@ -49,6 +49,8 @@
   "files": [
     "dist/",
     "plugin/",
+    "!plugin/scripts/*.d.mts",
+    "!plugin/scripts/*.map",
     "iii-config.yaml",
     "iii-config.docker.yaml",
     "docker-compose.yml",
