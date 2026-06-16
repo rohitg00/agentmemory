@@ -3,12 +3,13 @@ import { fileURLToPath } from "node:url";
 import { dirname } from "node:path";
 
 const here = dirname(fileURLToPath(import.meta.url));
+const workspaceRoot = dirname(here);
 
 const config: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
   turbopack: {
-    root: here,
+    root: workspaceRoot,
   },
   images: {
     dangerouslyAllowSVG: true,
