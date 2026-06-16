@@ -1326,6 +1326,15 @@ Per-call override at the SDK / REST layer: every mutating endpoint (`/session/st
 
 When `AGENT_ID` is unset, memory remains unscoped (legacy behavior, no tags, no filters).
 
+### Data Directory
+
+Native iii-engine state is stored under `~/.agentmemory/data` by default, even when `agentmemory` is launched from inside a project repository. This keeps `data/state_store.db` and `data/stream_store` files out of your working tree. Override the location with `--data-dir <path>` or `AGENTMEMORY_DATA_DIR` when you need a separate store:
+
+```bash
+npx @agentmemory/agentmemory --data-dir ~/.agentmemory-work/main
+AGENTMEMORY_DATA_DIR=~/.agentmemory-work/main npx @agentmemory/agentmemory
+```
+
 ### Ports
 
 agentmemory + iii-engine bind four ports by default. If a restart fails with `port in use`, this table tells you which process to look for.
