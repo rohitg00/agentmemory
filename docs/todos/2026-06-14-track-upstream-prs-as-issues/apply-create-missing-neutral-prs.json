@@ -1,0 +1,1073 @@
+{
+  "source": "rohitg00/agentmemory",
+  "target": "wbugitlab1/agentmemory",
+  "mode": "apply",
+  "state": "all",
+  "sourcePulls": 536,
+  "targetIssues": 878,
+  "targetIssueEndpointItems": 878,
+  "targetPullRequestItemsExcluded": 0,
+  "targetNormalIssues": 878,
+  "targetLabels": 39,
+  "targetMirrorCount": 500,
+  "plannedActions": [
+    {
+      "id": "create-issue:107",
+      "type": "create-issue",
+      "upstreamNumber": 107,
+      "targetNumber": null,
+      "title": "[upstream PR 107] feat: Hermes Agent memory provider plugin",
+      "labels": [
+        "upstream-pr",
+        "upstream-merged",
+        "decision-candidate"
+      ],
+      "bodyLength": 2906,
+      "bodySha256": "sha256:5354a263a2c907787b206af80280e432786364b61f48e5df8ea9ba414c05e9c4"
+    },
+    {
+      "id": "create-issue:106",
+      "type": "create-issue",
+      "upstreamNumber": 106,
+      "targetNumber": null,
+      "title": "[upstream PR 106] docs: README polish — badges, cost table, architecture diagram",
+      "labels": [
+        "upstream-pr",
+        "upstream-merged",
+        "decision-candidate"
+      ],
+      "bodyLength": 2392,
+      "bodySha256": "sha256:f7bcf64122476590fe1c4c83ba16a5b984b5d5855db77041d4059e1b11bf299a"
+    },
+    {
+      "id": "create-issue:105",
+      "type": "create-issue",
+      "upstreamNumber": 105,
+      "targetNumber": null,
+      "title": "[upstream PR 105] feat(search): add optional project/cwd filter to mem::search and /agentmemory/search",
+      "labels": [
+        "upstream-pr",
+        "upstream-merged",
+        "decision-candidate"
+      ],
+      "bodyLength": 3161,
+      "bodySha256": "sha256:362620e2e434f20c6c452c38ca19d18092f6419534f83fc4a893c09af5de28fa"
+    },
+    {
+      "id": "create-issue:103",
+      "type": "create-issue",
+      "upstreamNumber": 103,
+      "targetNumber": null,
+      "title": "[upstream PR 103] feat: add MiniMax provider and f<!-- -->ix ANTHROPIC_BASE_URL not passed to SDK",
+      "labels": [
+        "upstream-pr",
+        "upstream-merged",
+        "decision-candidate"
+      ],
+      "bodyLength": 2936,
+      "bodySha256": "sha256:c4ca950c3c442862f34c0d4b01705ad86d79f3de94ab956adfde92997c6270f2"
+    },
+    {
+      "id": "create-issue:102",
+      "type": "create-issue",
+      "upstreamNumber": 102,
+      "targetNumber": null,
+      "title": "[upstream PR 102] feat: DX improvements — dark mode, status command, memory previews",
+      "labels": [
+        "upstream-pr",
+        "upstream-merged",
+        "decision-candidate"
+      ],
+      "bodyLength": 2688,
+      "bodySha256": "sha256:3b51885008b094715b90c63b743a548fc43cc578208f681165aa5044618a324b"
+    },
+    {
+      "id": "create-issue:101",
+      "type": "create-issue",
+      "upstreamNumber": 101,
+      "targetNumber": null,
+      "title": "[upstream PR 101] ui(viewer): update graph interface with grid, zoom, and glow effects",
+      "labels": [
+        "upstream-pr",
+        "upstream-merged",
+        "decision-candidate"
+      ],
+      "bodyLength": 1959,
+      "bodySha256": "sha256:ea87db149941d554056dae05ab2c166d059725c62116da2ad912536e6f4362c5"
+    },
+    {
+      "id": "create-issue:99",
+      "type": "create-issue",
+      "upstreamNumber": 99,
+      "targetNumber": null,
+      "title": "[upstream PR 99] feat: add MiniMax provider support",
+      "labels": [
+        "upstream-pr",
+        "upstream-closed",
+        "decision-candidate"
+      ],
+      "bodyLength": 3028,
+      "bodySha256": "sha256:ac5b18b005c8a0836392191ff7af4a82c182c76876cf23c1222b3e01d935cfbe"
+    },
+    {
+      "id": "create-issue:97",
+      "type": "create-issue",
+      "upstreamNumber": 97,
+      "targetNumber": null,
+      "title": "[upstream PR 97] f<!-- -->ix: update graph viewer env variable instruction",
+      "labels": [
+        "upstream-pr",
+        "upstream-merged",
+        "decision-candidate"
+      ],
+      "bodyLength": 1394,
+      "bodySha256": "sha256:d4abe0b94e5fefe3867879a2e418bca6a543d46f5ade8b738a13304fa12073ff"
+    },
+    {
+      "id": "create-issue:95",
+      "type": "create-issue",
+      "upstreamNumber": 95,
+      "targetNumber": null,
+      "title": "[upstream PR 95] f<!-- -->ix: res<!-- -->olve 6 installation bugs breaking fresh setup",
+      "labels": [
+        "upstream-pr",
+        "upstream-merged",
+        "decision-candidate"
+      ],
+      "bodyLength": 2970,
+      "bodySha256": "sha256:de121c7cc429c6dd4365b6e275ace74928800e137e741f3e4659cbede2a342bc"
+    },
+    {
+      "id": "create-issue:93",
+      "type": "create-issue",
+      "upstreamNumber": 93,
+      "targetNumber": null,
+      "title": "[upstream PR 93] feat: cross-encoder reranking, working memory, skill extraction",
+      "labels": [
+        "upstream-pr",
+        "upstream-merged",
+        "decision-candidate"
+      ],
+      "bodyLength": 3147,
+      "bodySha256": "sha256:511c5c624539ab14c2b52b46d8a521a330175e5b4a9552273b5303468db9226c"
+    },
+    {
+      "id": "create-issue:83",
+      "type": "create-issue",
+      "upstreamNumber": 83,
+      "targetNumber": null,
+      "title": "[upstream PR 83] f<!-- -->ix: scope npm package as @<!-- -->agentmemory/agentmemory",
+      "labels": [
+        "upstream-pr",
+        "upstream-merged",
+        "decision-candidate"
+      ],
+      "bodyLength": 1343,
+      "bodySha256": "sha256:f69e1bccf99f174a74ef17452565057d8117e42a236e28f244bf4a062267fbc0"
+    },
+    {
+      "id": "create-issue:82",
+      "type": "create-issue",
+      "upstreamNumber": 82,
+      "targetNumber": null,
+      "title": "[upstream PR 82] feat: v0.7.0 — lessons, tool visibility, auto-consolidation, obsidian export, npx bootstrap",
+      "labels": [
+        "upstream-pr",
+        "upstream-merged",
+        "decision-candidate"
+      ],
+      "bodyLength": 4586,
+      "bodySha256": "sha256:c6054b9c807d7a574bf2e7ca785cba0c0eb5abb665562f118bdcfccd24b88c6f"
+    },
+    {
+      "id": "create-issue:81",
+      "type": "create-issue",
+      "upstreamNumber": 81,
+      "targetNumber": null,
+      "title": "[upstream PR 81] f<!-- -->ix: plugin install schema validation (#<!-- -->75)",
+      "labels": [
+        "upstream-pr",
+        "upstream-merged",
+        "decision-candidate"
+      ],
+      "bodyLength": 1522,
+      "bodySha256": "sha256:dc2c7321e7ef7d5afa203cdbf926ec09351969adcf055168277a589741343835"
+    },
+    {
+      "id": "create-issue:80",
+      "type": "create-issue",
+      "upstreamNumber": 80,
+      "targetNumber": null,
+      "title": "[upstream PR 80] docs: update README for v0.6.1",
+      "labels": [
+        "upstream-pr",
+        "upstream-merged",
+        "decision-candidate"
+      ],
+      "bodyLength": 1797,
+      "bodySha256": "sha256:1991eb730eeb39e3590d85c8ca8cb21ca6d91cf1869855de88ad455ad52a948d"
+    },
+    {
+      "id": "create-issue:79",
+      "type": "create-issue",
+      "upstreamNumber": 79,
+      "targetNumber": null,
+      "title": "[upstream PR 79] feat: v0.6.1 — citations, cascading updates, expanded mesh",
+      "labels": [
+        "upstream-pr",
+        "upstream-merged",
+        "decision-candidate"
+      ],
+      "bodyLength": 3888,
+      "bodySha256": "sha256:7c70a27cff1c7aeb10dc59af327881b83473163037835df99adcae51f6cf1c9c"
+    },
+    {
+      "id": "create-issue:78",
+      "type": "create-issue",
+      "upstreamNumber": 78,
+      "targetNumber": null,
+      "title": "[upstream PR 78] f<!-- -->ix: res<!-- -->olve 6 issues — performance, scheduling, TTL, plugin",
+      "labels": [
+        "upstream-pr",
+        "upstream-merged",
+        "decision-candidate"
+      ],
+      "bodyLength": 2362,
+      "bodySha256": "sha256:c3999d47b4cc0189da9d47cd9a62642e60ee14463f3c05dfcb5021ea56ace566"
+    },
+    {
+      "id": "create-issue:77",
+      "type": "create-issue",
+      "upstreamNumber": 77,
+      "targetNumber": null,
+      "title": "[upstream PR 77] f<!-- -->ix: res<!-- -->olve 8 performance and architecture issues",
+      "labels": [
+        "upstream-pr",
+        "upstream-merged",
+        "decision-candidate"
+      ],
+      "bodyLength": 2757,
+      "bodySha256": "sha256:b7d457762a2ddd688bc3a3a5704baaecd577e70c92cb6650a3c44fca9c169bb0"
+    },
+    {
+      "id": "create-issue:76",
+      "type": "create-issue",
+      "upstreamNumber": 76,
+      "targetNumber": null,
+      "title": "[upstream PR 76] feat: v0.6.0 advanced retrieval with real-world benchmarks",
+      "labels": [
+        "upstream-pr",
+        "upstream-merged",
+        "decision-candidate"
+      ],
+      "bodyLength": 3450,
+      "bodySha256": "sha256:621fc744107cb6b2c9be63af40888d3fa44b78aa3a25934386f5aa9eb5620825"
+    },
+    {
+      "id": "create-issue:74",
+      "type": "create-issue",
+      "upstreamNumber": 74,
+      "targetNumber": null,
+      "title": "[upstream PR 74] feat: v0.5.0 orchestration layer — 14 modules, 518 tests",
+      "labels": [
+        "upstream-pr",
+        "upstream-merged",
+        "decision-candidate"
+      ],
+      "bodyLength": 3588,
+      "bodySha256": "sha256:ea44cbd6b68761bced98483bcfbb3a4fe0a934f7cd9b0026bbd7e12c3521d654"
+    },
+    {
+      "id": "create-issue:73",
+      "type": "create-issue",
+      "upstreamNumber": 73,
+      "targetNumber": null,
+      "title": "[upstream PR 73] f<!-- -->ix: replace thumbnail with animated GIF demo",
+      "labels": [
+        "upstream-pr",
+        "upstream-merged",
+        "decision-candidate"
+      ],
+      "bodyLength": 1305,
+      "bodySha256": "sha256:a84f96a8ecdfd730fd54e3a69c5a64172bfc7f214a247602955b669639dc3fdd"
+    },
+    {
+      "id": "create-issue:72",
+      "type": "create-issue",
+      "upstreamNumber": 72,
+      "targetNumber": null,
+      "title": "[upstream PR 72] f<!-- -->ix: use clickable thumbnail for demo video in README",
+      "labels": [
+        "upstream-pr",
+        "upstream-merged",
+        "decision-candidate"
+      ],
+      "bodyLength": 1455,
+      "bodySha256": "sha256:1e317f3384efb62046b72577cf15b64d1338a677b43b2a988232f4a9d8e22e77"
+    },
+    {
+      "id": "create-issue:71",
+      "type": "create-issue",
+      "upstreamNumber": 71,
+      "targetNumber": null,
+      "title": "[upstream PR 71] docs: add demo video to README",
+      "labels": [
+        "upstream-pr",
+        "upstream-merged",
+        "decision-candidate"
+      ],
+      "bodyLength": 1298,
+      "bodySha256": "sha256:63108826781d010bba88a0aa98bfb99bdb3f05ce358248d94fb719429a5ce012"
+    },
+    {
+      "id": "create-issue:70",
+      "type": "create-issue",
+      "upstreamNumber": 70,
+      "targetNumber": null,
+      "title": "[upstream PR 70] docs: update README with viewer section and accurate stats",
+      "labels": [
+        "upstream-pr",
+        "upstream-merged",
+        "decision-candidate"
+      ],
+      "bodyLength": 1168,
+      "bodySha256": "sha256:9b31d683a3e65f3bde53ee50243c322a45108473a0b5eee371b70b68c8cfcb4e"
+    },
+    {
+      "id": "create-issue:69",
+      "type": "create-issue",
+      "upstreamNumber": 69,
+      "targetNumber": null,
+      "title": "[upstream PR 69] f<!-- -->ix: viewer security hardening and evolve write ordering",
+      "labels": [
+        "upstream-pr",
+        "upstream-merged",
+        "decision-candidate"
+      ],
+      "bodyLength": 1934,
+      "bodySha256": "sha256:0c81b368402f091af9684a119112f18b9fd5693033176499a6b8982051edb7e0"
+    },
+    {
+      "id": "create-issue:68",
+      "type": "create-issue",
+      "upstreamNumber": 68,
+      "targetNumber": null,
+      "title": "[upstream PR 68] F<!-- -->ix 38 system audit findings (clean)",
+      "labels": [
+        "upstream-pr",
+        "upstream-merged",
+        "decision-candidate"
+      ],
+      "bodyLength": 3014,
+      "bodySha256": "sha256:71fb3bb48ee1b922366495324c01c7b97c619cd67bba3135e55de7f0fcde83bf"
+    },
+    {
+      "id": "create-issue:67",
+      "type": "create-issue",
+      "upstreamNumber": 67,
+      "targetNumber": null,
+      "title": "[upstream PR 67] f<!-- -->ix: address 38 system audit findings",
+      "labels": [
+        "upstream-pr",
+        "upstream-closed",
+        "decision-candidate"
+      ],
+      "bodyLength": 4223,
+      "bodySha256": "sha256:7071f0bec8713b5f956b3d788bbf7a4fd57155ca4d44dd2f5ffba629421ef0c4"
+    },
+    {
+      "id": "create-issue:10",
+      "type": "create-issue",
+      "upstreamNumber": 10,
+      "targetNumber": null,
+      "title": "[upstream PR 10] feat: viewer UI redesign with real-time streaming",
+      "labels": [
+        "upstream-pr",
+        "upstream-merged",
+        "decision-candidate"
+      ],
+      "bodyLength": 2983,
+      "bodySha256": "sha256:810339876794e41e1df9e16e4ff7f02ddf3df3a961693448f507c85025c1366f"
+    },
+    {
+      "id": "create-issue:9",
+      "type": "create-issue",
+      "upstreamNumber": 9,
+      "targetNumber": null,
+      "title": "[upstream PR 9] feat: agentmemory v0.4.0 — the memory layer for all AI coding agents",
+      "labels": [
+        "upstream-pr",
+        "upstream-merged",
+        "decision-candidate"
+      ],
+      "bodyLength": 3795,
+      "bodySha256": "sha256:e7feb8d38d3c600772a0a51a67146f215936b1e3ef83f52c9e0ccf17485b6908"
+    },
+    {
+      "id": "create-issue:8",
+      "type": "create-issue",
+      "upstreamNumber": 8,
+      "targetNumber": null,
+      "title": "[upstream PR 8] docs: update README for v0.4.0",
+      "labels": [
+        "upstream-pr",
+        "upstream-merged",
+        "decision-candidate"
+      ],
+      "bodyLength": 2246,
+      "bodySha256": "sha256:ae01e8112c7aa44c4abd4e1458e79297f8145e4a8eea61cdcccefa6589e8be7d"
+    },
+    {
+      "id": "create-issue:7",
+      "type": "create-issue",
+      "upstreamNumber": 7,
+      "targetNumber": null,
+      "title": "[upstream PR 7] feat: agentmemory v0.4.0 — MCP resources, prompts, enrichment, confidence",
+      "labels": [
+        "upstream-pr",
+        "upstream-merged",
+        "decision-candidate"
+      ],
+      "bodyLength": 3454,
+      "bodySha256": "sha256:03b4cfd7f1ea47b7c612a6d8e097c5d210194c39e1d54fe8958e62fc2350763b"
+    },
+    {
+      "id": "create-issue:6",
+      "type": "create-issue",
+      "upstreamNumber": 6,
+      "targetNumber": null,
+      "title": "[upstream PR 6] f<!-- -->ix: comprehensive security and reliability audit",
+      "labels": [
+        "upstream-pr",
+        "upstream-merged",
+        "decision-candidate"
+      ],
+      "bodyLength": 3410,
+      "bodySha256": "sha256:7ad93d93403899db0aec87326b0b9f0b213cb48b2a084063f91acc321ff40528"
+    },
+    {
+      "id": "create-issue:5",
+      "type": "create-issue",
+      "upstreamNumber": 5,
+      "targetNumber": null,
+      "title": "[upstream PR 5] docs: rewrite README for v0.3.0 — what, why, and agent support",
+      "labels": [
+        "upstream-pr",
+        "upstream-merged",
+        "decision-candidate"
+      ],
+      "bodyLength": 2254,
+      "bodySha256": "sha256:bfc46c805a63e1bc04f6f14f061f9a9d2dde87beb7df3d4bd368ca5ea190577a"
+    },
+    {
+      "id": "create-issue:4",
+      "type": "create-issue",
+      "upstreamNumber": 4,
+      "targetNumber": null,
+      "title": "[upstream PR 4] feat: agentmemory v0.3.0 — semantic search, memory evolution, profiles",
+      "labels": [
+        "upstream-pr",
+        "upstream-merged",
+        "decision-candidate"
+      ],
+      "bodyLength": 4675,
+      "bodySha256": "sha256:76bee0480352e40618efdeae1a32b7373fccad70abdb8f218ec57f8e056561df"
+    },
+    {
+      "id": "create-issue:3",
+      "type": "create-issue",
+      "upstreamNumber": 3,
+      "targetNumber": null,
+      "title": "[upstream PR 3] docs: update README for v0.3.0",
+      "labels": [
+        "upstream-pr",
+        "upstream-merged",
+        "decision-candidate"
+      ],
+      "bodyLength": 1469,
+      "bodySha256": "sha256:2b0cf74376df5215c69b6e51580c79e6f973ece70f78a06a583babd531b01441"
+    },
+    {
+      "id": "create-issue:2",
+      "type": "create-issue",
+      "upstreamNumber": 2,
+      "targetNumber": null,
+      "title": "[upstream PR 2] feat: v0.2.0 -- 12 hooks, MCP tools, skills, pattern detection",
+      "labels": [
+        "upstream-pr",
+        "upstream-merged",
+        "decision-candidate"
+      ],
+      "bodyLength": 4178,
+      "bodySha256": "sha256:f1396dad7aa62a5fa423a00eed276f4b4520b63669a5e3674a2a53b7cbe5a9b7"
+    },
+    {
+      "id": "create-issue:1",
+      "type": "create-issue",
+      "upstreamNumber": 1,
+      "targetNumber": null,
+      "title": "[upstream PR 1] f<!-- -->ix: system audit -- 10 bugs fix<!-- -->ed across hooks, triggers, and core",
+      "labels": [
+        "upstream-pr",
+        "upstream-merged",
+        "decision-candidate"
+      ],
+      "bodyLength": 2835,
+      "bodySha256": "sha256:fd0029d493a48d7611337c0d051038a2730d52e4d67a8847bc6dd3a2d5449289"
+    }
+  ],
+  "planHash": "sha256:111d97cdc9c152ef13ceebf3de6bd92e9b66e3ebad02384b3b6b8e4fe0c4961f",
+  "appliedActions": [
+    {
+      "id": "create-issue:107",
+      "type": "create-issue",
+      "upstreamNumber": 107,
+      "targetNumber": 879,
+      "title": "[upstream PR 107] feat: Hermes Agent memory provider plugin",
+      "labels": [
+        "upstream-pr",
+        "upstream-merged",
+        "decision-candidate"
+      ],
+      "bodyLength": 2906,
+      "bodySha256": "sha256:5354a263a2c907787b206af80280e432786364b61f48e5df8ea9ba414c05e9c4",
+      "url": "https://github.com/wbugitlab1/agentmemory/issues/879"
+    },
+    {
+      "id": "create-issue:106",
+      "type": "create-issue",
+      "upstreamNumber": 106,
+      "targetNumber": 880,
+      "title": "[upstream PR 106] docs: README polish — badges, cost table, architecture diagram",
+      "labels": [
+        "upstream-pr",
+        "upstream-merged",
+        "decision-candidate"
+      ],
+      "bodyLength": 2392,
+      "bodySha256": "sha256:f7bcf64122476590fe1c4c83ba16a5b984b5d5855db77041d4059e1b11bf299a",
+      "url": "https://github.com/wbugitlab1/agentmemory/issues/880"
+    },
+    {
+      "id": "create-issue:105",
+      "type": "create-issue",
+      "upstreamNumber": 105,
+      "targetNumber": 881,
+      "title": "[upstream PR 105] feat(search): add optional project/cwd filter to mem::search and /agentmemory/search",
+      "labels": [
+        "upstream-pr",
+        "upstream-merged",
+        "decision-candidate"
+      ],
+      "bodyLength": 3161,
+      "bodySha256": "sha256:362620e2e434f20c6c452c38ca19d18092f6419534f83fc4a893c09af5de28fa",
+      "url": "https://github.com/wbugitlab1/agentmemory/issues/881"
+    },
+    {
+      "id": "create-issue:103",
+      "type": "create-issue",
+      "upstreamNumber": 103,
+      "targetNumber": 882,
+      "title": "[upstream PR 103] feat: add MiniMax provider and f<!-- -->ix ANTHROPIC_BASE_URL not passed to SDK",
+      "labels": [
+        "upstream-pr",
+        "upstream-merged",
+        "decision-candidate"
+      ],
+      "bodyLength": 2936,
+      "bodySha256": "sha256:c4ca950c3c442862f34c0d4b01705ad86d79f3de94ab956adfde92997c6270f2",
+      "url": "https://github.com/wbugitlab1/agentmemory/issues/882"
+    },
+    {
+      "id": "create-issue:102",
+      "type": "create-issue",
+      "upstreamNumber": 102,
+      "targetNumber": 883,
+      "title": "[upstream PR 102] feat: DX improvements — dark mode, status command, memory previews",
+      "labels": [
+        "upstream-pr",
+        "upstream-merged",
+        "decision-candidate"
+      ],
+      "bodyLength": 2688,
+      "bodySha256": "sha256:3b51885008b094715b90c63b743a548fc43cc578208f681165aa5044618a324b",
+      "url": "https://github.com/wbugitlab1/agentmemory/issues/883"
+    },
+    {
+      "id": "create-issue:101",
+      "type": "create-issue",
+      "upstreamNumber": 101,
+      "targetNumber": 884,
+      "title": "[upstream PR 101] ui(viewer): update graph interface with grid, zoom, and glow effects",
+      "labels": [
+        "upstream-pr",
+        "upstream-merged",
+        "decision-candidate"
+      ],
+      "bodyLength": 1959,
+      "bodySha256": "sha256:ea87db149941d554056dae05ab2c166d059725c62116da2ad912536e6f4362c5",
+      "url": "https://github.com/wbugitlab1/agentmemory/issues/884"
+    },
+    {
+      "id": "create-issue:99",
+      "type": "create-issue",
+      "upstreamNumber": 99,
+      "targetNumber": 885,
+      "title": "[upstream PR 99] feat: add MiniMax provider support",
+      "labels": [
+        "upstream-pr",
+        "upstream-closed",
+        "decision-candidate"
+      ],
+      "bodyLength": 3028,
+      "bodySha256": "sha256:ac5b18b005c8a0836392191ff7af4a82c182c76876cf23c1222b3e01d935cfbe",
+      "url": "https://github.com/wbugitlab1/agentmemory/issues/885"
+    },
+    {
+      "id": "create-issue:97",
+      "type": "create-issue",
+      "upstreamNumber": 97,
+      "targetNumber": 886,
+      "title": "[upstream PR 97] f<!-- -->ix: update graph viewer env variable instruction",
+      "labels": [
+        "upstream-pr",
+        "upstream-merged",
+        "decision-candidate"
+      ],
+      "bodyLength": 1394,
+      "bodySha256": "sha256:d4abe0b94e5fefe3867879a2e418bca6a543d46f5ade8b738a13304fa12073ff",
+      "url": "https://github.com/wbugitlab1/agentmemory/issues/886"
+    },
+    {
+      "id": "create-issue:95",
+      "type": "create-issue",
+      "upstreamNumber": 95,
+      "targetNumber": 887,
+      "title": "[upstream PR 95] f<!-- -->ix: res<!-- -->olve 6 installation bugs breaking fresh setup",
+      "labels": [
+        "upstream-pr",
+        "upstream-merged",
+        "decision-candidate"
+      ],
+      "bodyLength": 2970,
+      "bodySha256": "sha256:de121c7cc429c6dd4365b6e275ace74928800e137e741f3e4659cbede2a342bc",
+      "url": "https://github.com/wbugitlab1/agentmemory/issues/887"
+    },
+    {
+      "id": "create-issue:93",
+      "type": "create-issue",
+      "upstreamNumber": 93,
+      "targetNumber": 888,
+      "title": "[upstream PR 93] feat: cross-encoder reranking, working memory, skill extraction",
+      "labels": [
+        "upstream-pr",
+        "upstream-merged",
+        "decision-candidate"
+      ],
+      "bodyLength": 3147,
+      "bodySha256": "sha256:511c5c624539ab14c2b52b46d8a521a330175e5b4a9552273b5303468db9226c",
+      "url": "https://github.com/wbugitlab1/agentmemory/issues/888"
+    },
+    {
+      "id": "create-issue:83",
+      "type": "create-issue",
+      "upstreamNumber": 83,
+      "targetNumber": 889,
+      "title": "[upstream PR 83] f<!-- -->ix: scope npm package as @<!-- -->agentmemory/agentmemory",
+      "labels": [
+        "upstream-pr",
+        "upstream-merged",
+        "decision-candidate"
+      ],
+      "bodyLength": 1343,
+      "bodySha256": "sha256:f69e1bccf99f174a74ef17452565057d8117e42a236e28f244bf4a062267fbc0",
+      "url": "https://github.com/wbugitlab1/agentmemory/issues/889"
+    },
+    {
+      "id": "create-issue:82",
+      "type": "create-issue",
+      "upstreamNumber": 82,
+      "targetNumber": 890,
+      "title": "[upstream PR 82] feat: v0.7.0 — lessons, tool visibility, auto-consolidation, obsidian export, npx bootstrap",
+      "labels": [
+        "upstream-pr",
+        "upstream-merged",
+        "decision-candidate"
+      ],
+      "bodyLength": 4586,
+      "bodySha256": "sha256:c6054b9c807d7a574bf2e7ca785cba0c0eb5abb665562f118bdcfccd24b88c6f",
+      "url": "https://github.com/wbugitlab1/agentmemory/issues/890"
+    },
+    {
+      "id": "create-issue:81",
+      "type": "create-issue",
+      "upstreamNumber": 81,
+      "targetNumber": 891,
+      "title": "[upstream PR 81] f<!-- -->ix: plugin install schema validation (#<!-- -->75)",
+      "labels": [
+        "upstream-pr",
+        "upstream-merged",
+        "decision-candidate"
+      ],
+      "bodyLength": 1522,
+      "bodySha256": "sha256:dc2c7321e7ef7d5afa203cdbf926ec09351969adcf055168277a589741343835",
+      "url": "https://github.com/wbugitlab1/agentmemory/issues/891"
+    },
+    {
+      "id": "create-issue:80",
+      "type": "create-issue",
+      "upstreamNumber": 80,
+      "targetNumber": 892,
+      "title": "[upstream PR 80] docs: update README for v0.6.1",
+      "labels": [
+        "upstream-pr",
+        "upstream-merged",
+        "decision-candidate"
+      ],
+      "bodyLength": 1797,
+      "bodySha256": "sha256:1991eb730eeb39e3590d85c8ca8cb21ca6d91cf1869855de88ad455ad52a948d",
+      "url": "https://github.com/wbugitlab1/agentmemory/issues/892"
+    },
+    {
+      "id": "create-issue:79",
+      "type": "create-issue",
+      "upstreamNumber": 79,
+      "targetNumber": 893,
+      "title": "[upstream PR 79] feat: v0.6.1 — citations, cascading updates, expanded mesh",
+      "labels": [
+        "upstream-pr",
+        "upstream-merged",
+        "decision-candidate"
+      ],
+      "bodyLength": 3888,
+      "bodySha256": "sha256:7c70a27cff1c7aeb10dc59af327881b83473163037835df99adcae51f6cf1c9c",
+      "url": "https://github.com/wbugitlab1/agentmemory/issues/893"
+    },
+    {
+      "id": "create-issue:78",
+      "type": "create-issue",
+      "upstreamNumber": 78,
+      "targetNumber": 894,
+      "title": "[upstream PR 78] f<!-- -->ix: res<!-- -->olve 6 issues — performance, scheduling, TTL, plugin",
+      "labels": [
+        "upstream-pr",
+        "upstream-merged",
+        "decision-candidate"
+      ],
+      "bodyLength": 2362,
+      "bodySha256": "sha256:c3999d47b4cc0189da9d47cd9a62642e60ee14463f3c05dfcb5021ea56ace566",
+      "url": "https://github.com/wbugitlab1/agentmemory/issues/894"
+    },
+    {
+      "id": "create-issue:77",
+      "type": "create-issue",
+      "upstreamNumber": 77,
+      "targetNumber": 895,
+      "title": "[upstream PR 77] f<!-- -->ix: res<!-- -->olve 8 performance and architecture issues",
+      "labels": [
+        "upstream-pr",
+        "upstream-merged",
+        "decision-candidate"
+      ],
+      "bodyLength": 2757,
+      "bodySha256": "sha256:b7d457762a2ddd688bc3a3a5704baaecd577e70c92cb6650a3c44fca9c169bb0",
+      "url": "https://github.com/wbugitlab1/agentmemory/issues/895"
+    },
+    {
+      "id": "create-issue:76",
+      "type": "create-issue",
+      "upstreamNumber": 76,
+      "targetNumber": 896,
+      "title": "[upstream PR 76] feat: v0.6.0 advanced retrieval with real-world benchmarks",
+      "labels": [
+        "upstream-pr",
+        "upstream-merged",
+        "decision-candidate"
+      ],
+      "bodyLength": 3450,
+      "bodySha256": "sha256:621fc744107cb6b2c9be63af40888d3fa44b78aa3a25934386f5aa9eb5620825",
+      "url": "https://github.com/wbugitlab1/agentmemory/issues/896"
+    },
+    {
+      "id": "create-issue:74",
+      "type": "create-issue",
+      "upstreamNumber": 74,
+      "targetNumber": 897,
+      "title": "[upstream PR 74] feat: v0.5.0 orchestration layer — 14 modules, 518 tests",
+      "labels": [
+        "upstream-pr",
+        "upstream-merged",
+        "decision-candidate"
+      ],
+      "bodyLength": 3588,
+      "bodySha256": "sha256:ea44cbd6b68761bced98483bcfbb3a4fe0a934f7cd9b0026bbd7e12c3521d654",
+      "url": "https://github.com/wbugitlab1/agentmemory/issues/897"
+    },
+    {
+      "id": "create-issue:73",
+      "type": "create-issue",
+      "upstreamNumber": 73,
+      "targetNumber": 898,
+      "title": "[upstream PR 73] f<!-- -->ix: replace thumbnail with animated GIF demo",
+      "labels": [
+        "upstream-pr",
+        "upstream-merged",
+        "decision-candidate"
+      ],
+      "bodyLength": 1305,
+      "bodySha256": "sha256:a84f96a8ecdfd730fd54e3a69c5a64172bfc7f214a247602955b669639dc3fdd",
+      "url": "https://github.com/wbugitlab1/agentmemory/issues/898"
+    },
+    {
+      "id": "create-issue:72",
+      "type": "create-issue",
+      "upstreamNumber": 72,
+      "targetNumber": 899,
+      "title": "[upstream PR 72] f<!-- -->ix: use clickable thumbnail for demo video in README",
+      "labels": [
+        "upstream-pr",
+        "upstream-merged",
+        "decision-candidate"
+      ],
+      "bodyLength": 1455,
+      "bodySha256": "sha256:1e317f3384efb62046b72577cf15b64d1338a677b43b2a988232f4a9d8e22e77",
+      "url": "https://github.com/wbugitlab1/agentmemory/issues/899"
+    },
+    {
+      "id": "create-issue:71",
+      "type": "create-issue",
+      "upstreamNumber": 71,
+      "targetNumber": 900,
+      "title": "[upstream PR 71] docs: add demo video to README",
+      "labels": [
+        "upstream-pr",
+        "upstream-merged",
+        "decision-candidate"
+      ],
+      "bodyLength": 1298,
+      "bodySha256": "sha256:63108826781d010bba88a0aa98bfb99bdb3f05ce358248d94fb719429a5ce012",
+      "url": "https://github.com/wbugitlab1/agentmemory/issues/900"
+    },
+    {
+      "id": "create-issue:70",
+      "type": "create-issue",
+      "upstreamNumber": 70,
+      "targetNumber": 901,
+      "title": "[upstream PR 70] docs: update README with viewer section and accurate stats",
+      "labels": [
+        "upstream-pr",
+        "upstream-merged",
+        "decision-candidate"
+      ],
+      "bodyLength": 1168,
+      "bodySha256": "sha256:9b31d683a3e65f3bde53ee50243c322a45108473a0b5eee371b70b68c8cfcb4e",
+      "url": "https://github.com/wbugitlab1/agentmemory/issues/901"
+    },
+    {
+      "id": "create-issue:69",
+      "type": "create-issue",
+      "upstreamNumber": 69,
+      "targetNumber": 902,
+      "title": "[upstream PR 69] f<!-- -->ix: viewer security hardening and evolve write ordering",
+      "labels": [
+        "upstream-pr",
+        "upstream-merged",
+        "decision-candidate"
+      ],
+      "bodyLength": 1934,
+      "bodySha256": "sha256:0c81b368402f091af9684a119112f18b9fd5693033176499a6b8982051edb7e0",
+      "url": "https://github.com/wbugitlab1/agentmemory/issues/902"
+    },
+    {
+      "id": "create-issue:68",
+      "type": "create-issue",
+      "upstreamNumber": 68,
+      "targetNumber": 903,
+      "title": "[upstream PR 68] F<!-- -->ix 38 system audit findings (clean)",
+      "labels": [
+        "upstream-pr",
+        "upstream-merged",
+        "decision-candidate"
+      ],
+      "bodyLength": 3014,
+      "bodySha256": "sha256:71fb3bb48ee1b922366495324c01c7b97c619cd67bba3135e55de7f0fcde83bf",
+      "url": "https://github.com/wbugitlab1/agentmemory/issues/903"
+    },
+    {
+      "id": "create-issue:67",
+      "type": "create-issue",
+      "upstreamNumber": 67,
+      "targetNumber": 904,
+      "title": "[upstream PR 67] f<!-- -->ix: address 38 system audit findings",
+      "labels": [
+        "upstream-pr",
+        "upstream-closed",
+        "decision-candidate"
+      ],
+      "bodyLength": 4223,
+      "bodySha256": "sha256:7071f0bec8713b5f956b3d788bbf7a4fd57155ca4d44dd2f5ffba629421ef0c4",
+      "url": "https://github.com/wbugitlab1/agentmemory/issues/904"
+    },
+    {
+      "id": "create-issue:10",
+      "type": "create-issue",
+      "upstreamNumber": 10,
+      "targetNumber": 905,
+      "title": "[upstream PR 10] feat: viewer UI redesign with real-time streaming",
+      "labels": [
+        "upstream-pr",
+        "upstream-merged",
+        "decision-candidate"
+      ],
+      "bodyLength": 2983,
+      "bodySha256": "sha256:810339876794e41e1df9e16e4ff7f02ddf3df3a961693448f507c85025c1366f",
+      "url": "https://github.com/wbugitlab1/agentmemory/issues/905"
+    },
+    {
+      "id": "create-issue:9",
+      "type": "create-issue",
+      "upstreamNumber": 9,
+      "targetNumber": 906,
+      "title": "[upstream PR 9] feat: agentmemory v0.4.0 — the memory layer for all AI coding agents",
+      "labels": [
+        "upstream-pr",
+        "upstream-merged",
+        "decision-candidate"
+      ],
+      "bodyLength": 3795,
+      "bodySha256": "sha256:e7feb8d38d3c600772a0a51a67146f215936b1e3ef83f52c9e0ccf17485b6908",
+      "url": "https://github.com/wbugitlab1/agentmemory/issues/906"
+    },
+    {
+      "id": "create-issue:8",
+      "type": "create-issue",
+      "upstreamNumber": 8,
+      "targetNumber": 907,
+      "title": "[upstream PR 8] docs: update README for v0.4.0",
+      "labels": [
+        "upstream-pr",
+        "upstream-merged",
+        "decision-candidate"
+      ],
+      "bodyLength": 2246,
+      "bodySha256": "sha256:ae01e8112c7aa44c4abd4e1458e79297f8145e4a8eea61cdcccefa6589e8be7d",
+      "url": "https://github.com/wbugitlab1/agentmemory/issues/907"
+    },
+    {
+      "id": "create-issue:7",
+      "type": "create-issue",
+      "upstreamNumber": 7,
+      "targetNumber": 908,
+      "title": "[upstream PR 7] feat: agentmemory v0.4.0 — MCP resources, prompts, enrichment, confidence",
+      "labels": [
+        "upstream-pr",
+        "upstream-merged",
+        "decision-candidate"
+      ],
+      "bodyLength": 3454,
+      "bodySha256": "sha256:03b4cfd7f1ea47b7c612a6d8e097c5d210194c39e1d54fe8958e62fc2350763b",
+      "url": "https://github.com/wbugitlab1/agentmemory/issues/908"
+    },
+    {
+      "id": "create-issue:6",
+      "type": "create-issue",
+      "upstreamNumber": 6,
+      "targetNumber": 909,
+      "title": "[upstream PR 6] f<!-- -->ix: comprehensive security and reliability audit",
+      "labels": [
+        "upstream-pr",
+        "upstream-merged",
+        "decision-candidate"
+      ],
+      "bodyLength": 3410,
+      "bodySha256": "sha256:7ad93d93403899db0aec87326b0b9f0b213cb48b2a084063f91acc321ff40528",
+      "url": "https://github.com/wbugitlab1/agentmemory/issues/909"
+    },
+    {
+      "id": "create-issue:5",
+      "type": "create-issue",
+      "upstreamNumber": 5,
+      "targetNumber": 910,
+      "title": "[upstream PR 5] docs: rewrite README for v0.3.0 — what, why, and agent support",
+      "labels": [
+        "upstream-pr",
+        "upstream-merged",
+        "decision-candidate"
+      ],
+      "bodyLength": 2254,
+      "bodySha256": "sha256:bfc46c805a63e1bc04f6f14f061f9a9d2dde87beb7df3d4bd368ca5ea190577a",
+      "url": "https://github.com/wbugitlab1/agentmemory/issues/910"
+    },
+    {
+      "id": "create-issue:4",
+      "type": "create-issue",
+      "upstreamNumber": 4,
+      "targetNumber": 911,
+      "title": "[upstream PR 4] feat: agentmemory v0.3.0 — semantic search, memory evolution, profiles",
+      "labels": [
+        "upstream-pr",
+        "upstream-merged",
+        "decision-candidate"
+      ],
+      "bodyLength": 4675,
+      "bodySha256": "sha256:76bee0480352e40618efdeae1a32b7373fccad70abdb8f218ec57f8e056561df",
+      "url": "https://github.com/wbugitlab1/agentmemory/issues/911"
+    },
+    {
+      "id": "create-issue:3",
+      "type": "create-issue",
+      "upstreamNumber": 3,
+      "targetNumber": 912,
+      "title": "[upstream PR 3] docs: update README for v0.3.0",
+      "labels": [
+        "upstream-pr",
+        "upstream-merged",
+        "decision-candidate"
+      ],
+      "bodyLength": 1469,
+      "bodySha256": "sha256:2b0cf74376df5215c69b6e51580c79e6f973ece70f78a06a583babd531b01441",
+      "url": "https://github.com/wbugitlab1/agentmemory/issues/912"
+    },
+    {
+      "id": "create-issue:2",
+      "type": "create-issue",
+      "upstreamNumber": 2,
+      "targetNumber": 913,
+      "title": "[upstream PR 2] feat: v0.2.0 -- 12 hooks, MCP tools, skills, pattern detection",
+      "labels": [
+        "upstream-pr",
+        "upstream-merged",
+        "decision-candidate"
+      ],
+      "bodyLength": 4178,
+      "bodySha256": "sha256:f1396dad7aa62a5fa423a00eed276f4b4520b63669a5e3674a2a53b7cbe5a9b7",
+      "url": "https://github.com/wbugitlab1/agentmemory/issues/913"
+    },
+    {
+      "id": "create-issue:1",
+      "type": "create-issue",
+      "upstreamNumber": 1,
+      "targetNumber": 914,
+      "title": "[upstream PR 1] f<!-- -->ix: system audit -- 10 bugs fix<!-- -->ed across hooks, triggers, and core",
+      "labels": [
+        "upstream-pr",
+        "upstream-merged",
+        "decision-candidate"
+      ],
+      "bodyLength": 2835,
+      "bodySha256": "sha256:fd0029d493a48d7611337c0d051038a2730d52e4d67a8847bc6dd3a2d5449289",
+      "url": "https://github.com/wbugitlab1/agentmemory/issues/914"
+    }
+  ],
+  "skippedActions": [],
+  "failedAction": null,
+  "stopCondition": null,
+  "sanitization": {
+    "neutralizedMentions": 182,
+    "neutralizedReferences": 1040,
+    "neutralizedClosingKeywords": 1241
+  },
+  "failures": [],
+  "wroteRemote": true,
+  "generatedAt": "2026-06-15T10:06:04.017Z"
+}
