@@ -84,8 +84,8 @@ Planned adaptation: add bounded `q` support to the existing authenticated `/agen
 ## Prep Merge Notes
 
 - Current worktree branch: `review/issue-512-pr-536-viewer-cjk-search`.
-- Commit prepared for local main: `4663a11350f30baa103b516f8cf4ff4c4e0bb9ed`.
+- Implementation commit prepared for local main: `4663a11350f30baa103b516f8cf4ff4c4e0bb9ed`.
 - Main checkout: `/Users/A1538552/_projects/_tools/agentmemory`, branch `main`, clean before merge.
 - Merge basis: local `main` at `6c387b4efea524db5bf8fe0e923958cbcf0213f1`.
-- Merge result: fast-forward to `4663a11350f30baa103b516f8cf4ff4c4e0bb9ed`.
+- Merge result: fast-forward completed; local `main` includes the implementation and this prep record.
 - No push, PR creation, GitHub tracker update, label change, or public write was performed.
