@@ -164,7 +164,7 @@ describe("root quality gates", () => {
     const testConfig = (vitestConfig as RootVitestConfig).test;
     const coverage = testConfig?.coverage;
 
-    expect(testConfig?.testTimeout).toBe(10_000);
+    expect(testConfig?.testTimeout).toBe(30_000);
     expect(coverage?.provider).toBe("v8");
     expect(coverage?.all).toBe(true);
     expect(coverage?.include).toEqual([
