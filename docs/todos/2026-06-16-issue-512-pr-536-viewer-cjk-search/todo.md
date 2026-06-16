@@ -54,7 +54,7 @@ Planned adaptation: add bounded `q` support to the existing authenticated `/agen
 | Backend memory-only CJK search query | Targeted API tests | passed | Temporary dependency symlink to existing local install; `vitest run --exclude test/integration.test.ts test/api-memories-project.test.ts test/memories-pagination.test.ts`: 2 files, 14 tests passed. |
 | Viewer Memories query uses backend route | Source-level viewer test | passed | `test/memories-pagination.test.ts` checks backend `q=` path construction and IME-safe binding. |
 | Auth/scope/DoS posture | Security review and scanner gates | passed | Auth remains first in `api::memories`; project/agent filters run before search; `q` capped at 500 chars; viewer URL-encodes query. Security diff scan report: `/tmp/codex-security-scans/agentmemory/6c387b4_20260616T020931Z/report.md`; `semgrep scan --config p/default --error --metrics=off .`: 0 findings. |
-| Prep merge to local main | Prep skill workflow | pending |  |
+| Prep merge to local main | Prep skill workflow | passed | Local `main` worktree was clean; `main` was the merge base; fast-forward merge completed. |
 
 ## Verification Evidence
 
@@ -80,3 +80,12 @@ Planned adaptation: add bounded `q` support to the existing authenticated `/agen
 - `simple-code`: focused simplification pass over changed API/viewer/tests found the current minimal shape preferable; no follow-up edit made.
 - `requesting-code-review`: external subagent review was not invoked because the available subagent tool is limited to explicit user requests for subagents. A local review pass checked auth-before-read, project/agent filter order, memory-only result mapping, query length bound, URL encoding, DOM escaping, and stale response handling.
 - `review-implementation`: local adversarial review found no blocking correctness or security issue. Residual risk is limited to runtime viewer behavior depending on a live Agentmemory daemon; source-level tests cover route construction and handler binding.
+
+## Prep Merge Notes
+
+- Current worktree branch: `review/issue-512-pr-536-viewer-cjk-search`.
+- Commit prepared for local main: `4663a11350f30baa103b516f8cf4ff4c4e0bb9ed`.
+- Main checkout: `/Users/A1538552/_projects/_tools/agentmemory`, branch `main`, clean before merge.
+- Merge basis: local `main` at `6c387b4efea524db5bf8fe0e923958cbcf0213f1`.
+- Merge result: fast-forward to `4663a11350f30baa103b516f8cf4ff4c4e0bb9ed`.
+- No push, PR creation, GitHub tracker update, label change, or public write was performed.
