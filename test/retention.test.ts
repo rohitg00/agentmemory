@@ -10,6 +10,10 @@ vi.mock("../src/logger.js", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
+vi.mock("../src/functions/image-refs.js", () => ({
+  decrementImageRef: vi.fn(),
+}));
+
 function mockKV(
   memories: Memory[] = [],
   semanticMems: SemanticMemory[] = [],
