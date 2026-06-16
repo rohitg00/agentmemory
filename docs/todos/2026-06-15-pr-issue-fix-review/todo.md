@@ -64,7 +64,16 @@ Decision: `defer`. Direct import is rejected as-is. The issue remains a plausibl
 | PR diff and tests review | Public unauthenticated patch inspection and `git apply --check` | Done | Patch touches 21 files across graph/search/API/MCP/viewer/hooks/docs/tests and does not apply to current fork. |
 | Security review | Manual diff-scoped review against local graph/search boundaries | Done | Found unbounded per-query edge and memory enumeration, boot-time full backfill, missing project/agent isolation, stale smart-search result mapping, and broad unrelated hook/viewer churn. |
 | Worklist row | Diff inspection and reference-syntax scan | Done | PR 349 row added with neutral IDs and decision; no URL, hash-number, or mention syntax found. |
-| Prep local main merge readiness | prep-merge-to-local-main | Pending | Not run yet. |
+| Prep local main merge readiness | prep-merge-to-local-main | Done | Local main commit `60099a31029575412ba6fc27f4ab986196922e56` is already an ancestor of the review branch after the docs commit, so merge was a no-op. |
+
+## Verification Notes
+
+- Public unauthenticated issue metadata, PR metadata, and patch content were inspected. No credentialed GitHub reads and no GitHub writes were performed.
+- `git apply --check /tmp/agentmemory-pr-349.patch` failed because the patch is stale against the current fork; failures covered AGENTS, README, plugin metadata, smart search, index registration, state schema, API, types, hook scripts, and viewer paths.
+- Reference-syntax scan for active URLs, hash-number issue syntax, repository cross-reference syntax, and mentions passed for this task directory.
+- `git diff --cached --check` passed before the first docs commit.
+- `gitleaks protect --staged --redact` passed before the first docs commit.
+- Required focused review gates were performed locally. Subagent spawning was not used because the current tool policy only allows spawning when the user explicitly asks for subagents or parallel agent work.
 
 ## Subagent Ledger
 
