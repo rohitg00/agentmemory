@@ -118,3 +118,10 @@ Stop conditions:
   - `git diff --check -- src/functions/retention.ts test/context-injection.test.ts`: pass.
   - `corepack pnpm vitest run test/retention.test.ts --reporter verbose`: 1 file passed, 15 tests passed.
   - `corepack pnpm vitest run test/context-injection.test.ts --reporter verbose`: 1 file passed, 5 tests passed.
+- Security and final verification after post-merge fix:
+  - `semgrep scan --config p/default --error --metrics=off src/functions/retention.ts test/context-injection.test.ts`: pass, 0 findings.
+  - `gitleaks protect --staged --redact`: pass, no leaks found before post-merge-fix commit.
+  - Post-merge fix commit: `13b00161f7f8ff533c77df444a360828171eb079`.
+  - Prep-merge rerun after fix: captured local main `d4393d1ab5dd284edee3a17bfbf45825f239c07e` was already up to date after sandbox-escalated no-op merge command.
+  - Repeat dependency setup: requested frozen pnpm install exited 0 and was already up to date.
+  - Repeat full test: `corepack pnpm test` passed, 158 files and 1989 tests.
