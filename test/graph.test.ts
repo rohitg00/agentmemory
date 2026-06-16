@@ -14,6 +14,7 @@ import type {
 
 function mockKV() {
   const store = new Map<string, Map<string, unknown>>();
+  let listCalls = 0;
   return {
     get: async <T>(scope: string, key: string): Promise<T | null> => {
       return (store.get(scope)?.get(key) as T) ?? null;
@@ -27,9 +28,11 @@ function mockKV() {
       store.get(scope)?.delete(key);
     },
     list: async <T>(scope: string): Promise<T[]> => {
+      listCalls += 1;
       const entries = store.get(scope);
       return entries ? (Array.from(entries.values()) as T[]) : [];
     },
+    listCallCount: () => listCalls,
   };
 }
 
@@ -187,6 +190,26 @@ describe("Graph Functions", () => {
     expect(result.nodes.length).toBeGreaterThanOrEqual(1);
     expect(result.edges.length).toBeGreaterThanOrEqual(1);
     expect(result.depth).toBe(2);
+  });
+
+  it("graph-query startNodeId after fresh extraction does not enumerate graph scopes", async () => {
+    await sdk.trigger("mem::graph-extract", { observations: [testObs] });
+
+    const fileNodeId = await kv.get<string>(
+      "mem:graph:name-index",
+      "file|src/index.ts",
+    );
+    expect(fileNodeId).toBeTruthy();
+
+    const before = kv.listCallCount();
+    const result = (await sdk.trigger("mem::graph-query", {
+      startNodeId: fileNodeId,
+      maxDepth: 2,
+    })) as GraphQueryResult;
+
+    expect(result.nodes.length).toBeGreaterThanOrEqual(1);
+    expect(result.edges.length).toBeGreaterThanOrEqual(1);
+    expect(kv.listCallCount()).toBe(before);
   });
 
   it("graph-stats returns counts by type", async () => {

@@ -2,6 +2,7 @@ import type { ISdk } from "iii-sdk";
 import type { StateKV } from "../state/kv.js";
 import { KV, generateId } from "../state/schema.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
+import { indexGraphEdge, indexGraphNode } from "../state/graph-indexes.js";
 import { recordAudit } from "./audit.js";
 import type {
   MeshPeer,
@@ -275,6 +276,7 @@ async function lwwMergeList<T extends { id: string }>(
   items: T[] | undefined,
   lockPrefix: string,
   tsField: "updatedAt" | "createdAt",
+  onWrite?: (item: T) => Promise<void>,
 ): Promise<number> {
   if (!items || !Array.isArray(items)) return 0;
   let count = 0;
@@ -295,7 +297,10 @@ async function lwwMergeList<T extends { id: string }>(
       }
       return false;
     });
-    if (wrote) count++;
+    if (wrote) {
+      count++;
+      if (onWrite) await onWrite(item);
+    }
   }
   return count;
 }
@@ -326,7 +331,10 @@ async function lwwMergeGraphNodes(
       }
       return false;
     });
-    if (wrote) count++;
+    if (wrote) {
+      count++;
+      await indexGraphNode(kv, item);
+    }
   }
   return count;
 }
@@ -566,7 +574,14 @@ export function registerMeshFunction(
         }
       }
       accepted += await lwwMergeGraphNodes(kv, data.graphNodes);
-      accepted += await lwwMergeList(kv, KV.graphEdges, data.graphEdges, "mem:gedge", "createdAt");
+      accepted += await lwwMergeList(
+        kv,
+        KV.graphEdges,
+        data.graphEdges,
+        "mem:gedge",
+        "createdAt",
+        (edge) => indexGraphEdge(kv, edge),
+      );
       await recordAudit(kv, "mesh_sync", "mem::mesh-receive", [], {
         action: "mesh.receive",
         accepted,
@@ -691,7 +706,14 @@ async function applySyncData(
     applied += await lwwMergeGraphNodes(kv, data.graphNodes);
   }
   if (scopes.includes("graph:edges")) {
-    applied += await lwwMergeList(kv, KV.graphEdges, data.graphEdges, "mem:gedge", "createdAt");
+    applied += await lwwMergeList(
+      kv,
+      KV.graphEdges,
+      data.graphEdges,
+      "mem:gedge",
+      "createdAt",
+      (edge) => indexGraphEdge(kv, edge),
+    );
   }
 
   return applied;

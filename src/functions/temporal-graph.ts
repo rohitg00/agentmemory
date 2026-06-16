@@ -9,6 +9,11 @@ import type {
 } from "../types.js";
 import { KV, generateId } from "../state/schema.js";
 import type { StateKV } from "../state/kv.js";
+import {
+  indexGraphEdge,
+  indexGraphNode,
+  linkObservationsToNode,
+} from "../state/graph-indexes.js";
 import { logger } from "../logger.js";
 
 const TEMPORAL_EXTRACTION_SYSTEM = `You are a temporal knowledge extraction engine. Given observations, extract entities AND their temporal relationships with full context metadata.
@@ -216,10 +221,12 @@ export function registerTemporalGraphFunctions(
             };
             if (merged.aliases.length === 0) delete (merged as any).aliases;
             await kv.set(KV.graphNodes, existing.id, merged);
+            await linkObservationsToNode(kv, existing.id, obsIds);
             node.id = existing.id;
             idRemap.set(oldId, existing.id);
           } else {
             await kv.set(KV.graphNodes, node.id, node);
+            await indexGraphNode(kv, node);
             existingNodes.push(node);
           }
         }
@@ -254,6 +261,7 @@ export function registerTemporalGraphFunctions(
           }
 
           await kv.set(KV.graphEdges, edge.id, edge);
+          await indexGraphEdge(kv, edge);
           existingEdges.push(edge);
         }
 
