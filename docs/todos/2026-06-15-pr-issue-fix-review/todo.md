@@ -64,7 +64,7 @@ Decision: `defer`. Direct import is rejected as-is. The issue remains a plausibl
 | PR diff and tests review | Public unauthenticated patch inspection and `git apply --check` | Done | Patch touches 21 files across graph/search/API/MCP/viewer/hooks/docs/tests and does not apply to current fork. |
 | Security review | Manual diff-scoped review against local graph/search boundaries | Done | Found unbounded per-query edge and memory enumeration, boot-time full backfill, missing project/agent isolation, stale smart-search result mapping, and broad unrelated hook/viewer churn. |
 | Worklist row | Diff inspection and reference-syntax scan | Done | PR 349 row added with neutral IDs and decision; no URL, hash-number, or mention syntax found. |
-| Prep local main merge readiness | prep-merge-to-local-main | Done | Local main commit `60099a31029575412ba6fc27f4ab986196922e56` is already an ancestor of the review branch after the docs commit, so merge was a no-op. |
+| Prep local main merge readiness | prep-merge-to-local-main | Pending | Corrected rerun is in progress against current local main commit `d4393d1ab5dd284edee3a17bfbf45825f239c07e`; earlier no-op evidence for `60099a31029575412ba6fc27f4ab986196922e56` is stale because local main advanced. |
 
 ## Verification Notes
 
@@ -74,6 +74,7 @@ Decision: `defer`. Direct import is rejected as-is. The issue remains a plausibl
 - `git diff --cached --check` passed before the first docs commit.
 - `gitleaks protect --staged --redact` passed before the first docs commit.
 - Required focused review gates were performed locally. Subagent spawning was not used because the current tool policy only allows spawning when the user explicitly asks for subagents or parallel agent work.
+- 2026-06-16 corrected merge-readiness rerun is pending against current local main commit `d4393d1ab5dd284edee3a17bfbf45825f239c07e`; install and test evidence must be recorded after that merge.
 
 ## Subagent Ledger
 
