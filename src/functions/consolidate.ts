@@ -62,6 +62,48 @@ function parseMemoryXml(
   };
 }
 
+const LESSONABLE_MEMORY_TYPES = new Set<Memory["type"]>([
+  "architecture",
+  "bug",
+  "pattern",
+  "workflow",
+]);
+
+async function saveConsolidationLesson(
+  sdk: ISdk,
+  memory: Memory,
+  concept: string,
+  action: "created" | "evolved",
+): Promise<void> {
+  if (!LESSONABLE_MEMORY_TYPES.has(memory.type)) return;
+
+  const content =
+    memory.content.length > 500
+      ? `${memory.content.slice(0, 500)}...`
+      : memory.content;
+
+  try {
+    await sdk.trigger({
+      function_id: "mem::lesson-save",
+      payload: {
+        content: `[${memory.type}] ${memory.title}: ${content}`,
+        context: `${action} from consolidation concept group: ${concept}`,
+        confidence: 0.6,
+        project: memory.project,
+        tags: [memory.type, "consolidated"],
+        source: "consolidation",
+        sourceIds: [memory.id],
+      },
+    });
+  } catch (err) {
+    logger.warn("Failed to save lesson from consolidation", {
+      memoryId: memory.id,
+      type: memory.type,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
 export function registerConsolidateFunction(
   sdk: ISdk,
   kv: StateKV,
@@ -204,6 +246,7 @@ export function registerConsolidateFunction(
             });
             existingTitles.add(evolved.title.toLowerCase());
             consolidated++;
+            await saveConsolidationLesson(sdk, evolved, concept, "evolved");
           } else {
             const memory: Memory = {
               id: generateId("mem"),
@@ -222,6 +265,7 @@ export function registerConsolidateFunction(
             });
             existingTitles.add(memory.title.toLowerCase());
             consolidated++;
+            await saveConsolidationLesson(sdk, memory, concept, "created");
           }
         } catch (err) {
           logger.warn("Consolidation failed for concept", {

@@ -196,6 +196,48 @@ describe("Consolidation Pipeline", () => {
     expect(stored[0].triggerCondition).toBe("when writing tests");
   });
 
+  it("creates scoped lessons for newly extracted procedural memories", async () => {
+    const provider = {
+      name: "test",
+      compress: vi.fn(),
+      summarize: vi.fn().mockResolvedValue(
+        `<procedures><procedure name="Scoped Workflow" trigger="when shipping scoped changes"><step>Inspect project scope</step><step>Run targeted tests</step></procedure></procedures>`,
+      ),
+    };
+    sdk.registerFunction("mem::lesson-save", async (payload: Record<string, unknown>) => {
+      await kv.set("mem:lessons", "lsn_proc", payload);
+      return { success: true, action: "created", lesson: payload };
+    });
+    registerConsolidationPipelineFunction(sdk as never, kv as never, provider as never);
+
+    await kv.set("mem:memories", "api_1", { ...makePattern(1), project: "api" });
+    await kv.set("mem:memories", "api_2", { ...makePattern(2), project: "api" });
+    await kv.set("mem:memories", "web_1", { ...makePattern(3), project: "web" });
+    await kv.set("mem:memories", "web_2", { ...makePattern(4), project: "web" });
+
+    const result = (await sdk.trigger("mem::consolidate-pipeline", {
+      tier: "procedural",
+      project: "api",
+    })) as { success: boolean; results: Record<string, { patternsAnalyzed: number }> };
+
+    expect(result.success).toBe(true);
+    expect(result.results.procedural.patternsAnalyzed).toBe(2);
+
+    const stored = await kv.list<ProceduralMemory>("mem:procedural");
+    const lessons = await kv.list<Record<string, unknown>>("mem:lessons");
+    expect(stored).toHaveLength(1);
+    expect(lessons).toHaveLength(1);
+    expect(lessons[0]).toMatchObject({
+      content: "[procedure] Scoped Workflow: Inspect project scope; Run targeted tests",
+      context: "when shipping scoped changes",
+      confidence: 0.6,
+      project: "api",
+      tags: ["procedural", "consolidated"],
+      source: "consolidation",
+      sourceIds: [stored[0].id],
+    });
+  });
+
   it("consolidation records an audit entry", async () => {
     const provider = {
       name: "test",

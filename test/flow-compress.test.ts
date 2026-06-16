@@ -79,6 +79,10 @@ describe("mem::flow-compress", () => {
     } as unknown as MemoryProvider;
 
     registerFlowCompressFunction(sdk as never, kv as never, provider);
+    sdk.registerFunction("mem::lesson-save", async (payload: Record<string, unknown>) => {
+      await kv.set(KV.lessons, "lsn_flow", payload);
+      return { success: true, action: "created", lesson: payload };
+    });
     const action = makeDoneAction("act_flow");
     await kv.set(KV.actions, action.id, action);
 
@@ -97,5 +101,17 @@ describe("mem::flow-compress", () => {
     expect(memories[0].title).toBe("Address Semgrep findings");
     expect(memories[0].content).toContain("Outcome: Plan implemented");
     expect(memories[0].content).toContain("Lesson: Keep security suppressions justified");
+
+    const lessons = await kv.list<Record<string, unknown>>(KV.lessons);
+    expect(lessons).toHaveLength(1);
+    expect(lessons[0]).toMatchObject({
+      content: "Keep security suppressions justified",
+      context: "Address Semgrep findings",
+      confidence: 0.6,
+      project: "agentmemory",
+      tags: ["flow-compress"],
+      source: "consolidation",
+      sourceIds: [memories[0].id],
+    });
   });
 });

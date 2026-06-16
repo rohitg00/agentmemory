@@ -213,6 +213,27 @@ describe("Lessons", () => {
       expect(result.lessons[2].confidence).toBe(0.3);
     });
 
+    it("records an audit entry when lessons are listed", async () => {
+      const result = (await sdk.trigger("mem::lesson-list", {
+        project: "/app",
+        limit: 1,
+      })) as { lessons: Lesson[] };
+
+      expect(result.lessons).toHaveLength(1);
+      const audits = await kv.list<Record<string, unknown>>("mem:audit");
+      const listAudit = audits.find((a) => a.operation === "lesson_list");
+      expect(listAudit).toMatchObject({
+        operation: "lesson_list",
+        functionId: "mem::lesson-list",
+        targetIds: [result.lessons[0].id],
+        details: {
+          project: "/app",
+          resultCount: 1,
+          totalMatched: 2,
+        },
+      });
+    });
+
     it("filters by project", async () => {
       const result = (await sdk.trigger("mem::lesson-list", { project: "/app" })) as { lessons: Lesson[] };
       expect(result.lessons.length).toBe(2);

@@ -60,6 +60,8 @@ describe("Tools Registry", () => {
       "memory_verify",
       "memory_lesson_save",
       "memory_lesson_recall",
+      "memory_lesson_list",
+      "memory_lesson_strengthen",
       "memory_obsidian_export",
       "memory_save",
       "memory_recall",

@@ -245,6 +245,42 @@ describe("mem::consolidate — cross-project existingMatch guard", () => {
     expect(memories[0].project).toBe("api");
   });
 
+  it("creates a scoped lesson for newly consolidated pattern memories", async () => {
+    const sdk = makeMockSdk();
+    const kv = makeMockKV();
+    const provider = makeProvider("repeatable auth pattern");
+    sdk.registerFunction("mem::lesson-save", async (payload: Record<string, unknown>) => {
+      await kv.set(KV.lessons, "lsn_consolidated", payload);
+      return { success: true, action: "created", lesson: payload };
+    });
+
+    const session = makeSession("sess_api", "api");
+    await kv.set(KV.sessions, session.id, session);
+    for (let i = 0; i < 3; i++) {
+      await kv.set(
+        KV.observations(session.id),
+        `obs_${i}`,
+        makeObs(`obs_${i}`, session.id, "auth"),
+      );
+    }
+
+    registerConsolidateFunction(sdk as never, kv as never, provider as never);
+    await sdk.trigger("mem::consolidate", { project: "api", minObservations: 1 });
+
+    const memories = await kv.list<Memory>(KV.memories);
+    const lessons = await kv.list<Record<string, unknown>>(KV.lessons);
+    expect(lessons).toHaveLength(1);
+    expect(lessons[0]).toMatchObject({
+      content: "[pattern] repeatable auth pattern: synthesized content about the concept",
+      context: "created from consolidation concept group: auth",
+      confidence: 0.6,
+      project: "api",
+      tags: ["pattern", "consolidated"],
+      source: "consolidation",
+      sourceIds: [memories[0].id],
+    });
+  });
+
   it("leaves project undefined on memories when consolidate is called without a project", async () => {
     const sdk = makeMockSdk();
     const kv = makeMockKV();

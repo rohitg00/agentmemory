@@ -4,6 +4,7 @@ import { KV, generateId } from "../state/schema.js";
 import type { Action, ActionEdge, RoutineRun, MemoryProvider } from "../types.js";
 import { recordAudit } from "./audit.js";
 import { getXmlTag } from "../prompts/xml.js";
+import { logger } from "../logger.js";
 
 const FLOW_COMPRESS_SYSTEM = `You are a workflow summarizer. Given a completed action chain, produce a concise summary capturing:
 1. The overall goal and outcome
@@ -112,6 +113,29 @@ export function registerFlowCompressFunction(
           project: data.project,
         });
 
+        if (summary.lesson.trim()) {
+          const lessonContent = truncateLessonContent(summary.lesson.trim());
+          try {
+            await sdk.trigger({
+              function_id: "mem::lesson-save",
+              payload: {
+                content: lessonContent,
+                context: summary.goal || summary.outcome || "",
+                confidence: 0.6,
+                project: data.project,
+                tags: ["flow-compress"],
+                source: "consolidation",
+                sourceIds: [memory.id],
+              },
+            });
+          } catch (err) {
+            logger.warn("Failed to save lesson from flow-compress", {
+              memoryId: memory.id,
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }
+        }
+
         return {
           success: true,
           compressed: doneActions.length,
@@ -188,6 +212,10 @@ function formatSummary(s: {
   if (s.discoveries) parts.push(`Discoveries: ${s.discoveries}`);
   if (s.lesson) parts.push(`Lesson: ${s.lesson}`);
   return parts.join("\n\n");
+}
+
+function truncateLessonContent(content: string): string {
+  return content.length > 500 ? `${content.slice(0, 500)}...` : content;
 }
 
 function extractConcepts(actions: Action[]): string[] {

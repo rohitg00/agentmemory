@@ -290,6 +290,22 @@ describe("MCP tools/call validation boundaries", () => {
     ["memory_verify", {}, "id is required"],
     ["memory_lesson_save", {}, "content is required"],
     ["memory_lesson_recall", {}, "query is required"],
+    [
+      "memory_lesson_list",
+      { source: "other" },
+      "source must be one of: manual, crystal, consolidation",
+    ],
+    [
+      "memory_lesson_list",
+      { minConfidence: 2 },
+      "minConfidence must be between 0 and 1",
+    ],
+    [
+      "memory_lesson_list",
+      { limit: 0 },
+      "limit must be a positive integer",
+    ],
+    ["memory_lesson_strengthen", {}, "lessonId is required"],
     ["memory_slot_get", {}, "label required"],
     ["memory_slot_create", {}, "label required"],
     ["memory_slot_append", { label: "notes" }, "label and text required"],
@@ -653,6 +669,8 @@ describe("MCP tools/call fallback and KV-backed behavior", () => {
     ["memory_verify", "mem::verify", { id: "mem_1" }],
     ["memory_lesson_save", "mem::lesson-save", { content: "Prefer rg", context: "search", confidence: 0.8, project: "git:repo", tags: "tooling, search" }],
     ["memory_lesson_recall", "mem::lesson-recall", { query: "search", project: "git:repo", minConfidence: 0.2, limit: 3 }],
+    ["memory_lesson_list", "mem::lesson-list", { project: "git:repo", source: "manual", minConfidence: 0.2, limit: 3 }],
+    ["memory_lesson_strengthen", "mem::lesson-strengthen", { lessonId: " lsn_1 " }],
     ["memory_reflect", "mem::reflect", { project: "git:repo", maxClusters: 2 }],
     ["memory_insight_list", "mem::insight-list", { project: "git:repo", minConfidence: 0.3, limit: 4 }],
     ["memory_slot_list", "mem::slot-list", {}],
@@ -668,6 +686,20 @@ describe("MCP tools/call fallback and KV-backed behavior", () => {
     expect(response.status_code).toBe(200);
     expect(parsedContent(response)).toMatchObject({ function_id });
     expect(h.triggerCalls[0].function_id).toBe(function_id);
+  });
+
+  it("trims lesson strengthen IDs", async () => {
+    const h = createHarness();
+
+    const response = await h.callTool("memory_lesson_strengthen", {
+      lessonId: " lsn_1 ",
+    });
+
+    expect(response.status_code).toBe(200);
+    expect(h.triggerCalls[0]).toEqual({
+      function_id: "mem::lesson-strengthen",
+      payload: { lessonId: "lsn_1" },
+    });
   });
 
   it("returns sessions directly from KV for memory_sessions", async () => {

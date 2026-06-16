@@ -173,8 +173,25 @@ export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
       }
 
       lessons.sort((a, b) => b.confidence - a.confidence);
+      const selectedLessons = lessons.slice(0, limit);
 
-      return { success: true, lessons: lessons.slice(0, limit) };
+      try {
+        await recordAudit(
+          kv,
+          "lesson_list",
+          "mem::lesson-list",
+          selectedLessons.map((l) => l.id),
+          {
+            project: data.project,
+            source: data.source,
+            minConfidence,
+            resultCount: selectedLessons.length,
+            totalMatched: lessons.length,
+          },
+        );
+      } catch {}
+
+      return { success: true, lessons: selectedLessons };
     },
   );
 
