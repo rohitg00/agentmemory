@@ -340,3 +340,9 @@ PR 892 is relevant for Issue 700 and Issue 844. The fork should adapt the engine
 - Resolution preserved the PR 412 review notes alongside the existing PR 318 and PR 349 records.
 - 2026-06-16 local main integration resolved a third add/add conflict with the PR 892/Issues 700 and 844 review task record.
 - Resolution preserved the PR 892 review notes alongside the existing PR 318, PR 349, and PR 412 records.
+
+## PR List Merge Notes
+
+- 2026-06-16 local main integration merged the generated PR list task record from branch `pr-list`.
+- The generated full worklist was kept as the base list, and already-reviewed rows from local `main` were preserved for PR 318, PR 349, PR 412, and PR 892.
+- The upstream PR tracker task record remains under `docs/todos/2026-06-14-track-upstream-prs-as-issues/`; this file remains the issue-fix review record.

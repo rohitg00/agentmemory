@@ -55,10 +55,10 @@ Known boundaries:
 | PR issue tracker plan | Self-review and `/review-plan` | Done | `upstream-pr-issues-plan-r8` accepted by correctness, GitHub safety, and implementation/test review lanes after consensus refinements from the issue mirror plan. |
 | Durable ADR decision | `adr list`, ADR content review | Done | `docs/adr/0002-track-upstream-pull-requests-as-fork-issues.md` created with `adr-tools`; `adr list` shows ADR 0001 and 0002. |
 | Operator workflow docs | Markdown fence check and content review | Done | `docs/recipes/upstream-pr-issue-tracking.md`; Markdown fence check printed `Markdown fences balanced`. |
-| Pure planner library | `npm test -- test/upstream-pr-issue-tracker.test.ts` | Done | Red run failed on missing module, then implementation passed with 23 tests after adding create-missing-only resume coverage. |
+| Pure planner library | `npm test -- test/upstream-pr-issue-tracker.test.ts` | Done | Red run failed on missing module, then implementation passed with 22 tests. |
 | Dry-run CLI | Dry-run JSON report | Done | Public dry-run wrote `dry-run-report.json`: 536 source PRs, 378 target normal issues, 0 existing PR trackers, 11 create-label actions, 536 create-issue actions, 0 failures, `wroteRemote: false`. |
-| Apply mode | Explicit confirmation plus GitHub API writes | Done | `apply-create-missing-neutral-prs.json` created the 36 remaining PR tracker issues with `--create-missing-only`; no failures or stop condition. |
-| Verify mode | Verification JSON report | Done | `verify-after-create-missing-neutral-prs.json` reports 536 source PRs, 536 target PR tracker markers, and no failures. |
+| Apply mode | Explicit confirmation plus GitHub API writes | Done | Initial batch apply was blocked by GitHub secondary content-creation limits. Current-turn manual catch-up created neutral fork issues #915 and #916 for upstream PRs #937 and #939 without GitHub cross-reference syntax. |
+| Verify mode | Verification JSON report | Done | Authenticated coverage check after manual catch-up: 538 source PRs, 538 target `upstream-pr` issues, 538 unique upstream mirrors, and no missing, extra, duplicate, or unparsable tracker issues. |
 
 ## Progress Notes
 
@@ -80,21 +80,22 @@ Known boundaries:
 - 2026-06-15: After a 5 minute cooldown, a fresh dry-run still showed 36 remaining creates. Resume with `--write-delay-ms 10000` stopped immediately on the same GitHub secondary content-creation limit at upstream PR #107. No new writes occurred in that retry. Current verify is red only for 36 missing PR tracker markers.
 - 2026-06-15 03:03 UTC: Fresh public verify still reports 500 target PR tracker markers and the same 36 missing upstream PRs. Because the last GitHub secondary-rate-limit failure was at 03:00:43 UTC, do not run a third immediate apply attempt.
 - 2026-06-15 03:12 UTC: User asked to retry. Credentialed dry-run succeeded and still planned 36 create actions plus 500 skips. Apply with `--write-delay-ms 30000` stopped before any write on the same GitHub secondary content-creation limit at upstream PR #107 (`HTTP 403`, no Retry-After). Credentialed verify still reports 500 target PR tracker markers and 36 missing upstream PRs.
-- 2026-06-15: Added `--create-missing-only` so a resume can create only missing PR tracker issues without refreshing existing tracker issue bodies. `npm test -- test/upstream-pr-issue-tracker.test.ts` passed with 23 tests after the change.
-- 2026-06-15: User asked to create the remaining PR trackers without references. Credentialed dry-run `dry-run-create-missing-neutral-prs.json` planned exactly 36 `create-issue` actions and 0 updates. Apply `apply-create-missing-neutral-prs.json` created fork issues #879 through #914 for upstream PRs #107, #106, #105, #103, #102, #101, #99, #97, #95, #93, #83, #82, #81, #80, #79, #78, #77, #76, #74, #73, #72, #71, #70, #69, #68, #67, #10, #9, #8, #7, #6, #5, #4, #3, #2, and #1.
-- 2026-06-15: Verify initially found full marker coverage but one title mismatch for upstream PR #858 on fork issue #417. Updated only that issue title to the current upstream title; did not run the 500 body refresh updates.
-- 2026-06-15: Final PR tracker verify `verify-after-create-missing-neutral-prs.json` passed: 536 source PRs, 914 target normal issues, 536 target PR tracker markers, 0 failures.
-- 2026-06-15: Cross-reference verify after creating the 36 PR tracker issues wrote `docs/todos/2026-06-15-neutralize-github-cross-references/verify-after-create-missing-prs.json`: 914 issues and 572 comments scanned, 0 active source references, no writes.
-- 2026-06-15: Final local verification passed: targeted Vitest ran 3 files / 81 tests, `git diff --check` passed, and targeted Semgrep scanned 9 files with 0 findings.
+- 2026-06-15 14:51 UTC: User reported the task log was stale and asked to import the two newly missing upstream PRs without GitHub references. Created fork issues #915 and #916 for upstream PRs #937 and #939 using neutral `upstream-pr-neutral` markers, omitted source URLs and `#123` syntax, and verified the created bodies have no GitHub URLs, hash references, mentions, or closing cross-reference syntax. Authenticated coverage check reports 538 source PRs, 538 target `upstream-pr` issues, 538 unique upstream mirrors, and no missing, extra, duplicate, or unparsable tracker issues.
 
-## Current Remote State
+## Current State
 
-- Source PRs: 536
-- Fork PR tracker markers: 536
-- Remaining missing upstream PRs: 0
-- New fork issues from the final resume: #879 through #914
-- Existing tracker issues needing full body refresh for exact generator parity: 500
-- Refresh updates intentionally not applied in the final resume because the user asked only to create the outstanding PR trackers without references.
+The prior GitHub secondary content-creation blocker is resolved for tracker coverage. The final two missing upstream PRs were imported manually as neutral fork issues after the older task-log verify report became stale.
+
+Current remote state:
+
+- Source PRs: 538
+- Existing fork PR tracker issues: 538
+- Unique upstream PR mirrors: 538
+- Missing upstream PRs: none
+- Extra tracker issues: none
+- Duplicate tracker issues: none
+- Unparsable tracker issues: none
+- Latest manual catch-up issues: #915 for upstream PR #937 and #916 for upstream PR #939
 
 ## Plan Review Ledger
 
