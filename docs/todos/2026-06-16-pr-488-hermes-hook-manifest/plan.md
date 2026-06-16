@@ -81,8 +81,8 @@ Run: `git diff --check`
 
 Observed: no whitespace errors.
 
-- [ ] **Step 4: Run final merge prep**
+- [x] **Step 4: Run final merge prep**
 
 Run the required `$prep-merge-to-local-main` workflow.
 
-Expected: task-owned documentation is committed or recorded as no-op, local main is merged or recorded as already an ancestor, and final status is reported.
+Observed: task-owned documentation was committed, local main was already an ancestor, and no merge commit was needed.

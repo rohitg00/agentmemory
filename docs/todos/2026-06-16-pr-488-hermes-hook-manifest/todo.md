@@ -47,7 +47,7 @@ Known boundaries:
 | Fork decision | Local evidence review | Done | Decision: already-fixed; no import needed. Existing history shows the manifest fix landed locally before this review. |
 | Security review | Manual hook/tooling risk pass | Done | No new hook, command, dependency, network call, auth path, filesystem write, persistence behavior, or prompt flow is introduced because no product change is imported. Existing Hermes requests still use the local URL validation and plaintext bearer guard. |
 | Targeted verification | `npm test -- test/hermes-plugin.test.ts`; static Node manifest check; `git diff --check` | Partial | `git diff --check` passed. Static Node manifest check reported the six manifest hooks and six implemented lifecycle methods match. `npm test -- test/hermes-plugin.test.ts` could not run because `vitest` was not installed in this worktree. |
-| Merge prep | `$prep-merge-to-local-main` | Pending | Must run at the end of this task. |
+| Merge prep | `$prep-merge-to-local-main` | Done | Local main commit `6c387b4efea524db5bf8fe0e923958cbcf0213f1` was already an ancestor of the review branch, so the merge step was a no-op. |
 
 ## Decision
 
@@ -68,3 +68,16 @@ Rationale:
 - 2026-06-16: `npm test -- test/hermes-plugin.test.ts` failed before executing tests because the local worktree has no installed `vitest` binary; no dependency installation was performed.
 - 2026-06-16: Static Node manifest check confirmed the manifest hook set matches the implemented Hermes lifecycle hook set.
 - 2026-06-16: `git diff --check` passed.
+- 2026-06-16: Security-best-practices passive review found no critical or major issue in the docs-only branch diff. No code or config surface changed.
+- 2026-06-16: Simple-code cleanup clarified the targeted test step as an attempted test because Vitest was unavailable.
+- 2026-06-16: Focused review and implementation review found no critical or important issue in the task-owned documentation diff. Independent subagent review was not run because the available subagent tool is restricted to explicit subagent requests.
+- 2026-06-16: Codex Security diff scan was skipped for the committed branch diff because it changes only task-local documentation and does not alter hook manifests, auth, networking, filesystem behavior, dependencies, prompts, or persistence.
+- 2026-06-16: `gitleaks protect --staged --redact` found no leaks before the documentation commit.
+- 2026-06-16: `$prep-merge-to-local-main` preflight found the main worktree clean and at `6c387b4efea524db5bf8fe0e923958cbcf0213f1`; local main was already an ancestor, so merge was a no-op.
+
+## Final Review Notes
+
+- Decision remains `already-fixed`; no PR 488 code, config, manifest, or test hunks were imported.
+- Task-owned changes are limited to this local decision record and implementation plan.
+- Product security risk from this branch diff is low because it does not modify runtime surfaces.
+- Residual verification gap: the repo-native Vitest target could not run without installing dependencies in this worktree.
