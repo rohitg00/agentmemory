@@ -323,8 +323,6 @@ export function registerRetentionFunctions(
         };
       }
 
-      const { decrementImageRef } = await import("./image-refs.js");
-
       // Branch on source (#124). Pre-0.8.10 rows have no `source` field,
       // and that includes semantic retention rows that were written by
       // the old scorer — so we can't just default to episodic, that
@@ -337,6 +335,9 @@ export function registerRetentionFunctions(
       let evictedEpisodic = 0;
       let evictedSemantic = 0;
       const evictedIds: string[] = [];
+      let decrementImageRef:
+        | typeof import("./image-refs.js").decrementImageRef
+        | undefined;
       for (const candidate of candidates) {
         try {
           let scope: string | null = null;
@@ -367,7 +368,8 @@ export function registerRetentionFunctions(
 
           const mem = await kv.get<Memory>(scope, candidate.memoryId);
           if (mem && mem.imageRef) {
-            const { decrementImageRef } = await import("./image-refs.js");
+            decrementImageRef ??= (await import("./image-refs.js"))
+              .decrementImageRef;
             await decrementImageRef(kv, sdk, mem.imageRef);
           }
           await kv.delete(scope, candidate.memoryId);

@@ -8,6 +8,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   resetServerLogTeeForTests,
@@ -17,7 +18,10 @@ import {
 } from "../src/cli/server-log.js";
 
 function cliSource(): string {
-  return readFileSync("src/cli.ts", "utf-8");
+  return readFileSync(
+    fileURLToPath(new URL("../src/cli.ts", import.meta.url)),
+    "utf-8",
+  );
 }
 
 function functionBody(source: string, name: string): string {
@@ -68,6 +72,17 @@ describe("CLI server log persistence", () => {
   it("delegates iii config discovery to the tested build runtime helper", () => {
     const body = functionBody(cliSource(), "findIiiConfig");
     expect(body).toContain("findIiiConfigPath({ moduleDir: __dirname })");
+  });
+
+  it("renders a runtime iii config before starting the native engine", () => {
+    const prepareBody = functionBody(cliSource(), "prepareRuntimeIiiConfig");
+    const startBody = functionBody(cliSource(), "startEngine");
+
+    expect(prepareBody).toContain("renderRuntimePortIiiConfig(raw)");
+    expect(prepareBody).toContain("renderRuntimeDataDirIiiConfig(");
+    expect(prepareBody).toContain("dataDirResolution.dataDir");
+    expect(prepareBody).toContain("iii-config.yaml");
+    expect(startBody).toContain("prepareRuntimeIiiConfig(findIiiConfig())");
   });
 
   it("logs every engine child exit and supervises only unexpected native exits", () => {

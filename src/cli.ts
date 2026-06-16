@@ -43,6 +43,10 @@ import { isFirstRun, readPrefs, resetPrefs, writePrefs } from "./cli/preferences
 import { runOnboarding } from "./cli/onboarding.js";
 import { buildReadyWebSocketUrls } from "./cli/ready-hint.js";
 import { buildJsonRequestHeaders } from "./cli/http.js";
+import {
+  applyRuntimePortArgs,
+  renderRuntimeIiiConfig as renderRuntimePortIiiConfig,
+} from "./cli/runtime-ports.js";
 import { setBootVerbose } from "./logger.js";
 import { VERSION } from "./version.js";
 import { getAllTools, ESSENTIAL_TOOLS } from "./mcp/tools-registry.js";
@@ -57,7 +61,7 @@ import {
   findIiiConfigPath,
   iiiReleaseAsset,
   iiiReleaseUrl,
-  renderRuntimeIiiConfig,
+  renderRuntimeIiiConfig as renderRuntimeDataDirIiiConfig,
   resolveDataDir,
 } from "./cli/build-runtime.js";
 
@@ -208,27 +212,7 @@ if (toolsIdx !== -1 && args[toolsIdx + 1]) {
   process.env["AGENTMEMORY_TOOLS"] = toolsMode;
 }
 
-const portIdx = args.indexOf("--port");
-if (portIdx !== -1 && args[portIdx + 1]) {
-  process.env["III_REST_PORT"] = args[portIdx + 1];
-}
-
-// `--instance N` picks a 100-port block off the 3111 base so multiple
-// agentmemory daemons can coexist on one host without env-var
-// gymnastics (#750). `--instance 0` keeps the canonical 3111/3112/3113/49134
-// quartet; `--instance 1` → 3211/3212/3213/49234; etc. REST acts as the
-// anchor — streams/viewer/engine derive from it via fixed offsets below
-// unless an env explicitly pins each one.
-const instanceIdx = args.indexOf("--instance");
-if (instanceIdx !== -1 && args[instanceIdx + 1]) {
-  const n = parseInt(args[instanceIdx + 1] || "", 10);
-  if (Number.isFinite(n) && n >= 0 && n <= 50) {
-    const base = 3111 + n * 100;
-    if (!process.env["III_REST_PORT"]) {
-      process.env["III_REST_PORT"] = String(base);
-    }
-  }
-}
+applyRuntimePortArgs(args);
 
 const skipEngine = args.includes("--no-engine");
 
@@ -337,14 +321,19 @@ function findIiiConfig(): string {
   return findIiiConfigPath({ moduleDir: __dirname });
 }
 
-function writeRuntimeIiiConfig(configPath: string): string {
+function prepareRuntimeIiiConfig(configPath: string): string {
+  if (!configPath) return configPath;
+
   mkdirSync(dataDirResolution.dataDir, { recursive: true, mode: PRIVATE_DIR_MODE });
-  const runtimeConfigPath = join(dataDirResolution.dataDir, "iii-config.yaml");
-  writeFileSync(
-    runtimeConfigPath,
-    renderRuntimeIiiConfig(readFileSync(configPath, "utf-8"), dataDirResolution.dataDir),
-    "utf-8",
+  const raw = readFileSync(configPath, "utf-8");
+  const rendered = renderRuntimeDataDirIiiConfig(
+    renderRuntimePortIiiConfig(raw),
+    dataDirResolution.dataDir,
   );
+  if (rendered === raw) return configPath;
+
+  const runtimeConfigPath = join(dataDirResolution.dataDir, "iii-config.yaml");
+  writeFileSync(runtimeConfigPath, rendered, "utf-8");
   return runtimeConfigPath;
 }
 
@@ -924,11 +913,10 @@ function startIiiBin(
   configPath: string,
   options: StartEngineOptions = {},
 ): boolean {
-  const runtimeConfigPath = writeRuntimeIiiConfig(configPath);
   const s = p.spinner();
   s.start(`Starting iii-engine: ${iiiBin}`);
-  spawnEngineBackground(iiiBin, ["--config", runtimeConfigPath], "iii-engine", options);
-  writeEngineState({ kind: "native", configPath: runtimeConfigPath, binPath: iiiBin });
+  spawnEngineBackground(iiiBin, ["--config", configPath], "iii-engine", options);
+  writeEngineState({ kind: "native", configPath, binPath: iiiBin });
   s.stop("iii-engine process started");
   return true;
 }
@@ -948,7 +936,7 @@ function pickCompatibleIii(candidates: Array<string | null | undefined>): string
 }
 
 async function startEngine(options: StartEngineOptions = {}): Promise<boolean> {
-  const configPath = findIiiConfig();
+  const configPath = prepareRuntimeIiiConfig(findIiiConfig());
   const pathIii = whichBinary("iii");
   vlog(`iii binary: ${pathIii ?? "(not on PATH)"}, config: ${configPath || "(not found)"}`);
 
