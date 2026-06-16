@@ -646,6 +646,25 @@
       color: var(--ink); text-align: left; font-style: normal; white-space: pre;
     }
     .empty-state .empty-link { color: var(--accent); text-decoration: underline; font-size: 13px; font-style: normal; }
+    .empty-state .empty-gates {
+      display: inline-block;
+      width: min(520px, 100%);
+      margin: 12px auto;
+      padding: 10px 14px;
+      background: var(--bg-alt);
+      border: 1px solid var(--border-light);
+      border-radius: 4px;
+      text-align: left;
+      color: var(--ink-muted);
+      font-family: var(--font-ui);
+      font-size: 12px;
+      font-style: normal;
+      line-height: 1.45;
+      box-sizing: border-box;
+    }
+    .empty-state .gate-row { display: flex; justify-content: space-between; gap: 16px; padding: 3px 0; }
+    .empty-state .gate-label { color: var(--ink-muted); }
+    .empty-state .gate-value { color: var(--ink); font-family: var(--font-mono); font-weight: 600; text-align: right; }
 
     /* Feature flag banner system — compact collapsed by default */
     .flag-banners {
@@ -1176,7 +1195,7 @@
 
     var state = {
       activeTab: 'dashboard',
-      dashboard: { loaded: false, health: null, sessions: [], memories: [], graphStats: null, recentAudit: [], lessons: [], crystals: [] },
+      dashboard: { loaded: false, health: null, sessions: [], memories: [], graphStats: null, recentAudit: [], lessons: [], crystals: [], insights: [] },
       graph: { loaded: false, nodes: [], edges: [], stats: null, filters: {}, selectedNode: null, queryError: null, truncated: false, totalNodes: 0, totalEdges: 0 },
       memories: { loaded: false, items: [], search: '', typeFilter: '', total: 0, searching: false, requestId: 0 },
       timeline: { loaded: false, observations: [], sessionId: '', minImportance: 0, page: 0, pageSize: 50 },
@@ -1198,6 +1217,29 @@
       var d = document.createElement('div');
       d.textContent = String(s);
       return d.innerHTML;
+    }
+    function gateRows(rows) {
+      var html = '<div class="empty-gates">';
+      rows.forEach(function(row) {
+        html += '<div class="gate-row"><span class="gate-label">' + esc(row.label) + '</span><span class="gate-value">' + esc(row.value) + '</span></div>';
+      });
+      html += '</div>';
+      return html;
+    }
+    function consolidationEmptyState(kind, current, rows, trustedActionHtml) {
+      var title = {
+        semantic: 'Semantic facts are waiting for enough summaries',
+        procedural: 'Procedural skills are waiting for repeated patterns',
+        insights: 'Insights are waiting for enough clustered signals',
+        lessons: 'Lessons require explicit saves',
+        crystals: 'Crystals come from crystallize actions'
+      }[kind] || 'Nothing to show yet';
+      return '<div class="empty-state" style="padding:28px 14px;">' +
+        '<div class="empty-title">' + esc(title) + '</div>' +
+        '<div class="empty-lead">Current count: ' + esc(String(current)) + '. This is an input gate, not a broken tab.</div>' +
+        gateRows(rows) +
+        (trustedActionHtml || '') +
+        '</div>';
     }
     function formatTime(ts) {
       if (!ts) return '';
@@ -1428,7 +1470,8 @@
           apiGet('procedural'),
           apiGet('relations'),
           apiGet('lessons'),
-          apiGet('crystals')
+          apiGet('crystals'),
+          apiGet('insights')
         ]);
         state.dashboard.health = results[0];
         state.dashboard.sessions = arrayOrEmpty(results[1] && results[1].sessions);
@@ -1439,6 +1482,7 @@
         state.dashboard.procedural = firstArray(results[6] && results[6].procedures, results[6] && results[6].procedural);
         state.dashboard.lessons = arrayOrEmpty(results[8] && results[8].lessons);
         state.dashboard.crystals = arrayOrEmpty(results[9] && results[9].crystals);
+        state.dashboard.insights = arrayOrEmpty(results[10] && results[10].insights);
         state.dashboard.relations = arrayOrEmpty(results[7] && results[7].relations);
         state.dashboard.loaded = true;
         renderDashboard();
@@ -1655,13 +1699,18 @@
       var semFacts = arrayOrEmpty(d.semantic).filter(function(f) { return f && typeof f === 'object'; });
       var procItems = arrayOrEmpty(d.procedural).filter(function(p) { return p && typeof p === 'object'; });
       var relItems = arrayOrEmpty(d.relations).filter(function(r) { return r && typeof r === 'object'; });
+      var insightItems = arrayOrEmpty(d.insights).filter(function(i) { return i && typeof i === 'object'; });
 
       html += '<hr class="section-rule">';
       html += '<div class="two-col">';
 
       html += '<div class="card"><div class="card-title">Semantic Memory</div>';
       if (semFacts.length === 0) {
-        html += '<div style="font-size:13px;color:var(--ink-faint);font-style:italic;">No semantic facts yet. Observations will be consolidated into semantic memories over time.</div>';
+        html += consolidationEmptyState('semantic', 0, [
+          { label: 'Gate', value: 'needs at least 5 session summaries' },
+          { label: 'Session rows shown', value: String((d.sessions || []).length) },
+          { label: 'Next step', value: 'summarize more sessions' }
+        ]);
       } else {
           semFacts.slice(0, 5).forEach(function(f) {
             var conf = typeof f.confidence === 'number' ? Math.round(f.confidence * 100) : null;
@@ -1679,7 +1728,14 @@
 
         html += '<div class="card"><div class="card-title">Procedural Memory</div>';
       if (procItems.length === 0) {
-        html += '<div style="font-size:13px;color:var(--ink-faint);font-style:italic;">No procedures yet. Repeated patterns will be extracted as procedures.</div>';
+        var recurringPatterns = (d.memories || []).filter(function(m) {
+          return m && m.isLatest !== false && m.type === 'pattern' && (m.sessionIds || []).length >= 2;
+        }).length;
+        html += consolidationEmptyState('procedural', 0, [
+          { label: 'Gate', value: 'needs at least 2 recurring pattern memories' },
+          { label: 'Recurring patterns', value: String(recurringPatterns) },
+          { label: 'Also required', value: 'each pattern seen in 2+ sessions' }
+        ]);
       } else {
           procItems.slice(0, 5).forEach(function(p) {
             html += '<div class="procedure-item">';
@@ -1703,7 +1759,15 @@
       html += '<div class="card" style="margin-top:16px;"><div class="card-title">Consolidation Status</div>';
       html += '<div class="consolidation-row"><span class="cl">Semantic facts</span><span class="cv">' + semFacts.length + '</span></div>';
       html += '<div class="consolidation-row"><span class="cl">Procedures</span><span class="cv">' + procItems.length + '</span></div>';
+      html += '<div class="consolidation-row"><span class="cl">Insights</span><span class="cv">' + insightItems.length + '</span></div>';
       html += '<div class="consolidation-row"><span class="cl">Relations</span><span class="cv">' + relItems.length + '</span></div>';
+      if (insightItems.length === 0) {
+        html += consolidationEmptyState('insights', 0, [
+          { label: 'Gate', value: 'each cluster needs 3+ facts + lessons + crystals' },
+          { label: 'Current inputs', value: semFacts.length + ' facts, ' + lessonCount + ' lessons, ' + crystalCount + ' crystals' },
+          { label: 'Run when ready', value: 'POST /agentmemory/reflect' }
+        ]);
+      }
       html += '</div>';
 
       if (relItems.length > 0) {
@@ -3205,13 +3269,13 @@
       html += '</div>';
 
       if (items.length === 0) {
-        html += '<div class="empty-state">' +
-          '<div class="empty-icon">&#128161;</div>' +
-          '<div class="empty-title">No lessons yet</div>' +
-          '<div class="empty-lead">Lessons are confidence-scored pattern observations &mdash; things you corrected once that the agent should never do again. They persist across projects.</div>' +
+        html += consolidationEmptyState('lessons', 0, [
+          { label: 'Source', value: 'mem::lesson-save' },
+          { label: 'MCP tool', value: 'memory_lesson_save' },
+          { label: 'Automatic path', value: 'Replay JSONL import' }
+        ],
           '<pre class="empty-cmd"># Save a lesson explicitly\nmemory_lesson_save { rule, reason, confidence }\n\n# Or: Replay tab &rarr; Import JSONL auto-extracts lessons\n# from your past Claude Code sessions</pre>' +
-          '<div><a class="empty-link" href="https://github.com/rohitg00/agentmemory#lessons" target="_blank" rel="noopener">Lesson decay &amp; scoring &rarr;</a></div>' +
-          '</div>';
+          '<div><a class="empty-link" href="https://github.com/rohitg00/agentmemory#lessons" target="_blank" rel="noopener">Lesson decay &amp; scoring &rarr;</a></div>');
       } else {
         html += '<table><thead><tr><th>Lesson</th><th>Confidence</th><th>Reinforcements</th><th>Source</th><th>Project</th><th>Updated</th></tr></thead><tbody>';
         items.forEach(function(l) {
@@ -3361,13 +3425,13 @@
       html += '</div>';
 
       if (items.length === 0) {
-        html += '<div class="empty-state">' +
-          '<div class="empty-icon">&#128142;</div>' +
-          '<div class="empty-title">No crystals yet</div>' +
-          '<div class="empty-lead">Crystals are compressed action digests &mdash; the 3-line summary of what happened in a session. Generated from long conversations to give the next session fast context without re-reading everything.</div>' +
-          '<pre class="empty-cmd"># Auto: import a JSONL transcript\n#   Replay tab &rarr; Import JSONL\n\n# Manual: crystallize a specific session\nmemory_crystallize { sessionId }</pre>' +
-          '<div><a class="empty-link" href="https://github.com/rohitg00/agentmemory#crystals" target="_blank" rel="noopener">Crystal pipeline &rarr;</a></div>' +
-          '</div>';
+        html += consolidationEmptyState('crystals', 0, [
+          { label: 'Source', value: 'mem::crystallize' },
+          { label: 'MCP tool', value: 'memory_crystallize' },
+          { label: 'Run now', value: 'POST /agentmemory/crystals/auto' }
+        ],
+          '<pre class="empty-cmd"># Auto: import a JSONL transcript\n#   Replay tab &rarr; Import JSONL\n\n# Manual: crystallize completed actions\nmemory_crystallize { actionIds: "act_1,act_2" }</pre>' +
+          '<div><a class="empty-link" href="https://github.com/rohitg00/agentmemory#crystals" target="_blank" rel="noopener">Crystal pipeline &rarr;</a></div>');
       } else {
         items.forEach(function(c) {
           html += '<div class="card" style="margin-bottom:12px;border-left:3px solid var(--accent);">';

@@ -289,4 +289,55 @@ describe("viewer session rendering", () => {
     expect(() => sandbox.switchTab("sessions")).not.toThrow();
     expect(tabButtons.some((button: any) => button.classList.contains("active"))).toBe(true);
   });
+
+  it("explains consolidation gates and sources when tier views are empty", () => {
+    const { sandbox, getElement } = loadViewerSandbox();
+    sandbox.state.dashboard = {
+      loaded: true,
+      health: { status: "healthy", health: {} },
+      sessions: [
+        { id: "ses_1", status: "completed", observationCount: 3, startedAt: "2026-05-13T12:00:00Z" },
+        { id: "ses_2", status: "completed", observationCount: 4, startedAt: "2026-05-14T12:00:00Z" },
+      ],
+      memories: [
+        { id: "mem_1", isLatest: true, type: "pattern", sessionIds: ["ses_1"] },
+        { id: "mem_2", isLatest: true, type: "pattern", sessionIds: ["ses_1", "ses_2"] },
+      ],
+      graphStats: null,
+      recentAudit: [],
+      semantic: [],
+      procedural: [],
+      lessons: [],
+      crystals: [],
+      insights: [],
+      relations: [],
+    };
+
+    sandbox.renderDashboard();
+    const dashboard = getElement("view-dashboard").innerHTML;
+    expect(dashboard).toContain("Current count: 0");
+    expect(dashboard).toContain("Semantic facts are waiting for enough summaries");
+    expect(dashboard).toContain("needs at least 5 session summaries");
+    expect(dashboard).toContain("Session rows shown");
+    expect(dashboard).toContain("Procedural skills are waiting for repeated patterns");
+    expect(dashboard).toContain("needs at least 2 recurring pattern memories");
+    expect(dashboard).toContain("Recurring patterns");
+    expect(dashboard).toContain("Insights are waiting for enough clustered signals");
+    expect(dashboard).toContain("facts + lessons + crystals");
+
+    sandbox.state.lessons = { loaded: true, items: [], search: "" };
+    sandbox.renderLessons();
+    const lessons = getElement("view-lessons").innerHTML;
+    expect(lessons).toContain("Lessons require explicit saves");
+    expect(lessons).toContain("memory_lesson_save");
+    expect(lessons).toContain("Replay JSONL import");
+
+    sandbox.state.crystals = { loaded: true, items: [], search: "", lessonMap: {} };
+    sandbox.renderCrystals();
+    const crystals = getElement("view-crystals").innerHTML;
+    expect(crystals).toContain("Crystals come from crystallize actions");
+    expect(crystals).toContain("memory_crystallize");
+    expect(crystals).toContain("actionIds");
+    expect(crystals).toContain("POST /agentmemory/crystals/auto");
+  });
 });
