@@ -50,7 +50,7 @@ Stop conditions:
 | Default local model behavior | Targeted test, docs inspection/update if needed | complete | Default changed to `Xenova/paraphrase-multilingual-MiniLM-L12-v2`; Hugging Face public config verified `hidden_size: 384`. |
 | Security review | Manual review plus required scanners where applicable | complete | Semgrep default scan completed with 0 findings. Codex Security diff scan completed with no findings; reports under `/tmp/codex-security-scans/agentmemory/6c387b4_20260615T213735Z/`. |
 | Merge prep | prep-merge-to-local-main workflow | complete | Pre-merge commit `06b9925d9d229e7b2e251f3e96745e4fe2ce73dd`; local main commit `6c387b4efea524db5bf8fe0e923958cbcf0213f1` merged as a no-op (`Already up to date`). Post-merge checks passed. |
-| Corrected local-main readiness | Merge current local `main`, install with pnpm lockfile, run exact pnpm test | in progress | Local `main` `d4393d1ab5dd284edee3a17bfbf45825f239c07e` merged as `eba795a135ddef93eaa051e87dadda95c8410da8`; frozen pnpm install passed. Initial exact tests exposed full-suite cold-start/hook timing flakes; scoped post-merge fix added and `corepack pnpm test` passed 158 files / 1989 tests before committing the fix. |
+| Corrected local-main readiness | Merge current local `main`, install with pnpm lockfile, run exact pnpm test | complete | Local `main` `d4393d1ab5dd284edee3a17bfbf45825f239c07e` merged as `eba795a135ddef93eaa051e87dadda95c8410da8`; post-merge fix committed as `85583d3ddde8fd9b3f6275ccfdefb7da58430299`; repeat merge was no-op, repeat frozen install passed, and exact `corepack pnpm test` passed 158 files / 1989 tests. |
 
 ## Progress
 
@@ -81,6 +81,10 @@ Stop conditions:
   - Scoped fix: dry-run retention eviction now returns before loading image-reference cleanup; hook tests assert no stdin wait / no fetch instead of a brittle sub-1s wall-clock, and Copilot hook test timeout remains bounded at 10s.
   - Red/green evidence: the new dry-run regression test failed before moving the `image-refs` import and passed after the change. Targeted `test/retention.test.ts test/context-injection.test.ts test/copilot-plugin.test.ts` passed 37/37. Full `corepack pnpm test` passed 158 files / 1989 tests before commit.
   - Review/security: focused reviewers accepted the four-file patch; Semgrep p/default on the four changed files reported 0 findings. Diff-scoped security artifacts are under `/tmp/codex-security-scans/agentmemory/eba795a_post_merge_fix/`.
+  - Post-fix commit: `85583d3ddde8fd9b3f6275ccfdefb7da58430299`.
+  - Repeat prep after fix: local main `d4393d1ab5dd284edee3a17bfbf45825f239c07e` was already an ancestor; merge command returned `Already up to date`.
+  - Repeat install: same frozen pnpm command completed with `Already up to date` in 483ms.
+  - Repeat exact test: `corepack pnpm test` passed 158 test files / 1989 tests in 26.97s.
 
 ## Security Notes
 
