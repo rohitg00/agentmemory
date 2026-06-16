@@ -17,8 +17,13 @@ import {
 // and `enabled` (docs: README "OpenCode (MCP only)"). So it needs its own
 // adapter rather than createJsonMcpAdapter.
 
-const CONFIG_PATH = join(homedir(), ".config", "opencode", "opencode.json");
-const DETECT_DIR = join(homedir(), ".config", "opencode");
+function configPath(): string {
+  return join(homedir(), ".config", "opencode", "opencode.json");
+}
+
+function detectDir(): string {
+  return join(homedir(), ".config", "opencode");
+}
 
 // No `environment` block: OpenCode does not expand shell-style
 // `${VAR:-default}` values, and writing them literally would override the
@@ -50,11 +55,12 @@ export const adapter: ConnectAdapter = {
     "Using MCP via ~/.config/opencode/opencode.json (top-level `mcp` key). For full auto-capture, also install the bundled plugin in plugin/opencode/.",
 
   detect(): boolean {
-    return existsSync(DETECT_DIR);
+    return existsSync(detectDir());
   },
 
   async install(opts: ConnectOptions): Promise<ConnectResult> {
-    const existing = readJsonSafe<OpencodeConfig>(CONFIG_PATH);
+    const path = configPath();
+    const existing = readJsonSafe<OpencodeConfig>(path);
     const next: OpencodeConfig = existing ? { ...existing } : {};
     const existingMcp = next["mcp"];
     const mcp: Record<string, McpEntry> =
@@ -66,42 +72,42 @@ export const adapter: ConnectAdapter = {
 
     const alreadyHas = entryMatches(mcp["agentmemory"]);
     if (alreadyHas && !opts.force) {
-      logAlreadyWired(this.displayName, CONFIG_PATH);
-      return { kind: "already-wired", mutatedPath: CONFIG_PATH };
+      logAlreadyWired(this.displayName, path);
+      return { kind: "already-wired", mutatedPath: path };
     }
 
     if (opts.dryRun) {
       p.log.info(
-        `[dry-run] Would ${alreadyHas ? "overwrite" : "add"} mcp.agentmemory in ${CONFIG_PATH}`,
+        `[dry-run] Would ${alreadyHas ? "overwrite" : "add"} mcp.agentmemory in ${path}`,
       );
-      return { kind: "installed", mutatedPath: CONFIG_PATH };
+      return { kind: "installed", mutatedPath: path };
     }
 
     let backupPath: string | undefined;
-    if (existsSync(CONFIG_PATH)) {
-      backupPath = backupFile(CONFIG_PATH, this.name);
+    if (existsSync(path)) {
+      backupPath = backupFile(path, this.name);
       logBackup(backupPath);
     } else {
-      mkdirSync(dirname(CONFIG_PATH), { recursive: true });
+      mkdirSync(dirname(path), { recursive: true });
     }
 
     mcp["agentmemory"] = { ...OPENCODE_ENTRY };
     next["mcp"] = mcp;
-    writeJsonAtomic(CONFIG_PATH, next);
+    writeJsonAtomic(path, next);
 
-    const verify = readJsonSafe<OpencodeConfig>(CONFIG_PATH);
+    const verify = readJsonSafe<OpencodeConfig>(path);
     const verifyMcp = verify?.["mcp"] as Record<string, McpEntry> | undefined;
     if (!entryMatches(verifyMcp?.["agentmemory"])) {
       p.log.error(
-        `Verification failed: ${CONFIG_PATH} did not contain mcp.agentmemory after write.`,
+        `Verification failed: ${path} did not contain mcp.agentmemory after write.`,
       );
       return { kind: "skipped", reason: "verification-failed" };
     }
 
-    logInstalled(this.displayName, CONFIG_PATH);
+    logInstalled(this.displayName, path);
     return {
       kind: "installed",
-      mutatedPath: CONFIG_PATH,
+      mutatedPath: path,
       ...(backupPath !== undefined && { backupPath }),
     };
   },

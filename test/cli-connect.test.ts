@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -9,6 +9,25 @@ import {
   resolveAdapter,
 } from "../src/cli/connect/index.js";
 import type { ConnectAdapter } from "../src/cli/connect/types.js";
+
+const prompts = vi.hoisted(() => ({
+  intro: vi.fn(),
+  outro: vi.fn(),
+  note: vi.fn(),
+  multiselect: vi.fn(),
+  isCancel: vi.fn(() => false),
+  cancel: vi.fn(),
+  log: {
+    error: vi.fn(),
+    info: vi.fn(),
+    message: vi.fn(),
+    step: vi.fn(),
+    success: vi.fn(),
+    warn: vi.fn(),
+  },
+}));
+
+vi.mock("@clack/prompts", () => prompts);
 
 const EXPECTED_COPILOT_MCP_COMMAND =
   process.platform === "win32"
@@ -288,6 +307,21 @@ describe("agentmemory connect — opencode adapter (#872)", () => {
     const result = await a.install({ dryRun: true, force: false });
     expect(result.kind).toBe("installed");
     expect(readFileSync(cfgPath(), "utf-8")).toBe(before);
+  });
+
+  it("uses the current home when loaded through the dispatcher", async () => {
+    mkdirSync(join(tmpHome, ".config", "opencode"), {
+      recursive: true,
+    });
+    writeFileSync(cfgPath(), JSON.stringify({ mcp: {} }));
+
+    const a = resolveAdapter("opencode");
+    expect(a).not.toBeNull();
+    expect(a!.detect()).toBe(true);
+
+    const result = await a!.install({ dryRun: true, force: false });
+    expect(result.kind).toBe("installed");
+    expect(result.mutatedPath).toBe(cfgPath());
   });
 });
 
