@@ -7,6 +7,7 @@ import vitestConfig from "../vitest.config";
 type PackageJson = {
   scripts?: Record<string, string>;
   devDependencies?: Record<string, string>;
+  dependencies?: Record<string, string>;
 };
 
 type CoverageConfig = {
@@ -204,15 +205,43 @@ describe("root quality gates", () => {
   it("wires lint and coverage into CI without running coverage on every matrix cell", () => {
     const ci = readText(".github/workflows/ci.yml");
 
-    expect(ciRunCount("npm run lint")).toBe(1);
-    expect(ciRunCount("npm run coverage")).toBe(1);
-    expect(ci).toContain("npm run lint");
-    expect(ci).toContain("npm run coverage");
+    expect(ciRunCount("pnpm run lint")).toBe(1);
+    expect(ciRunCount("pnpm run coverage")).toBe(1);
+    expect(ciRunCount("pnpm test")).toBe(1);
+    expect(ci).toContain("corepack enable");
+    expect(ci).toContain("pnpm install --frozen-lockfile");
+    expect(ci).toContain("pnpm run lint");
+    expect(ci).toContain("pnpm run coverage");
+    expect(ci).not.toContain("package-lock-only");
+    expect(ci).not.toContain("npm ci");
     expect(ci).toContain("actions/upload-artifact@v4");
     expect(ci).toContain("name: coverage-report");
     expect(ci).toContain("path: coverage/");
     expect(ci).toContain("if-no-files-found: error");
     expect(ci).toContain("retention-days: 7");
     expect(ci).toContain("matrix.os == 'ubuntu-latest' && matrix.node-version == 22");
+  });
+
+  it("builds publish artifacts from the committed pnpm lockfile before npm publish", () => {
+    const publish = readText(".github/workflows/publish.yml");
+
+    expect(publish).toContain("corepack enable");
+    expect(publish).toContain("pnpm install --frozen-lockfile");
+    expect(publish).toContain("pnpm run build");
+    expect(publish).toContain("pnpm test");
+    expect(publish).toContain("npm pack --dry-run --json");
+    expect(publish).toContain("pnpm pack --dry-run --json");
+    expect(publish).toContain("working-directory: packages/mcp");
+    expect(publish).toContain("working-directory: integrations/filesystem-watcher");
+    expect(publish).toContain("npm publish --provenance --access public");
+    expect(publish).toContain("pnpm publish --provenance --access public --no-git-checks");
+    expect(publish).not.toContain("package-lock-only");
+    expect(publish).not.toContain("npm ci");
+  });
+
+  it("uses a pnpm workspace dependency for the MCP shim source package", () => {
+    const mcp = JSON.parse(readText("packages/mcp/package.json")) as PackageJson;
+
+    expect(mcp.dependencies?.["@agentmemory/agentmemory"]).toBe("workspace:~");
   });
 });
