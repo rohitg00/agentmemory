@@ -48,6 +48,7 @@ Known boundaries:
 | Post-merge Retention fix | Regression test plus lazy import | Done | New test failed before production change, then passed after moving `image-refs` import into the actual `mem.imageRef` branch. |
 | Targeted Retention verification | `corepack pnpm exec vitest run test/retention.test.ts` | Done | 1 file / 16 tests passed in 691ms. |
 | Full post-fix verification | `corepack pnpm test` | Done | 158 files / 1991 tests passed in 29.98s. |
+| Post-commit full verification | `corepack pnpm test` plus targeted rerun for timeout set | Done | First post-commit full run hit 8 unrelated timeouts; the 8 affected files passed targeted with 65/65 tests in 5.09s; a second full run passed 158 files / 1991 tests in 28.89s. |
 | Diff hygiene | `git diff --check` | Done | Passed with no whitespace errors. |
 | Security scan | `semgrep scan --config p/default --error --metrics=off src/functions/retention.ts test/retention.test.ts docs/todos/2026-06-16-issue-691-retry-merge-test/todo.md` | Done | 3 tracked files scanned, 210 rules, 0 findings. |
 | Independent review | Read-only reviewer on current working-tree diff | Done | ACCEPT; no Critical/Important actionable issue. Residual note: real image-ref eviction lacks a dedicated positive assertion, but the call path is unchanged. |
@@ -57,4 +58,5 @@ Known boundaries:
 - The Retention change is not part of the original viewer feature diff; it is a narrow closeout fix for the replacement full-test run.
 - The branch diff against local `main` originally touched only viewer files and task docs; Retention was unchanged before this retry.
 - The fix preserves eviction behavior and only avoids loading image cleanup code for dry-run and non-image paths.
+- The suite still exhibits the known changing timeout behavior under parallel full-suite load; final evidence includes both a targeted pass for the transient timeout set and a later full-suite pass on the same committed code.
 - `corepack pnpm exec tsc --noEmit` was attempted as an additional gate but is not a usable completion signal in this checkout: it fails on pre-existing repo-wide TypeScript errors outside the touched surface, including existing unused imports and missing `@opentelemetry/api` types.
