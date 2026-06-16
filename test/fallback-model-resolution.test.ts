@@ -4,13 +4,23 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 // model name and 404 on every call. Each fallback must resolve its
 // own env-driven default model.
 
-const captured: Array<{ provider: string; model: string }> = [];
+const captured: Array<{
+  provider: string;
+  model: string;
+  compressModel?: string;
+}> = [];
 
 vi.mock("../src/providers/openai.js", () => ({
   OpenAIProvider: class {
     name = "openai";
-    constructor(_key: string, model: string) {
-      captured.push({ provider: "openai", model });
+    constructor(
+      _key: string,
+      model: string,
+      _max: number,
+      _baseUrl?: string,
+      compressModel?: string,
+    ) {
+      captured.push({ provider: "openai", model, compressModel });
     }
     async compress() {
       return "";
@@ -24,10 +34,17 @@ vi.mock("../src/providers/openai.js", () => ({
 vi.mock("../src/providers/openrouter.js", () => ({
   OpenRouterProvider: class {
     name = "openrouter";
-    constructor(_key: string, model: string, _max: number, url?: string) {
+    constructor(
+      _key: string,
+      model: string,
+      _max: number,
+      url?: string,
+      compressModel?: string,
+    ) {
       captured.push({
         provider: url?.includes("googleapis") ? "gemini" : "openrouter",
         model,
+        compressModel,
       });
     }
     async compress() {
@@ -42,8 +59,14 @@ vi.mock("../src/providers/openrouter.js", () => ({
 vi.mock("../src/providers/anthropic.js", () => ({
   AnthropicProvider: class {
     name = "anthropic";
-    constructor(_key: string, model: string) {
-      captured.push({ provider: "anthropic", model });
+    constructor(
+      _key: string,
+      model: string,
+      _max: number,
+      _baseUrl?: string,
+      compressModel?: string,
+    ) {
+      captured.push({ provider: "anthropic", model, compressModel });
     }
     async compress() {
       return "";
@@ -57,8 +80,13 @@ vi.mock("../src/providers/anthropic.js", () => ({
 vi.mock("../src/providers/minimax.js", () => ({
   MinimaxProvider: class {
     name = "minimax";
-    constructor(_key: string, model: string) {
-      captured.push({ provider: "minimax", model });
+    constructor(
+      _key: string,
+      model: string,
+      _max: number,
+      compressModel?: string,
+    ) {
+      captured.push({ provider: "minimax", model, compressModel });
     }
     async compress() {
       return "";
@@ -174,6 +202,31 @@ describe("Fallback provider model resolution (#778)", () => {
     expect(captured.find((c) => c.provider === "gemini")?.model).toBe(
       "gemini-2.5-pro",
     );
+  });
+
+  it("fallback providers do not inherit the primary compression model", () => {
+    process.env.OPENAI_API_KEY = "sk";
+    process.env.GEMINI_API_KEY = "gk";
+
+    createFallbackProvider(
+      {
+        provider: "openai",
+        model: "gpt-4o-mini",
+        compressModel: "gpt-4o-mini-cheap",
+        maxTokens: 4096,
+      },
+      { providers: ["gemini"] },
+    );
+
+    expect(captured.find((c) => c.provider === "gemini")?.model).toBe(
+      "gemini-2.5-flash",
+    );
+    expect(captured.find((c) => c.provider === "openai")?.compressModel).toBe(
+      "gpt-4o-mini-cheap",
+    );
+    expect(
+      captured.find((c) => c.provider === "gemini")?.compressModel,
+    ).toBeUndefined();
   });
 
   it("fallback that matches the primary provider is skipped (no duplicate)", () => {

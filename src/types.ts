@@ -142,6 +142,7 @@ export interface HookPayload {
 export interface ProviderConfig {
   provider: ProviderType;
   model: string;
+  compressModel?: string;
   maxTokens: number;
   /** Optional base URL override (e.g. for Anthropic-compatible APIs or local proxies) */
   baseURL?: string;

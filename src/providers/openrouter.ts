@@ -26,6 +26,7 @@ export class OpenRouterProvider implements MemoryProvider {
   name: string;
   private apiKey: string;
   private model: string;
+  private compressModel?: string;
   private maxTokens: number;
   private baseUrl: string;
   private isOpenRouter: boolean;
@@ -37,9 +38,11 @@ export class OpenRouterProvider implements MemoryProvider {
     model: string,
     maxTokens: number,
     baseUrl: string,
+    compressModel?: string,
   ) {
     this.apiKey = apiKey;
     this.model = model;
+    this.compressModel = compressModel;
     this.maxTokens = maxTokens;
     this.baseUrl = baseUrl;
     this.isOpenRouter = baseUrl.includes("openrouter");
@@ -52,7 +55,7 @@ export class OpenRouterProvider implements MemoryProvider {
   }
 
   async compress(systemPrompt: string, userPrompt: string): Promise<string> {
-    return this.call(systemPrompt, userPrompt);
+    return this.call(systemPrompt, userPrompt, this.compressModel);
   }
 
   async summarize(systemPrompt: string, userPrompt: string): Promise<string> {
@@ -62,9 +65,10 @@ export class OpenRouterProvider implements MemoryProvider {
   private async call(
     systemPrompt: string,
     userPrompt: string,
+    modelOverride?: string,
   ): Promise<string> {
     const body: OpenRouterRequestBody = {
-      model: this.model,
+      model: modelOverride ?? this.model,
       max_tokens: this.maxTokens,
       messages: [
         { role: "system", content: systemPrompt },

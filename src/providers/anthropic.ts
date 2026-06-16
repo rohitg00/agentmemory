@@ -5,16 +5,24 @@ export class AnthropicProvider implements MemoryProvider {
   name = 'anthropic'
   private client: Anthropic
   private model: string
+  private compressModel?: string
   private maxTokens: number
 
-  constructor(apiKey: string, model: string, maxTokens: number, baseURL?: string) {
+  constructor(
+    apiKey: string,
+    model: string,
+    maxTokens: number,
+    baseURL?: string,
+    compressModel?: string,
+  ) {
     this.client = new Anthropic({ apiKey, ...(baseURL ? { baseURL } : {}) })
     this.model = model
+    this.compressModel = compressModel
     this.maxTokens = maxTokens
   }
 
   async compress(systemPrompt: string, userPrompt: string): Promise<string> {
-    return this.call(systemPrompt, userPrompt)
+    return this.call(systemPrompt, userPrompt, this.compressModel)
   }
 
   async summarize(systemPrompt: string, userPrompt: string): Promise<string> {
@@ -41,9 +49,13 @@ export class AnthropicProvider implements MemoryProvider {
     return textBlock?.text ?? ''
   }
 
-  private async call(systemPrompt: string, userPrompt: string): Promise<string> {
+  private async call(
+    systemPrompt: string,
+    userPrompt: string,
+    modelOverride?: string,
+  ): Promise<string> {
     const response = await this.client.messages.create({
-      model: this.model,
+      model: modelOverride ?? this.model,
       max_tokens: this.maxTokens,
       system: systemPrompt,
       messages: [{ role: 'user', content: userPrompt }],

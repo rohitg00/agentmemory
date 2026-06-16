@@ -20,26 +20,37 @@ export class MinimaxProvider implements MemoryProvider {
   name = 'minimax'
   private apiKey: string
   private model: string
+  private compressModel?: string
   private maxTokens: number
   private baseUrl: string
 
-  constructor(apiKey: string, model: string, maxTokens: number) {
+  constructor(
+    apiKey: string,
+    model: string,
+    maxTokens: number,
+    compressModel?: string,
+  ) {
     this.apiKey = apiKey
     this.model = model
+    this.compressModel = compressModel
     this.maxTokens = maxTokens
     this.baseUrl =
       getEnvVar('MINIMAX_BASE_URL') || 'https://api.minimax.io/anthropic'
   }
 
   async compress(systemPrompt: string, userPrompt: string): Promise<string> {
-    return this.call(systemPrompt, userPrompt)
+    return this.call(systemPrompt, userPrompt, this.compressModel)
   }
 
   async summarize(systemPrompt: string, userPrompt: string): Promise<string> {
     return this.call(systemPrompt, userPrompt)
   }
 
-  private async call(systemPrompt: string, userPrompt: string): Promise<string> {
+  private async call(
+    systemPrompt: string,
+    userPrompt: string,
+    modelOverride?: string,
+  ): Promise<string> {
     const url = `${this.baseUrl}/v1/messages`
     const response = await fetchWithTimeout(url, {
       method: 'POST',
@@ -49,7 +60,7 @@ export class MinimaxProvider implements MemoryProvider {
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        model: this.model,
+        model: modelOverride ?? this.model,
         max_tokens: this.maxTokens,
         system: systemPrompt,
         messages: [{ role: 'user', content: userPrompt }],
