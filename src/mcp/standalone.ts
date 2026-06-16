@@ -116,6 +116,7 @@ interface Validated {
   timeRange?: TimeRange | null;
   startTime?: string;
   endTime?: string;
+  expandIds?: string[];
   memoryIds?: string[];
   reason?: string;
 }
@@ -171,6 +172,10 @@ function validate(toolName: string, args: Record<string, unknown>): Validated {
       if (v.timeRange) {
         v.startTime = typeof args["start_time"] === "string" ? args["start_time"] : undefined;
         v.endTime = typeof args["end_time"] === "string" ? args["end_time"] : undefined;
+      }
+      if (toolName === "memory_smart_search") {
+        const expandIds = normalizeList(args["expandIds"]);
+        if (expandIds.length > 0) v.expandIds = expandIds;
       }
       return v;
     }
@@ -250,6 +255,7 @@ async function handleProxy(
         if (v.startTime !== undefined) body["start_time"] = v.startTime;
         if (v.endTime !== undefined) body["end_time"] = v.endTime;
       }
+      if (v.expandIds != null) body["expandIds"] = v.expandIds;
       const result = await handle.call("/agentmemory/smart-search", {
         method: "POST",
         body: JSON.stringify(body),
