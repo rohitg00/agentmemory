@@ -667,6 +667,7 @@ For central memory deployments where an empty local fallback would be misleading
 | **Cline / Roo Code / Kilo Code** | Cline MCP settings (Settings UI → MCP Servers → Edit) | Same `mcpServers` block. |
 | **Windsurf** | `~/.codeium/windsurf/mcp_config.json` | Same `mcpServers` block. |
 | **Gemini CLI** | `~/.gemini/settings.json` | `gemini mcp add agentmemory npx -y @agentmemory/mcp --scope user` (auto-merges). |
+| **GitHub Copilot in VS Code** | `.vscode/mcp.json` or VS Code user MCP settings | Uses VS Code's `servers` shape, not `mcpServers`; see the block below. |
 | **GitHub Copilot CLI (MCP only)** | `~/.copilot/mcp-config.json` | `agentmemory connect copilot-cli` merges `mcpServers.agentmemory`; Copilot picks it up on next launch or `/mcp`. |
 | **GitHub Copilot CLI (full plugin)** | Copilot plugin install | `copilot plugin install rohitg00/agentmemory:plugin` for the plugin from the GitHub subdir. |
 | **OpenClaw** | OpenClaw MCP config | Same `mcpServers` block, or use the deeper [memory plugin](integrations/openclaw/). |
@@ -687,6 +688,27 @@ For central memory deployments where an empty local fallback would be misleading
 | **Goose** | Goose MCP settings UI | Same `mcpServers` block — use `goose configure` → Add Extension → MCP. Direct YAML edit at `~/.config/goose/config.yaml` is supported but the schema uses `extensions:` + `cmd` (not `mcpServers:` + `command`). |
 | **Aider** | n/a | Talk to the REST API directly: `curl -X POST http://localhost:3111/agentmemory/smart-search -d '{"query": "auth"}'`. |
 | **Any agent (32+)** | n/a | `npx skillkit install agentmemory` auto-detects the host and merges. |
+
+GitHub Copilot in VS Code uses `servers` instead of `mcpServers`. Put this in `.vscode/mcp.json` for a workspace or in the VS Code user MCP settings:
+
+```json
+{
+  "servers": {
+    "agentmemory": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@agentmemory/mcp"],
+      "env": {
+        "AGENTMEMORY_URL": "${AGENTMEMORY_URL:-http://localhost:3111}",
+        "AGENTMEMORY_SECRET": "${AGENTMEMORY_SECRET:-}",
+        "AGENTMEMORY_TOOLS": "${AGENTMEMORY_TOOLS:-all}"
+      }
+    }
+  }
+}
+```
+
+Start `npx @agentmemory/agentmemory` in another terminal first when you want the full 53-tool persistent memory server. If the shim cannot reach that server, it falls back to the local 7-tool standalone surface unless you also set `"AGENTMEMORY_REQUIRE_SERVER": "1"` in `env`.
 
 **Sandboxed MCP clients** (Flatpak / Snap / restrictive containers) that can't reach the host's `localhost`: also set `"AGENTMEMORY_FORCE_PROXY": "1"` in the `env` block, and point `AGENTMEMORY_URL` at a route the sandbox can actually reach. Add `"AGENTMEMORY_REQUIRE_SERVER": "1"` when the client should fail rather than use the local fallback if that route is still broken. If `AGENTMEMORY_SECRET` is set, that route must be HTTPS or a loopback tunnel; the MCP shim refuses to send bearer auth over plaintext HTTP to non-loopback hosts. See [#234](https://github.com/rohitg00/agentmemory/issues/234) for the diagnostic walkthrough.
 
