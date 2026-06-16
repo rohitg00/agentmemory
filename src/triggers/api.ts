@@ -1670,10 +1670,10 @@ export function registerApiTriggers(
     config: { api_path: "/agentmemory/graph/extract", http_method: "POST" },
   });
 
-  // Backfill the knowledge graph from existing compressed observations.
-  // Viewer calls this when the graph is empty (#666). Iterates every
-  // session, collects observations that have a `title` (compressed only),
-  // and feeds them through `mem::graph-extract` in batches.
+  // Backfill the knowledge graph from existing compressed observations
+  // and latest saved memories. Viewer calls this when the graph is empty
+  // (#666). Inputs need a title because graph extraction expects compressed
+  // observation-shaped records.
   sdk.registerFunction("api::graph-build",
     async (req: ApiRequest<{ batchSize?: number }>): Promise<Response> => {
       const authErr = checkAuth(req, secret);
@@ -1684,34 +1684,61 @@ export function registerApiTriggers(
       );
       try {
         const sessions = await kv.list<Session>(KV.sessions);
+        const memories = await kv.list<Memory>(KV.memories);
         let totalNodes = 0;
         let totalEdges = 0;
         let batchesRun = 0;
+        const seenObservationIds = new Set<string>();
+        const sessionProjects = new Set(
+          sessions
+            .map((session) => session?.project)
+            .filter((project): project is string => typeof project === "string" && project.length > 0),
+        );
+        const graphInputs: CompressedObservation[] = [];
+        const addGraphInput = (observation: CompressedObservation): void => {
+          if (typeof observation.id !== "string" || seenObservationIds.has(observation.id)) return;
+          if (typeof observation.title !== "string" || observation.title.length === 0) return;
+          seenObservationIds.add(observation.id);
+          graphInputs.push(observation);
+        };
         for (const session of sessions) {
           const sid = session?.id;
           if (typeof sid !== "string" || sid.length === 0) continue;
           const observations = await kv.list<CompressedObservation>(KV.observations(sid));
-          const compressed = observations.filter((o) => o && typeof o.title === "string" && o.title.length > 0);
-          if (compressed.length === 0) continue;
-          for (let i = 0; i < compressed.length; i += batchSize) {
-            const batch = compressed.slice(i, i + batchSize);
-            try {
-              const result = (await sdk.trigger({
-                function_id: "mem::graph-extract",
-                payload: { observations: batch },
-              })) as { success?: boolean; nodesAdded?: number; edgesAdded?: number };
-              if (result?.success) {
-                totalNodes += Number(result.nodesAdded) || 0;
-                totalEdges += Number(result.edgesAdded) || 0;
-              }
-              batchesRun++;
-            } catch (err) {
-              logger.warn("graph-build batch failed", {
-                sessionId: sid,
-                batchIndex: Math.floor(i / batchSize),
-                error: err instanceof Error ? err.message : String(err),
-              });
+          for (const observation of observations) {
+            if (observation) addGraphInput(observation);
+          }
+        }
+        for (const memory of memories) {
+          if (!memory) continue;
+          if (memory?.isLatest === false) continue;
+          if (
+            typeof memory.project === "string" &&
+            memory.project.length > 0 &&
+            sessionProjects.size > 0 &&
+            !sessionProjects.has(memory.project)
+          ) {
+            continue;
+          }
+          addGraphInput(memoryToObservation(memory));
+        }
+        for (let i = 0; i < graphInputs.length; i += batchSize) {
+          const batch = graphInputs.slice(i, i + batchSize);
+          try {
+            const result = (await sdk.trigger({
+              function_id: "mem::graph-extract",
+              payload: { observations: batch },
+            })) as { success?: boolean; nodesAdded?: number; edgesAdded?: number };
+            if (result?.success) {
+              totalNodes += Number(result.nodesAdded) || 0;
+              totalEdges += Number(result.edgesAdded) || 0;
             }
+            batchesRun++;
+          } catch (err) {
+            logger.warn("graph-build batch failed", {
+              batchIndex: Math.floor(i / batchSize),
+              error: err instanceof Error ? err.message : String(err),
+            });
           }
         }
         return {
