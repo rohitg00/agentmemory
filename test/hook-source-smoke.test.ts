@@ -64,13 +64,17 @@ async function importHook(
   hook: string,
   payload: unknown,
   env: Record<string, string | undefined> = {},
+  options: { fetchMode?: "resolved" | "pending" } = {},
 ): Promise<{
   fetchMock: ReturnType<typeof vi.fn>;
   stdoutWrite: ReturnType<typeof vi.spyOn>;
   stderrWrite: ReturnType<typeof vi.spyOn>;
   setTimeoutSpy: ReturnType<typeof vi.spyOn>;
+  processExitSpy: ReturnType<typeof vi.spyOn>;
 }> {
   vi.resetModules();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   process.env = {
     ...originalEnv,
     AGENTMEMORY_URL: "http://localhost:3111",
@@ -85,7 +89,12 @@ async function importHook(
   };
   installStdin(typeof payload === "string" ? payload : JSON.stringify(payload));
 
-  const fetchMock = vi.fn(async () => jsonResponse({ context: "remembered context" }));
+  const pendingFetch = new Promise<Response>(() => {});
+  const fetchMock = vi.fn(
+    options.fetchMode === "pending"
+      ? () => pendingFetch
+      : async () => jsonResponse({ context: "remembered context" }),
+  );
   vi.stubGlobal("fetch", fetchMock);
   const stdoutWrite = vi
     .spyOn(process.stdout, "write")
@@ -96,13 +105,16 @@ async function importHook(
   const setTimeoutSpy = vi
     .spyOn(globalThis, "setTimeout")
     .mockImplementation(() => ({ unref: vi.fn() }) as unknown as NodeJS.Timeout);
+  const processExitSpy = vi
+    .spyOn(process, "exit")
+    .mockImplementation((() => undefined) as never);
 
   const importer = hookImporters[hook];
   if (!importer) throw new Error(`No hook importer for ${hook}`);
   await importer();
   await flushHookImport();
 
-  return { fetchMock, stdoutWrite, stderrWrite, setTimeoutSpy };
+  return { fetchMock, stdoutWrite, stderrWrite, setTimeoutSpy, processExitSpy };
 }
 
 describe("hook HTTP helper", () => {
@@ -322,7 +334,32 @@ describe("source hook entrypoints", () => {
       cwd: process.cwd(),
     });
     expect(telemetry.stdoutWrite).not.toHaveBeenCalled();
-    expect(telemetry.setTimeoutSpy).not.toHaveBeenCalled();
+    expect(telemetry.setTimeoutSpy).toHaveBeenCalledTimes(1);
+    expect(telemetry.setTimeoutSpy).toHaveBeenCalledWith(expect.any(Function), 500);
+    const exitCallback = telemetry.setTimeoutSpy.mock.calls[0]?.[0] as
+      | (() => void)
+      | undefined;
+    expect(exitCallback).toBeTypeOf("function");
+    exitCallback?.();
+    expect(telemetry.processExitSpy).toHaveBeenCalledWith(0);
+    const timeoutHandle = telemetry.setTimeoutSpy.mock.results[0]?.value as
+      | { unref?: () => unknown }
+      | undefined;
+    expect(timeoutHandle?.unref).toHaveBeenCalledTimes(1);
+
+    const pendingTelemetry = await importHook(
+      "session-start",
+      { session_id: "s1-pending", cwd: process.cwd() },
+      {},
+      { fetchMode: "pending" },
+    );
+    expect(pendingTelemetry.fetchMock).toHaveBeenCalledTimes(1);
+    expect(pendingTelemetry.setTimeoutSpy).toHaveBeenCalledTimes(1);
+    const pendingExitCallback = pendingTelemetry.setTimeoutSpy.mock.calls[0]?.[0] as
+      | (() => void)
+      | undefined;
+    pendingExitCallback?.();
+    expect(pendingTelemetry.processExitSpy).toHaveBeenCalledWith(0);
 
     const injected = await importHook(
       "session-start",
@@ -330,6 +367,7 @@ describe("source hook entrypoints", () => {
       { AGENTMEMORY_INJECT_CONTEXT: "true" },
     );
     expect(injected.stdoutWrite).toHaveBeenCalledWith("remembered context");
+    expect(injected.setTimeoutSpy).not.toHaveBeenCalled();
   });
 
   it("pre-tool-use stays silent by default and writes context for opted-in file tools", async () => {

@@ -1,0 +1,21 @@
+agentmemory has been installed.
+
+REST API:
+  kubectl --namespace {{ .Release.Namespace }} port-forward svc/{{ include "agentmemory.fullname" . }} {{ .Values.service.port }}:{{ .Values.service.port }}
+  curl http://127.0.0.1:{{ .Values.service.port }}/agentmemory/livez
+
+Viewer:
+  kubectl --namespace {{ .Release.Namespace }} port-forward deployment/{{ include "agentmemory.fullname" . }} 3113:3113
+  open http://127.0.0.1:3113
+
+HMAC secret:
+{{- if or .Values.secret.agentmemorySecret .Values.secret.existingKeys.hmac }}
+  The pod reads the HMAC from the mounted key at /var/run/agentmemory-hmac/hmac.
+  Use that secret value when configuring clients.
+{{- else }}
+  The entrypoint generates the HMAC on first boot and stores it at {{ .Values.persistence.mountPath }}/.hmac.
+  Retrieve it from the running pod:
+    kubectl --namespace {{ .Release.Namespace }} exec deployment/{{ include "agentmemory.fullname" . }} -- sh -c 'cat {{ .Values.persistence.mountPath }}/.hmac'
+{{- end }}
+
+Only the REST API Service port {{ .Values.service.port }} is exposed by default. Viewer, streams, iii-engine, and metrics ports stay inside the pod unless you port-forward to them.

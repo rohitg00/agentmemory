@@ -1,0 +1,197 @@
+{{- include "agentmemory.validateValues" . -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "agentmemory.fullname" . }}
+  labels:
+    {{- include "agentmemory.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    {{- toYaml .Values.strategy | nindent 4 }}
+  selector:
+    matchLabels:
+      {{- include "agentmemory.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "agentmemory.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "agentmemory.serviceAccountName" . }}
+      automountServiceAccountToken: {{ .Values.serviceAccount.automount }}
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if and .Values.persistence.enabled .Values.persistence.fixPermissions }}
+      initContainers:
+        - name: data-permissions
+          image: "{{ .Values.persistence.permissionsImage.repository }}:{{ .Values.persistence.permissionsImage.tag }}"
+          imagePullPolicy: {{ .Values.persistence.permissionsImage.pullPolicy }}
+          command:
+            - sh
+            - -c
+            - chown -R 1000:1000 {{ .Values.persistence.mountPath }} && chmod 755 {{ .Values.persistence.mountPath }}
+          securityContext:
+            runAsUser: 0
+            runAsGroup: 0
+          volumeMounts:
+            - name: data
+              mountPath: {{ .Values.persistence.mountPath }}
+      {{- end }}
+      containers:
+        - name: agentmemory
+          image: {{ include "agentmemory.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- with .Values.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          ports:
+            - name: http
+              containerPort: 3111
+              protocol: TCP
+            - name: streams
+              containerPort: 3112
+              protocol: TCP
+            - name: viewer
+              containerPort: 3113
+              protocol: TCP
+            - name: engine
+              containerPort: 49134
+              protocol: TCP
+            - name: metrics
+              containerPort: 9464
+              protocol: TCP
+          env:
+            - name: AGENTMEMORY_DATA_DIR
+              value: {{ .Values.persistence.mountPath | quote }}
+            {{- if or .Values.secret.agentmemorySecret .Values.secret.existingKeys.hmac }}
+            - name: AGENTMEMORY_HMAC_FILE
+              value: /var/run/agentmemory-hmac/hmac
+            {{- end }}
+            {{- range $name, $value := .Values.env }}
+            - name: {{ $name }}
+              value: {{ $value | quote }}
+            {{- end }}
+            {{- if .Values.secret.existingKeys.anthropicApiKey }}
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secret.existingSecret }}
+                  key: {{ .Values.secret.existingKeys.anthropicApiKey }}
+            {{- end }}
+            {{- if .Values.secret.existingKeys.openaiApiKey }}
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secret.existingSecret }}
+                  key: {{ .Values.secret.existingKeys.openaiApiKey }}
+            {{- end }}
+            {{- if .Values.secret.existingKeys.geminiApiKey }}
+            - name: GEMINI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secret.existingSecret }}
+                  key: {{ .Values.secret.existingKeys.geminiApiKey }}
+            {{- end }}
+            {{- if .Values.secret.existingKeys.voyageApiKey }}
+            - name: VOYAGE_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secret.existingSecret }}
+                  key: {{ .Values.secret.existingKeys.voyageApiKey }}
+            {{- end }}
+            {{- if .Values.secret.existingKeys.openrouterApiKey }}
+            - name: OPENROUTER_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secret.existingSecret }}
+                  key: {{ .Values.secret.existingKeys.openrouterApiKey }}
+            {{- end }}
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          startupProbe:
+            httpGet:
+              path: /agentmemory/livez
+              port: http
+            failureThreshold: {{ .Values.probes.startup.failureThreshold }}
+            periodSeconds: {{ .Values.probes.startup.periodSeconds }}
+            timeoutSeconds: {{ .Values.probes.startup.timeoutSeconds }}
+          livenessProbe:
+            httpGet:
+              path: /agentmemory/livez
+              port: http
+            failureThreshold: {{ .Values.probes.liveness.failureThreshold }}
+            periodSeconds: {{ .Values.probes.liveness.periodSeconds }}
+            timeoutSeconds: {{ .Values.probes.liveness.timeoutSeconds }}
+          readinessProbe:
+            httpGet:
+              path: /agentmemory/livez
+              port: http
+            failureThreshold: {{ .Values.probes.readiness.failureThreshold }}
+            periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
+            timeoutSeconds: {{ .Values.probes.readiness.timeoutSeconds }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: {{ .Values.persistence.mountPath }}
+            {{- if or .Values.secret.agentmemorySecret .Values.secret.existingKeys.hmac }}
+            - name: hmac-secret
+              mountPath: /var/run/agentmemory-hmac
+              readOnly: true
+            {{- end }}
+            {{- with .Values.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+      volumes:
+        - name: data
+          {{- if .Values.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "agentmemory.dataClaimName" . }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        {{- if or .Values.secret.agentmemorySecret .Values.secret.existingKeys.hmac }}
+        - name: hmac-secret
+          secret:
+            {{- if .Values.secret.agentmemorySecret }}
+            secretName: {{ include "agentmemory.fullname" . }}
+            items:
+              - key: {{ .Values.secret.keys.hmac }}
+                path: hmac
+            {{- else }}
+            secretName: {{ .Values.secret.existingSecret }}
+            items:
+              - key: {{ .Values.secret.existingKeys.hmac }}
+                path: hmac
+            {{- end }}
+        {{- end }}
+        {{- with .Values.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

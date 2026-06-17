@@ -28,6 +28,126 @@ const localPipelineMock = vi.fn(async () => async (texts: string[]) => ({
   tolist: () => texts.map(() => Array.from({ length: 384 }, () => 0.1)),
 }));
 
+function mockLoadTransformersWithWasmFlags() {
+  const wasm = { numThreads: 4 };
+  const loadTransformersCalls: number[] = [];
+  const pipeline = vi.fn(async (task: string) => {
+    if (task === "image-feature-extraction") {
+      return async () => ({
+        data: new Float32Array(Array.from({ length: 512 }, () => 0.1)),
+        tolist: () => [Array.from({ length: 512 }, () => 0.1)],
+      });
+    }
+    return async (texts: string[]) => ({
+      tolist: () => texts.map(() => Array.from({ length: 384 }, () => 0.1)),
+    });
+  });
+  const fromBlob = vi.fn(async () => ({ image: true }));
+  const loadTransformers = vi.fn(async () => {
+    wasm.numThreads = 1;
+    loadTransformersCalls.push(wasm.numThreads);
+    return {
+      env: { backends: { onnx: { wasm } } },
+      pipeline,
+      RawImage: {
+        fromBlob,
+      },
+    };
+  });
+  vi.doMock("../src/providers/transformers.js", () => ({
+    configureTransformersForNode: vi.fn((transformers: {
+      env?: { backends?: { onnx?: { wasm?: { numThreads?: number } } } };
+    }) => {
+      const target = transformers.env?.backends?.onnx?.wasm;
+      if (target) target.numThreads = 1;
+    }),
+    loadTransformers,
+  }));
+  return { wasm, pipeline, loadTransformersCalls, fromBlob, loadTransformers };
+}
+
+function mockLoadTransformersWithPipeline(pipeline = localPipelineMock) {
+  const loadTransformers = vi.fn(async () => ({
+    pipeline,
+  }));
+  vi.doMock("../src/providers/transformers.js", () => ({
+    configureTransformersForNode: vi.fn(),
+    loadTransformers,
+  }));
+  return { loadTransformers };
+}
+
+async function freshTransformersModule() {
+  vi.resetModules();
+  return await import("../src/providers/transformers.js");
+}
+
+describe("configureTransformersForNode", () => {
+  it("disables threaded ONNX WASM on Node", async () => {
+    const { configureTransformersForNode } = await freshTransformersModule();
+    const transformers = {
+      env: {
+        backends: {
+          onnx: {
+            wasm: { numThreads: 4 },
+          },
+        },
+      },
+      pipeline: vi.fn(),
+    };
+
+    configureTransformersForNode(transformers);
+
+    expect(transformers.env.backends.onnx.wasm.numThreads).toBe(1);
+  });
+
+  it("leaves modules without ONNX WASM flags unchanged", async () => {
+    const { configureTransformersForNode } = await freshTransformersModule();
+    const transformers = {
+      pipeline: vi.fn(),
+      env: {
+        backends: {
+          onnx: {},
+        },
+      },
+    };
+
+    configureTransformersForNode(transformers);
+
+    expect(transformers).toEqual({
+      pipeline: expect.any(Function),
+      env: {
+        backends: {
+          onnx: {},
+        },
+      },
+    });
+  });
+});
+
+describe("loadTransformers", () => {
+  it("configures ONNX WASM before returning the transformers module", async () => {
+    vi.resetModules();
+    const wasm = { numThreads: 4 };
+    const pipelineThreadCounts: number[] = [];
+    const pipeline = vi.fn(async () => {
+      pipelineThreadCounts.push(wasm.numThreads);
+      return null;
+    });
+    vi.doMock("@xenova/transformers", () => ({
+      env: { backends: { onnx: { wasm } } },
+      pipeline,
+    }));
+    const { loadTransformers } = await import("../src/providers/transformers.js");
+
+    const transformers = await loadTransformers();
+    await (transformers.pipeline as () => Promise<unknown>)();
+
+    expect(wasm.numThreads).toBe(1);
+    expect(pipelineThreadCounts).toEqual([1]);
+  });
+});
+
 async function freshEmbeddingModule() {
   vi.resetModules();
   return await import("../src/providers/embedding/index.js");
@@ -46,6 +166,7 @@ afterEach(() => {
   process.env = { ...originalEnv };
   rmSync(sandboxHome, { recursive: true, force: true });
   vi.doUnmock("@xenova/transformers");
+  vi.doUnmock("../src/providers/transformers.js");
   vi.restoreAllMocks();
 });
 
@@ -263,9 +384,7 @@ describe("createEmbeddingProvider", () => {
 
 describe("LocalEmbeddingProvider", () => {
   it("uses the multilingual local embedding model by default", async () => {
-    vi.doMock("@xenova/transformers", () => ({
-      pipeline: localPipelineMock,
-    }));
+    mockLoadTransformersWithPipeline();
     const {
       LocalEmbeddingProvider,
     } = await freshEmbeddingModule();
@@ -281,9 +400,7 @@ describe("LocalEmbeddingProvider", () => {
   });
 
   it("respects LOCAL_EMBEDDING_MODEL when loading the local extractor", async () => {
-    vi.doMock("@xenova/transformers", () => ({
-      pipeline: localPipelineMock,
-    }));
+    mockLoadTransformersWithPipeline();
     process.env["LOCAL_EMBEDDING_MODEL"] = "Xenova/custom-local-model";
     const {
       LocalEmbeddingProvider,
@@ -296,6 +413,66 @@ describe("LocalEmbeddingProvider", () => {
     expect(localPipelineMock).toHaveBeenCalledWith(
       "feature-extraction",
       "Xenova/custom-local-model",
+    );
+  });
+
+  it("disables threaded ONNX WASM before loading the local extractor on Node", async () => {
+    const { wasm, pipeline, loadTransformersCalls } =
+      mockLoadTransformersWithWasmFlags();
+    const {
+      LocalEmbeddingProvider,
+    } = await freshEmbeddingModule();
+
+    const provider = new LocalEmbeddingProvider();
+
+    await provider.embed("hello");
+
+    expect(wasm.numThreads).toBe(1);
+    expect(loadTransformersCalls).toEqual([1]);
+    expect(pipeline).toHaveBeenCalledWith(
+      "feature-extraction",
+      "Xenova/paraphrase-multilingual-MiniLM-L12-v2",
+    );
+  });
+});
+
+describe("ClipEmbeddingProvider", () => {
+  it("disables threaded ONNX WASM before loading the CLIP text extractor on Node", async () => {
+    const { wasm, pipeline, loadTransformersCalls } =
+      mockLoadTransformersWithWasmFlags();
+    const {
+      ClipEmbeddingProvider,
+    } = await freshEmbeddingModule();
+
+    const provider = new ClipEmbeddingProvider();
+
+    await provider.embed("screenshot");
+
+    expect(wasm.numThreads).toBe(1);
+    expect(loadTransformersCalls).toEqual([1]);
+    expect(pipeline).toHaveBeenCalledWith(
+      "feature-extraction",
+      "Xenova/clip-vit-base-patch32",
+    );
+  });
+
+  it("disables threaded ONNX WASM before loading the CLIP image extractor on Node", async () => {
+    const { wasm, pipeline, loadTransformersCalls, fromBlob } =
+      mockLoadTransformersWithWasmFlags();
+    const {
+      ClipEmbeddingProvider,
+    } = await freshEmbeddingModule();
+
+    const provider = new ClipEmbeddingProvider();
+
+    await provider.embedImage("data:image/png;base64,AA==");
+
+    expect(wasm.numThreads).toBe(1);
+    expect(loadTransformersCalls).toEqual([1]);
+    expect(fromBlob).toHaveBeenCalledOnce();
+    expect(pipeline).toHaveBeenCalledWith(
+      "image-feature-extraction",
+      "Xenova/clip-vit-base-patch32",
     );
   });
 });
