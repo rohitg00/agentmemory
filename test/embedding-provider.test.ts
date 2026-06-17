@@ -13,6 +13,7 @@ const ENV_KEYS = [
   "EMBEDDING_PROVIDER",
   "AGENTMEMORY_EMBEDDING_PROVIDER",
   "LOCAL_EMBEDDING_MODEL",
+  "EMBEDDING_MODEL",
   "OPENAI_BASE_URL",
   "OPENAI_EMBEDDING_BASE_URL",
   "OPENAI_EMBEDDING_API_KEY",
@@ -396,6 +397,7 @@ describe("LocalEmbeddingProvider", () => {
     expect(localPipelineMock).toHaveBeenCalledWith(
       "feature-extraction",
       "Xenova/paraphrase-multilingual-MiniLM-L12-v2",
+      { local_files_only: true, quantized: false },
     );
   });
 
@@ -413,7 +415,71 @@ describe("LocalEmbeddingProvider", () => {
     expect(localPipelineMock).toHaveBeenCalledWith(
       "feature-extraction",
       "Xenova/custom-local-model",
+      { local_files_only: true, quantized: false },
     );
+  });
+
+  it("uses EMBEDDING_MODEL as a compatibility fallback for local embeddings", async () => {
+    mockLoadTransformersWithPipeline();
+    process.env["EMBEDDING_MODEL"] = "Xenova/bge-large-zh-v1.5";
+    const {
+      LocalEmbeddingProvider,
+    } = await freshEmbeddingModule();
+
+    const provider = new LocalEmbeddingProvider();
+
+    await provider.embed("hello");
+
+    expect(provider.dimensions).toBe(1024);
+    expect(localPipelineMock).toHaveBeenCalledWith(
+      "feature-extraction",
+      "Xenova/bge-large-zh-v1.5",
+      { local_files_only: true, quantized: false },
+    );
+  });
+
+  it("prefers LOCAL_EMBEDDING_MODEL over EMBEDDING_MODEL", async () => {
+    mockLoadTransformersWithPipeline();
+    process.env["LOCAL_EMBEDDING_MODEL"] = "Xenova/multilingual-e5-base";
+    process.env["EMBEDDING_MODEL"] = "Xenova/bge-large-zh-v1.5";
+    const {
+      LocalEmbeddingProvider,
+    } = await freshEmbeddingModule();
+
+    const provider = new LocalEmbeddingProvider();
+
+    await provider.embed("hello");
+
+    expect(provider.dimensions).toBe(768);
+    expect(localPipelineMock).toHaveBeenCalledWith(
+      "feature-extraction",
+      "Xenova/multilingual-e5-base",
+      { local_files_only: true, quantized: false },
+    );
+  });
+
+  it("uses OPENAI_EMBEDDING_DIMENSIONS as an explicit local dimension override", async () => {
+    process.env["LOCAL_EMBEDDING_MODEL"] = "Xenova/custom-local-model";
+    process.env["OPENAI_EMBEDDING_DIMENSIONS"] = "512";
+    const {
+      LocalEmbeddingProvider,
+    } = await freshEmbeddingModule();
+
+    const provider = new LocalEmbeddingProvider();
+
+    expect(provider.dimensions).toBe(512);
+  });
+
+  it("rejects invalid OPENAI_EMBEDDING_DIMENSIONS values for local embeddings", async () => {
+    const { LocalEmbeddingProvider } = await freshEmbeddingModule();
+
+    for (const value of ["not-a-number", "-5", "0", "1.5", "1e3"]) {
+      process.env["OPENAI_EMBEDDING_DIMENSIONS"] = value;
+      expect(() => new LocalEmbeddingProvider()).toThrow(
+        /OPENAI_EMBEDDING_DIMENSIONS must be a positive integer/,
+      );
+      delete process.env["OPENAI_EMBEDDING_DIMENSIONS"];
+    }
   });
 
   it("disables threaded ONNX WASM before loading the local extractor on Node", async () => {
@@ -432,6 +498,7 @@ describe("LocalEmbeddingProvider", () => {
     expect(pipeline).toHaveBeenCalledWith(
       "feature-extraction",
       "Xenova/paraphrase-multilingual-MiniLM-L12-v2",
+      { local_files_only: true, quantized: false },
     );
   });
 });
