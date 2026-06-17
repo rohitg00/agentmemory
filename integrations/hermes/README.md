@@ -41,8 +41,9 @@ memory:
   provider: agentmemory
 
 Verify it's working with
-`curl http://localhost:3111/agentmemory/health` — it should return
-{"status":"healthy"}. Open the real-time viewer at
+`curl http://localhost:3111/agentmemory/health` — it should include
+`"status":"healthy"` plus version, subsystem health, circuit-breaker,
+and viewer fields. Open the real-time viewer at
 http://localhost:3113 to watch memories being captured live.
 
 If I want deeper integration — pre-LLM context injection, turn-level

@@ -182,6 +182,30 @@ describe("Generated skill references", () => {
     }
   });
 
+  it("documents each registered REST method/path endpoint", () => {
+    const apiSource = readFileSync(join(repoRoot, "src", "triggers", "api.ts"), "utf8");
+    const found: string[] = [];
+    const re = /api_path:\s*"([^"]+)"/g;
+    let match: RegExpExecArray | null;
+    while ((match = re.exec(apiSource)) !== null) {
+      const path = match[1];
+      const win = apiSource.slice(Math.max(0, match.index - 140), match.index + 140);
+      const methodMatch = /http_method:\s*"([A-Z]+)"/.exec(win);
+      found.push(`${methodMatch ? methodMatch[1] : "POST"} ${path}`);
+    }
+    const endpoints = [...new Set(found)].sort();
+    const reference = readFileSync(
+      join(pluginRoot, "skills", "agentmemory-rest-api", "REFERENCE.md"),
+      "utf8",
+    );
+
+    expect(reference).toContain(`${endpoints.length} registered endpoints:`);
+    for (const endpoint of endpoints) {
+      const [method, path] = endpoint.split(" ");
+      expect(reference).toContain(`| ${method} | \`${path}\` |`);
+    }
+  });
+
   it("runs the skill reference generator and skill lint success paths in-process", async () => {
     const originalArgv = process.argv;
     const originalExitCode = process.exitCode;
