@@ -141,7 +141,7 @@ describe("MCP server registration and auth", () => {
   it("registers tools, resources, and prompts endpoints with stable HTTP routes", () => {
     const h = createHarness();
 
-    expect(h.sdk.registerFunction).toHaveBeenCalledTimes(6);
+    expect(h.sdk.registerFunction).toHaveBeenCalledTimes(9);
     expect(h.triggers).toEqual([
       {
         type: "http",
@@ -152,6 +152,21 @@ describe("MCP server registration and auth", () => {
         type: "http",
         function_id: "mcp::tools::call",
         config: { api_path: "/agentmemory/mcp/call", http_method: "POST" },
+      },
+      {
+        type: "http",
+        function_id: "mcp::streamable",
+        config: { api_path: "/agentmemory/mcp", http_method: "POST" },
+      },
+      {
+        type: "http",
+        function_id: "mcp::streamable::get",
+        config: { api_path: "/agentmemory/mcp", http_method: "GET" },
+      },
+      {
+        type: "http",
+        function_id: "mcp::streamable::delete",
+        config: { api_path: "/agentmemory/mcp", http_method: "DELETE" },
       },
       {
         type: "http",

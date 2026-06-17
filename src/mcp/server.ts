@@ -12,6 +12,7 @@ import { isSlotsEnabled } from "../functions/slots.js";
 import { getVisibleTools, V010_SLOTS_TOOLS } from "./tools-registry.js";
 import { timingSafeCompare } from "../auth.js";
 import { getAgentId, isAgentScopeIsolated } from "../config.js";
+import { VERSION } from "../version.js";
 import {
   filterSessionsByTime,
   parseTimeRange,
@@ -22,6 +23,24 @@ type McpResponse = {
   status_code: number;
   headers?: Record<string, string>;
   body: unknown;
+};
+
+type JsonRpcId = string | number | null;
+
+type JsonRpcMessage = {
+  jsonrpc?: unknown;
+  id?: unknown;
+  method?: unknown;
+  params?: unknown;
+};
+
+type StreamableMethodResult =
+  | { ok: true; result: unknown }
+  | { ok: false; code: number; message: string };
+
+type StreamableMessageOutcome = {
+  response: unknown | null;
+  invalidRequest: boolean;
 };
 
 function asNonEmptyString(value: unknown): string | undefined {
@@ -58,6 +77,54 @@ function timeRangeErrorResponse(err: TimeRangeError): McpResponse {
     status_code: 400,
     body: { error: err.message, code: err.code },
   };
+}
+
+function jsonRpcError(id: JsonRpcId, code: number, message: string) {
+  return { jsonrpc: "2.0", id, error: { code, message } };
+}
+
+function isValidJsonRpcId(id: unknown): id is JsonRpcId | undefined {
+  return (
+    id === undefined ||
+    id === null ||
+    typeof id === "string" ||
+    typeof id === "number"
+  );
+}
+
+function streamJson(statusCode: number, body: unknown): McpResponse {
+  return {
+    status_code: statusCode,
+    headers: { "Content-Type": "application/json" },
+    body,
+  };
+}
+
+function streamAccepted(): McpResponse {
+  return {
+    status_code: 202,
+    headers: { "Content-Type": "application/json" },
+    body: null,
+  };
+}
+
+function responseErrorMessage(response: McpResponse): string {
+  const body = response.body as { error?: unknown };
+  return typeof body?.error === "string" ? body.error : "MCP request failed";
+}
+
+function originAllowed(origin: string): boolean {
+  try {
+    const parsed = new URL(origin);
+    return (
+      parsed.hostname === "localhost" ||
+      parsed.hostname === "127.0.0.1" ||
+      parsed.hostname === "::1" ||
+      parsed.hostname === "[::1]"
+    );
+  } catch {
+    return false;
+  }
 }
 
 const SLOT_TOOL_NAMES = new Set(V010_SLOTS_TOOLS.map((tool) => tool.name));
@@ -101,23 +168,22 @@ export function registerMcpEndpoints(
     return null;
   }
 
-  sdk.registerFunction("mcp::tools::list", 
-    async (req: ApiRequest): Promise<McpResponse> => {
-      const authErr = checkAuth(req, secret);
-      if (authErr) return authErr;
-      return { status_code: 200, body: { tools: getVisibleTools() } };
-    },
-  );
+  const handleToolsList = async (req: ApiRequest): Promise<McpResponse> => {
+    const authErr = checkAuth(req, secret);
+    if (authErr) return authErr;
+    return { status_code: 200, body: { tools: getVisibleTools() } };
+  };
+
+  sdk.registerFunction("mcp::tools::list", handleToolsList);
   sdk.registerTrigger({
     type: "http",
     function_id: "mcp::tools::list",
     config: { api_path: "/agentmemory/mcp/tools", http_method: "GET" },
   });
 
-  sdk.registerFunction("mcp::tools::call", 
-    async (
-      req: ApiRequest<{ name: string; arguments: Record<string, unknown> }>,
-    ): Promise<McpResponse> => {
+  const handleToolsCall = async (
+    req: ApiRequest<{ name: string; arguments: Record<string, unknown> }>,
+  ): Promise<McpResponse> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
 
@@ -1480,12 +1546,234 @@ export function registerMcpEndpoints(
           },
         };
       }
-    },
-  );
+    };
+
+  sdk.registerFunction("mcp::tools::call", handleToolsCall);
   sdk.registerTrigger({
     type: "http",
     function_id: "mcp::tools::call",
     config: { api_path: "/agentmemory/mcp/call", http_method: "POST" },
+  });
+
+  function checkStreamableOrigin(req: ApiRequest): McpResponse | null {
+    const origin =
+      req.headers?.["origin"] || req.headers?.["Origin"];
+    if (origin === undefined) return null;
+    if (typeof origin === "string" && originAllowed(origin)) return null;
+    return { status_code: 403, body: { error: "origin not allowed" } };
+  }
+
+  async function handleStreamableMethod(
+    method: string,
+    params: unknown,
+    headers: Record<string, string>,
+  ): Promise<StreamableMethodResult> {
+    switch (method) {
+      case "initialize":
+        return {
+          ok: true,
+          result: {
+            protocolVersion: "2025-03-26",
+            capabilities: { tools: { listChanged: false } },
+            serverInfo: { name: "agentmemory", version: VERSION },
+          },
+        };
+
+      case "notifications/initialized":
+        return { ok: true, result: {} };
+
+      case "tools/list": {
+        const response = await handleToolsList({
+          body: undefined,
+          headers,
+          query_params: {},
+        } as ApiRequest);
+        if (response.status_code >= 400) {
+          return {
+            ok: false,
+            code: -32603,
+            message: responseErrorMessage(response),
+          };
+        }
+        return { ok: true, result: response.body };
+      }
+
+      case "tools/call": {
+        if (!params || typeof params !== "object") {
+          return {
+            ok: false,
+            code: -32602,
+            message: "Invalid params: name is required",
+          };
+        }
+        const callParams = params as Record<string, unknown>;
+        if (typeof callParams.name !== "string") {
+          return {
+            ok: false,
+            code: -32602,
+            message: "Invalid params: name is required",
+          };
+        }
+        const response = await handleToolsCall({
+          body: {
+            name: callParams.name,
+            arguments:
+              callParams.arguments &&
+              typeof callParams.arguments === "object" &&
+              !Array.isArray(callParams.arguments)
+                ? (callParams.arguments as Record<string, unknown>)
+                : {},
+          },
+          headers,
+          query_params: {},
+        } as ApiRequest<{ name: string; arguments: Record<string, unknown> }>);
+        if (response.status_code >= 400) {
+          return {
+            ok: false,
+            code: response.status_code === 400 ? -32602 : -32603,
+            message: responseErrorMessage(response),
+          };
+        }
+        return { ok: true, result: response.body };
+      }
+
+      default:
+        return {
+          ok: false,
+          code: -32601,
+          message: `Method not found: ${method}`,
+        };
+    }
+  }
+
+  async function handleStreamableMessage(
+    message: JsonRpcMessage,
+    headers: Record<string, string>,
+  ): Promise<StreamableMessageOutcome> {
+    if (!isValidJsonRpcId(message.id)) {
+      return {
+        response: jsonRpcError(
+          null,
+          -32600,
+          "Invalid Request: id must be string, number, or null",
+        ),
+        invalidRequest: true,
+      };
+    }
+    if (typeof message.method !== "string") {
+      return {
+        response: jsonRpcError(
+          message.id === undefined ? null : message.id,
+          -32600,
+          "Invalid Request",
+        ),
+        invalidRequest: true,
+      };
+    }
+
+    const handled = await handleStreamableMethod(
+      message.method,
+      message.params,
+      headers,
+    );
+    if (message.id === undefined) {
+      return { response: null, invalidRequest: false };
+    }
+    if (!handled.ok) {
+      return {
+        response: jsonRpcError(message.id, handled.code, handled.message),
+        invalidRequest: false,
+      };
+    }
+    return {
+      response: {
+        jsonrpc: "2.0",
+        id: message.id,
+        result: handled.result,
+      },
+      invalidRequest: false,
+    };
+  }
+
+  const handleStreamablePost = async (
+    req: ApiRequest,
+  ): Promise<McpResponse> => {
+    const authErr = checkAuth(req, secret);
+    if (authErr) return authErr;
+    const originErr = checkStreamableOrigin(req);
+    if (originErr) return originErr;
+
+    if (Array.isArray(req.body)) {
+      if (!req.body.length) {
+        return streamJson(400, jsonRpcError(null, -32600, "Invalid Request"));
+      }
+      const outcomes = await Promise.all(
+        req.body.map(async (body) => {
+          if (!body || typeof body !== "object" || Array.isArray(body)) {
+            return {
+              response: jsonRpcError(null, -32600, "Invalid Request"),
+              invalidRequest: true,
+            };
+          }
+          const message = body as JsonRpcMessage;
+          if (message.jsonrpc !== "2.0") {
+            return {
+              response: jsonRpcError(null, -32600, "Invalid Request"),
+              invalidRequest: true,
+            };
+          }
+          return handleStreamableMessage(message, req.headers || {});
+        }),
+      );
+      const responses = outcomes
+        .map((outcome) => outcome.response)
+        .filter((response) => response !== null);
+      if (!responses.length) return streamAccepted();
+      return streamJson(200, responses);
+    }
+
+    const message = req.body as JsonRpcMessage;
+    if (!message || typeof message !== "object" || message.jsonrpc !== "2.0") {
+      return streamJson(400, jsonRpcError(null, -32600, "Invalid Request"));
+    }
+    const outcome = await handleStreamableMessage(message, req.headers || {});
+    if (outcome.response === null) return streamAccepted();
+    return streamJson(outcome.invalidRequest ? 400 : 200, outcome.response);
+  };
+
+  const streamableMethodNotAllowed = async (
+    req: ApiRequest,
+  ): Promise<McpResponse> => {
+    const authErr = checkAuth(req, secret);
+    if (authErr) return authErr;
+    const originErr = checkStreamableOrigin(req);
+    if (originErr) return originErr;
+    return {
+      status_code: 405,
+      headers: { Allow: "POST", "Content-Type": "application/json" },
+      body: {
+        error: "SSE is not supported; use POST for Streamable HTTP JSON-RPC",
+      },
+    };
+  };
+
+  sdk.registerFunction("mcp::streamable", handleStreamablePost);
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "mcp::streamable",
+    config: { api_path: "/agentmemory/mcp", http_method: "POST" },
+  });
+  sdk.registerFunction("mcp::streamable::get", streamableMethodNotAllowed);
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "mcp::streamable::get",
+    config: { api_path: "/agentmemory/mcp", http_method: "GET" },
+  });
+  sdk.registerFunction("mcp::streamable::delete", streamableMethodNotAllowed);
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "mcp::streamable::delete",
+    config: { api_path: "/agentmemory/mcp", http_method: "DELETE" },
   });
 
   const MCP_RESOURCES = [
