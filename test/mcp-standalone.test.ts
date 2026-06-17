@@ -25,6 +25,7 @@ import {
   V040_TOOLS,
 } from "../src/mcp/tools-registry.js";
 import { InMemoryKV } from "../src/mcp/in-memory-kv.js";
+import { createStdioTransport } from "../src/mcp/transport.js";
 import { handleToolCall } from "../src/mcp/standalone.js";
 import {
   resetHandleForTests,
@@ -48,6 +49,75 @@ const fetchTrap = vi.fn(async (url: unknown) => {
   throw new Error(
     `unexpected real fetch() call in mcp-standalone.test.ts: ${String(url)} — the livez probe DI stub should have absorbed this`,
   );
+});
+
+function standaloneHandler() {
+  return vi.mocked(createStdioTransport).mock.calls[0][0];
+}
+
+describe("standalone initialize protocol negotiation", () => {
+  it("echoes Claude Code's requested MCP protocol version", async () => {
+    const handler = standaloneHandler();
+
+    const result = await handler("initialize", {
+      protocolVersion: "2025-03-26",
+    });
+
+    expect(result).toMatchObject({
+      protocolVersion: "2025-03-26",
+      capabilities: { tools: { listChanged: false } },
+      serverInfo: { name: "agentmemory" },
+    });
+  });
+
+  it("keeps the default MCP protocol version when the client omits it", async () => {
+    const handler = standaloneHandler();
+
+    const result = await handler("initialize", {});
+
+    expect(result).toMatchObject({
+      protocolVersion: "2024-11-05",
+      serverInfo: { name: "agentmemory" },
+    });
+  });
+
+  it("keeps the default MCP protocol version when the client sends a non-string value", async () => {
+    const handler = standaloneHandler();
+
+    const result = await handler("initialize", {
+      protocolVersion: 20250326,
+    });
+
+    expect(result).toMatchObject({
+      protocolVersion: "2024-11-05",
+      serverInfo: { name: "agentmemory" },
+    });
+  });
+
+  it("keeps the default MCP protocol version when the client sends an unsupported string", async () => {
+    const handler = standaloneHandler();
+
+    const result = await handler("initialize", {
+      protocolVersion: "2099-01-01",
+    });
+
+    expect(result).toMatchObject({
+      protocolVersion: "2024-11-05",
+      serverInfo: { name: "agentmemory" },
+    });
+  });
+
+  it("still returns the tools/list shape after negotiating Claude Code's protocol version", async () => {
+    const handler = standaloneHandler();
+
+    await handler("initialize", { protocolVersion: "2025-03-26" });
+    const result = await handler("tools/list", {});
+
+    expect(result).toMatchObject({
+      tools: expect.any(Array),
+    });
+    expect((result as { tools: unknown[] }).tools.length).toBeGreaterThan(0);
+  });
 });
 
 describe("Tools Registry", () => {
