@@ -66,7 +66,7 @@ Stop conditions:
 | Document lifecycle and `memory_save` distinction | Compare README text with `src/functions/lessons.ts` and tests | Done | README now documents `memory_lesson_save` versus `memory_save`, confidence defaults, duplicate reinforcement, explicit strengthen, recall/list behavior, decay, soft-delete, and REST endpoint equivalents. |
 | Avoid generated-doc drift | Run `corepack pnpm run skills:check` or document blocker | Done | Initial run was blocked by pnpm ignored-build hardening; after `corepack pnpm install --frozen-lockfile --ignore-scripts`, `skills:check` reported only `plugin/skills/agentmemory-config/REFERENCE.md` env drift, unrelated to `memory_lesson_save`. |
 | Verify docs/tests | Run targeted tests/searches covering docs, tool counts, MCP/REST lesson behavior, and server-core/fallback boundaries | Done | `rg` confirmed README/source/test evidence. Expanded targeted Vitest passed 6 files / 213 tests, including `test/mcp-surface-default.test.ts` and `test/mcp-standalone-proxy.test.ts`. |
-| Local branch/commit prepared | `github-push-prepare` local branch prep | Pending | Not run yet. |
+| Local branch/commit prepared | `github-push-prepare` local branch prep | Done | Created commit `9152051a`; merged local `origin/main` commit `b5e02429` into the branch with merge commit `53abaa11`; PR diff remains README plus task-state files. |
 
 ## Subagent Ledger
 
@@ -87,9 +87,15 @@ Stop conditions:
 - Final read-only boundary/security review: ACCEPT.
 - Security gates: `gitleaks detect --source . --redact` passed with no leaks; `semgrep scan --config p/default --error --metrics=off .` scanned 670 tracked files with 0 findings.
 - Generated docs check remains blocked by unrelated existing drift: `corepack pnpm run skills:check` exits 1 for `plugin/skills/agentmemory-config/REFERENCE.md` AUTOGEN env drift. The MCP tools reference is not reported stale.
+- Local commit created: `9152051a docs: document memory lesson save lifecycle`.
+- `github-push-prepare` local base integration used existing local `refs/remotes/origin/main` at `b5e02429e85792ef1565acb816fd890eaba00fe4`; no fetch was run, so freshness is unverified. The initial sandboxed merge was blocked by Git metadata permissions; the same local merge command succeeded with escalation and created merge commit `53abaa11`.
+- Post-merge PR diff from `origin/main` contains only `README.md`, `docs/todos/2026-06-17-issue-222-memory-lesson-save-docs/plan.md`, and `docs/todos/2026-06-17-issue-222-memory-lesson-save-docs/todo.md`.
+- Post-merge targeted Vitest passed 6 files / 213 tests. Post-merge `gitleaks detect --source . --redact` passed with no leaks. Post-merge `semgrep scan --config p/default --error --metrics=off .` scanned 670 tracked files with 0 findings.
+- Final `corepack pnpm run skills:check` still exits 1 only for unrelated `plugin/skills/agentmemory-config/REFERENCE.md` AUTOGEN env drift.
 
 ## Final Review Notes
 
 - Sprint Contract status: acceptance criteria met for README inventory, `memory_lesson_save` versus `memory_save` guidance, lifecycle documentation, full-server REST endpoint references, and verification against the implemented MCP/REST/function/test surface.
 - Caveat: full `skills:check` is not green because of unrelated `agentmemory-config` generated env-reference drift. No generator run was performed because it would be a broad non-task-owned rewrite.
+- Final branch status before handoff: local branch prepared against local `origin/main`; remote freshness unverified because fetch was not approved.
 - Push/PR creation not performed; no current-turn approval for remote writes.
