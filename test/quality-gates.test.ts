@@ -9,6 +9,11 @@ type PackageJson = {
   scripts?: Record<string, string>;
   devDependencies?: Record<string, string>;
   dependencies?: Record<string, string>;
+  optionalDependencies?: Record<string, string>;
+  peerDependencies?: Record<string, string>;
+  peerDependenciesMeta?: Record<string, { optional?: boolean }>;
+  bundledDependencies?: string[];
+  bundleDependencies?: string[];
 };
 
 type CoverageConfig = {
@@ -304,6 +309,7 @@ describe("root quality gates", () => {
     }
 
     const workspace = readText("pnpm-workspace.yaml");
+    expectTopLevelYamlScalar(workspace, "autoInstallPeers", "false");
     expectTopLevelYamlScalar(workspace, "savePrefix", '""');
     expectTopLevelYamlScalar(workspace, "minimumReleaseAge", "1440");
     expectTopLevelYamlScalar(workspace, "minimumReleaseAgeStrict", "true");
@@ -337,6 +343,27 @@ describe("root quality gates", () => {
     const mcp = JSON.parse(readText("packages/mcp/package.json")) as PackageJson;
 
     expect(mcp.dependencies?.["@agentmemory/agentmemory"]).toBe("workspace:~");
+  });
+
+  it("does not auto-install Anthropic packages in the root package", () => {
+    const pkg = readPackageJson();
+    const autoInstallSurfaces = [
+      pkg.dependencies ?? {},
+      pkg.optionalDependencies ?? {},
+    ];
+    const bundled = [
+      ...(pkg.bundledDependencies ?? []),
+      ...(pkg.bundleDependencies ?? []),
+    ];
+
+    for (const deps of autoInstallSurfaces) {
+      expect(deps["@anthropic-ai/sdk"]).toBeUndefined();
+      expect(deps["@anthropic-ai/claude-agent-sdk"]).toBeUndefined();
+    }
+    expect(bundled).not.toContain("@anthropic-ai/sdk");
+    expect(bundled).not.toContain("@anthropic-ai/claude-agent-sdk");
+    expect(pkg.peerDependencies?.["@anthropic-ai/claude-agent-sdk"]).toBe("^0.3.142");
+    expect(pkg.peerDependenciesMeta?.["@anthropic-ai/claude-agent-sdk"]?.optional).toBe(true);
   });
 
   it("keeps the OSV waiver narrow and time-bounded", () => {

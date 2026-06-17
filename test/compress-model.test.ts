@@ -1,20 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const anthropicModels = vi.hoisted((): string[] => []);
-
-vi.mock("@anthropic-ai/sdk", () => ({
-  default: class Anthropic {
-    messages = {
-      create: async (body: { model: string }) => {
-        anthropicModels.push(body.model);
-        return {
-          content: [{ type: "text", text: "ok" }],
-        };
-      },
-    };
-  },
-}));
-
 import { loadConfig } from "../src/config.js";
 import { AnthropicProvider } from "../src/providers/anthropic.js";
 import { MinimaxProvider } from "../src/providers/minimax.js";
@@ -22,8 +7,11 @@ import { OpenAIProvider } from "../src/providers/openai.js";
 import { OpenRouterProvider } from "../src/providers/openrouter.js";
 
 function mockChatResponse(): {
+  sentUrl(callIndex?: number): string;
+  sentMethod(callIndex?: number): string;
   sentBody(callIndex?: number): Record<string, unknown>;
   sentModel(callIndex?: number): string;
+  sentHeaders(callIndex?: number): Headers;
 } {
   const spy = vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
     return new Response(
@@ -35,6 +23,13 @@ function mockChatResponse(): {
     );
   });
   return {
+    sentUrl(callIndex = 0): string {
+      return String(spy.mock.calls[callIndex]?.[0]);
+    },
+    sentMethod(callIndex = 0): string {
+      const init = spy.mock.calls[callIndex]?.[1] as RequestInit;
+      return init.method ?? "GET";
+    },
     sentBody(callIndex = 0): Record<string, unknown> {
       const init = spy.mock.calls[callIndex]?.[1] as RequestInit;
       return JSON.parse(init.body as string) as Record<string, unknown>;
@@ -42,13 +37,16 @@ function mockChatResponse(): {
     sentModel(callIndex = 0): string {
       return this.sentBody(callIndex).model as string;
     },
+    sentHeaders(callIndex = 0): Headers {
+      const init = spy.mock.calls[callIndex]?.[1] as RequestInit;
+      return new Headers(init.headers);
+    },
   };
 }
 
 describe("AGENTMEMORY_COMPRESS_MODEL", () => {
   afterEach(() => {
     vi.restoreAllMocks();
-    anthropicModels.length = 0;
   });
 
   it("routes OpenAI compress() to the compression model and summarize() to the main model", async () => {
@@ -126,19 +124,84 @@ describe("AGENTMEMORY_COMPRESS_MODEL", () => {
   });
 
   it("routes Anthropic compress() to the compression model", async () => {
+    const fetched = mockChatResponse();
     const provider = new AnthropicProvider(
       "test-key",
       "main-model",
       4096,
-      undefined,
+      "https://anthropic.example.test",
       "cheap-model",
     );
 
     await provider.compress("system", "user");
     await provider.summarize("system", "user");
 
-    expect(anthropicModels[0]).toBe("cheap-model");
-    expect(anthropicModels[1]).toBe("main-model");
+    expect(fetched.sentModel(0)).toBe("cheap-model");
+    expect(fetched.sentModel(1)).toBe("main-model");
+    expect(fetched.sentHeaders(0).get("x-api-key")).toBe("test-key");
+    expect(fetched.sentHeaders(0).get("anthropic-version")).toBe("2023-06-01");
+    expect(fetched.sentHeaders(0).get("content-type")).toBe("application/json");
+    expect(fetched.sentUrl(0)).toBe("https://anthropic.example.test/v1/messages");
+    expect(fetched.sentUrl(1)).toBe("https://anthropic.example.test/v1/messages");
+    expect(fetched.sentMethod(0)).toBe("POST");
+    expect(fetched.sentMethod(1)).toBe("POST");
+    expect(fetched.sentBody(0)).toMatchObject({
+      model: "cheap-model",
+      max_tokens: 4096,
+      system: "system",
+      messages: [{ role: "user", content: "user" }],
+    });
+    expect(fetched.sentBody(1)).toMatchObject({
+      model: "main-model",
+      max_tokens: 4096,
+      system: "system",
+      messages: [{ role: "user", content: "user" }],
+    });
+  });
+
+  it("sends Anthropic image descriptions through the messages API", async () => {
+    const fetched = mockChatResponse();
+    const provider = new AnthropicProvider(
+      "test-key",
+      "main-model",
+      4096,
+      "https://anthropic.example.test",
+    );
+
+    const result = await provider.describeImage("aW1hZ2U=", "image/png", "describe this");
+
+    expect(result).toBe("ok");
+    expect(fetched.sentModel()).toBe("main-model");
+    expect(fetched.sentBody().messages).toEqual([
+      {
+        role: "user",
+        content: [
+          {
+            type: "image",
+            source: {
+              type: "base64",
+              media_type: "image/png",
+              data: "aW1hZ2U=",
+            },
+          },
+          { type: "text", text: "describe this" },
+        ],
+      },
+    ]);
+  });
+
+  it("reports Anthropic API errors without echoing the upstream body", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response("prompt: user secret", { status: 400 }),
+    );
+    const provider = new AnthropicProvider("test-key", "main-model", 4096);
+
+    await expect(provider.compress("system", "user")).rejects.toThrow(
+      "Anthropic API error (400)",
+    );
+    await expect(provider.compress("system", "user")).rejects.not.toThrow(
+      "user secret",
+    );
   });
 });
 

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import { fetchWithTimeout } from "../src/providers/_fetch.js";
+import { AnthropicProvider } from "../src/providers/anthropic.js";
 import { MinimaxProvider } from "../src/providers/minimax.js";
 import { OpenRouterProvider } from "../src/providers/openrouter.js";
 import { OpenAIProvider } from "../src/providers/openai.js";
@@ -92,6 +93,22 @@ describe("Provider hang regression — MinimaxProvider", () => {
 
   it("compress() aborts after timeout when upstream hangs", async () => {
     const provider = new MinimaxProvider("test-key", "MiniMax-M2.7", 800);
+    await expect(provider.compress("system", "user")).rejects.toThrow();
+  });
+});
+
+describe("Provider hang regression — AnthropicProvider", () => {
+  beforeEach(() => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(hangingFetch as typeof fetch);
+    process.env["AGENTMEMORY_LLM_TIMEOUT_MS"] = "50";
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+    delete process.env["AGENTMEMORY_LLM_TIMEOUT_MS"];
+  });
+
+  it("compress() aborts after timeout when upstream hangs", async () => {
+    const provider = new AnthropicProvider("test-key", "claude-sonnet-4-20250514", 800);
     await expect(provider.compress("system", "user")).rejects.toThrow();
   });
 });

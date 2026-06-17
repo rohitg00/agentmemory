@@ -32,10 +32,18 @@ const sdkChildContext = new AsyncLocalStorage<true>()
 let sdkActiveCount = 0
 let sdkOriginalEnv: string | undefined
 
-type ClaudeAgentSdkModule = typeof import('@anthropic-ai/claude-agent-sdk')
+type ClaudeAgentSdkModule = {
+  query(args: {
+    prompt: string
+    options: { systemPrompt: string; maxTurns: number; allowedTools: string[] }
+  }): AsyncIterable<{ type: string; result?: string }>
+}
+
+type ClaudeAgentSdkLoader = () => Promise<ClaudeAgentSdkModule>
 
 export class AgentSDKProvider implements MemoryProvider {
   name = 'agent-sdk'
+  constructor(private readonly sdkLoader: ClaudeAgentSdkLoader = defaultClaudeAgentSdkLoader) {}
 
   // Memoize the dynamic import so concurrent callers share one resolution
   // instead of racing to resolve the specifier independently. Keeps the
@@ -44,7 +52,17 @@ export class AgentSDKProvider implements MemoryProvider {
 
   private loadSdk(): Promise<ClaudeAgentSdkModule> {
     if (!this.sdkPromise) {
-      this.sdkPromise = import('@anthropic-ai/claude-agent-sdk')
+      this.sdkPromise = this.sdkLoader().catch((err: unknown) => {
+        if (isMissingClaudeAgentSdk(err)) {
+          throw new Error(
+            "Claude Agent SDK fallback requires @anthropic-ai/claude-agent-sdk. " +
+              "Install it alongside agentmemory with `npm install @anthropic-ai/claude-agent-sdk` " +
+              "and set AGENTMEMORY_ALLOW_AGENT_SDK=true to opt in.",
+            { cause: err },
+          )
+        }
+        throw err
+      })
     }
     return this.sdkPromise
   }
@@ -100,7 +118,7 @@ export class AgentSDKProvider implements MemoryProvider {
         let result = ''
         for await (const msg of messages) {
           if (msg.type === 'result') {
-            result = (msg as any).result ?? ''
+            result = msg.result ?? ''
           }
         }
         return result
@@ -117,4 +135,18 @@ export class AgentSDKProvider implements MemoryProvider {
       }
     })
   }
+}
+
+function defaultClaudeAgentSdkLoader(): Promise<ClaudeAgentSdkModule> {
+  const specifier = '@anthropic-ai/claude-agent-sdk'
+  return import(specifier) as Promise<ClaudeAgentSdkModule>
+}
+
+function isMissingClaudeAgentSdk(err: unknown): boolean {
+  if (!(err instanceof Error)) return false
+  const code = (err as { code?: unknown }).code
+  return (
+    code === 'ERR_MODULE_NOT_FOUND' ||
+    err.message.includes('@anthropic-ai/claude-agent-sdk')
+  )
 }

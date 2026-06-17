@@ -1298,7 +1298,7 @@ agentmemory auto-detects from your environment. By default, no LLM calls are mad
 | OpenAI API | `OPENAI_API_KEY` | Default `gpt-4o-mini`, override with `OPENAI_MODEL` |
 | **Local (Ollama / LM Studio / vLLM / llama.cpp)** | `OPENAI_API_KEY=local` + `OPENAI_BASE_URL=http://localhost:11434/v1` (Ollama) or `http://localhost:1234/v1` (LM Studio) + `OPENAI_MODEL=<your model>` | Anything OpenAI-API-compatible. Zero cost, runs on your hardware. See [Local models](#local-models-ollama-lm-studio-vllm) below. |
 | Codex subscription fallback | `AGENTMEMORY_ALLOW_CODEX_SDK=true` | Opt-in only. Spawns `codex exec` and reuses the logged-in Codex/ChatGPT session through the supported CLI surface; never reads private token files. API-key providers still win unless `AGENTMEMORY_PREFER_CODEX_SDK=true` is also set. |
-| Claude subscription fallback | `AGENTMEMORY_ALLOW_AGENT_SDK=true` | Opt-in only. Spawns `@anthropic-ai/claude-agent-sdk` sessions — used to cause unbounded Stop-hook recursion (#149 follow-up) so it is no longer the default. |
+| Claude subscription fallback | `npm install @anthropic-ai/claude-agent-sdk` + `AGENTMEMORY_ALLOW_AGENT_SDK=true` | Opt-in only. Spawns `@anthropic-ai/claude-agent-sdk` sessions — used to cause unbounded Stop-hook recursion (#149 follow-up) so it is no longer the default or auto-installed. |
 
 ### Local models (Ollama / LM Studio / vLLM)
 
@@ -1523,7 +1523,8 @@ Create `~/.agentmemory/.env`:
 # AGENTMEMORY_CODEX_TIMEOUT_MS=60000       # Optional; overrides AGENTMEMORY_LLM_TIMEOUT_MS
 # AGENTMEMORY_COMPRESS_MODEL=cheap-model   # Optional: provider.compress() model override;
 #                                          # provider.summarize() keeps the provider model.
-# Opt-in Claude-subscription fallback (spawns @anthropic-ai/claude-agent-sdk);
+# Opt-in Claude-subscription fallback (requires npm install @anthropic-ai/claude-agent-sdk);
+# spawns @anthropic-ai/claude-agent-sdk sessions;
 # leave OFF unless you understand the Stop-hook recursion risk (#149 follow-up):
 # AGENTMEMORY_ALLOW_AGENT_SDK=true
 

@@ -15,7 +15,14 @@ const state = vi.hoisted(() => ({
     | ((systemPrompt: string, userPrompt: string) => string),
 }));
 
-vi.mock("@anthropic-ai/claude-agent-sdk", () => ({
+type FakeClaudeAgentSdkModule = {
+  query: (args: {
+    prompt: string;
+    options: { systemPrompt: string };
+  }) => AsyncIterable<{ type: "result"; result: string }>;
+};
+
+const fakeSdk: FakeClaudeAgentSdkModule = {
   query: ({
     prompt,
     options,
@@ -33,7 +40,11 @@ vi.mock("@anthropic-ai/claude-agent-sdk", () => ({
     }
     return gen();
   },
-}));
+};
+
+function providerWithFakeSdk(): AgentSDKProvider {
+  return new AgentSDKProvider(async () => fakeSdk);
+}
 
 import { AgentSDKProvider } from "../src/providers/agent-sdk.js";
 
@@ -49,7 +60,7 @@ describe("AgentSDKProvider recursion guard (#781)", () => {
   });
 
   it("concurrent summarize calls each return the SDK result (no empty siblings)", async () => {
-    const provider = new AgentSDKProvider();
+    const provider = providerWithFakeSdk();
 
     const results = await Promise.all([
       provider.summarize("sys", "chunk 1"),
@@ -74,7 +85,7 @@ describe("AgentSDKProvider recursion guard (#781)", () => {
   });
 
   it("compress and summarize share the same guard scope without interfering", async () => {
-    const provider = new AgentSDKProvider();
+    const provider = providerWithFakeSdk();
 
     const [a, b, c] = await Promise.all([
       provider.summarize("sys", "s1"),
@@ -89,7 +100,7 @@ describe("AgentSDKProvider recursion guard (#781)", () => {
   });
 
   it("sets AGENTMEMORY_SDK_CHILD=1 while inside the SDK call (so spawned subprocesses inherit it)", async () => {
-    const provider = new AgentSDKProvider();
+    const provider = providerWithFakeSdk();
     let observedEnv: string | undefined;
 
     state.mockResult = (sysPrompt, _userPrompt) => {
@@ -104,7 +115,7 @@ describe("AgentSDKProvider recursion guard (#781)", () => {
   });
 
   it("restores AGENTMEMORY_SDK_CHILD to its prior value after the call", async () => {
-    const provider = new AgentSDKProvider();
+    const provider = providerWithFakeSdk();
     process.env.AGENTMEMORY_SDK_CHILD = "prev-value";
 
     await provider.summarize("sys", "user");
@@ -113,7 +124,7 @@ describe("AgentSDKProvider recursion guard (#781)", () => {
   });
 
   it("keeps AGENTMEMORY_SDK_CHILD=1 for the full overlap of concurrent calls", async () => {
-    const provider = new AgentSDKProvider();
+    const provider = providerWithFakeSdk();
     // Allow the calls to overlap: each call records the env value it
     // saw, then a tick later records it again. With a refcounted guard
     // both observations on both calls should see "1"; with the old
@@ -142,7 +153,7 @@ describe("AgentSDKProvider recursion guard (#781)", () => {
   });
 
   it("genuine re-entry (an inner call inside the same async tree) still degrades to empty", async () => {
-    const provider = new AgentSDKProvider();
+    const provider = providerWithFakeSdk();
     let innerResult = "not-set";
 
     state.mockResult = async (_sys, _user) => {
@@ -156,5 +167,24 @@ describe("AgentSDKProvider recursion guard (#781)", () => {
     const outer = await provider.summarize("sys", "user");
     expect(outer).toBe("<result>outer</result>");
     expect(innerResult).toBe("");
+  });
+
+  it("explains how to install the optional peer when the SDK is missing", async () => {
+    const missing = Object.assign(new Error("Cannot find package"), {
+      code: "ERR_MODULE_NOT_FOUND",
+    });
+    const provider = new AgentSDKProvider(async () => {
+      throw missing;
+    });
+
+    await expect(provider.summarize("sys", "user")).rejects.toThrow(
+      "Claude Agent SDK fallback requires @anthropic-ai/claude-agent-sdk.",
+    );
+    await expect(provider.summarize("sys", "user")).rejects.toThrow(
+      "npm install @anthropic-ai/claude-agent-sdk",
+    );
+    await expect(provider.summarize("sys", "user")).rejects.toThrow(
+      "AGENTMEMORY_ALLOW_AGENT_SDK=true",
+    );
   });
 });
