@@ -72,7 +72,7 @@ Stop conditions:
 | Preserve Anthropic provider behavior | Targeted provider tests and build | Done | `corepack pnpm exec vitest run test/compress-model.test.ts test/agent-sdk-provider.test.ts test/fetch-timeout.test.ts test/quality-gates.test.ts test/build-package-contract.test.ts`: 5 files / 59 tests passed; `corepack pnpm run build` passed. |
 | Preserve agent-sdk opt-in behavior | Targeted provider tests | Done | `test/agent-sdk-provider.test.ts` passed and covers injected SDK loader, recursion guard, and missing optional peer error. |
 | Supply-chain/security gates | OSV, Semgrep, staged Gitleaks | Done | `osv-scanner scan source .` passed with the existing GHSA-8988-4f7v-96qf waiver and no unfiltered issues; `semgrep scan --config p/default --error --metrics=off .` passed with 0 findings; `gitleaks protect --staged --redact` passed with no leaks. |
-| GitHub PR local prep | `github-push-prepare` local-only flow | In progress | Preflight, local base capture, hook/signing inspection, scoped staging, staged patch inspection, and staged Gitleaks completed. Commit and base integration pending. |
+| GitHub PR local prep | `github-push-prepare` local-only flow | Done | Created task commit `06a96638`, merged captured local `origin/main` base `cf5f43b5b507aa59d335592020342313d5e1b773` with merge commit `0abfca1b`, reran post-merge verification, and performed no fetch, push, PR creation, publish, or deploy. |
 
 ## Dependency Intake
 
@@ -134,3 +134,6 @@ Dependency-intake detail:
 - 2026-06-17: Final review findings fixed before staging: Anthropic provider tests now assert request shape, and non-OK Anthropic responses no longer include upstream response body text in thrown errors.
 - 2026-06-17: Existing local `origin/main` was captured as PR base `cf5f43b5b507aa59d335592020342313d5e1b773`; no fetch was run, so freshness is unverified. Current HEAD before commit is `fe927dc29686b1ca6ca0546cf271eef77f852684`.
 - 2026-06-17: GitHub push prepare preflight found no staged files before task staging, no active hooks path, no commit/tag signing config, only sample hooks in `.git/hooks`, and no hook-manager references in repo config searched with `rg`.
+- 2026-06-17: Created task commit `06a96638 fix: stop auto-installing anthropic dependencies`, then merged captured base `cf5f43b5b507aa59d335592020342313d5e1b773` locally as merge commit `0abfca1b` without conflicts.
+- 2026-06-17: Post-merge verification passed: focused Vitest 5 files / 60 tests, `corepack pnpm run build`, `corepack pnpm run lint`, `git diff --check cf5f43b5b507aa59d335592020342313d5e1b773...HEAD`, `osv-scanner scan source .`, `semgrep scan --config p/default --error --metrics=off .`, `npm pack --dry-run --json`, `corepack pnpm --dir packages/mcp pack --dry-run --json`, and `gitleaks detect --source . --redact`.
+- 2026-06-17: Base freshness remains unverified because the delegated task did not authorize `git fetch`. The branch is clean and ready for a push/PR after explicit remote-write approval.

@@ -202,7 +202,7 @@ Expected: no unaccepted findings. If scanners are missing or network-blocked, re
 
 Review touched source/tests for avoidable duplication, unclear errors, and stale comments. Preserve provider APIs, package boundaries, and runtime behavior.
 
-- [ ] **Step 6: Delegate local staging, Gitleaks, commit, and PR-prep handoff to github-push-prepare**
+- [x] **Step 6: Delegate local staging, Gitleaks, commit, and PR-prep handoff to github-push-prepare**
 
 Use `github-push-prepare` local-only mode for staging only task-owned files, inspecting staged hunks, running `gitleaks protect --staged --redact`, committing, and preparing the local branch for a GitHub PR.
 
