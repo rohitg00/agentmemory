@@ -1689,7 +1689,7 @@ corepack pnpm test                  # 1,423+ tests
 corepack pnpm run test:integration  # API tests (requires running services)
 ```
 
-**Prerequisites:** Node.js >= 20, [iii-engine](https://iii.dev/docs) or Docker
+**Prerequisites:** Node.js >= 22.13, [iii-engine](https://iii.dev/docs) or Docker
 
 <h2 id="license"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/section-license.svg"><img src="assets/tags/section-license.svg" alt="License" height="32" /></picture></h2>
 

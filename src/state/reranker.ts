@@ -1,4 +1,16 @@
 import type { HybridSearchResult } from "../types.js";
+import {
+  loadTransformers,
+  type TransformersModule,
+} from "../providers/transformers.js";
+
+type RerankerTransformersModule = TransformersModule & {
+  pipeline: (
+    task: string,
+    model: string,
+    options: { quantized: boolean },
+  ) => Promise<any>;
+};
 
 let pipeline: any = null;
 let pipelineLoading: Promise<any> | null = null;
@@ -11,9 +23,8 @@ async function loadPipeline(): Promise<any> {
 
   pipelineLoading = (async () => {
     try {
-      const { pipeline: createPipeline } = await import(
-        "@xenova/transformers"
-      );
+      const { pipeline: createPipeline } =
+        await loadTransformers<RerankerTransformersModule>();
       pipeline = await createPipeline(
         "text-classification",
         "Xenova/ms-marco-MiniLM-L-6-v2",
