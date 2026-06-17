@@ -20,6 +20,10 @@ function base64ToFloat32(b64: string): Float32Array {
   );
 }
 
+function immediate(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve));
+}
+
 function cosineSimilarity(a: Float32Array, b: Float32Array): number {
   if (a.length !== b.length) return 0;
   let dot = 0;
@@ -34,46 +38,211 @@ function cosineSimilarity(a: Float32Array, b: Float32Array): number {
   return denom === 0 ? 0 : dot / denom;
 }
 
+type VectorSearchResult = {
+  obsId: string;
+  sessionId: string;
+  score: number;
+};
+
+type VectorSearchOptions = {
+  yieldEvery?: number;
+  onYield?: (scanned: number) => void;
+};
+
+type VectorSearchCandidate = VectorSearchResult & { order: number };
+
+type VectorEntry = {
+  obsId: string;
+  embedding: Float32Array;
+  sessionId: string;
+  order: number;
+  addedVersion: number;
+  removedVersion?: number;
+};
+
 export class VectorIndex {
-  private vectors: Map<string, { embedding: Float32Array; sessionId: string }> =
-    new Map();
+  private vectors: Map<string, VectorEntry> = new Map();
+  private retiredVectors: VectorEntry[] = [];
+  private version = 0;
+  private nextOrder = 0;
+  private activeAsyncSearches = 0;
 
   add(obsId: string, sessionId: string, embedding: Float32Array): void {
-    this.vectors.set(obsId, { embedding, sessionId });
+    const version = this.nextVersion();
+    const existing = this.vectors.get(obsId);
+    const order = existing?.order ?? this.nextOrder++;
+    if (existing) {
+      this.retireEntry(existing, version);
+    }
+    this.vectors.set(obsId, {
+      obsId,
+      embedding,
+      sessionId,
+      order,
+      addedVersion: version,
+    });
   }
 
   remove(obsId: string): void {
+    const existing = this.vectors.get(obsId);
+    if (!existing) return;
+    this.retireEntry(existing, this.nextVersion());
     this.vectors.delete(obsId);
+    this.compactRetiredVectors();
   }
 
   search(
     query: Float32Array,
     limit = 20,
-  ): Array<{ obsId: string; sessionId: string; score: number }> {
-    const results: Array<{
-      obsId: string;
-      sessionId: string;
-      score: number;
-    }> = [];
+  ): VectorSearchResult[] {
+    const results: VectorSearchCandidate[] = [];
+    const resultIds = new Set<string>();
     let minScore = -Infinity;
 
-    for (const [obsId, entry] of this.vectors) {
+    for (const entry of this.vectors.values()) {
       const score = cosineSimilarity(query, entry.embedding);
-      if (results.length < limit) {
-        results.push({ obsId, sessionId: entry.sessionId, score });
-        if (results.length === limit) {
-          results.sort((a, b) => a.score - b.score);
-          minScore = results[0].score;
-        }
-      } else if (score > minScore) {
-        results[0] = { obsId, sessionId: entry.sessionId, score };
-        results.sort((a, b) => a.score - b.score);
-        minScore = results[0].score;
-      }
+      minScore = this.considerResult(results, resultIds, limit, minScore, {
+        obsId: entry.obsId,
+        sessionId: entry.sessionId,
+        score,
+        order: entry.order,
+      });
     }
 
-    results.sort((a, b) => b.score - a.score);
-    return results;
+    return this.finalizeResults(results);
+  }
+
+  async searchAsync(
+    query: Float32Array,
+    limit = 20,
+    options: VectorSearchOptions = {},
+  ): Promise<VectorSearchResult[]> {
+    const results: VectorSearchCandidate[] = [];
+    const resultIds = new Set<string>();
+    const yieldEvery = Math.max(1, options.yieldEvery ?? 1_000);
+    const snapshotVersion = this.version;
+    let minScore = -Infinity;
+    let scanned = 0;
+
+    this.activeAsyncSearches++;
+    try {
+      for (const entry of this.vectors.values()) {
+        if (this.isVisibleAt(entry, snapshotVersion)) {
+          const score = cosineSimilarity(query, entry.embedding);
+          minScore = this.considerResult(results, resultIds, limit, minScore, {
+            obsId: entry.obsId,
+            sessionId: entry.sessionId,
+            score,
+            order: entry.order,
+          });
+        }
+        scanned++;
+        if (scanned % yieldEvery === 0) {
+          options.onYield?.(scanned);
+          await immediate();
+        }
+      }
+
+      for (let i = 0; i < this.retiredVectors.length; i++) {
+        const entry = this.retiredVectors[i];
+        if (this.isVisibleAt(entry, snapshotVersion)) {
+          const score = cosineSimilarity(query, entry.embedding);
+          minScore = this.considerResult(results, resultIds, limit, minScore, {
+            obsId: entry.obsId,
+            sessionId: entry.sessionId,
+            score,
+            order: entry.order,
+          });
+        }
+        scanned++;
+        if (scanned % yieldEvery === 0) {
+          options.onYield?.(scanned);
+          await immediate();
+        }
+      }
+
+      return this.finalizeResults(results);
+    } finally {
+      this.activeAsyncSearches--;
+      this.compactRetiredVectors();
+    }
+  }
+
+  private considerResult(
+    results: VectorSearchCandidate[],
+    resultIds: Set<string>,
+    limit: number,
+    minScore: number,
+    result: VectorSearchCandidate,
+  ): number {
+    if (resultIds.has(result.obsId)) return minScore;
+    if (results.length < limit) {
+      results.push(result);
+      resultIds.add(result.obsId);
+      if (results.length === limit) {
+        this.sortWorstFirst(results);
+        return results[0].score;
+      }
+      return minScore;
+    }
+    if (
+      result.score > minScore ||
+      this.isEarlierTie(result, results[0], minScore)
+    ) {
+      if (results[0]) {
+        resultIds.delete(results[0].obsId);
+      }
+      results[0] = result;
+      resultIds.add(result.obsId);
+      this.sortWorstFirst(results);
+      return results[0].score;
+    }
+    return minScore;
+  }
+
+  private sortWorstFirst(results: VectorSearchCandidate[]): void {
+    results.sort((a, b) => a.score - b.score || b.order - a.order);
+  }
+
+  private isEarlierTie(
+    result: VectorSearchCandidate,
+    worst: VectorSearchCandidate | undefined,
+    minScore: number,
+  ): boolean {
+    return Boolean(
+      worst && result.score === minScore && result.order < worst.order,
+    );
+  }
+
+  private finalizeResults(results: VectorSearchCandidate[]): VectorSearchResult[] {
+    return results
+      .sort((a, b) => b.score - a.score || a.order - b.order)
+      .map(({ obsId, sessionId, score }) => ({ obsId, sessionId, score }));
+  }
+
+  private nextVersion(): number {
+    this.version++;
+    return this.version;
+  }
+
+  private retireEntry(entry: VectorEntry, removedVersion: number): void {
+    entry.removedVersion = removedVersion;
+    if (this.activeAsyncSearches > 0) {
+      this.retiredVectors.push(entry);
+    }
+  }
+
+  private compactRetiredVectors(): void {
+    if (this.activeAsyncSearches === 0) {
+      this.retiredVectors = [];
+    }
+  }
+
+  private isVisibleAt(entry: VectorEntry, version: number): boolean {
+    return (
+      entry.addedVersion <= version &&
+      (entry.removedVersion === undefined || entry.removedVersion > version)
+    );
   }
 
   get size(): number {
@@ -104,21 +273,38 @@ export class VectorIndex {
   }
 
   clear(): void {
+    if (this.vectors.size > 0) {
+      const removedVersion = this.nextVersion();
+      for (const entry of this.vectors.values()) {
+        this.retireEntry(entry, removedVersion);
+      }
+    }
     this.vectors.clear();
+    this.compactRetiredVectors();
   }
 
   restoreFrom(other: VectorIndex): void {
     const src = (other as any).vectors as Map<
       string,
-      { embedding: Float32Array; sessionId: string }
+      { embedding: Float32Array; sessionId: string; order?: number }
     >;
+    const version = this.nextVersion();
+    if (this.vectors.size > 0) {
+      for (const entry of this.vectors.values()) {
+        this.retireEntry(entry, version);
+      }
+    }
     this.vectors = new Map();
     for (const [obsId, entry] of src) {
       this.vectors.set(obsId, {
+        obsId,
         embedding: new Float32Array(entry.embedding),
         sessionId: entry.sessionId,
+        order: this.nextOrder++,
+        addedVersion: version,
       });
     }
+    this.compactRetiredVectors();
   }
 
   serialize(): string {
@@ -155,8 +341,11 @@ export class VectorIndex {
         )
           continue;
         idx.vectors.set(obsId, {
+          obsId,
           embedding: base64ToFloat32(entry.embedding),
           sessionId: entry.sessionId,
+          order: idx.nextOrder++,
+          addedVersion: idx.nextVersion(),
         });
       } catch {
         continue;

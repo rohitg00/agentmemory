@@ -1,6 +1,7 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { HybridSearch } from "../src/state/hybrid-search.js";
 import { SearchIndex } from "../src/state/search-index.js";
+import { VectorIndex } from "../src/state/vector-index.js";
 import type {
   CompressedObservation,
   EmbeddingProvider,
@@ -68,6 +69,41 @@ describe("HybridSearch", () => {
     expect(results[0].observation.id).toBe("obs_1");
     expect(results[0].vectorScore).toBe(0);
     expect(results[0].bm25Score).toBeGreaterThan(0);
+  });
+
+  it("uses async vector search when embeddings are available", async () => {
+    const obs = makeObs({
+      id: "obs_vector",
+      sessionId: "ses_1",
+      title: "semantic result",
+      narrative: "semantic result",
+      concepts: ["semantic"],
+    });
+    bm25.add(obs);
+    await kv.set("mem:obs:ses_1", obs.id, obs);
+
+    const vector = new VectorIndex();
+    vector.add("obs_vector", "ses_1", new Float32Array([1, 0, 0]));
+    const searchAsyncSpy = vi.spyOn(vector, "searchAsync");
+    vi.spyOn(vector, "search").mockImplementation(() => {
+      throw new Error("HybridSearch must not call synchronous vector search");
+    });
+
+    const embeddingProvider: EmbeddingProvider = {
+      name: "test",
+      dimensions: 3,
+      embed: async () => new Float32Array([1, 0, 0]),
+      embedBatch: async () => [new Float32Array([1, 0, 0])],
+    };
+
+    const hybrid = new HybridSearch(bm25, vector, embeddingProvider, kv as never);
+
+    const results = await hybrid.search("semantic query", 5);
+
+    expect(searchAsyncSpy).toHaveBeenCalledWith(new Float32Array([1, 0, 0]), 10);
+    expect(results.some((result) => result.observation.id === "obs_vector")).toBe(
+      true,
+    );
   });
 
   it("returns empty results for no-match query", async () => {

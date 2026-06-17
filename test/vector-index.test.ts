@@ -49,6 +49,213 @@ describe("VectorIndex", () => {
     expect(results.length).toBe(3);
   });
 
+  it("preserves nonpositive limit behavior when comparing async and sync search", async () => {
+    index.add("obs_1", "ses_1", new Float32Array([1, 0, 0]));
+    index.add("obs_2", "ses_2", new Float32Array([0.5, 0.5, 0]));
+
+    for (const limit of [0, -1]) {
+      const syncResults = index.search(new Float32Array([1, 0, 0]), limit);
+      expect(syncResults).toHaveLength(1);
+      expect(syncResults[0].obsId).toBe("obs_1");
+
+      const asyncResults = await index.searchAsync(
+        new Float32Array([1, 0, 0]),
+        limit,
+      );
+      expect(asyncResults).toEqual(syncResults);
+    }
+  });
+
+  it("returns the same top results from async search", async () => {
+    for (let i = 0; i < 30; i++) {
+      index.add(
+        `obs_${i}`,
+        `ses_${i % 3}`,
+        new Float32Array([i / 30, 1 - i / 30, 0.25]),
+      );
+    }
+
+    const query = new Float32Array([0.9, 0.1, 0.25]);
+    const syncResults = index.search(query, 7);
+    const asyncResults = await index.searchAsync(query, 7);
+
+    expect(asyncResults.map((r) => r.obsId)).toEqual(
+      syncResults.map((r) => r.obsId),
+    );
+    expect(asyncResults.map((r) => r.sessionId)).toEqual(
+      syncResults.map((r) => r.sessionId),
+    );
+    asyncResults.forEach((result, i) => {
+      expect(result.score).toBeCloseTo(syncResults[i].score, 6);
+    });
+  });
+
+  it("yields between chunks during large async search", async () => {
+    const dimensions = 64;
+    const vectorCount = 2_000;
+    for (let n = 0; n < vectorCount; n++) {
+      const embedding = new Float32Array(dimensions);
+      for (let i = 0; i < dimensions; i++) {
+        embedding[i] = ((n + i) % 17) / 17;
+      }
+      index.add(`obs_${n}`, `ses_${n % 5}`, embedding);
+    }
+
+    const yieldedScans: number[] = [];
+    let immediateFired = false;
+    let immediateFiredBeforeSecondChunk = false;
+
+    const results = await index.searchAsync(
+      new Float32Array(dimensions).fill(0.5),
+      10,
+      {
+        yieldEvery: 25,
+        onYield: (scanned) => {
+          yieldedScans.push(scanned);
+          if (scanned === 25) {
+            setImmediate(() => {
+              immediateFired = true;
+            });
+          }
+          if (scanned === 50) {
+            immediateFiredBeforeSecondChunk = immediateFired;
+          }
+        },
+      },
+    );
+
+    expect(results).toHaveLength(10);
+    expect(yieldedScans).toContain(25);
+    expect(yieldedScans).toContain(50);
+    expect(immediateFiredBeforeSecondChunk).toBe(true);
+  });
+
+  it("yields with default chunking during large async search", async () => {
+    const dimensions = 32;
+    const vectorCount = 1_250;
+    for (let n = 0; n < vectorCount; n++) {
+      const embedding = new Float32Array(dimensions);
+      for (let i = 0; i < dimensions; i++) {
+        embedding[i] = ((n * 3 + i) % 19) / 19;
+      }
+      index.add(`obs_${n}`, `ses_${n % 7}`, embedding);
+    }
+
+    let immediateFired = false;
+    let searchResolved = false;
+    setImmediate(() => {
+      if (!searchResolved) {
+        immediateFired = true;
+      }
+    });
+
+    const results = await index.searchAsync(
+      new Float32Array(dimensions).fill(0.4),
+      10,
+    );
+    searchResolved = true;
+
+    expect(results).toHaveLength(10);
+    expect(immediateFired).toBe(true);
+  });
+
+  it("uses a snapshot when the index mutates during async search", async () => {
+    for (let i = 0; i < 50; i++) {
+      index.add(`obs_${i}`, "ses_original", new Float32Array([1, 0, 0]));
+    }
+
+    let mutated = false;
+
+    const results = await index.searchAsync(new Float32Array([1, 0, 0]), 5, {
+      yieldEvery: 1,
+      onYield: () => {
+        if (!mutated) {
+          mutated = true;
+          index.clear();
+          index.add("obs_new", "ses_new", new Float32Array([1, 0, 0]));
+        }
+      },
+    });
+
+    expect(mutated).toBe(true);
+    expect(results).toHaveLength(5);
+    expect(results.every((result) => result.sessionId === "ses_original")).toBe(
+      true,
+    );
+    expect(results.some((result) => result.obsId === "obs_new")).toBe(false);
+  });
+
+  it("preserves snapshot tie order when an entry is removed before it is scanned", async () => {
+    index.add("obs_a", "ses_1", new Float32Array([1, 0, 0]));
+    index.add("obs_b", "ses_1", new Float32Array([1, 0, 0]));
+    index.add("obs_c", "ses_1", new Float32Array([1, 0, 0]));
+    const baseline = index
+      .search(new Float32Array([1, 0, 0]), 2)
+      .map((result) => result.obsId);
+
+    let removed = false;
+    const results = await index.searchAsync(new Float32Array([1, 0, 0]), 2, {
+      yieldEvery: 1,
+      onYield: () => {
+        if (!removed) {
+          removed = true;
+          index.remove("obs_b");
+        }
+      },
+    });
+
+    expect(removed).toBe(true);
+    expect(results.map((result) => result.obsId)).toEqual(baseline);
+  });
+
+  it("preserves future async snapshots after restoreFrom runs during active search", async () => {
+    index.add("old_a", "ses_old", new Float32Array([1, 0, 0]));
+    index.add("old_b", "ses_old", new Float32Array([1, 0, 0]));
+    const replacement = new VectorIndex();
+    replacement.add("restored", "ses_restored", new Float32Array([1, 0, 0]));
+
+    let restored = false;
+    const restoreTimeResults = await index.searchAsync(new Float32Array([1, 0, 0]), 3, {
+      yieldEvery: 1,
+      onYield: () => {
+        if (!restored) {
+          restored = true;
+          index.restoreFrom(replacement);
+        }
+      },
+    });
+    expect(restored).toBe(true);
+    expect(restoreTimeResults.map((result) => result.obsId)).toEqual([
+      "old_a",
+      "old_b",
+    ]);
+    expect(restoreTimeResults.some((result) => result.obsId === "restored")).toBe(
+      false,
+    );
+
+    index.clear();
+    index.add("obs_a", "ses_1", new Float32Array([1, 0, 0]));
+    index.add("obs_b", "ses_1", new Float32Array([1, 0, 0]));
+    index.add("obs_c", "ses_1", new Float32Array([1, 0, 0]));
+    const baseline = index
+      .search(new Float32Array([1, 0, 0]), 2)
+      .map((result) => result.obsId);
+
+    let removed = false;
+    const results = await index.searchAsync(new Float32Array([1, 0, 0]), 2, {
+      yieldEvery: 1,
+      onYield: () => {
+        if (!removed) {
+          removed = true;
+          index.remove("obs_b");
+        }
+      },
+    });
+
+    expect(removed).toBe(true);
+    expect(results.map((result) => result.obsId)).toEqual(baseline);
+  });
+
   it("clears all vectors", () => {
     index.add("obs_1", "ses_1", new Float32Array([0.1, 0.2, 0.3]));
     index.add("obs_2", "ses_1", new Float32Array([0.4, 0.5, 0.6]));
