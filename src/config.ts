@@ -26,6 +26,11 @@ function parsePort(value: string | undefined): number | null {
     : null;
 }
 
+function parseStrictPort(value: string | undefined): number | null {
+  if (!value || !/^\d+$/.test(value)) return null;
+  return parsePort(value);
+}
+
 function parseRestAnchor(value: string | undefined, fallback: number): number {
   const parsed = parsePort(value);
   return parsed !== null && parsed + 2 <= MAX_TCP_PORT ? parsed : fallback;
@@ -239,6 +244,10 @@ export function loadConfig(): AgentMemoryConfig {
   const streamsPort =
     parsePort(env["III_STREAM_PORT"] || env["III_STREAMS_PORT"]) ??
     restPort + 1;
+  const viewerPort =
+    parseStrictPort(env["AGENTMEMORY_VIEWER_PORT"]) ??
+    parseStrictPort(env["III_VIEWER_PORT"]) ??
+    restPort + 2;
   const engineUrl =
     env["III_ENGINE_URL"] ||
     `ws://localhost:${parsePort(env["III_ENGINE_PORT"]) ?? 49134}`;
@@ -247,6 +256,7 @@ export function loadConfig(): AgentMemoryConfig {
     engineUrl,
     restPort,
     streamsPort,
+    viewerPort,
     provider,
     tokenBudget: safeParseInt(env["TOKEN_BUDGET"], 2000),
     maxObservationsPerSession: safeParseInt(env["MAX_OBS_PER_SESSION"], 500),
