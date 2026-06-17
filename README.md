@@ -747,6 +747,25 @@ corepack pnpm start
 
 This starts agentmemory with a local `iii-engine` if `iii` is already installed, or falls back to Docker Compose if Docker is available. REST, streams, and the viewer bind to `127.0.0.1` by default.
 
+#### LAN server mode
+
+For a trusted LAN server, bind the native REST and streams workers explicitly and require a bearer secret:
+
+```bash
+AGENTMEMORY_HOST=0.0.0.0 \
+AGENTMEMORY_SECRET="$(openssl rand -hex 32)" \
+npx @agentmemory/agentmemory
+```
+
+The same bind host is available as `agentmemory --host 0.0.0.0`. Non-loopback hosts fail closed unless `AGENTMEMORY_SECRET` is set. Clients then set `AGENTMEMORY_URL` and `AGENTMEMORY_SECRET`, but bearer auth is never sent over plaintext HTTP to non-loopback hosts. Put the LAN server behind HTTPS, or connect through a loopback tunnel such as SSH port forwarding and use `http://localhost:3111` locally.
+
+```bash
+export AGENTMEMORY_URL=https://memory.lan.example
+export AGENTMEMORY_SECRET="same-secret-as-server"
+```
+
+The Docker and hosted deployment templates already use server-style container binding and generated secrets; keep TLS or an equivalent private transport in front of them before using remote MCP clients.
+
 Install `iii-engine` manually. **agentmemory currently pins `iii-engine` to `v0.11.2`** — `v0.11.6` introduces a new sandbox-everything-via-`iii worker add` model that agentmemory hasn't been refactored for yet. Pin lifts once the refactor lands. Override with `AGENTMEMORY_III_VERSION=<version>` if you've migrated to the sandbox model manually.
 
 - **macOS arm64:** `mkdir -p ~/.local/bin && curl -fsSL https://github.com/iii-hq/iii/releases/download/iii/v0.11.2/iii-aarch64-apple-darwin.tar.gz | tar -xz -C ~/.local/bin && chmod +x ~/.local/bin/iii`
@@ -1573,6 +1592,10 @@ Create `~/.agentmemory/.env`:
 # LESSON_DECAY_ENABLED=true
 # OBSIDIAN_AUTO_EXPORT=false
 # AGENTMEMORY_EXPORT_ROOT=~/.agentmemory
+# AGENTMEMORY_BACKUP_ENABLED=false
+# AGENTMEMORY_BACKUP_DIR=~/.agentmemory/backups
+# AGENTMEMORY_BACKUP_INTERVAL_MS=86400000
+# AGENTMEMORY_BACKUP_RETENTION_DAYS=30
 # CLAUDE_MEMORY_BRIDGE=false
 # SNAPSHOT_ENABLED=false
 
@@ -1590,6 +1613,27 @@ Create `~/.agentmemory/.env`:
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/section-api.svg"><img src="assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
 129 endpoints on port `3111`. The REST API binds to `127.0.0.1` by default. Protected endpoints require `Authorization: Bearer <secret>` when `AGENTMEMORY_SECRET` is set, and mesh sync endpoints require `AGENTMEMORY_SECRET` on both peers.
+
+### Scheduled backups
+
+Scheduled backups are opt-in logical exports. They call the existing `mem::export` function and write timestamped JSON files, avoiding live SQLite file copies while the iii-engine owns state.
+
+```bash
+AGENTMEMORY_BACKUP_ENABLED=true
+AGENTMEMORY_BACKUP_DIR=~/.agentmemory/backups
+AGENTMEMORY_BACKUP_INTERVAL_MS=86400000
+AGENTMEMORY_BACKUP_RETENTION_DAYS=30
+```
+
+Backup files are named `agentmemory-backup-<timestamp>.json`. Retention only removes files matching that name pattern inside the configured backup directory. To restore, stop the server you are replacing, start a fresh server, and import a backup through the existing import endpoint:
+
+```bash
+jq '{exportData: ., strategy: "merge"}' agentmemory-backup-2026-06-17T123456789Z.json |
+curl -X POST "$AGENTMEMORY_URL/agentmemory/import" \
+  -H "Authorization: Bearer $AGENTMEMORY_SECRET" \
+  -H "Content-Type: application/json" \
+  --data-binary @-
+```
 
 <details>
 <summary>Key endpoints</summary>

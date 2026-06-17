@@ -45,7 +45,10 @@ import { runOnboarding } from "./cli/onboarding.js";
 import { buildReadyWebSocketUrls } from "./cli/ready-hint.js";
 import { buildJsonRequestHeaders } from "./cli/http.js";
 import {
+  applyRuntimeEnvFileValues,
+  applyRuntimeHostArgs,
   applyRuntimePortArgs,
+  assertRuntimeHostAllowed,
   renderRuntimeIiiConfig as renderRuntimePortIiiConfig,
 } from "./cli/runtime-ports.js";
 import { setBootVerbose } from "./logger.js";
@@ -180,6 +183,9 @@ Options:
   --instance <N>     Shortcut for --port (3111 + N*100). Relocates REST,
                      streams, and viewer ports; it does not relocate the
                      bundled native iii-engine listen port. (max N=50)
+  --host <host>      Bind REST and streams to a specific host (default:
+                     127.0.0.1). Non-loopback hosts require
+                     AGENTMEMORY_SECRET before startup.
 
 Environment:
   AGENTMEMORY_URL              Full REST base URL (e.g. http://localhost:3111).
@@ -215,7 +221,9 @@ if (toolsIdx !== -1 && args[toolsIdx + 1]) {
   process.env["AGENTMEMORY_TOOLS"] = toolsMode;
 }
 
+applyRuntimeEnvFile();
 applyRuntimePortArgs(args);
+applyRuntimeHostArgs(args);
 
 const skipEngine = args.includes("--no-engine");
 
@@ -326,6 +334,7 @@ function findIiiConfig(): string {
 
 function prepareRuntimeIiiConfig(configPath: string): string {
   if (!configPath) return configPath;
+  assertRuntimeHostAllowed();
 
   mkdirSync(dataDirResolution.dataDir, { recursive: true, mode: PRIVATE_DIR_MODE });
   const raw = readFileSync(configPath, "utf-8");
@@ -338,6 +347,19 @@ function prepareRuntimeIiiConfig(configPath: string): string {
   const runtimeConfigPath = join(dataDirResolution.dataDir, "iii-config.yaml");
   writeFileSync(runtimeConfigPath, rendered, "utf-8");
   return runtimeConfigPath;
+}
+
+function applyRuntimeEnvFile(): void {
+  const envPath = join(homedir(), ".agentmemory", ".env");
+  if (!existsSync(envPath)) return;
+
+  try {
+    const fileEnv = parseEnvFile(readFileSync(envPath, "utf-8"));
+    applyRuntimeEnvFileValues(fileEnv);
+  } catch {
+    // The worker also loads ~/.agentmemory/.env and will report config
+    // problems there. Runtime rendering keeps the env file best-effort.
+  }
 }
 
 function whichBinary(name: string): string | null {
@@ -1461,12 +1483,15 @@ async function main() {
 
 async function apiFetch<T = unknown>(base: string, path: string, timeoutMs = 5000): Promise<T | null> {
   try {
-    const headers: Record<string, string> = {};
-    const secret = process.env["AGENTMEMORY_SECRET"];
-    if (secret) headers["Authorization"] = `Bearer ${secret}`;
-    const res = await fetch(`${base}/agentmemory/${path}`, {
+    const url = `${base}/agentmemory/${path}`;
+    const headers = buildJsonRequestHeaders(url);
+    if (!headers.ok) {
+      p.log.warn(headers.message);
+      return null;
+    }
+    const res = await fetch(url, {
       signal: AbortSignal.timeout(timeoutMs),
-      headers,
+      headers: headers.headers,
     });
     return (await res.json()) as T;
   } catch {
@@ -2762,7 +2787,7 @@ async function runImportJsonl(): Promise<void> {
   // consumed alongside the flag so they don't leak into positional
   // args (e.g. `--port 3112 import-jsonl` would otherwise turn
   // 3112 into pathArg).
-  const VALUE_FLAGS = new Set(["--port", "--tools", "--data-dir"]);
+  const VALUE_FLAGS = new Set(["--port", "--host", "--tools", "--data-dir"]);
   let maxFiles: number | undefined;
   const tail = args.slice(1);
   const positional: string[] = [];
