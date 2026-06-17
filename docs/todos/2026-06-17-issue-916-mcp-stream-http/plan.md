@@ -333,7 +333,7 @@ gitleaks protect --staged --redact
 
 Run OSV only if dependency, lockfile, container, or vendored surfaces changed. This plan should not change those surfaces.
 
-- [ ] **Step 4: Commit scoped changes**
+- [x] **Step 4: Commit scoped changes**
 
 Stage only task-owned files:
 
@@ -342,7 +342,7 @@ git add src/mcp/server.ts test/mcp-streamable-http.test.ts test/mcp-server-surfa
 git commit -m "feat: add streamable HTTP MCP endpoint"
 ```
 
-- [ ] **Step 5: Run GitHub push prep local branch phase**
+- [x] **Step 5: Run GitHub push prep local branch phase**
 
 Use local `origin/main` unless the user explicitly approves `git fetch origin main`. Do not push or create a PR without separate current-turn approval.
 
