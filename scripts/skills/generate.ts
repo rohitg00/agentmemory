@@ -67,7 +67,7 @@ function mdEscape(s: string): string {
 function tools(): string {
   const all = getAllTools();
   const lines = [
-    `agentmemory exposes ${all.length} MCP tools. ${ESSENTIAL_TOOLS.size} are in the lean core set (\`--tools core\` or \`AGENTMEMORY_TOOLS=core\`); the rest load with \`--tools all\` (default).`,
+    `agentmemory exposes ${all.length} MCP tools. ${ESSENTIAL_TOOLS.size} are in the default core set (\`--tools core\` or \`AGENTMEMORY_TOOLS=core\`); the rest load with \`--tools all\` or \`AGENTMEMORY_TOOLS=all\`.`,
     "",
     "| Tool | Core | Parameters | Purpose |",
     "| --- | --- | --- | --- |",

@@ -6,7 +6,7 @@
       "env": {
         "AGENTMEMORY_URL": "${AGENTMEMORY_URL:-http://localhost:3111}",
         "AGENTMEMORY_SECRET": "${AGENTMEMORY_SECRET:-}",
-        "AGENTMEMORY_TOOLS": "${AGENTMEMORY_TOOLS:-all}"
+        "AGENTMEMORY_TOOLS": "${AGENTMEMORY_TOOLS:-core}"
       }
     }
   }

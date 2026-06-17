@@ -44,7 +44,7 @@ describe("connect: Qwen Code", () => {
       /\$\{AGENTMEMORY_URL:-/,
     );
     expect(cfg.mcpServers.agentmemory.env.AGENTMEMORY_TOOLS).toMatch(
-      /\$\{AGENTMEMORY_TOOLS:-all\}/,
+      /\$\{AGENTMEMORY_TOOLS:-core\}/,
     );
   });
 });

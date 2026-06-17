@@ -18,8 +18,8 @@ import * as p from "@clack/prompts";
 // docs, "If a required environment variable is not set and has no
 // default value, Claude Code will fail to parse the config."
 //
-// Defaults match the documented runtime: localhost:3111 (no auth, all
-// tools). One wired entry now serves local AND remote (Kubernetes /
+// Defaults match the documented runtime: localhost:3111 (no auth, core
+// tool discovery). One wired entry now serves local AND remote (Kubernetes /
 // reverse-proxied) deployments without doctor-warning duplicates (#375)
 // AND fresh installs that haven't exported envs (#510).
 export const AGENTMEMORY_MCP_BLOCK = {
@@ -28,7 +28,7 @@ export const AGENTMEMORY_MCP_BLOCK = {
   env: {
     AGENTMEMORY_URL: "${AGENTMEMORY_URL:-http://localhost:3111}",
     AGENTMEMORY_SECRET: "${AGENTMEMORY_SECRET:-}",
-    AGENTMEMORY_TOOLS: "${AGENTMEMORY_TOOLS:-all}",
+    AGENTMEMORY_TOOLS: "${AGENTMEMORY_TOOLS:-core}",
   },
 };
 
@@ -49,7 +49,7 @@ export const AGENTMEMORY_COPILOT_MCP_BLOCK = {
   env: {
     AGENTMEMORY_URL: "${AGENTMEMORY_URL:-http://localhost:3111}",
     AGENTMEMORY_SECRET: "${AGENTMEMORY_SECRET:-}",
-    AGENTMEMORY_TOOLS: "${AGENTMEMORY_TOOLS:-all}",
+    AGENTMEMORY_TOOLS: "${AGENTMEMORY_TOOLS:-core}",
   },
   tools: ["*"],
 };

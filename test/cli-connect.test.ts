@@ -186,7 +186,7 @@ describe("agentmemory connect — claude-code adapter (mock filesystem)", () => 
       "${AGENTMEMORY_URL:-http://localhost:3111}",
     );
     expect(entry.env.AGENTMEMORY_SECRET).toBe("${AGENTMEMORY_SECRET:-}");
-    expect(entry.env.AGENTMEMORY_TOOLS).toBe("${AGENTMEMORY_TOOLS:-all}");
+    expect(entry.env.AGENTMEMORY_TOOLS).toBe("${AGENTMEMORY_TOOLS:-core}");
   });
 
   it("install() with --force re-writes even when already wired", async () => {
@@ -386,7 +386,7 @@ describe("agentmemory connect — copilot-cli adapter (mock filesystem)", () => 
       env: {
         AGENTMEMORY_URL: "${AGENTMEMORY_URL:-http://localhost:3111}",
         AGENTMEMORY_SECRET: "${AGENTMEMORY_SECRET:-}",
-        AGENTMEMORY_TOOLS: "${AGENTMEMORY_TOOLS:-all}",
+        AGENTMEMORY_TOOLS: "${AGENTMEMORY_TOOLS:-core}",
       },
       tools: ["*"],
     });
@@ -449,7 +449,7 @@ describe("agentmemory connect — copilot-cli adapter (mock filesystem)", () => 
       "${AGENTMEMORY_URL:-http://localhost:3111}",
     );
     expect(entry.env.AGENTMEMORY_SECRET).toBe("${AGENTMEMORY_SECRET:-}");
-    expect(entry.env.AGENTMEMORY_TOOLS).toBe("${AGENTMEMORY_TOOLS:-all}");
+    expect(entry.env.AGENTMEMORY_TOOLS).toBe("${AGENTMEMORY_TOOLS:-core}");
   });
 
   it("install() with --force rewrites even when already wired", async () => {
@@ -464,7 +464,7 @@ describe("agentmemory connect — copilot-cli adapter (mock filesystem)", () => 
             env: {
               AGENTMEMORY_URL: "${AGENTMEMORY_URL:-http://localhost:3111}",
               AGENTMEMORY_SECRET: "${AGENTMEMORY_SECRET:-}",
-              AGENTMEMORY_TOOLS: "${AGENTMEMORY_TOOLS:-all}",
+              AGENTMEMORY_TOOLS: "${AGENTMEMORY_TOOLS:-core}",
             },
             tools: ["memory_save"],
           },

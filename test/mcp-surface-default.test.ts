@@ -1,16 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { readFileSync } from "node:fs";
 import {
+  ESSENTIAL_TOOLS,
   getAllTools,
   getVisibleTools,
 } from "../src/mcp/tools-registry.js";
 
-// plugin manifests and README advertise the full MCP tool surface. The old
-// default was AGENTMEMORY_TOOLS=core which silently capped the surface
-// at 8 essentials with no indication the other tools existed. Default
-// flipped to "all"; the lean set is still accessible via
-// AGENTMEMORY_TOOLS=core.
-describe("MCP tool surface default (#553)", () => {
+describe("MCP tool surface default", () => {
   const ORIG = process.env["AGENTMEMORY_TOOLS"];
   beforeEach(() => {
     delete process.env["AGENTMEMORY_TOOLS"];
@@ -20,11 +16,9 @@ describe("MCP tool surface default (#553)", () => {
     else process.env["AGENTMEMORY_TOOLS"] = ORIG;
   });
 
-  it("default returns the full tool surface, matching plugin advertising", () => {
+  it("default returns the 8 essential tools", () => {
     const visible = getVisibleTools();
-    const all = getAllTools();
-    expect(visible.length).toBe(all.length);
-    expect(visible.length).toBeGreaterThanOrEqual(48);
+    expect(new Set(visible.map((t) => t.name))).toEqual(ESSENTIAL_TOOLS);
   });
 
   it("AGENTMEMORY_TOOLS=all returns the same full set", () => {
@@ -68,6 +62,6 @@ describe("MCP tool surface default (#553)", () => {
     // AGENTMEMORY_URL.
     expect(env["AGENTMEMORY_URL"]).toMatch(/\$\{AGENTMEMORY_URL:-/);
     expect(env["AGENTMEMORY_SECRET"]).toMatch(/\$\{AGENTMEMORY_SECRET:-/);
-    expect(env["AGENTMEMORY_TOOLS"]).toMatch(/\$\{AGENTMEMORY_TOOLS:-all\}/);
+    expect(env["AGENTMEMORY_TOOLS"]).toMatch(/\$\{AGENTMEMORY_TOOLS:-core\}/);
   });
 });
