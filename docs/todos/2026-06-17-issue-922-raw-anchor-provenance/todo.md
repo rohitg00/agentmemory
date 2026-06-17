@@ -67,7 +67,7 @@ Stop conditions:
 | Draft raw-anchor design | Self-review, source cross-check, subagent design review | Done | `spec.md` drafted and revised with sidecar schema, aggregate-HMAC privacy contract, deletion/governance paths, export/import pagination behavior, migration, REST/MCP response, audit, and test design. |
 | Decide ADR need | Compare design with durable architecture docs | Done | ADR 0006 records the durable design direction because storage, export/import, and governance architecture are affected. |
 | Verify design docs | `rg` source/doc checks plus markdown/source review | Done | Source/doc consistency searches found proposed names and source anchors; `git diff --check` passed. |
-| GitHub push-prep local phase | Local branch prep, review gates, staged secret scan, commit, base check | In progress | Preflight and local base capture complete; staging/commit pending. |
+| GitHub push-prep local phase | Local branch prep, review gates, staged secret scan, commit, base check | Done | Design commit `ec81e3fd` plus a follow-up task-state evidence commit; local base is ancestor, worktree checks complete, no push/PR performed. |
 
 ## Subagent Ledger
 
@@ -99,3 +99,24 @@ Stop conditions:
   - `git diff --cached --name-status`: empty before staging.
   - `git remote -v`: `origin` is `https://github.com/wbugitlab1/agentmemory.git`; `upstream` is `https://github.com/rohitg00/agentmemory.git`.
   - Existing local PR base `refs/remotes/origin/main` is `0cd8711303473b5cc1cd3ac7fd8739a2d40f8831`; merge base is the same commit. No fetch was run, so freshness is unverified.
+- Staging and commit:
+  - Staged only `docs/adr/0006-design-redacted-provenance-sidecar-for-memory-verify.md`, `docs/adr/README.md`, and this task directory's `plan.md`, `spec.md`, and `todo.md`.
+  - `gitleaks protect --staged --redact` passed with no leaks.
+  - Created commit `ec81e3fd docs: design memory verify provenance sidecar`.
+- Post-commit verification:
+  - `git status -sb --untracked-files=all`: clean on `issue/922-raw-anchor-provenance`.
+  - `git merge-base --is-ancestor refs/remotes/origin/main HEAD`: exit 0 against local base `0cd8711303473b5cc1cd3ac7fd8739a2d40f8831`; no base merge required.
+  - `git diff --name-status refs/remotes/origin/main...HEAD`: only the ADR, ADR index, and task-state docs.
+  - `git diff --check HEAD~1..HEAD`: passed.
+  - `gitleaks detect --source . --redact --log-opts=HEAD~1..HEAD`: passed with no leaks in the task commit.
+  - `gitleaks detect --source . --redact`: found 14 leaks across existing repository history; the staged and task-commit scans passed, so this is recorded as pre-existing history risk outside the task-owned diff.
+  - `semgrep scan --config p/default --error --metrics=off .`: passed, 705 tracked targets scanned, 0 findings.
+
+## Final Review Notes
+
+- Sprint Contract status: met for design-only scope. No runtime code, schema, API, dependency, migration, or remote state changed.
+- Feature / Verification Matrix status: all rows complete after final task-state commit.
+- Review status: validity subagent returned valid/actionable design-only; design reviewer found three Medium issues, all fixed; final reviewer returned ACCEPT.
+- Security gate status: staged and task-commit Gitleaks scans passed; full-history Gitleaks has pre-existing findings outside this task; Semgrep passed with 0 findings.
+- GitHub push-prep result: local branch prepared against existing local `origin/main`; no fetch was run, so remote freshness is unverified. No push or PR creation was performed.
+- Preserved unrelated dirty paths: none in this worktree.
