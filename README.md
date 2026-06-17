@@ -61,7 +61,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-tools.svg"><img src="assets/tags/stat-tools.svg" alt="56 MCP tools" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-hooks.svg"><img src="assets/tags/stat-hooks.svg" alt="12 auto hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-deps.svg"><img src="assets/tags/stat-deps.svg" alt="0 external DBs" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-tests.svg"><img src="assets/tags/stat-tests.svg" alt="1,423+ tests passing" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-tests.svg"><img src="assets/tags/stat-tests.svg" alt="2,000+ tests passing" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -1036,15 +1036,19 @@ npm install @xenova/transformers
 |------|-------------|
 | `memory_compress_file` | Compress allowed-root markdown files while preserving structure |
 | `memory_file_history` | Past observations about specific files |
+| `memory_vision_search` | Find screenshots by description or visual similarity |
 | `memory_profile` | Project profile (concepts, files, patterns) |
 | `memory_export` | Export all memory data |
 | `memory_patterns` | Detect recurring patterns |
 | `memory_timeline` | Chronological observations |
 | `memory_relations` | Query relationship graph |
+| `memory_commit_lookup` | Look up the agent session linked to a git commit |
+| `memory_commits` | List recent commits linked to agent sessions |
 | `memory_graph_query` | Knowledge graph traversal |
 | `memory_lesson_recall` | Search saved lessons by query with project and confidence filters |
 | `memory_lesson_list` | List saved lessons by project, source, confidence, and limit |
 | `memory_lesson_strengthen` | Reinforce an existing lesson by ID |
+| `memory_obsidian_export` | Export memories, lessons, and crystals to Obsidian Markdown |
 | `memory_claude_bridge_sync` | Sync with MEMORY.md |
 | `memory_team_share` | Share with team members |
 | `memory_team_feed` | Recent shared items |
@@ -1072,6 +1076,13 @@ npm install @xenova/transformers
 | `memory_facet_tag` | Dimension:value tags |
 | `memory_facet_query` | Query by facet tags |
 | `memory_verify` | Trace provenance |
+| `memory_insight_list` | List synthesized higher-order insights |
+| `memory_slot_list` | List pinned, project, and global memory slots |
+| `memory_slot_get` | Read a memory slot by label |
+| `memory_slot_create` | Create a persistent memory slot |
+| `memory_slot_append` | Append text to an existing slot |
+| `memory_slot_replace` | Replace a slot's full content |
+| `memory_slot_delete` | Delete an obsolete memory slot |
 
 </details>
 
@@ -1090,21 +1101,34 @@ Lesson confidence changes through reinforcement and decay:
 
 The full-server REST equivalents are `POST /agentmemory/lessons`, `GET /agentmemory/lessons`, `POST /agentmemory/lessons/search`, and `POST /agentmemory/lessons/strengthen`.
 
-### 6 Resources · 3 Prompts · 4 Skills
+### 6 Resources · 3 Prompts · 15 Skills
 
 | Type | Name | Description |
 |------|------|-------------|
 | Resource | `agentmemory://status` | Health, session count, memory count |
 | Resource | `agentmemory://project/{name}/profile` | Per-project intelligence |
+| Resource | `agentmemory://project/{name}/recent` | Recent session summaries for a project |
 | Resource | `agentmemory://memories/latest` | Latest 10 active memories |
 | Resource | `agentmemory://graph/stats` | Knowledge graph statistics |
+| Resource | `agentmemory://team/{id}/profile` | Team memory profile |
 | Prompt | `recall_context` | Search + return context messages |
 | Prompt | `session_handoff` | Handoff data between agents |
 | Prompt | `detect_patterns` | Analyze recurring patterns |
 | Skill | `/recall` | Search memory |
 | Skill | `/remember` | Save to long-term memory |
+| Skill | `/recap` | Summarize recent sessions |
+| Skill | `/handoff` | Resume the most recent session context |
+| Skill | `/commit-context` | Trace a commit back to the agent session |
+| Skill | `/commit-history` | List recent agent-linked commits |
 | Skill | `/session-history` | Recent session summaries |
 | Skill | `/forget` | Delete observations/sessions |
+| Skill | `agentmemory-mcp-tools` | MCP tool reference |
+| Skill | `agentmemory-rest-api` | REST API reference |
+| Skill | `agentmemory-config` | Configuration reference |
+| Skill | `agentmemory-agents` | Agent integration reference |
+| Skill | `agentmemory-hooks` | Hook behavior reference |
+| Skill | `agentmemory-architecture` | Architecture reference |
+| Skill | `write-agentmemory-skill` | Skill authoring guide |
 
 ### Standalone MCP
 
@@ -1278,7 +1302,7 @@ Full registry: [workers.iii.dev](https://workers.iii.dev). Every worker there co
 | Prometheus / Grafana | iii OTEL + health monitor |
 | Custom plugin systems | `iii worker add <name>` |
 
-**174 source files · ~37,800 LOC · 1,423+ tests · 258 functions · 44 KV scopes** — all on three primitives. No `agentmemory plugin install`. The plugin system is iii itself.
+**195 source files · ~44,300 LOC · 2,000+ tests · 284 functions · 54 KV scopes** — all on three primitives. No `agentmemory plugin install`. The plugin system is iii itself.
 
 ---
 
@@ -1693,7 +1717,7 @@ Full endpoint list: [`src/triggers/api.ts`](src/triggers/api.ts)
 ```bash
 corepack pnpm run dev               # Hot reload
 corepack pnpm run build             # Production build
-corepack pnpm test                  # 1,423+ tests
+corepack pnpm test                  # 2,000+ tests
 corepack pnpm run test:integration  # API tests (requires running services)
 ```
 

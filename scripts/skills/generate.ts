@@ -97,8 +97,13 @@ function rest(): string {
   }
   const seen = new Set<string>();
   const rows = found
-    .filter((e) => (seen.has(e.path) ? false : (seen.add(e.path), true)))
-    .sort((a, b) => a.path.localeCompare(b.path));
+    .filter((e) => {
+      const key = `${e.method} ${e.path}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .sort((a, b) => a.path.localeCompare(b.path) || a.method.localeCompare(b.method));
   const lines = [
     `The REST API is the primary surface. All paths are under \`http://localhost:3111\` (override with \`--port\`). When \`AGENTMEMORY_SECRET\` is set, send \`Authorization: Bearer $AGENTMEMORY_SECRET\`; localhost is otherwise open.`,
     "",
