@@ -96,7 +96,7 @@ Primary task-owned surfaces:
 - [x] Targeted verification run.
 - [x] Review/security gates run.
 - [x] PR-prep staging run.
-- [ ] Local commit prepared.
+- [x] Local commit prepared.
 
 ## Review Notes
 
@@ -162,3 +162,6 @@ Primary task-owned surfaces:
   - Post-merge `corepack pnpm run skills:check` passed; 15 skills checked.
   - Post-merge `semgrep scan --config p/default --error --metrics=off .`
     completed with 0 findings.
+  - Local commits prepared:
+    - `caadbaae` `fix: reduce default MCP tool surface`
+    - `d3d27b10` merge of local `origin/main` base
