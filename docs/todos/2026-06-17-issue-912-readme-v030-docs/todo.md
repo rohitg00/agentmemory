@@ -53,7 +53,7 @@
 | Confirm nearby README counts | Check MCP tools, REST endpoints, hooks, skills against source/config | Complete | Local counts: 56 MCP tools, 129 REST endpoints, 12 hook events, 15 skills |
 | Verify docs formatting / source count evidence | Run targeted repo-native or closest available checks | Complete with blocker | Prettier check blocked because `prettier` is not installed; substituted `git diff --check`, ESLint on touched TS files, source count checks, README coverage checks, Vitest, and `skills:check` |
 | Run security gates for tooling change | Semgrep for script/test/tooling surface and Gitleaks before commit | Complete | Semgrep completed with 0 findings; staged Gitleaks found no leaks |
-| Prepare local PR branch | `github-push-prepare` local branch-prep phase, no remote writes | Complete | Branch created locally; after push/PR/merge approval, fetched and merged current `origin/main` base `38ec372d` |
+| Prepare local PR branch | `github-push-prepare` local branch-prep phase, no remote writes | Complete | Branch created locally; after push/PR/merge approval, fetched and merged current `origin/main` bases through `3cee91d1` |
 
 ## Subagent Ledger
 
@@ -112,12 +112,15 @@
   - Final post-base-merge verification: `corepack pnpm exec vitest run test/plugin-surface-contract.test.ts` passed 9/9 tests; `corepack pnpm run skills:check` passed; `corepack pnpm exec eslint scripts/skills/generate.ts test/plugin-surface-contract.test.ts` passed; `git diff --check refs/remotes/origin/main...HEAD` passed.
   - `git diff --name-status refs/remotes/origin/main...HEAD` showed only the issue #912 task-owned files.
   - After PR creation, GitHub reported the branch was behind. With explicit push/PR/merge approval, `git fetch origin main` updated `origin/main` to `38ec372d`; that base was merged locally with no conflicts, and the same verification passed again.
+  - A later merge attempt reported the branch behind again. `git fetch origin main` updated `origin/main` to `3cee91d1`; that base was merged locally with no conflicts, and verification was rerun.
 - Commits:
   - `e4308453` docs: update README source stats
   - `dd7c6c5b` docs: record issue 912 verification
   - local merge commit from `5cfc90b436033a2378b08eb67ab19ad96967a7d6`
   - `23bd91ae` docs: record issue 912 base merge
   - local merge commit from `38ec372d`
+  - `a99493b4` docs: record issue 912 latest base
+  - local merge commit from `3cee91d1`
 - Formatting caveat:
   - `corepack pnpm exec prettier --check ...` failed because `prettier` is not installed in this repo.
 
