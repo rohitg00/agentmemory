@@ -148,3 +148,17 @@ Primary task-owned surfaces:
     leaks.
 - OSV not run: no dependency manifests, lockfiles, container images, vendored
   code, or third-party package surfaces are task-owned changes.
+- GitHub PR prep base integration:
+  - No fetch was approved; existing local `refs/remotes/origin/main` at
+    `a0f96c3ba95935b28f16807ab7a63867fcf9639d` was used with unverified
+    freshness.
+  - Initial merge attempt inside the sandbox failed because Git could not write
+    shared worktree metadata `ORIG_HEAD`; rerun with escalation reached one
+    README conflict.
+  - README conflict resolved by preserving issue #247 core-default behavior and
+    upstream's lesson lifecycle/full-server note.
+  - Post-merge `corepack pnpm test` passed 171 files / 2220 tests.
+  - Post-merge `corepack pnpm run lint` passed.
+  - Post-merge `corepack pnpm run skills:check` passed; 15 skills checked.
+  - Post-merge `semgrep scan --config p/default --error --metrics=off .`
+    completed with 0 findings.

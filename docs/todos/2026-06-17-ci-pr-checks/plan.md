@@ -84,3 +84,43 @@ gh api repos/wbugitlab1/agentmemory/branches/main/protection --jq '{required_sta
 ```
 
 Expected: required status checks include both Node 22 job names.
+
+### Task 3: Keep Required PR Checks Present For Docs-Only PRs
+
+**Files:**
+- Modify: `.github/workflows/ci.yml`
+- Modify: `test/quality-gates.test.ts`
+- Modify: `docs/todos/2026-06-17-ci-pr-checks/todo.md`
+
+- [ ] **Step 1: Add a workflow guard test**
+
+Add a quality-gate test that extracts the `pull_request` trigger block from
+`.github/workflows/ci.yml` and asserts it has no `paths-ignore`.
+
+Expected RED: the test fails while `pull_request.paths-ignore` is present.
+
+- [ ] **Step 2: Remove pull_request path filters**
+
+Keep `push.paths-ignore` for main runner-minute savings, but remove
+`pull_request.paths-ignore` so branch protection always receives the required
+check contexts.
+
+- [ ] **Step 3: Verify locally and on GitHub**
+
+Run:
+
+```bash
+pnpm exec vitest run test/quality-gates.test.ts
+ruby -ryaml -e 'YAML.load_file(".github/workflows/ci.yml"); puts "yaml ok"'
+semgrep scan --config p/default --error --metrics=off .github/workflows/ci.yml
+gitleaks protect --staged --redact
+```
+
+Expected: targeted quality gate passes, workflow YAML parses, Semgrep has no
+findings, and staged Gitleaks finds no leaks.
+
+- [ ] **Step 4: Merge the CI fix before docs-only PRs**
+
+Push the CI fix branch, create a PR against `main`, wait for the required checks,
+merge through GitHub, then update docs-only PRs #926 and #929 so they can emit
+required check contexts and merge normally.

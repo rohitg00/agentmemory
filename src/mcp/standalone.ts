@@ -38,6 +38,19 @@ const SERVER_INFO = {
   protocolVersion: "2024-11-05",
 };
 
+const SUPPORTED_PROTOCOL_VERSIONS = new Set([
+  SERVER_INFO.protocolVersion,
+  "2025-03-26",
+]);
+
+function negotiatedProtocolVersion(params: Record<string, unknown>): string {
+  const requested = params["protocolVersion"];
+  return typeof requested === "string" &&
+    SUPPORTED_PROTOCOL_VERSIONS.has(requested)
+    ? requested
+    : SERVER_INFO.protocolVersion;
+}
+
 const kv = new InMemoryKV(getStandalonePersistPath());
 let modeAnnounced = false;
 
@@ -663,7 +676,7 @@ const transport = createStdioTransport(async (method, params) => {
   switch (method) {
     case "initialize":
       return {
-        protocolVersion: SERVER_INFO.protocolVersion,
+        protocolVersion: negotiatedProtocolVersion(params),
         capabilities: { tools: { listChanged: false } },
         serverInfo: {
           name: SERVER_INFO.name,
