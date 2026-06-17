@@ -199,7 +199,7 @@ Expected: pass.
 
 Update the Feature / Verification Matrix with command evidence and add final review notes. If a real Claude Code plugin session was not run, record that as a local reproduction limit, not as a pass.
 
-- [ ] **Step 4: Prepare local commit**
+- [x] **Step 4: Prepare local commit**
 
 Stage only task-owned files:
 

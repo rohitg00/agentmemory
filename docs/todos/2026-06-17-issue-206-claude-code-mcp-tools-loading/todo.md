@@ -77,8 +77,8 @@
 | Preserve default protocol when request omits/invalidates version | New regression in `test/mcp-standalone.test.ts` | Done | GREEN: same targeted suite passed with omitted, numeric, and unsupported string `protocolVersion` cases asserting `2024-11-05`. |
 | Preserve handler-visible tool list shape after initialize | New handler-level `tools/list` assertion | Done | GREEN: same targeted suite passed, including `{ tools: expect.any(Array) }` after `initialize` with `2025-03-26`. |
 | Preserve existing tool list/call behavior | Existing `test/mcp-standalone.test.ts` | Done | GREEN: same targeted suite passed 39 tests. |
-| Protocol-handling security gate | Semgrep default scan | Done | `semgrep scan --config p/default --error --metrics=off .` passed with 0 findings over 670 tracked files. |
-| Local PR-prep branch state without remote writes | `git status`, local commit, github-push-prepare preflight | Planned | Pending |
+| Protocol-handling security gate | Semgrep default scan | Done | `semgrep scan --config p/default --error --metrics=off .` passed with 0 findings over 670 tracked files before and after local base merge. |
+| Local PR-prep branch state without remote writes | `git status`, local commit, github-push-prepare preflight | Done | Local commit `58fec41a`; local base merge commit `39d6dc3e`; no fetch/push/PR creation. PR base used existing local `origin/main` at `b5e02429e85792ef1565acb816fd890eaba00fe4`, freshness unverified. |
 
 ## Subagent Ledger
 
@@ -100,8 +100,8 @@
 - [x] Implement minimal fix.
 - [x] Run targeted verification.
 - [x] Run final review and cleanup gates.
-- [ ] Commit task-owned changes.
-- [ ] Complete local github-push-prepare handoff without remote writes.
+- [x] Commit task-owned changes.
+- [x] Complete local github-push-prepare handoff without remote writes.
 
 ## Review Notes
 
@@ -111,3 +111,8 @@
 - GREEN evidence: after `src/mcp/standalone.ts` fix and cleanup, `corepack pnpm exec vitest run test/mcp-standalone.test.ts` passed 1 file / 38 tests.
 - Final review: Security reviewer ACCEPT. Test coverage reviewer found one Medium gap for unsupported string protocol versions; fixed with `protocolVersion: "2099-01-01"` default regression. Maintainability reviewer found one Medium plan-drift gap; fixed completed plan checkboxes. Post-fix `corepack pnpm exec vitest run test/mcp-standalone.test.ts` passed 1 file / 39 tests.
 - Final verification before staging: `git diff --check` passed; `corepack pnpm exec vitest run test/mcp-standalone.test.ts` passed 1 file / 39 tests; `semgrep scan --config p/default --error --metrics=off .` passed with 0 findings over 670 tracked files.
+- Commit `58fec41a` created with task-owned source, test, and task-state changes.
+- GitHub push-prep used existing local `origin/main` only; no fetch was approved or run. Existing local PR base was `b5e02429e85792ef1565acb816fd890eaba00fe4`. Local merge commit `39d6dc3e` integrated that base; merge touched only `.github/workflows/ci.yml` from the base side and had no conflicts.
+- Post-base targeted verification: `corepack pnpm exec vitest run test/mcp-standalone.test.ts` passed 1 file / 39 tests.
+- Post-base full test attempt: `corepack pnpm test` failed with 2 unrelated failures out of 2200 tests: generated skill reference drift (`plugin/skills/agentmemory-config/REFERENCE.md`, message says run `corepack pnpm run skills:gen`) and `test/backup-scheduler.test.ts` temp directory cleanup `ENOTEMPTY`. This matches the known generated-doc drift caveat and is not caused by the MCP initialize diff.
+- Post-base Semgrep: `semgrep scan --config p/default --error --metrics=off .` passed with 0 findings over 670 tracked files.
