@@ -1,7 +1,8 @@
 name: CI
 
-# `paths-ignore` keeps doc-only / website / README / CHANGELOG churn from
-# burning runner minutes. Source / config / workflow changes always run.
+# `push.paths-ignore` keeps doc-only / website / README / CHANGELOG churn from
+# burning runner minutes on main. Pull requests intentionally run for all paths
+# because branch protection requires these check contexts before merge.
 # `workflow_dispatch` gives a manual re-run button for flake debugging.
 on:
   push:
@@ -20,17 +21,6 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
     branches: [main]
-    paths-ignore:
-      - "README.md"
-      - "CHANGELOG.md"
-      - "AGENTS.md"
-      - "ROADMAP.md"
-      - "website/**"
-      - "docs/**"
-      - "assets/**"
-      - "deploy/**/README.md"
-      - "**/*.md"
-      - "**/*.mdx"
   workflow_dispatch:
 
 # Cancel in-flight PR runs when a force-push lands. Keep push runs to

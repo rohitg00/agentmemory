@@ -64,6 +64,17 @@ function ciRunCount(command: string): number {
   return readText(".github/workflows/ci.yml").split(`run: ${command}`).length - 1;
 }
 
+function workflowTriggerBlock(workflow: string, trigger: string): string {
+  const lines = workflow.split(/\r?\n/);
+  const start = lines.findIndex((line) => line === `  ${trigger}:`);
+  expect(start, `missing workflow trigger: ${trigger}`).toBeGreaterThanOrEqual(0);
+
+  const end = lines.findIndex(
+    (line, index) => index > start && /^  [A-Za-z0-9_-]+:/.test(line),
+  );
+  return lines.slice(start, end === -1 ? lines.length : end).join("\n");
+}
+
 function indexOfStep(workflow: string, step: string): number {
   const index = workflow.indexOf(step);
   expect(index, `missing workflow step: ${step}`).toBeGreaterThanOrEqual(0);
@@ -106,6 +117,14 @@ describe("root quality gates", () => {
   it("has root ESLint and Vitest coverage configuration files", () => {
     expect(existsSync("eslint.config.js")).toBe(true);
     expect(existsSync("vitest.config.ts")).toBe(true);
+  });
+
+  it("runs required CI checks for every pull request", () => {
+    const pullRequest = workflowTriggerBlock(readText(".github/workflows/ci.yml"), "pull_request");
+
+    expect(pullRequest).toContain("types: [opened, synchronize, reopened, ready_for_review]");
+    expect(pullRequest).toContain("branches: [main]");
+    expect(pullRequest).not.toContain("paths-ignore:");
   });
 
   it("keeps generated and runtime paths out of root linting", () => {
