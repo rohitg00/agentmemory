@@ -63,6 +63,7 @@ Stop conditions:
 |-|-|-|-|-|-|
 | Plan review | `docs/todos/2026-06-17-issue-195-encrypted-state-storage/plan.md`, issue evidence, README/SECURITY context | No | High/Medium findings on scope, acceptance, verification, and unsafe boundary changes | Medium findings fixed: matrix status, staged Gitleaks plan step, GitHub feature-loop sequencing | None after fixes. |
 | Final docs review | Task-owned diff only | No | Findings on documentation accuracy, security wording, and verification gaps | ACCEPT: no Critical/Important actionable findings | No independent residual blocker. |
+| Post-handoff issue validation | Read-only local repo and task-state evidence | No | One of `close`, `already fixed`, `fix needed`, or `needs approval/defer` with file/test evidence | `needs approval/defer`: no encrypted state storage exists; current branch documents posture only | True feature implementation remains deferred pending explicit security/persistence/data-format approval. |
 
 ## Progress
 
@@ -78,3 +79,4 @@ Stop conditions:
 - 2026-06-17: Used existing local `origin/main` ref `ce60bba0682e7e8fdfcc62250a2491d1e6a20e5c`; no fetch was run, so freshness is unverified.
 - 2026-06-17: Base merge was a no-op because the local `origin/main` ref is already an ancestor of the branch.
 - 2026-06-17: `codex-security:security-diff-scan` was skipped for the stable diff because it contains only Markdown documentation/task-state files and no executable, configuration, dependency, schema, or storage-format change; passive security review, focused implementation review, `git diff --check`, targeted vitest, and staged Gitleaks covered the changed surface.
+- 2026-06-17: Read-only validation subagent classified the underlying issue as `needs approval/defer`. Evidence: `src/state/kv.ts` passes values directly to iii-engine `state::*`; `iii-config.yaml` and `iii-config.docker.yaml` use file-based `state_store.db`; `test/engine-launch.test.ts` and `test/build-runtime.test.ts` cover data-dir rendering, not encryption behavior.
