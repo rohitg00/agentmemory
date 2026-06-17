@@ -52,7 +52,7 @@ Out of scope:
 
 ## Supply-chain stance
 
-agentmemory ships pre-built artifacts in the npm tarball — `dist/` is bundled at publish time, not built from `node_modules` at install time. The package's runtime dependency tree is intentionally small (6 production deps: `@anthropic-ai/sdk`, `@anthropic-ai/claude-agent-sdk`, `@clack/prompts`, `dotenv`, `iii-sdk`, `zod`) plus an optional set guarded behind `optionalDependencies` for embeddings.
+agentmemory ships pre-built artifacts in the npm tarball — `dist/` is bundled at publish time, not built from `node_modules` at install time. The package's default runtime dependency tree is intentionally small (4 production deps: `@clack/prompts`, `dotenv`, `iii-sdk`, `zod`) plus an optional set guarded behind `optionalDependencies` for embeddings. The Claude Agent SDK fallback is an optional peer used only when explicitly installed and enabled with `AGENTMEMORY_ALLOW_AGENT_SDK=true`.
 
 This fork commits `pnpm-lock.yaml` for source development and CI. Contributor builds and release jobs install with `pnpm install --frozen-lockfile --ignore-scripts` so tests, builds, and supply-chain scans run against the same resolved dependency graph without automatically running dependency lifecycle scripts.
 

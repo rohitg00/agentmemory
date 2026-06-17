@@ -1,12 +1,29 @@
-import Anthropic from '@anthropic-ai/sdk'
 import type { MemoryProvider } from '../types.js'
+import { fetchWithTimeout } from './_fetch.js'
+
+type AnthropicContent =
+  | { type: 'text'; text: string }
+  | {
+      type: 'image'
+      source: {
+        type: 'base64'
+        media_type: 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp'
+        data: string
+      }
+    }
+
+type AnthropicMessage = {
+  role: 'user'
+  content: string | AnthropicContent[]
+}
 
 export class AnthropicProvider implements MemoryProvider {
   name = 'anthropic'
-  private client: Anthropic
+  private apiKey: string
   private model: string
   private compressModel?: string
   private maxTokens: number
+  private baseUrl: string
 
   constructor(
     apiKey: string,
@@ -15,10 +32,11 @@ export class AnthropicProvider implements MemoryProvider {
     baseURL?: string,
     compressModel?: string,
   ) {
-    this.client = new Anthropic({ apiKey, ...(baseURL ? { baseURL } : {}) })
+    this.apiKey = apiKey
     this.model = model
     this.compressModel = compressModel
     this.maxTokens = maxTokens
+    this.baseUrl = (baseURL || 'https://api.anthropic.com').replace(/\/+$/, '')
   }
 
   async compress(systemPrompt: string, userPrompt: string): Promise<string> {
@@ -30,23 +48,20 @@ export class AnthropicProvider implements MemoryProvider {
   }
 
   async describeImage(imageData: string, mimeType: string, prompt: string): Promise<string> {
-    const response = await this.client.messages.create({
-      model: this.model,
-      max_tokens: this.maxTokens,
-      messages: [{
-        role: 'user',
-        content: [
-          {
-            type: 'image',
-            source: { type: 'base64', media_type: mimeType as 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp', data: imageData },
+    return this.callMessages(this.model, [{
+      role: 'user',
+      content: [
+        {
+          type: 'image',
+          source: {
+            type: 'base64',
+            media_type: mimeType as 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp',
+            data: imageData,
           },
-          { type: 'text', text: prompt },
-        ],
-      }],
-    })
-
-    const textBlock = response.content.find((b) => b.type === 'text')
-    return textBlock?.text ?? ''
+        },
+        { type: 'text', text: prompt },
+      ],
+    }])
   }
 
   private async call(
@@ -54,14 +69,40 @@ export class AnthropicProvider implements MemoryProvider {
     userPrompt: string,
     modelOverride?: string,
   ): Promise<string> {
-    const response = await this.client.messages.create({
-      model: modelOverride ?? this.model,
+    return this.callMessages(modelOverride ?? this.model, [{ role: 'user', content: userPrompt }], systemPrompt)
+  }
+
+  private async callMessages(
+    model: string,
+    messages: AnthropicMessage[],
+    systemPrompt?: string,
+  ): Promise<string> {
+    const body: Record<string, unknown> = {
+      model,
       max_tokens: this.maxTokens,
-      system: systemPrompt,
-      messages: [{ role: 'user', content: userPrompt }],
+      messages,
+    }
+    if (systemPrompt) body.system = systemPrompt
+
+    const response = await fetchWithTimeout(`${this.baseUrl}/v1/messages`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': this.apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify(body),
     })
 
-    const textBlock = response.content.find((b) => b.type === 'text')
+    if (!response.ok) {
+      await response.body?.cancel().catch(() => {})
+      throw new Error(`Anthropic API error (${response.status})`)
+    }
+
+    const data = (await response.json()) as {
+      content?: Array<{ type: string; text?: string }>
+    }
+    const textBlock = data.content?.find((b) => b.type === 'text')
     return textBlock?.text ?? ''
   }
 }
