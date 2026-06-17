@@ -99,3 +99,13 @@ Stop conditions:
 - Caveat: full `skills:check` is not green because of unrelated `agentmemory-config` generated env-reference drift. No generator run was performed because it would be a broad non-task-owned rewrite.
 - Final branch status before handoff: local branch prepared against local `origin/main`; remote freshness unverified because fetch was not approved.
 - Push/PR creation not performed; no current-turn approval for remote writes.
+
+## CI Follow-Up
+
+- PR #929 checks failed on both `ubuntu-latest` and `macos-latest` after successful build at `pnpm run skills:check`.
+- Root cause: generated config reference drift in `plugin/skills/agentmemory-config/REFERENCE.md`; the source scan found 54 `AGENTMEMORY_*` variables while the reference listed 49.
+- Missing generated variables were `AGENTMEMORY_BACKUP_DIR`, `AGENTMEMORY_BACKUP_ENABLED`, `AGENTMEMORY_BACKUP_INTERVAL_MS`, `AGENTMEMORY_BACKUP_RETENTION_DAYS`, and `AGENTMEMORY_HOST`.
+- Ran `corepack pnpm run skills:gen`; it updated only `plugin/skills/agentmemory-config/REFERENCE.md`.
+- Follow-up verification: `corepack pnpm run skills:check` now passes locally with `Skill lint passed: 15 skills checked.`
+- Additional checks: `git diff --check` passed; `gitleaks detect --source . --redact` passed with no leaks; `semgrep scan --config p/default --error --metrics=off .` completed with 0 findings and existing rule-timeout warnings in `src/cli.ts` and `src/triggers/api.ts`.
+- Current status: the earlier generated-doc drift caveat is resolved by the CI follow-up commit.
