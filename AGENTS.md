@@ -110,6 +110,7 @@ Hook scripts in `src/hooks/` are standalone Node.js scripts (no iii-sdk import).
 ## Testing
 
 - All tests must pass before PR: `corepack pnpm test` (950+ tests)
+- If `corepack pnpm exec`, `corepack pnpm run`, or `corepack pnpm test` is blocked by pnpm ignored-build hardening, first run `corepack pnpm install --frozen-lockfile --ignore-scripts`, then rerun the repo-native pnpm command; do not approve builds or treat direct `node_modules/.bin/*` calls as normal verification unless the pnpm command remains blocked and that blocker is reported.
 - Mock pattern: `vi.mock("iii-sdk")` with mock `sdk.trigger`, `kv.get/set/list`
 - Test files go in `test/` with `.test.ts` extension
 - Follow existing patterns in `test/crystallize.test.ts` for function tests
