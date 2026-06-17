@@ -61,7 +61,7 @@ Stop conditions:
 | Prove default async chunking yields | New `test/vector-index.test.ts` default-options yield test above the 1,000-entry threshold | passed | Covered by `yields with default chunking during large async search`; vector test file passed. |
 | Preserve ordering and snapshot behavior | Async/sync parity, mutation, tie, and restore tests | passed | `corepack pnpm test test/vector-index.test.ts` passed after strengthening active `restoreFrom()` result assertions. |
 | Route hybrid search through async vector path | `test/hybrid-search.test.ts` spy test | passed | `corepack pnpm test test/vector-index.test.ts test/hybrid-search.test.ts test/search.test.ts test/smart-search.test.ts` passed, 4 files / 56 tests. |
-| Keep scope free of dependency/API/persistence drift | Diff review, build, lint, skills check, security gate | partial | Build, lint, `skills:check`, full tests, `git diff --check`, and Semgrep passed. Staged Gitleaks still pending. |
+| Keep scope free of dependency/API/persistence drift | Diff review, build, lint, skills check, security gate | passed | Build, lint, `skills:check`, full tests, `git diff --check`, Semgrep, and staged Gitleaks passed before implementation commit. Post-merge targeted/full tests and Semgrep passed. |
 
 ## Subagent Ledger
 
@@ -70,7 +70,7 @@ Stop conditions:
 | Issue #96 validation | Local code, tests, and commit `fb650881` | no | `close`, `already fixed`, `fix needed`, or `needs approval/defer` with evidence | `fix needed`; HEAD has synchronous vector loop and hybrid sync call; `fb650881` matches smallest likely fix | none for triage |
 | Pre-implementation plan review | Plan, boundaries, acceptance criteria | no | High/Medium findings or `ACCEPT` | fixed two Medium findings: mandatory blocking security gates, default-yield test, and `skills:check` | none |
 | Implementation | Task-owned files from plan | yes | Bounded patch plus tests run | completed: async search, hybrid async call, and tests | broader verification still pending |
-| Final review | Stable branch diff | no | Security/test/maintainability findings or `ACCEPT` | security accepted; test coverage Medium fixed; maintainability Medium task-state drift fixed here | Semgrep/Gitleaks still pending |
+| Final review | Stable branch diff | no | Security/test/maintainability findings or `ACCEPT` | security accepted; test coverage Medium fixed; maintainability Medium task-state drift fixed | none |
 
 ## Progress
 
@@ -86,6 +86,10 @@ Stop conditions:
 - 2026-06-17: Full `corepack pnpm test` passed: 171 files / 2215 tests.
 - 2026-06-17: `semgrep scan --config p/default --error --metrics=off .` passed with 0 findings.
 - 2026-06-17: Final security reviewer returned `ACCEPT`. Final test reviewer found missing active `restoreFrom()` result assertion; fixed and reran vector/search tests. Final maintainability reviewer found stale task state; fixed in this update.
+- 2026-06-17: Staged only task-owned files and `gitleaks protect --staged --redact` passed: 0 leaks.
+- 2026-06-17: Created local commit `4366f505 fix: yield during large vector searches`.
+- 2026-06-17: Merged captured local `origin/main` base `20f7d4a3718f1b6f9cc928b1c9f42945c7b0d02c` into the branch, creating merge commit `c4f37e6c`. No fetch was run, so base freshness is unverified beyond the existing local remote-tracking ref.
+- 2026-06-17: Post-base verification passed: targeted search suite (4 files / 56 tests), build, lint, `skills:check`, full `corepack pnpm test` (171 files / 2220 tests), and Semgrep (0 findings).
 
 ## Review Notes
 
@@ -100,5 +104,15 @@ Final review findings:
 - maintainability: fixed Medium finding by updating this task state with implementation and verification status.
 
 Pending before commit/handoff readiness:
-- Stage explicit task-owned files and run `gitleaks protect --staged --redact`.
-- Merge local `origin/main` base `20f7d4a3718f1b6f9cc928b1c9f42945c7b0d02c` after commit and rerun targeted verification.
+- Commit this final task-state update.
+- Push and PR creation are not authorized in this turn.
+
+## GitHub Push Prep Notes
+
+- Working branch: `github-pr/issue-96-vector-search-yield-fe927dc2`.
+- PR base used: existing local `refs/remotes/origin/main` at `20f7d4a3718f1b6f9cc928b1c9f42945c7b0d02c`.
+- Fresh fetch: not run; remote-tracking freshness is unverified.
+- Base merge: completed locally with merge commit `c4f37e6c`.
+- Conflicts: none.
+- Security diff scan: skipped with reason. The stable branch diff changes internal vector-search CPU scheduling/ranking logic, hybrid call routing, tests, and task docs only; it does not alter auth/security controls, dependency manifests, network calls, protocol/schema handling, persisted vector format, or an external storage boundary. Focused security reviewer returned `ACCEPT`, Semgrep returned 0 findings, and staged Gitleaks returned 0 leaks.
+- Remote writes: not performed.
