@@ -1158,6 +1158,14 @@ Most agents (Cursor, Claude Desktop, Cline, Roo Code, Windsurf, Gemini CLI):
 
 Merge the `agentmemory` entry into your host's existing `mcpServers` object rather than replacing the file. For sandboxed clients that can't reach the host's `localhost`, add `"AGENTMEMORY_FORCE_PROXY": "1"` to the env block and set `AGENTMEMORY_URL` to a route the sandbox can reach. For central cross-agent memory, add `"AGENTMEMORY_REQUIRE_SERVER": "1"` so the shim errors instead of falling back to its local standalone store when the server route breaks. If `AGENTMEMORY_SECRET` is set, use HTTPS or a loopback tunnel; plaintext HTTP to non-loopback hosts is refused before bearer auth is sent.
 
+MCP clients that support Streamable HTTP can connect directly to the running server without the stdio shim:
+
+```text
+http://localhost:3111/agentmemory/mcp
+```
+
+The Streamable HTTP endpoint uses the existing REST worker and the same `AGENTMEMORY_SECRET` bearer-token rule as the helper MCP routes. It supports JSON-RPC `initialize`, `notifications/initialized`, `tools/list`, and `tools/call`; `GET`/SSE is not offered, so clients should send JSON-RPC over `POST`. agentmemory keeps this endpoint on the existing REST port (`3111` by default) rather than opening a separate listener so all HTTP handling still goes through iii `registerFunction`/`registerTrigger`; port `3114` remains available for the iii console.
+
 OpenCode (`opencode.json`):
 ```json
 {
