@@ -1,5 +1,6 @@
 import type { EmbeddingProvider } from "../../types.js";
 import { getEnvVar } from "../../config.js";
+import { loadTransformers } from "../transformers.js";
 
 export const DEFAULT_LOCAL_EMBEDDING_MODEL =
   "Xenova/paraphrase-multilingual-MiniLM-L12-v2";
@@ -39,8 +40,7 @@ export class LocalEmbeddingProvider implements EmbeddingProvider {
 
     let transformers: { pipeline: Pipeline };
     try {
-      // @ts-ignore - optional peer dependency
-      transformers = await import("@xenova/transformers");
+      transformers = await loadTransformers<{ pipeline: Pipeline }>();
     } catch {
       throw new Error(
         "Install @xenova/transformers for local embeddings: npm install @xenova/transformers",

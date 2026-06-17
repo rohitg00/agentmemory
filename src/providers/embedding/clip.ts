@@ -1,7 +1,8 @@
 import { readFile } from "node:fs/promises";
 import type { EmbeddingProvider } from "../../types.js";
+import { loadTransformers, type TransformersModule } from "../transformers.js";
 
-type TransformersModule = {
+type ClipTransformersModule = TransformersModule & {
   pipeline: (
     task: string,
     model: string,
@@ -26,7 +27,7 @@ export class ClipEmbeddingProvider implements EmbeddingProvider {
   readonly dimensions = DIMENSIONS;
   private textExtractor: ClipPipeline | null = null;
   private imageExtractor: ClipPipeline | null = null;
-  private transformers: TransformersModule | null = null;
+  private transformers: ClipTransformersModule | null = null;
   private readonly modelId: string;
 
   constructor(modelId: string = DEFAULT_MODEL) {
@@ -53,10 +54,10 @@ export class ClipEmbeddingProvider implements EmbeddingProvider {
     return normalize(vec);
   }
 
-  private async getTransformers(): Promise<TransformersModule> {
+  private async getTransformers(): Promise<ClipTransformersModule> {
     if (this.transformers) return this.transformers;
     try {
-      this.transformers = (await import("@xenova/transformers")) as unknown as TransformersModule;
+      this.transformers = await loadTransformers<ClipTransformersModule>();
     } catch {
       throw new Error(
         "Install @xenova/transformers for CLIP image embeddings: npm install @xenova/transformers",
@@ -81,7 +82,7 @@ export class ClipEmbeddingProvider implements EmbeddingProvider {
 }
 
 async function loadImage(
-  t: TransformersModule,
+  t: ClipTransformersModule,
   src: string,
 ): Promise<RawImageInstance> {
   if (src.startsWith("data:")) {
