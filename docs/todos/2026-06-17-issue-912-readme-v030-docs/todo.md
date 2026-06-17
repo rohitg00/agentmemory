@@ -53,7 +53,7 @@
 | Confirm nearby README counts | Check MCP tools, REST endpoints, hooks, skills against source/config | Complete | Local counts: 56 MCP tools, 129 REST endpoints, 12 hook events, 15 skills |
 | Verify docs formatting / source count evidence | Run targeted repo-native or closest available checks | Complete with blocker | Prettier check blocked because `prettier` is not installed; substituted `git diff --check`, ESLint on touched TS files, source count checks, README coverage checks, Vitest, and `skills:check` |
 | Run security gates for tooling change | Semgrep for script/test/tooling surface and Gitleaks before commit | Complete | Semgrep completed with 0 findings; staged Gitleaks found no leaks |
-| Prepare local PR branch | `github-push-prepare` local branch-prep phase, no remote writes | Complete | Branch created locally; existing local `origin/main` base `0cd8711303473b5cc1cd3ac7fd8739a2d40f8831`; no fetch/push approved or performed; base merge no-op |
+| Prepare local PR branch | `github-push-prepare` local branch-prep phase, no remote writes | Complete | Branch created locally; no fetch/push approved or performed; merged current local `origin/main` base `5cfc90b436033a2378b08eb67ab19ad96967a7d6` |
 
 ## Subagent Ledger
 
@@ -107,10 +107,14 @@
   - `git diff --check` passed.
   - `semgrep scan --config p/default --error --metrics=off scripts/skills/generate.ts test/plugin-surface-contract.test.ts README.md integrations/hermes/README.md` completed with 0 findings.
   - `gitleaks protect --staged --redact` scanned staged content and found no leaks.
-  - Final post-commit verification: `corepack pnpm exec vitest run test/plugin-surface-contract.test.ts` passed 9/9 tests; `corepack pnpm run skills:check` passed; `corepack pnpm exec eslint scripts/skills/generate.ts test/plugin-surface-contract.test.ts` passed; `git diff --check HEAD~1..HEAD` passed.
-  - Local PR base capture used existing `refs/remotes/origin/main` at `0cd8711303473b5cc1cd3ac7fd8739a2d40f8831`; freshness is unverified because fetch was not approved.
+  - Final post-commit verification before base merge: `corepack pnpm exec vitest run test/plugin-surface-contract.test.ts` passed 9/9 tests; `corepack pnpm run skills:check` passed; `corepack pnpm exec eslint scripts/skills/generate.ts test/plugin-surface-contract.test.ts` passed; `git diff --check HEAD~1..HEAD` passed.
+  - During final GitHub push-prep, the local `refs/remotes/origin/main` ref was observed at `5cfc90b436033a2378b08eb67ab19ad96967a7d6` without any fetch by this agent. It was merged locally into the branch after the sandbox blocked Git metadata writes and the same local merge was rerun with escalation.
+  - Final post-base-merge verification: `corepack pnpm exec vitest run test/plugin-surface-contract.test.ts` passed 9/9 tests; `corepack pnpm run skills:check` passed; `corepack pnpm exec eslint scripts/skills/generate.ts test/plugin-surface-contract.test.ts` passed; `git diff --check refs/remotes/origin/main...HEAD` passed.
+  - `git diff --name-status refs/remotes/origin/main...HEAD` showed only the issue #912 task-owned files.
 - Commits:
   - `e4308453` docs: update README source stats
+  - `dd7c6c5b` docs: record issue 912 verification
+  - local merge commit from `5cfc90b436033a2378b08eb67ab19ad96967a7d6`
 - Formatting caveat:
   - `corepack pnpm exec prettier --check ...` failed because `prettier` is not installed in this repo.
 
@@ -119,4 +123,4 @@
 - No unrelated dirty paths were present before branch creation.
 - No remote operations were run.
 - Pnpm auto-inserted an `allowBuilds` block into `pnpm-workspace.yaml` during dependency setup; this was not task-owned and was removed.
-- No base merge was needed because the captured local `origin/main` base is already an ancestor of the working branch.
+- Local base merge was needed after `refs/remotes/origin/main` moved locally during the session; no conflicts occurred.
