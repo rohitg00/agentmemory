@@ -2,10 +2,15 @@ name: CI
 
 # `paths-ignore` keeps doc-only / website / README / CHANGELOG churn from
 # burning runner minutes. Source / config / workflow changes always run.
+# Branch push coverage makes fork-local PR branches produce status checks even
+# when GitHub does not schedule the `pull_request` event in the fork.
 # `workflow_dispatch` gives a manual re-run button for flake debugging.
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+      - "fix/**"
+      - "github-pr/**"
     paths-ignore:
       - "README.md"
       - "CHANGELOG.md"
@@ -18,6 +23,7 @@ on:
       - "**/*.md"
       - "**/*.mdx"
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     branches: [main]
     paths-ignore:
       - "README.md"
@@ -52,7 +58,7 @@ jobs:
         # src/functions/obsidian-export.ts needs os.tmpdir() + path.join
         # rework before Windows can be added back. Tracked as follow-up.
         os: [ubuntu-latest, macos-latest]
-        node-version: [20, 22]
+        node-version: [22]
     steps:
       - uses: actions/checkout@v6
         with:
