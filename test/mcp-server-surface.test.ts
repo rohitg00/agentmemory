@@ -200,6 +200,38 @@ describe("MCP server registration and auth", () => {
       h.listTools({ authorization: "Bearer secret" }),
     ).resolves.toMatchObject({ status_code: 200 });
   });
+
+  it("hides non-core tools from default discovery while keeping direct calls routable", async () => {
+    const originalTools = process.env["AGENTMEMORY_TOOLS"];
+    delete process.env["AGENTMEMORY_TOOLS"];
+    try {
+      const h = createHarness();
+      const listed = await h.listTools();
+      const toolNames = new Set(
+        (listed.body as { tools: Array<{ name: string }> }).tools.map((tool) => tool.name),
+      );
+      expect(toolNames.has("memory_timeline")).toBe(false);
+
+      const result = await h.callTool("memory_timeline", {
+        anchor: "2026-06-17",
+        project: "git:repo",
+      });
+
+      expect(result.status_code).toBe(200);
+      expect(h.triggerCalls.at(-1)).toEqual({
+        function_id: "mem::timeline",
+        payload: {
+          anchor: "2026-06-17",
+          project: "git:repo",
+          before: 5,
+          after: 5,
+        },
+      });
+    } finally {
+      if (originalTools === undefined) delete process.env["AGENTMEMORY_TOOLS"];
+      else process.env["AGENTMEMORY_TOOLS"] = originalTools;
+    }
+  });
 });
 
 describe("MCP tools/call validation boundaries", () => {

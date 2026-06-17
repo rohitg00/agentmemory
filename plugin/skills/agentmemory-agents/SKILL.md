@@ -18,7 +18,7 @@ After wiring, restart the host or run its MCP reload (for example `/mcp` in Clau
 
 1. Detect the calling agent. If unknown, default to `claude-code`.
 2. Run `agentmemory connect <name>` using a name from the table in REFERENCE.md.
-3. Verify: the host should show the full tool set with a server running. Only 7 tools means the MCP shim could not reach a server (see ../_shared/TROUBLESHOOTING.md).
+3. Verify: the host should show the 8 core tools with a server running. Start the server with `--tools all` or `AGENTMEMORY_TOOLS=all` for all 56 tools. Only 7 tools means the MCP shim could not reach a server (see ../_shared/TROUBLESHOOTING.md).
 
 ## Notes
 

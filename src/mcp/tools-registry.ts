@@ -1062,13 +1062,11 @@ export function getAllTools(): McpToolDef[] {
   ];
 }
 
-// default switched from "core" (8 essential tools) to "all"
-// (full tool surface). README and plugin manifests have always
-// advertised all tools "in proxy mode"; the old default left OpenCode /
-// Claude Code users seeing 8 with no indication the other tools existed.
-// Users who want the lean essentials can still set AGENTMEMORY_TOOLS=core.
+// Default discovery stays lean for MCP clients with tight tool budgets.
+// The full tool surface remains available with AGENTMEMORY_TOOLS=all,
+// and tools/call keeps routing registered legacy tools directly.
 export function getVisibleTools(): McpToolDef[] {
-  const mode = process.env["AGENTMEMORY_TOOLS"] || "all";
-  if (mode === "core") return getAllTools().filter((t) => ESSENTIAL_TOOLS.has(t.name));
-  return getAllTools();
+  const mode = process.env["AGENTMEMORY_TOOLS"] || "core";
+  if (mode === "all") return getAllTools();
+  return getAllTools().filter((t) => ESSENTIAL_TOOLS.has(t.name));
 }

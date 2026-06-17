@@ -80,7 +80,7 @@ agentmemory connect <agent>
 
 If you cannot tell which agent you are, default to `claude-code`. After wiring, restart the agent or run its MCP reload command (for example `/mcp` in Claude Code) so it picks up the server.
 
-Expect: the agent now lists agentmemory's tools. With the server running you should see the full set of 55 tools (for example `memory_save`, `memory_smart_search`, `memory_sessions`). If you see only 7 tools, the MCP shim could not reach a server, see Troubleshooting.
+Expect: the agent now lists agentmemory's tools. With the server running you should see the 8 core tools by default (for example `memory_save`, `memory_smart_search`, `memory_sessions`). Start the server with `--tools all` or `AGENTMEMORY_TOOLS=all` for all 56 tools. If you see only 7 tools, the MCP shim could not reach a server, see Troubleshooting.
 
 ## 6. Install native skills
 
@@ -128,7 +128,7 @@ These are off by default because they spend tokens. Enable them only if the user
 
 ## Tool surface
 
-The MCP server exposes 55 tools by default (`--tools all`). Use `--tools core` (or `AGENTMEMORY_TOOLS=core`) for a lean 8-tool set on hosts with tight tool limits. The 8 core tools cover save, recall, consolidate, smart search, sessions, diagnose, lesson save, and reflect.
+The MCP server exposes the 8 core tools by default (`--tools core`). Use `--tools all` (or `AGENTMEMORY_TOOLS=all`) for the full 56-tool surface. The 8 core tools cover save, recall, consolidate, smart search, sessions, diagnose, lesson save, and reflect.
 
 ## Lifecycle commands
 

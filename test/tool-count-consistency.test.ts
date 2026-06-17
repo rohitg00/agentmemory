@@ -36,7 +36,13 @@ describe("Tool count consistency", () => {
     const cli = readText("src/cli.ts");
     expect(cli).toContain("const ALL_TOOLS_COUNT = getAllTools().length;");
     expect(cli).toContain(
-      "(default: all = ${ALL_TOOLS_COUNT} tools; core = ${CORE_TOOLS_COUNT} essentials)",
+      "(default: core = ${CORE_TOOLS_COUNT} essentials; all = ${ALL_TOOLS_COUNT} tools)",
+    );
+    expect(cli).toContain(
+      'Unknown --tools value "${toolsMode}" (valid: all, core); falling back to core.',
+    );
+    expect(cli).toContain(
+      'toolsMode === "all" || toolsMode === "core" ? toolsMode : "core"',
     );
     expect(cli).not.toMatch(/all\s*=\s*51 tools/);
   });
@@ -102,5 +108,23 @@ describe("Tool count consistency", () => {
       .slice(0, -1)
       .join(", ")}, and ${names[names.length - 1]}.`;
     expect(readText("INSTALL_FOR_AGENTS.md")).toContain(sentence);
+  });
+
+  it("install docs and agent skill describe core tool discovery by default", () => {
+    const install = readText("INSTALL_FOR_AGENTS.md");
+    expect(install).toContain("you should see the 8 core tools by default");
+    expect(install).toContain("for all 56 tools");
+    expect(install).not.toContain("full set of 55 tools");
+
+    const readme = readText("README.md");
+    expect(readme).toContain("you get the 8 core MCP tools");
+    expect(readme).toContain("start the server with `--tools all` for all 56 tools");
+    expect(readme).toContain("Default core tools (8 advertised by default)");
+    expect(readme).not.toContain("proxies all 56 tools when");
+
+    const agentsSkill = readText("plugin/skills/agentmemory-agents/SKILL.md");
+    expect(agentsSkill).toContain("show the 8 core tools with a server running");
+    expect(agentsSkill).toContain("for all 56 tools");
+    expect(agentsSkill).not.toContain("show the full tool set with a server running");
   });
 });

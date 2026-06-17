@@ -20,7 +20,7 @@ AGENTMEMORY_INJECT_CONTEXT=true
 
 - No API key is required. Without one, agentmemory runs zero-LLM with BM25 search. Text embeddings are explicit opt-in via `EMBEDDING_PROVIDER`; use `EMBEDDING_PROVIDER=local` for on-device embeddings or `EMBEDDING_PROVIDER=<remote>` plus that provider's key for remote embeddings.
 - Token-spending features ship OFF on purpose: `AGENTMEMORY_AUTO_COMPRESS` (LLM summaries) and `AGENTMEMORY_INJECT_CONTEXT` (auto context injection) both cost tokens proportional to tool-use frequency.
-- Tool visibility: `AGENTMEMORY_TOOLS=all` (default) or `core` for the lean set.
+- Tool visibility: `AGENTMEMORY_TOOLS=core` (default) or `all` for the full 56-tool set.
 - Auth: set `AGENTMEMORY_SECRET` to require `Authorization: Bearer` on the REST API.
 - MCP shim fail-hard mode: set `AGENTMEMORY_REQUIRE_SERVER=1` in the MCP server env when agentmemory is a central cross-agent memory instance and local standalone fallback would hide an outage. `AGENTMEMORY_DISABLE_LOCAL_FALLBACK=1` is accepted as an alias.
 

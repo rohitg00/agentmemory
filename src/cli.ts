@@ -173,7 +173,7 @@ Options:
   --help, -h         Show this help
   --verbose, -v      Show engine stderr, boot log, and diagnostic info
   --reset            Wipe ~/.agentmemory/preferences.json and re-run onboarding
-  --tools all|core   Tool visibility (default: all = ${ALL_TOOLS_COUNT} tools; core = ${CORE_TOOLS_COUNT} essentials)
+  --tools all|core   Tool visibility (default: core = ${CORE_TOOLS_COUNT} essentials; all = ${ALL_TOOLS_COUNT} tools)
   --no-engine        Skip auto-starting iii-engine
   --data-dir <path>  Store iii-engine state outside the current repo
   --port <N>         Override REST port (default: 3111). Streams (N+1) and
@@ -215,10 +215,11 @@ if (toolsIdx !== -1 && args[toolsIdx + 1]) {
   const toolsMode = args[toolsIdx + 1]!;
   if (toolsMode !== "all" && toolsMode !== "core") {
     p.log.warn(
-      `Unknown --tools value "${toolsMode}" (valid: all, core); falling back to all.`,
+      `Unknown --tools value "${toolsMode}" (valid: all, core); falling back to core.`,
     );
   }
-  process.env["AGENTMEMORY_TOOLS"] = toolsMode;
+  process.env["AGENTMEMORY_TOOLS"] =
+    toolsMode === "all" || toolsMode === "core" ? toolsMode : "core";
 }
 
 applyRuntimeEnvFile();

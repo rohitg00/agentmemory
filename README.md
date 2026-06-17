@@ -513,7 +513,7 @@ Implementation details live in `src/cli.ts` (see `runUpgrade` around the `src/cl
 ### Claude Code (one block, paste it)
 
 ```text
-Install agentmemory: run `npx @agentmemory/agentmemory` in a separate terminal to start the memory server. Then run `/plugin marketplace add rohitg00/agentmemory` and `/plugin install agentmemory` — the plugin registers all 12 hooks, 15 skills, AND auto-wires the `@agentmemory/mcp` stdio server via its `.mcp.json`, so you get 56 MCP tools (memory_smart_search, memory_save, memory_sessions, memory_governance_delete, etc.) without any extra config step. Verify with `curl http://localhost:3111/agentmemory/health`. The real-time viewer is at http://localhost:3113.
+Install agentmemory: run `npx @agentmemory/agentmemory` in a separate terminal to start the memory server. Then run `/plugin marketplace add rohitg00/agentmemory` and `/plugin install agentmemory` — the plugin registers all 12 hooks, 15 skills, AND auto-wires the `@agentmemory/mcp` stdio server via its `.mcp.json`, so you get the 8 core MCP tools without any extra config step. Start the server with `npx @agentmemory/agentmemory --tools all` when you want the full 56-tool surface (memory_smart_search, memory_save, memory_sessions, memory_governance_delete, etc.). Verify with `curl http://localhost:3111/agentmemory/health`. The real-time viewer is at http://localhost:3113.
 ```
 
 #### Claude Code without the plugin install (MCP-standalone path)
@@ -544,7 +544,7 @@ codex plugin add agentmemory@agentmemory
 
 The Codex plugin ships from the same `plugin/` directory as the Claude Code plugin. It registers:
 
-- `@agentmemory/mcp` as an MCP server (proxies all 56 tools when `AGENTMEMORY_URL` points at a running agentmemory server; falls back to 7 tools locally when no server is reachable unless `AGENTMEMORY_REQUIRE_SERVER=1` is set)
+- `@agentmemory/mcp` as an MCP server (proxies the server-advertised 8 core tools by default when `AGENTMEMORY_URL` points at a running agentmemory server; start the server with `--tools all` for all 56 tools; falls back to 7 tools locally when no server is reachable unless `AGENTMEMORY_REQUIRE_SERVER=1` is set)
 - 6 lifecycle hooks: `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PreCompact`, `Stop`
 - 8 invocable skills: `/recall`, `/remember`, `/session-history`, `/forget`, `/recap`, `/handoff`, `/commit-context`, `/commit-history`, plus 7 reference skills the agent loads on demand (MCP tools, REST API, config, agents, hooks, architecture, and the skill-authoring guide)
 
@@ -701,14 +701,14 @@ GitHub Copilot in VS Code uses `servers` instead of `mcpServers`. Put this in `.
       "env": {
         "AGENTMEMORY_URL": "${AGENTMEMORY_URL:-http://localhost:3111}",
         "AGENTMEMORY_SECRET": "${AGENTMEMORY_SECRET:-}",
-        "AGENTMEMORY_TOOLS": "${AGENTMEMORY_TOOLS:-all}"
+        "AGENTMEMORY_TOOLS": "${AGENTMEMORY_TOOLS:-core}"
       }
     }
   }
 }
 ```
 
-Start `npx @agentmemory/agentmemory` in another terminal first when you want the full 56-tool persistent memory server. If the shim cannot reach that server, it falls back to the local 7-tool standalone surface unless you also set `"AGENTMEMORY_REQUIRE_SERVER": "1"` in `env`.
+Start `npx @agentmemory/agentmemory` in another terminal first when you want the persistent memory server. By default the server advertises the 8 core MCP tools; start it with `npx @agentmemory/agentmemory --tools all` or `AGENTMEMORY_TOOLS=all npx @agentmemory/agentmemory` when you want the full 56-tool surface. If the shim cannot reach that server, it falls back to the local 7-tool standalone surface unless you also set `"AGENTMEMORY_REQUIRE_SERVER": "1"` in `env`.
 
 **Sandboxed MCP clients** (Flatpak / Snap / restrictive containers) that can't reach the host's `localhost`: also set `"AGENTMEMORY_FORCE_PROXY": "1"` in the `env` block, and point `AGENTMEMORY_URL` at a route the sandbox can actually reach. Add `"AGENTMEMORY_REQUIRE_SERVER": "1"` when the client should fail rather than use the local fallback if that route is still broken. If `AGENTMEMORY_SECRET` is set, that route must be HTTPS or a loopback tunnel; the MCP shim refuses to send bearer auth over plaintext HTTP to non-loopback hosts. See [#234](https://github.com/rohitg00/agentmemory/issues/234) for the diagnostic walkthrough.
 
@@ -1009,26 +1009,23 @@ npm install @xenova/transformers
 
 56 tools, 6 resources, 3 prompts, and 15 skills, the most comprehensive MCP memory toolkit for any agent.
 
-> **MCP shim vs full server:** the published `@agentmemory/mcp` package is a thin shim. It exposes the full 56-tool surface **only when it can reach a running agentmemory server** via `AGENTMEMORY_URL` (proxy mode). With no server reachable, the shim falls back to a 7-tool local set (`memory_save`, `memory_recall`, `memory_smart_search`, `memory_sessions`, `memory_export`, `memory_audit`, `memory_governance_delete`). Set `AGENTMEMORY_REQUIRE_SERVER=1` in the shim's env when that fallback would hide an outage; then livez failures and proxy-call failures return an MCP error instead. The `AGENTMEMORY_TOOLS=core|all` env var is a *server-side* flag — setting it in the shim's `env` block has no effect. If you see only 7 tools in Cursor / OpenCode / Gemini CLI, start `npx @agentmemory/agentmemory` (or the Docker stack) and set `AGENTMEMORY_URL=http://localhost:3111`.
+> **MCP shim vs full server:** the published `@agentmemory/mcp` package is a thin shim. It exposes the server's MCP surface **only when it can reach a running agentmemory server** via `AGENTMEMORY_URL` (proxy mode). The server advertises the 8 core tools by default; set `AGENTMEMORY_TOOLS=all` on the server to expose the full 56-tool surface. With no server reachable, the shim falls back to a 7-tool local set (`memory_save`, `memory_recall`, `memory_smart_search`, `memory_sessions`, `memory_export`, `memory_audit`, `memory_governance_delete`). Set `AGENTMEMORY_REQUIRE_SERVER=1` in the shim's env when that fallback would hide an outage; then livez failures and proxy-call failures return an MCP error instead. The `AGENTMEMORY_TOOLS=core|all` env var is a *server-side* flag — setting it in the shim's `env` block has no effect. If you see only 7 tools in Cursor / OpenCode / Gemini CLI, start `npx @agentmemory/agentmemory` (or the Docker stack) and set `AGENTMEMORY_URL=http://localhost:3111`.
 
 ### 56 Tools
 
 <details>
-<summary>Core tools (always available)</summary>
+<summary>Default core tools (8 advertised by default)</summary>
 
 | Tool | Description |
 |------|-------------|
-| `memory_recall` | Search past observations |
-| `memory_compress_file` | Compress allowed-root markdown files while preserving structure |
 | `memory_save` | Save an insight, decision, or pattern |
-| `memory_patterns` | Detect recurring patterns |
+| `memory_recall` | Search past observations |
+| `memory_consolidate` | Turn accumulated observations into structured long-term memories |
 | `memory_smart_search` | Hybrid semantic + keyword search |
-| `memory_file_history` | Past observations about specific files |
 | `memory_sessions` | List recent sessions |
-| `memory_timeline` | Chronological observations |
-| `memory_profile` | Project profile (concepts, files, patterns) |
-| `memory_export` | Export all memory data |
-| `memory_relations` | Query relationship graph |
+| `memory_diagnose` | Health checks across memory subsystems |
+| `memory_lesson_save` | Save reusable workflow lessons |
+| `memory_reflect` | Synthesize higher-order insights from memories |
 
 </details>
 
@@ -1604,7 +1601,7 @@ Create `~/.agentmemory/.env`:
 # USER_ID=
 # TEAM_MODE=private
 
-# Tool visibility: "core" (8 tools, lean fallback) or "all" (56 tools)
+# Tool visibility: "core" (8 tools, default) or "all" (56 tools)
 # AGENTMEMORY_TOOLS=core
 ```
 
