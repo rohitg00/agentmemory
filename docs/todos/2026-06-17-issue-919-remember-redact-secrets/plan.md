@@ -65,7 +65,7 @@ Stop conditions:
 | Align OpenCode command guidance | `rg -n "secret|redact|preserve" plugin/opencode/commands/remember.md` | Done | OpenCode `/remember` now requires redaction before `memory_save`, sanitized content, and no secret echo. |
 | Security-sensitive docs diff review | Final review subagents, Gitleaks detect/current-tree, staged Gitleaks before commit, Semgrep, Codex Security diff scan | Done | Final docs/security reviewer ACCEPT; staged `gitleaks protect --staged --redact` passed before commit `77ba2304`; current-tree Gitleaks passed; Semgrep passed with 0 findings; Codex Security diff scan reported no findings. Full-history Gitleaks reported 14 historical leaks not introduced by this patch. |
 | Full PR-readiness tests | `corepack pnpm test` | Done | Full non-integration Vitest passed: 171 files, 2228 tests. |
-| GitHub push-prep local phase | `github-push-prepare` preflight, local base capture, review chain, staged commit | Done | Local preflight done; branch was clean after commit `77ba2304`; existing local `origin/main` at `0cd8711303473b5cc1cd3ac7fd8739a2d40f8831` was used without fetch; base is already an ancestor of `HEAD`, so integration is a no-op. Follow-up staged Gitleaks passed for task-state reconciliation. |
+| GitHub push-prep local phase | `github-push-prepare` preflight, local base capture, review chain, staged commit | Done | Local preflight done; current local `origin/main` at `5cfc90b436033a2378b08eb67ab19ad96967a7d6` was used without fetch, so freshness is unverified; merged that base into the branch with merge commit `8c13c189`. Follow-up staged Gitleaks passed for task-state reconciliation. |
 
 ## Subagent Ledger
 
