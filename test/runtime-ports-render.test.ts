@@ -1,7 +1,10 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
+  applyRuntimeEnvFileValues,
+  applyRuntimeHostArgs,
   applyRuntimePortArgs,
+  assertRuntimeHostAllowed,
   renderRuntimeIiiConfig,
 } from "../src/cli/runtime-ports.js";
 
@@ -89,5 +92,87 @@ describe("runtime iii port rendering", () => {
     expect(env.III_ENGINE_PORT).toBe("5000");
     expect(env.III_ENGINE_URL).toBe("ws://127.0.0.1:5000");
     expect(env.AGENTMEMORY_VIEWER_PORT).toBe("4400");
+  });
+
+  it("applies --host to the runtime host environment", () => {
+    const env: NodeJS.ProcessEnv = {};
+
+    applyRuntimeHostArgs(["--host", "0.0.0.0"], env);
+
+    expect(env.AGENTMEMORY_HOST).toBe("0.0.0.0");
+  });
+
+  it("applies --host=value to the runtime host environment", () => {
+    const env: NodeJS.ProcessEnv = {};
+
+    applyRuntimeHostArgs(["--host=192.168.1.10"], env);
+
+    expect(env.AGENTMEMORY_HOST).toBe("192.168.1.10");
+  });
+
+  it("applies runtime .env values without overriding shell values", () => {
+    const env: NodeJS.ProcessEnv = {
+      AGENTMEMORY_HOST: "127.0.0.1",
+    };
+
+    applyRuntimeEnvFileValues(
+      {
+        AGENTMEMORY_HOST: "0.0.0.0 # expose on LAN",
+        AGENTMEMORY_SECRET: "secret # required for LAN",
+        III_REST_PORT: "3211",
+      },
+      env,
+    );
+
+    expect(env.AGENTMEMORY_HOST).toBe("127.0.0.1");
+    expect(env.AGENTMEMORY_SECRET).toBe("secret");
+    expect(env.III_REST_PORT).toBe("3211");
+  });
+
+  it("renders configured runtime host for REST and streams workers only", () => {
+    const nativeConfig = readFileSync("iii-config.yaml", "utf-8");
+
+    const rendered = renderRuntimeIiiConfig(nativeConfig, {
+      AGENTMEMORY_HOST: "0.0.0.0",
+      III_REST_PORT: "3211",
+    });
+
+    expect(rendered).toContain("port: 3211");
+    expect(rendered).toContain("port: 3212");
+    expect(rendered).toContain("http://localhost:3211");
+    expect(rendered).toMatch(/name: iii-http[\s\S]*?host: 0\.0\.0\.0/);
+    expect(rendered).toMatch(/name: iii-stream[\s\S]*?host: 0\.0\.0\.0/);
+    expect(rendered).toMatch(/name: iii-observability[\s\S]*?logs_console_output: false/);
+  });
+
+  it("requires a secret before rendering a non-loopback runtime host", () => {
+    expect(() =>
+      assertRuntimeHostAllowed({ AGENTMEMORY_HOST: "0.0.0.0" }),
+    ).toThrow(/AGENTMEMORY_SECRET/);
+
+    expect(() =>
+      assertRuntimeHostAllowed({
+        AGENTMEMORY_HOST: "0.0.0.0",
+        AGENTMEMORY_SECRET: "secret",
+      }),
+    ).not.toThrow();
+    expect(() =>
+      assertRuntimeHostAllowed({ AGENTMEMORY_HOST: "127.0.0.1" }),
+    ).not.toThrow();
+  });
+
+  it("rejects malformed runtime hosts before rendering yaml", () => {
+    expect(() =>
+      renderRuntimeIiiConfig("workers:\n", {
+        AGENTMEMORY_HOST: "0.0.0.0\n  port: 1",
+        AGENTMEMORY_SECRET: "secret",
+      }),
+    ).toThrow(/AGENTMEMORY_HOST must be/);
+    expect(() =>
+      renderRuntimeIiiConfig("workers:\n", {
+        AGENTMEMORY_HOST: "127.0.0.1:3111",
+        AGENTMEMORY_SECRET: "secret",
+      }),
+    ).toThrow(/AGENTMEMORY_HOST must be/);
   });
 });

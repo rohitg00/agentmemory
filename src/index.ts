@@ -64,6 +64,10 @@ import { registerRecentSearchesSweepFunction } from "./functions/recent-searches
 import { registerProfileFunction } from "./functions/profile.js";
 import { registerAutoForgetFunction } from "./functions/auto-forget.js";
 import { registerExportImportFunction } from "./functions/export-import.js";
+import {
+  loadBackupSchedulerConfig,
+  startBackupScheduler,
+} from "./functions/backup-scheduler.js";
 import { registerEnrichFunction } from "./functions/enrich.js";
 import { registerClaudeBridgeFunction } from "./functions/claude-bridge.js";
 import { registerGraphFunction } from "./functions/graph.js";
@@ -114,6 +118,7 @@ import { bootLog, logger } from "./logger.js";
 import { mkdirSync, writeFileSync, unlinkSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
+import { assertRuntimeHostAllowed } from "./cli/runtime-ports.js";
 
 // #640 + #474: the worker process (this file) is spawned by iii-exec
 // inside the engine. When `agentmemory stop` kills only the engine pid,
@@ -170,6 +175,8 @@ process.on("unhandledRejection", (reason) => {
 });
 
 async function main() {
+  assertRuntimeHostAllowed();
+
   const config = loadConfig();
   const embeddingConfig = loadEmbeddingConfig();
   const fallbackConfig = loadFallbackConfig();
@@ -268,6 +275,13 @@ async function main() {
   registerProfileFunction(sdk, kv);
   registerAutoForgetFunction(sdk, kv);
   registerExportImportFunction(sdk, kv);
+  const backupConfig = loadBackupSchedulerConfig();
+  const backupScheduler = startBackupScheduler(sdk, undefined, backupConfig);
+  if (backupScheduler) {
+    bootLog(
+      `Backups: ${backupConfig.dir} (every ${Math.round(backupConfig.intervalMs / 1000)}s)`,
+    );
+  }
   registerEnrichFunction(sdk, kv);
 
   const claudeBridgeConfig = loadClaudeBridgeConfig();

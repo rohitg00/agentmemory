@@ -78,11 +78,23 @@ describe("CLI server log persistence", () => {
     const prepareBody = functionBody(cliSource(), "prepareRuntimeIiiConfig");
     const startBody = functionBody(cliSource(), "startEngine");
 
+    expect(prepareBody).toContain("assertRuntimeHostAllowed()");
     expect(prepareBody).toContain("renderRuntimePortIiiConfig(raw)");
     expect(prepareBody).toContain("renderRuntimeDataDirIiiConfig(");
     expect(prepareBody).toContain("dataDirResolution.dataDir");
     expect(prepareBody).toContain("iii-config.yaml");
     expect(startBody).toContain("prepareRuntimeIiiConfig(findIiiConfig())");
+  });
+
+  it("does not run the runtime host guard before status-only commands", () => {
+    const source = cliSource();
+    const mainStart = source.indexOf("async function main()");
+    const apiFetchStart = source.indexOf("async function apiFetch");
+    expect(mainStart).toBeGreaterThanOrEqual(0);
+    expect(apiFetchStart).toBeGreaterThan(mainStart);
+    const mainBody = source.slice(mainStart, apiFetchStart);
+
+    expect(mainBody).not.toContain("assertRuntimeHostAllowed()");
   });
 
   it("logs every engine child exit and supervises only unexpected native exits", () => {
