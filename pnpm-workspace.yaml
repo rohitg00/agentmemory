@@ -8,6 +8,7 @@ packages:
 
 linkWorkspacePackages: true
 preferWorkspacePackages: true
+autoInstallPeers: false
 savePrefix: ""
 minimumReleaseAge: 1440
 minimumReleaseAgeStrict: true

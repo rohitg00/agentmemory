@@ -1009,39 +1009,42 @@ npm install @xenova/transformers
 
 56 tools, 6 resources, 3 prompts, and 15 skills, the most comprehensive MCP memory toolkit for any agent.
 
-> **MCP shim vs full server:** the published `@agentmemory/mcp` package is a thin shim. It exposes the full 56-tool surface **only when it can reach a running agentmemory server** via `AGENTMEMORY_URL` (proxy mode). With no server reachable, the shim falls back to a 7-tool local set (`memory_save`, `memory_recall`, `memory_smart_search`, `memory_sessions`, `memory_export`, `memory_audit`, `memory_governance_delete`). Set `AGENTMEMORY_REQUIRE_SERVER=1` in the shim's env when that fallback would hide an outage; then livez failures and proxy-call failures return an MCP error instead. The `AGENTMEMORY_TOOLS=core|all` env var is a *server-side* flag — setting it in the shim's `env` block has no effect. If you see only 7 tools in Cursor / OpenCode / Gemini CLI, start `npx @agentmemory/agentmemory` (or the Docker stack) and set `AGENTMEMORY_URL=http://localhost:3111`.
+> **MCP shim vs full server:** the published `@agentmemory/mcp` package is a thin shim. It exposes the full 56-tool surface **only when it can reach a running agentmemory server** via `AGENTMEMORY_URL` (proxy mode). With no server reachable, the shim falls back to a 7-tool local set (`memory_save`, `memory_recall`, `memory_smart_search`, `memory_sessions`, `memory_export`, `memory_audit`, `memory_governance_delete`). Lesson lifecycle tools such as `memory_lesson_save` require the full server/proxy surface. Set `AGENTMEMORY_REQUIRE_SERVER=1` in the shim's env when that fallback would hide an outage; then livez failures and proxy-call failures return an MCP error instead. The `AGENTMEMORY_TOOLS=core|all` env var is a *server-side* flag — setting it in the shim's `env` block has no effect. If you see only 7 tools in Cursor / OpenCode / Gemini CLI, start `npx @agentmemory/agentmemory` (or the Docker stack) and set `AGENTMEMORY_URL=http://localhost:3111`.
 
 ### 56 Tools
 
 <details>
-<summary>Core tools (always available)</summary>
+<summary>Server core tools (`AGENTMEMORY_TOOLS=core`)</summary>
 
 | Tool | Description |
 |------|-------------|
-| `memory_recall` | Search past observations |
-| `memory_compress_file` | Compress allowed-root markdown files while preserving structure |
 | `memory_save` | Save an insight, decision, or pattern |
-| `memory_patterns` | Detect recurring patterns |
+| `memory_recall` | Search past observations |
+| `memory_consolidate` | Run 4-tier consolidation |
 | `memory_smart_search` | Hybrid semantic + keyword search |
-| `memory_file_history` | Past observations about specific files |
 | `memory_sessions` | List recent sessions |
-| `memory_timeline` | Chronological observations |
-| `memory_profile` | Project profile (concepts, files, patterns) |
-| `memory_export` | Export all memory data |
-| `memory_relations` | Query relationship graph |
+| `memory_diagnose` | Run health checks across memory subsystems |
+| `memory_lesson_save` | Save a reusable lesson with confidence, project scope, tags, and reinforcement lifecycle |
+| `memory_reflect` | Synthesize higher-order insights from accumulated memories |
 
 </details>
 
 <details>
-<summary>Extended tools (56 total — set AGENTMEMORY_TOOLS=all)</summary>
+<summary>Additional full-server tools (56 total — set AGENTMEMORY_TOOLS=all)</summary>
 
 | Tool | Description |
 |------|-------------|
+| `memory_compress_file` | Compress allowed-root markdown files while preserving structure |
+| `memory_file_history` | Past observations about specific files |
+| `memory_profile` | Project profile (concepts, files, patterns) |
+| `memory_export` | Export all memory data |
 | `memory_patterns` | Detect recurring patterns |
 | `memory_timeline` | Chronological observations |
 | `memory_relations` | Query relationship graph |
 | `memory_graph_query` | Knowledge graph traversal |
-| `memory_consolidate` | Run 4-tier consolidation |
+| `memory_lesson_recall` | Search saved lessons by query with project and confidence filters |
+| `memory_lesson_list` | List saved lessons by project, source, confidence, and limit |
+| `memory_lesson_strengthen` | Reinforce an existing lesson by ID |
 | `memory_claude_bridge_sync` | Sync with MEMORY.md |
 | `memory_team_share` | Share with team members |
 | `memory_team_feed` | Recent shared items |
@@ -1071,6 +1074,21 @@ npm install @xenova/transformers
 | `memory_verify` | Trace provenance |
 
 </details>
+
+### Lessons vs Memories
+
+Use `memory_lesson_save` for reusable workflow guidance: rules, pitfalls, and "prefer/avoid" lessons that should gain or lose confidence over time. Use `memory_save` for ordinary durable facts, decisions, and patterns that do not need the lesson lifecycle.
+
+`memory_lesson_save` accepts `content` (required), plus optional `context`, `confidence`, `project`, and comma-separated `tags`. New lessons default to `confidence: 0.5` unless a value from `0.0` to `1.0` is provided; out-of-range values fall back to `0.5`. Saving the same lesson content again in the same `project` and `source` strengthens the existing lesson instead of creating a duplicate.
+
+Lesson confidence changes through reinforcement and decay:
+
+- Duplicate `memory_lesson_save` calls and `memory_lesson_strengthen` both increment `reinforcements`, update `lastReinforcedAt`, and move confidence 10% of the remaining distance toward `1.0`.
+- `memory_lesson_recall` searches content, context, and tags, then ranks matches by confidence, text relevance, and recency since creation or last reinforcement.
+- `memory_lesson_list` lists non-deleted lessons sorted by confidence and can filter by `project`, `source`, `minConfidence`, and `limit`.
+- The lesson decay sweep runs from the full server lifecycle and lowers confidence after at least one week by `decayRate` (`0.05` by default) per elapsed week. Unreinforced lessons at or below `0.1` confidence are soft-deleted.
+
+The full-server REST equivalents are `POST /agentmemory/lessons`, `GET /agentmemory/lessons`, `POST /agentmemory/lessons/search`, and `POST /agentmemory/lessons/strengthen`.
 
 ### 6 Resources · 3 Prompts · 4 Skills
 
@@ -1280,7 +1298,7 @@ agentmemory auto-detects from your environment. By default, no LLM calls are mad
 | OpenAI API | `OPENAI_API_KEY` | Default `gpt-4o-mini`, override with `OPENAI_MODEL` |
 | **Local (Ollama / LM Studio / vLLM / llama.cpp)** | `OPENAI_API_KEY=local` + `OPENAI_BASE_URL=http://localhost:11434/v1` (Ollama) or `http://localhost:1234/v1` (LM Studio) + `OPENAI_MODEL=<your model>` | Anything OpenAI-API-compatible. Zero cost, runs on your hardware. See [Local models](#local-models-ollama-lm-studio-vllm) below. |
 | Codex subscription fallback | `AGENTMEMORY_ALLOW_CODEX_SDK=true` | Opt-in only. Spawns `codex exec` and reuses the logged-in Codex/ChatGPT session through the supported CLI surface; never reads private token files. API-key providers still win unless `AGENTMEMORY_PREFER_CODEX_SDK=true` is also set. |
-| Claude subscription fallback | `AGENTMEMORY_ALLOW_AGENT_SDK=true` | Opt-in only. Spawns `@anthropic-ai/claude-agent-sdk` sessions — used to cause unbounded Stop-hook recursion (#149 follow-up) so it is no longer the default. |
+| Claude subscription fallback | `npm install @anthropic-ai/claude-agent-sdk` + `AGENTMEMORY_ALLOW_AGENT_SDK=true` | Opt-in only. Spawns `@anthropic-ai/claude-agent-sdk` sessions — used to cause unbounded Stop-hook recursion (#149 follow-up) so it is no longer the default or auto-installed. |
 
 ### Local models (Ollama / LM Studio / vLLM)
 
@@ -1388,6 +1406,11 @@ Native iii-engine state is stored under `~/.agentmemory/data` by default, even w
 npx @agentmemory/agentmemory --data-dir ~/.agentmemory-work/main
 AGENTMEMORY_DATA_DIR=~/.agentmemory-work/main npx @agentmemory/agentmemory
 ```
+
+agentmemory does not currently encrypt these iii-engine state files itself. For enterprise deployments that require
+encryption at rest, place `AGENTMEMORY_DATA_DIR` on an encrypted volume or platform-managed encrypted storage. Adding
+application-level encryption, tenant key isolation, or a new encrypted backend would change the storage/data-format
+boundary and needs an approved design before implementation.
 
 ### Ports
 
@@ -1500,7 +1523,8 @@ Create `~/.agentmemory/.env`:
 # AGENTMEMORY_CODEX_TIMEOUT_MS=60000       # Optional; overrides AGENTMEMORY_LLM_TIMEOUT_MS
 # AGENTMEMORY_COMPRESS_MODEL=cheap-model   # Optional: provider.compress() model override;
 #                                          # provider.summarize() keeps the provider model.
-# Opt-in Claude-subscription fallback (spawns @anthropic-ai/claude-agent-sdk);
+# Opt-in Claude-subscription fallback (requires npm install @anthropic-ai/claude-agent-sdk);
+# spawns @anthropic-ai/claude-agent-sdk sessions;
 # leave OFF unless you understand the Stop-hook recursion risk (#149 follow-up):
 # AGENTMEMORY_ALLOW_AGENT_SDK=true
 

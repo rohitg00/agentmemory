@@ -9,6 +9,11 @@ type PackageJson = {
   scripts?: Record<string, string>;
   devDependencies?: Record<string, string>;
   dependencies?: Record<string, string>;
+  optionalDependencies?: Record<string, string>;
+  peerDependencies?: Record<string, string>;
+  peerDependenciesMeta?: Record<string, { optional?: boolean }>;
+  bundledDependencies?: string[];
+  bundleDependencies?: string[];
 };
 
 type CoverageConfig = {
@@ -59,6 +64,17 @@ function ciRunCount(command: string): number {
   return readText(".github/workflows/ci.yml").split(`run: ${command}`).length - 1;
 }
 
+function workflowTriggerBlock(workflow: string, trigger: string): string {
+  const lines = workflow.split(/\r?\n/);
+  const start = lines.findIndex((line) => line === `  ${trigger}:`);
+  expect(start, `missing workflow trigger: ${trigger}`).toBeGreaterThanOrEqual(0);
+
+  const end = lines.findIndex(
+    (line, index) => index > start && /^  [A-Za-z0-9_-]+:/.test(line),
+  );
+  return lines.slice(start, end === -1 ? lines.length : end).join("\n");
+}
+
 function indexOfStep(workflow: string, step: string): number {
   const index = workflow.indexOf(step);
   expect(index, `missing workflow step: ${step}`).toBeGreaterThanOrEqual(0);
@@ -101,6 +117,14 @@ describe("root quality gates", () => {
   it("has root ESLint and Vitest coverage configuration files", () => {
     expect(existsSync("eslint.config.js")).toBe(true);
     expect(existsSync("vitest.config.ts")).toBe(true);
+  });
+
+  it("runs required CI checks for every pull request", () => {
+    const pullRequest = workflowTriggerBlock(readText(".github/workflows/ci.yml"), "pull_request");
+
+    expect(pullRequest).toContain("types: [opened, synchronize, reopened, ready_for_review]");
+    expect(pullRequest).toContain("branches: [main]");
+    expect(pullRequest).not.toContain("paths-ignore:");
   });
 
   it("keeps generated and runtime paths out of root linting", () => {
@@ -285,6 +309,7 @@ describe("root quality gates", () => {
     }
 
     const workspace = readText("pnpm-workspace.yaml");
+    expectTopLevelYamlScalar(workspace, "autoInstallPeers", "false");
     expectTopLevelYamlScalar(workspace, "savePrefix", '""');
     expectTopLevelYamlScalar(workspace, "minimumReleaseAge", "1440");
     expectTopLevelYamlScalar(workspace, "minimumReleaseAgeStrict", "true");
@@ -318,6 +343,27 @@ describe("root quality gates", () => {
     const mcp = JSON.parse(readText("packages/mcp/package.json")) as PackageJson;
 
     expect(mcp.dependencies?.["@agentmemory/agentmemory"]).toBe("workspace:~");
+  });
+
+  it("does not auto-install Anthropic packages in the root package", () => {
+    const pkg = readPackageJson();
+    const autoInstallSurfaces = [
+      pkg.dependencies ?? {},
+      pkg.optionalDependencies ?? {},
+    ];
+    const bundled = [
+      ...(pkg.bundledDependencies ?? []),
+      ...(pkg.bundleDependencies ?? []),
+    ];
+
+    for (const deps of autoInstallSurfaces) {
+      expect(deps["@anthropic-ai/sdk"]).toBeUndefined();
+      expect(deps["@anthropic-ai/claude-agent-sdk"]).toBeUndefined();
+    }
+    expect(bundled).not.toContain("@anthropic-ai/sdk");
+    expect(bundled).not.toContain("@anthropic-ai/claude-agent-sdk");
+    expect(pkg.peerDependencies?.["@anthropic-ai/claude-agent-sdk"]).toBe("^0.3.142");
+    expect(pkg.peerDependenciesMeta?.["@anthropic-ai/claude-agent-sdk"]?.optional).toBe(true);
   });
 
   it("keeps the OSV waiver narrow and time-bounded", () => {
