@@ -65,3 +65,22 @@ memory_save {
 ```
 
 Present the confirmation with the concepts echoed back.
+
+## 4. Security-sensitive operational note
+
+User: "Remember that the GitHub automation token [RAW_TOKEN_REDACTED_IN_EXAMPLE] is only for the release bot, lives in the Actions secret RELEASE_BOT_TOKEN, and must be rotated before the next release."
+
+Invocation:
+
+```json
+memory_save {
+  "content": "The GitHub automation token [REDACTED_GITHUB_TOKEN] is only for the release bot, lives in the Actions secret RELEASE_BOT_TOKEN, and must be rotated before the next release.",
+  "concepts": "release-bot-token, actions-secret, credential-rotation",
+  "files": ""
+}
+```
+
+Present:
+
+> Saved the operational note without storing the raw token. Concepts:
+> `release-bot-token`, `actions-secret`, `credential-rotation`.
