@@ -3,7 +3,7 @@ name: CI
 # `paths-ignore` keeps doc-only / website / README / CHANGELOG churn from
 # burning runner minutes. Source / config / workflow changes always run.
 # Branch push coverage makes fork-local PR branches produce status checks even
-# when this fork does not schedule the `pull_request` event.
+# when GitHub does not schedule the `pull_request` event in the fork.
 # `workflow_dispatch` gives a manual re-run button for flake debugging.
 on:
   push:
