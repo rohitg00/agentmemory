@@ -50,6 +50,16 @@ Out of scope:
 - `iii-sdk` upstream — report to the iii project.
 - The marketing site under `website/` unless the issue affects user security (XSS against visitors, credential leak in build output).
 
+## Storage encryption posture
+
+agentmemory stores durable state through iii-engine's file-based StateModule. The default runtime data directory is
+`~/.agentmemory/data`, and the native state files are not encrypted by agentmemory before they are handed to iii-engine.
+
+Deployments that require encryption at rest should put `AGENTMEMORY_DATA_DIR` on encrypted filesystem, disk, volume, or
+platform-managed storage and restrict directory permissions to the runtime account. Application-level encryption,
+per-tenant keys, encrypted export/import semantics, key rotation, and migration of existing plaintext stores are security
+and persistence boundary changes that require an approved design before implementation.
+
 ## Supply-chain stance
 
 agentmemory ships pre-built artifacts in the npm tarball — `dist/` is bundled at publish time, not built from `node_modules` at install time. The package's runtime dependency tree is intentionally small (6 production deps: `@anthropic-ai/sdk`, `@anthropic-ai/claude-agent-sdk`, `@clack/prompts`, `dotenv`, `iii-sdk`, `zod`) plus an optional set guarded behind `optionalDependencies` for embeddings.

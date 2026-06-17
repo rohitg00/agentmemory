@@ -1389,6 +1389,11 @@ npx @agentmemory/agentmemory --data-dir ~/.agentmemory-work/main
 AGENTMEMORY_DATA_DIR=~/.agentmemory-work/main npx @agentmemory/agentmemory
 ```
 
+agentmemory does not currently encrypt these iii-engine state files itself. For enterprise deployments that require
+encryption at rest, place `AGENTMEMORY_DATA_DIR` on an encrypted volume or platform-managed encrypted storage. Adding
+application-level encryption, tenant key isolation, or a new encrypted backend would change the storage/data-format
+boundary and needs an approved design before implementation.
+
 ### Ports
 
 agentmemory + iii-engine bind four ports by default. If a restart fails with `port in use`, this table tells you which process to look for.
