@@ -12,7 +12,7 @@
     ".": "./watcher.mjs"
   },
   "files": ["watcher.mjs", "bin.mjs", "README.md"],
-  "engines": { "node": ">=20" },
+  "engines": { "node": ">=22.13.0" },
   "license": "Apache-2.0",
   "homepage": "https://github.com/rohitg00/agentmemory/tree/main/integrations/filesystem-watcher",
   "repository": {

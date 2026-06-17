@@ -1,0 +1,102 @@
+replicaCount: 1
+
+image:
+  repository: ""
+  tag: "0.9.27"
+  pullPolicy: IfNotPresent
+  pullSecrets: []
+
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  automount: false
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+podLabels: {}
+podSecurityContext: {}
+securityContext: {}
+
+strategy:
+  type: Recreate
+
+service:
+  type: ClusterIP
+  port: 3111
+  annotations: {}
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts: []
+  tls: []
+
+networkPolicy:
+  enabled: true
+  ingressFrom: []
+
+persistence:
+  enabled: true
+  existingClaim: ""
+  storageClass: ""
+  accessModes:
+    - ReadWriteOnce
+  size: 1Gi
+  mountPath: /data
+  annotations: {}
+  fixPermissions: false
+  permissionsImage:
+    repository: busybox
+    tag: "1.36"
+    pullPolicy: IfNotPresent
+
+secret:
+  existingSecret: ""
+  existingKeys:
+    hmac: ""
+    anthropicApiKey: ""
+    openaiApiKey: ""
+    geminiApiKey: ""
+    voyageApiKey: ""
+    openrouterApiKey: ""
+  keys:
+    hmac: hmac
+  agentmemorySecret: ""
+
+env:
+  AGENTMEMORY_AUTO_COMPRESS: "false"
+  AGENTMEMORY_INJECT_CONTEXT: "false"
+
+extraEnv: []
+extraVolumes: []
+extraVolumeMounts: []
+
+probes:
+  startup:
+    failureThreshold: 10
+    periodSeconds: 3
+    timeoutSeconds: 2
+  liveness:
+    failureThreshold: 3
+    periodSeconds: 10
+    timeoutSeconds: 2
+  readiness:
+    failureThreshold: 3
+    periodSeconds: 5
+    timeoutSeconds: 2
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
