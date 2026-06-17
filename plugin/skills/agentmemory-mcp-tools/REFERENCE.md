@@ -35,7 +35,7 @@ agentmemory exposes 53 MCP tools. 8 are in the lean core set (`--tools core` or 
 | `memory_obsidian_export` |  | `vaultDir`: string, `types`: string | Export memories, lessons, and crystals as Obsidian-compatible Markdown files with YAML frontmatter and wikilinks for graph view. |
 | `memory_patterns` |  | `project`: string | Detect recurring patterns across sessions. |
 | `memory_profile` |  | `project`*: string, `refresh`: string | User/project profile with top concepts and file patterns. |
-| `memory_recall` | yes | `query`*: string, `limit`: number, `format`: string, `token_budget`: number | Search past session observations for relevant context. Use when you need to recall what happened in previous sessions, find past decisions, or look up how a file was modified before. |
+| `memory_recall` | yes | `query`*: string, `limit`: number, `format`: string, `token_budget`: number, `project`: string | Search past session observations for relevant context. Use when you need to recall what happened in previous sessions, find past decisions, or look up how a file was modified before. |
 | `memory_reflect` | yes | `project`: string, `maxClusters`: number | Traverse the knowledge graph, group related memories by concept clusters, and synthesize higher-order insights via LLM. Returns new and reinforced insights. |
 | `memory_relations` |  | `memoryId`*: string, `maxHops`: number, `minConfidence`: number | Query the memory relationship graph. |
 | `memory_routine_run` |  | `routineId`*: string, `project`: string, `initiatedBy`: string | Instantiate a frozen workflow routine, creating actions for each step with proper dependencies. |
@@ -53,7 +53,7 @@ agentmemory exposes 53 MCP tools. 8 are in the lean core set (`--tools core` or 
 | `memory_slot_get` |  | `label`*: string | Read a single slot by label. |
 | `memory_slot_list` |  | none | List all memory slots (pinned + project + global). Slots are editable, size-limited memory units the agent can read and modify across sessions. |
 | `memory_slot_replace` |  | `label`*: string, `content`*: string | Replace slot content in place. Fails if content exceeds sizeLimit. |
-| `memory_smart_search` | yes | `query`*: string, `expandIds`: string, `limit`: number | Hybrid semantic+keyword search with progressive disclosure. |
+| `memory_smart_search` | yes | `query`*: string, `expandIds`: string, `limit`: number, `project`: string | Hybrid semantic+keyword search with progressive disclosure. |
 | `memory_snapshot_create` |  | `message`: string | Create a git-versioned snapshot of current memory state. |
 | `memory_team_feed` |  | `limit`: number | Get recent shared items from all team members. |
 | `memory_team_share` |  | `itemId`*: string, `itemType`*: string | Share a memory or observation with team members. |

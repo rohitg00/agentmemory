@@ -54,10 +54,12 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
   });
 
   it("proxies memory_smart_search to POST /agentmemory/smart-search", async () => {
+    let smartSearchBody: Record<string, unknown> | undefined;
     installFetch((url, init) => {
       if (url.endsWith("/agentmemory/livez")) return new Response("ok", { status: 200 });
       if (url.endsWith("/agentmemory/smart-search")) {
         const body = JSON.parse((init?.body as string) || "{}");
+        smartSearchBody = body;
         return new Response(
           JSON.stringify({
             mode: "compact",
@@ -69,10 +71,19 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
       }
       return new Response("", { status: 404 });
     });
-    const res = await handleToolCall("memory_smart_search", { query: "auth bug", limit: 5 });
+    const res = await handleToolCall("memory_smart_search", {
+      query: "auth bug",
+      limit: 5,
+      project: "api",
+    });
     const body = JSON.parse(res.content[0].text);
     expect(body.query).toBe("auth bug");
     expect(body.results[0].id).toBe("m1");
+    expect(smartSearchBody).toMatchObject({
+      query: "auth bug",
+      limit: 5,
+      project: "api",
+    });
   });
 
   it("proxies memory_recall to POST /agentmemory/search and forwards format/token_budget (#507)", async () => {
@@ -100,6 +111,7 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
       limit: 5,
       format: "full",
       token_budget: 800,
+      project: "api",
     });
     const body = JSON.parse(res.content[0].text);
     expect(body.mode).toBe("full");
@@ -111,8 +123,44 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
       limit: 5,
       format: "full",
       token_budget: 800,
+      project: "api",
     });
     expect(calls.find((c) => c.url.endsWith("/agentmemory/smart-search"))).toBeUndefined();
+  });
+
+  it("proxies memory_save to POST /agentmemory/remember with project (#926)", async () => {
+    const calls: Array<{ url: string; body?: unknown }> = [];
+    installFetch((url, init) => {
+      if (url.endsWith("/agentmemory/livez")) return new Response("ok", { status: 200 });
+      const body = init?.body ? JSON.parse(init.body as string) : undefined;
+      calls.push({ url, body });
+      if (url.endsWith("/agentmemory/remember")) {
+        return new Response(JSON.stringify({ success: true, memory: { id: "mem_1" } }), {
+          status: 201,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return new Response("not found", { status: 404 });
+    });
+
+    await handleToolCall("memory_save", {
+      content: "proxy scoped memory",
+      concepts: "mcp, project",
+      files: "src/mcp/standalone.ts",
+      project: "api",
+    });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toEqual({
+      url: `${BASE}/agentmemory/remember`,
+      body: {
+        content: "proxy scoped memory",
+        type: "fact",
+        concepts: ["mcp", "project"],
+        files: ["src/mcp/standalone.ts"],
+        project: "api",
+      },
+    });
   });
 
   it("memory_recall defaults format to 'full' when omitted (#507)", async () => {

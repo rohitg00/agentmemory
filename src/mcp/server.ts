@@ -121,12 +121,14 @@ export function registerMcpEndpoints(
               typeof args.agentId === "string" && args.agentId.trim().length > 0
                 ? (args.agentId as string).trim()
                 : undefined;
+            const project = asNonEmptyString(args.project);
             const result = await sdk.trigger({ function_id: "mem::search", payload: {
               query: args.query,
               limit: typeof args.limit === "number" ? args.limit : 10,
               format,
               token_budget: tokenBudget,
               agentId: recallAgentId,
+              ...(project !== undefined && { project }),
             } });
             const text =
               format === "narrative" &&
@@ -273,12 +275,14 @@ export function registerMcpEndpoints(
             }
             const expandIds = parseCsvList(args.expandIds).slice(0, 20);
             const limit = Math.max(1, Math.min(100, asNumber(args.limit, 10) ?? 10));
+            const project = asNonEmptyString(args.project);
             const result = await sdk.trigger({
               function_id: "mem::smart-search",
               payload: {
                 query: args.query,
                 expandIds,
                 limit,
+                ...(project !== undefined && { project }),
               },
             });
             return {

@@ -89,6 +89,15 @@ describe("Tools Registry", () => {
       expect(tool.inputSchema.properties).toBeDefined();
     }
   });
+
+  it("core memory save and read tools expose project scope inputs (#926)", () => {
+    const tools = new Map(CORE_TOOLS.map((tool) => [tool.name, tool]));
+    for (const name of ["memory_save", "memory_recall", "memory_smart_search"]) {
+      expect(tools.get(name)?.inputSchema.properties.project).toMatchObject({
+        type: "string",
+      });
+    }
+  });
 });
 
 describe("InMemoryKV", () => {
@@ -220,6 +229,72 @@ describe("handleToolCall", () => {
     const parsed = JSON.parse(result.content[0].text);
     expect(parsed.results).toHaveLength(1);
     expect(parsed.results[0].content).toBe("TypeScript is great");
+  });
+
+  it("memory_save stores project and local project reads keep matching plus legacy memories (#926)", async () => {
+    const kv = new InMemoryKV();
+    const api = JSON.parse(
+      (
+        await handleToolCall(
+          "memory_save",
+          {
+            content: "API request-scoped JWT middleware",
+            project: " api ",
+          },
+          kv,
+        )
+      ).content[0].text,
+    ) as { saved: string };
+    const web = JSON.parse(
+      (
+        await handleToolCall(
+          "memory_save",
+          {
+            content: "Web request-scoped JWT middleware",
+            project: "web",
+          },
+          kv,
+        )
+      ).content[0].text,
+    ) as { saved: string };
+    await handleToolCall(
+      "memory_save",
+      { content: "Legacy request-scoped JWT middleware" },
+      kv,
+    );
+
+    const apiMemory = await kv.get<{ project?: string }>("mem:memories", api.saved);
+    const webMemory = await kv.get<{ project?: string }>("mem:memories", web.saved);
+    expect(apiMemory?.project).toBe("api");
+    expect(webMemory?.project).toBe("web");
+
+    const apiRecall = JSON.parse(
+      (
+        await handleToolCall(
+          "memory_recall",
+          { query: "request-scoped JWT", project: "api" },
+          kv,
+        )
+      ).content[0].text,
+    ) as { results: Array<{ content: string; project?: string }> };
+    expect(apiRecall.results.map((m) => m.content)).toEqual([
+      "API request-scoped JWT middleware",
+      "Legacy request-scoped JWT middleware",
+    ]);
+
+    const webSmartSearch = JSON.parse(
+      (
+        await handleToolCall(
+          "memory_smart_search",
+          { query: "request-scoped JWT", project: "web" },
+          kv,
+        )
+      ).content[0].text,
+    ) as { results: Array<{ content: string; project?: string }> };
+    expect(webSmartSearch.results.map((m) => m.content)).toEqual([
+      "Web request-scoped JWT middleware",
+      "Legacy request-scoped JWT middleware",
+    ]);
   });
 
   it("memory_save accepts concepts/files as arrays (plugin skill format, #139)", async () => {
