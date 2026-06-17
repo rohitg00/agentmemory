@@ -60,7 +60,7 @@ Stop conditions:
 | Transformer pipeline options | Failing then passing local provider tests | complete | Focused tests assert local `pipeline()` receives `{ local_files_only: true, quantized: false }`. |
 | Docs | README and `.env.example` inspection | complete | README and `.env.example` now document primary `LOCAL_EMBEDDING_MODEL`, fallback `EMBEDDING_MODEL`, dimension override, and local cache/offline behavior. Stale README `384-dimensional` restriction was removed. |
 | Build/type contract | `corepack pnpm run build` | complete | Build completed successfully in ~7s with tsdown declaration generation. |
-| GitHub push prep | `$github-push-prepare` local branch-prep phase | pending | Must report branch, base SHA, review/security gates, commit, and next commands or blocker. |
+| GitHub push prep | `$github-push-prepare` local branch-prep phase | complete | Local `origin/main` base `0cd8711303473b5cc1cd3ac7fd8739a2d40f8831` was already an ancestor of commit `f4e4f343`; no base merge needed. Fetch/push/PR creation were not run. |
 
 ## Subagent Ledger
 
@@ -90,3 +90,15 @@ Stop conditions:
   - Test coverage reviewer: `ACCEPT`; key behavior covered, table not exhaustively tested but representative non-384 entries are sufficient for this diff.
   - Security/boundary reviewer: `ACCEPT`; no remote embedding auto-enable, no dependency/auth/REST/MCP/schema/hook changes, local-file mode reduces model-download/data-egress risk.
   - Maintainability/integration reviewer: `ACCEPT`; diff preserves `LOCAL_EMBEDDING_MODEL` precedence and remains scoped.
+- Commit: `f4e4f343403021743ac0ec9dddb79ff1a488d1f7` (`fix: configure local embedding dimensions`).
+- GitHub push-prep local phase:
+  - Branch: `issue/917-local-embedding-model-dimensions`.
+  - PR base used: local `refs/remotes/origin/main` at `0cd8711303473b5cc1cd3ac7fd8739a2d40f8831`; freshness unverified because `git fetch origin main` was not approved.
+  - Branch diff from base: `.env.example`, `README.md`, task plan/todo docs, `src/providers/embedding/local.ts`, `test/embedding-provider.test.ts`.
+  - Base integration: no-op; captured base is already an ancestor of `HEAD`.
+  - Post-commit verification: `git diff --check 0cd8711303473b5cc1cd3ac7fd8739a2d40f8831...HEAD` passed; focused Vitest passed 43/43; `corepack pnpm run build` passed; `corepack pnpm test` passed 171 files / 2232 tests; Semgrep on changed surface passed with 0 findings.
+  - Build regenerated transient plugin script artifacts; they were restored after verification. Final status is clean.
+  - Remote writes not run. Next commands if approved later:
+    - `git fetch origin main`
+    - `git push -u origin issue/917-local-embedding-model-dimensions`
+    - `gh pr create --base main --head issue/917-local-embedding-model-dimensions`
