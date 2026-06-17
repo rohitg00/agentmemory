@@ -55,7 +55,7 @@ Stop conditions:
 | Confirm local implementation state | Read `src/state/kv.ts`, state config, runtime config renderers, README/SECURITY | Done | Storage is iii-engine file-based state; no encryption support found. |
 | Document current state-at-rest posture | Markdown diff review and whitespace check | Done | `README.md` and `SECURITY.md` now state that agentmemory does not encrypt iii-engine state files itself. |
 | Record approval blocker for real encryption | Task record, plan, and docs note boundary | Done | This file, `plan.md`, `README.md`, and `SECURITY.md` carry the stop condition. |
-| GitHub feature-loop prep | Required local PR-prep checks, commit, and handoff | Pending | To run after implementation review. |
+| GitHub feature-loop prep | Required local PR-prep checks, commit, and handoff | Done | Local commits created on `github-pr/issue-195-encrypted-storage-ce60bba0`; push/PR not run without approval. |
 
 ## Subagent Ledger
 
@@ -73,3 +73,8 @@ Stop conditions:
 - 2026-06-17: Verified `git diff --check` on task-owned docs (exit 0).
 - 2026-06-17: Verified `corepack pnpm exec vitest run test/engine-launch.test.ts test/build-runtime.test.ts` (2 files, 17 tests passed).
 - 2026-06-17: `corepack pnpm exec prettier --check ...` was not usable because Prettier is not a project dependency; replaced with `git diff --check` in the plan.
+- 2026-06-17: Staged task-owned files only and verified `gitleaks protect --staged --redact` (no leaks found).
+- 2026-06-17: Created local commit `117889fa` (`docs: clarify state encryption posture`).
+- 2026-06-17: Used existing local `origin/main` ref `ce60bba0682e7e8fdfcc62250a2491d1e6a20e5c`; no fetch was run, so freshness is unverified.
+- 2026-06-17: Base merge was a no-op because the local `origin/main` ref is already an ancestor of the branch.
+- 2026-06-17: `codex-security:security-diff-scan` was skipped for the stable diff because it contains only Markdown documentation/task-state files and no executable, configuration, dependency, schema, or storage-format change; passive security review, focused implementation review, `git diff --check`, targeted vitest, and staged Gitleaks covered the changed surface.
