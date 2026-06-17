@@ -1,0 +1,17 @@
+apiVersion: v2
+name: agentmemory
+description: Kubernetes Helm chart for agentmemory
+type: application
+version: 0.1.0
+appVersion: "0.9.27"
+home: https://github.com/wbugitlab1/agentmemory
+sources:
+  - https://github.com/wbugitlab1/agentmemory
+keywords:
+  - agentmemory
+  - mcp
+  - ai
+  - memory
+  - iii-engine
+maintainers:
+  - name: agentmemory maintainers

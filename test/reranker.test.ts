@@ -29,28 +29,60 @@ function makeResult(
 
 async function importRerankerWithScores(scoreForText: (text: string) => number) {
   vi.resetModules();
-  vi.doMock("@xenova/transformers", () => ({
-    pipeline: vi.fn(async () =>
+  vi.doMock("../src/providers/transformers.js", () => ({
+    loadTransformers: vi.fn(async () => ({
+      pipeline: vi.fn(async () =>
       vi.fn(async (text: string) => [
         { label: "LABEL_0", score: scoreForText(text) },
       ]),
     ),
+    })),
   }));
 
   return import("../src/state/reranker.js");
 }
 
+function importRerankerWithWasmFlags() {
+  vi.resetModules();
+  const wasm = { numThreads: 4 };
+  const reranker = vi.fn(async () => [{ score: 0.7 }]);
+  const loadTransformersCalls: number[] = [];
+  const pipeline = vi.fn(async () => {
+    return reranker;
+  });
+  const loadTransformers = vi.fn(async () => {
+    wasm.numThreads = 1;
+    loadTransformersCalls.push(wasm.numThreads);
+    return {
+      env: { backends: { onnx: { wasm } } },
+      pipeline,
+    };
+  });
+  vi.doMock("../src/providers/transformers.js", () => ({
+    loadTransformers,
+  }));
+  return {
+    wasm,
+    pipeline,
+    loadTransformersCalls,
+    load: () => import("../src/state/reranker.js"),
+  };
+}
+
 async function importUnavailableReranker() {
   vi.resetModules();
-  vi.doMock("@xenova/transformers", () => {
-    throw new Error("not installed");
-  });
+  vi.doMock("../src/providers/transformers.js", () => ({
+    loadTransformers: vi.fn(async () => {
+      throw new Error("not installed");
+    }),
+  }));
 
   return import("../src/state/reranker.js");
 }
 
 afterEach(() => {
   vi.doUnmock("@xenova/transformers");
+  vi.doUnmock("../src/providers/transformers.js");
   vi.resetModules();
 });
 
@@ -115,6 +147,26 @@ describe("reranker", () => {
 
     await rerank("test query", results);
     expect(isRerankerAvailable()).toBe(true);
+  });
+
+  it("disables threaded ONNX WASM before loading the reranker pipeline on Node", async () => {
+    const { wasm, pipeline, loadTransformersCalls, load } =
+      importRerankerWithWasmFlags();
+    const { rerank } = await load();
+    const localResults = [
+      makeResult("o1", "first result", 0.8),
+      makeResult("o2", "second result", 0.5),
+    ];
+
+    await rerank("test query", localResults);
+
+    expect(wasm.numThreads).toBe(1);
+    expect(loadTransformersCalls).toEqual([1]);
+    expect(pipeline).toHaveBeenCalledWith(
+      "text-classification",
+      "Xenova/ms-marco-MiniLM-L-6-v2",
+      { quantized: true },
+    );
   });
 
   it("handles single result gracefully", async () => {
