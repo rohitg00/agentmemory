@@ -226,7 +226,7 @@
 **Files:**
 - Git metadata only, plus task-owned files from Task 1.
 
-- [ ] **Step 1: Run `github-push-prepare` preflight**
+- [x] **Step 1: Run `github-push-prepare` preflight**
 
   Run the read-only preflight commands required by the skill:
 
@@ -240,7 +240,7 @@
 
   Expected: branch is `github-pr/issue-912-readme-v030-docs-0cd8711`; no unrelated dirty/staged files.
 
-- [ ] **Step 2: Capture local PR base without fetch**
+- [x] **Step 2: Capture local PR base without fetch**
 
   Because fetch is not approved, use existing local `refs/remotes/origin/main` only:
 
@@ -253,7 +253,7 @@
 
   Expected: base exists; freshness is explicitly unverified.
 
-- [ ] **Step 3: Stage and commit only task-owned files after review gates**
+- [x] **Step 3: Stage and commit only task-owned files after review gates**
 
   After verification and required review gates pass or are recorded as skipped with rationale:
 
@@ -266,7 +266,7 @@
 
   Expected: one commit containing only the README stats update and task-state evidence.
 
-- [ ] **Step 4: Final handoff**
+- [x] **Step 4: Final handoff**
 
   Report:
 

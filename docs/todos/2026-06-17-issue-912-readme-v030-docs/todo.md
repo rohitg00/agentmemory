@@ -52,8 +52,8 @@
 | Update Hermes health example | Compare example against `api::health` response in `src/triggers/api.ts` | Complete | Hermes README now promises the stable `"status":"healthy"` field plus expanded payload fields, not an exact object |
 | Confirm nearby README counts | Check MCP tools, REST endpoints, hooks, skills against source/config | Complete | Local counts: 56 MCP tools, 129 REST endpoints, 12 hook events, 15 skills |
 | Verify docs formatting / source count evidence | Run targeted repo-native or closest available checks | Complete with blocker | Prettier check blocked because `prettier` is not installed; substituted `git diff --check`, ESLint on touched TS files, source count checks, README coverage checks, Vitest, and `skills:check` |
-| Run security gates for tooling change | Semgrep for script/test/tooling surface and Gitleaks before commit | In progress | Semgrep completed with 0 findings; staged Gitleaks pending before commit |
-| Prepare local PR branch | `github-push-prepare` local branch-prep phase, no remote writes | In progress | Branch created locally; no fetch/push approved |
+| Run security gates for tooling change | Semgrep for script/test/tooling surface and Gitleaks before commit | Complete | Semgrep completed with 0 findings; staged Gitleaks found no leaks |
+| Prepare local PR branch | `github-push-prepare` local branch-prep phase, no remote writes | Complete | Branch created locally; existing local `origin/main` base `0cd8711303473b5cc1cd3ac7fd8739a2d40f8831`; no fetch/push approved or performed; base merge no-op |
 
 ## Subagent Ledger
 
@@ -106,6 +106,11 @@
   - `corepack pnpm exec eslint scripts/skills/generate.ts test/plugin-surface-contract.test.ts` passed.
   - `git diff --check` passed.
   - `semgrep scan --config p/default --error --metrics=off scripts/skills/generate.ts test/plugin-surface-contract.test.ts README.md integrations/hermes/README.md` completed with 0 findings.
+  - `gitleaks protect --staged --redact` scanned staged content and found no leaks.
+  - Final post-commit verification: `corepack pnpm exec vitest run test/plugin-surface-contract.test.ts` passed 9/9 tests; `corepack pnpm run skills:check` passed; `corepack pnpm exec eslint scripts/skills/generate.ts test/plugin-surface-contract.test.ts` passed; `git diff --check HEAD~1..HEAD` passed.
+  - Local PR base capture used existing `refs/remotes/origin/main` at `0cd8711303473b5cc1cd3ac7fd8739a2d40f8831`; freshness is unverified because fetch was not approved.
+- Commits:
+  - `e4308453` docs: update README source stats
 - Formatting caveat:
   - `corepack pnpm exec prettier --check ...` failed because `prettier` is not installed in this repo.
 
@@ -114,3 +119,4 @@
 - No unrelated dirty paths were present before branch creation.
 - No remote operations were run.
 - Pnpm auto-inserted an `allowBuilds` block into `pnpm-workspace.yaml` during dependency setup; this was not task-owned and was removed.
+- No base merge was needed because the captured local `origin/main` base is already an ancestor of the working branch.
