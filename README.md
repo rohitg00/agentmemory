@@ -994,14 +994,14 @@ npm install @xenova/transformers
 
 | Provider | Model | Cost | Notes |
 |---|---|---|---|
-| **Local (recommended)** | `paraphrase-multilingual-MiniLM-L12-v2` | Free | `EMBEDDING_PROVIDER=local`; override with `LOCAL_EMBEDDING_MODEL`; offline, +8pp recall over BM25-only |
+| **Local (recommended)** | `paraphrase-multilingual-MiniLM-L12-v2` | Free | `EMBEDDING_PROVIDER=local`; override with `LOCAL_EMBEDDING_MODEL` or fallback `EMBEDDING_MODEL`; offline, +8pp recall over BM25-only |
 | Gemini | `gemini-embedding-001` | Free tier | `EMBEDDING_PROVIDER=gemini` + `GEMINI_API_KEY`; 100+ languages, 768/1536/3072 dims (MRL), 2048-token input. Replaces `text-embedding-004` ([deprecated, shutdown Jan 14, 2026](https://ai.google.dev/gemini-api/docs/deprecations)) |
 | OpenAI | `text-embedding-3-small` | $0.02/1M | `EMBEDDING_PROVIDER=openai` + `OPENAI_API_KEY`; highest quality |
 | Voyage AI | `voyage-code-3` | Paid | `EMBEDDING_PROVIDER=voyage` + `VOYAGE_API_KEY`; optimized for code |
 | Cohere | `embed-english-v3.0` | Free trial | `EMBEDDING_PROVIDER=cohere` + `COHERE_API_KEY`; general purpose |
 | OpenRouter | Any model | Varies | `EMBEDDING_PROVIDER=openrouter` + `OPENROUTER_API_KEY`; set `OPENROUTER_EMBEDDING_DIMENSIONS` for non-1536 models |
 
-`LOCAL_EMBEDDING_MODEL` should name a 384-dimensional Xenova feature-extraction model; the embedding dimension guard rejects mismatched vectors instead of silently corrupting the vector index.
+`LOCAL_EMBEDDING_MODEL` should name a Xenova feature-extraction model. agentmemory derives dimensions for common 384/512/768/1024-dimensional Xenova models and otherwise falls back to 384 unless `OPENAI_EMBEDDING_DIMENSIONS` is set. The dimension guard rejects mismatched vectors instead of silently corrupting the vector index. Local model loading uses transformers.js offline/local-file mode, so selected models must already be available in the transformers.js model cache.
 
 ---
 
@@ -1344,7 +1344,7 @@ Reasoning-class models (`o1`-style with `<think>` blocks) can return empty `cont
 
 OpenRouter reasoning models can be configured with `OPENROUTER_REASONING_EFFORT=xhigh|high|medium|low|minimal|none`. Set `OPENROUTER_INCLUDE_REASONING=true` to ask supported OpenRouter models to return reasoning output when they expose it.
 
-Local embeddings are available via `@xenova/transformers` — set `EMBEDDING_PROVIDER=local` to use `paraphrase-multilingual-MiniLM-L12-v2` entirely on-device, or set `LOCAL_EMBEDDING_MODEL` to another 384-dimensional Xenova feature-extraction model. With no `EMBEDDING_PROVIDER`, agentmemory uses BM25+Graph search and does not call a text embedding provider.
+Local embeddings are available via `@xenova/transformers` — set `EMBEDDING_PROVIDER=local` to use `paraphrase-multilingual-MiniLM-L12-v2` entirely on-device, or set `LOCAL_EMBEDDING_MODEL` to another Xenova feature-extraction model. Common 384/512/768/1024-dimensional local models are recognized automatically; set `OPENAI_EMBEDDING_DIMENSIONS` for custom local models. With no `EMBEDDING_PROVIDER`, agentmemory uses BM25+Graph search and does not call a text embedding provider.
 
 ### Cost-aware model selection
 
@@ -1530,11 +1530,13 @@ Create `~/.agentmemory/.env`:
 
 # Embedding provider (explicit opt-in; default is BM25+Graph with no embeddings)
 # EMBEDDING_PROVIDER=local
+# LOCAL_EMBEDDING_MODEL=Xenova/paraphrase-multilingual-MiniLM-L12-v2
+# EMBEDDING_MODEL=Xenova/bge-large-zh-v1.5 # Fallback alias for local embeddings when LOCAL_EMBEDDING_MODEL is unset
 # VOYAGE_API_KEY=...
 # OPENAI_API_KEY=sk-...
 # OPENAI_BASE_URL=https://api.openai.com   # Override for Azure / vLLM / LM Studio / proxies
 # OPENAI_EMBEDDING_MODEL=text-embedding-3-small
-# OPENAI_EMBEDDING_DIMENSIONS=1536        # Required when the model is not in the known-models table
+# OPENAI_EMBEDDING_DIMENSIONS=1536        # Required when the model is not in the known-models table; also overrides custom local embedding dimensions
 # OPENROUTER_EMBEDDING_MODEL=openai/text-embedding-3-small
 # OPENROUTER_EMBEDDING_DIMENSIONS=1536    # Required when the OpenRouter model is not 1536-dim
 
