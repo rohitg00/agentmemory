@@ -2,11 +2,11 @@ import { createRequire } from "node:module";
 
 const cjkRequire = createRequire(import.meta.url);
 
-const CJK_RE = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
+const CJK_RE = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}\u30FC\uFF70]/u;
 const HAN_RE = /\p{Script=Han}/u;
-const KANA_RE = /[\p{Script=Hiragana}\p{Script=Katakana}]/u;
+const KANA_RE = /[\p{Script=Hiragana}\p{Script=Katakana}\u30FC\uFF70]/u;
 const HANGUL_RE = /\p{Script=Hangul}/u;
-const CJK_RUN_RE = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]+/gu;
+const CJK_RUN_RE = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}\u30FC\uFF70]+/gu;
 const HANGUL_BLOCK_RE = /[가-힯]+/g;
 
 type Script = "han" | "kana" | "hangul" | "other";
@@ -15,6 +15,17 @@ const hintShown = new Set<string>();
 
 export function hasCjk(text: string): boolean {
   return CJK_RE.test(text);
+}
+
+export function cjkBigrams(text: string): string[] {
+  const out: string[] = [];
+  for (const m of text.matchAll(CJK_RUN_RE)) {
+    const chars = Array.from(m[0]);
+    for (let i = 0; i < chars.length - 1; i++) {
+      out.push(chars[i] + chars[i + 1]);
+    }
+  }
+  return out;
 }
 
 export function detectScript(text: string): Script {
@@ -59,7 +70,7 @@ function getJieba(): JiebaInstance | null {
   } catch {
     showHintOnce(
       "jieba",
-      "install @node-rs/jieba to improve Chinese search; falling back to whole-string tokenization",
+      "install @node-rs/jieba to improve Chinese search; using whole-string segmentation with BM25 bigram fallback",
     );
     return null;
   }
@@ -82,7 +93,7 @@ function getJaSegmenter(): JaSegmenter | null {
   } catch {
     showHintOnce(
       "tiny-segmenter",
-      "install tiny-segmenter to improve Japanese search; falling back to whole-string tokenization",
+      "install tiny-segmenter to improve Japanese search; using whole-string segmentation with BM25 bigram fallback",
     );
     return null;
   }

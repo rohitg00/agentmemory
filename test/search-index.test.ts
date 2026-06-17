@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { SearchIndex } from "../src/state/search-index.js";
-import { segmentCjk } from "../src/state/cjk-segmenter.js";
+import { cjkBigrams, segmentCjk } from "../src/state/cjk-segmenter.js";
 import type { CompressedObservation } from "../src/types.js";
 
 function makeObs(
@@ -162,6 +162,26 @@ describe("SearchIndex", () => {
       expect(restored.search("alpha")).toEqual([]);
       expect(restored.search("beta")).toHaveLength(1);
     });
+
+    it("serializes the BM25 tokenization version", () => {
+      index.add(makeObs({ id: "obs_a", title: "alpha doc" }));
+
+      const serialized = JSON.parse(index.serialize()) as { v: number };
+
+      expect(serialized.v).toBe(3);
+    });
+
+    it("rejects stale BM25 snapshots from before CJK bigram tokenization", () => {
+      index.add(makeObs({ id: "obs_a", title: "alpha doc" }));
+      const staleSnapshot = JSON.stringify({
+        ...JSON.parse(index.serialize()),
+        v: 2,
+      });
+
+      const restored = SearchIndex.deserialize(staleSnapshot);
+
+      expect(restored.size).toBe(0);
+    });
   });
 
   it("returns empty for empty query", () => {
@@ -244,6 +264,96 @@ describe("SearchIndex", () => {
     const hit = results.find((r) => r.obsId === "obs_zh");
     expect(hit).toBeDefined();
     expect(hit!.score).toBeGreaterThan(0);
+  });
+
+  it("extracts overlapping CJK character bigrams", () => {
+    expect(cjkBigrams("人工智能技术发展迅速")).toEqual([
+      "人工",
+      "工智",
+      "智能",
+      "能技",
+      "技术",
+      "术发",
+      "发展",
+      "展迅",
+      "迅速",
+    ]);
+    expect(cjkBigrams("auth人工智能")).toEqual(["人工", "工智", "智能"]);
+    expect(cjkBigrams("コンピューター")).toEqual([
+      "コン",
+      "ンピ",
+      "ピュ",
+      "ュー",
+      "ータ",
+      "ター",
+    ]);
+  });
+
+  it("indexes CJK bigrams for internal substring search", () => {
+    index.add(
+      makeObs({
+        id: "obs_zh_bigram",
+        title: "人工智能技术发展迅速",
+        narrative: "中文内容没有空格也应该支持部分查询",
+        facts: [],
+        concepts: [],
+      }),
+    );
+
+    expect(index.search("人工智能").map((r) => r.obsId)).toContain(
+      "obs_zh_bigram",
+    );
+    expect(index.search("技术").map((r) => r.obsId)).toContain("obs_zh_bigram");
+    expect(index.search("发展").map((r) => r.obsId)).toContain("obs_zh_bigram");
+  });
+
+  it("indexes CJK bigrams across optional segmenter boundaries", () => {
+    index.add(
+      makeObs({
+        id: "obs_zh_boundary_bigram",
+        title: "人工智能技术发展迅速",
+        narrative: "",
+        facts: [],
+        concepts: [],
+      }),
+    );
+
+    expect(index.search("能技").map((r) => r.obsId)).toContain(
+      "obs_zh_boundary_bigram",
+    );
+  });
+
+  it("indexes CJK bigrams when optional segmenters do not split a run", () => {
+    index.add(
+      makeObs({
+        id: "obs_ko_bigram",
+        title: "프로젝트메모리",
+        narrative: "",
+        facts: [],
+        concepts: [],
+      }),
+    );
+
+    expect(index.search("트메").map((r) => r.obsId)).toContain("obs_ko_bigram");
+  });
+
+  it("indexes Japanese long-vowel mark bigrams", () => {
+    index.add(
+      makeObs({
+        id: "obs_ja_long_vowel",
+        title: "コンピューター",
+        narrative: "",
+        facts: [],
+        concepts: [],
+      }),
+    );
+
+    expect(index.search("ュー").map((r) => r.obsId)).toContain(
+      "obs_ja_long_vowel",
+    );
+    expect(index.search("ータ").map((r) => r.obsId)).toContain(
+      "obs_ja_long_vowel",
+    );
   });
 
   it("segments Japanese (kana + kanji) text into words", () => {

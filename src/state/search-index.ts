@@ -1,7 +1,9 @@
 import type { CompressedObservation } from "../types.js";
 import { stem } from "./stemmer.js";
 import { getSynonyms } from "./synonyms.js";
-import { segmentCjk, hasCjk } from "./cjk-segmenter.js";
+import { cjkBigrams, segmentCjk, hasCjk } from "./cjk-segmenter.js";
+
+const SEARCH_INDEX_VERSION = 3;
 
 interface IndexEntry {
   obsId: string;
@@ -201,7 +203,7 @@ export class SearchIndex {
         [id, Array.from(counts.entries())] as [string, [string, number][]],
     );
     return JSON.stringify({
-      v: 2,
+      v: SEARCH_INDEX_VERSION,
       entries,
       inverted,
       docTerms,
@@ -213,7 +215,8 @@ export class SearchIndex {
     try {
       const idx = new SearchIndex();
       const data = JSON.parse(json);
-      if (!data?.entries || !data?.inverted || !data?.docTerms) return idx;
+      if (data?.v !== SEARCH_INDEX_VERSION) return idx;
+      if (!data.entries || !data.inverted || !data.docTerms) return idx;
       for (const [key, val] of data.entries) {
         idx.entries.set(key, val);
       }
@@ -252,8 +255,11 @@ export class SearchIndex {
       if (raw.length < 2) continue;
       if (hasCjk(raw)) {
         for (const seg of segmentCjk(raw)) {
-          if (seg.length >= 1) out.push(seg);
+          if (seg.length >= 1) {
+            out.push(seg);
+          }
         }
+        out.push(...cjkBigrams(raw));
       } else {
         out.push(stem(raw));
       }

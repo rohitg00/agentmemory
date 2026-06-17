@@ -982,7 +982,7 @@ Triple-stream retrieval combining three signals:
 
 Fused with Reciprocal Rank Fusion (RRF, k=60) and session-diversified (max 3 results per session).
 
-BM25 tokenizes Greek, Cyrillic, Hebrew, Arabic, and accented Latin out of the box. For Chinese / Japanese / Korean memories, install the optional segmenters (`npm install @node-rs/jieba tiny-segmenter`) to split CJK runs into word-level tokens; without them, agentmemory soft-falls to whole-run tokenization and prints a one-time hint on stderr.
+BM25 tokenizes Greek, Cyrillic, Hebrew, Arabic, and accented Latin out of the box. Chinese / Japanese / Korean runs are searchable without extra dependencies through overlapping CJK character bigrams. Optional segmenters (`npm install @node-rs/jieba tiny-segmenter`) improve Chinese and Japanese search with word-level tokens; when they are unavailable, agentmemory keeps the bigram fallback and prints a one-time hint on stderr.
 
 ### Embedding providers
 
