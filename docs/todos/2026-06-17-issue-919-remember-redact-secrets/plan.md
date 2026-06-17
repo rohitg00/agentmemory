@@ -60,12 +60,12 @@ Stop conditions:
 
 | Change | Verification method | Status | Evidence |
 | --- | --- | --- | --- |
-| Update `remember` skill workflow | `rg -n "secret|redact|preserve" plugin/skills/remember/SKILL.md`; `corepack pnpm run skills:check` | Pending | Expected: workflow and checklist mention redaction; skill lint passes. |
-| Add safe secret-redaction example | `rg -n "REDACTED|credential|secret|memory_save" plugin/skills/remember/EXAMPLES.md`; `git diff --check` | Pending | Expected: example includes placeholder, no raw sample secret is persisted. |
-| Align OpenCode command guidance | `rg -n "secret|redact|preserve" plugin/opencode/commands/remember.md` | Pending | Expected: OpenCode guidance redacts raw secrets before save. |
-| Security-sensitive docs diff review | Final review subagent, Gitleaks detect, staged Gitleaks before commit, Semgrep if available | Pending | Expected: no raw secrets or security guidance regressions. |
-| Full PR-readiness tests | `corepack pnpm test` | Pending | Expected: full non-integration Vitest suite passes, or PR readiness is blocked with evidence. |
-| GitHub push-prep local phase | `github-push-prepare` preflight, local base capture, review chain, staged commit | Pending | Expected: local branch committed; push/PR commands withheld until explicit approval. |
+| Update `remember` skill workflow | `rg -n "secret|redact|preserve" plugin/skills/remember/SKILL.md`; `corepack pnpm run skills:check` | Done | `plugin/skills/remember/SKILL.md` requires secret inspection, descriptive placeholders, sanitized `content`, and no secret echo; `skills:check` passed. |
+| Add safe secret-redaction example | `rg -n "REDACTED|credential|secret|memory_save" plugin/skills/remember/EXAMPLES.md`; raw-secret pattern search; `git diff --check` | Done | `plugin/skills/remember/EXAMPLES.md` uses `[RAW_TOKEN_REDACTED_IN_EXAMPLE]` and `[REDACTED_GITHUB_TOKEN]`; realistic raw-secret pattern search returned no matches; diff checks passed. |
+| Align OpenCode command guidance | `rg -n "secret|redact|preserve" plugin/opencode/commands/remember.md` | Done | OpenCode `/remember` now requires redaction before `memory_save`, sanitized content, and no secret echo. |
+| Security-sensitive docs diff review | Final review subagents, Gitleaks detect/current-tree, staged Gitleaks before commit, Semgrep, Codex Security diff scan | Done | Final docs/security reviewer ACCEPT; staged `gitleaks protect --staged --redact` passed before commit `77ba2304`; current-tree Gitleaks passed; Semgrep passed with 0 findings; Codex Security diff scan reported no findings. Full-history Gitleaks reported 14 historical leaks not introduced by this patch. |
+| Full PR-readiness tests | `corepack pnpm test` | Done | Full non-integration Vitest passed: 171 files, 2228 tests. |
+| GitHub push-prep local phase | `github-push-prepare` preflight, local base capture, review chain, staged commit | Done | Local preflight done; branch was clean after commit `77ba2304`; existing local `origin/main` at `0cd8711303473b5cc1cd3ac7fd8739a2d40f8831` was used without fetch; base is already an ancestor of `HEAD`, so integration is a no-op. Follow-up staged Gitleaks passed for task-state reconciliation. |
 
 ## Subagent Ledger
 
