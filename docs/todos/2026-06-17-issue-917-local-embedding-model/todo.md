@@ -98,7 +98,7 @@ Stop conditions:
   - Base integration: no-op; captured base is already an ancestor of `HEAD`.
   - Post-commit verification: `git diff --check 0cd8711303473b5cc1cd3ac7fd8739a2d40f8831...HEAD` passed; focused Vitest passed 43/43; `corepack pnpm run build` passed; `corepack pnpm test` passed 171 files / 2232 tests; Semgrep on changed surface passed with 0 findings.
   - Build regenerated transient plugin script artifacts; they were restored after verification. Final status is clean.
-  - Remote writes not run. Next commands if approved later:
-    - `git fetch origin main`
-    - `git push -u origin issue/917-local-embedding-model-dimensions`
-    - `gh pr create --base main --head issue/917-local-embedding-model-dimensions`
+  - Remote writes: after current-turn approval, `git fetch origin main` updated local `origin/main` to `5cfc90b436033a2378b08eb67ab19ad96967a7d6`; that base was merged into the branch as `e91b4991f76da5c5527dae2356d796cf983c799d`.
+  - Post-base-merge checks: `git diff --check refs/remotes/origin/main...HEAD`, focused embedding provider Vitest, changed-surface Semgrep, and `corepack pnpm test` passed.
+  - Push: `git push -u origin issue/917-local-embedding-model-dimensions` succeeded.
+  - PR: `https://github.com/wbugitlab1/agentmemory/pull/939`.
