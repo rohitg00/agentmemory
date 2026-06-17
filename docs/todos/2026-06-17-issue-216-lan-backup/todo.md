@@ -72,6 +72,7 @@ Stop conditions:
 | Build smoke | `tsdown` | Done | `./node_modules/.bin/tsdown` completed successfully; generated tracked plugin bundle noise was reverted because it was not task-owned source. Existing tsdown deprecation/timing/dynamic-import warnings remain. |
 | Typecheck | `tsc --noEmit` | Blocked | Repo-wide `./node_modules/.bin/tsc --noEmit --pretty false` fails on pre-existing unrelated errors outside the touched implementation. |
 | Prep-merge gates | Focused tests, diff checks, security scans, review chain | Done | `git diff --check` and `git diff --cached --check` passed; staged Semgrep scanned 14 tracked files with 0 findings; `gitleaks protect --staged --redact` found no leaks. |
+| Local main integration | Merge local `main`, rerun repo-native checks | Done | Merged local `main` (`42af80e5`) into the prep branch without conflict; `corepack pnpm exec vitest ...` passed 6 files / 51 tests; `corepack pnpm exec tsdown` passed after `corepack pnpm install --frozen-lockfile --ignore-scripts` resolved ignored-build hardening without lockfile changes. |
 | Issue close | GitHub issue state check and close | Planned | Only after successful local merge preparation. |
 
 ## Subagent Ledger
@@ -96,6 +97,8 @@ Stop conditions:
 - 2026-06-17: Additional review hardening added a Node-safe backup interval range, explicit host-with-port rejection, atomic-write proof via injected filesystem calls, old unrelated file retention proof, and real scheduled-run coverage.
 - 2026-06-17: A final CLI scope pass removed the runtime host guard from the general command dispatcher so status/doctor-only commands stay diagnostic; guard enforcement remains in runtime config rendering and worker startup.
 - 2026-06-17: Staged prep-merge gates passed: cached diff check, Semgrep over changed tracked files, and Gitleaks staged secret scan.
+- 2026-06-17: Merged local `main` (`42af80e5`) into the prep branch. The only incoming change was the repo instruction to prefer `corepack pnpm` verification after pnpm ignored-build hardening.
+- 2026-06-17: Re-ran verification on the integrated branch through repo-native `corepack pnpm exec` commands. Initial `pnpm exec` hit ignored-build hardening, then `corepack pnpm install --frozen-lockfile --ignore-scripts` completed without dependency metadata changes; focused Vitest and `tsdown` passed.
 
 ## Review Notes
 
@@ -108,3 +111,4 @@ Resolved review findings:
 
 Residual risks:
 - Repo-wide typecheck is still blocked by pre-existing baseline errors unrelated to this issue.
+- `corepack pnpm exec tsdown` still emits existing deprecation/plugin timing/dynamic-import warnings.

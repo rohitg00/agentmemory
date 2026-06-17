@@ -90,7 +90,9 @@ Evidence: README documents secure LAN mode and scheduled logical exports; `.env.
 - [x] Complete required review chain from `prep-merge-to-local-main`.
 - [x] Re-run Semgrep after staging so new files are tracked.
 - [x] Stage intended files and run `gitleaks protect --staged --redact`.
-- [ ] Commit, merge to local `main` per prep skill if gates pass.
+- [x] Commit and merge local `main` into the prep branch.
+- [x] Re-run focused repo-native checks after the local `main` merge.
+- [ ] Merge the prep branch to local `main` per prep skill if final gates pass.
 - [ ] Close GitHub issue #216 after successful local merge preparation.
 
 ## Self Review
