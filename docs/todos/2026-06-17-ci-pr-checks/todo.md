@@ -34,7 +34,7 @@ Known boundaries:
 
 | Change | Verification | Status | Evidence |
 | --- | --- | --- | --- |
-| PR branch pushes trigger CI automatically | Push task branch, inspect GitHub Actions event and PR status rollup | Blocked | Push of `a9a7b269` created a GitHub `PushEvent` but no `WorkflowRunEvent`; explicit workflow enable by ID completed and needs a fresh non-doc probe push. |
+| PR branch pushes trigger CI automatically | Push task branch, inspect GitHub Actions event and PR status rollup | Blocked | Pushes of `a9a7b269`, `5083688e`, and non-ignored probe `8869797e` created GitHub `PushEvent`s but no `WorkflowRunEvent`; explicit workflow enable by ID and explicit repo Actions permissions did not produce automatic runs. |
 | PR event behavior remains configured | Inspect workflow trigger block | Done | `pull_request.types` now includes `opened`, `synchronize`, `reopened`, and `ready_for_review`; local YAML parse passed. |
 | Main gate can require stable check names | Inspect automatic check names, then set branch protection | Pending | Pending |
 
@@ -43,3 +43,4 @@ Known boundaries:
 - 2026-06-17: Root-cause check found no automatic `pull_request` runs for PRs #923, #924, or #925. Manual `workflow_dispatch` runs execute successfully but do not populate `statusCheckRollup`.
 - 2026-06-17: Updated CI trigger plan in the PR worktree. Local checks passed: `ruby -ryaml -e 'YAML.load_file(".github/workflows/ci.yml"); puts "yaml ok"'`, `git diff --check`, and `semgrep scan --config p/default --error --metrics=off .github/workflows/ci.yml` with 0 findings. `actionlint` is not installed in this environment.
 - 2026-06-17: Pushed branch commit `a9a7b269`; GitHub recorded a `PushEvent` but created no workflow run and no PR status check. Pushed main commit `b5e02429` with the same CI trigger and Node 22 matrix; GitHub recorded the main `PushEvent` but still created no workflow run. Ran `gh workflow enable 295872504 --repo wbugitlab1/agentmemory` successfully for an explicit enable probe.
+- 2026-06-17: Pushed non-ignored probe commit `8869797e` adding `.github/ci-trigger-probe.txt`; GitHub again recorded only `PushEvent` and no CheckSuite. Ran `gh api -X PUT repos/wbugitlab1/agentmemory/actions/permissions -F enabled=true -f allowed_actions=all` successfully before removing the probe file for the final push test.
