@@ -5,6 +5,7 @@ vi.mock("../src/logger.js", () => ({
 }));
 
 import { registerActionsFunction } from "../src/functions/actions.js";
+import { KV } from "../src/state/schema.js";
 import type { Action, ActionEdge } from "../src/types.js";
 import { mockKV, mockSdk } from "./helpers/mocks.js";
 
@@ -383,6 +384,23 @@ describe("Actions Functions", () => {
       ).toBe(true);
     });
 
+    it("filters legacy comma-separated string tags", async () => {
+      const legacy = (await sdk.trigger("mem::action-create", {
+        title: "Legacy string tags",
+      })) as { success: boolean; action: Action };
+      await kv.set(KV.actions, legacy.action.id, {
+        ...legacy.action,
+        tags: "backend, legacy",
+      } as unknown as Action);
+
+      const result = (await sdk.trigger("mem::action-list", {
+        tags: ["legacy"],
+      })) as { success: boolean; actions: Action[] };
+
+      expect(result.success).toBe(true);
+      expect(result.actions.map((a) => a.title)).toContain("Legacy string tags");
+    });
+
     it("respects limit", async () => {
       const result = (await sdk.trigger("mem::action-list", {
         limit: 2,
@@ -390,6 +408,45 @@ describe("Actions Functions", () => {
 
       expect(result.success).toBe(true);
       expect(result.actions.length).toBe(2);
+    });
+
+    it("accepts string limits from HTTP query parameters", async () => {
+      const result = (await sdk.trigger("mem::action-list", {
+        limit: "2",
+      })) as { success: boolean; actions: Action[] };
+
+      expect(result.success).toBe(true);
+      expect(result.actions.length).toBe(2);
+    });
+
+    it("orders actionable actions by status before priority and recency", async () => {
+      const cancelled = (await sdk.trigger("mem::action-create", {
+        title: "Cancelled priority 10",
+        priority: 10,
+      })) as { success: boolean; action: Action };
+      const active = (await sdk.trigger("mem::action-create", {
+        title: "Active priority 10",
+        priority: 10,
+      })) as { success: boolean; action: Action };
+      await sdk.trigger("mem::action-update", {
+        actionId: cancelled.action.id,
+        status: "cancelled",
+      });
+      await sdk.trigger("mem::action-update", {
+        actionId: active.action.id,
+        status: "active",
+      });
+
+      const result = (await sdk.trigger("mem::action-list", {
+        limit: 10,
+      })) as { success: boolean; actions: Action[] };
+      const titles = result.actions.map((a) => a.title);
+
+      expect(result.success).toBe(true);
+      expect(titles[0]).toBe("Active priority 10");
+      expect(titles.indexOf("Cancelled priority 10")).toBeGreaterThan(
+        titles.indexOf("Task A"),
+      );
     });
   });
 

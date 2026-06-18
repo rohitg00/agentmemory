@@ -1145,6 +1145,28 @@
       if (!s) return '';
       return s.length > n ? s.slice(0, n) + '...' : s;
     }
+    function normalizeTags(tags) {
+      if (Array.isArray(tags)) return tags;
+      if (typeof tags === 'string') {
+        return tags.split(',').map(function(t) { return t.trim(); }).filter(Boolean);
+      }
+      return [];
+    }
+    function actionStatusRank(status) {
+      if (status === 'active') return 0;
+      if (status === 'pending') return 1;
+      if (status === 'blocked') return 2;
+      if (status === 'done') return 3;
+      if (status === 'cancelled') return 4;
+      return 2;
+    }
+    function compareActions(a, b) {
+      var statusDelta = actionStatusRank(a.status) - actionStatusRank(b.status);
+      if (statusDelta) return statusDelta;
+      var priorityDelta = (b.priority || 0) - (a.priority || 0);
+      if (priorityDelta) return priorityDelta;
+      return String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || ''));
+    }
     function sessionId(s) {
       return s && s.id !== undefined && s.id !== null ? String(s.id) : '';
     }
@@ -3126,7 +3148,7 @@
     async function loadActions() {
       var el = document.getElementById('view-actions');
       el.innerHTML = '<div class="loading">Loading actions...</div>';
-      var results = await Promise.all([apiGet('actions'), apiGet('frontier')]);
+      var results = await Promise.all([apiGet('actions?limit=500'), apiGet('frontier')]);
       state.actions.items = (results[0] && results[0].actions) || [];
       state.actions.frontier = (results[1] && (results[1].frontier || results[1].actions)) || [];
       state.actions.loaded = true;
@@ -3142,7 +3164,7 @@
 
       if (search) {
         items = items.filter(function(a) {
-          return (a.title + ' ' + (a.description || '') + ' ' + (a.tags || []).join(' ')).toLowerCase().indexOf(search) >= 0;
+          return (a.title + ' ' + (a.description || '') + ' ' + normalizeTags(a.tags).join(' ')).toLowerCase().indexOf(search) >= 0;
         });
       }
       if (statusFilter) {
@@ -3171,7 +3193,7 @@
           '</div>';
       } else {
         html += '<table><thead><tr><th>Title</th><th>Status</th><th>Priority</th><th>Tags</th><th>Frontier</th><th>Updated</th></tr></thead><tbody>';
-        items = items.slice().sort(function(a, b) { return (b.priority || 0) - (a.priority || 0); });
+        items = items.slice().sort(compareActions);
         items.forEach(function(a) {
           var statusClass = a.status === 'done' ? 'badge-green' : a.status === 'active' ? 'badge-blue' : a.status === 'blocked' ? 'badge-red' : a.status === 'cancelled' ? 'badge-red' : 'badge-yellow';
           var isFrontier = frontierIds.has(a.id);
@@ -3181,7 +3203,7 @@
           html += '</td>';
           html += '<td><span class="badge ' + statusClass + '">' + esc(a.status) + '</span></td>';
           html += '<td style="text-align:center;font-weight:600;">' + (a.priority || '-') + '</td>';
-          html += '<td style="font-size:11px;color:var(--ink-muted);">' + (a.tags || []).map(esc).join(', ') + '</td>';
+          html += '<td style="font-size:11px;color:var(--ink-muted);">' + normalizeTags(a.tags).map(esc).join(', ') + '</td>';
           html += '<td style="text-align:center;">' + (isFrontier ? '&#9889;' : '') + '</td>';
           html += '<td style="font-size:12px;color:var(--ink-muted);">' + shortTime(a.updatedAt) + '</td>';
           html += '</tr>';

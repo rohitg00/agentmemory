@@ -2271,6 +2271,7 @@ export function registerApiTriggers(
         status: req.query_params?.["status"],
         project: req.query_params?.["project"],
         parentId: req.query_params?.["parentId"],
+        limit: req.query_params?.["limit"],
       } });
       return { status_code: 200, body: result };
     },

@@ -5,6 +5,58 @@ import { withKeyedLock } from "../state/keyed-mutex.js";
 import type { Action, ActionEdge } from "../types.js";
 import { recordAudit } from "./audit.js";
 
+function normalizeActionTags(action: Action): string[] {
+  const tags = (action as { tags?: unknown }).tags;
+  if (Array.isArray(tags)) {
+    return tags.filter((tag): tag is string => typeof tag === "string");
+  }
+  if (typeof tags === "string") {
+    return tags
+      .split(",")
+      .map((tag) => tag.trim())
+      .filter(Boolean);
+  }
+  return [];
+}
+
+function actionStatusRank(status: Action["status"] | undefined): number {
+  switch (status) {
+    case "active":
+      return 0;
+    case "pending":
+      return 1;
+    case "blocked":
+      return 2;
+    case "done":
+      return 3;
+    case "cancelled":
+      return 4;
+    default:
+      return 2;
+  }
+}
+
+function compareActions(a: Action, b: Action): number {
+  const statusDelta = actionStatusRank(a.status) - actionStatusRank(b.status);
+  if (statusDelta !== 0) return statusDelta;
+  const priorityDelta = (b.priority || 0) - (a.priority || 0);
+  if (priorityDelta !== 0) return priorityDelta;
+  return (b.updatedAt || b.createdAt || "").localeCompare(
+    a.updatedAt || a.createdAt || "",
+  );
+}
+
+function normalizeLimit(limit: unknown): number {
+  const parsed =
+    typeof limit === "number"
+      ? limit
+      : typeof limit === "string" && limit.trim()
+        ? Number(limit)
+        : undefined;
+  if (!Number.isFinite(parsed)) return 50;
+  return Math.max(1, Math.min(500, Math.trunc(parsed as number)));
+}
+
 export function registerActionsFunction(sdk: ISdk, kv: StateKV): void {
   sdk.registerFunction("mem::action-create", 
     async (data: {
@@ -207,7 +259,7 @@ export function registerActionsFunction(sdk: ISdk, kv: StateKV): void {
       project?: string;
       parentId?: string;
       tags?: string[];
-      limit?: number;
+      limit?: number | string;
     }) => {
       let actions = await kv.list<Action>(KV.actions);
 
@@ -222,16 +274,13 @@ export function registerActionsFunction(sdk: ISdk, kv: StateKV): void {
       }
       if (data.tags && data.tags.length > 0) {
         actions = actions.filter((a) =>
-          data.tags!.some((t) => a.tags.includes(t)),
+          data.tags!.some((t) => normalizeActionTags(a).includes(t)),
         );
       }
 
-      actions.sort(
-        (a, b) =>
-          new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
-      );
+      actions.sort(compareActions);
 
-      const limit = data.limit || 50;
+      const limit = normalizeLimit(data.limit);
       return { success: true, actions: actions.slice(0, limit) };
     },
   );
