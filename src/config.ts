@@ -90,6 +90,7 @@ function detectProvider(env: Record<string, string>): ProviderConfig {
       provider: "gemini",
       model: env["GEMINI_MODEL"] || "gemini-2.5-flash",
       maxTokens,
+      baseURL: env["GEMINI_BASE_URL"],
     };
   }
   if (hasRealValue(env["OPENROUTER_API_KEY"])) {
@@ -120,6 +121,7 @@ function detectProvider(env: Record<string, string>): ProviderConfig {
       provider: "openrouter",
       model,
       maxTokens,
+      baseURL: env["OPENROUTER_BASE_URL"],
     };
   }
 

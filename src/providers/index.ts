@@ -9,6 +9,7 @@ import { MinimaxProvider } from "./minimax.js";
 import { NoopProvider } from "./noop.js";
 import { OpenAIProvider } from "./openai.js";
 import { OpenRouterProvider } from "./openrouter.js";
+import { GeminiProvider } from "./gemini.js";
 import { ResilientProvider } from "./resilient.js";
 import { FallbackChainProvider } from "./fallback-chain.js";
 import { getEnvVar } from "../config.js";
@@ -115,11 +116,11 @@ function createBaseProvider(config: ProviderConfig): MemoryProvider {
           "GEMINI_API_KEY (or GOOGLE_API_KEY) is required for the gemini provider",
         );
       }
-      return new OpenRouterProvider(
+      return new GeminiProvider(
         geminiKey,
         config.model,
         config.maxTokens,
-        "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+        config.baseURL,
       );
     }
     case "openrouter":
@@ -127,7 +128,7 @@ function createBaseProvider(config: ProviderConfig): MemoryProvider {
         requireEnvVar("OPENROUTER_API_KEY"),
         config.model,
         config.maxTokens,
-        "https://openrouter.ai/api/v1/chat/completions",
+        config.baseURL,
       );
     case "openai": {
       const openaiKey = getEnvVar("OPENAI_API_KEY");
