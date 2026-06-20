@@ -1,6 +1,8 @@
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname } from "node:path";
 import * as p from "@clack/prompts";
+import { applyEdits, modify, parse } from "jsonc-parser";
+import type { ParseError } from "jsonc-parser";
 import type { ConnectAdapter, ConnectOptions, ConnectResult } from "./types.js";
 import {
   AGENTMEMORY_MCP_BLOCK,
@@ -8,7 +10,7 @@ import {
   logAlreadyWired,
   logBackup,
   logInstalled,
-  readJsonSafe,
+  writeTextAtomic,
   writeJsonAtomic,
 } from "./util.js";
 
@@ -26,6 +28,9 @@ export type JsonMcpAdapterConfig = {
   // Wrapper key under which servers live. Default "mcpServers".
   // Zed uses "context_servers"; otherwise same shape.
   wrapperKey?: string;
+  // Some hosts, including Zed, store settings as JSONC with comments and
+  // trailing commas. Preserve those files with textual JSONC edits.
+  jsonc?: boolean;
   // Extra fields merged into the agentmemory entry. Droid requires
   // type: "stdio"; other hosts ignore unknown fields.
   extraEntryFields?: Record<string, unknown>;
@@ -33,6 +38,59 @@ export type JsonMcpAdapterConfig = {
 
 type McpEntry = typeof AGENTMEMORY_MCP_BLOCK;
 type McpConfig = Record<string, unknown>;
+type ReadConfigResult =
+  | { kind: "missing"; config: McpConfig }
+  | { kind: "parsed"; config: McpConfig; raw: string }
+  | { kind: "invalid"; reason: string };
+
+const formattingOptions = {
+  insertSpaces: true,
+  tabSize: 2,
+  eol: "\n",
+  insertFinalNewline: true,
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function readMcpConfig(path: string, jsonc: boolean): ReadConfigResult {
+  if (!existsSync(path)) return { kind: "missing", config: {} };
+
+  const raw = readFileSync(path, "utf-8");
+  try {
+    const parsed = jsonc ? parseJsonc(raw) : JSON.parse(raw);
+    if (parsed === undefined && raw.trim() === "") {
+      return { kind: "parsed", config: {}, raw };
+    }
+    if (!isRecord(parsed)) {
+      return { kind: "invalid", reason: "top-level config is not an object" };
+    }
+    return { kind: "parsed", config: parsed, raw };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return { kind: "invalid", reason: message };
+  }
+}
+
+function parseJsonc(raw: string): unknown {
+  const errors: ParseError[] = [];
+  const parsed = parse(raw, errors, {
+    allowTrailingComma: true,
+    allowEmptyContent: true,
+  });
+  if (errors.length > 0) {
+    const first = errors[0];
+    throw new Error(
+      `JSONC parse error ${first.error} at offset ${first.offset}`,
+    );
+  }
+  return parsed;
+}
+
+function serverEntries(value: unknown): Record<string, McpEntry> {
+  return isRecord(value) ? { ...(value as Record<string, McpEntry>) } : {};
+}
 
 function entryMatches(entry: unknown): boolean {
   if (!entry || typeof entry !== "object") return false;
@@ -60,11 +118,17 @@ export function createJsonMcpAdapter(
     },
 
     async install(opts: ConnectOptions): Promise<ConnectResult> {
-      const existing = readJsonSafe<McpConfig>(config.configPath);
-      const next: McpConfig = existing ? { ...existing } : {};
-      const servers: Record<string, McpEntry> = {
-        ...((next[wrapperKey] as Record<string, McpEntry>) ?? {}),
-      };
+      const jsonc = config.jsonc ?? false;
+      const existing = readMcpConfig(config.configPath, jsonc);
+      if (existing.kind === "invalid") {
+        p.log.error(
+          `${config.displayName}: ${config.configPath} could not be parsed (${existing.reason}); leaving it unchanged.`,
+        );
+        return { kind: "skipped", reason: "invalid-config" };
+      }
+
+      const next: McpConfig = { ...existing.config };
+      const servers = serverEntries(next[wrapperKey]);
 
       const alreadyHas = entryMatches(servers["agentmemory"]);
       if (alreadyHas && !opts.force) {
@@ -92,12 +156,21 @@ export function createJsonMcpAdapter(
         ...(config.extraEntryFields ?? {}),
       };
       next[wrapperKey] = servers;
-      writeJsonAtomic(config.configPath, next);
+      if (jsonc && existing.kind === "parsed") {
+        const edits = modify(
+          existing.raw,
+          [wrapperKey, "agentmemory"],
+          servers["agentmemory"],
+          { formattingOptions },
+        );
+        writeTextAtomic(config.configPath, applyEdits(existing.raw, edits));
+      } else {
+        writeJsonAtomic(config.configPath, next);
+      }
 
-      const verify = readJsonSafe<McpConfig>(config.configPath);
-      const verifyServers = verify?.[wrapperKey] as
-        | Record<string, McpEntry>
-        | undefined;
+      const verify = readMcpConfig(config.configPath, jsonc);
+      const verifyServers =
+        verify.kind === "invalid" ? undefined : serverEntries(verify.config[wrapperKey]);
       if (!entryMatches(verifyServers?.["agentmemory"])) {
         p.log.error(
           `Verification failed: ${config.configPath} did not contain ${wrapperKey}.agentmemory after write.`,

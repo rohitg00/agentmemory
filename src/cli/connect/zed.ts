@@ -16,6 +16,7 @@ export const adapter = createJsonMcpAdapter({
   detectDir: zedConfigDir,
   configPath: join(zedConfigDir, "settings.json"),
   wrapperKey: "context_servers",
+  jsonc: true,
   docs: "https://github.com/rohitg00/agentmemory#other-agents",
   protocolNote:
     "→ Using MCP via ~/.config/zed/settings.json (key: context_servers).",
