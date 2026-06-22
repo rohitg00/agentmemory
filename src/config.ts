@@ -16,6 +16,37 @@ function safeParseInt(value: string | undefined, fallback: number): number {
   return Number.isNaN(parsed) ? fallback : parsed;
 }
 
+type PositiveIntOptions = {
+  min?: number;
+  max?: number;
+};
+
+export function parsePositiveInt(
+  value: string | undefined,
+  options: PositiveIntOptions = {},
+): number | undefined {
+  if (!value) return undefined;
+  const trimmed = value.trim();
+  if (!/^\d+$/.test(trimmed)) return undefined;
+  const parsed = Number(trimmed);
+  if (!Number.isFinite(parsed) || parsed <= 0) return undefined;
+  if (options.min !== undefined && parsed < options.min) return undefined;
+  if (options.max !== undefined && parsed > options.max) return undefined;
+  return parsed;
+}
+
+export function resolveTimeoutMs(
+  values: Array<string | undefined>,
+  fallback: number,
+  options: PositiveIntOptions = {},
+): number {
+  for (const value of values) {
+    const parsed = parsePositiveInt(value, options);
+    if (parsed !== undefined) return parsed;
+  }
+  return fallback;
+}
+
 const DATA_DIR = join(homedir(), ".agentmemory");
 const ENV_FILE = join(DATA_DIR, ".env");
 

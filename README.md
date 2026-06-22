@@ -1430,6 +1430,12 @@ Create `~/.agentmemory/.env`:
                                           # with v0.9.17.
                                           # Increase for slow networks or large batch calls;
                                           # decrease to fail-fast on rate-limit holds.
+# AGENTMEMORY_CONSOLIDATION_COMPRESS_TIMEOUT_MS=120000
+                                          # Optional: per-concept consolidate timeout in ms.
+                                          # Bounded to 1 000..300 000.
+# AGENTMEMORY_INVOCATION_TIMEOUT_MS=600000
+                                          # Optional: worker invocation timeout in ms.
+                                          # Bounded to 1 000..600 000.
 
 # Search tuning
 # BM25_WEIGHT=0.4

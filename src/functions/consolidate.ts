@@ -7,6 +7,7 @@ import type {
 } from "../types.js";
 import { KV, generateId } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
+import { getEnvVar, resolveTimeoutMs } from "../config.js";
 import { recordAudit } from "./audit.js";
 
 const CONSOLIDATION_SYSTEM = `You are a memory consolidation engine. Given a set of related observations from coding sessions, synthesize them into a single long-term memory.
@@ -138,6 +139,17 @@ export function registerConsolidateFunction(
           )
           .join("\n\n");
 
+        const consolidationCompressTimeoutMs = resolveTimeoutMs(
+          [
+            getEnvVar("AGENTMEMORY_CONSOLIDATION_COMPRESS_TIMEOUT_MS"),
+            getEnvVar("OPENAI_TIMEOUT_MS"),
+            getEnvVar("AGENTMEMORY_LLM_TIMEOUT_MS"),
+          ],
+          120_000,
+          { min: 1_000, max: 300_000 },
+        );
+        llmCallCount++;
+
         try {
           const response = await Promise.race([
             provider.compress(
@@ -145,10 +157,12 @@ export function registerConsolidateFunction(
               `Concept: "${concept}"\n\nObservations:\n${prompt}`,
             ),
             new Promise<never>((_, reject) =>
-              setTimeout(() => reject(new Error("compress timeout")), 30_000),
+              setTimeout(
+                () => reject(new Error("compress timeout")),
+                consolidationCompressTimeoutMs,
+              ),
             ),
           ]);
-          llmCallCount++;
           const parsed = parseMemoryXml(response, sessionIds);
           if (!parsed) continue;
 

@@ -29,7 +29,7 @@ workers:
     config:
       port: 3111
       host: 0.0.0.0
-      default_timeout: 180000
+      default_timeout: 600000
       cors:
         allowed_origins:
           - "http://localhost:3111"
