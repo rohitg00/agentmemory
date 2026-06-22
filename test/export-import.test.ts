@@ -5,6 +5,7 @@ vi.mock("../src/logger.js", () => ({
 }));
 
 import { registerExportImportFunction } from "../src/functions/export-import.js";
+import { getSearchIndex, rebuildIndex } from "../src/functions/search.js";
 import type {
   Session,
   CompressedObservation,
@@ -248,5 +249,45 @@ describe("Export/Import Functions", () => {
 
     expect(result.success).toBe(false);
     expect(result.error).toContain("Unsupported export version");
+  });
+
+  it("replace import reindexes search: drops ghosts and indexes imported data", async () => {
+    // Live search index starts reflecting the pre-import KV state.
+    const index = getSearchIndex();
+    index.clear();
+    await rebuildIndex(kv);
+    // Sanity: the existing memory ("Always validate tokens") is searchable.
+    expect(index.search("validate").length).toBeGreaterThan(0);
+
+    const importedMemory: Memory = {
+      ...testMemory,
+      id: "mem_imported",
+      title: "Database connection pooling",
+      content: "Reuse postgres connections efficiently",
+      concepts: ["database"],
+    };
+    const exportData: ExportData = {
+      version: "0.3.0",
+      exportedAt: new Date().toISOString(),
+      sessions: [],
+      observations: {},
+      memories: [importedMemory],
+      summaries: [],
+    };
+
+    const result = (await sdk.trigger("mem::import", {
+      exportData,
+      strategy: "replace",
+    })) as { success: boolean; memories: number };
+
+    expect(result.success).toBe(true);
+    expect(result.memories).toBe(1);
+
+    // Ghost gone: the replaced-out memory must no longer surface from search.
+    expect(index.search("validate")).toEqual([]);
+    // Imported data is searchable immediately, without a process restart.
+    const hits = index.search("postgres");
+    expect(hits.length).toBeGreaterThan(0);
+    expect(hits.some((h) => h.obsId === "mem_imported")).toBe(true);
   });
 });
