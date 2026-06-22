@@ -29,6 +29,7 @@ import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { VERSION } from "../version.js";
 import { recordAudit } from "./audit.js";
+import { rebuildIndex } from "./search.js";
 import { logger } from "../logger.js";
 
 export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
@@ -574,6 +575,24 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
           }
           await kv.set(KV.accessLog, log.memoryId, log);
         }
+      }
+
+      // KV is now the source of truth, but the in-memory search indices still
+      // reflect the pre-import state: a "replace" wipe leaves ghosts of deleted
+      // entries in BM25/vector, and freshly imported entries from any strategy
+      // were written straight to KV without being indexed. Rebuild both indices
+      // from KV so smart-search reflects the imported data immediately instead
+      // of only after a process restart.
+      try {
+        const indexed = await rebuildIndex(kv);
+        logger.info("Import reindex complete", { strategy, indexed });
+      } catch (err) {
+        // The import itself succeeded and is durable in KV; a reindex failure
+        // must not fail the import. Surface it so the gap is diagnosable.
+        logger.warn("Import reindex failed", {
+          strategy,
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
 
       logger.info("Import complete", { strategy, ...stats });
