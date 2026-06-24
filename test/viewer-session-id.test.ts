@@ -223,6 +223,35 @@ describe("viewer session rendering", () => {
     expect(getElement("view-dashboard").innerHTML).toContain("Unknown session");
   });
 
+  it("renders the dashboard Memories tile from the loaded long-term corpus", () => {
+    const { sandbox, getElement } = loadViewerSandbox();
+    sandbox.state.dashboard = {
+      loaded: true,
+      health: { status: "healthy", health: {} },
+      sessions: [
+        { id: "sess_1", status: "active", observationCount: 3, summary: { title: "Session summary" } },
+        { id: "sess_2", status: "done", observationCount: 1 },
+      ],
+      memoryCount: 1,
+      graphStats: null,
+      recentAudit: [],
+      semantic: [{ id: "sem_1" }, { id: "sem_2" }],
+      procedural: [{ id: "proc_1" }],
+      relations: [],
+      lessons: [{ id: "lesson_1" }, { id: "lesson_2" }],
+      crystals: [{ id: "crystal_1" }],
+    };
+
+    sandbox.renderDashboard();
+
+    const html = getElement("view-dashboard").innerHTML;
+    expect(html).toContain('<div class="label">Memories</div><div class="value">5</div>');
+    expect(html).toContain('<div class="label">Lessons</div><div class="value">2</div>');
+    expect(html).toContain('<div class="label">Crystals</div><div class="value">1</div>');
+    expect(html).toContain("saved + semantic + summaries + procedural");
+    expect(html).not.toContain('<div class="label">Memories</div><div class="value">1</div>');
+  });
+
   it("does not throw when timeline and sessions tabs receive sessions missing ids", () => {
     const { sandbox, getElement } = loadViewerSandbox();
     const sessions = [{ status: "active", observationCount: 1, startedAt: "2026-05-13T12:00:00Z" }];

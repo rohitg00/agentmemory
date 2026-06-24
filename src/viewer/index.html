@@ -1110,7 +1110,7 @@
 
     var state = {
       activeTab: 'dashboard',
-      dashboard: { loaded: false, health: null, sessions: [], memories: [], graphStats: null, recentAudit: [], lessons: [], crystals: [] },
+      dashboard: { loaded: false, health: null, sessions: [], memoryCount: null, graphStats: null, recentAudit: [], lessons: [], crystals: [] },
       graph: { loaded: false, nodes: [], edges: [], stats: null, filters: {}, selectedNode: null, queryError: null, truncated: false, totalNodes: 0, totalEdges: 0 },
       memories: { loaded: false, items: [], search: '', typeFilter: '' },
       timeline: { loaded: false, observations: [], sessionId: '', minImportance: 0, page: 0, pageSize: 50 },
@@ -1346,7 +1346,7 @@
         var results = await Promise.all([
           apiGet('health'),
           apiGet('sessions'),
-          apiGet('memories?latest=true&limit=500'),
+          apiGet('memories?latest=true&count=true'),
           apiGet('graph/stats'),
           apiGet('audit?limit=5'),
           apiGet('semantic'),
@@ -1357,7 +1357,7 @@
         ]);
         state.dashboard.health = results[0];
         state.dashboard.sessions = (results[1] && results[1].sessions) || [];
-        state.dashboard.memories = (results[2] && results[2].memories) || [];
+        state.dashboard.memoryCount = (results[2] && typeof results[2].latestCount === 'number') ? results[2].latestCount : null;
         state.dashboard.graphStats = results[3];
         state.dashboard.recentAudit = (results[4] && results[4].entries) || [];
         state.dashboard.semantic = (results[5] && results[5].facts) || (results[5] && results[5].semantic) || [];
@@ -1402,6 +1402,19 @@
       var fMetrics = h.functionMetrics || [];
       var cb = h.circuitBreaker || null;
       var workers = snap.workers || [];
+      var savedMemoryCount = typeof d.memoryCount === 'number' ? d.memoryCount : 0;
+      var summaryCount = (d.sessions || []).filter(function(s) { return !!s.summary; }).length;
+      var semanticCount = (d.semantic || []).length;
+      var proceduralCount = (d.procedural || []).length;
+      var lessonCount = (d.lessons || []).length;
+      var crystalCount = (d.crystals || []).length;
+      var memoryCount = savedMemoryCount + summaryCount + semanticCount + proceduralCount;
+      var memoryKinds = [];
+      if (savedMemoryCount) memoryKinds.push('saved');
+      if (semanticCount) memoryKinds.push('semantic');
+      if (summaryCount) memoryKinds.push('summaries');
+      if (proceduralCount) memoryKinds.push('procedural');
+      var memorySub = memoryKinds.length ? memoryKinds.join(' + ') : 'long-term corpus';
 
       var html = '';
       // First-run hero: empty dashboard = guided next step
@@ -1416,9 +1429,7 @@
       }
       html += '<div class="stats-grid">';
       html += '<div class="stat-card"><div class="label">Sessions</div><div class="value">' + d.sessions.length + '</div><div class="sub">' + activeSessions + ' active</div></div>';
-      html += '<div class="stat-card"><div class="label">Memories</div><div class="value">' + d.memories.length + '</div><div class="sub">latest versions</div></div>';
-      var lessonCount = (d.lessons || []).length;
-      var crystalCount = (d.crystals || []).length;
+      html += '<div class="stat-card"><div class="label">Memories</div><div class="value">' + memoryCount + '</div><div class="sub">' + esc(memorySub) + '</div></div>';
       html += '<div class="stat-card"><div class="label">Lessons</div><div class="value">' + lessonCount + '</div><div class="sub">confidence-scored</div></div>';
       html += '<div class="stat-card"><div class="label">Crystals</div><div class="value">' + crystalCount + '</div><div class="sub">action digests</div></div>';
       html += '<div class="stat-card"><div class="label">Graph Nodes</div><div class="value">' + nodeCount + '</div><div class="sub">' + edgeCount + ' edges</div></div>';
