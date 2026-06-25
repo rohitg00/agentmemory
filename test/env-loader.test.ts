@@ -28,6 +28,7 @@ describe("loadEnvFile", () => {
     delete process.env["AGENTMEMORY_DROP_STALE_INDEX"];
     delete process.env["CONSOLIDATION_ENABLED"];
     delete process.env["GRAPH_EXTRACTION_ENABLED"];
+    delete process.env["GRAPH_READ_ENABLED"];
     delete process.env["TOKEN"];
     delete process.env["HASHVAL"];
   });
@@ -88,5 +89,24 @@ describe("loadEnvFile", () => {
     writeEnv("AGENTMEMORY_DROP_STALE_INDEX=true");
     const cfg = await freshConfig();
     expect(cfg.isDropStaleIndexEnabled()).toBe(true);
+  });
+
+  it("allows graph reads while graph extraction stays disabled", async () => {
+    writeEnv(
+      [
+        "GRAPH_EXTRACTION_ENABLED=false",
+        "GRAPH_READ_ENABLED=true",
+      ].join("\n"),
+    );
+    const cfg = await freshConfig();
+    expect(cfg.isGraphExtractionEnabled()).toBe(false);
+    expect(cfg.isGraphReadEnabled()).toBe(true);
+  });
+
+  it("keeps graph read enabled when legacy graph extraction flag is enabled", async () => {
+    writeEnv("GRAPH_EXTRACTION_ENABLED=true");
+    const cfg = await freshConfig();
+    expect(cfg.isGraphExtractionEnabled()).toBe(true);
+    expect(cfg.isGraphReadEnabled()).toBe(true);
   });
 });

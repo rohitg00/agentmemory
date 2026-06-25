@@ -266,10 +266,8 @@ async function main() {
     );
   }
 
-  if (isGraphExtractionEnabled()) {
-    registerGraphFunction(sdk, kv, provider);
-    bootLog(`Knowledge graph: extraction enabled`);
-  }
+  registerGraphFunction(sdk, kv, provider);
+  bootLog(`Knowledge graph: registered (GRAPH_EXTRACTION_ENABLED=${isGraphExtractionEnabled() ? "true" : "false"})`);
 
   registerConsolidationPipelineFunction(sdk, kv, provider);
   bootLog(`Consolidation pipeline: registered (CONSOLIDATION_ENABLED=${isConsolidationEnabled() ? "true" : "false"})`);

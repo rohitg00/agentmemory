@@ -35,6 +35,15 @@ describe("api::session::end → event::session::stopped (#666)", () => {
 // which returned 404 because the endpoint was never registered. Backfill
 // the knowledge graph from existing compressed observations across every
 // session in batches.
+describe("graph functions are registered for read-only graph access", () => {
+  const index = readFileSync("src/index.ts", "utf-8");
+
+  it("registers graph functions even when extraction is disabled", () => {
+    expect(index).not.toMatch(/if \(isGraphExtractionEnabled\(\)\) \{[\s\S]*?registerGraphFunction/);
+    expect(index).toMatch(/registerGraphFunction\(sdk, kv, provider\)/);
+  });
+});
+
 describe("api::graph-build endpoint (#666)", () => {
   const api = readFileSync("src/triggers/api.ts", "utf-8");
 

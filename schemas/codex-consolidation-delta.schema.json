@@ -1,0 +1,156 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "exportData"
+  ],
+  "properties": {
+    "exportData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "sessions",
+        "observations",
+        "memories",
+        "summaries",
+        "semanticMemories",
+        "proceduralMemories"
+      ],
+      "properties": {
+        "version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sessions": {
+          "type": "array",
+          "maxItems": 0,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {}
+          }
+        },
+        "observations": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        },
+        "memories": {
+          "type": "array",
+          "maxItems": 0,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {}
+          }
+        },
+        "summaries": {
+          "type": "array",
+          "maxItems": 0,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {}
+          }
+        },
+        "semanticMemories": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "fact",
+              "confidence",
+              "sourceMemoryIds",
+              "sourceSessionIds"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "fact": {
+                "type": "string",
+                "minLength": 1
+              },
+              "confidence": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "sourceMemoryIds": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "sourceSessionIds": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          }
+        },
+        "proceduralMemories": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "name",
+              "triggerCondition",
+              "steps",
+              "sourceMemoryIds",
+              "sourceSessionIds"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "triggerCondition": {
+                "type": "string",
+                "minLength": 1
+              },
+              "steps": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "sourceMemoryIds": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "sourceSessionIds": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

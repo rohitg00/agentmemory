@@ -1,0 +1,148 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "exportData"
+  ],
+  "properties": {
+    "exportData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "sessions",
+        "observations",
+        "memories",
+        "summaries",
+        "graphNodes",
+        "graphEdges"
+      ],
+      "properties": {
+        "version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sessions": {
+          "type": "array",
+          "maxItems": 0,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {}
+          }
+        },
+        "observations": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        },
+        "memories": {
+          "type": "array",
+          "maxItems": 0,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {}
+          }
+        },
+        "summaries": {
+          "type": "array",
+          "maxItems": 0,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {}
+          }
+        },
+        "graphNodes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "type",
+              "name",
+              "properties",
+              "sourceObservationIds"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "type": {
+                "type": "string",
+                "minLength": 1
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "properties": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": false
+              },
+              "sourceObservationIds": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          }
+        },
+        "graphEdges": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "type",
+              "sourceNodeId",
+              "targetNodeId",
+              "weight",
+              "sourceObservationIds"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "type": {
+                "type": "string",
+                "minLength": 1
+              },
+              "sourceNodeId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "targetNodeId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "weight": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "sourceObservationIds": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

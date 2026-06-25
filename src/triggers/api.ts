@@ -15,6 +15,7 @@ import { MAX_FILES_UPPER_BOUND } from "../functions/replay.js";
 import { logger } from "../logger.js";
 import {
   isGraphExtractionEnabled,
+  isGraphReadEnabled,
   isConsolidationEnabled,
   isAutoCompressEnabled,
   isContextInjectionEnabled,
@@ -191,6 +192,17 @@ export function registerApiTriggers(
           needsLlm: true,
           description: "Extracts entities and relations from observations into a knowledge graph.",
           enableHow: "Set GRAPH_EXTRACTION_ENABLED=true and provide an LLM key, then restart.",
+          docsHref: "https://github.com/rohitg00/agentmemory#knowledge-graph",
+        },
+        {
+          key: "GRAPH_READ_ENABLED",
+          label: "Knowledge graph reads",
+          enabled: isGraphReadEnabled(),
+          default: false,
+          affects: ["Graph", "Dashboard"],
+          needsLlm: false,
+          description: "Exposes graph stats and query endpoints without enabling LLM-backed extraction.",
+          enableHow: "Set GRAPH_READ_ENABLED=true, then restart. GRAPH_EXTRACTION_ENABLED=true also enables graph reads for compatibility.",
           docsHref: "https://github.com/rohitg00/agentmemory#knowledge-graph",
         },
         {

@@ -15,6 +15,7 @@ import {
 } from "../prompts/graph-extraction.js";
 import { recordAudit } from "./audit.js";
 import { logger } from "../logger.js";
+import { isGraphExtractionEnabled } from "../config.js";
 
 // #753: keep the response payload below the iii state channel ceiling.
 // 500 nodes + their incident edges hold well under the limit on the
@@ -303,6 +304,127 @@ function mergeEdge(
   };
 }
 
+function mergeImportedNode(
+  existing: GraphNode,
+  incoming: GraphNode,
+  capturedAt: string,
+): GraphNode {
+  return {
+    ...existing,
+    properties: { ...existing.properties, ...incoming.properties },
+    sourceObservationIds: [
+      ...new Set([
+        ...existing.sourceObservationIds,
+        ...incoming.sourceObservationIds,
+      ]),
+    ],
+    updatedAt: capturedAt,
+  };
+}
+
+function mergeImportedEdge(existing: GraphEdge, incoming: GraphEdge): GraphEdge {
+  return {
+    ...existing,
+    weight: Math.max(existing.weight, incoming.weight),
+    sourceObservationIds: [
+      ...new Set([
+        ...existing.sourceObservationIds,
+        ...incoming.sourceObservationIds,
+      ]),
+    ],
+  };
+}
+
+export async function upsertGraphDelta(
+  kv: StateKV,
+  nodes: GraphNode[],
+  edges: GraphEdge[],
+  strategy: "merge" | "replace" | "skip" = "merge",
+): Promise<{ nodes: number; edges: number; skipped: number }> {
+  const snap = (await readSnapshot(kv)) ?? emptySnapshot();
+  const capturedAt = new Date().toISOString();
+  const changedEdges: GraphEdge[] = [];
+  let importedNodes = 0;
+  let importedEdges = 0;
+  let skipped = 0;
+
+  for (const node of nodes) {
+    const existing = await kv.get<GraphNode>(KV.graphNodes, node.id).catch(() => null);
+    if (strategy === "skip" && existing) {
+      skipped++;
+      continue;
+    }
+
+    const stored = existing ? mergeImportedNode(existing, node, capturedAt) : node;
+    await kv.set(KV.graphNodes, stored.id, stored);
+    await kv.set(KV.graphNameIndex, nameIndexKey(stored.type, stored.name), stored.id);
+
+    if (!existing) {
+      const degree = await kv.get<number>(KV.graphNodeDegree, stored.id) ?? 0;
+      await kv.set(KV.graphNodeDegree, stored.id, degree);
+      snap.stats.totalNodes += 1;
+      snap.stats.nodesByType[stored.type] =
+        (snap.stats.nodesByType[stored.type] ?? 0) + 1;
+      if (snap.topNodes.length < SNAPSHOT_TOP_NODES) {
+        snap.topNodes.push(stored);
+        snap.topDegrees[stored.id] = degree;
+      }
+    } else {
+      const topIdx = snap.topNodes.findIndex((n) => n.id === stored.id);
+      if (topIdx !== -1) snap.topNodes[topIdx] = stored;
+    }
+
+    importedNodes++;
+  }
+
+  for (const edge of edges) {
+    const sourceExists = await kv.get<GraphNode>(KV.graphNodes, edge.sourceNodeId).catch(() => null);
+    const targetExists = await kv.get<GraphNode>(KV.graphNodes, edge.targetNodeId).catch(() => null);
+    if (!sourceExists || !targetExists) {
+      skipped++;
+      continue;
+    }
+
+    const existing = await kv.get<GraphEdge>(KV.graphEdges, edge.id).catch(() => null);
+    if (strategy === "skip" && existing) {
+      skipped++;
+      continue;
+    }
+
+    const stored = existing ? mergeImportedEdge(existing, edge) : edge;
+    await kv.set(KV.graphEdges, stored.id, stored);
+    await kv.set(
+      KV.graphEdgeKey,
+      edgeIndexKey(stored.sourceNodeId, stored.targetNodeId, stored.type),
+      stored.id,
+    );
+
+    if (!existing) {
+      snap.stats.totalEdges += 1;
+      snap.stats.edgesByType[stored.type] =
+        (snap.stats.edgesByType[stored.type] ?? 0) + 1;
+      await applyDegreeDelta(kv, snap, stored.sourceNodeId, +1);
+      await applyDegreeDelta(kv, snap, stored.targetNodeId, +1);
+      changedEdges.push(stored);
+    } else {
+      const topIdx = snap.topEdges.findIndex((e) => e.id === stored.id);
+      if (topIdx !== -1) snap.topEdges[topIdx] = stored;
+    }
+
+    importedEdges++;
+  }
+
+  for (const edge of changedEdges) snapshotPushEdgeIfBothInTop(snap, edge);
+
+  if (importedNodes > 0 || importedEdges > 0) {
+    snap.updatedAt = capturedAt;
+    snap.dirty = false;
+    await kv.set(KV.graphSnapshot, SNAPSHOT_KEY, snap);
+  }
+
+  return { nodes: importedNodes, edges: importedEdges, skipped };
+}
+
 function resolvePagination(
   rawLimit: number | undefined,
   rawOffset: number | undefined,
@@ -457,6 +579,13 @@ export function registerGraphFunction(
 ): void {
   sdk.registerFunction("mem::graph-extract", 
     async (data: { observations: CompressedObservation[] }) => {
+      if (!isGraphExtractionEnabled()) {
+        return {
+          success: false,
+          error: "Knowledge graph extraction disabled; set GRAPH_EXTRACTION_ENABLED=true and restart to extract graph data.",
+        };
+      }
+
       if (!data.observations || data.observations.length === 0) {
         return { success: false, error: "No observations provided" };
       }

@@ -5,12 +5,15 @@ vi.mock("../src/logger.js", () => ({
 }));
 
 import { registerExportImportFunction } from "../src/functions/export-import.js";
+import { registerGraphFunction } from "../src/functions/graph.js";
 import type {
   Session,
   CompressedObservation,
   Memory,
   SessionSummary,
   ExportData,
+  GraphNode,
+  GraphEdge,
 } from "../src/types.js";
 
 function mockKV() {
@@ -229,6 +232,71 @@ describe("Export/Import Functions", () => {
     )) as ExportData;
     expect(reExported.sessions.length).toBe(exported.sessions.length);
     expect(reExported.memories.length).toBe(exported.memories.length);
+  });
+
+  it("imported graph deltas update graph snapshot for immediate reads", async () => {
+    const freshKv = mockKV();
+    const freshSdk = mockSdk();
+    registerExportImportFunction(freshSdk as never, freshKv as never);
+    registerGraphFunction(freshSdk as never, freshKv as never, {
+      name: "test",
+      compress: vi.fn(),
+      summarize: vi.fn(),
+    } as never);
+
+    const graphNodes: GraphNode[] = [
+      {
+        id: "gn_codex_file",
+        type: "file",
+        name: "src/auth.ts",
+        properties: { path: "src/auth.ts" },
+        sourceObservationIds: ["obs_graph_1"],
+        createdAt: "2026-02-01T00:00:00Z",
+      },
+      {
+        id: "gn_codex_concept",
+        type: "concept",
+        name: "auth tokens",
+        properties: {},
+        sourceObservationIds: ["obs_graph_1"],
+        createdAt: "2026-02-01T00:00:00Z",
+      },
+    ];
+    const graphEdges: GraphEdge[] = [
+      {
+        id: "ge_codex_edge",
+        type: "related_to",
+        sourceNodeId: "gn_codex_file",
+        targetNodeId: "gn_codex_concept",
+        weight: 0.8,
+        sourceObservationIds: ["obs_graph_1"],
+        createdAt: "2026-02-01T00:00:00Z",
+      },
+    ];
+
+    const result = (await freshSdk.trigger("mem::import", {
+      strategy: "skip",
+      exportData: {
+        version: "0.9.27",
+        exportedAt: new Date().toISOString(),
+        sessions: [],
+        observations: {},
+        memories: [],
+        summaries: [],
+        graphNodes,
+        graphEdges,
+      },
+    })) as { success: boolean };
+    const stats = (await freshSdk.trigger("mem::graph-stats", {})) as {
+      totalNodes: number;
+      totalEdges: number;
+      fromSnapshot: boolean;
+    };
+
+    expect(result.success).toBe(true);
+    expect(stats.fromSnapshot).toBe(true);
+    expect(stats.totalNodes).toBe(2);
+    expect(stats.totalEdges).toBe(1);
   });
 
   it("import rejects unsupported version", async () => {

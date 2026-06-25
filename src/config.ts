@@ -332,6 +332,12 @@ export function isGraphExtractionEnabled(): boolean {
   return getMergedEnv()["GRAPH_EXTRACTION_ENABLED"] === "true";
 }
 
+export function isGraphReadEnabled(): boolean {
+  const env = getMergedEnv();
+  return env["GRAPH_READ_ENABLED"] === "true" ||
+    env["GRAPH_EXTRACTION_ENABLED"] === "true";
+}
+
 export function getGraphBatchSize(): number {
   return safeParseInt(getMergedEnv()["GRAPH_EXTRACTION_BATCH_SIZE"], 10);
 }

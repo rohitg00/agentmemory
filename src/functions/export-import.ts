@@ -30,6 +30,7 @@ import { StateKV } from "../state/kv.js";
 import { VERSION } from "../version.js";
 import { recordAudit } from "./audit.js";
 import { logger } from "../logger.js";
+import { upsertGraphDelta } from "./graph.js";
 
 export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
   sdk.registerFunction("mem::export", 
@@ -321,6 +322,7 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
         for (const e of await kv.list<{ id: string }>(KV.graphEdges).catch(() => [])) {
           await kv.delete(KV.graphEdges, e.id);
         }
+        await kv.delete(KV.graphSnapshot, "current").catch(() => undefined);
         for (const s of await kv.list<{ id: string }>(KV.semantic).catch(() => [])) {
           await kv.delete(KV.semantic, s.id);
         }
@@ -397,23 +399,14 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
         stats.summaries++;
       }
 
-      if (importData.graphNodes) {
-        for (const node of importData.graphNodes) {
-          if (strategy === "skip") {
-            const existing = await kv.get(KV.graphNodes, node.id).catch(() => null);
-            if (existing) { stats.skipped++; continue; }
-          }
-          await kv.set(KV.graphNodes, node.id, node);
-        }
-      }
-      if (importData.graphEdges) {
-        for (const edge of importData.graphEdges) {
-          if (strategy === "skip") {
-            const existing = await kv.get(KV.graphEdges, edge.id).catch(() => null);
-            if (existing) { stats.skipped++; continue; }
-          }
-          await kv.set(KV.graphEdges, edge.id, edge);
-        }
+      if (importData.graphNodes || importData.graphEdges) {
+        const graphStats = await upsertGraphDelta(
+          kv,
+          importData.graphNodes ?? [],
+          importData.graphEdges ?? [],
+          strategy,
+        );
+        stats.skipped += graphStats.skipped;
       }
       if (importData.semanticMemories) {
         for (const sem of importData.semanticMemories) {

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 vi.mock("../src/logger.js", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
@@ -63,6 +63,8 @@ const mockProvider = {
   summarize: vi.fn(),
 };
 
+const ORIGINAL_GRAPH_EXTRACTION_ENABLED = process.env["GRAPH_EXTRACTION_ENABLED"];
+
 const testObs: CompressedObservation = {
   id: "obs_1",
   sessionId: "ses_1",
@@ -81,10 +83,39 @@ describe("Graph Functions", () => {
   let kv: ReturnType<typeof mockKV>;
 
   beforeEach(() => {
+    process.env["GRAPH_EXTRACTION_ENABLED"] = "true";
     sdk = mockSdk();
     kv = mockKV();
     vi.clearAllMocks();
     registerGraphFunction(sdk as never, kv as never, mockProvider as never);
+  });
+
+  afterEach(() => {
+    if (ORIGINAL_GRAPH_EXTRACTION_ENABLED === undefined) {
+      delete process.env["GRAPH_EXTRACTION_ENABLED"];
+    } else {
+      process.env["GRAPH_EXTRACTION_ENABLED"] = ORIGINAL_GRAPH_EXTRACTION_ENABLED;
+    }
+  });
+
+  it("keeps graph query available while graph extraction is disabled", async () => {
+    process.env["GRAPH_EXTRACTION_ENABLED"] = "false";
+
+    const extract = (await sdk.trigger("mem::graph-extract", {
+      observations: [testObs],
+    })) as { success: boolean; error?: string };
+    const stats = (await sdk.trigger("mem::graph-stats", {})) as {
+      totalNodes: number;
+      totalEdges: number;
+    };
+    const query = (await sdk.trigger("mem::graph-query", {})) as GraphQueryResult;
+
+    expect(extract.success).toBe(false);
+    expect(extract.error).toContain("Knowledge graph extraction disabled");
+    expect(mockProvider.compress).not.toHaveBeenCalled();
+    expect(stats.totalNodes).toBe(0);
+    expect(stats.totalEdges).toBe(0);
+    expect(query.nodes).toEqual([]);
   });
 
   it("graph-extract creates nodes and edges from XML response", async () => {
