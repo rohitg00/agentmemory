@@ -32,13 +32,16 @@ exec'ing the agentmemory CLI.
 - **Only port 3111 is exposed publicly.** The viewer on port 3113
   stays bound to the container's localhost. Reach it via SSH tunnel
   (see each platform's README).
-- **TLS upstream of the container.** Every managed platform terminates
-  TLS at its edge proxy; the templates publish a single internal port
-  (`3111`) to that proxy, never to the host. Integration plugins
-  configured with `AGENTMEMORY_REQUIRE_HTTPS=1` will refuse to send the
-  bearer over plaintext HTTP to a non-loopback host, so a
-  misconfigured TLS layer fails loud instead of silently leaking the
-  secret.
+- **TLS upstream of the container (managed platforms).** fly.io,
+  Railway, Render, and Coolify all terminate TLS at their edge proxy;
+  those templates publish a single internal port (`3111`) to that
+  proxy, never to the host. Integration plugins configured with
+  `AGENTMEMORY_REQUIRE_HTTPS=1` will refuse to send the bearer over
+  plaintext HTTP to a non-loopback host, so a misconfigured TLS layer
+  fails loud instead of silently leaking the secret. **Plain Docker is
+  the exception** — it publishes `3111` directly to the host network
+  by design (see its README), so TLS termination there is on you if
+  you need it.
 
 ## Pick a platform
 
@@ -56,7 +59,7 @@ exec'ing the agentmemory CLI.
   want a control plane at all — you manage the proxy and TLS, if any,
   yourself.
 
-All four give you the same agentmemory API at the same port (3111)
+All five give you the same agentmemory API at the same port (3111)
 with the same auth model. Migrating between them later is a `tar` of
 `/data` and a re-import — see each platform's README for the exact
 commands.

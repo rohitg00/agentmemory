@@ -56,6 +56,12 @@ Two options, in order of how much you trust the network this host is on:
 **Option A — SSH/local tunnel (recommended for anything beyond a fully
 trusted LAN).**
 
+The viewer port must first be exposed on the Docker host before a tunnel can
+reach it: uncomment the `3113:3113` line in `docker-compose.yml`'s `ports:`
+block and run `docker compose up -d` to apply it (you can leave
+`AGENTMEMORY_VIEWER_HOST`/`VIEWER_ALLOWED_HOSTS` unset for this option, since
+the tunnel terminates on `127.0.0.1` itself). Then:
+
 ```bash
 ssh -L 3113:127.0.0.1:3113 <user>@<docker-host>
 # then open http://localhost:3113 on your own machine
@@ -104,6 +110,10 @@ docker compose logs agentmemory | grep AGENTMEMORY_SECRET
 docker run --rm -v agentmemory-data:/data -v "$(pwd)":/backup alpine \
   tar czf /backup/agentmemory-backup.tar.gz -C /data .
 ```
+
+This assumes a Linux/WSL2 shell (`$(pwd)` and `tar` both need one). On native
+Windows PowerShell without WSL2, run it from a WSL2 shell instead, or
+substitute `${PWD}` for `$(pwd)` — see "Windows / Docker Desktop notes" below.
 
 Restore by extracting that tarball back into the same named volume.
 

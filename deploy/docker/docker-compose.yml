@@ -16,6 +16,9 @@ services:
     # loopback-only inside the container by default (safe), so it isn't
     # reachable from another machine until you both uncomment the port below
     # AND set AGENTMEMORY_VIEWER_HOST + VIEWER_ALLOWED_HOSTS (see README).
+    # If you terminate TLS with your own reverse proxy on this same host and
+    # don't want 3111 reachable from the LAN directly, bind it to loopback
+    # instead: "127.0.0.1:3111:3111".
     ports:
       - "3111:3111"
       # - "3113:3113"

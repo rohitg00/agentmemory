@@ -21,7 +21,12 @@ RUN_AS="node:node"
 III_CONFIG="/opt/agentmemory/node_modules/@agentmemory/agentmemory/dist/iii-config.yaml"
 
 mkdir -p "$DATA_DIR"
-chown -R "$RUN_AS" "$DATA_DIR"
+# Skip the recursive walk once /data is already node-owned (a freshly created
+# bind mount or named volume is root-owned; subsequent boots aren't) — avoids
+# adding restart latency proportional to volume size on every boot.
+if [ "$(stat -c '%U' "$DATA_DIR")" != "node" ]; then
+  chown -R "$RUN_AS" "$DATA_DIR"
+fi
 
 cat > "$III_CONFIG" <<'EOF'
 workers:
