@@ -12,7 +12,9 @@ import { withKeyedLock } from "../state/keyed-mutex.js";
 import { recordAccessBatch } from "./access-tracker.js";
 import {
   getAgentId,
+  getNamespace,
   isAgentScopeIsolated,
+  isNamespaceScopeIsolated,
   getFollowupWindowSeconds,
 } from "../config.js";
 import { logger } from "../logger.js";
@@ -83,6 +85,7 @@ export function registerSmartSearchFunction(
       expandIds?: Array<string | { obsId: string; sessionId: string }>;
       limit?: number;
       project?: string;
+      namespace?: string;
       includeLessons?: boolean;
       // optional per-call agent filter for runtimes routing many
       // roles through one server. "*" opts out of the env-default
@@ -128,6 +131,27 @@ export function registerSmartSearchFunction(
             'Pass agentId: "*" to opt in to a wildcard read.',
         );
       }
+      const explicitNamespace =
+        typeof data.namespace === "string" && data.namespace.trim().length > 0
+          ? data.namespace.trim()
+          : undefined;
+      const wildcardNamespace = explicitNamespace === "*";
+      const envNamespace = isNamespaceScopeIsolated() ? getNamespace() : undefined;
+      const filterNamespace = wildcardNamespace
+        ? undefined
+        : explicitNamespace ?? envNamespace;
+      if (
+        isNamespaceScopeIsolated() &&
+        !wildcardNamespace &&
+        !explicitNamespace &&
+        !envNamespace
+      ) {
+        throw new Error(
+          "mem::smart-search: AGENTMEMORY_NAMESPACE_SCOPE=isolated is set but " +
+            "no namespace is available (env AGENTMEMORY_NAMESPACE unset and no explicit " +
+            'namespace in the call). Pass namespace: "*" to opt in to a wildcard read.',
+        );
+      }
 
       if (data.expandIds && data.expandIds.length > 0) {
         const raw = data.expandIds.slice(0, 20);
@@ -159,21 +183,24 @@ export function registerSmartSearchFunction(
         const scoped = filterAgentId
           ? expanded.filter((e) => e.observation.agentId === filterAgentId)
           : expanded;
+        const namespaceScoped = filterNamespace
+          ? scoped.filter((e) => e.observation.namespace === filterNamespace)
+          : scoped;
 
         void recordAccessBatch(
           kv,
-          scoped.map((e) => e.observation.id),
+          namespaceScoped.map((e) => e.observation.id),
         );
 
         const truncated = data.expandIds.length > raw.length;
         logger.info("Smart search expanded", {
           requested: data.expandIds.length,
           attempted: raw.length,
-          returned: scoped.length,
-          filteredOutOfScope: expanded.length - scoped.length,
+          returned: namespaceScoped.length,
+          filteredOutOfScope: expanded.length - namespaceScoped.length,
           truncated,
         });
-        return { mode: "expanded", results: scoped, truncated };
+        return { mode: "expanded", results: namespaceScoped, truncated };
       }
 
       if (!data.query || typeof data.query !== "string" || !data.query.trim()) {
@@ -192,24 +219,29 @@ export function registerSmartSearchFunction(
       // is a defensible middle ground: enough headroom for a small
       // workload, capped at 300 so a 100-limit request never asks for
       // thousands of hits.
-      const overFetchLimit = filterAgentId
+      const overFetchLimit = filterAgentId || filterNamespace
         ? Math.min(limit * 3, 300)
         : limit;
 
       const [hybridResults, lessons] = await Promise.all([
         searchFn(data.query, overFetchLimit),
         includeLessons
-          ? recallLessons(sdk, data.query, lessonLimit, data.project)
+          ? recallLessons(sdk, data.query, lessonLimit, data.project, filterNamespace)
           : Promise.resolve([]),
       ]);
 
       const filteredHybrid = filterAgentId
         ? hybridResults
             .filter((r) => r.observation.agentId === filterAgentId)
+            .slice(0, overFetchLimit)
+        : hybridResults.slice(0, overFetchLimit);
+      const namespaceFilteredHybrid = filterNamespace
+        ? filteredHybrid
+            .filter((r) => r.observation.namespace === filterNamespace)
             .slice(0, limit)
-        : hybridResults.slice(0, limit);
+        : filteredHybrid.slice(0, limit);
 
-      const compact: CompactSearchResult[] = filteredHybrid.map((r) => ({
+      const compact: CompactSearchResult[] = namespaceFilteredHybrid.map((r) => ({
         obsId: r.observation.id,
         sessionId: r.sessionId,
         title: r.observation.title,
@@ -292,11 +324,12 @@ async function recallLessons(
   query: string,
   limit: number,
   project?: string,
+  namespace?: string,
 ): Promise<CompactLessonResult[]> {
   try {
     const result = (await sdk.trigger({
       function_id: "mem::lesson-recall",
-      payload: { query, limit, project },
+      payload: { query, limit, project, namespace },
     })) as { success?: boolean; lessons?: Array<Lesson & { score?: number }> };
     if (!result?.success || !Array.isArray(result.lessons)) return [];
     return result.lessons.map((l) => ({

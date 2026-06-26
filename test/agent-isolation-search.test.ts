@@ -20,11 +20,15 @@ vi.mock("../src/functions/access-tracker.js", () => ({
 const configState = {
   agentId: undefined as string | undefined,
   isolated: false,
+  namespace: undefined as string | undefined,
+  namespaceIsolated: false,
 };
 
 vi.mock("../src/config.js", () => ({
   getAgentId: () => configState.agentId,
+  getNamespace: () => configState.namespace,
   isAgentScopeIsolated: () => configState.isolated,
+  isNamespaceScopeIsolated: () => configState.namespaceIsolated,
 }));
 
 import {

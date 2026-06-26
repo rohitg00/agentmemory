@@ -3,6 +3,7 @@ import type { StateKV } from "../state/kv.js";
 import { KV, fingerprintId } from "../state/schema.js";
 import type { Lesson } from "../types.js";
 import { recordAudit } from "./audit.js";
+import { normalizeNamespace } from "../utils/namespace.js";
 
 function reinforceLesson(lesson: Lesson): void {
   const now = new Date().toISOString();
@@ -22,6 +23,7 @@ export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
       context?: string;
       confidence?: number;
       project?: string;
+      namespace?: string;
       tags?: string[];
       source?: "crystal" | "manual" | "consolidation";
       sourceIds?: string[];
@@ -30,7 +32,11 @@ export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
         return { success: false, error: "content is required" };
       }
 
-      const fp = fingerprintId("lsn", data.content.trim().toLowerCase());
+      const namespace = normalizeNamespace(data.namespace);
+      const fp = fingerprintId(
+        "lsn",
+        `${namespace ?? ""}::${data.project ?? ""}::${data.content.trim().toLowerCase()}`,
+      );
       const existing = await kv.get<Lesson>(KV.lessons, fp);
 
       if (existing && !existing.deleted) {
@@ -70,6 +76,7 @@ export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
         source: data.source || "manual",
         sourceIds: data.sourceIds || [],
         project: data.project,
+        ...(namespace ? { namespace } : {}),
         tags: data.tags || [],
         createdAt: now,
         updatedAt: now,
@@ -90,6 +97,7 @@ export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
     async (data: {
       query: string;
       project?: string;
+      namespace?: string;
       minConfidence?: number;
       limit?: number;
     }) => {
@@ -109,6 +117,10 @@ export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
 
       if (data.project) {
         lessons = lessons.filter((l) => l.project === data.project);
+      }
+      const namespace = normalizeNamespace(data.namespace);
+      if (namespace) {
+        lessons = lessons.filter((l) => l.namespace === namespace);
       }
 
       const scored = lessons
@@ -153,6 +165,7 @@ export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
   sdk.registerFunction("mem::lesson-list", 
     async (data: {
       project?: string;
+      namespace?: string;
       source?: string;
       minConfidence?: number;
       limit?: number;
@@ -167,6 +180,10 @@ export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
 
       if (data.project) {
         lessons = lessons.filter((l) => l.project === data.project);
+      }
+      const namespace = normalizeNamespace(data.namespace);
+      if (namespace) {
+        lessons = lessons.filter((l) => l.namespace === namespace);
       }
       if (data.source) {
         lessons = lessons.filter((l) => l.source === data.source);

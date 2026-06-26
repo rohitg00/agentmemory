@@ -8,18 +8,24 @@ import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { recordAudit } from "./audit.js";
 import { logger } from "../logger.js";
+import {
+  makeProjectProfileKey,
+  normalizeNamespace,
+} from "../utils/namespace.js";
 
 export function registerProfileFunction(sdk: ISdk, kv: StateKV): void {
   sdk.registerFunction("mem::profile", 
-    async (data: { project: string; refresh?: boolean } | undefined) => {
+    async (data: { project: string; namespace?: string; refresh?: boolean } | undefined) => {
       if (!data || typeof data.project !== "string" || !data.project.trim()) {
         return { success: false, error: "project is required" };
       }
       const project = data.project.trim();
+      const namespace = normalizeNamespace(data.namespace);
+      const profileKey = makeProjectProfileKey(project, namespace);
 
       if (!data.refresh) {
         const cached = await kv
-          .get<ProjectProfile>(KV.profiles, project)
+          .get<ProjectProfile>(KV.profiles, profileKey)
           .catch(() => null);
         if (cached) {
           const age = Date.now() - new Date(cached.updatedAt).getTime();
@@ -31,7 +37,7 @@ export function registerProfileFunction(sdk: ISdk, kv: StateKV): void {
 
       const sessions = await kv.list<Session>(KV.sessions);
       const projectSessions = sessions.filter(
-        (s) => s.project === project,
+        (s) => s.project === project && s.namespace === namespace,
       );
 
       if (projectSessions.length === 0) {
@@ -99,6 +105,7 @@ export function registerProfileFunction(sdk: ISdk, kv: StateKV): void {
 
       const profile: ProjectProfile = {
         project,
+        ...(namespace ? { namespace } : {}),
         updatedAt: new Date().toISOString(),
         topConcepts,
         topFiles,
@@ -109,14 +116,15 @@ export function registerProfileFunction(sdk: ISdk, kv: StateKV): void {
         totalObservations: totalObs,
       };
 
-      await kv.set(KV.profiles, project, profile);
-      await recordAudit(kv, "share", "mem::profile", [project], {
+      await kv.set(KV.profiles, profileKey, profile);
+      await recordAudit(kv, "share", "mem::profile", [profileKey], {
         sessionCount: projectSessions.length,
         totalObservations: totalObs,
       });
 
       logger.info("Profile generated", {
         project,
+        namespace,
         sessions: projectSessions.length,
         observations: totalObs,
       });

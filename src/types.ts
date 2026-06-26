@@ -1,6 +1,7 @@
 export interface Session {
   id: string;
   project: string;
+  namespace?: string;
   cwd: string;
   startedAt: string;
   endedAt?: string;
@@ -31,6 +32,7 @@ export interface RawObservation {
   id: string;
   sessionId: string;
   timestamp: string;
+  namespace?: string;
   hookType: HookType;
   toolName?: string;
   toolInput?: unknown;
@@ -47,6 +49,7 @@ export interface CompressedObservation {
   id: string;
   sessionId: string;
   timestamp: string;
+  namespace?: string;
   type: ObservationType;
   title: string;
   subtitle?: string;
@@ -84,6 +87,7 @@ export interface Memory {
   id: string;
   createdAt: string;
   updatedAt: string;
+  namespace?: string;
   type: "pattern" | "preference" | "architecture" | "bug" | "workflow" | "fact";
   title: string;
   content: string;
@@ -134,6 +138,7 @@ export interface HookPayload {
   hookType: HookType;
   sessionId: string;
   project: string;
+  namespace?: string;
   cwd: string;
   timestamp: string;
   data: unknown;
@@ -277,6 +282,7 @@ export interface CompactLessonResult {
   score: number;
   createdAt: string;
   project?: string;
+  namespace?: string;
   tags: string[];
 }
 
@@ -288,6 +294,7 @@ export interface TimelineEntry {
 
 export interface ProjectProfile {
   project: string;
+  namespace?: string;
   updatedAt: string;
   topConcepts: Array<{ concept: string; frequency: number }>;
   topFiles: Array<{ file: string; frequency: number }>;
@@ -807,6 +814,7 @@ export interface Lesson {
   source: "crystal" | "manual" | "consolidation";
   sourceIds: string[];
   project?: string;
+  namespace?: string;
   tags: string[];
   createdAt: string;
   updatedAt: string;

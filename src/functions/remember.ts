@@ -9,6 +9,7 @@ import { recordAudit } from "./audit.js";
 import { getSearchIndex, vectorIndexAddGuarded, vectorIndexRemove, flushIndexSave } from "./search.js";
 import { getAgentId } from "../config.js";
 import { logger } from "../logger.js";
+import { normalizeNamespace } from "../utils/namespace.js";
 
 export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
   sdk.registerFunction("mem::remember", 
@@ -21,6 +22,7 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
       sourceObservationIds?: string[];
       agentId?: string;
       project?: string;
+      namespace?: string;
     }) => {
       if (
         !data.content ||
@@ -58,6 +60,7 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
         typeof data.project === "string" && data.project.trim().length > 0
           ? data.project.trim()
           : undefined;
+      const namespace = normalizeNamespace(data.namespace);
 
       return withKeyedLock("mem:remember", async () => {
         const existingMemories = await kv.list<Memory>(KV.memories);
@@ -72,6 +75,11 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
           // an unscoped memory (legacy, no project field) is treated as a
           // wildcard so pre-existing data is not stranded.
           if (project && existing.project && existing.project !== project) {
+            continue;
+          }
+          // Namespace is the stronger boundary: fail closed so a namespaced
+          // memory never supersedes an unscoped legacy one (or vice versa).
+          if (namespace !== existing.namespace) {
             continue;
           }
           const similarity = jaccardSimilarity(
@@ -115,6 +123,7 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
           isLatest: true,
           ...(callAgentId ? { agentId: callAgentId } : {}),
           ...(project !== undefined && { project }),
+          ...(namespace !== undefined && { namespace }),
         };
 
         if (data.ttlDays && typeof data.ttlDays === "number" && data.ttlDays > 0) {

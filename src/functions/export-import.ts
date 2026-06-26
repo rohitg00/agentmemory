@@ -27,6 +27,7 @@ import type {
 import { normalizeAccessLog } from "./access-tracker.js";
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
+import { makeProjectProfileKey } from "../utils/namespace.js";
 import { VERSION } from "../version.js";
 import { recordAudit } from "./audit.js";
 import { logger } from "../logger.js";
@@ -62,7 +63,13 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
       }
 
       const profiles: ProjectProfile[] = [];
-      const uniqueProjects = [...new Set(paginatedSessions.map((s) => s.project))];
+      const uniqueProjects = [
+        ...new Set(
+          paginatedSessions.map((s) =>
+            makeProjectProfileKey(s.project, s.namespace),
+          ),
+        ),
+      ];
       const profileResults = await Promise.all(
         uniqueProjects.map((project) =>
           kv.get<ProjectProfile>(KV.profiles, project).catch(() => null),
@@ -328,7 +335,10 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
           await kv.delete(KV.procedural, p.id);
         }
         for (const profile of await kv.list<ProjectProfile>(KV.profiles).catch(() => [])) {
-          await kv.delete(KV.profiles, profile.project);
+          await kv.delete(
+            KV.profiles,
+            makeProjectProfileKey(profile.project, profile.namespace),
+          );
         }
         for (const a of await kv.list<AccessLogExport>(KV.accessLog).catch(() => [])) {
           await kv.delete(KV.accessLog, a.memoryId);
@@ -437,14 +447,21 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
         for (const profile of importData.profiles) {
           if (strategy === "skip") {
             const existing = await kv
-              .get<ProjectProfile>(KV.profiles, profile.project)
+              .get<ProjectProfile>(
+                KV.profiles,
+                makeProjectProfileKey(profile.project, profile.namespace),
+              )
               .catch(() => null);
             if (existing) {
               stats.skipped++;
               continue;
             }
           }
-          await kv.set(KV.profiles, profile.project, profile);
+          await kv.set(
+            KV.profiles,
+            makeProjectProfileKey(profile.project, profile.namespace),
+            profile,
+          );
         }
       }
 

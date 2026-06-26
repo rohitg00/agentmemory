@@ -8,8 +8,9 @@ import { withKeyedLock } from "../state/keyed-mutex.js";
 import { isAutoCompressEnabled } from "../config.js";
 import { buildSyntheticCompression } from "./compress-synthetic.js";
 import { getSearchIndex, vectorIndexAddGuarded } from "./search.js";
-import { getAgentId } from "../config.js";
+import { getAgentId, getNamespace } from "../config.js";
 import { logger } from "../logger.js";
+import { normalizeNamespace } from "../utils/namespace.js";
 
 export function extractImage(d: unknown): string | undefined {
   if (!d) return undefined;
@@ -140,6 +141,7 @@ export function registerObserveFunction(
         // retroactively scoped by a later AGENT_ID export.
         const existingSession = await kv.get<{
           agentId?: string;
+          namespace?: string;
           observationCount?: number;
           firstPrompt?: string;
         }>(KV.sessions, payload.sessionId);
@@ -148,6 +150,12 @@ export function registerObserveFunction(
           : getAgentId();
         if (inheritedAgentId) {
           raw.agentId = inheritedAgentId;
+        }
+        const inheritedNamespace = existingSession
+          ? existingSession.namespace
+          : normalizeNamespace(payload.namespace) ?? getNamespace();
+        if (inheritedNamespace) {
+          raw.namespace = inheritedNamespace;
         }
 
         if (pendingImageData && (pendingImageData.startsWith("data:image/") || pendingImageData.startsWith("iVBORw0KGgo") || pendingImageData.startsWith("/9j/"))) {
@@ -262,6 +270,7 @@ export function registerObserveFunction(
           await kv.set(KV.sessions, payload.sessionId, {
             id: payload.sessionId,
             project: payload.project,
+            ...(inheritedNamespace ? { namespace: inheritedNamespace } : {}),
             cwd: payload.cwd,
             startedAt: payload.timestamp ?? ts,
             updatedAt: ts,
