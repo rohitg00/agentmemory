@@ -1,7 +1,8 @@
-# One-click deploy templates
+# Deploy templates
 
-Stand up agentmemory on managed infrastructure without rolling your own
-Docker host. Each template ships a self-contained Dockerfile that pulls
+Stand up agentmemory on managed infrastructure (fly.io, Railway, Render,
+Coolify) or on a Docker host you already run yourself (NAS, homelab, plain
+`docker compose`). Each template ships a self-contained Dockerfile that pulls
 `@agentmemory/agentmemory` from npm at build time and copies the iii
 engine binary in from the official `iiidev/iii` image — no pre-built
 agentmemory image required. Storage mounts at `/data`; an HMAC secret
@@ -17,6 +18,7 @@ exec'ing the agentmemory CLI.
 | [Railway](./railway/README.md) | Push from GitHub, volume in the dashboard. Easiest managed dashboard flow. | $5/month (Hobby plan flat fee) |
 | [Render](./render/README.md) | Blueprint-driven; persistent disk attaches automatically. Most "set it and forget it." | $7.25/month (Starter web + 1 GB disk) |
 | [Coolify](./coolify/README.md) | Self-hosted on your own VPS. Same Docker Compose stack, you own the host and the data. | VPS cost only (Hetzner CX22 ~€3.79/month) |
+| [Plain Docker](./docker/README.md) | No PaaS control plane at all — a NAS, a homelab box, a Windows machine with Docker Desktop, anything that runs `docker compose`. You own the host, the proxy (if any), and the data. | Whatever hardware you already have |
 
 ## What every template guarantees
 
@@ -49,6 +51,10 @@ exec'ing the agentmemory CLI.
 - Pick **Coolify** if you already run a VPS and want a self-hosted
   control plane — same Docker Compose stack, no third-party host has
   your memories.
+- Pick **Plain Docker** if you already have a Docker host running
+  somewhere (NAS, homelab, a Windows box with Docker Desktop) and don't
+  want a control plane at all — you manage the proxy and TLS, if any,
+  yourself.
 
 All four give you the same agentmemory API at the same port (3111)
 with the same auth model. Migrating between them later is a `tar` of
