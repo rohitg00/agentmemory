@@ -11,6 +11,7 @@ function isSdkChildContext(payload: unknown): boolean {
 
 const REST_URL = process.env["AGENTMEMORY_URL"] || "http://localhost:3111";
 const SECRET = process.env["AGENTMEMORY_SECRET"] || "";
+const SUMMARIZE_ON_STOP = process.env["AGENTMEMORY_SUMMARIZE_ON_STOP"] === "true";
 
 function authHeaders(): Record<string, string> {
   const h: Record<string, string> = { "Content-Type": "application/json" };
@@ -39,12 +40,14 @@ async function main() {
 
   const sessionId = ((data.session_id || data.sessionId) as string) || "unknown";
 
-  fetch(`${REST_URL}/agentmemory/summarize`, {
-    method: "POST",
-    headers: authHeaders(),
-    body: JSON.stringify({ sessionId }),
-    signal: AbortSignal.timeout(120000),
-  }).catch(() => {});
+  if (SUMMARIZE_ON_STOP) {
+    fetch(`${REST_URL}/agentmemory/summarize`, {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ sessionId }),
+      signal: AbortSignal.timeout(120000),
+    }).catch(() => {});
+  }
 
   fetch(`${REST_URL}/agentmemory/session/end`, {
     method: "POST",

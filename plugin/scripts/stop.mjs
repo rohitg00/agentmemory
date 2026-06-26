@@ -7,6 +7,7 @@ function isSdkChildContext(payload) {
 }
 const REST_URL = process.env["AGENTMEMORY_URL"] || "http://localhost:3111";
 const SECRET = process.env["AGENTMEMORY_SECRET"] || "";
+const SUMMARIZE_ON_STOP = process.env["AGENTMEMORY_SUMMARIZE_ON_STOP"] === "true";
 function authHeaders() {
 	const h = { "Content-Type": "application/json" };
 	if (SECRET) h["Authorization"] = `Bearer ${SECRET}`;
@@ -23,7 +24,7 @@ async function main() {
 	}
 	if (isSdkChildContext(data)) return;
 	const sessionId = data.session_id || data.sessionId || "unknown";
-	fetch(`${REST_URL}/agentmemory/summarize`, {
+	if (SUMMARIZE_ON_STOP) fetch(`${REST_URL}/agentmemory/summarize`, {
 		method: "POST",
 		headers: authHeaders(),
 		body: JSON.stringify({ sessionId }),
@@ -38,7 +39,7 @@ async function main() {
 	setTimeout(() => process.exit(0), 1500).unref();
 }
 main();
-
 //#endregion
-export {  };
+export {};
+
 //# sourceMappingURL=stop.mjs.map

@@ -392,6 +392,10 @@ export function isAutoCompressEnabled(): boolean {
   return getMergedEnv()["AGENTMEMORY_AUTO_COMPRESS"] === "true";
 }
 
+export function isSummarizeOnStopEnabled(): boolean {
+  return getMergedEnv()["AGENTMEMORY_SUMMARIZE_ON_STOP"] === "true";
+}
+
 // Hook-level context injection into Claude Code's conversation is OFF by
 // default as of 0.8.10 (see #143). When disabled, pre-tool-use and
 // session-start hooks still POST observations for background capture, but

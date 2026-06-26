@@ -3,7 +3,7 @@ import type { CompressedObservation, HookPayload, Session } from "../types.js";
 import { KV, STREAM } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { isReflectEnabled } from "../functions/slots.js";
-import { isGraphExtractionEnabled } from "../config.js";
+import { isGraphExtractionEnabled, isSummarizeOnStopEnabled } from "../config.js";
 import { logger } from "../logger.js";
 
 export function registerEventTriggers(sdk: ISdk, kv: StateKV): void {
@@ -45,7 +45,9 @@ export function registerEventTriggers(sdk: ISdk, kv: StateKV): void {
   });
 
   sdk.registerFunction("event::session::stopped", async (data: { sessionId: string }) => {
-    const summary = await sdk.trigger({ function_id: "mem::summarize", payload: data });
+    const summary = isSummarizeOnStopEnabled()
+      ? await sdk.trigger({ function_id: "mem::summarize", payload: data })
+      : { skipped: true, reason: "AGENTMEMORY_SUMMARIZE_ON_STOP is not true" };
     if (isReflectEnabled()) {
       try {
         sdk.trigger({

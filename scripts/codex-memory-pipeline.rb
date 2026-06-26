@@ -1527,7 +1527,10 @@ def command_consolidate(options)
   puts "state=#{options.state_path}"
   puts "dry_run=#{options.dry_run}"
   puts "selected_memories=#{memories.length}"
-  raise "no memories selected" if memories.empty?
+  if memories.empty?
+    puts "no_op=true"
+    return
+  end
   return if options.dry_run && !options.codex_dry_run
 
   prompt = build_consolidation_prompt(memories, version)
@@ -1563,7 +1566,10 @@ def command_graph(options)
   puts "state=#{options.state_path}"
   puts "dry_run=#{options.dry_run}"
   puts "selected_memories=#{memories.length}"
-  raise "no memories selected" if memories.empty?
+  if memories.empty?
+    puts "no_op=true"
+    return
+  end
   return if options.dry_run && !options.codex_dry_run
 
   prompt = build_graph_prompt(memories, version)
