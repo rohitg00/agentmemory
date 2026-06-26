@@ -226,7 +226,7 @@ export function registerSmartSearchFunction(
       const [hybridResults, lessons] = await Promise.all([
         searchFn(data.query, overFetchLimit),
         includeLessons
-          ? recallLessons(sdk, data.query, lessonLimit, data.project)
+          ? recallLessons(sdk, data.query, lessonLimit, data.project, filterNamespace)
           : Promise.resolve([]),
       ]);
 
@@ -324,11 +324,12 @@ async function recallLessons(
   query: string,
   limit: number,
   project?: string,
+  namespace?: string,
 ): Promise<CompactLessonResult[]> {
   try {
     const result = (await sdk.trigger({
       function_id: "mem::lesson-recall",
-      payload: { query, limit, project },
+      payload: { query, limit, project, namespace },
     })) as { success?: boolean; lessons?: Array<Lesson & { score?: number }> };
     if (!result?.success || !Array.isArray(result.lessons)) return [];
     return result.lessons.map((l) => ({

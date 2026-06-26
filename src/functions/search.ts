@@ -361,18 +361,6 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
       const namespaceFilter = wildcardNamespace
         ? undefined
         : explicitNamespace ?? (isNamespaceScopeIsolated() ? getNamespace() : undefined)
-      if (
-        isNamespaceScopeIsolated() &&
-        !wildcardNamespace &&
-        !explicitNamespace &&
-        !getNamespace()
-      ) {
-        throw new Error(
-          "mem::search: AGENTMEMORY_NAMESPACE_SCOPE=isolated is set but no " +
-            "namespace is available (env AGENTMEMORY_NAMESPACE unset and no explicit " +
-            'namespace in the call). Pass namespace: "*" to opt in to a wildcard read.',
-        )
-      }
       const cwdFilter = typeof data.cwd === 'string' && data.cwd.trim().length > 0 ? data.cwd.trim() : undefined
       // #817: agent-scope isolation. mem::search backs REST /search,
       // memory_recall and recall_context. Without filtering here a

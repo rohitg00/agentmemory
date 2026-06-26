@@ -17,7 +17,7 @@ import {
   listPinnedSlots,
   renderPinnedContext,
 } from "./slots.js";
-import { makeProjectProfileKey } from "../utils/namespace.js";
+import { makeProjectProfileKey, normalizeNamespace } from "../utils/namespace.js";
 
 function estimateTokens(text: string): number {
   return Math.ceil(text.length / 3);
@@ -40,7 +40,8 @@ export function registerContextFunction(
     async (data: { sessionId: string; project: string; namespace?: string; budget?: number }) => {
       const budget = data.budget || tokenBudget;
       const blocks: ContextBlock[] = [];
-      const profileKey = makeProjectProfileKey(data.project, data.namespace);
+      const namespace = normalizeNamespace(data.namespace);
+      const profileKey = makeProjectProfileKey(data.project, namespace);
 
       const [pinnedSlots, profile, lessons] = await Promise.all([
         isSlotsEnabled()
@@ -109,7 +110,7 @@ export function registerContextFunction(
           (l) =>
             !l.deleted &&
             (!l.project || l.project === data.project) &&
-            (!data.namespace ? !l.namespace : l.namespace === data.namespace),
+            (!namespace ? !l.namespace : l.namespace === namespace),
         )
         .sort((a, b) => {
           const scoreA = (a.project === data.project ? 1.5 : 1) * a.confidence;
@@ -145,7 +146,7 @@ export function registerContextFunction(
           (s) =>
             s.project === data.project &&
             s.id !== data.sessionId &&
-            s.namespace === data.namespace,
+            s.namespace === namespace,
         )
         .sort(
           (a, b) =>
@@ -213,8 +214,8 @@ export function registerContextFunction(
       let usedTokens = 0;
       const selected: string[] = [];
       const accessedIds: string[] = [];
-      const namespaceAttr = data.namespace
-        ? ` namespace="${escapeXmlAttr(data.namespace)}"`
+      const namespaceAttr = namespace
+        ? ` namespace="${escapeXmlAttr(namespace)}"`
         : "";
       const header = `<agentmemory-context project="${escapeXmlAttr(data.project)}"${namespaceAttr}>`;
       const footer = `</agentmemory-context>`;
@@ -236,7 +237,7 @@ export function registerContextFunction(
       if (selected.length === 0) {
         logger.info("No context available", {
           project: data.project,
-          namespace: data.namespace,
+          namespace,
         });
         return { context: "", blocks: 0, tokens: 0 };
       }

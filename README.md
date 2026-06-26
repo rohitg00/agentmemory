@@ -1352,7 +1352,7 @@ What gets tagged when `AGENTMEMORY_NAMESPACE` is set: `Session.namespace`, `RawO
 
 What gets filtered in isolated mode: `mem::search`, `mem::smart-search`, `mem::context`, `mem::enrich`, `/agentmemory/sessions`, `/agentmemory/observations`, `/agentmemory/memories`.
 
-Per-call override at the SDK / REST layer: mutating endpoints such as `/session/start`, `/observe`, `/remember`, `/context`, `/search`, `/smart-search`, and `/enrich` accept a `namespace` field that overrides the env default for that call.
+Per-call override at the SDK / REST layer: write endpoints such as `/session/start`, `/observe`, and `/remember`, plus read endpoints such as `/context`, `/search`, `/smart-search`, and `/enrich`, accept a `namespace` field that overrides the env default for that call.
 
 ### Ports
 

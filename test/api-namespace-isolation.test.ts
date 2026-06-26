@@ -172,6 +172,8 @@ describe("api namespace isolation", () => {
     })) as { body: { session: Session } };
 
     expect(result.body.session.namespace).toBe("work");
+    const stored = await kv.get<Session>(KV.sessions, "sess-new");
+    expect(stored?.namespace).toBe("work");
   });
 
   it("sessions list is filtered by the active namespace in isolated mode", async () => {
@@ -198,5 +200,13 @@ describe("api namespace isolation", () => {
 
     expect(result.body.memories).toHaveLength(1);
     expect(result.body.memories[0]?.namespace).toBe("work");
+  });
+
+  it("memories list supports namespace wildcard override", async () => {
+    const result = (await sdk.trigger("api::memories", {
+      query_params: { namespace: "*" },
+    })) as { body: { memories: Memory[] } };
+
+    expect(result.body.memories).toHaveLength(2);
   });
 });

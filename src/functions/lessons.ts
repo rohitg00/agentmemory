@@ -118,8 +118,9 @@ export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
       if (data.project) {
         lessons = lessons.filter((l) => l.project === data.project);
       }
-      if (data.namespace) {
-        lessons = lessons.filter((l) => l.namespace === data.namespace);
+      const namespace = normalizeNamespace(data.namespace);
+      if (namespace) {
+        lessons = lessons.filter((l) => l.namespace === namespace);
       }
 
       const scored = lessons
@@ -180,8 +181,9 @@ export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
       if (data.project) {
         lessons = lessons.filter((l) => l.project === data.project);
       }
-      if (data.namespace) {
-        lessons = lessons.filter((l) => l.namespace === data.namespace);
+      const namespace = normalizeNamespace(data.namespace);
+      if (namespace) {
+        lessons = lessons.filter((l) => l.namespace === namespace);
       }
       if (data.source) {
         lessons = lessons.filter((l) => l.source === data.source);

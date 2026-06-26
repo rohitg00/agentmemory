@@ -3,6 +3,7 @@ import type { Memory } from "../types.js";
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { logger } from "../logger.js";
+import { getNamespace } from "../config.js";
 import { normalizeNamespace } from "../utils/namespace.js";
 
 const MAX_CONTEXT_LENGTH = 4000;
@@ -30,7 +31,7 @@ export function registerEnrichFunction(sdk: ISdk, kv: StateKV): void {
         typeof data.project === "string" && data.project.trim().length > 0
           ? data.project.trim()
           : undefined;
-      const namespace = normalizeNamespace(data.namespace);
+      const namespace = normalizeNamespace(data.namespace) ?? getNamespace();
 
       const parts: string[] = [];
 

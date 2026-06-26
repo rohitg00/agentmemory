@@ -77,6 +77,8 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
           if (project && existing.project && existing.project !== project) {
             continue;
           }
+          // Namespace is the stronger boundary: fail closed so a namespaced
+          // memory never supersedes an unscoped legacy one (or vice versa).
           if (namespace !== existing.namespace) {
             continue;
           }

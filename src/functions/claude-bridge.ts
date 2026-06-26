@@ -6,6 +6,7 @@ import { KV } from "../state/schema.js";
 import type { StateKV } from "../state/kv.js";
 import { recordAudit } from "./audit.js";
 import { logger } from "../logger.js";
+import { getNamespace } from "../config.js";
 import { makeProjectProfileKey } from "../utils/namespace.js";
 
 function parseMemoryMd(content: string): {
@@ -127,7 +128,7 @@ export function registerClaudeBridgeFunction(
           const profile = await kv
             .get<{ summary?: string }>(
               KV.profiles,
-              makeProjectProfileKey(config.projectPath),
+              makeProjectProfileKey(config.projectPath, getNamespace()),
             )
             .catch(() => null);
           projectSummary = profile?.summary || "";

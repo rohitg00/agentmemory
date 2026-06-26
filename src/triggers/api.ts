@@ -119,6 +119,59 @@ function asNonEmptyString(value: unknown): string | null {
   return trimmed ? trimmed : null;
 }
 
+function parseNamespaceInput(
+  value: unknown,
+  opts: { allowWildcard?: boolean } = {},
+): { namespace?: string; wildcard: boolean; invalid: boolean } {
+  if (value === undefined) {
+    return { namespace: undefined, wildcard: false, invalid: false };
+  }
+  if (value === null || typeof value !== "string") {
+    return { namespace: undefined, wildcard: false, invalid: true };
+  }
+  const trimmed = value.trim();
+  if (opts.allowWildcard && trimmed === "*") {
+    return { namespace: undefined, wildcard: true, invalid: false };
+  }
+  const namespace = normalizeNamespace(value);
+  if (namespace === undefined) {
+    return { namespace: undefined, wildcard: false, invalid: true };
+  }
+  return { namespace, wildcard: false, invalid: false };
+}
+
+function invalidNamespaceResponse(): Response {
+  return {
+    status_code: 400,
+    body: { error: "namespace must be a non-empty string" },
+  };
+}
+
+function resolveListNamespaceFilter(
+  parsed: { namespace?: string; wildcard: boolean; invalid: boolean },
+): { filterNamespace?: string } | Response {
+  if (parsed.invalid) {
+    return invalidNamespaceResponse();
+  }
+  const configuredNamespace = isNamespaceScopeIsolated() ? getNamespace() : undefined;
+  if (
+    isNamespaceScopeIsolated() &&
+    !parsed.wildcard &&
+    parsed.namespace === undefined &&
+    !configuredNamespace
+  ) {
+    return {
+      status_code: 500,
+      body: { error: "namespace isolation is enabled but no namespace is configured" },
+    };
+  }
+  return {
+    filterNamespace: parsed.wildcard
+      ? undefined
+      : parsed.namespace ?? configuredNamespace,
+  };
+}
+
 function parseOptionalFiniteNumber(value: unknown): number | undefined | null {
   if (value === undefined || value === null) return undefined;
   if (typeof value === "number") return Number.isFinite(value) ? value : null;
@@ -292,9 +345,12 @@ export function registerApiTriggers(
       const hookType = asNonEmptyString(body.hookType);
       const sessionId = asNonEmptyString(body.sessionId);
       const project = asNonEmptyString(body.project);
-      const namespace = normalizeNamespace(body.namespace);
+      const { namespace, invalid: invalidNamespace } = parseNamespaceInput(body.namespace);
       const cwd = asNonEmptyString(body.cwd);
       const timestamp = asNonEmptyString(body.timestamp);
+      if (invalidNamespace) {
+        return invalidNamespaceResponse();
+      }
       if (!hookType || !sessionId || !project || !cwd || !timestamp) {
         return {
           status_code: 400,
@@ -334,7 +390,10 @@ export function registerApiTriggers(
       const body = (req.body ?? {}) as Record<string, unknown>;
       const sessionId = asNonEmptyString(body.sessionId);
       const project = asNonEmptyString(body.project);
-      const namespace = normalizeNamespace(body.namespace);
+      const { namespace, invalid: invalidNamespace } = parseNamespaceInput(body.namespace);
+      if (invalidNamespace) {
+        return invalidNamespaceResponse();
+      }
       if (!sessionId || !project) {
         return {
           status_code: 400,
@@ -382,6 +441,10 @@ export function registerApiTriggers(
       }>,
     ): Promise<Response> => {
       const body = (req.body ?? {}) as Record<string, unknown>;
+      const { namespace, invalid: invalidNamespace } = parseNamespaceInput(body.namespace);
+      if (invalidNamespace) {
+        return invalidNamespaceResponse();
+      }
       const queryAgentId =
         typeof (req as { query_params?: Record<string, string> })
           .query_params?.["agentId"] === "string"
@@ -399,9 +462,6 @@ export function registerApiTriggers(
       }
       if (body.project !== undefined && typeof body.project !== "string") {
         return { status_code: 400, body: { error: "project must be a string" } };
-      }
-      if (body.namespace !== undefined && typeof body.namespace !== "string") {
-        return { status_code: 400, body: { error: "namespace must be a string" } };
       }
       if (body.cwd !== undefined && typeof body.cwd !== "string") {
         return { status_code: 400, body: { error: "cwd must be a string" } };
@@ -437,7 +497,7 @@ export function registerApiTriggers(
         query: body.query.trim(),
         limit: body.limit as number | undefined,
         project: body.project as string | undefined,
-        namespace: normalizeNamespace(body.namespace),
+        namespace,
         cwd: body.cwd as string | undefined,
         format:
           typeof body.format === "string"
@@ -576,7 +636,11 @@ export function registerApiTriggers(
       const body = (req.body ?? {}) as Record<string, unknown>;
       const sessionId = asNonEmptyString(body.sessionId);
       const project = asNonEmptyString(body.project);
-      const namespace = normalizeNamespace(body.namespace) ?? getNamespace();
+      const { namespace: explicitNamespace, invalid: invalidNamespace } = parseNamespaceInput(body.namespace);
+      if (invalidNamespace) {
+        return invalidNamespaceResponse();
+      }
+      const namespace = explicitNamespace ?? getNamespace();
       const cwd = asNonEmptyString(body.cwd);
       if (!sessionId || !project || !cwd) {
         return {
@@ -826,17 +890,13 @@ export function registerApiTriggers(
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
       const sessions = await kv.list<Session>(KV.sessions);
-      const normalizedNamespace =
-        typeof req.query_params?.["namespace"] === "string"
-          ? req.query_params["namespace"].trim()
-          : undefined;
-      const wildcardNamespace = normalizedNamespace === "*";
-      const explicitNamespace =
-        normalizedNamespace && !wildcardNamespace ? normalizedNamespace : undefined;
-      const filterNamespace = wildcardNamespace
-        ? undefined
-        : explicitNamespace ??
-          (isNamespaceScopeIsolated() ? getNamespace() : undefined);
+      const namespaceResult = resolveListNamespaceFilter(
+        parseNamespaceInput(req.query_params?.["namespace"], { allowWildcard: true }),
+      );
+      if ("status_code" in namespaceResult) {
+        return namespaceResult;
+      }
+      const { filterNamespace } = namespaceResult;
       const normalizedAgentId =
         typeof req.query_params?.["agentId"] === "string"
           ? req.query_params["agentId"].trim()
@@ -881,17 +941,13 @@ export function registerApiTriggers(
       const observations = await kv.list<CompressedObservation>(
         KV.observations(sessionId),
       );
-      const normalizedNamespace =
-        typeof req.query_params?.["namespace"] === "string"
-          ? req.query_params["namespace"].trim()
-          : undefined;
-      const wildcardNamespace = normalizedNamespace === "*";
-      const explicitNamespace =
-        normalizedNamespace && !wildcardNamespace ? normalizedNamespace : undefined;
-      const filterNamespace = wildcardNamespace
-        ? undefined
-        : explicitNamespace ??
-          (isNamespaceScopeIsolated() ? getNamespace() : undefined);
+      const namespaceResult = resolveListNamespaceFilter(
+        parseNamespaceInput(req.query_params?.["namespace"], { allowWildcard: true }),
+      );
+      if ("status_code" in namespaceResult) {
+        return namespaceResult;
+      }
+      const { filterNamespace } = namespaceResult;
       const normalizedAgentId =
         typeof req.query_params?.["agentId"] === "string"
           ? req.query_params["agentId"].trim()
@@ -1204,6 +1260,10 @@ export function registerApiTriggers(
     ): Promise<Response> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
+      const parsedNamespace = parseNamespaceInput(req.body?.namespace);
+      if (parsedNamespace.invalid) {
+        return invalidNamespaceResponse();
+      }
       if (
         !req.body?.query &&
         (!req.body?.expandIds || req.body.expandIds.length === 0)
@@ -1228,7 +1288,7 @@ export function registerApiTriggers(
         expandIds: req.body?.expandIds,
         limit: req.body?.limit,
         project: req.body?.project,
-        namespace: normalizeNamespace(req.body?.namespace),
+        namespace: parsedNamespace.namespace,
         includeLessons: req.body?.includeLessons,
         agentId: req.body?.agentId,
         sessionId: req.body?.sessionId,
@@ -1311,11 +1371,15 @@ export function registerApiTriggers(
           body: { error: "project query param is required" },
         };
       }
+      const parsedNamespace = parseNamespaceInput(req.query_params?.["namespace"]);
+      if (parsedNamespace.invalid) {
+        return invalidNamespaceResponse();
+      }
       const result = await sdk.trigger({
         function_id: "mem::profile",
         payload: {
           project,
-          namespace: normalizeNamespace(req.query_params?.["namespace"]),
+          namespace: parsedNamespace.namespace,
         },
       });
       return { status_code: 200, body: result };
@@ -1907,16 +1971,13 @@ export function registerApiTriggers(
       if (authErr) return authErr;
       const memories = await kv.list<import("../types.js").Memory>(KV.memories);
       const latest = req.query_params?.["latest"] === "true";
-      const normalizedNamespace =
-        typeof req.query_params?.["namespace"] === "string"
-          ? req.query_params["namespace"].trim()
-          : undefined;
-      const wildcardNamespace = normalizedNamespace === "*";
-      const explicitNamespace =
-        normalizedNamespace && !wildcardNamespace ? normalizedNamespace : undefined;
-      const filterNamespace = wildcardNamespace
-        ? undefined
-        : explicitNamespace ?? (isNamespaceScopeIsolated() ? getNamespace() : undefined);
+      const namespaceResult = resolveListNamespaceFilter(
+        parseNamespaceInput(req.query_params?.["namespace"], { allowWildcard: true }),
+      );
+      if ("status_code" in namespaceResult) {
+        return namespaceResult;
+      }
+      const { filterNamespace } = namespaceResult;
       // agentId filter. Request param wins, env AGENT_ID (when
       // scope=isolated) is the fallback. Shared mode keeps the tag but
       // does not restrict the list endpoint. Pass agentId=* to opt out

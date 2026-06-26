@@ -3,17 +3,19 @@ import type { CompressedObservation, HookPayload, Session } from "../types.js";
 import { KV, STREAM } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { isReflectEnabled } from "../functions/slots.js";
-import { isGraphExtractionEnabled } from "../config.js";
+import { getNamespace, isGraphExtractionEnabled } from "../config.js";
 import { logger } from "../logger.js";
+import { normalizeNamespace } from "../utils/namespace.js";
 
 export function registerEventTriggers(sdk: ISdk, kv: StateKV): void {
   sdk.registerFunction(
     "event::session::started",
     async (data: { sessionId: string; project: string; namespace?: string; cwd: string }) => {
+      const namespace = normalizeNamespace(data.namespace) ?? getNamespace();
       const session: Session = {
         id: data.sessionId,
         project: data.project,
-        ...(data.namespace ? { namespace: data.namespace } : {}),
+        ...(namespace ? { namespace } : {}),
         cwd: data.cwd,
         startedAt: new Date().toISOString(),
         status: "active",
@@ -28,7 +30,7 @@ export function registerEventTriggers(sdk: ISdk, kv: StateKV): void {
         payload: {
           sessionId: data.sessionId,
           project: data.project,
-          ...(data.namespace ? { namespace: data.namespace } : {}),
+          ...(namespace ? { namespace } : {}),
         },
       });
       return { session, context: contextResult.context };
