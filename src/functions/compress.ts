@@ -166,6 +166,7 @@ export function registerCompressFunction(
           ...(imageDescription ? { imageDescription } : {}),
           ...(data.raw.imageData ? { imageRef: data.raw.imageData } : {}),
           ...(data.raw.agentId ? { agentId: data.raw.agentId } : {}),
+          ...(data.raw.namespace ? { namespace: data.raw.namespace } : {}),
         };
 
         await kv.set(

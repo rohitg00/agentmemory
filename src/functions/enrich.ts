@@ -3,6 +3,7 @@ import type { Memory } from "../types.js";
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { logger } from "../logger.js";
+import { normalizeNamespace } from "../utils/namespace.js";
 
 const MAX_CONTEXT_LENGTH = 4000;
 
@@ -23,11 +24,13 @@ export function registerEnrichFunction(sdk: ISdk, kv: StateKV): void {
       terms?: string[];
       toolName?: string;
       project?: string;
+      namespace?: string;
     }) => {
       const project =
         typeof data.project === "string" && data.project.trim().length > 0
           ? data.project.trim()
           : undefined;
+      const namespace = normalizeNamespace(data.namespace);
 
       const parts: string[] = [];
 
@@ -50,7 +53,7 @@ export function registerEnrichFunction(sdk: ISdk, kv: StateKV): void {
         searchQueries.length > 0
           ? sdk
               .trigger<
-                { query: string; limit: number; project?: string },
+                { query: string; limit: number; project?: string; namespace?: string },
                 { results: Array<{ observation: { narrative: string } }> }
               >({
                 function_id: "mem::search",
@@ -58,6 +61,7 @@ export function registerEnrichFunction(sdk: ISdk, kv: StateKV): void {
                   query: searchQueries.join(" "),
                   limit: 5,
                   ...(project !== undefined && { project }),
+                  ...(namespace !== undefined && { namespace }),
                 },
               })
               .catch(() => ({ results: [] }))
@@ -71,6 +75,7 @@ export function registerEnrichFunction(sdk: ISdk, kv: StateKV): void {
               (m) =>
                 m.type === "bug" &&
                 m.isLatest &&
+                (!namespace ? !m.namespace : m.namespace === namespace) &&
                 // Guard only when both sides have an explicit project; unscoped memories pass through.
                 (!project || !m.project || m.project === project) &&
                 m.files.some((f) =>
@@ -128,6 +133,7 @@ export function registerEnrichFunction(sdk: ISdk, kv: StateKV): void {
       logger.info("Enrichment completed", {
         sessionId: data.sessionId,
         project,
+        namespace,
         fileCount: data.files.length,
         contextLength: context.length,
         truncated,

@@ -9,10 +9,11 @@ import { logger } from "../logger.js";
 export function registerEventTriggers(sdk: ISdk, kv: StateKV): void {
   sdk.registerFunction(
     "event::session::started",
-    async (data: { sessionId: string; project: string; cwd: string }) => {
+    async (data: { sessionId: string; project: string; namespace?: string; cwd: string }) => {
       const session: Session = {
         id: data.sessionId,
         project: data.project,
+        ...(data.namespace ? { namespace: data.namespace } : {}),
         cwd: data.cwd,
         startedAt: new Date().toISOString(),
         status: "active",
@@ -20,11 +21,15 @@ export function registerEventTriggers(sdk: ISdk, kv: StateKV): void {
       };
       await kv.set(KV.sessions, data.sessionId, session);
       const contextResult = await sdk.trigger<
-        { sessionId: string; project: string },
+        { sessionId: string; project: string; namespace?: string },
         { context: string }
       >({
         function_id: "mem::context",
-        payload: { sessionId: data.sessionId, project: data.project },
+        payload: {
+          sessionId: data.sessionId,
+          project: data.project,
+          ...(data.namespace ? { namespace: data.namespace } : {}),
+        },
       });
       return { session, context: contextResult.context };
     },

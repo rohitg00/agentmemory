@@ -13,6 +13,7 @@ export function memoryToObservation(memory: Memory): CompressedObservation {
     id: memory.id,
     sessionId: memory.sessionIds?.[0] ?? "memory",
     timestamp: memory.createdAt,
+    ...(memory.namespace ? { namespace: memory.namespace } : {}),
     type: "decision",
     title: memory.title,
     facts: [memory.content],

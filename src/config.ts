@@ -315,6 +315,30 @@ export function isAgentScopeIsolated(): boolean {
   return loadAgentScope()?.mode === "isolated";
 }
 
+export function loadNamespaceScope(): {
+  namespace: string;
+  mode: "shared" | "isolated";
+} | null {
+  const env = getMergedEnv();
+  const raw = env["AGENTMEMORY_NAMESPACE"];
+  if (!raw) return null;
+  const namespace = raw.trim().slice(0, 128);
+  if (!namespace) return null;
+  const mode =
+    env["AGENTMEMORY_NAMESPACE_SCOPE"] === "isolated"
+      ? "isolated"
+      : "shared";
+  return { namespace, mode };
+}
+
+export function getNamespace(): string | undefined {
+  return loadNamespaceScope()?.namespace;
+}
+
+export function isNamespaceScopeIsolated(): boolean {
+  return loadNamespaceScope()?.mode === "isolated";
+}
+
 export function loadSnapshotConfig(): {
   enabled: boolean;
   interval: number;

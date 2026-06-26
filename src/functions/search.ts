@@ -8,7 +8,12 @@ import type { EmbeddingProvider } from '../types.js'
 import { memoryToObservation } from '../state/memory-utils.js'
 import { recordAccessBatch } from './access-tracker.js'
 import { logger } from "../logger.js";
-import { getAgentId, isAgentScopeIsolated } from "../config.js";
+import {
+  getAgentId,
+  getNamespace,
+  isAgentScopeIsolated,
+  isNamespaceScopeIsolated,
+} from "../config.js";
 
 let index: SearchIndex | null = null
 let vectorIndex: VectorIndex | null = null
@@ -326,6 +331,7 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
       query: string
       limit?: number
       project?: string
+      namespace?: string
       cwd?: string
       format?: string
       token_budget?: number
@@ -347,6 +353,26 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
         effectiveLimit = Math.min(data.limit, MAX_LIMIT)
       }
       const projectFilter = typeof data.project === 'string' && data.project.trim().length > 0 ? data.project.trim() : undefined
+      const explicitNamespace =
+        typeof data.namespace === "string" && data.namespace.trim().length > 0
+          ? data.namespace.trim()
+          : undefined
+      const wildcardNamespace = explicitNamespace === "*"
+      const namespaceFilter = wildcardNamespace
+        ? undefined
+        : explicitNamespace ?? (isNamespaceScopeIsolated() ? getNamespace() : undefined)
+      if (
+        isNamespaceScopeIsolated() &&
+        !wildcardNamespace &&
+        !explicitNamespace &&
+        !getNamespace()
+      ) {
+        throw new Error(
+          "mem::search: AGENTMEMORY_NAMESPACE_SCOPE=isolated is set but no " +
+            "namespace is available (env AGENTMEMORY_NAMESPACE unset and no explicit " +
+            'namespace in the call). Pass namespace: "*" to opt in to a wildcard read.',
+        )
+      }
       const cwdFilter = typeof data.cwd === 'string' && data.cwd.trim().length > 0 ? data.cwd.trim() : undefined
       // #817: agent-scope isolation. mem::search backs REST /search,
       // memory_recall and recall_context. Without filtering here a
@@ -408,7 +434,7 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
       // doesn't carry it), so without the over-fetch isolated-mode
       // queries return underfilled pages when same-agent matches
       // rank lower than cross-agent ones in the hybrid score.
-      const filtering = !!(projectFilter || cwdFilter || filterAgentId)
+      const filtering = !!(projectFilter || namespaceFilter || cwdFilter || filterAgentId)
       const fetchLimit = filtering ? Math.max(effectiveLimit * 10, 100) : effectiveLimit
       const results = idx.search(query, fetchLimit)
 
@@ -426,13 +452,18 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
       // either has no KV.sessions entry or belongs to a different project.
       // When loadSession returns null we fall through to a KV.memories probe
       // so project-filtered search can include or exclude them correctly.
-      const memoryProjectCache = new Map<string, string | null>()
-      const loadMemoryProject = async (obsId: string): Promise<string | null> => {
-        if (memoryProjectCache.has(obsId)) return memoryProjectCache.get(obsId)!
+      const memoryMetaCache = new Map<string, { project: string | null; namespace: string | null }>()
+      const loadMemoryMeta = async (
+        obsId: string,
+      ): Promise<{ project: string | null; namespace: string | null }> => {
+        if (memoryMetaCache.has(obsId)) return memoryMetaCache.get(obsId)!
         const mem = await kv.get<Memory>(KV.memories, obsId).catch(() => null)
-        const proj = mem?.project ?? null
-        memoryProjectCache.set(obsId, proj)
-        return proj
+        const meta = {
+          project: mem?.project ?? null,
+          namespace: mem?.namespace ?? null,
+        }
+        memoryMetaCache.set(obsId, meta)
+        return meta
       }
 
       // First pass: filter by session (sequential — benefits from session cache).
@@ -451,6 +482,7 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
         if (filtering) {
           const s = await loadSession(r.sessionId)
           if (s) {
+            if (namespaceFilter && s.namespace !== namespaceFilter) continue
             if (projectFilter && s.project !== projectFilter) continue
             if (cwdFilter && s.cwd !== cwdFilter) continue
           } else {
@@ -468,9 +500,10 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
             //      block a result whose session we can no longer verify.
             // In both cases, a null memProject means "project unknown — treat as
             // unscoped and let it through" to preserve backward-compatibility.
-            if (projectFilter) {
-              const memProject = await loadMemoryProject(r.obsId)
-              if (memProject !== null && memProject !== projectFilter) continue
+            if (projectFilter || namespaceFilter) {
+              const memMeta = await loadMemoryMeta(r.obsId)
+              if (namespaceFilter && memMeta.namespace !== namespaceFilter) continue
+              if (projectFilter && memMeta.project !== null && memMeta.project !== projectFilter) continue
             }
             // cwd filter does not apply to unbound entries.
           }
@@ -498,6 +531,7 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
       for (let i = 0; i < candidates.length; i++) {
         const obs = obsResults[i]
         if (!obs) continue
+        if (namespaceFilter !== undefined && obs.namespace !== namespaceFilter) continue
         // #817: enforce agent-scope after the observation/memory is
         // loaded. The BM25 index doesn't carry agentId so the filter
         // happens post-lookup. Wildcard ("*") and no-isolation paths

@@ -1320,6 +1320,40 @@ Per-call override at the SDK / REST layer: every mutating endpoint (`/session/st
 
 When `AGENT_ID` is unset, memory remains unscoped (legacy behavior, no tags, no filters).
 
+### Workspace namespaces (`AGENTMEMORY_NAMESPACE` + `AGENTMEMORY_NAMESPACE_SCOPE`)
+
+If one agentmemory daemon serves multiple higher-level environments such as `work`, `personal`, or `research`, set a namespace on the server or per request.
+
+```env
+AGENTMEMORY_NAMESPACE=work
+AGENTMEMORY_NAMESPACE_SCOPE=isolated  # optional; default "shared"
+```
+
+This is intentionally separate from `project`:
+
+- `namespace` = the top-level workspace boundary
+- `project` = the project identifier inside that workspace
+
+Examples:
+
+- `namespace=work`, `project=thinpro`
+- `namespace=personal`, `project=thinpro`
+
+Those two projects can now coexist without sharing sessions, observations, memories, or cached project profiles.
+
+Two modes:
+
+| Mode | Tag writes | Filter recall | When to use |
+|------|------------|---------------|-------------|
+| `shared` (default) | yes | no | Auditability without automatic isolation. Callers can still filter by passing `namespace`. |
+| `isolated` | yes | yes | Strict workspace separation. Reads default to the configured namespace unless the caller explicitly opts out with `namespace=*`. |
+
+What gets tagged when `AGENTMEMORY_NAMESPACE` is set: `Session.namespace`, `RawObservation.namespace`, `CompressedObservation.namespace`, `Memory.namespace`, `ProjectProfile.namespace`, `Lesson.namespace`.
+
+What gets filtered in isolated mode: `mem::search`, `mem::smart-search`, `mem::context`, `mem::enrich`, `/agentmemory/sessions`, `/agentmemory/observations`, `/agentmemory/memories`.
+
+Per-call override at the SDK / REST layer: mutating endpoints such as `/session/start`, `/observe`, `/remember`, `/context`, `/search`, `/smart-search`, and `/enrich` accept a `namespace` field that overrides the env default for that call.
+
 ### Ports
 
 agentmemory + iii-engine bind four ports by default. If a restart fails with `port in use`, this table tells you which process to look for.

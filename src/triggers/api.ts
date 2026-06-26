@@ -21,8 +21,11 @@ import {
   detectEmbeddingProvider,
   detectLlmProviderKind,
   getAgentId,
+  getNamespace,
   isAgentScopeIsolated,
+  isNamespaceScopeIsolated,
 } from "../config.js";
+import { normalizeNamespace } from "../utils/namespace.js";
 
 type Response = {
   status_code: number;
@@ -289,6 +292,7 @@ export function registerApiTriggers(
       const hookType = asNonEmptyString(body.hookType);
       const sessionId = asNonEmptyString(body.sessionId);
       const project = asNonEmptyString(body.project);
+      const namespace = normalizeNamespace(body.namespace);
       const cwd = asNonEmptyString(body.cwd);
       const timestamp = asNonEmptyString(body.timestamp);
       if (!hookType || !sessionId || !project || !cwd || !timestamp) {
@@ -304,6 +308,7 @@ export function registerApiTriggers(
         hookType: hookType as HookPayload["hookType"],
         sessionId,
         project,
+        ...(namespace ? { namespace } : {}),
         cwd,
         timestamp,
         data: body.data,
@@ -324,11 +329,12 @@ export function registerApiTriggers(
 
   sdk.registerFunction("api::context",
     async (
-      req: ApiRequest<{ sessionId: string; project: string; budget?: number }>,
+      req: ApiRequest<{ sessionId: string; project: string; namespace?: string; budget?: number }>,
     ): Promise<Response> => {
       const body = (req.body ?? {}) as Record<string, unknown>;
       const sessionId = asNonEmptyString(body.sessionId);
       const project = asNonEmptyString(body.project);
+      const namespace = normalizeNamespace(body.namespace);
       if (!sessionId || !project) {
         return {
           status_code: 400,
@@ -342,10 +348,11 @@ export function registerApiTriggers(
           body: { error: "budget must be a positive integer" },
         };
       }
-      const payload: { sessionId: string; project: string; budget?: number } = {
+      const payload: { sessionId: string; project: string; namespace?: string; budget?: number } = {
         sessionId,
         project,
       };
+      if (namespace !== undefined) payload.namespace = namespace;
       if (budget !== undefined) payload.budget = budget;
       const result = await sdk.trigger({ function_id: "mem::context", payload });
       return { status_code: 200, body: result };
@@ -367,6 +374,7 @@ export function registerApiTriggers(
         query: string;
         limit?: number;
         project?: string;
+        namespace?: string;
         cwd?: string;
         format?: string;
         token_budget?: number;
@@ -391,6 +399,9 @@ export function registerApiTriggers(
       }
       if (body.project !== undefined && typeof body.project !== "string") {
         return { status_code: 400, body: { error: "project must be a string" } };
+      }
+      if (body.namespace !== undefined && typeof body.namespace !== "string") {
+        return { status_code: 400, body: { error: "namespace must be a string" } };
       }
       if (body.cwd !== undefined && typeof body.cwd !== "string") {
         return { status_code: 400, body: { error: "cwd must be a string" } };
@@ -426,6 +437,7 @@ export function registerApiTriggers(
         query: body.query.trim(),
         limit: body.limit as number | undefined,
         project: body.project as string | undefined,
+        namespace: normalizeNamespace(body.namespace),
         cwd: body.cwd as string | undefined,
         format:
           typeof body.format === "string"
@@ -559,11 +571,12 @@ export function registerApiTriggers(
 
   sdk.registerFunction("api::session::start",
     async (
-      req: ApiRequest<{ sessionId: string; project: string; cwd: string }>,
+      req: ApiRequest<{ sessionId: string; project: string; namespace?: string; cwd: string }>,
     ): Promise<Response> => {
       const body = (req.body ?? {}) as Record<string, unknown>;
       const sessionId = asNonEmptyString(body.sessionId);
       const project = asNonEmptyString(body.project);
+      const namespace = normalizeNamespace(body.namespace) ?? getNamespace();
       const cwd = asNonEmptyString(body.cwd);
       if (!sessionId || !project || !cwd) {
         return {
@@ -585,6 +598,7 @@ export function registerApiTriggers(
       const session: Session = {
         id: sessionId,
         project,
+        ...(namespace ? { namespace } : {}),
         cwd,
         startedAt: new Date().toISOString(),
         status: "active",
@@ -595,9 +609,12 @@ export function registerApiTriggers(
       };
       await kv.set(KV.sessions, sessionId, session);
       const contextResult = await sdk.trigger<
-        { sessionId: string; project: string },
+        { sessionId: string; project: string; namespace?: string },
         { context: string }
-      >({ function_id: "mem::context", payload: { sessionId, project } });
+      >({
+        function_id: "mem::context",
+        payload: { sessionId, project, ...(namespace ? { namespace } : {}) },
+      });
       return {
         status_code: 200,
         body: { session, context: contextResult.context },
@@ -809,6 +826,17 @@ export function registerApiTriggers(
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
       const sessions = await kv.list<Session>(KV.sessions);
+      const normalizedNamespace =
+        typeof req.query_params?.["namespace"] === "string"
+          ? req.query_params["namespace"].trim()
+          : undefined;
+      const wildcardNamespace = normalizedNamespace === "*";
+      const explicitNamespace =
+        normalizedNamespace && !wildcardNamespace ? normalizedNamespace : undefined;
+      const filterNamespace = wildcardNamespace
+        ? undefined
+        : explicitNamespace ??
+          (isNamespaceScopeIsolated() ? getNamespace() : undefined);
       const normalizedAgentId =
         typeof req.query_params?.["agentId"] === "string"
           ? req.query_params["agentId"].trim()
@@ -820,9 +848,12 @@ export function registerApiTriggers(
         ? undefined
         : explicitAgentId ??
           (isAgentScopeIsolated() ? getAgentId() : undefined);
-      const filtered = filterAgentId
+      let filtered = filterAgentId
         ? sessions.filter((s) => s.agentId === filterAgentId)
         : sessions;
+      if (filterNamespace !== undefined) {
+        filtered = filtered.filter((s) => s.namespace === filterNamespace);
+      }
       const summaries = await Promise.all(
         filtered.map((s) =>
           kv.get<SessionSummary>(KV.summaries, s.id).catch(() => null),
@@ -850,6 +881,17 @@ export function registerApiTriggers(
       const observations = await kv.list<CompressedObservation>(
         KV.observations(sessionId),
       );
+      const normalizedNamespace =
+        typeof req.query_params?.["namespace"] === "string"
+          ? req.query_params["namespace"].trim()
+          : undefined;
+      const wildcardNamespace = normalizedNamespace === "*";
+      const explicitNamespace =
+        normalizedNamespace && !wildcardNamespace ? normalizedNamespace : undefined;
+      const filterNamespace = wildcardNamespace
+        ? undefined
+        : explicitNamespace ??
+          (isNamespaceScopeIsolated() ? getNamespace() : undefined);
       const normalizedAgentId =
         typeof req.query_params?.["agentId"] === "string"
           ? req.query_params["agentId"].trim()
@@ -861,9 +903,12 @@ export function registerApiTriggers(
         ? undefined
         : explicitAgentId ??
           (isAgentScopeIsolated() ? getAgentId() : undefined);
-      const filtered = filterAgentId
+      let filtered = filterAgentId
         ? observations.filter((o) => o.agentId === filterAgentId)
         : observations;
+      if (filterNamespace !== undefined) {
+        filtered = filtered.filter((o) => o.namespace === filterNamespace);
+      }
       return { status_code: 200, body: { observations: filtered } };
     },
   );
@@ -897,6 +942,7 @@ export function registerApiTriggers(
         terms?: string[];
         toolName?: string;
         project?: string;
+        namespace?: string;
       }>,
     ): Promise<Response> => {
       const authErr = checkAuth(req, secret);
@@ -934,6 +980,15 @@ export function registerApiTriggers(
           body: { error: "project must be a non-empty string" },
         };
       }
+      if (
+        req.body.namespace !== undefined &&
+        (typeof req.body.namespace !== "string" || !req.body.namespace.trim())
+      ) {
+        return {
+          status_code: 400,
+          body: { error: "namespace must be a non-empty string" },
+        };
+      }
       const result = await sdk.trigger({
         function_id: "mem::enrich",
         payload: {
@@ -942,6 +997,9 @@ export function registerApiTriggers(
           ...(req.body.terms !== undefined && { terms: req.body.terms }),
           ...(req.body.toolName !== undefined && { toolName: req.body.toolName }),
           ...(req.body.project !== undefined && { project: req.body.project }),
+          ...(req.body.namespace !== undefined && {
+            namespace: normalizeNamespace(req.body.namespace),
+          }),
         },
       });
       return { status_code: 200, body: result };
@@ -963,6 +1021,7 @@ export function registerApiTriggers(
         ttlDays?: number;
         sourceObservationIds?: string[];
         project?: string;
+        namespace?: string;
       }>,
     ): Promise<Response> => {
       const authErr = checkAuth(req, secret);
@@ -980,6 +1039,12 @@ export function registerApiTriggers(
       ) {
         return { status_code: 400, body: { error: "project must be a non-empty string" } };
       }
+      if (
+        req.body.namespace !== undefined &&
+        (typeof req.body.namespace !== "string" || !req.body.namespace.trim())
+      ) {
+        return { status_code: 400, body: { error: "namespace must be a non-empty string" } };
+      }
       const result = await sdk.trigger({
         function_id: "mem::remember",
         payload: {
@@ -990,6 +1055,9 @@ export function registerApiTriggers(
           ...(req.body.ttlDays !== undefined && { ttlDays: req.body.ttlDays }),
           ...(req.body.sourceObservationIds !== undefined && { sourceObservationIds: req.body.sourceObservationIds }),
           ...(req.body.project !== undefined && { project: req.body.project }),
+          ...(req.body.namespace !== undefined && {
+            namespace: normalizeNamespace(req.body.namespace),
+          }),
         },
       });
       return { status_code: 201, body: result };
@@ -1127,6 +1195,7 @@ export function registerApiTriggers(
         expandIds?: Array<string | { obsId: string; sessionId: string }>;
         limit?: number;
         project?: string;
+        namespace?: string;
         includeLessons?: boolean;
         agentId?: string;
         sessionId?: string;
@@ -1159,6 +1228,7 @@ export function registerApiTriggers(
         expandIds: req.body?.expandIds,
         limit: req.body?.limit,
         project: req.body?.project,
+        namespace: normalizeNamespace(req.body?.namespace),
         includeLessons: req.body?.includeLessons,
         agentId: req.body?.agentId,
         sessionId: req.body?.sessionId,
@@ -1241,7 +1311,13 @@ export function registerApiTriggers(
           body: { error: "project query param is required" },
         };
       }
-      const result = await sdk.trigger({ function_id: "mem::profile", payload: { project } });
+      const result = await sdk.trigger({
+        function_id: "mem::profile",
+        payload: {
+          project,
+          namespace: normalizeNamespace(req.query_params?.["namespace"]),
+        },
+      });
       return { status_code: 200, body: result };
     },
   );
@@ -1831,6 +1907,16 @@ export function registerApiTriggers(
       if (authErr) return authErr;
       const memories = await kv.list<import("../types.js").Memory>(KV.memories);
       const latest = req.query_params?.["latest"] === "true";
+      const normalizedNamespace =
+        typeof req.query_params?.["namespace"] === "string"
+          ? req.query_params["namespace"].trim()
+          : undefined;
+      const wildcardNamespace = normalizedNamespace === "*";
+      const explicitNamespace =
+        normalizedNamespace && !wildcardNamespace ? normalizedNamespace : undefined;
+      const filterNamespace = wildcardNamespace
+        ? undefined
+        : explicitNamespace ?? (isNamespaceScopeIsolated() ? getNamespace() : undefined);
       // agentId filter. Request param wins, env AGENT_ID (when
       // scope=isolated) is the fallback. Shared mode keeps the tag but
       // does not restrict the list endpoint. Pass agentId=* to opt out
@@ -1849,6 +1935,9 @@ export function registerApiTriggers(
         ? undefined
         : explicitAgentId ?? (isAgentScopeIsolated() ? getAgentId() : undefined);
       let filtered = latest ? memories.filter((m) => m.isLatest) : memories;
+      if (filterNamespace !== undefined) {
+        filtered = filtered.filter((m) => m.namespace === filterNamespace);
+      }
       if (filterAgentId) {
         filtered = filtered.filter(
           (m) =>
