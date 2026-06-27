@@ -422,7 +422,7 @@ Yerel runtime'ınızı bilinçli olarak güncellemek istediğinizde bakım komut
 npx @agentmemory/agentmemory upgrade
 ```
 
-Uyarı: bu komut mevcut çalışma alanını/runtime'ı değiştirir. JavaScript bağımlılıklarını güncelleyebilir, `cargo install iii-engine --force` çalıştırabilir ve Docker imajlarını çekebilir.
+Uyarı: bu komut mevcut çalışma alanını/runtime'ı değiştirir. JavaScript bağımlılıklarını güncelleyebilir ve sabitlenmiş `iiidev/iii:0.11.2` Docker imajını çekebilir. Asla sabitlenmemiş ya da daha yeni bir iii motoru kurmaz.
 
 Uygulama detayları `src/cli.ts` içinde (`src/cli.ts:544-595` bölgesi civarında `runUpgrade`'a bakın).
 
@@ -656,7 +656,7 @@ npx -y @agentmemory/mcp
 | Port çakışması | `netstat -ano \| findstr :3111` ile neyin bağlı olduğunu görün, ardından öldürün veya `--port <N>` kullanın |
 | Docker kurulu olsa bile Docker fallback atlanıyor | Docker Desktop'ın gerçekten çalıştığından emin olun (sistem tepsisi simgesi) |
 
-> Not: `cargo install iii-engine` yoktur — `iii` crates.io'da yayımlanmamıştır. Tek desteklenen kurulum yöntemleri yukarıdaki önceden derlenmiş ikilik, upstream `sh` kurulum scripti (yalnızca macOS/Linux) ve Docker imajıdır.
+> Not: iii **motoru** önceden derlenmiş bir ikiliktir, bir cargo crate'i değildir — onu `cargo install` ile kurmaya çalışmayın. (iii **SDK'ları** crates.io, npm ve PyPI'de yayımlanmıştır, ancak agentmemory bunlara ihtiyaç duymaz.) Desteklenen motor kurulum yöntemleri, hepsi v0.11.2'ye sabitlenmiştir: yukarıdaki önceden derlenmiş v0.11.2 ikiliği, sürüm sabitlemesi **ile** upstream `sh` kurulum scripti `curl -fsSL https://install.iii.dev/iii/main/install.sh | VERSION=0.11.2 sh` (macOS/Linux) ve Docker imajı `iiidev/iii:0.11.2`. Yalın bir `install.sh | sh`, agentmemory'nin desteklemediği **en son** motoru kurar — her zaman `VERSION=0.11.2` geçirin. Hepsinden kolayı: sadece `npx @agentmemory/agentmemory` çalıştırın; bu, sabitlenmiş motoru sizin için `~/.agentmemory/bin` dizinine indirir.
 
 ---
 

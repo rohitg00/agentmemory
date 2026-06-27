@@ -65,6 +65,7 @@
     "@clack/prompts": "^1.2.0",
     "dotenv": "^17.4.2",
     "iii-sdk": "0.11.2",
+    "picocolors": "^1.1.1",
     "zod": "^4.0.0"
   },
   "optionalDependencies": {

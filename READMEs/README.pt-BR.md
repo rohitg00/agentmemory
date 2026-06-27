@@ -422,7 +422,7 @@ Use o comando de manutenção quando você intencionalmente quiser atualizar seu
 npx @agentmemory/agentmemory upgrade
 ```
 
-Aviso: este comando muta o workspace/runtime atual. Pode atualizar dependências JavaScript, pode rodar `cargo install iii-engine --force` e pode puxar imagens Docker.
+Aviso: este comando muta o workspace/runtime atual. Pode atualizar dependências JavaScript e puxar a imagem Docker fixada `iiidev/iii:0.11.2`. Nunca instala um engine iii sem fixação ou mais recente.
 
 Detalhes de implementação estão em `src/cli.ts` (veja `runUpgrade` na região `src/cli.ts:544-595`).
 
@@ -656,7 +656,7 @@ npx -y @agentmemory/mcp
 | Conflito de porta | `netstat -ano \| findstr :3111` para ver o que está em bind, mate o processo ou use `--port <N>` |
 | Fallback do Docker é pulado mesmo com Docker instalado | Confira se o Docker Desktop está de fato rodando (ícone na bandeja do sistema) |
 
-> Nota: não existe `cargo install iii-engine` — `iii` não é publicado no crates.io. Os únicos métodos de instalação suportados são o binário pré-compilado acima, o script de instalação `sh` upstream (somente macOS/Linux) e a imagem Docker.
+> Nota: o **engine** iii é um binário pré-compilado, não um crate do cargo — não tente instalá-lo com `cargo install`. (Os **SDKs** do iii são publicados no crates.io, npm e PyPI, mas o agentmemory não precisa deles.) Métodos de instalação do engine suportados, todos fixados em v0.11.2: o binário pré-compilado v0.11.2 acima, o script de instalação `sh` upstream **com a fixação de versão** `curl -fsSL https://install.iii.dev/iii/main/install.sh | VERSION=0.11.2 sh` (macOS/Linux) e a imagem Docker `iiidev/iii:0.11.2`. Um simples `install.sh | sh` instala o engine **mais recente**, que o agentmemory não suporta — sempre passe `VERSION=0.11.2`. O mais fácil de tudo: basta rodar `npx @agentmemory/agentmemory`, que busca o engine fixado em `~/.agentmemory/bin` para você.
 
 ---
 

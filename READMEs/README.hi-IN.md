@@ -422,7 +422,7 @@ Imported सेशंस native ones के साथ Replay picker में �
 npx @agentmemory/agentmemory upgrade
 ```
 
-चेतावनी: यह कमांड वर्तमान workspace/runtime को mutate करता है। यह JavaScript निर्भरताएँ update कर सकता है, `cargo install iii-engine --force` चला सकता है, और Docker images खींच सकता है।
+चेतावनी: यह कमांड वर्तमान workspace/runtime को mutate करता है। यह JavaScript निर्भरताएँ update कर सकता है और pinned Docker image `iiidev/iii:0.11.2` खींच सकता है। यह कभी भी unpinned या नया iii engine install नहीं करता।
 
 Implementation विवरण `src/cli.ts` में हैं (`src/cli.ts:544-595` क्षेत्र के आसपास `runUpgrade` देखें)।
 
@@ -656,7 +656,7 @@ npx -y @agentmemory/mcp
 | Port conflict | `netstat -ano \| findstr :3111` से देखें कि क्या bind है, फिर उसे kill करें या `--port <N>` का उपयोग करें |
 | Docker installed होने पर भी Docker fallback skip हो रहा है | सुनिश्चित करें कि Docker Desktop वास्तव में चल रहा है (system tray icon) |
 
-> नोट: कोई `cargo install iii-engine` नहीं है — `iii` crates.io पर publish नहीं है। केवल समर्थित install methods ऊपर prebuilt binary, upstream `sh` install script (केवल macOS/Linux), और Docker image हैं।
+> नोट: iii **engine** एक prebuilt binary है, cargo crate नहीं — इसे `cargo install` से install करने की कोशिश न करें। (iii **SDKs** crates.io, npm, और PyPI पर publish हैं, लेकिन agentmemory को उनकी ज़रूरत नहीं है।) समर्थित engine install methods, सभी v0.11.2 पर pinned: ऊपर वाला prebuilt v0.11.2 binary, version pin **के साथ** upstream `sh` install script `curl -fsSL https://install.iii.dev/iii/main/install.sh | VERSION=0.11.2 sh` (macOS/Linux), और Docker image `iiidev/iii:0.11.2`। केवल `install.sh | sh` **latest** engine install करता है, जिसे agentmemory support नहीं करता — हमेशा `VERSION=0.11.2` पास करें। सबसे आसान: बस `npx @agentmemory/agentmemory` चलाएँ, जो pinned engine को आपके लिए `~/.agentmemory/bin` में ले आता है।
 
 ---
 

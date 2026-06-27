@@ -10,6 +10,7 @@ import { buildSyntheticCompression } from "./compress-synthetic.js";
 import { getSearchIndex, vectorIndexAddGuarded } from "./search.js";
 import { getAgentId } from "../config.js";
 import { logger } from "../logger.js";
+import { saveImageToDisk, deleteImage } from "../utils/image-store.js";
 
 export function extractImage(d: unknown): string | undefined {
   if (!d) return undefined;
@@ -151,7 +152,6 @@ export function registerObserveFunction(
         }
 
         if (pendingImageData && (pendingImageData.startsWith("data:image/") || pendingImageData.startsWith("iVBORw0KGgo") || pendingImageData.startsWith("/9j/"))) {
-          const { saveImageToDisk } = await import("../utils/image-store.js");
           const { filePath, bytesWritten } = await saveImageToDisk(pendingImageData);
           raw.imageData = filePath;
           const { incrementImageRef } = await import("./image-refs.js");
@@ -180,7 +180,6 @@ export function registerObserveFunction(
 
         } catch (error) {
           if (raw.imageData) {
-            const { deleteImage } = await import("../utils/image-store.js");
             const { deletedBytes } = await deleteImage(raw.imageData);
             if (deletedBytes > 0) {
               sdk.trigger({

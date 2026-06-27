@@ -422,7 +422,7 @@ npx @agentmemory/agentmemory import-jsonl ~/.claude/projects/-my-project/abc123.
 npx @agentmemory/agentmemory upgrade
 ```
 
-Внимание: команда меняет текущее рабочее окружение / runtime. Она может обновлять JavaScript-зависимости, может запустить `cargo install iii-engine --force`, может стянуть Docker-образы.
+Внимание: команда меняет текущее рабочее окружение / runtime. Она может обновлять JavaScript-зависимости и стянуть закреплённый Docker-образ `iiidev/iii:0.11.2`. Она никогда не устанавливает незакреплённый или более новый движок iii.
 
 Детали реализации — в `src/cli.ts` (см. `runUpgrade` в районе `src/cli.ts:544-595`).
 
@@ -656,7 +656,7 @@ npx -y @agentmemory/mcp
 | Конфликт порта | `netstat -ano \| findstr :3111`, чтобы понять, что занимает порт, затем убить процесс или использовать `--port <N>` |
 | Откат на Docker пропускается, хотя Docker установлен | Убедитесь, что Docker Desktop действительно запущен (иконка в трее) |
 
-> Примечание: команды `cargo install iii-engine` нет — `iii` не публикуется на crates.io. Поддерживаются только три способа установки: готовый бинарь выше, upstream-`sh`-скрипт (только macOS/Linux) и Docker-образ.
+> Примечание: **движок** iii — это готовый бинарь, а не cargo-крейт, не пытайтесь установить его через `cargo install`. (**SDK** iii опубликованы на crates.io, npm и PyPI, но agentmemory они не нужны.) Поддерживаемые способы установки движка, все закреплены на v0.11.2: готовый бинарь v0.11.2 выше, upstream-`sh`-скрипт **с закреплением версии** `curl -fsSL https://install.iii.dev/iii/main/install.sh | VERSION=0.11.2 sh` (macOS/Linux) и Docker-образ `iiidev/iii:0.11.2`. Простой `install.sh | sh` устанавливает **последний** движок, который agentmemory не поддерживает, — всегда передавайте `VERSION=0.11.2`. Самый простой вариант: просто запустите `npx @agentmemory/agentmemory`, который сам загрузит закреплённый движок в `~/.agentmemory/bin`.
 
 ---
 

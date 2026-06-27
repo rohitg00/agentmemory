@@ -422,7 +422,7 @@ npx @agentmemory/agentmemory import-jsonl ~/.claude/projects/-my-project/abc123.
 npx @agentmemory/agentmemory upgrade
 ```
 
-경고: 이 명령은 현재 workspace/런타임을 변경합니다. JavaScript 의존성을 업데이트할 수 있으며, `cargo install iii-engine --force`를 실행할 수도 있고, Docker 이미지를 pull할 수도 있습니다.
+경고: 이 명령은 현재 workspace/런타임을 변경합니다. JavaScript 의존성을 업데이트할 수 있으며, 고정된 Docker 이미지 `iiidev/iii:0.11.2`를 pull할 수 있습니다. 고정되지 않았거나 더 새로운 iii 엔진을 설치하는 일은 절대 없습니다.
 
 구현 세부 사항은 `src/cli.ts`에 있습니다 (`runUpgrade`는 `src/cli.ts:544-595` 부근 참고).
 
@@ -656,7 +656,7 @@ npx -y @agentmemory/mcp
 | 포트 충돌 | `netstat -ano \| findstr :3111`로 무엇이 바인딩되어 있는지 확인하고 종료하거나 `--port <N>` 사용 |
 | Docker가 설치되어 있어도 Docker 폴백을 건너뜀 | Docker Desktop이 실제로 실행 중인지 확인 (시스템 트레이 아이콘) |
 
-> 참고: `cargo install iii-engine`는 없습니다 — `iii`는 crates.io에 게시되지 않았습니다. 지원되는 설치 방법은 위의 사전 빌드된 바이너리, 업스트림 `sh` 설치 스크립트(macOS/Linux 전용), Docker 이미지뿐입니다.
+> 참고: iii **엔진**은 사전 빌드된 바이너리이며 cargo 크레이트가 아닙니다 — `cargo install`로 설치하려 하지 마세요. (iii **SDK**는 crates.io, npm, PyPI에 게시되어 있지만 agentmemory에는 필요하지 않습니다.) 지원되는 엔진 설치 방법은 모두 v0.11.2에 고정되어 있습니다: 위의 사전 빌드된 v0.11.2 바이너리, 버전 핀**을 포함한** 업스트림 `sh` 설치 스크립트 `curl -fsSL https://install.iii.dev/iii/main/install.sh | VERSION=0.11.2 sh` (macOS/Linux), 그리고 Docker 이미지 `iiidev/iii:0.11.2`. 그냥 `install.sh | sh`를 실행하면 **최신** 엔진이 설치되는데, agentmemory는 이를 지원하지 않습니다 — 항상 `VERSION=0.11.2`를 전달하세요. 가장 쉬운 방법은 그냥 `npx @agentmemory/agentmemory`를 실행하는 것입니다. 이 명령이 고정된 엔진을 `~/.agentmemory/bin`에 가져다 줍니다.
 
 ---
 
