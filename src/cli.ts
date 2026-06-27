@@ -1239,10 +1239,14 @@ async function main() {
       fallbackIiiPaths().find((p) => existsSync(p)) ??
       null;
     const detected = attachedBin ? iiiBinVersion(attachedBin) : null;
-    const incompatible = !!(detected && detected !== IIPINNED_VERSION);
 
-    if (!incompatible) {
-      // Same version (or version unknown) — safe to share the running engine.
+    // Fail closed: only adopt the running engine when we can positively
+    // confirm it is the pinned version. An unknown version (detected === null,
+    // e.g. the binary can't be version-probed) is treated as incompatible —
+    // adopting a foreign or unverifiable engine hangs the worker in a
+    // WebSocket reconnect loop. Worst case here is a re-run that reinstalls
+    // the pinned engine, never a silent loop.
+    if (detected === IIPINNED_VERSION) {
       adoptRunningEngine();
       await import("./index.js");
       if (await waitForAgentmemoryReady(15000)) {
@@ -1253,6 +1257,8 @@ async function main() {
       return;
     }
 
+    const detectedLabel = detected ? `v${detected}` : "an unverified version";
+
     // An incompatible engine owns the port. Adopting it hangs the worker in a
     // WebSocket reconnect loop (it can't speak that engine's protocol), so stop
     // with the simplest honest remedy. A normal user has no other engine and
@@ -1261,11 +1267,11 @@ async function main() {
     // engine version: agentmemory only supports v${IIPINNED_VERSION}.
     const base = isInvokedViaNpx() ? "npx @agentmemory/agentmemory" : "agentmemory";
     p.log.error(
-      `Another iii-engine (v${detected}) is running on port ${getEnginePort()}, and agentmemory needs its own pinned v${IIPINNED_VERSION}.`,
+      `Another iii-engine (${detectedLabel}) is running on port ${getEnginePort()}, and agentmemory needs its own pinned v${IIPINNED_VERSION}.`,
     );
     p.note(
       [
-        `agentmemory only supports iii-engine v${IIPINNED_VERSION}. It will not adopt or change your running v${detected}.`,
+        `agentmemory only supports iii-engine v${IIPINNED_VERSION}. It will not adopt or change the running engine (${detectedLabel}).`,
         "",
         c.label("Switch to the pinned engine in two steps:"),
         "",

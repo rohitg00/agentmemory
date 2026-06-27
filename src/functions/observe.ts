@@ -10,7 +10,7 @@ import { buildSyntheticCompression } from "./compress-synthetic.js";
 import { getSearchIndex, vectorIndexAddGuarded } from "./search.js";
 import { getAgentId } from "../config.js";
 import { logger } from "../logger.js";
-import { saveImageToDisk, deleteImage } from "../utils/image-store.js";
+import { saveImageToDisk } from "../utils/image-store.js";
 
 export function extractImage(d: unknown): string | undefined {
   if (!d) return undefined;
@@ -180,14 +180,12 @@ export function registerObserveFunction(
 
         } catch (error) {
           if (raw.imageData) {
-            const { deletedBytes } = await deleteImage(raw.imageData);
-            if (deletedBytes > 0) {
-              sdk.trigger({
-                function_id: "mem::disk-size-delta",
-                payload: { deltaBytes: -deletedBytes },
-                action: TriggerAction.Void(),
-              });
-            }
+            // Roll back the ref taken above. decrementImageRef deletes the file
+            // only when no other observation still references it (deduped images
+            // survive) and emits the disk-size delta itself — deleting the file
+            // directly here would orphan shared images and leave a stale ref.
+            const { decrementImageRef } = await import("./image-refs.js");
+            await decrementImageRef(kv, sdk, raw.imageData);
           }
           throw error;
         }
