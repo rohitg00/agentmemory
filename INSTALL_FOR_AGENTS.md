@@ -46,7 +46,7 @@ The server listens on port 3111 and auto-starts its pinned iii engine on first r
 agentmemory &
 ```
 
-Or in a dedicated terminal, run `agentmemory` in the foreground. To run a second isolated instance, use `agentmemory --instance 1` (relocates the whole port block to 3211/3212/3213/49234).
+Or run `agentmemory` in the foreground in a dedicated terminal.
 
 Wait until it is reachable, then continue:
 
