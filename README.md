@@ -94,7 +94,7 @@ Fastest path if you use a coding agent: hand it this one instruction and it inst
 On Windows the fast path is WSL2. Native Windows engine setup is manual (about 10 to 20 minutes) and `agentmemory connect` is currently unsupported there. See the [Windows notes](#windows) below for the step-by-step.
 
 ```bash
-npm install -g @agentmemory/agentmemory          # once — bare `agentmemory` on PATH
+npm install -g @agentmemory/agentmemory   # once — bare `agentmemory` on PATH
 # If you hit EACCES on macOS/Linux system Node installs, retry with:
 # sudo npm install -g @agentmemory/agentmemory
 agentmemory                                      # start the memory server on :3111
@@ -112,7 +112,7 @@ npx @agentmemory/agentmemory
 
 Heads-up — npx caches per version. If a bare `npx @agentmemory/agentmemory` serves an older release, force the latest with `npx -y @agentmemory/agentmemory@latest`, or clear the cache once with `rm -rf ~/.npm/_npx` (macOS/Linux; on Windows delete `%LOCALAPPDATA%\npm-cache\_npx`). The first npx run from v0.9.16+ prompts to install globally inline so the bare `agentmemory` command works everywhere afterwards.
 
-Already running your own `iii` engine? agentmemory pins iii-engine v0.11.2 and won't attach to a different version (the worker can't speak another engine's protocol). Stop the other engine, then run `npx @agentmemory/agentmemory` — it installs and runs the pinned v0.11.2 in `~/.agentmemory/bin`, leaving your own `iii` untouched.
+Already running your own `iii` engine? agentmemory pins iii-engine v0.11.2 and won't attach to a different version (the worker can't speak another engine's protocol). Stop the other engine, then run `npx -y @agentmemory/agentmemory@latest` — it installs and runs the pinned v0.11.2 in `~/.agentmemory/bin`, leaving your own `iii` untouched.
 
 Full options at [Quick Start](#quick-start) below. Agent-specific wiring at [Works with every agent](#works-with-every-agent).
 

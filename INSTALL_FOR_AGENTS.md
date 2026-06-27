@@ -21,10 +21,10 @@ Several commands prompt on a TTY (for example the first-run "install globally?" 
 ## 1. Install globally
 
 ```bash
-npm install -g @agentmemory/agentmemory@latest
+npm install -g @agentmemory/agentmemory
 ```
 
-`@latest` ensures you (and future sessions) get the newest release, not a stale cache. If you hit `EACCES` on a system Node install (macOS/Linux), retry with `sudo npm install -g @agentmemory/agentmemory@latest`.
+`npm install -g` already fetches the latest published release. If you hit `EACCES` on a system Node install (macOS/Linux), retry with `sudo npm install -g @agentmemory/agentmemory`.
 
 No-install alternative: skip this step and run the server with `npx -y @agentmemory/agentmemory@latest` everywhere this runbook says `agentmemory`. The `@latest` and `-y` flags matter because npx caches per version and a bare `npx @agentmemory/agentmemory` can serve a stale release.
 
@@ -144,7 +144,7 @@ The MCP server exposes 53 tools by default (`--tools all`). Use `--tools core` (
 - `command not found: agentmemory`: the global bin is not on `PATH`. Use `npx -y @agentmemory/agentmemory@latest`.
 - `EACCES` during global install: retry with `sudo`, or use the npx form.
 - Stale npx version: run `npx -y @agentmemory/agentmemory@latest`, or clear the cache with `rm -rf ~/.npm/_npx` (macOS/Linux).
-- Port already in use: another process holds 3111 (or 49134). Stop that process, then re-run.
+- Port already in use: another process holds 3111, 3112, 3113, or 49134. Stop that process, then re-run.
 - Server starts but `livez` never returns 200: re-run with `agentmemory --verbose` to see engine stderr.
 - Engine version warning on start: harmless. agentmemory uses its own pinned engine in `~/.agentmemory/bin` regardless of any `iii` on `PATH`. Set `AGENTMEMORY_III_VERSION` only to override deliberately.
 - "engine conflict" / another iii engine already running: if a different iii version is already serving the port (common if you run your own iii), agentmemory will not adopt it and stops with an "engine conflict" note. Stop that engine (`agentmemory stop --force`, or however you started it), then re-run `agentmemory` — it installs and runs the pinned engine in `~/.agentmemory/bin`, leaving your own iii untouched.

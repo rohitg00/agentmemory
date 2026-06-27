@@ -184,8 +184,17 @@ export function registerObserveFunction(
             // only when no other observation still references it (deduped images
             // survive) and emits the disk-size delta itself — deleting the file
             // directly here would orphan shared images and leave a stale ref.
-            const { decrementImageRef } = await import("./image-refs.js");
-            await decrementImageRef(kv, sdk, raw.imageData);
+            // If the rollback itself fails, log it but still surface the
+            // original write error (the more useful failure to diagnose).
+            try {
+              const { decrementImageRef } = await import("./image-refs.js");
+              await decrementImageRef(kv, sdk, raw.imageData);
+            } catch (rollbackError) {
+              logger.error("Failed to roll back image ref after observation write failure", {
+                imageRef: raw.imageData,
+                error: rollbackError instanceof Error ? rollbackError.message : String(rollbackError),
+              });
+            }
           }
           throw error;
         }
