@@ -1,5 +1,6 @@
 import { execSync } from "node:child_process";
 import { basename } from "node:path";
+import "./_env.js";
 
 // Resolution order: AGENTMEMORY_PROJECT_NAME env → git toplevel basename → cwd basename.
 export function resolveProject(cwd?: string): string {

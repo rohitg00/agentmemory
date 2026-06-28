@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import "./_env.js";
 
 function isSdkChildContext(payload: unknown): boolean {
   if (process.env["AGENTMEMORY_SDK_CHILD"] === "1") return true;

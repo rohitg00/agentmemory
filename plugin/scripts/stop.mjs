@@ -1,4 +1,13 @@
 #!/usr/bin/env node
+import dotenv from "dotenv";
+import { homedir } from "node:os";
+import { join } from "node:path";
+//#region src/hooks/_env.ts
+dotenv.config({
+	path: join(homedir(), ".agentmemory", ".env"),
+	quiet: true
+});
+//#endregion
 //#region src/hooks/stop.ts
 function isSdkChildContext(payload) {
 	if (process.env["AGENTMEMORY_SDK_CHILD"] === "1") return true;
@@ -38,7 +47,7 @@ async function main() {
 	setTimeout(() => process.exit(0), 1500).unref();
 }
 main();
-
 //#endregion
-export {  };
+export {};
+
 //# sourceMappingURL=stop.mjs.map
