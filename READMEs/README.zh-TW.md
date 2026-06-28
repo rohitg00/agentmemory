@@ -434,7 +434,7 @@ Install agentmemory: run `npx @agentmemory/agentmemory` in a separate terminal t
 
 #### Claude Code 不安裝外掛(MCP-standalone 路徑)
 
-若你直接透過 `~/.claude.json` 連接 agentmemory 的 MCP 伺服器而非使用 `/plugin install`,Claude Code 永遠不會解析 `${CLAUDE_PLUGIN_ROOT}`,你必須把 hook 腳本指向 `~/.claude/settings.json` 中的絕對路徑。這些路徑通常會嵌入 agentmemory 版本號(例如 `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.21/scripts/…`),因此下次升級會靜默破壞所有 hooks([#508](https://github.com/rohitg00/agentmemory/issues/508))。
+若你直接透過 `~/.claude.json` 連接 agentmemory 的 MCP 伺服器而非使用 `/plugin install`,Claude Code 永遠不會解析 `${CLAUDE_PLUGIN_ROOT}`,你必須把 hook 腳本指向 `~/.claude/settings.json` 中的絕對路徑。這些路徑通常會嵌入 agentmemory 版本號(例如 `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.21/scripts/…`),因此下次升級會靜默破壞所有 hooks。
 
 變通方法:
 
@@ -563,7 +563,7 @@ Verify with `curl http://localhost:3111/agentmemory/health`. Open http://localho
 | **Aider** | n/a | 直接呼叫 REST API:`curl -X POST http://localhost:3111/agentmemory/smart-search -d '{"query": "auth"}'`。 |
 | **任何代理(32+)** | n/a | `npx skillkit install agentmemory` 自動偵測宿主並合併。 |
 
-**沙箱化的 MCP 用戶端**(Flatpak / Snap / 受限容器)無法存取宿主的 `localhost`:還要在 `env` 區塊中設定 `"AGENTMEMORY_FORCE_PROXY": "1"`,並把 `AGENTMEMORY_URL` 指向沙箱確實能到達的路由(例如你的 LAN IP)。診斷步驟見 [#234](https://github.com/rohitg00/agentmemory/issues/234)。
+**沙箱化的 MCP 用戶端**(Flatpak / Snap / 受限容器)無法存取宿主的 `localhost`:還要在 `env` 區塊中設定 `"AGENTMEMORY_FORCE_PROXY": "1"`,並把 `AGENTMEMORY_URL` 指向沙箱確實能到達的路由(例如你的 LAN IP)。
 
 ### 程式化存取(Python / Rust / Node)
 
@@ -1106,7 +1106,7 @@ agentmemory 從你的環境自動偵測。預設情況下,除非你設定提供�
 | MiniMax | `MINIMAX_API_KEY` | Anthropic 相容 |
 | Gemini | `GEMINI_API_KEY` | 同時啟用嵌入 |
 | OpenRouter | `OPENROUTER_API_KEY` | 任意模型 |
-| Claude 訂閱回退 | `AGENTMEMORY_ALLOW_AGENT_SDK=true` | 僅按需啟用。會衍生 `@anthropic-ai/claude-agent-sdk` 會話 — 曾導致無限 Stop-hook 遞迴(#149 後續)故不再預設。 |
+| Claude 訂閱回退 | `AGENTMEMORY_ALLOW_AGENT_SDK=true` | 僅按需啟用。會衍生 `@anthropic-ai/claude-agent-sdk` 會話 — 曾導致無限 Stop-hook 遞迴故不再預設。 |
 
 ### 成本感知的模型選擇
 
@@ -1177,7 +1177,7 @@ netstat -ano | findstr ":3111 :3112 :3113 :49134"
 taskkill /F /PID <pid>
 ```
 
-`agentmemory stop` 在優雅關閉時乾淨地回收 worker 和 engine pidfile(#640、#474)。上述手動清理僅針對當機後兩個 pidfile 都未留下的情況。
+`agentmemory stop` 在優雅關閉時乾淨地回收 worker 和 engine pidfile。上述手動清理僅針對當機後兩個 pidfile 都未留下的情況。
 
 ### 設定檔
 
@@ -1242,7 +1242,7 @@ CONSOLIDATION_ENABLED=true
 # OPENAI_API_KEY_FOR_LLM=false             # Optional: set to false to skip OpenAI auto-detection
 #                                          # for LLM (useful if you only want OpenAI for embeddings)
 # Opt-in Claude-subscription fallback (spawns @anthropic-ai/claude-agent-sdk);
-# leave OFF unless you understand the Stop-hook recursion risk (#149 follow-up):
+# leave OFF unless you understand the Stop-hook recursion risk:
 # AGENTMEMORY_ALLOW_AGENT_SDK=true
 
 # Embedding provider (auto-detected, or override)
@@ -1276,7 +1276,7 @@ CONSOLIDATION_ENABLED=true
 # III_REST_PORT=3111
 
 # Features
-# AGENTMEMORY_AUTO_COMPRESS=false  # OFF by default (#138). When on,
+# AGENTMEMORY_AUTO_COMPRESS=false  # OFF by default. When on,
                                    # every PostToolUse hook calls your
                                    # LLM provider to compress the
                                    # observation — expect significant
@@ -1298,7 +1298,7 @@ CONSOLIDATION_ENABLED=true
                                    # session_patterns, records touched
                                    # files in project_context. Fire-
                                    # and-forget; does not block.
-# AGENTMEMORY_INJECT_CONTEXT=false # OFF by default (#143). When on:
+# AGENTMEMORY_INJECT_CONTEXT=false # OFF by default. When on:
                                    # - SessionStart may inject ~1-2K
                                    #   chars of project context into
                                    #   the first turn of each session

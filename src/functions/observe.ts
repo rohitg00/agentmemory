@@ -280,7 +280,7 @@ export function registerObserveFunction(
           });
         }
 
-        // Per-observation LLM compression is opt-in as of 0.8.8 (#138).
+        // Per-observation LLM compression is opt-in as of 0.8.8.
         // Default path: build a zero-LLM synthetic compression so recall
         // and BM25 search still work without burning the user's Claude
         // token allocation on every tool invocation.

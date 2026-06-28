@@ -239,7 +239,7 @@ if (portIdx !== -1 && args[portIdx + 1]) {
 
 // `--instance N` picks a 100-port block off the 3111 base so multiple
 // agentmemory daemons can coexist on one host without env-var
-// gymnastics (#750). `--instance 0` keeps the canonical 3111/3112/3113/49134
+// gymnastics. `--instance 0` keeps the canonical 3111/3112/3113/49134
 // quartet; `--instance 1` → 3211/3212/3213/49234; etc. REST acts as the
 // anchor — streams/viewer/engine derive from it via fixed offsets below
 // unless an env explicitly pins each one.
@@ -322,7 +322,7 @@ function getViewerUrl(): string {
 // engine docs use post-0.11) and `III_STREAMS_PORT` (the name our
 // own config.ts has used since 0.7) so a single source of truth in
 // either form lights up the ready panel. Falls back to REST+1 so
-// `--port 3211` auto-picks 3212 instead of colliding on 3112 (#750).
+// `--port 3211` auto-picks 3212 instead of colliding on 3112.
 function getStreamPort(): number {
   return (
     parseInt(process.env["III_STREAM_PORT"] || "", 10) ||
@@ -334,7 +334,7 @@ function getStreamPort(): number {
 // Bridge WebSocket port — the iii engine's internal worker bus.
 // Defaults derived from REST as REST+46023 so the canonical 3111
 // anchor yields 49134 and `--port 3211` auto-picks 49234 without a
-// second-instance collision (#750). Overridable via
+// second-instance collision. Overridable via
 // `III_ENGINE_PORT` or the legacy `III_ENGINE_URL=ws://host:port`.
 function getEnginePort(): number {
   const explicit = parseInt(process.env["III_ENGINE_PORT"] || "", 10);
@@ -386,7 +386,7 @@ function findIiiConfig(): string {
   // Precedence (user-overridable wins): explicit env > project cwd >
   // ~/.agentmemory/ > bundled. The bundled config used to win
   // unconditionally, so users hitting the observability log-feedback
-  // loop (#519) had no way to drop a tamer config in place without
+  // loop had no way to drop a tamer config in place without
   // editing node_modules.
   const envPath = process.env["AGENTMEMORY_III_CONFIG"];
   const candidates = [
@@ -421,7 +421,7 @@ function whichBinary(name: string): string | null {
 
 // Private install location agentmemory manages itself. Sits under the
 // agentmemory state dir (~/.agentmemory/bin) so the pinned engine stays
-// isolated from a user-managed iii on PATH or in ~/.local/bin. #752: a
+// isolated from a user-managed iii on PATH or in ~/.local/bin. A
 // fresh box with iii 0.16.1 already on PATH refused to boot because the
 // hard-pin enforcer told users to overwrite their global install with
 // v0.11.2. Private install resolves the conflict without touching their
@@ -546,7 +546,7 @@ function clearEnginePidfile(): void {
   } catch {}
 }
 
-// Worker pidfile (#640, #474): the agentmemory worker process
+// Worker pidfile: the agentmemory worker process
 // (`node dist/index.mjs`) is spawned by iii-exec inside the engine. When
 // `agentmemory stop` kills only the engine pid, the worker can survive
 // (detached spawn, signal not propagated, or kept alive by a wrapper
@@ -701,7 +701,7 @@ function detectIiiConsole(): IiiConsoleState {
 // install.iii.dev/iii/main/install.sh: `engine_version="${VERSION:-}"`).
 // Pin to IIPINNED_VERSION so a fresh boot can never pull a newer iii
 // console that talks a different protocol than our pinned engine
-// (root cause of #712-class drift).
+// (root cause of protocol drift).
 const III_CONSOLE_INSTALL_CMD =
   `curl -fsSL https://install.iii.dev/iii/main/install.sh | VERSION=${IIPINNED_VERSION} sh`;
 
@@ -2534,7 +2534,7 @@ async function runStop(): Promise<void> {
 
   const portPids = findEnginePidsByPort(port);
   const pidfilePid = readEnginePidfile();
-  // #640 + #474: read the worker pid up front so the engine-down branch
+  // read the worker pid up front so the engine-down branch
   // can still reap an orphaned worker process (the common failure mode
   // where a wrapper script kept the worker alive across engine restarts).
   const workerPid = readWorkerPidfile();
@@ -2596,7 +2596,7 @@ async function runStop(): Promise<void> {
   if (pidfilePid) candidates.add(pidfilePid);
   for (const pid of portPids) candidates.add(pid);
 
-  // #640 + #474: stop must also reap the agentmemory worker process
+  // stop must also reap the agentmemory worker process
   // (`node dist/index.mjs`). If only the engine is killed, the worker can
   // survive (detached spawn / signal not propagated) and reconnect to the
   // next engine as a duplicate registration. workerPid was read above so
@@ -2612,7 +2612,7 @@ async function runStop(): Promise<void> {
   }
 
   let allStopped = true;
-  // #843: stop worker first, then engine. The worker's shutdown
+  // stop worker first, then engine. The worker's shutdown
   // handler calls indexPersistence.save() -> kv.set() -> iii state::set
   // to flush BM25/vector snapshots + audit rows. Killing iii first
   // leaves those writes with no engine to land on, and the index +

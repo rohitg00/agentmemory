@@ -434,7 +434,7 @@ Install agentmemory: run `npx @agentmemory/agentmemory` in a separate terminal t
 
 #### Claude Code sin instalar el plugin (ruta MCP standalone)
 
-Si conectas el servidor MCP de agentmemory directamente vía `~/.claude.json` en lugar de usar `/plugin install`, Claude Code nunca resuelve `${CLAUDE_PLUGIN_ROOT}` y tienes que apuntar los scripts de hook a rutas absolutas en `~/.claude/settings.json`. Esas rutas suelen incluir la versión de agentmemory (p. ej. `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.21/scripts/…`), por lo que la siguiente actualización rompe silenciosamente todos los hooks ([#508](https://github.com/rohitg00/agentmemory/issues/508)).
+Si conectas el servidor MCP de agentmemory directamente vía `~/.claude.json` en lugar de usar `/plugin install`, Claude Code nunca resuelve `${CLAUDE_PLUGIN_ROOT}` y tienes que apuntar los scripts de hook a rutas absolutas en `~/.claude/settings.json`. Esas rutas suelen incluir la versión de agentmemory (p. ej. `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.21/scripts/…`), por lo que la siguiente actualización rompe silenciosamente todos los hooks.
 
 Solución:
 
@@ -562,7 +562,7 @@ La entrada de agentmemory es el **mismo bloque de servidor MCP** en cada host qu
 | **Aider** | n/a | Habla directamente con la REST API: `curl -X POST http://localhost:3111/agentmemory/smart-search -d '{"query": "auth"}'`. |
 | **Cualquier agente (32+)** | n/a | `npx skillkit install agentmemory` auto-detecta el host y fusiona. |
 
-**Clientes MCP en sandbox** (Flatpak / Snap / contenedores restrictivos) que no pueden alcanzar el `localhost` del host: añade también `"AGENTMEMORY_FORCE_PROXY": "1"` al bloque `env`, y apunta `AGENTMEMORY_URL` a una ruta que el sandbox sí pueda alcanzar (p. ej. tu IP de LAN). Consulta [#234](https://github.com/rohitg00/agentmemory/issues/234) para el walkthrough de diagnóstico.
+**Clientes MCP en sandbox** (Flatpak / Snap / contenedores restrictivos) que no pueden alcanzar el `localhost` del host: añade también `"AGENTMEMORY_FORCE_PROXY": "1"` al bloque `env`, y apunta `AGENTMEMORY_URL` a una ruta que el sandbox sí pueda alcanzar (p. ej. tu IP de LAN).
 
 ### Acceso programático (Python / Rust / Node)
 
@@ -1098,7 +1098,7 @@ agentmemory autodetecta desde tu entorno. Por defecto no se hacen llamadas LLM a
 | MiniMax | `MINIMAX_API_KEY` | Compatible con Anthropic |
 | Gemini | `GEMINI_API_KEY` | También habilita embeddings |
 | OpenRouter | `OPENROUTER_API_KEY` | Cualquier modelo |
-| Claude subscription fallback | `AGENTMEMORY_ALLOW_AGENT_SDK=true` | Solo opt-in. Lanza sesiones de `@anthropic-ai/claude-agent-sdk` — solía causar recursión sin límite en el Stop-hook (seguimiento de #149), por eso ya no es el comportamiento por defecto. |
+| Claude subscription fallback | `AGENTMEMORY_ALLOW_AGENT_SDK=true` | Solo opt-in. Lanza sesiones de `@anthropic-ai/claude-agent-sdk` — solía causar recursión sin límite en el Stop-hook, por eso ya no es el comportamiento por defecto. |
 
 ### Selección de modelo con conciencia de coste
 
@@ -1169,7 +1169,7 @@ netstat -ano | findstr ":3111 :3112 :3113 :49134"
 taskkill /F /PID <pid>
 ```
 
-`agentmemory stop` recoge limpiamente tanto el worker como el pidfile del engine en un shutdown graceful (#640, #474). La limpieza manual de arriba solo aplica al caso post-crash en el que no queda ningún pidfile.
+`agentmemory stop` recoge limpiamente tanto el worker como el pidfile del engine en un shutdown graceful. La limpieza manual de arriba solo aplica al caso post-crash en el que no queda ningún pidfile.
 
 ### Fichero de configuración
 
@@ -1234,7 +1234,7 @@ Crea `~/.agentmemory/.env`:
 # OPENAI_API_KEY_FOR_LLM=false             # Optional: set to false to skip OpenAI auto-detection
 #                                          # for LLM (useful if you only want OpenAI for embeddings)
 # Opt-in Claude-subscription fallback (spawns @anthropic-ai/claude-agent-sdk);
-# leave OFF unless you understand the Stop-hook recursion risk (#149 follow-up):
+# leave OFF unless you understand the Stop-hook recursion risk:
 # AGENTMEMORY_ALLOW_AGENT_SDK=true
 
 # Embedding provider (auto-detected, or override)
@@ -1268,7 +1268,7 @@ Crea `~/.agentmemory/.env`:
 # III_REST_PORT=3111
 
 # Features
-# AGENTMEMORY_AUTO_COMPRESS=false  # OFF by default (#138). When on,
+# AGENTMEMORY_AUTO_COMPRESS=false  # OFF by default. When on,
                                    # every PostToolUse hook calls your
                                    # LLM provider to compress the
                                    # observation — expect significant
@@ -1290,7 +1290,7 @@ Crea `~/.agentmemory/.env`:
                                    # session_patterns, records touched
                                    # files in project_context. Fire-
                                    # and-forget; does not block.
-# AGENTMEMORY_INJECT_CONTEXT=false # OFF by default (#143). When on:
+# AGENTMEMORY_INJECT_CONTEXT=false # OFF by default. When on:
                                    # - SessionStart may inject ~1-2K
                                    #   chars of project context into
                                    #   the first turn of each session

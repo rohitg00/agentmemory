@@ -434,7 +434,7 @@ Install agentmemory: run `npx @agentmemory/agentmemory` in a separate terminal t
 
 #### 플러그인 설치 없이 Claude Code 사용 (MCP-독립형 경로)
 
-`/plugin install` 대신 `~/.claude.json`을 통해 agentmemory의 MCP 서버를 직접 연결한 경우, Claude Code는 `${CLAUDE_PLUGIN_ROOT}`를 해석하지 못하므로 `~/.claude/settings.json`의 hook 스크립트를 절대 경로로 지정해야 합니다. 이 경로들은 일반적으로 agentmemory 버전을 포함하기 때문에 (예: `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.21/scripts/…`), 다음 업그레이드에서 모든 hook이 조용히 깨질 수 있습니다 ([#508](https://github.com/rohitg00/agentmemory/issues/508)).
+`/plugin install` 대신 `~/.claude.json`을 통해 agentmemory의 MCP 서버를 직접 연결한 경우, Claude Code는 `${CLAUDE_PLUGIN_ROOT}`를 해석하지 못하므로 `~/.claude/settings.json`의 hook 스크립트를 절대 경로로 지정해야 합니다. 이 경로들은 일반적으로 agentmemory 버전을 포함하기 때문에 (예: `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.21/scripts/…`), 다음 업그레이드에서 모든 hook이 조용히 깨질 수 있습니다.
 
 해결책:
 
@@ -562,7 +562,7 @@ agentmemory 항목은 `mcpServers` 형태를 사용하는 모든 호스트(Curso
 | **Aider** | n/a | REST API와 직접 통신: `curl -X POST http://localhost:3111/agentmemory/smart-search -d '{"query": "auth"}'`. |
 | **모든 에이전트 (32+)** | n/a | `npx skillkit install agentmemory`가 호스트를 자동 감지하고 병합. |
 
-**샌드박스된 MCP 클라이언트**(Flatpak / Snap / 제한적인 컨테이너 등)가 호스트의 `localhost`에 도달할 수 없는 경우: `env` 블록에 `"AGENTMEMORY_FORCE_PROXY": "1"`도 설정하고, `AGENTMEMORY_URL`을 샌드박스가 실제로 도달 가능한 경로(예: LAN IP)로 지정하십시오. 진단 가이드는 [#234](https://github.com/rohitg00/agentmemory/issues/234)를 참고하십시오.
+**샌드박스된 MCP 클라이언트**(Flatpak / Snap / 제한적인 컨테이너 등)가 호스트의 `localhost`에 도달할 수 없는 경우: `env` 블록에 `"AGENTMEMORY_FORCE_PROXY": "1"`도 설정하고, `AGENTMEMORY_URL`을 샌드박스가 실제로 도달 가능한 경로(예: LAN IP)로 지정하십시오.
 
 ### 프로그래매틱 액세스 (Python / Rust / Node)
 
@@ -1089,7 +1089,7 @@ agentmemory는 환경에서 자동 감지합니다. 기본적으로 프로바이
 | MiniMax | `MINIMAX_API_KEY` | Anthropic 호환 |
 | Gemini | `GEMINI_API_KEY` | 임베딩도 활성화 |
 | OpenRouter | `OPENROUTER_API_KEY` | 모든 모델 |
-| Claude subscription 폴백 | `AGENTMEMORY_ALLOW_AGENT_SDK=true` | 옵트인 전용. `@anthropic-ai/claude-agent-sdk` 세션을 스폰 — 무한 Stop-hook 재귀를 일으킨 전력이 있어서(#149 후속) 더 이상 기본값이 아닙니다. |
+| Claude subscription 폴백 | `AGENTMEMORY_ALLOW_AGENT_SDK=true` | 옵트인 전용. `@anthropic-ai/claude-agent-sdk` 세션을 스폰 — 무한 Stop-hook 재귀를 일으킨 전력이 있어서 더 이상 기본값이 아닙니다. |
 
 ### 비용 인식 모델 선택
 
@@ -1160,7 +1160,7 @@ netstat -ano | findstr ":3111 :3112 :3113 :49134"
 taskkill /F /PID <pid>
 ```
 
-`agentmemory stop`은 정상 종료 시 워커와 엔진 pidfile을 모두 깔끔하게 회수합니다 (#640, #474). 위의 수동 정리는 어떤 pidfile도 남지 않은 크래시 후 케이스에만 해당됩니다.
+`agentmemory stop`은 정상 종료 시 워커와 엔진 pidfile을 모두 깔끔하게 회수합니다. 위의 수동 정리는 어떤 pidfile도 남지 않은 크래시 후 케이스에만 해당됩니다.
 
 ### 설정 파일
 
@@ -1225,7 +1225,7 @@ CONSOLIDATION_ENABLED=true
 # OPENAI_API_KEY_FOR_LLM=false             # Optional: set to false to skip OpenAI auto-detection
 #                                          # for LLM (useful if you only want OpenAI for embeddings)
 # Opt-in Claude-subscription fallback (spawns @anthropic-ai/claude-agent-sdk);
-# leave OFF unless you understand the Stop-hook recursion risk (#149 follow-up):
+# leave OFF unless you understand the Stop-hook recursion risk:
 # AGENTMEMORY_ALLOW_AGENT_SDK=true
 
 # Embedding provider (auto-detected, or override)
@@ -1259,7 +1259,7 @@ CONSOLIDATION_ENABLED=true
 # III_REST_PORT=3111
 
 # Features
-# AGENTMEMORY_AUTO_COMPRESS=false  # OFF by default (#138). When on,
+# AGENTMEMORY_AUTO_COMPRESS=false  # OFF by default. When on,
                                    # every PostToolUse hook calls your
                                    # LLM provider to compress the
                                    # observation — expect significant
@@ -1281,7 +1281,7 @@ CONSOLIDATION_ENABLED=true
                                    # session_patterns, records touched
                                    # files in project_context. Fire-
                                    # and-forget; does not block.
-# AGENTMEMORY_INJECT_CONTEXT=false # OFF by default (#143). When on:
+# AGENTMEMORY_INJECT_CONTEXT=false # OFF by default. When on:
                                    # - SessionStart may inject ~1-2K
                                    #   chars of project context into
                                    #   the first turn of each session
