@@ -33,7 +33,10 @@ export class LocalEmbeddingProvider implements EmbeddingProvider {
   private async getExtractor() {
     if (this.extractor) return this.extractor;
 
-    let transformers: { pipeline: Pipeline };
+    let transformers: {
+      pipeline: Pipeline;
+      env: { localModelPath: string; cacheDir: string };
+    };
     try {
       // @ts-ignore - optional peer dependency
       transformers = await import("@xenova/transformers");
@@ -41,6 +44,19 @@ export class LocalEmbeddingProvider implements EmbeddingProvider {
       throw new Error(
         "Install @xenova/transformers for local embeddings: npm install @xenova/transformers",
       );
+    }
+
+    // Pre-downloaded models (offline / restricted-network setups) live in
+    // ~/.cache/Xenova/ by convention. @xenova/transformers defaults
+    // localModelPath to its own install dir — which is deep inside npm's
+    // global node_modules and rarely holds pre-downloaded files. When
+    // XENOVA_CACHE_HOME is set, redirect both the local-model lookup and
+    // the download cache so the library finds existing files without a
+    // network fetch.
+    const cacheHome = process.env["XENOVA_CACHE_HOME"];
+    if (cacheHome) {
+      transformers.env.localModelPath = cacheHome;
+      transformers.env.cacheDir = cacheHome;
     }
 
     this.extractor = await transformers.pipeline(
