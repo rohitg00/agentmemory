@@ -63,7 +63,7 @@ async function main() {
     }).catch(() => {});
   }
 
-  setTimeout(() => process.exit(0), 1500).unref();
+  setTimeout(() => process.exit(0), 500).unref();
 }
 
 main();
