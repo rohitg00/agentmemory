@@ -29,9 +29,11 @@ describe("post-tool-use hook — capture filter (#993)", () => {
   let server: Server;
   let observeCalls = 0;
   let port = 0;
+  let onObserve: (() => void) | undefined;
 
   afterEach(async () => {
     observeCalls = 0;
+    onObserve = undefined;
     if (server) {
       await new Promise<void>((resolve, reject) => {
         server.close((err) => (err ? reject(err) : resolve()));
@@ -39,10 +41,26 @@ describe("post-tool-use hook — capture filter (#993)", () => {
     }
   });
 
+  async function assertNoObserveAfterHook(
+    hook: Promise<{ exitCode: number | null }>,
+    { settleMs = 300 } = {},
+  ): Promise<{ exitCode: number | null }> {
+    const result = await hook;
+    const deadline = Date.now() + settleMs;
+    while (Date.now() < deadline) {
+      if (observeCalls !== 0) {
+        throw new Error(`unexpected observe call(s): ${observeCalls}`);
+      }
+      await new Promise((r) => setTimeout(r, 25));
+    }
+    return result;
+  }
+
   async function startServer() {
     server = createServer((req, res) => {
       if (req.method === "POST" && req.url === "/agentmemory/observe") {
         observeCalls += 1;
+        onObserve?.();
       }
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end("{}");
@@ -64,10 +82,11 @@ describe("post-tool-use hook — capture filter (#993)", () => {
       tool_input: { query: "hooks" },
       tool_output: "results",
     });
-    const result = await runHook("post-tool-use.mjs", payload, {
-      AGENTMEMORY_URL: `http://127.0.0.1:${port}`,
-    });
-    await new Promise((r) => setTimeout(r, 600));
+    const result = await assertNoObserveAfterHook(
+      runHook("post-tool-use.mjs", payload, {
+        AGENTMEMORY_URL: `http://127.0.0.1:${port}`,
+      }),
+    );
     expect(result.exitCode).toBe(0);
     expect(observeCalls).toBe(0);
   });
@@ -80,10 +99,20 @@ describe("post-tool-use hook — capture filter (#993)", () => {
       tool_input: { command: "ls" },
       tool_output: "ok",
     });
+    const observeSeen = new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(
+        () => reject(new Error("observe request never arrived")),
+        2000,
+      );
+      onObserve = () => {
+        clearTimeout(timer);
+        resolve();
+      };
+    });
     const result = await runHook("post-tool-use.mjs", payload, {
       AGENTMEMORY_URL: `http://127.0.0.1:${port}`,
     });
-    await new Promise((r) => setTimeout(r, 600));
+    await observeSeen;
     expect(result.exitCode).toBe(0);
     expect(observeCalls).toBe(1);
   });
