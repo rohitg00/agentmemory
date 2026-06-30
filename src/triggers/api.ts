@@ -1889,6 +1889,16 @@ export function registerApiTriggers(
           : undefined;
       const offset =
         Number.isInteger(parsedOffset) && parsedOffset >= 0 ? parsedOffset : 0;
+      // kv.list returns rows in insertion order (oldest first), so slicing the
+      // head served the OLDEST memories — the viewer then showed stale data once
+      // the corpus exceeded the limit (#990). Sort newest-first (createdAt desc,
+      // fallback updatedAt) before the slice, mirroring the viewer-side fix from
+      // #674/#701.
+      filtered.sort((a, b) => {
+        const aKey = a.createdAt || a.updatedAt || "";
+        const bKey = b.createdAt || b.updatedAt || "";
+        return bKey.localeCompare(aKey);
+      });
       const sliced =
         limit !== undefined ? filtered.slice(offset, offset + limit) : filtered;
 
