@@ -2,9 +2,11 @@ import type { MemoryProvider } from "../types.js";
 
 export class FallbackChainProvider implements MemoryProvider {
   name: string;
+  isNoop: boolean;
 
   constructor(private providers: MemoryProvider[]) {
     this.name = `fallback(${providers.map((p) => p.name).join(" -> ")})`;
+    this.isNoop = providers.every((p) => p.isNoop === true);
   }
 
   async compress(systemPrompt: string, userPrompt: string): Promise<string> {

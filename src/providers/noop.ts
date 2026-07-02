@@ -9,6 +9,7 @@ import type { MemoryProvider } from "../types.js";
  */
 export class NoopProvider implements MemoryProvider {
   name = "noop";
+  isNoop = true;
 
   async compress(): Promise<string> {
     return "";

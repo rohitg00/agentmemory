@@ -151,6 +151,13 @@ export type ProviderType = "agent-sdk" | "anthropic" | "gemini" | "openrouter" |
 
 export interface MemoryProvider {
   name: string;
+  /**
+   * True when the provider performs no LLM work (zero-LLM mode). Wrapper
+   * providers (resilient, fallback chain) must propagate this from their
+   * inner provider(s) so callers can skip LLM-gated work without relying
+   * on `name`, which wrappers decorate (e.g. `resilient(noop)`).
+   */
+  isNoop?: boolean;
   compress(systemPrompt: string, userPrompt: string): Promise<string>;
   summarize(systemPrompt: string, userPrompt: string): Promise<string>;
   describeImage?(imageData: string, mimeType: string, prompt: string): Promise<string>;

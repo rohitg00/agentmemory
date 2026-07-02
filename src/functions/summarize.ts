@@ -260,7 +260,11 @@ export function registerSummarizeFunction(
         return { success: false, error: "no_observations" };
       }
 
-      if (provider.name === "noop") {
+      // #996: check isNoop, not name — the provider handed in here is
+      // always wrapped (name `resilient(noop)`), so a name check never
+      // fires and the noop path fell through to empty_provider_response,
+      // recording a false failure in metrics on every invocation.
+      if (provider.isNoop) {
         logger.info("Summarize skipped — no LLM provider configured", {
           sessionId,
         });
