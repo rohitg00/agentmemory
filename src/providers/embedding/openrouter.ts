@@ -27,13 +27,18 @@ const DEFAULT_DIMENSIONS = MODEL_DIMENSIONS[DEFAULT_MODEL] ?? 1536;
 
 function resolveDimensions(model: string, override: string | undefined): number {
   if (override !== undefined && override.trim().length > 0) {
-    const parsed = parseInt(override, 10);
-    if (!Number.isFinite(parsed) || parsed <= 0) {
+    const parsed = Number(override.trim());
+    if (!Number.isFinite(parsed) || parsed <= 0 || !Number.isInteger(parsed)) {
       throw new Error(
         `OPENROUTER_EMBEDDING_DIMENSIONS must be a positive integer, got: ${override}`,
       );
     }
     return parsed;
+  }
+  if (!(model in MODEL_DIMENSIONS)) {
+    console.warn(
+      `[agentmemory] Unknown embedding model "${model}" not in MODEL_DIMENSIONS; using default dimensions (${DEFAULT_DIMENSIONS}). Set OPENROUTER_EMBEDDING_DIMENSIONS to override.`,
+    );
   }
   return MODEL_DIMENSIONS[model] ?? DEFAULT_DIMENSIONS;
 }
