@@ -4,9 +4,43 @@ import { fetchWithTimeout } from "../_fetch.js";
 
 const API_URL = "https://openrouter.ai/api/v1/embeddings";
 
+const DEFAULT_MODEL = "openai/text-embedding-3-small";
+
+/**
+ * Known embedding model dimensions accessible via OpenRouter.
+ * Extend as new models are added. Override in any case via
+ * OPENROUTER_EMBEDDING_DIMENSIONS for models not listed here.
+ */
+const MODEL_DIMENSIONS: Record<string, number> = {
+  "openai/text-embedding-3-small": 1536,
+  "openai/text-embedding-3-large": 3072,
+  "openai/text-embedding-ada-002": 1536,
+  "qwen/qwen3-embedding-8b": 4096,
+  "google/gemini-embedding-001": 3072,
+  "cohere/embed-multilingual-v3.0": 1024,
+  "cohere/embed-english-v3.0": 1024,
+  "cohere/embed-multilingual-light-v3.0": 384,
+  "cohere/embed-english-light-v3.0": 384,
+};
+
+const DEFAULT_DIMENSIONS = MODEL_DIMENSIONS[DEFAULT_MODEL] ?? 1536;
+
+function resolveDimensions(model: string, override: string | undefined): number {
+  if (override !== undefined && override.trim().length > 0) {
+    const parsed = parseInt(override, 10);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      throw new Error(
+        `OPENROUTER_EMBEDDING_DIMENSIONS must be a positive integer, got: ${override}`,
+      );
+    }
+    return parsed;
+  }
+  return MODEL_DIMENSIONS[model] ?? DEFAULT_DIMENSIONS;
+}
+
 export class OpenRouterEmbeddingProvider implements EmbeddingProvider {
   readonly name = "openrouter";
-  readonly dimensions = 1536;
+  readonly dimensions: number;
   private apiKey: string;
   private model: string;
 
@@ -15,7 +49,11 @@ export class OpenRouterEmbeddingProvider implements EmbeddingProvider {
     if (!this.apiKey) throw new Error("OPENROUTER_API_KEY is required");
     this.model =
       getEnvVar("OPENROUTER_EMBEDDING_MODEL") ||
-      "openai/text-embedding-3-small";
+      DEFAULT_MODEL;
+    this.dimensions = resolveDimensions(
+      this.model,
+      getEnvVar("OPENROUTER_EMBEDDING_DIMENSIONS"),
+    );
   }
 
   async embed(text: string): Promise<Float32Array> {
