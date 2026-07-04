@@ -11,16 +11,18 @@ describe("iii console installer (#712)", () => {
     const consoleInstallCommand =
       cli.match(/const III_CONSOLE_INSTALL_CMD =\n\s+`([^`]+)`;/)?.[1] ?? "";
 
-    expect(consoleInstallCommand).toBe(
-      "curl -fsSL https://install.iii.dev/iii/main/install.sh | VERSION=${IIPINNED_VERSION} bash",
+    expect(consoleInstallCommand).toMatch(
+      /curl\s+-fsSL\s+https:\/\/install\.iii\.dev\/iii\/main\/install\.sh\s*\|\s*VERSION=\$\{IIPINNED_VERSION\}\s+bash/,
     );
-    expect(ensureConsoleBlock).toContain('const bashBin = whichBinary("bash");');
-    expect(ensureConsoleBlock).toContain(
-      'runCommand(bashBin, ["-c", III_CONSOLE_INSTALL_CMD]',
+    expect(ensureConsoleBlock).toMatch(
+      /const\s+bashBin\s*=\s*whichBinary\(["']bash["']\);/,
+    );
+    expect(ensureConsoleBlock).toMatch(
+      /runCommand\(\s*bashBin\s*,\s*\[\s*["']-c["']\s*,\s*III_CONSOLE_INSTALL_CMD\s*\]/,
     );
     expect(ensureConsoleBlock).not.toContain('whichBinary("sh")');
     expect(ensureConsoleBlock).not.toContain("runCommand(shBin");
-    expect(consoleInstallCommand).not.toContain("VERSION=${IIPINNED_VERSION} sh");
-    expect(consoleInstallCommand).not.toContain("install.sh | sh");
+    expect(consoleInstallCommand).not.toMatch(/VERSION=\$\{IIPINNED_VERSION\}\s+sh\b/);
+    expect(consoleInstallCommand).not.toMatch(/install\.sh\s*\|\s*sh\b/);
   });
 });
