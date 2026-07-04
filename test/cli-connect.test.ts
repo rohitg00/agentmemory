@@ -54,6 +54,7 @@ describe("agentmemory connect — dispatcher", () => {
         "gemini-cli",
         "hermes",
         "kiro",
+        "opencode",
         "openclaw",
         "openhuman",
         "pi",
@@ -62,7 +63,7 @@ describe("agentmemory connect — dispatcher", () => {
         "zed",
       ].sort(),
     );
-    expect(ADAPTERS.length).toBe(17);
+    expect(ADAPTERS.length).toBe(18);
   });
 
   it("every adapter exposes detect() and install()", () => {
@@ -71,6 +72,15 @@ describe("agentmemory connect — dispatcher", () => {
       expect(typeof a.install).toBe("function");
       expect(typeof a.name).toBe("string");
       expect(typeof a.displayName).toBe("string");
+    }
+  });
+
+  it("every adapter declares a category so onboarding never needs a separate list (#872)", () => {
+    for (const a of ADAPTERS) {
+      expect(
+        ["native", "mcp"].includes(a.category as string),
+        `adapter ${a.name} must set category to "native" or "mcp"`,
+      ).toBe(true);
     }
   });
 });
@@ -204,6 +214,80 @@ describe("agentmemory connect — claude-code adapter (mock filesystem)", () => 
       expect(existsSync(result.backupPath!)).toBe(true);
       expect(result.backupPath!).toContain(join(".agentmemory", "backups"));
     }
+  });
+});
+
+describe("agentmemory connect — opencode adapter (#872)", () => {
+  let tmpHome: string;
+  let originalHome: string | undefined;
+  let originalUserprofile: string | undefined;
+
+  beforeEach(() => {
+    tmpHome = mkdtempSync(join(tmpdir(), "am-opencode-"));
+    originalHome = process.env["HOME"];
+    originalUserprofile = process.env["USERPROFILE"];
+    process.env["HOME"] = tmpHome;
+    process.env["USERPROFILE"] = tmpHome;
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    if (originalHome !== undefined) process.env["HOME"] = originalHome;
+    else delete process.env["HOME"];
+    if (originalUserprofile !== undefined)
+      process.env["USERPROFILE"] = originalUserprofile;
+    else delete process.env["USERPROFILE"];
+    rmSync(tmpHome, { recursive: true, force: true });
+    vi.resetModules();
+  });
+
+  const cfgPath = () =>
+    join(tmpHome, ".config", "opencode", "opencode.json");
+
+  async function loadOpencode(): Promise<ConnectAdapter> {
+    const mod = await import("../src/cli/connect/opencode.js?t=" + Date.now());
+    return (mod as { adapter: ConnectAdapter }).adapter;
+  }
+
+  it("writes the opencode `mcp` schema (command as array) and preserves other servers", async () => {
+    require("node:fs").mkdirSync(join(tmpHome, ".config", "opencode"), {
+      recursive: true,
+    });
+    writeFileSync(
+      cfgPath(),
+      JSON.stringify({ mcp: { other: { type: "local", command: ["x"] } } }),
+    );
+
+    const a = await loadOpencode();
+    expect(a.name).toBe("opencode");
+    expect(a.detect()).toBe(true);
+
+    const first = await a.install({ dryRun: false, force: false });
+    expect(first.kind).toBe("installed");
+
+    const config = JSON.parse(readFileSync(cfgPath(), "utf-8"));
+    const entry = config.mcp.agentmemory;
+    expect(entry.type).toBe("local");
+    expect(Array.isArray(entry.command)).toBe(true);
+    expect(entry.command).toContain("@agentmemory/mcp");
+    expect(entry.enabled).toBe(true);
+    expect(config.mcp.other.command).toEqual(["x"]);
+
+    const second = await a.install({ dryRun: false, force: false });
+    expect(second.kind).toBe("already-wired");
+  });
+
+  it("dry-run does not mutate the file", async () => {
+    require("node:fs").mkdirSync(join(tmpHome, ".config", "opencode"), {
+      recursive: true,
+    });
+    const before = JSON.stringify({ mcp: {} });
+    writeFileSync(cfgPath(), before);
+
+    const a = await loadOpencode();
+    const result = await a.install({ dryRun: true, force: false });
+    expect(result.kind).toBe("installed");
+    expect(readFileSync(cfgPath(), "utf-8")).toBe(before);
   });
 });
 

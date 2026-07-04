@@ -755,4 +755,39 @@ describe("IndexPersistence", () => {
 
     await expect(persistence.save()).resolves.toBeUndefined();
   });
+
+  // #797: first run after upgrading to 0.9.25 crashed with
+  // 'TypeError: Cannot read properties of undefined (reading "v")'
+  // because some iii-state adapters return `undefined` (not `null`)
+  // for a missing key. The load path's `value !== null` check passed
+  // undefined to loadManifestData, which then read `undefined.v`.
+  it("load() returns null instead of crashing when kv.get returns undefined for the manifest (#797)", async () => {
+    const undefinedKv = {
+      ...mockKV(),
+      get: vi.fn(async () => undefined),
+    };
+    const persistence = new IndexPersistence(
+      undefinedKv as never,
+      new SearchIndex(),
+      null,
+    );
+
+    const loaded = await persistence.load();
+    expect(loaded.bm25).toBeNull();
+    expect(loaded.vector).toBeNull();
+  });
+
+  it("load() does not crash when a manifest row value is the wrong shape (#797)", async () => {
+    const wrongShapeKv = {
+      ...mockKV(),
+      get: vi.fn(async () => "not-a-manifest"),
+    };
+    const persistence = new IndexPersistence(
+      wrongShapeKv as never,
+      new SearchIndex(),
+      null,
+    );
+
+    await expect(persistence.load()).resolves.toBeDefined();
+  });
 });

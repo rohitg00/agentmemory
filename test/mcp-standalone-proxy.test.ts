@@ -193,6 +193,43 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
     expect(body.results[0].content).toBe("shape-check entry");
   });
 
+  it("local fallback scopes recall and smart search by project when the server is unreachable", async () => {
+    installFetch(() => {
+      throw new Error("ECONNREFUSED");
+    });
+    const localKv = new InMemoryKV(undefined);
+    await handleToolCall(
+      "memory_save",
+      { content: "shared-query alpha memory", project: "alpha" },
+      localKv,
+    );
+    await handleToolCall(
+      "memory_save",
+      { content: "shared-query beta memory", project: "beta" },
+      localKv,
+    );
+
+    const smartSearch = await handleToolCall(
+      "memory_smart_search",
+      { query: "shared-query", project: "alpha" },
+      localKv,
+    );
+    const smartSearchBody = JSON.parse(smartSearch.content[0].text);
+    expect(smartSearchBody.results.map((m: { content: string }) => m.content)).toEqual([
+      "shared-query alpha memory",
+    ]);
+
+    const recall = await handleToolCall(
+      "memory_recall",
+      { query: "shared-query", project: "alpha" },
+      localKv,
+    );
+    const recallBody = JSON.parse(recall.content[0].text);
+    expect(recallBody.results.map((m: { content: string }) => m.content)).toEqual([
+      "shared-query alpha memory",
+    ]);
+  });
+
   it("attaches Bearer token on the proxied tool request, not just the probe", async () => {
     process.env["AGENTMEMORY_SECRET"] = "s3cret";
     const authByPath = new Map<string, string | undefined>();

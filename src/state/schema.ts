@@ -15,6 +15,28 @@ export const KV = {
   claudeBridge: "mem:claude-bridge",
   graphNodes: "mem:graph:nodes",
   graphEdges: "mem:graph:edges",
+  // #814: precomputed snapshot of the top-degree subgraph and aggregate
+  // type counts. Saves /graph/query and /graph/stats from a full
+  // kv.list enumeration over 75K+ node corpora, which exceeds the iii
+  // invocation timeout and surfaces as "Invocation stopped" 500s.
+  // Single fixed key ("current") so writes are read-modify-write under
+  // the same keyed mutex as graph-extract.
+  graphSnapshot: "mem:graph:snapshot",
+  // #814 v2: targeted-lookup indexes so graph-extract never enumerates
+  // the full nodes/edges scope. Each entry is a single small kv.get,
+  // bounded payload — works at 75K+ nodes where kv.list would block
+  // the worker event loop (37MB WS frame parse blocks heartbeat,
+  // worker is declared dead before any Promise.race timer can fire).
+  // - graphNameIndex: key `${type}|${name}` -> nodeId. Replaces the
+  //   existingNodes.find() O(n) dedup scan inside mem::graph-extract.
+  // - graphEdgeKey: key `${src}|${tgt}|${type}` -> edgeId. Same for
+  //   edge dedup.
+  // - graphNodeDegree: key nodeId -> incident-edge count. Read /
+  //   incremented on edge writes to maintain the snapshot top-N
+  //   ranking without scanning all edges.
+  graphNameIndex: "mem:graph:name-index",
+  graphEdgeKey: "mem:graph:edge-key",
+  graphNodeDegree: "mem:graph:node-degree",
   semantic: "mem:semantic",
   procedural: "mem:procedural",
   teamShared: (teamId: string) => `mem:team:${teamId}:shared`,

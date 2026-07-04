@@ -1,21 +1,60 @@
 ---
 name: recall
-description: Search agentmemory for past observations, sessions, and learnings about a topic. Use when the user says "recall", "remember", "what did we do", or needs context from past sessions.
+description: Search agentmemory for past observations, sessions, and learnings about a topic using hybrid BM25 plus vector plus graph search. Use when the user says "recall", "what did we do about", "did we ever", "have we seen", or needs context from past sessions.
 argument-hint: "[search query]"
 user-invocable: true
 ---
 
 The user wants to recall past context about: $ARGUMENTS
 
-Use the `memory_smart_search` MCP tool (provided by the agentmemory server that this plugin wires up automatically via `.mcp.json`) with the user's query as the `query` argument and `limit: 10`. The tool runs hybrid BM25 + vector + graph-expanded search over captured observations and returns ranked results.
+## Quick start
 
-Present the returned results to the user in a readable format:
-- Group by session
-- For each observation show its type, title, and narrative
-- Highlight the most important observations (importance >= 7)
-- If no results come back, suggest 2-3 alternative search terms the user could try
+```json
+memory_smart_search { "query": "jwt refresh token rotation", "limit": 10 }
+```
 
-**Do NOT make up or hallucinate observations.** Only present what the MCP tool actually returned. If `memory_smart_search` isn't available, the stdio MCP shim didn't start — tell the user to:
-1. Run `/plugin list` in Claude Code and confirm `agentmemory` shows as enabled.
-2. Restart Claude Code (the plugin's `.mcp.json` is only read on startup).
-3. Check `/mcp` to see whether the `agentmemory` MCP server is connected.
+Expected output:
+
+```text
+2 results across 2 sessions.
+[importance 8] decision · "Rotate refresh tokens on every use" (session 7f3a9c21)
+[importance 5] code · "limit.ts counts per-IP" (session b21d004e)
+```
+
+## Why
+
+Only surface what the tool returned. Never fabricate an observation, a session
+id, or an importance score. If nothing comes back, say so.
+
+## Workflow
+
+1. Call `memory_smart_search` with the user's text as `query` and `limit: 10`.
+   Pass `project` when the user scopes to a specific repo.
+2. Group results by session.
+3. For each observation show its type, title, and narrative.
+4. Lead with the high-signal observations (importance >= 7).
+5. If zero results, suggest 2-3 alternative search terms and stop. Do not guess.
+
+## Anti-patterns
+
+WRONG: results are empty, so you write "We probably discussed token expiry last
+week" from assumption.
+
+RIGHT: "No memories matched that query. Try `refresh token`, `session expiry`,
+or `auth rotation`."
+
+## Checklist
+
+- Every observation shown came from the tool response.
+- Results grouped by session, high-importance first.
+- Empty results trigger alternative-term suggestions, not invention.
+- No session id or score was paraphrased or rounded.
+
+## See also
+
+- `remember`: the write side; recall retrieves what it stores.
+- `recap`, `handoff`, `session-history`: session-scoped views of the same data.
+
+## Troubleshooting
+
+See ../_shared/TROUBLESHOOTING.md if `memory_smart_search` is not available.

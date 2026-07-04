@@ -31,8 +31,10 @@
 .sheet {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.94);
-  backdrop-filter: blur(8px);
+  /* Portaled to <body>, so this sits in the root stacking context. Kept
+     below the nav (z-index: 100) so the brand + close button stay on top.
+     Fully opaque so hero content can't bleed through. */
+  background: var(--abyss);
   z-index: 95;
   opacity: 0;
   pointer-events: none;
@@ -90,7 +92,9 @@
   color: var(--gold);
 }
 
-@media (max-width: 720px) {
+/* Must match the breakpoint that hides .links in Nav.module.css, or the
+   721-860px range has no navigation at all. */
+@media (max-width: 860px) {
   .hamburger {
     display: inline-flex;
   }

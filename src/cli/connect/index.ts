@@ -1,5 +1,6 @@
 import { platform } from "node:os";
 import * as p from "@clack/prompts";
+import pc from "picocolors";
 import type { ConnectAdapter, ConnectOptions, ConnectResult } from "./types.js";
 import { adapter as antigravity } from "./antigravity.js";
 import { adapter as claudeCode } from "./claude-code.js";
@@ -13,6 +14,7 @@ import { adapter as geminiCli } from "./gemini-cli.js";
 import { adapter as hermes } from "./hermes.js";
 import { adapter as kiro } from "./kiro.js";
 import { adapter as openclaw } from "./openclaw.js";
+import { adapter as opencode } from "./opencode.js";
 import { adapter as openhuman } from "./openhuman.js";
 import { adapter as pi } from "./pi.js";
 import { adapter as qwen } from "./qwen.js";
@@ -33,6 +35,7 @@ export const ADAPTERS: readonly ConnectAdapter[] = [
   continueDev,
   zed,
   droid,
+  opencode,
   openclaw,
   hermes,
   pi,
@@ -175,13 +178,13 @@ function summarize(
   const lines = results.map(({ name, result }) => {
     switch (result.kind) {
       case "installed":
-        return `  ✓ ${name}${result.mutatedPath ? ` → ${result.mutatedPath}` : ""}`;
+        return `  ${pc.green("✓")} ${pc.bold(name)}${result.mutatedPath ? ` ${pc.dim("→")} ${pc.cyan(result.mutatedPath)}` : ""}`;
       case "already-wired":
-        return `  ✓ ${name} (already wired)`;
+        return `  ${pc.green("✓")} ${pc.bold(name)} ${pc.dim("(already wired)")}`;
       case "stub":
-        return `  ⚠ ${name} (manual install required: ${result.reason})`;
+        return `  ${pc.yellow("⚠")} ${pc.bold(name)} ${pc.yellow(`(manual install required: ${result.reason})`)}`;
       case "skipped":
-        return `  ✗ ${name} (skipped: ${result.reason})`;
+        return `  ${pc.red("✗")} ${pc.bold(name)} ${pc.dim(`(skipped: ${result.reason})`)}`;
     }
   });
   p.note(lines.join("\n"), "summary");
@@ -198,7 +201,7 @@ function summarize(
   );
   if (wiredAny) {
     p.log.info(
-      "Next: install agentmemory's 8 skills into the same agent(s) so they know when to call the tools:\n  npx skills add rohitg00/agentmemory -y",
+      "Next: install agentmemory's 15 skills into the same agent(s) so they know when to call the tools:\n  npx skills add rohitg00/agentmemory -y",
     );
   }
 

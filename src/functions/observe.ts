@@ -10,6 +10,7 @@ import { buildSyntheticCompression } from "./compress-synthetic.js";
 import { getSearchIndex, vectorIndexAddGuarded } from "./search.js";
 import { getAgentId } from "../config.js";
 import { logger } from "../logger.js";
+import { saveImageToDisk } from "../utils/image-store.js";
 
 export function extractImage(d: unknown): string | undefined {
   if (!d) return undefined;
@@ -151,7 +152,6 @@ export function registerObserveFunction(
         }
 
         if (pendingImageData && (pendingImageData.startsWith("data:image/") || pendingImageData.startsWith("iVBORw0KGgo") || pendingImageData.startsWith("/9j/"))) {
-          const { saveImageToDisk } = await import("../utils/image-store.js");
           const { filePath, bytesWritten } = await saveImageToDisk(pendingImageData);
           raw.imageData = filePath;
           const { incrementImageRef } = await import("./image-refs.js");
@@ -180,13 +180,19 @@ export function registerObserveFunction(
 
         } catch (error) {
           if (raw.imageData) {
-            const { deleteImage } = await import("../utils/image-store.js");
-            const { deletedBytes } = await deleteImage(raw.imageData);
-            if (deletedBytes > 0) {
-              sdk.trigger({
-                function_id: "mem::disk-size-delta",
-                payload: { deltaBytes: -deletedBytes },
-                action: TriggerAction.Void(),
+            // Roll back the ref taken above. decrementImageRef deletes the file
+            // only when no other observation still references it (deduped images
+            // survive) and emits the disk-size delta itself — deleting the file
+            // directly here would orphan shared images and leave a stale ref.
+            // If the rollback itself fails, log it but still surface the
+            // original write error (the more useful failure to diagnose).
+            try {
+              const { decrementImageRef } = await import("./image-refs.js");
+              await decrementImageRef(kv, sdk, raw.imageData);
+            } catch (rollbackError) {
+              logger.error("Failed to roll back image ref after observation write failure", {
+                imageRef: raw.imageData,
+                error: rollbackError instanceof Error ? rollbackError.message : String(rollbackError),
               });
             }
           }
@@ -274,7 +280,7 @@ export function registerObserveFunction(
           });
         }
 
-        // Per-observation LLM compression is opt-in as of 0.8.8 (#138).
+        // Per-observation LLM compression is opt-in as of 0.8.8.
         // Default path: build a zero-LLM synthetic compression so recall
         // and BM25 search still work without burning the user's Claude
         // token allocation on every tool invocation.

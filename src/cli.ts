@@ -21,6 +21,22 @@ import { join, dirname, delimiter as PATH_DELIMITER } from "node:path";
 import { fileURLToPath } from "node:url";
 import { homedir, platform } from "node:os";
 import * as p from "@clack/prompts";
+import pc from "picocolors";
+
+// Semantic color helpers. clack strips ANSI for box-width math
+// (stripVTControlCharacters + string-width), so coloring inside p.note
+// keeps borders aligned. Centralized here so the palette stays consistent
+// across every command's output.
+const c = {
+  url: pc.cyan,
+  ok: pc.green,
+  warn: pc.yellow,
+  err: pc.red,
+  cmd: (s: string) => pc.bold(pc.cyan(s)),
+  label: pc.bold,
+  dim: pc.dim,
+  accent: (s: string) => pc.bold(pc.yellow(s)),
+};
 import { generateId } from "./state/schema.js";
 import {
   buildDiagnostics,
@@ -43,6 +59,11 @@ import { isFirstRun, readPrefs, resetPrefs, writePrefs } from "./cli/preferences
 import { runOnboarding } from "./cli/onboarding.js";
 import { setBootVerbose } from "./logger.js";
 import { VERSION } from "./version.js";
+import { getAllTools, ESSENTIAL_TOOLS } from "./mcp/tools-registry.js";
+import { knownAgents } from "./cli/connect/index.js";
+
+const ALL_TOOLS_COUNT = getAllTools().length;
+const CORE_TOOLS_COUNT = getAllTools().filter((t) => ESSENTIAL_TOOLS.has(t.name)).length;
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
@@ -116,6 +137,22 @@ function vlog(msg: string): void {
   if (IS_VERBOSE) p.log.info(`[verbose] ${msg}`);
 }
 
+function wrapList(items: readonly string[], indent: number, width = 78): string {
+  const lines: string[] = [];
+  let line = "";
+  for (const item of items) {
+    const joined = line ? `${line}, ${item}` : item;
+    if (line && indent + joined.length > width) {
+      lines.push(`${line},`);
+      line = item;
+    } else {
+      line = joined;
+    }
+  }
+  lines.push(line);
+  return lines.join(`\n${" ".repeat(indent)}`);
+}
+
 if (args.includes("--help") || args.includes("-h")) {
   console.log(`
 agentmemory — persistent memory for AI coding agents
@@ -125,9 +162,8 @@ Usage: agentmemory [command] [options]
 Commands:
   (default)          Start agentmemory worker
   init               Copy bundled .env.example to ~/.agentmemory/.env if absent
-  connect [agent]    Wire agentmemory into an installed agent (claude-code,
-                     copilot-cli, codex, cursor, gemini-cli, openclaw,
-                     hermes, pi, openhuman).
+  connect [agent]    Wire agentmemory into an installed agent
+                     (${wrapList(knownAgents(), 21)}).
                      No arg = interactive picker. --all wires every detected agent.
                      --dry-run shows what would change. --force re-installs.
   status             Show connection status, memory count, flags, and health
@@ -136,7 +172,9 @@ Commands:
                      --dry-run: show what each fix would do, don't execute
   remove             Cleanly uninstall agentmemory (pidfile, state, .env, binaries).
                      --force: skip confirmations · --keep-data: keep memory data
-  demo               Seed sample sessions and show recall in action
+  demo [--serve]     Seed sample sessions and show recall in action.
+                     --serve boots the server, runs the demo, and stops it
+                     in one command (no second terminal).
   upgrade            Upgrade local deps + iii runtime (best effort)
   stop [--force]     Stop the running iii-engine started by this CLI.
                      --force bypasses the Docker-heuristic guard and signals
@@ -152,9 +190,14 @@ Options:
   --help, -h         Show this help
   --verbose, -v      Show engine stderr, boot log, and diagnostic info
   --reset            Wipe ~/.agentmemory/preferences.json and re-run onboarding
-  --tools all|core   Tool visibility (default: all = 51 tools; core = 8 essentials)
+  --tools all|core   Tool visibility (default: all = ${ALL_TOOLS_COUNT} tools; core = ${CORE_TOOLS_COUNT} essentials)
   --no-engine        Skip auto-starting iii-engine
-  --port <N>         Override REST port (default: 3111)
+  --port <N>         Override REST port (default: 3111). Streams (N+1), viewer
+                     (N+2), and iii engine (N+46023) auto-derive from N so a
+                     single flag relocates the whole quartet.
+  --instance <N>     Shortcut for --port (3111 + N*100) to run multiple
+                     daemons side-by-side without env gymnastics.
+                     --instance 1 -> 3211/3212/3213/49234, etc. (max N=50)
 
 Environment:
   AGENTMEMORY_URL              Full REST base URL (e.g. http://localhost:3111).
@@ -180,12 +223,35 @@ Quick start:
 
 const toolsIdx = args.indexOf("--tools");
 if (toolsIdx !== -1 && args[toolsIdx + 1]) {
-  process.env["AGENTMEMORY_TOOLS"] = args[toolsIdx + 1];
+  const toolsMode = args[toolsIdx + 1]!;
+  if (toolsMode !== "all" && toolsMode !== "core") {
+    p.log.warn(
+      `Unknown --tools value "${toolsMode}" (valid: all, core); falling back to all.`,
+    );
+  }
+  process.env["AGENTMEMORY_TOOLS"] = toolsMode;
 }
 
 const portIdx = args.indexOf("--port");
 if (portIdx !== -1 && args[portIdx + 1]) {
   process.env["III_REST_PORT"] = args[portIdx + 1];
+}
+
+// `--instance N` picks a 100-port block off the 3111 base so multiple
+// agentmemory daemons can coexist on one host without env-var
+// gymnastics. `--instance 0` keeps the canonical 3111/3112/3113/49134
+// quartet; `--instance 1` → 3211/3212/3213/49234; etc. REST acts as the
+// anchor — streams/viewer/engine derive from it via fixed offsets below
+// unless an env explicitly pins each one.
+const instanceIdx = args.indexOf("--instance");
+if (instanceIdx !== -1 && args[instanceIdx + 1]) {
+  const n = parseInt(args[instanceIdx + 1] || "", 10);
+  if (Number.isFinite(n) && n >= 0 && n <= 50) {
+    const base = 3111 + n * 100;
+    if (!process.env["III_REST_PORT"]) {
+      process.env["III_REST_PORT"] = String(base);
+    }
+  }
 }
 
 const skipEngine = args.includes("--no-engine");
@@ -255,17 +321,20 @@ function getViewerUrl(): string {
 // subscribe. Honors both `III_STREAM_PORT` (the singular name the
 // engine docs use post-0.11) and `III_STREAMS_PORT` (the name our
 // own config.ts has used since 0.7) so a single source of truth in
-// either form lights up the ready panel.
+// either form lights up the ready panel. Falls back to REST+1 so
+// `--port 3211` auto-picks 3212 instead of colliding on 3112.
 function getStreamPort(): number {
   return (
     parseInt(process.env["III_STREAM_PORT"] || "", 10) ||
     parseInt(process.env["III_STREAMS_PORT"] || "", 10) ||
-    3112
+    getRestPort() + 1
   );
 }
 
 // Bridge WebSocket port — the iii engine's internal worker bus.
-// Defaults to 49134 (engine convention) and is overridable via
+// Defaults derived from REST as REST+46023 so the canonical 3111
+// anchor yields 49134 and `--port 3211` auto-picks 49234 without a
+// second-instance collision. Overridable via
 // `III_ENGINE_PORT` or the legacy `III_ENGINE_URL=ws://host:port`.
 function getEnginePort(): number {
   const explicit = parseInt(process.env["III_ENGINE_PORT"] || "", 10);
@@ -277,7 +346,7 @@ function getEnginePort(): number {
       if (parsed) return parseInt(parsed, 10);
     } catch {}
   }
-  return 49134;
+  return getRestPort() + 46023;
 }
 
 async function isEngineRunning(): Promise<boolean> {
@@ -317,7 +386,7 @@ function findIiiConfig(): string {
   // Precedence (user-overridable wins): explicit env > project cwd >
   // ~/.agentmemory/ > bundled. The bundled config used to win
   // unconditionally, so users hitting the observability log-feedback
-  // loop (#519) had no way to drop a tamer config in place without
+  // loop had no way to drop a tamer config in place without
   // editing node_modules.
   const envPath = process.env["AGENTMEMORY_III_CONFIG"];
   const candidates = [
@@ -352,7 +421,7 @@ function whichBinary(name: string): string | null {
 
 // Private install location agentmemory manages itself. Sits under the
 // agentmemory state dir (~/.agentmemory/bin) so the pinned engine stays
-// isolated from a user-managed iii on PATH or in ~/.local/bin. #752: a
+// isolated from a user-managed iii on PATH or in ~/.local/bin. A
 // fresh box with iii 0.16.1 already on PATH refused to boot because the
 // hard-pin enforcer told users to overwrite their global install with
 // v0.11.2. Private install resolves the conflict without touching their
@@ -477,7 +546,7 @@ function clearEnginePidfile(): void {
   } catch {}
 }
 
-// Worker pidfile (#640, #474): the agentmemory worker process
+// Worker pidfile: the agentmemory worker process
 // (`node dist/index.mjs`) is spawned by iii-exec inside the engine. When
 // `agentmemory stop` kills only the engine pid, the worker can survive
 // (detached spawn, signal not propagated, or kept alive by a wrapper
@@ -628,8 +697,30 @@ function detectIiiConsole(): IiiConsoleState {
   return { kind: "missing" };
 }
 
+// The upstream install script reads `VERSION` as an env var (see
+// install.iii.dev/iii/main/install.sh: `engine_version="${VERSION:-}"`).
+// Pin to IIPINNED_VERSION so a fresh boot can never pull a newer iii
+// console that talks a different protocol than our pinned engine
+// (root cause of protocol drift).
 const III_CONSOLE_INSTALL_CMD =
-  "curl -fsSL https://install.iii.dev/iii/main/install.sh | sh";
+  `curl -fsSL https://install.iii.dev/iii/main/install.sh | VERSION=${IIPINNED_VERSION} sh`;
+
+// Display-only renderer. The internal `runCommand(shBin, ["-c", ...])`
+// path uses III_CONSOLE_INSTALL_CMD verbatim (POSIX shell). Anywhere
+// that PRINTS the command to a user has to handle Windows separately
+// since `VERSION=X sh` and the pipe-to-sh idiom aren't valid in
+// cmd.exe / PowerShell.
+function iiiConsoleInstallHint(): string {
+  if (!IS_WINDOWS) return III_CONSOLE_INSTALL_CMD;
+  return (
+    `# PowerShell:\n` +
+    `  $env:VERSION = "${IIPINNED_VERSION}"\n` +
+    `  iwr -useb https://install.iii.dev/iii/main/install.sh -OutFile install.sh\n` +
+    `  bash install.sh   # WSL or Git Bash required\n` +
+    `# Or grab the pinned release directly:\n` +
+    `  https://github.com/iii-hq/iii/releases/tag/iii%2Fv${IIPINNED_VERSION}`
+  );
+}
 
 async function ensureIiiConsole(): Promise<IiiConsoleState> {
   const state = detectIiiConsole();
@@ -655,7 +746,7 @@ async function ensureIiiConsole(): Promise<IiiConsoleState> {
   const curlBin = whichBinary("curl");
   if (!shBin || !curlBin) {
     p.log.warn(
-      `curl or sh not found. Install manually:\n  ${III_CONSOLE_INSTALL_CMD}`,
+      `curl or sh not found. Install manually:\n  ${iiiConsoleInstallHint()}`,
     );
     return state;
   }
@@ -664,7 +755,7 @@ async function ensureIiiConsole(): Promise<IiiConsoleState> {
   });
   if (!ok) {
     p.log.warn(
-      `iii console install failed. Re-run manually:\n  ${III_CONSOLE_INSTALL_CMD}`,
+      `iii console install failed. Re-run manually:\n  ${iiiConsoleInstallHint()}`,
     );
     return state;
   }
@@ -691,7 +782,7 @@ function adoptRunningEngine(): void {
       });
     }
     if (enginePid && !existingPid) {
-      p.log.info(`Attached to existing iii-engine (pid ${enginePid})`);
+      p.log.info(c.ok(`Attached to existing iii-engine (pid ${enginePid})`));
     }
   } catch (err) {
     vlog(`adoptRunningEngine: ${err instanceof Error ? err.message : String(err)}`);
@@ -814,7 +905,7 @@ function startIiiBin(iiiBin: string, configPath: string): boolean {
   s.start(`Starting iii-engine: ${iiiBin}`);
   writeEngineState({ kind: "native", configPath, binPath: iiiBin });
   spawnEngineBackground(iiiBin, ["--config", configPath], "iii-engine");
-  s.stop("iii-engine process started");
+  s.stop(c.ok("iii-engine process started"));
   return true;
 }
 
@@ -847,7 +938,7 @@ async function startEngine(): Promise<boolean> {
 
   if (iiiBin && configPath) {
     if (iiiBin !== pathIii) {
-      p.log.info(`Using iii at: ${iiiBin} (v${IIPINNED_VERSION})`);
+      p.log.info(`Using iii at: ${c.dim(iiiBin)} (v${c.accent(IIPINNED_VERSION)})`);
       process.env["PATH"] = `${dirname(iiiBin)}${PATH_DELIMITER}${process.env["PATH"] ?? ""}`;
     }
     return startIiiBin(iiiBin, configPath);
@@ -1073,20 +1164,20 @@ function printReadyHint(consoleState: IiiConsoleState): void {
         // the detected binary path so `(run: ...)` is executable as-
         // is, even when the binary isn't on PATH under the bare
         // name `iii-console`.
-        `iii console  ${consoleState.binPath}  (run: ${consoleState.binPath} -p <port>)`
-      : `iii console  (install: ${III_CONSOLE_INSTALL_CMD})`;
+        `${c.label("iii console")}  ${c.dim(consoleState.binPath)}  ${c.dim(`(run: ${consoleState.binPath} -p <port>)`)}`
+      : `${c.label("iii console")}  ${c.dim(`(install: ${iiiConsoleInstallHint()})`)}`;
 
   const lines = [
-    `REST API     ${restUrl}`,
-    `Viewer       ${viewerUrl}`,
-    `Streams      ${streamUrl}`,
-    `Engine       ${engineUrl}`,
+    `${c.label("REST API")}     ${c.url(restUrl)}`,
+    `${c.label("Viewer")}       ${c.url(viewerUrl)}`,
+    `${c.label("Streams")}      ${c.url(streamUrl)}`,
+    `${c.label("Engine")}       ${c.url(engineUrl)}`,
     consoleLine,
   ];
   // p.note renders a bordered panel with a title — same affordance
   // used elsewhere in this CLI for "Troubleshooting" / "Setup
   // required" blocks, so the visual language stays consistent.
-  p.note(lines.join("\n"), `agentmemory v${VERSION}`);
+  p.note(lines.join("\n"), `agentmemory v${c.accent(VERSION)}`);
 
   // Pick a runnable form for the suggested next-step. Users invoked
   // via `npx` don't have the bare `agentmemory` command on PATH yet
@@ -1096,7 +1187,7 @@ function printReadyHint(consoleState: IiiConsoleState): void {
   const demoCommand = isInvokedViaNpx()
     ? "npx @agentmemory/agentmemory demo"
     : "agentmemory demo";
-  process.stdout.write(`\nTry: ${demoCommand}\n`);
+  process.stdout.write(`\n${c.dim("Try:")} ${c.cmd(demoCommand)}\n`);
 }
 
 async function main() {
@@ -1147,28 +1238,58 @@ async function main() {
       whichBinary("iii") ??
       fallbackIiiPaths().find((p) => existsSync(p)) ??
       null;
-    if (attachedBin) {
-      const detected = iiiBinVersion(attachedBin);
-      if (detected && detected !== IIPINNED_VERSION) {
-        p.log.error(
-          `Attached iii-engine appears to be v${detected} (from ${attachedBin}) ` +
-            `but agentmemory v${VERSION} hard-pins v${IIPINNED_VERSION}. ` +
-            `Engine API drift causes runtime failures (e.g. state::list-not-found on v0.13.0+). ` +
-            `Stop the running engine (\`agentmemory stop --force\`) and re-run \`agentmemory\` ` +
-            `to install the pinned engine into ~/.agentmemory/bin without touching ${attachedBin}. ` +
-            `Or set AGENTMEMORY_III_VERSION=${detected} to override at your own risk.`,
-        );
-        process.exit(1);
+    const detected = attachedBin ? iiiBinVersion(attachedBin) : null;
+
+    // Fail closed: only adopt the running engine when we can positively
+    // confirm it is the pinned version. An unknown version (detected === null,
+    // e.g. the binary can't be version-probed) is treated as incompatible —
+    // adopting a foreign or unverifiable engine hangs the worker in a
+    // WebSocket reconnect loop. Worst case here is a re-run that reinstalls
+    // the pinned engine, never a silent loop.
+    if (detected === IIPINNED_VERSION) {
+      adoptRunningEngine();
+      await import("./index.js");
+      if (await waitForAgentmemoryReady(15000)) {
+        const consoleState = await ensureIiiConsole();
+        await maybeOfferGlobalInstall();
+        printReadyHint(consoleState);
       }
+      return;
     }
-    adoptRunningEngine();
-    await import("./index.js");
-    if (await waitForAgentmemoryReady(15000)) {
-      const consoleState = await ensureIiiConsole();
-      await maybeOfferGlobalInstall();
-      printReadyHint(consoleState);
-    }
-    return;
+
+    const detectedLabel = detected ? `v${detected}` : "an unverified version";
+
+    // An incompatible engine owns the port. Adopting it hangs the worker in a
+    // WebSocket reconnect loop (it can't speak that engine's protocol), so stop
+    // with the simplest honest remedy. A normal user has no other engine and
+    // never sees this; only someone running their own iii does, and for them
+    // "stop it, then run normally" is the fix. We do not suggest a different
+    // engine version: agentmemory only supports v${IIPINNED_VERSION}.
+    const base = isInvokedViaNpx() ? "npx @agentmemory/agentmemory" : "agentmemory";
+    p.log.error(
+      `Another iii-engine (${detectedLabel}) is running on port ${getEnginePort()}, and agentmemory needs its own pinned v${IIPINNED_VERSION}.`,
+    );
+    p.note(
+      [
+        `agentmemory only supports iii-engine v${IIPINNED_VERSION}. It will not adopt or change the running engine (${detectedLabel}).`,
+        "",
+        c.label("Switch to the pinned engine in two steps:"),
+        "",
+        `  1. Stop the running engine:`,
+        `       ${c.cmd(`${base} stop --force`)}`,
+        `     ${c.dim(`(or stop your own iii however you started it — agentmemory leaves your global iii untouched)`)}`,
+        "",
+        `  2. Start agentmemory. It downloads and runs the pinned`,
+        `     v${IIPINNED_VERSION} into ~/.agentmemory/bin automatically:`,
+        `       ${c.cmd(base)}`,
+        "",
+        c.dim(`Step 2 needs no manual install. To install iii v${IIPINNED_VERSION} yourself (replaces your global iii), curl:`),
+        `     ${c.cmd(III_CONSOLE_INSTALL_CMD)}`,
+        `     ${c.dim("or download the release:")} ${c.url(`https://github.com/iii-hq/iii/releases/tag/iii%2Fv${IIPINNED_VERSION}`)}`,
+      ].join("\n"),
+      "engine conflict",
+    );
+    process.exit(1);
   }
 
   const started = await startEngine();
@@ -1207,7 +1328,7 @@ async function main() {
       p.note(
         [
           "Common causes:",
-          "  - iii-engine version mismatch — reinstall the latest binary",
+          `  - iii-engine version mismatch — reinstall the pinned v${IIPINNED_VERSION} binary`,
           "    (sh script on macOS/Linux, GitHub release zip on Windows)",
           "  - Docker Desktop not running (if you're using the Docker path)",
           "  - Port already in use (see below)",
@@ -1234,7 +1355,7 @@ async function main() {
     process.exit(1);
   }
 
-  s.stop("iii-engine is ready");
+  s.stop(c.ok("iii-engine is ready"));
   await import("./index.js");
   if (await waitForAgentmemoryReady(15000)) {
     const consoleState = await ensureIiiConsole();
@@ -1310,7 +1431,7 @@ async function runStatus() {
     p.log.success(`Connected — v${version} at ${base}`);
 
     const lines = [
-      `Health:       ${status === "healthy" ? "✓ healthy" : status}`,
+      `Health:       ${status === "healthy" ? pc.green("✓ healthy") : pc.yellow(status)}`,
       `Sessions:     ${sessions}`,
       `Observations: ${obsCount}`,
       `Memories:     ${memCount}`,
@@ -1318,7 +1439,7 @@ async function runStatus() {
       `Circuit:      ${cb}`,
       `Heap:         ${heapMB} MB`,
       `Uptime:       ${uptime}s`,
-      `Viewer:       ${getViewerUrl()}`,
+      `Viewer:       ${c.url(getViewerUrl())}`,
     ];
 
     if (obsCount > 0) {
@@ -1329,10 +1450,10 @@ async function runStatus() {
     }
 
     if (flagsRes) {
-      const provider = flagsRes.provider === "llm" ? "✓ llm" : "✗ noop (no key)";
-      const embed = flagsRes.embeddingProvider === "embeddings" ? "✓ embeddings" : "bm25-only";
+      const provider = flagsRes.provider === "llm" ? pc.green("✓ llm") : pc.yellow("✗ noop (no key)");
+      const embed = flagsRes.embeddingProvider === "embeddings" ? pc.green("✓ embeddings") : pc.dim("bm25-only");
       const flagRows = (flagsRes.flags || []).map((f: { key: string; enabled: boolean; label: string }) =>
-        `  ${f.enabled ? "✓" : "✗"} ${f.key.padEnd(32)} ${f.label}`
+        `  ${f.enabled ? pc.green("✓") : pc.dim("✗")} ${pc.bold(f.key.padEnd(32))} ${f.label}`
       );
       lines.push("");
       lines.push(`Provider:     ${provider}`);
@@ -1362,7 +1483,7 @@ type DoctorCheck = { name: string; ok: boolean; hint?: string };
 
 function formatChecks(checks: DoctorCheck[]): string {
   return checks
-    .map((c) => `${c.ok ? "✓" : "✗"} ${c.name}${c.hint ? `\n   ${c.hint}` : ""}`)
+    .map((c) => `${c.ok ? pc.green("✓") : pc.red("✗")} ${c.name}${c.hint ? `\n   ${c.hint}` : ""}`)
     .join("\n");
 }
 
@@ -2053,19 +2174,82 @@ async function runInit() {
   p.outro(`Edit ${target} and you're set.`);
 }
 
+async function startServerForDemo(): Promise<() => Promise<void>> {
+  if (await isAgentmemoryReady()) {
+    return async () => {};
+  }
+
+  const startedEngine = !(await isEngineRunning());
+  if (startedEngine) {
+    const ok = await startEngine();
+    if (!ok) {
+      p.log.error("Could not start iii-engine for the demo.");
+      p.note(installInstructions().join("\n"), "Setup required");
+      process.exit(1);
+    }
+    if (!(await waitForEngine(15000))) {
+      p.log.error("iii-engine did not become ready within 15s.");
+      process.exit(1);
+    }
+  }
+
+  await import("./index.js");
+  if (!(await waitForAgentmemoryReady(15000))) {
+    p.log.error("agentmemory worker did not become ready within 15s.");
+    process.exit(1);
+  }
+
+  return async () => {
+    if (!startedEngine) return;
+    const port = getRestPort();
+    const state = readEngineState();
+    if (state?.kind === "docker") {
+      await stopDockerEngine(state.composeFile, port).catch(() => {});
+      return;
+    }
+    const pids = new Set<number>(findEnginePidsByPort(port));
+    const pidfilePid = readEnginePidfile();
+    if (pidfilePid) pids.add(pidfilePid);
+    for (const pid of pids) {
+      await signalAndWait(pid, "SIGTERM", 3000).catch(() => {});
+    }
+    clearEnginePidfile();
+    clearEngineState();
+    clearWorkerPidfile();
+  };
+}
+
 async function runDemo() {
   const port = getRestPort();
   const base = `http://localhost:${port}`;
   p.intro("agentmemory demo");
 
-  if (!(await isAgentmemoryReady())) {
+  const serve = args.includes("--serve");
+  let teardown: () => Promise<void> = async () => {};
+
+  if (serve) {
+    teardown = await startServerForDemo();
+  } else if (!(await isAgentmemoryReady())) {
     p.log.error(
       `agentmemory worker not reachable on port ${port} (livez probe failed). Something may be on the port but it isn't serving /agentmemory/*.`,
     );
     p.log.info("Start it with: npx @agentmemory/agentmemory");
+    p.log.info("Or run a one-command demo with: npx @agentmemory/agentmemory demo --serve");
     process.exit(1);
   }
 
+  try {
+    await runDemoBody(base);
+  } finally {
+    await teardown();
+  }
+
+  if (serve) {
+    process.exit(0);
+  }
+}
+
+async function runDemoBody(base: string) {
   const demoProject = "/tmp/agentmemory-demo";
   const sessions = buildDemoSessions();
 
@@ -2099,17 +2283,17 @@ async function runDemo() {
     `Project:       ${demoProject}`,
     `Sessions:      ${sessions.length} seeded (${totalObs} observations)`,
     "",
-    "Search results:",
+    c.label("Search results:"),
     ...results.flatMap((r) => [
-      `  "${r.query}"`,
-      `    → ${r.hits} hit(s), top: ${r.topTitle.slice(0, 60)}`,
+      `  ${c.label(`"${r.query}"`)}`,
+      `    ${c.dim("→")} ${c.ok(`${r.hits} hit(s)`)}, top: ${r.topTitle.slice(0, 60)}`,
     ]),
     "",
-    `Notice: searching "database performance optimization"`,
-    `found the N+1 query fix — keyword matching can't do that.`,
+    c.accent(`Notice: searching "database performance optimization"`),
+    c.accent(`found the N+1 query fix — keyword matching can't do that.`),
     "",
-    `Viewer:        ${getViewerUrl()}`,
-    `Clean up with: curl -X DELETE "${base}/agentmemory/sessions?project=${demoProject}"`,
+    `Viewer:        ${c.url(getViewerUrl())}`,
+    `Clean up with: ${c.dim(`curl -X DELETE "${base}/agentmemory/sessions?project=${demoProject}"`)}`,
   ];
 
   p.note(lines.join("\n"), "demo complete");
@@ -2130,7 +2314,7 @@ function runCommand(
   });
 
   if (result.status === 0) {
-    spinner.stop(`${options.label} ✓`);
+    spinner.stop(`${options.label} ${pc.green("✓")}`);
     return true;
   }
 
@@ -2144,7 +2328,7 @@ function runCommand(
     return false;
   }
 
-  spinner.stop(`${options.label} ✗`);
+  spinner.stop(`${options.label} ${pc.red("✗")}`);
   p.log.error(msg.slice(0, 300));
   return false;
 }
@@ -2350,7 +2534,7 @@ async function runStop(): Promise<void> {
 
   const portPids = findEnginePidsByPort(port);
   const pidfilePid = readEnginePidfile();
-  // #640 + #474: read the worker pid up front so the engine-down branch
+  // read the worker pid up front so the engine-down branch
   // can still reap an orphaned worker process (the common failure mode
   // where a wrapper script kept the worker alive across engine restarts).
   const workerPid = readWorkerPidfile();
@@ -2412,7 +2596,7 @@ async function runStop(): Promise<void> {
   if (pidfilePid) candidates.add(pidfilePid);
   for (const pid of portPids) candidates.add(pid);
 
-  // #640 + #474: stop must also reap the agentmemory worker process
+  // stop must also reap the agentmemory worker process
   // (`node dist/index.mjs`). If only the engine is killed, the worker can
   // survive (detached spawn / signal not propagated) and reconnect to the
   // next engine as a duplicate registration. workerPid was read above so
@@ -2428,19 +2612,26 @@ async function runStop(): Promise<void> {
   }
 
   let allStopped = true;
+  // stop worker first, then engine. The worker's shutdown
+  // handler calls indexPersistence.save() -> kv.set() -> iii state::set
+  // to flush BM25/vector snapshots + audit rows. Killing iii first
+  // leaves those writes with no engine to land on, and the index +
+  // observations end up as in-memory state the iii process never
+  // persists. Worker SIGTERM grace bumped 3s -> 5s to give a large
+  // index a real chance to commit before the engine goes away.
+  for (const pid of workerCandidates) {
+    const s = p.spinner();
+    s.start(`Stopping agentmemory worker (pid ${pid})... [flushing state]`);
+    const ok = await signalAndWait(pid, "SIGTERM", 5000);
+    s.stop(ok ? `Stopped worker pid ${pid}` : `Failed to stop worker pid ${pid}`);
+    if (!ok) allStopped = false;
+  }
   for (const pid of candidates) {
+    if (workerCandidates.has(pid)) continue;
     const s = p.spinner();
     s.start(`Stopping iii-engine (pid ${pid})...`);
     const ok = await signalAndWait(pid, "SIGTERM", 3000);
     s.stop(ok ? `Stopped pid ${pid}` : `Failed to stop pid ${pid}`);
-    if (!ok) allStopped = false;
-  }
-  for (const pid of workerCandidates) {
-    if (candidates.has(pid)) continue;
-    const s = p.spinner();
-    s.start(`Stopping agentmemory worker (pid ${pid})...`);
-    const ok = await signalAndWait(pid, "SIGTERM", 3000);
-    s.stop(ok ? `Stopped worker pid ${pid}` : `Failed to stop worker pid ${pid}`);
     if (!ok) allStopped = false;
   }
 
