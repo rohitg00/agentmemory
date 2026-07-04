@@ -1,4 +1,5 @@
 const DEFAULT_REST_PORT = 3111;
+const ENGINE_PORT_OFFSET = 46023;
 
 function parsePort(value: string | undefined): number | null {
   if (!value) return null;
@@ -12,6 +13,10 @@ function setIfUnset(env: NodeJS.ProcessEnv, key: string, value: number | string)
   if (!env[key]) env[key] = String(value);
 }
 
+function hasAny(env: NodeJS.ProcessEnv, keys: string[]): boolean {
+  return keys.some((key) => Boolean(env[key]));
+}
+
 export function configuredRuntimePorts(env: NodeJS.ProcessEnv = process.env): {
   restPort: number;
   streamPort: number;
@@ -21,20 +26,21 @@ export function configuredRuntimePorts(env: NodeJS.ProcessEnv = process.env): {
   return {
     restPort,
     streamPort:
-      parsePort(env["III_STREAMS_PORT"]) ??
       parsePort(env["III_STREAM_PORT"]) ??
+      parsePort(env["III_STREAMS_PORT"]) ??
       restPort + 1,
     enginePort:
-      parsePort(env["III_ENGINE_PORT"]) ??
-      parsePort(env["III_PORT"]) ??
       (() => {
         try {
           const port = new URL(env["III_ENGINE_URL"] || "").port;
-          return parsePort(port) ?? restPort + 3;
+          return parsePort(port);
         } catch {
-          return restPort + 3;
+          return null;
         }
-      })(),
+      })() ??
+      parsePort(env["III_ENGINE_PORT"]) ??
+      parsePort(env["III_PORT"]) ??
+      restPort + ENGINE_PORT_OFFSET,
   };
 }
 
@@ -49,17 +55,23 @@ export function applyPortFlag(args: string[], env: NodeJS.ProcessEnv = process.e
 
   const streamPort = restPort + 1;
   const viewerPort = restPort + 2;
-  const enginePort = restPort + 3;
+  const enginePort = restPort + ENGINE_PORT_OFFSET;
   if (enginePort > 65535) return;
 
   env["III_REST_PORT"] = String(restPort);
-  setIfUnset(env, "III_STREAMS_PORT", streamPort);
-  setIfUnset(env, "III_STREAM_PORT", streamPort);
-  setIfUnset(env, "AGENTMEMORY_VIEWER_PORT", viewerPort);
-  setIfUnset(env, "III_VIEWER_PORT", viewerPort);
-  setIfUnset(env, "III_PORT", enginePort);
-  setIfUnset(env, "III_ENGINE_PORT", enginePort);
-  setIfUnset(env, "III_ENGINE_URL", `ws://localhost:${enginePort}`);
+  if (!hasAny(env, ["III_STREAM_PORT", "III_STREAMS_PORT"])) {
+    setIfUnset(env, "III_STREAMS_PORT", streamPort);
+    setIfUnset(env, "III_STREAM_PORT", streamPort);
+  }
+  if (!hasAny(env, ["AGENTMEMORY_VIEWER_PORT", "III_VIEWER_PORT"])) {
+    setIfUnset(env, "AGENTMEMORY_VIEWER_PORT", viewerPort);
+    setIfUnset(env, "III_VIEWER_PORT", viewerPort);
+  }
+  if (!hasAny(env, ["III_ENGINE_URL", "III_ENGINE_PORT", "III_PORT"])) {
+    setIfUnset(env, "III_PORT", enginePort);
+    setIfUnset(env, "III_ENGINE_PORT", enginePort);
+    setIfUnset(env, "III_ENGINE_URL", `ws://localhost:${enginePort}`);
+  }
 }
 
 export function renderRuntimeIiiConfig(

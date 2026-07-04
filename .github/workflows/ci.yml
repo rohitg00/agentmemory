@@ -66,4 +66,5 @@ jobs:
       - run: npm install --package-lock-only --legacy-peer-deps --no-audit --no-fund
       - run: npm ci --legacy-peer-deps --no-audit --no-fund
       - run: npm run build
+      - run: npm run skills:check
       - run: npm test

@@ -12,9 +12,9 @@ describe("runtime port derivation (#750)", () => {
     expect(env.III_STREAM_PORT).toBe("3212");
     expect(env.AGENTMEMORY_VIEWER_PORT).toBe("3213");
     expect(env.III_VIEWER_PORT).toBe("3213");
-    expect(env.III_PORT).toBe("3214");
-    expect(env.III_ENGINE_PORT).toBe("3214");
-    expect(env.III_ENGINE_URL).toBe("ws://localhost:3214");
+    expect(env.III_PORT).toBe("49234");
+    expect(env.III_ENGINE_PORT).toBe("49234");
+    expect(env.III_ENGINE_URL).toBe("ws://localhost:49234");
   });
 
   it("respects explicit sibling port overrides", () => {
@@ -28,9 +28,49 @@ describe("runtime port derivation (#750)", () => {
 
     expect(env.III_REST_PORT).toBe("3211");
     expect(env.III_STREAMS_PORT).toBe("4300");
+    expect(env.III_STREAM_PORT).toBeUndefined();
     expect(env.III_PORT).toBe("49000");
+    expect(env.III_ENGINE_PORT).toBeUndefined();
     expect(env.III_ENGINE_URL).toBe("ws://127.0.0.1:49000");
     expect(env.AGENTMEMORY_VIEWER_PORT).toBe("4400");
+    expect(env.III_VIEWER_PORT).toBeUndefined();
+  });
+
+  it("does not shadow explicit lower-priority sibling overrides", () => {
+    const env: NodeJS.ProcessEnv = {
+      III_STREAMS_PORT: "4300",
+      III_VIEWER_PORT: "4400",
+      III_PORT: "49000",
+    };
+    applyPortFlag(["--port", "3211"], env);
+
+    expect(env.III_REST_PORT).toBe("3211");
+    expect(env.III_STREAMS_PORT).toBe("4300");
+    expect(env.III_STREAM_PORT).toBeUndefined();
+    expect(env.III_VIEWER_PORT).toBe("4400");
+    expect(env.AGENTMEMORY_VIEWER_PORT).toBeUndefined();
+    expect(env.III_PORT).toBe("49000");
+    expect(env.III_ENGINE_PORT).toBeUndefined();
+    expect(env.III_ENGINE_URL).toBeUndefined();
+  });
+
+  it("matches loadConfig precedence when rendering runtime ports", () => {
+    const nativeConfig = readFileSync("iii-config.yaml", "utf-8");
+    const rendered = renderRuntimeIiiConfig(nativeConfig, {
+      III_REST_PORT: "3211",
+      III_STREAMS_PORT: "4300",
+      III_STREAM_PORT: "4301",
+      III_PORT: "49000",
+      III_ENGINE_PORT: "49001",
+      III_ENGINE_URL: "ws://127.0.0.1:49002",
+    });
+
+    expect(rendered).toContain("port: 3211");
+    expect(rendered).toContain("port: 4301");
+    expect(rendered).toContain("port: 49002");
+    expect(rendered).not.toContain("port: 4300");
+    expect(rendered).not.toContain("port: 49000");
+    expect(rendered).not.toContain("port: 49001");
   });
 
   it("ignores --port values that would overflow derived sibling ports", () => {
@@ -49,12 +89,12 @@ describe("runtime port derivation (#750)", () => {
     const rendered = renderRuntimeIiiConfig(nativeConfig, {
       III_REST_PORT: "3211",
       III_STREAMS_PORT: "3212",
-      III_PORT: "3214",
+      III_PORT: "49234",
     });
 
     expect(nativeConfig).toContain("port: 3111");
     expect(nativeConfig).toContain("port: 3112");
-    expect(rendered).toContain("port: 3214");
+    expect(rendered).toContain("port: 49234");
     expect(rendered).toContain("port: 3211");
     expect(rendered).toContain("port: 3212");
   });
