@@ -11,6 +11,7 @@ const SECTIONS = [
   { href: "#live", label: "DEMO" },
   { href: "#compare", label: "VS" },
   { href: "#install", label: "INSTALL" },
+  { href: "/docs", label: "DOCS" },
 ];
 
 export async function Nav() {

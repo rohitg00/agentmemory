@@ -10,6 +10,7 @@ import type {
 } from "../types.js";
 import { getVisibleTools } from "./tools-registry.js";
 import { timingSafeCompare } from "../auth.js";
+import { getAgentId, isAgentScopeIsolated } from "../config.js";
 
 type McpResponse = {
   status_code: number;
@@ -112,11 +113,20 @@ export function registerMcpEndpoints(
                 body: { error: "token_budget must be a positive integer" },
               };
             }
+            // #817: forward agentId so mem::search applies the same
+            // isolation filter smart-search uses. Default behavior is
+            // unchanged (no agentId → falls back to env AGENT_ID when
+            // AGENTMEMORY_AGENT_SCOPE=isolated; "*" wildcard bypasses).
+            const recallAgentId =
+              typeof args.agentId === "string" && args.agentId.trim().length > 0
+                ? (args.agentId as string).trim()
+                : undefined;
             const result = await sdk.trigger({ function_id: "mem::search", payload: {
               query: args.query,
               limit: typeof args.limit === "number" ? args.limit : 10,
               format,
               token_budget: tokenBudget,
+              agentId: recallAgentId,
             } });
             const text =
               format === "narrative" &&
@@ -1635,6 +1645,9 @@ export function registerMcpEndpoints(
                 },
               };
             }
+            // #817: mem::search now enforces agent-scope upstream when
+            // AGENTMEMORY_AGENT_SCOPE=isolated, so the search half of
+            // this prompt is safe by default.
             const searchResult = await sdk
               .trigger({
                 function_id: "mem::search",
@@ -1642,7 +1655,31 @@ export function registerMcpEndpoints(
               })
               .catch(() => ({ results: [] }));
             const memories = await kv.list<Memory>(KV.memories);
-            const relevant = memories.filter((m) => m.isLatest).slice(0, 5);
+            // #817: also filter the memory list. recall_context's
+            // second source is the latest-memory feed, which leaks
+            // cross-agent rows when isolated mode is on. Mirror the
+            // search-side filter explicitly here; the upstream filter
+            // doesn't apply to a raw kv.list.
+            //
+            // Fail-closed: if isolated mode is on but no AGENT_ID is
+            // available, return an empty `relevant` array rather than
+            // letting every memory through. The mem::search call
+            // above already throws in this case, but the kv.list feed
+            // is a separate path that has to enforce isolation on its
+            // own.
+            const isolated = isAgentScopeIsolated();
+            const activeAgentId = isolated ? getAgentId() : undefined;
+            const relevant =
+              isolated && activeAgentId === undefined
+                ? []
+                : memories
+                    .filter((m) => m.isLatest)
+                    .filter(
+                      (m) =>
+                        activeAgentId === undefined ||
+                        m.agentId === activeAgentId,
+                    )
+                    .slice(0, 5);
             return {
               status_code: 200,
               body: {

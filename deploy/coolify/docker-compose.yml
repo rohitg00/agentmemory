@@ -4,7 +4,7 @@ services:
       context: .
       dockerfile: Dockerfile
       args:
-        AGENTMEMORY_VERSION: "0.9.12"
+        AGENTMEMORY_VERSION: "0.9.27"
         III_VERSION: "0.11.2"
         III_SDK_VERSION: "0.11.2"
     restart: unless-stopped

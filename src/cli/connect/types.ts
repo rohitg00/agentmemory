@@ -21,6 +21,13 @@ export type ConnectAdapter = {
    * opt-in bridge for MCP-only clients.
    */
   protocolNote?: string;
+  /**
+   * Integration style, used by onboarding to group agents. "native" =
+   * ships a first-party plugin / lifecycle hooks; "mcp" = wires the MCP
+   * server only. Declared on the adapter so the picker never needs a
+   * separate hardcoded list (#872). Defaults to "mcp" when omitted.
+   */
+  category?: "native" | "mcp";
   detect(): boolean;
   install(opts: ConnectOptions): Promise<ConnectResult>;
 };

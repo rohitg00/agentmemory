@@ -49,7 +49,6 @@
 
 <p align="center">
   <a href="https://www.npmjs.com/package/@agentmemory/agentmemory"><img src="https://img.shields.io/npm/v/@agentmemory/agentmemory?color=CB3837&label=npm&style=for-the-badge&logo=npm" alt="npm version" /></a>
-  <a href="https://www.npmjs.com/package/@agentmemory/agentmemory"><img src="https://img.shields.io/npm/dm/@agentmemory/agentmemory?color=CB3837&label=downloads&style=for-the-badge&logo=npm" alt="npm downloads" /></a>
   <a href="https://github.com/rohitg00/agentmemory/actions"><img src="https://img.shields.io/github/actions/workflow/status/rohitg00/agentmemory/ci.yml?label=tests&style=for-the-badge&logo=github" alt="CI" /></a>
   <a href="https://github.com/rohitg00/agentmemory/blob/main/LICENSE"><img src="https://img.shields.io/github/license/rohitg00/agentmemory?color=blue&style=for-the-badge" alt="License" /></a>
   <a href="https://github.com/rohitg00/agentmemory/stargazers"><img src="https://img.shields.io/github/stars/rohitg00/agentmemory?style=for-the-badge&color=yellow&logo=github" alt="Stars" /></a>
@@ -422,7 +421,7 @@ Use o comando de manutenção quando você intencionalmente quiser atualizar seu
 npx @agentmemory/agentmemory upgrade
 ```
 
-Aviso: este comando muta o workspace/runtime atual. Pode atualizar dependências JavaScript, pode rodar `cargo install iii-engine --force` e pode puxar imagens Docker.
+Aviso: este comando muta o workspace/runtime atual. Pode atualizar dependências JavaScript e puxar a imagem Docker fixada `iiidev/iii:0.11.2`. Nunca instala um engine iii sem fixação ou mais recente.
 
 Detalhes de implementação estão em `src/cli.ts` (veja `runUpgrade` na região `src/cli.ts:544-595`).
 
@@ -434,7 +433,7 @@ Install agentmemory: run `npx @agentmemory/agentmemory` in a separate terminal t
 
 #### Claude Code sem instalar o plugin (caminho MCP standalone)
 
-Se você cabear o servidor MCP do agentmemory via `~/.claude.json` diretamente em vez de usar `/plugin install`, o Claude Code nunca resolve `${CLAUDE_PLUGIN_ROOT}` e você tem que apontar os scripts de hook para caminhos absolutos em `~/.claude/settings.json`. Esses caminhos tipicamente embutem a versão do agentmemory (ex: `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.21/scripts/…`), então a próxima atualização quebra silenciosamente todos os hooks ([#508](https://github.com/rohitg00/agentmemory/issues/508)).
+Se você cabear o servidor MCP do agentmemory via `~/.claude.json` diretamente em vez de usar `/plugin install`, o Claude Code nunca resolve `${CLAUDE_PLUGIN_ROOT}` e você tem que apontar os scripts de hook para caminhos absolutos em `~/.claude/settings.json`. Esses caminhos tipicamente embutem a versão do agentmemory (ex: `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.21/scripts/…`), então a próxima atualização quebra silenciosamente todos os hooks.
 
 Contorno:
 
@@ -562,7 +561,7 @@ A entrada do agentmemory é o **mesmo bloco de servidor MCP** em todo host que u
 | **Aider** | n/a | Fale diretamente com a REST API: `curl -X POST http://localhost:3111/agentmemory/smart-search -d '{"query": "auth"}'`. |
 | **Qualquer agente (32+)** | n/a | `npx skillkit install agentmemory` autodetecta o host e mescla. |
 
-**Clientes MCP em sandbox** (Flatpak / Snap / contêineres restritivos) que não conseguem alcançar o `localhost` do host: também defina `"AGENTMEMORY_FORCE_PROXY": "1"` no bloco `env`, e aponte `AGENTMEMORY_URL` para uma rota que o sandbox realmente alcance (ex: seu IP de LAN). Veja [#234](https://github.com/rohitg00/agentmemory/issues/234) para o passo a passo de diagnóstico.
+**Clientes MCP em sandbox** (Flatpak / Snap / contêineres restritivos) que não conseguem alcançar o `localhost` do host: também defina `"AGENTMEMORY_FORCE_PROXY": "1"` no bloco `env`, e aponte `AGENTMEMORY_URL` para uma rota que o sandbox realmente alcance (ex: seu IP de LAN).
 
 ### Acesso programático (Python / Rust / Node)
 
@@ -656,7 +655,7 @@ npx -y @agentmemory/mcp
 | Conflito de porta | `netstat -ano \| findstr :3111` para ver o que está em bind, mate o processo ou use `--port <N>` |
 | Fallback do Docker é pulado mesmo com Docker instalado | Confira se o Docker Desktop está de fato rodando (ícone na bandeja do sistema) |
 
-> Nota: não existe `cargo install iii-engine` — `iii` não é publicado no crates.io. Os únicos métodos de instalação suportados são o binário pré-compilado acima, o script de instalação `sh` upstream (somente macOS/Linux) e a imagem Docker.
+> Nota: o **engine** iii é um binário pré-compilado, não um crate do cargo — não tente instalá-lo com `cargo install`. (Os **SDKs** do iii são publicados no crates.io, npm e PyPI, mas o agentmemory não precisa deles.) Métodos de instalação do engine suportados, todos fixados em v0.11.2: o binário pré-compilado v0.11.2 acima, o script de instalação `sh` upstream **com a fixação de versão** `curl -fsSL https://install.iii.dev/iii/main/install.sh | VERSION=0.11.2 sh` (macOS/Linux) e a imagem Docker `iiidev/iii:0.11.2`. Um simples `install.sh | sh` instala o engine **mais recente**, que o agentmemory não suporta — sempre passe `VERSION=0.11.2`. O mais fácil de tudo: basta rodar `npx @agentmemory/agentmemory`, que busca o engine fixado em `~/.agentmemory/bin` para você.
 
 ---
 
@@ -1098,7 +1097,7 @@ agentmemory autodetecta a partir do seu ambiente. Por padrão, nenhuma chamada L
 | MiniMax | `MINIMAX_API_KEY` | Compatível com Anthropic |
 | Gemini | `GEMINI_API_KEY` | Também habilita embeddings |
 | OpenRouter | `OPENROUTER_API_KEY` | Qualquer modelo |
-| Claude subscription fallback | `AGENTMEMORY_ALLOW_AGENT_SDK=true` | Apenas opt-in. Cria sessões de `@anthropic-ai/claude-agent-sdk` — costumava causar recursão sem limite no Stop-hook (seguimento do #149), por isso não é mais o padrão. |
+| Claude subscription fallback | `AGENTMEMORY_ALLOW_AGENT_SDK=true` | Apenas opt-in. Cria sessões de `@anthropic-ai/claude-agent-sdk` — costumava causar recursão sem limite no Stop-hook, por isso não é mais o padrão. |
 
 ### Seleção de modelo com consciência de custo
 
@@ -1169,7 +1168,7 @@ netstat -ano | findstr ":3111 :3112 :3113 :49134"
 taskkill /F /PID <pid>
 ```
 
-`agentmemory stop` recolhe tanto o worker quanto o pidfile do engine de forma limpa no shutdown graceful (#640, #474). A limpeza manual acima só serve para o caso pós-crash em que nenhum pidfile foi deixado para trás.
+`agentmemory stop` recolhe tanto o worker quanto o pidfile do engine de forma limpa no shutdown graceful. A limpeza manual acima só serve para o caso pós-crash em que nenhum pidfile foi deixado para trás.
 
 ### Arquivo de configuração
 
@@ -1234,7 +1233,7 @@ Crie `~/.agentmemory/.env`:
 # OPENAI_API_KEY_FOR_LLM=false             # Optional: set to false to skip OpenAI auto-detection
 #                                          # for LLM (useful if you only want OpenAI for embeddings)
 # Opt-in Claude-subscription fallback (spawns @anthropic-ai/claude-agent-sdk);
-# leave OFF unless you understand the Stop-hook recursion risk (#149 follow-up):
+# leave OFF unless you understand the Stop-hook recursion risk:
 # AGENTMEMORY_ALLOW_AGENT_SDK=true
 
 # Embedding provider (auto-detected, or override)
@@ -1268,7 +1267,7 @@ Crie `~/.agentmemory/.env`:
 # III_REST_PORT=3111
 
 # Features
-# AGENTMEMORY_AUTO_COMPRESS=false  # OFF by default (#138). When on,
+# AGENTMEMORY_AUTO_COMPRESS=false  # OFF by default. When on,
                                    # every PostToolUse hook calls your
                                    # LLM provider to compress the
                                    # observation — expect significant
@@ -1290,7 +1289,7 @@ Crie `~/.agentmemory/.env`:
                                    # session_patterns, records touched
                                    # files in project_context. Fire-
                                    # and-forget; does not block.
-# AGENTMEMORY_INJECT_CONTEXT=false # OFF by default (#143). When on:
+# AGENTMEMORY_INJECT_CONTEXT=false # OFF by default. When on:
                                    # - SessionStart may inject ~1-2K
                                    #   chars of project context into
                                    #   the first turn of each session

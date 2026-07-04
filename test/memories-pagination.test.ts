@@ -114,4 +114,67 @@ describe("memories + export pagination (#544)", () => {
     expect(response.status_code).toBe(200);
     expect(await kv.get(KV.memories, "mem_delete_me")).toBeNull();
   });
+
+  it("DELETE /agentmemory/memories/:id rejects missing ids (#739)", async () => {
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerRememberFunction(sdk as never, kv as never);
+    registerApiTriggers(sdk as never, kv as never);
+
+    const handler = sdk.functions.get("api::memory-delete");
+    expect(handler).toBeTypeOf("function");
+
+    const response = await handler!({
+      path_params: {},
+      headers: {},
+    });
+
+    expect(response.status_code).toBe(400);
+    expect(response.body).toEqual({ error: "id path parameter is required" });
+  });
+
+  it("DELETE /agentmemory/memories/:id returns 404 for unknown memories (#739)", async () => {
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerRememberFunction(sdk as never, kv as never);
+    registerApiTriggers(sdk as never, kv as never);
+
+    const handler = sdk.functions.get("api::memory-delete");
+    expect(handler).toBeTypeOf("function");
+
+    const response = await handler!({
+      path_params: { id: "missing_memory" },
+      headers: {},
+    });
+
+    expect(response.status_code).toBe(404);
+    expect(response.body).toEqual({ error: "memory not found: missing_memory" });
+  });
+
+  it("DELETE /agentmemory/memories/:id preserves the REST auth guard (#739)", async () => {
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerRememberFunction(sdk as never, kv as never);
+    registerApiTriggers(sdk as never, kv as never, "secret-token");
+
+    await kv.set(KV.memories, "mem_protected", {
+      id: "mem_protected",
+      content: "protected memory",
+      type: "fact",
+    });
+
+    const handler = sdk.functions.get("api::memory-delete");
+    expect(handler).toBeTypeOf("function");
+
+    const response = await handler!({
+      path_params: { id: "mem_protected" },
+      headers: {},
+    });
+
+    expect(response.status_code).toBe(401);
+    expect(response.body).toEqual({ error: "unauthorized" });
+    expect(await kv.get(KV.memories, "mem_protected")).toMatchObject({
+      id: "mem_protected",
+    });
+  });
 });

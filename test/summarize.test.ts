@@ -414,4 +414,69 @@ describe("mem::summarize chunking", () => {
     // Reduce is a single call so doesn't bump it.
     expect(maxInflight).toBe(2);
   });
+
+  // #783: markdown-wrapped XML used to silently fail parsing because
+  // the tag regex looked for <title> in the raw payload. stripXmlWrappers
+  // now peels ```xml ... ``` fences and conversational pre/postamble
+  // before the regex runs.
+  it("parses a summary even when the LLM wraps XML in markdown fences", async () => {
+    const wrappedXml = "Here's the summary:\n```xml\n" + summaryXml({
+      title: "wrapped",
+      narrative: "n",
+      decisions: ["d1"],
+      files: ["src/a.ts"],
+      concepts: ["c1"],
+    }) + "\n```\nLet me know if you need anything else.";
+    const provider = makeProvider([wrappedXml]);
+    const { handler, kv } = await setupHandler({
+      sessionId: "ses_md",
+      obsCount: 1,
+      provider,
+    });
+
+    const result: any = await handler({ sessionId: "ses_md" });
+
+    expect(result.success).toBe(true);
+    expect(result.summary.title).toBe("wrapped");
+    const stored = await kv.get("summaries", "ses_md");
+    expect((stored as any).title).toBe("wrapped");
+  });
+
+  it("retries the final summarize once on first-attempt parse failure", async () => {
+    // First call returns garbage (no <title>), second returns valid XML.
+    // The chunk-level retry is bypassed for a 1-obs session (no chunking),
+    // so this exercises the new final-summarize retry path.
+    const provider = makeProvider([
+      "not xml, just a sentence with no tags",
+      summaryXml({ title: "second-attempt" }),
+    ]);
+    const { handler } = await setupHandler({
+      sessionId: "ses_retry",
+      obsCount: 1,
+      provider,
+    });
+
+    const result: any = await handler({ sessionId: "ses_retry" });
+
+    expect(result.success).toBe(true);
+    expect(result.summary.title).toBe("second-attempt");
+    expect((provider as any).calls.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("returns parse_failed only after both attempts fail", async () => {
+    const provider = makeProvider([
+      "garbage one",
+      "garbage two",
+    ]);
+    const { handler } = await setupHandler({
+      sessionId: "ses_fail",
+      obsCount: 1,
+      provider,
+    });
+
+    const result: any = await handler({ sessionId: "ses_fail" });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe("parse_failed");
+  });
 });
