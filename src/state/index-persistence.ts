@@ -358,7 +358,16 @@ export class IndexPersistence {
       "manifest",
     );
     if (!manifest.ok) return null;
-    if (manifest.value !== null) {
+    // #797: some iii-state adapters return `undefined` (not `null`) for
+    // a missing key. The previous `value !== null` check passed
+    // undefined through to loadManifestData, which then crashed on
+    // `manifest.v` with TypeError. Treat both null and undefined as
+    // "no manifest" and fall through to the legacy path. The shape
+    // check stays so a malformed-but-present row still fails closed.
+    if (
+      manifest.value != null &&
+      typeof manifest.value === "object"
+    ) {
       return this.loadManifestData(manifest.value, label);
     }
 

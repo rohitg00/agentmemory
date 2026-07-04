@@ -11,6 +11,7 @@ const DOCS = "https://github.com/rohitg00/agentmemory/tree/main/integrations/pi"
 export const adapter: ConnectAdapter = {
   name: "pi",
   displayName: "pi",
+  category: "native",
   docs: DOCS,
   protocolNote:
     "→ Using native hooks (REST API at :3111). MCP not required.",

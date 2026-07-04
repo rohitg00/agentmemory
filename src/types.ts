@@ -307,7 +307,7 @@ export interface ExportPagination {
 }
 
 export interface ExportData {
-  version: "0.3.0" | "0.4.0" | "0.5.0" | "0.6.0" | "0.6.1" | "0.7.0" | "0.7.2" | "0.7.3" | "0.7.4" | "0.7.5" | "0.7.6" | "0.7.7" | "0.7.9" | "0.8.0" | "0.8.1" | "0.8.2" | "0.8.3" | "0.8.4" | "0.8.5" | "0.8.6" | "0.8.7" | "0.8.8" | "0.8.9" | "0.8.10" | "0.8.11" | "0.8.12" | "0.8.13" | "0.9.0" | "0.9.1" | "0.9.2" | "0.9.3" | "0.9.4" | "0.9.5" | "0.9.6" | "0.9.7" | "0.9.8" | "0.9.9" | "0.9.10" | "0.9.11" | "0.9.12" | "0.9.13" | "0.9.14" | "0.9.15" | "0.9.16" | "0.9.17" | "0.9.18" | "0.9.19" | "0.9.20" | "0.9.21" | "0.9.22" | "0.9.23" | "0.9.24" | "0.9.25";
+  version: "0.3.0" | "0.4.0" | "0.5.0" | "0.6.0" | "0.6.1" | "0.7.0" | "0.7.2" | "0.7.3" | "0.7.4" | "0.7.5" | "0.7.6" | "0.7.7" | "0.7.9" | "0.8.0" | "0.8.1" | "0.8.2" | "0.8.3" | "0.8.4" | "0.8.5" | "0.8.6" | "0.8.7" | "0.8.8" | "0.8.9" | "0.8.10" | "0.8.11" | "0.8.12" | "0.8.13" | "0.9.0" | "0.9.1" | "0.9.2" | "0.9.3" | "0.9.4" | "0.9.5" | "0.9.6" | "0.9.7" | "0.9.8" | "0.9.9" | "0.9.10" | "0.9.11" | "0.9.12" | "0.9.13" | "0.9.14" | "0.9.15" | "0.9.16" | "0.9.17" | "0.9.18" | "0.9.19" | "0.9.20" | "0.9.21" | "0.9.22" | "0.9.23" | "0.9.24" | "0.9.25" | "0.9.26" | "0.9.27";
   exportedAt: string;
   sessions: Session[];
   observations: Record<string, CompressedObservation[]>;
@@ -450,6 +450,45 @@ export interface GraphQueryResult {
   // detect when the default was applied vs an explicit `limit`.
   limit?: number;
   offset?: number;
+  // #814: indicates the response came from the precomputed top-degree
+  // snapshot rather than a live kv.list enumeration. Set only on the
+  // empty-body / nodeType-only branch on large corpora where the
+  // unbounded enumeration would exceed the iii invocation timeout.
+  fromSnapshot?: boolean;
+  // #814: when the snapshot is stale or absent and the live fallback
+  // also failed, expose an explanatory note so the viewer can surface
+  // an actionable banner instead of a blank graph.
+  warning?: string;
+}
+
+// #814: persisted top-degree subgraph + aggregate counts. Stored under
+// KV.graphSnapshot with a single key "current". `dirty` is set true by
+// mem::graph-extract after writes and flipped false when the snapshot
+// rebuild completes.
+export interface GraphSnapshot {
+  version: 1;
+  topNodes: GraphNode[];
+  topEdges: GraphEdge[];
+  // Synchronous degree lookup keyed by nodeId. Maintained alongside
+  // topNodes so re-ranking after an edge write doesn't require an
+  // async kv.get for every top-N entry inside the sort comparator.
+  // Keys are limited to the top-N set; non-top nodes track their
+  // degree in KV.graphNodeDegree only.
+  topDegrees: Record<string, number>;
+  stats: {
+    totalNodes: number;
+    totalEdges: number;
+    nodesByType: Record<string, number>;
+    edgesByType: Record<string, number>;
+  };
+  updatedAt: string;
+  dirty: boolean;
+  // #825 follow-up: ISO timestamp set by mem::graph-reset. After
+  // reset, mem::graph-extract treats any pre-resetAt node as an
+  // orphan (skip merge, write fresh) so future extracts don't
+  // silently reconnect to legacy rows via stale name-index entries.
+  // Absent / 1970 epoch = no reset has run.
+  resetAt?: string;
 }
 
 export type ConsolidationTier =

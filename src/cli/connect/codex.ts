@@ -63,6 +63,7 @@ function stripExistingBlock(toml: string): string {
 export const adapter: ConnectAdapter = {
   name: "codex",
   displayName: "Codex CLI",
+  category: "native",
   docs: "https://github.com/rohitg00/agentmemory#codex-cli-codex-plugin-platform",
   protocolNote:
     "→ Using MCP. Hooks ship via the Codex plugin; on Codex Desktop, also pass --with-hooks to install the global hooks.json workaround for openai/codex#16430.",

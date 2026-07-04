@@ -6,6 +6,62 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.9.27] — 2026-06-07
+
+Wave release closing several breaking regressions reported against v0.9.26, plus an agent-scope isolation security fix, an iii version-pin audit fix, and a benchmark scorecard correction. No breaking changes; drop-in upgrade.
+
+### Security
+
+- **`AGENTMEMORY_AGENT_SCOPE=isolated` not enforced on `mem::search` / `POST /agentmemory/search` / `memory_recall` / `recall_context`** ([#817](https://github.com/rohitg00/agentmemory/issues/817)). PR #654's isolation work covered smart-search, `/memories`, `/observations`, and `/sessions` but missed the BM25-only recall path. An isolated worker booted with `AGENT_ID=B` could read agent A's memories via the standard MCP `memory_recall` tool. `mem::search` now applies the same filter as smart-search (wildcard `agentId: "*"` bypasses, explicit `agentId` pins, isolated mode falls back to env `AGENT_ID`). `recall_context` prompt also filters its kv.list memory feed by active agent. Fail-closed: if isolated mode is on and no agent id resolves from any source, the call throws rather than dropping the filter.
+
+### Fixed
+
+- **`/graph/query` and `/graph/stats` timed out with `"Invocation stopped"` on large existing corpora** ([#814](https://github.com/rohitg00/agentmemory/issues/814), [PR #816](https://github.com/rohitg00/agentmemory/pull/816)). The v0.9.25 fix from #753 paginated the response but the unbounded `kv.list<GraphNode>` + `kv.list<GraphEdge>` pair still ran on every call. At 75K+ nodes the response payload exceeded the iii heartbeat budget and the worker was declared dead before the new wall-clock timer could fire. Refactored `mem::graph-extract` to maintain three side-indexes (`graphNameIndex`, `graphEdgeKey`, `graphNodeDegree`) so every extract path is O(1), never O(n). The hot path now reads exclusively from a precomputed top-degree snapshot updated inline on every extract. Same `kv.list` bottleneck was also blocking `mem::graph-extract` on every observation capture, so the fix immediately speeds up the observation pipeline too.
+- **All data lost on `agentmemory stop` followed by restart** ([#843](https://github.com/rohitg00/agentmemory/issues/843)). `runStop()` killed the iii engine first, then the worker. The worker's shutdown handler flushes BM25/vector snapshots and audit rows via `indexPersistence.save() -> kv.set() -> state::set`, which all routed through an iii engine that was already dead. Stop order inverted: worker first with a bumped 5s SIGTERM grace (gives a large index a real chance to commit), engine second. The "Memories persisted to disk" message now reflects actual disk state.
+- **`mem::graph-snapshot-rebuild` and `mem::graph-reset` heartbeat-crashed on legacy >25K-node corpora** ([#825](https://github.com/rohitg00/agentmemory/issues/825)). Both endpoints called `kv.list` up front. At 75K nodes the response payload blocks the event loop in `JSON.parse` and the iii heartbeat starves before any wall-clock budget timer can fire. `mem::graph-snapshot-rebuild` now refuses pre-flight when no prior snapshot exists, returning `{ legacyCorpus: true }` with operator guidance unless an explicit `force: true` flag is set. `mem::graph-reset` no longer enumerates anything: it writes an empty snapshot stamped with `resetAt` and returns. Legacy rows stay as on-disk orphans but post-reset `mem::graph-extract` calls compare each name-index hit's `createdAt` against `resetAt`, so older rows are treated as not-found and a fresh node is written instead of silently reconnecting to a pre-reset orphan.
+- **Multi-instance port collisions on one host** ([#750](https://github.com/rohitg00/agentmemory/issues/750), [PR #815](https://github.com/rohitg00/agentmemory/pull/815)). `--port N` only relocated REST + viewer; streams (3112) and iii engine (49134) stayed hardcoded so a second daemon collided on those WS ports regardless of `--port`. `loadConfig()` now derives streams = REST+1 and engine = REST+46023 (so the canonical 3111 → 3112/49134 default is unchanged, and `--port 3211` → 3212/49234). New `--instance N` shortcut picks a 100-port block: `--instance 1` → 3211/3212/3213/49234. Per-port env overrides (`III_STREAM_PORT`, `III_ENGINE_PORT`, `III_ENGINE_URL`) still win.
+- **iii console install pulled latest engine instead of the pinned v0.11.2** (audit). `III_CONSOLE_INSTALL_CMD` ran `curl -fsSL https://install.iii.dev/iii/main/install.sh | sh` with no version pin. A fresh first-run prompt could install a console build that talks a different protocol than the engine agentmemory pins. The install script reads a `VERSION` env var (`engine_version="${VERSION:-}"` in install.sh), so the command now passes `VERSION=${IIPINNED_VERSION}`. Render path is platform-aware too: Windows users get a PowerShell-friendly hint instead of a POSIX command they can't run. Mismatch error text updated from "reinstall the latest binary" to reference the pinned version explicitly.
+
+### Docs
+
+- **Corrected coding-agent-life-v1 P@5 numbers in the published scorecard** ([#796](https://github.com/rohitg00/agentmemory/issues/796), [PR #805](https://github.com/rohitg00/agentmemory/pull/805)). The original scorecard reported P@5 = 0.578 / 0.267, generated before [PR #562](https://github.com/rohitg00/agentmemory/pull/562) changed the P@K denominator from `topK.length` to `k`. On the current formula those numbers are mathematically impossible (math ceiling at K=5 on this corpus is 0.240). Re-scored on v0.9.26: hybrid 0.240 / R@5 1.000, grep 0.227 / R@5 0.967. Reframed lift as recall + temporal not aggregate precision; aggregate P@5 saturates on a small / single-gold corpus and can't differentiate top-tier adapters.
+- **README refresh** ([PR #807](https://github.com/rohitg00/agentmemory/pull/807)). Stats line bumped to 174 files / 1,390+ tests / 258 functions. Corrected hero P@5 numbers. "New in vX.Y.Z" callout block removed since that pattern went stale every release; latest release notes link points at CHANGELOG.md.
+- **`import-jsonl` users warned about Claude Code's `cleanupPeriodDays`.** Default 30-day auto-deletion of `~/.claude/projects/*.jsonl` doesn't affect hook-wired installs (each turn lands in iii state while the session is live), but fresh installs on months-old Claude Code histories silently lost anything older than 30 days. README now flags this with three workarounds: cron the import, raise `cleanupPeriodDays`, or wire hooks.
+
+### Added
+
+- **`POST /agentmemory/graph/snapshot-rebuild`** — pays the full enumeration cost once on corpora ≤ 25K nodes, persists a top-degree subgraph + aggregate counts, refuses with `{ success: false, tooLarge: true, totalNodes, ceiling }` above the safe ceiling instead of killing the worker. Strict `force: true` boolean check bypasses the legacy-corpus pre-flight refusal.
+- **`POST /agentmemory/graph/reset`** — clean-restart escape hatch for legacy corpora. Enumeration-free: writes empty snapshot with `resetAt` epoch marker. Future extracts treat any pre-`resetAt` row as orphan via `createdAt` comparison.
+- **`--instance N` CLI flag** — multi-daemon convenience. Picks a 100-port block off the 3111 base. Max N=50.
+- **`GraphSnapshot.topDegrees`** — synchronous degree lookup keyed by nodeId so re-ranking after edge writes runs sync over numbers instead of async kv.get inside the sort comparator.
+- **`GraphSnapshot.resetAt`** — ISO timestamp set by `mem::graph-reset`. Drives post-reset orphan detection in extract.
+- **`GraphQueryResult.fromSnapshot`** + **`GraphQueryResult.warning`** — response fields the viewer can use to surface "served from cache" or "rebuild needed" banners instead of opaque 500s.
+
+### Changed
+
+- **REST endpoint count: 126 → 128**. `POST /agentmemory/graph/snapshot-rebuild` and `POST /agentmemory/graph/reset` added.
+- **`mem::graph-stats`** now reads exclusively from the snapshot. Returns `{ ..., fromSnapshot, warning }` envelope when snapshot is absent; never returns a 500.
+- **`mem::graph-query` empty-body / nodeType-only path** reads exclusively from the snapshot. `startNodeId` / `query` paths keep the live enumeration behind a 6s budget with snapshot-backed fallback on rejection.
+- **`mem::search` over-fetch** triggers when agentId filtering is active (not just project/cwd). Without it, isolated-mode pages were silently underfilled when same-agent matches ranked below cross-agent ones.
+
+### Known limitations
+
+- `mem::graph-query` BFS (`startNodeId`) and text-search (`query`) paths still call `kv.list` and degrade past ~25K nodes on fresh corpora ([#828](https://github.com/rohitg00/agentmemory/issues/828)). The hot path stays safe (snapshot-only). A per-node adjacency index is the right next fix; deferred to the structured graph migration milestone ([#309](https://github.com/rohitg00/agentmemory/issues/309)).
+- `/agentmemory:forget` skill still calls `memory_governance_delete` which only touches `KV.memories` and never observations ([#833](https://github.com/rohitg00/agentmemory/issues/833)). Skill rewrite + new `memory_forget` MCP tool tracked separately.
+- `crypto.randomUUID()` global-only on Node <19 ([#715](https://github.com/rohitg00/agentmemory/issues/715)). Drop-in import fix tracked.
+
+[0.9.27]: https://github.com/rohitg00/agentmemory/compare/v0.9.26...v0.9.27
+
+## [0.9.26] — 2026-06-03
+
+Hotfix on top of v0.9.25. The first-run boot crashed for users without a persisted index because the load path didn't handle `undefined` returns from iii-state adapters.
+
+### Fixed
+
+- **First boot crash: `TypeError: Cannot read properties of undefined (reading 'v')`** ([#797](https://github.com/rohitg00/agentmemory/issues/797)). The sharded index load path (`loadShardedData`) checked `manifest.value !== null` before forwarding to `loadManifestData`. Some iii-state adapters return `undefined` (not `null`) for a missing key, so `undefined !== null` was true and `loadManifestData(undefined, ...)` immediately threw on `manifest.v`. Now treats both `null` and `undefined` (plus non-object values) as "no manifest" and falls through to the legacy load path. Self-healing: the next debounced save rebuilds a fresh manifest, so the crash was already cosmetic for ongoing operation — but it scared every fresh upgrader. Tests cover both undefined and wrong-shape manifest rows.
+
+[0.9.26]: https://github.com/rohitg00/agentmemory/compare/v0.9.25...v0.9.26
+
 ## [0.9.25] — 2026-06-03
 
 Bug-fix wave closing every breaking regression reported against 0.9.24, plus a feature lane (graph pagination + smart-search followup diagnostic + obsidian-export hardening + sharded index persistence). Eleven issues closed. No breaking changes; drop-in upgrade.

@@ -100,15 +100,34 @@ export function registerSmartSearchFunction(
       // Compute the agent filter once, up front. Both the expandIds
       // branch and the hybrid-search branch consult it — otherwise
       // expandIds becomes a cross-agent leak (#554 follow-up).
+      //
+      // #817 follow-up: fail-closed when isolated mode is on AND no
+      // agent id is resolvable from any source. Silently letting
+      // filterAgentId fall through to `undefined` would be the same
+      // cross-agent leak this filter is meant to prevent.
       const isolated = isAgentScopeIsolated();
       const explicitAgentId =
         typeof data.agentId === "string" && data.agentId.trim().length > 0
           ? data.agentId.trim()
           : undefined;
       const wildcardAgent = explicitAgentId === "*";
+      const envAgentId = isolated ? getAgentId() : undefined;
       const filterAgentId = wildcardAgent
         ? undefined
-        : explicitAgentId ?? (isolated ? getAgentId() : undefined);
+        : explicitAgentId ?? envAgentId;
+      if (
+        isolated &&
+        !wildcardAgent &&
+        !explicitAgentId &&
+        !envAgentId
+      ) {
+        throw new Error(
+          "mem::smart-search: AGENTMEMORY_AGENT_SCOPE=isolated is set but " +
+            "no agent id is available (env AGENT_ID unset and no explicit " +
+            "agentId in the call). Refusing to read cross-agent rows. " +
+            'Pass agentId: "*" to opt in to a wildcard read.',
+        );
+      }
 
       if (data.expandIds && data.expandIds.length > 0) {
         const raw = data.expandIds.slice(0, 20);

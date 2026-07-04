@@ -19,6 +19,7 @@ vi.mock("../src/functions/access-tracker.js", () => ({
 
 vi.mock("../src/config.js", () => ({
   getAgentId: () => undefined,
+  isAgentScopeIsolated: () => false,
 }));
 
 import { registerRememberFunction } from "../src/functions/remember.js";
