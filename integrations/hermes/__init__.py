@@ -174,6 +174,59 @@ def _api_bg(base: str, path: str, body: dict | None = None) -> None:
     t.start()
 
 
+def _extract_tool_observations(
+    messages: list[dict[str, Any]],
+    max_results: int = 10,
+) -> list[dict[str, Any]]:
+    """Extract individual tool-call observations from an OpenAI-format message list.
+
+    Hermes passes the full conversation messages (including assistant tool_calls
+    and tool results) via the ``messages`` kwarg on ``sync_turn``.  This helper
+    walks that list and yields one ``data`` dict per tool call/result pair, in
+    the same ``{tool_name, tool_input, tool_output}`` shape that the agentmemory
+    server expects from ``post_tool_use`` hooks.
+
+    Tool calls are matched to their results by ``tool_call_id``.  Only calls
+    that have a matching result are returned.  The *latest* calls are returned
+    first (capped by ``max_results``) so a turn that fires 50 tool calls does
+    not flood the observation pipeline.
+    """
+    pending: dict[str, dict[str, Any]] = {}
+    results: list[dict[str, Any]] = []
+    for msg in messages:
+        if not isinstance(msg, dict):
+            continue
+        role = msg.get("role")
+        if role == "assistant" and isinstance(msg.get("tool_calls"), list):
+            for call in msg["tool_calls"]:
+                if not isinstance(call, dict):
+                    continue
+                fn = call.get("function") or {}
+                name = fn.get("name", "")
+                if not name:
+                    continue
+                call_id = call.get("id", "")
+                try:
+                    args_str = fn.get("arguments", "")
+                    if isinstance(args_str, dict):
+                        args_str = json.dumps(args_str)
+                except (TypeError, ValueError):
+                    args_str = str(fn.get("arguments", ""))
+                pending[call_id] = {
+                    "tool_name": name,
+                    "tool_input": args_str,
+                }
+        elif role == "tool":
+            call_id = msg.get("tool_call_id", "")
+            if call_id in pending:
+                content = msg.get("content", "")
+                if isinstance(content, (str, bytes)):
+                    pending[call_id]["tool_output"] = str(content)
+                    results.append(pending.pop(call_id))
+    results.reverse()
+    return results[:max_results]
+
+
 class AgentMemoryProvider(MemoryProvider):
 
     @property
@@ -344,16 +397,31 @@ class AgentMemoryProvider(MemoryProvider):
         return json.dumps({"error": f"Unknown tool: {name}"})
 
     def sync_turn(self, user: str, assistant: str, **kwargs: Any) -> None:
+        session_id = kwargs.get("session_id", self._session_id)
+        ts = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+        messages = kwargs.get("messages")
+        if messages:
+            for obs in _extract_tool_observations(messages, max_results=10):
+                _api_bg(self._base, "observe", {
+                    "hookType": "post_tool_use",
+                    "sessionId": session_id,
+                    "project": self._project,
+                    "cwd": self._project,
+                    "timestamp": ts,
+                    "data": obs,
+                })
+
         _api_bg(self._base, "observe", {
             "hookType": "post_tool_use",
-            "sessionId": kwargs.get("session_id", self._session_id),
+            "sessionId": session_id,
             "project": self._project,
             "cwd": self._project,
-            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "timestamp": ts,
             "data": {
                 "tool_name": "conversation",
-                "tool_input": user[:500],
-                "tool_output": assistant[:2000],
+                "tool_input": user,
+                "tool_output": assistant,
             },
         })
 
