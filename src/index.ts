@@ -370,7 +370,9 @@ async function main() {
     }, snapshotConfig.interval * 1000);
     snapshotTimer.unref();
     bootLog(
-      `Git snapshots: ${snapshotConfig.dir} (every ${snapshotConfig.interval}s)`,
+      snapshotIntervalMs > 0
+        ? `Git snapshots: ${snapshotConfig.dir} (every ${snapshotConfig.interval}s)`
+        : `Git snapshots: ${snapshotConfig.dir} (periodic timer disabled, SNAPSHOT_INTERVAL=0 — manual trigger only)`,
     );
   }
 
