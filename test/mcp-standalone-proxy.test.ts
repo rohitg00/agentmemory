@@ -208,6 +208,11 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
       { content: "shared-query beta memory", project: "beta" },
       localKv,
     );
+    await handleToolCall(
+      "memory_save",
+      { content: "shared-query legacy memory" },
+      localKv,
+    );
 
     const smartSearch = await handleToolCall(
       "memory_smart_search",
@@ -215,9 +220,15 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
       localKv,
     );
     const smartSearchBody = JSON.parse(smartSearch.content[0].text);
-    expect(smartSearchBody.results.map((m: { content: string }) => m.content)).toEqual([
-      "shared-query alpha memory",
-    ]);
+    const smartSearchContents = smartSearchBody.results.map((m: { content: string }) => m.content);
+    expect(smartSearchContents).toHaveLength(2);
+    expect(smartSearchContents).toEqual(
+      expect.arrayContaining([
+        "shared-query alpha memory",
+        "shared-query legacy memory",
+      ]),
+    );
+    expect(smartSearchContents).not.toContain("shared-query beta memory");
 
     const recall = await handleToolCall(
       "memory_recall",
@@ -225,9 +236,15 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
       localKv,
     );
     const recallBody = JSON.parse(recall.content[0].text);
-    expect(recallBody.results.map((m: { content: string }) => m.content)).toEqual([
-      "shared-query alpha memory",
-    ]);
+    const recallContents = recallBody.results.map((m: { content: string }) => m.content);
+    expect(recallContents).toHaveLength(2);
+    expect(recallContents).toEqual(
+      expect.arrayContaining([
+        "shared-query alpha memory",
+        "shared-query legacy memory",
+      ]),
+    );
+    expect(recallContents).not.toContain("shared-query beta memory");
   });
 
   it("attaches Bearer token on the proxied tool request, not just the probe", async () => {
