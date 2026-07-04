@@ -97,6 +97,51 @@ describe("parseJsonlText", () => {
     const out = parseJsonlText(text, "fb-used");
     expect(out.sessionId).toBe("fb-used");
   });
+
+  it("parses OpenAI chat-format JSONL (role/content/tool_calls)", () => {
+    const out = parseJsonlText(fx("openai-format.jsonl"));
+    expect(out.sessionId).toBe("sess-openai");
+    // user prompt → assistant text+tool_call → tool result → assistant text
+    const kinds = out.observations.map((o) => o.hookType);
+    expect(kinds).toEqual([
+      "prompt_submit",
+      "stop",          // assistant text "Let me check…"
+      "pre_tool_use",  // Bash tool_call from same assistant message
+      "post_tool_use", // tool result
+      "stop",          // final assistant text
+    ]);
+    // user prompt extracted from { role: "user", content: "..." }
+    expect(out.observations[0].userPrompt).toBe("Fix the login bug");
+    // tool_call extracted from assistant.tool_calls[].function
+    const toolCall = out.observations[2];
+    expect(toolCall.toolName).toBe("Bash");
+    expect((toolCall.toolInput as { command: string }).command).toBe("cat src/auth.ts");
+    // tool_result extracted from { role: "tool", tool_call_id, content }
+    const toolResult = out.observations[3];
+    expect(toolResult.toolOutput).toBe("export function login() { ... }");
+    // final assistant text-only message
+    expect(out.observations[4].assistantResponse).toContain("Found the bug");
+  });
+
+  it("does not break Claude Code format when OpenAI entries are mixed in", () => {
+    const mixed = [
+      JSON.stringify({
+        type: "user",
+        sessionId: "sess-mixed",
+        timestamp: "2026-01-01T00:00:00.000Z",
+        message: { role: "user", content: [{ type: "text", text: "claude-format" }] },
+      }),
+      JSON.stringify({
+        role: "user",
+        content: "openai-format",
+        timestamp: "2026-01-01T00:00:01.000Z",
+      }),
+    ].join("\n");
+    const out = parseJsonlText(mixed);
+    expect(out.observations).toHaveLength(2);
+    expect(out.observations[0].userPrompt).toBe("claude-format");
+    expect(out.observations[1].userPrompt).toBe("openai-format");
+  });
 });
 
 describe("projectTimeline", () => {
