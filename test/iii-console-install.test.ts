@@ -16,7 +16,7 @@ describe("iii console installer (#712)", () => {
     );
     expect(ensureConsoleBlock).toContain('const bashBin = whichBinary("bash");');
     expect(ensureConsoleBlock).toContain(
-      'runCommand(bashBin, ["-lc", III_CONSOLE_INSTALL_CMD]',
+      'runCommand(bashBin, ["-c", III_CONSOLE_INSTALL_CMD]',
     );
     expect(ensureConsoleBlock).not.toContain('whichBinary("sh")');
     expect(ensureConsoleBlock).not.toContain("runCommand(shBin");

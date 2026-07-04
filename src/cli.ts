@@ -705,7 +705,7 @@ function detectIiiConsole(): IiiConsoleState {
 const III_CONSOLE_INSTALL_CMD =
   `curl -fsSL https://install.iii.dev/iii/main/install.sh | VERSION=${IIPINNED_VERSION} bash`;
 
-// Display-only renderer. The internal `runCommand(bashBin, ["-lc", ...])`
+// Display-only renderer. The internal `runCommand(bashBin, ["-c", ...])`
 // path uses III_CONSOLE_INSTALL_CMD verbatim. Anywhere
 // that PRINTS the command to a user has to handle Windows separately
 // since `VERSION=X bash` and the pipe-to-bash idiom aren't valid in
@@ -750,7 +750,7 @@ async function ensureIiiConsole(): Promise<IiiConsoleState> {
     );
     return state;
   }
-  const ok = runCommand(bashBin, ["-lc", III_CONSOLE_INSTALL_CMD], {
+  const ok = runCommand(bashBin, ["-c", III_CONSOLE_INSTALL_CMD], {
     label: "Installing iii console",
   });
   if (!ok) {
