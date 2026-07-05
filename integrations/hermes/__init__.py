@@ -206,6 +206,8 @@ def _extract_tool_observations(
                 if not name:
                     continue
                 call_id = call.get("id", "")
+                if not call_id:
+                    continue
                 try:
                     args_str = fn.get("arguments", "")
                     if isinstance(args_str, dict):
@@ -250,6 +252,7 @@ class AgentMemoryProvider(MemoryProvider):
             "project": self._project,
             "cwd": self._project,
         })
+        self._first_prompt_sent = False
 
     def get_config_schema(self) -> list[dict]:
         return [
@@ -399,6 +402,17 @@ class AgentMemoryProvider(MemoryProvider):
     def sync_turn(self, user: str, assistant: str, **kwargs: Any) -> None:
         session_id = kwargs.get("session_id", self._session_id)
         ts = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+        if not getattr(self, "_first_prompt_sent", False) and user:
+            _api_bg(self._base, "observe", {
+                "hookType": "prompt_submit",
+                "sessionId": session_id,
+                "project": self._project,
+                "cwd": self._project,
+                "timestamp": ts,
+                "data": {"prompt": user},
+            })
+            self._first_prompt_sent = True
 
         messages = kwargs.get("messages")
         if messages:
