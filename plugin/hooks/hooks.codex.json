@@ -24,7 +24,7 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "Edit|Write|Read|Glob|Grep",
+        "matcher": "Edit|Write|Read|Glob|Grep|apply_patch|exec_command|shell_command|Bash",
         "hooks": [
           {
             "type": "command",
