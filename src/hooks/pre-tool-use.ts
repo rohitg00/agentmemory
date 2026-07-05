@@ -31,6 +31,109 @@ function authHeaders(): Record<string, string> {
   return h;
 }
 
+type EnrichTarget = {
+  files: string[];
+  terms: string[];
+  toolName: string;
+};
+
+function unique(values: string[]): string[] {
+  return [...new Set(values.filter((value) => value.trim().length > 0))];
+}
+
+function extractCodexPatchFiles(patch: string): string[] {
+  const files: string[] = [];
+  for (const line of patch.split("\n")) {
+    const match = line.match(/^\*\*\* (?:Add|Update|Delete) File: (.+)$/);
+    if (match) files.push(match[1].trim());
+  }
+  return unique(files);
+}
+
+function extractCodexCommandTarget(command: string): EnrichTarget | undefined {
+  const trimmed = command.trim();
+  if (!trimmed || /[;&|`$<>]/.test(trimmed)) return undefined;
+
+  const parts = trimmed.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g) ?? [];
+  const tokens = parts.map((part) => part.replace(/^["']|["']$/g, ""));
+  const commandName = tokens[0]?.split("/").pop();
+  if (!commandName) return undefined;
+
+  if (commandName === "rg") {
+    const positional = tokens.slice(1).filter((token) => !token.startsWith("-"));
+    if (positional.length === 0) return undefined;
+    const [pattern, ...paths] = positional;
+    return {
+      files: unique(paths),
+      terms: pattern ? [pattern] : [],
+      toolName: "grep",
+    };
+  }
+
+  if (["sed", "cat", "head", "tail", "nl"].includes(commandName)) {
+    const paths = tokens
+      .slice(1)
+      .filter((token) => !token.startsWith("-") && /[./]/.test(token));
+    if (paths.length === 0) return undefined;
+    return { files: unique(paths), terms: [], toolName: "read" };
+  }
+
+  if (["ls", "find"].includes(commandName)) {
+    const paths = tokens.slice(1).filter((token) => !token.startsWith("-"));
+    if (paths.length === 0) return undefined;
+    return { files: unique(paths), terms: [], toolName: "glob" };
+  }
+
+  return undefined;
+}
+
+function enrichTargetForTool(
+  toolName: string,
+  toolInput: Record<string, unknown>,
+): EnrichTarget | undefined {
+  const normalizedToolName = toolName.toLowerCase();
+  const fileTools = ["edit", "write", "create", "read", "view", "glob", "grep"];
+
+  if (fileTools.includes(normalizedToolName)) {
+    const files: string[] = [];
+    const fileKeys =
+      normalizedToolName === "grep"
+        ? ["path", "file"]
+        : ["file_path", "path", "file", "pattern"];
+    for (const key of fileKeys) {
+      const val = toolInput[key];
+      if (typeof val === "string" && val.length > 0) files.push(val);
+    }
+    if (files.length === 0) return undefined;
+
+    const terms: string[] = [];
+    if (normalizedToolName === "grep" || normalizedToolName === "glob") {
+      const pattern = toolInput["pattern"];
+      if (typeof pattern === "string" && pattern.length > 0) {
+        terms.push(pattern);
+      }
+    }
+
+    return { files: unique(files), terms, toolName };
+  }
+
+  if (normalizedToolName === "apply_patch") {
+    const patch = toolInput["patch"] ?? toolInput["input"] ?? toolInput["command"];
+    if (typeof patch !== "string") return undefined;
+    const files = extractCodexPatchFiles(patch);
+    if (files.length === 0) return undefined;
+    return { files, terms: [], toolName: "edit" };
+  }
+
+  if (["exec_command", "shell_command", "bash"].includes(normalizedToolName)) {
+    const command = toolInput["cmd"] ?? toolInput["command"];
+    if (typeof command !== "string") return undefined;
+    return extractCodexCommandTarget(command);
+  }
+
+  return undefined;
+}
+
 async function main() {
   // Default off: exit immediately so we don't even open stdin. This keeps
   // Claude Code's tool-call hot path as cheap as possible.
@@ -58,10 +161,6 @@ async function main() {
         : undefined;
   if (!toolName) return;
 
-  const normalizedToolName = toolName.toLowerCase();
-  const fileTools = ["edit", "write", "create", "read", "view", "glob", "grep"];
-  if (!fileTools.includes(normalizedToolName)) return;
-
   const rawToolInput = data.tool_input ?? data.toolArgs;
   const toolInput =
     typeof rawToolInput === "object" &&
@@ -69,24 +168,9 @@ async function main() {
     !Array.isArray(rawToolInput)
       ? (rawToolInput as Record<string, unknown>)
       : {};
-  const files: string[] = [];
-  const fileKeys =
-    normalizedToolName === "grep"
-      ? ["path", "file"]
-      : ["file_path", "path", "file", "pattern"];
-  for (const key of fileKeys) {
-    const val = toolInput[key];
-    if (typeof val === "string" && val.length > 0) files.push(val);
-  }
-  if (files.length === 0) return;
 
-  const terms: string[] = [];
-  if (normalizedToolName === "grep" || normalizedToolName === "glob") {
-    const pattern = toolInput["pattern"];
-    if (typeof pattern === "string" && pattern.length > 0) {
-      terms.push(pattern);
-    }
-  }
+  const target = enrichTargetForTool(toolName, toolInput);
+  if (!target) return;
 
   const rawSessionId = data.session_id || data.sessionId;
   const sessionId =
@@ -104,9 +188,9 @@ async function main() {
       headers: authHeaders(),
       body: JSON.stringify({
         sessionId,
-        files,
-        terms,
-        toolName,
+        files: target.files,
+        terms: target.terms,
+        toolName: target.toolName,
         ...(project !== undefined && { project }),
       }),
       signal: AbortSignal.timeout(2000),

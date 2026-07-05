@@ -10,7 +10,7 @@ function readJson<T = unknown>(path: string): T {
 }
 
 type HookHandler = { type: string; command: string };
-type HookEntry = { hooks: HookHandler[] };
+type HookEntry = { matcher?: string; hooks: HookHandler[] };
 
 function hookCommands(path: string): string[] {
   const manifest = readJson<{ hooks: Record<string, HookEntry[]> }>(path);
@@ -115,6 +115,16 @@ describe("Codex plugin manifest (developers.openai.com/codex/plugins)", () => {
     expect(events).toContain("PostToolUse");
     expect(events).toContain("PreCompact");
     expect(events).toContain("Stop");
+  });
+
+  it("routes Codex-native file tool names to PreToolUse", () => {
+    const hooks = readJson<{ hooks: Record<string, HookEntry[]> }>(
+      join(pluginRoot, "hooks/hooks.codex.json"),
+    );
+    const matcher = hooks.hooks.PreToolUse?.[0]?.matcher;
+    expect(matcher).toBeDefined();
+    expect(matcher).toContain("apply_patch");
+    expect(matcher).toContain("exec_command");
   });
 
   it("hook command scripts referenced in hooks.codex.json exist on disk", () => {

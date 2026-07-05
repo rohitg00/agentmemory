@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { spawn } from "node:child_process";
+import { createServer } from "node:http";
 import { join } from "node:path";
 
 const HOOKS_DIR = join(import.meta.dirname, "..", "plugin", "scripts");
@@ -52,6 +53,49 @@ function runHook(
     child.stdin.write(stdin);
     child.stdin.end();
   });
+}
+
+async function runHookWithServer(
+  scriptName: string,
+  stdin: string,
+  env: Record<string, string>,
+): Promise<{
+  stdout: string;
+  exitCode: number | null;
+  requests: Array<{ path: string; body: Record<string, unknown> }>;
+}> {
+  const requests: Array<{ path: string; body: Record<string, unknown> }> = [];
+  const server = createServer((req, res) => {
+    let raw = "";
+    req.on("data", (chunk) => {
+      raw += chunk;
+    });
+    req.on("end", () => {
+      requests.push({
+        path: req.url ?? "",
+        body: raw ? (JSON.parse(raw) as Record<string, unknown>) : {},
+      });
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ context: "remembered context" }));
+    });
+  });
+
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  if (!address || typeof address === "string") {
+    server.close();
+    throw new Error("test server did not bind to a TCP port");
+  }
+
+  try {
+    const result = await runHook(scriptName, stdin, {
+      ...env,
+      AGENTMEMORY_URL: `http://127.0.0.1:${address.port}`,
+    });
+    return { stdout: result.stdout, exitCode: result.exitCode, requests };
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
 }
 
 describe("pre-tool-use hook — context injection gate (#143)", () => {
@@ -107,6 +151,98 @@ describe("pre-tool-use hook — context injection gate (#143)", () => {
     });
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toBe("");
+  });
+
+  it("enriches Codex apply_patch events by parsing patch file headers", async () => {
+    const payload = JSON.stringify({
+      session_id: "ses_codex",
+      tool_name: "apply_patch",
+      tool_input: {
+        command: [
+          "*** Begin Patch",
+          "*** Update File: src/hooks/pre-tool-use.ts",
+          "@@",
+          "-old",
+          "+new",
+          "*** Add File: test/codex-hook.test.ts",
+          "+it('works', () => {})",
+          "*** End Patch",
+        ].join("\n"),
+      },
+      project: "agentmemory",
+    });
+
+    const result = await runHookWithServer("pre-tool-use.mjs", payload, {
+      AGENTMEMORY_INJECT_CONTEXT: "true",
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toBe("remembered context");
+    expect(result.requests).toHaveLength(1);
+    expect(result.requests[0]).toMatchObject({
+      path: "/agentmemory/enrich",
+      body: {
+        sessionId: "ses_codex",
+        files: ["src/hooks/pre-tool-use.ts", "test/codex-hook.test.ts"],
+        terms: [],
+        toolName: "edit",
+        project: "agentmemory",
+      },
+    });
+  });
+
+  it("ignores Codex apply_patch events without concrete patch file headers", async () => {
+    const payload = JSON.stringify({
+      session_id: "ses_codex",
+      tool_name: "apply_patch",
+      tool_input: { patch: "*** Begin Patch\n*** End Patch" },
+    });
+
+    const result = await runHook("pre-tool-use.mjs", payload, {
+      AGENTMEMORY_INJECT_CONTEXT: "true",
+      AGENTMEMORY_URL: "http://127.0.0.1:1",
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toBe("");
+  });
+
+  it("enriches conservative Codex exec_command grep events", async () => {
+    const payload = JSON.stringify({
+      session_id: "ses_codex",
+      tool_name: "exec_command",
+      tool_input: { cmd: "rg pre-tool-use src test" },
+    });
+
+    const result = await runHookWithServer("pre-tool-use.mjs", payload, {
+      AGENTMEMORY_INJECT_CONTEXT: "true",
+    });
+
+    expect(result.stdout).toBe("remembered context");
+    expect(result.requests[0]).toMatchObject({
+      path: "/agentmemory/enrich",
+      body: {
+        sessionId: "ses_codex",
+        files: ["src", "test"],
+        terms: ["pre-tool-use"],
+        toolName: "grep",
+      },
+    });
+  });
+
+  it("does not parse compound Codex shell commands", async () => {
+    const payload = JSON.stringify({
+      session_id: "ses_codex",
+      tool_name: "exec_command",
+      tool_input: { cmd: "sed -n '1,40p' src/hooks/pre-tool-use.ts | cat" },
+    });
+
+    const result = await runHookWithServer("pre-tool-use.mjs", payload, {
+      AGENTMEMORY_INJECT_CONTEXT: "true",
+    });
+
+    expect(result.stdout).toBe("");
+    expect(result.requests).toHaveLength(0);
   });
 });
 
