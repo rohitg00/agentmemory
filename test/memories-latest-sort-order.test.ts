@@ -35,6 +35,10 @@ describe("api::memories sorts newest first before pagination (#990)", () => {
   it("sorts on createdAt desc with updatedAt fallback (matches the #701 viewer fix)", () => {
     expect(handler).toMatch(/a\.createdAt \|\| a\.updatedAt/);
     expect(handler).toMatch(/b\.createdAt \|\| b\.updatedAt/);
-    expect(handler).toMatch(/localeCompare/);
+    // Direction matters: newest-first requires the comparator to return
+    // bKey.localeCompare(aKey) (descending). A reversed comparator would still
+    // contain `localeCompare` and pass a bare match, so pin the argument order
+    // to guard against silently sorting oldest-first. (#990)
+    expect(handler).toMatch(/bKey\.localeCompare\(aKey\)/);
   });
 });
