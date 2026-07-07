@@ -479,4 +479,27 @@ describe("mem::summarize chunking", () => {
     expect(result.success).toBe(false);
     expect(result.error).toBe("parse_failed");
   });
+
+  it("ResilientProvider-wrapped noop provider returns no_provider without calling summarize (#1020)", async () => {
+    const calls: Array<{ system: string; user: string }> = [];
+    const wrappedNoop: MemoryProvider = {
+      name: "resilient(noop)",
+      compress: async () => "",
+      summarize: async (system: string, user: string) => {
+        calls.push({ system, user });
+        return "";
+      },
+    };
+    const { handler } = await setupHandler({
+      sessionId: "ses_noop",
+      obsCount: 3,
+      provider: wrappedNoop,
+    });
+
+    const result: any = await handler({ sessionId: "ses_noop" });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe("no_provider");
+    expect(calls).toHaveLength(0);
+  });
 });
