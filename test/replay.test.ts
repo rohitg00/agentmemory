@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseJsonlText } from "../src/replay/jsonl-parser.js";
 import { projectTimeline } from "../src/replay/timeline.js";
+import { rawFromCompressed } from "../src/functions/replay.js";
+import type { CompressedObservation } from "../src/types.js";
 
 const fx = (name: string) =>
   readFileSync(join(__dirname, "fixtures/jsonl", name), "utf-8");
@@ -140,6 +142,126 @@ describe("projectTimeline", () => {
     });
     const out = parseJsonlText(text);
     expect(out.startedAt).toBe(out.endedAt);
+  });
+});
+
+// 基础工厂：生成最小合法的 CompressedObservation，允许按需覆盖字段。
+function makeCompressed(
+  overrides: Partial<CompressedObservation> & { type: CompressedObservation["type"] },
+): CompressedObservation {
+  return {
+    id: "obs-test-1",
+    sessionId: "sess-test",
+    timestamp: "2026-04-17T10:00:00.000Z",
+    title: "default-title",
+    narrative: "default narrative",
+    facts: [],
+    concepts: [],
+    files: [],
+    importance: 0.5,
+    ...overrides,
+  };
+}
+
+describe("rawFromCompressed", () => {
+  /**
+   * 回归测试：压缩->重建 shim 在工具类事件上必须保留可展示内容。
+   *
+   * 旧版 shim 将所有 CompressedObservation 一律映射为 hookType:"post_tool_use"
+   * 但 toolName/toolInput/toolOutput 全部为 undefined，replay detail 面板因此
+   * 一片空白。修复后工具类 obs 的 title/subtitle/narrative 应分别流向对应字段。
+   */
+  it("工具类 observation（command_run）应映射为 post_tool_use，并保留工具内容", () => {
+    const obs = makeCompressed({
+      type: "command_run",
+      title: "Bash",
+      subtitle: "ls -la",
+      narrative: "README.md\nsrc\n",
+      facts: ["ran ls"],
+    });
+
+    const raw = rawFromCompressed(obs);
+
+    expect(raw.hookType).toBe("post_tool_use");
+    expect(raw.toolName).toBe("Bash");
+    expect(raw.toolInput).toBe("ls -la");
+    expect(raw.toolOutput).toBe("README.md\nsrc\n");
+    expect(raw.userPrompt).toBeUndefined();
+    expect(raw.assistantResponse).toBeUndefined();
+  });
+
+  it("对话类 observation（conversation）应映射为 prompt_submit，内容取 narrative", () => {
+    const obs = makeCompressed({
+      type: "conversation",
+      title: "User message",
+      narrative: "Fix the login bug",
+      facts: [],
+    });
+
+    const raw = rawFromCompressed(obs);
+
+    expect(raw.hookType).toBe("prompt_submit");
+    expect(raw.userPrompt).toBe("Fix the login bug");
+    expect(raw.toolName).toBeUndefined();
+    expect(raw.toolInput).toBeUndefined();
+    expect(raw.toolOutput).toBeUndefined();
+    expect(raw.assistantResponse).toBeUndefined();
+  });
+
+  it("工具类 observation 在 subtitle 缺失时 toolInput 应为 undefined（不报错）", () => {
+    // subtitle 是 CompressedObservation 的可选字段；旧数据可能没有该字段。
+    const obs = makeCompressed({
+      type: "file_read",
+      title: "Read",
+      // subtitle 故意省略
+      narrative: "file content here",
+      facts: [],
+    });
+
+    const raw = rawFromCompressed(obs);
+
+    expect(raw.hookType).toBe("post_tool_use");
+    expect(raw.toolName).toBe("Read");
+    expect(raw.toolInput).toBeUndefined();
+    expect(raw.toolOutput).toBe("file content here");
+  });
+
+  it("rawFromCompressed 的输出经 projectTimeline 后 detail 字段可在事件中取到", () => {
+    // 端到端验证：压缩 obs → rawFromCompressed → projectTimeline → TimelineEvent
+    // 工具类事件的 toolName/toolInput/toolOutput 必须出现在最终的 timeline 事件里。
+    const toolObs = rawFromCompressed(
+      makeCompressed({
+        type: "command_run",
+        title: "Bash",
+        subtitle: "echo hello",
+        narrative: "hello",
+        facts: [],
+      }),
+    );
+    const convObs = rawFromCompressed(
+      makeCompressed({
+        id: "obs-test-2",
+        type: "conversation",
+        title: "User message",
+        narrative: "What files are here?",
+        facts: [],
+        timestamp: "2026-04-17T10:00:01.000Z",
+      }),
+    );
+
+    const tl = projectTimeline([toolObs, convObs]);
+
+    // 工具结果事件
+    const toolEvent = tl.events.find((e) => e.kind === "tool_result");
+    expect(toolEvent).toBeDefined();
+    expect(toolEvent?.toolName).toBe("Bash");
+    expect(toolEvent?.toolInput).toBe("echo hello");
+    expect(toolEvent?.toolOutput).toBe("hello");
+
+    // 对话（prompt）事件
+    const promptEvent = tl.events.find((e) => e.kind === "prompt");
+    expect(promptEvent).toBeDefined();
+    expect(promptEvent?.body).toBe("What files are here?");
   });
 });
 
