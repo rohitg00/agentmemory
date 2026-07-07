@@ -260,7 +260,6 @@ export function registerSummarizeFunction(
         return { success: false, error: "no_observations" };
       }
 
-      // Unwrap resilient(...) wrapper to get the base provider name (#1020)
       const baseProviderName = provider.name.replace(/^resilient\((.+)\)$/, "$1");
       if (baseProviderName === "noop") {
         logger.info("Summarize skipped — no LLM provider configured", {
