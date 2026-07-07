@@ -21,6 +21,22 @@ import { join, dirname, delimiter as PATH_DELIMITER } from "node:path";
 import { fileURLToPath } from "node:url";
 import { homedir, platform } from "node:os";
 import * as p from "@clack/prompts";
+import pc from "picocolors";
+
+// Semantic color helpers. clack strips ANSI for box-width math
+// (stripVTControlCharacters + string-width), so coloring inside p.note
+// keeps borders aligned. Centralized here so the palette stays consistent
+// across every command's output.
+const c = {
+  url: pc.cyan,
+  ok: pc.green,
+  warn: pc.yellow,
+  err: pc.red,
+  cmd: (s: string) => pc.bold(pc.cyan(s)),
+  label: pc.bold,
+  dim: pc.dim,
+  accent: (s: string) => pc.bold(pc.yellow(s)),
+};
 import { generateId } from "./state/schema.js";
 import {
   buildDiagnostics,
@@ -223,7 +239,7 @@ if (portIdx !== -1 && args[portIdx + 1]) {
 
 // `--instance N` picks a 100-port block off the 3111 base so multiple
 // agentmemory daemons can coexist on one host without env-var
-// gymnastics (#750). `--instance 0` keeps the canonical 3111/3112/3113/49134
+// gymnastics. `--instance 0` keeps the canonical 3111/3112/3113/49134
 // quartet; `--instance 1` → 3211/3212/3213/49234; etc. REST acts as the
 // anchor — streams/viewer/engine derive from it via fixed offsets below
 // unless an env explicitly pins each one.
@@ -306,7 +322,7 @@ function getViewerUrl(): string {
 // engine docs use post-0.11) and `III_STREAMS_PORT` (the name our
 // own config.ts has used since 0.7) so a single source of truth in
 // either form lights up the ready panel. Falls back to REST+1 so
-// `--port 3211` auto-picks 3212 instead of colliding on 3112 (#750).
+// `--port 3211` auto-picks 3212 instead of colliding on 3112.
 function getStreamPort(): number {
   return (
     parseInt(process.env["III_STREAM_PORT"] || "", 10) ||
@@ -318,7 +334,7 @@ function getStreamPort(): number {
 // Bridge WebSocket port — the iii engine's internal worker bus.
 // Defaults derived from REST as REST+46023 so the canonical 3111
 // anchor yields 49134 and `--port 3211` auto-picks 49234 without a
-// second-instance collision (#750). Overridable via
+// second-instance collision. Overridable via
 // `III_ENGINE_PORT` or the legacy `III_ENGINE_URL=ws://host:port`.
 function getEnginePort(): number {
   const explicit = parseInt(process.env["III_ENGINE_PORT"] || "", 10);
@@ -370,7 +386,7 @@ function findIiiConfig(): string {
   // Precedence (user-overridable wins): explicit env > project cwd >
   // ~/.agentmemory/ > bundled. The bundled config used to win
   // unconditionally, so users hitting the observability log-feedback
-  // loop (#519) had no way to drop a tamer config in place without
+  // loop had no way to drop a tamer config in place without
   // editing node_modules.
   const envPath = process.env["AGENTMEMORY_III_CONFIG"];
   const candidates = [
@@ -405,7 +421,7 @@ function whichBinary(name: string): string | null {
 
 // Private install location agentmemory manages itself. Sits under the
 // agentmemory state dir (~/.agentmemory/bin) so the pinned engine stays
-// isolated from a user-managed iii on PATH or in ~/.local/bin. #752: a
+// isolated from a user-managed iii on PATH or in ~/.local/bin. A
 // fresh box with iii 0.16.1 already on PATH refused to boot because the
 // hard-pin enforcer told users to overwrite their global install with
 // v0.11.2. Private install resolves the conflict without touching their
@@ -530,7 +546,7 @@ function clearEnginePidfile(): void {
   } catch {}
 }
 
-// Worker pidfile (#640, #474): the agentmemory worker process
+// Worker pidfile: the agentmemory worker process
 // (`node dist/index.mjs`) is spawned by iii-exec inside the engine. When
 // `agentmemory stop` kills only the engine pid, the worker can survive
 // (detached spawn, signal not propagated, or kept alive by a wrapper
@@ -685,7 +701,7 @@ function detectIiiConsole(): IiiConsoleState {
 // install.iii.dev/iii/main/install.sh: `engine_version="${VERSION:-}"`).
 // Pin to IIPINNED_VERSION so a fresh boot can never pull a newer iii
 // console that talks a different protocol than our pinned engine
-// (root cause of #712-class drift).
+// (root cause of protocol drift).
 const III_CONSOLE_INSTALL_CMD =
   `curl -fsSL https://install.iii.dev/iii/main/install.sh | VERSION=${IIPINNED_VERSION} sh`;
 
@@ -766,7 +782,7 @@ function adoptRunningEngine(): void {
       });
     }
     if (enginePid && !existingPid) {
-      p.log.info(`Attached to existing iii-engine (pid ${enginePid})`);
+      p.log.info(c.ok(`Attached to existing iii-engine (pid ${enginePid})`));
     }
   } catch (err) {
     vlog(`adoptRunningEngine: ${err instanceof Error ? err.message : String(err)}`);
@@ -889,7 +905,7 @@ function startIiiBin(iiiBin: string, configPath: string): boolean {
   s.start(`Starting iii-engine: ${iiiBin}`);
   writeEngineState({ kind: "native", configPath, binPath: iiiBin });
   spawnEngineBackground(iiiBin, ["--config", configPath], "iii-engine");
-  s.stop("iii-engine process started");
+  s.stop(c.ok("iii-engine process started"));
   return true;
 }
 
@@ -922,7 +938,7 @@ async function startEngine(): Promise<boolean> {
 
   if (iiiBin && configPath) {
     if (iiiBin !== pathIii) {
-      p.log.info(`Using iii at: ${iiiBin} (v${IIPINNED_VERSION})`);
+      p.log.info(`Using iii at: ${c.dim(iiiBin)} (v${c.accent(IIPINNED_VERSION)})`);
       process.env["PATH"] = `${dirname(iiiBin)}${PATH_DELIMITER}${process.env["PATH"] ?? ""}`;
     }
     return startIiiBin(iiiBin, configPath);
@@ -1148,20 +1164,20 @@ function printReadyHint(consoleState: IiiConsoleState): void {
         // the detected binary path so `(run: ...)` is executable as-
         // is, even when the binary isn't on PATH under the bare
         // name `iii-console`.
-        `iii console  ${consoleState.binPath}  (run: ${consoleState.binPath} -p <port>)`
-      : `iii console  (install: ${iiiConsoleInstallHint()})`;
+        `${c.label("iii console")}  ${c.dim(consoleState.binPath)}  ${c.dim(`(run: ${consoleState.binPath} -p <port>)`)}`
+      : `${c.label("iii console")}  ${c.dim(`(install: ${iiiConsoleInstallHint()})`)}`;
 
   const lines = [
-    `REST API     ${restUrl}`,
-    `Viewer       ${viewerUrl}`,
-    `Streams      ${streamUrl}`,
-    `Engine       ${engineUrl}`,
+    `${c.label("REST API")}     ${c.url(restUrl)}`,
+    `${c.label("Viewer")}       ${c.url(viewerUrl)}`,
+    `${c.label("Streams")}      ${c.url(streamUrl)}`,
+    `${c.label("Engine")}       ${c.url(engineUrl)}`,
     consoleLine,
   ];
   // p.note renders a bordered panel with a title — same affordance
   // used elsewhere in this CLI for "Troubleshooting" / "Setup
   // required" blocks, so the visual language stays consistent.
-  p.note(lines.join("\n"), `agentmemory v${VERSION}`);
+  p.note(lines.join("\n"), `agentmemory v${c.accent(VERSION)}`);
 
   // Pick a runnable form for the suggested next-step. Users invoked
   // via `npx` don't have the bare `agentmemory` command on PATH yet
@@ -1171,7 +1187,7 @@ function printReadyHint(consoleState: IiiConsoleState): void {
   const demoCommand = isInvokedViaNpx()
     ? "npx @agentmemory/agentmemory demo"
     : "agentmemory demo";
-  process.stdout.write(`\nTry: ${demoCommand}\n`);
+  process.stdout.write(`\n${c.dim("Try:")} ${c.cmd(demoCommand)}\n`);
 }
 
 async function main() {
@@ -1222,24 +1238,58 @@ async function main() {
       whichBinary("iii") ??
       fallbackIiiPaths().find((p) => existsSync(p)) ??
       null;
-    if (attachedBin) {
-      const detected = iiiBinVersion(attachedBin);
-      if (detected && detected !== IIPINNED_VERSION) {
-        p.log.warn(
-          `iii on PATH is v${detected} (from ${attachedBin}) but agentmemory v${VERSION} pins v${IIPINNED_VERSION}. ` +
-            `agentmemory will use its own pinned engine in ~/.agentmemory/bin and leaves ${attachedBin} untouched. ` +
-            `If you want agentmemory to track a different engine, set AGENTMEMORY_III_VERSION=${detected}.`,
-        );
+    const detected = attachedBin ? iiiBinVersion(attachedBin) : null;
+
+    // Fail closed: only adopt the running engine when we can positively
+    // confirm it is the pinned version. An unknown version (detected === null,
+    // e.g. the binary can't be version-probed) is treated as incompatible —
+    // adopting a foreign or unverifiable engine hangs the worker in a
+    // WebSocket reconnect loop. Worst case here is a re-run that reinstalls
+    // the pinned engine, never a silent loop.
+    if (detected === IIPINNED_VERSION) {
+      adoptRunningEngine();
+      await import("./index.js");
+      if (await waitForAgentmemoryReady(15000)) {
+        const consoleState = await ensureIiiConsole();
+        await maybeOfferGlobalInstall();
+        printReadyHint(consoleState);
       }
+      return;
     }
-    adoptRunningEngine();
-    await import("./index.js");
-    if (await waitForAgentmemoryReady(15000)) {
-      const consoleState = await ensureIiiConsole();
-      await maybeOfferGlobalInstall();
-      printReadyHint(consoleState);
-    }
-    return;
+
+    const detectedLabel = detected ? `v${detected}` : "an unverified version";
+
+    // An incompatible engine owns the port. Adopting it hangs the worker in a
+    // WebSocket reconnect loop (it can't speak that engine's protocol), so stop
+    // with the simplest honest remedy. A normal user has no other engine and
+    // never sees this; only someone running their own iii does, and for them
+    // "stop it, then run normally" is the fix. We do not suggest a different
+    // engine version: agentmemory only supports v${IIPINNED_VERSION}.
+    const base = isInvokedViaNpx() ? "npx @agentmemory/agentmemory" : "agentmemory";
+    p.log.error(
+      `Another iii-engine (${detectedLabel}) is running on port ${getEnginePort()}, and agentmemory needs its own pinned v${IIPINNED_VERSION}.`,
+    );
+    p.note(
+      [
+        `agentmemory only supports iii-engine v${IIPINNED_VERSION}. It will not adopt or change the running engine (${detectedLabel}).`,
+        "",
+        c.label("Switch to the pinned engine in two steps:"),
+        "",
+        `  1. Stop the running engine:`,
+        `       ${c.cmd(`${base} stop --force`)}`,
+        `     ${c.dim(`(or stop your own iii however you started it — agentmemory leaves your global iii untouched)`)}`,
+        "",
+        `  2. Start agentmemory. It downloads and runs the pinned`,
+        `     v${IIPINNED_VERSION} into ~/.agentmemory/bin automatically:`,
+        `       ${c.cmd(base)}`,
+        "",
+        c.dim(`Step 2 needs no manual install. To install iii v${IIPINNED_VERSION} yourself (replaces your global iii), curl:`),
+        `     ${c.cmd(III_CONSOLE_INSTALL_CMD)}`,
+        `     ${c.dim("or download the release:")} ${c.url(`https://github.com/iii-hq/iii/releases/tag/iii%2Fv${IIPINNED_VERSION}`)}`,
+      ].join("\n"),
+      "engine conflict",
+    );
+    process.exit(1);
   }
 
   const started = await startEngine();
@@ -1305,7 +1355,7 @@ async function main() {
     process.exit(1);
   }
 
-  s.stop("iii-engine is ready");
+  s.stop(c.ok("iii-engine is ready"));
   await import("./index.js");
   if (await waitForAgentmemoryReady(15000)) {
     const consoleState = await ensureIiiConsole();
@@ -1381,7 +1431,7 @@ async function runStatus() {
     p.log.success(`Connected — v${version} at ${base}`);
 
     const lines = [
-      `Health:       ${status === "healthy" ? "✓ healthy" : status}`,
+      `Health:       ${status === "healthy" ? pc.green("✓ healthy") : pc.yellow(status)}`,
       `Sessions:     ${sessions}`,
       `Observations: ${obsCount}`,
       `Memories:     ${memCount}`,
@@ -1389,7 +1439,7 @@ async function runStatus() {
       `Circuit:      ${cb}`,
       `Heap:         ${heapMB} MB`,
       `Uptime:       ${uptime}s`,
-      `Viewer:       ${getViewerUrl()}`,
+      `Viewer:       ${c.url(getViewerUrl())}`,
     ];
 
     if (obsCount > 0) {
@@ -1400,10 +1450,10 @@ async function runStatus() {
     }
 
     if (flagsRes) {
-      const provider = flagsRes.provider === "llm" ? "✓ llm" : "✗ noop (no key)";
-      const embed = flagsRes.embeddingProvider === "embeddings" ? "✓ embeddings" : "bm25-only";
+      const provider = flagsRes.provider === "llm" ? pc.green("✓ llm") : pc.yellow("✗ noop (no key)");
+      const embed = flagsRes.embeddingProvider === "embeddings" ? pc.green("✓ embeddings") : pc.dim("bm25-only");
       const flagRows = (flagsRes.flags || []).map((f: { key: string; enabled: boolean; label: string }) =>
-        `  ${f.enabled ? "✓" : "✗"} ${f.key.padEnd(32)} ${f.label}`
+        `  ${f.enabled ? pc.green("✓") : pc.dim("✗")} ${pc.bold(f.key.padEnd(32))} ${f.label}`
       );
       lines.push("");
       lines.push(`Provider:     ${provider}`);
@@ -1433,7 +1483,7 @@ type DoctorCheck = { name: string; ok: boolean; hint?: string };
 
 function formatChecks(checks: DoctorCheck[]): string {
   return checks
-    .map((c) => `${c.ok ? "✓" : "✗"} ${c.name}${c.hint ? `\n   ${c.hint}` : ""}`)
+    .map((c) => `${c.ok ? pc.green("✓") : pc.red("✗")} ${c.name}${c.hint ? `\n   ${c.hint}` : ""}`)
     .join("\n");
 }
 
@@ -2233,17 +2283,17 @@ async function runDemoBody(base: string) {
     `Project:       ${demoProject}`,
     `Sessions:      ${sessions.length} seeded (${totalObs} observations)`,
     "",
-    "Search results:",
+    c.label("Search results:"),
     ...results.flatMap((r) => [
-      `  "${r.query}"`,
-      `    → ${r.hits} hit(s), top: ${r.topTitle.slice(0, 60)}`,
+      `  ${c.label(`"${r.query}"`)}`,
+      `    ${c.dim("→")} ${c.ok(`${r.hits} hit(s)`)}, top: ${r.topTitle.slice(0, 60)}`,
     ]),
     "",
-    `Notice: searching "database performance optimization"`,
-    `found the N+1 query fix — keyword matching can't do that.`,
+    c.accent(`Notice: searching "database performance optimization"`),
+    c.accent(`found the N+1 query fix — keyword matching can't do that.`),
     "",
-    `Viewer:        ${getViewerUrl()}`,
-    `Clean up with: curl -X DELETE "${base}/agentmemory/sessions?project=${demoProject}"`,
+    `Viewer:        ${c.url(getViewerUrl())}`,
+    `Clean up with: ${c.dim(`curl -X DELETE "${base}/agentmemory/sessions?project=${demoProject}"`)}`,
   ];
 
   p.note(lines.join("\n"), "demo complete");
@@ -2264,7 +2314,7 @@ function runCommand(
   });
 
   if (result.status === 0) {
-    spinner.stop(`${options.label} ✓`);
+    spinner.stop(`${options.label} ${pc.green("✓")}`);
     return true;
   }
 
@@ -2278,7 +2328,7 @@ function runCommand(
     return false;
   }
 
-  spinner.stop(`${options.label} ✗`);
+  spinner.stop(`${options.label} ${pc.red("✗")}`);
   p.log.error(msg.slice(0, 300));
   return false;
 }
@@ -2484,7 +2534,7 @@ async function runStop(): Promise<void> {
 
   const portPids = findEnginePidsByPort(port);
   const pidfilePid = readEnginePidfile();
-  // #640 + #474: read the worker pid up front so the engine-down branch
+  // read the worker pid up front so the engine-down branch
   // can still reap an orphaned worker process (the common failure mode
   // where a wrapper script kept the worker alive across engine restarts).
   const workerPid = readWorkerPidfile();
@@ -2546,7 +2596,7 @@ async function runStop(): Promise<void> {
   if (pidfilePid) candidates.add(pidfilePid);
   for (const pid of portPids) candidates.add(pid);
 
-  // #640 + #474: stop must also reap the agentmemory worker process
+  // stop must also reap the agentmemory worker process
   // (`node dist/index.mjs`). If only the engine is killed, the worker can
   // survive (detached spawn / signal not propagated) and reconnect to the
   // next engine as a duplicate registration. workerPid was read above so
@@ -2562,7 +2612,7 @@ async function runStop(): Promise<void> {
   }
 
   let allStopped = true;
-  // #843: stop worker first, then engine. The worker's shutdown
+  // stop worker first, then engine. The worker's shutdown
   // handler calls indexPersistence.save() -> kv.set() -> iii state::set
   // to flush BM25/vector snapshots + audit rows. Killing iii first
   // leaves those writes with no engine to land on, and the index +

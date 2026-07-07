@@ -49,7 +49,6 @@
 
 <p align="center">
   <a href="https://www.npmjs.com/package/@agentmemory/agentmemory"><img src="https://img.shields.io/npm/v/@agentmemory/agentmemory?color=CB3837&label=npm&style=for-the-badge&logo=npm" alt="npm version" /></a>
-  <a href="https://www.npmjs.com/package/@agentmemory/mcp"><img src="https://img.shields.io/npm/dm/@agentmemory/mcp?color=CB3837&label=downloads&style=for-the-badge&logo=npm" alt="npm downloads" /></a>
   <a href="https://github.com/rohitg00/agentmemory/actions"><img src="https://img.shields.io/github/actions/workflow/status/rohitg00/agentmemory/ci.yml?label=tests&style=for-the-badge&logo=github" alt="CI" /></a>
   <a href="https://github.com/rohitg00/agentmemory/blob/main/LICENSE"><img src="https://img.shields.io/github/license/rohitg00/agentmemory?color=blue&style=for-the-badge" alt="License" /></a>
   <a href="https://github.com/rohitg00/agentmemory/stargazers"><img src="https://img.shields.io/github/stars/rohitg00/agentmemory?style=for-the-badge&color=yellow&logo=github" alt="Stars" /></a>
@@ -94,7 +93,7 @@ Fastest path if you use a coding agent: hand it this one instruction and it inst
 On Windows the fast path is WSL2. Native Windows engine setup is manual (about 10 to 20 minutes) and `agentmemory connect` is currently unsupported there. See the [Windows notes](#windows) below for the step-by-step.
 
 ```bash
-npm install -g @agentmemory/agentmemory          # once — bare `agentmemory` on PATH
+npm install -g @agentmemory/agentmemory   # once — bare `agentmemory` on PATH
 # If you hit EACCES on macOS/Linux system Node installs, retry with:
 # sudo npm install -g @agentmemory/agentmemory
 agentmemory                                      # start the memory server on :3111
@@ -111,6 +110,8 @@ npx @agentmemory/agentmemory
 ```
 
 Heads-up — npx caches per version. If a bare `npx @agentmemory/agentmemory` serves an older release, force the latest with `npx -y @agentmemory/agentmemory@latest`, or clear the cache once with `rm -rf ~/.npm/_npx` (macOS/Linux; on Windows delete `%LOCALAPPDATA%\npm-cache\_npx`). The first npx run from v0.9.16+ prompts to install globally inline so the bare `agentmemory` command works everywhere afterwards.
+
+Already running your own `iii` engine? agentmemory pins iii-engine v0.11.2 and won't attach to a different version (the worker can't speak another engine's protocol). Stop the other engine, then run `npx -y @agentmemory/agentmemory@latest` — it installs and runs the pinned v0.11.2 in `~/.agentmemory/bin`, leaving your own `iii` untouched.
 
 Full options at [Quick Start](#quick-start) below. Agent-specific wiring at [Works with every agent](#works-with-every-agent).
 
@@ -506,7 +507,7 @@ Use the maintenance command when you intentionally want to update your local run
 npx @agentmemory/agentmemory upgrade
 ```
 
-Warning: this command mutates the current workspace/runtime. It can update JavaScript dependencies, may run `cargo install iii-engine --force`, and may pull Docker images.
+Warning: this command mutates the current workspace/runtime. It can update JavaScript dependencies and pull the pinned `iiidev/iii:0.11.2` Docker image. It never installs an unpinned or newer iii engine.
 
 Implementation details live in `src/cli.ts` (see `runUpgrade` around the `src/cli.ts:544-595` region).
 
@@ -518,7 +519,7 @@ Install agentmemory: run `npx @agentmemory/agentmemory` in a separate terminal t
 
 #### Claude Code without the plugin install (MCP-standalone path)
 
-If you wire agentmemory's MCP server through `~/.claude.json` directly instead of using `/plugin install`, Claude Code never resolves `${CLAUDE_PLUGIN_ROOT}` and you have to point hook scripts at absolute paths in `~/.claude/settings.json`. Those paths typically embed the agentmemory version (e.g. `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.22/scripts/…`), so the next upgrade silently breaks every hook ([#508](https://github.com/rohitg00/agentmemory/issues/508)).
+If you wire agentmemory's MCP server through `~/.claude.json` directly instead of using `/plugin install`, Claude Code never resolves `${CLAUDE_PLUGIN_ROOT}` and you have to point hook scripts at absolute paths in `~/.claude/settings.json`. Those paths typically embed the agentmemory version (e.g. `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.22/scripts/…`), so the next upgrade silently breaks every hook.
 
 Workaround:
 
@@ -684,7 +685,7 @@ The agentmemory entry is the **same MCP server block** across every host that us
 | **Aider** | n/a | Talk to the REST API directly: `curl -X POST http://localhost:3111/agentmemory/smart-search -d '{"query": "auth"}'`. |
 | **Any agent (32+)** | n/a | `npx skillkit install agentmemory` auto-detects the host and merges. |
 
-**Sandboxed MCP clients** (Flatpak / Snap / restrictive containers) that can't reach the host's `localhost`: also set `"AGENTMEMORY_FORCE_PROXY": "1"` in the `env` block, and point `AGENTMEMORY_URL` at a route the sandbox can actually reach (e.g. your LAN IP). See [#234](https://github.com/rohitg00/agentmemory/issues/234) for the diagnostic walkthrough.
+**Sandboxed MCP clients** (Flatpak / Snap / restrictive containers) that can't reach the host's `localhost`: also set `"AGENTMEMORY_FORCE_PROXY": "1"` in the `env` block, and point `AGENTMEMORY_URL` at a route the sandbox can actually reach (e.g. your LAN IP).
 
 ### Programmatic access (Python / Rust / Node)
 
@@ -778,7 +779,7 @@ npx -y @agentmemory/mcp
 | Port conflict | `netstat -ano \| findstr :3111` to see what's bound, then kill it or use `--port <N>` |
 | Docker fallback skipped even though Docker is installed | Make sure Docker Desktop is actually running (system tray icon) |
 
-> Note: there is no `cargo install iii-engine` — `iii` is not published to crates.io. The only supported install methods are the prebuilt binary above, the upstream `sh` install script (macOS/Linux only), and the Docker image.
+> Note: the iii **engine** is a prebuilt binary, not a cargo crate — don't try to `cargo install` it. (The iii **SDKs** are published on crates.io, npm, and PyPI, but agentmemory doesn't need them.) Supported engine install methods, all pinned to v0.11.2: the prebuilt v0.11.2 binary above, the upstream sh install script **with the version pin** `curl -fsSL https://install.iii.dev/iii/main/install.sh | VERSION=0.11.2 sh` (macOS/Linux), and the Docker image `iiidev/iii:0.11.2`. A bare `install.sh | sh` installs the **latest** engine, which agentmemory does not support — always pass `VERSION=0.11.2`. Easiest of all: just run `npx @agentmemory/agentmemory`, which fetches the pinned engine into `~/.agentmemory/bin` for you.
 
 ---
 
@@ -1229,7 +1230,7 @@ agentmemory auto-detects from your environment. By default, no LLM calls are mad
 | OpenRouter | `OPENROUTER_API_KEY` | Any model |
 | OpenAI API | `OPENAI_API_KEY` | Default `gpt-4o-mini`, override with `OPENAI_MODEL` |
 | **Local (Ollama / LM Studio / vLLM / llama.cpp)** | `OPENAI_API_KEY=local` + `OPENAI_BASE_URL=http://localhost:11434/v1` (Ollama) or `http://localhost:1234/v1` (LM Studio) + `OPENAI_MODEL=<your model>` | Anything OpenAI-API-compatible. Zero cost, runs on your hardware. See [Local models](#local-models-ollama-lm-studio-vllm) below. |
-| Claude subscription fallback | `AGENTMEMORY_ALLOW_AGENT_SDK=true` | Opt-in only. Spawns `@anthropic-ai/claude-agent-sdk` sessions — used to cause unbounded Stop-hook recursion (#149 follow-up) so it is no longer the default. |
+| Claude subscription fallback | `AGENTMEMORY_ALLOW_AGENT_SDK=true` | Opt-in only. Spawns `@anthropic-ai/claude-agent-sdk` sessions — used to cause unbounded Stop-hook recursion so it is no longer the default. |
 
 ### Local models (Ollama / LM Studio / vLLM)
 
@@ -1344,7 +1345,7 @@ netstat -ano | findstr ":3111 :3112 :3113 :49134"
 taskkill /F /PID <pid>
 ```
 
-`agentmemory stop` reaps both the worker and the engine pidfile cleanly on graceful shutdown (#640, #474). The manual cleanup above is only for the post-crash case where neither pidfile is left behind.
+`agentmemory stop` reaps both the worker and the engine pidfile cleanly on graceful shutdown. The manual cleanup above is only for the post-crash case where neither pidfile is left behind.
 
 ### Config File
 
@@ -1409,7 +1410,7 @@ Create `~/.agentmemory/.env`:
 # OPENAI_API_KEY_FOR_LLM=false             # Optional: set to false to skip OpenAI auto-detection
 #                                          # for LLM (useful if you only want OpenAI for embeddings)
 # Opt-in Claude-subscription fallback (spawns @anthropic-ai/claude-agent-sdk);
-# leave OFF unless you understand the Stop-hook recursion risk (#149 follow-up):
+# leave OFF unless you understand the Stop-hook recursion risk:
 # AGENTMEMORY_ALLOW_AGENT_SDK=true
 
 # Embedding provider (auto-detected, or override)
@@ -1443,7 +1444,7 @@ Create `~/.agentmemory/.env`:
 # III_REST_PORT=3111
 
 # Features
-# AGENTMEMORY_AUTO_COMPRESS=false  # OFF by default (#138). When on,
+# AGENTMEMORY_AUTO_COMPRESS=false  # OFF by default. When on,
                                    # every PostToolUse hook calls your
                                    # LLM provider to compress the
                                    # observation — expect significant
@@ -1465,7 +1466,7 @@ Create `~/.agentmemory/.env`:
                                    # session_patterns, records touched
                                    # files in project_context. Fire-
                                    # and-forget; does not block.
-# AGENTMEMORY_INJECT_CONTEXT=false # OFF by default (#143). When on:
+# AGENTMEMORY_INJECT_CONTEXT=false # OFF by default. When on:
                                    # - SessionStart may inject ~1-2K
                                    #   chars of project context into
                                    #   the first turn of each session

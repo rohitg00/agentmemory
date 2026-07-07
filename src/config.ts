@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
+import pc from "picocolors";
 import type {
   AgentMemoryConfig,
   ProviderConfig,
@@ -126,15 +127,11 @@ function detectProvider(env: Record<string, string>): ProviderConfig {
   const allowAgentSdk = env["AGENTMEMORY_ALLOW_AGENT_SDK"] === "true";
   if (!allowAgentSdk) {
     process.stderr.write(
-      "[agentmemory] No LLM provider key found " +
-        "(ANTHROPIC_API_KEY, GEMINI_API_KEY, OPENROUTER_API_KEY, MINIMAX_API_KEY, OPENAI_API_KEY). " +
-        "LLM-backed compression and summarization are DISABLED — using no-op provider. " +
-        "This is the safe default: the agent-sdk fallback used to spawn Claude Agent SDK " +
-        "child sessions which inherit Claude Code's plugin hooks and cause infinite Stop-hook " +
-        "recursion (#149 follow-up). To opt in to the agent-sdk fallback anyway, set both " +
-        "AGENTMEMORY_AUTO_COMPRESS=true AND AGENTMEMORY_ALLOW_AGENT_SDK=true — but be aware " +
-        "it will burn your Claude Pro allocation and may still recurse if you use it from " +
-        "inside Claude Code itself.\n",
+      pc.dim(
+        "[agentmemory] No LLM provider key set — running zero-LLM (BM25 + on-device embeddings). " +
+          "Set ANTHROPIC_API_KEY (or GEMINI/OPENAI/OPENROUTER/MINIMAX) in ~/.agentmemory/.env for LLM compression and summaries. " +
+          "Agent-SDK fallback stays off by default to avoid a Stop-hook recursion loop; opt in with AGENTMEMORY_AUTO_COMPRESS=true + AGENTMEMORY_ALLOW_AGENT_SDK=true.\n",
+      ),
     );
     return {
       provider: "noop",
@@ -146,7 +143,7 @@ function detectProvider(env: Record<string, string>): ProviderConfig {
   process.stderr.write(
     "[agentmemory] WARNING: agent-sdk fallback enabled via AGENTMEMORY_ALLOW_AGENT_SDK=true. " +
       "This spawns @anthropic-ai/claude-agent-sdk child sessions that can trigger the Stop-hook " +
-      "recursion loop (#149 follow-up). A SDK-child env marker is set to block re-entry, " +
+      "recursion loop. A SDK-child env marker is set to block re-entry, " +
       "but prefer setting a real API key in ~/.agentmemory/.env instead.\n",
   );
   return {
@@ -164,7 +161,7 @@ export function loadConfig(): AgentMemoryConfig {
   // Port quartet: REST is the anchor; streams/engine derive from it
   // unless individually overridden. Default anchor 3111 yields the
   // canonical 3112 streams / 49134 engine pair, but `III_REST_PORT=3211`
-  // auto-picks 3212 + 49234 so a second instance doesn't collide (#750).
+  // auto-picks 3212 + 49234 so a second instance doesn't collide.
   const restPort = parseInt(env["III_REST_PORT"] || "3111", 10) || 3111;
   const streamsPort =
     parseInt(env["III_STREAM_PORT"] || env["III_STREAMS_PORT"] || "", 10) ||
@@ -336,7 +333,7 @@ export function getGraphBatchSize(): number {
   return safeParseInt(getMergedEnv()["GRAPH_EXTRACTION_BATCH_SIZE"], 10);
 }
 
-// #771: window for the smart-search followup-rate diagnostic. A second
+// window for the smart-search followup-rate diagnostic. A second
 // search arriving within this many seconds (with disjoint results)
 // counts as a "follow-up" — a directional signal that the first result
 // set didn't satisfy. Long values overcount (legitimate refinement
@@ -376,7 +373,7 @@ function hasLLMProviderConfigured(env: Record<string, string | undefined>): bool
   );
 }
 
-// Per-observation LLM compression is OFF by default as of 0.8.8 (see #138).
+// Per-observation LLM compression is OFF by default as of 0.8.8.
 // When disabled, observations are captured and indexed via a synthetic
 // (zero-LLM) compression path so recall/search still works. Users who want
 // richer LLM-generated summaries can set AGENTMEMORY_AUTO_COMPRESS=true in
@@ -387,7 +384,7 @@ export function isAutoCompressEnabled(): boolean {
 }
 
 // Hook-level context injection into Claude Code's conversation is OFF by
-// default as of 0.8.10 (see #143). When disabled, pre-tool-use and
+// default as of 0.8.10. When disabled, pre-tool-use and
 // session-start hooks still POST observations for background capture, but
 // never write context to stdout — so Claude Code doesn't inject an extra
 // ~4000-char blob into every tool turn. 0.8.8 stopped the agentmemory-side
@@ -446,7 +443,7 @@ export function loadFallbackConfig(): FallbackConfig {
           "[agentmemory] Ignoring FALLBACK_PROVIDERS entry 'agent-sdk' " +
             "(AGENTMEMORY_ALLOW_AGENT_SDK is not 'true'). The agent-sdk " +
             "fallback can spawn Claude Agent SDK child sessions that trigger " +
-            "the Stop-hook recursion loop (#149 follow-up). Opt in explicitly " +
+            "the Stop-hook recursion loop. Opt in explicitly " +
             "with AGENTMEMORY_ALLOW_AGENT_SDK=true if this is intentional.\n",
         );
         return false;
