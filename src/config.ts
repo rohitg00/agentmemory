@@ -400,6 +400,55 @@ export function getConsolidationDecayDays(): number {
   return safeParseInt(getMergedEnv()["CONSOLIDATION_DECAY_DAYS"], 30);
 }
 
+// Per-session LLM token budget. Hard cap default is 100k
+// estimated tokens per session. AGENTMEMORY_SESSION_TOKEN_CAP overrides the
+// global default; mem::session::start can override per-session.
+const SESSION_TOKEN_CAP_DEFAULT = 100_000;
+const SYSTEM_TOKEN_CAP_DEFAULT = 1_000_000;
+const SESSION_BUDGET_RETENTION_DAYS_DEFAULT = 7;
+// Soft warning fires at this fraction of the cap.
+export const SESSION_BUDGET_WARN_RATIO = 0.8;
+
+export function getSessionTokenCap(): number {
+  const n = safeParseInt(
+getMergedEnv()["AGENTMEMORY_SESSION_TOKEN_CAP"],
+    SESSION_TOKEN_CAP_DEFAULT
+  );
+  return n > 0 ? n : SESSION_TOKEN_CAP_DEFAULT;
+}
+
+// Cron-fired / cross-session LLM calls (consolidation, reflect, graph
+// extraction) have no active session; they bill the "__system__" sentinel
+// against this separate, larger cap.
+export function getSystemTokenCap(): number {
+  const n = safeParseInt(
+    getMergedEnv()["AGENTMEMORY_SYSTEM_TOKEN_CAP"],
+    SYSTEM_TOKEN_CAP_DEFAULT,
+  );
+  return n > 0 ? n : SYSTEM_TOKEN_CAP_DEFAULT;
+}
+
+export function getSessionBudgetRetentionDays(): number {
+  const n = safeParseInt(
+    getMergedEnv()["AGENTMEMORY_SESSION_BUDGET_RETENTION_DAYS"],
+    SESSION_BUDGET_RETENTION_DAYS_DEFAULT,
+  );
+  return n > 0 ? n : SESSION_BUDGET_RETENTION_DAYS_DEFAULT;
+}
+
+// USD-per-1M-token rates used to normalize raw token counts into a rough
+// costEstimate at record time. Override with
+// AGENTMEMORY_COST_IN_PER_1M / AGENTMEMORY_COST_OUT_PER_1M.
+export function getCostRatesPer1M(): { input: number; output: number } {
+  const env = getMergedEnv();
+  const input = parseFloat(env["AGENTMEMORY_COST_IN_PER_1M"] ?? "");
+  const output = parseFloat(env["AGENTMEMORY_COST_OUT_PER_1M"] ?? "");
+  return {
+    input: Number.isFinite(input) && input >= 0 ? input : 0.14,
+    output: Number.isFinite(output) && output >= 0 ? output : 0.28,
+  };
+}
+
 export function isStandaloneMcp(): boolean {
   return getMergedEnv()["STANDALONE_MCP"] === "true";
 }

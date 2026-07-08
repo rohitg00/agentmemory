@@ -88,6 +88,7 @@ import { registerTemporalGraphFunctions } from "./functions/temporal-graph.js";
 import { registerRetentionFunctions } from "./functions/retention.js";
 import { registerCompressFileFunction } from "./functions/compress-file.js";
 import { registerReplayFunctions } from "./functions/replay.js";
+import { registerSessionBudgetFunctions,initSessionBudgetMeter} from "./functions/session-budget.js";
 import { registerApiTriggers } from "./triggers/api.js";
 import { registerEventTriggers } from "./triggers/events.js";
 import { registerMcpEndpoints } from "./mcp/server.js";
@@ -220,6 +221,7 @@ async function main() {
   const secret = getEnvVar("AGENTMEMORY_SECRET");
   const metricsStore = new MetricsStore(kv);
   const dedupMap = new DedupMap();
+  initSessionBudgetMeter(kv, sdk);
 
   const vectorIndex = embeddingProvider ? new VectorIndex() : null;
 
@@ -332,6 +334,7 @@ async function main() {
   registerRetentionFunctions(sdk, kv);
   registerCompressFileFunction(sdk, kv, provider);
   registerReplayFunctions(sdk, kv);
+  registerSessionBudgetFunctions(sdk, kv);
   bootLog(
     `v0.6 advanced retrieval: sliding-window, query-expansion, temporal-graph, retention-scoring`,
   );
@@ -518,7 +521,7 @@ async function main() {
     `Ready. ${embeddingProvider ? "Triple-stream (BM25+Vector+Graph)" : "BM25+Graph"} search active.`,
   );
   bootLog(
-    `REST API: 128 endpoints at http://localhost:${config.restPort}/agentmemory/*`,
+    `REST API: 129 endpoints at http://localhost:${config.restPort}/agentmemory/*`,
   );
   bootLog(
     `MCP surface (opt-in via \`npx @agentmemory/mcp\`): ${getAllTools().length} tools · 6 resources · 3 prompts`,
@@ -578,6 +581,19 @@ async function main() {
     } catch {}
   }, 60 * 60 * 1000);
   recentSearchesSweepTimer.unref();
+
+  // reap token budgets for sessions whose endedAt +
+  // retention window has passed (plus orphaned rows).
+  // Hourly, unref'd so it never holds the process open.
+  const sessionBudgetReapTimer = setInterval(async () => {
+    try {
+      await sdk.trigger({
+        function_id: "mem::session::budget::reap",
+        payload: {},
+      });
+    } catch {}
+  }, 60 * 60 * 1000);
+  sessionBudgetReapTimer.unref();
 
   if (isConsolidationEnabled()) {
     const consolidationTimer = setInterval(async () => {

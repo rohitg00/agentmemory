@@ -278,6 +278,14 @@ export function registerObserveFunction(
               ? { firstPrompt: trimmedPrompt }
               : {}),
           });
+          // OpenCode and other plugins that skip
+          // POST /session/start create the session here; seed its token
+          // budget too so background compress/summarize spend is capped.
+          sdk.trigger({
+            function_id: "mem::session::budget::init",
+            payload: { sessionId: payload.sessionId },
+            action: TriggerAction.Void(),
+          });
         }
 
         // Per-observation LLM compression is opt-in as of 0.8.8.

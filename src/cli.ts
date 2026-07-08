@@ -1395,13 +1395,14 @@ async function runStatus() {
   }
 
   try {
-    const [healthRes, sessionsRes, graphRes, memoriesRes, flagsRes, followupRes] = await Promise.all([
+    const [healthRes, sessionsRes, graphRes, memoriesRes, flagsRes, followupRes, budgetsRes] = await Promise.all([
       apiFetch<any>(base, "health"),
       apiFetch<any>(base, "sessions"),
       apiFetch<any>(base, "graph/stats"),
       apiFetch<any>(base, "memories?count=true"),
       apiFetch<any>(base, "config/flags"),
       apiFetch<any>(base, "diagnostics/followup"),
+      apiFetch<any>(base, "session/budget").catch(() => null),
     ]);
 
     if (typeof healthRes?.viewerPort === "number") {
@@ -1469,6 +1470,33 @@ async function runStatus() {
       lines.push("");
       lines.push(
         `Followup rate: ${hits}/${total} (${pct}%) within ${followupRes.windowSeconds}s — directional, may overcount on refinement`,
+      );
+    }
+
+    const budgetList = Array.isArray(budgetsRes?.budgets) ? budgetsRes.budgets : [];
+    const sessionBudgets = budgetList.filter(
+      (b: any) => b && b.sessionId && b.sessionId !== "__system__",
+    );
+    if (sessionBudgets.length > 0) {
+      let exhausted = 0;
+      let nearCap = 0;
+      let active = 0;
+      for (const b of sessionBudgets) {
+        const used = Number(b.tokensUsed) || 0;
+        const cap = Number(b.tokenCap) || 0;
+        const isExhausted = Boolean(b.exhaustedAt) || (cap > 0 && used >= cap);
+        if (isExhausted) {
+          exhausted++;
+        } else if (b.warnEmittedAt || (cap > 0 && used >= cap * 0.8)) {
+          nearCap++;
+          active++;
+        } else {
+          active++;
+        }
+      }
+      lines.push("");
+      lines.push(
+        `Token budgets: ${active} active, ${nearCap} near-cap, ${exhausted} exhausted`,
       );
     }
 

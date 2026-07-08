@@ -19,6 +19,8 @@ import { validateOutput } from "../eval/validator.js";
 import { scoreSummary } from "../eval/quality.js";
 import type { MetricsStore } from "../eval/metrics-store.js";
 import { safeAudit } from "./audit.js";
+import { withSession } from "../state/session-context.js";
+import { getSessionBudgetMeter } from "./session-budget.js";
 import { logger } from "../logger.js";
 
 // Per-chunk observation budget when a session is too large to fit in one
@@ -105,6 +107,7 @@ async function produceSummaryXml(
   mode: "single" | "chunked";
   chunks: number;
   skipped?: number;
+  truncated?: boolean;
 }> {
   const chunkSize = getChunkSize();
   if (compressed.length <= chunkSize) {
@@ -132,7 +135,23 @@ async function produceSummaryXml(
   // so the reduce step sees partials in chronological order even when some
   // were skipped.
   const partialByIdx: Array<SessionSummary | null> = new Array(chunks.length).fill(null);
+  let truncated = false;
+  let processedChunks = 0;
+  const meter = getSessionBudgetMeter();
   for (let batchStart = 0; batchStart < chunks.length; batchStart += concurrency) {
+    // BEFORE dispatching the next batch when the
+    // session's token cap is exhausted. The in-flight batch already
+    // completed; we reduce over whatever partials we have and mark the
+    // summary truncated rather than burning past the cap.
+    if (batchStart > 0 && (await meter.isExhausted(sessionId))) {
+      truncated = true;
+      logger.warn("Summarize aborted mid-session: token budget exhausted", {
+        sessionId,
+        processedChunks,
+        totalChunks: chunks.length,
+      });
+      break;
+    }
     const batch = chunks.slice(batchStart, batchStart + concurrency);
     await Promise.all(
       batch.map(async (chunk, j) => {
@@ -147,14 +166,20 @@ async function produceSummaryXml(
         );
       }),
     );
+    processedChunks += batch.length;
   }
 
-  const skipped = partialByIdx.filter((p) => p === null).length;
+  // When truncated, only the chunks we actually attempted count toward the
+  // skip ratio — unprocessed tail chunks aren't failures.
+  const consideredChunks = truncated ? processedChunks : chunks.length;
+  const skipped = partialByIdx
+    .slice(0, consideredChunks)
+    .filter((p) => p === null).length;
   const partials = partialByIdx.filter((p): p is SessionSummary => p !== null);
 
-  if (skipped > Math.floor(chunks.length * MAX_SKIP_RATIO)) {
+  if (skipped > Math.floor(consideredChunks * MAX_SKIP_RATIO)) {
     throw new Error(
-      `too_many_chunks_skipped: ${skipped}/${chunks.length} chunks failed to parse after retry`,
+      `too_many_chunks_skipped: ${skipped}/${consideredChunks} chunks failed to parse after retry`,
     );
   }
   if (skipped > 0) {
@@ -163,6 +188,23 @@ async function produceSummaryXml(
       skipped,
       total: chunks.length,
     });
+  }
+
+  // When truncated, the budget is already exhausted — a reduce LLM call
+  // would be blocked by the same gate and throw away the partial work.
+  // Merge the partials deterministically (no LLM) so the truncated summary
+  // is still persisted.
+  if (truncated) {
+    if (partials.length === 0) {
+      return { response: "", mode: "chunked", chunks: processedChunks, skipped, truncated };
+    }
+    return {
+      response: synthesizeReducedXml(partials),
+      mode: "chunked",
+      chunks: processedChunks,
+      skipped,
+      truncated,
+    };
   }
 
   const reduceInput = partials.map((p) => {
@@ -177,11 +219,67 @@ async function produceSummaryXml(
       obsRangeEnd: Math.min((originalIdx + 1) * chunkSize, compressed.length),
     };
   });
-  const response = await provider.summarize(
-    REDUCE_SYSTEM,
-    buildReducePrompt(reduceInput),
+  // The reduce call can be blocked if the final chunk pushed the session
+  // over its cap (no mid-loop trigger fired). Rather than lose the whole
+  // summary, fall back to the deterministic merge and mark it truncated.
+  let response: string;
+  try {
+    response = await provider.summarize(
+      REDUCE_SYSTEM,
+      buildReducePrompt(reduceInput),
+    );
+  } catch (err) {
+    if (
+      err instanceof Error &&
+      err.message === "session_budget_exhausted" &&
+      partials.length > 0
+    ) {
+      return {
+        response: synthesizeReducedXml(partials),
+        mode: "chunked",
+        chunks: chunks.length,
+        skipped,
+        truncated: true,
+      };
+    }
+    throw err;
+  }
+  return {
+    response,
+    mode: "chunked",
+    chunks: chunks.length,
+    skipped,
+    truncated,
+  };
+}
+
+// Deterministic merge of chunk partials into a parseable summary XML, used
+// only on the truncated (budget-exhausted) path where an LLM reduce call
+// is not permitted.
+function synthesizeReducedXml(partials: SessionSummary[]): string {
+  const esc = (s: string) =>
+    String(s ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+  const uniq = (xs: string[]) => [...new Set(xs.filter(Boolean))];
+  const title = esc(partials[0]?.title || "Session summary (partial)");
+  const narrative = esc(
+    partials
+      .map((p) => p.narrative)
+      .filter(Boolean)
+      .join(" "),
   );
-  return { response, mode: "chunked", chunks: chunks.length, skipped };
+  const decisions = uniq(partials.flatMap((p) => p.keyDecisions || []));
+  const files = uniq(partials.flatMap((p) => p.filesModified || []));
+  const concepts = uniq(partials.flatMap((p) => p.concepts || []));
+  return (
+    `<summary><title>${title}</title>` +
+    `<narrative>${narrative}</narrative>` +
+    `<decisions>${decisions.map((d) => `<decision>${esc(d)}</decision>`).join("")}</decisions>` +
+    `<files>${files.map((f) => `<file>${esc(f)}</file>`).join("")}</files>` +
+    `<concepts>${concepts.map((c) => `<concept>${esc(c)}</concept>`).join("")}</concepts></summary>`
+  );
 }
 
 // #783: many LLMs (DeepSeek, GPT variants, some Anthropic responses)
@@ -233,7 +331,8 @@ export function registerSummarizeFunction(
   metricsStore?: MetricsStore,
 ): void {
   sdk.registerFunction("mem::summarize", 
-    async (data: { sessionId: string } | undefined) => {
+    async (data: { sessionId: string } | undefined) =>
+      withSession(data?.sessionId, async () => {
       const startMs = Date.now();
       if (!data || typeof data.sessionId !== "string" || !data.sessionId.trim()) {
         return { success: false, error: "sessionId is required" };
@@ -282,6 +381,7 @@ export function registerSummarizeFunction(
         let response = "";
         let mode = "single";
         let chunks = 1;
+        let truncated = false;
         for (let attempt = 1; attempt <= 2; attempt++) {
           const produced = await produceSummaryXml(
             provider,
@@ -292,6 +392,7 @@ export function registerSummarizeFunction(
           response = produced.response;
           mode = produced.mode;
           chunks = produced.chunks;
+          truncated = produced.truncated ?? false;
           if (!response || !response.trim()) {
             logger.warn("Empty provider response on summarize", {
               sessionId,
@@ -356,10 +457,13 @@ export function registerSummarizeFunction(
 
         const qualityScore = scoreSummary(summaryForValidation);
 
+        if (truncated) summary.truncated = true;
+
         await kv.set(KV.summaries, sessionId, summary);
         await safeAudit(kv, "compress", "mem::summarize", [sessionId], {
           title: summary.title,
           observationCount: compressed.length,
+          ...(truncated ? { truncated: true } : {}),
         });
 
         const latencyMs = Date.now() - startMs;
@@ -393,6 +497,6 @@ export function registerSummarizeFunction(
         });
         return { success: false, error: msg };
       }
-    },
+    }),
   );
 }

@@ -104,6 +104,35 @@ export function registerEventTriggers(sdk: ISdk, kv: StateKV): void {
     config: { topic: "agentmemory.session.ended" },
   });
 
+  // Estimated-token-per-session budget lifecycle events. mem::session::budget::record
+  // fires these when a session crosses 80% (soft warn) or hits its cap
+  // (exhausted). Each fans the budget out to the viewer stream group so
+  // dashboards can surface near-cap / exhausted sessions in real time.
+  const registerBudgetEvent = (
+    functionId: string,
+    eventType: string,
+  ): void => {
+    sdk.registerFunction(
+      functionId,
+      async (data: { budget?: unknown }) => {
+        await sdk.trigger({
+          function_id: "stream::send",
+          payload: {
+            stream_name: STREAM.name,
+            group_id: STREAM.viewerGroup,
+            id: `${eventType}-${Date.now()}`,
+            type: eventType,
+            data: { budget: data?.budget ?? null },
+          },
+          action: TriggerAction.Void(),
+        });
+        return { emitted: true };
+      },
+    );
+  };
+  registerBudgetEvent("event::mem::budget::soft-warned", "budget.soft_warned");
+  registerBudgetEvent("event::mem::budget::exhausted", "budget.exhausted");
+
   // React to observation count changes and emit a lightweight live event for dashboards/viewer.
   sdk.registerFunction(
     "event::session::observation-count-changed",

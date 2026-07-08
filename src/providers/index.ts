@@ -55,7 +55,7 @@ function defaultModelFor(providerType: ProviderConfig["provider"]): string {
 }
 
 export function createProvider(config: ProviderConfig): ResilientProvider {
-  return new ResilientProvider(createBaseProvider(config));
+  return new ResilientProvider(createBaseProvider(config), config.model);
 }
 
 export function createFallbackProvider(
@@ -87,9 +87,9 @@ export function createFallbackProvider(
   }
 
   if (providers.length > 1) {
-    return new ResilientProvider(new FallbackChainProvider(providers));
+    return new ResilientProvider(new FallbackChainProvider(providers),config.model,);
   }
-  return new ResilientProvider(providers[0]);
+  return new ResilientProvider(providers[0], config.model);
 }
 
 function createBaseProvider(config: ProviderConfig): MemoryProvider {

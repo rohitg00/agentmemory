@@ -1,5 +1,5 @@
 import { TriggerAction, type ISdk, type ApiRequest } from "iii-sdk";
-import type { Session, CompressedObservation, HookPayload, CommitLink, SessionSummary } from "../types.js";
+import type { Session, CompressedObservation, HookPayload, CommitLink, SessionSummary, SessionBudget } from "../types.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
@@ -594,6 +594,21 @@ export function registerApiTriggers(
         ...(agentId ? { agentId } : {}),
       };
       await kv.set(KV.sessions, sessionId, session);
+      // Seed the per-session token budget. An optional
+      // tokenCap in the request body overrides the global default for this
+      // session only; init is idempotent so a re-fired start never resets
+      // a live counter.
+      const tokenCap = parseOptionalInt(body.tokenCap);
+      sdk.trigger({
+        function_id: "mem::session::budget::init",
+        payload: {
+          sessionId,
+          ...(typeof tokenCap === "number" && tokenCap > 0
+            ? { tokenCap }
+            : {}),
+        },
+        action: TriggerAction.Void(),
+      });
       const contextResult = await sdk.trigger<
         { sessionId: string; project: string },
         { context: string }
@@ -651,6 +666,33 @@ export function registerApiTriggers(
       http_method: "POST",
       middleware_function_ids: ["middleware::api-auth"],
     },
+  });
+
+  // Read per-session token-budget state. With ?sessionId,
+  // returns that session's budget; without it, returns all budget rows
+  // (used by `agentmemory status` and the viewer to surface near-cap and
+  // exhausted sessions).
+  sdk.registerFunction("api::session::budget",
+    async (req: ApiRequest): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const sessionId = asNonEmptyString(req.query_params?.["sessionId"]);
+      if (sessionId) {
+        const budget = await kv
+          .get<SessionBudget>(KV.sessionBudget, sessionId)
+          .catch(() => null);
+        return { status_code: 200, body: { budget: budget ?? null } };
+      }
+      const budgets = await kv
+        .list<SessionBudget>(KV.sessionBudget)
+        .catch(() => [] as SessionBudget[]);
+      return { status_code: 200, body: { budgets } };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::session::budget",
+    config: { api_path: "/agentmemory/session/budget", http_method: "GET" },
   });
 
   sdk.registerFunction("api::summarize", 

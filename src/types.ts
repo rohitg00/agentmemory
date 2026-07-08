@@ -114,6 +114,21 @@ export interface SessionSummary {
   filesModified: string[];
   concepts: string[];
   observationCount: number;
+  truncated?: boolean;
+}
+
+export interface SessionBudget {
+  sessionId: string;
+  tokenCap: number;
+  tokensUsed: number;
+  inputTokens: number;
+  outputTokens: number;
+  costEstimate: number;
+  callCount: number;
+  warnEmittedAt?: string;
+  exhaustedAt?: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export type HookType =
@@ -608,7 +623,9 @@ export interface AuditEntry {
     | "slot_replace"
     | "slot_create"
     | "slot_delete"
-    | "slot_reflect";
+    | "slot_reflect"
+    | "budget_warn"
+    | "budget_exhausted";
   userId?: string;
   functionId: string;
   targetIds: string[];

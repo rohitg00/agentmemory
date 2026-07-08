@@ -16,6 +16,8 @@ import {
 import { VISION_DESCRIPTION_PROMPT } from "../prompts/vision.js";
 import { getXmlTag, getXmlChildren } from "../prompts/xml.js";
 import { getSearchIndex, vectorIndexAddGuarded } from "./search.js";
+import { buildSyntheticCompression } from "./compress-synthetic.js";
+import { withSession } from "../state/session-context.js";
 import { CompressOutputSchema } from "../eval/schemas.js";
 import { validateOutput } from "../eval/validator.js";
 import { scoreCompression } from "../eval/quality.js";
@@ -75,7 +77,7 @@ export function registerCompressFunction(
       observationId: string;
       sessionId: string;
       raw: RawObservation;
-    }) => {
+    }) => withSession(data.sessionId, async () => {
       const startMs = Date.now();
 
       let imageDescription: string | undefined;
@@ -253,6 +255,43 @@ export function registerCompressFunction(
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         const latencyMs = Date.now() - startMs;
+
+        // the session's token cap is exhausted. Don't drop
+        // the observation — fall back to zero-LLM synthetic compression so
+        // recall/search still work, exactly as if AGENTMEMORY_AUTO_COMPRESS
+        // were off, until the budget is reset or the session ends.
+        if (msg === "session_budget_exhausted") {
+          const synthetic = buildSyntheticCompression(data.raw);
+          synthetic.id = data.observationId;
+          synthetic.sessionId = data.sessionId;
+          await kv.set(
+            KV.observations(data.sessionId),
+            data.observationId,
+            synthetic,
+          );
+          try {
+            getSearchIndex().add(synthetic);
+          } catch {}
+          await vectorIndexAddGuarded(
+            synthetic.id,
+            synthetic.sessionId,
+            synthetic.title + " " + (synthetic.narrative || ""),
+            { kind: "synthetic", logId: synthetic.id },
+          ).catch(() => {});
+          if (metricsStore) {
+            await metricsStore.record("mem::compress", latencyMs, false);
+          }
+          logger.warn("Compression budget exhausted; stored synthetic", {
+            obsId: data.observationId,
+            sessionId: data.sessionId,
+          });
+          return {
+            success: true,
+            compressed: synthetic,
+            budgetExhausted: true,
+          };
+        }
+
         if (metricsStore) {
           await metricsStore.record("mem::compress", latencyMs, false);
         }
@@ -262,6 +301,6 @@ export function registerCompressFunction(
         });
         return { success: false, error: "compression_failed" };
       }
-    },
+    }),
   );
 }

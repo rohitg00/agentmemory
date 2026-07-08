@@ -72,6 +72,10 @@ export const KV = {
   // #771: tracks the most recent smart-search call per session, used by
   // the followup-rate diagnostic. Key = sessionId. TTL-swept hourly.
   recentSearches: "mem:recent-searches",
+  // estimated-token-per-session LLM token budget. Key = sessionId (or the
+  // "__system__" sentinel for cron / cross-session LLM calls). Reaped by
+  // mem::session::budget::reap once a session's endedAt + retention passes.
+  sessionBudget: "mem:session-budget",
 } as const;
 
 export const STREAM = {

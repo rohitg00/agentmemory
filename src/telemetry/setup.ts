@@ -61,6 +61,7 @@ interface Histograms {
   qualityScore: Histogram;
   embeddingLatency: Histogram;
   vectorSearchLatency: Histogram;
+  sessionTokensUsed: Histogram;
 }
 
 type Meter = {
@@ -105,6 +106,7 @@ const HISTOGRAM_NAMES: Array<[keyof Histograms, string]> = [
   ["qualityScore", "quality.score"],
   ["embeddingLatency", "embedding.latency_ms"],
   ["vectorSearchLatency", "vector_search.latency_ms"],
+  ["sessionTokensUsed", "session.tokens_used"],
 ];
 
 // Accessors so functions outside `initMetrics`'s closure can record into

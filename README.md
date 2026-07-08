@@ -1295,6 +1295,18 @@ Quality vs cost tradeoff for memory work: compression is a summarization task wi
 
 Sources: [OpenRouter pricing for Sonnet 4.6](https://openrouter.ai/anthropic/claude-sonnet-4.6/pricing), [DeepSeek V4 Pro](https://openrouter.ai/deepseek/deepseek-v4-pro), [DeepSeek pricing notes](https://api-docs.deepseek.com/quick_start/pricing/).
 
+### Per-session token budget
+
+Pathological sessions (long-running CC instances, runaway tool loops) can rack up unbounded background compress/summarize spend. Each session gets a running token budget with a **hard cap** (default **100k estimated tokens**) and an **80% soft warning**.
+
+| Knob | Default | Purpose |
+|------|---------|---------|
+| `AGENTMEMORY_SESSION_TOKEN_CAP` | `100000` | Hard cap per session. Once exceeded, further LLM calls for that session are blocked; compression falls back to zero-LLM synthetic output. |
+| `AGENTMEMORY_SYSTEM_TOKEN_CAP` | `1000000` | Separate cap for cron-fired / cross-session LLM work (consolidation, reflect) tracked under the `__system__` sentinel. |
+| `AGENTMEMORY_SESSION_BUDGET_RETENTION_DAYS` | `7` | How long budget rows persist after a session ends before the hourly reaper deletes them. |
+
+Per-session override: pass `tokenCap` in the body of `POST /agentmemory/session/start`. Budget state is KV-persisted and survives restarts. `agentmemory status` reports `N active, M near-cap, K exhausted`. OTEL histogram: `session.tokens_used`.
+
 ### Multi-agent memory (`AGENT_ID` + `AGENTMEMORY_AGENT_SCOPE`)
 
 In multi-agent setups where several roles share one agentmemory server (architect / developer / reviewer / researcher / support-agent), `AGENT_ID` tags every write with the role that made it. `AGENTMEMORY_AGENT_SCOPE` controls whether recall filters by that tag.
@@ -1449,6 +1461,13 @@ Create `~/.agentmemory/.env`:
                                    # LLM provider to compress the
                                    # observation — expect significant
                                    # token spend on active sessions.
+# AGENTMEMORY_SESSION_TOKEN_CAP=100000  # Per-session hard cap on estimated
+                                        # LLM tokens (compress + summarize).
+                                        # Soft-warn at 80%; synthetic fallback
+                                        # after exhaustion. Override per
+                                        # session via tokenCap on /session/start.
+# AGENTMEMORY_SYSTEM_TOKEN_CAP=1000000  # Cap for cron / cross-session LLM work.
+# AGENTMEMORY_SESSION_BUDGET_RETENTION_DAYS=7
 # AGENTMEMORY_SLOTS=false          # OFF by default. Editable pinned
                                    # memory slots — persona,
                                    # user_preferences, tool_guidelines,
@@ -1501,7 +1520,7 @@ Create `~/.agentmemory/.env`:
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/section-api.svg"><img src="assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-128 endpoints on port `3111`. The REST API binds to `127.0.0.1` by default. Protected endpoints require `Authorization: Bearer <secret>` when `AGENTMEMORY_SECRET` is set, and mesh sync endpoints require `AGENTMEMORY_SECRET` on both peers.
+129 endpoints on port `3111`. The REST API binds to `127.0.0.1` by default. Protected endpoints require `Authorization: Bearer <secret>` when `AGENTMEMORY_SECRET` is set, and mesh sync endpoints require `AGENTMEMORY_SECRET` on both peers.
 
 <details>
 <summary>Key endpoints</summary>
