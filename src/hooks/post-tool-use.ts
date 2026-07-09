@@ -10,6 +10,23 @@ function isSdkChildContext(payload: unknown): boolean {
 const REST_URL = process.env["AGENTMEMORY_URL"] || "http://localhost:3111";
 const SECRET = process.env["AGENTMEMORY_SECRET"] || "";
 
+// #993: agentmemory's own MCP tools (memory_recall, memory_smart_search,
+// etc.) create observations when they run — those observations then surface
+// in later recall results, creating a feedback loop that pollutes the corpus.
+// Skip capture for any tool whose name starts with "memory_" or "mem::".
+const SELF_CAPTURE_PREFIXES = ["memory_", "mem::"];
+
+function isSelfCaptureTool(toolName: unknown): boolean {
+  if (typeof toolName !== "string") return false;
+  return SELF_CAPTURE_PREFIXES.some((p) => toolName.startsWith(p));
+}
+
+// #993: allow users to disable all post-tool-use observation capture via
+// AGENTMEMORY_CAPTURE_TOOL_USE=false. Mirrors the opt-in/opt-out pattern
+// used by AGENTMEMORY_INJECT_CONTEXT on pre-tool-use.
+const CAPTURE_TOOL_USE =
+  process.env["AGENTMEMORY_CAPTURE_TOOL_USE"] !== "false";
+
 function authHeaders(): Record<string, string> {
   const h: Record<string, string> = { "Content-Type": "application/json" };
   if (SECRET) h["Authorization"] = `Bearer ${SECRET}`;
@@ -34,6 +51,11 @@ async function main() {
   const sessionId = ((data.session_id || data.sessionId) as string) || "unknown";
   const toolName = data.tool_name ?? data.toolName;
   const toolInput = data.tool_input ?? data.toolArgs;
+
+  // #993: skip self-capturing agentmemory's own MCP tools and allow
+  // users to disable all post-tool-use observation via env override.
+  if (!CAPTURE_TOOL_USE) return;
+  if (isSelfCaptureTool(toolName)) return;
 
   const { imageData, cleanOutput } = extractImageData(toolOutput(data));
 

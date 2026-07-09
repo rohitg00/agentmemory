@@ -350,6 +350,16 @@ async function main() {
     bootLog(
       `Git snapshots: ${snapshotConfig.dir} (every ${snapshotConfig.interval}s)`,
     );
+    // #1006: actually schedule the periodic snapshot timer. Previously
+    // the interval was read and logged but never passed to setInterval,
+    // so snapshots only happened on manual trigger.
+    const snapshotIntervalMs = snapshotConfig.interval * 1000;
+    const snapshotTimer = setInterval(async () => {
+      try {
+        await sdk.trigger({ function_id: "mem::snapshot-create", payload: {} });
+      } catch {}
+    }, snapshotIntervalMs);
+    snapshotTimer.unref();
   }
 
   const bm25Index = getSearchIndex();

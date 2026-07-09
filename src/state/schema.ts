@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { hasCjk, segmentCjk } from "./cjk-segmenter.js";
 
 export const KV = {
   sessions: "mem:sessions",
@@ -91,9 +92,52 @@ export function fingerprintId(prefix: string, content: string): string {
   return `${prefix}_${hash.slice(0, 16)}`;
 }
 
+/**
+ * CJK-aware tokenizer for Jaccard similarity.
+ *
+ * For English/whitespace-delimited text we keep the original behaviour:
+ * split on whitespace, filter tokens longer than 2 characters.
+ *
+ * For CJK text (Chinese/Japanese/Korean) whitespace splitting produces
+ * near-disjoint sets because CJK text is typically written without spaces.
+ * We reuse the existing `segmentCjk` function and additionally emit
+ * character bigrams from CJK runs so that no-space Chinese text still
+ * produces useful overlap.
+ */
+function tokenizeForJaccard(text: string): Set<string> {
+  // Fast path: no CJK characters → original whitespace split
+  if (!hasCjk(text)) {
+    return new Set(text.split(/\s+/).filter((t) => t.length > 2));
+  }
+
+  // CJK path: segment + add character bigrams for overlap
+  const segments = segmentCjk(text);
+  const tokens = new Set<string>();
+
+  for (const seg of segments) {
+    // Keep the whole segment as a token (works for word-segmented Chinese
+    // via jieba, and for English fragments in mixed text).
+    const cleaned = seg.replace(/[^\p{L}\p{N}]/gu, "").toLowerCase();
+    if (cleaned.length > 2) {
+      tokens.add(cleaned);
+    }
+
+    // Add CJK character bigrams from each segment so unsegmented CJK
+    // text can still produce meaningful overlap.
+    const cjkChars = seg.match(/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/gu);
+    if (cjkChars && cjkChars.length >= 2) {
+      for (let i = 0; i < cjkChars.length - 1; i++) {
+        tokens.add(cjkChars[i] + cjkChars[i + 1]);
+      }
+    }
+  }
+
+  return tokens;
+}
+
 export function jaccardSimilarity(a: string, b: string): number {
-  const setA = new Set(a.split(/\s+/).filter((t) => t.length > 2));
-  const setB = new Set(b.split(/\s+/).filter((t) => t.length > 2));
+  const setA = tokenizeForJaccard(a);
+  const setB = tokenizeForJaccard(b);
   if (setA.size === 0 && setB.size === 0) return 1;
   if (setA.size === 0 || setB.size === 0) return 0;
   let intersection = 0;
