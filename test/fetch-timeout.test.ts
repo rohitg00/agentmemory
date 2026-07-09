@@ -91,7 +91,7 @@ describe("Provider hang regression — MinimaxProvider", () => {
   });
 
   it("compress() aborts after timeout when upstream hangs", async () => {
-    const provider = new MinimaxProvider("test-key", "MiniMax-M2.7", 800);
+    const provider = new MinimaxProvider("test-key", "MiniMax-M3", 800);
     await expect(provider.compress("system", "user")).rejects.toThrow();
   });
 });
