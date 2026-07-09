@@ -131,9 +131,10 @@ export default function agentmemoryExtension(pi: ExtensionAPI) {
   async function refreshStatus(ctx: { ui: { setStatus: (key: string, text: string) => void } }) {
     // Capture the setter while ctx is still active. After await getHealth(), the
     // session may have been replaced/reloaded and ctx.ui would throw stale.
-    let setStatus: ((key: string, text: string) => void) | undefined;
+    let setStatus: (key: string, text: string) => void;
     try {
-      setStatus = ctx.ui.setStatus.bind(ctx.ui);
+      const ui = ctx.ui;
+      setStatus = ui.setStatus.bind(ui);
     } catch {
       return;
     }
