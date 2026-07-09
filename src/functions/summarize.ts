@@ -260,7 +260,7 @@ export function registerSummarizeFunction(
         return { success: false, error: "no_observations" };
       }
 
-      if (provider.name === "noop") {
+      if (provider.name === "noop" || provider.name === "resilient(noop)") {
         logger.info("Summarize skipped — no LLM provider configured", {
           sessionId,
         });

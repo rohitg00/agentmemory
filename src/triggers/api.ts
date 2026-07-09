@@ -36,6 +36,11 @@ function parseOptionalInt(raw: unknown): number | undefined {
   return Number.isFinite(n) ? n : undefined;
 }
 
+function parsePositiveLimit(raw: unknown): number | undefined {
+  const n = parseOptionalInt(raw);
+  return n !== undefined && n > 0 ? n : undefined;
+}
+
 function checkAuth(
   req: ApiRequest,
   secret: string | undefined,
@@ -502,7 +507,9 @@ export function registerApiTriggers(
       sessions.sort((a, b) =>
         (b.startedAt || "").localeCompare(a.startedAt || ""),
       );
-      return { status_code: 200, body: { success: true, sessions } };
+      const limit = parsePositiveLimit(req.query_params?.["limit"]);
+      const limited = limit !== undefined ? sessions.slice(0, limit) : sessions;
+      return { status_code: 200, body: { success: true, sessions: limited } };
     },
   );
   sdk.registerTrigger({
@@ -823,12 +830,14 @@ export function registerApiTriggers(
       const filtered = filterAgentId
         ? sessions.filter((s) => s.agentId === filterAgentId)
         : sessions;
+      const limit = parsePositiveLimit(req.query_params?.["limit"]);
+      const sliced = limit !== undefined ? filtered.slice(0, limit) : filtered;
       const summaries = await Promise.all(
-        filtered.map((s) =>
+        sliced.map((s) =>
           kv.get<SessionSummary>(KV.summaries, s.id).catch(() => null),
         ),
       );
-      const withSummary = filtered.map((s, i) =>
+      const withSummary = sliced.map((s, i) =>
         summaries[i] ? { ...s, summary: summaries[i] } : s,
       );
       return { status_code: 200, body: { sessions: withSummary } };
@@ -1001,7 +1010,56 @@ export function registerApiTriggers(
     config: { api_path: "/agentmemory/remember", http_method: "POST" },
   });
 
-  sdk.registerFunction("api::forget", 
+  sdk.registerFunction("api::memory-update",
+    async (
+      req: ApiRequest<{
+        memoryId: string;
+        content: string;
+        type?: string;
+        concepts?: string[];
+        files?: string[];
+        ttlDays?: number;
+        agentId?: string;
+      }>,
+    ): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      if (!req.body?.memoryId) {
+        return { status_code: 400, body: { error: "memoryId is required" } };
+      }
+      if (
+        !req.body?.content ||
+        typeof req.body.content !== "string" ||
+        !req.body.content.trim()
+      ) {
+        return { status_code: 400, body: { error: "content is required" } };
+      }
+      const result = await sdk.trigger({
+        function_id: "mem::update",
+        payload: {
+          memoryId: req.body.memoryId,
+          content: req.body.content,
+          ...(req.body.type !== undefined && { type: req.body.type }),
+          ...(req.body.concepts !== undefined && { concepts: req.body.concepts }),
+          ...(req.body.files !== undefined && { files: req.body.files }),
+          ...(req.body.ttlDays !== undefined && { ttlDays: req.body.ttlDays }),
+          ...(req.body.agentId !== undefined && { agentId: req.body.agentId }),
+        },
+      });
+      const r = result as { success: boolean; error?: string };
+      if (!r.success && r.error === "memory not found") {
+        return { status_code: 404, body: result };
+      }
+      return { status_code: 200, body: result };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::memory-update",
+    config: { api_path: "/agentmemory/memories/update", http_method: "PUT" },
+  });
+
+  sdk.registerFunction("api::forget",
     async (
       req: ApiRequest<{
         sessionId?: string;
@@ -1027,14 +1085,26 @@ export function registerApiTriggers(
     config: { api_path: "/agentmemory/forget", http_method: "POST" },
   });
 
-  sdk.registerFunction("api::consolidate", 
+  sdk.registerFunction("api::consolidate",
     async (
       req: ApiRequest<{ project?: string; minObservations?: number }>,
     ): Promise<Response> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
-      const result = await sdk.trigger({ function_id: "mem::consolidate", payload: req.body });
-      return { status_code: 200, body: result };
+      try {
+        const result = await sdk.trigger({ function_id: "mem::consolidate", payload: req.body });
+        return { status_code: 200, body: result };
+      } catch (err) {
+        // #1008: without this catch the engine's default error handler
+        // stringifies the Error as "[object Object]" instead of exposing
+        // the actual .message.
+        const message = err instanceof Error ? err.message : String(err);
+        logger.warn("api::consolidate failed", { error: message });
+        return {
+          status_code: 500,
+          body: { error: message },
+        };
+      }
     },
   );
   sdk.registerTrigger({

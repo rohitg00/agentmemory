@@ -339,7 +339,7 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
     expect(joined).toMatch(/AGENTMEMORY_FORCE_PROXY/);
   });
 
-  it("local fallback tools/list returns all 7 IMPLEMENTED_TOOLS regardless of AGENTMEMORY_TOOLS env (#234)", async () => {
+  it("local fallback tools/list returns all 8 IMPLEMENTED_TOOLS regardless of AGENTMEMORY_TOOLS env (#234)", async () => {
     const { handleToolsList } = await import("../src/mcp/standalone.js");
     installFetch(() => {
       throw new Error("ECONNREFUSED");
@@ -355,13 +355,14 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
       "memory_save",
       "memory_sessions",
       "memory_smart_search",
+      "memory_update",
     ]);
-    expect(beforeTools).toHaveLength(7);
+    expect(beforeTools).toHaveLength(8);
 
     resetHandleForTests();
     process.env["AGENTMEMORY_TOOLS"] = "core";
     const core = await handleToolsList();
-    expect((core.tools as unknown[]).length).toBe(7);
+    expect((core.tools as unknown[]).length).toBe(8);
     delete process.env["AGENTMEMORY_TOOLS"];
   });
 
