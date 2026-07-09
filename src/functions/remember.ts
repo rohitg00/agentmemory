@@ -167,6 +167,129 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
     },
   );
 
+  // ── mem::update ─────────────────────────────────────────────────────
+  // Updates an existing memory by ID: sets new content, increments version,
+  // and marks the old memory as superseded.  This fills the gap identified
+  // in #1018 where calling memory_save twice with the same concepts created
+  // two separate v1 memories instead of versioning.
+  sdk.registerFunction("mem::update",
+    async (data: {
+      memoryId: string;
+      content: string;
+      type?: string;
+      concepts?: string[];
+      files?: string[];
+      ttlDays?: number;
+      agentId?: string;
+    }) => {
+      if (!data.memoryId || typeof data.memoryId !== "string") {
+        return { success: false, error: "memoryId is required" };
+      }
+      if (
+        !data.content ||
+        typeof data.content !== "string" ||
+        !data.content.trim()
+      ) {
+        return { success: false, error: "content is required" };
+      }
+
+      return withKeyedLock("mem:update", async () => {
+        const existing = await kv.get<Memory>(KV.memories, data.memoryId);
+        if (!existing) {
+          return { success: false, error: "memory not found" };
+        }
+
+        const now = new Date().toISOString();
+        const newVersion = (existing.version ?? 1) + 1;
+        const validTypes = new Set([
+          "pattern",
+          "preference",
+          "architecture",
+          "bug",
+          "workflow",
+          "fact",
+        ]);
+        const memType = validTypes.has(data.type || "")
+          ? (data.type as Memory["type"])
+          : existing.type;
+
+        const callAgentId =
+          typeof data.agentId === "string" && data.agentId.trim().length > 0
+            ? data.agentId.trim().slice(0, 128)
+            : getAgentId();
+
+        const updated: Memory = {
+          id: existing.id,
+          createdAt: existing.createdAt,
+          updatedAt: now,
+          type: memType,
+          title: data.content.slice(0, 80),
+          content: data.content,
+          concepts: data.concepts ?? existing.concepts,
+          files: data.files ?? existing.files,
+          sessionIds: existing.sessionIds,
+          strength: existing.strength,
+          version: newVersion,
+          parentId: existing.parentId,
+          supersedes: [...(existing.supersedes ?? []), existing.id],
+          sourceObservationIds: existing.sourceObservationIds,
+          isLatest: true,
+          forgetAfter: existing.forgetAfter,
+          ...(existing.imageRef ? { imageRef: existing.imageRef } : {}),
+          ...(existing.imageData ? { imageData: existing.imageData } : {}),
+          ...(callAgentId ? { agentId: callAgentId } : {}),
+          ...(existing.project !== undefined && { project: existing.project }),
+        };
+
+        if (data.ttlDays && typeof data.ttlDays === "number" && data.ttlDays > 0) {
+          updated.forgetAfter = new Date(
+            Date.now() + data.ttlDays * 86400000,
+          ).toISOString();
+        }
+
+        // Mark the old version as no longer latest.
+        existing.isLatest = false;
+        existing.updatedAt = now;
+        await kv.set(KV.memories, existing.id, existing);
+
+        // Save the updated memory in-place (same ID, new version).
+        await kv.set(KV.memories, updated.id, updated);
+
+        // Re-index: remove old content, add new.
+        try {
+          getSearchIndex().remove(existing.id);
+          getSearchIndex().add(memoryToObservation(updated));
+        } catch (err) {
+          logger.warn("Failed to re-index updated memory in BM25", {
+            memId: updated.id,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+        await vectorIndexRemove(updated.id);
+        await vectorIndexAddGuarded(
+          updated.id,
+          updated.sessionIds?.[0] ?? "memory",
+          updated.title + " " + updated.content,
+          { kind: "memory", logId: updated.id },
+        );
+
+        await recordAudit(kv, "update", "mem::update", [updated.id], {
+          memoryId: updated.id,
+          oldVersion: existing.version ?? 1,
+          newVersion,
+          reason: "user-initiated update",
+        });
+
+        logger.info("Memory updated", {
+          memId: updated.id,
+          oldVersion: existing.version ?? 1,
+          newVersion,
+        });
+        return { success: true, memory: updated };
+      });
+    },
+  );
+
   sdk.registerFunction("mem::forget",
     async (data: {
       sessionId?: string;

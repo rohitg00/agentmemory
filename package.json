@@ -1,7 +1,7 @@
 {
-  "name": "@agentmemory/agentmemory",
-  "version": "0.9.27",
-  "description": "Persistent memory for AI coding agents, powered by iii-engine's three primitives",
+  "name": "ziiagentmemory",
+  "version": "0.1.0",
+  "description": "Persistent memory for AI coding agents — CJK-aware dedup, memory_update versioning, standalone MCP server",
   "type": "module",
   "main": "dist/index.mjs",
   "types": "dist/index.d.mts",
@@ -14,6 +14,7 @@
     "./package.json": "./package.json"
   },
   "bin": {
+    "ziiagentmemory": "dist/cli.mjs",
     "agentmemory": "dist/cli.mjs"
   },
   "scripts": {
@@ -53,11 +54,16 @@
     "README.md",
     "AGENTS.md"
   ],
-  "author": "Rohit Ghumare <ghumare64@gmail.com>",
+  "author": "Zeeshan Ahmad <ziishanahmad@gmail.com>",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/rohitg00/agentmemory"
+    "url": "https://github.com/ziishanahmad/ziiagentmemory"
+  },
+  "homepage": "https://github.com/ziishanahmad/ziiagentmemory",
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.142",

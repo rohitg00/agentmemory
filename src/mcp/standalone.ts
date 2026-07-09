@@ -15,6 +15,7 @@ import {
 
 const IMPLEMENTED_TOOLS = new Set([
   "memory_save",
+  "memory_update",
   "memory_recall",
   "memory_smart_search",
   "memory_sessions",
@@ -96,6 +97,7 @@ function textResponse(payload: unknown, pretty = false): {
 interface Validated {
   tool: string;
   content?: string;
+  memoryId?: string;
   type?: string;
   concepts?: string[];
   files?: string[];
@@ -120,6 +122,24 @@ function validate(toolName: string, args: Record<string, unknown>): Validated {
       }
       v.content = content;
       v.type = (args["type"] as string) || "fact";
+      v.concepts = normalizeList(args["concepts"]);
+      v.files = normalizeList(args["files"]);
+      return v;
+    }
+    case "memory_update": {
+      const memoryId = args["memoryId"];
+      if (typeof memoryId !== "string" || !memoryId.trim()) {
+        throw new Error("memoryId is required");
+      }
+      const content = args["content"];
+      if (typeof content !== "string" || !content.trim()) {
+        throw new Error("content is required");
+      }
+      v.memoryId = memoryId;
+      v.content = content;
+      if (typeof args["type"] === "string" && args["type"].trim()) {
+        v.type = args["type"] as string;
+      }
       v.concepts = normalizeList(args["concepts"]);
       v.files = normalizeList(args["files"]);
       return v;
@@ -182,7 +202,21 @@ async function handleProxy(
           files: v.files,
         }),
       });
-      return textResponse(result);
+      return textResponse(result, true);
+    }
+    case "memory_update": {
+      const body: Record<string, unknown> = {
+        memoryId: v.memoryId,
+        content: v.content,
+      };
+      if (v.type) body["type"] = v.type;
+      if (v.concepts) body["concepts"] = v.concepts;
+      if (v.files) body["files"] = v.files;
+      const result = await handle.call("/agentmemory/memories/update", {
+        method: "PUT",
+        body: JSON.stringify(body),
+      });
+      return textResponse(result, true);
     }
     case "memory_recall": {
       const body: Record<string, unknown> = {
@@ -261,6 +295,45 @@ async function handleLocal(
       });
       kvInstance.persist();
       return textResponse({ saved: id });
+    }
+
+    case "memory_update": {
+      const existing = await kvInstance.get<Record<string, unknown>>(
+        "mem:memories",
+        v.memoryId!,
+      );
+      if (!existing) {
+        return textResponse({ success: false, error: "memory not found" });
+      }
+      const oldVersion =
+        typeof existing["version"] === "number" ? existing["version"] : 1;
+      const newVersion = oldVersion + 1;
+      const isoNow = new Date().toISOString();
+      const updated = {
+        ...existing,
+        type: v.type ?? existing["type"],
+        title: (v.content || "").slice(0, 80),
+        content: v.content,
+        concepts: v.concepts ?? existing["concepts"],
+        files: v.files ?? existing["files"],
+        updatedAt: isoNow,
+        version: newVersion,
+        isLatest: true,
+        supersedes: [
+          ...(Array.isArray(existing["supersedes"])
+            ? (existing["supersedes"] as string[])
+            : []),
+          v.memoryId!,
+        ],
+      };
+      await kvInstance.set("mem:memories", v.memoryId!, updated);
+      kvInstance.persist();
+      return textResponse({
+        success: true,
+        memory: updated,
+        oldVersion,
+        newVersion,
+      });
     }
 
     case "memory_recall":

@@ -88,6 +88,40 @@ export const CORE_TOOLS: McpToolDef[] = [
     },
   },
   {
+    name: "memory_update",
+    description:
+      "Update an existing memory by ID with new content. Increments the version " +
+      "and supersedes the old content. Use this instead of calling memory_save twice " +
+      "when you want to revise a memory rather than create a duplicate.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        memoryId: {
+          type: "string",
+          description: "The ID of the memory to update (e.g. mem_xxx)",
+        },
+        content: {
+          type: "string",
+          description: "The new content for the memory",
+        },
+        type: {
+          type: "string",
+          description:
+            "New memory type (optional, keeps existing if omitted): pattern, preference, architecture, bug, workflow, or fact",
+        },
+        concepts: {
+          type: "string",
+          description: "Comma-separated key concepts (optional, keeps existing if omitted)",
+        },
+        files: {
+          type: "string",
+          description: "Comma-separated relevant file paths (optional, keeps existing if omitted)",
+        },
+      },
+      required: ["memoryId", "content"],
+    },
+  },
+  {
     name: "memory_file_history",
     description: "Get past observations about specific files.",
     inputSchema: {

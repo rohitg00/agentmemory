@@ -1001,7 +1001,56 @@ export function registerApiTriggers(
     config: { api_path: "/agentmemory/remember", http_method: "POST" },
   });
 
-  sdk.registerFunction("api::forget", 
+  sdk.registerFunction("api::memory-update",
+    async (
+      req: ApiRequest<{
+        memoryId: string;
+        content: string;
+        type?: string;
+        concepts?: string[];
+        files?: string[];
+        ttlDays?: number;
+        agentId?: string;
+      }>,
+    ): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      if (!req.body?.memoryId) {
+        return { status_code: 400, body: { error: "memoryId is required" } };
+      }
+      if (
+        !req.body?.content ||
+        typeof req.body.content !== "string" ||
+        !req.body.content.trim()
+      ) {
+        return { status_code: 400, body: { error: "content is required" } };
+      }
+      const result = await sdk.trigger({
+        function_id: "mem::update",
+        payload: {
+          memoryId: req.body.memoryId,
+          content: req.body.content,
+          ...(req.body.type !== undefined && { type: req.body.type }),
+          ...(req.body.concepts !== undefined && { concepts: req.body.concepts }),
+          ...(req.body.files !== undefined && { files: req.body.files }),
+          ...(req.body.ttlDays !== undefined && { ttlDays: req.body.ttlDays }),
+          ...(req.body.agentId !== undefined && { agentId: req.body.agentId }),
+        },
+      });
+      const r = result as { success: boolean; error?: string };
+      if (!r.success && r.error === "memory not found") {
+        return { status_code: 404, body: result };
+      }
+      return { status_code: 200, body: result };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::memory-update",
+    config: { api_path: "/agentmemory/memories/update", http_method: "PUT" },
+  });
+
+  sdk.registerFunction("api::forget",
     async (
       req: ApiRequest<{
         sessionId?: string;
