@@ -1248,7 +1248,16 @@
         if (!res.ok) {
           if (res.status === 401) showViewerAuthPrompt();
           console.warn('[viewer] API ' + (fetchOpts.method || 'GET') + ' ' + path + ' returned ' + res.status);
-          return null;
+          // Some endpoints (e.g. health) intentionally respond with a non-2xx
+          // status while still returning a valid JSON body describing the
+          // degraded state (see #1019). Surface that body instead of
+          // discarding it as null, which used to make a "critical" health
+          // response render as "unknown".
+          try {
+            return await res.json();
+          } catch (parseErr) {
+            return null;
+          }
         }
         hideViewerAuthPrompt();
         return await res.json();
