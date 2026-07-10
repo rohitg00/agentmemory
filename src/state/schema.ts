@@ -5,6 +5,7 @@ export const KV = {
   observations: (sessionId: string) => `mem:obs:${sessionId}`,
   memories: "mem:memories",
   summaries: "mem:summaries",
+  archiveImports: "mem:archive-imports",
   config: "mem:config",
   metrics: "mem:metrics",
   health: "mem:health",

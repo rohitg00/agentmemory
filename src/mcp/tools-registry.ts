@@ -925,7 +925,7 @@ export const V010_SLOTS_TOOLS: McpToolDef[] = [
   },
 ];
 
-const ESSENTIAL_TOOLS = new Set([
+export const ESSENTIAL_TOOLS = new Set([
   "memory_save",
   "memory_recall",
   "memory_consolidate",

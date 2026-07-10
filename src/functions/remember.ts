@@ -14,11 +14,16 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
   sdk.registerFunction("mem::remember", 
     async (data: {
       content: string;
+      title?: string;
       type?: string;
       concepts?: string[];
       files?: string[];
       ttlDays?: number;
       sourceObservationIds?: string[];
+      sessionIds?: string[];
+      sourceCandidateId?: string;
+      confidence?: number;
+      strength?: number;
       agentId?: string;
       project?: string;
     }) => {
@@ -37,6 +42,9 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
       }
       if (data.sourceObservationIds && !Array.isArray(data.sourceObservationIds)) {
         return { success: false, error: "sourceObservationIds must be an array" };
+      }
+      if (data.sessionIds && !Array.isArray(data.sessionIds)) {
+        return { success: false, error: "sessionIds must be an array" };
       }
       const validTypes = new Set([
         "pattern",
@@ -94,24 +102,48 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
           typeof data.agentId === "string" && data.agentId.trim().length > 0
             ? data.agentId.trim().slice(0, 128)
             : getAgentId();
+        const title =
+          typeof data.title === "string" && data.title.trim().length > 0
+            ? data.title.trim().slice(0, 120)
+            : data.content.slice(0, 80);
+        const sessionIds = (data.sessionIds || []).filter(
+          (id): id is string => typeof id === "string" && id.trim().length > 0,
+        );
+        const confidence =
+          typeof data.confidence === "number" && Number.isFinite(data.confidence)
+            ? Math.max(0, Math.min(1, data.confidence))
+            : undefined;
+        const strength =
+          typeof data.strength === "number" && Number.isFinite(data.strength)
+            ? Math.max(1, Math.min(10, Math.round(data.strength)))
+            : confidence !== undefined
+              ? Math.max(1, Math.min(10, Math.round(confidence * 10)))
+              : 7;
+        const sourceCandidateId =
+          typeof data.sourceCandidateId === "string" &&
+          data.sourceCandidateId.trim().length > 0
+            ? data.sourceCandidateId.trim()
+            : undefined;
 
         const memory: Memory = {
           id: generateId("mem"),
           createdAt: now,
           updatedAt: now,
           type: memType,
-          title: data.content.slice(0, 80),
+          title,
           content: data.content,
           concepts: data.concepts || [],
           files: data.files || [],
-          sessionIds: [],
-          strength: 7,
+          sessionIds,
+          strength,
+          ...(confidence !== undefined && { confidence }),
           version: supersededId ? supersededVersion + 1 : 1,
           parentId: supersededId,
           supersedes: supersededId ? [supersededId] : [],
           sourceObservationIds: (data.sourceObservationIds || []).filter(
             (id): id is string => typeof id === "string" && id.length > 0,
           ),
+          ...(sourceCandidateId ? { sourceCandidateId } : {}),
           isLatest: true,
           ...(callAgentId ? { agentId: callAgentId } : {}),
           ...(project !== undefined && { project }),

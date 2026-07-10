@@ -11,6 +11,10 @@ vi.mock("../src/state/schema.js", () => ({
     observations: (sessionId: string) => `obs:${sessionId}`,
     audit: "audit",
   },
+  fingerprintId: (prefix: string, content: string) => {
+    const { createHash } = require("node:crypto");
+    return `${prefix}_${createHash("sha256").update(content).digest("hex").slice(0, 16)}`;
+  },
 }));
 
 vi.mock("../src/eval/schemas.js", () => ({
@@ -108,16 +112,41 @@ function summaryXml(opts: {
   decisions?: string[];
   files?: string[];
   concepts?: string[];
+  durableCandidates?: Array<{
+    type: string;
+    title: string;
+    content: string;
+    concepts?: string[];
+    files?: string[];
+    sourceObservationIds?: string[];
+    confidence: number;
+    promotionReason?: string;
+  }>;
 }): string {
   const d = (opts.decisions ?? []).map((x) => `<decision>${x}</decision>`).join("");
   const f = (opts.files ?? []).map((x) => `<file>${x}</file>`).join("");
   const c = (opts.concepts ?? []).map((x) => `<concept>${x}</concept>`).join("");
+  const durableCandidates = (opts.durableCandidates ?? [])
+    .map((candidate) => {
+      const candidateConcepts = (candidate.concepts ?? [])
+        .map((value) => `<concept>${value}</concept>`)
+        .join("");
+      const candidateFiles = (candidate.files ?? [])
+        .map((value) => `<file>${value}</file>`)
+        .join("");
+      const candidateSourceObservationIds = (candidate.sourceObservationIds ?? [])
+        .map((value) => `<id>${value}</id>`)
+        .join("");
+      return `<candidate><type>${candidate.type}</type><title>${candidate.title}</title><content>${candidate.content}</content><concepts>${candidateConcepts}</concepts><files>${candidateFiles}</files><sourceObservationIds>${candidateSourceObservationIds}</sourceObservationIds><confidence>${candidate.confidence}</confidence>${candidate.promotionReason ? `<promotionReason>${candidate.promotionReason}</promotionReason>` : ""}</candidate>`;
+    })
+    .join("");
   return `<summary>
 <title>${opts.title}</title>
 <narrative>${opts.narrative ?? "narrative"}</narrative>
 <decisions>${d}</decisions>
 <files>${f}</files>
 <concepts>${c}</concepts>
+<durableCandidates>${durableCandidates}</durableCandidates>
 </summary>`;
 }
 
@@ -478,5 +507,57 @@ describe("mem::summarize chunking", () => {
 
     expect(result.success).toBe(false);
     expect(result.error).toBe("parse_failed");
+  });
+
+  it("parses durable candidates, drops low-confidence rows, and caps no-evidence confidence", async () => {
+    const provider = makeProvider([
+      summaryXml({
+        title: "durables",
+        narrative: "This session established a stable archive promotion workflow for future reuse.",
+        durableCandidates: [
+          {
+            type: "workflow",
+            title: "Explicit promote only",
+            content: "Archived sessions should create durable candidates first and only write Memory through explicit promote.",
+            concepts: ["durable-candidates"],
+            files: ["src/functions/durable-candidates.ts"],
+            sourceObservationIds: ["obs_0"],
+            confidence: 0.82,
+            promotionReason: "Cross-session workflow policy",
+          },
+          {
+            type: "fact",
+            title: "Weak idea",
+            content: "This one should be filtered out.",
+            confidence: 0.4,
+          },
+          {
+            type: "fact",
+            title: "No evidence candidate",
+            content: "Candidate without evidence ids should remain force-only.",
+            confidence: 0.95,
+          },
+        ],
+      }),
+    ]);
+    const { handler, kv } = await setupHandler({
+      sessionId: "ses_durable",
+      obsCount: 1,
+      provider,
+    });
+
+    const result: any = await handler({ sessionId: "ses_durable" });
+
+    expect(result.success).toBe(true);
+    const stored: any = await kv.get("summaries", "ses_durable");
+    expect(stored?.durableCandidates).toHaveLength(2);
+    expect(stored?.durableCandidates[0].sourceObservationIds).toEqual(["obs_0"]);
+    expect(
+      stored?.durableCandidates.find((item: any) => item.title === "No evidence candidate")
+        ?.confidence,
+    ).toBe(0.6);
+    expect(
+      stored?.durableCandidates.some((item: any) => item.title === "Weak idea"),
+    ).toBe(false);
   });
 });

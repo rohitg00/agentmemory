@@ -80,22 +80,49 @@ export type ObservationType =
   | "image"
   | "other";
 
+export type DurableCandidateType =
+  | "pattern"
+  | "preference"
+  | "architecture"
+  | "bug"
+  | "workflow"
+  | "fact";
+
+export interface DurableCandidate {
+  id: string;
+  sessionId: string;
+  project?: string;
+  type: DurableCandidateType;
+  title: string;
+  content: string;
+  concepts: string[];
+  files: string[];
+  sourceObservationIds: string[];
+  confidence: number;
+  promotionReason?: string;
+  createdAt: string;
+  promotedMemoryId?: string;
+  promotedAt?: string;
+}
+
 export interface Memory {
   id: string;
   createdAt: string;
   updatedAt: string;
-  type: "pattern" | "preference" | "architecture" | "bug" | "workflow" | "fact";
+  type: DurableCandidateType;
   title: string;
   content: string;
   concepts: string[];
   files: string[];
   sessionIds: string[];
   strength: number;
+  confidence?: number;
   version: number;
   parentId?: string;
   supersedes?: string[];
   relatedIds?: string[];
   sourceObservationIds?: string[];
+  sourceCandidateId?: string;
   isLatest: boolean;
   forgetAfter?: string;
   imageRef?: string;
@@ -114,6 +141,18 @@ export interface SessionSummary {
   filesModified: string[];
   concepts: string[];
   observationCount: number;
+  durableCandidates?: DurableCandidate[];
+}
+
+export interface ArchiveImportRecord {
+  id: string;
+  archivePath: string;
+  fileHash: string;
+  sessionId: string;
+  processedAt: string;
+  durableCandidateCount: number;
+  summaryCreated: boolean;
+  source: "archive-process";
 }
 
 export type HookType =

@@ -37,7 +37,7 @@ export function isSensitive(path: string): boolean {
   return SENSITIVE_PATH_PATTERNS.some((re) => re.test(path));
 }
 
-async function isSymlink(path: string): Promise<boolean> {
+export async function isSymlink(path: string): Promise<boolean> {
   try {
     const st = await lstat(path);
     return st.isSymbolicLink();
@@ -203,7 +203,7 @@ async function loadObservations(
   return rows.map((r) => (isRawShape(r) ? r : rawFromCompressed(r as CompressedObservation)));
 }
 
-async function findJsonlFiles(
+export async function findJsonlFiles(
   root: string,
   limit = 200,
 ): Promise<{

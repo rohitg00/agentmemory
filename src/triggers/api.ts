@@ -557,6 +557,73 @@ export function registerApiTriggers(
     config: { api_path: "/agentmemory/replay/import-jsonl", http_method: "POST" },
   });
 
+  sdk.registerFunction("api::archive::process",
+    async (
+      req: ApiRequest<{
+        path?: string;
+        maxFiles?: number;
+        force?: boolean;
+        allowNonArchivePath?: boolean;
+      }>,
+    ): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const payload: {
+        path?: string;
+        maxFiles?: number;
+        force?: boolean;
+        allowNonArchivePath?: boolean;
+      } = {};
+      if (body.path !== undefined) {
+        if (typeof body.path !== "string" || body.path.trim().length === 0) {
+          return {
+            status_code: 400,
+            body: { error: "path must be a non-empty string" },
+          };
+        }
+        payload.path = body.path.trim();
+      }
+      if (body.maxFiles !== undefined) {
+        const n = body.maxFiles as number;
+        if (!Number.isInteger(n) || n < 1 || n > MAX_FILES_UPPER_BOUND) {
+          return {
+            status_code: 400,
+            body: {
+              error: `maxFiles must be an integer between 1 and ${MAX_FILES_UPPER_BOUND}`,
+            },
+          };
+        }
+        payload.maxFiles = n;
+      }
+      if (body.force !== undefined) {
+        if (typeof body.force !== "boolean") {
+          return { status_code: 400, body: { error: "force must be a boolean" } };
+        }
+        payload.force = body.force;
+      }
+      if (body.allowNonArchivePath !== undefined) {
+        if (typeof body.allowNonArchivePath !== "boolean") {
+          return {
+            status_code: 400,
+            body: { error: "allowNonArchivePath must be a boolean" },
+          };
+        }
+        payload.allowNonArchivePath = body.allowNonArchivePath;
+      }
+      const result = await sdk.trigger({
+        function_id: "mem::archive::process",
+        payload,
+      });
+      return { status_code: 202, body: result };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::archive::process",
+    config: { api_path: "/agentmemory/archive/process", http_method: "POST" },
+  });
+
   sdk.registerFunction("api::session::start",
     async (
       req: ApiRequest<{ sessionId: string; project: string; cwd: string }>,
@@ -949,11 +1016,16 @@ export function registerApiTriggers(
     async (
       req: ApiRequest<{
         content: string;
+        title?: string;
         type?: string;
         concepts?: string[];
         files?: string[];
         ttlDays?: number;
         sourceObservationIds?: string[];
+        sessionIds?: string[];
+        sourceCandidateId?: string;
+        confidence?: number;
+        strength?: number;
         project?: string;
       }>,
     ): Promise<Response> => {
@@ -972,15 +1044,80 @@ export function registerApiTriggers(
       ) {
         return { status_code: 400, body: { error: "project must be a non-empty string" } };
       }
+      if (
+        req.body.title !== undefined &&
+        (typeof req.body.title !== "string" || !req.body.title.trim())
+      ) {
+        return { status_code: 400, body: { error: "title must be a non-empty string" } };
+      }
+      for (const [field, value] of [
+        ["concepts", req.body.concepts],
+        ["files", req.body.files],
+        ["sourceObservationIds", req.body.sourceObservationIds],
+        ["sessionIds", req.body.sessionIds],
+      ] as const) {
+        if (
+          value !== undefined &&
+          (!Array.isArray(value) || !value.every((item: unknown) => typeof item === "string"))
+        ) {
+          return {
+            status_code: 400,
+            body: { error: `${field} must be an array of strings` },
+          };
+        }
+      }
+      if (
+        req.body.ttlDays !== undefined &&
+        (typeof req.body.ttlDays !== "number" || !Number.isFinite(req.body.ttlDays) || req.body.ttlDays <= 0)
+      ) {
+        return { status_code: 400, body: { error: "ttlDays must be a positive number" } };
+      }
+      if (
+        req.body.sourceCandidateId !== undefined &&
+        (typeof req.body.sourceCandidateId !== "string" || !req.body.sourceCandidateId.trim())
+      ) {
+        return {
+          status_code: 400,
+          body: { error: "sourceCandidateId must be a non-empty string" },
+        };
+      }
+      if (
+        req.body.confidence !== undefined &&
+        (typeof req.body.confidence !== "number" ||
+          !Number.isFinite(req.body.confidence) ||
+          req.body.confidence < 0 ||
+          req.body.confidence > 1)
+      ) {
+        return {
+          status_code: 400,
+          body: { error: "confidence must be a number between 0 and 1" },
+        };
+      }
+      if (
+        req.body.strength !== undefined &&
+        (!Number.isInteger(req.body.strength) ||
+          req.body.strength < 1 ||
+          req.body.strength > 10)
+      ) {
+        return {
+          status_code: 400,
+          body: { error: "strength must be an integer between 1 and 10" },
+        };
+      }
       const result = await sdk.trigger({
         function_id: "mem::remember",
         payload: {
           content: req.body.content,
+          ...(req.body.title !== undefined && { title: req.body.title }),
           ...(req.body.type !== undefined && { type: req.body.type }),
           ...(req.body.concepts !== undefined && { concepts: req.body.concepts }),
           ...(req.body.files !== undefined && { files: req.body.files }),
           ...(req.body.ttlDays !== undefined && { ttlDays: req.body.ttlDays }),
           ...(req.body.sourceObservationIds !== undefined && { sourceObservationIds: req.body.sourceObservationIds }),
+          ...(req.body.sessionIds !== undefined && { sessionIds: req.body.sessionIds }),
+          ...(req.body.sourceCandidateId !== undefined && { sourceCandidateId: req.body.sourceCandidateId }),
+          ...(req.body.confidence !== undefined && { confidence: req.body.confidence }),
+          ...(req.body.strength !== undefined && { strength: req.body.strength }),
           ...(req.body.project !== undefined && { project: req.body.project }),
         },
       });
@@ -991,6 +1128,148 @@ export function registerApiTriggers(
     type: "http",
     function_id: "api::remember",
     config: { api_path: "/agentmemory/remember", http_method: "POST" },
+  });
+
+  sdk.registerFunction("api::durable-candidates",
+    async (req: ApiRequest): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const promotedRaw = req.query_params?.["promoted"];
+      const promoted =
+        promotedRaw === undefined
+          ? undefined
+          : promotedRaw === "true"
+            ? true
+            : promotedRaw === "false"
+              ? false
+              : null;
+      if (promoted === null) {
+        return {
+          status_code: 400,
+          body: { error: "promoted must be true or false when provided" },
+        };
+      }
+      const minConfidence = parseOptionalFiniteNumber(
+        req.query_params?.["minConfidence"],
+      );
+      if (minConfidence === null) {
+        return {
+          status_code: 400,
+          body: { error: "invalid numeric parameter: minConfidence" },
+        };
+      }
+      const limit = parseOptionalPositiveInt(req.query_params?.["limit"]);
+      if (limit === null) {
+        return {
+          status_code: 400,
+          body: { error: "invalid numeric parameter: limit" },
+        };
+      }
+      const result = await sdk.trigger({
+        function_id: "mem::durable-candidates::list",
+        payload: {
+          ...(req.query_params?.["sessionId"] && {
+            sessionId: req.query_params["sessionId"],
+          }),
+          ...(req.query_params?.["project"] && {
+            project: req.query_params["project"],
+          }),
+          ...(req.query_params?.["type"] && { type: req.query_params["type"] }),
+          ...(promoted !== undefined && { promoted }),
+          ...(minConfidence !== undefined && { minConfidence }),
+          ...(limit !== undefined && { limit }),
+        },
+      });
+      return { status_code: 200, body: result };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::durable-candidates",
+    config: { api_path: "/agentmemory/durable-candidates", http_method: "GET" },
+  });
+
+  sdk.registerFunction("api::durable-candidates::promote",
+    async (
+      req: ApiRequest<{ candidateId?: string; dryRun?: boolean; force?: boolean }>,
+    ): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const candidateId = asNonEmptyString(body.candidateId);
+      if (!candidateId) {
+        return { status_code: 400, body: { error: "candidateId is required" } };
+      }
+      if (body.dryRun !== undefined && typeof body.dryRun !== "boolean") {
+        return { status_code: 400, body: { error: "dryRun must be a boolean" } };
+      }
+      if (body.force !== undefined && typeof body.force !== "boolean") {
+        return { status_code: 400, body: { error: "force must be a boolean" } };
+      }
+      const result = await sdk.trigger({
+        function_id: "mem::durable-candidates::promote",
+        payload: {
+          candidateId,
+          ...(body.dryRun !== undefined && { dryRun: body.dryRun }),
+          ...(body.force !== undefined && { force: body.force }),
+        },
+      });
+      return { status_code: 200, body: result };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::durable-candidates::promote",
+    config: {
+      api_path: "/agentmemory/durable-candidates/promote",
+      http_method: "POST",
+    },
+  });
+
+  sdk.registerFunction("api::durable-candidates::backfill",
+    async (
+      req: ApiRequest<{ dryRun?: boolean; limit?: number; sessionIds?: string[] }>,
+    ): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      if (body.dryRun !== undefined && typeof body.dryRun !== "boolean") {
+        return { status_code: 400, body: { error: "dryRun must be a boolean" } };
+      }
+      if (
+        body.limit !== undefined &&
+        (!Number.isInteger(body.limit) || (body.limit as number) < 1)
+      ) {
+        return { status_code: 400, body: { error: "limit must be a positive integer" } };
+      }
+      if (
+        body.sessionIds !== undefined &&
+        (!Array.isArray(body.sessionIds) ||
+          !(body.sessionIds as unknown[]).every((item) => typeof item === "string"))
+      ) {
+        return {
+          status_code: 400,
+          body: { error: "sessionIds must be an array of strings" },
+        };
+      }
+      const result = await sdk.trigger({
+        function_id: "mem::durable-candidates::backfill",
+        payload: {
+          ...(body.dryRun !== undefined && { dryRun: body.dryRun }),
+          ...(body.limit !== undefined && { limit: body.limit }),
+          ...(body.sessionIds !== undefined && { sessionIds: body.sessionIds }),
+        },
+      });
+      return { status_code: 200, body: result };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::durable-candidates::backfill",
+    config: {
+      api_path: "/agentmemory/durable-candidates/backfill",
+      http_method: "POST",
+    },
   });
 
   sdk.registerFunction("api::forget", 

@@ -88,6 +88,7 @@ import { registerTemporalGraphFunctions } from "./functions/temporal-graph.js";
 import { registerRetentionFunctions } from "./functions/retention.js";
 import { registerCompressFileFunction } from "./functions/compress-file.js";
 import { registerReplayFunctions } from "./functions/replay.js";
+import { registerDurableCandidateFunctions } from "./functions/durable-candidates.js";
 import { registerApiTriggers } from "./triggers/api.js";
 import { registerEventTriggers } from "./triggers/events.js";
 import { registerMcpEndpoints } from "./mcp/server.js";
@@ -332,6 +333,7 @@ async function main() {
   registerRetentionFunctions(sdk, kv);
   registerCompressFileFunction(sdk, kv, provider);
   registerReplayFunctions(sdk, kv);
+  registerDurableCandidateFunctions(sdk, kv, provider);
   bootLog(
     `v0.6 advanced retrieval: sliding-window, query-expansion, temporal-graph, retention-scoring`,
   );
@@ -518,7 +520,7 @@ async function main() {
     `Ready. ${embeddingProvider ? "Triple-stream (BM25+Vector+Graph)" : "BM25+Graph"} search active.`,
   );
   bootLog(
-    `REST API: 128 endpoints at http://localhost:${config.restPort}/agentmemory/*`,
+    `REST API: 132 endpoints at http://localhost:${config.restPort}/agentmemory/*`,
   );
   bootLog(
     `MCP surface (opt-in via \`npx @agentmemory/mcp\`): ${getAllTools().length} tools · 6 resources · 3 prompts`,
