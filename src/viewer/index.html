@@ -1256,6 +1256,7 @@
           try {
             return await res.json();
           } catch (parseErr) {
+            console.debug('[viewer] API ' + path + ' non-2xx body was not JSON:', parseErr);
             return null;
           }
         }
