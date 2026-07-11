@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -267,7 +267,7 @@ describe("durable candidates lifecycle", () => {
     expect((await kv.list("mem:memories")).length).toBe(0);
   });
 
-  it("archive/process is idempotent on archivePath + fileHash + sessionId", async () => {
+  it("archive/process is idempotent on sessionId + fileHash", async () => {
     const tempDir = mkdtempSync(join(tmpdir(), "agentmemory-archive-"));
     tempDirs.add(tempDir);
     const archivePath = join(tempDir, "session.jsonl");
@@ -306,21 +306,230 @@ describe("durable candidates lifecycle", () => {
       sdk as never,
       kv as never,
       makeProvider(makeSummaryXml("sess_archive", "obs_1")),
+      { archiveRoot: tempDir },
     );
 
     const first: any = await sdk.trigger({
       function_id: "mem::archive::process",
-      payload: { path: archivePath, allowNonArchivePath: true },
+      payload: { path: archivePath },
     });
+    const movedDir = join(tempDir, "moved");
+    mkdirSync(movedDir);
+    const movedPath = join(movedDir, "session.jsonl");
+    renameSync(archivePath, movedPath);
     const second: any = await sdk.trigger({
       function_id: "mem::archive::process",
-      payload: { path: archivePath, allowNonArchivePath: true },
+      payload: { path: movedPath, force: true },
     });
 
     expect(first.success).toBe(true);
     expect(first.processed).toHaveLength(1);
     expect(first.processed[0].sessionId).toBe("sess_archive");
     expect(first.processed[0].durableCandidateCount).toBe(1);
-    expect(second.skipped[0].reason).toBe("already_processed");
+    expect(second.skipped[0].reason).toBe("already_completed");
+    const ledger = await kv.get<any>("mem:archive-imports", first.processed[0].idempotencyKey);
+    expect(ledger.status).toBe("completed");
+    expect(ledger.attempts).toBe(1);
+  });
+
+  it("completes a zero-observation archive without attempting a summary", async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "agentmemory-archive-empty-"));
+    tempDirs.add(tempDir);
+    const archivePath = join(tempDir, "empty.jsonl");
+    writeFileSync(
+      archivePath,
+      [
+        JSON.stringify({
+          type: "session_meta",
+          payload: {
+            id: "sess_archive_empty",
+            cwd: "C:\\work\\agentmemory",
+            timestamp: "2026-07-10T00:00:00.000Z",
+          },
+        }),
+        JSON.stringify({ type: "event_msg", payload: { type: "task_started" } }),
+      ].join("\n") + "\n",
+      "utf-8",
+    );
+
+    sdk.registerFunction("mem::replay::import-jsonl", async () => {
+      await kv.set("mem:sessions", "sess_archive_empty", {
+        id: "sess_archive_empty",
+        project: "agentmemory",
+        cwd: "C:\\work\\agentmemory",
+        startedAt: "2026-07-10T00:00:00.000Z",
+        endedAt: "2026-07-10T00:00:00.000Z",
+        status: "completed",
+        observationCount: 0,
+      } satisfies Session);
+      return { success: true };
+    });
+    const summarize = vi.fn();
+    registerDurableCandidateFunctions(
+      sdk as never,
+      kv as never,
+      { name: "test", compress: async () => "", summarize },
+      { archiveRoot: tempDir },
+    );
+
+    const result: any = await sdk.trigger({
+      function_id: "mem::archive::process",
+      payload: { path: archivePath },
+    });
+
+    expect(result.processed).toHaveLength(1);
+    expect(result.processed[0]).toMatchObject({
+      sessionId: "sess_archive_empty",
+      durableCandidateCount: 0,
+    });
+    expect(summarize).not.toHaveBeenCalled();
+    const ledger = await kv.get<any>("mem:archive-imports", result.processed[0].idempotencyKey);
+    expect(ledger).toMatchObject({
+      status: "completed",
+      summaryCreated: false,
+      parsedObservationCount: 0,
+      importedObservationCount: 0,
+    });
+  });
+
+  it("retries a failed archive summary without replaying observations", async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "agentmemory-archive-retry-"));
+    tempDirs.add(tempDir);
+    const archivePath = join(tempDir, "session.jsonl");
+    writeFileSync(
+      archivePath,
+      `${JSON.stringify({
+        type: "user",
+        sessionId: "sess_archive_retry",
+        cwd: "/tmp/agentmemory",
+        timestamp: "2026-07-10T00:00:00.000Z",
+        message: { role: "user", content: [{ type: "text", text: "Retry summary." }] },
+      })}\n`,
+      "utf-8",
+    );
+
+    let replayCalls = 0;
+    let failSummary = true;
+    sdk.registerFunction("mem::replay::import-jsonl", async () => {
+      replayCalls += 1;
+      const session: Session = {
+        id: "sess_archive_retry",
+        project: "agentmemory",
+        cwd: "/tmp/agentmemory",
+        startedAt: "2026-07-10T00:00:00.000Z",
+        endedAt: "2026-07-10T00:01:00.000Z",
+        status: "completed",
+        observationCount: 1,
+      };
+      await kv.set("mem:sessions", session.id, session);
+      await kv.set("mem:obs:sess_archive_retry", "obs_1", makeObservation(session.id));
+      return { success: true };
+    });
+    const provider: MemoryProvider = {
+      name: "test",
+      compress: async () => "",
+      summarize: async () => {
+        if (failSummary) throw new Error("summary_unavailable");
+        return makeSummaryXml("sess_archive_retry", "obs_1");
+      },
+    };
+    registerDurableCandidateFunctions(sdk as never, kv as never, provider, {
+      archiveRoot: tempDir,
+    });
+
+    const first: any = await sdk.trigger({
+      function_id: "mem::archive::process",
+      payload: { path: archivePath },
+    });
+    const afterFailure = await kv.list<any>("mem:archive-imports");
+    expect(first.skipped[0].reason).toBe("summary_unavailable");
+    expect(afterFailure[0].status).toBe("failed");
+    expect(afterFailure[0].failureStage).toBe("summary");
+
+    failSummary = false;
+    const second: any = await sdk.trigger({
+      function_id: "mem::archive::process",
+      payload: { path: archivePath, force: true },
+    });
+
+    expect(second.processed).toHaveLength(1);
+    expect(replayCalls).toBe(1);
+    expect((await kv.list<any>("mem:archive-imports"))[0].status).toBe("completed");
+  });
+
+  it("requires force metadata for a low-confidence candidate", async () => {
+    const candidate = materializeDurableCandidate({
+      sessionId: "sess_force",
+      project: "agentmemory",
+      type: "workflow",
+      title: "Needs review",
+      content: "This candidate has limited supporting evidence.",
+      concepts: ["review"],
+      files: [],
+      sourceObservationIds: ["obs_1"],
+      confidence: 0.6,
+      createdAt: "2026-07-10T00:00:00.000Z",
+    });
+    expect(candidate).not.toBeNull();
+    await kv.set("mem:summaries", "sess_force", {
+      sessionId: "sess_force",
+      project: "agentmemory",
+      createdAt: "2026-07-10T00:00:00.000Z",
+      title: "Summary",
+      narrative: "Narrative long enough to count as a valid test summary.",
+      keyDecisions: [],
+      filesModified: [],
+      concepts: [],
+      observationCount: 1,
+      durableCandidates: [candidate!],
+    } satisfies SessionSummary);
+    registerDurableCandidateFunctions(
+      sdk as never,
+      kv as never,
+      makeProvider(makeSummaryXml("sess_force", "obs_1")),
+    );
+
+    const denied: any = await sdk.trigger({
+      function_id: "mem::durable-candidates::promote",
+      payload: { candidateId: candidate!.id, force: true },
+    });
+    const preview: any = await sdk.trigger({
+      function_id: "mem::durable-candidates::promote",
+      payload: {
+        candidateId: candidate!.id,
+        force: true,
+        dryRun: true,
+        forceReason: "Reviewed during migration.",
+        promotedBy: "operator",
+      },
+    });
+
+    expect(denied.error).toBe("force_metadata_required");
+    expect(preview.success).toBe(true);
+    expect(preview.dryRun).toBe(true);
+  });
+
+  it("rejects archive paths outside the configured archive root", async () => {
+    const archiveRoot = mkdtempSync(join(tmpdir(), "agentmemory-archive-root-"));
+    const outsideRoot = mkdtempSync(join(tmpdir(), "agentmemory-archive-outside-"));
+    tempDirs.add(archiveRoot);
+    tempDirs.add(outsideRoot);
+    const outsidePath = join(outsideRoot, "session.jsonl");
+    writeFileSync(outsidePath, "{}\n", "utf-8");
+
+    registerDurableCandidateFunctions(
+      sdk as never,
+      kv as never,
+      makeProvider(makeSummaryXml("sess_archive", "obs_1")),
+      { archiveRoot },
+    );
+
+    const result: any = await sdk.trigger({
+      function_id: "mem::archive::process",
+      payload: { path: outsidePath },
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("archive path must live under");
   });
 });

@@ -103,6 +103,8 @@ export interface DurableCandidate {
   createdAt: string;
   promotedMemoryId?: string;
   promotedAt?: string;
+  promotedBy?: string;
+  forceReason?: string;
 }
 
 export interface Memory {
@@ -142,16 +144,34 @@ export interface SessionSummary {
   concepts: string[];
   observationCount: number;
   durableCandidates?: DurableCandidate[];
+  durableCandidatesVersion?: number;
+  durableCandidatesGeneratedAt?: string;
 }
+
+export type ArchiveImportStatus =
+  | "discovered"
+  | "importing_observations"
+  | "observations_imported"
+  | "summarizing"
+  | "completed"
+  | "failed";
 
 export interface ArchiveImportRecord {
   id: string;
   archivePath: string;
   fileHash: string;
   sessionId: string;
-  processedAt: string;
-  durableCandidateCount: number;
-  summaryCreated: boolean;
+  status: ArchiveImportStatus;
+  createdAt: string;
+  updatedAt: string;
+  attempts: number;
+  parsedObservationCount: number;
+  importedObservationCount: number;
+  durableCandidateCount?: number;
+  summaryCreated?: boolean;
+  completedAt?: string;
+  failureStage?: "observations" | "summary";
+  lastError?: string;
   source: "archive-process";
 }
 

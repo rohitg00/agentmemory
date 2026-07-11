@@ -151,4 +151,57 @@ describe("import-jsonl re-key on parsed.sessionId (#775)", () => {
       .filter((c) => c.scope === KV.sessions && c.key === "sess-fresh");
     expect(sessionWrites.length).toBe(1);
   });
+
+  it("re-imports stable observations without inflating the session count", async () => {
+    writeFixture("sess-idempotent");
+    const kv = mockKV();
+    const sdk = mockSdk(kv);
+    registerReplayFunctions(sdk, kv as never);
+
+    const first = (await sdk.trigger("mem::replay::import-jsonl", {
+      path: tmpRoot,
+    })) as { success: boolean; observations?: number };
+    const second = (await sdk.trigger("mem::replay::import-jsonl", {
+      path: tmpRoot,
+    })) as { success: boolean; observations?: number };
+
+    expect(first).toMatchObject({ success: true, observations: 2 });
+    expect(second).toMatchObject({ success: true, observations: 0 });
+    expect(await kv.list(KV.observations("sess-idempotent"))).toHaveLength(2);
+    expect((await kv.get<any>(KV.sessions, "sess-idempotent"))?.observationCount).toBe(2);
+  });
+
+  it("creates a zero-observation session for a Codex archive", async () => {
+    const dir = join(tmpRoot, "empty");
+    require("node:fs").mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, "sess-codex-empty.jsonl"),
+      [
+        JSON.stringify({
+          type: "session_meta",
+          payload: {
+            id: "sess-codex-empty",
+            cwd: "C:\\work\\agentmemory",
+            timestamp: "2026-07-10T00:00:00.000Z",
+          },
+        }),
+        JSON.stringify({ type: "event_msg", payload: { type: "task_started" } }),
+      ].join("\n") + "\n",
+    );
+
+    const kv = mockKV();
+    const sdk = mockSdk(kv);
+    registerReplayFunctions(sdk, kv as never);
+
+    const result = (await sdk.trigger("mem::replay::import-jsonl", {
+      path: dir,
+    })) as { success: boolean; observations?: number };
+
+    expect(result).toMatchObject({ success: true, observations: 0 });
+    expect(await kv.get<any>(KV.sessions, "sess-codex-empty")).toMatchObject({
+      id: "sess-codex-empty",
+      observationCount: 0,
+      status: "completed",
+    });
+  });
 });

@@ -382,7 +382,6 @@ export function registerReplayFunctions(sdk: ISdk, kv: StateKV): void {
         }
 
         const parsed = parseJsonlText(text, generateId("sess"));
-        if (parsed.observations.length === 0) continue;
 
         const firstPromptObs = parsed.observations.find(
           (o) => typeof o.userPrompt === "string" && o.userPrompt.trim().length > 0,
@@ -392,19 +391,19 @@ export function registerReplayFunctions(sdk: ISdk, kv: StateKV): void {
           : undefined;
 
         const existing = await kv.get<Session>(KV.sessions, parsed.sessionId);
+        let session: Session;
         if (existing) {
-          existing.observationCount =
-            (existing.observationCount || 0) + parsed.observations.length;
+          session = existing;
           if (parsed.endedAt > (existing.endedAt || "")) {
-            existing.endedAt = parsed.endedAt;
+            session.endedAt = parsed.endedAt;
           }
-          if (existing.status === "active") existing.status = "completed";
-          const existingTags = existing.tags || [];
+          if (session.status === "active") session.status = "completed";
+          const existingTags = session.tags || [];
           if (!existingTags.includes("jsonl-import")) {
-            existing.tags = [...existingTags, "jsonl-import"];
+            session.tags = [...existingTags, "jsonl-import"];
           }
-          if (!existing.firstPrompt && firstPrompt) {
-            existing.firstPrompt = firstPrompt;
+          if (!session.firstPrompt && firstPrompt) {
+            session.firstPrompt = firstPrompt;
           }
           // #775: re-key on parsed.sessionId, not existing.id. Older
           // session rows may be missing the `id` field; existing.id
@@ -415,25 +414,24 @@ export function registerReplayFunctions(sdk: ISdk, kv: StateKV): void {
           // legacy row killed the entire batch. parsed.sessionId is
           // always populated (parseJsonlText has a three-level
           // fallback) and is what we just used to read the row.
-          if (!existing.id) existing.id = parsed.sessionId;
-          await kv.set(KV.sessions, parsed.sessionId, existing);
+          if (!session.id) session.id = parsed.sessionId;
         } else {
-          const session: Session = {
+          session = {
             id: parsed.sessionId,
             project: parsed.project,
             cwd: parsed.cwd,
             startedAt: parsed.startedAt,
             endedAt: parsed.endedAt,
             status: "completed",
-            observationCount: parsed.observations.length,
+            observationCount: 0,
             tags: ["jsonl-import"],
             firstPrompt,
           };
-          await kv.set(KV.sessions, session.id, session);
         }
 
         const searchIndex = getSearchIndex();
         const compressed: CompressedObservation[] = [];
+        const observationsBefore = await kv.list(KV.observations(parsed.sessionId));
         await Promise.all(
           parsed.observations.map(async (obs) => {
             const synthetic = buildSyntheticCompression(obs);
@@ -442,17 +440,24 @@ export function registerReplayFunctions(sdk: ISdk, kv: StateKV): void {
             searchIndex.add(synthetic);
           }),
         );
-        observationCount += parsed.observations.length;
+        const storedObservations = await kv.list(KV.observations(parsed.sessionId));
+        const addedObservations = Math.max(0, storedObservations.length - observationsBefore.length);
+        session.observationCount = storedObservations.length;
+        await kv.set(KV.sessions, parsed.sessionId, session);
+
+        observationCount += addedObservations;
         sessionIds.push(parsed.sessionId);
 
-        await deriveCrystalAndLessons(
-          kv,
-          parsed.sessionId,
-          parsed.project,
-          parsed.observations,
-          compressed,
-          firstPrompt,
-        );
+        if (addedObservations > 0) {
+          await deriveCrystalAndLessons(
+            kv,
+            parsed.sessionId,
+            parsed.project,
+            parsed.observations,
+            compressed,
+            firstPrompt,
+          );
+        }
       }
 
       await safeAudit(kv, "import", "mem::replay::import-jsonl", sessionIds, {

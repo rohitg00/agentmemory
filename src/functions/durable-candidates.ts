@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { homedir } from "node:os";
-import { lstat, readFile } from "node:fs/promises";
+import { lstat, readFile, realpath } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import type { ISdk } from "iii-sdk";
 import type {
@@ -16,7 +16,7 @@ import {
   bucketCandidateConfidence,
   updateSummaryCandidate,
 } from "./durable-candidate-utils.js";
-import { summarizeSession } from "./summarize.js";
+import { DURABLE_CANDIDATE_SCHEMA_VERSION, summarizeSession } from "./summarize.js";
 import {
   MAX_FILES_DEFAULT,
   MAX_FILES_UPPER_BOUND,
@@ -99,6 +99,7 @@ function collectDurableCandidates(
 
 async function readArchiveTargets(
   rawPath: string,
+  archiveRoot: string,
   maxFiles?: number,
 ): Promise<
   | {
@@ -116,6 +117,10 @@ async function readArchiveTargets(
     ? join(homedir(), rawPath.slice(1))
     : rawPath;
   const abs = resolve(expanded);
+  const allowedRoot = resolve(archiveRoot);
+  if (!isSubPath(abs, allowedRoot)) {
+    return { success: false, error: `archive path must live under ${allowedRoot}` };
+  }
   if (isSensitive(abs)) {
     return { success: false, error: "refusing to process sensitive-looking path" };
   }
@@ -130,6 +135,17 @@ async function readArchiveTargets(
     return { success: false, error: "path not found" };
   }
 
+  let realAllowedRoot: string;
+  let realPath: string;
+  try {
+    [realAllowedRoot, realPath] = await Promise.all([realpath(allowedRoot), realpath(abs)]);
+  } catch {
+    return { success: false, error: "archive path cannot be resolved safely" };
+  }
+  if (!isSubPath(realPath, realAllowedRoot)) {
+    return { success: false, error: "archive path resolves outside the allowed root" };
+  }
+
   const effectiveMaxFiles =
     maxFiles === undefined
       ? MAX_FILES_DEFAULT
@@ -137,6 +153,19 @@ async function readArchiveTargets(
 
   if (stat.isDirectory()) {
     const found = await findJsonlFiles(abs, effectiveMaxFiles);
+    const unsafeFile = await Promise.all(
+      found.files.map(async (file) => {
+        if (await isSymlink(file)) return true;
+        try {
+          return !isSubPath(await realpath(file), realAllowedRoot);
+        } catch {
+          return true;
+        }
+      }),
+    );
+    if (unsafeFile.some(Boolean)) {
+      return { success: false, error: "archive contains a symlink or path outside the allowed root" };
+    }
     return {
       success: true,
       files: found.files,
@@ -167,7 +196,9 @@ export function registerDurableCandidateFunctions(
   sdk: ISdk,
   kv: StateKV,
   provider: MemoryProvider,
+  options: { archiveRoot?: string } = {},
 ): void {
+  const archiveRoot = options.archiveRoot || ARCHIVE_ROOT_DEFAULT;
   sdk.registerFunction(
     "mem::durable-candidates::list",
     async (data: {
@@ -228,6 +259,8 @@ export function registerDurableCandidateFunctions(
       candidateId?: string;
       dryRun?: boolean;
       force?: boolean;
+      forceReason?: string;
+      promotedBy?: string;
     }) => {
       const candidateId =
         typeof data?.candidateId === "string" ? data.candidateId.trim() : "";
@@ -244,6 +277,10 @@ export function registerDurableCandidateFunctions(
       const { summary, candidate } = found;
       const dryRun = data?.dryRun === true;
       const force = data?.force === true;
+      const forceReason =
+        typeof data?.forceReason === "string" ? data.forceReason.trim() : "";
+      const promotedBy =
+        typeof data?.promotedBy === "string" ? data.promotedBy.trim() : "";
       const requiresForce =
         candidate.confidence < DURABLE_PROMOTE_MIN_CONFIDENCE ||
         candidate.sourceObservationIds.length === 0;
@@ -304,6 +341,15 @@ export function registerDurableCandidateFunctions(
         };
       }
 
+      if (requiresForce && (!forceReason || !promotedBy)) {
+        return {
+          success: false,
+          error: "force_metadata_required",
+          requiresForce: true,
+          required: ["forceReason", "promotedBy"],
+        };
+      }
+
       if (dryRun) {
         return {
           success: true,
@@ -344,8 +390,14 @@ export function registerDurableCandidateFunctions(
         ...candidate,
         promotedMemoryId: rememberResult.memory.id,
         promotedAt,
+        ...(requiresForce && { forceReason, promotedBy }),
       });
       await kv.set(KV.summaries, summary.sessionId, updatedSummary);
+      await safeAudit(kv, "remember", "mem::durable-candidates::promote", [candidate.sessionId], {
+        candidateId: candidate.id,
+        force: requiresForce,
+        ...(requiresForce && { forceReason, promotedBy }),
+      });
 
       return {
         success: true,
@@ -377,9 +429,17 @@ export function registerDurableCandidateFunctions(
       const sessions = await kv.list<Session>(KV.sessions);
       const summaries = await kv.list<SessionSummary>(KV.summaries);
       const memories = await kv.list<import("../types.js").Memory>(KV.memories);
+      const archiveImports = await kv.list<ArchiveImportRecord>(KV.archiveImports);
       const summaryBySessionId = new Map(
         summaries.map((summary) => [summary.sessionId, summary] as const),
       );
+      const archiveBySessionId = new Map<string, ArchiveImportRecord>();
+      for (const record of archiveImports) {
+        const previous = archiveBySessionId.get(record.sessionId);
+        if (!previous || record.updatedAt > previous.updatedAt) {
+          archiveBySessionId.set(record.sessionId, record);
+        }
+      }
 
       const scope = {
         sessions: sessions.length,
@@ -395,6 +455,11 @@ export function registerDurableCandidateFunctions(
         sessionId: string;
         project: string;
         observationCount: number;
+        reason:
+          | "summary_failed"
+          | "candidate_schema_outdated"
+          | "live_session_without_archive"
+          | "candidate_schema_missing";
       }> = [];
       const skippedSessions: Array<{ sessionId: string; reason: string }> = [];
 
@@ -419,17 +484,40 @@ export function registerDurableCandidateFunctions(
           continue;
         }
         const existingSummary = summaryBySessionId.get(session.id);
-        if ((existingSummary?.durableCandidates?.length || 0) > 0) {
+        const archiveImport = archiveBySessionId.get(session.id);
+        if (
+          existingSummary?.durableCandidatesVersion === DURABLE_CANDIDATE_SCHEMA_VERSION &&
+          (existingSummary.durableCandidates?.length || 0) > 0
+        ) {
           skippedSessions.push({
             sessionId: session.id,
             reason: "already_has_candidates",
           });
           continue;
         }
+        if (
+          existingSummary?.durableCandidatesVersion === DURABLE_CANDIDATE_SCHEMA_VERSION &&
+          Array.isArray(existingSummary.durableCandidates)
+        ) {
+          skippedSessions.push({
+            sessionId: session.id,
+            reason: "candidate_schema_current",
+          });
+          continue;
+        }
+        const reason =
+          archiveImport?.status === "failed" && archiveImport.failureStage === "summary"
+            ? "summary_failed"
+            : existingSummary?.durableCandidatesVersion !== undefined
+              ? "candidate_schema_outdated"
+              : !archiveImport
+                ? "live_session_without_archive"
+                : "candidate_schema_missing";
         eligibleSessions.push({
           sessionId: session.id,
           project: session.project,
           observationCount: observations.length,
+          reason,
         });
       }
 
@@ -508,7 +596,6 @@ export function registerDurableCandidateFunctions(
       path?: string;
       maxFiles?: number;
       force?: boolean;
-      allowNonArchivePath?: boolean;
     } = {}) => {
       const rawPath =
         typeof data.path === "string" && data.path.trim()
@@ -518,17 +605,9 @@ export function registerDurableCandidateFunctions(
         data.maxFiles === undefined
           ? undefined
           : Math.min(data.maxFiles, MAX_FILES_UPPER_BOUND);
-      const allowNonArchivePath = data.allowNonArchivePath === true;
-      const fileSelection = await readArchiveTargets(rawPath, maxFiles);
+      const fileSelection = await readArchiveTargets(rawPath, archiveRoot, maxFiles);
       if (!fileSelection.success) {
         return { success: false, error: fileSelection.error };
-      }
-
-      if (!allowNonArchivePath && !isSubPath(fileSelection.rootPath, ARCHIVE_ROOT_DEFAULT)) {
-        return {
-          success: false,
-          error: `archive path must live under ${ARCHIVE_ROOT_DEFAULT}`,
-        };
       }
 
       const processed: Array<{
@@ -557,82 +636,183 @@ export function registerDurableCandidateFunctions(
         }
 
         const parsed = parseJsonlText(text);
-        if (parsed.observations.length === 0) {
-          skipped.push({
-            archivePath: file,
-            sessionId: parsed.sessionId,
-            reason: "no_observations",
-          });
-          continue;
-        }
 
         const fileHash = hashText(text);
         const idempotencyKey = fingerprintId(
           "arch",
-          `${file}\n${fileHash}\n${parsed.sessionId}`,
+          `${parsed.sessionId}\n${fileHash}`,
         );
         const existingImport = await kv.get<ArchiveImportRecord>(
           KV.archiveImports,
           idempotencyKey,
         );
-        if (existingImport && data.force !== true) {
+        if (
+          existingImport &&
+          (existingImport.status === "completed" || existingImport.summaryCreated === true)
+        ) {
           skipped.push({
             archivePath: file,
             sessionId: parsed.sessionId,
-            reason: "already_processed",
+            reason: "already_completed",
           });
           continue;
         }
 
-        const importResult = (await sdk.trigger({
-          function_id: "mem::replay::import-jsonl",
-          payload: { path: file, maxFiles: 1 },
-        })) as { success?: boolean; error?: string };
-        if (!importResult?.success) {
-          skipped.push({
-            archivePath: file,
-            sessionId: parsed.sessionId,
-            reason: importResult?.error || "import_failed",
-          });
-          continue;
-        }
+        const startedAt = new Date().toISOString();
+        let record: ArchiveImportRecord = {
+          ...existingImport,
+          id: idempotencyKey,
+          archivePath: file,
+          fileHash,
+          sessionId: parsed.sessionId,
+          status: existingImport?.status || "discovered",
+          createdAt: existingImport?.createdAt || startedAt,
+          updatedAt: startedAt,
+          attempts: (existingImport?.attempts || 0) + 1,
+          parsedObservationCount: parsed.observations.length,
+          importedObservationCount:
+            existingImport?.importedObservationCount || 0,
+          source: "archive-process",
+        };
+        await kv.set(KV.archiveImports, idempotencyKey, record);
 
-        const session = await kv.get<Session>(KV.sessions, parsed.sessionId);
-        if (session) {
-          const observationCount = (
+        const observationsAlreadyImported =
+          record.status === "observations_imported" ||
+          record.status === "summarizing" ||
+          (record.status === "failed" && record.failureStage === "summary");
+        if (!observationsAlreadyImported) {
+          record = {
+            ...record,
+            status: "importing_observations",
+            failureStage: undefined,
+            lastError: undefined,
+            updatedAt: new Date().toISOString(),
+          };
+          await kv.set(KV.archiveImports, idempotencyKey, record);
+
+          const importResult = (await sdk.trigger({
+            function_id: "mem::replay::import-jsonl",
+            payload: { path: file, maxFiles: 1 },
+          })) as { success?: boolean; error?: string };
+          if (!importResult?.success) {
+            record = {
+              ...record,
+              status: "failed",
+              failureStage: "observations",
+              lastError: importResult?.error || "import_failed",
+              updatedAt: new Date().toISOString(),
+            };
+            await kv.set(KV.archiveImports, idempotencyKey, record);
+            skipped.push({
+              archivePath: file,
+              sessionId: parsed.sessionId,
+              reason: record.lastError || "import_failed",
+            });
+            continue;
+          }
+
+          const session = await kv.get<Session>(KV.sessions, parsed.sessionId);
+          if (!session) {
+            record = {
+              ...record,
+              status: "failed",
+              failureStage: "observations",
+              lastError: "session_not_found_after_import",
+              updatedAt: new Date().toISOString(),
+            };
+            await kv.set(KV.archiveImports, idempotencyKey, record);
+            skipped.push({
+              archivePath: file,
+              sessionId: parsed.sessionId,
+              reason: record.lastError || "session_not_found_after_import",
+            });
+            continue;
+          }
+
+          session.observationCount = (
             await kv.list(KV.observations(parsed.sessionId))
           ).length;
-          session.observationCount = observationCount;
           session.status = "completed";
           session.endedAt = parsed.endedAt || session.endedAt;
           await kv.set(KV.sessions, parsed.sessionId, session);
+
+          record = {
+            ...record,
+            status: "observations_imported",
+            importedObservationCount: parsed.observations.length,
+            failureStage: undefined,
+            lastError: undefined,
+            updatedAt: new Date().toISOString(),
+          };
+          await kv.set(KV.archiveImports, idempotencyKey, record);
         }
 
+        if (parsed.observations.length === 0) {
+          const completedAt = new Date().toISOString();
+          record = {
+            ...record,
+            status: "completed",
+            durableCandidateCount: 0,
+            summaryCreated: false,
+            completedAt,
+            failureStage: undefined,
+            lastError: undefined,
+            updatedAt: completedAt,
+          };
+          await kv.set<ArchiveImportRecord>(KV.archiveImports, idempotencyKey, record);
+          processed.push({
+            archivePath: file,
+            sessionId: parsed.sessionId,
+            durableCandidateCount: 0,
+            idempotencyKey,
+            fileHash,
+          });
+          continue;
+        }
+
+        record = {
+          ...record,
+          status: "summarizing",
+          failureStage: undefined,
+          lastError: undefined,
+          updatedAt: new Date().toISOString(),
+        };
+        await kv.set(KV.archiveImports, idempotencyKey, record);
         const summaryResult = await summarizeSession(kv, provider, {
           sessionId: parsed.sessionId,
           persistSummary: true,
         });
         if (!summaryResult.success) {
+          record = {
+            ...record,
+            status: "failed",
+            failureStage: "summary",
+            lastError: summaryResult.error,
+            updatedAt: new Date().toISOString(),
+          };
+          await kv.set(KV.archiveImports, idempotencyKey, record);
           skipped.push({
             archivePath: file,
             sessionId: parsed.sessionId,
-            reason: summaryResult.error,
+            reason: record.lastError || "summary_failed",
           });
           continue;
         }
 
         const durableCandidateCount =
           summaryResult.summary.durableCandidates?.length || 0;
-        await kv.set<ArchiveImportRecord>(KV.archiveImports, idempotencyKey, {
-          id: idempotencyKey,
-          archivePath: file,
-          fileHash,
-          sessionId: parsed.sessionId,
-          processedAt: new Date().toISOString(),
+        const completedAt = new Date().toISOString();
+        record = {
+          ...record,
+          status: "completed",
           durableCandidateCount,
           summaryCreated: true,
-          source: "archive-process",
-        });
+          completedAt,
+          failureStage: undefined,
+          lastError: undefined,
+          updatedAt: completedAt,
+        };
+        await kv.set<ArchiveImportRecord>(KV.archiveImports, idempotencyKey, record);
         processed.push({
           archivePath: file,
           sessionId: parsed.sessionId,

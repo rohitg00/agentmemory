@@ -36,6 +36,7 @@ const CHUNK_CONCURRENCY_DEFAULT = 6;
 // Bail on the merged summary if more than this fraction of chunks fail
 // to parse — a half-blind narrative is worse than a clean error.
 const MAX_SKIP_RATIO = 0.5;
+export const DURABLE_CANDIDATE_SCHEMA_VERSION = 1;
 
 function getChunkSize(): number {
   const raw = process.env.SUMMARIZE_CHUNK_SIZE;
@@ -367,7 +368,12 @@ export async function summarizeSession(
     }
 
     const qualityScore = scoreSummary(summaryForValidation);
-    let summaryToStore = summary;
+    const durableCandidatesGeneratedAt = new Date().toISOString();
+    let summaryToStore: SessionSummary = {
+      ...summary,
+      durableCandidatesVersion: DURABLE_CANDIDATE_SCHEMA_VERSION,
+      durableCandidatesGeneratedAt,
+    };
 
     if (persistSummary) {
       if (mergeDurableCandidatesOnly) {
@@ -377,6 +383,8 @@ export async function summarizeSession(
             ...existingSummary,
             observationCount: summary.observationCount,
             durableCandidates: summary.durableCandidates,
+            durableCandidatesVersion: DURABLE_CANDIDATE_SCHEMA_VERSION,
+            durableCandidatesGeneratedAt,
           };
         }
       }

@@ -563,7 +563,6 @@ export function registerApiTriggers(
         path?: string;
         maxFiles?: number;
         force?: boolean;
-        allowNonArchivePath?: boolean;
       }>,
     ): Promise<Response> => {
       const authErr = checkAuth(req, secret);
@@ -573,7 +572,6 @@ export function registerApiTriggers(
         path?: string;
         maxFiles?: number;
         force?: boolean;
-        allowNonArchivePath?: boolean;
       } = {};
       if (body.path !== undefined) {
         if (typeof body.path !== "string" || body.path.trim().length === 0) {
@@ -601,15 +599,6 @@ export function registerApiTriggers(
           return { status_code: 400, body: { error: "force must be a boolean" } };
         }
         payload.force = body.force;
-      }
-      if (body.allowNonArchivePath !== undefined) {
-        if (typeof body.allowNonArchivePath !== "boolean") {
-          return {
-            status_code: 400,
-            body: { error: "allowNonArchivePath must be a boolean" },
-          };
-        }
-        payload.allowNonArchivePath = body.allowNonArchivePath;
       }
       const result = await sdk.trigger({
         function_id: "mem::archive::process",
@@ -1191,7 +1180,13 @@ export function registerApiTriggers(
 
   sdk.registerFunction("api::durable-candidates::promote",
     async (
-      req: ApiRequest<{ candidateId?: string; dryRun?: boolean; force?: boolean }>,
+      req: ApiRequest<{
+        candidateId?: string;
+        dryRun?: boolean;
+        force?: boolean;
+        forceReason?: string;
+        promotedBy?: string;
+      }>,
     ): Promise<Response> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
@@ -1206,12 +1201,24 @@ export function registerApiTriggers(
       if (body.force !== undefined && typeof body.force !== "boolean") {
         return { status_code: 400, body: { error: "force must be a boolean" } };
       }
+      const forceReason =
+        body.forceReason === undefined ? undefined : asNonEmptyString(body.forceReason);
+      if (body.forceReason !== undefined && !forceReason) {
+        return { status_code: 400, body: { error: "forceReason must be a non-empty string" } };
+      }
+      const promotedBy =
+        body.promotedBy === undefined ? undefined : asNonEmptyString(body.promotedBy);
+      if (body.promotedBy !== undefined && !promotedBy) {
+        return { status_code: 400, body: { error: "promotedBy must be a non-empty string" } };
+      }
       const result = await sdk.trigger({
         function_id: "mem::durable-candidates::promote",
         payload: {
           candidateId,
           ...(body.dryRun !== undefined && { dryRun: body.dryRun }),
           ...(body.force !== undefined && { force: body.force }),
+          ...(forceReason !== undefined && { forceReason }),
+          ...(promotedBy !== undefined && { promotedBy }),
         },
       });
       return { status_code: 200, body: result };
