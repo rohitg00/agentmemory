@@ -100,7 +100,7 @@ agentmemory                                      # start the memory server on :3
 agentmemory demo                                 # seed sample sessions + prove recall
 agentmemory demo --serve                         # one command: boot server, run demo, tear down (no second terminal)
 agentmemory connect claude-code                  # wire MCP into your agent (also: copilot-cli, codex, cursor, gemini-cli, ...)
-npx skills add rohitg00/agentmemory -y           # install 15 native skills (8 you can invoke, 7 reference) so your agent knows when to use the tools
+npx skills add rohitg00/agentmemory -y           # install 17 native skills (10 invocable, 7 reference) so your agent knows when to use the tools
 ```
 
 Or via `npx` (no install):
@@ -545,7 +545,7 @@ The Codex plugin ships from the same `plugin/` directory as the Claude Code plug
 
 - `@agentmemory/mcp` as an MCP server (proxies all 53 tools when `AGENTMEMORY_URL` points at a running agentmemory server; falls back to 7 tools locally when no server is reachable)
 - 6 lifecycle hooks: `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PreCompact`, `Stop`
-- 8 invocable skills: `/recall`, `/remember`, `/session-history`, `/forget`, `/recap`, `/handoff`, `/commit-context`, `/commit-history`, plus 7 reference skills the agent loads on demand (MCP tools, REST API, config, agents, hooks, architecture, and the skill-authoring guide)
+- 10 invocable skills: `/recall`, `/remember`, `/session-history`, `/forget`, `/recap`, `/handoff`, `/commit-context`, `/commit-history`, `/recall-debug`, `/why-memory`, plus 7 reference skills the agent loads on demand (MCP tools, REST API, config, agents, hooks, architecture, and the skill-authoring guide)
 
 Codex's hook engine injects `CLAUDE_PLUGIN_ROOT` into hook subprocesses (per [`codex-rs/hooks/src/engine/discovery.rs`](https://github.com/openai/codex/blob/main/codex-rs/hooks/src/engine/discovery.rs)), so the same hook scripts work across both hosts without duplication. Subagent / SessionEnd / Notification / TaskCompleted / PostToolUseFailure events are Claude-Code-only and are not registered for Codex.
 
@@ -638,7 +638,7 @@ This is **complementary** to `agentmemory connect <agent>`:
 - `agentmemory connect <agent>` writes the MCP server config so the tools are available.
 - `npx skills add rohitg00/agentmemory` installs the skills so the agent knows when to call them.
 
-For the few agents the skills CLI doesn't cover yet (Zed v1.3.x and below), drop the 15 SKILL.md files under the agent's native skill directory yourself — same format works everywhere.
+For the few agents the skills CLI doesn't cover yet (Zed v1.3.x and below), drop the 17 SKILL.md files under the agent's native skill directory yourself — same format works everywhere.
 
 #### Standard MCP block
 
@@ -676,7 +676,7 @@ The agentmemory entry is the **same MCP server block** across every host that us
 | **Qwen Code** | `~/.qwen/settings.json` | `agentmemory connect qwen` writes the standard `mcpServers` block. Hook payload is field-compatible with Claude Code, so the existing 12-hook scripts work without modification — wire them via the `hooks` section in the same `settings.json`. |
 | **Antigravity** (replaces Gemini CLI) | `mcp_config.json` (in Antigravity's User dir) | `agentmemory connect antigravity` writes the standard `mcpServers` block. macOS: `~/Library/Application Support/Antigravity/User/`. Linux: `~/.config/Antigravity/User/`. Use after the 2026-06-18 Gemini CLI sunset. |
 | **Kiro** | `~/.kiro/settings/mcp.json` | `agentmemory connect kiro` writes the user-level config. Workspace overrides go in `.kiro/settings/mcp.json` next to your code. |
-| **Warp** | `~/.warp/.mcp.json` | `agentmemory connect warp` writes the standard `mcpServers` block. Warp also auto-discovers skills from `.claude/skills/` — once the Claude Code plugin is installed the 8 agentmemory skills (`remember`, `recall`, `recap`, `handoff`, `forget`, `commit-context`, `commit-history`, `session-history`) appear natively in Warp's slash-command palette. |
+| **Warp** | `~/.warp/.mcp.json` | `agentmemory connect warp` writes the standard `mcpServers` block. Warp also auto-discovers skills from `.claude/skills/` — once the Claude Code plugin is installed the 10 agentmemory skills (`remember`, `recall`, `recap`, `handoff`, `forget`, `commit-context`, `commit-history`, `session-history`, `recall-debug`, `why-memory`) appear natively in Warp's slash-command palette. |
 | **Cline (CLI)** | `~/.cline/mcp.json` | `agentmemory connect cline` writes the standard `mcpServers` block. VS Code extension users: paste the same block via Cline Settings → MCP Servers → Edit JSON. |
 | **Continue.dev** | `~/.continue/config.yaml` (preferred) or `config.json` (legacy) | `agentmemory connect continue` creates `config.yaml` from scratch when neither exists, or modifies existing `config.json`. **If you already have `config.yaml`** the adapter prints the exact block to paste under `mcpServers:` — it won't silently rewrite your yaml because preserving comments and anchors safely needs a YAML parser the package doesn't ship. Continue uses array form (not object) for `mcpServers`. |
 | **Zed** | `~/.config/zed/settings.json` | `agentmemory connect zed` writes under `context_servers` (Zed's key, NOT `mcpServers`). Remote MCP servers can be wired via `{"url": "..."}` instead. |
@@ -955,6 +955,50 @@ npm install @xenova/transformers
 | Cohere | `embed-english-v3.0` | Free trial | General purpose |
 | OpenRouter | Any model | Varies | Multi-model proxy |
 
+### Scoped Traceable Recall
+
+Every recall (search, context injection, enrichment) is centralized through `RecallCore` (`src/recall/core.ts`) and produces a `RecallTrace` recording exactly which items were selected or dropped — and why. Traces are queryable via the `recall-debug` APIs and skills.
+
+| Trace field | What it records |
+|---|---|
+| `selected` | Items injected into context, with scores and source |
+| `dropped` | Items considered but excluded, with a structured reason |
+| `budget` | Token budget applied at recall time |
+| `scope` | Resolved project/repo/checkout identity fingerprint |
+| `entryPoint` | Which code path triggered the recall (context, enrich, smart_search, etc.) |
+
+**Recall config** (`~/.agentmemory/config.toml`):
+
+```toml
+[recall_budget]
+max_context_tokens = 800
+reserved_bootstrap_tokens = 200
+max_semantic_tokens = 600
+max_memories = 5
+max_session_summaries = 1
+max_observations = 3
+max_continuity_items = 1
+
+[recall_scope]
+unknown_auto_injection = false
+unknown_explicit_search = true
+
+[recall_trace]
+retention_days = 30
+max_traces = 10000
+max_dropped_items_per_reason = 20
+
+[recall_injection]
+reinjection_turn_window = 8
+```
+
+**Recall debug endpoints:**
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/agentmemory/recall/debug` | Query recent recall traces, filterable by `projectId`, `repoId`, `entryPoint`, `itemId` |
+| `GET` | `/agentmemory/recall/debug/{traceId}` | Fetch a single recall trace by id |
+
 ---
 
 <h2 id="mcp-server"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/section-mcp.svg"><img src="assets/tags/section-mcp.svg" alt="MCP Server" height="32" /></picture></h2>
@@ -1023,7 +1067,7 @@ npm install @xenova/transformers
 
 </details>
 
-### 6 Resources · 3 Prompts · 4 Skills
+### 6 Resources · 3 Prompts · 10 Skills + 7 Reference
 
 | Type | Name | Description |
 |------|------|-------------|
@@ -1031,13 +1075,21 @@ npm install @xenova/transformers
 | Resource | `agentmemory://project/{name}/profile` | Per-project intelligence |
 | Resource | `agentmemory://memories/latest` | Latest 10 active memories |
 | Resource | `agentmemory://graph/stats` | Knowledge graph statistics |
+| Resource | `agentmemory://recall/ledger/{projectId}` | Recall injection ledger (dedup guard) |
+| Resource | `agentmemory://recall/trace/{traceId}` | Single recall trace by id |
 | Prompt | `recall_context` | Search + return context messages |
 | Prompt | `session_handoff` | Handoff data between agents |
 | Prompt | `detect_patterns` | Analyze recurring patterns |
 | Skill | `/recall` | Search memory |
 | Skill | `/remember` | Save to long-term memory |
+| Skill | `/recap` | Recap recent session activity |
+| Skill | `/handoff` | Handoff context between agents/sessions |
 | Skill | `/session-history` | Recent session summaries |
 | Skill | `/forget` | Delete observations/sessions |
+| Skill | `/commit-context` | Show commit-level context for a change |
+| Skill | `/commit-history` | Show commit history for a file |
+| Skill | `/recall-debug` | Inspect a single recall invocation — why items were selected or dropped |
+| Skill | `/why-memory` | Explain a memory's recent recall history and scope decisions |
 
 ### Standalone MCP
 
@@ -1211,7 +1263,7 @@ Full registry: [workers.iii.dev](https://workers.iii.dev). Every worker there co
 | Prometheus / Grafana | iii OTEL + health monitor |
 | Custom plugin systems | `iii worker add <name>` |
 
-**174 source files · ~37,800 LOC · 1,423+ tests · 258 functions · 44 KV scopes** — all on three primitives. No `agentmemory plugin install`. The plugin system is iii itself.
+**184 source files · ~42,400 LOC · 1,500+ tests · 296 functions · 58 KV scopes** — all on three primitives. No `agentmemory plugin install`. The plugin system is iii itself.
 
 ---
 
@@ -1450,7 +1502,26 @@ Create `~/.agentmemory/.env`:
 # unknown_auto_injection = false
 # unknown_explicit_search = true
 # [recall_trace]
+# retention_days = 30
+# max_traces = 10000
 # max_dropped_items_per_reason = 20
+# [recall_injection]
+# reinjection_turn_window = 8
+
+# Durable candidates (P1): archive processing extracts candidate
+# memories from past sessions. Promote is explicit and idempotent.
+# Features:
+# AGENTMEMORY_DURABLE_CANDIDATES_ENABLED=false  # OFF by default
+# POST /agentmemory/archive/process             # generate candidates
+# POST /agentmemory/durable-candidates/backfill # backfill from existing observations
+# POST /agentmemory/durable-candidates/promote  # promote a candidate to memory
+
+# Vector index maintenance
+# AGENTMEMORY_DROP_STALE_INDEX=false    # OFF by default. When on, stale
+                                        # (dimension-mismatched) vectors
+                                        # in the persisted index are
+                                        # silently dropped on load instead
+                                        # of rejecting the entire index.
 
 # Auth
 # AGENTMEMORY_SECRET=your-secret

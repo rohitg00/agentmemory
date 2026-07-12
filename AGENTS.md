@@ -90,6 +90,30 @@ case "memory_your_tool": {
 }
 ```
 
+### Recall Pattern
+
+Recall is centralized through `RecallCore` (`src/recall/core.ts`). All search paths (`context`, `enrich`, `prompt-submit`, `pre-compact`, MCP `memory_recall`, `memory_smart_search`) route through it instead of calling `hybridSearch` or `kv.list` directly. This ensures every recall produces a traceable `RecallTrace` with selected/dropped items and reasons.
+
+```typescript
+const recallCore = new RecallCore(kv, config.recall, hybridSearch.searchWithTrace);
+// context generation
+registerContextFunction(sdk, kv, config.tokenBudget, recallCore);
+// enrichment (PreToolUse)
+registerEnrichFunction(sdk, kv, recallCore);
+// MCP tools: memory_recall + memory_smart_search with outputMode=structured/context
+// route through mem::context which delegates to recallCore
+```
+
+**When adding new search/recal paths, you MUST:**
+1. Route through `RecallCore` — never bypass it with direct `hybridSearch` or `kv.list`
+2. Wire recall trace persistence via `persistRecallTrace()` in `src/recall/trace-store.ts`
+3. Register new debug endpoints in `src/triggers/api.ts` (`api::recall-debug` / `api::recall-debug-by-id`)
+4. Add corresponding skill docs if the recall path is user-facing
+
+**When adding new KV scopes for recall traces:**
+1. `src/state/schema.ts` — add to the KV object (e.g. `recallTraces: { kv: "memory" }`)
+2. `src/types.ts` — add the corresponding interface (`RecallTrace`, `RecallItemTrace`, etc.)
+
 ### Hook Scripts
 Hook scripts in `src/hooks/` are standalone Node.js scripts (no iii-sdk import). They read JSON from stdin, make HTTP calls to the REST API, and exit. There are two patterns depending on whether Claude Code consumes the script's stdout:
 
@@ -114,11 +138,11 @@ Hook scripts in `src/hooks/` are standalone Node.js scripts (no iii-sdk import).
 - Test files go in `test/` with `.test.ts` extension
 - Follow existing patterns in `test/crystallize.test.ts` for function tests
 
-## Current Stats (v0.9.16)
+## Current Stats (v0.9.27)
 
-- 53 MCP tools (8 visible by default, `AGENTMEMORY_TOOLS=all` for all)
+- 53 MCP tools (core: memory_recall, memory_save, memory_compress_file, memory_file_history, memory_patterns, memory_sessions, memory_smart_search, memory_timeline, memory_profile, memory_export, memory_relations; `AGENTMEMORY_TOOLS=all` for 53)
 - 136 REST endpoints
 - 6 MCP resources, 3 MCP prompts
-- 12 hooks, 17 skills
-- 50+ iii functions
-- 950+ tests
+- 12 hooks, 17 skills (10 invocable + 7 reference)
+- 296 registered functions (148 mem::, 137 api::, 6 mcp::, 5 event::)
+- 184 source files · ~42,400 LOC · 1,500+ tests · 58 KV scopes
