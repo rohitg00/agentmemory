@@ -67,7 +67,22 @@ function getMaxAttempts(): number {
   return Number.isFinite(n) && n > 0 ? n : MAX_ATTEMPTS_DEFAULT;
 }
 
-// One chunk call with retry-once. Returns null when both attempts fail —
+// Attempts for a single chunk call in chunked (large-session) mode. Default 3
+// (was a hard 2). Kept as a SEPARATE knob from SUMMARIZE_MAX_ATTEMPTS because
+// chunk retries multiply across every chunk AND every concurrency slot, so a
+// large session under provider throttling can amplify load fast — tune this
+// down (or leave at the skip-ratio-protected default) independently of the
+// cheap top-level retry. Override via SUMMARIZE_CHUNK_MAX_ATTEMPTS.
+const CHUNK_MAX_ATTEMPTS_DEFAULT = 3;
+function getChunkMaxAttempts(): number {
+  const raw = process.env.SUMMARIZE_CHUNK_MAX_ATTEMPTS;
+  if (!raw) return CHUNK_MAX_ATTEMPTS_DEFAULT;
+  const n = parseInt(raw, 10);
+  return Number.isFinite(n) && n > 0 ? n : CHUNK_MAX_ATTEMPTS_DEFAULT;
+}
+
+// One chunk call, retried up to getChunkMaxAttempts() times (default 3).
+// Returns null when all attempts fail —
 // whether by parse failure, provider 4xx (content rejected by upstream
 // filters), or transient network/5xx errors that didn't recover on retry.
 // All failure modes are equivalent at this layer: the chunk is unusable,
@@ -82,7 +97,8 @@ async function summarizeChunkWithRetry(
   idx: number,
   total: number,
 ): Promise<SessionSummary | null> {
-  for (let attempt = 1; attempt <= 2; attempt++) {
+  const maxAttempts = getChunkMaxAttempts();
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
       const xml = await provider.summarize(
         SUMMARY_SYSTEM,
