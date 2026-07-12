@@ -14,7 +14,7 @@ import { fetchWithTimeout } from './_fetch.js'
  *   MAX_TOKENS       — max output tokens (default: 4096)
  *
  * Optional:
- *   MINIMAX_BASE_URL — Anthropic-compatible base URL (default: https://api.minimax.io/anthropic/v1)
+ *   MINIMAX_BASE_URL — Anthropic-compatible base URL (default: https://api.minimax.io/anthropic)
  */
 export class MinimaxProvider implements MemoryProvider {
   name = 'minimax'
@@ -28,11 +28,11 @@ export class MinimaxProvider implements MemoryProvider {
     this.model = model
     this.maxTokens = maxTokens
     this.baseUrl =
-      getEnvVar('MINIMAX_BASE_URL') || 'https://api.minimax.io/anthropic/v1'
+      getEnvVar('MINIMAX_BASE_URL') || 'https://api.minimax.io/anthropic'
   }
 
   private messagesUrl(): string {
-    return `${this.baseUrl.replace(/\/+$/, '')}/messages`
+    return `${this.baseUrl.replace(/\/+$/, '')}/v1/messages`
   }
 
   async compress(systemPrompt: string, userPrompt: string): Promise<string> {

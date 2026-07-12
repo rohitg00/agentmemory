@@ -12,16 +12,16 @@ describe("MinimaxProvider — base URL resolution (#285)", () => {
     }
   });
 
-  it("defaults to MiniMax's Anthropic-compatible /anthropic/v1 endpoint", () => {
+  it("defaults to MiniMax's Anthropic-compatible base URL", () => {
     delete process.env["MINIMAX_BASE_URL"];
     const provider = new MinimaxProvider("test-key", "MiniMax-M3", 800);
     expect((provider as unknown as { baseUrl: string }).baseUrl).toBe(
-      "https://api.minimax.io/anthropic/v1",
+      "https://api.minimax.io/anthropic",
     );
   });
 
-  it("posts messages directly under MINIMAX_BASE_URL without adding another /v1 segment", () => {
-    process.env["MINIMAX_BASE_URL"] = "https://custom.example.com/anthropic/v1/";
+  it("appends /v1/messages to MINIMAX_BASE_URL", () => {
+    process.env["MINIMAX_BASE_URL"] = "https://custom.example.com/anthropic/";
     const provider = new MinimaxProvider("test-key", "MiniMax-M3", 800);
     expect((provider as unknown as { messagesUrl: () => string }).messagesUrl()).toBe(
       "https://custom.example.com/anthropic/v1/messages",
@@ -29,10 +29,10 @@ describe("MinimaxProvider — base URL resolution (#285)", () => {
   });
 
   it("honors MINIMAX_BASE_URL via getEnvVar (merged ~/.agentmemory/.env + process.env)", () => {
-    process.env["MINIMAX_BASE_URL"] = "https://custom.example.com/anthropic/v1";
+    process.env["MINIMAX_BASE_URL"] = "https://custom.example.com/anthropic";
     const provider = new MinimaxProvider("test-key", "MiniMax-M3", 800);
     expect((provider as unknown as { baseUrl: string }).baseUrl).toBe(
-      "https://custom.example.com/anthropic/v1",
+      "https://custom.example.com/anthropic",
     );
   });
 });
