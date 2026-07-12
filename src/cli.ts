@@ -185,6 +185,10 @@ Commands:
   import-jsonl [p]   Import Claude Code JSONL transcripts (default: ~/.claude/projects)
                      --max-files <N> | --max-files=<N>: override scan cap (default 200, max 1000;
                      out-of-range is rejected; for trees >1000 files, batch by subdirectory)
+  archive-watcher    Install, run, or uninstall the Codex archive watcher.
+                     install [--yes|--new-only|--dry-run]
+                     run [--mode background|once]
+                     uninstall
 
 Options:
   --help, -h         Show this help
@@ -2649,6 +2653,11 @@ async function runMcp(): Promise<void> {
   await import("./mcp/standalone.js");
 }
 
+async function runArchiveWatcherCmd(): Promise<void> {
+  const { runArchiveWatcherCommand } = await import("./cli/archive-watcher.js");
+  await runArchiveWatcherCommand(args.slice(1));
+}
+
 async function runConnectCmd(): Promise<void> {
   const { runConnect } = await import("./cli/connect/index.js");
   await runConnect(args.slice(1));
@@ -2983,6 +2992,7 @@ const commands: Record<string, () => Promise<void>> = {
   remove: runRemove,
   mcp: runMcp,
   "import-jsonl": runImportJsonl,
+  "archive-watcher": runArchiveWatcherCmd,
 };
 
 const handler = commands[args[0] ?? ""] ?? main;

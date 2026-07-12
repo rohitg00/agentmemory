@@ -561,6 +561,26 @@ agentmemory connect codex --with-hooks
 
 This adds an idempotent block to `~/.codex/hooks.json` referencing absolute paths to the bundled scripts (no `${CLAUDE_PLUGIN_ROOT}` expansion needed at user-scope). Re-run the same command after upgrading agentmemory to refresh paths. User entries in the same file are preserved; only previous agentmemory entries are replaced.
 
+#### Codex archive ingestion (Windows)
+
+Codex does not expose a native Archive lifecycle event. On native Windows, agentmemory can watch `~/.codex/archived_sessions` through an explicit, user-scoped Scheduled Task. The task invokes the stable `agentmemory` CLI; it does not point directly at a versioned npm-package script.
+
+```powershell
+# Inspect the first-run history decision without changing state or tasks
+agentmemory archive-watcher install --dry-run
+
+# Process existing archives, then keep watching future archives
+agentmemory archive-watcher install --yes
+
+# Skip archives that already exist and watch only future files
+agentmemory archive-watcher install --new-only
+
+# Remove only the Scheduled Task; state, ledger, and canonical data remain
+agentmemory archive-watcher uninstall
+```
+
+The watcher health-checks agentmemory once per scan, waits for two stable file observations before submitting JSONL, and retries transient failures with bounded backoff. Completed state is recorded only after the server archive ledger returns `processed` or `skipped_completed`. State is kept at `%USERPROFILE%\\.agentmemory\\archive-watcher-state.json`.
+
 ### GitHub Copilot CLI
 
 ```bash

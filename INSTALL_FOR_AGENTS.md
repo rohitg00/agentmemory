@@ -82,7 +82,25 @@ If you cannot tell which agent you are, default to `claude-code`. After wiring, 
 
 Expect: the agent now lists agentmemory's tools. With the server running you should see the full set of 53 tools (for example `memory_save`, `memory_smart_search`, `memory_sessions`). If you see only 7 tools, the MCP shim could not reach a server, see Troubleshooting.
 
-## 6. Install native skills
+## 6. Enable Codex archive ingestion on native Windows
+
+Codex writes completed sessions to `~/.codex/archived_sessions` but does not expose an Archive hook. After installing the stable `agentmemory` CLI, choose one explicit history policy:
+
+```powershell
+agentmemory archive-watcher install --dry-run
+agentmemory archive-watcher install --yes       # process existing + future archives
+agentmemory archive-watcher install --new-only  # future archives only
+```
+
+The installer is idempotent and registers a user-scoped Scheduled Task that invokes `agentmemory archive-watcher run --mode background`. It does not delete state, the archive ledger, the canonical store, or memory data. Remove only the task with:
+
+```powershell
+agentmemory archive-watcher uninstall
+```
+
+The watcher performs one health check per scan, waits for two stable observations before posting a file, and uses bounded retry backoff while the server is unavailable.
+
+## 7. Install native skills
 
 ```bash
 npx skills add rohitg00/agentmemory -y
