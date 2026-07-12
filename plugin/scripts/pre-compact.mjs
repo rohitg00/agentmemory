@@ -55,13 +55,20 @@ async function main() {
 		});
 	} catch {}
 	try {
+		await fetch(`${REST_URL}/agentmemory/recall/context-epoch`, {
+			method: "POST",
+			headers: authHeaders(),
+			body: JSON.stringify({ sessionId }),
+			signal: AbortSignal.timeout(1e3)
+		});
 		const res = await fetch(`${REST_URL}/agentmemory/context`, {
 			method: "POST",
 			headers: authHeaders(),
 			body: JSON.stringify({
 				sessionId,
 				project,
-				budget: 1500
+				cwd: data.cwd || process.cwd(),
+				outputMode: "bootstrap"
 			}),
 			signal: AbortSignal.timeout(5e3)
 		});

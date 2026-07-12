@@ -67,6 +67,7 @@ async function main() {
 				files,
 				terms,
 				toolName,
+				cwd: typeof data.cwd === "string" ? data.cwd : process.cwd(),
 				...project !== void 0 && { project }
 			}),
 			signal: AbortSignal.timeout(2e3)

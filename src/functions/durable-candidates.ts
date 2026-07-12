@@ -6,11 +6,13 @@ import type { ISdk } from "iii-sdk";
 import type {
   ArchiveImportRecord,
   DurableCandidate,
+  DurableCandidateRecommendation,
+  Memory,
   Session,
   SessionSummary,
 } from "../types.js";
 import { StateKV } from "../state/kv.js";
-import { KV, fingerprintId } from "../state/schema.js";
+import { KV, fingerprintId, jaccardSimilarity } from "../state/schema.js";
 import {
   DURABLE_PROMOTE_MIN_CONFIDENCE,
   bucketCandidateConfidence,
@@ -95,6 +97,12 @@ function collectDurableCandidates(
       if (byCreatedAt !== 0) return byCreatedAt;
       return b.confidence - a.confidence;
     });
+}
+
+function isPlanOrTodo(candidate: DurableCandidate): boolean {
+  return /\b(todo|to[- ]do|plan|planned|next step|follow[- ]up)\b/i.test(
+    `${candidate.title}\n${candidate.content}`,
+  );
 }
 
 async function readArchiveTargets(
@@ -250,6 +258,43 @@ export function registerDurableCandidateFunctions(
         total: candidates.length,
         candidates,
       };
+    },
+  );
+
+  sdk.registerFunction(
+    "mem::durable-candidates::recommend",
+    async (data: { candidateId?: string; project?: string } = {}) => {
+      const summaries = await kv.list<SessionSummary>(KV.summaries);
+      const all = collectDurableCandidates(summaries)
+        .filter((candidate) => !candidate.promotedMemoryId)
+        .filter((candidate) => !data.candidateId || candidate.id === data.candidateId)
+        .filter((candidate) => !data.project || candidate.project === data.project);
+      const memories = await kv.list<Memory>(KV.memories);
+      const recommendations: DurableCandidateRecommendation[] = [];
+      for (const candidate of all) {
+        const reasons: string[] = [];
+        if (candidate.confidence >= 0.9) reasons.push("confidence >= 0.90");
+        if (candidate.project) reasons.push("project scope explicit");
+        if (candidate.sourceObservationIds.length >= 3) reasons.push("3 evidence observations");
+        const hasConflict = memories.some((memory) =>
+          memory.isLatest !== false &&
+          memory.project === candidate.project &&
+          jaccardSimilarity(memory.content.toLowerCase(), candidate.content.toLowerCase()) > 0.7,
+        );
+        if (!hasConflict) reasons.push("no conflicting memory");
+        if (!isPlanOrTodo(candidate)) reasons.push("not a plan or todo");
+        const eligible = reasons.length === 5;
+        const recommendation: DurableCandidateRecommendation = {
+          candidateId: candidate.id,
+          recommendation: eligible ? "auto_promote_eligible" : "not_eligible",
+          reasons,
+          wouldPromote: false,
+          evaluatedAt: new Date().toISOString(),
+        };
+        await kv.set(KV.durableRecommendations, candidate.id, recommendation);
+        recommendations.push(recommendation);
+      }
+      return { success: true, recommendations };
     },
   );
 

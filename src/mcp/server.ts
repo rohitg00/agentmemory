@@ -121,6 +121,25 @@ export function registerMcpEndpoints(
               typeof args.agentId === "string" && args.agentId.trim().length > 0
                 ? (args.agentId as string).trim()
                 : undefined;
+            const outputMode = typeof args.outputMode === "string" ? args.outputMode.trim().toLowerCase() : undefined;
+            if (outputMode === "structured" || outputMode === "context") {
+              const result = await sdk.trigger({ function_id: "mem::context", payload: {
+                sessionId: typeof args.sessionId === "string" ? args.sessionId : "explicit-recall",
+                project: typeof args.project === "string" ? args.project : "",
+                projectId: typeof args.project === "string" ? args.project : undefined,
+                repoId: typeof args.repoId === "string" ? args.repoId : undefined,
+                checkoutId: typeof args.checkoutId === "string" ? args.checkoutId : undefined,
+                query: args.query,
+                entryPoint: "memory_recall",
+                outputMode: outputMode === "structured" ? "ranked_results" : "rendered_context",
+                ...(tokenBudget ? { budget: tokenBudget } : {}),
+                debug: true,
+              } });
+              return {
+                status_code: 200,
+                body: { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] },
+              };
+            }
             const result = await sdk.trigger({ function_id: "mem::search", payload: {
               query: args.query,
               limit: typeof args.limit === "number" ? args.limit : 10,
@@ -273,12 +292,28 @@ export function registerMcpEndpoints(
             }
             const expandIds = parseCsvList(args.expandIds).slice(0, 20);
             const limit = Math.max(1, Math.min(100, asNumber(args.limit, 10) ?? 10));
+            if (typeof args.project === "string" && args.project.trim()) {
+              const result = await sdk.trigger({ function_id: "mem::context", payload: {
+                sessionId: typeof args.sessionId === "string" ? args.sessionId : "smart-search",
+                project: args.project,
+                projectId: args.project,
+                repoId: typeof args.repoId === "string" ? args.repoId : undefined,
+                checkoutId: typeof args.checkoutId === "string" ? args.checkoutId : undefined,
+                query: args.query,
+                entryPoint: "smart_search",
+                outputMode: "ranked_results",
+                debug: true,
+                limit,
+              } });
+              return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] } };
+            }
             const result = await sdk.trigger({
               function_id: "mem::smart-search",
               payload: {
                 query: args.query,
                 expandIds,
                 limit,
+                project: typeof args.project === "string" ? args.project : undefined,
               },
             });
             return {

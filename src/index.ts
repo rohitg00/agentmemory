@@ -23,6 +23,7 @@ import { StateKV } from "./state/kv.js";
 import { KV } from "./state/schema.js";
 import { VectorIndex } from "./state/vector-index.js";
 import { HybridSearch } from "./state/hybrid-search.js";
+import { RecallCore } from "./recall/core.js";
 import { IndexPersistence } from "./state/index-persistence.js";
 import { registerPrivacyFunction } from "./functions/privacy.js";
 import { registerObserveFunction } from "./functions/observe.js";
@@ -243,7 +244,6 @@ async function main() {
   registerDiskSizeManager(sdk, kv);
   registerCompressFunction(sdk, kv, provider, metricsStore);
   registerSearchFunction(sdk, kv);
-  registerContextFunction(sdk, kv, config.tokenBudget);
   registerSummarizeFunction(sdk, kv, provider, metricsStore);
   registerMigrateFunction(sdk, kv);
   registerFileIndexFunction(sdk, kv);
@@ -257,7 +257,6 @@ async function main() {
   registerProfileFunction(sdk, kv);
   registerAutoForgetFunction(sdk, kv);
   registerExportImportFunction(sdk, kv);
-  registerEnrichFunction(sdk, kv);
 
   const claudeBridgeConfig = loadClaudeBridgeConfig();
   if (claudeBridgeConfig.enabled) {
@@ -365,6 +364,14 @@ async function main() {
     embeddingConfig.vectorWeight,
     graphWeight,
   );
+
+  const recallCore = new RecallCore(
+    kv,
+    config.recall,
+    (query, limit) => hybridSearch.searchWithTrace(query, limit),
+  );
+  registerContextFunction(sdk, kv, config.tokenBudget, recallCore);
+  registerEnrichFunction(sdk, kv, recallCore);
 
   registerSmartSearchFunction(sdk, kv, (query, limit) =>
     hybridSearch.search(query, limit),
@@ -520,7 +527,7 @@ async function main() {
     `Ready. ${embeddingProvider ? "Triple-stream (BM25+Vector+Graph)" : "BM25+Graph"} search active.`,
   );
   bootLog(
-    `REST API: 132 endpoints at http://localhost:${config.restPort}/agentmemory/*`,
+    `REST API: 136 endpoints at http://localhost:${config.restPort}/agentmemory/*`,
   );
   bootLog(
     `MCP surface (opt-in via \`npx @agentmemory/mcp\`): ${getAllTools().length} tools · 6 resources · 3 prompts`,

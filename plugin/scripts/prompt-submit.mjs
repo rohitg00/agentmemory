@@ -29,6 +29,7 @@ function isSdkChildContext(payload) {
 }
 const REST_URL = process.env["AGENTMEMORY_URL"] || "http://localhost:3111";
 const SECRET = process.env["AGENTMEMORY_SECRET"] || "";
+const INJECT_CONTEXT = process.env["AGENTMEMORY_INJECT_CONTEXT"] === "true";
 function authHeaders() {
 	const h = { "Content-Type": "application/json" };
 	if (SECRET) h["Authorization"] = `Bearer ${SECRET}`;
@@ -45,20 +46,40 @@ async function main() {
 	}
 	if (isSdkChildContext(data)) return;
 	const sessionId = data.session_id || data.sessionId || "unknown";
+	const project = resolveProject(data.cwd);
+	const prompt = typeof data.prompt === "string" ? data.prompt : typeof data.userPrompt === "string" ? data.userPrompt : "";
 	fetch(`${REST_URL}/agentmemory/observe`, {
 		method: "POST",
 		headers: authHeaders(),
 		body: JSON.stringify({
 			hookType: "prompt_submit",
 			sessionId,
-			project: resolveProject(data.cwd),
+			project,
 			cwd: data.cwd || process.cwd(),
 			timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-			data: { prompt: data.prompt ?? data.userPrompt }
+			data: { prompt }
 		}),
 		signal: AbortSignal.timeout(3e3)
 	}).catch(() => {});
-	setTimeout(() => process.exit(0), 500).unref();
+	if (!INJECT_CONTEXT || !prompt) return;
+	try {
+		const response = await fetch(`${REST_URL}/agentmemory/context`, {
+			method: "POST",
+			headers: authHeaders(),
+			body: JSON.stringify({
+				sessionId,
+				project,
+				cwd: data.cwd || process.cwd(),
+				query: prompt,
+				outputMode: "prompt_injection"
+			}),
+			signal: AbortSignal.timeout(1500)
+		});
+		if (response.ok) {
+			const result = await response.json();
+			if (typeof result.context === "string" && result.context) process.stdout.write(result.context);
+		}
+	} catch {}
 }
 main();
 //#endregion

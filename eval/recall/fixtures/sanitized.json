@@ -1,0 +1,17 @@
+[
+  {"id":"pps-pair-cache","query":"PPS7000 weighted benchmark 的 pair cache 在哪里？","projectId":"pps7000","expectedMemoryIds":["mem_pps_pair_cache"],"forbiddenMemoryIds":["mem_ic_plan"],"maxAcceptableTokens":800},
+  {"id":"pps-stage-one","query":"weighted stage1 的实现约束是什么？","projectId":"pps7000","expectedMemoryIds":["mem_pps_weighted_stage1"],"forbiddenMemoryIds":["mem_ic_plan"],"maxAcceptableTokens":800},
+  {"id":"pps-docs","query":"这个项目的文档应该怎么写？","projectId":"pps7000","expectedMemoryIds":["mem_docs_preference"],"forbiddenMemoryIds":["mem_gat_formula"],"maxAcceptableTokens":800},
+  {"id":"gat-formula","query":"GAT edge weight 的公式是什么？","projectId":"study-heavy-industrial-chain","expectedMemoryIds":["mem_gat_formula"],"forbiddenMemoryIds":["mem_ic_plan"],"maxAcceptableTokens":800},
+  {"id":"ic-plan","query":"Ivan's Childhood 当前实现计划是什么？","projectId":"ivans-childhood","expectedMemoryIds":["mem_ic_plan"],"forbiddenMemoryIds":["mem_pps_pair_cache"],"maxAcceptableTokens":800},
+  {"id":"pps-cache-key","query":"pair cache key 包含哪些字段？","projectId":"pps7000","expectedMemoryIds":["mem_pps_pair_cache"],"forbiddenMemoryIds":["mem_ic_plan"],"maxAcceptableTokens":800},
+  {"id":"gat-weighted","query":"edge weight 进入 attention 的位置？","projectId":"study-heavy-industrial-chain","expectedMemoryIds":["mem_gat_formula"],"forbiddenMemoryIds":["mem_docs_preference"],"maxAcceptableTokens":800},
+  {"id":"pps-benchmark","query":"PPS7000 benchmark 的 weighted stage 如何运行？","projectId":"pps7000","expectedMemoryIds":["mem_pps_weighted_stage1"],"forbiddenMemoryIds":["mem_ic_plan"],"maxAcceptableTokens":800},
+  {"id":"docs-style","query":"README 更新时遵循什么写作偏好？","projectId":"pps7000","expectedMemoryIds":["mem_docs_preference"],"forbiddenMemoryIds":["mem_gat_formula"],"maxAcceptableTokens":800},
+  {"id":"ic-next","query":"Ivan 项目的下一步实现工作是什么？","projectId":"ivans-childhood","expectedMemoryIds":["mem_ic_plan"],"forbiddenMemoryIds":["mem_pps_weighted_stage1"],"maxAcceptableTokens":800},
+  {"id":"pps-no-ic","query":"PPS7000 pair cache 的目录？","projectId":"pps7000","expectedMemoryIds":["mem_pps_pair_cache"],"forbiddenMemoryIds":["mem_ic_plan"],"maxAcceptableTokens":800},
+  {"id":"gat-no-docs","query":"图神经网络边权公式？","projectId":"study-heavy-industrial-chain","expectedMemoryIds":["mem_gat_formula"],"forbiddenMemoryIds":["mem_docs_preference"],"maxAcceptableTokens":800},
+  {"id":"pps-score","query":"weighted benchmark 的评分缓存复用规则？","projectId":"pps7000","expectedMemoryIds":["mem_pps_pair_cache","mem_pps_weighted_stage1"],"forbiddenMemoryIds":["mem_ic_plan"],"maxAcceptableTokens":800},
+  {"id":"docs-project","query":"本项目的技术文档采用什么结构？","projectId":"pps7000","expectedMemoryIds":["mem_docs_preference"],"forbiddenMemoryIds":["mem_ic_plan"],"maxAcceptableTokens":800},
+  {"id":"ic-isolation","query":"Ivan's Childhood 的计划和约束？","projectId":"ivans-childhood","expectedMemoryIds":["mem_ic_plan"],"forbiddenMemoryIds":["mem_pps_pair_cache","mem_gat_formula"],"maxAcceptableTokens":800}
+]

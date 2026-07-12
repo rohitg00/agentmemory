@@ -9,6 +9,7 @@ import { recordAudit } from "./audit.js";
 import { getSearchIndex, vectorIndexAddGuarded, vectorIndexRemove, flushIndexSave } from "./search.js";
 import { getAgentId } from "../config.js";
 import { logger } from "../logger.js";
+import { normalizeScope, sameScope } from "../recall/scope.js";
 
 export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
   sdk.registerFunction("mem::remember", 
@@ -26,6 +27,9 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
       strength?: number;
       agentId?: string;
       project?: string;
+      scope?: Memory["scope"];
+      origin?: Memory["origin"];
+      checkoutId?: string;
     }) => {
       if (
         !data.content ||
@@ -66,6 +70,19 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
         typeof data.project === "string" && data.project.trim().length > 0
           ? data.project.trim()
           : undefined;
+      const requestedScope = normalizeScope(data.scope);
+      const scope =
+        requestedScope.level !== "unknown"
+          ? requestedScope
+          : project
+            ? { level: "project" as const, projectId: project }
+            : requestedScope;
+      if (scope.level === "user" && memType !== "preference") {
+        return {
+          success: false,
+          error: "user scope is restricted to explicit preference memories",
+        };
+      }
 
       return withKeyedLock("mem:remember", async () => {
         const existingMemories = await kv.list<Memory>(KV.memories);
@@ -79,7 +96,7 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
           // Both sides must have an explicit project for the guard to engage;
           // an unscoped memory (legacy, no project field) is treated as a
           // wildcard so pre-existing data is not stranded.
-          if (project && existing.project && existing.project !== project) {
+          if (!sameScope(normalizeScope(existing.scope), scope)) {
             continue;
           }
           const similarity = jaccardSimilarity(
@@ -124,6 +141,12 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
           data.sourceCandidateId.trim().length > 0
             ? data.sourceCandidateId.trim()
             : undefined;
+        const origin =
+          data.origin === "system" || data.origin === "candidate_promoted"
+            ? data.origin
+            : sourceCandidateId
+              ? "candidate_promoted"
+              : "manual";
 
         const memory: Memory = {
           id: generateId("mem"),
@@ -147,6 +170,11 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
           isLatest: true,
           ...(callAgentId ? { agentId: callAgentId } : {}),
           ...(project !== undefined && { project }),
+          scope,
+          origin,
+          ...(typeof data.checkoutId === "string" && data.checkoutId.trim()
+            ? { checkoutId: data.checkoutId.trim() }
+            : {}),
         };
 
         if (data.ttlDays && typeof data.ttlDays === "number" && data.ttlDays > 0) {

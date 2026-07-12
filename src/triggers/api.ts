@@ -1,5 +1,5 @@
 import { TriggerAction, type ISdk, type ApiRequest } from "iii-sdk";
-import type { Session, CompressedObservation, HookPayload, CommitLink } from "../types.js";
+import type { Session, CompressedObservation, HookPayload, CommitLink, RecallTrace } from "../types.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
@@ -11,6 +11,8 @@ import { timingSafeCompare } from "../auth.js";
 import { isSlotsEnabled, isReflectEnabled } from "../functions/slots.js";
 import { renderViewerDocument } from "../viewer/document.js";
 import { getBoundViewerPort, getViewerSkipped } from "../viewer/server.js";
+import { resolveRecallIdentity } from "../recall/identity.js";
+import { advanceRecallContextEpoch } from "../recall/ledger.js";
 import { MAX_FILES_UPPER_BOUND } from "../functions/replay.js";
 import { logger } from "../logger.js";
 import {
@@ -342,11 +344,45 @@ export function registerApiTriggers(
           body: { error: "budget must be a positive integer" },
         };
       }
-      const payload: { sessionId: string; project: string; budget?: number } = {
+      const outputMode = body.outputMode;
+      if (outputMode !== undefined && outputMode !== "bootstrap" && outputMode !== "prompt_injection" && outputMode !== "rendered_context") {
+        return { status_code: 400, body: { error: "outputMode must be bootstrap, prompt_injection, or rendered_context" } };
+      }
+      const optionalString = (key: string): string | undefined =>
+        typeof body[key] === "string" && body[key].trim() ? body[key].trim() : undefined;
+      const payload: {
+        sessionId: string;
+        project: string;
+        budget?: number;
+        query?: string;
+        projectId?: string;
+        repoId?: string;
+        checkoutId?: string;
+        cwd?: string;
+        outputMode?: "bootstrap" | "prompt_injection" | "rendered_context";
+        debug?: boolean;
+      } = {
         sessionId,
         project,
       };
       if (budget !== undefined) payload.budget = budget;
+      for (const key of ["query", "projectId", "repoId", "checkoutId"] as const) {
+        const value = optionalString(key);
+        if (value !== undefined) payload[key] = value;
+      }
+      const cwd = optionalString("cwd");
+      if (cwd !== undefined) payload.cwd = cwd;
+      if (cwd && (!payload.projectId || !payload.repoId || !payload.checkoutId)) {
+        const identity = resolveRecallIdentity(cwd, payload.projectId || project);
+        payload.projectId ||= identity.projectId;
+        payload.repoId ||= identity.repoId;
+        payload.checkoutId ||= identity.checkoutId;
+      }
+      if (outputMode !== undefined) payload.outputMode = outputMode;
+      if (body.debug !== undefined) {
+        if (typeof body.debug !== "boolean") return { status_code: 400, body: { error: "debug must be a boolean" } };
+        payload.debug = body.debug;
+      }
       const result = await sdk.trigger({ function_id: "mem::context", payload });
       return { status_code: 200, body: result };
     },
@@ -359,6 +395,69 @@ export function registerApiTriggers(
       http_method: "POST",
       middleware_function_ids: ["middleware::api-auth"],
     },
+  });
+
+  sdk.registerFunction("api::recall-debug",
+    async (req: ApiRequest): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const params = req.query_params || {};
+      const rawLimit = Number(params["limit"] || 50);
+      const limit = Number.isInteger(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, 200) : 50;
+      const traces = await kv.list<RecallTrace>(KV.recallTraces);
+      const filtered = traces
+        .filter((trace) => !params["projectId"] || trace.projectId === params["projectId"])
+        .filter((trace) => !params["repoId"] || trace.repoId === params["repoId"])
+        .filter((trace) => !params["entryPoint"] || trace.entryPoint === params["entryPoint"])
+        .filter((trace) => {
+          const itemId = params["itemId"];
+          return !itemId || trace.selected.some((item) => item.id === itemId) || trace.dropped.some((item) => item.id === itemId);
+        })
+        .sort((left, right) => right.timestamp.localeCompare(left.timestamp))
+        .slice(0, limit);
+      return { status_code: 200, body: { traces: filtered, total: filtered.length } };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::recall-debug",
+    config: { api_path: "/agentmemory/recall/debug", http_method: "GET" },
+  });
+
+  sdk.registerFunction("api::recall-debug-by-id",
+    async (req: ApiRequest): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const traceId = req.path_params?.["traceId"];
+      if (!traceId || typeof traceId !== "string") {
+        return { status_code: 400, body: { error: "traceId path parameter is required" } };
+      }
+      const trace = await kv.get<RecallTrace>(KV.recallTraces, traceId);
+      return trace
+        ? { status_code: 200, body: { trace } }
+        : { status_code: 404, body: { error: "recall trace not found" } };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::recall-debug-by-id",
+    config: { api_path: "/agentmemory/recall/debug/:traceId", http_method: "GET" },
+  });
+
+  sdk.registerFunction("api::recall-context-epoch",
+    async (req: ApiRequest<{ sessionId?: string }>): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const sessionId = asNonEmptyString((req.body as Record<string, unknown> | undefined)?.sessionId);
+      if (!sessionId) return { status_code: 400, body: { error: "sessionId is required" } };
+      const state = await advanceRecallContextEpoch(kv, sessionId);
+      return { status_code: 200, body: state };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::recall-context-epoch",
+    config: { api_path: "/agentmemory/recall/context-epoch", http_method: "POST" },
   });
 
   sdk.registerFunction("api::search",
@@ -638,6 +737,7 @@ export function registerApiTriggers(
           ? body.agentId.trim().slice(0, 128)
           : undefined;
       const agentId = requestAgentId ?? getAgentId();
+      const identity = resolveRecallIdentity(cwd, project);
       const session: Session = {
         id: sessionId,
         project,
@@ -648,15 +748,24 @@ export function registerApiTriggers(
         ...(title ? { summary: title.slice(0, 200) } : {}),
         ...(title ? { firstPrompt: title.slice(0, 200) } : {}),
         ...(agentId ? { agentId } : {}),
+        ...(identity.repoId ? { repoId: identity.repoId } : {}),
+        checkoutId: identity.checkoutId,
       };
       await kv.set(KV.sessions, sessionId, session);
       const contextResult = await sdk.trigger<
-        { sessionId: string; project: string },
-        { context: string }
-      >({ function_id: "mem::context", payload: { sessionId, project } });
+        { sessionId: string; project: string; projectId: string; repoId?: string; checkoutId: string; outputMode: "bootstrap" },
+        { context: string; traceId?: string }
+      >({ function_id: "mem::context", payload: {
+        sessionId,
+        project,
+        projectId: identity.projectId,
+        ...(identity.repoId ? { repoId: identity.repoId } : {}),
+        checkoutId: identity.checkoutId,
+        outputMode: "bootstrap",
+      } });
       return {
         status_code: 200,
-        body: { session, context: contextResult.context },
+        body: { session, context: contextResult.context, ...(contextResult.traceId ? { traceId: contextResult.traceId } : {}) },
       };
     },
   );
@@ -945,6 +1054,9 @@ export function registerApiTriggers(
         terms?: string[];
         toolName?: string;
         project?: string;
+        repoId?: string;
+        checkoutId?: string;
+        cwd?: string;
       }>,
     ): Promise<Response> => {
       const authErr = checkAuth(req, secret);
@@ -1016,6 +1128,9 @@ export function registerApiTriggers(
         confidence?: number;
         strength?: number;
         project?: string;
+        scope?: { level?: string; projectId?: string; repoId?: string };
+        origin?: string;
+        checkoutId?: string;
       }>,
     ): Promise<Response> => {
       const authErr = checkAuth(req, secret);
@@ -1033,6 +1148,8 @@ export function registerApiTriggers(
       ) {
         return { status_code: 400, body: { error: "project must be a non-empty string" } };
       }
+      const cwd = typeof req.body.cwd === "string" && req.body.cwd.trim() ? req.body.cwd.trim() : undefined;
+      const identity = cwd ? resolveRecallIdentity(cwd, req.body.project || "") : undefined;
       if (
         req.body.title !== undefined &&
         (typeof req.body.title !== "string" || !req.body.title.trim())
@@ -1093,6 +1210,28 @@ export function registerApiTriggers(
           body: { error: "strength must be an integer between 1 and 10" },
         };
       }
+      const scope = req.body.scope;
+      if (scope !== undefined) {
+        if (!scope || typeof scope !== "object" || Array.isArray(scope)) {
+          return { status_code: 400, body: { error: "scope must be an object" } };
+        }
+        const rawScope = scope as Record<string, unknown>;
+        if (!["project", "repo", "user", "unknown"].includes(String(rawScope.level))) {
+          return { status_code: 400, body: { error: "scope.level must be project, repo, user, or unknown" } };
+        }
+        if (rawScope.projectId !== undefined && typeof rawScope.projectId !== "string") {
+          return { status_code: 400, body: { error: "scope.projectId must be a string" } };
+        }
+        if (rawScope.repoId !== undefined && typeof rawScope.repoId !== "string") {
+          return { status_code: 400, body: { error: "scope.repoId must be a string" } };
+        }
+      }
+      if (req.body.origin !== undefined && !["manual", "candidate_promoted", "system"].includes(String(req.body.origin))) {
+        return { status_code: 400, body: { error: "origin must be manual, candidate_promoted, or system" } };
+      }
+      if (req.body.checkoutId !== undefined && typeof req.body.checkoutId !== "string") {
+        return { status_code: 400, body: { error: "checkoutId must be a string" } };
+      }
       const result = await sdk.trigger({
         function_id: "mem::remember",
         payload: {
@@ -1108,6 +1247,11 @@ export function registerApiTriggers(
           ...(req.body.confidence !== undefined && { confidence: req.body.confidence }),
           ...(req.body.strength !== undefined && { strength: req.body.strength }),
           ...(req.body.project !== undefined && { project: req.body.project }),
+          ...(typeof req.body.repoId === "string" ? { repoId: req.body.repoId } : identity?.repoId ? { repoId: identity.repoId } : {}),
+          ...(typeof req.body.checkoutId === "string" ? { checkoutId: req.body.checkoutId } : identity ? { checkoutId: identity.checkoutId } : {}),
+          ...(scope !== undefined && { scope }),
+          ...(req.body.origin !== undefined && { origin: req.body.origin }),
+          ...(req.body.checkoutId !== undefined && { checkoutId: req.body.checkoutId }),
         },
       });
       return { status_code: 201, body: result };
@@ -1176,6 +1320,26 @@ export function registerApiTriggers(
     type: "http",
     function_id: "api::durable-candidates",
     config: { api_path: "/agentmemory/durable-candidates", http_method: "GET" },
+  });
+
+  sdk.registerFunction("api::durable-candidates::recommend",
+    async (req: ApiRequest<{ candidateId?: string; project?: string }>): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const result = await sdk.trigger({
+        function_id: "mem::durable-candidates::recommend",
+        payload: {
+          ...(typeof req.body?.candidateId === "string" ? { candidateId: req.body.candidateId } : {}),
+          ...(typeof req.body?.project === "string" ? { project: req.body.project } : {}),
+        },
+      });
+      return { status_code: 200, body: result };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::durable-candidates::recommend",
+    config: { api_path: "/agentmemory/durable-candidates/recommend", http_method: "POST" },
   });
 
   sdk.registerFunction("api::durable-candidates::promote",
@@ -2199,7 +2363,8 @@ export function registerApiTriggers(
       if (!memory) {
         return { status_code: 404, body: { error: `memory not found: ${id}` } };
       }
-      return { status_code: 200, body: { memory } };
+      const recallStats = await kv.get<import("../types.js").RecallItemStats>(KV.recallStats, id);
+      return { status_code: 200, body: { memory, recallStats } };
     },
   );
   sdk.registerTrigger({
@@ -2366,6 +2531,12 @@ export function registerApiTriggers(
     if (body["pinned"] !== undefined && typeof body["pinned"] !== "boolean") {
       return { status_code: 400, body: { error: "pinned must be a boolean" } };
     }
+    if (body["projectId"] !== undefined && typeof body["projectId"] !== "string") {
+      return { status_code: 400, body: { error: "projectId must be a string" } };
+    }
+    if (body["repoId"] !== undefined && typeof body["repoId"] !== "string") {
+      return { status_code: 400, body: { error: "repoId must be a string" } };
+    }
     if (
       body["scope"] !== undefined &&
       body["scope"] !== "project" &&
@@ -2385,6 +2556,8 @@ export function registerApiTriggers(
     if (typeof body["description"] === "string") payload["description"] = body["description"];
     if (sizeLimit !== undefined) payload["sizeLimit"] = sizeLimit;
     if (typeof body["pinned"] === "boolean") payload["pinned"] = body["pinned"];
+    if (typeof body["projectId"] === "string") payload["projectId"] = body["projectId"];
+    if (typeof body["repoId"] === "string") payload["repoId"] = body["repoId"];
     if (body["scope"] === "project" || body["scope"] === "global") payload["scope"] = body["scope"];
     const result = await sdk.trigger({ function_id: "mem::slot-create", payload });
     const resp = result as { success?: boolean; error?: string };

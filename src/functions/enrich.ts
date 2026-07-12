@@ -3,6 +3,7 @@ import type { Memory } from "../types.js";
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { logger } from "../logger.js";
+import type { RecallCore } from "../recall/core.js";
 
 const MAX_CONTEXT_LENGTH = 4000;
 
@@ -15,7 +16,7 @@ function escapeXml(s: string): string {
     .replace(/'/g, "&apos;");
 }
 
-export function registerEnrichFunction(sdk: ISdk, kv: StateKV): void {
+export function registerEnrichFunction(sdk: ISdk, kv: StateKV, recallCore?: RecallCore): void {
   sdk.registerFunction("mem::enrich",
     async (data: {
       sessionId: string;
@@ -23,11 +24,35 @@ export function registerEnrichFunction(sdk: ISdk, kv: StateKV): void {
       terms?: string[];
       toolName?: string;
       project?: string;
+      repoId?: string;
+      checkoutId?: string;
     }) => {
       const project =
         typeof data.project === "string" && data.project.trim().length > 0
           ? data.project.trim()
           : undefined;
+
+      if (recallCore) {
+        const query = [
+          ...data.files.map((file) => file.split("/").pop() || file),
+          ...(data.terms || []),
+        ].filter(Boolean).join(" ");
+        if (!query) return { context: "", truncated: false };
+        const result = await recallCore.recall({
+          entryPoint: "enrich",
+          outputMode: "prompt_injection",
+          query,
+          sessionId: data.sessionId,
+          projectId: project,
+          repoId: data.repoId,
+          checkoutId: data.checkoutId,
+        });
+        return {
+          context: result.context,
+          truncated: false,
+          traceId: result.trace.id,
+        };
+      }
 
       const parts: string[] = [];
 

@@ -13,6 +13,7 @@ vi.mock("../src/functions/audit.js", () => ({
 
 import { registerDurableCandidateFunctions } from "../src/functions/durable-candidates.js";
 import { materializeDurableCandidate } from "../src/functions/durable-candidate-utils.js";
+import { KV } from "../src/state/schema.js";
 import type {
   CompressedObservation,
   MemoryProvider,
@@ -117,6 +118,27 @@ describe("durable candidates lifecycle", () => {
       rmSync(dir, { recursive: true, force: true });
     }
     tempDirs.clear();
+  });
+
+  it("records a shadow recommendation without writing a memory", async () => {
+    registerDurableCandidateFunctions(sdk as never, kv as never, makeProvider(""));
+    const candidate = {
+      id: "cand_shadow", sessionId: "s1", project: "project-a", type: "fact" as const,
+      title: "Stable cache invariant", content: "The cache key must include stage, pair id, and benchmark revision.",
+      concepts: [], files: [], sourceObservationIds: ["obs1", "obs2", "obs3"], confidence: 0.95,
+      createdAt: "2026-07-10T00:00:00.000Z",
+    };
+    await kv.set(KV.summaries, "s1", {
+      sessionId: "s1", project: "project-a", createdAt: "2026-07-10T00:00:00.000Z",
+      title: "summary", narrative: "", keyDecisions: [], filesModified: [], concepts: [], observationCount: 3,
+      durableCandidates: [candidate],
+    });
+
+    const result = await sdk.functions.get("mem::durable-candidates::recommend")!({ candidateId: "cand_shadow" });
+
+    expect(result.recommendations[0]).toMatchObject({ recommendation: "auto_promote_eligible", wouldPromote: false });
+    expect(await kv.list(KV.memories)).toEqual([]);
+    expect(await kv.get(KV.durableRecommendations, "cand_shadow")).toBeTruthy();
   });
 
   it("promote skips when a memory already exists for sourceCandidateId and backfills promotedMemoryId", async () => {

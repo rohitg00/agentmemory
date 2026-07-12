@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
+import { parse as parseToml } from "smol-toml";
 import type {
   AgentMemoryConfig,
   ProviderConfig,
@@ -8,6 +9,7 @@ import type {
   FallbackConfig,
   ClaudeBridgeConfig,
   TeamConfig,
+  RecallConfig,
 } from "./types.js";
 
 function safeParseInt(value: string | undefined, fallback: number): number {
@@ -18,6 +20,31 @@ function safeParseInt(value: string | undefined, fallback: number): number {
 
 const DATA_DIR = join(homedir(), ".agentmemory");
 const ENV_FILE = join(DATA_DIR, ".env");
+const CONFIG_FILE = join(DATA_DIR, "config.toml");
+
+const DEFAULT_RECALL_CONFIG: RecallConfig = {
+  budget: {
+    maxContextTokens: 800,
+    reservedBootstrapTokens: 200,
+    maxSemanticTokens: 600,
+    maxMemories: 5,
+    maxSessionSummaries: 1,
+    maxObservations: 3,
+    maxContinuityItems: 1,
+  },
+  scope: {
+    unknownAutoInjection: false,
+    unknownExplicitSearch: true,
+  },
+  trace: {
+    retentionDays: 30,
+    maxTraces: 10_000,
+    maxDroppedItemsPerReason: 20,
+  },
+  injection: {
+    reinjectionTurnWindow: 8,
+  },
+};
 
 let warnPremiumModelShown = false;
 
@@ -43,6 +70,176 @@ function loadEnvFile(): Record<string, string> {
     vars[key] = val;
   }
   return vars;
+}
+
+function loadTomlFile(): Record<string, unknown> {
+  if (!existsSync(CONFIG_FILE)) return {};
+  try {
+    const parsed = parseToml(readFileSync(CONFIG_FILE, "utf-8"));
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      throw new Error("top-level document must be a table");
+    }
+    return parsed as Record<string, unknown>;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new Error(`Invalid ${CONFIG_FILE}: ${message}`);
+  }
+}
+
+function nestedTomlValue(
+  source: Record<string, unknown>,
+  section: string,
+  key: string,
+): unknown {
+  const table = source[section];
+  if (!table || typeof table !== "object" || Array.isArray(table)) return undefined;
+  return (table as Record<string, unknown>)[key];
+}
+
+function positiveConfigInt(
+  value: unknown,
+  fallback: number,
+  label: string,
+): number {
+  if (value === undefined) return fallback;
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 1) {
+    throw new Error(`${label} must be a positive integer`);
+  }
+  return value;
+}
+
+function booleanConfigValue(
+  value: unknown,
+  fallback: boolean,
+  label: string,
+): boolean {
+  if (value === undefined) return fallback;
+  if (typeof value !== "boolean") throw new Error(`${label} must be a boolean`);
+  return value;
+}
+
+function envOrToml(
+  env: Record<string, string>,
+  envKey: string,
+  toml: Record<string, unknown>,
+  section: string,
+  key: string,
+): unknown {
+  if (env[envKey] !== undefined) return Number(env[envKey]);
+  return nestedTomlValue(toml, section, key);
+}
+
+function envOrTomlBoolean(
+  env: Record<string, string>,
+  envKey: string,
+  toml: Record<string, unknown>,
+  section: string,
+  key: string,
+): unknown {
+  if (env[envKey] !== undefined) {
+    if (env[envKey] === "true") return true;
+    if (env[envKey] === "false") return false;
+    return env[envKey];
+  }
+  return nestedTomlValue(toml, section, key);
+}
+
+export function loadRecallConfig(
+  overrides?: Record<string, string>,
+): RecallConfig {
+  const env = getMergedEnv(overrides);
+  const toml = loadTomlFile();
+  const budget = DEFAULT_RECALL_CONFIG.budget;
+  const scope = DEFAULT_RECALL_CONFIG.scope;
+  const trace = DEFAULT_RECALL_CONFIG.trace;
+  const injection = DEFAULT_RECALL_CONFIG.injection;
+  const maxContextTokens = positiveConfigInt(
+    env["AGENTMEMORY_RECALL_MAX_CONTEXT_TOKENS"] !== undefined
+      ? Number(env["AGENTMEMORY_RECALL_MAX_CONTEXT_TOKENS"])
+      : env["TOKEN_BUDGET"] !== undefined
+        ? Number(env["TOKEN_BUDGET"])
+        : nestedTomlValue(toml, "recall_budget", "max_context_tokens"),
+    budget.maxContextTokens,
+    "recall_budget.max_context_tokens",
+  );
+  const result: RecallConfig = {
+    budget: {
+      maxContextTokens,
+      reservedBootstrapTokens: positiveConfigInt(
+        envOrToml(env, "AGENTMEMORY_RECALL_RESERVED_BOOTSTRAP_TOKENS", toml, "recall_budget", "reserved_bootstrap_tokens"),
+        budget.reservedBootstrapTokens,
+        "recall_budget.reserved_bootstrap_tokens",
+      ),
+      maxSemanticTokens: positiveConfigInt(
+        envOrToml(env, "AGENTMEMORY_RECALL_MAX_SEMANTIC_TOKENS", toml, "recall_budget", "max_semantic_tokens"),
+        budget.maxSemanticTokens,
+        "recall_budget.max_semantic_tokens",
+      ),
+      maxMemories: positiveConfigInt(
+        envOrToml(env, "AGENTMEMORY_RECALL_MAX_MEMORIES", toml, "recall_budget", "max_memories"),
+        budget.maxMemories,
+        "recall_budget.max_memories",
+      ),
+      maxSessionSummaries: positiveConfigInt(
+        envOrToml(env, "AGENTMEMORY_RECALL_MAX_SESSION_SUMMARIES", toml, "recall_budget", "max_session_summaries"),
+        budget.maxSessionSummaries,
+        "recall_budget.maxSessionSummaries",
+      ),
+      maxObservations: positiveConfigInt(
+        envOrToml(env, "AGENTMEMORY_RECALL_MAX_OBSERVATIONS", toml, "recall_budget", "max_observations"),
+        budget.maxObservations,
+        "recall_budget.max_observations",
+      ),
+      maxContinuityItems: positiveConfigInt(
+        envOrToml(env, "AGENTMEMORY_RECALL_MAX_CONTINUITY_ITEMS", toml, "recall_budget", "max_continuity_items"),
+        budget.maxContinuityItems,
+        "recall_budget.max_continuity_items",
+      ),
+    },
+    scope: {
+      unknownAutoInjection: booleanConfigValue(
+        envOrTomlBoolean(env, "AGENTMEMORY_RECALL_UNKNOWN_AUTO_INJECTION", toml, "recall_scope", "unknown_auto_injection"),
+        scope.unknownAutoInjection,
+        "recall_scope.unknown_auto_injection",
+      ),
+      unknownExplicitSearch: booleanConfigValue(
+        envOrTomlBoolean(env, "AGENTMEMORY_RECALL_UNKNOWN_EXPLICIT_SEARCH", toml, "recall_scope", "unknown_explicit_search"),
+        scope.unknownExplicitSearch,
+        "recall_scope.unknown_explicit_search",
+      ),
+    },
+    trace: {
+      retentionDays: positiveConfigInt(
+        envOrToml(env, "AGENTMEMORY_RECALL_TRACE_RETENTION_DAYS", toml, "recall_trace", "retention_days"),
+        trace.retentionDays,
+        "recall_trace.retention_days",
+      ),
+      maxTraces: positiveConfigInt(
+        envOrToml(env, "AGENTMEMORY_RECALL_TRACE_MAX_TRACES", toml, "recall_trace", "max_traces"),
+        trace.maxTraces,
+        "recall_trace.max_traces",
+      ),
+      maxDroppedItemsPerReason: positiveConfigInt(
+        envOrToml(env, "AGENTMEMORY_RECALL_TRACE_MAX_DROPPED_ITEMS_PER_REASON", toml, "recall_trace", "max_dropped_items_per_reason"),
+        trace.maxDroppedItemsPerReason,
+        "recall_trace.max_dropped_items_per_reason",
+      ),
+    },
+    injection: {
+      reinjectionTurnWindow: positiveConfigInt(
+        envOrToml(env, "AGENTMEMORY_RECALL_REINJECTION_TURN_WINDOW", toml, "recall_injection", "reinjection_turn_window"),
+        injection.reinjectionTurnWindow,
+        "recall_injection.reinjection_turn_window",
+      ),
+    },
+  };
+  if (result.budget.reservedBootstrapTokens > result.budget.maxContextTokens) {
+    throw new Error("recall_budget.reserved_bootstrap_tokens must not exceed max_context_tokens");
+  }
+  if (result.budget.maxSemanticTokens > result.budget.maxContextTokens) {
+    throw new Error("recall_budget.max_semantic_tokens must not exceed max_context_tokens");
+  }
+  return result;
 }
 
 function hasRealValue(v: string | undefined): v is string {
@@ -184,6 +381,7 @@ export function loadConfig(): AgentMemoryConfig {
     maxObservationsPerSession: safeParseInt(env["MAX_OBS_PER_SESSION"], 500),
     compressionModel: provider.model,
     dataDir: DATA_DIR,
+    recall: loadRecallConfig(),
   };
 }
 

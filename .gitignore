@@ -21,6 +21,7 @@ agentmemory-debug/
 
 # Lock files — never commit (see feedback_no_lockfiles memory)
 package-lock.json
+eval/recall/fixtures/local.json
 pnpm-lock.yaml
 yarn.lock
 integrations/hermes/__pycache__/
