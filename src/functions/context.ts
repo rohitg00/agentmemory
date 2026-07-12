@@ -59,7 +59,7 @@ export function registerContextFunction(
           projectId: data.projectId || data.project,
           repoId: data.repoId,
           checkoutId: data.checkoutId,
-          ...(data.budget ? { budget: { maxContextTokens: data.budget } } : {}),
+          ...(data.budget !== undefined ? { budget: { maxContextTokens: data.budget } } : {}),
           debug: data.debug,
         });
         return {

@@ -104,6 +104,11 @@ function normalizeDuplicate(content: string): string {
   return content.toLowerCase().replace(/\s+/g, " ").trim();
 }
 
+function boundedBudgetValue(requested: number | undefined, configured: number): number {
+  if (requested === undefined || !Number.isFinite(requested)) return configured;
+  return Math.min(configured, Math.max(0, Math.floor(requested)));
+}
+
 export class RecallCore {
   constructor(
     private readonly kv: StateKV,
@@ -165,10 +170,18 @@ export class RecallCore {
     const semanticCandidates = surviving
       .filter((candidate) => !candidate.bootstrap)
       .sort((left, right) => right.score - left.score);
+    const effectiveBudget = {
+      maxContextTokens: boundedBudgetValue(request.budget?.maxContextTokens, this.config.budget.maxContextTokens),
+      maxSemanticTokens: boundedBudgetValue(request.budget?.maxSemanticTokens, this.config.budget.maxSemanticTokens),
+      maxMemories: boundedBudgetValue(request.budget?.maxMemories, this.config.budget.maxMemories),
+      maxSessionSummaries: boundedBudgetValue(request.budget?.maxSessionSummaries, this.config.budget.maxSessionSummaries),
+      maxObservations: boundedBudgetValue(request.budget?.maxObservations, this.config.budget.maxObservations),
+      maxContinuityItems: boundedBudgetValue(request.budget?.maxContinuityItems, this.config.budget.maxContinuityItems),
+    };
     const selected: RecallItemTrace[] = [];
     const selectedContent: string[] = [];
     const usedContents = new Set<string>();
-    const maxContext = request.budget?.maxContextTokens ?? this.config.budget.maxContextTokens;
+    const maxContext = effectiveBudget.maxContextTokens;
     const opening = request.outputMode === "bootstrap"
       ? `<agentmemory-bootstrap project="${request.projectId || ""}">`
       : `<agentmemory-context project="${request.projectId || ""}">`;
@@ -179,7 +192,7 @@ export class RecallCore {
 
     for (const candidate of bootstrapCandidates) {
       const item = traceItem(candidate, "selected", "selected as mandatory bootstrap");
-      if (candidate.kind === "continuity" && bootstrapContinuity >= this.config.budget.maxContinuityItems) {
+      if (candidate.kind === "continuity" && bootstrapContinuity >= effectiveBudget.maxContinuityItems) {
         drop(candidate, "low_score", "dropped because the configured continuity limit was reached");
         continue;
       }
@@ -201,7 +214,7 @@ export class RecallCore {
 
     if (request.outputMode !== "bootstrap") {
       const semanticLimit = Math.min(
-        request.budget?.maxSemanticTokens ?? this.config.budget.maxSemanticTokens,
+        effectiveBudget.maxSemanticTokens,
         remaining,
       );
       let semanticUsed = 0;
@@ -228,7 +241,7 @@ export class RecallCore {
           drop(candidate, "duplicate", "dropped because this item/version/query was injected in the current context epoch");
           continue;
         }
-        if (request.outputMode !== "ranked_results" && !this.withinKindCap(candidate, kindCounts)) {
+        if (request.outputMode !== "ranked_results" && !this.withinKindCap(candidate, kindCounts, effectiveBudget)) {
           drop(candidate, "low_score", "dropped because the configured kind limit was reached");
           continue;
         }
@@ -407,14 +420,18 @@ export class RecallCore {
     return 2;
   }
 
-  private withinKindCap(candidate: RecallCandidate, counts: Partial<Record<RecallItemKind, number>>): boolean {
+  private withinKindCap(
+    candidate: RecallCandidate,
+    counts: Partial<Record<RecallItemKind, number>>,
+    budget = this.config.budget,
+  ): boolean {
     const cap = candidate.kind === "memory"
-      ? this.config.budget.maxMemories
+      ? budget.maxMemories
       : candidate.kind === "summary"
-        ? this.config.budget.maxSessionSummaries
+        ? budget.maxSessionSummaries
         : candidate.kind === "observation"
-          ? this.config.budget.maxObservations
-          : this.config.budget.maxContinuityItems;
+          ? budget.maxObservations
+          : budget.maxContinuityItems;
     return (counts[candidate.kind] || 0) < cap;
   }
 }

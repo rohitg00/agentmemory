@@ -137,6 +137,13 @@ function parseOptionalPositiveInt(value: unknown): number | undefined | null {
   return parsed;
 }
 
+function parseOptionalNonNegativeInt(value: unknown): number | undefined | null {
+  const parsed = parseOptionalFiniteNumber(value);
+  if (parsed === undefined || parsed === null) return parsed;
+  if (!Number.isInteger(parsed) || parsed < 0) return null;
+  return parsed;
+}
+
 export function registerApiTriggers(
   sdk: ISdk,
   kv: StateKV,
@@ -337,11 +344,11 @@ export function registerApiTriggers(
           body: { error: "sessionId and project are required strings" },
         };
       }
-      const budget = parseOptionalPositiveInt(body.budget);
+      const budget = parseOptionalNonNegativeInt(body.budget);
       if (budget === null) {
         return {
           status_code: 400,
-          body: { error: "budget must be a positive integer" },
+          body: { error: "budget must be a non-negative integer" },
         };
       }
       const outputMode = body.outputMode;

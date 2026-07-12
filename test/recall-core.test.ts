@@ -100,6 +100,22 @@ describe("RecallCore", () => {
     expect(result.context).toBe("");
   });
 
+  it("clamps request budgets to the configured hard context ceiling", async () => {
+    const kv = makeKv();
+    await kv.set(KV.memories, "mem_clamped", {
+      id: "mem_clamped", createdAt: "2026-07-01T00:00:00.000Z", updatedAt: "2026-07-01T00:00:00.000Z",
+      type: "fact", title: "clamped", content: "A deliberately long memory that must remain below the service hard ceiling.", concepts: [], files: [], sessionIds: [], strength: 7, version: 1, isLatest: true,
+      scope: { level: "project", projectId: "pps" }, origin: "manual",
+    });
+    const core = new RecallCore(kv as never, config, async () => [hit("mem_clamped", 0.8)]);
+    const result = await core.recall({
+      entryPoint: "context", outputMode: "rendered_context", query: "clamped", projectId: "pps",
+      budget: { maxContextTokens: 10_000 },
+    });
+
+    expect(result.trace.finalContextTokenCount).toBeLessThanOrEqual(config.budget.maxContextTokens);
+  });
+
   it("suppresses duplicate automatic injection only inside the current epoch and turn window", async () => {
     const kv = makeKv();
     await kv.set(KV.memories, "mem_one", {

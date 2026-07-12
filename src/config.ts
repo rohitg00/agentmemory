@@ -96,14 +96,14 @@ function nestedTomlValue(
   return (table as Record<string, unknown>)[key];
 }
 
-function positiveConfigInt(
+function nonNegativeConfigInt(
   value: unknown,
   fallback: number,
   label: string,
 ): number {
   if (value === undefined) return fallback;
-  if (typeof value !== "number" || !Number.isInteger(value) || value < 1) {
-    throw new Error(`${label} must be a positive integer`);
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
+    throw new Error(`${label} must be a non-negative integer`);
   }
   return value;
 }
@@ -153,7 +153,7 @@ export function loadRecallConfig(
   const scope = DEFAULT_RECALL_CONFIG.scope;
   const trace = DEFAULT_RECALL_CONFIG.trace;
   const injection = DEFAULT_RECALL_CONFIG.injection;
-  const maxContextTokens = positiveConfigInt(
+  const maxContextTokens = nonNegativeConfigInt(
     env["AGENTMEMORY_RECALL_MAX_CONTEXT_TOKENS"] !== undefined
       ? Number(env["AGENTMEMORY_RECALL_MAX_CONTEXT_TOKENS"])
       : env["TOKEN_BUDGET"] !== undefined
@@ -165,32 +165,32 @@ export function loadRecallConfig(
   const result: RecallConfig = {
     budget: {
       maxContextTokens,
-      reservedBootstrapTokens: positiveConfigInt(
+      reservedBootstrapTokens: nonNegativeConfigInt(
         envOrToml(env, "AGENTMEMORY_RECALL_RESERVED_BOOTSTRAP_TOKENS", toml, "recall_budget", "reserved_bootstrap_tokens"),
         budget.reservedBootstrapTokens,
         "recall_budget.reserved_bootstrap_tokens",
       ),
-      maxSemanticTokens: positiveConfigInt(
+      maxSemanticTokens: nonNegativeConfigInt(
         envOrToml(env, "AGENTMEMORY_RECALL_MAX_SEMANTIC_TOKENS", toml, "recall_budget", "max_semantic_tokens"),
         budget.maxSemanticTokens,
         "recall_budget.max_semantic_tokens",
       ),
-      maxMemories: positiveConfigInt(
+      maxMemories: nonNegativeConfigInt(
         envOrToml(env, "AGENTMEMORY_RECALL_MAX_MEMORIES", toml, "recall_budget", "max_memories"),
         budget.maxMemories,
         "recall_budget.max_memories",
       ),
-      maxSessionSummaries: positiveConfigInt(
+      maxSessionSummaries: nonNegativeConfigInt(
         envOrToml(env, "AGENTMEMORY_RECALL_MAX_SESSION_SUMMARIES", toml, "recall_budget", "max_session_summaries"),
         budget.maxSessionSummaries,
         "recall_budget.maxSessionSummaries",
       ),
-      maxObservations: positiveConfigInt(
+      maxObservations: nonNegativeConfigInt(
         envOrToml(env, "AGENTMEMORY_RECALL_MAX_OBSERVATIONS", toml, "recall_budget", "max_observations"),
         budget.maxObservations,
         "recall_budget.max_observations",
       ),
-      maxContinuityItems: positiveConfigInt(
+      maxContinuityItems: nonNegativeConfigInt(
         envOrToml(env, "AGENTMEMORY_RECALL_MAX_CONTINUITY_ITEMS", toml, "recall_budget", "max_continuity_items"),
         budget.maxContinuityItems,
         "recall_budget.max_continuity_items",
@@ -209,24 +209,24 @@ export function loadRecallConfig(
       ),
     },
     trace: {
-      retentionDays: positiveConfigInt(
+      retentionDays: nonNegativeConfigInt(
         envOrToml(env, "AGENTMEMORY_RECALL_TRACE_RETENTION_DAYS", toml, "recall_trace", "retention_days"),
         trace.retentionDays,
         "recall_trace.retention_days",
       ),
-      maxTraces: positiveConfigInt(
+      maxTraces: nonNegativeConfigInt(
         envOrToml(env, "AGENTMEMORY_RECALL_TRACE_MAX_TRACES", toml, "recall_trace", "max_traces"),
         trace.maxTraces,
         "recall_trace.max_traces",
       ),
-      maxDroppedItemsPerReason: positiveConfigInt(
+      maxDroppedItemsPerReason: nonNegativeConfigInt(
         envOrToml(env, "AGENTMEMORY_RECALL_TRACE_MAX_DROPPED_ITEMS_PER_REASON", toml, "recall_trace", "max_dropped_items_per_reason"),
         trace.maxDroppedItemsPerReason,
         "recall_trace.max_dropped_items_per_reason",
       ),
     },
     injection: {
-      reinjectionTurnWindow: positiveConfigInt(
+      reinjectionTurnWindow: nonNegativeConfigInt(
         envOrToml(env, "AGENTMEMORY_RECALL_REINJECTION_TURN_WINDOW", toml, "recall_injection", "reinjection_turn_window"),
         injection.reinjectionTurnWindow,
         "recall_injection.reinjection_turn_window",
