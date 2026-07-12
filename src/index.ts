@@ -21,6 +21,7 @@ import {
 } from "./providers/index.js";
 import { StateKV } from "./state/kv.js";
 import { KV } from "./state/schema.js";
+import { initSentry } from "./observability/sentry.js";
 import { VectorIndex } from "./state/vector-index.js";
 import { HybridSearch } from "./state/hybrid-search.js";
 import { IndexPersistence } from "./state/index-persistence.js";
@@ -158,6 +159,8 @@ process.on("unhandledRejection", (reason) => {
 });
 
 async function main() {
+  // Optional error reporting — no-op unless SENTRY_DSN is set.
+  initSentry();
   const config = loadConfig();
   const embeddingConfig = loadEmbeddingConfig();
   const fallbackConfig = loadFallbackConfig();

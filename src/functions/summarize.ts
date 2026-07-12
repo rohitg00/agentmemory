@@ -20,6 +20,10 @@ import { scoreSummary } from "../eval/quality.js";
 import type { MetricsStore } from "../eval/metrics-store.js";
 import { safeAudit } from "./audit.js";
 import { logger } from "../logger.js";
+import {
+  captureFailure,
+  captureException as captureSummarizeException,
+} from "../observability/sentry.js";
 
 // Per-chunk observation budget when a session is too large to fit in one
 // LLM call. Default ≈ 50k input tokens per chunk at ~110 tok/obs — fits
@@ -48,6 +52,19 @@ function getChunkConcurrency(): number {
   if (!raw) return CHUNK_CONCURRENCY_DEFAULT;
   const n = parseInt(raw, 10);
   return Number.isFinite(n) && n > 0 ? n : CHUNK_CONCURRENCY_DEFAULT;
+}
+
+// Attempts for the top-level produce-and-parse loop. Default 3 (was a hard 2):
+// most counted failures are empty_provider_response / parse_failed from an LLM
+// that intermittently returns empty or unparseable structured output, and a
+// third roll-of-the-dice recovers a meaningful fraction. Override via
+// SUMMARIZE_MAX_ATTEMPTS.
+const MAX_ATTEMPTS_DEFAULT = 3;
+function getMaxAttempts(): number {
+  const raw = process.env.SUMMARIZE_MAX_ATTEMPTS;
+  if (!raw) return MAX_ATTEMPTS_DEFAULT;
+  const n = parseInt(raw, 10);
+  return Number.isFinite(n) && n > 0 ? n : MAX_ATTEMPTS_DEFAULT;
 }
 
 // One chunk call with retry-once. Returns null when both attempts fail —
@@ -282,7 +299,8 @@ export function registerSummarizeFunction(
         let response = "";
         let mode = "single";
         let chunks = 1;
-        for (let attempt = 1; attempt <= 2; attempt++) {
+        const maxAttempts = getMaxAttempts();
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
           const produced = await produceSummaryXml(
             provider,
             compressed,
@@ -318,6 +336,15 @@ export function registerSummarizeFunction(
           if (metricsStore) {
             await metricsStore.record("mem::summarize", latencyMs, false);
           }
+          captureFailure("empty_provider_response", {
+            sessionId,
+            provider: provider.name,
+            mode,
+            chunks,
+            observationCount: compressed.length,
+            attempts: maxAttempts,
+            latencyMs,
+          });
           return { success: false, error: "empty_provider_response" };
         }
 
@@ -326,6 +353,15 @@ export function registerSummarizeFunction(
           if (metricsStore) {
             await metricsStore.record("mem::summarize", latencyMs, false);
           }
+          captureFailure("parse_failed", {
+            sessionId,
+            provider: provider.name,
+            mode,
+            chunks,
+            observationCount: compressed.length,
+            attempts: maxAttempts,
+            latencyMs,
+          });
           return { success: false, error: "parse_failed" };
         }
 
@@ -350,6 +386,14 @@ export function registerSummarizeFunction(
           logger.warn("Summary validation failed", {
             sessionId,
             errors: validation.result.errors,
+          });
+          captureFailure("validation_failed", {
+            sessionId,
+            provider: provider.name,
+            mode,
+            observationCount: compressed.length,
+            errors: validation.result.errors,
+            latencyMs,
           });
           return { success: false, error: "validation_failed" };
         }
@@ -390,6 +434,12 @@ export function registerSummarizeFunction(
         logger.error("Summarize failed", {
           sessionId,
           error: msg,
+        });
+        captureSummarizeException(err, {
+          sessionId,
+          provider: provider.name,
+          observationCount: compressed.length,
+          latencyMs,
         });
         return { success: false, error: msg };
       }
