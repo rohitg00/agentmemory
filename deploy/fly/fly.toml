@@ -12,11 +12,14 @@ app = "agentmemory"
 primary_region = "iad"
 
 [build]
-  # Path is relative to the build context (repo root), not this
-  # directory — the Dockerfile packs checked-out source into an npm
-  # tarball at build time, so `fly deploy` must run with the repo root
-  # as context. See deploy/fly/README.md for the full invocation.
-  dockerfile = "deploy/fly/Dockerfile"
+  # flyctl resolves this path relative to the DIRECTORY CONTAINING
+  # THIS CONFIG FILE (deploy/fly/), not the build context root —
+  # verified empirically 2026-07-13: "deploy/fly/Dockerfile" here
+  # doubled up to deploy/fly/deploy/fly/Dockerfile at build time.
+  # The build CONTEXT is still the repo root (see deploy/fly/README.md
+  # for the full `fly deploy .` invocation) — only this dockerfile
+  # path is config-relative.
+  dockerfile = "Dockerfile"
 
 [[mounts]]
   source = "agentmemory_data"
