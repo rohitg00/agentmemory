@@ -56,7 +56,7 @@ Scope smoke 的可执行覆盖来自 benchmark fixture 和 focused suites：proj
 
 原有 runtime 在 3111 上保持运行，未停止任何身份不明进程；原实例已验证 `/agentmemory/livez` 200、`/agentmemory/health` 200、`GET /agentmemory/build-info` 200。该实例的旧 build-info 是 `52f7200`，因此不把它冒充为本次修复后的 runtime 验证。
 
-最终 runtime 重启使用本地构建 `e0c6ce9817a8e6b41e83d469435942385cb91cb4`，接入既有 iii bridge（49134）；未停止 Scheduled Task。`/agentmemory/livez`、`/agentmemory/health`、`GET /agentmemory/build-info` 均 HTTP 200，viewer live smoke HTTP 200（端口因 3113 被占用而安全 fallback 到 3116）。build-info 实测：`sourceCommit=e0c6ce9817a8e6b41e83d469435942385cb91cb4`、`sourceDirty=false`、`builtAt=2026-07-13T07:34:12.837Z`、`artifactHash=f19c526f7bb86c290bad8a95769d8515f1bda393ae6e8544bde4bbc4e4eb45b3`；按 `scripts/build-runtime-assets.mjs` 的 Windows 路径规则重算一致。REST recall context/debug/debug-by-id 均 HTTP 200，trace=`rtr_mriwzn00_57c3acca2ef6`，并验证 `limit=0`。实例只用于验收；停止/重启的进程均为已识别 AgentMemory/iii runtime 进程，不修改 Scheduled Task。
+最终 runtime 重启使用本地构建的 acceptance HEAD，接入既有 iii bridge（49134）；未停止 Scheduled Task。`/agentmemory/livez`、`/agentmemory/health`、`GET /agentmemory/build-info` 均 HTTP 200，viewer live smoke HTTP 200（端口因 3113 被占用而安全 fallback 到 3116）。build-info 实测 `sourceCommit` 与验收时 HEAD 一致、`sourceDirty=false`、`builtAt` 为 ISO 时间、`artifactHash=f19c526f7bb86c290bad8a95769d8515f1bda393ae6e8544bde4bbc4e4eb45b3`；按 `scripts/build-runtime-assets.mjs` 的 Windows 路径规则重算一致。REST recall context/debug/debug-by-id 均 HTTP 200，最新 trace=`rtr_mrix53u6_f2b4a2bde895`，并验证 `limit=0`。实例只用于验收；停止/重启的进程均为已识别 AgentMemory/iii runtime 进程，不修改 Scheduled Task。
 
 ## 全量测试分类
 
