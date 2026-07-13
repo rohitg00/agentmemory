@@ -174,3 +174,10 @@ See <https://fly.io/docs/about/pricing/> for the up-to-date rate card.
   code itself, just commit the change and deploy — the builder stage
   packs whatever is checked out, so there is no separate version arg to
   bump.
+- `deploy/fly/package-lock.json` is a lockfile scoped only to this build
+  context (the repo otherwise gitignores lockfiles). It's committed for
+  build reproducibility and used by the builder stage's `npm ci`. When
+  you intentionally bump a dependency in `package.json`, regenerate it:
+  `npm install --package-lock-only && cp package-lock.json deploy/fly/package-lock.json && rm package-lock.json`
+  (run from the repo root). A stale lockfile makes `npm ci` fail loudly
+  at build time rather than silently drifting.

@@ -14,11 +14,14 @@ FROM iiidev/iii:${III_VERSION} AS iii-image
 # source tree `npm run build` would use locally.
 FROM node:22-slim AS builder
 WORKDIR /build
-# No `npm ci` here: this repo gitignores its lockfile (see .gitignore),
-# so a fresh clone with no local `npm install` history won't have one
-# in the build context.
-COPY package.json ./
-RUN npm install
+# deploy/fly/package-lock.json is a lockfile scoped ONLY to this build
+# context, committed despite the repo-wide no-lockfile policy (see the
+# .gitignore exception) so this stage gets a reproducible dependency tree
+# instead of re-resolving semver ranges on every build. Regenerate it
+# deliberately (npm install --package-lock-only against the root
+# package.json) whenever a dependency is intentionally bumped.
+COPY package.json deploy/fly/package-lock.json ./
+RUN npm ci
 COPY tsconfig.json ./
 COPY src/ ./src/
 COPY plugin/ ./plugin/

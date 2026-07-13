@@ -19,10 +19,13 @@ data-*/
 agentmemory-debug/
 .gstack/
 
-# Lock files — never commit (see feedback_no_lockfiles memory)
+# Lock files — never commit (see feedback_no_lockfiles memory), except a
+# lockfile scoped ONLY to the Fly deploy build context, which is
+# deliberately committed for build reproducibility (deploy/fly/README.md).
 package-lock.json
 pnpm-lock.yaml
 yarn.lock
+!deploy/fly/package-lock.json
 integrations/hermes/__pycache__/
 
 # Eval reports (transient; published scorecards live in docs/benchmarks/)
