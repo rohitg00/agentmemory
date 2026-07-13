@@ -15,6 +15,7 @@ import { resolveRecallIdentity } from "../recall/identity.js";
 import { advanceRecallContextEpoch } from "../recall/ledger.js";
 import { MAX_FILES_UPPER_BOUND } from "../functions/replay.js";
 import { logger } from "../logger.js";
+import { loadRuntimeBuildInfo } from "../build-info.js";
 import {
   isGraphExtractionEnabled,
   isConsolidationEnabled,
@@ -182,6 +183,26 @@ export function registerApiTriggers(
     type: "http",
     function_id: "api::liveness",
     config: { api_path: "/agentmemory/livez", http_method: "GET" },
+  });
+
+  sdk.registerFunction("api::build-info",
+    async (req: ApiRequest): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const buildInfo = await loadRuntimeBuildInfo();
+      if (!buildInfo) {
+        return {
+          status_code: 503,
+          body: { error: "build-info is unavailable; build the runtime first" },
+        };
+      }
+      return { status_code: 200, body: buildInfo };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::build-info",
+    config: { api_path: "/agentmemory/build-info", http_method: "GET" },
   });
 
   sdk.registerFunction("api::config-flags",
