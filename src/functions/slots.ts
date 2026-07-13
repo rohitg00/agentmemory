@@ -234,6 +234,8 @@ export function registerSlotsFunctions(sdk: ISdk, kv: StateKV): void {
       description?: string;
       pinned?: boolean;
       scope?: SlotScope;
+      projectId?: string;
+      repoId?: string;
     }) => {
       const label = validateLabel(data?.label);
       if (!label) return { success: false, error: "label required (lowercase, starts with letter, [a-z0-9_])" };
@@ -249,6 +251,12 @@ export function registerSlotsFunctions(sdk: ISdk, kv: StateKV): void {
       }
       const description = typeof data?.description === "string" ? data.description : "";
       const pinned = typeof data?.pinned === "boolean" ? data.pinned : true;
+      const projectId = typeof data?.projectId === "string" && data.projectId.trim()
+        ? data.projectId.trim()
+        : undefined;
+      const repoId = typeof data?.repoId === "string" && data.repoId.trim()
+        ? data.repoId.trim()
+        : undefined;
       return withKeyedLock(`slot:${label}`, async () => {
         // Duplicate check is scope-local so a project slot can shadow a
         // global slot with the same label — matches the read precedence.
@@ -265,6 +273,8 @@ export function registerSlotsFunctions(sdk: ISdk, kv: StateKV): void {
           scope,
           createdAt: ts,
           updatedAt: ts,
+          ...(projectId ? { projectId } : {}),
+          ...(repoId ? { repoId } : {}),
         };
         await kv.set(scopeKv(scope), label, slot);
         await recordAudit(kv, "slot_create", "mem::slot-create", [label], {

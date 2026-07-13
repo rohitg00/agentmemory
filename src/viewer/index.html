@@ -991,6 +991,7 @@
     <button class="active" data-tab="dashboard" aria-current="page">Dashboard</button>
     <button data-tab="graph">Graph</button>
     <button data-tab="memories">Memories</button>
+    <button data-tab="recall-traces">Recall Traces</button>
     <button data-tab="timeline">Timeline</button>
     <button data-tab="sessions">Sessions</button>
     <button data-tab="lessons">Lessons</button>
@@ -1008,6 +1009,7 @@
   <div id="view-dashboard" class="view active"></div>
   <div id="view-graph" class="view"></div>
   <div id="view-memories" class="view"></div>
+  <div id="view-recall-traces" class="view"></div>
   <div id="view-lessons" class="view"></div>
   <div id="view-actions" class="view"></div>
   <div id="view-crystals" class="view"></div>
@@ -1105,7 +1107,7 @@
       task: '&#9745;', other: '&#128196;'
     };
     var CB_STATE_COLORS = { closed: 'badge-green', open: 'badge-red', 'half-open': 'badge-yellow' };
-    var TAB_IDS = ['dashboard', 'graph', 'memories', 'timeline', 'sessions', 'lessons', 'actions', 'crystals', 'audit', 'activity', 'profile', 'replay'];
+    var TAB_IDS = ['dashboard', 'graph', 'memories', 'recall-traces', 'timeline', 'sessions', 'lessons', 'actions', 'crystals', 'audit', 'activity', 'profile', 'replay'];
     var VIEWER_TOKEN_STORAGE_KEY = 'agentmemory-viewer-token';
 
     var state = {
@@ -1113,6 +1115,7 @@
       dashboard: { loaded: false, health: null, sessions: [], memories: [], graphStats: null, recentAudit: [], lessons: [], crystals: [] },
       graph: { loaded: false, nodes: [], edges: [], stats: null, filters: {}, selectedNode: null, queryError: null, truncated: false, totalNodes: 0, totalEdges: 0 },
       memories: { loaded: false, items: [], search: '', typeFilter: '' },
+      recallTraces: { loaded: false, items: [] },
       timeline: { loaded: false, observations: [], sessionId: '', minImportance: 0, page: 0, pageSize: 50 },
       sessions: { loaded: false, items: [], selectedId: null },
       audit: { loaded: false, entries: [], opFilter: '' },
@@ -1327,6 +1330,7 @@
         case 'dashboard': if (!state.dashboard.loaded) await loadDashboard(); break;
         case 'graph': if (!state.graph.loaded) await loadGraph(); break;
         case 'memories': if (!state.memories.loaded) await loadMemories(); break;
+        case 'recall-traces': if (!state.recallTraces.loaded) await loadRecallTraces(); break;
         case 'timeline': if (!state.timeline.loaded) await loadTimeline(); break;
         case 'sessions': if (!state.sessions.loaded) await loadSessions(); break;
         case 'lessons': if (!state.lessons.loaded) await loadLessons(); break;
@@ -2404,6 +2408,34 @@
       state.memories.total = (result && typeof result.total === 'number') ? result.total : items.length;
       state.memories.loaded = true;
       renderMemories();
+    }
+
+    async function loadRecallTraces() {
+      var el = document.getElementById('view-recall-traces');
+      el.innerHTML = '<div class="loading">Loading recall traces...</div>';
+      var result = await apiGet('recall/debug?limit=100');
+      var traces = (result && result.traces) || [];
+      state.recallTraces.items = traces;
+      state.recallTraces.loaded = true;
+      if (!traces.length) {
+        el.innerHTML = '<div class="empty">No recall traces yet.</div>';
+        return;
+      }
+      var rows = traces.map(function(trace) {
+        var mode = trace.retrievalMode || {};
+        var vector = mode.vector || {};
+        var selected = (trace.selected || []).length;
+        var dropped = trace.droppedCountsByDecision || {};
+        return '<tr>' +
+          '<td>' + esc(trace.timestamp || '') + '</td>' +
+          '<td>' + esc(trace.entryPoint || '') + ' / ' + esc(trace.outputMode || '') + '</td>' +
+          '<td>' + esc(trace.query || '[no query]') + '</td>' +
+          '<td>' + selected + ' selected, ' + Object.keys(dropped).map(function(k) { return esc(k) + ': ' + esc(String(dropped[k])); }).join(', ') + '</td>' +
+          '<td>' + (trace.finalContextTokenCount || 0) + ' tokens</td>' +
+          '<td>' + esc(vector.status || 'disabled') + (vector.reason ? ': ' + esc(vector.reason) : '') + '</td>' +
+        '</tr>';
+      }).join('');
+      el.innerHTML = '<div class="section"><h2>Recall Traces</h2><table class="metric-table"><thead><tr><th>Time</th><th>Entry</th><th>Query</th><th>Decision</th><th>Budget</th><th>Vector</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
     }
 
     function renderMemories() {

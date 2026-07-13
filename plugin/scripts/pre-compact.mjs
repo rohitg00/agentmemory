@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 import { execSync } from "node:child_process";
 import { basename } from "node:path";
-
 //#region src/hooks/_project.ts
 function resolveProject(cwd) {
 	const explicit = process.env["AGENTMEMORY_PROJECT_NAME"];
@@ -21,7 +20,6 @@ function resolveProject(cwd) {
 	} catch {}
 	return basename(dir);
 }
-
 //#endregion
 //#region src/hooks/pre-compact.ts
 function isSdkChildContext(payload) {
@@ -57,13 +55,20 @@ async function main() {
 		});
 	} catch {}
 	try {
+		await fetch(`${REST_URL}/agentmemory/recall/context-epoch`, {
+			method: "POST",
+			headers: authHeaders(),
+			body: JSON.stringify({ sessionId }),
+			signal: AbortSignal.timeout(1e3)
+		});
 		const res = await fetch(`${REST_URL}/agentmemory/context`, {
 			method: "POST",
 			headers: authHeaders(),
 			body: JSON.stringify({
 				sessionId,
 				project,
-				budget: 1500
+				cwd: data.cwd || process.cwd(),
+				outputMode: "bootstrap"
 			}),
 			signal: AbortSignal.timeout(5e3)
 		});
@@ -74,7 +79,7 @@ async function main() {
 	} catch {}
 }
 main();
-
 //#endregion
-export {  };
+export {};
+
 //# sourceMappingURL=pre-compact.mjs.map

@@ -5,6 +5,7 @@ export const KV = {
   observations: (sessionId: string) => `mem:obs:${sessionId}`,
   memories: "mem:memories",
   summaries: "mem:summaries",
+  archiveImports: "mem:archive-imports",
   config: "mem:config",
   metrics: "mem:metrics",
   health: "mem:health",
@@ -72,6 +73,10 @@ export const KV = {
   // #771: tracks the most recent smart-search call per session, used by
   // the followup-rate diagnostic. Key = sessionId. TTL-swept hourly.
   recentSearches: "mem:recent-searches",
+  recallTraces: "mem:recall-traces",
+  recallStats: "mem:recall-stats",
+  injectionLedger: "mem:injection-ledger",
+  durableRecommendations: "mem:durable-recommendations",
 } as const;
 
 export const STREAM = {

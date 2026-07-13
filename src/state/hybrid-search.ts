@@ -6,6 +6,7 @@ import type {
   CompressedObservation,
   Memory,
   QueryExpansion,
+  RetrievalChannelStatus,
 } from "../types.js";
 import { memoryToObservation } from "./memory-utils.js";
 import type { StateKV } from "./kv.js";
@@ -16,11 +17,23 @@ import {
 } from "../functions/graph-retrieval.js";
 import { extractEntitiesFromQuery } from "../functions/query-expansion.js";
 import { rerank } from "./reranker.js";
+import { VectorRetrievalHealth } from "../recall/vector-health.js";
+import { isGraphExtractionEnabled } from "../config.js";
 
 const RRF_K = 60;
 
+export interface HybridSearchResponse {
+  results: HybridSearchResult[];
+  retrievalMode: {
+    bm25: RetrievalChannelStatus;
+    vector: RetrievalChannelStatus;
+    graph: RetrievalChannelStatus;
+  };
+}
+
 export class HybridSearch {
   private graphRetrieval: GraphRetrieval;
+  private vectorHealth = new VectorRetrievalHealth();
 
   constructor(
     private bm25: SearchIndex,
@@ -36,6 +49,10 @@ export class HybridSearch {
   }
 
   async search(query: string, limit = 20): Promise<HybridSearchResult[]> {
+    return (await this.tripleStreamSearch(query, limit)).results;
+  }
+
+  async searchWithTrace(query: string, limit = 20): Promise<HybridSearchResponse> {
     return this.tripleStreamSearch(query, limit);
   }
 
@@ -60,8 +77,8 @@ export class HybridSearch {
     );
 
     const merged = new Map<string, HybridSearchResult>();
-    for (const results of resultSets) {
-      for (const r of results) {
+    for (const response of resultSets) {
+      for (const r of response.results) {
         const existing = merged.get(r.observation.id);
         if (!existing || r.combinedScore > existing.combinedScore) {
           merged.set(r.observation.id, r);
@@ -78,8 +95,9 @@ export class HybridSearch {
     query: string,
     limit: number,
     entityHints?: string[],
-  ): Promise<HybridSearchResult[]> {
+  ): Promise<HybridSearchResponse> {
     const bm25Results = this.bm25.search(query, limit * 2);
+    const bm25Mode: RetrievalChannelStatus = { status: "healthy", attempted: true };
 
     let vectorResults: Array<{
       obsId: string;
@@ -88,12 +106,17 @@ export class HybridSearch {
     }> = [];
     let queryEmbedding: Float32Array | null = null;
 
-    if (this.vector && this.embeddingProvider && this.vector.size > 0) {
+    let vectorMode = this.vectorHealth.begin(
+      Boolean(this.embeddingProvider),
+      Boolean(this.vector && this.vector.size > 0),
+    );
+    if (vectorMode.attempted && this.vector && this.embeddingProvider) {
       try {
         queryEmbedding = await this.embeddingProvider.embed(query);
         vectorResults = this.vector.search(queryEmbedding, limit * 2);
-      } catch {
-        // fall through to BM25-only
+        this.vectorHealth.success();
+      } catch (err) {
+        vectorMode = this.vectorHealth.failure(err);
       }
     }
 
@@ -102,15 +125,23 @@ export class HybridSearch {
         ? entityHints
         : extractEntitiesFromQuery(query);
     let graphResults: GraphRetrievalResult[] = [];
-    if (entities.length > 0) {
+    let graphMode: RetrievalChannelStatus = isGraphExtractionEnabled()
+      ? { status: "healthy", attempted: entities.length > 0 }
+      : { status: "disabled", attempted: false, reason: "graph extraction is disabled" };
+    if (entities.length > 0 && isGraphExtractionEnabled()) {
       try {
         graphResults = await this.graphRetrieval.searchByEntities(
           entities,
           2,
           limit,
         );
-      } catch {
-        // graph search is best-effort
+      } catch (err) {
+        graphMode = {
+          status: "disabled",
+          attempted: true,
+          reason: err instanceof Error ? err.message : "graph retrieval failed",
+          fallback: "BM25/vector",
+        };
       }
     }
 
@@ -120,8 +151,13 @@ export class HybridSearch {
         const expansionResults =
           await this.graphRetrieval.expandFromChunks(topVectorObs, 1, 5);
         graphResults = [...graphResults, ...expansionResults];
-      } catch {
-        // expansion is best-effort
+      } catch (err) {
+        graphMode = {
+          status: "disabled",
+          attempted: true,
+          reason: err instanceof Error ? err.message : "graph expansion failed",
+          fallback: "BM25/vector",
+        };
       }
     }
 
@@ -230,13 +266,22 @@ export class HybridSearch {
         const head = enriched.slice(0, rerankWindow);
         const tail = enriched.slice(rerankWindow);
         const reranked = await rerank(query, head, rerankWindow);
-        return reranked.concat(tail).slice(0, limit);
+        return {
+          results: reranked.concat(tail).slice(0, limit),
+          retrievalMode: { bm25: bm25Mode, vector: vectorMode, graph: graphMode },
+        };
       } catch {
-        return enriched.slice(0, limit);
+        return {
+          results: enriched.slice(0, limit),
+          retrievalMode: { bm25: bm25Mode, vector: vectorMode, graph: graphMode },
+        };
       }
     }
 
-    return enriched.slice(0, limit);
+    return {
+      results: enriched.slice(0, limit),
+      retrievalMode: { bm25: bm25Mode, vector: vectorMode, graph: graphMode },
+    };
   }
 
   private diversifyBySession(

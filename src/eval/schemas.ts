@@ -32,6 +32,15 @@ const ObservationTypeEnum = z.enum([
   "other",
 ]);
 
+const DurableCandidateTypeEnum = z.enum([
+  "pattern",
+  "preference",
+  "architecture",
+  "bug",
+  "workflow",
+  "fact",
+]);
+
 export const ObserveInputSchema = z.object({
   hookType: HookTypeEnum,
   sessionId: z.string().min(1),
@@ -58,6 +67,26 @@ export const SummaryOutputSchema = z.object({
   keyDecisions: z.array(z.string()),
   filesModified: z.array(z.string()),
   concepts: z.array(z.string()),
+  durableCandidates: z
+    .array(
+      z.object({
+        id: z.string().min(1),
+        sessionId: z.string().min(1),
+        project: z.string().min(1).optional(),
+        type: DurableCandidateTypeEnum,
+        title: z.string().min(1),
+        content: z.string().min(1),
+        concepts: z.array(z.string()),
+        files: z.array(z.string()),
+        sourceObservationIds: z.array(z.string()),
+        confidence: z.number().min(0).max(1),
+        promotionReason: z.string().min(1).optional(),
+        createdAt: z.string().min(1),
+        promotedMemoryId: z.string().min(1).optional(),
+        promotedAt: z.string().min(1).optional(),
+      }),
+    )
+    .optional(),
 });
 
 export const SearchInputSchema = z.object({
@@ -73,11 +102,20 @@ export const ContextInputSchema = z.object({
 
 export const RememberInputSchema = z.object({
   content: z.string().min(1),
+  title: z.string().min(1).optional(),
   type: z
     .enum(["pattern", "preference", "architecture", "bug", "workflow", "fact"])
     .optional(),
   concepts: z.array(z.string()).optional(),
   files: z.array(z.string()).optional(),
+  ttlDays: z.number().positive().optional(),
+  sourceObservationIds: z.array(z.string()).optional(),
+  sessionIds: z.array(z.string()).optional(),
+  sourceCandidateId: z.string().min(1).optional(),
+  confidence: z.number().min(0).max(1).optional(),
+  strength: z.number().int().min(1).max(10).optional(),
+  agentId: z.string().min(1).optional(),
+  project: z.string().min(1).optional(),
 });
 
 export const SmartSearchInputSchema = z.object({

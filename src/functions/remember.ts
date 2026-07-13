@@ -9,18 +9,27 @@ import { recordAudit } from "./audit.js";
 import { getSearchIndex, vectorIndexAddGuarded, vectorIndexRemove, flushIndexSave } from "./search.js";
 import { getAgentId } from "../config.js";
 import { logger } from "../logger.js";
+import { normalizeScope, sameScope } from "../recall/scope.js";
 
 export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
   sdk.registerFunction("mem::remember", 
     async (data: {
       content: string;
+      title?: string;
       type?: string;
       concepts?: string[];
       files?: string[];
       ttlDays?: number;
       sourceObservationIds?: string[];
+      sessionIds?: string[];
+      sourceCandidateId?: string;
+      confidence?: number;
+      strength?: number;
       agentId?: string;
       project?: string;
+      scope?: Memory["scope"];
+      origin?: Memory["origin"];
+      checkoutId?: string;
     }) => {
       if (
         !data.content ||
@@ -37,6 +46,9 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
       }
       if (data.sourceObservationIds && !Array.isArray(data.sourceObservationIds)) {
         return { success: false, error: "sourceObservationIds must be an array" };
+      }
+      if (data.sessionIds && !Array.isArray(data.sessionIds)) {
+        return { success: false, error: "sessionIds must be an array" };
       }
       const validTypes = new Set([
         "pattern",
@@ -58,6 +70,19 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
         typeof data.project === "string" && data.project.trim().length > 0
           ? data.project.trim()
           : undefined;
+      const requestedScope = normalizeScope(data.scope);
+      const scope =
+        requestedScope.level !== "unknown"
+          ? requestedScope
+          : project
+            ? { level: "project" as const, projectId: project }
+            : requestedScope;
+      if (scope.level === "user" && memType !== "preference") {
+        return {
+          success: false,
+          error: "user scope is restricted to explicit preference memories",
+        };
+      }
 
       return withKeyedLock("mem:remember", async () => {
         const existingMemories = await kv.list<Memory>(KV.memories);
@@ -71,7 +96,7 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
           // Both sides must have an explicit project for the guard to engage;
           // an unscoped memory (legacy, no project field) is treated as a
           // wildcard so pre-existing data is not stranded.
-          if (project && existing.project && existing.project !== project) {
+          if (!sameScope(normalizeScope(existing.scope), scope)) {
             continue;
           }
           const similarity = jaccardSimilarity(
@@ -94,27 +119,62 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
           typeof data.agentId === "string" && data.agentId.trim().length > 0
             ? data.agentId.trim().slice(0, 128)
             : getAgentId();
+        const title =
+          typeof data.title === "string" && data.title.trim().length > 0
+            ? data.title.trim().slice(0, 120)
+            : data.content.slice(0, 80);
+        const sessionIds = (data.sessionIds || []).filter(
+          (id): id is string => typeof id === "string" && id.trim().length > 0,
+        );
+        const confidence =
+          typeof data.confidence === "number" && Number.isFinite(data.confidence)
+            ? Math.max(0, Math.min(1, data.confidence))
+            : undefined;
+        const strength =
+          typeof data.strength === "number" && Number.isFinite(data.strength)
+            ? Math.max(1, Math.min(10, Math.round(data.strength)))
+            : confidence !== undefined
+              ? Math.max(1, Math.min(10, Math.round(confidence * 10)))
+              : 7;
+        const sourceCandidateId =
+          typeof data.sourceCandidateId === "string" &&
+          data.sourceCandidateId.trim().length > 0
+            ? data.sourceCandidateId.trim()
+            : undefined;
+        const origin =
+          data.origin === "system" || data.origin === "candidate_promoted"
+            ? data.origin
+            : sourceCandidateId
+              ? "candidate_promoted"
+              : "manual";
 
         const memory: Memory = {
           id: generateId("mem"),
           createdAt: now,
           updatedAt: now,
           type: memType,
-          title: data.content.slice(0, 80),
+          title,
           content: data.content,
           concepts: data.concepts || [],
           files: data.files || [],
-          sessionIds: [],
-          strength: 7,
+          sessionIds,
+          strength,
+          ...(confidence !== undefined && { confidence }),
           version: supersededId ? supersededVersion + 1 : 1,
           parentId: supersededId,
           supersedes: supersededId ? [supersededId] : [],
           sourceObservationIds: (data.sourceObservationIds || []).filter(
             (id): id is string => typeof id === "string" && id.length > 0,
           ),
+          ...(sourceCandidateId ? { sourceCandidateId } : {}),
           isLatest: true,
           ...(callAgentId ? { agentId: callAgentId } : {}),
           ...(project !== undefined && { project }),
+          scope,
+          origin,
+          ...(typeof data.checkoutId === "string" && data.checkoutId.trim()
+            ? { checkoutId: data.checkoutId.trim() }
+            : {}),
         };
 
         if (data.ttlDays && typeof data.ttlDays === "number" && data.ttlDays > 0) {

@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
-import pc from "picocolors";
+import { parse as parseToml } from "smol-toml";
 import type {
   AgentMemoryConfig,
   ProviderConfig,
@@ -9,6 +9,7 @@ import type {
   FallbackConfig,
   ClaudeBridgeConfig,
   TeamConfig,
+  RecallConfig,
 } from "./types.js";
 
 function safeParseInt(value: string | undefined, fallback: number): number {
@@ -19,6 +20,31 @@ function safeParseInt(value: string | undefined, fallback: number): number {
 
 const DATA_DIR = join(homedir(), ".agentmemory");
 const ENV_FILE = join(DATA_DIR, ".env");
+const CONFIG_FILE = join(DATA_DIR, "config.toml");
+
+const DEFAULT_RECALL_CONFIG: RecallConfig = {
+  budget: {
+    maxContextTokens: 800,
+    reservedBootstrapTokens: 200,
+    maxSemanticTokens: 600,
+    maxMemories: 5,
+    maxSessionSummaries: 1,
+    maxObservations: 3,
+    maxContinuityItems: 1,
+  },
+  scope: {
+    unknownAutoInjection: false,
+    unknownExplicitSearch: true,
+  },
+  trace: {
+    retentionDays: 30,
+    maxTraces: 10_000,
+    maxDroppedItemsPerReason: 20,
+  },
+  injection: {
+    reinjectionTurnWindow: 8,
+  },
+};
 
 let warnPremiumModelShown = false;
 
@@ -44,6 +70,176 @@ function loadEnvFile(): Record<string, string> {
     vars[key] = val;
   }
   return vars;
+}
+
+function loadTomlFile(): Record<string, unknown> {
+  if (!existsSync(CONFIG_FILE)) return {};
+  try {
+    const parsed = parseToml(readFileSync(CONFIG_FILE, "utf-8"));
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      throw new Error("top-level document must be a table");
+    }
+    return parsed as Record<string, unknown>;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new Error(`Invalid ${CONFIG_FILE}: ${message}`);
+  }
+}
+
+function nestedTomlValue(
+  source: Record<string, unknown>,
+  section: string,
+  key: string,
+): unknown {
+  const table = source[section];
+  if (!table || typeof table !== "object" || Array.isArray(table)) return undefined;
+  return (table as Record<string, unknown>)[key];
+}
+
+function nonNegativeConfigInt(
+  value: unknown,
+  fallback: number,
+  label: string,
+): number {
+  if (value === undefined) return fallback;
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
+    throw new Error(`${label} must be a non-negative integer`);
+  }
+  return value;
+}
+
+function booleanConfigValue(
+  value: unknown,
+  fallback: boolean,
+  label: string,
+): boolean {
+  if (value === undefined) return fallback;
+  if (typeof value !== "boolean") throw new Error(`${label} must be a boolean`);
+  return value;
+}
+
+function envOrToml(
+  env: Record<string, string>,
+  envKey: string,
+  toml: Record<string, unknown>,
+  section: string,
+  key: string,
+): unknown {
+  if (env[envKey] !== undefined) return Number(env[envKey]);
+  return nestedTomlValue(toml, section, key);
+}
+
+function envOrTomlBoolean(
+  env: Record<string, string>,
+  envKey: string,
+  toml: Record<string, unknown>,
+  section: string,
+  key: string,
+): unknown {
+  if (env[envKey] !== undefined) {
+    if (env[envKey] === "true") return true;
+    if (env[envKey] === "false") return false;
+    return env[envKey];
+  }
+  return nestedTomlValue(toml, section, key);
+}
+
+export function loadRecallConfig(
+  overrides?: Record<string, string>,
+): RecallConfig {
+  const env = getMergedEnv(overrides);
+  const toml = loadTomlFile();
+  const budget = DEFAULT_RECALL_CONFIG.budget;
+  const scope = DEFAULT_RECALL_CONFIG.scope;
+  const trace = DEFAULT_RECALL_CONFIG.trace;
+  const injection = DEFAULT_RECALL_CONFIG.injection;
+  const maxContextTokens = nonNegativeConfigInt(
+    env["AGENTMEMORY_RECALL_MAX_CONTEXT_TOKENS"] !== undefined
+      ? Number(env["AGENTMEMORY_RECALL_MAX_CONTEXT_TOKENS"])
+      : env["TOKEN_BUDGET"] !== undefined
+        ? Number(env["TOKEN_BUDGET"])
+        : nestedTomlValue(toml, "recall_budget", "max_context_tokens"),
+    budget.maxContextTokens,
+    "recall_budget.max_context_tokens",
+  );
+  const result: RecallConfig = {
+    budget: {
+      maxContextTokens,
+      reservedBootstrapTokens: nonNegativeConfigInt(
+        envOrToml(env, "AGENTMEMORY_RECALL_RESERVED_BOOTSTRAP_TOKENS", toml, "recall_budget", "reserved_bootstrap_tokens"),
+        budget.reservedBootstrapTokens,
+        "recall_budget.reserved_bootstrap_tokens",
+      ),
+      maxSemanticTokens: nonNegativeConfigInt(
+        envOrToml(env, "AGENTMEMORY_RECALL_MAX_SEMANTIC_TOKENS", toml, "recall_budget", "max_semantic_tokens"),
+        budget.maxSemanticTokens,
+        "recall_budget.max_semantic_tokens",
+      ),
+      maxMemories: nonNegativeConfigInt(
+        envOrToml(env, "AGENTMEMORY_RECALL_MAX_MEMORIES", toml, "recall_budget", "max_memories"),
+        budget.maxMemories,
+        "recall_budget.max_memories",
+      ),
+      maxSessionSummaries: nonNegativeConfigInt(
+        envOrToml(env, "AGENTMEMORY_RECALL_MAX_SESSION_SUMMARIES", toml, "recall_budget", "max_session_summaries"),
+        budget.maxSessionSummaries,
+        "recall_budget.maxSessionSummaries",
+      ),
+      maxObservations: nonNegativeConfigInt(
+        envOrToml(env, "AGENTMEMORY_RECALL_MAX_OBSERVATIONS", toml, "recall_budget", "max_observations"),
+        budget.maxObservations,
+        "recall_budget.max_observations",
+      ),
+      maxContinuityItems: nonNegativeConfigInt(
+        envOrToml(env, "AGENTMEMORY_RECALL_MAX_CONTINUITY_ITEMS", toml, "recall_budget", "max_continuity_items"),
+        budget.maxContinuityItems,
+        "recall_budget.max_continuity_items",
+      ),
+    },
+    scope: {
+      unknownAutoInjection: booleanConfigValue(
+        envOrTomlBoolean(env, "AGENTMEMORY_RECALL_UNKNOWN_AUTO_INJECTION", toml, "recall_scope", "unknown_auto_injection"),
+        scope.unknownAutoInjection,
+        "recall_scope.unknown_auto_injection",
+      ),
+      unknownExplicitSearch: booleanConfigValue(
+        envOrTomlBoolean(env, "AGENTMEMORY_RECALL_UNKNOWN_EXPLICIT_SEARCH", toml, "recall_scope", "unknown_explicit_search"),
+        scope.unknownExplicitSearch,
+        "recall_scope.unknown_explicit_search",
+      ),
+    },
+    trace: {
+      retentionDays: nonNegativeConfigInt(
+        envOrToml(env, "AGENTMEMORY_RECALL_TRACE_RETENTION_DAYS", toml, "recall_trace", "retention_days"),
+        trace.retentionDays,
+        "recall_trace.retention_days",
+      ),
+      maxTraces: nonNegativeConfigInt(
+        envOrToml(env, "AGENTMEMORY_RECALL_TRACE_MAX_TRACES", toml, "recall_trace", "max_traces"),
+        trace.maxTraces,
+        "recall_trace.max_traces",
+      ),
+      maxDroppedItemsPerReason: nonNegativeConfigInt(
+        envOrToml(env, "AGENTMEMORY_RECALL_TRACE_MAX_DROPPED_ITEMS_PER_REASON", toml, "recall_trace", "max_dropped_items_per_reason"),
+        trace.maxDroppedItemsPerReason,
+        "recall_trace.max_dropped_items_per_reason",
+      ),
+    },
+    injection: {
+      reinjectionTurnWindow: nonNegativeConfigInt(
+        envOrToml(env, "AGENTMEMORY_RECALL_REINJECTION_TURN_WINDOW", toml, "recall_injection", "reinjection_turn_window"),
+        injection.reinjectionTurnWindow,
+        "recall_injection.reinjection_turn_window",
+      ),
+    },
+  };
+  if (result.budget.reservedBootstrapTokens > result.budget.maxContextTokens) {
+    throw new Error("recall_budget.reserved_bootstrap_tokens must not exceed max_context_tokens");
+  }
+  if (result.budget.maxSemanticTokens > result.budget.maxContextTokens) {
+    throw new Error("recall_budget.max_semantic_tokens must not exceed max_context_tokens");
+  }
+  return result;
 }
 
 function hasRealValue(v: string | undefined): v is string {
@@ -127,11 +323,15 @@ function detectProvider(env: Record<string, string>): ProviderConfig {
   const allowAgentSdk = env["AGENTMEMORY_ALLOW_AGENT_SDK"] === "true";
   if (!allowAgentSdk) {
     process.stderr.write(
-      pc.dim(
-        "[agentmemory] No LLM provider key set — running zero-LLM (BM25 + on-device embeddings). " +
-          "Set ANTHROPIC_API_KEY (or GEMINI/OPENAI/OPENROUTER/MINIMAX) in ~/.agentmemory/.env for LLM compression and summaries. " +
-          "Agent-SDK fallback stays off by default to avoid a Stop-hook recursion loop; opt in with AGENTMEMORY_AUTO_COMPRESS=true + AGENTMEMORY_ALLOW_AGENT_SDK=true.\n",
-      ),
+      "[agentmemory] No LLM provider key found " +
+        "(ANTHROPIC_API_KEY, GEMINI_API_KEY, OPENROUTER_API_KEY, MINIMAX_API_KEY, OPENAI_API_KEY). " +
+        "LLM-backed compression and summarization are DISABLED — using no-op provider. " +
+        "This is the safe default: the agent-sdk fallback used to spawn Claude Agent SDK " +
+        "child sessions which inherit Claude Code's plugin hooks and cause infinite Stop-hook " +
+        "recursion (#149 follow-up). To opt in to the agent-sdk fallback anyway, set both " +
+        "AGENTMEMORY_AUTO_COMPRESS=true AND AGENTMEMORY_ALLOW_AGENT_SDK=true — but be aware " +
+        "it will burn your Claude Pro allocation and may still recurse if you use it from " +
+        "inside Claude Code itself.\n",
     );
     return {
       provider: "noop",
@@ -143,7 +343,7 @@ function detectProvider(env: Record<string, string>): ProviderConfig {
   process.stderr.write(
     "[agentmemory] WARNING: agent-sdk fallback enabled via AGENTMEMORY_ALLOW_AGENT_SDK=true. " +
       "This spawns @anthropic-ai/claude-agent-sdk child sessions that can trigger the Stop-hook " +
-      "recursion loop. A SDK-child env marker is set to block re-entry, " +
+      "recursion loop (#149 follow-up). A SDK-child env marker is set to block re-entry, " +
       "but prefer setting a real API key in ~/.agentmemory/.env instead.\n",
   );
   return {
@@ -161,7 +361,7 @@ export function loadConfig(): AgentMemoryConfig {
   // Port quartet: REST is the anchor; streams/engine derive from it
   // unless individually overridden. Default anchor 3111 yields the
   // canonical 3112 streams / 49134 engine pair, but `III_REST_PORT=3211`
-  // auto-picks 3212 + 49234 so a second instance doesn't collide.
+  // auto-picks 3212 + 49234 so a second instance doesn't collide (#750).
   const restPort = parseInt(env["III_REST_PORT"] || "3111", 10) || 3111;
   const streamsPort =
     parseInt(env["III_STREAM_PORT"] || env["III_STREAMS_PORT"] || "", 10) ||
@@ -181,6 +381,7 @@ export function loadConfig(): AgentMemoryConfig {
     maxObservationsPerSession: safeParseInt(env["MAX_OBS_PER_SESSION"], 500),
     compressionModel: provider.model,
     dataDir: DATA_DIR,
+    recall: loadRecallConfig(),
   };
 }
 
@@ -333,7 +534,7 @@ export function getGraphBatchSize(): number {
   return safeParseInt(getMergedEnv()["GRAPH_EXTRACTION_BATCH_SIZE"], 10);
 }
 
-// window for the smart-search followup-rate diagnostic. A second
+// #771: window for the smart-search followup-rate diagnostic. A second
 // search arriving within this many seconds (with disjoint results)
 // counts as a "follow-up" — a directional signal that the first result
 // set didn't satisfy. Long values overcount (legitimate refinement
@@ -373,7 +574,7 @@ function hasLLMProviderConfigured(env: Record<string, string | undefined>): bool
   );
 }
 
-// Per-observation LLM compression is OFF by default as of 0.8.8.
+// Per-observation LLM compression is OFF by default as of 0.8.8 (see #138).
 // When disabled, observations are captured and indexed via a synthetic
 // (zero-LLM) compression path so recall/search still works. Users who want
 // richer LLM-generated summaries can set AGENTMEMORY_AUTO_COMPRESS=true in
@@ -384,7 +585,7 @@ export function isAutoCompressEnabled(): boolean {
 }
 
 // Hook-level context injection into Claude Code's conversation is OFF by
-// default as of 0.8.10. When disabled, pre-tool-use and
+// default as of 0.8.10 (see #143). When disabled, pre-tool-use and
 // session-start hooks still POST observations for background capture, but
 // never write context to stdout — so Claude Code doesn't inject an extra
 // ~4000-char blob into every tool turn. 0.8.8 stopped the agentmemory-side
@@ -443,7 +644,7 @@ export function loadFallbackConfig(): FallbackConfig {
           "[agentmemory] Ignoring FALLBACK_PROVIDERS entry 'agent-sdk' " +
             "(AGENTMEMORY_ALLOW_AGENT_SDK is not 'true'). The agent-sdk " +
             "fallback can spawn Claude Agent SDK child sessions that trigger " +
-            "the Stop-hook recursion loop. Opt in explicitly " +
+            "the Stop-hook recursion loop (#149 follow-up). Opt in explicitly " +
             "with AGENTMEMORY_ALLOW_AGENT_SDK=true if this is intentional.\n",
         );
         return false;

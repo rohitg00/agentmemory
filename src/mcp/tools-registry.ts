@@ -32,6 +32,13 @@ export const CORE_TOOLS: McpToolDef[] = [
           type: "number",
           description: "Optional token budget to trim returned results",
         },
+        outputMode: {
+          type: "string",
+          description: "structured returns ranked traceable results; context returns token-packed rendered context",
+        },
+        project: { type: "string", description: "Project scope identifier" },
+        repoId: { type: "string", description: "Repository identity fingerprint" },
+        checkoutId: { type: "string", description: "Checkout identity fingerprint" },
       },
       required: ["query"],
     },
@@ -130,6 +137,9 @@ export const CORE_TOOLS: McpToolDef[] = [
           description: "Comma-separated observation IDs to expand",
         },
         limit: { type: "number", description: "Max results (default 10)" },
+        project: { type: "string", description: "Project scope identifier" },
+        repoId: { type: "string", description: "Repository identity fingerprint" },
+        checkoutId: { type: "string", description: "Checkout identity fingerprint" },
       },
       required: ["query"],
     },
@@ -950,9 +960,9 @@ export function getAllTools(): McpToolDef[] {
 }
 
 // default switched from "core" (8 essential tools) to "all"
-// (full 53-tool surface). README and plugin manifests have always
-// advertised 53 tools "in proxy mode"; the old default left OpenCode /
-// Claude Code users seeing 8 with no indication the other tools existed.
+// (full 51-tool surface). README and plugin manifests have always
+// advertised 51 tools "in proxy mode"; the old default left OpenCode /
+// Claude Code users seeing 8 with no indication the other 43 existed.
 // Users who want the lean essentials can still set AGENTMEMORY_TOOLS=core.
 export function getVisibleTools(): McpToolDef[] {
   const mode = process.env["AGENTMEMORY_TOOLS"] || "all";

@@ -17,6 +17,7 @@ import {
   listPinnedSlots,
   renderPinnedContext,
 } from "./slots.js";
+import type { RecallCore } from "../recall/core.js";
 
 function estimateTokens(text: string): number {
   return Math.ceil(text.length / 3);
@@ -34,9 +35,43 @@ export function registerContextFunction(
   sdk: ISdk,
   kv: StateKV,
   tokenBudget: number,
+  recallCore?: RecallCore,
 ): void {
   sdk.registerFunction("mem::context", 
-    async (data: { sessionId: string; project: string; budget?: number }) => {
+    async (data: {
+      sessionId: string;
+      project: string;
+      budget?: number;
+      query?: string;
+      limit?: number;
+      projectId?: string;
+      repoId?: string;
+      checkoutId?: string;
+      outputMode?: "bootstrap" | "prompt_injection" | "rendered_context" | "ranked_results";
+      entryPoint?: "context" | "search" | "smart_search" | "memory_recall" | "prompt" | "session_start" | "enrich";
+      debug?: boolean;
+    }) => {
+      if (recallCore) {
+        const result = await recallCore.recall({
+          entryPoint: data.entryPoint || "context",
+          outputMode: data.outputMode || "rendered_context",
+          query: data.query,
+          limit: data.limit,
+          sessionId: data.sessionId,
+          projectId: data.projectId || data.project,
+          repoId: data.repoId,
+          checkoutId: data.checkoutId,
+          ...(data.budget !== undefined ? { budget: { maxContextTokens: data.budget } } : {}),
+          debug: data.debug,
+        });
+        return {
+          context: result.context,
+          blocks: result.results.length,
+          tokens: result.trace.finalContextTokenCount,
+          traceId: result.trace.id,
+          ...(data.debug ? { trace: result.trace } : {}),
+        };
+      }
       const budget = data.budget || tokenBudget;
       const blocks: ContextBlock[] = [];
 

@@ -97,6 +97,52 @@ describe("parseJsonlText", () => {
     const out = parseJsonlText(text, "fb-used");
     expect(out.sessionId).toBe("fb-used");
   });
+
+  it("parses Codex archive primary events with stable observation ids", () => {
+    const text = [
+      JSON.stringify({
+        type: "session_meta",
+        timestamp: "2026-07-10T00:00:00.000Z",
+        payload: {
+          id: "codex-session",
+          timestamp: "2026-07-10T00:00:00.000Z",
+          cwd: "C:\\work\\agentmemory",
+        },
+      }),
+      JSON.stringify({
+        type: "response_item",
+        timestamp: "2026-07-10T00:00:01.000Z",
+        payload: { type: "message", role: "assistant", content: [] },
+      }),
+      JSON.stringify({
+        type: "event_msg",
+        timestamp: "2026-07-10T00:00:02.000Z",
+        payload: { type: "user_message", message: "Import this archive." },
+      }),
+      "not-json",
+      JSON.stringify({
+        type: "event_msg",
+        timestamp: "2026-07-10T00:00:03.000Z",
+        payload: { type: "task_complete", last_agent_message: "Done." },
+      }),
+    ].join("\n");
+
+    const first = parseJsonlText(text);
+    const second = parseJsonlText(text);
+
+    expect(first.sessionId).toBe("codex-session");
+    expect(first.project).toBe("agentmemory");
+    expect(first.cwd).toBe("C:\\work\\agentmemory");
+    expect(first.observations.map((observation) => observation.hookType)).toEqual([
+      "prompt_submit",
+      "task_completed",
+    ]);
+    expect(first.observations[0].userPrompt).toBe("Import this archive.");
+    expect(first.observations[1].assistantResponse).toBe("Done.");
+    expect(first.observations.map((observation) => observation.id)).toEqual(
+      second.observations.map((observation) => observation.id),
+    );
+  });
 });
 
 describe("projectTimeline", () => {

@@ -100,7 +100,7 @@ agentmemory                                      # start the memory server on :3
 agentmemory demo                                 # seed sample sessions + prove recall
 agentmemory demo --serve                         # one command: boot server, run demo, tear down (no second terminal)
 agentmemory connect claude-code                  # wire MCP into your agent (also: copilot-cli, codex, cursor, gemini-cli, ...)
-npx skills add rohitg00/agentmemory -y           # install 15 native skills (8 you can invoke, 7 reference) so your agent knows when to use the tools
+npx skills add rohitg00/agentmemory -y           # install 17 native skills (10 invocable, 7 reference) so your agent knows when to use the tools
 ```
 
 Or via `npx` (no install):
@@ -514,7 +514,7 @@ Implementation details live in `src/cli.ts` (see `runUpgrade` around the `src/cl
 ### Claude Code (one block, paste it)
 
 ```text
-Install agentmemory: run `npx @agentmemory/agentmemory` in a separate terminal to start the memory server. Then run `/plugin marketplace add rohitg00/agentmemory` and `/plugin install agentmemory` — the plugin registers all 12 hooks, 15 skills, AND auto-wires the `@agentmemory/mcp` stdio server via its `.mcp.json`, so you get 53 MCP tools (memory_smart_search, memory_save, memory_sessions, memory_governance_delete, etc.) without any extra config step. Verify with `curl http://localhost:3111/agentmemory/health`. The real-time viewer is at http://localhost:3113.
+Install agentmemory: run `npx @agentmemory/agentmemory` in a separate terminal to start the memory server. Then run `/plugin marketplace add rohitg00/agentmemory` and `/plugin install agentmemory` — the plugin registers all 12 hooks, 17 skills, AND auto-wires the `@agentmemory/mcp` stdio server via its `.mcp.json`, so you get 53 MCP tools (memory_smart_search, memory_save, memory_sessions, memory_governance_delete, etc.) without any extra config step. Verify with `curl http://localhost:3111/agentmemory/health`. The real-time viewer is at http://localhost:3113.
 ```
 
 #### Claude Code without the plugin install (MCP-standalone path)
@@ -545,7 +545,7 @@ The Codex plugin ships from the same `plugin/` directory as the Claude Code plug
 
 - `@agentmemory/mcp` as an MCP server (proxies all 53 tools when `AGENTMEMORY_URL` points at a running agentmemory server; falls back to 7 tools locally when no server is reachable)
 - 6 lifecycle hooks: `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PreCompact`, `Stop`
-- 8 invocable skills: `/recall`, `/remember`, `/session-history`, `/forget`, `/recap`, `/handoff`, `/commit-context`, `/commit-history`, plus 7 reference skills the agent loads on demand (MCP tools, REST API, config, agents, hooks, architecture, and the skill-authoring guide)
+- 10 invocable skills: `/recall`, `/remember`, `/session-history`, `/forget`, `/recap`, `/handoff`, `/commit-context`, `/commit-history`, `/recall-debug`, `/why-memory`, plus 7 reference skills the agent loads on demand (MCP tools, REST API, config, agents, hooks, architecture, and the skill-authoring guide)
 
 Codex's hook engine injects `CLAUDE_PLUGIN_ROOT` into hook subprocesses (per [`codex-rs/hooks/src/engine/discovery.rs`](https://github.com/openai/codex/blob/main/codex-rs/hooks/src/engine/discovery.rs)), so the same hook scripts work across both hosts without duplication. Subagent / SessionEnd / Notification / TaskCompleted / PostToolUseFailure events are Claude-Code-only and are not registered for Codex.
 
@@ -560,6 +560,26 @@ agentmemory connect codex --with-hooks
 ```
 
 This adds an idempotent block to `~/.codex/hooks.json` referencing absolute paths to the bundled scripts (no `${CLAUDE_PLUGIN_ROOT}` expansion needed at user-scope). Re-run the same command after upgrading agentmemory to refresh paths. User entries in the same file are preserved; only previous agentmemory entries are replaced.
+
+#### Codex archive ingestion (Windows)
+
+Codex does not expose a native Archive lifecycle event. On native Windows, agentmemory can watch `~/.codex/archived_sessions` through an explicit, user-scoped Scheduled Task. The task invokes the stable `agentmemory` CLI; it does not point directly at a versioned npm-package script.
+
+```powershell
+# Inspect the first-run history decision without changing state or tasks
+agentmemory archive-watcher install --dry-run
+
+# Process existing archives, then keep watching future archives
+agentmemory archive-watcher install --yes
+
+# Skip archives that already exist and watch only future files
+agentmemory archive-watcher install --new-only
+
+# Remove only the Scheduled Task; state, ledger, and canonical data remain
+agentmemory archive-watcher uninstall
+```
+
+The watcher health-checks agentmemory once per scan, waits for two stable file observations before submitting JSONL, and retries transient failures with bounded backoff. Completed state is recorded only after the server archive ledger returns `processed` or `skipped_completed`. State is kept at `%USERPROFILE%\\.agentmemory\\archive-watcher-state.json`.
 
 ### GitHub Copilot CLI
 
@@ -625,7 +645,7 @@ Start the memory server: `npx @agentmemory/agentmemory`
 
 #### Native skills via `npx skills add` (50+ agents)
 
-agentmemory ships 15 skills in the Claude-Code-style `<dir>/SKILL.md` format: 8 invocable action skills (`remember`, `recall`, `recap`, `handoff`, `forget`, `commit-context`, `commit-history`, `session-history`) and 7 reference skills the agent loads on demand (`agentmemory-mcp-tools`, `agentmemory-rest-api`, `agentmemory-config`, `agentmemory-agents`, `agentmemory-hooks`, `agentmemory-architecture`, `write-agentmemory-skill`). The reference skills carry data tables generated from source, so they never drift. The [`skills`](https://npmjs.com/package/skills) CLI by vercel-labs auto-installs them into the calling agent's native skill directory across 50+ agents (Claude Code, Cursor, Cline, Continue, Droid, Warp, Codex, Antigravity, Kiro, OpenCode, Goose, Roo, Trae, Windsurf, and more):
+agentmemory ships 17 skills in the Claude-Code-style `<dir>/SKILL.md` format: 10 invocable action skills (`remember`, `recall`, `recap`, `handoff`, `forget`, `commit-context`, `commit-history`, `session-history`, `recall-debug`, `why-memory`) and 7 reference skills the agent loads on demand (`agentmemory-mcp-tools`, `agentmemory-rest-api`, `agentmemory-config`, `agentmemory-agents`, `agentmemory-hooks`, `agentmemory-architecture`, `write-agentmemory-skill`). The reference skills carry data tables generated from source, so they never drift. The [`skills`](https://npmjs.com/package/skills) CLI by vercel-labs auto-installs them into the calling agent's native skill directory across 50+ agents (Claude Code, Cursor, Cline, Continue, Droid, Warp, Codex, Antigravity, Kiro, OpenCode, Goose, Roo, Trae, Windsurf, and more):
 
 ```bash
 npx skills add rohitg00/agentmemory -y          # auto-detects the calling agent
@@ -638,7 +658,7 @@ This is **complementary** to `agentmemory connect <agent>`:
 - `agentmemory connect <agent>` writes the MCP server config so the tools are available.
 - `npx skills add rohitg00/agentmemory` installs the skills so the agent knows when to call them.
 
-For the few agents the skills CLI doesn't cover yet (Zed v1.3.x and below), drop the 15 SKILL.md files under the agent's native skill directory yourself — same format works everywhere.
+For the few agents the skills CLI doesn't cover yet (Zed v1.3.x and below), drop the 17 SKILL.md files under the agent's native skill directory yourself — same format works everywhere.
 
 #### Standard MCP block
 
@@ -668,7 +688,7 @@ The agentmemory entry is the **same MCP server block** across every host that us
 | **GitHub Copilot CLI (full plugin)** | Copilot plugin install | `copilot plugin install rohitg00/agentmemory:plugin` for the plugin from the GitHub subdir. |
 | **OpenClaw** | OpenClaw MCP config | Same `mcpServers` block, or use the deeper [memory plugin](integrations/openclaw/). |
 | **Codex CLI (MCP only)** | `.codex/config.toml` | TOML shape: `codex mcp add agentmemory -- npx -y @agentmemory/mcp`, or add `[mcp_servers.agentmemory]` manually. |
-| **Codex CLI (full plugin)** | Codex plugin marketplace | `codex plugin marketplace add rohitg00/agentmemory` then `codex plugin add agentmemory@agentmemory`. Registers MCP + 6 lifecycle hooks (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PreCompact, Stop) + 15 skills. On Codex Desktop, also run `agentmemory connect codex --with-hooks` until [openai/codex#16430](https://github.com/openai/codex/issues/16430) lands — plugin hooks are currently silent there. |
+| **Codex CLI (full plugin)** | Codex plugin marketplace | `codex plugin marketplace add rohitg00/agentmemory` then `codex plugin add agentmemory@agentmemory`. Registers MCP + 6 lifecycle hooks (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PreCompact, Stop) + 17 skills. On Codex Desktop, also run `agentmemory connect codex --with-hooks` until [openai/codex#16430](https://github.com/openai/codex/issues/16430) lands — plugin hooks are currently silent there. |
 | **OpenCode (MCP only)** | `opencode.json` | Different shape — top-level `mcp` key, command as array: `{"mcp": {"agentmemory": {"type": "local", "command": ["npx", "-y", "@agentmemory/mcp"], "enabled": true}}}`. |
 | **OpenCode (full plugin)** | `plugin/opencode/` | 22 auto-capture hooks covering session lifecycle, messages, tools, errors. Two slash commands (`/recall`, `/remember`). Copy `plugin/opencode/` into your OpenCode workspace and add the plugin entry to `opencode.json`. See [`plugin/opencode/README.md`](plugin/opencode/README.md) for the full hook table + gap analysis. |
 | **pi** | `~/.pi/agent/extensions/agentmemory` | Copy [`integrations/pi`](integrations/pi/) and restart pi. |
@@ -676,7 +696,7 @@ The agentmemory entry is the **same MCP server block** across every host that us
 | **Qwen Code** | `~/.qwen/settings.json` | `agentmemory connect qwen` writes the standard `mcpServers` block. Hook payload is field-compatible with Claude Code, so the existing 12-hook scripts work without modification — wire them via the `hooks` section in the same `settings.json`. |
 | **Antigravity** (replaces Gemini CLI) | `mcp_config.json` (in Antigravity's User dir) | `agentmemory connect antigravity` writes the standard `mcpServers` block. macOS: `~/Library/Application Support/Antigravity/User/`. Linux: `~/.config/Antigravity/User/`. Use after the 2026-06-18 Gemini CLI sunset. |
 | **Kiro** | `~/.kiro/settings/mcp.json` | `agentmemory connect kiro` writes the user-level config. Workspace overrides go in `.kiro/settings/mcp.json` next to your code. |
-| **Warp** | `~/.warp/.mcp.json` | `agentmemory connect warp` writes the standard `mcpServers` block. Warp also auto-discovers skills from `.claude/skills/` — once the Claude Code plugin is installed the 8 agentmemory skills (`remember`, `recall`, `recap`, `handoff`, `forget`, `commit-context`, `commit-history`, `session-history`) appear natively in Warp's slash-command palette. |
+| **Warp** | `~/.warp/.mcp.json` | `agentmemory connect warp` writes the standard `mcpServers` block. Warp also auto-discovers skills from `.claude/skills/` — once the Claude Code plugin is installed the 10 agentmemory skills (`remember`, `recall`, `recap`, `handoff`, `forget`, `commit-context`, `commit-history`, `session-history`, `recall-debug`, `why-memory`) appear natively in Warp's slash-command palette. |
 | **Cline (CLI)** | `~/.cline/mcp.json` | `agentmemory connect cline` writes the standard `mcpServers` block. VS Code extension users: paste the same block via Cline Settings → MCP Servers → Edit JSON. |
 | **Continue.dev** | `~/.continue/config.yaml` (preferred) or `config.json` (legacy) | `agentmemory connect continue` creates `config.yaml` from scratch when neither exists, or modifies existing `config.json`. **If you already have `config.yaml`** the adapter prints the exact block to paste under `mcpServers:` — it won't silently rewrite your yaml because preserving comments and anchors safely needs a YAML parser the package doesn't ship. Continue uses array form (not object) for `mcpServers`. |
 | **Zed** | `~/.config/zed/settings.json` | `agentmemory connect zed` writes under `context_servers` (Zed's key, NOT `mcpServers`). Remote MCP servers can be wired via `{"url": "..."}` instead. |
@@ -955,11 +975,55 @@ npm install @xenova/transformers
 | Cohere | `embed-english-v3.0` | Free trial | General purpose |
 | OpenRouter | Any model | Varies | Multi-model proxy |
 
+### Scoped Traceable Recall
+
+Every recall (search, context injection, enrichment) is centralized through `RecallCore` (`src/recall/core.ts`) and produces a `RecallTrace` recording exactly which items were selected or dropped — and why. Traces are queryable via the `recall-debug` APIs and skills.
+
+| Trace field | What it records |
+|---|---|
+| `selected` | Items injected into context, with scores and source |
+| `dropped` | Items considered but excluded, with a structured reason |
+| `budget` | Token budget applied at recall time |
+| `scope` | Resolved project/repo/checkout identity fingerprint |
+| `entryPoint` | Which code path triggered the recall (context, enrich, smart_search, etc.) |
+
+**Recall config** (`~/.agentmemory/config.toml`):
+
+```toml
+[recall_budget]
+max_context_tokens = 800
+reserved_bootstrap_tokens = 200
+max_semantic_tokens = 600
+max_memories = 5
+max_session_summaries = 1
+max_observations = 3
+max_continuity_items = 1
+
+[recall_scope]
+unknown_auto_injection = false
+unknown_explicit_search = true
+
+[recall_trace]
+retention_days = 30
+max_traces = 10000
+max_dropped_items_per_reason = 20
+
+[recall_injection]
+reinjection_turn_window = 8
+```
+
+**Recall debug endpoints:**
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/agentmemory/recall/debug` | Query recent recall traces, filterable by `projectId`, `repoId`, `entryPoint`, `itemId` |
+| `GET` | `/agentmemory/recall/debug/{traceId}` | Fetch a single recall trace by id |
+
 ---
 
 <h2 id="mcp-server"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/section-mcp.svg"><img src="assets/tags/section-mcp.svg" alt="MCP Server" height="32" /></picture></h2>
 
-53 tools, 6 resources, 3 prompts, and 15 skills, the most comprehensive MCP memory toolkit for any agent.
+53 tools, 6 resources, 3 prompts, and 17 skills, the most comprehensive MCP memory toolkit for any agent.
 
 > **MCP shim vs full server:** the published `@agentmemory/mcp` package is a thin shim. It exposes the full 53-tool surface **only when it can reach a running agentmemory server** via `AGENTMEMORY_URL` (proxy mode). With no server reachable, the shim falls back to a 7-tool local set (`memory_save`, `memory_recall`, `memory_smart_search`, `memory_sessions`, `memory_export`, `memory_audit`, `memory_governance_delete`). The `AGENTMEMORY_TOOLS=core|all` env var is a *server-side* flag — setting it in the shim's `env` block has no effect. If you see only 7 tools in Cursor / OpenCode / Gemini CLI, start `npx @agentmemory/agentmemory` (or the Docker stack) and set `AGENTMEMORY_URL=http://localhost:3111`.
 
@@ -1023,7 +1087,7 @@ npm install @xenova/transformers
 
 </details>
 
-### 6 Resources · 3 Prompts · 4 Skills
+### 6 Resources · 3 Prompts · 10 Skills + 7 Reference
 
 | Type | Name | Description |
 |------|------|-------------|
@@ -1031,13 +1095,21 @@ npm install @xenova/transformers
 | Resource | `agentmemory://project/{name}/profile` | Per-project intelligence |
 | Resource | `agentmemory://memories/latest` | Latest 10 active memories |
 | Resource | `agentmemory://graph/stats` | Knowledge graph statistics |
+| Resource | `agentmemory://recall/ledger/{projectId}` | Recall injection ledger (dedup guard) |
+| Resource | `agentmemory://recall/trace/{traceId}` | Single recall trace by id |
 | Prompt | `recall_context` | Search + return context messages |
 | Prompt | `session_handoff` | Handoff data between agents |
 | Prompt | `detect_patterns` | Analyze recurring patterns |
 | Skill | `/recall` | Search memory |
 | Skill | `/remember` | Save to long-term memory |
+| Skill | `/recap` | Recap recent session activity |
+| Skill | `/handoff` | Handoff context between agents/sessions |
 | Skill | `/session-history` | Recent session summaries |
 | Skill | `/forget` | Delete observations/sessions |
+| Skill | `/commit-context` | Show commit-level context for a change |
+| Skill | `/commit-history` | Show commit history for a file |
+| Skill | `/recall-debug` | Inspect a single recall invocation — why items were selected or dropped |
+| Skill | `/why-memory` | Explain a memory's recent recall history and scope decisions |
 
 ### Standalone MCP
 
@@ -1211,7 +1283,7 @@ Full registry: [workers.iii.dev](https://workers.iii.dev). Every worker there co
 | Prometheus / Grafana | iii OTEL + health monitor |
 | Custom plugin systems | `iii worker add <name>` |
 
-**174 source files · ~37,800 LOC · 1,423+ tests · 258 functions · 44 KV scopes** — all on three primitives. No `agentmemory plugin install`. The plugin system is iii itself.
+**184 source files · ~42,400 LOC · 1,500+ tests · 296 functions · 58 KV scopes** — all on three primitives. No `agentmemory plugin install`. The plugin system is iii itself.
 
 ---
 
@@ -1437,6 +1509,40 @@ Create `~/.agentmemory/.env`:
 # VECTOR_WEIGHT=0.6
 # TOKEN_BUDGET=2000
 
+# Structured recall budget: ~/.agentmemory/config.toml
+# [recall_budget]
+# max_context_tokens = 800
+# reserved_bootstrap_tokens = 200
+# max_semantic_tokens = 600
+# max_memories = 5
+# max_session_summaries = 1
+# max_observations = 3
+# max_continuity_items = 1
+# [recall_scope]
+# unknown_auto_injection = false
+# unknown_explicit_search = true
+# [recall_trace]
+# retention_days = 30
+# max_traces = 10000
+# max_dropped_items_per_reason = 20
+# [recall_injection]
+# reinjection_turn_window = 8
+
+# Durable candidates (P1): archive processing extracts candidate
+# memories from past sessions. Promote is explicit and idempotent.
+# Features:
+# AGENTMEMORY_DURABLE_CANDIDATES_ENABLED=false  # OFF by default
+# POST /agentmemory/archive/process             # generate candidates
+# POST /agentmemory/durable-candidates/backfill # backfill from existing observations
+# POST /agentmemory/durable-candidates/promote  # promote a candidate to memory
+
+# Vector index maintenance
+# AGENTMEMORY_DROP_STALE_INDEX=false    # OFF by default. When on, stale
+                                        # (dimension-mismatched) vectors
+                                        # in the persisted index are
+                                        # silently dropped on load instead
+                                        # of rejecting the entire index.
+
 # Auth
 # AGENTMEMORY_SECRET=your-secret
 
@@ -1501,7 +1607,7 @@ Create `~/.agentmemory/.env`:
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/section-api.svg"><img src="assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-128 endpoints on port `3111`. The REST API binds to `127.0.0.1` by default. Protected endpoints require `Authorization: Bearer <secret>` when `AGENTMEMORY_SECRET` is set, and mesh sync endpoints require `AGENTMEMORY_SECRET` on both peers.
+137 endpoints on port `3111`. The REST API binds to `127.0.0.1` by default. Protected endpoints require `Authorization: Bearer <secret>` when `AGENTMEMORY_SECRET` is set, and mesh sync endpoints require `AGENTMEMORY_SECRET` on both peers.
 
 <details>
 <summary>Key endpoints</summary>

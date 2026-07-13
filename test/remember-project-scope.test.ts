@@ -203,7 +203,7 @@ describe("mem::remember — cross-project dedup isolation", () => {
     expect(original?.isLatest).toBe(false);
   });
 
-  it("allows an unscoped memory to be superseded by a scoped one (legacy compat)", async () => {
+  it("does not supersede an unknown-scope legacy memory from a scoped write", async () => {
     const sdk = mockSdk();
     const kv = mockKV();
     registerRememberFunction(sdk as never, kv as never);
@@ -217,7 +217,7 @@ describe("mem::remember — cross-project dedup isolation", () => {
       },
     }) as { memory: { id: string } };
 
-    // New scoped memory — should supersede the legacy unscoped one
+    // New scoped memory must stay isolated from an unknown-scope legacy row.
     const scoped = await sdk.trigger({
       function_id: "mem::remember",
       payload: {
@@ -227,10 +227,10 @@ describe("mem::remember — cross-project dedup isolation", () => {
       },
     }) as { memory: { supersedes: string[] } };
 
-    expect(scoped.memory.supersedes).toContain(legacy.memory.id);
+    expect(scoped.memory.supersedes).not.toContain(legacy.memory.id);
   });
 
-  it("allows a scoped memory to be superseded by an unscoped one (legacy compat)", async () => {
+  it("does not let an unknown-scope write supersede a scoped memory", async () => {
     const sdk = mockSdk();
     const kv = mockKV();
     registerRememberFunction(sdk as never, kv as never);
@@ -244,7 +244,7 @@ describe("mem::remember — cross-project dedup isolation", () => {
       },
     }) as { memory: { id: string } };
 
-    // Unscoped write — should still supersede since one side has no project
+    // Unknown scope must not cross the project isolation boundary.
     const unscoped = await sdk.trigger({
       function_id: "mem::remember",
       payload: {
@@ -253,6 +253,6 @@ describe("mem::remember — cross-project dedup isolation", () => {
       },
     }) as { memory: { supersedes: string[] } };
 
-    expect(unscoped.memory.supersedes).toContain(scoped.memory.id);
+    expect(unscoped.memory.supersedes).not.toContain(scoped.memory.id);
   });
 });

@@ -38,7 +38,7 @@ async function main() {
 	setTimeout(() => process.exit(0), 1500).unref();
 }
 main();
-
 //#endregion
-export {  };
+export {};
+
 //# sourceMappingURL=stop.mjs.map

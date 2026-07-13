@@ -17,7 +17,7 @@
     "agentmemory": "dist/cli.mjs"
   },
   "scripts": {
-    "build": "tsdown && (cp iii-config.yaml dist/ 2>/dev/null || true) && (cp iii-config.docker.yaml dist/ 2>/dev/null || true) && (cp docker-compose.yml dist/ 2>/dev/null || true) && (cp .env.example dist/ 2>/dev/null || true) && mkdir -p dist/viewer && cp src/viewer/index.html dist/viewer/ && cp src/viewer/favicon.svg dist/viewer/",
+    "build": "tsdown && node scripts/build-runtime-assets.mjs",
     "dev": "tsx src/index.ts",
     "start": "node dist/cli.mjs",
     "migrate": "node dist/functions/migrate.js",
@@ -28,6 +28,7 @@
     "skills:gen": "tsx scripts/skills/generate.ts",
     "skills:check": "tsx scripts/skills/generate.ts --check && tsx scripts/skills/check.ts",
     "bench:load": "node --import tsx benchmark/load-100k.ts",
+    "bench:recall": "tsx eval/recall/runner.ts",
     "eval:longmemeval": "tsx eval/runner/longmemeval.ts",
     "eval:coding-life": "tsx eval/runner/coding-life.ts"
   },
@@ -66,6 +67,7 @@
     "dotenv": "^17.4.2",
     "iii-sdk": "0.11.2",
     "picocolors": "^1.1.1",
+    "smol-toml": "1.7.0",
     "zod": "^4.0.0"
   },
   "optionalDependencies": {

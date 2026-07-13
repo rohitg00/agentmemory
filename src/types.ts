@@ -12,6 +12,8 @@ export interface Session {
   summary?: string;
   commitShas?: string[];
   agentId?: string;
+  repoId?: string;
+  checkoutId?: string;
 }
 
 export interface CommitLink {
@@ -80,28 +82,68 @@ export type ObservationType =
   | "image"
   | "other";
 
+export type DurableCandidateType =
+  | "pattern"
+  | "preference"
+  | "architecture"
+  | "bug"
+  | "workflow"
+  | "fact";
+
+export interface DurableCandidate {
+  id: string;
+  sessionId: string;
+  project?: string;
+  type: DurableCandidateType;
+  title: string;
+  content: string;
+  concepts: string[];
+  files: string[];
+  sourceObservationIds: string[];
+  confidence: number;
+  promotionReason?: string;
+  createdAt: string;
+  promotedMemoryId?: string;
+  promotedAt?: string;
+  promotedBy?: string;
+  forceReason?: string;
+}
+
+export interface DurableCandidateRecommendation {
+  candidateId: string;
+  recommendation: "auto_promote_eligible" | "not_eligible";
+  reasons: string[];
+  wouldPromote: false;
+  evaluatedAt: string;
+}
+
 export interface Memory {
   id: string;
   createdAt: string;
   updatedAt: string;
-  type: "pattern" | "preference" | "architecture" | "bug" | "workflow" | "fact";
+  type: DurableCandidateType;
   title: string;
   content: string;
   concepts: string[];
   files: string[];
   sessionIds: string[];
   strength: number;
+  confidence?: number;
   version: number;
   parentId?: string;
   supersedes?: string[];
   relatedIds?: string[];
   sourceObservationIds?: string[];
+  sourceCandidateId?: string;
   isLatest: boolean;
   forgetAfter?: string;
   imageRef?: string;
   imageData?: string;
   agentId?: string;
   project?: string;
+  scope?: RecallScope;
+  origin?: MemoryOrigin;
+  checkoutId?: string;
 }
 
 export interface SessionSummary {
@@ -114,6 +156,36 @@ export interface SessionSummary {
   filesModified: string[];
   concepts: string[];
   observationCount: number;
+  durableCandidates?: DurableCandidate[];
+  durableCandidatesVersion?: number;
+  durableCandidatesGeneratedAt?: string;
+}
+
+export type ArchiveImportStatus =
+  | "discovered"
+  | "importing_observations"
+  | "observations_imported"
+  | "summarizing"
+  | "completed"
+  | "failed";
+
+export interface ArchiveImportRecord {
+  id: string;
+  archivePath: string;
+  fileHash: string;
+  sessionId: string;
+  status: ArchiveImportStatus;
+  createdAt: string;
+  updatedAt: string;
+  attempts: number;
+  parsedObservationCount: number;
+  importedObservationCount: number;
+  durableCandidateCount?: number;
+  summaryCreated?: boolean;
+  completedAt?: string;
+  failureStage?: "observations" | "summary";
+  lastError?: string;
+  source: "archive-process";
 }
 
 export type HookType =
@@ -165,6 +237,161 @@ export interface AgentMemoryConfig {
   maxObservationsPerSession: number;
   compressionModel: string;
   dataDir: string;
+  recall: RecallConfig;
+}
+
+export interface RecallBudget {
+  maxContextTokens: number;
+  reservedBootstrapTokens: number;
+  maxSemanticTokens: number;
+  maxMemories: number;
+  maxSessionSummaries: number;
+  maxObservations: number;
+  maxContinuityItems: number;
+}
+
+export interface RecallScopeConfig {
+  unknownAutoInjection: boolean;
+  unknownExplicitSearch: boolean;
+}
+
+export interface RecallTraceConfig {
+  retentionDays: number;
+  maxTraces: number;
+  maxDroppedItemsPerReason: number;
+}
+
+export interface RecallInjectionConfig {
+  reinjectionTurnWindow: number;
+}
+
+export interface RecallConfig {
+  budget: RecallBudget;
+  scope: RecallScopeConfig;
+  trace: RecallTraceConfig;
+  injection: RecallInjectionConfig;
+}
+
+export type RecallScopeLevel = "project" | "repo" | "user" | "unknown";
+
+export interface RecallScope {
+  level: RecallScopeLevel;
+  projectId?: string;
+  repoId?: string;
+}
+
+export type MemoryOrigin = "manual" | "candidate_promoted" | "system";
+
+export type RecallEntryPoint =
+  | "session_start"
+  | "prompt"
+  | "context"
+  | "enrich"
+  | "search"
+  | "smart_search"
+  | "memory_recall";
+
+export type RecallOutputMode =
+  | "bootstrap"
+  | "prompt_injection"
+  | "ranked_results"
+  | "rendered_context";
+
+export interface RecallRequest {
+  entryPoint: RecallEntryPoint;
+  outputMode: RecallOutputMode;
+  query?: string;
+  sessionId?: string;
+  projectId?: string;
+  repoId?: string;
+  checkoutId?: string;
+  limit?: number;
+  budget?: Partial<RecallBudget>;
+  debug?: boolean;
+  tokenizerHint?: string;
+}
+
+export type RecallItemKind =
+  | "memory"
+  | "summary"
+  | "observation"
+  | "continuity";
+
+export type RecallDecision =
+  | "selected"
+  | "low_score"
+  | "over_budget"
+  | "duplicate"
+  | "stale"
+  | "scope_mismatch"
+  | "superseded";
+
+export interface RecallItemTrace {
+  id: string;
+  kind: RecallItemKind;
+  subkind?: "project_rule" | "repo_instruction" | "lesson" | "durable_memory";
+  score: number;
+  bm25Score?: number;
+  vectorScore?: number;
+  graphScore?: number;
+  recencyScore?: number;
+  scopeScore?: number;
+  tokenCount: number;
+  reason: string;
+  sourceSessionIds?: string[];
+  sourceObservationIds?: string[];
+  decision: RecallDecision;
+}
+
+export type RetrievalChannelHealth = "healthy" | "degraded" | "disabled";
+
+export interface RetrievalChannelStatus {
+  status: RetrievalChannelHealth;
+  attempted: boolean;
+  reason?: string;
+  fallback?: string;
+}
+
+export interface RecallTokenEstimator {
+  name: string;
+  version: string;
+  estimated: boolean;
+}
+
+export interface RecallTrace {
+  id: string;
+  timestamp: string;
+  entryPoint: RecallEntryPoint;
+  outputMode: RecallOutputMode;
+  projectId?: string;
+  repoId?: string;
+  checkoutId?: string;
+  query?: string;
+  queryFingerprint?: string;
+  redactionKinds: string[];
+  selected: RecallItemTrace[];
+  dropped: RecallItemTrace[];
+  droppedCountsByDecision: Partial<Record<RecallDecision, number>>;
+  totalCandidateCount: number;
+  selectedTokenCount: number;
+  finalContextTokenCount: number;
+  tokenEstimator: RecallTokenEstimator;
+  retrievalMode: {
+    bm25: RetrievalChannelStatus;
+    vector: RetrievalChannelStatus;
+    graph: RetrievalChannelStatus;
+  };
+}
+
+export interface RecallItemStats {
+  itemId: string;
+  recallCount: number;
+  lastRecalledAt?: string;
+  recentQuery?: string;
+  averageScore: number;
+  scopeMismatchCount: number;
+  /** Scaled integer accumulator used to derive averageScore atomically. */
+  scoreTotalMicros?: number;
 }
 
 export interface SearchResult {
@@ -233,6 +460,8 @@ export interface MemorySlot {
   scope: "project" | "global";
   createdAt: string;
   updatedAt: string;
+  projectId?: string;
+  repoId?: string;
 }
 
 export interface EmbeddingProvider {
