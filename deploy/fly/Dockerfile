@@ -22,7 +22,7 @@ WORKDIR /build
 # package.json) whenever a dependency is intentionally bumped.
 COPY package.json deploy/fly/package-lock.json ./
 RUN npm ci
-COPY tsconfig.json ./
+COPY tsconfig.json tsdown.config.ts ./
 COPY src/ ./src/
 COPY plugin/ ./plugin/
 COPY iii-config.yaml iii-config.docker.yaml docker-compose.yml .env.example LICENSE README.md AGENTS.md ./
