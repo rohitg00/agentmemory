@@ -27,6 +27,19 @@ export function initSentry(): void {
   const dsn = process.env.SENTRY_DSN;
   if (!dsn) return;
   try {
+    // A NODE_OPTIONS `--require` preload script (or any other in-process
+    // caller) may already have called Sentry.init() before this module
+    // runs. Sentry.init() replaces the global client on every call rather
+    // than merging options, so calling it again here would silently wipe
+    // an already-configured tracesSampleRate/release. Reuse the existing
+    // client instead of re-initializing over it.
+    if (Sentry.isInitialized()) {
+      enabled = true;
+      logger.info("Sentry already initialized (external preload) — reusing it", {
+        environment: process.env.FLY_APP_NAME,
+      });
+      return;
+    }
     Sentry.init({
       dsn,
       tracesSampleRate: 0,

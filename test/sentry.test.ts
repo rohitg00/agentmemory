@@ -43,11 +43,26 @@ describe("observability/sentry", () => {
 
   it("initSentry() calls Sentry.init() and enables reporting when SENTRY_DSN is set and the SDK initializes", async () => {
     process.env.SENTRY_DSN = "https://key@o0.ingest.sentry.io/1";
-    sentryMock.isInitialized.mockReturnValue(true);
+    // Pre-init check (not yet initialized) then post-init check (init succeeded).
+    sentryMock.isInitialized.mockReturnValueOnce(false).mockReturnValue(true);
     const { initSentry, captureFailure } = await import("../src/observability/sentry.js");
 
     initSentry();
     expect(sentryMock.init).toHaveBeenCalledTimes(1);
+
+    captureFailure("some_code", { sessionId: "s1" });
+    expect(sentryMock.captureMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it("initSentry() reuses an already-initialized Sentry client instead of calling init() again", async () => {
+    // Simulates a NODE_OPTIONS --require preload script that already called
+    // Sentry.init() before this module runs.
+    process.env.SENTRY_DSN = "https://key@o0.ingest.sentry.io/1";
+    sentryMock.isInitialized.mockReturnValue(true);
+    const { initSentry, captureFailure } = await import("../src/observability/sentry.js");
+
+    initSentry();
+    expect(sentryMock.init).not.toHaveBeenCalled();
 
     captureFailure("some_code", { sessionId: "s1" });
     expect(sentryMock.captureMessage).toHaveBeenCalledTimes(1);
@@ -87,7 +102,7 @@ describe("observability/sentry", () => {
 
   it("captureException() truncates an overly long error message before forwarding", async () => {
     process.env.SENTRY_DSN = "https://key@o0.ingest.sentry.io/1";
-    sentryMock.isInitialized.mockReturnValue(true);
+    sentryMock.isInitialized.mockReturnValueOnce(false).mockReturnValue(true);
     const { initSentry, captureException } = await import("../src/observability/sentry.js");
     initSentry();
 
@@ -102,7 +117,7 @@ describe("observability/sentry", () => {
 
   it("captureException() and captureFailure() swallow a thrown SDK error and log it instead of throwing", async () => {
     process.env.SENTRY_DSN = "https://key@o0.ingest.sentry.io/1";
-    sentryMock.isInitialized.mockReturnValue(true);
+    sentryMock.isInitialized.mockReturnValueOnce(false).mockReturnValue(true);
     sentryMock.captureException.mockImplementationOnce(() => {
       throw new Error("sdk down");
     });
@@ -124,7 +139,7 @@ describe("observability/sentry", () => {
     expect(sentryMock.flush).not.toHaveBeenCalled();
 
     process.env.SENTRY_DSN = "https://key@o0.ingest.sentry.io/1";
-    sentryMock.isInitialized.mockReturnValue(true);
+    sentryMock.isInitialized.mockReturnValueOnce(false).mockReturnValue(true);
     mod.initSentry();
     await mod.flushSentry();
     expect(sentryMock.flush).toHaveBeenCalledTimes(1);
