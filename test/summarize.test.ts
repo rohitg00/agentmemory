@@ -17,8 +17,9 @@ vi.mock("../src/eval/schemas.js", () => ({
   SummaryOutputSchema: {},
 }));
 
+const validateOutputMock = vi.fn(() => ({ valid: true, result: { errors: [] as string[] } }));
 vi.mock("../src/eval/validator.js", () => ({
-  validateOutput: () => ({ valid: true, result: { errors: [] } }),
+  validateOutput: (...args: unknown[]) => validateOutputMock(...args),
 }));
 
 vi.mock("../src/eval/quality.js", () => ({
@@ -29,7 +30,18 @@ vi.mock("../src/functions/audit.js", () => ({
   safeAudit: vi.fn(),
 }));
 
+// Prevents real Sentry calls in this suite (SENTRY_DSN is never set in
+// CI, but the module should never depend on that being true) and lets
+// individual tests assert on which failure sites actually fire.
+vi.mock("../src/observability/sentry.js", () => ({
+  initSentry: vi.fn(),
+  captureFailure: vi.fn(),
+  captureException: vi.fn(),
+}));
+
 import { registerSummarizeFunction } from "../src/functions/summarize.js";
+import { captureFailure, captureException } from "../src/observability/sentry.js";
+import { logger } from "../src/logger.js";
 import type {
   CompressedObservation,
   Session,
@@ -152,6 +164,11 @@ describe("mem::summarize chunking", () => {
   beforeEach(() => {
     delete process.env.SUMMARIZE_CHUNK_SIZE;
     delete process.env.SUMMARIZE_CHUNK_CONCURRENCY;
+    delete process.env.SUMMARIZE_MAX_ATTEMPTS;
+    delete process.env.SUMMARIZE_CHUNK_MAX_ATTEMPTS;
+    validateOutputMock.mockReturnValue({ valid: true, result: { errors: [] } });
+    vi.mocked(captureFailure).mockClear();
+    vi.mocked(captureException).mockClear();
   });
 
   afterEach(() => {
@@ -273,6 +290,10 @@ describe("mem::summarize chunking", () => {
   it("persistently-broken chunk is skipped, reduce still runs on remaining partials", async () => {
     process.env.SUMMARIZE_CHUNK_SIZE = "100";
     process.env.SUMMARIZE_CHUNK_CONCURRENCY = "1";
+    // Pin to 2 attempts explicitly — this test's fixture assumes exactly
+    // 2 provider calls per broken chunk, and the actual default has
+    // changed once already (2 -> 3) without this test being updated.
+    process.env.SUMMARIZE_CHUNK_MAX_ATTEMPTS = "2";
     const provider = makeProvider([
       summaryXml({ title: "ok1" }),
       "<garbage/>", "<garbage/>",   // chunk 2: both attempts parse-fail
@@ -326,6 +347,10 @@ describe("mem::summarize chunking", () => {
   it("provider error on one chunk after retry is skipped, not propagated", async () => {
     process.env.SUMMARIZE_CHUNK_SIZE = "100";
     process.env.SUMMARIZE_CHUNK_CONCURRENCY = "1";
+    // Pin to 2 attempts explicitly — this test's fixture assumes exactly
+    // 2 provider calls for the failing chunk, and the actual default has
+    // changed once already (2 -> 3) without this test being updated.
+    process.env.SUMMARIZE_CHUNK_MAX_ATTEMPTS = "2";
     let i = 0;
     const provider: MemoryProvider & { calls: any[] } = {
       name: "test",
@@ -478,5 +503,223 @@ describe("mem::summarize chunking", () => {
 
     expect(result.success).toBe(false);
     expect(result.error).toBe("parse_failed");
+  });
+
+  it("SUMMARIZE_MAX_ATTEMPTS env override raises the top-level retry count", async () => {
+    process.env.SUMMARIZE_MAX_ATTEMPTS = "5";
+    // 4 garbage responses then a valid one — only recoverable with 5 attempts.
+    const provider = makeProvider([
+      "garbage",
+      "garbage",
+      "garbage",
+      "garbage",
+      summaryXml({ title: "fifth-attempt" }),
+    ]);
+    const { handler } = await setupHandler({
+      sessionId: "ses_five",
+      obsCount: 1,
+      provider,
+    });
+
+    const result: any = await handler({ sessionId: "ses_five" });
+
+    expect(result.success).toBe(true);
+    expect(result.summary.title).toBe("fifth-attempt");
+    expect(provider.calls).toHaveLength(5);
+  });
+
+  it("SUMMARIZE_MAX_ATTEMPTS above the ceiling is clamped to 5", async () => {
+    process.env.SUMMARIZE_MAX_ATTEMPTS = "50";
+    // Always garbage — if the ceiling weren't enforced this would spin
+    // for 50 attempts instead of 5.
+    const provider = makeProvider(["garbage"]);
+    const { handler } = await setupHandler({
+      sessionId: "ses_ceiling",
+      obsCount: 1,
+      provider,
+    });
+
+    const result: any = await handler({ sessionId: "ses_ceiling" });
+
+    expect(result.success).toBe(false);
+    expect(provider.calls).toHaveLength(5);
+  });
+
+  it("invalid SUMMARIZE_MAX_ATTEMPTS values fall back to the default", async () => {
+    process.env.SUMMARIZE_MAX_ATTEMPTS = "not-a-number";
+    const provider = makeProvider([summaryXml({ title: "ok" })]);
+    const { handler } = await setupHandler({
+      sessionId: "ses_invalid_env",
+      obsCount: 1,
+      provider,
+    });
+
+    const result: any = await handler({ sessionId: "ses_invalid_env" });
+
+    expect(result.success).toBe(true);
+    expect(provider.calls).toHaveLength(1);
+  });
+
+  it("empty_provider_response fires captureFailure with that code when every attempt is empty", async () => {
+    const provider = makeProvider(["", "", ""]);
+    const { handler } = await setupHandler({
+      sessionId: "ses_empty",
+      obsCount: 1,
+      provider,
+    });
+
+    const result: any = await handler({ sessionId: "ses_empty" });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe("empty_provider_response");
+    expect(captureFailure).toHaveBeenCalledWith(
+      "empty_provider_response",
+      expect.objectContaining({ sessionId: "ses_empty", sawEmptyResponse: true, sawParseFailure: false }),
+    );
+  });
+
+  it("classifies as parse_failed (not empty_provider_response) when an earlier attempt returned unparseable content and a later attempt returned empty", async () => {
+    process.env.SUMMARIZE_MAX_ATTEMPTS = "3";
+    // Attempt 1: non-empty but unparseable (a real parse failure).
+    // Attempt 2: empty. Attempt 3: empty. The pre-fix classifier only
+    // looked at the last attempt's state and would have reported
+    // empty_provider_response here, masking the real parse failure.
+    const provider = makeProvider(["not xml, no tags", "", ""]);
+    const { handler } = await setupHandler({
+      sessionId: "ses_mixed",
+      obsCount: 1,
+      provider,
+    });
+
+    const result: any = await handler({ sessionId: "ses_mixed" });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe("parse_failed");
+    expect(captureFailure).toHaveBeenCalledWith(
+      "parse_failed",
+      expect.objectContaining({ sawEmptyResponse: true, sawParseFailure: true }),
+    );
+  });
+
+  it("validation_failed fires captureFailure with field paths, not free-text messages", async () => {
+    validateOutputMock.mockReturnValue({
+      valid: false,
+      result: { errors: ["title: String must contain at least 1 character(s)"] },
+    });
+    const provider = makeProvider([summaryXml({ title: "x" })]);
+    const { handler } = await setupHandler({
+      sessionId: "ses_validation",
+      obsCount: 1,
+      provider,
+    });
+
+    const result: any = await handler({ sessionId: "ses_validation" });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe("validation_failed");
+    expect(captureFailure).toHaveBeenCalledWith(
+      "validation_failed",
+      expect.objectContaining({ errorPaths: ["title"], errorCount: 1 }),
+    );
+    const ctx = vi.mocked(captureFailure).mock.calls[0][1];
+    expect(JSON.stringify(ctx)).not.toContain("String must contain");
+  });
+
+  it("thrown provider error fires captureException with sanitized, content-free context", async () => {
+    const provider: MemoryProvider & { calls: any[] } = {
+      name: "test",
+      calls: [],
+      compress: async () => "",
+      summarize: async () => {
+        throw new Error("OpenAI API error (status 400)");
+      },
+    };
+    const { handler } = await setupHandler({
+      sessionId: "ses_throws",
+      obsCount: 1,
+      provider,
+    });
+
+    const result: any = await handler({ sessionId: "ses_throws" });
+
+    expect(result.success).toBe(false);
+    expect(captureException).toHaveBeenCalledTimes(1);
+    const [err, ctx] = vi.mocked(captureException).mock.calls[0];
+    expect((err as Error).message).toBe("OpenAI API error (status 400)");
+    expect(ctx).toEqual(
+      expect.objectContaining({ sessionId: "ses_throws", provider: "test" }),
+    );
+  });
+
+  it("a top-level retry reuses cached chunk partials instead of re-summarizing every chunk", async () => {
+    process.env.SUMMARIZE_CHUNK_SIZE = "100";
+    process.env.SUMMARIZE_CHUNK_CONCURRENCY = "1";
+    process.env.SUMMARIZE_MAX_ATTEMPTS = "2";
+    // 3 chunks all succeed on the first pass, but the reduce call itself
+    // returns garbage on attempt 1 and valid XML on attempt 2. If the
+    // retry re-ran every chunk, we'd see 3 more chunk calls before the
+    // second reduce call; with caching we should see exactly one extra
+    // call (the second reduce attempt).
+    const provider = makeProvider([
+      summaryXml({ title: "chunk1" }),
+      summaryXml({ title: "chunk2" }),
+      summaryXml({ title: "chunk3" }),
+      "garbage-reduce-response",
+      summaryXml({ title: "merged-on-retry" }),
+    ]);
+    const { handler, kv } = await setupHandler({
+      sessionId: "ses_cache_reuse",
+      obsCount: 250,
+      provider,
+    });
+
+    const result: any = await handler({ sessionId: "ses_cache_reuse" });
+
+    expect(result.success).toBe(true);
+    // 3 chunk calls + 2 reduce attempts = 5 total, not 3 + 3 + 2 = 8.
+    expect(provider.calls).toHaveLength(5);
+    const stored: any = await kv.get("summaries", "ses_cache_reuse");
+    expect(stored?.title).toBe("merged-on-retry");
+  });
+
+  it("chunk map-phase deadline stops new batches and counts remaining chunks as skipped", async () => {
+    process.env.SUMMARIZE_CHUNK_SIZE = "100";
+    process.env.SUMMARIZE_CHUNK_CONCURRENCY = "1";
+    process.env.SUMMARIZE_MAX_ATTEMPTS = "1";
+    const T0 = 1_700_000_000_000;
+    // Call 1 (index 0): startMs at the top of the handler -- irrelevant here.
+    // Call 2 (index 1): ChunkPartialCache.deadlineAt is set to T0 + 150_000.
+    // Call 3 (index 2): batch-start check for chunk 1 -- still under deadline, proceeds.
+    // Call 4+ (index 3+): batch-start check for chunk 2 -- now past deadline, breaks.
+    const times = [T0, T0, T0 + 10_000, T0 + 200_000];
+    let call = 0;
+    const nowSpy = vi.spyOn(Date, "now").mockImplementation(() => {
+      const t = times[Math.min(call, times.length - 1)];
+      call += 1;
+      return t;
+    });
+    try {
+      const provider = makeProvider([summaryXml({ title: "ok1" })]);
+      const { handler } = await setupHandler({
+        sessionId: "ses_deadline",
+        obsCount: 250,
+        provider,
+      });
+
+      const result: any = await handler({ sessionId: "ses_deadline" });
+
+      // 3 chunks, chunk 1 resolved, chunks 2+3 never attempted (deadline
+      // reached before their batch starts) -- 2/3 skipped trips
+      // MAX_SKIP_RATIO before a reduce call is ever made.
+      expect(result.success).toBe(false);
+      expect(result.error).toMatch(/too_many_chunks_skipped: 2\/3/);
+      expect(provider.calls).toHaveLength(1);
+      expect(vi.mocked(logger.warn)).toHaveBeenCalledWith(
+        "Summarize chunk map-phase deadline reached, skipping remaining chunks",
+        expect.objectContaining({ sessionId: "ses_deadline" }),
+      );
+    } finally {
+      nowSpy.mockRestore();
+    }
   });
 });
