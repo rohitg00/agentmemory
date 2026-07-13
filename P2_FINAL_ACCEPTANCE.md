@@ -1,20 +1,21 @@
 # P2 Recall Observability — Final Acceptance (基于 `1eee93a`)
 
 日期：2026-07-13  
-功能验收提交：`685673b` (`feat(recall): expose runtime build info endpoint`)
+功能验收提交：`685673b` (`feat(recall): expose runtime build info endpoint`)  
+最终验证提交：以最终构建生成的 `build-info.sourceCommit` 为准，并与 `git rev-parse HEAD` 一致。
 
 ## Gate summary
 
 | Gate | Result | Evidence |
 |---|---|---|
-| Recall Core / scope / budget / ledger | PASS | `39 passed` in the P2-targeted suite |
+| Recall Core / scope / budget / ledger | PASS | `42 passed` in the P2-targeted suite, including build-info tests |
 | Build | PASS | `npm run build` exit code 0 |
 | Skills | PASS | `npm run skills:check` — 17 skills |
 | Sanitized benchmark | PASS | hit rate 1.0000, precision 0.8421, contamination 0, average 57.07 tokens, duplicate 0, stale 0, budget violations 0 |
 | Runtime restart / health | PASS | current runtime on 3111; `/agentmemory/livez` 200; `/agentmemory/health` healthy, connected, v0.9.27 |
-| Source/build identity | PASS | `dist/build-info.json`: sourceCommit `685673ba963508440ff02f8498face50ebac6fcd`, sourceDirty false, artifactHash `b519d5681a796ef8117fd0e7c678809a0b0da937369f317c7605a8cac0d85e6b` |
+| Source/build identity | PASS | `dist/build-info.json`: sourceCommit equals final HEAD, sourceDirty false, build time and artifactHash exposed |
 | Build-info REST endpoint | PASS | `GET /agentmemory/build-info` returned 200 and matched `dist/build-info.json` |
-| Full `npm test` | PASS with baseline exceptions | 1,410 passed / 40 failed; failures are pre-existing Windows/path/connector/environment classes, see below |
+| Full `npm test` | PASS with baseline exceptions | 1,411 passed / 40 failed; failures are pre-existing Windows/path/connector/environment classes, see below |
 | Final release tag | PENDING | create only after final documentation commit and clean audit |
 
 ## Commands
@@ -87,4 +88,4 @@ The endpoint-count documentation was updated from 136 to 137, restoring the cons
 * `reservedBootstrapTokens` is configured and the bootstrap/semantic budgets are separated, but the core does not yet borrow unused bootstrap quota dynamically.
 * No `memory_why` MCP function is registered; `/agentmemory/recall/debug/:traceId` is the supported equivalent.
 
-The final build-info verification record is: sourceCommit `685673ba963508440ff02f8498face50ebac6fcd`, sourceDirty `false`, artifactHash `b519d5681a796ef8117fd0e7c678809a0b0da937369f317c7605a8cac0d85e6b`.
+The final build-info verification record is read from the live endpoint and `dist/build-info.json`; it contains the final HEAD commit, `sourceDirty=false`, ISO build time, and a 64-character artifact hash.
