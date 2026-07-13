@@ -1,6 +1,6 @@
 import type { MemoryProvider } from "../types.js";
 import { getEnvVar } from "../config.js";
-import { fetchWithTimeout } from "./_fetch.js";
+import { fetchWithTimeout, throwSafeHttpError, throwSafeShapeError } from "./_fetch.js";
 import {
   DEFAULT_AZURE_API_VERSION,
   buildAuthHeaders,
@@ -124,8 +124,7 @@ export class OpenAIProvider implements MemoryProvider {
     }
 
     if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`OpenAI API error (${response.status}): ${text}`);
+      await throwSafeHttpError("OpenAI", response);
     }
 
     const data = (await response.json()) as {
@@ -145,9 +144,7 @@ export class OpenAIProvider implements MemoryProvider {
     if (reasoning) {
       return reasoning;
     }
-    throw new Error(
-      `OpenAI returned unexpected response: ${JSON.stringify(data).slice(0, 200)}`,
-    );
+    return throwSafeShapeError("OpenAI", data);
   }
 }
 

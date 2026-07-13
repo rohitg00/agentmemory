@@ -1,5 +1,5 @@
 import type { MemoryProvider } from "../types.js";
-import { fetchWithTimeout } from "./_fetch.js";
+import { fetchWithTimeout, throwSafeHttpError, throwSafeShapeError } from "./_fetch.js";
 
 export class OpenRouterProvider implements MemoryProvider {
   name: string;
@@ -53,8 +53,7 @@ export class OpenRouterProvider implements MemoryProvider {
     });
 
     if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`${this.name} API error (${response.status}): ${text}`);
+      await throwSafeHttpError(this.name, response);
     }
 
     const data = (await response.json()) as Record<string, unknown>;
@@ -63,9 +62,7 @@ export class OpenRouterProvider implements MemoryProvider {
       | undefined;
     const content = choices?.[0]?.message?.content;
     if (!content) {
-      throw new Error(
-        `${this.name} returned unexpected response: ${JSON.stringify(data).slice(0, 200)}`,
-      );
+      return throwSafeShapeError(this.name, data);
     }
     return content;
   }

@@ -1,6 +1,6 @@
 import type { MemoryProvider } from '../types.js'
 import { getEnvVar } from '../config.js'
-import { fetchWithTimeout } from './_fetch.js'
+import { fetchWithTimeout, throwSafeHttpError } from './_fetch.js'
 
 /**
  * MiniMax provider using raw fetch to call MiniMax's Anthropic-compatible API.
@@ -57,8 +57,7 @@ export class MinimaxProvider implements MemoryProvider {
     })
 
     if (!response.ok) {
-      const text = await response.text()
-      throw new Error(`MiniMax API error ${response.status}: ${text}`)
+      await throwSafeHttpError('MiniMax', response)
     }
 
     const data = (await response.json()) as {
