@@ -71,13 +71,15 @@ All live traces reported `vector: degraded`, `fallback: BM25/graph`, reason `vec
 
 ## Full-test failure classification
 
-The 40 full-suite failures were not P2 regressions observed in the targeted suite. They cluster as:
+The 40 full-suite failures were not P2 regressions observed in the targeted suite. Exact baseline classification:
 
-* `windows-path`: hook project basename and Obsidian path assertions;
-* `connector-environment`: connect-new-agents and Copilot/Cline host fixtures;
-* `env-isolation`: embedding provider and slots flag tests reading the host environment;
-* `symlink-capability`: Windows symlink/TOCTOU tests;
-* `known-preexisting`: plaintext HTTP integration fixture and related baseline assumptions.
+* `connector-environment` (15): `connect-new-agents.test.ts` (11), `copilot-plugin.test.ts` (1), `cli-remove.test.ts` (3).
+* `windows-path` (14): `obsidian-export.test.ts` (8), `hook-project.test.ts` (6).
+* `symlink-capability` (5): `compress-file.test.ts` (5).
+* `env-isolation` (5): `embedding-provider.test.ts` (3), `slots-flag-gate.test.ts` (2).
+* `known-preexisting` (1): `integration-plaintext-http.test.ts` (1).
+
+The waiver basis is unchanged from the baseline: these tests depend on Windows symlink/path semantics, host connector configuration, or intentionally isolated provider/environment state. None exercises P2 Recall Core or build-info behavior.
 
 The endpoint-count documentation was updated from 136 to 137, restoring the consistency test. `P2-related failures = 0` and `new-regression = 0`; the remaining failures are waived Windows/connector/environment baselines listed above.
 
