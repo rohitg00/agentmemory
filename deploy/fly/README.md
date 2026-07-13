@@ -24,21 +24,25 @@ flow stays consistent:
 
 ```bash
 # 1. Install flyctl: https://fly.io/docs/flyctl/install/
-# 2. Pick your unique app name (and matching volume name):
+# 2. Pick your unique app name:
 export APP="agentmemory-$(whoami)"     # or any other globally-unique name
-export VOLUME="${APP//-/_}_data"       # Fly volume names can't contain '-'
+export VOLUME="agentmemory_data"       # must exactly match [[mounts]].source
+                                        # in deploy/fly/fly.toml — NOT derived
+                                        # from $APP (that volume would never
+                                        # get attached to the app)
 
 # 3. From the REPO ROOT (not this directory) — the Dockerfile packs
 #    checked-out source into an npm tarball at build time, so the build
-#    context must be the whole repo, not deploy/fly/:
-fly launch --copy-config --no-deploy --name "$APP" \
-  --config deploy/fly/fly.toml --dockerfile deploy/fly/Dockerfile
+#    context must be the whole repo, not deploy/fly/. (flyctl reads the
+#    Dockerfile path from fly.toml's own [build].dockerfile field, resolved
+#    relative to deploy/fly/ — there's no working CLI flag to override it.)
+fly launch --copy-config --no-deploy --name "$APP" --config deploy/fly/fly.toml
 
 # 4. Create the volume in the same region as the app:
 fly volumes create "$VOLUME" --region iad --size 1
 
 # 5. Deploy (still from the repo root):
-fly deploy . --config deploy/fly/fly.toml --dockerfile deploy/fly/Dockerfile --app "$APP"
+fly deploy . --config deploy/fly/fly.toml --app "$APP"
 ```
 
 If `fly launch` reports the name is taken, pick another value for `$APP`,
@@ -118,6 +122,7 @@ inside the machine.
 fly ssh console --app "$APP"
 rm /data/.hmac
 exit
+fly machine list --app "$APP"        # copy the machine ID from the ID column
 fly machine restart <machine-id>
 fly logs --app "$APP" | grep AGENTMEMORY_SECRET=
 ```
@@ -135,6 +140,7 @@ To restore on a fresh machine:
 
 ```bash
 cat "$APP-YYYYMMDD.tar.gz" | fly ssh console --app "$APP" -C "tar xzf - -C /"
+fly machine list --app "$APP"        # copy the machine ID from the ID column
 fly machine restart <machine-id>
 ```
 
@@ -143,8 +149,8 @@ fly machine restart <machine-id>
 - Idle (machine stopped): the volume costs ~$0.15/GB/month. A 1 GB
   volume is roughly $0.15/month.
 - Active (machine running on `shared-cpu-1x` with 512 MB): about
-  $1.94/month if it ran 24/7; in practice `auto_stop_machines` keeps
-  that well under $1.
+  $3.69/month if it ran 24/7 (per Fly's current pricing page); in
+  practice `auto_stop_machines` keeps that well under $1.
 - Outbound bandwidth: 100 GB/month free on the Hobby plan, then $0.02/GB
   in North America / Europe.
 
@@ -161,13 +167,13 @@ See <https://fly.io/docs/about/pricing/> for the up-to-date rate card.
   commit you deploy from (no manually-built tarball to keep in sync).
   First build is ~60 seconds (includes `npm ci` + `npm run build` +
   `npm pack`); cached layers shrink rebuilds to well under that when
-  only `src/` changed. Image is ~114 MB.
+  only `src/` changed. Image is ~124 MB.
 - First deploy lands on a **shared IPv4 + dedicated IPv6** by default
   (free). If you need a dedicated IPv4 for legacy clients without SNI,
   run `fly ips allocate-v4 --app "$APP"` — costs $2/month.
 - Cold-start (from machine launch to passing `/agentmemory/livez`) is
   ~9 seconds measured. `grace_period = "30s"` on the health check
-  gives a 3x safety margin.
+  gives more than 3x safety margin.
 - To upgrade `III_VERSION` (the `iii` engine binary), bump the
   `ARG III_VERSION` default in `deploy/fly/Dockerfile` or pass
   `--build-arg III_VERSION=<x>` on deploy. To upgrade the agentmemory
