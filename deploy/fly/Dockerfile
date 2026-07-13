@@ -2,9 +2,31 @@ ARG III_VERSION=0.11.2
 
 FROM iiidev/iii:${III_VERSION} AS iii-image
 
+# Builder stage: packs this branch's checked-out source into an npm
+# tarball at image-build time. The Dockerfile previously installed the
+# published `@agentmemory/agentmemory@${AGENTMEMORY_VERSION}` npm package,
+# which can't ship a fork patch until it's released upstream; an interim
+# local workaround (a manually-built, untracked tarball) covered that gap
+# but had no build-time check that it matched the checked-out source — a
+# fresh checkout with no local tarball would break, and a source change
+# with no tarball rebuild would silently ship stale code. Build context is
+# the repo root (see deploy/fly/README.md), so this stage sees the same
+# source tree `npm run build` would use locally.
+FROM node:22-slim AS builder
+WORKDIR /build
+# No `npm ci` here: this repo gitignores its lockfile (see .gitignore),
+# so a fresh clone with no local `npm install` history won't have one
+# in the build context.
+COPY package.json ./
+RUN npm install
+COPY tsconfig.json ./
+COPY src/ ./src/
+COPY plugin/ ./plugin/
+COPY iii-config.yaml iii-config.docker.yaml docker-compose.yml .env.example LICENSE README.md AGENTS.md ./
+RUN npm run build && mkdir -p /build/out && npm pack --pack-destination /build/out
+
 FROM node:22-slim
 
-ARG AGENTMEMORY_VERSION=0.9.27
 ARG III_VERSION=0.11.2
 ARG III_SDK_VERSION=0.11.2
 
@@ -21,14 +43,15 @@ COPY --from=iii-image /app/iii /usr/local/bin/iii
 # is not refactored for yet). `npm install -g` ignores overrides, hence
 # the local prefix.
 WORKDIR /opt/agentmemory
+COPY --from=builder /build/out/*.tgz /opt/agentmemory/agentmemory.tgz
 RUN printf '{"name":"agentmemory-deploy","version":"1.0.0","private":true,"overrides":{"iii-sdk":"%s"}}\n' "${III_SDK_VERSION}" > package.json \
- && npm install "@agentmemory/agentmemory@${AGENTMEMORY_VERSION}" --omit=optional --no-fund --no-audit \
+ && npm install ./agentmemory.tgz --omit=optional --no-fund --no-audit \
  && ln -s /opt/agentmemory/node_modules/.bin/agentmemory /usr/local/bin/agentmemory
 
 ENV AGENTMEMORY_III_VERSION=${III_VERSION} \
     TINI_SUBREAPER=1
 
-COPY --chmod=0755 entrypoint.sh /usr/local/bin/agentmemory-entrypoint.sh
+COPY --chmod=0755 deploy/fly/entrypoint.sh /usr/local/bin/agentmemory-entrypoint.sh
 
 EXPOSE 3111
 

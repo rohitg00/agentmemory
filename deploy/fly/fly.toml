@@ -12,7 +12,11 @@ app = "agentmemory"
 primary_region = "iad"
 
 [build]
-  dockerfile = "Dockerfile"
+  # Path is relative to the build context (repo root), not this
+  # directory — the Dockerfile packs checked-out source into an npm
+  # tarball at build time, so `fly deploy` must run with the repo root
+  # as context. See deploy/fly/README.md for the full invocation.
+  dockerfile = "deploy/fly/Dockerfile"
 
 [[mounts]]
   source = "agentmemory_data"

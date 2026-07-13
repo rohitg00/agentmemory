@@ -28,14 +28,17 @@ flow stays consistent:
 export APP="agentmemory-$(whoami)"     # or any other globally-unique name
 export VOLUME="${APP//-/_}_data"       # Fly volume names can't contain '-'
 
-# 3. From this directory:
-fly launch --copy-config --no-deploy --name "$APP"
+# 3. From the REPO ROOT (not this directory) — the Dockerfile packs
+#    checked-out source into an npm tarball at build time, so the build
+#    context must be the whole repo, not deploy/fly/:
+fly launch --copy-config --no-deploy --name "$APP" \
+  --config deploy/fly/fly.toml --dockerfile deploy/fly/Dockerfile
 
 # 4. Create the volume in the same region as the app:
 fly volumes create "$VOLUME" --region iad --size 1
 
-# 5. Deploy:
-fly deploy --app "$APP"
+# 5. Deploy (still from the repo root):
+fly deploy . --config deploy/fly/fly.toml --dockerfile deploy/fly/Dockerfile --app "$APP"
 ```
 
 If `fly launch` reports the name is taken, pick another value for `$APP`,
@@ -152,15 +155,22 @@ See <https://fly.io/docs/about/pricing/> for the up-to-date rate card.
 - The volume lives in one region. To survive a region outage, create a
   second volume in another region and update `primary_region` after the
   failover, or take snapshots with `fly volumes snapshots create`.
-- The Dockerfile builds in the Fly Builder on every deploy — first
-  build is ~30 seconds; cached layers shrink rebuilds to under 10
-  seconds. Image is ~114 MB.
+- The Dockerfile builds in the Fly Builder on every deploy — the
+  `builder` stage compiles this branch's checked-out source and packs
+  it into an npm tarball, so the shipped image always matches the
+  commit you deploy from (no manually-built tarball to keep in sync).
+  First build is ~60 seconds (includes `npm ci` + `npm run build` +
+  `npm pack`); cached layers shrink rebuilds to well under that when
+  only `src/` changed. Image is ~114 MB.
 - First deploy lands on a **shared IPv4 + dedicated IPv6** by default
   (free). If you need a dedicated IPv4 for legacy clients without SNI,
   run `fly ips allocate-v4 --app "$APP"` — costs $2/month.
 - Cold-start (from machine launch to passing `/agentmemory/livez`) is
   ~9 seconds measured. `grace_period = "30s"` on the health check
   gives a 3x safety margin.
-- Bump `AGENTMEMORY_VERSION` or `III_VERSION` in the Dockerfile to
-  upgrade. `fly deploy --build-arg AGENTMEMORY_VERSION=<x>` also works
-  for a one-off without editing the file.
+- To upgrade `III_VERSION` (the `iii` engine binary), bump the
+  `ARG III_VERSION` default in `deploy/fly/Dockerfile` or pass
+  `--build-arg III_VERSION=<x>` on deploy. To upgrade the agentmemory
+  code itself, just commit the change and deploy — the builder stage
+  packs whatever is checked out, so there is no separate version arg to
+  bump.
