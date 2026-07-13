@@ -56,16 +56,16 @@ Scope smoke 的可执行覆盖来自 benchmark fixture 和 focused suites：proj
 
 原有 runtime 在 3111 上保持运行，未停止任何身份不明进程；原实例已验证 `/agentmemory/livez` 200、`/agentmemory/health` 200、`GET /agentmemory/build-info` 200。该实例的旧 build-info 是 `52f7200`，因此不把它冒充为本次修复后的 runtime 验证。
 
-本次最终构建/安装验收应使用当前代码提交后启动的隔离 `--instance 1` runtime（3211/3212/3213/49234），并记录：`/livez`、`/health`、`/agentmemory/build-info` 均 200；build-info 的 `sourceCommit` 与最终 HEAD 一致、`sourceDirty=false`、builtAt 为 ISO 时间、artifactHash 为 64 位 SHA-256；已安装 artifact hash 与当前构建一致。实例只用于验收，不修改 Scheduled Task；若需清理，仅停止本次启动且可明确识别的实例。
+最终 runtime 重启使用本地构建 `e0c6ce9817a8e6b41e83d469435942385cb91cb4`，接入既有 iii bridge（49134）；未停止 Scheduled Task。`/agentmemory/livez`、`/agentmemory/health`、`GET /agentmemory/build-info` 均 HTTP 200，viewer live smoke HTTP 200（端口因 3113 被占用而安全 fallback 到 3116）。build-info 实测：`sourceCommit=e0c6ce9817a8e6b41e83d469435942385cb91cb4`、`sourceDirty=false`、`builtAt=2026-07-13T07:34:12.837Z`、`artifactHash=f19c526f7bb86c290bad8a95769d8515f1bda393ae6e8544bde4bbc4e4eb45b3`；按 `scripts/build-runtime-assets.mjs` 的 Windows 路径规则重算一致。REST recall context/debug/debug-by-id 均 HTTP 200，trace=`rtr_mriwzn00_57c3acca2ef6`，并验证 `limit=0`。实例只用于验收；停止/重启的进程均为已识别 AgentMemory/iii runtime 进程，不修改 Scheduled Task。
 
 ## 全量测试分类
 
-`npm test` 的既有基线为 `1,411 passed / 40 failed`。40 项逐项豁免保持原分类：connector-environment 15（connect-new-agents 11、copilot-plugin 1、cli-remove 3）；windows-path 14（obsidian-export 8、hook-project 6）；symlink-capability 5（compress-file 5）；env-isolation 5（embedding-provider 3、slots-flag-gate 2）；known-preexisting 1（integration-plaintext-http 1）。
+本次 `npm test -- --reporter=dot` 实际为 `1,422 passed / 40 failed`（新增 11 个回归测试，故通过数较原 `1,411` 基线增加 11；失败数保持 40）。40 项逐项豁免保持原分类：connector-environment 15（connect-new-agents 11、copilot-plugin 1、cli-remove 3）；windows-path 14（obsidian-export 8、hook-project 6）；symlink-capability 5（compress-file 5）；env-isolation 5（embedding-provider 3、slots-flag-gate 2）；known-preexisting 1（integration-plaintext-http 1）。
 
 最终验收必须确认：`P2-related failures = 0`、`new regressions = 0`，任何超出上述 40 项的失败都必须单独调查，不能归入 baseline。另执行 `git diff --check`，结果必须无 whitespace error。
 
 ## 提交与 tag 建议
 
-最终验证代码 commit：在本报告和测试变更提交后记录实际 `git rev-parse HEAD`；验收记录提交如为后续 docs-only commit，也一并记录实际 hash。工作树最终必须 clean。
+最终验证代码 commit：`e0c6ce9`（完整 hash `e0c6ce9817a8e6b41e83d469435942385cb91cb4`）。本 acceptance record 的后续 docs-only commit 如产生，需在最终输出中另行记录；工作树最终必须 clean。
 
 本次不创建、删除、移动或 push tag。远端查询未返回 `p2-recall-observability-final*`，所以若最终确认本地 tag 尚未 push，建议用户确认后将本地 tag 从原 `52f7200` 重建到新的最终验收 commit；若发现旧 tag 已 push，则保留旧 tag，建议新建 `p2-recall-observability-final.1`。本次只给建议，不执行 tag 操作。
