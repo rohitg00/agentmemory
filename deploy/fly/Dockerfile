@@ -51,6 +51,17 @@ RUN printf '{"name":"agentmemory-deploy","version":"1.0.0","private":true,"overr
  && npm install ./agentmemory.tgz --omit=optional --no-fund --no-audit \
  && ln -s /opt/agentmemory/node_modules/.bin/agentmemory /usr/local/bin/agentmemory
 
+# Optional NODE_OPTIONS preload for broad crash reporting: set
+#   NODE_OPTIONS="--require /opt/agentmemory/sentry-preload.cjs"
+# to capture uncaught exceptions/module-load failures that happen before
+# this package's own initSentry() (src/observability/sentry.ts) gets a
+# chance to run. Requires @sentry/node, already installed above as a
+# dependency of the packed tarball. No-op (just logs and exits the
+# require silently-successful) when SENTRY_DSN is unset. initSentry()
+# detects an already-initialized client from this preload and reuses it
+# instead of re-initializing over its tracesSampleRate/release.
+COPY deploy/fly/sentry-preload.cjs /opt/agentmemory/sentry-preload.cjs
+
 ENV AGENTMEMORY_III_VERSION=${III_VERSION} \
     TINI_SUBREAPER=1
 
