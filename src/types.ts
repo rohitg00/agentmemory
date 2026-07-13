@@ -211,6 +211,7 @@ export interface HealthSnapshot {
   eventLoopLagMs: number;
   uptimeSeconds: number;
   kvConnectivity?: { status: string; latencyMs?: number; error?: string };
+  sentryEnabled: boolean;
   status: "healthy" | "degraded" | "critical";
   alerts: string[];
   notes?: string[];

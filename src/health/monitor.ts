@@ -3,6 +3,7 @@ import type { HealthSnapshot } from "../types.js";
 import type { StateKV } from "../state/kv.js";
 import { KV } from "../state/schema.js";
 import { evaluateHealth } from "./thresholds.js";
+import { isSentryEnabled } from "../observability/sentry.js";
 
 export function registerHealthMonitor(
   sdk: ISdk,
@@ -80,6 +81,7 @@ export function registerHealthMonitor(
       eventLoopLagMs,
       uptimeSeconds: uptime,
       kvConnectivity,
+      sentryEnabled: isSentryEnabled(),
       status: "healthy",
       alerts: [],
     };

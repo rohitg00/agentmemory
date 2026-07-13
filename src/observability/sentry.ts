@@ -12,6 +12,16 @@ import { logger } from "../logger.js";
 
 let enabled = false;
 
+/**
+ * Whether Sentry reporting is actually active (SENTRY_DSN was set AND
+ * Sentry.init() took effect — see the isInitialized() check in initSentry()
+ * below). Exposed so a health check or deploy-verification script can
+ * confirm error reporting is live without tailing boot logs.
+ */
+export function isSentryEnabled(): boolean {
+  return enabled;
+}
+
 /** Initialize Sentry once at process startup. No-op unless SENTRY_DSN is set. */
 export function initSentry(): void {
   const dsn = process.env.SENTRY_DSN;

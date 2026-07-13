@@ -11,6 +11,7 @@ function snap(over: Partial<HealthSnapshot> = {}): HealthSnapshot {
     eventLoopLagMs: 0,
     uptimeSeconds: 1,
     kvConnectivity: { status: "ok", latencyMs: 1 },
+    sentryEnabled: false,
     status: "healthy",
     alerts: [],
     ...over,

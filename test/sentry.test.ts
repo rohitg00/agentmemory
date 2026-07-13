@@ -129,4 +129,19 @@ describe("observability/sentry", () => {
     await mod.flushSentry();
     expect(sentryMock.flush).toHaveBeenCalledTimes(1);
   });
+
+  it("isSentryEnabled() reflects whether reporting actually took effect", async () => {
+    const mod = await import("../src/observability/sentry.js");
+    expect(mod.isSentryEnabled()).toBe(false);
+
+    process.env.SENTRY_DSN = "not-a-valid-dsn";
+    sentryMock.isInitialized.mockReturnValue(false);
+    mod.initSentry();
+    expect(mod.isSentryEnabled()).toBe(false);
+
+    process.env.SENTRY_DSN = "https://key@o0.ingest.sentry.io/1";
+    sentryMock.isInitialized.mockReturnValue(true);
+    mod.initSentry();
+    expect(mod.isSentryEnabled()).toBe(true);
+  });
 });
