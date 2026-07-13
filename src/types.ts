@@ -390,6 +390,8 @@ export interface RecallItemStats {
   recentQuery?: string;
   averageScore: number;
   scopeMismatchCount: number;
+  /** Scaled integer accumulator used to derive averageScore atomically. */
+  scoreTotalMicros?: number;
 }
 
 export interface SearchResult {

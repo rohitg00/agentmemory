@@ -3,8 +3,10 @@ import type { RecallItemStats, RecallTrace, RecallTraceConfig } from "../types.j
 import { KV } from "../state/schema.js";
 import type { StateKV } from "../state/kv.js";
 import { stripPrivateData } from "../functions/privacy.js";
+import { withKeyedLock } from "../state/keyed-mutex.js";
 
 const QUERY_SALT_KEY = "recall-query-salt";
+const SCORE_SCALE = 1_000_000;
 
 async function querySalt(kv: StateKV): Promise<string> {
   const existing = await kv.get<string>(KV.state, QUERY_SALT_KEY).catch(() => null);
@@ -37,7 +39,55 @@ function emptyStats(itemId: string): RecallItemStats {
     recallCount: 0,
     averageScore: 0,
     scopeMismatchCount: 0,
+    scoreTotalMicros: 0,
   };
+}
+
+export function materializeRecallStats(stats: RecallItemStats): RecallItemStats {
+  return stats.scoreTotalMicros !== undefined && stats.recallCount > 0
+    ? { ...stats, averageScore: stats.scoreTotalMicros / SCORE_SCALE / stats.recallCount }
+    : stats;
+}
+
+async function ensureStats(kv: StateKV, itemId: string): Promise<void> {
+  // Initialization/migration is guarded in-process; all recurring counters use
+  // state::update, whose ordered increments are atomic across workers.
+  await withKeyedLock(`recallStats:${itemId}`, async () => {
+    const current = await kv.get<RecallItemStats>(KV.recallStats, itemId);
+    if (!current) {
+      await kv.set(KV.recallStats, itemId, emptyStats(itemId));
+      return;
+    }
+    if (current.scoreTotalMicros === undefined) {
+      await kv.set(KV.recallStats, itemId, {
+        ...current,
+        scoreTotalMicros: Math.round(current.averageScore * current.recallCount * SCORE_SCALE),
+      });
+    }
+  });
+}
+
+async function updateSelectedStats(
+  kv: StateKV,
+  itemId: string,
+  score: number,
+  timestamp: string,
+  query?: string,
+): Promise<void> {
+  await ensureStats(kv, itemId);
+  await kv.update(KV.recallStats, itemId, [
+    { type: "increment", path: "recallCount", by: 1 },
+    { type: "increment", path: "scoreTotalMicros", by: Math.round(score * SCORE_SCALE) },
+    { type: "set", path: "lastRecalledAt", value: timestamp },
+    { type: "set", path: "recentQuery", value: query },
+  ]);
+}
+
+async function updateMismatchStats(kv: StateKV, itemId: string): Promise<void> {
+  await ensureStats(kv, itemId);
+  await kv.update(KV.recallStats, itemId, [
+    { type: "increment", path: "scopeMismatchCount", by: 1 },
+  ]);
 }
 
 export async function persistRecallTrace(
@@ -59,23 +109,13 @@ export async function persistRecallTrace(
       .map((entry) => kv.delete(KV.recallTraces, entry.id)),
   );
 
-  await Promise.all(trace.selected.map(async (item) => {
-    const current = (await kv.get<RecallItemStats>(KV.recallStats, item.id)) || emptyStats(item.id);
-    const count = current.recallCount + 1;
-    await kv.set(KV.recallStats, item.id, {
-      ...current,
-      recallCount: count,
-      averageScore: ((current.averageScore * current.recallCount) + item.score) / count,
-      lastRecalledAt: trace.timestamp,
-      recentQuery: trace.query,
-    });
-  }));
+  await Promise.all(trace.selected.map((item) => updateSelectedStats(
+    kv,
+    item.id,
+    item.score,
+    trace.timestamp,
+    trace.query,
+  )));
   const mismatches = trace.dropped.filter((item) => item.decision === "scope_mismatch");
-  await Promise.all(mismatches.map(async (item) => {
-    const current = (await kv.get<RecallItemStats>(KV.recallStats, item.id)) || emptyStats(item.id);
-    await kv.set(KV.recallStats, item.id, {
-      ...current,
-      scopeMismatchCount: current.scopeMismatchCount + 1,
-    });
-  }));
+  await Promise.all(mismatches.map((item) => updateMismatchStats(kv, item.id)));
 }

@@ -43,6 +43,7 @@ export function registerContextFunction(
       project: string;
       budget?: number;
       query?: string;
+      limit?: number;
       projectId?: string;
       repoId?: string;
       checkoutId?: string;
@@ -55,6 +56,7 @@ export function registerContextFunction(
           entryPoint: data.entryPoint || "context",
           outputMode: data.outputMode || "rendered_context",
           query: data.query,
+          limit: data.limit,
           sessionId: data.sessionId,
           projectId: data.projectId || data.project,
           repoId: data.repoId,

@@ -12,6 +12,7 @@ import { isSlotsEnabled, isReflectEnabled } from "../functions/slots.js";
 import { renderViewerDocument } from "../viewer/document.js";
 import { getBoundViewerPort, getViewerSkipped } from "../viewer/server.js";
 import { resolveRecallIdentity } from "../recall/identity.js";
+import { materializeRecallStats } from "../recall/trace-store.js";
 import { advanceRecallContextEpoch } from "../recall/ledger.js";
 import { MAX_FILES_UPPER_BOUND } from "../functions/replay.js";
 import { logger } from "../logger.js";
@@ -354,7 +355,7 @@ export function registerApiTriggers(
 
   sdk.registerFunction("api::context",
     async (
-      req: ApiRequest<{ sessionId: string; project: string; budget?: number }>,
+      req: ApiRequest<{ sessionId: string; project: string; budget?: number; limit?: number }>,
     ): Promise<Response> => {
       const body = (req.body ?? {}) as Record<string, unknown>;
       const sessionId = asNonEmptyString(body.sessionId);
@@ -372,6 +373,10 @@ export function registerApiTriggers(
           body: { error: "budget must be a non-negative integer" },
         };
       }
+      const limit = parseOptionalNonNegativeInt(body.limit);
+      if (limit === null) {
+        return { status_code: 400, body: { error: "limit must be a non-negative integer" } };
+      }
       const outputMode = body.outputMode;
       if (outputMode !== undefined && outputMode !== "bootstrap" && outputMode !== "prompt_injection" && outputMode !== "rendered_context") {
         return { status_code: 400, body: { error: "outputMode must be bootstrap, prompt_injection, or rendered_context" } };
@@ -382,6 +387,7 @@ export function registerApiTriggers(
         sessionId: string;
         project: string;
         budget?: number;
+        limit?: number;
         query?: string;
         projectId?: string;
         repoId?: string;
@@ -394,6 +400,7 @@ export function registerApiTriggers(
         project,
       };
       if (budget !== undefined) payload.budget = budget;
+      if (limit !== undefined) payload.limit = limit;
       for (const key of ["query", "projectId", "repoId", "checkoutId"] as const) {
         const value = optionalString(key);
         if (value !== undefined) payload[key] = value;
@@ -401,7 +408,7 @@ export function registerApiTriggers(
       const cwd = optionalString("cwd");
       if (cwd !== undefined) payload.cwd = cwd;
       if (cwd && (!payload.projectId || !payload.repoId || !payload.checkoutId)) {
-        const identity = resolveRecallIdentity(cwd, payload.projectId || project);
+        const identity = await resolveRecallIdentity(cwd, payload.projectId || project);
         payload.projectId ||= identity.projectId;
         payload.repoId ||= identity.repoId;
         payload.checkoutId ||= identity.checkoutId;
@@ -765,7 +772,7 @@ export function registerApiTriggers(
           ? body.agentId.trim().slice(0, 128)
           : undefined;
       const agentId = requestAgentId ?? getAgentId();
-      const identity = resolveRecallIdentity(cwd, project);
+      const identity = await resolveRecallIdentity(cwd, project);
       const session: Session = {
         id: sessionId,
         project,
@@ -1177,7 +1184,7 @@ export function registerApiTriggers(
         return { status_code: 400, body: { error: "project must be a non-empty string" } };
       }
       const cwd = typeof req.body.cwd === "string" && req.body.cwd.trim() ? req.body.cwd.trim() : undefined;
-      const identity = cwd ? resolveRecallIdentity(cwd, req.body.project || "") : undefined;
+      const identity = cwd ? await resolveRecallIdentity(cwd, req.body.project || "") : undefined;
       if (
         req.body.title !== undefined &&
         (typeof req.body.title !== "string" || !req.body.title.trim())
@@ -2392,7 +2399,7 @@ export function registerApiTriggers(
         return { status_code: 404, body: { error: `memory not found: ${id}` } };
       }
       const recallStats = await kv.get<import("../types.js").RecallItemStats>(KV.recallStats, id);
-      return { status_code: 200, body: { memory, recallStats } };
+      return { status_code: 200, body: { memory, recallStats: recallStats ? materializeRecallStats(recallStats) : null } };
     },
   );
   sdk.registerTrigger({

@@ -85,6 +85,12 @@ const FIXTURE_MEMORIES: MemoryFixture[] = [
 
 function makeKv() {
   const store = new Map<string, Map<string, unknown>>();
+  const getRecord = (scope: string, key: string): Record<string, unknown> => {
+    if (!store.has(scope)) store.set(scope, new Map());
+    const existing = store.get(scope)!.get(key);
+    if (existing && typeof existing === "object") return { ...(existing as Record<string, unknown>) };
+    return {};
+  };
   return {
     async get<T>(scope: string, key: string): Promise<T | null> {
       return (store.get(scope)?.get(key) as T) ?? null;
@@ -93,6 +99,22 @@ function makeKv() {
       if (!store.has(scope)) store.set(scope, new Map());
       store.get(scope)!.set(key, value);
       return value;
+    },
+    async update<T>(
+      scope: string,
+      key: string,
+      ops: Array<{ type: string; path: string; value?: unknown; by?: number }>,
+    ): Promise<T> {
+      const next = getRecord(scope, key);
+      for (const op of ops) {
+        if (op.type === "increment") {
+          next[op.path] = Number(next[op.path] || 0) + (op.by ?? 1);
+        } else if (op.type === "set") {
+          next[op.path] = op.value;
+        }
+      }
+      await this.set(scope, key, next);
+      return next as T;
     },
     async delete(scope: string, key: string): Promise<void> {
       store.get(scope)?.delete(key);

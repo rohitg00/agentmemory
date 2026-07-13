@@ -13,6 +13,16 @@ function makeKv() {
       store.get(scope)!.set(key, value);
       return value;
     },
+    update: async <T>(scope: string, key: string, ops: Array<{ type: string; path: string; value?: unknown; by?: number }>): Promise<T> => {
+      const current = (store.get(scope)?.get(key) as Record<string, unknown> | undefined) ?? {};
+      for (const op of ops) {
+        if (op.type === "increment") current[op.path] = Number(current[op.path] ?? 0) + Number(op.by);
+        if (op.type === "set") current[op.path] = op.value;
+      }
+      if (!store.has(scope)) store.set(scope, new Map());
+      store.get(scope)!.set(key, current);
+      return current as T;
+    },
     delete: async (scope: string, key: string): Promise<void> => {
       store.get(scope)?.delete(key);
     },
@@ -100,6 +110,24 @@ describe("RecallCore", () => {
     expect(result.context).toBe("");
   });
 
+  it("honors explicit ranked result limits, including zero and limits above candidates", async () => {
+    const kv = makeKv();
+    for (const id of ["mem_one", "mem_two"]) {
+      await kv.set(KV.memories, id, {
+        id, createdAt: "2026-07-01T00:00:00.000Z", updatedAt: "2026-07-01T00:00:00.000Z",
+        type: "fact", title: id, content: `${id} relevant implementation detail`, concepts: [], files: [], sessionIds: [], strength: 7, version: 1, isLatest: true,
+        scope: { level: "project", projectId: "pps" }, origin: "manual",
+      });
+    }
+    const core = new RecallCore(kv as never, config, async () => [hit("mem_one", 0.8), hit("mem_two", 0.7)]);
+
+    const zero = await core.recall({ entryPoint: "search", outputMode: "ranked_results", query: "relevant", projectId: "pps", limit: 0 });
+    const aboveCandidates = await core.recall({ entryPoint: "search", outputMode: "ranked_results", query: "relevant", projectId: "pps", limit: 10 });
+
+    expect(zero.results).toHaveLength(0);
+    expect(aboveCandidates.results).toHaveLength(2);
+  });
+
   it("clamps request budgets to the configured hard context ceiling", async () => {
     const kv = makeKv();
     await kv.set(KV.memories, "mem_clamped", {
@@ -114,6 +142,20 @@ describe("RecallCore", () => {
     });
 
     expect(result.trace.finalContextTokenCount).toBeLessThanOrEqual(config.budget.maxContextTokens);
+  });
+
+  it("keeps prompt injection inside the hard context budget", async () => {
+    const kv = makeKv();
+    await kv.set(KV.memories, "mem_prompt", {
+      id: "mem_prompt", createdAt: "2026-07-01T00:00:00.000Z", updatedAt: "2026-07-01T00:00:00.000Z",
+      type: "fact", title: "prompt", content: "A long prompt-injection candidate that must not exceed the hard budget.", concepts: [], files: [], sessionIds: [], strength: 7, version: 1, isLatest: true,
+      scope: { level: "project", projectId: "pps" }, origin: "manual",
+    });
+    const hardConfig = { ...config, budget: { ...config.budget, maxContextTokens: 12, maxSemanticTokens: 12 } };
+    const core = new RecallCore(kv as never, hardConfig, async () => [hit("mem_prompt", 0.8)]);
+    const result = await core.recall({ entryPoint: "prompt", outputMode: "prompt_injection", query: "prompt", projectId: "pps", sessionId: "session" });
+
+    expect(result.trace.finalContextTokenCount).toBeLessThanOrEqual(12);
   });
 
   it("suppresses duplicate automatic injection only inside the current epoch and turn window", async () => {

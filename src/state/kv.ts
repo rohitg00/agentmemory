@@ -20,10 +20,10 @@ export class StateKV {
   async update<T = unknown>(
     scope: string,
     key: string,
-    ops: Array<{ type: string; path: string; value?: unknown }>,
+    ops: Array<{ type: string; path: string; value?: unknown; by?: number }>,
   ): Promise<T> {
     return this.sdk.trigger<
-      { scope: string; key: string; ops: Array<{ type: string; path: string; value?: unknown }> },
+      { scope: string; key: string; ops: Array<{ type: string; path: string; value?: unknown; by?: number }> },
       T
     >({
       function_id: 'state::update',

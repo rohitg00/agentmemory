@@ -219,7 +219,9 @@ export class RecallCore {
       );
       let semanticUsed = 0;
       const kindCounts: Partial<Record<RecallItemKind, number>> = {};
-      const rankedLimit = Math.max(1, request.limit || 20);
+      const rankedLimit = request.limit === undefined || !Number.isFinite(request.limit)
+        ? 20
+        : Math.max(0, Math.floor(request.limit));
       for (const candidate of semanticCandidates) {
         const item = traceItem(candidate, "selected", "selected by hybrid retrieval and bounded boosts");
         if (request.outputMode === "ranked_results" && selected.length >= rankedLimit) {
@@ -357,7 +359,10 @@ export class RecallCore {
       return sessionCache.get(sessionId) || null;
     };
     const hybrid = this.hybridRecall
-      ? await this.hybridRecall(request.query, Math.max((request.limit || 20) * 5, 50))
+      ? await this.hybridRecall(
+        request.query,
+        Math.max((request.limit === undefined || !Number.isFinite(request.limit) ? 20 : Math.max(0, Math.floor(request.limit))) * 5, 50),
+      )
       : [];
     const hits = Array.isArray(hybrid) ? hybrid : hybrid.results;
     const retrievalMode = Array.isArray(hybrid)

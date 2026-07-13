@@ -2430,7 +2430,7 @@
           '<td>' + esc(trace.timestamp || '') + '</td>' +
           '<td>' + esc(trace.entryPoint || '') + ' / ' + esc(trace.outputMode || '') + '</td>' +
           '<td>' + esc(trace.query || '[no query]') + '</td>' +
-          '<td>' + selected + ' selected, ' + Object.keys(dropped).map(function(k) { return esc(k) + ': ' + dropped[k]; }).join(', ') + '</td>' +
+          '<td>' + selected + ' selected, ' + Object.keys(dropped).map(function(k) { return esc(k) + ': ' + esc(String(dropped[k])); }).join(', ') + '</td>' +
           '<td>' + (trace.finalContextTokenCount || 0) + ' tokens</td>' +
           '<td>' + esc(vector.status || 'disabled') + (vector.reason ? ': ' + esc(vector.reason) : '') + '</td>' +
         '</tr>';

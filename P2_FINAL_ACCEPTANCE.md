@@ -1,93 +1,71 @@
-# P2 Recall Observability — Final Acceptance (基于 `1eee93a`)
+# P2 Recall Observability — Final Acceptance
 
 日期：2026-07-13  
-功能验收提交：`685673b` (`feat(recall): expose runtime build info endpoint`)  
-最终验证提交：以最终构建生成的 `build-info.sourceCommit` 为准，并与 `git rev-parse HEAD` 一致。
+原验收 commit：`52f7200`  
+原验收 tag：`p2-recall-observability-final`（本地指向 `52f7200`）  
+CodeRabbit review 复核范围：PR #1050 的旧范围 `93ae9bc` → `2245597`；本次以当前 HEAD 为准。
 
-## Gate summary
+## 本次结论
 
-| Gate | Result | Evidence |
-|---|---|---|
-| Recall Core / scope / budget / ledger | PASS | `42 passed` in the P2-targeted suite, including build-info tests |
-| Build | PASS | `npm run build` exit code 0 |
-| Skills | PASS | `npm run skills:check` — 17 skills |
-| Sanitized benchmark | PASS | hit rate 1.0000, precision 0.8421, contamination 0, average 57.07 tokens, duplicate 0, stale 0, budget violations 0 |
-| Runtime restart / health | PASS | current runtime on 3111; `/agentmemory/livez` 200; `/agentmemory/health` healthy, connected, v0.9.27 |
-| Source/build identity | PASS | `dist/build-info.json`: sourceCommit equals final HEAD, sourceDirty false, build time and artifactHash exposed |
-| Build-info REST endpoint | PASS | `GET /agentmemory/build-info` returned 200 and matched `dist/build-info.json` |
-| Full `npm test` | PASS with baseline exceptions | 1,411 passed / 40 failed; failures are pre-existing Windows/path/connector/environment classes, see below |
-| Final release tag | PENDING | create only after final documentation commit and clean audit |
+CodeRabbit 五项重点评论在当前 HEAD 仍存在，均已先补回归测试再修复：
 
-## Commands
+1. `mem::context` 现在保留并转发 `limit`，`limit=0` 不会被默认值覆盖；ranked results 的 limit 不再被 context token budget 错误截断。
+2. recall identity 改为异步 git 探测，cwd 受 `AGENTMEMORY_RECALL_ALLOWED_ROOTS`/默认工作根约束，并拒绝越界、不存在、文件、UNC、symlink escape；git 探测有 500ms 超时，失败安全降级 unknown。
+3. HTTPS、SSH URL、SCP remote 统一 hostname/用户/default port/URL encoding/`.git`/尾斜杠后计算稳定 repoId；不同 host/owner/repo 不碰撞。
+4. recall stats 使用底层 `state::update` 的原子 increment 保存 count、scaled score total、scope mismatch；平均分在读取时物化，不写 Memory 内容、version 或 updatedAt。
+5. Viewer dropped reason/label/value 同一路径全部转义后才进入 `innerHTML`。
+
+逐条分类和非阻塞事项见 [CODERABBIT_REVIEW_TRIAGE.md](CODERABBIT_REVIEW_TRIAGE.md)。其他评论（archive import session ID、observe rollback image ref、trace retention、hydration、pre-compact、MCP schema、README 数字、配置标签、checkoutId、stale comment、重复 enum、fake timer、CJK token、共享类型）未混入本次修复，均列为 `defer-with-issue`。
+
+## 修改清单
+
+- `src/functions/context.ts`、`src/recall/core.ts`、`src/triggers/api.ts`：贯通并校验 limit，保留零值。
+- `src/recall/identity.ts`：异步、受信根、realpath、symlink/UNC/越界检查、超时和 remote canonicalization。
+- `src/state/kv.ts`、`src/recall/trace-store.ts`、`src/types.ts`：原子 stats 更新和 scaled aggregate。
+- `src/viewer/index.html`：完整转义 dropped 动态值。
+- `eval/recall/runner.ts`：benchmark KV stub 补齐 `state::update` 原子操作语义。
+- `.env.example` 与生成的 config reference：记录允许 identity roots 配置。
+- 新增/更新五组 focused regression tests；新增本报告与 CodeRabbit triage 报告。
+
+## 实际测试与 benchmark
+
+已通过：
 
 ```text
-npm run build
+npx vitest run test/recall-core.test.ts test/recall-context-limit.test.ts test/recall-identity.test.ts test/recall-trace-store.test.ts test/viewer-recall-xss.test.ts --reporter=verbose
+  5 files / 17 tests passed
+
+npx vitest run test/cross-project-isolation.test.ts test/agent-isolation-search.test.ts test/enrich-project-isolation.test.ts test/recall-core.test.ts test/recall-config.test.ts test/circuit-breaker.test.ts test/vector-retrieval-health.test.ts test/recall-context-limit.test.ts test/recall-identity.test.ts test/recall-trace-store.test.ts test/viewer-recall-xss.test.ts --reporter=verbose
+  11 files / 50 tests passed
+
+npx vitest run test/hybrid-search.test.ts test/vector-retrieval-health.test.ts test/recall-core.test.ts --reporter=verbose
+  3 files / 17 tests passed
+
 npm run skills:check
-npx vitest run test/cross-project-isolation.test.ts test/agent-isolation-search.test.ts \
-  test/enrich-project-isolation.test.ts test/recall-core.test.ts \
-  test/recall-config.test.ts test/circuit-breaker.test.ts \
-  test/vector-retrieval-health.test.ts
-npm run bench:recall -- --json
-npm test
-git diff --check
+  17 skills checked; passed
+
+npm run build
+  exit code 0; passed
 ```
 
-The benchmark runner is `eval/recall/runner.ts` and uses the production `RecallCore` with an isolated in-memory KV store and sanitized fixtures. It writes project-scoped PPS7000/GAT memories, a user preference, and an unknown legacy memory. It emits 15 trace IDs per run.
+Benchmark command：`npm run bench:recall -- --json`。结果：hit rate `1.0000`、precision `0.8421`、cross-project contamination `0`、budget violation `0`、duplicate injection `0`、stale/superseded injection `0`、average injected tokens `57.07`。首次运行发现并修复 benchmark stub 缺少 `update` 的验收阻断，修复后结果恢复并达到 gate。
 
-Benchmark trace IDs from the accepted run include:
+Scope smoke 的可执行覆盖来自 benchmark fixture 和 focused suites：project 正向命中、cross-project contamination `0`、user scope 跨项目、unknown 不自动注入、explicit recall 可返回 unknown。Vector degraded/BM25 fallback 由 `hybrid-search` 与 `vector-retrieval-health` 定向 smoke 通过。
 
-```text
-rtr_mri0zj9s_660c1ef46e87
-rtr_mri0zj9t_566511e82911
-rtr_mri0zj9u_366f69d18f9d
-rtr_mri0zj9u_c223125b7a71
-rtr_mri0zj9v_cfd3d78d8a32
-rtr_mri0zj9v_c86eb703ed54
-rtr_mri0zj9v_fffb78273327
-rtr_mri0zj9w_3008ca138f41
-rtr_mri0zj9w_8685051e0a78
-rtr_mri0zj9x_849f8c873b23
-rtr_mri0zj9x_94386338e5e8
-rtr_mri0zj9x_a8843b02315c
-rtr_mri0zj9x_eea5ebcb64dc
-rtr_mri0zj9y_3bbd2df31708
-rtr_mri0zj9y_5765f74c4a22
-```
+## Runtime / build-info
 
-## Live scope smoke
+原有 runtime 在 3111 上保持运行，未停止任何身份不明进程；原实例已验证 `/agentmemory/livez` 200、`/agentmemory/health` 200、`GET /agentmemory/build-info` 200。该实例的旧 build-info 是 `52f7200`，因此不把它冒充为本次修复后的 runtime 验证。
 
-After stopping the stale AgentMemory chain (PID 3892/37836) and restarting the current build, the canonical runtime registered successfully on 3111/3112/49134. Temporary live memories were deleted after the smoke.
+本次最终构建/安装验收应使用当前代码提交后启动的隔离 `--instance 1` runtime（3211/3212/3213/49234），并记录：`/livez`、`/health`、`/agentmemory/build-info` 均 200；build-info 的 `sourceCommit` 与最终 HEAD 一致、`sourceDirty=false`、builtAt 为 ISO 时间、artifactHash 为 64 位 SHA-256；已安装 artifact hash 与当前构建一致。实例只用于验收，不修改 Scheduled Task；若需清理，仅停止本次启动且可明确识别的实例。
 
-| Case | Trace | Result |
-|---|---|---|
-| PPS7000 positive | `rtr_mri1c5cx_f869f4a6060b` | PPS memory selected; unrelated GAT/user/observation candidates dropped by scope; 42 tokens |
-| GAT positive | `rtr_mri1c5im_7e064fb6f92e` | GAT memory selected; PPS dropped by scope; 41 tokens |
-| GAT query in PPS project | `rtr_mri1c5je_08f47fe8442f` | GAT memory scope-mismatch dropped; no cross-project GAT injection |
-| User preference in GAT | `rtr_mri1c5k0_21a3d3a979ee` | user-scoped preference selected cross-project; 39 tokens |
-| Unknown automatic injection | `rtr_mri1c5l4_bc7161220ef1` | unknown legacy memory dropped; automatic injection did not select it |
-| Explicit recall/context | `rtr_mri1c5lp_5f5152075e7f` | unknown legacy memory returned when explicitly requested |
+## 全量测试分类
 
-All live traces reported `vector: degraded`, `fallback: BM25/graph`, reason `vector index is unavailable`, and used estimator `conservative-unicode@1 (estimated=true)`. This matches the observed OpenAI embedding 429/quota warning in the runtime log; no hybrid claim was made for these traces.
+`npm test` 的既有基线为 `1,411 passed / 40 failed`。40 项逐项豁免保持原分类：connector-environment 15（connect-new-agents 11、copilot-plugin 1、cli-remove 3）；windows-path 14（obsidian-export 8、hook-project 6）；symlink-capability 5（compress-file 5）；env-isolation 5（embedding-provider 3、slots-flag-gate 2）；known-preexisting 1（integration-plaintext-http 1）。
 
-## Full-test failure classification
+最终验收必须确认：`P2-related failures = 0`、`new regressions = 0`，任何超出上述 40 项的失败都必须单独调查，不能归入 baseline。另执行 `git diff --check`，结果必须无 whitespace error。
 
-The 40 full-suite failures were not P2 regressions observed in the targeted suite. Exact baseline classification:
+## 提交与 tag 建议
 
-* `connector-environment` (15): `connect-new-agents.test.ts` (11), `copilot-plugin.test.ts` (1), `cli-remove.test.ts` (3).
-* `windows-path` (14): `obsidian-export.test.ts` (8), `hook-project.test.ts` (6).
-* `symlink-capability` (5): `compress-file.test.ts` (5).
-* `env-isolation` (5): `embedding-provider.test.ts` (3), `slots-flag-gate.test.ts` (2).
-* `known-preexisting` (1): `integration-plaintext-http.test.ts` (1).
+最终验证代码 commit：在本报告和测试变更提交后记录实际 `git rev-parse HEAD`；验收记录提交如为后续 docs-only commit，也一并记录实际 hash。工作树最终必须 clean。
 
-The waiver basis is unchanged from the baseline: these tests depend on Windows symlink/path semantics, host connector configuration, or intentionally isolated provider/environment state. None exercises P2 Recall Core or build-info behavior.
-
-The endpoint-count documentation was updated from 136 to 137, restoring the consistency test. `P2-related failures = 0` and `new-regression = 0`; the remaining failures are waived Windows/connector/environment baselines listed above.
-
-## Remaining limitations
-
-* Health currently exposes the provider circuit breaker but not a top-level vector retrieval status; the authoritative degraded/fallback state is present in every recall trace and Viewer trace row.
-* The trace item schema does not carry a dedicated scope field; scope decisions are recorded in the item reason and `scope_mismatch` decision.
-* `reservedBootstrapTokens` is configured and the bootstrap/semantic budgets are separated, but the core does not yet borrow unused bootstrap quota dynamically.
-* No `memory_why` MCP function is registered; `/agentmemory/recall/debug/:traceId` is the supported equivalent.
-
-The final build-info verification record is read from the live endpoint and `dist/build-info.json`; it contains the final HEAD commit, `sourceDirty=false`, ISO build time, and a 64-character artifact hash.
+本次不创建、删除、移动或 push tag。远端查询未返回 `p2-recall-observability-final*`，所以若最终确认本地 tag 尚未 push，建议用户确认后将本地 tag 从原 `52f7200` 重建到新的最终验收 commit；若发现旧 tag 已 push，则保留旧 tag，建议新建 `p2-recall-observability-final.1`。本次只给建议，不执行 tag 操作。
