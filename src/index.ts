@@ -21,7 +21,7 @@ import {
 } from "./providers/index.js";
 import { StateKV } from "./state/kv.js";
 import { KV } from "./state/schema.js";
-import { initSentry } from "./observability/sentry.js";
+import { initSentry, flushSentry } from "./observability/sentry.js";
 import { VectorIndex } from "./state/vector-index.js";
 import { HybridSearch } from "./state/hybrid-search.js";
 import { IndexPersistence } from "./state/index-persistence.js";
@@ -601,7 +601,13 @@ async function main() {
     await indexPersistence.save().catch((err) => {
       console.warn(`[agentmemory] Failed to save index on shutdown:`, err);
     });
-    await sdk.shutdown();
+    await sdk.shutdown().catch((err) => {
+      // A failed sdk.shutdown() must not prevent flushSentry() from
+      // running below -- buffered Sentry events from this same shutdown
+      // sequence would otherwise be silently dropped.
+      console.warn(`[agentmemory] sdk.shutdown() failed:`, err);
+    });
+    await flushSentry();
     clearWorkerPidfile();
     process.exit(0);
   };
