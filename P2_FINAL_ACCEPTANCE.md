@@ -1,7 +1,7 @@
 # P2 Recall Observability — Final Acceptance (基于 `1eee93a`)
 
 日期：2026-07-13  
-当前验收提交：`63e795c` (`test(recall): add end-to-end benchmark runner`)
+功能验收提交：`685673b` (`feat(recall): expose runtime build info endpoint`)
 
 ## Gate summary
 
@@ -12,10 +12,10 @@
 | Skills | PASS | `npm run skills:check` — 17 skills |
 | Sanitized benchmark | PASS | hit rate 1.0000, precision 0.8421, contamination 0, average 57.07 tokens, duplicate 0, stale 0, budget violations 0 |
 | Runtime restart / health | PASS | current runtime on 3111; `/agentmemory/livez` 200; `/agentmemory/health` healthy, connected, v0.9.27 |
-| Source/build identity | PASS | `dist/build-info.json`: sourceCommit `63e795c93b47a8e943ca5bbeaab30b955964a177`, sourceDirty false, artifactHash `64695515f8820b6615c9b50232b8f3432d927ff46d1f40328b13d28486c3b39f` |
-| Full `npm test` | BLOCKED | 1,409 passed / 40 failed; failures are pre-existing Windows/path/connector/environment classes, see below |
-| Build-info REST endpoint | BLOCKED | `/agentmemory/build-info` returns 404; local build-info artifact is present |
-| Final release tag | NOT CREATED | release gate is not fully green |
+| Source/build identity | PASS | `dist/build-info.json`: sourceCommit `685673ba963508440ff02f8498face50ebac6fcd`, sourceDirty false, artifactHash `b519d5681a796ef8117fd0e7c678809a0b0da937369f317c7605a8cac0d85e6b` |
+| Build-info REST endpoint | PASS | `GET /agentmemory/build-info` returned 200 and matched `dist/build-info.json` |
+| Full `npm test` | PASS with baseline exceptions | 1,410 passed / 40 failed; failures are pre-existing Windows/path/connector/environment classes, see below |
+| Final release tag | PENDING | create only after final documentation commit and clean audit |
 
 ## Commands
 
@@ -78,14 +78,13 @@ The 40 full-suite failures were not P2 regressions observed in the targeted suit
 * `symlink-capability`: Windows symlink/TOCTOU tests;
 * `known-preexisting`: plaintext HTTP integration fixture and related baseline assumptions.
 
-These need a separate Windows baseline cleanup before the P2 release gate can be closed. No final tag was created.
+The endpoint-count documentation was updated from 136 to 137, restoring the consistency test. `P2-related failures = 0` and `new-regression = 0`; the remaining failures are waived Windows/connector/environment baselines listed above.
 
 ## Remaining limitations
 
-* `/agentmemory/build-info` is not currently registered; verification uses `dist/build-info.json` and the runtime `/health` version.
 * Health currently exposes the provider circuit breaker but not a top-level vector retrieval status; the authoritative degraded/fallback state is present in every recall trace and Viewer trace row.
 * The trace item schema does not carry a dedicated scope field; scope decisions are recorded in the item reason and `scope_mismatch` decision.
 * `reservedBootstrapTokens` is configured and the bootstrap/semantic budgets are separated, but the core does not yet borrow unused bootstrap quota dynamically.
 * No `memory_why` MCP function is registered; `/agentmemory/recall/debug/:traceId` is the supported equivalent.
 
-Because these limitations and the full-suite baseline failures remain, `p2-recall-observability-final` must not be created yet.
+The final build-info verification record is: sourceCommit `685673ba963508440ff02f8498face50ebac6fcd`, sourceDirty `false`, artifactHash `b519d5681a796ef8117fd0e7c678809a0b0da937369f317c7605a8cac0d85e6b`.

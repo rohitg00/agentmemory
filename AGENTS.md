@@ -141,7 +141,7 @@ Hook scripts in `src/hooks/` are standalone Node.js scripts (no iii-sdk import).
 ## Current Stats (v0.9.27)
 
 - 53 MCP tools (core: memory_recall, memory_save, memory_compress_file, memory_file_history, memory_patterns, memory_sessions, memory_smart_search, memory_timeline, memory_profile, memory_export, memory_relations; `AGENTMEMORY_TOOLS=all` for 53)
-- 136 REST endpoints
+- 137 REST endpoints
 - 6 MCP resources, 3 MCP prompts
 - 12 hooks, 17 skills (10 invocable + 7 reference)
 - 296 registered functions (148 mem::, 137 api::, 6 mcp::, 5 event::)
