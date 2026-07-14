@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 import { resolveProject } from "./_project.js";
 
+import { agentmemoryEnv } from "./env.js";
+
 // Inlined from ./sdk-guard so each hook bundles to a single self-contained
 // .mjs (matches the pattern used by every other hook entry in tsdown.config).
 function isSdkChildContext(payload: unknown): boolean {
@@ -10,7 +12,7 @@ function isSdkChildContext(payload: unknown): boolean {
 }
 
 const REST_URL = process.env["AGENTMEMORY_URL"] || "http://localhost:3111";
-const SECRET = process.env["AGENTMEMORY_SECRET"] || "";
+const SECRET = agentmemoryEnv("AGENTMEMORY_SECRET");
 
 // Passive telemetry only — nothing reads the response, so the previous
 // `await` was pure latency. Tightened from 2000ms to a defensive cap so a

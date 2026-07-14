@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 import { resolveProject } from "./_project.js";
 
+import { agentmemoryEnv } from "./env.js";
+
 function isSdkChildContext(payload: unknown): boolean {
   if (process.env["AGENTMEMORY_SDK_CHILD"] === "1") return true;
   if (!payload || typeof payload !== "object") return false;
@@ -8,7 +10,7 @@ function isSdkChildContext(payload: unknown): boolean {
 }
 
 const REST_URL = process.env["AGENTMEMORY_URL"] || "http://localhost:3111";
-const SECRET = process.env["AGENTMEMORY_SECRET"] || "";
+const SECRET = agentmemoryEnv("AGENTMEMORY_SECRET");
 
 function authHeaders(): Record<string, string> {
   const h: Record<string, string> = { "Content-Type": "application/json" };

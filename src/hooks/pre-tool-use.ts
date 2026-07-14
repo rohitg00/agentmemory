@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+import { agentmemoryEnv } from "./env.js";
+
 function isSdkChildContext(payload: unknown): boolean {
   if (process.env["AGENTMEMORY_SDK_CHILD"] === "1") return true;
   if (!payload || typeof payload !== "object") return false;
@@ -20,10 +22,10 @@ function isSdkChildContext(payload: unknown): boolean {
 //   AGENTMEMORY_INJECT_CONTEXT=true   in ~/.agentmemory/.env
 // and restart Claude Code. Expect your session input token count to grow
 // proportionally with the number of file-touching tool calls per turn.
-const INJECT_CONTEXT = process.env["AGENTMEMORY_INJECT_CONTEXT"] === "true";
+const INJECT_CONTEXT = agentmemoryEnv("AGENTMEMORY_INJECT_CONTEXT") === "true";
 
 const REST_URL = process.env["AGENTMEMORY_URL"] || "http://localhost:3111";
-const SECRET = process.env["AGENTMEMORY_SECRET"] || "";
+const SECRET = agentmemoryEnv("AGENTMEMORY_SECRET");
 
 function authHeaders(): Record<string, string> {
   const h: Record<string, string> = { "Content-Type": "application/json" };
