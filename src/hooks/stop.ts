@@ -39,13 +39,9 @@ async function main() {
 
   const sessionId = ((data.session_id || data.sessionId) as string) || "unknown";
 
-  fetch(`${REST_URL}/agentmemory/summarize`, {
-    method: "POST",
-    headers: authHeaders(),
-    body: JSON.stringify({ sessionId }),
-    signal: AbortSignal.timeout(120000),
-  }).catch(() => {});
-
+  // Summarize is NOT called directly here: /agentmemory/session/end fans out
+  // event::session::stopped, whose handler already runs mem::summarize.
+  // Calling both used to double every summarize LLM run.
   fetch(`${REST_URL}/agentmemory/session/end`, {
     method: "POST",
     headers: authHeaders(),
@@ -53,7 +49,7 @@ async function main() {
     signal: AbortSignal.timeout(5000),
   }).catch(() => {});
 
-  setTimeout(() => process.exit(0), 1500).unref();
+  setTimeout(() => process.exit(0), 500).unref();
 }
 
 main();

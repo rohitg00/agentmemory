@@ -4,6 +4,7 @@ import { KV, STREAM } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { isReflectEnabled } from "../functions/slots.js";
 import { isGraphExtractionEnabled } from "../config.js";
+import { computeInputFingerprint } from "../functions/input-fingerprint.js";
 import { logger } from "../logger.js";
 
 export function registerEventTriggers(sdk: ISdk, kv: StateKV): void {
@@ -67,11 +68,32 @@ export function registerEventTriggers(sdk: ISdk, kv: StateKV): void {
         );
         const compressed = observations.filter((o) => o.title);
         if (compressed.length > 0) {
-          sdk.trigger({
-            function_id: "mem::graph-extract",
-            payload: { observations: compressed },
-            action: TriggerAction.Void(),
-          });
+          // Sessions that stop repeatedly without new observations (e.g.
+          // heartbeat loops) would re-extract the identical set every time;
+          // skip when the fingerprint of the set is unchanged.
+          const fingerprint = computeInputFingerprint(compressed);
+          const prev = await kv
+            .get<{ fingerprint: string }>(
+              KV.graphExtractState,
+              data.sessionId,
+            )
+            .catch(() => null);
+          if (prev && prev.fingerprint === fingerprint) {
+            logger.info("Graph extraction skipped — input unchanged", {
+              sessionId: data.sessionId,
+              observationCount: compressed.length,
+            });
+          } else {
+            await kv.set(KV.graphExtractState, data.sessionId, {
+              fingerprint,
+              at: new Date().toISOString(),
+            });
+            sdk.trigger({
+              function_id: "mem::graph-extract",
+              payload: { observations: compressed },
+              action: TriggerAction.Void(),
+            });
+          }
         }
       } catch (err) {
         logger.warn("graph-extract trigger failed", {
