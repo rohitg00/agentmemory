@@ -519,6 +519,59 @@ describe("mem::summarize dedup (double-trigger guard)", () => {
     expect(provider.calls).toHaveLength(1);
   });
 
+  it("re-summarizes when the observation set changed but the count did not", async () => {
+    const provider = makeProvider([
+      summaryXml({ title: "First run" }),
+      summaryXml({ title: "Second run" }),
+    ]);
+    const { handler, kv } = await setupHandler({
+      sessionId: "ses_swap",
+      obsCount: 10,
+      provider,
+    });
+
+    await handler({ sessionId: "ses_swap" });
+
+    // evict/auto-forget can delete observations; a new one can then bring
+    // the count back to its previous value with different content.
+    await kv.delete("obs:ses_swap", "obs_0");
+    const extra = makeObs(10, "ses_swap");
+    await kv.set("obs:ses_swap", extra.id, extra);
+
+    const result: any = await handler({ sessionId: "ses_swap" });
+    expect(result.success).toBe(true);
+    expect(result.skipped).toBeUndefined();
+    expect(result.summary.title).toBe("Second run");
+    expect(provider.calls).toHaveLength(2);
+  });
+
+  it("releases the session lock when a run exceeds SUMMARIZE_LOCK_TIMEOUT_MS", async () => {
+    process.env.SUMMARIZE_LOCK_TIMEOUT_MS = "50";
+    try {
+      const provider: MemoryProvider = {
+        name: "hung",
+        compress: async () => "",
+        summarize: () => new Promise(() => {}), // never settles
+      };
+      const { handler } = await setupHandler({
+        sessionId: "ses_hung",
+        obsCount: 10,
+        provider,
+      });
+
+      const result: any = await handler({ sessionId: "ses_hung" });
+      expect(result.success).toBe(false);
+      expect(result.error).toBe("summarize_timeout");
+
+      // The lock must be free again: a follow-up call proceeds instead of
+      // queueing behind the hung run.
+      const again: any = await handler({ sessionId: "ses_hung" });
+      expect(again.error).toBe("summarize_timeout");
+    } finally {
+      delete process.env.SUMMARIZE_LOCK_TIMEOUT_MS;
+    }
+  });
+
   it("re-summarizes when new observations arrived since last summary", async () => {
     const provider = makeProvider([
       summaryXml({ title: "First run" }),

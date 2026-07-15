@@ -15,6 +15,7 @@ import {
   buildReducePrompt,
 } from "../prompts/summary.js";
 import { getXmlTag, getXmlChildren } from "../prompts/xml.js";
+import { computeInputFingerprint } from "./input-fingerprint.js";
 import { SummaryOutputSchema } from "../eval/schemas.js";
 import { validateOutput } from "../eval/validator.js";
 import { scoreSummary } from "../eval/quality.js";
@@ -49,6 +50,44 @@ function getChunkConcurrency(): number {
   if (!raw) return CHUNK_CONCURRENCY_DEFAULT;
   const n = parseInt(raw, 10);
   return Number.isFinite(n) && n > 0 ? n : CHUNK_CONCURRENCY_DEFAULT;
+}
+
+// Upper bound on how long one summarize run may hold the per-session lock.
+// Some providers (anthropic, agent-sdk) have no request timeout of their
+// own; without a bound a hung LLM call would block every later summarize
+// for that session forever. Generous enough for chunked map-reduce runs.
+const LOCK_TIMEOUT_MS_DEFAULT = 300_000;
+
+function getLockTimeoutMs(): number {
+  const raw = process.env.SUMMARIZE_LOCK_TIMEOUT_MS;
+  if (!raw) return LOCK_TIMEOUT_MS_DEFAULT;
+  const n = parseInt(raw, 10);
+  return Number.isFinite(n) && n > 0 ? n : LOCK_TIMEOUT_MS_DEFAULT;
+}
+
+// Resolves with a timeout marker instead of rejecting so the caller gets a
+// normal { success: false } result. The underlying run keeps going in the
+// background, but the keyed lock is released.
+function raceLockTimeout<T>(
+  work: Promise<T>,
+  ms: number,
+  sessionId: string,
+): Promise<T | { success: false; error: string }> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<{ success: false; error: string }>((resolve) => {
+    timer = setTimeout(() => {
+      logger.warn("Summarize lock timeout — releasing session lock", {
+        sessionId,
+        timeoutMs: ms,
+      });
+      resolve({ success: false, error: "summarize_timeout" });
+    }, ms);
+    timer.unref?.();
+  });
+  return Promise.race([
+    work.finally(() => clearTimeout(timer)),
+    timeout,
+  ]);
 }
 
 // One chunk call with retry-once. Returns null when both attempts fail —
@@ -244,7 +283,7 @@ export function registerSummarizeFunction(
       // Serialize per-session runs: the stop path and the explicit API can
       // race, and a second concurrent run would redo the same LLM work.
       // See the up-to-date short-circuit below for the sequential case.
-      return withKeyedLock(`summarize:${sessionId}`, async () => {
+      const runSummarize = async () => {
         const session = await kv.get<Session>(KV.sessions, sessionId);
         if (!session) {
           logger.warn("Session not found for summarize", {
@@ -265,15 +304,18 @@ export function registerSummarizeFunction(
           return { success: false, error: "no_observations" };
         }
 
-        // Observations are append-only, so an unchanged count means the
-        // LLM input would be identical to the previous run. Skipping avoids
-        // re-summarizing long-lived sessions (e.g. heartbeat loops) from
-        // scratch on every stop when nothing new happened.
+        // An unchanged input fingerprint means the LLM input would be
+        // identical to the previous run. Skipping avoids re-summarizing
+        // long-lived sessions (e.g. heartbeat loops) from scratch on every
+        // stop when nothing new happened. Summaries written before this
+        // field existed have no fingerprint and never match, so they
+        // re-summarize once and pick one up.
+        const inputFingerprint = computeInputFingerprint(compressed);
         const existing = await kv.get<SessionSummary>(
           KV.summaries,
           sessionId,
         );
-        if (existing && existing.observationCount === compressed.length) {
+        if (existing && existing.inputFingerprint === inputFingerprint) {
           logger.info("Summary already up to date — skipping", {
             sessionId,
             observationCount: compressed.length,
@@ -377,7 +419,8 @@ export function registerSummarizeFunction(
 
           const qualityScore = scoreSummary(summaryForValidation);
 
-          await kv.set(KV.summaries, sessionId, summary);
+          summary.inputFingerprint = inputFingerprint;
+        await kv.set(KV.summaries, sessionId, summary);
           await safeAudit(kv, "compress", "mem::summarize", [sessionId], {
             title: summary.title,
             observationCount: compressed.length,
@@ -414,7 +457,11 @@ export function registerSummarizeFunction(
           });
           return { success: false, error: msg };
         }
-      });
+      };
+
+      return withKeyedLock(`summarize:${sessionId}`, () =>
+        raceLockTimeout(runSummarize(), getLockTimeoutMs(), sessionId),
+      );
     },
   );
 }
