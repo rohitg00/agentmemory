@@ -22,6 +22,10 @@ export const KV = {
   // Single fixed key ("current") so writes are read-modify-write under
   // the same keyed mutex as graph-extract.
   graphSnapshot: "mem:graph:snapshot",
+  // Per-session fingerprint of the observation set last sent to
+  // mem::graph-extract on session stop; used to skip re-extraction when
+  // the session stops again without new observations.
+  graphExtractState: "mem:graph:extract-state",
   // #814 v2: targeted-lookup indexes so graph-extract never enumerates
   // the full nodes/edges scope. Each entry is a single small kv.get,
   // bounded payload — works at 75K+ nodes where kv.list would block

@@ -91,3 +91,28 @@ describe("agentmemory status no longer depends on /export (#666)", () => {
     expect(cli).toMatch(/memoriesRes\?\.latestCount\s*\?\?\s*memoriesRes\?\.total/);
   });
 });
+
+// Sessions that stop repeatedly without new observations (e.g. heartbeat
+// loops) used to re-extract the identical observation set on every stop.
+// The handler now fingerprints the set and skips when unchanged.
+describe("event::session::stopped graph-extract dedup", () => {
+  const events = readFileSync("src/triggers/events.ts", "utf-8");
+
+  it("fingerprints the compressed set before triggering mem::graph-extract", () => {
+    expect(events).toMatch(
+      /const fingerprint = computeInputFingerprint\(compressed\);[\s\S]*?function_id:\s*"mem::graph-extract"/,
+    );
+  });
+
+  it("skips extraction when the stored fingerprint matches", () => {
+    expect(events).toMatch(
+      /prev\.fingerprint === fingerprint[\s\S]*?Graph extraction skipped/,
+    );
+  });
+
+  it("persists the fingerprint under KV.graphExtractState before triggering", () => {
+    expect(events).toMatch(
+      /kv\.set\(KV\.graphExtractState,\s*data\.sessionId,\s*\{\s*fingerprint,[\s\S]*?\}\);[\s\S]*?function_id:\s*"mem::graph-extract"/,
+    );
+  });
+});
