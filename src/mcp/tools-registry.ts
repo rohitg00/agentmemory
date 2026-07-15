@@ -115,8 +115,13 @@ export const CORE_TOOLS: McpToolDef[] = [
   {
     name: "memory_sessions",
     description:
-      "List recent sessions with their status and observation counts.",
-    inputSchema: { type: "object", properties: {} },
+      "List recent sessions with their status and observation counts, newest first.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        limit: { type: "number", description: "Max results (default 100, max 500)" },
+      },
+    },
   },
   {
     name: "memory_smart_search",

@@ -808,6 +808,16 @@ export function registerApiTriggers(
     async (req: ApiRequest): Promise<Response> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
+      // No `limit` means "every session", deliberately: scripts/agentmemory-
+      // import-with-skip.py builds its already-imported skip-set from one
+      // unbounded call, and a default cap would silently shrink that set and
+      // re-import the remainder as duplicates. Callers that want a bounded
+      // response send `limit` (the MCP proxy and gateway both default to 20).
+      const rawLimit = parseOptionalInt(req.query_params?.["limit"]);
+      const limit =
+        rawLimit !== undefined && rawLimit > 0 ? rawLimit : undefined;
+      const rawOffset = parseOptionalInt(req.query_params?.["offset"]);
+      const offset = Math.max(0, rawOffset ?? 0);
       const sessions = await kv.list<Session>(KV.sessions);
       const normalizedAgentId =
         typeof req.query_params?.["agentId"] === "string"
@@ -823,15 +833,27 @@ export function registerApiTriggers(
       const filtered = filterAgentId
         ? sessions.filter((s) => s.agentId === filterAgentId)
         : sessions;
+      // Page before hydrating summaries: one kv.get per returned session, not
+      // one per session in the store.
+      const sorted = [...filtered].sort((a, b) =>
+        (b.startedAt || "").localeCompare(a.startedAt || ""),
+      );
+      const page =
+        limit === undefined
+          ? sorted.slice(offset)
+          : sorted.slice(offset, offset + limit);
       const summaries = await Promise.all(
-        filtered.map((s) =>
+        page.map((s) =>
           kv.get<SessionSummary>(KV.summaries, s.id).catch(() => null),
         ),
       );
-      const withSummary = filtered.map((s, i) =>
+      const withSummary = page.map((s, i) =>
         summaries[i] ? { ...s, summary: summaries[i] } : s,
       );
-      return { status_code: 200, body: { sessions: withSummary } };
+      return {
+        status_code: 200,
+        body: { sessions: withSummary, total: filtered.length, limit, offset },
+      };
     },
   );
   sdk.registerTrigger({

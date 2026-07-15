@@ -253,12 +253,29 @@ export function registerMcpEndpoints(
           }
 
           case "memory_sessions": {
-            const sessions = await kv.list(KV.sessions);
+            const rawLimit = asNumber(args.limit);
+            const limit =
+              rawLimit !== undefined && rawLimit > 0
+                ? Math.min(Math.floor(rawLimit), 500)
+                : 100;
+            const all = await kv.list<Session>(KV.sessions);
+            const sessions = [...all]
+              .sort((a, b) =>
+                (b.startedAt || "").localeCompare(a.startedAt || ""),
+              )
+              .slice(0, limit);
             return {
               status_code: 200,
               body: {
                 content: [
-                  { type: "text", text: JSON.stringify({ sessions }, null, 2) },
+                  {
+                    type: "text",
+                    text: JSON.stringify(
+                      { sessions, total: all.length, limit },
+                      null,
+                      2,
+                    ),
+                  },
                 ],
               },
             };
