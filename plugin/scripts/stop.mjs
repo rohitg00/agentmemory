@@ -23,12 +23,6 @@ async function main() {
 	}
 	if (isSdkChildContext(data)) return;
 	const sessionId = data.session_id || data.sessionId || "unknown";
-	fetch(`${REST_URL}/agentmemory/summarize`, {
-		method: "POST",
-		headers: authHeaders(),
-		body: JSON.stringify({ sessionId }),
-		signal: AbortSignal.timeout(12e4)
-	}).catch(() => {});
 	fetch(`${REST_URL}/agentmemory/session/end`, {
 		method: "POST",
 		headers: authHeaders(),
@@ -38,7 +32,7 @@ async function main() {
 	setTimeout(() => process.exit(0), 1500).unref();
 }
 main();
-
 //#endregion
-export {  };
+export {};
+
 //# sourceMappingURL=stop.mjs.map

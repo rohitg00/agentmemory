@@ -480,3 +480,64 @@ describe("mem::summarize chunking", () => {
     expect(result.error).toBe("parse_failed");
   });
 });
+
+describe("mem::summarize dedup (double-trigger guard)", () => {
+  it("skips the LLM when observation count is unchanged since last summary", async () => {
+    const provider = makeProvider([summaryXml({ title: "First run" })]);
+    const { handler } = await setupHandler({
+      sessionId: "ses_dedup",
+      obsCount: 10,
+      provider,
+    });
+
+    const first: any = await handler({ sessionId: "ses_dedup" });
+    expect(first.success).toBe(true);
+    expect(provider.calls).toHaveLength(1);
+
+    const second: any = await handler({ sessionId: "ses_dedup" });
+    expect(second.success).toBe(true);
+    expect(second.skipped).toBe(true);
+    expect(second.summary.title).toBe("First run");
+    expect(provider.calls).toHaveLength(1); // no second LLM run
+  });
+
+  it("collapses concurrent duplicate calls into a single LLM run", async () => {
+    const provider = makeProvider([summaryXml({ title: "Only run" })]);
+    const { handler } = await setupHandler({
+      sessionId: "ses_race",
+      obsCount: 10,
+      provider,
+    });
+
+    const [a, b]: any[] = await Promise.all([
+      handler({ sessionId: "ses_race" }),
+      handler({ sessionId: "ses_race" }),
+    ]);
+
+    expect(a.success).toBe(true);
+    expect(b.success).toBe(true);
+    expect(provider.calls).toHaveLength(1);
+  });
+
+  it("re-summarizes when new observations arrived since last summary", async () => {
+    const provider = makeProvider([
+      summaryXml({ title: "First run" }),
+      summaryXml({ title: "Second run" }),
+    ]);
+    const { handler, kv } = await setupHandler({
+      sessionId: "ses_grow",
+      obsCount: 10,
+      provider,
+    });
+
+    await handler({ sessionId: "ses_grow" });
+    const extra = makeObs(10, "ses_grow");
+    await kv.set("obs:ses_grow", extra.id, extra);
+
+    const result: any = await handler({ sessionId: "ses_grow" });
+    expect(result.success).toBe(true);
+    expect(result.skipped).toBeUndefined();
+    expect(result.summary.title).toBe("Second run");
+    expect(provider.calls).toHaveLength(2);
+  });
+});
