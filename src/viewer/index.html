@@ -1244,15 +1244,18 @@
           headers.Authorization = 'Bearer ' + viewerToken;
         }
         var fetchOpts = Object.assign({}, opts || {}, { headers: headers });
+        var readErrorBody = fetchOpts.readErrorBody;
+        delete fetchOpts.readErrorBody;
         var res = await fetch(url, fetchOpts);
         if (!res.ok) {
           if (res.status === 401) showViewerAuthPrompt();
           console.warn('[viewer] API ' + (fetchOpts.method || 'GET') + ' ' + path + ' returned ' + res.status);
-          // Some endpoints (e.g. health) intentionally respond with a non-2xx
-          // status while still returning a valid JSON body describing the
-          // degraded state (see #1019). Surface that body instead of
-          // discarding it as null, which used to make a "critical" health
-          // response render as "unknown".
+          // Non-2xx responses resolve to null so callers can keep treating
+          // null as "request failed" (e.g. loadGraph's disabled/error state).
+          // The health endpoint opts out via readErrorBody: it intentionally
+          // responds 503 with a valid JSON body when status is "critical"
+          // (see #1019), and the dashboard badge needs that body.
+          if (!readErrorBody) return null;
           try {
             return await res.json();
           } catch (parseErr) {
@@ -1354,7 +1357,7 @@
       el.innerHTML = '<div class="loading">Loading dashboard...</div>';
       try {
         var results = await Promise.all([
-          apiGet('health'),
+          api('health', { readErrorBody: true }),
           apiGet('sessions'),
           apiGet('memories?latest=true&limit=500'),
           apiGet('graph/stats'),
