@@ -31,6 +31,7 @@ async function main() {
     return;
   }
 
+  if (!data || typeof data !== "object") return;
   if (isSdkChildContext(data)) {
     // Do not summarize from inside a Claude Agent SDK child session;
     // would re-enter agent-sdk provider and loop (see sdk-guard.ts).
@@ -56,4 +57,4 @@ async function main() {
   setTimeout(() => process.exit(0), 1500).unref();
 }
 
-main();
+main().catch(() => process.exit(0));

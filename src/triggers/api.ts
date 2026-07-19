@@ -324,7 +324,12 @@ export function registerApiTriggers(
 
   sdk.registerFunction("api::context",
     async (
-      req: ApiRequest<{ sessionId: string; project: string; budget?: number }>,
+      req: ApiRequest<{
+        sessionId: string;
+        project: string;
+        budget?: number;
+        agentId?: string;
+      }>,
     ): Promise<Response> => {
       const body = (req.body ?? {}) as Record<string, unknown>;
       const sessionId = asNonEmptyString(body.sessionId);
@@ -342,11 +347,31 @@ export function registerApiTriggers(
           body: { error: "budget must be a positive integer" },
         };
       }
-      const payload: { sessionId: string; project: string; budget?: number } = {
+      // Propagate agentId so mem::context applies the same cross-agent
+      // isolation filter as mem::search. Honors body.agentId, ?agentId=,
+      // or the worker's AGENT_ID fallback under AGENTMEMORY_AGENT_SCOPE=isolated.
+      const queryAgentId =
+        typeof (req as { query_params?: Record<string, string> })
+          .query_params?.["agentId"] === "string"
+          ? (req as { query_params: Record<string, string> })
+              .query_params["agentId"]
+          : undefined;
+      const bodyAgentId =
+        typeof body.agentId === "string" && body.agentId.trim().length > 0
+          ? (body.agentId as string).trim()
+          : undefined;
+      const payload: {
+        sessionId: string;
+        project: string;
+        budget?: number;
+        agentId?: string;
+      } = {
         sessionId,
         project,
       };
       if (budget !== undefined) payload.budget = budget;
+      const agentId = bodyAgentId ?? queryAgentId;
+      if (agentId !== undefined) payload.agentId = agentId;
       const result = await sdk.trigger({ function_id: "mem::context", payload });
       return { status_code: 200, body: result };
     },
@@ -595,9 +620,12 @@ export function registerApiTriggers(
       };
       await kv.set(KV.sessions, sessionId, session);
       const contextResult = await sdk.trigger<
-        { sessionId: string; project: string },
+        { sessionId: string; project: string; agentId?: string },
         { context: string }
-      >({ function_id: "mem::context", payload: { sessionId, project } });
+      >({
+        function_id: "mem::context",
+        payload: { sessionId, project, ...(agentId ? { agentId } : {}) },
+      });
       return {
         status_code: 200,
         body: { session, context: contextResult.context },

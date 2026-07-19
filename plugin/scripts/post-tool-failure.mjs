@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 import { execSync } from "node:child_process";
 import { basename } from "node:path";
-
 //#region src/hooks/_project.ts
 function resolveProject(cwd) {
 	const explicit = process.env["AGENTMEMORY_PROJECT_NAME"];
@@ -21,7 +20,6 @@ function resolveProject(cwd) {
 	} catch {}
 	return basename(dir);
 }
-
 //#endregion
 //#region src/hooks/post-tool-failure.ts
 function isSdkChildContext(payload) {
@@ -45,6 +43,7 @@ async function main() {
 	} catch {
 		return;
 	}
+	if (!data || typeof data !== "object") return;
 	if (isSdkChildContext(data)) return;
 	if (data.is_interrupt || data.isInterrupt) return;
 	const sessionId = data.session_id || data.sessionId || "unknown";
@@ -70,8 +69,8 @@ async function main() {
 	}).catch(() => {});
 	setTimeout(() => process.exit(0), 500).unref();
 }
-main();
-
+main().catch(() => process.exit(0));
 //#endregion
-export {  };
+export {};
+
 //# sourceMappingURL=post-tool-failure.mjs.map

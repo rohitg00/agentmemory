@@ -29,6 +29,7 @@ async function main() {
     return;
   }
 
+  if (!data || typeof data !== "object") return;
   if (isSdkChildContext(data)) return;
 
   const sessionId = ((data.session_id || data.sessionId) as string) || "unknown";
@@ -114,4 +115,4 @@ function truncate(value: unknown, max: number): unknown {
   return value;
 }
 
-main();
+main().catch(() => process.exit(0));

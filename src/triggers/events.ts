@@ -3,13 +3,23 @@ import type { CompressedObservation, HookPayload, Session } from "../types.js";
 import { KV, STREAM } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { isReflectEnabled } from "../functions/slots.js";
-import { isGraphExtractionEnabled } from "../config.js";
+import { getAgentId, isGraphExtractionEnabled } from "../config.js";
 import { logger } from "../logger.js";
 
 export function registerEventTriggers(sdk: ISdk, kv: StateKV): void {
   sdk.registerFunction(
     "event::session::started",
-    async (data: { sessionId: string; project: string; cwd: string }) => {
+    async (data: {
+      sessionId: string;
+      project: string;
+      cwd: string;
+      agentId?: string;
+    }) => {
+      const requestAgentId =
+        typeof data.agentId === "string" && data.agentId.trim().length > 0
+          ? data.agentId.trim().slice(0, 128)
+          : undefined;
+      const agentId = requestAgentId ?? getAgentId();
       const session: Session = {
         id: data.sessionId,
         project: data.project,
@@ -17,14 +27,19 @@ export function registerEventTriggers(sdk: ISdk, kv: StateKV): void {
         startedAt: new Date().toISOString(),
         status: "active",
         observationCount: 0,
+        ...(agentId ? { agentId } : {}),
       };
       await kv.set(KV.sessions, data.sessionId, session);
       const contextResult = await sdk.trigger<
-        { sessionId: string; project: string },
+        { sessionId: string; project: string; agentId?: string },
         { context: string }
       >({
         function_id: "mem::context",
-        payload: { sessionId: data.sessionId, project: data.project },
+        payload: {
+          sessionId: data.sessionId,
+          project: data.project,
+          ...(agentId ? { agentId } : {}),
+        },
       });
       return { session, context: contextResult.context };
     },

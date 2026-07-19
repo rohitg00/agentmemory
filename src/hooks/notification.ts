@@ -29,6 +29,7 @@ async function main() {
     return;
   }
 
+  if (!data || typeof data !== "object") return;
   if (isSdkChildContext(data)) return;
   const notificationType = data.notification_type ?? data.notificationType;
   if (notificationType !== "permission_prompt") return;
@@ -59,4 +60,4 @@ async function main() {
   setTimeout(() => process.exit(0), 500).unref();
 }
 
-main();
+main().catch(() => process.exit(0));

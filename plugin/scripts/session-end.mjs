@@ -21,6 +21,7 @@ async function main() {
 	} catch {
 		return;
 	}
+	if (!data || typeof data !== "object") return;
 	if (isSdkChildContext(data)) return;
 	const sessionId = data.session_id || data.sessionId || "unknown";
 	fetch(`${REST_URL}/agentmemory/session/end`, {
@@ -53,8 +54,8 @@ async function main() {
 	}).catch(() => {});
 	setTimeout(() => process.exit(0), 1500).unref();
 }
-main();
-
+main().catch(() => process.exit(0));
 //#endregion
-export {  };
+export {};
+
 //# sourceMappingURL=session-end.mjs.map

@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.9.28] — 2026-07-19
+
+Patch release: hardens the hook runner against malformed payloads and closes a cross-agent context leak. No breaking changes; drop-in upgrade.
+
+### Security
+
+- **Cross-agent memory leak via `POST /agentmemory/context`** ([#1057](https://github.com/rohitg00/agentmemory/issues/1057)). `mem::context` and its `api::context` handler filtered candidate sessions by `project` only, so under `AGENTMEMORY_AGENT_SCOPE=isolated` one profile could receive another profile's session observations and summaries whenever they shared a project path — while `/search` and `/smart-search` already filtered correctly. `mem::context` now applies the same agent-scope filter as `mem::search` ([#817](https://github.com/rohitg00/agentmemory/issues/817)): explicit `agentId` pins, wildcard `agentId: "*"` bypasses, isolated mode falls back to env `AGENT_ID`, and the call fails closed if isolated mode is on with no resolvable agent id. All three callers (`api::context`, `api::session::start`, `event::session::started`) now forward `agentId`.
+
+### Fixed
+
+- **Hooks crashed with exit code 1 on a `null` JSON payload** ([#1047](https://github.com/rohitg00/agentmemory/issues/1047)). `JSON.parse("null")` returns `null` without throwing, so the existing parse guard passed it through and the first `data.session_id` access threw a `TypeError`. Because each hook called `main()` bare, that became an unhandled rejection and the host CLI (Codex CLI, Claude Code) reported "hook exited with code 1" on every affected tool call. All 13 hook entrypoints now guard `if (!data || typeof data !== "object")` before dereferencing, and wrap the top-level `main()` in `.catch()` so any hook error fails closed (silent exit 0) instead of surfacing to the host tool loop.
+
+### Docs
+
+- Refreshed stale stats in README and AGENTS.md (AGENTS test count 950+ → 1,428+, iii-function count 50+ → 260+) plus the README source-file, LOC, function, and KV-scope counts, and regenerated the website meta snapshot for 0.9.28. Removed the rate-limited star-history chart from the README and all 11 translations.
+
 ## [0.9.27] — 2026-06-07
 
 Wave release closing several breaking regressions reported against v0.9.26, plus an agent-scope isolation security fix, an iii version-pin audit fix, and a benchmark scorecard correction. No breaking changes; drop-in upgrade.
@@ -50,6 +66,7 @@ Wave release closing several breaking regressions reported against v0.9.26, plus
 - `/agentmemory:forget` skill still calls `memory_governance_delete` which only touches `KV.memories` and never observations ([#833](https://github.com/rohitg00/agentmemory/issues/833)). Skill rewrite + new `memory_forget` MCP tool tracked separately.
 - `crypto.randomUUID()` global-only on Node <19 ([#715](https://github.com/rohitg00/agentmemory/issues/715)). Drop-in import fix tracked.
 
+[0.9.28]: https://github.com/rohitg00/agentmemory/compare/v0.9.27...v0.9.28
 [0.9.27]: https://github.com/rohitg00/agentmemory/compare/v0.9.26...v0.9.27
 
 ## [0.9.26] — 2026-06-03

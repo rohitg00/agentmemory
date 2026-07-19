@@ -37,6 +37,7 @@ async function main() {
     return;
   }
 
+  if (!data || typeof data !== "object") return;
   if (isSdkChildContext(data)) return;
 
   const sessionId = ((data.session_id || data.sessionId) as string) || "unknown";
@@ -62,4 +63,4 @@ async function main() {
   setTimeout(() => process.exit(0), 500).unref();
 }
 
-main();
+main().catch(() => process.exit(0));

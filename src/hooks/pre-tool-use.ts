@@ -48,6 +48,7 @@ async function main() {
     return;
   }
 
+  if (!data || typeof data !== "object") return;
   if (isSdkChildContext(data)) return;
 
   const toolName =
@@ -123,4 +124,4 @@ async function main() {
   }
 }
 
-main();
+main().catch(() => process.exit(0));

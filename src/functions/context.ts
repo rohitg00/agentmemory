@@ -17,6 +17,7 @@ import {
   listPinnedSlots,
   renderPinnedContext,
 } from "./slots.js";
+import { getAgentId, isAgentScopeIsolated } from "../config.js";
 
 function estimateTokens(text: string): number {
   return Math.ceil(text.length / 3);
@@ -36,9 +37,38 @@ export function registerContextFunction(
   tokenBudget: number,
 ): void {
   sdk.registerFunction("mem::context", 
-    async (data: { sessionId: string; project: string; budget?: number }) => {
+    async (data: {
+      sessionId: string;
+      project: string;
+      budget?: number;
+      agentId?: string;
+    }) => {
       const budget = data.budget || tokenBudget;
       const blocks: ContextBlock[] = [];
+
+      // Cross-agent isolation for the injected-context path. Mirrors the
+      // filter mem::search / mem::smart-search already apply so /context
+      // cannot leak another profile's sessions. Fail-closed: if isolated
+      // mode is on with no explicit agentId and env AGENT_ID unset, refuse
+      // rather than silently returning cross-agent rows.
+      const isolated = isAgentScopeIsolated();
+      const explicitAgentId =
+        typeof data.agentId === "string" && data.agentId.trim().length > 0
+          ? data.agentId.trim()
+          : undefined;
+      const wildcardAgent = explicitAgentId === "*";
+      const envAgentId = isolated ? getAgentId() : undefined;
+      const filterAgentId = wildcardAgent
+        ? undefined
+        : explicitAgentId ?? envAgentId;
+      if (isolated && !wildcardAgent && !explicitAgentId && !envAgentId) {
+        throw new Error(
+          "mem::context: AGENTMEMORY_AGENT_SCOPE=isolated is set but no " +
+            "agent id is available (env AGENT_ID unset and no explicit " +
+            "agentId in the call). Refusing to read cross-agent rows. " +
+            'Pass agentId: "*" to opt in to a wildcard read.',
+        );
+      }
 
       const [pinnedSlots, profile, lessons] = await Promise.all([
         isSlotsEnabled()
@@ -134,7 +164,12 @@ export function registerContextFunction(
 
       const allSessions = await kv.list<Session>(KV.sessions);
       const sessions = allSessions
-        .filter((s) => s.project === data.project && s.id !== data.sessionId)
+        .filter(
+          (s) =>
+            s.project === data.project &&
+            s.id !== data.sessionId &&
+            (filterAgentId === undefined || s.agentId === filterAgentId),
+        )
         .sort(
           (a, b) =>
             new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime(),

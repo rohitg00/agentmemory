@@ -29,6 +29,7 @@ async function main() {
     return;
   }
 
+  if (!data || typeof data !== "object") return;
   if (isSdkChildContext(data)) return;
   if (data.is_interrupt || data.isInterrupt) return;
 
@@ -63,4 +64,4 @@ async function main() {
   setTimeout(() => process.exit(0), 500).unref();
 }
 
-main();
+main().catch(() => process.exit(0));
