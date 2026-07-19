@@ -1425,6 +1425,11 @@ Create `~/.agentmemory/.env`:
 # Search tuning
 # BM25_WEIGHT=0.4
 # VECTOR_WEIGHT=0.6
+# RERANK_ENABLED=false
+# RERANK_BASE_URL=http://localhost:4000
+# RERANK_API_KEY=your-reranker-key  # optional for unauthenticated local endpoints
+# RERANK_MODEL=bge-reranker-v2-m3
+# RERANK_TIMEOUT_MS=30000
 # TOKEN_BUDGET=2000
 
 # Auth
