@@ -140,7 +140,11 @@ def _preload_agentmemory_dotenv() -> None:
                     continue
                 # Only pull agentmemory-related keys from Hermes profile .env so
                 # we never stomp unrelated shell credentials from that file.
-                if path.name == ".env" and "agentmemory" not in path.parts:
+                # Exempt both ~/.agentmemory/.env and XDG …/agentmemory/.env
+                # (substring on path components — bare equality misses the dotdir).
+                if path.name == ".env" and not any(
+                    "agentmemory" in part for part in path.parts
+                ):
                     if not key.startswith("AGENTMEMORY_"):
                         continue
                 existing = os.environ.get(key)
@@ -266,7 +270,19 @@ def _debug_log_path() -> Path:
     # Last resort: uid-scoped name under the process temp dir (not a shared fixed path).
     import tempfile
 
-    return Path(tempfile.gettempdir()) / f"agentmemory_plugin_debug-{os.getuid()}.log"
+    getuid = getattr(os, "getuid", None)
+    uid = getuid() if callable(getuid) else None
+    if uid is not None:
+        return Path(tempfile.gettempdir()) / f"agentmemory_plugin_debug-{uid}.log"
+    # Windows / platforms without getuid: stable non-colliding name via username.
+    try:
+        import getpass
+
+        user = getpass.getuser() or "user"
+    except Exception:  # noqa: BLE001 — best-effort identity only
+        user = "user"
+    safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in str(user))[:64]
+    return Path(tempfile.gettempdir()) / f"agentmemory_plugin_debug-{safe or 'user'}.log"
 
 
 def _debug_log(msg: str) -> None:
