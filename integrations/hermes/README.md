@@ -106,8 +106,26 @@ The plugin auto-detects the running server and hooks into the Hermes agent loop.
 | `AGENTMEMORY_URL` | `http://localhost:3111` | agentmemory server URL |
 | `AGENTMEMORY_SECRET` | (none) | Auth token for protected instances |
 | `AGENTMEMORY_REQUIRE_HTTPS` | (off) | When set to `1`, refuse to send the bearer token over plaintext HTTP to a non-loopback host. Sends only when `AGENTMEMORY_URL` is `https://...` or points at `localhost`/`127.0.0.1`/`::1`. With this off, the plugin warns once on stderr but still sends. |
+| `AGENTMEMORY_PROJECT` | (auto) | Force a project slug on writes |
+| `AGENTMEMORY_AGENT_ID` | (auto = Hermes profile) | Force `agentId` on writes |
+| `AGENTMEMORY_WORK_ROOTS` | auto-detect | Colon-separated work roots for repo slugs (authoritative if set). Auto: existing `~/code`, `~/projects`, `~/src`, `~/work`, `~/Developer`, `~/Repos` |
+| `AGENTMEMORY_WORKDIR` | (none) | Optional workdir hint for repo detection |
+| `TERMINAL_CWD` | (Hermes) | Also used as a workdir candidate |
 
 The plugin reads `~/.agentmemory/.env` (or `$XDG_CONFIG_HOME/agentmemory/.env`) at import time and populates any missing values into the process environment via `os.environ.setdefault`. Anything you set in the shell takes precedence; the file is only used to fill gaps. This means `hermes memory status` reports the plugin as available even when the agentmemory service is launched by systemd or another process manager that loads `~/.agentmemory/.env` directly without exporting it to the Hermes CLI shell (#250).
+
+## Multi-profile / project tagging
+
+One agentmemory daemon can serve multiple Hermes profiles (**shared** scope). This plugin tags writes:
+
+| Field | Value |
+|-------|--------|
+| `agentId` | Hermes profile (`agent_identity` / `…/profiles/<name>`) |
+| `project` | Explicit `memory_save` arg → `AGENTMEMORY_PROJECT` → first path segment under a work root (`~/code/<repo>/…`) → profile slug |
+
+Slugs are sanitized (`a-z0-9-`, `_`→`-`). Filesystem paths are never stored as `project`. Search/prefetch stay **unfiltered** so profiles still share host-wide memory; context/lessons use `project` for ranking boosts.
+
+See `scoping.py` and run `python3 tests/test_scoping.py -v` from this directory.
 
 ## What Hermes gets
 

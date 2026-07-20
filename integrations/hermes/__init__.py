@@ -5,6 +5,8 @@ Drop this folder into ~/.hermes/plugins/agentmemory/
 or install via: hermes plugin install agentmemory
 
 Requires agentmemory server running: npx @agentmemory/agentmemory
+
+Project / agentId tagging: see scoping.py and README (multi-profile section).
 """
 
 from __future__ import annotations
@@ -49,6 +51,28 @@ except ImportError:
         def shutdown(self, **kwargs: Any) -> None: pass
 
 
+# Prefer package-relative import when shipped as a package; fall back to the
+# sibling module path used by `cp -r integrations/hermes …/plugins/agentmemory`
+# and by tests that load __init__.py via importlib from a file path.
+try:
+    from .scoping import (  # type: ignore
+        load_work_roots,
+        pick_workdir,
+        resolve_agent_id,
+        resolve_project,
+    )
+except ImportError:  # pragma: no cover - exercised via file-path import tests
+    _here = Path(__file__).resolve().parent
+    if str(_here) not in sys.path:
+        sys.path.insert(0, str(_here))
+    from scoping import (  # type: ignore
+        load_work_roots,
+        pick_workdir,
+        resolve_agent_id,
+        resolve_project,
+    )
+
+
 DEFAULT_BASE_URL = "http://localhost:3111"
 TIMEOUT = 5
 LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
@@ -69,12 +93,41 @@ _plaintext_bearer_warned = False
 # (http://localhost:3111) and Hermes status reflects that.
 def _preload_agentmemory_dotenv() -> None:
     candidates: list[Path] = []
-    home = os.environ.get("HOME")
-    if home:
-        candidates.append(Path(home) / ".agentmemory" / ".env")
+    # Hermes profile sessions often skew HOME to profiles/<name>/home while the
+    # daemon keeps secrets at the real user home (~/.agentmemory/.env). Also try
+    # HERMES_REAL_HOME and the passwd home so plugin tools don't 401 silently.
+    # Profile Hermes .env (HERMES_HOME/.env) often holds AGENTMEMORY_URL/SECRET
+    # even when the slash_worker process env strips *SECRET* values.
+    for key in ("HERMES_REAL_HOME", "HOME", "HERMES_HOME"):
+        val = os.environ.get(key)
+        if not val:
+            continue
+        root = Path(val)
+        if key == "HERMES_HOME":
+            candidates.append(root / ".env")
+        else:
+            candidates.append(root / ".agentmemory" / ".env")
+    try:
+        import pwd
+
+        pw_home = pwd.getpwuid(os.getuid()).pw_dir
+        if pw_home:
+            candidates.append(Path(pw_home) / ".agentmemory" / ".env")
+    except Exception:
+        pass
     xdg_config = os.environ.get("XDG_CONFIG_HOME")
     if xdg_config:
         candidates.append(Path(xdg_config) / "agentmemory" / ".env")
+    # de-dupe while preserving order
+    seen: set[str] = set()
+    uniq: list[Path] = []
+    for path in candidates:
+        key = str(path)
+        if key in seen:
+            continue
+        seen.add(key)
+        uniq.append(path)
+    candidates = uniq
     for path in candidates:
         try:
             if not path.is_file():
@@ -86,8 +139,18 @@ def _preload_agentmemory_dotenv() -> None:
                 key, _, value = line.partition("=")
                 key = key.strip()
                 value = value.strip().strip('"').strip("'")
-                if key:
-                    os.environ.setdefault(key, value)
+                if not key or not value:
+                    continue
+                # Only pull agentmemory-related keys from Hermes profile .env so
+                # we never stomp unrelated shell credentials from that file.
+                if path.name == ".env" and "agentmemory" not in path.parts:
+                    if not key.startswith("AGENTMEMORY_"):
+                        continue
+                existing = os.environ.get(key)
+                # setdefault alone is wrong if Hermes exported AGENTMEMORY_SECRET=""
+                # after filtering — empty must be treated as missing.
+                if existing is None or existing == "":
+                    os.environ[key] = value
         except (OSError, UnicodeDecodeError):
             continue
     # Guarantee AGENTMEMORY_URL is set so `hermes memory status` never
@@ -150,12 +213,27 @@ def _reset_plaintext_bearer_guard_for_tests() -> None:
     _plaintext_bearer_warned = False
 
 
+def _resolve_agentmemory_secret(explicit: str = "") -> str:
+    """Return bearer secret: explicit arg, env, or real-home dotenv (HOME may be skewed)."""
+    if explicit:
+        return explicit
+    env_secret = os.environ.get("AGENTMEMORY_SECRET", "")
+    if env_secret:
+        return env_secret
+    # Last resort: read daemon dotenv without relying on skewed HOME.
+    _preload_agentmemory_dotenv()
+    return os.environ.get("AGENTMEMORY_SECRET", "")
+
+
 def _api(base: str, path: str, body: dict | None = None, method: str = "POST", secret: str = "") -> dict | None:
     if not _validate_url(base):
+        _debug_log(f"_api invalid base={base!r} path={path}")
         return None
+    # Normalize trailing slash so we never hit //agentmemory/
+    base = (base or DEFAULT_BASE_URL).rstrip("/")
     url = f"{base}/agentmemory/{path}"
     headers = {"Content-Type": "application/json"}
-    auth = secret or os.environ.get("AGENTMEMORY_SECRET", "")
+    auth = _resolve_agentmemory_secret(secret)
     _check_plaintext_bearer_guard(base, auth)
     if auth:
         headers["Authorization"] = f"Bearer {auth}"
@@ -165,8 +243,25 @@ def _api(base: str, path: str, body: dict | None = None, method: str = "POST", s
     try:
         with urlopen(req, timeout=TIMEOUT) as resp:
             return json.loads(resp.read().decode())
-    except (URLError, TimeoutError, json.JSONDecodeError):
+    except Exception as exc:  # noqa: BLE001 — surface class for silent 401/None diagnosis
+        # HTTPError is a URLError subclass; include status without body secrets.
+        status = getattr(exc, "code", None)
+        _debug_log(
+            f"_api fail path={path} status={status} err={type(exc).__name__}: {exc} "
+            f"auth_set={bool(auth)} base={base} home={os.environ.get('HOME')!r} "
+            f"real_home={os.environ.get('HERMES_REAL_HOME')!r}"
+        )
         return None
+
+
+def _debug_log(msg: str) -> None:
+    """Best-effort local diagnose log (no secrets)."""
+    try:
+        log_path = Path("/tmp/agentmemory_plugin_debug.log")
+        with log_path.open("a", encoding="utf-8") as fh:
+            fh.write(f"{time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())} {msg}\n")
+    except OSError:
+        pass
 
 
 def _api_bg(base: str, path: str, body: dict | None = None) -> None:
@@ -185,18 +280,77 @@ class AgentMemoryProvider(MemoryProvider):
         base = os.environ.get("AGENTMEMORY_URL", DEFAULT_BASE_URL)
         return _validate_url(base)
 
+    def _ensure_scope_defaults(self) -> None:
+        """Idempotent defaults if initialize was skipped (tests / odd hosts)."""
+        if not getattr(self, "_base", None):
+            self._base = os.environ.get("AGENTMEMORY_URL", DEFAULT_BASE_URL)
+        if not getattr(self, "_session_id", None):
+            self._session_id = ""
+        if not hasattr(self, "_agent_id") or not hasattr(self, "_project"):
+            self._hermes_home = getattr(self, "_hermes_home", None) or os.environ.get(
+                "HERMES_HOME"
+            )
+            self._agent_identity = getattr(self, "_agent_identity", None)
+            self._cwd = getattr(self, "_cwd", None)
+            self._agent_id = resolve_agent_id(
+                agent_identity=self._agent_identity,
+                hermes_home=self._hermes_home,
+                env_agent_id=os.environ.get("AGENTMEMORY_AGENT_ID"),
+            )
+            self._project = resolve_project(
+                workdir=self._cwd,
+                agent_identity=self._agent_identity,
+                hermes_home=self._hermes_home,
+                env_project=os.environ.get("AGENTMEMORY_PROJECT"),
+                env_agent_id=os.environ.get("AGENTMEMORY_AGENT_ID"),
+            )
+
+    def _resolve_project(self, explicit: str | None = None) -> str:
+        self._ensure_scope_defaults()
+        return resolve_project(
+            explicit=explicit,
+            workdir=getattr(self, "_cwd", None),
+            agent_identity=getattr(self, "_agent_identity", None),
+            hermes_home=getattr(self, "_hermes_home", None),
+            env_project=os.environ.get("AGENTMEMORY_PROJECT"),
+            env_agent_id=os.environ.get("AGENTMEMORY_AGENT_ID"),
+        )
+
     def initialize(self, session_id: str, **kwargs: Any) -> None:
         self._base = os.environ.get("AGENTMEMORY_URL", DEFAULT_BASE_URL)
         self._session_id = session_id
-        self._project = kwargs.get("cwd", os.getcwd())
+        self._hermes_home = kwargs.get("hermes_home") or os.environ.get("HERMES_HOME")
+        self._agent_identity = kwargs.get("agent_identity")
+        self._cwd = pick_workdir(kwargs_cwd=kwargs.get("cwd"))
+        self._agent_id = resolve_agent_id(
+            agent_identity=self._agent_identity,
+            hermes_home=self._hermes_home,
+            env_agent_id=os.environ.get("AGENTMEMORY_AGENT_ID"),
+        )
+        self._project = resolve_project(
+            workdir=self._cwd,
+            agent_identity=self._agent_identity,
+            hermes_home=self._hermes_home,
+            env_project=os.environ.get("AGENTMEMORY_PROJECT"),
+            env_agent_id=os.environ.get("AGENTMEMORY_AGENT_ID"),
+        )
+        roots = load_work_roots()
+        _debug_log(
+            f"scope init session={session_id!r} agentId={self._agent_id!r} "
+            f"project={self._project!r} cwd={self._cwd!r} work_roots={len(roots)} "
+            f"identity={self._agent_identity!r} hermes_home={self._hermes_home!r}"
+        )
         if os.environ.get("AGENTMEMORY_REQUIRE_HTTPS") == "1":
             _check_plaintext_bearer_guard(self._base, os.environ.get("AGENTMEMORY_SECRET", ""))
 
-        _api(self._base, "session/start", {
+        body: dict[str, Any] = {
             "sessionId": session_id,
             "project": self._project,
-            "cwd": self._project,
-        })
+            "agentId": self._agent_id,
+        }
+        if self._cwd:
+            body["cwd"] = self._cwd
+        _api(self._base, "session/start", body)
 
     def get_config_schema(self) -> list[dict]:
         return [
@@ -220,6 +374,7 @@ class AgentMemoryProvider(MemoryProvider):
         config_path.write_text(json.dumps(values, indent=2))
 
     def system_prompt_block(self) -> str:
+        self._ensure_scope_defaults()
         result = _api(self._base, "context", {
             "sessionId": self._session_id,
             "project": self._project,
@@ -229,6 +384,7 @@ class AgentMemoryProvider(MemoryProvider):
         return ""
 
     def prefetch(self, query: str, **kwargs: Any) -> str:
+        # Shared-scope: do not hard-filter smart-search by project (v1).
         result = _api(self._base, "smart-search", {
             "query": query,
             "limit": 5,
@@ -274,6 +430,13 @@ class AgentMemoryProvider(MemoryProvider):
                             "enum": ["pattern", "preference", "architecture", "bug", "workflow", "fact"],
                             "description": "Memory type",
                         },
+                        "project": {
+                            "type": "string",
+                            "description": (
+                                "Optional stable project slug (a-z0-9-). "
+                                "Default: auto from repo under work roots or Hermes profile."
+                            ),
+                        },
                     },
                     "required": ["content"],
                 },
@@ -298,6 +461,8 @@ class AgentMemoryProvider(MemoryProvider):
         # content with a 400 on the next request, so always serialize to a
         # JSON string here — matches what agentmemory's main MCP server does
         # in src/mcp/standalone.ts (`{ type: "text", text: JSON.stringify(...) }`).
+        self._ensure_scope_defaults()
+
         if name == "memory_recall":
             result = _api(self._base, "search", {
                 "query": args["query"],
@@ -318,11 +483,31 @@ class AgentMemoryProvider(MemoryProvider):
             return json.dumps({"results": items})
 
         if name == "memory_save":
+            # Re-resolve base/secret at call time — worker env may gain
+            # HERMES_* late, and SECRET is often absent from process env.
+            self._base = os.environ.get("AGENTMEMORY_URL", getattr(self, "_base", DEFAULT_BASE_URL))
+            project = self._resolve_project(args.get("project"))
+            agent_id = getattr(self, "_agent_id", None) or resolve_agent_id(
+                agent_identity=getattr(self, "_agent_identity", None),
+                hermes_home=getattr(self, "_hermes_home", None),
+                env_agent_id=os.environ.get("AGENTMEMORY_AGENT_ID"),
+            )
+            _debug_log(
+                f"memory_save agentId={agent_id!r} project={project!r} "
+                f"explicit={args.get('project')!r}"
+            )
             result = _api(self._base, "remember", {
                 "content": args["content"],
                 "type": args.get("type", "fact"),
+                "project": project,
+                "agentId": agent_id,
             })
-            return json.dumps(result or {"success": False})
+            if result:
+                return json.dumps(result)
+            return json.dumps({
+                "success": False,
+                "error": "agentmemory remember failed (auth/network); see /tmp/agentmemory_plugin_debug.log",
+            })
 
         if name == "memory_search":
             result = _api(self._base, "smart-search", {
@@ -344,25 +529,31 @@ class AgentMemoryProvider(MemoryProvider):
         return json.dumps({"error": f"Unknown tool: {name}"})
 
     def sync_turn(self, user: str, assistant: str, **kwargs: Any) -> None:
-        _api_bg(self._base, "observe", {
+        self._ensure_scope_defaults()
+        # api::observe requires hookType, sessionId, project, cwd, timestamp (all strings).
+        cwd = self._cwd or self._hermes_home or self._project or "."
+        body: dict[str, Any] = {
             "hookType": "post_tool_use",
             "sessionId": kwargs.get("session_id", self._session_id),
             "project": self._project,
-            "cwd": self._project,
+            "cwd": cwd,
+            "agentId": self._agent_id,
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "data": {
                 "tool_name": "conversation",
                 "tool_input": user[:500],
                 "tool_output": assistant[:2000],
             },
-        })
+        }
+        _api_bg(self._base, "observe", body)
 
     def on_session_end(self, messages: list, **kwargs: Any) -> None:
         _api(self._base, "session/end", {
-            "sessionId": kwargs.get("session_id", self._session_id),
+            "sessionId": kwargs.get("session_id", getattr(self, "_session_id", "")),
         })
 
     def on_pre_compress(self, messages: list, **kwargs: Any) -> None:
+        self._ensure_scope_defaults()
         result = _api(self._base, "context", {
             "sessionId": kwargs.get("session_id", self._session_id),
             "project": self._project,
@@ -375,9 +566,12 @@ class AgentMemoryProvider(MemoryProvider):
 
     def on_memory_write(self, action: str, target: str, content: str, **kwargs: Any) -> None:
         if action in ("add", "update") and content:
+            self._ensure_scope_defaults()
             _api_bg(self._base, "remember", {
                 "content": content,
                 "type": "fact",
+                "project": self._project,
+                "agentId": self._agent_id,
             })
 
     def shutdown(self, **kwargs: Any) -> None:
