@@ -25,6 +25,23 @@ _AUTO_WORK_ROOT_NAMES = (
 )
 
 
+def pwd_home() -> str | None:
+    """Passwd home for the current uid, or None if unavailable.
+
+    Narrow exceptions: missing ``pwd`` (non-Unix), unknown uid, or broken
+    pwd entry attributes — not a blanket ``Exception``.
+    """
+    try:
+        import pwd
+
+        home = pwd.getpwuid(os.getuid()).pw_dir
+    except (ImportError, KeyError, AttributeError, OSError, TypeError):
+        return None
+    if isinstance(home, str) and home.strip():
+        return home
+    return None
+
+
 def sanitize_slug(value: str | None) -> str | None:
     """Normalize and validate a project/agentId slug.
 
@@ -113,12 +130,7 @@ def _candidate_homes(
         add(home)
     add(e.get("HERMES_REAL_HOME"))
     add(e.get("HOME"))
-    try:
-        import pwd
-
-        add(pwd.getpwuid(os.getuid()).pw_dir)
-    except Exception:
-        pass
+    add(pwd_home())
     try:
         add(Path.home())
     except (OSError, RuntimeError):

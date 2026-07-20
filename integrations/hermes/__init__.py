@@ -58,6 +58,7 @@ try:
     from .scoping import (  # type: ignore
         load_work_roots,
         pick_workdir,
+        pwd_home,
         resolve_agent_id,
         resolve_project,
     )
@@ -68,6 +69,7 @@ except ImportError:  # pragma: no cover - exercised via file-path import tests
     from scoping import (  # type: ignore
         load_work_roots,
         pick_workdir,
+        pwd_home,
         resolve_agent_id,
         resolve_project,
     )
@@ -107,14 +109,9 @@ def _preload_agentmemory_dotenv() -> None:
             candidates.append(root / ".env")
         else:
             candidates.append(root / ".agentmemory" / ".env")
-    try:
-        import pwd
-
-        pw_home = pwd.getpwuid(os.getuid()).pw_dir
-        if pw_home:
-            candidates.append(Path(pw_home) / ".agentmemory" / ".env")
-    except Exception:
-        pass
+    pw_home = pwd_home()
+    if pw_home:
+        candidates.append(Path(pw_home) / ".agentmemory" / ".env")
     xdg_config = os.environ.get("XDG_CONFIG_HOME")
     if xdg_config:
         candidates.append(Path(xdg_config) / "agentmemory" / ".env")
@@ -254,11 +251,38 @@ def _api(base: str, path: str, body: dict | None = None, method: str = "POST", s
         return None
 
 
+def _debug_log_path() -> Path:
+    """Per-user private path for plugin diagnostics (never a fixed world /tmp name)."""
+    hermes_home = os.environ.get("HERMES_HOME")
+    if hermes_home:
+        return Path(hermes_home) / "agentmemory_plugin_debug.log"
+    for key in ("HERMES_REAL_HOME", "HOME"):
+        val = os.environ.get(key)
+        if val:
+            return Path(val) / ".agentmemory" / "plugin_debug.log"
+    pw = pwd_home()
+    if pw:
+        return Path(pw) / ".agentmemory" / "plugin_debug.log"
+    # Last resort: uid-scoped name under the process temp dir (not a shared fixed path).
+    import tempfile
+
+    return Path(tempfile.gettempdir()) / f"agentmemory_plugin_debug-{os.getuid()}.log"
+
+
 def _debug_log(msg: str) -> None:
-    """Best-effort local diagnose log (no secrets)."""
+    """Best-effort local diagnose log (no secrets).
+
+    Writes under HERMES_HOME or ~/.agentmemory with O_NOFOLLOW when available
+    so a pre-created symlink in a shared temp dir cannot redirect the write.
+    """
     try:
-        log_path = Path("/tmp/agentmemory_plugin_debug.log")
-        with log_path.open("a", encoding="utf-8") as fh:
+        log_path = _debug_log_path()
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        flags = os.O_WRONLY | os.O_APPEND | os.O_CREAT
+        if hasattr(os, "O_NOFOLLOW"):
+            flags |= os.O_NOFOLLOW
+        fd = os.open(str(log_path), flags, 0o600)
+        with os.fdopen(fd, "a", encoding="utf-8") as fh:
             fh.write(f"{time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())} {msg}\n")
     except OSError:
         pass
@@ -276,6 +300,7 @@ class AgentMemoryProvider(MemoryProvider):
         return "agentmemory"
 
     def is_available(self) -> bool:
+        """True when AGENTMEMORY_URL is a valid http(s) base (no network I/O)."""
         # Hermes contract: no network calls in is_available.
         base = os.environ.get("AGENTMEMORY_URL", DEFAULT_BASE_URL)
         return _validate_url(base)
@@ -306,6 +331,7 @@ class AgentMemoryProvider(MemoryProvider):
             )
 
     def _resolve_project(self, explicit: str | None = None) -> str:
+        """Resolve project slug for this write (explicit arg wins over env/workdir)."""
         self._ensure_scope_defaults()
         return resolve_project(
             explicit=explicit,
@@ -317,6 +343,7 @@ class AgentMemoryProvider(MemoryProvider):
         )
 
     def initialize(self, session_id: str, **kwargs: Any) -> None:
+        """Bind session scope (project/agentId) and start a daemon session."""
         self._base = os.environ.get("AGENTMEMORY_URL", DEFAULT_BASE_URL)
         self._session_id = session_id
         self._hermes_home = kwargs.get("hermes_home") or os.environ.get("HERMES_HOME")
@@ -353,6 +380,7 @@ class AgentMemoryProvider(MemoryProvider):
         _api(self._base, "session/start", body)
 
     def get_config_schema(self) -> list[dict]:
+        """Hermes plugin config UI schema (URL + optional secret)."""
         return [
             {
                 "key": "url",
@@ -370,10 +398,12 @@ class AgentMemoryProvider(MemoryProvider):
         ]
 
     def save_config(self, values: dict, hermes_home: str) -> None:
+        """Persist plugin config JSON under the active Hermes home."""
         config_path = Path(hermes_home) / "agentmemory.json"
         config_path.write_text(json.dumps(values, indent=2))
 
     def system_prompt_block(self) -> str:
+        """Return daemon context block for system-prompt injection, if any."""
         self._ensure_scope_defaults()
         result = _api(self._base, "context", {
             "sessionId": self._session_id,
@@ -384,6 +414,8 @@ class AgentMemoryProvider(MemoryProvider):
         return ""
 
     def prefetch(self, query: str, **kwargs: Any) -> str:
+        """Sync smart-search prefetch for the current turn (shared-scope, no project filter)."""
+        self._ensure_scope_defaults()
         # Shared-scope: do not hard-filter smart-search by project (v1).
         result = _api(self._base, "smart-search", {
             "query": query,
@@ -402,9 +434,12 @@ class AgentMemoryProvider(MemoryProvider):
         return "\n".join(lines) if lines else ""
 
     def queue_prefetch(self, query: str, **kwargs: Any) -> None:
+        """Background smart-search prefetch (fire-and-forget)."""
+        self._ensure_scope_defaults()
         _api_bg(self._base, "smart-search", {"query": query, "limit": 3})
 
     def get_tool_schemas(self) -> list[dict]:
+        """OpenAI-style tool schemas Hermes exposes for memory_* tools."""
         return [
             {
                 "name": "memory_recall",
@@ -456,6 +491,7 @@ class AgentMemoryProvider(MemoryProvider):
         ]
 
     def handle_tool_call(self, name: str, args: dict) -> str:
+        """Dispatch memory_* tools; always return a JSON string for protocol safety."""
         # Hermes stores the return value as the tool result `content` in the
         # session history. Anthropic-protocol providers reject non-string
         # content with a 400 on the next request, so always serialize to a
@@ -506,7 +542,10 @@ class AgentMemoryProvider(MemoryProvider):
                 return json.dumps(result)
             return json.dumps({
                 "success": False,
-                "error": "agentmemory remember failed (auth/network); see /tmp/agentmemory_plugin_debug.log",
+                "error": (
+                    "agentmemory remember failed (auth/network); "
+                    f"see {_debug_log_path()}"
+                ),
             })
 
         if name == "memory_search":
@@ -529,6 +568,7 @@ class AgentMemoryProvider(MemoryProvider):
         return json.dumps({"error": f"Unknown tool: {name}"})
 
     def sync_turn(self, user: str, assistant: str, **kwargs: Any) -> None:
+        """Background-observe a completed user/assistant turn with scope tags."""
         self._ensure_scope_defaults()
         # api::observe requires hookType, sessionId, project, cwd, timestamp (all strings).
         cwd = self._cwd or self._hermes_home or self._project or "."
@@ -548,11 +588,14 @@ class AgentMemoryProvider(MemoryProvider):
         _api_bg(self._base, "observe", body)
 
     def on_session_end(self, messages: list, **kwargs: Any) -> None:
+        """Notify the daemon that the Hermes session is ending."""
+        self._ensure_scope_defaults()
         _api(self._base, "session/end", {
             "sessionId": kwargs.get("session_id", getattr(self, "_session_id", "")),
         })
 
     def on_pre_compress(self, messages: list, **kwargs: Any) -> None:
+        """Inject agentmemory context before context compression when available."""
         self._ensure_scope_defaults()
         result = _api(self._base, "context", {
             "sessionId": kwargs.get("session_id", self._session_id),
@@ -565,6 +608,7 @@ class AgentMemoryProvider(MemoryProvider):
             })
 
     def on_memory_write(self, action: str, target: str, content: str, **kwargs: Any) -> None:
+        """Mirror Hermes native memory writes into agentmemory with project/agentId."""
         if action in ("add", "update") and content:
             self._ensure_scope_defaults()
             _api_bg(self._base, "remember", {
@@ -575,6 +619,7 @@ class AgentMemoryProvider(MemoryProvider):
             })
 
     def shutdown(self, **kwargs: Any) -> None:
+        """No-op teardown hook (Hermes lifecycle)."""
         pass
 
 

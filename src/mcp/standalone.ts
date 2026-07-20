@@ -3,7 +3,7 @@
 import { InMemoryKV } from "./in-memory-kv.js";
 import { createStdioTransport } from "./transport.js";
 import { getAllTools } from "./tools-registry.js";
-import { getStandalonePersistPath } from "../config.js";
+import { getStandalonePersistPath, parseOptionalAgentIdField } from "../config.js";
 import { VERSION } from "../version.js";
 import { generateId } from "../state/schema.js";
 import {
@@ -125,12 +125,18 @@ function validate(toolName: string, args: Record<string, unknown>): Validated {
       v.concepts = normalizeList(args["concepts"]);
       v.files = normalizeList(args["files"]);
       const project = args["project"];
-      if (typeof project === "string" && project.trim()) {
+      if (project !== undefined && project !== null) {
+        if (typeof project !== "string" || !project.trim()) {
+          throw new Error("project must be a non-empty string");
+        }
         v.project = project.trim();
       }
-      const agentId = args["agentId"];
-      if (typeof agentId === "string" && agentId.trim()) {
-        v.agentId = agentId.trim().slice(0, 128);
+      const agentIdField = parseOptionalAgentIdField(args["agentId"]);
+      if (!agentIdField.ok) {
+        throw new Error(agentIdField.error);
+      }
+      if (agentIdField.value !== undefined) {
+        v.agentId = agentIdField.value;
       }
       return v;
     }
@@ -270,9 +276,12 @@ async function handleLocal(
         version: 1,
         isLatest: true,
         sessionIds: [],
+        ...(v.project !== undefined && { project: v.project }),
+        ...(v.agentId !== undefined && { agentId: v.agentId }),
       });
       kvInstance.persist();
-      return textResponse({ saved: id });
+      const saved = await kvInstance.get("mem:memories", id);
+      return textResponse({ saved: id, memory: saved });
     }
 
     case "memory_recall":

@@ -3,7 +3,7 @@ import type { CompressedObservation, HookPayload, Session } from "../types.js";
 import { KV, STREAM } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { isReflectEnabled } from "../functions/slots.js";
-import { getAgentId, isGraphExtractionEnabled } from "../config.js";
+import { getAgentId, isGraphExtractionEnabled, sanitizeAgentId } from "../config.js";
 import { logger } from "../logger.js";
 
 export function registerEventTriggers(sdk: ISdk, kv: StateKV): void {
@@ -15,10 +15,7 @@ export function registerEventTriggers(sdk: ISdk, kv: StateKV): void {
       cwd: string;
       agentId?: string;
     }) => {
-      const requestAgentId =
-        typeof data.agentId === "string" && data.agentId.trim().length > 0
-          ? data.agentId.trim().slice(0, 128)
-          : undefined;
+      const requestAgentId = sanitizeAgentId(data.agentId);
       const agentId = requestAgentId ?? getAgentId();
       const session: Session = {
         id: data.sessionId,

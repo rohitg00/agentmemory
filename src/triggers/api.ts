@@ -22,6 +22,8 @@ import {
   detectLlmProviderKind,
   getAgentId,
   isAgentScopeIsolated,
+  parseOptionalAgentIdField,
+  sanitizeAgentId,
 } from "../config.js";
 
 type Response = {
@@ -602,10 +604,7 @@ export function registerApiTriggers(
       // allow session/start to override AGENT_ID from request body
       // (multi-agent runtimes that route many roles through one server
       // process). Falls back to the AGENT_ID env on the server.
-      const requestAgentId =
-        typeof body.agentId === "string" && body.agentId.trim().length > 0
-          ? body.agentId.trim().slice(0, 128)
-          : undefined;
+      const requestAgentId = sanitizeAgentId(body.agentId);
       const agentId = requestAgentId ?? getAgentId();
       const session: Session = {
         id: sessionId,
@@ -1009,11 +1008,9 @@ export function registerApiTriggers(
       ) {
         return { status_code: 400, body: { error: "project must be a non-empty string" } };
       }
-      if (
-        req.body.agentId !== undefined &&
-        (typeof req.body.agentId !== "string" || !req.body.agentId.trim())
-      ) {
-        return { status_code: 400, body: { error: "agentId must be a non-empty string" } };
+      const agentIdField = parseOptionalAgentIdField(req.body.agentId);
+      if (!agentIdField.ok) {
+        return { status_code: 400, body: { error: agentIdField.error } };
       }
       const result = await sdk.trigger({
         function_id: "mem::remember",
@@ -1025,7 +1022,7 @@ export function registerApiTriggers(
           ...(req.body.ttlDays !== undefined && { ttlDays: req.body.ttlDays }),
           ...(req.body.sourceObservationIds !== undefined && { sourceObservationIds: req.body.sourceObservationIds }),
           ...(req.body.project !== undefined && { project: req.body.project }),
-          ...(req.body.agentId !== undefined && { agentId: req.body.agentId.trim().slice(0, 128) }),
+          ...(agentIdField.value !== undefined && { agentId: agentIdField.value }),
         },
       });
       return { status_code: 201, body: result };

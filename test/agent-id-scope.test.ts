@@ -43,6 +43,31 @@ describe("loadAgentScope (#554)", () => {
   });
 });
 
+describe("sanitizeAgentId / parseOptionalAgentIdField", () => {
+  it("sanitizes trim + cap and rejects blank/non-string", async () => {
+    const { sanitizeAgentId, parseOptionalAgentIdField, AGENT_ID_MAX_LEN } =
+      await import("../src/config.js");
+    expect(sanitizeAgentId(undefined)).toBeUndefined();
+    expect(sanitizeAgentId(null)).toBeUndefined();
+    expect(sanitizeAgentId(12)).toBeUndefined();
+    expect(sanitizeAgentId("   ")).toBeUndefined();
+    expect(sanitizeAgentId("  hermes  ")).toBe("hermes");
+    expect(sanitizeAgentId("a".repeat(200))).toBe("a".repeat(AGENT_ID_MAX_LEN));
+
+    expect(parseOptionalAgentIdField(undefined)).toEqual({ ok: true, value: undefined });
+    expect(parseOptionalAgentIdField(null)).toEqual({ ok: true, value: undefined });
+    expect(parseOptionalAgentIdField("  se  ")).toEqual({ ok: true, value: "se" });
+    expect(parseOptionalAgentIdField("")).toEqual({
+      ok: false,
+      error: "agentId must be a non-empty string",
+    });
+    expect(parseOptionalAgentIdField(0)).toEqual({
+      ok: false,
+      error: "agentId must be a non-empty string",
+    });
+  });
+});
+
 describe("mem::remember stamps agentId on the Memory (#554)", () => {
   const ORIG = process.env["AGENT_ID"];
   beforeEach(() => {

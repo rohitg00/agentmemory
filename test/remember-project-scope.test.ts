@@ -143,6 +143,23 @@ describe("mem::remember — project field stamping", () => {
     expect(stored?.agentId).toBe("software-engineer");
   });
 
+  it("trims and caps agentId at 128 characters", async () => {
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerRememberFunction(sdk as never, kv as never);
+
+    const longId = `  ${"a".repeat(200)}  `;
+    const result = await sdk.trigger({
+      function_id: "mem::remember",
+      payload: {
+        content: "capped agent id",
+        agentId: longId,
+      },
+    }) as { success: boolean; memory: { agentId?: string } };
+
+    expect(result.memory.agentId).toBe("a".repeat(128));
+  });
+
   it("treats a blank project string the same as no project", async () => {
     const sdk = mockSdk();
     const kv = mockKV();

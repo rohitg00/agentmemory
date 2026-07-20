@@ -13,6 +13,7 @@ from scoping import (
     load_work_roots,
     pick_workdir,
     profile_from_hermes_home,
+    pwd_home,
     repo_slug_from_workdir,
     resolve_agent_id,
     resolve_project,
@@ -201,6 +202,12 @@ class TestResolve(unittest.TestCase):
                 getcwd=str(td),
             )
             self.assertIsNone(wd)
+
+
+class TestPwdHome(unittest.TestCase):
+    def test_pwd_home_returns_str_or_none(self):
+        home = pwd_home()
+        self.assertTrue(home is None or (isinstance(home, str) and home.strip()))
 
 
 if __name__ == "__main__":

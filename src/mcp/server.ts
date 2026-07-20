@@ -10,7 +10,7 @@ import type {
 } from "../types.js";
 import { getVisibleTools } from "./tools-registry.js";
 import { timingSafeCompare } from "../auth.js";
-import { getAgentId, isAgentScopeIsolated } from "../config.js";
+import { getAgentId, isAgentScopeIsolated, parseOptionalAgentIdField } from "../config.js";
 
 type McpResponse = {
   status_code: number;
@@ -187,10 +187,14 @@ export function registerMcpEndpoints(
                 ? args.project.trim()
                 : undefined;
 
-            const agentId =
-              typeof args.agentId === "string" && args.agentId.trim().length > 0
-                ? args.agentId.trim().slice(0, 128)
-                : undefined;
+            const agentIdField = parseOptionalAgentIdField(args.agentId);
+            if (!agentIdField.ok) {
+              return {
+                status_code: 400,
+                body: { error: agentIdField.error },
+              };
+            }
+            const agentId = agentIdField.value;
 
             const result = await sdk.trigger({ function_id: "mem::remember", payload: {
               content: args.content,

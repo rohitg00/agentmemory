@@ -15,9 +15,13 @@ vi.mock("../src/mcp/transport.js", () => ({
   createStdioTransport: vi.fn(() => ({ start: vi.fn(), stop: vi.fn() })),
 }));
 
-vi.mock("../src/config.js", () => ({
-  getStandalonePersistPath: vi.fn(() => "/tmp/test-standalone.json"),
-}));
+vi.mock("../src/config.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/config.js")>();
+  return {
+    ...actual,
+    getStandalonePersistPath: vi.fn(() => "/tmp/test-standalone.json"),
+  };
+});
 
 import {
   getAllTools,
@@ -206,6 +210,42 @@ describe("handleToolCall", () => {
         handleToolCall("memory_save", { content: bogus }, kv),
       ).rejects.toThrow("content is required");
     }
+  });
+
+  it("memory_save rejects blank/non-string agentId when provided", async () => {
+    const kv = new InMemoryKV();
+    await expect(
+      handleToolCall("memory_save", { content: "x", agentId: "   " }, kv),
+    ).rejects.toThrow("agentId must be a non-empty string");
+    await expect(
+      handleToolCall("memory_save", { content: "x", agentId: 12 }, kv),
+    ).rejects.toThrow("agentId must be a non-empty string");
+  });
+
+  it("memory_save rejects blank/non-string project when provided", async () => {
+    const kv = new InMemoryKV();
+    await expect(
+      handleToolCall("memory_save", { content: "x", project: "" }, kv),
+    ).rejects.toThrow("project must be a non-empty string");
+    await expect(
+      handleToolCall("memory_save", { content: "x", project: 1 }, kv),
+    ).rejects.toThrow("project must be a non-empty string");
+  });
+
+  it("memory_save stamps project and agentId on local-mode memories", async () => {
+    const kv = new InMemoryKV();
+    const result = await handleToolCall(
+      "memory_save",
+      {
+        content: "scoped entry",
+        project: "  demo  ",
+        agentId: `  ${"b".repeat(200)}  `,
+      },
+      kv,
+    );
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.memory.project).toBe("demo");
+    expect(parsed.memory.agentId).toBe("b".repeat(128));
   });
 
   it("memory_recall returns matching memories", async () => {
