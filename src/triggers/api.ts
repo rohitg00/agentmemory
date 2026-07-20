@@ -603,7 +603,6 @@ export function registerApiTriggers(
       // allow session/start to override AGENT_ID from request body
       // (multi-agent runtimes that route many roles through one server
       // process). Falls back to the AGENT_ID env on the server.
-      // Malformed/blank body.agentId → 400 (same contract as api::remember).
       const agentIdField = parseOptionalAgentIdField(body.agentId);
       if (!agentIdField.ok) {
         return { status_code: 400, body: { error: agentIdField.error } };
