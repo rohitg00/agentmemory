@@ -991,6 +991,7 @@ export function registerApiTriggers(
         ttlDays?: number;
         sourceObservationIds?: string[];
         project?: string;
+        agentId?: string;
       }>,
     ): Promise<Response> => {
       const authErr = checkAuth(req, secret);
@@ -1008,6 +1009,12 @@ export function registerApiTriggers(
       ) {
         return { status_code: 400, body: { error: "project must be a non-empty string" } };
       }
+      if (
+        req.body.agentId !== undefined &&
+        (typeof req.body.agentId !== "string" || !req.body.agentId.trim())
+      ) {
+        return { status_code: 400, body: { error: "agentId must be a non-empty string" } };
+      }
       const result = await sdk.trigger({
         function_id: "mem::remember",
         payload: {
@@ -1018,6 +1025,7 @@ export function registerApiTriggers(
           ...(req.body.ttlDays !== undefined && { ttlDays: req.body.ttlDays }),
           ...(req.body.sourceObservationIds !== undefined && { sourceObservationIds: req.body.sourceObservationIds }),
           ...(req.body.project !== undefined && { project: req.body.project }),
+          ...(req.body.agentId !== undefined && { agentId: req.body.agentId.trim().slice(0, 128) }),
         },
       });
       return { status_code: 201, body: result };

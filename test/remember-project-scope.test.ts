@@ -117,6 +117,32 @@ describe("mem::remember — project field stamping", () => {
     expect(result.memory.project).toBe("api");
   });
 
+  it("persists agentId on the saved memory when provided", async () => {
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerRememberFunction(sdk as never, kv as never);
+
+    const result = await sdk.trigger({
+      function_id: "mem::remember",
+      payload: {
+        content: "hermes multi-profile provenance stamp",
+        type: "fact",
+        project: "software-engineer",
+        agentId: "software-engineer",
+      },
+    }) as { success: boolean; memory: { id: string; project?: string; agentId?: string } };
+
+    expect(result.success).toBe(true);
+    expect(result.memory.project).toBe("software-engineer");
+    expect(result.memory.agentId).toBe("software-engineer");
+
+    const stored = await kv.get<{ project?: string; agentId?: string }>(
+      "mem:memories",
+      result.memory.id,
+    );
+    expect(stored?.agentId).toBe("software-engineer");
+  });
+
   it("treats a blank project string the same as no project", async () => {
     const sdk = mockSdk();
     const kv = mockKV();
