@@ -86,6 +86,7 @@ def profile_from_hermes_home(hermes_home: str | None) -> str | None:
 
 
 def _resolve_existing_dir(raw: str) -> Path | None:
+    """Expand/resolve raw path and return it only if it is an existing directory."""
     try:
         p = Path(raw).expanduser().resolve()
     except (OSError, RuntimeError):

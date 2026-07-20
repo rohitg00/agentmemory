@@ -94,6 +94,7 @@ _plaintext_bearer_warned = False
 # unreadable, malformed) — the plugin falls back to its existing default
 # (http://localhost:3111) and Hermes status reflects that.
 def _preload_agentmemory_dotenv() -> None:
+    """Load AGENTMEMORY_* (and daemon .env keys) into os.environ via setdefault."""
     candidates: list[Path] = []
     # Hermes profile sessions often skew HOME to profiles/<name>/home while the
     # daemon keeps secrets at the real user home (~/.agentmemory/.env). Also try
@@ -165,6 +166,7 @@ _preload_agentmemory_dotenv()
 
 
 def _validate_url(base: str) -> bool:
+    """True if base is a parseable http(s) URL with a hostname."""
     if not base:
         return False
     try:
@@ -179,6 +181,7 @@ def _validate_url(base: str) -> bool:
 
 
 def _uses_plaintext_bearer_auth(base: str, secret: str = "") -> bool:
+    """True when a non-empty secret would be sent over non-loopback HTTP."""
     if not secret:
         return False
     parsed = urlparse(base)
@@ -186,10 +189,12 @@ def _uses_plaintext_bearer_auth(base: str, secret: str = "") -> bool:
 
 
 def _plaintext_bearer_auth_message(base: str) -> str:
+    """Human-readable warning/error for bearer auth over plaintext HTTP."""
     return f"agentmemory: AGENTMEMORY_SECRET is configured for plaintext HTTP to {base}. Bearer tokens and memory payloads can be observed on the network; use HTTPS or an SSH tunnel."
 
 
 def _warn_plaintext_bearer_auth(message: str) -> None:
+    """Emit a one-line plaintext-auth warning to stderr."""
     print(message, file=sys.stderr)
 
 
@@ -198,6 +203,7 @@ def _check_plaintext_bearer_guard(
     secret: str = "",
     warn: Callable[[str], None] | None = None,
 ) -> None:
+    """Warn once (or raise if AGENTMEMORY_REQUIRE_HTTPS=1) for plaintext bearer auth."""
     global _plaintext_bearer_warned
     if not _uses_plaintext_bearer_auth(base, secret):
         return
@@ -210,6 +216,7 @@ def _check_plaintext_bearer_guard(
 
 
 def _reset_plaintext_bearer_guard_for_tests() -> None:
+    """Clear the once-only plaintext warning latch (tests only)."""
     global _plaintext_bearer_warned
     _plaintext_bearer_warned = False
 
@@ -227,6 +234,7 @@ def _resolve_agentmemory_secret(explicit: str = "") -> str:
 
 
 def _api(base: str, path: str, body: dict | None = None, method: str = "POST", secret: str = "") -> dict | None:
+    """POST/GET JSON against `{base}/agentmemory/{path}`; None on transport/auth failure."""
     if not _validate_url(base):
         _debug_log(f"_api invalid base={base!r} path={path}")
         return None
@@ -305,14 +313,17 @@ def _debug_log(msg: str) -> None:
 
 
 def _api_bg(base: str, path: str, body: dict | None = None) -> None:
+    """Fire-and-forget daemon API call on a background thread."""
     t = threading.Thread(target=_api, args=(base, path, body), daemon=True)
     t.start()
 
 
 class AgentMemoryProvider(MemoryProvider):
+    """Hermes MemoryProvider that tags writes with stable project/agentId slugs."""
 
     @property
     def name(self) -> str:
+        """Provider id registered with Hermes (`agentmemory`)."""
         return "agentmemory"
 
     def is_available(self) -> bool:
@@ -640,4 +651,5 @@ class AgentMemoryProvider(MemoryProvider):
 
 
 def register(ctx: Any) -> None:
+    """Hermes plugin entrypoint: register AgentMemoryProvider on the host context."""
     ctx.register_memory_provider(AgentMemoryProvider())
