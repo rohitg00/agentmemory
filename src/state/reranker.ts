@@ -11,8 +11,18 @@ async function rerankExternal(
   topK: number,
 ): Promise<HybridSearchResult[] | null> {
   const baseUrl = process.env.RERANK_BASE_URL?.replace(/\/+$/, "");
-  const apiKey = process.env.RERANK_API_KEY || process.env.OPENAI_API_KEY;
   if (!baseUrl) return null;
+  const openaiBaseUrl = (
+    process.env.OPENAI_BASE_URL || "https://api.openai.com"
+  ).replace(/\/+$/, "");
+  const apiKey =
+    process.env.RERANK_API_KEY ||
+    (baseUrl === openaiBaseUrl ? process.env.OPENAI_API_KEY : undefined);
+  const configuredTimeout = Number(process.env.RERANK_TIMEOUT_MS);
+  const timeout =
+    Number.isFinite(configuredTimeout) && configuredTimeout > 0
+      ? configuredTimeout
+      : 30_000;
 
   const candidates = results.slice(0, Math.min(results.length, topK));
   try {
@@ -31,9 +41,7 @@ async function rerankExternal(
         ),
         top_n: candidates.length,
       }),
-      signal: AbortSignal.timeout(
-        Number(process.env.RERANK_TIMEOUT_MS || 30_000),
-      ),
+      signal: AbortSignal.timeout(timeout),
     });
     if (!response.ok) {
       logger.warn("External reranker request failed", {
