@@ -802,7 +802,7 @@ BM25 tokeniza griego, cirílico, hebreo, árabe y latín con tildes de serie. Pa
 agentmemory autodetecta tu proveedor. Para mejores resultados, instala embeddings locales (gratis):
 
 ```bash
-npm install @xenova/transformers
+npm install @huggingface/transformers
 ```
 
 | Proveedor | Modelo | Coste | Notas |

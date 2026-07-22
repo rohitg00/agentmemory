@@ -813,7 +813,7 @@ BM25, Yunanca, Kiril, İbranice, Arapça ve aksanlı Latin'i kutudan çıkar ç�
 agentmemory sağlayıcınızı otomatik algılar. En iyi sonuçlar için yerel embedding'leri kurun (ücretsiz):
 
 ```bash
-npm install @xenova/transformers
+npm install @huggingface/transformers
 ```
 
 | Sağlayıcı | Model | Maliyet | Notlar |

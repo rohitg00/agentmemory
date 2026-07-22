@@ -20,19 +20,17 @@ const shared = {
   format: ["esm"] as const,
   target: "node20" as const,
   // Keep these as node_modules imports (deps.neverBundle). We never import
-  // onnxruntime-{node,web} directly; they come in transitively through
-  // @xenova/transformers, which is lazy-loaded from
+  // onnxruntime-{node,web} or sharp directly; they come in transitively
+  // through @huggingface/transformers, which is lazy-loaded from
   // src/providers/embedding/{clip,local}.ts and src/state/reranker.ts.
   // Bundling inlines relative paths like
   // `../bin/napi-v3/darwin/arm64/onnxruntime_binding.node` that no longer
-  // resolve from dist/. All are declared as optionalDependencies in
-  // package.json so users can install them only when they enable local
-  // embeddings / CLIP / reranker.
+  // resolve from dist/. @huggingface/transformers is declared as an
+  // optionalDependency in package.json so users can install it only when
+  // they enable local embeddings / CLIP / reranker.
   deps: {
     neverBundle: [
-      "@xenova/transformers",
-      "onnxruntime-node",
-      "onnxruntime-web",
+      "@huggingface/transformers",
       "@anthropic-ai/claude-agent-sdk",
       "@anthropic-ai/sdk",
     ],

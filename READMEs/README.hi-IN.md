@@ -812,7 +812,7 @@ BM25 box से बाहर ही Greek, Cyrillic, Hebrew, Arabic, और acce
 agentmemory आपके provider को auto-detect करता है। सर्वोत्तम परिणामों के लिए, local embeddings install करें (free):
 
 ```bash
-npm install @xenova/transformers
+npm install @huggingface/transformers
 ```
 
 | Provider | Model | Cost | नोट्स |

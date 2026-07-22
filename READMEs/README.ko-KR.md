@@ -793,7 +793,7 @@ BM25는 기본적으로 그리스어, 키릴 문자, 히브리어, 아랍어, �
 agentmemory는 프로바이더를 자동 감지합니다. 최상의 결과를 위해 로컬 임베딩을 설치하십시오 (무료):
 
 ```bash
-npm install @xenova/transformers
+npm install @huggingface/transformers
 ```
 
 | 프로바이더 | 모델 | 비용 | 비고 |

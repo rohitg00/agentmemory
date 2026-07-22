@@ -810,7 +810,7 @@ BM25 开箱即用支持希腊语、西里尔语、希伯来语、阿拉伯语和
 agentmemory 自动检测你的提供者。为获得最佳效果,安装本地嵌入(免费):
 
 ```bash
-npm install @xenova/transformers
+npm install @huggingface/transformers
 ```
 
 | 提供者 | 模型 | 成本 | 备注 |

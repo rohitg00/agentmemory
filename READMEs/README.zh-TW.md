@@ -810,7 +810,7 @@ BM25 開箱即用支援希臘文、西里爾文、希伯來文、阿拉伯文和
 agentmemory 自動偵測你的提供者。為獲得最佳效果,安裝本地嵌入(免費):
 
 ```bash
-npm install @xenova/transformers
+npm install @huggingface/transformers
 ```
 
 | 提供者 | 模型 | 成本 | 備註 |

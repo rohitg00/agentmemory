@@ -933,7 +933,7 @@ BM25 tokenizes Greek, Cyrillic, Hebrew, Arabic, and accented Latin out of the bo
 agentmemory auto-detects your provider. For best results, install local embeddings (free):
 
 ```bash
-npm install @xenova/transformers
+npm install @huggingface/transformers
 ```
 
 | Provider | Model | Cost | Notes |
@@ -1264,7 +1264,7 @@ OPENAI_MODEL=qwen2.5-coder-7b-instruct         # match the model name from LM St
 
 Reasoning-class models (`o1`-style with `<think>` blocks) can return empty `content` with a `reasoning` field your local server may not surface. If extractions come back blank, switch to a non-reasoning model first. The `OPENAI_REASONING_EFFORT=none` env can also disable thinking on Ollama Cloud thinking models that mirror the OpenAI reasoning schema.
 
-Local embeddings ship out of the box via `@xenova/transformers` — `EMBEDDING_PROVIDER=local` (default) gives you BGE-small entirely on-device. No extra config needed.
+Local embeddings ship out of the box via `@huggingface/transformers` — `EMBEDDING_PROVIDER=local` (default) gives you `Xenova/all-MiniLM-L6-v2` (384-dim) entirely on-device. No extra config needed.
 
 ### Cost-aware model selection
 

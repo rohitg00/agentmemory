@@ -812,7 +812,7 @@ BM25 は箱から出してすぐにギリシャ文字、キリル文字、ヘブ
 agentmemory はプロバイダーを自動検出します。最良の結果を得るには、ローカル埋め込み(無料)をインストール:
 
 ```bash
-npm install @xenova/transformers
+npm install @huggingface/transformers
 ```
 
 | プロバイダー | モデル | コスト | 備考 |

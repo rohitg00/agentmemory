@@ -802,7 +802,7 @@ BM25 tokeniza grego, cirílico, hebraico, árabe e latim acentuado de fábrica. 
 agentmemory autodetecta seu provider. Para melhores resultados, instale embeddings locais (gratuito):
 
 ```bash
-npm install @xenova/transformers
+npm install @huggingface/transformers
 ```
 
 | Provider | Modelo | Custo | Notas |
