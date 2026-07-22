@@ -39,7 +39,7 @@ const TOOL_GUIDANCE = [
 ].join(" ");
 
 function getBaseUrl(): string {
-  return (process.env["AGENTMEMORY_URL"] || "http://localhost:3111").replace(/\/+$/, "");
+  return DEFAULT_URL.replace(/\/+$/, "");
 }
 
 function sha256(data: string): string {
