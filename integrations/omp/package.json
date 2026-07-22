@@ -1,0 +1,5 @@
+{
+  "name": "agentmemory-omp-extension",
+  "private": true,
+  "type": "module"
+}
