@@ -22,6 +22,7 @@ vi.mock("../src/config.js", () => ({
 import {
   getAllTools,
   getVisibleTools,
+  ESSENTIAL_TOOLS,
   type McpToolDef,
 } from "../src/mcp/tools-registry.js";
 import { handleToolsList } from "../src/mcp/standalone.js";
@@ -61,6 +62,8 @@ const DESTRUCTIVE_TOOLS = new Set([
   "memory_heal",
   "memory_slot_delete",
 ]);
+
+const TOTAL = getAllTools().length;
 
 const instantLocalFallbackProbe = vi.fn(async () => ({
   ok: false,
@@ -136,13 +139,14 @@ describe("MCP tool risk annotations", () => {
 
   it("every tool falls into exactly one classification (23 + 3 + 27 covers total)", () => {
     const tools = getAllTools();
-    expect(tools.length).toBe(53);
+    expect(tools.length).toBe(TOTAL);
     const counts = { "read-only": 0, destructive: 0, "state-changing": 0, invalid: 0 };
     for (const t of tools) counts[classification(t) as keyof typeof counts]++;
     expect(counts["read-only"]).toBe(23);
     expect(counts.destructive).toBe(3);
     expect(counts["state-changing"]).toBe(27);
     expect(counts.invalid).toBe(0);
+    expect(counts["read-only"] + counts.destructive + counts["state-changing"]).toBe(TOTAL);
   });
 
   it("getVisibleTools preserves annotations in every visibility mode", () => {
@@ -151,8 +155,8 @@ describe("MCP tool risk annotations", () => {
       for (const mode of ["all", "core"]) {
         process.env["AGENTMEMORY_TOOLS"] = mode;
         const visible = getVisibleTools();
-        if (mode === "all") expect(visible.length).toBe(53);
-        if (mode === "core") expect(visible.length).toBe(8);
+        if (mode === "all") expect(visible.length).toBe(TOTAL);
+        if (mode === "core") expect(visible.length).toBe(ESSENTIAL_TOOLS.size);
         for (const tool of visible) {
           expect(tool.annotations, `tool ${tool.name} lost annotations in ${mode} mode`).toBeDefined();
         }
