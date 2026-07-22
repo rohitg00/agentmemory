@@ -851,14 +851,18 @@ export function registerApiTriggers(
       const filtered = filterAgentId
         ? sessions.filter((s) => s.agentId === filterAgentId)
         : sessions;
-      const summaries = await Promise.all(
-        filtered.map((s) =>
-          kv.get<SessionSummary>(KV.summaries, s.id).catch(() => null),
+      // Fetch summaries with a single list + in-memory join. Fanning out one
+      // kv.get per session in a Promise.all deadlocks the engine channel once
+      // the session count grows into the hundreds (#1100).
+      const summariesById = new Map(
+        (await kv.list<SessionSummary>(KV.summaries).catch(() => [])).map(
+          (summary): [string, SessionSummary] => [summary.sessionId, summary],
         ),
       );
-      const withSummary = filtered.map((s, i) =>
-        summaries[i] ? { ...s, summary: summaries[i] } : s,
-      );
+      const withSummary = filtered.map((s) => {
+        const summary = summariesById.get(s.id);
+        return summary ? { ...s, summary } : s;
+      });
       return { status_code: 200, body: { sessions: withSummary } };
     },
   );
