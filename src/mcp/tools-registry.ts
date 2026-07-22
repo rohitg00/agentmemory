@@ -1,3 +1,11 @@
+export type McpToolAnnotations = {
+  readOnlyHint?: boolean;
+  destructiveHint?: boolean;
+  idempotentHint?: boolean;
+  openWorldHint?: boolean;
+  title?: string;
+};
+
 export type McpToolDef = {
   name: string;
   description: string;
@@ -6,6 +14,7 @@ export type McpToolDef = {
     properties: Record<string, { type: string; description: string }>;
     required?: string[];
   };
+  annotations?: McpToolAnnotations;
 };
 
 export const CORE_TOOLS: McpToolDef[] = [
@@ -35,6 +44,7 @@ export const CORE_TOOLS: McpToolDef[] = [
       },
       required: ["query"],
     },
+    annotations: { readOnlyHint: true, destructiveHint: false },
   },
   {
     name: "memory_compress_file",
@@ -50,6 +60,7 @@ export const CORE_TOOLS: McpToolDef[] = [
       },
       required: ["filePath"],
     },
+    annotations: { readOnlyHint: false, destructiveHint: false },
   },
   {
     name: "memory_save",
@@ -92,6 +103,7 @@ export const CORE_TOOLS: McpToolDef[] = [
       },
       required: ["content"],
     },
+    annotations: { readOnlyHint: false, destructiveHint: false },
   },
   {
     name: "memory_file_history",
@@ -107,6 +119,7 @@ export const CORE_TOOLS: McpToolDef[] = [
       },
       required: ["files"],
     },
+    annotations: { readOnlyHint: true, destructiveHint: false },
   },
   {
     name: "memory_patterns",
@@ -117,12 +130,14 @@ export const CORE_TOOLS: McpToolDef[] = [
         project: { type: "string", description: "Project path to analyze" },
       },
     },
+    annotations: { readOnlyHint: true, destructiveHint: false },
   },
   {
     name: "memory_sessions",
     description:
       "List recent sessions with their status and observation counts.",
     inputSchema: { type: "object", properties: {} },
+    annotations: { readOnlyHint: true, destructiveHint: false },
   },
   {
     name: "memory_smart_search",
@@ -139,6 +154,7 @@ export const CORE_TOOLS: McpToolDef[] = [
       },
       required: ["query"],
     },
+    annotations: { readOnlyHint: true, destructiveHint: false },
   },
   {
     name: "memory_vision_search",
@@ -154,6 +170,7 @@ export const CORE_TOOLS: McpToolDef[] = [
         sessionId: { type: "string", description: "Filter to a single session" },
       },
     },
+    annotations: { readOnlyHint: true, destructiveHint: false },
   },
   {
     name: "memory_timeline",
@@ -177,6 +194,7 @@ export const CORE_TOOLS: McpToolDef[] = [
       },
       required: ["anchor"],
     },
+    annotations: { readOnlyHint: true, destructiveHint: false },
   },
   {
     name: "memory_profile",
@@ -192,11 +210,13 @@ export const CORE_TOOLS: McpToolDef[] = [
       },
       required: ["project"],
     },
+    annotations: { readOnlyHint: false, destructiveHint: false },
   },
   {
     name: "memory_export",
     description: "Export all memory data as JSON.",
     inputSchema: { type: "object", properties: {} },
+    annotations: { readOnlyHint: true, destructiveHint: false },
   },
   {
     name: "memory_relations",
@@ -219,6 +239,7 @@ export const CORE_TOOLS: McpToolDef[] = [
       },
       required: ["memoryId"],
     },
+    annotations: { readOnlyHint: true, destructiveHint: false },
   },
   {
     name: "memory_commit_lookup",
@@ -231,6 +252,7 @@ export const CORE_TOOLS: McpToolDef[] = [
       },
       required: ["sha"],
     },
+    annotations: { readOnlyHint: true, destructiveHint: false },
   },
   {
     name: "memory_commits",
@@ -244,6 +266,7 @@ export const CORE_TOOLS: McpToolDef[] = [
         limit: { type: "number", description: "Max results (default 100, max 500)" },
       },
     },
+    annotations: { readOnlyHint: true, destructiveHint: false },
   },
 ];
 
@@ -263,6 +286,7 @@ export const V040_TOOLS: McpToolDef[] = [
       },
       required: ["direction"],
     },
+    annotations: { readOnlyHint: false, destructiveHint: false },
   },
   {
     name: "memory_graph_query",
@@ -282,6 +306,7 @@ export const V040_TOOLS: McpToolDef[] = [
         query: { type: "string", description: "Search nodes by name" },
       },
     },
+    annotations: { readOnlyHint: true, destructiveHint: false },
   },
   {
     name: "memory_consolidate",
@@ -296,6 +321,7 @@ export const V040_TOOLS: McpToolDef[] = [
         },
       },
     },
+    annotations: { readOnlyHint: false, destructiveHint: false },
   },
   {
     name: "memory_team_share",
@@ -314,6 +340,7 @@ export const V040_TOOLS: McpToolDef[] = [
       },
       required: ["itemId", "itemType"],
     },
+    annotations: { readOnlyHint: false, destructiveHint: false },
   },
   {
     name: "memory_team_feed",
@@ -324,6 +351,7 @@ export const V040_TOOLS: McpToolDef[] = [
         limit: { type: "number", description: "Max items (default 20)" },
       },
     },
+    annotations: { readOnlyHint: true, destructiveHint: false },
   },
   {
     name: "memory_audit",
@@ -335,6 +363,7 @@ export const V040_TOOLS: McpToolDef[] = [
         limit: { type: "number", description: "Max entries (default 50)" },
       },
     },
+    annotations: { readOnlyHint: true, destructiveHint: false },
   },
   {
     name: "memory_governance_delete",
@@ -350,6 +379,7 @@ export const V040_TOOLS: McpToolDef[] = [
       },
       required: ["memoryIds"],
     },
+    annotations: { readOnlyHint: false, destructiveHint: true },
   },
   {
     name: "memory_snapshot_create",
@@ -360,6 +390,7 @@ export const V040_TOOLS: McpToolDef[] = [
         message: { type: "string", description: "Snapshot description" },
       },
     },
+    annotations: { readOnlyHint: false, destructiveHint: false },
   },
 ];
 
@@ -397,6 +428,7 @@ export const V050_TOOLS: McpToolDef[] = [
       },
       required: ["title"],
     },
+    annotations: { readOnlyHint: false, destructiveHint: false },
   },
   {
     name: "memory_action_update",
@@ -418,6 +450,7 @@ export const V050_TOOLS: McpToolDef[] = [
       },
       required: ["actionId"],
     },
+    annotations: { readOnlyHint: false, destructiveHint: false },
   },
   {
     name: "memory_frontier",
@@ -434,6 +467,7 @@ export const V050_TOOLS: McpToolDef[] = [
         limit: { type: "number", description: "Max results (default 20)" },
       },
     },
+    annotations: { readOnlyHint: true, destructiveHint: false },
   },
   {
     name: "memory_next",
@@ -446,6 +480,7 @@ export const V050_TOOLS: McpToolDef[] = [
         agentId: { type: "string", description: "Current agent ID" },
       },
     },
+    annotations: { readOnlyHint: true, destructiveHint: false },
   },
   {
     name: "memory_lease",
@@ -471,6 +506,7 @@ export const V050_TOOLS: McpToolDef[] = [
       },
       required: ["actionId", "agentId", "operation"],
     },
+    annotations: { readOnlyHint: false, destructiveHint: false },
   },
   {
     name: "memory_routine_run",
@@ -485,6 +521,7 @@ export const V050_TOOLS: McpToolDef[] = [
       },
       required: ["routineId"],
     },
+    annotations: { readOnlyHint: false, destructiveHint: false },
   },
   {
     name: "memory_signal_send",
@@ -510,6 +547,7 @@ export const V050_TOOLS: McpToolDef[] = [
       },
       required: ["from", "content"],
     },
+    annotations: { readOnlyHint: false, destructiveHint: false },
   },
   {
     name: "memory_signal_read",
@@ -531,6 +569,7 @@ export const V050_TOOLS: McpToolDef[] = [
       },
       required: ["agentId"],
     },
+    annotations: { readOnlyHint: false, destructiveHint: false },
   },
   {
     name: "memory_checkpoint",
@@ -564,6 +603,7 @@ export const V050_TOOLS: McpToolDef[] = [
       },
       required: ["operation"],
     },
+    annotations: { readOnlyHint: false, destructiveHint: false },
   },
   {
     name: "memory_mesh_sync",
@@ -582,6 +622,7 @@ export const V050_TOOLS: McpToolDef[] = [
         },
       },
     },
+    annotations: { readOnlyHint: false, destructiveHint: false },
   },
 ];
 
@@ -610,6 +651,7 @@ export const V051_TOOLS: McpToolDef[] = [
       },
       required: ["name", "type"],
     },
+    annotations: { readOnlyHint: false, destructiveHint: false },
   },
   {
     name: "memory_sentinel_trigger",
@@ -623,6 +665,7 @@ export const V051_TOOLS: McpToolDef[] = [
       },
       required: ["sentinelId"],
     },
+    annotations: { readOnlyHint: false, destructiveHint: false },
   },
   {
     name: "memory_sketch_create",
@@ -638,6 +681,7 @@ export const V051_TOOLS: McpToolDef[] = [
       },
       required: ["title"],
     },
+    annotations: { readOnlyHint: false, destructiveHint: false },
   },
   {
     name: "memory_sketch_promote",
@@ -651,6 +695,7 @@ export const V051_TOOLS: McpToolDef[] = [
       },
       required: ["sketchId"],
     },
+    annotations: { readOnlyHint: false, destructiveHint: false },
   },
   {
     name: "memory_crystallize",
@@ -668,6 +713,7 @@ export const V051_TOOLS: McpToolDef[] = [
       },
       required: ["actionIds"],
     },
+    annotations: { readOnlyHint: false, destructiveHint: false },
   },
   {
     name: "memory_diagnose",
@@ -682,6 +728,7 @@ export const V051_TOOLS: McpToolDef[] = [
         },
       },
     },
+    annotations: { readOnlyHint: true, destructiveHint: false },
   },
   {
     name: "memory_heal",
@@ -700,6 +747,7 @@ export const V051_TOOLS: McpToolDef[] = [
         },
       },
     },
+    annotations: { readOnlyHint: false, destructiveHint: true },
   },
   {
     name: "memory_facet_tag",
@@ -718,6 +766,7 @@ export const V051_TOOLS: McpToolDef[] = [
       },
       required: ["targetId", "targetType", "dimension", "value"],
     },
+    annotations: { readOnlyHint: false, destructiveHint: false },
   },
   {
     name: "memory_facet_query",
@@ -740,6 +789,7 @@ export const V051_TOOLS: McpToolDef[] = [
         },
       },
     },
+    annotations: { readOnlyHint: true, destructiveHint: false },
   },
 ];
 
@@ -758,6 +808,7 @@ export const V061_TOOLS: McpToolDef[] = [
       },
       required: ["id"],
     },
+    annotations: { readOnlyHint: true, destructiveHint: false },
   },
 ];
 
@@ -786,6 +837,7 @@ export const V070_TOOLS: McpToolDef[] = [
       },
       required: ["content"],
     },
+    annotations: { readOnlyHint: false, destructiveHint: false },
   },
   {
     name: "memory_lesson_recall",
@@ -804,6 +856,7 @@ export const V070_TOOLS: McpToolDef[] = [
       },
       required: ["query"],
     },
+    annotations: { readOnlyHint: true, destructiveHint: false },
   },
   {
     name: "memory_lesson_delete",
@@ -834,6 +887,7 @@ export const V070_TOOLS: McpToolDef[] = [
         },
       },
     },
+    annotations: { readOnlyHint: false, destructiveHint: false },
   },
 ];
 
@@ -852,6 +906,7 @@ export const V073_TOOLS: McpToolDef[] = [
         },
       },
     },
+    annotations: { readOnlyHint: false, destructiveHint: false },
   },
   {
     name: "memory_insight_list",
@@ -868,6 +923,7 @@ export const V073_TOOLS: McpToolDef[] = [
         limit: { type: "number", description: "Max results (default 50)" },
       },
     },
+    annotations: { readOnlyHint: true, destructiveHint: false },
   },
 ];
 
@@ -877,6 +933,7 @@ export const V010_SLOTS_TOOLS: McpToolDef[] = [
     description:
       "List all memory slots (pinned + project + global). Slots are editable, size-limited memory units the agent can read and modify across sessions.",
     inputSchema: { type: "object", properties: {} },
+    annotations: { readOnlyHint: true, destructiveHint: false },
   },
   {
     name: "memory_slot_get",
@@ -888,6 +945,7 @@ export const V010_SLOTS_TOOLS: McpToolDef[] = [
       },
       required: ["label"],
     },
+    annotations: { readOnlyHint: true, destructiveHint: false },
   },
   {
     name: "memory_slot_create",
@@ -904,6 +962,7 @@ export const V010_SLOTS_TOOLS: McpToolDef[] = [
       },
       required: ["label"],
     },
+    annotations: { readOnlyHint: false, destructiveHint: false },
   },
   {
     name: "memory_slot_append",
@@ -917,6 +976,7 @@ export const V010_SLOTS_TOOLS: McpToolDef[] = [
       },
       required: ["label", "text"],
     },
+    annotations: { readOnlyHint: false, destructiveHint: false },
   },
   {
     name: "memory_slot_replace",
@@ -929,6 +989,7 @@ export const V010_SLOTS_TOOLS: McpToolDef[] = [
       },
       required: ["label", "content"],
     },
+    annotations: { readOnlyHint: false, destructiveHint: false },
   },
   {
     name: "memory_slot_delete",
@@ -940,6 +1001,7 @@ export const V010_SLOTS_TOOLS: McpToolDef[] = [
       },
       required: ["label"],
     },
+    annotations: { readOnlyHint: false, destructiveHint: true },
   },
 ];
 
