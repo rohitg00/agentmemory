@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { resolveDataDir } from "../src/cli-data-dir.js";
 
@@ -69,5 +71,32 @@ describe("resolveDataDir", () => {
       dataDir: join(home, "Library", "Application Support", "agentmemory"),
       source: "default",
     });
+  });
+
+  it("adopts legacy data without sharing it with another instance", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "agentmemory-data-"));
+    mkdirSync(join(cwd, ".git"));
+    mkdirSync(join(cwd, "data"));
+    const home = "/home/alex";
+    const base = { cwd, home, platform: "linux" as const };
+    const defaultDir = join(home, ".local", "share", "agentmemory");
+    try {
+      expect(resolveDataDir({ args: [], env: {}, ...base }).dataDir).toBe(
+        join(cwd, "data"),
+      );
+      expect(
+        resolveDataDir({
+          args: ["--instance", "1"],
+          env: { XDG_DATA_HOME: join(cwd, "xdg") },
+          ...base,
+        }),
+      ).toEqual({
+        dataDir: join(defaultDir, "instance-1"),
+        source: "default",
+        relocatedFrom: join(cwd, "xdg", "agentmemory"),
+      });
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
   });
 });

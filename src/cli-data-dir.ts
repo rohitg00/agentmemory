@@ -79,11 +79,16 @@ export function resolveDataDir(options: ResolveDataDirOptions = {}): ResolvedDat
   const cwd = options.cwd ?? process.cwd();
   const home = options.home ?? homedir();
   const nodePlatform = options.platform ?? platform();
+  const parsedInstance = parseInt(argValue(args, "--instance") ?? "0", 10);
+  const instance =
+    parsedInstance > 0 && parsedInstance <= 50 ? parsedInstance : 0;
+  const forInstance = (dataDir: string) =>
+    instance ? join(dataDir, `instance-${instance}`) : dataDir;
 
   const flagValue = argValue(args, "--data-dir");
   if (flagValue) {
     return {
-      dataDir: absoluteDataDir(flagValue, cwd, home),
+      dataDir: forInstance(absoluteDataDir(flagValue, cwd, home)),
       source: "flag",
     };
   }
@@ -91,18 +96,22 @@ export function resolveDataDir(options: ResolveDataDirOptions = {}): ResolvedDat
   const envValue = env["AGENTMEMORY_DATA_DIR"];
   if (envValue) {
     return {
-      dataDir: absoluteDataDir(envValue, cwd, home),
+      dataDir: forInstance(absoluteDataDir(envValue, cwd, home)),
       source: "env",
     };
   }
 
+  const legacyDir = resolve(cwd, "data");
+  if (instance === 0 && existsSync(legacyDir)) {
+    return { dataDir: legacyDir, source: "default" };
+  }
+
   const defaultDir = platformDefaultDataDir(env, home, nodePlatform);
-  const gitParent = nearestGitParent(defaultDir);
-  if (gitParent) {
+  if (nearestGitParent(cwd)) {
     const relocated = platformDefaultDataDir(env, home, nodePlatform, false);
     if (relocated !== defaultDir) {
       return {
-        dataDir: relocated,
+        dataDir: forInstance(relocated),
         source: "default",
         relocatedFrom: defaultDir,
       };
@@ -110,7 +119,7 @@ export function resolveDataDir(options: ResolveDataDirOptions = {}): ResolvedDat
   }
 
   return {
-    dataDir: defaultDir,
+    dataDir: forInstance(defaultDir),
     source: "default",
   };
 }
