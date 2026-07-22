@@ -145,14 +145,17 @@ describe("MCP tool risk annotations", () => {
     expect(counts.invalid).toBe(0);
   });
 
-  it("getVisibleTools under AGENTMEMORY_TOOLS=all preserves annotations on every tool", () => {
+  it("getVisibleTools preserves annotations in every visibility mode", () => {
     const prev = process.env["AGENTMEMORY_TOOLS"];
-    process.env["AGENTMEMORY_TOOLS"] = "all";
     try {
-      const visible = getVisibleTools();
-      expect(visible.length).toBe(53);
-      for (const tool of visible) {
-        expect(tool.annotations, `tool ${tool.name} lost annotations`).toBeDefined();
+      for (const mode of ["all", "core"]) {
+        process.env["AGENTMEMORY_TOOLS"] = mode;
+        const visible = getVisibleTools();
+        if (mode === "all") expect(visible.length).toBe(53);
+        if (mode === "core") expect(visible.length).toBe(8);
+        for (const tool of visible) {
+          expect(tool.annotations, `tool ${tool.name} lost annotations in ${mode} mode`).toBeDefined();
+        }
       }
     } finally {
       if (prev === undefined) delete process.env["AGENTMEMORY_TOOLS"];
