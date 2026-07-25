@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { resolveDataDir } from "../src/cli-data-dir.js";
@@ -77,13 +77,15 @@ describe("resolveDataDir", () => {
     const cwd = mkdtempSync(join(tmpdir(), "agentmemory-data-"));
     mkdirSync(join(cwd, ".git"));
     mkdirSync(join(cwd, "data"));
+    writeFileSync(join(cwd, "data", "iii-config.yaml"), "");
     const home = "/home/alex";
     const base = { cwd, home, platform: "linux" as const };
     const defaultDir = join(home, ".local", "share", "agentmemory");
     try {
-      expect(resolveDataDir({ args: [], env: {}, ...base }).dataDir).toBe(
-        join(cwd, "data"),
-      );
+      expect(resolveDataDir({ args: [], env: {}, ...base })).toEqual({
+        dataDir: join(cwd, "data"),
+        source: "default",
+      });
       expect(
         resolveDataDir({
           args: ["--instance", "1"],
@@ -97,6 +99,52 @@ describe("resolveDataDir", () => {
       });
     } finally {
       rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("does not adopt an unrelated data directory", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "agentmemory-data-"));
+    mkdirSync(join(cwd, ".git"));
+    mkdirSync(join(cwd, "data"));
+    const home = "/home/alex";
+    try {
+      expect(
+        resolveDataDir({
+          args: [],
+          env: {},
+          cwd,
+          home,
+          platform: "linux",
+        }),
+      ).toEqual({
+        dataDir: join(home, ".local", "share", "agentmemory"),
+        source: "default",
+      });
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps an XDG data directory outside the current git worktree", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "agentmemory-data-"));
+    mkdirSync(join(cwd, ".git"));
+    const xdgDataHome = mkdtempSync(join(tmpdir(), "agentmemory-xdg-"));
+    try {
+      expect(
+        resolveDataDir({
+          args: [],
+          env: { XDG_DATA_HOME: xdgDataHome },
+          cwd,
+          home: "/home/alex",
+          platform: "linux",
+        }),
+      ).toEqual({
+        dataDir: join(xdgDataHome, "agentmemory"),
+        source: "default",
+      });
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+      rmSync(xdgDataHome, { recursive: true, force: true });
     }
   });
 });

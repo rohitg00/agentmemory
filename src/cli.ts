@@ -258,7 +258,9 @@ if (instanceIdx !== -1 && args[instanceIdx + 1]) {
 }
 
 const dataDirResolution = resolveDataDir({ args });
-process.env["AGENTMEMORY_DATA_DIR"] = dataDirResolution.dataDir;
+if (dataDirResolution.source !== "default") {
+  process.env["AGENTMEMORY_DATA_DIR"] = dataDirResolution.dataDir;
+}
 
 const skipEngine = args.includes("--no-engine");
 

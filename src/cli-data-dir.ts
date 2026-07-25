@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { dirname, isAbsolute, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { homedir, platform } from "node:os";
 
 export type DataDirSource = "flag" | "env" | "default";
@@ -73,6 +73,16 @@ function nearestGitParent(pathValue: string): string | undefined {
   }
 }
 
+function isWithin(parent: string, child: string): boolean {
+  const pathFromParent = relative(parent, child);
+  return (
+    pathFromParent === "" ||
+    (pathFromParent !== ".." &&
+      !pathFromParent.startsWith(`..${sep}`) &&
+      !isAbsolute(pathFromParent))
+  );
+}
+
 export function resolveDataDir(options: ResolveDataDirOptions = {}): ResolvedDataDir {
   const args = options.args ?? process.argv.slice(2);
   const env = options.env ?? process.env;
@@ -102,12 +112,16 @@ export function resolveDataDir(options: ResolveDataDirOptions = {}): ResolvedDat
   }
 
   const legacyDir = resolve(cwd, "data");
-  if (instance === 0 && existsSync(legacyDir)) {
+  const hasLegacyStore =
+    existsSync(join(legacyDir, "state_store.db")) ||
+    existsSync(join(legacyDir, "iii-config.yaml"));
+  if (instance === 0 && hasLegacyStore) {
     return { dataDir: legacyDir, source: "default" };
   }
 
   const defaultDir = platformDefaultDataDir(env, home, nodePlatform);
-  if (nearestGitParent(cwd)) {
+  const gitParent = nearestGitParent(cwd);
+  if (gitParent && isWithin(gitParent, defaultDir)) {
     const relocated = platformDefaultDataDir(env, home, nodePlatform, false);
     if (relocated !== defaultDir) {
       return {
