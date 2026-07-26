@@ -5,7 +5,7 @@ import {
   normalizePathSlashes,
   pathUnderHome,
   resolveWorkspace
-} from '../plugin/scripts/cursor/workspace.mjs';
+} from '../src/hooks/cursor/workspace.js';
 
 describe('cursor workspace resolver', () => {
   it('isCursorMetadataPath rejects substring false positives', () => {
