@@ -47,6 +47,31 @@ function writeJson(path, data, restrictPermissions = false) {
   }
 }
 
+function isPlainObject(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function describeJsonType(value) {
+  if (value === null) return 'null';
+  if (Array.isArray(value)) return 'array';
+  return typeof value;
+}
+
+function requireObjectConfig(path, value, label) {
+  if (!isPlainObject(value)) {
+    console.error(`${path}: expected ${label} to be a JSON object, got ${describeJsonType(value)}`);
+    process.exit(1);
+  }
+}
+
+function requireObjectField(path, fieldName, value) {
+  if (value === undefined) return;
+  if (!isPlainObject(value)) {
+    console.error(`${path}: expected "${fieldName}" to be a JSON object, got ${describeJsonType(value)}`);
+    process.exit(1);
+  }
+}
+
 function linkMarketplace() {
   mkdirSync(dirname(MARKETPLACE_DIR), { recursive: true });
   if (!existsSync(MARKETPLACE_DIR)) {
@@ -61,12 +86,14 @@ function linkMarketplace() {
 function mergeMcp(env) {
   let mcp;
   try {
-    mcp = readJson(MCP_PATH);
+    mcp = existsSync(MCP_PATH) ? readJson(MCP_PATH) : {};
   } catch (err) {
     console.error(err.message);
     console.error('Refusing to overwrite mcp.json. Fix the file or restore from backup.');
     process.exit(1);
   }
+  requireObjectConfig(MCP_PATH, mcp, 'mcp.json root');
+  requireObjectField(MCP_PATH, 'mcpServers', mcp.mcpServers);
   if (!mcp.mcpServers) mcp.mcpServers = {};
   mcp.mcpServers.agentmemory = {
     command: 'npx',
@@ -99,6 +126,8 @@ function disableUserHooks() {
     console.error('Refusing to clear hooks.json until the file is valid JSON.');
     process.exit(1);
   }
+  requireObjectConfig(HOOKS_PATH, hooks, 'hooks.json root');
+  requireObjectField(HOOKS_PATH, 'hooks', hooks.hooks);
   const hasAgentmemory = JSON.stringify(hooks).includes('agentmemory-');
   if (!hasAgentmemory) return null;
   const backup = `${HOOKS_PATH}.pre-plugin-${Date.now()}.bak`;
