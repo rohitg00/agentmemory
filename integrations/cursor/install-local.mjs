@@ -166,6 +166,6 @@ console.log('2. Enable plugin: agentmemory');
 console.log('3. Disable the old rohitg00/agentmemory marketplace plugin if both are enabled.');
 console.log('4. Developer: Reload Window');
 console.log('5. Run: node integrations/cursor/verify-flow.mjs');
-console.log('6. In hooks log, confirm commands use ${CURSOR_PLUGIN_ROOT}/scripts/cursor/');
+console.log('6. In hooks log, confirm commands use ${CURSOR_PLUGIN_ROOT}/scripts/cursor/run-hook.mjs');
 console.log('\nOnly after plugin hooks are confirmed:');
 console.log('  node integrations/cursor/install-local.mjs --clear-user-hooks');

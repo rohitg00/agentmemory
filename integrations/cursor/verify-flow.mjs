@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 
 const INTEGRATION_ROOT = resolve(dirname(fileURLToPath(import.meta.url)));
 const REPO_ROOT = resolve(INTEGRATION_ROOT, '../..');
-const SCRIPTS = join(REPO_ROOT, 'plugin', 'scripts', 'cursor');
+const CURSOR_SCRIPTS = join(REPO_ROOT, 'plugin', 'scripts', 'cursor');
 const ENV_PATH = join(homedir(), '.agentmemory', '.env');
 
 function loadEnv(path) {
@@ -23,11 +23,17 @@ function loadEnv(path) {
   return out;
 }
 
-function runHook(script, payload) {
-  const r = spawnSync(process.execPath, [join(SCRIPTS, script)], {
+function runHook(script, args, payload) {
+  const hookEnv = {
+    ...process.env,
+    ...(env.AGENTMEMORY_URL ? { AGENTMEMORY_URL: env.AGENTMEMORY_URL } : {}),
+    ...(env.AGENTMEMORY_SECRET ? { AGENTMEMORY_SECRET: env.AGENTMEMORY_SECRET } : {})
+  };
+  const r = spawnSync(process.execPath, [join(CURSOR_SCRIPTS, script), ...args], {
     input: JSON.stringify(payload),
     encoding: 'utf-8',
-    timeout: 30000,
+    timeout: 60000,
+    env: hookEnv
   });
   return { script, status: r.status, stderr: r.stderr?.slice(0, 200) };
 }
@@ -35,7 +41,7 @@ function runHook(script, payload) {
 async function fetchSession(url, secret, id) {
   const r = await fetch(`${url}/agentmemory/sessions`, {
     headers: { Authorization: `Bearer ${secret}` },
-    signal: AbortSignal.timeout(30000),
+    signal: AbortSignal.timeout(30000)
   });
   if (!r.ok) throw new Error(`sessions list ${r.status}`);
   const data = await r.json();
@@ -50,25 +56,26 @@ if (!url || !secret) {
   process.exit(1);
 }
 
-if (!existsSync(join(SCRIPTS, 'agentmemory-session-start.mjs'))) {
-  console.error(`Missing plugin scripts at ${SCRIPTS}`);
+if (!existsSync(join(CURSOR_SCRIPTS, 'run-hook.mjs'))) {
+  console.error(`Missing Cursor shim at ${CURSOR_SCRIPTS}`);
   process.exit(1);
 }
 
-const sessionId = `cursor-plugin-verify-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}`;
+const repoRootNorm = join(REPO_ROOT).replace(/\\/g, '/');
+const sessionId = `cursor-plugin-verify-${Date.now()}`;
 const basePayload = {
   session_id: sessionId,
-  workspace_roots: [join(REPO_ROOT).replace(/\\/g, '/')],
-  cwd: '.cursor',
+  workspace_roots: [repoRootNorm],
+  cwd: repoRootNorm
 };
 
 console.log('=== agentmemory Cursor plugin verify ===\n');
-console.log(`Scripts: ${SCRIPTS}\n`);
+console.log(`Shim scripts: ${CURSOR_SCRIPTS}\n`);
 
 try {
   const livez = await fetch(`${url}/agentmemory/livez`, {
     headers: { Authorization: `Bearer ${secret}` },
-    signal: AbortSignal.timeout(15000),
+    signal: AbortSignal.timeout(15000)
   });
   console.log(`livez: ${livez.ok ? 'ok' : livez.status}`);
 } catch (e) {
@@ -76,15 +83,28 @@ try {
   process.exit(1);
 }
 
-for (const step of [
-  ['agentmemory-session-start.mjs', basePayload],
-  ['agentmemory-post-tool-use.mjs', { ...basePayload, tool_name: 'Read', tool_input: { path: join(REPO_ROOT, 'package.json') } }],
-  ['agentmemory-stop.mjs', basePayload],
-  ['agentmemory-session-end.mjs', { ...basePayload, reason: 'window_close' }],
-]) {
-  const result = runHook(step[0], step[1]);
-  console.log(`${step[0]}: exit ${result.status}${result.stderr ? ` (${result.stderr})` : ''}`);
-  await new Promise((r) => setTimeout(r, 2500));
+const hookSteps = [
+  ['run-hook.mjs', ['sessionStart'], basePayload],
+  [
+    'run-hook.mjs',
+    ['postToolUse'],
+    {
+      ...basePayload,
+      tool_name: 'Read',
+      tool_input: { path: join(REPO_ROOT, 'package.json') },
+      tool_output: 'verify-flow smoke test'
+    }
+  ],
+  ['run-detached.mjs', ['stop'], basePayload],
+  ['run-detached.mjs', ['sessionEnd'], { ...basePayload, reason: 'window_close' }]
+];
+
+for (const step of hookSteps) {
+  const result = runHook(step[0], step[1], step[2]);
+  const label = `${step[0]} ${step[1].join(' ')}`;
+  console.log(`${label}: exit ${result.status}${result.stderr ? ` (${result.stderr})` : ''}`);
+  const waitMs = step[1][0] === 'postToolUse' ? 5000 : 2500;
+  await new Promise((r) => setTimeout(r, waitMs));
 }
 
 const session = await fetchSession(url, secret, sessionId);

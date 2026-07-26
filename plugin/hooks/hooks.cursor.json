@@ -3,53 +3,53 @@
   "hooks": {
     "sessionStart": [
       {
-        "command": "node \"${CURSOR_PLUGIN_ROOT}/scripts/cursor/agentmemory-session-start.mjs\""
+        "command": "node \"${CURSOR_PLUGIN_ROOT}/scripts/cursor/run-hook.mjs\" sessionStart"
       }
     ],
     "beforeSubmitPrompt": [
       {
-        "command": "node \"${CURSOR_PLUGIN_ROOT}/scripts/cursor/agentmemory-prompt-submit.mjs\""
+        "command": "node \"${CURSOR_PLUGIN_ROOT}/scripts/cursor/run-hook.mjs\" beforeSubmitPrompt"
       }
     ],
     "preToolUse": [
       {
         "matcher": "Edit|Write|Read|Glob|Grep|Shell",
-        "command": "node \"${CURSOR_PLUGIN_ROOT}/scripts/cursor/agentmemory-pre-tool-use.mjs\""
+        "command": "node \"${CURSOR_PLUGIN_ROOT}/scripts/cursor/run-hook.mjs\" preToolUse"
       }
     ],
     "postToolUse": [
       {
-        "command": "node \"${CURSOR_PLUGIN_ROOT}/scripts/cursor/agentmemory-post-tool-use.mjs\""
+        "command": "node \"${CURSOR_PLUGIN_ROOT}/scripts/cursor/run-hook.mjs\" postToolUse"
       }
     ],
     "postToolUseFailure": [
       {
-        "command": "node \"${CURSOR_PLUGIN_ROOT}/scripts/cursor/agentmemory-post-tool-failure.mjs\""
+        "command": "node \"${CURSOR_PLUGIN_ROOT}/scripts/cursor/run-hook.mjs\" postToolUseFailure"
       }
     ],
     "preCompact": [
       {
-        "command": "node \"${CURSOR_PLUGIN_ROOT}/scripts/cursor/agentmemory-pre-compact.mjs\""
+        "command": "node \"${CURSOR_PLUGIN_ROOT}/scripts/cursor/run-hook.mjs\" preCompact"
       }
     ],
     "subagentStart": [
       {
-        "command": "node \"${CURSOR_PLUGIN_ROOT}/scripts/cursor/agentmemory-subagent-start.mjs\""
+        "command": "node \"${CURSOR_PLUGIN_ROOT}/scripts/cursor/run-hook.mjs\" subagentStart"
       }
     ],
     "subagentStop": [
       {
-        "command": "node \"${CURSOR_PLUGIN_ROOT}/scripts/cursor/agentmemory-subagent-stop.mjs\""
+        "command": "node \"${CURSOR_PLUGIN_ROOT}/scripts/cursor/run-hook.mjs\" subagentStop"
       }
     ],
     "stop": [
       {
-        "command": "node \"${CURSOR_PLUGIN_ROOT}/scripts/cursor/agentmemory-stop.mjs\""
+        "command": "node \"${CURSOR_PLUGIN_ROOT}/scripts/cursor/run-detached.mjs\" stop"
       }
     ],
     "sessionEnd": [
       {
-        "command": "node \"${CURSOR_PLUGIN_ROOT}/scripts/cursor/agentmemory-session-end.mjs\""
+        "command": "node \"${CURSOR_PLUGIN_ROOT}/scripts/cursor/run-detached.mjs\" sessionEnd"
       }
     ]
   }

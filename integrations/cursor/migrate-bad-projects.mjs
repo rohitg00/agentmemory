@@ -4,17 +4,29 @@
  * by re-resolving the real workspace from Cursor transcript paths.
  *
  * Usage:
- *   node fix-cursor-session-projects.mjs          # apply
- *   node fix-cursor-session-projects.mjs --dry-run  # preview only
+ *   node integrations/cursor/migrate-bad-projects.mjs          # apply
+ *   node integrations/cursor/migrate-bad-projects.mjs --dry-run
  */
-import {
-  getRestUrl,
-  getSecret,
-  isCursorMetadataPath,
-  resolveWorkspace
-} from './agentmemory-lib.mjs';
+import { existsSync, readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
+import { isCursorMetadataPath, resolveWorkspace } from '../../plugin/scripts/cursor/workspace.mjs';
 
 const dryRun = process.argv.includes('--dry-run');
+
+function loadEnv() {
+  const envPath = join(homedir(), '.agentmemory', '.env');
+  const env = {};
+  if (!existsSync(envPath)) return env;
+  for (const line of readFileSync(envPath, 'utf-8').split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const eq = trimmed.indexOf('=');
+    if (eq === -1) continue;
+    env[trimmed.slice(0, eq).trim()] = trimmed.slice(eq + 1).trim();
+  }
+  return env;
+}
 
 function isBadSession(session) {
   const { project, cwd } = session;
@@ -22,8 +34,7 @@ function isBadSession(session) {
 }
 
 async function main() {
-  const restUrl = getRestUrl();
-  const secret = getSecret();
+  const { AGENTMEMORY_URL: restUrl, AGENTMEMORY_SECRET: secret } = loadEnv();
   if (!restUrl || !secret) {
     console.error('Missing AGENTMEMORY_URL or AGENTMEMORY_SECRET in ~/.agentmemory/.env');
     process.exit(1);

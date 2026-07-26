@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 import {
   chmodSync,
   closeSync,
@@ -8,77 +7,18 @@ import {
   readFileSync,
   renameSync,
   readdirSync,
+  statSync,
   unlinkSync,
   writeFileSync
 } from 'node:fs';
-import { spawn, execSync } from 'node:child_process';
+import { execSync } from 'node:child_process';
 import { dirname, join, basename } from 'node:path';
 import { homedir } from 'node:os';
-import { fileURLToPath } from 'node:url';
 
 const HOME = homedir();
 const CURSOR_PROJECTS_DIR = join(HOME, '.cursor', 'projects');
 const SESSION_CACHE_PATH = join(HOME, '.cursor', 'hooks', '.agentmemory-session-cache.json');
-const ENV_FILE_PATH = join(HOME, '.agentmemory', '.env');
-
-let cachedEnvFile = null;
-
-export function loadAgentmemoryEnv(envPath = ENV_FILE_PATH) {
-  const out = {};
-  if (!existsSync(envPath)) return out;
-  try {
-    for (const line of readFileSync(envPath, 'utf-8').split('\n')) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith('#')) continue;
-      const idx = trimmed.indexOf('=');
-      if (idx === -1) continue;
-      out[trimmed.slice(0, idx).trim()] = trimmed.slice(idx + 1).trim();
-    }
-  } catch {}
-  return out;
-}
-
-function getEnvFile() {
-  if (!cachedEnvFile) cachedEnvFile = loadAgentmemoryEnv();
-  return cachedEnvFile;
-}
-
-export function getConfigValue(key) {
-  if (process.env[key] !== undefined && process.env[key] !== '') return process.env[key];
-  return getEnvFile()[key];
-}
-
-export function isConfigEnabled(key) {
-  return getConfigValue(key) === 'true';
-}
-
-export function getRestUrl() {
-  return getConfigValue('AGENTMEMORY_URL') || 'http://localhost:3111';
-}
-
-export function getSecret() {
-  return getConfigValue('AGENTMEMORY_SECRET') || '';
-}
-
-export function authHeaders() {
-  const h = { 'Content-Type': 'application/json' };
-  const secret = getSecret();
-  if (secret) h.Authorization = `Bearer ${secret}`;
-  return h;
-}
-
-export function truncateValue(value, max) {
-  if (typeof value === 'string') {
-    if (value.length > max) return `${value.slice(0, max)}\n[...truncated]`;
-    return value;
-  }
-  if (typeof value === 'object' && value !== null) {
-    const str = JSON.stringify(value);
-    if (str.length > max) return `${str.slice(0, max)}...[truncated]`;
-    return str;
-  }
-  return value;
-}
+const HOOK_PAYLOAD_DIR = join(HOME, '.cursor', 'hooks', '.am-hook-payloads');
 
 export function normalizePathSlashes(value) {
   return String(value).replace(/\\/g, '/');
@@ -91,11 +31,29 @@ export function isCursorMetadataPath(value) {
   return /(^|\/)\.cursor(\/|$)/.test(trimmed);
 }
 
+export function pathUnderHome(value) {
+  if (typeof value !== 'string') return false;
+  const homeNorm = normalizePathSlashes(HOME);
+  const valueNorm = normalizePathSlashes(value);
+  return valueNorm === homeNorm || valueNorm.startsWith(`${homeNorm}/`);
+}
+
+function isIdeInstallPath(value) {
+  if (!value || typeof value !== 'string') return false;
+  const norm = normalizePathSlashes(value).toLowerCase();
+  return (
+    /(^|[\\/])(programs|program files|program files \(x86\))[\\/]cursor([\\/]|$)/i.test(norm) ||
+    /cursor\.app[\\/]contents/i.test(norm) ||
+    /(^|[\\/])microsoft vs code[\\/]resources[\\/]app([\\/]|$)/i.test(norm)
+  );
+}
+
 function isBadPath(value) {
   if (!value || typeof value !== 'string') return true;
   const trimmed = normalizePathSlashes(value.trim());
   if (!trimmed || trimmed === '/' || trimmed === '.') return true;
   if (isCursorMetadataPath(trimmed)) return true;
+  if (isIdeInstallPath(trimmed)) return true;
   return false;
 }
 
@@ -154,16 +112,18 @@ function recallSession(sessionId) {
   return cache[sessionId] || null;
 }
 
-function pathUnderHome(value) {
-  if (typeof value !== 'string') return false;
-  const homeNorm = normalizePathSlashes(HOME);
-  const valueNorm = normalizePathSlashes(value);
-  return valueNorm === homeNorm || valueNorm.startsWith(`${homeNorm}/`);
+function isCollectablePath(value) {
+  if (typeof value !== 'string' || isCursorMetadataPath(value)) return false;
+  if (pathUnderHome(value)) return true;
+  if (process.platform === 'win32' && /^[a-zA-Z]:[\\/]/.test(value) && pathExists(value)) {
+    return true;
+  }
+  return false;
 }
 
 function collectPathStrings(value, out = []) {
   if (typeof value === 'string') {
-    if (pathUnderHome(value) && !isCursorMetadataPath(value)) out.push(value);
+    if (isCollectablePath(value)) out.push(value);
     return out;
   }
   if (Array.isArray(value)) {
@@ -176,10 +136,27 @@ function collectPathStrings(value, out = []) {
   return out;
 }
 
+function pathExists(pathValue) {
+  if (existsSync(pathValue)) return true;
+  if (process.platform === 'win32') {
+    const native = pathValue.replace(/\//g, '\\');
+    if (native !== pathValue && existsSync(native)) return true;
+  }
+  return false;
+}
+
 function existingAncestor(pathValue) {
   let current = pathValue;
   while (current && current !== HOME && current !== '/') {
-    if (existsSync(current)) return current;
+    if (pathExists(current)) {
+      const resolved = process.platform === 'win32' ? current.replace(/\//g, '\\') : current;
+      try {
+        if (statSync(resolved).isFile()) {
+          return dirname(resolved);
+        }
+      } catch {}
+      return resolved;
+    }
     current = dirname(current);
   }
   return null;
@@ -349,8 +326,6 @@ export function readHookStdinComplete(maxWaitMs = 30000) {
   });
 }
 
-const HOOK_PAYLOAD_DIR = join(HOME, '.cursor', 'hooks', '.am-hook-payloads');
-
 export function writeHookPayloadTemp(input) {
   mkdirSync(HOOK_PAYLOAD_DIR, { recursive: true });
   try {
@@ -380,39 +355,22 @@ export function readWorkerHookPayload() {
   }
 }
 
-export function spawnDetachedHookWorker(scriptUrl, input) {
-  const payloadFile = writeHookPayloadTemp(input);
-  const child = spawn(process.execPath, [fileURLToPath(scriptUrl)], {
-    detached: true,
-    stdio: 'ignore',
-    windowsHide: true,
-    env: {
-      ...process.env,
-      AM_HOOK_WORKER: '1',
-      AM_HOOK_INPUT_FILE: payloadFile
+function resolveFromPathCandidates(candidates, sessionId) {
+  for (const candidate of candidates) {
+    if (isBadPath(candidate)) continue;
+    const existing = existingAncestor(candidate);
+    if (!existing || isIdeInstallPath(existing)) continue;
+    const project = projectFromPath(existing);
+    if (project !== '.cursor') {
+      rememberSession(sessionId, project, existing);
+      return { project, cwd: existing };
     }
-  });
-  child.unref();
-
-  const bail = setTimeout(() => process.exit(0), 2000);
-  if (bail.unref) bail.unref();
-  child.on('spawn', () => process.exit(0));
-  child.on('error', (err) => {
-    console.error('[agentmemory] failed to spawn hook worker:', err.message);
-    try {
-      unlinkSync(payloadFile);
-    } catch {}
-    process.exit(0);
-  });
-}
-
-export async function runDetachedHookParent(scriptUrl) {
-  const input = await readHookStdinComplete();
-  spawnDetachedHookWorker(scriptUrl, input);
+  }
+  return null;
 }
 
 export function resolveWorkspace(data) {
-  const sessionId = data?.session_id;
+  const sessionId = data?.session_id ?? data?.sessionId;
   const cached = recallSession(sessionId);
   if (cached?.cwd && !isBadPath(cached.cwd)) {
     return { project: cached.project, cwd: cached.cwd };
@@ -426,43 +384,35 @@ export function resolveWorkspace(data) {
     data?.workspace,
     data?.cwd,
     data?.root_path,
-    data?.project_path,
-    process.env.CURSOR_WORKSPACE_ROOT,
-    process.env.CURSOR_WORKSPACE_FOLDER,
-    process.env.PWD,
-    process.env.VSCODE_CWD
+    data?.project_path
   ];
 
-  for (const candidate of payloadCandidates) {
-    if (isBadPath(candidate)) continue;
-    const existing = existingAncestor(candidate);
-    if (!existing) continue;
-    const project = projectFromPath(existing);
-    if (project !== '.cursor') {
-      rememberSession(sessionId, project, existing);
-      return { project, cwd: existing };
-    }
-  }
+  const fromPayload = resolveFromPathCandidates(payloadCandidates, sessionId);
+  if (fromPayload) return fromPayload;
 
   const toolPaths = collectPathStrings(data?.tool_input)
     .map(existingAncestor)
-    .filter(Boolean);
-  for (const existing of toolPaths) {
-    const project = projectFromPath(existing);
-    if (project !== '.cursor') {
-      rememberSession(sessionId, project, existing);
-      return { project, cwd: existing };
-    }
-  }
+    .filter((p) => p && !isIdeInstallPath(p));
+  const fromTools = resolveFromPathCandidates(toolPaths, sessionId);
+  if (fromTools) return fromTools;
 
   if (sessionId) {
     const fromSession = workspaceFromSessionId(sessionId);
-    if (fromSession) {
+    if (fromSession && !isIdeInstallPath(fromSession)) {
       const project = projectFromPath(fromSession);
       rememberSession(sessionId, project, fromSession);
       return { project, cwd: fromSession };
     }
   }
+
+  const envCandidates = [
+    process.env.CURSOR_WORKSPACE_ROOT,
+    process.env.CURSOR_WORKSPACE_FOLDER,
+    process.env.PWD,
+    process.env.VSCODE_CWD
+  ];
+  const fromEnv = resolveFromPathCandidates(envCandidates, sessionId);
+  if (fromEnv) return fromEnv;
 
   if (process.env.CURSOR_WORKSPACE_LABEL) {
     const label = process.env.CURSOR_WORKSPACE_LABEL;
