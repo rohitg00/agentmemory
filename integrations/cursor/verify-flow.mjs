@@ -126,8 +126,15 @@ record(
 //    (sessionId, tool_name, tool_input), so a byte-identical retry would be
 //    discarded as a duplicate and could never succeed.
 console.log('\n[2/4] postToolUse');
-const OBSERVE_ATTEMPTS = 3;
+// Measured against a Tailscale-reachable daemon: roughly 15% of observations
+// are dropped, in bursts rather than independently -- three in a row is
+// normal, then thirty in a row land. The same rate applies when the canonical
+// hook is invoked directly, without this adapter, so it is a property of the
+// fire-and-forget hook contract plus a busy daemon, not of the Cursor path.
+// Retries therefore have to be spaced, not just repeated.
+const OBSERVE_ATTEMPTS = 4;
 for (let attempt = 1; attempt <= OBSERVE_ATTEMPTS; attempt++) {
+  if (attempt > 1) await sleep(attempt * 2000);
   r = runHook('run-hook.mjs', ['postToolUse'], {
     ...basePayload,
     tool_name: 'Read',
