@@ -79,5 +79,25 @@ export function delegateHook(
 
   if (child.stdout) process.stdout.write(child.stdout);
   if (child.stderr) process.stderr.write(child.stderr);
+
+  // spawnSync reports a failure to launch (missing script, timeout kill) as
+  // status === null, so `status ?? 0` would announce success and lose the
+  // observation silently -- the exact failure mode that makes a memory hook
+  // untrustworthy. Say so on stderr, but still exit 0: agentmemory is a
+  // passive recorder and must never block the editor. A genuine non-zero
+  // exit from the canonical hook is a real decision and is passed through.
+  if (child.error) {
+    console.error(
+      `[agentmemory] cursor hook "${hookKey}" could not run ${script}: ${child.error.message}`,
+    );
+    return 0;
+  }
+  if (child.signal) {
+    console.error(
+      `[agentmemory] cursor hook "${hookKey}" (${script}) was killed by ${child.signal}` +
+        ` -- treating as no-op`,
+    );
+    return 0;
+  }
   return child.status ?? 0;
 }

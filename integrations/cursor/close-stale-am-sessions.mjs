@@ -8,23 +8,7 @@
  *   node integrations/cursor/close-stale-am-sessions.mjs --min-age-hours 6 --project my-project
  *   node integrations/cursor/close-stale-am-sessions.mjs --exclude ses_abc123,def456
  */
-import { existsSync, readFileSync } from 'node:fs';
-import { homedir } from 'node:os';
-import { join } from 'node:path';
-
-function loadEnv() {
-  const envPath = join(homedir(), '.agentmemory', '.env');
-  const env = {};
-  if (!existsSync(envPath)) return env;
-  for (const line of readFileSync(envPath, 'utf-8').split('\n')) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith('#')) continue;
-    const eq = trimmed.indexOf('=');
-    if (eq === -1) continue;
-    env[trimmed.slice(0, eq).trim()] = trimmed.slice(eq + 1).trim();
-  }
-  return env;
-}
+import { requireConnection } from './_env.mjs';
 
 function parseArgs() {
   const args = process.argv.slice(2);
@@ -57,11 +41,7 @@ function parseArgs() {
 
 async function main() {
   const opts = parseArgs();
-  const { AGENTMEMORY_URL: restUrl, AGENTMEMORY_SECRET: secret } = loadEnv();
-  if (!restUrl || !secret) {
-    console.error('Missing AGENTMEMORY_URL or AGENTMEMORY_SECRET in ~/.agentmemory/.env');
-    process.exit(1);
-  }
+  const { url: restUrl, secret } = requireConnection();
 
   const headers = {
     Authorization: `Bearer ${secret}`,

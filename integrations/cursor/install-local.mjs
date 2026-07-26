@@ -4,29 +4,16 @@ import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execSync } from 'node:child_process';
+import { ENV_PATH, loadConfig } from './_env.mjs';
 
 const INTEGRATION_ROOT = resolve(dirname(fileURLToPath(import.meta.url)));
 const REPO_ROOT = resolve(INTEGRATION_ROOT, '../..');
 const CURSOR_DIR = join(homedir(), '.cursor');
-const ENV_PATH = join(homedir(), '.agentmemory', '.env');
 const MCP_PATH = join(CURSOR_DIR, 'mcp.json');
 const HOOKS_PATH = join(CURSOR_DIR, 'hooks.json');
 const MARKETPLACE_NAME = 'local-agentmemory';
 const MARKETPLACE_DIR = join(CURSOR_DIR, 'plugins', 'marketplaces', MARKETPLACE_NAME);
 const LEGACY_MARKETPLACE_DIR = join(CURSOR_DIR, 'plugins', 'marketplaces', 'local-agentmemory-cursor');
-
-function loadEnv(path) {
-  const out = {};
-  if (!existsSync(path)) return out;
-  for (const line of readFileSync(path, 'utf-8').split('\n')) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith('#')) continue;
-    const idx = trimmed.indexOf('=');
-    if (idx === -1) continue;
-    out[trimmed.slice(0, idx).trim()] = trimmed.slice(idx + 1).trim();
-  }
-  return out;
-}
 
 function readJson(path) {
   if (!existsSync(path)) return {};
@@ -136,9 +123,11 @@ function disableUserHooks() {
   return backup;
 }
 
-const env = loadEnv(ENV_PATH);
+const env = loadConfig(['AGENTMEMORY_URL', 'AGENTMEMORY_SECRET', 'AGENTMEMORY_TOOLS']);
 if (!env.AGENTMEMORY_URL || !env.AGENTMEMORY_SECRET) {
-  console.error('Missing ~/.agentmemory/.env with AGENTMEMORY_URL and AGENTMEMORY_SECRET');
+  console.error(
+    `Missing AGENTMEMORY_URL / AGENTMEMORY_SECRET. Set them in the environment or in ${ENV_PATH}.`
+  );
   process.exit(1);
 }
 

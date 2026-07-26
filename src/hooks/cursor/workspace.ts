@@ -137,12 +137,45 @@ function recallSession(sessionId: string | undefined): SessionCacheEntry | null 
   return cache[sessionId] ?? null;
 }
 
+// Absolute paths that belong to the OS rather than to any user project. A
+// stray /usr/lib/... or /etc/... reference inside tool_input must not be
+// allowed to resolve to a project named "lib" or "etc".
+const SYSTEM_PATH_PREFIXES = [
+  "/usr/",
+  "/etc/",
+  "/bin/",
+  "/sbin/",
+  "/lib/",
+  "/lib64/",
+  "/opt/",
+  "/var/",
+  "/proc/",
+  "/sys/",
+  "/dev/",
+  "/run/",
+  "/boot/",
+  "/snap/",
+  "/nix/",
+];
+
+function isSystemPath(value: string): boolean {
+  const norm = normalizePathSlashes(value);
+  return SYSTEM_PATH_PREFIXES.some((prefix) => norm.startsWith(prefix));
+}
+
+// tool_input carries whatever shape the tool used, so paths are harvested by
+// walking the object. The filter has to be permissive enough to find the
+// project and strict enough not to invent one.
 function isCollectablePath(value: unknown): value is string {
   if (typeof value !== "string" || isCursorMetadataPath(value)) return false;
   if (pathUnderHome(value)) return true;
-  if (process.platform === "win32" && /^[a-zA-Z]:[\\/]/.test(value) && pathExists(value)) {
-    return true;
-  }
+  // Windows drive-absolute: HOME is regularly on C: while the checkout sits
+  // on D:, so a HOME-only rule loses every cross-drive project.
+  if (/^[a-zA-Z]:[\\/]/.test(value)) return pathExists(value);
+  // POSIX-absolute outside $HOME: containers (Codespaces, devcontainers)
+  // check repos out at /workspaces/..., which a HOME-only rule silently
+  // rejects. existingAncestor() and the git lookup downstream validate it.
+  if (value.startsWith("/")) return !isSystemPath(value) && pathExists(value);
   return false;
 }
 
@@ -214,7 +247,6 @@ function cleanRepoName(dirPath: string): string {
   }
 
   const name = baseName.replace(/(-worktree-\d+|-worktree|-[a-f0-9]{7,40})$/i, "");
-  if (/^pxread-/i.test(name)) return "pxread";
   return name || "unknown-project";
 }
 

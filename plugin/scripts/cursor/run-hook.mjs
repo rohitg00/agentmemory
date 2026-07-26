@@ -88,10 +88,32 @@ function recallSession(sessionId) {
 	if (!sessionId) return null;
 	return loadSessionCache()[sessionId] ?? null;
 }
+const SYSTEM_PATH_PREFIXES = [
+	"/usr/",
+	"/etc/",
+	"/bin/",
+	"/sbin/",
+	"/lib/",
+	"/lib64/",
+	"/opt/",
+	"/var/",
+	"/proc/",
+	"/sys/",
+	"/dev/",
+	"/run/",
+	"/boot/",
+	"/snap/",
+	"/nix/"
+];
+function isSystemPath(value) {
+	const norm = normalizePathSlashes(value);
+	return SYSTEM_PATH_PREFIXES.some((prefix) => norm.startsWith(prefix));
+}
 function isCollectablePath(value) {
 	if (typeof value !== "string" || isCursorMetadataPath(value)) return false;
 	if (pathUnderHome(value)) return true;
-	if (process.platform === "win32" && /^[a-zA-Z]:[\\/]/.test(value) && pathExists(value)) return true;
+	if (/^[a-zA-Z]:[\\/]/.test(value)) return pathExists(value);
+	if (value.startsWith("/")) return !isSystemPath(value) && pathExists(value);
 	return false;
 }
 function collectPathStrings(value, out = []) {
@@ -149,9 +171,7 @@ function cleanRepoName(dirPath) {
 		const parent = dirname(normalized);
 		if (parent && parent !== normalized && parent !== "." && parent !== "/") return cleanRepoName(parent);
 	}
-	const name = baseName.replace(/(-worktree-\d+|-worktree|-[a-f0-9]{7,40})$/i, "");
-	if (/^pxread-/i.test(name)) return "pxread";
-	return name || "unknown-project";
+	return baseName.replace(/(-worktree-\d+|-worktree|-[a-f0-9]{7,40})$/i, "") || "unknown-project";
 }
 function projectFromPath(targetPath) {
 	try {
@@ -349,6 +369,14 @@ function delegateHook(hookKey, data, options = {}) {
 	});
 	if (child.stdout) process.stdout.write(child.stdout);
 	if (child.stderr) process.stderr.write(child.stderr);
+	if (child.error) {
+		console.error(`[agentmemory] cursor hook "${hookKey}" could not run ${script}: ${child.error.message}`);
+		return 0;
+	}
+	if (child.signal) {
+		console.error(`[agentmemory] cursor hook "${hookKey}" (${script}) was killed by ${child.signal} -- treating as no-op`);
+		return 0;
+	}
 	return child.status ?? 0;
 }
 //#endregion

@@ -24,8 +24,11 @@ describe('cursor workspace resolver', () => {
 
   it('resolveWorkspace uses workspace_roots when cwd is .cursor metadata', () => {
     const repoRoot = join(process.cwd()).replace(/\\/g, '/');
+    // resolveWorkspace persists what it resolves under this session id, so a
+    // fixed id would be served from the cache on the second run and stop
+    // exercising the workspace_roots branch this test exists to cover.
     const resolved = resolveWorkspace({
-      session_id: 'test-session',
+      session_id: `metadata-cwd-${Date.now()}-${Math.random().toString(36).slice(2)}`,
       workspace_roots: [repoRoot],
       cwd: '.cursor'
     });
