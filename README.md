@@ -602,6 +602,19 @@ copilot plugin install rohitg00/agentmemory:plugin
 
 `agentmemory connect copilot-cli` merges `mcpServers.agentmemory` into `~/.copilot/mcp-config.json` (or `$COPILOT_HOME/mcp-config.json` when `COPILOT_HOME` is set) and preserves existing servers. This adapter is Windows-safe even though other `connect` adapters still require manual Windows setup. Copilot picks up the MCP server on next launch or after `/mcp`. Install the plugin as well when you want the full hook/skill experience.
 
+### Cursor
+
+```bash
+# MCP wiring
+agentmemory connect cursor
+```
+
+Then add the native hooks: **Settings → Plugins → Add marketplace** → select an agentmemory checkout (the directory containing `.cursor-plugin/marketplace.json`), enable the **agentmemory** plugin, and reload the window.
+
+Cursor runs the same lifecycle hooks as every other host — they are the canonical `plugin/scripts/*.mjs`, not a separate implementation. A thin adapter in front of them resolves which project a session belongs to, which Cursor does not reliably report: its payload `cwd` can be `.cursor`, the Cursor install directory, or missing entirely. Do not also wire hooks into `~/.cursor/hooks.json` — the plugin already dispatches them, and both copies firing records every observation twice.
+
+Full guide: [`integrations/cursor/`](integrations/cursor/)
+
 <details>
 <summary><b>OpenClaw (paste this prompt)</b></summary>
 
@@ -689,7 +702,7 @@ The agentmemory entry is the **same MCP server block** across every host that us
 | Agent | Config file | Notes |
 |---|---|---|
 | **Cursor (MCP only)** | `~/.cursor/mcp.json` | Merge into `mcpServers`, or `agentmemory connect cursor`. One-click deeplink also available on the website. |
-| **Cursor (full plugin)** | `.cursor-plugin/` | Cursor Marketplace listing (submission in review) or Cursor Settings → Plugins → local checkout. Registers 7 auto-capture hooks (sessionStart, beforeSubmitPrompt, preToolUse, postToolUse, postToolUseFailure, stop, sessionEnd) + 17 skills + the MCP server, with `AGENTMEMORY_URL` / `AGENTMEMORY_SECRET` managed in Cursor's plugin dashboard. Works in the Cursor IDE and `cursor-agent` CLI; CLI print-mode prompts are backfilled from the session transcript at session end. |
+| **Cursor (full plugin)** | `.cursor-plugin/` | Cursor Marketplace listing or Settings → Plugins → local checkout. Registers lifecycle hooks via a thin adapter that delegates to the canonical `plugin/scripts/*.mjs`, plus skills and MCP. The adapter resolves the workspace Cursor does not reliably report. See [Cursor](#cursor). Works in the Cursor IDE and `cursor-agent` CLI. |
 | **Claude Desktop** | `claude_desktop_config.json` (Application Support) | Merge into `mcpServers`. Restart Claude Desktop after editing. |
 | **Cline / Roo Code / Kilo Code** | Cline MCP settings (Settings UI → MCP Servers → Edit) | Same `mcpServers` block. |
 | **Devin CLI (MCP + hooks)** | `~/.config/devin/config.json` | `agentmemory connect devin` merges the MCP entry; `--with-hooks` adds six native auto-capture hooks (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, Stop, SessionEnd) with Devin'"'"'s lowercase tool matchers. Verify with `devin mcp list` and `/hooks` inside devin. |
