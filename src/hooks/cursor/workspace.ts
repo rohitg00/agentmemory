@@ -14,6 +14,7 @@ import {
 import { execSync } from "node:child_process";
 import { dirname, join, basename } from "node:path";
 import { homedir } from "node:os";
+import { workspaceFromCursorDb } from "./cursor-db.js";
 
 // Cursor does not hand hooks a trustworthy working directory: `cwd` can be
 // `.cursor`, the IDE install path (via VSCODE_CWD), or absent entirely. This
@@ -48,6 +49,11 @@ export function isCursorMetadataPath(value: unknown): boolean {
   if (!value || typeof value !== "string") return false;
   const trimmed = normalizePathSlashes(value.trim());
   if (trimmed === ".cursor") return true;
+  // ~/.cursor/worktrees/<name> is the exception: Cursor puts real git
+  // checkouts there for its background agents. Treating those as metadata
+  // sends the session to whatever the transcript scan guesses instead of to
+  // the repository the agent is actually editing.
+  if (/(^|\/)\.cursor\/worktrees\/[^/]/.test(trimmed)) return false;
   return /(^|\/)\.cursor(\/|$)/.test(trimmed);
 }
 
@@ -74,6 +80,9 @@ function isBadPath(value: unknown): boolean {
   if (!value || typeof value !== "string") return true;
   const trimmed = normalizePathSlashes(value.trim());
   if (!trimmed || trimmed === "/" || trimmed === ".") return true;
+  // A bare drive root is never a project. Cursor emits a single-letter
+  // transcript slug for some legacy windows ("c"), which decodes to "C:".
+  if (/^[a-zA-Z]:\/?$/.test(trimmed)) return true;
   if (isCursorMetadataPath(trimmed)) return true;
   if (isIdeInstallPath(trimmed)) return true;
   return false;
@@ -203,12 +212,15 @@ function pathExists(pathValue: string): boolean {
   return false;
 }
 
+const MAX_ANCESTOR_STEPS = 64;
+
 // Payloads often carry a file path (tool_input.path) rather than a
 // directory, and sometimes a path that no longer exists. Walk up until
 // something real is found, then normalise a file down to its directory.
 function existingAncestor(pathValue: string): string | null {
   let current = pathValue;
-  while (current && current !== HOME && current !== "/") {
+  for (let step = 0; step < MAX_ANCESTOR_STEPS; step++) {
+    if (!current || current === HOME || current === "/") return null;
     if (pathExists(current)) {
       const resolved = process.platform === "win32" ? current.replace(/\//g, "\\") : current;
       try {
@@ -218,7 +230,15 @@ function existingAncestor(pathValue: string): string | null {
       } catch {}
       return resolved;
     }
-    current = dirname(current);
+    // dirname() is a fixed point at every filesystem root -- dirname("//") is
+    // "//", dirname("C:") is "C:", dirname("D:/") is "D:/" -- so climbing
+    // without a progress check spins forever. Nothing produced such an input
+    // while this only ever saw $HOME-prefixed paths; a general path scan
+    // produces them constantly, because every "https://host/x" in a
+    // transcript contains a "//host/x".
+    const parent = dirname(current);
+    if (parent === current) return null;
+    current = parent;
   }
   return null;
 }
@@ -231,12 +251,37 @@ function gitRootFromPath(targetPath: string): string {
   }).trim();
 }
 
+// Filesystem-only equivalent of `git rev-parse --show-toplevel`, for hot
+// paths that would otherwise spawn a process per candidate. `.git` is a
+// directory in a normal clone and a file in a linked worktree, so a plain
+// existence check covers both.
+function gitRootNearby(startPath: string): string | null {
+  let current = startPath;
+  for (let step = 0; step < MAX_ANCESTOR_STEPS; step++) {
+    if (!current || current === "/") return null;
+    if (pathExists(join(current, ".git"))) return current;
+    const parent = dirname(current);
+    if (parent === current) return null;
+    current = parent;
+  }
+  return null;
+}
+
 function cleanRepoName(dirPath: string): string {
   const normalized = normalizePathSlashes(dirPath).replace(/\/+$/, "");
   if (!normalized) return "unknown-project";
 
   const claudeWt = normalized.match(/^(.*?)\/\.claude\/worktrees\/[^/]+$/i);
   if (claudeWt?.[1]) return cleanRepoName(claudeWt[1]);
+
+  // Cursor names agent worktrees "<repo>-<4-8 char token>" under
+  // ~/.cursor/worktrees. Fold them back onto the repository so a background
+  // agent's memories land with the rest of that project's.
+  const cursorWt = normalized.match(/\/\.cursor\/worktrees\/([^/]+)$/i);
+  if (cursorWt?.[1]) {
+    const stripped = cursorWt[1].replace(/-[a-z0-9]{4,8}$/i, "");
+    return stripped || cursorWt[1];
+  }
 
   const baseName = basename(normalized);
   if (/^agent-[a-f0-9]{6,}$/i.test(baseName)) {
@@ -258,29 +303,49 @@ function projectFromPath(targetPath: string): string {
   }
 }
 
-// Cursor names transcript directories after the workspace path with every
-// separator flattened to "-", so "Users-me-src-my-app" is ambiguous between
-// .../src/my/app and .../src/my-app. Try both splits at each position and
-// keep whatever exists on disk.
+// Cursor names each directory under ~/.cursor/projects after the workspace
+// path with every separator flattened to "-", so the transcript directory for
+// a session already encodes where that session was running. Decoding it is
+// lossy in one direction only: a directory name may itself contain hyphens,
+// which makes "d-Andrew-Code-cc-router" mean D:/Andrew/Code/cc-router and,
+// just as validly on paper, D:/Andrew/Code/cc/router.
+//
+// The disambiguator is the filesystem. Try every way of grouping consecutive
+// segments into one directory name, but only descend into groupings that
+// actually exist -- pruning collapses what looks like a 2^segments search
+// into the handful of real directories on the machine.
 function decodeSlugCandidates(slug: string): string[] {
   if (!slug || slug === "empty-window") return [];
+  // Cursor 3.x names workspace-less windows (started from the welcome screen)
+  // after a timestamp. Those never correspond to a path.
+  if (/^\d{10,}$/.test(slug)) return [];
+
   const parts = slug.split("-");
-  if (parts[0] !== "Users" || parts.length < 2) return [];
+  if (!parts.length) return [];
 
   const results = new Set<string>();
 
   function walk(index: number, currentPath: string): void {
     if (index >= parts.length) {
-      if (existsSync(currentPath)) results.add(currentPath);
+      results.add(currentPath);
       return;
     }
-    walk(index + 1, `${currentPath}/${parts[index]}`);
-    const remainder = parts.slice(index).join("-");
-    const alt = `${currentPath}/${remainder}`;
-    if (existsSync(alt)) results.add(alt);
+    for (let take = 1; index + take <= parts.length; take++) {
+      const next = `${currentPath}/${parts.slice(index, index + take).join("-")}`;
+      if (!pathExists(next)) continue;
+      walk(index + take, next);
+    }
   }
 
-  walk(2, `/${parts[0]}/${parts[1]}`);
+  // A single leading letter is a Windows drive: "d-Andrew-Code" -> D:/Andrew/Code.
+  // Without this branch the whole function returns nothing on Windows, which
+  // is where HOME and the checkout most often sit on different drives.
+  const first = parts[0];
+  if (first && /^[a-zA-Z]$/.test(first)) walk(1, `${first.toUpperCase()}:`);
+  // Otherwise the slug starts at the filesystem root: "Users-alice-src",
+  // "home-andrew-src", "workspaces-repo".
+  walk(0, "");
+
   return [...results];
 }
 
@@ -325,19 +390,74 @@ function findSessionTranscript(
   return null;
 }
 
+const TRANSCRIPT_SCAN_BYTES = 250000;
+const TRANSCRIPT_CANDIDATE_LIMIT = 120;
+const TRANSCRIPT_MATCH_LIMIT = 4000;
+const TRANSCRIPT_MIN_VOTES = 3;
+
+// Paths are normalised to forward slashes before matching, so a Windows path
+// looks like "D:/repo/src/a.ts" by the time these run.
+//
+// Both patterns are a single character class with one bounded quantifier, on
+// purpose. The obvious formulation -- /\/(?:[\w.-]+\/)+[\w.-]*/ -- nests a
+// quantifier inside a quantifier, and on a 250KB transcript full of
+// slash-bearing strings that backtracks badly enough to hang the hook for
+// minutes. There is no clever matching to do here anyway: grab anything
+// path-shaped and let the existence check below decide.
+const TRANSCRIPT_PATH_PATTERNS = [
+  /[a-zA-Z]:[A-Za-z0-9._@+\-/]{3,240}/g, // Windows drive-absolute
+  /\/[A-Za-z0-9._@+\-/]{3,240}/g, // POSIX absolute
+];
+
+// Last resort before environment variables: mine the session transcript for
+// paths and take the directory that shows up across the most of them.
+//
+// This used to anchor its regex on $HOME, which quietly made the whole layer
+// dead on the two most common non-trivial setups -- Windows with HOME on C:
+// and the checkout on D:, and containers that check out under /workspaces.
+// Match any absolute path shape instead and let existence plus the git lookup
+// downstream throw out the noise (URLs, log fragments, OS paths).
 function workspaceFromTranscriptFile(transcriptFile: string | null): string | null {
   if (!transcriptFile || !existsSync(transcriptFile)) return null;
 
-  const chunk = normalizePathSlashes(readFileSync(transcriptFile, "utf-8").slice(0, 250000));
-  const escapedHome = normalizePathSlashes(HOME).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const re = new RegExp(`${escapedHome}[^\\s"'\\\\]+`, "g");
+  const chunk = normalizePathSlashes(
+    readFileSync(transcriptFile, "utf-8").slice(0, TRANSCRIPT_SCAN_BYTES),
+  );
   const counts = new Map<string, number>();
+  const seen = new Set<string>();
 
-  for (const match of chunk.match(re) || []) {
-    if (isCursorMetadataPath(match)) continue;
-    const existing = existingAncestor(match);
-    if (!existing || existing === HOME) continue;
-    counts.set(existing, (counts.get(existing) || 0) + 1);
+  // Bounded on both axes: every candidate costs filesystem walks, and a busy
+  // transcript can contain thousands of path-shaped strings.
+  for (const pattern of TRANSCRIPT_PATH_PATTERNS) {
+    pattern.lastIndex = 0;
+    let match: RegExpExecArray | null;
+    let scanned = 0;
+    while ((match = pattern.exec(chunk)) !== null) {
+      if (++scanned > TRANSCRIPT_MATCH_LIMIT) break;
+      if (seen.size >= TRANSCRIPT_CANDIDATE_LIMIT) break;
+      const value = match[0];
+      if (seen.has(value)) continue;
+      seen.add(value);
+      // "//host/path" is the tail of a URL, not a filesystem path.
+      if (value.startsWith("//")) continue;
+      if (isCursorMetadataPath(value) || isIdeInstallPath(value) || isSystemPath(value)) continue;
+      // Only paths that still exist vote, and they vote for their git root.
+      //
+      // Both halves matter. Letting a path climb to whatever ancestor still
+      // exists (existingAncestor) means a deleted D:/repo/pkg/src/a.ts votes
+      // for D:/repo, and a transcript is full of such paths, so the
+      // shallowest common directory always wins -- a session in
+      // D:/Andrew/Code/pkg resolves to the project "Code". Counting existing
+      // directories as themselves instead just moves the problem: the winner
+      // becomes whatever generic directory the conversation mentioned most,
+      // which in practice is "/bin" or "C:/Users". Requiring a repository
+      // root is what makes a vote mean "this is a project".
+      const existing = existingDirectory(value);
+      if (!existing || existing === HOME || isBadPath(existing)) continue;
+      const root = gitRootNearby(existing);
+      if (!root || root === HOME || isBadPath(root)) continue;
+      counts.set(root, (counts.get(root) || 0) + 1);
+    }
   }
 
   let best: string | null = null;
@@ -349,19 +469,32 @@ function workspaceFromTranscriptFile(transcriptFile: string | null): string | nu
     }
   }
 
-  return best;
+  // One passing mention of a repository is not evidence that the session was
+  // running in it. This layer is a guess of last resort, and a wrong guess
+  // files a user's memories under someone else's project -- worse than
+  // admitting the workspace is unknown.
+  return bestCount >= TRANSCRIPT_MIN_VOTES ? best : null;
 }
 
 function workspaceFromSessionId(sessionId: string): string | null {
   const hit = findSessionTranscript(sessionId);
   if (!hit) return null;
 
-  const fromTranscript = workspaceFromTranscriptFile(hit.transcriptFile);
-  if (fromTranscript) return fromTranscript;
-
+  // Slug first. It is a lossy encoding of the workspace path, but every
+  // candidate it produces is verified against the filesystem, so a result is
+  // a directory that really exists and really matches the name Cursor gave
+  // this session's transcript directory.
   const preferredLabel = process.env["CURSOR_WORKSPACE_LABEL"] || "";
-  const candidates = decodeSlugCandidates(hit.slug);
-  return pickBestCandidate(candidates, preferredLabel);
+  const fromSlug = pickBestCandidate(decodeSlugCandidates(hit.slug), preferredLabel);
+  if (fromSlug) return fromSlug;
+
+  // Transcript scan last: it answers "which directory is mentioned most in
+  // this conversation", which is a guess, not a fact. Asked first it will
+  // happily answer "agentmemory" for a session about agentmemory that was
+  // actually running somewhere else entirely. It stays because it is the only
+  // thing that can place a workspace-less window that was still working on
+  // real files.
+  return workspaceFromTranscriptFile(hit.transcriptFile);
 }
 
 export function readHookStdinComplete(maxWaitMs = 30000): Promise<string> {
@@ -421,21 +554,55 @@ export function readWorkerHookPayload(): Record<string, unknown> | null {
   }
 }
 
+// A project name starting with "." is always a tool's metadata directory
+// (.cursor, .codex, .claude, .vscode), never the thing the user is working on.
+function isMetadataProjectName(project: string): boolean {
+  return project.startsWith(".");
+}
+
+// The path exactly, or its parent when it points at a file. Unlike
+// existingAncestor() this does not climb: for a workspace path that some
+// source claims is authoritative, "the directory is gone" means the record is
+// stale, not "use whatever ancestor still exists". Climbing there silently
+// turns D:/Andrew/Code/cc-router (moved away) into the project "Code" and
+// files the session's memories under it.
+function existingDirectory(pathValue: string): string | null {
+  if (!pathExists(pathValue)) return null;
+  const resolved = process.platform === "win32" ? pathValue.replace(/\//g, "\\") : pathValue;
+  try {
+    return statSync(resolved).isFile() ? dirname(resolved) : resolved;
+  } catch {
+    return null;
+  }
+}
+
 function resolveFromPathCandidates(
   candidates: unknown[],
   sessionId: string | undefined,
+  options: { exact?: boolean } = {},
 ): Workspace | null {
   for (const candidate of candidates) {
     if (typeof candidate !== "string" || isBadPath(candidate)) continue;
-    const existing = existingAncestor(candidate);
-    if (!existing || isIdeInstallPath(existing)) continue;
+    const existing = options.exact ? existingDirectory(candidate) : existingAncestor(candidate);
+    if (!existing || isBadPath(existing)) continue;
     const project = projectFromPath(existing);
-    if (project !== ".cursor") {
+    if (!isMetadataProjectName(project)) {
       rememberSession(sessionId, project, existing);
       return { project, cwd: existing };
     }
   }
   return null;
+}
+
+// Which layer answered is the single most useful thing to know when a session
+// lands under the wrong project, and it is invisible from the outside: every
+// layer returns the same shape. Set AM_CURSOR_DEBUG=1 to have the resolver say
+// so on stderr, which Cursor surfaces in its hook log.
+function debugLayer(layer: string, result: Workspace | null): Workspace | null {
+  if (result && process.env["AM_CURSOR_DEBUG"] === "1") {
+    console.error(`[agentmemory] workspace resolved by ${layer}: ${result.project} (${result.cwd})`);
+  }
+  return result;
 }
 
 export function resolveWorkspace(data: HookData): Workspace {
@@ -456,22 +623,34 @@ export function resolveWorkspace(data: HookData): Workspace {
     data?.["project_path"],
   ];
 
-  const fromPayload = resolveFromPathCandidates(payloadCandidates, sessionId);
+  const fromPayload = debugLayer("payload", resolveFromPathCandidates(payloadCandidates, sessionId));
   if (fromPayload) return fromPayload;
 
   const toolPaths = collectPathStrings(data?.["tool_input"])
     .map(existingAncestor)
     .filter((p): p is string => Boolean(p) && !isIdeInstallPath(p));
-  const fromTools = resolveFromPathCandidates(toolPaths, sessionId);
+  const fromTools = debugLayer("tool_input", resolveFromPathCandidates(toolPaths, sessionId));
   if (fromTools) return fromTools;
 
   if (sessionId) {
-    const fromSession = workspaceFromSessionId(sessionId);
-    if (fromSession && !isIdeInstallPath(fromSession)) {
-      const project = projectFromPath(fromSession);
-      rememberSession(sessionId, project, fromSession);
-      return { project, cwd: fromSession };
-    }
+    // Cursor's own record of where this session was running. Exact, so it is
+    // tried before the inference layers below -- it costs one indexed SQLite
+    // read (~5ms) and, because the result is cached per session, happens at
+    // most once per session rather than once per hook.
+    const fromDb = debugLayer(
+      "cursor-db",
+      resolveFromPathCandidates([workspaceFromCursorDb(sessionId)], sessionId, { exact: true }),
+    );
+    if (fromDb) return fromDb;
+
+    // Same validation as every other layer: both sources here already
+    // verified the directory exists, so `exact` keeps a stale one from
+    // silently climbing to a parent.
+    const fromSession = debugLayer(
+      "transcript-dir",
+      resolveFromPathCandidates([workspaceFromSessionId(sessionId)], sessionId, { exact: true }),
+    );
+    if (fromSession) return fromSession;
   }
 
   // Env comes last: VSCODE_CWD in particular is frequently the IDE install
@@ -482,7 +661,7 @@ export function resolveWorkspace(data: HookData): Workspace {
     process.env["PWD"],
     process.env["VSCODE_CWD"],
   ];
-  const fromEnv = resolveFromPathCandidates(envCandidates, sessionId);
+  const fromEnv = debugLayer("env", resolveFromPathCandidates(envCandidates, sessionId));
   if (fromEnv) return fromEnv;
 
   const label = process.env["CURSOR_WORKSPACE_LABEL"];
