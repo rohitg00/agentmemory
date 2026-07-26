@@ -574,6 +574,10 @@ function isMetadataProject(project: ResolvedProject): boolean {
   return project.name.startsWith(".") && !project.fromGitRoot;
 }
 
+function isHomeDirectory(pathValue: string): boolean {
+  return normalizePathSlashes(pathValue) === normalizePathSlashes(HOME);
+}
+
 // The path exactly, or its parent when it points at a file. Unlike
 // existingAncestor() this does not climb: for a workspace path that some
 // source claims is authoritative, "the directory is gone" means the record is
@@ -600,6 +604,13 @@ function resolveFromPathCandidates(
     const existing = options.exact ? existingDirectory(candidate) : existingAncestor(candidate);
     if (!existing || isBadPath(existing)) continue;
     const project = projectFromPath(existing);
+    // $HOME is what a hook sees when the agent was launched with no workspace
+    // at all. Accepting it invents a project named after the account -- real
+    // sessions were being filed under "Andrew" with cwd C:\Users\Andrew --
+    // when the honest answer is that there is no workspace. Same carve-out as
+    // the dot-directory rule: allowed when HOME is itself a repository, which
+    // is the dotfiles-checked-out-in-$HOME layout.
+    if (isHomeDirectory(existing) && !project.fromGitRoot) continue;
     if (!isMetadataProject(project)) {
       rememberSession(sessionId, project.name, existing);
       return { project: project.name, cwd: existing };

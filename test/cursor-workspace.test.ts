@@ -138,6 +138,19 @@ describe('cursor workspace resolver', () => {
     }
   });
 
+  it('never reports the home directory as the project', () => {
+    // An agent launched with no workspace reports $HOME, which used to become
+    // a project named after the account -- 18 real sessions in one day filed
+    // under "Andrew", cwd C:\Users\Andrew. Unless $HOME is itself a
+    // repository, "no workspace" is the honest answer.
+    const home = process.env.HOME || process.env.USERPROFILE;
+    if (!home) return;
+    const resolved = withoutWorkspaceEnv(() =>
+      resolveWorkspace({ session_id: sessionId('home-cwd'), cwd: normalizePathSlashes(home) })
+    );
+    expect(resolved.project).toBe('unknown-project');
+  });
+
   it('never reports a bare drive root as the project', () => {
     const resolved = withoutWorkspaceEnv(() =>
       resolveWorkspace({ session_id: sessionId('drive-root'), cwd: 'C:/' })

@@ -551,6 +551,9 @@ function readWorkerHookPayload() {
 function isMetadataProject(project) {
 	return project.name.startsWith(".") && !project.fromGitRoot;
 }
+function isHomeDirectory(pathValue) {
+	return normalizePathSlashes(pathValue) === normalizePathSlashes(HOME);
+}
 function existingDirectory(pathValue) {
 	if (!pathExists(pathValue)) return null;
 	const resolved = process.platform === "win32" ? pathValue.replace(/\//g, "\\") : pathValue;
@@ -566,6 +569,7 @@ function resolveFromPathCandidates(candidates, sessionId, options = {}) {
 		const existing = options.exact ? existingDirectory(candidate) : existingAncestor(candidate);
 		if (!existing || isBadPath(existing)) continue;
 		const project = projectFromPath(existing);
+		if (isHomeDirectory(existing) && !project.fromGitRoot) continue;
 		if (!isMetadataProject(project)) {
 			rememberSession(sessionId, project.name, existing);
 			return {
