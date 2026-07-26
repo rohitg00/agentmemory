@@ -295,11 +295,17 @@ function cleanRepoName(dirPath: string): string {
   return name || "unknown-project";
 }
 
-function projectFromPath(targetPath: string): string {
+interface ResolvedProject {
+  name: string;
+  /** Whether the name came from a git toplevel rather than a bare directory. */
+  fromGitRoot: boolean;
+}
+
+function projectFromPath(targetPath: string): ResolvedProject {
   try {
-    return cleanRepoName(gitRootFromPath(targetPath));
+    return { name: cleanRepoName(gitRootFromPath(targetPath)), fromGitRoot: true };
   } catch {
-    return cleanRepoName(targetPath);
+    return { name: cleanRepoName(targetPath), fromGitRoot: false };
   }
 }
 
@@ -554,10 +560,18 @@ export function readWorkerHookPayload(): Record<string, unknown> | null {
   }
 }
 
-// A project name starting with "." is always a tool's metadata directory
-// (.cursor, .codex, .claude, .vscode), never the thing the user is working on.
-function isMetadataProjectName(project: string): boolean {
-  return project.startsWith(".");
+// Sessions were landing under ".codex": a path pointing into an agent's state
+// directory walked up to ~/.codex and that became the project name.
+//
+// Rejecting every dot-named directory would be wrong, though. Plenty of real
+// projects are dot-named -- ~/.dotfiles, ~/.emacs.d, ~/.config kept under
+// chezmoi, and GitHub's own convention of a repository literally named
+// ".github". What separates those from ~/.codex or ~/.vscode is not the name,
+// it is that a human deliberately version controls them. So the rule is "a
+// dot-named directory that is not a repository", which needs no list of tool
+// names to keep up to date as new agents ship.
+function isMetadataProject(project: ResolvedProject): boolean {
+  return project.name.startsWith(".") && !project.fromGitRoot;
 }
 
 // The path exactly, or its parent when it points at a file. Unlike
@@ -586,9 +600,9 @@ function resolveFromPathCandidates(
     const existing = options.exact ? existingDirectory(candidate) : existingAncestor(candidate);
     if (!existing || isBadPath(existing)) continue;
     const project = projectFromPath(existing);
-    if (!isMetadataProjectName(project)) {
-      rememberSession(sessionId, project, existing);
-      return { project, cwd: existing };
+    if (!isMetadataProject(project)) {
+      rememberSession(sessionId, project.name, existing);
+      return { project: project.name, cwd: existing };
     }
   }
   return null;

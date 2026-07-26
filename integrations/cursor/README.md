@@ -180,8 +180,16 @@ later hook in that session is a single JSON read.
 | 8 | `unknown-project` | — | the honest answer when nothing else is |
 
 Every candidate then passes the same gate: not `.cursor`, not an IDE install
-path, not an OS directory, not a bare drive root, and the resulting project
-name must not start with `.` (which caught sessions landing under `.codex`).
+path, not an OS directory, not a bare drive root, and not another agent's
+state directory.
+
+That last one is narrower than it sounds. Sessions were landing under
+`.codex`, but rejecting every dot-named directory would be wrong — plenty of
+real projects are dot-named, from `~/.dotfiles` and `~/.emacs.d` to GitHub's
+convention of a repository literally called `.github`. What separates those
+from `~/.codex` or `~/.vscode` is not the name but that a human deliberately
+version controls them, so the rule is **a dot-named directory that is not a
+git repository**. No list of tool names to keep current as new agents ship.
 
 Layers 4–6 additionally require the directory to **exist exactly**. Climbing to
 whatever ancestor survives is right for a file path out of `tool_input`, but

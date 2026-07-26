@@ -384,9 +384,15 @@ function cleanRepoName(dirPath) {
 }
 function projectFromPath(targetPath) {
 	try {
-		return cleanRepoName(gitRootFromPath(targetPath));
+		return {
+			name: cleanRepoName(gitRootFromPath(targetPath)),
+			fromGitRoot: true
+		};
 	} catch {
-		return cleanRepoName(targetPath);
+		return {
+			name: cleanRepoName(targetPath),
+			fromGitRoot: false
+		};
 	}
 }
 function decodeSlugCandidates(slug) {
@@ -485,8 +491,8 @@ function workspaceFromSessionId(sessionId) {
 	if (fromSlug) return fromSlug;
 	return workspaceFromTranscriptFile(hit.transcriptFile);
 }
-function isMetadataProjectName(project) {
-	return project.startsWith(".");
+function isMetadataProject(project) {
+	return project.name.startsWith(".") && !project.fromGitRoot;
 }
 function existingDirectory(pathValue) {
 	if (!pathExists(pathValue)) return null;
@@ -503,10 +509,10 @@ function resolveFromPathCandidates(candidates, sessionId, options = {}) {
 		const existing = options.exact ? existingDirectory(candidate) : existingAncestor(candidate);
 		if (!existing || isBadPath(existing)) continue;
 		const project = projectFromPath(existing);
-		if (!isMetadataProjectName(project)) {
-			rememberSession(sessionId, project, existing);
+		if (!isMetadataProject(project)) {
+			rememberSession(sessionId, project.name, existing);
 			return {
-				project,
+				project: project.name,
 				cwd: existing
 			};
 		}

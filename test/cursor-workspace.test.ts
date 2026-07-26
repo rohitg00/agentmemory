@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { execFileSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
@@ -112,6 +113,28 @@ describe('cursor workspace resolver', () => {
       expect(resolved.project).toBe('unknown-project');
     } finally {
       rmSync(dotDir, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps a dot-named directory that is version controlled', () => {
+    // ~/.dotfiles, ~/.emacs.d, ~/.config under chezmoi, and GitHub's own
+    // convention of a repository named ".github" are all real projects people
+    // open in an editor. What separates them from ~/.codex is not the leading
+    // dot, it is that a human deliberately version controls them.
+    const parent = mkdtempSync(join(tmpdir(), 'am-ws-'));
+    const repo = join(parent, '.dotfiles');
+    mkdirSync(repo, { recursive: true });
+    execFileSync('git', ['init', '-q'], { cwd: repo, stdio: 'ignore' });
+    try {
+      const resolved = withoutWorkspaceEnv(() =>
+        resolveWorkspace({
+          session_id: sessionId('dot-repo'),
+          workspace_roots: [normalizePathSlashes(repo)]
+        })
+      );
+      expect(resolved.project).toBe('.dotfiles');
+    } finally {
+      rmSync(parent, { recursive: true, force: true });
     }
   });
 
