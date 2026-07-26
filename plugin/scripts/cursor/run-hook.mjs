@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 import { createRequire } from "node:module";
 import { execSync, spawnSync } from "node:child_process";
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 //#region src/hooks/cursor/cursor-db.ts
 /**
@@ -43,19 +43,23 @@ import { homedir } from "node:os";
 */
 const require = createRequire(import.meta.url);
 let driverCache;
-function requireQuietly(id) {
+let warningFilterInstalled = false;
+function suppressSqliteExperimentalWarning() {
+	if (warningFilterInstalled) return;
+	warningFilterInstalled = true;
 	const previous = process.listeners("warning");
 	process.removeAllListeners("warning");
 	process.on("warning", (warning) => {
-		if (warning.name !== "ExperimentalWarning") process.emitWarning(warning);
+		if (warning.name === "ExperimentalWarning" && /sqlite/i.test(warning.message)) return;
+		for (const listener of previous) listener(warning);
 	});
+}
+function requireQuietly(id) {
+	suppressSqliteExperimentalWarning();
 	try {
 		return require(id);
 	} catch {
 		return null;
-	} finally {
-		process.removeAllListeners("warning");
-		for (const listener of previous) process.on("warning", listener);
 	}
 }
 function loadDriver() {
@@ -593,8 +597,12 @@ function enrichPayload(data) {
 }
 function delegateHook(hookKey, data, options = {}) {
 	const script = HOOK_MAP[hookKey];
-	const { project, payload } = enrichPayload(data);
 	const scriptPath = join(options.officialDir ?? defaultOfficialDir(), script);
+	if (!existsSync(scriptPath)) {
+		console.error(`[agentmemory] cursor hook "${hookKey}": canonical hook not found at ${scriptPath}. Run \`npm run build\` in the agentmemory checkout.`);
+		return 0;
+	}
+	const { project, payload } = enrichPayload(data);
 	const child = spawnSync(process.execPath, [scriptPath], {
 		input: JSON.stringify(payload),
 		env: {

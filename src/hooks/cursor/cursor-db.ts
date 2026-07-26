@@ -55,24 +55,36 @@ interface Driver {
 // `undefined` = not probed yet, `null` = probed and unavailable.
 let driverCache: Driver | null | undefined;
 
-// node:sqlite is still flagged experimental and emits a process warning the
-// first time it is required. Hook stderr is surfaced in Cursor's hook log, so
-// a warning on every session would be noise about an implementation detail
-// the user did not ask for. Silence that one warning across the require, then
-// restore whatever listeners were there.
-function requireQuietly<T>(id: string): T | null {
+// node:sqlite is still flagged experimental and emits a process warning on
+// load. Hook stderr is surfaced in Cursor's hook log, so that would put a
+// paragraph about an implementation detail in front of the user on every
+// session that reaches this module.
+//
+// The filter is installed once and left in place, rather than wrapped around
+// the require, because process.emitWarning defers the actual emission to the
+// next tick: restoring the original listeners in a `finally` happens before
+// the warning is ever emitted, so the wrapping approach silences nothing. It
+// is scoped as tightly as it can be -- only this one warning is dropped, and
+// everything else is re-emitted untouched.
+let warningFilterInstalled = false;
+
+function suppressSqliteExperimentalWarning(): void {
+  if (warningFilterInstalled) return;
+  warningFilterInstalled = true;
   const previous = process.listeners("warning");
   process.removeAllListeners("warning");
   process.on("warning", (warning: Error) => {
-    if (warning.name !== "ExperimentalWarning") process.emitWarning(warning);
+    if (warning.name === "ExperimentalWarning" && /sqlite/i.test(warning.message)) return;
+    for (const listener of previous) listener(warning);
   });
+}
+
+function requireQuietly<T>(id: string): T | null {
+  suppressSqliteExperimentalWarning();
   try {
     return require(id) as T;
   } catch {
     return null;
-  } finally {
-    process.removeAllListeners("warning");
-    for (const listener of previous) process.on("warning", listener);
   }
 }
 

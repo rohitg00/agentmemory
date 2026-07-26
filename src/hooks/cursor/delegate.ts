@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { resolveWorkspace } from "./workspace.js";
@@ -64,8 +65,24 @@ export function delegateHook(
   options: DelegateOptions = {},
 ): number {
   const script = HOOK_MAP[hookKey];
-  const { project, payload } = enrichPayload(data);
   const scriptPath = join(options.officialDir ?? defaultOfficialDir(), script);
+
+  // Checked explicitly rather than left to the spawn: node starts fine and
+  // then exits 1 with a module-not-found stack, which the block below would
+  // forward as a deliberate non-zero decision from the hook, and which lands
+  // a Node stack trace in Cursor's hook log. This is a real installation
+  // state -- the plugin ships built .mjs, so a source checkout that has not
+  // run `npm run build` hits it -- and it deserves an answer the user can act
+  // on rather than a stack trace.
+  if (!existsSync(scriptPath)) {
+    console.error(
+      `[agentmemory] cursor hook "${hookKey}": canonical hook not found at ${scriptPath}.` +
+        ` Run \`npm run build\` in the agentmemory checkout.`,
+    );
+    return 0;
+  }
+
+  const { project, payload } = enrichPayload(data);
 
   const child = spawnSync(process.execPath, [scriptPath], {
     input: JSON.stringify(payload),

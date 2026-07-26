@@ -1,11 +1,39 @@
 import { describe, it, expect } from 'vitest';
-import { join } from 'node:path';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { basename, join } from 'node:path';
 import {
   isCursorMetadataPath,
   normalizePathSlashes,
   pathUnderHome,
   resolveWorkspace
 } from '../src/hooks/cursor/workspace.js';
+
+// resolveWorkspace caches per session id, so every test needs a fresh one or
+// it is served the previous run's answer instead of exercising its branch.
+const sessionId = (label: string): string =>
+  `${label}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+// The last resort before "unknown" reads the environment. Tests that assert a
+// payload was rejected have to blank it, or the developer's own shell (PWD)
+// answers instead and the assertion passes for the wrong reason.
+const ENV_KEYS = [
+  'CURSOR_WORKSPACE_ROOT',
+  'CURSOR_WORKSPACE_FOLDER',
+  'CURSOR_WORKSPACE_LABEL',
+  'PWD',
+  'VSCODE_CWD'
+];
+
+function withoutWorkspaceEnv<T>(fn: () => T): T {
+  const saved = ENV_KEYS.map((k) => [k, process.env[k]] as const);
+  for (const k of ENV_KEYS) delete process.env[k];
+  try {
+    return fn();
+  } finally {
+    for (const [k, v] of saved) if (v !== undefined) process.env[k] = v;
+  }
+}
 
 describe('cursor workspace resolver', () => {
   it('isCursorMetadataPath rejects substring false positives', () => {
@@ -15,6 +43,13 @@ describe('cursor workspace resolver', () => {
     expect(isCursorMetadataPath('/home/user/.cursor-workspace-clone')).toBe(false);
   });
 
+  it('treats ~/.cursor/worktrees as real checkouts, not metadata', () => {
+    // Cursor puts background-agent worktrees there. Classifying them as
+    // metadata sends those sessions to whatever the transcript scan guesses.
+    expect(isCursorMetadataPath('/home/me/.cursor/worktrees/myrepo-a1b2')).toBe(false);
+    expect(isCursorMetadataPath('/home/me/.cursor/extensions')).toBe(true);
+  });
+
   it('pathUnderHome requires a path-component boundary after HOME', () => {
     const home = normalizePathSlashes(process.env.HOME || process.env.USERPROFILE || '/home/alice');
     expect(pathUnderHome(home)).toBe(true);
@@ -22,27 +57,91 @@ describe('cursor workspace resolver', () => {
     expect(pathUnderHome(`${home}-backup`)).toBe(false);
   });
 
-  it('resolveWorkspace uses workspace_roots when cwd is .cursor metadata', () => {
-    const repoRoot = join(process.cwd()).replace(/\\/g, '/');
-    // resolveWorkspace persists what it resolves under this session id, so a
-    // fixed id would be served from the cache on the second run and stop
-    // exercising the workspace_roots branch this test exists to cover.
-    const resolved = resolveWorkspace({
-      session_id: `metadata-cwd-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-      workspace_roots: [repoRoot],
-      cwd: '.cursor'
-    });
-    expect(resolved.project).toBe('agentmemory');
-    expect(normalizePathSlashes(resolved.cwd)).toBe(repoRoot);
+  it('uses workspace_roots when cwd is .cursor metadata', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'am-ws-'));
+    try {
+      const resolved = resolveWorkspace({
+        session_id: sessionId('metadata-cwd'),
+        workspace_roots: [normalizePathSlashes(dir)],
+        cwd: '.cursor'
+      });
+      expect(resolved.project).toBe(basename(dir));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
-  it('resolveWorkspace uses tool_input paths under home', () => {
-    const repoRoot = join(process.cwd()).replace(/\\/g, '/');
-    const resolved = resolveWorkspace({
-      session_id: `tool-${Date.now()}`,
-      tool_input: { path: `${repoRoot}/package.json` }
-    });
-    expect(resolved.project).toBe('agentmemory');
-    expect(normalizePathSlashes(resolved.cwd)).toBe(repoRoot);
+  it('resolves a tool_input file path to its directory, outside $HOME', () => {
+    // Doubles as the container case: on CI the temp dir is /tmp/... (POSIX
+    // absolute, not under $HOME), which a HOME-only rule silently rejected --
+    // the same way it rejects a Codespaces checkout under /workspaces.
+    const dir = mkdtempSync(join(tmpdir(), 'am-ws-'));
+    writeFileSync(join(dir, 'package.json'), '{}');
+    try {
+      const resolved = resolveWorkspace({
+        session_id: sessionId('tool-input'),
+        tool_input: { path: normalizePathSlashes(join(dir, 'package.json')) }
+      });
+      expect(resolved.project).toBe(basename(dir));
+      expect(normalizePathSlashes(resolved.cwd)).toBe(normalizePathSlashes(dir));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('never reports an OS directory as the project', () => {
+    // A stray /usr/lib/... in tool_input must not produce a project "lib".
+    const resolved = withoutWorkspaceEnv(() =>
+      resolveWorkspace({
+        session_id: sessionId('system-path'),
+        tool_input: { path: '/usr/lib/node_modules/whatever.js' }
+      })
+    );
+    expect(resolved.project).toBe('unknown-project');
+  });
+
+  it('never reports a tool metadata directory as the project', () => {
+    // Sessions were landing under ".codex"; only ".cursor" used to be blocked.
+    const home = process.env.HOME || process.env.USERPROFILE || tmpdir();
+    const dotDir = join(home, `.am-test-dot-${Date.now()}`);
+    mkdirSync(dotDir, { recursive: true });
+    try {
+      const resolved = withoutWorkspaceEnv(() =>
+        resolveWorkspace({ session_id: sessionId('dot-dir'), cwd: normalizePathSlashes(dotDir) })
+      );
+      expect(resolved.project).toBe('unknown-project');
+    } finally {
+      rmSync(dotDir, { recursive: true, force: true });
+    }
+  });
+
+  it('never reports a bare drive root as the project', () => {
+    const resolved = withoutWorkspaceEnv(() =>
+      resolveWorkspace({ session_id: sessionId('drive-root'), cwd: 'C:/' })
+    );
+    expect(resolved.project).toBe('unknown-project');
+  });
+
+  it('terminates on paths whose parent is itself', () => {
+    // Regression: the ancestor walk used dirname() with only a `!== "/"`
+    // guard, but dirname is a fixed point at every root -- dirname("//") is
+    // "//", dirname("C:") is "C:". Any URL-shaped path ("//host/x", which the
+    // transcript scan produces constantly) spun forever and hung the hook.
+    const started = Date.now();
+    for (const cwd of ['//', '//host/share/project', 'C:', 'D:/', '/']) {
+      withoutWorkspaceEnv(() => resolveWorkspace({ session_id: sessionId('root-ish'), cwd }));
+    }
+    expect(Date.now() - started).toBeLessThan(10000);
+  });
+
+  it('ignores an IDE install directory', () => {
+    const resolved = withoutWorkspaceEnv(() =>
+      resolveWorkspace({
+        session_id: sessionId('ide-install'),
+        // VSCODE_CWD leaks this shape and used to yield the project "cursor".
+        cwd: 'C:/Users/me/AppData/Local/Programs/cursor'
+      })
+    );
+    expect(resolved.project).not.toBe('cursor');
   });
 });
