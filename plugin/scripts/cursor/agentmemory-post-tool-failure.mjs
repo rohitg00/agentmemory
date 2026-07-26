@@ -1,35 +1,10 @@
 #!/usr/bin/env node
-import { readFileSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
-import { homedir } from 'node:os';
-import { resolveWorkspace } from './agentmemory-lib.mjs';
-
-const config = {};
-const envPath = join(homedir(), '.agentmemory', '.env');
-if (existsSync(envPath)) {
-  const content = readFileSync(envPath, 'utf-8');
-  for (const line of content.split('\n')) {
-    const trimmed = line.trim();
-    if (trimmed && !trimmed.startsWith('#')) {
-      const idx = trimmed.indexOf('=');
-      if (idx !== -1) {
-        const key = trimmed.slice(0, idx).trim();
-        const val = trimmed.slice(idx + 1).trim();
-        config[key] = val;
-      }
-    }
-  }
-}
-
-const REST_URL = process.env.AGENTMEMORY_URL || config.AGENTMEMORY_URL || 'http://localhost:3111';
-const SECRET = process.env.AGENTMEMORY_SECRET || config.AGENTMEMORY_SECRET || '';
-
-function authHeaders() {
-  const h = { 'Content-Type': 'application/json' };
-  if (SECRET) h['Authorization'] = `Bearer ${SECRET}`;
-  return h;
-}
-
+import {
+  authHeaders,
+  getRestUrl,
+  resolveWorkspace,
+  truncateValue
+} from './agentmemory-lib.mjs';
 
 async function main() {
   let input = '';
@@ -44,7 +19,7 @@ async function main() {
   const sessionId = data.session_id || 'unknown';
   const { project, cwd } = resolveWorkspace(data);
   try {
-    await fetch(`${REST_URL}/agentmemory/observe`, {
+    await fetch(`${getRestUrl()}/agentmemory/observe`, {
       method: 'POST',
       headers: authHeaders(),
       body: JSON.stringify({
@@ -55,12 +30,13 @@ async function main() {
         timestamp: new Date().toISOString(),
         data: {
           tool_name: data.tool_name,
-          tool_input: typeof data.tool_input === 'string' ? data.tool_input.slice(0, 4000) : JSON.stringify(data.tool_input ?? '').slice(0, 4000),
-          error: typeof data.error === 'string' ? data.error.slice(0, 4000) : JSON.stringify(data.error ?? '').slice(0, 4000)
+          tool_input: truncateValue(data.tool_input, 4000),
+          error: truncateValue(data.error, 4000)
         }
       }),
       signal: AbortSignal.timeout(3000)
     });
   } catch {}
 }
+
 main();

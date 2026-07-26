@@ -8,22 +8,7 @@
  *   node close-stale-am-sessions.mjs --min-age-hours 6 --project 智能报表-wrenai
  *   node close-stale-am-sessions.mjs --exclude ses_abc123,def456
  */
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { homedir } from 'node:os';
-
-function loadEnv() {
-  const envPath = join(homedir(), '.agentmemory', '.env');
-  const env = {};
-  for (const line of readFileSync(envPath, 'utf-8').split('\n')) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith('#')) continue;
-    const eq = trimmed.indexOf('=');
-    if (eq === -1) continue;
-    env[trimmed.slice(0, eq).trim()] = trimmed.slice(eq + 1).trim();
-  }
-  return env;
-}
+import { getRestUrl, getSecret } from './agentmemory-lib.mjs';
 
 function parseArgs() {
   const args = process.argv.slice(2);
@@ -35,7 +20,13 @@ function parseArgs() {
   };
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--min-age-hours' && args[i + 1]) {
-      opts.minAgeHours = Number(args[++i]);
+      const raw = args[++i];
+      const parsed = Number(raw);
+      if (!Number.isFinite(parsed) || parsed < 0) {
+        console.error(`Invalid --min-age-hours value: ${raw}`);
+        process.exit(1);
+      }
+      opts.minAgeHours = parsed;
     } else if (args[i] === '--project' && args[i + 1]) {
       opts.project = args[++i];
     } else if (args[i] === '--exclude' && args[i + 1]) {
@@ -50,18 +41,19 @@ function parseArgs() {
 
 async function main() {
   const opts = parseArgs();
-  const { AGENTMEMORY_URL, AGENTMEMORY_SECRET } = loadEnv();
-  if (!AGENTMEMORY_URL || !AGENTMEMORY_SECRET) {
+  const restUrl = getRestUrl();
+  const secret = getSecret();
+  if (!restUrl || !secret) {
     console.error('Missing AGENTMEMORY_URL or AGENTMEMORY_SECRET in ~/.agentmemory/.env');
     process.exit(1);
   }
 
   const headers = {
-    Authorization: `Bearer ${AGENTMEMORY_SECRET}`,
+    Authorization: `Bearer ${secret}`,
     'Content-Type': 'application/json'
   };
 
-  const listRes = await fetch(`${AGENTMEMORY_URL}/agentmemory/sessions`, { headers });
+  const listRes = await fetch(`${restUrl}/agentmemory/sessions`, { headers });
   if (!listRes.ok) {
     console.error('Failed to list sessions:', listRes.status, await listRes.text());
     process.exit(1);
@@ -106,7 +98,7 @@ async function main() {
   let failed = 0;
 
   for (const s of candidates) {
-    const res = await fetch(`${AGENTMEMORY_URL}/agentmemory/session/end`, {
+    const res = await fetch(`${restUrl}/agentmemory/session/end`, {
       method: 'POST',
       headers,
       body: JSON.stringify({ sessionId: s.id })
@@ -121,7 +113,7 @@ async function main() {
 
   console.log(`Closed ${closed} session(s), ${failed} failed.`);
 
-  const verify = await fetch(`${AGENTMEMORY_URL}/agentmemory/sessions`, { headers }).then((r) =>
+  const verify = await fetch(`${restUrl}/agentmemory/sessions`, { headers }).then((r) =>
     r.json()
   );
   const stillActive = verify.sessions.filter(

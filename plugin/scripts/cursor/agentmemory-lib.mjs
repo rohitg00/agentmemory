@@ -1,19 +1,129 @@
 #!/usr/bin/env node
-import { readFileSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
-import { join, dirname, basename } from 'node:path';
-import { homedir } from 'node:os';
-import { execSync } from 'node:child_process';
+import {
+  closeSync,
+  existsSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  renameSync,
+  readdirSync,
+  unlinkSync,
+  writeFileSync
+} from 'node:fs';
+import { spawn, execSync } from 'node:child_process';
+import { dirname, join, basename } from 'node:path';
+import { homedir, tmpdir } from 'node:os';
+import { fileURLToPath } from 'node:url';
 
 const HOME = homedir();
 const CURSOR_PROJECTS_DIR = join(HOME, '.cursor', 'projects');
 const SESSION_CACHE_PATH = join(HOME, '.cursor', 'hooks', '.agentmemory-session-cache.json');
+const ENV_FILE_PATH = join(HOME, '.agentmemory', '.env');
+
+let cachedEnvFile = null;
+
+export function loadAgentmemoryEnv(envPath = ENV_FILE_PATH) {
+  const out = {};
+  if (!existsSync(envPath)) return out;
+  try {
+    for (const line of readFileSync(envPath, 'utf-8').split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+      const idx = trimmed.indexOf('=');
+      if (idx === -1) continue;
+      out[trimmed.slice(0, idx).trim()] = trimmed.slice(idx + 1).trim();
+    }
+  } catch {}
+  return out;
+}
+
+function getEnvFile() {
+  if (!cachedEnvFile) cachedEnvFile = loadAgentmemoryEnv();
+  return cachedEnvFile;
+}
+
+export function getConfigValue(key) {
+  if (process.env[key] !== undefined && process.env[key] !== '') return process.env[key];
+  return getEnvFile()[key];
+}
+
+export function isConfigEnabled(key) {
+  return getConfigValue(key) === 'true';
+}
+
+export function getRestUrl() {
+  return getConfigValue('AGENTMEMORY_URL') || 'http://localhost:3111';
+}
+
+export function getSecret() {
+  return getConfigValue('AGENTMEMORY_SECRET') || '';
+}
+
+export function authHeaders() {
+  const h = { 'Content-Type': 'application/json' };
+  const secret = getSecret();
+  if (secret) h.Authorization = `Bearer ${secret}`;
+  return h;
+}
+
+export function truncateValue(value, max) {
+  if (typeof value === 'string') {
+    if (value.length > max) return `${value.slice(0, max)}\n[...truncated]`;
+    return value;
+  }
+  if (typeof value === 'object' && value !== null) {
+    const str = JSON.stringify(value);
+    if (str.length > max) return `${str.slice(0, max)}...[truncated]`;
+    return str;
+  }
+  return value;
+}
+
+export function normalizePathSlashes(value) {
+  return String(value).replace(/\\/g, '/');
+}
+
+export function isCursorMetadataPath(value) {
+  if (!value || typeof value !== 'string') return false;
+  const trimmed = normalizePathSlashes(value.trim());
+  if (trimmed === '.cursor') return true;
+  return /(^|\/)\.cursor(\/|$)/.test(trimmed);
+}
 
 function isBadPath(value) {
   if (!value || typeof value !== 'string') return true;
-  const trimmed = value.trim();
+  const trimmed = normalizePathSlashes(value.trim());
   if (!trimmed || trimmed === '/' || trimmed === '.') return true;
-  if (trimmed === '.cursor' || trimmed.endsWith('/.cursor')) return true;
+  if (isCursorMetadataPath(trimmed)) return true;
   return false;
+}
+
+function sleepMs(ms) {
+  const end = Date.now() + ms;
+  while (Date.now() < end) {}
+}
+
+function withSessionCacheLock(fn) {
+  const lockPath = `${SESSION_CACHE_PATH}.lock`;
+  mkdirSync(dirname(SESSION_CACHE_PATH), { recursive: true });
+  let fd;
+  for (let i = 0; i < 50; i++) {
+    try {
+      fd = openSync(lockPath, 'wx');
+      break;
+    } catch {
+      sleepMs(10);
+    }
+  }
+  if (!fd) return;
+  try {
+    return fn();
+  } finally {
+    closeSync(fd);
+    try {
+      unlinkSync(lockPath);
+    } catch {}
+  }
 }
 
 function loadSessionCache() {
@@ -26,11 +136,15 @@ function loadSessionCache() {
 
 function rememberSession(sessionId, project, cwd) {
   if (!sessionId || !project || project === '.cursor') return;
-  try {
-    const cache = loadSessionCache();
-    cache[sessionId] = { project, cwd, updatedAt: new Date().toISOString() };
-    writeFileSync(SESSION_CACHE_PATH, JSON.stringify(cache, null, 2));
-  } catch {}
+  withSessionCacheLock(() => {
+    try {
+      const cache = loadSessionCache();
+      cache[sessionId] = { project, cwd, updatedAt: new Date().toISOString() };
+      const tmp = `${SESSION_CACHE_PATH}.${process.pid}.${Date.now()}.tmp`;
+      writeFileSync(tmp, JSON.stringify(cache, null, 2));
+      renameSync(tmp, SESSION_CACHE_PATH);
+    } catch {}
+  });
 }
 
 function recallSession(sessionId) {
@@ -39,9 +153,16 @@ function recallSession(sessionId) {
   return cache[sessionId] || null;
 }
 
+function pathUnderHome(value) {
+  if (typeof value !== 'string') return false;
+  const homeNorm = normalizePathSlashes(HOME);
+  const valueNorm = normalizePathSlashes(value);
+  return value.startsWith(HOME) || valueNorm.startsWith(homeNorm);
+}
+
 function collectPathStrings(value, out = []) {
   if (typeof value === 'string') {
-    if (value.startsWith(HOME) && !value.includes('/.cursor/')) out.push(value);
+    if (pathUnderHome(value) && !isCursorMetadataPath(value)) out.push(value);
     return out;
   }
   if (Array.isArray(value)) {
@@ -72,14 +193,12 @@ function gitRootFromPath(targetPath) {
 }
 
 function cleanRepoName(dirPath) {
-  const normalized = String(dirPath || '').replace(/\\/g, '/').replace(/\/+$/, '');
+  const normalized = normalizePathSlashes(dirPath).replace(/\/+$/, '');
   if (!normalized) return 'unknown-project';
 
-  // Claude/Cursor worktrees: .../<repo>/.claude/worktrees/agent-xxx -> <repo>
   const claudeWt = normalized.match(/^(.*?)\/\.claude\/worktrees\/[^/]+$/i);
   if (claudeWt?.[1]) return cleanRepoName(claudeWt[1]);
 
-  // Generic git worktree folder named agent-<hash>
   const baseName = basename(normalized);
   if (/^agent-[a-f0-9]{6,}$/i.test(baseName)) {
     const parent = dirname(normalized);
@@ -89,7 +208,6 @@ function cleanRepoName(dirPath) {
   }
 
   let name = baseName.replace(/(-worktree-\d+|-worktree|-[a-f0-9]{7,40})$/i, '');
-  // Known local variant folders that should share one memory bucket
   if (/^pxread-/i.test(name)) return 'pxread';
   return name || 'unknown-project';
 }
@@ -166,13 +284,13 @@ function findSessionTranscript(sessionId) {
 function workspaceFromTranscriptFile(transcriptFile) {
   if (!transcriptFile || !existsSync(transcriptFile)) return null;
 
-  const chunk = readFileSync(transcriptFile, 'utf-8').slice(0, 250000);
-  const escapedHome = HOME.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const re = new RegExp(`${escapedHome}/[^\\s"'\\\\]+`, 'g');
+  const chunk = normalizePathSlashes(readFileSync(transcriptFile, 'utf-8').slice(0, 250000));
+  const escapedHome = normalizePathSlashes(HOME).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp(`${escapedHome}[^\\s"'\\\\]+`, 'g');
   const counts = new Map();
 
   for (const match of chunk.match(re) || []) {
-    if (match.includes('/.cursor/')) continue;
+    if (isCursorMetadataPath(match)) continue;
     const existing = existingAncestor(match);
     if (!existing || existing === HOME) continue;
     counts.set(existing, (counts.get(existing) || 0) + 1);
@@ -200,6 +318,90 @@ function workspaceFromSessionId(sessionId) {
   const preferredLabel = process.env.CURSOR_WORKSPACE_LABEL || '';
   const candidates = decodeSlugCandidates(hit.slug);
   return pickBestCandidate(candidates, preferredLabel);
+}
+
+export function readHookStdinComplete(maxWaitMs = 30000) {
+  return new Promise((resolve) => {
+    let input = '';
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      try {
+        process.stdin.destroy();
+      } catch {}
+      resolve(input);
+    };
+    const t = setTimeout(finish, maxWaitMs);
+    if (t.unref) t.unref();
+    process.stdin.on('data', (c) => {
+      input += c;
+    });
+    process.stdin.on('end', () => {
+      clearTimeout(t);
+      finish();
+    });
+    process.stdin.on('error', () => {
+      clearTimeout(t);
+      finish();
+    });
+  });
+}
+
+export function writeHookPayloadTemp(input) {
+  const path = join(tmpdir(), `am-hook-${process.pid}-${Date.now()}.json`);
+  writeFileSync(path, input, 'utf-8');
+  return path;
+}
+
+export function readWorkerHookPayload() {
+  const file = process.env.AM_HOOK_INPUT_FILE;
+  if (!file) {
+    console.error('[agentmemory] missing AM_HOOK_INPUT_FILE in worker');
+    return null;
+  }
+  try {
+    const raw = readFileSync(file, 'utf-8');
+    return JSON.parse(raw);
+  } catch (err) {
+    console.error('[agentmemory] failed to parse hook payload:', err.message);
+    return null;
+  } finally {
+    try {
+      unlinkSync(file);
+    } catch {}
+  }
+}
+
+export function spawnDetachedHookWorker(scriptUrl, input) {
+  const payloadFile = writeHookPayloadTemp(input);
+  const child = spawn(process.execPath, [fileURLToPath(scriptUrl)], {
+    detached: true,
+    stdio: 'ignore',
+    windowsHide: true,
+    env: {
+      ...process.env,
+      AM_HOOK_WORKER: '1',
+      AM_HOOK_INPUT_FILE: payloadFile
+    }
+  });
+  child.unref();
+
+  const bail = setTimeout(() => process.exit(0), 2000);
+  if (bail.unref) bail.unref();
+  child.on('spawn', () => process.exit(0));
+  child.on('error', (err) => {
+    console.error('[agentmemory] failed to spawn hook worker:', err.message);
+    try {
+      unlinkSync(payloadFile);
+    } catch {}
+    process.exit(0);
+  });
+}
+
+export async function runDetachedHookParent(scriptUrl) {
+  const input = await readHookStdinComplete();
+  spawnDetachedHookWorker(scriptUrl, input);
 }
 
 export function resolveWorkspace(data) {

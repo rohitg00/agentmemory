@@ -7,47 +7,34 @@
  *   node fix-cursor-session-projects.mjs          # apply
  *   node fix-cursor-session-projects.mjs --dry-run  # preview only
  */
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { homedir } from 'node:os';
-import { resolveWorkspace } from './agentmemory-lib.mjs';
+import {
+  getRestUrl,
+  getSecret,
+  isCursorMetadataPath,
+  resolveWorkspace
+} from './agentmemory-lib.mjs';
 
 const dryRun = process.argv.includes('--dry-run');
 
-function loadEnv() {
-  const envPath = join(homedir(), '.agentmemory', '.env');
-  const env = {};
-  for (const line of readFileSync(envPath, 'utf-8').split('\n')) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith('#')) continue;
-    const eq = trimmed.indexOf('=');
-    if (eq === -1) continue;
-    env[trimmed.slice(0, eq).trim()] = trimmed.slice(eq + 1).trim();
-  }
-  return env;
-}
-
 function isBadSession(session) {
   const { project, cwd } = session;
-  if (project === '.cursor' || cwd === '.cursor') return true;
-  if (project?.endsWith('/.cursor') || cwd?.endsWith('/.cursor')) return true;
-  if (project?.includes('/.cursor') || cwd?.includes('/.cursor')) return true;
-  return false;
+  return isCursorMetadataPath(project) || isCursorMetadataPath(cwd);
 }
 
 async function main() {
-  const { AGENTMEMORY_URL, AGENTMEMORY_SECRET } = loadEnv();
-  if (!AGENTMEMORY_URL || !AGENTMEMORY_SECRET) {
+  const restUrl = getRestUrl();
+  const secret = getSecret();
+  if (!restUrl || !secret) {
     console.error('Missing AGENTMEMORY_URL or AGENTMEMORY_SECRET in ~/.agentmemory/.env');
     process.exit(1);
   }
 
   const headers = {
-    Authorization: `Bearer ${AGENTMEMORY_SECRET}`,
+    Authorization: `Bearer ${secret}`,
     'Content-Type': 'application/json'
   };
 
-  const listRes = await fetch(`${AGENTMEMORY_URL}/agentmemory/sessions`, { headers });
+  const listRes = await fetch(`${restUrl}/agentmemory/sessions`, { headers });
   if (!listRes.ok) {
     console.error('Failed to list sessions:', listRes.status, await listRes.text());
     process.exit(1);
@@ -99,7 +86,7 @@ async function main() {
     return;
   }
 
-  const importRes = await fetch(`${AGENTMEMORY_URL}/agentmemory/import`, {
+  const importRes = await fetch(`${restUrl}/agentmemory/import`, {
     method: 'POST',
     headers,
     body: JSON.stringify({

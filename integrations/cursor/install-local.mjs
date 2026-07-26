@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -30,12 +30,21 @@ function loadEnv(path) {
 
 function readJson(path) {
   if (!existsSync(path)) return {};
-  return JSON.parse(readFileSync(path, 'utf-8'));
+  try {
+    return JSON.parse(readFileSync(path, 'utf-8'));
+  } catch {
+    return {};
+  }
 }
 
-function writeJson(path, data) {
+function writeJson(path, data, restrictPermissions = false) {
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, `${JSON.stringify(data, null, 2)}\n`, 'utf-8');
+  if (restrictPermissions) {
+    try {
+      chmodSync(path, 0o600);
+    } catch {}
+  }
 }
 
 function linkMarketplace() {
@@ -62,8 +71,13 @@ function mergeMcp(env) {
     },
   };
   const backup = `${MCP_PATH}.bak-${Date.now()}`;
-  if (existsSync(MCP_PATH)) copyFileSync(MCP_PATH, backup);
-  writeJson(MCP_PATH, mcp);
+  if (existsSync(MCP_PATH)) {
+    copyFileSync(MCP_PATH, backup);
+    try {
+      chmodSync(backup, 0o600);
+    } catch {}
+  }
+  writeJson(MCP_PATH, mcp, true);
   return backup;
 }
 

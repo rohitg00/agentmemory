@@ -16,7 +16,7 @@ node integrations/cursor/verify-flow.mjs
 Then in Cursor:
 
 1. **Settings → Plugins → Add marketplace** → select the **repo root**  
-   `D:\Andrew\Code\Github\agentmemory`  
+   `<path-to-your-agentmemory-clone>`  
    (must contain `.cursor-plugin/marketplace.json`)
 2. Enable plugin **agentmemory**
 3. **Disable** the old `rohitg00/agentmemory` marketplace entry if both are on
@@ -31,7 +31,7 @@ node integrations/cursor/install-local.mjs --clear-user-hooks
 
 ## Layout (PR target)
 
-```
+```text
 agentmemory/                          ← marketplace root (git repo)
   .cursor-plugin/marketplace.json
   plugin/

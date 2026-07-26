@@ -1,39 +1,13 @@
 #!/usr/bin/env node
-import { readFileSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
-import { homedir } from 'node:os';
-import { resolveWorkspace } from './agentmemory-lib.mjs';
+import {
+  authHeaders,
+  getRestUrl,
+  isConfigEnabled,
+  resolveWorkspace
+} from './agentmemory-lib.mjs';
 
-// Load config from ~/.agentmemory/.env
-const config = {};
-const envPath = join(homedir(), '.agentmemory', '.env');
-if (existsSync(envPath)) {
-  const content = readFileSync(envPath, 'utf-8');
-  for (const line of content.split('\n')) {
-    const trimmed = line.trim();
-    if (trimmed && !trimmed.startsWith('#')) {
-      const idx = trimmed.indexOf('=');
-      if (idx !== -1) {
-        const key = trimmed.slice(0, idx).trim();
-        const val = trimmed.slice(idx + 1).trim();
-        config[key] = val;
-      }
-    }
-  }
-}
-
-const INJECT_CONTEXT = process.env.AGENTMEMORY_INJECT_CONTEXT === 'true' || config.AGENTMEMORY_INJECT_CONTEXT === 'true';
-const REST_URL = process.env.AGENTMEMORY_URL || config.AGENTMEMORY_URL || 'http://localhost:3111';
-const SECRET = process.env.AGENTMEMORY_SECRET || config.AGENTMEMORY_SECRET || '';
 const INJECT_TIMEOUT_MS = 2500;
 const REGISTER_TIMEOUT_MS = 1500;
-
-function authHeaders() {
-  const h = { 'Content-Type': 'application/json' };
-  if (SECRET) h['Authorization'] = `Bearer ${SECRET}`;
-  return h;
-}
-
 
 async function main() {
   let input = '';
@@ -46,7 +20,7 @@ async function main() {
   }
   const sessionId = data.session_id || `ses_${Date.now().toString(36)}`;
   const { project, cwd } = resolveWorkspace(data);
-  const url = `${REST_URL}/agentmemory/session/start`;
+  const url = `${getRestUrl()}/agentmemory/session/start`;
   const init = {
     method: 'POST',
     headers: authHeaders(),
@@ -56,7 +30,7 @@ async function main() {
       cwd
     })
   };
-  if (!INJECT_CONTEXT) {
+  if (!isConfigEnabled('AGENTMEMORY_INJECT_CONTEXT')) {
     try {
       await fetch(url, {
         ...init,
@@ -80,4 +54,5 @@ async function main() {
     }
   } catch {}
 }
+
 main();
