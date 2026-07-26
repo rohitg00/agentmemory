@@ -1,0 +1,19 @@
+{
+  "name": "agentmemory",
+  "owner": {
+    "name": "Rohit Ghumare",
+    "github": "rohitg00"
+  },
+  "metadata": {
+    "description": "Persistent memory for AI coding agents",
+    "version": "0.9.28"
+  },
+  "plugins": [
+    {
+      "name": "agentmemory",
+      "source": "./plugin",
+      "description": "Cursor lifecycle hooks + MCP + skills for agentmemory",
+      "version": "0.9.28"
+    }
+  ]
+}
