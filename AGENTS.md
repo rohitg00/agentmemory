@@ -1,5 +1,17 @@
 # agentmemory — Agent Instructions
 
+## Execution defaults
+
+- Do not add features, refactors, abstractions, helpers, or cleanup beyond the request.
+- Prefer the simplest solution that works now; do not design for hypothetical future requirements.
+- Do not add impossible-path validation, fallback, or error handling inside trusted internal code; validate at real system boundaries.
+- Once there is enough evidence to act, act; do not re-litigate settled decisions or narrate options that will not be followed.
+- If the user is describing a problem, asking a question, or thinking out loud without requesting a change, deliver evaluation/findings and stop; do not apply a fix unless explicitly asked.
+- Before a state-changing command, ensure current-session evidence supports that exact action.
+- Pause only for destructive or irreversible actions, real scope changes, or input only the user can provide.
+- Report progress and conclusions only from current-session tool evidence; say explicitly what was not verified.
+- Start the final response with the result found or what happened.
+
 ## Architecture
 
 agentmemory is a persistent memory system for AI coding agents, built on iii-engine's three primitives (Worker/Function/Trigger). Everything goes through `registerFunction`/`registerTrigger`/`sdk.trigger()` — never bypass iii-engine with standalone SQLite or in-process alternatives.
