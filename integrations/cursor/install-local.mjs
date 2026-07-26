@@ -32,8 +32,8 @@ function readJson(path) {
   if (!existsSync(path)) return {};
   try {
     return JSON.parse(readFileSync(path, 'utf-8'));
-  } catch {
-    return {};
+  } catch (err) {
+    throw new Error(`Cannot parse ${path}: ${err.message}`);
   }
 }
 
@@ -59,7 +59,14 @@ function linkMarketplace() {
 }
 
 function mergeMcp(env) {
-  const mcp = readJson(MCP_PATH);
+  let mcp;
+  try {
+    mcp = readJson(MCP_PATH);
+  } catch (err) {
+    console.error(err.message);
+    console.error('Refusing to overwrite mcp.json. Fix the file or restore from backup.');
+    process.exit(1);
+  }
   if (!mcp.mcpServers) mcp.mcpServers = {};
   mcp.mcpServers.agentmemory = {
     command: 'npx',
@@ -84,7 +91,14 @@ function mergeMcp(env) {
 function disableUserHooks() {
   if (!process.argv.includes('--clear-user-hooks')) return null;
   if (!existsSync(HOOKS_PATH)) return null;
-  const hooks = readJson(HOOKS_PATH);
+  let hooks;
+  try {
+    hooks = readJson(HOOKS_PATH);
+  } catch (err) {
+    console.error(err.message);
+    console.error('Refusing to clear hooks.json until the file is valid JSON.');
+    process.exit(1);
+  }
   const hasAgentmemory = JSON.stringify(hooks).includes('agentmemory-');
   if (!hasAgentmemory) return null;
   const backup = `${HOOKS_PATH}.pre-plugin-${Date.now()}.bak`;

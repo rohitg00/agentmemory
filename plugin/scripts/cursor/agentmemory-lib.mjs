@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import {
+  chmodSync,
   closeSync,
   existsSync,
   mkdirSync,
@@ -12,7 +13,7 @@ import {
 } from 'node:fs';
 import { spawn, execSync } from 'node:child_process';
 import { dirname, join, basename } from 'node:path';
-import { homedir, tmpdir } from 'node:os';
+import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
 const HOME = homedir();
@@ -157,7 +158,7 @@ function pathUnderHome(value) {
   if (typeof value !== 'string') return false;
   const homeNorm = normalizePathSlashes(HOME);
   const valueNorm = normalizePathSlashes(value);
-  return value.startsWith(HOME) || valueNorm.startsWith(homeNorm);
+  return valueNorm === homeNorm || valueNorm.startsWith(`${homeNorm}/`);
 }
 
 function collectPathStrings(value, out = []) {
@@ -348,9 +349,15 @@ export function readHookStdinComplete(maxWaitMs = 30000) {
   });
 }
 
+const HOOK_PAYLOAD_DIR = join(HOME, '.cursor', 'hooks', '.am-hook-payloads');
+
 export function writeHookPayloadTemp(input) {
-  const path = join(tmpdir(), `am-hook-${process.pid}-${Date.now()}.json`);
-  writeFileSync(path, input, 'utf-8');
+  mkdirSync(HOOK_PAYLOAD_DIR, { recursive: true });
+  try {
+    chmodSync(HOOK_PAYLOAD_DIR, 0o700);
+  } catch {}
+  const path = join(HOOK_PAYLOAD_DIR, `am-hook-${process.pid}-${Date.now()}.json`);
+  writeFileSync(path, input, { encoding: 'utf-8', mode: 0o600 });
   return path;
 }
 

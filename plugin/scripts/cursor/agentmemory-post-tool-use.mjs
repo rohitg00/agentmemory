@@ -44,10 +44,18 @@ function isBase64Image(val) {
   return typeof val === 'string' && (val.startsWith('data:image/') || val.startsWith('iVBORw0KGgo') || val.startsWith('/9j/'));
 }
 
+const MAX_IMAGE_DATA_CHARS = 8000;
+
+function boundImageData(imageData) {
+  if (!imageData || typeof imageData !== 'string') return undefined;
+  if (imageData.length <= MAX_IMAGE_DATA_CHARS) return imageData;
+  return undefined;
+}
+
 function extractImageData(output) {
   if (isBase64Image(output)) {
     return {
-      imageData: output,
+      imageData: boundImageData(output),
       cleanOutput: '[image data extracted]'
     };
   }
@@ -57,7 +65,7 @@ function extractImageData(output) {
     const clean = {};
     for (const [key, val] of Object.entries(obj)) {
       if (!imageData && isBase64Image(val)) {
-        imageData = val;
+        imageData = boundImageData(val);
         clean[key] = '[image data extracted]';
       } else {
         clean[key] = val;
