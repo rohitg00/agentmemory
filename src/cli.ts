@@ -64,6 +64,7 @@ import { knownAgents } from "./cli/connect/index.js";
 
 const ALL_TOOLS_COUNT = getAllTools().length;
 const CORE_TOOLS_COUNT = getAllTools().filter((t) => ESSENTIAL_TOOLS.has(t.name)).length;
+import { resolveDataDir } from "./cli-data-dir.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
@@ -198,10 +199,12 @@ Options:
   --instance <N>     Shortcut for --port (3111 + N*100) to run multiple
                      daemons side-by-side without env gymnastics.
                      --instance 1 -> 3211/3212/3213/49234, etc. (max N=50)
+  --data-dir <path>  Store iii-engine state outside the current repo
 
 Environment:
   AGENTMEMORY_URL              Full REST base URL (e.g. http://localhost:3111).
                                Honored by status, doctor, and MCP shim commands.
+  AGENTMEMORY_DATA_DIR         State directory fallback when --data-dir is not set.
   AGENTMEMORY_USE_DOCKER=1     Prefer the bundled docker-compose path over the
                                native iii-engine binary on first run.
   AGENTMEMORY_III_VERSION      Override pinned iii-engine version (default ${IIPINNED_VERSION}).
@@ -252,6 +255,11 @@ if (instanceIdx !== -1 && args[instanceIdx + 1]) {
       process.env["III_REST_PORT"] = String(base);
     }
   }
+}
+
+const dataDirResolution = resolveDataDir({ args });
+if (dataDirResolution.source !== "default") {
+  process.env["AGENTMEMORY_DATA_DIR"] = dataDirResolution.dataDir;
 }
 
 const skipEngine = args.includes("--no-engine");
@@ -400,6 +408,50 @@ function findIiiConfig(): string {
     if (existsSync(c)) return c;
   }
   return "";
+}
+
+function yamlSingleQuoted(value: string): string {
+  return `'${value.replace(/'/g, "''")}'`;
+}
+
+function renderIiiConfig(template: string, dataDir: string): string {
+  return template
+    .replace(
+      "file_path: ./data/state_store.db",
+      `file_path: ${yamlSingleQuoted(join(dataDir, "state_store.db"))}`,
+    )
+    .replace(
+      "file_path: ./data/stream_store",
+      `file_path: ${yamlSingleQuoted(join(dataDir, "stream_store"))}`,
+    );
+}
+
+function writeRuntimeIiiConfig(configPath: string, dataDir: string): string {
+  mkdirSync(dataDir, { recursive: true });
+  const runtimeConfigPath = join(dataDir, "iii-config.yaml");
+  writeFileSync(
+    runtimeConfigPath,
+    renderIiiConfig(readFileSync(configPath, "utf8"), dataDir),
+  );
+  return runtimeConfigPath;
+}
+
+function warnIfRelocatedDataDir(): void {
+  if (!dataDirResolution.relocatedFrom) return;
+
+  try {
+    mkdirSync(dataDirResolution.dataDir, { recursive: true });
+    const marker = join(dataDirResolution.dataDir, ".cwd-relocation-warning");
+    if (existsSync(marker)) return;
+    p.log.warn(
+      `Default data dir ${dataDirResolution.relocatedFrom} is inside a git worktree; using ${dataDirResolution.dataDir} instead.`,
+    );
+    writeFileSync(marker, new Date().toISOString());
+  } catch {
+    p.log.warn(
+      `Default data dir ${dataDirResolution.relocatedFrom} is inside a git worktree; using ${dataDirResolution.dataDir} instead.`,
+    );
+  }
 }
 
 function whichBinary(name: string): string | null {
@@ -925,8 +977,12 @@ function pickCompatibleIii(candidates: Array<string | null | undefined>): string
 
 async function startEngine(): Promise<boolean> {
   const configPath = findIiiConfig();
+  warnIfRelocatedDataDir();
+  const runtimeConfigPath = configPath
+    ? writeRuntimeIiiConfig(configPath, dataDirResolution.dataDir)
+    : "";
   const pathIii = whichBinary("iii");
-  vlog(`iii binary: ${pathIii ?? "(not on PATH)"}, config: ${configPath || "(not found)"}`);
+  vlog(`iii binary: ${pathIii ?? "(not on PATH)"}, config: ${runtimeConfigPath || "(not found)"}`);
 
   const fallbacks = fallbackIiiPaths().filter((p) => existsSync(p));
   for (const f of fallbacks) {
@@ -936,12 +992,12 @@ async function startEngine(): Promise<boolean> {
 
   let iiiBin = pickCompatibleIii([pathIii, ...fallbacks]);
 
-  if (iiiBin && configPath) {
+  if (iiiBin && runtimeConfigPath) {
     if (iiiBin !== pathIii) {
       p.log.info(`Using iii at: ${c.dim(iiiBin)} (v${c.accent(IIPINNED_VERSION)})`);
       process.env["PATH"] = `${dirname(iiiBin)}${PATH_DELIMITER}${process.env["PATH"] ?? ""}`;
     }
-    return startIiiBin(iiiBin, configPath);
+    return startIiiBin(iiiBin, runtimeConfigPath);
   }
 
   if (pathIii && !iiiBin) {
@@ -959,6 +1015,7 @@ async function startEngine(): Promise<boolean> {
 
   const dockerBin = whichBinary("docker");
   vlog(`docker binary: ${dockerBin ?? "(not on PATH)"}`);
+  mkdirSync(dataDirResolution.dataDir, { recursive: true });
   const dockerComposeCandidates = [
     join(__dirname, "..", "docker-compose.yml"),
     join(__dirname, "docker-compose.yml"),
@@ -2659,7 +2716,7 @@ async function runImportJsonl(): Promise<void> {
   // consumed alongside the flag so they don't leak into positional
   // args (e.g. `--port 3112 import-jsonl` would otherwise turn
   // 3112 into pathArg).
-  const VALUE_FLAGS = new Set(["--port", "--tools"]);
+  const VALUE_FLAGS = new Set(["--port", "--tools", "--data-dir"]);
   let maxFiles: number | undefined;
   const tail = args.slice(1);
   const positional: string[] = [];

@@ -9,7 +9,7 @@ services:
     image: busybox:1.36
     user: "0:0"
     volumes:
-      - iii-data:/data
+      - "${AGENTMEMORY_DATA_DIR:-iii-data}:/data"
     entrypoint: ["sh", "-c", "chown -R 65532:65532 /data && chmod 755 /data"]
     restart: "no"
 
@@ -34,7 +34,7 @@ services:
       - "127.0.0.1:3112:3112"
       - "127.0.0.1:9464:9464"
     volumes:
-      - iii-data:/data
+      - "${AGENTMEMORY_DATA_DIR:-iii-data}:/data"
       - ./iii-config.docker.yaml:/app/config.yaml:ro
     restart: unless-stopped
     logging:
