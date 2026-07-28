@@ -1,28 +1,24 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 
-vi.mock("@huggingface/transformers", () => {
-  const err = new Error("Cannot find module '@huggingface/transformers'");
-  (err as NodeJS.ErrnoException).code = "ERR_MODULE_NOT_FOUND";
-  throw err;
+afterEach(() => {
+  vi.doUnmock("@huggingface/transformers");
+  vi.resetModules();
 });
-
-import { ClipEmbeddingProvider } from "../src/providers/embedding/clip.js";
 
 describe("ClipEmbeddingProvider (package unavailable)", () => {
   it("throws clean install hint when @huggingface/transformers is missing", async () => {
-    const provider = new ClipEmbeddingProvider();
-    await expect(provider.embed("hello")).rejects.toThrow(
+    vi.doMock("@huggingface/transformers");
+    vi.resetModules();
+    const { ClipEmbeddingProvider: Fresh } = await import(
+      "../src/providers/embedding/clip.js"
+    );
+    await expect(new Fresh().embed("hello")).rejects.toThrow(
       "Install @huggingface/transformers for CLIP embeddings",
     );
   });
 });
 
 describe("ClipEmbeddingProvider (with loaded pipeline)", () => {
-  afterEach(() => {
-    vi.doUnmock("@huggingface/transformers");
-    vi.resetModules();
-  });
-
   function mockSuccessModule() {
     const textExtractor = vi.fn(async (texts: string[]) => ({
       tolist: () => texts.map(() => [0.1, 0.2]),
