@@ -1,35 +1,11 @@
 name: CI
 
-# `paths-ignore` keeps doc-only / website / README / CHANGELOG churn from
-# burning runner minutes. Source / config / workflow changes always run.
-# `workflow_dispatch` gives a manual re-run button for flake debugging.
+# Retired to workflow_dispatch-only (2026-07-28): the GitHub account has a
+# 2,000-min/month Actions quota with a $0 stop-usage budget, so push/PR
+# triggers were removed (fleet local-builds policy). Run `npm test` locally
+# before PR (see AGENTS.md); dispatch manually from the Actions tab when a
+# hosted run is genuinely needed.
 on:
-  push:
-    branches: [main]
-    paths-ignore:
-      - "README.md"
-      - "CHANGELOG.md"
-      - "AGENTS.md"
-      - "ROADMAP.md"
-      - "website/**"
-      - "docs/**"
-      - "assets/**"
-      - "deploy/**/README.md"
-      - "**/*.md"
-      - "**/*.mdx"
-  pull_request:
-    branches: [main]
-    paths-ignore:
-      - "README.md"
-      - "CHANGELOG.md"
-      - "AGENTS.md"
-      - "ROADMAP.md"
-      - "website/**"
-      - "docs/**"
-      - "assets/**"
-      - "deploy/**/README.md"
-      - "**/*.md"
-      - "**/*.mdx"
   workflow_dispatch:
 
 # Cancel in-flight PR runs when a force-push lands. Keep push runs to
