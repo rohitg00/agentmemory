@@ -1,7 +1,9 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 
 vi.mock("@huggingface/transformers", () => {
-  throw new Error("not installed");
+  const err = new Error("Cannot find module '@huggingface/transformers'");
+  (err as NodeJS.ErrnoException).code = "ERR_MODULE_NOT_FOUND";
+  throw err;
 });
 
 import { LocalEmbeddingProvider } from "../src/providers/embedding/local.js";
@@ -16,6 +18,11 @@ describe("LocalEmbeddingProvider (package unavailable)", () => {
 });
 
 describe("LocalEmbeddingProvider (with loaded pipeline)", () => {
+  afterEach(() => {
+    vi.doUnmock("@huggingface/transformers");
+    vi.resetModules();
+  });
+
   function mockSuccessModule() {
     const extractor = vi.fn(async (texts: string[]) => ({
       tolist: () => texts.map(() => [0.1, 0.2, 0.3]),

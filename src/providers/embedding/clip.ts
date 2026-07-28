@@ -57,11 +57,20 @@ export class ClipEmbeddingProvider implements EmbeddingProvider {
 }
 
 async function loadTransformers(): Promise<TransformersModule> {
-  return import("@huggingface/transformers").catch(() => {
-    throw new Error(
-      "Install @huggingface/transformers for CLIP image embeddings: npm install @huggingface/transformers",
-    );
-  });
+  try {
+    return await import("@huggingface/transformers");
+  } catch (err) {
+    const e = err as NodeJS.ErrnoException & { cause?: NodeJS.ErrnoException };
+    if (
+      e?.code === "ERR_MODULE_NOT_FOUND" ||
+      e?.cause?.code === "ERR_MODULE_NOT_FOUND"
+    ) {
+      throw new Error(
+        "Install @huggingface/transformers for CLIP embeddings: npm install @huggingface/transformers",
+      );
+    }
+    throw err;
+  }
 }
 
 async function loadImage(

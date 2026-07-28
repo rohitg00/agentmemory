@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 
 vi.mock("@huggingface/transformers", () => {
   throw new Error("not installed");
@@ -62,6 +62,11 @@ describe("reranker", () => {
 });
 
 describe("reranker with loaded pipeline", () => {
+  afterEach(() => {
+    vi.doUnmock("@huggingface/transformers");
+    vi.resetModules();
+  });
+
   it("invokes the @huggingface/transformers pipeline and reorders by score", async () => {
     const mockPipeline = vi.fn(async (text: string) => [
       { score: text.includes("First") ? 0.9 : 0.1 },

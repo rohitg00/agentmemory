@@ -52,7 +52,7 @@ jobs:
         # src/functions/obsidian-export.ts needs os.tmpdir() + path.join
         # rework before Windows can be added back. Tracked as follow-up.
         os: [ubuntu-latest, macos-latest]
-        node-version: [20, 22]
+        node-version: [20, 22, 24, 26]
     steps:
       - uses: actions/checkout@v6
         with:
