@@ -88,6 +88,39 @@ describe("Actions REST pagination", () => {
     });
   });
 
+  it("serves the bounded action graph projection without event history", async () => {
+    const response = (await sdk.trigger("api::action-graph-snapshot", {
+      headers: {},
+      query_params: { limit: "10" },
+    })) as {
+      status_code: number;
+      body: {
+        success: boolean;
+        actions: Action[];
+        actionEdges: unknown[];
+        limit: number;
+        eventsIncluded: boolean;
+      };
+    };
+
+    expect(response.status_code).toBe(200);
+    expect(response.body.success).toBe(true);
+    expect(response.body.actions).toHaveLength(10);
+    expect(response.body.actionEdges).toEqual([]);
+    expect(response.body.limit).toBe(10);
+    expect(response.body.eventsIncluded).toBe(false);
+  });
+
+  it("rejects an invalid action graph limit", async () => {
+    const response = (await sdk.trigger("api::action-graph-snapshot", {
+      headers: {},
+      query_params: { limit: "0" },
+    })) as { status_code: number; body: { error: string } };
+
+    expect(response.status_code).toBe(400);
+    expect(response.body.error).toBe("limit must be a positive integer");
+  });
+
   it("whitelists action-create fields instead of forwarding the raw body", async () => {
     let received: Record<string, unknown> | undefined;
     sdk.registerFunction("mem::action-create", async (data) => {

@@ -445,6 +445,81 @@ describe("Actions Functions", () => {
     });
   });
 
+  describe("mem::action-graph-snapshot", () => {
+    it("returns a bounded projection with typed edges and no events", async () => {
+      const source = (await sdk.trigger("mem::action-create", {
+        title: "Graph source",
+        description: "Large detail excluded from the projection",
+        priority: 10,
+        projectId: "agentmemory",
+      })) as { action: Action };
+      const target = (await sdk.trigger("mem::action-create", {
+        title: "Graph target",
+        priority: 9,
+        projectId: "agentmemory",
+      })) as { action: Action };
+      await sdk.trigger("mem::action-create", {
+        title: "Lower-ranked action",
+        priority: 1,
+      });
+      await sdk.trigger("mem::action-edge-create", {
+        sourceActionId: source.action.id,
+        targetActionId: target.action.id,
+        type: "unlocks",
+      });
+
+      const result = (await sdk.trigger("mem::action-graph-snapshot", {
+        limit: 2,
+      })) as {
+        success: boolean;
+        revision: number;
+        actions: Array<Record<string, unknown>>;
+        actionEdges: ActionEdge[];
+        totalActions: number;
+        totalEdges: number;
+        truncatedActions: number;
+        truncatedEdges: number;
+        eventsIncluded: boolean;
+      };
+
+      expect(result.success).toBe(true);
+      expect(result.actions.map((action) => action.id)).toEqual([
+        source.action.id,
+        target.action.id,
+      ]);
+      expect(result.actions[0]).not.toHaveProperty("description");
+      expect(result.actions[0]).not.toHaveProperty("createdBy");
+      expect(result.actionEdges).toHaveLength(1);
+      expect(result.actionEdges[0]).toMatchObject({
+        sourceActionId: source.action.id,
+        targetActionId: target.action.id,
+        type: "unlocks",
+      });
+      expect(result.totalActions).toBe(3);
+      expect(result.totalEdges).toBe(1);
+      expect(result.truncatedActions).toBe(1);
+      expect(result.truncatedEdges).toBe(0);
+      expect(result.eventsIncluded).toBe(false);
+      expect(result.revision).toBeGreaterThan(0);
+    });
+
+    it("rejects invalid limits and caps oversized snapshots", async () => {
+      const invalid = (await sdk.trigger("mem::action-graph-snapshot", {
+        limit: 0,
+      })) as { success: boolean; error: string };
+      expect(invalid).toEqual({
+        success: false,
+        error: "limit must be a positive integer",
+      });
+
+      const capped = (await sdk.trigger("mem::action-graph-snapshot", {
+        limit: 100_000,
+      })) as { success: boolean; limit: number };
+      expect(capped.success).toBe(true);
+      expect(capped.limit).toBe(5_000);
+    });
+  });
+
   describe("mem::action-get", () => {
     it("returns action with edges and children", async () => {
       const parent = (await sdk.trigger("mem::action-create", {

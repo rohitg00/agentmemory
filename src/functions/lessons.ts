@@ -4,6 +4,8 @@ import { KV, fingerprintId } from "../state/schema.js";
 import type { Lesson } from "../types.js";
 import { recordAudit } from "./audit.js";
 
+const MAX_LESSON_LIST_LIMIT = 500;
+
 function reinforceLesson(lesson: Lesson): void {
   const now = new Date().toISOString();
   lesson.reinforcements++;
@@ -156,8 +158,31 @@ export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
       source?: string;
       minConfidence?: number;
       limit?: number;
+      offset?: number;
+      sortBy?: "confidence" | "recent";
     }) => {
-      const limit = data.limit ?? 50;
+      const requestedLimit = data.limit ?? 50;
+      const offset = data.offset ?? 0;
+      if (!Number.isInteger(requestedLimit) || requestedLimit < 1) {
+        return { success: false, error: "limit must be a positive integer" };
+      }
+      if (!Number.isInteger(offset) || offset < 0) {
+        return {
+          success: false,
+          error: "offset must be a non-negative integer",
+        };
+      }
+      if (
+        data.sortBy !== undefined &&
+        data.sortBy !== "confidence" &&
+        data.sortBy !== "recent"
+      ) {
+        return {
+          success: false,
+          error: "sortBy must be confidence or recent",
+        };
+      }
+      const limit = Math.min(requestedLimit, MAX_LESSON_LIST_LIMIT);
       const minConfidence = data.minConfidence ?? 0;
       let lessons = await kv.list<Lesson>(KV.lessons);
 
@@ -172,9 +197,27 @@ export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
         lessons = lessons.filter((l) => l.source === data.source);
       }
 
-      lessons.sort((a, b) => b.confidence - a.confidence);
+      lessons.sort(
+        data.sortBy === "recent"
+          ? (a, b) =>
+              lessonTimestampMs(b) - lessonTimestampMs(a) ||
+              a.id.localeCompare(b.id)
+          : (a, b) =>
+              b.confidence - a.confidence || a.id.localeCompare(b.id),
+      );
 
-      return { success: true, lessons: lessons.slice(0, limit) };
+      const total = lessons.length;
+      const page = lessons.slice(offset, offset + limit);
+      const hasMore = offset + page.length < total;
+      return {
+        success: true,
+        lessons: page,
+        total,
+        limit,
+        offset,
+        hasMore,
+        nextOffset: hasMore ? offset + page.length : null,
+      };
     },
   );
 
@@ -280,4 +323,9 @@ export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
       return { success: true, decayed, softDeleted, total: lessons.length };
     },
   );
+}
+
+function lessonTimestampMs(lesson: Lesson): number {
+  const parsed = Date.parse(lesson.updatedAt || lesson.createdAt);
+  return Number.isFinite(parsed) ? parsed : 0;
 }

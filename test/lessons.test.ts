@@ -228,9 +228,88 @@ describe("Lessons", () => {
       expect(result.lessons.length).toBe(2);
     });
 
+    it("can sort project lessons by most recent update", async () => {
+      const lessons = await kv.list<Lesson>("mem:lessons");
+      const timestamps = new Map([
+        ["Lesson A", "2026-07-20T00:00:00.000Z"],
+        ["Lesson B", "2026-07-19T00:00:00.000Z"],
+        ["Lesson C", "2026-07-21T00:00:00.000Z"],
+      ]);
+      await Promise.all(
+        lessons.map((lesson) =>
+          kv.set("mem:lessons", lesson.id, {
+            ...lesson,
+            updatedAt: timestamps.get(lesson.content),
+          }),
+        ),
+      );
+
+      const result = (await sdk.trigger("mem::lesson-list", {
+        sortBy: "recent",
+      })) as { lessons: Lesson[] };
+      expect(result.lessons.map((lesson) => lesson.content)).toEqual([
+        "Lesson C",
+        "Lesson A",
+        "Lesson B",
+      ]);
+    });
+
     it("respects limit", async () => {
       const result = (await sdk.trigger("mem::lesson-list", { limit: 1 })) as { lessons: Lesson[] };
       expect(result.lessons.length).toBe(1);
+    });
+
+    it("returns stable bounded pages with metadata", async () => {
+      const first = (await sdk.trigger("mem::lesson-list", {
+        limit: 2,
+      })) as {
+        lessons: Lesson[];
+        total: number;
+        limit: number;
+        offset: number;
+        hasMore: boolean;
+        nextOffset: number;
+      };
+      const second = (await sdk.trigger("mem::lesson-list", {
+        limit: 2,
+        offset: first.nextOffset,
+      })) as {
+        lessons: Lesson[];
+        total: number;
+        limit: number;
+        offset: number;
+        hasMore: boolean;
+        nextOffset: null;
+      };
+
+      expect(first.lessons).toHaveLength(2);
+      expect(second.lessons).toHaveLength(1);
+      expect(first.total).toBe(3);
+      expect(second.total).toBe(3);
+      expect(first.limit).toBe(2);
+      expect(second.offset).toBe(2);
+      expect(first.hasMore).toBe(true);
+      expect(second.hasMore).toBe(false);
+      expect(second.nextOffset).toBeNull();
+      expect(
+        new Set([...first.lessons, ...second.lessons].map((lesson) => lesson.id))
+          .size,
+      ).toBe(3);
+    });
+
+    it("caps oversized pages and rejects invalid offsets", async () => {
+      const capped = (await sdk.trigger("mem::lesson-list", {
+        limit: 100_000,
+      })) as { limit: number };
+      expect(capped.limit).toBe(500);
+
+      const invalid = (await sdk.trigger("mem::lesson-list", {
+        offset: -1,
+      })) as { success: boolean; error: string };
+      expect(invalid).toEqual({
+        success: false,
+        error: "offset must be a non-negative integer",
+      });
     });
   });
 

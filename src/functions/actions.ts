@@ -50,6 +50,7 @@ const LEGACY_STATUSES = new Set<Action["status"]>([
   "blocked",
   "cancelled",
 ]);
+const MAX_ACTION_GRAPH_ACTIONS = 5_000;
 
 interface ActionCreateInput {
   title: string;
@@ -402,6 +403,49 @@ export function registerActionsFunction(sdk: ISdk, kv: StateKV): void {
       return actionStoreError(error);
     }
   });
+
+  sdk.registerFunction(
+    "mem::action-graph-snapshot",
+    async (data: { limit?: number }) => {
+      const requestedLimit = data.limit ?? MAX_ACTION_GRAPH_ACTIONS;
+      if (!Number.isInteger(requestedLimit) || requestedLimit < 1) {
+        return {
+          success: false,
+          error: "limit must be a positive integer",
+        };
+      }
+
+      try {
+        const limit = Math.min(requestedLimit, MAX_ACTION_GRAPH_ACTIONS);
+        const snapshot = await readActionStoreSnapshot(kv);
+        const rankedActions = [...snapshot.actions].sort(compareGraphActions);
+        const selectedActions = rankedActions.slice(0, limit);
+        const selectedIds = new Set(selectedActions.map((action) => action.id));
+        const selectedEdges = snapshot.edges
+          .filter(
+            (edge) =>
+              selectedIds.has(edge.sourceActionId) &&
+              selectedIds.has(edge.targetActionId),
+          )
+          .sort(compareGraphEdges);
+
+        return {
+          success: true,
+          revision: snapshot.state.revision,
+          actions: selectedActions.map(projectActionForGraph),
+          actionEdges: selectedEdges.map(projectActionEdgeForGraph),
+          totalActions: snapshot.actions.length,
+          totalEdges: snapshot.edges.length,
+          limit,
+          truncatedActions: snapshot.actions.length - selectedActions.length,
+          truncatedEdges: snapshot.edges.length - selectedEdges.length,
+          eventsIncluded: false,
+        };
+      } catch (error) {
+        return actionStoreError(error);
+      }
+    },
+  );
 
   sdk.registerFunction("mem::action-get", async (data: { actionId: string }) => {
     if (!data.actionId) {
@@ -818,6 +862,71 @@ function normalizePriority(value?: number): number {
 
 function isValidEdgeType(value: string): value is ActionEdge["type"] {
   return VALID_EDGE_TYPES.includes(value as ActionEdge["type"]);
+}
+
+function compareGraphActions(left: Action, right: Action): number {
+  const leftTerminal =
+    left.lifecycle === "done" ||
+    left.lifecycle === "cancelled" ||
+    left.status === "done" ||
+    left.status === "cancelled";
+  const rightTerminal =
+    right.lifecycle === "done" ||
+    right.lifecycle === "cancelled" ||
+    right.status === "done" ||
+    right.status === "cancelled";
+  return (
+    Number(leftTerminal) - Number(rightTerminal) ||
+    (right.priority ?? 0) - (left.priority ?? 0) ||
+    timestampMs(right.updatedAt) - timestampMs(left.updatedAt) ||
+    left.id.localeCompare(right.id)
+  );
+}
+
+function compareGraphEdges(left: ActionEdge, right: ActionEdge): number {
+  return (
+    left.sourceActionId.localeCompare(right.sourceActionId) ||
+    left.targetActionId.localeCompare(right.targetActionId) ||
+    left.type.localeCompare(right.type) ||
+    left.id.localeCompare(right.id)
+  );
+}
+
+function projectActionForGraph(action: Action) {
+  return {
+    id: action.id,
+    title: action.title,
+    status: action.status,
+    lifecycle: action.lifecycle,
+    project: action.project,
+    projectId: action.projectId,
+    parentId: action.parentId,
+    owner: action.owner,
+    assignedTo: action.assignedTo,
+    priority: action.priority,
+    tags: action.tags,
+    blockedReason: action.blockedReason,
+    repoRoot: action.repoRoot,
+    worktree: action.worktree,
+    branch: action.branch,
+    taskSlug: action.taskSlug,
+    updatedAt: action.updatedAt,
+  };
+}
+
+function projectActionEdgeForGraph(edge: ActionEdge) {
+  return {
+    id: edge.id,
+    type: edge.type,
+    sourceActionId: edge.sourceActionId,
+    targetActionId: edge.targetActionId,
+    createdAt: edge.createdAt,
+  };
+}
+
+function timestampMs(value: string | undefined): number {
+  const parsed = Date.parse(value ?? "");
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 function actionStoreError(error: unknown) {

@@ -2680,6 +2680,35 @@ export function registerApiTriggers(
     config: { api_path: "/agentmemory/actions", http_method: "GET" },
   });
 
+  sdk.registerFunction(
+    "api::action-graph-snapshot",
+    async (req: ApiRequest): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const limit = parseOptionalPositiveInt(req.query_params?.["limit"]);
+      if (limit === null) {
+        return {
+          status_code: 400,
+          body: { error: "limit must be a positive integer" },
+        };
+      }
+      const result = await sdk.trigger({
+        function_id: "mem::action-graph-snapshot",
+        payload: { limit },
+      });
+      const success = (result as { success?: boolean }).success !== false;
+      return { status_code: success ? 200 : 400, body: result };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::action-graph-snapshot",
+    config: {
+      api_path: "/agentmemory/actions/graph",
+      http_method: "GET",
+    },
+  });
+
   sdk.registerFunction("api::action-get", 
     async (req: ApiRequest<{ actionId: string }>): Promise<Response> => {
       const authErr = checkAuth(req, secret);
@@ -3553,11 +3582,31 @@ export function registerApiTriggers(
         body: { error: "invalid numeric parameter: limit" },
       };
     }
+    const offset = parseOptionalNonNegativeInt(params.offset);
+    if (offset === null) {
+      return {
+        status_code: 400,
+        body: { error: "invalid numeric parameter: offset" },
+      };
+    }
+    const sortBy = asNonEmptyString(params.sortBy);
+    if (
+      sortBy !== undefined &&
+      sortBy !== "confidence" &&
+      sortBy !== "recent"
+    ) {
+      return {
+        status_code: 400,
+        body: { error: "sortBy must be confidence or recent" },
+      };
+    }
     const result = await sdk.trigger({ function_id: "mem::lesson-list", payload: {
       project: params.project,
       source: params.source,
       minConfidence,
       limit,
+      offset,
+      sortBy,
     } });
     return { status_code: 200, body: result };
   });
