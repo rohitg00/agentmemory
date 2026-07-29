@@ -13,7 +13,10 @@ import { ResilientProvider } from "./resilient.js";
 import { FallbackChainProvider } from "./fallback-chain.js";
 import { getEnvVar } from "../config.js";
 
-export { createEmbeddingProvider, createImageEmbeddingProvider } from "./embedding/index.js";
+export {
+  createEmbeddingProvider,
+  createImageEmbeddingProvider,
+} from "./embedding/index.js";
 
 function requireEnvVar(key: string): string {
   const value = getEnvVar(key);
@@ -141,9 +144,7 @@ function createBaseProvider(config: ProviderConfig): MemoryProvider {
     case "openai": {
       const openaiKey = getEnvVar("OPENAI_API_KEY");
       if (!openaiKey) {
-        throw new Error(
-          "OPENAI_API_KEY is required for the openai provider",
-        );
+        throw new Error("OPENAI_API_KEY is required for the openai provider");
       }
       return new OpenAIProvider(
         openaiKey,
