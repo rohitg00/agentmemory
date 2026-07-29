@@ -36,6 +36,8 @@ function defaultModelFor(providerType: ProviderConfig["provider"]): string {
   switch (providerType) {
     case "openai":
       return getEnvVar("OPENAI_MODEL") || "gpt-4o-mini";
+    case "atlascloud":
+      return getEnvVar("ATLASCLOUD_MODEL") || "deepseek-ai/deepseek-v4-pro";
     case "anthropic":
       return getEnvVar("ANTHROPIC_MODEL") || "claude-sonnet-4-20250514";
     case "gemini":
@@ -94,6 +96,13 @@ export function createFallbackProvider(
 
 function createBaseProvider(config: ProviderConfig): MemoryProvider {
   switch (config.provider) {
+    case "atlascloud":
+      return new OpenAIProvider(
+        requireEnvVar("ATLASCLOUD_API_KEY"),
+        config.model,
+        config.maxTokens,
+        config.baseURL || "https://api.atlascloud.ai/v1",
+      );
     case "minimax":
       return new MinimaxProvider(
         requireEnvVar("MINIMAX_API_KEY"),

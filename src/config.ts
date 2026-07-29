@@ -63,6 +63,15 @@ function detectProvider(env: Record<string, string>): ProviderConfig {
     };
   }
 
+  if (hasRealValue(env["ATLASCLOUD_API_KEY"])) {
+    return {
+      provider: "atlascloud",
+      model: env["ATLASCLOUD_MODEL"] || "deepseek-ai/deepseek-v4-pro",
+      maxTokens,
+      baseURL: env["ATLASCLOUD_BASE_URL"] || "https://api.atlascloud.ai/v1",
+    };
+  }
+
   // MiniMax: Anthropic-compatible API, requires raw fetch to avoid SDK stainless headers
   if (hasRealValue(env["MINIMAX_API_KEY"])) {
     return {
@@ -203,6 +212,7 @@ export function detectLlmProviderKind(): "llm" | "noop" {
   const env = getMergedEnv();
   if (
     hasRealValue(env["ANTHROPIC_API_KEY"]) ||
+    hasRealValue(env["ATLASCLOUD_API_KEY"]) ||
     hasRealValue(env["GEMINI_API_KEY"]) ||
     hasRealValue(env["GOOGLE_API_KEY"]) ||
     hasRealValue(env["OPENROUTER_API_KEY"]) ||
@@ -362,7 +372,8 @@ function hasLLMProviderConfigured(env: Record<string, string | undefined>): bool
     env["OPENAI_API_KEY"] &&
     (env["OPENAI_API_KEY_FOR_LLM"] || "").toLowerCase() !== "false";
   return Boolean(
-    env["ANTHROPIC_API_KEY"] ||
+      env["ANTHROPIC_API_KEY"] ||
+      env["ATLASCLOUD_API_KEY"] ||
       openaiKeyForLlm ||
       env["OPENROUTER_API_KEY"] ||
       env["GEMINI_API_KEY"] ||
@@ -414,6 +425,7 @@ export function getStandalonePersistPath(): string {
 
 const VALID_PROVIDERS = new Set([
   "anthropic",
+  "atlascloud",
   "gemini",
   "openrouter",
   "agent-sdk",
