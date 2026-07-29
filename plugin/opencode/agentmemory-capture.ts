@@ -1,7 +1,9 @@
 import type { Plugin } from "@opencode-ai/plugin";
+import { execFileSync } from "node:child_process";
+import { basename } from "node:path";
 
 const API = process.env.AGENTMEMORY_URL || "http://localhost:3111";
-const FILE_TOOLS = new Set(["Read", "Write", "Edit", "Glob", "Grep"]);
+const FILE_TOOLS = new Set(["read", "write", "edit", "apply_patch", "glob", "grep"]);
 const FILE_KEYS = ["filePath", "file_path", "path", "file", "pattern"];
 const MAX_STASHED_FILES = 20;
 
@@ -47,19 +49,26 @@ async function observe(
   hookType: string,
   data: Record<string, unknown>,
 ): Promise<void> {
+  const scope = scopeFor(sessionId);
   await post("/observe", {
     hookType,
     sessionId,
-    project: projectPath,
-    cwd: projectPath,
+    project: scope.project,
+    cwd: scope.cwd,
     timestamp: new Date().toISOString(),
     data,
   });
 }
 
+interface ProjectScope {
+  project: string;
+  cwd: string;
+}
+
 let activeSessionId: string | null = null;
 let pendingConfig: Record<string, unknown> | null = null;
-let projectPath: string | null = null;
+let defaultScope: ProjectScope = resolveScope(process.cwd());
+const sessionScopes = new Map<string, ProjectScope>();
 const stashedFiles = new Map<string, Set<string>>();
 const seenSubtaskIds = new Map<string, Set<string>>();
 const seenToolCallIds = new Map<string, Set<string>>();
@@ -90,15 +99,53 @@ function toolCallSetFor(sid: string): Set<string> {
 }
 
 function pruneSessionMaps(sid: string): void {
+  sessionScopes.delete(sid);
   stashedFiles.delete(sid);
   seenSubtaskIds.delete(sid);
   seenToolCallIds.delete(sid);
+}
+
+function resolveScope(cwd: string): ProjectScope {
+  const normalizedCwd = cwd.trim() || process.cwd();
+  const explicitProject = process.env.AGENTMEMORY_PROJECT?.trim();
+  if (explicitProject) return { project: explicitProject, cwd: normalizedCwd };
+
+  try {
+    const root = execFileSync("git", ["rev-parse", "--show-toplevel"], {
+      cwd: normalizedCwd,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+      timeout: 500,
+    }).trim();
+    if (root) return { project: basename(root), cwd: normalizedCwd };
+  } catch {}
+
+  return { project: basename(normalizedCwd) || normalizedCwd, cwd: normalizedCwd };
+}
+
+function scopeFor(sessionId: string): ProjectScope {
+  return sessionScopes.get(sessionId) || defaultScope;
+}
+
+function updateSessionScope(sessionId: string, cwd: unknown): void {
+  if (typeof cwd !== "string" || cwd.trim().length === 0) return;
+  sessionScopes.set(sessionId, resolveScope(cwd));
 }
 
 function safeSlice(v: unknown, max: number): string {
   if (typeof v === "string") return v.slice(0, max);
   if (v == null) return "";
   try { return JSON.stringify(v).slice(0, max); } catch { return ""; }
+}
+
+function safeToolInput(v: unknown): unknown {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return safeSlice(v, 4000);
+  const input = v as Record<string, unknown>;
+  const compact: Record<string, unknown> = { summary: safeSlice(v, 3000) };
+  for (const key of FILE_KEYS) {
+    if (typeof input[key] === "string") compact[key] = input[key];
+  }
+  return compact;
 }
 
 const AGENTMEMORY_INSTRUCTIONS = `<agentmemory-instructions>
@@ -168,7 +215,8 @@ function extractErrorMessage(err: unknown): string {
 }
 
 export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
-  projectPath = ctx.worktree || ctx.project?.id || process.cwd();
+  const directory = (ctx as { directory?: string }).directory || ctx.worktree || process.cwd();
+  defaultScope = resolveScope(directory);
 
   return {
     event: async ({ event }) => {
@@ -180,6 +228,7 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
         const info = props.info as Record<string, unknown> | undefined;
         activeSessionId = (info?.id as string) || props.sessionID || null;
         if (!activeSessionId) return;
+        updateSessionScope(activeSessionId, info?.directory || defaultScope.cwd);
         stashedFiles.set(activeSessionId, new Set());
         seenSubtaskIds.delete(activeSessionId);
         seenToolCallIds.delete(activeSessionId);
@@ -188,13 +237,14 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
         // and another `session.created` event during the await could
         // rebind it, causing context to be cached against the wrong key.
         const sessionId = activeSessionId;
+        const scope = scopeFor(sessionId);
         const startResult = await postJson("/session/start", {
           sessionId,
           title: info?.title ?? null,
           parentID: info?.parentID ?? null,
           version: info?.version ?? null,
-          project: projectPath,
-          cwd: projectPath,
+          project: scope.project,
+          cwd: scope.cwd,
         });
         // cache the context returned at session/start so the
         // chat.system.transform hook injects it without a second fetch.
@@ -239,6 +289,7 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
         const info = props.info as Record<string, unknown> | undefined;
         const sid = (info?.id as string) || props.sessionID || activeSessionId;
         if (!sid) return;
+        updateSessionScope(sid, info?.directory);
         await observe(sid, "session_updated", {
           title: info?.title ?? null,
           parentID: info?.parentID ?? null,
@@ -272,10 +323,8 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
         post("/crystals/auto", { olderThanDays: 7 }, 30000);
         post("/consolidate-pipeline", { tier: "all", force: true }, 30000);
         if (sid === activeSessionId) activeSessionId = null;
-        stashedFiles.delete(sid);
+        pruneSessionMaps(sid);
         startContextCache.delete(sid);
-        seenSubtaskIds.delete(sid);
-        seenToolCallIds.delete(sid);
         contextInjectedSessions.delete(sid);
       }
 
@@ -299,6 +348,7 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
         if (info.role === "assistant") {
           const sid = props.sessionID || (info.sessionID as string) || activeSessionId;
           if (!sid) return;
+          updateSessionScope(sid, (info.path as Record<string, unknown> | undefined)?.cwd);
           const tokens = info.tokens as Record<string, unknown> | undefined;
           const error = info.error ? extractErrorMessage(info.error) : null;
           await observe(sid, "assistant_message", {
@@ -374,7 +424,7 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
             await observe(sid, "post_tool_use", {
               tool_name: toolName,
               call_id: callId,
-              tool_input: safeSlice(st.input, 4000),
+              tool_input: safeToolInput(st.input),
               tool_output: safeSlice(st.output, 8000),
               title: st.title ?? null,
               metadata: st.metadata || {},
@@ -394,7 +444,7 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
             await observe(sid, "post_tool_failure", {
               tool_name: toolName,
               call_id: callId,
-              tool_input: safeSlice(st.input, 4000),
+              tool_input: safeToolInput(st.input),
               tool_output: safeSlice(st.error, 8000),
               duration_ms: (startTime != null && endTime != null) ? endTime - startTime : null,
             });
@@ -579,9 +629,13 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
       });
     },
 
+    "shell.env": async (input) => {
+      if (input.sessionID) updateSessionScope(input.sessionID, input.cwd);
+    },
+
     // ── tool.execute.before ──
     "tool.execute.before": async (input, output) => {
-      if (!FILE_TOOLS.has(input.tool)) return;
+      if (!FILE_TOOLS.has(input.tool.toLowerCase())) return;
       const sid = input.sessionID || activeSessionId;
       if (!sid) return;
       const args = output.args as Record<string, unknown> | undefined;
@@ -612,7 +666,7 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
         if (typeof ctx !== "string" || ctx.length === 0) {
           const result = await postJson("/context", {
             sessionId: sid,
-            project: projectPath,
+            project: scopeFor(sid).project,
           });
           ctx = (result as any)?.context;
         } else {
@@ -650,7 +704,7 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
 
       const result = await postJson("/context", {
         sessionId: sid,
-        project: projectPath,
+        project: scopeFor(sid).project,
       });
       const ctx = (result as any)?.context;
       if (typeof ctx === "string" && ctx.length > 0) {
