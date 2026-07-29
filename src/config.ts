@@ -54,10 +54,7 @@ function detectProvider(env: Record<string, string>): ProviderConfig {
   const maxTokens = parseInt(env["MAX_TOKENS"] || "4096", 10);
 
   // OpenAI-compatible: supports OpenAI, DeepSeek, SiliconFlow, Azure, vLLM, LM Studio
-  if (
-    hasRealValue(env["OPENAI_API_KEY"]) &&
-    env["OPENAI_API_KEY_FOR_LLM"] !== "false"
-  ) {
+  if (hasRealValue(env["OPENAI_API_KEY"]) && env["OPENAI_API_KEY_FOR_LLM"] !== "false") {
     return {
       provider: "openai",
       model: env["OPENAI_MODEL"] || "gpt-4o-mini",
@@ -92,14 +89,8 @@ function detectProvider(env: Record<string, string>): ProviderConfig {
       baseURL: env["ANTHROPIC_BASE_URL"],
     };
   }
-  if (
-    hasRealValue(env["GEMINI_API_KEY"]) ||
-    hasRealValue(env["GOOGLE_API_KEY"])
-  ) {
-    if (
-      !hasRealValue(env["GEMINI_API_KEY"]) &&
-      hasRealValue(env["GOOGLE_API_KEY"])
-    ) {
+  if (hasRealValue(env["GEMINI_API_KEY"]) || hasRealValue(env["GOOGLE_API_KEY"])) {
+    if (!hasRealValue(env["GEMINI_API_KEY"]) && hasRealValue(env["GOOGLE_API_KEY"])) {
       process.stderr.write(
         "[agentmemory] GOOGLE_API_KEY detected — treating as GEMINI_API_KEY. " +
           "Set GEMINI_API_KEY in ~/.agentmemory/.env to silence this warning.\n",
@@ -315,8 +306,9 @@ export function loadAgentScope(): {
   if (!raw) return null;
   const agentId = raw.trim().slice(0, 128);
   if (!agentId) return null;
-  const mode =
-    env["AGENTMEMORY_AGENT_SCOPE"] === "isolated" ? "isolated" : "shared";
+  const mode = env["AGENTMEMORY_AGENT_SCOPE"] === "isolated"
+    ? "isolated"
+    : "shared";
   return { agentId, mode };
 }
 
@@ -373,24 +365,22 @@ export function isConsolidationEnabled(): boolean {
   return hasLLMProviderConfigured(env);
 }
 
-function hasLLMProviderConfigured(
-  env: Record<string, string | undefined>,
-): boolean {
+function hasLLMProviderConfigured(env: Record<string, string | undefined>): boolean {
   const provider = (env["AGENTMEMORY_PROVIDER"] || "").toLowerCase();
   if (provider === "noop") return false;
   const openaiKeyForLlm =
     env["OPENAI_API_KEY"] &&
     (env["OPENAI_API_KEY_FOR_LLM"] || "").toLowerCase() !== "false";
   return Boolean(
-    env["ANTHROPIC_API_KEY"] ||
-    env["ATLASCLOUD_API_KEY"] ||
-    openaiKeyForLlm ||
-    env["OPENROUTER_API_KEY"] ||
-    env["GEMINI_API_KEY"] ||
-    env["GOOGLE_API_KEY"] ||
-    env["MINIMAX_API_KEY"] ||
-    env["OPENAI_BASE_URL"] ||
-    provider === "agent-sdk",
+      env["ANTHROPIC_API_KEY"] ||
+      env["ATLASCLOUD_API_KEY"] ||
+      openaiKeyForLlm ||
+      env["OPENROUTER_API_KEY"] ||
+      env["GEMINI_API_KEY"] ||
+      env["GOOGLE_API_KEY"] ||
+      env["MINIMAX_API_KEY"] ||
+      env["OPENAI_BASE_URL"] ||
+      provider === "agent-sdk",
   );
 }
 
