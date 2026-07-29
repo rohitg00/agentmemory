@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **Workstation LLM MCP completion.** Added `memory_enrich_session`, `memory_diagnostic_followup`, and `memory_flow_compress` so the existing engine functions are reachable from MCP clients. Added `memory_llm_smoke`, a fixed-input connectivity probe that reports configured provider/model evidence without persistent AgentMemory or filesystem writes. The `workstation-llm` profile now contains the curated workstation surface plus seven LLM-backed tools.
+- **Safe LLM identity metadata.** `/agentmemory/health` now reports `llmConfiguredProvider` and `llmModel` without exposing base URLs or credentials. New `POST /agentmemory/llm/smoke` and `POST /agentmemory/enrich-session` REST endpoints mirror the new MCP operations.
+
+### Changed
+
+- **Surface counts:** 54 → 58 MCP tools and 131 → 133 REST endpoints.
+
 ## [0.9.27] — 2026-06-07
 
 Wave release closing several breaking regressions reported against v0.9.26, plus an agent-scope isolation security fix, an iii version-pin audit fix, and a benchmark scorecard correction. No breaking changes; drop-in upgrade.

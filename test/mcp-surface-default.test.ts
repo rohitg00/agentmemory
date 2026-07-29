@@ -64,7 +64,7 @@ describe("MCP tool surface default (#553)", () => {
     expect(names.has("memory_reflect")).toBe(false);
   });
 
-  it("AGENTMEMORY_TOOLS=workstation-llm adds only the four LLM-backed tools", () => {
+  it("AGENTMEMORY_TOOLS=workstation-llm adds only the LLM-backed tools", () => {
     process.env["AGENTMEMORY_TOOLS"] = "workstation-llm";
     const names = new Set(getVisibleTools().map((tool) => tool.name));
     expect(names).toEqual(WORKSTATION_LLM_TOOLS);
@@ -72,6 +72,10 @@ describe("MCP tool surface default (#553)", () => {
     for (const tool of LLM_BACKED_TOOLS) {
       expect(names.has(tool)).toBe(true);
     }
+    expect(names.has("memory_enrich_session")).toBe(true);
+    expect(names.has("memory_diagnostic_followup")).toBe(true);
+    expect(names.has("memory_flow_compress")).toBe(true);
+    expect(names.has("memory_llm_smoke")).toBe(true);
     expect(names.has("memory_governance_delete")).toBe(false);
   });
 

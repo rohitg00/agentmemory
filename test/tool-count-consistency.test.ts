@@ -9,7 +9,7 @@ vi.mock("../src/logger.js", () => ({
 import { getAllTools, ESSENTIAL_TOOLS } from "../src/mcp/tools-registry.js";
 
 const ROOT = join(import.meta.dirname, "..");
-const EXPECTED_TOOL_COUNT = 54;
+const EXPECTED_TOOL_COUNT = 58;
 
 function readText(relativePath: string): string {
   return readFileSync(join(ROOT, relativePath), "utf-8");
@@ -24,7 +24,7 @@ describe("Tool count consistency", () => {
     const cli = readText("src/cli.ts");
     expect(cli).toContain("const ALL_TOOLS_COUNT = getAllTools().length;");
     expect(cli).toContain(
-      "workstation-llm = curated + 4 LLM tools",
+      "workstation-llm = curated + 7 LLM tools",
     );
     expect(cli).not.toMatch(/all\s*=\s*51 tools/);
   });

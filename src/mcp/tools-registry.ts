@@ -979,6 +979,67 @@ export const V073_TOOLS: McpToolDef[] = [
   },
 ];
 
+export const V0927_WORKSTATION_TOOLS: McpToolDef[] = [
+  {
+    name: "memory_enrich_session",
+    description:
+      "LLM-enrich qualifying observations in a session and persist enriched chunks. This is a state-changing, paid-provider operation.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sessionId: {
+          type: "string",
+          description: "Session ID whose observations should be enriched",
+        },
+        lookback: {
+          type: "number",
+          description: "Previous observations included in each context window (default 3)",
+        },
+        lookahead: {
+          type: "number",
+          description: "Following observations included in each context window (default 2)",
+        },
+        minImportance: {
+          type: "number",
+          description: "Minimum observation importance from 0 to 10 (default 4)",
+        },
+      },
+      required: ["sessionId"],
+    },
+  },
+  {
+    name: "memory_diagnostic_followup",
+    description:
+      "Read the smart-search follow-up-rate diagnostic counters. This is a read-only directional signal and may overcount legitimate query refinement.",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "memory_flow_compress",
+    description:
+      "LLM-summarize a completed action flow and persist it as workflow memory. Provide a run ID, comma-separated action IDs, or a project.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        runId: { type: "string", description: "Completed routine run ID" },
+        actionIds: {
+          type: "string",
+          description: "Comma-separated completed action IDs",
+        },
+        project: {
+          type: "string",
+          description: "Project whose completed actions should be compressed",
+        },
+      },
+    },
+  },
+  {
+    name: "memory_llm_smoke",
+    description:
+      "Run a fixed, non-sensitive LLM connectivity probe. Returns provider/model evidence and performs no persistent AgentMemory or filesystem writes.",
+    inputSchema: { type: "object", properties: {} },
+  },
+];
+
 export const V010_SLOTS_TOOLS: McpToolDef[] = [
   {
     name: "memory_slot_list",
@@ -1072,6 +1133,7 @@ export const WORKSTATION_TOOLS = new Set([
   "memory_lease",
   "memory_signal_send",
   "memory_signal_read",
+  "memory_diagnostic_followup",
 ]);
 
 export const LLM_BACKED_TOOLS = new Set([
@@ -1079,6 +1141,9 @@ export const LLM_BACKED_TOOLS = new Set([
   "memory_consolidate",
   "memory_crystallize",
   "memory_reflect",
+  "memory_enrich_session",
+  "memory_flow_compress",
+  "memory_llm_smoke",
 ]);
 
 export const WORKSTATION_LLM_TOOLS = new Set([
@@ -1095,6 +1160,7 @@ export function getAllTools(): McpToolDef[] {
     ...V061_TOOLS,
     ...V070_TOOLS,
     ...V073_TOOLS,
+    ...V0927_WORKSTATION_TOOLS,
     ...V010_SLOTS_TOOLS,
   ];
 }
