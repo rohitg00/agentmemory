@@ -166,6 +166,19 @@ export function registerMcpEndpoints(
             };
           }
 
+          case "memory_llm_smoke": {
+            const result = await sdk.trigger({
+              function_id: "mem::llm-smoke",
+              payload: {},
+            });
+            return {
+              status_code: 200,
+              body: {
+                content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+              },
+            };
+          }
+
           case "memory_save": {
             if (typeof args.content !== "string" || !args.content.trim()) {
               return {
@@ -235,6 +248,51 @@ export function registerMcpEndpoints(
                       "No history found.",
                   },
                 ],
+              },
+            };
+          }
+
+          case "memory_enrich_session": {
+            const sessionId = asNonEmptyString(args.sessionId);
+            if (!sessionId) {
+              return {
+                status_code: 400,
+                body: { error: "sessionId is required for memory_enrich_session" },
+              };
+            }
+            for (const field of ["lookback", "lookahead", "minImportance"] as const) {
+              const value = args[field];
+              if (
+                value !== undefined &&
+                (typeof value !== "number" ||
+                  !Number.isInteger(value) ||
+                  value < 0 ||
+                  (field === "minImportance" && value > 10))
+              ) {
+                return {
+                  status_code: 400,
+                  body: {
+                    error:
+                      "lookback and lookahead must be non-negative integers; minImportance must be an integer from 0 to 10",
+                  },
+                };
+              }
+            }
+            const result = await sdk.trigger({
+              function_id: "mem::enrich-session",
+              payload: {
+                sessionId,
+                ...(args.lookback !== undefined && { lookback: args.lookback }),
+                ...(args.lookahead !== undefined && { lookahead: args.lookahead }),
+                ...(args.minImportance !== undefined && {
+                  minImportance: args.minImportance,
+                }),
+              },
+            });
+            return {
+              status_code: 200,
+              body: {
+                content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
               },
             };
           }
@@ -1137,12 +1195,65 @@ export function registerMcpEndpoints(
             return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(crysResult, null, 2) }] } };
           }
 
+          case "memory_flow_compress": {
+            if (
+              (args.runId !== undefined && typeof args.runId !== "string") ||
+              (args.actionIds !== undefined && typeof args.actionIds !== "string") ||
+              (args.project !== undefined && typeof args.project !== "string")
+            ) {
+              return {
+                status_code: 400,
+                body: {
+                  error: "runId, actionIds, and project must be strings when provided",
+                },
+              };
+            }
+            const runId = asNonEmptyString(args.runId);
+            const project = asNonEmptyString(args.project);
+            const actionIds = parseCsvList(args.actionIds);
+            if (!runId && actionIds.length === 0 && !project) {
+              return {
+                status_code: 400,
+                body: {
+                  error: "runId, actionIds, or project is required for memory_flow_compress",
+                },
+              };
+            }
+            const result = await sdk.trigger({
+              function_id: "mem::flow-compress",
+              payload: {
+                ...(runId !== undefined && { runId }),
+                ...(actionIds.length > 0 && { actionIds }),
+                ...(project !== undefined && { project }),
+              },
+            });
+            return {
+              status_code: 200,
+              body: {
+                content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+              },
+            };
+          }
+
           case "memory_diagnose": {
             const diagCats = typeof args.categories === "string" && args.categories.trim()
               ? args.categories.split(",").map((s: string) => s.trim()).filter(Boolean)
               : undefined;
             const diagResult = await sdk.trigger({ function_id: "mem::diagnose", payload: { categories: diagCats } });
             return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(diagResult, null, 2) }] } };
+          }
+
+          case "memory_diagnostic_followup": {
+            const result = await sdk.trigger({
+              function_id: "mem::diagnostic::followup-stats",
+              payload: {},
+            });
+            return {
+              status_code: 200,
+              body: {
+                content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+              },
+            };
           }
 
           case "memory_heal": {

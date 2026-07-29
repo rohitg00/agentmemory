@@ -193,7 +193,7 @@ Options:
   --reset            Wipe ~/.agentmemory/preferences.json and re-run onboarding
   --tools all|core|workstation|workstation-llm
                      Tool visibility (default: all = ${ALL_TOOLS_COUNT}; core = ${CORE_TOOLS_COUNT};
-                     workstation = curated coordination; workstation-llm = curated + 4 LLM tools)
+                     workstation = curated coordination; workstation-llm = curated + 7 LLM tools)
   --no-engine        Skip auto-starting iii-engine
   --port <N>         Override REST port (default: 3111). Streams (N+1), viewer
                      (N+2), and iii engine (N+46023) auto-derive from N so a

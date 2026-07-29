@@ -31,6 +31,7 @@ describe("LLM runtime state APIs", () => {
       undefined,
       metrics,
       provider,
+      { provider: "openai", model: "deepseek-v4-pro" },
     );
 
     const health = (await sdk.trigger("api::health", {
@@ -43,6 +44,8 @@ describe("LLM runtime state APIs", () => {
       llmToolsDisabled: true,
       llmExecutionState: "disabled",
       llmProvider: "resilient(noop)",
+      llmConfiguredProvider: "openai",
+      llmModel: "deepseek-v4-pro",
     });
     expect(functionMetrics).toContainEqual(
       expect.objectContaining({

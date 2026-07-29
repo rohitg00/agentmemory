@@ -1,5 +1,12 @@
 import { TriggerAction, type ISdk, type ApiRequest, type EnqueueResult } from "iii-sdk";
-import type { Session, CompressedObservation, HookPayload, CommitLink, SessionSummary } from "../types.js";
+import type {
+  Session,
+  CompressedObservation,
+  HookPayload,
+  CommitLink,
+  SessionSummary,
+  ProviderConfig,
+} from "../types.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
 import { KV, generateId } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
@@ -213,6 +220,7 @@ export function registerApiTriggers(
   secret?: string,
   metricsStore?: MetricsStore,
   provider?: ResilientProvider,
+  providerConfig?: Pick<ProviderConfig, "provider" | "model">,
 ): void {
   sdk.registerFunction(
     "middleware::api-auth",
@@ -351,6 +359,8 @@ export function registerApiTriggers(
           llmToolsDisabled: process.env["AGENTMEMORY_DISABLE_LLM_TOOLS"] === "true",
           llmExecutionState,
           llmProvider: provider?.name ?? null,
+          llmConfiguredProvider: providerConfig?.provider ?? null,
+          llmModel: providerConfig?.model ?? null,
           health: health || null,
           functionMetrics,
           circuitBreaker,
@@ -588,6 +598,23 @@ export function registerApiTriggers(
     type: "http",
     function_id: "api::compress-file",
     config: { api_path: "/agentmemory/compress-file", http_method: "POST" },
+  });
+
+  sdk.registerFunction("api::llm-smoke",
+    async (req: ApiRequest): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const result = await sdk.trigger({
+        function_id: "mem::llm-smoke",
+        payload: {},
+      });
+      return { status_code: 200, body: result };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::llm-smoke",
+    config: { api_path: "/agentmemory/llm/smoke", http_method: "POST" },
   });
 
   sdk.registerFunction("api::replay::load",
@@ -1138,6 +1165,60 @@ export function registerApiTriggers(
     type: "http",
     function_id: "api::enrich",
     config: { api_path: "/agentmemory/enrich", http_method: "POST" },
+  });
+
+  sdk.registerFunction("api::enrich-session",
+    async (
+      req: ApiRequest<{
+        sessionId: string;
+        lookback?: number;
+        lookahead?: number;
+        minImportance?: number;
+      }>,
+    ): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const sessionId = asNonEmptyString(body.sessionId);
+      if (!sessionId) {
+        return {
+          status_code: 400,
+          body: { error: "sessionId is required and must be a non-empty string" },
+        };
+      }
+      const lookback = parseOptionalNonNegativeInt(body.lookback);
+      const lookahead = parseOptionalNonNegativeInt(body.lookahead);
+      const minImportance = parseOptionalNonNegativeInt(body.minImportance);
+      if (
+        lookback === null ||
+        lookahead === null ||
+        minImportance === null ||
+        (minImportance !== undefined && minImportance > 10)
+      ) {
+        return {
+          status_code: 400,
+          body: {
+            error:
+              "lookback and lookahead must be non-negative integers; minImportance must be an integer from 0 to 10",
+          },
+        };
+      }
+      const result = await sdk.trigger({
+        function_id: "mem::enrich-session",
+        payload: {
+          sessionId,
+          ...(lookback !== undefined && { lookback }),
+          ...(lookahead !== undefined && { lookahead }),
+          ...(minImportance !== undefined && { minImportance }),
+        },
+      });
+      return { status_code: 200, body: result };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::enrich-session",
+    config: { api_path: "/agentmemory/enrich-session", http_method: "POST" },
   });
 
   sdk.registerFunction("api::remember",
@@ -3080,8 +3161,41 @@ export function registerApiTriggers(
     ): Promise<Response> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const runId = asNonEmptyString(body.runId);
+      const project = asNonEmptyString(body.project);
+      const actionIds =
+        body.actionIds === undefined
+          ? undefined
+          : Array.isArray(body.actionIds) &&
+              body.actionIds.length > 0 &&
+              body.actionIds.every(
+                (actionId) =>
+                  typeof actionId === "string" && actionId.trim().length > 0,
+              )
+            ? body.actionIds.map((actionId) => (actionId as string).trim())
+            : null;
+      if (actionIds === null) {
+        return {
+          status_code: 400,
+          body: { error: "actionIds must be a non-empty array of strings" },
+        };
+      }
+      if (!runId && !actionIds && !project) {
+        return {
+          status_code: 400,
+          body: { error: "runId, actionIds, or project is required" },
+        };
+      }
       try {
-        const result = await sdk.trigger({ function_id: "mem::flow-compress", payload: req.body || {} });
+        const result = await sdk.trigger({
+          function_id: "mem::flow-compress",
+          payload: {
+            ...(runId !== null && { runId }),
+            ...(actionIds !== undefined && { actionIds }),
+            ...(project !== null && { project }),
+          },
+        });
         return { status_code: 200, body: result };
       } catch {
         return {
