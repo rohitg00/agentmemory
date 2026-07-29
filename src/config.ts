@@ -287,6 +287,45 @@ export function loadTeamConfig(): TeamConfig | null {
 // Filtering is gated by AGENTMEMORY_AGENT_SCOPE:
 //   "shared"   (default) — tag everything, do not filter recall paths
 //   "isolated"           — tag everything AND filter recall paths
+
+/** Max length for agentId values accepted at write/session boundaries. */
+export const AGENT_ID_MAX_LEN = 128;
+
+/**
+ * Normalize an optional agentId from env/request/tool args.
+ * Returns undefined when absent, non-string, or blank after trim.
+ * Valid values are trimmed and capped at maxLen (default 128).
+ */
+export function sanitizeAgentId(
+  value: unknown,
+  maxLen: number = AGENT_ID_MAX_LEN,
+): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  return trimmed.length > maxLen ? trimmed.slice(0, maxLen) : trimmed;
+}
+
+/**
+ * Parse an optional agentId field when the key may be present.
+ * - undefined/null → ok, value undefined (field omitted)
+ * - present but blank/non-string → error (callers return 400 / throw)
+ * - present valid string → ok, trimmed+capped value
+ */
+export function parseOptionalAgentIdField(
+  value: unknown,
+  maxLen: number = AGENT_ID_MAX_LEN,
+): { ok: true; value: string | undefined } | { ok: false; error: string } {
+  if (value === undefined || value === null) {
+    return { ok: true, value: undefined };
+  }
+  const sanitized = sanitizeAgentId(value, maxLen);
+  if (sanitized === undefined) {
+    return { ok: false, error: "agentId must be a non-empty string" };
+  }
+  return { ok: true, value: sanitized };
+}
+
 export function loadAgentScope(): {
   agentId: string;
   mode: "shared" | "isolated";
@@ -294,7 +333,7 @@ export function loadAgentScope(): {
   const env = getMergedEnv();
   const raw = env["AGENT_ID"];
   if (!raw) return null;
-  const agentId = raw.trim().slice(0, 128);
+  const agentId = sanitizeAgentId(raw);
   if (!agentId) return null;
   const mode = env["AGENTMEMORY_AGENT_SCOPE"] === "isolated"
     ? "isolated"

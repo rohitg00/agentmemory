@@ -22,6 +22,7 @@ import {
   detectLlmProviderKind,
   getAgentId,
   isAgentScopeIsolated,
+  parseOptionalAgentIdField,
 } from "../config.js";
 
 type Response = {
@@ -602,11 +603,11 @@ export function registerApiTriggers(
       // allow session/start to override AGENT_ID from request body
       // (multi-agent runtimes that route many roles through one server
       // process). Falls back to the AGENT_ID env on the server.
-      const requestAgentId =
-        typeof body.agentId === "string" && body.agentId.trim().length > 0
-          ? body.agentId.trim().slice(0, 128)
-          : undefined;
-      const agentId = requestAgentId ?? getAgentId();
+      const agentIdField = parseOptionalAgentIdField(body.agentId);
+      if (!agentIdField.ok) {
+        return { status_code: 400, body: { error: agentIdField.error } };
+      }
+      const agentId = agentIdField.value ?? getAgentId();
       const session: Session = {
         id: sessionId,
         project,
@@ -991,6 +992,7 @@ export function registerApiTriggers(
         ttlDays?: number;
         sourceObservationIds?: string[];
         project?: string;
+        agentId?: string;
       }>,
     ): Promise<Response> => {
       const authErr = checkAuth(req, secret);
@@ -1008,6 +1010,10 @@ export function registerApiTriggers(
       ) {
         return { status_code: 400, body: { error: "project must be a non-empty string" } };
       }
+      const agentIdField = parseOptionalAgentIdField(req.body.agentId);
+      if (!agentIdField.ok) {
+        return { status_code: 400, body: { error: agentIdField.error } };
+      }
       const result = await sdk.trigger({
         function_id: "mem::remember",
         payload: {
@@ -1018,6 +1024,7 @@ export function registerApiTriggers(
           ...(req.body.ttlDays !== undefined && { ttlDays: req.body.ttlDays }),
           ...(req.body.sourceObservationIds !== undefined && { sourceObservationIds: req.body.sourceObservationIds }),
           ...(req.body.project !== undefined && { project: req.body.project }),
+          ...(agentIdField.value !== undefined && { agentId: agentIdField.value }),
         },
       });
       return { status_code: 201, body: result };

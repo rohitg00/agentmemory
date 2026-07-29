@@ -83,6 +83,12 @@ export const CORE_TOOLS: McpToolDef[] = [
             "started. Do not use filesystem paths or ad-hoc display names — those " +
             "change across machines and will silently break project scoping.",
         },
+        agentId: {
+          type: "string",
+          description:
+            "Optional agent/role id that wrote this memory (e.g. Hermes profile name). " +
+            "Used for multi-agent provenance; pair with AGENTMEMORY_AGENT_SCOPE when isolating.",
+        },
       },
       required: ["content"],
     },
