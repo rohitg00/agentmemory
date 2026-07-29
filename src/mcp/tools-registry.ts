@@ -1081,6 +1081,11 @@ export const LLM_BACKED_TOOLS = new Set([
   "memory_reflect",
 ]);
 
+export const WORKSTATION_LLM_TOOLS = new Set([
+  ...WORKSTATION_TOOLS,
+  ...LLM_BACKED_TOOLS,
+]);
+
 export function getAllTools(): McpToolDef[] {
   return [
     ...CORE_TOOLS,
@@ -1104,6 +1109,8 @@ export function getVisibleTools(): McpToolDef[] {
     selected = all.filter((tool) => ESSENTIAL_TOOLS.has(tool.name));
   } else if (mode === "workstation") {
     selected = all.filter((tool) => WORKSTATION_TOOLS.has(tool.name));
+  } else if (mode === "workstation-llm") {
+    selected = all.filter((tool) => WORKSTATION_LLM_TOOLS.has(tool.name));
   } else {
     const allow = new Set(
       mode

@@ -24,7 +24,7 @@ describe("Tool count consistency", () => {
     const cli = readText("src/cli.ts");
     expect(cli).toContain("const ALL_TOOLS_COUNT = getAllTools().length;");
     expect(cli).toContain(
-      "Tool visibility (default: all = ${ALL_TOOLS_COUNT}; core = ${CORE_TOOLS_COUNT}; workstation = curated coordination set)",
+      "workstation-llm = curated + 4 LLM tools",
     );
     expect(cli).not.toMatch(/all\s*=\s*51 tools/);
   });

@@ -961,7 +961,7 @@ npm install @xenova/transformers
 
 54 tools, 6 resources, 3 prompts, and 15 skills, the most comprehensive MCP memory toolkit for any agent.
 
-> **MCP shim vs full server:** the published `@agentmemory/mcp` package is a thin shim. It exposes the running server's selected tool profile **only when it can reach an agentmemory server** via `AGENTMEMORY_URL` (proxy mode). With no server reachable, the shim falls back to a 7-tool local set (`memory_save`, `memory_recall`, `memory_smart_search`, `memory_sessions`, `memory_export`, `memory_audit`, `memory_governance_delete`). `AGENTMEMORY_TOOLS=core|workstation|all` is evaluated by the running server; set it in the server service environment. If you see only 7 local-fallback tools in Cursor / OpenCode / Gemini CLI, start `npx @agentmemory/agentmemory` (or the Docker stack) and set `AGENTMEMORY_URL=http://localhost:3111`.
+> **MCP shim vs full server:** the published `@agentmemory/mcp` package is a thin shim. It exposes the running server's selected tool profile **only when it can reach an agentmemory server** via `AGENTMEMORY_URL` (proxy mode). With no server reachable, the shim falls back to a 7-tool local set (`memory_save`, `memory_recall`, `memory_smart_search`, `memory_sessions`, `memory_export`, `memory_audit`, `memory_governance_delete`). `AGENTMEMORY_TOOLS=core|workstation|workstation-llm|all` is evaluated by the running server; `workstation-llm` is the curated workstation surface plus the four LLM-backed tools. Set the profile in the server service environment. If you see only 7 local-fallback tools in Cursor / OpenCode / Gemini CLI, start `npx @agentmemory/agentmemory` (or the Docker stack) and set `AGENTMEMORY_URL=http://localhost:3111`.
 
 ### 54 Tools
 
@@ -1523,7 +1523,8 @@ Create `~/.agentmemory/.env`:
 # USER_ID=
 # TEAM_MODE=private
 
-# Tool visibility: "core" (7), "workstation" (curated coordination), "all" (54), or a comma-separated allowlist
+# Tool visibility: "core" (7), "workstation" (curated coordination),
+# "workstation-llm" (curated + 4 LLM-backed tools), "all" (54), or a comma-separated allowlist
 # AGENTMEMORY_TOOLS=core
 # AGENTMEMORY_DISABLE_LLM_TOOLS=true  # reports skipped_disabled, not failure
 ```
