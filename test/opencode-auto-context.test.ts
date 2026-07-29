@@ -35,3 +35,17 @@ describe("OpenCode plugin auto-context injection (#431)", () => {
     expect(deletedBlock).toMatch(/startContextCache\.delete\(sid\)/);
   });
 });
+
+describe("OpenCode plugin project name override", () => {
+  const plugin = readFileSync(
+    "plugin/opencode/agentmemory-capture.ts",
+    "utf-8",
+  );
+
+  it("honours AGENTMEMORY_PROJECT_NAME before falling back to ctx/cwd", () => {
+    expect(plugin).toMatch(/AGENTMEMORY_PROJECT_NAME/);
+    expect(plugin).toMatch(
+      /explicitProject\s*\|\|\s*ctx\.worktree\s*\|\|\s*ctx\.project\?\.id\s*\|\|\s*process\.cwd\(\)/,
+    );
+  });
+});
