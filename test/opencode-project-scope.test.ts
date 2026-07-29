@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { join } from "node:path";
+import { execFileSync } from "node:child_process";
+import { basename, join } from "node:path";
 
 interface CapturedRequest {
   path: string;
@@ -40,6 +41,10 @@ afterEach(() => {
 describe("OpenCode project scoping", () => {
   it("uses the repository basename for project and preserves the full cwd", async () => {
     const cwd = join(process.cwd(), "plugin");
+    const repositoryRoot = execFileSync("git", ["rev-parse", "--show-toplevel"], {
+      cwd,
+      encoding: "utf8",
+    }).trim();
     const { hooks, requests } = await setupPlugin(cwd);
 
     await hooks.event({
@@ -50,7 +55,7 @@ describe("OpenCode project scoping", () => {
     });
 
     const start = requests.find((request) => request.path === "/agentmemory/session/start");
-    expect(start?.body.project).toBe("agentmemory");
+    expect(start?.body.project).toBe(basename(repositoryRoot));
     expect(start?.body.cwd).toBe(cwd);
   });
 
