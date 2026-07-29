@@ -248,6 +248,8 @@ export class FilesystemWatcher {
     const failures = [];
     for (const root of this.roots) {
       try {
+        const st = statSync(root);
+        if (!st.isDirectory()) throw new Error("not a directory");
         const handle = watch(
           root,
           { recursive: true, persistent: true },
