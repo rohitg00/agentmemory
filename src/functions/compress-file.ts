@@ -30,7 +30,10 @@ function stripMarkdownFence(text: string): string {
 }
 
 function extractUrls(text: string): string[] {
-  return Array.from(new Set(text.match(/https?:\/\/[^\s)]+/g) || []));
+  const urls = text.match(/https?:\/\/[^\s)]+/g) || [];
+  return Array.from(
+    new Set(urls.map((url) => url.replace(/[.,;:!]+$/, ""))),
+  );
 }
 
 function extractHeadings(text: string): string[] {
