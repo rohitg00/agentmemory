@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs";
 import {
   getAllTools,
   getVisibleTools,
+  LLM_BACKED_TOOLS,
+  WORKSTATION_LLM_TOOLS,
   WORKSTATION_TOOLS,
 } from "../src/mcp/tools-registry.js";
 
@@ -60,6 +62,17 @@ describe("MCP tool surface default (#553)", () => {
     expect(names.has("memory_signal_send")).toBe(true);
     expect(names.has("memory_consolidate")).toBe(false);
     expect(names.has("memory_reflect")).toBe(false);
+  });
+
+  it("AGENTMEMORY_TOOLS=workstation-llm adds only the four LLM-backed tools", () => {
+    process.env["AGENTMEMORY_TOOLS"] = "workstation-llm";
+    const names = new Set(getVisibleTools().map((tool) => tool.name));
+    expect(names).toEqual(WORKSTATION_LLM_TOOLS);
+    expect(names.size).toBe(WORKSTATION_TOOLS.size + LLM_BACKED_TOOLS.size);
+    for (const tool of LLM_BACKED_TOOLS) {
+      expect(names.has(tool)).toBe(true);
+    }
+    expect(names.has("memory_governance_delete")).toBe(false);
   });
 
   it("supports custom allowlists and explicit disabled tools", () => {

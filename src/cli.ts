@@ -191,8 +191,9 @@ Options:
   --help, -h         Show this help
   --verbose, -v      Show engine stderr, boot log, and diagnostic info
   --reset            Wipe ~/.agentmemory/preferences.json and re-run onboarding
-  --tools all|core|workstation
-                     Tool visibility (default: all = ${ALL_TOOLS_COUNT}; core = ${CORE_TOOLS_COUNT}; workstation = curated coordination set)
+  --tools all|core|workstation|workstation-llm
+                     Tool visibility (default: all = ${ALL_TOOLS_COUNT}; core = ${CORE_TOOLS_COUNT};
+                     workstation = curated coordination; workstation-llm = curated + 4 LLM tools)
   --no-engine        Skip auto-starting iii-engine
   --port <N>         Override REST port (default: 3111). Streams (N+1), viewer
                      (N+2), and iii engine (N+46023) auto-derive from N so a
@@ -230,9 +231,12 @@ Quick start:
 const toolsIdx = args.indexOf("--tools");
 if (toolsIdx !== -1 && args[toolsIdx + 1]) {
   const toolsMode = args[toolsIdx + 1]!;
-  if (!["all", "core", "workstation"].includes(toolsMode) && !toolsMode.includes(",")) {
+  if (
+    !["all", "core", "workstation", "workstation-llm"].includes(toolsMode) &&
+    !toolsMode.includes(",")
+  ) {
     p.log.warn(
-      `Unknown --tools value "${toolsMode}" (valid: all, core, workstation, or a comma-separated allowlist); falling back to the safe core set.`,
+      `Unknown --tools value "${toolsMode}" (valid: all, core, workstation, workstation-llm, or a comma-separated allowlist); falling back to the safe core set.`,
     );
     process.env["AGENTMEMORY_TOOLS"] = "core";
   } else {
