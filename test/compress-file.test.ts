@@ -193,6 +193,27 @@ describe("mem::compress-file", () => {
     expect(fileStore.get("/tmp/guide.original.md")).toBeUndefined();
   });
 
+  it("does not treat trailing sentence punctuation as part of a URL", async () => {
+    const path = "/tmp/guide.md";
+    fileStore.set(
+      path,
+      "# Guide\n\nRead https://example.com/docs/, then continue with the detailed instructions.",
+    );
+    summarize.mockResolvedValue(
+      "# Guide\n\nRead https://example.com/docs/ and continue.",
+    );
+
+    const result = (await sdk.trigger("mem::compress-file", {
+      filePath: path,
+    })) as { success: boolean };
+
+    expect(result.success).toBe(true);
+    expect(fileStore.get("/tmp/guide.original.md")).toContain(
+      "https://example.com/docs/,",
+    );
+    expect(fileStore.get(path)).toContain("https://example.com/docs/");
+  });
+
   it("uses a distinct backup path for *.original.md inputs", async () => {
     const path = "/tmp/notes.original.md";
     fileStore.set(path, "# Title\n\nLong original body.");
