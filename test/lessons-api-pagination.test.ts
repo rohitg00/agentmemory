@@ -78,6 +78,29 @@ describe("Lessons REST pagination", () => {
     });
   });
 
+  it("accepts an omitted sort order and uses the function default", async () => {
+    const response = (await sdk.trigger("api::lesson-list", {
+      headers: {},
+      query_params: { limit: "2", offset: "0" },
+    })) as {
+      status_code: number;
+      body: {
+        success: boolean;
+        lessons: Lesson[];
+        limit: number;
+        offset: number;
+      };
+    };
+
+    expect(response.status_code).toBe(200);
+    expect(response.body).toMatchObject({
+      success: true,
+      limit: 2,
+      offset: 0,
+    });
+    expect(response.body.lessons).toHaveLength(2);
+  });
+
   it.each([
     [{ offset: "-1" }, "invalid numeric parameter: offset"],
     [{ sortBy: "random" }, "sortBy must be confidence or recent"],

@@ -3589,7 +3589,7 @@ export function registerApiTriggers(
         body: { error: "invalid numeric parameter: offset" },
       };
     }
-    const sortBy = asNonEmptyString(params.sortBy);
+    const sortBy = asNonEmptyString(params.sortBy) ?? undefined;
     if (
       sortBy !== undefined &&
       sortBy !== "confidence" &&
