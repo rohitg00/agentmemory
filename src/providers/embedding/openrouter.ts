@@ -6,7 +6,7 @@ const API_URL = "https://openrouter.ai/api/v1/embeddings";
 
 export class OpenRouterEmbeddingProvider implements EmbeddingProvider {
   readonly name = "openrouter";
-  readonly dimensions = 1536;
+  readonly dimensions: number;
   private apiKey: string;
   private model: string;
 
@@ -16,6 +16,19 @@ export class OpenRouterEmbeddingProvider implements EmbeddingProvider {
     this.model =
       getEnvVar("OPENROUTER_EMBEDDING_MODEL") ||
       "openai/text-embedding-3-small";
+
+    const dimStr = getEnvVar("OPENROUTER_EMBEDDING_DIMENSIONS");
+    if (dimStr !== undefined && dimStr.trim().length > 0) {
+      const parsed = parseInt(dimStr, 10);
+      if (!Number.isFinite(parsed) || parsed <= 0) {
+        throw new Error(
+          `OPENROUTER_EMBEDDING_DIMENSIONS must be a positive integer, got: ${dimStr}`,
+        );
+      }
+      this.dimensions = parsed;
+    } else {
+      this.dimensions = 1536;
+    }
   }
 
   async embed(text: string): Promise<Float32Array> {
@@ -33,6 +46,7 @@ export class OpenRouterEmbeddingProvider implements EmbeddingProvider {
       body: JSON.stringify({
         model: this.model,
         input: texts,
+        dimensions: this.dimensions,
       }),
     });
 
