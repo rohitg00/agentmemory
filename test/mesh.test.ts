@@ -4,6 +4,15 @@ vi.mock("../src/logger.js", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
+// isAllowedUrl() in src/functions/mesh.ts calls dns/promises.lookup() on any
+// non-IP hostname (e.g. the *.example.com peers used below). On DNS-restricted
+// hosts that real lookup hangs to the vitest timeout. Mock the dns layer to
+// return a fixed PUBLIC address so isAllowedUrl's own private-IP/loopback
+// logic still runs and resolves instantly without touching the network.
+vi.mock("node:dns/promises", () => ({
+  lookup: vi.fn(async () => [{ address: "93.184.216.34", family: 4 }]),
+}));
+
 import { registerMeshFunction } from "../src/functions/mesh.js";
 import type {
   MeshPeer,
