@@ -1,6 +1,7 @@
 import { TriggerAction, type ISdk } from "iii-sdk";
 import type { Memory } from "../types.js";
 import { KV, generateId, jaccardSimilarity } from "../state/schema.js";
+import { isNegationConflict } from "../state/memory-dedup.js";
 import { StateKV } from "../state/kv.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
 import { memoryToObservation } from "../state/memory-utils.js";
@@ -78,7 +79,7 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
             lowerContent,
             existing.content.toLowerCase(),
           );
-          if (similarity > 0.7) {
+          if (similarity > 0.7 && !isNegationConflict(lowerContent, existing.content.toLowerCase())) {
             supersededId = existing.id;
             supersededVersion = existing.version ?? 1;
             supersededMemory = existing;
