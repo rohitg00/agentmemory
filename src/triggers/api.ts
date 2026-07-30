@@ -36,6 +36,11 @@ function parseOptionalInt(raw: unknown): number | undefined {
   return Number.isFinite(n) ? n : undefined;
 }
 
+function parsePositiveLimit(raw: unknown): number | undefined {
+  const n = parseOptionalInt(raw);
+  return n !== undefined && n > 0 ? n : undefined;
+}
+
 function checkAuth(
   req: ApiRequest,
   secret: string | undefined,
@@ -527,7 +532,9 @@ export function registerApiTriggers(
       sessions.sort((a, b) =>
         (b.startedAt || "").localeCompare(a.startedAt || ""),
       );
-      return { status_code: 200, body: { success: true, sessions } };
+      const limit = parsePositiveLimit(req.query_params?.["limit"]);
+      const limited = limit !== undefined ? sessions.slice(0, limit) : sessions;
+      return { status_code: 200, body: { success: true, sessions: limited } };
     },
   );
   sdk.registerTrigger({
@@ -851,12 +858,14 @@ export function registerApiTriggers(
       const filtered = filterAgentId
         ? sessions.filter((s) => s.agentId === filterAgentId)
         : sessions;
+      const limit = parsePositiveLimit(req.query_params?.["limit"]);
+      const sliced = limit !== undefined ? filtered.slice(0, limit) : filtered;
       const summaries = await Promise.all(
-        filtered.map((s) =>
+        sliced.map((s) =>
           kv.get<SessionSummary>(KV.summaries, s.id).catch(() => null),
         ),
       );
-      const withSummary = filtered.map((s, i) =>
+      const withSummary = sliced.map((s, i) =>
         summaries[i] ? { ...s, summary: summaries[i] } : s,
       );
       return { status_code: 200, body: { sessions: withSummary } };
