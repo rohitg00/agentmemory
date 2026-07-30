@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- **`mem::reflect` no longer enumerates the graph node scope.** `kv.list(KV.graphNodes)` stopped completing once `mem:graph:nodes` grew past ~100 MB, and the failure was swallowed by a silent `.catch(() => [])`. Graph clustering then returned nothing, reflect fell back to lexical clustering, and a cluster matching thousands of facts produced a prompt large enough to exceed the 180s invocation timeout — every run, silently disabling insight generation. Reflect now reads the top-degree graph snapshot (the same fast path graph extraction already used), cluster inputs are capped at 50 items per category, and the remaining `kv.list` calls log a warning instead of degrading silently.
+- **Health no longer pins itself to `critical` on a healthy process.** Memory severity divided `heapUsed` by `heapTotal`, but `heapTotal` is the heap V8 has committed so far, which it deliberately keeps near-full and grows on demand. Any process past the RSS floor therefore reported ~100% and `/agentmemory/health` returned 503 indefinitely, making it useless as a liveness signal. The snapshot now carries `heapLimit` from `v8.getHeapStatistics()` and the ratio is measured against that ceiling; snapshots persisted without it still evaluate as before.
+
 ## [0.9.27] — 2026-06-07
 
 Wave release closing several breaking regressions reported against v0.9.26, plus an agent-scope isolation security fix, an iii version-pin audit fix, and a benchmark scorecard correction. No breaking changes; drop-in upgrade.
