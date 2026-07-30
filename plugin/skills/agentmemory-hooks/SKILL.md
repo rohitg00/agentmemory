@@ -21,12 +21,12 @@ Watch observations land live at `http://localhost:3113`.
 
 - Session start and end frame each unit of work and let `handoff` resume it.
 - Tool-use hooks capture what changed and why, the raw material for `recall` and `recap`.
-- Prompt-submit captures intent. Pre-compact preserves context before the host trims it.
+- Prompt-submit captures intent. With `AGENTMEMORY_PROMPT_RECALL=true`, the same hook proactively injects up to 5 compact memories into each Claude Code or Codex prompt. Pre-compact preserves context before the host trims it.
 - A post-commit hook links commits to sessions, which powers `commit-context` and `commit-history`.
 
 ## Important
 
-- Capture is on by default and is zero-LLM. Turning observations into LLM summaries (`AGENTMEMORY_AUTO_COMPRESS`) and injecting them back into context (`AGENTMEMORY_INJECT_CONTEXT`) are separate opt-ins because they spend tokens.
+- Capture is on by default and is zero-LLM. LLM summaries (`AGENTMEMORY_AUTO_COMPRESS`), SessionStart/PreToolUse injection (`AGENTMEMORY_INJECT_CONTEXT`), and proactive prompt recall (`AGENTMEMORY_PROMPT_RECALL`) are separate opt-ins because they spend tokens.
 - If observations are missing, confirm the plugin is enabled and the server is running. See ../_shared/TROUBLESHOOTING.md.
 
 ## See also

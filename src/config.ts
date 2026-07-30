@@ -396,6 +396,13 @@ export function isContextInjectionEnabled(): boolean {
   return getMergedEnv()["AGENTMEMORY_INJECT_CONTEXT"] === "true";
 }
 
+// Prompt-time recall is a separate, lower-volume injection mode for hosts
+// that support UserPromptSubmit (Claude Code and Codex). It is OFF by default
+// and can be enabled without SessionStart or PreToolUse injection.
+export function isPromptRecallEnabled(): boolean {
+  return getMergedEnv()["AGENTMEMORY_PROMPT_RECALL"] === "true";
+}
+
 export function getConsolidationDecayDays(): number {
   return safeParseInt(getMergedEnv()["CONSOLIDATION_DECAY_DAYS"], 30);
 }

@@ -224,9 +224,9 @@ export function registerSmartSearchFunction(
       );
 
       // #771: followup-rate diagnostic. Only fires for agent-initiated
-      // searches that carry a sessionId — viewer-originated searches
-      // (source === "viewer") and direct-sdk callers without a session
-      // anchor are skipped. The result-set comparison uses obsIds: a
+      // searches that carry a sessionId — viewer and automatic prompt-hook
+      // searches, plus direct-sdk callers without a session anchor, are
+      // skipped. The result-set comparison uses obsIds: a
       // disjoint set under the window suggests the previous call's
       // results were not used, which is our directional proxy for
       // reader-failure-with-evidence.
@@ -234,6 +234,7 @@ export function registerSmartSearchFunction(
         data.sessionId &&
         typeof data.sessionId === "string" &&
         data.source !== "viewer" &&
+        data.source !== "prompt-hook" &&
         compact.length > 0
       ) {
         // Skip detection when retrieval returned nothing: an empty

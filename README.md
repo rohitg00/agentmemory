@@ -1477,6 +1477,12 @@ Create `~/.agentmemory/.env`:
                                    #   log only per Claude Code docs)
                                    # Observations are still captured via
                                    # PostToolUse regardless of this flag.
+# AGENTMEMORY_PROMPT_RECALL=false  # OFF by default. When on, the
+                                   # UserPromptSubmit hook injects up to
+                                   # 5 compact memories into each Claude
+                                   # Code or Codex prompt. Independent
+                                   # from AGENTMEMORY_INJECT_CONTEXT, so
+                                   # prompt recall can be enabled alone.
 # GRAPH_EXTRACTION_ENABLED=false
 # CONSOLIDATION_ENABLED=false   # on by default when an LLM provider is configured
 # LESSON_DECAY_ENABLED=true

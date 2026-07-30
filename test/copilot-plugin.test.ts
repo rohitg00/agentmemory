@@ -321,13 +321,22 @@ describe("Copilot hook scripts", () => {
     });
   });
 
-  it("prompt-submit accepts Copilot camelCase prompt payload", async () => {
-    const result = await runHook("scripts/prompt-submit.mjs", {
-      sessionId: "copilot-session",
-      cwd: "C:\\repo",
-      userPrompt: "remember this prompt",
-    });
+  it("prompt-submit keeps Copilot observe-only when proactive recall is enabled", async () => {
+    const result = await runHook(
+      "scripts/prompt-submit.mjs",
+      {
+        sessionId: "copilot-session",
+        cwd: "C:\\repo",
+        userPrompt: "remember this prompt",
+      },
+      {
+        AGENTMEMORY_PROMPT_RECALL: "true",
+        COPILOT_PLUGIN_ROOT: pluginRoot,
+      },
+    );
 
+    expect(result.stdout).toBe("");
+    expect(result.requests).toHaveLength(1);
     expect(result.requests[0]?.path).toBe("/agentmemory/observe");
     expect(result.requests[0]?.body).toMatchObject({
       hookType: "prompt_submit",

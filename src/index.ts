@@ -11,6 +11,7 @@ import {
   isAutoCompressEnabled,
   isConsolidationEnabled,
   isContextInjectionEnabled,
+  isPromptRecallEnabled,
   isDropStaleIndexEnabled,
 } from "./config.js";
 import {
@@ -291,6 +292,16 @@ async function main() {
   } else {
     bootLog(
       `Context injection: OFF (default) — hooks capture observations but do not inject context into Claude Code's conversation. Set AGENTMEMORY_INJECT_CONTEXT=true to opt-in (warning: expect your Claude Pro allocation to drain faster).`,
+    );
+  }
+
+  if (isPromptRecallEnabled()) {
+    bootLog(
+      `Prompt recall: ON — UserPromptSubmit injects up to 5 compact memories into each Claude Code or Codex prompt. Set AGENTMEMORY_PROMPT_RECALL=false to disable.`,
+    );
+  } else {
+    bootLog(
+      `Prompt recall: OFF (default) — set AGENTMEMORY_PROMPT_RECALL=true to opt in to compact per-prompt recall for Claude Code and Codex.`,
     );
   }
 

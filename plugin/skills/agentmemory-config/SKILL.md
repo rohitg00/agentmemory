@@ -13,13 +13,14 @@ Enable richer memory and set a provider key in `~/.agentmemory/.env`:
 ```env
 ANTHROPIC_API_KEY=sk-ant-...
 AGENTMEMORY_AUTO_COMPRESS=true
-AGENTMEMORY_INJECT_CONTEXT=true
+AGENTMEMORY_PROMPT_RECALL=true
 ```
 
 ## Defaults worth knowing
 
 - No API key is required. Without one, agentmemory runs zero-LLM with BM25 plus local embeddings.
-- Token-spending features ship OFF on purpose: `AGENTMEMORY_AUTO_COMPRESS` (LLM summaries) and `AGENTMEMORY_INJECT_CONTEXT` (auto context injection) both cost tokens proportional to tool-use frequency.
+- Token-spending features ship OFF on purpose: `AGENTMEMORY_AUTO_COMPRESS` (LLM summaries), `AGENTMEMORY_INJECT_CONTEXT` (SessionStart/PreToolUse injection), and `AGENTMEMORY_PROMPT_RECALL` (compact per-prompt recall for Claude Code/Codex).
+- `AGENTMEMORY_PROMPT_RECALL=true` can be enabled alone; it injects at most 5 compact memories per `UserPromptSubmit` and does not enable the other injection hooks.
 - Tool visibility: `AGENTMEMORY_TOOLS=all` (default) or `core` for the lean set.
 - Auth: set `AGENTMEMORY_SECRET` to require `Authorization: Bearer` on the REST API.
 

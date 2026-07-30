@@ -211,6 +211,18 @@ describe("Smart-search followup-rate diagnostic (#771)", () => {
     expect(await kv.get(KV.recentSearches, "ses_1")).toBeNull();
   });
 
+  it("skips automatic prompt-hook searches", async () => {
+    searchResults = [makeHit("obs_a")];
+    await sdk.trigger("mem::smart-search", {
+      query: "automatic prompt recall",
+      sessionId: "ses_1",
+      source: "prompt-hook",
+    });
+
+    expect(getFollowupStats().agentInitiatedSearches).toBe(0);
+    expect(await kv.get(KV.recentSearches, "ses_1")).toBeNull();
+  });
+
   it("skips searches without a sessionId (direct sdk callers)", async () => {
     searchResults = [makeHit("obs_a")];
     await sdk.trigger("mem::smart-search", { query: "no session" });

@@ -18,6 +18,7 @@ import {
   isConsolidationEnabled,
   isAutoCompressEnabled,
   isContextInjectionEnabled,
+  isPromptRecallEnabled,
   detectEmbeddingProvider,
   detectLlmProviderKind,
   getAgentId,
@@ -225,6 +226,17 @@ export function registerApiTriggers(
           description: "Hooks write recalled context into Claude Code's conversation. OFF captures in the background without injecting.",
           enableHow: "Set AGENTMEMORY_INJECT_CONTEXT=true and restart.",
           docsHref: "https://github.com/rohitg00/agentmemory/issues/143",
+        },
+        {
+          key: "AGENTMEMORY_PROMPT_RECALL",
+          label: "Proactive prompt recall",
+          enabled: isPromptRecallEnabled(),
+          default: false,
+          affects: ["Hooks"],
+          needsLlm: false,
+          description: "UserPromptSubmit injects up to 5 compact memories into each Claude Code or Codex prompt.",
+          enableHow: "Set AGENTMEMORY_PROMPT_RECALL=true in ~/.agentmemory/.env; applies on the next hook run.",
+          docsHref: "https://github.com/rohitg00/agentmemory#configuration",
         },
       ];
       return {
