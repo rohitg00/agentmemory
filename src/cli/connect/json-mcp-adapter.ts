@@ -60,7 +60,15 @@ export function createJsonMcpAdapter(
     },
 
     async install(opts: ConnectOptions): Promise<ConnectResult> {
+      const configExists = existsSync(config.configPath);
       const existing = readJsonSafe<McpConfig>(config.configPath);
+      if (configExists && existing === null) {
+        p.log.error(
+          `Could not parse ${config.configPath}; leaving it unchanged. Fix the JSON and retry.`,
+        );
+        return { kind: "skipped", reason: "invalid-json" };
+      }
+
       const next: McpConfig = existing ? { ...existing } : {};
       const servers: Record<string, McpEntry> = {
         ...((next[wrapperKey] as Record<string, McpEntry>) ?? {}),
@@ -80,7 +88,7 @@ export function createJsonMcpAdapter(
       }
 
       let backupPath: string | undefined;
-      if (existsSync(config.configPath)) {
+      if (configExists) {
         backupPath = backupFile(config.configPath, config.name);
         logBackup(backupPath);
       } else {

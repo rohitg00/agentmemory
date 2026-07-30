@@ -1,5 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdtempSync, mkdirSync, rmSync, readFileSync, existsSync } from "node:fs";
+import {
+  mkdtempSync,
+  mkdirSync,
+  rmSync,
+  readFileSync,
+  existsSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir, platform } from "node:os";
 import { join } from "node:path";
 
@@ -218,13 +225,16 @@ describe("connect: Droid (Factory.ai)", () => {
 describe("connect: Zed", () => {
   let home: string;
   const ORIG = process.env["HOME"];
+  const ORIG_USERPROFILE = process.env["USERPROFILE"];
   beforeEach(() => {
     home = freshHome();
     vi.resetModules();
     process.env["HOME"] = home;
+    process.env["USERPROFILE"] = home;
   });
   afterEach(() => {
     process.env["HOME"] = ORIG;
+    process.env["USERPROFILE"] = ORIG_USERPROFILE;
     rmSync(home, { recursive: true, force: true });
   });
 
@@ -245,6 +255,49 @@ describe("connect: Zed", () => {
     expect(cfg.context_servers.agentmemory.command).toBe("npx");
     expect(cfg.context_servers.agentmemory.args).toContain("@agentmemory/mcp");
     expect(cfg.mcpServers).toBeUndefined();
+  });
+
+  it("preserves existing Zed settings and context servers", async () => {
+    const zedDir = join(home, ".config", "zed");
+    const settingsPath = join(zedDir, "settings.json");
+    mkdirSync(zedDir, { recursive: true });
+    writeFileSync(
+      settingsPath,
+      JSON.stringify({
+        theme: "One Dark",
+        context_servers: {
+          other: {
+            command: "node",
+            args: ["server.js"],
+          },
+        },
+      }),
+    );
+
+    const { adapter } = await import("../src/cli/connect/zed.js");
+    const result = await adapter.install({ dryRun: false, force: false });
+
+    expect(result.kind).toBe("installed");
+    const cfg = JSON.parse(readFileSync(settingsPath, "utf-8"));
+    expect(cfg.theme).toBe("One Dark");
+    expect(cfg.context_servers.other.command).toBe("node");
+    expect(cfg.context_servers.agentmemory.command).toBe("npx");
+    expect(cfg.context_servers.agentmemory.args).toContain("@agentmemory/mcp");
+  });
+
+  it("does not overwrite existing Zed settings when the file cannot be parsed", async () => {
+    const zedDir = join(home, ".config", "zed");
+    const settingsPath = join(zedDir, "settings.json");
+    const originalSettings = '{\n  // Zed allows JSONC-style settings\n  "theme": "One Dark",\n}\n';
+    mkdirSync(zedDir, { recursive: true });
+    writeFileSync(settingsPath, originalSettings);
+
+    const { adapter } = await import("../src/cli/connect/zed.js");
+    const result = await adapter.install({ dryRun: false, force: false });
+
+    expect(result).toEqual({ kind: "skipped", reason: "invalid-json" });
+    expect(readFileSync(settingsPath, "utf-8")).toBe(originalSettings);
+    expect(existsSync(join(home, ".agentmemory", "backups"))).toBe(false);
   });
 });
 
