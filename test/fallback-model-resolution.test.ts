@@ -24,11 +24,23 @@ vi.mock("../src/providers/openai.js", () => ({
 vi.mock("../src/providers/openrouter.js", () => ({
   OpenRouterProvider: class {
     name = "openrouter";
-    constructor(_key: string, model: string, _max: number, url?: string) {
-      captured.push({
-        provider: url?.includes("googleapis") ? "gemini" : "openrouter",
-        model,
-      });
+    constructor(_key: string, model: string) {
+      captured.push({ provider: "openrouter", model });
+    }
+    async compress() {
+      return "";
+    }
+    async summarize() {
+      return "";
+    }
+  },
+}));
+
+vi.mock("../src/providers/gemini.js", () => ({
+  GeminiProvider: class {
+    name = "gemini";
+    constructor(_key: string, model: string) {
+      captured.push({ provider: "gemini", model });
     }
     async compress() {
       return "";

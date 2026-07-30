@@ -2,10 +2,10 @@ import type { MemoryProvider } from "../types.js";
 import { getEnvVar } from "../config.js";
 import { fetchWithTimeout } from "./_fetch.js";
 
-const DEFAULT_BASE_URL = "https://openrouter.ai/api/v1";
+const DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com/v1beta";
 
-export class OpenRouterProvider implements MemoryProvider {
-  name: string;
+export class GeminiProvider implements MemoryProvider {
+  name = "gemini";
   private apiKey: string;
   private model: string;
   private maxTokens: number;
@@ -20,10 +20,9 @@ export class OpenRouterProvider implements MemoryProvider {
     this.apiKey = apiKey;
     this.model = model;
     this.maxTokens = maxTokens;
-    const baseUrl = (baseURL || getEnvVar("OPENROUTER_BASE_URL") || DEFAULT_BASE_URL)
+    const baseUrl = (baseURL || getEnvVar("GEMINI_BASE_URL") || DEFAULT_BASE_URL)
       .replace(/\/+$/, "");
-    this.endpoint = `${baseUrl}/chat/completions`;
-    this.name = "openrouter";
+    this.endpoint = `${baseUrl}/openai/chat/completions`;
   }
 
   async compress(systemPrompt: string, userPrompt: string): Promise<string> {
@@ -43,7 +42,6 @@ export class OpenRouterProvider implements MemoryProvider {
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${this.apiKey}`,
-        "HTTP-Referer": "https://github.com/rohitg00/agentmemory",
       },
       body: JSON.stringify({
         model: this.model,
@@ -57,7 +55,7 @@ export class OpenRouterProvider implements MemoryProvider {
 
     if (!response.ok) {
       const text = await response.text();
-      throw new Error(`${this.name} API error (${response.status}): ${text}`);
+      throw new Error(`Gemini API error (${response.status}): ${text}`);
     }
 
     const data = (await response.json()) as Record<string, unknown>;
@@ -67,7 +65,7 @@ export class OpenRouterProvider implements MemoryProvider {
     const content = choices?.[0]?.message?.content;
     if (!content) {
       throw new Error(
-        `${this.name} returned unexpected response: ${JSON.stringify(data).slice(0, 200)}`,
+        `Gemini returned unexpected response: ${JSON.stringify(data).slice(0, 200)}`,
       );
     }
     return content;

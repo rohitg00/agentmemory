@@ -4,16 +4,20 @@ import { fetchWithTimeout } from "../_fetch.js";
 
 const BATCH_LIMIT = 100;
 const MODEL = "models/gemini-embedding-001";
-const API_BASE = `https://generativelanguage.googleapis.com/v1beta/${MODEL}:batchEmbedContents`;
+const DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com/v1beta";
 
 export class GeminiEmbeddingProvider implements EmbeddingProvider {
   readonly name = "gemini";
   readonly dimensions = 768;
   private apiKey: string;
+  private endpoint: string;
 
-  constructor(apiKey?: string) {
+  constructor(apiKey?: string, baseURL?: string) {
     this.apiKey = apiKey || getEnvVar("GEMINI_API_KEY") || "";
     if (!this.apiKey) throw new Error("GEMINI_API_KEY is required");
+    const baseUrl = (baseURL || getEnvVar("GEMINI_BASE_URL") || DEFAULT_BASE_URL)
+      .replace(/\/+$/, "");
+    this.endpoint = `${baseUrl}/${MODEL}:batchEmbedContents`;
   }
 
   async embed(text: string): Promise<Float32Array> {
@@ -26,7 +30,7 @@ export class GeminiEmbeddingProvider implements EmbeddingProvider {
 
     for (let i = 0; i < texts.length; i += BATCH_LIMIT) {
       const chunk = texts.slice(i, i + BATCH_LIMIT);
-      const response = await fetchWithTimeout(`${API_BASE}?key=${this.apiKey}`, {
+      const response = await fetchWithTimeout(`${this.endpoint}?key=${this.apiKey}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

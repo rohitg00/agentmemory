@@ -1380,7 +1380,9 @@ Create `~/.agentmemory/.env`:
 # ANTHROPIC_API_KEY=sk-ant-...
 # ANTHROPIC_BASE_URL=...              # Optional: Anthropic-compatible proxy / Azure
 # GEMINI_API_KEY=...
+# GEMINI_BASE_URL=https://generativelanguage.googleapis.com/v1beta  # Optional: Gemini API / proxy base URL
 # OPENROUTER_API_KEY=...
+# OPENROUTER_BASE_URL=https://openrouter.ai/api/v1  # Optional: OpenRouter API / proxy base URL
 # MINIMAX_API_KEY=...
 # OPENAI_API_KEY=***                       # NOTE: this same key auto-activates BOTH the
 #                                          # OpenAI LLM provider (here) AND the OpenAI
@@ -1417,6 +1419,8 @@ Create `~/.agentmemory/.env`:
 # OPENAI_BASE_URL=https://api.openai.com   # Override for Azure / vLLM / LM Studio / proxies
 # OPENAI_EMBEDDING_MODEL=text-embedding-3-small
 # OPENAI_EMBEDDING_DIMENSIONS=1536        # Required when the model is not in the known-models table
+# GEMINI_BASE_URL=https://generativelanguage.googleapis.com/v1beta  # Also used by Gemini embeddings
+# OPENROUTER_BASE_URL=https://openrouter.ai/api/v1  # Also used by OpenRouter embeddings
 
 # Outbound LLM / embedding timeout
 # AGENTMEMORY_LLM_TIMEOUT_MS=60000       # Default: 60 000 ms (60 s). Applies to every

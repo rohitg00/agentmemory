@@ -2,6 +2,7 @@ import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import { fetchWithTimeout } from "../src/providers/_fetch.js";
 import { MinimaxProvider } from "../src/providers/minimax.js";
 import { OpenRouterProvider } from "../src/providers/openrouter.js";
+import { GeminiProvider } from "../src/providers/gemini.js";
 import { OpenAIProvider } from "../src/providers/openai.js";
 import { GeminiEmbeddingProvider } from "../src/providers/embedding/gemini.js";
 import { OpenAIEmbeddingProvider } from "../src/providers/embedding/openai.js";
@@ -96,7 +97,7 @@ describe("Provider hang regression — MinimaxProvider", () => {
   });
 });
 
-describe("Provider hang regression — OpenRouterProvider (covers Gemini LLM path)", () => {
+describe("Provider hang regression — OpenRouterProvider", () => {
   beforeEach(() => {
     vi.spyOn(globalThis, "fetch").mockImplementation(hangingFetch as typeof fetch);
     process.env["AGENTMEMORY_LLM_TIMEOUT_MS"] = "50";
@@ -111,8 +112,24 @@ describe("Provider hang regression — OpenRouterProvider (covers Gemini LLM pat
       "test-key",
       "gemini-2.5-flash",
       1024,
-      "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+      "https://openrouter.ai/api/v1",
     );
+    await expect(provider.compress("system", "user")).rejects.toThrow();
+  });
+});
+
+describe("Provider hang regression — GeminiProvider", () => {
+  beforeEach(() => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(hangingFetch as typeof fetch);
+    process.env["AGENTMEMORY_LLM_TIMEOUT_MS"] = "50";
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+    delete process.env["AGENTMEMORY_LLM_TIMEOUT_MS"];
+  });
+
+  it("compress() aborts after timeout when upstream hangs", async () => {
+    const provider = new GeminiProvider("test-key", "gemini-2.5-flash", 1024);
     await expect(provider.compress("system", "user")).rejects.toThrow();
   });
 });
@@ -343,4 +360,3 @@ describe("OpenAIProvider thinking-model fallback (#627)", () => {
     expect(out).toBe("real content");
   });
 });
-
