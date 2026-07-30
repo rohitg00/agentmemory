@@ -681,7 +681,7 @@ async function maybeOfferGlobalInstall(): Promise<void> {
   if (!process.stdin.isTTY) return;
   if (process.env["CI"]) return;
   const prefs = readPrefs();
-  if (prefs.skipGlobalInstall || prefs.skipNpxHint) return;
+  if (prefs.skipGlobalInstall || prefs.skipNpxHint || !process.stdin.isTTY) return;
 
   const answer = await p.confirm({
     message:
@@ -781,7 +781,7 @@ async function ensureIiiConsole(): Promise<IiiConsoleState> {
   // Non-interactive contexts get the panel hint but no prompt.
   if (!process.stdin.isTTY || process.env["CI"]) return state;
   const prefs = readPrefs();
-  if (prefs.skipConsoleInstall) return state;
+  if (prefs.skipConsoleInstall || !process.stdin.isTTY) return state;
 
   const answer = await p.confirm({
     message:
@@ -908,12 +908,30 @@ function spawnEngineBackground(
   label: string,
 ): ChildProcess {
   vlog(`spawn: ${bin} ${spawnArgs.join(" ")}`);
+  const isDocker = label.includes("Docker");
+  const backgroundMode = args.includes("--background");
   const child = spawn(bin, spawnArgs, {
-    detached: true,
-    stdio: ["ignore", "ignore", "pipe"],
+    detached: backgroundMode,
+    stdio: backgroundMode ? ["ignore", "ignore", "pipe"] : ["pipe", "pipe", "pipe"],
     windowsHide: true,
   });
-  const isDocker = label.includes("Docker");
+  if (!backgroundMode) {
+    child.stdout?.on("data", (chunk: Buffer) => {
+      if (IS_VERBOSE) process.stdout.write(chunk);
+    });
+  }
+  if (!backgroundMode) {
+    const cleanupChild = () => {
+      if (!isDocker && !child.killed) child.kill();
+    };
+    process.on("exit", cleanupChild);
+    for (const sig of ["SIGINT", "SIGTERM"] as const) {
+      process.on(sig, () => {
+        cleanupChild();
+        process.exit();
+      });
+    }
+  }
   if (!isDocker && typeof child.pid === "number") {
     writeEnginePidfile(child.pid);
   }
@@ -948,7 +966,7 @@ function spawnEngineBackground(
       clearEngineState();
     }
   });
-  child.unref();
+  if (backgroundMode) child.unref();
   return child;
 }
 
