@@ -1,4 +1,14 @@
+import { buildOutputLanguageInstruction } from "./language.js";
+
 export const GRAPH_EXTRACTION_SYSTEM = `You are a knowledge graph extraction engine. Given a compressed observation from a coding session, extract entities and relationships.
+
+${buildOutputLanguageInstruction([
+  "XML tag names",
+  "attribute names",
+  "entity type enum values",
+  "relationship type enum values",
+  "file paths and code identifiers",
+])}
 
 Output format (XML):
 <entities>
