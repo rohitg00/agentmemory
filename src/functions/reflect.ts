@@ -11,6 +11,8 @@ import type {
   MemoryProvider,
 } from "../types.js";
 import { recordAudit } from "./audit.js";
+import { readSnapshot } from "./graph.js";
+import { logger } from "../logger.js";
 import { REFLECT_SYSTEM, buildReflectPrompt } from "../prompts/reflect.js";
 
 interface ConceptCluster {
@@ -170,15 +172,45 @@ export function registerReflectFunctions(
       const maxClusters = Math.min(data?.maxClusters ?? 10, 20);
       const maxInsightsPerCluster = 5;
       const maxTotal = 50;
+      const maxItemsPerCluster = 50;
 
-      const [graphNodes, graphEdges, semanticMemories, lessons, crystals] =
+      // 讀不到就退化成 fallback 分群，但不能靜默：payload 一旦超過引擎上限
+      // 就會在這裡失敗，而 fallback 的 prompt 成本高出兩個數量級。
+      const listOrEmpty = async <T>(scope: string): Promise<T[]> => {
+        try {
+          return await kv.list<T>(scope);
+        } catch (error) {
+          logger.warn("reflect: kv.list failed, degrading to empty set", {
+            scope,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          return [];
+        }
+      };
+
+      // #814 v2: graph nodes come from the precomputed top-degree
+      // snapshot, never from `kv.list<GraphNode>(KV.graphNodes)`. At 26K
+      // nodes that list burns the entire invocation budget, so reflect
+      // timed out before it could emit anything. The snapshot is capped
+      // at the top-degree subgraph, which is far more than the at-most-20
+      // clusters this function builds. No snapshot => empty node set =>
+      // the existing lexical fallback below.
+      const [snapshot, graphEdges, semanticMemories, lessons, crystals] =
         await Promise.all([
-          kv.list<GraphNode>(KV.graphNodes).catch(() => []),
-          kv.list<GraphEdge>(KV.graphEdges).catch(() => []),
-          kv.list<SemanticMemory>(KV.semantic).catch(() => []),
-          kv.list<Lesson>(KV.lessons).catch(() => []),
-          kv.list<Crystal>(KV.crystals).catch(() => []),
+          readSnapshot(kv),
+          listOrEmpty<GraphEdge>(KV.graphEdges),
+          listOrEmpty<SemanticMemory>(KV.semantic),
+          listOrEmpty<Lesson>(KV.lessons),
+          listOrEmpty<Crystal>(KV.crystals),
         ]);
+
+      if (!snapshot) {
+        logger.warn(
+          "reflect: no graph snapshot, degrading to lexical clustering",
+          { scope: KV.graphSnapshot },
+        );
+      }
+      const graphNodes: GraphNode[] = snapshot?.topNodes ?? [];
 
       let activeLessons = lessons.filter((l) => !l.deleted);
       if (data?.project) {
@@ -237,20 +269,31 @@ export function registerReflectFunctions(
           continue;
         }
 
+        // 詞彙 fallback 的 cluster 可以匹配到數千筆 facts，未截斷的 prompt 會
+        // 撐到數十萬 token 並超過引擎的 invocation timeout。取信心最高的前段即可。
+        const topByConfidence = <T extends { confidence: number }>(items: T[]) =>
+          [...items]
+            .sort((a, b) => b.confidence - a.confidence)
+            .slice(0, maxItemsPerCluster);
+
+        const selectedFacts = topByConfidence(clusterFacts);
+        const selectedLessons = topByConfidence(clusterLessons);
+        const selectedCrystals = clusterCrystals.slice(0, maxItemsPerCluster);
+
         const cluster: ConceptCluster = {
           concepts: conceptNames,
-          facts: clusterFacts.map((f) => ({
+          facts: selectedFacts.map((f) => ({
             fact: f.fact,
             confidence: f.confidence,
           })),
-          lessons: clusterLessons.map((l) => ({
+          lessons: selectedLessons.map((l) => ({
             content: l.content,
             confidence: l.confidence,
           })),
-          crystalNarratives: clusterCrystals.map((c) => c.narrative),
-          factIds: clusterFacts.map((f) => f.id),
-          lessonIds: clusterLessons.map((l) => l.id),
-          crystalIds: clusterCrystals.map((c) => c.id),
+          crystalNarratives: selectedCrystals.map((c) => c.narrative),
+          factIds: selectedFacts.map((f) => f.id),
+          lessonIds: selectedLessons.map((l) => l.id),
+          crystalIds: selectedCrystals.map((c) => c.id),
         };
 
         try {

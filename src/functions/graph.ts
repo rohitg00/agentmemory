@@ -76,7 +76,9 @@ function emptySnapshot(): GraphSnapshot {
   };
 }
 
-async function readSnapshot(kv: StateKV): Promise<GraphSnapshot | null> {
+export async function readSnapshot(
+  kv: StateKV,
+): Promise<GraphSnapshot | null> {
   try {
     const snap = await kv.get<GraphSnapshot>(KV.graphSnapshot, SNAPSHOT_KEY);
     if (snap && typeof snap === "object" && snap.version === 1) {

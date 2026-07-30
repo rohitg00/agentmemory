@@ -57,6 +57,28 @@ function makeConceptNode(name: string): GraphNode {
   };
 }
 
+// Reflect reads graph nodes from the #814 top-degree snapshot, not from
+// the mem:graph:nodes scope, so tests seed the snapshot.
+async function seedSnapshot(
+  kv: ReturnType<typeof mockKV>,
+  nodes: GraphNode[],
+): Promise<void> {
+  await kv.set("mem:graph:snapshot", "current", {
+    version: 1,
+    topNodes: nodes,
+    topEdges: [],
+    topDegrees: {},
+    stats: {
+      totalNodes: nodes.length,
+      totalEdges: 0,
+      nodesByType: {},
+      edgesByType: {},
+    },
+    updatedAt: "2026-04-01T00:00:00Z",
+    dirty: false,
+  });
+}
+
 function makeEdge(src: string, tgt: string): GraphEdge {
   return {
     id: `edge_${src}_${tgt}`,
@@ -151,9 +173,11 @@ describe("Reflect", () => {
     });
 
     it("synthesizes insights from graph concept clusters", async () => {
-      await kv.set("mem:graph:nodes", "node_security", makeConceptNode("security"));
-      await kv.set("mem:graph:nodes", "node_validation", makeConceptNode("validation"));
-      await kv.set("mem:graph:nodes", "node_testing", makeConceptNode("testing"));
+      await seedSnapshot(kv, [
+        makeConceptNode("security"),
+        makeConceptNode("validation"),
+        makeConceptNode("testing"),
+      ]);
       await kv.set("mem:graph:edges", "edge_1", makeEdge("security", "validation"));
       await kv.set("mem:graph:edges", "edge_2", makeEdge("security", "testing"));
 
@@ -178,8 +202,10 @@ describe("Reflect", () => {
     });
 
     it("skips clusters with fewer than 3 supporting items", async () => {
-      await kv.set("mem:graph:nodes", "node_sparse", makeConceptNode("sparse"));
-      await kv.set("mem:graph:nodes", "node_topic", makeConceptNode("topic"));
+      await seedSnapshot(kv, [
+        makeConceptNode("sparse"),
+        makeConceptNode("topic"),
+      ]);
       await kv.set("mem:graph:edges", "edge_1", makeEdge("sparse", "topic"));
       await kv.set("mem:semantic", "sem_1", makeSemantic("One sparse fact"));
 
@@ -194,8 +220,10 @@ describe("Reflect", () => {
     });
 
     it("deduplicates insights by fingerprint", async () => {
-      await kv.set("mem:graph:nodes", "node_security", makeConceptNode("security"));
-      await kv.set("mem:graph:nodes", "node_validation", makeConceptNode("validation"));
+      await seedSnapshot(kv, [
+        makeConceptNode("security"),
+        makeConceptNode("validation"),
+      ]);
       await kv.set("mem:graph:edges", "edge_1", makeEdge("security", "validation"));
       await kv.set("mem:semantic", "sem_1", makeSemantic("Always validate security inputs"));
       await kv.set("mem:semantic", "sem_2", makeSemantic("Testing improves security coverage"));
@@ -233,11 +261,33 @@ describe("Reflect", () => {
       expect(result.usedFallback).toBe(true);
     });
 
+    it("never enumerates the graph node scope", async () => {
+      await kv.set("mem:graph:nodes", "node_security", makeConceptNode("security"));
+      await kv.set("mem:graph:nodes", "node_validation", makeConceptNode("validation"));
+      await kv.set("mem:graph:edges", "edge_1", makeEdge("security", "validation"));
+      await kv.set("mem:semantic", "sem_1", makeSemantic("Always validate security inputs"));
+      await kv.set("mem:semantic", "sem_2", makeSemantic("Testing improves security coverage"));
+      await kv.set("mem:semantic", "sem_3", makeSemantic("Validation prevents injection"));
+
+      const listSpy = vi.spyOn(kv, "list");
+
+      const result = (await sdk.trigger("mem::reflect", {})) as {
+        usedFallback: boolean;
+      };
+
+      expect(listSpy.mock.calls.map((c) => c[0])).not.toContain(
+        "mem:graph:nodes",
+      );
+      expect(result.usedFallback).toBe(true);
+    });
+
     it("handles LLM failure gracefully", async () => {
       provider.summarize.mockRejectedValue(new Error("LLM timeout"));
 
-      await kv.set("mem:graph:nodes", "node_a", makeConceptNode("concept_a"));
-      await kv.set("mem:graph:nodes", "node_b", makeConceptNode("concept_b"));
+      await seedSnapshot(kv, [
+        makeConceptNode("concept_a"),
+        makeConceptNode("concept_b"),
+      ]);
       await kv.set("mem:graph:edges", "edge_1", makeEdge("concept_a", "concept_b"));
       await kv.set("mem:semantic", "sem_1", makeSemantic("fact about concept_a"));
       await kv.set("mem:semantic", "sem_2", makeSemantic("fact about concept_b"));
