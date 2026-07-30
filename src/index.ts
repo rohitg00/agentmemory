@@ -13,6 +13,7 @@ import {
   isContextInjectionEnabled,
   isDropStaleIndexEnabled,
 } from "./config.js";
+import { loadSystemdCredentials } from "./load-credentials.js";
 import {
   createProvider,
   createFallbackProvider,
@@ -158,6 +159,10 @@ process.on("unhandledRejection", (reason) => {
 });
 
 async function main() {
+  // Pull any systemd-delivered secrets ($CREDENTIALS_DIRECTORY) into the
+  // environment before config/providers read keys; a value set after exec
+  // stays out of /proc/<pid>/environ. No-op when the dir is unset.
+  loadSystemdCredentials();
   const config = loadConfig();
   const embeddingConfig = loadEmbeddingConfig();
   const fallbackConfig = loadFallbackConfig();
