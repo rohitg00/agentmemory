@@ -16,6 +16,7 @@ import {
 import { VISION_DESCRIPTION_PROMPT } from "../prompts/vision.js";
 import { getXmlTag, getXmlChildren } from "../prompts/xml.js";
 import { getSearchIndex, vectorIndexAddGuarded } from "./search.js";
+import { scrubRecord } from "./privacy.js";
 import { CompressOutputSchema } from "../eval/schemas.js";
 import { validateOutput } from "../eval/validator.js";
 import { scoreCompression } from "../eval/quality.js";
@@ -156,11 +157,16 @@ export function registerCompressFunction(
 
         const qualityScore = scoreCompression(parsed);
 
+        // The raw input was scrubbed at capture, but the LLM can echo a
+        // secret it saw elsewhere in its context into the summary — scrub
+        // the model output too before it is persisted and indexed.
+        const scrubbedParsed = scrubRecord(parsed);
+
         const compressed: CompressedObservation = {
           id: data.observationId,
           sessionId: data.sessionId,
           timestamp: data.raw.timestamp,
-          ...parsed,
+          ...scrubbedParsed,
           confidence: qualityScore / 100,
           ...(hasImage ? { modality: data.raw.modality } : {}),
           ...(imageDescription ? { imageDescription } : {}),

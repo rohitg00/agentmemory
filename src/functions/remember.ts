@@ -6,6 +6,7 @@ import { withKeyedLock } from "../state/keyed-mutex.js";
 import { memoryToObservation } from "../state/memory-utils.js";
 import { deleteAccessLog } from "./access-tracker.js";
 import { recordAudit } from "./audit.js";
+import { stripPrivateData } from "./privacy.js";
 import { getSearchIndex, vectorIndexAddGuarded, vectorIndexRemove, flushIndexSave } from "./search.js";
 import { getAgentId } from "../config.js";
 import { logger } from "../logger.js";
@@ -49,6 +50,11 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
       const memType = validTypes.has(data.type || "")
         ? (data.type as Memory["type"])
         : "fact";
+
+      // Explicit saves bypass the observe pipeline, so they need the same
+      // secret scrubbing hook payloads get. Scrub before the similarity
+      // check so dedup compares the stored (scrubbed) form.
+      data.content = stripPrivateData(data.content);
 
       const now = new Date().toISOString();
       // Normalize project early so every subsequent comparison and storage
