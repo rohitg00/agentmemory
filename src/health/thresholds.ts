@@ -59,10 +59,16 @@ export function evaluateHealth(
     degraded = true;
   }
 
+  // heapTotal is the heap V8 has *committed*, which it keeps near-full by design
+  // and grows on demand — measuring against it reports ~100% on a perfectly
+  // healthy process. Measure against the real ceiling (--max-old-space-size)
+  // when the snapshot carries it; older persisted snapshots do not.
+  const heapCeiling =
+    snapshot.memory.heapLimit && snapshot.memory.heapLimit > 0
+      ? snapshot.memory.heapLimit
+      : snapshot.memory.heapTotal;
   const memPercent =
-    snapshot.memory.heapTotal > 0
-      ? (snapshot.memory.heapUsed / snapshot.memory.heapTotal) * 100
-      : 0;
+    heapCeiling > 0 ? (snapshot.memory.heapUsed / heapCeiling) * 100 : 0;
   const rss = snapshot.memory.rss ?? 0;
   const rssAboveFloor = rss >= cfg.memoryRssFloorBytes;
   const memMb = Math.round(rss / (1024 * 1024));

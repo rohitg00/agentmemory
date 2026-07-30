@@ -208,6 +208,8 @@ export interface HealthSnapshot {
   memory: {
     heapUsed: number;
     heapTotal: number;
+    /** V8 heap ceiling (--max-old-space-size). Absent on snapshots persisted before it was collected. */
+    heapLimit?: number;
     rss: number;
     external: number;
   };

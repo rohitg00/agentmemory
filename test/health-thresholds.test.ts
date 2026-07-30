@@ -80,6 +80,38 @@ describe("evaluateHealth memory severity", () => {
     expect(alerts.some((a) => a.startsWith("memory_warn_"))).toBe(true);
   });
 
+  it("stays healthy when the committed heap is full but far below the ceiling", () => {
+    // Observed on the Oracle host: 588MB used of a 603MB committed heap reads as
+    // 97%, but --max-old-space-size=6144 means real utilisation is under 10%.
+    const s = snap({
+      memory: {
+        heapUsed: 588 * 1024 * 1024,
+        heapTotal: 603 * 1024 * 1024,
+        heapLimit: 6144 * 1024 * 1024,
+        rss: 1608 * 1024 * 1024,
+        external: 0,
+      },
+    });
+    const { status, alerts } = evaluateHealth(s);
+    expect(status).toBe("healthy");
+    expect(alerts).toEqual([]);
+  });
+
+  it("goes critical when usage approaches the heap ceiling", () => {
+    const s = snap({
+      memory: {
+        heapUsed: 5900 * 1024 * 1024,
+        heapTotal: 5950 * 1024 * 1024,
+        heapLimit: 6144 * 1024 * 1024,
+        rss: 6500 * 1024 * 1024,
+        external: 0,
+      },
+    });
+    const { status, alerts } = evaluateHealth(s);
+    expect(status).toBe("critical");
+    expect(alerts.some((a) => a.startsWith("memory_critical_"))).toBe(true);
+  });
+
   it("respects caller-supplied memoryRssFloorBytes", () => {
     const s = snap({
       memory: {
