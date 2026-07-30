@@ -17,6 +17,18 @@ function safeParseInt(value: string | undefined, fallback: number): number {
   return Number.isNaN(parsed) ? fallback : parsed;
 }
 
+function safeParseFloat(value: string | undefined, fallback: number): number {
+  if (!value) return fallback;
+  // Strict parse: parseFloat would accept trailing junk ("0.2oops" -> 0.2),
+  // silently honoring a malformed env value instead of falling back. Number()
+  // rejects partial matches. Guard the empty-after-trim case too, since
+  // Number("") is 0 (not NaN) and a whitespace-only value should fall back.
+  const normalized = value.trim();
+  if (!normalized) return fallback;
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
 const DATA_DIR = join(homedir(), ".agentmemory");
 const ENV_FILE = join(DATA_DIR, ".env");
 
@@ -398,6 +410,54 @@ export function isContextInjectionEnabled(): boolean {
 
 export function getConsolidationDecayDays(): number {
   return safeParseInt(getMergedEnv()["CONSOLIDATION_DECAY_DAYS"], 30);
+}
+
+// Temporal decay for recall ranking (see functions/temporal-decay.ts).
+// OFF by default — like auto-compress and context-injection, anything that
+// changes recall ordering is opt-in so existing deployments keep their
+// current behavior until a user explicitly enables it. Enable with
+// AGENTMEMORY_TEMPORAL_DECAY=true. When on, recall blends an exponential
+// recency factor (and optional importance term) into the relevance score so
+// fresh/reinforced memories outrank equally-relevant stale ones.
+export function isTemporalDecayEnabled(): boolean {
+  const v = getMergedEnv()["AGENTMEMORY_TEMPORAL_DECAY"];
+  return v === "true" || v === "1";
+}
+
+// Recency half-life in days: a memory un-accessed for this long has its
+// recency weight halved. Default 14 days — two weeks balances "this week's
+// work is hot" against not aggressively forgetting month-old context.
+export function getTemporalDecayHalfLifeDays(): number {
+  return safeParseFloat(
+    getMergedEnv()["AGENTMEMORY_TEMPORAL_DECAY_HALF_LIFE_DAYS"],
+    14,
+  );
+}
+
+// Blend weight for the recency factor in [0,1]. Higher = time dominates.
+export function getTemporalDecayRecencyWeight(): number {
+  return safeParseFloat(
+    getMergedEnv()["AGENTMEMORY_TEMPORAL_DECAY_RECENCY_WEIGHT"],
+    0.5,
+  );
+}
+
+// Blend weight for importance in [0,1]. Higher = important memories resist
+// decay more. recencyWeight + importanceWeight should stay <= 1.
+export function getTemporalDecayImportanceWeight(): number {
+  return safeParseFloat(
+    getMergedEnv()["AGENTMEMORY_TEMPORAL_DECAY_IMPORTANCE_WEIGHT"],
+    0.2,
+  );
+}
+
+// Floor on the decay multiplier in [0,1]. Guarantees decay demotes but
+// never erases: a stale hit keeps at least this fraction of its relevance.
+export function getTemporalDecayFloor(): number {
+  return safeParseFloat(
+    getMergedEnv()["AGENTMEMORY_TEMPORAL_DECAY_FLOOR"],
+    0.2,
+  );
 }
 
 export function isStandaloneMcp(): boolean {

@@ -12,6 +12,11 @@ import {
   isConsolidationEnabled,
   isContextInjectionEnabled,
   isDropStaleIndexEnabled,
+  isTemporalDecayEnabled,
+  getTemporalDecayHalfLifeDays,
+  getTemporalDecayRecencyWeight,
+  getTemporalDecayImportanceWeight,
+  getTemporalDecayFloor,
 } from "./config.js";
 import {
   createProvider,
@@ -354,6 +359,13 @@ async function main() {
 
   const bm25Index = getSearchIndex();
   const graphWeight = parseFloat(getEnvVar("AGENTMEMORY_GRAPH_WEIGHT") || "0.3");
+  const temporalDecay = {
+    enabled: isTemporalDecayEnabled(),
+    halfLifeDays: getTemporalDecayHalfLifeDays(),
+    recencyWeight: getTemporalDecayRecencyWeight(),
+    importanceWeight: getTemporalDecayImportanceWeight(),
+    floor: getTemporalDecayFloor(),
+  };
   const hybridSearch = new HybridSearch(
     bm25Index,
     vectorIndex,
@@ -362,6 +374,11 @@ async function main() {
     embeddingConfig.bm25Weight,
     embeddingConfig.vectorWeight,
     graphWeight,
+    process.env.RERANK_ENABLED === "true",
+    temporalDecay,
+  );
+  bootLog(
+    `Temporal decay: ${temporalDecay.enabled ? `enabled (half-life ${temporalDecay.halfLifeDays}d)` : "disabled"}`,
   );
 
   registerSmartSearchFunction(sdk, kv, (query, limit) =>
