@@ -77,6 +77,25 @@ export class OpenAIProvider implements MemoryProvider {
 
   private async call(systemPrompt: string, userPrompt: string): Promise<string> {
     const url = buildChatUrl(this.baseUrl, this.isAzure, this.azureApiVersion);
+    // AGENTMEMORY_DISABLE_THINKING=true forces thinking mode OFF on
+    // hybrid-reasoning models (Qwen3, GLM, Kimi, DeepSeek V4-Flash).
+    // Without this, every call burns tokens on a <think>...</think>
+    // block before the actual answer, and structured-output prompts
+    // (graph extraction, XML/JSON-mode summarization, etc.) often
+    // truncate inside the thinking block — yielding empty `content`
+    // and a meandering `reasoning` field that parsers can't recover.
+    //
+    // Belt-and-suspenders: send `chat_template_kwargs.enable_thinking=
+    // false` as the server-side signal AND prefix `/no_think` to the
+    // system message as the client-side fallback (same pattern as
+    // gitops-assistant's llm_engine.py:6207-6260, which has a
+    // documented "$7 Qwen3-32B incident" from missing this signal).
+    const disableThinking =
+      (getEnvVar("AGENTMEMORY_DISABLE_THINKING") || "").toLowerCase() === "true";
+    const effectiveSystemPrompt = disableThinking
+      ? `/no_think\n\n${systemPrompt}`
+      : systemPrompt;
+
     const body: Record<string, unknown> = {
       model: this.model,
       max_tokens: this.maxTokens,
@@ -88,12 +107,15 @@ export class OpenAIProvider implements MemoryProvider {
       // Send it explicitly so non-spec endpoints route to non-streaming too.
       stream: false,
       messages: [
-        { role: "system", content: systemPrompt },
+        { role: "system", content: effectiveSystemPrompt },
         { role: "user", content: userPrompt },
       ],
     };
     if (this.reasoningEffort) {
       body.reasoning_effort = this.reasoningEffort;
+    }
+    if (disableThinking) {
+      body.chat_template_kwargs = { enable_thinking: false };
     }
 
     // Bound the request via the shared fetchWithTimeout helper, which
