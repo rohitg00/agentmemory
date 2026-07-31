@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **Native hooks adapter for Droid (Factory.ai)**. `agentmemory connect droid --with-hooks` now also merges the bundled `hooks.droid.json` manifest into Droid's native `~/.factory/hooks.json` (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, SessionEnd), reusing the same idempotent merge/re-install logic already backing the Codex and Claude Code hook installers. `createJsonMcpAdapter` gained an optional `installHooks` hook so other JSON-MCP-shaped adapters can opt into the same pattern later.
+
 ## [0.9.28] — 2026-07-19
 
 Patch release: hardens the hook runner against malformed payloads and closes a cross-agent context leak. No breaking changes; drop-in upgrade.
