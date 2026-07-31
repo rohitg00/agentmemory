@@ -339,7 +339,7 @@ async function handleProxyGeneric(
   handle: ProxyHandle,
 ): Promise<{ content: Array<{ type: string; text: string }> }> {
   // Forward to the server's full MCP surface so non-Claude clients can
-  // reach all 53 tools (lessons, sentinels, slots, signals, graph, …)
+  // reach all 54 tools (lessons, sentinels, slots, signals, graph, …)
   // instead of being capped at the 7 IMPLEMENTED_TOOLS set baked into
   // this shim. The server validates arguments per tool.
   const result = (await handle.call("/agentmemory/mcp/call", {
