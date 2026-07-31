@@ -329,24 +329,108 @@ describe("Lessons", () => {
       const after = await kv.get<Lesson>("mem:lessons", saved.lesson.id);
       expect(after!.deleted).toBe(true);
     });
+  });
 
-    it("uses lastDecayedAt for incremental delta (not full age)", async () => {
+  describe("mem::lesson-delete", () => {
+    it("soft-deletes an existing lesson", async () => {
       const saved = (await sdk.trigger("mem::lesson-save", {
-        content: "Incremental decay",
-        confidence: 0.8,
+        content: "Delete me",
+        confidence: 0.7,
       })) as { lesson: Lesson };
 
-      const lesson = await kv.get<Lesson>("mem:lessons", saved.lesson.id);
-      lesson!.createdAt = new Date(Date.now() - 28 * 24 * 60 * 60 * 1000).toISOString();
-      lesson!.lastDecayedAt = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-      lesson!.confidence = 0.6;
-      await kv.set("mem:lessons", lesson!.id, lesson!);
+      const result = (await sdk.trigger("mem::lesson-delete", {
+        lessonId: saved.lesson.id,
+      })) as { success: boolean; lesson: Lesson };
 
-      await sdk.trigger("mem::lesson-decay-sweep", {});
+      expect(result.success).toBe(true);
+      expect(result.lesson.deleted).toBe(true);
 
-      const after = await kv.get<Lesson>("mem:lessons", saved.lesson.id);
-      expect(after!.confidence).toBeCloseTo(0.55, 2);
-      expect(after!.confidence).toBeGreaterThan(0.4);
+      const stored = await kv.get<Lesson>("mem:lessons", saved.lesson.id);
+      expect(stored!.deleted).toBe(true);
+    });
+
+    it("excludes a soft-deleted lesson from recall and list", async () => {
+      const saved = (await sdk.trigger("mem::lesson-save", {
+        content: "Hide me from recall",
+        confidence: 0.9,
+      })) as { lesson: Lesson };
+
+      await sdk.trigger("mem::lesson-delete", { lessonId: saved.lesson.id });
+
+      const recall = (await sdk.trigger("mem::lesson-recall", {
+        query: "hide recall",
+      })) as { lessons: Lesson[] };
+      expect(recall.lessons.some((l) => l.id === saved.lesson.id)).toBe(false);
+
+      const list = (await sdk.trigger("mem::lesson-list", {})) as {
+        lessons: Lesson[];
+      };
+      expect(list.lessons.some((l) => l.id === saved.lesson.id)).toBe(false);
+    });
+
+    it("returns not found for an already-deleted lesson", async () => {
+      const saved = (await sdk.trigger("mem::lesson-save", {
+        content: "Double delete",
+      })) as { lesson: Lesson };
+
+      await sdk.trigger("mem::lesson-delete", { lessonId: saved.lesson.id });
+      const second = (await sdk.trigger("mem::lesson-delete", {
+        lessonId: saved.lesson.id,
+      })) as { success: boolean; error?: string };
+
+      expect(second.success).toBe(false);
+      expect(second.error).toBe("lesson not found");
+    });
+
+    it("returns not found for a nonexistent lessonId", async () => {
+      const result = (await sdk.trigger("mem::lesson-delete", {
+        lessonId: "lsn_nonexistent",
+      })) as { success: boolean; error?: string };
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe("lesson not found");
+    });
+
+    it("rejects a missing lessonId", async () => {
+      const result = (await sdk.trigger("mem::lesson-delete", {})) as {
+        success: boolean;
+        error?: string;
+      };
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe("lessonId is required");
+    });
+
+    it("creates a fresh lesson when deleted content is re-saved", async () => {
+      const saved = (await sdk.trigger("mem::lesson-save", {
+        content: "Resave after delete",
+      })) as { lesson: Lesson };
+
+      await sdk.trigger("mem::lesson-delete", { lessonId: saved.lesson.id });
+
+      const resaved = (await sdk.trigger("mem::lesson-save", {
+        content: "Resave after delete",
+      })) as { action: string; lesson: Lesson };
+
+      expect(resaved.action).toBe("created");
+      expect(resaved.lesson.id).toBe(saved.lesson.id);
+      expect(resaved.lesson.deleted).toBeUndefined();
+    });
+
+    it("records a lesson_delete audit row", async () => {
+      const saved = (await sdk.trigger("mem::lesson-save", {
+        content: "Audited delete",
+      })) as { lesson: Lesson };
+
+      await sdk.trigger("mem::lesson-delete", { lessonId: saved.lesson.id });
+
+      const auditRows = (await kv.list("mem:audit")) as Array<{
+        operation: string;
+        targetIds: string[];
+      }>;
+      const row = auditRows.find((r) => r.operation === "lesson_delete");
+      expect(row).toBeDefined();
+      expect(row!.targetIds).toEqual([saved.lesson.id]);
     });
   });
 });

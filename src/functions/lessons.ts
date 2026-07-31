@@ -203,6 +203,32 @@ export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
     },
   );
 
+  sdk.registerFunction("mem::lesson-delete",
+    async (data: { lessonId: string }) => {
+      if (!data.lessonId) {
+        return { success: false, error: "lessonId is required" };
+      }
+
+      const lesson = await kv.get<Lesson>(KV.lessons, data.lessonId);
+      if (!lesson || lesson.deleted) {
+        return { success: false, error: "lesson not found" };
+      }
+
+      lesson.deleted = true;
+      lesson.updatedAt = new Date().toISOString();
+
+      await kv.set(KV.lessons, lesson.id, lesson);
+
+      try {
+        await recordAudit(kv, "lesson_delete", "mem::lesson-delete", [
+          lesson.id,
+        ]);
+      } catch {}
+
+      return { success: true, lesson };
+    },
+  );
+
   sdk.registerFunction("mem::lesson-decay-sweep", 
     async () => {
       const lessons = await kv.list<Lesson>(KV.lessons);
