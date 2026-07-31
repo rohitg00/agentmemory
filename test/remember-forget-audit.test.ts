@@ -131,12 +131,16 @@ describe("mem::forget audit coverage (issue #125)", () => {
     const kv = mockKV();
     registerRememberFunction(sdk as never, kv as never);
 
+    const deleteSpy = vi.spyOn(kv, "delete");
     const result = await sdk.trigger({
       function_id: "mem::forget",
       payload: { memoryId: "lsn_4f9cb07017a7c8ac" },
     });
 
     expect(result).toEqual({ success: true, deleted: 0 });
+    // No-op path must not touch the memories keyspace or search index.
+    expect(deleteSpy).not.toHaveBeenCalled();
+    expect(getSearchIndex().has("lsn_4f9cb07017a7c8ac")).toBe(false);
   });
 
   it("emits no audit row when memoryId does not exist", async () => {

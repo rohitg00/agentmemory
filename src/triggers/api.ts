@@ -3154,8 +3154,9 @@ export function registerApiTriggers(
     const denied = checkAuth(req, secret);
     if (denied) return denied;
     const body = req.body as Record<string, unknown>;
-    if (!body?.lessonId || typeof body.lessonId !== "string") return { status_code: 400, body: { error: "lessonId is required" } };
-    const result = await sdk.trigger({ function_id: "mem::lesson-delete", payload: { lessonId: body.lessonId } });
+    const lessonId = typeof body?.lessonId === "string" ? body.lessonId.trim() : "";
+    if (!lessonId) return { status_code: 400, body: { error: "lessonId is required" } };
+    const result = await sdk.trigger({ function_id: "mem::lesson-delete", payload: { lessonId } });
     const resp = result as { success?: boolean; error?: string };
     if (resp?.success === false && resp.error === "lesson not found") {
       return { status_code: 404, body: { error: "lesson not found" } };
