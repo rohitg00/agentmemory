@@ -329,6 +329,25 @@ describe("Lessons", () => {
       const after = await kv.get<Lesson>("mem:lessons", saved.lesson.id);
       expect(after!.deleted).toBe(true);
     });
+
+    it("uses lastDecayedAt for incremental delta (not full age)", async () => {
+      const saved = (await sdk.trigger("mem::lesson-save", {
+        content: "Incremental decay",
+        confidence: 0.8,
+      })) as { lesson: Lesson };
+
+      const lesson = await kv.get<Lesson>("mem:lessons", saved.lesson.id);
+      lesson!.createdAt = new Date(Date.now() - 28 * 24 * 60 * 60 * 1000).toISOString();
+      lesson!.lastDecayedAt = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+      lesson!.confidence = 0.6;
+      await kv.set("mem:lessons", lesson!.id, lesson!);
+
+      await sdk.trigger("mem::lesson-decay-sweep", {});
+
+      const after = await kv.get<Lesson>("mem:lessons", saved.lesson.id);
+      expect(after!.confidence).toBeCloseTo(0.55, 2);
+      expect(after!.confidence).toBeGreaterThan(0.4);
+    });
   });
 
   describe("mem::lesson-delete", () => {
