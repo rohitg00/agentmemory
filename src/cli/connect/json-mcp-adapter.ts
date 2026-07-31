@@ -90,7 +90,14 @@ export function createJsonMcpAdapter(
         p.log.info(
           `[dry-run] Would ${alreadyHas ? "overwrite" : "add"} ${wrapperKey}.agentmemory in ${config.configPath}`,
         );
-        if (opts.withHooks && config.installHooks) config.installHooks(opts);
+        if (opts.withHooks && config.installHooks) {
+          const hookResult = config.installHooks(opts);
+          if (hookResult.kind === "skipped") {
+            p.log.warn(
+              `${config.displayName} hooks skipped: ${hookResult.reason}.`,
+            );
+          }
+        }
         return { kind: "installed", mutatedPath: config.configPath };
       }
 

@@ -21,21 +21,18 @@ describe("buildMergedHooks (Droid manifest)", () => {
     }
   });
 
-  it("includes Droid's five documented lifecycle events", () => {
+  it("includes Droid's five documented lifecycle events (and nothing else)", () => {
     const merged = buildMergedHooks(null, findPluginRoot(), "hooks.droid.json");
-    for (const event of [
+    const expectedEvents = [
       "SessionStart",
       "UserPromptSubmit",
       "PreToolUse",
       "PostToolUse",
       "SessionEnd",
-    ]) {
-      expect(Object.keys(merged.hooks)).toContain(event);
-    }
-    // Droid does not document PreCompact/Stop/Subagent* hooks — the
-    // Claude-only events must not leak into the Droid manifest.
-    expect(Object.keys(merged.hooks)).not.toContain("PreCompact");
-    expect(Object.keys(merged.hooks)).not.toContain("Stop");
+    ];
+    expect(Object.keys(merged.hooks).sort()).toEqual(
+      [...expectedEvents].sort(),
+    );
   });
 
   it("preserves the PreToolUse matcher", () => {
@@ -65,11 +62,9 @@ describe("buildMergedHooks (Droid manifest)", () => {
     ).toBe(true);
   });
 
-  it("re-install is idempotent (no duplicate agentmemory entries)", () => {
+  it("re-install is idempotent (produces identical manifest)", () => {
     const first = buildMergedHooks(null, findPluginRoot(), "hooks.droid.json");
     const second = buildMergedHooks(first, findPluginRoot(), "hooks.droid.json");
-    for (const event of Object.keys(first.hooks)) {
-      expect(second.hooks[event]!.length).toBe(first.hooks[event]!.length);
-    }
+    expect(second).toEqual(first);
   });
 });
