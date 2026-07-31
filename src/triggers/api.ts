@@ -3158,7 +3158,7 @@ export function registerApiTriggers(
     const result = await sdk.trigger({ function_id: "mem::lesson-delete", payload: { lessonId: body.lessonId } });
     const resp = result as { success?: boolean; error?: string };
     if (resp?.success === false && resp.error === "lesson not found") {
-      return { status_code: 404, body: result };
+      return { status_code: 404, body: { error: "lesson not found" } };
     }
     return { status_code: 200, body: result };
   });
