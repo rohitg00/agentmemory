@@ -2,10 +2,11 @@ export type ConnectOptions = {
   dryRun: boolean;
   force: boolean;
   /**
-   * When true, the Codex adapter additionally writes a global
-   * `~/.codex/hooks.json` block referencing absolute paths to bundled hook
-   * scripts. Workaround for openai/codex#16430, which prevents plugin-local
-   * hooks from dispatching on Codex Desktop. No-op for other adapters.
+   * When true, adapters that ship a native hook config alongside MCP
+   * additionally write it: Codex (`~/.codex/hooks.json`, workaround for
+   * openai/codex#16430), Claude Code (`~/.claude/settings.json`, workaround
+   * for #508), and Droid (`~/.factory/hooks.json`, its native hooks
+   * config). No-op for adapters without a hooks installer.
    */
   withHooks?: boolean;
 };
