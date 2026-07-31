@@ -3150,6 +3150,19 @@ export function registerApiTriggers(
   });
   sdk.registerTrigger({ type: "http", function_id: "api::lesson-strengthen", config: { api_path: "/agentmemory/lessons/strengthen", http_method: "POST" } });
 
+  sdk.registerFunction("api::lesson-delete",  async (req: ApiRequest) => {
+    const denied = checkAuth(req, secret);
+    if (denied) return denied;
+    const body = req.body as Record<string, unknown>;
+    if (!body?.lessonId || typeof body.lessonId !== "string") return { status_code: 400, body: { error: "lessonId is required" } };
+    const result = await sdk.trigger({ function_id: "mem::lesson-delete", payload: { lessonId: body.lessonId } });
+    if (result && (result as { success?: boolean; error?: string }).success === false && (result as { error?: string }).error === "lesson not found") {
+      return { status_code: 404, body: result };
+    }
+    return { status_code: 200, body: result };
+  });
+  sdk.registerTrigger({ type: "http", function_id: "api::lesson-delete", config: { api_path: "/agentmemory/lessons/delete", http_method: "POST" } });
+
   sdk.registerFunction("api::obsidian-export", async (req: ApiRequest) => {
     const denied = checkAuth(req, secret);
     if (denied) return denied;

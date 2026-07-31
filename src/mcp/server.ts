@@ -1122,6 +1122,16 @@ export function registerMcpEndpoints(
             return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(lessonRecallResult, null, 2) }] } };
           }
 
+          case "memory_lesson_delete": {
+            if (typeof args.lessonId !== "string" || !args.lessonId.trim()) {
+              return { status_code: 400, body: { error: "lessonId is required" } };
+            }
+            const lessonDeleteResult = await sdk.trigger({ function_id: "mem::lesson-delete", payload: {
+              lessonId: args.lessonId,
+            } });
+            return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(lessonDeleteResult, null, 2) }] } };
+          }
+
           case "memory_reflect": {
             const reflectResult = await sdk.trigger({ function_id: "mem::reflect", payload: {
               project: args.project,

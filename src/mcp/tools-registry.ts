@@ -800,6 +800,18 @@ export const V070_TOOLS: McpToolDef[] = [
     },
   },
   {
+    name: "memory_lesson_delete",
+    description:
+      "Soft-delete a lesson by id. Deleted lessons are excluded from recall and list; re-saving the same content creates a fresh lesson.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        lessonId: { type: "string", description: "The lesson id (lsn_...)" },
+      },
+      required: ["lessonId"],
+    },
+  },
+  {
     name: "memory_obsidian_export",
     description:
       "Export memories, lessons, and crystals as Obsidian-compatible Markdown files with YAML frontmatter and wikilinks for graph view.",
