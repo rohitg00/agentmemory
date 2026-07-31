@@ -181,15 +181,17 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
 
       if (data.memoryId) {
         const mem = await kv.get<Memory>(KV.memories, data.memoryId);
-        await kv.delete(KV.memories, data.memoryId);
-        if (mem?.imageRef) {
-          await decrementImageRef(kv, sdk, mem.imageRef);
+        if (mem) {
+          await kv.delete(KV.memories, data.memoryId);
+          if (mem.imageRef) {
+            await decrementImageRef(kv, sdk, mem.imageRef);
+          }
+          await deleteAccessLog(kv, data.memoryId);
+          getSearchIndex().remove(data.memoryId);
+          vectorIndexRemove(data.memoryId);
+          deletedMemoryIds.push(data.memoryId);
+          deleted++;
         }
-        await deleteAccessLog(kv, data.memoryId);
-        getSearchIndex().remove(data.memoryId);
-        vectorIndexRemove(data.memoryId);
-        deletedMemoryIds.push(data.memoryId);
-        deleted++;
       }
 
       if (
