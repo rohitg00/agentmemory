@@ -158,7 +158,7 @@ function json(
 
 function readBody(req: IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
-    let data = "";
+    const chunks: Buffer[] = [];
     let size = 0;
     req.on("data", (chunk: Buffer) => {
       size += chunk.length;
@@ -167,9 +167,9 @@ function readBody(req: IncomingMessage): Promise<string> {
         reject(new Error("too large"));
         return;
       }
-      data += chunk.toString();
+      chunks.push(chunk);
     });
-    req.on("end", () => resolve(data));
+    req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
     req.on("error", reject);
   });
 }

@@ -3,6 +3,19 @@ import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+const readFileSyncCalls: unknown[][] = [];
+
+vi.mock("node:fs", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs")>();
+  return {
+    ...actual,
+    readFileSync: (...args: unknown[]) => {
+      readFileSyncCalls.push(args);
+      return (actual.readFileSync as (...a: unknown[]) => unknown)(...args);
+    },
+  };
+});
+
 const ORIGINAL_HOME = process.env["HOME"];
 const ORIGINAL_USERPROFILE = process.env["USERPROFILE"];
 
@@ -88,5 +101,108 @@ describe("loadEnvFile", () => {
     writeEnv("AGENTMEMORY_DROP_STALE_INDEX=true");
     const cfg = await freshConfig();
     expect(cfg.isDropStaleIndexEnabled()).toBe(true);
+  });
+});
+
+describe("hydrateProcessEnvFromFile", () => {
+  const TOUCHED = ["HYDRATE_ONLY", "HYDRATE_WINS"];
+
+  beforeEach(() => {
+    sandboxHome = mkdtempSync(join(tmpdir(), "agentmemory-hydrate-"));
+    process.env["HOME"] = sandboxHome;
+    process.env["USERPROFILE"] = sandboxHome;
+    for (const k of TOUCHED) delete process.env[k];
+  });
+
+  afterEach(() => {
+    if (ORIGINAL_HOME === undefined) delete process.env["HOME"];
+    else process.env["HOME"] = ORIGINAL_HOME;
+    if (ORIGINAL_USERPROFILE === undefined) delete process.env["USERPROFILE"];
+    else process.env["USERPROFILE"] = ORIGINAL_USERPROFILE;
+    for (const k of TOUCHED) delete process.env[k];
+    rmSync(sandboxHome, { recursive: true, force: true });
+  });
+
+  it("copies .env-only keys into process.env", async () => {
+    writeEnv("HYDRATE_ONLY=from-file");
+    const cfg = await freshConfig();
+    expect(process.env["HYDRATE_ONLY"]).toBeUndefined();
+    cfg.hydrateProcessEnvFromFile();
+    expect(process.env["HYDRATE_ONLY"]).toBe("from-file");
+  });
+
+  it("does not overwrite a value already set in process.env", async () => {
+    writeEnv("HYDRATE_WINS=from-file");
+    process.env["HYDRATE_WINS"] = "from-process";
+    const cfg = await freshConfig();
+    cfg.hydrateProcessEnvFromFile();
+    expect(process.env["HYDRATE_WINS"]).toBe("from-process");
+  });
+
+  it("exposes a .env-only key via getEnvVar and, after hydrate, via raw process.env", async () => {
+    writeEnv("HYDRATE_ONLY=from-file");
+    const cfg = await freshConfig();
+    expect(cfg.getEnvVar("HYDRATE_ONLY")).toBe("from-file");
+    expect(process.env["HYDRATE_ONLY"]).toBeUndefined();
+    cfg.hydrateProcessEnvFromFile();
+    expect(process.env["HYDRATE_ONLY"]).toBe("from-file");
+  });
+});
+
+describe("loadEnvFile cache", () => {
+  beforeEach(() => {
+    sandboxHome = mkdtempSync(join(tmpdir(), "agentmemory-cache-"));
+    process.env["HOME"] = sandboxHome;
+    process.env["USERPROFILE"] = sandboxHome;
+    delete process.env["CACHED_VAR"];
+    readFileSyncCalls.length = 0;
+  });
+
+  afterEach(() => {
+    if (ORIGINAL_HOME === undefined) delete process.env["HOME"];
+    else process.env["HOME"] = ORIGINAL_HOME;
+    if (ORIGINAL_USERPROFILE === undefined) delete process.env["USERPROFILE"];
+    else process.env["USERPROFILE"] = ORIGINAL_USERPROFILE;
+    delete process.env["CACHED_VAR"];
+    rmSync(sandboxHome, { recursive: true, force: true });
+  });
+
+  it("reads the .env file from disk only once across many getMergedEnv/getEnvVar calls", async () => {
+    writeEnv("CACHED_VAR=cached");
+    const cfg = await freshConfig();
+    const envPath = join(sandboxHome, ".agentmemory", ".env");
+    readFileSyncCalls.length = 0;
+
+    for (let i = 0; i < 25; i++) {
+      cfg.getEnvVar("CACHED_VAR");
+      cfg.loadEmbeddingConfig();
+      cfg.isConsolidationEnabled();
+    }
+
+    const envReads = readFileSyncCalls.filter(([p]) => p === envPath);
+    expect(envReads).toHaveLength(1);
+    expect(cfg.getEnvVar("CACHED_VAR")).toBe("cached");
+  });
+
+  it("sees updated .env content after vi.resetModules reloads the module", async () => {
+    writeEnv("CACHED_VAR=first");
+    const first = await freshConfig();
+    expect(first.getEnvVar("CACHED_VAR")).toBe("first");
+
+    writeEnv("CACHED_VAR=second");
+    const second = await freshConfig();
+    expect(second.getEnvVar("CACHED_VAR")).toBe("second");
+  });
+
+  it("re-reads disk after __resetEnvFileCache within the same module instance", async () => {
+    writeEnv("CACHED_VAR=first");
+    const cfg = await freshConfig();
+    expect(cfg.getEnvVar("CACHED_VAR")).toBe("first");
+
+    writeEnv("CACHED_VAR=second");
+    expect(cfg.getEnvVar("CACHED_VAR")).toBe("first");
+
+    cfg.__resetEnvFileCache();
+    expect(cfg.getEnvVar("CACHED_VAR")).toBe("second");
   });
 });

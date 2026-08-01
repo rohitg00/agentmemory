@@ -248,6 +248,18 @@ export class FilesystemWatcher {
     const failures = [];
     for (const root of this.roots) {
       try {
+        // Validate the root before handing it to fs.watch: on Linux with
+        // Node 24+, fs.watch on a nonexistent path no longer throws
+        // synchronously, so a missing root would otherwise count as
+        // "attached" and be watched-in-name-only. An explicit stat keeps
+        // the failure deterministic across Node versions and platforms.
+        const st = statSync(root, { throwIfNoEntry: false });
+        if (!st) {
+          throw new Error("no such directory");
+        }
+        if (!st.isDirectory()) {
+          throw new Error("not a directory");
+        }
         const handle = watch(
           root,
           { recursive: true, persistent: true },

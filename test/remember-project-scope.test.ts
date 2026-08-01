@@ -256,3 +256,81 @@ describe("mem::remember — cross-project dedup isolation", () => {
     expect(unscoped.memory.supersedes).toContain(scoped.memory.id);
   });
 });
+
+describe("mem::remember — CJK dedup", () => {
+  beforeEach(() => {
+    getSearchIndex().clear();
+    setIndexPersistence(null);
+  });
+
+  afterEach(() => {
+    setIndexPersistence(null);
+  });
+
+  it("dedups two near-identical CJK memories (new one supersedes old)", async () => {
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerRememberFunction(sdk as never, kv as never);
+
+    const first = await sdk.trigger({
+      function_id: "mem::remember",
+      payload: {
+        content: "用户认证中间件必须先去除请求头里的 Bearer 前缀然后再校验令牌",
+        type: "pattern",
+      },
+    }) as { memory: { id: string } };
+
+    const second = await sdk.trigger({
+      function_id: "mem::remember",
+      payload: {
+        content: "用户认证中间件必须先去除请求头里的 Bearer 前缀然后校验令牌",
+        type: "pattern",
+      },
+    }) as { memory: { supersedes: string[] } };
+
+    expect(second.memory.supersedes).toContain(first.memory.id);
+
+    const original = await kv.get<{ isLatest: boolean }>("mem:memories", first.memory.id);
+    expect(original?.isLatest).toBe(false);
+  });
+
+  it("does NOT supersede two unrelated short CJK memories (北京 vs 上海)", async () => {
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerRememberFunction(sdk as never, kv as never);
+
+    const beijing = await sdk.trigger({
+      function_id: "mem::remember",
+      payload: { content: "北京", type: "fact" },
+    }) as { memory: { id: string } };
+
+    const shanghai = await sdk.trigger({
+      function_id: "mem::remember",
+      payload: { content: "上海", type: "fact" },
+    }) as { memory: { supersedes: string[] } };
+
+    // The old empty-set shortcut returned similarity 1 here and falsely
+    // chained "上海" as a new version of "北京".
+    expect(shanghai.memory.supersedes).toHaveLength(0);
+
+    const original = await kv.get<{ isLatest: boolean }>("mem:memories", beijing.memory.id);
+    expect(original?.isLatest).toBe(true);
+  });
+
+  it("preserves a trailing astral character in the title (no lone surrogate)", async () => {
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerRememberFunction(sdk as never, kv as never);
+
+    // 80th UTF-16 code unit falls inside a surrogate pair; the title must
+    // not end on a lone high surrogate.
+    const content = "x".repeat(79) + "😀 trailing";
+    const result = await sdk.trigger({
+      function_id: "mem::remember",
+      payload: { content, type: "fact" },
+    }) as { memory: { title: string } };
+
+    expect(/[\uD800-\uDBFF]$/.test(result.memory.title)).toBe(false);
+    expect(result.memory.title.length).toBe(79);
+  });
+});

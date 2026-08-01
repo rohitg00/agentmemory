@@ -8,6 +8,13 @@ export type ConnectOptions = {
    * hooks from dispatching on Codex Desktop. No-op for other adapters.
    */
   withHooks?: boolean;
+  /**
+   * When true (default), after wiring the agent's MCP/hooks, also write a
+   * memory-usage guideline into the agent's native rules file so hook-less
+   * agents proactively call memory_recall / memory_save. Disabled with
+   * `--no-guidelines`. No-op for agents without a guideline target.
+   */
+  guidelines?: boolean;
 };
 
 export type ConnectAdapter = {

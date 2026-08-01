@@ -8,34 +8,9 @@ import {
   detectAzure,
   normalizeBaseUrl,
 } from "../_openai-shared.js";
+import { resolveDimensions } from "./_dimensions.js";
 
 const DEFAULT_MODEL = "text-embedding-3-small";
-
-/**
- * Known OpenAI embedding model dimensions. Extend as new models ship.
- * Override in any case via OPENAI_EMBEDDING_DIMENSIONS for custom or
- * self-hosted OpenAI-compatible endpoints returning non-standard sizes.
- */
-const MODEL_DIMENSIONS: Record<string, number> = {
-  "text-embedding-3-small": 1536,
-  "text-embedding-3-large": 3072,
-  "text-embedding-ada-002": 1536,
-};
-
-const DEFAULT_DIMENSIONS = MODEL_DIMENSIONS[DEFAULT_MODEL] ?? 1536;
-
-function resolveDimensions(model: string, override: string | undefined): number {
-  if (override !== undefined && override.trim().length > 0) {
-    const parsed = parseInt(override, 10);
-    if (!Number.isFinite(parsed) || parsed <= 0) {
-      throw new Error(
-        `OPENAI_EMBEDDING_DIMENSIONS must be a positive integer, got: ${override}`,
-      );
-    }
-    return parsed;
-  }
-  return MODEL_DIMENSIONS[model] ?? DEFAULT_DIMENSIONS;
-}
 
 /**
  * OpenAI-compatible embedding provider.
@@ -71,7 +46,7 @@ function resolveDimensions(model: string, override: string | undefined): number 
  *   OPENAI_EMBEDDING_MODEL       — model name (default: text-embedding-3-small)
  *   OPENAI_EMBEDDING_DIMENSIONS  — override reported dimensions (required for
  *                                  custom / self-hosted models not in the
- *                                  MODEL_DIMENSIONS table above)
+ *                                  shared MODEL_DIMENSIONS table)
  */
 export class OpenAIEmbeddingProvider implements EmbeddingProvider {
   readonly name = "openai";
@@ -107,6 +82,7 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
     this.dimensions = resolveDimensions(
       this.model,
       getEnvVar("OPENAI_EMBEDDING_DIMENSIONS"),
+      "OPENAI_EMBEDDING_DIMENSIONS",
     );
     this.isAzure = detectAzure(this.baseUrl);
     this.azureApiVersion =

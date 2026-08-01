@@ -15,7 +15,7 @@ import { parseJsonlText } from "../replay/jsonl-parser.js";
 import { projectTimeline, type Timeline } from "../replay/timeline.js";
 import { safeAudit } from "./audit.js";
 import { buildSyntheticCompression } from "./compress-synthetic.js";
-import { getSearchIndex } from "./search.js";
+import { indexRecords } from "./search.js";
 import { logger } from "../logger.js";
 
 export const MAX_FILES_DEFAULT = 200;
@@ -432,16 +432,17 @@ export function registerReplayFunctions(sdk: ISdk, kv: StateKV): void {
           await kv.set(KV.sessions, session.id, session);
         }
 
-        const searchIndex = getSearchIndex();
         const compressed: CompressedObservation[] = [];
         await Promise.all(
           parsed.observations.map(async (obs) => {
             const synthetic = buildSyntheticCompression(obs);
             compressed.push(synthetic);
             await kv.set(KV.observations(parsed.sessionId), obs.id, synthetic);
-            searchIndex.add(synthetic);
           }),
         );
+        // BM25 + vector in one path so jsonl-imported observations are
+        // reachable by semantic search, not just keyword.
+        await indexRecords(compressed, []);
         observationCount += parsed.observations.length;
         sessionIds.push(parsed.sessionId);
 

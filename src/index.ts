@@ -1,5 +1,6 @@
-import { registerWorker } from "iii-sdk";
+import { registerWorker, TriggerAction } from "iii-sdk";
 import {
+  hydrateProcessEnvFromFile,
   loadConfig,
   getEnvVar,
   loadEmbeddingConfig,
@@ -57,6 +58,7 @@ import { registerExportImportFunction } from "./functions/export-import.js";
 import { registerEnrichFunction } from "./functions/enrich.js";
 import { registerClaudeBridgeFunction } from "./functions/claude-bridge.js";
 import { registerGraphFunction } from "./functions/graph.js";
+import { registerGraphImportFunction } from "./functions/graph-import.js";
 import { registerConsolidationPipelineFunction } from "./functions/consolidation-pipeline.js";
 import { registerTeamFunction } from "./functions/team.js";
 import { registerGovernanceFunction } from "./functions/governance.js";
@@ -158,6 +160,10 @@ process.on("unhandledRejection", (reason) => {
 });
 
 async function main() {
+  // Fold ~/.agentmemory/.env into process.env before anything reads config
+  // or raw process.env. Only-if-unset, so real process.env still wins.
+  hydrateProcessEnvFromFile();
+
   const config = loadConfig();
   const embeddingConfig = loadEmbeddingConfig();
   const fallbackConfig = loadFallbackConfig();
@@ -268,6 +274,7 @@ async function main() {
 
   if (isGraphExtractionEnabled()) {
     registerGraphFunction(sdk, kv, provider);
+    registerGraphImportFunction(sdk, kv);
     bootLog(`Knowledge graph: extraction enabled`);
   }
 
@@ -347,6 +354,21 @@ async function main() {
   const snapshotConfig = loadSnapshotConfig();
   if (snapshotConfig.enabled) {
     registerSnapshotFunction(sdk, kv, snapshotConfig.dir);
+    // The boot line promised "every <interval>s" but nothing ever fired
+    // mem::snapshot-create. Drive it on a periodic timer (unref'd so it
+    // never keeps the process alive), mirroring the auto-forget timer.
+    // mem::snapshot-create serializes overlapping runs internally (git-lock
+    // safety), so the timer can stay a simple fire-and-forget tick.
+    const snapshotTimer = setInterval(() => {
+      sdk
+        .trigger({
+          function_id: "mem::snapshot-create",
+          payload: {},
+          action: TriggerAction.Void(),
+        })
+        .catch(() => {});
+    }, snapshotConfig.interval * 1000);
+    snapshotTimer.unref();
     bootLog(
       `Git snapshots: ${snapshotConfig.dir} (every ${snapshotConfig.interval}s)`,
     );
@@ -518,7 +540,7 @@ async function main() {
     `Ready. ${embeddingProvider ? "Triple-stream (BM25+Vector+Graph)" : "BM25+Graph"} search active.`,
   );
   bootLog(
-    `REST API: 128 endpoints at http://localhost:${config.restPort}/agentmemory/*`,
+    `REST API: 129 endpoints at http://localhost:${config.restPort}/agentmemory/*`,
   );
   bootLog(
     `MCP surface (opt-in via \`npx @agentmemory/mcp\`): ${getAllTools().length} tools · 6 resources · 3 prompts`,

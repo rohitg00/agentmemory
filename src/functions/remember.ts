@@ -10,6 +10,15 @@ import { getSearchIndex, vectorIndexAddGuarded, vectorIndexRemove, flushIndexSav
 import { getAgentId } from "../config.js";
 import { logger } from "../logger.js";
 
+// Slicing by UTF-16 code unit can cut an astral character (emoji, some CJK
+// extensions) mid surrogate pair, leaving a lone high surrogate that renders
+// as a replacement glyph. Drop a dangling trailing high surrogate so the
+// title stays valid.
+function safeSlice(text: string, length: number): string {
+  const sliced = text.slice(0, length);
+  return /[\uD800-\uDBFF]$/.test(sliced) ? sliced.slice(0, -1) : sliced;
+}
+
 export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
   sdk.registerFunction("mem::remember", 
     async (data: {
@@ -100,7 +109,7 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
           createdAt: now,
           updatedAt: now,
           type: memType,
-          title: data.content.slice(0, 80),
+          title: safeSlice(data.content, 80),
           content: data.content,
           concepts: data.concepts || [],
           files: data.files || [],
