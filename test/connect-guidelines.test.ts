@@ -81,6 +81,26 @@ describe("writeGuideline", () => {
     expect(second.match(/agentmemory:start/g)?.length).toBe(1);
   });
 
+  it("refuses to touch a file with a lone or reversed marker", () => {
+    const path = join(home, ".factory", "AGENTS.md");
+    mkdirSync(join(home, ".factory"), { recursive: true });
+    // Lone START marker: appending would let a later run pair this orphan
+    // with the appended block's END and cut the user's content in between.
+    const lone = "# Rules\n<!-- agentmemory:start -->\nuser notes here\n";
+    writeFileSync(path, lone, "utf8");
+    const r = writeGuideline("droid", { cwd, home });
+    expect(r.kind).toBe("unchanged");
+    expect(readFileSync(path, "utf8")).toBe(lone);
+
+    // Reversed pair: same refusal.
+    const reversed =
+      "<!-- agentmemory:end -->\nmiddle\n<!-- agentmemory:start -->\n";
+    writeFileSync(path, reversed, "utf8");
+    const r2 = writeGuideline("droid", { cwd, home });
+    expect(r2.kind).toBe("unchanged");
+    expect(readFileSync(path, "utf8")).toBe(reversed);
+  });
+
   it("is idempotent for dedicated files (second run unchanged)", () => {
     expect(writeGuideline("cursor", { cwd, home }).kind).toBe("written");
     expect(writeGuideline("cursor", { cwd, home }).kind).toBe("unchanged");

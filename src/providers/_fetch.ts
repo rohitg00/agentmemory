@@ -89,6 +89,9 @@ export async function fetchWithTimeout(
     const remaining = budgetMs - elapsed;
     if (delay + MIN_ATTEMPT_FLOOR_MS > remaining) return response;
 
+    // This response is being discarded for a retry; release its body so the
+    // underlying connection is returned to the pool instead of leaking.
+    await response.body?.cancel().catch(() => {});
     await sleep(delay);
 
     // Cap the per-attempt timeout to whatever budget is left so a late attempt

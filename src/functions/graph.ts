@@ -471,6 +471,9 @@ export async function persistGraphDelta(
   const capturedAt = new Date().toISOString();
   let newNodeCount = 0;
   let newEdgeCount = 0;
+  // Merge-only batches mutate cached topNodes/topEdges entries without
+  // changing the counts; track that separately so the snapshot still persists.
+  let snapMutated = false;
   const newEdgesForTopCheck: GraphEdge[] = [];
   // When a freshly-minted node merges into an existing row via the name
   // index, edges in the same batch still reference the fresh id. Remap edge
@@ -507,7 +510,10 @@ export async function persistGraphDelta(
       // Update topNodes entry if present so a stale clone isn't
       // returned from the snapshot fast path.
       const topIdx = snap.topNodes.findIndex((n) => n.id === existing!.id);
-      if (topIdx !== -1) snap.topNodes[topIdx] = merged;
+      if (topIdx !== -1) {
+        snap.topNodes[topIdx] = merged;
+        snapMutated = true;
+      }
     } else {
       await kv.set(KV.graphNodes, node.id, node);
       await kv.set(KV.graphNameIndex, indexKey, node.id);
@@ -553,7 +559,10 @@ export async function persistGraphDelta(
       await kv.set(KV.graphEdges, existing.id, merged);
       // Replace cached topEdges entry too if present.
       const topIdx = snap.topEdges.findIndex((e) => e.id === existing!.id);
-      if (topIdx !== -1) snap.topEdges[topIdx] = merged;
+      if (topIdx !== -1) {
+        snap.topEdges[topIdx] = merged;
+        snapMutated = true;
+      }
     } else {
       await kv.set(KV.graphEdges, edge.id, edge);
       await kv.set(KV.graphEdgeKey, eKey, edge.id);
@@ -574,7 +583,7 @@ export async function persistGraphDelta(
     snapshotPushEdgeIfBothInTop(snap, edge);
   }
 
-  if (newNodeCount > 0 || newEdgeCount > 0) {
+  if (newNodeCount > 0 || newEdgeCount > 0 || snapMutated) {
     snap.updatedAt = capturedAt;
     snap.dirty = false;
     await kv.set(KV.graphSnapshot, SNAPSHOT_KEY, snap);

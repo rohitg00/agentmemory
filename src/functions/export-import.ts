@@ -289,15 +289,22 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
 
       if (strategy === "replace") {
         const existing = await kv.list<Session>(KV.sessions);
+        // Collect observation deletes across all sessions, then run them in
+        // one bounded pass: a runChunked nested inside a runChunked callback
+        // multiplies in-flight deletes to chunk-size squared.
+        const obsDeletes: Array<{ sessionId: string; obsId: string }> = [];
         await runChunked(existing, async (session) => {
           await kv.delete(KV.sessions, session.id);
           const obs = await kv
             .list<CompressedObservation>(KV.observations(session.id))
             .catch(() => []);
-          await runChunked(obs, (o) =>
-            kv.delete(KV.observations(session.id), o.id),
-          );
+          for (const o of obs) {
+            obsDeletes.push({ sessionId: session.id, obsId: o.id });
+          }
         });
+        await runChunked(obsDeletes, (d) =>
+          kv.delete(KV.observations(d.sessionId), d.obsId),
+        );
         await runChunked(await kv.list<Memory>(KV.memories), (m) =>
           kv.delete(KV.memories, m.id),
         );
@@ -634,7 +641,13 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
       // rather than one giant Promise.all over 500k docs. Indexing
       // failures are logged, not fatal — the KV writes already committed
       // and the restart rebuild is the backstop.
-      await indexRecords(indexObs, indexMems);
+      try {
+        await indexRecords(indexObs, indexMems);
+      } catch (err) {
+        logger.warn("Import indexing failed; restart rebuild will recover", {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
 
       logger.info("Import complete", { strategy, ...stats });
       await recordAudit(kv, "import", "mem::import", [], {

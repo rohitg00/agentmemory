@@ -1658,10 +1658,23 @@ export function registerApiTriggers(
     async (req: ApiRequest<{ path?: string; cwd?: string }>): Promise<Response> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
+      const { path, cwd } = req.body ?? {};
+      if (
+        (path !== undefined && typeof path !== "string") ||
+        (cwd !== undefined && typeof cwd !== "string")
+      ) {
+        return {
+          status_code: 400,
+          body: { error: "path and cwd must be strings when provided" },
+        };
+      }
       try {
         const result = await sdk.trigger({
           function_id: "mem::graph::import-graphify",
-          payload: req.body || {},
+          payload: {
+            ...(path !== undefined ? { path } : {}),
+            ...(cwd !== undefined ? { cwd } : {}),
+          },
         });
         return { status_code: 200, body: result };
       } catch {

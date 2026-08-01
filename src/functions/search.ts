@@ -311,8 +311,10 @@ export async function rebuildIndex(kv: StateKV): Promise<number> {
   }
 
   const sessions = await kv.list<Session>(KV.sessions)
-  const allObs: CompressedObservation[] = []
   const failedSessions: string[] = []
+  // Index each session chunk as it loads instead of accumulating every
+  // observation first, so peak memory stays bounded to one chunk.
+  let indexed = 0
   for (let batch = 0; batch < sessions.length; batch += 10) {
     const chunk = sessions.slice(batch, batch + 10)
     const results = await Promise.all(
@@ -325,13 +327,17 @@ export async function rebuildIndex(kv: StateKV): Promise<number> {
         }
       })
     )
-    for (const r of results) allObs.push(...r)
+    const chunkObs = results.flat()
+    if (chunkObs.length > 0) {
+      indexed += await indexRecords(chunkObs, [])
+    }
   }
   if (failedSessions.length > 0) {
     logger.warn('rebuildIndex: failed to load observations for sessions', { failedSessions })
   }
 
-  return indexRecords(allObs, memories)
+  indexed += await indexRecords([], memories)
+  return indexed
 }
 
 export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {

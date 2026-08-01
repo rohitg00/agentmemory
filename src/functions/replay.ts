@@ -442,7 +442,13 @@ export function registerReplayFunctions(sdk: ISdk, kv: StateKV): void {
         );
         // BM25 + vector in one path so jsonl-imported observations are
         // reachable by semantic search, not just keyword.
-        await indexRecords(compressed, []);
+        try {
+          await indexRecords(compressed, []);
+        } catch (err) {
+          logger.warn("Import indexing failed; restart rebuild will recover", {
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
         observationCount += parsed.observations.length;
         sessionIds.push(parsed.sessionId);
 

@@ -11,6 +11,13 @@ vi.mock("../src/logger.js", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
+// The recovered-session consolidation pass is gated on isConsolidationEnabled
+// (keyless installs skip it); force it on so these tests exercise the pass.
+vi.mock("../src/config.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../src/config.js")>()),
+  isConsolidationEnabled: () => true,
+}));
+
 type Store = Map<string, Map<string, unknown>>;
 type Handler = (payload: unknown) => unknown | Promise<unknown>;
 

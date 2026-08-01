@@ -87,8 +87,24 @@ describe("parseGraphifyGraph", () => {
     expect(parsed.skippedEdges).toBe(1);
     const types = parsed.edges.map((e) => e.type).sort();
     expect(types).toEqual(["imports", "related_to"]);
-    const weights = parsed.edges.map((e) => e.weight).sort();
+    const weights = parsed.edges.map((e) => e.weight).sort((a, b) => a - b);
     expect(weights).toEqual([0.6, 0.9]);
+  });
+
+  it("maps AMBIGUOUS confidence and unknown file_type defaults", () => {
+    const fixture = {
+      nodes: [
+        { id: "a", label: "mystery" },
+        { id: "b", label: "helper.rs", file_type: "wat" },
+      ],
+      links: [{ source: "a", target: "b", relation: "calls", confidence: "AMBIGUOUS" }],
+    };
+    const parsed = parseGraphifyGraph(JSON.stringify(fixture));
+    const byName = new Map(parsed.nodes.map((n) => [n.name, n]));
+    // no/unknown file_type: extension-looking labels are files, rest concepts
+    expect(byName.get("mystery")!.type).toBe("concept");
+    expect(byName.get("helper.rs")!.type).toBe("file");
+    expect(parsed.edges[0].weight).toBe(0.3);
   });
 
   it("accepts the --no-cluster shape where edges live under `edges`", () => {
@@ -157,6 +173,17 @@ describe("mem::graph::import-graphify", () => {
     expect(second.newEdges).toBe(0);
     expect(await kv.list(KV.graphNodes)).toHaveLength(4);
     expect(await kv.list(KV.graphEdges)).toHaveLength(2);
+
+    // A merge-only run mutates cached snapshot entries even with zero new
+    // counts; the persisted snapshot must still reflect current graph data.
+    const snap = await kv.get<{
+      stats: { totalNodes: number; totalEdges: number };
+      topNodes: unknown[];
+    }>("mem:graph:snapshot", "current");
+    expect(snap).not.toBeNull();
+    expect(snap!.stats.totalNodes).toBe(4);
+    expect(snap!.stats.totalEdges).toBe(2);
+    expect(snap!.topNodes.length).toBeGreaterThan(0);
   });
 
   it("fails cleanly with a pointer when graph.json is absent", async () => {

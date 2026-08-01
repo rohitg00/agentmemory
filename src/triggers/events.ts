@@ -15,7 +15,7 @@ import { logger } from "../logger.js";
 // the per-turn session-stop fan-out.
 const CONSOLIDATION_MARKER_KEY = "consolidation:lastRun";
 
-async function consolidationDue(kv: StateKV): Promise<boolean> {
+async function consolidationDueUnserialized(kv: StateKV): Promise<boolean> {
   const cooldownMs = getConsolidationCooldownMs();
   if (cooldownMs <= 0) return true; // debounce disabled
   const now = Date.now();
@@ -26,6 +26,19 @@ async function consolidationDue(kv: StateKV): Promise<boolean> {
   if (now - lastAt < cooldownMs) return false;
   await kv.set(KV.config, CONSOLIDATION_MARKER_KEY, { at: now }).catch(() => {});
   return true;
+}
+
+// Concurrent session-stop events would otherwise interleave the marker
+// read-check-write above and both pass the cooldown. Serialize the whole
+// check through an in-process chain so exactly one concurrent caller wins.
+let consolidationCheckChain: Promise<unknown> = Promise.resolve();
+
+function consolidationDue(kv: StateKV): Promise<boolean> {
+  const result = consolidationCheckChain.then(() =>
+    consolidationDueUnserialized(kv),
+  );
+  consolidationCheckChain = result.catch(() => false);
+  return result;
 }
 
 export function registerEventTriggers(sdk: ISdk, kv: StateKV): void {

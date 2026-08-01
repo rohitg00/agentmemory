@@ -288,6 +288,25 @@ describe("session-stop consolidation debounce", () => {
     expect(count("mem::summarize")).toBe(5);
   });
 
+  it("consolidates once when stops arrive concurrently (serialized cooldown check)", async () => {
+    // Regression: without serialization, two stops racing through the marker
+    // read-check-write both observe the stale marker and both fire.
+    const { sdk, handlers, trigger } = mockSdk();
+    registerEventTriggers(sdk as never, persistentKV() as never);
+    const stopped = handlers.get("event::session::stopped")!;
+
+    await Promise.all([
+      stopped({ sessionId: "ses_1" }),
+      stopped({ sessionId: "ses_2" }),
+      stopped({ sessionId: "ses_3" }),
+    ]);
+
+    const consolidateCount = trigger.mock.calls.filter(
+      (c) => (c[0] as { function_id: string }).function_id === "mem::consolidate-pipeline",
+    ).length;
+    expect(consolidateCount).toBe(1);
+  });
+
   it("consolidates on every stop when the cooldown is disabled (0)", async () => {
     vi.mocked(getConsolidationCooldownMs).mockReturnValue(0);
     const { sdk, handlers, trigger } = mockSdk();

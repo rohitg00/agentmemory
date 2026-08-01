@@ -101,9 +101,9 @@ describe("mem::search", () => {
 
     // Module-level SearchIndex singleton would leak across tests; reset.
     getSearchIndex().clear();
-    // mem::search no longer rebuilds inline on a cold index (it kicks off
-    // a background rebuild and returns current results), so populate the
-    // index deterministically here before the query assertions run.
+    // mem::search awaits a shared rebuild on a cold index; the explicit call
+    // here pre-populates the index deterministically so the query assertions
+    // below never depend on that cold-start path.
     await rebuildIndex(kv as never);
   });
 

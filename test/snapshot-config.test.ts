@@ -1,8 +1,14 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { loadSnapshotConfig } from "../src/config.js";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { loadSnapshotConfig, __resetEnvFileCache } from "../src/config.js";
 
-// loadSnapshotConfig reads getMergedEnv(), where process.env overrides the
-// on-disk ~/.agentmemory/.env, so setting process.env here is authoritative.
+// loadSnapshotConfig reads getMergedEnv(), which merges the on-disk
+// ~/.agentmemory/.env under process.env. The tests below delete the
+// process.env keys, so a developer machine with SNAPSHOT_* in its real .env
+// would leak into the defaults; point HOME at an empty temp dir and reset
+// the env-file cache so the file layer is deterministic.
 //
 // Regression (P1): a zero/negative SNAPSHOT_INTERVAL flowed straight into
 // setInterval(fn, interval * 1000). Node clamps a non-positive delay to ~1ms,
@@ -15,8 +21,17 @@ const DEFAULT_INTERVAL = 3600;
 
 describe("loadSnapshotConfig interval validation", () => {
   const saved: Record<string, string | undefined> = {};
+  let sandboxHome: string;
+  let savedHome: string | undefined;
+  let savedUserProfile: string | undefined;
 
   beforeEach(() => {
+    sandboxHome = mkdtempSync(join(tmpdir(), "am-snapcfg-"));
+    savedHome = process.env["HOME"];
+    savedUserProfile = process.env["USERPROFILE"];
+    process.env["HOME"] = sandboxHome;
+    process.env["USERPROFILE"] = sandboxHome;
+    __resetEnvFileCache();
     for (const k of KEYS) {
       saved[k] = process.env[k];
       delete process.env[k];
@@ -28,6 +43,12 @@ describe("loadSnapshotConfig interval validation", () => {
       if (saved[k] === undefined) delete process.env[k];
       else process.env[k] = saved[k];
     }
+    if (savedHome === undefined) delete process.env["HOME"];
+    else process.env["HOME"] = savedHome;
+    if (savedUserProfile === undefined) delete process.env["USERPROFILE"];
+    else process.env["USERPROFILE"] = savedUserProfile;
+    __resetEnvFileCache();
+    rmSync(sandboxHome, { recursive: true, force: true });
   });
 
   it("falls back to the default when interval is zero", () => {

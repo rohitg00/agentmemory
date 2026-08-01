@@ -153,6 +153,12 @@ function upsertBlock(existing: string): string {
       existing.slice(0, startIdx) + block + existing.slice(endIdx + END.length)
     );
   }
+  // Malformed marker state: a lone or reversed marker. Appending here would
+  // let a later run pair the orphan marker with the appended block's twin and
+  // cut the user's content between them. Leave the file untouched.
+  if (startIdx !== -1 || endIdx !== -1) {
+    return existing;
+  }
   const sep = existing.length === 0 || existing.endsWith("\n") ? "" : "\n";
   const lead = existing.length === 0 ? "" : "\n";
   return `${existing}${sep}${lead}${block}\n`;

@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import type { ISdk } from "iii-sdk";
 import type { GraphEdge, GraphEdgeType, GraphNode, GraphNodeType } from "../types.js";
@@ -196,19 +196,21 @@ export function registerGraphImportFunction(sdk: ISdk, kv: StateKV): void {
   sdk.registerFunction(
     "mem::graph::import-graphify",
     async (data?: { path?: string; cwd?: string }): Promise<GraphifyImportResult> => {
-      const path =
-        data?.path ?? join(data?.cwd ?? process.cwd(), "graphify-out", "graph.json");
-
-      if (!existsSync(path)) {
-        return {
-          success: false,
-          error: `graph.json not found at ${path}. Run graphify first, or pass an explicit path.`,
-          path,
-        };
-      }
+      const explicitPath = typeof data?.path === "string" ? data.path : undefined;
+      const cwd = typeof data?.cwd === "string" ? data.cwd : process.cwd();
+      const path = explicitPath ?? join(cwd, "graphify-out", "graph.json");
 
       try {
-        const size = statSync(path).size;
+        let size: number;
+        try {
+          size = (await stat(path)).size;
+        } catch {
+          return {
+            success: false,
+            error: `graph.json not found at ${path}. Run graphify first, or pass an explicit path.`,
+            path,
+          };
+        }
         if (size > MAX_FILE_BYTES) {
           return {
             success: false,
@@ -217,7 +219,7 @@ export function registerGraphImportFunction(sdk: ISdk, kv: StateKV): void {
           };
         }
 
-        const parsed = parseGraphifyGraph(readFileSync(path, "utf-8"));
+        const parsed = parseGraphifyGraph(await readFile(path, "utf-8"));
         const { newNodeCount, newEdgeCount } = await persistGraphDelta(
           kv,
           parsed.nodes,
