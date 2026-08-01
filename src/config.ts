@@ -252,19 +252,20 @@ export function loadClaudeBridgeConfig(): ClaudeBridgeConfig {
   const lineBudget = safeParseInt(env["CLAUDE_MEMORY_LINE_BUDGET"], 200);
   let memoryFilePath = "";
   if (enabled && projectPath) {
-    // Claude Code stores MEMORY.md at
-    //   ~/.claude/projects/<slug>/MEMORY.md
+    // Claude Code stores project memory at
+    //   ~/.claude/projects/<slug>/memory/MEMORY.md
     // where <slug> is the project path with `/` and `\` swapped for `-`.
     // The leading `-` from an absolute POSIX path is preserved (Claude
     // Code keeps it; stripping it produced a slug Claude never reads).
-    // There's also no `memory/` subdirectory — the file sits directly
-    // under the slug dir.
+    // The `memory/` subdirectory holds MEMORY.md (the index) plus one
+    // per-topic `.md` file per memory (verified against Claude Code 2.x).
     const safePath = projectPath.replace(/[/\\]/g, "-");
     memoryFilePath = join(
       homedir(),
       ".claude",
       "projects",
       safePath,
+      "memory",
       "MEMORY.md",
     );
   }
