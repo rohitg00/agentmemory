@@ -570,6 +570,21 @@ copilot plugin install rohitg00/agentmemory:plugin
 
 `agentmemory connect copilot-cli` merges `mcpServers.agentmemory` into `~/.copilot/mcp-config.json` (or `$COPILOT_HOME/mcp-config.json` when `COPILOT_HOME` is set) and preserves existing servers. This adapter is Windows-safe even though other `connect` adapters still require manual Windows setup. Copilot picks up the MCP server on next launch or after `/mcp`. Install the plugin as well when you want the full hook/skill experience.
 
+### Amp (Sourcegraph)
+
+```bash
+# 1. start the memory server in a separate terminal
+npx @agentmemory/agentmemory
+
+# 2. wire MCP + install the auto-capture plugin
+agentmemory connect amp --with-hooks
+```
+
+`agentmemory connect amp` merges `amp.mcpServers.agentmemory` into `~/.config/amp/settings.json` (or `%APPDATA%\amp\settings.json` on Windows). With `--with-hooks`, it also copies the native plugin (`integrations/amp/agentmemory.ts`) to `~/.config/amp/plugins/agentmemory.ts`, which hooks into Amp's `session.start`, `agent.start`, `tool.call`, `tool.result`, and `agent.end` events for automatic observation capture. The plugin also registers `memory_recall`, `memory_save`, `memory_smart_search`, and `memory_sessions` tools plus `agentmemory-recall`, `agentmemory-remember`, and `agentmemory-session-history` commands. This adapter is Windows-safe. Restart Amp (or run `plugins: reload` from the command palette) to pick up the changes.
+
+Full guide: [`integrations/amp/`](integrations/amp/)
+
+
 <details>
 <summary><b>OpenClaw (paste this prompt)</b></summary>
 

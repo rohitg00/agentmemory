@@ -4,6 +4,7 @@ import pc from "picocolors";
 import type { ConnectAdapter, ConnectOptions, ConnectResult } from "./types.js";
 import { writeGuideline } from "./guidelines.js";
 import { adapter as antigravity } from "./antigravity.js";
+import { adapter as amp } from "./amp.js";
 import { adapter as claudeCode } from "./claude-code.js";
 import { adapter as cline } from "./cline.js";
 import { adapter as copilotCli } from "./copilot-cli.js";
@@ -26,6 +27,7 @@ export const ADAPTERS: readonly ConnectAdapter[] = [
   claudeCode,
   copilotCli,
   codex,
+  amp,
   cursor,
   geminiCli,
   qwen,
@@ -131,7 +133,8 @@ export async function runConnect(args: string[]): Promise<void> {
   const { dryRun, force, all, withHooks, guidelines, positional } =
     parseFlags(args);
   const allowWindowsAdapter =
-    positional.length === 1 && positional[0]?.toLowerCase() === "copilot-cli";
+    positional.length === 1 &&
+    ["copilot-cli", "amp"].includes(positional[0]?.toLowerCase() ?? "");
   if (platform() === "win32" && !allowWindowsAdapter) {
     p.intro("agentmemory connect");
     p.log.warn(

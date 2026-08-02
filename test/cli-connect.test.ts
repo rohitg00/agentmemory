@@ -43,6 +43,7 @@ describe("agentmemory connect — dispatcher", () => {
   it("ships the supported agent list", () => {
     expect(knownAgents().sort()).toEqual(
       [
+        "amp",
         "antigravity",
         "claude-code",
         "cline",
@@ -63,7 +64,7 @@ describe("agentmemory connect — dispatcher", () => {
         "zed",
       ].sort(),
     );
-    expect(ADAPTERS.length).toBe(18);
+    expect(ADAPTERS.length).toBe(19);
   });
 
   it("every adapter exposes detect() and install()", () => {
