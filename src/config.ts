@@ -271,7 +271,7 @@ export function detectEmbeddingProvider(
   if (forced) return forced;
 
   if (source["GEMINI_API_KEY"]) return "gemini";
-  if (source["OPENAI_API_KEY"]) return "openai";
+  if (source["OPENAI_EMBEDDING_API_KEY"] || source["OPENAI_API_KEY"]) return "openai";
   if (source["VOYAGE_API_KEY"]) return "voyage";
   if (source["COHERE_API_KEY"]) return "cohere";
   if (source["OPENROUTER_API_KEY"]) return "openrouter";
