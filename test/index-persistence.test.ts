@@ -791,3 +791,61 @@ describe("IndexPersistence", () => {
     await expect(persistence.load()).resolves.toBeDefined();
   });
 });
+
+describe("index_persist audit gating", () => {
+  let kv: ReturnType<typeof mockKV>;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    kv = mockKV();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    delete process.env.AGENTMEMORY_AUDIT_INDEX_PERSIST;
+  });
+
+  async function indexPersistEntries(): Promise<Array<{ operation: string }>> {
+    const entries = await kv.list<{ operation: string }>("mem:audit");
+    return entries.filter((entry) => entry.operation === "index_persist");
+  }
+
+  it("writes no index_persist audit entries by default", async () => {
+    const persistence = new IndexPersistence(
+      kv as never,
+      makeBm25("obs_1", "auth handler"),
+      null,
+    );
+
+    await persistence.save();
+
+    expect(await indexPersistEntries()).toEqual([]);
+  });
+
+  it("writes index_persist audit entries when explicitly enabled", async () => {
+    process.env.AGENTMEMORY_AUDIT_INDEX_PERSIST = "1";
+    const persistence = new IndexPersistence(
+      kv as never,
+      makeBm25("obs_1", "auth handler"),
+      null,
+    );
+
+    await persistence.save();
+
+    expect((await indexPersistEntries()).length).toBeGreaterThan(0);
+  });
+
+  it("still persists the index when auditing is off", async () => {
+    const persistence = new IndexPersistence(
+      kv as never,
+      makeBm25("obs_1", "auth handler"),
+      null,
+    );
+
+    await persistence.save();
+
+    const loaded = await persistence.load();
+    expect(loaded.bm25).not.toBeNull();
+    expect(loaded.bm25!.size).toBe(1);
+  });
+});
