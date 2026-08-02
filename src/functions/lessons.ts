@@ -1,10 +1,24 @@
 import type { ISdk } from "iii-sdk";
 import type { StateKV } from "../state/kv.js";
 import { KV, fingerprintId } from "../state/schema.js";
+import { withKeyedLock } from "../state/keyed-mutex.js";
 import type { Lesson } from "../types.js";
 import { recordAudit } from "./audit.js";
 
 const MAX_LESSON_LIST_LIMIT = 500;
+const MAX_CORRECTION_REASON_LENGTH = 1000;
+const MAX_CORRECTION_ACTOR_LENGTH = 128;
+
+type LessonCorrectionData = {
+  lessonId: string;
+  reason: string;
+  actor?: string;
+  project?: string;
+  expectedUpdatedAt?: string;
+  replacementLessonId?: string;
+};
+
+type LessonCorrectionMode = "delete" | "supersede";
 
 function reinforceLesson(lesson: Lesson): void {
   const now = new Date().toISOString();
@@ -15,6 +29,165 @@ function reinforceLesson(lesson: Lesson): void {
   );
   lesson.lastReinforcedAt = now;
   lesson.updatedAt = now;
+}
+
+function lessonLockKey(lessonId: string): string {
+  return `mem:lesson:${lessonId}`;
+}
+
+function withLessonLocks<T>(
+  lessonIds: string[],
+  fn: () => Promise<T>,
+): Promise<T> {
+  const orderedIds = [...new Set(lessonIds)].sort();
+  const lockNext = (index: number): Promise<T> => {
+    if (index >= orderedIds.length) return fn();
+    return withKeyedLock(lessonLockKey(orderedIds[index]), () =>
+      lockNext(index + 1),
+    );
+  };
+  return lockNext(0);
+}
+
+function correctionFailure(code: string, error: string) {
+  return { success: false, code, error };
+}
+
+async function correctLesson(
+  kv: StateKV,
+  data: LessonCorrectionData,
+  mode: LessonCorrectionMode,
+) {
+  const lessonId = data.lessonId?.trim();
+  const reason = data.reason?.trim();
+  const actor = data.actor?.trim() || "unknown";
+  const project = data.project?.trim() || undefined;
+  const expectedUpdatedAt = data.expectedUpdatedAt?.trim() || undefined;
+  const replacementLessonId = data.replacementLessonId?.trim() || undefined;
+
+  if (!lessonId) {
+    return correctionFailure("invalid_request", "lessonId is required");
+  }
+  if (!reason) {
+    return correctionFailure("invalid_request", "reason is required");
+  }
+  if (reason.length > MAX_CORRECTION_REASON_LENGTH) {
+    return correctionFailure(
+      "invalid_request",
+      `reason must be at most ${MAX_CORRECTION_REASON_LENGTH} characters`,
+    );
+  }
+  if (actor.length > MAX_CORRECTION_ACTOR_LENGTH) {
+    return correctionFailure(
+      "invalid_request",
+      `actor must be at most ${MAX_CORRECTION_ACTOR_LENGTH} characters`,
+    );
+  }
+  if (mode === "supersede" && !replacementLessonId) {
+    return correctionFailure(
+      "invalid_request",
+      "replacementLessonId is required",
+    );
+  }
+  if (replacementLessonId === lessonId) {
+    return correctionFailure(
+      "invalid_request",
+      "replacementLessonId must differ from lessonId",
+    );
+  }
+
+  const lockIds = replacementLessonId
+    ? [lessonId, replacementLessonId]
+    : [lessonId];
+  return withLessonLocks(lockIds, async () => {
+    const lesson = await kv.get<Lesson>(KV.lessons, lessonId);
+    if (!lesson) {
+      return correctionFailure("lesson_not_found", "lesson not found");
+    }
+
+    if (lesson.deleted) {
+      const sameCorrection =
+        lesson.deleteReason === reason &&
+        lesson.supersededByLessonId === replacementLessonId;
+      if (sameCorrection) {
+        return {
+          success: true,
+          action:
+            mode === "supersede"
+              ? "already_superseded"
+              : "already_deleted",
+          lesson,
+        };
+      }
+      return correctionFailure(
+        "lesson_already_deleted",
+        "lesson is already deleted with different correction metadata",
+      );
+    }
+
+    if (project !== undefined && lesson.project !== project) {
+      return correctionFailure(
+        "project_mismatch",
+        "lesson does not belong to the requested project",
+      );
+    }
+    if (
+      expectedUpdatedAt !== undefined &&
+      lesson.updatedAt !== expectedUpdatedAt
+    ) {
+      return correctionFailure(
+        "revision_conflict",
+        "lesson changed since expectedUpdatedAt",
+      );
+    }
+
+    if (replacementLessonId) {
+      const replacement = await kv.get<Lesson>(
+        KV.lessons,
+        replacementLessonId,
+      );
+      if (!replacement || replacement.deleted) {
+        return correctionFailure(
+          "replacement_not_found",
+          "replacement lesson not found",
+        );
+      }
+      if (replacement.project !== lesson.project) {
+        return correctionFailure(
+          "project_mismatch",
+          "replacement lesson must belong to the same project",
+        );
+      }
+    }
+
+    const timestamp = new Date().toISOString();
+    lesson.deleted = true;
+    lesson.deletedAt = timestamp;
+    lesson.deletedBy = actor;
+    lesson.deleteReason = reason;
+    lesson.supersededByLessonId = replacementLessonId;
+    lesson.updatedAt = timestamp;
+    await kv.set(KV.lessons, lesson.id, lesson);
+
+    const operation =
+      mode === "supersede" ? "lesson_supersede" : "lesson_delete";
+    try {
+      await recordAudit(kv, operation, `mem::lesson-${mode}`, [lesson.id], {
+        actor,
+        reason,
+        project: lesson.project,
+        expectedUpdatedAt,
+        replacementLessonId,
+        deletedAt: timestamp,
+      });
+    } catch {}
+
+    return {
+      success: true,
+      action: mode === "supersede" ? "superseded" : "deleted",
+      lesson,
+    };
+  });
 }
 
 export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
@@ -33,58 +206,67 @@ export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
       }
 
       const fp = fingerprintId("lsn", data.content.trim().toLowerCase());
-      const existing = await kv.get<Lesson>(KV.lessons, fp);
+      return withKeyedLock(lessonLockKey(fp), async () => {
+        const existing = await kv.get<Lesson>(KV.lessons, fp);
 
-      if (existing && !existing.deleted) {
-        reinforceLesson(existing);
-        if (data.context && !existing.context) {
-          existing.context = data.context;
+        if (existing?.deleted) {
+          return correctionFailure(
+            "lesson_deleted",
+            "lesson is deleted; save corrected content as a new lesson",
+          );
         }
-        await kv.set(KV.lessons, existing.id, existing);
+
+        if (existing) {
+          reinforceLesson(existing);
+          if (data.context && !existing.context) {
+            existing.context = data.context;
+          }
+          await kv.set(KV.lessons, existing.id, existing);
+
+          try {
+            await recordAudit(kv, "lesson_strengthen", "mem::lesson-save", [
+              existing.id,
+            ]);
+          } catch {}
+
+          return {
+            success: true,
+            action: "strengthened",
+            lesson: existing,
+          };
+        }
+
+        const confidence =
+          typeof data.confidence === "number" &&
+          data.confidence >= 0 &&
+          data.confidence <= 1
+            ? data.confidence
+            : 0.5;
+
+        const now = new Date().toISOString();
+        const lesson: Lesson = {
+          id: fp,
+          content: data.content.trim(),
+          context: data.context?.trim() || "",
+          confidence,
+          reinforcements: 0,
+          source: data.source || "manual",
+          sourceIds: data.sourceIds || [],
+          project: data.project,
+          tags: data.tags || [],
+          createdAt: now,
+          updatedAt: now,
+          decayRate: 0.05,
+        };
+
+        await kv.set(KV.lessons, lesson.id, lesson);
 
         try {
-          await recordAudit(kv, "lesson_strengthen", "mem::lesson-save", [
-            existing.id,
-          ]);
+          await recordAudit(kv, "lesson_save", "mem::lesson-save", [lesson.id]);
         } catch {}
 
-        return {
-          success: true,
-          action: "strengthened",
-          lesson: existing,
-        };
-      }
-
-      const confidence =
-        typeof data.confidence === "number" &&
-        data.confidence >= 0 &&
-        data.confidence <= 1
-          ? data.confidence
-          : 0.5;
-
-      const now = new Date().toISOString();
-      const lesson: Lesson = {
-        id: fp,
-        content: data.content.trim(),
-        context: data.context?.trim() || "",
-        confidence,
-        reinforcements: 0,
-        source: data.source || "manual",
-        sourceIds: data.sourceIds || [],
-        project: data.project,
-        tags: data.tags || [],
-        createdAt: now,
-        updatedAt: now,
-        decayRate: 0.05,
-      };
-
-      await kv.set(KV.lessons, lesson.id, lesson);
-
-      try {
-        await recordAudit(kv, "lesson_save", "mem::lesson-save", [lesson.id]);
-      } catch {}
-
-      return { success: true, action: "created", lesson };
+        return { success: true, action: "created", lesson };
+      });
     },
   );
 
@@ -227,98 +409,108 @@ export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
         return { success: false, error: "lessonId is required" };
       }
 
-      const lesson = await kv.get<Lesson>(KV.lessons, data.lessonId);
-      if (!lesson || lesson.deleted) {
-        return { success: false, error: "lesson not found" };
-      }
+      return withKeyedLock(lessonLockKey(data.lessonId), async () => {
+        const lesson = await kv.get<Lesson>(KV.lessons, data.lessonId);
+        if (!lesson || lesson.deleted) {
+          return { success: false, error: "lesson not found" };
+        }
 
-      reinforceLesson(lesson);
+        reinforceLesson(lesson);
 
-      await kv.set(KV.lessons, lesson.id, lesson);
+        await kv.set(KV.lessons, lesson.id, lesson);
 
-      try {
-        await recordAudit(kv, "lesson_strengthen", "mem::lesson-strengthen", [
-          lesson.id,
-        ]);
-      } catch {}
+        try {
+          await recordAudit(kv, "lesson_strengthen", "mem::lesson-strengthen", [
+            lesson.id,
+          ]);
+        } catch {}
 
-      return { success: true, lesson };
+        return { success: true, lesson };
+      });
     },
+  );
+
+  sdk.registerFunction("mem::lesson-delete", async (data: LessonCorrectionData) =>
+    correctLesson(kv, data, "delete"),
+  );
+
+  sdk.registerFunction(
+    "mem::lesson-supersede",
+    async (data: LessonCorrectionData) =>
+      correctLesson(kv, data, "supersede"),
   );
 
   sdk.registerFunction("mem::lesson-decay-sweep", 
     async () => {
       const lessons = await kv.list<Lesson>(KV.lessons);
-      let decayed = 0;
-      let softDeleted = 0;
       const now = Date.now();
       const timestamp = new Date().toISOString();
-      const dirty: Lesson[] = [];
-      const auditEvents: Array<{
-        id: string;
-        action: "decay" | "soft-delete";
-        beforeConfidence: number;
-        afterConfidence: number;
-        beforeDeleted: boolean;
-        afterDeleted: boolean;
-      }> = [];
+      const outcomes = await Promise.all(
+        lessons.map((listedLesson) =>
+          withKeyedLock(lessonLockKey(listedLesson.id), async () => {
+            const lesson = await kv.get<Lesson>(KV.lessons, listedLesson.id);
+            if (!lesson || lesson.deleted) return null;
 
-      for (const lesson of lessons) {
-        if (lesson.deleted) continue;
+            const baseline =
+              lesson.lastDecayedAt ||
+              lesson.lastReinforcedAt ||
+              lesson.createdAt;
+            const weeksSinceBaseline =
+              (now - new Date(baseline).getTime()) /
+              (1000 * 60 * 60 * 24 * 7);
+            if (weeksSinceBaseline < 1) return null;
 
-        const baseline = lesson.lastDecayedAt || lesson.lastReinforcedAt || lesson.createdAt;
-        const weeksSinceBaseline =
-          (now - new Date(baseline).getTime()) / (1000 * 60 * 60 * 24 * 7);
+            const decay = lesson.decayRate * weeksSinceBaseline;
+            const newConfidence = Math.max(
+              0.05,
+              lesson.confidence - decay,
+            );
+            if (newConfidence === lesson.confidence) return null;
 
-        if (weeksSinceBaseline < 1) continue;
+            const beforeConfidence = lesson.confidence;
+            lesson.confidence = Math.round(newConfidence * 1000) / 1000;
+            lesson.lastDecayedAt = timestamp;
+            lesson.updatedAt = timestamp;
+            const softDeleted =
+              lesson.confidence <= 0.1 && lesson.reinforcements === 0;
+            if (softDeleted) {
+              lesson.deleted = true;
+              lesson.deletedAt = timestamp;
+              lesson.deletedBy = "system";
+              lesson.deleteReason = "decay-sweep";
+            }
 
-        const decay = lesson.decayRate * weeksSinceBaseline;
-        const newConfidence = Math.max(0.05, lesson.confidence - decay);
-
-        if (newConfidence !== lesson.confidence) {
-          const beforeConfidence = lesson.confidence;
-          const beforeDeleted = !!lesson.deleted;
-          lesson.confidence = Math.round(newConfidence * 1000) / 1000;
-          lesson.lastDecayedAt = timestamp;
-          lesson.updatedAt = timestamp;
-
-          if (lesson.confidence <= 0.1 && lesson.reinforcements === 0) {
-            lesson.deleted = true;
-            softDeleted++;
-          } else {
-            decayed++;
-          }
-
-          dirty.push(lesson);
-          auditEvents.push({
-            id: lesson.id,
-            action: lesson.deleted ? "soft-delete" : "decay",
-            beforeConfidence,
-            afterConfidence: lesson.confidence,
-            beforeDeleted,
-            afterDeleted: !!lesson.deleted,
-          });
-        }
-      }
-
-      await Promise.all(dirty.map((l) => kv.set(KV.lessons, l.id, l)));
-      await Promise.all(
-        auditEvents.map((event) =>
-          recordAudit(kv, "lesson_strengthen", "mem::lesson-decay-sweep", [event.id], {
-            action: event.action,
-            actor: "system",
-            reason: "decay-sweep",
-            before: {
-              confidence: event.beforeConfidence,
-              deleted: event.beforeDeleted,
-            },
-            after: {
-              confidence: event.afterConfidence,
-              deleted: event.afterDeleted,
-            },
+            await kv.set(KV.lessons, lesson.id, lesson);
+            try {
+              await recordAudit(
+                kv,
+                softDeleted ? "lesson_delete" : "lesson_strengthen",
+                "mem::lesson-decay-sweep",
+                [lesson.id],
+                {
+                  action: softDeleted ? "soft-delete" : "decay",
+                  actor: "system",
+                  reason: "decay-sweep",
+                  before: {
+                    confidence: beforeConfidence,
+                    deleted: false,
+                  },
+                  after: {
+                    confidence: lesson.confidence,
+                    deleted: softDeleted,
+                  },
+                },
+              );
+            } catch {}
+            return softDeleted ? "soft-delete" : "decay";
           }),
         ),
       );
+
+      const decayed = outcomes.filter((outcome) => outcome === "decay").length;
+      const softDeleted = outcomes.filter(
+        (outcome) => outcome === "soft-delete",
+      ).length;
 
       return { success: true, decayed, softDeleted, total: lessons.length };
     },

@@ -1,4 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+
+vi.mock("node:os", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:os")>();
+  return {
+    ...actual,
+    homedir: () => "/tmp/agentmemory-embedding-provider-test-home",
+  };
+});
+
 import {
   createEmbeddingProvider,
   withDimensionGuard,

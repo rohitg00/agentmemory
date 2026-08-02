@@ -1337,6 +1337,57 @@ export function registerMcpEndpoints(
             return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(lessonRecallResult, null, 2) }] } };
           }
 
+          case "memory_lesson_delete": {
+            const lessonId = asNonEmptyString(args.lessonId);
+            const reason = asNonEmptyString(args.reason);
+            if (!lessonId || !reason) {
+              return {
+                status_code: 400,
+                body: { error: "lessonId and reason are required" },
+              };
+            }
+            const lessonDeleteResult = await sdk.trigger({
+              function_id: "mem::lesson-delete",
+              payload: {
+                lessonId,
+                reason,
+                project: asNonEmptyString(args.project),
+                expectedUpdatedAt: asNonEmptyString(args.expectedUpdatedAt),
+                actor: asNonEmptyString(args.actor) ?? getAgentId() ?? "unknown",
+              },
+            });
+            return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(lessonDeleteResult, null, 2) }] } };
+          }
+
+          case "memory_lesson_supersede": {
+            const lessonId = asNonEmptyString(args.lessonId);
+            const replacementLessonId = asNonEmptyString(
+              args.replacementLessonId,
+            );
+            const reason = asNonEmptyString(args.reason);
+            if (!lessonId || !replacementLessonId || !reason) {
+              return {
+                status_code: 400,
+                body: {
+                  error:
+                    "lessonId, replacementLessonId, and reason are required",
+                },
+              };
+            }
+            const lessonSupersedeResult = await sdk.trigger({
+              function_id: "mem::lesson-supersede",
+              payload: {
+                lessonId,
+                replacementLessonId,
+                reason,
+                project: asNonEmptyString(args.project),
+                expectedUpdatedAt: asNonEmptyString(args.expectedUpdatedAt),
+                actor: asNonEmptyString(args.actor) ?? getAgentId() ?? "unknown",
+              },
+            });
+            return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(lessonSupersedeResult, null, 2) }] } };
+          }
+
           case "memory_reflect": {
             const reflectResult = await sdk.trigger({ function_id: "mem::reflect", payload: {
               project: args.project,

@@ -926,6 +926,71 @@ export const V070_TOOLS: McpToolDef[] = [
     },
   },
   {
+    name: "memory_lesson_delete",
+    description:
+      "Soft-delete one lesson by exact ID while preserving correction metadata and an audit trail. Requires a human-readable reason.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        lessonId: { type: "string", description: "Exact lesson ID to delete" },
+        reason: {
+          type: "string",
+          description: "Why this lesson is being deleted",
+        },
+        project: {
+          type: "string",
+          description: "Optional project guard; must match the lesson",
+        },
+        expectedUpdatedAt: {
+          type: "string",
+          description:
+            "Optional optimistic concurrency guard from the lesson's updatedAt",
+        },
+        actor: {
+          type: "string",
+          description: "Optional actor attribution; defaults to AGENT_ID",
+        },
+      },
+      required: ["lessonId", "reason"],
+    },
+  },
+  {
+    name: "memory_lesson_supersede",
+    description:
+      "Soft-delete one lesson in favor of an existing replacement lesson in the same project, preserving lineage and an audit trail.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        lessonId: {
+          type: "string",
+          description: "Exact lesson ID being superseded",
+        },
+        replacementLessonId: {
+          type: "string",
+          description: "Exact existing replacement lesson ID",
+        },
+        reason: {
+          type: "string",
+          description: "Why the original lesson is being superseded",
+        },
+        project: {
+          type: "string",
+          description: "Optional project guard; must match both lessons",
+        },
+        expectedUpdatedAt: {
+          type: "string",
+          description:
+            "Optional optimistic concurrency guard from the original lesson's updatedAt",
+        },
+        actor: {
+          type: "string",
+          description: "Optional actor attribution; defaults to AGENT_ID",
+        },
+      },
+      required: ["lessonId", "replacementLessonId", "reason"],
+    },
+  },
+  {
     name: "memory_obsidian_export",
     description:
       "Export memories, lessons, and crystals as Obsidian-compatible Markdown files with YAML frontmatter and wikilinks for graph view.",

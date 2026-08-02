@@ -3632,6 +3632,114 @@ export function registerApiTriggers(
   });
   sdk.registerTrigger({ type: "http", function_id: "api::lesson-strengthen", config: { api_path: "/agentmemory/lessons/strengthen", http_method: "POST" } });
 
+  sdk.registerFunction("api::lesson-delete", async (req: ApiRequest) => {
+    const denied = checkAuth(req, secret);
+    if (denied) return denied;
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const lessonId = asNonEmptyString(body.lessonId);
+    const reason = asNonEmptyString(body.reason);
+    if (!lessonId || !reason) {
+      return {
+        status_code: 400,
+        body: { error: "lessonId and reason are required" },
+      };
+    }
+    for (const field of ["project", "expectedUpdatedAt", "actor"] as const) {
+      if (body[field] !== undefined && typeof body[field] !== "string") {
+        return {
+          status_code: 400,
+          body: { error: `${field} must be a string` },
+        };
+      }
+    }
+    const result = await sdk.trigger({
+      function_id: "mem::lesson-delete",
+      payload: {
+        lessonId,
+        reason,
+        project: asNonEmptyString(body.project) ?? undefined,
+        expectedUpdatedAt:
+          asNonEmptyString(body.expectedUpdatedAt) ?? undefined,
+        actor: asNonEmptyString(body.actor) ?? getAgentId() ?? "unknown",
+      },
+    });
+    const response = result as { success?: boolean; code?: string };
+    const statusCode =
+      response.success !== false
+        ? 200
+        : response.code === "lesson_not_found"
+          ? 404
+          : response.code === "revision_conflict" ||
+              response.code === "lesson_already_deleted" ||
+              response.code === "project_mismatch"
+            ? 409
+            : 400;
+    return { status_code: statusCode, body: result };
+  });
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::lesson-delete",
+    config: { api_path: "/agentmemory/lessons", http_method: "DELETE" },
+  });
+
+  sdk.registerFunction("api::lesson-supersede", async (req: ApiRequest) => {
+    const denied = checkAuth(req, secret);
+    if (denied) return denied;
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const lessonId = asNonEmptyString(body.lessonId);
+    const replacementLessonId = asNonEmptyString(body.replacementLessonId);
+    const reason = asNonEmptyString(body.reason);
+    if (!lessonId || !replacementLessonId || !reason) {
+      return {
+        status_code: 400,
+        body: {
+          error: "lessonId, replacementLessonId, and reason are required",
+        },
+      };
+    }
+    for (const field of ["project", "expectedUpdatedAt", "actor"] as const) {
+      if (body[field] !== undefined && typeof body[field] !== "string") {
+        return {
+          status_code: 400,
+          body: { error: `${field} must be a string` },
+        };
+      }
+    }
+    const result = await sdk.trigger({
+      function_id: "mem::lesson-supersede",
+      payload: {
+        lessonId,
+        replacementLessonId,
+        reason,
+        project: asNonEmptyString(body.project) ?? undefined,
+        expectedUpdatedAt:
+          asNonEmptyString(body.expectedUpdatedAt) ?? undefined,
+        actor: asNonEmptyString(body.actor) ?? getAgentId() ?? "unknown",
+      },
+    });
+    const response = result as { success?: boolean; code?: string };
+    const statusCode =
+      response.success !== false
+        ? 200
+        : response.code === "lesson_not_found" ||
+            response.code === "replacement_not_found"
+          ? 404
+          : response.code === "revision_conflict" ||
+              response.code === "lesson_already_deleted" ||
+              response.code === "project_mismatch"
+            ? 409
+            : 400;
+    return { status_code: statusCode, body: result };
+  });
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::lesson-supersede",
+    config: {
+      api_path: "/agentmemory/lessons/supersede",
+      http_method: "POST",
+    },
+  });
+
   sdk.registerFunction("api::obsidian-export", async (req: ApiRequest) => {
     const denied = checkAuth(req, secret);
     if (denied) return denied;

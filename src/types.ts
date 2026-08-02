@@ -619,6 +619,8 @@ export interface AuditEntry {
     | "lesson_save"
     | "lesson_recall"
     | "lesson_strengthen"
+    | "lesson_delete"
+    | "lesson_supersede"
     | "obsidian_export"
     | "reflect"
     | "insight_search"
@@ -942,6 +944,10 @@ export interface Lesson {
   lastDecayedAt?: string;
   decayRate: number;
   deleted?: boolean;
+  deletedAt?: string;
+  deletedBy?: string;
+  deleteReason?: string;
+  supersededByLessonId?: string;
 }
 
 export interface Insight {
