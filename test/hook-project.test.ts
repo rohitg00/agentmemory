@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from "vitest";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { resolveProject } from "../src/hooks/_project.js";
 
 // The checkout directory is not necessarily named "agentmemory" — contributors clone
@@ -67,10 +67,22 @@ describe("resolveProject — hook project basename resolver", () => {
   });
 
   it("falls back to basename(cwd) when not in a git repo", () => {
-    const dir = mkdtempSync(join(tmpdir(), "amem-noproj-"));
+    // mkdtemp lands under os.tmpdir(), which is not always outside a repository —
+    // TMPDIR pointed at a working directory makes git walk up and find one, and the
+    // fallback under test never runs. Ceiling the upward search at the parent so the
+    // directory is genuinely repo-less. The ceiling must be a resolved path: git
+    // compares it after resolving symlinks, and on macOS tmpdir() is one.
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), "amem-noproj-")));
+    const priorCeiling = process.env.GIT_CEILING_DIRECTORIES;
+    process.env.GIT_CEILING_DIRECTORIES = dirname(dir);
     try {
       expect(resolveProject(dir)).toBe(basename(dir));
     } finally {
+      if (priorCeiling === undefined) {
+        delete process.env.GIT_CEILING_DIRECTORIES;
+      } else {
+        process.env.GIT_CEILING_DIRECTORIES = priorCeiling;
+      }
       rmSync(dir, { recursive: true, force: true });
     }
   });
