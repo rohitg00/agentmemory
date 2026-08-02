@@ -39,7 +39,7 @@ describe("buildMergedHooks (Droid manifest)", () => {
     const merged = buildMergedHooks(null, findPluginRoot(), "hooks.droid.json");
     const preToolUse = merged.hooks["PreToolUse"];
     expect(preToolUse).toBeDefined();
-    expect(preToolUse![0]!.matcher).toBe("Edit|Write|Read|Glob|Grep");
+    expect(preToolUse![0]!.matcher).toBe("Edit|Create|Read|Glob|Grep");
   });
 
   it("appends to existing user hooks without dropping them", () => {
