@@ -4,6 +4,7 @@ import pc from "picocolors";
 import type { ConnectAdapter, ConnectOptions, ConnectResult } from "./types.js";
 import { writeGuideline } from "./guidelines.js";
 import { adapter as antigravity } from "./antigravity.js";
+import { adapter as bob } from "./bob.js";
 import { adapter as claudeCode } from "./claude-code.js";
 import { adapter as cline } from "./cline.js";
 import { adapter as copilotCli } from "./copilot-cli.js";
@@ -36,6 +37,7 @@ export const ADAPTERS: readonly ConnectAdapter[] = [
   continueDev,
   zed,
   droid,
+  bob,
   opencode,
   openclaw,
   hermes,
