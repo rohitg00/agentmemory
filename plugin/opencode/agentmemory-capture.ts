@@ -168,7 +168,8 @@ function extractErrorMessage(err: unknown): string {
 }
 
 export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
-  projectPath = ctx.worktree || ctx.project?.id || process.cwd();
+  const explicitProject = process.env.AGENTMEMORY_PROJECT_NAME?.trim();
+  projectPath = explicitProject || ctx.worktree || ctx.project?.id || process.cwd();
 
   return {
     event: async ({ event }) => {

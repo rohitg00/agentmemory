@@ -52,6 +52,7 @@ The REST API is the primary surface. All paths are under `http://localhost:3111`
 | DELETE | `/agentmemory/governance/memories` |
 | POST | `/agentmemory/graph/build` |
 | POST | `/agentmemory/graph/extract` |
+| POST | `/agentmemory/graph/import-graphify` |
 | POST | `/agentmemory/graph/query` |
 | POST | `/agentmemory/graph/reset` |
 | POST | `/agentmemory/graph/snapshot-rebuild` |

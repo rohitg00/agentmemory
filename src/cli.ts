@@ -58,6 +58,7 @@ import { renderSplash } from "./cli/splash.js";
 import { isFirstRun, readPrefs, resetPrefs, writePrefs } from "./cli/preferences.js";
 import { runOnboarding } from "./cli/onboarding.js";
 import { setBootVerbose } from "./logger.js";
+import { hydrateProcessEnvFromFile } from "./config.js";
 import { VERSION } from "./version.js";
 import { getAllTools, ESSENTIAL_TOOLS } from "./mcp/tools-registry.js";
 import { knownAgents } from "./cli/connect/index.js";
@@ -82,6 +83,12 @@ const IS_VERBOSE =
 setBootVerbose(IS_VERBOSE);
 
 const IS_RESET = args.includes("--reset");
+
+// Fold ~/.agentmemory/.env into process.env before any port/URL read
+// (getRestPort/getBaseUrl/getStreamPort/getEnginePort) or the --port /
+// --instance / --tools handlers below. Only-if-unset, so a real
+// process.env value — including one just set by a CLI flag — still wins.
+hydrateProcessEnvFromFile();
 
 // --version / -V early exit. Print VERSION + exit before any side effects
 // (engine boot, env load, dir mkdir). `-v` is taken by --verbose so we

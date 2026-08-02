@@ -14,6 +14,15 @@ let index: SearchIndex | null = null
 let vectorIndex: VectorIndex | null = null
 let currentEmbeddingProvider: EmbeddingProvider | null = null
 
+// Dedupes the lazy cold-start rebuild kicked off from the mem::search
+// request path. A full rebuildIndex walks every observation across every
+// session, so N concurrent queries against an empty index would each
+// launch their own rebuild and saturate the engine invocation pool. The
+// first query with an empty index starts one rebuild and shares its
+// promise; concurrent queries await the same rebuild instead of spawning
+// duplicates. The boot-time rebuild in index.ts is unaffected.
+let rebuildPromise: Promise<number> | null = null
+
 export function getSearchIndex(): SearchIndex {
   if (!index) index = new SearchIndex()
   return index
@@ -218,6 +227,66 @@ function getRebuildEmbedBatchSize(): number {
   return Number.isFinite(n) && n > 0 ? n : DEFAULT_REBUILD_EMBED_BATCH
 }
 
+// Shared BM25 + batched-vector indexing for a set of records. The full
+// rebuild and every import path (export-import, jsonl replay) funnel
+// through this so they index identically and none can silently skip the
+// vector side. It does NOT clear the index — callers that rebuild clear
+// first; importers add. When no embedding provider is configured it skips
+// the vector enqueue entirely, so a keyless install never allocates embed
+// jobs it would immediately discard.
+export async function indexRecords(
+  observations: CompressedObservation[],
+  memories: Memory[],
+): Promise<number> {
+  const idx = getSearchIndex()
+  const vectorEnabled = Boolean(vectorIndex && currentEmbeddingProvider)
+  const batchSize = getRebuildEmbedBatchSize()
+  type EmbedJob = {
+    id: string
+    sessionId: string
+    text: string
+    context: { kind: "memory" | "observation" | "synthetic"; logId: string }
+  }
+  const pending: EmbedJob[] = []
+  const flush = async (): Promise<void> => {
+    if (pending.length === 0) return
+    await vectorIndexAddBatchGuarded(pending)
+    pending.length = 0
+  }
+  const enqueue = async (job: EmbedJob): Promise<void> => {
+    if (!vectorEnabled) return
+    pending.push(job)
+    if (pending.length >= batchSize) await flush()
+  }
+
+  let count = 0
+  for (const memory of memories) {
+    if (memory.isLatest === false) continue
+    if (!memory.title || !memory.content) continue
+    idx.add(memoryToObservation(memory))
+    await enqueue({
+      id: memory.id,
+      sessionId: memory.sessionIds?.[0] ?? 'memory',
+      text: memory.title + ' ' + memory.content,
+      context: { kind: "memory", logId: memory.id },
+    })
+    count++
+  }
+  for (const obs of observations) {
+    if (!obs.title || !obs.narrative) continue
+    idx.add(obs)
+    await enqueue({
+      id: obs.id,
+      sessionId: obs.sessionId,
+      text: obs.title + ' ' + obs.narrative,
+      context: { kind: "observation", logId: obs.id },
+    })
+    count++
+  }
+  await flush()
+  return count
+}
+
 export async function rebuildIndex(kv: StateKV): Promise<number> {
   const idx = getSearchIndex()
   idx.clear()
@@ -228,46 +297,13 @@ export async function rebuildIndex(kv: StateKV): Promise<number> {
   // repopulation loops run, so BM25 and vector stay in sync.
   vectorIndex?.clear()
 
-  const batchSize = getRebuildEmbedBatchSize()
-  // Accumulator for the batched embed flush. BM25 add is synchronous and
-  // doesn't need batching — only the vector path benefits.
-  type EmbedJob = {
-    id: string
-    sessionId: string
-    text: string
-    context: { kind: "memory" | "observation" | "synthetic"; logId: string }
-  }
-  const pending: EmbedJob[] = []
-  let count = 0
-
-  const flush = async (): Promise<void> => {
-    if (pending.length === 0) return
-    await vectorIndexAddBatchGuarded(pending)
-    pending.length = 0
-  }
-  const enqueue = async (job: EmbedJob): Promise<void> => {
-    pending.push(job)
-    if (pending.length >= batchSize) await flush()
-  }
-
   // Memories live in their own KV scope outside per-session observation
   // scopes, so they need a separate walk. Without this, mem::remember
   // entries vanish from BM25 on every restart even after the live-write
-  // fix in remember.ts (#257).
+  // fix in remember.ts.
+  let memories: Memory[] = []
   try {
-    const memories = await kv.list<Memory>(KV.memories)
-    for (const memory of memories) {
-      if (memory.isLatest === false) continue
-      if (!memory.title || !memory.content) continue
-      idx.add(memoryToObservation(memory))
-      await enqueue({
-        id: memory.id,
-        sessionId: memory.sessionIds?.[0] ?? 'memory',
-        text: memory.title + ' ' + memory.content,
-        context: { kind: "memory", logId: memory.id },
-      })
-      count++
-    }
+    memories = await kv.list<Memory>(KV.memories)
   } catch (err) {
     logger.warn('rebuildIndex: failed to load memories', {
       error: err instanceof Error ? err.message : String(err),
@@ -275,13 +311,10 @@ export async function rebuildIndex(kv: StateKV): Promise<number> {
   }
 
   const sessions = await kv.list<Session>(KV.sessions)
-  if (!sessions.length) {
-    await flush()
-    return count
-  }
-
-  const obsPerSession: CompressedObservation[][] = []
   const failedSessions: string[] = []
+  // Index each session chunk as it loads instead of accumulating every
+  // observation first, so peak memory stays bounded to one chunk.
+  let indexed = 0
   for (let batch = 0; batch < sessions.length; batch += 10) {
     const chunk = sessions.slice(batch, batch + 10)
     const results = await Promise.all(
@@ -294,29 +327,17 @@ export async function rebuildIndex(kv: StateKV): Promise<number> {
         }
       })
     )
-    obsPerSession.push(...results)
+    const chunkObs = results.flat()
+    if (chunkObs.length > 0) {
+      indexed += await indexRecords(chunkObs, [])
+    }
   }
   if (failedSessions.length > 0) {
     logger.warn('rebuildIndex: failed to load observations for sessions', { failedSessions })
   }
-  for (const observations of obsPerSession) {
-    for (const obs of observations) {
-      if (obs.title && obs.narrative) {
-        idx.add(obs)
-        await enqueue({
-          id: obs.id,
-          sessionId: obs.sessionId,
-          text: obs.title + ' ' + obs.narrative,
-          context: { kind: "observation", logId: obs.id },
-        })
-        count++
-      }
-    }
-  }
 
-  // Drain the last partial batch.
-  await flush()
-  return count
+  indexed += await indexRecords([], memories)
+  return indexed
 }
 
 export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
@@ -397,8 +418,25 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
       }
 
       if (idx.size === 0) {
-        const count = await rebuildIndex(kv)
-        logger.info('Search index rebuilt', { entries: count })
+        // Share one rebuild across concurrent cold-start queries so they
+        // don't each walk the whole corpus and saturate the pool.
+        if (!rebuildPromise) {
+          rebuildPromise = rebuildIndex(kv)
+            .then((count) => {
+              logger.info('Search index rebuilt', { entries: count })
+              return count
+            })
+            .catch((err) => {
+              logger.warn('Index rebuild failed', {
+                error: err instanceof Error ? err.message : String(err),
+              })
+              return 0
+            })
+            .finally(() => {
+              rebuildPromise = null
+            })
+        }
+        await rebuildPromise
       }
 
       // When filtering by project/cwd, over-fetch from the index so the

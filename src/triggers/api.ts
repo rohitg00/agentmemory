@@ -851,11 +851,21 @@ export function registerApiTriggers(
       const filtered = filterAgentId
         ? sessions.filter((s) => s.agentId === filterAgentId)
         : sessions;
-      const summaries = await Promise.all(
-        filtered.map((s) =>
-          kv.get<SessionSummary>(KV.summaries, s.id).catch(() => null),
-        ),
-      );
+      // Bounded fan-out: each kv.get is a full engine invocation, so
+      // Promise.all over hundreds of sessions saturates the invocation
+      // pool. Batch in chunks of 10 (parallel within a chunk, sequential
+      // across chunks); the summaries array stays index-aligned with
+      // `filtered`.
+      const summaries: Array<SessionSummary | null> = [];
+      for (let batch = 0; batch < filtered.length; batch += 10) {
+        const chunk = filtered.slice(batch, batch + 10);
+        const results = await Promise.all(
+          chunk.map((s) =>
+            kv.get<SessionSummary>(KV.summaries, s.id).catch(() => null),
+          ),
+        );
+        summaries.push(...results);
+      }
       const withSummary = filtered.map((s, i) =>
         summaries[i] ? { ...s, summary: summaries[i] } : s,
       );
@@ -1639,6 +1649,43 @@ export function registerApiTriggers(
     type: "http",
     function_id: "api::graph-build",
     config: { api_path: "/agentmemory/graph/build", http_method: "POST" },
+  });
+
+  // Import graphify's structural graph (graphify-out/graph.json) into the
+  // memory graph. Deterministic, no LLM call; idempotent via the graph
+  // name-index upsert.
+  sdk.registerFunction("api::graph-import-graphify",
+    async (req: ApiRequest<{ path?: string; cwd?: string }>): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const { path, cwd } = req.body ?? {};
+      if (
+        (path !== undefined && typeof path !== "string") ||
+        (cwd !== undefined && typeof cwd !== "string")
+      ) {
+        return {
+          status_code: 400,
+          body: { error: "path and cwd must be strings when provided" },
+        };
+      }
+      try {
+        const result = await sdk.trigger({
+          function_id: "mem::graph::import-graphify",
+          payload: {
+            ...(path !== undefined ? { path } : {}),
+            ...(cwd !== undefined ? { cwd } : {}),
+          },
+        });
+        return { status_code: 200, body: result };
+      } catch {
+        return graphDisabledResponse();
+      }
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::graph-import-graphify",
+    config: { api_path: "/agentmemory/graph/import-graphify", http_method: "POST" },
   });
 
   sdk.registerFunction("api::consolidate-pipeline",

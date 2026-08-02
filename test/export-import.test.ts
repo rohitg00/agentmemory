@@ -5,6 +5,7 @@ vi.mock("../src/logger.js", () => ({
 }));
 
 import { registerExportImportFunction } from "../src/functions/export-import.js";
+import { getSearchIndex } from "../src/functions/search.js";
 import type {
   Session,
   CompressedObservation,
@@ -108,6 +109,10 @@ describe("Export/Import Functions", () => {
   beforeEach(async () => {
     sdk = mockSdk();
     kv = mockKV();
+    // getSearchIndex() returns a module-level singleton shared across
+    // tests. Clear it so index assertions here don't see rows added by
+    // a prior test's import.
+    getSearchIndex().clear();
     registerExportImportFunction(sdk as never, kv as never);
 
     await kv.set("mem:sessions", "ses_1", testSession);
@@ -149,6 +154,59 @@ describe("Export/Import Functions", () => {
 
     const allSessions = await kv.list("mem:sessions");
     expect(allSessions.length).toBe(2);
+  });
+
+  it("import adds imported records to the search index", async () => {
+    // Regression: mem::import wrote rows to KV but never indexed them.
+    // On an existing install the boot rebuild gate (bm25.size === 0) is
+    // false, so imported data stayed invisible to mem::search forever.
+    const importedObs: CompressedObservation = {
+      id: "obs_imported",
+      sessionId: "ses_imported",
+      timestamp: "2026-03-01T10:00:00Z",
+      type: "file_edit",
+      title: "Kubernetes deployment rollout",
+      facts: ["Scaled replicas"],
+      narrative: "Adjusted the kubernetes deployment rollout strategy",
+      concepts: ["k8s"],
+      files: ["deploy.yaml"],
+      importance: 6,
+    };
+    const importedMem: Memory = {
+      ...testMemory,
+      id: "mem_imported",
+      title: "Postgres connection pooling",
+      content: "Use pgbouncer for postgres connection pooling",
+    };
+    const exportData: ExportData = {
+      version: "0.9.28",
+      exportedAt: new Date().toISOString(),
+      sessions: [
+        { ...testSession, id: "ses_imported", observationCount: 1 },
+      ],
+      observations: { ses_imported: [importedObs] },
+      memories: [importedMem],
+      summaries: [],
+    };
+
+    const result = (await sdk.trigger("mem::import", {
+      exportData,
+      strategy: "merge",
+    })) as { success: boolean; observations: number; memories: number };
+
+    expect(result.success).toBe(true);
+    expect(result.observations).toBe(1);
+    expect(result.memories).toBe(1);
+
+    const idx = getSearchIndex();
+    expect(idx.has("obs_imported")).toBe(true);
+    expect(idx.has("mem_imported")).toBe(true);
+
+    const obsHit = idx.search("kubernetes rollout");
+    expect(obsHit.some((r) => r.obsId === "obs_imported")).toBe(true);
+
+    const memHit = idx.search("postgres pooling");
+    expect(memHit.some((r) => r.obsId === "mem_imported")).toBe(true);
   });
 
   it("import with skip strategy does not overwrite existing", async () => {

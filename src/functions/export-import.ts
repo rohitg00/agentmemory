@@ -29,7 +29,31 @@ import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { VERSION } from "../version.js";
 import { recordAudit } from "./audit.js";
+import { indexRecords } from "./search.js";
 import { logger } from "../logger.js";
+
+// Bounded-concurrency chunk size for the import delete/write loops. A
+// "replace" or "merge" of a large export (up to MAX_TOTAL_OBSERVATIONS,
+// ~500k) would otherwise issue hundreds of thousands of sequential state
+// round-trips and blow the 180s function timeout, leaving partial state.
+// 20 keeps per-chunk fan-out low enough not to overwhelm the state
+// backend while collapsing wallclock by ~20x versus the serial path.
+const IMPORT_CHUNK_SIZE = 20;
+
+// Run `fn` over `items` in fixed-size chunks, awaiting each chunk before
+// starting the next. Preserves ordering guarantees across chunks (chunk N
+// fully settles before chunk N+1 begins) while parallelizing within a
+// chunk. Errors propagate — a failing item rejects the whole import, same
+// as the original serial loops.
+async function runChunked<T>(
+  items: readonly T[],
+  fn: (item: T) => Promise<void>,
+): Promise<void> {
+  for (let i = 0; i < items.length; i += IMPORT_CHUNK_SIZE) {
+    const chunk = items.slice(i, i + IMPORT_CHUNK_SIZE);
+    await Promise.all(chunk.map(fn));
+  }
+}
 
 export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
   sdk.registerFunction("mem::export", 
@@ -265,114 +289,145 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
 
       if (strategy === "replace") {
         const existing = await kv.list<Session>(KV.sessions);
-        for (const session of existing) {
+        // Collect observation deletes across all sessions, then run them in
+        // one bounded pass: a runChunked nested inside a runChunked callback
+        // multiplies in-flight deletes to chunk-size squared.
+        const obsDeletes: Array<{ sessionId: string; obsId: string }> = [];
+        await runChunked(existing, async (session) => {
           await kv.delete(KV.sessions, session.id);
           const obs = await kv
             .list<CompressedObservation>(KV.observations(session.id))
             .catch(() => []);
           for (const o of obs) {
-            await kv.delete(KV.observations(session.id), o.id);
+            obsDeletes.push({ sessionId: session.id, obsId: o.id });
           }
-        }
-        const existingMem = await kv.list<Memory>(KV.memories);
-        for (const m of existingMem) {
-          await kv.delete(KV.memories, m.id);
-        }
-        const existingSummaries = await kv.list<SessionSummary>(KV.summaries);
-        for (const s of existingSummaries) {
-          await kv.delete(KV.summaries, s.sessionId);
-        }
-        for (const a of await kv.list<Action>(KV.actions).catch(() => [])) {
-          await kv.delete(KV.actions, a.id);
-        }
-        for (const e of await kv.list<ActionEdge>(KV.actionEdges).catch(() => [])) {
-          await kv.delete(KV.actionEdges, e.id);
-        }
-        for (const r of await kv.list<Routine>(KV.routines).catch(() => [])) {
-          await kv.delete(KV.routines, r.id);
-        }
-        for (const s of await kv.list<Signal>(KV.signals).catch(() => [])) {
-          await kv.delete(KV.signals, s.id);
-        }
-        for (const c of await kv.list<Checkpoint>(KV.checkpoints).catch(() => [])) {
-          await kv.delete(KV.checkpoints, c.id);
-        }
-        for (const s of await kv.list<Sentinel>(KV.sentinels).catch(() => [])) {
-          await kv.delete(KV.sentinels, s.id);
-        }
-        for (const s of await kv.list<Sketch>(KV.sketches).catch(() => [])) {
-          await kv.delete(KV.sketches, s.id);
-        }
-        for (const c of await kv.list<Crystal>(KV.crystals).catch(() => [])) {
-          await kv.delete(KV.crystals, c.id);
-        }
-        for (const f of await kv.list<Facet>(KV.facets).catch(() => [])) {
-          await kv.delete(KV.facets, f.id);
-        }
-        for (const l of await kv.list<Lesson>(KV.lessons).catch(() => [])) {
-          await kv.delete(KV.lessons, l.id);
-        }
-        for (const i of await kv.list<Insight>(KV.insights).catch(() => [])) {
-          await kv.delete(KV.insights, i.id);
-        }
-        for (const n of await kv.list<{ id: string }>(KV.graphNodes).catch(() => [])) {
-          await kv.delete(KV.graphNodes, n.id);
-        }
-        for (const e of await kv.list<{ id: string }>(KV.graphEdges).catch(() => [])) {
-          await kv.delete(KV.graphEdges, e.id);
-        }
-        for (const s of await kv.list<{ id: string }>(KV.semantic).catch(() => [])) {
-          await kv.delete(KV.semantic, s.id);
-        }
-        for (const p of await kv.list<{ id: string }>(KV.procedural).catch(() => [])) {
-          await kv.delete(KV.procedural, p.id);
-        }
-        for (const profile of await kv.list<ProjectProfile>(KV.profiles).catch(() => [])) {
-          await kv.delete(KV.profiles, profile.project);
-        }
-        for (const a of await kv.list<AccessLogExport>(KV.accessLog).catch(() => [])) {
-          await kv.delete(KV.accessLog, a.memoryId);
-        }
+        });
+        await runChunked(obsDeletes, (d) =>
+          kv.delete(KV.observations(d.sessionId), d.obsId),
+        );
+        await runChunked(await kv.list<Memory>(KV.memories), (m) =>
+          kv.delete(KV.memories, m.id),
+        );
+        await runChunked(
+          await kv.list<SessionSummary>(KV.summaries),
+          (s) => kv.delete(KV.summaries, s.sessionId),
+        );
+        await runChunked(await kv.list<Action>(KV.actions).catch(() => []), (a) =>
+          kv.delete(KV.actions, a.id),
+        );
+        await runChunked(
+          await kv.list<ActionEdge>(KV.actionEdges).catch(() => []),
+          (e) => kv.delete(KV.actionEdges, e.id),
+        );
+        await runChunked(
+          await kv.list<Routine>(KV.routines).catch(() => []),
+          (r) => kv.delete(KV.routines, r.id),
+        );
+        await runChunked(
+          await kv.list<Signal>(KV.signals).catch(() => []),
+          (s) => kv.delete(KV.signals, s.id),
+        );
+        await runChunked(
+          await kv.list<Checkpoint>(KV.checkpoints).catch(() => []),
+          (c) => kv.delete(KV.checkpoints, c.id),
+        );
+        await runChunked(
+          await kv.list<Sentinel>(KV.sentinels).catch(() => []),
+          (s) => kv.delete(KV.sentinels, s.id),
+        );
+        await runChunked(
+          await kv.list<Sketch>(KV.sketches).catch(() => []),
+          (s) => kv.delete(KV.sketches, s.id),
+        );
+        await runChunked(
+          await kv.list<Crystal>(KV.crystals).catch(() => []),
+          (c) => kv.delete(KV.crystals, c.id),
+        );
+        await runChunked(
+          await kv.list<Facet>(KV.facets).catch(() => []),
+          (f) => kv.delete(KV.facets, f.id),
+        );
+        await runChunked(
+          await kv.list<Lesson>(KV.lessons).catch(() => []),
+          (l) => kv.delete(KV.lessons, l.id),
+        );
+        await runChunked(
+          await kv.list<Insight>(KV.insights).catch(() => []),
+          (i) => kv.delete(KV.insights, i.id),
+        );
+        await runChunked(
+          await kv.list<{ id: string }>(KV.graphNodes).catch(() => []),
+          (n) => kv.delete(KV.graphNodes, n.id),
+        );
+        await runChunked(
+          await kv.list<{ id: string }>(KV.graphEdges).catch(() => []),
+          (e) => kv.delete(KV.graphEdges, e.id),
+        );
+        await runChunked(
+          await kv.list<{ id: string }>(KV.semantic).catch(() => []),
+          (s) => kv.delete(KV.semantic, s.id),
+        );
+        await runChunked(
+          await kv.list<{ id: string }>(KV.procedural).catch(() => []),
+          (p) => kv.delete(KV.procedural, p.id),
+        );
+        await runChunked(
+          await kv.list<ProjectProfile>(KV.profiles).catch(() => []),
+          (profile) => kv.delete(KV.profiles, profile.project),
+        );
+        await runChunked(
+          await kv.list<AccessLogExport>(KV.accessLog).catch(() => []),
+          (a) => kv.delete(KV.accessLog, a.memoryId),
+        );
       }
 
-      for (const session of importData.sessions) {
+      // Records actually written this run, accumulated for search
+      // indexing after the KV writes settle. Skipped (already-present)
+      // and merge-overwritten rows are already in the index or will be
+      // re-added below, so re-indexing them is harmless; we only skip the
+      // ones the "skip" strategy declined to write.
+      const indexObs: CompressedObservation[] = [];
+      const indexMems: Memory[] = [];
+
+      await runChunked(importData.sessions, async (session) => {
         if (strategy === "skip") {
           const existing = await kv
             .get<Session>(KV.sessions, session.id)
             .catch(() => null);
           if (existing) {
             stats.skipped++;
-            continue;
+            return;
           }
         }
         await kv.set(KV.sessions, session.id, session);
         stats.sessions++;
-      }
+      });
 
       for (const [sessionId, obs] of Object.entries(importData.observations)) {
-        for (const o of obs) {
+        await runChunked(obs, async (o) => {
           if (strategy === "skip") {
             const existing = await kv
               .get<CompressedObservation>(KV.observations(sessionId), o.id)
               .catch(() => null);
             if (existing) {
               stats.skipped++;
-              continue;
+              return;
             }
           }
           await kv.set(KV.observations(sessionId), o.id, o);
           stats.observations++;
-        }
+          indexObs.push(o);
+        });
       }
 
-      for (const memory of importData.memories) {
+      await runChunked(importData.memories, async (memory) => {
         if (strategy === "skip") {
           const existing = await kv
             .get<Memory>(KV.memories, memory.id)
             .catch(() => null);
           if (existing) {
             stats.skipped++;
-            continue;
+            return;
           }
         }
         // Older exports + hand-edited dumps can omit this field.
@@ -381,171 +436,172 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
         }
         await kv.set(KV.memories, memory.id, memory);
         stats.memories++;
-      }
+        indexMems.push(memory);
+      });
 
-      for (const summary of importData.summaries) {
+      await runChunked(importData.summaries, async (summary) => {
         if (strategy === "skip") {
           const existing = await kv
             .get<SessionSummary>(KV.summaries, summary.sessionId)
             .catch(() => null);
           if (existing) {
             stats.skipped++;
-            continue;
+            return;
           }
         }
         await kv.set(KV.summaries, summary.sessionId, summary);
         stats.summaries++;
-      }
+      });
 
       if (importData.graphNodes) {
-        for (const node of importData.graphNodes) {
+        await runChunked(importData.graphNodes, async (node) => {
           if (strategy === "skip") {
             const existing = await kv.get(KV.graphNodes, node.id).catch(() => null);
-            if (existing) { stats.skipped++; continue; }
+            if (existing) { stats.skipped++; return; }
           }
           await kv.set(KV.graphNodes, node.id, node);
-        }
+        });
       }
       if (importData.graphEdges) {
-        for (const edge of importData.graphEdges) {
+        await runChunked(importData.graphEdges, async (edge) => {
           if (strategy === "skip") {
             const existing = await kv.get(KV.graphEdges, edge.id).catch(() => null);
-            if (existing) { stats.skipped++; continue; }
+            if (existing) { stats.skipped++; return; }
           }
           await kv.set(KV.graphEdges, edge.id, edge);
-        }
+        });
       }
       if (importData.semanticMemories) {
-        for (const sem of importData.semanticMemories) {
+        await runChunked(importData.semanticMemories, async (sem) => {
           if (strategy === "skip") {
             const existing = await kv.get(KV.semantic, sem.id).catch(() => null);
-            if (existing) { stats.skipped++; continue; }
+            if (existing) { stats.skipped++; return; }
           }
           await kv.set(KV.semantic, sem.id, sem);
-        }
+        });
       }
       if (importData.proceduralMemories) {
-        for (const proc of importData.proceduralMemories) {
+        await runChunked(importData.proceduralMemories, async (proc) => {
           if (strategy === "skip") {
             const existing = await kv.get(KV.procedural, proc.id).catch(() => null);
-            if (existing) { stats.skipped++; continue; }
+            if (existing) { stats.skipped++; return; }
           }
           await kv.set(KV.procedural, proc.id, proc);
-        }
+        });
       }
       if (importData.profiles) {
-        for (const profile of importData.profiles) {
+        await runChunked(importData.profiles, async (profile) => {
           if (strategy === "skip") {
             const existing = await kv
               .get<ProjectProfile>(KV.profiles, profile.project)
               .catch(() => null);
             if (existing) {
               stats.skipped++;
-              continue;
+              return;
             }
           }
           await kv.set(KV.profiles, profile.project, profile);
-        }
+        });
       }
 
       if (importData.actions) {
-        for (const action of importData.actions) {
+        await runChunked(importData.actions, async (action) => {
           if (strategy === "skip") {
             const existing = await kv.get(KV.actions, action.id).catch(() => null);
-            if (existing) { stats.skipped++; continue; }
+            if (existing) { stats.skipped++; return; }
           }
           await kv.set(KV.actions, action.id, action);
-        }
+        });
       }
       if (importData.actionEdges) {
-        for (const edge of importData.actionEdges) {
+        await runChunked(importData.actionEdges, async (edge) => {
           if (strategy === "skip") {
             const existing = await kv.get(KV.actionEdges, edge.id).catch(() => null);
-            if (existing) { stats.skipped++; continue; }
+            if (existing) { stats.skipped++; return; }
           }
           await kv.set(KV.actionEdges, edge.id, edge);
-        }
+        });
       }
       if (importData.routines) {
-        for (const routine of importData.routines) {
+        await runChunked(importData.routines, async (routine) => {
           if (strategy === "skip") {
             const existing = await kv.get(KV.routines, routine.id).catch(() => null);
-            if (existing) { stats.skipped++; continue; }
+            if (existing) { stats.skipped++; return; }
           }
           await kv.set(KV.routines, routine.id, routine);
-        }
+        });
       }
       if (importData.signals) {
-        for (const signal of importData.signals) {
+        await runChunked(importData.signals, async (signal) => {
           if (strategy === "skip") {
             const existing = await kv.get(KV.signals, signal.id).catch(() => null);
-            if (existing) { stats.skipped++; continue; }
+            if (existing) { stats.skipped++; return; }
           }
           await kv.set(KV.signals, signal.id, signal);
-        }
+        });
       }
       if (importData.checkpoints) {
-        for (const checkpoint of importData.checkpoints) {
+        await runChunked(importData.checkpoints, async (checkpoint) => {
           if (strategy === "skip") {
             const existing = await kv.get(KV.checkpoints, checkpoint.id).catch(() => null);
-            if (existing) { stats.skipped++; continue; }
+            if (existing) { stats.skipped++; return; }
           }
           await kv.set(KV.checkpoints, checkpoint.id, checkpoint);
-        }
+        });
       }
       if (importData.sentinels) {
-        for (const sentinel of importData.sentinels) {
+        await runChunked(importData.sentinels, async (sentinel) => {
           if (strategy === "skip") {
             const existing = await kv.get(KV.sentinels, sentinel.id).catch(() => null);
-            if (existing) { stats.skipped++; continue; }
+            if (existing) { stats.skipped++; return; }
           }
           await kv.set(KV.sentinels, sentinel.id, sentinel);
-        }
+        });
       }
       if (importData.sketches) {
-        for (const sketch of importData.sketches) {
+        await runChunked(importData.sketches, async (sketch) => {
           if (strategy === "skip") {
             const existing = await kv.get(KV.sketches, sketch.id).catch(() => null);
-            if (existing) { stats.skipped++; continue; }
+            if (existing) { stats.skipped++; return; }
           }
           await kv.set(KV.sketches, sketch.id, sketch);
-        }
+        });
       }
       if (importData.crystals) {
-        for (const crystal of importData.crystals) {
+        await runChunked(importData.crystals, async (crystal) => {
           if (strategy === "skip") {
             const existing = await kv.get(KV.crystals, crystal.id).catch(() => null);
-            if (existing) { stats.skipped++; continue; }
+            if (existing) { stats.skipped++; return; }
           }
           await kv.set(KV.crystals, crystal.id, crystal);
-        }
+        });
       }
       if (importData.facets) {
-        for (const facet of importData.facets) {
+        await runChunked(importData.facets, async (facet) => {
           if (strategy === "skip") {
             const existing = await kv.get(KV.facets, facet.id).catch(() => null);
-            if (existing) { stats.skipped++; continue; }
+            if (existing) { stats.skipped++; return; }
           }
           await kv.set(KV.facets, facet.id, facet);
-        }
+        });
       }
       if (importData.lessons) {
-        for (const lesson of importData.lessons) {
+        await runChunked(importData.lessons, async (lesson) => {
           if (strategy === "skip") {
             const existing = await kv.get(KV.lessons, lesson.id).catch(() => null);
-            if (existing) { stats.skipped++; continue; }
+            if (existing) { stats.skipped++; return; }
           }
           await kv.set(KV.lessons, lesson.id, lesson);
-        }
+        });
       }
       if (importData.insights) {
-        for (const insight of importData.insights) {
+        await runChunked(importData.insights, async (insight) => {
           if (strategy === "skip") {
             const existing = await kv.get(KV.insights, insight.id).catch(() => null);
-            if (existing) { stats.skipped++; continue; }
+            if (existing) { stats.skipped++; return; }
           }
           await kv.set(KV.insights, insight.id, insight);
-        }
+        });
       }
       if (importData.accessLogs) {
         if (!Array.isArray(importData.accessLogs)) {
@@ -560,20 +616,37 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
         const memoryIds = new Set<string>(
           importData.memories.map((m) => m.id),
         );
-        for (const raw of importData.accessLogs) {
+        await runChunked(importData.accessLogs, async (raw) => {
           const log = normalizeAccessLog(raw);
-          if (!log.memoryId || !memoryIds.has(log.memoryId)) continue;
+          if (!log.memoryId || !memoryIds.has(log.memoryId)) return;
           if (strategy === "skip") {
             const existing = await kv
               .get(KV.accessLog, log.memoryId)
               .catch(() => null);
             if (existing) {
               stats.skipped++;
-              continue;
+              return;
             }
           }
           await kv.set(KV.accessLog, log.memoryId, log);
-        }
+        });
+      }
+
+      // Imported rows are now in KV but invisible to search: the boot
+      // rebuild gate only fires when BM25 is empty, so on any existing
+      // install (non-empty persisted index) imported observations and
+      // memories never surface via mem::search / smart-search until a
+      // manual rebuild. Add them to BM25 (synchronous) and enqueue the
+      // vector embeddings in batches (one embedBatch call per chunk)
+      // rather than one giant Promise.all over 500k docs. Indexing
+      // failures are logged, not fatal — the KV writes already committed
+      // and the restart rebuild is the backstop.
+      try {
+        await indexRecords(indexObs, indexMems);
+      } catch (err) {
+        logger.warn("Import indexing failed; restart rebuild will recover", {
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
 
       logger.info("Import complete", { strategy, ...stats });

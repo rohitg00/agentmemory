@@ -4,10 +4,10 @@ import { join } from "node:path";
 import { loadClaudeBridgeConfig } from "../src/config.js";
 
 // bridge path must match Claude Code's slug convention exactly:
-//   ~/.claude/projects/<slug>/MEMORY.md
+//   ~/.claude/projects/<slug>/memory/MEMORY.md
 // where <slug> replaces every / and \ with - and KEEPS any leading -.
-// The previous code stripped the leading - and added a /memory/
-// subdirectory; the bridge then wrote a file Claude Code never read.
+// The memory/ subdirectory holds MEMORY.md (the index) plus per-topic
+// .md files — this is where Claude Code 2.x actually reads/writes.
 describe("loadClaudeBridgeConfig path (#625)", () => {
   const ORIG_ENV = { ...process.env };
   beforeEach(() => {
@@ -24,16 +24,15 @@ describe("loadClaudeBridgeConfig path (#625)", () => {
     process.env["CLAUDE_PROJECT_PATH"] = "/home/user/repos/my-project";
     const cfg = loadClaudeBridgeConfig();
     expect(cfg.memoryFilePath).toBe(
-      join(homedir(), ".claude", "projects", "-home-user-repos-my-project", "MEMORY.md"),
+      join(homedir(), ".claude", "projects", "-home-user-repos-my-project", "memory", "MEMORY.md"),
     );
   });
 
-  it("writes MEMORY.md directly under the slug dir, no memory/ subdir", () => {
+  it("writes MEMORY.md inside the memory/ subdir under the slug dir", () => {
     process.env["CLAUDE_MEMORY_BRIDGE"] = "true";
     process.env["CLAUDE_PROJECT_PATH"] = "/Users/x/agentmemory";
     const cfg = loadClaudeBridgeConfig();
-    expect(cfg.memoryFilePath).not.toMatch(/[/\\]memory[/\\]MEMORY\.md$/);
-    expect(cfg.memoryFilePath).toMatch(/-Users-x-agentmemory[/\\]MEMORY\.md$/);
+    expect(cfg.memoryFilePath).toMatch(/-Users-x-agentmemory[/\\]memory[/\\]MEMORY\.md$/);
   });
 
   it("returns empty memoryFilePath when bridge disabled", () => {
@@ -53,6 +52,6 @@ describe("loadClaudeBridgeConfig path (#625)", () => {
     process.env["CLAUDE_MEMORY_BRIDGE"] = "true";
     process.env["CLAUDE_PROJECT_PATH"] = "C:\\Users\\x\\project";
     const cfg = loadClaudeBridgeConfig();
-    expect(cfg.memoryFilePath).toMatch(/C:-Users-x-project[/\\]MEMORY\.md$/);
+    expect(cfg.memoryFilePath).toMatch(/C:-Users-x-project[/\\]memory[/\\]MEMORY\.md$/);
   });
 });

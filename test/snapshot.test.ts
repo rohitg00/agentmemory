@@ -164,3 +164,64 @@ describe("Snapshot Functions", () => {
     expect(audits.length).toBe(1);
   });
 });
+
+describe("snapshot-create reentrancy guard", () => {
+  // Regression (P2): mem::snapshot-create is triggered by the periodic timer,
+  // REST (api::snapshot-create), and MCP. Two runs writing state.json and
+  // committing in the same git repo at once race on the index lock. An
+  // overlapping call must be a no-op success while the first run finishes.
+  it("skips an overlapping call and releases the guard on completion", async () => {
+    let releaseFirst!: () => void;
+    const firstListGate = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    let listCalls = 0;
+    const store = new Map<string, Map<string, unknown>>();
+    const gatedKv = {
+      get: async () => null,
+      set: async <T>(scope: string, key: string, data: T): Promise<T> => {
+        if (!store.has(scope)) store.set(scope, new Map());
+        store.get(scope)!.set(key, data);
+        return data;
+      },
+      delete: async () => {},
+      list: async <T>(scope: string): Promise<T[]> => {
+        listCalls++;
+        // Park the first snapshot inside its initial list() so a second
+        // snapshot-create observes the in-flight guard.
+        if (listCalls === 1) await firstListGate;
+        return (Array.from(store.get(scope)?.values() ?? []) as T[]) ?? [];
+      },
+    };
+    const localSdk = mockSdk();
+    registerSnapshotFunction(localSdk as never, gatedKv as never, "/tmp/reentrant");
+
+    // Start the first snapshot; it parks inside kv.list with the guard held.
+    const p1 = localSdk.trigger("mem::snapshot-create", { message: "first" });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // Overlapping call: must be rejected as already-in-progress, NOT run git.
+    const r2 = (await localSdk.trigger("mem::snapshot-create", {
+      message: "second",
+    })) as { success: boolean; message?: string; snapshot?: unknown };
+    expect(r2).toEqual({
+      success: true,
+      message: "Snapshot already in progress",
+    });
+    expect(r2.snapshot).toBeUndefined();
+
+    // Release the first run; it completes normally.
+    releaseFirst();
+    const r1 = (await p1) as { success: boolean; snapshot?: unknown };
+    expect(r1.success).toBe(true);
+    expect(r1.snapshot).toBeDefined();
+
+    // Guard is released: a fresh call runs the full body again.
+    const r3 = (await localSdk.trigger("mem::snapshot-create", {
+      message: "third",
+    })) as { success: boolean; snapshot?: unknown };
+    expect(r3.success).toBe(true);
+    expect(r3.snapshot).toBeDefined();
+  });
+});

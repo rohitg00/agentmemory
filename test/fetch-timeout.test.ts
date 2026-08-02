@@ -75,6 +75,241 @@ describe("fetchWithTimeout", () => {
 });
 
 // ─────────────────────────────────────────────────────────────
+// Bounded-retry total-deadline tests
+//
+// The retry wrapper must bound TOTAL elapsed time across every
+// attempt + sleep — not per-attempt — so worst case never blows
+// past the caller's budget or the iii 180s invocation timeout.
+// ─────────────────────────────────────────────────────────────
+describe("fetchWithTimeout bounded retry (total deadline)", () => {
+  // Builds a fetch mock that replays a queue of {status, headers} in order,
+  // repeating the last entry once the queue is exhausted. Records how many
+  // times it was invoked so we can assert attempt counts.
+  function queuedFetch(
+    responses: Array<{ status: number; headers?: Record<string, string> }>,
+  ): { fetch: typeof fetch; calls: () => number } {
+    let i = 0;
+    const impl = (async () => {
+      const spec = responses[Math.min(i, responses.length - 1)];
+      i++;
+      return new Response(null, {
+        status: spec.status,
+        headers: spec.headers,
+      });
+    }) as typeof fetch;
+    return { fetch: impl, calls: () => i };
+  }
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+    delete process.env["AGENTMEMORY_LLM_TIMEOUT_MS"];
+  });
+
+  // 0. The FIRST attempt must honor the hard budget cap, not the raw caller
+  //    timeout. Regression: fetchOnce was called with `ms` instead of the
+  //    capped `budgetMs`, so a large caller timeout (e.g. 300s) could hang the
+  //    initial request past HARD_BUDGET_CAP_MS (170s) and the iii 180s
+  //    invocation timeout before any retry logic ran.
+  it("caps the first attempt at the hard budget, not the raw caller timeout", async () => {
+    const signals: AbortSignal[] = [];
+    const capturing = ((_url: string, init?: RequestInit) => {
+      const signal = init!.signal as AbortSignal;
+      signals.push(signal);
+      return new Promise<Response>((_resolve, reject) => {
+        signal.addEventListener("abort", () =>
+          reject(new DOMException("AbortError", "AbortError")),
+        );
+      });
+    }) as typeof fetch;
+    vi.spyOn(globalThis, "fetch").mockImplementation(capturing);
+    vi.useFakeTimers();
+
+    // 300s caller timeout — far above the 170s HARD_BUDGET_CAP_MS.
+    const p = fetchWithTimeout("https://example.com", {}, 300000);
+    p.catch(() => {}); // observe rejection so it isn't flagged unhandled
+
+    expect(signals).toHaveLength(1);
+    // Just before the cap the first attempt is still alive.
+    await vi.advanceTimersByTimeAsync(169999);
+    expect(signals[0].aborted).toBe(false);
+    // At the cap it must abort. Pre-fix (raw 300s) it would still be alive.
+    await vi.advanceTimersByTimeAsync(2);
+    expect(signals[0].aborted).toBe(true);
+
+    await expect(p).rejects.toThrow();
+  });
+
+  // 1. 429 then 200 → retried exactly once, resolves 200.
+  it("retries once on 429 then resolves the follow-up 200", async () => {
+    const q = queuedFetch([{ status: 429 }, { status: 200 }]);
+    vi.spyOn(globalThis, "fetch").mockImplementation(q.fetch);
+    vi.useFakeTimers();
+
+    const p = fetchWithTimeout("https://example.com", {}, 60000);
+    // Drain the backoff sleep (500ms default) so the retry fires.
+    await vi.advanceTimersByTimeAsync(500);
+    const res = await p;
+
+    expect(res.status).toBe(200);
+    expect(q.calls()).toBe(2);
+  });
+
+  // 2. 429 with a hostile Retry-After (100000s) must NOT wait that long. The
+  //    delay collapses to the low per-delay cap (5000ms) so the retry fires
+  //    quickly and total elapsed stays nowhere near 100000s.
+  it("does not honour a hostile Retry-After literally — caps it and stays within budget", async () => {
+    const q = queuedFetch([
+      { status: 429, headers: { "Retry-After": "100000" } }, // 100000s
+      { status: 200 },
+    ]);
+    vi.spyOn(globalThis, "fetch").mockImplementation(q.fetch);
+    vi.useFakeTimers();
+    const start = Date.now();
+
+    const p = fetchWithTimeout("https://example.com", {}, 60000);
+    // runAllTimers drains every scheduled sleep; if the code honored 100000s
+    // literally this would advance 100_000_000ms of simulated time.
+    await vi.runAllTimersAsync();
+    const res = await p;
+    const elapsed = Date.now() - start;
+
+    expect(res.status).toBe(200);
+    expect(q.calls()).toBe(2);
+    // The only sleep was the capped 5000ms delay — total elapsed is bounded to
+    // the cap, nowhere near the 100_000_000ms the header requested.
+    expect(elapsed).toBeLessThanOrEqual(5000);
+    expect(elapsed).toBeLessThan(60000);
+  });
+
+  // 2c. When the capped delay still cannot fit inside a small budget, we do NOT
+  //     retry and return the last 429 within bound.
+  it("returns the last 429 without retrying when even the capped delay overruns a small budget", async () => {
+    const q = queuedFetch([
+      { status: 429, headers: { "Retry-After": "100000" } },
+      { status: 200 },
+    ]);
+    vi.spyOn(globalThis, "fetch").mockImplementation(q.fetch);
+    vi.useFakeTimers();
+    const start = Date.now();
+
+    // Budget 1000ms: capped delay 5000ms + floor 100ms > remaining, no retry.
+    const p = fetchWithTimeout("https://example.com", {}, 1000);
+    await vi.runAllTimersAsync();
+    const res = await p;
+    const elapsed = Date.now() - start;
+
+    expect(res.status).toBe(429);
+    expect(q.calls()).toBe(1);
+    expect(elapsed).toBeLessThan(1000);
+  });
+
+  // 2b. Retry-After present but LARGER than the low per-delay cap collapses to
+  //     MAX_RETRY_DELAY_MS (5000), still bounded, still retries when budget
+  //     allows.
+  it("caps an oversized Retry-After to the max delay and still retries within budget", async () => {
+    const q = queuedFetch([
+      { status: 503, headers: { "Retry-After": "60" } }, // 60s requested
+      { status: 200 },
+    ]);
+    vi.spyOn(globalThis, "fetch").mockImplementation(q.fetch);
+    vi.useFakeTimers();
+
+    const p = fetchWithTimeout("https://example.com", {}, 60000);
+    // Requested 60s, but the honored delay is capped at 5000ms.
+    await vi.advanceTimersByTimeAsync(5000);
+    const res = await p;
+
+    expect(res.status).toBe(200);
+    expect(q.calls()).toBe(2);
+  });
+
+  // 3. Persistent 503 → stops after the bounded attempts AND within the total
+  //    deadline. Attempt count is bounded at MAX_ATTEMPTS (3) and total
+  //    simulated elapsed stays under the budget.
+  it("stops persistent 503 at the attempt cap and within the deadline", async () => {
+    const q = queuedFetch([{ status: 503 }]);
+    vi.spyOn(globalThis, "fetch").mockImplementation(q.fetch);
+    vi.useFakeTimers();
+    const start = Date.now();
+
+    const p = fetchWithTimeout("https://example.com", {}, 60000);
+    // Two retries with 500ms + 1000ms exponential backoff.
+    await vi.advanceTimersByTimeAsync(500);
+    await vi.advanceTimersByTimeAsync(1000);
+    const res = await p;
+    const elapsed = Date.now() - start;
+
+    expect(res.status).toBe(503);
+    // Initial attempt + 2 retries = MAX_ATTEMPTS.
+    expect(q.calls()).toBe(3);
+    expect(elapsed).toBeLessThan(60000);
+    // Total simulated sleep was only the two backoffs.
+    expect(elapsed).toBeLessThanOrEqual(1500);
+  });
+
+  // 3b. A tiny budget forces us to bail before even the first retry sleep —
+  //     the sleep + minimal attempt floor already overruns the remaining
+  //     budget, so we return the first 503 without retrying.
+  it("does not retry when the budget is too small to fit a retry", async () => {
+    const q = queuedFetch([{ status: 503 }, { status: 200 }]);
+    vi.spyOn(globalThis, "fetch").mockImplementation(q.fetch);
+    vi.useFakeTimers();
+
+    // Budget of 200ms: backoff 500ms + floor 100ms > remaining, so no retry.
+    const p = fetchWithTimeout("https://example.com", {}, 200);
+    await vi.runAllTimersAsync();
+    const res = await p;
+
+    expect(res.status).toBe(503);
+    expect(q.calls()).toBe(1);
+  });
+
+  // 5. Retry-After as an HTTP-date is parsed, capped to the max delay, and the
+  //    retry fires within budget.
+  it("parses an HTTP-date Retry-After and caps the honored delay", async () => {
+    // 2s in the future — under the max delay cap, so honored as-is.
+    const future = new Date(Date.now() + 2000).toUTCString();
+    const q = queuedFetch([
+      { status: 429, headers: { "Retry-After": future } },
+      { status: 200 },
+    ]);
+    vi.spyOn(globalThis, "fetch").mockImplementation(q.fetch);
+    vi.useFakeTimers();
+
+    const p = fetchWithTimeout("https://example.com", {}, 60000);
+    await vi.advanceTimersByTimeAsync(2000);
+    const res = await p;
+
+    expect(res.status).toBe(200);
+    expect(q.calls()).toBe(2);
+  });
+
+  // 5b. A far-future HTTP-date collapses to the capped delay (5000ms), which
+  //     still exceeds a small budget → no retry, last 503 returned in bound.
+  it("does not retry on a far-future HTTP-date Retry-After that overruns a small budget", async () => {
+    const farFuture = new Date(Date.now() + 3600_000).toUTCString(); // 1h out
+    const q = queuedFetch([
+      { status: 503, headers: { "Retry-After": farFuture } },
+      { status: 200 },
+    ]);
+    vi.spyOn(globalThis, "fetch").mockImplementation(q.fetch);
+    vi.useFakeTimers();
+    const start = Date.now();
+
+    // Budget 1000ms: capped delay 5000ms + floor > remaining, so no retry.
+    const p = fetchWithTimeout("https://example.com", {}, 1000);
+    await vi.runAllTimersAsync();
+    const res = await p;
+    const elapsed = Date.now() - start;
+
+    expect(res.status).toBe(503);
+    expect(q.calls()).toBe(1);
+    expect(elapsed).toBeLessThan(1000);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────
 // Provider hang regression tests
 // Each provider must call fetchWithTimeout, which honours the
 // AbortSignal when the explicit timeoutMs is tiny (50 ms).
