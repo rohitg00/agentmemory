@@ -40,6 +40,10 @@ import {
   readActionStoreSnapshot,
   withActionStoreLock,
 } from "./action-store.js";
+import {
+  normalizeLesson,
+  parseImportedLesson,
+} from "./lesson-model.js";
 
 export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
   sdk.registerFunction("mem::export", 
@@ -147,7 +151,10 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
         sketches: sketches.length > 0 ? sketches : undefined,
         crystals: crystals.length > 0 ? crystals : undefined,
         facets: facets.length > 0 ? facets : undefined,
-        lessons: lessons.length > 0 ? lessons : undefined,
+        lessons:
+          lessons.length > 0
+            ? lessons.map((lesson) => normalizeLesson(lesson))
+            : undefined,
         insights: insights.length > 0 ? insights : undefined,
         routines: routines.length > 0 ? routines : undefined,
         signals: signals.length > 0 ? signals : undefined,
@@ -212,6 +219,7 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
       const MAX_ACTIONS = 100_000;
       const MAX_ACTION_EDGES = 250_000;
       const MAX_ACTION_EVENTS = 500_000;
+      const MAX_LESSONS = 100_000;
 
       if (!Array.isArray(importData.sessions)) {
         return { success: false, error: "sessions must be an array" };
@@ -275,6 +283,36 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
           success: false,
           error: `Too many total observations (max ${MAX_TOTAL_OBSERVATIONS})`,
         };
+      }
+
+      const importedLessons = importData.lessons ?? [];
+      if (!Array.isArray(importedLessons)) {
+        return { success: false, error: "lessons must be an array" };
+      }
+      if (importedLessons.length > MAX_LESSONS) {
+        return {
+          success: false,
+          error: `Too many lessons (max ${MAX_LESSONS})`,
+        };
+      }
+      const normalizedImportedLessons: Lesson[] = [];
+      const importedLessonIds = new Set<string>();
+      for (const lesson of importedLessons) {
+        const parsed = parseImportedLesson(lesson);
+        if (!parsed.success) {
+          return {
+            success: false,
+            error: `Invalid lesson: ${parsed.error}`,
+          };
+        }
+        if (importedLessonIds.has(parsed.lesson.id)) {
+          return {
+            success: false,
+            error: `Duplicate lesson: ${parsed.lesson.id}`,
+          };
+        }
+        importedLessonIds.add(parsed.lesson.id);
+        normalizedImportedLessons.push(parsed.lesson);
       }
 
       const importedActions = Array.isArray(importData.actions)
@@ -431,6 +469,7 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
         actions: 0,
         actionEdges: 0,
         actionEvents: 0,
+        lessons: 0,
         skipped: 0,
       };
 
@@ -780,14 +819,18 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
           await kv.set(KV.facets, facet.id, facet);
         }
       }
-      if (importData.lessons) {
-        for (const lesson of importData.lessons) {
-          if (strategy === "skip") {
-            const existing = await kv.get(KV.lessons, lesson.id).catch(() => null);
-            if (existing) { stats.skipped++; continue; }
+      for (const lesson of normalizedImportedLessons) {
+        if (strategy === "skip") {
+          const existing = await kv
+            .get(KV.lessons, lesson.id)
+            .catch(() => null);
+          if (existing) {
+            stats.skipped++;
+            continue;
           }
-          await kv.set(KV.lessons, lesson.id, lesson);
         }
+        await kv.set(KV.lessons, lesson.id, lesson);
+        stats.lessons++;
       }
       if (importData.insights) {
         for (const insight of importData.insights) {

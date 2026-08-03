@@ -8,6 +8,7 @@ import {
   deleteActionEdge,
   persistAction,
 } from "./action-store.js";
+import { isLessonListable } from "./lesson-model.js";
 import type {
   Action,
   ActionEdge,
@@ -408,7 +409,7 @@ export function registerDiagnosticsFunction(sdk: ISdk, kv: StateKV): void {
         // Catches bad confidence values that would silently break recall
         // scoring (memory_lesson_recall multiplies by confidence).
         const lessons = await kv.list<Lesson>(KV.lessons);
-        const live = lessons.filter((l) => !l.deleted);
+        const live = lessons.filter(isLessonListable);
         let lessonIssues = 0;
         for (const l of live) {
           // Number.isFinite rejects NaN / Infinity / non-numbers; a

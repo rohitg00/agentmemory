@@ -17,6 +17,7 @@ import { safeAudit } from "./audit.js";
 import { buildSyntheticCompression } from "./compress-synthetic.js";
 import { getSearchIndex } from "./search.js";
 import { logger } from "../logger.js";
+import { normalizeLesson } from "./lesson-model.js";
 
 export const MAX_FILES_DEFAULT = 200;
 export const MAX_FILES_UPPER_BOUND = 1000;
@@ -120,25 +121,26 @@ async function deriveCrystalAndLessons(
     try {
       const existing = await kv.get<Lesson>(KV.lessons, lessonId);
       if (existing) {
-        const existingSources = existing.sourceIds || [];
+        const normalizedExisting = normalizeLesson(existing);
+        const existingSources = normalizedExisting.sourceIds;
         const mergedSources = existingSources.includes(sessionId)
           ? existingSources
           : [...existingSources, sessionId];
-        const existingTags = existing.tags || [];
+        const existingTags = normalizedExisting.tags;
         const mergedTags = existingTags.includes("auto-import")
           ? existingTags
           : [...existingTags, "auto-import"];
         const merged: Lesson = {
-          ...existing,
+          ...normalizedExisting,
           sourceIds: mergedSources,
           tags: mergedTags,
-          reinforcements: (existing.reinforcements || 0) + 1,
+          reinforcements: normalizedExisting.reinforcements + 1,
           updatedAt: createdAt,
           lastReinforcedAt: createdAt,
         };
         await kv.set(KV.lessons, lessonId, merged);
       } else {
-        const lesson: Lesson = {
+        const lesson = normalizeLesson({
           id: lessonId,
           content,
           context: firstPrompt || project,
@@ -151,7 +153,7 @@ async function deriveCrystalAndLessons(
           createdAt,
           updatedAt: createdAt,
           decayRate: 0.05,
-        };
+        });
         await kv.set(KV.lessons, lessonId, lesson);
       }
       lessonIds.push(lessonId);

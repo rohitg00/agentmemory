@@ -11,6 +11,10 @@ import type {
   Session,
 } from "../types.js";
 import { recordAudit } from "./audit.js";
+import {
+  isLessonListable,
+  toLessonReadModel,
+} from "./lesson-model.js";
 const DEFAULT_EXPORT_ROOT = join(homedir(), ".agentmemory");
 
 function getExportRoot(): string {
@@ -116,25 +120,43 @@ function memoryToMd(m: Memory): string {
 }
 
 function lessonToMd(l: Lesson): string {
-  const tags = safeArray<string>(l.tags);
-  const sourceIds = safeArray<string>(l.sourceIds);
-  const content = safeString(l.content);
-  const headline = content ? content.slice(0, 80) : l.id;
+  const lesson = toLessonReadModel(l);
+  const tags = safeArray<string>(lesson.tags);
+  const sourceIds = safeArray<string>(lesson.sourceIds);
+  const content = safeString(lesson.content);
+  const headline = content ? content.slice(0, 80) : lesson.id;
 
   const fm = toFrontmatter({
-    id: l.id,
+    id: lesson.id,
     type: "lesson",
-    source: l.source,
-    confidence: l.confidence,
-    reinforcements: l.reinforcements,
-    created: l.createdAt,
-    updated: l.updatedAt,
-    project: l.project,
+    schemaVersion: lesson.schemaVersion,
+    source: lesson.source,
+    confidence: lesson.confidence,
+    reinforcements: lesson.reinforcements,
+    created: lesson.createdAt,
+    updated: lesson.updatedAt,
+    project: lesson.project,
     tags,
-    decayRate: l.decayRate,
+    decayRate: lesson.decayRate,
+    mechanismId: lesson.mechanismId,
+    mechanismVersion: lesson.mechanismVersion,
+    claimType: lesson.claimType,
+    evidenceVerdict: lesson.evidenceVerdict,
+    lifecycle: lesson.lifecycle,
+    scopeRing: lesson.scope.ring,
+    scopeId: lesson.scope.scopeId,
+    sensitivity: lesson.sensitivity,
+    contentFingerprint: lesson.contentFingerprint,
   });
 
   const sourceLinks = sourceIds.map((id) => `- [[${id}]]`).join("\n");
+  const evidenceLines = lesson.evidenceRefs
+    .map((reference) => {
+      const anchor = reference.commitSha ?? reference.artifactDigest;
+      const path = reference.path ? `:${reference.path}` : "";
+      return `- ${reference.kind}: ${reference.repoRemoteUrl}@${anchor}${path}`;
+    })
+    .join("\n");
 
   const sections = [
     fm,
@@ -144,8 +166,36 @@ function lessonToMd(l: Lesson): string {
     content,
   ];
 
-  if (l.context) {
-    sections.push("", "## Context", l.context);
+  if (lesson.claim) {
+    sections.push("", "## Falsifiable Claim", lesson.claim);
+  }
+  if (lesson.context) {
+    sections.push("", "## Context", lesson.context);
+  }
+  if (lesson.applicabilityConditions.length > 0) {
+    sections.push(
+      "",
+      "## Applies When",
+      lesson.applicabilityConditions.map((value) => `- ${value}`).join("\n"),
+    );
+  }
+  if (lesson.nonApplicabilityConditions.length > 0) {
+    sections.push(
+      "",
+      "## Does Not Apply When",
+      lesson.nonApplicabilityConditions
+        .map((value) => `- ${value}`)
+        .join("\n"),
+    );
+  }
+  if (lesson.falsificationConditions.length > 0) {
+    sections.push(
+      "",
+      "## Falsified When",
+      lesson.falsificationConditions
+        .map((value) => `- ${value}`)
+        .join("\n"),
+    );
   }
   if (tags.length > 0) {
     sections.push(
@@ -156,6 +206,9 @@ function lessonToMd(l: Lesson): string {
   }
   if (sourceLinks) {
     sections.push("", "## Sources", sourceLinks);
+  }
+  if (evidenceLines) {
+    sections.push("", "## Evidence Anchors", evidenceLines);
   }
 
   return sections.join("\n");
@@ -324,7 +377,8 @@ export function registerObsidianExportFunction(
         }
 
         for (const l of lessons.filter(
-          (l): l is Lesson & { id: string } => hasExportId(l) && !l.deleted,
+          (l): l is Lesson & { id: string } =>
+            hasExportId(l) && isLessonListable(l),
         )) {
           const filename = `${sanitize(l.id)}.md`;
           const filepath = join(dirs.lessons, filename);

@@ -3087,7 +3087,7 @@
 
       var html = '<div class="card" style="margin-bottom:12px;padding:12px;background:var(--bg-subtle);">';
       html += '<div style="font-size:13px;color:var(--ink-muted);line-height:1.5;">';
-      html += '<strong>Lessons</strong> are portable heuristics — short imperative rules (always/never/prefer/avoid) extracted from past work. Auto-surface from JSONL imports (low confidence, tag <code>auto-import</code>), get reinforced when the agent applies them, and decay if unused. Higher confidence = more battle-tested.';
+      html += '<strong>Lessons</strong> are portable prose heuristics or structured causal claims. Reinforcement tracks reuse without changing evidence confidence. Schema-v1 lessons keep evidence verdict separate from lifecycle and compute stale/contradicted flags without automatic confidence changes; pre-schema rows retain legacy decay compatibility.';
       html += '</div></div>';
 
       html += '<div style="display:flex;gap:8px;margin-bottom:12px;">';
@@ -3101,7 +3101,7 @@
           '<div class="empty-title">No lessons yet</div>' +
           '<div class="empty-lead">Lessons are confidence-scored pattern observations &mdash; things you corrected once that the agent should never do again. They persist across projects.</div>' +
           '<pre class="empty-cmd"># Save a lesson explicitly\nmemory_lesson_save { rule, reason, confidence }\n\n# Or: Replay tab &rarr; Import JSONL auto-extracts lessons\n# from your past Claude Code sessions</pre>' +
-          '<div><a class="empty-link" href="https://github.com/rohitg00/agentmemory#lessons" target="_blank" rel="noopener">Lesson decay &amp; scoring &rarr;</a></div>' +
+          '<div><a class="empty-link" href="https://github.com/rohitg00/agentmemory#structured-causal-lessons" target="_blank" rel="noopener">Causal lesson schema &amp; confidence &rarr;</a></div>' +
           '</div>';
       } else {
         html += '<table><thead><tr><th>Lesson</th><th>Confidence</th><th>Reinforcements</th><th>Source</th><th>Project</th><th>Updated</th></tr></thead><tbody>';

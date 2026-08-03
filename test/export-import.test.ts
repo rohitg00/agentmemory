@@ -15,6 +15,7 @@ import type {
   ActionEdge,
   ActionCollectionState,
   ActionEvent,
+  Lesson,
 } from "../src/types.js";
 
 function mockKV() {
@@ -233,6 +234,164 @@ describe("Export/Import Functions", () => {
     )) as ExportData;
     expect(reExported.sessions.length).toBe(exported.sessions.length);
     expect(reExported.memories.length).toBe(exported.memories.length);
+  });
+
+  it("exports legacy lessons with normalized defaults without rewriting live state", async () => {
+    const legacy: Lesson = {
+      id: "lsn_legacy_export",
+      content: "Legacy export lesson",
+      context: "",
+      confidence: 0.7,
+      reinforcements: 0,
+      source: "manual",
+      sourceIds: [],
+      project: "agentmemory",
+      tags: ["legacy"],
+      createdAt: "2026-07-01T00:00:00.000Z",
+      updatedAt: "2026-07-01T00:00:00.000Z",
+      decayRate: 0.05,
+    };
+    await kv.set("mem:lessons", legacy.id, legacy);
+
+    const exported = (await sdk.trigger("mem::export", {})) as ExportData;
+    const stored = await kv.get<Lesson>("mem:lessons", legacy.id);
+
+    expect(exported.lessons).toEqual([
+      expect.objectContaining({
+        id: legacy.id,
+        schemaVersion: 1,
+        evidenceVerdict: "unverified",
+        lifecycle: "active",
+        sensitivity: "restricted",
+        scope: { ring: "worktree" },
+        contentFingerprint: expect.stringMatching(/^lfp_[a-f0-9]{16}$/),
+      }),
+    ]);
+    expect(stored).toEqual(legacy);
+    expect(stored?.schemaVersion).toBeUndefined();
+  });
+
+  it("normalizes legacy lessons during explicit import and preserves structured fields", async () => {
+    const legacy = {
+      id: "lsn_legacy_import",
+      content: "Imported legacy lesson",
+      context: "",
+      confidence: 0.6,
+      reinforcements: 0,
+      source: "manual",
+      sourceIds: [],
+      project: "agentmemory",
+      tags: [],
+      createdAt: "2026-07-01T00:00:00.000Z",
+      updatedAt: "2026-07-01T00:00:00.000Z",
+      decayRate: 0.05,
+    } as Lesson;
+    const structured = {
+      ...legacy,
+      id: "lsn_structured_import",
+      content: "Structured imported lesson",
+      mechanismId: "import/normalization",
+      claim: "Explicit import produces a stable normalized lesson.",
+      claimType: "causal",
+      evidenceVerdict: "supported",
+      lifecycle: "active",
+      evidenceRefs: [
+        {
+          kind: "experiment",
+          projectId: "agentmemory",
+          repoRemoteUrl: "https://github.com/rohitg00/agentmemory",
+          commitSha: "d".repeat(40),
+          recordedAt: "2026-08-02T20:00:00.000Z",
+          sampleCount: 1,
+        },
+      ],
+      scope: { ring: "repo", scopeId: "repo:agentmemory" },
+      sensitivity: "confidential",
+    } as Lesson;
+    const exportData: ExportData = {
+      version: "0.9.27",
+      exportedAt: new Date().toISOString(),
+      sessions: [],
+      observations: {},
+      memories: [],
+      summaries: [],
+      lessons: [legacy, structured],
+    };
+
+    const result = (await sdk.trigger("mem::import", {
+      exportData,
+      strategy: "merge",
+    })) as { success: boolean; lessons: number };
+    const storedLegacy = await kv.get<Lesson>(
+      "mem:lessons",
+      legacy.id,
+    );
+    const storedStructured = await kv.get<Lesson>(
+      "mem:lessons",
+      structured.id,
+    );
+
+    expect(result).toMatchObject({ success: true, lessons: 2 });
+    expect(storedLegacy).toMatchObject({
+      schemaVersion: 1,
+      evidenceVerdict: "unverified",
+      lifecycle: "active",
+      sensitivity: "restricted",
+    });
+    expect(storedStructured).toMatchObject({
+      schemaVersion: 1,
+      mechanismId: "import/normalization",
+      evidenceVerdict: "supported",
+      lifecycle: "active",
+      sensitivity: "confidential",
+      evidenceRefs: [expect.objectContaining({ commitSha: "d".repeat(40) })],
+    });
+  });
+
+  it("rejects invalid structured lessons before replace mutation", async () => {
+    const preserved: Lesson = {
+      id: "lsn_preserved",
+      content: "Preserve this lesson",
+      context: "",
+      confidence: 0.5,
+      reinforcements: 0,
+      source: "manual",
+      sourceIds: [],
+      tags: [],
+      createdAt: "2026-07-01T00:00:00.000Z",
+      updatedAt: "2026-07-01T00:00:00.000Z",
+      decayRate: 0.05,
+    };
+    await kv.set("mem:lessons", preserved.id, preserved);
+    const invalid = {
+      ...preserved,
+      id: "lsn_invalid",
+      mechanismId: "invalid/import",
+      claim: "This unsupported record has no durable evidence.",
+      evidenceVerdict: "supported",
+      scope: { ring: "repo", scopeId: "repo:agentmemory" },
+    } as Lesson;
+    const exportData: ExportData = {
+      version: "0.9.27",
+      exportedAt: new Date().toISOString(),
+      sessions: [],
+      observations: {},
+      memories: [],
+      summaries: [],
+      lessons: [invalid],
+    };
+
+    const result = (await sdk.trigger("mem::import", {
+      exportData,
+      strategy: "replace",
+    })) as { success: boolean; error: string };
+
+    expect(result).toMatchObject({
+      success: false,
+      error: expect.stringContaining("durable evidence reference"),
+    });
+    expect(await kv.get("mem:lessons", preserved.id)).toEqual(preserved);
+    expect(await kv.get("mem:sessions", "ses_1")).toEqual(testSession);
   });
 
   it("import rejects unsupported version", async () => {

@@ -928,6 +928,68 @@ export interface Crystal {
   createdAt: string;
 }
 
+export type LessonEvidenceVerdict =
+  | "supported"
+  | "refuted"
+  | "mixed"
+  | "unverified";
+
+export type LessonLifecycle =
+  | "draft"
+  | "active"
+  | "superseded"
+  | "retracted";
+
+export type LessonClaimType =
+  | "causal"
+  | "predictive"
+  | "procedural"
+  | "constraint"
+  | "descriptive";
+
+export type LessonScopeRing =
+  | "worktree"
+  | "repo"
+  | "initiative"
+  | "domain"
+  | "global";
+
+export type LessonSensitivity =
+  | "public"
+  | "internal"
+  | "confidential"
+  | "restricted";
+
+export interface LessonHumanApproval {
+  approvedBy: string;
+  approvedAt: string;
+  reason: string;
+}
+
+export interface LessonScope {
+  ring: LessonScopeRing;
+  scopeId?: string;
+  humanApproval?: LessonHumanApproval;
+}
+
+export interface LessonEvidenceReference {
+  kind: string;
+  projectId: string;
+  repoRemoteUrl: string;
+  commitSha?: string;
+  artifactDigest?: string;
+  path?: string;
+  recordedAt: string;
+  validatedAt?: string;
+  evidenceKind?: string;
+  sampleCount?: number;
+}
+
+export interface LessonComputedFlags {
+  stale: boolean;
+  contradicted: boolean;
+}
+
 export interface Lesson {
   id: string;
   content: string;
@@ -948,6 +1010,44 @@ export interface Lesson {
   deletedBy?: string;
   deleteReason?: string;
   supersededByLessonId?: string;
+  schemaVersion?: 1;
+  mechanismId?: string;
+  mechanismVersion?: string;
+  mechanismAliases?: string[];
+  claim?: string;
+  claimType?: LessonClaimType;
+  evidenceVerdict?: LessonEvidenceVerdict;
+  lifecycle?: LessonLifecycle;
+  applicabilityConditions?: string[];
+  nonApplicabilityConditions?: string[];
+  falsificationConditions?: string[];
+  structuredFacets?: Record<string, string[]>;
+  evidenceRefs?: LessonEvidenceReference[];
+  scope?: LessonScope;
+  sensitivity?: LessonSensitivity;
+  reviewAfter?: string;
+  contradictedByLessonIds?: string[];
+  contentFingerprint?: string;
+}
+
+export interface NormalizedLesson extends Lesson {
+  schemaVersion: 1;
+  mechanismAliases: string[];
+  evidenceVerdict: LessonEvidenceVerdict;
+  lifecycle: LessonLifecycle;
+  applicabilityConditions: string[];
+  nonApplicabilityConditions: string[];
+  falsificationConditions: string[];
+  structuredFacets: Record<string, string[]>;
+  evidenceRefs: LessonEvidenceReference[];
+  scope: LessonScope;
+  sensitivity: LessonSensitivity;
+  contradictedByLessonIds: string[];
+  contentFingerprint: string;
+}
+
+export interface LessonReadModel extends NormalizedLesson {
+  computedFlags: LessonComputedFlags;
 }
 
 export interface Insight {

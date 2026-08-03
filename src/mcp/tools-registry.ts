@@ -1,9 +1,21 @@
+export type McpSchemaProperty = {
+  type: string;
+  description?: string;
+  enum?: string[];
+  items?: McpSchemaProperty;
+  properties?: Record<string, McpSchemaProperty>;
+  required?: string[];
+  additionalProperties?: boolean | McpSchemaProperty;
+  maxItems?: number;
+  minimum?: number;
+};
+
 export type McpToolDef = {
   name: string;
   description: string;
   inputSchema: {
     type: "object";
-    properties: Record<string, { type: string; description: string }>;
+    properties: Record<string, McpSchemaProperty>;
     required?: string[];
   };
 };
@@ -885,7 +897,7 @@ export const V070_TOOLS: McpToolDef[] = [
   {
     name: "memory_lesson_save",
     description:
-      "Save a lesson learned from this session. Lessons have confidence scores that strengthen when reinforced and decay when not used. Duplicate content auto-strengthens the existing lesson.",
+      "Save a legacy prose lesson or a structured causal lesson. Reinforcement tracks reuse without changing evidence confidence; structured inputs support verdict, lifecycle, durable evidence, scope, sensitivity, and deterministic fingerprints.",
     inputSchema: {
       type: "object",
       properties: {
@@ -903,6 +915,143 @@ export const V070_TOOLS: McpToolDef[] = [
         },
         project: { type: "string", description: "Project this lesson is about" },
         tags: { type: "string", description: "Comma-separated tags" },
+        mechanismId: {
+          type: "string",
+          description:
+            "Canonical mechanism identity for a structured causal lesson",
+        },
+        mechanismVersion: {
+          type: "string",
+          description: "Optional version within the canonical mechanism",
+        },
+        mechanismAliases: {
+          type: "array",
+          description: "Optional prior or alternate mechanism identities",
+          items: { type: "string" },
+          maxItems: 8,
+        },
+        claim: {
+          type: "string",
+          description:
+            "Short falsifiable claim, distinct from the prose content",
+        },
+        claimType: {
+          type: "string",
+          description: "General claim classification",
+          enum: [
+            "causal",
+            "predictive",
+            "procedural",
+            "constraint",
+            "descriptive",
+          ],
+        },
+        evidenceVerdict: {
+          type: "string",
+          description: "Evidence verdict, independent of lifecycle",
+          enum: ["supported", "refuted", "mixed", "unverified"],
+        },
+        lifecycle: {
+          type: "string",
+          description:
+            "Initial lifecycle; superseded and retracted require correction tools",
+          enum: ["draft", "active"],
+        },
+        applicabilityConditions: {
+          type: "array",
+          description: "Conditions under which the claim applies",
+          items: { type: "string" },
+          maxItems: 16,
+        },
+        nonApplicabilityConditions: {
+          type: "array",
+          description: "Conditions under which the claim does not apply",
+          items: { type: "string" },
+          maxItems: 16,
+        },
+        falsificationConditions: {
+          type: "array",
+          description: "Observable conditions that would falsify the claim",
+          items: { type: "string" },
+          maxItems: 16,
+        },
+        structuredFacets: {
+          type: "object",
+          description:
+            "General facet dimensions mapped to string values, such as asset, venue, horizon, regime, or signal_family",
+          additionalProperties: {
+            type: "array",
+            items: { type: "string" },
+            maxItems: 16,
+          },
+        },
+        evidenceRefs: {
+          type: "array",
+          description:
+            "At most eight immutable evidence anchors; branch, ref, or path alone is insufficient",
+          maxItems: 8,
+          items: {
+            type: "object",
+            properties: {
+              kind: { type: "string" },
+              projectId: { type: "string" },
+              repoRemoteUrl: { type: "string" },
+              commitSha: { type: "string" },
+              artifactDigest: { type: "string" },
+              path: { type: "string" },
+              recordedAt: { type: "string" },
+              validatedAt: { type: "string" },
+              evidenceKind: { type: "string" },
+              sampleCount: { type: "number", minimum: 0 },
+            },
+            required: [
+              "kind",
+              "projectId",
+              "repoRemoteUrl",
+              "recordedAt",
+            ],
+          },
+        },
+        scope: {
+          type: "object",
+          description:
+            "Scope ring and durable scope identity; project remains only a label",
+          properties: {
+            ring: {
+              type: "string",
+              enum: ["worktree", "repo", "initiative", "domain", "global"],
+            },
+            scopeId: { type: "string" },
+            humanApproval: {
+              type: "object",
+              properties: {
+                approvedBy: { type: "string" },
+                approvedAt: { type: "string" },
+                reason: { type: "string" },
+              },
+              required: ["approvedBy", "approvedAt", "reason"],
+            },
+          },
+          required: ["ring"],
+        },
+        sensitivity: {
+          type: "string",
+          description:
+            "Sensitivity classification; defaults fail-closed to restricted",
+          enum: ["public", "internal", "confidential", "restricted"],
+        },
+        reviewAfter: {
+          type: "string",
+          description:
+            "Optional ISO review timestamp used to compute staleness without changing lifecycle or confidence",
+        },
+        contradictedByLessonIds: {
+          type: "array",
+          description:
+            "Explicit lesson IDs used to compute contradiction state without changing confidence",
+          items: { type: "string" },
+          maxItems: 16,
+        },
       },
       required: ["content"],
     },
@@ -928,7 +1077,7 @@ export const V070_TOOLS: McpToolDef[] = [
   {
     name: "memory_lesson_delete",
     description:
-      "Soft-delete one lesson by exact ID while preserving correction metadata and an audit trail. Requires a human-readable reason.",
+      "Retract one lesson by exact ID when its evidence is invalid, preserving the legacy tombstone fields, correction metadata, and audit trail. Requires a human-readable reason.",
     inputSchema: {
       type: "object",
       properties: {
@@ -957,7 +1106,7 @@ export const V070_TOOLS: McpToolDef[] = [
   {
     name: "memory_lesson_supersede",
     description:
-      "Soft-delete one lesson in favor of an existing replacement lesson in the same project, preserving lineage and an audit trail.",
+      "Mark one lesson superseded in favor of an active replacement in the same durable scope, preserving legacy tombstone fields, lineage, and an audit trail.",
     inputSchema: {
       type: "object",
       properties: {

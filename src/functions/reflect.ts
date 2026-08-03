@@ -12,6 +12,7 @@ import type {
 } from "../types.js";
 import { recordAudit } from "./audit.js";
 import { REFLECT_SYSTEM, buildReflectPrompt } from "../prompts/reflect.js";
+import { isLessonRecallable } from "./lesson-model.js";
 
 interface ConceptCluster {
   concepts: string[];
@@ -180,7 +181,7 @@ export function registerReflectFunctions(
           kv.list<Crystal>(KV.crystals).catch(() => []),
         ]);
 
-      let activeLessons = lessons.filter((l) => !l.deleted);
+      let activeLessons = lessons.filter(isLessonRecallable);
       if (data?.project) {
         activeLessons = activeLessons.filter((l) => l.project === data.project);
       }

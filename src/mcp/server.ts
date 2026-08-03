@@ -12,6 +12,7 @@ import { getVisibleTools } from "./tools-registry.js";
 import { timingSafeCompare } from "../auth.js";
 import { getAgentId, isAgentScopeIsolated } from "../config.js";
 import { selectSessionPage } from "../functions/session-list.js";
+import { parseLessonSaveInput } from "../functions/lesson-model.js";
 
 type McpResponse = {
   status_code: number;
@@ -1307,20 +1308,20 @@ export function registerMcpEndpoints(
           }
 
           case "memory_lesson_save": {
-            if (typeof args.content !== "string" || !args.content.trim()) {
-              return { status_code: 400, body: { error: "content is required" } };
-            }
-            const lessonTags = typeof args.tags === "string" && args.tags.trim()
-              ? args.tags.split(",").map((t: string) => t.trim()).filter(Boolean)
-              : [];
-            const lessonSaveResult = await sdk.trigger({ function_id: "mem::lesson-save", payload: {
-              content: args.content,
-              context: args.context || "",
-              confidence: args.confidence,
-              project: args.project,
-              tags: lessonTags,
+            const parsed = parseLessonSaveInput(args, {
               source: "manual",
-            } });
+              allowSourceMetadata: false,
+            });
+            if (!parsed.success) {
+              return {
+                status_code: 400,
+                body: { error: parsed.error },
+              };
+            }
+            const lessonSaveResult = await sdk.trigger({
+              function_id: "mem::lesson-save",
+              payload: parsed.value,
+            });
             return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(lessonSaveResult, null, 2) }] } };
           }
 

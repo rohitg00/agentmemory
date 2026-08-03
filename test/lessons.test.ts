@@ -91,7 +91,7 @@ describe("Lessons", () => {
       expect(result.lesson.confidence).toBe(0.5);
     });
 
-    it("strengthens existing lesson on duplicate content", async () => {
+    it("records duplicate reinforcement without changing confidence", async () => {
       const first = (await sdk.trigger("mem::lesson-save", {
         content: "Duplicate lesson",
       })) as { action: string; lesson: Lesson };
@@ -106,7 +106,7 @@ describe("Lessons", () => {
       expect(second.action).toBe("strengthened");
       expect(second.lesson.id).toBe(originalId);
       expect(second.lesson.reinforcements).toBe(1);
-      expect(second.lesson.confidence).toBeGreaterThan(0.5);
+      expect(second.lesson.confidence).toBe(0.5);
     });
 
     it("rejects empty content", async () => {
@@ -195,6 +195,28 @@ describe("Lessons", () => {
       })) as { success: boolean };
 
       expect(result.success).toBe(false);
+    });
+
+    it("keeps draft lessons listable but out of active recall", async () => {
+      const saved = (await sdk.trigger("mem::lesson-save", {
+        content: "Draft lesson pending review",
+        lifecycle: "draft",
+      })) as { lesson: Lesson };
+      const recall = (await sdk.trigger("mem::lesson-recall", {
+        query: "draft pending review",
+      })) as { lessons: Lesson[] };
+      const list = (await sdk.trigger("mem::lesson-list", {})) as {
+        lessons: Lesson[];
+      };
+
+      expect(saved.lesson.lifecycle).toBe("draft");
+      expect(recall.lessons).toEqual([]);
+      expect(list.lessons).toContainEqual(
+        expect.objectContaining({
+          id: saved.lesson.id,
+          lifecycle: "draft",
+        }),
+      );
     });
   });
 
@@ -314,7 +336,7 @@ describe("Lessons", () => {
   });
 
   describe("mem::lesson-strengthen", () => {
-    it("increases confidence with diminishing returns", async () => {
+    it("tracks reinforcement without changing evidence confidence", async () => {
       const saved = (await sdk.trigger("mem::lesson-save", {
         content: "Strengthen me",
         confidence: 0.5,
@@ -326,11 +348,11 @@ describe("Lessons", () => {
 
       expect(result.success).toBe(true);
       expect(result.lesson.reinforcements).toBe(1);
-      expect(result.lesson.confidence).toBeCloseTo(0.55, 2);
+      expect(result.lesson.confidence).toBe(0.5);
       expect(result.lesson.lastReinforcedAt).toBeDefined();
     });
 
-    it("caps confidence at 1.0", async () => {
+    it("does not silently increase high confidence", async () => {
       const saved = (await sdk.trigger("mem::lesson-save", {
         content: "High confidence",
         confidence: 0.95,
@@ -340,7 +362,7 @@ describe("Lessons", () => {
         lessonId: saved.lesson.id,
       })) as { lesson: Lesson };
 
-      expect(result.lesson.confidence).toBeLessThanOrEqual(1.0);
+      expect(result.lesson.confidence).toBe(0.95);
     });
 
     it("fails for missing lessonId", async () => {
@@ -353,7 +375,7 @@ describe("Lessons", () => {
   });
 
   describe("mem::lesson-decay-sweep", () => {
-    it("decays old lessons incrementally", async () => {
+    it("preserves incremental decay for legacy stored lessons", async () => {
       const saved = (await sdk.trigger("mem::lesson-save", {
         content: "Old lesson",
         confidence: 0.8,
@@ -361,6 +383,7 @@ describe("Lessons", () => {
 
       const lessons = await kv.list<Lesson>("mem:lessons");
       const lesson = lessons[0];
+      delete lesson.schemaVersion;
       lesson.createdAt = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
       await kv.set("mem:lessons", lesson.id, lesson);
 
@@ -376,7 +399,7 @@ describe("Lessons", () => {
       expect(after!.lastDecayedAt).toBeDefined();
     });
 
-    it("does not decay lessons less than 1 week old", async () => {
+    it("does not decay normalized lessons without a review deadline", async () => {
       await sdk.trigger("mem::lesson-save", {
         content: "Recent lesson",
         confidence: 0.5,
@@ -389,13 +412,14 @@ describe("Lessons", () => {
       expect(result.decayed).toBe(0);
     });
 
-    it("soft-deletes low-confidence unreinforced lessons", async () => {
+    it("preserves legacy low-confidence soft deletion", async () => {
       const saved = (await sdk.trigger("mem::lesson-save", {
         content: "Weak lesson",
         confidence: 0.12,
       })) as { lesson: Lesson };
 
       const lesson = await kv.get<Lesson>("mem:lessons", saved.lesson.id);
+      delete lesson!.schemaVersion;
       lesson!.createdAt = new Date(Date.now() - 21 * 24 * 60 * 60 * 1000).toISOString();
       await kv.set("mem:lessons", lesson!.id, lesson!);
 
@@ -409,13 +433,14 @@ describe("Lessons", () => {
       expect(after!.deleted).toBe(true);
     });
 
-    it("uses lastDecayedAt for incremental delta (not full age)", async () => {
+    it("uses lastDecayedAt for legacy incremental delta", async () => {
       const saved = (await sdk.trigger("mem::lesson-save", {
         content: "Incremental decay",
         confidence: 0.8,
       })) as { lesson: Lesson };
 
       const lesson = await kv.get<Lesson>("mem:lessons", saved.lesson.id);
+      delete lesson!.schemaVersion;
       lesson!.createdAt = new Date(Date.now() - 28 * 24 * 60 * 60 * 1000).toISOString();
       lesson!.lastDecayedAt = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
       lesson!.confidence = 0.6;
@@ -426,6 +451,32 @@ describe("Lessons", () => {
       const after = await kv.get<Lesson>("mem:lessons", saved.lesson.id);
       expect(after!.confidence).toBeCloseTo(0.55, 2);
       expect(after!.confidence).toBeGreaterThan(0.4);
+    });
+
+    it("computes schema-v1 staleness without mutating confidence or lifecycle", async () => {
+      const saved = (await sdk.trigger("mem::lesson-save", {
+        content: "Review this evidence later",
+        confidence: 0.8,
+        reviewAfter: "2020-01-01T00:00:00.000Z",
+      })) as { lesson: Lesson };
+
+      const result = (await sdk.trigger("mem::lesson-decay-sweep", {})) as {
+        stale: number;
+        decayed: number;
+        softDeleted: number;
+      };
+      const after = await kv.get<Lesson>("mem:lessons", saved.lesson.id);
+
+      expect(result).toMatchObject({
+        stale: 1,
+        decayed: 0,
+        softDeleted: 0,
+      });
+      expect(after).toMatchObject({
+        confidence: 0.8,
+        lifecycle: "active",
+      });
+      expect(after?.deleted).not.toBe(true);
     });
   });
 });

@@ -1516,7 +1516,7 @@ Create `~/.agentmemory/.env`:
                                    # PostToolUse regardless of this flag.
 # GRAPH_EXTRACTION_ENABLED=false
 # CONSOLIDATION_ENABLED=false   # on by default when an LLM provider is configured
-# LESSON_DECAY_ENABLED=true
+# LESSON_DECAY_ENABLED=true  # legacy confidence decay + schema-v1 staleness scan
 # OBSIDIAN_AUTO_EXPORT=false
 # AGENTMEMORY_EXPORT_ROOT=~/.agentmemory
 # CLAUDE_MEMORY_BRIDGE=false
@@ -1532,6 +1532,35 @@ Create `~/.agentmemory/.env`:
 # AGENTMEMORY_TOOLS=core
 # AGENTMEMORY_DISABLE_LLM_TOOLS=true  # reports skipped_disabled, not failure
 ```
+
+### Structured causal lessons
+
+`memory_lesson_save` and `POST /agentmemory/lessons` remain compatible with
+prose-only lessons and also accept causal schema-v1 fields:
+
+- canonical `mechanismId`/optional version and aliases, plus a short
+  falsifiable `claim`;
+- evidence verdict (`supported`, `refuted`, `mixed`, `unverified`) independent
+  of lifecycle (`draft`, `active`, `superseded`, `retracted`);
+- applicability, non-applicability, falsification conditions, and general
+  string-valued facets;
+- at most eight durable evidence references anchored by a full commit SHA
+  and/or artifact digest;
+- worktree/repo/initiative/domain/global scope rings and sensitivity
+  classification.
+
+Structured causal lessons require an explicit durable scope; global scope also
+requires human approval metadata. Legacy lessons normalize on read to
+`unverified` + `active` with an implicit worktree scope and
+`sensitivity: restricted`; reads do not rewrite stored rows. Reinforcement
+records reuse without increasing evidence confidence.
+Supersession/retraction continue through the audited correction APIs.
+
+Scope and sensitivity enforcement, automatic contradiction discovery, and
+hybrid/vector lesson retrieval are intentionally deferred to PR2. Until then,
+sensitivity metadata is classification, not an access-control boundary. See
+[Causal Lesson Schema v1](docs/superpowers/specs/2026-08-02-causal-lesson-schema-v1.md)
+for the complete compatibility and fingerprint contract.
 
 ---
 
@@ -1557,8 +1586,8 @@ Create `~/.agentmemory/.env`:
 | `GET` | `/agentmemory/profile` | Project profile |
 | `GET` | `/agentmemory/actions/graph` | Bounded action and dependency projection without event history |
 | `GET` | `/agentmemory/lessons` | Bounded lesson pages with project, confidence, and recency controls |
-| `DELETE` | `/agentmemory/lessons` | Tombstone a lesson (reason + optional actor; supports expectedUpdatedAt revision guard) |
-| `POST` | `/agentmemory/lessons/supersede` | Tombstone a lesson and link a replacement lesson |
+| `DELETE` | `/agentmemory/lessons` | Retract a lesson through an audited compatibility tombstone (reason + optional actor; supports expectedUpdatedAt) |
+| `POST` | `/agentmemory/lessons/supersede` | Mark a lesson superseded and link an active replacement through the audited correction path |
 | `GET` | `/agentmemory/export` | Export all data |
 | `POST` | `/agentmemory/import` | Import from JSON |
 | `POST` | `/agentmemory/graph/query` | Knowledge graph query |

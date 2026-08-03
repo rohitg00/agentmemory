@@ -22,6 +22,7 @@ import { MAX_FILES_UPPER_BOUND } from "../functions/replay.js";
 import { logger } from "../logger.js";
 import { selectSessionPage } from "../functions/session-list.js";
 import { triggerDetached } from "../utils/trigger-detached.js";
+import { parseLessonSaveInput } from "../functions/lesson-model.js";
 import {
   isGraphExtractionEnabled,
   isConsolidationEnabled,
@@ -3545,19 +3546,16 @@ export function registerApiTriggers(
   sdk.registerFunction("api::lesson-save",  async (req: ApiRequest) => {
     const denied = checkAuth(req, secret);
     if (denied) return denied;
-    const body = req.body as Record<string, unknown>;
-    if (!body?.content || typeof body.content !== "string") return { status_code: 400, body: { error: "content is required" } };
-    const tags = typeof body.tags === "string" ? (body.tags as string).split(",").map((t: string) => t.trim()).filter(Boolean) : Array.isArray(body.tags) ? body.tags : [];
+    const parsed = parseLessonSaveInput(req.body, {
+      source: "manual",
+      allowSourceMetadata: false,
+    });
+    if (!parsed.success) {
+      return { status_code: 400, body: { error: parsed.error } };
+    }
     const result = (await sdk.trigger({
       function_id: "mem::lesson-save",
-      payload: {
-        content: body.content,
-        context: body.context || "",
-        confidence: typeof body.confidence === "number" ? body.confidence : undefined,
-        project: typeof body.project === "string" ? body.project : undefined,
-        tags,
-        source: "manual",
-      },
+      payload: parsed.value,
     })) as { action?: string };
     const statusCode = result?.action === "created" ? 201 : 200;
     return { status_code: statusCode, body: result };
@@ -3615,9 +3613,44 @@ export function registerApiTriggers(
   sdk.registerFunction("api::lesson-search",  async (req: ApiRequest) => {
     const denied = checkAuth(req, secret);
     if (denied) return denied;
-    const body = req.body as Record<string, unknown>;
-    if (!body?.query || typeof body.query !== "string") return { status_code: 400, body: { error: "query is required" } };
-    const result = await sdk.trigger({ function_id: "mem::lesson-recall", payload: body });
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const query = asNonEmptyString(body.query);
+    if (!query) {
+      return { status_code: 400, body: { error: "query is required" } };
+    }
+    if (body.project !== undefined && typeof body.project !== "string") {
+      return { status_code: 400, body: { error: "project must be a string" } };
+    }
+    if (
+      body.minConfidence !== undefined &&
+      (typeof body.minConfidence !== "number" ||
+        !Number.isFinite(body.minConfidence))
+    ) {
+      return {
+        status_code: 400,
+        body: { error: "minConfidence must be a finite number" },
+      };
+    }
+    if (
+      body.limit !== undefined &&
+      (typeof body.limit !== "number" ||
+        !Number.isInteger(body.limit) ||
+        body.limit < 1)
+    ) {
+      return {
+        status_code: 400,
+        body: { error: "limit must be a positive integer" },
+      };
+    }
+    const result = await sdk.trigger({
+      function_id: "mem::lesson-recall",
+      payload: {
+        query,
+        project: asNonEmptyString(body.project),
+        minConfidence: body.minConfidence,
+        limit: body.limit,
+      },
+    });
     return { status_code: 200, body: result };
   });
   sdk.registerTrigger({ type: "http", function_id: "api::lesson-search", config: { api_path: "/agentmemory/lessons/search", http_method: "POST" } });
@@ -3671,7 +3704,8 @@ export function registerApiTriggers(
           ? 404
           : response.code === "revision_conflict" ||
               response.code === "lesson_already_deleted" ||
-              response.code === "project_mismatch"
+              response.code === "project_mismatch" ||
+              response.code === "scope_mismatch"
             ? 409
             : 400;
     return { status_code: statusCode, body: result };
@@ -3726,7 +3760,9 @@ export function registerApiTriggers(
           ? 404
           : response.code === "revision_conflict" ||
               response.code === "lesson_already_deleted" ||
-              response.code === "project_mismatch"
+              response.code === "project_mismatch" ||
+              response.code === "scope_mismatch" ||
+              response.code === "replacement_not_active"
             ? 409
             : 400;
     return { status_code: statusCode, body: result };

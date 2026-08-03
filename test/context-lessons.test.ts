@@ -60,6 +60,12 @@ function makeLesson(over: Partial<Lesson> = {}): Lesson {
     lastDecayedAt: over.lastDecayedAt,
     decayRate: over.decayRate ?? 0.05,
     deleted: over.deleted,
+    lifecycle: over.lifecycle,
+    mechanismId: over.mechanismId,
+    claim: over.claim,
+    evidenceVerdict: over.evidenceVerdict,
+    evidenceRefs: over.evidenceRefs,
+    scope: over.scope,
   };
 }
 
@@ -165,6 +171,54 @@ describe("mem::context — lessons auto-injection (#457)", () => {
     });
 
     expect(result.context).not.toContain("tombstoned-lesson");
+  });
+
+  it("keeps draft lessons out of injected context", async () => {
+    await seedLesson(kv, {
+      id: "lesson_draft",
+      content: "draft-lesson-pending-review",
+      project: "/tmp/proj",
+      confidence: 0.9,
+      lifecycle: "draft",
+    });
+
+    const result = await handler({
+      sessionId: "ses_draft",
+      project: "/tmp/proj",
+    });
+
+    expect(result.context).not.toContain("draft-lesson-pending-review");
+  });
+
+  it("labels refuted active lessons as negative evidence", async () => {
+    await seedLesson(kv, {
+      id: "lesson_refuted",
+      content: "The longer explanatory record",
+      mechanismId: "context/refuted",
+      claim: "This mechanism improves outcomes.",
+      project: "/tmp/proj",
+      confidence: 0.9,
+      lifecycle: "active",
+      evidenceVerdict: "refuted",
+      evidenceRefs: [
+        {
+          kind: "experiment",
+          projectId: "agentmemory",
+          repoRemoteUrl: "https://github.com/rohitg00/agentmemory",
+          commitSha: "a".repeat(40),
+          recordedAt: "2026-08-02T20:00:00.000Z",
+        },
+      ],
+      scope: { ring: "repo", scopeId: "repo:agentmemory" },
+    });
+
+    const result = await handler({
+      sessionId: "ses_refuted",
+      project: "/tmp/proj",
+    });
+
+    expect(result.context).toContain("[verdict:refuted]");
+    expect(result.context).toContain("This mechanism improves outcomes.");
   });
 
   it("caps at the top 10 lessons by confidence", async () => {
