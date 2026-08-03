@@ -28,6 +28,7 @@ const DEFAULT_IGNORE = [
 
 const MAX_PREVIEW_BYTES = 4096;
 const DEBOUNCE_MS = 500;
+const WATCHER_CLOSE_TIMEOUT_MS = 1000;
 const REDACTED = "[REDACTED]";
 const PEM_BEGIN_RE = /-----BEGIN [A-Z ]*PRIVATE KEY-----/;
 const PEM_END_RE = /-----END [A-Z ]*PRIVATE KEY-----/;
@@ -291,16 +292,40 @@ export class FilesystemWatcher {
   }
 
   stop() {
-    for (const w of this.watchers) {
-      try {
-        w.close();
-      } catch {}
-    }
+    const watchers = this.watchers;
     this.watchers = [];
+
     for (const { timer } of this.pendingByPath.values()) {
       clearTimeout(timer);
     }
     this.pendingByPath.clear();
+
+    return Promise.all(
+      watchers.map(
+        (watcher) =>
+          new Promise((resolveClose) => {
+            let settled = false;
+            let timeout;
+            const finish = () => {
+              if (settled) return;
+              settled = true;
+              if (timeout) clearTimeout(timeout);
+              watcher.removeListener("close", finish);
+              resolveClose();
+            };
+
+            watcher.once("close", finish);
+            timeout = setTimeout(finish, WATCHER_CLOSE_TIMEOUT_MS);
+            timeout.unref?.();
+
+            try {
+              watcher.close();
+            } catch {
+              finish();
+            }
+          }),
+      ),
+    ).then(() => undefined);
   }
 }
 
