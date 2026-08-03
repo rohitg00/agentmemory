@@ -60,13 +60,12 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: ${{ matrix.node-version }}
-      # Two-step install: generate a lockfile in-runner with
-      # --package-lock-only, then install from it with `npm ci`.
-      # Lockfiles are gitignored at the repo level.
-      - name: Generate dependency lockfile
-        run: npm install --package-lock-only --legacy-peer-deps --no-audit --no-fund
+      # The repository intentionally does not commit package-lock.json.
+      # Generating an ephemeral lockfile and immediately running npm ci is
+      # unreliable with platform-specific optional dependencies, so CI uses
+      # one clean resolver/install pass instead.
       - name: Install dependencies
-        run: npm ci --legacy-peer-deps --no-audit --no-fund
+        run: npm install --legacy-peer-deps --no-audit --no-fund
       - name: Build TypeScript package
         run: npm run build
       - name: Check generated skills
