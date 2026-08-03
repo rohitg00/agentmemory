@@ -1,6 +1,6 @@
 import type { ISdk } from "iii-sdk";
 import type { StateKV } from "../state/kv.js";
-import { KV } from "../state/schema.js";
+import { fingerprintId, KV } from "../state/schema.js";
 import type { Lesson } from "../types.js";
 import { recordAudit } from "./audit.js";
 import {
@@ -24,6 +24,12 @@ import {
   sameLessonScope,
   toLessonReadModel,
 } from "./lesson-model.js";
+import {
+  compactRetrievedLesson,
+  parseLessonRecallInput,
+  rankLessonRecallCandidates,
+  selectLessonRecallCandidates,
+} from "./lesson-retrieval.js";
 
 const MAX_LESSON_LIST_LIMIT = 500;
 const MAX_CORRECTION_REASON_LENGTH = 1000;
@@ -508,93 +514,56 @@ export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
     },
   );
 
-  sdk.registerFunction("mem::lesson-recall", 
-    async (data: {
-      query: string;
-      project?: string;
-      minConfidence?: number;
-      limit?: number;
-      accessContext?: LessonAccessContext;
-    }) => {
-      if (!data.query?.trim()) {
-        return { success: false, error: "query is required" };
-      }
-
-      const query = data.query.toLowerCase();
-      const minConfidence = data.minConfidence ?? 0.1;
-      const limit = data.limit ?? 10;
-      const accessContext = lessonAccessContextFromPayload(
-        data.accessContext,
+  sdk.registerFunction("mem::lesson-recall", async (data: unknown) => {
+    const parsed = parseLessonRecallInput(data);
+    if (!parsed.success) {
+      return correctionFailure("invalid_request", parsed.error);
+    }
+    const input = parsed.value;
+    const accessContext = lessonAccessContextFromPayload(
+      input.accessContext,
+    );
+    const storedLessons = await kv.list<Lesson>(KV.lessons);
+    let candidates;
+    try {
+      candidates = selectLessonRecallCandidates(storedLessons, input);
+    } catch {
+      return correctionFailure(
+        "lesson_state_unavailable",
+        "lesson retrieval state is unavailable",
       );
+    }
+    const { ranked, diagnostics } = await rankLessonRecallCandidates(
+      candidates,
+      input,
+    );
 
-      const storedLessons = await kv.list<Lesson>(KV.lessons);
-      let lessons = storedLessons
-        .filter(isLessonRecallable)
-        .filter((lesson) => canReadLesson(lesson, accessContext))
-        .map((lesson) => toLessonReadModel(lesson));
-
-      lessons = lessons.filter((l) => l.confidence >= minConfidence);
-
-      if (data.project) {
-        lessons = lessons.filter((l) => l.project === data.project);
-      }
-
-      const scored = lessons
-        .map((l) => {
-          const facetText = Object.entries(l.structuredFacets)
-            .flatMap(([dimension, values]) => [dimension, ...values])
-            .join(" ");
-          const text = [
-            l.content,
-            l.context,
-            l.claim,
-            l.mechanismId,
-            ...l.mechanismAliases,
-            ...l.applicabilityConditions,
-            ...l.nonApplicabilityConditions,
-            ...l.falsificationConditions,
-            facetText,
-            ...l.tags,
-          ]
-            .filter(Boolean)
-            .join(" ")
-            .toLowerCase();
-          const terms = query.split(/\s+/).filter((t) => t.length > 1);
-          const matchCount = terms.filter((t) => text.includes(t)).length;
-          if (matchCount === 0) return null;
-
-          const relevance = matchCount / terms.length;
-          const daysSinceReinforced = l.lastReinforcedAt
-            ? (Date.now() - new Date(l.lastReinforcedAt).getTime()) /
-              (1000 * 60 * 60 * 24)
-            : (Date.now() - new Date(l.createdAt).getTime()) /
-              (1000 * 60 * 60 * 24);
-          const recencyBoost = 1 / (1 + daysSinceReinforced * 0.01);
-          const score = l.confidence * relevance * recencyBoost;
-
-          return { lesson: l, score };
-        })
-        .filter(Boolean) as Array<{ lesson: Lesson; score: number }>;
-
-      scored.sort((a, b) => b.score - a.score);
-
-      try {
-        await recordAudit(kv, "lesson_recall", "mem::lesson-recall", [], {
-          query: data.query,
+    try {
+      await recordAudit(
+        kv,
+        "lesson_recall",
+        "mem::lesson-recall",
+        ranked.map(({ lesson }) => lesson.id),
+        {
+          queryFingerprint: fingerprintId("qry", input.query),
           actor: accessContext.principalId,
-          resultCount: scored.length,
-        });
-      } catch {}
+          requestedLimit: input.limit,
+          resultCount: ranked.length,
+          retrievalMode: diagnostics.usedMode,
+          fallbackCode: diagnostics.fallbackCode,
+          noticeCode: diagnostics.noticeCode,
+        },
+      );
+    } catch {}
 
-      return {
-        success: true,
-        lessons: scored.slice(0, limit).map((s) => ({
-          ...s.lesson,
-          score: Math.round(s.score * 1000) / 1000,
-        })),
-      };
-    },
-  );
+    return {
+      success: true,
+      retrieval: diagnostics,
+      lessons: input.compact
+        ? ranked.map(compactRetrievedLesson)
+        : ranked.map(({ lesson, score }) => ({ ...lesson, score })),
+    };
+  });
 
   sdk.registerFunction("mem::lesson-list", 
     async (data: {

@@ -12,13 +12,18 @@ import { registerExportImportFunction } from "../src/functions/export-import.js"
 import { registerContextFunction } from "../src/functions/context.js";
 import { registerCrystallizeFunction } from "../src/functions/crystallize.js";
 import { systemLessonAccessContext } from "../src/functions/lesson-access.js";
+import {
+  resetLessonRetrievalCacheForTests,
+} from "../src/functions/lesson-retrieval.js";
 import { registerLessonsFunctions } from "../src/functions/lessons.js";
+import { setEmbeddingProvider } from "../src/functions/search.js";
 import { registerReflectFunctions } from "../src/functions/reflect.js";
 import { registerSmartSearchFunction } from "../src/functions/smart-search.js";
 import { registerMcpEndpoints } from "../src/mcp/server.js";
 import { registerApiTriggers } from "../src/triggers/api.js";
 import type {
   Crystal,
+  EmbeddingProvider,
   ExportData,
   Insight,
   Lesson,
@@ -66,6 +71,8 @@ describe("lesson authorization boundaries", () => {
   let reflectionPrompts: string[];
 
   beforeEach(() => {
+    setEmbeddingProvider(null);
+    resetLessonRetrievalCacheForTests();
     policyDir = mkdtempSync(join(tmpdir(), "agentmemory-lesson-policy-"));
     const policyPath = join(policyDir, "callers.json");
     writeFileSync(
@@ -159,6 +166,8 @@ describe("lesson authorization boundaries", () => {
   });
 
   afterEach(() => {
+    setEmbeddingProvider(null);
+    resetLessonRetrievalCacheForTests();
     delete process.env["AGENTMEMORY_LESSON_ACCESS_MODE"];
     delete process.env["AGENTMEMORY_LESSON_CALLER_POLICY_FILE"];
     rmSync(policyDir, { recursive: true, force: true });
@@ -251,6 +260,71 @@ describe("lesson authorization boundaries", () => {
       "authorization/visible",
     ]);
     expect(recall.body.lessons).toHaveLength(1);
+  });
+
+  it("keeps hidden lessons out of provider inputs, results, and diagnostics", async () => {
+    const embedder: EmbeddingProvider = {
+      name: "local",
+      dimensions: 2,
+      embed: vi.fn(async () => new Float32Array([1, 0])),
+      embedBatch: vi.fn(async (texts: string[]) =>
+        texts.map(() => new Float32Array([1, 0])),
+      ),
+    };
+    setEmbeddingProvider(embedder);
+    const system = systemLessonAccessContext();
+    await sdk.trigger("mem::lesson-save", {
+      ...lessonInput("invariance-visible"),
+      content: "Shared candidate visible evidence",
+      accessContext: system,
+    });
+    const request = {
+      headers: headers("codex-token", "codex"),
+      body: {
+        query: "shared candidate unauthorized payload",
+        retrievalMode: "hybrid",
+        compact: true,
+      },
+    };
+
+    const before = (await sdk.trigger(
+      "api::lesson-search",
+      request,
+    )) as { status_code: number; body: unknown };
+    const beforeProviderInputs = JSON.stringify({
+      query: vi.mocked(embedder.embed).mock.calls,
+      candidates: vi.mocked(embedder.embedBatch).mock.calls,
+    });
+
+    await sdk.trigger("mem::lesson-save", {
+      ...lessonInput("invariance-hidden", REPO_TWO),
+      content: "Shared candidate UNAUTHORIZED_PAYLOAD exact evidence",
+      accessContext: system,
+    });
+    await sdk.trigger("mem::lesson-recall", {
+      query: "shared candidate unauthorized payload",
+      retrievalMode: "hybrid",
+      compact: true,
+      accessContext: system,
+    });
+    vi.mocked(embedder.embed).mockClear();
+    vi.mocked(embedder.embedBatch).mockClear();
+
+    const after = (await sdk.trigger(
+      "api::lesson-search",
+      request,
+    )) as { status_code: number; body: unknown };
+    const afterProviderInputs = JSON.stringify({
+      query: vi.mocked(embedder.embed).mock.calls,
+      candidates: vi.mocked(embedder.embedBatch).mock.calls,
+    });
+
+    expect(after).toEqual(before);
+    expect(afterProviderInputs).toBe(beforeProviderInputs);
+    expect(afterProviderInputs).not.toContain("UNAUTHORIZED_PAYLOAD");
+    expect(JSON.stringify(after.body)).not.toContain(
+      "invariance-hidden",
+    );
   });
 
   it("reserves whole-database export for a restricted all-scopes operator", async () => {

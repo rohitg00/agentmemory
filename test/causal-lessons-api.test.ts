@@ -5,10 +5,18 @@ vi.mock("../src/logger.js", () => ({
 }));
 
 import { registerLessonsFunctions } from "../src/functions/lessons.js";
+import {
+  resetLessonRetrievalCacheForTests,
+} from "../src/functions/lesson-retrieval.js";
+import { setEmbeddingProvider } from "../src/functions/search.js";
 import { registerMcpEndpoints } from "../src/mcp/server.js";
 import { getAllTools } from "../src/mcp/tools-registry.js";
 import { registerApiTriggers } from "../src/triggers/api.js";
-import type { Lesson } from "../src/types.js";
+import type {
+  AuditEntry,
+  EmbeddingProvider,
+  Lesson,
+} from "../src/types.js";
 import { mockKV, mockSdk } from "./helpers/mocks.js";
 
 function evidence(commit = "a".repeat(40)) {
@@ -34,6 +42,8 @@ describe("causal lesson REST and MCP boundaries", () => {
   let kv: ReturnType<typeof mockKV>;
 
   beforeEach(() => {
+    setEmbeddingProvider(null);
+    resetLessonRetrievalCacheForTests();
     sdk = mockSdk();
     kv = mockKV();
     registerLessonsFunctions(sdk as never, kv as never);
@@ -200,6 +210,12 @@ describe("causal lesson REST and MCP boundaries", () => {
         limit: 5,
         lifecycle: "retracted",
         deleted: true,
+        includeHidden: true,
+        candidateIds: ["lsn_untrusted"],
+        accessContext: {
+          mode: "enforce",
+          principalId: "untrusted",
+        },
       },
     })) as {
       status_code: number;
@@ -209,6 +225,163 @@ describe("causal lesson REST and MCP boundaries", () => {
     expect(response.status_code).toBe(200);
     expect(response.body.lessons).toHaveLength(1);
     expect(response.body.lessons[0].lifecycle).toBe("active");
+  });
+
+  it("accepts bounded hybrid filters at REST and MCP boundaries and hashes the audit query", async () => {
+    const embedder: EmbeddingProvider = {
+      name: "local",
+      dimensions: 2,
+      embed: vi.fn(async () => new Float32Array([1, 0])),
+      embedBatch: vi.fn(async (texts: string[]) =>
+        texts.map(() => new Float32Array([1, 0])),
+      ),
+    };
+    setEmbeddingProvider(embedder);
+    await sdk.trigger("mem::lesson-save", {
+      content: "Queue pressure reversal survives cost controls.",
+      project: "agentmemory",
+      tags: ["microstructure", "costed"],
+      mechanismId: "queue-pressure/reversal",
+      claim: "Queue pressure predicts a short-horizon reversal.",
+      claimType: "predictive",
+      evidenceVerdict: "unverified",
+      structuredFacets: {
+        asset: ["HYPE"],
+        venue: ["Bybit"],
+      },
+      scope: {
+        ring: "repo",
+        scopeId: "repo:https://github.com/wrightpt/agentmemory",
+      },
+      sensitivity: "public",
+    });
+    const rawQuery = "private candidate analogy";
+    const filters = {
+      query: rawQuery,
+      project: "agentmemory",
+      retrievalMode: "hybrid",
+      compact: true,
+      mechanismId: "queue-pressure/reversal",
+      claimType: "predictive",
+      evidenceVerdicts: ["unverified"],
+      structuredFacets: {
+        asset: ["hype"],
+        venue: ["BYBIT"],
+      },
+      tags: ["microstructure", "costed"],
+      scopeRing: "repo",
+      sensitivity: "public",
+      includeHidden: true,
+      candidateIds: ["lsn_untrusted"],
+    };
+
+    const rest = (await sdk.trigger("api::lesson-search", {
+      headers: {},
+      body: filters,
+    })) as {
+      status_code: number;
+      body: {
+        lessons: Array<{ lessonId: string; evidenceRefs?: unknown }>;
+        retrieval: { usedMode: string };
+      };
+    };
+    const mcp = (await sdk.trigger("mcp::tools::call", {
+      headers: {},
+      body: {
+        name: "memory_lesson_recall",
+        arguments: filters,
+      },
+    })) as {
+      status_code: number;
+      body: { content: Array<{ text: string }> };
+    };
+    const mcpResult = JSON.parse(mcp.body.content[0].text) as {
+      lessons: Array<{ lessonId: string }>;
+      retrieval: { usedMode: string };
+    };
+    const audits = await kv.list<AuditEntry>("mem:audit");
+    const recallAudits = audits.filter(
+      (entry) => entry.operation === "lesson_recall",
+    );
+
+    expect(rest).toMatchObject({
+      status_code: 200,
+      body: {
+        retrieval: { usedMode: "hybrid" },
+        lessons: [expect.objectContaining({ lessonId: expect.any(String) })],
+      },
+    });
+    expect(rest.body.lessons[0]).toHaveProperty("lessonId");
+    expect(rest.body.lessons[0]).not.toHaveProperty("evidenceRefs");
+    expect(mcp.status_code).toBe(200);
+    expect(mcpResult.retrieval.usedMode).toBe("hybrid");
+    expect(mcpResult.lessons).toHaveLength(1);
+    expect(recallAudits).toHaveLength(2);
+    for (const audit of recallAudits) {
+      expect(audit.targetIds).toHaveLength(1);
+      expect(audit.details).toHaveProperty("queryFingerprint");
+      expect(JSON.stringify(audit.details)).not.toContain(rawQuery);
+      expect(audit.details).not.toHaveProperty("query");
+    }
+    const tool = getAllTools().find(
+      (candidate) => candidate.name === "memory_lesson_recall",
+    );
+    expect(tool?.inputSchema.properties).toHaveProperty("retrievalMode");
+    expect(tool?.inputSchema.properties).toHaveProperty("structuredFacets");
+    expect(tool?.inputSchema.properties).toHaveProperty("compact");
+  });
+
+  it("returns bounded validation errors for invalid recall input at both boundaries", async () => {
+    const rest = (await sdk.trigger("api::lesson-search", {
+      headers: {},
+      body: { query: "valid", limit: 51 },
+    })) as { status_code: number; body: { code: string } };
+    const mcp = (await sdk.trigger("mcp::tools::call", {
+      headers: {},
+      body: {
+        name: "memory_lesson_recall",
+        arguments: { query: "x".repeat(2_049) },
+      },
+    })) as { status_code: number; body: { code: string } };
+
+    expect(rest).toMatchObject({
+      status_code: 400,
+      body: { code: "invalid_request" },
+    });
+    expect(mcp).toMatchObject({
+      status_code: 400,
+      body: { code: "invalid_request" },
+    });
+  });
+
+  it("fails closed before embedding when authoritative lesson state is malformed", async () => {
+    const embedder: EmbeddingProvider = {
+      name: "local",
+      dimensions: 2,
+      embed: vi.fn(async () => new Float32Array([1, 0])),
+      embedBatch: vi.fn(async (texts: string[]) =>
+        texts.map(() => new Float32Array([1, 0])),
+      ),
+    };
+    setEmbeddingProvider(embedder);
+    await kv.set("mem:lessons", "lsn_invalid", {
+      id: "lsn_invalid",
+      schemaVersion: 1,
+      content: 42,
+    } as unknown as Lesson);
+
+    const result = (await sdk.trigger("mem::lesson-recall", {
+      query: "invalid lesson",
+      retrievalMode: "hybrid",
+    })) as { success: boolean; code: string; error: string };
+
+    expect(result).toEqual({
+      success: false,
+      code: "lesson_state_unavailable",
+      error: "lesson retrieval state is unavailable",
+    });
+    expect(embedder.embed).not.toHaveBeenCalled();
+    expect(embedder.embedBatch).not.toHaveBeenCalled();
   });
 
   it("rejects dangling, self, cross-scope, and cross-project contradiction relations", async () => {

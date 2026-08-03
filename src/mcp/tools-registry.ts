@@ -6,8 +6,14 @@ export type McpSchemaProperty = {
   properties?: Record<string, McpSchemaProperty>;
   required?: string[];
   additionalProperties?: boolean | McpSchemaProperty;
+  minItems?: number;
   maxItems?: number;
+  minLength?: number;
+  maxLength?: number;
+  maxProperties?: number;
+  maximum?: number;
   minimum?: number;
+  pattern?: string;
 };
 
 export type McpToolDef = {
@@ -1093,17 +1099,108 @@ export const V070_TOOLS: McpToolDef[] = [
   {
     name: "memory_lesson_recall",
     description:
-      "Search lessons by query. Returns lessons sorted by confidence and recency. Use to check what the agent has learned before making decisions.",
+      "Search causal lessons. Legacy-compatible lexical ranking is the default; retrievalMode=hybrid adds semantic similarity after authorization and exact structured prefilters, with deterministic lexical fallback. Use compact=true to inject bounded causal lessons instead of full evidence rows.",
     inputSchema: {
       type: "object",
       properties: {
-        query: { type: "string", description: "Search query" },
-        project: { type: "string", description: "Filter by project" },
+        query: {
+          type: "string",
+          minLength: 1,
+          maxLength: 2048,
+          pattern: "\\S",
+          description: "Search query",
+        },
+        project: {
+          type: "string",
+          maxLength: 512,
+          description: "Filter by project",
+        },
         minConfidence: {
           type: "number",
+          minimum: 0,
+          maximum: 1,
           description: "Minimum confidence threshold (default 0.1)",
         },
-        limit: { type: "number", description: "Max results (default 10)" },
+        limit: {
+          type: "integer",
+          minimum: 1,
+          maximum: 50,
+          description: "Max results (default 10, maximum 50)",
+        },
+        retrievalMode: {
+          type: "string",
+          enum: ["lexical", "hybrid"],
+          description:
+            "lexical preserves the prior confidence/relevance/recency scorer; hybrid combines lexical and embedding similarity and falls back to lexical when embeddings are unavailable",
+        },
+        compact: {
+          type: "boolean",
+          description:
+            "Return bounded causal lesson projections without raw evidence references or source rows",
+        },
+        mechanismId: {
+          type: "string",
+          maxLength: 128,
+          pattern: "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+          description:
+            "Exact mechanism ID or alias filter applied before ranking",
+        },
+        claimType: {
+          type: "string",
+          enum: [
+            "causal",
+            "predictive",
+            "procedural",
+            "constraint",
+            "descriptive",
+          ],
+        },
+        evidenceVerdicts: {
+          type: "array",
+          description:
+            "Allowed evidence verdicts; values are ORed and the filter is applied before ranking",
+          items: {
+            type: "string",
+            enum: ["supported", "refuted", "mixed", "unverified"],
+          },
+          maxItems: 4,
+        },
+        structuredFacets: {
+          type: "object",
+          description:
+            "Exact causal facet filters. Dimensions are ANDed; values within one dimension are ORed.",
+          maxProperties: 32,
+          additionalProperties: {
+            type: "array",
+            items: {
+              type: "string",
+              minLength: 1,
+              maxLength: 256,
+              pattern: "\\S",
+            },
+            minItems: 1,
+            maxItems: 16,
+          },
+        },
+        tags: {
+          type: "array",
+          description: "Require every listed tag before ranking",
+          items: {
+            type: "string",
+            minLength: 1,
+            maxLength: 256,
+            pattern: "\\S",
+          },
+          maxItems: 32,
+        },
+        scopeRing: {
+          type: "string",
+          enum: ["worktree", "repo", "initiative", "domain", "global"],
+        },
+        sensitivity: {
+          type: "string",
+          enum: ["public", "internal", "confidential", "restricted"],
+        },
       },
       required: ["query"],
     },

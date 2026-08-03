@@ -23,6 +23,7 @@ import { logger } from "../logger.js";
 import { selectSessionPage } from "../functions/session-list.js";
 import { triggerDetached } from "../utils/trigger-detached.js";
 import { parseLessonSaveInput } from "../functions/lesson-model.js";
+import { parseLessonRecallInput } from "../functions/lesson-retrieval.js";
 import {
   bindResolvedLessonWriteIdentity,
   resolveLessonBoundaryAccess,
@@ -3800,43 +3801,31 @@ export function registerApiTriggers(
     const access = resolveLessonRequestAccess(req);
     if (!access.success) return access.response;
     const body = (req.body ?? {}) as Record<string, unknown>;
-    const query = asNonEmptyString(body.query);
-    if (!query) {
-      return { status_code: 400, body: { error: "query is required" } };
-    }
-    if (body.project !== undefined && typeof body.project !== "string") {
-      return { status_code: 400, body: { error: "project must be a string" } };
-    }
-    if (
-      body.minConfidence !== undefined &&
-      (typeof body.minConfidence !== "number" ||
-        !Number.isFinite(body.minConfidence))
-    ) {
+    const parsed = parseLessonRecallInput({
+      query: body.query,
+      project: body.project,
+      minConfidence: body.minConfidence,
+      limit: body.limit,
+      retrievalMode: body.retrievalMode,
+      compact: body.compact,
+      mechanismId: body.mechanismId,
+      claimType: body.claimType,
+      evidenceVerdicts: body.evidenceVerdicts,
+      structuredFacets: body.structuredFacets,
+      tags: body.tags,
+      scopeRing: body.scopeRing,
+      sensitivity: body.sensitivity,
+      accessContext: access.context,
+    });
+    if (!parsed.success) {
       return {
         status_code: 400,
-        body: { error: "minConfidence must be a finite number" },
-      };
-    }
-    if (
-      body.limit !== undefined &&
-      (typeof body.limit !== "number" ||
-        !Number.isInteger(body.limit) ||
-        body.limit < 1)
-    ) {
-      return {
-        status_code: 400,
-        body: { error: "limit must be a positive integer" },
+        body: { error: parsed.error, code: "invalid_request" },
       };
     }
     const result = await sdk.trigger({
       function_id: "mem::lesson-recall",
-      payload: {
-        query,
-        project: asNonEmptyString(body.project),
-        minConfidence: body.minConfidence,
-        limit: body.limit,
-        accessContext: access.context,
-      },
+      payload: parsed.value,
     });
     return { status_code: 200, body: result };
   });

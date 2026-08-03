@@ -13,6 +13,7 @@ import { timingSafeCompare } from "../auth.js";
 import { getAgentId, isAgentScopeIsolated } from "../config.js";
 import { selectSessionPage } from "../functions/session-list.js";
 import { parseLessonSaveInput } from "../functions/lesson-model.js";
+import { parseLessonRecallInput } from "../functions/lesson-retrieval.js";
 import {
   bindResolvedLessonWriteIdentity,
   resolveLessonBoundaryAccess,
@@ -1402,16 +1403,32 @@ export function registerMcpEndpoints(
           case "memory_lesson_recall": {
             const access = resolveLessonRequestAccess(req);
             if (!access.success) return access.response;
-            if (typeof args.query !== "string" || !args.query.trim()) {
-              return { status_code: 400, body: { error: "query is required" } };
-            }
-            const lessonRecallResult = await sdk.trigger({ function_id: "mem::lesson-recall", payload: {
+            const parsed = parseLessonRecallInput({
               query: args.query,
               project: args.project,
               minConfidence: args.minConfidence,
               limit: args.limit,
+              retrievalMode: args.retrievalMode,
+              compact: args.compact,
+              mechanismId: args.mechanismId,
+              claimType: args.claimType,
+              evidenceVerdicts: args.evidenceVerdicts,
+              structuredFacets: args.structuredFacets,
+              tags: args.tags,
+              scopeRing: args.scopeRing,
+              sensitivity: args.sensitivity,
               accessContext: access.context,
-            } });
+            });
+            if (!parsed.success) {
+              return {
+                status_code: 400,
+                body: { error: parsed.error, code: "invalid_request" },
+              };
+            }
+            const lessonRecallResult = await sdk.trigger({
+              function_id: "mem::lesson-recall",
+              payload: parsed.value,
+            });
             return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(lessonRecallResult, null, 2) }] } };
           }
 

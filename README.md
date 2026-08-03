@@ -1638,12 +1638,60 @@ so a later storage failure during a full multi-collection import can still
 require operator repair; this is existing portable-import behavior, not an
 all-or-nothing database transaction.
 
-Automatic contradiction discovery and hybrid/vector lesson retrieval remain
-separate follow-up work. See
+`memory_lesson_recall` and `POST /agentmemory/lessons/search` accept exact
+categorical filters for mechanism, claim type, verdict, facets, tags, scope
+ring, and sensitivity. Facet dimensions are ANDed, values within one dimension
+are ORed, and requested tags are ANDed. Filtering and authorization happen
+before ranking or embedding.
+
+Direct lesson recall defaults to the prior confidence/relevance/recency lexical
+scorer. Set `retrievalMode: "hybrid"` to add causal-document embedding
+similarity with two-channel reciprocal-rank fusion. Normal smart-search requests
+hybrid lesson recall automatically. Hybrid recall never uses the observation
+BM25/vector indexes or knowledge graph. Provider absence, invalid vectors,
+timeout, weak semantic signal, policy denial, or more than 256 authorized
+candidates returns the same bounded lexical result with a fixed diagnostic
+code. Semantic cosine scores below `0.2` do not qualify.
+
+Set `compact: true` for a deterministic, size-bounded projection without raw
+evidence references or source rows. This is the normal smart-search form and is
+intended for generation context:
+
+```json
+{
+  "query": "have we tried a costed queue-pressure reversal before?",
+  "project": "trading-system",
+  "retrievalMode": "hybrid",
+  "compact": true,
+  "structuredFacets": {
+    "asset": ["HYPE", "XMR"],
+    "horizon": ["5m"]
+  },
+  "evidenceVerdicts": ["supported", "refuted", "mixed"]
+}
+```
+
+Local embedding providers may process every authorized lesson. Remote lesson
+embedding is disabled unless
+`AGENTMEMORY_LESSON_REMOTE_EMBEDDINGS=true`; its default sensitivity ceiling is
+`public`, configurable with
+`AGENTMEMORY_LESSON_EMBED_MAX_SENSITIVITY`. Authorized rows above that ceiling
+remain eligible for lexical retrieval but their text is not sent to the remote
+provider. Only public lesson embeddings enter the shared cache. Protected
+internal/confidential/restricted embeddings are request-local so a privileged
+retrieval cannot change another authorization domain's cache hits, provider
+calls, or lock timing. The public cache is deliberately process-local, lazy,
+bounded to 4,096 exact-document fingerprints per provider object, and excluded
+from export. Persistent lesson vectors remain a follow-up after providers
+expose a stable model identity suitable for an on-disk cache key.
+
+Automatic contradiction discovery remains separate follow-up work. See
 [Causal Lesson Schema v1](docs/superpowers/specs/2026-08-02-causal-lesson-schema-v1.md)
 for the compatibility/fingerprint contract and
 [Causal Lesson Access v2](docs/superpowers/specs/2026-08-03-causal-lesson-access-v2.md)
-for the authorization and rollout contract.
+for the authorization and rollout contract, and
+[Causal Lesson Hybrid Retrieval v3](docs/superpowers/specs/2026-08-03-causal-lesson-hybrid-retrieval-v3.md)
+for retrieval ordering, egress, fallback, and cache invariants.
 
 ---
 

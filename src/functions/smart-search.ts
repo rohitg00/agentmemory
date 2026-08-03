@@ -4,7 +4,6 @@ import type {
   CompactSearchResult,
   CompressedObservation,
   HybridSearchResult,
-  Lesson,
 } from "../types.js";
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
@@ -18,6 +17,7 @@ import {
 import { logger } from "../logger.js";
 import { getCounters } from "../telemetry/setup.js";
 import type { LessonAccessContext } from "./lesson-access.js";
+import type { CompactRetrievedLesson } from "./lesson-retrieval.js";
 
 // #771: smart-search followup-rate diagnostic. Stored per session as
 // the most recent search payload, used to detect whether the next
@@ -68,10 +68,6 @@ export function resetFollowupStatsForTests(): void {
   followupStats.followupWithinWindow = 0;
   followupStats.agentInitiatedSearches = 0;
 }
-
-// Compact mode trims each lesson's content for at-a-glance display. The
-// full content is fetched via memory_lesson_recall when the caller needs it.
-const LESSON_CONTENT_PREVIEW_CHARS = 240;
 
 export function registerSmartSearchFunction(
   sdk: ISdk,
@@ -305,18 +301,22 @@ async function recallLessons(
   try {
     const result = (await sdk.trigger({
       function_id: "mem::lesson-recall",
-      payload: { query, limit, project, accessContext },
-    })) as { success?: boolean; lessons?: Array<Lesson & { score?: number }> };
+      payload: {
+        query,
+        limit,
+        project,
+        retrievalMode: "hybrid",
+        compact: true,
+        accessContext,
+      },
+    })) as {
+      success?: boolean;
+      lessons?: CompactRetrievedLesson[];
+    };
     if (!result?.success || !Array.isArray(result.lessons)) return [];
     return result.lessons.map((lesson) => {
-      const evidenceVerdict = lesson.evidenceVerdict ?? "unverified";
-      const contradicted =
-        Boolean(
-          (lesson as Lesson & {
-            computedFlags?: { contradicted?: boolean };
-          }).computedFlags?.contradicted,
-        ) ||
-        (lesson.contradictedByLessonIds?.length ?? 0) > 0;
+      const evidenceVerdict = lesson.evidenceVerdict;
+      const contradicted = lesson.contradicted;
       const evidenceLabel: CompactLessonResult["evidenceLabel"] = contradicted
         ? "contradicted evidence"
         : evidenceVerdict === "refuted"
@@ -327,17 +327,14 @@ async function recallLessons(
               ? "mixed evidence"
               : "unverified evidence";
       return {
-        lessonId: lesson.id,
-        content:
-          lesson.content.length > LESSON_CONTENT_PREVIEW_CHARS
-            ? lesson.content.slice(0, LESSON_CONTENT_PREVIEW_CHARS) + "…"
-            : lesson.content,
+        lessonId: lesson.lessonId,
+        content: lesson.content,
         claim: lesson.claim,
         evidenceVerdict,
         evidenceLabel,
         contradicted,
         confidence: lesson.confidence,
-        score: lesson.score ?? lesson.confidence,
+        score: lesson.score,
         createdAt: lesson.createdAt,
         project: lesson.project,
         tags: lesson.tags ?? [],
