@@ -47,11 +47,9 @@ jobs:
       # whether a flake is platform-specific or universal).
       fail-fast: false
       matrix:
-        # Windows held back: test/obsidian-export.test.ts has hardcoded
-        # POSIX paths (`/tmp/...`) that fail on D:\ drive runners.
-        # src/functions/obsidian-export.ts needs os.tmpdir() + path.join
-        # rework before Windows can be added back. Tracked as follow-up.
-        os: [ubuntu-latest, macos-latest]
+        # Windows is covered again after the path-sensitive test fixtures
+        # were normalized with node:path and Windows binary naming.
+        os: [ubuntu-latest, macos-latest, windows-latest]
         node-version: [20, 22, 24, 26]
     steps:
       - uses: actions/checkout@v6
