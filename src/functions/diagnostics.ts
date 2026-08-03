@@ -355,26 +355,29 @@ export function registerDiagnosticsFunction(sdk: ISdk, kv: StateKV): void {
           }
         }
 
-        // Project-coverage check: unscoped memories (no project field) will
-        // appear in every project's context and search results until the
-        // infer-memory-projects migration runs. Surface a count so operators
-        // know the backfill is still pending and can trigger it explicitly.
         const latestMemories = memories.filter((m) => m.isLatest);
-        const unscopedCount = latestMemories.filter((m) => !m.project).length;
-        if (unscopedCount === 0) {
+        const unscopedMemories = latestMemories.filter((m) => !m.project);
+        const sessionLinkedUnscoped = unscopedMemories.filter(
+          (m) => m.sessionIds.length > 0,
+        );
+        const globalCount = unscopedMemories.length - sessionLinkedUnscoped.length;
+        const migratableCount = sessionLinkedUnscoped.length;
+        if (migratableCount === 0) {
           checks.push({
             name: "memory-project-coverage",
             category: "memories",
             status: "pass",
-            message: `All ${latestMemories.length} latest memories have a project scope`,
+            message: globalCount === 0
+              ? `All ${latestMemories.length} latest memories have a project scope`
+              : `${globalCount} sessionless latest memories are intentionally global; all session-linked memories have a project scope`,
             fixable: false,
           });
-        } else if (unscopedCount <= 10) {
+        } else if (migratableCount <= 10) {
           checks.push({
             name: "memory-project-coverage",
             category: "memories",
             status: "warn",
-            message: `${unscopedCount} of ${latestMemories.length} latest memories have no project scope — run POST /agentmemory/migrate {"step":"infer-memory-projects"} to backfill`,
+            message: `${migratableCount} of ${latestMemories.length} session-linked latest memories have no project scope — run POST /agentmemory/migrate {"step":"infer-memory-projects"} to backfill`,
             fixable: true,
           });
         } else {
@@ -382,7 +385,7 @@ export function registerDiagnosticsFunction(sdk: ISdk, kv: StateKV): void {
             name: "memory-project-coverage",
             category: "memories",
             status: "fail",
-            message: `${unscopedCount} of ${latestMemories.length} latest memories have no project scope — run POST /agentmemory/migrate {"step":"infer-memory-projects"} to backfill`,
+            message: `${migratableCount} of ${latestMemories.length} session-linked latest memories have no project scope — run POST /agentmemory/migrate {"step":"infer-memory-projects"} to backfill`,
             fixable: true,
           });
         }
