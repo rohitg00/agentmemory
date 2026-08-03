@@ -163,6 +163,28 @@ describe("lesson authorization boundaries", () => {
     expect(await kv.list("mem:lessons")).toHaveLength(1);
   });
 
+  it("cannot create a contradiction relation to a lesson above its clearance", async () => {
+    const hidden = (await sdk.trigger("mem::lesson-save", {
+      ...lessonInput("restricted-target"),
+      sensitivity: "restricted",
+      accessContext: systemLessonAccessContext(),
+    })) as { lesson: Lesson };
+
+    const response = (await sdk.trigger("api::lesson-save", {
+      headers: headers("codex-token", "codex"),
+      body: {
+        ...lessonInput("relation-source"),
+        contradictedByLessonIds: [hidden.lesson.id],
+      },
+    })) as { status_code: number; body: { code: string } };
+
+    expect(response).toMatchObject({
+      status_code: 403,
+      body: { code: "access_denied" },
+    });
+    expect(await kv.list("mem:lessons")).toHaveLength(1);
+  });
+
   it("filters list, recall, and export totals without revealing other scopes", async () => {
     const system = systemLessonAccessContext();
     await sdk.trigger("mem::lesson-save", {

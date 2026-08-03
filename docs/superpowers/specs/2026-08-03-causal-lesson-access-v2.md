@@ -22,7 +22,8 @@ self-assert an actor.
   returns 503; missing or invalid credentials return 401.
 
 The mode is selected with `AGENTMEMORY_LESSON_ACCESS_MODE`. The policy path is
-selected with `AGENTMEMORY_LESSON_CALLER_POLICY_FILE`.
+selected with `AGENTMEMORY_LESSON_CALLER_POLICY_FILE` and must be absolute.
+Unknown mode values and relative policy paths fail closed.
 
 ## Caller policy
 

@@ -89,27 +89,52 @@ async function validateContradictionRelations(
   kv: StateKV,
   source: Lesson,
   targetIds: string[],
-): Promise<string | null> {
+  accessContext: LessonAccessContext,
+): Promise<
+  | { code: "access_denied" | "invalid_relation"; error: string }
+  | null
+> {
   for (const targetId of targetIds) {
     if (
       targetId === source.id ||
       normalizeLesson(source).idAliases.includes(targetId)
     ) {
-      return "contradictedByLessonIds must not contain the lesson itself";
+      return {
+        code: "invalid_relation",
+        error: "contradictedByLessonIds must not contain the lesson itself",
+      };
     }
     const target = await kv.get<Lesson>(KV.lessons, targetId);
     if (!target) {
-      return `contradiction target does not exist: ${targetId}`;
+      return {
+        code: "invalid_relation",
+        error: `contradiction target does not exist: ${targetId}`,
+      };
+    }
+    if (!canReadLesson(target, accessContext)) {
+      return {
+        code: "access_denied",
+        error: "lesson access denied for contradiction target",
+      };
     }
     try {
       if (!isLessonRecallable(target)) {
-        return `contradiction target must be active: ${targetId}`;
+        return {
+          code: "invalid_relation",
+          error: `contradiction target must be active: ${targetId}`,
+        };
       }
       if (!sameLessonContradictionScope(source, target)) {
-        return `contradiction target must share durable scope and project label: ${targetId}`;
+        return {
+          code: "invalid_relation",
+          error: `contradiction target must share durable scope and project label: ${targetId}`,
+        };
       }
     } catch {
-      return `contradiction target is invalid: ${targetId}`;
+      return {
+        code: "invalid_relation",
+        error: `contradiction target is invalid: ${targetId}`,
+      };
     }
   }
   return null;
@@ -341,13 +366,17 @@ export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
             ) {
               return accessFailure("strengthen");
             }
-            const contradictionError = await validateContradictionRelations(
+            const contradictionFailure = await validateContradictionRelations(
               kv,
               existing,
               input.contradictedByLessonIds,
+              accessContext,
             );
-            if (contradictionError) {
-              return correctionFailure("invalid_relation", contradictionError);
+            if (contradictionFailure) {
+              return correctionFailure(
+                contradictionFailure.code,
+                contradictionFailure.error,
+              );
             }
             reinforceLesson(existing);
             if (input.context && !existing.context) {
@@ -421,13 +450,17 @@ export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
             contentFingerprint: lessonContentFingerprint(input),
           };
 
-          const contradictionError = await validateContradictionRelations(
+          const contradictionFailure = await validateContradictionRelations(
             kv,
             lesson,
             input.contradictedByLessonIds,
+            accessContext,
           );
-          if (contradictionError) {
-            return correctionFailure("invalid_relation", contradictionError);
+          if (contradictionFailure) {
+            return correctionFailure(
+              contradictionFailure.code,
+              contradictionFailure.error,
+            );
           }
           await kv.set(KV.lessons, lesson.id, lesson);
 

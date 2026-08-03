@@ -174,6 +174,26 @@ describe("lesson caller policy", () => {
       statusCode: 401,
       code: "caller_authentication_failed",
     });
+    expect(
+      resolveLessonBoundaryAccess(
+        {
+          "x-agentmemory-agent-id": "codex",
+          "x-agentmemory-caller-token": "codex-token",
+        },
+        { mode: "enforce", policyPath: "relative/callers.json" },
+      ),
+    ).toMatchObject({
+      success: false,
+      statusCode: 503,
+      code: "caller_policy_unavailable",
+    });
+    expect(
+      resolveLessonBoundaryAccess({}, { mode: "invalid" as never }),
+    ).toMatchObject({
+      success: false,
+      statusCode: 503,
+      code: "caller_policy_unavailable",
+    });
   });
 
   it("keeps legacy behavior explicit in classify mode", () => {

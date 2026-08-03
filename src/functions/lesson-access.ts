@@ -5,6 +5,7 @@ import {
   timingSafeEqual,
 } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { isAbsolute } from "node:path";
 import { getAgentId, getEnvVar } from "../config.js";
 import type {
   Lesson,
@@ -100,7 +101,19 @@ function nonEmptyString(
 }
 
 function normalizeMode(value: unknown): LessonAccessMode {
-  return value === "enforce" ? "enforce" : "classify";
+  const normalized = typeof value === "string" ? value.trim() : value;
+  if (
+    normalized === undefined ||
+    normalized === null ||
+    normalized === "" ||
+    normalized === "classify"
+  ) {
+    return "classify";
+  }
+  if (normalized === "enforce") return "enforce";
+  throw new Error(
+    "AGENTMEMORY_LESSON_ACCESS_MODE must be classify or enforce",
+  );
 }
 
 export function getLessonAccessMode(): LessonAccessMode {
@@ -357,7 +370,20 @@ export function resolveLessonBoundaryAccess(
   headers?: Record<string, string | string[] | undefined>,
   options: ResolveLessonBoundaryAccessOptions = {},
 ): LessonBoundaryAccessResult {
-  const mode = options.mode ?? getLessonAccessMode();
+  let mode: LessonAccessMode;
+  try {
+    mode =
+      options.mode === undefined
+        ? getLessonAccessMode()
+        : normalizeMode(options.mode);
+  } catch {
+    return {
+      success: false,
+      statusCode: 503,
+      error: "lesson caller policy is unavailable",
+      code: "caller_policy_unavailable",
+    };
+  }
   const claimedAgentId = headerValue(headers, "x-agentmemory-agent-id");
   if (mode === "classify") {
     return {
@@ -375,10 +401,12 @@ export function resolveLessonBoundaryAccess(
       getEnvVar("AGENTMEMORY_LESSON_CALLER_POLICY_FILE");
     policy = options.policy
       ? parseLessonCallerPolicy(options.policy)
-      : policyPath
+      : policyPath && isAbsolute(policyPath)
         ? loadPolicyFile(policyPath)
         : (() => {
-            throw new Error("lesson caller policy file is not configured");
+            throw new Error(
+              "lesson caller policy file must be configured with an absolute path",
+            );
           })();
   } catch {
     return {

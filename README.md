@@ -1603,8 +1603,9 @@ Set `AGENTMEMORY_LESSON_ACCESS_MODE=enforce` and
 the server. Set a unique high-entropy `AGENTMEMORY_CALLER_TOKEN` and matching
 `AGENT_ID` on each client. Keep raw tokens out of the policy and source control;
 the policy contains only `tokenSha256`. Missing/invalid policy or credentials
-fail closed after enforcement is enabled. Internal scheduled functions use an
-explicit service context; that service cannot approve global lessons.
+fail closed after enforcement is enabled. An invalid access-mode value or
+non-absolute policy path also fails closed. Internal scheduled functions use
+an explicit service context; that service cannot approve global lessons.
 
 Automatic contradiction discovery and hybrid/vector lesson retrieval remain
 separate follow-up work. See
