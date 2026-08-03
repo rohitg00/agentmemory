@@ -3,13 +3,9 @@
     "enabled": true,
     "PreInvocation": [
       {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/antigravity-bridge.mjs\" PreInvocation",
-            "timeout": 10
-          }
-        ]
+        "type": "command",
+        "command": "node ${CLAUDE_PLUGIN_ROOT}/scripts/antigravity-bridge.mjs PreInvocation",
+        "timeout": 10
       }
     ],
     "PreToolUse": [
@@ -18,7 +14,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/antigravity-bridge.mjs\" PreToolUse",
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/scripts/antigravity-bridge.mjs PreToolUse",
             "timeout": 10
           }
         ]
@@ -30,7 +26,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/antigravity-bridge.mjs\" PostToolUse",
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/scripts/antigravity-bridge.mjs PostToolUse",
             "timeout": 10
           }
         ]
@@ -38,13 +34,9 @@
     ],
     "Stop": [
       {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/antigravity-bridge.mjs\" Stop",
-            "timeout": 10
-          }
-        ]
+        "type": "command",
+        "command": "node ${CLAUDE_PLUGIN_ROOT}/scripts/antigravity-bridge.mjs Stop",
+        "timeout": 10
       }
     ]
   }

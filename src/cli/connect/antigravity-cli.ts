@@ -6,6 +6,7 @@ import { createJsonMcpAdapter } from "./json-mcp-adapter.js";
 import type { ConnectOptions, ConnectResult } from "./types.js";
 import {
   buildMergedAntigravityHooks,
+  containsSpaces,
   type AntigravityHookManifest,
 } from "./antigravity-hooks.js";
 import { findPluginRoot } from "./codex-hooks.js";
@@ -64,6 +65,16 @@ function installAntigravityCliHooks(opts: ConnectOptions): ConnectResult {
     return {
       kind: "skipped",
       reason: err instanceof Error ? err.message : String(err),
+    };
+  }
+
+  // agy parses `command` itself and honours no quoting, so a plugin path
+  // with a space produces a bundle that loads but never runs. Refuse rather
+  // than install hooks that can only fail at tool time.
+  if (containsSpaces(pluginRoot)) {
+    return {
+      kind: "skipped",
+      reason: `Antigravity CLI cannot run hook commands whose path contains spaces, and agentmemory is installed at ${pluginRoot}. Reinstall it under a space-free path to use --with-hooks; MCP works either way.`,
     };
   }
 
