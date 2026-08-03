@@ -3,30 +3,13 @@ import { spawnSync } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-// Antigravity CLI (`agy`) bridge.
-//
-// Antigravity ships a first-party hooks system, but its contract differs
-// from the Claude Code / Codex / Droid family in three ways that make the
-// bundled hook scripts unusable as direct `command` targets:
-//
-//   1. Only five events exist — PreToolUse, PostToolUse, PreInvocation,
-//      PostInvocation, Stop. There is no SessionStart, SessionEnd or
-//      UserPromptSubmit, so the session lifecycle has to be synthesized
-//      from PreInvocation (first invocation) and Stop.
-//   2. The stdin payload is camelCase and nested: tool calls arrive as
-//      `toolCall.name` + `toolCall.args` (args themselves PascalCase, e.g.
-//      `AbsolutePath`, `TargetFile`, `Query`), and the session key is
-//      `conversationId`, not `session_id`.
-//   3. stdout must be a JSON object. `pre-tool-use.mjs` writes raw context
-//      text when AGENTMEMORY_INJECT_CONTEXT=true, which Antigravity would
-//      fail to parse as a PreToolUse decision.
-//
-// So this bridge sits in front of the canonical hooks: it normalizes the
-// payload into the shape they already accept, pipes it to the right
-// script(s), discards their stdout, and emits the minimal well-formed
-// response for the event. Auto-capture is the goal; the bridge never blocks
-// or rewrites a tool call — see `responseFor` for why PreToolUse is the one
-// event that cannot answer with a bare `{}`.
+// Antigravity CLI (`agy`) bridge — sits in front of the canonical hooks
+// because three parts of agy's contract make them unusable as direct
+// `command` targets: only five events exist (no SessionStart/SessionEnd/
+// UserPromptSubmit, so the lifecycle is synthesized from PreInvocation and
+// Stop); the payload is camelCase and nests tool calls under `toolCall`; and
+// stdout must be a JSON object, which `pre-tool-use.mjs` breaks when
+// AGENTMEMORY_INJECT_CONTEXT=true makes it write raw context text.
 //
 // Invoked as: node antigravity-bridge.mjs <PreInvocation|PreToolUse|PostToolUse|Stop>
 // Sources: antigravity.google/docs/hooks, antigravity.google/docs/cli/using
@@ -89,11 +72,9 @@ function normalizeToolArgs(args: Json | undefined): Json {
   return out;
 }
 
-/**
- * Translate one Antigravity hook payload into the flat, snake_case shape
- * the bundled hooks consume. Unknown fields are passed through so future
- * Antigravity additions stay visible to the capture pipeline.
- */
+// Translate one Antigravity hook payload into the flat, snake_case shape the
+// bundled hooks consume. Unknown fields pass through so future Antigravity
+// additions stay visible to the capture pipeline.
 export function normalizePayload(event: string, raw: Json): Json {
   const toolCall = asObject(raw["toolCall"]);
   const workspacePaths = Array.isArray(raw["workspacePaths"])
@@ -143,14 +124,11 @@ export function normalizePayload(event: string, raw: Json): Json {
   return out;
 }
 
-/**
- * Map an Antigravity event to the bundled scripts it should drive.
- *
- * PreInvocation stands in for both SessionStart and UserPromptSubmit: the
- * first invocation of a conversation opens the session, every later one is
- * a fresh user turn. PostInvocation is deliberately unmapped — PostToolUse
- * already captures the work, and firing again would double-record it.
- */
+// Map an Antigravity event to the bundled scripts it should drive.
+// PreInvocation stands in for both SessionStart and UserPromptSubmit: the
+// first invocation of a conversation opens the session, every later one is a
+// fresh user turn. PostInvocation is deliberately unmapped — PostToolUse
+// already captures the work, and firing again would double-record it.
 export function targetsFor(event: string, raw: Json): string[] {
   switch (event) {
     case "PreInvocation": {
@@ -171,17 +149,10 @@ export function targetsFor(event: string, raw: Json): string[] {
   }
 }
 
-/**
- * The stdout contract, per event.
- *
- * Antigravity documents `decision` as a *required* field of PreToolUse hook
- * output, and agy treats a response that omits it as a denial: a bare `{}`
- * on PreToolUse makes the agent refuse every matched tool call (reported
- * against agy 1.0.5 in cmux#5358). A passive capture hook must therefore say
- * `allow` explicitly. No other event carries a permission decision, so they
- * stay on `{}` — emitting `decision` or `terminationBehavior` there would
- * override the user's own settings.
- */
+// The stdout contract, per event. agy treats a PreToolUse response without
+// `decision` as a denial, so a bare `{}` there makes it refuse every matched
+// tool call (verified on 1.0.15). No other event carries a permission
+// decision, so they stay on `{}` — sending one would override user settings.
 export function responseFor(event: string): string {
   return event === "PreToolUse" ? '{"decision":"allow"}' : "{}";
 }

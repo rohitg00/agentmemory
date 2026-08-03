@@ -41,11 +41,6 @@ function normalizeToolArgs(args) {
 	for (const [from, to] of Object.entries(ARG_KEY_MAP)) if (out[to] === void 0 && args[from] !== void 0) out[to] = args[from];
 	return out;
 }
-/**
-* Translate one Antigravity hook payload into the flat, snake_case shape
-* the bundled hooks consume. Unknown fields are passed through so future
-* Antigravity additions stay visible to the capture pipeline.
-*/
 function normalizePayload(event, raw) {
 	const toolCall = asObject(raw["toolCall"]);
 	const workspacePaths = Array.isArray(raw["workspacePaths"]) ? raw["workspacePaths"] : [];
@@ -72,14 +67,6 @@ function normalizePayload(event, raw) {
 	}
 	return out;
 }
-/**
-* Map an Antigravity event to the bundled scripts it should drive.
-*
-* PreInvocation stands in for both SessionStart and UserPromptSubmit: the
-* first invocation of a conversation opens the session, every later one is
-* a fresh user turn. PostInvocation is deliberately unmapped — PostToolUse
-* already captures the work, and firing again would double-record it.
-*/
 function targetsFor(event, raw) {
 	switch (event) {
 		case "PreInvocation": {
@@ -92,17 +79,6 @@ function targetsFor(event, raw) {
 		default: return [];
 	}
 }
-/**
-* The stdout contract, per event.
-*
-* Antigravity documents `decision` as a *required* field of PreToolUse hook
-* output, and agy treats a response that omits it as a denial: a bare `{}`
-* on PreToolUse makes the agent refuse every matched tool call (reported
-* against agy 1.0.5 in cmux#5358). A passive capture hook must therefore say
-* `allow` explicitly. No other event carries a permission decision, so they
-* stay on `{}` — emitting `decision` or `terminationBehavior` there would
-* override the user's own settings.
-*/
 function responseFor(event) {
 	return event === "PreToolUse" ? "{\"decision\":\"allow\"}" : "{}";
 }

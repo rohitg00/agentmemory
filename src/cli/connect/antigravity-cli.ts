@@ -18,22 +18,11 @@ import {
   writeJsonAtomic,
 } from "./util.js";
 
-// Antigravity ships two products that do NOT share configuration:
-//
-//   • the IDE, wired by `antigravity.ts` via the app-support directory
-//     (~/Library/Application Support/Antigravity/User/mcp_config.json);
-//   • the `agy` CLI, wired here, which reads its customizations out of
-//     ~/.gemini/ — MCP servers from ~/.gemini/config/mcp_config.json and
-//     hooks from ~/.gemini/config/hooks.json, with per-workspace overrides
-//     in <repo>/.agents/hooks.json.
-//
-// Detection keys off ~/.gemini/antigravity-cli/, which only the CLI
-// creates — ~/.gemini/ alone would also match a Gemini CLI install.
-//
-// Unlike Claude Code, Codex and Droid, Antigravity's hooks.json is a map of
-// *named* hook bundles and exposes only five events, so `--with-hooks`
-// uses the dedicated merge engine in antigravity-hooks.ts and routes every
-// event through the bridge in plugin/scripts/antigravity-bridge.mjs.
+// The `agy` CLI shares no configuration with the Antigravity IDE that
+// `antigravity.ts` wires — it reads MCP from ~/.gemini/config/mcp_config.json
+// and hooks from ~/.gemini/config/hooks.json (per-workspace overrides in
+// <repo>/.agents/hooks.json). Detection keys off ~/.gemini/antigravity-cli/,
+// which only the CLI creates; ~/.gemini/ alone would also match Gemini CLI.
 // Sources: antigravity.google/docs/hooks, antigravity.google/docs/cli/using
 const GEMINI_DIR = join(homedir(), ".gemini");
 const ANTIGRAVITY_CLI_DIR = join(GEMINI_DIR, "antigravity-cli");
@@ -53,9 +42,7 @@ export const adapter = createJsonMcpAdapter({
 
 /**
  * Merge the bundled `plugin/hooks/hooks.antigravity.json` into
- * `~/.gemini/config/hooks.json`. Idempotent in the same way as the Codex
- * and Droid installers: re-running replaces only the hook bundle
- * agentmemory owns and leaves user-authored bundles alone.
+ * `~/.gemini/config/hooks.json`, replacing only the bundle agentmemory owns.
  */
 function installAntigravityCliHooks(opts: ConnectOptions): ConnectResult {
   let pluginRoot: string;
@@ -68,9 +55,8 @@ function installAntigravityCliHooks(opts: ConnectOptions): ConnectResult {
     };
   }
 
-  // agy parses `command` itself and honours no quoting, so a plugin path
-  // with a space produces a bundle that loads but never runs. Refuse rather
-  // than install hooks that can only fail at tool time.
+  // agy honours no quoting, so a space in the path yields hooks that load
+  // but never run. Refuse rather than install something that can only fail.
   if (containsSpaces(pluginRoot)) {
     return {
       kind: "skipped",
