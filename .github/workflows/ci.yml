@@ -68,7 +68,11 @@ jobs:
         run: npm install --legacy-peer-deps --no-audit --no-fund
       - name: Build TypeScript package
         run: npm run build
-      - name: Check generated skills
-        run: npm run skills:check
+      - name: Show generated skill drift
+        shell: bash
+        run: |
+          npm run skills:gen
+          git diff -- plugin/skills/agentmemory-rest-api/REFERENCE.md
+          git diff --exit-code -- plugin/skills/agentmemory-rest-api/REFERENCE.md
       - name: Run test suite
         run: npm test
