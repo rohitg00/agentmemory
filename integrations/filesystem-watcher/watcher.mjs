@@ -1,4 +1,4 @@
-import { watch, promises as fsp, statSync } from "node:fs";
+import { watch, promises as fsp, statSync, realpathSync } from "node:fs";
 import { resolve, relative, join, extname, sep, basename } from "node:path";
 import { randomBytes } from "node:crypto";
 
@@ -261,8 +261,15 @@ export class FilesystemWatcher {
         if (!st.isDirectory()) {
           throw new Error("not a directory");
         }
+
+        // libuv versions currently bundled by Node 24.16+ and early Node 26
+        // can abort on Windows when fs.watch receives an 8.3 short path but
+        // ReadDirectoryChangesW later reports the same directory in long form.
+        // Watch the canonical native path while preserving the configured root
+        // in emitted payloads. This avoids the upstream prefix-mismatch crash.
+        const watchRoot = realpathSync.native(root);
         const handle = watch(
-          root,
+          watchRoot,
           { recursive: true, persistent: true },
           (_eventType, filename) => {
             if (!filename) return;
