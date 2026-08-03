@@ -3,6 +3,7 @@ import type { StateKV } from "../state/kv.js";
 import { KV, generateId } from "../state/schema.js";
 import type { Action, ActionEdge, Crystal, MemoryProvider } from "../types.js";
 import { persistAction } from "./action-store.js";
+import { systemLessonAccessContext } from "./lesson-access.js";
 
 interface CrystalDigest {
   narrative: string;
@@ -85,6 +86,7 @@ export function registerCrystallizeFunction(
                   tags: [],
                   source: "crystal",
                   sourceIds: [crystal.id],
+                  accessContext: systemLessonAccessContext(),
                 },
               })
               .catch(() => {}),

@@ -54,6 +54,17 @@ function authHeader(): Record<string, string> {
   return secret ? { authorization: `Bearer ${secret}` } : {};
 }
 
+export function callerIdentityHeaders(): Record<string, string> {
+  const agentId = resolveEnvOrEmpty("AGENT_ID");
+  const callerToken = resolveEnvOrEmpty("AGENTMEMORY_CALLER_TOKEN");
+  return {
+    ...(agentId ? { "x-agentmemory-agent-id": agentId } : {}),
+    ...(callerToken
+      ? { "x-agentmemory-caller-token": callerToken }
+      : {}),
+  };
+}
+
 /**
  * Probes the agentmemory server's livez endpoint. Returns a Response-shaped
  * object whose `ok` flag drives the proxy/local-fallback decision.
@@ -143,6 +154,7 @@ export async function resolveHandle(): Promise<Handle> {
               "content-type": "application/json",
               ...authHeader(),
               ...(init?.headers as Record<string, string> | undefined),
+              ...callerIdentityHeaders(),
             },
             signal: AbortSignal.timeout(CALL_TIMEOUT_MS),
           });

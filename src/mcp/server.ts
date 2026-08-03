@@ -13,12 +13,37 @@ import { timingSafeCompare } from "../auth.js";
 import { getAgentId, isAgentScopeIsolated } from "../config.js";
 import { selectSessionPage } from "../functions/session-list.js";
 import { parseLessonSaveInput } from "../functions/lesson-model.js";
+import {
+  bindResolvedLessonWriteIdentity,
+  resolveLessonBoundaryAccess,
+  type LessonAccessContext,
+} from "../functions/lesson-access.js";
 
 type McpResponse = {
   status_code: number;
   headers?: Record<string, string>;
   body: unknown;
 };
+
+type LessonRequestAccess =
+  | { success: true; context: LessonAccessContext }
+  | { success: false; response: McpResponse };
+
+function resolveLessonRequestAccess(req: ApiRequest): LessonRequestAccess {
+  const resolved = resolveLessonBoundaryAccess(
+    req.headers as Record<string, string | string[] | undefined> | undefined,
+  );
+  if (!resolved.success) {
+    return {
+      success: false,
+      response: {
+        status_code: resolved.statusCode,
+        body: { error: resolved.error, code: resolved.code },
+      },
+    };
+  }
+  return { success: true, context: resolved.context };
+}
 
 function asNonEmptyString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
@@ -335,6 +360,8 @@ export function registerMcpEndpoints(
           }
 
           case "memory_smart_search": {
+            const access = resolveLessonRequestAccess(req);
+            if (!access.success) return access.response;
             if (typeof args.query !== "string" || !args.query.trim()) {
               return {
                 status_code: 400,
@@ -349,6 +376,7 @@ export function registerMcpEndpoints(
                 query: args.query,
                 expandIds,
                 limit,
+                accessContext: access.context,
               },
             });
             return {
@@ -432,7 +460,12 @@ export function registerMcpEndpoints(
           }
 
           case "memory_export": {
-            const result = await sdk.trigger({ function_id: "mem::export", payload: {} });
+            const access = resolveLessonRequestAccess(req);
+            if (!access.success) return access.response;
+            const result = await sdk.trigger({
+              function_id: "mem::export",
+              payload: { accessContext: access.context },
+            });
             return {
               status_code: 200,
               body: {
@@ -1308,7 +1341,20 @@ export function registerMcpEndpoints(
           }
 
           case "memory_lesson_save": {
-            const parsed = parseLessonSaveInput(args, {
+            const access = resolveLessonRequestAccess(req);
+            if (!access.success) return access.response;
+            const prepared = bindResolvedLessonWriteIdentity(
+              args,
+              access.context,
+            );
+            if (!prepared.success) {
+              return {
+                status_code:
+                  prepared.code === "access_denied" ? 403 : 400,
+                body: { error: prepared.error, code: prepared.code },
+              };
+            }
+            const parsed = parseLessonSaveInput(prepared.value, {
               source: "manual",
               allowSourceMetadata: false,
             });
@@ -1320,12 +1366,14 @@ export function registerMcpEndpoints(
             }
             const lessonSaveResult = await sdk.trigger({
               function_id: "mem::lesson-save",
-              payload: parsed.value,
+              payload: { ...parsed.value, accessContext: access.context },
             });
             return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(lessonSaveResult, null, 2) }] } };
           }
 
           case "memory_lesson_recall": {
+            const access = resolveLessonRequestAccess(req);
+            if (!access.success) return access.response;
             if (typeof args.query !== "string" || !args.query.trim()) {
               return { status_code: 400, body: { error: "query is required" } };
             }
@@ -1334,11 +1382,14 @@ export function registerMcpEndpoints(
               project: args.project,
               minConfidence: args.minConfidence,
               limit: args.limit,
+              accessContext: access.context,
             } });
             return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(lessonRecallResult, null, 2) }] } };
           }
 
           case "memory_lesson_delete": {
+            const access = resolveLessonRequestAccess(req);
+            if (!access.success) return access.response;
             const lessonId = asNonEmptyString(args.lessonId);
             const reason = asNonEmptyString(args.reason);
             if (!lessonId || !reason) {
@@ -1355,12 +1406,15 @@ export function registerMcpEndpoints(
                 project: asNonEmptyString(args.project),
                 expectedUpdatedAt: asNonEmptyString(args.expectedUpdatedAt),
                 actor: asNonEmptyString(args.actor) ?? getAgentId() ?? "unknown",
+                accessContext: access.context,
               },
             });
             return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(lessonDeleteResult, null, 2) }] } };
           }
 
           case "memory_lesson_supersede": {
+            const access = resolveLessonRequestAccess(req);
+            if (!access.success) return access.response;
             const lessonId = asNonEmptyString(args.lessonId);
             const replacementLessonId = asNonEmptyString(
               args.replacementLessonId,
@@ -1384,15 +1438,19 @@ export function registerMcpEndpoints(
                 project: asNonEmptyString(args.project),
                 expectedUpdatedAt: asNonEmptyString(args.expectedUpdatedAt),
                 actor: asNonEmptyString(args.actor) ?? getAgentId() ?? "unknown",
+                accessContext: access.context,
               },
             });
             return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(lessonSupersedeResult, null, 2) }] } };
           }
 
           case "memory_reflect": {
+            const access = resolveLessonRequestAccess(req);
+            if (!access.success) return access.response;
             const reflectResult = await sdk.trigger({ function_id: "mem::reflect", payload: {
               project: args.project,
               maxClusters: args.maxClusters,
+              accessContext: access.context,
             } });
             return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(reflectResult, null, 2) }] } };
           }
@@ -1407,12 +1465,15 @@ export function registerMcpEndpoints(
           }
 
           case "memory_obsidian_export": {
+            const access = resolveLessonRequestAccess(req);
+            if (!access.success) return access.response;
             const exportTypes = typeof args.types === "string" && args.types.trim()
               ? args.types.split(",").map((t: string) => t.trim()).filter(Boolean)
               : undefined;
             const obsidianResult = await sdk.trigger({ function_id: "mem::obsidian-export", payload: {
               vaultDir: args.vaultDir,
               types: exportTypes,
+              accessContext: access.context,
             } });
             return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(obsidianResult, null, 2) }] } };
           }

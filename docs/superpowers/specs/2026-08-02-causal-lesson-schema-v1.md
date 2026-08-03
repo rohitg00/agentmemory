@@ -176,11 +176,11 @@ requires a separate durable `scope.scopeId`; global scope rejects `scopeId`.
 Legacy prose lessons retain the fail-closed implicit worktree scope for
 compatibility.
 
-`scopeId`, `humanApproval.approvedBy`, and correction `actor` are
-caller-supplied metadata in PR1. They express classification, lineage, and
-audit attribution, but they are not authenticated identities and do not grant
-authorization. Server-resolved caller identity, approval authority, and
-durable-scope access enforcement are deferred to PR2.
+In PR1, `scopeId`, `humanApproval.approvedBy`, and correction `actor` were
+caller-supplied metadata only. The companion
+[Causal Lesson Access v2](2026-08-03-causal-lesson-access-v2.md) defines the
+opt-in server-resolved identity, approval authority, and durable-scope access
+enforcement added in PR2.
 
 Global scope requires:
 
@@ -204,10 +204,10 @@ are rejected.
 Sensitivity is `public`, `internal`, `confidential`, or `restricted`, with a
 fail-closed default of `restricted`.
 
-PR1 records and returns scope/sensitivity metadata but deliberately preserves
-the existing project-based visibility behavior. Retrieval enforcement belongs
-to PR2. Until that lands, callers must not treat `sensitivity` as an enforced
-access-control boundary.
+PR1 records and returns scope/sensitivity metadata while preserving the
+existing visibility behavior. Access v2 keeps that behavior as explicit
+`classify` mode and adds opt-in `enforce` mode; callers must not treat
+`sensitivity` as an access-control boundary unless enforcement is active.
 
 ## Confidence, reinforcement, staleness, and contradiction
 

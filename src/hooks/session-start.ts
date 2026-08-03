@@ -20,6 +20,8 @@ const INJECT_CONTEXT = process.env["AGENTMEMORY_INJECT_CONTEXT"] === "true";
 
 const REST_URL = process.env["AGENTMEMORY_URL"] || "http://localhost:3111";
 const SECRET = process.env["AGENTMEMORY_SECRET"] || "";
+const AGENT_ID = process.env["AGENT_ID"] || "";
+const CALLER_TOKEN = process.env["AGENTMEMORY_CALLER_TOKEN"] || "";
 
 // When the server is unreachable a 5s timeout multiplies hard under
 // concurrent fan-out (Slack bots, multi-agent harnesses) and becomes a
@@ -31,6 +33,8 @@ const REGISTER_TIMEOUT_MS = 800;
 function authHeaders(): Record<string, string> {
   const h: Record<string, string> = { "Content-Type": "application/json" };
   if (SECRET) h["Authorization"] = `Bearer ${SECRET}`;
+  if (AGENT_ID) h["X-AgentMemory-Agent-Id"] = AGENT_ID;
+  if (CALLER_TOKEN) h["X-AgentMemory-Caller-Token"] = CALLER_TOKEN;
   return h;
 }
 

@@ -95,9 +95,13 @@ async function callAgentMemory<T>(
   const url = `${baseUrl}/agentmemory/${pathname.replace(/^\/+/, "")}`;
   const headers: Record<string, string> = {};
   const secret = process.env.AGENTMEMORY_SECRET;
+  const agentId = process.env.AGENT_ID;
+  const callerToken = process.env.AGENTMEMORY_CALLER_TOKEN;
   guardPlaintextBearerAuth(baseUrl, secret);
   if (options?.body !== undefined) headers["Content-Type"] = "application/json";
   if (secret) headers.Authorization = `Bearer ${secret}`;
+  if (agentId) headers["X-AgentMemory-Agent-Id"] = agentId;
+  if (callerToken) headers["X-AgentMemory-Caller-Token"] = callerToken;
 
   try {
     const response = await fetch(url, {

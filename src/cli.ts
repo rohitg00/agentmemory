@@ -2037,6 +2037,21 @@ function buildDemoSessions(): DemoSession[] {
   ];
 }
 
+function cliJsonHeaders(): Record<string, string> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  const secret = process.env["AGENTMEMORY_SECRET"];
+  const agentId = process.env["AGENT_ID"];
+  const callerToken = process.env["AGENTMEMORY_CALLER_TOKEN"];
+  if (secret) headers["Authorization"] = `Bearer ${secret}`;
+  if (agentId) headers["X-AgentMemory-Agent-Id"] = agentId;
+  if (callerToken) {
+    headers["X-AgentMemory-Caller-Token"] = callerToken;
+  }
+  return headers;
+}
+
 async function postJson<T = unknown>(
   url: string,
   body: unknown,
@@ -2045,7 +2060,7 @@ async function postJson<T = unknown>(
   try {
     const res = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: cliJsonHeaders(),
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(timeoutMs),
     });
@@ -2063,7 +2078,7 @@ async function postJsonStrict<T = unknown>(
 ): Promise<T | null> {
   const res = await fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: cliJsonHeaders(),
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(timeoutMs),
   });
@@ -2105,7 +2120,7 @@ async function seedDemoSession(
     try {
       const res = await fetch(url, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: cliJsonHeaders(),
         body: JSON.stringify(payload),
         signal: AbortSignal.timeout(5000),
       });

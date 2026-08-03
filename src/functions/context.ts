@@ -21,6 +21,11 @@ import {
   isLessonRecallable,
   toLessonReadModel,
 } from "./lesson-model.js";
+import {
+  canReadLesson,
+  lessonAccessContextFromPayload,
+  type LessonAccessContext,
+} from "./lesson-access.js";
 
 function estimateTokens(text: string): number {
   return Math.ceil(text.length / 3);
@@ -40,9 +45,15 @@ export function registerContextFunction(
   tokenBudget: number,
 ): void {
   sdk.registerFunction("mem::context", 
-    async (data: { sessionId: string; project: string; budget?: number }) => {
+    async (data: {
+      sessionId: string;
+      project: string;
+      budget?: number;
+      accessContext?: LessonAccessContext;
+    }) => {
       const budget = data.budget || tokenBudget;
       const blocks: ContextBlock[] = [];
+      const accessContext = lessonAccessContextFromPayload(data.accessContext);
 
       const [pinnedSlots, profile, lessons] = await Promise.all([
         isSlotsEnabled()
@@ -110,6 +121,7 @@ export function registerContextFunction(
         .filter(
           (lesson) =>
             isLessonRecallable(lesson) &&
+            canReadLesson(lesson, accessContext) &&
             (!lesson.project || lesson.project === data.project),
         )
         .map((lesson) => toLessonReadModel(lesson))

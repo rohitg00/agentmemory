@@ -18,7 +18,10 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { timingSafeCompare } from "../auth.js";
 import { VERSION } from "../version.js";
-import { resolveEnvOrEmpty } from "./rest-proxy.js";
+import {
+  callerIdentityHeaders,
+  resolveEnvOrEmpty,
+} from "./rest-proxy.js";
 
 const DEFAULT_ENGINE_URL = "http://127.0.0.1:3111";
 const DEFAULT_HOST = "127.0.0.1";
@@ -112,6 +115,7 @@ function engineHeaders(): Record<string, string> {
   return {
     "content-type": "application/json",
     ...(secret ? { authorization: `Bearer ${secret}` } : {}),
+    ...callerIdentityHeaders(),
   };
 }
 
@@ -129,7 +133,7 @@ export function createProxyBackend(options: {
   async function request(path: string, init: RequestInit): Promise<unknown> {
     const response = await fetchImpl(`${baseUrl}${path}`, {
       ...init,
-      headers: { ...engineHeaders(), ...(init.headers ?? {}) },
+      headers: { ...(init.headers ?? {}), ...engineHeaders() },
       signal: AbortSignal.timeout(BACKEND_TIMEOUT_MS),
     });
     if (!response.ok) {

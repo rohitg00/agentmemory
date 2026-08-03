@@ -650,12 +650,14 @@ The agentmemory entry is the **same MCP server block** across every host that us
   "args": ["-y", "@agentmemory/mcp"],
   "env": {
     "AGENTMEMORY_URL": "${AGENTMEMORY_URL}",
-    "AGENTMEMORY_SECRET": "${AGENTMEMORY_SECRET}"
+    "AGENTMEMORY_SECRET": "${AGENTMEMORY_SECRET}",
+    "AGENT_ID": "${AGENT_ID}",
+    "AGENTMEMORY_CALLER_TOKEN": "${AGENTMEMORY_CALLER_TOKEN}"
   }
 }
 ```
 
-**Merge this entry into the existing `mcpServers` object** in the host's config file — don't replace the file. If the file already has other servers, add `agentmemory` next to them as another key inside `mcpServers`. If `mcpServers` is missing entirely, paste the block inside `{ "mcpServers": { ... } }`. The `${VAR}` placeholders inherit `AGENTMEMORY_URL` / `AGENTMEMORY_SECRET` from the shell at MCP-server launch — unset vars pass empty strings and the shim falls back to `http://localhost:3111`. One wired entry covers both local and remote (k8s / reverse-proxied) deployments.
+**Merge this entry into the existing `mcpServers` object** in the host's config file — don't replace the file. If the file already has other servers, add `agentmemory` next to them as another key inside `mcpServers`. If `mcpServers` is missing entirely, paste the block inside `{ "mcpServers": { ... } }`. The `${VAR}` placeholders inherit the endpoint, API secret, caller ID, and caller token from the shell at MCP-server launch — unset vars pass empty strings and the shim falls back to `http://localhost:3111`. One wired entry covers both local and remote (k8s / reverse-proxied) deployments.
 
 | Agent | Config file | Notes |
 |---|---|---|
@@ -1473,6 +1475,10 @@ Create `~/.agentmemory/.env`:
 
 # Auth
 # AGENTMEMORY_SECRET=your-secret
+# AGENTMEMORY_LESSON_ACCESS_MODE=classify  # classify (default) | enforce
+# AGENTMEMORY_LESSON_CALLER_POLICY_FILE=/etc/agentmemory/lesson-callers.json
+# AGENT_ID=codex
+# AGENTMEMORY_CALLER_TOKEN=unique-client-token
 
 # Ports (defaults: 3111 API, 3113 viewer)
 # III_REST_PORT=3111
@@ -1576,17 +1582,36 @@ Authoritative lesson enumeration and normalization fail closed for import,
 portable export, and reflection; a read failure cannot become an empty lesson
 set that permits tombstone restoration or positive synthesis.
 
-`scopeId`, global `humanApproval.approvedBy`, and correction `actor` values are
-caller-supplied classification, lineage, and audit-attribution metadata. They
-are not authenticated identities or an authorization boundary in PR1.
-Server-resolved caller identity, approval authority, and durable-scope access
-enforcement remain PR2 work.
+Lesson authorization has two explicit modes. `classify` is the default and
+preserves the PR1 behavior. `enforce` resolves a caller from a per-client token
+and server-side SHA-256 token-digest policy, then applies exact durable-scope
+grants and the sensitivity order
+`public < internal < confidential < restricted`. Write grants imply read;
+global is not a wildcard; legacy implicit-worktree rows require the
+`lesson:legacy-worktree` capability.
 
-Scope and sensitivity enforcement, automatic contradiction discovery, and
-hybrid/vector lesson retrieval are intentionally deferred to PR2. Until then,
-sensitivity metadata is classification, not an access-control boundary. See
+In enforce mode, REST and MCP arguments cannot self-assert identity. The server
+stamps correction actors plus global `humanApproval.approvedBy` and
+`humanApproval.approvedAt`; only an authenticated human with
+`lesson:approve-global` may approve global scope.
+Portable/Obsidian exports require `lesson:export`, imports require
+`lesson:import`, and unauthorized lessons are removed before list, recall,
+context, smart-search, reflection, and export counts are computed.
+
+Set `AGENTMEMORY_LESSON_ACCESS_MODE=enforce` and
+`AGENTMEMORY_LESSON_CALLER_POLICY_FILE=/absolute/path/lesson-callers.json` on
+the server. Set a unique high-entropy `AGENTMEMORY_CALLER_TOKEN` and matching
+`AGENT_ID` on each client. Keep raw tokens out of the policy and source control;
+the policy contains only `tokenSha256`. Missing/invalid policy or credentials
+fail closed after enforcement is enabled. Internal scheduled functions use an
+explicit service context; that service cannot approve global lessons.
+
+Automatic contradiction discovery and hybrid/vector lesson retrieval remain
+separate follow-up work. See
 [Causal Lesson Schema v1](docs/superpowers/specs/2026-08-02-causal-lesson-schema-v1.md)
-for the complete compatibility and fingerprint contract.
+for the compatibility/fingerprint contract and
+[Causal Lesson Access v2](docs/superpowers/specs/2026-08-03-causal-lesson-access-v2.md)
+for the authorization and rollout contract.
 
 ---
 

@@ -28,6 +28,28 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
     resetHandleForTests();
     globalThis.fetch = originalFetch;
     delete process.env["AGENTMEMORY_URL"];
+    delete process.env["AGENT_ID"];
+    delete process.env["AGENTMEMORY_CALLER_TOKEN"];
+  });
+
+  it("forwards server-resolved caller identity headers without exposing them in payloads", async () => {
+    process.env["AGENT_ID"] = "codex";
+    process.env["AGENTMEMORY_CALLER_TOKEN"] = "caller-secret";
+    let requestHeaders: Headers | undefined;
+    installFetch((url, init) => {
+      if (url.endsWith("/agentmemory/livez")) {
+        return new Response("ok", { status: 200 });
+      }
+      requestHeaders = new Headers(init?.headers);
+      return new Response(JSON.stringify({ sessions: [] }), { status: 200 });
+    });
+
+    await handleToolCall("memory_sessions", { limit: 1 });
+
+    expect(requestHeaders?.get("x-agentmemory-agent-id")).toBe("codex");
+    expect(requestHeaders?.get("x-agentmemory-caller-token")).toBe(
+      "caller-secret",
+    );
   });
 
   it("proxies memory_sessions to GET /agentmemory/sessions when server is up", async () => {

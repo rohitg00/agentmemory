@@ -110,6 +110,8 @@ function createClient(cfg, api) {
   const timeoutMs = Number(cfg.timeout_ms || DEFAULT_TIMEOUT_MS);
   const fallbackOnError = cfg.fallback_on_error !== false;
   const secret = process.env.AGENTMEMORY_SECRET;
+  const agentId = process.env.AGENT_ID;
+  const callerToken = process.env.AGENTMEMORY_CALLER_TOKEN;
   const guardPlaintextBearerAuth = createPlaintextBearerAuthGuard(
     (message) => api.logger.warn?.(message),
   );
@@ -121,6 +123,10 @@ function createClient(cfg, api) {
     guardPlaintextBearerAuth(baseUrl, secret);
     const headers = { "Content-Type": "application/json" };
     if (secret) headers.Authorization = `Bearer ${secret}`;
+    if (agentId) headers["X-AgentMemory-Agent-Id"] = agentId;
+    if (callerToken) {
+      headers["X-AgentMemory-Caller-Token"] = callerToken;
+    }
     try {
       const res = await fetch(`${baseUrl}${path}`, {
         method: "POST",

@@ -17,6 +17,7 @@ import {
 } from "../config.js";
 import { logger } from "../logger.js";
 import { getCounters } from "../telemetry/setup.js";
+import type { LessonAccessContext } from "./lesson-access.js";
 
 // #771: smart-search followup-rate diagnostic. Stored per session as
 // the most recent search payload, used to detect whether the next
@@ -95,6 +96,7 @@ export function registerSmartSearchFunction(
       // #771: marks viewer-originated searches so the diagnostic
       // ignores them — only agent-initiated re-queries should count.
       source?: string;
+      accessContext?: LessonAccessContext;
     }) => {
 
       // Compute the agent filter once, up front. Both the expandIds
@@ -199,7 +201,13 @@ export function registerSmartSearchFunction(
       const [hybridResults, lessons] = await Promise.all([
         searchFn(data.query, overFetchLimit),
         includeLessons
-          ? recallLessons(sdk, data.query, lessonLimit, data.project)
+          ? recallLessons(
+              sdk,
+              data.query,
+              lessonLimit,
+              data.project,
+              data.accessContext,
+            )
           : Promise.resolve([]),
       ]);
 
@@ -292,11 +300,12 @@ async function recallLessons(
   query: string,
   limit: number,
   project?: string,
+  accessContext?: LessonAccessContext,
 ): Promise<CompactLessonResult[]> {
   try {
     const result = (await sdk.trigger({
       function_id: "mem::lesson-recall",
-      payload: { query, limit, project },
+      payload: { query, limit, project, accessContext },
     })) as { success?: boolean; lessons?: Array<Lesson & { score?: number }> };
     if (!result?.success || !Array.isArray(result.lessons)) return [];
     return result.lessons.map((lesson) => {

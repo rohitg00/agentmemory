@@ -18,6 +18,11 @@ import {
   isLessonRecallable,
   toLessonReadModel,
 } from "./lesson-model.js";
+import {
+  canReadLesson,
+  lessonAccessContextFromPayload,
+  type LessonAccessContext,
+} from "./lesson-access.js";
 
 interface ConceptCluster {
   concepts: string[];
@@ -222,10 +227,17 @@ export function registerReflectFunctions(
   provider: MemoryProvider,
 ): void {
   sdk.registerFunction("mem::reflect", 
-    async (data: { maxClusters?: number; project?: string }) => {
+    async (data: {
+      maxClusters?: number;
+      project?: string;
+      accessContext?: LessonAccessContext;
+    }) => {
       const maxClusters = Math.min(data?.maxClusters ?? 10, 20);
       const maxInsightsPerCluster = 5;
       const maxTotal = 50;
+      const accessContext = lessonAccessContextFromPayload(
+        data?.accessContext,
+      );
 
       let lessons: Lesson[];
       try {
@@ -244,7 +256,10 @@ export function registerReflectFunctions(
       let activeLessons: LessonReadModel[] = [];
       try {
         for (const lesson of lessons) {
-          if (isLessonRecallable(lesson)) {
+          if (
+            isLessonRecallable(lesson) &&
+            canReadLesson(lesson, accessContext)
+          ) {
             activeLessons.push(toLessonReadModel(lesson));
           }
         }

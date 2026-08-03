@@ -49,6 +49,13 @@ import {
   sameLessonScope,
 } from "./lesson-model.js";
 import { withLessonMutationLock } from "./lesson-locks.js";
+import {
+  canReadLesson,
+  canUseLessonCapability,
+  canWriteLessonScope,
+  lessonAccessContextFromPayload,
+  type LessonAccessContext,
+} from "./lesson-access.js";
 
 interface ImportedLessonCandidate {
   lesson: Lesson;
@@ -66,7 +73,21 @@ const MAX_LESSON_STATE_DIAGNOSTIC_DETAIL_LENGTH = 256;
 
 export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
   sdk.registerFunction("mem::export", 
-    async (data?: { maxSessions?: number; offset?: number }) => {
+    async (data?: {
+      maxSessions?: number;
+      offset?: number;
+      accessContext?: LessonAccessContext;
+    }) => {
+      const accessContext = lessonAccessContextFromPayload(
+        data?.accessContext,
+      );
+      if (!canUseLessonCapability(accessContext, "lesson:export")) {
+        return {
+          success: false,
+          code: "access_denied",
+          error: "lesson access denied for export",
+        };
+      }
       const rawMax = Number(data?.maxSessions);
       const maxSessions = Number.isFinite(rawMax) && rawMax > 0 ? Math.min(Math.floor(rawMax), 1000) : undefined;
       const rawOffset = Number(data?.offset);
@@ -142,6 +163,9 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
         kv.list<Checkpoint>(KV.checkpoints).catch(() => []),
         kv.list<AccessLogExport>(KV.accessLog).catch(() => []),
       ]);
+      const authorizedLessons = lessons
+        .filter((lesson) => canReadLesson(lesson, accessContext))
+        .map((lesson) => normalizeLesson(lesson));
 
       const exportData: ExportData = {
         version: VERSION,
@@ -175,8 +199,8 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
         crystals: crystals.length > 0 ? crystals : undefined,
         facets: facets.length > 0 ? facets : undefined,
         lessons:
-          lessons.length > 0
-            ? lessons.map((lesson) => normalizeLesson(lesson))
+          authorizedLessons.length > 0
+            ? authorizedLessons
             : undefined,
         insights: insights.length > 0 ? insights : undefined,
         routines: routines.length > 0 ? routines : undefined,
@@ -199,6 +223,7 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
         0,
       );
       logger.info("Export complete", {
+        actor: accessContext.principalId,
         sessions: paginatedSessions.length,
         totalSessions: allSessions.length,
         observations: totalObs,
@@ -214,7 +239,18 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
     async (data: {
       exportData: ExportData;
       strategy?: "merge" | "replace" | "skip";
+      accessContext?: LessonAccessContext;
     }) => {
+      const accessContext = lessonAccessContextFromPayload(
+        data?.accessContext,
+      );
+      if (!canUseLessonCapability(accessContext, "lesson:import")) {
+        return {
+          success: false,
+          code: "access_denied",
+          error: "lesson access denied for import",
+        };
+      }
       if (
         !data?.exportData ||
         typeof data.exportData !== "object" ||
@@ -541,12 +577,17 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
       const lessonImport = await withLessonMutationLock(() =>
         applyImportedLessonBatch(
           kv,
-          normalizedImportedLessons,
-          strategy,
-        ),
+        normalizedImportedLessons,
+        strategy,
+        accessContext,
+      ),
       );
       if (!lessonImport.success) {
-        return { success: false, error: lessonImport.error };
+        return {
+          success: false,
+          error: lessonImport.error,
+          ...(lessonImport.code ? { code: lessonImport.code } : {}),
+        };
       }
       stats.lessons = lessonImport.written;
       stats.skipped += lessonImport.skipped;
@@ -925,6 +966,7 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
 
       logger.info("Import complete", { strategy, ...stats });
       await recordAudit(kv, "import", "mem::import", [], {
+        actor: accessContext.principalId,
         strategy,
         stats,
       });
@@ -937,9 +979,10 @@ async function applyImportedLessonBatch(
   kv: StateKV,
   imported: ImportedLessonCandidate[],
   strategy: "merge" | "replace" | "skip",
+  accessContext: LessonAccessContext,
 ): Promise<
   | { success: true; written: number; skipped: number }
-  | { success: false; error: string }
+  | { success: false; error: string; code?: "access_denied" }
 > {
   let existingRows: Lesson[];
   try {
@@ -980,6 +1023,57 @@ async function applyImportedLessonBatch(
         };
       }
       existingAliases.set(alias, normalized.id);
+    }
+  }
+
+  for (const candidate of imported) {
+    const normalized = normalizeLesson(candidate.lesson);
+    if (
+      !canWriteLessonScope(
+        normalized.scope,
+        normalized.sensitivity,
+        accessContext,
+      )
+    ) {
+      return {
+        success: false,
+        code: "access_denied",
+        error: "Lesson import access denied for incoming durable scope",
+      };
+    }
+    const current = existing.get(normalized.id);
+    if (
+      current &&
+      (!canReadLesson(current, accessContext) ||
+        !canWriteLessonScope(
+          current.scope!,
+          current.sensitivity!,
+          accessContext,
+        ))
+    ) {
+      return {
+        success: false,
+        code: "access_denied",
+        error: "Lesson import access denied for existing durable scope",
+      };
+    }
+  }
+  if (strategy === "replace") {
+    for (const current of existing.values()) {
+      if (
+        !canReadLesson(current, accessContext) ||
+        !canWriteLessonScope(
+          current.scope!,
+          current.sensitivity!,
+          accessContext,
+        )
+      ) {
+        return {
+          success: false,
+          code: "access_denied",
+          error: "Lesson import access denied for replace deletion",
+        };
+      }
     }
   }
 
@@ -1107,7 +1201,7 @@ async function applyImportedLessonBatch(
         "import",
         "mem::import:lessons",
         affectedIds,
-        auditDetails,
+        { ...auditDetails, actor: accessContext.principalId },
       );
     }
   } catch (error) {
@@ -1125,6 +1219,7 @@ async function applyImportedLessonBatch(
         affectedIds,
         {
           ...auditDetails,
+          actor: accessContext.principalId,
           applyError: error instanceof Error ? error.message : String(error),
           rollback,
         },

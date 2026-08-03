@@ -6,6 +6,8 @@ import { isReflectEnabled } from "../functions/slots.js";
 import { isGraphExtractionEnabled } from "../config.js";
 import { logger } from "../logger.js";
 import { triggerDetached } from "../utils/trigger-detached.js";
+import { systemLessonAccessContext } from "../functions/lesson-access.js";
+import type { LessonAccessContext } from "../functions/lesson-access.js";
 
 export function registerEventTriggers(sdk: ISdk, kv: StateKV): void {
   sdk.registerFunction(
@@ -37,11 +39,19 @@ export function registerEventTriggers(sdk: ISdk, kv: StateKV): void {
       };
       await kv.set(KV.sessions, data.sessionId, session);
       const contextResult = await sdk.trigger<
-        { sessionId: string; project: string },
+        {
+          sessionId: string;
+          project: string;
+          accessContext: LessonAccessContext;
+        },
         { context: string }
       >({
         function_id: "mem::context",
-        payload: { sessionId: data.sessionId, project: data.project },
+        payload: {
+          sessionId: data.sessionId,
+          project: data.project,
+          accessContext: systemLessonAccessContext(),
+        },
       });
       return { session, context: contextResult.context };
     },

@@ -16,6 +16,12 @@ import {
   isLessonListable,
   toLessonReadModel,
 } from "./lesson-model.js";
+import {
+  canReadLesson,
+  canUseLessonCapability,
+  lessonAccessContextFromPayload,
+  type LessonAccessContext,
+} from "./lesson-access.js";
 const DEFAULT_EXPORT_ROOT = join(homedir(), ".agentmemory");
 
 function getExportRoot(): string {
@@ -336,7 +342,15 @@ export function registerObsidianExportFunction(
   kv: StateKV,
 ): void {
   sdk.registerFunction("mem::obsidian-export",
-    async (data: { vaultDir?: string; types?: string[] } | undefined) => {
+    async (
+      data:
+        | {
+            vaultDir?: string;
+            types?: string[];
+            accessContext?: LessonAccessContext;
+          }
+        | undefined,
+    ) => {
       if (!data || typeof data !== "object") {
         return { success: false, error: "payload is required" };
       }
@@ -362,6 +376,19 @@ export function registerObsidianExportFunction(
       const exportTypes = new Set(
         data.types ?? ["memories", "lessons", "crystals", "sessions"],
       );
+      const accessContext = lessonAccessContextFromPayload(
+        data.accessContext,
+      );
+      if (
+        exportTypes.has("lessons") &&
+        !canUseLessonCapability(accessContext, "lesson:export")
+      ) {
+        return {
+          success: false,
+          code: "access_denied",
+          error: "lesson access denied for Obsidian export",
+        };
+      }
 
       const dirs = {
         memories: join(vaultDir, "memories"),
@@ -415,7 +442,9 @@ export function registerObsidianExportFunction(
 
         for (const l of lessons.filter(
           (l): l is Lesson & { id: string } =>
-            hasExportId(l) && isLessonListable(l),
+            hasExportId(l) &&
+            isLessonListable(l) &&
+            canReadLesson(l, accessContext),
         )) {
           const filename = `${sanitize(l.id)}.md`;
           const filepath = join(dirs.lessons, filename);
@@ -501,6 +530,7 @@ export function registerObsidianExportFunction(
         await writeFile(join(vaultDir, "MOC.md"), moc);
 
         await recordAudit(kv, "obsidian_export", "mem::obsidian-export", [], {
+          actor: accessContext.principalId,
           vaultDir,
           stats,
         });
