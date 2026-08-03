@@ -180,7 +180,8 @@ describe("connect: Codex --with-hooks", () => {
   });
 
   afterEach(() => {
-    process.env["HOME"] = ORIG;
+    if (ORIG === undefined) delete process.env["HOME"];
+    else process.env["HOME"] = ORIG;
     if (ORIG_USERPROFILE === undefined) delete process.env["USERPROFILE"];
     else process.env["USERPROFILE"] = ORIG_USERPROFILE;
     rmSync(home, { recursive: true, force: true });

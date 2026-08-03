@@ -79,8 +79,6 @@ export const adapter: ConnectAdapter = {
 
     if (wired && !opts.force) {
       logAlreadyWired("Codex CLI", CODEX_TOML);
-      // --with-hooks is independent of MCP wiring (issue #508 / openai/codex#16430).
-      // Re-run refreshes absolute script paths even when MCP is already in place.
       if (opts.withHooks) {
         const hookResult = installCodexHooks(opts);
         if (hookResult.kind === "skipped") {
