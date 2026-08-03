@@ -2,7 +2,11 @@ import { fingerprintId } from "../state/schema.js";
 import type {
   Lesson,
   LessonClaimType,
+  LessonEvidenceProvenance,
+  LessonEvidenceProvenanceType,
   LessonEvidenceReference,
+  LessonEvidenceVerification,
+  LessonEvidenceVerificationState,
   LessonEvidenceVerdict,
   LessonHumanApproval,
   LessonLifecycle,
@@ -31,6 +35,21 @@ const MAX_EVIDENCE_KIND_LENGTH = 64;
 const MAX_EVIDENCE_PROJECT_ID_LENGTH = 128;
 const MAX_EVIDENCE_REMOTE_LENGTH = 2048;
 const MAX_EVIDENCE_PATH_LENGTH = 1024;
+const MAX_EVIDENCE_LOCATOR_LENGTH = 2048;
+const MAX_EVIDENCE_IMMUTABLE_ID_LENGTH = 512;
+const MAX_EVIDENCE_VERIFIER_LENGTH = 256;
+const MAX_EVIDENCE_VERIFICATION_NOTE_LENGTH = 1000;
+const MAX_LESSON_ID_ALIASES = 16;
+const MAX_LESSON_ID_LENGTH = 256;
+
+const FACET_DIMENSION_PATTERN = /^[a-z][a-z0-9_]*$/;
+const RESERVED_FACET_DIMENSIONS = new Set([
+  "__proto__",
+  "constructor",
+  "prototype",
+]);
+const EXPLICIT_RFC3339_PATTERN =
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:Z|([+-])(\d{2}):(\d{2}))$/;
 
 const EVIDENCE_VERDICTS = new Set<LessonEvidenceVerdict>([
   "supported",
@@ -63,6 +82,21 @@ const SENSITIVITIES = new Set<LessonSensitivity>([
   "internal",
   "confidential",
   "restricted",
+]);
+const PROVENANCE_TYPES = new Set<LessonEvidenceProvenanceType>([
+  "git",
+  "object-store",
+  "database-query",
+  "oci",
+  "doi",
+  "urn",
+  "dataset",
+  "attestation",
+]);
+const VERIFICATION_STATES = new Set<LessonEvidenceVerificationState>([
+  "unverified",
+  "verified",
+  "rejected",
 ]);
 
 export interface LessonSaveInput {
@@ -100,6 +134,7 @@ type LessonParseOptions = {
   allowImplicitWorktreeScope?: boolean;
   source?: "crystal" | "manual" | "consolidation";
   allowSourceMetadata?: boolean;
+  allowLegacyGitVerificationMigration?: boolean;
 };
 
 class LessonInputError extends Error {}
@@ -207,7 +242,10 @@ export function parseLessonSaveInput(
     const structuredFacets = normalizeStructuredFacets(
       record.structuredFacets,
     );
-    const evidenceRefs = normalizeEvidenceRefs(record.evidenceRefs);
+    const evidenceRefs = normalizeEvidenceRefs(
+      record.evidenceRefs,
+      options.allowLegacyGitVerificationMigration === true,
+    );
     const scope = normalizeScope(
       record.scope,
       options.allowImplicitWorktreeScope === true,
@@ -218,7 +256,7 @@ export function parseLessonSaveInput(
         "sensitivity",
         SENSITIVITIES,
       ) ?? "restricted";
-    const reviewAfter = optionalDate(record.reviewAfter, "reviewAfter");
+    const reviewAfter = optionalStrictDate(record.reviewAfter, "reviewAfter");
     const contradictedByLessonIds = normalizeStringArray(
       record.contradictedByLessonIds,
       "contradictedByLessonIds",
@@ -262,6 +300,16 @@ export function parseLessonSaveInput(
     if (evidenceVerdict !== "unverified" && evidenceRefs.length === 0) {
       throw new LessonInputError(
         `${evidenceVerdict} lessons require at least one durable evidence reference`,
+      );
+    }
+    if (
+      evidenceVerdict !== "unverified" &&
+      evidenceRefs.some(
+        (reference) => reference.verification?.state !== "verified",
+      )
+    ) {
+      throw new LessonInputError(
+        `${evidenceVerdict} lessons require every evidence reference to be explicitly verified`,
       );
     }
 
@@ -336,17 +384,16 @@ export function lessonIdForInput(input: LessonSaveInput): string {
       contentFingerprint: lessonContentFingerprint(input),
       evidenceVerdict: input.evidenceVerdict,
       evidenceRefs: input.evidenceRefs,
-      lifecycle: input.lifecycle,
       scope: input.scope,
       sensitivity: input.sensitivity,
       reviewAfter: input.reviewAfter,
-      contradictedByLessonIds: input.contradictedByLessonIds,
     }),
   );
 }
 
 export function normalizeLesson(lesson: Lesson): NormalizedLesson {
   const lifecycle = deriveLifecycle(lesson);
+  const structuredMarkers = hasStructuredLessonMarkers(lesson);
   const parsed = parseLessonSaveInput(
     {
       ...lesson,
@@ -355,33 +402,73 @@ export function normalizeLesson(lesson: Lesson): NormalizedLesson {
     {
       allowTerminalLifecycle: true,
       allowImplicitWorktreeScope: true,
+      allowLegacyGitVerificationMigration: true,
     },
   );
-  const fallback = parseLessonSaveInput(
-    {
-      content:
-        typeof lesson.content === "string" && lesson.content.trim()
-          ? lesson.content
-          : lesson.id || "legacy-lesson",
-      context: typeof lesson.context === "string" ? lesson.context : "",
-      confidence: lesson.confidence,
-      project: lesson.project,
-      tags: Array.isArray(lesson.tags) ? lesson.tags : [],
-      source: lesson.source,
-      sourceIds: Array.isArray(lesson.sourceIds) ? lesson.sourceIds : [],
-      lifecycle,
-    },
-    {
-      allowTerminalLifecycle: true,
-      allowImplicitWorktreeScope: true,
-    },
-  );
-  if (!fallback.success) {
-    throw new Error(`Invalid legacy lesson ${lesson.id}: ${fallback.error}`);
+  if (!parsed.success && structuredMarkers) {
+    throw new Error(`Invalid structured lesson ${lesson.id}: ${parsed.error}`);
   }
-  const value = parsed.success ? parsed.value : fallback.value;
+  const legacyFallback = parsed.success
+    ? undefined
+    : parseLessonSaveInput(
+        {
+          content:
+            typeof lesson.content === "string" && lesson.content.trim()
+              ? lesson.content
+              : lesson.id || "legacy-lesson",
+          context: typeof lesson.context === "string" ? lesson.context : "",
+          confidence: lesson.confidence,
+          project: lesson.project,
+          tags: Array.isArray(lesson.tags) ? lesson.tags : [],
+          source: lesson.source,
+          sourceIds: Array.isArray(lesson.sourceIds) ? lesson.sourceIds : [],
+          lifecycle,
+        },
+        {
+          allowTerminalLifecycle: true,
+          allowImplicitWorktreeScope: true,
+        },
+      );
+  if (legacyFallback && !legacyFallback.success) {
+    throw new Error(
+      `Invalid legacy lesson ${lesson.id}: ${legacyFallback.error}`,
+    );
+  }
+  const value = parsed.success ? parsed.value : legacyFallback!.value;
+  const identityKind =
+    lesson.identityKind ??
+    (structuredMarkers ? "canonical" : "legacy-prose");
+  if (
+    identityKind === "legacy-prose" &&
+    (value.mechanismId || value.claim || hasCausalStructure(value))
+  ) {
+    throw new Error(
+      `Invalid structured lesson ${lesson.id}: legacy-prose identity cannot carry causal structure`,
+    );
+  }
+  const canonicalId = lessonIdForInput(value);
+  const idAliases = normalizeStringArray(
+    lesson.idAliases,
+    "idAliases",
+    {
+      maxItems: MAX_LESSON_ID_ALIASES,
+      maxLength: MAX_LESSON_ID_LENGTH,
+      sort: true,
+    },
+  ).filter((alias) => alias !== lesson.id);
+  if (identityKind === "legacy-prose" && canonicalId !== lesson.id) {
+    idAliases.push(canonicalId);
+    idAliases.sort(compareText);
+  }
+  if (new Set(idAliases).size > MAX_LESSON_ID_ALIASES) {
+    throw new Error(
+      `Invalid lesson ${lesson.id}: idAliases exceed ${MAX_LESSON_ID_ALIASES} entries after canonicalization`,
+    );
+  }
   const normalized: NormalizedLesson = {
     ...lesson,
+    identityKind,
+    idAliases: [...new Set(idAliases)],
     content: value.content,
     context: value.context,
     confidence:
@@ -467,10 +554,21 @@ export function isLessonRecallable(lesson: Lesson): boolean {
 
 export function parseImportedLesson(
   raw: unknown,
-): { success: true; lesson: NormalizedLesson } | { success: false; error: string } {
+):
+  | {
+      success: true;
+      lesson: NormalizedLesson;
+      sourceId: string;
+      canonicalized: boolean;
+    }
+  | { success: false; error: string } {
   try {
     const record = requireRecord(raw, "lesson");
-    const id = requiredString(record.id, "lesson.id");
+    const sourceId = requiredString(
+      record.id,
+      "lesson.id",
+      MAX_LESSON_ID_LENGTH,
+    );
     const createdAt = requiredDate(record.createdAt, "lesson.createdAt");
     const updatedAt = requiredDate(record.updatedAt, "lesson.updatedAt");
     if (
@@ -484,11 +582,48 @@ export function parseImportedLesson(
     if (record.deleted !== undefined && typeof record.deleted !== "boolean") {
       throw new LessonInputError("lesson.deleted must be a boolean");
     }
+    if (
+      record.identityKind !== undefined &&
+      record.identityKind !== "canonical" &&
+      record.identityKind !== "legacy-prose"
+    ) {
+      throw new LessonInputError(
+        "lesson.identityKind must be canonical or legacy-prose",
+      );
+    }
+    const explicitLegacy = record.identityKind === "legacy-prose";
+    const legacyProse =
+      explicitLegacy || !hasStructuredLessonMarkers(record);
     const parsed = parseLessonSaveInput(record, {
       allowTerminalLifecycle: true,
       allowImplicitWorktreeScope: true,
+      allowLegacyGitVerificationMigration: true,
     });
     if (!parsed.success) throw new LessonInputError(parsed.error);
+    if (legacyProse && hasCausalStructure(parsed.value)) {
+      throw new LessonInputError(
+        "legacy-prose identity cannot carry structured causal fields",
+      );
+    }
+    const canonicalId = lessonIdForInput(parsed.value);
+    const id = legacyProse ? sourceId : canonicalId;
+    const idAliases = normalizeStringArray(
+      record.idAliases,
+      "lesson.idAliases",
+      {
+        maxItems: MAX_LESSON_ID_ALIASES,
+        maxLength: MAX_LESSON_ID_LENGTH,
+        sort: true,
+      },
+    ).filter((alias) => alias !== id);
+    if (sourceId !== id) idAliases.push(sourceId);
+    if (legacyProse && canonicalId !== id) idAliases.push(canonicalId);
+    const uniqueAliases = [...new Set(idAliases)].sort(compareText);
+    if (uniqueAliases.length > MAX_LESSON_ID_ALIASES) {
+      throw new LessonInputError(
+        `lesson.idAliases must contain at most ${MAX_LESSON_ID_ALIASES} aliases after canonicalization`,
+      );
+    }
 
     const deletedAt = optionalDate(record.deletedAt, "lesson.deletedAt");
     const lastReinforcedAt = optionalDate(
@@ -529,7 +664,7 @@ export function parseImportedLesson(
         "superseded lessons require supersededByLessonId",
       );
     }
-    if (supersededByLessonId === id) {
+    if (supersededByLessonId === sourceId) {
       throw new LessonInputError(
         "supersededByLessonId must differ from lesson.id",
       );
@@ -537,6 +672,8 @@ export function parseImportedLesson(
 
     const candidate: Lesson = {
       id,
+      identityKind: legacyProse ? "legacy-prose" : "canonical",
+      idAliases: uniqueAliases,
       content: parsed.value.content,
       context: parsed.value.context,
       confidence: parsed.value.confidence ?? 0.5,
@@ -583,7 +720,12 @@ export function parseImportedLesson(
       contradictedByLessonIds: parsed.value.contradictedByLessonIds,
       contentFingerprint: lessonContentFingerprint(parsed.value),
     };
-    return { success: true, lesson: normalizeLesson(candidate) };
+    return {
+      success: true,
+      lesson: normalizeLesson(candidate),
+      sourceId,
+      canonicalized: id !== sourceId,
+    };
   } catch (error) {
     return {
       success: false,
@@ -615,6 +757,31 @@ export function sameLessonScope(left: Lesson, right: Lesson): boolean {
     return false;
   }
   return left.project === right.project;
+}
+
+export function sameLessonContradictionScope(
+  left: Lesson,
+  right: Lesson,
+): boolean {
+  return (
+    sameLessonScope(left, right) &&
+    normalizeProjectLabel(left.project) === normalizeProjectLabel(right.project)
+  );
+}
+
+export function lessonCanonicalId(lesson: Lesson): string {
+  const parsed = parseLessonSaveInput(
+    { ...lesson, lifecycle: deriveLifecycle(lesson) },
+    {
+      allowTerminalLifecycle: true,
+      allowImplicitWorktreeScope: true,
+      allowLegacyGitVerificationMigration: true,
+    },
+  );
+  if (!parsed.success) {
+    throw new Error(`Invalid lesson ${lesson.id}: ${parsed.error}`);
+  }
+  return lessonIdForInput(parsed.value);
 }
 
 function normalizeConfidence(value: unknown): number | undefined {
@@ -655,6 +822,11 @@ function normalizeScope(
     "scope.scopeId",
     MAX_SCOPE_ID_LENGTH,
   );
+  if (ring === "global" && scopeId) {
+    throw new LessonInputError(
+      "scope.scopeId must be omitted for global scope",
+    );
+  }
   if (
     ring !== "global" &&
     !scopeId &&
@@ -676,7 +848,7 @@ function normalizeScope(
         approval.approvedBy,
         "scope.humanApproval.approvedBy",
       ),
-      approvedAt: requiredDate(
+      approvedAt: requiredStrictDate(
         approval.approvedAt,
         "scope.humanApproval.approvedAt",
       ),
@@ -710,15 +882,19 @@ function normalizeStructuredFacets(
       `structuredFacets must have at most ${MAX_FACET_DIMENSIONS} dimensions`,
     );
   }
-  const normalized: Record<string, string[]> = {};
+  const normalized = new Map<string, string[]>();
   for (const [rawDimension, rawValues] of entries) {
     const dimension = rawDimension
       .trim()
       .toLowerCase()
       .replace(/[\s-]+/g, "_");
-    if (!dimension || dimension.length > 64) {
+    if (
+      dimension.length > 64 ||
+      !FACET_DIMENSION_PATTERN.test(dimension) ||
+      RESERVED_FACET_DIMENSIONS.has(dimension)
+    ) {
       throw new LessonInputError(
-        "structuredFacets dimensions must be 1-64 characters",
+        "structuredFacets dimensions must normalize to 1-64 character ASCII snake_case names matching ^[a-z][a-z0-9_]*$ and must not be reserved",
       );
     }
     const values = normalizeStringArray(
@@ -732,23 +908,26 @@ function normalizeStructuredFacets(
       },
     );
     const mergedValues = [
-      ...new Set([...(normalized[dimension] ?? []), ...values]),
+      ...new Set([...(normalized.get(dimension) ?? []), ...values]),
     ].sort(compareText);
     if (mergedValues.length > MAX_FACET_VALUES) {
       throw new LessonInputError(
         `structuredFacets.${dimension} must contain at most ${MAX_FACET_VALUES} values after normalization`,
       );
     }
-    normalized[dimension] = mergedValues;
+    normalized.set(dimension, mergedValues);
   }
   return Object.fromEntries(
-    Object.entries(normalized).sort(([left], [right]) =>
+    [...normalized.entries()].sort(([left], [right]) =>
       compareText(left, right),
     ),
   );
 }
 
-function normalizeEvidenceRefs(value: unknown): LessonEvidenceReference[] {
+function normalizeEvidenceRefs(
+  value: unknown,
+  allowLegacyGitVerificationMigration: boolean,
+): LessonEvidenceReference[] {
   if (value === undefined || value === null) return [];
   if (!Array.isArray(value)) {
     throw new LessonInputError("evidenceRefs must be an array");
@@ -759,7 +938,11 @@ function normalizeEvidenceRefs(value: unknown): LessonEvidenceReference[] {
     );
   }
   const refs = value.map((rawRef, index) =>
-    normalizeEvidenceRef(rawRef, index),
+    normalizeEvidenceRef(
+      rawRef,
+      index,
+      allowLegacyGitVerificationMigration,
+    ),
   );
   const unique = new Map(
     refs.map((ref) => [stableStringify(ref), ref] as const),
@@ -772,6 +955,7 @@ function normalizeEvidenceRefs(value: unknown): LessonEvidenceReference[] {
 function normalizeEvidenceRef(
   value: unknown,
   index: number,
+  allowLegacyGitVerificationMigration: boolean,
 ): LessonEvidenceReference {
   const record = requireRecord(value, `evidenceRefs[${index}]`);
   const prefix = `evidenceRefs[${index}]`;
@@ -784,36 +968,116 @@ function normalizeEvidenceRef(
     `${prefix}.projectId`,
     MAX_EVIDENCE_PROJECT_ID_LENGTH,
   );
-  const repoRemoteUrl = normalizeRepoRemote(
-    requiredString(
-      record.repoRemoteUrl,
-      `${prefix}.repoRemoteUrl`,
-      MAX_EVIDENCE_REMOTE_LENGTH,
-    ),
+  const legacyRepoRemote = optionalString(
+    record.repoRemoteUrl,
     `${prefix}.repoRemoteUrl`,
+    MAX_EVIDENCE_REMOTE_LENGTH,
   );
-  const commitSha = normalizeCommitSha(
+  const legacyCommitSha = normalizeCommitSha(
     optionalString(record.commitSha, `${prefix}.commitSha`, 64),
     `${prefix}.commitSha`,
   );
-  const artifactDigest = normalizeArtifactDigest(
+  const legacyArtifactDigest = normalizeArtifactDigest(
     optionalString(record.artifactDigest, `${prefix}.artifactDigest`, 256),
     `${prefix}.artifactDigest`,
   );
-  if (!commitSha && !artifactDigest) {
-    throw new LessonInputError(
-      `${prefix} requires commitSha and/or artifactDigest; branch, ref, and path are not immutable proof`,
-    );
-  }
-  const path = normalizeEvidencePath(
+  const legacyPath = normalizeEvidencePath(
     optionalString(record.path, `${prefix}.path`, MAX_EVIDENCE_PATH_LENGTH),
     `${prefix}.path`,
   );
-  const recordedAt = requiredDate(record.recordedAt, `${prefix}.recordedAt`);
-  const validatedAt = optionalDate(
+  const provenance =
+    record.provenance === undefined || record.provenance === null
+      ? normalizeLegacyGitProvenance(
+          legacyRepoRemote,
+          legacyCommitSha,
+          legacyArtifactDigest,
+          legacyPath,
+          prefix,
+        )
+      : normalizeEvidenceProvenance(record.provenance, prefix);
+  if (
+    provenance.type !== "git" &&
+    (legacyRepoRemote || legacyCommitSha || legacyArtifactDigest)
+  ) {
+    throw new LessonInputError(
+      `${prefix} Git-specific fields require provenance.type=git`,
+    );
+  }
+  const repoRemoteUrl =
+    provenance.type === "git"
+      ? normalizeRepoRemote(provenance.locator, `${prefix}.provenance.locator`)
+      : undefined;
+  const commitSha =
+    provenance.type === "git"
+      ? normalizeCommitSha(
+          provenance.immutableId,
+          `${prefix}.provenance.immutableId`,
+        )
+      : undefined;
+  const artifactDigest =
+    provenance.type === "git" ? provenance.digest : undefined;
+  if (
+    provenance.type === "git" &&
+    legacyRepoRemote &&
+    normalizeRepoRemote(legacyRepoRemote, `${prefix}.repoRemoteUrl`) !==
+      repoRemoteUrl
+  ) {
+    throw new LessonInputError(
+      `${prefix}.repoRemoteUrl must match provenance.locator`,
+    );
+  }
+  if (
+    provenance.type === "git" &&
+    legacyCommitSha &&
+    legacyCommitSha !== commitSha
+  ) {
+    throw new LessonInputError(
+      `${prefix}.commitSha must match provenance.immutableId`,
+    );
+  }
+  if (
+    provenance.type === "git" &&
+    legacyArtifactDigest &&
+    legacyArtifactDigest !== artifactDigest
+  ) {
+    throw new LessonInputError(
+      `${prefix}.artifactDigest must match provenance.digest`,
+    );
+  }
+  const path = provenance.path ?? legacyPath;
+  if (legacyPath && provenance.path && legacyPath !== provenance.path) {
+    throw new LessonInputError(
+      `${prefix}.path must match provenance.path`,
+    );
+  }
+  const recordedAt = requiredStrictDate(
+    record.recordedAt,
+    `${prefix}.recordedAt`,
+  );
+  const validatedAt = optionalStrictDate(
     record.validatedAt,
     `${prefix}.validatedAt`,
   );
+  const legacyGitShape =
+    (record.provenance === undefined || record.provenance === null) &&
+    Boolean(legacyRepoRemote);
+  const verification =
+    allowLegacyGitVerificationMigration &&
+    legacyGitShape &&
+    (record.verification === undefined || record.verification === null)
+      ? {
+          state: "verified" as const,
+          basis: "legacy-git-anchor" as const,
+          verifiedBy: "agentmemory:legacy-git-anchor-migration",
+          verifiedAt: validatedAt ?? recordedAt,
+          note:
+            "Compatibility migration preserves the pre-verification schema verdict; evidence relevance was not re-audited.",
+        }
+      : normalizeEvidenceVerification(
+          record.verification,
+          prefix,
+          allowLegacyGitVerificationMigration,
+        );
   const evidenceKindRaw = optionalString(
     record.evidenceKind,
     `${prefix}.evidenceKind`,
@@ -838,6 +1102,8 @@ function normalizeEvidenceRef(
   return {
     kind,
     projectId: projectId.trim(),
+    provenance,
+    verification,
     repoRemoteUrl,
     commitSha,
     artifactDigest,
@@ -847,6 +1113,219 @@ function normalizeEvidenceRef(
     evidenceKind,
     sampleCount,
   };
+}
+
+function normalizeLegacyGitProvenance(
+  repoRemoteUrl: string | undefined,
+  commitSha: string | undefined,
+  artifactDigest: string | undefined,
+  path: string | undefined,
+  prefix: string,
+): LessonEvidenceProvenance {
+  if (!repoRemoteUrl) {
+    throw new LessonInputError(
+      `${prefix} requires provenance or a backward-compatible repoRemoteUrl`,
+    );
+  }
+  const locator = normalizeRepoRemote(
+    repoRemoteUrl,
+    `${prefix}.repoRemoteUrl`,
+  );
+  if (!commitSha && !artifactDigest) {
+    throw new LessonInputError(
+      `${prefix} requires an immutable commit SHA or digest; branch, ref, and path are not immutable proof`,
+    );
+  }
+  return {
+    type: "git",
+    locator,
+    immutableId: commitSha,
+    digest: artifactDigest,
+    path,
+  };
+}
+
+function normalizeEvidenceProvenance(
+  value: unknown,
+  prefix: string,
+): LessonEvidenceProvenance {
+  const record = requireRecord(value, `${prefix}.provenance`);
+  const type = normalizeEnum(
+    record.type,
+    `${prefix}.provenance.type`,
+    PROVENANCE_TYPES,
+  );
+  if (!type) {
+    throw new LessonInputError(`${prefix}.provenance.type is required`);
+  }
+  const locator = normalizeEvidenceLocator(
+    requiredString(
+      record.locator,
+      `${prefix}.provenance.locator`,
+      MAX_EVIDENCE_LOCATOR_LENGTH,
+    ),
+    type,
+    `${prefix}.provenance.locator`,
+  );
+  const rawImmutableId = optionalString(
+    record.immutableId,
+    `${prefix}.provenance.immutableId`,
+    MAX_EVIDENCE_IMMUTABLE_ID_LENGTH,
+  );
+  const immutableId =
+    type === "git"
+      ? normalizeCommitSha(
+          rawImmutableId,
+          `${prefix}.provenance.immutableId`,
+        )
+      : normalizeImmutableId(
+          rawImmutableId,
+          `${prefix}.provenance.immutableId`,
+        );
+  const digest = normalizeArtifactDigest(
+    optionalString(
+      record.digest,
+      `${prefix}.provenance.digest`,
+      256,
+    ),
+    `${prefix}.provenance.digest`,
+  );
+  const path = normalizeEvidencePath(
+    optionalString(
+      record.path,
+      `${prefix}.provenance.path`,
+      MAX_EVIDENCE_PATH_LENGTH,
+    ),
+    `${prefix}.provenance.path`,
+  );
+
+  if (
+    (type === "git" ||
+      type === "object-store" ||
+      type === "database-query" ||
+      type === "dataset") &&
+    !immutableId &&
+    !digest
+  ) {
+    throw new LessonInputError(
+      `${prefix}.provenance requires immutableId and/or digest for type ${type}`,
+    );
+  }
+  if ((type === "oci" || type === "attestation") && !digest) {
+    throw new LessonInputError(
+      `${prefix}.provenance.digest is required for type ${type}`,
+    );
+  }
+
+  return { type, locator, immutableId, digest, path };
+}
+
+function normalizeEvidenceLocator(
+  value: string,
+  type: LessonEvidenceProvenanceType,
+  field: string,
+): string {
+  const trimmed = value.trim();
+  if (/[\s\0-\x1f]/.test(trimmed)) {
+    throw new LessonInputError(
+      `${field} must be a non-whitespace immutable locator`,
+    );
+  }
+  if (type === "git") return normalizeRepoRemote(trimmed, field);
+  if (type === "doi") {
+    const normalized = trimmed.replace(/^https?:\/\/doi\.org\//i, "");
+    if (!/^10\.\d{4,9}\/\S+$/i.test(normalized)) {
+      throw new LessonInputError(`${field} must contain a valid DOI`);
+    }
+    return normalized.toLowerCase();
+  }
+  if (type === "urn" && !/^urn:[a-z0-9][a-z0-9-]{0,31}:.+$/i.test(trimmed)) {
+    throw new LessonInputError(`${field} must contain a valid URN`);
+  }
+  return trimmed;
+}
+
+function normalizeImmutableId(
+  value: string | undefined,
+  field: string,
+): string | undefined {
+  if (!value) return undefined;
+  const trimmed = value.trim();
+  if (/[\s\0-\x1f]/.test(trimmed)) {
+    throw new LessonInputError(
+      `${field} must be a non-whitespace immutable identifier`,
+    );
+  }
+  return trimmed;
+}
+
+function normalizeEvidenceVerification(
+  value: unknown,
+  prefix: string,
+  allowLegacyGitVerificationMigration: boolean,
+): LessonEvidenceVerification {
+  if (value === undefined || value === null) {
+    return { state: "unverified" };
+  }
+  const record = requireRecord(value, `${prefix}.verification`);
+  const state =
+    normalizeEnum(
+      record.state,
+      `${prefix}.verification.state`,
+      VERIFICATION_STATES,
+    ) ?? "unverified";
+  const basisRaw = optionalString(
+    record.basis,
+    `${prefix}.verification.basis`,
+    64,
+  );
+  if (
+    basisRaw !== undefined &&
+    basisRaw !== "explicit-review" &&
+    basisRaw !== "legacy-git-anchor"
+  ) {
+    throw new LessonInputError(
+      `${prefix}.verification.basis must be explicit-review or legacy-git-anchor`,
+    );
+  }
+  if (
+    basisRaw === "legacy-git-anchor" &&
+    !allowLegacyGitVerificationMigration
+  ) {
+    throw new LessonInputError(
+      `${prefix}.verification.basis legacy-git-anchor is reserved for compatibility import`,
+    );
+  }
+  const basis =
+    state === "unverified"
+      ? undefined
+      : (basisRaw as LessonEvidenceVerification["basis"] | undefined) ??
+        "explicit-review";
+  const verifiedBy = optionalString(
+    record.verifiedBy,
+    `${prefix}.verification.verifiedBy`,
+    MAX_EVIDENCE_VERIFIER_LENGTH,
+  );
+  const verifiedAt = optionalStrictDate(
+    record.verifiedAt,
+    `${prefix}.verification.verifiedAt`,
+  );
+  const note = optionalString(
+    record.note,
+    `${prefix}.verification.note`,
+    MAX_EVIDENCE_VERIFICATION_NOTE_LENGTH,
+  );
+  if (state !== "unverified" && (!verifiedBy || !verifiedAt)) {
+    throw new LessonInputError(
+      `${prefix}.verification ${state} state requires verifiedBy and verifiedAt`,
+    );
+  }
+  if (state === "unverified" && (verifiedBy || verifiedAt)) {
+    throw new LessonInputError(
+      `${prefix}.verification unverified state must not include verifiedBy or verifiedAt`,
+    );
+  }
+  return { state, basis, verifiedBy, verifiedAt, note };
 }
 
 function normalizeRepoRemote(value: string, field: string): string {
@@ -1054,6 +1533,12 @@ function requiredDate(value: unknown, field: string): string {
   return normalized;
 }
 
+function requiredStrictDate(value: unknown, field: string): string {
+  const normalized = optionalStrictDate(value, field);
+  if (!normalized) throw new LessonInputError(`${field} is required`);
+  return normalized;
+}
+
 function optionalDate(value: unknown, field: string): string | undefined {
   if (value === undefined || value === null || value === "") return undefined;
   if (typeof value !== "string") {
@@ -1064,6 +1549,112 @@ function optionalDate(value: unknown, field: string): string | undefined {
     throw new LessonInputError(`${field} must be a valid ISO timestamp`);
   }
   return new Date(parsed).toISOString();
+}
+
+function optionalStrictDate(
+  value: unknown,
+  field: string,
+): string | undefined {
+  if (value === undefined || value === null || value === "") return undefined;
+  const match =
+    typeof value === "string"
+      ? EXPLICIT_RFC3339_PATTERN.exec(value)
+      : null;
+  if (!match) {
+    throw new LessonInputError(
+      `${field} must be an RFC3339 timestamp with explicit Z or numeric offset`,
+    );
+  }
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const hour = Number(match[4]);
+  const minute = Number(match[5]);
+  const second = Number(match[6]);
+  const offsetHour = match[8] === undefined ? 0 : Number(match[8]);
+  const offsetMinute = match[9] === undefined ? 0 : Number(match[9]);
+  const daysInMonth =
+    month === 2
+      ? isLeapYear(year)
+        ? 29
+        : 28
+      : month === 4 || month === 6 || month === 9 || month === 11
+        ? 30
+        : 31;
+  if (
+    month < 1 ||
+    month > 12 ||
+    day < 1 ||
+    day > daysInMonth ||
+    hour > 23 ||
+    minute > 59 ||
+    second > 59 ||
+    offsetHour > 23 ||
+    offsetMinute > 59
+  ) {
+    throw new LessonInputError(
+      `${field} must contain a calendar-valid RFC3339 timestamp`,
+    );
+  }
+  const parsed = Date.parse(value);
+  if (!Number.isFinite(parsed)) {
+    throw new LessonInputError(`${field} must be a valid RFC3339 timestamp`);
+  }
+  return new Date(parsed).toISOString();
+}
+
+function isLeapYear(year: number): boolean {
+  return year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+}
+
+function hasStructuredLessonMarkers(
+  value: Lesson | Record<string, unknown>,
+): boolean {
+  const record = value as Record<string, unknown>;
+  if (record.identityKind === "legacy-prose") return true;
+  return [
+    "schemaVersion",
+    "identityKind",
+    "idAliases",
+    "mechanismId",
+    "mechanismVersion",
+    "mechanismAliases",
+    "claim",
+    "claimType",
+    "evidenceVerdict",
+    "lifecycle",
+    "applicabilityConditions",
+    "nonApplicabilityConditions",
+    "falsificationConditions",
+    "structuredFacets",
+    "evidenceRefs",
+    "scope",
+    "sensitivity",
+    "reviewAfter",
+    "contradictedByLessonIds",
+    "contentFingerprint",
+  ].some((field) => record[field] !== undefined);
+}
+
+function hasCausalStructure(input: LessonSaveInput): boolean {
+  return (
+    Boolean(
+      input.mechanismId ||
+        input.mechanismVersion ||
+        input.claim ||
+        input.claimType,
+    ) ||
+    input.mechanismAliases.length > 0 ||
+    input.applicabilityConditions.length > 0 ||
+    input.nonApplicabilityConditions.length > 0 ||
+    input.falsificationConditions.length > 0 ||
+    Object.keys(input.structuredFacets).length > 0 ||
+    input.evidenceRefs.length > 0
+  );
+}
+
+function normalizeProjectLabel(value: string | undefined): string {
+  return value?.trim() ?? "";
 }
 
 function normalizeDisplayText(value: string): string {

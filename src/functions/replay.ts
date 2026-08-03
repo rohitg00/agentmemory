@@ -17,7 +17,13 @@ import { safeAudit } from "./audit.js";
 import { buildSyntheticCompression } from "./compress-synthetic.js";
 import { getSearchIndex } from "./search.js";
 import { logger } from "../logger.js";
-import { normalizeLesson } from "./lesson-model.js";
+import {
+  lessonCanonicalId,
+  lessonIdForInput,
+  normalizeLesson,
+  parseLessonSaveInput,
+} from "./lesson-model.js";
+import { withLessonLocks } from "./lesson-locks.js";
 
 export const MAX_FILES_DEFAULT = 200;
 export const MAX_FILES_UPPER_BOUND = 1000;
@@ -114,34 +120,59 @@ async function deriveCrystalAndLessons(
   const lessonEntries = Array.from(lessonMatches.values()).slice(0, 20);
   const lessonIds: string[] = [];
   for (const content of lessonEntries) {
-    // Content-addressed ID so re-importing the same JSONL does not
-    // duplicate lessons. fingerprintId hashes the normalized content,
-    // giving a stable lesson_xxx for identical text.
-    const lessonId = fingerprintId("lesson", content.trim().toLowerCase());
     try {
-      const existing = await kv.get<Lesson>(KV.lessons, lessonId);
-      if (existing) {
-        const normalizedExisting = normalizeLesson(existing);
-        const existingSources = normalizedExisting.sourceIds;
-        const mergedSources = existingSources.includes(sessionId)
-          ? existingSources
-          : [...existingSources, sessionId];
-        const existingTags = normalizedExisting.tags;
-        const mergedTags = existingTags.includes("auto-import")
-          ? existingTags
-          : [...existingTags, "auto-import"];
-        const merged: Lesson = {
-          ...normalizedExisting,
-          sourceIds: mergedSources,
-          tags: mergedTags,
-          reinforcements: normalizedExisting.reinforcements + 1,
-          updatedAt: createdAt,
-          lastReinforcedAt: createdAt,
-        };
-        await kv.set(KV.lessons, lessonId, merged);
-      } else {
+      const parsed = parseLessonSaveInput({
+        content,
+        context: firstPrompt || project,
+        confidence: 0.4,
+        source: "consolidation",
+        sourceIds: [sessionId],
+        project,
+        tags: ["auto-import"],
+      });
+      if (!parsed.success) continue;
+      const lessonId = lessonIdForInput(parsed.value);
+      await withLessonLocks([lessonId], async () => {
+        const exact = await kv.get<Lesson>(KV.lessons, lessonId);
+        const existing =
+          exact ??
+          (await kv.list<Lesson>(KV.lessons)).find((lesson) => {
+            try {
+              const normalized = normalizeLesson(lesson);
+              return (
+                normalized.idAliases.includes(lessonId) ||
+                lessonCanonicalId(normalized) === lessonId
+              );
+            } catch {
+              return false;
+            }
+          });
+        if (existing) {
+          const normalizedExisting = normalizeLesson(existing);
+          const existingSources = normalizedExisting.sourceIds;
+          const mergedSources = existingSources.includes(sessionId)
+            ? existingSources
+            : [...existingSources, sessionId];
+          const existingTags = normalizedExisting.tags;
+          const mergedTags = existingTags.includes("auto-import")
+            ? existingTags
+            : [...existingTags, "auto-import"];
+          const merged: Lesson = {
+            ...normalizedExisting,
+            sourceIds: mergedSources,
+            tags: mergedTags,
+            reinforcements: normalizedExisting.reinforcements + 1,
+            updatedAt: createdAt,
+            lastReinforcedAt: createdAt,
+          };
+          await kv.set(KV.lessons, existing.id, merged);
+          lessonIds.push(existing.id);
+          return;
+        }
         const lesson = normalizeLesson({
           id: lessonId,
+          identityKind: "canonical",
+          idAliases: [],
           content,
           context: firstPrompt || project,
           confidence: 0.4,
@@ -155,8 +186,8 @@ async function deriveCrystalAndLessons(
           decayRate: 0.05,
         });
         await kv.set(KV.lessons, lessonId, lesson);
-      }
-      lessonIds.push(lessonId);
+        lessonIds.push(lessonId);
+      });
     } catch {}
   }
 

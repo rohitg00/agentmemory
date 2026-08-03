@@ -21,6 +21,11 @@ function evidence(commit = "a".repeat(40)) {
     recordedAt: "2026-08-02T20:00:00.000Z",
     evidenceKind: "unit-test",
     sampleCount: 12,
+    verification: {
+      state: "verified",
+      verifiedBy: "reviewer@example.test",
+      verifiedAt: "2026-08-02T20:30:00.000Z",
+    },
   };
 }
 
@@ -204,5 +209,89 @@ describe("causal lesson REST and MCP boundaries", () => {
     expect(response.status_code).toBe(200);
     expect(response.body.lessons).toHaveLength(1);
     expect(response.body.lessons[0].lifecycle).toBe("active");
+  });
+
+  it("rejects dangling, self, cross-scope, and cross-project contradiction relations", async () => {
+    const target = (await sdk.trigger("mem::lesson-save", {
+      content: "Contradiction target",
+      project: "project-one",
+      mechanismId: "relations/target",
+      claim: "The target claim is active.",
+      scope: { ring: "repo", scopeId: "repo:one" },
+    })) as { lesson: Lesson };
+    const sourceInput = {
+      content: "Contradiction source",
+      project: "project-one",
+      mechanismId: "relations/source",
+      claim: "The source claim is active.",
+      scope: { ring: "repo", scopeId: "repo:one" },
+    };
+    const source = (await sdk.trigger(
+      "mem::lesson-save",
+      sourceInput,
+    )) as { lesson: Lesson };
+
+    const dangling = await sdk.trigger("mem::lesson-save", {
+      ...sourceInput,
+      contradictedByLessonIds: ["lsn_missing"],
+    });
+    const self = await sdk.trigger("mem::lesson-save", {
+      ...sourceInput,
+      contradictedByLessonIds: [source.lesson.id],
+    });
+    const otherScope = (await sdk.trigger("mem::lesson-save", {
+      content: "Other scope target",
+      project: "project-one",
+      mechanismId: "relations/other-scope",
+      claim: "The other-scope target is active.",
+      scope: { ring: "repo", scopeId: "repo:two" },
+    })) as { lesson: Lesson };
+    const crossScope = await sdk.trigger("mem::lesson-save", {
+      ...sourceInput,
+      contradictedByLessonIds: [otherScope.lesson.id],
+    });
+    const otherProject = (await sdk.trigger("mem::lesson-save", {
+      content: "Other project target",
+      project: "project-two",
+      mechanismId: "relations/other-project",
+      claim: "The other-project target is active.",
+      scope: { ring: "repo", scopeId: "repo:one" },
+    })) as { lesson: Lesson };
+    const crossProject = await sdk.trigger("mem::lesson-save", {
+      ...sourceInput,
+      contradictedByLessonIds: [otherProject.lesson.id],
+    });
+    const valid = await sdk.trigger("mem::lesson-save", {
+      ...sourceInput,
+      contradictedByLessonIds: [target.lesson.id],
+    });
+
+    expect(dangling).toMatchObject({
+      success: false,
+      code: "invalid_relation",
+      error: expect.stringContaining("does not exist"),
+    });
+    expect(self).toMatchObject({
+      success: false,
+      code: "invalid_relation",
+      error: expect.stringContaining("must not contain the lesson itself"),
+    });
+    expect(crossScope).toMatchObject({
+      success: false,
+      code: "invalid_relation",
+      error: expect.stringContaining("durable scope and project"),
+    });
+    expect(crossProject).toMatchObject({
+      success: false,
+      code: "invalid_relation",
+      error: expect.stringContaining("durable scope and project"),
+    });
+    expect(valid).toMatchObject({
+      success: true,
+      action: "strengthened",
+      lesson: {
+        contradictedByLessonIds: [target.lesson.id],
+      },
+    });
   });
 });

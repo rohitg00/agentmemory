@@ -1,17 +1,19 @@
 import type { ISdk } from "iii-sdk";
 import type { StateKV } from "../state/kv.js";
 import { KV } from "../state/schema.js";
-import { withKeyedLock } from "../state/keyed-mutex.js";
 import type { Lesson } from "../types.js";
 import { recordAudit } from "./audit.js";
+import { withLessonLocks } from "./lesson-locks.js";
 import {
   LESSON_SCHEMA_VERSION,
   isLessonListable,
   isLessonRecallable,
+  lessonCanonicalId,
   lessonContentFingerprint,
   lessonIdForInput,
   normalizeLesson,
   parseLessonSaveInput,
+  sameLessonContradictionScope,
   sameLessonScope,
   toLessonReadModel,
 } from "./lesson-model.js";
@@ -38,26 +40,64 @@ function reinforceLesson(lesson: Lesson): void {
   lesson.updatedAt = now;
 }
 
-function lessonLockKey(lessonId: string): string {
-  return `mem:lesson:${lessonId}`;
-}
-
-function withLessonLocks<T>(
-  lessonIds: string[],
-  fn: () => Promise<T>,
-): Promise<T> {
-  const orderedIds = [...new Set(lessonIds)].sort();
-  const lockNext = (index: number): Promise<T> => {
-    if (index >= orderedIds.length) return fn();
-    return withKeyedLock(lessonLockKey(orderedIds[index]), () =>
-      lockNext(index + 1),
-    );
-  };
-  return lockNext(0);
-}
-
 function correctionFailure(code: string, error: string) {
   return { success: false, code, error };
+}
+
+async function findLessonByCanonicalIdentity(
+  kv: StateKV,
+  canonicalId: string,
+): Promise<Lesson | null> {
+  const exact = await kv.get<Lesson>(KV.lessons, canonicalId);
+  if (exact) return exact;
+  const matches: Lesson[] = [];
+  for (const lesson of await kv.list<Lesson>(KV.lessons)) {
+    try {
+      const normalized = normalizeLesson(lesson);
+      if (
+        normalized.idAliases.includes(canonicalId) ||
+        lessonCanonicalId(normalized) === canonicalId
+      ) {
+        matches.push(lesson);
+      }
+    } catch {}
+  }
+  if (matches.length > 1) {
+    throw new Error(
+      `multiple lessons claim canonical identity ${canonicalId}`,
+    );
+  }
+  return matches[0] ?? null;
+}
+
+async function validateContradictionRelations(
+  kv: StateKV,
+  source: Lesson,
+  targetIds: string[],
+): Promise<string | null> {
+  for (const targetId of targetIds) {
+    if (
+      targetId === source.id ||
+      normalizeLesson(source).idAliases.includes(targetId)
+    ) {
+      return "contradictedByLessonIds must not contain the lesson itself";
+    }
+    const target = await kv.get<Lesson>(KV.lessons, targetId);
+    if (!target) {
+      return `contradiction target does not exist: ${targetId}`;
+    }
+    try {
+      if (!isLessonRecallable(target)) {
+        return `contradiction target must be active: ${targetId}`;
+      }
+      if (!sameLessonContradictionScope(source, target)) {
+        return `contradiction target must share durable scope and project label: ${targetId}`;
+      }
+    } catch {
+      return `contradiction target is invalid: ${targetId}`;
+    }
+  }
+  return null;
 }
 
 async function correctLesson(
@@ -220,90 +260,135 @@ export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
       const input = parsed.value;
 
       const fp = lessonIdForInput(input);
-      return withKeyedLock(lessonLockKey(fp), async () => {
-        const existing = await kv.get<Lesson>(KV.lessons, fp);
-
-        if (existing && !isLessonListable(existing)) {
-          return correctionFailure(
-            "lesson_deleted",
-            "lesson is superseded or retracted; save corrected evidence as a new lesson",
-          );
-        }
-
-        if (existing) {
-          reinforceLesson(existing);
-          if (input.context && !existing.context) {
-            existing.context = input.context;
+      return withLessonLocks(
+        [fp, ...input.contradictedByLessonIds],
+        async () => {
+          let existing: Lesson | null;
+          try {
+            existing = await findLessonByCanonicalIdentity(kv, fp);
+          } catch (error) {
+            return correctionFailure(
+              "canonical_identity_conflict",
+              error instanceof Error ? error.message : String(error),
+            );
           }
-          await kv.set(KV.lessons, existing.id, existing);
+
+          if (existing && !isLessonListable(existing)) {
+            return correctionFailure(
+              "lesson_deleted",
+              "lesson is superseded or retracted; save corrected evidence as a new lesson",
+            );
+          }
+
+          if (existing) {
+            const contradictionError = await validateContradictionRelations(
+              kv,
+              existing,
+              input.contradictedByLessonIds,
+            );
+            if (contradictionError) {
+              return correctionFailure("invalid_relation", contradictionError);
+            }
+            reinforceLesson(existing);
+            if (input.context && !existing.context) {
+              existing.context = input.context;
+            }
+            existing.sourceIds = [
+              ...new Set([...existing.sourceIds, ...input.sourceIds]),
+            ].sort();
+            existing.tags = [...new Set([...existing.tags, ...input.tags])];
+            existing.contradictedByLessonIds = [
+              ...new Set([
+                ...(existing.contradictedByLessonIds ?? []),
+                ...input.contradictedByLessonIds,
+              ]),
+            ].sort();
+            await kv.set(KV.lessons, existing.id, existing);
+
+            try {
+              await recordAudit(
+                kv,
+                "lesson_strengthen",
+                "mem::lesson-save",
+                [existing.id],
+                { confidenceChanged: false },
+              );
+            } catch {}
+
+            return {
+              success: true,
+              action: "strengthened",
+              lesson: toLessonReadModel(existing),
+            };
+          }
+
+          const now = new Date().toISOString();
+          const lesson: Lesson = {
+            id: fp,
+            identityKind: "canonical",
+            idAliases: [],
+            content: input.content,
+            context: input.context,
+            confidence: input.confidence ?? 0.5,
+            reinforcements: 0,
+            source: input.source,
+            sourceIds: input.sourceIds,
+            project: input.project,
+            tags: input.tags,
+            createdAt: now,
+            updatedAt: now,
+            decayRate: 0.05,
+            schemaVersion: LESSON_SCHEMA_VERSION,
+            mechanismId: input.mechanismId,
+            mechanismVersion: input.mechanismVersion,
+            mechanismAliases: input.mechanismAliases,
+            claim: input.claim,
+            claimType: input.claimType,
+            evidenceVerdict: input.evidenceVerdict,
+            lifecycle: input.lifecycle,
+            applicabilityConditions: input.applicabilityConditions,
+            nonApplicabilityConditions: input.nonApplicabilityConditions,
+            falsificationConditions: input.falsificationConditions,
+            structuredFacets: input.structuredFacets,
+            evidenceRefs: input.evidenceRefs,
+            scope: input.scope,
+            sensitivity: input.sensitivity,
+            reviewAfter: input.reviewAfter,
+            contradictedByLessonIds: input.contradictedByLessonIds,
+            contentFingerprint: lessonContentFingerprint(input),
+          };
+
+          const contradictionError = await validateContradictionRelations(
+            kv,
+            lesson,
+            input.contradictedByLessonIds,
+          );
+          if (contradictionError) {
+            return correctionFailure("invalid_relation", contradictionError);
+          }
+          await kv.set(KV.lessons, lesson.id, lesson);
 
           try {
             await recordAudit(
               kv,
-              "lesson_strengthen",
+              "lesson_save",
               "mem::lesson-save",
-              [existing.id],
-              { confidenceChanged: false },
+              [lesson.id],
+              {
+                contentFingerprint: lesson.contentFingerprint,
+                evidenceVerdict: lesson.evidenceVerdict,
+                lifecycle: lesson.lifecycle,
+              },
             );
           } catch {}
 
           return {
             success: true,
-            action: "strengthened",
-            lesson: toLessonReadModel(existing),
+            action: "created",
+            lesson: toLessonReadModel(lesson),
           };
-        }
-
-        const now = new Date().toISOString();
-        const lesson: Lesson = {
-          id: fp,
-          content: input.content,
-          context: input.context,
-          confidence: input.confidence ?? 0.5,
-          reinforcements: 0,
-          source: input.source,
-          sourceIds: input.sourceIds,
-          project: input.project,
-          tags: input.tags,
-          createdAt: now,
-          updatedAt: now,
-          decayRate: 0.05,
-          schemaVersion: LESSON_SCHEMA_VERSION,
-          mechanismId: input.mechanismId,
-          mechanismVersion: input.mechanismVersion,
-          mechanismAliases: input.mechanismAliases,
-          claim: input.claim,
-          claimType: input.claimType,
-          evidenceVerdict: input.evidenceVerdict,
-          lifecycle: input.lifecycle,
-          applicabilityConditions: input.applicabilityConditions,
-          nonApplicabilityConditions: input.nonApplicabilityConditions,
-          falsificationConditions: input.falsificationConditions,
-          structuredFacets: input.structuredFacets,
-          evidenceRefs: input.evidenceRefs,
-          scope: input.scope,
-          sensitivity: input.sensitivity,
-          reviewAfter: input.reviewAfter,
-          contradictedByLessonIds: input.contradictedByLessonIds,
-          contentFingerprint: lessonContentFingerprint(input),
-        };
-
-        await kv.set(KV.lessons, lesson.id, lesson);
-
-        try {
-          await recordAudit(kv, "lesson_save", "mem::lesson-save", [lesson.id], {
-            contentFingerprint: lesson.contentFingerprint,
-            evidenceVerdict: lesson.evidenceVerdict,
-            lifecycle: lesson.lifecycle,
-          });
-        } catch {}
-
-        return {
-          success: true,
-          action: "created",
-          lesson: toLessonReadModel(lesson),
-        };
-      });
+        },
+      );
     },
   );
 
@@ -464,7 +549,7 @@ export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
         return { success: false, error: "lessonId is required" };
       }
 
-      return withKeyedLock(lessonLockKey(data.lessonId), async () => {
+      return withLessonLocks([data.lessonId], async () => {
         const lesson = await kv.get<Lesson>(KV.lessons, data.lessonId);
         if (!lesson || !isLessonListable(lesson)) {
           return { success: false, error: "lesson not found" };
@@ -506,7 +591,7 @@ export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
       const timestamp = new Date().toISOString();
       const outcomes = await Promise.all(
         lessons.map((listedLesson) =>
-          withKeyedLock(lessonLockKey(listedLesson.id), async () => {
+          withLessonLocks([listedLesson.id], async () => {
             const lesson = await kv.get<Lesson>(KV.lessons, listedLesson.id);
             if (!lesson || lesson.deleted) return null;
 

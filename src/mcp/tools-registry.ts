@@ -978,7 +978,7 @@ export const V070_TOOLS: McpToolDef[] = [
         structuredFacets: {
           type: "object",
           description:
-            "General facet dimensions mapped to string values, such as asset, venue, horizon, regime, or signal_family",
+            "General facet dimensions mapped to string values. Dimensions normalize to ASCII snake_case matching ^[a-z][a-z0-9_]*$",
           additionalProperties: {
             type: "array",
             items: { type: "string" },
@@ -988,13 +988,49 @@ export const V070_TOOLS: McpToolDef[] = [
         evidenceRefs: {
           type: "array",
           description:
-            "At most eight immutable evidence anchors; branch, ref, or path alone is insufficient",
+            "At most eight immutable provenance anchors with explicit verification state; branch, ref, path, or syntactic provenance alone is insufficient",
           maxItems: 8,
           items: {
             type: "object",
             properties: {
               kind: { type: "string" },
               projectId: { type: "string" },
+              provenance: {
+                type: "object",
+                properties: {
+                  type: {
+                    type: "string",
+                    enum: [
+                      "git",
+                      "object-store",
+                      "database-query",
+                      "oci",
+                      "doi",
+                      "urn",
+                      "dataset",
+                      "attestation",
+                    ],
+                  },
+                  locator: { type: "string" },
+                  immutableId: { type: "string" },
+                  digest: { type: "string" },
+                  path: { type: "string" },
+                },
+                required: ["type", "locator"],
+              },
+              verification: {
+                type: "object",
+                properties: {
+                  state: {
+                    type: "string",
+                    enum: ["unverified", "verified", "rejected"],
+                  },
+                  verifiedBy: { type: "string" },
+                  verifiedAt: { type: "string" },
+                  note: { type: "string" },
+                },
+                required: ["state"],
+              },
               repoRemoteUrl: { type: "string" },
               commitSha: { type: "string" },
               artifactDigest: { type: "string" },
@@ -1004,12 +1040,7 @@ export const V070_TOOLS: McpToolDef[] = [
               evidenceKind: { type: "string" },
               sampleCount: { type: "number", minimum: 0 },
             },
-            required: [
-              "kind",
-              "projectId",
-              "repoRemoteUrl",
-              "recordedAt",
-            ],
+            required: ["kind", "projectId", "recordedAt"],
           },
         },
         scope: {

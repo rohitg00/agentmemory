@@ -292,6 +292,15 @@ export interface CompactSearchResult {
 export interface CompactLessonResult {
   lessonId: string;
   content: string;
+  claim?: string;
+  evidenceVerdict: LessonEvidenceVerdict;
+  evidenceLabel:
+    | "supported evidence"
+    | "refuted evidence (negative)"
+    | "mixed evidence"
+    | "unverified evidence"
+    | "contradicted evidence";
+  contradicted: boolean;
   confidence: number;
   score: number;
   createdAt: string;
@@ -972,10 +981,43 @@ export interface LessonScope {
   humanApproval?: LessonHumanApproval;
 }
 
+export type LessonEvidenceProvenanceType =
+  | "git"
+  | "object-store"
+  | "database-query"
+  | "oci"
+  | "doi"
+  | "urn"
+  | "dataset"
+  | "attestation";
+
+export interface LessonEvidenceProvenance {
+  type: LessonEvidenceProvenanceType;
+  locator: string;
+  immutableId?: string;
+  digest?: string;
+  path?: string;
+}
+
+export type LessonEvidenceVerificationState =
+  | "unverified"
+  | "verified"
+  | "rejected";
+
+export interface LessonEvidenceVerification {
+  state: LessonEvidenceVerificationState;
+  basis?: "explicit-review" | "legacy-git-anchor";
+  verifiedBy?: string;
+  verifiedAt?: string;
+  note?: string;
+}
+
 export interface LessonEvidenceReference {
   kind: string;
   projectId: string;
-  repoRemoteUrl: string;
+  provenance?: LessonEvidenceProvenance;
+  verification?: LessonEvidenceVerification;
+  repoRemoteUrl?: string;
   commitSha?: string;
   artifactDigest?: string;
   path?: string;
@@ -992,6 +1034,8 @@ export interface LessonComputedFlags {
 
 export interface Lesson {
   id: string;
+  identityKind?: "canonical" | "legacy-prose";
+  idAliases?: string[];
   content: string;
   context: string;
   confidence: number;
@@ -1032,6 +1076,8 @@ export interface Lesson {
 
 export interface NormalizedLesson extends Lesson {
   schemaVersion: 1;
+  identityKind: "canonical" | "legacy-prose";
+  idAliases: string[];
   mechanismAliases: string[];
   evidenceVerdict: LessonEvidenceVerdict;
   lifecycle: LessonLifecycle;
@@ -1060,6 +1106,7 @@ export interface Insight {
   sourceMemoryIds: string[];
   sourceLessonIds: string[];
   sourceCrystalIds: string[];
+  evidenceVerdict?: LessonEvidenceVerdict;
   project?: string;
   tags: string[];
   createdAt: string;

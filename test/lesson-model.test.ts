@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { execFileSync } from "node:child_process";
 import {
   lessonContentFingerprint,
   lessonIdForInput,
@@ -25,6 +26,11 @@ function evidence(
     validatedAt: "2026-08-02T21:00:00.000Z",
     evidenceKind: "unit-test",
     sampleCount: 42,
+    verification: {
+      state: "verified",
+      verifiedBy: "reviewer@example.test",
+      verifiedAt: "2026-08-02T21:00:00.000Z",
+    },
     ...overrides,
   };
 }
@@ -209,6 +215,140 @@ describe("causal lesson model", () => {
     });
   });
 
+  it("supports discriminated non-Git provenance without treating syntax as verification", () => {
+    const provenances = [
+      {
+        type: "object-store",
+        locator: "s3://research-bucket/evidence.json",
+        digest: `sha256:${"1".repeat(64)}`,
+      },
+      {
+        type: "database-query",
+        locator: "clickhouse://analytics/query-17",
+        immutableId: "snapshot-20260802-001",
+        digest: `sha256:${"2".repeat(64)}`,
+      },
+      {
+        type: "oci",
+        locator: "ghcr.io/example/evidence",
+        digest: `sha256:${"3".repeat(64)}`,
+      },
+      { type: "doi", locator: "https://doi.org/10.1000/Test.Dataset" },
+      { type: "urn", locator: "urn:example:evidence:2026:08:02" },
+      {
+        type: "dataset",
+        locator: "dataset://market-replay/v2",
+        immutableId: "release-42",
+      },
+      {
+        type: "attestation",
+        locator: "rekor://entry/1234",
+        digest: `sha256:${"4".repeat(64)}`,
+      },
+    ];
+    for (const [index, provenance] of provenances.entries()) {
+      const parsed = parseLessonSaveInput({
+        content: `Evidence provenance ${index}`,
+        mechanismId: `provenance/${index}`,
+        claim: `Provenance type ${provenance.type} is durably anchored.`,
+        evidenceVerdict: "supported",
+        evidenceRefs: [
+          {
+            kind: "experiment",
+            projectId: "agentmemory",
+            provenance,
+            recordedAt: "2026-08-02T20:00:00Z",
+            verification: {
+              state: "verified",
+              verifiedBy: "reviewer@example.test",
+              verifiedAt: "2026-08-02T20:30:00Z",
+            },
+          },
+        ],
+        scope: { ring: "repo", scopeId: "repo:agentmemory" },
+      });
+      expect(parsed, provenance.type).toMatchObject({
+        success: true,
+        value: {
+          evidenceRefs: [
+            {
+              provenance: {
+                type: provenance.type,
+              },
+              verification: {
+                state: "verified",
+                basis: "explicit-review",
+              },
+            },
+          ],
+        },
+      });
+    }
+
+    const unreviewed = parseLessonSaveInput({
+      content: "A digest is not an audited relevance judgment",
+      mechanismId: "provenance/unreviewed",
+      claim: "Syntactic provenance alone supports the claim.",
+      evidenceVerdict: "supported",
+      evidenceRefs: [
+        {
+          kind: "experiment",
+          projectId: "agentmemory",
+          provenance: {
+            type: "oci",
+            locator: "ghcr.io/example/evidence",
+            digest: `sha256:${"5".repeat(64)}`,
+          },
+          recordedAt: "2026-08-02T20:00:00Z",
+        },
+      ],
+      scope: { ring: "repo", scopeId: "repo:agentmemory" },
+    });
+    expect(unreviewed).toMatchObject({
+      success: false,
+      error: expect.stringContaining("explicitly verified"),
+    });
+  });
+
+  it("migrates legacy Git-shaped verdict evidence with an explicit compatibility basis", () => {
+    const imported = parseImportedLesson({
+      ...legacyLesson(),
+      id: "caller-chosen-id",
+      schemaVersion: 1,
+      mechanismId: "legacy/git-evidence",
+      claim: "The pre-verification schema accepted this durable Git anchor.",
+      evidenceVerdict: "refuted",
+      evidenceRefs: [
+        {
+          kind: "falsification",
+          projectId: "agentmemory",
+          repoRemoteUrl: "https://github.com/rohitg00/agentmemory",
+          commitSha: "f".repeat(40),
+          recordedAt: "2026-08-02T20:00:00Z",
+        },
+      ],
+      scope: { ring: "repo", scopeId: "repo:agentmemory" },
+    });
+
+    expect(imported).toMatchObject({
+      success: true,
+      canonicalized: true,
+      lesson: {
+        id: expect.stringMatching(/^lsn_[a-f0-9]{16}$/),
+        idAliases: ["caller-chosen-id"],
+        evidenceRefs: [
+          {
+            verification: {
+              state: "verified",
+              basis: "legacy-git-anchor",
+              verifiedBy: "agentmemory:legacy-git-anchor-migration",
+            },
+          },
+        ],
+      },
+    });
+  });
+
   it("requires durable scope identity and human approval for global promotion", () => {
     const missingCausalScope = parseLessonSaveInput({
       content: "Unscoped causal claim",
@@ -231,6 +371,18 @@ describe("causal lesson model", () => {
           approvedBy: "patrick",
           approvedAt: "2026-08-02T22:00:00Z",
           reason: "Reviewed evidence and approved global promotion",
+        },
+      },
+    });
+    const globalScopeId = parseLessonSaveInput({
+      content: "Invalid global scope ID",
+      scope: {
+        ring: "global",
+        scopeId: "global:any",
+        humanApproval: {
+          approvedBy: "patrick",
+          approvedAt: "2026-08-02T22:00:00Z",
+          reason: "This should still fail structurally",
         },
       },
     });
@@ -258,6 +410,166 @@ describe("causal lesson model", () => {
           },
         },
       },
+    });
+    expect(globalScopeId).toMatchObject({
+      success: false,
+      error: expect.stringContaining("must be omitted"),
+    });
+  });
+
+  it("requires explicit RFC3339 offsets and hashes offset-equivalent times identically across timezones", () => {
+    const timezoneLess = parseLessonSaveInput({
+      content: "Timezone-less evidence",
+      mechanismId: "time/strict",
+      claim: "Timezone-less inputs are deterministic.",
+      evidenceRefs: [
+        evidence({
+          recordedAt: "2026-08-02T20:00:00",
+        }),
+      ],
+      scope: { ring: "repo", scopeId: "repo:agentmemory" },
+    });
+    expect(timezoneLess).toMatchObject({
+      success: false,
+      error: expect.stringContaining("explicit Z or numeric offset"),
+    });
+    for (const impossible of [
+      "2026-02-30T00:00:00Z",
+      "2026-13-01T00:00:00Z",
+      "2025-02-29T00:00:00Z",
+      "2026-04-31T20:00:00-04:00",
+    ]) {
+      const parsed = parseLessonSaveInput({
+        content: `Impossible timestamp ${impossible}`,
+        reviewAfter: impossible,
+      });
+      expect(parsed, impossible).toMatchObject({
+        success: false,
+        error: expect.stringContaining("calendar-valid"),
+      });
+    }
+    expect(
+      parseLessonSaveInput({
+        content: "Valid leap day",
+        reviewAfter: "2024-02-29T00:00:00Z",
+      }),
+    ).toMatchObject({
+      success: true,
+      value: { reviewAfter: "2024-02-29T00:00:00.000Z" },
+    });
+
+    const utc = parsedLesson({
+      evidenceRefs: [
+        evidence({
+          recordedAt: "2026-08-02T20:00:00Z",
+          validatedAt: "2026-08-02T21:00:00Z",
+          verification: {
+            state: "verified",
+            verifiedBy: "reviewer@example.test",
+            verifiedAt: "2026-08-02T21:00:00Z",
+          },
+        }),
+      ],
+      reviewAfter: "2026-09-01T00:00:00Z",
+    });
+    const offset = parsedLesson({
+      evidenceRefs: [
+        evidence({
+          recordedAt: "2026-08-02T16:00:00-04:00",
+          validatedAt: "2026-08-02T17:00:00-04:00",
+          verification: {
+            state: "verified",
+            verifiedBy: "reviewer@example.test",
+            verifiedAt: "2026-08-02T17:00:00-04:00",
+          },
+        }),
+      ],
+      reviewAfter: "2026-08-31T20:00:00-04:00",
+    });
+    expect(lessonIdForInput(utc)).toBe(lessonIdForInput(offset));
+
+    const script = `
+      import { parseLessonSaveInput, lessonIdForInput } from "./src/functions/lesson-model.ts";
+      const parsed = parseLessonSaveInput({
+        content: "Timezone child process",
+        mechanismId: "time/child",
+        claim: "Explicit offsets make identity timezone-independent.",
+        evidenceVerdict: "supported",
+        evidenceRefs: [{
+          kind: "experiment",
+          projectId: "agentmemory",
+          provenance: { type: "oci", locator: "ghcr.io/example/evidence", digest: "sha256:${"6".repeat(64)}" },
+          recordedAt: "2026-08-02T16:00:00-04:00",
+          verification: { state: "verified", verifiedBy: "reviewer", verifiedAt: "2026-08-02T17:00:00-04:00" }
+        }],
+        scope: { ring: "repo", scopeId: "repo:agentmemory" }
+      });
+      if (!parsed.success) throw new Error(parsed.error);
+      process.stdout.write(lessonIdForInput(parsed.value));
+    `;
+    const run = (timezone: string) =>
+      execFileSync(
+        process.execPath,
+        ["--import", "tsx", "--input-type=module", "-e", script],
+        {
+          cwd: process.cwd(),
+          env: { ...process.env, TZ: timezone },
+          encoding: "utf8",
+        },
+      );
+    expect(run("UTC")).toBe(run("America/New_York"));
+  });
+
+  it("enforces normalized ASCII snake_case facet dimensions", () => {
+    for (const dimension of [
+      "a/b",
+      "a.b",
+      "éxchange",
+      "__proto__",
+      "constructor",
+      "9asset",
+    ]) {
+      const parsed = parseLessonSaveInput({
+        content: `Invalid facet ${dimension}`,
+        structuredFacets: { [dimension]: ["value"] },
+      });
+      expect(parsed, dimension).toMatchObject({
+        success: false,
+        error: expect.stringContaining("ASCII snake_case"),
+      });
+    }
+    expect(
+      parseLessonSaveInput({
+        content: "Valid normalized facet",
+        mechanismId: "facet/valid",
+        claim: "Normalized facet dimensions remain domain-neutral.",
+        structuredFacets: { "Signal Family": ["order-flow"] },
+        scope: { ring: "repo", scopeId: "repo:agentmemory" },
+      }),
+    ).toMatchObject({
+      success: true,
+      value: { structuredFacets: { signal_family: ["order-flow"] } },
+    });
+  });
+
+  it("fails closed for malformed structured rows while retaining raw legacy fallback", () => {
+    expect(() =>
+      normalizeLesson(
+        legacyLesson({
+          schemaVersion: 1,
+          evidenceRefs: "not-an-array" as never,
+        }),
+      ),
+    ).toThrow(/Invalid structured lesson.*evidenceRefs must be an array/);
+    expect(
+      normalizeLesson(
+        legacyLesson({
+          confidence: Number.NaN,
+        }),
+      ),
+    ).toMatchObject({
+      identityKind: "legacy-prose",
+      evidenceVerdict: "unverified",
     });
   });
 

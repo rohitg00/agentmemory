@@ -9,15 +9,26 @@ import type {
   Lesson,
   Crystal,
   MemoryProvider,
+  LessonEvidenceVerdict,
+  LessonReadModel,
 } from "../types.js";
 import { recordAudit } from "./audit.js";
 import { REFLECT_SYSTEM, buildReflectPrompt } from "../prompts/reflect.js";
-import { isLessonRecallable } from "./lesson-model.js";
+import {
+  isLessonRecallable,
+  toLessonReadModel,
+} from "./lesson-model.js";
 
 interface ConceptCluster {
   concepts: string[];
   facts: Array<{ fact: string; confidence: number }>;
-  lessons: Array<{ content: string; confidence: number }>;
+  lessons: Array<{
+    content: string;
+    claim?: string;
+    confidence: number;
+    evidenceVerdict: LessonEvidenceVerdict;
+    contradicted: boolean;
+  }>;
   crystalNarratives: string[];
   factIds: string[];
   lessonIds: string[];
@@ -27,10 +38,6 @@ interface ConceptCluster {
 function reinforceInsight(insight: Insight): void {
   const now = new Date().toISOString();
   insight.reinforcements++;
-  insight.confidence = Math.min(
-    1.0,
-    insight.confidence + 0.1 * (1 - insight.confidence),
-  );
   insight.lastReinforcedAt = now;
   insight.updatedAt = now;
 }
@@ -161,6 +168,29 @@ function buildJaccardClusters(
   return clusters;
 }
 
+function parseInsightAttributes(
+  value: string,
+): Record<string, string | undefined> {
+  const attributes: Record<string, string | undefined> = {};
+  const attributePattern = /([A-Za-z][A-Za-z0-9]*)="([^"]*)"/g;
+  let match: RegExpExecArray | null;
+  while ((match = attributePattern.exec(value)) !== null) {
+    attributes[match[1]] = match[2];
+  }
+  return attributes;
+}
+
+function normalizeInsightEvidenceVerdict(
+  value: string | undefined,
+): LessonEvidenceVerdict | undefined {
+  return value === "supported" ||
+    value === "refuted" ||
+    value === "mixed" ||
+    value === "unverified"
+    ? value
+    : undefined;
+}
+
 export function registerReflectFunctions(
   sdk: ISdk,
   kv: StateKV,
@@ -181,7 +211,14 @@ export function registerReflectFunctions(
           kv.list<Crystal>(KV.crystals).catch(() => []),
         ]);
 
-      let activeLessons = lessons.filter(isLessonRecallable);
+      let activeLessons: LessonReadModel[] = [];
+      for (const lesson of lessons) {
+        try {
+          if (isLessonRecallable(lesson)) {
+            activeLessons.push(toLessonReadModel(lesson));
+          }
+        } catch {}
+      }
       if (data?.project) {
         activeLessons = activeLessons.filter((l) => l.project === data.project);
       }
@@ -219,7 +256,9 @@ export function registerReflectFunctions(
         const clusterLessons = activeLessons.filter((l) =>
           l.tags.some((t) => conceptSet.has(t.toLowerCase())) ||
           conceptNames.some((c) =>
-            l.content.toLowerCase().includes(c.toLowerCase()),
+            `${l.claim ?? ""} ${l.content}`
+              .toLowerCase()
+              .includes(c.toLowerCase()),
           ),
         );
 
@@ -246,7 +285,10 @@ export function registerReflectFunctions(
           })),
           lessons: clusterLessons.map((l) => ({
             content: l.content,
+            claim: l.claim,
             confidence: l.confidence,
+            evidenceVerdict: l.evidenceVerdict,
+            contradicted: l.computedFlags.contradicted,
           })),
           crystalNarratives: clusterCrystals.map((c) => c.narrative),
           factIds: clusterFacts.map((f) => f.id),
@@ -259,21 +301,39 @@ export function registerReflectFunctions(
           const response = await provider.summarize(REFLECT_SYSTEM, prompt);
 
           const insightRegex =
-            /<insight\s+confidence="([^"]+)"\s+title="([^"]+)">([\s\S]*?)<\/insight>/g;
+            /<insight\s+([^>]+)>([\s\S]*?)<\/insight>/g;
           let match;
           let clusterCount = 0;
+          const hasNegativeLessonEvidence = cluster.lessons.some(
+            (lesson) =>
+              lesson.evidenceVerdict === "refuted" ||
+              lesson.contradicted,
+          );
 
           while (
             (match = insightRegex.exec(response)) !== null &&
             clusterCount < maxInsightsPerCluster &&
             totalInsights < maxTotal
           ) {
-            const parsedConf = parseFloat(match[1]);
+            const attributes = parseInsightAttributes(match[1]);
+            if (!attributes.title || !attributes.confidence) continue;
+            const outputVerdict = normalizeInsightEvidenceVerdict(
+              attributes.evidenceVerdict,
+            );
+            if (
+              hasNegativeLessonEvidence &&
+              outputVerdict !== "refuted" &&
+              outputVerdict !== "mixed"
+            ) {
+              continue;
+            }
+            const evidenceVerdict = outputVerdict ?? "supported";
+            const parsedConf = parseFloat(attributes.confidence);
             const confidence = Number.isNaN(parsedConf)
               ? 0.5
               : Math.max(0, Math.min(1, parsedConf));
-            const title = match[2].trim();
-            const content = match[3].trim();
+            const title = attributes.title.trim();
+            const content = match[2].trim();
 
             if (!content) continue;
 
@@ -282,6 +342,10 @@ export function registerReflectFunctions(
 
             if (existing && !existing.deleted) {
               reinforceInsight(existing);
+              existing.evidenceVerdict =
+                (existing.evidenceVerdict ?? "supported") === evidenceVerdict
+                  ? evidenceVerdict
+                  : "mixed";
               await kv.set(KV.insights, existing.id, existing);
               reinforced++;
             } else {
@@ -296,6 +360,7 @@ export function registerReflectFunctions(
                 sourceMemoryIds: cluster.factIds,
                 sourceLessonIds: cluster.lessonIds,
                 sourceCrystalIds: cluster.crystalIds,
+                evidenceVerdict,
                 project: data?.project,
                 tags: conceptNames,
                 createdAt: now,

@@ -235,6 +235,56 @@ describe("Smart Search Function", () => {
       expect(result.lessons[0].content).toMatch(/…$/);
     });
 
+    it("carries claim and explicitly labels refuted or contradicted evidence", async () => {
+      sdk.registerFunction("mem::lesson-recall", async () => ({
+        success: true,
+        lessons: [
+          {
+            id: "lsn_refuted",
+            content: "Long prose must not become positive guidance.",
+            claim: "Force-pushing main is safe.",
+            evidenceVerdict: "refuted",
+            confidence: 0.9,
+            createdAt: "2026-04-01T00:00:00Z",
+            tags: ["git"],
+            score: 0.8,
+          },
+          {
+            id: "lsn_contradicted",
+            content: "This claim has an active counterexample.",
+            claim: "All retries are idempotent.",
+            evidenceVerdict: "supported",
+            contradictedByLessonIds: ["lsn_counterexample"],
+            confidence: 0.7,
+            createdAt: "2026-04-01T00:00:00Z",
+            tags: ["retries"],
+            score: 0.7,
+          },
+        ],
+      }));
+
+      const result = (await sdk.trigger("mem::smart-search", {
+        query: "safe retries",
+      })) as { lessons: any[] };
+
+      expect(result.lessons).toEqual([
+        expect.objectContaining({
+          lessonId: "lsn_refuted",
+          claim: "Force-pushing main is safe.",
+          evidenceVerdict: "refuted",
+          evidenceLabel: "refuted evidence (negative)",
+          contradicted: false,
+        }),
+        expect.objectContaining({
+          lessonId: "lsn_contradicted",
+          claim: "All retries are idempotent.",
+          evidenceVerdict: "supported",
+          evidenceLabel: "contradicted evidence",
+          contradicted: true,
+        }),
+      ]);
+    });
+
     it("includeLessons:false omits the lessons array entirely", async () => {
       // No lesson-recall handler registered — would throw if invoked.
       const result = (await sdk.trigger("mem::smart-search", {

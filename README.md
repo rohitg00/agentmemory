@@ -1544,17 +1544,32 @@ prose-only lessons and also accept causal schema-v1 fields:
   of lifecycle (`draft`, `active`, `superseded`, `retracted`);
 - applicability, non-applicability, falsification conditions, and general
   string-valued facets;
-- at most eight durable evidence references anchored by a full commit SHA
-  and/or artifact digest;
+- at most eight durable evidence references using discriminated Git,
+  object-store/query snapshot, OCI, DOI/URN, dataset, or attestation
+  provenance plus an explicit verification state;
 - worktree/repo/initiative/domain/global scope rings and sensitivity
   classification.
 
 Structured causal lessons require an explicit durable scope; global scope also
-requires human approval metadata. Legacy lessons normalize on read to
+requires human approval metadata and forbids `scopeId`. Facet dimensions
+normalize to ASCII snake case and must match `^[a-z][a-z0-9_]*$`. Schema-v1
+approval, evidence, verification, and review timestamps require a
+calendar-valid RFC3339 value with an explicit `Z` or numeric offset.
+
+New supported/refuted/mixed saves require every evidence reference to carry an
+explicit verified review. Import/read normalization preserves older Git-shaped
+verdict rows through a visible `legacy-git-anchor` verification basis; this is
+a compatibility classification and explicitly does not claim that evidence
+relevance was re-audited.
+
+Legacy lessons normalize on read to
 `unverified` + `active` with an implicit worktree scope and
 `sensitivity: restricted`; reads do not rewrite stored rows. Reinforcement
 records reuse without increasing evidence confidence.
 Supersession/retraction continue through the audited correction APIs.
+Compact smart-search results retain claim/verdict/contradiction labels.
+Reflection treats refuted claims as negative evidence and will not persist a
+supported synthesis from a cluster containing refuted or contradicted lessons.
 
 Scope and sensitivity enforcement, automatic contradiction discovery, and
 hybrid/vector lesson retrieval are intentionally deferred to PR2. Until then,

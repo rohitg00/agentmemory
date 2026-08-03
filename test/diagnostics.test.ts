@@ -678,6 +678,41 @@ describe("Diagnostics Functions", () => {
       expect(warn?.status).toBe("warn");
     });
 
+    it("lessons category: diagnoses malformed structured rows without legacy fallback", async () => {
+      await kv.set(KV.lessons, "lsn_malformed_structured", {
+        id: "lsn_malformed_structured",
+        schemaVersion: 1,
+        content: "malformed structured row",
+        context: "",
+        confidence: 0.7,
+        reinforcements: 0,
+        source: "manual",
+        sourceIds: [],
+        tags: [],
+        createdAt: "2026-08-02T00:00:00Z",
+        updatedAt: "2026-08-02T00:00:00Z",
+        decayRate: 0.05,
+        evidenceRefs: "invalid",
+      });
+
+      const result = (await sdk.trigger("mem::diagnose", {
+        categories: ["lessons"],
+      })) as { checks: DiagnosticCheck[] };
+
+      expect(result.checks).toContainEqual(
+        expect.objectContaining({
+          name: "lesson-invalid-structured:lsn_malformed_structured",
+          status: "fail",
+          message: expect.stringContaining(
+            "evidenceRefs must be an array",
+          ),
+        }),
+      );
+      expect(result.checks).not.toContainEqual(
+        expect.objectContaining({ name: "lessons-ok" }),
+      );
+    });
+
     it("summaries category: warns on missing title", async () => {
       await kv.set(KV.summaries, "ses_1", {
         sessionId: "ses_1", project: "p", createdAt: "", title: "",

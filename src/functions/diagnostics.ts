@@ -409,8 +409,24 @@ export function registerDiagnosticsFunction(sdk: ISdk, kv: StateKV): void {
         // Catches bad confidence values that would silently break recall
         // scoring (memory_lesson_recall multiplies by confidence).
         const lessons = await kv.list<Lesson>(KV.lessons);
-        const live = lessons.filter(isLessonListable);
+        const live: Lesson[] = [];
         let lessonIssues = 0;
+        for (const lesson of lessons) {
+          try {
+            if (isLessonListable(lesson)) live.push(lesson);
+          } catch (error) {
+            checks.push({
+              name: `lesson-invalid-structured:${lesson.id}`,
+              category: "lessons",
+              status: "fail",
+              message: `Lesson ${lesson.id} has invalid structured data: ${
+                error instanceof Error ? error.message : String(error)
+              }`,
+              fixable: false,
+            });
+            lessonIssues++;
+          }
+        }
         for (const l of live) {
           // Number.isFinite rejects NaN / Infinity / non-numbers; a
           // corrupted row passing those would silently survive the < / >

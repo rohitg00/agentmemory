@@ -5,6 +5,7 @@ vi.mock("../src/logger.js", () => ({
 }));
 
 import { registerExportImportFunction } from "../src/functions/export-import.js";
+import { registerLessonsFunctions } from "../src/functions/lessons.js";
 import type {
   Session,
   CompressedObservation,
@@ -15,26 +16,89 @@ import type {
   ActionEdge,
   ActionCollectionState,
   ActionEvent,
+  AuditEntry,
   Lesson,
 } from "../src/types.js";
+import { parseImportedLesson } from "../src/functions/lesson-model.js";
 
 function mockKV() {
   const store = new Map<string, Map<string, unknown>>();
+  const injectedFailures: Array<{
+    operation: "set" | "delete";
+    scope: string;
+    key: string;
+  }> = [];
+  let setBarrier:
+    | {
+        scope: string;
+        key: string;
+        reached: () => void;
+        waitForRelease: Promise<void>;
+      }
+    | undefined;
   return {
     get: async <T>(scope: string, key: string): Promise<T | null> => {
       return (store.get(scope)?.get(key) as T) ?? null;
     },
     set: async <T>(scope: string, key: string, data: T): Promise<T> => {
+      if (setBarrier?.scope === scope && setBarrier.key === key) {
+        const barrier = setBarrier;
+        setBarrier = undefined;
+        barrier.reached();
+        await barrier.waitForRelease;
+      }
+      const setFailureIndex = injectedFailures.findIndex(
+        (failure) =>
+          failure.operation === "set" &&
+          failure.scope === scope &&
+          failure.key === key,
+      );
+      if (setFailureIndex >= 0) {
+        injectedFailures.splice(setFailureIndex, 1);
+        throw new Error(`injected set failure for ${scope}/${key}`);
+      }
       if (!store.has(scope)) store.set(scope, new Map());
       store.get(scope)!.set(key, data);
       return data;
     },
     delete: async (scope: string, key: string): Promise<void> => {
+      const deleteFailureIndex = injectedFailures.findIndex(
+        (failure) =>
+          failure.operation === "delete" &&
+          failure.scope === scope &&
+          failure.key === key,
+      );
+      if (deleteFailureIndex >= 0) {
+        injectedFailures.splice(deleteFailureIndex, 1);
+        throw new Error(`injected delete failure for ${scope}/${key}`);
+      }
       store.get(scope)?.delete(key);
     },
     list: async <T>(scope: string): Promise<T[]> => {
       const entries = store.get(scope);
       return entries ? (Array.from(entries.values()) as T[]) : [];
+    },
+    failNext(
+      operation: "set" | "delete",
+      scope: string,
+      key: string,
+    ): void {
+      injectedFailures.push({ operation, scope, key });
+    },
+    pauseNextSet(scope: string, key: string): {
+      reached: Promise<void>;
+      release: () => void;
+    } {
+      let reached!: () => void;
+      let release!: () => void;
+      const reachedPromise = new Promise<void>((resolve) => {
+        reached = resolve;
+      });
+      const waitForRelease = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      setBarrier = { scope, key, reached, waitForRelease };
+      return { reached: reachedPromise, release };
     },
   };
 }
@@ -105,6 +169,70 @@ const testSummary: SessionSummary = {
   concepts: ["auth"],
   observationCount: 1,
 };
+
+function emptyExport(lessons: Lesson[] = []): ExportData {
+  return {
+    version: "0.9.27",
+    exportedAt: "2026-08-02T20:00:00.000Z",
+    sessions: [],
+    observations: {},
+    memories: [],
+    summaries: [],
+    lessons,
+  };
+}
+
+function structuredLesson(
+  id: string,
+  overrides: Partial<Lesson> = {},
+): Lesson {
+  return {
+    id,
+    content: `Structured lesson ${id}`,
+    context: "",
+    confidence: 0.7,
+    reinforcements: 0,
+    source: "manual",
+    sourceIds: [],
+    project: "agentmemory",
+    tags: ["causal"],
+    createdAt: "2026-08-02T20:00:00.000Z",
+    updatedAt: "2026-08-02T20:00:00.000Z",
+    decayRate: 0.05,
+    schemaVersion: 1,
+    mechanismId: `import/${id.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}`,
+    claim: `The claim for ${id} is falsifiable.`,
+    claimType: "causal",
+    evidenceVerdict: "supported",
+    lifecycle: "active",
+    evidenceRefs: [
+      {
+        kind: "experiment",
+        projectId: "agentmemory",
+        provenance: {
+          type: "oci",
+          locator: `ghcr.io/example/${id.toLowerCase()}`,
+          digest: `sha256:${"a".repeat(64)}`,
+        },
+        recordedAt: "2026-08-02T20:00:00.000Z",
+        verification: {
+          state: "verified",
+          verifiedBy: "reviewer@example.test",
+          verifiedAt: "2026-08-02T20:30:00.000Z",
+        },
+      },
+    ],
+    scope: { ring: "repo", scopeId: "repo:agentmemory" },
+    sensitivity: "restricted",
+    ...overrides,
+  };
+}
+
+function importedLesson(raw: Lesson): Lesson {
+  const parsed = parseImportedLesson(raw);
+  if (!parsed.success) throw new Error(parsed.error);
+  return parsed.lesson;
+}
 
 describe("Export/Import Functions", () => {
   let sdk: ReturnType<typeof mockSdk>;
@@ -317,6 +445,7 @@ describe("Export/Import Functions", () => {
       summaries: [],
       lessons: [legacy, structured],
     };
+    const structuredCanonical = importedLesson(structured);
 
     const result = (await sdk.trigger("mem::import", {
       exportData,
@@ -328,7 +457,7 @@ describe("Export/Import Functions", () => {
     );
     const storedStructured = await kv.get<Lesson>(
       "mem:lessons",
-      structured.id,
+      structuredCanonical.id,
     );
 
     expect(result).toMatchObject({ success: true, lessons: 2 });
@@ -344,7 +473,16 @@ describe("Export/Import Functions", () => {
       evidenceVerdict: "supported",
       lifecycle: "active",
       sensitivity: "confidential",
-      evidenceRefs: [expect.objectContaining({ commitSha: "d".repeat(40) })],
+      idAliases: [structured.id],
+      evidenceRefs: [
+        expect.objectContaining({
+          commitSha: "d".repeat(40),
+          verification: expect.objectContaining({
+            state: "verified",
+            basis: "legacy-git-anchor",
+          }),
+        }),
+      ],
     });
   });
 
@@ -392,6 +530,440 @@ describe("Export/Import Functions", () => {
     });
     expect(await kv.get("mem:lessons", preserved.id)).toEqual(preserved);
     expect(await kv.get("mem:sessions", "ses_1")).toEqual(testSession);
+  });
+
+  it("rejects unknown runtime import strategies before any mutation", async () => {
+    const before = await kv.list<Session>("mem:sessions");
+    const result = (await sdk.trigger("mem::import", {
+      exportData: emptyExport([structuredLesson("unknown-strategy")]),
+      strategy: "overwrite",
+    } as never)) as { success: boolean; error: string };
+
+    expect(result).toMatchObject({
+      success: false,
+      error: "strategy must be merge, replace, or skip",
+    });
+    expect(await kv.list<Session>("mem:sessions")).toEqual(before);
+    expect(await kv.list("mem:lessons")).toEqual([]);
+  });
+
+  it.each(["retracted", "superseded"] as const)(
+    "blocks merge resurrection of a %s lesson without partially writing the batch",
+    async (lifecycle) => {
+      const replacement = importedLesson(
+        structuredLesson(`replacement-${lifecycle}`),
+      );
+      const activeOriginal = structuredLesson(`terminal-${lifecycle}`);
+      const terminal = importedLesson({
+        ...activeOriginal,
+        lifecycle,
+        deleted: true,
+        deletedAt: "2026-08-02T21:00:00.000Z",
+        deletedBy: "reviewer",
+        deleteReason: "terminal evidence state",
+        supersededByLessonId:
+          lifecycle === "superseded" ? replacement.id : undefined,
+      });
+      await kv.set("mem:lessons", replacement.id, replacement);
+      await kv.set("mem:lessons", terminal.id, terminal);
+      const unrelated = structuredLesson(`unrelated-${lifecycle}`);
+      const unrelatedCanonical = importedLesson(unrelated);
+
+      const result = (await sdk.trigger("mem::import", {
+        exportData: emptyExport([activeOriginal, unrelated]),
+        strategy: "merge",
+      })) as { success: boolean; error: string };
+
+      expect(result).toMatchObject({
+        success: false,
+        error: expect.stringContaining(
+          `cannot replace terminal ${lifecycle}`,
+        ),
+      });
+      expect(await kv.get<Lesson>("mem:lessons", terminal.id)).toEqual(
+        terminal,
+      );
+      expect(
+        await kv.get("mem:lessons", unrelatedCanonical.id),
+      ).toBeNull();
+      expect(await kv.list<Lesson>("mem:lessons")).toHaveLength(2);
+    },
+  );
+
+  it("serializes correction against merge preflight so a concurrent tombstone cannot be resurrected", async () => {
+    registerLessonsFunctions(sdk as never, kv as never);
+    const raw = structuredLesson("concurrent-correction", {
+      evidenceVerdict: "unverified",
+      evidenceRefs: [],
+    });
+    const active = importedLesson(raw);
+    await kv.set("mem:lessons", active.id, active);
+    const barrier = kv.pauseNextSet("mem:lessons", active.id);
+
+    const correctionPromise = sdk.trigger("mem::lesson-delete", {
+      lessonId: active.id,
+      reason: "Concurrent evidence invalidation",
+      actor: "reviewer",
+    });
+    await barrier.reached;
+    const importPromise = sdk.trigger("mem::import", {
+      exportData: emptyExport([raw]),
+      strategy: "merge",
+    });
+    barrier.release();
+
+    const correction = await correctionPromise;
+    const imported = await importPromise;
+    const finalLesson = await kv.get<Lesson>("mem:lessons", active.id);
+
+    expect(correction).toMatchObject({
+      success: true,
+      action: "deleted",
+    });
+    expect(imported).toMatchObject({
+      success: false,
+      error: expect.stringContaining("cannot replace terminal retracted"),
+    });
+    expect(finalLesson).toMatchObject({
+      lifecycle: "retracted",
+      deleted: true,
+      deleteReason: "Concurrent evidence invalidation",
+    });
+  });
+
+  it("allows explicit replace restoration and audits canonical IDs with lifecycle preimages", async () => {
+    const active = structuredLesson("explicit-restore");
+    const terminal = importedLesson({
+      ...active,
+      lifecycle: "retracted",
+      deleted: true,
+      deletedAt: "2026-08-02T21:00:00.000Z",
+      deletedBy: "reviewer",
+      deleteReason: "bad artifact",
+    });
+    await kv.set("mem:lessons", terminal.id, terminal);
+
+    const result = (await sdk.trigger("mem::import", {
+      exportData: emptyExport([active]),
+      strategy: "replace",
+    })) as { success: boolean; lessons: number };
+    const restored = await kv.list<Lesson>("mem:lessons");
+    const audits = await kv.list<AuditEntry>("mem:audit");
+
+    expect(result).toMatchObject({ success: true, lessons: 1 });
+    expect(restored).toEqual([
+      expect.objectContaining({
+        id: terminal.id,
+        lifecycle: "active",
+        deleted: undefined,
+      }),
+    ]);
+    expect(audits).toContainEqual(
+      expect.objectContaining({
+        functionId: "mem::import:lessons",
+        targetIds: [terminal.id],
+        details: expect.objectContaining({
+          strategy: "replace",
+          lifecycleTransitions: [
+            {
+              lessonId: terminal.id,
+              before: "retracted",
+              after: "active",
+            },
+          ],
+        }),
+      }),
+    );
+  });
+
+  it("restores the exact lesson preimage when a merge set fails mid-batch", async () => {
+    const preserved = importedLesson(structuredLesson("preserved-set"));
+    const first = importedLesson(structuredLesson("first-set"));
+    const second = importedLesson(structuredLesson("second-set"));
+    await kv.set("mem:lessons", preserved.id, preserved);
+    kv.failNext("set", "mem:lessons", second.id);
+
+    const result = (await sdk.trigger("mem::import", {
+      exportData: emptyExport([
+        structuredLesson("first-set"),
+        structuredLesson("second-set"),
+      ]),
+      strategy: "merge",
+    })) as { success: boolean; error: string };
+
+    expect(result).toMatchObject({
+      success: false,
+      error: expect.stringContaining("exact preimage restored"),
+    });
+    expect(await kv.list<Lesson>("mem:lessons")).toEqual([preserved]);
+    expect(await kv.get("mem:lessons", first.id)).toBeNull();
+    expect(await kv.get("mem:lessons", second.id)).toBeNull();
+  });
+
+  it("reports and audits rollback failure with the affected lesson IDs", async () => {
+    const first = importedLesson(structuredLesson("rollback-failure-first"));
+    const second = importedLesson(
+      structuredLesson("rollback-failure-second"),
+    );
+    kv.failNext("set", "mem:lessons", second.id);
+    kv.failNext("delete", "mem:lessons", first.id);
+
+    const result = (await sdk.trigger("mem::import", {
+      exportData: emptyExport([
+        structuredLesson("rollback-failure-first"),
+        structuredLesson("rollback-failure-second"),
+      ]),
+      strategy: "merge",
+    })) as { success: boolean; error: string };
+    const audits = await kv.list<AuditEntry>("mem:audit");
+
+    expect(result).toMatchObject({
+      success: false,
+      error: expect.stringContaining("rollback failed"),
+    });
+    expect(result.error).toContain(first.id);
+    expect(audits).toContainEqual(
+      expect.objectContaining({
+        functionId: "mem::import:lessons-rollback",
+        targetIds: [first.id, second.id],
+        details: expect.objectContaining({
+          rollback: expect.objectContaining({ success: false }),
+        }),
+      }),
+    );
+  });
+
+  it("restores the exact lesson preimage when a replace delete fails mid-batch", async () => {
+    const first = importedLesson(structuredLesson("first-delete"));
+    const second = importedLesson(structuredLesson("second-delete"));
+    await kv.set("mem:lessons", first.id, first);
+    await kv.set("mem:lessons", second.id, second);
+    kv.failNext("delete", "mem:lessons", second.id);
+
+    const result = (await sdk.trigger("mem::import", {
+      exportData: emptyExport(),
+      strategy: "replace",
+    })) as { success: boolean; error: string };
+
+    expect(result).toMatchObject({
+      success: false,
+      error: expect.stringContaining("exact preimage restored"),
+    });
+    const restored = await kv.list<Lesson>("mem:lessons");
+    expect(restored).toHaveLength(2);
+    expect(restored).toEqual(expect.arrayContaining([first, second]));
+  });
+
+  it("canonicalizes arbitrary structured IDs and rejects canonical duplicates", async () => {
+    const first = {
+      ...structuredLesson("arbitrary-one"),
+      computedFlags: { stale: true, contradicted: true },
+    } as Lesson;
+    const duplicate = { ...first, id: "arbitrary-two" };
+    const canonical = importedLesson(first);
+
+    const duplicateResult = (await sdk.trigger("mem::import", {
+      exportData: emptyExport([first, duplicate]),
+      strategy: "merge",
+    })) as { success: boolean; error: string };
+    expect(duplicateResult).toMatchObject({
+      success: false,
+      error: expect.stringContaining("Duplicate lesson"),
+    });
+    expect(await kv.list("mem:lessons")).toEqual([]);
+
+    const success = await sdk.trigger("mem::import", {
+      exportData: emptyExport([first]),
+      strategy: "merge",
+    });
+    expect(success).toMatchObject({ success: true, lessons: 1 });
+    expect(await kv.list<Lesson>("mem:lessons")).toEqual([
+      expect.objectContaining({
+        id: canonical.id,
+        identityKind: "canonical",
+        idAliases: ["arbitrary-one"],
+      }),
+    ]);
+    expect((await kv.list<Lesson>("mem:lessons"))[0]).not.toHaveProperty(
+      "computedFlags",
+    );
+  });
+
+  it("resolves order-independent imported lineage through canonical aliases", async () => {
+    const target = structuredLesson("lineage-target");
+    const targetCanonical = importedLesson(target);
+    const source = {
+      ...structuredLesson("lineage-source", {
+        evidenceVerdict: "unverified",
+        evidenceRefs: [],
+      }),
+      lifecycle: "superseded" as const,
+      deleted: true,
+      deletedAt: "2026-08-02T21:00:00.000Z",
+      deletedBy: "reviewer",
+      deleteReason: "new evidence",
+      supersededByLessonId: target.id,
+    };
+    const sourceCanonical = importedLesson(source);
+
+    const result = await sdk.trigger("mem::import", {
+      exportData: emptyExport([source, target]),
+      strategy: "merge",
+    });
+
+    expect(result).toMatchObject({ success: true, lessons: 2 });
+    expect(
+      await kv.get<Lesson>("mem:lessons", sourceCanonical.id),
+    ).toMatchObject({
+      supersededByLessonId: targetCanonical.id,
+    });
+
+    const reverseKv = mockKV();
+    const reverseSdk = mockSdk();
+    registerExportImportFunction(reverseSdk as never, reverseKv as never);
+    const reverse = await reverseSdk.trigger("mem::import", {
+      exportData: emptyExport([target, source]),
+      strategy: "merge",
+    });
+    expect(reverse).toMatchObject({ success: true, lessons: 2 });
+    expect(
+      await reverseKv.get<Lesson>("mem:lessons", sourceCanonical.id),
+    ).toMatchObject({
+      supersededByLessonId: targetCanonical.id,
+    });
+  });
+
+  it.each([
+    {
+      name: "dangling contradiction",
+      lessons: () => [
+        structuredLesson("dangling-contradiction", {
+          contradictedByLessonIds: ["missing-target"],
+        }),
+      ],
+      message: "dangling contradiction",
+    },
+    {
+      name: "self contradiction",
+      lessons: () => {
+        const lesson = structuredLesson("self-contradiction");
+        return [{ ...lesson, contradictedByLessonIds: [lesson.id] }];
+      },
+      message: "cannot contradict itself",
+    },
+    {
+      name: "cross-scope contradiction",
+      lessons: () => {
+        const target = structuredLesson("cross-scope-target", {
+          scope: { ring: "repo", scopeId: "repo:two" },
+        });
+        return [
+          structuredLesson("cross-scope-source", {
+            scope: { ring: "repo", scopeId: "repo:one" },
+            contradictedByLessonIds: [target.id],
+          }),
+          target,
+        ];
+      },
+      message: "crosses durable scope or project",
+    },
+    {
+      name: "cross-project contradiction",
+      lessons: () => {
+        const target = structuredLesson("cross-project-target", {
+          project: "project-two",
+        });
+        return [
+          structuredLesson("cross-project-source", {
+            project: "project-one",
+            contradictedByLessonIds: [target.id],
+          }),
+          target,
+        ];
+      },
+      message: "crosses durable scope or project",
+    },
+    {
+      name: "cross-scope supersession",
+      lessons: () => {
+        const target = structuredLesson("cross-supersession-target", {
+          scope: { ring: "repo", scopeId: "repo:two" },
+        });
+        return [
+          {
+            ...structuredLesson("cross-supersession-source", {
+              evidenceVerdict: "unverified",
+              evidenceRefs: [],
+              scope: { ring: "repo", scopeId: "repo:one" },
+            }),
+            lifecycle: "superseded" as const,
+            deleted: true,
+            deletedAt: "2026-08-02T21:00:00.000Z",
+            deletedBy: "reviewer",
+            deleteReason: "replaced",
+            supersededByLessonId: target.id,
+          },
+          target,
+        ];
+      },
+      message: "crosses durable scope",
+    },
+    {
+      name: "terminal contradiction target",
+      lessons: () => {
+        const target = structuredLesson("terminal-relation-target", {
+          lifecycle: "retracted",
+          deleted: true,
+          deletedAt: "2026-08-02T21:00:00.000Z",
+          deletedBy: "reviewer",
+          deleteReason: "invalid",
+        });
+        return [
+          structuredLesson("terminal-relation-source", {
+            contradictedByLessonIds: [target.id],
+          }),
+          target,
+        ];
+      },
+      message: "must be active",
+    },
+  ])("rejects $name in the complete post-import graph", async ({ lessons, message }) => {
+    const result = (await sdk.trigger("mem::import", {
+      exportData: emptyExport(lessons()),
+      strategy: "merge",
+    })) as { success: boolean; error: string };
+
+    expect(result).toMatchObject({
+      success: false,
+      error: expect.stringContaining(message),
+    });
+    expect(await kv.list("mem:lessons")).toEqual([]);
+  });
+
+  it("rejects malformed structured export/import without rewriting it as legacy", async () => {
+    const malformed = {
+      ...structuredLesson("malformed-roundtrip"),
+      evidenceRefs: "not-an-array",
+    } as unknown as Lesson;
+    await kv.set("mem:lessons", malformed.id, malformed);
+
+    await expect(sdk.trigger("mem::export", {})).rejects.toThrow(
+      /Invalid structured lesson.*evidenceRefs must be an array/,
+    );
+    expect(await kv.get("mem:lessons", malformed.id)).toEqual(malformed);
+
+    const fresh = mockKV();
+    const freshSdk = mockSdk();
+    registerExportImportFunction(freshSdk as never, fresh as never);
+    const imported = await freshSdk.trigger("mem::import", {
+      exportData: emptyExport([malformed]),
+      strategy: "merge",
+    });
+    expect(imported).toMatchObject({
+      success: false,
+      error: expect.stringContaining("evidenceRefs must be an array"),
+    });
+    expect(await fresh.list("mem:lessons")).toEqual([]);
   });
 
   it("import rejects unsupported version", async () => {

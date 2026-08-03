@@ -8,7 +8,9 @@ vi.mock("../src/logger.js", () => ({
 }));
 
 import { registerReplayFunctions } from "../src/functions/replay.js";
+import { registerLessonsFunctions } from "../src/functions/lessons.js";
 import { KV } from "../src/state/schema.js";
+import type { Lesson } from "../src/types.js";
 
 function mockKV() {
   const store = new Map<string, Map<string, unknown>>();
@@ -64,7 +66,11 @@ describe("import-jsonl re-key on parsed.sessionId (#775)", () => {
     tmpRoot = mkdtempSync(join(tmpdir(), "replay-import-key-"));
   });
 
-  function writeFixture(sessionId: string, ts = "2026-04-17T10:00:00.000Z") {
+  function writeFixture(
+    sessionId: string,
+    ts = "2026-04-17T10:00:00.000Z",
+    assistantText = "world",
+  ) {
     const dir = join(tmpRoot, "proj");
     rmSync(dir, { recursive: true, force: true });
     require("node:fs").mkdirSync(dir, { recursive: true });
@@ -87,7 +93,7 @@ describe("import-jsonl re-key on parsed.sessionId (#775)", () => {
         timestamp: ts,
         message: {
           role: "assistant",
-          content: [{ type: "text", text: "world" }],
+          content: [{ type: "text", text: assistantText }],
         },
       }),
     ];
@@ -150,5 +156,87 @@ describe("import-jsonl re-key on parsed.sessionId (#775)", () => {
       .getSetCalls()
       .filter((c) => c.scope === KV.sessions && c.key === "sess-fresh");
     expect(sessionWrites.length).toBe(1);
+  });
+
+  it("uses the same canonical lesson identity as save and deduplicates replay lessons", async () => {
+    const content = "Always validate imported sessions before replay.";
+    writeFixture(
+      "sess-canonical-lesson",
+      "2026-04-17T10:00:00.000Z",
+      content,
+    );
+    const kv = mockKV();
+    const sdk = mockSdk(kv);
+    registerLessonsFunctions(sdk, kv as never);
+    registerReplayFunctions(sdk, kv as never);
+    const saved = (await sdk.trigger("mem::lesson-save", {
+      content,
+      project: "proj",
+    })) as { lesson: Lesson };
+
+    const result = await sdk.trigger("mem::replay::import-jsonl", {
+      path: tmpRoot,
+    });
+    const lessons = await kv.list<Lesson>(KV.lessons);
+
+    expect(result).toMatchObject({ success: true, imported: 1 });
+    expect(lessons).toHaveLength(1);
+    expect(lessons[0]).toMatchObject({
+      id: saved.lesson.id,
+      sourceIds: ["sess-canonical-lesson"],
+      tags: ["auto-import"],
+      reinforcements: 1,
+    });
+  });
+
+  it("finds a legacy replay lesson by canonical identity without creating a duplicate", async () => {
+    const content = "Never trust a replay path without validation.";
+    writeFixture(
+      "sess-legacy-lesson",
+      "2026-04-17T10:00:00.000Z",
+      content,
+    );
+    const kv = mockKV();
+    const sdk = mockSdk(kv);
+    registerLessonsFunctions(sdk, kv as never);
+    registerReplayFunctions(sdk, kv as never);
+    const legacy: Lesson = {
+      id: "lesson_legacy_replay_id",
+      content,
+      context: "legacy replay",
+      confidence: 0.4,
+      reinforcements: 0,
+      source: "consolidation",
+      sourceIds: ["old-session"],
+      project: "proj",
+      tags: ["auto-import"],
+      createdAt: "2026-03-01T00:00:00.000Z",
+      updatedAt: "2026-03-01T00:00:00.000Z",
+      decayRate: 0.05,
+    };
+    await kv.set(KV.lessons, legacy.id, legacy);
+
+    await sdk.trigger("mem::replay::import-jsonl", { path: tmpRoot });
+    const save = (await sdk.trigger("mem::lesson-save", {
+      content,
+      project: "proj",
+    })) as { success: boolean; action: string; lesson: Lesson };
+    const lessons = await kv.list<Lesson>(KV.lessons);
+
+    expect(save).toMatchObject({
+      success: true,
+      action: "strengthened",
+      lesson: { id: legacy.id },
+    });
+    expect(lessons).toHaveLength(1);
+    expect(lessons[0]).toMatchObject({
+      id: legacy.id,
+      identityKind: "legacy-prose",
+      sourceIds: ["old-session", "sess-legacy-lesson"],
+      reinforcements: 2,
+    });
+    expect(lessons[0].idAliases).toEqual([
+      expect.stringMatching(/^lsn_[a-f0-9]{16}$/),
+    ]);
   });
 });

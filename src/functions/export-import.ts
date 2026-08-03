@@ -1,4 +1,5 @@
 import type { ISdk } from "iii-sdk";
+import { isDeepStrictEqual } from "node:util";
 import type {
   Session,
   CompressedObservation,
@@ -41,9 +42,25 @@ import {
   withActionStoreLock,
 } from "./action-store.js";
 import {
+  isLessonRecallable,
   normalizeLesson,
   parseImportedLesson,
+  sameLessonContradictionScope,
+  sameLessonScope,
 } from "./lesson-model.js";
+import { withLessonMutationLock } from "./lesson-locks.js";
+
+interface ImportedLessonCandidate {
+  lesson: Lesson;
+  sourceId: string;
+  canonicalized: boolean;
+}
+
+interface LessonLifecycleTransition {
+  lessonId: string;
+  before?: string;
+  after?: string;
+}
 
 export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
   sdk.registerFunction("mem::export", 
@@ -199,7 +216,19 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
       ) {
         return { success: false, error: "exportData with string version is required" };
       }
-      const strategy = data.strategy || "merge";
+      const requestedStrategy = (data as { strategy?: unknown }).strategy;
+      if (
+        requestedStrategy !== undefined &&
+        requestedStrategy !== "merge" &&
+        requestedStrategy !== "replace" &&
+        requestedStrategy !== "skip"
+      ) {
+        return {
+          success: false,
+          error: "strategy must be merge, replace, or skip",
+        };
+      }
+      const strategy = requestedStrategy ?? "merge";
       const importData = data.exportData;
 
       const supportedVersions = new Set(["0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.6.1", "0.7.0", "0.7.2", "0.7.3", "0.7.4", "0.7.5", "0.7.6", "0.7.7", "0.7.9", "0.8.0", "0.8.1", "0.8.2", "0.8.3", "0.8.4", "0.8.5", "0.8.6", "0.8.7", "0.8.8", "0.8.9", "0.8.10", "0.8.11", "0.8.12", "0.8.13", "0.9.0", "0.9.1", "0.9.2", "0.9.3", "0.9.4", "0.9.5", "0.9.6", "0.9.7", "0.9.8", "0.9.9", "0.9.10", "0.9.11", "0.9.12", "0.9.13", "0.9.14", "0.9.15", "0.9.16", "0.9.17", "0.9.18", "0.9.19", "0.9.20", "0.9.21", "0.9.22", "0.9.23", "0.9.24", "0.9.25", "0.9.26", "0.9.27"]);
@@ -295,8 +324,9 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
           error: `Too many lessons (max ${MAX_LESSONS})`,
         };
       }
-      const normalizedImportedLessons: Lesson[] = [];
+      const normalizedImportedLessons: ImportedLessonCandidate[] = [];
       const importedLessonIds = new Set<string>();
+      const importedLessonAliases = new Map<string, string>();
       for (const lesson of importedLessons) {
         const parsed = parseImportedLesson(lesson);
         if (!parsed.success) {
@@ -312,7 +342,21 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
           };
         }
         importedLessonIds.add(parsed.lesson.id);
-        normalizedImportedLessons.push(parsed.lesson);
+        for (const alias of [
+          parsed.sourceId,
+          ...(parsed.lesson.idAliases ?? []),
+          parsed.lesson.id,
+        ]) {
+          const claimedBy = importedLessonAliases.get(alias);
+          if (claimedBy && claimedBy !== parsed.lesson.id) {
+            return {
+              success: false,
+              error: `Duplicate lesson identity alias ${alias}: ${claimedBy}, ${parsed.lesson.id}`,
+            };
+          }
+          importedLessonAliases.set(alias, parsed.lesson.id);
+        }
+        normalizedImportedLessons.push(parsed);
       }
 
       const importedActions = Array.isArray(importData.actions)
@@ -460,6 +504,21 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
           }
         }
       }
+      if (
+        importData.accessLogs !== undefined &&
+        !Array.isArray(importData.accessLogs)
+      ) {
+        return { success: false, error: "accessLogs must be an array" };
+      }
+      if (
+        Array.isArray(importData.accessLogs) &&
+        importData.accessLogs.length > MAX_ACCESS_LOGS
+      ) {
+        return {
+          success: false,
+          error: `Too many access logs (max ${MAX_ACCESS_LOGS})`,
+        };
+      }
 
       const stats = {
         sessions: 0,
@@ -472,6 +531,19 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
         lessons: 0,
         skipped: 0,
       };
+
+      const lessonImport = await withLessonMutationLock(() =>
+        applyImportedLessonBatch(
+          kv,
+          normalizedImportedLessons,
+          strategy,
+        ),
+      );
+      if (!lessonImport.success) {
+        return { success: false, error: lessonImport.error };
+      }
+      stats.lessons = lessonImport.written;
+      stats.skipped += lessonImport.skipped;
 
       if (strategy === "replace") {
         const existing = await kv.list<Session>(KV.sessions);
@@ -512,9 +584,6 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
         }
         for (const f of await kv.list<Facet>(KV.facets).catch(() => [])) {
           await kv.delete(KV.facets, f.id);
-        }
-        for (const l of await kv.list<Lesson>(KV.lessons).catch(() => [])) {
-          await kv.delete(KV.lessons, l.id);
         }
         for (const i of await kv.list<Insight>(KV.insights).catch(() => [])) {
           await kv.delete(KV.insights, i.id);
@@ -819,19 +888,6 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
           await kv.set(KV.facets, facet.id, facet);
         }
       }
-      for (const lesson of normalizedImportedLessons) {
-        if (strategy === "skip") {
-          const existing = await kv
-            .get(KV.lessons, lesson.id)
-            .catch(() => null);
-          if (existing) {
-            stats.skipped++;
-            continue;
-          }
-        }
-        await kv.set(KV.lessons, lesson.id, lesson);
-        stats.lessons++;
-      }
       if (importData.insights) {
         for (const insight of importData.insights) {
           if (strategy === "skip") {
@@ -842,15 +898,6 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
         }
       }
       if (importData.accessLogs) {
-        if (!Array.isArray(importData.accessLogs)) {
-          return { success: false, error: "accessLogs must be an array" };
-        }
-        if (importData.accessLogs.length > MAX_ACCESS_LOGS) {
-          return {
-            success: false,
-            error: `Too many access logs (max ${MAX_ACCESS_LOGS})`,
-          };
-        }
         const memoryIds = new Set<string>(
           importData.memories.map((m) => m.id),
         );
@@ -878,6 +925,291 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
       return { success: true, strategy, ...stats };
     },
   );
+}
+
+async function applyImportedLessonBatch(
+  kv: StateKV,
+  imported: ImportedLessonCandidate[],
+  strategy: "merge" | "replace" | "skip",
+): Promise<
+  | { success: true; written: number; skipped: number }
+  | { success: false; error: string }
+> {
+  const existingRows = await kv.list<Lesson>(KV.lessons).catch(() => []);
+  const preimage = new Map(
+    existingRows.map((lesson) => [lesson.id, lesson] as const),
+  );
+  const existing = new Map<string, Lesson>();
+  const existingAliases = new Map<string, string>();
+  for (const row of existingRows) {
+    let normalized: Lesson;
+    try {
+      normalized = normalizeLesson(row);
+    } catch (error) {
+      return {
+        success: false,
+        error: `Invalid existing structured lesson ${row.id}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      };
+    }
+    existing.set(normalized.id, normalized);
+    for (const alias of [
+      normalized.id,
+      ...(normalized.idAliases ?? []),
+    ]) {
+      const claimedBy = existingAliases.get(alias);
+      if (claimedBy && claimedBy !== normalized.id) {
+        return {
+          success: false,
+          error: `Existing lesson identity alias conflict ${alias}: ${claimedBy}, ${normalized.id}`,
+        };
+      }
+      existingAliases.set(alias, normalized.id);
+    }
+  }
+
+  const incomingAliases = new Map<string, string>();
+  for (const candidate of imported) {
+    for (const alias of [
+      candidate.sourceId,
+      candidate.lesson.id,
+      ...(candidate.lesson.idAliases ?? []),
+    ]) {
+      const claimedBy = incomingAliases.get(alias);
+      if (claimedBy && claimedBy !== candidate.lesson.id) {
+        return {
+          success: false,
+          error: `Imported lesson identity alias conflict ${alias}: ${claimedBy}, ${candidate.lesson.id}`,
+        };
+      }
+      const existingOwner = existingAliases.get(alias);
+      if (
+        strategy !== "replace" &&
+        existingOwner &&
+        existingOwner !== candidate.lesson.id
+      ) {
+        return {
+          success: false,
+          error: `Imported lesson identity ${alias} conflicts with existing lesson ${existingOwner}`,
+        };
+      }
+      incomingAliases.set(alias, candidate.lesson.id);
+    }
+  }
+
+  const resolveRelationId = (id: string): string =>
+    incomingAliases.get(id) ?? existingAliases.get(id) ?? id;
+  const incoming = new Map<string, Lesson>();
+  for (const candidate of imported) {
+    const rewritten = normalizeLesson({
+      ...candidate.lesson,
+      supersededByLessonId: candidate.lesson.supersededByLessonId
+        ? resolveRelationId(candidate.lesson.supersededByLessonId)
+        : undefined,
+      contradictedByLessonIds: (
+        candidate.lesson.contradictedByLessonIds ?? []
+      )
+        .map(resolveRelationId)
+        .filter((id, index, ids) => ids.indexOf(id) === index)
+        .sort(),
+    });
+    incoming.set(rewritten.id, rewritten);
+  }
+
+  const finalLessons =
+    strategy === "replace"
+      ? new Map(incoming)
+      : new Map(existing);
+  let skipped = 0;
+  for (const [id, lesson] of incoming) {
+    const current = existing.get(id);
+    if (strategy === "skip" && current) {
+      skipped++;
+      continue;
+    }
+    if (
+      strategy === "merge" &&
+      current &&
+      (current.lifecycle === "retracted" ||
+        current.lifecycle === "superseded") &&
+      lesson.lifecycle !== current.lifecycle
+    ) {
+      return {
+        success: false,
+        error: `Merge import cannot replace terminal ${current.lifecycle} lesson ${id} with ${lesson.lifecycle}; use replace import for an explicit audited restore`,
+      };
+    }
+    finalLessons.set(id, lesson);
+  }
+
+  const graphError = validateLessonGraph(finalLessons);
+  if (graphError) return { success: false, error: graphError };
+
+  const writes = [...incoming.values()].filter(
+    (lesson) => strategy !== "skip" || !existing.has(lesson.id),
+  );
+  const deletes =
+    strategy === "replace"
+      ? [...existing.keys()].filter((id) => !incoming.has(id))
+      : [];
+  const transitions: LessonLifecycleTransition[] = [];
+  for (const lesson of writes) {
+    transitions.push({
+      lessonId: lesson.id,
+      before: existing.get(lesson.id)?.lifecycle,
+      after: normalizeLesson(lesson).lifecycle,
+    });
+  }
+  for (const id of deletes) {
+    transitions.push({
+      lessonId: id,
+      before: existing.get(id)?.lifecycle,
+      after: undefined,
+    });
+  }
+
+  const affectedIds = transitions.map((transition) => transition.lessonId);
+  const auditDetails = {
+    strategy,
+    canonicalizedIds: imported
+      .filter((candidate) => candidate.canonicalized)
+      .map((candidate) => ({
+        sourceId: candidate.sourceId,
+        lessonId: candidate.lesson.id,
+      })),
+    lifecycleTransitions: transitions,
+  };
+  try {
+    for (const id of deletes) {
+      await kv.delete(KV.lessons, id);
+    }
+    for (const lesson of writes) {
+      await kv.set(KV.lessons, lesson.id, lesson);
+    }
+    if (affectedIds.length > 0) {
+      await recordAudit(
+        kv,
+        "import",
+        "mem::import:lessons",
+        affectedIds,
+        auditDetails,
+      );
+    }
+  } catch (error) {
+    const rollback = await restoreLessonPreimage(
+      kv,
+      affectedIds,
+      preimage,
+    );
+    let auditError: string | undefined;
+    try {
+      await recordAudit(
+        kv,
+        "import",
+        "mem::import:lessons-rollback",
+        affectedIds,
+        {
+          ...auditDetails,
+          applyError: error instanceof Error ? error.message : String(error),
+          rollback,
+        },
+      );
+    } catch (rollbackAuditError) {
+      auditError =
+        rollbackAuditError instanceof Error
+          ? rollbackAuditError.message
+          : String(rollbackAuditError);
+    }
+    const applyError = error instanceof Error ? error.message : String(error);
+    if (!rollback.success) {
+      return {
+        success: false,
+        error: `Lesson import failed (${applyError}); rollback failed: ${rollback.errors.join("; ")}${auditError ? `; rollback audit failed: ${auditError}` : ""}`,
+      };
+    }
+    return {
+      success: false,
+      error: `Lesson import failed (${applyError}); exact preimage restored${auditError ? `; rollback audit failed: ${auditError}` : ""}`,
+    };
+  }
+  return { success: true, written: writes.length, skipped };
+}
+
+async function restoreLessonPreimage(
+  kv: StateKV,
+  affectedIds: string[],
+  preimage: Map<string, Lesson>,
+): Promise<{ success: boolean; errors: string[] }> {
+  const errors: string[] = [];
+  for (const id of [...new Set(affectedIds)].reverse()) {
+    try {
+      const before = preimage.get(id);
+      if (before) {
+        await kv.set(KV.lessons, id, before);
+      } else {
+        await kv.delete(KV.lessons, id);
+      }
+    } catch (error) {
+      errors.push(
+        `${id}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+  for (const id of new Set(affectedIds)) {
+    try {
+      const actual = await kv.get<Lesson>(KV.lessons, id);
+      const expected = preimage.get(id) ?? null;
+      if (!isDeepStrictEqual(actual, expected)) {
+        errors.push(`${id}: preimage verification mismatch`);
+      }
+    } catch (error) {
+      errors.push(
+        `${id}: verification failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
+  return { success: errors.length === 0, errors };
+}
+
+function validateLessonGraph(lessons: Map<string, Lesson>): string | null {
+  for (const lesson of lessons.values()) {
+    const normalized = normalizeLesson(lesson);
+    const supersededBy = normalized.supersededByLessonId;
+    if (supersededBy) {
+      if (supersededBy === normalized.id) {
+        return `Lesson ${normalized.id} cannot supersede itself`;
+      }
+      const target = lessons.get(supersededBy);
+      if (!target) {
+        return `Lesson ${normalized.id} has dangling supersession target ${supersededBy}`;
+      }
+      if (!isLessonRecallable(target)) {
+        return `Lesson ${normalized.id} supersession target ${supersededBy} must be active`;
+      }
+      if (!sameLessonScope(normalized, target)) {
+        return `Lesson ${normalized.id} supersession target ${supersededBy} crosses durable scope`;
+      }
+    }
+    for (const contradictionId of normalized.contradictedByLessonIds) {
+      if (contradictionId === normalized.id) {
+        return `Lesson ${normalized.id} cannot contradict itself`;
+      }
+      const target = lessons.get(contradictionId);
+      if (!target) {
+        return `Lesson ${normalized.id} has dangling contradiction target ${contradictionId}`;
+      }
+      if (!isLessonRecallable(target)) {
+        return `Lesson ${normalized.id} contradiction target ${contradictionId} must be active`;
+      }
+      if (!sameLessonContradictionScope(normalized, target)) {
+        return `Lesson ${normalized.id} contradiction target ${contradictionId} crosses durable scope or project`;
+      }
+    }
+  }
+  return null;
 }
 
 function collectImportedActionsWithDerivedBlockers(

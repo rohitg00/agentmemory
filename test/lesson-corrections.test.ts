@@ -260,6 +260,11 @@ describe("lesson corrections", () => {
           repoRemoteUrl: "https://github.com/rohitg00/agentmemory",
           commitSha: "c".repeat(40),
           recordedAt: "2026-08-02T20:00:00.000Z",
+          verification: {
+            state: "verified",
+            verifiedBy: "reviewer@example.test",
+            verifiedAt: "2026-08-02T20:30:00.000Z",
+          },
         },
       ],
       scope: { ring: "repo", scopeId: "repo:agentmemory" },

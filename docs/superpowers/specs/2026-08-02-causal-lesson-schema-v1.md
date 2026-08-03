@@ -22,6 +22,7 @@ Stored legacy lessons are not rewritten by reads. Recall, list, context, JSON
 export, and Obsidian export normalize them in memory to:
 
 - `schemaVersion: 1`
+- `identityKind: "legacy-prose"` and a canonical `lsn_*` alias
 - `evidenceVerdict: "unverified"`
 - `lifecycle: "active"` unless correction metadata proves supersession or retraction
 - `scope: { ring: "worktree" }`
@@ -31,6 +32,9 @@ export, and Obsidian export normalize them in memory to:
 
 The legacy `project` field remains a label and compatibility filter. It is not
 used as a durable cross-repository join key for structured corrections.
+Malformed rows carrying schema-v1 or structured markers never fall back to
+legacy defaults. Export rejects them with the field diagnostic and leaves the
+raw row untouched; `mem::diagnose` reports them as invalid structured lessons.
 
 ## Causal identity and claim
 
@@ -45,6 +49,14 @@ A structured causal lesson uses:
 If any causal structure is supplied, both `mechanismId` and `claim` are
 required. Legacy prose-only saves remain valid.
 
+Structured saves, structured imports, and replay-derived lessons all use the
+same canonical `lsn_*` identity helper. Import deterministically remaps a
+caller-provided structured ID and records it in `idAliases`. Two rows claiming
+the same canonical ID or alias are rejected. Prose IDs are preserved only when
+the normalized row explicitly carries `identityKind: "legacy-prose"`;
+canonical aliases prevent replay/save duplicates during the compatibility
+window.
+
 ## Evidence verdict and lifecycle
 
 Evidence and lifecycle are independent:
@@ -56,8 +68,12 @@ Evidence and lifecycle are independent:
 
 A refuted active lesson remains recallable negative evidence. Recall payloads
 retain the verdict, and injected context labels it explicitly so refutation is
-not presented as a supported instruction. Retraction means the evidence itself
-is invalid. Supersession means another active lesson replaces this record.
+not presented as a supported instruction. Compact smart-search results also
+retain `claim`, `evidenceVerdict`, an explicit evidence label, and contradiction
+state. Reflection places refuted/contradicted lessons in a separate
+counterevidence section and refuses to persist a supported synthesis from a
+cluster containing that evidence. Retraction means the evidence itself is
+invalid. Supersession means another active lesson replaces this record.
 
 Normal save calls may create only draft or active records. Terminal lifecycle
 changes reuse the audited correction functions:
@@ -79,8 +95,11 @@ The schema is domain-neutral:
 - `falsificationConditions`
 - `structuredFacets: Record<string, string[]>`
 
-Facet dimensions are normalized to lowercase snake case. Values remain general
-strings. Trading examples such as `asset`, `venue`, `horizon`, `regime`, and
+Facet dimensions normalize spaces/hyphens to underscores and must then be
+ASCII snake case matching `^[a-z][a-z0-9_]*$`. Slashes, punctuation, Unicode
+letters, leading digits, and unsafe reserved names such as `constructor`,
+`prototype`, and `__proto__` are rejected. Values remain general strings.
+Trading examples such as `asset`, `venue`, `horizon`, `regime`, and
 `signal_family` are conventions, not hard-coded schema dimensions.
 
 Each condition list is bounded to 16 entries. Facets are bounded to 32
@@ -92,14 +111,51 @@ dimensions and 16 values per dimension.
 
 - `kind`
 - `projectId` as a label
-- `repoRemoteUrl`
-- at least one full immutable anchor: `commitSha` or `artifactDigest`
+- discriminated `provenance`
+- explicit `verification`
 - `recordedAt`
 
-Optional fields are `path`, `validatedAt`, `evidenceKind`, and `sampleCount`.
-A branch, ref, or path without a full commit SHA or artifact digest is rejected.
-Supported, refuted, and mixed verdicts require at least one valid evidence
-reference.
+Provenance supports:
+
+| Type | Required immutable identity |
+| --- | --- |
+| `git` | normalized remote plus full commit SHA and/or digest |
+| `object-store` | immutable object/version ID and/or digest |
+| `database-query` | immutable snapshot/query-result ID and/or digest |
+| `oci` | digest |
+| `doi` | valid DOI |
+| `urn` | valid URN |
+| `dataset` | immutable release ID and/or digest |
+| `attestation` | digest |
+
+Optional evidence fields remain `path`, `validatedAt`, `evidenceKind`, and
+`sampleCount`. The old top-level Git shape (`repoRemoteUrl`, `commitSha`,
+`artifactDigest`, `path`) remains import/read compatible and normalizes to
+`provenance.type: "git"`.
+
+Verification state is `unverified`, `verified`, or `rejected`. Verified and
+rejected decisions require actor/time metadata. New supported, refuted, and
+mixed saves require every reference to be explicitly verified; a syntactically
+immutable locator alone is not evidence-relevance approval.
+
+Older Git-shaped supported/refuted/mixed rows that predate verification
+metadata are not rejected or downgraded. Import/read normalization assigns:
+
+```json
+{
+  "state": "verified",
+  "basis": "legacy-git-anchor",
+  "verifiedBy": "agentmemory:legacy-git-anchor-migration",
+  "verifiedAt": "<validatedAt or recordedAt>"
+}
+```
+
+This explicit compatibility basis preserves the prior verdict. It does not
+assert that relevance was newly audited. New REST/MCP saves cannot select the
+reserved migration basis.
+
+A branch, ref, or path without the immutable identity required by its
+provenance type is rejected.
 
 ## Scope and sensitivity
 
@@ -112,9 +168,10 @@ reference.
 - `global`
 
 A structured causal lesson requires an explicit scope. A non-global scope
-requires a separate durable `scope.scopeId`. `project`/`projectId` labels do
-not substitute for it. Legacy prose lessons retain the fail-closed implicit
-worktree scope for compatibility.
+requires a separate durable `scope.scopeId`; global scope rejects `scopeId`.
+`project`/`projectId` labels do not substitute for durable scope identity.
+Legacy prose lessons retain the fail-closed implicit worktree scope for
+compatibility.
 
 Global scope requires:
 
@@ -128,6 +185,12 @@ Global scope requires:
   }
 }
 ```
+
+All schema-v1 approval, evidence-recording, evidence-validation, verification,
+and review timestamps require a calendar-valid RFC3339 timestamp with an
+explicit `Z` or numeric offset. They canonicalize to UTC before storage or
+fingerprinting. Timezone-less inputs and impossible dates such as February 30
+are rejected.
 
 Sensitivity is `public`, `internal`, `confidential`, or `restricted`, with a
 fail-closed default of `restricted`.
@@ -147,6 +210,11 @@ Schema-v1 lessons are not confidence-decayed or soft-deleted by the legacy
 decay sweep. `reviewAfter` computes `computedFlags.stale` at read time. The
 optional `contradictedByLessonIds` relation metadata computes
 `computedFlags.contradicted`. Neither flag changes lifecycle or confidence.
+Contradiction targets must exist, remain active, differ from the source, and
+share both durable scope and the current project label. The project-label
+equality check is a PR1 fail-closed authority bound, not a cross-repository join
+mechanism. Supersession targets must exist, remain active, differ from the
+source, and share durable scope.
 
 Pre-schema stored lessons retain the old decay behavior until an explicit
 replay/import normalizes them. This preserves backward compatibility without a
@@ -166,10 +234,11 @@ prose, evidence verdict, evidence anchors, lifecycle, popularity, and
 confidence do not alter the content fingerprint.
 
 Structured lesson IDs additionally include verdict, immutable evidence
-references, lifecycle, scope, sensitivity, review deadline, and contradiction
-links. This allows two records to share a causal content fingerprint while
-preserving distinct evidence packages or verdicts for later near-duplicate
-analysis.
+references, scope, sensitivity, and review deadline. Lifecycle and relation
+links do not alter identity, so an audited correction retains a stable lesson
+ID and relation batches do not become recursively order-dependent. This allows
+two records to share a causal content fingerprint while preserving distinct
+evidence packages or verdicts for later near-duplicate analysis.
 
 Object keys and unordered arrays are canonicalized before hashing. Fingerprint
 comparison never relies on insertion order or raw `JSON.stringify` ordering.
@@ -180,8 +249,19 @@ REST and MCP lesson-save handlers validate and whitelist structured fields
 before calling `mem::lesson-save`. REST lesson search now whitelists its query
 fields instead of forwarding the raw request body.
 
-JSON import validates all lessons, bounds the collection, rejects duplicate
-lesson IDs, recomputes deterministic fingerprints, and completes validation
-before a replace strategy deletes existing state.
+JSON import accepts only `merge`, `replace`, or `skip`. It canonicalizes
+structured IDs, resolves aliases independent of batch order, validates the
+complete post-import supersession/contradiction graph, bounds the collection,
+strips computed read-model fields, and completes lesson preflight under the
+shared lesson mutation lock.
+
+Default merge never replaces a retracted/superseded row with a non-terminal
+row. Whole-collection `replace` is the explicit restore path. Both successful
+changes and restore transitions audit affected IDs and before/after lifecycle
+metadata. Lesson delete/set application records the exact preimage; if a KV
+operation fails mid-batch, import restores and verifies every affected row,
+reports rollback failures explicitly, and writes a rollback audit when
+possible. Save, correction, replay, decay, and import share the mutation lock,
+so a concurrent correction cannot be resurrected between preflight and write.
 
 No retrieval or ranking engine is introduced in this PR.
