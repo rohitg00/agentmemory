@@ -10,7 +10,7 @@ Generated from `src/cli/connect/index.ts`. Do not edit the block below by hand; 
 | Antigravity | `antigravity` | Using MCP via mcp_config.json. Antigravity replaces Gemini CLI (sunset 2026-06-18). |
 | Claude Code | `claude-code` | Using MCP. Hooks are also available, see https://github.com/rohitg00/agentmemory#claude-code-one-block-paste-it. |
 | Cline | `cline` | Using MCP via ~/.cline/mcp.json (CLI). VS Code users: add the same block via Cline Settings → MCP Servers → Edit JSON. |
-| Codex CLI | `codex` | Using MCP. Hooks ship via the Codex plugin; on Codex Desktop, also pass --with-hooks to install the global hooks.json workaround for openai/codex#16430. |
+| Codex CLI | `codex` | Using MCP. Hooks ship via the Codex plugin; on Codex Desktop, also pass --with-hooks to install (or refresh) the global ~/.codex/hooks.json workaround for openai/codex#16430, works even when MCP is already wired. |
 | Continue | `continue` | Using MCP via ~/.continue/config.yaml (preferred) or config.json (legacy, only when no yaml). |
 | GitHub Copilot CLI | `copilot-cli` | Using MCP. Install the plugin too for full hooks/skills coverage. |
 | Cursor | `cursor` | Using MCP (the only protocol Cursor speaks). Memory bridge runs at :3111 underneath. |

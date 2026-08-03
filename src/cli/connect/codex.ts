@@ -66,7 +66,7 @@ export const adapter: ConnectAdapter = {
   category: "native",
   docs: "https://github.com/rohitg00/agentmemory#codex-cli-codex-plugin-platform",
   protocolNote:
-    "→ Using MCP. Hooks ship via the Codex plugin; on Codex Desktop, also pass --with-hooks to install the global hooks.json workaround for openai/codex#16430.",
+    "→ Using MCP. Hooks ship via the Codex plugin; on Codex Desktop, also pass --with-hooks to install (or refresh) the global ~/.codex/hooks.json workaround for openai/codex#16430 — works even when MCP is already wired.",
 
   detect(): boolean {
     return existsSync(CODEX_DIR);
@@ -79,6 +79,14 @@ export const adapter: ConnectAdapter = {
 
     if (wired && !opts.force) {
       logAlreadyWired("Codex CLI", CODEX_TOML);
+      // --with-hooks is independent of MCP wiring (issue #508 / openai/codex#16430).
+      // Re-run refreshes absolute script paths even when MCP is already in place.
+      if (opts.withHooks) {
+        const hookResult = installCodexHooks(opts);
+        if (hookResult.kind === "skipped") {
+          p.log.warn(`Codex hooks fallback skipped: ${hookResult.reason}.`);
+        }
+      }
       return { kind: "already-wired", mutatedPath: CODEX_TOML };
     }
 
@@ -86,7 +94,12 @@ export const adapter: ConnectAdapter = {
       p.log.info(
         `[dry-run] Would ${wired ? "rewrite" : "append"} [mcp_servers.agentmemory] in ${CODEX_TOML}`,
       );
-      if (opts.withHooks) installCodexHooks(opts);
+      if (opts.withHooks) {
+        const hookResult = installCodexHooks(opts);
+        if (hookResult.kind === "skipped") {
+          p.log.warn(`Codex hooks fallback skipped: ${hookResult.reason}.`);
+        }
+      }
       return { kind: "installed", mutatedPath: CODEX_TOML };
     }
 
