@@ -243,7 +243,7 @@ export function parseLessonSaveInput(
         sort: true,
       },
     );
-    const structuredFacets = normalizeStructuredFacets(
+    const structuredFacets = normalizeLessonStructuredFacets(
       record.structuredFacets,
     );
     const evidenceRefs = normalizeEvidenceRefs(
@@ -875,7 +875,7 @@ function normalizeScope(
   };
 }
 
-function normalizeStructuredFacets(
+export function normalizeLessonStructuredFacets(
   value: unknown,
 ): Record<string, string[]> {
   if (value === undefined || value === null) return {};

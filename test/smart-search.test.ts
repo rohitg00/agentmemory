@@ -199,8 +199,8 @@ describe("Smart Search Function", () => {
       sdk.registerFunction("mem::lesson-recall", async (payload: any) => ({
         success: true,
         lessons: [
-          { id: "lsn_a", content: "always rebase before push", confidence: 0.9, createdAt: "2026-04-01T00:00:00Z", project: "p", tags: ["git"], score: 0.81 },
-          { id: "lsn_b", content: "never force-push to main", confidence: 0.95, createdAt: "2026-04-02T00:00:00Z", project: "p", tags: ["git"], score: 0.76 },
+          { lessonId: "lsn_a", content: "always rebase before push", evidenceVerdict: "supported", contradicted: false, confidence: 0.9, createdAt: "2026-04-01T00:00:00Z", project: "p", tags: ["git"], score: 0.81 },
+          { lessonId: "lsn_b", content: "never force-push to main", evidenceVerdict: "supported", contradicted: false, confidence: 0.95, createdAt: "2026-04-02T00:00:00Z", project: "p", tags: ["git"], score: 0.76 },
         ],
       }));
 
@@ -220,19 +220,18 @@ describe("Smart Search Function", () => {
       expect(result.lessons![0].tags).toEqual(["git"]);
     });
 
-    it("compact mode truncates long lesson content for preview", async () => {
-      const long = "x".repeat(500);
+    it("preserves the retriever's already-bounded lesson projection", async () => {
+      const bounded = `${"x".repeat(399)}…`;
       sdk.registerFunction("mem::lesson-recall", async () => ({
         success: true,
-        lessons: [{ id: "lsn_long", content: long, confidence: 0.5, createdAt: "", tags: [], score: 0.4 }],
+        lessons: [{ lessonId: "lsn_long", content: bounded, evidenceVerdict: "unverified", contradicted: false, confidence: 0.5, createdAt: "", tags: [], score: 0.4 }],
       }));
 
       const result = (await sdk.trigger("mem::smart-search", {
         query: "x",
       })) as { lessons: any[] };
 
-      expect(result.lessons[0].content.length).toBeLessThan(long.length);
-      expect(result.lessons[0].content).toMatch(/…$/);
+      expect(result.lessons[0].content).toBe(bounded);
     });
 
     it("carries claim and explicitly labels refuted or contradicted evidence", async () => {
@@ -240,21 +239,22 @@ describe("Smart Search Function", () => {
         success: true,
         lessons: [
           {
-            id: "lsn_refuted",
+            lessonId: "lsn_refuted",
             content: "Long prose must not become positive guidance.",
             claim: "Force-pushing main is safe.",
             evidenceVerdict: "refuted",
+            contradicted: false,
             confidence: 0.9,
             createdAt: "2026-04-01T00:00:00Z",
             tags: ["git"],
             score: 0.8,
           },
           {
-            id: "lsn_contradicted",
+            lessonId: "lsn_contradicted",
             content: "This claim has an active counterexample.",
             claim: "All retries are idempotent.",
             evidenceVerdict: "supported",
-            contradictedByLessonIds: ["lsn_counterexample"],
+            contradicted: true,
             confidence: 0.7,
             createdAt: "2026-04-01T00:00:00Z",
             tags: ["retries"],
@@ -311,6 +311,8 @@ describe("Smart Search Function", () => {
       expect(receivedPayload).toMatchObject({
         query: "rebase",
         project: "gitops-assistant",
+        retrievalMode: "hybrid",
+        compact: true,
       });
     });
 
