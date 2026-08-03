@@ -20,9 +20,12 @@ process.stderr.write(
   `[fs-watcher] emitting to ${envCfg.baseUrl || "http://localhost:3111"}\n`,
 );
 
-const shutdown = () => {
-  watcher.stop();
+let shuttingDown = false;
+const shutdown = async () => {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  await watcher.stop();
   process.exit(0);
 };
-process.on("SIGINT", shutdown);
-process.on("SIGTERM", shutdown);
+process.on("SIGINT", () => void shutdown());
+process.on("SIGTERM", () => void shutdown());
