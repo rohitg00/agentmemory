@@ -24,9 +24,10 @@ import { parseImportedLesson } from "../src/functions/lesson-model.js";
 function mockKV() {
   const store = new Map<string, Map<string, unknown>>();
   const injectedFailures: Array<{
-    operation: "set" | "delete";
+    operation: "set" | "delete" | "list";
     scope: string;
-    key: string;
+    key?: string;
+    message?: string;
   }> = [];
   let setBarrier:
     | {
@@ -75,6 +76,16 @@ function mockKV() {
       store.get(scope)?.delete(key);
     },
     list: async <T>(scope: string): Promise<T[]> => {
+      const listFailureIndex = injectedFailures.findIndex(
+        (failure) =>
+          failure.operation === "list" && failure.scope === scope,
+      );
+      if (listFailureIndex >= 0) {
+        const [failure] = injectedFailures.splice(listFailureIndex, 1);
+        throw new Error(
+          failure.message ?? `injected list failure for ${scope}`,
+        );
+      }
       const entries = store.get(scope);
       return entries ? (Array.from(entries.values()) as T[]) : [];
     },
@@ -84,6 +95,9 @@ function mockKV() {
       key: string,
     ): void {
       injectedFailures.push({ operation, scope, key });
+    },
+    failNextList(scope: string, message?: string): void {
+      injectedFailures.push({ operation: "list", scope, message });
     },
     pauseNextSet(scope: string, key: string): {
       reached: Promise<void>;
@@ -259,6 +273,36 @@ describe("Export/Import Functions", () => {
     expect(result.observations["ses_1"].length).toBe(1);
     expect(result.memories.length).toBe(1);
     expect(result.summaries.length).toBe(1);
+  });
+
+  it("fails closed instead of silently omitting lessons when authoritative export enumeration fails", async () => {
+    const tombstone = importedLesson({
+      ...structuredLesson("export-read-failure"),
+      lifecycle: "retracted",
+      deleted: true,
+      deletedAt: "2026-08-02T21:00:00.000Z",
+      deletedBy: "reviewer",
+      deleteReason: "invalid evidence",
+    });
+    await kv.set("mem:lessons", tombstone.id, tombstone);
+    kv.failNextList(
+      "mem:lessons",
+      `injected state::list failure ${"x".repeat(4096)}`,
+    );
+
+    const error = await sdk
+      .trigger("mem::export", {})
+      .then(() => null)
+      .catch((caught) => caught as Error);
+
+    expect(error).toBeInstanceOf(Error);
+    expect(error?.message).toContain(
+      "authoritative lesson state read failed",
+    );
+    expect(error?.message.length).toBeLessThanOrEqual(400);
+    expect(await kv.get<Lesson>("mem:lessons", tombstone.id)).toEqual(
+      tombstone,
+    );
   });
 
   it("import with merge strategy adds data", async () => {
@@ -545,6 +589,46 @@ describe("Export/Import Functions", () => {
     });
     expect(await kv.list<Session>("mem:sessions")).toEqual(before);
     expect(await kv.list("mem:lessons")).toEqual([]);
+  });
+
+  it("fails closed on an authoritative lesson-state read error without resurrecting a tombstone", async () => {
+    const active = structuredLesson("read-failure-tombstone");
+    const tombstone = importedLesson({
+      ...active,
+      lifecycle: "retracted",
+      deleted: true,
+      deletedAt: "2026-08-02T21:00:00.000Z",
+      deletedBy: "reviewer",
+      deleteReason: "invalid evidence",
+    });
+    const unrelated = importedLesson(structuredLesson("read-failure-unrelated"));
+    await kv.set("mem:lessons", tombstone.id, tombstone);
+    kv.failNextList(
+      "mem:lessons",
+      `injected state::list failure ${"x".repeat(4096)}`,
+    );
+
+    const result = (await sdk.trigger("mem::import", {
+      exportData: emptyExport([
+        active,
+        structuredLesson("read-failure-unrelated"),
+      ]),
+      strategy: "merge",
+    })) as { success: boolean; error: string };
+
+    expect(result).toMatchObject({
+      success: false,
+      error: expect.stringContaining(
+        "authoritative lesson state read failed",
+      ),
+    });
+    expect(result.error.length).toBeLessThanOrEqual(400);
+    expect(result).not.toHaveProperty("lessons");
+    expect(await kv.get<Lesson>("mem:lessons", tombstone.id)).toEqual(
+      tombstone,
+    );
+    expect(await kv.get("mem:lessons", unrelated.id)).toBeNull();
+    expect(await kv.list<Lesson>("mem:lessons")).toEqual([tombstone]);
   });
 
   it.each(["retracted", "superseded"] as const)(

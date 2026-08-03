@@ -1560,7 +1560,9 @@ New supported/refuted/mixed saves require every evidence reference to carry an
 explicit verified review. Import/read normalization preserves older Git-shaped
 verdict rows through a visible `legacy-git-anchor` verification basis; this is
 a compatibility classification and explicitly does not claim that evidence
-relevance was re-audited.
+relevance was re-audited. That reserved basis is accepted only for immutable
+Git provenance with the canonical AgentMemory migration actor; OCI and every
+other non-Git provenance type are rejected if they claim it.
 
 Legacy lessons normalize on read to
 `unverified` + `active` with an implicit worktree scope and
@@ -1570,6 +1572,15 @@ Supersession/retraction continue through the audited correction APIs.
 Compact smart-search results retain claim/verdict/contradiction labels.
 Reflection treats refuted claims as negative evidence and will not persist a
 supported synthesis from a cluster containing refuted or contradicted lessons.
+Authoritative lesson enumeration and normalization fail closed for import,
+portable export, and reflection; a read failure cannot become an empty lesson
+set that permits tombstone restoration or positive synthesis.
+
+`scopeId`, global `humanApproval.approvedBy`, and correction `actor` values are
+caller-supplied classification, lineage, and audit-attribution metadata. They
+are not authenticated identities or an authorization boundary in PR1.
+Server-resolved caller identity, approval authority, and durable-scope access
+enforcement remain PR2 work.
 
 Scope and sensitivity enforcement, automatic contradiction discovery, and
 hybrid/vector lesson retrieval are intentionally deferred to PR2. Until then,

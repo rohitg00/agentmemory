@@ -7,6 +7,7 @@ import { KV } from "../state/schema.js";
 import type {
   Memory,
   Lesson,
+  LessonEvidenceReference,
   Crystal,
   Session,
 } from "../types.js";
@@ -55,6 +56,40 @@ function safeTimestamp(value: unknown): number {
   if (typeof value !== "string") return 0;
   const time = new Date(value).getTime();
   return Number.isFinite(time) ? time : 0;
+}
+
+function evidenceReferenceToMd(
+  reference: LessonEvidenceReference,
+): string {
+  const provenance = reference.provenance;
+  const type = provenance?.type ?? "git";
+  const locator =
+    provenance?.locator ?? reference.repoRemoteUrl ?? "missing-locator";
+  const immutableId =
+    provenance?.immutableId ?? reference.commitSha;
+  const digest =
+    provenance?.digest ?? reference.artifactDigest;
+  const path = provenance?.path ?? reference.path;
+  const verification = reference.verification ?? { state: "unverified" };
+  const fields = [
+    `type=${type}`,
+    `locator=${JSON.stringify(locator)}`,
+    immutableId ? `immutableId=${JSON.stringify(immutableId)}` : undefined,
+    digest ? `digest=${JSON.stringify(digest)}` : undefined,
+    path ? `path=${JSON.stringify(path)}` : undefined,
+    `verification=${verification.state}`,
+    verification.basis ? `basis=${verification.basis}` : undefined,
+    verification.verifiedBy
+      ? `verifiedBy=${JSON.stringify(verification.verifiedBy)}`
+      : undefined,
+    verification.verifiedAt
+      ? `verifiedAt=${JSON.stringify(verification.verifiedAt)}`
+      : undefined,
+    verification.note
+      ? `verificationNote=${JSON.stringify(verification.note)}`
+      : undefined,
+  ].filter((field): field is string => Boolean(field));
+  return `- ${reference.kind}: ${fields.join(" ")}`;
 }
 
 function toFrontmatter(obj: Record<string, unknown>): string {
@@ -140,22 +175,24 @@ function lessonToMd(l: Lesson): string {
     decayRate: lesson.decayRate,
     mechanismId: lesson.mechanismId,
     mechanismVersion: lesson.mechanismVersion,
+    mechanismAliases: lesson.mechanismAliases,
     claimType: lesson.claimType,
     evidenceVerdict: lesson.evidenceVerdict,
     lifecycle: lesson.lifecycle,
     scopeRing: lesson.scope.ring,
     scopeId: lesson.scope.scopeId,
     sensitivity: lesson.sensitivity,
+    reviewAfter: lesson.reviewAfter,
+    contradictedByLessonIds: lesson.contradictedByLessonIds,
+    structuredFacets: lesson.structuredFacets,
+    computedStale: lesson.computedFlags.stale,
+    computedContradicted: lesson.computedFlags.contradicted,
     contentFingerprint: lesson.contentFingerprint,
   });
 
   const sourceLinks = sourceIds.map((id) => `- [[${id}]]`).join("\n");
   const evidenceLines = lesson.evidenceRefs
-    .map((reference) => {
-      const anchor = reference.commitSha ?? reference.artifactDigest;
-      const path = reference.path ? `:${reference.path}` : "";
-      return `- ${reference.kind}: ${reference.repoRemoteUrl}@${anchor}${path}`;
-    })
+    .map(evidenceReferenceToMd)
     .join("\n");
 
   const sections = [

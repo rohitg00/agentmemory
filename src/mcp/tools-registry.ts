@@ -1046,7 +1046,7 @@ export const V070_TOOLS: McpToolDef[] = [
         scope: {
           type: "object",
           description:
-            "Scope ring and durable scope identity; project remains only a label",
+            "Caller-supplied scope classification and lineage metadata, not authorization; project remains only a label",
           properties: {
             ring: {
               type: "string",
@@ -1055,6 +1055,8 @@ export const V070_TOOLS: McpToolDef[] = [
             scopeId: { type: "string" },
             humanApproval: {
               type: "object",
+              description:
+                "Caller-supplied approval metadata for global promotion; PR1 does not authenticate this identity",
               properties: {
                 approvedBy: { type: "string" },
                 approvedAt: { type: "string" },
@@ -1128,7 +1130,8 @@ export const V070_TOOLS: McpToolDef[] = [
         },
         actor: {
           type: "string",
-          description: "Optional actor attribution; defaults to AGENT_ID",
+          description:
+            "Optional caller-supplied audit attribution, not authenticated identity; defaults to AGENT_ID",
         },
       },
       required: ["lessonId", "reason"],
@@ -1137,7 +1140,7 @@ export const V070_TOOLS: McpToolDef[] = [
   {
     name: "memory_lesson_supersede",
     description:
-      "Mark one lesson superseded in favor of an active replacement in the same durable scope, preserving legacy tombstone fields, lineage, and an audit trail.",
+      "Mark one lesson superseded in favor of an active replacement in the same durable scope, preserving legacy tombstone fields, lineage, and an audit trail. An optional project guard applies only to the original lesson; replacement compatibility follows durable scope rules.",
     inputSchema: {
       type: "object",
       properties: {
@@ -1155,7 +1158,8 @@ export const V070_TOOLS: McpToolDef[] = [
         },
         project: {
           type: "string",
-          description: "Optional project guard; must match both lessons",
+          description:
+            "Optional project guard for the original lesson; replacement compatibility is enforced by durable scope rules",
         },
         expectedUpdatedAt: {
           type: "string",
@@ -1164,7 +1168,8 @@ export const V070_TOOLS: McpToolDef[] = [
         },
         actor: {
           type: "string",
-          description: "Optional actor attribution; defaults to AGENT_ID",
+          description:
+            "Optional caller-supplied audit attribution, not authenticated identity; defaults to AGENT_ID",
         },
       },
       required: ["lessonId", "replacementLessonId", "reason"],

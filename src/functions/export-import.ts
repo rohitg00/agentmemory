@@ -62,6 +62,8 @@ interface LessonLifecycleTransition {
   after?: string;
 }
 
+const MAX_LESSON_STATE_DIAGNOSTIC_DETAIL_LENGTH = 256;
+
 export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
   sdk.registerFunction("mem::export", 
     async (data?: { maxSessions?: number; offset?: number }) => {
@@ -129,7 +131,11 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
         kv.list<Sketch>(KV.sketches).catch(() => []),
         kv.list<Crystal>(KV.crystals).catch(() => []),
         kv.list<Facet>(KV.facets).catch(() => []),
-        kv.list<Lesson>(KV.lessons).catch(() => []),
+        kv.list<Lesson>(KV.lessons).catch((error) => {
+          throw new Error(
+            `Lesson export failed closed: authoritative lesson state read failed (${boundedLessonStateDiagnosticDetail(error)})`,
+          );
+        }),
         kv.list<Insight>(KV.insights).catch(() => []),
         kv.list<Routine>(KV.routines).catch(() => []),
         kv.list<Signal>(KV.signals).catch(() => []),
@@ -935,7 +941,15 @@ async function applyImportedLessonBatch(
   | { success: true; written: number; skipped: number }
   | { success: false; error: string }
 > {
-  const existingRows = await kv.list<Lesson>(KV.lessons).catch(() => []);
+  let existingRows: Lesson[];
+  try {
+    existingRows = await kv.list<Lesson>(KV.lessons);
+  } catch (error) {
+    return {
+      success: false,
+      error: `Lesson import failed closed: authoritative lesson state read failed (${boundedLessonStateDiagnosticDetail(error)})`,
+    };
+  }
   const preimage = new Map(
     existingRows.map((lesson) => [lesson.id, lesson] as const),
   );
@@ -1134,6 +1148,15 @@ async function applyImportedLessonBatch(
     };
   }
   return { success: true, written: writes.length, skipped };
+}
+
+function boundedLessonStateDiagnosticDetail(error: unknown): string {
+  const raw = error instanceof Error ? error.message : String(error);
+  const normalized = raw.replace(/\s+/g, " ").trim() || "unknown error";
+  if (normalized.length <= MAX_LESSON_STATE_DIAGNOSTIC_DETAIL_LENGTH) {
+    return normalized;
+  }
+  return `${normalized.slice(0, MAX_LESSON_STATE_DIAGNOSTIC_DETAIL_LENGTH - 3)}...`;
 }
 
 async function restoreLessonPreimage(

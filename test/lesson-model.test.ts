@@ -347,6 +347,153 @@ describe("causal lesson model", () => {
         ],
       },
     });
+    if (!imported.success) throw new Error(imported.error);
+    expect(parseImportedLesson(imported.lesson)).toMatchObject({
+      success: true,
+      lesson: {
+        evidenceRefs: [
+          {
+            verification: {
+              state: "verified",
+              basis: "legacy-git-anchor",
+              verifiedBy: "agentmemory:legacy-git-anchor-migration",
+            },
+          },
+        ],
+      },
+    });
+  });
+
+  it("accepts a serialized legacy-git-anchor basis only with immutable Git provenance", () => {
+    const imported = parseImportedLesson({
+      ...legacyLesson(),
+      id: "serialized-git-migration",
+      schemaVersion: 1,
+      mechanismId: "legacy/serialized-git-evidence",
+      claim: "A serialized compatibility record retains its immutable Git anchor.",
+      evidenceVerdict: "refuted",
+      evidenceRefs: [
+        {
+          kind: "falsification",
+          projectId: "agentmemory",
+          provenance: {
+            type: "git",
+            locator: "https://github.com/rohitg00/agentmemory",
+            immutableId: "e".repeat(40),
+          },
+          recordedAt: "2026-08-02T20:00:00Z",
+          verification: {
+            state: "verified",
+            basis: "legacy-git-anchor",
+            verifiedBy: "agentmemory:legacy-git-anchor-migration",
+            verifiedAt: "2026-08-02T20:00:00Z",
+          },
+        },
+      ],
+      scope: { ring: "repo", scopeId: "repo:agentmemory" },
+    });
+
+    expect(imported).toMatchObject({
+      success: true,
+      lesson: {
+        evidenceRefs: [
+          {
+            provenance: { type: "git", immutableId: "e".repeat(40) },
+            verification: {
+              state: "verified",
+              basis: "legacy-git-anchor",
+            },
+          },
+        ],
+      },
+    });
+  });
+
+  it.each([
+    {
+      type: "oci",
+      provenance: {
+        type: "oci",
+        locator: "ghcr.io/example/evidence",
+        digest: `sha256:${"6".repeat(64)}`,
+      },
+    },
+    {
+      type: "doi",
+      provenance: {
+        type: "doi",
+        locator: "10.1000/non-git-evidence",
+      },
+    },
+  ])(
+    "rejects a non-Git $type reference claiming the reserved legacy migration basis",
+    ({ type, provenance }) => {
+      const imported = parseImportedLesson({
+        ...legacyLesson(),
+        id: `spoofed-${type}-migration`,
+        schemaVersion: 1,
+        mechanismId: `legacy/spoofed-${type}`,
+        claim: "Non-Git provenance cannot claim the Git compatibility migration.",
+        evidenceVerdict: "refuted",
+        evidenceRefs: [
+          {
+            kind: "falsification",
+            projectId: "agentmemory",
+            provenance,
+            recordedAt: "2026-08-02T20:00:00Z",
+            verification: {
+              state: "verified",
+              basis: "legacy-git-anchor",
+              verifiedBy: "agentmemory:legacy-git-anchor-migration",
+              verifiedAt: "2026-08-02T20:00:00Z",
+            },
+          },
+        ],
+        scope: { ring: "repo", scopeId: "repo:agentmemory" },
+      });
+
+      expect(imported).toMatchObject({
+        success: false,
+        error: expect.stringContaining(
+          "reserved for compatibility import of immutable Git provenance",
+        ),
+      });
+    },
+  );
+
+  it("rejects arbitrary migration actors even for immutable Git provenance", () => {
+    const imported = parseImportedLesson({
+      ...legacyLesson(),
+      id: "spoofed-git-migration-actor",
+      schemaVersion: 1,
+      mechanismId: "legacy/spoofed-git-actor",
+      claim: "The reserved migration actor cannot be caller-selected.",
+      evidenceVerdict: "refuted",
+      evidenceRefs: [
+        {
+          kind: "falsification",
+          projectId: "agentmemory",
+          provenance: {
+            type: "git",
+            locator: "https://github.com/rohitg00/agentmemory",
+            immutableId: "d".repeat(40),
+          },
+          recordedAt: "2026-08-02T20:00:00Z",
+          verification: {
+            state: "verified",
+            basis: "legacy-git-anchor",
+            verifiedBy: "caller-selected-reviewer",
+            verifiedAt: "2026-08-02T20:00:00Z",
+          },
+        },
+      ],
+      scope: { ring: "repo", scopeId: "repo:agentmemory" },
+    });
+
+    expect(imported).toMatchObject({
+      success: false,
+      error: expect.stringContaining("canonical migration actor"),
+    });
   });
 
   it("requires durable scope identity and human approval for global promotion", () => {

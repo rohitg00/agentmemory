@@ -152,7 +152,10 @@ metadata are not rejected or downgraded. Import/read normalization assigns:
 
 This explicit compatibility basis preserves the prior verdict. It does not
 assert that relevance was newly audited. New REST/MCP saves cannot select the
-reserved migration basis.
+reserved migration basis. Import/read normalization accepts it only for
+immutable Git provenance with
+`verifiedBy: "agentmemory:legacy-git-anchor-migration"`; arbitrary migration
+actors and all non-Git provenance types are rejected.
 
 A branch, ref, or path without the immutable identity required by its
 provenance type is rejected.
@@ -172,6 +175,12 @@ requires a separate durable `scope.scopeId`; global scope rejects `scopeId`.
 `project`/`projectId` labels do not substitute for durable scope identity.
 Legacy prose lessons retain the fail-closed implicit worktree scope for
 compatibility.
+
+`scopeId`, `humanApproval.approvedBy`, and correction `actor` are
+caller-supplied metadata in PR1. They express classification, lineage, and
+audit attribution, but they are not authenticated identities and do not grant
+authorization. Server-resolved caller identity, approval authority, and
+durable-scope access enforcement are deferred to PR2.
 
 Global scope requires:
 
@@ -254,6 +263,17 @@ structured IDs, resolves aliases independent of batch order, validates the
 complete post-import supersession/contradiction graph, bounds the collection,
 strips computed read-model fields, and completes lesson preflight under the
 shared lesson mutation lock.
+
+Authoritative lesson enumeration and structured normalization fail closed.
+Import performs no writes when its lesson preflight read fails and returns a
+bounded diagnostic; portable export refuses to omit an unreadable lesson
+store. Reflection aborts before provider invocation or insight persistence
+when lesson enumeration or normalization fails.
+
+Obsidian export renders discriminated provenance plus verification state
+instead of assuming every anchor is Git. The viewer searches and displays
+claim, verdict, lifecycle, durable scope, sensitivity, and computed
+stale/contradicted flags.
 
 Default merge never replaces a retracted/superseded row with a non-terminal
 row. Whole-collection `replace` is the explicit restore path. Both successful

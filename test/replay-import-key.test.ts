@@ -189,6 +189,43 @@ describe("import-jsonl re-key on parsed.sessionId (#775)", () => {
     });
   });
 
+  it("preserves a retracted tombstone when replay rediscovers the same canonical lesson", async () => {
+    const content = "Always preserve terminal lesson tombstones during replay.";
+    writeFixture(
+      "sess-terminal-lesson",
+      "2026-04-17T10:00:00.000Z",
+      content,
+    );
+    const kv = mockKV();
+    const sdk = mockSdk(kv);
+    registerLessonsFunctions(sdk, kv as never);
+    registerReplayFunctions(sdk, kv as never);
+    const saved = (await sdk.trigger("mem::lesson-save", {
+      content,
+      project: "proj",
+    })) as { lesson: Lesson };
+    await sdk.trigger("mem::lesson-delete", {
+      lessonId: saved.lesson.id,
+      reason: "The replayed evidence was invalid",
+      actor: "reviewer",
+    });
+
+    const result = await sdk.trigger("mem::replay::import-jsonl", {
+      path: tmpRoot,
+    });
+    const lessons = await kv.list<Lesson>(KV.lessons);
+
+    expect(result).toMatchObject({ success: true, imported: 1 });
+    expect(lessons).toHaveLength(1);
+    expect(lessons[0]).toMatchObject({
+      id: saved.lesson.id,
+      lifecycle: "retracted",
+      deleted: true,
+      deletedBy: "reviewer",
+      deleteReason: "The replayed evidence was invalid",
+    });
+  });
+
   it("finds a legacy replay lesson by canonical identity without creating a duplicate", async () => {
     const content = "Never trust a replay path without validation.";
     writeFixture(

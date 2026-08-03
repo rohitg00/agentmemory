@@ -9,21 +9,30 @@ import type { Insight, GraphNode, GraphEdge, SemanticMemory, Lesson, Crystal } f
 
 function mockKV() {
   const store = new Map<string, Map<string, unknown>>();
+  const listFailures = new Map<string, string>();
   return {
     get: async <T>(scope: string, key: string): Promise<T | null> => {
       return (store.get(scope)?.get(key) as T) ?? null;
     },
-    set: async <T>(scope: string, key: string, data: T): Promise<T> => {
+    set: vi.fn(async <T>(scope: string, key: string, data: T): Promise<T> => {
       if (!store.has(scope)) store.set(scope, new Map());
       store.get(scope)!.set(key, data);
       return data;
-    },
+    }),
     delete: async (scope: string, key: string): Promise<void> => {
       store.get(scope)?.delete(key);
     },
     list: async <T>(scope: string): Promise<T[]> => {
+      const failure = listFailures.get(scope);
+      if (failure !== undefined) {
+        listFailures.delete(scope);
+        throw new Error(failure);
+      }
       const entries = store.get(scope);
       return entries ? (Array.from(entries.values()) as T[]) : [];
+    },
+    failNextList(scope: string, message: string): void {
+      listFailures.set(scope, message);
     },
   };
 }
@@ -255,6 +264,77 @@ describe("Reflect", () => {
 
       expect(result.success).toBe(true);
       expect(result.newInsights).toBe(0);
+    });
+
+    it("fails closed with zero writes when authoritative lesson enumeration fails", async () => {
+      await kv.set("mem:graph:nodes", "node_security", makeConceptNode("security"));
+      await kv.set("mem:graph:nodes", "node_validation", makeConceptNode("validation"));
+      await kv.set("mem:graph:edges", "edge_1", makeEdge("security", "validation"));
+      await kv.set("mem:semantic", "sem_1", makeSemantic("security requires validation", "sem_1"));
+      await kv.set("mem:semantic", "sem_2", makeSemantic("validation protects security", "sem_2"));
+      await kv.set("mem:semantic", "sem_3", makeSemantic("security validation blocks defects", "sem_3"));
+      kv.set.mockClear();
+      kv.failNextList(
+        "mem:lessons",
+        `injected state::list failure ${"x".repeat(4096)}`,
+      );
+
+      const result = (await sdk.trigger("mem::reflect", {})) as {
+        success: boolean;
+        error: string;
+        newInsights: number;
+      };
+
+      expect(result).toMatchObject({
+        success: false,
+        newInsights: 0,
+        error: expect.stringContaining(
+          "authoritative lesson state read failed",
+        ),
+      });
+      expect(result.error.length).toBeLessThanOrEqual(400);
+      expect(provider.summarize).not.toHaveBeenCalled();
+      expect(kv.set).not.toHaveBeenCalled();
+      expect(await kv.list("mem:insights")).toEqual([]);
+    });
+
+    it("fails closed with zero writes when a structured lesson cannot be normalized", async () => {
+      await kv.set("mem:graph:nodes", "node_security", makeConceptNode("security"));
+      await kv.set("mem:graph:nodes", "node_validation", makeConceptNode("validation"));
+      await kv.set("mem:graph:edges", "edge_1", makeEdge("security", "validation"));
+      await kv.set("mem:semantic", "sem_1", makeSemantic("security requires validation", "sem_1"));
+      await kv.set("mem:semantic", "sem_2", makeSemantic("validation protects security", "sem_2"));
+      await kv.set("mem:semantic", "sem_3", makeSemantic("security validation blocks defects", "sem_3"));
+      await kv.set(
+        "mem:lessons",
+        "lsn_invalid",
+        {
+          ...makeLesson("Invalid structured lesson", ["security"]),
+          schemaVersion: 1,
+          mechanismId: "invalid/structured",
+          claim: "Malformed evidence must not disappear.",
+          evidenceRefs: "not-an-array",
+          scope: { ring: "repo", scopeId: "repo:agentmemory" },
+        } as unknown as Lesson,
+      );
+      kv.set.mockClear();
+
+      const result = (await sdk.trigger("mem::reflect", {})) as {
+        success: boolean;
+        error: string;
+        newInsights: number;
+      };
+
+      expect(result).toMatchObject({
+        success: false,
+        newInsights: 0,
+        error: expect.stringContaining(
+          "authoritative lesson normalization failed",
+        ),
+      });
+      expect(provider.summarize).not.toHaveBeenCalled();
+      expect(kv.set).not.toHaveBeenCalled();
+      expect(await kv.list("mem:insights")).toEqual([]);
     });
 
     it("labels refuted claims in the prompt and refuses positive synthesis persistence", async () => {

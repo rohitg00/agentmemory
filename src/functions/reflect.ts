@@ -35,6 +35,8 @@ interface ConceptCluster {
   crystalIds: string[];
 }
 
+const MAX_REFLECT_DIAGNOSTIC_DETAIL_LENGTH = 256;
+
 function reinforceInsight(insight: Insight): void {
   const now = new Date().toISOString();
   insight.reinforcements++;
@@ -191,6 +193,29 @@ function normalizeInsightEvidenceVerdict(
     : undefined;
 }
 
+function reflectLessonReadFailure(
+  stage: "state read" | "normalization",
+  error: unknown,
+): {
+  success: false;
+  error: string;
+  newInsights: 0;
+  reinforced: 0;
+} {
+  const raw = error instanceof Error ? error.message : String(error);
+  const normalized = raw.replace(/\s+/g, " ").trim() || "unknown error";
+  const detail =
+    normalized.length <= MAX_REFLECT_DIAGNOSTIC_DETAIL_LENGTH
+      ? normalized
+      : `${normalized.slice(0, MAX_REFLECT_DIAGNOSTIC_DETAIL_LENGTH - 3)}...`;
+  return {
+    success: false,
+    error: `Reflection failed closed: authoritative lesson ${stage} failed (${detail})`,
+    newInsights: 0,
+    reinforced: 0,
+  };
+}
+
 export function registerReflectFunctions(
   sdk: ISdk,
   kv: StateKV,
@@ -202,22 +227,29 @@ export function registerReflectFunctions(
       const maxInsightsPerCluster = 5;
       const maxTotal = 50;
 
-      const [graphNodes, graphEdges, semanticMemories, lessons, crystals] =
+      let lessons: Lesson[];
+      try {
+        lessons = await kv.list<Lesson>(KV.lessons);
+      } catch (error) {
+        return reflectLessonReadFailure("state read", error);
+      }
+      const [graphNodes, graphEdges, semanticMemories, crystals] =
         await Promise.all([
           kv.list<GraphNode>(KV.graphNodes).catch(() => []),
           kv.list<GraphEdge>(KV.graphEdges).catch(() => []),
           kv.list<SemanticMemory>(KV.semantic).catch(() => []),
-          kv.list<Lesson>(KV.lessons).catch(() => []),
           kv.list<Crystal>(KV.crystals).catch(() => []),
         ]);
 
       let activeLessons: LessonReadModel[] = [];
-      for (const lesson of lessons) {
-        try {
+      try {
+        for (const lesson of lessons) {
           if (isLessonRecallable(lesson)) {
             activeLessons.push(toLessonReadModel(lesson));
           }
-        } catch {}
+        }
+      } catch (error) {
+        return reflectLessonReadFailure("normalization", error);
       }
       if (data?.project) {
         activeLessons = activeLessons.filter((l) => l.project === data.project);

@@ -3081,7 +3081,27 @@
 
       if (search) {
         items = items.filter(function(l) {
-          return (l.content + ' ' + l.context + ' ' + (l.tags || []).join(' ')).toLowerCase().indexOf(search) >= 0;
+          var scope = l.scope || {};
+          var flags = l.computedFlags || {};
+          var facets = l.structuredFacets || {};
+          var facetText = Object.keys(facets).map(function(dimension) {
+            return dimension + ' ' + (facets[dimension] || []).join(' ');
+          }).join(' ');
+          return [
+            l.content,
+            l.context,
+            l.claim,
+            l.mechanismId,
+            l.evidenceVerdict,
+            l.lifecycle,
+            scope.ring,
+            scope.scopeId,
+            l.sensitivity,
+            flags.stale ? 'stale' : '',
+            flags.contradicted ? 'contradicted' : '',
+            (l.tags || []).join(' '),
+            facetText
+          ].filter(Boolean).join(' ').toLowerCase().indexOf(search) >= 0;
         });
       }
 
@@ -3100,16 +3120,34 @@
           '<div class="empty-icon">&#128161;</div>' +
           '<div class="empty-title">No lessons yet</div>' +
           '<div class="empty-lead">Lessons are confidence-scored pattern observations &mdash; things you corrected once that the agent should never do again. They persist across projects.</div>' +
-          '<pre class="empty-cmd"># Save a lesson explicitly\nmemory_lesson_save { rule, reason, confidence }\n\n# Or: Replay tab &rarr; Import JSONL auto-extracts lessons\n# from your past Claude Code sessions</pre>' +
+          '<pre class="empty-cmd"># Save a lesson explicitly\nmemory_lesson_save { content, confidence }\n\n# Or: Replay tab &rarr; Import JSONL auto-extracts lessons\n# from your past Claude Code sessions</pre>' +
           '<div><a class="empty-link" href="https://github.com/rohitg00/agentmemory#structured-causal-lessons" target="_blank" rel="noopener">Causal lesson schema &amp; confidence &rarr;</a></div>' +
           '</div>';
       } else {
-        html += '<table><thead><tr><th>Lesson</th><th>Confidence</th><th>Reinforcements</th><th>Source</th><th>Project</th><th>Updated</th></tr></thead><tbody>';
+        html += '<table><thead><tr><th>Lesson / Claim</th><th>Evidence</th><th>Lifecycle / Scope</th><th>Confidence</th><th>Reinforcements</th><th>Source</th><th>Project</th><th>Updated</th></tr></thead><tbody>';
         items.forEach(function(l) {
           var confPct = Math.round(l.confidence * 100);
           var confColor = confPct >= 70 ? 'var(--green)' : confPct >= 40 ? 'var(--yellow)' : 'var(--red)';
+          var verdict = l.evidenceVerdict || 'unverified';
+          var verdictBadge = verdict === 'supported' ? 'badge-green' : verdict === 'refuted' ? 'badge-red' : verdict === 'mixed' ? 'badge-yellow' : 'badge-muted';
+          var lifecycle = l.lifecycle || 'active';
+          var lifecycleBadge = lifecycle === 'active' ? 'badge-green' : lifecycle === 'draft' ? 'badge-muted' : lifecycle === 'superseded' ? 'badge-yellow' : 'badge-red';
+          var scope = l.scope || { ring: 'worktree' };
+          var flags = l.computedFlags || {};
           html += '<tr>';
-          html += '<td style="max-width:400px;">' + esc(truncate(l.content, 120)) + (l.context ? '<div style="font-size:11px;color:var(--ink-faint);margin-top:2px;">' + esc(truncate(l.context, 80)) + '</div>' : '') + '</td>';
+          html += '<td style="max-width:400px;">' + esc(truncate(l.content, 120));
+          if (l.claim) html += '<div style="font-size:12px;color:var(--ink);margin-top:4px;"><strong>Claim:</strong> ' + esc(truncate(l.claim, 180)) + '</div>';
+          if (l.mechanismId) html += '<div style="font-size:10px;color:var(--ink-faint);font-family:var(--font-mono);margin-top:2px;">' + esc(l.mechanismId) + '</div>';
+          if (l.context) html += '<div style="font-size:11px;color:var(--ink-faint);margin-top:2px;">' + esc(truncate(l.context, 80)) + '</div>';
+          html += '</td>';
+          html += '<td><span class="badge ' + verdictBadge + '">' + esc(verdict) + '</span>';
+          if (flags.contradicted) html += '<div style="margin-top:4px;"><span class="badge badge-red">contradicted</span></div>';
+          if (flags.stale) html += '<div style="margin-top:4px;"><span class="badge badge-yellow">stale</span></div>';
+          html += '</td>';
+          html += '<td><span class="badge ' + lifecycleBadge + '">' + esc(lifecycle) + '</span>';
+          html += '<div style="font-size:11px;color:var(--ink-muted);margin-top:4px;">' + esc(scope.ring || 'worktree');
+          if (scope.scopeId) html += ' &middot; ' + esc(truncate(scope.scopeId, 60));
+          html += '</div><div style="font-size:10px;color:var(--ink-faint);margin-top:2px;">sensitivity: ' + esc(l.sensitivity || 'restricted') + '</div></td>';
           html += '<td><div class="gauge" style="min-width:80px;"><div class="gauge-bar"><div class="gauge-fill" style="width:' + confPct + '%;background:' + confColor + '"></div></div><span class="gauge-value" style="font-size:11px;">' + confPct + '%</span></div></td>';
           html += '<td style="text-align:center;">' + (l.reinforcements || 0) + '</td>';
           html += '<td><span class="badge badge-' + (l.source === 'crystal' ? 'purple' : l.source === 'consolidation' ? 'yellow' : 'blue') + '">' + esc(l.source) + '</span></td>';

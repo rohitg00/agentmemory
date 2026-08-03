@@ -41,6 +41,10 @@ const MAX_EVIDENCE_VERIFIER_LENGTH = 256;
 const MAX_EVIDENCE_VERIFICATION_NOTE_LENGTH = 1000;
 const MAX_LESSON_ID_ALIASES = 16;
 const MAX_LESSON_ID_LENGTH = 256;
+const LEGACY_GIT_ANCHOR_MIGRATION_ACTOR =
+  "agentmemory:legacy-git-anchor-migration";
+const LEGACY_GIT_ANCHOR_MIGRATION_NOTE =
+  "Compatibility migration preserves the pre-verification schema verdict; evidence relevance was not re-audited.";
 
 const FACET_DIMENSION_PATTERN = /^[a-z][a-z0-9_]*$/;
 const RESERVED_FACET_DIMENSIONS = new Set([
@@ -1061,6 +1065,10 @@ function normalizeEvidenceRef(
   const legacyGitShape =
     (record.provenance === undefined || record.provenance === null) &&
     Boolean(legacyRepoRemote);
+  const allowsLegacyGitAnchorBasis =
+    allowLegacyGitVerificationMigration &&
+    provenance.type === "git" &&
+    Boolean(commitSha || artifactDigest);
   const verification =
     allowLegacyGitVerificationMigration &&
     legacyGitShape &&
@@ -1068,15 +1076,14 @@ function normalizeEvidenceRef(
       ? {
           state: "verified" as const,
           basis: "legacy-git-anchor" as const,
-          verifiedBy: "agentmemory:legacy-git-anchor-migration",
+          verifiedBy: LEGACY_GIT_ANCHOR_MIGRATION_ACTOR,
           verifiedAt: validatedAt ?? recordedAt,
-          note:
-            "Compatibility migration preserves the pre-verification schema verdict; evidence relevance was not re-audited.",
+          note: LEGACY_GIT_ANCHOR_MIGRATION_NOTE,
         }
       : normalizeEvidenceVerification(
           record.verification,
           prefix,
-          allowLegacyGitVerificationMigration,
+          allowsLegacyGitAnchorBasis,
         );
   const evidenceKindRaw = optionalString(
     record.evidenceKind,
@@ -1262,7 +1269,7 @@ function normalizeImmutableId(
 function normalizeEvidenceVerification(
   value: unknown,
   prefix: string,
-  allowLegacyGitVerificationMigration: boolean,
+  allowLegacyGitAnchorBasis: boolean,
 ): LessonEvidenceVerification {
   if (value === undefined || value === null) {
     return { state: "unverified" };
@@ -1290,10 +1297,10 @@ function normalizeEvidenceVerification(
   }
   if (
     basisRaw === "legacy-git-anchor" &&
-    !allowLegacyGitVerificationMigration
+    !allowLegacyGitAnchorBasis
   ) {
     throw new LessonInputError(
-      `${prefix}.verification.basis legacy-git-anchor is reserved for compatibility import`,
+      `${prefix}.verification.basis legacy-git-anchor is reserved for compatibility import of immutable Git provenance`,
     );
   }
   const basis =
@@ -1315,6 +1322,15 @@ function normalizeEvidenceVerification(
     `${prefix}.verification.note`,
     MAX_EVIDENCE_VERIFICATION_NOTE_LENGTH,
   );
+  if (
+    basisRaw === "legacy-git-anchor" &&
+    (state !== "verified" ||
+      verifiedBy !== LEGACY_GIT_ANCHOR_MIGRATION_ACTOR)
+  ) {
+    throw new LessonInputError(
+      `${prefix}.verification.basis legacy-git-anchor requires verified state and canonical migration actor ${LEGACY_GIT_ANCHOR_MIGRATION_ACTOR}`,
+    );
+  }
   if (state !== "unverified" && (!verifiedBy || !verifiedAt)) {
     throw new LessonInputError(
       `${prefix}.verification ${state} state requires verifiedBy and verifiedAt`,
