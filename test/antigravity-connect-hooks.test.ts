@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { resolve } from "node:path";
+import { copyFileSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import {
   buildMergedAntigravityHooks,
   type AntigravityHookManifest,
@@ -106,6 +108,32 @@ describe("buildMergedAntigravityHooks", () => {
   it("re-install is idempotent", () => {
     const first = build();
     expect(build(first)).toEqual(first);
+  });
+
+  it("keeps a pluginRoot containing $-replacement patterns literal", () => {
+    // `String.prototype.replace` with a string argument reads `$$`, `$&`,
+    // "$`" and `$'` in the replacement as patterns. An install path holding
+    // any of them would otherwise be rewritten into a broken command, and
+    // the only symptom would be hooks that silently never fire.
+    const tmp = mkdtempSync(join(tmpdir(), "am-antigravity-"));
+    try {
+      const oddRoot = join(tmp, "plug$&$$in");
+      mkdirSync(join(oddRoot, "hooks"), { recursive: true });
+      copyFileSync(
+        join(PLUGIN_ROOT, "hooks", "hooks.antigravity.json"),
+        join(oddRoot, "hooks", "hooks.antigravity.json"),
+      );
+
+      const command = eventEntries(
+        buildMergedAntigravityHooks(null, oddRoot)["agentmemory"],
+        "Stop",
+      )[0]!.hooks[0]!.command;
+
+      expect(command).toContain(`${oddRoot}/scripts/`);
+      expect(command).not.toContain("${CLAUDE_PLUGIN_ROOT}");
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
   });
 });
 
