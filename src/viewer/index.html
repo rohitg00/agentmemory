@@ -1133,6 +1133,30 @@
       d.textContent = String(s);
       return d.innerHTML;
     }
+    function lessonFacetEntries(facets) {
+      var entries = [];
+      Object.keys(facets || {}).sort().forEach(function(dimension) {
+        var values = Array.isArray(facets[dimension])
+          ? facets[dimension].filter(function(value) {
+              return value !== undefined && value !== null && String(value).length > 0;
+            }).map(function(value) { return String(value); }).sort()
+          : [];
+        values.forEach(function(value) {
+          entries.push({ dimension: dimension, value: value });
+        });
+      });
+      return entries;
+    }
+    function renderLessonFacets(facets) {
+      var entries = lessonFacetEntries(facets);
+      if (entries.length === 0) return '';
+      var html = '<div class="lesson-facets" style="display:flex;gap:4px;flex-wrap:wrap;margin-top:6px;">';
+      html += '<span style="font-size:10px;color:var(--ink-faint);align-self:center;">Facets:</span>';
+      entries.forEach(function(entry) {
+        html += '<span class="badge badge-muted lesson-facet">' + esc(entry.dimension) + ': ' + esc(entry.value) + '</span>';
+      });
+      return html + '</div>';
+    }
     function formatTime(ts) {
       if (!ts) return '';
       try { return new Date(ts).toLocaleString(); } catch { return ts; }
@@ -3083,9 +3107,8 @@
         items = items.filter(function(l) {
           var scope = l.scope || {};
           var flags = l.computedFlags || {};
-          var facets = l.structuredFacets || {};
-          var facetText = Object.keys(facets).map(function(dimension) {
-            return dimension + ' ' + (facets[dimension] || []).join(' ');
+          var facetText = lessonFacetEntries(l.structuredFacets).map(function(entry) {
+            return entry.dimension + ' ' + entry.value;
           }).join(' ');
           return [
             l.content,
@@ -3139,6 +3162,7 @@
           if (l.claim) html += '<div style="font-size:12px;color:var(--ink);margin-top:4px;"><strong>Claim:</strong> ' + esc(truncate(l.claim, 180)) + '</div>';
           if (l.mechanismId) html += '<div style="font-size:10px;color:var(--ink-faint);font-family:var(--font-mono);margin-top:2px;">' + esc(l.mechanismId) + '</div>';
           if (l.context) html += '<div style="font-size:11px;color:var(--ink-faint);margin-top:2px;">' + esc(truncate(l.context, 80)) + '</div>';
+          html += renderLessonFacets(l.structuredFacets);
           html += '</td>';
           html += '<td><span class="badge ' + verdictBadge + '">' + esc(verdict) + '</span>';
           if (flags.contradicted) html += '<div style="margin-top:4px;"><span class="badge badge-red">contradicted</span></div>';
