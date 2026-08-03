@@ -11,6 +11,7 @@ import { StateKV } from "../state/kv.js";
 import { recordAudit } from "./audit.js";
 import { deleteAccessLog } from "./access-tracker.js";
 import { logger } from "../logger.js";
+import type { LessonAccessContext } from "./lesson-access.js";
 
 interface EvictionConfig {
   staleSessionDays: number;
@@ -79,11 +80,14 @@ async function recoverStaleSession(
   }
 }
 
-async function runRecoveredSessionConsolidation(sdk: ISdk): Promise<void> {
+async function runRecoveredSessionConsolidation(
+  sdk: ISdk,
+  accessContext?: LessonAccessContext,
+): Promise<void> {
   try {
     await sdk.trigger({
       function_id: "mem::consolidate-pipeline",
-      payload: { tier: "all" },
+      payload: { tier: "all", accessContext },
     });
   } catch (err) {
     logger.warn("Recovered session consolidation failed", {
@@ -94,7 +98,10 @@ async function runRecoveredSessionConsolidation(sdk: ISdk): Promise<void> {
 
 export function registerEvictFunction(sdk: ISdk, kv: StateKV): void {
   sdk.registerFunction("mem::evict", 
-    async (data: { dryRun?: boolean }): Promise<EvictionStats> => {
+    async (data: {
+      dryRun?: boolean;
+      accessContext?: LessonAccessContext;
+    }): Promise<EvictionStats> => {
       const dryRun = data?.dryRun ?? false;
       const { decrementImageRef } = await import("./image-refs.js");
 
@@ -179,7 +186,10 @@ export function registerEvictFunction(sdk: ISdk, kv: StateKV): void {
       }
 
       if (!dryRun && recoveredStaleSessions > 0) {
-        await runRecoveredSessionConsolidation(sdk);
+        await runRecoveredSessionConsolidation(
+          sdk,
+          data.accessContext,
+        );
       }
 
       const projectObs = new Map<string, CompressedObservation[]>();

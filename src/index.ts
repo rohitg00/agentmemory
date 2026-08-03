@@ -90,6 +90,7 @@ import { registerCompressFileFunction } from "./functions/compress-file.js";
 import { registerLlmSmokeFunction } from "./functions/llm-smoke.js";
 import { registerReplayFunctions } from "./functions/replay.js";
 import { registerSessionContextFunction } from "./functions/session-context.js";
+import { systemLessonAccessContext } from "./functions/lesson-access.js";
 import { registerApiTriggers } from "./triggers/api.js";
 import { registerEventTriggers } from "./triggers/events.js";
 import { registerMcpEndpoints } from "./mcp/server.js";
@@ -587,7 +588,10 @@ async function main() {
   if (isConsolidationEnabled()) {
     const consolidationTimer = setInterval(async () => {
       try {
-        await sdk.trigger({ function_id: "mem::consolidate-pipeline", payload: {} });
+        await sdk.trigger({
+          function_id: "mem::consolidate-pipeline",
+          payload: { accessContext: systemLessonAccessContext() },
+        });
       } catch {}
     }, consolidationIntervalMs);
     consolidationTimer.unref();

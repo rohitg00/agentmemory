@@ -16,6 +16,14 @@ import {
   isLessonListable,
   toLessonReadModel,
 } from "./lesson-model.js";
+import {
+  buildLessonAccessIndex,
+  canReadCrystal,
+  canReadLesson,
+  canUseLessonOperatorCapability,
+  lessonAccessContextFromPayload,
+  type LessonAccessContext,
+} from "./lesson-access.js";
 const DEFAULT_EXPORT_ROOT = join(homedir(), ".agentmemory");
 
 function getExportRoot(): string {
@@ -336,7 +344,15 @@ export function registerObsidianExportFunction(
   kv: StateKV,
 ): void {
   sdk.registerFunction("mem::obsidian-export",
-    async (data: { vaultDir?: string; types?: string[] } | undefined) => {
+    async (
+      data:
+        | {
+            vaultDir?: string;
+            types?: string[];
+            accessContext?: LessonAccessContext;
+          }
+        | undefined,
+    ) => {
       if (!data || typeof data !== "object") {
         return { success: false, error: "payload is required" };
       }
@@ -362,6 +378,24 @@ export function registerObsidianExportFunction(
       const exportTypes = new Set(
         data.types ?? ["memories", "lessons", "crystals", "sessions"],
       );
+      const accessContext = lessonAccessContextFromPayload(
+        data.accessContext,
+      );
+      const exportsProtectedRecords =
+        exportTypes.has("lessons") || exportTypes.has("crystals");
+      if (
+        exportsProtectedRecords &&
+        !canUseLessonOperatorCapability(
+          accessContext,
+          "lesson:export",
+        )
+      ) {
+        return {
+          success: false,
+          code: "access_denied",
+          error: "lesson access denied for Obsidian export",
+        };
+      }
 
       const dirs = {
         memories: join(vaultDir, "memories"),
@@ -375,6 +409,37 @@ export function registerObsidianExportFunction(
       // TypeError as `{"error":"[object Object]"}`. With this guard the
       // worst case is `{success: false, error: <string>}`.
       try {
+        let lessons: Lesson[] = [];
+        let crystals: Crystal[] = [];
+        if (exportsProtectedRecords) {
+          try {
+            const authoritativeLessons = await kv.list<Lesson>(KV.lessons);
+            lessons = exportTypes.has("lessons")
+              ? authoritativeLessons
+              : [];
+            if (exportTypes.has("crystals")) {
+              const storedCrystals = await kv.list<Crystal>(KV.crystals);
+              if (accessContext.mode === "enforce") {
+                const lessonIndex = buildLessonAccessIndex(
+                  authoritativeLessons,
+                );
+                crystals = storedCrystals.filter((crystal) =>
+                  canReadCrystal(crystal, lessonIndex, accessContext),
+                );
+              } else {
+                crystals = storedCrystals;
+              }
+            }
+          } catch {
+            return {
+              success: false,
+              code: "lesson_state_unavailable",
+              error: "Obsidian protected export is unavailable",
+              vaultDir,
+            };
+          }
+        }
+
         await Promise.all(
           Object.values(dirs).map((dir) => mkdir(dir, { recursive: true })),
         );
@@ -386,10 +451,8 @@ export function registerObsidianExportFunction(
         const crystalMoc: string[] = [];
         const sessionMoc: string[] = [];
 
-        const [memories, lessons, crystals, sessions] = await Promise.all([
+        const [memories, sessions] = await Promise.all([
           exportTypes.has("memories") ? kv.list<Memory>(KV.memories) : Promise.resolve([] as Memory[]),
-          exportTypes.has("lessons") ? kv.list<Lesson>(KV.lessons) : Promise.resolve([] as Lesson[]),
-          exportTypes.has("crystals") ? kv.list<Crystal>(KV.crystals) : Promise.resolve([] as Crystal[]),
           exportTypes.has("sessions") ? kv.list<Session>(KV.sessions) : Promise.resolve([] as Session[]),
         ]);
 
@@ -415,7 +478,9 @@ export function registerObsidianExportFunction(
 
         for (const l of lessons.filter(
           (l): l is Lesson & { id: string } =>
-            hasExportId(l) && isLessonListable(l),
+            hasExportId(l) &&
+            isLessonListable(l) &&
+            canReadLesson(l, accessContext),
         )) {
           const filename = `${sanitize(l.id)}.md`;
           const filepath = join(dirs.lessons, filename);
@@ -501,6 +566,7 @@ export function registerObsidianExportFunction(
         await writeFile(join(vaultDir, "MOC.md"), moc);
 
         await recordAudit(kv, "obsidian_export", "mem::obsidian-export", [], {
+          actor: accessContext.principalId,
           vaultDir,
           stats,
         });

@@ -130,6 +130,16 @@ What the plugin does:
 - captures completed conversation turns after the agent finishes (via the `agent_end` hook)
 - shares the same backend with Claude Code, Codex CLI, Gemini CLI, Hermes, pi, and other agents
 
+### Environment variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `AGENTMEMORY_URL` | `http://localhost:3111` | agentmemory server URL |
+| `AGENTMEMORY_SECRET` | (none) | Bearer token for protected instances |
+| `AGENT_ID` | (none) | Optional claimed principal ID; must match the caller-token policy entry when lesson enforcement is enabled |
+| `AGENTMEMORY_CALLER_TOKEN` | (none) | Per-client raw lesson-access token; keep it out of source control |
+| `AGENTMEMORY_REQUIRE_HTTPS` | (off) | When set to `1`, refuse to send either credential over plaintext HTTP to a non-loopback host. With this off, the plugin warns once but still sends. |
+
 ### Memory runtime (current scope)
 
 The plugin currently registers a `promptBuilder` only — not a full `MemoryPluginRuntime` adapter. OpenClaw's `MemoryRuntimeBackendConfig` type today is `{ backend: "builtin" }` or `{ backend: "qmd" }`; both are openclaw-internal backends that don't fit agentmemory's external REST shape. The hook-driven recall + capture flow above is the working integration path. If you need OpenClaw's in-process memory-runtime APIs (e.g. `getMemorySearchManager`) backed by agentmemory, file an upstream request against `openclaw` for an `"external"` backend type and we'll wire `runtime` here once the contract supports it.

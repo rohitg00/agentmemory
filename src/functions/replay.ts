@@ -18,12 +18,11 @@ import { buildSyntheticCompression } from "./compress-synthetic.js";
 import { getSearchIndex } from "./search.js";
 import { logger } from "../logger.js";
 import {
-  lessonCanonicalId,
-  lessonIdForInput,
-  normalizeLesson,
-  parseLessonSaveInput,
-} from "./lesson-model.js";
-import { withLessonLocks } from "./lesson-locks.js";
+  buildLessonAccessIndex,
+  canReadCrystal,
+  lessonAccessContextFromPayload,
+  type LessonAccessContext,
+} from "./lesson-access.js";
 
 export const MAX_FILES_DEFAULT = 200;
 export const MAX_FILES_UPPER_BOUND = 1000;
@@ -74,12 +73,14 @@ const LESSON_PATTERNS: RegExp[] = [
 ];
 
 async function deriveCrystalAndLessons(
+  sdk: ISdk,
   kv: StateKV,
   sessionId: string,
   project: string,
   rawObs: RawObservation[],
   compressed: CompressedObservation[],
   firstPrompt: string | undefined,
+  accessContext: LessonAccessContext,
 ): Promise<void> {
   if (rawObs.length === 0) return;
   const createdAt = new Date().toISOString();
@@ -121,73 +122,25 @@ async function deriveCrystalAndLessons(
   const lessonIds: string[] = [];
   for (const content of lessonEntries) {
     try {
-      const parsed = parseLessonSaveInput({
-        content,
-        context: firstPrompt || project,
-        confidence: 0.4,
-        source: "consolidation",
-        sourceIds: [sessionId],
-        project,
-        tags: ["auto-import"],
-      });
-      if (!parsed.success) continue;
-      const lessonId = lessonIdForInput(parsed.value);
-      await withLessonLocks([lessonId], async () => {
-        const exact = await kv.get<Lesson>(KV.lessons, lessonId);
-        const existing =
-          exact ??
-          (await kv.list<Lesson>(KV.lessons)).find((lesson) => {
-            try {
-              const normalized = normalizeLesson(lesson);
-              return (
-                normalized.idAliases.includes(lessonId) ||
-                lessonCanonicalId(normalized) === lessonId
-              );
-            } catch {
-              return false;
-            }
-          });
-        if (existing) {
-          const normalizedExisting = normalizeLesson(existing);
-          const existingSources = normalizedExisting.sourceIds;
-          const mergedSources = existingSources.includes(sessionId)
-            ? existingSources
-            : [...existingSources, sessionId];
-          const existingTags = normalizedExisting.tags;
-          const mergedTags = existingTags.includes("auto-import")
-            ? existingTags
-            : [...existingTags, "auto-import"];
-          const merged: Lesson = {
-            ...normalizedExisting,
-            sourceIds: mergedSources,
-            tags: mergedTags,
-            reinforcements: normalizedExisting.reinforcements + 1,
-            updatedAt: createdAt,
-            lastReinforcedAt: createdAt,
-          };
-          await kv.set(KV.lessons, existing.id, merged);
-          lessonIds.push(existing.id);
-          return;
-        }
-        const lesson = normalizeLesson({
-          id: lessonId,
-          identityKind: "canonical",
-          idAliases: [],
+      const result = (await sdk.trigger({
+        function_id: "mem::lesson-save",
+        payload: {
           content,
           context: firstPrompt || project,
           confidence: 0.4,
-          reinforcements: 0,
           source: "consolidation",
           sourceIds: [sessionId],
           project,
           tags: ["auto-import"],
-          createdAt,
-          updatedAt: createdAt,
-          decayRate: 0.05,
-        });
-        await kv.set(KV.lessons, lessonId, lesson);
-        lessonIds.push(lessonId);
-      });
+          accessContext,
+        },
+      })) as {
+        success?: boolean;
+        lesson?: { id?: string };
+      };
+      if (result.success && typeof result.lesson?.id === "string") {
+        lessonIds.push(result.lesson.id);
+      }
     } catch {}
   }
 
@@ -205,12 +158,25 @@ async function deriveCrystalAndLessons(
 
   try {
     const existingCrystal = await kv.get<Crystal>(KV.crystals, crystalId);
+    if (existingCrystal && accessContext.mode === "enforce") {
+      try {
+        const lessonIndex = buildLessonAccessIndex(
+          await kv.list<Lesson>(KV.lessons),
+        );
+        if (!canReadCrystal(existingCrystal, lessonIndex, accessContext)) {
+          return;
+        }
+      } catch {
+        return;
+      }
+    }
     const crystal: Crystal = {
       id: crystalId,
       narrative: narrativePreview || `Session ${sessionId.slice(0, 12)} (${rawObs.length} observations)`,
       keyOutcomes: Array.from(tools).slice(0, 8),
       filesAffected: Array.from(files).slice(0, 20),
       lessons: lessonIds,
+      sourceLessonIds: lessonIds,
       sourceActionIds: existingCrystal?.sourceActionIds ?? [],
       sessionId,
       project,
@@ -320,7 +286,11 @@ export function registerReplayFunctions(sdk: ISdk, kv: StateKV): void {
   sdk.registerFunction(
     "mem::replay::import-jsonl",
     async (
-      data: { path?: string; maxFiles?: number } = {},
+      data: {
+        path?: string;
+        maxFiles?: number;
+        accessContext?: LessonAccessContext;
+      } = {},
     ): Promise<
       | {
           success: true;
@@ -399,6 +369,9 @@ export function registerReplayFunctions(sdk: ISdk, kv: StateKV): void {
 
       const sessionIds: string[] = [];
       let observationCount = 0;
+      const accessContext = lessonAccessContextFromPayload(
+        data.accessContext,
+      );
 
       for (const file of files) {
         if (isSensitive(file)) continue;
@@ -479,12 +452,14 @@ export function registerReplayFunctions(sdk: ISdk, kv: StateKV): void {
         sessionIds.push(parsed.sessionId);
 
         await deriveCrystalAndLessons(
+          sdk,
           kv,
           parsed.sessionId,
           parsed.project,
           parsed.observations,
           compressed,
           firstPrompt,
+          accessContext,
         );
       }
 

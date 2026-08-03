@@ -122,7 +122,7 @@ def _uses_plaintext_bearer_auth(base: str, secret: str = "") -> bool:
 
 
 def _plaintext_bearer_auth_message(base: str) -> str:
-    return f"agentmemory: AGENTMEMORY_SECRET is configured for plaintext HTTP to {base}. Bearer tokens and memory payloads can be observed on the network; use HTTPS or an SSH tunnel."
+    return f"agentmemory: an AGENTMEMORY_SECRET or AGENTMEMORY_CALLER_TOKEN credential is configured for plaintext HTTP to {base}. Bearer tokens and memory payloads can be observed on the network; use HTTPS or an SSH tunnel."
 
 
 def _warn_plaintext_bearer_auth(message: str) -> None:
@@ -156,9 +156,15 @@ def _api(base: str, path: str, body: dict | None = None, method: str = "POST", s
     url = f"{base}/agentmemory/{path}"
     headers = {"Content-Type": "application/json"}
     auth = secret or os.environ.get("AGENTMEMORY_SECRET", "")
-    _check_plaintext_bearer_guard(base, auth)
+    caller_token = os.environ.get("AGENTMEMORY_CALLER_TOKEN", "")
+    _check_plaintext_bearer_guard(base, auth or caller_token)
     if auth:
         headers["Authorization"] = f"Bearer {auth}"
+    agent_id = os.environ.get("AGENT_ID", "")
+    if agent_id:
+        headers["X-AgentMemory-Agent-Id"] = agent_id
+    if caller_token:
+        headers["X-AgentMemory-Caller-Token"] = caller_token
 
     data = json.dumps(body).encode() if body else None
     req = Request(url, data=data, headers=headers, method=method)
@@ -190,7 +196,11 @@ class AgentMemoryProvider(MemoryProvider):
         self._session_id = session_id
         self._project = kwargs.get("cwd", os.getcwd())
         if os.environ.get("AGENTMEMORY_REQUIRE_HTTPS") == "1":
-            _check_plaintext_bearer_guard(self._base, os.environ.get("AGENTMEMORY_SECRET", ""))
+            _check_plaintext_bearer_guard(
+                self._base,
+                os.environ.get("AGENTMEMORY_SECRET", "")
+                or os.environ.get("AGENTMEMORY_CALLER_TOKEN", ""),
+            )
 
         _api(self._base, "session/start", {
             "sessionId": session_id,

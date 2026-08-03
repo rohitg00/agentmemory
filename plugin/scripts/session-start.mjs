@@ -108,11 +108,15 @@ function isSdkChildContext(payload) {
 const INJECT_CONTEXT = process.env["AGENTMEMORY_INJECT_CONTEXT"] === "true";
 const REST_URL = process.env["AGENTMEMORY_URL"] || "http://localhost:3111";
 const SECRET = process.env["AGENTMEMORY_SECRET"] || "";
+const AGENT_ID = process.env["AGENT_ID"] || "";
+const CALLER_TOKEN = process.env["AGENTMEMORY_CALLER_TOKEN"] || "";
 const INJECT_TIMEOUT_MS = 1500;
 const REGISTER_TIMEOUT_MS = 800;
 function authHeaders() {
 	const h = { "Content-Type": "application/json" };
 	if (SECRET) h["Authorization"] = `Bearer ${SECRET}`;
+	if (AGENT_ID) h["X-AgentMemory-Agent-Id"] = AGENT_ID;
+	if (CALLER_TOKEN) h["X-AgentMemory-Caller-Token"] = CALLER_TOKEN;
 	return h;
 }
 async function main() {

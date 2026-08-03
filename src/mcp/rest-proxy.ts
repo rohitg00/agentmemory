@@ -1,3 +1,6 @@
+import { upstreamHttpError } from "./http-error.js";
+import { createPlaintextCredentialGuard } from "./plaintext-credential.js";
+
 const DEFAULT_URL = "http://localhost:3111";
 const DEFAULT_HEALTH_PROBE_TIMEOUT_MS = 2_000;
 const CALL_TIMEOUT_MS = 15_000;
@@ -30,6 +33,7 @@ export type Handle = ProxyHandle | LocalHandle;
 let cached: Handle | null = null;
 let cachedAt = 0;
 let probeInFlight: Promise<Handle> | null = null;
+let guardPlaintextCredential = createPlaintextCredentialGuard();
 
 // `${VAR}`-style placeholders ship in plugin/.mcp.json so MCP hosts that
 // expand them (Claude Code, Cursor) substitute the user's shell value.
@@ -49,9 +53,27 @@ function baseUrl(): string {
   return (resolveEnvOrEmpty("AGENTMEMORY_URL") || DEFAULT_URL).replace(/\/+$/, "");
 }
 
+function outboundCredential(): string {
+  return (
+    resolveEnvOrEmpty("AGENTMEMORY_SECRET") ||
+    resolveEnvOrEmpty("AGENTMEMORY_CALLER_TOKEN")
+  );
+}
+
 function authHeader(): Record<string, string> {
   const secret = resolveEnvOrEmpty("AGENTMEMORY_SECRET");
   return secret ? { authorization: `Bearer ${secret}` } : {};
+}
+
+export function callerIdentityHeaders(): Record<string, string> {
+  const agentId = resolveEnvOrEmpty("AGENT_ID");
+  const callerToken = resolveEnvOrEmpty("AGENTMEMORY_CALLER_TOKEN");
+  return {
+    ...(agentId ? { "x-agentmemory-agent-id": agentId } : {}),
+    ...(callerToken
+      ? { "x-agentmemory-caller-token": callerToken }
+      : {}),
+  };
 }
 
 /**
@@ -124,6 +146,7 @@ export async function resolveHandle(): Promise<Handle> {
   }
   if (probeInFlight) return probeInFlight;
   const url = baseUrl();
+  guardPlaintextCredential(url, outboundCredential());
   const skipProbe = forceProxy();
   probeInFlight = (async () => {
     const up = skipProbe ? true : await probe(url);
@@ -137,18 +160,22 @@ export async function resolveHandle(): Promise<Handle> {
         mode: "proxy",
         baseUrl: url,
         call: async (path, init) => {
+          guardPlaintextCredential(url, outboundCredential());
           const res = await fetch(`${url}${path}`, {
             ...init,
             headers: {
               "content-type": "application/json",
               ...authHeader(),
               ...(init?.headers as Record<string, string> | undefined),
+              ...callerIdentityHeaders(),
             },
             signal: AbortSignal.timeout(CALL_TIMEOUT_MS),
           });
           if (!res.ok) {
-            throw new Error(
-              `${init?.method || "GET"} ${path} -> ${res.status} ${res.statusText}`,
+            throw await upstreamHttpError(
+              init?.method || "GET",
+              path,
+              res,
             );
           }
           const text = await res.text();
@@ -176,4 +203,5 @@ export function resetHandleForTests(): void {
   cachedAt = 0;
   probeInFlight = null;
   livezProbe = defaultLivezProbe;
+  guardPlaintextCredential = createPlaintextCredentialGuard();
 }

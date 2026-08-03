@@ -1,7 +1,12 @@
-import type { AuditEntry } from "../types.js";
+import type { AuditEntry, Lesson } from "../types.js";
 import { KV, generateId } from "../state/schema.js";
 import type { StateKV } from "../state/kv.js";
 import { logger } from "../logger.js";
+import {
+  buildLessonAccessIndex,
+  canReadLesson,
+  lessonAccessContextFromPayload,
+} from "./lesson-access.js";
 
 // Audit coverage policy (issue #125).
 //
@@ -84,6 +89,7 @@ export async function queryAudit(
     dateFrom?: string;
     dateTo?: string;
     limit?: number;
+    accessContext?: unknown;
   },
 ): Promise<AuditEntry[]> {
   const all = await kv.list<AuditEntry>(KV.audit);
@@ -109,5 +115,121 @@ export async function queryAudit(
     entries = entries.filter((e) => new Date(e.timestamp).getTime() <= to);
   }
 
+  const accessContext = lessonAccessContextFromPayload(
+    filter?.accessContext,
+  );
+  if (accessContext.mode === "enforce") {
+    const ordinaryEntries = entries.filter(
+      (entry) => !isLessonRelatedAuditEntry(entry),
+    );
+    const lessonEntries = entries.filter(isLessonRelatedAuditEntry);
+    if (lessonEntries.length > 0) {
+      try {
+        const lessons = await kv.list<Lesson>(KV.lessons);
+        const lessonIndex = buildLessonAccessIndex(lessons);
+        const readableLessonEntries = lessonEntries.filter((entry) => {
+          const referencedIds = lessonAuditReferenceIds(entry);
+          if (referencedIds.length === 0) return false;
+          try {
+            return referencedIds.every((id) => {
+              const lesson = lessonIndex.get(id);
+              return lesson !== undefined &&
+                canReadLesson(lesson, accessContext);
+            });
+          } catch {
+            return false;
+          }
+        });
+        const readableEntries = new Set(readableLessonEntries);
+        entries = entries.filter(
+          (entry) =>
+            !isLessonRelatedAuditEntry(entry) ||
+            readableEntries.has(entry),
+        );
+      } catch {
+        // An unavailable or malformed authoritative lesson index cannot prove
+        // any lesson audit row is readable. Preserve unrelated audit rows.
+        entries = ordinaryEntries;
+      }
+    }
+  }
+
   return entries.slice(0, filter?.limit || 100);
+}
+
+function lessonAuditReferenceIds(entry: AuditEntry): string[] {
+  const ids = new Set<string>();
+  const add = (value: unknown): void => {
+    if (typeof value === "string" && value.length > 0) ids.add(value);
+  };
+  if (Array.isArray(entry.targetIds)) {
+    for (const id of entry.targetIds) add(id);
+  }
+
+  const details =
+    entry.details && typeof entry.details === "object"
+      ? entry.details
+      : undefined;
+  if (!details) return [...ids];
+
+  add(details.lessonId);
+  add(details.replacementLessonId);
+  for (const field of ["lessonIds", "sourceLessonIds"] as const) {
+    const values = details[field];
+    if (Array.isArray(values)) {
+      for (const value of values) add(value);
+    }
+  }
+  for (const field of ["canonicalizedIds", "lifecycleTransitions"] as const) {
+    const values = details[field];
+    if (!Array.isArray(values)) continue;
+    for (const value of values) {
+      if (value && typeof value === "object" && !Array.isArray(value)) {
+        add((value as Record<string, unknown>).lessonId);
+      }
+    }
+  }
+  return [...ids];
+}
+
+const LESSON_AUDIT_OPERATIONS = new Set<AuditEntry["operation"]>([
+  "lesson_save",
+  "lesson_recall",
+  "lesson_strengthen",
+  "lesson_delete",
+  "lesson_supersede",
+]);
+
+function isLessonRelatedAuditEntry(entry: AuditEntry): boolean {
+  if (LESSON_AUDIT_OPERATIONS.has(entry.operation)) return true;
+  if (
+    typeof entry.functionId === "string" &&
+    (entry.functionId.startsWith("mem::lesson-") ||
+      entry.functionId.startsWith("mem::import:lessons"))
+  ) {
+    return true;
+  }
+
+  const details =
+    entry.details && typeof entry.details === "object"
+      ? entry.details
+      : undefined;
+  if (!details) return false;
+  if (
+    "lessonId" in details ||
+    "lessonIds" in details ||
+    "sourceLessonIds" in details ||
+    "canonicalizedIds" in details ||
+    "lifecycleTransitions" in details
+  ) {
+    return true;
+  }
+  const stats = details.stats;
+  return Boolean(
+    stats &&
+      typeof stats === "object" &&
+      "lessons" in stats &&
+      typeof (stats as Record<string, unknown>).lessons === "number" &&
+      (stats as Record<string, number>).lessons > 0,
+  );
 }

@@ -650,12 +650,14 @@ The agentmemory entry is the **same MCP server block** across every host that us
   "args": ["-y", "@agentmemory/mcp"],
   "env": {
     "AGENTMEMORY_URL": "${AGENTMEMORY_URL}",
-    "AGENTMEMORY_SECRET": "${AGENTMEMORY_SECRET}"
+    "AGENTMEMORY_SECRET": "${AGENTMEMORY_SECRET}",
+    "AGENT_ID": "${AGENT_ID}",
+    "AGENTMEMORY_CALLER_TOKEN": "${AGENTMEMORY_CALLER_TOKEN}"
   }
 }
 ```
 
-**Merge this entry into the existing `mcpServers` object** in the host's config file — don't replace the file. If the file already has other servers, add `agentmemory` next to them as another key inside `mcpServers`. If `mcpServers` is missing entirely, paste the block inside `{ "mcpServers": { ... } }`. The `${VAR}` placeholders inherit `AGENTMEMORY_URL` / `AGENTMEMORY_SECRET` from the shell at MCP-server launch — unset vars pass empty strings and the shim falls back to `http://localhost:3111`. One wired entry covers both local and remote (k8s / reverse-proxied) deployments.
+**Merge this entry into the existing `mcpServers` object** in the host's config file — don't replace the file. If the file already has other servers, add `agentmemory` next to them as another key inside `mcpServers`. If `mcpServers` is missing entirely, paste the block inside `{ "mcpServers": { ... } }`. The `${VAR}` placeholders inherit the endpoint, API secret, caller ID, and caller token from the shell at MCP-server launch — unset vars pass empty strings and the shim falls back to `http://localhost:3111`. One wired entry covers both local and remote (k8s / reverse-proxied) deployments.
 
 | Agent | Config file | Notes |
 |---|---|---|
@@ -1473,6 +1475,10 @@ Create `~/.agentmemory/.env`:
 
 # Auth
 # AGENTMEMORY_SECRET=your-secret
+# AGENTMEMORY_LESSON_ACCESS_MODE=classify  # classify (default) | enforce
+# AGENTMEMORY_LESSON_CALLER_POLICY_FILE=/etc/agentmemory/lesson-callers.json
+# AGENT_ID=codex
+# AGENTMEMORY_CALLER_TOKEN=unique-client-token
 
 # Ports (defaults: 3111 API, 3113 viewer)
 # III_REST_PORT=3111
@@ -1576,17 +1582,68 @@ Authoritative lesson enumeration and normalization fail closed for import,
 portable export, and reflection; a read failure cannot become an empty lesson
 set that permits tombstone restoration or positive synthesis.
 
-`scopeId`, global `humanApproval.approvedBy`, and correction `actor` values are
-caller-supplied classification, lineage, and audit-attribution metadata. They
-are not authenticated identities or an authorization boundary in PR1.
-Server-resolved caller identity, approval authority, and durable-scope access
-enforcement remain PR2 work.
+Lesson authorization has two explicit modes. `classify` is the default and
+preserves the PR1 behavior. `enforce` resolves a caller from a per-client token
+and server-side SHA-256 token-digest policy, then applies exact durable-scope
+grants and the sensitivity order
+`public < internal < confidential < restricted`. Write grants imply read;
+global is not a wildcard. `lesson:legacy-worktree` is a read-only compatibility
+exception for existing implicit-worktree rows; new enforced caller writes
+require an explicit durable scope.
 
-Scope and sensitivity enforcement, automatic contradiction discovery, and
-hybrid/vector lesson retrieval are intentionally deferred to PR2. Until then,
-sensitivity metadata is classification, not an access-control boundary. See
+In enforce mode, REST and MCP arguments cannot self-assert identity. The server
+stamps correction actors plus global `humanApproval.approvedBy` and
+`humanApproval.approvedAt`; only an authenticated human with
+`lesson:approve-global` may approve global scope.
+Portable/Obsidian exports require `lesson:export`, imports require
+`lesson:import`, and unauthorized lessons are removed before list, recall,
+context, smart-search, reflection, audit/diagnostic projections, crystal and
+insight reads, and export counts are computed. In enforcement mode, a portable
+full-database import/export or an Obsidian export containing lessons or
+crystals is an operator operation: the caller must have `restricted` clearance,
+`lesson:all-scopes`, and the matching export/import capability. A capability
+alone is intentionally insufficient.
+
+Replay, crystallization, consolidation, eviction, reflection, audit, and
+diagnostic paths preserve the resolved caller context instead of manufacturing
+service authority. New crystals record `sourceLessonIds`; synthesized insights
+retain lesson/crystal provenance, and every public projection requires all
+referenced lessons to be readable. Crystal lesson values must also correspond
+positionally to the referenced lesson ID or authoritative lesson content, so a
+readable ID cannot launder unrelated prose. Legacy crystals that contain
+lesson prose but no lesson IDs are visible only to an all-scopes principal in
+enforcement mode.
+
+Set `AGENTMEMORY_LESSON_ACCESS_MODE=enforce` and
+`AGENTMEMORY_LESSON_CALLER_POLICY_FILE=/absolute/path/lesson-callers.json` on
+the server. Set a unique high-entropy `AGENTMEMORY_CALLER_TOKEN` and matching
+`AGENT_ID` on each client. Keep raw tokens out of the policy and source control;
+the policy contains only `tokenSha256`. Missing/invalid policy or credentials
+fail closed after enforcement is enabled. An invalid access-mode value or
+non-absolute policy path also fails closed. Internal scheduled functions use
+an explicit service context; that service cannot approve global lessons.
+
+The viewer must use a separate server-side read principal configured with
+`AGENTMEMORY_VIEWER_AGENT_ID` and `AGENTMEMORY_VIEWER_CALLER_TOKEN`. Browser
+headers are ignored and the raw viewer token is never embedded in HTML. Pi,
+Hermes, OpenClaw, the standalone MCP shim, streamable HTTP MCP bridge, and the
+replay CLI forward the caller headers. Their plaintext-HTTP guards treat either
+the bearer secret or caller token as a credential, warn once for a non-loopback
+HTTP endpoint, and refuse the request when `AGENTMEMORY_REQUIRE_HTTPS=1`.
+
+Import preflights collection shapes and all lesson authorization before its
+first write. The lesson batch restores exact preimages if a lesson write fails.
+The underlying KV API has no transaction spanning every non-lesson collection,
+so a later storage failure during a full multi-collection import can still
+require operator repair; this is existing portable-import behavior, not an
+all-or-nothing database transaction.
+
+Automatic contradiction discovery and hybrid/vector lesson retrieval remain
+separate follow-up work. See
 [Causal Lesson Schema v1](docs/superpowers/specs/2026-08-02-causal-lesson-schema-v1.md)
-for the complete compatibility and fingerprint contract.
+for the compatibility/fingerprint contract and
+[Causal Lesson Access v2](docs/superpowers/specs/2026-08-03-causal-lesson-access-v2.md)
+for the authorization and rollout contract.
 
 ---
 

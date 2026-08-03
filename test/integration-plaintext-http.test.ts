@@ -75,6 +75,17 @@ describe("OpenClaw plaintext bearer guard", () => {
     );
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  it("also refuses caller-token-only authentication over remote plaintext", () => {
+    delete process.env["AGENTMEMORY_SECRET"];
+    process.env["AGENTMEMORY_CALLER_TOKEN"] = "caller-secret";
+    process.env["AGENTMEMORY_REQUIRE_HTTPS"] = "1";
+    const fetchMock = mockFetch();
+    expect(() => registerOpenClaw("http://remote.example:3111")).toThrow(
+      /plaintext HTTP to http:\/\/remote\.example:3111/,
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });
 
 describe("pi plaintext bearer guard", () => {
@@ -198,6 +209,16 @@ except RuntimeError as exc:
     assert "plaintext HTTP to http://remote.example:3111" in str(exc), exc
 else:
     raise AssertionError("expected RuntimeError")
+assert calls == [], calls
+
+os.environ.pop("AGENTMEMORY_SECRET", None)
+os.environ["AGENTMEMORY_CALLER_TOKEN"] = "caller-secret"
+try:
+    mod._api("http://remote.example:3111", "health", method="GET")
+except RuntimeError as exc:
+    assert "plaintext HTTP to http://remote.example:3111" in str(exc), exc
+else:
+    raise AssertionError("expected caller-token RuntimeError")
 assert calls == [], calls
 `;
     const result = spawnSync("python3", ["-c", script], {

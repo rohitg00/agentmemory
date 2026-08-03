@@ -7,10 +7,16 @@ const MAX_STASHED_FILES = 20;
 
 const DEBUG = process.env.OPENCODE_AGENTMEMORY_DEBUG === "1";
 const SECRET = process.env.AGENTMEMORY_SECRET || "";
+const AGENT_ID = process.env.AGENT_ID || "";
+const CALLER_TOKEN = process.env.AGENTMEMORY_CALLER_TOKEN || "";
 
 function authHeaders(): Record<string, string> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (SECRET) headers["Authorization"] = `Bearer ${SECRET}`;
+  if (AGENT_ID) headers["X-AgentMemory-Agent-Id"] = AGENT_ID;
+  if (CALLER_TOKEN) {
+    headers["X-AgentMemory-Caller-Token"] = CALLER_TOKEN;
+  }
   return headers;
 }
 

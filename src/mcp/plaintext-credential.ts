@@ -4,29 +4,37 @@ function normalizedHostname(hostname: string): string {
   return hostname.replace(/^\[|\]$/g, "").toLowerCase();
 }
 
-export function usesPlaintextBearerAuth(baseUrl: string, secret?: string): boolean {
-  if (!secret) return false;
+function usesPlaintextCredential(
+  baseUrl: string,
+  credential?: string,
+): boolean {
+  if (!credential) return false;
   try {
     const parsed = new URL(baseUrl);
-    return parsed.protocol === "http:" && !LOOPBACK_HOSTS.has(normalizedHostname(parsed.hostname));
+    return (
+      parsed.protocol === "http:" &&
+      !LOOPBACK_HOSTS.has(normalizedHostname(parsed.hostname))
+    );
   } catch {
     return false;
   }
 }
 
-export function plaintextBearerAuthMessage(baseUrl: string): string {
+function plaintextCredentialMessage(baseUrl: string): string {
   return `agentmemory: an AGENTMEMORY_SECRET or AGENTMEMORY_CALLER_TOKEN credential is configured for plaintext HTTP to ${baseUrl}. Bearer tokens and memory payloads can be observed on the network; use HTTPS or an SSH tunnel.`;
 }
 
-export function createPlaintextBearerAuthGuard(
+export function createPlaintextCredentialGuard(
   warn: (message: string) => void = (message) => console.warn(message),
   env?: { AGENTMEMORY_REQUIRE_HTTPS?: string },
-): (baseUrl: string, secret?: string) => void {
+): (baseUrl: string, credential?: string) => void {
   let warned = false;
-  return (baseUrl, secret) => {
-    if (!usesPlaintextBearerAuth(baseUrl, secret)) return;
-    const message = plaintextBearerAuthMessage(baseUrl);
-    if ((env || process.env).AGENTMEMORY_REQUIRE_HTTPS === "1") throw new Error(message);
+  return (baseUrl, credential) => {
+    if (!usesPlaintextCredential(baseUrl, credential)) return;
+    const message = plaintextCredentialMessage(baseUrl);
+    if ((env ?? process.env).AGENTMEMORY_REQUIRE_HTTPS === "1") {
+      throw new Error(message);
+    }
     if (!warned) {
       warned = true;
       warn(message);

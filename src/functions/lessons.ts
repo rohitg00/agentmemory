@@ -3,6 +3,13 @@ import type { StateKV } from "../state/kv.js";
 import { KV } from "../state/schema.js";
 import type { Lesson } from "../types.js";
 import { recordAudit } from "./audit.js";
+import {
+  bindResolvedLessonWriteIdentity,
+  canReadLesson,
+  canWriteLessonScope,
+  lessonAccessContextFromPayload,
+  type LessonAccessContext,
+} from "./lesson-access.js";
 import { withLessonLocks } from "./lesson-locks.js";
 import {
   LESSON_SCHEMA_VERSION,
@@ -26,6 +33,7 @@ type LessonCorrectionData = {
   lessonId: string;
   reason: string;
   actor?: string;
+  accessContext?: LessonAccessContext;
   project?: string;
   expectedUpdatedAt?: string;
   replacementLessonId?: string;
@@ -42,6 +50,13 @@ function reinforceLesson(lesson: Lesson): void {
 
 function correctionFailure(code: string, error: string) {
   return { success: false, code, error };
+}
+
+function accessFailure(operation: string) {
+  return correctionFailure(
+    "access_denied",
+    `lesson access denied for ${operation}`,
+  );
 }
 
 async function findLessonByCanonicalIdentity(
@@ -74,27 +89,52 @@ async function validateContradictionRelations(
   kv: StateKV,
   source: Lesson,
   targetIds: string[],
-): Promise<string | null> {
+  accessContext: LessonAccessContext,
+): Promise<
+  | { code: "access_denied" | "invalid_relation"; error: string }
+  | null
+> {
   for (const targetId of targetIds) {
     if (
       targetId === source.id ||
       normalizeLesson(source).idAliases.includes(targetId)
     ) {
-      return "contradictedByLessonIds must not contain the lesson itself";
+      return {
+        code: "invalid_relation",
+        error: "contradictedByLessonIds must not contain the lesson itself",
+      };
     }
     const target = await kv.get<Lesson>(KV.lessons, targetId);
     if (!target) {
-      return `contradiction target does not exist: ${targetId}`;
+      return {
+        code: "invalid_relation",
+        error: `contradiction target does not exist: ${targetId}`,
+      };
+    }
+    if (!canReadLesson(target, accessContext)) {
+      return {
+        code: "access_denied",
+        error: "lesson access denied for contradiction target",
+      };
     }
     try {
       if (!isLessonRecallable(target)) {
-        return `contradiction target must be active: ${targetId}`;
+        return {
+          code: "invalid_relation",
+          error: `contradiction target must be active: ${targetId}`,
+        };
       }
       if (!sameLessonContradictionScope(source, target)) {
-        return `contradiction target must share durable scope and project label: ${targetId}`;
+        return {
+          code: "invalid_relation",
+          error: `contradiction target must share durable scope and project label: ${targetId}`,
+        };
       }
     } catch {
-      return `contradiction target is invalid: ${targetId}`;
+      return {
+        code: "invalid_relation",
+        error: `contradiction target is invalid: ${targetId}`,
+      };
     }
   }
   return null;
@@ -105,9 +145,13 @@ async function correctLesson(
   data: LessonCorrectionData,
   mode: LessonCorrectionMode,
 ) {
+  const accessContext = lessonAccessContextFromPayload(data.accessContext);
   const lessonId = data.lessonId?.trim();
   const reason = data.reason?.trim();
-  const actor = data.actor?.trim() || "unknown";
+  const actor =
+    accessContext.mode === "enforce"
+      ? accessContext.principalId
+      : data.actor?.trim() || "unknown";
   const project = data.project?.trim() || undefined;
   const expectedUpdatedAt = data.expectedUpdatedAt?.trim() || undefined;
   const replacementLessonId = data.replacementLessonId?.trim() || undefined;
@@ -153,6 +197,16 @@ async function correctLesson(
     }
 
     const normalizedLesson = normalizeLesson(lesson);
+    if (
+      !canReadLesson(lesson, accessContext) ||
+      !canWriteLessonScope(
+        normalizedLesson.scope,
+        normalizedLesson.sensitivity,
+        accessContext,
+      )
+    ) {
+      return accessFailure(mode);
+    }
     if (!isLessonListable(lesson)) {
       const sameCorrection =
         lesson.deleteReason === reason &&
@@ -202,6 +256,9 @@ async function correctLesson(
           "replacement lesson not found",
         );
       }
+      if (!canReadLesson(replacement, accessContext)) {
+        return accessFailure("replacement read");
+      }
       if (!isLessonRecallable(replacement)) {
         return correctionFailure(
           "replacement_not_active",
@@ -232,14 +289,23 @@ async function correctLesson(
     const operation =
       mode === "supersede" ? "lesson_supersede" : "lesson_delete";
     try {
-      await recordAudit(kv, operation, `mem::lesson-${mode}`, [lesson.id], {
-        actor,
-        reason,
-        project: lesson.project,
-        expectedUpdatedAt,
-        replacementLessonId,
-        deletedAt: timestamp,
-      });
+      await recordAudit(
+        kv,
+        operation,
+        `mem::lesson-${mode}`,
+        [
+          lesson.id,
+          ...(replacementLessonId ? [replacementLessonId] : []),
+        ],
+        {
+          actor,
+          reason,
+          project: lesson.project,
+          expectedUpdatedAt,
+          replacementLessonId,
+          deletedAt: timestamp,
+        },
+      );
     } catch {}
 
     return {
@@ -253,11 +319,29 @@ async function correctLesson(
 export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
   sdk.registerFunction("mem::lesson-save", 
     async (data: unknown) => {
-      const parsed = parseLessonSaveInput(data);
+      const accessContext = lessonAccessContextFromPayload(
+        data &&
+          typeof data === "object" &&
+          !Array.isArray(data)
+          ? (data as Record<string, unknown>).accessContext
+          : undefined,
+      );
+      const prepared = bindResolvedLessonWriteIdentity(data, accessContext);
+      if (!prepared.success) return prepared;
+      const parsed = parseLessonSaveInput(prepared.value);
       if (!parsed.success) {
         return correctionFailure("invalid_request", parsed.error);
       }
       const input = parsed.value;
+      if (
+        !canWriteLessonScope(
+          input.scope,
+          input.sensitivity,
+          accessContext,
+        )
+      ) {
+        return accessFailure("save");
+      }
 
       const fp = lessonIdForInput(input);
       return withLessonLocks(
@@ -281,44 +365,71 @@ export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
           }
 
           if (existing) {
-            const contradictionError = await validateContradictionRelations(
+            const normalizedExisting = normalizeLesson(existing);
+            if (
+              !canReadLesson(normalizedExisting, accessContext) ||
+              !canWriteLessonScope(
+                normalizedExisting.scope,
+                normalizedExisting.sensitivity,
+                accessContext,
+              )
+            ) {
+              return accessFailure("strengthen");
+            }
+            const contradictionFailure = await validateContradictionRelations(
               kv,
-              existing,
+              normalizedExisting,
               input.contradictedByLessonIds,
+              accessContext,
             );
-            if (contradictionError) {
-              return correctionFailure("invalid_relation", contradictionError);
+            if (contradictionFailure) {
+              return correctionFailure(
+                contradictionFailure.code,
+                contradictionFailure.error,
+              );
             }
-            reinforceLesson(existing);
-            if (input.context && !existing.context) {
-              existing.context = input.context;
+            reinforceLesson(normalizedExisting);
+            if (input.context && !normalizedExisting.context) {
+              normalizedExisting.context = input.context;
             }
-            existing.sourceIds = [
-              ...new Set([...existing.sourceIds, ...input.sourceIds]),
-            ].sort();
-            existing.tags = [...new Set([...existing.tags, ...input.tags])];
-            existing.contradictedByLessonIds = [
+            normalizedExisting.sourceIds = [
               ...new Set([
-                ...(existing.contradictedByLessonIds ?? []),
+                ...normalizedExisting.sourceIds,
+                ...input.sourceIds,
+              ]),
+            ].sort();
+            normalizedExisting.tags = [
+              ...new Set([...normalizedExisting.tags, ...input.tags]),
+            ];
+            normalizedExisting.contradictedByLessonIds = [
+              ...new Set([
+                ...normalizedExisting.contradictedByLessonIds,
                 ...input.contradictedByLessonIds,
               ]),
             ].sort();
-            await kv.set(KV.lessons, existing.id, existing);
+            await kv.set(
+              KV.lessons,
+              normalizedExisting.id,
+              normalizedExisting,
+            );
 
             try {
               await recordAudit(
                 kv,
                 "lesson_strengthen",
                 "mem::lesson-save",
-                [existing.id],
-                { confidenceChanged: false },
+                [normalizedExisting.id],
+                {
+                  actor: accessContext.principalId,
+                  confidenceChanged: false,
+                },
               );
             } catch {}
 
             return {
               success: true,
               action: "strengthened",
-              lesson: toLessonReadModel(existing),
+              lesson: toLessonReadModel(normalizedExisting),
             };
           }
 
@@ -358,13 +469,17 @@ export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
             contentFingerprint: lessonContentFingerprint(input),
           };
 
-          const contradictionError = await validateContradictionRelations(
+          const contradictionFailure = await validateContradictionRelations(
             kv,
             lesson,
             input.contradictedByLessonIds,
+            accessContext,
           );
-          if (contradictionError) {
-            return correctionFailure("invalid_relation", contradictionError);
+          if (contradictionFailure) {
+            return correctionFailure(
+              contradictionFailure.code,
+              contradictionFailure.error,
+            );
           }
           await kv.set(KV.lessons, lesson.id, lesson);
 
@@ -375,6 +490,7 @@ export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
               "mem::lesson-save",
               [lesson.id],
               {
+                actor: accessContext.principalId,
                 contentFingerprint: lesson.contentFingerprint,
                 evidenceVerdict: lesson.evidenceVerdict,
                 lifecycle: lesson.lifecycle,
@@ -398,6 +514,7 @@ export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
       project?: string;
       minConfidence?: number;
       limit?: number;
+      accessContext?: LessonAccessContext;
     }) => {
       if (!data.query?.trim()) {
         return { success: false, error: "query is required" };
@@ -406,10 +523,14 @@ export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
       const query = data.query.toLowerCase();
       const minConfidence = data.minConfidence ?? 0.1;
       const limit = data.limit ?? 10;
+      const accessContext = lessonAccessContextFromPayload(
+        data.accessContext,
+      );
 
       const storedLessons = await kv.list<Lesson>(KV.lessons);
       let lessons = storedLessons
         .filter(isLessonRecallable)
+        .filter((lesson) => canReadLesson(lesson, accessContext))
         .map((lesson) => toLessonReadModel(lesson));
 
       lessons = lessons.filter((l) => l.confidence >= minConfidence);
@@ -460,6 +581,7 @@ export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
       try {
         await recordAudit(kv, "lesson_recall", "mem::lesson-recall", [], {
           query: data.query,
+          actor: accessContext.principalId,
           resultCount: scored.length,
         });
       } catch {}
@@ -482,6 +604,7 @@ export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
       limit?: number;
       offset?: number;
       sortBy?: "confidence" | "recent";
+      accessContext?: LessonAccessContext;
     }) => {
       const requestedLimit = data.limit ?? 50;
       const offset = data.offset ?? 0;
@@ -506,9 +629,13 @@ export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
       }
       const limit = Math.min(requestedLimit, MAX_LESSON_LIST_LIMIT);
       const minConfidence = data.minConfidence ?? 0;
+      const accessContext = lessonAccessContextFromPayload(
+        data.accessContext,
+      );
       const storedLessons = await kv.list<Lesson>(KV.lessons);
       let lessons = storedLessons
         .filter(isLessonListable)
+        .filter((lesson) => canReadLesson(lesson, accessContext))
         .map((lesson) => toLessonReadModel(lesson))
         .filter((lesson) => lesson.confidence >= minConfidence);
 
@@ -544,7 +671,10 @@ export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
   );
 
   sdk.registerFunction("mem::lesson-strengthen", 
-    async (data: { lessonId: string }) => {
+    async (data: {
+      lessonId: string;
+      accessContext?: LessonAccessContext;
+    }) => {
       if (!data.lessonId) {
         return { success: false, error: "lessonId is required" };
       }
@@ -553,6 +683,20 @@ export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
         const lesson = await kv.get<Lesson>(KV.lessons, data.lessonId);
         if (!lesson || !isLessonListable(lesson)) {
           return { success: false, error: "lesson not found" };
+        }
+        const accessContext = lessonAccessContextFromPayload(
+          data.accessContext,
+        );
+        const normalized = normalizeLesson(lesson);
+        if (
+          !canReadLesson(lesson, accessContext) ||
+          !canWriteLessonScope(
+            normalized.scope,
+            normalized.sensitivity,
+            accessContext,
+          )
+        ) {
+          return accessFailure("strengthen");
         }
 
         reinforceLesson(lesson);
@@ -565,7 +709,10 @@ export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
             "lesson_strengthen",
             "mem::lesson-strengthen",
             [lesson.id],
-            { confidenceChanged: false },
+            {
+              actor: accessContext.principalId,
+              confidenceChanged: false,
+            },
           );
         } catch {}
 

@@ -11,7 +11,7 @@ import { homedir } from "node:os";
 import * as p from "@clack/prompts";
 
 // Env values use ${VAR:-default} expansion so the wired MCP entry
-// inherits AGENTMEMORY_URL / AGENTMEMORY_SECRET / AGENTMEMORY_TOOLS
+// inherits endpoint, caller identity, auth, and tool-selection settings
 // from the user's shell, but never fails parse when the var is unset
 // (#510). Earlier `${VAR}` form caused Claude Code to silently drop the
 // server when no shell-level export existed — per the Claude Code MCP
@@ -28,6 +28,8 @@ export const AGENTMEMORY_MCP_BLOCK = {
   env: {
     AGENTMEMORY_URL: "${AGENTMEMORY_URL:-http://localhost:3111}",
     AGENTMEMORY_SECRET: "${AGENTMEMORY_SECRET:-}",
+    AGENT_ID: "${AGENT_ID:-}",
+    AGENTMEMORY_CALLER_TOKEN: "${AGENTMEMORY_CALLER_TOKEN:-}",
     AGENTMEMORY_TOOLS: "${AGENTMEMORY_TOOLS:-all}",
   },
 };
@@ -49,6 +51,8 @@ export const AGENTMEMORY_COPILOT_MCP_BLOCK = {
   env: {
     AGENTMEMORY_URL: "${AGENTMEMORY_URL:-http://localhost:3111}",
     AGENTMEMORY_SECRET: "${AGENTMEMORY_SECRET:-}",
+    AGENT_ID: "${AGENT_ID:-}",
+    AGENTMEMORY_CALLER_TOKEN: "${AGENTMEMORY_CALLER_TOKEN:-}",
     AGENTMEMORY_TOOLS: "${AGENTMEMORY_TOOLS:-all}",
   },
   tools: ["*"],

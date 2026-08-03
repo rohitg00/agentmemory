@@ -213,7 +213,8 @@ export const CORE_TOOLS: McpToolDef[] = [
   },
   {
     name: "memory_export",
-    description: "Export all memory data as JSON.",
+    description:
+      "Export all memory data as JSON. In lesson enforcement mode this is an operator-only operation requiring restricted clearance, lesson:all-scopes, and lesson:export.",
     inputSchema: { type: "object", properties: {} },
   },
   {
@@ -1131,7 +1132,7 @@ export const V070_TOOLS: McpToolDef[] = [
         actor: {
           type: "string",
           description:
-            "Optional caller-supplied audit attribution, not authenticated identity; defaults to AGENT_ID",
+            "Optional attribution hint in classify mode; ignored and server-stamped from the authenticated principal in enforce mode",
         },
       },
       required: ["lessonId", "reason"],
@@ -1169,7 +1170,7 @@ export const V070_TOOLS: McpToolDef[] = [
         actor: {
           type: "string",
           description:
-            "Optional caller-supplied audit attribution, not authenticated identity; defaults to AGENT_ID",
+            "Optional attribution hint in classify mode; ignored and server-stamped from the authenticated principal in enforce mode",
         },
       },
       required: ["lessonId", "replacementLessonId", "reason"],
@@ -1178,7 +1179,7 @@ export const V070_TOOLS: McpToolDef[] = [
   {
     name: "memory_obsidian_export",
     description:
-      "Export memories, lessons, and crystals as Obsidian-compatible Markdown files with YAML frontmatter and wikilinks for graph view.",
+      "Export memories, lessons, and crystals as Obsidian-compatible Markdown files with YAML frontmatter and wikilinks for graph view. In lesson enforcement mode, lesson/crystal exports require restricted clearance, lesson:all-scopes, and lesson:export.",
     inputSchema: {
       type: "object",
       properties: {

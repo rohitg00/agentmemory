@@ -9,6 +9,10 @@ import {
   persistAction,
 } from "./action-store.js";
 import { isLessonListable } from "./lesson-model.js";
+import {
+  canReadLesson,
+  lessonAccessContextFromPayload,
+} from "./lesson-access.js";
 import type {
   Action,
   ActionEdge,
@@ -51,7 +55,7 @@ const ONE_HOUR_MS = 60 * 60 * 1000;
 
 export function registerDiagnosticsFunction(sdk: ISdk, kv: StateKV): void {
   sdk.registerFunction("mem::diagnose", 
-    async (data: { categories?: string[] }) => {
+    async (data: { categories?: string[]; accessContext?: unknown }) => {
       const categories = data.categories && data.categories.length > 0
         ? data.categories.filter((c) => ALL_CATEGORIES.includes(c))
         : ALL_CATEGORIES;
@@ -405,16 +409,52 @@ export function registerDiagnosticsFunction(sdk: ISdk, kv: StateKV): void {
       }
 
       if (categories.includes("lessons")) {
+        const lessonAccessContext = lessonAccessContextFromPayload(
+          data.accessContext,
+        );
         // Counts only live lessons (deleted=true rows are tombstoned).
         // Catches bad confidence values that would silently break recall
         // scoring (memory_lesson_recall multiplies by confidence).
-        const lessons = await kv.list<Lesson>(KV.lessons);
+        let lessons: Lesson[];
+        let lessonStateUnavailable = false;
+        if (lessonAccessContext.mode === "classify") {
+          lessons = await kv.list<Lesson>(KV.lessons);
+        } else {
+          try {
+            lessons = await kv.list<Lesson>(KV.lessons);
+          } catch {
+            lessonStateUnavailable = true;
+            checks.push({
+              name: "lesson-projection-unavailable",
+              category: "lessons",
+              status: "fail",
+              message:
+                "Lesson diagnostics are unavailable because authoritative lesson state could not be read",
+              fixable: false,
+            });
+            lessons = [];
+          }
+        }
         const live: Lesson[] = [];
-        let lessonIssues = 0;
+        let readableLessonCount = 0;
+        let lessonIssues = lessonStateUnavailable ? 1 : 0;
+        let projectionIncomplete = false;
         for (const lesson of lessons) {
           try {
-            if (isLessonListable(lesson)) live.push(lesson);
+            if (
+              lessonAccessContext.mode === "enforce" &&
+              !canReadLesson(lesson, lessonAccessContext)
+            ) {
+              continue;
+            }
+            const listable = isLessonListable(lesson);
+            readableLessonCount++;
+            if (listable) live.push(lesson);
           } catch (error) {
+            if (lessonAccessContext.mode === "enforce") {
+              projectionIncomplete = true;
+              continue;
+            }
             checks.push({
               name: `lesson-invalid-structured:${lesson.id}`,
               category: "lessons",
@@ -426,6 +466,17 @@ export function registerDiagnosticsFunction(sdk: ISdk, kv: StateKV): void {
             });
             lessonIssues++;
           }
+        }
+        if (projectionIncomplete) {
+          checks.push({
+            name: "lesson-projection-incomplete",
+            category: "lessons",
+            status: "fail",
+            message:
+              "Lesson diagnostics are incomplete because one or more authoritative rows were unreadable or invalid",
+            fixable: false,
+          });
+          lessonIssues++;
         }
         for (const l of live) {
           // Number.isFinite rejects NaN / Infinity / non-numbers; a
@@ -453,7 +504,7 @@ export function registerDiagnosticsFunction(sdk: ISdk, kv: StateKV): void {
             name: "lessons-ok",
             category: "lessons",
             status: "pass",
-            message: `All ${live.length} lessons are healthy (${lessons.length - live.length} tombstoned)`,
+            message: `All ${live.length} lessons are healthy (${readableLessonCount - live.length} tombstoned)`,
             fixable: false,
           });
         }

@@ -18,7 +18,12 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { timingSafeCompare } from "../auth.js";
 import { VERSION } from "../version.js";
-import { resolveEnvOrEmpty } from "./rest-proxy.js";
+import {
+  callerIdentityHeaders,
+  resolveEnvOrEmpty,
+} from "./rest-proxy.js";
+import { upstreamHttpError } from "./http-error.js";
+import { createPlaintextCredentialGuard } from "./plaintext-credential.js";
 
 const DEFAULT_ENGINE_URL = "http://127.0.0.1:3111";
 const DEFAULT_HOST = "127.0.0.1";
@@ -112,7 +117,15 @@ function engineHeaders(): Record<string, string> {
   return {
     "content-type": "application/json",
     ...(secret ? { authorization: `Bearer ${secret}` } : {}),
+    ...callerIdentityHeaders(),
   };
+}
+
+function outboundCredential(): string {
+  return (
+    resolveEnvOrEmpty("AGENTMEMORY_SECRET") ||
+    resolveEnvOrEmpty("AGENTMEMORY_CALLER_TOKEN")
+  );
 }
 
 export function createProxyBackend(options: {
@@ -125,16 +138,27 @@ export function createProxyBackend(options: {
     )
   ).replace(/\/+$/, "");
   const fetchImpl = options.fetchImpl ?? fetch;
+  const guardPlaintextCredential = createPlaintextCredentialGuard();
+  const guardBackendRequest = () => {
+    guardPlaintextCredential(baseUrl, outboundCredential());
+  };
+
+  if (resolveEnvOrEmpty("AGENTMEMORY_REQUIRE_HTTPS") === "1") {
+    guardBackendRequest();
+  }
 
   async function request(path: string, init: RequestInit): Promise<unknown> {
+    guardBackendRequest();
     const response = await fetchImpl(`${baseUrl}${path}`, {
       ...init,
-      headers: { ...engineHeaders(), ...(init.headers ?? {}) },
+      headers: { ...(init.headers ?? {}), ...engineHeaders() },
       signal: AbortSignal.timeout(BACKEND_TIMEOUT_MS),
     });
     if (!response.ok) {
-      throw new Error(
-        `${init.method ?? "GET"} ${path} -> ${response.status} ${response.statusText}`,
+      throw await upstreamHttpError(
+        init.method ?? "GET",
+        path,
+        response,
       );
     }
     const text = await response.text();
@@ -143,6 +167,7 @@ export function createProxyBackend(options: {
 
   return {
     async health() {
+      guardBackendRequest();
       try {
         const response = await fetchImpl(`${baseUrl}/agentmemory/livez`, {
           method: "GET",

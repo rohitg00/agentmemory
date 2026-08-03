@@ -931,6 +931,7 @@ export interface Crystal {
   keyOutcomes: string[];
   filesAffected: string[];
   lessons: string[];
+  sourceLessonIds?: string[];
   sourceActionIds: string[];
   sessionId?: string;
   project?: string;

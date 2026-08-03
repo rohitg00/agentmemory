@@ -140,6 +140,83 @@ describe("requireInboundBearer", () => {
   });
 });
 
+describe("viewer proxy caller headers", () => {
+  const originalAgentId = process.env.AGENTMEMORY_VIEWER_AGENT_ID;
+  const originalCallerToken =
+    process.env.AGENTMEMORY_VIEWER_CALLER_TOKEN;
+  let viewer: Server | undefined;
+  let upstream: Server | undefined;
+
+  afterEach(async () => {
+    if (viewer) {
+      await new Promise<void>((resolve) => viewer!.close(() => resolve()));
+      viewer = undefined;
+    }
+    if (upstream) {
+      await new Promise<void>((resolve) => upstream!.close(() => resolve()));
+      upstream = undefined;
+    }
+    if (originalAgentId === undefined) {
+      delete process.env.AGENTMEMORY_VIEWER_AGENT_ID;
+    } else {
+      process.env.AGENTMEMORY_VIEWER_AGENT_ID = originalAgentId;
+    }
+    if (originalCallerToken === undefined) {
+      delete process.env.AGENTMEMORY_VIEWER_CALLER_TOKEN;
+    } else {
+      process.env.AGENTMEMORY_VIEWER_CALLER_TOKEN = originalCallerToken;
+    }
+  });
+
+  async function waitForListening(server: Server): Promise<void> {
+    if (server.listening) return;
+    await new Promise<void>((resolve) =>
+      server.once("listening", () => resolve()),
+    );
+  }
+
+  it("adds its server-side lesson principal without exposing or trusting browser credentials", async () => {
+    process.env.AGENTMEMORY_VIEWER_AGENT_ID = "viewer-service";
+    process.env.AGENTMEMORY_VIEWER_CALLER_TOKEN = "viewer-caller-secret";
+
+    let forwardedHeaders: Record<string, string | string[] | undefined> = {};
+    upstream = createServer((req, res) => {
+      forwardedHeaders = req.headers;
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ success: true }));
+    });
+    upstream.listen(0, "127.0.0.1");
+    await waitForListening(upstream);
+    const upstreamPort = (upstream.address() as AddressInfo).port;
+
+    viewer = startViewerServer(0, null, null, undefined, upstreamPort);
+    await waitForListening(viewer);
+    const viewerPort = (viewer.address() as AddressInfo).port;
+
+    const response = await fetch(
+      `http://127.0.0.1:${viewerPort}/agentmemory/lessons`,
+      {
+        headers: {
+          "X-AgentMemory-Agent-Id": "browser-supplied-agent",
+          "X-AgentMemory-Caller-Token": "browser-supplied-token",
+        },
+      },
+    );
+    expect(response.status).toBe(200);
+    expect(forwardedHeaders["x-agentmemory-agent-id"]).toBe(
+      "viewer-service",
+    );
+    expect(forwardedHeaders["x-agentmemory-caller-token"]).toBe(
+      "viewer-caller-secret",
+    );
+
+    const html = await fetch(`http://127.0.0.1:${viewerPort}/`).then((res) =>
+      res.text(),
+    );
+    expect(html).not.toContain("viewer-caller-secret");
+  });
+});
+
 describe("startViewerServer host binding", () => {
   const originalEnv = process.env.AGENTMEMORY_VIEWER_HOST;
   const originalOverride = process.env.VIEWER_ALLOWED_HOSTS;

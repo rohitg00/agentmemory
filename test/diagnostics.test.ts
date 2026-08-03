@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("../src/logger.js", () => ({
@@ -5,6 +6,11 @@ vi.mock("../src/logger.js", () => ({
 }));
 
 import { registerDiagnosticsFunction } from "../src/functions/diagnostics.js";
+import {
+  resolveLessonBoundaryAccess,
+  type LessonAccessContext,
+  type LessonCallerPolicy,
+} from "../src/functions/lesson-access.js";
 import type {
   Action,
   ActionEdge,
@@ -16,6 +22,7 @@ import type {
   Session,
   Memory,
   MeshPeer,
+  Lesson,
 } from "../src/types.js";
 import { KV } from "../src/state/schema.js";
 
@@ -174,6 +181,67 @@ function makePeer(overrides: Partial<MeshPeer> = {}): MeshPeer {
     sharedScopes: [],
     ...overrides,
   };
+}
+
+function makeScopedLesson(
+  id: string,
+  scopeId: string,
+  overrides: Partial<Lesson> = {},
+): Lesson {
+  return {
+    id,
+    content: `Lesson ${id}`,
+    context: "",
+    confidence: 0.8,
+    reinforcements: 0,
+    source: "manual",
+    sourceIds: [],
+    project: "agentmemory",
+    tags: [],
+    createdAt: "2026-08-03T00:00:00.000Z",
+    updatedAt: "2026-08-03T00:00:00.000Z",
+    decayRate: 0.05,
+    schemaVersion: 1,
+    identityKind: "canonical",
+    mechanismId: `diagnostics/${id}`,
+    claim: `Diagnostics projection covers ${id}.`,
+    evidenceVerdict: "unverified",
+    lifecycle: "active",
+    applicabilityConditions: [],
+    nonApplicabilityConditions: [],
+    falsificationConditions: [],
+    structuredFacets: {},
+    evidenceRefs: [],
+    scope: { ring: "repo", scopeId },
+    sensitivity: "internal",
+    contradictedByLessonIds: [],
+    ...overrides,
+  };
+}
+
+function scopedLessonReaderContext(): LessonAccessContext {
+  const token = "diagnostics-reader-token";
+  const policy: LessonCallerPolicy = {
+    version: 1,
+    principals: [{
+      principalId: "diagnostics-reader",
+      principalKind: "agent",
+      tokenSha256: createHash("sha256").update(token).digest("hex"),
+      clearance: "confidential",
+      scopes: [{
+        ring: "repo",
+        scopeId: "repo:visible",
+        access: "read",
+      }],
+      capabilities: [],
+    }],
+  };
+  const resolved = resolveLessonBoundaryAccess(
+    { "x-agentmemory-caller-token": token },
+    { mode: "enforce", policy },
+  );
+  if (!resolved.success) throw new Error("test access context did not resolve");
+  return resolved.context;
 }
 
 describe("Diagnostics Functions", () => {
@@ -708,6 +776,62 @@ describe("Diagnostics Functions", () => {
           ),
         }),
       );
+      expect(result.checks).not.toContainEqual(
+        expect.objectContaining({ name: "lessons-ok" }),
+      );
+    });
+
+    it("lessons category: enforce mode exposes only readable checks and bounded projection failure", async () => {
+      await kv.set(
+        KV.lessons,
+        "lsn_visible_bad_confidence",
+        makeScopedLesson(
+          "lsn_visible_bad_confidence",
+          "repo:visible",
+          { confidence: 1.5 },
+        ),
+      );
+      await kv.set(
+        KV.lessons,
+        "lsn_hidden_private",
+        makeScopedLesson("lsn_hidden_private", "repo:hidden", {
+          content: "hidden diagnostic content",
+        }),
+      );
+      await kv.set(KV.lessons, "lsn_hidden_malformed", {
+        ...makeScopedLesson("lsn_hidden_malformed", "repo:visible"),
+        evidenceRefs: "private malformed evidence detail",
+      });
+
+      const result = (await sdk.trigger("mem::diagnose", {
+        categories: ["lessons"],
+        accessContext: scopedLessonReaderContext(),
+      })) as { checks: DiagnosticCheck[] };
+
+      expect(result.checks).toContainEqual(
+        expect.objectContaining({
+          name: "lesson-bad-confidence:lsn_visible_bad_confidence",
+          status: "warn",
+        }),
+      );
+      expect(result.checks).toContainEqual({
+        name: "lesson-projection-incomplete",
+        category: "lessons",
+        status: "fail",
+        message:
+          "Lesson diagnostics are incomplete because one or more authoritative rows were unreadable or invalid",
+        fixable: false,
+      });
+      expect(
+        result.checks.filter(
+          (check) => check.name === "lesson-projection-incomplete",
+        ),
+      ).toHaveLength(1);
+      const serialized = JSON.stringify(result.checks);
+      expect(serialized).not.toContain("lsn_hidden_private");
+      expect(serialized).not.toContain("hidden diagnostic content");
+      expect(serialized).not.toContain("lsn_hidden_malformed");
+      expect(serialized).not.toContain("private malformed evidence detail");
       expect(result.checks).not.toContainEqual(
         expect.objectContaining({ name: "lessons-ok" }),
       );

@@ -24,6 +24,11 @@ import { selectSessionPage } from "../functions/session-list.js";
 import { triggerDetached } from "../utils/trigger-detached.js";
 import { parseLessonSaveInput } from "../functions/lesson-model.js";
 import {
+  bindResolvedLessonWriteIdentity,
+  resolveLessonBoundaryAccess,
+  type LessonAccessContext,
+} from "../functions/lesson-access.js";
+import {
   isGraphExtractionEnabled,
   isConsolidationEnabled,
   isAutoCompressEnabled,
@@ -41,6 +46,26 @@ type Response = {
   headers?: Record<string, string>;
   body: unknown;
 };
+
+type LessonRequestAccess =
+  | { success: true; context: LessonAccessContext }
+  | { success: false; response: Response };
+
+function resolveLessonRequestAccess(req: ApiRequest): LessonRequestAccess {
+  const resolved = resolveLessonBoundaryAccess(
+    req.headers as Record<string, string | string[] | undefined> | undefined,
+  );
+  if (!resolved.success) {
+    return {
+      success: false,
+      response: {
+        status_code: resolved.statusCode,
+        body: { error: resolved.error, code: resolved.code },
+      },
+    };
+  }
+  return { success: true, context: resolved.context };
+}
 
 export const OBSERVATION_QUEUE = "agentmemory-observations";
 
@@ -454,6 +479,8 @@ export function registerApiTriggers(
     async (
       req: ApiRequest<{ sessionId: string; project: string; budget?: number }>,
     ): Promise<Response> => {
+      const access = resolveLessonRequestAccess(req);
+      if (!access.success) return access.response;
       const body = (req.body ?? {}) as Record<string, unknown>;
       const sessionId = asNonEmptyString(body.sessionId);
       const project = asNonEmptyString(body.project);
@@ -470,9 +497,15 @@ export function registerApiTriggers(
           body: { error: "budget must be a positive integer" },
         };
       }
-      const payload: { sessionId: string; project: string; budget?: number } = {
+      const payload: {
+        sessionId: string;
+        project: string;
+        budget?: number;
+        accessContext: LessonAccessContext;
+      } = {
         sessionId,
         project,
+        accessContext: access.context,
       };
       if (budget !== undefined) payload.budget = budget;
       const result = await sdk.trigger({ function_id: "mem::context", payload });
@@ -662,8 +695,14 @@ export function registerApiTriggers(
     ): Promise<Response> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
+      const access = resolveLessonRequestAccess(req);
+      if (!access.success) return access.response;
       const body = (req.body ?? {}) as Record<string, unknown>;
-      const payload: { path?: string; maxFiles?: number } = {};
+      const payload: {
+        path?: string;
+        maxFiles?: number;
+        accessContext: LessonAccessContext;
+      } = { accessContext: access.context };
       if (body.path !== undefined) {
         if (typeof body.path !== "string" || body.path.trim().length === 0) {
           return {
@@ -727,6 +766,8 @@ export function registerApiTriggers(
           },
         };
       }
+      const access = resolveLessonRequestAccess(req);
+      if (!access.success) return access.response;
       const title = typeof body.title === "string" ? body.title.trim() : undefined;
       // allow session/start to override AGENT_ID from request body
       // (multi-agent runtimes that route many roles through one server
@@ -752,9 +793,16 @@ export function registerApiTriggers(
       };
       await kv.set(KV.sessions, sessionId, session);
       const contextResult = await sdk.trigger<
-        { sessionId: string; project: string },
+        {
+          sessionId: string;
+          project: string;
+          accessContext: LessonAccessContext;
+        },
         { context: string }
-      >({ function_id: "mem::context", payload: { sessionId, project } });
+      >({
+        function_id: "mem::context",
+        payload: { sessionId, project, accessContext: access.context },
+      });
       return {
         status_code: 200,
         body: { session, context: contextResult.context },
@@ -1425,9 +1473,14 @@ export function registerApiTriggers(
     async (req: ApiRequest<{ dryRun?: boolean }>): Promise<Response> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
+      const access = resolveLessonRequestAccess(req);
+      if (!access.success) return access.response;
       const dryRun =
         req.query_params?.["dryRun"] === "true" || req.body?.dryRun === true;
-      const result = await sdk.trigger({ function_id: "mem::evict", payload: { dryRun } });
+      const result = await sdk.trigger({
+        function_id: "mem::evict",
+        payload: { dryRun, accessContext: access.context },
+      });
       return { status_code: 200, body: result };
     },
   );
@@ -1461,6 +1514,13 @@ export function registerApiTriggers(
           body: { error: "query or expandIds is required" },
         };
       }
+      const includesLessons =
+        (!req.body?.expandIds || req.body.expandIds.length === 0) &&
+        req.body?.includeLessons !== false;
+      const access = includesLessons
+        ? resolveLessonRequestAccess(req)
+        : undefined;
+      if (access && !access.success) return access.response;
       // #771: route the X-Agentmemory-Source header into the payload so
       // the followup-rate diagnostic can skip viewer-originated calls.
       // Body wins if both are set (advanced callers explicitly override).
@@ -1480,6 +1540,7 @@ export function registerApiTriggers(
         agentId: req.body?.agentId,
         sessionId: req.body?.sessionId,
         source: req.body?.source ?? sourceFromHeader,
+        ...(access?.success ? { accessContext: access.context } : {}),
       };
       const result = await sdk.trigger({ function_id: "mem::smart-search", payload });
       return { status_code: 200, body: result };
@@ -1572,6 +1633,8 @@ export function registerApiTriggers(
     async (req: ApiRequest): Promise<Response> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
+      const access = resolveLessonRequestAccess(req);
+      if (!access.success) return access.response;
       // mem::export already supports maxSessions/offset internally,
       // but the HTTP endpoint hardcoded an empty payload — so /export on a
       // real corpus (40 sessions × 34K observations × 8K memories) hit the
@@ -1579,7 +1642,11 @@ export function registerApiTriggers(
       // Pass through the query-string pagination so callers can chunk.
       const rawMax = req.query_params?.["maxSessions"];
       const rawOffset = req.query_params?.["offset"];
-      const payload: { maxSessions?: number; offset?: number } = {};
+      const payload: {
+        maxSessions?: number;
+        offset?: number;
+        accessContext: LessonAccessContext;
+      } = { accessContext: access.context };
       if (typeof rawMax === "string") {
         const n = Number(rawMax);
         if (Number.isInteger(n) && n > 0) payload.maxSessions = n;
@@ -1592,7 +1659,11 @@ export function registerApiTriggers(
         function_id: "mem::export",
         payload,
       });
-      return { status_code: 200, body: result };
+      const response = result as { code?: string };
+      return {
+        status_code: response.code === "access_denied" ? 403 : 200,
+        body: result,
+      };
     },
   );
   sdk.registerTrigger({
@@ -1610,11 +1681,24 @@ export function registerApiTriggers(
     ): Promise<Response> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
+      const access = resolveLessonRequestAccess(req);
+      if (!access.success) return access.response;
       if (!req.body?.exportData) {
         return { status_code: 400, body: { error: "exportData is required" } };
       }
-      const result = await sdk.trigger({ function_id: "mem::import", payload: req.body });
-      return { status_code: 200, body: result };
+      const result = await sdk.trigger({
+        function_id: "mem::import",
+        payload: {
+          exportData: req.body.exportData,
+          strategy: req.body.strategy,
+          accessContext: access.context,
+        },
+      });
+      const response = result as { code?: string };
+      return {
+        status_code: response.code === "access_denied" ? 403 : 200,
+        body: result,
+      };
     },
   );
   sdk.registerTrigger({
@@ -1934,9 +2018,22 @@ export function registerApiTriggers(
     async (req: ApiRequest<{ tier?: string }>): Promise<Response> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
+      const access = resolveLessonRequestAccess(req);
+      if (!access.success) return access.response;
+      const body = (req.body ?? {}) as Record<string, unknown>;
       try {
-        const result = await sdk.trigger({ function_id: "mem::consolidate-pipeline", payload: req.body || {},
-         });
+        const result = await sdk.trigger({
+          function_id: "mem::consolidate-pipeline",
+          payload: {
+            tier: typeof body.tier === "string" ? body.tier : undefined,
+            force: typeof body.force === "boolean" ? body.force : undefined,
+            project:
+              typeof body.project === "string"
+                ? body.project
+                : undefined,
+            accessContext: access.context,
+          },
+        });
         return { status_code: 200, body: result };
       } catch {
         return consolidationDisabledResponse();
@@ -2020,10 +2117,13 @@ export function registerApiTriggers(
     async (req: ApiRequest): Promise<Response> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
+      const access = resolveLessonRequestAccess(req);
+      if (!access.success) return access.response;
       const parsedLimit = parseOptionalInt(req.query_params?.["limit"]);
       const entries = await sdk.trigger({ function_id: "mem::audit-query", payload: {
         operation: req.query_params?.["operation"],
         limit: parsedLimit ?? 50,
+        accessContext: access.context,
       } });
       return { status_code: 200, body: { entries, success: true } };
     },
@@ -3423,9 +3523,30 @@ export function registerApiTriggers(
   sdk.registerFunction("api::crystallize",  async (req: ApiRequest) => {
     const denied = checkAuth(req, secret);
     if (denied) return denied;
-    const body = req.body as Record<string, unknown>;
-    if (!body?.actionIds) return { status_code: 400, body: { error: "actionIds is required" } };
-    const result = await sdk.trigger({ function_id: "mem::crystallize", payload: body });
+    const access = resolveLessonRequestAccess(req);
+    if (!access.success) return access.response;
+    const body = (req.body as Record<string, unknown>) || {};
+    if (
+      !Array.isArray(body.actionIds) ||
+      !body.actionIds.every(
+        (id): id is string => typeof id === "string" && id.length > 0,
+      )
+    ) {
+      return { status_code: 400, body: { error: "actionIds is required" } };
+    }
+    const result = await sdk.trigger({
+      function_id: "mem::crystallize",
+      payload: {
+        actionIds: body.actionIds,
+        project:
+          typeof body.project === "string" ? body.project : undefined,
+        sessionId:
+          typeof body.sessionId === "string"
+            ? body.sessionId
+            : undefined,
+        accessContext: access.context,
+      },
+    });
     return { status_code: 200, body: result };
   });
   sdk.registerTrigger({ type: "http", function_id: "api::crystallize", config: { api_path: "/agentmemory/crystals/create", http_method: "POST" } });
@@ -3433,6 +3554,8 @@ export function registerApiTriggers(
   sdk.registerFunction("api::crystal-list",  async (req: ApiRequest) => {
     const denied = checkAuth(req, secret);
     if (denied) return denied;
+    const access = resolveLessonRequestAccess(req);
+    if (!access.success) return access.response;
     const params = req.query_params || {};
     const limit = parseOptionalPositiveInt(params.limit);
     if (limit === null) {
@@ -3441,7 +3564,15 @@ export function registerApiTriggers(
         body: { error: "invalid numeric parameter: limit" },
       };
     }
-    const result = await sdk.trigger({ function_id: "mem::crystal-list", payload: { project: params.project, sessionId: params.sessionId, limit } });
+    const result = await sdk.trigger({
+      function_id: "mem::crystal-list",
+      payload: {
+        project: params.project,
+        sessionId: params.sessionId,
+        limit,
+        accessContext: access.context,
+      },
+    });
     return { status_code: 200, body: result };
   });
   sdk.registerTrigger({ type: "http", function_id: "api::crystal-list", config: { api_path: "/agentmemory/crystals", http_method: "GET" } });
@@ -3449,8 +3580,23 @@ export function registerApiTriggers(
   sdk.registerFunction("api::auto-crystallize",  async (req: ApiRequest) => {
     const denied = checkAuth(req, secret);
     if (denied) return denied;
-    const body = req.body as Record<string, unknown>;
-    const result = await sdk.trigger({ function_id: "mem::auto-crystallize", payload: body || {} });
+    const access = resolveLessonRequestAccess(req);
+    if (!access.success) return access.response;
+    const body = (req.body as Record<string, unknown>) || {};
+    const result = await sdk.trigger({
+      function_id: "mem::auto-crystallize",
+      payload: {
+        olderThanDays:
+          typeof body.olderThanDays === "number"
+            ? body.olderThanDays
+            : undefined,
+        project:
+          typeof body.project === "string" ? body.project : undefined,
+        dryRun:
+          typeof body.dryRun === "boolean" ? body.dryRun : undefined,
+        accessContext: access.context,
+      },
+    });
     return { status_code: 200, body: result };
   });
   sdk.registerTrigger({ type: "http", function_id: "api::auto-crystallize", config: { api_path: "/agentmemory/crystals/auto", http_method: "POST" } });
@@ -3458,8 +3604,28 @@ export function registerApiTriggers(
   sdk.registerFunction("api::diagnose",  async (req: ApiRequest) => {
     const denied = checkAuth(req, secret);
     if (denied) return denied;
-    const body = req.body as Record<string, unknown>;
-    const result = await sdk.trigger({ function_id: "mem::diagnose", payload: body || {} });
+    const body = (req.body as Record<string, unknown>) || {};
+    const categories = Array.isArray(body.categories)
+      ? body.categories.filter(
+          (category): category is string =>
+            typeof category === "string",
+        )
+      : undefined;
+    const includesLessons =
+      categories === undefined || categories.includes("lessons");
+    const access = includesLessons
+      ? resolveLessonRequestAccess(req)
+      : undefined;
+    if (access && !access.success) return access.response;
+    const result = await sdk.trigger({
+      function_id: "mem::diagnose",
+      payload: {
+        categories,
+        ...(access?.success
+          ? { accessContext: access.context }
+          : {}),
+      },
+    });
     return { status_code: 200, body: result };
   });
   sdk.registerTrigger({ type: "http", function_id: "api::diagnose", config: { api_path: "/agentmemory/diagnostics", http_method: "POST" } });
@@ -3546,7 +3712,19 @@ export function registerApiTriggers(
   sdk.registerFunction("api::lesson-save",  async (req: ApiRequest) => {
     const denied = checkAuth(req, secret);
     if (denied) return denied;
-    const parsed = parseLessonSaveInput(req.body, {
+    const access = resolveLessonRequestAccess(req);
+    if (!access.success) return access.response;
+    const prepared = bindResolvedLessonWriteIdentity(
+      req.body,
+      access.context,
+    );
+    if (!prepared.success) {
+      return {
+        status_code: prepared.code === "access_denied" ? 403 : 400,
+        body: { error: prepared.error, code: prepared.code },
+      };
+    }
+    const parsed = parseLessonSaveInput(prepared.value, {
       source: "manual",
       allowSourceMetadata: false,
     });
@@ -3555,8 +3733,11 @@ export function registerApiTriggers(
     }
     const result = (await sdk.trigger({
       function_id: "mem::lesson-save",
-      payload: parsed.value,
-    })) as { action?: string };
+      payload: { ...parsed.value, accessContext: access.context },
+    })) as { action?: string; code?: string };
+    if (result?.code === "access_denied") {
+      return { status_code: 403, body: result };
+    }
     const statusCode = result?.action === "created" ? 201 : 200;
     return { status_code: statusCode, body: result };
   });
@@ -3565,6 +3746,8 @@ export function registerApiTriggers(
   sdk.registerFunction("api::lesson-list",  async (req: ApiRequest) => {
     const denied = checkAuth(req, secret);
     if (denied) return denied;
+    const access = resolveLessonRequestAccess(req);
+    if (!access.success) return access.response;
     const params = req.query_params || {};
     const minConfidence = parseOptionalFiniteNumber(params.minConfidence);
     if (minConfidence === null) {
@@ -3605,6 +3788,7 @@ export function registerApiTriggers(
       limit,
       offset,
       sortBy,
+      accessContext: access.context,
     } });
     return { status_code: 200, body: result };
   });
@@ -3613,6 +3797,8 @@ export function registerApiTriggers(
   sdk.registerFunction("api::lesson-search",  async (req: ApiRequest) => {
     const denied = checkAuth(req, secret);
     if (denied) return denied;
+    const access = resolveLessonRequestAccess(req);
+    if (!access.success) return access.response;
     const body = (req.body ?? {}) as Record<string, unknown>;
     const query = asNonEmptyString(body.query);
     if (!query) {
@@ -3649,6 +3835,7 @@ export function registerApiTriggers(
         project: asNonEmptyString(body.project),
         minConfidence: body.minConfidence,
         limit: body.limit,
+        accessContext: access.context,
       },
     });
     return { status_code: 200, body: result };
@@ -3658,16 +3845,27 @@ export function registerApiTriggers(
   sdk.registerFunction("api::lesson-strengthen",  async (req: ApiRequest) => {
     const denied = checkAuth(req, secret);
     if (denied) return denied;
+    const access = resolveLessonRequestAccess(req);
+    if (!access.success) return access.response;
     const body = req.body as Record<string, unknown>;
     if (!body?.lessonId || typeof body.lessonId !== "string") return { status_code: 400, body: { error: "lessonId is required" } };
-    const result = await sdk.trigger({ function_id: "mem::lesson-strengthen", payload: { lessonId: body.lessonId } });
-    return { status_code: 200, body: result };
+    const result = await sdk.trigger({
+      function_id: "mem::lesson-strengthen",
+      payload: { lessonId: body.lessonId, accessContext: access.context },
+    });
+    const response = result as { code?: string };
+    return {
+      status_code: response.code === "access_denied" ? 403 : 200,
+      body: result,
+    };
   });
   sdk.registerTrigger({ type: "http", function_id: "api::lesson-strengthen", config: { api_path: "/agentmemory/lessons/strengthen", http_method: "POST" } });
 
   sdk.registerFunction("api::lesson-delete", async (req: ApiRequest) => {
     const denied = checkAuth(req, secret);
     if (denied) return denied;
+    const access = resolveLessonRequestAccess(req);
+    if (!access.success) return access.response;
     const body = (req.body ?? {}) as Record<string, unknown>;
     const lessonId = asNonEmptyString(body.lessonId);
     const reason = asNonEmptyString(body.reason);
@@ -3694,6 +3892,7 @@ export function registerApiTriggers(
         expectedUpdatedAt:
           asNonEmptyString(body.expectedUpdatedAt) ?? undefined,
         actor: asNonEmptyString(body.actor) ?? getAgentId() ?? "unknown",
+        accessContext: access.context,
       },
     });
     const response = result as { success?: boolean; code?: string };
@@ -3707,6 +3906,8 @@ export function registerApiTriggers(
               response.code === "project_mismatch" ||
               response.code === "scope_mismatch"
             ? 409
+            : response.code === "access_denied"
+              ? 403
             : 400;
     return { status_code: statusCode, body: result };
   });
@@ -3719,6 +3920,8 @@ export function registerApiTriggers(
   sdk.registerFunction("api::lesson-supersede", async (req: ApiRequest) => {
     const denied = checkAuth(req, secret);
     if (denied) return denied;
+    const access = resolveLessonRequestAccess(req);
+    if (!access.success) return access.response;
     const body = (req.body ?? {}) as Record<string, unknown>;
     const lessonId = asNonEmptyString(body.lessonId);
     const replacementLessonId = asNonEmptyString(body.replacementLessonId);
@@ -3749,6 +3952,7 @@ export function registerApiTriggers(
         expectedUpdatedAt:
           asNonEmptyString(body.expectedUpdatedAt) ?? undefined,
         actor: asNonEmptyString(body.actor) ?? getAgentId() ?? "unknown",
+        accessContext: access.context,
       },
     });
     const response = result as { success?: boolean; code?: string };
@@ -3764,6 +3968,8 @@ export function registerApiTriggers(
               response.code === "scope_mismatch" ||
               response.code === "replacement_not_active"
             ? 409
+            : response.code === "access_denied"
+              ? 403
             : 400;
     return { status_code: statusCode, body: result };
   });
@@ -3788,18 +3994,40 @@ export function registerApiTriggers(
       };
     }
     const types = typeof body.types === "string" ? body.types.split(",").map((t: string) => t.trim()).filter(Boolean) : undefined;
-    const result = await sdk.trigger({ function_id: "mem::obsidian-export", payload: { vaultDir, types } });
-    return { status_code: 200, body: result };
+    const includesProtectedRecords =
+      types === undefined ||
+      types.includes("lessons") ||
+      types.includes("crystals");
+    const access = includesProtectedRecords
+      ? resolveLessonRequestAccess(req)
+      : undefined;
+    if (access && !access.success) return access.response;
+    const result = await sdk.trigger({
+      function_id: "mem::obsidian-export",
+      payload: {
+        vaultDir,
+        types,
+        ...(access?.success ? { accessContext: access.context } : {}),
+      },
+    });
+    const response = result as { code?: string };
+    return {
+      status_code: response.code === "access_denied" ? 403 : 200,
+      body: result,
+    };
   });
   sdk.registerTrigger({ type: "http", function_id: "api::obsidian-export", config: { api_path: "/agentmemory/obsidian/export", http_method: "POST" } });
 
   sdk.registerFunction("api::reflect",  async (req: ApiRequest) => {
     const denied = checkAuth(req, secret);
     if (denied) return denied;
+    const access = resolveLessonRequestAccess(req);
+    if (!access.success) return access.response;
     const body = (req.body as Record<string, unknown>) || {};
     const result = await sdk.trigger({ function_id: "mem::reflect", payload: {
       project: typeof body.project === "string" ? body.project : undefined,
       maxClusters: typeof body.maxClusters === "number" ? body.maxClusters : undefined,
+      accessContext: access.context,
     } });
     return { status_code: 200, body: result };
   });
@@ -3808,6 +4036,8 @@ export function registerApiTriggers(
   sdk.registerFunction("api::insight-list",  async (req: ApiRequest) => {
     const denied = checkAuth(req, secret);
     if (denied) return denied;
+    const access = resolveLessonRequestAccess(req);
+    if (!access.success) return access.response;
     const params = req.query_params || {};
     const minConfidence = parseOptionalFiniteNumber(params.minConfidence);
     if (minConfidence === null) {
@@ -3827,6 +4057,7 @@ export function registerApiTriggers(
       project: params.project,
       minConfidence,
       limit,
+      accessContext: access.context,
     } });
     return { status_code: 200, body: result };
   });
@@ -3835,6 +4066,8 @@ export function registerApiTriggers(
   sdk.registerFunction("api::insight-search",  async (req: ApiRequest) => {
     const denied = checkAuth(req, secret);
     if (denied) return denied;
+    const access = resolveLessonRequestAccess(req);
+    if (!access.success) return access.response;
     const body = req.body as Record<string, unknown>;
     if (!body?.query || typeof body.query !== "string") return { status_code: 400, body: { error: "query is required" } };
     const result = await sdk.trigger({ function_id: "mem::insight-search", payload: {
@@ -3842,6 +4075,7 @@ export function registerApiTriggers(
       project: typeof body.project === "string" ? body.project : undefined,
       minConfidence: typeof body.minConfidence === "number" ? body.minConfidence : undefined,
       limit: typeof body.limit === "number" ? body.limit : undefined,
+      accessContext: access.context,
     } });
     return { status_code: 200, body: result };
   });
