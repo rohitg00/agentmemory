@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 const expectedHermesHooks = [
   "prefetch",
@@ -67,5 +70,53 @@ describe("Hermes plugin manifest", () => {
     expect(source).toMatch(
       /os\.environ\.setdefault\(\s*["']AGENTMEMORY_URL["']\s*,\s*DEFAULT_BASE_URL\s*\)/,
     );
+  });
+
+  it("forwards the configured agent identity and caller token", () => {
+    const script = String.raw`
+import importlib.util
+
+spec = importlib.util.spec_from_file_location("agentmemory_hermes", "integrations/hermes/__init__.py")
+mod = importlib.util.module_from_spec(spec)
+assert spec.loader is not None
+spec.loader.exec_module(mod)
+
+seen = []
+class FakeResponse:
+    def __enter__(self):
+        return self
+    def __exit__(self, exc_type, exc, tb):
+        return False
+    def read(self):
+        return b'{"success": true}'
+
+def fake_urlopen(req, timeout=0):
+    seen.append({key.lower(): value for key, value in req.header_items()})
+    return FakeResponse()
+
+mod.urlopen = fake_urlopen
+result = mod._api("http://localhost:3111", "smart-search", {"query": "auth"})
+assert result == {"success": True}, result
+assert seen[0]["authorization"] == "Bearer api-secret", seen[0]
+assert seen[0]["x-agentmemory-agent-id"] == "hermes-agent", seen[0]
+assert seen[0]["x-agentmemory-caller-token"] == "hermes-caller-secret", seen[0]
+`;
+    const emptyConfigDir = join(
+      tmpdir(),
+      `agentmemory-hermes-caller-test-${process.pid}`,
+    );
+    const result = spawnSync("python3", ["-c", script], {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        HOME: emptyConfigDir,
+        XDG_CONFIG_HOME: emptyConfigDir,
+        AGENTMEMORY_SECRET: "api-secret",
+        AGENT_ID: "hermes-agent",
+        AGENTMEMORY_CALLER_TOKEN: "hermes-caller-secret",
+      },
+      encoding: "utf8",
+    });
+    expect(result.status, result.stderr || result.stdout).toBe(0);
   });
 });

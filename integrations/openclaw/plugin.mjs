@@ -89,7 +89,7 @@ function usesPlaintextBearerAuth(baseUrl, secret) {
 }
 
 function plaintextBearerAuthMessage(baseUrl) {
-  return `agentmemory: AGENTMEMORY_SECRET is configured for plaintext HTTP to ${baseUrl}. Bearer tokens and memory payloads can be observed on the network; use HTTPS or an SSH tunnel.`;
+  return `agentmemory: an AGENTMEMORY_SECRET or AGENTMEMORY_CALLER_TOKEN credential is configured for plaintext HTTP to ${baseUrl}. Bearer tokens and memory payloads can be observed on the network; use HTTPS or an SSH tunnel.`;
 }
 
 export function createPlaintextBearerAuthGuard(warn, env) {
@@ -116,11 +116,11 @@ function createClient(cfg, api) {
     (message) => api.logger.warn?.(message),
   );
   if (process.env.AGENTMEMORY_REQUIRE_HTTPS === "1") {
-    guardPlaintextBearerAuth(baseUrl, secret);
+    guardPlaintextBearerAuth(baseUrl, secret || callerToken);
   }
 
   async function postJson(path, payload) {
-    guardPlaintextBearerAuth(baseUrl, secret);
+    guardPlaintextBearerAuth(baseUrl, secret || callerToken);
     const headers = { "Content-Type": "application/json" };
     if (secret) headers.Authorization = `Bearer ${secret}`;
     if (agentId) headers["X-AgentMemory-Agent-Id"] = agentId;

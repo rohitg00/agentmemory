@@ -43,7 +43,7 @@ Unknown mode values and relative policy paths fail closed.
           "access": "write"
         }
       ],
-      "capabilities": ["lesson:export"]
+      "capabilities": []
     }
   ]
 }
@@ -64,8 +64,9 @@ Supported capabilities are:
 The sensitivity order is
 `public < internal < confidential < restricted`. Access requires both adequate
 clearance and a matching scope grant unless `lesson:all-scopes` is present.
-Legacy rows normalized to an implicit worktree scope additionally require
-`lesson:legacy-worktree`.
+`lesson:legacy-worktree` is a read-only exception for existing rows normalized
+to an implicit worktree scope. New enforced writes require an explicit durable
+scope unless they originate from the sealed internal service context.
 
 ## Boundary contract
 
@@ -76,9 +77,15 @@ Clients send:
 
 The token is matched to `tokenSha256` with a timing-safe digest comparison. If
 the optional claimed ID is present it must match the policy principal. The MCP
-shim, streamable HTTP MCP bridge, bundled hooks, Pi, OpenCode, and OpenClaw
-integrations forward these headers from `AGENTMEMORY_CALLER_TOKEN` and
-`AGENT_ID`.
+shim, streamable HTTP MCP bridge, bundled hooks, Pi, OpenCode, Hermes, and
+OpenClaw integrations forward these headers from `AGENTMEMORY_CALLER_TOKEN`
+and `AGENT_ID`.
+
+The viewer uses a separate server-side identity from
+`AGENTMEMORY_VIEWER_AGENT_ID` and `AGENTMEMORY_VIEWER_CALLER_TOKEN`. It ignores
+browser-supplied caller identity headers and never embeds the caller token in
+the rendered document. Integration plaintext-HTTP guards treat either
+`AGENTMEMORY_SECRET` or `AGENTMEMORY_CALLER_TOKEN` as a credential.
 
 Request bodies and MCP arguments are explicitly whitelisted. A supplied
 `accessContext` is never forwarded by a public boundary. Direct iii function
@@ -91,15 +98,30 @@ principal.
 
 - Save, strengthen, retract, and supersede require read/write authority for the
   affected durable scope and adequate sensitivity clearance.
-- Recall, list, injected context, smart search, reflection, and exports filter
-  unauthorized lessons before totals, ranking, or provider prompts.
+- Recall, list, injected context, smart search, reflection, audit/diagnostic
+  projections, crystal/insight reads, and exports filter unauthorized lessons
+  before totals, ranking, provider prompts, or derived content are returned.
+- Replay, crystallization, consolidation, eviction, reflection, audit, and
+  diagnostics propagate a resolved caller. Scheduled maintenance alone may
+  receive the sealed internal service context.
+- Crystals persist `sourceLessonIds`; insights retain their lesson/crystal
+  provenance. Every referenced lesson must be readable, and each crystal
+  lesson value must correspond to its positional source lesson ID or
+  authoritative content. A legacy crystal with lesson prose but no source IDs
+  requires all-scopes authority in enforcement mode.
 - Global saves require an authenticated `human` principal with
   `lesson:approve-global`; the server stamps `humanApproval.approvedBy` and
   `humanApproval.approvedAt`.
 - In enforce mode correction actors are server-stamped.
-- Portable and Obsidian lesson exports require `lesson:export`.
-- Imports require `lesson:import`, validate every incoming lesson before any
-  write, and require authority for overwritten or replace-deleted lessons.
+- Portable full-database export/import and Obsidian exports containing lessons
+  or crystals are operator-only in enforcement mode: `restricted` clearance,
+  `lesson:all-scopes`, and the matching `lesson:export` or `lesson:import`
+  capability are all required.
+- Imports preflight collection shapes and every incoming lesson before any
+  write, require authority for overwritten or replace-deleted lessons, and
+  restore exact lesson preimages if a lesson-batch write fails. The KV
+  abstraction has no transaction spanning all non-lesson collections, so a
+  later full-import storage failure can still require operator repair.
 - The internal service context can run scheduled maintenance across scopes but
   cannot approve global publication.
 

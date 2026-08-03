@@ -360,8 +360,6 @@ export function registerMcpEndpoints(
           }
 
           case "memory_smart_search": {
-            const access = resolveLessonRequestAccess(req);
-            if (!access.success) return access.response;
             if (typeof args.query !== "string" || !args.query.trim()) {
               return {
                 status_code: 400,
@@ -369,6 +367,11 @@ export function registerMcpEndpoints(
               };
             }
             const expandIds = parseCsvList(args.expandIds).slice(0, 20);
+            const access =
+              expandIds.length === 0
+                ? resolveLessonRequestAccess(req)
+                : undefined;
+            if (access && !access.success) return access.response;
             const limit = Math.max(1, Math.min(100, asNumber(args.limit, 10) ?? 10));
             const result = await sdk.trigger({
               function_id: "mem::smart-search",
@@ -376,7 +379,9 @@ export function registerMcpEndpoints(
                 query: args.query,
                 expandIds,
                 limit,
-                accessContext: access.context,
+                ...(access?.success
+                  ? { accessContext: access.context }
+                  : {}),
               },
             });
             return {
@@ -580,10 +585,13 @@ export function registerMcpEndpoints(
           }
 
           case "memory_consolidate": {
+            const access = resolveLessonRequestAccess(req);
+            if (!access.success) return access.response;
             try {
               const result = await sdk.trigger({ function_id: "mem::consolidate-pipeline", payload: {
                 tier: args.tier as string,
                 force: true,
+                accessContext: access.context,
               } });
               return {
                 status_code: 200,
@@ -675,10 +683,13 @@ export function registerMcpEndpoints(
           }
 
           case "memory_audit": {
+            const access = resolveLessonRequestAccess(req);
+            if (!access.success) return access.response;
             try {
               const result = await sdk.trigger({ function_id: "mem::audit-query", payload: {
                 operation: args.operation as string,
                 limit: typeof args.limit === "number" ? args.limit : 50,
+                accessContext: access.context,
               } });
               return {
                 status_code: 200,
@@ -1217,6 +1228,8 @@ export function registerMcpEndpoints(
           }
 
           case "memory_crystallize": {
+            const access = resolveLessonRequestAccess(req);
+            if (!access.success) return access.response;
             if (typeof args.actionIds !== "string" || !args.actionIds.trim()) {
               return { status_code: 400, body: { error: "actionIds is required" } };
             }
@@ -1225,6 +1238,7 @@ export function registerMcpEndpoints(
               actionIds: crysIds,
               project: args.project,
               sessionId: args.sessionId,
+              accessContext: access.context,
             } });
             return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(crysResult, null, 2) }] } };
           }
@@ -1273,7 +1287,21 @@ export function registerMcpEndpoints(
             const diagCats = typeof args.categories === "string" && args.categories.trim()
               ? args.categories.split(",").map((s: string) => s.trim()).filter(Boolean)
               : undefined;
-            const diagResult = await sdk.trigger({ function_id: "mem::diagnose", payload: { categories: diagCats } });
+            const includesLessons =
+              diagCats === undefined || diagCats.includes("lessons");
+            const access = includesLessons
+              ? resolveLessonRequestAccess(req)
+              : undefined;
+            if (access && !access.success) return access.response;
+            const diagResult = await sdk.trigger({
+              function_id: "mem::diagnose",
+              payload: {
+                categories: diagCats,
+                ...(access?.success
+                  ? { accessContext: access.context }
+                  : {}),
+              },
+            });
             return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(diagResult, null, 2) }] } };
           }
 
@@ -1456,24 +1484,35 @@ export function registerMcpEndpoints(
           }
 
           case "memory_insight_list": {
+            const access = resolveLessonRequestAccess(req);
+            if (!access.success) return access.response;
             const insightListResult = await sdk.trigger({ function_id: "mem::insight-list", payload: {
               project: args.project,
               minConfidence: args.minConfidence,
               limit: args.limit,
+              accessContext: access.context,
             } });
             return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(insightListResult, null, 2) }] } };
           }
 
           case "memory_obsidian_export": {
-            const access = resolveLessonRequestAccess(req);
-            if (!access.success) return access.response;
             const exportTypes = typeof args.types === "string" && args.types.trim()
               ? args.types.split(",").map((t: string) => t.trim()).filter(Boolean)
               : undefined;
+            const includesProtectedRecords =
+              exportTypes === undefined ||
+              exportTypes.includes("lessons") ||
+              exportTypes.includes("crystals");
+            const access = includesProtectedRecords
+              ? resolveLessonRequestAccess(req)
+              : undefined;
+            if (access && !access.success) return access.response;
             const obsidianResult = await sdk.trigger({ function_id: "mem::obsidian-export", payload: {
               vaultDir: args.vaultDir,
               types: exportTypes,
-              accessContext: access.context,
+              ...(access?.success
+                ? { accessContext: access.context }
+                : {}),
             } });
             return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(obsidianResult, null, 2) }] } };
           }

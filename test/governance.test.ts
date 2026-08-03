@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 vi.mock("../src/logger.js", () => ({
@@ -10,7 +11,12 @@ import {
   setIndexPersistence,
 } from "../src/functions/search.js";
 import { memoryToObservation } from "../src/state/memory-utils.js";
-import type { Memory, AuditEntry } from "../src/types.js";
+import {
+  resolveLessonBoundaryAccess,
+  type LessonAccessContext,
+  type LessonCallerPolicy,
+} from "../src/functions/lesson-access.js";
+import type { Memory, AuditEntry, Lesson } from "../src/types.js";
 
 function mockKV() {
   const store = new Map<string, Map<string, unknown>>();
@@ -65,6 +71,83 @@ function makeMemory(id: string, type: Memory["type"] = "pattern"): Memory {
     strength: 5,
     version: 1,
     isLatest: true,
+  };
+}
+
+function makeScopedLesson(
+  id: string,
+  scopeId: string,
+  sensitivity: Lesson["sensitivity"] = "internal",
+): Lesson {
+  return {
+    id,
+    content: `Lesson ${id}`,
+    context: "",
+    confidence: 0.8,
+    reinforcements: 0,
+    source: "manual",
+    sourceIds: [],
+    project: "agentmemory",
+    tags: [],
+    createdAt: "2026-08-03T00:00:00.000Z",
+    updatedAt: "2026-08-03T00:00:00.000Z",
+    decayRate: 0.05,
+    schemaVersion: 1,
+    identityKind: "canonical",
+    mechanismId: `audit/${id}`,
+    claim: `Audit projection covers ${id}.`,
+    evidenceVerdict: "unverified",
+    lifecycle: "active",
+    applicabilityConditions: [],
+    nonApplicabilityConditions: [],
+    falsificationConditions: [],
+    structuredFacets: {},
+    evidenceRefs: [],
+    scope: { ring: "repo", scopeId },
+    sensitivity,
+    contradictedByLessonIds: [],
+  };
+}
+
+function scopedReaderContext(): LessonAccessContext {
+  const token = "governance-reader-token";
+  const policy: LessonCallerPolicy = {
+    version: 1,
+    principals: [{
+      principalId: "audit-reader",
+      principalKind: "agent",
+      tokenSha256: createHash("sha256").update(token).digest("hex"),
+      clearance: "confidential",
+      scopes: [{
+        ring: "repo",
+        scopeId: "repo:visible",
+        access: "read",
+      }],
+      capabilities: [],
+    }],
+  };
+  const resolved = resolveLessonBoundaryAccess(
+    { "x-agentmemory-caller-token": token },
+    { mode: "enforce", policy },
+  );
+  if (!resolved.success) throw new Error("test access context did not resolve");
+  return resolved.context;
+}
+
+function makeAuditEntry(
+  id: string,
+  operation: AuditEntry["operation"],
+  functionId: string,
+  targetIds: string[],
+  details: Record<string, unknown> = {},
+): AuditEntry {
+  return {
+    id,
+    timestamp: "2026-08-03T00:00:00.000Z",
+    operation,
+    functionId,
+    targetIds,
+    details,
   };
 }
 
@@ -252,5 +335,101 @@ describe("Governance Functions", () => {
     expect(entries.length).toBe(1);
     expect(entries[0].operation).toBe("delete");
     expect(entries[0].functionId).toBe("mem::governance-delete");
+  });
+
+  it("audit-query fail-closes lesson rows against the sealed caller projection", async () => {
+    const visible = makeScopedLesson("lsn_visible", "repo:visible");
+    visible.idAliases = ["lsn_visible_alias"];
+    const hidden = makeScopedLesson("lsn_hidden", "repo:hidden");
+    await kv.set("mem:lessons", visible.id, visible);
+    await kv.set("mem:lessons", hidden.id, hidden);
+
+    const auditEntries = [
+      makeAuditEntry(
+        "aud_visible",
+        "lesson_save",
+        "mem::lesson-save",
+        [visible.id],
+      ),
+      makeAuditEntry(
+        "aud_hidden",
+        "lesson_save",
+        "mem::lesson-save",
+        [hidden.id],
+      ),
+      makeAuditEntry(
+        "aud_mixed",
+        "lesson_strengthen",
+        "mem::lesson-strengthen",
+        [visible.id, hidden.id],
+      ),
+      makeAuditEntry(
+        "aud_missing",
+        "lesson_delete",
+        "mem::lesson-delete",
+        ["lsn_missing"],
+      ),
+      makeAuditEntry(
+        "aud_no_targets",
+        "lesson_recall",
+        "mem::lesson-recall",
+        [],
+        { query: "private terms" },
+      ),
+      makeAuditEntry(
+        "aud_import_visible",
+        "import",
+        "mem::import:lessons",
+        [visible.id],
+      ),
+      makeAuditEntry(
+        "aud_visible_alias",
+        "lesson_strengthen",
+        "mem::lesson-strengthen",
+        ["lsn_visible_alias"],
+      ),
+      makeAuditEntry(
+        "aud_ordinary",
+        "delete",
+        "mem::governance-delete",
+        ["mem_1"],
+      ),
+    ];
+    for (const entry of auditEntries) {
+      await kv.set("mem:audit", entry.id, entry);
+    }
+
+    const classifyEntries = (await sdk.trigger(
+      "mem::audit-query",
+      {},
+    )) as AuditEntry[];
+    expect(classifyEntries).toHaveLength(auditEntries.length);
+
+    const enforceEntries = (await sdk.trigger("mem::audit-query", {
+      accessContext: scopedReaderContext(),
+    })) as AuditEntry[];
+    expect(enforceEntries.map((entry) => entry.id).sort()).toEqual([
+      "aud_import_visible",
+      "aud_ordinary",
+      "aud_visible",
+      "aud_visible_alias",
+    ]);
+    expect(JSON.stringify(enforceEntries)).not.toContain("lsn_hidden");
+    expect(JSON.stringify(enforceEntries)).not.toContain("private terms");
+
+    const sealed = scopedReaderContext();
+    const forgedEntries = (await sdk.trigger("mem::audit-query", {
+      accessContext: {
+        ...sealed,
+        scopes: [{
+          ring: "repo",
+          scopeId: "repo:hidden",
+          access: "read",
+        }],
+      },
+    })) as AuditEntry[];
+    expect(forgedEntries.map((entry) => entry.id)).toEqual([
+      "aud_ordinary",
+    ]);
   });
 });

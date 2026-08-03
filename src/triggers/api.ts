@@ -695,8 +695,14 @@ export function registerApiTriggers(
     ): Promise<Response> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
+      const access = resolveLessonRequestAccess(req);
+      if (!access.success) return access.response;
       const body = (req.body ?? {}) as Record<string, unknown>;
-      const payload: { path?: string; maxFiles?: number } = {};
+      const payload: {
+        path?: string;
+        maxFiles?: number;
+        accessContext: LessonAccessContext;
+      } = { accessContext: access.context };
       if (body.path !== undefined) {
         if (typeof body.path !== "string" || body.path.trim().length === 0) {
           return {
@@ -1467,9 +1473,14 @@ export function registerApiTriggers(
     async (req: ApiRequest<{ dryRun?: boolean }>): Promise<Response> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
+      const access = resolveLessonRequestAccess(req);
+      if (!access.success) return access.response;
       const dryRun =
         req.query_params?.["dryRun"] === "true" || req.body?.dryRun === true;
-      const result = await sdk.trigger({ function_id: "mem::evict", payload: { dryRun } });
+      const result = await sdk.trigger({
+        function_id: "mem::evict",
+        payload: { dryRun, accessContext: access.context },
+      });
       return { status_code: 200, body: result };
     },
   );
@@ -2007,9 +2018,22 @@ export function registerApiTriggers(
     async (req: ApiRequest<{ tier?: string }>): Promise<Response> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
+      const access = resolveLessonRequestAccess(req);
+      if (!access.success) return access.response;
+      const body = (req.body ?? {}) as Record<string, unknown>;
       try {
-        const result = await sdk.trigger({ function_id: "mem::consolidate-pipeline", payload: req.body || {},
-         });
+        const result = await sdk.trigger({
+          function_id: "mem::consolidate-pipeline",
+          payload: {
+            tier: typeof body.tier === "string" ? body.tier : undefined,
+            force: typeof body.force === "boolean" ? body.force : undefined,
+            project:
+              typeof body.project === "string"
+                ? body.project
+                : undefined,
+            accessContext: access.context,
+          },
+        });
         return { status_code: 200, body: result };
       } catch {
         return consolidationDisabledResponse();
@@ -2093,10 +2117,13 @@ export function registerApiTriggers(
     async (req: ApiRequest): Promise<Response> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
+      const access = resolveLessonRequestAccess(req);
+      if (!access.success) return access.response;
       const parsedLimit = parseOptionalInt(req.query_params?.["limit"]);
       const entries = await sdk.trigger({ function_id: "mem::audit-query", payload: {
         operation: req.query_params?.["operation"],
         limit: parsedLimit ?? 50,
+        accessContext: access.context,
       } });
       return { status_code: 200, body: { entries, success: true } };
     },
@@ -3496,9 +3523,30 @@ export function registerApiTriggers(
   sdk.registerFunction("api::crystallize",  async (req: ApiRequest) => {
     const denied = checkAuth(req, secret);
     if (denied) return denied;
-    const body = req.body as Record<string, unknown>;
-    if (!body?.actionIds) return { status_code: 400, body: { error: "actionIds is required" } };
-    const result = await sdk.trigger({ function_id: "mem::crystallize", payload: body });
+    const access = resolveLessonRequestAccess(req);
+    if (!access.success) return access.response;
+    const body = (req.body as Record<string, unknown>) || {};
+    if (
+      !Array.isArray(body.actionIds) ||
+      !body.actionIds.every(
+        (id): id is string => typeof id === "string" && id.length > 0,
+      )
+    ) {
+      return { status_code: 400, body: { error: "actionIds is required" } };
+    }
+    const result = await sdk.trigger({
+      function_id: "mem::crystallize",
+      payload: {
+        actionIds: body.actionIds,
+        project:
+          typeof body.project === "string" ? body.project : undefined,
+        sessionId:
+          typeof body.sessionId === "string"
+            ? body.sessionId
+            : undefined,
+        accessContext: access.context,
+      },
+    });
     return { status_code: 200, body: result };
   });
   sdk.registerTrigger({ type: "http", function_id: "api::crystallize", config: { api_path: "/agentmemory/crystals/create", http_method: "POST" } });
@@ -3506,6 +3554,8 @@ export function registerApiTriggers(
   sdk.registerFunction("api::crystal-list",  async (req: ApiRequest) => {
     const denied = checkAuth(req, secret);
     if (denied) return denied;
+    const access = resolveLessonRequestAccess(req);
+    if (!access.success) return access.response;
     const params = req.query_params || {};
     const limit = parseOptionalPositiveInt(params.limit);
     if (limit === null) {
@@ -3514,7 +3564,15 @@ export function registerApiTriggers(
         body: { error: "invalid numeric parameter: limit" },
       };
     }
-    const result = await sdk.trigger({ function_id: "mem::crystal-list", payload: { project: params.project, sessionId: params.sessionId, limit } });
+    const result = await sdk.trigger({
+      function_id: "mem::crystal-list",
+      payload: {
+        project: params.project,
+        sessionId: params.sessionId,
+        limit,
+        accessContext: access.context,
+      },
+    });
     return { status_code: 200, body: result };
   });
   sdk.registerTrigger({ type: "http", function_id: "api::crystal-list", config: { api_path: "/agentmemory/crystals", http_method: "GET" } });
@@ -3522,8 +3580,23 @@ export function registerApiTriggers(
   sdk.registerFunction("api::auto-crystallize",  async (req: ApiRequest) => {
     const denied = checkAuth(req, secret);
     if (denied) return denied;
-    const body = req.body as Record<string, unknown>;
-    const result = await sdk.trigger({ function_id: "mem::auto-crystallize", payload: body || {} });
+    const access = resolveLessonRequestAccess(req);
+    if (!access.success) return access.response;
+    const body = (req.body as Record<string, unknown>) || {};
+    const result = await sdk.trigger({
+      function_id: "mem::auto-crystallize",
+      payload: {
+        olderThanDays:
+          typeof body.olderThanDays === "number"
+            ? body.olderThanDays
+            : undefined,
+        project:
+          typeof body.project === "string" ? body.project : undefined,
+        dryRun:
+          typeof body.dryRun === "boolean" ? body.dryRun : undefined,
+        accessContext: access.context,
+      },
+    });
     return { status_code: 200, body: result };
   });
   sdk.registerTrigger({ type: "http", function_id: "api::auto-crystallize", config: { api_path: "/agentmemory/crystals/auto", http_method: "POST" } });
@@ -3531,8 +3604,28 @@ export function registerApiTriggers(
   sdk.registerFunction("api::diagnose",  async (req: ApiRequest) => {
     const denied = checkAuth(req, secret);
     if (denied) return denied;
-    const body = req.body as Record<string, unknown>;
-    const result = await sdk.trigger({ function_id: "mem::diagnose", payload: body || {} });
+    const body = (req.body as Record<string, unknown>) || {};
+    const categories = Array.isArray(body.categories)
+      ? body.categories.filter(
+          (category): category is string =>
+            typeof category === "string",
+        )
+      : undefined;
+    const includesLessons =
+      categories === undefined || categories.includes("lessons");
+    const access = includesLessons
+      ? resolveLessonRequestAccess(req)
+      : undefined;
+    if (access && !access.success) return access.response;
+    const result = await sdk.trigger({
+      function_id: "mem::diagnose",
+      payload: {
+        categories,
+        ...(access?.success
+          ? { accessContext: access.context }
+          : {}),
+      },
+    });
     return { status_code: 200, body: result };
   });
   sdk.registerTrigger({ type: "http", function_id: "api::diagnose", config: { api_path: "/agentmemory/diagnostics", http_method: "POST" } });
@@ -3901,8 +3994,11 @@ export function registerApiTriggers(
       };
     }
     const types = typeof body.types === "string" ? body.types.split(",").map((t: string) => t.trim()).filter(Boolean) : undefined;
-    const includesLessons = types === undefined || types.includes("lessons");
-    const access = includesLessons
+    const includesProtectedRecords =
+      types === undefined ||
+      types.includes("lessons") ||
+      types.includes("crystals");
+    const access = includesProtectedRecords
       ? resolveLessonRequestAccess(req)
       : undefined;
     if (access && !access.success) return access.response;
@@ -3940,6 +4036,8 @@ export function registerApiTriggers(
   sdk.registerFunction("api::insight-list",  async (req: ApiRequest) => {
     const denied = checkAuth(req, secret);
     if (denied) return denied;
+    const access = resolveLessonRequestAccess(req);
+    if (!access.success) return access.response;
     const params = req.query_params || {};
     const minConfidence = parseOptionalFiniteNumber(params.minConfidence);
     if (minConfidence === null) {
@@ -3959,6 +4057,7 @@ export function registerApiTriggers(
       project: params.project,
       minConfidence,
       limit,
+      accessContext: access.context,
     } });
     return { status_code: 200, body: result };
   });
@@ -3967,6 +4066,8 @@ export function registerApiTriggers(
   sdk.registerFunction("api::insight-search",  async (req: ApiRequest) => {
     const denied = checkAuth(req, secret);
     if (denied) return denied;
+    const access = resolveLessonRequestAccess(req);
+    if (!access.success) return access.response;
     const body = req.body as Record<string, unknown>;
     if (!body?.query || typeof body.query !== "string") return { status_code: 400, body: { error: "query is required" } };
     const result = await sdk.trigger({ function_id: "mem::insight-search", payload: {
@@ -3974,6 +4075,7 @@ export function registerApiTriggers(
       project: typeof body.project === "string" ? body.project : undefined,
       minConfidence: typeof body.minConfidence === "number" ? body.minConfidence : undefined,
       limit: typeof body.limit === "number" ? body.limit : undefined,
+      accessContext: access.context,
     } });
     return { status_code: 200, body: result };
   });

@@ -19,9 +19,15 @@ import {
   toLessonReadModel,
 } from "./lesson-model.js";
 import {
+  buildCrystalAccessIndex,
+  buildLessonAccessIndex,
+  canReadCrystal,
+  canReadInsight,
   canReadLesson,
   lessonAccessContextFromPayload,
+  type CrystalAccessIndex,
   type LessonAccessContext,
+  type LessonAccessIndex,
 } from "./lesson-access.js";
 
 interface ConceptCluster {
@@ -221,6 +227,50 @@ function reflectLessonReadFailure(
   };
 }
 
+async function filterReadableInsights(
+  kv: StateKV,
+  insights: Insight[],
+  accessContext: LessonAccessContext,
+): Promise<
+  | { success: true; insights: Insight[] }
+  | {
+      success: false;
+      code: "lesson_state_unavailable";
+      error: string;
+      insights: [];
+    }
+> {
+  if (accessContext.mode === "classify") {
+    return { success: true, insights };
+  }
+  try {
+    const [lessons, crystals] = await Promise.all([
+      kv.list<Lesson>(KV.lessons),
+      kv.list<Crystal>(KV.crystals),
+    ]);
+    const lessonIndex = buildLessonAccessIndex(lessons);
+    const crystalIndex = buildCrystalAccessIndex(crystals);
+    return {
+      success: true,
+      insights: insights.filter((insight) =>
+        canReadInsight(
+          insight,
+          lessonIndex,
+          crystalIndex,
+          accessContext,
+        ),
+      ),
+    };
+  } catch {
+    return {
+      success: false,
+      code: "lesson_state_unavailable",
+      error: "insight access is unavailable",
+      insights: [],
+    };
+  }
+}
+
 export function registerReflectFunctions(
   sdk: ISdk,
   kv: StateKV,
@@ -254,7 +304,11 @@ export function registerReflectFunctions(
         ]);
 
       let activeLessons: LessonReadModel[] = [];
+      let lessonIndex: LessonAccessIndex;
+      let crystalIndex: CrystalAccessIndex;
       try {
+        lessonIndex = buildLessonAccessIndex(lessons);
+        crystalIndex = buildCrystalAccessIndex(crystals);
         for (const lesson of lessons) {
           if (
             isLessonRecallable(lesson) &&
@@ -310,12 +364,21 @@ export function registerReflectFunctions(
         );
 
         const clusterCrystals = crystals.filter((c) =>
+          canReadCrystal(c, lessonIndex, accessContext) &&
           (c.lessons || []).some((l) =>
             conceptNames.some((cn) =>
               l.toLowerCase().includes(cn.toLowerCase()),
             ),
           ),
         );
+        const clusterLessonIds = [
+          ...new Set([
+            ...clusterLessons.map((lesson) => lesson.id),
+            ...clusterCrystals.flatMap(
+              (crystal) => crystal.sourceLessonIds ?? [],
+            ),
+          ]),
+        ].sort();
 
         const totalItems =
           clusterFacts.length + clusterLessons.length + clusterCrystals.length;
@@ -339,7 +402,7 @@ export function registerReflectFunctions(
           })),
           crystalNarratives: clusterCrystals.map((c) => c.narrative),
           factIds: clusterFacts.map((f) => f.id),
-          lessonIds: clusterLessons.map((l) => l.id),
+          lessonIds: clusterLessonIds,
           crystalIds: clusterCrystals.map((c) => c.id),
         };
 
@@ -388,11 +451,45 @@ export function registerReflectFunctions(
             const existing = await kv.get<Insight>(KV.insights, fp);
 
             if (existing && !existing.deleted) {
+              if (
+                !canReadInsight(
+                  existing,
+                  lessonIndex,
+                  crystalIndex,
+                  accessContext,
+                )
+              ) {
+                continue;
+              }
               reinforceInsight(existing);
               existing.evidenceVerdict =
                 (existing.evidenceVerdict ?? "supported") === evidenceVerdict
                   ? evidenceVerdict
                   : "mixed";
+              existing.sourceConceptCluster = [
+                ...new Set([
+                  ...existing.sourceConceptCluster,
+                  ...conceptNames,
+                ]),
+              ].sort();
+              existing.sourceMemoryIds = [
+                ...new Set([
+                  ...existing.sourceMemoryIds,
+                  ...cluster.factIds,
+                ]),
+              ].sort();
+              existing.sourceLessonIds = [
+                ...new Set([
+                  ...existing.sourceLessonIds,
+                  ...cluster.lessonIds,
+                ]),
+              ].sort();
+              existing.sourceCrystalIds = [
+                ...new Set([
+                  ...existing.sourceCrystalIds,
+                  ...cluster.crystalIds,
+                ]),
+              ].sort();
               await kv.set(KV.insights, existing.id, existing);
               reinforced++;
             } else {
@@ -452,10 +549,21 @@ export function registerReflectFunctions(
       project?: string;
       minConfidence?: number;
       limit?: number;
+      accessContext?: LessonAccessContext;
     }) => {
       const limit = data?.limit ?? 50;
       const minConfidence = data?.minConfidence ?? 0;
       let items = await kv.list<Insight>(KV.insights);
+      const accessContext = lessonAccessContextFromPayload(
+        data?.accessContext,
+      );
+      const readable = await filterReadableInsights(
+        kv,
+        items,
+        accessContext,
+      );
+      if (!readable.success) return readable;
+      items = readable.insights;
 
       items = items.filter(
         (i) => !i.deleted && i.confidence >= minConfidence,
@@ -477,6 +585,7 @@ export function registerReflectFunctions(
       project?: string;
       minConfidence?: number;
       limit?: number;
+      accessContext?: LessonAccessContext;
     }) => {
       if (!data?.query?.trim()) {
         return { success: false, error: "query is required" };
@@ -487,6 +596,16 @@ export function registerReflectFunctions(
       const limit = data.limit ?? 10;
 
       let items = await kv.list<Insight>(KV.insights);
+      const accessContext = lessonAccessContextFromPayload(
+        data.accessContext,
+      );
+      const readable = await filterReadableInsights(
+        kv,
+        items,
+        accessContext,
+      );
+      if (!readable.success) return readable;
+      items = readable.insights;
       items = items.filter(
         (i) => !i.deleted && i.confidence >= minConfidence,
       );

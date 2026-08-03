@@ -308,6 +308,16 @@ describe("lesson access decisions", () => {
         }),
       ),
     ).toBe(true);
+    expect(
+      canWriteLessonScope(
+        { ring: "worktree" },
+        "restricted",
+        context({
+          clearance: "restricted",
+          capabilities: ["lesson:legacy-worktree"],
+        }),
+      ),
+    ).toBe(false);
     expect(canUseLessonCapability(context(), "lesson:export")).toBe(false);
     expect(
       canUseLessonCapability(
@@ -388,6 +398,13 @@ describe("lesson access decisions", () => {
   it("gives only the explicit system context full internal access", () => {
     const system = systemLessonAccessContext();
     expect(canReadLesson(lesson("restricted"), system)).toBe(true);
+    expect(
+      canWriteLessonScope(
+        { ring: "worktree" },
+        "restricted",
+        system,
+      ),
+    ).toBe(true);
     expect(canUseLessonCapability(system, "lesson:import")).toBe(true);
     expect(canApproveGlobalLesson(system)).toBe(false);
   });

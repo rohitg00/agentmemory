@@ -406,6 +406,17 @@ async function proxyToRestApi(
   if (secret) {
     headers["Authorization"] = `Bearer ${secret}`;
   }
+  // The browser never receives these credentials, and inbound copies are
+  // deliberately ignored: the viewer has its own server-side read principal.
+  const viewerAgentId = process.env["AGENTMEMORY_VIEWER_AGENT_ID"];
+  const viewerCallerToken =
+    process.env["AGENTMEMORY_VIEWER_CALLER_TOKEN"];
+  if (viewerAgentId) {
+    headers["X-AgentMemory-Agent-Id"] = viewerAgentId;
+  }
+  if (viewerCallerToken) {
+    headers["X-AgentMemory-Caller-Token"] = viewerCallerToken;
+  }
   const ct = req.headers["content-type"];
   if (ct) {
     headers["Content-Type"] = ct;

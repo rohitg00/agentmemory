@@ -1,4 +1,11 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -63,7 +70,13 @@ describe("import-jsonl re-key on parsed.sessionId (#775)", () => {
   let tmpRoot: string;
 
   beforeEach(() => {
+    delete process.env["AGENTMEMORY_LESSON_ACCESS_MODE"];
     tmpRoot = mkdtempSync(join(tmpdir(), "replay-import-key-"));
+  });
+
+  afterEach(() => {
+    delete process.env["AGENTMEMORY_LESSON_ACCESS_MODE"];
+    rmSync(tmpRoot, { recursive: true, force: true });
   });
 
   function writeFixture(
@@ -275,5 +288,36 @@ describe("import-jsonl re-key on parsed.sessionId (#775)", () => {
     expect(lessons[0].idAliases).toEqual([
       expect.stringMatching(/^lsn_[a-f0-9]{16}$/),
     ]);
+  });
+
+  it("does not mutate lessons directly when enforce mode has no caller authority", async () => {
+    const content =
+      "Always reject replay-derived lessons without caller authority.";
+    writeFixture(
+      "sess-enforce-no-authority",
+      "2026-04-17T10:00:00.000Z",
+      content,
+    );
+    const kv = mockKV();
+    const sdk = mockSdk(kv);
+    registerLessonsFunctions(sdk, kv as never);
+    registerReplayFunctions(sdk, kv as never);
+    const saved = (await sdk.trigger("mem::lesson-save", {
+      content,
+      project: "proj",
+    })) as { lesson: Lesson };
+
+    process.env["AGENTMEMORY_LESSON_ACCESS_MODE"] = "enforce";
+    const result = await sdk.trigger("mem::replay::import-jsonl", {
+      path: tmpRoot,
+    });
+    const stored = await kv.get<Lesson>(KV.lessons, saved.lesson.id);
+
+    expect(result).toMatchObject({ success: true, imported: 1 });
+    expect(stored).toMatchObject({
+      id: saved.lesson.id,
+      reinforcements: 0,
+      sourceIds: [],
+    });
   });
 });

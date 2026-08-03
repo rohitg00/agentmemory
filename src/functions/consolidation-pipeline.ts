@@ -17,7 +17,10 @@ import {
 import { recordAudit } from "./audit.js";
 import { getConsolidationDecayDays, isConsolidationEnabled } from "../config.js";
 import { logger } from "../logger.js";
-import { systemLessonAccessContext } from "./lesson-access.js";
+import {
+  lessonAccessContextFromPayload,
+  type LessonAccessContext,
+} from "./lesson-access.js";
 
 function applyDecay(
   items: Array<{
@@ -49,11 +52,19 @@ export function registerConsolidationPipelineFunction(
   provider: MemoryProvider,
 ): void {
   sdk.registerFunction("mem::consolidate-pipeline", 
-    async (data?: { tier?: string; force?: boolean; project?: string }) => {
+    async (data?: {
+      tier?: string;
+      force?: boolean;
+      project?: string;
+      accessContext?: LessonAccessContext;
+    }) => {
       if (!data?.force && !isConsolidationEnabled()) {
         return { success: false, skipped: true, reason: "Consolidation disabled: set CONSOLIDATION_ENABLED=true or configure an LLM provider (ANTHROPIC_API_KEY / OPENAI_API_KEY / OPENROUTER_API_KEY / GEMINI_API_KEY / GOOGLE_API_KEY / MINIMAX_API_KEY / OPENAI_BASE_URL / AGENTMEMORY_PROVIDER=agent-sdk)" };
       }
       const tier = data?.tier || "all";
+      const accessContext = lessonAccessContextFromPayload(
+        data?.accessContext,
+      );
       const decayDays = getConsolidationDecayDays();
       const results: Record<string, unknown> = {};
 
@@ -139,7 +150,7 @@ export function registerConsolidationPipelineFunction(
           const reflectResult = await sdk.trigger({ function_id: "mem::reflect", payload: {
             maxClusters: 10,
             project: data?.project,
-            accessContext: systemLessonAccessContext(),
+            accessContext,
           } });
           results.reflect = reflectResult;
         } catch (err) {
@@ -253,7 +264,7 @@ export function registerConsolidationPipelineFunction(
         try {
           await sdk.trigger({
             function_id: "mem::obsidian-export",
-            payload: { accessContext: systemLessonAccessContext() },
+            payload: { accessContext },
           });
           results.obsidianExport = { success: true };
         } catch (err) {

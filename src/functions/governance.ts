@@ -170,6 +170,7 @@ export function registerGovernanceFunction(sdk: ISdk, kv: StateKV): void {
       dateFrom?: string;
       dateTo?: string;
       limit?: number;
+      accessContext?: unknown;
     }) => {
       return queryAudit(kv, data);
     },

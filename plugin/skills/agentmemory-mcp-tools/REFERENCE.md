@@ -21,7 +21,7 @@ agentmemory exposes 60 MCP tools. 7 are in the lean core set (`--tools core` or 
 | `memory_diagnose` | yes | `categories`: string | Run health checks across all subsystems (actions, leases, sentinels, sketches, signals, sessions, memories, mesh). Identifies stuck, orphaned, and inconsistent state. |
 | `memory_diagnostic_followup` |  | none | Read the smart-search follow-up-rate diagnostic counters. This is a read-only directional signal and may overcount legitimate query refinement. |
 | `memory_enrich_session` |  | `sessionId`*: string, `lookback`: number, `lookahead`: number, `minImportance`: number | LLM-enrich qualifying observations in a session and persist enriched chunks. This is a state-changing, paid-provider operation. |
-| `memory_export` |  | none | Export all memory data as JSON. |
+| `memory_export` |  | none | Export all memory data as JSON. In lesson enforcement mode this is an operator-only operation requiring restricted clearance, lesson:all-scopes, and lesson:export. |
 | `memory_facet_query` |  | `matchAll`: string, `matchAny`: string, `targetType`: string | Query targets by facet tags with AND/OR logic. Find all actions tagged priority:urgent AND team:backend. |
 | `memory_facet_tag` |  | `targetId`*: string, `targetType`*: string, `dimension`*: string, `value`*: string | Attach a structured tag (dimension:value) to an action, memory, or observation for multi-dimensional categorization. |
 | `memory_file_history` |  | `files`*: string, `sessionId`: string | Get past observations about specific files. |
@@ -39,7 +39,7 @@ agentmemory exposes 60 MCP tools. 7 are in the lean core set (`--tools core` or 
 | `memory_llm_smoke` |  | none | Run a fixed, non-sensitive LLM connectivity probe. Returns provider/model evidence and performs no persistent AgentMemory or filesystem writes. |
 | `memory_mesh_sync` |  | `peerId`: string, `direction`: string | Sync memories and actions with peer agentmemory instances for multi-agent collaboration. |
 | `memory_next` |  | `project`: string, `agentId`: string | Get the single most important next action to work on. Combines dependency resolution, priority, and recency into a score. |
-| `memory_obsidian_export` |  | `vaultDir`: string, `types`: string | Export memories, lessons, and crystals as Obsidian-compatible Markdown files with YAML frontmatter and wikilinks for graph view. |
+| `memory_obsidian_export` |  | `vaultDir`: string, `types`: string | Export memories, lessons, and crystals as Obsidian-compatible Markdown files with YAML frontmatter and wikilinks for graph view. In lesson enforcement mode, lesson/crystal exports require restricted clearance, lesson:all-scopes, and lesson:export. |
 | `memory_patterns` |  | `project`: string | Detect recurring patterns across sessions. |
 | `memory_profile` |  | `project`*: string, `refresh`: string | User/project profile with top concepts and file patterns. |
 | `memory_recall` | yes | `query`*: string, `limit`: number, `format`: string, `token_budget`: number | Search past session observations for relevant context. Use when you need to recall what happened in previous sessions, find past decisions, or look up how a file was modified before. |

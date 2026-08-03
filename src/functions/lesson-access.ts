@@ -8,6 +8,8 @@ import { readFileSync } from "node:fs";
 import { isAbsolute } from "node:path";
 import { getAgentId, getEnvVar } from "../config.js";
 import type {
+  Crystal,
+  Insight,
   Lesson,
   LessonScope,
   LessonScopeRing,
@@ -537,12 +539,12 @@ function scopeAllowed(
   access: LessonScopeAccess,
 ): boolean {
   if (hasCapability(context, "lesson:all-scopes")) return true;
-  if (
-    scope.ring === "worktree" &&
-    !scope.scopeId &&
-    hasCapability(context, "lesson:legacy-worktree")
-  ) {
-    return true;
+  if (scope.ring === "worktree" && !scope.scopeId) {
+    return (
+      context.resolvedBy === "system" ||
+      (access === "read" &&
+        hasCapability(context, "lesson:legacy-worktree"))
+    );
   }
   return context.scopes.some(
     (grant) =>
@@ -583,6 +585,18 @@ export function canUseLessonCapability(
   return context.mode === "classify" || hasCapability(context, capability);
 }
 
+export function canUseLessonOperatorCapability(
+  context: LessonAccessContext,
+  capability: "lesson:export" | "lesson:import",
+): boolean {
+  return (
+    context.mode === "classify" ||
+    (context.clearance === "restricted" &&
+      hasCapability(context, "lesson:all-scopes") &&
+      hasCapability(context, capability))
+  );
+}
+
 export function canApproveGlobalLesson(
   context: LessonAccessContext,
 ): boolean {
@@ -591,6 +605,106 @@ export function canApproveGlobalLesson(
     (context.principalKind === "human" &&
       hasCapability(context, "lesson:approve-global"))
   );
+}
+
+export type LessonAccessIndex = Map<string, Lesson>;
+
+export function buildLessonAccessIndex(
+  lessons: Lesson[],
+): LessonAccessIndex {
+  const index: LessonAccessIndex = new Map();
+  for (const lesson of lessons) {
+    const normalized = normalizeLesson(lesson);
+    for (const id of [normalized.id, ...normalized.idAliases]) {
+      const existing = index.get(id);
+      if (existing && existing.id !== normalized.id) {
+        throw new Error(`multiple lessons claim access identity ${id}`);
+      }
+      index.set(id, normalized);
+    }
+  }
+  return index;
+}
+
+export function canReadLessonSourceIds(
+  sourceLessonIds: string[] | undefined,
+  index: LessonAccessIndex,
+  context: LessonAccessContext,
+): boolean {
+  if (context.mode === "classify") return true;
+  if (!sourceLessonIds || sourceLessonIds.length === 0) return true;
+  return sourceLessonIds.every((id) => {
+    const lesson = index.get(id);
+    return lesson !== undefined && canReadLesson(lesson, context);
+  });
+}
+
+export function canReadCrystal(
+  crystal: Crystal,
+  index: LessonAccessIndex,
+  context: LessonAccessContext,
+): boolean {
+  if (context.mode === "classify") return true;
+  if (crystal.sourceLessonIds && crystal.sourceLessonIds.length > 0) {
+    const lessonValues = crystal.lessons ?? [];
+    if (lessonValues.length !== crystal.sourceLessonIds.length) {
+      return false;
+    }
+    return crystal.sourceLessonIds.every((id, position) => {
+      const lesson = index.get(id);
+      if (!lesson || !canReadLesson(lesson, context)) return false;
+      const value = lessonValues[position];
+      return (
+        value === id ||
+        value === lesson.id ||
+        value === lesson.content
+      );
+    });
+  }
+  if ((crystal.lessons ?? []).length > 0) {
+    return hasCapability(context, "lesson:all-scopes");
+  }
+  return true;
+}
+
+export type CrystalAccessIndex = Map<string, Crystal>;
+
+export function buildCrystalAccessIndex(
+  crystals: Crystal[],
+): CrystalAccessIndex {
+  const index: CrystalAccessIndex = new Map();
+  for (const crystal of crystals) {
+    if (index.has(crystal.id)) {
+      throw new Error(`duplicate crystal access identity ${crystal.id}`);
+    }
+    index.set(crystal.id, crystal);
+  }
+  return index;
+}
+
+export function canReadInsight(
+  insight: Insight,
+  lessonIndex: LessonAccessIndex,
+  crystalIndex: CrystalAccessIndex,
+  context: LessonAccessContext,
+): boolean {
+  if (context.mode === "classify") return true;
+  if (
+    !canReadLessonSourceIds(
+      insight.sourceLessonIds,
+      lessonIndex,
+      context,
+    )
+  ) {
+    return false;
+  }
+  return (insight.sourceCrystalIds ?? []).every((id) => {
+    const crystal = crystalIndex.get(id);
+    return (
+      crystal !== undefined &&
+      canReadCrystal(crystal, lessonIndex, context)
+    );
+  });
 }
 
 export type LessonWriteIdentityResult =

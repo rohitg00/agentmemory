@@ -2778,9 +2778,7 @@ async function runImportJsonl(): Promise<void> {
   if (pathArg) body["path"] = pathArg;
   if (maxFiles !== undefined) body["maxFiles"] = maxFiles;
 
-  const headers: Record<string, string> = { "content-type": "application/json" };
-  const secret = process.env["AGENTMEMORY_SECRET"];
-  if (secret) headers["authorization"] = `Bearer ${secret}`;
+  const headers = cliJsonHeaders();
 
   p.log.info(`Importing JSONL from ${pathArg || "~/.claude/projects"}…`);
   const spinner = p.spinner();

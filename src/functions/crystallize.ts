@@ -1,9 +1,20 @@
 import type { ISdk } from "iii-sdk";
 import type { StateKV } from "../state/kv.js";
 import { KV, generateId } from "../state/schema.js";
-import type { Action, ActionEdge, Crystal, MemoryProvider } from "../types.js";
+import type {
+  Action,
+  ActionEdge,
+  Crystal,
+  Lesson,
+  MemoryProvider,
+} from "../types.js";
 import { persistAction } from "./action-store.js";
-import { systemLessonAccessContext } from "./lesson-access.js";
+import {
+  buildLessonAccessIndex,
+  canReadCrystal,
+  lessonAccessContextFromPayload,
+  type LessonAccessContext,
+} from "./lesson-access.js";
 
 interface CrystalDigest {
   narrative: string;
@@ -27,6 +38,7 @@ export function registerCrystallizeFunction(
       actionIds: string[];
       sessionId?: string;
       project?: string;
+      accessContext?: LessonAccessContext;
     }) => {
       if (!data.actionIds || data.actionIds.length === 0) {
         return { success: false, error: "actionIds is required" };
@@ -54,17 +66,52 @@ export function registerCrystallizeFunction(
       );
 
       const prompt = buildChainText(actions, relevantEdges);
+      const accessContext = lessonAccessContextFromPayload(
+        data.accessContext,
+      );
 
       try {
         const response = await provider.summarize(CRYSTALLIZE_SYSTEM, prompt);
         const digest = parseDigest(response);
+        const crystalId = generateId("crys");
+        const persistedLessons: string[] = [];
+        const sourceLessonIds: string[] = [];
+
+        for (const lesson of digest.lessons) {
+          try {
+            const result = (await sdk.trigger({
+              function_id: "mem::lesson-save",
+              payload: {
+                content: lesson,
+                context: digest.narrative,
+                confidence: 0.6,
+                project: data.project,
+                tags: [],
+                source: "crystal",
+                sourceIds: [crystalId],
+                accessContext,
+              },
+            })) as {
+              success?: boolean;
+              lesson?: { id?: string };
+            };
+            if (result.success && typeof result.lesson?.id === "string") {
+              persistedLessons.push(lesson);
+              sourceLessonIds.push(result.lesson.id);
+            }
+          } catch {}
+        }
 
         const crystal: Crystal = {
-          id: generateId("crys"),
+          id: crystalId,
           narrative: digest.narrative,
           keyOutcomes: digest.keyOutcomes,
           filesAffected: digest.filesAffected,
-          lessons: digest.lessons,
+          lessons:
+            accessContext.mode === "classify"
+              ? digest.lessons
+              : persistedLessons,
+          sourceLessonIds,
           sourceActionIds: data.actionIds,
           sessionId: data.sessionId,
           project: data.project,
@@ -72,26 +119,6 @@ export function registerCrystallizeFunction(
         };
 
         await kv.set(KV.crystals, crystal.id, crystal);
-
-        await Promise.all(
-          digest.lessons.map((lesson) =>
-            sdk
-              .trigger({
-                function_id: "mem::lesson-save",
-                payload: {
-                  content: lesson,
-                  context: crystal.narrative,
-                  confidence: 0.6,
-                  project: data.project,
-                  tags: [],
-                  source: "crystal",
-                  sourceIds: [crystal.id],
-                  accessContext: systemLessonAccessContext(),
-                },
-              })
-              .catch(() => {}),
-          ),
-        );
 
         for (const action of actions) {
           const updated = { ...action, crystallizedInto: crystal.id };
@@ -117,9 +144,30 @@ export function registerCrystallizeFunction(
       project?: string;
       sessionId?: string;
       limit?: number;
+      accessContext?: LessonAccessContext;
     }) => {
       const limit = data.limit ?? 20;
+      const accessContext = lessonAccessContextFromPayload(
+        data.accessContext,
+      );
       let crystals = await kv.list<Crystal>(KV.crystals);
+      if (accessContext.mode === "enforce") {
+        try {
+          const lessonIndex = buildLessonAccessIndex(
+            await kv.list<Lesson>(KV.lessons),
+          );
+          crystals = crystals.filter((crystal) =>
+            canReadCrystal(crystal, lessonIndex, accessContext),
+          );
+        } catch {
+          return {
+            success: false,
+            code: "lesson_state_unavailable",
+            error: "crystal access is unavailable",
+            crystals: [],
+          };
+        }
+      }
 
       if (data.project) {
         crystals = crystals.filter((c) => c.project === data.project);
@@ -138,7 +186,10 @@ export function registerCrystallizeFunction(
   );
 
   sdk.registerFunction("mem::crystal-get", 
-    async (data: { crystalId: string }) => {
+    async (data: {
+      crystalId: string;
+      accessContext?: LessonAccessContext;
+    }) => {
       if (!data.crystalId) {
         return { success: false, error: "crystalId is required" };
       }
@@ -146,6 +197,25 @@ export function registerCrystallizeFunction(
       const crystal = await kv.get<Crystal>(KV.crystals, data.crystalId);
       if (!crystal) {
         return { success: false, error: "crystal not found" };
+      }
+      const accessContext = lessonAccessContextFromPayload(
+        data.accessContext,
+      );
+      if (accessContext.mode === "enforce") {
+        try {
+          const lessonIndex = buildLessonAccessIndex(
+            await kv.list<Lesson>(KV.lessons),
+          );
+          if (!canReadCrystal(crystal, lessonIndex, accessContext)) {
+            return { success: false, error: "crystal not found" };
+          }
+        } catch {
+          return {
+            success: false,
+            code: "lesson_state_unavailable",
+            error: "crystal access is unavailable",
+          };
+        }
       }
 
       return { success: true, crystal };
@@ -157,6 +227,7 @@ export function registerCrystallizeFunction(
       olderThanDays?: number;
       project?: string;
       dryRun?: boolean;
+      accessContext?: LessonAccessContext;
     }) => {
       const olderThanDays = data.olderThanDays ?? 7;
       const dryRun = data.dryRun ?? false;
@@ -216,6 +287,7 @@ export function registerCrystallizeFunction(
           const result = (await sdk.trigger({ function_id: "mem::crystallize", payload: {
             actionIds,
             project,
+            accessContext: data.accessContext,
           } })) as { success: boolean; crystal?: Crystal };
 
           if (result.success && result.crystal) {

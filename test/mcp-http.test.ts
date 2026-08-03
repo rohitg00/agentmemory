@@ -257,4 +257,24 @@ describe("AgentMemory Streamable HTTP transport", () => {
       await backend.callTool("memory_next", { project: "workstation" }),
     ).toEqual({ content: [{ type: "text", text: "ok" }] });
   });
+
+  it("preserves structured authorization errors from the engine", async () => {
+    const fetchImpl = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          code: "lesson_access_denied",
+          error: "lesson access denied",
+        }),
+        { status: 403, statusText: "Forbidden" },
+      ),
+    );
+    const backend = createProxyBackend({
+      baseUrl: "http://127.0.0.1:3111",
+      fetchImpl: fetchImpl as typeof fetch,
+    });
+
+    await expect(backend.listTools()).rejects.toThrow(
+      "403 Forbidden; code=lesson_access_denied error=lesson access denied",
+    );
+  });
 });

@@ -97,7 +97,7 @@ async function callAgentMemory<T>(
   const secret = process.env.AGENTMEMORY_SECRET;
   const agentId = process.env.AGENT_ID;
   const callerToken = process.env.AGENTMEMORY_CALLER_TOKEN;
-  guardPlaintextBearerAuth(baseUrl, secret);
+  guardPlaintextBearerAuth(baseUrl, secret || callerToken);
   if (options?.body !== undefined) headers["Content-Type"] = "application/json";
   if (secret) headers.Authorization = `Bearer ${secret}`;
   if (agentId) headers["X-AgentMemory-Agent-Id"] = agentId;
@@ -120,7 +120,8 @@ export default function agentmemoryExtension(pi: ExtensionAPI) {
   if (process.env.AGENTMEMORY_REQUIRE_HTTPS === "1") {
     guardPlaintextBearerAuth(
       normalizeBaseUrl(process.env.AGENTMEMORY_URL || DEFAULT_URL),
-      process.env.AGENTMEMORY_SECRET,
+      process.env.AGENTMEMORY_SECRET ||
+        process.env.AGENTMEMORY_CALLER_TOKEN,
     );
   }
   let sessionId = `ephemeral-${crypto.randomUUID().slice(0, 8)}`;

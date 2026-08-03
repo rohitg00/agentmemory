@@ -22,6 +22,7 @@ import {
   callerIdentityHeaders,
   resolveEnvOrEmpty,
 } from "./rest-proxy.js";
+import { upstreamHttpError } from "./http-error.js";
 
 const DEFAULT_ENGINE_URL = "http://127.0.0.1:3111";
 const DEFAULT_HOST = "127.0.0.1";
@@ -137,8 +138,10 @@ export function createProxyBackend(options: {
       signal: AbortSignal.timeout(BACKEND_TIMEOUT_MS),
     });
     if (!response.ok) {
-      throw new Error(
-        `${init.method ?? "GET"} ${path} -> ${response.status} ${response.statusText}`,
+      throw await upstreamHttpError(
+        init.method ?? "GET",
+        path,
+        response,
       );
     }
     const text = await response.text();

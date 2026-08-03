@@ -1,3 +1,5 @@
+import { upstreamHttpError } from "./http-error.js";
+
 const DEFAULT_URL = "http://localhost:3111";
 const DEFAULT_HEALTH_PROBE_TIMEOUT_MS = 2_000;
 const CALL_TIMEOUT_MS = 15_000;
@@ -159,8 +161,10 @@ export async function resolveHandle(): Promise<Handle> {
             signal: AbortSignal.timeout(CALL_TIMEOUT_MS),
           });
           if (!res.ok) {
-            throw new Error(
-              `${init?.method || "GET"} ${path} -> ${res.status} ${res.statusText}`,
+            throw await upstreamHttpError(
+              init?.method || "GET",
+              path,
+              res,
             );
           }
           const text = await res.text();

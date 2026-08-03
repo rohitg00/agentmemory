@@ -356,11 +356,12 @@ export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
           }
 
           if (existing) {
+            const normalizedExisting = normalizeLesson(existing);
             if (
-              !canReadLesson(existing, accessContext) ||
+              !canReadLesson(normalizedExisting, accessContext) ||
               !canWriteLessonScope(
-                normalizeLesson(existing).scope,
-                normalizeLesson(existing).sensitivity,
+                normalizedExisting.scope,
+                normalizedExisting.sensitivity,
                 accessContext,
               )
             ) {
@@ -368,7 +369,7 @@ export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
             }
             const contradictionFailure = await validateContradictionRelations(
               kv,
-              existing,
+              normalizedExisting,
               input.contradictedByLessonIds,
               accessContext,
             );
@@ -378,28 +379,37 @@ export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
                 contradictionFailure.error,
               );
             }
-            reinforceLesson(existing);
-            if (input.context && !existing.context) {
-              existing.context = input.context;
+            reinforceLesson(normalizedExisting);
+            if (input.context && !normalizedExisting.context) {
+              normalizedExisting.context = input.context;
             }
-            existing.sourceIds = [
-              ...new Set([...existing.sourceIds, ...input.sourceIds]),
-            ].sort();
-            existing.tags = [...new Set([...existing.tags, ...input.tags])];
-            existing.contradictedByLessonIds = [
+            normalizedExisting.sourceIds = [
               ...new Set([
-                ...(existing.contradictedByLessonIds ?? []),
+                ...normalizedExisting.sourceIds,
+                ...input.sourceIds,
+              ]),
+            ].sort();
+            normalizedExisting.tags = [
+              ...new Set([...normalizedExisting.tags, ...input.tags]),
+            ];
+            normalizedExisting.contradictedByLessonIds = [
+              ...new Set([
+                ...normalizedExisting.contradictedByLessonIds,
                 ...input.contradictedByLessonIds,
               ]),
             ].sort();
-            await kv.set(KV.lessons, existing.id, existing);
+            await kv.set(
+              KV.lessons,
+              normalizedExisting.id,
+              normalizedExisting,
+            );
 
             try {
               await recordAudit(
                 kv,
                 "lesson_strengthen",
                 "mem::lesson-save",
-                [existing.id],
+                [normalizedExisting.id],
                 {
                   actor: accessContext.principalId,
                   confidenceChanged: false,
@@ -410,7 +420,7 @@ export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
             return {
               success: true,
               action: "strengthened",
-              lesson: toLessonReadModel(existing),
+              lesson: toLessonReadModel(normalizedExisting),
             };
           }
 

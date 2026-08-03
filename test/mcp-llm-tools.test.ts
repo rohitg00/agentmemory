@@ -33,7 +33,14 @@ describe("MCP LLM tools", () => {
     expect(result.status_code).toBe(200);
     expect(sdk.trigger).toHaveBeenCalledWith({
       function_id: "mem::consolidate-pipeline",
-      payload: { tier: "semantic", force: true },
+      payload: {
+        tier: "semantic",
+        force: true,
+        accessContext: expect.objectContaining({
+          mode: "classify",
+          principalId: "legacy-unresolved",
+        }),
+      },
     });
   });
 

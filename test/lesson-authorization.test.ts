@@ -10,13 +10,19 @@ vi.mock("../src/logger.js", () => ({
 
 import { registerExportImportFunction } from "../src/functions/export-import.js";
 import { registerContextFunction } from "../src/functions/context.js";
+import { registerCrystallizeFunction } from "../src/functions/crystallize.js";
 import { systemLessonAccessContext } from "../src/functions/lesson-access.js";
 import { registerLessonsFunctions } from "../src/functions/lessons.js";
 import { registerReflectFunctions } from "../src/functions/reflect.js";
 import { registerSmartSearchFunction } from "../src/functions/smart-search.js";
 import { registerMcpEndpoints } from "../src/mcp/server.js";
 import { registerApiTriggers } from "../src/triggers/api.js";
-import type { ExportData, Lesson } from "../src/types.js";
+import type {
+  Crystal,
+  ExportData,
+  Insight,
+  Lesson,
+} from "../src/types.js";
 import { mockKV, mockSdk } from "./helpers/mocks.js";
 
 const REPO_ONE = {
@@ -89,7 +95,24 @@ describe("lesson authorization boundaries", () => {
             tokenSha256: tokenDigest("human-token"),
             clearance: "restricted",
             scopes: [{ ring: "global", access: "write" }],
-            capabilities: ["lesson:approve-global"],
+            capabilities: [
+              "lesson:approve-global",
+              "lesson:all-scopes",
+              "lesson:export",
+              "lesson:import",
+            ],
+          },
+          {
+            principalId: "backup-service",
+            principalKind: "service",
+            tokenSha256: tokenDigest("backup-token"),
+            clearance: "restricted",
+            scopes: [],
+            capabilities: [
+              "lesson:all-scopes",
+              "lesson:export",
+              "lesson:import",
+            ],
           },
         ],
       }),
@@ -101,6 +124,19 @@ describe("lesson authorization boundaries", () => {
     kv = mockKV();
     reflectionPrompts = [];
     registerLessonsFunctions(sdk as never, kv as never);
+    registerCrystallizeFunction(
+      sdk as never,
+      kv as never,
+      {
+        summarize: async () =>
+          JSON.stringify({
+            narrative: "Authorized crystal",
+            keyOutcomes: ["done"],
+            filesAffected: [],
+            lessons: ["Derived crystallization lesson"],
+          }),
+      } as never,
+    );
     registerContextFunction(sdk as never, kv as never, 2000);
     registerSmartSearchFunction(
       sdk as never,
@@ -185,7 +221,7 @@ describe("lesson authorization boundaries", () => {
     expect(await kv.list("mem:lessons")).toHaveLength(1);
   });
 
-  it("filters list, recall, and export totals without revealing other scopes", async () => {
+  it("filters list and recall totals without revealing other scopes", async () => {
     const system = systemLessonAccessContext();
     await sdk.trigger("mem::lesson-save", {
       ...lessonInput("visible"),
@@ -210,21 +246,39 @@ describe("lesson authorization boundaries", () => {
       status_code: number;
       body: { lessons: Lesson[] };
     };
-    const exported = (await sdk.trigger("api::export", {
-      headers: headers("codex-token", "codex"),
-      query_params: {},
-    })) as { status_code: number; body: ExportData };
-
     expect(list.body.total).toBe(1);
     expect(list.body.lessons.map((lesson) => lesson.mechanismId)).toEqual([
       "authorization/visible",
     ]);
     expect(recall.body.lessons).toHaveLength(1);
-    expect(exported.status_code).toBe(200);
-    expect(exported.body.lessons).toHaveLength(1);
-    expect(exported.body.lessons?.[0].mechanismId).toBe(
-      "authorization/visible",
-    );
+  });
+
+  it("reserves whole-database export for a restricted all-scopes operator", async () => {
+    const system = systemLessonAccessContext();
+    await sdk.trigger("mem::lesson-save", {
+      ...lessonInput("operator-visible"),
+      accessContext: system,
+    });
+    await sdk.trigger("mem::lesson-save", {
+      ...lessonInput("operator-other", REPO_TWO),
+      accessContext: system,
+    });
+
+    const repoCaller = (await sdk.trigger("api::export", {
+      headers: headers("codex-token", "codex"),
+      query_params: {},
+    })) as { status_code: number; body: { code: string } };
+    const operator = (await sdk.trigger("api::export", {
+      headers: headers("human-token", "patrick"),
+      query_params: {},
+    })) as { status_code: number; body: ExportData };
+
+    expect(repoCaller).toMatchObject({
+      status_code: 403,
+      body: { code: "access_denied" },
+    });
+    expect(operator.status_code).toBe(200);
+    expect(operator.body.lessons).toHaveLength(2);
   });
 
   it("filters injected context and smart-search lesson results", async () => {
@@ -302,7 +356,7 @@ describe("lesson authorization boundaries", () => {
     });
   });
 
-  it("rejects an out-of-scope import before writing any lesson", async () => {
+  it("rejects a non-operator import before writing any lesson", async () => {
     const candidate = (await sdk.trigger("mem::lesson-save", {
       ...lessonInput("import-hidden", REPO_TWO),
       accessContext: systemLessonAccessContext(),
@@ -365,6 +419,170 @@ describe("lesson authorization boundaries", () => {
       status_code: 403,
       body: { code: "access_denied" },
     });
+  });
+
+  it("requires a human operator to restore a global lesson", async () => {
+    const saved = (await sdk.trigger("api::lesson-save", {
+      headers: headers("human-token", "patrick"),
+      body: {
+        content: "Restorable global causal lesson",
+        mechanismId: "authorization/global-restore",
+        claim: "Global restoration requires a fresh human approval.",
+        scope: {
+          ring: "global",
+          humanApproval: {
+            approvedAt: "2026-08-03T01:00:00.000Z",
+            reason: "Approved for backup restoration.",
+          },
+        },
+        sensitivity: "internal",
+      },
+    })) as { body: { lesson: Lesson } };
+    await kv.delete("mem:lessons", saved.body.lesson.id);
+    const exportData: ExportData = {
+      version: "0.9.27",
+      exportedAt: "2026-08-03T01:00:00.000Z",
+      sessions: [],
+      observations: {},
+      memories: [],
+      summaries: [],
+      lessons: [saved.body.lesson],
+    };
+
+    const service = (await sdk.trigger("api::import", {
+      headers: headers("backup-token", "backup-service"),
+      body: { exportData, strategy: "merge" },
+    })) as { status_code: number; body: { code: string } };
+    expect(service).toMatchObject({
+      status_code: 403,
+      body: { code: "access_denied" },
+    });
+    expect(await kv.list("mem:lessons")).toEqual([]);
+
+    const human = (await sdk.trigger("api::import", {
+      headers: headers("human-token", "patrick"),
+      body: { exportData, strategy: "merge" },
+    })) as { status_code: number; body: { success: boolean } };
+    const restored = await kv.get<Lesson>(
+      "mem:lessons",
+      saved.body.lesson.id,
+    );
+    expect(human).toMatchObject({
+      status_code: 200,
+      body: { success: true },
+    });
+    expect(restored?.scope?.humanApproval?.approvedBy).toBe("patrick");
+    expect(restored?.scope?.humanApproval?.approvedAt).not.toBe(
+      saved.body.lesson.scope?.humanApproval?.approvedAt,
+    );
+  });
+
+  it("filters crystals and insights by their lesson provenance", async () => {
+    const system = systemLessonAccessContext();
+    const visible = (await sdk.trigger("mem::lesson-save", {
+      ...lessonInput("projection-visible"),
+      accessContext: system,
+    })) as { lesson: Lesson };
+    const hidden = (await sdk.trigger("mem::lesson-save", {
+      ...lessonInput("projection-hidden", REPO_TWO),
+      accessContext: system,
+    })) as { lesson: Lesson };
+
+    const visibleCrystal: Crystal = {
+      id: "crys_visible",
+      narrative: "Visible crystal",
+      keyOutcomes: [],
+      filesAffected: [],
+      lessons: [visible.lesson.content],
+      sourceLessonIds: [visible.lesson.id],
+      sourceActionIds: [],
+      createdAt: "2026-08-03T01:00:00.000Z",
+    };
+    const hiddenCrystal: Crystal = {
+      ...visibleCrystal,
+      id: "crys_hidden",
+      narrative: "Hidden crystal",
+      lessons: [hidden.lesson.content],
+      sourceLessonIds: [hidden.lesson.id],
+    };
+    await kv.set("mem:crystals", visibleCrystal.id, visibleCrystal);
+    await kv.set("mem:crystals", hiddenCrystal.id, hiddenCrystal);
+
+    const insightBase: Insight = {
+      id: "ins_visible",
+      title: "Visible insight",
+      content: "Visible derived content",
+      confidence: 0.8,
+      reinforcements: 0,
+      sourceConceptCluster: [],
+      sourceMemoryIds: [],
+      sourceLessonIds: [visible.lesson.id],
+      sourceCrystalIds: [visibleCrystal.id],
+      tags: [],
+      createdAt: "2026-08-03T01:00:00.000Z",
+      updatedAt: "2026-08-03T01:00:00.000Z",
+      decayRate: 0.05,
+    };
+    await kv.set("mem:insights", insightBase.id, insightBase);
+    await kv.set("mem:insights", "ins_hidden", {
+      ...insightBase,
+      id: "ins_hidden",
+      title: "Hidden insight",
+      content: "Hidden derived content",
+      sourceLessonIds: [hidden.lesson.id],
+      sourceCrystalIds: [hiddenCrystal.id],
+    });
+    await kv.set("mem:crystals", "crys_spoofed", {
+      ...visibleCrystal,
+      id: "crys_spoofed",
+      narrative: "Spoofed crystal",
+      lessons: ["Hidden derived content with visible provenance"],
+    });
+
+    const crystals = (await sdk.trigger("api::crystal-list", {
+      headers: headers("codex-token", "codex"),
+      query_params: {},
+    })) as { body: { crystals: Crystal[] } };
+    const insights = (await sdk.trigger("api::insight-list", {
+      headers: headers("codex-token", "codex"),
+      query_params: {},
+    })) as { body: { insights: Insight[] } };
+
+    expect(crystals.body.crystals.map((crystal) => crystal.id)).toEqual([
+      visibleCrystal.id,
+    ]);
+    expect(insights.body.insights.map((insight) => insight.id)).toEqual([
+      insightBase.id,
+    ]);
+    expect(JSON.stringify({ crystals, insights })).not.toContain(
+      "Hidden derived",
+    );
+    expect(crystals.body.crystals.map((crystal) => crystal.id)).not.toContain(
+      "crys_spoofed",
+    );
+  });
+
+  it("does not mint system authority for public crystallization", async () => {
+    await kv.set("mem:actions", "act_crystallize", {
+      id: "act_crystallize",
+      title: "Crystallize safely",
+      status: "done",
+      lifecycle: "done",
+      priority: 5,
+      tags: [],
+      createdAt: "2026-08-03T01:00:00.000Z",
+      updatedAt: "2026-08-03T01:00:00.000Z",
+    });
+
+    const response = (await sdk.trigger("api::crystallize", {
+      headers: headers("codex-token", "codex"),
+      body: { actionIds: ["act_crystallize"], project: "agentmemory" },
+    })) as { status_code: number; body: { crystal: Crystal } };
+
+    expect(response.status_code).toBe(200);
+    expect(response.body.crystal.lessons).toEqual([]);
+    expect(response.body.crystal.sourceLessonIds).toEqual([]);
+    expect(await kv.list("mem:lessons")).toEqual([]);
   });
 
   it("server-stamps correction actors across REST and MCP", async () => {

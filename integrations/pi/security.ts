@@ -15,7 +15,7 @@ export function usesPlaintextBearerAuth(baseUrl: string, secret?: string): boole
 }
 
 export function plaintextBearerAuthMessage(baseUrl: string): string {
-  return `agentmemory: AGENTMEMORY_SECRET is configured for plaintext HTTP to ${baseUrl}. Bearer tokens and memory payloads can be observed on the network; use HTTPS or an SSH tunnel.`;
+  return `agentmemory: an AGENTMEMORY_SECRET or AGENTMEMORY_CALLER_TOKEN credential is configured for plaintext HTTP to ${baseUrl}. Bearer tokens and memory payloads can be observed on the network; use HTTPS or an SSH tunnel.`;
 }
 
 export function createPlaintextBearerAuthGuard(

@@ -1,6 +1,9 @@
 import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 import { handleToolCall } from "../src/mcp/standalone.js";
-import { resetHandleForTests } from "../src/mcp/rest-proxy.js";
+import {
+  resetHandleForTests,
+  resolveHandle,
+} from "../src/mcp/rest-proxy.js";
 import { InMemoryKV } from "../src/mcp/in-memory-kv.js";
 
 type FetchMock = ReturnType<typeof vi.fn>;
@@ -28,6 +31,7 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
     resetHandleForTests();
     globalThis.fetch = originalFetch;
     delete process.env["AGENTMEMORY_URL"];
+    delete process.env["AGENTMEMORY_FORCE_PROXY"];
     delete process.env["AGENT_ID"];
     delete process.env["AGENTMEMORY_CALLER_TOKEN"];
   });
@@ -49,6 +53,29 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
     expect(requestHeaders?.get("x-agentmemory-agent-id")).toBe("codex");
     expect(requestHeaders?.get("x-agentmemory-caller-token")).toBe(
       "caller-secret",
+    );
+  });
+
+  it("preserves bounded structured error diagnostics from the engine", async () => {
+    process.env["AGENTMEMORY_FORCE_PROXY"] = "1";
+    installFetch(() =>
+      new Response(
+        JSON.stringify({
+          code: "lesson_policy_unavailable",
+          error: "lesson access policy unavailable",
+          ignored: "x".repeat(2_000),
+        }),
+        { status: 503, statusText: "Service Unavailable" },
+      ),
+    );
+
+    const handle = await resolveHandle();
+    expect(handle.mode).toBe("proxy");
+    if (handle.mode !== "proxy") throw new Error("expected proxy handle");
+    await expect(
+      handle.call("/agentmemory/lessons", { method: "GET" }),
+    ).rejects.toThrow(
+      "503 Service Unavailable; code=lesson_policy_unavailable error=lesson access policy unavailable",
     );
   });
 

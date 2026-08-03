@@ -50,8 +50,13 @@ import {
 } from "./lesson-model.js";
 import { withLessonMutationLock } from "./lesson-locks.js";
 import {
+  bindResolvedLessonWriteIdentity,
+  buildCrystalAccessIndex,
+  buildLessonAccessIndex,
+  canReadCrystal,
+  canReadInsight,
   canReadLesson,
-  canUseLessonCapability,
+  canUseLessonOperatorCapability,
   canWriteLessonScope,
   lessonAccessContextFromPayload,
   type LessonAccessContext,
@@ -71,6 +76,19 @@ interface LessonLifecycleTransition {
 
 const MAX_LESSON_STATE_DIAGNOSTIC_DETAIL_LENGTH = 256;
 
+function isRecordWithNonEmptyString(
+  value: unknown,
+  field: string,
+): boolean {
+  return (
+    value !== null &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    typeof (value as Record<string, unknown>)[field] === "string" &&
+    ((value as Record<string, unknown>)[field] as string).length > 0
+  );
+}
+
 export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
   sdk.registerFunction("mem::export", 
     async (data?: {
@@ -81,7 +99,12 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
       const accessContext = lessonAccessContextFromPayload(
         data?.accessContext,
       );
-      if (!canUseLessonCapability(accessContext, "lesson:export")) {
+      if (
+        !canUseLessonOperatorCapability(
+          accessContext,
+          "lesson:export",
+        )
+      ) {
         return {
           success: false,
           code: "access_denied",
@@ -163,9 +186,22 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
         kv.list<Checkpoint>(KV.checkpoints).catch(() => []),
         kv.list<AccessLogExport>(KV.accessLog).catch(() => []),
       ]);
+      const lessonIndex = buildLessonAccessIndex(lessons);
+      const crystalIndex = buildCrystalAccessIndex(crystals);
       const authorizedLessons = lessons
         .filter((lesson) => canReadLesson(lesson, accessContext))
         .map((lesson) => normalizeLesson(lesson));
+      const authorizedCrystals = crystals.filter((crystal) =>
+        canReadCrystal(crystal, lessonIndex, accessContext),
+      );
+      const authorizedInsights = insights.filter((insight) =>
+        canReadInsight(
+          insight,
+          lessonIndex,
+          crystalIndex,
+          accessContext,
+        ),
+      );
 
       const exportData: ExportData = {
         version: VERSION,
@@ -196,13 +232,19 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
         },
         sentinels: sentinels.length > 0 ? sentinels : undefined,
         sketches: sketches.length > 0 ? sketches : undefined,
-        crystals: crystals.length > 0 ? crystals : undefined,
+        crystals:
+          authorizedCrystals.length > 0
+            ? authorizedCrystals
+            : undefined,
         facets: facets.length > 0 ? facets : undefined,
         lessons:
           authorizedLessons.length > 0
             ? authorizedLessons
             : undefined,
-        insights: insights.length > 0 ? insights : undefined,
+        insights:
+          authorizedInsights.length > 0
+            ? authorizedInsights
+            : undefined,
         routines: routines.length > 0 ? routines : undefined,
         signals: signals.length > 0 ? signals : undefined,
         checkpoints: checkpoints.length > 0 ? checkpoints : undefined,
@@ -244,7 +286,12 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
       const accessContext = lessonAccessContextFromPayload(
         data?.accessContext,
       );
-      if (!canUseLessonCapability(accessContext, "lesson:import")) {
+      if (
+        !canUseLessonOperatorCapability(
+          accessContext,
+          "lesson:import",
+        )
+      ) {
         return {
           success: false,
           code: "access_denied",
@@ -308,6 +355,60 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
       ) {
         return { success: false, error: "observations must be an object" };
       }
+      const importRecord = importData as unknown as Record<
+        string,
+        unknown
+      >;
+      const keyedCollections: Array<{
+        field: string;
+        key: string;
+        required?: boolean;
+      }> = [
+        { field: "sessions", key: "id", required: true },
+        { field: "memories", key: "id", required: true },
+        {
+          field: "summaries",
+          key: "sessionId",
+          required: true,
+        },
+        { field: "profiles", key: "project" },
+        { field: "graphNodes", key: "id" },
+        { field: "graphEdges", key: "id" },
+        { field: "semanticMemories", key: "id" },
+        { field: "proceduralMemories", key: "id" },
+        { field: "actions", key: "id" },
+        { field: "actionEdges", key: "id" },
+        { field: "actionEvents", key: "id" },
+        { field: "routines", key: "id" },
+        { field: "signals", key: "id" },
+        { field: "checkpoints", key: "id" },
+        { field: "sentinels", key: "id" },
+        { field: "sketches", key: "id" },
+        { field: "crystals", key: "id" },
+        { field: "facets", key: "id" },
+        { field: "insights", key: "id" },
+        { field: "accessLogs", key: "memoryId" },
+      ];
+      for (const collection of keyedCollections) {
+        const value = importRecord[collection.field];
+        if (value === undefined && !collection.required) continue;
+        if (!Array.isArray(value)) {
+          return {
+            success: false,
+            error: `${collection.field} must be an array`,
+          };
+        }
+        if (
+          !value.every((item) =>
+            isRecordWithNonEmptyString(item, collection.key),
+          )
+        ) {
+          return {
+            success: false,
+            error: `${collection.field} contains an invalid record`,
+          };
+        }
+      }
 
       if (importData.sessions.length > MAX_SESSIONS) {
         return {
@@ -340,6 +441,16 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
       for (const [, obs] of Object.entries(importData.observations)) {
         if (!Array.isArray(obs)) {
           return { success: false, error: "observation values must be arrays" };
+        }
+        if (
+          !obs.every((item) =>
+            isRecordWithNonEmptyString(item, "id"),
+          )
+        ) {
+          return {
+            success: false,
+            error: "observations contain an invalid record",
+          };
         }
         if (obs.length > MAX_OBS_PER_SESSION) {
           return {
@@ -996,6 +1107,34 @@ async function applyImportedLessonBatch(
   const preimage = new Map(
     existingRows.map((lesson) => [lesson.id, lesson] as const),
   );
+  const authorizedImported: ImportedLessonCandidate[] = [];
+  for (const candidate of imported) {
+    const prepared = bindResolvedLessonWriteIdentity(
+      candidate.lesson,
+      accessContext,
+    );
+    if (!prepared.success) {
+      return {
+        success: false,
+        ...(prepared.code === "access_denied"
+          ? { code: "access_denied" as const }
+          : {}),
+        error: prepared.error,
+      };
+    }
+    try {
+      authorizedImported.push({
+        ...candidate,
+        lesson: normalizeLesson(prepared.value as Lesson),
+      });
+    } catch {
+      return {
+        success: false,
+        error: "Invalid imported lesson after server identity binding",
+      };
+    }
+  }
+  imported = authorizedImported;
   const existing = new Map<string, Lesson>();
   const existingAliases = new Map<string, string>();
   for (const row of existingRows) {
@@ -1123,6 +1262,24 @@ async function applyImportedLessonBatch(
         .sort(),
     });
     incoming.set(rewritten.id, rewritten);
+  }
+  for (const lesson of incoming.values()) {
+    const relationIds = [
+      ...(lesson.supersededByLessonId
+        ? [lesson.supersededByLessonId]
+        : []),
+      ...lesson.contradictedByLessonIds!,
+    ];
+    for (const relationId of relationIds) {
+      const target = incoming.get(relationId) ?? existing.get(relationId);
+      if (target && !canReadLesson(target, accessContext)) {
+        return {
+          success: false,
+          code: "access_denied",
+          error: "Lesson import access denied for relation target",
+        };
+      }
+    }
   }
 
   const finalLessons =

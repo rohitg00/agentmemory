@@ -1587,8 +1587,9 @@ preserves the PR1 behavior. `enforce` resolves a caller from a per-client token
 and server-side SHA-256 token-digest policy, then applies exact durable-scope
 grants and the sensitivity order
 `public < internal < confidential < restricted`. Write grants imply read;
-global is not a wildcard; legacy implicit-worktree rows require the
-`lesson:legacy-worktree` capability.
+global is not a wildcard. `lesson:legacy-worktree` is a read-only compatibility
+exception for existing implicit-worktree rows; new enforced caller writes
+require an explicit durable scope.
 
 In enforce mode, REST and MCP arguments cannot self-assert identity. The server
 stamps correction actors plus global `humanApproval.approvedBy` and
@@ -1596,7 +1597,22 @@ stamps correction actors plus global `humanApproval.approvedBy` and
 `lesson:approve-global` may approve global scope.
 Portable/Obsidian exports require `lesson:export`, imports require
 `lesson:import`, and unauthorized lessons are removed before list, recall,
-context, smart-search, reflection, and export counts are computed.
+context, smart-search, reflection, audit/diagnostic projections, crystal and
+insight reads, and export counts are computed. In enforcement mode, a portable
+full-database import/export or an Obsidian export containing lessons or
+crystals is an operator operation: the caller must have `restricted` clearance,
+`lesson:all-scopes`, and the matching export/import capability. A capability
+alone is intentionally insufficient.
+
+Replay, crystallization, consolidation, eviction, reflection, audit, and
+diagnostic paths preserve the resolved caller context instead of manufacturing
+service authority. New crystals record `sourceLessonIds`; synthesized insights
+retain lesson/crystal provenance, and every public projection requires all
+referenced lessons to be readable. Crystal lesson values must also correspond
+positionally to the referenced lesson ID or authoritative lesson content, so a
+readable ID cannot launder unrelated prose. Legacy crystals that contain
+lesson prose but no lesson IDs are visible only to an all-scopes principal in
+enforcement mode.
 
 Set `AGENTMEMORY_LESSON_ACCESS_MODE=enforce` and
 `AGENTMEMORY_LESSON_CALLER_POLICY_FILE=/absolute/path/lesson-callers.json` on
@@ -1606,6 +1622,20 @@ the policy contains only `tokenSha256`. Missing/invalid policy or credentials
 fail closed after enforcement is enabled. An invalid access-mode value or
 non-absolute policy path also fails closed. Internal scheduled functions use
 an explicit service context; that service cannot approve global lessons.
+
+The viewer must use a separate server-side read principal configured with
+`AGENTMEMORY_VIEWER_AGENT_ID` and `AGENTMEMORY_VIEWER_CALLER_TOKEN`. Browser
+headers are ignored and the raw viewer token is never embedded in HTML. Pi,
+Hermes, OpenClaw, the MCP shims, and the replay CLI forward the caller headers;
+their plaintext-HTTP guard treats either the bearer secret or caller token as
+a credential.
+
+Import preflights collection shapes and all lesson authorization before its
+first write. The lesson batch restores exact preimages if a lesson write fails.
+The underlying KV API has no transaction spanning every non-lesson collection,
+so a later storage failure during a full multi-collection import can still
+require operator repair; this is existing portable-import behavior, not an
+all-or-nothing database transaction.
 
 Automatic contradiction discovery and hybrid/vector lesson retrieval remain
 separate follow-up work. See
