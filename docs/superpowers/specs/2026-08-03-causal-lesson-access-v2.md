@@ -84,8 +84,10 @@ and `AGENT_ID`.
 The viewer uses a separate server-side identity from
 `AGENTMEMORY_VIEWER_AGENT_ID` and `AGENTMEMORY_VIEWER_CALLER_TOKEN`. It ignores
 browser-supplied caller identity headers and never embeds the caller token in
-the rendered document. Integration plaintext-HTTP guards treat either
-`AGENTMEMORY_SECRET` or `AGENTMEMORY_CALLER_TOKEN` as a credential.
+the rendered document. Integration and MCP proxy plaintext-HTTP guards treat
+either `AGENTMEMORY_SECRET` or `AGENTMEMORY_CALLER_TOKEN` as a credential,
+warn once for non-loopback HTTP, and refuse before the request when
+`AGENTMEMORY_REQUIRE_HTTPS=1`.
 
 Request bodies and MCP arguments are explicitly whitelisted. A supplied
 `accessContext` is never forwarded by a public boundary. Direct iii function

@@ -389,6 +389,20 @@ describe("Governance Functions", () => {
         ["lsn_visible_alias"],
       ),
       makeAuditEntry(
+        "aud_hidden_replacement",
+        "lesson_supersede",
+        "mem::lesson-supersede",
+        [visible.id],
+        { replacementLessonId: hidden.id },
+      ),
+      makeAuditEntry(
+        "aud_visible_replacement",
+        "lesson_supersede",
+        "mem::lesson-supersede",
+        [visible.id],
+        { replacementLessonId: visible.id },
+      ),
+      makeAuditEntry(
         "aud_ordinary",
         "delete",
         "mem::governance-delete",
@@ -413,6 +427,7 @@ describe("Governance Functions", () => {
       "aud_ordinary",
       "aud_visible",
       "aud_visible_alias",
+      "aud_visible_replacement",
     ]);
     expect(JSON.stringify(enforceEntries)).not.toContain("lsn_hidden");
     expect(JSON.stringify(enforceEntries)).not.toContain("private terms");

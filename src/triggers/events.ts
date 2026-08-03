@@ -6,7 +6,7 @@ import { isReflectEnabled } from "../functions/slots.js";
 import { isGraphExtractionEnabled } from "../config.js";
 import { logger } from "../logger.js";
 import { triggerDetached } from "../utils/trigger-detached.js";
-import { systemLessonAccessContext } from "../functions/lesson-access.js";
+import { lessonAccessContextFromPayload } from "../functions/lesson-access.js";
 import type { LessonAccessContext } from "../functions/lesson-access.js";
 
 export function registerEventTriggers(sdk: ISdk, kv: StateKV): void {
@@ -21,7 +21,9 @@ export function registerEventTriggers(sdk: ISdk, kv: StateKV): void {
       worktree?: string;
       branch?: string;
       taskSlug?: string;
+      accessContext?: unknown;
     }) => {
+      const accessContext = lessonAccessContextFromPayload(data.accessContext);
       const startedAt = new Date().toISOString();
       const session: Session = {
         id: data.sessionId,
@@ -50,7 +52,7 @@ export function registerEventTriggers(sdk: ISdk, kv: StateKV): void {
         payload: {
           sessionId: data.sessionId,
           project: data.project,
-          accessContext: systemLessonAccessContext(),
+          accessContext,
         },
       });
       return { session, context: contextResult.context };

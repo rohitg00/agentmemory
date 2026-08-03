@@ -1626,9 +1626,10 @@ an explicit service context; that service cannot approve global lessons.
 The viewer must use a separate server-side read principal configured with
 `AGENTMEMORY_VIEWER_AGENT_ID` and `AGENTMEMORY_VIEWER_CALLER_TOKEN`. Browser
 headers are ignored and the raw viewer token is never embedded in HTML. Pi,
-Hermes, OpenClaw, the MCP shims, and the replay CLI forward the caller headers;
-their plaintext-HTTP guard treats either the bearer secret or caller token as
-a credential.
+Hermes, OpenClaw, the standalone MCP shim, streamable HTTP MCP bridge, and the
+replay CLI forward the caller headers. Their plaintext-HTTP guards treat either
+the bearer secret or caller token as a credential, warn once for a non-loopback
+HTTP endpoint, and refuse the request when `AGENTMEMORY_REQUIRE_HTTPS=1`.
 
 Import preflights collection shapes and all lesson authorization before its
 first write. The lesson batch restores exact preimages if a lesson write fails.

@@ -1,4 +1,5 @@
 import { upstreamHttpError } from "./http-error.js";
+import { createPlaintextCredentialGuard } from "./plaintext-credential.js";
 
 const DEFAULT_URL = "http://localhost:3111";
 const DEFAULT_HEALTH_PROBE_TIMEOUT_MS = 2_000;
@@ -32,6 +33,7 @@ export type Handle = ProxyHandle | LocalHandle;
 let cached: Handle | null = null;
 let cachedAt = 0;
 let probeInFlight: Promise<Handle> | null = null;
+let guardPlaintextCredential = createPlaintextCredentialGuard();
 
 // `${VAR}`-style placeholders ship in plugin/.mcp.json so MCP hosts that
 // expand them (Claude Code, Cursor) substitute the user's shell value.
@@ -49,6 +51,13 @@ export function resolveEnvOrEmpty(name: string): string {
 
 function baseUrl(): string {
   return (resolveEnvOrEmpty("AGENTMEMORY_URL") || DEFAULT_URL).replace(/\/+$/, "");
+}
+
+function outboundCredential(): string {
+  return (
+    resolveEnvOrEmpty("AGENTMEMORY_SECRET") ||
+    resolveEnvOrEmpty("AGENTMEMORY_CALLER_TOKEN")
+  );
 }
 
 function authHeader(): Record<string, string> {
@@ -137,6 +146,7 @@ export async function resolveHandle(): Promise<Handle> {
   }
   if (probeInFlight) return probeInFlight;
   const url = baseUrl();
+  guardPlaintextCredential(url, outboundCredential());
   const skipProbe = forceProxy();
   probeInFlight = (async () => {
     const up = skipProbe ? true : await probe(url);
@@ -150,6 +160,7 @@ export async function resolveHandle(): Promise<Handle> {
         mode: "proxy",
         baseUrl: url,
         call: async (path, init) => {
+          guardPlaintextCredential(url, outboundCredential());
           const res = await fetch(`${url}${path}`, {
             ...init,
             headers: {
@@ -192,4 +203,5 @@ export function resetHandleForTests(): void {
   cachedAt = 0;
   probeInFlight = null;
   livezProbe = defaultLivezProbe;
+  guardPlaintextCredential = createPlaintextCredentialGuard();
 }

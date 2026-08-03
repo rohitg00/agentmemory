@@ -128,15 +128,10 @@ export async function queryAudit(
         const lessons = await kv.list<Lesson>(KV.lessons);
         const lessonIndex = buildLessonAccessIndex(lessons);
         const readableLessonEntries = lessonEntries.filter((entry) => {
-          if (
-            !Array.isArray(entry.targetIds) ||
-            entry.targetIds.length === 0
-          ) {
-            return false;
-          }
+          const referencedIds = lessonAuditReferenceIds(entry);
+          if (referencedIds.length === 0) return false;
           try {
-            return entry.targetIds.every((id) => {
-              if (typeof id !== "string" || id.length === 0) return false;
+            return referencedIds.every((id) => {
               const lesson = lessonIndex.get(id);
               return lesson !== undefined &&
                 canReadLesson(lesson, accessContext);
@@ -160,6 +155,41 @@ export async function queryAudit(
   }
 
   return entries.slice(0, filter?.limit || 100);
+}
+
+function lessonAuditReferenceIds(entry: AuditEntry): string[] {
+  const ids = new Set<string>();
+  const add = (value: unknown): void => {
+    if (typeof value === "string" && value.length > 0) ids.add(value);
+  };
+  if (Array.isArray(entry.targetIds)) {
+    for (const id of entry.targetIds) add(id);
+  }
+
+  const details =
+    entry.details && typeof entry.details === "object"
+      ? entry.details
+      : undefined;
+  if (!details) return [...ids];
+
+  add(details.lessonId);
+  add(details.replacementLessonId);
+  for (const field of ["lessonIds", "sourceLessonIds"] as const) {
+    const values = details[field];
+    if (Array.isArray(values)) {
+      for (const value of values) add(value);
+    }
+  }
+  for (const field of ["canonicalizedIds", "lifecycleTransitions"] as const) {
+    const values = details[field];
+    if (!Array.isArray(values)) continue;
+    for (const value of values) {
+      if (value && typeof value === "object" && !Array.isArray(value)) {
+        add((value as Record<string, unknown>).lessonId);
+      }
+    }
+  }
+  return [...ids];
 }
 
 const LESSON_AUDIT_OPERATIONS = new Set<AuditEntry["operation"]>([

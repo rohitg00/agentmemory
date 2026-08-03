@@ -289,14 +289,23 @@ async function correctLesson(
     const operation =
       mode === "supersede" ? "lesson_supersede" : "lesson_delete";
     try {
-      await recordAudit(kv, operation, `mem::lesson-${mode}`, [lesson.id], {
-        actor,
-        reason,
-        project: lesson.project,
-        expectedUpdatedAt,
-        replacementLessonId,
-        deletedAt: timestamp,
-      });
+      await recordAudit(
+        kv,
+        operation,
+        `mem::lesson-${mode}`,
+        [
+          lesson.id,
+          ...(replacementLessonId ? [replacementLessonId] : []),
+        ],
+        {
+          actor,
+          reason,
+          project: lesson.project,
+          expectedUpdatedAt,
+          replacementLessonId,
+          deletedAt: timestamp,
+        },
+      );
     } catch {}
 
     return {

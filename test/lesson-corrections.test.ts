@@ -145,7 +145,7 @@ describe("lesson corrections", () => {
       audit.filter((entry) => entry.operation === "lesson_supersede"),
     ).toEqual([
       expect.objectContaining({
-        targetIds: [original.id],
+        targetIds: [original.id, replacement.id],
         details: expect.objectContaining({
           replacementLessonId: replacement.id,
         }),
