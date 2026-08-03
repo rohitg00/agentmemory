@@ -133,6 +133,7 @@ describe("guidelineTargets coverage", () => {
     expect(names).toEqual(
       [
         "antigravity",
+        "antigravity-cli",
         "cline",
         "continue",
         "copilot-cli",
