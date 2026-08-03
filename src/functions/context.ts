@@ -17,6 +17,10 @@ import {
   listPinnedSlots,
   renderPinnedContext,
 } from "./slots.js";
+import {
+  isLessonRecallable,
+  toLessonReadModel,
+} from "./lesson-model.js";
 
 function estimateTokens(text: string): number {
   return Math.ceil(text.length / 3);
@@ -103,7 +107,12 @@ export function registerContextFunction(
       // 10 to keep the block bounded since the outer token-budget loop
       // below will drop the whole block if it doesn't fit. #457.
       const relevantLessons = lessons
-        .filter((l) => !l.deleted && (!l.project || l.project === data.project))
+        .filter(
+          (lesson) =>
+            isLessonRecallable(lesson) &&
+            (!lesson.project || lesson.project === data.project),
+        )
+        .map((lesson) => toLessonReadModel(lesson))
         .sort((a, b) => {
           const scoreA = (a.project === data.project ? 1.5 : 1) * a.confidence;
           const scoreB = (b.project === data.project ? 1.5 : 1) * b.confidence;
@@ -113,10 +122,11 @@ export function registerContextFunction(
 
       if (relevantLessons.length > 0) {
         const items = relevantLessons
-          .map(
-            (l) =>
-              `- (${l.confidence.toFixed(2)}) ${l.content}${l.context ? ` — ${l.context}` : ""}`,
-          )
+          .map((lesson) => {
+            const claim = lesson.claim ? `${lesson.claim} — ` : "";
+            const context = lesson.context ? ` — ${lesson.context}` : "";
+            return `- [verdict:${lesson.evidenceVerdict}] (${lesson.confidence.toFixed(2)}) ${claim}${lesson.content}${context}`;
+          })
           .join("\n");
         const lessonsContent = `## Lessons Learned\n${items}`;
         const mostRecent = relevantLessons.reduce((acc, l) => {

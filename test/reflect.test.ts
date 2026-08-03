@@ -9,21 +9,30 @@ import type { Insight, GraphNode, GraphEdge, SemanticMemory, Lesson, Crystal } f
 
 function mockKV() {
   const store = new Map<string, Map<string, unknown>>();
+  const listFailures = new Map<string, string>();
   return {
     get: async <T>(scope: string, key: string): Promise<T | null> => {
       return (store.get(scope)?.get(key) as T) ?? null;
     },
-    set: async <T>(scope: string, key: string, data: T): Promise<T> => {
+    set: vi.fn(async <T>(scope: string, key: string, data: T): Promise<T> => {
       if (!store.has(scope)) store.set(scope, new Map());
       store.get(scope)!.set(key, data);
       return data;
-    },
+    }),
     delete: async (scope: string, key: string): Promise<void> => {
       store.get(scope)?.delete(key);
     },
     list: async <T>(scope: string): Promise<T[]> => {
+      const failure = listFailures.get(scope);
+      if (failure !== undefined) {
+        listFailures.delete(scope);
+        throw new Error(failure);
+      }
       const entries = store.get(scope);
       return entries ? (Array.from(entries.values()) as T[]) : [];
+    },
+    failNextList(scope: string, message: string): void {
+      listFailures.set(scope, message);
     },
   };
 }
@@ -84,7 +93,11 @@ function makeSemantic(fact: string, id?: string): SemanticMemory {
   };
 }
 
-function makeLesson(content: string, tags: string[]): Lesson {
+function makeLesson(
+  content: string,
+  tags: string[],
+  overrides: Partial<Lesson> = {},
+): Lesson {
   return {
     id: `lsn_${content.slice(0, 8)}`,
     content,
@@ -97,6 +110,7 @@ function makeLesson(content: string, tags: string[]): Lesson {
     createdAt: "2026-04-01T00:00:00Z",
     updatedAt: "2026-04-01T00:00:00Z",
     decayRate: 0.05,
+    ...overrides,
   };
 }
 
@@ -250,6 +264,227 @@ describe("Reflect", () => {
 
       expect(result.success).toBe(true);
       expect(result.newInsights).toBe(0);
+    });
+
+    it("fails closed with zero writes when authoritative lesson enumeration fails", async () => {
+      await kv.set("mem:graph:nodes", "node_security", makeConceptNode("security"));
+      await kv.set("mem:graph:nodes", "node_validation", makeConceptNode("validation"));
+      await kv.set("mem:graph:edges", "edge_1", makeEdge("security", "validation"));
+      await kv.set("mem:semantic", "sem_1", makeSemantic("security requires validation", "sem_1"));
+      await kv.set("mem:semantic", "sem_2", makeSemantic("validation protects security", "sem_2"));
+      await kv.set("mem:semantic", "sem_3", makeSemantic("security validation blocks defects", "sem_3"));
+      kv.set.mockClear();
+      kv.failNextList(
+        "mem:lessons",
+        `injected state::list failure ${"x".repeat(4096)}`,
+      );
+
+      const result = (await sdk.trigger("mem::reflect", {})) as {
+        success: boolean;
+        error: string;
+        newInsights: number;
+      };
+
+      expect(result).toMatchObject({
+        success: false,
+        newInsights: 0,
+        error: expect.stringContaining(
+          "authoritative lesson state read failed",
+        ),
+      });
+      expect(result.error.length).toBeLessThanOrEqual(400);
+      expect(provider.summarize).not.toHaveBeenCalled();
+      expect(kv.set).not.toHaveBeenCalled();
+      expect(await kv.list("mem:insights")).toEqual([]);
+    });
+
+    it("fails closed with zero writes when a structured lesson cannot be normalized", async () => {
+      await kv.set("mem:graph:nodes", "node_security", makeConceptNode("security"));
+      await kv.set("mem:graph:nodes", "node_validation", makeConceptNode("validation"));
+      await kv.set("mem:graph:edges", "edge_1", makeEdge("security", "validation"));
+      await kv.set("mem:semantic", "sem_1", makeSemantic("security requires validation", "sem_1"));
+      await kv.set("mem:semantic", "sem_2", makeSemantic("validation protects security", "sem_2"));
+      await kv.set("mem:semantic", "sem_3", makeSemantic("security validation blocks defects", "sem_3"));
+      await kv.set(
+        "mem:lessons",
+        "lsn_invalid",
+        {
+          ...makeLesson("Invalid structured lesson", ["security"]),
+          schemaVersion: 1,
+          mechanismId: "invalid/structured",
+          claim: "Malformed evidence must not disappear.",
+          evidenceRefs: "not-an-array",
+          scope: { ring: "repo", scopeId: "repo:agentmemory" },
+        } as unknown as Lesson,
+      );
+      kv.set.mockClear();
+
+      const result = (await sdk.trigger("mem::reflect", {})) as {
+        success: boolean;
+        error: string;
+        newInsights: number;
+      };
+
+      expect(result).toMatchObject({
+        success: false,
+        newInsights: 0,
+        error: expect.stringContaining(
+          "authoritative lesson normalization failed",
+        ),
+      });
+      expect(provider.summarize).not.toHaveBeenCalled();
+      expect(kv.set).not.toHaveBeenCalled();
+      expect(await kv.list("mem:insights")).toEqual([]);
+    });
+
+    it("labels refuted claims in the prompt and refuses positive synthesis persistence", async () => {
+      provider.summarize.mockResolvedValue(
+        `<insights>
+<insight evidenceVerdict="supported" confidence="0.9" title="Unsafe Positive">
+Force-pushing main is safe and should be standard practice.
+</insight>
+</insights>`,
+      );
+      await kv.set(
+        "mem:graph:nodes",
+        "node_security",
+        makeConceptNode("security"),
+      );
+      await kv.set(
+        "mem:graph:nodes",
+        "node_validation",
+        makeConceptNode("validation"),
+      );
+      await kv.set(
+        "mem:graph:edges",
+        "edge_1",
+        makeEdge("security", "validation"),
+      );
+      await kv.set(
+        "mem:semantic",
+        "sem_1",
+        makeSemantic("security facts require validation", "sem_1"),
+      );
+      await kv.set(
+        "mem:semantic",
+        "sem_2",
+        makeSemantic("validation protects security boundaries", "sem_2"),
+      );
+      await kv.set(
+        "mem:lessons",
+        "lsn_refuted",
+        makeLesson("Force-pushing main caused data loss.", ["security"], {
+          id: "lsn_refuted",
+          schemaVersion: 1,
+          mechanismId: "git/force-push",
+          claim: "Force-pushing main is safe.",
+          evidenceVerdict: "refuted",
+          lifecycle: "active",
+          evidenceRefs: [
+            {
+              kind: "incident",
+              projectId: "agentmemory",
+              provenance: {
+                type: "attestation",
+                locator: "rekor://entry/refuted-force-push",
+                digest: `sha256:${"a".repeat(64)}`,
+              },
+              recordedAt: "2026-04-01T00:00:00Z",
+              verification: {
+                state: "verified",
+                verifiedBy: "reviewer@example.test",
+                verifiedAt: "2026-04-01T01:00:00Z",
+              },
+            },
+          ],
+          scope: { ring: "repo", scopeId: "repo:agentmemory" },
+        }),
+      );
+
+      const result = (await sdk.trigger("mem::reflect", {})) as {
+        newInsights: number;
+      };
+      const prompt = provider.summarize.mock.calls[0][1] as string;
+
+      expect(prompt).toContain("Negative or Contradicted Evidence");
+      expect(prompt).toContain("verdict=refuted");
+      expect(prompt).toContain("claim=Force-pushing main is safe.");
+      expect(result.newInsights).toBe(0);
+      expect(await kv.list("mem:insights")).toEqual([]);
+    });
+
+    it("persists an explicitly mixed synthesis when refuted evidence contributes", async () => {
+      provider.summarize.mockResolvedValue(
+        `<insights>
+<insight evidenceVerdict="mixed" confidence="0.65" title="Contested Practice">
+The practice has mixed evidence and the refuted claim must remain visible as counterevidence.
+</insight>
+</insights>`,
+      );
+      await kv.set("mem:graph:nodes", "node_retry", makeConceptNode("retry"));
+      await kv.set(
+        "mem:graph:nodes",
+        "node_idempotency",
+        makeConceptNode("idempotency"),
+      );
+      await kv.set(
+        "mem:graph:edges",
+        "edge_1",
+        makeEdge("retry", "idempotency"),
+      );
+      await kv.set(
+        "mem:semantic",
+        "sem_1",
+        makeSemantic("retry requires idempotency", "sem_1"),
+      );
+      await kv.set(
+        "mem:semantic",
+        "sem_2",
+        makeSemantic("idempotency bounds retry risk", "sem_2"),
+      );
+      await kv.set(
+        "mem:lessons",
+        "lsn_retry_refuted",
+        makeLesson("Unbounded retries failed.", ["retry"], {
+          id: "lsn_retry_refuted",
+          schemaVersion: 1,
+          mechanismId: "retry/unbounded",
+          claim: "Unbounded retries are safe.",
+          evidenceVerdict: "refuted",
+          lifecycle: "active",
+          evidenceRefs: [
+            {
+              kind: "incident",
+              projectId: "agentmemory",
+              provenance: {
+                type: "attestation",
+                locator: "rekor://entry/unbounded-retry",
+                digest: `sha256:${"b".repeat(64)}`,
+              },
+              recordedAt: "2026-04-01T00:00:00Z",
+              verification: {
+                state: "verified",
+                verifiedBy: "reviewer@example.test",
+                verifiedAt: "2026-04-01T01:00:00Z",
+              },
+            },
+          ],
+          scope: { ring: "repo", scopeId: "repo:agentmemory" },
+        }),
+      );
+
+      const result = (await sdk.trigger("mem::reflect", {})) as {
+        newInsights: number;
+      };
+      const insights = await kv.list<Insight>("mem:insights");
+
+      expect(result.newInsights).toBe(1);
+      expect(insights).toEqual([
+        expect.objectContaining({
+          evidenceVerdict: "mixed",
+          sourceLessonIds: ["lsn_retry_refuted"],
+        }),
+      ]);
     });
   });
 

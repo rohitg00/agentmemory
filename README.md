@@ -1516,7 +1516,7 @@ Create `~/.agentmemory/.env`:
                                    # PostToolUse regardless of this flag.
 # GRAPH_EXTRACTION_ENABLED=false
 # CONSOLIDATION_ENABLED=false   # on by default when an LLM provider is configured
-# LESSON_DECAY_ENABLED=true
+# LESSON_DECAY_ENABLED=true  # legacy confidence decay + schema-v1 staleness scan
 # OBSIDIAN_AUTO_EXPORT=false
 # AGENTMEMORY_EXPORT_ROOT=~/.agentmemory
 # CLAUDE_MEMORY_BRIDGE=false
@@ -1532,6 +1532,61 @@ Create `~/.agentmemory/.env`:
 # AGENTMEMORY_TOOLS=core
 # AGENTMEMORY_DISABLE_LLM_TOOLS=true  # reports skipped_disabled, not failure
 ```
+
+### Structured causal lessons
+
+`memory_lesson_save` and `POST /agentmemory/lessons` remain compatible with
+prose-only lessons and also accept causal schema-v1 fields:
+
+- canonical `mechanismId`/optional version and aliases, plus a short
+  falsifiable `claim`;
+- evidence verdict (`supported`, `refuted`, `mixed`, `unverified`) independent
+  of lifecycle (`draft`, `active`, `superseded`, `retracted`);
+- applicability, non-applicability, falsification conditions, and general
+  string-valued facets;
+- at most eight durable evidence references using discriminated Git,
+  object-store/query snapshot, OCI, DOI/URN, dataset, or attestation
+  provenance plus an explicit verification state;
+- worktree/repo/initiative/domain/global scope rings and sensitivity
+  classification.
+
+Structured causal lessons require an explicit durable scope; global scope also
+requires human approval metadata and forbids `scopeId`. Facet dimensions
+normalize to ASCII snake case and must match `^[a-z][a-z0-9_]*$`. Schema-v1
+approval, evidence, verification, and review timestamps require a
+calendar-valid RFC3339 value with an explicit `Z` or numeric offset.
+
+New supported/refuted/mixed saves require every evidence reference to carry an
+explicit verified review. Import/read normalization preserves older Git-shaped
+verdict rows through a visible `legacy-git-anchor` verification basis; this is
+a compatibility classification and explicitly does not claim that evidence
+relevance was re-audited. That reserved basis is accepted only for immutable
+Git provenance with the canonical AgentMemory migration actor; OCI and every
+other non-Git provenance type are rejected if they claim it.
+
+Legacy lessons normalize on read to
+`unverified` + `active` with an implicit worktree scope and
+`sensitivity: restricted`; reads do not rewrite stored rows. Reinforcement
+records reuse without increasing evidence confidence.
+Supersession/retraction continue through the audited correction APIs.
+Compact smart-search results retain claim/verdict/contradiction labels.
+Reflection treats refuted claims as negative evidence and will not persist a
+supported synthesis from a cluster containing refuted or contradicted lessons.
+Authoritative lesson enumeration and normalization fail closed for import,
+portable export, and reflection; a read failure cannot become an empty lesson
+set that permits tombstone restoration or positive synthesis.
+
+`scopeId`, global `humanApproval.approvedBy`, and correction `actor` values are
+caller-supplied classification, lineage, and audit-attribution metadata. They
+are not authenticated identities or an authorization boundary in PR1.
+Server-resolved caller identity, approval authority, and durable-scope access
+enforcement remain PR2 work.
+
+Scope and sensitivity enforcement, automatic contradiction discovery, and
+hybrid/vector lesson retrieval are intentionally deferred to PR2. Until then,
+sensitivity metadata is classification, not an access-control boundary. See
+[Causal Lesson Schema v1](docs/superpowers/specs/2026-08-02-causal-lesson-schema-v1.md)
+for the complete compatibility and fingerprint contract.
 
 ---
 
@@ -1557,8 +1612,8 @@ Create `~/.agentmemory/.env`:
 | `GET` | `/agentmemory/profile` | Project profile |
 | `GET` | `/agentmemory/actions/graph` | Bounded action and dependency projection without event history |
 | `GET` | `/agentmemory/lessons` | Bounded lesson pages with project, confidence, and recency controls |
-| `DELETE` | `/agentmemory/lessons` | Tombstone a lesson (reason + optional actor; supports expectedUpdatedAt revision guard) |
-| `POST` | `/agentmemory/lessons/supersede` | Tombstone a lesson and link a replacement lesson |
+| `DELETE` | `/agentmemory/lessons` | Retract a lesson through an audited compatibility tombstone (reason + optional actor; supports expectedUpdatedAt) |
+| `POST` | `/agentmemory/lessons/supersede` | Mark a lesson superseded and link an active replacement through the audited correction path |
 | `GET` | `/agentmemory/export` | Export all data |
 | `POST` | `/agentmemory/import` | Import from JSON |
 | `POST` | `/agentmemory/graph/query` | Knowledge graph query |

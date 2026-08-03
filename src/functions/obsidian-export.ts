@@ -7,10 +7,15 @@ import { KV } from "../state/schema.js";
 import type {
   Memory,
   Lesson,
+  LessonEvidenceReference,
   Crystal,
   Session,
 } from "../types.js";
 import { recordAudit } from "./audit.js";
+import {
+  isLessonListable,
+  toLessonReadModel,
+} from "./lesson-model.js";
 const DEFAULT_EXPORT_ROOT = join(homedir(), ".agentmemory");
 
 function getExportRoot(): string {
@@ -51,6 +56,40 @@ function safeTimestamp(value: unknown): number {
   if (typeof value !== "string") return 0;
   const time = new Date(value).getTime();
   return Number.isFinite(time) ? time : 0;
+}
+
+function evidenceReferenceToMd(
+  reference: LessonEvidenceReference,
+): string {
+  const provenance = reference.provenance;
+  const type = provenance?.type ?? "git";
+  const locator =
+    provenance?.locator ?? reference.repoRemoteUrl ?? "missing-locator";
+  const immutableId =
+    provenance?.immutableId ?? reference.commitSha;
+  const digest =
+    provenance?.digest ?? reference.artifactDigest;
+  const path = provenance?.path ?? reference.path;
+  const verification = reference.verification ?? { state: "unverified" };
+  const fields = [
+    `type=${type}`,
+    `locator=${JSON.stringify(locator)}`,
+    immutableId ? `immutableId=${JSON.stringify(immutableId)}` : undefined,
+    digest ? `digest=${JSON.stringify(digest)}` : undefined,
+    path ? `path=${JSON.stringify(path)}` : undefined,
+    `verification=${verification.state}`,
+    verification.basis ? `basis=${verification.basis}` : undefined,
+    verification.verifiedBy
+      ? `verifiedBy=${JSON.stringify(verification.verifiedBy)}`
+      : undefined,
+    verification.verifiedAt
+      ? `verifiedAt=${JSON.stringify(verification.verifiedAt)}`
+      : undefined,
+    verification.note
+      ? `verificationNote=${JSON.stringify(verification.note)}`
+      : undefined,
+  ].filter((field): field is string => Boolean(field));
+  return `- ${reference.kind}: ${fields.join(" ")}`;
 }
 
 function toFrontmatter(obj: Record<string, unknown>): string {
@@ -116,25 +155,45 @@ function memoryToMd(m: Memory): string {
 }
 
 function lessonToMd(l: Lesson): string {
-  const tags = safeArray<string>(l.tags);
-  const sourceIds = safeArray<string>(l.sourceIds);
-  const content = safeString(l.content);
-  const headline = content ? content.slice(0, 80) : l.id;
+  const lesson = toLessonReadModel(l);
+  const tags = safeArray<string>(lesson.tags);
+  const sourceIds = safeArray<string>(lesson.sourceIds);
+  const content = safeString(lesson.content);
+  const headline = content ? content.slice(0, 80) : lesson.id;
 
   const fm = toFrontmatter({
-    id: l.id,
+    id: lesson.id,
     type: "lesson",
-    source: l.source,
-    confidence: l.confidence,
-    reinforcements: l.reinforcements,
-    created: l.createdAt,
-    updated: l.updatedAt,
-    project: l.project,
+    schemaVersion: lesson.schemaVersion,
+    source: lesson.source,
+    confidence: lesson.confidence,
+    reinforcements: lesson.reinforcements,
+    created: lesson.createdAt,
+    updated: lesson.updatedAt,
+    project: lesson.project,
     tags,
-    decayRate: l.decayRate,
+    decayRate: lesson.decayRate,
+    mechanismId: lesson.mechanismId,
+    mechanismVersion: lesson.mechanismVersion,
+    mechanismAliases: lesson.mechanismAliases,
+    claimType: lesson.claimType,
+    evidenceVerdict: lesson.evidenceVerdict,
+    lifecycle: lesson.lifecycle,
+    scopeRing: lesson.scope.ring,
+    scopeId: lesson.scope.scopeId,
+    sensitivity: lesson.sensitivity,
+    reviewAfter: lesson.reviewAfter,
+    contradictedByLessonIds: lesson.contradictedByLessonIds,
+    structuredFacets: lesson.structuredFacets,
+    computedStale: lesson.computedFlags.stale,
+    computedContradicted: lesson.computedFlags.contradicted,
+    contentFingerprint: lesson.contentFingerprint,
   });
 
   const sourceLinks = sourceIds.map((id) => `- [[${id}]]`).join("\n");
+  const evidenceLines = lesson.evidenceRefs
+    .map(evidenceReferenceToMd)
+    .join("\n");
 
   const sections = [
     fm,
@@ -144,8 +203,36 @@ function lessonToMd(l: Lesson): string {
     content,
   ];
 
-  if (l.context) {
-    sections.push("", "## Context", l.context);
+  if (lesson.claim) {
+    sections.push("", "## Falsifiable Claim", lesson.claim);
+  }
+  if (lesson.context) {
+    sections.push("", "## Context", lesson.context);
+  }
+  if (lesson.applicabilityConditions.length > 0) {
+    sections.push(
+      "",
+      "## Applies When",
+      lesson.applicabilityConditions.map((value) => `- ${value}`).join("\n"),
+    );
+  }
+  if (lesson.nonApplicabilityConditions.length > 0) {
+    sections.push(
+      "",
+      "## Does Not Apply When",
+      lesson.nonApplicabilityConditions
+        .map((value) => `- ${value}`)
+        .join("\n"),
+    );
+  }
+  if (lesson.falsificationConditions.length > 0) {
+    sections.push(
+      "",
+      "## Falsified When",
+      lesson.falsificationConditions
+        .map((value) => `- ${value}`)
+        .join("\n"),
+    );
   }
   if (tags.length > 0) {
     sections.push(
@@ -156,6 +243,9 @@ function lessonToMd(l: Lesson): string {
   }
   if (sourceLinks) {
     sections.push("", "## Sources", sourceLinks);
+  }
+  if (evidenceLines) {
+    sections.push("", "## Evidence Anchors", evidenceLines);
   }
 
   return sections.join("\n");
@@ -324,7 +414,8 @@ export function registerObsidianExportFunction(
         }
 
         for (const l of lessons.filter(
-          (l): l is Lesson & { id: string } => hasExportId(l) && !l.deleted,
+          (l): l is Lesson & { id: string } =>
+            hasExportId(l) && isLessonListable(l),
         )) {
           const filename = `${sanitize(l.id)}.md`;
           const filepath = join(dirs.lessons, filename);

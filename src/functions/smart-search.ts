@@ -299,18 +299,41 @@ async function recallLessons(
       payload: { query, limit, project },
     })) as { success?: boolean; lessons?: Array<Lesson & { score?: number }> };
     if (!result?.success || !Array.isArray(result.lessons)) return [];
-    return result.lessons.map((l) => ({
-      lessonId: l.id,
-      content:
-        l.content.length > LESSON_CONTENT_PREVIEW_CHARS
-          ? l.content.slice(0, LESSON_CONTENT_PREVIEW_CHARS) + "…"
-          : l.content,
-      confidence: l.confidence,
-      score: l.score ?? l.confidence,
-      createdAt: l.createdAt,
-      project: l.project,
-      tags: l.tags ?? [],
-    }));
+    return result.lessons.map((lesson) => {
+      const evidenceVerdict = lesson.evidenceVerdict ?? "unverified";
+      const contradicted =
+        Boolean(
+          (lesson as Lesson & {
+            computedFlags?: { contradicted?: boolean };
+          }).computedFlags?.contradicted,
+        ) ||
+        (lesson.contradictedByLessonIds?.length ?? 0) > 0;
+      const evidenceLabel: CompactLessonResult["evidenceLabel"] = contradicted
+        ? "contradicted evidence"
+        : evidenceVerdict === "refuted"
+          ? "refuted evidence (negative)"
+          : evidenceVerdict === "supported"
+            ? "supported evidence"
+            : evidenceVerdict === "mixed"
+              ? "mixed evidence"
+              : "unverified evidence";
+      return {
+        lessonId: lesson.id,
+        content:
+          lesson.content.length > LESSON_CONTENT_PREVIEW_CHARS
+            ? lesson.content.slice(0, LESSON_CONTENT_PREVIEW_CHARS) + "…"
+            : lesson.content,
+        claim: lesson.claim,
+        evidenceVerdict,
+        evidenceLabel,
+        contradicted,
+        confidence: lesson.confidence,
+        score: lesson.score ?? lesson.confidence,
+        createdAt: lesson.createdAt,
+        project: lesson.project,
+        tags: lesson.tags ?? [],
+      };
+    });
   } catch (err) {
     logger.warn("Smart search: mem::lesson-recall failed; returning empty lesson list", {
       error: err instanceof Error ? err.message : String(err),

@@ -292,6 +292,15 @@ export interface CompactSearchResult {
 export interface CompactLessonResult {
   lessonId: string;
   content: string;
+  claim?: string;
+  evidenceVerdict: LessonEvidenceVerdict;
+  evidenceLabel:
+    | "supported evidence"
+    | "refuted evidence (negative)"
+    | "mixed evidence"
+    | "unverified evidence"
+    | "contradicted evidence";
+  contradicted: boolean;
   confidence: number;
   score: number;
   createdAt: string;
@@ -928,8 +937,105 @@ export interface Crystal {
   createdAt: string;
 }
 
+export type LessonEvidenceVerdict =
+  | "supported"
+  | "refuted"
+  | "mixed"
+  | "unverified";
+
+export type LessonLifecycle =
+  | "draft"
+  | "active"
+  | "superseded"
+  | "retracted";
+
+export type LessonClaimType =
+  | "causal"
+  | "predictive"
+  | "procedural"
+  | "constraint"
+  | "descriptive";
+
+export type LessonScopeRing =
+  | "worktree"
+  | "repo"
+  | "initiative"
+  | "domain"
+  | "global";
+
+export type LessonSensitivity =
+  | "public"
+  | "internal"
+  | "confidential"
+  | "restricted";
+
+export interface LessonHumanApproval {
+  approvedBy: string;
+  approvedAt: string;
+  reason: string;
+}
+
+export interface LessonScope {
+  ring: LessonScopeRing;
+  scopeId?: string;
+  humanApproval?: LessonHumanApproval;
+}
+
+export type LessonEvidenceProvenanceType =
+  | "git"
+  | "object-store"
+  | "database-query"
+  | "oci"
+  | "doi"
+  | "urn"
+  | "dataset"
+  | "attestation";
+
+export interface LessonEvidenceProvenance {
+  type: LessonEvidenceProvenanceType;
+  locator: string;
+  immutableId?: string;
+  digest?: string;
+  path?: string;
+}
+
+export type LessonEvidenceVerificationState =
+  | "unverified"
+  | "verified"
+  | "rejected";
+
+export interface LessonEvidenceVerification {
+  state: LessonEvidenceVerificationState;
+  basis?: "explicit-review" | "legacy-git-anchor";
+  verifiedBy?: string;
+  verifiedAt?: string;
+  note?: string;
+}
+
+export interface LessonEvidenceReference {
+  kind: string;
+  projectId: string;
+  provenance?: LessonEvidenceProvenance;
+  verification?: LessonEvidenceVerification;
+  repoRemoteUrl?: string;
+  commitSha?: string;
+  artifactDigest?: string;
+  path?: string;
+  recordedAt: string;
+  validatedAt?: string;
+  evidenceKind?: string;
+  sampleCount?: number;
+}
+
+export interface LessonComputedFlags {
+  stale: boolean;
+  contradicted: boolean;
+}
+
 export interface Lesson {
   id: string;
+  identityKind?: "canonical" | "legacy-prose";
+  idAliases?: string[];
   content: string;
   context: string;
   confidence: number;
@@ -948,6 +1054,46 @@ export interface Lesson {
   deletedBy?: string;
   deleteReason?: string;
   supersededByLessonId?: string;
+  schemaVersion?: 1;
+  mechanismId?: string;
+  mechanismVersion?: string;
+  mechanismAliases?: string[];
+  claim?: string;
+  claimType?: LessonClaimType;
+  evidenceVerdict?: LessonEvidenceVerdict;
+  lifecycle?: LessonLifecycle;
+  applicabilityConditions?: string[];
+  nonApplicabilityConditions?: string[];
+  falsificationConditions?: string[];
+  structuredFacets?: Record<string, string[]>;
+  evidenceRefs?: LessonEvidenceReference[];
+  scope?: LessonScope;
+  sensitivity?: LessonSensitivity;
+  reviewAfter?: string;
+  contradictedByLessonIds?: string[];
+  contentFingerprint?: string;
+}
+
+export interface NormalizedLesson extends Lesson {
+  schemaVersion: 1;
+  identityKind: "canonical" | "legacy-prose";
+  idAliases: string[];
+  mechanismAliases: string[];
+  evidenceVerdict: LessonEvidenceVerdict;
+  lifecycle: LessonLifecycle;
+  applicabilityConditions: string[];
+  nonApplicabilityConditions: string[];
+  falsificationConditions: string[];
+  structuredFacets: Record<string, string[]>;
+  evidenceRefs: LessonEvidenceReference[];
+  scope: LessonScope;
+  sensitivity: LessonSensitivity;
+  contradictedByLessonIds: string[];
+  contentFingerprint: string;
+}
+
+export interface LessonReadModel extends NormalizedLesson {
+  computedFlags: LessonComputedFlags;
 }
 
 export interface Insight {
@@ -960,6 +1106,7 @@ export interface Insight {
   sourceMemoryIds: string[];
   sourceLessonIds: string[];
   sourceCrystalIds: string[];
+  evidenceVerdict?: LessonEvidenceVerdict;
   project?: string;
   tags: string[];
   createdAt: string;

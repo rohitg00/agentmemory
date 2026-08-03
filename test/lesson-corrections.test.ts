@@ -48,6 +48,7 @@ describe("lesson corrections", () => {
       lesson: {
         id: lesson.id,
         deleted: true,
+        lifecycle: "retracted",
         deletedBy: "codex",
         deleteReason: "Superseded by current evidence",
       },
@@ -129,6 +130,7 @@ describe("lesson corrections", () => {
       lesson: {
         id: original.id,
         deleted: true,
+        lifecycle: "superseded",
         supersededByLessonId: replacement.id,
       },
     });
@@ -183,6 +185,108 @@ describe("lesson corrections", () => {
       success: false,
       code: "project_mismatch",
     });
+  });
+
+  it("uses durable scope identity instead of project labels for structured supersession", async () => {
+    const base = {
+      project: "shared-label",
+      mechanismId: "scope/identity",
+      claim: "Durable scope identity controls correction joins.",
+      scope: { ring: "repo", scopeId: "repo:one" },
+    };
+    const original = (await sdk.trigger("mem::lesson-save", {
+      ...base,
+      content: "Original scoped lesson",
+    })) as { lesson: Lesson };
+    const replacement = (await sdk.trigger("mem::lesson-save", {
+      ...base,
+      content: "Replacement in another repo",
+      mechanismId: "scope/identity-v2",
+      claim: "A project label is not a cross-repo join key.",
+      scope: { ring: "repo", scopeId: "repo:two" },
+    })) as { lesson: Lesson };
+
+    const result = await sdk.trigger("mem::lesson-supersede", {
+      lessonId: original.lesson.id,
+      replacementLessonId: replacement.lesson.id,
+      reason: "Attempted cross-scope correction",
+    });
+
+    expect(result).toMatchObject({
+      success: false,
+      code: "scope_mismatch",
+    });
+  });
+
+  it("treats project as a label when structured lessons share a durable scope", async () => {
+    const scope = { ring: "repo", scopeId: "repo:shared-authority" };
+    const original = (await sdk.trigger("mem::lesson-save", {
+      content: "Original label-scoped lesson",
+      project: "legacy-label-one",
+      mechanismId: "scope/shared-original",
+      claim: "The original scoped claim applies.",
+      scope,
+    })) as { lesson: Lesson };
+    const replacement = (await sdk.trigger("mem::lesson-save", {
+      content: "Replacement label-scoped lesson",
+      project: "legacy-label-two",
+      mechanismId: "scope/shared-replacement",
+      claim: "The corrected scoped claim applies.",
+      scope,
+    })) as { lesson: Lesson };
+
+    const result = await sdk.trigger("mem::lesson-supersede", {
+      lessonId: original.lesson.id,
+      replacementLessonId: replacement.lesson.id,
+      reason: "Durable scope, not project label, authorizes lineage",
+    });
+
+    expect(result).toMatchObject({
+      success: true,
+      action: "superseded",
+    });
+  });
+
+  it("keeps refuted evidence recallable until it is explicitly retracted", async () => {
+    const saved = (await sdk.trigger("mem::lesson-save", {
+      content: "Refuted causal lesson remains negative evidence",
+      mechanismId: "negative/evidence",
+      claim: "The proposed mechanism improves outcomes.",
+      evidenceVerdict: "refuted",
+      evidenceRefs: [
+        {
+          kind: "experiment",
+          projectId: "agentmemory",
+          repoRemoteUrl: "https://github.com/rohitg00/agentmemory",
+          commitSha: "c".repeat(40),
+          recordedAt: "2026-08-02T20:00:00.000Z",
+          verification: {
+            state: "verified",
+            verifiedBy: "reviewer@example.test",
+            verifiedAt: "2026-08-02T20:30:00.000Z",
+          },
+        },
+      ],
+      scope: { ring: "repo", scopeId: "repo:agentmemory" },
+    })) as { lesson: Lesson };
+    const before = (await sdk.trigger("mem::lesson-recall", {
+      query: "refuted negative evidence",
+    })) as { lessons: Lesson[] };
+
+    await sdk.trigger("mem::lesson-delete", {
+      lessonId: saved.lesson.id,
+      reason: "Underlying evidence artifact was invalid",
+    });
+    const after = (await sdk.trigger("mem::lesson-recall", {
+      query: "refuted negative evidence",
+    })) as { lessons: Lesson[] };
+
+    expect(before.lessons).toHaveLength(1);
+    expect(before.lessons[0]).toMatchObject({
+      evidenceVerdict: "refuted",
+      lifecycle: "active",
+    });
+    expect(after.lessons).toEqual([]);
   });
 
   it("serializes delete and strengthen so the tombstone wins", async () => {

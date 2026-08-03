@@ -195,6 +195,61 @@ describe("Obsidian Export", () => {
     expect(content).toContain('source: "manual"');
   });
 
+  it("renders structured lesson provenance, verification, and computed fields without Git-only placeholders", async () => {
+    const lesson: Lesson = {
+      ...makeLesson("lsn_structured"),
+      schemaVersion: 1,
+      mechanismId: "projection/non-git",
+      claim: "Non-Git evidence remains visible in portable lesson exports.",
+      claimType: "causal",
+      evidenceVerdict: "supported",
+      lifecycle: "active",
+      evidenceRefs: [
+        {
+          kind: "attestation",
+          projectId: "agentmemory",
+          provenance: {
+            type: "oci",
+            locator: "ghcr.io/example/evidence",
+            digest: `sha256:${"a".repeat(64)}`,
+          },
+          recordedAt: "2026-04-01T00:00:00Z",
+          verification: {
+            state: "verified",
+            verifiedBy: "reviewer@example.test",
+            verifiedAt: "2026-04-01T01:00:00Z",
+          },
+        },
+      ],
+      structuredFacets: { signal_family: ["projection-test"] },
+      contradictedByLessonIds: ["lsn_counterexample"],
+      scope: { ring: "repo", scopeId: "repo:agentmemory" },
+      sensitivity: "restricted",
+    };
+    await kv.set("mem:lessons", lesson.id, lesson);
+
+    const result = (await sdk.trigger("mem::obsidian-export", {})) as {
+      exported: Record<string, number>;
+    };
+    const lessonFile = [...writtenFiles.entries()].find(([path]) =>
+      path.includes("lessons/lsn_structured.md"),
+    );
+
+    expect(result.exported.lessons).toBe(1);
+    expect(lessonFile).toBeDefined();
+    expect(lessonFile?.[1]).toContain("type=oci");
+    expect(lessonFile?.[1]).toContain(
+      'locator="ghcr.io/example/evidence"',
+    );
+    expect(lessonFile?.[1]).toContain(
+      `digest="sha256:${"a".repeat(64)}"`,
+    );
+    expect(lessonFile?.[1]).toContain("verification=verified");
+    expect(lessonFile?.[1]).toContain("basis=explicit-review");
+    expect(lessonFile?.[1]).toContain("computedContradicted: true");
+    expect(lessonFile?.[1]).not.toContain("undefined@undefined");
+  });
+
   it("exports crystals with wikilinks to source actions", async () => {
     const crystal = makeCrystal("crys_001");
     await kv.set("mem:crystals", crystal.id, crystal);
