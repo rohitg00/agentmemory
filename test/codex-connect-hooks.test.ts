@@ -1,5 +1,12 @@
-import { describe, it, expect } from "vitest";
-import { writeFileSync, readFileSync, mkdirSync, rmSync } from "node:fs";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import {
+  writeFileSync,
+  readFileSync,
+  mkdirSync,
+  rmSync,
+  mkdtempSync,
+  existsSync,
+} from "node:fs";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import {
@@ -9,6 +16,27 @@ import {
 } from "../src/cli/connect/codex-hooks.js";
 
 const PLUGIN_ROOT = resolve(__dirname, "..", "plugin");
+
+const CODEX_TOML_BLOCK = `[mcp_servers.agentmemory]
+command = "npx"
+args = ["-y", "@agentmemory/mcp"]
+
+[mcp_servers.agentmemory.env]
+AGENTMEMORY_URL = "http://localhost:3111"
+`;
+
+const CODEX_EVENTS = [
+  "SessionStart",
+  "UserPromptSubmit",
+  "PreToolUse",
+  "PostToolUse",
+  "PreCompact",
+  "Stop",
+] as const;
+
+function freshHome(): string {
+  return mkdtempSync(join(tmpdir(), "am-codex-connect-"));
+}
 
 describe("findPluginRoot", () => {
   it("locates the bundled plugin/ directory from src/cli/connect/", () => {
@@ -133,5 +161,123 @@ describe("buildMergedHooks file round-trip", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("connect: Codex --with-hooks", () => {
+  let home: string;
+  const ORIG = process.env["HOME"];
+  const ORIG_USERPROFILE = process.env["USERPROFILE"];
+
+  beforeEach(() => {
+    home = freshHome();
+    vi.resetModules();
+    process.env["HOME"] = home;
+    // os.homedir() on win32 reads USERPROFILE, not HOME — without this,
+    // adapter.detect()/install() resolve the real user's home directory
+    // instead of the isolated temp one.
+    process.env["USERPROFILE"] = home;
+  });
+
+  afterEach(() => {
+    if (ORIG === undefined) delete process.env["HOME"];
+    else process.env["HOME"] = ORIG;
+    if (ORIG_USERPROFILE === undefined) delete process.env["USERPROFILE"];
+    else process.env["USERPROFILE"] = ORIG_USERPROFILE;
+    rmSync(home, { recursive: true, force: true });
+  });
+
+  it("--with-hooks writes ~/.codex/hooks.json with Codex's six lifecycle events", async () => {
+    mkdirSync(join(home, ".codex"), { recursive: true });
+    const { adapter } = await import("../src/cli/connect/codex.js");
+    const result = await adapter.install({
+      dryRun: false,
+      force: false,
+      withHooks: true,
+    });
+    expect(result.kind).toBe("installed");
+    const hooksPath = join(home, ".codex", "hooks.json");
+    expect(existsSync(hooksPath)).toBe(true);
+    const hooks = JSON.parse(readFileSync(hooksPath, "utf-8")) as HookManifest;
+    expect(Object.keys(hooks.hooks).sort()).toEqual([...CODEX_EVENTS].sort());
+  });
+
+  it("without --with-hooks, does not write ~/.codex/hooks.json", async () => {
+    mkdirSync(join(home, ".codex"), { recursive: true });
+    const { adapter } = await import("../src/cli/connect/codex.js");
+    await adapter.install({ dryRun: false, force: false });
+    expect(existsSync(join(home, ".codex", "hooks.json"))).toBe(false);
+  });
+
+  it("re-running install with --with-hooks on an already-wired MCP config still refreshes hooks.json", async () => {
+    const codexDir = join(home, ".codex");
+    mkdirSync(codexDir, { recursive: true });
+    writeFileSync(join(codexDir, "config.toml"), CODEX_TOML_BLOCK, "utf-8");
+
+    const { adapter } = await import("../src/cli/connect/codex.js");
+    const result = await adapter.install({
+      dryRun: false,
+      force: false,
+      withHooks: true,
+    });
+    expect(result.kind).toBe("already-wired");
+
+    const hooksPath = join(codexDir, "hooks.json");
+    expect(existsSync(hooksPath)).toBe(true);
+    const hooks = JSON.parse(readFileSync(hooksPath, "utf-8")) as HookManifest;
+    expect(Object.keys(hooks.hooks).sort()).toEqual([...CODEX_EVENTS].sort());
+  });
+
+  it("already-wired without --with-hooks does not write hooks.json", async () => {
+    const codexDir = join(home, ".codex");
+    mkdirSync(codexDir, { recursive: true });
+    writeFileSync(join(codexDir, "config.toml"), CODEX_TOML_BLOCK, "utf-8");
+
+    const { adapter } = await import("../src/cli/connect/codex.js");
+    const result = await adapter.install({ dryRun: false, force: false });
+    expect(result.kind).toBe("already-wired");
+    expect(existsSync(join(codexDir, "hooks.json"))).toBe(false);
+  });
+
+  it("re-install with --with-hooks is idempotent and preserves user hook entries", async () => {
+    const codexDir = join(home, ".codex");
+    mkdirSync(codexDir, { recursive: true });
+    writeFileSync(join(codexDir, "config.toml"), CODEX_TOML_BLOCK, "utf-8");
+    writeFileSync(
+      join(codexDir, "hooks.json"),
+      `${JSON.stringify(
+        {
+          hooks: {
+            SessionStart: [
+              { hooks: [{ type: "command", command: "echo user-custom" }] },
+            ],
+          },
+        },
+        null,
+        2,
+      )}\n`,
+      "utf-8",
+    );
+
+    const { adapter } = await import("../src/cli/connect/codex.js");
+    await adapter.install({ dryRun: false, force: false, withHooks: true });
+    await adapter.install({ dryRun: false, force: false, withHooks: true });
+
+    const hooks = JSON.parse(
+      readFileSync(join(codexDir, "hooks.json"), "utf-8"),
+    ) as HookManifest;
+    const sessionStart = hooks.hooks["SessionStart"]!;
+    expect(
+      sessionStart.some((e) =>
+        e.hooks.some((h) => h.command === "echo user-custom"),
+      ),
+    ).toBe(true);
+    expect(
+      sessionStart.filter((e) =>
+        e.hooks.some((h) =>
+          h.command.replace(/\\/g, "/").includes("/scripts/session-start.mjs"),
+        ),
+      ),
+    ).toHaveLength(1);
   });
 });
