@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { execFileSync } from "node:child_process";
 import { copyFileSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -9,6 +10,7 @@ import {
 import { findPluginRoot } from "../src/cli/connect/codex-hooks.js";
 import {
   normalizePayload,
+  responseFor,
   targetsFor,
 } from "../src/hooks/antigravity-bridge.js";
 
@@ -167,6 +169,36 @@ describe("antigravity bridge payload normalization", () => {
     expect((out["tool_input"] as Record<string, unknown>)["StartLine"]).toBe(1);
   });
 
+  it("maps every PascalCase arg the canonical hooks read", () => {
+    const cases: [string, string, string][] = [
+      ["AbsolutePath", "file_path", "/repo/a.ts"],
+      ["TargetFile", "file_path", "/repo/b.ts"],
+      ["DirectoryPath", "path", "/repo/src"],
+      ["SearchDirectory", "path", "/repo/test"],
+      ["Pattern", "pattern", "*.ts"],
+      ["Query", "pattern", "normalizePayload"],
+      ["CommandLine", "command", "npm test"],
+    ];
+    for (const [from, to, value] of cases) {
+      const input = normalizePayload("PreToolUse", {
+        toolCall: { name: "view_file", args: { [from]: value } },
+      })["tool_input"] as Record<string, unknown>;
+      expect(input[to], `${from} -> ${to}`).toBe(value);
+      // The original key survives alongside the canonical one.
+      expect(input[from], from).toBe(value);
+    }
+  });
+
+  it("does not let a mapped alias clobber an explicit canonical key", () => {
+    const input = normalizePayload("PreToolUse", {
+      toolCall: {
+        name: "edit_file",
+        args: { TargetFile: "/repo/alias.ts", file_path: "/repo/explicit.ts" },
+      },
+    })["tool_input"] as Record<string, unknown>;
+    expect(input["file_path"]).toBe("/repo/explicit.ts");
+  });
+
   it("passes unmapped tool names through unchanged", () => {
     const out = normalizePayload("PostToolUse", {
       toolCall: { name: "run_command", args: { CommandLine: "npm test" } },
@@ -179,6 +211,40 @@ describe("antigravity bridge payload normalization", () => {
 
   it("falls back to a placeholder session id rather than dropping the event", () => {
     expect(normalizePayload("Stop", {})["session_id"]).toBe("unknown");
+  });
+});
+
+describe("antigravity bridge stdout contract", () => {
+  // agy documents `decision` as required on PreToolUse output and treats a
+  // response without it as a denial — a bare `{}` there makes the agent
+  // refuse every matched tool call instead of passively capturing it.
+  it("answers PreToolUse with an explicit allow, everything else with {}", () => {
+    expect(JSON.parse(responseFor("PreToolUse"))).toEqual({
+      decision: "allow",
+    });
+    for (const event of ["PreInvocation", "PostToolUse", "Stop", ""]) {
+      expect(JSON.parse(responseFor(event)), event).toEqual({});
+    }
+  });
+
+  it("writes that contract to stdout when the bundled script actually runs", () => {
+    const script = join(PLUGIN_ROOT, "scripts", "antigravity-bridge.mjs");
+    const run = (event: string) =>
+      execFileSync(process.execPath, [script, event], {
+        input: JSON.stringify({
+          conversationId: "c1",
+          toolCall: { name: "view_file", args: { AbsolutePath: "/repo/a.ts" } },
+        }),
+        encoding: "utf-8",
+        // No server is listening on port 1, so every capture fetch fails
+        // fast: this asserts the response survives a failed capture, which
+        // is exactly the case where a swallowed error could emit nothing.
+        env: { ...process.env, AGENTMEMORY_URL: "http://127.0.0.1:1" },
+        stdio: ["pipe", "pipe", "ignore"],
+      });
+
+    expect(JSON.parse(run("PreToolUse"))).toEqual({ decision: "allow" });
+    expect(JSON.parse(run("PostToolUse"))).toEqual({});
   });
 });
 

@@ -92,6 +92,20 @@ function targetsFor(event, raw) {
 		default: return [];
 	}
 }
+/**
+* The stdout contract, per event.
+*
+* Antigravity documents `decision` as a *required* field of PreToolUse hook
+* output, and agy treats a response that omits it as a denial: a bare `{}`
+* on PreToolUse makes the agent refuse every matched tool call (reported
+* against agy 1.0.5 in cmux#5358). A passive capture hook must therefore say
+* `allow` explicitly. No other event carries a permission decision, so they
+* stay on `{}` — emitting `decision` or `terminationBehavior` there would
+* override the user's own settings.
+*/
+function responseFor(event) {
+	return event === "PreToolUse" ? "{\"decision\":\"allow\"}" : "{}";
+}
 async function main() {
 	const event = process.argv[2];
 	if (!event) return;
@@ -115,10 +129,10 @@ async function main() {
 	});
 }
 if (process.argv[1] !== void 0 && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main().catch(() => {}).finally(() => {
-	process.stdout.write("{}");
+	process.stdout.write(responseFor(process.argv[2] ?? ""));
 	process.exit(0);
 });
 //#endregion
-export { normalizePayload, targetsFor };
+export { normalizePayload, responseFor, targetsFor };
 
 //# sourceMappingURL=antigravity-bridge.mjs.map

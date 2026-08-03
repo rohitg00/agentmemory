@@ -23,9 +23,10 @@ import { fileURLToPath } from "node:url";
 //
 // So this bridge sits in front of the canonical hooks: it normalizes the
 // payload into the shape they already accept, pipes it to the right
-// script(s), discards their stdout, and always emits `{}` — a no-op
-// response that leaves Antigravity's own permission decisions untouched.
-// Auto-capture is the goal; the bridge never blocks or rewrites a tool call.
+// script(s), discards their stdout, and emits the minimal well-formed
+// response for the event. Auto-capture is the goal; the bridge never blocks
+// or rewrites a tool call — see `responseFor` for why PreToolUse is the one
+// event that cannot answer with a bare `{}`.
 //
 // Invoked as: node antigravity-bridge.mjs <PreInvocation|PreToolUse|PostToolUse|Stop>
 // Sources: antigravity.google/docs/hooks, antigravity.google/docs/cli/using
@@ -170,6 +171,21 @@ export function targetsFor(event: string, raw: Json): string[] {
   }
 }
 
+/**
+ * The stdout contract, per event.
+ *
+ * Antigravity documents `decision` as a *required* field of PreToolUse hook
+ * output, and agy treats a response that omits it as a denial: a bare `{}`
+ * on PreToolUse makes the agent refuse every matched tool call (reported
+ * against agy 1.0.5 in cmux#5358). A passive capture hook must therefore say
+ * `allow` explicitly. No other event carries a permission decision, so they
+ * stay on `{}` — emitting `decision` or `terminationBehavior` there would
+ * override the user's own settings.
+ */
+export function responseFor(event: string): string {
+  return event === "PreToolUse" ? '{"decision":"allow"}' : "{}";
+}
+
 async function main() {
   const event = process.argv[2];
   if (!event) return;
@@ -214,9 +230,10 @@ if (invokedDirectly) {
   main()
     .catch(() => {})
     .finally(() => {
-      // Always a well-formed, non-blocking response — never `decision` or
-      // `terminationBehavior`, which would override the user's own settings.
-      process.stdout.write("{}");
+      // Always a well-formed, non-blocking response, emitted even when the
+      // capture above threw or the payload was unparseable — a hook that
+      // writes nothing is as fatal to PreToolUse as one that writes `{}`.
+      process.stdout.write(responseFor(process.argv[2] ?? ""));
       process.exit(0);
     });
 }
