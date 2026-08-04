@@ -29,6 +29,17 @@ export AGENTMEMORY_SECRET=...   # only if the server requires auth
 agentmemory-fs-watcher
 ```
 
+The watcher also reads agentmemory env files, matching the main agentmemory
+service. Configuration is loaded in this order, with later sources overriding
+earlier ones:
+
+1. `~/.agentmemory/.env`
+2. `$XDG_CONFIG_HOME/agentmemory/.env`
+3. Process environment variables
+
+This is useful when the watcher runs in a container or process manager and
+should point at a shared server instead of the default `http://localhost:3111`.
+
 Every file change inside the watched roots becomes a `post_tool_use` observation whose `data.changeKind` is `file_change` or `file_delete`. The first 4 KB of each text file is included as `data.content` so retrieval can match by substring; larger files are truncated with `data.truncated: true`. Binary files are not read (set `AGENTMEMORY_FS_WATCH_ALLOW_BINARY=1` to override).
 
 Session id and project are required by the observe endpoint — set them via env, or the watcher generates a per-process `fs-watcher-<ts>-<rand>` session id and uses the first root's directory name as the project.
