@@ -73,7 +73,7 @@ describe("FilesystemWatcher", { retry: 2 }, () => {
       expect(body.data.files).toContain("notes.md");
       expect(body.data.content).toContain("hello world");
     } finally {
-      w.stop();
+      await w.stop();
     }
   });
 
@@ -93,7 +93,7 @@ describe("FilesystemWatcher", { retry: 2 }, () => {
       );
       expect(deletes.length).toBeGreaterThanOrEqual(1);
     } finally {
-      w.stop();
+      await w.stop();
     }
   });
 
@@ -137,7 +137,7 @@ describe("FilesystemWatcher", { retry: 2 }, () => {
       );
       expect(matches).toHaveLength(0);
     } finally {
-      w.stop();
+      await w.stop();
     }
   });
 
@@ -156,7 +156,7 @@ describe("FilesystemWatcher", { retry: 2 }, () => {
       const headers = captured[captured.length - 1].headers as Record<string, string>;
       expect(headers.authorization).toBe("Bearer shhh");
     } finally {
-      w.stop();
+      await w.stop();
     }
   });
 
@@ -362,7 +362,7 @@ describe("FilesystemWatcher", { retry: 2 }, () => {
       );
       expect(hits.length).toBeLessThanOrEqual(2);
     } finally {
-      w.stop();
+      await w.stop();
     }
   });
 });

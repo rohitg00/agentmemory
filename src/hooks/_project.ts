@@ -1,6 +1,10 @@
 import { execSync } from "node:child_process";
 import { basename } from "node:path";
 
+function projectBasename(path: string): string {
+  return basename(path.replace(/\\/g, "/"));
+}
+
 // Resolution order: AGENTMEMORY_PROJECT_NAME env → git toplevel basename → cwd basename.
 export function resolveProject(cwd?: string): string {
   const explicit = process.env["AGENTMEMORY_PROJECT_NAME"];
@@ -14,7 +18,7 @@ export function resolveProject(cwd?: string): string {
     })
       .toString()
       .trim();
-    if (top) return basename(top);
+    if (top) return projectBasename(top);
   } catch {}
-  return basename(dir);
+  return projectBasename(dir);
 }

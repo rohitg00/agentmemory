@@ -37,6 +37,10 @@ function mkdir(relPath: string): void {
   mkdirSync(join(sandbox, relPath), { recursive: true });
 }
 
+function iiiBinaryName(): string {
+  return process.platform === "win32" ? "iii.exe" : "iii";
+}
+
 beforeEach(() => {
   sandbox = mkdtempSync(join(tmpdir(), "agentmemory-remove-"));
 });
@@ -110,7 +114,7 @@ describe("buildRemovePlan", () => {
   });
 
   it("local-bin/iii is alwaysAsk when version does not match", () => {
-    touch(".local/bin/iii", "fakebin");
+    touch(join(".local", "bin", iiiBinaryName()), "fakebin");
     const plan = buildRemovePlan(
       ctx({ localBinIiiVersion: "9.9.9" }),
       { force: false, keepData: false },
@@ -121,7 +125,7 @@ describe("buildRemovePlan", () => {
   });
 
   it("local-bin/iii is auto-fixable when version matches pinned", () => {
-    touch(".local/bin/iii", "fakebin");
+    touch(join(".local", "bin", iiiBinaryName()), "fakebin");
     const plan = buildRemovePlan(
       ctx({ localBinIiiVersion: "0.11.2" }),
       { force: false, keepData: false },
@@ -139,7 +143,7 @@ describe("buildRemovePlan", () => {
   });
 
   it("private ~/.agentmemory/bin/iii is removed without prompt", () => {
-    touch(".agentmemory/bin/iii", "fakebin");
+    touch(join(".agentmemory", "bin", iiiBinaryName()), "fakebin");
     const plan = buildRemovePlan(ctx(), { force: false, keepData: false });
     const item = plan.find((p) => p.id === "private-bin-iii")!;
     expect(item).toBeDefined();

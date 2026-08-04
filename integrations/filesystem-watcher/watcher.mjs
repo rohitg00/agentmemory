@@ -1,4 +1,4 @@
-import { watch, promises as fsp, statSync } from "node:fs";
+import { watch, promises as fsp, statSync, realpathSync } from "node:fs";
 import { resolve, relative, join, extname, sep, basename } from "node:path";
 import { randomBytes } from "node:crypto";
 
@@ -28,6 +28,7 @@ const DEFAULT_IGNORE = [
 
 const MAX_PREVIEW_BYTES = 4096;
 const DEBOUNCE_MS = 500;
+const WATCHER_CLOSE_TIMEOUT_MS = 1000;
 const REDACTED = "[REDACTED]";
 const PEM_BEGIN_RE = /-----BEGIN [A-Z ]*PRIVATE KEY-----/;
 const PEM_END_RE = /-----END [A-Z ]*PRIVATE KEY-----/;
@@ -260,8 +261,15 @@ export class FilesystemWatcher {
         if (!st.isDirectory()) {
           throw new Error("not a directory");
         }
+
+        // libuv versions currently bundled by Node 24.16+ and early Node 26
+        // can abort on Windows when fs.watch receives an 8.3 short path but
+        // ReadDirectoryChangesW later reports the same directory in long form.
+        // Watch the canonical native path while preserving the configured root
+        // in emitted payloads. This avoids the upstream prefix-mismatch crash.
+        const watchRoot = realpathSync.native(root);
         const handle = watch(
-          root,
+          watchRoot,
           { recursive: true, persistent: true },
           (_eventType, filename) => {
             if (!filename) return;
@@ -291,16 +299,40 @@ export class FilesystemWatcher {
   }
 
   stop() {
-    for (const w of this.watchers) {
-      try {
-        w.close();
-      } catch {}
-    }
+    const watchers = this.watchers;
     this.watchers = [];
+
     for (const { timer } of this.pendingByPath.values()) {
       clearTimeout(timer);
     }
     this.pendingByPath.clear();
+
+    return Promise.all(
+      watchers.map(
+        (watcher) =>
+          new Promise((resolveClose) => {
+            let settled = false;
+            let timeout;
+            const finish = () => {
+              if (settled) return;
+              settled = true;
+              if (timeout) clearTimeout(timeout);
+              watcher.removeListener("close", finish);
+              resolveClose();
+            };
+
+            watcher.once("close", finish);
+            timeout = setTimeout(finish, WATCHER_CLOSE_TIMEOUT_MS);
+            timeout.unref?.();
+
+            try {
+              watcher.close();
+            } catch {
+              finish();
+            }
+          }),
+      ),
+    ).then(() => undefined);
   }
 }
 

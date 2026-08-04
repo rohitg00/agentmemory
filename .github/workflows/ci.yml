@@ -47,24 +47,28 @@ jobs:
       # whether a flake is platform-specific or universal).
       fail-fast: false
       matrix:
-        # Windows held back: test/obsidian-export.test.ts has hardcoded
-        # POSIX paths (`/tmp/...`) that fail on D:\ drive runners.
-        # src/functions/obsidian-export.ts needs os.tmpdir() + path.join
-        # rework before Windows can be added back. Tracked as follow-up.
-        os: [ubuntu-latest, macos-latest]
+        # Windows is covered again after the path-sensitive test fixtures
+        # were normalized with node:path and Windows binary naming.
+        os: [ubuntu-latest, macos-latest, windows-latest]
         node-version: [20, 22, 24, 26]
     steps:
-      - uses: actions/checkout@v6
+      - name: Check out repository
+        uses: actions/checkout@v6
         with:
           persist-credentials: false
-      - uses: actions/setup-node@v6
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ matrix.node-version }}
-      # Two-step install: generate a lockfile in-runner with
-      # --package-lock-only, then install from it with `npm ci`.
-      # Lockfiles are gitignored at the repo level.
-      - run: npm install --package-lock-only --legacy-peer-deps --no-audit --no-fund
-      - run: npm ci --legacy-peer-deps --no-audit --no-fund
-      - run: npm run build
-      - run: npm run skills:check
-      - run: npm test
+      # The repository intentionally does not commit package-lock.json.
+      # Generating an ephemeral lockfile and immediately running npm ci is
+      # unreliable with platform-specific optional dependencies, so CI uses
+      # one clean resolver/install pass instead.
+      - name: Install dependencies
+        run: npm install --legacy-peer-deps --no-audit --no-fund
+      - name: Build TypeScript package
+        run: npm run build
+      - name: Check generated skills
+        run: npm run skills:check
+      - name: Run test suite
+        run: npm test

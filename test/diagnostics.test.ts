@@ -439,6 +439,35 @@ describe("Diagnostics Functions", () => {
       expect(check!.fixable).toBe(false);
     });
 
+    it("treats sessionless memories as intentionally global", async () => {
+      const memory = makeMemory({ project: undefined, sessionIds: [] });
+      await kv.set(KV.memories, memory.id, memory);
+
+      const result = (await sdk.trigger("mem::diagnose", {
+        categories: ["memories"],
+      })) as { checks: DiagnosticCheck[] };
+
+      const check = result.checks.find((c) => c.name === "memory-project-coverage");
+      expect(check).toMatchObject({ status: "pass", fixable: false });
+      expect(check!.message).toContain("intentionally global");
+    });
+
+    it("warns for session-linked memories without a project", async () => {
+      const memory = makeMemory({
+        project: undefined,
+        sessionIds: ["ses_legacy"],
+      });
+      await kv.set(KV.memories, memory.id, memory);
+
+      const result = (await sdk.trigger("mem::diagnose", {
+        categories: ["memories"],
+      })) as { checks: DiagnosticCheck[] };
+
+      const check = result.checks.find((c) => c.name === "memory-project-coverage");
+      expect(check).toMatchObject({ status: "warn", fixable: true });
+      expect(check!.message).toContain("infer-memory-projects");
+    });
+
     it("stale mesh peer produces warn", async () => {
       const peer = makePeer({
         lastSyncAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
