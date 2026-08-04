@@ -69,3 +69,36 @@ describe("Hermes plugin manifest", () => {
     );
   });
 });
+
+describe("sync_turn rich capture", () => {
+  const source = readFileSync("integrations/hermes/__init__.py", "utf8");
+
+  it("does not hard-truncate tool_input to 500 chars", () => {
+    // The old code had user[:500] — verify that's gone.
+    expect(source).not.toMatch(/user\[:500\]/);
+  });
+
+  it("does not hard-truncate tool_output to 2000 chars", () => {
+    expect(source).not.toMatch(/assistant\[:2000\]/);
+  });
+
+  it("defines _extract_tool_observations helper", () => {
+    expect(source).toMatch(/def _extract_tool_observations\(/);
+  });
+
+  it("uses messages kwarg in sync_turn", () => {
+    expect(source).toMatch(/kwargs\.get\(["']messages["']\)/);
+  });
+
+  it("matches tool results by tool_call_id", () => {
+    expect(source).toMatch(/tool_call_id/);
+  });
+
+  it("caps extracted observations with max_results", () => {
+    expect(source).toMatch(/max_results/);
+  });
+
+  it("still sends a conversation observation as fallback", () => {
+    expect(source).toMatch(/tool_name.*conversation/);
+  });
+});
