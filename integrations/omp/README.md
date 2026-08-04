@@ -21,23 +21,28 @@ Start the agentmemory server in a separate terminal:
 npx @agentmemory/agentmemory
 ```
 
-Copy this folder into omp's global extensions directory:
+Install the extension into omp (links this folder into omp's plugin directory):
 
 ```bash
-mkdir -p ~/.omp/agent/extensions/agentmemory
-cp integrations/omp/index.ts ~/.omp/agent/extensions/agentmemory/index.ts
-cp integrations/omp/security.ts ~/.omp/agent/extensions/agentmemory/security.ts
+omp plugin install ./integrations/omp
 ```
 
-Then enable it in `~/.omp/agent/settings.json` if you prefer explicit loading:
+Then restart omp for the extension to load. Verify it was picked up:
 
-```json
-{
-  "extensions": ["~/.omp/agent/extensions/agentmemory"]
-}
+```bash
+omp plugin doctor
+# ✔ plugins_directory: Found at ...
+# ✔ plugin:agentmemory-omp-extension: v0.9.28
 ```
 
-If you place it under `~/.omp/agent/extensions/agentmemory/`, omp will also auto-discover it and `/reload` can hot-reload it.
+Alternatively, `omp install ./integrations/omp` is an alias for the same command.
+
+> **Note:** omp's plugin system loads extensions from `~/.omp/plugins/` (via
+> `node_modules` + the `omp` manifest in `package.json`). The old
+> `~/.omp/agent/extensions/agentmemory/` copy approach is **not** supported by
+> omp — it is not auto-discovered. The link created by `omp plugin install`
+> points at this folder, so edits to `integrations/omp/` take effect on the
+> next omp restart.
 
 ## What it adds
 
@@ -53,8 +58,9 @@ If you place it under `~/.omp/agent/extensions/agentmemory/`, omp will also auto
 |---|---|---|
 | `AGENTMEMORY_URL` | `http://localhost:3111` | agentmemory server URL |
 | `AGENTMEMORY_SECRET` | (none) | Bearer token for protected instances |
+| `AGENTMEMORY_PROJECT_NAME` | (unset) | Overrides the project name used in session/observation payloads. Defaults to the git repo basename (or cwd basename if not a git repo). |
 | `AGENTMEMORY_REQUIRE_HTTPS` | (off) | When set to `1`, refuse to send a bearer token over plaintext HTTP to a non-loopback host. Sends the token only when `AGENTMEMORY_URL` is `https://...` or points at `localhost`/`127.0.0.1`/`::1`. With this off, the plugin warns once but still sends. |
-| `AGENTMEMORY_INJECT_CONTEXT` | (off) | When set to `1`, injects memory search results into the system prompt context on every turn. |
+| `AGENTMEMORY_INJECT_CONTEXT` | (off) | When set to `1`, injects file enrichment context (via `/enrich`) into the conversation for files touched by tools. |
 | `AGENTMEMORY_CONSOLIDATION_ENABLED` | (on) | When set to `0`, disables background memory consolidation jobs. |
 
 ## Smoke test

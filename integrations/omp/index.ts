@@ -42,8 +42,18 @@ function getBaseUrl(): string {
   return DEFAULT_URL.replace(/\/+$/, "");
 }
 
-function sha256(data: string): string {
-  return crypto.createHash("sha256").update(data).digest("hex");
+// Mirrors src/state/schema.ts primitives — the extension is a standalone
+// package that connects to the server over HTTP, so the id helpers are
+// inlined instead of imported from server internals.
+function generateId(prefix: string): string {
+  const ts = Date.now().toString(36);
+  const rand = crypto.randomUUID().replace(/-/g, "").slice(0, 12);
+  return `${prefix}_${ts}_${rand}`;
+}
+
+function fingerprintId(prefix: string, content: string): string {
+  const hash = crypto.createHash("sha256").update(content).digest("hex");
+  return `${prefix}_${hash.slice(0, 16)}`;
 }
 
 function isBase64Image(val: unknown): val is string {
@@ -149,8 +159,9 @@ export default function agentmemoryExtension(pi: ExtensionAPI) {
     guardPlaintextBearerAuth(getBaseUrl(), process.env["AGENTMEMORY_SECRET"]);
   }
 
-  let sessionId = `ephemeral-${crypto.randomUUID().slice(0, 8)}`;
+  let sessionId = generateId("ephemeral");
   let currentProject = resolveProject();
+  let currentCwd = process.cwd();
   let lastPrompt = "";
   let lastHealthOk = false;
   let cachedContext: string | undefined;
@@ -165,7 +176,7 @@ export default function agentmemoryExtension(pi: ExtensionAPI) {
   }
 
   function isDuplicate(data: string): boolean {
-    const hash = sha256(data);
+    const hash = fingerprintId("dedup", data);
     const now = Date.now();
     const prev = recentHashes.get(hash);
     if (prev && now - prev < DEDUP_WINDOW_MS) return true;
@@ -183,7 +194,7 @@ export default function agentmemoryExtension(pi: ExtensionAPI) {
       hookType,
       sessionId,
       project: currentProject,
-      cwd: currentProject,
+      cwd: currentCwd,
       timestamp: new Date().toISOString(),
       data,
     };
@@ -305,12 +316,13 @@ export default function agentmemoryExtension(pi: ExtensionAPI) {
     const sessionFile = ctx.sessionManager.getSessionFile();
     sessionId = sessionFile
       ? path.basename(sessionFile).replace(/\.[^.]+$/, "")
-      : `ephemeral-${crypto.randomUUID().slice(0, 8)}`;
+      : generateId("ephemeral");
     currentProject = resolveProject();
+    currentCwd = process.cwd();
     await refreshStatus(ctx);
     if (lastHealthOk) {
       await callAgentMemory("session/start", {
-        body: { sessionId, project: currentProject, cwd: currentProject },
+        body: { sessionId, project: currentProject, cwd: currentCwd },
         timeoutMs: 2000,
       });
     }
@@ -319,6 +331,10 @@ export default function agentmemoryExtension(pi: ExtensionAPI) {
   // before_agent_start — recall relevant memories and inject into system prompt
   pi.on("before_agent_start", async (event, ctx) => {
     currentProject = resolveProject();
+    const eventCwd = (event as Record<string, unknown>).systemPromptOptions as
+      | { cwd?: string }
+      | undefined;
+    currentCwd = eventCwd?.cwd || process.cwd();
     const prompt = (event as Record<string, unknown>).prompt as string | undefined;
     lastPrompt = prompt?.trim() || "";
     if (!lastPrompt) return;
@@ -332,7 +348,7 @@ export default function agentmemoryExtension(pi: ExtensionAPI) {
           hookType: "prompt_submit",
           sessionId,
           project: currentProject,
-          cwd: currentProject,
+          cwd: currentCwd,
           timestamp: new Date().toISOString(),
           data: { prompt: lastPrompt },
         },
@@ -400,7 +416,7 @@ export default function agentmemoryExtension(pi: ExtensionAPI) {
       return { ...msg, content };
     });
 
-    const enrichEnabled = process.env["AGENTMEMORY_INJECT_CONTEXT"] === "true";
+    const enrichEnabled = process.env["AGENTMEMORY_INJECT_CONTEXT"] === "1";
     if (enrichEnabled && fileStash.size > 0 && lastHealthOk) {
       const files = [...fileStash].slice(0, 20);
       fileStash.clear();
@@ -419,14 +435,13 @@ export default function agentmemoryExtension(pi: ExtensionAPI) {
   });
 
   // session_before_compact — fetch context summary before compaction
-  pi.on("session_before_compact", () => {
+  pi.on("session_before_compact", async () => {
     if (!lastHealthOk) return;
-    void callAgentMemory<{ context?: string }>("context", {
+    const result = await callAgentMemory<{ context?: string }>("context", {
       body: { sessionId, project: currentProject, budget: 1500 },
       timeoutMs: 5000,
-    }).then((result) => {
-      cachedContext = result?.context;
     });
+    cachedContext = result?.context;
   });
 
   // session.compacting — inject cached context into compaction output
@@ -435,6 +450,17 @@ export default function agentmemoryExtension(pi: ExtensionAPI) {
       const ctx = cachedContext;
       cachedContext = undefined;
       return { context: [ctx] };
+    }
+    // Cache missed (e.g. session_before_compact is still awaiting the
+    // request or the server was unreachable) — fetch fresh context so the
+    // compaction still gets the summary.
+    if (!lastHealthOk) return;
+    const result = await callAgentMemory<{ context?: string }>("context", {
+      body: { sessionId, project: currentProject, budget: 1500 },
+      timeoutMs: 5000,
+    });
+    if (result?.context) {
+      return { context: [result.context] };
     }
   });
 
@@ -470,7 +496,7 @@ export default function agentmemoryExtension(pi: ExtensionAPI) {
         (() => { const { promise, resolve } = Promise.withResolvers<void>(); setTimeout(resolve, 1000); return promise; })(),
       ]);
 
-      if (process.env["AGENTMEMORY_CONSOLIDATION_ENABLED"] === "true") {
+      if (process.env["AGENTMEMORY_CONSOLIDATION_ENABLED"] !== "0") {
         await callAgentMemory("crystals/auto", {
           body: { olderThanDays: 0 },
           timeoutMs: 60000,
@@ -490,7 +516,7 @@ export default function agentmemoryExtension(pi: ExtensionAPI) {
         body: {
           sessionId,
           project: currentProject,
-          cwd: currentProject,
+          cwd: currentCwd,
           timestamp: new Date().toISOString(),
         },
         timeoutMs: 5000,
