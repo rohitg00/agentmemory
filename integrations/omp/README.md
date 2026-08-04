@@ -37,12 +37,9 @@ omp plugin doctor
 
 Alternatively, `omp install ./integrations/omp` is an alias for the same command.
 
-> **Note:** omp's plugin system loads extensions from `~/.omp/plugins/` (via
-> `node_modules` + the `omp` manifest in `package.json`). The old
-> `~/.omp/agent/extensions/agentmemory/` copy approach is **not** supported by
-> omp — it is not auto-discovered. The link created by `omp plugin install`
-> points at this folder, so edits to `integrations/omp/` take effect on the
-> next omp restart.
+> **Note:** Use `omp plugin install` only. Do **not** copy this folder to
+> `~/.omp/agent/extensions/agentmemory/` — omp scans that directory too, so the
+> extension would load twice and every tool call would be observed twice.
 
 ## What it adds
 
