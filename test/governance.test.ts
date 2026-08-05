@@ -533,3 +533,120 @@ describe("Governance Functions", () => {
     ]);
   });
 });
+
+describe("clearDanglingMemoryReferences concurrency safety (#fresh-read-under-lock)", () => {
+  // The fresh-read-under-keyed-lock fix prevents a stale snapshot from
+  // clobbering a concurrent survivor update. This test injects a concurrent
+  // write between the initial list snapshot and the per-memory fresh read, and
+  // asserts the concurrent addition survives (it would be lost if the function
+  // wrote back the stale snapshot). It fails on the pre-fix scan-then-write
+  // implementation and passes once each survivor is re-read inside its lock.
+  it("preserves a concurrent survivor update made after the snapshot", async () => {
+    const base = mockKV();
+    const target = makeMemory("mem_target", "pattern");
+    const alive = makeMemory("mem_alive", "bug");
+    const holder = makeMemory("mem_holder", "fact");
+    holder.supersedes = ["mem_target", "mem_alive"];
+    const concurrent = makeMemory("mem_concurrent", "fact");
+    for (const m of [target, alive, holder, concurrent]) {
+      await base.set("mem:memories", m.id, m);
+    }
+
+    // Simulate a concurrent writer that appends mem_concurrent to holder's
+    // supersedes after the list snapshot is taken but before the per-memory
+    // fresh read. We inject on holder's first get (which, post-fix, happens
+    // inside the per-memory keyed lock). The pre-fix code never re-read the
+    // holder, so it would write the stale snapshot back and lose this addition.
+    let injected = false;
+    const wrapped = {
+      get: async (scope: string, key: string) => {
+        const v = await base.get(scope, key);
+        if (
+          !injected &&
+          scope === "mem:memories" &&
+          key === "mem_holder" &&
+          v
+        ) {
+          injected = true;
+          const mem = { ...(v as Memory) };
+          mem.supersedes = [...(mem.supersedes ?? []), "mem_concurrent"];
+          await base.set("mem:memories", "mem_holder", mem);
+          return mem;
+        }
+        return v;
+      },
+      set: (scope: string, key: string, data: unknown) =>
+        base.set(scope, key, data),
+      delete: (scope: string, key: string) => base.delete(scope, key),
+      list: (scope: string) => base.list(scope),
+    };
+
+    const sdk = mockSdk();
+    registerGovernanceFunction(sdk as never, wrapped as never);
+
+    const result = (await sdk.trigger("mem::governance-delete", {
+      memoryIds: ["mem_target"],
+    })) as { success: boolean; repairedReferrers: string[] };
+
+    expect(result.success).toBe(true);
+    expect(result.repairedReferrers).toEqual(["mem_holder"]);
+
+    const holderAfter = (await base.get("mem:memories", "mem_holder")) as Memory;
+    // The deleted reference is pruned, AND the concurrent writer's addition is
+    // preserved — proving the write was based on a fresh read, not the snapshot.
+    expect(holderAfter.supersedes).toEqual(["mem_alive", "mem_concurrent"]);
+    expect(holderAfter.supersedes).not.toContain("mem_target");
+  });
+
+  it("does not clobber a survivor that lost its dangling ref before the write", async () => {
+    // If a survivor is concurrently corrected between the list snapshot and
+    // the fresh read, the fresh read sees the corrected state and the function
+    // writes nothing (changed=false), avoiding a redundant/regressive write.
+    const base = mockKV();
+    const target = makeMemory("mem_target", "pattern");
+    const holder = makeMemory("mem_holder", "fact");
+    holder.supersedes = ["mem_target"];
+    await base.set("mem:memories", target.id, target);
+    await base.set("mem:memories", holder.id, holder);
+
+    let injected = false;
+    const wrapped = {
+      get: async (scope: string, key: string) => {
+        const v = await base.get(scope, key);
+        if (
+          !injected &&
+          scope === "mem:memories" &&
+          key === "mem_holder" &&
+          v
+        ) {
+          injected = true;
+          // Concurrent writer already removed the dangling ref.
+          const mem = { ...(v as Memory), supersedes: [] };
+          await base.set("mem:memories", "mem_holder", mem);
+          return mem;
+        }
+        return v;
+      },
+      set: (scope: string, key: string, data: unknown) =>
+        base.set(scope, key, data),
+      delete: (scope: string, key: string) => base.delete(scope, key),
+      list: (scope: string) => base.list(scope),
+    };
+
+    const sdk = mockSdk();
+    registerGovernanceFunction(sdk as never, wrapped as never);
+
+    const result = (await sdk.trigger("mem::governance-delete", {
+      memoryIds: ["mem_target"],
+    })) as { success: boolean; repairedReferrers: string[]; removedReferences: number };
+
+    expect(result.success).toBe(true);
+    // Nothing to repair: the concurrent correction already cleared the ref, and
+    // the fresh read saw it — so no write, no reported repair.
+    expect(result.repairedReferrers).toEqual([]);
+    expect(result.removedReferences).toBe(0);
+
+    const holderAfter = (await base.get("mem:memories", "mem_holder")) as Memory;
+    expect(holderAfter.supersedes ?? []).toEqual([]);
+  });
+});

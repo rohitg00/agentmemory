@@ -2,6 +2,7 @@ import type { ISdk } from "iii-sdk";
 import type { Memory, GovernanceFilter, AuditEntry } from "../types.js";
 import { KV } from "../state/schema.js";
 import type { StateKV } from "../state/kv.js";
+import { withKeyedLock } from "../state/keyed-mutex.js";
 import { recordAudit, safeAudit, queryAudit } from "./audit.js";
 import { deleteAccessLog } from "./access-tracker.js";
 import { getSearchIndex, vectorIndexRemove, flushIndexSave } from "./search.js";
@@ -14,6 +15,12 @@ import { logger } from "../logger.js";
  * memories that were repaired and how many references were dropped, for audit
  * and result reporting. Indexes are not touched: reference fields are not part
  * of the search/vector observation shape.
+ *
+ * Each survivor is repaired under its per-memory keyed lock
+ * (`mem:memory:<id>`, the same key diagnostics heal uses) with a fresh read
+ * immediately before stripping/writing, so a concurrent update to a survivor
+ * (e.g. a new `supersedes` added between the list and the write) is preserved
+ * rather than clobbered by a stale snapshot.
  */
 async function clearDanglingMemoryReferences(
   kv: StateKV,
@@ -23,18 +30,28 @@ async function clearDanglingMemoryReferences(
     return { repairedReferrers: [], removedCount: 0 };
   }
   const removed = new Set(deletedIds);
-  const memories = await kv.list<Memory>(KV.memories);
+  // List once to pick candidate survivors; the authoritative read happens per
+  // memory inside the lock below.
+  const snapshot = await kv.list<Memory>(KV.memories);
+  const candidateIds = snapshot
+    .filter((m) => !removed.has(m.id))
+    .map((m) => m.id);
   const repairedReferrers: string[] = [];
   let removedCount = 0;
-  for (const memory of memories) {
-    if (removed.has(memory.id)) continue;
-    const { memory: next, changed, removed: dropped } =
-      stripMemoryReferences(memory, removed);
-    if (changed) {
+  for (const id of candidateIds) {
+    const droppedHere = await withKeyedLock(`mem:memory:${id}`, async () => {
+      const fresh = await kv.get<Memory>(KV.memories, id);
+      if (!fresh) return 0;
+      const { memory: next, changed, removed: dropped } =
+        stripMemoryReferences(fresh, removed);
+      if (!changed) return 0;
       next.updatedAt = new Date().toISOString();
       await kv.set(KV.memories, next.id, next);
-      repairedReferrers.push(next.id);
-      removedCount += dropped.length;
+      return dropped.length;
+    });
+    if (droppedHere > 0) {
+      repairedReferrers.push(id);
+      removedCount += droppedHere;
     }
   }
   return { repairedReferrers, removedCount };

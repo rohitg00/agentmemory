@@ -314,6 +314,50 @@ describe("Diagnostics Functions", () => {
       expect(check!.fixable).toBe(true);
     });
 
+    it("explicit human/approval/blockedReason gates are not flagged as blocked-deps-done", async () => {
+      // Each blocked action has all requires-deps done BUT also carries an
+      // explicit non-dependency gate. None should be reported as a fixable
+      // blocked-deps-done defect (they are intentionally blocked).
+      const dep = makeAction({ status: "done" });
+      const humanGated = makeAction({
+        status: "blocked",
+        title: "Human-gated",
+        awaitingHuman: true,
+      });
+      const approvalGated = makeAction({
+        status: "blocked",
+        title: "Approval-gated",
+        approval: { state: "pending" },
+      });
+      const reasonGated = makeAction({
+        status: "blocked",
+        title: "Reason-gated",
+        blockedReason: "Waiting on a manual merge gate",
+      });
+      for (const a of [humanGated, approvalGated, reasonGated]) {
+        await kv.set(KV.actions, a.id, a);
+        await kv.set(
+          KV.actionEdges,
+          `edge_${a.id}`,
+          makeEdge({
+            sourceActionId: a.id,
+            targetActionId: dep.id,
+            type: "requires",
+          }),
+        );
+      }
+      await kv.set(KV.actions, dep.id, dep);
+
+      const result = (await sdk.trigger("mem::diagnose", {
+        categories: ["actions"],
+      })) as { checks: DiagnosticCheck[] };
+
+      const flagged = result.checks.filter((c) =>
+        c.name.startsWith("blocked-deps-done:"),
+      );
+      expect(flagged).toEqual([]);
+    });
+
     it("pending action with unsatisfied deps produces fail (fixable)", async () => {
       const dep = makeAction({ status: "active" });
       const pending = makeAction({ status: "pending" });
@@ -563,6 +607,9 @@ describe("Diagnostics Functions", () => {
       expect(check!.message).toContain("no session-linked unscoped memories remain");
       expect(check!.message).toContain("infer-memory-projects is a no-op here");
       expect(check!.message).toContain("need manual project assignment");
+      // Zero inferable candidates => the migration is a no-op, so the finding
+      // must NOT claim to be fixable by an automated heal/migrate step.
+      expect(check!.fixable).toBe(false);
     });
 
     it("project-coverage message distinguishes inferable from ambiguous unscoped memories", async () => {
@@ -593,6 +640,9 @@ describe("Diagnostics Functions", () => {
       expect(check!.message).toContain("attempt backfill of the 1 session-linked");
       // ...and the session-less count (1) is flagged as needing manual work.
       expect(check!.message).toContain("remaining 1 have no sessionIds");
+      // At least one inferable candidate => the migration can do something, so
+      // the finding is honestly fixable.
+      expect(check!.fixable).toBe(true);
     });
 
     it("stale mesh peer produces warn", async () => {
@@ -672,6 +722,40 @@ describe("Diagnostics Functions", () => {
 
       const updated = await kv.get<Action>(KV.actions, blocked.id);
       expect(updated!.status).toBe("pending");
+    });
+
+    it("does not unblock an action held by an explicit non-dependency gate", async () => {
+      // Same shape as "unblocks stuck blocked action" but the blocked action
+      // also carries awaitingHuman + a pending approval. Heal must leave it
+      // blocked (skipped), not mint a misleading unblock.
+      const dep = makeAction({ status: "done" });
+      const gated = makeAction({
+        status: "blocked",
+        title: "Approval-gated task",
+        awaitingHuman: true,
+        approval: { state: "pending" },
+      });
+      const edge = makeEdge({
+        sourceActionId: gated.id,
+        targetActionId: dep.id,
+        type: "requires",
+      });
+      await kv.set(KV.actions, dep.id, dep);
+      await kv.set(KV.actions, gated.id, gated);
+      await kv.set(KV.actionEdges, edge.id, edge);
+
+      const result = (await sdk.trigger("mem::heal", {
+        categories: ["actions"],
+      })) as { success: boolean; fixed: number; skipped: number; details: string[] };
+
+      expect(result.success).toBe(true);
+      expect(result.fixed).toBe(0);
+      expect(result.skipped).toBe(1);
+      expect(result.details.some((d) => d.includes("Unblocked"))).toBe(false);
+
+      const unchanged = await kv.get<Action>(KV.actions, gated.id);
+      expect(unchanged!.status).toBe("blocked");
+      expect(unchanged!.awaitingHuman).toBe(true);
     });
 
     it("blocks pending action with unsatisfied deps", async () => {

@@ -8,6 +8,7 @@ import {
   deleteActionEdge,
   persistAction,
 } from "./action-store.js";
+import { hasExplicitNonDependencyGate } from "./actions.js";
 import { stripMemoryReferences } from "../state/memory-utils.js";
 import { isLessonListable } from "./lesson-model.js";
 import {
@@ -99,13 +100,26 @@ export function registerDiagnosticsFunction(sdk: ISdk, kv: StateKV): void {
                 return target && target.status === "done";
               });
               if (allDone) {
-                checks.push({
-                  name: `blocked-deps-done:${action.id}`,
-                  category: "actions",
-                  status: "fail",
-                  message: `Action "${action.title}" is blocked but all dependencies are done`,
-                  fixable: true,
-                });
+                // Only a dependency-only block is a fixable defect. An explicit
+                // non-dependency gate (blockedReason / awaitingHuman /
+                // pending-or-rejected approval / unsatisfied gated_by) means the
+                // block is intentional — flagging it as "deps done, should
+                // unblock" is a false positive (heal cannot clear the gate;
+                // legacyStatusFor would revert the unblock).
+                const hasExplicitGate = await hasExplicitNonDependencyGate(
+                  kv,
+                  action,
+                  allEdges,
+                );
+                if (!hasExplicitGate) {
+                  checks.push({
+                    name: `blocked-deps-done:${action.id}`,
+                    category: "actions",
+                    status: "fail",
+                    message: `Action "${action.title}" is blocked but all dependencies are done`,
+                    fixable: true,
+                  });
+                }
               }
             }
           }
@@ -421,6 +435,12 @@ export function registerDiagnosticsFunction(sdk: ISdk, kv: StateKV): void {
           ambiguousCount > 0
             ? `; the remaining ${ambiguousCount} have no sessionIds and need manual project assignment (or a session linkage pass) — the migration cannot attribute them`
             : "";
+        // Fixability is honest: the engine can only auto-backfill the
+        // session-linked (inferable) subset via infer-memory-projects. When
+        // every unscoped memory lacks sessionIds the migration is a no-op, so
+        // the finding is not fixable by an automated heal/migrate step (it
+        // needs manual project assignment or a session-linkage pass).
+        const coverageFixable = inferableCount > 0;
         if (unscopedCount === 0) {
           checks.push({
             name: "memory-project-coverage",
@@ -435,7 +455,7 @@ export function registerDiagnosticsFunction(sdk: ISdk, kv: StateKV): void {
             category: "memories",
             status: "warn",
             message: `${unscopedCount} of ${latestMemories.length} latest memories have no project scope — ${inferHint}${ambiguousHint}`,
-            fixable: true,
+            fixable: coverageFixable,
           });
         } else {
           checks.push({
@@ -443,7 +463,7 @@ export function registerDiagnosticsFunction(sdk: ISdk, kv: StateKV): void {
             category: "memories",
             status: "fail",
             message: `${unscopedCount} of ${latestMemories.length} latest memories have no project scope — ${inferHint}${ambiguousHint}`,
-            fixable: true,
+            fixable: coverageFixable,
           });
         }
 
@@ -808,6 +828,14 @@ export function registerDiagnosticsFunction(sdk: ISdk, kv: StateKV): void {
                       return target && target.status === "done";
                     });
                     if (!stillAllDone) return false;
+                    // Skip actions held by an explicit non-dependency gate:
+                    // unblocking them is a no-op (legacyStatusFor reverts it)
+                    // that only churns revisions and writes a misleading audit.
+                    if (
+                      await hasExplicitNonDependencyGate(kv, fresh, freshEdges)
+                    ) {
+                      return false;
+                    }
                     const before = structuredClone(fresh);
                     fresh.status = "pending";
                     fresh.lifecycle = "pending";
