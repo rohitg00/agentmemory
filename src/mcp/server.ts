@@ -1386,6 +1386,10 @@ export function registerMcpEndpoints(
             const parsed = parseLessonSaveInput(prepared.value, {
               source: "manual",
               allowSourceMetadata: false,
+              // Legacy prose saves keep the fail-closed implicit worktree
+              // scope per causal-lesson-schema-v1; structured causal saves
+              // still require an explicit durable scope.
+              allowImplicitWorktreeScope: true,
             });
             if (!parsed.success) {
               return {

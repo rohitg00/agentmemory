@@ -160,6 +160,70 @@ describe("causal lesson REST and MCP boundaries", () => {
     expect(tool?.inputSchema.properties).toHaveProperty("sensitivity");
   });
 
+  it("keeps legacy prose saves valid without a scope at both boundaries (implicit worktree scope)", async () => {
+    const mcp = (await sdk.trigger("mcp::tools::call", {
+      headers: {},
+      body: {
+        name: "memory_lesson_save",
+        arguments: {
+          content: "Legacy prose lesson without explicit scope",
+          project: "agentmemory",
+          tags: "legacy,compat",
+          confidence: 0.4,
+        },
+      },
+    })) as {
+      status_code: number;
+      body: { error?: string; content?: Array<{ text: string }> };
+    };
+    expect(mcp.status_code).toBe(200);
+    const mcpResult = JSON.parse(mcp.body.content![0].text) as {
+      lesson: Lesson;
+    };
+    expect(mcpResult.lesson.scope).toMatchObject({ ring: "worktree" });
+    expect(mcpResult.lesson.scope.scopeId).toBeUndefined();
+
+    const rest = (await sdk.trigger("api::lesson-save", {
+      headers: {},
+      body: {
+        content: "Legacy prose REST lesson without explicit scope",
+        project: "agentmemory",
+        tags: ["legacy", "compat"],
+      },
+    })) as { status_code: number; body: { lesson?: Lesson; error?: string } };
+    expect(rest.status_code).toBe(201);
+    expect(rest.body.lesson?.scope).toMatchObject({ ring: "worktree" });
+  });
+
+  it("still rejects structured causal saves that omit an explicit scope", async () => {
+    const mcp = (await sdk.trigger("mcp::tools::call", {
+      headers: {},
+      body: {
+        name: "memory_lesson_save",
+        arguments: {
+          content: "Structured lesson missing scope",
+          mechanismId: "scope/guard",
+          claim: "Structured lessons require explicit durable scope.",
+          claimType: "causal",
+        },
+      },
+    })) as { status_code: number; body: { error?: string } };
+    expect(mcp.status_code).toBe(400);
+    expect(mcp.body.error).toContain("explicit durable scope");
+
+    const rest = (await sdk.trigger("api::lesson-save", {
+      headers: {},
+      body: {
+        content: "Structured lesson missing scope",
+        mechanismId: "scope/guard-rest",
+        claim: "Structured lessons require explicit durable scope.",
+        claimType: "causal",
+      },
+    })) as { status_code: number; body: { error?: string } };
+    expect(rest.status_code).toBe(400);
+    expect(rest.body.error).toContain("explicit durable scope");
+  });
+
   it("rejects invalid immutable evidence and unapproved global scope at both boundaries", async () => {
     const rest = (await sdk.trigger("api::lesson-save", {
       headers: {},

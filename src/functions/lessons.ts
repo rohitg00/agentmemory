@@ -334,7 +334,13 @@ export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
       );
       const prepared = bindResolvedLessonWriteIdentity(data, accessContext);
       if (!prepared.success) return prepared;
-      const parsed = parseLessonSaveInput(prepared.value);
+      // Legacy prose saves keep the fail-closed implicit worktree scope
+      // (causal-lesson-schema-v1 spec: "Legacy prose lessons retain the
+      // fail-closed implicit worktree scope for compatibility"). Structured
+      // causal lessons still require an explicit durable scope below.
+      const parsed = parseLessonSaveInput(prepared.value, {
+        allowImplicitWorktreeScope: true,
+      });
       if (!parsed.success) {
         return correctionFailure("invalid_request", parsed.error);
       }
