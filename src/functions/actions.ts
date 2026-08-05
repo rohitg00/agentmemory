@@ -649,6 +649,42 @@ async function actionGateExists(
   return Boolean(checkpoint || sentinel);
 }
 
+/**
+ * True when an action is held blocked by something OTHER than its `requires`
+ * dependency edges: a manual `blockedReason`, `awaitingHuman`, a pending or
+ * rejected `approval`, or an unsatisfied `gated_by` checkpoint/sentinel.
+ *
+ * Used by diagnosis and heal so a "blocked but all dependencies done" finding
+ * is only treated as fixable when the dependencies are the SOLE blocker. An
+ * explicit gate means the block is intentional, and heal must not clear it:
+ * `normalizeActionV2` -> `legacyStatusFor` would immediately re-derive
+ * `status: "blocked"` from the surviving gate, so unblocking would only
+ * produce revision churn and a misleading "newStatus: pending" audit.
+ */
+export async function hasExplicitNonDependencyGate(
+  kv: StateKV,
+  action: Action,
+  edges: ActionEdge[],
+): Promise<boolean> {
+  if (action.blockedReason) return true;
+  if (action.awaitingHuman) return true;
+  const approvalState = action.approval?.state;
+  if (approvalState === "pending" || approvalState === "rejected") return true;
+  const gates = edges.filter(
+    (edge) => edge.sourceActionId === action.id && edge.type === "gated_by",
+  );
+  for (const edge of gates) {
+    const checkpoint = await kv.get<Checkpoint>(
+      KV.checkpoints,
+      edge.targetActionId,
+    );
+    if (checkpoint?.status === "passed") continue;
+    const sentinel = await kv.get<Sentinel>(KV.sentinels, edge.targetActionId);
+    if (sentinel?.status !== "triggered") return true;
+  }
+  return false;
+}
+
 function applyActionUpdate(
   action: Action,
   data: ActionUpdateInput,
