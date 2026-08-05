@@ -224,6 +224,91 @@ describe("Governance Functions", () => {
   // Delete paths must tear down the BM25 index entry and trigger an
   // IndexPersistence save so a hard process exit can't restore a stale
   // snapshot at next boot.
+  describe("dangling reference cleanup on delete (#supersedes-parent-cleanup)", () => {
+    it("governance-delete clears supersedes/parentId/relatedIds in survivors", async () => {
+      // mem_target is referenced by all three fields of mem_holder. Deleting it
+      // must drop those references rather than leaving them dangling.
+      const target = makeMemory("mem_target", "pattern");
+      const holder = makeMemory("mem_holder", "bug");
+      holder.supersedes = ["mem_target", "mem_other_alive"];
+      holder.parentId = "mem_target";
+      holder.relatedIds = ["mem_target", "mem_other_alive"];
+      const otherAlive = makeMemory("mem_other_alive", "pattern");
+      for (const m of [target, holder, otherAlive]) {
+        await kv.set("mem:memories", m.id, m);
+      }
+
+      const result = (await sdk.trigger("mem::governance-delete", {
+        memoryIds: ["mem_target"],
+        reason: "superseded cleanup",
+      })) as {
+        success: boolean;
+        deleted: number;
+        repairedReferrers: string[];
+        removedReferences: number;
+      };
+
+      expect(result.success).toBe(true);
+      expect(result.deleted).toBe(1);
+      expect(result.repairedReferrers).toEqual(["mem_holder"]);
+      // 1 supersedes + 1 parentId + 1 relatedIds = 3 references dropped.
+      expect(result.removedReferences).toBe(3);
+
+      const holderAfter = (await kv.get("mem:memories", "mem_holder")) as Memory;
+      expect(holderAfter.supersedes).toEqual(["mem_other_alive"]);
+      expect(holderAfter.parentId).toBeUndefined();
+      expect(holderAfter.relatedIds).toEqual(["mem_other_alive"]);
+    });
+
+    it("governance-delete with no surviving refs reports empty repair lists", async () => {
+      // mem_1/mem_2/mem_3 are the beforeEach seed; none reference each other.
+      const result = (await sdk.trigger("mem::governance-delete", {
+        memoryIds: ["mem_1"],
+      })) as {
+        success: boolean;
+        repairedReferrers: string[];
+        removedReferences: number;
+      };
+
+      expect(result.success).toBe(true);
+      expect(result.repairedReferrers).toEqual([]);
+      expect(result.removedReferences).toBe(0);
+    });
+
+    it("governance-bulk clears supersedes/parentId/relatedIds in survivors", async () => {
+      // holder is type "fact" so it survives a pattern-only bulk delete; it
+      // references mem_target (pattern) via all three fields.
+      const target = makeMemory("mem_target", "pattern");
+      const holder = makeMemory("mem_holder", "fact");
+      holder.supersedes = ["mem_target"];
+      holder.parentId = "mem_target";
+      holder.relatedIds = ["mem_target"];
+      for (const m of [target, holder]) {
+        await kv.set("mem:memories", m.id, m);
+      }
+
+      const result = (await sdk.trigger("mem::governance-bulk", {
+        type: ["pattern"],
+      })) as {
+        success: boolean;
+        deleted: number;
+        repairedReferrers: string[];
+        removedReferences: number;
+      };
+
+      expect(result.success).toBe(true);
+      // mem_target + the two seeded pattern memories (mem_1, mem_3) deleted.
+      expect(result.deleted).toBe(3);
+      expect(result.repairedReferrers).toEqual(["mem_holder"]);
+      expect(result.removedReferences).toBe(3);
+
+      const holderAfter = (await kv.get("mem:memories", "mem_holder")) as Memory;
+      expect(holderAfter.supersedes ?? []).toEqual([]);
+      expect(holderAfter.parentId).toBeUndefined();
+      expect(holderAfter.relatedIds ?? []).toEqual([]);
+    });
+  });
+
   describe("search index cleanup on delete", () => {
     function indexedObs(id: string, title: string) {
       return memoryToObservation({

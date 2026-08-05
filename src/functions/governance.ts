@@ -5,7 +5,40 @@ import type { StateKV } from "../state/kv.js";
 import { recordAudit, safeAudit, queryAudit } from "./audit.js";
 import { deleteAccessLog } from "./access-tracker.js";
 import { getSearchIndex, vectorIndexRemove, flushIndexSave } from "./search.js";
+import { stripMemoryReferences } from "../state/memory-utils.js";
 import { logger } from "../logger.js";
+
+/**
+ * After memories are deleted, clear now-dangling `supersedes`/`parentId`/
+ * `relatedIds` back-references in the *surviving* memories. Returns the IDs of
+ * memories that were repaired and how many references were dropped, for audit
+ * and result reporting. Indexes are not touched: reference fields are not part
+ * of the search/vector observation shape.
+ */
+async function clearDanglingMemoryReferences(
+  kv: StateKV,
+  deletedIds: string[],
+): Promise<{ repairedReferrers: string[]; removedCount: number }> {
+  if (deletedIds.length === 0) {
+    return { repairedReferrers: [], removedCount: 0 };
+  }
+  const removed = new Set(deletedIds);
+  const memories = await kv.list<Memory>(KV.memories);
+  const repairedReferrers: string[] = [];
+  let removedCount = 0;
+  for (const memory of memories) {
+    if (removed.has(memory.id)) continue;
+    const { memory: next, changed, removed: dropped } =
+      stripMemoryReferences(memory, removed);
+    if (changed) {
+      next.updatedAt = new Date().toISOString();
+      await kv.set(KV.memories, next.id, next);
+      repairedReferrers.push(next.id);
+      removedCount += dropped.length;
+    }
+  }
+  return { repairedReferrers, removedCount };
+}
 
 export function registerGovernanceFunction(sdk: ISdk, kv: StateKV): void {
   sdk.registerFunction("mem::governance-delete", 
@@ -19,6 +52,7 @@ export function registerGovernanceFunction(sdk: ISdk, kv: StateKV): void {
       }
 
       let deleted = 0;
+      const deletedIds: string[] = [];
       for (const id of data.memoryIds) {
         const mem = await kv.get<Memory>(KV.memories, id);
         if (mem) {
@@ -27,10 +61,17 @@ export function registerGovernanceFunction(sdk: ISdk, kv: StateKV): void {
           getSearchIndex().remove(id);
           vectorIndexRemove(id);
           deleted++;
+          deletedIds.push(id);
         }
       }
 
       if (deleted > 0) await flushIndexSave();
+
+      // Prevent the delete from leaving dangling supersedes/parentId/
+      // relatedIds back-references in surviving memories. Without this, every
+      // governance-delete would mint new memory-missing-supersedes warnings.
+      const { repairedReferrers, removedCount } =
+        await clearDanglingMemoryReferences(kv, deletedIds);
 
       await recordAudit(
         kv,
@@ -40,14 +81,24 @@ export function registerGovernanceFunction(sdk: ISdk, kv: StateKV): void {
         {
           reason: data.reason || "manual deletion",
           deleted,
+          repairedReferrers: repairedReferrers.length > 0 ? repairedReferrers : undefined,
+          removedReferences: removedCount > 0 ? removedCount : undefined,
         },
       );
 
       logger.info("Governance delete", {
         requested: data.memoryIds.length,
         deleted,
+        repairedReferrers: repairedReferrers.length,
+        removedReferences: removedCount,
       });
-      return { success: true, deleted, total: data.memoryIds.length };
+      return {
+        success: true,
+        deleted,
+        total: data.memoryIds.length,
+        repairedReferrers,
+        removedReferences: removedCount,
+      };
     },
   );
 
@@ -138,6 +189,11 @@ export function registerGovernanceFunction(sdk: ISdk, kv: StateKV): void {
 
       if (successfulIds.length > 0) await flushIndexSave();
 
+      // Same dangling-reference cleanup as the single governance-delete path,
+      // applied to the batch of successfully deleted memories.
+      const { repairedReferrers, removedCount } =
+        await clearDanglingMemoryReferences(kv, successfulIds);
+
       await safeAudit(
         kv,
         "delete",
@@ -148,18 +204,24 @@ export function registerGovernanceFunction(sdk: ISdk, kv: StateKV): void {
           deleted: successfulIds.length,
           failed: failures.length,
           failures: failures.length > 0 ? failures : undefined,
+          repairedReferrers: repairedReferrers.length > 0 ? repairedReferrers : undefined,
+          removedReferences: removedCount > 0 ? removedCount : undefined,
         },
       );
 
       logger.info("Governance bulk delete", {
         deleted: successfulIds.length,
         failed: failures.length,
+        repairedReferrers: repairedReferrers.length,
+        removedReferences: removedCount,
       });
       return {
         success: failures.length === 0,
         deleted: successfulIds.length,
         failed: failures.length,
         failures: failures.length > 0 ? failures : undefined,
+        repairedReferrers,
+        removedReferences: removedCount,
       };
     },
   );

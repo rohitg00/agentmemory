@@ -8,6 +8,7 @@ import {
   deleteActionEdge,
   persistAction,
 } from "./action-store.js";
+import { stripMemoryReferences } from "../state/memory-utils.js";
 import { isLessonListable } from "./lesson-model.js";
 import {
   canReadLesson,
@@ -343,11 +344,42 @@ export function registerDiagnosticsFunction(sdk: ISdk, kv: StateKV): void {
                   category: "memories",
                   status: "warn",
                   message: `Memory "${memory.title}" supersedes non-existent memory ${sid}`,
-                  fixable: false,
+                  // Fixable via mem::heal {categories:["memories"]}, which now
+                  // prunes dangling supersedes/parentId/relatedIds references.
+                  fixable: true,
                 });
                 memoryIssues++;
               }
               supersededBy.set(sid, memory.id);
+            }
+          }
+
+          // parentId / relatedIds dangling-reference detection. Same root
+          // cause as missing-supersedes (a delete that did not clear
+          // back-references), so they are heal-fixable too.
+          if (memory.parentId && !memoryIds.has(memory.parentId)) {
+            checks.push({
+              name: `memory-missing-parent:${memory.id}:${memory.parentId}`,
+              category: "memories",
+              status: "warn",
+              message: `Memory "${memory.title}" has parentId ${memory.parentId} which does not exist`,
+              fixable: true,
+            });
+            memoryIssues++;
+          }
+
+          if (memory.relatedIds && memory.relatedIds.length > 0) {
+            for (const rid of memory.relatedIds) {
+              if (!memoryIds.has(rid)) {
+                checks.push({
+                  name: `memory-missing-related:${memory.id}:${rid}`,
+                  category: "memories",
+                  status: "warn",
+                  message: `Memory "${memory.title}" references non-existent related memory ${rid}`,
+                  fixable: true,
+                });
+                memoryIssues++;
+              }
             }
           }
         }
@@ -366,11 +398,29 @@ export function registerDiagnosticsFunction(sdk: ISdk, kv: StateKV): void {
         }
 
         // Project-coverage check: unscoped memories (no project field) will
-        // appear in every project's context and search results until the
-        // infer-memory-projects migration runs. Surface a count so operators
-        // know the backfill is still pending and can trigger it explicitly.
+        // appear in every project's context and search results until they are
+        // assigned a project. The message must be honest about what the
+        // infer-memory-projects migration can actually do: it only attributes
+        // memories that have sessionIds resolving to a strict-majority project.
+        // Unscoped memories with empty sessionIds (common for pre-session-link
+        // legacy rows) are returned as `ambiguous` and left unchanged, so
+        // prescribing that migration for them is a no-op. Split the count so
+        // an operator knows how many are inferable vs need manual assignment.
         const latestMemories = memories.filter((m) => m.isLatest);
-        const unscopedCount = latestMemories.filter((m) => !m.project).length;
+        const unscoped = latestMemories.filter((m) => !m.project);
+        const unscopedCount = unscoped.length;
+        const inferableCount = unscoped.filter(
+          (m) => (m.sessionIds?.length ?? 0) > 0,
+        ).length;
+        const ambiguousCount = unscopedCount - inferableCount;
+        const inferHint =
+          inferableCount > 0
+            ? `run POST /agentmemory/migrate {"step":"infer-memory-projects"} to attempt backfill of the ${inferableCount} session-linked`
+            : `no session-linked unscoped memories remain; infer-memory-projects is a no-op here`;
+        const ambiguousHint =
+          ambiguousCount > 0
+            ? `; the remaining ${ambiguousCount} have no sessionIds and need manual project assignment (or a session linkage pass) — the migration cannot attribute them`
+            : "";
         if (unscopedCount === 0) {
           checks.push({
             name: "memory-project-coverage",
@@ -384,7 +434,7 @@ export function registerDiagnosticsFunction(sdk: ISdk, kv: StateKV): void {
             name: "memory-project-coverage",
             category: "memories",
             status: "warn",
-            message: `${unscopedCount} of ${latestMemories.length} latest memories have no project scope — run POST /agentmemory/migrate {"step":"infer-memory-projects"} to backfill`,
+            message: `${unscopedCount} of ${latestMemories.length} latest memories have no project scope — ${inferHint}${ambiguousHint}`,
             fixable: true,
           });
         } else {
@@ -392,7 +442,7 @@ export function registerDiagnosticsFunction(sdk: ISdk, kv: StateKV): void {
             name: "memory-project-coverage",
             category: "memories",
             status: "fail",
-            message: `${unscopedCount} of ${latestMemories.length} latest memories have no project scope — run POST /agentmemory/migrate {"step":"infer-memory-projects"} to backfill`,
+            message: `${unscopedCount} of ${latestMemories.length} latest memories have no project scope — ${inferHint}${ambiguousHint}`,
             fixable: true,
           });
         }
@@ -1164,6 +1214,63 @@ export function registerDiagnosticsFunction(sdk: ISdk, kv: StateKV): void {
             } else {
               skipped++;
             }
+          }
+        }
+
+        // Prune dangling inter-memory references (supersedes/parentId/
+        // relatedIds pointing at non-existent memories). These accumulate when
+        // memories are removed outside governance-delete (legacy deletes,
+        // manual KV edits) and are exactly what the memory-missing-* warns
+        // above flag. Code-only: no live data is touched until an operator
+        // invokes mem::heal after deploy.
+        const currentMemories = await kv.list<Memory>(KV.memories);
+        const existingIds = new Set(currentMemories.map((m) => m.id));
+        for (const memory of currentMemories) {
+          const dangling = new Set<string>();
+          for (const id of memory.supersedes ?? []) {
+            if (!existingIds.has(id)) dangling.add(id);
+          }
+          if (memory.parentId && !existingIds.has(memory.parentId)) {
+            dangling.add(memory.parentId);
+          }
+          for (const id of memory.relatedIds ?? []) {
+            if (!existingIds.has(id)) dangling.add(id);
+          }
+          if (dangling.size === 0) continue;
+
+          if (dryRun) {
+            details.push(
+              `[dry-run] Would prune ${dangling.size} dangling reference(s) from memory "${memory.title}" (${memory.id})`,
+            );
+            fixed++;
+            continue;
+          }
+          const didFix = await withKeyedLock(
+            `mem:memory:${memory.id}`,
+            async () => {
+              const fresh = await kv.get<Memory>(KV.memories, memory.id);
+              if (!fresh) return false;
+              const { memory: next, changed } =
+                stripMemoryReferences(fresh, dangling);
+              if (!changed) return false;
+              next.updatedAt = new Date().toISOString();
+              await kv.set(KV.memories, next.id, next);
+              await recordAudit(kv, "heal", "mem::heal", [next.id], {
+                entityType: "memory",
+                reason: "dangling-memory-reference-prune",
+                action: "update",
+                removed: [...dangling],
+              });
+              return true;
+            },
+          );
+          if (didFix) {
+            details.push(
+              `Pruned ${dangling.size} dangling reference(s) from memory "${memory.title}" (${memory.id})`,
+            );
+            fixed++;
+          } else {
+            skipped++;
           }
         }
       }

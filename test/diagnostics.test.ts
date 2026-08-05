@@ -504,7 +504,95 @@ describe("Diagnostics Functions", () => {
       );
       expect(check).toBeDefined();
       expect(check!.status).toBe("warn");
-      expect(check!.fixable).toBe(false);
+      // Fixable via mem::heal {categories:["memories"]}, which prunes
+      // dangling supersedes/parentId/relatedIds references.
+      expect(check!.fixable).toBe(true);
+    });
+
+    it("dangling parentId and relatedIds produce fixable warns", async () => {
+      const alive = makeMemory({ id: "mem_alive" });
+      const withParent = makeMemory({
+        id: "mem_orphan",
+        parentId: "mem_gone",
+      });
+      const withRelated = makeMemory({
+        id: "mem_related",
+        relatedIds: ["mem_gone", "mem_alive"],
+      });
+      for (const m of [alive, withParent, withRelated]) {
+        await kv.set(KV.memories, m.id, m);
+      }
+
+      const result = (await sdk.trigger("mem::diagnose", {
+        categories: ["memories"],
+      })) as { checks: DiagnosticCheck[] };
+
+      const parentCheck = result.checks.find((c) =>
+        c.name.startsWith("memory-missing-parent:"),
+      );
+      expect(parentCheck).toBeDefined();
+      expect(parentCheck!.status).toBe("warn");
+      expect(parentCheck!.fixable).toBe(true);
+
+      const relatedCheck = result.checks.find((c) =>
+        c.name.startsWith("memory-missing-related:"),
+      );
+      expect(relatedCheck).toBeDefined();
+      expect(relatedCheck!.status).toBe("warn");
+      expect(relatedCheck!.fixable).toBe(true);
+    });
+
+    it("project-coverage message is honest when unscoped memories lack sessionIds", async () => {
+      // Unscoped memories with no sessionIds cannot be attributed by
+      // infer-memory-projects (returned as `ambiguous`). The message must say
+      // so instead of prescribing a no-op migration.
+      await kv.set(
+        KV.memories,
+        "m1",
+        makeMemory({ id: "m1", project: undefined, sessionIds: [] }),
+      );
+
+      const result = (await sdk.trigger("mem::diagnose", {
+        categories: ["memories"],
+      })) as { checks: DiagnosticCheck[] };
+
+      const check = result.checks.find(
+        (c) => c.name === "memory-project-coverage",
+      );
+      expect(check).toBeDefined();
+      expect(check!.message).toContain("no session-linked unscoped memories remain");
+      expect(check!.message).toContain("infer-memory-projects is a no-op here");
+      expect(check!.message).toContain("need manual project assignment");
+    });
+
+    it("project-coverage message distinguishes inferable from ambiguous unscoped memories", async () => {
+      await kv.set(
+        KV.memories,
+        "inferable",
+        makeMemory({
+          id: "inferable",
+          project: undefined,
+          sessionIds: ["ses_1"],
+        }),
+      );
+      await kv.set(
+        KV.memories,
+        "ambiguous",
+        makeMemory({ id: "ambiguous", project: undefined, sessionIds: [] }),
+      );
+
+      const result = (await sdk.trigger("mem::diagnose", {
+        categories: ["memories"],
+      })) as { checks: DiagnosticCheck[] };
+
+      const check = result.checks.find(
+        (c) => c.name === "memory-project-coverage",
+      );
+      expect(check).toBeDefined();
+      // The session-linked count (1) is surfaced for the migration hint...
+      expect(check!.message).toContain("attempt backfill of the 1 session-linked");
+      // ...and the session-less count (1) is flagged as needing manual work.
+      expect(check!.message).toContain("remaining 1 have no sessionIds");
     });
 
     it("stale mesh peer produces warn", async () => {
@@ -706,6 +794,72 @@ describe("Diagnostics Functions", () => {
 
       const unchanged = await kv.get<Action>(KV.actions, blocked.id);
       expect(unchanged!.status).toBe("blocked");
+    });
+
+    it("prunes dangling supersedes/parentId/relatedIds references", async () => {
+      // mem_alive is legitimately superseded by mem_child, so isLatest=false —
+      // this also keeps the stale-latest heal pass quiet so the count isolates
+      // the dangling-reference prune.
+      const alive = makeMemory({ id: "mem_alive", title: "Alive", isLatest: false });
+      const supersedesDangling = makeMemory({
+        id: "mem_child",
+        title: "Child",
+        supersedes: ["mem_gone", "mem_alive"],
+      });
+      const parentDangling = makeMemory({
+        id: "mem_orphan",
+        title: "Orphan",
+        parentId: "mem_gone",
+      });
+      const relatedDangling = makeMemory({
+        id: "mem_related",
+        title: "Related",
+        relatedIds: ["mem_gone", "mem_alive"],
+      });
+      for (const m of [alive, supersedesDangling, parentDangling, relatedDangling]) {
+        await kv.set(KV.memories, m.id, m);
+      }
+
+      const result = (await sdk.trigger("mem::heal", {
+        categories: ["memories"],
+      })) as { success: boolean; fixed: number; details: string[] };
+
+      expect(result.success).toBe(true);
+      // Three memories had dangling refs pruned.
+      expect(result.fixed).toBe(3);
+
+      const child = await kv.get<Memory>(KV.memories, "mem_child");
+      expect(child!.supersedes).toEqual(["mem_alive"]);
+
+      const orphan = await kv.get<Memory>(KV.memories, "mem_orphan");
+      expect(orphan!.parentId).toBeUndefined();
+
+      const related = await kv.get<Memory>(KV.memories, "mem_related");
+      expect(related!.relatedIds).toEqual(["mem_alive"]);
+    });
+
+    it("dry run reports dangling references without pruning", async () => {
+      const alive = makeMemory({ id: "mem_alive", title: "Alive" });
+      const dangling = makeMemory({
+        id: "mem_child",
+        title: "Child",
+        supersedes: ["mem_gone"],
+      });
+      await kv.set(KV.memories, alive.id, alive);
+      await kv.set(KV.memories, dangling.id, dangling);
+
+      const result = (await sdk.trigger("mem::heal", {
+        categories: ["memories"],
+        dryRun: true,
+      })) as { success: boolean; fixed: number; details: string[] };
+
+      expect(result.success).toBe(true);
+      expect(result.fixed).toBe(1);
+      expect(result.details.some((d) => d.includes("[dry-run]"))).toBe(true);
+
+      // Nothing actually changed.
+      const unchanged = await kv.get<Memory>(KV.memories, "mem_child");
+      expect(unchanged!.supersedes).toEqual(["mem_gone"]);
     });
   });
 
