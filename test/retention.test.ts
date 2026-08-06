@@ -1,4 +1,9 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import {
+  getSearchIndex,
+  setIndexPersistence,
+} from "../src/functions/search.js";
+import { memoryToObservation } from "../src/state/memory-utils.js";
 import type { Memory, SemanticMemory } from "../src/types.js";
 
 vi.mock("../src/logger.js", () => ({
@@ -502,5 +507,60 @@ describe("RetentionScoring", () => {
     expect(result.evictedSemantic).toBe(0);
     const remaining = await kv.list("mem:memories");
     expect(remaining).toHaveLength(0);
+  });
+
+  describe("search-index cleanup on eviction", () => {
+    beforeEach(() => {
+      getSearchIndex().clear();
+      setIndexPersistence(null);
+    });
+
+    afterEach(() => {
+      setIndexPersistence(null);
+    });
+
+    it("removes evicted memories from the BM25 index and flushes persistence", async () => {
+      const { registerRetentionFunctions } = await import(
+        "../src/functions/retention.js"
+      );
+      const persistence = { scheduleSave: vi.fn(), save: vi.fn(async () => {}) };
+      setIndexPersistence(persistence);
+
+      const evictee = makeMemory("mem_evict", "fact", 500);
+      const sdk = mockSdk();
+      const kv = mockKV([evictee]);
+      registerRetentionFunctions(sdk as never, kv as never);
+      getSearchIndex().add(memoryToObservation(evictee));
+      expect(getSearchIndex().has("mem_evict")).toBe(true);
+
+      await sdk.trigger({ function_id: "mem::retention-score", payload: {} });
+      await sdk.trigger({
+        function_id: "mem::retention-evict",
+        payload: { threshold: 0.9 },
+      });
+
+      expect(getSearchIndex().has("mem_evict")).toBe(false);
+      expect(persistence.save).toHaveBeenCalled();
+    });
+
+    it("does not flush persistence when nothing is evicted", async () => {
+      const { registerRetentionFunctions } = await import(
+        "../src/functions/retention.js"
+      );
+      const persistence = { scheduleSave: vi.fn(), save: vi.fn(async () => {}) };
+      setIndexPersistence(persistence);
+
+      const sdk = mockSdk();
+      const kv = mockKV([makeMemory("mem_fresh", "architecture", 1)]);
+      registerRetentionFunctions(sdk as never, kv as never);
+
+      await sdk.trigger({ function_id: "mem::retention-score", payload: {} });
+      await sdk.trigger({
+        function_id: "mem::retention-evict",
+        payload: { threshold: 0.01 },
+      });
+
+      expect(persistence.save).not.toHaveBeenCalled();
+    });
   });
 });

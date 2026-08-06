@@ -10,6 +10,7 @@ const DOCS = "https://github.com/tinyhumansai/openhuman";
 export const adapter: ConnectAdapter = {
   name: "openhuman",
   displayName: "OpenHuman",
+  category: "native",
   docs: DOCS,
   protocolNote:
     "→ Using native hooks (REST API at :3111). MCP not required.",

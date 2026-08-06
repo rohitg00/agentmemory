@@ -25,6 +25,16 @@ const FEATURED: Agent[] = [
     sub: "FIRST-CLASS PLUGIN",
   },
   {
+    id: "copilot-cli",
+    name: "Copilot CLI",
+    from: "GitHub",
+    logo: "https://svgl.app/library/github_dark.svg",
+    accent: "#24292E",
+    href: "https://docs.github.com/copilot/github-copilot-in-the-cli",
+    pitch: "11 hooks + MCP · framed stdio",
+    sub: "NATIVE PLUGIN",
+  },
+  {
     id: "codex",
     name: "Codex CLI",
     from: "OpenAI",
@@ -89,9 +99,49 @@ const MARQUEE: Agent[] = [
     id: "cursor",
     name: "Cursor",
     from: "Anysphere",
-    logo: "https://www.freelogovectors.net/wp-content/uploads/2025/06/cursor-logo-freelogovectors.net_.png",
+    logo: "https://svgl.app/library/cursor_dark.svg",
     accent: "#000000",
     href: "https://cursor.com",
+  },
+  {
+    id: "warp",
+    name: "Warp",
+    from: "Warp",
+    logo: "https://svgl.app/library/warp.svg",
+    accent: "#9B59FF",
+    href: "https://www.warp.dev",
+  },
+  {
+    id: "continue",
+    name: "Continue",
+    from: "Continue.dev",
+    logo: "https://continue.dev/icon.svg",
+    accent: "#000000",
+    href: "https://continue.dev",
+  },
+  {
+    id: "cline",
+    name: "Cline",
+    from: "cline",
+    logo: "https://github.com/cline.png",
+    accent: "#F59E0B",
+    href: "https://github.com/cline/cline",
+  },
+  {
+    id: "zed",
+    name: "Zed",
+    from: "Zed Industries",
+    logo: "https://svgl.app/library/zed-logo_dark.svg",
+    accent: "#FF4500",
+    href: "https://zed.dev",
+  },
+  {
+    id: "droid",
+    name: "Droid",
+    from: "Factory.ai",
+    logo: "https://www.factory.ai/favicon.svg",
+    accent: "#FF6B35",
+    href: "https://docs.factory.ai/cli",
   },
   {
     id: "gemini-cli",
@@ -102,20 +152,36 @@ const MARQUEE: Agent[] = [
     href: "https://github.com/google-gemini/gemini-cli",
   },
   {
+    id: "antigravity",
+    name: "Antigravity",
+    from: "Google",
+    logo: "https://svgl.app/library/antigravity.svg",
+    accent: "#4285F4",
+    href: "https://antigravity.google",
+  },
+  {
+    id: "qwen",
+    name: "Qwen Code",
+    from: "Alibaba",
+    logo: "https://svgl.app/library/qwen_dark.svg",
+    accent: "#615CED",
+    href: "https://github.com/QwenLM/qwen-code",
+  },
+  {
+    id: "kiro",
+    name: "Kiro",
+    from: "AWS",
+    logo: "https://kiro.dev/favicon.ico",
+    accent: "#FF9900",
+    href: "https://kiro.dev",
+  },
+  {
     id: "opencode",
     name: "OpenCode",
     from: "opencode-ai",
     logo: "https://github.com/opencode-ai.png",
     accent: "#22C55E",
     href: "https://github.com/opencode-ai/opencode",
-  },
-  {
-    id: "cline",
-    name: "Cline",
-    from: "cline",
-    logo: "https://github.com/cline.png",
-    accent: "#F59E0B",
-    href: "https://github.com/cline/cline",
   },
   {
     id: "roo",
@@ -152,8 +218,8 @@ const MARQUEE: Agent[] = [
   {
     id: "windsurf",
     name: "Windsurf",
-    from: "Codeium",
-    logo: "https://exafunction.github.io/public/brand/windsurf-black-symbol.svg",
+    from: "Cognition",
+    logo: "https://svgl.app/library/windsurf-dark.svg",
     accent: "#00A699",
     href: "https://windsurf.com",
   },
@@ -224,12 +290,12 @@ export function Agents() {
       <header className="section-head">
         <span className="section-eyebrow">WORKS WITH</span>
         <h2 id="agents-title" className="section-title">
-          SIX FIRST-PARTY.<br />REST MCP-NATIVE.
+          SEVEN NATIVE PLUGINS.<br />REST MCP-NATIVE.
         </h2>
         <p className="section-lede">
-          NATIVE PLUGINS FOR CLAUDE CODE, CODEX CLI, OPENCLAW, HERMES, PI, AND
-          OPENHUMAN. EVERY OTHER MCP CLIENT GETS IT FOR FREE. `agentmemory
-          connect &lt;agent&gt;` AUTO-WIRES THEM ALL.
+          NATIVE PLUGINS FOR CLAUDE CODE, COPILOT CLI, CODEX CLI, OPENCLAW,
+          HERMES, PI, AND OPENHUMAN. EVERY OTHER MCP CLIENT GETS IT FOR FREE.
+          `agentmemory connect &lt;agent&gt;` AUTO-WIRES THEM ALL.
         </p>
       </header>
 

@@ -1,10 +1,9 @@
-import type { ISdk } from "iii-sdk";
+import { TriggerAction, type ISdk } from "iii-sdk";
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { IMAGES_DIR, getMaxBytes, deleteImage } from "../utils/image-store.js";
-import { getImageRefCount } from "./image-refs.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
 import { logger } from "../logger.js";
 
@@ -56,6 +55,7 @@ export function registerImageQuotaCleanup(sdk: ISdk, kv: StateKV): void {
           await withKeyedLock(`imgRef:${f.filePath}`, async () => {
             let refCount: number;
             try {
+              const { getImageRefCount } = await import("./image-refs.js");
               refCount = await getImageRefCount(kv, f.filePath);
             } catch (err) {
               // Fail-closed: if we cannot determine refCount we must NOT
@@ -75,7 +75,11 @@ export function registerImageQuotaCleanup(sdk: ISdk, kv: StateKV): void {
 
             const { deletedBytes } = await deleteImage(f.filePath);
             if (deletedBytes > 0) {
-              sdk.triggerVoid("mem::disk-size-delta", { deltaBytes: -deletedBytes });
+              sdk.trigger({
+                function_id: "mem::disk-size-delta",
+                payload: { deltaBytes: -deletedBytes },
+                action: TriggerAction.Void(),
+              });
               totalToFree -= deletedBytes;
               freedBytes += deletedBytes;
               evicted++;

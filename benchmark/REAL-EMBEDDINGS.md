@@ -59,7 +59,7 @@ Embedding is a one-time cost at ingestion. Search is sub-millisecond after index
 
 ## Recommendation
 
-Enable local embeddings by default (`EMBEDDING_PROVIDER=local` or install `@xenova/transformers`).
+Enable local embeddings by default (`EMBEDDING_PROVIDER=local` or install `@huggingface/transformers`).
 This gives agentmemory genuine semantic search that built-in agent memories cannot match —
 understanding that "database performance optimization" relates to "N+1 query fix" and "eager loading".
 

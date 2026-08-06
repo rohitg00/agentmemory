@@ -31,24 +31,30 @@ async function main() {
     return;
   }
 
+  if (!data || typeof data !== "object") return;
   if (isSdkChildContext(data)) {
     // Do not summarize from inside a Claude Agent SDK child session;
     // would re-enter agent-sdk provider and loop (see sdk-guard.ts).
     return;
   }
 
-  const sessionId = (data.session_id as string) || "unknown";
+  const sessionId = ((data.session_id || data.sessionId) as string) || "unknown";
 
-  try {
-    await fetch(`${REST_URL}/agentmemory/summarize`, {
-      method: "POST",
-      headers: authHeaders(),
-      body: JSON.stringify({ sessionId }),
-      signal: AbortSignal.timeout(120000), // Increased from 30s to 120s
-    });
-  } catch {
-    // summarize is best-effort
-  }
+  fetch(`${REST_URL}/agentmemory/summarize`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({ sessionId }),
+    signal: AbortSignal.timeout(120000),
+  }).catch(() => {});
+
+  fetch(`${REST_URL}/agentmemory/session/end`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({ sessionId }),
+    signal: AbortSignal.timeout(5000),
+  }).catch(() => {});
+
+  setTimeout(() => process.exit(0), 1500).unref();
 }
 
-main();
+main().catch(() => process.exit(0));

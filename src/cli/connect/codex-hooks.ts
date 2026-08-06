@@ -3,17 +3,27 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 /**
- * Workaround for openai/codex#16430 — Codex Desktop does not dispatch
+ * Shared merge engine for writing agentmemory's bundled hook scripts into
+ * a host's global, user-scope hooks config. Originally built as a
+ * workaround for openai/codex#16430 — Codex Desktop does not dispatch
  * plugin-local `hooks.json` even though both `CodexHooks` and `PluginHooks`
  * feature flags are stable + default-enabled in
  * `codex-rs/features/src/lib.rs`. Until upstream fixes plugin-scope
  * dispatch, the same hook commands can be mirrored into the global
  * `~/.codex/hooks.json`, which is loaded reliably.
  *
- * This module builds that mirror, with `${CLAUDE_PLUGIN_ROOT}` resolved to
+ * The same merge logic now also backs Claude Code's `--with-hooks`
+ * fallback (`~/.claude/settings.json`, #508 workaround) and Droid's
+ * native `~/.factory/hooks.json` install, since both hosts consume the
+ * identical `{ hooks: { <event>: [{ matcher?, hooks: [{ type, command }] }] } }`
+ * shape — only the bundled manifest file passed to `buildMergedHooks`
+ * differs per host.
+ *
+ * This module builds that merge, with `${CLAUDE_PLUGIN_ROOT}` resolved to
  * the bundled `plugin/` directory so the user-scope file does not depend
- * on env-var expansion (Codex only injects `CLAUDE_PLUGIN_ROOT` for
- * plugin-scope hooks).
+ * on env-var expansion (only Claude Code actually injects
+ * `CLAUDE_PLUGIN_ROOT` for plugin-scope hooks — the token is reused here
+ * purely as an internal placeholder for "the bundled plugin/ dir").
  *
  * Identification on re-install: every command we write contains the
  * resolved `<pluginRoot>/scripts/` prefix, so subsequent installs can
@@ -64,9 +74,10 @@ export function findPluginRoot(startUrl: string = import.meta.url): string {
 export function buildMergedHooks(
   existing: HookManifest | null,
   pluginRoot: string,
+  manifestFile = "hooks.codex.json",
 ): HookManifest {
-  const codexManifestPath = join(pluginRoot, "hooks", "hooks.codex.json");
-  const ours = JSON.parse(readFileSync(codexManifestPath, "utf-8")) as HookManifest;
+  const bundledManifestPath = join(pluginRoot, "hooks", manifestFile);
+  const ours = JSON.parse(readFileSync(bundledManifestPath, "utf-8")) as HookManifest;
   const scriptsDir = join(pluginRoot, "scripts");
 
   const out: HookManifest = { hooks: {} };
@@ -96,5 +107,12 @@ export function buildMergedHooks(
 }
 
 function isAgentmemoryEntry(entry: HookEntry, scriptsDir: string): boolean {
-  return entry.hooks.some((handler) => handler.command.includes(scriptsDir));
+  const normalizedScriptsDir = normalizePathForCommandMatch(scriptsDir);
+  return entry.hooks.some((handler) =>
+    normalizePathForCommandMatch(handler.command).includes(normalizedScriptsDir),
+  );
+}
+
+function normalizePathForCommandMatch(value: string): string {
+  return value.replace(/\\/g, "/");
 }

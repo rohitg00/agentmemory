@@ -16,13 +16,19 @@ function escapeXml(s: string): string {
 }
 
 export function registerEnrichFunction(sdk: ISdk, kv: StateKV): void {
-  sdk.registerFunction("mem::enrich", 
+  sdk.registerFunction("mem::enrich",
     async (data: {
       sessionId: string;
       files: string[];
       terms?: string[];
       toolName?: string;
+      project?: string;
     }) => {
+      const project =
+        typeof data.project === "string" && data.project.trim().length > 0
+          ? data.project.trim()
+          : undefined;
+
       const parts: string[] = [];
 
       const fileContextPromise = sdk
@@ -44,13 +50,14 @@ export function registerEnrichFunction(sdk: ISdk, kv: StateKV): void {
         searchQueries.length > 0
           ? sdk
               .trigger<
-                { query: string; limit: number },
+                { query: string; limit: number; project?: string },
                 { results: Array<{ observation: { narrative: string } }> }
               >({
                 function_id: "mem::search",
                 payload: {
                   query: searchQueries.join(" "),
                   limit: 5,
+                  ...(project !== undefined && { project }),
                 },
               })
               .catch(() => ({ results: [] }))
@@ -64,6 +71,8 @@ export function registerEnrichFunction(sdk: ISdk, kv: StateKV): void {
               (m) =>
                 m.type === "bug" &&
                 m.isLatest &&
+                // Guard only when both sides have an explicit project; unscoped memories pass through.
+                (!project || !m.project || m.project === project) &&
                 m.files.some((f) =>
                   data.files.some((df) => f.includes(df) || df.includes(f)),
                 ),
@@ -118,6 +127,7 @@ export function registerEnrichFunction(sdk: ISdk, kv: StateKV): void {
 
       logger.info("Enrichment completed", {
         sessionId: data.sessionId,
+        project,
         fileCount: data.files.length,
         contextLength: context.length,
         truncated,

@@ -135,6 +135,14 @@ function loadViewerSandbox() {
       search: "",
     },
     localStorage: { getItem: () => null, setItem: () => {} },
+    sessionStorage: (() => {
+      const values = new Map<string, string>();
+      return {
+        getItem: (key: string) => values.get(key) ?? null,
+        setItem: (key: string, value: string) => values.set(key, value),
+        removeItem: (key: string) => values.delete(key),
+      };
+    })(),
     fetch: async () => ({ ok: true, json: async () => ({}) }),
     WebSocket: function WebSocket() {},
     navigator: { userAgent: "vitest" },
@@ -169,6 +177,35 @@ function loadViewerSandbox() {
 }
 
 describe("viewer session rendering", () => {
+  it("attaches the saved viewer bearer to API calls", async () => {
+    const { sandbox } = loadViewerSandbox();
+    const requests: Array<{ url: string; opts: { headers?: Record<string, string> } }> = [];
+    sandbox.sessionStorage.setItem("agentmemory-viewer-token", "viewer-secret");
+    sandbox.fetch = async (url: string, opts: { headers?: Record<string, string> }) => {
+      requests.push({ url, opts });
+      return { ok: true, json: async () => ({ ok: true }) };
+    };
+
+    await sandbox.apiGet("health");
+
+    expect(requests).toHaveLength(1);
+    expect(requests[0].opts.headers?.Authorization).toBe("Bearer viewer-secret");
+  });
+
+  it("shows where to find AGENTMEMORY_SECRET after a viewer auth failure", async () => {
+    const { sandbox, getElement } = loadViewerSandbox();
+    sandbox.fetch = async () => ({ ok: false, status: 401, json: async () => ({}) });
+
+    await sandbox.apiGet("health");
+
+    const prompt = getElement("viewer-auth");
+    expect(prompt.classList.contains("open")).toBe(true);
+    expect(prompt.innerHTML).toContain("AGENTMEMORY_SECRET");
+    expect(prompt.innerHTML).toContain("unlock viewer API access");
+    expect(prompt.innerHTML).not.toContain("fly logs");
+    expect(prompt.innerHTML).not.toContain("/data/.hmac");
+  });
+
   it("does not throw when dashboard sessions are missing ids", () => {
     const { sandbox, getElement } = loadViewerSandbox();
     sandbox.state.dashboard = {

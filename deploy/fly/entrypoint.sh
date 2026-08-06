@@ -95,4 +95,18 @@ fi
 AGENTMEMORY_SECRET="$(cat "$HMAC_FILE")"
 export AGENTMEMORY_SECRET
 
+# The viewer's default 127.0.0.1 bind is unreachable through fly proxy,
+# which enters the machine via fly-local-6pn (IPv6). Opt into a
+# non-loopback bind ONLY when we're actually inside Fly (detected via
+# Fly's runtime variables). A plain `docker run` of this image will not
+# see these variables and will keep the safe-by-default loopback bind,
+# so it can't silently expose the viewer's bearer-authorized proxy to
+# the LAN. VIEWER_ALLOWED_HOSTS is preseeded to the Host headers that
+# `fly proxy 3113:3113` actually produces on the operator's laptop.
+if [ -n "${FLY_APP_NAME:-}" ] || [ -n "${FLY_ALLOC_ID:-}" ]; then
+  : "${AGENTMEMORY_VIEWER_HOST:=::}"
+  : "${VIEWER_ALLOWED_HOSTS:=localhost:3113,127.0.0.1:3113,[::1]:3113}"
+  export AGENTMEMORY_VIEWER_HOST VIEWER_ALLOWED_HOSTS
+fi
+
 exec gosu "$RUN_AS" agentmemory "$@"

@@ -58,6 +58,8 @@ describe("OpenAIEmbeddingProvider", () => {
   beforeEach(() => {
     process.env = { ...originalEnv };
     delete process.env["OPENAI_BASE_URL"];
+    delete process.env["OPENAI_EMBEDDING_BASE_URL"];
+    delete process.env["OPENAI_EMBEDDING_API_KEY"];
     delete process.env["OPENAI_EMBEDDING_MODEL"];
     delete process.env["OPENAI_EMBEDDING_DIMENSIONS"];
   });
@@ -74,7 +76,8 @@ describe("OpenAIEmbeddingProvider", () => {
 
   it("throws when no API key is provided", () => {
     delete process.env["OPENAI_API_KEY"];
-    expect(() => new OpenAIEmbeddingProvider()).toThrow("OPENAI_API_KEY is required");
+    delete process.env["OPENAI_EMBEDDING_API_KEY"];
+    expect(() => new OpenAIEmbeddingProvider()).toThrow(/API key is required.*OPENAI_EMBEDDING_API_KEY.*OPENAI_API_KEY/);
   });
 
   it("respects OPENAI_BASE_URL env var", async () => {

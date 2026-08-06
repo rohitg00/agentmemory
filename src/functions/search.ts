@@ -8,10 +8,20 @@ import type { EmbeddingProvider } from '../types.js'
 import { memoryToObservation } from '../state/memory-utils.js'
 import { recordAccessBatch } from './access-tracker.js'
 import { logger } from "../logger.js";
+import { getAgentId, isAgentScopeIsolated } from "../config.js";
 
 let index: SearchIndex | null = null
 let vectorIndex: VectorIndex | null = null
 let currentEmbeddingProvider: EmbeddingProvider | null = null
+
+// Dedupes the lazy cold-start rebuild kicked off from the mem::search
+// request path. A full rebuildIndex walks every observation across every
+// session, so N concurrent queries against an empty index would each
+// launch their own rebuild and saturate the engine invocation pool. The
+// first query with an empty index starts one rebuild and shares its
+// promise; concurrent queries await the same rebuild instead of spawning
+// duplicates. The boot-time rebuild in index.ts is unaffected.
+let rebuildPromise: Promise<number> | null = null
 
 export function getSearchIndex(): SearchIndex {
   if (!index) index = new SearchIndex()
@@ -32,6 +42,44 @@ export function setEmbeddingProvider(provider: EmbeddingProvider | null): void {
 
 export function getEmbeddingProvider(): EmbeddingProvider | null {
   return currentEmbeddingProvider
+}
+
+export function vectorIndexRemove(id: string): void {
+  vectorIndex?.remove(id);
+}
+
+// Persistence sync hook. Without this, index removals only live in
+// memory; a crash/SIGKILL before graceful shutdown reloads a stale
+// snapshot at boot and the deleted entry resurrects in the index.
+// Wired by src/index.ts after IndexPersistence is constructed; no-op
+// until then so unit tests that exercise the delete paths in
+// isolation don't need to wire persistence.
+let indexPersistence: {
+  scheduleSave: () => void;
+  save: () => Promise<void>;
+} | null = null;
+
+export function setIndexPersistence(
+  p: { scheduleSave: () => void; save: () => Promise<void> } | null,
+): void {
+  indexPersistence = p;
+}
+
+export function scheduleIndexSave(): void {
+  indexPersistence?.scheduleSave();
+}
+
+// Synchronous flush variant for delete paths. The debounced
+// scheduleSave is fine for adds (chatty), but a hard process exit
+// inside the 5s debounce window would lose deletes and resurrect
+// removed entries on next boot. Deletes are infrequent enough that
+// awaiting a single write per operation is acceptable. save() catches
+// its own errors via IndexPersistence.logFailure, so this resolves
+// even when persistence fails — callers must not treat a failed
+// flush as a fatal error on the delete itself (the KV delete already
+// committed before this is invoked).
+export async function flushIndexSave(): Promise<void> {
+  await indexPersistence?.save();
 }
 
 // Hard cap on embedding input length. Most providers cap input around
@@ -179,6 +227,66 @@ function getRebuildEmbedBatchSize(): number {
   return Number.isFinite(n) && n > 0 ? n : DEFAULT_REBUILD_EMBED_BATCH
 }
 
+// Shared BM25 + batched-vector indexing for a set of records. The full
+// rebuild and every import path (export-import, jsonl replay) funnel
+// through this so they index identically and none can silently skip the
+// vector side. It does NOT clear the index — callers that rebuild clear
+// first; importers add. When no embedding provider is configured it skips
+// the vector enqueue entirely, so a keyless install never allocates embed
+// jobs it would immediately discard.
+export async function indexRecords(
+  observations: CompressedObservation[],
+  memories: Memory[],
+): Promise<number> {
+  const idx = getSearchIndex()
+  const vectorEnabled = Boolean(vectorIndex && currentEmbeddingProvider)
+  const batchSize = getRebuildEmbedBatchSize()
+  type EmbedJob = {
+    id: string
+    sessionId: string
+    text: string
+    context: { kind: "memory" | "observation" | "synthetic"; logId: string }
+  }
+  const pending: EmbedJob[] = []
+  const flush = async (): Promise<void> => {
+    if (pending.length === 0) return
+    await vectorIndexAddBatchGuarded(pending)
+    pending.length = 0
+  }
+  const enqueue = async (job: EmbedJob): Promise<void> => {
+    if (!vectorEnabled) return
+    pending.push(job)
+    if (pending.length >= batchSize) await flush()
+  }
+
+  let count = 0
+  for (const memory of memories) {
+    if (memory.isLatest === false) continue
+    if (!memory.title || !memory.content) continue
+    idx.add(memoryToObservation(memory))
+    await enqueue({
+      id: memory.id,
+      sessionId: memory.sessionIds?.[0] ?? 'memory',
+      text: memory.title + ' ' + memory.content,
+      context: { kind: "memory", logId: memory.id },
+    })
+    count++
+  }
+  for (const obs of observations) {
+    if (!obs.title || !obs.narrative) continue
+    idx.add(obs)
+    await enqueue({
+      id: obs.id,
+      sessionId: obs.sessionId,
+      text: obs.title + ' ' + obs.narrative,
+      context: { kind: "observation", logId: obs.id },
+    })
+    count++
+  }
+  await flush()
+  return count
+}
+
 export async function rebuildIndex(kv: StateKV): Promise<number> {
   const idx = getSearchIndex()
   idx.clear()
@@ -189,46 +297,13 @@ export async function rebuildIndex(kv: StateKV): Promise<number> {
   // repopulation loops run, so BM25 and vector stay in sync.
   vectorIndex?.clear()
 
-  const batchSize = getRebuildEmbedBatchSize()
-  // Accumulator for the batched embed flush. BM25 add is synchronous and
-  // doesn't need batching — only the vector path benefits.
-  type EmbedJob = {
-    id: string
-    sessionId: string
-    text: string
-    context: { kind: "memory" | "observation" | "synthetic"; logId: string }
-  }
-  const pending: EmbedJob[] = []
-  let count = 0
-
-  const flush = async (): Promise<void> => {
-    if (pending.length === 0) return
-    await vectorIndexAddBatchGuarded(pending)
-    pending.length = 0
-  }
-  const enqueue = async (job: EmbedJob): Promise<void> => {
-    pending.push(job)
-    if (pending.length >= batchSize) await flush()
-  }
-
   // Memories live in their own KV scope outside per-session observation
   // scopes, so they need a separate walk. Without this, mem::remember
   // entries vanish from BM25 on every restart even after the live-write
-  // fix in remember.ts (#257).
+  // fix in remember.ts.
+  let memories: Memory[] = []
   try {
-    const memories = await kv.list<Memory>(KV.memories)
-    for (const memory of memories) {
-      if (memory.isLatest === false) continue
-      if (!memory.title || !memory.content) continue
-      idx.add(memoryToObservation(memory))
-      await enqueue({
-        id: memory.id,
-        sessionId: memory.sessionIds[0] ?? 'memory',
-        text: memory.title + ' ' + memory.content,
-        context: { kind: "memory", logId: memory.id },
-      })
-      count++
-    }
+    memories = await kv.list<Memory>(KV.memories)
   } catch (err) {
     logger.warn('rebuildIndex: failed to load memories', {
       error: err instanceof Error ? err.message : String(err),
@@ -236,13 +311,10 @@ export async function rebuildIndex(kv: StateKV): Promise<number> {
   }
 
   const sessions = await kv.list<Session>(KV.sessions)
-  if (!sessions.length) {
-    await flush()
-    return count
-  }
-
-  const obsPerSession: CompressedObservation[][] = []
   const failedSessions: string[] = []
+  // Index each session chunk as it loads instead of accumulating every
+  // observation first, so peak memory stays bounded to one chunk.
+  let indexed = 0
   for (let batch = 0; batch < sessions.length; batch += 10) {
     const chunk = sessions.slice(batch, batch + 10)
     const results = await Promise.all(
@@ -255,29 +327,17 @@ export async function rebuildIndex(kv: StateKV): Promise<number> {
         }
       })
     )
-    obsPerSession.push(...results)
+    const chunkObs = results.flat()
+    if (chunkObs.length > 0) {
+      indexed += await indexRecords(chunkObs, [])
+    }
   }
   if (failedSessions.length > 0) {
     logger.warn('rebuildIndex: failed to load observations for sessions', { failedSessions })
   }
-  for (const observations of obsPerSession) {
-    for (const obs of observations) {
-      if (obs.title && obs.narrative) {
-        idx.add(obs)
-        await enqueue({
-          id: obs.id,
-          sessionId: obs.sessionId,
-          text: obs.title + ' ' + obs.narrative,
-          context: { kind: "observation", logId: obs.id },
-        })
-        count++
-      }
-    }
-  }
 
-  // Drain the last partial batch.
-  await flush()
-  return count
+  indexed += await indexRecords([], memories)
+  return indexed
 }
 
 export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
@@ -290,6 +350,7 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
       cwd?: string
       format?: string
       token_budget?: number
+      agentId?: string
     }) => {
       const idx = getSearchIndex()
 
@@ -306,8 +367,44 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
         }
         effectiveLimit = Math.min(data.limit, MAX_LIMIT)
       }
-      const projectFilter = typeof data.project === 'string' && data.project.length > 0 ? data.project : undefined
-      const cwdFilter = typeof data.cwd === 'string' && data.cwd.length > 0 ? data.cwd : undefined
+      const projectFilter = typeof data.project === 'string' && data.project.trim().length > 0 ? data.project.trim() : undefined
+      const cwdFilter = typeof data.cwd === 'string' && data.cwd.trim().length > 0 ? data.cwd.trim() : undefined
+      // #817: agent-scope isolation. mem::search backs REST /search,
+      // memory_recall and recall_context. Without filtering here a
+      // worker booted with AGENT_ID=B + AGENTMEMORY_AGENT_SCOPE=isolated
+      // could read A's memories — the cross-agent leak the issue
+      // documented. Mirrors the smart-search pattern: wildcard "*"
+      // bypasses, explicit agentId pins, isolated mode falls back to
+      // the worker's own AGENT_ID.
+      //
+      // Fail-closed: if isolated mode is on AND no explicit agentId
+      // is given AND env AGENT_ID is unset, refuse the call rather
+      // than silently dropping the filter. Allowing the call through
+      // with filterAgentId=undefined is the same leak this fix is
+      // supposed to close.
+      const isolated = isAgentScopeIsolated();
+      const explicitAgentId =
+        typeof data.agentId === "string" && data.agentId.trim().length > 0
+          ? data.agentId.trim()
+          : undefined;
+      const wildcardAgent = explicitAgentId === "*";
+      const envAgentId = isolated ? getAgentId() : undefined;
+      const filterAgentId = wildcardAgent
+        ? undefined
+        : explicitAgentId ?? envAgentId;
+      if (
+        isolated &&
+        !wildcardAgent &&
+        !explicitAgentId &&
+        !envAgentId
+      ) {
+        throw new Error(
+          "mem::search: AGENTMEMORY_AGENT_SCOPE=isolated is set but no " +
+            "agent id is available (env AGENT_ID unset and no explicit " +
+            "agentId in the call). Refusing to read cross-agent rows. " +
+            'Pass agentId: "*" to opt in to a wildcard read.',
+        );
+      }
       const format = typeof data.format === 'string' ? data.format : 'full'
       if (!['full', 'compact', 'narrative'].includes(format)) {
         throw new Error("mem::search: format must be one of 'full', 'compact', or 'narrative'")
@@ -321,13 +418,35 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
       }
 
       if (idx.size === 0) {
-        const count = await rebuildIndex(kv)
-        logger.info('Search index rebuilt', { entries: count })
+        // Share one rebuild across concurrent cold-start queries so they
+        // don't each walk the whole corpus and saturate the pool.
+        if (!rebuildPromise) {
+          rebuildPromise = rebuildIndex(kv)
+            .then((count) => {
+              logger.info('Search index rebuilt', { entries: count })
+              return count
+            })
+            .catch((err) => {
+              logger.warn('Index rebuild failed', {
+                error: err instanceof Error ? err.message : String(err),
+              })
+              return 0
+            })
+            .finally(() => {
+              rebuildPromise = null
+            })
+        }
+        await rebuildPromise
       }
 
       // When filtering by project/cwd, over-fetch from the index so the
       // post-filter still has a chance of returning `effectiveLimit` results.
-      const filtering = !!(projectFilter || cwdFilter)
+      // Over-fetch whenever ANY post-index filter is active. agentId
+      // is dropped after the observation/memory is loaded (BM25 index
+      // doesn't carry it), so without the over-fetch isolated-mode
+      // queries return underfilled pages when same-agent matches
+      // rank lower than cross-agent ones in the hybrid score.
+      const filtering = !!(projectFilter || cwdFilter || filterAgentId)
       const fetchLimit = filtering ? Math.max(effectiveLimit * 10, 100) : effectiveLimit
       const results = idx.search(query, fetchLimit)
 
@@ -340,15 +459,59 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
         return s ?? null
       }
 
+      // Cache for memory project lookups. Memories indexed via mem::remember
+      // use a synthetic sessionId ('memory' or the first real sessionId) that
+      // either has no KV.sessions entry or belongs to a different project.
+      // When loadSession returns null we fall through to a KV.memories probe
+      // so project-filtered search can include or exclude them correctly.
+      const memoryProjectCache = new Map<string, string | null>()
+      const loadMemoryProject = async (obsId: string): Promise<string | null> => {
+        if (memoryProjectCache.has(obsId)) return memoryProjectCache.get(obsId)!
+        const mem = await kv.get<Memory>(KV.memories, obsId).catch(() => null)
+        const proj = mem?.project ?? null
+        memoryProjectCache.set(obsId, proj)
+        return proj
+      }
+
       // First pass: filter by session (sequential — benefits from session cache).
+      // Memory entries with a synthetic sessionId take a secondary KV.memories
+      // path so project filtering works correctly for them too.
+      //
+      // When agentId filtering is active we can't cap at effectiveLimit
+      // here — the second pass (post-load) is what drops cross-agent
+      // rows, and capping early would underfill the result page. Use
+      // fetchLimit as the upper bound in that case; the final
+      // truncation lives at the end of the second pass.
+      const earlyCap = filterAgentId ? fetchLimit : effectiveLimit
       const candidates: typeof results = []
       for (const r of results) {
-        if (candidates.length >= effectiveLimit) break
+        if (candidates.length >= earlyCap) break
         if (filtering) {
           const s = await loadSession(r.sessionId)
-          if (!s) continue
-          if (projectFilter && s.project !== projectFilter) continue
-          if (cwdFilter && s.cwd !== cwdFilter) continue
+          if (s) {
+            if (projectFilter && s.project !== projectFilter) continue
+            if (cwdFilter && s.cwd !== cwdFilter) continue
+          } else {
+            // Session not found. Two cases arrive here:
+            //   1. Synthetic sessionId — memories indexed via mem::remember use
+            //      sessionIds[0] ?? 'memory'. The string 'memory' has no session
+            //      entry; neither does a real sessionId when sessionIds[0] happens
+            //      to be a session from a different lifecycle. Probe KV.memories
+            //      directly to get the memory's own project field.
+            //   2. Deleted session — the session existed when the entry was indexed
+            //      but was since evicted. The KV.memories probe returns null for
+            //      these (they are observations, not memories), so memProject is
+            //      null and the entry passes through as unscoped. This is the safe
+            //      fallback: we lose the ability to filter but never incorrectly
+            //      block a result whose session we can no longer verify.
+            // In both cases, a null memProject means "project unknown — treat as
+            // unscoped and let it through" to preserve backward-compatibility.
+            if (projectFilter) {
+              const memProject = await loadMemoryProject(r.obsId)
+              if (memProject !== null && memProject !== projectFilter) continue
+            }
+            // cwd filter does not apply to unbound entries.
+          }
         }
         candidates.push(r)
       }
@@ -372,13 +535,18 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
       const enriched: SearchResult[] = []
       for (let i = 0; i < candidates.length; i++) {
         const obs = obsResults[i]
-        if (obs) {
-          enriched.push({
-            observation: obs,
-            score: candidates[i].score,
-            sessionId: candidates[i].sessionId,
-          })
-        }
+        if (!obs) continue
+        // #817: enforce agent-scope after the observation/memory is
+        // loaded. The BM25 index doesn't carry agentId so the filter
+        // happens post-lookup. Wildcard ("*") and no-isolation paths
+        // resolved filterAgentId=undefined upstream and pass through.
+        if (filterAgentId !== undefined && obs.agentId !== filterAgentId) continue
+        if (enriched.length >= effectiveLimit) break
+        enriched.push({
+          observation: obs,
+          score: candidates[i].score,
+          sessionId: candidates[i].sessionId,
+        })
       }
 
       void recordAccessBatch(

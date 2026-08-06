@@ -355,12 +355,44 @@ export function registerDiagnosticsFunction(sdk: ISdk, kv: StateKV): void {
           }
         }
 
+        // Project-coverage check: unscoped memories (no project field) will
+        // appear in every project's context and search results until the
+        // infer-memory-projects migration runs. Surface a count so operators
+        // know the backfill is still pending and can trigger it explicitly.
+        const latestMemories = memories.filter((m) => m.isLatest);
+        const unscopedCount = latestMemories.filter((m) => !m.project).length;
+        if (unscopedCount === 0) {
+          checks.push({
+            name: "memory-project-coverage",
+            category: "memories",
+            status: "pass",
+            message: `All ${latestMemories.length} latest memories have a project scope`,
+            fixable: false,
+          });
+        } else if (unscopedCount <= 10) {
+          checks.push({
+            name: "memory-project-coverage",
+            category: "memories",
+            status: "warn",
+            message: `${unscopedCount} of ${latestMemories.length} latest memories have no project scope — run POST /agentmemory/migrate {"step":"infer-memory-projects"} to backfill`,
+            fixable: true,
+          });
+        } else {
+          checks.push({
+            name: "memory-project-coverage",
+            category: "memories",
+            status: "fail",
+            message: `${unscopedCount} of ${latestMemories.length} latest memories have no project scope — run POST /agentmemory/migrate {"step":"infer-memory-projects"} to backfill`,
+            fixable: true,
+          });
+        }
+
         if (memoryIssues === 0) {
           checks.push({
             name: "memories-ok",
             category: "memories",
             status: "pass",
-            message: `All ${memories.length} memories are consistent`,
+            message: `All ${memories.length} memories are structurally consistent`,
             fixable: false,
           });
         }

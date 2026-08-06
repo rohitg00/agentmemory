@@ -11,7 +11,7 @@ import type { CompressedObservation, Memory } from "../types.js";
 export function memoryToObservation(memory: Memory): CompressedObservation {
   return {
     id: memory.id,
-    sessionId: memory.sessionIds[0] ?? "memory",
+    sessionId: memory.sessionIds?.[0] ?? "memory",
     timestamp: memory.createdAt,
     type: "decision",
     title: memory.title,

@@ -90,9 +90,26 @@ export function dataDir(home: string): string {
   return join(home, ".agentmemory", "data");
 }
 
-export function localBinIii(home: string): string {
-  return join(home, ".local", "bin", "iii");
+// Platform-aware binary name. Windows requires the .exe suffix or the
+// existsSync probe misses the installed binary.
+function iiiBinFile(): string {
+  return process.platform === "win32" ? "iii.exe" : "iii";
 }
+
+// Legacy install location. Older agentmemory versions wrote the pinned iii
+// engine here. Kept so `agentmemory remove` can still clean up after them.
+export function legacyLocalBinIii(home: string): string {
+  return join(home, ".local", "bin", iiiBinFile());
+}
+
+// Current private install location. Lives under ~/.agentmemory/ so it
+// stays isolated from any user-managed iii on PATH.
+export function privateIiiBin(home: string): string {
+  return join(home, ".agentmemory", "bin", iiiBinFile());
+}
+
+// Back-compat shim for any caller still importing the old name.
+export const localBinIii = privateIiiBin;
 
 function safeSize(path: string): number {
   try {
@@ -195,21 +212,39 @@ export function buildRemovePlan(
     }
   }
 
-  // ~/.local/bin/iii — only remove if it matches the version we installed.
+  // Private install (~/.agentmemory/bin/iii) — agentmemory owns this path,
+  // so it's always safe to remove. The version check still gates the
+  // legacy ~/.local/bin/iii path which may be a user-managed install we
+  // don't own.
+  const privIii = privateIiiBin(home);
+  if (pathExists(privIii)) {
+    plan.push({
+      id: "private-bin-iii",
+      description: `Delete ~/.agentmemory/bin/iii (agentmemory's private install)`,
+      path: privIii,
+      alwaysAsk: false,
+      applicable: true,
+      sizeBytes: safeSize(privIii),
+    });
+  }
+
+  // Legacy ~/.local/bin/iii — only remove if it matches the version we
+  // installed. Older agentmemory wrote here; newer versions don't but the
+  // file may still be a leftover from a previous install.
   // Heuristic: spawn `iii --version`; if it returns pinnedVersion, safe to
   // remove. Otherwise mark `alwaysAsk` so the operator confirms explicitly.
-  const localIii = localBinIii(home);
-  if (pathExists(localIii)) {
+  const legacyIii = legacyLocalBinIii(home);
+  if (pathExists(legacyIii)) {
     const matches = localBinIiiVersion === pinnedVersion;
     plan.push({
-      id: "local-bin-iii",
+      id: "legacy-local-bin-iii",
       description: matches
-        ? `Delete ~/.local/bin/iii (matches pinned v${pinnedVersion})`
-        : `Delete ~/.local/bin/iii (version ${localBinIiiVersion ?? "unknown"} != pinned v${pinnedVersion}) — will ask`,
-      path: localIii,
+        ? `Delete ~/.local/bin/iii (legacy install location, matches pinned v${pinnedVersion})`
+        : `Delete ~/.local/bin/iii (legacy install location, version ${localBinIiiVersion ?? "unknown"} != pinned v${pinnedVersion}) — will ask`,
+      path: legacyIii,
       alwaysAsk: !matches,
       applicable: true,
-      sizeBytes: safeSize(localIii),
+      sizeBytes: safeSize(legacyIii),
     });
   }
 

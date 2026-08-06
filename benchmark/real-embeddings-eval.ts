@@ -335,7 +335,7 @@ function generateReport(systems: SystemResult[], obsCount: number): string {
   w("");
   w("## Recommendation");
   w("");
-  w("Enable local embeddings by default (`EMBEDDING_PROVIDER=local` or install `@xenova/transformers`).");
+  w("Enable local embeddings by default (`EMBEDDING_PROVIDER=local` or install `@huggingface/transformers`).");
   w("This gives agentmemory genuine semantic search that built-in agent memories cannot match —");
   w("understanding that \"database performance optimization\" relates to \"N+1 query fix\" and \"eager loading\".");
   w("");
@@ -357,7 +357,7 @@ async function main() {
     console.log(`Model loaded. Dimensions: ${testEmbed.length}\n`);
   } catch (err) {
     console.error("Failed to load Xenova model:", err);
-    console.error("Install with: npm install @xenova/transformers");
+    console.error("Install with: npm install @huggingface/transformers");
     process.exit(1);
   }
 

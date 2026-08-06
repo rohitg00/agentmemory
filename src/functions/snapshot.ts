@@ -41,8 +41,18 @@ export function registerSnapshotFunction(
   kv: StateKV,
   snapshotDir: string,
 ): void {
-  sdk.registerFunction("mem::snapshot-create", 
+  // Serialize snapshots: the periodic timer, REST (api::snapshot-create), and
+  // MCP can all trigger this concurrently. Two runs writing state.json and
+  // committing in the same git repo at once race on the index lock. An
+  // overlapping call is a no-op success; the winner captures current state.
+  let snapshotInFlight = false;
+
+  sdk.registerFunction("mem::snapshot-create",
     async (data?: { message?: string }) => {
+      if (snapshotInFlight) {
+        return { success: true, message: "Snapshot already in progress" };
+      }
+      snapshotInFlight = true;
 
       try {
         await ensureGitRepo(snapshotDir);
@@ -124,6 +134,8 @@ export function registerSnapshotFunction(
         const msg = err instanceof Error ? err.message : String(err);
         logger.error("Snapshot failed", { error: msg });
         return { success: false, error: msg };
+      } finally {
+        snapshotInFlight = false;
       }
     },
   );
