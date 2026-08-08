@@ -15,7 +15,13 @@ export class LocalEmbeddingProvider implements EmbeddingProvider {
   constructor() {
     this.model = getEnvVar("LOCAL_EMBEDDING_MODEL") || "Xenova/all-MiniLM-L6-v2";
     const dim = getEnvVar("LOCAL_EMBEDDING_DIMENSIONS");
-    this.dimensions = dim ? parseInt(dim, 10) : 384;
+    const dimensions = dim ? Number(dim) : 384;
+    if (!Number.isSafeInteger(dimensions) || dimensions <= 0) {
+      throw new Error(
+        "LOCAL_EMBEDDING_DIMENSIONS must be a positive safe integer",
+      );
+    }
+    this.dimensions = dimensions;
   }
 
   async embed(text: string): Promise<Float32Array> {
