@@ -21,9 +21,10 @@ describe("_openai-shared — detectAzure", () => {
     expect(detectAzure("https://api.openai.com")).toBe(false);
   });
 
-  it("does not flag DeepSeek / SiliconFlow / Ollama / vLLM", () => {
+  it("does not flag DeepSeek / SiliconFlow / Novita / Ollama / vLLM", () => {
     expect(detectAzure("https://api.deepseek.com/v1")).toBe(false);
     expect(detectAzure("https://api.siliconflow.cn")).toBe(false);
+    expect(detectAzure("https://api.novita.ai/openai/v1")).toBe(false);
     expect(detectAzure("http://localhost:11434/v1")).toBe(false);
     expect(detectAzure("http://localhost:8000/v1")).toBe(false);
   });
@@ -158,6 +159,12 @@ describe("_openai-shared — non-OpenAI base URLs (#628, #646)", () => {
     expect(
       buildEmbeddingUrl("https://api.deepseek.com/v1", false, "2024-08-01-preview"),
     ).toBe("https://api.deepseek.com/v1/embeddings");
+  });
+
+  it("routes Novita AI's /openai/v1 base through the v1 anchor", () => {
+    expect(
+      buildChatUrl("https://api.novita.ai/openai/v1", false, "2024-08-01-preview"),
+    ).toBe("https://api.novita.ai/openai/v1/chat/completions");
   });
 
   it("does not inject /v1 when provider uses non-OpenAI version segment (Zhipu /api/paas/v4, #646)", () => {
