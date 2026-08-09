@@ -5,8 +5,10 @@ import type {
   CompressedObservation,
   HybridSearchResult,
   Lesson,
+  Memory,
 } from "../types.js";
 import { KV } from "../state/schema.js";
+import { memoryToObservation } from "../state/memory-utils.js";
 import { StateKV } from "../state/kv.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
 import { recordAccessBatch } from "./access-tracker.js";
@@ -371,6 +373,12 @@ async function findObservation(
     if (obs) return obs;
   }
 
+  // Saved memories (mem::remember) live in KV.memories under a synthetic
+  // session, not KV.observations(*); resolve them before the scan so a bare
+  // obsId for a saved memory resolves and skips the O(sessions) scan.
+  const mem = (await kv.get<Memory>(KV.memories, obsId).catch(() => null)) ?? null;
+  if (mem) return memoryToObservation(mem);
+
   const sessions = await kv.list<{ id: string }>(KV.sessions);
   for (let i = 0; i < sessions.length; i += 5) {
     const batch = sessions.slice(i, i + 5);
@@ -379,7 +387,7 @@ async function findObservation(
         kv.get<CompressedObservation>(KV.observations(s.id), obsId).catch(() => null),
       ),
     );
-    const found = results.find((r) => r !== null);
+    const found = results.find((r) => r != null);
     if (found) return found;
   }
   return null;
