@@ -21,6 +21,7 @@ Patch release: the `.env` file now actually applies everywhere, imports become s
 
 - `--data-dir` flag and `AGENTMEMORY_DATA_DIR` so iii-engine state lives outside repositories, with gated legacy `./data` adoption and Docker-volume preservation (#314)
 - Native hooks adapter for Droid via `~/.factory/hooks.json`, reusing the bundled hook scripts (#1130)
+- Native hooks adapter for Antigravity CLI (agy) via a stdin bridge that normalizes agy's hook payloads onto the bundled hook scripts, with an explicit PreToolUse allow decision (#1146, thanks @berthojoris)
 - `mem::graph::import-graphify` and `POST /agentmemory/graph/import-graphify`: merge graphify's `graph.json` into the knowledge graph with confidence tags carried over as edge weights (#1136)
 - Connector guideline activation for twelve hook-less agents, with every rules-file path verified against the agent's official documentation (#1136)
 - Honest `memory_forget` reporting plus a real lesson delete path (`mem::lesson-delete`, `DELETE`-style REST route, MCP tool) (#1132)
