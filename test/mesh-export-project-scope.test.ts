@@ -9,13 +9,9 @@ import { KV } from "../src/state/schema.js";
 import { SAFE_PAYLOAD_BYTES } from "../src/state/frame-guard.js";
 import type { Memory } from "../src/types.js";
 
-// api::mesh-export filters `actions` by ?project but historically returned
-// ALL memories regardless of project. On a mesh instance federating one
-// project to a peer that only shares that project, the peer pulled every
-// other project's memories too (cross-project leak), and those extra memories
-// could push the payload past the 16 MiB transport frame into a 413 (#1142/#890)
-// even when the requested project's own slice fit fine. Memories carry the same
-// optional `project` field as actions, so the scoped export must filter both.
+// A project-scoped mesh export must filter memories like actions: unscoped
+// memories leak across projects and can push the payload past the transport
+// frame limit even when the requested project's own slice fits.
 
 const SECRET = "mesh-test-secret";
 
@@ -75,7 +71,7 @@ async function meshExport(
   });
 }
 
-describe("api::mesh-export project scoping (#1142/#890)", () => {
+describe("api::mesh-export project scoping", () => {
   it("excludes other projects' memories from a project-scoped export", async () => {
     const kv = mockKV();
     await kv.set(KV.memories, "m-alpha", memory("m-alpha", "alpha"));

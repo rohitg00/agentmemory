@@ -15,10 +15,8 @@ import { registerExportImportFunction } from "../src/functions/export-import.js"
 import { KV } from "../src/state/schema.js";
 import type { Session } from "../src/types.js";
 
-// The pinned iii engine refuses a WebSocket frame over 16 MiB; a function
-// result that serializes larger dies on the worker->engine hop and drops the
-// worker, 404ing every endpoint (#1142). The guard must catch it BEFORE the
-// return so the oversized frame is never shipped.
+// The guard must catch an oversized payload before the return so the frame
+// that would drop the worker is never shipped.
 
 describe("frame-guard", () => {
   it("keeps the safe cap under the 16 MiB frame limit with headroom", () => {
@@ -82,7 +80,7 @@ function mockSdk(kv: ReturnType<typeof mockKV>) {
   } as never;
 }
 
-describe("mem::export frame guard (#1142)", () => {
+describe("mem::export frame guard", () => {
   it("returns the export object when it fits under the frame limit", async () => {
     const kv = mockKV();
     await kv.set(KV.sessions, "s1", {

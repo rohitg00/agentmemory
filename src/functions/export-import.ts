@@ -182,10 +182,8 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
         summaries: summaries.length,
       });
 
-      // Refuse an over-frame payload here rather than let it die on the
-      // worker->engine hop and drop the whole daemon (#1142). The session
-      // collections page on ?maxSessions/?offset, but the other collections
-      // do not, so a large store can exceed the cap even at ?maxSessions=1.
+      // Only session collections page on ?maxSessions/?offset, so a large
+      // store can exceed the transport cap even at ?maxSessions=1.
       const oversized = checkPayloadFrameSize(
         exportData,
         "narrow the range with ?maxSessions / ?offset, or export fewer collections; the non-session collections (memories, graph, semantic, actions, lessons, ...) are not yet paginated",

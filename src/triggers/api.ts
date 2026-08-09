@@ -2791,9 +2791,7 @@ export function registerApiTriggers(
         );
         body.graphEdges = df(graphEdges, "createdAt");
       }
-      // Same 16 MiB transport-frame ceiling as #1142: a full mesh export past
-      // the frame limit would drop the worker (#890). Fail this one request
-      // with 413 instead of taking the daemon down.
+      // Fail an over-frame export with 413 instead of dropping the worker.
       const oversized = checkPayloadFrameSize(
         body,
         "use ?since to fetch only changes after a timestamp, or ?project to scope the export",
