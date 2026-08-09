@@ -367,7 +367,31 @@ export function registerMcpEndpoints(
           }
 
           case "memory_export": {
-            const result = await sdk.trigger({ function_id: "mem::export", payload: {} });
+            // The tool is where an agent actually reaches export, so the
+            // paging arguments have to survive this layer or a large store
+            // stays unreachable from MCP. `collections` is forwarded raw,
+            // empty string included: mem::export reads an empty selection
+            // as "no collections", which only stays distinguishable from
+            // an absent argument if this layer does not drop it.
+            const exportPayload: {
+              maxSessions?: number;
+              offset?: number;
+              collectionLimit?: number;
+              collectionOffset?: number;
+              collections?: string;
+            } = {};
+            for (const key of ["maxSessions", "collectionLimit"] as const) {
+              const n = Number(args[key]);
+              if (Number.isInteger(n) && n > 0) exportPayload[key] = n;
+            }
+            for (const key of ["offset", "collectionOffset"] as const) {
+              const n = Number(args[key]);
+              if (Number.isInteger(n) && n >= 0) exportPayload[key] = n;
+            }
+            if (typeof args.collections === "string") {
+              exportPayload.collections = args.collections;
+            }
+            const result = await sdk.trigger({ function_id: "mem::export", payload: exportPayload });
             return {
               status_code: 200,
               body: {
