@@ -4,6 +4,7 @@ import pc from "picocolors";
 import type { ConnectAdapter, ConnectOptions, ConnectResult } from "./types.js";
 import { writeGuideline } from "./guidelines.js";
 import { adapter as antigravity } from "./antigravity.js";
+import { adapter as antigravityCli } from "./antigravity-cli.js";
 import { adapter as claudeCode } from "./claude-code.js";
 import { adapter as cline } from "./cline.js";
 import { adapter as copilotCli } from "./copilot-cli.js";
@@ -30,6 +31,7 @@ export const ADAPTERS: readonly ConnectAdapter[] = [
   geminiCli,
   qwen,
   antigravity,
+  antigravityCli,
   kiro,
   warp,
   cline,

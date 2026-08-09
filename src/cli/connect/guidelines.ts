@@ -120,6 +120,14 @@ export function guidelineTargets(
       scope: "global",
       source: "https://antigravity.google/docs/rules-workflows",
     },
+    // The agy CLI reads the same ~/.gemini/GEMINI.md as the IDE.
+    "antigravity-cli": {
+      globalPath: join(home, ".gemini", "GEMINI.md"),
+      projectPath: join(".agents", "rules", "agentmemory.md"),
+      format: "block",
+      scope: "global",
+      source: "https://antigravity.google/docs/rules-workflows",
+    },
     "copilot-cli": {
       globalPath: join(home, ".copilot", "copilot-instructions.md"),
       projectPath: join(".github", "copilot-instructions.md"),
