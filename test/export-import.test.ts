@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 vi.mock("../src/logger.js", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
@@ -132,6 +132,24 @@ describe("Export/Import Functions", () => {
     expect(result.observations["ses_1"].length).toBe(1);
     expect(result.memories.length).toBe(1);
     expect(result.summaries.length).toBe(1);
+  });
+
+  it("export without params returns the complete corpus unchanged", async () => {
+    const result = (await sdk.trigger("mem::export", {})) as ExportData;
+
+    // Pins the contract every consumer depends on: no query params means
+    // the whole corpus, in exactly this shape. Empty collections stay
+    // absent rather than becoming empty arrays, and no pagination block
+    // appears. exportedAt is the only time-varying field.
+    const { exportedAt, ...stable } = result;
+    expect(exportedAt).toBeDefined();
+    expect(stable).toEqual({
+      version: VERSION,
+      sessions: [testSession],
+      observations: { ses_1: [testObs] },
+      memories: [testMemory],
+      summaries: [testSummary],
+    });
   });
 
   it("import with merge strategy adds data", async () => {
@@ -307,5 +325,178 @@ describe("Export/Import Functions", () => {
 
     expect(result.success).toBe(false);
     expect(result.error).toContain("Unsupported export version");
+  });
+});
+
+describe("Export collection pagination", () => {
+  let sdk: ReturnType<typeof mockSdk>;
+  let kv: ReturnType<typeof mockKV>;
+
+  beforeEach(async () => {
+    sdk = mockSdk();
+    kv = mockKV();
+    registerExportImportFunction(sdk as never, kv as never);
+    await kv.set("mem:sessions", "ses_1", testSession);
+    for (let i = 0; i < 7; i++) {
+      await kv.set("mem:memories", `mem_${i}`, { ...testMemory, id: `mem_${i}` });
+    }
+    for (let i = 0; i < 5; i++) {
+      await kv.set("mem:graph:nodes", `node_${i}`, { id: `node_${i}`, label: `n${i}` });
+    }
+  });
+
+  it("returns every collection in full when no collection limit is given", async () => {
+    const result = (await sdk.trigger("mem::export", {})) as ExportData;
+
+    expect(result.memories.length).toBe(7);
+    expect(result.graphNodes?.length).toBe(5);
+    expect(result.collectionPagination).toBeUndefined();
+  });
+
+  it("bounds every collection, not just sessions, when a collection limit is given", async () => {
+    const result = (await sdk.trigger("mem::export", {
+      collectionLimit: 3,
+    })) as ExportData;
+
+    expect(result.memories.length).toBe(3);
+    expect(result.graphNodes?.length).toBe(3);
+    expect(result.collectionPagination?.limit).toBe(3);
+    expect(result.collectionPagination?.offset).toBe(0);
+    expect(result.collectionPagination?.totals["memories"]).toBe(7);
+    expect(result.collectionPagination?.totals["graphNodes"]).toBe(5);
+    expect(result.collectionPagination?.hasMore).toBe(true);
+  });
+
+  it("walks a collection to its end across pages", async () => {
+    const page2 = (await sdk.trigger("mem::export", {
+      collectionLimit: 3,
+      collectionOffset: 3,
+    })) as ExportData;
+    expect(page2.memories.length).toBe(3);
+    expect(page2.collectionPagination?.hasMore).toBe(true);
+
+    const page3 = (await sdk.trigger("mem::export", {
+      collectionLimit: 3,
+      collectionOffset: 6,
+    })) as ExportData;
+    expect(page3.memories.length).toBe(1);
+    expect(page3.collectionPagination?.hasMore).toBe(false);
+  });
+});
+
+describe("Export collection allowlist", () => {
+  let sdk: ReturnType<typeof mockSdk>;
+  let kv: ReturnType<typeof mockKV>;
+
+  beforeEach(async () => {
+    sdk = mockSdk();
+    kv = mockKV();
+    registerExportImportFunction(sdk as never, kv as never);
+    await kv.set("mem:sessions", "ses_1", testSession);
+    await kv.set("mem:obs:ses_1", "obs_1", testObs);
+    await kv.set("mem:summaries", "ses_1", testSummary);
+    for (let i = 0; i < 7; i++) {
+      await kv.set("mem:memories", `mem_${i}`, { ...testMemory, id: `mem_${i}` });
+    }
+    // graphNodes deliberately outlasts every other collection: a client
+    // that reads only memories+summaries must not be told to keep paging
+    // for rows it throws away.
+    for (let i = 0; i < 20; i++) {
+      await kv.set("mem:graph:nodes", `node_${i}`, { id: `node_${i}`, label: `n${i}` });
+    }
+  });
+
+  it("returns every collection when no allowlist is given", async () => {
+    const result = (await sdk.trigger("mem::export", {})) as ExportData;
+
+    expect(result.memories.length).toBe(7);
+    expect(result.summaries.length).toBe(1);
+    expect(result.graphNodes?.length).toBe(20);
+  });
+
+  it("drops the collections outside the allowlist", async () => {
+    const result = (await sdk.trigger("mem::export", {
+      collections: ["memories", "summaries"],
+    })) as ExportData;
+
+    expect(result.memories.length).toBe(7);
+    expect(result.summaries.length).toBe(1);
+    expect(result.graphNodes).toBeUndefined();
+  });
+
+  it("accepts the allowlist as a comma-separated string", async () => {
+    const result = (await sdk.trigger("mem::export", {
+      collections: "memories, summaries",
+    })) as ExportData;
+
+    expect(result.memories.length).toBe(7);
+    expect(result.summaries.length).toBe(1);
+    expect(result.graphNodes).toBeUndefined();
+  });
+
+  it("keeps collectionTotals reporting every collection", async () => {
+    const result = (await sdk.trigger("mem::export", {
+      collections: ["memories"],
+      collectionLimit: 3,
+    })) as ExportData;
+
+    expect(result.collectionPagination?.totals["memories"]).toBe(7);
+    expect(result.collectionPagination?.totals["summaries"]).toBe(1);
+    expect(result.collectionPagination?.totals["graphNodes"]).toBe(20);
+  });
+
+  it("computes hasMore from the allowlist alone", async () => {
+    const selected = (await sdk.trigger("mem::export", {
+      collections: ["memories"],
+      collectionLimit: 7,
+    })) as ExportData;
+    expect(selected.collectionPagination?.hasMore).toBe(false);
+
+    const everything = (await sdk.trigger("mem::export", {
+      collectionLimit: 7,
+    })) as ExportData;
+    expect(everything.collectionPagination?.hasMore).toBe(true);
+  });
+
+  it("ignores unknown collection names instead of failing", async () => {
+    const result = (await sdk.trigger("mem::export", {
+      collections: ["memories", "notACollection"],
+      collectionLimit: 7,
+    })) as ExportData;
+
+    expect(result.memories.length).toBe(7);
+    expect(result.graphNodes).toBeUndefined();
+    expect(result.collectionPagination?.hasMore).toBe(false);
+  });
+
+  it("selects nothing when the allowlist names no known collection", async () => {
+    const result = (await sdk.trigger("mem::export", {
+      collections: ["notACollection"],
+      collectionLimit: 3,
+    })) as ExportData;
+
+    expect(result.memories).toEqual([]);
+    expect(result.summaries).toEqual([]);
+    expect(result.graphNodes).toBeUndefined();
+    expect(result.collectionPagination?.totals["memories"]).toBe(7);
+    expect(result.collectionPagination?.hasMore).toBe(false);
+  });
+
+  it("treats an empty allowlist as an explicit empty selection", async () => {
+    const result = (await sdk.trigger("mem::export", {
+      collections: "",
+    })) as ExportData;
+
+    expect(result.memories).toEqual([]);
+    expect(result.graphNodes).toBeUndefined();
+  });
+
+  it("leaves sessions and observations outside the allowlist", async () => {
+    const result = (await sdk.trigger("mem::export", {
+      collections: ["memories"],
+    })) as ExportData;
+
+    expect(result.sessions.length).toBe(1);
+    expect(result.observations["ses_1"].length).toBe(1);
   });
 });

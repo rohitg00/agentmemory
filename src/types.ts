@@ -326,6 +326,25 @@ export interface ExportPagination {
   hasMore: boolean;
 }
 
+// Pagination for the top-level collections (memories, graph, lessons, …).
+// Separate from ExportPagination because that one slices sessions and the
+// observations hanging off them, which left every other collection
+// unbounded: a corpus could reach a size where even ?maxSessions=1 was
+// undeliverable, making the export permanently impossible at any
+// parameter.
+export interface ExportCollectionPagination {
+  offset: number;
+  limit: number;
+  // Every collection, always — including the ones a `collections`
+  // allowlist kept out of this response. Clients read totals for corpus
+  // counts, not only to size their own walk.
+  totals: Record<string, number>;
+  // True when any *selected* collection has rows past this window. With
+  // no allowlist that is every collection, as before.
+  hasMore: boolean;
+}
+
+
 export interface ExportData {
   version: "0.3.0" | "0.4.0" | "0.5.0" | "0.6.0" | "0.6.1" | "0.7.0" | "0.7.2" | "0.7.3" | "0.7.4" | "0.7.5" | "0.7.6" | "0.7.7" | "0.7.9" | "0.8.0" | "0.8.1" | "0.8.2" | "0.8.3" | "0.8.4" | "0.8.5" | "0.8.6" | "0.8.7" | "0.8.8" | "0.8.9" | "0.8.10" | "0.8.11" | "0.8.12" | "0.8.13" | "0.9.0" | "0.9.1" | "0.9.2" | "0.9.3" | "0.9.4" | "0.9.5" | "0.9.6" | "0.9.7" | "0.9.8" | "0.9.9" | "0.9.10" | "0.9.11" | "0.9.12" | "0.9.13" | "0.9.14" | "0.9.15" | "0.9.16" | "0.9.17" | "0.9.18" | "0.9.19" | "0.9.20" | "0.9.21" | "0.9.22" | "0.9.23" | "0.9.24" | "0.9.25" | "0.9.26" | "0.9.27" | "0.9.28" | "0.9.29";
   exportedAt: string;
@@ -351,6 +370,7 @@ export interface ExportData {
   insights?: Insight[];
   accessLogs?: AccessLogExport[];
   pagination?: ExportPagination;
+  collectionPagination?: ExportCollectionPagination;
 }
 
 export interface AccessLogExport {
