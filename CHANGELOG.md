@@ -111,6 +111,7 @@ Wave release closing several breaking regressions reported against v0.9.26, plus
 - `/agentmemory:forget` skill still calls `memory_governance_delete` which only touches `KV.memories` and never observations ([#833](https://github.com/rohitg00/agentmemory/issues/833)). Skill rewrite + new `memory_forget` MCP tool tracked separately.
 - `crypto.randomUUID()` global-only on Node <19 ([#715](https://github.com/rohitg00/agentmemory/issues/715)). Drop-in import fix tracked.
 
+[0.9.29]: https://github.com/rohitg00/agentmemory/compare/v0.9.28...v0.9.29
 [0.9.28]: https://github.com/rohitg00/agentmemory/compare/v0.9.27...v0.9.28
 [0.9.27]: https://github.com/rohitg00/agentmemory/compare/v0.9.26...v0.9.27
 
