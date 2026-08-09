@@ -1230,6 +1230,13 @@ agentmemory auto-detects from your environment. By default, no LLM calls are mad
 | **Local (Ollama / LM Studio / vLLM / llama.cpp)** | `OPENAI_API_KEY=local` + `OPENAI_BASE_URL=http://localhost:11434/v1` (Ollama) or `http://localhost:1234/v1` (LM Studio) + `OPENAI_MODEL=<your model>` | Anything OpenAI-API-compatible. Zero cost, runs on your hardware. See [Local models](#local-models-ollama--lm-studio--vllm) below. |
 | Claude subscription fallback | `AGENTMEMORY_ALLOW_AGENT_SDK=true` | Opt-in only. Spawns `@anthropic-ai/claude-agent-sdk` sessions — used to cause unbounded Stop-hook recursion so it is no longer the default. |
 
+MiniMax defaults to `MiniMax-M3`; set the model variable to `MiniMax-M2.7` to use another supported model. Choose the matching protocol configuration and regional base URL:
+
+| Protocol | Configuration | Global base URL | China base URL |
+|----------|---------------|-----------------|----------------|
+| Anthropic-compatible | `MINIMAX_API_KEY`, `MINIMAX_MODEL`, `MINIMAX_BASE_URL` | `https://api.minimax.io/anthropic` | `https://api.minimaxi.com/anthropic` |
+| OpenAI-compatible | `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_BASE_URL` | `https://api.minimax.io/v1` | `https://api.minimaxi.com/v1` |
+
 ### Local models (Ollama / LM Studio / vLLM)
 
 agentmemory talks to any OpenAI-API-compatible server, so anything that exposes `/v1/chat/completions` works without code changes. No paid keys, no cloud, no rate limits — runs entirely on your hardware.

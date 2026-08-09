@@ -10,11 +10,11 @@ import { fetchWithTimeout } from './_fetch.js'
  *
  * Required env vars (loaded from ~/.agentmemory/.env or process.env):
  *   MINIMAX_API_KEY  — your MiniMax API key
- *   MINIMAX_MODEL    — model name (default: MiniMax-M2.7)
- *   MAX_TOKENS       — max output tokens (default: 800; MiniMax-M2.7 needs ≤800)
+ *   MINIMAX_MODEL    — model name (default: MiniMax-M3)
+ *   MAX_TOKENS       — max output tokens (default: 4096)
  *
  * Optional:
- *   MINIMAX_BASE_URL — base URL without path (default: https://api.minimax.io/anthropic)
+ *   MINIMAX_BASE_URL — Anthropic-compatible base URL (default: https://api.minimax.io/anthropic)
  */
 export class MinimaxProvider implements MemoryProvider {
   name = 'minimax'
@@ -31,6 +31,11 @@ export class MinimaxProvider implements MemoryProvider {
       getEnvVar('MINIMAX_BASE_URL') || 'https://api.minimax.io/anthropic'
   }
 
+  private messagesUrl(): string {
+    const baseUrl = this.baseUrl.replace(/\/+$/, '').replace(/\/v1$/, '')
+    return `${baseUrl}/v1/messages`
+  }
+
   async compress(systemPrompt: string, userPrompt: string): Promise<string> {
     return this.call(systemPrompt, userPrompt)
   }
@@ -40,7 +45,7 @@ export class MinimaxProvider implements MemoryProvider {
   }
 
   private async call(systemPrompt: string, userPrompt: string): Promise<string> {
-    const url = `${this.baseUrl}/v1/messages`
+    const url = this.messagesUrl()
     const response = await fetchWithTimeout(url, {
       method: 'POST',
       headers: {
