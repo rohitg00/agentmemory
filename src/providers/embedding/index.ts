@@ -7,6 +7,7 @@ import { CohereEmbeddingProvider } from "./cohere.js";
 import { OpenRouterEmbeddingProvider } from "./openrouter.js";
 import { LocalEmbeddingProvider } from "./local.js";
 import { ClipEmbeddingProvider } from "./clip.js";
+import { CloudflareEmbeddingProvider } from "./cloudflare.js";
 
 export {
   GeminiEmbeddingProvider,
@@ -16,6 +17,7 @@ export {
   OpenRouterEmbeddingProvider,
   LocalEmbeddingProvider,
   ClipEmbeddingProvider,
+  CloudflareEmbeddingProvider,
 };
 
 let imageEmbeddingProvider: EmbeddingProvider | null = null;
@@ -36,6 +38,8 @@ export function createEmbeddingProvider(): EmbeddingProvider | null {
       return withDimensionGuard(new GeminiEmbeddingProvider(getEnvVar("GEMINI_API_KEY")!));
     case "openai":
       return withDimensionGuard(new OpenAIEmbeddingProvider(getEnvVar("OPENAI_API_KEY")!));
+    case "cloudflare":
+      return withDimensionGuard(new CloudflareEmbeddingProvider(getEnvVar("CLOUDFLARE_API_TOKEN")!));
     case "voyage":
       return withDimensionGuard(new VoyageEmbeddingProvider(getEnvVar("VOYAGE_API_KEY")!));
     case "cohere":

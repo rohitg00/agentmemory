@@ -1227,6 +1227,7 @@ agentmemory auto-detects from your environment. By default, no LLM calls are mad
 | Gemini | `GEMINI_API_KEY` | Also enables embeddings |
 | OpenRouter | `OPENROUTER_API_KEY` | Any model |
 | OpenAI API | `OPENAI_API_KEY` | Default `gpt-4o-mini`, override with `OPENAI_MODEL` |
+| Cloudflare Workers AI | `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` | Default `@cf/meta/llama-3.1-8b-instruct-fp8`, override with `CLOUDFLARE_MODEL`. Same token also enables Cloudflare embeddings. Requests already flow through your account's default [AI Gateway](https://developers.cloudflare.com/ai-gateway/) (logging, caching, rate limiting, guardrails); set `CLOUDFLARE_AI_GATEWAY_ID` to pin a named one. Reasoning models (`@cf/zai-org/glm-*`, `qwq`, `deepseek-r1`) need `MAX_TOKENS` ≥ 4096 and cost far more per background compression — prefer a small instruct model. |
 | **Local (Ollama / LM Studio / vLLM / llama.cpp)** | `OPENAI_API_KEY=local` + `OPENAI_BASE_URL=http://localhost:11434/v1` (Ollama) or `http://localhost:1234/v1` (LM Studio) + `OPENAI_MODEL=<your model>` | Anything OpenAI-API-compatible. Zero cost, runs on your hardware. See [Local models](#local-models-ollama--lm-studio--vllm) below. |
 | Claude subscription fallback | `AGENTMEMORY_ALLOW_AGENT_SDK=true` | Opt-in only. Spawns `@anthropic-ai/claude-agent-sdk` sessions — used to cause unbounded Stop-hook recursion so it is no longer the default. |
 
@@ -1383,6 +1384,10 @@ Create `~/.agentmemory/.env`:
 # GEMINI_API_KEY=...
 # OPENROUTER_API_KEY=...
 # MINIMAX_API_KEY=...
+# CLOUDFLARE_API_TOKEN=...            # Workers AI; also enables Cloudflare embeddings
+# CLOUDFLARE_ACCOUNT_ID=...           # Required unless CLOUDFLARE_AI_BASE_URL is set
+# CLOUDFLARE_AI_BASE_URL=...          # Override the chat endpoint
+# CLOUDFLARE_AI_GATEWAY_ID=...        # Pin a named AI Gateway (cf-aig-gateway-id)
 # OPENAI_API_KEY=***                       # NOTE: this same key auto-activates BOTH the
 #                                          # OpenAI LLM provider (here) AND the OpenAI
 #                                          # embedding provider (further below). Set
@@ -1418,6 +1423,11 @@ Create `~/.agentmemory/.env`:
 # OPENAI_BASE_URL=https://api.openai.com   # Override for Azure / vLLM / LM Studio / proxies
 # OPENAI_EMBEDDING_MODEL=text-embedding-3-small
 # OPENAI_EMBEDDING_DIMENSIONS=1536        # Required when the model is not in the known-models table
+# CLOUDFLARE_API_TOKEN=...
+# CLOUDFLARE_ACCOUNT_ID=...
+# CLOUDFLARE_EMBEDDING_MODEL=@cf/baai/bge-base-en-v1.5
+# CLOUDFLARE_EMBEDDING_DIMENSIONS=768     # Required when the model is not in the known-models table
+# CLOUDFLARE_EMBEDDING_BASE_URL=...       # Override the embedding endpoint
 
 # Outbound LLM / embedding timeout
 # AGENTMEMORY_LLM_TIMEOUT_MS=60000       # Default: 60 000 ms (60 s). Applies to every

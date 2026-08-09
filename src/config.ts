@@ -105,6 +105,18 @@ function detectProvider(env: Record<string, string>): ProviderConfig {
     };
   }
 
+  if (hasRealValue(env["CLOUDFLARE_API_TOKEN"])) {
+    return {
+      provider: "cloudflare",
+      // Literal rather than CLOUDFLARE_DEFAULT_CHAT_MODEL: providers/ imports
+      // config.ts, so importing back would cycle. Same trade-off every other
+      // provider default in this function makes.
+      model: env["CLOUDFLARE_MODEL"] || "@cf/meta/llama-3.1-8b-instruct-fp8",
+      maxTokens,
+      baseURL: env["CLOUDFLARE_AI_BASE_URL"],
+    };
+  }
+
   if (hasRealValue(env["ANTHROPIC_API_KEY"])) {
     return {
       provider: "anthropic",
@@ -162,7 +174,7 @@ function detectProvider(env: Record<string, string>): ProviderConfig {
     process.stderr.write(
       pc.dim(
         "[agentmemory] No LLM provider key set — running zero-LLM (BM25 + on-device embeddings). " +
-          "Set ANTHROPIC_API_KEY (or GEMINI/OPENAI/OPENROUTER/MINIMAX) in ~/.agentmemory/.env for LLM compression and summaries. " +
+          "Set ANTHROPIC_API_KEY (or OPENAI/CLOUDFLARE/GEMINI/OPENROUTER/MINIMAX) in ~/.agentmemory/.env for LLM compression and summaries. " +
           "Agent-SDK fallback stays off by default to avoid a Stop-hook recursion loop; opt in with AGENTMEMORY_AUTO_COMPRESS=true + AGENTMEMORY_ALLOW_AGENT_SDK=true.\n",
       ),
     );
@@ -236,6 +248,7 @@ export function detectLlmProviderKind(): "llm" | "noop" {
   const env = getMergedEnv();
   if (
     hasRealValue(env["ANTHROPIC_API_KEY"]) ||
+    hasRealValue(env["CLOUDFLARE_API_TOKEN"]) ||
     hasRealValue(env["GEMINI_API_KEY"]) ||
     hasRealValue(env["GOOGLE_API_KEY"]) ||
     hasRealValue(env["OPENROUTER_API_KEY"]) ||
@@ -272,6 +285,7 @@ export function detectEmbeddingProvider(
 
   if (source["GEMINI_API_KEY"]) return "gemini";
   if (source["OPENAI_API_KEY"]) return "openai";
+  if (source["CLOUDFLARE_API_TOKEN"]) return "cloudflare";
   if (source["VOYAGE_API_KEY"]) return "voyage";
   if (source["COHERE_API_KEY"]) return "cohere";
   if (source["OPENROUTER_API_KEY"]) return "openrouter";
@@ -483,6 +497,7 @@ const VALID_PROVIDERS = new Set([
   "agent-sdk",
   "minimax",
   "openai",
+  "cloudflare",
 ]);
 
 export function loadFallbackConfig(): FallbackConfig {

@@ -5,6 +5,7 @@ import {
 } from "../src/providers/embedding/index.js";
 import { GeminiEmbeddingProvider } from "../src/providers/embedding/gemini.js";
 import { OpenAIEmbeddingProvider } from "../src/providers/embedding/openai.js";
+import { CloudflareEmbeddingProvider } from "../src/providers/embedding/cloudflare.js";
 import type { EmbeddingProvider } from "../src/types.js";
 
 describe("createEmbeddingProvider", () => {
@@ -14,6 +15,7 @@ describe("createEmbeddingProvider", () => {
     process.env = { ...originalEnv };
     delete process.env["GEMINI_API_KEY"];
     delete process.env["OPENAI_API_KEY"];
+    delete process.env["CLOUDFLARE_API_TOKEN"];
     delete process.env["VOYAGE_API_KEY"];
     delete process.env["COHERE_API_KEY"];
     delete process.env["OPENROUTER_API_KEY"];
@@ -41,6 +43,14 @@ describe("createEmbeddingProvider", () => {
     const provider = createEmbeddingProvider();
     expect(provider).toBeInstanceOf(OpenAIEmbeddingProvider);
     expect(provider!.name).toBe("openai");
+  });
+
+  it("returns CloudflareEmbeddingProvider when CLOUDFLARE_API_TOKEN is set", () => {
+    process.env["CLOUDFLARE_API_TOKEN"] = "test-key-789";
+    process.env["CLOUDFLARE_ACCOUNT_ID"] = "test-account";
+    const provider = createEmbeddingProvider();
+    expect(provider).toBeInstanceOf(CloudflareEmbeddingProvider);
+    expect(provider!.name).toBe("cloudflare");
   });
 
   it("EMBEDDING_PROVIDER override takes precedence", () => {

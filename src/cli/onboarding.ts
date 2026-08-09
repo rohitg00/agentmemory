@@ -51,6 +51,7 @@ const AGENT_GLYPH: Record<string, string> = {
 const PROVIDERS: { value: string; label: string; envKey: string | null }[] = [
   { value: "anthropic", label: "Anthropic — claude", envKey: "ANTHROPIC_API_KEY" },
   { value: "openai", label: "OpenAI — gpt", envKey: "OPENAI_API_KEY" },
+  { value: "cloudflare", label: "Cloudflare Workers AI — @cf/*", envKey: "CLOUDFLARE_API_TOKEN" },
   { value: "gemini", label: "Google — gemini", envKey: "GEMINI_API_KEY" },
   { value: "openrouter", label: "OpenRouter — multi-model", envKey: "OPENROUTER_API_KEY" },
   { value: "minimax", label: "MiniMax — minimax-m1", envKey: "MINIMAX_API_KEY" },
@@ -60,6 +61,7 @@ const PROVIDERS: { value: string; label: string; envKey: string | null }[] = [
 const PROVIDER_COST_HINTS: Record<string, string> = {
   anthropic: "rough cost: a fast Haiku-class model keeps compress/consolidate at fractions of a cent per session.",
   openai: "rough cost: a mini-class model keeps compress/consolidate at fractions of a cent per session.",
+  cloudflare: "rough cost: scales with the chosen @cf model's per-token price on Cloudflare Workers AI.",
   gemini: "rough cost: a Flash-class model keeps compress/consolidate at fractions of a cent per session.",
   openrouter: "rough cost: pick a small model; spend tracks your chosen model's per-token price.",
   minimax: "rough cost: scales with the MiniMax model price per token.",

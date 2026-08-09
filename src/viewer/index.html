@@ -3749,7 +3749,7 @@
           icon: '&#9888;',
           title: f.label,
           keyLabel: f.key,
-          desc: f.description + (f.needsLlm ? ' Requires an LLM provider key (ANTHROPIC_API_KEY, GEMINI_API_KEY, etc.).' : ''),
+          desc: f.description + (f.needsLlm ? ' Requires an LLM provider key (ANTHROPIC_API_KEY, OPENAI_API_KEY, CLOUDFLARE_API_TOKEN + CLOUDFLARE_ACCOUNT_ID, etc.).' : ''),
           enable: f.enableHow,
           docs: f.docsHref,
           dismissKey: f.key,
@@ -3762,7 +3762,7 @@
           title: 'No LLM provider key set',
           keyLabel: 'ANTHROPIC_API_KEY',
           desc: 'Compression, summarization, and graph extraction stay disabled until a key is provided.',
-          enable: 'export ANTHROPIC_API_KEY=sk-ant-...\n# then restart: npx @agentmemory/agentmemory',
+          enable: 'export ANTHROPIC_API_KEY=sk-ant-...\n# or OPENAI_API_KEY, GEMINI_API_KEY, etc.\n# Cloudflare: export CLOUDFLARE_API_TOKEN=... CLOUDFLARE_ACCOUNT_ID=...\n# then restart: npx @agentmemory/agentmemory',
           docs: 'https://github.com/rohitg00/agentmemory#quick-start',
           dismissKey: '__provider_noop',
         });
@@ -3774,7 +3774,7 @@
           title: 'Running in BM25-only mode',
           keyLabel: 'OPENAI_API_KEY',
           desc: 'Semantic vector search is off. BM25 keyword search is active and good for exact matches.',
-          enable: 'export OPENAI_API_KEY=sk-...\n# or VOYAGE_API_KEY, COHERE_API_KEY, OLLAMA_HOST',
+          enable: 'export OPENAI_API_KEY=sk-...\n# or VOYAGE_API_KEY, COHERE_API_KEY, OLLAMA_HOST\n# Cloudflare: export CLOUDFLARE_API_TOKEN=... CLOUDFLARE_ACCOUNT_ID=...',
           docs: 'https://github.com/rohitg00/agentmemory#embedding-providers',
           dismissKey: '__embedding_none',
         });

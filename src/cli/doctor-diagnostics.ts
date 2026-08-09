@@ -89,6 +89,7 @@ const PLACEHOLDER_VALUES = new Set([
 const PROVIDER_KEY_NAMES = [
   "ANTHROPIC_API_KEY",
   "OPENAI_API_KEY",
+  "CLOUDFLARE_API_TOKEN",
   "GEMINI_API_KEY",
   "GOOGLE_API_KEY",
   "OPENROUTER_API_KEY",
@@ -197,9 +198,10 @@ export function buildDiagnostics(effects: DoctorEffects): Diagnostic[] {
       message: "No LLM provider API key found in ~/.agentmemory/.env.",
       fixPreview: "Open ~/.agentmemory/.env in $EDITOR and paste your key, then re-check.",
       moreInfo:
-        "Set at least one of: ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, " +
+        "Set at least one of: ANTHROPIC_API_KEY, OPENAI_API_KEY, CLOUDFLARE_API_TOKEN, GEMINI_API_KEY, " +
         "OPENROUTER_API_KEY, MINIMAX_API_KEY. The daemon picks the first that resolves " +
-        "to a real (non-placeholder) value at startup.",
+        "to a real (non-placeholder) value at startup. CLOUDFLARE_API_TOKEN additionally " +
+        "requires CLOUDFLARE_ACCOUNT_ID unless a Cloudflare base URL is set.",
       check: async () => {
         if (!effects.envFileExists()) {
           return { ok: false, detail: "env file missing (run env-missing fix first)" };
