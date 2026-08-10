@@ -1,5 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdtempSync, mkdirSync, rmSync, readFileSync, existsSync } from "node:fs";
+import {
+  mkdtempSync,
+  mkdirSync,
+  rmSync,
+  readFileSync,
+  writeFileSync,
+  existsSync,
+} from "node:fs";
 import { tmpdir, platform } from "node:os";
 import { join } from "node:path";
 
@@ -337,6 +344,37 @@ describe("connect: Zed", () => {
     expect(cfg.context_servers.agentmemory.command).toBe("npx");
     expect(cfg.context_servers.agentmemory.args).toContain("@agentmemory/mcp");
     expect(cfg.mcpServers).toBeUndefined();
+  });
+
+  it("preserves existing JSONC Zed settings when adding agentmemory", async () => {
+    const zedDir = join(home, ".config", "zed");
+    const settingsPath = join(zedDir, "settings.json");
+    mkdirSync(zedDir, { recursive: true });
+    writeFileSync(
+      settingsPath,
+      `{
+  // Keep user's editor preferences.
+  "vim_mode": true,
+  "context_servers": {
+    "existing": {
+      "command": "node",
+      "args": ["server.js"],
+    },
+  },
+}
+`,
+    );
+
+    const { adapter } = await import("../src/cli/connect/zed.js");
+    const result = await adapter.install({ dryRun: false, force: false });
+    expect(result.kind).toBe("installed");
+
+    const updated = readFileSync(settingsPath, "utf-8");
+    expect(updated).toContain("// Keep user's editor preferences.");
+    expect(updated).toContain('"vim_mode": true');
+    expect(updated).toContain('"existing"');
+    expect(updated).toContain('"agentmemory"');
+    expect(updated).toContain("@agentmemory/mcp");
   });
 });
 
