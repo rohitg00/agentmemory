@@ -9,6 +9,7 @@ import type {
   CompressedObservation,
   HybridSearchResult,
   CompactSearchResult,
+  Memory,
   Session,
 } from "../src/types.js";
 
@@ -137,6 +138,125 @@ describe("Smart Search Function", () => {
     expect(result.mode).toBe("expanded");
     expect(result.results.length).toBe(1);
     expect(result.results[0].observation.title).toBe("Auth handler");
+  });
+
+  it("expand mode returns full durable memories", async () => {
+    const memory: Memory = {
+      id: "mem_wiki",
+      createdAt: "2026-07-19T00:00:00Z",
+      updatedAt: "2026-07-19T00:00:00Z",
+      type: "architecture",
+      title: "AgentMemory knowledge backend",
+      content: "Full durable wiki content that must not be truncated.",
+      concepts: ["agentmemory"],
+      files: ["wiki/agentmemory.md"],
+      sessionIds: [],
+      strength: 7,
+      version: 1,
+      supersedes: [],
+      sourceObservationIds: [],
+      isLatest: true,
+      project: "obsidian-vault",
+    };
+    await kv.set("mem:memories", memory.id, memory);
+
+    const result = (await sdk.trigger("mem::smart-search", {
+      expandIds: [memory.id],
+    })) as {
+      mode: string;
+      results: Array<{ obsId: string; observation: CompressedObservation }>;
+    };
+
+    expect(result.results).toHaveLength(1);
+    expect(result.results[0].observation.narrative).toBe(memory.content);
+  });
+
+  it("filters expanded durable memories to the requested project", async () => {
+    const memory: Memory = {
+      id: "mem_other_project",
+      createdAt: "2026-07-19T00:00:00Z",
+      updatedAt: "2026-07-19T00:00:00Z",
+      type: "architecture",
+      title: "Other project memory",
+      content: "This memory must not cross the project boundary.",
+      concepts: [],
+      files: [],
+      sessionIds: [],
+      strength: 5,
+      version: 1,
+      supersedes: [],
+      sourceObservationIds: [],
+      isLatest: true,
+      project: "other-project",
+    };
+    await kv.set("mem:memories", memory.id, memory);
+
+    const result = (await sdk.trigger("mem::smart-search", {
+      expandIds: [memory.id],
+      project: "my-project",
+    })) as { results: Array<{ obsId: string }> };
+
+    expect(result.results).toEqual([]);
+  });
+
+  it("preserves durable memory agent scope during expansion", async () => {
+    const memory: Memory = {
+      id: "mem_scoped",
+      createdAt: "2026-07-19T00:00:00Z",
+      updatedAt: "2026-07-19T00:00:00Z",
+      type: "architecture",
+      title: "Scoped memory",
+      content: "Only the owning agent may expand this memory.",
+      concepts: [],
+      files: [],
+      sessionIds: [],
+      strength: 5,
+      version: 1,
+      supersedes: [],
+      sourceObservationIds: [],
+      isLatest: true,
+      project: "my-project",
+      agentId: "agent-owner",
+    };
+    await kv.set("mem:memories", memory.id, memory);
+
+    const result = (await sdk.trigger("mem::smart-search", {
+      expandIds: [memory.id],
+      agentId: "agent-owner",
+    })) as { results: Array<{ obsId: string }> };
+
+    expect(result.results.map((item) => item.obsId)).toEqual([memory.id]);
+  });
+
+  it("filters compact candidates to the requested project", async () => {
+    const other = makeObs({
+      id: "obs_other",
+      sessionId: "ses_other",
+      title: "Unrelated project",
+    });
+    await kv.set("mem:sessions", "ses_other", {
+      id: "ses_other",
+      project: "other-project",
+      cwd: "/other",
+      startedAt: "2026-02-01T00:00:00Z",
+      status: "completed",
+      observationCount: 1,
+    });
+    await kv.set("mem:obs:ses_other", other.id, other);
+    searchResults.unshift({
+      observation: other,
+      bm25Score: 1,
+      vectorScore: 1,
+      combinedScore: 1,
+      sessionId: "ses_other",
+    });
+
+    const result = (await sdk.trigger("mem::smart-search", {
+      query: "auth",
+      project: "my-project",
+    })) as { results: CompactSearchResult[] };
+
+    expect(result.results.map((item) => item.obsId)).toEqual(["obs_1", "obs_2"]);
   });
 
   it("returns error when query is missing and no expandIds", async () => {
