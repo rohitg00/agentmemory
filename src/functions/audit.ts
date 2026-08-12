@@ -2,6 +2,7 @@ import type { AuditEntry } from "../types.js";
 import { KV, generateId } from "../state/schema.js";
 import type { StateKV } from "../state/kv.js";
 import { logger } from "../logger.js";
+import { getEnvVar } from "../config.js";
 
 // Audit coverage policy (issue #125).
 //
@@ -31,6 +32,40 @@ import { logger } from "../logger.js";
 // When adding a new deletion path, add an explicit recordAudit call
 // BEFORE kv.delete(...) and match one of the two shapes above.
 
+/**
+ * The audit log has no retention of its own: it grows for the life of the
+ * install, and because the KV adapter rewrites a whole scope on every set, each
+ * audit write costs more as the log gets longer. Keep the most recent
+ * AGENTMEMORY_AUDIT_MAX rows (0 disables the bound), checked every
+ * TRIM_INTERVAL writes so the common path stays a single set.
+ */
+const DEFAULT_AUDIT_MAX = 5000;
+const TRIM_INTERVAL = 100;
+let writesSinceTrim = 0;
+
+function auditMax(): number {
+  const raw = parseInt(getEnvVar("AGENTMEMORY_AUDIT_MAX") || "", 10);
+  if (Number.isFinite(raw) && raw >= 0) return raw;
+  return DEFAULT_AUDIT_MAX;
+}
+
+async function trimAuditLog(kv: StateKV): Promise<void> {
+  const max = auditMax();
+  if (max === 0) return;
+  const all = await kv.list<AuditEntry>(KV.audit);
+  if (all.length <= max) return;
+  const stale = [...all]
+    .sort(
+      (a, b) =>
+        new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
+    )
+    .slice(0, all.length - max);
+  for (const old of stale) {
+    await kv.delete(KV.audit, old.id).catch(() => {});
+  }
+  logger.info("audit log trimmed", { removed: stale.length, kept: max });
+}
+
 export async function recordAudit(
   kv: StateKV,
   operation: AuditEntry["operation"],
@@ -51,6 +86,15 @@ export async function recordAudit(
     qualityScore,
   };
   await kv.set(KV.audit, entry.id, entry);
+  if (++writesSinceTrim >= TRIM_INTERVAL) {
+    writesSinceTrim = 0;
+    // Never fail the audited operation because pruning failed.
+    await trimAuditLog(kv).catch((err) => {
+      logger.warn("audit log trim failed", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    });
+  }
   return entry;
 }
 
