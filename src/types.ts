@@ -384,6 +384,12 @@ export interface GraphNode {
   name: string;
   properties: Record<string, unknown>;
   sourceObservationIds: string[];
+  // sessionId of the most recent source observation. Carried so graph
+  // retrieval can resolve a node's observations back to their KV
+  // namespace (KV.observations is keyed by sessionId). Optional for
+  // backward compatibility with nodes written before #656; retrieval
+  // falls back to a cross-session obsId scan when absent.
+  sessionId?: string;
   createdAt: string;
   updatedAt?: string;
   aliases?: string[];
