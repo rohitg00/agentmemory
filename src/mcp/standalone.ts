@@ -29,6 +29,91 @@ const SERVER_INFO = {
   protocolVersion: "2024-11-05",
 };
 
+const MCP_RESOURCES = [
+  {
+    uri: "agentmemory://status",
+    name: "Agent Memory Status",
+    description: "Current session count, memory count, and health status",
+    mimeType: "application/json",
+  },
+  {
+    uri: "agentmemory://project/{name}/profile",
+    name: "Project Profile",
+    description:
+      "Top concepts, frequently modified files, and conventions for a project",
+    mimeType: "application/json",
+  },
+  {
+    uri: "agentmemory://project/{name}/recent",
+    name: "Recent Sessions",
+    description: "Last 5 session summaries for a project",
+    mimeType: "application/json",
+  },
+  {
+    uri: "agentmemory://memories/latest",
+    name: "Latest Memories",
+    description: "Top 10 latest memories with their type and strength",
+    mimeType: "application/json",
+  },
+  {
+    uri: "agentmemory://graph/stats",
+    name: "Knowledge Graph Stats",
+    description: "Node and edge counts by type in the knowledge graph",
+    mimeType: "application/json",
+  },
+  {
+    uri: "agentmemory://team/{id}/profile",
+    name: "Team Profile",
+    description: "Team memory profile with shared concepts and patterns",
+    mimeType: "application/json",
+  },
+];
+
+const MCP_RESOURCE_TEMPLATES = MCP_RESOURCES.filter((r) =>
+  r.uri.includes("{"),
+).map((r) => ({
+  uriTemplate: r.uri,
+  name: r.name,
+  description: r.description,
+  mimeType: r.mimeType,
+}));
+
+const MCP_PROMPTS = [
+  {
+    name: "recall_context",
+    description: "Search observations and memories to build context for a task",
+    arguments: [
+      {
+        name: "task_description",
+        description: "What you are working on",
+        required: true,
+      },
+    ],
+  },
+  {
+    name: "session_handoff",
+    description: "Generate a handoff summary for continuing work in a new session",
+    arguments: [
+      {
+        name: "session_id",
+        description: "Session ID to hand off from",
+        required: true,
+      },
+    ],
+  },
+  {
+    name: "detect_patterns",
+    description: "Detect recurring patterns across sessions for a project",
+    arguments: [
+      {
+        name: "project",
+        description: "Project path to analyze (optional)",
+        required: false,
+      },
+    ],
+  },
+];
+
 const kv = new InMemoryKV(getStandalonePersistPath());
 let modeAnnounced = false;
 
@@ -89,6 +174,60 @@ function textResponse(payload: unknown, pretty = false): {
   return {
     content: [
       { type: "text", text: JSON.stringify(payload, null, pretty ? 2 : 0) },
+    ],
+  };
+}
+
+function resourceContents(uri: string, payload: unknown): {
+  contents: Array<{ uri: string; mimeType: string; text: string }>;
+} {
+  return {
+    contents: [
+      {
+        uri,
+        mimeType: "application/json",
+        text: JSON.stringify(payload),
+      },
+    ],
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function resourceTemplatesFromResources(resources: unknown[]): unknown[] {
+  return resources
+    .filter((resource): resource is Record<string, unknown> => {
+      return isRecord(resource) &&
+        typeof resource["uri"] === "string" &&
+        resource["uri"].includes("{");
+    })
+    .map((resource) => ({
+      uriTemplate: resource["uri"],
+      name: resource["name"],
+      description: resource["description"],
+      mimeType: resource["mimeType"],
+    }));
+}
+
+function decodeUriComponent(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    throw new Error("Invalid percent-encoding in URI");
+  }
+}
+
+function promptMessage(text: string): {
+  messages: Array<{ role: string; content: { type: string; text: string } }>;
+} {
+  return {
+    messages: [
+      {
+        role: "user",
+        content: { type: "text", text },
+      },
     ],
   };
 }
@@ -445,12 +584,330 @@ export async function handleToolsList(): Promise<{ tools: unknown[] }> {
   return { tools: fallback };
 }
 
+export async function handleResourcesList(): Promise<{ resources: unknown[] }> {
+  const handle = await resolveHandle();
+  announceMode(handle);
+  if (handle.mode === "proxy") {
+    try {
+      const remote = (await handle.call("/agentmemory/mcp/resources", {
+        method: "GET",
+      })) as { resources?: unknown } | null;
+      if (remote && Array.isArray(remote.resources)) {
+        return { resources: remote.resources };
+      }
+      process.stderr.write(
+        "[@agentmemory/mcp] resources/list: server returned unexpected shape; falling back to local resource list\n",
+      );
+    } catch (err) {
+      process.stderr.write(
+        `[@agentmemory/mcp] resources/list proxy failed: ${err instanceof Error ? err.message : String(err)}; falling back to local resource list\n`,
+      );
+      invalidateHandle();
+    }
+  }
+  return { resources: MCP_RESOURCES };
+}
+
+export async function handleResourceTemplatesList(): Promise<{
+  resourceTemplates: unknown[];
+}> {
+  const handle = await resolveHandle();
+  announceMode(handle);
+  if (handle.mode === "proxy") {
+    try {
+      const remote = (await handle.call("/agentmemory/mcp/resources", {
+        method: "GET",
+      })) as { resources?: unknown } | null;
+      if (remote && Array.isArray(remote.resources)) {
+        return {
+          resourceTemplates: resourceTemplatesFromResources(remote.resources),
+        };
+      }
+      process.stderr.write(
+        "[@agentmemory/mcp] resources/templates/list: server returned unexpected resource shape; falling back to local resource templates\n",
+      );
+    } catch (err) {
+      process.stderr.write(
+        `[@agentmemory/mcp] resources/templates/list proxy failed: ${err instanceof Error ? err.message : String(err)}; falling back to local resource templates\n`,
+      );
+      invalidateHandle();
+    }
+  }
+  return { resourceTemplates: MCP_RESOURCE_TEMPLATES };
+}
+
+async function handleLocalResourceRead(
+  uri: string,
+  kvInstance: InMemoryKV,
+): Promise<{ contents: Array<{ uri: string; mimeType: string; text: string }> }> {
+  if (uri === "agentmemory://status") {
+    const [sessions, memories, healthData] = await Promise.all([
+      kvInstance.list<Record<string, unknown>>("mem:sessions"),
+      kvInstance.list<Record<string, unknown>>("mem:memories"),
+      kvInstance.list<Record<string, unknown>>("mem:health").catch(() => []),
+    ]);
+    return resourceContents(uri, {
+      sessionCount: sessions.length,
+      memoryCount: memories.length,
+      healthStatus: healthData.length > 0 ? "available" : "no-data",
+    });
+  }
+
+  const projectProfileMatch = uri.match(
+    /^agentmemory:\/\/project\/(.+)\/profile$/,
+  );
+  if (projectProfileMatch) {
+    const project = decodeUriComponent(projectProfileMatch[1]);
+    return resourceContents(uri, {
+      project,
+      topConcepts: [],
+      frequentFiles: [],
+      conventions: [],
+      mode: "local-fallback",
+    });
+  }
+
+  const projectRecentMatch = uri.match(
+    /^agentmemory:\/\/project\/(.+)\/recent$/,
+  );
+  if (projectRecentMatch) {
+    const project = decodeUriComponent(projectRecentMatch[1]);
+    const summaries =
+      await kvInstance.list<Record<string, unknown>>("mem:summaries");
+    const filtered = summaries
+      .filter((s) => s["project"] === project)
+      .sort((a, b) => {
+        const left = String(a["createdAt"] || "");
+        const right = String(b["createdAt"] || "");
+        return new Date(right).getTime() - new Date(left).getTime();
+      })
+      .slice(0, 5);
+    return resourceContents(uri, filtered);
+  }
+
+  if (uri === "agentmemory://memories/latest") {
+    const memories =
+      await kvInstance.list<Record<string, unknown>>("mem:memories");
+    const latest = memories
+      .filter((m) => m["isLatest"] !== false)
+      .sort((a, b) => {
+        const left = String(a["updatedAt"] || a["createdAt"] || "");
+        const right = String(b["updatedAt"] || b["createdAt"] || "");
+        return new Date(right).getTime() - new Date(left).getTime();
+      })
+      .slice(0, 10)
+      .map((m) => ({
+        id: m["id"],
+        title: m["title"],
+        type: m["type"],
+        strength: m["strength"],
+      }));
+    return resourceContents(uri, latest);
+  }
+
+  if (uri === "agentmemory://graph/stats") {
+    return resourceContents(uri, {
+      totalNodes: 0,
+      totalEdges: 0,
+      nodesByType: {},
+      edgesByType: {},
+      mode: "local-fallback",
+    });
+  }
+
+  const teamProfileMatch = uri.match(/^agentmemory:\/\/team\/(.+)\/profile$/);
+  if (teamProfileMatch) {
+    const teamId = decodeUriComponent(teamProfileMatch[1]);
+    return resourceContents(uri, {
+      teamId,
+      sharedItems: 0,
+      mode: "local-fallback",
+    });
+  }
+
+  throw new Error(`Unknown resource: ${uri}`);
+}
+
+export async function handleResourceRead(
+  uri: string,
+  kvInstance: InMemoryKV = kv,
+): Promise<{ contents: Array<{ uri: string; mimeType: string; text: string }> }> {
+  if (typeof uri !== "string" || !uri.trim()) {
+    throw new Error("uri is required");
+  }
+
+  const handle = await resolveHandle();
+  announceMode(handle);
+  if (handle.mode === "proxy") {
+    try {
+      const remote = (await handle.call("/agentmemory/mcp/resources/read", {
+        method: "POST",
+        body: JSON.stringify({ uri }),
+      })) as { contents?: unknown } | null;
+      if (remote && Array.isArray(remote.contents)) {
+        return remote as {
+          contents: Array<{ uri: string; mimeType: string; text: string }>;
+        };
+      }
+      process.stderr.write(
+        "[@agentmemory/mcp] resources/read: server returned unexpected shape; falling back to local resource reader\n",
+      );
+    } catch (err) {
+      process.stderr.write(
+        `[@agentmemory/mcp] resources/read proxy failed: ${err instanceof Error ? err.message : String(err)}; falling back to local resource reader\n`,
+      );
+      invalidateHandle();
+    }
+  }
+  return handleLocalResourceRead(uri, kvInstance);
+}
+
+export async function handlePromptsList(): Promise<{ prompts: unknown[] }> {
+  const handle = await resolveHandle();
+  announceMode(handle);
+  if (handle.mode === "proxy") {
+    try {
+      const remote = (await handle.call("/agentmemory/mcp/prompts", {
+        method: "GET",
+      })) as { prompts?: unknown } | null;
+      if (remote && Array.isArray(remote.prompts)) {
+        return { prompts: remote.prompts };
+      }
+      process.stderr.write(
+        "[@agentmemory/mcp] prompts/list: server returned unexpected shape; falling back to local prompt list\n",
+      );
+    } catch (err) {
+      process.stderr.write(
+        `[@agentmemory/mcp] prompts/list proxy failed: ${err instanceof Error ? err.message : String(err)}; falling back to local prompt list\n`,
+      );
+      invalidateHandle();
+    }
+  }
+  return { prompts: MCP_PROMPTS };
+}
+
+async function handleLocalPromptGet(
+  name: string,
+  args: Record<string, unknown>,
+  kvInstance: InMemoryKV,
+): Promise<{
+  messages: Array<{ role: string; content: { type: string; text: string } }>;
+}> {
+  switch (name) {
+    case "recall_context": {
+      const taskDesc = args["task_description"];
+      if (typeof taskDesc !== "string" || !taskDesc.trim()) {
+        throw new Error("task_description argument is required and must be a string");
+      }
+      const memories =
+        await kvInstance.list<Record<string, unknown>>("mem:memories");
+      const query = taskDesc.toLowerCase();
+      const relevant = memories
+        .filter((m) =>
+          [
+            m["title"],
+            m["content"],
+            Array.isArray(m["concepts"]) ? m["concepts"].join(" ") : "",
+            Array.isArray(m["files"]) ? m["files"].join(" ") : "",
+          ]
+            .join(" ")
+            .toLowerCase()
+            .includes(query),
+        )
+        .slice(0, 5);
+      return promptMessage(
+        `Here is relevant context from local agentmemory fallback for the task: "${taskDesc}"\n\n## Relevant Memories\n${JSON.stringify(relevant, null, 2)}`,
+      );
+    }
+
+    case "session_handoff": {
+      const sessionId = args["session_id"];
+      if (typeof sessionId !== "string" || !sessionId.trim()) {
+        throw new Error("session_id argument is required and must be a string");
+      }
+      const session = await kvInstance.get("mem:sessions", sessionId);
+      const summaries =
+        await kvInstance.list<Record<string, unknown>>("mem:summaries");
+      const summary = summaries.find((s) => s["sessionId"] === sessionId);
+      return promptMessage(
+        `## Session Handoff\n\n### Session\n${JSON.stringify(session, null, 2)}\n\n### Summary\n${JSON.stringify(summary || "No summary available", null, 2)}`,
+      );
+    }
+
+    case "detect_patterns": {
+      if (args["project"] !== undefined && typeof args["project"] !== "string") {
+        throw new Error("project argument must be a string");
+      }
+      return promptMessage(
+        `## Pattern Analysis\n\n${JSON.stringify(
+          {
+            project: args["project"],
+            fileCoOccurrence: [],
+            concepts: [],
+            mode: "local-fallback",
+          },
+          null,
+          2,
+        )}`,
+      );
+    }
+
+    default:
+      throw new Error(`Unknown prompt: ${name}`);
+  }
+}
+
+export async function handlePromptGet(
+  name: string,
+  args: Record<string, unknown> = {},
+  kvInstance: InMemoryKV = kv,
+): Promise<{
+  messages: Array<{ role: string; content: { type: string; text: string } }>;
+}> {
+  if (typeof name !== "string" || !name.trim()) {
+    throw new Error("name is required");
+  }
+
+  const handle = await resolveHandle();
+  announceMode(handle);
+  if (handle.mode === "proxy") {
+    try {
+      const remote = (await handle.call("/agentmemory/mcp/prompts/get", {
+        method: "POST",
+        body: JSON.stringify({ name, arguments: args }),
+      })) as { messages?: unknown } | null;
+      if (remote && Array.isArray(remote.messages)) {
+        return remote as {
+          messages: Array<{
+            role: string;
+            content: { type: string; text: string };
+          }>;
+        };
+      }
+      process.stderr.write(
+        "[@agentmemory/mcp] prompts/get: server returned unexpected shape; falling back to local prompt handler\n",
+      );
+    } catch (err) {
+      process.stderr.write(
+        `[@agentmemory/mcp] prompts/get proxy failed: ${err instanceof Error ? err.message : String(err)}; falling back to local prompt handler\n`,
+      );
+      invalidateHandle();
+    }
+  }
+  return handleLocalPromptGet(name, args, kvInstance);
+}
+
 const transport = createStdioTransport(async (method, params) => {
+  const requestParams = isRecord(params) ? params : {};
   switch (method) {
     case "initialize":
       return {
         protocolVersion: SERVER_INFO.protocolVersion,
-        capabilities: { tools: { listChanged: false } },
+        capabilities: {
+          tools: { listChanged: false },
+          resources: { listChanged: false },
+          prompts: { listChanged: false },
+        },
         serverInfo: {
           name: SERVER_INFO.name,
           version: SERVER_INFO.version,
@@ -463,9 +920,29 @@ const transport = createStdioTransport(async (method, params) => {
     case "tools/list":
       return handleToolsList();
 
+    case "resources/list":
+      return handleResourcesList();
+
+    case "resources/templates/list":
+      return handleResourceTemplatesList();
+
+    case "resources/read":
+      return handleResourceRead(requestParams["uri"] as string);
+
+    case "prompts/list":
+      return handlePromptsList();
+
+    case "prompts/get":
+      return handlePromptGet(
+        requestParams["name"] as string,
+        isRecord(requestParams["arguments"]) ? requestParams["arguments"] : {},
+      );
+
     case "tools/call": {
-      const toolName = params.name as string;
-      const toolArgs = (params.arguments as Record<string, unknown>) || {};
+      const toolName = requestParams["name"] as string;
+      const toolArgs = isRecord(requestParams["arguments"])
+        ? requestParams["arguments"]
+        : {};
       try {
         return await handleToolCall(toolName, toolArgs);
       } catch (err) {

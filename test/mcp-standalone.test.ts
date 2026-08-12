@@ -450,3 +450,76 @@ describe("handleToolCall", () => {
     expect(parsed.requested).toBe(2);
   });
 });
+
+describe("standalone MCP resources and prompts", () => {
+  beforeEach(() => {
+    resetHandleForTests();
+    setLivezProbe(instantLocalFallbackProbe);
+  });
+
+  afterEach(() => {
+    resetHandleForTests();
+  });
+
+  it("lists resources and resource templates in local fallback mode", async () => {
+    const { handleResourcesList, handleResourceTemplatesList } = await import("../src/mcp/standalone.js");
+    const resources = await handleResourcesList();
+    expect(resources.resources).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ uri: "agentmemory://status" }),
+        expect.objectContaining({ uri: "agentmemory://memories/latest" }),
+      ]),
+    );
+
+    const templates = await handleResourceTemplatesList();
+    expect(templates.resourceTemplates).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ uriTemplate: "agentmemory://project/{name}/profile" }),
+      ]),
+    );
+  });
+
+  it("reads status resource from local fallback storage", async () => {
+    const { handleResourceRead } = await import("../src/mcp/standalone.js");
+    const kv = new InMemoryKV();
+    await kv.set("mem:sessions", "s1", { id: "s1" });
+    await kv.set("mem:memories", "m1", { id: "m1" });
+    const result = await handleResourceRead("agentmemory://status", kv);
+    expect(result.contents[0].mimeType).toBe("application/json");
+    expect(JSON.parse(result.contents[0].text)).toEqual(
+      expect.objectContaining({
+        sessionCount: 1,
+        memoryCount: 1,
+        healthStatus: "no-data",
+      }),
+    );
+  });
+
+  it("reports available health when local fallback storage has health data", async () => {
+    const { handleResourceRead } = await import("../src/mcp/standalone.js");
+    const kv = new InMemoryKV();
+    await kv.set("mem:health", "latest", { status: "healthy" });
+    const result = await handleResourceRead("agentmemory://status", kv);
+    expect(JSON.parse(result.contents[0].text)).toEqual(
+      expect.objectContaining({ healthStatus: "available" }),
+    );
+  });
+
+  it("lists and gets prompts in local fallback mode", async () => {
+    const { handlePromptsList, handlePromptGet } = await import("../src/mcp/standalone.js");
+    const prompts = await handlePromptsList();
+    expect(prompts.prompts).toEqual(
+      expect.arrayContaining([expect.objectContaining({ name: "recall_context" })]),
+    );
+
+    const kv = new InMemoryKV();
+    await kv.set("mem:memories", "m1", {
+      title: "Auth fix",
+      content: "Use bearer auth for viewer unlock",
+      concepts: ["auth"],
+    });
+    const result = await handlePromptGet("recall_context", { task_description: "auth" }, kv);
+    expect(result.messages[0].role).toBe("user");
+    expect(result.messages[0].content.text).toContain("Auth fix");
+  });
+});
