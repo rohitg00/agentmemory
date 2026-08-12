@@ -154,9 +154,24 @@ export default function agentmemoryExtension(pi: ExtensionAPI) {
   }
 
   async function refreshStatus(ctx: { ui: { setStatus: (key: string, text: string) => void } }) {
+    // Capture the setter while ctx is still active. After await getHealth(), the
+    // session may have been replaced/reloaded and ctx.ui would throw stale.
+    let setStatus: (key: string, text: string) => void;
+    try {
+      const ui = ctx.ui;
+      setStatus = ui.setStatus.bind(ui);
+    } catch {
+      return;
+    }
+
     const health = await getHealth();
     lastHealthOk = !!health && (health.status === "healthy" || health.health?.status === "healthy");
-    ctx.ui.setStatus("agentmemory", lastHealthOk ? "🧠 agentmemory" : "🧠 agentmemory off");
+
+    try {
+      setStatus("agentmemory", lastHealthOk ? "🧠 agentmemory" : "🧠 agentmemory off");
+    } catch {
+      // UI may already be gone after session replacement; status is best-effort.
+    }
   }
 
   pi.registerCommand("agentmemory-status", {
