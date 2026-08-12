@@ -176,6 +176,18 @@ function loadViewerSandbox() {
   return { sandbox, getElement };
 }
 
+function expectTextOrder(html: string, labels: string[]) {
+  const positions = labels.map((label) => html.indexOf(label));
+  positions.forEach((position, index) => {
+    expect(position, `${labels[index]} should be rendered`)
+      .toBeGreaterThanOrEqual(0);
+  });
+  for (let i = 1; i < positions.length; i++) {
+    expect(positions[i - 1], `${labels[i - 1]} should render before ${labels[i]}`)
+      .toBeLessThan(positions[i]);
+  }
+}
+
 describe("viewer session rendering", () => {
   it("attaches the saved viewer bearer to API calls", async () => {
     const { sandbox } = loadViewerSandbox();
@@ -238,5 +250,74 @@ describe("viewer session rendering", () => {
     expect(tabButtons.length).toBeGreaterThan(0);
     expect(() => sandbox.switchTab("sessions")).not.toThrow();
     expect(tabButtons.some((button: any) => button.classList.contains("active"))).toBe(true);
+  });
+});
+
+describe("viewer timeline sort order", () => {
+  it("renders newest-first and oldest-first sort buttons", () => {
+    const { sandbox, getElement } = loadViewerSandbox();
+
+    sandbox.renderTimelineToolbar([
+      {
+        id: "ses_1",
+        status: "completed",
+        observationCount: 3,
+        startedAt: "2026-05-13T12:00:00Z",
+      },
+    ]);
+
+    const html = getElement("view-timeline").innerHTML;
+    expect(html).toContain('data-action="timeline-sort"');
+    expect(html).toContain("NEWEST FIRST");
+    expect(html).toContain("OLDEST FIRST");
+  });
+
+  it("orders observations by selected timeline sort direction", () => {
+    const { sandbox, getElement } = loadViewerSandbox();
+    sandbox.state.timeline.observations = [
+      {
+        id: "old",
+        sessionId: "ses_1",
+        timestamp: "2026-05-13T10:00:00Z",
+        title: "Oldest observation",
+        type: "conversation",
+        importance: 5,
+      },
+      {
+        id: "mid",
+        sessionId: "ses_1",
+        timestamp: "2026-05-13T11:00:00Z",
+        title: "Middle observation",
+        type: "conversation",
+        importance: 5,
+      },
+      {
+        id: "new",
+        sessionId: "ses_1",
+        timestamp: "2026-05-13T12:00:00Z",
+        title: "Newest observation",
+        type: "conversation",
+        importance: 5,
+      },
+    ];
+    sandbox.state.timeline.sortOrder = "desc";
+
+    sandbox.renderObservations();
+    expectTextOrder(getElement("tl-content").innerHTML, [
+      "Newest observation",
+      "Middle observation",
+      "Oldest observation",
+    ]);
+
+    sandbox.state.timeline.page = 2;
+    sandbox.setTimelineSortOrder("asc");
+
+    expect(sandbox.state.timeline.sortOrder).toBe("asc");
+    expect(sandbox.state.timeline.page).toBe(0);
+    expectTextOrder(getElement("tl-content").innerHTML, [
+      "Oldest observation",
+      "Middle observation",
+      "Newest observation",
+    ]);
   });
 });

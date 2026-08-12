@@ -367,6 +367,10 @@
     .btn-danger:hover { background: var(--accent); color: white; box-shadow: 3px 3px 0px 0px var(--border); }
     .btn-primary { background: var(--ink); color: var(--bg); border-color: var(--ink); }
     .btn-primary:hover { background: var(--ink-secondary); box-shadow: 3px 3px 0px 0px var(--ink-muted); }
+    .sort-toggle { display: inline-flex; gap: 0; }
+    .sort-toggle .btn { padding: 7px 10px; }
+    .sort-toggle .btn.active { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+    .sort-toggle .btn + .btn { border-left: none; }
 
     .graph-container {
       display: flex;
@@ -1113,7 +1117,7 @@
       dashboard: { loaded: false, health: null, sessions: [], memories: [], graphStats: null, recentAudit: [], lessons: [], crystals: [] },
       graph: { loaded: false, nodes: [], edges: [], stats: null, filters: {}, selectedNode: null, queryError: null, truncated: false, totalNodes: 0, totalEdges: 0 },
       memories: { loaded: false, items: [], search: '', typeFilter: '' },
-      timeline: { loaded: false, observations: [], sessionId: '', minImportance: 0, page: 0, pageSize: 50 },
+      timeline: { loaded: false, observations: [], sessionId: '', minImportance: 0, page: 0, pageSize: 50, sortOrder: 'desc' },
       sessions: { loaded: false, items: [], selectedId: null },
       audit: { loaded: false, entries: [], opFilter: '' },
       activity: { loaded: false, observations: [], sessions: [], typeFilter: '' },
@@ -2575,7 +2579,11 @@
       for (var i = 1; i <= 9; i++) {
         html += '<option value="' + i + '"' + (state.timeline.minImportance === i ? ' selected' : '') + '>&ge; ' + i + '</option>';
       }
-      html += '</select></div>';
+      html += '</select>';
+      html += '<div class="sort-toggle" role="group" aria-label="Timeline sort order">';
+      html += '<button type="button" class="btn' + (timelineSortOrder() === 'desc' ? ' active' : '') + '" data-action="timeline-sort" data-sort-order="desc" aria-pressed="' + (timelineSortOrder() === 'desc' ? 'true' : 'false') + '">NEWEST FIRST</button>';
+      html += '<button type="button" class="btn' + (timelineSortOrder() === 'asc' ? ' active' : '') + '" data-action="timeline-sort" data-sort-order="asc" aria-pressed="' + (timelineSortOrder() === 'asc' ? 'true' : 'false') + '">OLDEST FIRST</button>';
+      html += '</div></div>';
       html += '<div id="tl-content"></div>';
       el.innerHTML = html;
 
@@ -2605,6 +2613,28 @@
 
     var tlTypeFilter = '';
 
+    function timelineSortOrder() {
+      return state.timeline.sortOrder === 'asc' ? 'asc' : 'desc';
+    }
+
+    function sortedTimelineObservations(items) {
+      var order = timelineSortOrder();
+      return items.slice().sort(function(a, b) {
+        var at = a && a.timestamp ? String(a.timestamp) : '';
+        var bt = b && b.timestamp ? String(b.timestamp) : '';
+        if (at === bt) return 0;
+        return order === 'asc' ? at.localeCompare(bt) : bt.localeCompare(at);
+      });
+    }
+
+    function updateTimelineSortButtons() {
+      document.querySelectorAll('[data-action="timeline-sort"]').forEach(function(button) {
+        var active = button.getAttribute('data-sort-order') === timelineSortOrder();
+        button.classList.toggle('active', active);
+        button.setAttribute('aria-pressed', active ? 'true' : 'false');
+      });
+    }
+
     function renderObservations() {
       var content = document.getElementById('tl-content');
       if (!content) return;
@@ -2627,6 +2657,7 @@
           return t === tlTypeFilter;
         });
       }
+      filtered = sortedTimelineObservations(filtered);
 
       var pageSize = state.timeline.pageSize;
       var page = state.timeline.page;
@@ -2767,6 +2798,13 @@
 
     function tlPage(p) {
       state.timeline.page = p;
+      renderObservations();
+    }
+
+    function setTimelineSortOrder(order) {
+      state.timeline.sortOrder = order === 'asc' ? 'asc' : 'desc';
+      state.timeline.page = 0;
+      updateTimelineSortButtons();
       renderObservations();
     }
 
@@ -3927,6 +3965,10 @@
       }
       if (action === 'timeline-filter') {
         setTlTypeFilter(target.getAttribute('data-type-filter') || '');
+        return;
+      }
+      if (action === 'timeline-sort') {
+        setTimelineSortOrder(target.getAttribute('data-sort-order') || 'desc');
         return;
       }
       if (action === 'timeline-page') {
