@@ -6,10 +6,104 @@ import { withKeyedLock } from "../state/keyed-mutex.js";
 import { recordAudit } from "./audit.js";
 import { getEnvVar } from "../config.js";
 import { logger } from "../logger.js";
+import { createHash } from "node:crypto";
 
 type SlotScope = "project" | "global";
 
 const DEFAULT_SIZE_LIMIT = 2000;
+
+/** KV scope holding the pre-write copy of every slot mutation. */
+const SLOT_HISTORY_SCOPE = "mem:slots:history";
+const DEFAULT_SLOT_HISTORY = 20;
+/** Fractions of sizeLimit at which a read starts telling the caller to compact. */
+const SLOT_WARN_PCT = 70;
+const SLOT_URGENT_PCT = 90;
+
+export interface SlotHistoryEntry {
+  id: string;
+  label: string;
+  operation: "append" | "replace";
+  content: string;
+  size: number;
+  rev: number;
+  at: string;
+}
+
+export interface SlotStats {
+  size: number;
+  sizeLimit: number;
+  free: number;
+  pctUsed: number;
+  rev: number;
+  contentHash: string;
+  warning?: string;
+}
+
+/**
+ * Headroom and revision of a slot, returned alongside every read and write so a
+ * caller can see it is running out of room before an append starts failing, and
+ * can pass the revision back to prove it merged from the current content.
+ */
+export function slotStats(slot: MemorySlot): SlotStats {
+  const size = slot.content.length;
+  const sizeLimit = slot.sizeLimit || 1;
+  const pctUsed = Math.round((size / sizeLimit) * 100);
+  const stats: SlotStats = {
+    size,
+    sizeLimit,
+    free: Math.max(0, sizeLimit - size),
+    pctUsed,
+    rev: slot.rev ?? 0,
+    contentHash: createHash("sha1").update(slot.content).digest("hex").slice(0, 12),
+  };
+  if (pctUsed >= SLOT_URGENT_PCT) {
+    stats.warning = `slot is ${pctUsed}% full (${stats.free} chars free) — compact it now; the next append of this size will fail`;
+  } else if (pctUsed >= SLOT_WARN_PCT) {
+    stats.warning = `slot is ${pctUsed}% full (${stats.free} chars free) — compact before the next large append`;
+  }
+  return stats;
+}
+
+function slotHistoryLimit(): number {
+  const raw = parseInt(getEnvVar("AGENTMEMORY_SLOT_HISTORY") || "", 10);
+  return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_SLOT_HISTORY;
+}
+
+/**
+ * Copy the slot as it stands before a mutation, keeping the most recent N per
+ * label. History is best-effort: a slot write is never failed because its undo
+ * copy could not be stored.
+ */
+async function snapshotSlot(
+  kv: StateKV,
+  slot: MemorySlot,
+  operation: SlotHistoryEntry["operation"],
+): Promise<void> {
+  try {
+    const entry: SlotHistoryEntry = {
+      id: `${slot.label}_${Date.now().toString(36)}`,
+      label: slot.label,
+      operation,
+      content: slot.content,
+      size: slot.content.length,
+      rev: slot.rev ?? 0,
+      at: nowIso(),
+    };
+    await kv.set(SLOT_HISTORY_SCOPE, entry.id, entry);
+    const keep = slotHistoryLimit();
+    const mine = (await kv.list<SlotHistoryEntry>(SLOT_HISTORY_SCOPE))
+      .filter((e) => e.label === slot.label)
+      .sort((a, b) => (a.at || "").localeCompare(b.at || ""));
+    for (const old of mine.slice(0, Math.max(0, mine.length - keep))) {
+      await kv.delete(SLOT_HISTORY_SCOPE, old.id).catch(() => {});
+    }
+  } catch (err) {
+    logger.warn("slot history snapshot failed", {
+      label: slot.label,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
 
 export const DEFAULT_SLOTS: ReadonlyArray<
   Omit<MemorySlot, "createdAt" | "updatedAt">
@@ -208,9 +302,9 @@ export function registerSlotsFunctions(sdk: ISdk, kv: StateKV): void {
     const merged = new Map<string, MemorySlot>();
     for (const s of global) merged.set(s.label, s);
     for (const s of project) merged.set(s.label, s);
-    const slots = Array.from(merged.values()).sort((a, b) =>
-      a.label.localeCompare(b.label),
-    );
+    const slots = Array.from(merged.values())
+      .sort((a, b) => a.label.localeCompare(b.label))
+      .map((slot) => ({ ...slot, ...slotStats(slot) }));
     return { success: true, slots };
   });
 
@@ -221,7 +315,7 @@ export function registerSlotsFunctions(sdk: ISdk, kv: StateKV): void {
       if (!label) return { success: false, error: "label required (lowercase, starts with letter, [a-z0-9_])" };
       const { slot, scope } = await readSlot(kv, label);
       if (!slot) return { success: false, error: "slot not found" };
-      return { success: true, slot, scope };
+      return { success: true, slot, scope, ...slotStats(slot) };
     },
   );
 
@@ -298,44 +392,118 @@ export function registerSlotsFunctions(sdk: ISdk, kv: StateKV): void {
             sizeLimit: slot.sizeLimit,
           };
         }
-        const updated: MemorySlot = { ...slot, content: next, updatedAt: nowIso() };
+        await snapshotSlot(kv, slot, "append");
+        const updated: MemorySlot = {
+          ...slot,
+          content: next,
+          rev: (slot.rev ?? 0) + 1,
+          updatedAt: nowIso(),
+        };
         await kv.set(scopeKv(scope), label, updated);
         await recordAudit(kv, "slot_append", "mem::slot-append", [label], {
           scope,
           added: text.length,
           total: next.length,
         });
-        return { success: true, slot: updated, size: next.length };
+        return { success: true, slot: updated, ...slotStats(updated) };
       });
     },
   );
 
   sdk.registerFunction(
     "mem::slot-replace",
-    async (data: { label?: string; content?: string }) => {
+    async (data: {
+      label?: string;
+      content?: string;
+      expectedRev?: number;
+      expectedHash?: string;
+    }) => {
       const label = validateLabel(data?.label);
       if (!label) return { success: false, error: "label required" };
       if (typeof data?.content !== "string") return { success: false, error: "content required (string)" };
+      const content: string = data.content;
       return withKeyedLock(`slot:${label}`, async () => {
         const { slot, scope } = await readSlot(kv, label);
         if (!slot) return { success: false, error: "slot not found (use mem::slot-create first)" };
         if (slot.readOnly) return { success: false, error: "slot is read-only" };
-        if (data.content.length > slot.sizeLimit) {
+        if (content.length > slot.sizeLimit) {
           return {
             success: false,
-            error: `content exceeds sizeLimit (${data.content.length} > ${slot.sizeLimit})`,
+            error: `content exceeds sizeLimit (${content.length} > ${slot.sizeLimit})`,
             sizeLimit: slot.sizeLimit,
           };
         }
-        const updated: MemorySlot = { ...slot, content: data.content, updatedAt: nowIso() };
+        const current = slotStats(slot);
+        if (data.expectedRev !== undefined && Number(data.expectedRev) !== current.rev) {
+          return {
+            success: false,
+            error: `slot changed since you read it (expectedRev ${data.expectedRev}, current ${current.rev}) — re-read the slot and merge, do not overwrite`,
+            current,
+          };
+        }
+        if (typeof data.expectedHash === "string" && data.expectedHash !== current.contentHash) {
+          return {
+            success: false,
+            error: `slot changed since you read it (expectedHash ${data.expectedHash}, current ${current.contentHash}) — re-read the slot and merge, do not overwrite`,
+            current,
+          };
+        }
+        await snapshotSlot(kv, slot, "replace");
+        const updated: MemorySlot = {
+          ...slot,
+          content,
+          rev: (slot.rev ?? 0) + 1,
+          updatedAt: nowIso(),
+        };
         await kv.set(scopeKv(scope), label, updated);
         await recordAudit(kv, "slot_replace", "mem::slot-replace", [label], {
           scope,
           before: slot.content.length,
-          after: data.content.length,
+          after: content.length,
         });
-        return { success: true, slot: updated, size: data.content.length };
+        return {
+          success: true,
+          slot: updated,
+          previousSize: slot.content.length,
+          ...slotStats(updated),
+        };
       });
+    },
+  );
+
+  sdk.registerFunction(
+    "mem::slot-history",
+    async (data: { label?: string; id?: string; restore?: boolean }) => {
+      const label = validateLabel(data?.label);
+      if (!label) return { success: false, error: "label required" };
+      const entries = (await kv.list<SlotHistoryEntry>(SLOT_HISTORY_SCOPE))
+        .filter((e) => e.label === label)
+        .sort((a, b) => (b.at || "").localeCompare(a.at || ""));
+      if (data?.restore === true) {
+        const target = data.id ? entries.find((e) => e.id === data.id) : entries[0];
+        if (!target) return { success: false, error: "no history entry to restore" };
+        return {
+          success: true,
+          entry: target,
+          restoreWith: {
+            function_id: "mem::slot-replace",
+            label,
+            content: target.content,
+          },
+        };
+      }
+      return {
+        success: true,
+        label,
+        entries: entries.map((e) => ({
+          id: e.id,
+          at: e.at,
+          operation: e.operation,
+          size: e.size,
+          rev: e.rev,
+          preview: (e.content || "").slice(0, 200),
+        })),
+      };
     },
   );
 

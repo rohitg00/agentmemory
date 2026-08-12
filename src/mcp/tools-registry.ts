@@ -914,12 +914,22 @@ export const V010_SLOTS_TOOLS: McpToolDef[] = [
   },
   {
     name: "memory_slot_replace",
-    description: "Replace slot content in place. Fails if content exceeds sizeLimit.",
+    description:
+      "Replace slot content in place. Fails if content exceeds sizeLimit. Pass expectedRev (or expectedHash) from your memory_slot_get read so a concurrent write by another session is rejected instead of silently clobbered; the previous content is snapshotted to slot history either way.",
     inputSchema: {
       type: "object",
       properties: {
         label: { type: "string", description: "Slot label" },
         content: { type: "string", description: "New full content" },
+        expectedRev: {
+          type: "number",
+          description:
+            "rev returned by memory_slot_get. If it no longer matches, the replace is rejected — re-read and merge.",
+        },
+        expectedHash: {
+          type: "string",
+          description: "contentHash returned by memory_slot_get; alternative to expectedRev.",
+        },
       },
       required: ["label", "content"],
     },
