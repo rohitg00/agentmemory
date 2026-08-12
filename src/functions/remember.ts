@@ -7,7 +7,7 @@ import { memoryToObservation } from "../state/memory-utils.js";
 import { deleteAccessLog } from "./access-tracker.js";
 import { recordAudit } from "./audit.js";
 import { getSearchIndex, vectorIndexAddGuarded, vectorIndexRemove, flushIndexSave } from "./search.js";
-import { getAgentId } from "../config.js";
+import { isGraphExtractionEnabled, getAgentId } from "../config.js";
 import { logger } from "../logger.js";
 
 // Slicing by UTF-16 code unit can cut an astral character (emoji, some CJK
@@ -155,6 +155,37 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
           memory.title + " " + memory.content,
           { kind: "memory", logId: memory.id },
         );
+
+        // Feed the knowledge graph from saved memories the same way
+        // observation writes do (event::session::compressed in
+        // triggers/events.ts). Without this, Memory records — including
+        // bulk imports like in-repo doc ingestion or post-hoc lesson
+        // crystallization — never populate KV.graphNodes/Edges, so
+        // mem::reflect's graph-clustering path doesn't see them and
+        // ends up synthesizing only from lessons + semantic facts +
+        // crystals. Gated on the same GRAPH_EXTRACTION_ENABLED flag
+        // that the observation path already honors. Fire-and-forget;
+        // graph-extract is an LLM call that can take seconds and must
+        // not block the remember response.
+        if (isGraphExtractionEnabled()) {
+          // Fire-and-forget graph extraction. The Void action enqueues
+          // the work without returning a promise, so there's no async
+          // rejection to leak (the engine queue owns downstream
+          // failures); the try/catch guards only a synchronous enqueue
+          // throw. v3-d; replaces the removed sdk.triggerVoid (#773).
+          try {
+            sdk.trigger({
+              function_id: "mem::graph-extract",
+              payload: { observations: [memoryToObservation(memory)] },
+              action: TriggerAction.Void(),
+            });
+          } catch (err) {
+            logger.warn("graph-extract enqueue threw on remember", {
+              memId: memory.id,
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }
+        }
 
         if (supersededId) {
           await sdk.trigger({
