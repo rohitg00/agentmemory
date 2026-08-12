@@ -1,4 +1,5 @@
 import type { ISdk } from "iii-sdk";
+import { getIndexPersistenceStatus } from "../state/index-persistence.js";
 import type { HealthSnapshot } from "../types.js";
 import type { StateKV } from "../state/kv.js";
 import { KV } from "../state/schema.js";
@@ -80,6 +81,7 @@ export function registerHealthMonitor(
       eventLoopLagMs,
       uptimeSeconds: uptime,
       kvConnectivity,
+      indexPersistence: getIndexPersistenceStatus(),
       status: "healthy",
       alerts: [],
     };
