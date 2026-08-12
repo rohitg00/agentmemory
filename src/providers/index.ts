@@ -74,7 +74,8 @@ export function createFallbackProvider(
       // override) rather than copying config.model from the primary.
       // Without this, FALLBACK_PROVIDERS=gemini on an OpenAI primary
       // would call Gemini with `gpt-4o-mini`, get a 404 every time,
-      // and trip the circuit breaker.
+      // and trip the circuit breaker. AGENTMEMORY_COMPRESS_MODEL is
+      // excluded for the same reason: model names are provider-specific.
       const fbConfig: ProviderConfig = {
         provider: providerType,
         model: defaultModelFor(providerType),
@@ -99,6 +100,7 @@ function createBaseProvider(config: ProviderConfig): MemoryProvider {
         requireEnvVar("MINIMAX_API_KEY"),
         config.model,
         config.maxTokens,
+        config.compressModel,
       );
     case "anthropic":
       return new AnthropicProvider(
@@ -106,6 +108,7 @@ function createBaseProvider(config: ProviderConfig): MemoryProvider {
         config.model,
         config.maxTokens,
         config.baseURL,
+        config.compressModel,
       );
     case "gemini": {
       const geminiKey =
@@ -120,6 +123,7 @@ function createBaseProvider(config: ProviderConfig): MemoryProvider {
         config.model,
         config.maxTokens,
         "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+        config.compressModel,
       );
     }
     case "openrouter":
@@ -128,6 +132,7 @@ function createBaseProvider(config: ProviderConfig): MemoryProvider {
         config.model,
         config.maxTokens,
         "https://openrouter.ai/api/v1/chat/completions",
+        config.compressModel,
       );
     case "openai": {
       const openaiKey = getEnvVar("OPENAI_API_KEY");
@@ -141,6 +146,7 @@ function createBaseProvider(config: ProviderConfig): MemoryProvider {
         config.model,
         config.maxTokens,
         config.baseURL,
+        config.compressModel,
       );
     }
     case "noop":

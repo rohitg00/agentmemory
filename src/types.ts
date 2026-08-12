@@ -142,6 +142,8 @@ export interface HookPayload {
 export interface ProviderConfig {
   provider: ProviderType;
   model: string;
+  /** Optional cheaper model for compress() calls only; summarize() stays on `model` */
+  compressModel?: string;
   maxTokens: number;
   /** Optional base URL override (e.g. for Anthropic-compatible APIs or local proxies) */
   baseURL?: string;
