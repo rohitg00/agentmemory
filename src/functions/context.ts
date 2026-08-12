@@ -12,6 +12,7 @@ import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { recordAccessBatch } from "./access-tracker.js";
 import { logger } from "../logger.js";
+import { escapeXml } from "../prompts/xml.js";
 import {
   isSlotsEnabled,
   listPinnedSlots,
@@ -21,14 +22,6 @@ import { getAgentId, isAgentScopeIsolated } from "../config.js";
 
 function estimateTokens(text: string): number {
   return Math.ceil(text.length / 3);
-}
-
-function escapeXmlAttr(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/"/g, "&quot;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
 }
 
 export function registerContextFunction(
@@ -95,7 +88,7 @@ export function registerContextFunction(
           profileParts.push(
             `Concepts: ${profile.topConcepts
               .slice(0, 8)
-              .map((c) => c.concept)
+              .map((c) => escapeXml(c.concept))
               .join(", ")}`,
           );
         }
@@ -103,16 +96,21 @@ export function registerContextFunction(
           profileParts.push(
             `Key files: ${profile.topFiles
               .slice(0, 5)
-              .map((f) => f.file)
+              .map((f) => escapeXml(f.file))
               .join(", ")}`,
           );
         }
         if (profile.conventions.length > 0) {
-          profileParts.push(`Conventions: ${profile.conventions.join("; ")}`);
+          profileParts.push(
+            `Conventions: ${profile.conventions.map(escapeXml).join("; ")}`,
+          );
         }
         if (profile.commonErrors.length > 0) {
           profileParts.push(
-            `Common errors: ${profile.commonErrors.slice(0, 3).join("; ")}`,
+            `Common errors: ${profile.commonErrors
+              .slice(0, 3)
+              .map(escapeXml)
+              .join("; ")}`,
           );
         }
         if (profileParts.length > 0) {
@@ -145,7 +143,7 @@ export function registerContextFunction(
         const items = relevantLessons
           .map(
             (l) =>
-              `- (${l.confidence.toFixed(2)}) ${l.content}${l.context ? ` — ${l.context}` : ""}`,
+              `- (${l.confidence.toFixed(2)}) ${escapeXml(l.content)}${l.context ? ` — ${escapeXml(l.context)}` : ""}`,
           )
           .join("\n");
         const lessonsContent = `## Lessons Learned\n${items}`;
@@ -186,7 +184,11 @@ export function registerContextFunction(
       for (let i = 0; i < sessions.length; i++) {
         const summary = summariesPerSession[i];
         if (summary) {
-          const content = `## ${summary.title}\n${summary.narrative}\nDecisions: ${summary.keyDecisions.join("; ")}\nFiles: ${summary.filesModified.join(", ")}`;
+          const content = `## ${escapeXml(summary.title)}\n${escapeXml(summary.narrative)}\nDecisions: ${summary.keyDecisions
+            .map(escapeXml)
+            .join("; ")}\nFiles: ${summary.filesModified
+            .map(escapeXml)
+            .join(", ")}`;
           blocks.push({
             type: "summary",
             content,
@@ -218,7 +220,10 @@ export function registerContextFunction(
             .sort((a, b) => b.importance - a.importance)
             .slice(0, 5);
           const items = top
-            .map((o) => `- [${o.type}] ${o.title}: ${o.narrative}`)
+            .map(
+              (o) =>
+                `- [${escapeXml(o.type)}] ${escapeXml(o.title)}: ${escapeXml(o.narrative)}`,
+            )
             .join("\n");
           const content = `## Session ${sessions[i].id.slice(0, 8)} (${sessions[i].startedAt})\n${items}`;
           blocks.push({
@@ -236,7 +241,7 @@ export function registerContextFunction(
       let usedTokens = 0;
       const selected: string[] = [];
       const accessedIds: string[] = [];
-      const header = `<agentmemory-context project="${escapeXmlAttr(data.project)}">`;
+      const header = `<agentmemory-context project="${escapeXml(data.project)}">`;
       const footer = `</agentmemory-context>`;
       usedTokens += estimateTokens(header) + estimateTokens(footer);
 

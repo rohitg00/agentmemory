@@ -6,6 +6,7 @@ import { withKeyedLock } from "../state/keyed-mutex.js";
 import { recordAudit } from "./audit.js";
 import { getEnvVar } from "../config.js";
 import { logger } from "../logger.js";
+import { escapeXml } from "../prompts/xml.js";
 
 type SlotScope = "project" | "global";
 
@@ -186,8 +187,11 @@ export function renderPinnedContext(slots: MemorySlot[]): string {
   if (slots.length === 0) return "";
   const lines: string[] = ["# agentmemory pinned slots", ""];
   for (const slot of slots) {
+    // label is validated to /^[a-z][a-z0-9_]*$/ on write, so it carries no
+    // markup; content is free-form and must be escaped so a pinned slot
+    // can't break out of the wrapping context block (H1 injection vector).
     lines.push(`## ${slot.label}`);
-    lines.push(slot.content.trim());
+    lines.push(escapeXml(slot.content.trim()));
     lines.push("");
   }
   return lines.join("\n");

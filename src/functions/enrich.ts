@@ -3,17 +3,9 @@ import type { Memory } from "../types.js";
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { logger } from "../logger.js";
+import { escapeXml } from "../prompts/xml.js";
 
 const MAX_CONTEXT_LENGTH = 4000;
-
-function escapeXml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&apos;");
-}
 
 export function registerEnrichFunction(sdk: ISdk, kv: StateKV): void {
   sdk.registerFunction("mem::enrich",

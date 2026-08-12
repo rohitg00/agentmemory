@@ -219,8 +219,10 @@ describe("mem::context — lessons auto-injection (#457)", () => {
       project: "/tmp/proj",
     });
 
+    // The `>` is XML-escaped on the way into the context block (H1
+    // injection defense), so the rendered line carries `&gt;`.
     expect(result.context).toContain(
-      "use TaskCreate for >5-file work — when working on multi-file refactors",
+      "use TaskCreate for &gt;5-file work — when working on multi-file refactors",
     );
   });
 });
