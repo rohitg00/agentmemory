@@ -8,6 +8,8 @@ import type {
 import { KV, generateId } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { recordAudit } from "./audit.js";
+import { getSearchIndex, vectorIndexAddGuarded } from "./search.js";
+import { memoryToObservation } from "../state/memory-utils.js";
 
 const CONSOLIDATION_SYSTEM = `You are a memory consolidation engine. Given a set of related observations from coding sessions, synthesize them into a single long-term memory.
 
@@ -202,6 +204,24 @@ export function registerConsolidateFunction(
               newId: evolved.id,
               concept,
             });
+            // The newest version must be searchable immediately, mirroring
+            // mem::remember. Without this the BM25/vector index keeps pointing
+            // at the superseded version (or nothing on first creation) until a
+            // full rebuild — memories are invisible to smart-search in between.
+            try {
+              getSearchIndex().add(memoryToObservation(evolved));
+            } catch (err) {
+              logger.warn("Failed to index evolved memory into BM25", {
+                memId: evolved.id,
+                error: err instanceof Error ? err.message : String(err),
+              });
+            }
+            await vectorIndexAddGuarded(
+              evolved.id,
+              evolved.sessionIds?.[0] ?? "memory",
+              evolved.title + " " + evolved.content,
+              { kind: "memory", logId: evolved.id },
+            );
             existingTitles.add(evolved.title.toLowerCase());
             consolidated++;
           } else {
@@ -220,6 +240,23 @@ export function registerConsolidateFunction(
               action: "create_memory",
               concept,
             });
+            // Same indexing as mem::remember: without this, consolidated
+            // memories are written to KV but never enter the BM25/vector
+            // index, so smart-search cannot recall them until a full rebuild.
+            try {
+              getSearchIndex().add(memoryToObservation(memory));
+            } catch (err) {
+              logger.warn("Failed to index consolidated memory into BM25", {
+                memId: memory.id,
+                error: err instanceof Error ? err.message : String(err),
+              });
+            }
+            await vectorIndexAddGuarded(
+              memory.id,
+              memory.sessionIds?.[0] ?? "memory",
+              memory.title + " " + memory.content,
+              { kind: "memory", logId: memory.id },
+            );
             existingTitles.add(memory.title.toLowerCase());
             consolidated++;
           }
