@@ -89,6 +89,7 @@ async function callAgentMemory<T>(
     method?: "GET" | "POST";
     body?: unknown;
     baseUrl?: string;
+    timeoutMs?: number;
   },
 ): Promise<T | null> {
   const baseUrl = normalizeBaseUrl(options?.baseUrl || process.env.AGENTMEMORY_URL || DEFAULT_URL);
@@ -105,6 +106,7 @@ async function callAgentMemory<T>(
       method,
       headers,
       body: options?.body !== undefined ? JSON.stringify(options.body) : undefined,
+      signal: options?.timeoutMs ? AbortSignal.timeout(options.timeoutMs) : undefined,
     });
     if (!response.ok) return null;
     return (await response.json()) as T;
@@ -298,5 +300,23 @@ export default function agentmemoryExtension(pi: ExtensionAPI) {
         },
       },
     });
+  });
+
+  pi.on("session_shutdown", async (event) => {
+    // Only on a real quit: /new, /resume, /fork and extension reloads all fire
+    // this hook too, but the session continues. Ending it early would orphan the
+    // observations of the session that keeps running.
+    if (event.reason !== "quit") return;
+    if (!lastHealthOk || !sessionId) return;
+    // Mirrors the Claude Code Stop hook (plugin/scripts/stop.mjs): summarize the
+    // session before marking it ended so the summary is persisted, with an
+    // explicit timeout so a slow LLM cannot hang the exit.
+    await callAgentMemory("summarize", { body: { sessionId }, timeoutMs: 120_000 });
+    await callAgentMemory("session/end", { body: { sessionId }, timeoutMs: 5_000 });
+    // mem::consolidate has no scheduler and is not invoked by
+    // consolidate-pipeline, so fold one run into the exit path: it clusters
+    // observations (importance >= 5, same concept >= 3) into cross-session
+    // memories. Fire-and-forget — the server runs it in the background.
+    void callAgentMemory("consolidate", { body: {} });
   });
 }
