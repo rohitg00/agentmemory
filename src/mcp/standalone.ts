@@ -265,6 +265,7 @@ async function handleLocal(
         content: v.content,
         concepts: v.concepts,
         files: v.files,
+        project: v.project,
         createdAt: isoNow,
         updatedAt: isoNow,
         strength: 7,
@@ -283,6 +284,13 @@ async function handleLocal(
       const all =
         await kvInstance.list<Record<string, unknown>>("mem:memories");
       const results = all
+        // #926/#787 follow-up: the local KV fallback used to ignore
+        // project entirely, so a scoped search during a server outage
+        // could return memories from every project. Filter strictly —
+        // unlike the server's session-resolution fallback, this KV has
+        // no session store to fall back on, so an unscoped record is
+        // excluded rather than passed through when a filter is active.
+        .filter((m) => v.project == null || m["project"] === v.project)
         .filter((m) => {
           const text = [
             typeof m["title"] === "string" ? m["title"] : "",
