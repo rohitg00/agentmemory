@@ -130,6 +130,54 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
     expect(recallBody).not.toHaveProperty("token_budget");
   });
 
+  it("forwards project on memory_save to POST /agentmemory/remember (#926)", async () => {
+    let rememberBody: Record<string, unknown> | undefined;
+    installFetch((url, init) => {
+      if (url.endsWith("/agentmemory/livez")) return new Response("ok", { status: 200 });
+      if (url.endsWith("/agentmemory/remember")) {
+        rememberBody = init?.body ? JSON.parse(init.body as string) : undefined;
+        return new Response(JSON.stringify({ id: "m-1", action: "created" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return new Response("not found", { status: 404 });
+    });
+    await handleToolCall("memory_save", {
+      content: "project-scoped entry",
+      project: "acme-widgets",
+    });
+    expect(rememberBody?.["project"]).toBe("acme-widgets");
+  });
+
+  it("forwards project on memory_recall to POST /agentmemory/search (#787)", async () => {
+    let searchBody: Record<string, unknown> | undefined;
+    installFetch((url, init) => {
+      if (url.endsWith("/agentmemory/livez")) return new Response("ok", { status: 200 });
+      if (url.endsWith("/agentmemory/search")) {
+        searchBody = init?.body ? JSON.parse(init.body as string) : undefined;
+        return new Response(JSON.stringify({ mode: "full", facts: [] }), { status: 200 });
+      }
+      return new Response("not found", { status: 404 });
+    });
+    await handleToolCall("memory_recall", { query: "auth bug", project: "acme-widgets" });
+    expect(searchBody?.["project"]).toBe("acme-widgets");
+  });
+
+  it("forwards project on memory_smart_search to POST /agentmemory/smart-search (#787)", async () => {
+    let smartSearchBody: Record<string, unknown> | undefined;
+    installFetch((url, init) => {
+      if (url.endsWith("/agentmemory/livez")) return new Response("ok", { status: 200 });
+      if (url.endsWith("/agentmemory/smart-search")) {
+        smartSearchBody = init?.body ? JSON.parse(init.body as string) : undefined;
+        return new Response(JSON.stringify({ mode: "compact", results: [] }), { status: 200 });
+      }
+      return new Response("not found", { status: 404 });
+    });
+    await handleToolCall("memory_smart_search", { query: "auth bug", project: "acme-widgets" });
+    expect(smartSearchBody?.["project"]).toBe("acme-widgets");
+  });
+
   it("proxies memory_governance_delete to the DELETE REST endpoint", async () => {
     const calls: Array<{ url: string; method: string; body?: unknown }> = [];
     installFetch((url, init) => {

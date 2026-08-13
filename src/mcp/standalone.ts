@@ -105,6 +105,7 @@ interface Validated {
   tokenBudget?: number;
   memoryIds?: string[];
   reason?: string;
+  project?: string;
 }
 
 function validate(toolName: string, args: Record<string, unknown>): Validated {
@@ -122,6 +123,10 @@ function validate(toolName: string, args: Record<string, unknown>): Validated {
       v.type = (args["type"] as string) || "fact";
       v.concepts = normalizeList(args["concepts"]);
       v.files = normalizeList(args["files"]);
+      const project = args["project"];
+      if (typeof project === "string" && project.trim()) {
+        v.project = project.trim();
+      }
       return v;
     }
     case "memory_recall":
@@ -142,6 +147,10 @@ function validate(toolName: string, args: Record<string, unknown>): Validated {
       } else if (typeof budget === "string" && budget.trim()) {
         const n = Number(budget);
         if (Number.isFinite(n) && n > 0) v.tokenBudget = Math.floor(n);
+      }
+      const project = args["project"];
+      if (typeof project === "string" && project.trim()) {
+        v.project = project.trim();
       }
       return v;
     }
@@ -173,14 +182,16 @@ async function handleProxy(
 ): Promise<{ content: Array<{ type: string; text: string }> }> {
   switch (v.tool) {
     case "memory_save": {
+      const body: Record<string, unknown> = {
+        content: v.content,
+        type: v.type,
+        concepts: v.concepts,
+        files: v.files,
+      };
+      if (v.project != null) body["project"] = v.project;
       const result = await handle.call("/agentmemory/remember", {
         method: "POST",
-        body: JSON.stringify({
-          content: v.content,
-          type: v.type,
-          concepts: v.concepts,
-          files: v.files,
-        }),
+        body: JSON.stringify(body),
       });
       return textResponse(result);
     }
@@ -191,6 +202,7 @@ async function handleProxy(
         format: v.format ?? "full",
       };
       if (v.tokenBudget != null) body["token_budget"] = v.tokenBudget;
+      if (v.project != null) body["project"] = v.project;
       const result = await handle.call("/agentmemory/search", {
         method: "POST",
         body: JSON.stringify(body),
@@ -201,6 +213,7 @@ async function handleProxy(
       const body: Record<string, unknown> = { query: v.query, limit: v.limit };
       if (v.format != null) body["format"] = v.format;
       if (v.tokenBudget != null) body["token_budget"] = v.tokenBudget;
+      if (v.project != null) body["project"] = v.project;
       const result = await handle.call("/agentmemory/smart-search", {
         method: "POST",
         body: JSON.stringify(body),
