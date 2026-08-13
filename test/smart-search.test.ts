@@ -322,6 +322,7 @@ describe("Smart Search Function", () => {
         observation: memObs,
         bm25Score: 0.5,
         vectorScore: 0,
+        graphScore: 0,
         combinedScore: 0.5,
         sessionId: "memory",
       };
@@ -353,6 +354,7 @@ describe("Smart Search Function", () => {
         observation: orphanObs,
         bm25Score: 0.4,
         vectorScore: 0,
+        graphScore: 0,
         combinedScore: 0.4,
         sessionId: "ses_gone",
       };
@@ -374,6 +376,20 @@ describe("Smart Search Function", () => {
       })) as { results: CompactSearchResult[] };
 
       expect(result.results.length).toBe(2);
+    });
+
+    it("also scopes the expandIds branch — a caller can't bypass project scoping by expanding directly", async () => {
+      const matching = (await sdk.trigger("mem::smart-search", {
+        expandIds: ["obs_1"],
+        project: "my-project",
+      })) as { mode: string; results: unknown[] };
+      expect(matching.results.length).toBe(1);
+
+      const mismatched = (await sdk.trigger("mem::smart-search", {
+        expandIds: ["obs_1"],
+        project: "someone-elses-project",
+      })) as { mode: string; results: unknown[] };
+      expect(mismatched.results).toEqual([]);
     });
   });
 });
