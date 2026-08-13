@@ -234,7 +234,7 @@ export default function agentmemoryExtension(pi: ExtensionAPI) {
     }),
     async execute(_toolCallId, params) {
       const result = await callAgentMemory<Record<string, unknown>>("remember", {
-        body: { content: params.content, type: params.type || "fact" },
+        body: { content: params.content, type: params.type || "fact", project: currentProject },
       });
       if (!result) {
         return {
