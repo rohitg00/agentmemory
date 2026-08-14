@@ -157,7 +157,11 @@ export default function agentmemoryExtension(pi: ExtensionAPI) {
 
   async function refreshStatus(ctx: { ui: { setStatus: (key: string, text: string) => void } }) {
     const health = await getHealth();
-    lastHealthOk = !!health && (health.status === "healthy" || health.health?.status === "healthy");
+    lastHealthOk =
+      !!health &&
+      (health.status === "ok" ||
+        health.status === "healthy" ||
+        health.health?.status === "healthy");
     ctx.ui.setStatus("agentmemory", lastHealthOk ? "🧠 agentmemory" : "🧠 agentmemory off");
   }
 
@@ -311,7 +315,11 @@ export default function agentmemoryExtension(pi: ExtensionAPI) {
     // Mirrors the Claude Code Stop hook (plugin/scripts/stop.mjs): summarize the
     // session before marking it ended so the summary is persisted, with an
     // explicit timeout so a slow LLM cannot hang the exit.
-    await callAgentMemory("summarize", { body: { sessionId }, timeoutMs: 120_000 });
+    const summary = await callAgentMemory("summarize", {
+      body: { sessionId },
+      timeoutMs: 120_000,
+    });
+    if (!summary) return;
     await callAgentMemory("session/end", { body: { sessionId }, timeoutMs: 5_000 });
     // mem::consolidate has no scheduler and is not invoked by
     // consolidate-pipeline, so fold one run into the exit path: it clusters
