@@ -105,6 +105,8 @@ interface Validated {
   tokenBudget?: number;
   memoryIds?: string[];
   reason?: string;
+  agentId?: string;
+  project?: string;
 }
 
 function validate(toolName: string, args: Record<string, unknown>): Validated {
@@ -122,6 +124,14 @@ function validate(toolName: string, args: Record<string, unknown>): Validated {
       v.type = (args["type"] as string) || "fact";
       v.concepts = normalizeList(args["concepts"]);
       v.files = normalizeList(args["files"]);
+      const agentId = args["agentId"];
+      if (typeof agentId === "string" && agentId.trim().length > 0) {
+        v.agentId = agentId;
+      }
+      const project = args["project"];
+      if (typeof project === "string" && project.trim().length > 0) {
+        v.project = project;
+      }
       return v;
     }
     case "memory_recall":
@@ -180,6 +190,8 @@ async function handleProxy(
           type: v.type,
           concepts: v.concepts,
           files: v.files,
+          agentId: v.agentId,
+          project: v.project,
         }),
       });
       return textResponse(result);

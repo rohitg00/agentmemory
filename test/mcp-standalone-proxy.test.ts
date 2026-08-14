@@ -365,6 +365,46 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
     delete process.env["AGENTMEMORY_TOOLS"];
   });
 
+  it("FR-2 forwards agentId/project in the memory_save proxy body when provided", async () => {
+    let rememberBody: Record<string, unknown> | undefined;
+    installFetch((url, init) => {
+      if (url.endsWith("/agentmemory/livez")) return new Response("ok", { status: 200 });
+      if (url.endsWith("/agentmemory/remember")) {
+        rememberBody = init?.body ? JSON.parse(init.body as string) : undefined;
+        return new Response(JSON.stringify({ id: "m-1", action: "created" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return new Response("not found", { status: 404 });
+    });
+    await handleToolCall("memory_save", {
+      content: "scoped entry",
+      agentId: "a1",
+      project: "p1",
+    });
+    expect(rememberBody?.["agentId"]).toBe("a1");
+    expect(rememberBody?.["project"]).toBe("p1");
+  });
+
+  it("FR-2 omits agentId/project from the memory_save proxy body when not provided", async () => {
+    let rememberBody: Record<string, unknown> | undefined;
+    installFetch((url, init) => {
+      if (url.endsWith("/agentmemory/livez")) return new Response("ok", { status: 200 });
+      if (url.endsWith("/agentmemory/remember")) {
+        rememberBody = init?.body ? JSON.parse(init.body as string) : undefined;
+        return new Response(JSON.stringify({ id: "m-1", action: "created" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return new Response("not found", { status: 404 });
+    });
+    await handleToolCall("memory_save", { content: "unscoped entry" });
+    expect(rememberBody).not.toHaveProperty("agentId");
+    expect(rememberBody).not.toHaveProperty("project");
+  });
+
   it("AGENTMEMORY_PROBE_TIMEOUT_MS overrides the default probe timeout", async () => {
     process.env["AGENTMEMORY_PROBE_TIMEOUT_MS"] = "50";
     let probeStarted = 0;
