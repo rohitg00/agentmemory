@@ -191,9 +191,7 @@ export function registerSmartSearchFunction(
       // searcher for more hits than we need and trim post-filter. 3×
       // is a defensible middle ground: enough headroom for a small
       // workload, capped at 300 so a 100-limit request never asks for
-      // thousands of hits. The project filter trims even harder
-      // (observations only carry their project via the session row),
-      // so it over-fetches the same way.
+      // thousands of hits.
       const projectFilter =
         typeof data.project === "string" && data.project.trim().length > 0
           ? data.project.trim()
@@ -210,31 +208,36 @@ export function registerSmartSearchFunction(
           : Promise.resolve([]),
       ]);
 
-      // Observations are only searchable via their compressed form,
-      // which has no project — the project lives on the session row.
-      // Resolve it per hit (falling back to KV.memories for hits that
-      // are memories, whose sessionId is synthetic), treating null or
-      // unknown projects as unscoped so they stay visible.
-      const sessionProjects = new Map<string, string | undefined>();
-      const memoryProjects = new Map<string, string | undefined>();
+      const sessionProjects = new Map<string, Promise<string | undefined>>();
+      const memoryProjects = new Map<string, Promise<string | undefined>>();
+      const getSessionProject = (sessionId: string): Promise<string | undefined> => {
+        let project = sessionProjects.get(sessionId);
+        if (!project) {
+          project = kv
+            .get<{ project?: string }>(KV.sessions, sessionId)
+            .catch(() => null)
+            .then((session) => session?.project);
+          sessionProjects.set(sessionId, project);
+        }
+        return project;
+      };
+      const getMemoryProject = (obsId: string): Promise<string | undefined> => {
+        let project = memoryProjects.get(obsId);
+        if (!project) {
+          project = kv
+            .get<{ project?: string }>(KV.memories, obsId)
+            .catch(() => null)
+            .then((memory) => memory?.project);
+          memoryProjects.set(obsId, project);
+        }
+        return project;
+      };
       const resolveHitProject = async (r: HybridSearchResult): Promise<string | undefined> => {
         if (r.sessionId) {
-          if (!sessionProjects.has(r.sessionId)) {
-            const s = await kv
-              .get<{ project?: string }>(KV.sessions, r.sessionId)
-              .catch(() => null);
-            sessionProjects.set(r.sessionId, s?.project);
-          }
-          const p = sessionProjects.get(r.sessionId);
+          const p = await getSessionProject(r.sessionId);
           if (p) return p;
         }
-        if (!memoryProjects.has(r.observation.id)) {
-          const m = await kv
-            .get<{ project?: string }>(KV.memories, r.observation.id)
-            .catch(() => null);
-          memoryProjects.set(r.observation.id, m?.project);
-        }
-        return memoryProjects.get(r.observation.id);
+        return getMemoryProject(r.observation.id);
       };
 
       let projectScoped = hybridResults;
