@@ -61,6 +61,7 @@ export interface CompressedObservation {
   imageDescription?: string;
   modality?: "text" | "image" | "mixed";
   agentId?: string;
+  project?: string;
 }
 
 export type ObservationType =
