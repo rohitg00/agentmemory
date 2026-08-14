@@ -83,6 +83,10 @@ export const CORE_TOOLS: McpToolDef[] = [
             "started. Do not use filesystem paths or ad-hoc display names — those " +
             "change across machines and will silently break project scoping.",
         },
+        agentId: {
+          type: "string",
+          description: "Agent role this memory belongs to (e.g. backend-dev)",
+        },
       },
       required: ["content"],
     },
