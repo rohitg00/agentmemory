@@ -1002,6 +1002,7 @@ export function registerApiTriggers(
         ttlDays?: number;
         sourceObservationIds?: string[];
         project?: string;
+        agentId?: string;
       }>,
     ): Promise<Response> => {
       const authErr = checkAuth(req, secret);
@@ -1019,6 +1020,13 @@ export function registerApiTriggers(
       ) {
         return { status_code: 400, body: { error: "project must be a non-empty string" } };
       }
+      // agentId is optional here on purpose: env AGENT_ID fallback is
+      // handled once, downstream, by mem::remember (remember.ts). Doing
+      // it here too would let the two fallbacks disagree.
+      const agentId =
+        typeof req.body.agentId === "string" && req.body.agentId.trim().length > 0
+          ? req.body.agentId.trim().slice(0, 128)
+          : undefined;
       const result = await sdk.trigger({
         function_id: "mem::remember",
         payload: {
@@ -1029,6 +1037,7 @@ export function registerApiTriggers(
           ...(req.body.ttlDays !== undefined && { ttlDays: req.body.ttlDays }),
           ...(req.body.sourceObservationIds !== undefined && { sourceObservationIds: req.body.sourceObservationIds }),
           ...(req.body.project !== undefined && { project: req.body.project }),
+          ...(agentId !== undefined && { agentId }),
         },
       });
       return { status_code: 201, body: result };
