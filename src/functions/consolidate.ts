@@ -204,10 +204,6 @@ export function registerConsolidateFunction(
               newId: evolved.id,
               concept,
             });
-            // The newest version must be searchable immediately, mirroring
-            // mem::remember. Without this the BM25/vector index keeps pointing
-            // at the superseded version (or nothing on first creation) until a
-            // full rebuild — memories are invisible to smart-search in between.
             try {
               getSearchIndex().add(memoryToObservation(evolved));
             } catch (err) {
@@ -240,9 +236,6 @@ export function registerConsolidateFunction(
               action: "create_memory",
               concept,
             });
-            // Same indexing as mem::remember: without this, consolidated
-            // memories are written to KV but never enter the BM25/vector
-            // index, so smart-search cannot recall them until a full rebuild.
             try {
               getSearchIndex().add(memoryToObservation(memory));
             } catch (err) {
