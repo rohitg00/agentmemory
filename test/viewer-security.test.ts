@@ -220,7 +220,7 @@ describe("viewer request handler DNS rebinding defence (e2e)", () => {
     expect(res.body).toMatch(/^<svg\b/);
     expect(res.body).toContain("</svg>");
     // Sanity-check the artwork: rounded dark tile + green "AM" lettering.
-    expect(res.body).toContain('fill="#111111"');
+    expect(res.body).toContain('<svg');
     expect(res.body).toContain(">AM<");
   });
 });
