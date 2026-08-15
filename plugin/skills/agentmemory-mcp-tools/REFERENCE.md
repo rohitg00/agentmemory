@@ -40,7 +40,7 @@ agentmemory exposes 54 MCP tools. 8 are in the lean core set (`--tools core` or 
 | `memory_reflect` | yes | `project`: string, `maxClusters`: number | Traverse the knowledge graph, group related memories by concept clusters, and synthesize higher-order insights via LLM. Returns new and reinforced insights. |
 | `memory_relations` |  | `memoryId`*: string, `maxHops`: number, `minConfidence`: number | Query the memory relationship graph. |
 | `memory_routine_run` |  | `routineId`*: string, `project`: string, `initiatedBy`: string | Instantiate a frozen workflow routine, creating actions for each step with proper dependencies. |
-| `memory_save` | yes | `content`*: string, `type`: string, `concepts`: string, `files`: string, `project`: string | Explicitly save an important insight, decision, or pattern to long-term memory. |
+| `memory_save` | yes | `content`*: string, `type`: string, `concepts`: string, `files`: string, `project`: string, `agentId`: string | Explicitly save an important insight, decision, or pattern to long-term memory. |
 | `memory_sentinel_create` |  | `name`*: string, `type`*: string, `config`: string, `linkedActionIds`: string, `expiresInMs`: number | Create an event-driven sentinel that watches for conditions (webhook, timer, threshold, pattern, approval) and auto-unblocks gated actions when triggered. |
 | `memory_sentinel_trigger` |  | `sentinelId`*: string, `result`: string | Externally fire a sentinel, providing an optional result payload. Unblocks any gated actions. |
 | `memory_sessions` | yes | none | List recent sessions with their status and observation counts. |
