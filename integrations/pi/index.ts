@@ -149,6 +149,13 @@ export default function agentmemoryExtension(pi: ExtensionAPI) {
   let lastPrompt = "";
   let lastHealthOk = false;
 
+  // PostToolUse parity: observe each tool call as its own observation.
+  // The server's inferType classifies by tool name (command_run, file_edit,
+  // file_read, ...) and, with AUTO_COMPRESS=true, the LLM compression
+  // extracts title/concepts/importance per call. Set AGENTMEMORY_TOOL_OBSERVE=0
+  // to fall back to conversation-level observations only.
+  const toolObserveEnabled = process.env.AGENTMEMORY_TOOL_OBSERVE !== "0";
+
   async function getHealth() {
     return await callAgentMemory<HealthResponse>("health", { method: "GET" });
   }
@@ -278,6 +285,40 @@ export default function agentmemoryExtension(pi: ExtensionAPI) {
     return {
       systemPrompt: [event.systemPrompt, TOOL_GUIDANCE, recallBlock].filter(Boolean).join("\n\n"),
     };
+  });
+
+  pi.on("tool_result", (event) => {
+    if (!toolObserveEnabled) return;
+    if (!lastHealthOk || !sessionId) return;
+    const toolName = event.toolName;
+    if (!toolName) return;
+    let input: string;
+    try {
+      input = typeof event.input === "string" ? event.input : JSON.stringify(event.input ?? {});
+    } catch {
+      input = "";
+    }
+    let output: string;
+    try {
+      output = typeof event.content === "string" ? event.content : JSON.stringify(event.content ?? "");
+    } catch {
+      output = "";
+    }
+    void callAgentMemory("observe", {
+      body: {
+        hookType: "post_tool_use",
+        sessionId,
+        project: currentProject,
+        cwd: currentCwd,
+        timestamp: new Date().toISOString(),
+        data: {
+          tool_name: toolName,
+          tool_input: input.slice(0, 8000),
+          tool_output: output.slice(0, 8000),
+          ...(event.isError ? { tool_error: true } : {}),
+        },
+      },
+    });
   });
 
   pi.on("agent_end", async (event) => {
