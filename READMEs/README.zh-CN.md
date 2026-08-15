@@ -87,7 +87,7 @@ npx @agentmemory/agentmemory
 
 ```bash
 agentmemory demo --serve                 # 注入示例会话并观察召回找到它们
-npx skills add rohitg00/agentmemory -y   # 15 个原生 skills,让代理知道何时使用记忆
+npx skills add rohitg00/agentmemory -y   # 17 个原生 skills,让代理知道何时使用记忆
 ```
 
 想让编码代理包办全程?交给它一条指令:
@@ -522,7 +522,7 @@ npx @agentmemory/agentmemory upgrade
 ### Claude Code(一段话,直接粘贴)
 
 ```text
-Install agentmemory: run `npx @agentmemory/agentmemory` in a separate terminal to start the memory server. Then run `/plugin marketplace add rohitg00/agentmemory` and `/plugin install agentmemory` — the plugin registers all 12 hooks, 15 skills, AND auto-wires the `@agentmemory/mcp` stdio server via its `.mcp.json`, so you get 54 MCP tools (memory_smart_search, memory_save, memory_sessions, memory_governance_delete, etc.) without any extra config step. Verify with `curl http://localhost:3111/agentmemory/health`. The real-time viewer is at http://localhost:3113.
+Install agentmemory: run `npx @agentmemory/agentmemory` in a separate terminal to start the memory server. Then run `/plugin marketplace add rohitg00/agentmemory` and `/plugin install agentmemory` — the plugin registers all 12 hooks, 17 skills, AND auto-wires the `@agentmemory/mcp` stdio server via its `.mcp.json`, so you get 54 MCP tools (memory_smart_search, memory_save, memory_sessions, memory_governance_delete, etc.) without any extra config step. Verify with `curl http://localhost:3111/agentmemory/health`. The real-time viewer is at http://localhost:3113.
 ```
 
 #### Claude Code 不安装插件(MCP-standalone 路径)
@@ -554,7 +554,7 @@ Codex 插件与 Claude Code 插件同源,来自相同的 `plugin/` 目录。它�
 
 - `@agentmemory/mcp` 作为 MCP 服务器(当 `AGENTMEMORY_URL` 指向运行中的 agentmemory 服务器时,代理全部 54 个工具;若服务器不可达,本地回退至 7 个工具)
 - 6 个生命周期 hooks:`SessionStart`、`UserPromptSubmit`、`PreToolUse`、`PostToolUse`、`PreCompact`、`Stop`
-- 8 个可调用 skills:`/recall`、`/remember`、`/session-history`、`/forget`、`/recap`、`/handoff`、`/commit-context`、`/commit-history`,外加 7 个代理按需加载的参考 skills(MCP 工具、REST API、配置、代理、hooks、架构,以及 skill 编写指南)
+- 9 个可调用 skills:`/recall`、`/remember`、`/session-history`、`/forget`、`/recap`、`/handoff`、`/lesson`、`/commit-context`、`/commit-history`,外加 8 个代理按需加载的参考 skills(memory discipline, MCP 工具、REST API、配置、代理、hooks、架构,以及 skill 编写指南)
 
 Codex 的 hook 引擎会将 `CLAUDE_PLUGIN_ROOT` 注入 hook 子进程(参见 [`codex-rs/hooks/src/engine/discovery.rs`](https://github.com/openai/codex/blob/main/codex-rs/hooks/src/engine/discovery.rs)),因此同样的 hook 脚本在两个宿主中都能工作,无需重复实现。Subagent / SessionEnd / Notification / TaskCompleted / PostToolUseFailure 事件仅 Claude Code 支持,Codex 未注册这些。
 
@@ -622,7 +622,7 @@ Verify with `curl http://localhost:3111/agentmemory/health`. Open http://localho
 
 #### 通过 `npx skills add` 安装原生 skills(50+ 代理)
 
-agentmemory 以 Claude Code 风格的 `<dir>/SKILL.md` 格式提供 15 个 skills:8 个可调用的动作 skills(`remember`、`recall`、`recap`、`handoff`、`forget`、`commit-context`、`commit-history`、`session-history`)和 7 个代理按需加载的参考 skills(`agentmemory-mcp-tools`、`agentmemory-rest-api`、`agentmemory-config`、`agentmemory-agents`、`agentmemory-hooks`、`agentmemory-architecture`、`write-agentmemory-skill`)。参考 skills 携带从源码生成的数据表,因此永不漂移。vercel-labs 的 [`skills`](https://npmjs.com/package/skills) CLI 会把它们自动安装到调用代理的原生 skill 目录,覆盖 50+ 代理(Claude Code、Cursor、Cline、Continue、Droid、Warp、Codex、Antigravity、Kiro、OpenCode、Goose、Roo、Trae、Windsurf 等):
+agentmemory 以 Claude Code 风格的 `<dir>/SKILL.md` 格式提供 17 个 skills:9 个可调用的动作 skills(`remember`、`recall`、`recap`、`handoff`、`forget`、`lesson`、`commit-context`、`commit-history`、`session-history`)和 8 个代理按需加载的参考 skills(`memory-discipline`、`agentmemory-mcp-tools`、`agentmemory-rest-api`、`agentmemory-config`、`agentmemory-agents`、`agentmemory-hooks`、`agentmemory-architecture`、`write-agentmemory-skill`)。参考 skills 携带从源码生成的数据表,因此永不漂移。vercel-labs 的 [`skills`](https://npmjs.com/package/skills) CLI 会把它们自动安装到调用代理的原生 skill 目录,覆盖 50+ 代理(Claude Code、Cursor、Cline、Continue、Droid、Warp、Codex、Antigravity、Kiro、OpenCode、Goose、Roo、Trae、Windsurf 等):
 
 ```bash
 npx skills add rohitg00/agentmemory -y          # 自动检测调用代理
@@ -665,7 +665,7 @@ npx skills add rohitg00/agentmemory -y -a '*'   # 安装到每个已安装的代
 | **GitHub Copilot CLI (完整插件)** | Copilot 插件安装 | `copilot plugin install rohitg00/agentmemory:plugin` 安装 GitHub 子目录中的插件。 |
 | **OpenClaw** | OpenClaw MCP 配置 | 同样的 `mcpServers` 块,或使用更深的[记忆插件](../integrations/openclaw/)。 |
 | **Codex CLI (仅 MCP)** | `.codex/config.toml` | TOML 形式:`codex mcp add agentmemory -- npx -y @agentmemory/mcp`,或手动添加 `[mcp_servers.agentmemory]`。 |
-| **Codex CLI (完整插件)** | Codex 插件市场 | `codex plugin marketplace add rohitg00/agentmemory` 然后 `codex plugin add agentmemory@agentmemory`。注册 MCP + 6 个生命周期 hooks(SessionStart、UserPromptSubmit、PreToolUse、PostToolUse、PreCompact、Stop)+ 15 个 skills。在 Codex Desktop 上,直到 [openai/codex#16430](https://github.com/openai/codex/issues/16430) 落地之前,还要运行 `agentmemory connect codex --with-hooks`;那里的插件 hooks 当前无响应。 |
+| **Codex CLI (完整插件)** | Codex 插件市场 | `codex plugin marketplace add rohitg00/agentmemory` 然后 `codex plugin add agentmemory@agentmemory`。注册 MCP + 6 个生命周期 hooks(SessionStart、UserPromptSubmit、PreToolUse、PostToolUse、PreCompact、Stop)+ 17 个 skills。在 Codex Desktop 上,直到 [openai/codex#16430](https://github.com/openai/codex/issues/16430) 落地之前,还要运行 `agentmemory connect codex --with-hooks`;那里的插件 hooks 当前无响应。 |
 | **OpenCode (仅 MCP)** | `opencode.json` | 不同结构:顶层 `mcp` key,command 是数组:`{"mcp": {"agentmemory": {"type": "local", "command": ["npx", "-y", "@agentmemory/mcp"], "enabled": true}}}`。 |
 | **OpenCode (完整插件)** | `plugin/opencode/` | 22 个自动捕获 hooks,覆盖会话生命周期、消息、工具、错误。项目归属按会话进行,因此一个跨多个仓库的 OpenCode 进程会把每个会话归档到各自的项目下。两个斜杠命令(`/recall`、`/remember`)。将 `plugin/opencode/` 复制到你的 OpenCode 工作空间并把插件条目添加到 `opencode.json`。完整 hook 表和差异分析见 [`plugin/opencode/README.md`](../plugin/opencode/README.md)。 |
 | **pi** | `~/.pi/agent/extensions/agentmemory` | `agentmemory connect pi` 把捆绑扩展安装到 pi 的自动发现目录(代理启动时召回、代理结束时捕获、`memory_search` / `memory_save` / `memory_health` 工具、`/agentmemory-status`)。在运行中的 pi 里执行 `/reload` 即可加载。[`integrations/pi`](../integrations/pi/) 也是一个 pi 包(从检出的仓库运行 `pi install ./integrations/pi`)。 |
@@ -964,7 +964,7 @@ npm install @huggingface/transformers
 
 <h2 id="mcp-server"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-mcp.svg"><img src="../assets/tags/section-mcp.svg" alt="MCP Server" height="32" /></picture></h2>
 
-54 个工具、6 个资源、3 个提示词、15 个 skills。
+54 个工具、6 个资源、3 个提示词、17 个 skills。
 
 > **MCP shim 对比完整服务器:** 已发布的 `@agentmemory/mcp` 包是一个薄 shim。**只有当它能通过 `AGENTMEMORY_URL` 连通运行中的 agentmemory 服务器**(代理模式)时,才暴露完整的 54 工具表面。在没有可达服务器的情况下,shim 回退到 7 工具的本地集合(`memory_save`、`memory_recall`、`memory_smart_search`、`memory_sessions`、`memory_export`、`memory_audit`、`memory_governance_delete`)。`AGENTMEMORY_TOOLS=core|all` 环境变量是*服务器端*标志;在 shim 的 `env` 块中设置无效。如果在 Cursor / OpenCode / Gemini CLI 中只看到 7 个工具,启动 `npx @agentmemory/agentmemory`(或 Docker 栈)并设置 `AGENTMEMORY_URL=http://localhost:3111`。
 
@@ -1033,7 +1033,7 @@ npm install @huggingface/transformers
 
 </details>
 
-### 6 个资源 · 3 个提示词 · 15 个 Skills
+### 6 个资源 · 3 个提示词 · 17 个 Skills
 
 | 类型 | 名称 | 描述 |
 |------|------|-------------|

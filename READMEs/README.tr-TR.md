@@ -87,7 +87,7 @@ Ardından recall'un çalıştığını kanıtlayın ve ajanınıza skill'lerini 
 
 ```bash
 agentmemory demo --serve                 # seed sample sessions + watch recall find them
-npx skills add rohitg00/agentmemory -y   # 15 native skills so your agent knows when to reach for memory
+npx skills add rohitg00/agentmemory -y   # 17 native skills so your agent knows when to reach for memory
 ```
 
 Tüm işi bir kodlama ajanına mı bırakmayı tercih ediyorsunuz? Ona tek bir talimat verin:
@@ -522,7 +522,7 @@ Uygulama detayları `src/cli.ts` içinde (`src/cli.ts:544-595` bölgesi civarın
 ### Claude Code (tek blok, yapıştırın)
 
 ```text
-Install agentmemory: run `npx @agentmemory/agentmemory` in a separate terminal to start the memory server. Then run `/plugin marketplace add rohitg00/agentmemory` and `/plugin install agentmemory` — the plugin registers all 12 hooks, 15 skills, AND auto-wires the `@agentmemory/mcp` stdio server via its `.mcp.json`, so you get 54 MCP tools (memory_smart_search, memory_save, memory_sessions, memory_governance_delete, etc.) without any extra config step. Verify with `curl http://localhost:3111/agentmemory/health`. The real-time viewer is at http://localhost:3113.
+Install agentmemory: run `npx @agentmemory/agentmemory` in a separate terminal to start the memory server. Then run `/plugin marketplace add rohitg00/agentmemory` and `/plugin install agentmemory` — the plugin registers all 12 hooks, 17 skills, AND auto-wires the `@agentmemory/mcp` stdio server via its `.mcp.json`, so you get 54 MCP tools (memory_smart_search, memory_save, memory_sessions, memory_governance_delete, etc.) without any extra config step. Verify with `curl http://localhost:3111/agentmemory/health`. The real-time viewer is at http://localhost:3113.
 ```
 
 #### Eklenti kurulumu olmadan Claude Code (MCP-bağımsız yol)
@@ -553,7 +553,7 @@ Codex eklentisi, Claude Code eklentisiyle aynı `plugin/` dizininden gelir. Şun
 
 - `@agentmemory/mcp` MCP sunucusu olarak (`AGENTMEMORY_URL` çalışan bir agentmemory sunucusuna işaret ettiğinde tüm 54 tool'u proxy yapar; erişilebilir sunucu yoksa yerel olarak 7 tool'a düşer)
 - 6 yaşam döngüsü hook'u: `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PreCompact`, `Stop`
-- 8 çağrılabilir skill: `/recall`, `/remember`, `/session-history`, `/forget`, `/recap`, `/handoff`, `/commit-context`, `/commit-history`; artı ajanın gerektiğinde yüklediği 7 referans skill'i (MCP tool'ları, REST API, yapılandırma, ajanlar, hook'lar, mimari ve skill yazım kılavuzu)
+- 9 çağrılabilir skill: `/recall`, `/remember`, `/session-history`, `/forget`, `/recap`, `/handoff`, `/lesson`, `/commit-context`, `/commit-history`; artı ajanın gerektiğinde yüklediği 8 referans skill'i (memory discipline, MCP tool'ları, REST API, yapılandırma, ajanlar, hook'lar, mimari ve skill yazım kılavuzu)
 
 Codex'in hook motoru, hook alt süreçlerine `CLAUDE_PLUGIN_ROOT` enjekte eder (bkz. [`codex-rs/hooks/src/engine/discovery.rs`](https://github.com/openai/codex/blob/main/codex-rs/hooks/src/engine/discovery.rs)), bu sayede aynı hook scriptleri her iki host'ta da çoğaltma yapmadan çalışır. Subagent / SessionEnd / Notification / TaskCompleted / PostToolUseFailure olayları yalnızca Claude Code'a özeldir ve Codex için kaydedilmez.
 
@@ -621,7 +621,7 @@ Bellek sunucusunu başlatın: `npx @agentmemory/agentmemory`
 
 #### `npx skills add` ile yerel skill'ler (50+ ajan)
 
-agentmemory, Claude-Code-tarzı `<dir>/SKILL.md` formatında 15 skill sunar: 8 çağrılabilir aksiyon skill'i (`remember`, `recall`, `recap`, `handoff`, `forget`, `commit-context`, `commit-history`, `session-history`) ve ajanın gerektiğinde yüklediği 7 referans skill'i (`agentmemory-mcp-tools`, `agentmemory-rest-api`, `agentmemory-config`, `agentmemory-agents`, `agentmemory-hooks`, `agentmemory-architecture`, `write-agentmemory-skill`). Referans skill'leri kaynaktan üretilen veri tabloları taşır, bu yüzden asla sapmazlar. vercel-labs'ın [`skills`](https://npmjs.com/package/skills) CLI'si bunları 50+ ajanda (Claude Code, Cursor, Cline, Continue, Droid, Warp, Codex, Antigravity, Kiro, OpenCode, Goose, Roo, Trae, Windsurf ve daha fazlası) çağıran ajanın yerel skill dizinine otomatik olarak kurar:
+agentmemory, Claude-Code-tarzı `<dir>/SKILL.md` formatında 17 skill sunar: 9 çağrılabilir aksiyon skill'i (`remember`, `recall`, `recap`, `handoff`, `forget`, `lesson`, `commit-context`, `commit-history`, `session-history`) ve ajanın gerektiğinde yüklediği 8 referans skill'i (`memory-discipline`, `agentmemory-mcp-tools`, `agentmemory-rest-api`, `agentmemory-config`, `agentmemory-agents`, `agentmemory-hooks`, `agentmemory-architecture`, `write-agentmemory-skill`). Referans skill'leri kaynaktan üretilen veri tabloları taşır, bu yüzden asla sapmazlar. vercel-labs'ın [`skills`](https://npmjs.com/package/skills) CLI'si bunları 50+ ajanda (Claude Code, Cursor, Cline, Continue, Droid, Warp, Codex, Antigravity, Kiro, OpenCode, Goose, Roo, Trae, Windsurf ve daha fazlası) çağıran ajanın yerel skill dizinine otomatik olarak kurar:
 
 ```bash
 npx skills add rohitg00/agentmemory -y          # auto-detects the calling agent
@@ -634,7 +634,7 @@ Bu, `agentmemory connect <agent>` ile **tamamlayıcıdır**:
 - `agentmemory connect <agent>` MCP sunucu yapılandırmasını yazar, böylece tool'lar kullanılabilir olur.
 - `npx skills add rohitg00/agentmemory` skill'leri kurar, böylece ajan onları ne zaman çağıracağını bilir.
 
-skills CLI'sinin henüz kapsamadığı az sayıdaki ajan için (Zed v1.3.x ve altı), 15 SKILL.md dosyasını ajanın yerel skill dizinine kendiniz bırakın; aynı format her yerde çalışır.
+skills CLI'sinin henüz kapsamadığı az sayıdaki ajan için (Zed v1.3.x ve altı), 17 SKILL.md dosyasını ajanın yerel skill dizinine kendiniz bırakın; aynı format her yerde çalışır.
 
 #### Standart MCP bloğu
 
@@ -664,7 +664,7 @@ agentmemory girdisi, `mcpServers` şeklini kullanan her host'ta (Cursor, Claude 
 | **GitHub Copilot CLI (tam eklenti)** | Copilot eklenti kurulumu | GitHub alt dizinindeki eklenti için `copilot plugin install rohitg00/agentmemory:plugin`. |
 | **OpenClaw** | OpenClaw MCP yapılandırması | Aynı `mcpServers` bloğu veya daha derin [bellek eklentisi](../integrations/openclaw/) kullanın. |
 | **Codex CLI (yalnız MCP)** | `.codex/config.toml` | TOML şekli: `codex mcp add agentmemory -- npx -y @agentmemory/mcp` veya manuel olarak `[mcp_servers.agentmemory]` ekleyin. |
-| **Codex CLI (tam eklenti)** | Codex eklenti marketplace | `codex plugin marketplace add rohitg00/agentmemory` ardından `codex plugin add agentmemory@agentmemory`. MCP + 6 yaşam döngüsü hook'u (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PreCompact, Stop) + 15 skill kaydeder. Codex Desktop'ta, [openai/codex#16430](https://github.com/openai/codex/issues/16430) inene kadar `agentmemory connect codex --with-hooks` da çalıştırın; eklenti hook'ları şu anda orada sessiz. |
+| **Codex CLI (tam eklenti)** | Codex eklenti marketplace | `codex plugin marketplace add rohitg00/agentmemory` ardından `codex plugin add agentmemory@agentmemory`. MCP + 6 yaşam döngüsü hook'u (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PreCompact, Stop) + 17 skill kaydeder. Codex Desktop'ta, [openai/codex#16430](https://github.com/openai/codex/issues/16430) inene kadar `agentmemory connect codex --with-hooks` da çalıştırın; eklenti hook'ları şu anda orada sessiz. |
 | **OpenCode (yalnız MCP)** | `opencode.json` | Farklı şekil: üst seviye `mcp` anahtarı, komut dizi olarak: `{"mcp": {"agentmemory": {"type": "local", "command": ["npx", "-y", "@agentmemory/mcp"], "enabled": true}}}`. |
 | **OpenCode (tam eklenti)** | `plugin/opencode/` | Oturum yaşam döngüsü, mesajlar, araçlar, hataları kapsayan 22 otomatik yakalama hook'u. Proje ataması oturum başınadır; bu yüzden birden çok depoya yayılan tek bir OpenCode süreci her oturumu kendi projesi altına dosyalar. İki slash komut (`/recall`, `/remember`). `plugin/opencode/`'u OpenCode çalışma alanınıza kopyalayın ve eklenti girdisini `opencode.json`'a ekleyin. Tam hook tablosu + gap analizi için [`plugin/opencode/README.md`](../plugin/opencode/README.md) bakın. |
 | **pi** | `~/.pi/agent/extensions/agentmemory` | `agentmemory connect pi` paketli uzantıyı pi'nin otomatik keşif dizinine kurar (ajan başlangıcında recall, ajan bitişinde yakalama, `memory_search` / `memory_save` / `memory_health` tool'ları, `/agentmemory-status`). Çalışan bir pi'de `/reload` bunu alır. [`integrations/pi`](../integrations/pi/) aynı zamanda bir pi paketidir (bir checkout içinden `pi install ./integrations/pi`). |
@@ -967,7 +967,7 @@ npm install @huggingface/transformers
 
 <h2 id="mcp-server"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-mcp.svg"><img src="../assets/tags/section-mcp.svg" alt="MCP Server" height="32" /></picture></h2>
 
-54 tool, 6 kaynak, 3 prompt ve 15 skill.
+54 tool, 6 kaynak, 3 prompt ve 17 skill.
 
 > **MCP shim vs tam sunucu:** yayımlanan `@agentmemory/mcp` paketi ince bir shim'dir. Tam 54-tool yüzeyini **yalnızca `AGENTMEMORY_URL` üzerinden çalışan bir agentmemory sunucusuna erişebildiğinde** açığa çıkarır (proxy modu). Erişilebilir sunucu yoksa, shim 7-tool yerel sete (`memory_save`, `memory_recall`, `memory_smart_search`, `memory_sessions`, `memory_export`, `memory_audit`, `memory_governance_delete`) düşer. `AGENTMEMORY_TOOLS=core|all` env değişkeni *sunucu tarafı* bir bayraktır; shim'in `env` bloğunda ayarlamak hiçbir etki yapmaz. Cursor / OpenCode / Gemini CLI'da yalnızca 7 tool görüyorsanız, `npx @agentmemory/agentmemory` (veya Docker stack'i) başlatın ve `AGENTMEMORY_URL=http://localhost:3111` ayarlayın.
 
@@ -1036,7 +1036,7 @@ Küçükten büyüğe üç tool yüzeyi: `AGENTMEMORY_TOOLS=core` görünürlü�
 
 </details>
 
-### 6 Kaynak · 3 Prompt · 15 Skill
+### 6 Kaynak · 3 Prompt · 17 Skill
 
 | Tür | İsim | Açıklama |
 |------|------|-------------|

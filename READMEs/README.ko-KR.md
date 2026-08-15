@@ -87,7 +87,7 @@ npx @agentmemory/agentmemory
 
 ```bash
 agentmemory demo --serve                 # seed sample sessions + watch recall find them
-npx skills add rohitg00/agentmemory -y   # 15 native skills so your agent knows when to reach for memory
+npx skills add rohitg00/agentmemory -y   # 17 native skills so your agent knows when to reach for memory
 ```
 
 코딩 에이전트에게 전체 과정을 맡기고 싶다면 지침 하나만 건네십시오:
@@ -522,7 +522,7 @@ npx @agentmemory/agentmemory upgrade
 ### Claude Code (블록 한 번, 붙여넣기)
 
 ```text
-Install agentmemory: run `npx @agentmemory/agentmemory` in a separate terminal to start the memory server. Then run `/plugin marketplace add rohitg00/agentmemory` and `/plugin install agentmemory` — the plugin registers all 12 hooks, 15 skills, AND auto-wires the `@agentmemory/mcp` stdio server via its `.mcp.json`, so you get 54 MCP tools (memory_smart_search, memory_save, memory_sessions, memory_governance_delete, etc.) without any extra config step. Verify with `curl http://localhost:3111/agentmemory/health`. The real-time viewer is at http://localhost:3113.
+Install agentmemory: run `npx @agentmemory/agentmemory` in a separate terminal to start the memory server. Then run `/plugin marketplace add rohitg00/agentmemory` and `/plugin install agentmemory` — the plugin registers all 12 hooks, 17 skills, AND auto-wires the `@agentmemory/mcp` stdio server via its `.mcp.json`, so you get 54 MCP tools (memory_smart_search, memory_save, memory_sessions, memory_governance_delete, etc.) without any extra config step. Verify with `curl http://localhost:3111/agentmemory/health`. The real-time viewer is at http://localhost:3113.
 ```
 
 #### 플러그인 설치 없이 Claude Code 사용 (MCP-독립형 경로)
@@ -553,7 +553,7 @@ Codex 플러그인은 Claude Code 플러그인과 동일한 `plugin/` 디렉터�
 
 - `@agentmemory/mcp`를 MCP 서버로 등록 (`AGENTMEMORY_URL`이 실행 중인 agentmemory 서버를 가리킬 때 51개 도구 모두 프록시. 도달 가능한 서버가 없으면 로컬에서 7개 도구로 폴백)
 - 6개 라이프사이클 hooks: `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PreCompact`, `Stop`
-- 호출 가능한 skills 8개: `/recall`, `/remember`, `/session-history`, `/forget`, `/recap`, `/handoff`, `/commit-context`, `/commit-history`, 그리고 에이전트가 필요할 때 로드하는 참조 skills 7개(MCP 도구, REST API, 설정, 에이전트, 훅, 아키텍처, skill 작성 가이드)
+- 호출 가능한 skills 9개: `/recall`, `/remember`, `/session-history`, `/forget`, `/recap`, `/handoff`, `/lesson`, `/commit-context`, `/commit-history`, 그리고 에이전트가 필요할 때 로드하는 참조 skills 8개(memory discipline, MCP 도구, REST API, 설정, 에이전트, 훅, 아키텍처, skill 작성 가이드)
 
 Codex의 hook 엔진은 hook 서브프로세스에 `CLAUDE_PLUGIN_ROOT`를 주입하므로 ([`codex-rs/hooks/src/engine/discovery.rs`](https://github.com/openai/codex/blob/main/codex-rs/hooks/src/engine/discovery.rs) 참고), 동일한 hook 스크립트가 중복 없이 두 호스트에서 모두 동작합니다. Subagent / SessionEnd / Notification / TaskCompleted / PostToolUseFailure 이벤트는 Claude Code 전용이며 Codex에는 등록되지 않습니다.
 
@@ -621,7 +621,7 @@ Verify with `curl http://localhost:3111/agentmemory/health`. Open http://localho
 
 #### `npx skills add`를 통한 네이티브 skills (50+ 에이전트)
 
-agentmemory는 Claude Code 스타일의 `<dir>/SKILL.md` 형식으로 15개의 skills를 제공합니다: 8개의 호출 가능한 액션 skills(`remember`, `recall`, `recap`, `handoff`, `forget`, `commit-context`, `commit-history`, `session-history`)와 에이전트가 필요할 때 로드하는 7개의 레퍼런스 skills(`agentmemory-mcp-tools`, `agentmemory-rest-api`, `agentmemory-config`, `agentmemory-agents`, `agentmemory-hooks`, `agentmemory-architecture`, `write-agentmemory-skill`)입니다. 레퍼런스 skills는 소스에서 생성된 데이터 표를 담고 있어 절대 드리프트하지 않습니다. vercel-labs의 [`skills`](https://npmjs.com/package/skills) CLI가 50개 이상의 에이전트(Claude Code, Cursor, Cline, Continue, Droid, Warp, Codex, Antigravity, Kiro, OpenCode, Goose, Roo, Trae, Windsurf 등)에서 호출한 에이전트의 네이티브 skill 디렉터리에 이를 자동 설치합니다:
+agentmemory는 Claude Code 스타일의 `<dir>/SKILL.md` 형식으로 17개의 skills를 제공합니다: 9개의 호출 가능한 액션 skills(`remember`, `recall`, `recap`, `handoff`, `forget`, `lesson`, `commit-context`, `commit-history`, `session-history`)와 에이전트가 필요할 때 로드하는 8개의 레퍼런스 skills(`memory-discipline`, `agentmemory-mcp-tools`, `agentmemory-rest-api`, `agentmemory-config`, `agentmemory-agents`, `agentmemory-hooks`, `agentmemory-architecture`, `write-agentmemory-skill`)입니다. 레퍼런스 skills는 소스에서 생성된 데이터 표를 담고 있어 절대 드리프트하지 않습니다. vercel-labs의 [`skills`](https://npmjs.com/package/skills) CLI가 50개 이상의 에이전트(Claude Code, Cursor, Cline, Continue, Droid, Warp, Codex, Antigravity, Kiro, OpenCode, Goose, Roo, Trae, Windsurf 등)에서 호출한 에이전트의 네이티브 skill 디렉터리에 이를 자동 설치합니다:
 
 ```bash
 npx skills add rohitg00/agentmemory -y          # auto-detects the calling agent
@@ -664,7 +664,7 @@ agentmemory 항목은 `mcpServers` 형태를 사용하는 모든 호스트(Curso
 | **GitHub Copilot CLI (full plugin)** | Copilot 플러그인 설치 | GitHub 하위 디렉터리의 플러그인은 `copilot plugin install rohitg00/agentmemory:plugin`. |
 | **OpenClaw** | OpenClaw MCP config | 동일한 `mcpServers` 블록을 사용하거나, 더 깊은 [memory plugin](../integrations/openclaw/)을 사용. |
 | **Codex CLI (MCP only)** | `.codex/config.toml` | TOML 형식: `codex mcp add agentmemory -- npx -y @agentmemory/mcp`, 또는 `[mcp_servers.agentmemory]`를 수동으로 추가. |
-| **Codex CLI (full plugin)** | Codex 플러그인 마켓플레이스 | `codex plugin marketplace add rohitg00/agentmemory` 후 `codex plugin add agentmemory@agentmemory`. MCP + 6 lifecycle hooks (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PreCompact, Stop) + 15 skills 등록. Codex Desktop에서는 [openai/codex#16430](https://github.com/openai/codex/issues/16430)이 머지될 때까지 `agentmemory connect codex --with-hooks`도 실행해야 합니다. 현재 그곳에서는 플러그인 hooks가 동작하지 않습니다. |
+| **Codex CLI (full plugin)** | Codex 플러그인 마켓플레이스 | `codex plugin marketplace add rohitg00/agentmemory` 후 `codex plugin add agentmemory@agentmemory`. MCP + 6 lifecycle hooks (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PreCompact, Stop) + 17 skills 등록. Codex Desktop에서는 [openai/codex#16430](https://github.com/openai/codex/issues/16430)이 머지될 때까지 `agentmemory connect codex --with-hooks`도 실행해야 합니다. 현재 그곳에서는 플러그인 hooks가 동작하지 않습니다. |
 | **OpenCode (MCP only)** | `opencode.json` | 다른 형식: 최상위 `mcp` 키, 명령은 배열로: `{"mcp": {"agentmemory": {"type": "local", "command": ["npx", "-y", "@agentmemory/mcp"], "enabled": true}}}`. |
 | **OpenCode (full plugin)** | `plugin/opencode/` | 세션 라이프사이클, 메시지, 도구, 오류를 다루는 22개의 자동 캡처 hooks. 프로젝트 어트리뷰션은 세션 단위이므로, 하나의 OpenCode 프로세스가 여러 저장소에 걸쳐 있어도 각 세션은 자기 프로젝트 아래에 기록됩니다. 두 개의 슬래시 명령(`/recall`, `/remember`). `plugin/opencode/`를 OpenCode workspace에 복사한 후 `opencode.json`에 플러그인 항목을 추가하십시오. 전체 hook 표 + gap 분석은 [`plugin/opencode/README.md`](../plugin/opencode/README.md) 참고. |
 | **pi** | `~/.pi/agent/extensions/agentmemory` | `agentmemory connect pi`가 번들된 확장을 pi의 자동 발견 디렉터리에 설치합니다(에이전트 시작 시 리콜, 에이전트 종료 시 캡처, `memory_search` / `memory_save` / `memory_health` 도구, `/agentmemory-status`). 실행 중인 pi에서 `/reload`를 하면 인식됩니다. [`integrations/pi`](../integrations/pi/)는 pi 패키지이기도 합니다(체크아웃에서 `pi install ./integrations/pi`). |
@@ -947,7 +947,7 @@ npm install @huggingface/transformers
 
 <h2 id="mcp-server"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-mcp.svg"><img src="../assets/tags/section-mcp.svg" alt="MCP 서버" height="32" /></picture></h2>
 
-54개 도구, 6개 리소스, 3개 프롬프트, 15개 skills.
+54개 도구, 6개 리소스, 3개 프롬프트, 17개 skills.
 
 > **MCP shim 대 전체 서버:** 게시된 `@agentmemory/mcp` 패키지는 얇은 shim입니다. `AGENTMEMORY_URL`을 통해 실행 중인 agentmemory 서버에 도달할 수 있을 때 **만** 전체 54-도구 표면을 노출합니다(프록시 모드). 도달 가능한 서버가 없으면 shim은 7-도구 로컬 세트(`memory_save`, `memory_recall`, `memory_smart_search`, `memory_sessions`, `memory_export`, `memory_audit`, `memory_governance_delete`)로 폴백합니다. `AGENTMEMORY_TOOLS=core|all` 환경 변수는 *서버 측* 플래그이며, shim의 `env` 블록에 설정해도 효과가 없습니다. Cursor / OpenCode / Gemini CLI에서 도구가 7개만 보인다면 `npx @agentmemory/agentmemory`(또는 Docker 스택)를 시작하고 `AGENTMEMORY_URL=http://localhost:3111`을 설정하십시오.
 
@@ -1016,7 +1016,7 @@ npm install @huggingface/transformers
 
 </details>
 
-### 6 리소스 · 3 프롬프트 · 15 Skills
+### 6 리소스 · 3 프롬프트 · 17 Skills
 
 | 유형 | 이름 | 설명 |
 |------|------|-------------|

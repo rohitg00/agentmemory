@@ -87,7 +87,7 @@ Después demuestra que el recall funciona y dale a tu agente sus skills:
 
 ```bash
 agentmemory demo --serve                 # seed sample sessions + watch recall find them
-npx skills add rohitg00/agentmemory -y   # 15 native skills so your agent knows when to reach for memory
+npx skills add rohitg00/agentmemory -y   # 17 native skills so your agent knows when to reach for memory
 ```
 
 ¿Prefieres que un agente de codificación lo haga todo? Entrégale una única instrucción:
@@ -524,7 +524,7 @@ Los detalles de implementación están en `src/cli.ts` (ver `runUpgrade` en torn
 ### Claude Code (un bloque, pégalo)
 
 ```text
-Install agentmemory: run `npx @agentmemory/agentmemory` in a separate terminal to start the memory server. Then run `/plugin marketplace add rohitg00/agentmemory` and `/plugin install agentmemory` — the plugin registers all 12 hooks, 15 skills, AND auto-wires the `@agentmemory/mcp` stdio server via its `.mcp.json`, so you get 54 MCP tools (memory_smart_search, memory_save, memory_sessions, memory_governance_delete, etc.) without any extra config step. Verify with `curl http://localhost:3111/agentmemory/health`. The real-time viewer is at http://localhost:3113.
+Install agentmemory: run `npx @agentmemory/agentmemory` in a separate terminal to start the memory server. Then run `/plugin marketplace add rohitg00/agentmemory` and `/plugin install agentmemory` — the plugin registers all 12 hooks, 17 skills, AND auto-wires the `@agentmemory/mcp` stdio server via its `.mcp.json`, so you get 54 MCP tools (memory_smart_search, memory_save, memory_sessions, memory_governance_delete, etc.) without any extra config step. Verify with `curl http://localhost:3111/agentmemory/health`. The real-time viewer is at http://localhost:3113.
 ```
 
 #### Claude Code sin instalar el plugin (ruta MCP standalone)
@@ -555,7 +555,7 @@ El plugin de Codex se sirve desde el mismo directorio `plugin/` que el de Claude
 
 - `@agentmemory/mcp` como servidor MCP (hace de proxy a las 54 tools cuando `AGENTMEMORY_URL` apunta a un servidor agentmemory en ejecución; cae a 7 tools en local cuando no hay servidor accesible)
 - 6 hooks de ciclo de vida: `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PreCompact`, `Stop`
-- 8 skills invocables: `/recall`, `/remember`, `/session-history`, `/forget`, `/recap`, `/handoff`, `/commit-context`, `/commit-history`, más 7 skills de referencia que el agente carga bajo demanda (tools MCP, REST API, config, agentes, hooks, arquitectura y la guía de autoría de skills)
+- 9 skills invocables: `/recall`, `/remember`, `/session-history`, `/forget`, `/recap`, `/handoff`, `/lesson`, `/commit-context`, `/commit-history`, más 8 skills de referencia que el agente carga bajo demanda (memory discipline, tools MCP, REST API, config, agentes, hooks, arquitectura y la guía de autoría de skills)
 
 El motor de hooks de Codex inyecta `CLAUDE_PLUGIN_ROOT` en los subprocesos de hook (según [`codex-rs/hooks/src/engine/discovery.rs`](https://github.com/openai/codex/blob/main/codex-rs/hooks/src/engine/discovery.rs)), por lo que los mismos scripts de hook funcionan en ambos hosts sin duplicación. Los eventos Subagent / SessionEnd / Notification / TaskCompleted / PostToolUseFailure son exclusivos de Claude Code y no se registran para Codex.
 
@@ -623,7 +623,7 @@ Arranca el servidor de memoria: `npx @agentmemory/agentmemory`
 
 #### Skills nativas vía `npx skills add` (50+ agentes)
 
-agentmemory incluye 15 skills en el formato `<dir>/SKILL.md` al estilo de Claude Code: 8 skills de acción invocables (`remember`, `recall`, `recap`, `handoff`, `forget`, `commit-context`, `commit-history`, `session-history`) y 7 skills de referencia que el agente carga bajo demanda (`agentmemory-mcp-tools`, `agentmemory-rest-api`, `agentmemory-config`, `agentmemory-agents`, `agentmemory-hooks`, `agentmemory-architecture`, `write-agentmemory-skill`). Las skills de referencia llevan tablas de datos generadas desde el código fuente, así que nunca se desincronizan. La CLI [`skills`](https://npmjs.com/package/skills) de vercel-labs las auto-instala en el directorio de skills nativo del agente que la invoca en 50+ agentes (Claude Code, Cursor, Cline, Continue, Droid, Warp, Codex, Antigravity, Kiro, OpenCode, Goose, Roo, Trae, Windsurf y más):
+agentmemory incluye 17 skills en el formato `<dir>/SKILL.md` al estilo de Claude Code: 9 skills de acción invocables (`remember`, `recall`, `recap`, `handoff`, `forget`, `lesson`, `commit-context`, `commit-history`, `session-history`) y 8 skills de referencia que el agente carga bajo demanda (`memory-discipline`, `agentmemory-mcp-tools`, `agentmemory-rest-api`, `agentmemory-config`, `agentmemory-agents`, `agentmemory-hooks`, `agentmemory-architecture`, `write-agentmemory-skill`). Las skills de referencia llevan tablas de datos generadas desde el código fuente, así que nunca se desincronizan. La CLI [`skills`](https://npmjs.com/package/skills) de vercel-labs las auto-instala en el directorio de skills nativo del agente que la invoca en 50+ agentes (Claude Code, Cursor, Cline, Continue, Droid, Warp, Codex, Antigravity, Kiro, OpenCode, Goose, Roo, Trae, Windsurf y más):
 
 ```bash
 npx skills add rohitg00/agentmemory -y          # auto-detects the calling agent
@@ -636,7 +636,7 @@ Esto es **complementario** a `agentmemory connect <agent>`:
 - `agentmemory connect <agent>` escribe la configuración del servidor MCP para que las tools estén disponibles.
 - `npx skills add rohitg00/agentmemory` instala las skills para que el agente sepa cuándo llamarlas.
 
-Para los pocos agentes que la CLI de skills aún no cubre (Zed v1.3.x e inferiores), coloca tú mismo los 15 ficheros SKILL.md bajo el directorio de skills nativo del agente; el mismo formato funciona en todas partes.
+Para los pocos agentes que la CLI de skills aún no cubre (Zed v1.3.x e inferiores), coloca tú mismo los 17 ficheros SKILL.md bajo el directorio de skills nativo del agente; el mismo formato funciona en todas partes.
 
 #### Bloque MCP estándar
 
@@ -666,7 +666,7 @@ La entrada de agentmemory es el **mismo bloque de servidor MCP** en cada host qu
 | **GitHub Copilot CLI (plugin completo)** | Instalación de plugin de Copilot | `copilot plugin install rohitg00/agentmemory:plugin` para el plugin desde el subdirectorio de GitHub. |
 | **OpenClaw** | Configuración MCP de OpenClaw | Mismo bloque `mcpServers`, o usa el [memory plugin](../integrations/openclaw/) más profundo. |
 | **Codex CLI (solo MCP)** | `.codex/config.toml` | Forma TOML: `codex mcp add agentmemory -- npx -y @agentmemory/mcp`, o añade `[mcp_servers.agentmemory]` a mano. |
-| **Codex CLI (plugin completo)** | Marketplace de plugins Codex | `codex plugin marketplace add rohitg00/agentmemory` y luego `codex plugin add agentmemory@agentmemory`. Registra MCP + 6 hooks de ciclo de vida (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PreCompact, Stop) + 15 skills. En Codex Desktop, ejecuta también `agentmemory connect codex --with-hooks` hasta que aterrice [openai/codex#16430](https://github.com/openai/codex/issues/16430); los hooks de plugin están silenciados allí por ahora. |
+| **Codex CLI (plugin completo)** | Marketplace de plugins Codex | `codex plugin marketplace add rohitg00/agentmemory` y luego `codex plugin add agentmemory@agentmemory`. Registra MCP + 6 hooks de ciclo de vida (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PreCompact, Stop) + 17 skills. En Codex Desktop, ejecuta también `agentmemory connect codex --with-hooks` hasta que aterrice [openai/codex#16430](https://github.com/openai/codex/issues/16430); los hooks de plugin están silenciados allí por ahora. |
 | **OpenCode (solo MCP)** | `opencode.json` | Forma distinta: clave `mcp` en el nivel superior, comando como array: `{"mcp": {"agentmemory": {"type": "local", "command": ["npx", "-y", "@agentmemory/mcp"], "enabled": true}}}`. |
 | **OpenCode (plugin completo)** | `plugin/opencode/` | 22 hooks de captura automática que cubren ciclo de vida de sesión, mensajes, tools y errores. La atribución de proyecto es por sesión, así que un único proceso de OpenCode que abarque varios repositorios archiva cada sesión bajo su propio proyecto. Dos comandos slash (`/recall`, `/remember`). Copia `plugin/opencode/` a tu workspace de OpenCode y añade la entrada del plugin a `opencode.json`. Tabla completa de hooks + análisis de gaps en [`plugin/opencode/README.md`](../plugin/opencode/README.md). |
 | **pi** | `~/.pi/agent/extensions/agentmemory` | `agentmemory connect pi` instala la extensión empaquetada en el directorio de auto-descubrimiento de pi (recall al arrancar el agente, captura al terminar, tools `memory_search` / `memory_save` / `memory_health`, `/agentmemory-status`). Un `/reload` en un pi en ejecución la detecta. [`integrations/pi`](../integrations/pi/) también es un paquete pi (`pi install ./integrations/pi` desde un checkout). |
@@ -958,7 +958,7 @@ npm install @huggingface/transformers
 
 <h2 id="mcp-server"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-mcp.svg"><img src="../assets/tags/section-mcp.svg" alt="Servidor MCP" height="32" /></picture></h2>
 
-54 tools, 6 recursos, 3 prompts y 15 skills.
+54 tools, 6 recursos, 3 prompts y 17 skills.
 
 > **Shim MCP vs servidor completo:** el paquete publicado `@agentmemory/mcp` es un shim ligero. Expone la superficie completa de 54 tools **solo cuando puede alcanzar un servidor agentmemory en ejecución** vía `AGENTMEMORY_URL` (modo proxy). Sin servidor accesible, el shim cae a un set local de 7 tools (`memory_save`, `memory_recall`, `memory_smart_search`, `memory_sessions`, `memory_export`, `memory_audit`, `memory_governance_delete`). La variable de entorno `AGENTMEMORY_TOOLS=core|all` es un flag *del lado del servidor*; definirla en el bloque `env` del shim no tiene efecto. Si ves solo 7 tools en Cursor / OpenCode / Gemini CLI, arranca `npx @agentmemory/agentmemory` (o la stack Docker) y define `AGENTMEMORY_URL=http://localhost:3111`.
 
@@ -1027,7 +1027,7 @@ Tres superficies de tools, de menor a mayor: `AGENTMEMORY_TOOLS=core` recorta la
 
 </details>
 
-### 6 Recursos · 3 Prompts · 15 Skills
+### 6 Recursos · 3 Prompts · 17 Skills
 
 | Tipo | Nombre | Descripción |
 |------|------|-------------|
