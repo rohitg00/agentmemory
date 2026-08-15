@@ -39,6 +39,7 @@ import {
   setVectorIndex,
   setEmbeddingProvider,
   setIndexPersistence,
+  setHybridRanker,
 } from "./functions/search.js";
 import { registerContextFunction } from "./functions/context.js";
 import { registerSummarizeFunction } from "./functions/summarize.js";
@@ -389,6 +390,7 @@ async function main() {
   registerSmartSearchFunction(sdk, kv, (query, limit) =>
     hybridSearch.search(query, limit),
   );
+  setHybridRanker((query, limit) => hybridSearch.search(query, limit));
   registerRecentSearchesSweepFunction(sdk, kv);
 
   registerApiTriggers(sdk, kv, secret, metricsStore, provider);

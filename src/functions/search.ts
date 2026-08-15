@@ -14,6 +14,22 @@ let index: SearchIndex | null = null
 let vectorIndex: VectorIndex | null = null
 let currentEmbeddingProvider: EmbeddingProvider | null = null
 
+// Hybrid ranking hook for mem::search. Wired by index.ts once the
+// hybrid searcher exists (it is constructed after this module's
+// registration runs). When set and the vector index has entries,
+// mem::search ranks candidates through the full BM25+vector+graph
+// fusion instead of BM25 alone — previously only mem::smart-search got
+// hybrid ranking while the primary recall surface stayed keyword-only.
+type HybridRanker = (
+  query: string,
+  limit: number,
+) => Promise<Array<{ observation: CompressedObservation; sessionId: string; combinedScore: number }>>
+let hybridRanker: HybridRanker | null = null
+
+export function setHybridRanker(fn: HybridRanker | null): void {
+  hybridRanker = fn
+}
+
 // Dedupes the lazy cold-start rebuild kicked off from the mem::search
 // request path. A full rebuildIndex walks every observation across every
 // session, so N concurrent queries against an empty index would each
@@ -448,7 +464,17 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
       // rank lower than cross-agent ones in the hybrid score.
       const filtering = !!(projectFilter || cwdFilter || filterAgentId)
       const fetchLimit = filtering ? Math.max(effectiveLimit * 10, 100) : effectiveLimit
-      const results = idx.search(query, fetchLimit)
+      let results: Array<{ obsId: string; sessionId: string; score: number }>
+      if (hybridRanker && vectorIndex && vectorIndex.size > 0) {
+        const hybrid = await hybridRanker(query, fetchLimit)
+        results = hybrid.map((r) => ({
+          obsId: r.observation.id,
+          sessionId: r.sessionId,
+          score: r.combinedScore,
+        }))
+      } else {
+        results = idx.search(query, fetchLimit)
+      }
 
       // Resolve session -> project/cwd once per sessionId we touch.
       const sessionCache = new Map<string, Session | null>()

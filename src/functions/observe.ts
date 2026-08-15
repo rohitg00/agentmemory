@@ -92,12 +92,28 @@ export function registerObserveFunction(
         sanitizedRaw = stripPrivateData(String(payload.data));
       }
 
+      // Stamp which trust boundary this content crossed. Tool hooks carry
+      // whatever the tool returned (file contents, command output, web
+      // pages) — content the user never wrote; prompt_submit is the user's
+      // own words; everything else originates from the agent runtime.
+      const originChannel =
+        payload.hookType === "prompt_submit"
+          ? ("user" as const)
+          : payload.hookType === "pre_tool_use" ||
+              payload.hookType === "post_tool_use" ||
+              payload.hookType === "post_tool_failure"
+            ? ("tool" as const)
+            : ("agent" as const);
       const raw: RawObservation = {
         id: obsId,
         sessionId: payload.sessionId,
         timestamp: payload.timestamp,
         hookType: payload.hookType,
         raw: sanitizedRaw,
+        origin: {
+          channel: originChannel,
+          capturedAt: payload.timestamp,
+        },
       };
 
       let extractedImage: string | undefined;
@@ -111,6 +127,7 @@ export function registerObserveFunction(
           raw.toolName = d["tool_name"] as string | undefined;
           raw.toolInput = d["tool_input"];
           raw.toolOutput = d["tool_output"] || d["error"];
+          if (raw.origin && raw.toolName) raw.origin.detail = raw.toolName;
         }
         if (payload.hookType === "prompt_submit") {
           raw.userPrompt = d["prompt"] as string | undefined;

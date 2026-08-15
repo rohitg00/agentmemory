@@ -1,8 +1,55 @@
 import type { ISdk } from "iii-sdk";
 import type { StateKV } from "../state/kv.js";
 import { KV, fingerprintId } from "../state/schema.js";
-import type { Lesson } from "../types.js";
+import type { CompressedObservation, Lesson } from "../types.js";
+import { SearchIndex } from "../state/search-index.js";
 import { recordAudit } from "./audit.js";
+
+// Dedicated BM25 index for lessons. Recall previously listed every
+// lesson from KV and substring-matched per query — O(corpus) per call
+// with no term weighting. The index is in-memory and built lazily from
+// one KV list (the same cost a single recall used to pay), then kept
+// current incrementally on save/delete. Confidence x recency reranking
+// stays exactly as before — the index only replaces the relevance term.
+let lessonIndex: SearchIndex | null = null;
+let lessonIndexBuild: Promise<void> | null = null;
+
+function lessonToIndexDoc(l: Lesson): CompressedObservation {
+  return {
+    id: l.id,
+    sessionId: "lesson",
+    timestamp: l.createdAt,
+    type: "decision",
+    title: l.content.slice(0, 120),
+    facts: [l.content],
+    narrative: l.context || "",
+    concepts: l.tags,
+    files: [],
+    importance: l.confidence,
+  };
+}
+
+async function ensureLessonIndex(kv: StateKV): Promise<SearchIndex> {
+  if (lessonIndex) return lessonIndex;
+  if (!lessonIndexBuild) {
+    lessonIndexBuild = (async () => {
+      const idx = new SearchIndex();
+      const all = await kv.list<Lesson>(KV.lessons);
+      for (const l of all) {
+        if (!l.deleted) idx.add(lessonToIndexDoc(l));
+      }
+      lessonIndex = idx;
+    })().finally(() => {
+      lessonIndexBuild = null;
+    });
+  }
+  await lessonIndexBuild;
+  return lessonIndex!;
+}
+
+export function __resetLessonIndex(): void {
+  lessonIndex = null;
+}
 
 function reinforceLesson(lesson: Lesson): void {
   const now = new Date().toISOString();
@@ -77,6 +124,7 @@ export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
       };
 
       await kv.set(KV.lessons, lesson.id, lesson);
+      if (lessonIndex) lessonIndex.add(lessonToIndexDoc(lesson));
 
       try {
         await recordAudit(kv, "lesson_save", "mem::lesson-save", [lesson.id]);
@@ -97,41 +145,42 @@ export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
         return { success: false, error: "query is required" };
       }
 
-      const query = data.query.toLowerCase();
       const minConfidence = data.minConfidence ?? 0.1;
       const limit = data.limit ?? 10;
 
-      let lessons = await kv.list<Lesson>(KV.lessons);
+      // BM25 over the lesson index picks candidates; the composite score
+      // (confidence x relevance x recency) is unchanged — only the
+      // relevance term moved from per-call substring counting to a
+      // weighted index lookup.
+      const idx = await ensureLessonIndex(kv);
+      const hits = idx.search(data.query, Math.max(limit * 5, 50));
+      const maxHit = hits.length > 0 ? hits[0].score : 0;
 
-      lessons = lessons.filter(
-        (l) => !l.deleted && l.confidence >= minConfidence,
+      const loaded = await Promise.all(
+        hits.map((h) => kv.get<Lesson>(KV.lessons, h.obsId).catch(() => null)),
       );
 
-      if (data.project) {
-        lessons = lessons.filter((l) => l.project === data.project);
+      const scored: Array<{ lesson: Lesson; score: number }> = [];
+      for (let i = 0; i < hits.length; i++) {
+        const l = loaded[i];
+        if (!l || l.deleted || l.confidence < minConfidence) continue;
+        if (data.project && l.project !== data.project) continue;
+
+        const relevance = maxHit > 0 ? hits[i].score / maxHit : 0;
+        const daysSinceReinforced = l.lastReinforcedAt
+          ? (Date.now() - new Date(l.lastReinforcedAt).getTime()) /
+            (1000 * 60 * 60 * 24)
+          : (Date.now() - new Date(l.createdAt).getTime()) /
+            (1000 * 60 * 60 * 24);
+        const recencyBoost = 1 / (1 + daysSinceReinforced * 0.01);
+        scored.push({ lesson: l, score: l.confidence * relevance * recencyBoost });
       }
 
-      const scored = lessons
-        .map((l) => {
-          const text = `${l.content} ${l.context} ${l.tags.join(" ")}`.toLowerCase();
-          const terms = query.split(/\s+/).filter((t) => t.length > 1);
-          const matchCount = terms.filter((t) => text.includes(t)).length;
-          if (matchCount === 0) return null;
-
-          const relevance = matchCount / terms.length;
-          const daysSinceReinforced = l.lastReinforcedAt
-            ? (Date.now() - new Date(l.lastReinforcedAt).getTime()) /
-              (1000 * 60 * 60 * 24)
-            : (Date.now() - new Date(l.createdAt).getTime()) /
-              (1000 * 60 * 60 * 24);
-          const recencyBoost = 1 / (1 + daysSinceReinforced * 0.01);
-          const score = l.confidence * relevance * recencyBoost;
-
-          return { lesson: l, score };
-        })
-        .filter(Boolean) as Array<{ lesson: Lesson; score: number }>;
-
-      scored.sort((a, b) => b.score - a.score);
+      scored.sort(
+        (a, b) =>
+          b.score - a.score ||
+          (a.lesson.id < b.lesson.id ? -1 : a.lesson.id > b.lesson.id ? 1 : 0),
+      );
 
       try {
         await recordAudit(kv, "lesson_recall", "mem::lesson-recall", [], {
@@ -218,6 +267,7 @@ export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
       lesson.updatedAt = new Date().toISOString();
 
       await kv.set(KV.lessons, lesson.id, lesson);
+      if (lessonIndex) lessonIndex.remove(lesson.id);
 
       try {
         await recordAudit(kv, "lesson_delete", "mem::lesson-delete", [
@@ -285,6 +335,11 @@ export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
       }
 
       await Promise.all(dirty.map((l) => kv.set(KV.lessons, l.id, l)));
+      if (lessonIndex) {
+        for (const l of dirty) {
+          if (l.deleted) lessonIndex.remove(l.id);
+        }
+      }
       await Promise.all(
         auditEvents.map((event) =>
           recordAudit(kv, "lesson_strengthen", "mem::lesson-decay-sweep", [event.id], {

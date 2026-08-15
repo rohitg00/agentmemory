@@ -191,34 +191,51 @@ export class HybridSearch {
       }
     });
 
-    const hasVector = vectorResults.length > 0;
-    const hasGraph = graphResults.length > 0;
+    // Weight fusion per item over the streams that actually ranked it.
+    // Normalizing over every enabled stream caps a single-stream hit at
+    // weight/(RRF_K+1) no matter how strong it is — with the graph stream
+    // empty on default installs, a #1 BM25 result carried a permanent
+    // penalty against anything two streams agreed on. Per-item
+    // normalization puts single-stream and multi-stream hits on the same
+    // scale; cross-stream agreement earns a small explicit bonus instead
+    // of an implicit one baked into the denominator.
+    const AGREEMENT_BONUS = 0.05;
+    const combined = Array.from(scores.entries()).map(([obsId, s]) => {
+      const wB = Number.isFinite(s.bm25Rank) ? this.bm25Weight : 0;
+      const wV = Number.isFinite(s.vectorRank) ? this.vectorWeight : 0;
+      const wG = Number.isFinite(s.graphRank) ? this.graphWeight : 0;
+      const wSum = wB + wV + wG;
+      const matchedStreams =
+        (wB > 0 ? 1 : 0) + (wV > 0 ? 1 : 0) + (wG > 0 ? 1 : 0);
+      const rrf =
+        wSum > 0
+          ? (wB * (1 / (RRF_K + s.bm25Rank)) +
+              wV * (1 / (RRF_K + s.vectorRank)) +
+              wG * (1 / (RRF_K + s.graphRank))) /
+            wSum
+          : 0;
+      const minRank = Math.min(s.bm25Rank, s.vectorRank, s.graphRank);
+      return {
+        obsId,
+        sessionId: s.sessionId,
+        bm25Score: s.bm25Score,
+        vectorScore: s.vectorScore,
+        graphScore: s.graphScore,
+        graphContext: s.graphContext,
+        combinedScore: rrf * (1 + AGREEMENT_BONUS * (matchedStreams - 1)),
+        minRank,
+      };
+    });
 
-    let effectiveBm25W = this.bm25Weight;
-    let effectiveVectorW = hasVector ? this.vectorWeight : 0;
-    let effectiveGraphW = hasGraph ? this.graphWeight : 0;
-
-    const totalW = effectiveBm25W + effectiveVectorW + effectiveGraphW;
-    if (totalW > 0) {
-      effectiveBm25W /= totalW;
-      effectiveVectorW /= totalW;
-      effectiveGraphW /= totalW;
-    }
-
-    const combined = Array.from(scores.entries()).map(([obsId, s]) => ({
-      obsId,
-      sessionId: s.sessionId,
-      bm25Score: s.bm25Score,
-      vectorScore: s.vectorScore,
-      graphScore: s.graphScore,
-      graphContext: s.graphContext,
-      combinedScore:
-        effectiveBm25W * (1 / (RRF_K + s.bm25Rank)) +
-        effectiveVectorW * (1 / (RRF_K + s.vectorRank)) +
-        effectiveGraphW * (1 / (RRF_K + s.graphRank)),
-    }));
-
-    combined.sort((a, b) => b.combinedScore - a.combinedScore);
+    // Deterministic order: score, then best single-stream rank, then id —
+    // equal-scored results previously came back in Map-insertion order,
+    // which varies with which stream answered first.
+    combined.sort(
+      (a, b) =>
+        b.combinedScore - a.combinedScore ||
+        a.minRank - b.minRank ||
+        (a.obsId < b.obsId ? -1 : a.obsId > b.obsId ? 1 : 0),
+    );
 
     const retrievalDepth = Math.max(limit, 20);
     const rerankWindow = 20;

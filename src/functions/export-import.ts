@@ -428,6 +428,12 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
               return;
             }
           }
+          // Imported records enter through a different trust boundary than
+          // live capture; keep the source's own origin when the export
+          // carried one, otherwise mark the import channel.
+          if (!o.origin) {
+            o.origin = { channel: "import", capturedAt: o.timestamp };
+          }
           await kv.set(KV.observations(sessionId), o.id, o);
           stats.observations++;
           indexObs.push(o);
@@ -447,6 +453,9 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
         // Older exports + hand-edited dumps can omit this field.
         if (!Array.isArray(memory.sessionIds)) {
           memory.sessionIds = [];
+        }
+        if (!memory.origin) {
+          memory.origin = { channel: "import", capturedAt: memory.createdAt };
         }
         await kv.set(KV.memories, memory.id, memory);
         stats.memories++;

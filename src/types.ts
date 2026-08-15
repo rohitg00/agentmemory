@@ -27,6 +27,20 @@ export interface CommitLink {
   linkedAt: string;
 }
 
+// Immutable write-time provenance. `channel` records which trust
+// boundary the content crossed to get here: text a user typed, the
+// agent's own reasoning, output returned by a tool, an imported
+// transcript, or a record shared in from another agent. Derived
+// records (compressed observations, memories distilled from them)
+// carry their source's origin forward so downstream consumers can
+// always answer "where did this come from" — the precondition for any
+// future trust-tiered retrieval or ingest screening.
+export interface Origin {
+  channel: "user" | "agent" | "tool" | "import" | "shared";
+  detail?: string;
+  capturedAt: string;
+}
+
 export interface RawObservation {
   id: string;
   sessionId: string;
@@ -41,6 +55,7 @@ export interface RawObservation {
   modality?: "text" | "image" | "mixed";
   imageData?: string;
   agentId?: string;
+  origin?: Origin;
 }
 
 export interface CompressedObservation {
@@ -61,6 +76,7 @@ export interface CompressedObservation {
   imageDescription?: string;
   modality?: "text" | "image" | "mixed";
   agentId?: string;
+  origin?: Origin;
 }
 
 export type ObservationType =
@@ -102,6 +118,7 @@ export interface Memory {
   imageData?: string;
   agentId?: string;
   project?: string;
+  origin?: Origin;
 }
 
 export interface SessionSummary {
