@@ -114,9 +114,12 @@ export function guidelineTargets(
     },
     // DeepSeek Harness loads $DSH_HOME/AGENTS.md into every session's first
     // step via @deepseek-ai/dsh-agent-instructions (same mechanism as the
-    // project-level AGENTS.md chain).
+    // project-level AGENTS.md chain). DSH_HOME override keeps this aligned
+    // with the dsh adapter, which resolves its profile paths through DSH_HOME.
     dsh: {
-      globalPath: join(home, ".dsh", "AGENTS.md"),
+      globalPath: process.env.DSH_HOME
+        ? join(process.env.DSH_HOME, "AGENTS.md")
+        : join(home, ".dsh", "AGENTS.md"),
       projectPath: "AGENTS.md",
       format: "block",
       scope: "global",

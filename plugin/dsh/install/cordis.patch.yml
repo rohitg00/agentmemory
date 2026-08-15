@@ -9,9 +9,11 @@
         transport: stdio
         serverName: agentmemory
         command: npx
-        # --cache: work around a broken ~/.npm cache (root-owned files cause
-        # npx EPERM); drop it if your npm cache is healthy
-        args: ['--cache', '/tmp/npmcache-dsh', '-y', '@agentmemory/mcp']
+        # If npx fails with EPERM (broken ~/.npm cache), point --cache at a
+        # private per-user dir, e.g. '~/.cache/npmcache-dsh' expanded to an
+        # absolute path by the installer (never /tmp — predictable + shared):
+        # args: ['--cache', '/home/<user>/.cache/npmcache-dsh', '-y', '@agentmemory/mcp']
+        args: ['-y', '@agentmemory/mcp']
         env:
           AGENTMEMORY_URL: http://localhost:3111
           # AGENTMEMORY_SECRET: '<match the daemon .env>'

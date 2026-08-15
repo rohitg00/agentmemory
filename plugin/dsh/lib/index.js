@@ -280,7 +280,15 @@ function apply(ctx, rawConfig = {}) {
 		const payload = { notification_type: "permission_prompt" };
 		for (const key of APPROVAL_FIELDS) {
 			const value = data[key];
-			if (value !== void 0) payload[key] = typeof value === "string" ? value.slice(0, 2e3) : value;
+			if (value === void 0) continue;
+			let text;
+			if (typeof value === "string") text = value;
+			else try {
+				text = JSON.stringify(value);
+			} catch {
+				text = String(value);
+			}
+			payload[key] = text.slice(0, 2e3);
 		}
 		fireObserve(sid, info, "notification", payload);
 	});

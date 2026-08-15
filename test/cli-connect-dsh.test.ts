@@ -28,13 +28,22 @@ const OPTS = { dryRun: false, force: false, withHooks: false, guidelines: false 
 describe("agentmemory connect — dsh adapter", () => {
   let tmpHome: string;
 
+  let prevDshHome: string | undefined;
+  let prevProfile: string | undefined;
+
   beforeEach(() => {
     tmpHome = mkdtempSync(join(tmpdir(), "am-dsh-"));
+    prevDshHome = process.env.DSH_HOME;
+    prevProfile = process.env.AGENTMEMORY_DSH_PROFILE;
     process.env.DSH_HOME = join(tmpHome, ".dsh");
     delete process.env.AGENTMEMORY_DSH_PROFILE;
   });
 
   afterEach(() => {
+    if (prevDshHome === undefined) delete process.env.DSH_HOME;
+    else process.env.DSH_HOME = prevDshHome;
+    if (prevProfile === undefined) delete process.env.AGENTMEMORY_DSH_PROFILE;
+    else process.env.AGENTMEMORY_DSH_PROFILE = prevProfile;
     rmSync(tmpHome, { recursive: true, force: true });
   });
 
@@ -131,6 +140,8 @@ describe("agentmemory connect — dsh adapter", () => {
 describe("writeGuideline for dsh", () => {
   it("writes the memory-usage block into ~/.dsh/AGENTS.md", () => {
     const home = mkdtempSync(join(tmpdir(), "am-dsh-guide-"));
+    const prev = process.env.DSH_HOME;
+    delete process.env.DSH_HOME; // the host may set it (e.g. running under dsh)
     try {
       expect(Object.keys(guidelineTargets(home))).toContain("dsh");
       const result = writeGuideline("dsh", { cwd: "/tmp", home });
@@ -139,6 +150,24 @@ describe("writeGuideline for dsh", () => {
       expect(existsSync(result.path)).toBe(true);
       expect(readFileSync(result.path, "utf8")).toContain("agentmemory:start");
     } finally {
+      if (prev === undefined) delete process.env.DSH_HOME;
+      else process.env.DSH_HOME = prev;
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it("honors DSH_HOME when resolving the global guideline path", () => {
+    const home = mkdtempSync(join(tmpdir(), "am-dsh-guide2-"));
+    const prev = process.env.DSH_HOME;
+    process.env.DSH_HOME = join(home, "custom-dsh");
+    try {
+      const result = writeGuideline("dsh", { cwd: "/tmp", home });
+      expect(result.kind).toBe("written");
+      expect(result.path).toBe(join(home, "custom-dsh", "AGENTS.md"));
+      expect(existsSync(result.path)).toBe(true);
+    } finally {
+      if (prev === undefined) delete process.env.DSH_HOME;
+      else process.env.DSH_HOME = prev;
       rmSync(home, { recursive: true, force: true });
     }
   });

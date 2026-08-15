@@ -47,18 +47,33 @@ const MCP_ENTRY_MARKER = "# ── agentmemory (installed by 'agentmemory connec
 
 // Remove the previously installed agentmemory block (marker comment + its
 // insert entry) so --force re-installs cleanly instead of appending a
-// duplicate. Content after the block (user's own entries) is preserved.
+// duplicate. Also removes a user-configured `- id: mcp-agentmemory` entry
+// that lacks the marker, so --force never leaves two entries with the same
+// server id. Content outside the removed spans (user's own entries) survives.
 function stripInstalledBlock(content: string): string {
-  const idx = content.indexOf(MCP_ENTRY_MARKER);
-  if (idx === -1) return content;
-  const lineStart = content.lastIndexOf("\n", idx) + 1;
-  const tail = content.slice(lineStart);
-  // The block's own "- insert:" line, then any following top-level entry.
-  const first = tail.search(/^- /m);
-  const rest = first === -1 ? "" : tail.slice(first + 1);
-  const second = rest.search(/^- /m);
-  const end = second === -1 ? content.length : lineStart + first + 1 + second;
-  return content.slice(0, lineStart) + content.slice(end);
+  let out = content;
+  const idx = out.indexOf(MCP_ENTRY_MARKER);
+  if (idx !== -1) {
+    const lineStart = out.lastIndexOf("\n", idx) + 1;
+    const tail = out.slice(lineStart);
+    // The block's own "- insert:" line, then any following top-level entry.
+    const first = tail.search(/^- /m);
+    const rest = first === -1 ? "" : tail.slice(first + 1);
+    const second = rest.search(/^- /m);
+    const end = second === -1 ? out.length : lineStart + first + 1 + second;
+    out = out.slice(0, lineStart) + out.slice(end);
+  }
+  const entry = out.indexOf("- id: mcp-agentmemory");
+  if (entry !== -1) {
+    const lineStart = out.lastIndexOf("\n", entry) + 1;
+    const insertPos = out.lastIndexOf("\n- insert:", lineStart);
+    const blockStart = insertPos === -1 ? lineStart : insertPos + 1;
+    const tail = out.slice(lineStart);
+    const nextTop = tail.search(/^- /m);
+    const end = nextTop === -1 ? out.length : lineStart + nextTop;
+    out = out.slice(0, blockStart) + out.slice(end);
+  }
+  return out;
 }
 
 const MCP_ENTRY = [
@@ -119,8 +134,26 @@ export const adapter: ConnectAdapter = {
 
     const existing = existsSync(patch) ? readFileSync(patch, "utf8") : "";
     const alreadyHas = existing.includes("- id: mcp-agentmemory");
+    const ensureSkill = (force: boolean): void => {
+      // Skill for the DSH skill registry (<dshHome>/skills). Never clobber a
+      // user-customized copy unless --force (and keep a backup when replacing).
+      const skillDir = join(dshHome(), "skills", "agentmemory-sync");
+      const skillPath = join(skillDir, "SKILL.md");
+      if (existsSync(skillPath) && !force) {
+        p.log.info("  skill exists (skipped; --force to overwrite)");
+        return;
+      }
+      if (existsSync(skillPath)) {
+        const skillBackup = backupFile(skillPath, this.name, "md");
+        logBackup(skillBackup);
+      }
+      mkdirSync(skillDir, { recursive: true });
+      writeFileSync(skillPath, SKILL_MD, "utf8");
+    };
+
     if (alreadyHas && !opts.force) {
       logAlreadyWired(this.displayName, patch);
+      ensureSkill(false);
       return { kind: "already-wired", mutatedPath: patch };
     }
 
@@ -145,20 +178,7 @@ export const adapter: ConnectAdapter = {
     const next = base + joiner + NL + MCP_ENTRY;
     writeFileSync(patch, next, "utf8");
 
-    // Skill for the DSH skill registry (<dshHome>/skills). Never clobber a
-    // user-customized copy unless --force (and keep a backup when replacing).
-    const skillDir = join(dshHome(), "skills", "agentmemory-sync");
-    const skillPath = join(skillDir, "SKILL.md");
-    if (existsSync(skillPath) && !opts.force) {
-      p.log.info("  skill exists (skipped; --force to overwrite)");
-    } else {
-      if (existsSync(skillPath)) {
-        const skillBackup = backupFile(skillPath, this.name, "md");
-        logBackup(skillBackup);
-      }
-      mkdirSync(skillDir, { recursive: true });
-      writeFileSync(skillPath, SKILL_MD, "utf8");
-    }
+    ensureSkill(opts.force);
 
     logInstalled(this.displayName, patch);
     p.log.message(

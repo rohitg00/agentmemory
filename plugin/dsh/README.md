@@ -63,7 +63,7 @@ Restart dsh (or wait for HMR to load the new plugin).
 
 1. The first turn of a new session should show injected recalled context/guidance.
 2. `curl http://localhost:3111/agentmemory/sessions` lists the dsh sessions.
-3. After ending a session, `curl http://localhost:3111/agentmemory/search -H 'Content-Type: application/json' -d '{"query":"<what you did>"}'` recalls the new memory.
+3. After ending a session, `curl http://localhost:3111/agentmemory/search -H 'Content-Type: application/json' -d '{"query":"<what you did>"}'` recalls the new memory (add `-H "Authorization: Bearer $AGENTMEMORY_SECRET"` when the daemon requires auth).
 
 ## Development
 
@@ -72,7 +72,7 @@ npm run build    # tsdown → lib/index.js (zero runtime dependencies)
 npm test         # vitest (20 cases: REST client / event mapping / injection / self-call filter / fail-open)
 ```
 
-Design contract (same as the official hooks): injecting handlers await + time out + fail silently; telemetry handlers fire-and-forget and never block the agent loop; any REST failure is logged once and never throws into cordis.
+Design contract (same as the official hooks): injecting handlers await + time out + fail silently; telemetry handlers fire-and-forget and never block the agent loop; REST failures never throw into cordis (with `AGENTMEMORY_DSH_DEBUG=1` they are logged via the REST client).
 
 ## Config
 

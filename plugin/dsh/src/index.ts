@@ -423,7 +423,20 @@ export function apply(ctx: PluginContext, rawConfig: Partial<AgentmemoryConfig> 
     const payload: Record<string, unknown> = { notification_type: "permission_prompt" };
     for (const key of APPROVAL_FIELDS) {
       const value = data[key];
-      if (value !== undefined) payload[key] = typeof value === "string" ? value.slice(0, 2000) : value;
+      if (value === undefined) continue;
+      // Truncate everything, not just strings: approval metadata can carry
+      // tool arguments or file paths and must not leave the process whole.
+      let text: string;
+      if (typeof value === "string") {
+        text = value;
+      } else {
+        try {
+          text = JSON.stringify(value);
+        } catch {
+          text = String(value);
+        }
+      }
+      payload[key] = text.slice(0, 2000);
     }
     fireObserve(sid, info, "notification", payload);
   });
@@ -444,8 +457,11 @@ export function apply(ctx: PluginContext, rawConfig: Partial<AgentmemoryConfig> 
     sessionInfos.delete(sid);
   });
 
-  // Dispose bookkeeping on plugin teardown: clear caches and let in-flight
-  // REST calls settle (the promises are referenced, so nothing is dropped).
+  // Dispose bookkeeping on plugin teardown. In-flight REST calls (including
+  // /session/end summarization) stay referenced in pendingCalls — never cleared
+  // here — and Node's event loop keeps the process alive until their sockets
+  // settle, so a normal host shutdown does not drop them. Only a forced
+  // process.exit() could cut them off; cordis disposes plugins before exiting.
   ctx.effect(() => () => {
     startContextCache.clear();
     injectedSessions.clear();

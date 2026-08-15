@@ -35,7 +35,7 @@ const L1 = [
   "        transport: stdio",
   "        serverName: agentmemory",
   "        command: npx",
-  "        args: ['--cache', '/tmp/npmcache-dsh', '-y', '@agentmemory/mcp']",
+  "        args: ['--cache', '" + path.join(os.homedir(), ".cache", "npmcache-dsh") + "', '-y', '@agentmemory/mcp']",
   "        env:",
   // single-quote the URL in YAML and double any embedded single quotes
   "          AGENTMEMORY_URL: '" + String(url).replace(/'/g, "''") + "'",

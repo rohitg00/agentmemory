@@ -38,14 +38,14 @@ Event names are taken from `@deepseek-ai/dsh-session` / `@deepseek-ai/dsh-agent`
 
 ## Verification (live, macOS)
 
-- `npm test`: full suite green (1620/1627; 6 pre-existing environment failures in `embedding-provider.test.ts` unrelated to this change).
+- `npm test`: 1620 passed, 6 failed (all pre-existing environment failures in `embedding-provider.test.ts`, unrelated to this change), 1 skipped out of 1627 total.
 - `@agentmemory/mcp` stdio handshake: initialize + `tools/list` → 53 tools; `memory_sessions` returns real daemon data.
 - dsh `session.create` → daemon registers a session with `agentId=dsh`; observations captured during active sessions.
 - `~/.dsh/AGENTS.md` guideline injected into live dsh sessions; `agentmemory-sync` skill picked up by dsh's skill registry.
 
 ## Known environment caveat
 
-A root-owned `~/.npm/_cacache` (npm historical bug) makes `npx -y @agentmemory/mcp` fail with EPERM, so the dsh MCP bridge cannot spawn the shim. Fix: `sudo chown -R 501:20 ~/.npm`, or add `--cache <dir>` to the entry's `args` (both documented in `plugin/dsh/install/cordis.patch.yml`).
+A root-owned `~/.npm/_cacache` (npm historical bug) makes `npx -y @agentmemory/mcp` fail with EPERM, so the dsh MCP bridge cannot spawn the shim. Fix: `sudo chown -R "$(id -u):$(id -g)" ~/.npm` (never hard-code UID/GID), or point `--cache` at a private per-user directory in the entry's `args` (the installer generates `~/.cache/npmcache-dsh`; both documented in `plugin/dsh/install/cordis.patch.yml`).
 
 ## Installer
 
