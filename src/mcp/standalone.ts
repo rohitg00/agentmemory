@@ -99,6 +99,8 @@ interface Validated {
   type?: string;
   concepts?: string[];
   files?: string[];
+  project?: string;
+  agentId?: string;
   query?: string;
   limit?: number;
   format?: string;
@@ -122,6 +124,15 @@ function validate(toolName: string, args: Record<string, unknown>): Validated {
       v.type = (args["type"] as string) || "fact";
       v.concepts = normalizeList(args["concepts"]);
       v.files = normalizeList(args["files"]);
+      // The tool schema exposes project (and now agentId); dropping them
+      // here silently broke project/agent scoping through the stdio
+      // package specifically.
+      if (typeof args["project"] === "string" && args["project"].trim()) {
+        v.project = args["project"].trim();
+      }
+      if (typeof args["agentId"] === "string" && args["agentId"].trim()) {
+        v.agentId = args["agentId"].trim();
+      }
       return v;
     }
     case "memory_recall":
@@ -180,6 +191,8 @@ async function handleProxy(
           type: v.type,
           concepts: v.concepts,
           files: v.files,
+          ...(v.project !== undefined && { project: v.project }),
+          ...(v.agentId !== undefined && { agentId: v.agentId }),
         }),
       });
       return textResponse(result);

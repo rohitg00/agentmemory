@@ -1012,6 +1012,7 @@ export function registerApiTriggers(
         ttlDays?: number;
         sourceObservationIds?: string[];
         project?: string;
+        agentId?: string;
       }>,
     ): Promise<Response> => {
       const authErr = checkAuth(req, secret);
@@ -1039,6 +1040,9 @@ export function registerApiTriggers(
           ...(req.body.ttlDays !== undefined && { ttlDays: req.body.ttlDays }),
           ...(req.body.sourceObservationIds !== undefined && { sourceObservationIds: req.body.sourceObservationIds }),
           ...(req.body.project !== undefined && { project: req.body.project }),
+          ...(typeof req.body.agentId === "string" && req.body.agentId.trim()
+            ? { agentId: req.body.agentId.trim() }
+            : {}),
         },
       });
       return { status_code: 201, body: result };

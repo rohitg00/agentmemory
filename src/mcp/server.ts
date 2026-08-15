@@ -186,6 +186,10 @@ export function registerMcpEndpoints(
               typeof args.project === "string" && args.project.trim().length > 0
                 ? args.project.trim()
                 : undefined;
+            const saveAgentId =
+              typeof args.agentId === "string" && args.agentId.trim().length > 0
+                ? (args.agentId as string).trim()
+                : undefined;
 
             const result = await sdk.trigger({ function_id: "mem::remember", payload: {
               content: args.content,
@@ -193,6 +197,7 @@ export function registerMcpEndpoints(
               concepts,
               files,
               ...(project !== undefined && { project }),
+              ...(saveAgentId !== undefined && { agentId: saveAgentId }),
             } });
             return {
               status_code: 200,
