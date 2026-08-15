@@ -830,6 +830,18 @@ function adoptRunningEngine(): void {
 
     const pids = findEnginePidsByPort(getRestPort());
     const enginePid = pids[0];
+    if (enginePid) {
+      // A Docker-forwarded port is held by the VM/proxy process
+      // (com.docker.backend, vpnkit, ...), not the engine. Adopting it
+      // as kind:"native" would make a later `stop` SIGTERM that process.
+      const comm = pidCommand(enginePid);
+      if (isForeignPortHolder(comm)) {
+        vlog(
+          `adoptRunningEngine: refusing to adopt pid ${enginePid} (${comm}) — Docker/VM port holder, not a native engine`,
+        );
+        return;
+      }
+    }
     if (enginePid && !existingPid) {
       writeEnginePidfile(enginePid);
     }
@@ -2542,6 +2554,25 @@ async function signalAndWait(
   return !pidAlive(pid);
 }
 
+function pidCommand(pid: number): string {
+  if (IS_WINDOWS) return "";
+  try {
+    return execFileSync("ps", ["-p", String(pid), "-o", "comm="], {
+      encoding: "utf-8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+  } catch {
+    return "";
+  }
+}
+
+function isForeignPortHolder(comm: string): boolean {
+  if (!comm) return false;
+  return /docker|vpnkit|qemu|virtualization|colima|lima|podman|orbstack/i.test(
+    comm,
+  );
+}
+
 function findEnginePidsByPort(port: number): number[] {
   if (IS_WINDOWS) return [];
   const lsof = whichBinary("lsof");
@@ -2581,15 +2612,55 @@ async function stopDockerEngine(composeFile: string, port: number): Promise<void
     );
     process.exit(1);
   }
-  const ok = runCommand(dockerBin, ["compose", "-f", composeFile, "down"], {
-    label: `docker compose -f ${composeFile} down`,
-  });
+
+  // Reap the native worker first so its shutdown flush (BM25/vector
+  // snapshots via iii state::set) lands while the engine is still up —
+  // same ordering as the native stop path. Previously the worker pidfile
+  // was cleared without ever signaling the process, leaking a worker on
+  // every Docker-mode stop.
+  const workerPid = readWorkerPidfile();
+  if (workerPid) {
+    const s = p.spinner();
+    s.start(`Stopping agentmemory worker (pid ${workerPid})... [flushing state]`);
+    const workerOk = await signalAndWait(workerPid, "SIGTERM", 5000);
+    s.stop(
+      workerOk
+        ? `Stopped worker pid ${workerPid}`
+        : `Failed to stop worker pid ${workerPid}`,
+    );
+  }
+
+  // Scope teardown to agentmemory's own services. A bare `down` against a
+  // user-owned compose file tears down every service in it. `rm -s -f`
+  // stops and removes only the named containers.
+  let composeText = "";
+  try {
+    composeText = readFileSync(composeFile, "utf-8");
+  } catch {
+    composeText = "";
+  }
+  const ownServices = ["iii-engine", "iii-init"].filter((svc) =>
+    new RegExp(`^\\s{2}${svc}:`, "m").test(composeText),
+  );
+  if (ownServices.length === 0) {
+    p.log.error(
+      `${composeFile} does not define the agentmemory services (iii-engine/iii-init). Refusing to run an unscoped \`docker compose down\` against it — that would tear down every service in the file.\n\nStop the engine service manually:\n  docker compose -f ${composeFile} stop <service>`,
+    );
+    process.exit(1);
+  }
+  const ok = runCommand(
+    dockerBin,
+    ["compose", "-f", composeFile, "rm", "-s", "-f", ...ownServices],
+    {
+      label: `docker compose -f ${composeFile} rm -s -f ${ownServices.join(" ")}`,
+    },
+  );
   clearEnginePidfile();
   clearEngineState();
   clearWorkerPidfile();
   if (!ok) {
     p.log.error(
-      `docker compose down failed. The engine may still be running on :${port}. Inspect with:\n  docker compose -f ${composeFile} ps`,
+      `docker compose rm failed. The engine may still be running on :${port}. Inspect with:\n  docker compose -f ${composeFile} ps`,
     );
     process.exit(1);
   }
@@ -2710,8 +2781,17 @@ async function runStop(): Promise<void> {
     s.stop(ok ? `Stopped worker pid ${pid}` : `Failed to stop worker pid ${pid}`);
     if (!ok) allStopped = false;
   }
+  const skippedForeign: Array<{ pid: number; comm: string }> = [];
   for (const pid of candidates) {
     if (workerCandidates.has(pid)) continue;
+    // Last-line guard against a stale/poisoned pidfile or a Docker
+    // port-forward holding :port — signaling com.docker.backend kills
+    // Docker Desktop's whole backend.
+    const comm = pidCommand(pid);
+    if (!force && isForeignPortHolder(comm)) {
+      skippedForeign.push({ pid, comm });
+      continue;
+    }
     const s = p.spinner();
     s.start(`Stopping iii-engine (pid ${pid})...`);
     const ok = await signalAndWait(pid, "SIGTERM", 3000);
@@ -2722,6 +2802,15 @@ async function runStop(): Promise<void> {
   clearEnginePidfile();
   clearEngineState();
   clearWorkerPidfile();
+  if (skippedForeign.length > 0) {
+    const list = skippedForeign
+      .map((sf) => `  pid ${sf.pid}  ${sf.comm}`)
+      .join("\n");
+    p.log.error(
+      `Refused to signal Docker/VM process(es) holding :${port} — they are not the iii engine:\n${list}\n\nIf the engine runs in Docker, stop it there:\n  docker compose ps && docker compose rm -s -f <service>\n\nOr re-run with --force to signal them anyway.`,
+    );
+    process.exit(1);
+  }
   if (!allStopped) {
     p.log.error("One or more processes survived SIGKILL. Investigate with `ps`.");
     process.exit(1);

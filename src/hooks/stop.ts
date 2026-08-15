@@ -40,13 +40,10 @@ async function main() {
 
   const sessionId = ((data.session_id || data.sessionId) as string) || "unknown";
 
-  fetch(`${REST_URL}/agentmemory/summarize`, {
-    method: "POST",
-    headers: authHeaders(),
-    body: JSON.stringify({ sessionId }),
-    signal: AbortSignal.timeout(120000),
-  }).catch(() => {});
-
+  // session/end fans out event::session::stopped, whose handler already
+  // runs mem::summarize (plus slot-reflect and graph-extract). A separate
+  // /agentmemory/summarize POST here dispatched a second full summarize
+  // for every Stop hook.
   fetch(`${REST_URL}/agentmemory/session/end`, {
     method: "POST",
     headers: authHeaders(),

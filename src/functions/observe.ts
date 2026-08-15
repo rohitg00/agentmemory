@@ -68,10 +68,15 @@ export function registerObserveFunction(
             ? (payload.data as Record<string, unknown>)
             : {};
         const toolName = (d["tool_name"] as string) || payload.hookType;
+        // Hooks without tool_input (prompt_submit, notifications, lifecycle)
+        // must hash their actual payload — hashing the shared undefined would
+        // collapse every event of that hook type into one dedup key and
+        // silently drop all but the first within the TTL window.
+        const dedupInput = d["tool_input"] !== undefined ? d["tool_input"] : d;
         dedupHash = dedupMap.computeHash(
           payload.sessionId,
           toolName,
-          d["tool_input"],
+          dedupInput,
         );
         if (dedupMap.isDuplicate(dedupHash)) {
           return { deduplicated: true, sessionId: payload.sessionId };

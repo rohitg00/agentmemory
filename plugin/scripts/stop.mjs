@@ -24,12 +24,6 @@ async function main() {
 	if (!data || typeof data !== "object") return;
 	if (isSdkChildContext(data)) return;
 	const sessionId = data.session_id || data.sessionId || "unknown";
-	fetch(`${REST_URL}/agentmemory/summarize`, {
-		method: "POST",
-		headers: authHeaders(),
-		body: JSON.stringify({ sessionId }),
-		signal: AbortSignal.timeout(12e4)
-	}).catch(() => {});
 	fetch(`${REST_URL}/agentmemory/session/end`, {
 		method: "POST",
 		headers: authHeaders(),
