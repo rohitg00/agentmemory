@@ -2385,8 +2385,25 @@ async function runDemoBody(base: string) {
       `    ${c.dim("→")} ${c.ok(`${r.hits} hit(s)`)}, top: ${r.topTitle.slice(0, 60)}`,
     ]),
     "",
-    c.accent(`Notice: searching "database performance optimization"`),
-    c.accent(`found the N+1 query fix — keyword matching can't do that.`),
+    // Only claim the semantic-recall win when the search actually hit.
+    // Without an embedding key this query returns 0 hits, and asserting
+    // success over a visibly failed search reads as a lie.
+    ...(() => {
+      const semantic = results.find(
+        (r) => r.query === "database performance optimization",
+      );
+      if (semantic && semantic.hits > 0) {
+        return [
+          c.accent(`Notice: searching "database performance optimization"`),
+          c.accent(`found the N+1 query fix — keyword matching can't do that.`),
+        ];
+      }
+      return [
+        c.dim(`Note: "database performance optimization" found nothing —`),
+        c.dim(`semantic recall needs an embedding provider key (e.g.`),
+        c.dim(`OPENAI_API_KEY or GEMINI_API_KEY in ~/.agentmemory/.env).`),
+      ];
+    })(),
     "",
     `Viewer:        ${c.url(getViewerUrl())}`,
     `Clean up with: ${c.dim(`curl -X DELETE "${base}/agentmemory/sessions?project=${demoProject}"`)}`,

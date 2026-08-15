@@ -333,7 +333,7 @@
       align-items: center;
       flex-wrap: wrap;
     }
-    .toolbar input, .toolbar select {
+    .toolbar input, .toolbar select, .search-input {
       background: var(--bg);
       border: 1px solid var(--border);
       color: var(--ink);
@@ -342,11 +342,29 @@
       outline: none;
       font-family: var(--font-ui);
     }
-    .toolbar input:focus, .toolbar select:focus {
+    .toolbar input:focus, .toolbar select:focus, .search-input:focus {
       border-color: var(--ink);
       box-shadow: 2px 2px 0px 0px var(--border);
     }
     .toolbar input { flex: 1; min-width: 200px; }
+    .toolbar button:not(.btn) {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--ink);
+      padding: 7px 16px;
+      font-size: 11px;
+      cursor: pointer;
+      transition: box-shadow 0.1s, transform 0.1s;
+      font-family: var(--font-ui);
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .toolbar button:not(.btn):hover { box-shadow: 3px 3px 0px 0px var(--border); transform: translate(-1px, -1px); }
+    .toolbar button:not(.btn):active { box-shadow: none; transform: translate(0, 0); }
+    @media (max-width: 720px) {
+      .view { overflow-x: auto; }
+    }
 
     .btn {
       background: var(--bg);
@@ -1112,7 +1130,7 @@
       activeTab: 'dashboard',
       dashboard: { loaded: false, health: null, sessions: [], memories: [], graphStats: null, recentAudit: [], lessons: [], crystals: [] },
       graph: { loaded: false, nodes: [], edges: [], stats: null, filters: {}, selectedNode: null, queryError: null, truncated: false, totalNodes: 0, totalEdges: 0 },
-      memories: { loaded: false, items: [], search: '', typeFilter: '' },
+      memories: { loaded: false, items: [], search: '', typeFilter: '', selectedId: null },
       timeline: { loaded: false, observations: [], sessionId: '', minImportance: 0, page: 0, pageSize: 50 },
       sessions: { loaded: false, items: [], selectedId: null },
       audit: { loaded: false, entries: [], opFilter: '' },
@@ -1150,7 +1168,15 @@
     }
     function shortSessionId(s, n) {
       var id = sessionId(s);
-      return id ? id.slice(0, n || 8) : '';
+      if (!id) return '';
+      var max = n || 8;
+      if (id.length <= max) return id;
+      // Session ids share a long common prefix (demo_msuaboq7_...); the
+      // distinguishing part is the tail. Keep head + tail so truncated
+      // ids stay tellable apart in lists and dropdowns.
+      var tail = 6;
+      var head = Math.max(2, max - tail - 1);
+      return id.slice(0, head) + '…' + id.slice(-tail);
     }
     function sessionDisplayName(s) {
       var project = s && s.project ? String(s.project).split('/').pop() : '';
@@ -1336,25 +1362,29 @@
     }
 
     async function loadTab(tab) {
+      // Refetch on every tab entry. The loaded-once model went stale the
+      // moment anything wrote through the API after first visit: a memory
+      // saved by the agent never appeared until a hard browser reload,
+      // and the 10s poll only refreshes the dashboard.
       switch(tab) {
-        case 'dashboard': if (!state.dashboard.loaded) await loadDashboard(); break;
-        case 'graph': if (!state.graph.loaded) await loadGraph(); break;
-        case 'memories': if (!state.memories.loaded) await loadMemories(); break;
-        case 'timeline': if (!state.timeline.loaded) await loadTimeline(); break;
-        case 'sessions': if (!state.sessions.loaded) await loadSessions(); break;
-        case 'lessons': if (!state.lessons.loaded) await loadLessons(); break;
-        case 'actions': if (!state.actions.loaded) await loadActions(); break;
-        case 'crystals': if (!state.crystals.loaded) await loadCrystals(); break;
-        case 'audit': if (!state.audit.loaded) await loadAudit(); break;
-        case 'activity': if (!state.activity.loaded) await loadActivity(); break;
-        case 'profile': if (!state.profile.loaded) await loadProfile(); break;
+        case 'dashboard': await loadDashboard(); break;
+        case 'graph': await loadGraph(); break;
+        case 'memories': await loadMemories(); break;
+        case 'timeline': await loadTimeline(); break;
+        case 'sessions': await loadSessions(); break;
+        case 'lessons': await loadLessons(); break;
+        case 'actions': await loadActions(); break;
+        case 'crystals': await loadCrystals(); break;
+        case 'audit': await loadAudit(); break;
+        case 'activity': await loadActivity(); break;
+        case 'profile': await loadProfile(); break;
         case 'replay': if (!state.replay.loaded) await loadReplay(); break;
       }
     }
 
     async function loadDashboard() {
       var el = document.getElementById('view-dashboard');
-      el.innerHTML = '<div class="loading">Loading dashboard...</div>';
+      if (!state.dashboard.loaded) el.innerHTML = '<div class="loading">Loading dashboard...</div>';
       try {
         var results = await Promise.all([
           api('health', { readErrorBody: true }),
@@ -1695,9 +1725,24 @@
 
       var results = await Promise.all([
         apiPost('graph/query', { limit: GRAPH_INITIAL_LIMIT }),
-        apiGet('graph/stats')
+        api('graph/stats', { readErrorBody: true })
       ]);
       var queryResult = results[0];
+      var statsResult = results[1];
+      if (statsResult && statsResult.error && statsResult.flag) {
+        // 503 with a structured body = the feature is off, not broken.
+        // Rendering this as "query failed / Retry" sends users hunting
+        // through server logs for an error that isn't one.
+        state.graph.disabledInfo = statsResult;
+        state.graph.queryError = null;
+        state.graph.nodes = [];
+        state.graph.edges = [];
+        state.graph.stats = {};
+        state.graph.loaded = true;
+        renderGraphSidebar();
+        return;
+      }
+      state.graph.disabledInfo = null;
       if (queryResult === null) {
         // api() returns null only on non-2xx or a transport error; an
         // empty graph would come back as { nodes: [], edges: [] }.
@@ -1764,6 +1809,17 @@
 
       var html = '';
 
+      if (state.graph.disabledInfo) {
+        html += '<div style="margin:8px 0;padding:10px 12px;border:1px solid var(--border);background:var(--bg-alt);font-size:12px;color:var(--ink);line-height:1.5;">';
+        html += '<div style="font-weight:600;margin-bottom:4px;">Knowledge graph is off</div>';
+        html += '<div style="font-size:11px;color:var(--ink-muted);">' + esc(state.graph.disabledInfo.enableHow || 'Set ' + (state.graph.disabledInfo.flag || 'GRAPH_EXTRACTION_ENABLED') + '=true and restart.') + '</div>';
+        if (state.graph.disabledInfo.docsHref) {
+          html += '<a href="' + esc(state.graph.disabledInfo.docsHref) + '" target="_blank" rel="noopener" style="font-size:11px;">docs &rarr;</a>';
+        }
+        html += '</div>';
+        sb.innerHTML = html;
+        return;
+      }
       // #753: error banner stays above the search box so a failed
       // graph/query doesn't read as "0 nodes".
       if (state.graph.queryError) {
@@ -2401,7 +2457,7 @@
 
     async function loadMemories() {
       var el = document.getElementById('view-memories');
-      el.innerHTML = '<div class="loading">Loading memories...</div>';
+      if (!state.memories.loaded) el.innerHTML = '<div class="loading">Loading memories...</div>';
       // cap at 2000 so the viewer remains responsive on large
       // corpora. Older endpoints returned the full unbounded list which
       // hit the iii invocation timeout and the UI fell through to 0.
@@ -2484,7 +2540,8 @@
           var strength = Math.round(rawStrength <= 1 ? rawStrength * 100 : rawStrength * 10);
           if (strength > 100) strength = 100;
           var barColor = strength > 70 ? 'var(--green)' : strength > 40 ? 'var(--yellow)' : 'var(--red)';
-          html += '<tr>';
+          var expanded = state.memories.selectedId === m.id;
+          html += '<tr class="memory-row' + (expanded ? ' selected' : '') + '" data-action="select-memory" data-memory-id="' + esc(m.id) + '" role="button" tabindex="0" aria-expanded="' + (expanded ? 'true' : 'false') + '" style="cursor:pointer;">';
           var preview = (m.content || '').split('\n').slice(0, 2).join(' ').trim();
           var previewHtml = esc(truncate(preview, 150));
           if (search && search.length > 2) {
@@ -2505,6 +2562,21 @@
           html += '<td style="font-size:11px;color:var(--ink-faint);font-family:var(--font-mono);">' + esc(formatTime(m.updatedAt)) + '</td>';
           html += '<td><button class="btn btn-danger" style="font-size:9px;padding:2px 8px;" data-action="delete-memory" data-memory-id="' + esc(m.id) + '" data-memory-title="' + esc(m.title || '') + '">Delete</button></td>';
           html += '</tr>';
+          if (expanded) {
+            html += '<tr class="memory-detail-row"><td colspan="6" style="background:var(--bg-alt);padding:14px 16px;">';
+            html += '<div style="font-size:13px;color:var(--ink);white-space:pre-wrap;line-height:1.5;margin-bottom:10px;">' + esc(m.content || '') + '</div>';
+            html += '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:11px;color:var(--ink-muted);font-family:var(--font-mono);margin-bottom:10px;">';
+            html += '<span>id: ' + esc(m.id) + '</span>';
+            if (m.project) html += '<span>project: ' + esc(m.project) + '</span>';
+            if (m.createdAt) html += '<span>created: ' + esc(formatTime(m.createdAt)) + '</span>';
+            if (m.supersedes && m.supersedes.length > 0) html += '<span>supersedes: ' + esc(m.supersedes.join(', ')) + '</span>';
+            if (m.files && m.files.length > 0) html += '<span>files: ' + esc(m.files.join(', ')) + '</span>';
+            if (m.sessionIds && m.sessionIds.length > 0) html += '<span>sessions: ' + m.sessionIds.length + '</span>';
+            html += '</div>';
+            html += '<details><summary style="cursor:pointer;font-size:11px;color:var(--ink-faint);font-family:var(--font-mono);">raw record</summary>';
+            html += '<pre style="margin-top:8px;padding:10px;background:var(--bg);border:1px solid var(--border);font-size:11px;line-height:1.5;overflow-x:auto;">' + esc(JSON.stringify(m, null, 2)) + '</pre></details>';
+            html += '</td></tr>';
+          }
         });
         html += '</table>';
       }
@@ -2546,7 +2618,7 @@
 
     async function loadTimeline() {
       var el = document.getElementById('view-timeline');
-      el.innerHTML = '<div class="loading">Loading timeline...</div>';
+      if (!state.timeline.loaded) el.innerHTML = '<div class="loading">Loading timeline...</div>';
       var sessResult = await apiGet('sessions');
       var sessions = (sessResult && sessResult.sessions) || [];
       state.timeline.loaded = true;
@@ -2772,7 +2844,7 @@
 
     async function loadActivity() {
       var el = document.getElementById('view-activity');
-      el.innerHTML = '<div class="loading">Loading activity...</div>';
+      if (!state.activity.loaded) el.innerHTML = '<div class="loading">Loading activity...</div>';
       var results = await Promise.all([
         apiGet('sessions'),
         apiGet('audit?limit=200')
@@ -2909,7 +2981,7 @@
 
     async function loadSessions() {
       var el = document.getElementById('view-sessions');
-      el.innerHTML = '<div class="loading">Loading sessions...</div>';
+      if (!state.sessions.loaded) el.innerHTML = '<div class="loading">Loading sessions...</div>';
       var result = await apiGet('sessions');
       state.sessions.items = (result && result.sessions) || [];
       state.sessions.loaded = true;
@@ -2930,7 +3002,7 @@
           var statusBadge = s.status === 'active' ? 'badge-green' : s.status === 'completed' ? 'badge-blue' : 'badge-muted';
           var id = sessionId(s);
           var selected = id && state.sessions.selectedId === id;
-          html += '<div class="session-item' + (selected ? ' selected' : '') + '"' + (id ? ' data-action="select-session" data-session-id="' + esc(id) + '"' : '') + '>';
+          html += '<div class="session-item' + (selected ? ' selected' : '') + '"' + (id ? ' data-action="select-session" data-session-id="' + esc(id) + '" role="button" tabindex="0" aria-expanded="' + (selected ? 'true' : 'false') + '"' : '') + '>';
           html += '<div class="session-top"><span class="session-project">' + esc(sessionDisplayName(s)) + '</span>';
           html += '<span class="badge ' + statusBadge + '">' + esc(s.status) + '</span></div>';
           var preview = s.firstPrompt || s.summary || '';
@@ -2953,6 +3025,15 @@
     function selectSession(id) {
       state.sessions.selectedId = state.sessions.selectedId === id ? null : id;
       renderSessions();
+      // The detail panel renders below the full session list — off-screen
+      // for any list longer than a few rows. Bring it into view so
+      // selecting a session visibly does something.
+      if (state.sessions.selectedId) {
+        var panel = document.getElementById('session-detail');
+        if (panel && panel.scrollIntoView) {
+          panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      }
     }
 
     async function renderSessionDetail() {
@@ -3076,7 +3157,7 @@
 
     async function loadLessons() {
       var el = document.getElementById('view-lessons');
-      el.innerHTML = '<div class="loading">Loading lessons...</div>';
+      if (!state.lessons.loaded) el.innerHTML = '<div class="loading">Loading lessons...</div>';
       var result = await apiGet('lessons');
       state.lessons.items = (result && result.lessons) || [];
       state.lessons.loaded = true;
@@ -3138,7 +3219,7 @@
 
     async function loadActions() {
       var el = document.getElementById('view-actions');
-      el.innerHTML = '<div class="loading">Loading actions...</div>';
+      if (!state.actions.loaded) el.innerHTML = '<div class="loading">Loading actions...</div>';
       var results = await Promise.all([apiGet('actions'), apiGet('frontier')]);
       state.actions.items = (results[0] && results[0].actions) || [];
       state.actions.frontier = (results[1] && (results[1].frontier || results[1].actions)) || [];
@@ -3213,7 +3294,7 @@
 
     async function loadCrystals() {
       var el = document.getElementById('view-crystals');
-      el.innerHTML = '<div class="loading">Loading crystals...</div>';
+      if (!state.crystals.loaded) el.innerHTML = '<div class="loading">Loading crystals...</div>';
       var results = await Promise.all([apiGet('crystals'), apiGet('lessons')]);
       state.crystals.items = (results[0] && results[0].crystals) || [];
       var lessonMap = {};
@@ -3326,7 +3407,7 @@
 
     async function loadAudit() {
       var el = document.getElementById('view-audit');
-      el.innerHTML = '<div class="loading">Loading audit log...</div>';
+      if (!state.audit.loaded) el.innerHTML = '<div class="loading">Loading audit log...</div>';
       var result = await apiGet('audit?limit=100');
       state.audit.entries = (result && result.entries) || [];
       state.audit.loaded = true;
@@ -3859,6 +3940,17 @@
       }
     });
     fetchFlags();
+    // Keyboard activation for role="button" cards (session items). Click
+    // delegation alone leaves them unreachable for keyboard and AT users.
+    document.addEventListener('keydown', function(e) {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      if (!(e.target instanceof Element)) return;
+      var card = e.target.closest('[role="button"][data-action="select-session"], [role="button"][data-action="select-memory"]');
+      if (!card) return;
+      e.preventDefault();
+      card.click();
+    });
+
     document.addEventListener('click', function(e) {
       if (!(e.target instanceof Element)) return;
       var target = e.target.closest('[data-action]');
@@ -3937,6 +4029,14 @@
       if (action === 'select-session') {
         var sessionId = target.getAttribute('data-session-id');
         if (sessionId) selectSession(sessionId);
+        return;
+      }
+      if (action === 'select-memory') {
+        var memId = target.getAttribute('data-memory-id');
+        if (memId) {
+          state.memories.selectedId = state.memories.selectedId === memId ? null : memId;
+          renderMemories();
+        }
         return;
       }
       if (action === 'end-session') {
@@ -4188,7 +4288,21 @@
     });
 
     switchTab(tabFromRoute(), { replaceRoute: true });
-    connectWs();
+    // Resolve the stream WebSocket target from the server before the first
+    // connect. The old viewerPort-1 arithmetic breaks whenever the viewer
+    // binds a fallback port (3113 taken → viewer on 3114 → 3113 is another
+    // HTTP server, not the streams endpoint) — every retry then fails and
+    // the viewer silently degrades to 10s polling.
+    (async function initWs() {
+      try {
+        var live = await api('livez');
+        if (live && typeof live.streamsPort === 'number' && live.streamsPort > 0) {
+          WS_URL = wsProto + '//' + window.location.hostname + ':' + live.streamsPort;
+          WS_DIRECT_URL = WS_URL + '/stream/mem-live/viewer';
+        }
+      } catch (_) {}
+      connectWs();
+    })();
     startDashboardAutoRefresh();
   </script>
 </body>

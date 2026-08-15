@@ -23,6 +23,7 @@ import {
   detectLlmProviderKind,
   getAgentId,
   isAgentScopeIsolated,
+  loadConfig,
 } from "../config.js";
 
 type Response = {
@@ -167,7 +168,16 @@ export function registerApiTriggers(
   sdk.registerFunction("api::liveness",
     async (): Promise<Response> => ({
       status_code: 200,
-      body: { status: "ok", service: "agentmemory", viewerPort: getBoundViewerPort(), viewerSkipped: getViewerSkipped() },
+      body: {
+        status: "ok",
+        service: "agentmemory",
+        viewerPort: getBoundViewerPort(),
+        viewerSkipped: getViewerSkipped(),
+        // The viewer derives its stream WebSocket target from this instead
+        // of port arithmetic: when the viewer binds a fallback port,
+        // viewerPort-1 points at the wrong server and live updates die.
+        streamsPort: loadConfig().streamsPort,
+      },
     }),
   );
   sdk.registerTrigger({
