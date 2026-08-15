@@ -431,7 +431,9 @@ export function apply(ctx: PluginContext, rawConfig: Partial<AgentmemoryConfig> 
         text = value;
       } else {
         try {
-          text = JSON.stringify(value);
+          // JSON.stringify can return undefined (functions, symbols, toJSON
+          // returning undefined); fall back to String() before slicing.
+          text = JSON.stringify(value) ?? String(value);
         } catch {
           text = String(value);
         }

@@ -284,7 +284,7 @@ function apply(ctx, rawConfig = {}) {
 			let text;
 			if (typeof value === "string") text = value;
 			else try {
-				text = JSON.stringify(value);
+				text = JSON.stringify(value) ?? String(value);
 			} catch {
 				text = String(value);
 			}
