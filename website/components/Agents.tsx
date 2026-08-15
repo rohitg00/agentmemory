@@ -88,7 +88,7 @@ const FEATURED: Agent[] = [
     id: "opencode",
     name: "OpenCode",
     from: "SST",
-    logo: "https://github.com/sst.png",
+    logo: "/opencode.png",
     accent: "#F5A623",
     href: "https://github.com/rohitg00/agentmemory/tree/main/plugin/opencode",
     pitch: "Capture plugin with per-session project attribution",
