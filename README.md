@@ -30,7 +30,7 @@
 </p>
 
 <p align="center">
-  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.3k%20stars%20%2F%20182%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white&labelColor=1a1a1a" alt="Design doc: 1.3k stars / 182 forks on the gist" /></a>
+  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.6k%20stars%20%2F%20230%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white&labelColor=1a1a1a" alt="Design doc: 1.6k stars / 230 forks on the gist" /></a>
 </p>
 
 <p align="center">
@@ -50,7 +50,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-tools.svg"><img src="assets/tags/stat-tools.svg" alt="54 MCP tools" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-hooks.svg"><img src="assets/tags/stat-hooks.svg" alt="12 auto hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-deps.svg"><img src="assets/tags/stat-deps.svg" alt="0 external DBs" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-tests.svg"><img src="assets/tags/stat-tests.svg" alt="1,596+ tests passing" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-tests.svg"><img src="assets/tags/stat-tests.svg" alt="1,648+ tests passing" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -66,7 +66,6 @@
   <a href="#how-it-works">How It Works</a> &bull;
   <a href="#mcp-server">MCP</a> &bull;
   <a href="#real-time-viewer">Viewer</a> &bull;
-  <a href="#iii-console">iii Console</a> &bull;
   <a href="#powered-by-iii">Powered by iii</a> &bull;
   <a href="#configuration">Config</a> &bull;
   <a href="#api">API</a>
@@ -76,34 +75,58 @@
 
 ## Install
 
-Fastest path if you use a coding agent: hand it this one instruction and it installs, wires, and verifies agentmemory end to end.
-
-> Retrieve and follow the instructions at: https://raw.githubusercontent.com/rohitg00/agentmemory/main/INSTALL_FOR_AGENTS.md
-
-On Windows the fast path is WSL2. Native Windows engine setup is manual (about 10 to 20 minutes) and `agentmemory connect` is currently unsupported there. See the [Windows notes](#windows) below for the step-by-step.
-
-```bash
-npm install -g @agentmemory/agentmemory   # once — bare `agentmemory` on PATH
-# If you hit EACCES on macOS/Linux system Node installs, retry with:
-# sudo npm install -g @agentmemory/agentmemory
-agentmemory                                      # start the memory server on :3111
-agentmemory demo                                 # seed sample sessions + prove recall
-agentmemory demo --serve                         # one command: boot server, run demo, tear down (no second terminal)
-agentmemory connect claude-code                  # wire MCP into your agent (also: copilot-cli, codex, cursor, gemini-cli, ...)
-npx skills add rohitg00/agentmemory -y           # install 15 native skills (8 you can invoke, 7 reference) so your agent knows when to use the tools
-```
-
-Or via `npx` (no install):
+One command:
 
 ```bash
 npx @agentmemory/agentmemory
 ```
 
-Heads-up: npx caches per version. If a bare `npx @agentmemory/agentmemory` serves an older release, force the latest with `npx -y @agentmemory/agentmemory@latest`, or clear the cache once with `rm -rf ~/.npm/_npx` (macOS/Linux; on Windows delete `%LOCALAPPDATA%\npm-cache\_npx`). The first npx run from v0.9.16+ prompts to install globally inline so the bare `agentmemory` command works everywhere afterwards.
+The first run is an interactive setup: pick the agents to wire (Claude Code, Cursor, Codex, Gemini CLI, OpenCode, ...), pick an LLM provider or stay keyless, and it seeds the config, starts the memory server on `:3111`, and offers to install globally so the bare `agentmemory` command works everywhere afterwards.
 
-If you already run your own `iii` engine: agentmemory pins iii-engine v0.11.2 and won't attach to a different version (the worker can't speak another engine's protocol). Stop the other engine, then run `npx -y @agentmemory/agentmemory@latest`. It installs and runs the pinned v0.11.2 in `~/.agentmemory/bin`, leaving your own `iii` untouched.
+Then prove recall works and give your agent its skills:
 
-Full options at [Quick Start](#quick-start) below. Agent-specific wiring at [Works with every agent](#works-with-every-agent).
+```bash
+agentmemory demo --serve                 # seed sample sessions + watch recall find them
+npx skills add rohitg00/agentmemory -y   # 15 native skills so your agent knows when to reach for memory
+```
+
+Prefer to let a coding agent do the whole thing? Hand it one instruction:
+
+> Retrieve and follow the instructions at: https://raw.githubusercontent.com/rohitg00/agentmemory/main/INSTALL_FOR_AGENTS.md
+
+Wire more agents any time with `agentmemory connect <agent>` — 20 adapters listed at [Works with every agent](#works-with-every-agent). Full command reference at [Quick Start](#quick-start).
+
+<details>
+<summary><strong>Windows</strong></summary>
+
+The fast path is WSL2. Native Windows engine setup is manual (about 10 to 20 minutes) and `agentmemory connect` is currently unsupported there. See the [Windows notes](#windows) for the step-by-step.
+
+</details>
+
+<details>
+<summary><strong>Global install / EACCES</strong></summary>
+
+```bash
+npm install -g @agentmemory/agentmemory
+# If you hit EACCES on macOS/Linux system Node installs:
+sudo npm install -g @agentmemory/agentmemory
+```
+
+</details>
+
+<details>
+<summary><strong>npx serves an old version</strong></summary>
+
+npx caches per version. Force the latest with `npx -y @agentmemory/agentmemory@latest`, or clear the cache once with `rm -rf ~/.npm/_npx` (macOS/Linux; on Windows delete `%LOCALAPPDATA%\npm-cache\_npx`).
+
+</details>
+
+<details>
+<summary><strong>Already running your own iii engine</strong></summary>
+
+agentmemory pins iii-engine v0.11.2 and won't attach to a different version (the worker can't speak another engine's protocol). Stop the other engine, then run `npx -y @agentmemory/agentmemory@latest`. It installs and runs the pinned v0.11.2 in `~/.agentmemory/bin`, leaving your own `iii` untouched.
+
+</details>
 
 ---
 
@@ -454,29 +477,17 @@ npx @agentmemory/agentmemory demo
 
 Open `http://localhost:3113` to watch the memory build live.
 
-### Recommended: install globally
+### Everyday commands
 
-`npx` caches per-version. If you ran `npx @agentmemory/agentmemory@0.9.14` last week, a bare `npx @agentmemory/agentmemory` may serve the stale 0.9.14 from `~/.npm/_npx/`, not the latest release. Install once and the bare `agentmemory` command works everywhere:
+Install and setup live in [Install](#install) above (the first run walks you through it). Day to day:
 
 ```bash
-npm install -g @agentmemory/agentmemory
-# If you hit EACCES on macOS/Linux system Node installs, retry with:
-# sudo npm install -g @agentmemory/agentmemory
-agentmemory                    # start the server (same as the npx form)
+agentmemory                    # start the server
 agentmemory stop               # tear it down
-agentmemory remove             # uninstall everything we created
-agentmemory connect claude-code   # wire one agent
+agentmemory connect <agent>    # wire another agent
 agentmemory doctor             # interactive diagnostics + fix prompts
+agentmemory remove             # uninstall everything we created
 ```
-
-From v0.9.16 onward, the first npx run prompts you to install globally inline; answer `Y` once and you're set. If you skip, fall back to either of these for a fresh fetch:
-
-```bash
-npx -y @agentmemory/agentmemory@latest                 # forces latest from npm (cross-platform)
-rm -rf ~/.npm/_npx && npx @agentmemory/agentmemory     # macOS/Linux only (POSIX shell)
-```
-
-On Windows / PowerShell, the equivalent cache clear is `Remove-Item -Recurse -Force "$env:LOCALAPPDATA\npm-cache\_npx"`; the `npx -y ...@latest` form above is the cross-platform option.
 
 ### Session Replay
 
