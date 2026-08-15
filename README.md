@@ -473,11 +473,11 @@ Latest release notes: [CHANGELOG.md](CHANGELOG.md).
 
 | System | ⭐ | Angle |
 |--------|---|-------|
-| [Zep / Graphiti](https://github.com/getzep/graphiti) | 30K | Temporal knowledge graph; strongest published temporal-query results (LongMemEval 63.8%), but graph builds asynchronously so fresh facts can lag |
-| [Cognee](https://github.com/topoteretes/cognee) | 30K | Document-to-knowledge-graph ingestion, Python-only, built for structured entity extraction rather than session capture |
-| [LangMem](https://langchain-ai.github.io/langmem/) | — | LangGraph-native memory layer; the default when your stack is already LangChain |
+| Zep / Graphiti | 30K | Temporal knowledge graph; strongest published temporal-query results (LongMemEval 63.8%), but graph builds asynchronously so fresh facts can lag |
+| Cognee | 30K | Document-to-knowledge-graph ingestion, Python-only, built for structured entity extraction rather than session capture |
+| LangMem | — | LangGraph-native memory layer; the default when your stack is already LangChain |
 | Cloudflare Agent Memory | — | Managed edge memory, the significant new managed entrant of 2026 |
-| [Memobase](https://github.com/memodb-io/memobase) | — | Evolving structured user profiles instead of memory facts; caps LLM calls per run |
+| Memobase | — | Evolving structured user profiles instead of memory facts; caps LLM calls per run |
 
 None of these auto-capture from coding-agent hooks, ship a local-first viewer, or run keyless — the combination agentmemory is built around.
 
