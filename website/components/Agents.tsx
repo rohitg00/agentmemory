@@ -178,6 +178,14 @@ const MARQUEE: Agent[] = [
     href: "https://github.com/QwenLM/qwen-code",
   },
   {
+    id: "dsh",
+    name: "DeepSeek Harness",
+    from: "DeepSeek",
+    logo: "https://svgl.app/library/deepseek.svg",
+    accent: "#4D6BFE",
+    href: "https://github.com/deepseek-ai/deepseek-harness",
+  },
+  {
     id: "kiro",
     name: "Kiro",
     from: "AWS",
