@@ -497,9 +497,4 @@ describe("agentmemory connect — stub adapters log + return stub", () => {
     expect(result.kind).toBe("stub");
   });
 
-  it("pi adapter returns stub", async () => {
-    const { adapter } = await import("../src/cli/connect/pi.js");
-    const result = await adapter.install({ dryRun: false, force: false });
-    expect(result.kind).toBe("stub");
-  });
 });

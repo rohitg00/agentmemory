@@ -45,6 +45,7 @@
   "files": [
     "dist/",
     "plugin/",
+    "integrations/pi/",
     "iii-config.yaml",
     "iii-config.docker.yaml",
     "docker-compose.yml",
