@@ -41,6 +41,18 @@ export interface Origin {
   capturedAt: string;
 }
 
+// One precedence rule for records entering through an import path:
+// a source that already carries provenance keeps it; anything else is
+// marked as having crossed the import boundary.
+export function importOrigin(
+  existing: Origin | undefined,
+  capturedAt: string,
+  detail?: string,
+): Origin {
+  if (existing) return existing;
+  return { channel: "import", capturedAt, ...(detail ? { detail } : {}) };
+}
+
 export interface RawObservation {
   id: string;
   sessionId: string;

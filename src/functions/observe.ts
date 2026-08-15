@@ -1,5 +1,7 @@
 import { TriggerAction, type ISdk } from "iii-sdk";
-import type { RawObservation, HookPayload } from "../types.js";
+import type { RawObservation, HookPayload, Origin } from "../types.js";
+
+const TOOL_HOOKS = new Set(["pre_tool_use", "post_tool_use", "post_tool_failure"]);
 import { KV, STREAM, generateId } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { stripPrivateData } from "./privacy.js";
@@ -93,17 +95,12 @@ export function registerObserveFunction(
       }
 
       // Stamp which trust boundary this content crossed. Tool hooks carry
-      // whatever the tool returned (file contents, command output, web
-      // pages) — content the user never wrote; prompt_submit is the user's
-      // own words; everything else originates from the agent runtime.
-      const originChannel =
-        payload.hookType === "prompt_submit"
-          ? ("user" as const)
-          : payload.hookType === "pre_tool_use" ||
-              payload.hookType === "post_tool_use" ||
-              payload.hookType === "post_tool_failure"
-            ? ("tool" as const)
-            : ("agent" as const);
+      // whatever the tool returned — content the user never wrote;
+      // prompt_submit is the user's own words; everything else originates
+      // from the agent runtime.
+      let originChannel: Origin["channel"] = "agent";
+      if (payload.hookType === "prompt_submit") originChannel = "user";
+      else if (TOOL_HOOKS.has(payload.hookType)) originChannel = "tool";
       const raw: RawObservation = {
         id: obsId,
         sessionId: payload.sessionId,

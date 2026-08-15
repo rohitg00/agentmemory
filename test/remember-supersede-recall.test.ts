@@ -1,57 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { mockKV, mockSdk } from "./helpers/mocks.js";
 
 vi.mock("../src/logger.js", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
-function mockKV() {
-  const store = new Map<string, Map<string, unknown>>();
-  return {
-    store,
-    get: async <T>(scope: string, key: string): Promise<T | null> =>
-      (store.get(scope)?.get(key) as T) ?? null,
-    set: async <T>(scope: string, key: string, data: T): Promise<T> => {
-      if (!store.has(scope)) store.set(scope, new Map());
-      store.get(scope)!.set(key, data);
-      return data;
-    },
-    update: async () => {},
-    delete: async (scope: string, key: string) => {
-      store.get(scope)?.delete(key);
-    },
-    list: async <T>(scope: string): Promise<T[]> => {
-      const m = store.get(scope);
-      return m ? (Array.from(m.values()) as T[]) : [];
-    },
-  };
-}
-
-function mockSdk() {
-  const fns = new Map<string, Function>();
-  return {
-    fns,
-    registerFunction: (idOrOpts: string | { id: string }, fn: Function) => {
-      const id = typeof idOrOpts === "string" ? idOrOpts : idOrOpts.id;
-      fns.set(id, fn);
-    },
-    trigger: async (
-      idOrInput: string | { function_id: string; payload: unknown; action?: unknown },
-      data?: unknown,
-    ) => {
-      const id = typeof idOrInput === "string" ? idOrInput : idOrInput.function_id;
-      const payload = typeof idOrInput === "string" ? data : idOrInput.payload;
-      const fn = fns.get(id);
-      if (fn) return fn(payload);
-      return null;
-    },
-  };
-}
-
 async function setup() {
   vi.resetModules();
   const search = await import("../src/functions/search.js");
   const { registerRememberFunction } = await import("../src/functions/remember.js");
-  const sdk = mockSdk();
+  const sdk = mockSdk({ looseTrigger: true });
   const kv = mockKV();
   registerRememberFunction(sdk as never, kv as never);
   return { sdk, kv, search };

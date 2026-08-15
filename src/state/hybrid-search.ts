@@ -191,14 +191,10 @@ export class HybridSearch {
       }
     });
 
-    // Weight fusion per item over the streams that actually ranked it.
-    // Normalizing over every enabled stream caps a single-stream hit at
-    // weight/(RRF_K+1) no matter how strong it is — with the graph stream
-    // empty on default installs, a #1 BM25 result carried a permanent
-    // penalty against anything two streams agreed on. Per-item
-    // normalization puts single-stream and multi-stream hits on the same
-    // scale; cross-stream agreement earns a small explicit bonus instead
-    // of an implicit one baked into the denominator.
+    // Weights are normalized per item over the streams that ranked it.
+    // Normalizing over every enabled stream capped single-stream hits at
+    // weight/(RRF_K+1) — with the graph stream empty on default installs,
+    // a #1 BM25 result carried a permanent penalty.
     const AGREEMENT_BONUS = 0.05;
     const combined = Array.from(scores.entries()).map(([obsId, s]) => {
       const wB = Number.isFinite(s.bm25Rank) ? this.bm25Weight : 0;
@@ -214,7 +210,6 @@ export class HybridSearch {
               wG * (1 / (RRF_K + s.graphRank))) /
             wSum
           : 0;
-      const minRank = Math.min(s.bm25Rank, s.vectorRank, s.graphRank);
       return {
         obsId,
         sessionId: s.sessionId,
@@ -223,7 +218,7 @@ export class HybridSearch {
         graphScore: s.graphScore,
         graphContext: s.graphContext,
         combinedScore: rrf * (1 + AGREEMENT_BONUS * (matchedStreams - 1)),
-        minRank,
+        minRank: Math.min(s.bm25Rank, s.vectorRank, s.graphRank),
       };
     });
 
@@ -236,6 +231,7 @@ export class HybridSearch {
         a.minRank - b.minRank ||
         (a.obsId < b.obsId ? -1 : a.obsId > b.obsId ? 1 : 0),
     );
+    for (const c of combined) delete (c as { minRank?: number }).minRank;
 
     const retrievalDepth = Math.max(limit, 20);
     const rerankWindow = 20;

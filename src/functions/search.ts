@@ -464,13 +464,22 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
       // rank lower than cross-agent ones in the hybrid score.
       const filtering = !!(projectFilter || cwdFilter || filterAgentId)
       const fetchLimit = filtering ? Math.max(effectiveLimit * 10, 100) : effectiveLimit
-      let results: Array<{ obsId: string; sessionId: string; score: number }>
+      // Hybrid results carry the observation the ranker already loaded,
+      // so the load pass below doesn't refetch every record it just
+      // enriched.
+      let results: Array<{
+        obsId: string
+        sessionId: string
+        score: number
+        observation?: CompressedObservation
+      }>
       if (hybridRanker && vectorIndex && vectorIndex.size > 0) {
         const hybrid = await hybridRanker(query, fetchLimit)
         results = hybrid.map((r) => ({
           obsId: r.observation.id,
           sessionId: r.sessionId,
           score: r.combinedScore,
+          observation: r.observation,
         }))
       } else {
         results = idx.search(query, fetchLimit)
@@ -548,6 +557,7 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
       // sessionId, so the observation key never exists (#265).
       const obsResults = await Promise.all(
         candidates.map(async (r) => {
+          if (r.observation) return r.observation
           const obs = await kv
             .get<CompressedObservation>(KV.observations(r.sessionId), r.obsId)
             .catch(() => null)

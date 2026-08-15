@@ -142,6 +142,7 @@
     @media (max-width: 720px) {
       .app-header { flex-wrap: wrap; row-gap: 6px; padding: 10px 16px; }
       .app-header .dateline { display: none; }
+      .view { overflow-x: auto; }
     }
     .ws-status {
       font-size: 10px;
@@ -372,26 +373,8 @@
       box-shadow: 2px 2px 0px 0px var(--border);
     }
     .toolbar input { flex: 1; min-width: 200px; }
-    .toolbar button:not(.btn) {
-      background: var(--bg);
-      border: 1px solid var(--border);
-      color: var(--ink);
-      padding: 7px 16px;
-      font-size: 11px;
-      cursor: pointer;
-      transition: box-shadow 0.1s, transform 0.1s;
-      font-family: var(--font-ui);
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-    }
-    .toolbar button:not(.btn):hover { box-shadow: 3px 3px 0px 0px var(--border); transform: translate(-1px, -1px); }
-    .toolbar button:not(.btn):active { box-shadow: none; transform: translate(0, 0); }
-    @media (max-width: 720px) {
-      .view { overflow-x: auto; }
-    }
 
-    .btn {
+    .btn, .toolbar button {
       background: var(--bg);
       border: 1px solid var(--border);
       color: var(--ink);
@@ -404,8 +387,8 @@
       text-transform: uppercase;
       letter-spacing: 0.06em;
     }
-    .btn:hover { box-shadow: 3px 3px 0px 0px var(--border); transform: translate(-1px, -1px); }
-    .btn:active { box-shadow: none; transform: translate(0, 0); }
+    .btn:hover, .toolbar button:hover { box-shadow: 3px 3px 0px 0px var(--border); transform: translate(-1px, -1px); }
+    .btn:active, .toolbar button:active { box-shadow: none; transform: translate(0, 0); }
     .btn-danger { border-color: var(--accent); color: var(--accent); }
     .btn-danger:hover { background: var(--accent); color: white; box-shadow: 3px 3px 0px 0px var(--border); }
     .btn-primary { background: var(--ink); color: var(--bg); border-color: var(--ink); }
@@ -1212,7 +1195,7 @@
       try {
         var o = JSON.parse(t);
         if (o && typeof o === 'object') {
-          var keys = ['file_path', 'filePath', 'path', 'command', 'pattern', 'url', 'query', 'prompt'];
+          var keys = ['file_path', 'filepath', 'filePath', 'path', 'file', 'command', 'pattern', 'url', 'query', 'prompt'];
           for (var i = 0; i < keys.length; i++) {
             if (typeof o[keys[i]] === 'string' && o[keys[i]].length > 0) return o[keys[i]];
           }
@@ -1423,11 +1406,19 @@
       loadTab(tab);
     }
 
+    // Per-tab freshness stamps. Tabs refetch on entry (the loaded-once
+    // model went stale the moment anything wrote through the API), but a
+    // short window stops rapid tab flipping from re-issuing the full
+    // fan-out (dashboard alone is ~10 requests) on every click.
+    var tabFetchedAt = {};
+    var TAB_FRESH_MS = 5000;
+
     async function loadTab(tab) {
-      // Refetch on every tab entry. The loaded-once model went stale the
-      // moment anything wrote through the API after first visit: a memory
-      // saved by the agent never appeared until a hard browser reload,
-      // and the 10s poll only refreshes the dashboard.
+      var now = Date.now();
+      if (tab !== 'replay' && tabFetchedAt[tab] && now - tabFetchedAt[tab] < TAB_FRESH_MS) {
+        return;
+      }
+      tabFetchedAt[tab] = now;
       switch(tab) {
         case 'dashboard': await loadDashboard(); break;
         case 'graph': await loadGraph(); break;
@@ -1440,6 +1431,9 @@
         case 'audit': await loadAudit(); break;
         case 'activity': await loadActivity(); break;
         case 'profile': await loadProfile(); break;
+        // Replay stays fetch-once: reloading it would reset playback
+        // timer and cursor state mid-session; its toolbar has an explicit
+        // Refresh button instead.
         case 'replay': if (!state.replay.loaded) await loadReplay(); break;
       }
     }
@@ -3090,10 +3084,13 @@
     function selectSession(id) {
       state.sessions.selectedId = state.sessions.selectedId === id ? null : id;
       renderSessions();
-      // The detail panel renders below the full session list — off-screen
-      // for any list longer than a few rows. Bring it into view so
-      // selecting a session visibly does something.
-      if (state.sessions.selectedId) {
+      // On the stacked layout (narrow screens) the detail renders below
+      // the list; bring it into view. The wide two-pane layout keeps the
+      // panel sticky beside the list, so no scroll is needed there.
+      if (
+        state.sessions.selectedId &&
+        window.matchMedia('(max-width: 1100px)').matches
+      ) {
         var panel = document.getElementById('session-detail');
         if (panel && panel.scrollIntoView) {
           panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -4010,7 +4007,7 @@
     document.addEventListener('keydown', function(e) {
       if (e.key !== 'Enter' && e.key !== ' ') return;
       if (!(e.target instanceof Element)) return;
-      var card = e.target.closest('[role="button"][data-action="select-session"], [role="button"][data-action="select-memory"], [role="link"][data-action="goto-tab"]');
+      var card = e.target.closest('[data-action][role="button"], [data-action][role="link"]');
       if (!card) return;
       e.preventDefault();
       card.click();

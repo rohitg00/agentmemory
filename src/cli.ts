@@ -837,7 +837,7 @@ function adoptRunningEngine(): void {
       const comm = pidCommand(enginePid);
       if (isForeignPortHolder(comm)) {
         vlog(
-          `adoptRunningEngine: refusing to adopt pid ${enginePid} (${comm}) — Docker/VM port holder, not a native engine`,
+          `adoptRunningEngine: refusing to adopt pid ${enginePid} (${comm}) — not the iii engine binary`,
         );
         return;
       }
@@ -2375,6 +2375,12 @@ async function runDemoBody(base: string) {
 
   sQuery.stop("Search complete");
 
+  // Only claim the semantic-recall win when the search actually hit.
+  // Without an embedding key this query returns 0 hits, and asserting
+  // success over a visibly failed search reads as a lie.
+  const semanticHits =
+    results.find((r) => r.query === "database performance optimization")
+      ?.hits ?? 0;
   const lines = [
     `Project:       ${demoProject}`,
     `Sessions:      ${sessions.length} seeded (${totalObs} observations)`,
@@ -2385,25 +2391,16 @@ async function runDemoBody(base: string) {
       `    ${c.dim("→")} ${c.ok(`${r.hits} hit(s)`)}, top: ${r.topTitle.slice(0, 60)}`,
     ]),
     "",
-    // Only claim the semantic-recall win when the search actually hit.
-    // Without an embedding key this query returns 0 hits, and asserting
-    // success over a visibly failed search reads as a lie.
-    ...(() => {
-      const semantic = results.find(
-        (r) => r.query === "database performance optimization",
-      );
-      if (semantic && semantic.hits > 0) {
-        return [
+    ...(semanticHits > 0
+      ? [
           c.accent(`Notice: searching "database performance optimization"`),
           c.accent(`found the N+1 query fix — keyword matching can't do that.`),
-        ];
-      }
-      return [
-        c.dim(`Note: "database performance optimization" found nothing —`),
-        c.dim(`semantic recall needs an embedding provider key (e.g.`),
-        c.dim(`OPENAI_API_KEY or GEMINI_API_KEY in ~/.agentmemory/.env).`),
-      ];
-    })(),
+        ]
+      : [
+          c.dim(`Note: "database performance optimization" found nothing —`),
+          c.dim(`semantic recall needs an embedding provider key (e.g.`),
+          c.dim(`OPENAI_API_KEY or GEMINI_API_KEY in ~/.agentmemory/.env).`),
+        ]),
     "",
     `Viewer:        ${c.url(getViewerUrl())}`,
     `Clean up with: ${c.dim(`curl -X DELETE "${base}/agentmemory/sessions?project=${demoProject}"`)}`,
@@ -2571,6 +2568,17 @@ async function signalAndWait(
   return !pidAlive(pid);
 }
 
+// Shared worker-reap: SIGTERM with a grace window sized for the worker's
+// shutdown flush (index snapshots land via the engine, so the worker must
+// die before the engine does, with time to commit).
+async function stopWorkerPid(pid: number, graceMs: number): Promise<boolean> {
+  const s = p.spinner();
+  s.start(`Stopping agentmemory worker (pid ${pid})... [flushing state]`);
+  const ok = await signalAndWait(pid, "SIGTERM", graceMs);
+  s.stop(ok ? `Stopped worker pid ${pid}` : `Failed to stop worker pid ${pid}`);
+  return ok;
+}
+
 function pidCommand(pid: number): string {
   if (IS_WINDOWS) return "";
   try {
@@ -2583,11 +2591,15 @@ function pidCommand(pid: number): string {
   }
 }
 
+// Positive identity beats a denylist: the engine is always the `iii`
+// binary (spawned from PATH or ~/.agentmemory/bin), so anything else
+// holding the port — Docker's proxy, an ssh forward, a stray dev
+// server — must not be adopted or signaled. A denylist of known VM
+// stacks failed open for every name it didn't know.
 function isForeignPortHolder(comm: string): boolean {
   if (!comm) return false;
-  return /docker|vpnkit|qemu|virtualization|colima|lima|podman|orbstack/i.test(
-    comm,
-  );
+  const base = comm.split("/").pop() || comm;
+  return base !== "iii" && !base.startsWith("iii-");
 }
 
 function findEnginePidsByPort(port: number): number[] {
@@ -2637,14 +2649,7 @@ async function stopDockerEngine(composeFile: string, port: number): Promise<void
   // every Docker-mode stop.
   const workerPid = readWorkerPidfile();
   if (workerPid) {
-    const s = p.spinner();
-    s.start(`Stopping agentmemory worker (pid ${workerPid})... [flushing state]`);
-    const workerOk = await signalAndWait(workerPid, "SIGTERM", 5000);
-    s.stop(
-      workerOk
-        ? `Stopped worker pid ${workerPid}`
-        : `Failed to stop worker pid ${workerPid}`,
-    );
+    await stopWorkerPid(workerPid, 5000);
   }
 
   // Scope teardown to agentmemory's own services. A bare `down` against a
@@ -2792,11 +2797,7 @@ async function runStop(): Promise<void> {
   // persists. Worker SIGTERM grace bumped 3s -> 5s to give a large
   // index a real chance to commit before the engine goes away.
   for (const pid of workerCandidates) {
-    const s = p.spinner();
-    s.start(`Stopping agentmemory worker (pid ${pid})... [flushing state]`);
-    const ok = await signalAndWait(pid, "SIGTERM", 5000);
-    s.stop(ok ? `Stopped worker pid ${pid}` : `Failed to stop worker pid ${pid}`);
-    if (!ok) allStopped = false;
+    if (!(await stopWorkerPid(pid, 5000))) allStopped = false;
   }
   const skippedForeign: Array<{ pid: number; comm: string }> = [];
   for (const pid of candidates) {
@@ -2824,7 +2825,7 @@ async function runStop(): Promise<void> {
       .map((sf) => `  pid ${sf.pid}  ${sf.comm}`)
       .join("\n");
     p.log.error(
-      `Refused to signal Docker/VM process(es) holding :${port} — they are not the iii engine:\n${list}\n\nIf the engine runs in Docker, stop it there:\n  docker compose ps && docker compose rm -s -f <service>\n\nOr re-run with --force to signal them anyway.`,
+      `Refused to signal process(es) holding :${port} that are not the iii engine:\n${list}\n\nIf the engine runs in Docker, stop it there:\n  docker compose ps && docker compose rm -s -f <service>\n\nOr re-run with --force to signal them anyway.`,
     );
     process.exit(1);
   }

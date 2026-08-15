@@ -24,6 +24,7 @@ import type {
   ExportPagination,
   AccessLogExport,
 } from "../types.js";
+import { importOrigin } from "../types.js";
 import { normalizeAccessLog } from "./access-tracker.js";
 import { KV } from "../state/schema.js";
 import { checkPayloadFrameSize } from "../state/frame-guard.js";
@@ -428,12 +429,9 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
               return;
             }
           }
-          // Imported records enter through a different trust boundary than
-          // live capture; keep the source's own origin when the export
-          // carried one, otherwise mark the import channel.
-          if (!o.origin) {
-            o.origin = { channel: "import", capturedAt: o.timestamp };
-          }
+          // Imported records enter through a different trust boundary
+          // than live capture.
+          o.origin = importOrigin(o.origin, o.timestamp);
           await kv.set(KV.observations(sessionId), o.id, o);
           stats.observations++;
           indexObs.push(o);
@@ -454,9 +452,7 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
         if (!Array.isArray(memory.sessionIds)) {
           memory.sessionIds = [];
         }
-        if (!memory.origin) {
-          memory.origin = { channel: "import", capturedAt: memory.createdAt };
-        }
+        memory.origin = importOrigin(memory.origin, memory.createdAt);
         await kv.set(KV.memories, memory.id, memory);
         stats.memories++;
         indexMems.push(memory);

@@ -80,20 +80,30 @@ function projectFor(sessionId: string): { name: string | null; cwd: string | nul
   return p ?? { name: defaultProjectName, cwd: defaultProjectCwd };
 }
 
+const projectNameCache = new Map<string, string>();
+
 function resolveProjectName(dir: string): string {
   const explicit = process.env.AGENTMEMORY_PROJECT_NAME?.trim();
   if (explicit) return explicit;
+  const cached = projectNameCache.get(dir);
+  if (cached !== undefined) return cached;
   try {
     const top = execFileSync("git", ["rev-parse", "--show-toplevel"], {
       cwd: dir,
       stdio: ["ignore", "pipe", "ignore"],
       encoding: "utf8",
     }).trim();
-    if (top) return basename(top);
+    if (top) {
+      const name = basename(top);
+      projectNameCache.set(dir, name);
+      return name;
+    }
   } catch {
     // not a git repo, fall through
   }
-  return basename(dir) || dir;
+  const fallback = basename(dir) || dir;
+  projectNameCache.set(dir, fallback);
+  return fallback;
 }
 const stashedFiles = new Map<string, Set<string>>();
 const seenSubtaskIds = new Map<string, Set<string>>();
@@ -232,13 +242,14 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
           typeof info?.directory === "string" && info.directory
             ? info.directory
             : defaultProjectCwd;
+        let proj: { name: string | null; cwd: string | null };
         if (sessionDir) {
-          sessionProjects.set(sessionId, {
-            cwd: sessionDir,
-            name: resolveProjectName(sessionDir),
-          });
+          const entry = { cwd: sessionDir, name: resolveProjectName(sessionDir) };
+          sessionProjects.set(sessionId, entry);
+          proj = entry;
+        } else {
+          proj = projectFor(sessionId);
         }
-        const proj = projectFor(sessionId);
         const startResult = await postJson("/session/start", {
           sessionId,
           title: info?.title ?? null,

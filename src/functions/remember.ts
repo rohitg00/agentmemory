@@ -78,17 +78,31 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
         // stops working.
         const idx = getSearchIndex();
         let candidateMemories: Memory[];
-        if (idx.size > 0) {
-          // 50 hits, not 20: the shared index also holds observations,
-          // which occupy slots but never resolve to memories below. A
-          // >0.7-Jaccard duplicate shares most tokens with the query so
-          // it ranks near the top regardless.
-          const hits = idx.search(data.content, 50);
-          const loaded = await Promise.all(
-            hits.map((h) => kv.get<Memory>(KV.memories, h.obsId).catch(() => null)),
-          );
-          candidateMemories = loaded.filter((m): m is Memory => m !== null);
-        } else {
+        try {
+          if (idx.size > 0) {
+            // 50 hits, not 20: the shared index also holds observations,
+            // which occupy slots but never resolve to memories below. A
+            // >0.7-Jaccard duplicate shares most tokens with the query so
+            // it ranks near the top regardless. Only mem_-prefixed ids can
+            // resolve in KV.memories, so skip the guaranteed-miss lookups.
+            const hits = idx
+              .search(data.content, 50)
+              .filter((h) => h.obsId.startsWith("mem_"));
+            const loaded = await Promise.all(
+              hits.map((h) =>
+                kv.get<Memory>(KV.memories, h.obsId).catch(() => null),
+              ),
+            );
+            candidateMemories = loaded.filter((m): m is Memory => m !== null);
+          } else {
+            candidateMemories = await kv.list<Memory>(KV.memories);
+          }
+        } catch (err) {
+          // Candidate generation is an optimization; a failure here must
+          // never block the save itself.
+          logger.warn("supersession candidate lookup failed, using full scan", {
+            error: err instanceof Error ? err.message : JSON.stringify(err),
+          });
           candidateMemories = await kv.list<Memory>(KV.memories);
         }
         let supersededId: string | undefined;
@@ -122,11 +136,7 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
             similarity > 0.4 &&
             (!nearMatch || similarity > nearMatch.similarity)
           ) {
-            nearMatch = {
-              id: existing.id,
-              title: existing.title,
-              similarity: Math.round(similarity * 100) / 100,
-            };
+            nearMatch = { id: existing.id, title: existing.title, similarity };
           }
         }
 
@@ -220,7 +230,14 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
         return {
           success: true,
           memory,
-          ...(nearMatch && !supersededId ? { similarTo: nearMatch } : {}),
+          ...(nearMatch && !supersededId
+            ? {
+                similarTo: {
+                  ...nearMatch,
+                  similarity: Math.round(nearMatch.similarity * 100) / 100,
+                },
+              }
+            : {}),
         };
       });
     },

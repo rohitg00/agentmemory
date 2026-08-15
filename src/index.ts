@@ -387,10 +387,10 @@ async function main() {
     graphWeight,
   );
 
-  registerSmartSearchFunction(sdk, kv, (query, limit) =>
-    hybridSearch.search(query, limit),
-  );
-  setHybridRanker((query, limit) => hybridSearch.search(query, limit));
+  const hybridRanker = (query: string, limit: number) =>
+    hybridSearch.search(query, limit);
+  registerSmartSearchFunction(sdk, kv, hybridRanker);
+  setHybridRanker(hybridRanker);
   registerRecentSearchesSweepFunction(sdk, kv);
 
   registerApiTriggers(sdk, kv, secret, metricsStore, provider);

@@ -165,19 +165,23 @@ export function registerApiTriggers(
     },
   );
 
+  // Shared instance metadata for livez and health so the two never
+  // drift. streamsPort lets the viewer resolve its stream WebSocket
+  // target from the server instead of port arithmetic, which broke
+  // whenever the viewer bound a fallback port. Config is boot-static,
+  // so read it once instead of rebuilding the merged env per request.
+  const bootStreamsPort = loadConfig().streamsPort;
+  const instanceInfo = () => ({
+    service: "agentmemory",
+    viewerPort: getBoundViewerPort(),
+    viewerSkipped: getViewerSkipped(),
+    streamsPort: bootStreamsPort,
+  });
+
   sdk.registerFunction("api::liveness",
     async (): Promise<Response> => ({
       status_code: 200,
-      body: {
-        status: "ok",
-        service: "agentmemory",
-        viewerPort: getBoundViewerPort(),
-        viewerSkipped: getViewerSkipped(),
-        // The viewer derives its stream WebSocket target from this instead
-        // of port arithmetic: when the viewer binds a fallback port,
-        // viewerPort-1 points at the wrong server and live updates die.
-        streamsPort: loadConfig().streamsPort,
-      },
+      body: { status: "ok", ...instanceInfo() },
     }),
   );
   sdk.registerTrigger({
@@ -278,8 +282,7 @@ export function registerApiTriggers(
           health: health || null,
           functionMetrics,
           circuitBreaker,
-          viewerPort: getBoundViewerPort(),
-          viewerSkipped: getViewerSkipped(),
+          ...instanceInfo(),
         },
       };
     },
