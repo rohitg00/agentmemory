@@ -5,6 +5,11 @@ import crypto from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { createPlaintextBearerAuthGuard } from "./security.js";
 
+/** SHA-256 hex hash used for client-side observation dedup. */
+function sha256(data: string): string {
+  return crypto.createHash("sha256").update(data).digest("hex");
+}
+
 type TextBlock = { type?: string; text?: string };
 type AssistantMessage = { role?: string; content?: unknown };
 type SmartSearchResult = {
@@ -149,6 +154,26 @@ export default function agentmemoryExtension(pi: ExtensionAPI) {
   let lastPrompt = "";
   let lastHealthOk = false;
 
+  // Client-side dedup window: skip observations with the same content hash
+  // within this interval (mirrors the server's dedup but avoids the HTTP
+  // round-trip and its LLM compression during rapid repeats, e.g. an
+  // auto-retry re-running the same tool with identical input).
+  const DEDUP_WINDOW_MS = 5 * 60 * 1000;
+  const recentHashes = new Map<string, number>();
+  function isDuplicate(data: string): boolean {
+    const hash = sha256(data);
+    const now = Date.now();
+    const prev = recentHashes.get(hash);
+    if (prev && now - prev < DEDUP_WINDOW_MS) return true;
+    if (recentHashes.size > 500) {
+      for (const [k, ts] of recentHashes) {
+        if (now - ts >= DEDUP_WINDOW_MS) recentHashes.delete(k);
+      }
+    }
+    recentHashes.set(hash, now);
+    return false;
+  }
+
   async function getHealth() {
     return await callAgentMemory<HealthResponse>("health", { method: "GET" });
   }
@@ -254,6 +279,13 @@ export default function agentmemoryExtension(pi: ExtensionAPI) {
     sessionId = sessionFile ? path.basename(sessionFile).replace(/\.[^.]+$/, "") : `ephemeral-${crypto.randomUUID().slice(0, 8)}`;
     currentCwd = process.cwd();
     currentProject = resolveProjectName(currentCwd);
+    // Explicitly register the session so the server loads project profiles
+    // and scopes observations correctly (SessionStart parity).
+    if (lastHealthOk) {
+      await callAgentMemory("session/start", {
+        body: { sessionId, project: currentProject, cwd: currentCwd },
+      });
+    }
     await refreshStatus(ctx);
   });
 
@@ -262,6 +294,22 @@ export default function agentmemoryExtension(pi: ExtensionAPI) {
     currentProject = resolveProjectName(currentCwd);
     lastPrompt = event.prompt?.trim() || "";
     if (!lastPrompt) return;
+
+    // Capture the user prompt as an observation (UserPromptSubmit parity),
+    // deduped so an auto-retry re-submitting the same prompt does not
+    // re-observe it within the window.
+    if (lastHealthOk && !isDuplicate(`prompt_submit:${lastPrompt}`)) {
+      void callAgentMemory("observe", {
+        body: {
+          hookType: "prompt_submit",
+          sessionId,
+          project: currentProject,
+          cwd: currentCwd,
+          timestamp: new Date().toISOString(),
+          data: { prompt: lastPrompt },
+        },
+      });
+    }
 
     const result = await callAgentMemory<{ results?: SmartSearchResult[] }>("smart-search", {
       body: { query: lastPrompt, limit: 5 },
@@ -293,8 +341,8 @@ export default function agentmemoryExtension(pi: ExtensionAPI) {
         timestamp: new Date().toISOString(),
         data: {
           tool_name: "conversation",
-          tool_input: lastPrompt.slice(0, 500),
-          tool_output: assistantText.slice(0, 4000),
+          tool_input: lastPrompt.slice(0, 8000),
+          tool_output: assistantText.slice(0, 8000),
         },
       },
     });
