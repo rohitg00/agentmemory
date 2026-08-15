@@ -12,20 +12,14 @@ import type { ConnectAdapter, ConnectOptions, ConnectResult } from "./types.js";
 import { findPluginRoot } from "./codex-hooks.js";
 import { backupFile, logAlreadyWired, logBackup, logInstalled } from "./util.js";
 
-// pi auto-discovers extensions at ~/.pi/agent/extensions/*/index.ts, so the
-// install is a copy of the bundled extension into its own subdirectory —
-// no settings.json edit required. The bundled source ships in the npm
-// package under integrations/pi/ (index.ts + security.ts; typebox and the
-// pi types are provided by pi itself at runtime).
-// Source: pi.dev/docs/latest/extensions#extension-locations.
+// pi auto-discovers ~/.pi/agent/extensions/*/index.ts, so installing is a
+// copy of the bundled extension; no settings.json edit.
 
 const PI_DIR = join(homedir(), ".pi");
 const PI_EXT_DIR = join(PI_DIR, "agent", "extensions", "agentmemory");
 const DOCS = "https://github.com/rohitg00/agentmemory/tree/main/integrations/pi";
 const EXT_FILES = ["index.ts", "security.ts"] as const;
 
-// integrations/pi sits next to plugin/ at the package root, in both the
-// published layout and the repo checkout.
 function findPiSourceDir(): string {
   const packageRoot = dirname(findPluginRoot());
   const dir = join(packageRoot, "integrations", "pi");

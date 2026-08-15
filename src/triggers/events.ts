@@ -107,9 +107,7 @@ export function registerEventTriggers(sdk: ISdk, kv: StateKV): void {
     if (isReflectEnabled()) {
       fireVoid("mem::slot-reflect", { sessionId: data.sessionId });
     }
-    // Fires keyless too: mem::graph-extract always runs the deterministic
-    // structural pass and gates the LLM pass on GRAPH_EXTRACTION_ENABLED
-    // plus a real provider internally.
+    // Unconditional: mem::graph-extract gates its LLM pass internally.
     try {
       const observations = await kv.list<CompressedObservation>(
         KV.observations(data.sessionId),

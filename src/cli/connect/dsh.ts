@@ -10,31 +10,15 @@ import {
   type HookManifest,
 } from "./codex-hooks.js";
 
-// DeepSeek Harness loads plugins through layered cordis patch files; the
-// home-level $DSH_HOME/cordis.patch.yml is the machine-local layer shared
-// by every profile, so appended rows wire agentmemory everywhere.
-//
-// Two rows:
-//   1. @deepseek-ai/dsh-mcp-client — registers the MCP tools on ctx.tools
-//      as mcp__agentmemory__<tool>.
-//   2. (--with-hooks) @deepseek-ai/dsh-hooks-claude-code — Harness's
-//      first-party Claude Code hook bridge. It runs agentmemory's bundled
-//      hook scripts (Claude Code payload shape) on the harness's own
-//      interception points, giving full auto-capture: SessionStart,
-//      UserPromptSubmit, PreToolUse, PostToolUse, Stop. Unsupported
-//      events in the manifest (PreCompact) are parsed-and-skipped by the
-//      bridge.
-// Source: packages/mcp/mcp-client/README.md,
-// packages/hooks/hooks-claude-code/README.md, and
-// docs/user/develop/basic/publish.md in deepseek-ai/deepseek-harness.
+// Rows land in the home-level cordis.patch.yml, the patch layer every
+// Harness profile loads; the hooks row reuses the bundled Claude Code
+// hook scripts through Harness's own bridge plugin.
 
 function dshHome(): string {
   return process.env["DSH_HOME"] || join(homedir(), ".dsh");
 }
 
-// Harness env blocks are plain strings with no shell interpolation, so the
-// URL is written literally instead of the ${VAR:-default} template the
-// JSON-config agents get.
+// Harness env values are literal strings; no ${VAR:-default} interpolation.
 const MCP_BLOCK = `- insert:
     - id: agentmemory
       name: '@deepseek-ai/dsh-mcp-client'
@@ -59,8 +43,7 @@ function hooksBlock(hooksConfigPath: string): string {
 `;
 }
 
-// Drop the managed block containing `marker`: from the nearest preceding
-// top-level "- " line through the line before the next top-level "- ".
+// Drop the managed top-level block containing `marker`.
 function stripBlock(content: string, marker: string): string {
   if (!content.includes(marker)) return content;
   const lines = content.split("\n");

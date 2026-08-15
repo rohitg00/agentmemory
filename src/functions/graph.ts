@@ -451,11 +451,8 @@ function parseGraphXml(
   return { nodes, edges };
 }
 
-// Deterministic extraction from the structured fields of compressed
-// observations. Files and concepts already name the entities, and
-// appearing in the same observation is an edge — neither needs a
-// language model. Runs on every session end so the graph populates
-// keyless; LLM extraction layers typed relations on top when enabled.
+// Files and concepts name the nodes; same-observation co-occurrence is an
+// edge. Keyless by design — the LLM pass only adds typed relations.
 const HEURISTIC_EDGE_WEIGHT = 0.4;
 const MAX_HEURISTIC_EDGES_PER_OBS = 12;
 
@@ -520,8 +517,7 @@ export function extractGraphHeuristics(
       nodeFor("concept", c, obs.id),
     );
 
-    // Concepts attach to the files they were observed with; consecutive
-    // pairs keep the edge count linear in the entity count.
+    // Consecutive pairs keep the edge count linear in the entity count.
     for (const concept of conceptNodes) {
       for (const file of fileNodes) link(concept, file);
     }
@@ -691,8 +687,6 @@ export function registerGraphFunction(
 
       const obsIds = data.observations.map((o) => o.id);
 
-      // Structural pass: entities from files/concepts plus co-occurrence
-      // edges. Deterministic and keyless, so it always runs.
       let nodes: GraphNode[] = [];
       let edges: GraphEdge[] = [];
       try {
@@ -705,8 +699,6 @@ export function registerGraphFunction(
         });
       }
 
-      // LLM pass layers typed relations (fixes, depends_on, causes...)
-      // on top; gated on the flag and a real provider.
       const llmEnabled =
         isGraphExtractionEnabled() && !provider.name.includes("noop");
       let llmError: string | undefined;
