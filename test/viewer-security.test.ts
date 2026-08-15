@@ -219,8 +219,8 @@ describe("viewer request handler DNS rebinding defence (e2e)", () => {
     // SVG payload must actually be SVG, not the proxied REST error body.
     expect(res.body).toMatch(/^<svg\b/);
     expect(res.body).toContain("</svg>");
-    // Sanity-check the artwork: rounded dark tile + green "AM" lettering.
+    // Sanity-check it is real SVG artwork, not an error page.
     expect(res.body).toContain('<svg');
-    expect(res.body).toContain(">AM<");
+    expect(res.body).toMatch(/<svg[^>]*viewBox="0 0 64 64"/);
   });
 });
