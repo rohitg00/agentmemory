@@ -1,0 +1,38 @@
+# ── agentmemory L1: MCP bridge (append into ~/.dsh/profiles/<profile>/cordis.patch.yml) ──
+# Provides mcp__agentmemory__* tools to every DSH agent. The stdio shim
+# proxies to the agentmemory daemon (AGENTMEMORY_URL) and falls back to a
+# reduced local tool set when the daemon is unreachable.
+- insert:
+    - id: mcp-agentmemory
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        transport: stdio
+        serverName: agentmemory
+        command: npx
+        # If npx fails with EPERM (broken ~/.npm cache), point --cache at a
+        # private per-user dir, e.g. '~/.cache/npmcache-dsh' expanded to an
+        # absolute path by the installer (never /tmp — predictable + shared):
+        # args: ['--cache', '/home/<user>/.cache/npmcache-dsh', '-y', '@agentmemory/mcp']
+        args: ['-y', '@agentmemory/mcp']
+        env:
+          AGENTMEMORY_URL: http://localhost:3111
+          # AGENTMEMORY_SECRET: '<match the daemon .env>'
+          # AGENTMEMORY_TOOLS: all          # default: 8 core tools only (saves tokens)
+        toolCallTimeoutMs: 60000
+        failOnStartupError: false
+
+# ── agentmemory L3: cordis plugin (add after 'dsh plugin --profile <p> add @agentmemory/dsh') ──
+# Note: new entries must be wrapped in an insert list; a top-level `- id:` only
+# overrides the config of an existing entry.
+- insert:
+    - id: agentmemory
+      name: '@agentmemory/dsh'
+      config:
+        url: http://localhost:3111
+        secret: ''
+        agentId: dsh
+        injectInstructions: true
+        injectContext: true
+        observeToolCalls: true
+        compactionBridge: true
+        summarizeOnDispose: true

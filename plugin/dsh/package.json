@@ -1,0 +1,47 @@
+{
+  "name": "@agentmemory/dsh",
+  "version": "0.1.0",
+  "description": "agentmemory cordis plugin for DeepSeek Harness — auto-captures DSH session lifecycle into long-term memory (session start registration, first-step context injection, tool/prompt observations, compaction bridge, session-end summarization).",
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "install",
+    "README.md"
+  ],
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "agentmemory",
+    "memory",
+    "cordis",
+    "plugin"
+  ],
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@types/node": "^25.9.1",
+    "tsdown": "^0.21.10",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.6"
+  },
+  "scripts": {
+    "build": "tsdown",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  }
+}

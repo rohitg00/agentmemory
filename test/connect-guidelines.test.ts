@@ -139,6 +139,7 @@ describe("guidelineTargets coverage", () => {
         "copilot-cli",
         "cursor",
         "droid",
+        "dsh",
         "gemini-cli",
         "kiro",
         "opencode",
