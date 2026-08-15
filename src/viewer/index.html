@@ -139,6 +139,10 @@
       align-items: center;
       gap: 12px;
     }
+    @media (max-width: 720px) {
+      .app-header { flex-wrap: wrap; row-gap: 6px; padding: 10px 16px; }
+      .app-header .dateline { display: none; }
+    }
     .ws-status {
       font-size: 10px;
       padding: 3px 10px;
@@ -158,7 +162,11 @@
       display: inline-block;
     }
     .ws-status.connected { border-color: var(--green); color: var(--green); }
-    .ws-status.connected::before { background: var(--green); }
+    .ws-status.connected::before { background: var(--green); animation: live-pulse 2.4s ease-in-out infinite; }
+    @keyframes live-pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.35; }
+    }
     .ws-status.disconnected { border-color: var(--ink-faint); color: var(--ink-faint); }
     .ws-status.disconnected::before { background: var(--ink-faint); }
 
@@ -195,7 +203,15 @@
     }
 
     .view { display: none; flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 24px; }
-    .view.active { display: block; }
+    .view.active { display: block; animation: view-in 160ms ease-out; }
+    @keyframes view-in {
+      from { opacity: 0; transform: translateY(4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .view.active { animation: none; }
+      .ws-status.connected::before { animation: none; }
+    }
 
     .stats-grid {
       display: grid;
@@ -211,6 +227,14 @@
       border-bottom: 1px solid var(--border-light);
     }
     .stat-card:last-child { border-right: none; }
+    .stat-card[data-action] {
+      cursor: pointer;
+      transition: background 0.15s ease-out;
+    }
+    .stat-card[data-action]:hover { background: var(--bg-alt); }
+    .stat-card[data-action]:hover .label { color: var(--accent); }
+    .stat-card[data-action]:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+    .stat-card[data-action]:active { background: var(--bg-inset); }
     .stat-card .label {
       font-size: 9px;
       color: var(--ink-muted);
@@ -294,6 +318,7 @@
       border-collapse: collapse;
       font-size: 13px;
       font-family: var(--font-body);
+      font-variant-numeric: tabular-nums;
     }
     th {
       text-align: left;
@@ -541,18 +566,36 @@
     }
     .tag.file-tag { border-color: var(--green); color: var(--green); }
 
+    /* Two-pane sessions: list left, detail pinned right on wide screens.
+       The detail panel previously rendered below the full list — selecting
+       a session on any real corpus put the response off-screen. */
+    .sessions-layout {
+      display: grid;
+      grid-template-columns: minmax(300px, 400px) minmax(0, 1fr);
+      gap: 20px;
+      align-items: start;
+    }
+    .sessions-layout #session-detail { position: sticky; top: 0; min-width: 0; }
+    .sessions-layout #session-detail .detail-panel { margin-top: 0; }
+    @media (max-width: 1100px) {
+      .sessions-layout { grid-template-columns: 1fr; }
+      .sessions-layout #session-detail { position: static; }
+    }
     .session-list { display: flex; flex-direction: column; gap: 0; }
     .session-item {
       background: var(--bg);
       border: 1px solid var(--border-light);
       border-bottom: none;
+      border-left: 3px solid transparent;
       padding: 14px 20px;
       cursor: pointer;
-      transition: background 0.1s;
+      transition: background 0.15s ease-out, border-color 0.15s ease-out;
     }
     .session-item:last-child { border-bottom: 1px solid var(--border-light); }
-    .session-item:hover { background: var(--bg-alt); }
-    .session-item.selected { background: var(--bg-alt); border-left: 3px solid var(--accent); }
+    .session-item:hover { background: var(--bg-alt); border-left-color: var(--border-light); }
+    .session-item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+    .session-item:active { background: var(--bg-inset); }
+    .session-item.selected { background: var(--bg-alt); border-left-color: var(--accent); }
     .session-item .session-top {
       display: flex;
       justify-content: space-between;
@@ -1159,6 +1202,25 @@
       if (!ts) return '';
       try { return new Date(ts).toLocaleTimeString(); } catch { return ts; }
     }
+    // Observation subtitles are often the raw tool input serialized as
+    // JSON ('{"file_path":"src/x.ts"}'). Pull the human-meaningful field
+    // out for display; anything unparseable renders as-is.
+    function humanizeSubtitle(s) {
+      if (typeof s !== 'string') return '';
+      var t = s.trim();
+      if (!t.startsWith('{')) return s;
+      try {
+        var o = JSON.parse(t);
+        if (o && typeof o === 'object') {
+          var keys = ['file_path', 'filePath', 'path', 'command', 'pattern', 'url', 'query', 'prompt'];
+          for (var i = 0; i < keys.length; i++) {
+            if (typeof o[keys[i]] === 'string' && o[keys[i]].length > 0) return o[keys[i]];
+          }
+        }
+      } catch (_) {}
+      return s;
+    }
+
     function truncate(s, n) {
       if (!s) return '';
       return s.length > n ? s.slice(0, n) + '...' : s;
@@ -1458,13 +1520,13 @@
           '</div>';
       }
       html += '<div class="stats-grid">';
-      html += '<div class="stat-card"><div class="label">Sessions</div><div class="value">' + d.sessions.length + '</div><div class="sub">' + activeSessions + ' active</div></div>';
-      html += '<div class="stat-card"><div class="label">Memories</div><div class="value">' + d.memories.length + '</div><div class="sub">latest versions</div></div>';
+      html += '<div class="stat-card" data-action="goto-tab" data-tab="sessions" role="link" tabindex="0"><div class="label">Sessions</div><div class="value">' + d.sessions.length + '</div><div class="sub">' + activeSessions + ' active</div></div>';
+      html += '<div class="stat-card" data-action="goto-tab" data-tab="memories" role="link" tabindex="0"><div class="label">Memories</div><div class="value">' + d.memories.length + '</div><div class="sub">latest versions</div></div>';
       var lessonCount = (d.lessons || []).length;
       var crystalCount = (d.crystals || []).length;
-      html += '<div class="stat-card"><div class="label">Lessons</div><div class="value">' + lessonCount + '</div><div class="sub">confidence-scored</div></div>';
-      html += '<div class="stat-card"><div class="label">Crystals</div><div class="value">' + crystalCount + '</div><div class="sub">action digests</div></div>';
-      html += '<div class="stat-card"><div class="label">Graph Nodes</div><div class="value">' + nodeCount + '</div><div class="sub">' + edgeCount + ' edges</div></div>';
+      html += '<div class="stat-card" data-action="goto-tab" data-tab="lessons" role="link" tabindex="0"><div class="label">Lessons</div><div class="value">' + lessonCount + '</div><div class="sub">confidence-scored</div></div>';
+      html += '<div class="stat-card" data-action="goto-tab" data-tab="crystals" role="link" tabindex="0"><div class="label">Crystals</div><div class="value">' + crystalCount + '</div><div class="sub">action digests</div></div>';
+      html += '<div class="stat-card" data-action="goto-tab" data-tab="graph" role="link" tabindex="0"><div class="label">Graph Nodes</div><div class="value">' + nodeCount + '</div><div class="sub">' + edgeCount + ' edges</div></div>';
       html += '<div class="stat-card"><div class="label">Health</div><div class="value"><div class="health-bar"><span class="health-dot ' + dotClass + '"></span> ' + esc(healthStatus) + '</div></div>';
       html += '<div class="sub">' + esc(snap.connectionState || 'unknown') + '</div></div>';
       var totalCalls = fMetrics.reduce(function(a, m) { return a + (m.totalCalls || 0); }, 0);
@@ -2567,6 +2629,9 @@
             html += '<div style="font-size:13px;color:var(--ink);white-space:pre-wrap;line-height:1.5;margin-bottom:10px;">' + esc(m.content || '') + '</div>';
             html += '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:11px;color:var(--ink-muted);font-family:var(--font-mono);margin-bottom:10px;">';
             html += '<span>id: ' + esc(m.id) + '</span>';
+            if (m.origin && m.origin.channel) {
+              html += '<span>origin: ' + esc(m.origin.channel) + (m.origin.detail ? ' (' + esc(m.origin.detail) + ')' : '') + '</span>';
+            }
             if (m.project) html += '<span>project: ' + esc(m.project) + '</span>';
             if (m.createdAt) html += '<span>created: ' + esc(formatTime(m.createdAt)) + '</span>';
             if (m.supersedes && m.supersedes.length > 0) html += '<span>supersedes: ' + esc(m.supersedes.join(', ')) + '</span>';
@@ -2764,7 +2829,7 @@
         html += '<span class="obs-time">' + esc(shortTime(o.timestamp)) + '</span>';
         html += '</div></div>';
 
-        if (o.subtitle) html += '<div class="obs-subtitle">' + esc(o.subtitle) + '</div>';
+        if (o.subtitle) html += '<div class="obs-subtitle">' + esc(humanizeSubtitle(o.subtitle)) + '</div>';
 
         html += '<div style="margin-top:4px;">';
         html += '<span class="badge" style="border-color:' + typeColor + ';color:' + typeColor + ';margin-right:4px;">' + esc(type.replace(/_/g, ' ')) + '</span>';
@@ -2994,7 +3059,7 @@
         return (b.startedAt || '').localeCompare(a.startedAt || '');
       });
 
-      var html = '<div class="session-list">';
+      var html = '<div class="sessions-layout"><div class="session-list">';
       if (items.length === 0) {
         html += '<div class="empty-state"><div class="empty-icon">&#128466;</div><p>No sessions</p></div>';
       } else {
@@ -3016,7 +3081,7 @@
         });
       }
       html += '</div>';
-      html += '<div id="session-detail"></div>';
+      html += '<div id="session-detail"></div></div>';
       el.innerHTML = html;
 
       if (state.sessions.selectedId) renderSessionDetail();
@@ -3189,7 +3254,7 @@
         html += '<div class="empty-state">' +
           '<div class="empty-icon">&#128161;</div>' +
           '<div class="empty-title">No lessons yet</div>' +
-          '<div class="empty-lead">Lessons are confidence-scored pattern observations &mdash; things you corrected once that the agent should never do again. They persist across projects.</div>' +
+          '<div class="empty-lead">Lessons are short imperative rules (always/never/prefer/avoid) learned from past work &mdash; things you corrected once that the agent should never repeat. Confidence grows when they hold and decays when unused.</div>' +
           '<pre class="empty-cmd"># Save a lesson explicitly\nmemory_lesson_save { rule, reason, confidence }\n\n# Or: Replay tab &rarr; Import JSONL auto-extracts lessons\n# from your past Claude Code sessions</pre>' +
           '<div><a class="empty-link" href="https://github.com/rohitg00/agentmemory#lessons" target="_blank" rel="noopener">Lesson decay &amp; scoring &rarr;</a></div>' +
           '</div>';
@@ -3345,7 +3410,7 @@
         html += '<div class="empty-state">' +
           '<div class="empty-icon">&#128142;</div>' +
           '<div class="empty-title">No crystals yet</div>' +
-          '<div class="empty-lead">Crystals are compressed action digests &mdash; the 3-line summary of what happened in a session. Generated from long conversations to give the next session fast context without re-reading everything.</div>' +
+          '<div class="empty-lead">Crystals are frozen snapshots of completed work &mdash; one session’s narrative, key outcomes, files touched, and lessons surfaced, kept after raw observations are pruned so the next session gets fast context.</div>' +
           '<pre class="empty-cmd"># Auto: import a JSONL transcript\n#   Replay tab &rarr; Import JSONL\n\n# Manual: crystallize a specific session\nmemory_crystallize { sessionId }</pre>' +
           '<div><a class="empty-link" href="https://github.com/rohitg00/agentmemory#crystals" target="_blank" rel="noopener">Crystal pipeline &rarr;</a></div>' +
           '</div>';
@@ -3945,7 +4010,7 @@
     document.addEventListener('keydown', function(e) {
       if (e.key !== 'Enter' && e.key !== ' ') return;
       if (!(e.target instanceof Element)) return;
-      var card = e.target.closest('[role="button"][data-action="select-session"], [role="button"][data-action="select-memory"]');
+      var card = e.target.closest('[role="button"][data-action="select-session"], [role="button"][data-action="select-memory"], [role="link"][data-action="goto-tab"]');
       if (!card) return;
       e.preventDefault();
       card.click();
@@ -4029,6 +4094,11 @@
       if (action === 'select-session') {
         var sessionId = target.getAttribute('data-session-id');
         if (sessionId) selectSession(sessionId);
+        return;
+      }
+      if (action === 'goto-tab') {
+        var gotoTab = target.getAttribute('data-tab');
+        if (gotoTab) switchTab(gotoTab);
         return;
       }
       if (action === 'select-memory') {
