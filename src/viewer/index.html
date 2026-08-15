@@ -2025,10 +2025,10 @@
         var c = typeCenters[n.type] || { x: 0, y: 0 };
         return {
           id: n.id, type: n.type, name: n.name, properties: n.properties,
-          x: c.x + (Math.random() - 0.5) * 90,
-          y: c.y + (Math.random() - 0.5) * 90,
+          x: c.x + (Math.random() - 0.5) * 150,
+          y: c.y + (Math.random() - 0.5) * 150,
           vx: 0, vy: 0,
-          r: Math.max(8, Math.min(22, 8 + deg * 2.5))
+          r: Math.max(11, Math.min(22, 11 + deg * 2.5))
         };
       });
       graphSim.edges = state.graph.edges.slice();
@@ -2249,8 +2249,8 @@
         }
         if (graphSim.clustered && graphSim.typeCenters && graphSim.typeCenters[n.type]) {
           var tc = graphSim.typeCenters[n.type];
-          fx += (tc.x - n.x) * 0.02;
-          fy += (tc.y - n.y) * 0.02;
+          fx += (tc.x - n.x) * 0.006;
+          fy += (tc.y - n.y) * 0.006;
         } else {
           fx -= n.x * centerGravity;
           fy -= n.y * centerGravity;
@@ -2381,7 +2381,7 @@
         Object.keys(graphSim.typeCenters).forEach(function(t) {
           if (state.graph.filters[t] === false) return;
           var c = graphSim.typeCenters[t];
-          ctx.fillText(t.toUpperCase(), c.x, c.y - 64 / graphSim.zoom);
+          ctx.fillText(t.toUpperCase(), c.x, c.y - 96 / graphSim.zoom);
         });
         ctx.restore();
       }
@@ -2485,7 +2485,7 @@
         var isSelected = selectedId === n.id;
         var isHovered = hoverNodeId === n.id;
         var matchesSearch = !searchActive || n.name.toLowerCase().includes(graphSearchTerm);
-        var isFocusFaded = focusNodeId && n.id !== focusNodeId && !graphSim.edges.some(function(ed) {
+        var isFocusFaded = graphSim.edges.length > 0 && focusNodeId && n.id !== focusNodeId && !graphSim.edges.some(function(ed) {
           return (ed.sourceNodeId === focusNodeId && ed.targetNodeId === n.id) ||
                  (ed.targetNodeId === focusNodeId && ed.sourceNodeId === n.id);
         });
