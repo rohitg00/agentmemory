@@ -96,30 +96,6 @@ export function MemoryGraph() {
   return (
     <>
       <canvas ref={canvasRef} className={styles.canvas} aria-hidden />
-      <button
-        className={styles.pause}
-        aria-label={running ? "Pause animation" : "Resume animation"}
-        onClick={() => setRunning((v) => !v)}
-      >
-        <svg viewBox="0 0 40 40" width="36" height="36" aria-hidden>
-          <circle
-            cx="20"
-            cy="20"
-            r="18.5"
-            fill="none"
-            stroke="rgba(255,255,255,0.35)"
-            strokeWidth="1"
-          />
-          {running ? (
-            <g>
-              <rect x="15" y="13" width="3" height="14" fill="#fff" />
-              <rect x="22" y="13" width="3" height="14" fill="#fff" />
-            </g>
-          ) : (
-            <polygon points="16,12 29,20 16,28" fill="#fff" />
-          )}
-        </svg>
-      </button>
       <div className={styles.rail} aria-hidden>
         <span ref={railRef} />
       </div>
