@@ -55,19 +55,21 @@
   font-weight: 500 !important;
 }
 @media (max-width: 1024px) {
+  .table {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
   .row {
-    grid-template-columns: 1.4fr 1fr;
-    gap: 8px 16px;
-  }
-  .row span:nth-child(n + 3) {
-    display: none;
-  }
-  .head span:nth-child(n + 3) {
-    display: none;
+    min-width: 720px;
+    gap: 12px;
   }
 }
 @media (max-width: 640px) {
   .table {
     padding: 0 20px;
+  }
+  .row {
+    padding: 14px 16px;
+    font-size: 13px;
   }
 }

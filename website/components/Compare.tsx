@@ -1,12 +1,12 @@
 import styles from "./Compare.module.css";
 
 const ROWS = [
-  ["RETRIEVAL R@5", "95.2%", "81.4%", "73.8%", "78.1%"],
-  ["EXTERNAL DEPS", "0", "2 (Qdrant, Neo4j)", "1 (Postgres)", "1 (Neo4j)"],
+  ["RETRIEVAL", "95.2% (LongMemEval-S)", "68.5% (LoCoMo)", "83.2% (LoCoMo)", "63.8% (LongMemEval)"],
+  ["EXTERNAL DEPS", "0", "Qdrant / pgvector", "Postgres + vector", "Neo4j"],
   ["REST ENDPOINTS", "130", "—", "—", "—"],
-  ["MCP TOOLS", "54", "12", "18", "9"],
-  ["AUTO-HOOKS", "12", "0", "0", "0"],
-  ["NATIVE PLUGINS", "6", "—", "—", "—"],
+  ["MCP TOOLS", "54", "—", "—", "—"],
+  ["AUTO-CAPTURE HOOKS", "12", "Manual add()", "Agent self-edits", "—"],
+  ["NATIVE AGENT PLUGINS", "6", "—", "—", "—"],
   ["OPEN SOURCE", "Yes (Apache-2.0)", "Yes", "Yes", "Yes"],
 ];
 
@@ -19,9 +19,10 @@ export function Compare() {
           Vs. the field.
         </h2>
         <p className="section-lede">
-          Numbers straight from the LongMemEval-S benchmark and each
-          project&apos;s own docs. Ship what you want — we just picked the one
-          with receipts.
+          Only the agentmemory number is ours, measured on LongMemEval-S and
+          reproducible from the repo. Competitor figures are their own published
+          claims on their own benchmarks — different datasets, shown for
+          ballpark. Ship what you want; we just picked the one with receipts.
         </p>
       </header>
       <div className={styles.table} role="table" aria-label="Comparison">
@@ -32,7 +33,7 @@ export function Compare() {
           </span>
           <span role="columnheader">MEM0</span>
           <span role="columnheader">LETTA</span>
-          <span role="columnheader">COGNEE</span>
+          <span role="columnheader">ZEP / GRAPHITI</span>
         </div>
         {ROWS.map((r) => (
           <div key={r[0]} className={styles.row} role="row">
