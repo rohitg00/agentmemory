@@ -4,6 +4,7 @@ import {
   mkdirSync,
   rmSync,
   readFileSync,
+  readdirSync,
   writeFileSync,
   existsSync,
 } from "node:fs";
@@ -76,6 +77,27 @@ describe("connect: pi", () => {
     expect(readFileSync(join(extDir(), "index.ts"), "utf-8")).toBe(
       readFileSync("integrations/pi/index.ts", "utf-8"),
     );
+  });
+
+  it("backs up every modified extension file before overwriting", async () => {
+    mkdirSync(extDir(), { recursive: true });
+    writeFileSync(join(extDir(), "index.ts"), "// stale index\n", "utf-8");
+    writeFileSync(join(extDir(), "security.ts"), "// stale security\n", "utf-8");
+    const { adapter } = await import("../src/cli/connect/pi.js");
+    const result = await adapter.install({ dryRun: false, force: false });
+    expect(result.kind).toBe("installed");
+
+    const backups = readdirSync(join(home, ".agentmemory", "backups"));
+    const indexBackup = backups.find((f) => f.startsWith("pi-index-"));
+    const securityBackup = backups.find((f) => f.startsWith("pi-security-"));
+    expect(indexBackup).toBeDefined();
+    expect(securityBackup).toBeDefined();
+    expect(
+      readFileSync(join(home, ".agentmemory", "backups", indexBackup!), "utf-8"),
+    ).toBe("// stale index\n");
+    expect(
+      readFileSync(join(home, ".agentmemory", "backups", securityBackup!), "utf-8"),
+    ).toBe("// stale security\n");
   });
 
   it("dry-run mutates nothing", async () => {

@@ -19,12 +19,14 @@ const lessonRecords = new Map<string, Lesson>();
 let lessonIndexBuild: Promise<void> | null = null;
 let lessonIndexGeneration = 0;
 
-// Call after any path that writes KV.lessons without going through the
-// lesson functions (import, replay), so the next recall rebuilds from KV.
 export function resetLessonIndex(): void {
   lessonIndexGeneration++;
   lessonIndex = null;
   lessonRecords.clear();
+}
+
+function noteLessonMutation(): void {
+  if (!lessonIndex && lessonIndexBuild) resetLessonIndex();
 }
 
 async function ensureLessonIndex(kv: StateKV): Promise<SearchIndex> {
@@ -92,6 +94,7 @@ export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
           lessonIndex.remove(existing.id);
           lessonIndex.add(lessonToObservation(existing));
         }
+        noteLessonMutation();
 
         try {
           await recordAudit(kv, "lesson_strengthen", "mem::lesson-save", [
@@ -132,6 +135,7 @@ export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
       await kv.set(KV.lessons, lesson.id, lesson);
       lessonRecords.set(lesson.id, lesson);
       if (lessonIndex) lessonIndex.add(lessonToObservation(lesson));
+      noteLessonMutation();
 
       try {
         await recordAudit(kv, "lesson_save", "mem::lesson-save", [lesson.id]);
@@ -155,12 +159,7 @@ export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
       const minConfidence = data.minConfidence ?? 0.1;
       const limit = data.limit ?? 10;
 
-      // BM25 over the lesson index picks candidates; the composite score
-      // (confidence x relevance x recency) is unchanged — only the
-      // relevance term moved from per-call substring counting to a
-      // weighted index lookup.
       const idx = await ensureLessonIndex(kv);
-      // Post-index filters shrink the page, so over-fetch harder when active.
       const filtering = !!data.project || minConfidence > 0.1;
       const fetchLimit = filtering
         ? Math.max(limit * 10, 100)
@@ -250,6 +249,7 @@ export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
 
       await kv.set(KV.lessons, lesson.id, lesson);
       lessonRecords.set(lesson.id, lesson);
+      noteLessonMutation();
 
       try {
         await recordAudit(kv, "lesson_strengthen", "mem::lesson-strengthen", [
@@ -278,6 +278,7 @@ export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
       await kv.set(KV.lessons, lesson.id, lesson);
       lessonRecords.delete(lesson.id);
       if (lessonIndex) lessonIndex.remove(lesson.id);
+      noteLessonMutation();
 
       try {
         await recordAudit(kv, "lesson_delete", "mem::lesson-delete", [
@@ -353,6 +354,7 @@ export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
           lessonRecords.set(l.id, l);
         }
       }
+      if (dirty.length > 0) noteLessonMutation();
       await Promise.all(
         auditEvents.map((event) =>
           recordAudit(kv, "lesson_strengthen", "mem::lesson-decay-sweep", [event.id], {

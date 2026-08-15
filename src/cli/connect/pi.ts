@@ -74,10 +74,12 @@ export const adapter: ConnectAdapter = {
     }
 
     let backupPath: string | undefined;
-    const existingIndex = join(PI_EXT_DIR, "index.ts");
-    if (existsSync(existingIndex)) {
-      backupPath = backupFile(existingIndex, this.name, "ts");
-      logBackup(backupPath);
+    for (const s of sources) {
+      if (existsSync(s.target) && readFileSync(s.target, "utf-8") !== s.content) {
+        const backup = backupFile(s.target, `${this.name}-${s.name.replace(/\.ts$/, "")}`, "ts");
+        logBackup(backup);
+        backupPath ??= backup;
+      }
     }
 
     mkdirSync(PI_EXT_DIR, { recursive: true });

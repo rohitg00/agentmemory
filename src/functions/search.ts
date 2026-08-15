@@ -39,9 +39,6 @@ export function setHybridRanker(fn: HybridRanker | null): void {
 // duplicates. The boot-time rebuild in index.ts is unaffected.
 let rebuildPromise: Promise<number> | null = null
 
-// True once rebuildIndex has walked KV.memories into the shared index, so
-// supersession candidate search never runs against an index that only
-// holds live observations.
 let memoryIndexReady = false
 export function isMemoryIndexReady(): boolean {
   return memoryIndexReady
@@ -314,6 +311,7 @@ export async function indexRecords(
 export async function rebuildIndex(kv: StateKV): Promise<number> {
   const idx = getSearchIndex()
   idx.clear()
+  memoryIndexReady = false
 
   // BM25 clear above wipes stale doc entries; the vector index has the
   // symmetric concern — memories/observations deleted between runs
@@ -326,8 +324,10 @@ export async function rebuildIndex(kv: StateKV): Promise<number> {
   // entries vanish from BM25 on every restart even after the live-write
   // fix in remember.ts.
   let memories: Memory[] = []
+  let memoriesLoaded = false
   try {
     memories = await kv.list<Memory>(KV.memories)
+    memoriesLoaded = true
   } catch (err) {
     logger.warn('rebuildIndex: failed to load memories', {
       error: err instanceof Error ? err.message : String(err),
@@ -361,7 +361,7 @@ export async function rebuildIndex(kv: StateKV): Promise<number> {
   }
 
   indexed += await indexRecords([], memories)
-  memoryIndexReady = true
+  if (memoriesLoaded) memoryIndexReady = true
   return indexed
 }
 

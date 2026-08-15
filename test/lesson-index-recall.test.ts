@@ -7,11 +7,30 @@ vi.mock("../src/logger.js", () => ({
 
 async function setup() {
   vi.resetModules();
-  const { registerLessonsFunctions } = await import("../src/functions/lessons.js");
+  const { registerLessonsFunctions, resetLessonIndex } = await import(
+    "../src/functions/lessons.js"
+  );
   const sdk = mockSdk({ looseTrigger: true });
   const kv = mockKV();
   registerLessonsFunctions(sdk as never, kv as never);
-  return { sdk, kv };
+  return { sdk, kv, resetLessonIndex };
+}
+
+function gateFirstLessonList(kv: { list: (scope: string) => Promise<unknown[]> }) {
+  const origList = kv.list.bind(kv);
+  let release!: () => void;
+  const gate = new Promise<void>((r) => {
+    release = r;
+  });
+  let gated = true;
+  kv.list = async (scope: string) => {
+    if (scope === "mem:lessons" && gated) {
+      gated = false;
+      await gate;
+    }
+    return origList(scope);
+  };
+  return release;
 }
 
 describe("lesson recall through the lesson index", () => {
@@ -83,5 +102,76 @@ describe("lesson recall through the lesson index", () => {
       query: "streaming polling",
     })) as { lessons: Array<{ id: string }> };
     expect(res.lessons.map((l) => l.id)).not.toContain(saved.lesson.id);
+  });
+
+  it("a save landing while the index build is in flight is not lost", async () => {
+    const { sdk, kv } = await setup();
+    await kv.set("mem:lessons", "lsn_early", {
+      id: "lsn_early",
+      content: "cache invalidation needs an explicit generation counter",
+      context: "",
+      confidence: 0.8,
+      reinforcements: 0,
+      source: "manual",
+      sourceIds: [],
+      tags: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      decayRate: 0.05,
+    });
+    const release = gateFirstLessonList(kv as never);
+
+    const pendingRecall = sdk.trigger("mem::lesson-recall", {
+      query: "cache invalidation generation",
+    });
+    await new Promise((r) => setTimeout(r, 0));
+
+    const saved = (await sdk.trigger("mem::lesson-save", {
+      content: "cache invalidation generation counters beat timestamps",
+      confidence: 0.9,
+    })) as { success: boolean; lesson: { id: string } };
+    expect(saved.success).toBe(true);
+
+    release();
+    await pendingRecall;
+
+    const res = (await sdk.trigger("mem::lesson-recall", {
+      query: "cache invalidation generation",
+    })) as { lessons: Array<{ id: string }> };
+    expect(res.lessons.map((l) => l.id)).toContain(saved.lesson.id);
+    expect(res.lessons.map((l) => l.id)).toContain("lsn_early");
+  });
+
+  it("resetLessonIndex during an in-flight build discards the stale snapshot", async () => {
+    const { sdk, kv, resetLessonIndex } = await setup();
+    const release = gateFirstLessonList(kv as never);
+
+    const pendingRecall = sdk.trigger("mem::lesson-recall", {
+      query: "replayed lesson content",
+    });
+    await new Promise((r) => setTimeout(r, 0));
+
+    await kv.set("mem:lessons", "lsn_replayed", {
+      id: "lsn_replayed",
+      content: "replayed lesson content arrives outside the lesson functions",
+      context: "",
+      confidence: 0.7,
+      reinforcements: 0,
+      source: "manual",
+      sourceIds: [],
+      tags: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      decayRate: 0.05,
+    });
+    resetLessonIndex();
+
+    release();
+    await pendingRecall;
+
+    const res = (await sdk.trigger("mem::lesson-recall", {
+      query: "replayed lesson content",
+    })) as { lessons: Array<{ id: string }> };
+    expect(res.lessons.map((l) => l.id)).toContain("lsn_replayed");
   });
 });
