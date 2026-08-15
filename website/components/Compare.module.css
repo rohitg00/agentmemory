@@ -8,6 +8,10 @@
   margin: 0 auto;
   padding: 0 40px;
 }
+.table:focus-visible {
+  outline: 2px solid var(--border-ghost);
+  outline-offset: 2px;
+}
 .table > .row:first-child {
   border-radius: var(--radius-card) var(--radius-card) 0 0;
 }

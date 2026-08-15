@@ -1,11 +1,12 @@
 import styles from "./Compare.module.css";
+import meta from "../lib/generated-meta.json";
 
 const ROWS = [
   ["RETRIEVAL", "95.2% (LongMemEval-S)", "68.5% (LoCoMo)", "83.2% (LoCoMo)", "63.8% (LongMemEval)"],
   ["EXTERNAL DEPS", "0", "Qdrant / pgvector", "Postgres + vector", "Neo4j"],
-  ["REST ENDPOINTS", "130", "—", "—", "—"],
-  ["MCP TOOLS", "54", "—", "—", "—"],
-  ["AUTO-CAPTURE HOOKS", "12", "Manual add()", "Agent self-edits", "—"],
+  ["REST ENDPOINTS", String(meta.restEndpoints), "—", "—", "—"],
+  ["MCP TOOLS", String(meta.mcpTools), "—", "—", "—"],
+  ["AUTO-CAPTURE HOOKS", String(meta.hooks), "Manual add()", "Agent self-edits", "—"],
   ["NATIVE AGENT PLUGINS", "6", "—", "—", "—"],
   ["OPEN SOURCE", "Yes (Apache-2.0)", "Yes", "Yes", "Yes"],
 ];
@@ -25,7 +26,7 @@ export function Compare() {
           ballpark. Ship what you want; we just picked the one with receipts.
         </p>
       </header>
-      <div className={styles.table} role="table" aria-label="Comparison">
+      <div className={styles.table} role="table" aria-label="Comparison" tabIndex={0}>
         <div className={`${styles.row} ${styles.head}`} role="row">
           <span role="columnheader" />
           <span role="columnheader" className={styles.mine}>
