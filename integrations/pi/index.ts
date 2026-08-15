@@ -89,6 +89,7 @@ async function callAgentMemory<T>(
     method?: "GET" | "POST";
     body?: unknown;
     baseUrl?: string;
+    timeoutMs?: number;
   },
 ): Promise<T | null> {
   const baseUrl = normalizeBaseUrl(options?.baseUrl || process.env.AGENTMEMORY_URL || DEFAULT_URL);
@@ -105,6 +106,7 @@ async function callAgentMemory<T>(
       method,
       headers,
       body: options?.body !== undefined ? JSON.stringify(options.body) : undefined,
+      signal: options?.timeoutMs ? AbortSignal.timeout(options.timeoutMs) : undefined,
     });
     if (!response.ok) return null;
     return (await response.json()) as T;
@@ -149,14 +151,55 @@ export default function agentmemoryExtension(pi: ExtensionAPI) {
   let lastPrompt = "";
   let lastHealthOk = false;
 
+  // Per-tool observation capture; disable with AGENTMEMORY_TOOL_OBSERVE=0 to
+  // fall back to conversation-level observations only.
+  const toolObserveEnabled = process.env.AGENTMEMORY_TOOL_OBSERVE !== "0";
+
+  // Client-side dedup for prompt observations: an auto-retry re-submitting
+  // the identical prompt inside the window skips the HTTP round-trip (and
+  // its LLM compression). Server-side dedup still backstops everything else.
+  const DEDUP_WINDOW_MS = 5 * 60 * 1000;
+  const recentHashes = new Map<string, number>();
+  function isDuplicate(data: string): boolean {
+    const hash = crypto.createHash("sha256").update(data).digest("hex");
+    const now = Date.now();
+    const prev = recentHashes.get(hash);
+    if (prev !== undefined && now - prev < DEDUP_WINDOW_MS) return true;
+    if (recentHashes.size > 500) {
+      for (const [key, ts] of recentHashes) {
+        if (now - ts >= DEDUP_WINDOW_MS) recentHashes.delete(key);
+      }
+    }
+    recentHashes.set(hash, now);
+    return false;
+  }
+
   async function getHealth() {
     return await callAgentMemory<HealthResponse>("health", { method: "GET" });
   }
 
   async function refreshStatus(ctx: { ui: { setStatus: (key: string, text: string) => void } }) {
+    // Capture the setter while ctx is still active: after the await the
+    // session may have been replaced or reloaded, and touching ctx.ui then
+    // throws a stale-context error (#1035).
+    let setStatus: (key: string, text: string) => void;
+    try {
+      const ui = ctx.ui;
+      setStatus = ui.setStatus.bind(ui);
+    } catch {
+      return;
+    }
     const health = await getHealth();
-    lastHealthOk = !!health && (health.status === "healthy" || health.health?.status === "healthy");
-    ctx.ui.setStatus("agentmemory", lastHealthOk ? "🧠 agentmemory" : "🧠 agentmemory off");
+    lastHealthOk =
+      !!health &&
+      (health.status === "ok" ||
+        health.status === "healthy" ||
+        health.health?.status === "healthy");
+    try {
+      setStatus("agentmemory", lastHealthOk ? "🧠 agentmemory" : "🧠 agentmemory off");
+    } catch {
+      // UI already gone after session replacement; status is best-effort.
+    }
   }
 
   pi.registerCommand("agentmemory-status", {
@@ -234,7 +277,7 @@ export default function agentmemoryExtension(pi: ExtensionAPI) {
     }),
     async execute(_toolCallId, params) {
       const result = await callAgentMemory<Record<string, unknown>>("remember", {
-        body: { content: params.content, type: params.type || "fact" },
+        body: { content: params.content, type: params.type || "fact", project: currentProject },
       });
       if (!result) {
         return {
@@ -255,6 +298,14 @@ export default function agentmemoryExtension(pi: ExtensionAPI) {
     currentCwd = process.cwd();
     currentProject = resolveProjectName(currentCwd);
     await refreshStatus(ctx);
+    // Register the session so the server loads project profiles and scopes
+    // observations from the first turn. Must run after refreshStatus — that
+    // is where lastHealthOk is first populated.
+    if (lastHealthOk) {
+      await callAgentMemory("session/start", {
+        body: { sessionId, project: currentProject, cwd: currentCwd },
+      });
+    }
   });
 
   pi.on("before_agent_start", async (event, ctx) => {
@@ -262,6 +313,21 @@ export default function agentmemoryExtension(pi: ExtensionAPI) {
     currentProject = resolveProjectName(currentCwd);
     lastPrompt = event.prompt?.trim() || "";
     if (!lastPrompt) return;
+
+    // Capture the prompt itself (UserPromptSubmit parity), deduped so an
+    // auto-retry re-submitting the same prompt is not re-observed.
+    if (lastHealthOk && !isDuplicate(`prompt_submit:${lastPrompt}`)) {
+      void callAgentMemory("observe", {
+        body: {
+          hookType: "prompt_submit",
+          sessionId,
+          project: currentProject,
+          cwd: currentCwd,
+          timestamp: new Date().toISOString(),
+          data: { prompt: lastPrompt },
+        },
+      });
+    }
 
     const result = await callAgentMemory<{ results?: SmartSearchResult[] }>("smart-search", {
       body: { query: lastPrompt, limit: 5 },
@@ -280,6 +346,43 @@ export default function agentmemoryExtension(pi: ExtensionAPI) {
     };
   });
 
+  // Per-tool observations (PostToolUse parity): the server's inferType
+  // classifies by tool name (command_run, file_edit, ...) so tool-level
+  // detail — which command ran, which file changed — reaches memory
+  // instead of only the conversation turn.
+  pi.on("tool_result", (event) => {
+    if (!toolObserveEnabled || !lastHealthOk || !sessionId) return;
+    const toolName = event.toolName;
+    if (!toolName) return;
+    let input = "";
+    try {
+      input = typeof event.input === "string" ? event.input : JSON.stringify(event.input ?? {});
+    } catch {
+      // non-serializable input; observe with what we have
+    }
+    let output = "";
+    try {
+      output = typeof event.content === "string" ? event.content : JSON.stringify(event.content ?? "");
+    } catch {
+      // non-serializable output; observe with what we have
+    }
+    void callAgentMemory("observe", {
+      body: {
+        hookType: "post_tool_use",
+        sessionId,
+        project: currentProject,
+        cwd: currentCwd,
+        timestamp: new Date().toISOString(),
+        data: {
+          tool_name: toolName,
+          tool_input: input.slice(0, 8000),
+          tool_output: output.slice(0, 8000),
+          ...(event.isError ? { tool_error: true } : {}),
+        },
+      },
+    });
+  });
+
   pi.on("agent_end", async (event) => {
     if (!lastHealthOk || !lastPrompt) return;
     const assistantText = getLastAssistantText(event.messages as unknown[]);
@@ -293,10 +396,29 @@ export default function agentmemoryExtension(pi: ExtensionAPI) {
         timestamp: new Date().toISOString(),
         data: {
           tool_name: "conversation",
-          tool_input: lastPrompt.slice(0, 500),
-          tool_output: assistantText.slice(0, 4000),
+          tool_input: lastPrompt.slice(0, 8000),
+          tool_output: assistantText.slice(0, 8000),
         },
       },
     });
+  });
+
+  pi.on("session_shutdown", async (event) => {
+    // Only a real quit ends the session: /new, /resume, /fork and extension
+    // reloads fire this hook too, but the pi process (or the session itself)
+    // keeps going, and ending early would orphan what follows.
+    if (event.reason !== "quit") return;
+    if (!lastHealthOk || !sessionId) return;
+    // session/end fans out event::session::stopped on the server, which runs
+    // the summary and the consolidation pipeline — no separate summarize
+    // call here, or the session would be summarized twice (#1203).
+    await callAgentMemory("session/end", {
+      body: { sessionId },
+      timeoutMs: 5_000,
+    });
+    // mem::consolidate (cross-session clustering) has no scheduler and is not
+    // part of consolidate-pipeline; fold one fire-and-forget run into the
+    // exit path.
+    void callAgentMemory("consolidate", { body: {} });
   });
 }
