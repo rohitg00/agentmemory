@@ -70,7 +70,11 @@ export class HybridSearch {
     }
 
     return Array.from(merged.values())
-      .sort((a, b) => b.combinedScore - a.combinedScore)
+      .sort(
+        (a, b) =>
+          b.combinedScore - a.combinedScore ||
+          (a.obsId < b.obsId ? -1 : a.obsId > b.obsId ? 1 : 0),
+      )
       .slice(0, limit);
   }
 
@@ -191,47 +195,49 @@ export class HybridSearch {
       }
     });
 
-    // Weights are normalized per item over the streams that ranked it.
-    // Normalizing over every enabled stream capped single-stream hits at
-    // weight/(RRF_K+1) — with the graph stream empty on default installs,
-    // a #1 BM25 result carried a permanent penalty.
+    // Normalize once per query by the best attainable weighted score over
+    // the streams that produced results, so configured stream weights
+    // survive for single-stream hits and a silent stream carries no penalty.
     const AGREEMENT_BONUS = 0.05;
-    const combined = Array.from(scores.entries()).map(([obsId, s]) => {
+    const activeWeight =
+      (bm25Results.length > 0 ? this.bm25Weight : 0) +
+      (vectorResults.length > 0 ? this.vectorWeight : 0) +
+      (graphResults.length > 0 ? this.graphWeight : 0);
+    const maxAttainable = activeWeight * (1 / (RRF_K + 1));
+    const ranked = Array.from(scores.entries()).map(([obsId, s]) => {
       const wB = Number.isFinite(s.bm25Rank) ? this.bm25Weight : 0;
       const wV = Number.isFinite(s.vectorRank) ? this.vectorWeight : 0;
       const wG = Number.isFinite(s.graphRank) ? this.graphWeight : 0;
-      const wSum = wB + wV + wG;
       const matchedStreams =
         (wB > 0 ? 1 : 0) + (wV > 0 ? 1 : 0) + (wG > 0 ? 1 : 0);
-      const rrf =
-        wSum > 0
-          ? (wB * (1 / (RRF_K + s.bm25Rank)) +
-              wV * (1 / (RRF_K + s.vectorRank)) +
-              wG * (1 / (RRF_K + s.graphRank))) /
-            wSum
-          : 0;
+      const weighted =
+        wB * (1 / (RRF_K + s.bm25Rank)) +
+        wV * (1 / (RRF_K + s.vectorRank)) +
+        wG * (1 / (RRF_K + s.graphRank));
+      const rrf = maxAttainable > 0 ? weighted / maxAttainable : 0;
       return {
         obsId,
-        sessionId: s.sessionId,
-        bm25Score: s.bm25Score,
-        vectorScore: s.vectorScore,
-        graphScore: s.graphScore,
-        graphContext: s.graphContext,
+        s,
         combinedScore: rrf * (1 + AGREEMENT_BONUS * (matchedStreams - 1)),
         minRank: Math.min(s.bm25Rank, s.vectorRank, s.graphRank),
       };
     });
 
-    // Deterministic order: score, then best single-stream rank, then id —
-    // equal-scored results previously came back in Map-insertion order,
-    // which varies with which stream answered first.
-    combined.sort(
+    ranked.sort(
       (a, b) =>
         b.combinedScore - a.combinedScore ||
         a.minRank - b.minRank ||
         (a.obsId < b.obsId ? -1 : a.obsId > b.obsId ? 1 : 0),
     );
-    for (const c of combined) delete (c as { minRank?: number }).minRank;
+    const combined = ranked.map(({ obsId, s, combinedScore }) => ({
+      obsId,
+      sessionId: s.sessionId,
+      bm25Score: s.bm25Score,
+      vectorScore: s.vectorScore,
+      graphScore: s.graphScore,
+      graphContext: s.graphContext,
+      combinedScore,
+    }));
 
     const retrievalDepth = Math.max(limit, 20);
     const rerankWindow = 20;

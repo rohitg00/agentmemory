@@ -96,9 +96,17 @@ describe("keyless graph extraction wiring", () => {
     const events = readFileSync("src/triggers/events.ts", "utf-8");
     const stopped = events.slice(events.indexOf("event::session::stopped"));
     const gate = stopped.indexOf("isGraphExtractionEnabled()");
-    const fire = stopped.indexOf('function_id: "mem::graph-extract"');
+    const fire = stopped.indexOf('fireVoid("mem::graph-extract"');
     expect(fire).toBeGreaterThan(-1);
     expect(gate === -1 || gate > fire).toBe(true);
+  });
+
+  it("graph functions register unconditionally so the trigger always resolves", () => {
+    const index = readFileSync("src/index.ts", "utf-8");
+    const reg = index.indexOf("registerGraphFunction(sdk, kv, provider)");
+    expect(reg).toBeGreaterThan(-1);
+    const before = index.slice(Math.max(0, reg - 200), reg);
+    expect(before).not.toContain("isGraphExtractionEnabled()");
   });
 
   it("mem::graph-extract gates the LLM pass, not the heuristic pass", () => {

@@ -82,6 +82,7 @@ const testObs: CompressedObservation = {
 describe("Graph Functions", () => {
   let sdk: ReturnType<typeof mockSdk>;
   let kv: ReturnType<typeof mockKV>;
+  const ORIG_GRAPH_FLAG = process.env["GRAPH_EXTRACTION_ENABLED"];
 
   beforeEach(() => {
     sdk = mockSdk();
@@ -92,7 +93,8 @@ describe("Graph Functions", () => {
   });
 
   afterEach(() => {
-    delete process.env["GRAPH_EXTRACTION_ENABLED"];
+    if (ORIG_GRAPH_FLAG === undefined) delete process.env["GRAPH_EXTRACTION_ENABLED"];
+    else process.env["GRAPH_EXTRACTION_ENABLED"] = ORIG_GRAPH_FLAG;
   });
 
   it("graph-extract creates nodes and edges from XML response", async () => {

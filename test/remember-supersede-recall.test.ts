@@ -55,11 +55,10 @@ describe("mem::remember supersession and recall hygiene", () => {
     };
 
     expect(second.memory.version).toBe(1);
-    if (second.similarTo) {
-      expect(second.similarTo.id).toBe(first.memory.id);
-      expect(second.similarTo.similarity).toBeGreaterThan(0.4);
-      expect(second.similarTo.similarity).toBeLessThanOrEqual(0.7);
-    }
+    expect(second.similarTo).toBeDefined();
+    expect(second.similarTo!.id).toBe(first.memory.id);
+    expect(second.similarTo!.similarity).toBeGreaterThan(0.4);
+    expect(second.similarTo!.similarity).toBeLessThanOrEqual(0.7);
   });
 
   it("still finds the supersession target through index-backed candidates", async () => {

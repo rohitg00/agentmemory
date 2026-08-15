@@ -65,16 +65,20 @@ export function registerObserveFunction(
 
       let dedupHash: string | undefined;
       if (dedupMap) {
-        const d =
-          typeof payload.data === "object" && payload.data !== null
-            ? (payload.data as Record<string, unknown>)
-            : {};
+        const dataIsObject =
+          typeof payload.data === "object" && payload.data !== null;
+        const d = dataIsObject
+          ? (payload.data as Record<string, unknown>)
+          : {};
         const toolName = (d["tool_name"] as string) || payload.hookType;
-        // Hooks without tool_input (prompt_submit, notifications, lifecycle)
-        // must hash their actual payload — hashing the shared undefined would
-        // collapse every event of that hook type into one dedup key and
-        // silently drop all but the first within the TTL window.
-        const dedupInput = d["tool_input"] !== undefined ? d["tool_input"] : d;
+        // Hash the full payload when tool_input is absent so distinct
+        // events never collapse onto one key.
+        const dedupInput =
+          d["tool_input"] !== undefined
+            ? d["tool_input"]
+            : dataIsObject
+              ? d
+              : payload.data;
         dedupHash = dedupMap.computeHash(
           payload.sessionId,
           toolName,
@@ -94,10 +98,6 @@ export function registerObserveFunction(
         sanitizedRaw = stripPrivateData(String(payload.data));
       }
 
-      // Stamp which trust boundary this content crossed. Tool hooks carry
-      // whatever the tool returned — content the user never wrote;
-      // prompt_submit is the user's own words; everything else originates
-      // from the agent runtime.
       let originChannel: Origin["channel"] = "agent";
       if (payload.hookType === "prompt_submit") originChannel = "user";
       else if (TOOL_HOOKS.has(payload.hookType)) originChannel = "tool";

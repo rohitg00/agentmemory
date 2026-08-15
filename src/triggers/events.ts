@@ -114,11 +114,7 @@ export function registerEventTriggers(sdk: ISdk, kv: StateKV): void {
       );
       const compressed = observations.filter((o) => o.title);
       if (compressed.length > 0) {
-        sdk.trigger({
-          function_id: "mem::graph-extract",
-          payload: { observations: compressed },
-          action: TriggerAction.Void(),
-        });
+        fireVoid("mem::graph-extract", { observations: compressed });
       }
     } catch (err) {
       logger.warn("graph-extract trigger failed", {

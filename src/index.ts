@@ -273,11 +273,11 @@ async function main() {
     );
   }
 
-  if (isGraphExtractionEnabled()) {
-    registerGraphFunction(sdk, kv, provider);
-    registerGraphImportFunction(sdk, kv);
-    bootLog(`Knowledge graph: extraction enabled`);
-  }
+  registerGraphFunction(sdk, kv, provider);
+  registerGraphImportFunction(sdk, kv);
+  bootLog(
+    `Knowledge graph: structural extraction on (LLM relations ${isGraphExtractionEnabled() ? "enabled" : "off"})`,
+  );
 
   registerConsolidationPipelineFunction(sdk, kv, provider);
   bootLog(`Consolidation pipeline: registered (CONSOLIDATION_ENABLED=${isConsolidationEnabled() ? "true" : "false"})`);

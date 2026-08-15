@@ -246,7 +246,7 @@ export default function agentmemoryExtension(pi: ExtensionAPI) {
     }),
     async execute(_toolCallId, params) {
       const result = await callAgentMemory<{ results?: SmartSearchResult[] }>("smart-search", {
-        body: { query: params.query, limit: params.limit ?? 5 },
+        body: { query: params.query, limit: params.limit ?? 5, project: currentProject },
       });
       const results = result?.results || [];
       return {
@@ -306,7 +306,7 @@ export default function agentmemoryExtension(pi: ExtensionAPI) {
     lastPrompt = event.prompt?.trim() || "";
     if (!lastPrompt) return;
 
-    if (lastHealthOk && !isDuplicate(`prompt_submit:${lastPrompt}`)) {
+    if (lastHealthOk && !isDuplicate(`prompt_submit:${sessionId}:${lastPrompt}`)) {
       void callAgentMemory("observe", {
         body: {
           hookType: "prompt_submit",
@@ -320,7 +320,7 @@ export default function agentmemoryExtension(pi: ExtensionAPI) {
     }
 
     const result = await callAgentMemory<{ results?: SmartSearchResult[] }>("smart-search", {
-      body: { query: lastPrompt, limit: 5 },
+      body: { query: lastPrompt, limit: 5, project: currentProject },
     });
     const results = result?.results || [];
     const recallBlock = results.length

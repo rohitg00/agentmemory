@@ -6,7 +6,7 @@ import { withKeyedLock } from "../state/keyed-mutex.js";
 import { memoryToObservation } from "../state/memory-utils.js";
 import { deleteAccessLog } from "./access-tracker.js";
 import { recordAudit } from "./audit.js";
-import { getSearchIndex, vectorIndexAddGuarded, vectorIndexRemove, flushIndexSave } from "./search.js";
+import { getSearchIndex, isMemoryIndexReady, vectorIndexAddGuarded, vectorIndexRemove, flushIndexSave } from "./search.js";
 import { getAgentId } from "../config.js";
 import { logger } from "../logger.js";
 
@@ -79,7 +79,7 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
         const idx = getSearchIndex();
         let candidateMemories: Memory[];
         try {
-          if (idx.size > 0) {
+          if (isMemoryIndexReady() && idx.size > 0) {
             // 50 hits, not 20: the shared index also holds observations,
             // which occupy slots but never resolve to memories below. A
             // >0.7-Jaccard duplicate shares most tokens with the query so

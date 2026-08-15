@@ -30,7 +30,8 @@ describe("connect: pi", () => {
     process.env["USERPROFILE"] = home;
   });
   afterEach(() => {
-    process.env["HOME"] = ORIG_HOME;
+    if (ORIG_HOME === undefined) delete process.env["HOME"];
+    else process.env["HOME"] = ORIG_HOME;
     if (ORIG_USERPROFILE === undefined) delete process.env["USERPROFILE"];
     else process.env["USERPROFILE"] = ORIG_USERPROFILE;
     rmSync(home, { recursive: true, force: true });

@@ -1,9 +1,17 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import * as p from "@clack/prompts";
 import type { ConnectAdapter, ConnectOptions, ConnectResult } from "./types.js";
-import { backupFile, logAlreadyWired, logBackup, logInstalled } from "./util.js";
+import {
+  backupFile,
+  logAlreadyWired,
+  logBackup,
+  logInstalled,
+  readJsonSafe,
+  writeJsonAtomic,
+  writeTextAtomic,
+} from "./util.js";
 import {
   buildMergedHooks,
   findPluginRoot,
@@ -64,20 +72,12 @@ function appendBlock(content: string, block: string): string {
   return base.trim() ? `${base}\n${block}` : block;
 }
 
-function writeAtomic(path: string, content: string): void {
-  const tmpPath = `${path}.tmp`;
-  writeFileSync(tmpPath, content, "utf-8");
-  renameSync(tmpPath, path);
-}
-
 function installHooksFile(home: string): string {
   const hooksPath = join(home, "agentmemory.hooks.json");
   const pluginRoot = findPluginRoot();
-  const existing = existsSync(hooksPath)
-    ? (JSON.parse(readFileSync(hooksPath, "utf-8")) as HookManifest)
-    : null;
+  const existing = readJsonSafe<HookManifest>(hooksPath);
   const merged = buildMergedHooks(existing, pluginRoot, "hooks.codex.json");
-  writeAtomic(hooksPath, `${JSON.stringify(merged, null, 2)}\n`);
+  writeJsonAtomic(hooksPath, merged);
   return hooksPath;
 }
 
@@ -132,7 +132,7 @@ export const adapter: ConnectAdapter = {
       p.log.info(`Hook manifest: ${hooksPath}`);
     }
 
-    writeAtomic(configPath, next);
+    writeTextAtomic(configPath, next);
 
     const written = readFileSync(configPath, "utf-8");
     if (!written.includes(MCP_MARKER) || (wantHooks && !written.includes(HOOKS_MARKER))) {

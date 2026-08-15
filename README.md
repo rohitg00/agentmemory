@@ -981,22 +981,27 @@ npm install @huggingface/transformers
 
 ### 54 Tools
 
+Three tool surfaces, smallest to largest: `AGENTMEMORY_TOOLS=core` trims visibility to 8 essentials (`memory_save`, `memory_recall`, `memory_consolidate`, `memory_smart_search`, `memory_sessions`, `memory_diagnose`, `memory_lesson_save`, `memory_reflect`); the base set below is the registry's 14 foundational tools; the default (`AGENTMEMORY_TOOLS=all`) exposes all 54.
+
 <details>
-<summary>Core tools (always available)</summary>
+<summary>Base tools (14)</summary>
 
 | Tool | Description |
 |------|-------------|
 | `memory_recall` | Search past observations |
 | `memory_compress_file` | Compress markdown files while preserving structure |
 | `memory_save` | Save an insight, decision, or pattern |
-| `memory_patterns` | Detect recurring patterns |
-| `memory_smart_search` | Hybrid semantic + keyword search |
 | `memory_file_history` | Past observations about specific files |
+| `memory_patterns` | Detect recurring patterns |
 | `memory_sessions` | List recent sessions |
+| `memory_smart_search` | Hybrid semantic + keyword search |
+| `memory_vision_search` | Search image observations |
 | `memory_timeline` | Chronological observations |
 | `memory_profile` | Project profile (concepts, files, patterns) |
 | `memory_export` | Export all memory data |
 | `memory_relations` | Query relationship graph |
+| `memory_commit_lookup` | Sessions behind a git commit |
+| `memory_commits` | Commits recorded for a session |
 
 </details>
 
@@ -1045,8 +1050,10 @@ npm install @huggingface/transformers
 |------|------|-------------|
 | Resource | `agentmemory://status` | Health, session count, memory count |
 | Resource | `agentmemory://project/{name}/profile` | Per-project intelligence |
+| Resource | `agentmemory://project/{name}/recent` | Recent observations for a project |
 | Resource | `agentmemory://memories/latest` | Latest 10 active memories |
 | Resource | `agentmemory://graph/stats` | Knowledge graph statistics |
+| Resource | `agentmemory://team/{id}/profile` | Shared team profile |
 | Prompt | `recall_context` | Search + return context messages |
 | Prompt | `session_handoff` | Handoff data between agents |
 | Prompt | `detect_patterns` | Analyze recurring patterns |

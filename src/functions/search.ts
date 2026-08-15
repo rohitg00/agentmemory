@@ -39,6 +39,14 @@ export function setHybridRanker(fn: HybridRanker | null): void {
 // duplicates. The boot-time rebuild in index.ts is unaffected.
 let rebuildPromise: Promise<number> | null = null
 
+// True once rebuildIndex has walked KV.memories into the shared index, so
+// supersession candidate search never runs against an index that only
+// holds live observations.
+let memoryIndexReady = false
+export function isMemoryIndexReady(): boolean {
+  return memoryIndexReady
+}
+
 export function getSearchIndex(): SearchIndex {
   if (!index) index = new SearchIndex()
   return index
@@ -353,6 +361,7 @@ export async function rebuildIndex(kv: StateKV): Promise<number> {
   }
 
   indexed += await indexRecords([], memories)
+  memoryIndexReady = true
   return indexed
 }
 
@@ -474,13 +483,20 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
         observation?: CompressedObservation
       }>
       if (hybridRanker && vectorIndex && vectorIndex.size > 0) {
-        const hybrid = await hybridRanker(query, fetchLimit)
-        results = hybrid.map((r) => ({
-          obsId: r.observation.id,
-          sessionId: r.sessionId,
-          score: r.combinedScore,
-          observation: r.observation,
-        }))
+        try {
+          const hybrid = await hybridRanker(query, fetchLimit)
+          results = hybrid.map((r) => ({
+            obsId: r.observation.id,
+            sessionId: r.sessionId,
+            score: r.combinedScore,
+            observation: r.observation,
+          }))
+        } catch (err) {
+          logger.warn("hybrid ranking failed, falling back to keyword search", {
+            error: err instanceof Error ? err.message : String(err),
+          })
+          results = idx.search(query, fetchLimit)
+        }
       } else {
         results = idx.search(query, fetchLimit)
       }

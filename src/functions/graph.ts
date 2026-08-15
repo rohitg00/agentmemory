@@ -451,8 +451,6 @@ function parseGraphXml(
   return { nodes, edges };
 }
 
-// Files and concepts name the nodes; same-observation co-occurrence is an
-// edge. Keyless by design — the LLM pass only adds typed relations.
 const HEURISTIC_EDGE_WEIGHT = 0.4;
 const MAX_HEURISTIC_EDGES_PER_OBS = 12;
 
@@ -463,7 +461,7 @@ export function extractGraphHeuristics(
   const nodes: GraphNode[] = [];
   const nodeByKey = new Map<string, GraphNode>();
   const edges: GraphEdge[] = [];
-  const edgePairs = new Set<string>();
+  const edgeByPair = new Map<string, GraphEdge>();
 
   const nodeFor = (
     type: GraphNode["type"],
@@ -494,12 +492,18 @@ export function extractGraphHeuristics(
   for (const obs of observations) {
     let budget = MAX_HEURISTIC_EDGES_PER_OBS;
     const link = (a: GraphNode | null, b: GraphNode | null): void => {
-      if (!a || !b || a.id === b.id || budget <= 0) return;
+      if (!a || !b || a.id === b.id) return;
       const pair = a.id < b.id ? `${a.id}|${b.id}` : `${b.id}|${a.id}`;
-      if (edgePairs.has(pair)) return;
-      edgePairs.add(pair);
+      const existing = edgeByPair.get(pair);
+      if (existing) {
+        if (!existing.sourceObservationIds.includes(obs.id)) {
+          existing.sourceObservationIds.push(obs.id);
+        }
+        return;
+      }
+      if (budget <= 0) return;
       budget -= 1;
-      edges.push({
+      const edge: GraphEdge = {
         id: generateId("ge"),
         type: "related_to",
         sourceNodeId: a.id,
@@ -507,7 +511,9 @@ export function extractGraphHeuristics(
         weight: HEURISTIC_EDGE_WEIGHT,
         sourceObservationIds: [obs.id],
         createdAt: now,
-      });
+      };
+      edgeByPair.set(pair, edge);
+      edges.push(edge);
     };
 
     const fileNodes = (obs.files ?? []).map((f) =>
@@ -517,7 +523,6 @@ export function extractGraphHeuristics(
       nodeFor("concept", c, obs.id),
     );
 
-    // Consecutive pairs keep the edge count linear in the entity count.
     for (const concept of conceptNodes) {
       for (const file of fileNodes) link(concept, file);
     }

@@ -2648,8 +2648,9 @@ async function stopDockerEngine(composeFile: string, port: number): Promise<void
   // was cleared without ever signaling the process, leaking a worker on
   // every Docker-mode stop.
   const workerPid = readWorkerPidfile();
+  let workerStopped = true;
   if (workerPid) {
-    await stopWorkerPid(workerPid, 5000);
+    workerStopped = await stopWorkerPid(workerPid, 5000);
   }
 
   // Scope teardown to agentmemory's own services. A bare `down` against a
@@ -2662,7 +2663,7 @@ async function stopDockerEngine(composeFile: string, port: number): Promise<void
     composeText = "";
   }
   const ownServices = ["iii-engine", "iii-init"].filter((svc) =>
-    new RegExp(`^\\s{2}${svc}:`, "m").test(composeText),
+    new RegExp(`^\\s+${svc}:`, "m").test(composeText),
   );
   if (ownServices.length === 0) {
     p.log.error(
@@ -2677,10 +2678,13 @@ async function stopDockerEngine(composeFile: string, port: number): Promise<void
       label: `docker compose -f ${composeFile} rm -s -f ${ownServices.join(" ")}`,
     },
   );
-  clearEnginePidfile();
-  clearEngineState();
-  clearWorkerPidfile();
-  if (!ok) {
+  // Clear each piece of state only after its shutdown succeeded, so a
+  // failed stop stays retryable.
+  if (workerStopped) clearWorkerPidfile();
+  if (ok) {
+    clearEnginePidfile();
+    clearEngineState();
+  } else {
     p.log.error(
       `docker compose rm failed. The engine may still be running on :${port}. Inspect with:\n  docker compose -f ${composeFile} ps`,
     );

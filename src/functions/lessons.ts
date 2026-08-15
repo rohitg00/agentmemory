@@ -17,13 +17,24 @@ import { recordAudit } from "./audit.js";
 let lessonIndex: SearchIndex | null = null;
 const lessonRecords = new Map<string, Lesson>();
 let lessonIndexBuild: Promise<void> | null = null;
+let lessonIndexGeneration = 0;
+
+// Call after any path that writes KV.lessons without going through the
+// lesson functions (import, replay), so the next recall rebuilds from KV.
+export function resetLessonIndex(): void {
+  lessonIndexGeneration++;
+  lessonIndex = null;
+  lessonRecords.clear();
+}
 
 async function ensureLessonIndex(kv: StateKV): Promise<SearchIndex> {
   if (lessonIndex) return lessonIndex;
   if (!lessonIndexBuild) {
+    const generation = lessonIndexGeneration;
     lessonIndexBuild = (async () => {
       const idx = new SearchIndex();
       const all = await kv.list<Lesson>(KV.lessons);
+      if (generation !== lessonIndexGeneration) return;
       for (const l of all) {
         if (!l.deleted) {
           idx.add(lessonToObservation(l));
@@ -36,7 +47,7 @@ async function ensureLessonIndex(kv: StateKV): Promise<SearchIndex> {
     });
   }
   await lessonIndexBuild;
-  return lessonIndex!;
+  return lessonIndex ?? ensureLessonIndex(kv);
 }
 
 function reinforceLesson(lesson: Lesson): void {
@@ -70,11 +81,17 @@ export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
 
       if (existing && !existing.deleted) {
         reinforceLesson(existing);
+        let indexedTextChanged = false;
         if (data.context && !existing.context) {
           existing.context = data.context;
+          indexedTextChanged = true;
         }
         await kv.set(KV.lessons, existing.id, existing);
         lessonRecords.set(existing.id, existing);
+        if (indexedTextChanged && lessonIndex) {
+          lessonIndex.remove(existing.id);
+          lessonIndex.add(lessonToObservation(existing));
+        }
 
         try {
           await recordAudit(kv, "lesson_strengthen", "mem::lesson-save", [
@@ -143,7 +160,12 @@ export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
       // relevance term moved from per-call substring counting to a
       // weighted index lookup.
       const idx = await ensureLessonIndex(kv);
-      const hits = idx.search(data.query, Math.max(limit * 5, 50));
+      // Post-index filters shrink the page, so over-fetch harder when active.
+      const filtering = !!data.project || minConfidence > 0.1;
+      const fetchLimit = filtering
+        ? Math.max(limit * 10, 100)
+        : Math.max(limit * 5, 50);
+      const hits = idx.search(data.query, fetchLimit);
       const maxHit = hits.length > 0 ? hits[0].score : 0;
 
       const scored: Array<{ lesson: Lesson; score: number }> = [];

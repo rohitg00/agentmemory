@@ -27,23 +27,14 @@ export interface CommitLink {
   linkedAt: string;
 }
 
-// Immutable write-time provenance. `channel` records which trust
-// boundary the content crossed to get here: text a user typed, the
-// agent's own reasoning, output returned by a tool, an imported
-// transcript, or a record shared in from another agent. Derived
-// records (compressed observations, memories distilled from them)
-// carry their source's origin forward so downstream consumers can
-// always answer "where did this come from" — the precondition for any
-// future trust-tiered retrieval or ingest screening.
+// Immutable write-time provenance: which trust boundary the content
+// crossed, inherited by derived records.
 export interface Origin {
   channel: "user" | "agent" | "tool" | "import" | "shared";
   detail?: string;
   capturedAt: string;
 }
 
-// One precedence rule for records entering through an import path:
-// a source that already carries provenance keeps it; anything else is
-// marked as having crossed the import boundary.
 export function importOrigin(
   existing: Origin | undefined,
   capturedAt: string,

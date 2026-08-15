@@ -4497,7 +4497,7 @@
     // the viewer silently degrades to 10s polling.
     (async function initWs() {
       try {
-        var live = await api('livez');
+        var live = await api('livez', { signal: AbortSignal.timeout(5000) });
         if (live && typeof live.streamsPort === 'number' && live.streamsPort > 0) {
           WS_URL = wsProto + '//' + window.location.hostname + ':' + live.streamsPort;
           WS_DIRECT_URL = WS_URL + '/stream/mem-live/viewer';

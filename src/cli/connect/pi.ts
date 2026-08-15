@@ -1,16 +1,16 @@
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  writeFileSync,
-  renameSync,
-} from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import * as p from "@clack/prompts";
 import type { ConnectAdapter, ConnectOptions, ConnectResult } from "./types.js";
 import { findPluginRoot } from "./codex-hooks.js";
-import { backupFile, logAlreadyWired, logBackup, logInstalled } from "./util.js";
+import {
+  backupFile,
+  logAlreadyWired,
+  logBackup,
+  logInstalled,
+  writeTextAtomic,
+} from "./util.js";
 
 // pi auto-discovers ~/.pi/agent/extensions/*/index.ts, so installing is a
 // copy of the bundled extension; no settings.json edit.
@@ -20,21 +20,16 @@ const PI_EXT_DIR = join(PI_DIR, "agent", "extensions", "agentmemory");
 const DOCS = "https://github.com/rohitg00/agentmemory/tree/main/integrations/pi";
 const EXT_FILES = ["index.ts", "security.ts"] as const;
 
-function findPiSourceDir(): string {
-  const packageRoot = dirname(findPluginRoot());
-  const dir = join(packageRoot, "integrations", "pi");
-  if (!existsSync(join(dir, "index.ts"))) {
-    throw new Error(
-      `agentmemory: bundled pi extension not found at ${dir} — reinstall the package`,
-    );
+function findPiSourceDir(): string | null {
+  let packageRoot: string;
+  try {
+    packageRoot = dirname(findPluginRoot());
+  } catch {
+    return null;
   }
-  return dir;
-}
-
-function writeAtomic(path: string, content: string): void {
-  const tmpPath = `${path}.tmp`;
-  writeFileSync(tmpPath, content, "utf-8");
-  renameSync(tmpPath, path);
+  const dir = join(packageRoot, "integrations", "pi");
+  const complete = EXT_FILES.every((f) => existsSync(join(dir, f)));
+  return complete ? dir : null;
 }
 
 export const adapter: ConnectAdapter = {
@@ -51,6 +46,12 @@ export const adapter: ConnectAdapter = {
 
   async install(opts: ConnectOptions): Promise<ConnectResult> {
     const sourceDir = findPiSourceDir();
+    if (!sourceDir) {
+      p.log.error(
+        "Bundled pi extension not found (integrations/pi missing from the install) — reinstall agentmemory.",
+      );
+      return { kind: "skipped", reason: "bundled-extension-missing" };
+    }
     const sources = EXT_FILES.map((f) => ({
       name: f,
       content: readFileSync(join(sourceDir, f), "utf-8"),
@@ -81,7 +82,7 @@ export const adapter: ConnectAdapter = {
 
     mkdirSync(PI_EXT_DIR, { recursive: true });
     for (const s of sources) {
-      writeAtomic(s.target, s.content);
+      writeTextAtomic(s.target, s.content);
     }
 
     const verified = sources.every(

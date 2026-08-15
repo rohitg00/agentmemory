@@ -13,6 +13,7 @@ import { importOrigin } from "../types.js";
 import type { StateKV } from "../state/kv.js";
 import { KV, generateId, fingerprintId } from "../state/schema.js";
 import { parseJsonlText } from "../replay/jsonl-parser.js";
+import { resetLessonIndex } from "./lessons.js";
 import { projectTimeline, type Timeline } from "../replay/timeline.js";
 import { safeAudit } from "./audit.js";
 import { buildSyntheticCompression } from "./compress-synthetic.js";
@@ -158,6 +159,7 @@ async function deriveCrystalAndLessons(
       lessonIds.push(lessonId);
     } catch {}
   }
+  if (lessonIds.length > 0) resetLessonIndex();
 
   // Content-addressed on sessionId so re-importing the same session
   // upserts the crystal in place instead of creating a new one.

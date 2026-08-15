@@ -24,7 +24,7 @@
   border-bottom: none;
   align-items: center;
   font-size: 14px;
-  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 .row > span {
   color: var(--body);

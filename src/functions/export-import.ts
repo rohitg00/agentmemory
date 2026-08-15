@@ -32,6 +32,7 @@ import { StateKV } from "../state/kv.js";
 import { VERSION } from "../version.js";
 import { recordAudit } from "./audit.js";
 import { indexRecords } from "./search.js";
+import { resetLessonIndex } from "./lessons.js";
 import { logger } from "../logger.js";
 
 // Bounded-concurrency chunk size for the import delete/write loops. A
@@ -366,6 +367,7 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
           await kv.list<Lesson>(KV.lessons).catch(() => []),
           (l) => kv.delete(KV.lessons, l.id),
         );
+        resetLessonIndex();
         await runChunked(
           await kv.list<Insight>(KV.insights).catch(() => []),
           (i) => kv.delete(KV.insights, i.id),
@@ -429,8 +431,6 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
               return;
             }
           }
-          // Imported records enter through a different trust boundary
-          // than live capture.
           o.origin = importOrigin(o.origin, o.timestamp);
           await kv.set(KV.observations(sessionId), o.id, o);
           stats.observations++;
@@ -612,6 +612,7 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
           }
           await kv.set(KV.lessons, lesson.id, lesson);
         });
+        resetLessonIndex();
       }
       if (importData.insights) {
         await runChunked(importData.insights, async (insight) => {
