@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -13,6 +13,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.unstubAllEnvs();
   rmSync(home, { recursive: true, force: true });
   rmSync(cwd, { recursive: true, force: true });
 });
@@ -52,6 +53,23 @@ describe("writeGuideline", () => {
     expect(r.kind).toBe("written");
     expect(existsSync(join(home, ".factory", "AGENTS.md"))).toBe(true);
     // must NOT have written into the project cwd
+    expect(existsSync(join(cwd, "AGENTS.md"))).toBe(false);
+  });
+
+  it.each([false, true])("writes DSH memory instructions in the selected home (override: %s)", override => {
+    const dshHome = join(home, override ? "custom-dsh" : ".dsh");
+    vi.stubEnv("DSH_HOME", override ? dshHome : "");
+    mkdirSync(dshHome, { recursive: true });
+    const path = join(dshHome, "AGENTS.md");
+    writeFileSync(path, "Keep my instructions.\n");
+    expect(writeGuideline("dsh", { cwd, home, dryRun: true }).kind).toBe("would-write");
+    expect(readFileSync(path, "utf8")).toBe("Keep my instructions.\n");
+    expect(writeGuideline("dsh", { cwd, home })).toMatchObject({ kind: "written", path, scope: "global" });
+    const body = readFileSync(path, "utf8");
+    expect(body).toContain("Keep my instructions.");
+    expect(body).toContain("memory_recall");
+    expect(writeGuideline("dsh", { cwd, home }).kind).toBe("unchanged");
+    expect(readFileSync(path, "utf8")).toBe(body);
     expect(existsSync(join(cwd, "AGENTS.md"))).toBe(false);
   });
 
@@ -139,6 +157,7 @@ describe("guidelineTargets coverage", () => {
         "copilot-cli",
         "cursor",
         "droid",
+        "dsh",
         "gemini-cli",
         "kiro",
         "opencode",

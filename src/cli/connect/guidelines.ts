@@ -112,6 +112,19 @@ export function guidelineTargets(
       scope: "global",
       source: "https://docs.factory.ai/cli/configuration/agents-md",
     },
+    // DeepSeek Harness loads $DSH_HOME/AGENTS.md into every session's first
+    // step via @deepseek-ai/dsh-agent-instructions (same mechanism as the
+    // project-level AGENTS.md chain). DSH_HOME override keeps this aligned
+    // with the dsh adapter, which resolves its profile paths through DSH_HOME.
+    dsh: {
+      globalPath: process.env.DSH_HOME
+        ? join(process.env.DSH_HOME, "AGENTS.md")
+        : join(home, ".dsh", "AGENTS.md"),
+      projectPath: "AGENTS.md",
+      format: "block",
+      scope: "global",
+      source: "https://github.com/deepseek-ai/deepseek-harness",
+    },
     // Antigravity does NOT read AGENTS.md; global rules live in ~/.gemini/GEMINI.md.
     antigravity: {
       globalPath: join(home, ".gemini", "GEMINI.md"),
