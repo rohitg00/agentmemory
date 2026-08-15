@@ -23,10 +23,16 @@ const IMPLEMENTED_TOOLS = new Set([
   "memory_governance_delete",
 ]);
 
+const SUPPORTED_PROTOCOL_VERSIONS = [
+  "2025-11-25",
+  "2025-06-18",
+  "2025-03-26",
+  "2024-11-05",
+];
+
 const SERVER_INFO = {
   name: "agentmemory",
   version: VERSION,
-  protocolVersion: "2024-11-05",
 };
 
 const kv = new InMemoryKV(getStandalonePersistPath());
@@ -460,15 +466,23 @@ export async function handleToolsList(): Promise<{ tools: unknown[] }> {
 
 const transport = createStdioTransport(async (method, params) => {
   switch (method) {
-    case "initialize":
+    case "initialize": {
+      const requested = (params as { protocolVersion?: unknown } | undefined)
+        ?.protocolVersion;
+      const protocolVersion =
+        typeof requested === "string" &&
+        SUPPORTED_PROTOCOL_VERSIONS.includes(requested)
+          ? requested
+          : SUPPORTED_PROTOCOL_VERSIONS[0];
       return {
-        protocolVersion: SERVER_INFO.protocolVersion,
+        protocolVersion,
         capabilities: { tools: { listChanged: false } },
         serverInfo: {
           name: SERVER_INFO.name,
           version: SERVER_INFO.version,
         },
       };
+    }
 
     case "notifications/initialized":
       return {};
