@@ -112,4 +112,74 @@ describe("connect: DeepSeek Harness", () => {
     expect(result.kind).toBe("installed");
     expect(existsSync(join(home, ".dsh", "cordis.patch.yml"))).toBe(false);
   });
+
+  it("--with-hooks writes the manifest and the hooks-claude-code row", async () => {
+    mkdirSync(join(home, ".dsh"), { recursive: true });
+    const { adapter } = await import("../src/cli/connect/dsh.js");
+    const result = await adapter.install({
+      dryRun: false,
+      force: false,
+      withHooks: true,
+    });
+    expect(result.kind).toBe("installed");
+
+    const hooksPath = join(home, ".dsh", "agentmemory.hooks.json");
+    expect(existsSync(hooksPath)).toBe(true);
+    const manifest = JSON.parse(readFileSync(hooksPath, "utf-8"));
+    // Bridge-supported events from the bundled Claude Code shaped manifest.
+    for (const ev of ["SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop"]) {
+      expect(manifest.hooks[ev]).toBeDefined();
+    }
+    // Commands are resolved to absolute paths, no env placeholders left.
+    const flat = JSON.stringify(manifest);
+    expect(flat).not.toContain("${CLAUDE_PLUGIN_ROOT}");
+
+    const patch = readFileSync(join(home, ".dsh", "cordis.patch.yml"), "utf-8");
+    expect(patch).toContain("id: agentmemory-hooks");
+    expect(patch).toContain("name: '@deepseek-ai/dsh-hooks-claude-code'");
+    expect(patch).toContain(`configPath: ${JSON.stringify(hooksPath)}`);
+    // MCP row still present alongside.
+    expect(patch).toContain("serverName: agentmemory");
+  });
+
+  it("MCP-only install after --with-hooks keeps the hooks row intact", async () => {
+    mkdirSync(join(home, ".dsh"), { recursive: true });
+    const { adapter } = await import("../src/cli/connect/dsh.js");
+    await adapter.install({ dryRun: false, force: false, withHooks: true });
+    const result = await adapter.install({ dryRun: false, force: false });
+    expect(result.kind).toBe("already-wired");
+    const patch = readFileSync(join(home, ".dsh", "cordis.patch.yml"), "utf-8");
+    expect(patch).toContain("id: agentmemory-hooks");
+    expect(patch).toContain("serverName: agentmemory");
+  });
+
+  it("--with-hooks after MCP-only adds the hooks row without duplicating MCP", async () => {
+    mkdirSync(join(home, ".dsh"), { recursive: true });
+    const { adapter } = await import("../src/cli/connect/dsh.js");
+    await adapter.install({ dryRun: false, force: false });
+    const result = await adapter.install({
+      dryRun: false,
+      force: false,
+      withHooks: true,
+    });
+    expect(result.kind).toBe("installed");
+    const patch = readFileSync(join(home, ".dsh", "cordis.patch.yml"), "utf-8");
+    expect(patch.match(/serverName: agentmemory/g)).toHaveLength(1);
+    expect(patch.match(/id: agentmemory-hooks/g)).toHaveLength(1);
+  });
+
+  it("--force --with-hooks replaces both rows without duplicating", async () => {
+    mkdirSync(join(home, ".dsh"), { recursive: true });
+    const { adapter } = await import("../src/cli/connect/dsh.js");
+    await adapter.install({ dryRun: false, force: false, withHooks: true });
+    const result = await adapter.install({
+      dryRun: false,
+      force: true,
+      withHooks: true,
+    });
+    expect(result.kind).toBe("installed");
+    const patch = readFileSync(join(home, ".dsh", "cordis.patch.yml"), "utf-8");
+    expect(patch.match(/serverName: agentmemory/g)).toHaveLength(1);
+    expect(patch.match(/id: agentmemory-hooks/g)).toHaveLength(1);
+  });
 });
