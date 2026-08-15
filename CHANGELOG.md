@@ -4,9 +4,16 @@ All notable changes to agentmemory will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.9.29] — 2026-08-15
 
-Recall-quality wave: hybrid ranking reaches the primary recall path, lessons get a real index, every record learns where it came from, and agent scoping finally threads through all save paths. Plus a viewer clarity pass and safer Docker-mode teardown. No breaking changes; drop-in upgrade.
+Release wave in two parts. Recall quality: hybrid ranking reaches the primary recall path, lessons get a real index, every record learns where it came from, the knowledge graph populates keyless, and agent scoping threads through all save paths — plus connector parity for pi and Codex, a new DeepSeek Harness connector, current provider model defaults, and a viewer clarity pass. Foundation: the `.env` file now applies everywhere, imports become searchable, consolidation runs on session stop, twelve MCP-only agents get activated on connect, and every capture surface agrees on what "project" means. No breaking changes; read the upgrade notes for behavior changes you will notice.
+
+### Upgrade notes
+
+- `~/.agentmemory/.env` values that were silently ignored by most modules now take effect on boot. If that file has stale entries from past experiments, review it before upgrading.
+- `agentmemory connect <agent>` now writes a short memory-usage guideline into the agent's native rules file (Cursor, Cline, Continue, Zed, Warp, Kiro, Gemini CLI, Qwen, OpenCode, Droid, Copilot CLI, Antigravity) so MCP-only agents actually call the memory tools. Pass `--no-guidelines` to opt out.
+- Installs with an LLM key now run consolidation and crystallization on session stop (previously they never fired), debounced to once per 5 minutes (`AGENTMEMORY_CONSOLIDATION_COOLDOWN_MS`).
+- Local embeddings re-download once after the `@huggingface/transformers` migration (different model cache directory). Model IDs are unchanged.
 
 ### Added
 
@@ -18,10 +25,19 @@ Recall-quality wave: hybrid ranking reaches the primary recall path, lessons get
 - **`connect pi` actually installs.** The pi adapter was a stub that printed manual copy instructions because `integrations/` never shipped in the npm package. The extension source now ships, and `connect pi` copies it into `~/.pi/agent/extensions/agentmemory/`, which pi auto-discovers — no settings.json edit, `/reload` picks it up live. Idempotent by content compare; `--force` and stale copies refresh with a backup. `integrations/pi` is also a proper pi package now (`pi-package` keyword, `pi.extensions` manifest, peer deps on `@earendil-works/pi-coding-agent` + `typebox`; private, local installs only — `pi install ./integrations/pi` from a checkout), and the extension's type import moved off the renamed upstream package name.
 - **DeepSeek Harness connector.** `agentmemory connect dsh` appends an `@deepseek-ai/dsh-mcp-client` row to the home-level `$DSH_HOME/cordis.patch.yml`, the machine-local patch layer every Harness profile loads. `--with-hooks` adds full auto-capture: the bundled Claude Code hook scripts run through Harness's first-party `@deepseek-ai/dsh-hooks-claude-code` bridge (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, Stop) via a manifest written to `$DSH_HOME/agentmemory.hooks.json` with absolute script paths. Idempotent, `--force` replaces the rows, honors `DSH_HOME`.
 - **Viewer clarity pass.** Two-pane session explorer (list beside a sticky detail panel on wide screens), dashboard stat cards that navigate to their tabs, memory and lesson rows that expand to the full stored record with raw JSON and origin provenance, type-clustered graph layout with label collision avoidance when relations are sparse, health notes translated from machine slugs into sentences, honest zero states for consolidation and graph, and the official icon as the favicon.
+- `--data-dir` flag and `AGENTMEMORY_DATA_DIR` so iii-engine state lives outside repositories, with gated legacy `./data` adoption and Docker-volume preservation (#314)
+- Native hooks adapter for Droid via `~/.factory/hooks.json`, reusing the bundled hook scripts (#1130)
+- Native hooks adapter for Antigravity CLI (agy) via a stdin bridge that normalizes agy's hook payloads onto the bundled hook scripts, with an explicit PreToolUse allow decision (#1146, thanks @berthojoris)
+- `mem::graph::import-graphify` and `POST /agentmemory/graph/import-graphify`: merge graphify's `graph.json` into the knowledge graph with confidence tags carried over as edge weights (#1136)
+- Connector guideline activation for twelve hook-less agents, with every rules-file path verified against the agent's official documentation (#1136)
+- Honest `memory_forget` reporting plus a real lesson delete path (`mem::lesson-delete`, `DELETE`-style REST route, MCP tool) (#1132)
+- `AGENTMEMORY_PROJECT_NAME` override in the OpenCode plugin (#1125)
+- Provider fetches retry 429/503 honoring `Retry-After` under a total-elapsed budget capped below the iii invocation timeout (#1136)
 
 ### Changed
 
 - **Provider default models bumped to current generations.** OpenAI `gpt-4o-mini` → `gpt-5.6-luna`, Anthropic `claude-sonnet-4-20250514` (deprecated upstream, retires 2026-06-15) → `claude-sonnet-5`, Gemini `gemini-2.5-flash` → `gemini-3.7-flash` (current stable Flash), MiniMax `MiniMax-M2.7` → `MiniMax-M3`, OpenRouter `anthropic/claude-sonnet-4-20250514` → `anthropic/claude-sonnet-5`. The premium-model cost warning now also matches OpenAI's Sol flagship tier, and its cheap-alternative hint leads with `deepseek/deepseek-v4-flash-0731`. Explicit `*_MODEL` env overrides are unaffected. Embedding defaults are unchanged (`text-embedding-3-small`, `gemini-embedding-001`, local MiniLM are all current). README local-model picks refreshed to the Qwen 3 / gpt-oss / DeepSeek R1 generation.
+- Local embeddings migrate from `@xenova/transformers` to `@huggingface/transformers` v4 with Node 22+ support; CI now tests Node 20, 22, 24, and 26 (#479, #1096)
 
 ### Fixed
 
@@ -35,31 +51,6 @@ Recall-quality wave: hybrid ranking reaches the primary recall path, lessons get
 - **Safe Docker-mode stop** ([#1151](https://github.com/rohitg00/agentmemory/issues/1151)). The CLI refuses to adopt or signal Docker/VM port holders (com.docker.backend, vpnkit, colima) as the native engine unless `--force`; Docker-mode teardown is scoped to agentmemory's own compose services instead of an unscoped `down`; the native worker is reaped before Docker teardown instead of deleting `worker.pid` with the process still running.
 - **Viewer live stream and freshness.** The stream WebSocket target resolves from `/agentmemory/livez` (new `streamsPort` field) instead of viewerPort-1 arithmetic, which pointed at the wrong server whenever the viewer bound a fallback port and silently degraded live updates to polling. Tab data refetches on entry (with a freshness gate), so a memory saved by the agent appears without a hard reload.
 - **Hermetic tests** ([#1178](https://github.com/rohitg00/agentmemory/issues/1178)). HOME/USERPROFILE are isolated for the whole vitest run so suites stop reading the developer's real `~/.agentmemory/.env`.
-
-## [0.9.29] — 2026-08-02
-
-Patch release: the `.env` file now actually applies everywhere, imports become searchable, consolidation runs on session stop, twelve MCP-only agents get activated on connect, and every capture surface finally agrees on what "project" means. No breaking changes; read the upgrade notes below for four behavior changes you will notice.
-
-### Upgrade notes
-
-- `~/.agentmemory/.env` values that were silently ignored by most modules now take effect on boot. If that file has stale entries from past experiments, review it before upgrading.
-- `agentmemory connect <agent>` now writes a short memory-usage guideline into the agent's native rules file (Cursor, Cline, Continue, Zed, Warp, Kiro, Gemini CLI, Qwen, OpenCode, Droid, Copilot CLI, Antigravity) so MCP-only agents actually call the memory tools. Pass `--no-guidelines` to opt out.
-- Installs with an LLM key now run consolidation and crystallization on session stop (previously they never fired), debounced to once per 5 minutes (`AGENTMEMORY_CONSOLIDATION_COOLDOWN_MS`).
-- Local embeddings re-download once after the `@huggingface/transformers` migration (different model cache directory). Model IDs are unchanged.
-
-### Added
-
-- `--data-dir` flag and `AGENTMEMORY_DATA_DIR` so iii-engine state lives outside repositories, with gated legacy `./data` adoption and Docker-volume preservation (#314)
-- Native hooks adapter for Droid via `~/.factory/hooks.json`, reusing the bundled hook scripts (#1130)
-- Native hooks adapter for Antigravity CLI (agy) via a stdin bridge that normalizes agy's hook payloads onto the bundled hook scripts, with an explicit PreToolUse allow decision (#1146, thanks @berthojoris)
-- `mem::graph::import-graphify` and `POST /agentmemory/graph/import-graphify`: merge graphify's `graph.json` into the knowledge graph with confidence tags carried over as edge weights (#1136)
-- Connector guideline activation for twelve hook-less agents, with every rules-file path verified against the agent's official documentation (#1136)
-- Honest `memory_forget` reporting plus a real lesson delete path (`mem::lesson-delete`, `DELETE`-style REST route, MCP tool) (#1132)
-- `AGENTMEMORY_PROJECT_NAME` override in the OpenCode plugin (#1125)
-- Provider fetches retry 429/503 honoring `Retry-After` under a total-elapsed budget capped below the iii invocation timeout (#1136)
-
-### Fixed
-
 - Boot hydrates `~/.agentmemory/.env` into `process.env`, closing the class of "env var in .env is ignored" bugs (#1136)
 - Imported and replayed observations are indexed into BM25 and the vector index, so imports are searchable (#1072, via #1136)
 - Snapshot timer actually runs, non-positive intervals clamp to the default, and snapshot creation is serialized across timer, REST, and MCP (#1006, via #1136)
@@ -76,10 +67,6 @@ Patch release: the `.env` file now actually applies everywhere, imports become s
 - OpenCode file enrichment matches the agent's lowercase tool names, which the previous capitalized set never did
 - Viewer surfaces health status from non-2xx health responses (#1046)
 - Documented REST endpoint count matches the registered routes again (130)
-
-### Changed
-
-- Local embeddings migrate from `@xenova/transformers` to `@huggingface/transformers` v4 with Node 22+ support; CI now tests Node 20, 22, 24, and 26 (#479, #1096)
 
 ## [0.9.28] — 2026-07-19
 
