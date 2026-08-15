@@ -108,7 +108,7 @@ function detectProvider(env: Record<string, string>): ProviderConfig {
   if (hasRealValue(env["ANTHROPIC_API_KEY"])) {
     return {
       provider: "anthropic",
-      model: env["ANTHROPIC_MODEL"] || "claude-sonnet-4-20250514",
+      model: env["ANTHROPIC_MODEL"] || "claude-sonnet-4-6",
       maxTokens,
       baseURL: env["ANTHROPIC_BASE_URL"],
     };
@@ -128,7 +128,7 @@ function detectProvider(env: Record<string, string>): ProviderConfig {
   }
   if (hasRealValue(env["OPENROUTER_API_KEY"])) {
     const model =
-      env["OPENROUTER_MODEL"] || "anthropic/claude-sonnet-4-20250514";
+      env["OPENROUTER_MODEL"] || "anthropic/claude-sonnet-4.6";
     // warn when the configured OpenRouter model is in the
     // premium tier and likely to burn money on background compression.
     // Captured workload data shows ~$5/35h on claude-sonnet-4 vs
@@ -181,7 +181,7 @@ function detectProvider(env: Record<string, string>): ProviderConfig {
   );
   return {
     provider: "agent-sdk",
-    model: "claude-sonnet-4-20250514",
+    model: "claude-sonnet-4-6",
     maxTokens,
   };
 }
