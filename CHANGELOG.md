@@ -15,6 +15,10 @@ Recall-quality wave: hybrid ranking reaches the primary recall path, lessons get
 - **`AGENTMEMORY_LLM_NOTHINK=1`** (opt-in): asks local reasoning models to skip their hidden thinking pass during graph extraction. Extraction runs faster; relation quality can drop slightly. Default behavior unchanged; documented in `.env.example`.
 - **Viewer clarity pass.** Two-pane session explorer (list beside a sticky detail panel on wide screens), dashboard stat cards that navigate to their tabs, memory and lesson rows that expand to the full stored record with raw JSON and origin provenance, type-clustered graph layout with label collision avoidance when relations are sparse, health notes translated from machine slugs into sentences, honest zero states for consolidation and graph, and the official icon as the favicon.
 
+### Changed
+
+- **Provider default models bumped to current generations.** OpenAI `gpt-4o-mini` → `gpt-5.6-luna`, Anthropic `claude-sonnet-4-20250514` (deprecated upstream, retires 2026-06-15) → `claude-sonnet-5`, Gemini `gemini-2.5-flash` → `gemini-3.7-flash` (current stable Flash), MiniMax `MiniMax-M2.7` → `MiniMax-M3`, OpenRouter `anthropic/claude-sonnet-4-20250514` → `anthropic/claude-sonnet-5`. The premium-model cost warning now also matches OpenAI's Sol flagship tier, and its cheap-alternative hint leads with `deepseek/deepseek-v4-flash-0731`. Explicit `*_MODEL` env overrides are unaffected. Embedding defaults are unchanged (`text-embedding-3-small`, `gemini-embedding-001`, local MiniLM are all current). README local-model picks refreshed to the Qwen 3 / gpt-oss / DeepSeek R1 generation.
+
 ### Fixed
 
 - **Hybrid ranking on the primary recall path.** `mem::search` (behind `memory_recall`) now ranks through the full BM25 + vector + graph fusion when the vector index is populated; it was keyword-only while only smart-search got hybrid ranking. Fusion weights normalize per item over the streams that actually ranked it, with an explicit cross-stream agreement bonus, replacing the every-enabled-stream denominator that permanently penalized single-stream hits. Result order is deterministic (score, best rank, id).

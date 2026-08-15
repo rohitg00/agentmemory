@@ -1234,7 +1234,7 @@ agentmemory auto-detects from your environment. By default, no LLM calls are mad
 | MiniMax | `MINIMAX_API_KEY` | Anthropic-compatible |
 | Gemini | `GEMINI_API_KEY` | Also enables embeddings |
 | OpenRouter | `OPENROUTER_API_KEY` | Any model |
-| OpenAI API | `OPENAI_API_KEY` | Default `gpt-4o-mini`, override with `OPENAI_MODEL` |
+| OpenAI API | `OPENAI_API_KEY` | Default `gpt-5.6-luna`, override with `OPENAI_MODEL` |
 | **Local (Ollama / LM Studio / vLLM / llama.cpp)** | `OPENAI_API_KEY=local` + `OPENAI_BASE_URL=http://localhost:11434/v1` (Ollama) or `http://localhost:1234/v1` (LM Studio) + `OPENAI_MODEL=<your model>` | Anything OpenAI-API-compatible. Zero cost, runs on your hardware. See [Local models](#local-models-ollama--lm-studio--vllm) below. |
 | Claude subscription fallback | `AGENTMEMORY_ALLOW_AGENT_SDK=true` | Opt-in only. Spawns `@anthropic-ai/claude-agent-sdk` sessions; it used to cause unbounded Stop-hook recursion, so it is no longer the default. |
 
@@ -1245,7 +1245,7 @@ agentmemory talks to any OpenAI-API-compatible server, so anything that exposes 
 **Ollama** (default port `11434`):
 
 ```bash
-ollama pull qwen2.5-coder:7b   # or llama3.2:3b, mistral:7b, etc.
+ollama pull qwen3:8b   # or qwen3:4b, gpt-oss:20b, qwen3-coder:30b, etc.
 ollama serve
 ```
 
@@ -1253,18 +1253,18 @@ ollama serve
 # ~/.agentmemory/.env
 OPENAI_API_KEY=ollama                          # any non-empty string; Ollama ignores it
 OPENAI_BASE_URL=http://localhost:11434/v1
-OPENAI_MODEL=qwen2.5-coder:7b
+OPENAI_MODEL=qwen3:8b
 ```
 
 **LM Studio** (default port `1234`):
 
-Open LM Studio → Local Server tab → Start Server. Pick any chat model from the picker (Qwen 2.5 Coder, Llama 3.2, DeepSeek, etc.).
+Open LM Studio → Local Server tab → Start Server. Pick any chat model from the picker (Qwen 3, gpt-oss, DeepSeek R1, etc.).
 
 ```env
 # ~/.agentmemory/.env
 OPENAI_API_KEY=lmstudio                        # any non-empty string; LM Studio ignores it
 OPENAI_BASE_URL=http://localhost:1234/v1
-OPENAI_MODEL=qwen2.5-coder-7b-instruct         # match the model name from LM Studio
+OPENAI_MODEL=qwen3-8b                          # match the model name from LM Studio
 ```
 
 **vLLM / llama.cpp / Text Generation Inference**: same shape. Point `OPENAI_BASE_URL` at whatever URL your server exposes and set `OPENAI_MODEL` to a name your server will accept.
@@ -1273,10 +1273,13 @@ OPENAI_MODEL=qwen2.5-coder-7b-instruct         # match the model name from LM St
 
 | Model | Size | Why |
 |-------|------|-----|
-| `qwen2.5-coder:7b` | ~4.7 GB | Best at code-shaped sessions; trained on programming + tool-use traces |
-| `llama3.2:3b` | ~2 GB | Smallest sane option; fine for compression, weaker for graph extraction |
-| `mistral:7b-instruct` | ~4.4 GB | Good general-purpose baseline if you don't want code-specific |
-| `deepseek-r1:7b` | ~4.7 GB | Reasoning-tier quality at 7B; slower but cleaner extractions |
+| `qwen3:8b` | ~5.2 GB | Balanced default on a 16 GB machine; strong at extraction and tool-shaped text |
+| `qwen3:4b` | ~2.6 GB | Smallest sane option; fine for compression, weaker for graph extraction |
+| `qwen3-coder:30b` | ~19 GB | Best local pick for code-shaped sessions (30B MoE, 3.3B active) on 24-32 GB hardware |
+| `gpt-oss:20b` | ~14 GB | Strong general model that fits 16 GB RAM |
+| `deepseek-r1:8b` | ~5.2 GB | Reasoning distill; slower but cleaner extractions |
+
+Qwen 3 models think by default and can burn the whole token budget on reasoning before any output. Set `AGENTMEMORY_LLM_NOTHINK=1` to append `/no_think` to graph-extraction prompts, and raise `MAX_TOKENS` (16384 works) if extractions come back empty.
 
 Reasoning-class models (`o1`-style with `<think>` blocks) can return empty `content` with a `reasoning` field your local server may not surface. If extractions come back blank, switch to a non-reasoning model first. The `OPENAI_REASONING_EFFORT=none` env can also disable thinking on Ollama Cloud thinking models that mirror the OpenAI reasoning schema.
 
@@ -1288,18 +1291,20 @@ Background compression runs on every observation, so model choice meaningfully c
 
 | Tier | Model | Input / 1M | Output / 1M | Cost for the captured 35h | Notes |
 |------|-------|------------|-------------|---------------------------|-------|
+| Recommended | `deepseek/deepseek-v4-flash-0731` | $0.07 | $0.14 | ~$0.07 (est.) | Latest DeepSeek; cheapest recommended pick for compression workloads. |
 | Recommended | `deepseek/deepseek-v4-pro` | $0.435 | $0.87 | ~$0.46 | Solid compression + summarization quality at ~10× lower cost than Sonnet. |
-| Recommended | `deepseek/deepseek-chat` | $0.27 | $1.10 | ~$0.40 | Older but still fine for compression-only workloads. |
 | Recommended | `qwen/qwen3-coder` | $0.45 | $1.80 | ~$0.55 | Strong code reasoning if your sessions are heavily code-shaped. |
-| Premium | `anthropic/claude-sonnet-4.6` | $3.00 | $15.00 | ~$5.02 | High quality but expensive for always-on background work. |
-| Premium | `openai/gpt-4o` | $2.50 | $10.00 | ~$4.20 | Similar tier to Sonnet. |
-| Avoid | `anthropic/claude-opus-4.6` | $15.00 | $75.00 | ~$25+ | Reasoning-class model; massive overspend for compression. |
+| Premium | `anthropic/claude-sonnet-5` | $3.00 | $15.00 | ~$5.02 (est.) | Same list price as the measured Sonnet 4.6 run; $2/$10 intro pricing through 2026-08-31. |
+| Premium | `openai/gpt-5.6-sol` | $5.00 | $30.00 | ~$9 (est.) | Flagship tier; expensive for always-on background work. |
+| Avoid | `anthropic/claude-opus-5` | $5.00 | $25.00 | ~$8.40 (est.) | Flagship-class model; overspend for compression. |
+
+Measured rows come from the captured run; (est.) rows scale the same token mix by each model's list price.
 
 agentmemory prints a runtime warning when `OPENROUTER_MODEL` matches a premium-tier pattern. Set `AGENTMEMORY_SUPPRESS_COST_WARNING=1` to silence once you've made an informed choice.
 
-Quality vs cost tradeoff for memory work: compression is a summarization task with relatively loose quality bars (the agent re-reads the summary, not the user). DeepSeek-V4-Pro / Qwen3-Coder land within rounding error of Sonnet on this task while costing ~10× less. Save the premium-tier models for queries you read directly.
+Quality vs cost tradeoff for memory work: compression is a summarization task with relatively loose quality bars (the agent re-reads the summary, not the user). DeepSeek V4 Flash / V4 Pro / Qwen3-Coder land within rounding error of Sonnet on this task while costing 10-70× less. Save the premium-tier models for queries you read directly.
 
-Sources: [OpenRouter pricing for Sonnet 4.6](https://openrouter.ai/anthropic/claude-sonnet-4.6/pricing), [DeepSeek V4 Pro](https://openrouter.ai/deepseek/deepseek-v4-pro), [DeepSeek pricing notes](https://api-docs.deepseek.com/quick_start/pricing/).
+Sources: [OpenRouter pricing for Claude Sonnet 5](https://openrouter.ai/anthropic/claude-sonnet-5), [DeepSeek V4 Flash](https://openrouter.ai/deepseek/deepseek-v4-flash-0731), [DeepSeek pricing notes](https://api-docs.deepseek.com/quick_start/pricing/).
 
 ### Multi-agent memory (`AGENT_ID` + `AGENTMEMORY_AGENT_SCOPE`)
 
@@ -1401,7 +1406,7 @@ Create `~/.agentmemory/.env`:
 #                                          # Auto-detected from `.openai.azure.com` hostname; uses
 #                                          # api-key header + api-version query param.
 # OPENAI_API_VERSION=2024-08-01-preview    # Optional: Azure api-version query param
-# OPENAI_MODEL=gpt-4o-mini                 # Optional: default model
+# OPENAI_MODEL=gpt-5.6-luna                # Optional: default model
 # OPENAI_TIMEOUT_MS=60000                  # Optional: OpenAI-scoped alias for the outbound fetch
 #                                          # timeout. Takes precedence over AGENTMEMORY_LLM_TIMEOUT_MS
 #                                          # for back-compat with v0.9.17. New configs should

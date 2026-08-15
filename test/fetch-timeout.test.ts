@@ -326,7 +326,7 @@ describe("Provider hang regression — MinimaxProvider", () => {
   });
 
   it("compress() aborts after timeout when upstream hangs", async () => {
-    const provider = new MinimaxProvider("test-key", "MiniMax-M2.7", 800);
+    const provider = new MinimaxProvider("test-key", "MiniMax-M3", 800);
     await expect(provider.compress("system", "user")).rejects.toThrow();
   });
 });
@@ -344,7 +344,7 @@ describe("Provider hang regression — OpenRouterProvider (covers Gemini LLM pat
   it("compress() aborts after timeout when upstream hangs", async () => {
     const provider = new OpenRouterProvider(
       "test-key",
-      "gemini-2.5-flash",
+      "gemini-3.7-flash",
       1024,
       "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
     );
@@ -454,7 +454,7 @@ describe("OpenAIProvider timeout env precedence (#446)", () => {
 
   it("OPENAI_TIMEOUT_MS alone aborts the OpenAI LLM call", async () => {
     process.env["OPENAI_TIMEOUT_MS"] = "30";
-    const provider = new OpenAIProvider("test-key", "gpt-4o-mini", 1024);
+    const provider = new OpenAIProvider("test-key", "gpt-5.6-luna", 1024);
     await expect(provider.compress("system", "user")).rejects.toThrow(
       /timed out after 30ms/,
     );
@@ -462,7 +462,7 @@ describe("OpenAIProvider timeout env precedence (#446)", () => {
 
   it("AGENTMEMORY_LLM_TIMEOUT_MS alone aborts the OpenAI LLM call", async () => {
     process.env["AGENTMEMORY_LLM_TIMEOUT_MS"] = "30";
-    const provider = new OpenAIProvider("test-key", "gpt-4o-mini", 1024);
+    const provider = new OpenAIProvider("test-key", "gpt-5.6-luna", 1024);
     await expect(provider.compress("system", "user")).rejects.toThrow(
       /timed out after 30ms/,
     );
@@ -474,7 +474,7 @@ describe("OpenAIProvider timeout env precedence (#446)", () => {
     // we'd time out at 5000ms and the test would hang past the 5s
     // vitest default. We assert the message ms to lock the precedence.
     process.env["AGENTMEMORY_LLM_TIMEOUT_MS"] = "5000";
-    const provider = new OpenAIProvider("test-key", "gpt-4o-mini", 1024);
+    const provider = new OpenAIProvider("test-key", "gpt-5.6-luna", 1024);
     await expect(provider.compress("system", "user")).rejects.toThrow(
       /timed out after 30ms/,
     );
@@ -484,7 +484,7 @@ describe("OpenAIProvider timeout env precedence (#446)", () => {
     // We don't actually wait 60s — the provider stores timeoutMs at
     // construction. Construct, then assert the bound via the error
     // message after the hang aborts at a tiny pre-set value.
-    const provider = new OpenAIProvider("test-key", "gpt-4o-mini", 1024);
+    const provider = new OpenAIProvider("test-key", "gpt-5.6-luna", 1024);
     // Access the resolved timeout via the constructed field name. The
     // class keeps `timeoutMs` private; reaching in via the index
     // access keeps the test on the public observed behaviour: the ms
@@ -503,7 +503,7 @@ describe("OpenAIProvider timeout env precedence (#446)", () => {
     // silently swallow.
     for (const bad of ["30ms", "1_000", "60s", "30abc", "-30", "0"]) {
       process.env["OPENAI_TIMEOUT_MS"] = bad;
-      const provider = new OpenAIProvider("test-key", "gpt-4o-mini", 1024);
+      const provider = new OpenAIProvider("test-key", "gpt-5.6-luna", 1024);
       const ms = (provider as unknown as { timeoutMs: number }).timeoutMs;
       expect(ms).toBe(60_000);
       delete process.env["OPENAI_TIMEOUT_MS"];
@@ -547,7 +547,7 @@ describe("OpenAIProvider thinking-model fallback (#627)", () => {
         },
       ],
     });
-    const provider = new OpenAIProvider("test-key", "gpt-4o-mini", 1024);
+    const provider = new OpenAIProvider("test-key", "gpt-5.6-luna", 1024);
     const out = await provider.compress("system", "user");
     expect(out).toBe("thinking-mode output");
   });
@@ -556,7 +556,7 @@ describe("OpenAIProvider thinking-model fallback (#627)", () => {
     mockOpenAIResponse({
       choices: [{ message: { content: "", reasoning: "older shape" } }],
     });
-    const provider = new OpenAIProvider("test-key", "gpt-4o-mini", 1024);
+    const provider = new OpenAIProvider("test-key", "gpt-5.6-luna", 1024);
     const out = await provider.compress("system", "user");
     expect(out).toBe("older shape");
   });
@@ -573,7 +573,7 @@ describe("OpenAIProvider thinking-model fallback (#627)", () => {
         },
       ],
     });
-    const provider = new OpenAIProvider("test-key", "gpt-4o-mini", 1024);
+    const provider = new OpenAIProvider("test-key", "gpt-5.6-luna", 1024);
     const out = await provider.compress("system", "user");
     expect(out).toBe("real content");
   });
