@@ -1,4 +1,5 @@
 import { MemoryGraph } from "./MemoryGraph";
+import { FeaturedIn } from "./FeaturedIn";
 import { GitHubStarButton } from "./GitHubStarButton";
 import { HeroNpxCommand } from "./HeroNpxCommand";
 import { getProjectMeta } from "@/lib/meta";
@@ -37,6 +38,7 @@ export async function Hero() {
             />
           </div>
         </div>
+        <FeaturedIn compact />
       </div>
     </section>
   );

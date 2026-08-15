@@ -2400,20 +2400,16 @@
       var nodeMap = {};
       graphSim.nodes.forEach(function(n) { nodeMap[n.id] = n; });
 
-      if (graphSim.clustered && graphSim.typeCenters && graphSim.zoom > 0.55) {
-        ctx.save();
-        ctx.font = '600 ' + (11 / graphSim.zoom).toFixed(1) + 'px Inter, sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillStyle = isDarkMode() ? 'rgba(255,255,255,0.28)' : 'rgba(0,0,0,0.30)';
-        Object.keys(graphSim.typeCenters).forEach(function(t) {
-          if (state.graph.filters[t] === false) return;
-          var c = graphSim.typeCenters[t];
-          ctx.fillText(t.toUpperCase(), c.x, c.y - 96 / graphSim.zoom);
-        });
-        ctx.restore();
-      }
-
       var searchActive = graphSearchTerm.length > 0;
+      var drawnLabelRects = [];
+      function labelFits(x, y, w2, h2) {
+        for (var li = 0; li < drawnLabelRects.length; li++) {
+          var r = drawnLabelRects[li];
+          if (x < r.x + r.w && x + w2 > r.x && y < r.y + r.h && y + h2 > r.y) return false;
+        }
+        drawnLabelRects.push({ x: x, y: y, w: w2, h: h2 });
+        return true;
+      }
       var totalVisible = graphSim.nodes.filter(function(n) { return state.graph.filters[n.type]; }).length;
       var isDense = totalVisible > 40;
       var labelZoomThreshold = isDense ? 1.5 : 0.5;
@@ -2580,7 +2576,13 @@
           var labelW = textW + (16 * zoomInv);
           var labelH = 20 * zoomInv;
           var labelY = n.y + n.r + (8 * zoomInv); // Top of the background pill
-          
+          // Selected/hovered labels always win; others draw only into
+          // free space so zoomed-out views degrade to fewer labels
+          // instead of a pile of overlapping pills.
+          if (!isSelected && !isHovered && !labelFits(n.x - labelW / 2, labelY, labelW, labelH)) {
+            ctx.restore();
+            return;
+          }
           ctx.fillStyle = isDarkMode() ? 'rgba(30,30,35,0.92)' : 'rgba(255,255,255,0.92)';
           ctx.beginPath();
           ctx.roundRect ? ctx.roundRect(n.x - labelW / 2, labelY, labelW, labelH, 4 * zoomInv) : ctx.rect(n.x - labelW / 2, labelY, labelW, labelH);
