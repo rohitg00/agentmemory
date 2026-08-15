@@ -50,21 +50,20 @@
       --font-mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
     }
     html[data-theme="dark"] {
-      --bg: #1a1a1e;
-      --bg-alt: #232328;
-      --bg-subtle: #1f1f24;
-      --bg-inset: #2a2a30;
-      --border: #444;
-      --border-light: #3a3a42;
-      --border-heavy: #ccc;
-      --ink: #eee;
-      --ink-secondary: #ccc;
-      --ink-muted: #999;
-      --ink-faint: #777;
+      --bg: #121316;
+      --bg-alt: #1a1c20;
+      --bg-subtle: #17181b;
+      --bg-inset: #222428;
+      --border: #33363b;
+      --border-light: #26282c;
+      --border-heavy: #c9cbd1;
+      --ink: #eef0f3;
+      --ink-secondary: #c6c9ce;
+      --ink-muted: #94979d;
+      --ink-faint: #6d7076;
+      --accent: #f2555a;
+      --accent-light: #ff7a70;
       --cream: #2a2520;
-    }
-    html[data-theme="dark"] body {
-      background-image: radial-gradient(circle, #3a3a42 0.5px, transparent 0.5px);
     }
     html[data-theme="dark"] .graph-tooltip {
       background: rgba(30,30,35,0.92);
@@ -80,6 +79,16 @@
       color: var(--bg);
     }
     * { margin: 0; padding: 0; box-sizing: border-box; }
+    #bg-dither {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 0;
+      pointer-events: none;
+      opacity: 0.5;
+    }
+    .app-header, .tab-bar, .view, .flags-banner, footer, .app-footer { position: relative; z-index: 1; }
     body {
       font-family: var(--font-body);
       background: var(--bg);
@@ -89,8 +98,6 @@
       height: 100vh;
       display: flex;
       flex-direction: column;
-      background-image: radial-gradient(circle, #D4D4CF 0.5px, transparent 0.5px);
-      background-size: 16px 16px;
     }
     ::-webkit-scrollbar { width: 6px; }
     ::-webkit-scrollbar-track { background: var(--bg); }
@@ -1019,6 +1026,7 @@
   </style>
 </head>
 <body>
+  <canvas id="bg-dither" aria-hidden="true"></canvas>
   <div class="app-header">
     <a class="brand" href="#dashboard" data-tab-link="dashboard" aria-label="Open dashboard">
       <h1>agentmemory</h1>
@@ -1161,7 +1169,7 @@
       sessions: { loaded: false, items: [], selectedId: null },
       audit: { loaded: false, entries: [], opFilter: '' },
       activity: { loaded: false, observations: [], sessions: [], typeFilter: '' },
-      lessons: { loaded: false, items: [], search: '' },
+      lessons: { loaded: false, items: [], search: '', selectedId: null },
       actions: { loaded: false, items: [], frontier: [], statusFilter: '', search: '' },
       crystals: { loaded: false, items: [], search: '', lessonMap: {} },
       profile: { loaded: false, projects: [], selectedProject: '', data: null },
@@ -1188,6 +1196,26 @@
     // Observation subtitles are often the raw tool input serialized as
     // JSON ('{"file_path":"src/x.ts"}'). Pull the human-meaningful field
     // out for display; anything unparseable renders as-is.
+    // Health alerts/notes arrive as compact machine slugs
+    // (memory_heap_tight_93%_rss111mb). Translate the known families
+    // into sentences; unknown slugs render as-is.
+    function humanizeHealthFlag(f) {
+      var m;
+      if ((m = /^memory_heap_tight_(\d+)%_rss(\d+)mb$/.exec(f)))
+        return 'Heap is running tight: ' + m[1] + '% of allocated heap in use (process memory ' + m[2] + ' MB). Informational — Node grows the heap on demand.';
+      if ((m = /^memory_(warn|critical)_(\d+)%_rss(\d+)mb$/.exec(f)))
+        return 'Memory ' + (m[1] === 'critical' ? 'critically high' : 'elevated') + ': ' + m[2] + '% of heap in use, process memory ' + m[3] + ' MB.';
+      if ((m = /^cpu_(warn|critical)_(\d+)%$/.exec(f)))
+        return 'CPU ' + (m[1] === 'critical' ? 'critically high' : 'elevated') + ': ' + m[2] + '%.';
+      if ((m = /^event_loop_lag_(warn|critical)_(\d+)ms$/.exec(f)))
+        return 'Event loop ' + (m[1] === 'critical' ? 'severely delayed' : 'delayed') + ': ' + m[2] + ' ms behind. The worker is busy or blocked.';
+      if (f === 'connection_reconnecting')
+        return 'Engine connection lost — reconnecting.';
+      if ((m = /^connection_(.+)$/.exec(f)))
+        return 'Engine connection state: ' + m[1] + '.';
+      return f;
+    }
+
     function humanizeSubtitle(s) {
       if (typeof s !== 'string') return '';
       var t = s.trim();
@@ -1581,7 +1609,8 @@
 
       if (snap.alerts && snap.alerts.length > 0) {
         html += '<div class="card" style="margin-bottom:16px;border-color:var(--accent);border-width:2px;"><div class="card-title" style="color:var(--accent);border-bottom-color:var(--accent);">Alerts (' + snap.alerts.length + ')</div>';
-        snap.alerts.forEach(function(al) {
+        snap.alerts.forEach(function(alRaw) {
+          var al = humanizeHealthFlag(alRaw);
           html += '<div style="font-size:12px;color:var(--accent);padding:4px 0;border-bottom:1px solid var(--border-light);font-family:var(--font-ui);">' + esc(al) + '</div>';
         });
         html += '</div>';
@@ -1590,7 +1619,7 @@
       if (snap.notes && snap.notes.length > 0) {
         html += '<div class="card" style="margin-bottom:16px;"><div class="card-title" style="color:var(--ink-muted);">Notes (' + snap.notes.length + ')</div>';
         snap.notes.forEach(function(n) {
-          html += '<div style="font-size:12px;color:var(--ink-muted);padding:4px 0;border-bottom:1px solid var(--border-light);font-family:var(--font-ui);">' + esc(n) + '</div>';
+          html += '<div style="font-size:12px;color:var(--ink-muted);padding:4px 0;border-bottom:1px solid var(--border-light);font-family:var(--font-ui);">' + esc(humanizeHealthFlag(n)) + '</div>';
         });
         html += '</div>';
       }
@@ -1724,6 +1753,9 @@
       html += '<div class="consolidation-row"><span class="cl">Semantic facts</span><span class="cv">' + semFacts.length + '</span></div>';
       html += '<div class="consolidation-row"><span class="cl">Procedures</span><span class="cv">' + procItems.length + '</span></div>';
       html += '<div class="consolidation-row"><span class="cl">Relations</span><span class="cv">' + relItems.length + '</span></div>';
+      if (semFacts.length === 0 && procItems.length === 0 && relItems.length === 0) {
+        html += '<div style="font-size:12px;color:var(--ink-faint);margin-top:8px;line-height:1.5;">Consolidation distills session observations into durable facts and repeatable procedures. It runs on a schedule when <code>CONSOLIDATION_ENABLED=true</code> and an LLM provider key are set, or on demand via <code>memory_consolidate</code>.</div>';
+      }
       html += '</div>';
 
       if (relItems.length > 0) {
@@ -2683,7 +2715,13 @@
       state.timeline.loaded = true;
 
       if (sessions.length > 0 && !state.timeline.sessionId) {
-        var sorted = sessions.slice().sort(function(a, b) { return (b.startedAt || '').localeCompare(a.startedAt || ''); });
+        // Default to the session with the most observations — the newest
+        // one is often a sparse just-started session, which made the tab
+        // look empty on first open.
+        var sorted = sessions.slice().sort(function(a, b) {
+          return (b.observationCount || 0) - (a.observationCount || 0) ||
+            (b.startedAt || '').localeCompare(a.startedAt || '');
+        });
         var firstSelectable = sorted.find(function(s) { return sessionId(s); });
         state.timeline.sessionId = firstSelectable ? sessionId(firstSelectable) : '';
       }
@@ -3256,11 +3294,12 @@
           '<div><a class="empty-link" href="https://github.com/rohitg00/agentmemory#lessons" target="_blank" rel="noopener">Lesson decay &amp; scoring &rarr;</a></div>' +
           '</div>';
       } else {
-        html += '<table><thead><tr><th>Lesson</th><th>Confidence</th><th>Reinforcements</th><th>Source</th><th>Project</th><th>Updated</th></tr></thead><tbody>';
+        html += '<table><thead><tr><th>Lesson</th><th title="How battle-tested the rule is. Grows each time it is reinforced, decays weekly when unused.">Confidence</th><th title="Times the agent re-confirmed this rule.">Uses</th><th>Source</th><th>Project</th><th>Updated</th></tr></thead><tbody>';
         items.forEach(function(l) {
           var confPct = Math.round(l.confidence * 100);
           var confColor = confPct >= 70 ? 'var(--green)' : confPct >= 40 ? 'var(--yellow)' : 'var(--red)';
-          html += '<tr>';
+          var expanded = state.lessons.selectedId === l.id;
+          html += '<tr class="lesson-row' + (expanded ? ' selected' : '') + '" data-action="select-lesson" data-lesson-id="' + esc(l.id) + '" role="button" tabindex="0" aria-expanded="' + (expanded ? 'true' : 'false') + '" style="cursor:pointer;">';
           html += '<td style="max-width:400px;">' + esc(truncate(l.content, 120)) + (l.context ? '<div style="font-size:11px;color:var(--ink-faint);margin-top:2px;">' + esc(truncate(l.context, 80)) + '</div>' : '') + '</td>';
           html += '<td><div class="gauge" style="min-width:80px;"><div class="gauge-bar"><div class="gauge-fill" style="width:' + confPct + '%;background:' + confColor + '"></div></div><span class="gauge-value" style="font-size:11px;">' + confPct + '%</span></div></td>';
           html += '<td style="text-align:center;">' + (l.reinforcements || 0) + '</td>';
@@ -3268,6 +3307,21 @@
           html += '<td style="font-size:12px;color:var(--ink-muted);">' + esc(l.project || '-') + '</td>';
           html += '<td style="font-size:12px;color:var(--ink-muted);">' + shortTime(l.updatedAt) + '</td>';
           html += '</tr>';
+          if (expanded) {
+            html += '<tr class="lesson-detail-row"><td colspan="6" style="background:var(--bg-alt);padding:14px 16px;">';
+            html += '<div style="font-size:13px;color:var(--ink);white-space:pre-wrap;line-height:1.5;margin-bottom:8px;">' + esc(l.content) + '</div>';
+            if (l.context) html += '<div style="font-size:12px;color:var(--ink-muted);margin-bottom:8px;"><span style="font-family:var(--font-ui);font-size:10px;text-transform:uppercase;letter-spacing:0.1em;">Why learned</span><br>' + esc(l.context) + '</div>';
+            html += '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:11px;color:var(--ink-muted);font-family:var(--font-mono);margin-bottom:8px;">';
+            html += '<span>id: ' + esc(l.id) + '</span>';
+            if (l.tags && l.tags.length) html += '<span>tags: ' + esc(l.tags.join(', ')) + '</span>';
+            if (l.createdAt) html += '<span>learned: ' + esc(formatTime(l.createdAt)) + '</span>';
+            if (l.lastReinforcedAt) html += '<span>last confirmed: ' + esc(formatTime(l.lastReinforcedAt)) + '</span>';
+            if (l.sourceIds && l.sourceIds.length) html += '<span>from ' + l.sourceIds.length + ' session(s)</span>';
+            html += '</div>';
+            html += '<details><summary style="cursor:pointer;font-size:11px;color:var(--ink-faint);font-family:var(--font-mono);">raw record</summary>';
+            html += '<pre style="margin-top:8px;padding:10px;background:var(--bg);border:1px solid var(--border);font-size:11px;line-height:1.5;overflow-x:auto;">' + esc(JSON.stringify(l, null, 2)) + '</pre></details>';
+            html += '</td></tr>';
+          }
         });
         html += '</tbody></table>';
       }
@@ -3292,6 +3346,10 @@
     function renderActions() {
       var el = document.getElementById('view-actions');
       var items = state.actions.items;
+      var introCard = '<div class="card" style="margin-bottom:12px;padding:12px;background:var(--bg-subtle);">' +
+        '<div style="font-size:13px;color:var(--ink-muted);line-height:1.5;">' +
+        '<strong>Actions</strong> are follow-ups the agent surfaced during sessions — decisions to revisit, files to inspect, tasks blocked on input. Status flows pending &rarr; active &rarr; done/blocked; the <em>frontier</em> marks what is unblocked and ready to pick up next.' +
+        '</div></div>';
       var search = state.actions.search.toLowerCase();
       var statusFilter = state.actions.statusFilter;
       var frontierIds = new Set((state.actions.frontier || []).map(function(a) { return a.id; }));
@@ -3305,7 +3363,8 @@
         items = items.filter(function(a) { return a.status === statusFilter; });
       }
 
-      var html = '<div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">';
+      var html = introCard;
+      html += '<div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">';
       html += '<input id="actions-search" class="search-input" type="text" placeholder="Search actions..." value="' + esc(state.actions.search) + '" style="flex:1;min-width:200px" />';
       html += '<select id="actions-status-filter" style="padding:4px 8px;font-size:12px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--ink);">';
       html += '<option value="">All statuses</option>';
@@ -3593,7 +3652,7 @@
       html += '<div class="card"><div class="card-title">Top Concepts</div>';
       var concepts = p.topConcepts || [];
       if (concepts.length === 0) {
-        html += '<div style="font-size:13px;color:var(--ink-faint);font-style:italic;">No concepts yet</div>';
+        html += '<div style="font-size:13px;color:var(--ink-faint);line-height:1.5;">No concepts yet. Concepts are tagged when observations are compressed by an LLM (<code>AGENTMEMORY_AUTO_COMPRESS=true</code> + provider key) or attached to saved memories.</div>';
       } else {
         var maxC = Math.max.apply(null, concepts.map(function(c) { return c.frequency; })) || 1;
         html += '<div class="bar-chart">';
@@ -4098,6 +4157,14 @@
         if (gotoTab) switchTab(gotoTab);
         return;
       }
+      if (action === 'select-lesson') {
+        var lsnId = target.getAttribute('data-lesson-id');
+        if (lsnId) {
+          state.lessons.selectedId = state.lessons.selectedId === lsnId ? null : lsnId;
+          renderLessons();
+        }
+        return;
+      }
       if (action === 'select-memory') {
         var memId = target.getAttribute('data-memory-id');
         if (memId) {
@@ -4371,6 +4438,67 @@
       connectWs();
     })();
     startDashboardAutoRefresh();
+
+    // Ambient background: an ordered-dither dot field that drifts very
+    // slowly — the print-halftone cousin of the old static dot grid.
+    // Renders at quarter resolution and ~12fps; a single static frame
+    // under prefers-reduced-motion.
+    (function ditherField() {
+      var cv = document.getElementById('bg-dither');
+      if (!cv || !cv.getContext) return;
+      var ctx = cv.getContext('2d');
+      var BAYER = [
+        [0, 8, 2, 10],
+        [12, 4, 14, 6],
+        [3, 11, 1, 9],
+        [15, 7, 13, 5]
+      ];
+      var CELL = 7;
+      var t = 0;
+      var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+      function dotColor() {
+        return document.documentElement.getAttribute('data-theme') === 'dark'
+          ? 'rgba(150, 154, 162, 0.16)'
+          : 'rgba(90, 90, 84, 0.14)';
+      }
+
+      function draw() {
+        var w = cv.width = Math.ceil(window.innerWidth / 2);
+        var h = cv.height = Math.ceil(window.innerHeight / 2);
+        ctx.clearRect(0, 0, w, h);
+        ctx.fillStyle = dotColor();
+        var cols = Math.ceil(w / CELL) + 1;
+        var rows = Math.ceil(h / CELL) + 1;
+        for (var y = 0; y < rows; y++) {
+          for (var x = 0; x < cols; x++) {
+            // Slow luminance swells drifting diagonally; the Bayer
+            // threshold turns them into stable ordered-dither dots.
+            var v =
+              0.5 +
+              0.5 *
+                Math.sin(x * 0.11 + t * 0.013) *
+                Math.cos(y * 0.13 - t * 0.011);
+            if (v * 16 > BAYER[y % 4][x % 4] + 6.5) {
+              ctx.fillRect(x * CELL, y * CELL, 1.4, 1.4);
+            }
+          }
+        }
+      }
+
+      draw();
+      if (!reduced) {
+        setInterval(function () {
+          t++;
+          draw();
+        }, 85);
+      }
+      window.addEventListener('resize', draw);
+      new MutationObserver(draw).observe(document.documentElement, {
+        attributes: true,
+        attributeFilter: ['data-theme']
+      });
+    })();
   </script>
 </body>
 </html>
