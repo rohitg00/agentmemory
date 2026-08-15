@@ -24,10 +24,10 @@ export function Stats({
   const rootRef = useRef<HTMLDivElement>(null);
 
   const STATS: StatItem[] = [
+    { target: 95.2, suffix: "%", label: "RETRIEVAL R@5 · LONGMEMEVAL-S", float: true },
+    { target: 92, suffix: "%", label: "FEWER INPUT TOKENS PER SESSION" },
     { target: mcpTools, label: "MCP TOOLS" },
     { target: restEndpoints, label: "REST ENDPOINTS" },
-    { target: hooks, label: "AUTO-CAPTURE HOOKS" },
-    { target: 7, label: "NATIVE AGENT PLUGINS" },
     { target: 0, label: "EXTERNAL DATABASES" },
     { target: testsPassing, label: "TESTS PASSING" },
   ];

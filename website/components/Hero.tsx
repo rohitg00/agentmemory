@@ -22,9 +22,9 @@ export async function Hero() {
           <span className={`${styles.word} ${styles.accent}`}>memory</span>
         </h1>
         <p className={styles.lede}>
-          Give your coding agent a memory that survives the session. Capture
-          every tool call and prompt, recall it in the next conversation, keep
-          everything on your own machine.
+          Give your coding agent a memory that survives the session. 95.2%
+          retrieval recall on LongMemEval-S with about 92% fewer input tokens
+          than full-context replay, all on your own machine.
         </p>
         <div className={styles.cta}>
           <HeroNpxCommand />
