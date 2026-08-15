@@ -71,13 +71,13 @@ export function Install() {
   return (
     <section className={styles.install} id="install" aria-labelledby="install-title">
       <header className="section-head">
-        <span className="section-eyebrow">SHIP IT</span>
+        <span className="section-eyebrow">Ship it</span>
         <h2 id="install-title" className="section-title">
-          ONE INSTALL.<br />ANY AGENT.
+          One install.<br />Any agent.
         </h2>
         <p className="section-lede">
-          RUNS ON YOUR MACHINE. DATA STAYS LOCAL. BRING YOUR CLAUDE SUBSCRIPTION
-          — OR POINT IT AT ANTHROPIC, GEMINI, MINIMAX, OR OPENROUTER.
+          Runs on your machine. Data stays local. Bring your Claude subscription
+          — or point it at Anthropic, Gemini, MiniMax, or OpenRouter.
         </p>
       </header>
       <div className={styles.cards}>
@@ -89,12 +89,12 @@ export function Install() {
       </div>
       <div className={styles.cta}>
         <a
-          className="btn btn--accent"
+          className="btn btn--sunset"
           href="https://github.com/rohitg00/agentmemory#quick-start"
           target="_blank"
           rel="noopener"
         >
-          READ THE QUICKSTART
+          Read the quickstart
         </a>
         <a
           className="btn btn--ghost"
@@ -102,7 +102,7 @@ export function Install() {
           target="_blank"
           rel="noopener"
         >
-          NPM PACKAGE
+          npm package
         </a>
         <a
           className="btn btn--ghost"
@@ -110,7 +110,7 @@ export function Install() {
           target="_blank"
           rel="noopener"
         >
-          INTEGRATIONS
+          Integrations
         </a>
       </div>
     </section>

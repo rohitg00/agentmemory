@@ -2,7 +2,8 @@
   display: none;
   width: 40px;
   height: 40px;
-  border: 1px solid var(--charcoal);
+  border: 1px solid var(--border-ghost);
+  border-radius: var(--radius-pill);
   align-items: center;
   justify-content: center;
   flex-direction: column;
@@ -10,22 +11,22 @@
 }
 .bar {
   display: block;
-  width: 18px;
-  height: 2px;
-  background: var(--white);
+  width: 16px;
+  height: 1.5px;
+  background: var(--ink);
   transition:
     transform 220ms ease,
     opacity 220ms ease;
   transform-origin: center;
 }
 .bar1 {
-  transform: translateY(6px) rotate(45deg) !important;
+  transform: translateY(5.5px) rotate(45deg) !important;
 }
 .bar2 {
   opacity: 0;
 }
 .bar3 {
-  transform: translateY(-6px) rotate(-45deg) !important;
+  transform: translateY(-5.5px) rotate(-45deg) !important;
 }
 
 .sheet {
@@ -34,7 +35,7 @@
   /* Portaled to <body>, so this sits in the root stacking context. Kept
      below the nav (z-index: 100) so the brand + close button stay on top.
      Fully opaque so hero content can't bleed through. */
-  background: var(--abyss);
+  background: var(--canvas);
   z-index: 95;
   opacity: 0;
   pointer-events: none;
@@ -59,19 +60,19 @@
   margin: 0;
 }
 .list li {
-  border-bottom: 1px solid var(--charcoal);
+  border-bottom: 1px solid var(--hairline);
 }
 .list a {
   display: block;
   padding: 18px 0;
   font-size: 26px;
-  font-weight: 900;
-  letter-spacing: -0.01em;
-  text-transform: uppercase;
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  color: var(--ink);
   transition: color 180ms ease, padding-left 180ms ease;
 }
 .list a:hover {
-  color: var(--gold);
+  color: var(--body);
   padding-left: 8px;
 }
 .foot {
@@ -80,16 +81,17 @@
   flex-wrap: wrap;
   gap: 14px 20px;
   padding-top: 20px;
-  border-top: 1px solid var(--charcoal);
+  border-top: 1px solid var(--hairline);
 }
 .foot a {
+  font-family: var(--font-mono);
   font-size: 12px;
-  letter-spacing: 0.96px;
-  color: var(--steel);
+  letter-spacing: 1.2px;
+  color: var(--mute);
   text-transform: uppercase;
 }
 .foot a:hover {
-  color: var(--gold);
+  color: var(--ink);
 }
 
 /* Must match the breakpoint that hides .links in Nav.module.css, or the

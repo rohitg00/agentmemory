@@ -1,7 +1,6 @@
 .install {
   padding: 112px 0;
-  background: var(--iron);
-  border-top: 1px solid var(--charcoal);
+  border-top: 1px solid var(--hairline);
 }
 .cards {
   max-width: 1000px;
@@ -16,21 +15,22 @@
   gap: 10px;
 }
 .stepLabel {
+  font-family: var(--font-mono);
   font-size: 11px;
-  letter-spacing: 0.96px;
-  color: var(--gold);
+  letter-spacing: 1.4px;
+  color: var(--mute);
   text-transform: uppercase;
-  font-weight: 700;
 }
 .box {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   gap: 16px;
   align-items: center;
-  padding: 22px 28px;
-  background: var(--abyss);
-  border: 1px solid var(--charcoal);
-  color: var(--mist);
+  padding: 20px 26px;
+  background: var(--canvas-soft);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-card);
+  color: var(--body);
   font-family: var(--font-mono);
   font-size: 14px;
   text-align: left;
@@ -42,30 +42,29 @@
   cursor: pointer;
 }
 .box:hover {
-  border-color: var(--gold);
-  background: var(--charcoal);
+  border-color: var(--border-ghost);
+  background: var(--canvas-card);
 }
 .boxCopied {
-  border-color: #29c864 !important;
+  border-color: var(--ok) !important;
 }
 .boxCopied .hint {
-  color: #29c864;
+  color: var(--ok);
 }
 .prompt {
-  color: var(--gold);
-  font-weight: 700;
+  color: var(--sunset);
 }
 .cmd {
-  color: var(--white);
+  color: var(--ink);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   min-width: 0;
 }
 .hint {
-  color: var(--ash);
-  font-size: 11px;
-  letter-spacing: 0.96px;
+  color: var(--mute);
+  font-size: 10.5px;
+  letter-spacing: 1.2px;
   text-transform: uppercase;
   white-space: nowrap;
 }

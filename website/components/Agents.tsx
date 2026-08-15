@@ -232,7 +232,6 @@ function FeaturedCard({ a }: { a: Agent }) {
       href={a.href}
       target="_blank"
       rel="noopener"
-      style={{ ["--agent-accent" as string]: a.accent }}
     >
       <div className={styles.featuredHead}>
         <div className={styles.featuredLogo}>
@@ -265,7 +264,6 @@ function MarqueeTile({ a }: { a: Agent }) {
       href={a.href}
       target="_blank"
       rel="noopener"
-      style={{ ["--agent-accent" as string]: a.accent }}
     >
       <Image
         src={a.logo}
@@ -288,14 +286,14 @@ export function Agents() {
   return (
     <section className={styles.wrap} id="agents" aria-labelledby="agents-title">
       <header className="section-head">
-        <span className="section-eyebrow">WORKS WITH</span>
+        <span className="section-eyebrow">Works with</span>
         <h2 id="agents-title" className="section-title">
-          SEVEN NATIVE PLUGINS.<br />REST MCP-NATIVE.
+          Seven native plugins.<br />Rest MCP-native.
         </h2>
         <p className="section-lede">
-          NATIVE PLUGINS FOR CLAUDE CODE, COPILOT CLI, CODEX CLI, OPENCLAW,
-          HERMES, PI, AND OPENHUMAN. EVERY OTHER MCP CLIENT GETS IT FOR FREE.
-          `agentmemory connect &lt;agent&gt;` AUTO-WIRES THEM ALL.
+          Native plugins for Claude Code, Copilot CLI, Codex CLI, OpenClaw,
+          Hermes, pi, and OpenHuman. Every other MCP client gets it for free.
+          `agentmemory connect &lt;agent&gt;` auto-wires them all.
         </p>
       </header>
 

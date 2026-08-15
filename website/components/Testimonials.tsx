@@ -79,7 +79,7 @@ export function Testimonials() {
           BUILDERS USING AGENTMEMORY
         </div>
         <h2 className={styles.title}>
-          IN THE <span className={styles.accent}>WILD.</span>
+          In the <span className={styles.accent}>wild.</span>
         </h2>
         <p className={styles.lede}>
           Verbatim from the Product Hunt launch thread. Each card

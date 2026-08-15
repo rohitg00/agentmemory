@@ -126,9 +126,9 @@ export function LiveTerminal({
   return (
     <section className={styles.live} id="live" aria-labelledby="live-title">
       <header className="section-head">
-        <span className="section-eyebrow">LIVE</span>
+        <span className="section-eyebrow">Live</span>
         <h2 id="live-title" className="section-title">
-          MEMORY THAT TYPES BACK.
+          Memory that types back.
         </h2>
       </header>
       <div className={styles.terminal} data-terminal>
@@ -149,7 +149,7 @@ export function LiveTerminal({
               play();
             }}
           >
-            REPLAY
+            Replay
           </button>
           <span className={styles.status}>{status}</span>
         </div>

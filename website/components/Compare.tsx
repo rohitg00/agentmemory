@@ -7,7 +7,7 @@ const ROWS = [
   ["MCP TOOLS", "51", "12", "18", "9"],
   ["AUTO-HOOKS", "12", "0", "0", "0"],
   ["NATIVE PLUGINS", "6", "—", "—", "—"],
-  ["OPEN SOURCE", "YES (APACHE-2.0)", "YES", "YES", "YES"],
+  ["OPEN SOURCE", "Yes (Apache-2.0)", "Yes", "Yes", "Yes"],
 ];
 
 export function Compare() {
@@ -16,11 +16,12 @@ export function Compare() {
       <header className="section-head">
         <span className="section-eyebrow">VS.</span>
         <h2 id="cmp-title" className="section-title">
-          VS. THE FIELD.
+          Vs. the field.
         </h2>
         <p className="section-lede">
-          NUMBERS STRAIGHT FROM THE LONGMEMEVAL-S BENCHMARK AND EACH PROJECT&apos;S
-          OWN DOCS. SHIP WHAT YOU WANT — WE JUST PICKED THE ONE WITH RECEIPTS.
+          Numbers straight from the LongMemEval-S benchmark and each
+          project&apos;s own docs. Ship what you want — we just picked the one
+          with receipts.
         </p>
       </header>
       <div className={styles.table} role="table" aria-label="Comparison">

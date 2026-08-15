@@ -7,10 +7,10 @@ import styles from "./CommandCenter.module.css";
 type Tab = "viewer" | "console" | "state" | "traces";
 
 const TABS: Array<{ id: Tab; label: string; sub: string }> = [
-  { id: "viewer", label: "VIEWER", sub: ":3113 · LIVE OBSERVATION STREAM" },
-  { id: "console", label: "iii CONSOLE", sub: ":3114 · ENGINE DASHBOARD" },
-  { id: "state", label: "STATE", sub: "RAW KV BROWSER + JSON EDITOR" },
-  { id: "traces", label: "TRACES", sub: "OTEL WATERFALL + FLAME" },
+  { id: "viewer", label: "Viewer", sub: ":3113 · LIVE OBSERVATION STREAM" },
+  { id: "console", label: "iii Console", sub: ":3114 · ENGINE DASHBOARD" },
+  { id: "state", label: "State", sub: "RAW KV BROWSER + JSON EDITOR" },
+  { id: "traces", label: "Traces", sub: "OTEL WATERFALL + FLAME" },
 ];
 
 const PANELS: Record<
@@ -25,7 +25,7 @@ const PANELS: Record<
   }
 > = {
   viewer: {
-    title: "SHIP-WITH VIEWER · PORT 3113",
+    title: "Ship-with viewer · port 3113",
     blurb:
       "The agentmemory server auto-starts a real-time viewer on port 3113. No install, no config. Everything the server sees, the viewer shows.",
     bullets: [
@@ -40,7 +40,7 @@ const PANELS: Record<
     launch: "open http://localhost:3113",
   },
   console: {
-    title: "iii CONSOLE · FIRST-CLASS",
+    title: "iii console · first-class",
     blurb:
       "agentmemory runs on the iii engine, so the official iii console gives engine-level visibility: every function call, every worker, every queue, every trace. From v0.9.16 the agentmemory CLI prompts to install iii console alongside the engine. Launch on :3114 so the viewer keeps :3113.",
     bullets: [
@@ -55,7 +55,7 @@ const PANELS: Record<
     launch: "iii-console --port 3114 --engine-port 3111",
   },
   state: {
-    title: "RAW KV BROWSER",
+    title: "Raw KV browser",
     blurb:
       "Three-panel view of the key/value store behind every memory, session, retention score, audit row, and access log. Edit JSON in place.",
     bullets: [
@@ -69,7 +69,7 @@ const PANELS: Record<
     launch: "open http://localhost:3114/states",
   },
   traces: {
-    title: "OPENTELEMETRY OUT OF THE BOX",
+    title: "OpenTelemetry out of the box",
     blurb:
       "iii-observability ships with exporter: memory, sampling_ratio: 1.0. Every memory operation emits a trace span + structured log. Swap to OTLP for Jaeger / Honeycomb / Tempo.",
     bullets: [
@@ -95,14 +95,14 @@ export function CommandCenter() {
       aria-labelledby="cc-title"
     >
       <header className="section-head">
-        <span className="section-eyebrow">COMMAND CENTER</span>
+        <span className="section-eyebrow">Command center</span>
         <h2 id="cc-title" className="section-title">
-          TWO UIs.<br />ONE MEMORY RUNTIME.
+          Two UIs.<br />One memory runtime.
         </h2>
         <p className="section-lede">
-          AGENTMEMORY SHIPS A REAL-TIME VIEWER FOR YOUR MEMORIES AND AN
-          ENGINE-LEVEL CONSOLE FOR EVERY FUNCTION, TRIGGER, AND OTEL SPAN.
-          BOTH ARE FIRST-CLASS — INSTALLED INLINE BY THE CLI ON FIRST RUN.
+          agentmemory ships a real-time viewer for your memories and an
+          engine-level console for every function, trigger, and OTel span.
+          Both are first-class — installed inline by the CLI on first run.
         </p>
       </header>
       <div className={styles.tabs} role="tablist" aria-label="Command center">

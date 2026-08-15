@@ -2,7 +2,7 @@
   padding: 112px 0 96px;
 }
 
-/* Featured row: 4 first-party cards */
+/* Featured row: first-party plugin cards */
 .featuredRow {
   max-width: 1440px;
   margin: 0 auto 56px;
@@ -14,10 +14,11 @@
 
 .featured {
   position: relative;
-  background: var(--iron);
-  border: 1px solid var(--charcoal);
+  background: var(--canvas-card);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-card);
   padding: 24px;
-  color: var(--white);
+  color: var(--ink);
   text-decoration: none;
   display: flex;
   flex-direction: column;
@@ -25,27 +26,12 @@
   min-height: 200px;
   transition:
     background 200ms ease,
-    border-color 200ms ease,
-    transform 200ms ease;
+    border-color 200ms ease;
   overflow: hidden;
 }
-.featured::before {
-  content: "";
-  position: absolute;
-  inset: 0 0 auto 0;
-  height: 3px;
-  background: var(--agent-accent, var(--gold));
-  transform: scaleX(0.2);
-  transform-origin: left;
-  transition: transform 240ms ease;
-}
 .featured:hover {
-  background: var(--charcoal);
-  border-color: var(--agent-accent, var(--gold));
-  transform: translateY(-2px);
-}
-.featured:hover::before {
-  transform: scaleX(1);
+  background: var(--canvas-soft);
+  border-color: var(--border-ghost);
 }
 
 .featuredHead {
@@ -54,15 +40,15 @@
   align-items: center;
 }
 .featuredLogo {
-  width: 56px;
-  height: 56px;
+  width: 52px;
+  height: 52px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 10px;
+  border-radius: var(--radius-card);
   overflow: hidden;
-  background: var(--abyss);
-  border: 1px solid var(--charcoal);
+  background: var(--canvas);
+  border: 1px solid var(--hairline);
   flex-shrink: 0;
 }
 .featuredLogo img {
@@ -77,42 +63,41 @@
   min-width: 0;
 }
 .featuredSub {
+  font-family: var(--font-mono);
   font-size: 10px;
-  letter-spacing: 0.96px;
-  color: var(--agent-accent, var(--gold));
+  letter-spacing: 1.2px;
+  color: var(--mute);
   text-transform: uppercase;
-  font-weight: 700;
 }
 .featuredName {
-  font-size: 20px;
-  font-weight: 900;
+  font-size: 18px;
+  font-weight: 500;
   letter-spacing: -0.01em;
-  color: var(--white);
+  color: var(--ink);
 }
 .featuredFrom {
-  font-size: 10.5px;
-  letter-spacing: 0.96px;
-  color: var(--ash);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 1.2px;
+  color: var(--mute);
   text-transform: uppercase;
 }
 .featuredPitch {
   margin: 0;
-  font-size: 12.5px;
-  letter-spacing: 0.12px;
-  color: var(--steel);
-  text-transform: uppercase;
+  font-size: 13px;
+  color: var(--body);
   line-height: 1.55;
 }
 .featuredArrow {
   position: absolute;
   top: 16px;
   right: 20px;
-  font-size: 18px;
-  color: var(--ash);
+  font-size: 16px;
+  color: var(--mute);
   transition: color 180ms ease, transform 180ms ease;
 }
 .featured:hover .featuredArrow {
-  color: var(--agent-accent, var(--gold));
+  color: var(--ink);
   transform: translate(2px, -2px);
 }
 
@@ -135,11 +120,11 @@
 }
 .fadeLeft {
   left: 0;
-  background: linear-gradient(90deg, var(--abyss) 0%, rgba(0, 0, 0, 0) 100%);
+  background: linear-gradient(90deg, var(--canvas) 0%, rgba(10, 10, 10, 0) 100%);
 }
 .fadeRight {
   right: 0;
-  background: linear-gradient(270deg, var(--abyss) 0%, rgba(0, 0, 0, 0) 100%);
+  background: linear-gradient(270deg, var(--canvas) 0%, rgba(10, 10, 10, 0) 100%);
 }
 .marquee {
   display: flex;
@@ -164,10 +149,11 @@
   display: inline-flex;
   align-items: center;
   gap: 12px;
-  padding: 14px 18px;
-  background: var(--iron);
-  border: 1px solid var(--charcoal);
-  color: var(--white);
+  padding: 12px 20px;
+  background: var(--canvas-card);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-pill);
+  color: var(--ink);
   text-decoration: none;
   flex-shrink: 0;
   transition:
@@ -175,15 +161,15 @@
     background 180ms ease;
 }
 .tile:hover {
-  border-color: var(--agent-accent, var(--gold));
-  background: var(--charcoal);
+  border-color: var(--border-ghost);
+  background: var(--canvas-soft);
 }
 .tileLogo {
-  width: 40px;
-  height: 40px;
-  border-radius: 8px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
   overflow: hidden;
-  background: var(--abyss);
+  background: var(--canvas);
   flex-shrink: 0;
   object-fit: cover;
 }
@@ -194,15 +180,15 @@
 }
 .tileName {
   font-size: 13.5px;
-  font-weight: 900;
+  font-weight: 500;
   letter-spacing: -0.01em;
-  color: var(--white);
-  text-transform: uppercase;
+  color: var(--ink);
 }
 .tileFrom {
-  font-size: 10px;
-  letter-spacing: 0.96px;
-  color: var(--ash);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 1px;
+  color: var(--mute);
   text-transform: uppercase;
 }
 

@@ -18,18 +18,18 @@ export async function Hero() {
           ZERO EXTERNAL DATABASES · v{meta.version}
         </div>
         <h1 className={styles.title} id="hero-title">
-          <span className={styles.word}>AGENT</span>
-          <span className={`${styles.word} ${styles.accent}`}>MEMORY</span>
+          <span className={styles.word}>agent</span>
+          <span className={`${styles.word} ${styles.accent}`}>memory</span>
         </h1>
         <p className={styles.lede}>
-          THE MEMORY LAYER YOUR CODING AGENT SHOULD HAVE HAD FROM DAY ONE.
-          CAPTURE EVERY SESSION. RECALL IN MILLISECONDS. RUN ANYWHERE.
+          The memory layer your coding agent should have had from day one.
+          Capture every session. Recall in milliseconds. Run anywhere.
         </p>
         <div className={styles.cta}>
           <HeroNpxCommand />
           <div className={styles.ctaSecondary}>
             <a href="#live" className="btn btn--ghost">
-              SEE IT MOVE
+              See it move
             </a>
             <GitHubStarButton
               repo="rohitg00/agentmemory"
