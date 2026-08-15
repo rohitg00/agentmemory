@@ -81,12 +81,15 @@
     padding: 0 20px;
   }
   .box {
+    grid-template-columns: auto minmax(0, 1fr);
     padding: 18px 16px;
     gap: 10px;
     font-size: 13px;
   }
   .hint {
+    grid-column: 1 / -1;
     font-size: 10px;
     letter-spacing: 0.6px;
+    white-space: normal;
   }
 }
