@@ -1940,7 +1940,10 @@
         html += '<label class="filter-item"><input type="checkbox" checked data-type="' + esc(type) + '"><span class="filter-dot" style="background:' + color + '"></span>' + esc(type) + '</label>';
       });
 
-      html += '<div class="graph-legend"><h3>Legend</h3>';
+      if (state.graph.nodes.length > 0 && state.graph.edges.length === 0) {
+        html += '<div style="margin:10px 0;padding:10px 12px;border:1px solid var(--border-light);background:var(--bg-subtle);font-size:11px;color:var(--ink-muted);line-height:1.5;">Entities extracted, no relations between them yet. Nodes are grouped by kind; edges appear as extraction sees entities acting on each other across more sessions (larger models find them faster).</div>';
+      }
+      html += '<div class="graph-legend" style="display:none"><h3>Legend</h3>';
       var shapeLabels = { rect: '&#9645;', circle: '&#9679;', diamond: '&#9670;', hexagon: '&#11042;' };
       var shownShapes = {};
       Object.keys(NODE_COLORS).forEach(function(type) {
@@ -2000,14 +2003,30 @@
         edgeMap[e.targetNodeId] = (edgeMap[e.targetNodeId] || 0) + 1;
       });
 
+      // With no (or few) edges a pure force layout is a meaningless
+      // scatter. Anchor each type to its own cluster center so the
+      // picture reads as "here is what memory knows, grouped by kind";
+      // once real relations exist the edge springs dominate instead.
+      var types = [];
+      state.graph.nodes.forEach(function(n) {
+        if (types.indexOf(n.type) === -1) types.push(n.type);
+      });
+      var typeCenters = {};
+      types.forEach(function(t, ti) {
+        var a = (2 * Math.PI * ti) / Math.max(types.length, 1) - Math.PI / 2;
+        var cr = types.length > 1 ? Math.min(cw, ch) * 0.28 : 0;
+        typeCenters[t] = { x: Math.cos(a) * cr, y: Math.sin(a) * cr };
+      });
+      graphSim.typeCenters = typeCenters;
+      graphSim.clustered = state.graph.edges.length < state.graph.nodes.length / 2;
+
       graphSim.nodes = state.graph.nodes.map(function(n, i) {
-        var angle = (2 * Math.PI * i) / Math.max(state.graph.nodes.length, 1);
-        var radius = Math.min(cw, ch) * 0.3;
         var deg = edgeMap[n.id] || 0;
+        var c = typeCenters[n.type] || { x: 0, y: 0 };
         return {
           id: n.id, type: n.type, name: n.name, properties: n.properties,
-          x: Math.cos(angle) * radius + (Math.random() - 0.5) * 50,
-          y: Math.sin(angle) * radius + (Math.random() - 0.5) * 50,
+          x: c.x + (Math.random() - 0.5) * 90,
+          y: c.y + (Math.random() - 0.5) * 90,
           vx: 0, vy: 0,
           r: Math.max(8, Math.min(22, 8 + deg * 2.5))
         };
@@ -2228,8 +2247,14 @@
           fx += (dx / dist) * force;
           fy += (dy / dist) * force;
         }
-        fx -= n.x * centerGravity;
-        fy -= n.y * centerGravity;
+        if (graphSim.clustered && graphSim.typeCenters && graphSim.typeCenters[n.type]) {
+          var tc = graphSim.typeCenters[n.type];
+          fx += (tc.x - n.x) * 0.02;
+          fy += (tc.y - n.y) * 0.02;
+        } else {
+          fx -= n.x * centerGravity;
+          fy -= n.y * centerGravity;
+        }
         var nvx = (n.vx + fx) * damping;
         var nvy = (n.vy + fy) * damping;
         // Velocity cap (#563): keep any single node from being launched
@@ -2347,6 +2372,19 @@
 
       var nodeMap = {};
       graphSim.nodes.forEach(function(n) { nodeMap[n.id] = n; });
+
+      if (graphSim.clustered && graphSim.typeCenters) {
+        ctx.save();
+        ctx.font = '600 ' + (11 / graphSim.zoom).toFixed(1) + 'px Inter, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillStyle = isDarkMode() ? 'rgba(255,255,255,0.28)' : 'rgba(0,0,0,0.30)';
+        Object.keys(graphSim.typeCenters).forEach(function(t) {
+          if (state.graph.filters[t] === false) return;
+          var c = graphSim.typeCenters[t];
+          ctx.fillText(t.toUpperCase(), c.x, c.y - 64 / graphSim.zoom);
+        });
+        ctx.restore();
+      }
 
       var searchActive = graphSearchTerm.length > 0;
       var totalVisible = graphSim.nodes.filter(function(n) { return state.graph.filters[n.type]; }).length;
@@ -2500,6 +2538,7 @@
         var showLabel = matchesSearch && !isFocusFaded && (
           isSelected || isHovered ||
           (searchActive && matchesSearch) ||
+          totalVisible <= 30 ||
           (!isDense && graphSim.zoom > labelZoomThreshold) ||
           (isDense && graphSim.zoom > labelZoomThreshold && n.r > 10)
         );
