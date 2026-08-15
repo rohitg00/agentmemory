@@ -6,6 +6,7 @@ import { Primitives } from "@/components/Primitives";
 import { Features } from "@/components/Features";
 import { CommandCenter } from "@/components/CommandCenter";
 import { LiveTerminal } from "@/components/LiveTerminal";
+import { Testimonials } from "@/components/Testimonials";
 import { Agents } from "@/components/Agents";
 import { Install } from "@/components/Install";
 import { Footer } from "@/components/Footer";
@@ -33,6 +34,7 @@ export default function Page() {
         />
         <CommandCenter restEndpoints={meta.restEndpoints} />
         <LiveTerminal mcpTools={meta.mcpTools} hooks={meta.hooks} />
+        <Testimonials />
         <Agents />
         <Install />
       </main>

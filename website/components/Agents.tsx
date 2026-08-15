@@ -84,6 +84,16 @@ const FEATURED: Agent[] = [
     pitch: "Native Memory trait backend (Rust)",
     sub: "NATIVE BACKEND",
   },
+  {
+    id: "opencode",
+    name: "OpenCode",
+    from: "SST",
+    logo: "https://github.com/sst.png",
+    accent: "#F5A623",
+    href: "https://github.com/rohitg00/agentmemory/tree/main/plugin/opencode",
+    pitch: "Capture plugin with per-session project attribution",
+    sub: "NATIVE PLUGIN",
+  },
 ];
 
 const MARQUEE: Agent[] = [
@@ -174,14 +184,6 @@ const MARQUEE: Agent[] = [
     logo: "https://kiro.dev/favicon.ico",
     accent: "#FF9900",
     href: "https://kiro.dev",
-  },
-  {
-    id: "opencode",
-    name: "OpenCode",
-    from: "opencode-ai",
-    logo: "https://github.com/opencode-ai.png",
-    accent: "#22C55E",
-    href: "https://github.com/opencode-ai/opencode",
   },
   {
     id: "roo",
