@@ -31,7 +31,7 @@ const FEATURED: Agent[] = [
     logo: "https://svgl.app/library/github_dark.svg",
     accent: "#24292E",
     href: "https://docs.github.com/copilot/github-copilot-in-the-cli",
-    pitch: "11 hooks + MCP · framed stdio",
+    pitch: "MCP + plugin hooks and skills",
     sub: "NATIVE PLUGIN",
   },
   {
@@ -292,8 +292,9 @@ export function Agents() {
         </h2>
         <p className="section-lede">
           Native plugins for Claude Code, Copilot CLI, Codex CLI, OpenClaw,
-          Hermes, pi, and OpenHuman. Every other MCP client gets it for free.
-          `agentmemory connect &lt;agent&gt;` auto-wires them all.
+          Hermes, pi, and OpenHuman. OpenCode gets a plugin that attributes
+          each session to its own project. Every other MCP client gets it for
+          free. `agentmemory connect &lt;agent&gt;` auto-wires them all.
         </p>
       </header>
 

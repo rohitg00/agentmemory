@@ -13,7 +13,7 @@ const TABS: Array<{ id: Tab; label: string; sub: string }> = [
   { id: "traces", label: "Traces", sub: "OTEL WATERFALL + FLAME" },
 ];
 
-const PANELS: Record<
+function buildPanels(restEndpoints: number): Record<
   Tab,
   {
     title: string;
@@ -23,70 +23,72 @@ const PANELS: Record<
     alt: string;
     launch: string;
   }
-> = {
-  viewer: {
-    title: "Ship-with viewer · port 3113",
-    blurb:
-      "The agentmemory server auto-starts a real-time viewer on port 3113. No install, no config. Everything the server sees, the viewer shows.",
-    bullets: [
-      "LIVE OBSERVATION STREAM · EVERY HOOK AS IT FIRES",
-      "SESSION EXPLORER · REPLAY ANY PAST SESSION",
-      "MEMORY BROWSER · FILTER BY PROJECT / TYPE / CONFIDENCE",
-      "KNOWLEDGE GRAPH VISUALIZATION · FORCE-DIRECTED",
-      "HEALTH DASHBOARD · HEAP / RSS / EVENT LOOP LAG",
-    ],
-    img: "/demo.gif",
-    alt: "agentmemory viewer live demo",
-    launch: "open http://localhost:3113",
-  },
-  console: {
-    title: "iii console · first-class",
-    blurb:
-      "agentmemory runs on the iii engine, so the official iii console gives engine-level visibility: every function call, every worker, every queue, every trace. From v0.9.16 the agentmemory CLI prompts to install iii console alongside the engine. Launch on :3114 so the viewer keeps :3113.",
-    bullets: [
-      "REGISTERED FUNCTIONS · INVOKE ANY DIRECTLY WITH JSON",
-      "121 HTTP ENDPOINTS · REPLAY ANY REST CALL",
-      "WEBSOCKET STREAM MONITOR · WATCH FRAMES LIVE",
-      "OTEL EXPORTER = MEMORY (DEFAULT) · TRACES STAY LOCAL",
-      "NO AUTH · BIND TO 127.0.0.1 ONLY",
-    ],
-    img: "/dashboard.png",
-    alt: "iii console dashboard",
-    launch: "iii-console --port 3114 --engine-port 3111",
-  },
-  state: {
-    title: "Raw KV browser",
-    blurb:
-      "Three-panel view of the key/value store behind every memory, session, retention score, audit row, and access log. Edit JSON in place.",
-    bullets: [
-      "SCOPED NAMESPACES · mem:memories / mem:sessions / mem:retention",
-      "JSON-NATIVE EDIT · NO MIGRATIONS",
-      "AUDIT ROW PER CHANGE · FORENSIC TRAIL",
-      "BACKED BY iii STATE ADAPTERS · IN-MEMORY OR FILE-BASED",
-    ],
-    img: "/states.png",
-    alt: "iii console state browser",
-    launch: "open http://localhost:3114/states",
-  },
-  traces: {
-    title: "OpenTelemetry out of the box",
-    blurb:
-      "iii-observability ships with exporter: memory, sampling_ratio: 1.0. Every memory operation emits a trace span + structured log. Swap to OTLP for Jaeger / Honeycomb / Tempo.",
-    bullets: [
-      "WATERFALL · FLAME · SERVICE BREAKDOWN · TRACE MAP",
-      "FILTER BY TRACE ID · SERVICE · DURATION",
-      "MEMORY SEARCH SPAN TREE · BM25 → VECTOR → GRAPH → RERANK",
-      "SWAP EXPORTER TO OTLP FOR PROD TELEMETRY",
-    ],
-    img: "/traces-waterfall.png",
-    alt: "iii console traces waterfall",
-    launch: "open http://localhost:3114/traces",
-  },
-};
+> {
+  return {
+    viewer: {
+      title: "Ship-with viewer · port 3113",
+      blurb:
+        "The agentmemory server auto-starts a real-time viewer on port 3113. No install, no config. Tabs refresh live as hooks fire, and any past session replays in place.",
+      bullets: [
+        "LIVE OBSERVATION STREAM · EVERY HOOK AS IT FIRES",
+        "SESSION EXPLORER · REPLAY ANY PAST SESSION",
+        "MEMORY BROWSER · FILTER BY PROJECT / TYPE / CONFIDENCE",
+        "KNOWLEDGE GRAPH VISUALIZATION · FORCE-DIRECTED",
+        "HEALTH DASHBOARD · HEAP / RSS / EVENT LOOP LAG",
+      ],
+      img: "/demo.gif",
+      alt: "agentmemory viewer live demo",
+      launch: "open http://localhost:3113",
+    },
+    console: {
+      title: "iii console · first-class",
+      blurb:
+        "agentmemory runs on the iii engine, so the official iii console gives engine-level visibility: every function call, every worker, every queue, every trace. From v0.9.16 the agentmemory CLI prompts to install iii console alongside the engine. Launch on :3114 so the viewer keeps :3113.",
+      bullets: [
+        "REGISTERED FUNCTIONS · INVOKE ANY DIRECTLY WITH JSON",
+        `${restEndpoints} HTTP ENDPOINTS · REPLAY ANY REST CALL`,
+        "WEBSOCKET STREAM MONITOR · WATCH FRAMES LIVE",
+        "OTEL EXPORTER = MEMORY (DEFAULT) · TRACES STAY LOCAL",
+        "NO AUTH · BIND TO 127.0.0.1 ONLY",
+      ],
+      img: "/dashboard.png",
+      alt: "iii console dashboard",
+      launch: "iii-console --port 3114 --engine-port 3111",
+    },
+    state: {
+      title: "Raw KV browser",
+      blurb:
+        "Three-panel view of the key/value store behind every memory, session, retention score, audit row, and access log. Edit JSON in place.",
+      bullets: [
+        "SCOPED NAMESPACES · mem:memories / mem:sessions / mem:retention",
+        "JSON-NATIVE EDIT · NO MIGRATIONS",
+        "AUDIT ROW PER CHANGE · FORENSIC TRAIL",
+        "BACKED BY iii STATE ADAPTERS · IN-MEMORY OR FILE-BASED",
+      ],
+      img: "/states.png",
+      alt: "iii console state browser",
+      launch: "open http://localhost:3114/states",
+    },
+    traces: {
+      title: "OpenTelemetry out of the box",
+      blurb:
+        "iii-observability ships with exporter: memory, sampling_ratio: 1.0. Every memory operation emits a trace span + structured log. Swap to OTLP for any external tracing backend.",
+      bullets: [
+        "WATERFALL · FLAME · SERVICE BREAKDOWN · TRACE MAP",
+        "FILTER BY TRACE ID · SERVICE · DURATION",
+        "MEMORY SEARCH SPAN TREE · BM25 → VECTOR → GRAPH → RERANK",
+        "SWAP EXPORTER TO OTLP FOR PROD TELEMETRY",
+      ],
+      img: "/traces-waterfall.png",
+      alt: "iii console traces waterfall",
+      launch: "open http://localhost:3114/traces",
+    },
+  };
+}
 
-export function CommandCenter() {
+export function CommandCenter({ restEndpoints }: { restEndpoints: number }) {
   const [tab, setTab] = useState<Tab>("viewer");
-  const panel = PANELS[tab];
+  const panel = buildPanels(restEndpoints)[tab];
 
   return (
     <section
@@ -102,7 +104,7 @@ export function CommandCenter() {
         <p className="section-lede">
           agentmemory ships a real-time viewer for your memories and an
           engine-level console for every function, trigger, and OTel span.
-          Both are first-class — installed inline by the CLI on first run.
+          Both are first-class, installed inline by the CLI on first run.
         </p>
       </header>
       <div className={styles.tabs} role="tablist" aria-label="Command center">

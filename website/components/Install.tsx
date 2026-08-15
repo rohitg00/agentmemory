@@ -22,16 +22,16 @@ const SIMPLE: Cmd[] = [
     hint: "RUNS ON :3111 · VIEWER ON :3113",
   },
   {
-    label: "3. SEE SEMANTIC RECALL INSTANTLY",
+    label: "3. RUN THE DEMO",
     cmd: "agentmemory demo",
-    hint: "SEEDS 3 SESSIONS · PROVES HYBRID SEARCH WORKS",
+    hint: "SEEDS 3 SESSIONS · SHOWS HYBRID RECALL ON REAL DATA",
   },
 ];
 
 const NPX_FALLBACK: Cmd = {
-  label: "PREFER ZERO-INSTALL? USE NPX",
+  label: "ZERO-INSTALL PATH: NPX",
   cmd: "npx @agentmemory/agentmemory",
-  hint: "REPLACES STEPS 1+2 · USES NPX CACHE — SEE README FOR CAVEAT",
+  hint: "REPLACES STEPS 1+2 · USES NPX CACHE · SEE README FOR CAVEAT",
 };
 
 function CopyBox({ label, cmd, hint }: Cmd) {
@@ -76,8 +76,10 @@ export function Install() {
           One install.<br />Any agent.
         </h2>
         <p className="section-lede">
-          Runs on your machine. Data stays local. Bring your Claude subscription
-          — or point it at Anthropic, Gemini, MiniMax, or OpenRouter.
+          Runs on your machine. Data stays local. Capture and recall need no
+          LLM key; add one for Anthropic, OpenAI, Gemini, MiniMax, or
+          OpenRouter to activate consolidation, graph extraction, and LLM
+          compression.
         </p>
       </header>
       <div className={styles.cards}>

@@ -403,7 +403,8 @@
 
     .graph-container {
       display: flex;
-      height: calc(100vh - 130px);
+      height: calc(100vh - 178px);
+      min-height: 460px;
       margin: -24px;
       border-top: 1px solid var(--border-light);
     }
@@ -2034,6 +2035,7 @@
       graphSim.edges = state.graph.edges.slice();
       graphSim.running = true;
       graphSim.dragNode = null;
+      graphSim.autoFitPending = true;
 
       setupGraphInteraction(canvas);
       runSimulation();
@@ -2287,6 +2289,10 @@
         totalKineticEnergy += n.vx * n.vx + n.vy * n.vy;
       });
 
+      if (graphSim.autoFitPending && graphSim.tickCount > 45) {
+        graphSim.autoFitPending = false;
+        fitGraphToView();
+      }
       // park the simulation when the layout is quiet to save CPU.
       // Pick up again when a drag/interaction wakes the loop.
       var rmsVelocity = nodes.length > 0 ? Math.sqrt(totalKineticEnergy / nodes.length) : 0;
@@ -2344,6 +2350,27 @@
       }
     }
 
+    function fitGraphToView() {
+      var canvas = graphSim.canvas;
+      if (!canvas || graphSim.nodes.length === 0) return;
+      var w = canvas.width / window.devicePixelRatio;
+      var h = canvas.height / window.devicePixelRatio;
+      var minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+      graphSim.nodes.forEach(function(n) {
+        if (n.x < minX) minX = n.x;
+        if (n.x > maxX) maxX = n.x;
+        if (n.y < minY) minY = n.y;
+        if (n.y > maxY) maxY = n.y;
+      });
+      var pad = 150;
+      var spanX = (maxX - minX) + pad * 2;
+      var spanY = (maxY - minY) + pad * 2;
+      var z = Math.min(w / spanX, h / spanY);
+      graphSim.zoom = Math.max(0.35, Math.min(1.4, z));
+      graphSim.panX = w / 2 - ((minX + maxX) / 2) * graphSim.zoom;
+      graphSim.panY = h / 2 - ((minY + maxY) / 2) * graphSim.zoom;
+    }
+
     function renderGraph() {
       var ctx = graphSim.ctx;
       var canvas = graphSim.canvas;
@@ -2373,7 +2400,7 @@
       var nodeMap = {};
       graphSim.nodes.forEach(function(n) { nodeMap[n.id] = n; });
 
-      if (graphSim.clustered && graphSim.typeCenters) {
+      if (graphSim.clustered && graphSim.typeCenters && graphSim.zoom > 0.55) {
         ctx.save();
         ctx.font = '600 ' + (11 / graphSim.zoom).toFixed(1) + 'px Inter, sans-serif';
         ctx.textAlign = 'center';
@@ -2538,7 +2565,7 @@
         var showLabel = matchesSearch && !isFocusFaded && (
           isSelected || isHovered ||
           (searchActive && matchesSearch) ||
-          totalVisible <= 30 ||
+          (totalVisible <= 30 && graphSim.zoom > 0.5) ||
           (!isDense && graphSim.zoom > labelZoomThreshold) ||
           (isDense && graphSim.zoom > labelZoomThreshold && n.r > 10)
         );

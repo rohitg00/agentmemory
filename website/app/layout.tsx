@@ -17,9 +17,9 @@ const jetbrains = JetBrains_Mono({
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://agentmemory.dev"),
-  title: "agentmemory — persistent memory for AI coding agents",
+  title: "agentmemory: persistent memory for AI coding agents",
   description:
-    "The memory layer your coding agent should have had from day one. 95.2% retrieval R@5. 92% fewer tokens. 0 external databases. Works with every agent.",
+    "Persistent memory for AI coding agents. Capture every session, recall it in the next one. Runs locally with zero external databases. Works with every MCP client.",
   icons: {
     icon: [{ url: "/icon.svg", type: "image/svg+xml" }],
     apple: "/icon.svg",

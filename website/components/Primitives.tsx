@@ -5,19 +5,19 @@ const CARDS = [
     glyph: "01",
     title: "Hooks",
     text:
-      "12 auto-capture hooks piped into every coding agent. Every tool call, every prompt, every stop becomes a compressed observation.",
+      "12 auto-capture hooks piped into every coding agent. Every tool call, every prompt, every stop becomes a compressed observation, stamped with its origin and agent.",
   },
   {
     glyph: "02",
     title: "Recall",
     text:
-      "Triple-stream retrieval — BM25 + vector + knowledge graph. Reranked on device. P50 under 20ms on a laptop.",
+      "Hybrid retrieval on the primary recall path: BM25, vector, and knowledge graph scores ranked together, reranked on device. Superseded versions stay out of results.",
   },
   {
     glyph: "03",
     title: "Consolidate",
     text:
-      "Hourly sweeps compress raw observations into semantic memories. Duplicates merged. Stale rows decayed. Audit row emitted every delete.",
+      "With an LLM provider key, consolidation runs on session stop: raw observations compress into semantic memories, duplicates merge, stale rows decay, audit rows record it all.",
   },
 ];
 
@@ -32,9 +32,9 @@ export function Primitives() {
           No framework tax.
         </h2>
         <p className="section-lede">
-          Built on the iii engine — every memory operation is a worker, a
-          function, or a trigger. No Redis. No Kafka. No Postgres. The entire
-          runtime is one process.
+          Built on the iii engine: every memory operation is a worker, a
+          function, or a trigger. No external databases, queues, or vector
+          stores. The entire runtime is one process.
         </p>
       </header>
       <div className={styles.grid}>

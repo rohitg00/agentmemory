@@ -74,7 +74,7 @@ export function GitHubStarButton({ repo, initialStars }: Props) {
       target="_blank"
       rel="noopener noreferrer"
       className={`btn btn--ghost ${styles.starBtn}`}
-      aria-label={`Star ${repo} on GitHub${stars !== null ? ` — ${stars.toLocaleString()} stars` : ""}`}
+      aria-label={`Star ${repo} on GitHub${stars !== null ? `, ${stars.toLocaleString()} stars` : ""}`}
     >
       <svg
         aria-hidden

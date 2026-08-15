@@ -1,7 +1,6 @@
 import { MemoryGraph } from "./MemoryGraph";
 import { GitHubStarButton } from "./GitHubStarButton";
 import { HeroNpxCommand } from "./HeroNpxCommand";
-import { FeaturedIn } from "./FeaturedIn";
 import { getProjectMeta } from "@/lib/meta";
 import { fetchRepoStats } from "@/lib/github";
 import styles from "./Hero.module.css";
@@ -22,8 +21,9 @@ export async function Hero() {
           <span className={`${styles.word} ${styles.accent}`}>memory</span>
         </h1>
         <p className={styles.lede}>
-          The memory layer your coding agent should have had from day one.
-          Capture every session. Recall in milliseconds. Run anywhere.
+          Give your coding agent a memory that survives the session. Capture
+          every tool call and prompt, recall it in the next conversation, keep
+          everything on your own machine.
         </p>
         <div className={styles.cta}>
           <HeroNpxCommand />
@@ -37,7 +37,6 @@ export async function Hero() {
             />
           </div>
         </div>
-        <FeaturedIn compact />
       </div>
     </section>
   );

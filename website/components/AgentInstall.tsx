@@ -263,7 +263,7 @@ export function AgentInstall() {
 
   return (
     <div className={styles.wrap}>
-      <div className={styles.stepLabel}>3. WIRE UP ANY AGENT</div>
+      <div className={styles.stepLabel}>4. WIRE UP ANY AGENT</div>
       <p className={styles.helper}>
         One MCP JSON fits almost everything. Pick your agent on the left, or
         paste the universal config on the right.
@@ -285,7 +285,7 @@ export function AgentInstall() {
         <div className={styles.snippetCol}>
           <Snippet
             title="UNIVERSAL MCP JSON"
-            hint="WORKS FOR CLAUDE DESKTOP · CURSOR · CLINE · ROO · WINDSURF · GEMINI · WARP · DROID · KIRO · ANTIGRAVITY · QWEN — MERGE INTO EXISTING mcpServers"
+            hint="WORKS FOR CLAUDE DESKTOP · CURSOR · CLINE · ROO · WINDSURF · GEMINI · WARP · DROID · KIRO · ANTIGRAVITY · QWEN · MERGE INTO EXISTING mcpServers"
             body={UNIVERSAL_JSON}
           />
         </div>
@@ -296,19 +296,19 @@ export function AgentInstall() {
         aria-expanded={showMore}
         onClick={() => setShowMore((v) => !v)}
       >
-        {showMore ? "— Hide other shapes" : "+ OpenCode · Cline · Continue · Zed · Droid · Qwen · Antigravity · Kiro · Hermes · OpenClaw · VS Code"}
+        {showMore ? "− Hide other shapes" : "+ OpenCode · Cline · Continue · Zed · Droid · Qwen · Antigravity · Kiro · Hermes · OpenClaw · VS Code"}
       </button>
 
       {showMore && (
         <div className={styles.moreGrid}>
           <Snippet
             title="OPENCODE"
-            hint="opencode.json — different shape (mcp key, command as array)"
+            hint="opencode.json · different shape (mcp key, command as array)"
             body={OPENCODE_JSON}
           />
           <Snippet
             title="VS CODE (mcp.json)"
-            hint=".vscode/mcp.json — uses servers key, not mcpServers"
+            hint=".vscode/mcp.json · uses servers key, not mcpServers"
             body={VSCODE_MCP_JSON}
           />
           <Snippet
@@ -318,12 +318,12 @@ export function AgentInstall() {
           />
           <Snippet
             title="HERMES"
-            hint="integrations/hermes — plugin.yaml"
+            hint="integrations/hermes · plugin.yaml"
             body={HERMES_YAML}
           />
           <Snippet
             title="OPENCLAW"
-            hint="integrations/openclaw — plugin.yaml"
+            hint="integrations/openclaw · plugin.yaml"
             body={OPENCLAW_YAML}
           />
         </div>

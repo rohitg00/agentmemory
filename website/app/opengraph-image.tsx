@@ -1,10 +1,12 @@
 import { ImageResponse } from "next/og";
+import { getProjectMeta } from "@/lib/meta";
 
-export const alt = "agentmemory — persistent memory for AI coding agents";
+export const alt = "agentmemory: persistent memory for AI coding agents";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
 export default function Image() {
+  const meta = getProjectMeta();
   return new ImageResponse(
     (
       <div
@@ -87,12 +89,12 @@ export default function Image() {
           }}
         >
           <div style={{ display: "flex", gap: 10 }}>
-            <span style={{ color: "#ffffff" }}>95.2%</span>
-            <span>RETRIEVAL R@5</span>
+            <span style={{ color: "#ffffff" }}>{meta.mcpTools}</span>
+            <span>MCP TOOLS</span>
           </div>
           <div style={{ display: "flex", gap: 10 }}>
-            <span style={{ color: "#ffffff" }}>92%</span>
-            <span>FEWER TOKENS</span>
+            <span style={{ color: "#ffffff" }}>{meta.restEndpoints}</span>
+            <span>REST ENDPOINTS</span>
           </div>
           <div style={{ display: "flex", gap: 10 }}>
             <span style={{ color: "#ffffff" }}>0</span>

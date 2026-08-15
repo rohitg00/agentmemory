@@ -21,8 +21,8 @@ function buildScript(mcpTools: number, hooks: number): Seg[] {
       t: "typed",
       text: 'memory.recall({ query: "where did we land the retry logic?" })\n',
     },
-    { t: "comment", text: "// triple-stream retrieval: BM25 + vector + graph\n" },
-    { t: "ok", text: "✓ 3 memories · p50 18ms · reranked on device\n\n" },
+    { t: "comment", text: "// hybrid retrieval: BM25 + vector + graph\n" },
+    { t: "ok", text: "✓ 3 memories · reranked on device\n\n" },
     { t: "plain", text: "→ " },
     { t: "val", text: "src/retry.ts:47 · exponentialBackoff(max=5, jitter=true)\n" },
     { t: "plain", text: "→ " },
@@ -37,7 +37,7 @@ function buildScript(mcpTools: number, hooks: number): Seg[] {
     },
     { t: "prompt", text: "$ " },
     { t: "typed", text: "memory.consolidate({ project: 'pay-api' })\n" },
-    { t: "ok", text: "✓ 18 raw observations → 4 semantic memories · audit row emitted\n" },
+    { t: "ok", text: "✓ raw observations → semantic memories · audit rows written\n" },
   ];
 }
 

@@ -9,7 +9,7 @@ const SECTIONS = [
   { href: "#features", label: "Features" },
   { href: "#command-center", label: "Control" },
   { href: "#live", label: "Demo" },
-  { href: "#compare", label: "VS" },
+  { href: "#agents", label: "Agents" },
   { href: "#install", label: "Install" },
   { href: "/docs", label: "Docs" },
 ];
@@ -44,7 +44,7 @@ export async function Nav() {
           href="https://github.com/rohitg00/agentmemory"
           target="_blank"
           rel="noopener"
-          aria-label={`agentmemory on GitHub — ${stats.stars} stars`}
+          aria-label={`agentmemory on GitHub, ${stats.stars} stars`}
         >
           <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden>
             <path
