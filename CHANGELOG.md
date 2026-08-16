@@ -4,7 +4,7 @@ All notable changes to agentmemory will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.9.29] — 2026-08-15
+## [0.9.29] — 2026-08-16
 
 Release wave in two parts. Recall quality: hybrid ranking reaches the primary recall path, lessons get a real index, every record learns where it came from, the knowledge graph populates keyless, and agent scoping threads through all save paths — plus connector parity for pi and Codex, a new DeepSeek Harness connector, current provider model defaults, and a viewer clarity pass. Foundation: the `.env` file now applies everywhere, imports become searchable, consolidation runs on session stop, twelve MCP-only agents get activated on connect, and every capture surface agrees on what "project" means. No breaking changes; read the upgrade notes for behavior changes you will notice.
 
@@ -16,6 +16,10 @@ Release wave in two parts. Recall quality: hybrid ranking reaches the primary re
 - Local embeddings re-download once after the `@huggingface/transformers` migration (different model cache directory). Model IDs are unchanged.
 
 ### Added
+
+- **Two new skills (15 → 17).** `memory-discipline` (reference) codifies the session loop the memory model expects: recall before nontrivial work, save decisions with their reasons at the moment they settle, route corrections into lessons. `/lesson` (invocable) distills a correction into a confidence-weighted rule via `memory_lesson_save`, echoing the saved rule back for veto.
+
+- **Devin support.** New `agentmemory connect devin` adapter wires the MCP entry into Devin CLI's user config, and `--with-hooks` installs six native auto-capture hooks (`SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `Stop`, `SessionEnd`) using Devin's lowercase tool matchers — the capitalized Claude Code matchers Devin also loads never match its tool names, so capture looked wired but never fired. A Devin plugin manifest at `plugin/.devin-plugin/plugin.json` registers all 17 skills as `/agentmemory:<skill>` slash commands plus the MCP server. Hook payloads now resolve the project from `DEVIN_PROJECT_DIR`, and session-start context injection answers each host in its own shape (Devin's `hookSpecificOutput.additionalContext`, Cursor's `additional_context`, Claude Code's raw stdout). Verified against Devin CLI 3000.1.23.
 
 - **Cursor plugin.** Full Cursor Marketplace plugin (`.cursor-plugin/`): 7 native auto-capture hooks (`sessionStart`, `beforeSubmitPrompt`, `preToolUse`, `postToolUse`, `postToolUseFailure`, `stop`, `sessionEnd`), all 17 skills, and the MCP server, with `AGENTMEMORY_URL` / `AGENTMEMORY_SECRET` declared as dashboard-managed plugin variables. Hook scripts accept Cursor's payload dialect (`conversation_id` session fallback, `workspace_roots` project attribution) without changing Claude Code behavior, and context injection answers each host in its own output shape. Cursor's CLI print mode never dispatches `beforeSubmitPrompt`, so session end backfills user prompts from the session transcript; server-side dedup absorbs the re-post where a live hook already captured the prompt. Verified end to end against Cursor 3.13.25, GUI and `cursor-agent` CLI.
 
