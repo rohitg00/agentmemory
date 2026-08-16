@@ -575,7 +575,7 @@ Cela ajoute un bloc idempotent à `~/.codex/hooks.json` qui référence des chem
 <summary><b>OpenClaw (collez ce prompt)</b></summary>
 
 ```text
-Install agentmemory for OpenClaw. Run `npx @agentmemory/agentmemory` in a separate terminal to start the memory server on localhost:3111. Then add this to my OpenClaw MCP config so agentmemory is available with all 51 memory tools:
+Install agentmemory for OpenClaw. Run `npx @agentmemory/agentmemory` in a separate terminal to start the memory server on localhost:3111. Then add this to my OpenClaw MCP config so agentmemory is available with all 54 memory tools:
 
 {
   "mcpServers": {
@@ -600,7 +600,7 @@ Guide complet : [`integrations/openclaw/`](../integrations/openclaw/)
 <summary><b>Hermes Agent (collez ce prompt)</b></summary>
 
 ```text
-Install agentmemory for Hermes. Run `npx @agentmemory/agentmemory` in a separate terminal to start the memory server on localhost:3111. Then add this to ~/.hermes/config.yaml so Hermes can use agentmemory as an MCP server with all 51 memory tools:
+Install agentmemory for Hermes. Run `npx @agentmemory/agentmemory` in a separate terminal to start the memory server on localhost:3111. Then add this to ~/.hermes/config.yaml so Hermes can use agentmemory as an MCP server with all 54 memory tools:
 
 mcp_servers:
   agentmemory:

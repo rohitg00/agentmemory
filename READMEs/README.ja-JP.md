@@ -554,7 +554,7 @@ codex plugin add agentmemory@agentmemory
 
 Codex プラグインは Claude Code プラグインと同じ `plugin/` ディレクトリから出荷されます。以下を登録します:
 
-- `@agentmemory/mcp` を MCP サーバーとして(`AGENTMEMORY_URL` が動作中の agentmemory サーバーを指す場合は 51 ツールすべてをプロキシ、サーバーに到達できない場合はローカルで 7 ツールにフォールバック)
+- `@agentmemory/mcp` を MCP サーバーとして(`AGENTMEMORY_URL` が動作中の agentmemory サーバーを指す場合は 54 ツールすべてをプロキシ、サーバーに到達できない場合はローカルで 7 ツールにフォールバック)
 - 6 つのライフサイクル hooks: `SessionStart`、`UserPromptSubmit`、`PreToolUse`、`PostToolUse`、`PreCompact`、`Stop`
 - 呼び出し可能な 9 つの skills: `/recall`、`/remember`、`/session-history`、`/forget`、`/recap`、`/handoff`、`/lesson`、`/commit-context`、`/commit-history`、さらにエージェントが必要時に読み込む 8 つのリファレンス skills(memory discipline, MCP ツール、REST API、設定、エージェント、フック、アーキテクチャ、skill 執筆ガイド)
 
@@ -576,7 +576,7 @@ agentmemory connect codex --with-hooks
 <summary><b>OpenClaw(このプロンプトを貼り付け)</b></summary>
 
 ```text
-Install agentmemory for OpenClaw. Run `npx @agentmemory/agentmemory` in a separate terminal to start the memory server on localhost:3111. Then add this to my OpenClaw MCP config so agentmemory is available with all 51 memory tools:
+Install agentmemory for OpenClaw. Run `npx @agentmemory/agentmemory` in a separate terminal to start the memory server on localhost:3111. Then add this to my OpenClaw MCP config so agentmemory is available with all 54 memory tools:
 
 {
   "mcpServers": {
@@ -601,7 +601,7 @@ Restart OpenClaw. Verify with `curl http://localhost:3111/agentmemory/health`. O
 <summary><b>Hermes Agent(このプロンプトを貼り付け)</b></summary>
 
 ```text
-Install agentmemory for Hermes. Run `npx @agentmemory/agentmemory` in a separate terminal to start the memory server on localhost:3111. Then add this to ~/.hermes/config.yaml so Hermes can use agentmemory as an MCP server with all 51 memory tools:
+Install agentmemory for Hermes. Run `npx @agentmemory/agentmemory` in a separate terminal to start the memory server on localhost:3111. Then add this to ~/.hermes/config.yaml so Hermes can use agentmemory as an MCP server with all 54 memory tools:
 
 mcp_servers:
   agentmemory:

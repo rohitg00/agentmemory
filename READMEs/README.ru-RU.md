@@ -553,7 +553,7 @@ codex plugin add agentmemory@agentmemory
 
 Плагин Codex поставляется из того же каталога `plugin/`, что и плагин Claude Code. Он регистрирует:
 
-- `@agentmemory/mcp` как MCP-сервер (проксирует все 51 инструмент, когда `AGENTMEMORY_URL` указывает на работающий сервер agentmemory; локально откатывается к 7 инструментам, если сервер недоступен)
+- `@agentmemory/mcp` как MCP-сервер (проксирует все 54 инструмент, когда `AGENTMEMORY_URL` указывает на работающий сервер agentmemory; локально откатывается к 7 инструментам, если сервер недоступен)
 - 6 хуков жизненного цикла: `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PreCompact`, `Stop`
 - 9 вызываемых skills: `/recall`, `/remember`, `/session-history`, `/forget`, `/recap`, `/handoff`, `/lesson`, `/commit-context`, `/commit-history`, плюс 8 справочных skills, которые агент загружает по запросу (memory discipline, инструменты MCP, REST API, конфигурация, агенты, хуки, архитектура и руководство по написанию skills)
 
@@ -575,7 +575,7 @@ agentmemory connect codex --with-hooks
 <summary><b>OpenClaw (вставьте этот промпт)</b></summary>
 
 ```text
-Install agentmemory for OpenClaw. Run `npx @agentmemory/agentmemory` in a separate terminal to start the memory server on localhost:3111. Then add this to my OpenClaw MCP config so agentmemory is available with all 51 memory tools:
+Install agentmemory for OpenClaw. Run `npx @agentmemory/agentmemory` in a separate terminal to start the memory server on localhost:3111. Then add this to my OpenClaw MCP config so agentmemory is available with all 54 memory tools:
 
 {
   "mcpServers": {
@@ -600,7 +600,7 @@ Restart OpenClaw. Verify with `curl http://localhost:3111/agentmemory/health`. O
 <summary><b>Hermes Agent (вставьте этот промпт)</b></summary>
 
 ```text
-Install agentmemory for Hermes. Run `npx @agentmemory/agentmemory` in a separate terminal to start the memory server on localhost:3111. Then add this to ~/.hermes/config.yaml so Hermes can use agentmemory as an MCP server with all 51 memory tools:
+Install agentmemory for Hermes. Run `npx @agentmemory/agentmemory` in a separate terminal to start the memory server on localhost:3111. Then add this to ~/.hermes/config.yaml so Hermes can use agentmemory as an MCP server with all 54 memory tools:
 
 mcp_servers:
   agentmemory:
