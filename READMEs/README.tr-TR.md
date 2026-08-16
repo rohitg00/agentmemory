@@ -169,7 +169,7 @@ agentmemory; hook'ları, MCP'yi veya REST API'yi destekleyen her ajanla çalış
 <td align="center" width="12.5%">
 <a href="https://cursor.com"><img src="https://www.freelogovectors.net/wp-content/uploads/2025/06/cursor-logo-freelogovectors.net_.png" alt="Cursor" width="48" height="48" /></a><br/>
 <strong>Cursor</strong><br/>
-<sub>MCP sunucusu</sub>
+<sub>yerel eklenti + MCP</sub>
 </td>
 <td align="center" width="12.5%">
 <a href="https://github.com/google-gemini/gemini-cli"><img src="https://github.com/google-gemini.png?size=120" alt="Gemini CLI" width="48" height="48" /></a><br/>
@@ -655,7 +655,8 @@ agentmemory girdisi, `mcpServers` şeklini kullanan her host'ta (Cursor, Claude 
 
 | Ajan | Yapılandırma dosyası | Notlar |
 |---|---|---|
-| **Cursor** | `~/.cursor/mcp.json` | `mcpServers` içine birleştirin. Web sitesinde tek tıklamayla deeplink de mevcut. |
+| **Cursor (yalnız MCP)** | `~/.cursor/mcp.json` | `mcpServers` içine birleştirin, veya `agentmemory connect cursor`. Web sitesinde tek tıklamayla deeplink de mevcut. |
+| **Cursor (tam eklenti)** | `.cursor-plugin/` | Cursor Marketplace kaydı (gönderim incelemede) veya Cursor Settings → Plugins → yerel checkout. 7 otomatik yakalama hook'u (sessionStart, beforeSubmitPrompt, preToolUse, postToolUse, postToolUseFailure, stop, sessionEnd) + 17 skill + MCP sunucusunu kaydeder; `AGENTMEMORY_URL` / `AGENTMEMORY_SECRET` Cursor eklenti panosunda yönetilir. Cursor IDE ve `cursor-agent` CLI'de çalışır; CLI print modundaki prompt'lar oturum sonunda transcript'ten geri doldurulur. |
 | **Claude Desktop** | `claude_desktop_config.json` (Application Support) | `mcpServers` içine birleştirin. Düzenlemeden sonra Claude Desktop'ı yeniden başlatın. |
 | **Cline / Roo Code / Kilo Code** | Cline MCP ayarları (Settings UI → MCP Servers → Edit) | Aynı `mcpServers` bloğu. |
 | **Windsurf** | `~/.codeium/windsurf/mcp_config.json` | Aynı `mcpServers` bloğu. |

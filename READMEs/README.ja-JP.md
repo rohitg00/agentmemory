@@ -169,7 +169,7 @@ agentmemory は hooks、MCP、REST API をサポートするあらゆるエー�
 <td align="center" width="12.5%">
 <a href="https://cursor.com"><img src="https://www.freelogovectors.net/wp-content/uploads/2025/06/cursor-logo-freelogovectors.net_.png" alt="Cursor" width="48" height="48" /></a><br/>
 <strong>Cursor</strong><br/>
-<sub>MCP サーバー</sub>
+<sub>ネイティブプラグイン + MCP</sub>
 </td>
 <td align="center" width="12.5%">
 <a href="https://github.com/google-gemini/gemini-cli"><img src="https://github.com/google-gemini.png?size=120" alt="Gemini CLI" width="48" height="48" /></a><br/>
@@ -658,7 +658,8 @@ skills CLI がまだカバーしていない少数のエージェント(Zed v1.3
 
 | エージェント | 設定ファイル | 備考 |
 |---|---|---|
-| **Cursor** | `~/.cursor/mcp.json` | `mcpServers` にマージ。ウェブサイトでワンクリックディープリンクも利用可能。 |
+| **Cursor (MCP のみ)** | `~/.cursor/mcp.json` | `mcpServers` にマージ、または `agentmemory connect cursor`。ウェブサイトでワンクリックディープリンクも利用可能。 |
+| **Cursor (フルプラグイン)** | `.cursor-plugin/` | Cursor Marketplace の掲載(申請レビュー中)、または Cursor Settings → Plugins → ローカルチェックアウト。7 つの自動キャプチャ hooks(sessionStart, beforeSubmitPrompt, preToolUse, postToolUse, postToolUseFailure, stop, sessionEnd)+ 17 の skills + MCP サーバーを登録し、`AGENTMEMORY_URL` / `AGENTMEMORY_SECRET` は Cursor のプラグインダッシュボードで管理します。Cursor IDE と `cursor-agent` CLI の両方で動作。CLI の print モードのプロンプトはセッション終了時にトランスクリプトから補完されます。 |
 | **Claude Desktop** | `claude_desktop_config.json`(Application Support) | `mcpServers` にマージ。編集後 Claude Desktop を再起動。 |
 | **Cline / Roo Code / Kilo Code** | Cline MCP 設定(設定 UI → MCP Servers → Edit) | 同じ `mcpServers` ブロック。 |
 | **Windsurf** | `~/.codeium/windsurf/mcp_config.json` | 同じ `mcpServers` ブロック。 |

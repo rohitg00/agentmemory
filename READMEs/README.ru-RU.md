@@ -169,7 +169,7 @@ agentmemory работает с любым агентом, поддержива�
 <td align="center" width="12.5%">
 <a href="https://cursor.com"><img src="https://www.freelogovectors.net/wp-content/uploads/2025/06/cursor-logo-freelogovectors.net_.png" alt="Cursor" width="48" height="48" /></a><br/>
 <strong>Cursor</strong><br/>
-<sub>MCP-сервер</sub>
+<sub>нативный плагин + MCP</sub>
 </td>
 <td align="center" width="12.5%">
 <a href="https://github.com/google-gemini/gemini-cli"><img src="https://github.com/google-gemini.png?size=120" alt="Gemini CLI" width="48" height="48" /></a><br/>
@@ -657,7 +657,8 @@ npx skills add rohitg00/agentmemory -y -a '*'   # install to every installed age
 
 | Агент | Файл конфигурации | Заметки |
 |---|---|---|
-| **Cursor** | `~/.cursor/mcp.json` | Добавить в `mcpServers`. Также доступен deeplink в один клик на сайте. |
+| **Cursor (только MCP)** | `~/.cursor/mcp.json` | Добавить в `mcpServers`, или `agentmemory connect cursor`. Также доступен deeplink в один клик на сайте. |
+| **Cursor (полный плагин)** | `.cursor-plugin/` | Карточка в Cursor Marketplace (заявка на рассмотрении) или Cursor Settings → Plugins → локальный checkout. Регистрирует 7 hooks автозахвата (sessionStart, beforeSubmitPrompt, preToolUse, postToolUse, postToolUseFailure, stop, sessionEnd) + 17 skills + MCP-сервер; `AGENTMEMORY_URL` / `AGENTMEMORY_SECRET` управляются в панели плагинов Cursor. Работает в Cursor IDE и CLI `cursor-agent`; промпты CLI в режиме print дозаписываются из транскрипта при завершении сессии. |
 | **Claude Desktop** | `claude_desktop_config.json` (Application Support) | Добавить в `mcpServers`. После правки перезапустить Claude Desktop. |
 | **Cline / Roo Code / Kilo Code** | Настройки MCP в Cline (Settings UI → MCP Servers → Edit) | Тот же блок `mcpServers`. |
 | **Windsurf** | `~/.codeium/windsurf/mcp_config.json` | Тот же блок `mcpServers`. |

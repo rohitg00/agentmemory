@@ -169,7 +169,7 @@ agentmemory 相容任何支援 hooks、MCP 或 REST API 的代理。所有代理
 <td align="center" width="12.5%">
 <a href="https://cursor.com"><img src="https://www.freelogovectors.net/wp-content/uploads/2025/06/cursor-logo-freelogovectors.net_.png" alt="Cursor" width="48" height="48" /></a><br/>
 <strong>Cursor</strong><br/>
-<sub>MCP 伺服器</sub>
+<sub>原生外掛 + MCP</sub>
 </td>
 <td align="center" width="12.5%">
 <a href="https://github.com/google-gemini/gemini-cli"><img src="https://github.com/google-gemini.png?size=120" alt="Gemini CLI" width="48" height="48" /></a><br/>
@@ -656,7 +656,8 @@ npx skills add rohitg00/agentmemory -y -a '*'   # 安裝到每個已安裝的代
 
 | 代理 | 設定檔 | 備註 |
 |---|---|---|
-| **Cursor** | `~/.cursor/mcp.json` | 合併到 `mcpServers`。網站上也提供一鍵深層連結。 |
+| **Cursor(僅 MCP)** | `~/.cursor/mcp.json` | 合併到 `mcpServers`,或 `agentmemory connect cursor`。網站上也提供一鍵深層連結。 |
+| **Cursor(完整外掛)** | `.cursor-plugin/` | Cursor Marketplace 條目(提交審核中)或 Cursor Settings → Plugins → 本地 checkout。註冊 7 個自動擷取 hooks(sessionStart, beforeSubmitPrompt, preToolUse, postToolUse, postToolUseFailure, stop, sessionEnd)+ 17 個 skills + MCP 伺服器;`AGENTMEMORY_URL` / `AGENTMEMORY_SECRET` 在 Cursor 外掛面板中管理。Cursor IDE 與 `cursor-agent` CLI 皆可用;CLI print 模式的提示詞會在工作階段結束時從 transcript 回填。 |
 | **Claude Desktop** | `claude_desktop_config.json`(Application Support) | 合併到 `mcpServers`。編輯後重新啟動 Claude Desktop。 |
 | **Cline / Roo Code / Kilo Code** | Cline MCP 設定(設定 UI → MCP Servers → Edit) | 同樣的 `mcpServers` 區塊。 |
 | **Windsurf** | `~/.codeium/windsurf/mcp_config.json` | 同樣的 `mcpServers` 區塊。 |

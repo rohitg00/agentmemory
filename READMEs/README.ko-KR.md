@@ -169,7 +169,7 @@ agentmemory는 hooks, MCP, REST API를 지원하는 모든 에이전트와 호�
 <td align="center" width="12.5%">
 <a href="https://cursor.com"><img src="https://www.freelogovectors.net/wp-content/uploads/2025/06/cursor-logo-freelogovectors.net_.png" alt="Cursor" width="48" height="48" /></a><br/>
 <strong>Cursor</strong><br/>
-<sub>MCP server</sub>
+<sub>네이티브 플러그인 + MCP</sub>
 </td>
 <td align="center" width="12.5%">
 <a href="https://github.com/google-gemini/gemini-cli"><img src="https://github.com/google-gemini.png?size=120" alt="Gemini CLI" width="48" height="48" /></a><br/>
@@ -655,7 +655,8 @@ agentmemory 항목은 `mcpServers` 형태를 사용하는 모든 호스트(Curso
 
 | 에이전트 | 설정 파일 | 비고 |
 |---|---|---|
-| **Cursor** | `~/.cursor/mcp.json` | `mcpServers`에 병합. 웹사이트에서 원클릭 deeplink도 사용 가능. |
+| **Cursor (MCP 전용)** | `~/.cursor/mcp.json` | `mcpServers`에 병합하거나 `agentmemory connect cursor`. 웹사이트에서 원클릭 deeplink도 사용 가능. |
+| **Cursor (전체 플러그인)** | `.cursor-plugin/` | Cursor Marketplace 등록(제출 심사 중) 또는 Cursor Settings → Plugins → 로컬 체크아웃. 자동 캡처 hooks 7개(sessionStart, beforeSubmitPrompt, preToolUse, postToolUse, postToolUseFailure, stop, sessionEnd) + skills 17개 + MCP 서버를 등록하며, `AGENTMEMORY_URL` / `AGENTMEMORY_SECRET`은 Cursor 플러그인 대시보드에서 관리됩니다. Cursor IDE와 `cursor-agent` CLI 모두에서 동작; CLI print 모드의 프롬프트는 세션 종료 시 transcript에서 채워집니다. |
 | **Claude Desktop** | `claude_desktop_config.json` (Application Support) | `mcpServers`에 병합. 편집 후 Claude Desktop 재시작. |
 | **Cline / Roo Code / Kilo Code** | Cline MCP settings (Settings UI → MCP Servers → Edit) | 동일한 `mcpServers` 블록. |
 | **Windsurf** | `~/.codeium/windsurf/mcp_config.json` | 동일한 `mcpServers` 블록. |

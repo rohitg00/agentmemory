@@ -169,7 +169,7 @@ agentmemory किसी भी ऐसे एजेंट के साथ क�
 <td align="center" width="12.5%">
 <a href="https://cursor.com"><img src="https://www.freelogovectors.net/wp-content/uploads/2025/06/cursor-logo-freelogovectors.net_.png" alt="Cursor" width="48" height="48" /></a><br/>
 <strong>Cursor</strong><br/>
-<sub>MCP सर्वर</sub>
+<sub>native plugin + MCP</sub>
 </td>
 <td align="center" width="12.5%">
 <a href="https://github.com/google-gemini/gemini-cli"><img src="https://github.com/google-gemini.png?size=120" alt="Gemini CLI" width="48" height="48" /></a><br/>
@@ -636,7 +636,8 @@ agentmemory entry `mcpServers` shape का उपयोग करने वा�
 
 | एजेंट | Config फाइल | नोट्स |
 |---|---|---|
-| **Cursor** | `~/.cursor/mcp.json` | `mcpServers` में merge करें। Website पर one-click deeplink भी उपलब्ध। |
+| **Cursor (केवल MCP)** | `~/.cursor/mcp.json` | `mcpServers` में merge करें, या `agentmemory connect cursor`। Website पर one-click deeplink भी उपलब्ध। |
+| **Cursor (पूर्ण plugin)** | `.cursor-plugin/` | Cursor Marketplace listing (submission समीक्षा में) या Cursor Settings → Plugins → local checkout। 7 auto-capture hooks (sessionStart, beforeSubmitPrompt, preToolUse, postToolUse, postToolUseFailure, stop, sessionEnd) + 17 skills + MCP server register करता है; `AGENTMEMORY_URL` / `AGENTMEMORY_SECRET` Cursor के plugin dashboard में manage होते हैं। Cursor IDE और `cursor-agent` CLI दोनों में काम करता है; CLI print mode के prompts session end पर transcript से backfill होते हैं। |
 | **Claude Desktop** | `claude_desktop_config.json` (Application Support) | `mcpServers` में merge करें। Edit के बाद Claude Desktop restart करें। |
 | **Cline / Roo Code / Kilo Code** | Cline MCP settings (Settings UI → MCP Servers → Edit) | वही `mcpServers` block। |
 | **Windsurf** | `~/.codeium/windsurf/mcp_config.json` | वही `mcpServers` block। |

@@ -169,7 +169,7 @@ agentmemory funciona con cualquier agente que soporte hooks, MCP o REST API. Tod
 <td align="center" width="12.5%">
 <a href="https://cursor.com"><img src="https://www.freelogovectors.net/wp-content/uploads/2025/06/cursor-logo-freelogovectors.net_.png" alt="Cursor" width="48" height="48" /></a><br/>
 <strong>Cursor</strong><br/>
-<sub>MCP server</sub>
+<sub>plugin nativo + MCP</sub>
 </td>
 <td align="center" width="12.5%">
 <a href="https://github.com/google-gemini/gemini-cli"><img src="https://github.com/google-gemini.png?size=120" alt="Gemini CLI" width="48" height="48" /></a><br/>
@@ -657,7 +657,8 @@ La entrada de agentmemory es el **mismo bloque de servidor MCP** en cada host qu
 
 | Agente | Fichero de configuración | Notas |
 |---|---|---|
-| **Cursor** | `~/.cursor/mcp.json` | Fusiona en `mcpServers`. También hay deeplink de un clic en el sitio web. |
+| **Cursor (solo MCP)** | `~/.cursor/mcp.json` | Fusiona en `mcpServers`, o `agentmemory connect cursor`. También hay deeplink de un clic en el sitio web. |
+| **Cursor (plugin completo)** | `.cursor-plugin/` | Listado en el Cursor Marketplace (envío en revisión) o Cursor Settings → Plugins → checkout local. Registra 7 hooks de captura automática (sessionStart, beforeSubmitPrompt, preToolUse, postToolUse, postToolUseFailure, stop, sessionEnd) + 17 skills + el servidor MCP; `AGENTMEMORY_URL` / `AGENTMEMORY_SECRET` se gestionan en el panel de plugins de Cursor. Funciona en el IDE de Cursor y en la CLI `cursor-agent`; en modo print de la CLI los prompts se recuperan del transcript al cerrar la sesión. |
 | **Claude Desktop** | `claude_desktop_config.json` (Application Support) | Fusiona en `mcpServers`. Reinicia Claude Desktop tras editar. |
 | **Cline / Roo Code / Kilo Code** | Ajustes MCP de Cline (Settings UI → MCP Servers → Edit) | Mismo bloque `mcpServers`. |
 | **Windsurf** | `~/.codeium/windsurf/mcp_config.json` | Mismo bloque `mcpServers`. |

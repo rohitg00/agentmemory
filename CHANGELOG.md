@@ -17,6 +17,8 @@ Release wave in two parts. Recall quality: hybrid ranking reaches the primary re
 
 ### Added
 
+- **Cursor plugin.** Full Cursor Marketplace plugin (`.cursor-plugin/`): 7 native auto-capture hooks (`sessionStart`, `beforeSubmitPrompt`, `preToolUse`, `postToolUse`, `postToolUseFailure`, `stop`, `sessionEnd`), all 17 skills, and the MCP server, with `AGENTMEMORY_URL` / `AGENTMEMORY_SECRET` declared as dashboard-managed plugin variables. Hook scripts accept Cursor's payload dialect (`conversation_id` session fallback, `workspace_roots` project attribution) without changing Claude Code behavior, and context injection answers each host in its own output shape. Cursor's CLI print mode never dispatches `beforeSubmitPrompt`, so session end backfills user prompts from the session transcript; server-side dedup absorbs the re-post where a live hook already captured the prompt. Verified end to end against Cursor 3.13.25, GUI and `cursor-agent` CLI.
+
 - **Write-time provenance on every record.** Each observation and memory carries an immutable origin block (channel `user` / `agent` / `tool` / `import` / `shared`, detail, capturedAt) stamped at capture, save, and import, and inherited through both compression paths. The base for trust-aware retrieval and ingest screening.
 - **`similarTo` advisory hint on save.** `mem::remember` reports a near-miss similarity match (0.4 to 0.7) back to the caller so agents can spot near-duplicates without the write being blocked.
 - **`AGENTMEMORY_LLM_NOTHINK=1`** (opt-in): asks local reasoning models to skip their hidden thinking pass during graph extraction. Extraction runs faster; relation quality can drop slightly. Default behavior unchanged; documented in `.env.example`.
@@ -40,6 +42,8 @@ Release wave in two parts. Recall quality: hybrid ranking reaches the primary re
 - Local embeddings migrate from `@xenova/transformers` to `@huggingface/transformers` v4 with Node 22+ support; CI now tests Node 20, 22, 24, and 26 (#479, #1096)
 
 ### Fixed
+
+- **MCP protocol version negotiation.** The standalone MCP server hardcoded `protocolVersion: "2024-11-05"` and ignored the client's requested version, so hosts that drop that revision disconnected with `-32000` ([#908](https://github.com/rohitg00/agentmemory/issues/908)). `initialize` now echoes any supported revision (`2025-11-25`, `2025-06-18`, `2025-03-26`, `2024-11-05`) and answers with the latest supported otherwise.
 
 - **Hybrid ranking on the primary recall path.** `mem::search` (behind `memory_recall`) now ranks through the full BM25 + vector + graph fusion when the vector index is populated; it was keyword-only while only smart-search got hybrid ranking. Fusion weights normalize per item over the streams that actually ranked it, with an explicit cross-stream agreement bonus, replacing the every-enabled-stream denominator that permanently penalized single-stream hits. Result order is deterministic (score, best rank, id).
 - **Indexed lesson recall.** Lessons get a dedicated in-memory BM25 index built lazily from one KV list and maintained incrementally on save, delete, and decay; recall previously listed and substring-scanned the whole corpus per query. A record cache beside the index takes recall to zero KV round-trips.
