@@ -20,6 +20,12 @@ function resolveProject(cwd) {
 	} catch {}
 	return basename(dir);
 }
+function hookCwd(data) {
+	if (!data || typeof data !== "object") return void 0;
+	if (typeof data.cwd === "string" && data.cwd.trim()) return data.cwd;
+	const roots = data.workspace_roots;
+	if (Array.isArray(roots) && typeof roots[0] === "string" && roots[0].trim()) return roots[0];
+}
 //#endregion
 //#region src/hooks/pre-compact.ts
 function isSdkChildContext(payload) {
@@ -45,8 +51,8 @@ async function main() {
 	}
 	if (!data || typeof data !== "object") return;
 	if (isSdkChildContext(data)) return;
-	const sessionId = data.session_id || data.sessionId || "unknown";
-	const project = resolveProject(data.cwd);
+	const sessionId = data.session_id || data.sessionId || data.conversation_id || "unknown";
+	const project = resolveProject(hookCwd(data));
 	if (process.env["CLAUDE_MEMORY_BRIDGE"] === "true") try {
 		await fetch(`${REST_URL}/agentmemory/claude-bridge/sync`, {
 			method: "POST",

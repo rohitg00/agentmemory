@@ -20,6 +20,12 @@ function resolveProject(cwd) {
 	} catch {}
 	return basename(dir);
 }
+function hookCwd(data) {
+	if (!data || typeof data !== "object") return void 0;
+	if (typeof data.cwd === "string" && data.cwd.trim()) return data.cwd;
+	const roots = data.workspace_roots;
+	if (Array.isArray(roots) && typeof roots[0] === "string" && roots[0].trim()) return roots[0];
+}
 //#endregion
 //#region src/hooks/post-tool-use.ts
 function isSdkChildContext(payload) {
@@ -45,18 +51,19 @@ async function main() {
 	}
 	if (!data || typeof data !== "object") return;
 	if (isSdkChildContext(data)) return;
-	const sessionId = data.session_id || data.sessionId || "unknown";
+	const sessionId = data.session_id || data.sessionId || data.conversation_id || "unknown";
 	const toolName = data.tool_name ?? data.toolName;
 	const toolInput = data.tool_input ?? data.toolArgs;
 	const { imageData, cleanOutput } = extractImageData(toolOutput(data));
+	const cwd = hookCwd(data) || process.cwd();
 	fetch(`${REST_URL}/agentmemory/observe`, {
 		method: "POST",
 		headers: authHeaders(),
 		body: JSON.stringify({
 			hookType: "post_tool_use",
 			sessionId,
-			project: resolveProject(data.cwd),
-			cwd: data.cwd || process.cwd(),
+			project: resolveProject(cwd),
+			cwd,
 			timestamp: (/* @__PURE__ */ new Date()).toISOString(),
 			data: {
 				tool_name: toolName,

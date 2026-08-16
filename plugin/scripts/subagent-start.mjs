@@ -20,6 +20,12 @@ function resolveProject(cwd) {
 	} catch {}
 	return basename(dir);
 }
+function hookCwd(data) {
+	if (!data || typeof data !== "object") return void 0;
+	if (typeof data.cwd === "string" && data.cwd.trim()) return data.cwd;
+	const roots = data.workspace_roots;
+	if (Array.isArray(roots) && typeof roots[0] === "string" && roots[0].trim()) return roots[0];
+}
 //#endregion
 //#region src/hooks/subagent-start.ts
 function isSdkChildContext(payload) {
@@ -46,17 +52,18 @@ async function main() {
 	}
 	if (!data || typeof data !== "object") return;
 	if (isSdkChildContext(data)) return;
-	const sessionId = data.session_id || data.sessionId || "unknown";
+	const sessionId = data.session_id || data.sessionId || data.conversation_id || "unknown";
 	const agentId = data.agent_id || data.agentName;
 	const agentType = data.agent_type || data.agentDisplayName || data.agentName;
+	const cwd = hookCwd(data) || process.cwd();
 	fetch(`${REST_URL}/agentmemory/observe`, {
 		method: "POST",
 		headers: authHeaders(),
 		body: JSON.stringify({
 			hookType: "subagent_start",
 			sessionId,
-			project: resolveProject(data.cwd),
-			cwd: data.cwd || process.cwd(),
+			project: resolveProject(cwd),
+			cwd,
 			timestamp: (/* @__PURE__ */ new Date()).toISOString(),
 			data: {
 				agent_id: agentId,

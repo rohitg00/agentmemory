@@ -1,4 +1,33 @@
 #!/usr/bin/env node
+import { readFileSync } from "node:fs";
+import { execSync } from "node:child_process";
+import { basename } from "node:path";
+//#region src/hooks/_project.ts
+function resolveProject(cwd) {
+	const explicit = process.env["AGENTMEMORY_PROJECT_NAME"];
+	if (explicit && explicit.trim()) return explicit.trim();
+	const dir = cwd && cwd.trim() ? cwd : process.cwd();
+	try {
+		const top = execSync("git rev-parse --show-toplevel", {
+			cwd: dir,
+			stdio: [
+				"ignore",
+				"pipe",
+				"ignore"
+			],
+			timeout: 500
+		}).toString().trim();
+		if (top) return basename(top);
+	} catch {}
+	return basename(dir);
+}
+function hookCwd(data) {
+	if (!data || typeof data !== "object") return void 0;
+	if (typeof data.cwd === "string" && data.cwd.trim()) return data.cwd;
+	const roots = data.workspace_roots;
+	if (Array.isArray(roots) && typeof roots[0] === "string" && roots[0].trim()) return roots[0];
+}
+//#endregion
 //#region src/hooks/session-end.ts
 function isSdkChildContext(payload) {
 	if (process.env["AGENTMEMORY_SDK_CHILD"] === "1") return true;
@@ -12,6 +41,35 @@ function authHeaders() {
 	if (SECRET) h["Authorization"] = `Bearer ${SECRET}`;
 	return h;
 }
+function extractTranscriptPrompts(data) {
+	const path = data.transcript_path;
+	if (typeof path !== "string" || !path.endsWith(".jsonl")) return [];
+	let raw;
+	try {
+		raw = readFileSync(path, "utf-8");
+	} catch {
+		return [];
+	}
+	const prompts = [];
+	for (const line of raw.split("\n")) {
+		if (!line.trim()) continue;
+		let msg;
+		try {
+			msg = JSON.parse(line);
+		} catch {
+			continue;
+		}
+		if (msg.role !== "user") continue;
+		for (const block of msg.message?.content ?? []) {
+			if (block.type !== "text" || typeof block.text !== "string") continue;
+			const m = block.text.match(/<user_query>\n?([\s\S]*?)\n?<\/user_query>/);
+			const text = (m ? m[1] : block.text).trim();
+			if (text) prompts.push(text.slice(0, 8e3));
+		}
+		if (prompts.length >= 50) break;
+	}
+	return prompts;
+}
 async function main() {
 	let input = "";
 	for await (const chunk of process.stdin) input += chunk;
@@ -23,7 +81,25 @@ async function main() {
 	}
 	if (!data || typeof data !== "object") return;
 	if (isSdkChildContext(data)) return;
-	const sessionId = data.session_id || data.sessionId || "unknown";
+	const sessionId = data.session_id || data.sessionId || data.conversation_id || "unknown";
+	const transcriptPrompts = extractTranscriptPrompts(data);
+	if (transcriptPrompts.length > 0) {
+		const cwd = hookCwd(data) || process.cwd();
+		const project = resolveProject(cwd);
+		for (const prompt of transcriptPrompts) fetch(`${REST_URL}/agentmemory/observe`, {
+			method: "POST",
+			headers: authHeaders(),
+			body: JSON.stringify({
+				hookType: "prompt_submit",
+				sessionId,
+				project,
+				cwd,
+				timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+				data: { prompt }
+			}),
+			signal: AbortSignal.timeout(3e3)
+		}).catch(() => {});
+	}
 	fetch(`${REST_URL}/agentmemory/session/end`, {
 		method: "POST",
 		headers: authHeaders(),

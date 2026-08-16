@@ -20,6 +20,12 @@ function resolveProject(cwd) {
 	} catch {}
 	return basename(dir);
 }
+function hookCwd(data) {
+	if (!data || typeof data !== "object") return void 0;
+	if (typeof data.cwd === "string" && data.cwd.trim()) return data.cwd;
+	const roots = data.workspace_roots;
+	if (Array.isArray(roots) && typeof roots[0] === "string" && roots[0].trim()) return roots[0];
+}
 //#endregion
 //#region src/hooks/notification.ts
 function isSdkChildContext(payload) {
@@ -47,16 +53,17 @@ async function main() {
 	if (isSdkChildContext(data)) return;
 	const notificationType = data.notification_type ?? data.notificationType;
 	if (notificationType !== "permission_prompt") return;
-	const rawSessionId = data.session_id ?? data.sessionId;
+	const rawSessionId = data.session_id ?? data.sessionId ?? data.conversation_id;
 	const sessionId = typeof rawSessionId === "string" && rawSessionId.length > 0 ? rawSessionId : "unknown";
+	const cwd = hookCwd(data) || process.cwd();
 	fetch(`${REST_URL}/agentmemory/observe`, {
 		method: "POST",
 		headers: authHeaders(),
 		body: JSON.stringify({
 			hookType: "notification",
 			sessionId,
-			project: resolveProject(data.cwd),
-			cwd: data.cwd || process.cwd(),
+			project: resolveProject(cwd),
+			cwd,
 			timestamp: (/* @__PURE__ */ new Date()).toISOString(),
 			data: {
 				notification_type: notificationType,
