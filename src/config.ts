@@ -269,6 +269,12 @@ export function detectEmbeddingProvider(
   const forced = source["EMBEDDING_PROVIDER"];
   if (forced) return forced;
 
+  // Embedding-specific key beats generic provider auto-detection: it's a
+  // stronger signal of intent than a chat-LLM key that merely shares the
+  // OpenAI wire shape. Without this, "chat on Gemini, embeddings on OpenAI"
+  // silently routes embeddings through the Gemini branch.
+  if (source["OPENAI_EMBEDDING_API_KEY"]) return "openai";
+
   if (source["GEMINI_API_KEY"]) return "gemini";
   if (source["OPENAI_API_KEY"]) return "openai";
   if (source["VOYAGE_API_KEY"]) return "voyage";

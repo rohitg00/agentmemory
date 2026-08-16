@@ -23,7 +23,7 @@ const DEFAULT_MODEL = "text-embedding-3-small";
  * `api-key` header instead of `Authorization: Bearer`.
  *
  * Required env vars:
- *   OPENAI_API_KEY               — API key (fallback for OPENAI_EMBEDDING_API_KEY)
+ *   OPENAI_API_KEY               — Fallback API key when OPENAI_EMBEDDING_API_KEY is unset
  *
  * Optional:
  *   OPENAI_BASE_URL              — base URL without path (default: https://api.openai.com).

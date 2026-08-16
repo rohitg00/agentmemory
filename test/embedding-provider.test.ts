@@ -18,6 +18,11 @@ describe("createEmbeddingProvider", () => {
     delete process.env["COHERE_API_KEY"];
     delete process.env["OPENROUTER_API_KEY"];
     delete process.env["EMBEDDING_PROVIDER"];
+    delete process.env["OPENAI_BASE_URL"];
+    delete process.env["OPENAI_EMBEDDING_API_KEY"];
+    delete process.env["OPENAI_EMBEDDING_BASE_URL"];
+    delete process.env["OPENAI_EMBEDDING_MODEL"];
+    delete process.env["OPENAI_EMBEDDING_DIMENSIONS"];
   });
 
   afterEach(() => {
@@ -49,6 +54,41 @@ describe("createEmbeddingProvider", () => {
     process.env["EMBEDDING_PROVIDER"] = "openai";
     const provider = createEmbeddingProvider();
     expect(provider).toBeInstanceOf(OpenAIEmbeddingProvider);
+  });
+
+  it("uses OPENAI_EMBEDDING_API_KEY in Authorization when both keys are set", async () => {
+    process.env["OPENAI_API_KEY"] = "llm-key";
+    process.env["OPENAI_EMBEDDING_API_KEY"] = "embedding-key";
+    const provider = createEmbeddingProvider();
+    expect(provider).toBeInstanceOf(OpenAIEmbeddingProvider);
+
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({ data: [{ embedding: new Array(1536).fill(0.1) }] }),
+        { status: 200 },
+      ),
+    );
+
+    await provider!.embed("hi");
+    const headers = (fetchSpy.mock.calls[0]![1] as RequestInit).headers as Record<string, string>;
+    expect(headers["Authorization"]).toBe("Bearer embedding-key");
+
+    fetchSpy.mockRestore();
+  });
+
+  it("detects openai when only OPENAI_EMBEDDING_API_KEY is set", () => {
+    process.env["OPENAI_EMBEDDING_API_KEY"] = "embedding-only-key";
+    const provider = createEmbeddingProvider();
+    expect(provider).toBeInstanceOf(OpenAIEmbeddingProvider);
+    expect(provider!.name).toBe("openai");
+  });
+
+  it("OPENAI_EMBEDDING_API_KEY takes precedence over GEMINI_API_KEY for embedding detection", () => {
+    process.env["GEMINI_API_KEY"] = "gemini-chat-key";
+    process.env["OPENAI_EMBEDDING_API_KEY"] = "embedding-key";
+    const provider = createEmbeddingProvider();
+    expect(provider).toBeInstanceOf(OpenAIEmbeddingProvider);
+    expect(provider!.name).toBe("openai");
   });
 });
 
