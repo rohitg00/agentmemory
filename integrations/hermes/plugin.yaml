@@ -1,5 +1,5 @@
 name: agentmemory
-version: 0.8.0
+version: 0.9.29
 description: "Persistent cross-session memory for Hermes Agent via agentmemory. 95.2% retrieval accuracy on LongMemEval."
 author: "Rohit Ghumare"
 homepage: "https://github.com/rohitg00/agentmemory"
