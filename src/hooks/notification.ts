@@ -34,11 +34,10 @@ async function main() {
   const notificationType = data.notification_type ?? data.notificationType;
   if (notificationType !== "permission_prompt") return;
 
-  const rawSessionId = data.session_id ?? data.sessionId ?? data.conversation_id;
-  const sessionId =
-    typeof rawSessionId === "string" && rawSessionId.length > 0
-      ? rawSessionId
-      : "unknown";
+  const rawSessionId = [data.session_id, data.sessionId, data.conversation_id].find(
+    (v) => typeof v === "string" && v.length > 0,
+  );
+  const sessionId = typeof rawSessionId === "string" ? rawSessionId : "unknown";
 
   const cwd = hookCwd(data) || process.cwd();
 

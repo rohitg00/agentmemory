@@ -67,11 +67,12 @@ describe("Cursor plugin hooks config", () => {
     }
   });
 
-  it("every hook command points at an existing built script", () => {
+  it("every hook command resolves from the plugin root to a built script", () => {
     for (const entries of Object.values(hooks.hooks) as Array<
       Array<{ command: string }>
     >) {
       for (const entry of entries) {
+        expect(entry.command).toContain("${CURSOR_PLUGIN_ROOT}/");
         const script = entry.command.match(/plugin\/scripts\/\S+\.mjs/)?.[0];
         expect(script).toBeDefined();
         expect(existsSync(script!)).toBe(true);

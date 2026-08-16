@@ -24,7 +24,9 @@ function hookCwd(data) {
 	if (!data || typeof data !== "object") return void 0;
 	if (typeof data.cwd === "string" && data.cwd.trim()) return data.cwd;
 	const roots = data.workspace_roots;
-	if (Array.isArray(roots) && typeof roots[0] === "string" && roots[0].trim()) return roots[0];
+	if (Array.isArray(roots)) {
+		for (const root of roots) if (typeof root === "string" && root.trim()) return root;
+	}
 }
 //#endregion
 //#region src/hooks/notification.ts
@@ -53,8 +55,12 @@ async function main() {
 	if (isSdkChildContext(data)) return;
 	const notificationType = data.notification_type ?? data.notificationType;
 	if (notificationType !== "permission_prompt") return;
-	const rawSessionId = data.session_id ?? data.sessionId ?? data.conversation_id;
-	const sessionId = typeof rawSessionId === "string" && rawSessionId.length > 0 ? rawSessionId : "unknown";
+	const rawSessionId = [
+		data.session_id,
+		data.sessionId,
+		data.conversation_id
+	].find((v) => typeof v === "string" && v.length > 0);
+	const sessionId = typeof rawSessionId === "string" ? rawSessionId : "unknown";
 	const cwd = hookCwd(data) || process.cwd();
 	fetch(`${REST_URL}/agentmemory/observe`, {
 		method: "POST",

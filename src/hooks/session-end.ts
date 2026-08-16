@@ -40,12 +40,12 @@ function extractTranscriptPrompts(data: Record<string, unknown>): string[] {
     }
     if (msg.role !== "user") continue;
     for (const block of msg.message?.content ?? []) {
+      if (prompts.length >= 50) return prompts;
       if (block.type !== "text" || typeof block.text !== "string") continue;
       const m = block.text.match(/<user_query>\n?([\s\S]*?)\n?<\/user_query>/);
       const text = (m ? m[1] : block.text).trim();
       if (text) prompts.push(text.slice(0, 8000));
     }
-    if (prompts.length >= 50) break;
   }
   return prompts;
 }
@@ -72,21 +72,24 @@ async function main() {
   if (transcriptPrompts.length > 0) {
     const cwd = hookCwd(data) || process.cwd();
     const project = resolveProject(cwd);
-    for (const prompt of transcriptPrompts) {
-      fetch(`${REST_URL}/agentmemory/observe`, {
-        method: "POST",
-        headers: authHeaders(),
-        body: JSON.stringify({
-          hookType: "prompt_submit",
-          sessionId,
-          project,
-          cwd,
-          timestamp: new Date().toISOString(),
-          data: { prompt },
+    const timestamp = new Date().toISOString();
+    await Promise.allSettled(
+      transcriptPrompts.map((prompt) =>
+        fetch(`${REST_URL}/agentmemory/observe`, {
+          method: "POST",
+          headers: authHeaders(),
+          body: JSON.stringify({
+            hookType: "prompt_submit",
+            sessionId,
+            project,
+            cwd,
+            timestamp,
+            data: { prompt },
+          }),
+          signal: AbortSignal.timeout(3000),
         }),
-        signal: AbortSignal.timeout(3000),
-      }).catch(() => {});
-    }
+      ),
+    );
   }
 
   fetch(`${REST_URL}/agentmemory/session/end`, {

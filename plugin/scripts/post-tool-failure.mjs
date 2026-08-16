@@ -24,7 +24,9 @@ function hookCwd(data) {
 	if (!data || typeof data !== "object") return void 0;
 	if (typeof data.cwd === "string" && data.cwd.trim()) return data.cwd;
 	const roots = data.workspace_roots;
-	if (Array.isArray(roots) && typeof roots[0] === "string" && roots[0].trim()) return roots[0];
+	if (Array.isArray(roots)) {
+		for (const root of roots) if (typeof root === "string" && root.trim()) return root;
+	}
 }
 //#endregion
 //#region src/hooks/post-tool-failure.ts

@@ -25,7 +25,9 @@ function hookCwd(data) {
 	if (!data || typeof data !== "object") return void 0;
 	if (typeof data.cwd === "string" && data.cwd.trim()) return data.cwd;
 	const roots = data.workspace_roots;
-	if (Array.isArray(roots) && typeof roots[0] === "string" && roots[0].trim()) return roots[0];
+	if (Array.isArray(roots)) {
+		for (const root of roots) if (typeof root === "string" && root.trim()) return root;
+	}
 }
 //#endregion
 //#region src/hooks/session-end.ts
@@ -61,12 +63,12 @@ function extractTranscriptPrompts(data) {
 		}
 		if (msg.role !== "user") continue;
 		for (const block of msg.message?.content ?? []) {
+			if (prompts.length >= 50) return prompts;
 			if (block.type !== "text" || typeof block.text !== "string") continue;
 			const m = block.text.match(/<user_query>\n?([\s\S]*?)\n?<\/user_query>/);
 			const text = (m ? m[1] : block.text).trim();
 			if (text) prompts.push(text.slice(0, 8e3));
 		}
-		if (prompts.length >= 50) break;
 	}
 	return prompts;
 }
@@ -86,7 +88,8 @@ async function main() {
 	if (transcriptPrompts.length > 0) {
 		const cwd = hookCwd(data) || process.cwd();
 		const project = resolveProject(cwd);
-		for (const prompt of transcriptPrompts) fetch(`${REST_URL}/agentmemory/observe`, {
+		const timestamp = (/* @__PURE__ */ new Date()).toISOString();
+		await Promise.allSettled(transcriptPrompts.map((prompt) => fetch(`${REST_URL}/agentmemory/observe`, {
 			method: "POST",
 			headers: authHeaders(),
 			body: JSON.stringify({
@@ -94,11 +97,11 @@ async function main() {
 				sessionId,
 				project,
 				cwd,
-				timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+				timestamp,
 				data: { prompt }
 			}),
 			signal: AbortSignal.timeout(3e3)
-		}).catch(() => {});
+		})));
 	}
 	fetch(`${REST_URL}/agentmemory/session/end`, {
 		method: "POST",

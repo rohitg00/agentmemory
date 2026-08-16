@@ -96,7 +96,33 @@ describe("session-end transcript prompt backfill", () => {
       expect(p.body.hookType).toBe("prompt_submit");
       expect(p.body.sessionId).toBe("ses_t1");
     }
-    expect(posts.some((p) => p.path.includes("/session/end"))).toBe(true);
+    const endIndex = posts.findIndex((p) => p.path.includes("/session/end"));
+    expect(endIndex).toBeGreaterThanOrEqual(0);
+    for (let i = 0; i < posts.length; i++) {
+      if (posts[i].path.includes("/observe")) expect(i).toBeLessThan(endIndex);
+    }
+  });
+
+  it("caps backfill at 50 prompts even within a single transcript record", async () => {
+    posts.length = 0;
+    const transcript = join(dir, "t-cap.jsonl");
+    const blocks = Array.from({ length: 60 }, (_, i) => ({
+      type: "text",
+      text: `<user_query>\nprompt number ${i}\n</user_query>`,
+    }));
+    writeFileSync(
+      transcript,
+      JSON.stringify({ role: "user", message: { content: blocks } }) + "\n",
+    );
+
+    const code = await runHook({
+      session_id: "ses_cap",
+      hook_event_name: "sessionEnd",
+      reason: "completed",
+      transcript_path: transcript,
+    });
+    expect(code).toBe(0);
+    expect(posts.filter((p) => p.path.includes("/observe"))).toHaveLength(50);
   });
 
   it("skips backfill cleanly when transcript_path is absent or unreadable", async () => {

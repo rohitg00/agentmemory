@@ -3,38 +3,38 @@
   "hooks": {
     "sessionStart": [
       {
-        "command": "node plugin/scripts/session-start.mjs"
+        "command": "node ${CURSOR_PLUGIN_ROOT}/plugin/scripts/session-start.mjs"
       }
     ],
     "beforeSubmitPrompt": [
       {
-        "command": "node plugin/scripts/prompt-submit.mjs"
+        "command": "node ${CURSOR_PLUGIN_ROOT}/plugin/scripts/prompt-submit.mjs"
       }
     ],
     "preToolUse": [
       {
-        "command": "node plugin/scripts/pre-tool-use.mjs",
+        "command": "node ${CURSOR_PLUGIN_ROOT}/plugin/scripts/pre-tool-use.mjs",
         "matcher": "Shell|Read|Write|Grep"
       }
     ],
     "postToolUse": [
       {
-        "command": "node plugin/scripts/post-tool-use.mjs"
+        "command": "node ${CURSOR_PLUGIN_ROOT}/plugin/scripts/post-tool-use.mjs"
       }
     ],
     "postToolUseFailure": [
       {
-        "command": "node plugin/scripts/post-tool-failure.mjs"
+        "command": "node ${CURSOR_PLUGIN_ROOT}/plugin/scripts/post-tool-failure.mjs"
       }
     ],
     "stop": [
       {
-        "command": "node plugin/scripts/stop.mjs"
+        "command": "node ${CURSOR_PLUGIN_ROOT}/plugin/scripts/stop.mjs"
       }
     ],
     "sessionEnd": [
       {
-        "command": "node plugin/scripts/session-end.mjs"
+        "command": "node ${CURSOR_PLUGIN_ROOT}/plugin/scripts/session-end.mjs"
       }
     ]
   }
