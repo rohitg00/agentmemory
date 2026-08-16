@@ -51,6 +51,7 @@ describe("agentmemory connect — dispatcher", () => {
         "codex",
         "continue",
         "cursor",
+    "devin",
         "droid",
         "dsh",
         "gemini-cli",
@@ -65,7 +66,7 @@ describe("agentmemory connect — dispatcher", () => {
         "zed",
       ].sort(),
     );
-    expect(ADAPTERS.length).toBe(20);
+    expect(ADAPTERS.length).toBe(21);
   });
 
   it("every adapter exposes detect() and install()", () => {

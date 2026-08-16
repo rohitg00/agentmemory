@@ -27,6 +27,8 @@ function hookCwd(data) {
 	if (Array.isArray(roots)) {
 		for (const root of roots) if (typeof root === "string" && root.trim()) return root;
 	}
+	const projectDir = process.env["DEVIN_PROJECT_DIR"] || process.env["CLAUDE_PROJECT_DIR"];
+	if (projectDir && projectDir.trim()) return projectDir;
 }
 //#endregion
 //#region src/hooks/post-tool-failure.ts

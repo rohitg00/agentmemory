@@ -169,7 +169,7 @@ agentmemory 相容任何支援 hooks、MCP 或 REST API 的代理。所有代理
 <td align="center" width="12.5%">
 <a href="https://cursor.com"><img src="https://www.freelogovectors.net/wp-content/uploads/2025/06/cursor-logo-freelogovectors.net_.png" alt="Cursor" width="48" height="48" /></a><br/>
 <strong>Cursor</strong><br/>
-<sub>原生外掛 + MCP</sub>
+<sub>MCP 伺服器</sub>
 </td>
 <td align="center" width="12.5%">
 <a href="https://github.com/google-gemini/gemini-cli"><img src="https://github.com/google-gemini.png?size=120" alt="Gemini CLI" width="48" height="48" /></a><br/>
@@ -209,9 +209,9 @@ agentmemory 相容任何支援 hooks、MCP 或 REST API 的代理。所有代理
 <sub>MCP 伺服器</sub>
 </td>
 <td align="center" width="12.5%">
-<a href="https://windsurf.com"><img src="https://exafunction.github.io/public/brand/windsurf-black-symbol.svg?size=120" alt="Windsurf" width="48" height="48" /></a><br/>
-<strong>Windsurf</strong><br/>
-<sub>MCP 伺服器</sub>
+<a href="https://devin.ai"><img src="https://raw.githubusercontent.com/rohitg00/agentmemory/main/website/public/devin.png" alt="Devin" width="48" height="48" /></a><br/>
+<strong>Devin</strong><br/>
+<sub>6 hooks + MCP</sub>
 </td>
 <td align="center" width="12.5%">
 <a href="https://github.com/RooCodeInc/Roo-Code"><img src="https://github.com/RooCodeInc.png?size=120" alt="Roo Code" width="48" height="48" /></a><br/>
@@ -656,15 +656,15 @@ npx skills add rohitg00/agentmemory -y -a '*'   # 安裝到每個已安裝的代
 
 | 代理 | 設定檔 | 備註 |
 |---|---|---|
-| **Cursor(僅 MCP)** | `~/.cursor/mcp.json` | 合併到 `mcpServers`,或 `agentmemory connect cursor`。網站上也提供一鍵深層連結。 |
-| **Cursor(完整外掛)** | `.cursor-plugin/` | Cursor Marketplace 條目(提交審核中)或 Cursor Settings → Plugins → 本地 checkout。註冊 7 個自動擷取 hooks(sessionStart, beforeSubmitPrompt, preToolUse, postToolUse, postToolUseFailure, stop, sessionEnd)+ 17 個 skills + MCP 伺服器;`AGENTMEMORY_URL` / `AGENTMEMORY_SECRET` 在 Cursor 外掛面板中管理。Cursor IDE 與 `cursor-agent` CLI 皆可用;CLI print 模式的提示詞會在工作階段結束時從 transcript 回填。 |
+| **Cursor** | `~/.cursor/mcp.json` | 合併到 `mcpServers`。網站上也提供一鍵深層連結。 |
 | **Claude Desktop** | `claude_desktop_config.json`(Application Support) | 合併到 `mcpServers`。編輯後重新啟動 Claude Desktop。 |
 | **Cline / Roo Code / Kilo Code** | Cline MCP 設定(設定 UI → MCP Servers → Edit) | 同樣的 `mcpServers` 區塊。 |
-| **Windsurf** | `~/.codeium/windsurf/mcp_config.json` | 同樣的 `mcpServers` 區塊。 |
+| **Devin CLI** | `~/.config/devin/config.json` | `agentmemory connect devin` 合併 MCP 條目;`--with-hooks` 再加上六個原生自動擷取 hooks(SessionStart、UserPromptSubmit、PreToolUse、PostToolUse、Stop、SessionEnd),使用 Devin 的小寫工具比對器。用 `devin mcp list` 與 devin 內的 `/hooks` 驗證。 |
+| **Devin(雲端)** | Settings → Connections → MCP servers | 新增自訂 MCP(STDIO):command `npx`、args `-y @agentmemory/mcp@latest`、env `AGENTMEMORY_URL` 指向網路可達的 agentmemory 部署,並設定 `AGENTMEMORY_SECRET`(雲端工作階段無法存取 localhost — 見 [`deploy/`](../deploy/))。 |
 | **Gemini CLI** | `~/.gemini/settings.json` | `gemini mcp add agentmemory npx -y @agentmemory/mcp --scope user`(自動合併)。 |
 | **GitHub Copilot CLI(僅 MCP)** | `~/.copilot/mcp-config.json` | `agentmemory connect copilot-cli` 合併 `mcpServers.agentmemory`;Copilot 在下次啟動或 `/mcp` 時接收。 |
 | **GitHub Copilot CLI(完整外掛)** | Copilot 外掛安裝 | `copilot plugin install rohitg00/agentmemory:plugin` 安裝 GitHub 子目錄中的外掛。 |
-| **OpenClaw** | OpenClaw MCP 設定 | 同樣的 `mcpServers` 區塊,或使用更深的[記憶外掛](../integrations/openclaw/)。 |
+| **OpenClaw** | OpenClaw MCP 設定 | 同樣的 `mcpServers` 區塊。更深:`openclaw plugins install ./integrations/openclaw` 會佔用 OpenClaw 的記憶槽位(自動從 `memory-core` 切換);設定 `plugins.entries.agentmemory.hooks.allowConversationAccess=true`,否則輪次擷取會被靜默封鎖。見 [`integrations/openclaw`](integrations/openclaw/)。 |
 | **Codex CLI(僅 MCP)** | `.codex/config.toml` | TOML 形式:`codex mcp add agentmemory -- npx -y @agentmemory/mcp`,或手動新增 `[mcp_servers.agentmemory]`。 |
 | **Codex CLI(完整外掛)** | Codex 外掛市集 | `codex plugin marketplace add rohitg00/agentmemory` 然後 `codex plugin add agentmemory@agentmemory`。註冊 MCP + 6 個生命週期 hooks(SessionStart、UserPromptSubmit、PreToolUse、PostToolUse、PreCompact、Stop)+ 17 個 skills。在 Codex Desktop 上,直到 [openai/codex#16430](https://github.com/openai/codex/issues/16430) 落地之前,還要執行 `agentmemory connect codex --with-hooks`;那裡的外掛 hooks 目前沒有回應。 |
 | **OpenCode(僅 MCP)** | `opencode.json` | 不同結構:頂層 `mcp` key,command 是陣列:`{"mcp": {"agentmemory": {"type": "local", "command": ["npx", "-y", "@agentmemory/mcp"], "enabled": true}}}`。 |

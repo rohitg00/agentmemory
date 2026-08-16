@@ -169,7 +169,7 @@ agentmemory funciona com qualquer agente que suporte hooks, MCP ou REST API. Tod
 <td align="center" width="12.5%">
 <a href="https://cursor.com"><img src="https://www.freelogovectors.net/wp-content/uploads/2025/06/cursor-logo-freelogovectors.net_.png" alt="Cursor" width="48" height="48" /></a><br/>
 <strong>Cursor</strong><br/>
-<sub>plugin nativo + MCP</sub>
+<sub>MCP server</sub>
 </td>
 <td align="center" width="12.5%">
 <a href="https://github.com/google-gemini/gemini-cli"><img src="https://github.com/google-gemini.png?size=120" alt="Gemini CLI" width="48" height="48" /></a><br/>
@@ -209,9 +209,9 @@ agentmemory funciona com qualquer agente que suporte hooks, MCP ou REST API. Tod
 <sub>MCP server</sub>
 </td>
 <td align="center" width="12.5%">
-<a href="https://windsurf.com"><img src="https://exafunction.github.io/public/brand/windsurf-black-symbol.svg?size=120" alt="Windsurf" width="48" height="48" /></a><br/>
-<strong>Windsurf</strong><br/>
-<sub>MCP server</sub>
+<a href="https://devin.ai"><img src="https://raw.githubusercontent.com/rohitg00/agentmemory/main/website/public/devin.png" alt="Devin" width="48" height="48" /></a><br/>
+<strong>Devin</strong><br/>
+<sub>6 hooks + MCP</sub>
 </td>
 <td align="center" width="12.5%">
 <a href="https://github.com/RooCodeInc/Roo-Code"><img src="https://github.com/RooCodeInc.png?size=120" alt="Roo Code" width="48" height="48" /></a><br/>
@@ -657,21 +657,21 @@ A entrada do agentmemory é o **mesmo bloco de servidor MCP** em todo host que u
 
 | Agente | Arquivo de configuração | Notas |
 |---|---|---|
-| **Cursor (só MCP)** | `~/.cursor/mcp.json` | Mescle em `mcpServers`, ou `agentmemory connect cursor`. Deeplink de um clique também disponível no site. |
-| **Cursor (plugin completo)** | `.cursor-plugin/` | Listagem no Cursor Marketplace (submissão em revisão) ou Cursor Settings → Plugins → checkout local. Registra 7 hooks de captura automática (sessionStart, beforeSubmitPrompt, preToolUse, postToolUse, postToolUseFailure, stop, sessionEnd) + 17 skills + o servidor MCP; `AGENTMEMORY_URL` / `AGENTMEMORY_SECRET` são gerenciados no painel de plugins do Cursor. Funciona no IDE do Cursor e na CLI `cursor-agent`; no modo print da CLI os prompts são recuperados do transcript no fim da sessão. |
+| **Cursor** | `~/.cursor/mcp.json` | Mescle em `mcpServers`. Deeplink de um clique também disponível no site. |
 | **Claude Desktop** | `claude_desktop_config.json` (Application Support) | Mescle em `mcpServers`. Reinicie o Claude Desktop após editar. |
 | **Cline / Roo Code / Kilo Code** | Configurações MCP do Cline (Settings UI → MCP Servers → Edit) | Mesmo bloco `mcpServers`. |
-| **Windsurf** | `~/.codeium/windsurf/mcp_config.json` | Mesmo bloco `mcpServers`. |
+| **Devin CLI** | `~/.config/devin/config.json` | `agentmemory connect devin` mescla a entrada MCP; `--with-hooks` adiciona seis hooks nativos de captura automática (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, Stop, SessionEnd) com os matchers de ferramentas em minúsculas do Devin. Verifique com `devin mcp list` e `/hooks` dentro do devin. |
+| **Devin (nuvem)** | Settings → Connections → MCP servers | Adicione um MCP personalizado (STDIO): command `npx`, args `-y @agentmemory/mcp@latest`, env `AGENTMEMORY_URL` apontando para um deployment de agentmemory acessível pela rede mais `AGENTMEMORY_SECRET` (sessões na nuvem não alcançam localhost — veja [`deploy/`](../deploy/)). |
 | **Gemini CLI** | `~/.gemini/settings.json` | `gemini mcp add agentmemory npx -y @agentmemory/mcp --scope user` (mescla automaticamente). |
 | **GitHub Copilot CLI (somente MCP)** | `~/.copilot/mcp-config.json` | `agentmemory connect copilot-cli` mescla `mcpServers.agentmemory`; o Copilot o reconhece no próximo launch ou via `/mcp`. |
 | **GitHub Copilot CLI (plugin completo)** | Instalação de plugin do Copilot | `copilot plugin install rohitg00/agentmemory:plugin` para o plugin a partir do subdiretório do GitHub. |
-| **OpenClaw** | Configuração MCP do OpenClaw | Mesmo bloco `mcpServers`, ou use o [memory plugin](../integrations/openclaw/) mais profundo. |
+| **OpenClaw** | Configuração MCP do OpenClaw | Mesmo bloco `mcpServers`. Mais profundo: `openclaw plugins install ./integrations/openclaw` reivindica o slot de memória do OpenClaw (alterna automaticamente de `memory-core`); defina `plugins.entries.agentmemory.hooks.allowConversationAccess=true` ou a captura de turnos fica bloqueada silenciosamente. Veja [`integrations/openclaw`](integrations/openclaw/). |
 | **Codex CLI (somente MCP)** | `.codex/config.toml` | Formato TOML: `codex mcp add agentmemory -- npx -y @agentmemory/mcp`, ou adicione `[mcp_servers.agentmemory]` manualmente. |
 | **Codex CLI (plugin completo)** | Marketplace de plugins do Codex | `codex plugin marketplace add rohitg00/agentmemory` e depois `codex plugin add agentmemory@agentmemory`. Registra MCP + 6 hooks de ciclo de vida (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PreCompact, Stop) + 17 skills. No Codex Desktop, rode também `agentmemory connect codex --with-hooks` até que [openai/codex#16430](https://github.com/openai/codex/issues/16430) seja mergeado; os hooks de plugin estão silenciosos lá. |
 | **OpenCode (somente MCP)** | `opencode.json` | Formato diferente: chave `mcp` no topo, comando como array: `{"mcp": {"agentmemory": {"type": "local", "command": ["npx", "-y", "@agentmemory/mcp"], "enabled": true}}}`. |
 | **OpenCode (plugin completo)** | `plugin/opencode/` | 22 hooks de captura automática cobrindo ciclo de vida de sessão, mensagens, tools e erros. A atribuição de projeto é por sessão, então um único processo do OpenCode abrangendo vários repositórios arquiva cada sessão sob o próprio projeto. Dois comandos slash (`/recall`, `/remember`). Copie `plugin/opencode/` para seu workspace do OpenCode e adicione a entrada do plugin em `opencode.json`. Tabela completa de hooks + análise de gaps em [`plugin/opencode/README.md`](../plugin/opencode/README.md). |
 | **pi** | `~/.pi/agent/extensions/agentmemory` | `agentmemory connect pi` instala a extensão empacotada no diretório de auto-descoberta do pi (recall no início do agente, captura no fim do agente, tools `memory_search` / `memory_save` / `memory_health`, `/agentmemory-status`). `/reload` em um pi em execução a reconhece. [`integrations/pi`](../integrations/pi/) também é um pacote pi (`pi install ./integrations/pi` a partir de um checkout). |
-| **Hermes Agent** | `~/.hermes/config.yaml` | Use o [memory provider plugin](../integrations/hermes/) mais profundo com `memory.provider: agentmemory`. |
+| **Hermes Agent** | `~/.hermes/config.yaml` | `cp -r integrations/hermes ~/.hermes/plugins/agentmemory` + `memory.provider: agentmemory` ativa o memory provider de 6 hooks (prefetch, captura de turnos, fim de sessão, pré-compressão, espelhamento do MEMORY.md, bloco de system prompt). Valide com `hermes plugins doctor` e `hermes memory status`. Veja [`integrations/hermes`](integrations/hermes/). |
 | **Qwen Code** | `~/.qwen/settings.json` | `agentmemory connect qwen` escreve o bloco `mcpServers` padrão. O payload dos hooks é compatível em nível de campo com o Claude Code, então os scripts dos 12 hooks existentes funcionam sem modificação; conecte-os via a seção `hooks` do mesmo `settings.json`. |
 | **Antigravity** (substitui o Gemini CLI) | `mcp_config.json` (no diretório User do Antigravity) | `agentmemory connect antigravity` escreve o bloco `mcpServers` padrão. macOS: `~/Library/Application Support/Antigravity/User/`. Linux: `~/.config/Antigravity/User/`. Use após o sunset do Gemini CLI em 2026-06-18. |
 | **Antigravity CLI** (`agy`) | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity-cli`. O CLI `agy` mantém a própria configuração em `~/.gemini/`, separada do Antigravity IDE acima. Passe `--with-hooks` para captura automática nativa via `~/.gemini/config/hooks.json`. |

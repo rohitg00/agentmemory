@@ -169,7 +169,7 @@ agentmemory는 hooks, MCP, REST API를 지원하는 모든 에이전트와 호�
 <td align="center" width="12.5%">
 <a href="https://cursor.com"><img src="https://www.freelogovectors.net/wp-content/uploads/2025/06/cursor-logo-freelogovectors.net_.png" alt="Cursor" width="48" height="48" /></a><br/>
 <strong>Cursor</strong><br/>
-<sub>네이티브 플러그인 + MCP</sub>
+<sub>MCP server</sub>
 </td>
 <td align="center" width="12.5%">
 <a href="https://github.com/google-gemini/gemini-cli"><img src="https://github.com/google-gemini.png?size=120" alt="Gemini CLI" width="48" height="48" /></a><br/>
@@ -209,9 +209,9 @@ agentmemory는 hooks, MCP, REST API를 지원하는 모든 에이전트와 호�
 <sub>MCP server</sub>
 </td>
 <td align="center" width="12.5%">
-<a href="https://windsurf.com"><img src="https://exafunction.github.io/public/brand/windsurf-black-symbol.svg?size=120" alt="Windsurf" width="48" height="48" /></a><br/>
-<strong>Windsurf</strong><br/>
-<sub>MCP server</sub>
+<a href="https://devin.ai"><img src="https://raw.githubusercontent.com/rohitg00/agentmemory/main/website/public/devin.png" alt="Devin" width="48" height="48" /></a><br/>
+<strong>Devin</strong><br/>
+<sub>6 hooks + MCP</sub>
 </td>
 <td align="center" width="12.5%">
 <a href="https://github.com/RooCodeInc/Roo-Code"><img src="https://github.com/RooCodeInc.png?size=120" alt="Roo Code" width="48" height="48" /></a><br/>
@@ -655,21 +655,21 @@ agentmemory 항목은 `mcpServers` 형태를 사용하는 모든 호스트(Curso
 
 | 에이전트 | 설정 파일 | 비고 |
 |---|---|---|
-| **Cursor (MCP 전용)** | `~/.cursor/mcp.json` | `mcpServers`에 병합하거나 `agentmemory connect cursor`. 웹사이트에서 원클릭 deeplink도 사용 가능. |
-| **Cursor (전체 플러그인)** | `.cursor-plugin/` | Cursor Marketplace 등록(제출 심사 중) 또는 Cursor Settings → Plugins → 로컬 체크아웃. 자동 캡처 hooks 7개(sessionStart, beforeSubmitPrompt, preToolUse, postToolUse, postToolUseFailure, stop, sessionEnd) + skills 17개 + MCP 서버를 등록하며, `AGENTMEMORY_URL` / `AGENTMEMORY_SECRET`은 Cursor 플러그인 대시보드에서 관리됩니다. Cursor IDE와 `cursor-agent` CLI 모두에서 동작; CLI print 모드의 프롬프트는 세션 종료 시 transcript에서 채워집니다. |
+| **Cursor** | `~/.cursor/mcp.json` | `mcpServers`에 병합. 웹사이트에서 원클릭 deeplink도 사용 가능. |
 | **Claude Desktop** | `claude_desktop_config.json` (Application Support) | `mcpServers`에 병합. 편집 후 Claude Desktop 재시작. |
 | **Cline / Roo Code / Kilo Code** | Cline MCP settings (Settings UI → MCP Servers → Edit) | 동일한 `mcpServers` 블록. |
-| **Windsurf** | `~/.codeium/windsurf/mcp_config.json` | 동일한 `mcpServers` 블록. |
+| **Devin CLI** | `~/.config/devin/config.json` | `agentmemory connect devin`이 MCP 항목을 병합하고, `--with-hooks`는 Devin의 소문자 tool matcher를 사용하는 6개의 네이티브 자동 캡처 hooks(SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, Stop, SessionEnd)를 추가합니다. `devin mcp list`와 devin 내부의 `/hooks`로 확인하세요. |
+| **Devin (클라우드)** | Settings → Connections → MCP servers | 커스텀 MCP(STDIO) 추가: command `npx`, args `-y @agentmemory/mcp@latest`, env `AGENTMEMORY_URL`을 네트워크로 접근 가능한 agentmemory 배포로 지정하고 `AGENTMEMORY_SECRET` 설정(클라우드 세션은 localhost에 접근할 수 없음 — [`deploy/`](../deploy/) 참고). |
 | **Gemini CLI** | `~/.gemini/settings.json` | `gemini mcp add agentmemory npx -y @agentmemory/mcp --scope user` (자동 병합). |
 | **GitHub Copilot CLI (MCP only)** | `~/.copilot/mcp-config.json` | `agentmemory connect copilot-cli`가 `mcpServers.agentmemory`를 병합. Copilot은 다음 실행 또는 `/mcp`에서 인식. |
 | **GitHub Copilot CLI (full plugin)** | Copilot 플러그인 설치 | GitHub 하위 디렉터리의 플러그인은 `copilot plugin install rohitg00/agentmemory:plugin`. |
-| **OpenClaw** | OpenClaw MCP config | 동일한 `mcpServers` 블록을 사용하거나, 더 깊은 [memory plugin](../integrations/openclaw/)을 사용. |
+| **OpenClaw** | OpenClaw MCP config | 동일한 `mcpServers` 블록. 더 깊게: `openclaw plugins install ./integrations/openclaw`는 OpenClaw의 메모리 슬롯을 차지합니다(`memory-core`에서 자동 전환). `plugins.entries.agentmemory.hooks.allowConversationAccess=true`를 설정하지 않으면 턴 캡처가 조용히 차단됩니다. [`integrations/openclaw`](integrations/openclaw/) 참고. |
 | **Codex CLI (MCP only)** | `.codex/config.toml` | TOML 형식: `codex mcp add agentmemory -- npx -y @agentmemory/mcp`, 또는 `[mcp_servers.agentmemory]`를 수동으로 추가. |
 | **Codex CLI (full plugin)** | Codex 플러그인 마켓플레이스 | `codex plugin marketplace add rohitg00/agentmemory` 후 `codex plugin add agentmemory@agentmemory`. MCP + 6 lifecycle hooks (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PreCompact, Stop) + 17 skills 등록. Codex Desktop에서는 [openai/codex#16430](https://github.com/openai/codex/issues/16430)이 머지될 때까지 `agentmemory connect codex --with-hooks`도 실행해야 합니다. 현재 그곳에서는 플러그인 hooks가 동작하지 않습니다. |
 | **OpenCode (MCP only)** | `opencode.json` | 다른 형식: 최상위 `mcp` 키, 명령은 배열로: `{"mcp": {"agentmemory": {"type": "local", "command": ["npx", "-y", "@agentmemory/mcp"], "enabled": true}}}`. |
 | **OpenCode (full plugin)** | `plugin/opencode/` | 세션 라이프사이클, 메시지, 도구, 오류를 다루는 22개의 자동 캡처 hooks. 프로젝트 어트리뷰션은 세션 단위이므로, 하나의 OpenCode 프로세스가 여러 저장소에 걸쳐 있어도 각 세션은 자기 프로젝트 아래에 기록됩니다. 두 개의 슬래시 명령(`/recall`, `/remember`). `plugin/opencode/`를 OpenCode workspace에 복사한 후 `opencode.json`에 플러그인 항목을 추가하십시오. 전체 hook 표 + gap 분석은 [`plugin/opencode/README.md`](../plugin/opencode/README.md) 참고. |
 | **pi** | `~/.pi/agent/extensions/agentmemory` | `agentmemory connect pi`가 번들된 확장을 pi의 자동 발견 디렉터리에 설치합니다(에이전트 시작 시 리콜, 에이전트 종료 시 캡처, `memory_search` / `memory_save` / `memory_health` 도구, `/agentmemory-status`). 실행 중인 pi에서 `/reload`를 하면 인식됩니다. [`integrations/pi`](../integrations/pi/)는 pi 패키지이기도 합니다(체크아웃에서 `pi install ./integrations/pi`). |
-| **Hermes Agent** | `~/.hermes/config.yaml` | `memory.provider: agentmemory`로 더 깊은 [memory provider plugin](../integrations/hermes/) 사용. |
+| **Hermes Agent** | `~/.hermes/config.yaml` | `cp -r integrations/hermes ~/.hermes/plugins/agentmemory` + `memory.provider: agentmemory`가 6개 hook로 구성된 메모리 프로바이더(프리페치, 턴 캡처, 세션 종료, 사전 압축, MEMORY.md 미러링, 시스템 프롬프트 블록)를 활성화합니다. `hermes plugins doctor`와 `hermes memory status`로 검증하세요. [`integrations/hermes`](integrations/hermes/) 참고. |
 | **Qwen Code** | `~/.qwen/settings.json` | `agentmemory connect qwen`이 표준 `mcpServers` 블록을 기록. Hook 페이로드는 Claude Code와 필드 호환이므로, 기존 12-hook 스크립트가 수정 없이 동작합니다. 동일한 `settings.json`의 `hooks` 섹션에서 연결하십시오. |
 | **Antigravity** (Gemini CLI 대체) | `mcp_config.json` (Antigravity의 User 디렉터리 내) | `agentmemory connect antigravity`가 표준 `mcpServers` 블록을 기록. macOS: `~/Library/Application Support/Antigravity/User/`. Linux: `~/.config/Antigravity/User/`. 2026-06-18 Gemini CLI sunset 이후 사용. |
 | **Antigravity CLI** (`agy`) | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity-cli`. `agy` CLI는 위의 Antigravity IDE와 별도로 `~/.gemini/` 아래에 자체 설정을 유지합니다. `~/.gemini/config/hooks.json`을 통한 네이티브 자동 캡처는 `--with-hooks`를 전달하십시오. |

@@ -28,5 +28,8 @@ export function hookCwd(data: Record<string, unknown> | null | undefined): strin
       if (typeof root === "string" && root.trim()) return root;
     }
   }
+  const projectDir =
+    process.env["DEVIN_PROJECT_DIR"] || process.env["CLAUDE_PROJECT_DIR"];
+  if (projectDir && projectDir.trim()) return projectDir;
   return undefined;
 }

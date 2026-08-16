@@ -169,7 +169,7 @@ agentmemory 兼容任何支持 hooks、MCP 或 REST API 的代理。所有代理
 <td align="center" width="12.5%">
 <a href="https://cursor.com"><img src="https://www.freelogovectors.net/wp-content/uploads/2025/06/cursor-logo-freelogovectors.net_.png" alt="Cursor" width="48" height="48" /></a><br/>
 <strong>Cursor</strong><br/>
-<sub>原生插件 + MCP</sub>
+<sub>MCP 服务器</sub>
 </td>
 <td align="center" width="12.5%">
 <a href="https://github.com/google-gemini/gemini-cli"><img src="https://github.com/google-gemini.png?size=120" alt="Gemini CLI" width="48" height="48" /></a><br/>
@@ -209,9 +209,9 @@ agentmemory 兼容任何支持 hooks、MCP 或 REST API 的代理。所有代理
 <sub>MCP 服务器</sub>
 </td>
 <td align="center" width="12.5%">
-<a href="https://windsurf.com"><img src="https://exafunction.github.io/public/brand/windsurf-black-symbol.svg?size=120" alt="Windsurf" width="48" height="48" /></a><br/>
-<strong>Windsurf</strong><br/>
-<sub>MCP 服务器</sub>
+<a href="https://devin.ai"><img src="https://raw.githubusercontent.com/rohitg00/agentmemory/main/website/public/devin.png" alt="Devin" width="48" height="48" /></a><br/>
+<strong>Devin</strong><br/>
+<sub>6 hooks + MCP</sub>
 </td>
 <td align="center" width="12.5%">
 <a href="https://github.com/RooCodeInc/Roo-Code"><img src="https://github.com/RooCodeInc.png?size=120" alt="Roo Code" width="48" height="48" /></a><br/>
@@ -656,21 +656,21 @@ npx skills add rohitg00/agentmemory -y -a '*'   # 安装到每个已安装的代
 
 | 代理 | 配置文件 | 备注 |
 |---|---|---|
-| **Cursor(仅 MCP)** | `~/.cursor/mcp.json` | 合并到 `mcpServers`,或 `agentmemory connect cursor`。网站上也提供一键深链。 |
-| **Cursor(完整插件)** | `.cursor-plugin/` | Cursor Marketplace 条目(提交审核中)或 Cursor Settings → Plugins → 本地 checkout。注册 7 个自动捕获 hooks(sessionStart, beforeSubmitPrompt, preToolUse, postToolUse, postToolUseFailure, stop, sessionEnd)+ 17 个 skills + MCP 服务器;`AGENTMEMORY_URL` / `AGENTMEMORY_SECRET` 在 Cursor 插件面板中管理。Cursor IDE 和 `cursor-agent` CLI 均可用;CLI print 模式的提示词会在会话结束时从 transcript 回填。 |
+| **Cursor** | `~/.cursor/mcp.json` | 合并到 `mcpServers`。网站上也提供一键深链。 |
 | **Claude Desktop** | `claude_desktop_config.json` (Application Support) | 合并到 `mcpServers`。编辑后重启 Claude Desktop。 |
 | **Cline / Roo Code / Kilo Code** | Cline MCP 设置 (设置 UI → MCP Servers → Edit) | 同样的 `mcpServers` 块。 |
-| **Windsurf** | `~/.codeium/windsurf/mcp_config.json` | 同样的 `mcpServers` 块。 |
+| **Devin CLI** | `~/.config/devin/config.json` | `agentmemory connect devin` 合并 MCP 条目;`--with-hooks` 再加上六个原生自动捕获 hooks(SessionStart、UserPromptSubmit、PreToolUse、PostToolUse、Stop、SessionEnd),使用 Devin 的小写工具匹配器。用 `devin mcp list` 和 devin 内的 `/hooks` 验证。 |
+| **Devin(云端)** | Settings → Connections → MCP servers | 添加自定义 MCP(STDIO):command `npx`,args `-y @agentmemory/mcp@latest`,env `AGENTMEMORY_URL` 指向网络可达的 agentmemory 部署,并设置 `AGENTMEMORY_SECRET`(云端会话无法访问 localhost — 见 [`deploy/`](../deploy/))。 |
 | **Gemini CLI** | `~/.gemini/settings.json` | `gemini mcp add agentmemory npx -y @agentmemory/mcp --scope user`(自动合并)。 |
 | **GitHub Copilot CLI (仅 MCP)** | `~/.copilot/mcp-config.json` | `agentmemory connect copilot-cli` 合并 `mcpServers.agentmemory`;Copilot 在下次启动或 `/mcp` 后接收。 |
 | **GitHub Copilot CLI (完整插件)** | Copilot 插件安装 | `copilot plugin install rohitg00/agentmemory:plugin` 安装 GitHub 子目录中的插件。 |
-| **OpenClaw** | OpenClaw MCP 配置 | 同样的 `mcpServers` 块,或使用更深的[记忆插件](../integrations/openclaw/)。 |
+| **OpenClaw** | OpenClaw MCP 配置 | 同样的 `mcpServers` 块。更深:`openclaw plugins install ./integrations/openclaw` 会占用 OpenClaw 的记忆槽位(自动从 `memory-core` 切换);设置 `plugins.entries.agentmemory.hooks.allowConversationAccess=true`,否则轮次捕获会被静默阻止。见 [`integrations/openclaw`](integrations/openclaw/)。 |
 | **Codex CLI (仅 MCP)** | `.codex/config.toml` | TOML 形式:`codex mcp add agentmemory -- npx -y @agentmemory/mcp`,或手动添加 `[mcp_servers.agentmemory]`。 |
 | **Codex CLI (完整插件)** | Codex 插件市场 | `codex plugin marketplace add rohitg00/agentmemory` 然后 `codex plugin add agentmemory@agentmemory`。注册 MCP + 6 个生命周期 hooks(SessionStart、UserPromptSubmit、PreToolUse、PostToolUse、PreCompact、Stop)+ 17 个 skills。在 Codex Desktop 上,直到 [openai/codex#16430](https://github.com/openai/codex/issues/16430) 落地之前,还要运行 `agentmemory connect codex --with-hooks`;那里的插件 hooks 当前无响应。 |
 | **OpenCode (仅 MCP)** | `opencode.json` | 不同结构:顶层 `mcp` key,command 是数组:`{"mcp": {"agentmemory": {"type": "local", "command": ["npx", "-y", "@agentmemory/mcp"], "enabled": true}}}`。 |
 | **OpenCode (完整插件)** | `plugin/opencode/` | 22 个自动捕获 hooks,覆盖会话生命周期、消息、工具、错误。项目归属按会话进行,因此一个跨多个仓库的 OpenCode 进程会把每个会话归档到各自的项目下。两个斜杠命令(`/recall`、`/remember`)。将 `plugin/opencode/` 复制到你的 OpenCode 工作空间并把插件条目添加到 `opencode.json`。完整 hook 表和差异分析见 [`plugin/opencode/README.md`](../plugin/opencode/README.md)。 |
 | **pi** | `~/.pi/agent/extensions/agentmemory` | `agentmemory connect pi` 把捆绑扩展安装到 pi 的自动发现目录(代理启动时召回、代理结束时捕获、`memory_search` / `memory_save` / `memory_health` 工具、`/agentmemory-status`)。在运行中的 pi 里执行 `/reload` 即可加载。[`integrations/pi`](../integrations/pi/) 也是一个 pi 包(从检出的仓库运行 `pi install ./integrations/pi`)。 |
-| **Hermes Agent** | `~/.hermes/config.yaml` | 使用更深的[记忆提供者插件](../integrations/hermes/),设置 `memory.provider: agentmemory`。 |
+| **Hermes Agent** | `~/.hermes/config.yaml` | `cp -r integrations/hermes ~/.hermes/plugins/agentmemory` + `memory.provider: agentmemory` 启用 6 个 hook 的记忆提供者(预取、轮次捕获、会话结束、压缩前、MEMORY.md 镜像、系统提示词块)。用 `hermes plugins doctor` 和 `hermes memory status` 验证。见 [`integrations/hermes`](integrations/hermes/)。 |
 | **Qwen Code** | `~/.qwen/settings.json` | `agentmemory connect qwen` 会写入标准的 `mcpServers` 块。Hook 负载与 Claude Code 字段兼容,因此现有的 12 hook 脚本无需修改即可工作;通过同一 `settings.json` 的 `hooks` 段连接它们。 |
 | **Antigravity** (替换 Gemini CLI) | `mcp_config.json`(在 Antigravity 的 User 目录中) | `agentmemory connect antigravity` 会写入标准的 `mcpServers` 块。macOS: `~/Library/Application Support/Antigravity/User/`。Linux: `~/.config/Antigravity/User/`。在 2026-06-18 Gemini CLI 停服后使用。 |
 | **Antigravity CLI** (`agy`) | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity-cli`。`agy` CLI 在 `~/.gemini/` 下保有自己的配置,与上面的 Antigravity IDE 分开。传 `--with-hooks` 通过 `~/.gemini/config/hooks.json` 获得原生自动捕获。 |

@@ -34,6 +34,24 @@ function authHeaders(): Record<string, string> {
   return h;
 }
 
+function contextPayload(data: Record<string, unknown>, context: string): string {
+  if (
+    typeof data.cursor_version === "string" ||
+    data.hook_event_name === "sessionStart"
+  ) {
+    return JSON.stringify({ additional_context: context });
+  }
+  if (process.env["DEVIN_PROJECT_DIR"] || data.prompt_id !== undefined) {
+    return JSON.stringify({
+      hookSpecificOutput: {
+        hookEventName: "SessionStart",
+        additionalContext: context,
+      },
+    });
+  }
+  return context;
+}
+
 async function main() {
   let input = "";
   for await (const chunk of process.stdin) {
@@ -82,13 +100,7 @@ async function main() {
     if (res.ok) {
       const result = (await res.json()) as { context?: string };
       if (result.context) {
-        const isCursor =
-          typeof data.cursor_version === "string" || data.hook_event_name === "sessionStart";
-        if (isCursor) {
-          process.stdout.write(JSON.stringify({ additional_context: result.context }));
-        } else {
-          process.stdout.write(result.context);
-        }
+        process.stdout.write(contextPayload(data, result.context));
       }
     }
   } catch {

@@ -169,7 +169,7 @@ agentmemory; hook'ları, MCP'yi veya REST API'yi destekleyen her ajanla çalış
 <td align="center" width="12.5%">
 <a href="https://cursor.com"><img src="https://www.freelogovectors.net/wp-content/uploads/2025/06/cursor-logo-freelogovectors.net_.png" alt="Cursor" width="48" height="48" /></a><br/>
 <strong>Cursor</strong><br/>
-<sub>yerel eklenti + MCP</sub>
+<sub>MCP sunucusu</sub>
 </td>
 <td align="center" width="12.5%">
 <a href="https://github.com/google-gemini/gemini-cli"><img src="https://github.com/google-gemini.png?size=120" alt="Gemini CLI" width="48" height="48" /></a><br/>
@@ -209,9 +209,9 @@ agentmemory; hook'ları, MCP'yi veya REST API'yi destekleyen her ajanla çalış
 <sub>MCP sunucusu</sub>
 </td>
 <td align="center" width="12.5%">
-<a href="https://windsurf.com"><img src="https://exafunction.github.io/public/brand/windsurf-black-symbol.svg?size=120" alt="Windsurf" width="48" height="48" /></a><br/>
-<strong>Windsurf</strong><br/>
-<sub>MCP sunucusu</sub>
+<a href="https://devin.ai"><img src="https://raw.githubusercontent.com/rohitg00/agentmemory/main/website/public/devin.png" alt="Devin" width="48" height="48" /></a><br/>
+<strong>Devin</strong><br/>
+<sub>6 hooks + MCP</sub>
 </td>
 <td align="center" width="12.5%">
 <a href="https://github.com/RooCodeInc/Roo-Code"><img src="https://github.com/RooCodeInc.png?size=120" alt="Roo Code" width="48" height="48" /></a><br/>
@@ -655,21 +655,21 @@ agentmemory girdisi, `mcpServers` şeklini kullanan her host'ta (Cursor, Claude 
 
 | Ajan | Yapılandırma dosyası | Notlar |
 |---|---|---|
-| **Cursor (yalnız MCP)** | `~/.cursor/mcp.json` | `mcpServers` içine birleştirin, veya `agentmemory connect cursor`. Web sitesinde tek tıklamayla deeplink de mevcut. |
-| **Cursor (tam eklenti)** | `.cursor-plugin/` | Cursor Marketplace kaydı (gönderim incelemede) veya Cursor Settings → Plugins → yerel checkout. 7 otomatik yakalama hook'u (sessionStart, beforeSubmitPrompt, preToolUse, postToolUse, postToolUseFailure, stop, sessionEnd) + 17 skill + MCP sunucusunu kaydeder; `AGENTMEMORY_URL` / `AGENTMEMORY_SECRET` Cursor eklenti panosunda yönetilir. Cursor IDE ve `cursor-agent` CLI'de çalışır; CLI print modundaki prompt'lar oturum sonunda transcript'ten geri doldurulur. |
+| **Cursor** | `~/.cursor/mcp.json` | `mcpServers` içine birleştirin. Web sitesinde tek tıklamayla deeplink de mevcut. |
 | **Claude Desktop** | `claude_desktop_config.json` (Application Support) | `mcpServers` içine birleştirin. Düzenlemeden sonra Claude Desktop'ı yeniden başlatın. |
 | **Cline / Roo Code / Kilo Code** | Cline MCP ayarları (Settings UI → MCP Servers → Edit) | Aynı `mcpServers` bloğu. |
-| **Windsurf** | `~/.codeium/windsurf/mcp_config.json` | Aynı `mcpServers` bloğu. |
+| **Devin CLI** | `~/.config/devin/config.json` | `agentmemory connect devin` MCP girdisini birleştirir; `--with-hooks` Devin'in küçük harfli araç matcher'larıyla altı yerel otomatik yakalama hook'u (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, Stop, SessionEnd) ekler. `devin mcp list` ve devin içinde `/hooks` ile doğrulayın. |
+| **Devin (bulut)** | Settings → Connections → MCP servers | Özel MCP (STDIO) ekleyin: command `npx`, args `-y @agentmemory/mcp@latest`, env `AGENTMEMORY_URL` ağdan erişilebilir bir agentmemory dağıtımına ve `AGENTMEMORY_SECRET` (bulut oturumları localhost'a erişemez — bkz. [`deploy/`](../deploy/)). |
 | **Gemini CLI** | `~/.gemini/settings.json` | `gemini mcp add agentmemory npx -y @agentmemory/mcp --scope user` (otomatik birleştirir). |
 | **GitHub Copilot CLI (yalnız MCP)** | `~/.copilot/mcp-config.json` | `agentmemory connect copilot-cli` `mcpServers.agentmemory`'yi birleştirir; Copilot bunu bir sonraki başlatmada veya `/mcp` ile alır. |
 | **GitHub Copilot CLI (tam eklenti)** | Copilot eklenti kurulumu | GitHub alt dizinindeki eklenti için `copilot plugin install rohitg00/agentmemory:plugin`. |
-| **OpenClaw** | OpenClaw MCP yapılandırması | Aynı `mcpServers` bloğu veya daha derin [bellek eklentisi](../integrations/openclaw/) kullanın. |
+| **OpenClaw** | OpenClaw MCP yapılandırması | Aynı `mcpServers` bloğu. Daha derin: `openclaw plugins install ./integrations/openclaw` OpenClaw'ın bellek slot'unu devralır (`memory-core`'dan otomatik geçiş yapar); `plugins.entries.agentmemory.hooks.allowConversationAccess=true` ayarlayın, yoksa tur yakalama sessizce engellenir. Bkz. [`integrations/openclaw`](integrations/openclaw/). |
 | **Codex CLI (yalnız MCP)** | `.codex/config.toml` | TOML şekli: `codex mcp add agentmemory -- npx -y @agentmemory/mcp` veya manuel olarak `[mcp_servers.agentmemory]` ekleyin. |
 | **Codex CLI (tam eklenti)** | Codex eklenti marketplace | `codex plugin marketplace add rohitg00/agentmemory` ardından `codex plugin add agentmemory@agentmemory`. MCP + 6 yaşam döngüsü hook'u (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PreCompact, Stop) + 17 skill kaydeder. Codex Desktop'ta, [openai/codex#16430](https://github.com/openai/codex/issues/16430) inene kadar `agentmemory connect codex --with-hooks` da çalıştırın; eklenti hook'ları şu anda orada sessiz. |
 | **OpenCode (yalnız MCP)** | `opencode.json` | Farklı şekil: üst seviye `mcp` anahtarı, komut dizi olarak: `{"mcp": {"agentmemory": {"type": "local", "command": ["npx", "-y", "@agentmemory/mcp"], "enabled": true}}}`. |
 | **OpenCode (tam eklenti)** | `plugin/opencode/` | Oturum yaşam döngüsü, mesajlar, araçlar, hataları kapsayan 22 otomatik yakalama hook'u. Proje ataması oturum başınadır; bu yüzden birden çok depoya yayılan tek bir OpenCode süreci her oturumu kendi projesi altına dosyalar. İki slash komut (`/recall`, `/remember`). `plugin/opencode/`'u OpenCode çalışma alanınıza kopyalayın ve eklenti girdisini `opencode.json`'a ekleyin. Tam hook tablosu + gap analizi için [`plugin/opencode/README.md`](../plugin/opencode/README.md) bakın. |
 | **pi** | `~/.pi/agent/extensions/agentmemory` | `agentmemory connect pi` paketli uzantıyı pi'nin otomatik keşif dizinine kurar (ajan başlangıcında recall, ajan bitişinde yakalama, `memory_search` / `memory_save` / `memory_health` tool'ları, `/agentmemory-status`). Çalışan bir pi'de `/reload` bunu alır. [`integrations/pi`](../integrations/pi/) aynı zamanda bir pi paketidir (bir checkout içinden `pi install ./integrations/pi`). |
-| **Hermes Agent** | `~/.hermes/config.yaml` | Daha derin [bellek sağlayıcı eklentisi](../integrations/hermes/)'ni `memory.provider: agentmemory` ile kullanın. |
+| **Hermes Agent** | `~/.hermes/config.yaml` | `cp -r integrations/hermes ~/.hermes/plugins/agentmemory` + `memory.provider: agentmemory`, 6 hook'lu bellek sağlayıcısını etkinleştirir (ön yükleme, tur yakalama, oturum sonu, ön sıkıştırma, MEMORY.md yansıtma, sistem promptu bloğu). `hermes plugins doctor` ve `hermes memory status` ile doğrulayın. Bkz. [`integrations/hermes`](integrations/hermes/). |
 | **Qwen Code** | `~/.qwen/settings.json` | `agentmemory connect qwen` standart `mcpServers` bloğunu yazar. Hook yükü Claude Code ile alan-uyumludur, bu yüzden mevcut 12 hook scripti değişiklik yapmadan çalışır; aynı `settings.json`'daki `hooks` bölümü üzerinden bağlayın. |
 | **Antigravity** (Gemini CLI'nin yerini alır) | `mcp_config.json` (Antigravity'nin User dizininde) | `agentmemory connect antigravity` standart `mcpServers` bloğunu yazar. macOS: `~/Library/Application Support/Antigravity/User/`. Linux: `~/.config/Antigravity/User/`. 2026-06-18 Gemini CLI sonlandırılması sonrasında kullanın. |
 | **Antigravity CLI** (`agy`) | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity-cli`. `agy` CLI'si kendi yapılandırmasını, yukarıdaki Antigravity IDE'den ayrı olarak `~/.gemini/` altında tutar. `~/.gemini/config/hooks.json` üzerinden yerel otomatik yakalama için `--with-hooks` geçin. |

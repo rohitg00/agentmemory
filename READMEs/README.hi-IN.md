@@ -169,7 +169,7 @@ agentmemory किसी भी ऐसे एजेंट के साथ क�
 <td align="center" width="12.5%">
 <a href="https://cursor.com"><img src="https://www.freelogovectors.net/wp-content/uploads/2025/06/cursor-logo-freelogovectors.net_.png" alt="Cursor" width="48" height="48" /></a><br/>
 <strong>Cursor</strong><br/>
-<sub>native plugin + MCP</sub>
+<sub>MCP सर्वर</sub>
 </td>
 <td align="center" width="12.5%">
 <a href="https://github.com/google-gemini/gemini-cli"><img src="https://github.com/google-gemini.png?size=120" alt="Gemini CLI" width="48" height="48" /></a><br/>
@@ -209,9 +209,9 @@ agentmemory किसी भी ऐसे एजेंट के साथ क�
 <sub>MCP सर्वर</sub>
 </td>
 <td align="center" width="12.5%">
-<a href="https://windsurf.com"><img src="https://exafunction.github.io/public/brand/windsurf-black-symbol.svg?size=120" alt="Windsurf" width="48" height="48" /></a><br/>
-<strong>Windsurf</strong><br/>
-<sub>MCP सर्वर</sub>
+<a href="https://devin.ai"><img src="https://raw.githubusercontent.com/rohitg00/agentmemory/main/website/public/devin.png" alt="Devin" width="48" height="48" /></a><br/>
+<strong>Devin</strong><br/>
+<sub>6 hooks + MCP</sub>
 </td>
 <td align="center" width="12.5%">
 <a href="https://github.com/RooCodeInc/Roo-Code"><img src="https://github.com/RooCodeInc.png?size=120" alt="Roo Code" width="48" height="48" /></a><br/>
@@ -636,21 +636,21 @@ agentmemory entry `mcpServers` shape का उपयोग करने वा�
 
 | एजेंट | Config फाइल | नोट्स |
 |---|---|---|
-| **Cursor (केवल MCP)** | `~/.cursor/mcp.json` | `mcpServers` में merge करें, या `agentmemory connect cursor`। Website पर one-click deeplink भी उपलब्ध। |
-| **Cursor (पूर्ण plugin)** | `.cursor-plugin/` | Cursor Marketplace listing (submission समीक्षा में) या Cursor Settings → Plugins → local checkout। 7 auto-capture hooks (sessionStart, beforeSubmitPrompt, preToolUse, postToolUse, postToolUseFailure, stop, sessionEnd) + 17 skills + MCP server register करता है; `AGENTMEMORY_URL` / `AGENTMEMORY_SECRET` Cursor के plugin dashboard में manage होते हैं। Cursor IDE और `cursor-agent` CLI दोनों में काम करता है; CLI print mode के prompts session end पर transcript से backfill होते हैं। |
+| **Cursor** | `~/.cursor/mcp.json` | `mcpServers` में merge करें। Website पर one-click deeplink भी उपलब्ध। |
 | **Claude Desktop** | `claude_desktop_config.json` (Application Support) | `mcpServers` में merge करें। Edit के बाद Claude Desktop restart करें। |
 | **Cline / Roo Code / Kilo Code** | Cline MCP settings (Settings UI → MCP Servers → Edit) | वही `mcpServers` block। |
-| **Windsurf** | `~/.codeium/windsurf/mcp_config.json` | वही `mcpServers` block। |
+| **Devin CLI** | `~/.config/devin/config.json` | `agentmemory connect devin` MCP entry merge करता है; `--with-hooks` छह native auto-capture hooks (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, Stop, SessionEnd) जोड़ता है, Devin के lowercase tool matchers के साथ। `devin mcp list` और devin के अंदर `/hooks` से verify करें। |
+| **Devin (cloud)** | Settings → Connections → MCP servers | Custom MCP (STDIO) जोड़ें: command `npx`, args `-y @agentmemory/mcp@latest`, env `AGENTMEMORY_URL` एक network-reachable agentmemory deployment पर plus `AGENTMEMORY_SECRET` (cloud sessions localhost तक नहीं पहुँचते — देखें [`deploy/`](../deploy/))। |
 | **Gemini CLI** | `~/.gemini/settings.json` | `gemini mcp add agentmemory npx -y @agentmemory/mcp --scope user` (auto-merges)। |
 | **GitHub Copilot CLI (केवल MCP)** | `~/.copilot/mcp-config.json` | `agentmemory connect copilot-cli` `mcpServers.agentmemory` merge करता है; Copilot इसे अगली launch या `/mcp` पर pick कर लेता है। |
 | **GitHub Copilot CLI (पूर्ण plugin)** | Copilot plugin install | GitHub subdir से plugin के लिए `copilot plugin install rohitg00/agentmemory:plugin`। |
-| **OpenClaw** | OpenClaw MCP config | वही `mcpServers` block, या गहरे [memory plugin](../integrations/openclaw/) का उपयोग करें। |
+| **OpenClaw** | OpenClaw MCP config | वही `mcpServers` block। गहराई से: `openclaw plugins install ./integrations/openclaw` OpenClaw का memory slot claim कर लेता है (`memory-core` से auto-switch करता है); `plugins.entries.agentmemory.hooks.allowConversationAccess=true` सेट करें, वरना turn capture चुपचाप block हो जाता है। [`integrations/openclaw`](integrations/openclaw/) देखें। |
 | **Codex CLI (केवल MCP)** | `.codex/config.toml` | TOML shape: `codex mcp add agentmemory -- npx -y @agentmemory/mcp`, या manually `[mcp_servers.agentmemory]` जोड़ें। |
 | **Codex CLI (पूर्ण plugin)** | Codex plugin marketplace | `codex plugin marketplace add rohitg00/agentmemory` फिर `codex plugin add agentmemory@agentmemory`। MCP + 6 lifecycle hooks (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PreCompact, Stop) + 17 skills register करता है। Codex Desktop पर, [openai/codex#16430](https://github.com/openai/codex/issues/16430) land होने तक `agentmemory connect codex --with-hooks` भी चलाएँ; plugin hooks वर्तमान में वहाँ silent हैं। |
 | **OpenCode (केवल MCP)** | `opencode.json` | अलग shape: top-level `mcp` key, command array के रूप में: `{"mcp": {"agentmemory": {"type": "local", "command": ["npx", "-y", "@agentmemory/mcp"], "enabled": true}}}`। |
 | **OpenCode (पूर्ण plugin)** | `plugin/opencode/` | Session lifecycle, messages, tools, errors को कवर करने वाले 22 auto-capture hooks। Project attribution प्रति-session है, इसलिए कई repositories में फैली एक OpenCode process हर session को उसके अपने project के अंतर्गत file करती है। दो slash commands (`/recall`, `/remember`)। `plugin/opencode/` को अपने OpenCode workspace में copy करें और plugin entry को `opencode.json` में जोड़ें। पूरी hook table + gap analysis के लिए [`plugin/opencode/README.md`](../plugin/opencode/README.md) देखें। |
 | **pi** | `~/.pi/agent/extensions/agentmemory` | `agentmemory connect pi` bundled extension को pi की auto-discovery directory में install करता है (agent start पर recall, agent end पर capture, `memory_search` / `memory_save` / `memory_health` tools, `/agentmemory-status`)। चल रहे pi में `/reload` इसे pick कर लेता है। [`integrations/pi`](../integrations/pi/) एक pi package भी है (checkout से `pi install ./integrations/pi`)। |
-| **Hermes Agent** | `~/.hermes/config.yaml` | गहरे [memory provider plugin](../integrations/hermes/) का उपयोग `memory.provider: agentmemory` के साथ करें। |
+| **Hermes Agent** | `~/.hermes/config.yaml` | `cp -r integrations/hermes ~/.hermes/plugins/agentmemory` + `memory.provider: agentmemory` 6-hook memory provider (prefetch, turn capture, session end, pre-compress, MEMORY.md mirroring, system prompt block) को enable कर देता है। `hermes plugins doctor` और `hermes memory status` से validate करें। [`integrations/hermes`](integrations/hermes/) देखें। |
 | **Qwen Code** | `~/.qwen/settings.json` | `agentmemory connect qwen` standard `mcpServers` block लिखता है। Hook payload Claude Code के साथ field-compatible है, इसलिए मौजूदा 12-hook scripts modification के बिना काम करते हैं; उन्हें उसी `settings.json` के `hooks` section के माध्यम से जोड़ें। |
 | **Antigravity** (Gemini CLI को replace करता है) | `mcp_config.json` (Antigravity की User dir में) | `agentmemory connect antigravity` standard `mcpServers` block लिखता है। macOS: `~/Library/Application Support/Antigravity/User/`। Linux: `~/.config/Antigravity/User/`। 2026-06-18 Gemini CLI sunset के बाद उपयोग करें। |
 | **Antigravity CLI** (`agy`) | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity-cli`। `agy` CLI अपनी config `~/.gemini/` के अंतर्गत रखता है, ऊपर वाले Antigravity IDE से अलग। `~/.gemini/config/hooks.json` के माध्यम से native auto-capture के लिए `--with-hooks` pass करें। |

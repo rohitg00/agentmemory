@@ -11,6 +11,7 @@ import { adapter as copilotCli } from "./copilot-cli.js";
 import { adapter as codex } from "./codex.js";
 import { adapter as continueDev } from "./continue.js";
 import { adapter as cursor } from "./cursor.js";
+import { adapter as devin } from "./devin.js";
 import { adapter as droid } from "./droid.js";
 import { adapter as dsh } from "./dsh.js";
 import { adapter as geminiCli } from "./gemini-cli.js";
@@ -29,6 +30,7 @@ export const ADAPTERS: readonly ConnectAdapter[] = [
   copilotCli,
   codex,
   cursor,
+  devin,
   geminiCli,
   qwen,
   antigravity,

@@ -169,7 +169,7 @@ agentmemory は hooks、MCP、REST API をサポートするあらゆるエー�
 <td align="center" width="12.5%">
 <a href="https://cursor.com"><img src="https://www.freelogovectors.net/wp-content/uploads/2025/06/cursor-logo-freelogovectors.net_.png" alt="Cursor" width="48" height="48" /></a><br/>
 <strong>Cursor</strong><br/>
-<sub>ネイティブプラグイン + MCP</sub>
+<sub>MCP サーバー</sub>
 </td>
 <td align="center" width="12.5%">
 <a href="https://github.com/google-gemini/gemini-cli"><img src="https://github.com/google-gemini.png?size=120" alt="Gemini CLI" width="48" height="48" /></a><br/>
@@ -209,9 +209,9 @@ agentmemory は hooks、MCP、REST API をサポートするあらゆるエー�
 <sub>MCP サーバー</sub>
 </td>
 <td align="center" width="12.5%">
-<a href="https://windsurf.com"><img src="https://exafunction.github.io/public/brand/windsurf-black-symbol.svg?size=120" alt="Windsurf" width="48" height="48" /></a><br/>
-<strong>Windsurf</strong><br/>
-<sub>MCP サーバー</sub>
+<a href="https://devin.ai"><img src="https://raw.githubusercontent.com/rohitg00/agentmemory/main/website/public/devin.png" alt="Devin" width="48" height="48" /></a><br/>
+<strong>Devin</strong><br/>
+<sub>6 hooks + MCP</sub>
 </td>
 <td align="center" width="12.5%">
 <a href="https://github.com/RooCodeInc/Roo-Code"><img src="https://github.com/RooCodeInc.png?size=120" alt="Roo Code" width="48" height="48" /></a><br/>
@@ -658,21 +658,21 @@ skills CLI がまだカバーしていない少数のエージェント(Zed v1.3
 
 | エージェント | 設定ファイル | 備考 |
 |---|---|---|
-| **Cursor (MCP のみ)** | `~/.cursor/mcp.json` | `mcpServers` にマージ、または `agentmemory connect cursor`。ウェブサイトでワンクリックディープリンクも利用可能。 |
-| **Cursor (フルプラグイン)** | `.cursor-plugin/` | Cursor Marketplace の掲載(申請レビュー中)、または Cursor Settings → Plugins → ローカルチェックアウト。7 つの自動キャプチャ hooks(sessionStart, beforeSubmitPrompt, preToolUse, postToolUse, postToolUseFailure, stop, sessionEnd)+ 17 の skills + MCP サーバーを登録し、`AGENTMEMORY_URL` / `AGENTMEMORY_SECRET` は Cursor のプラグインダッシュボードで管理します。Cursor IDE と `cursor-agent` CLI の両方で動作。CLI の print モードのプロンプトはセッション終了時にトランスクリプトから補完されます。 |
+| **Cursor** | `~/.cursor/mcp.json` | `mcpServers` にマージ。ウェブサイトでワンクリックディープリンクも利用可能。 |
 | **Claude Desktop** | `claude_desktop_config.json`(Application Support) | `mcpServers` にマージ。編集後 Claude Desktop を再起動。 |
 | **Cline / Roo Code / Kilo Code** | Cline MCP 設定(設定 UI → MCP Servers → Edit) | 同じ `mcpServers` ブロック。 |
-| **Windsurf** | `~/.codeium/windsurf/mcp_config.json` | 同じ `mcpServers` ブロック。 |
+| **Devin CLI** | `~/.config/devin/config.json` | `agentmemory connect devin` が MCP エントリをマージし、`--with-hooks` で 6 つのネイティブ自動キャプチャ hooks(SessionStart、UserPromptSubmit、PreToolUse、PostToolUse、Stop、SessionEnd)を Devin の小文字ツールマッチャー付きで追加します。`devin mcp list` と devin 内の `/hooks` で確認してください。 |
+| **Devin(クラウド)** | Settings → Connections → MCP servers | カスタム MCP(STDIO)を追加: command `npx`、args `-y @agentmemory/mcp@latest`、env `AGENTMEMORY_URL` をネットワーク到達可能な agentmemory デプロイに向け、`AGENTMEMORY_SECRET` も設定(クラウドセッションは localhost に到達できません — [`deploy/`](../deploy/) を参照)。 |
 | **Gemini CLI** | `~/.gemini/settings.json` | `gemini mcp add agentmemory npx -y @agentmemory/mcp --scope user`(自動マージ)。 |
 | **GitHub Copilot CLI(MCP のみ)** | `~/.copilot/mcp-config.json` | `agentmemory connect copilot-cli` が `mcpServers.agentmemory` をマージ。Copilot は次回起動時または `/mcp` で拾い上げます。 |
 | **GitHub Copilot CLI(フルプラグイン)** | Copilot プラグインインストール | GitHub サブディレクトリのプラグインは `copilot plugin install rohitg00/agentmemory:plugin`。 |
-| **OpenClaw** | OpenClaw MCP 設定 | 同じ `mcpServers` ブロック、または[より深いメモリプラグイン](../integrations/openclaw/)を使用。 |
+| **OpenClaw** | OpenClaw MCP 設定 | 同じ `mcpServers` ブロック。より深く: `openclaw plugins install ./integrations/openclaw` は OpenClaw のメモリスロットを占有します(`memory-core` から自動切り替え)。`plugins.entries.agentmemory.hooks.allowConversationAccess=true` を設定しないと、ターンキャプチャがサイレントにブロックされます。[`integrations/openclaw`](integrations/openclaw/) を参照。 |
 | **Codex CLI(MCP のみ)** | `.codex/config.toml` | TOML シェイプ: `codex mcp add agentmemory -- npx -y @agentmemory/mcp`、または `[mcp_servers.agentmemory]` を手動で追加。 |
 | **Codex CLI(フルプラグイン)** | Codex プラグインマーケットプレイス | `codex plugin marketplace add rohitg00/agentmemory` のあと `codex plugin add agentmemory@agentmemory`。MCP + 6 つのライフサイクル hooks(SessionStart、UserPromptSubmit、PreToolUse、PostToolUse、PreCompact、Stop)+ 17 個の skills を登録。Codex Desktop では、[openai/codex#16430](https://github.com/openai/codex/issues/16430) が解決するまで `agentmemory connect codex --with-hooks` も実行してください。そちらではプラグイン hooks が現在無音です。 |
 | **OpenCode(MCP のみ)** | `opencode.json` | 異なるシェイプ: トップレベルの `mcp` キー、command は配列: `{"mcp": {"agentmemory": {"type": "local", "command": ["npx", "-y", "@agentmemory/mcp"], "enabled": true}}}`。 |
 | **OpenCode(フルプラグイン)** | `plugin/opencode/` | 22 個の自動キャプチャ hooks がセッションライフサイクル、メッセージ、ツール、エラーをカバー。プロジェクトの帰属はセッション単位なので、1 つの OpenCode プロセスが複数のリポジトリにまたがっても、各セッションはそれぞれのプロジェクトに記録されます。2 つのスラッシュコマンド(`/recall`、`/remember`)。`plugin/opencode/` を OpenCode ワークスペースにコピーし、プラグインエントリを `opencode.json` に追加。完全な hook 表とギャップ分析は [`plugin/opencode/README.md`](../plugin/opencode/README.md) を参照。 |
 | **pi** | `~/.pi/agent/extensions/agentmemory` | `agentmemory connect pi` が同梱の拡張を pi の自動検出ディレクトリにインストールします(エージェント開始時のリコール、終了時のキャプチャ、`memory_search` / `memory_save` / `memory_health` ツール、`/agentmemory-status`)。実行中の pi では `/reload` で反映されます。[`integrations/pi`](../integrations/pi/) は pi パッケージでもあります(チェックアウトから `pi install ./integrations/pi`)。 |
-| **Hermes Agent** | `~/.hermes/config.yaml` | より深い[メモリプロバイダープラグイン](../integrations/hermes/)を使い、`memory.provider: agentmemory` を設定。 |
+| **Hermes Agent** | `~/.hermes/config.yaml` | `cp -r integrations/hermes ~/.hermes/plugins/agentmemory` + `memory.provider: agentmemory` で 6 フックのメモリプロバイダー(プリフェッチ、ターンキャプチャ、セッション終了、事前圧縮、MEMORY.md ミラーリング、システムプロンプトブロック)が有効になります。`hermes plugins doctor` と `hermes memory status` で検証してください。[`integrations/hermes`](integrations/hermes/) を参照。 |
 | **Qwen Code** | `~/.qwen/settings.json` | `agentmemory connect qwen` が標準の `mcpServers` ブロックを書き込みます。Hook ペイロードは Claude Code とフィールド互換なので、既存の 12 hook スクリプトはそのまま動作。同じ `settings.json` の `hooks` セクションで配線してください。 |
 | **Antigravity**(Gemini CLI の後継) | `mcp_config.json`(Antigravity の User ディレクトリ内) | `agentmemory connect antigravity` が標準の `mcpServers` ブロックを書き込みます。macOS: `~/Library/Application Support/Antigravity/User/`。Linux: `~/.config/Antigravity/User/`。2026-06-18 の Gemini CLI 終了後に使用。 |
 | **Antigravity CLI**(`agy`) | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity-cli`。`agy` CLI は上の Antigravity IDE とは別に、独自の設定を `~/.gemini/` 配下に保持します。ネイティブ自動キャプチャには `--with-hooks` を渡すと `~/.gemini/config/hooks.json` 経由で配線されます。 |
