@@ -226,12 +226,12 @@ const MARQUEE: Agent[] = [
     href: "https://github.com/Aider-AI/aider",
   },
   {
-    id: "windsurf",
-    name: "Windsurf",
+    id: "devin",
+    name: "Devin",
     from: "Cognition",
-    logo: "https://github.com/Exafunction.png",
-    accent: "#00A699",
-    href: "https://windsurf.com",
+    logo: "/devin.png",
+    accent: "#317CFF",
+    href: "https://devin.ai",
   },
 ];
 
