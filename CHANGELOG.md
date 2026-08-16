@@ -4,6 +4,12 @@ All notable changes to agentmemory will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **Cursor hooks go through a workspace adapter.** `#1213` wired Cursor camelCase events straight at `plugin/scripts/*.mjs`. That is still the work those scripts do, but `plugin/cursor/hooks.json` now calls `plugin/scripts/cursor/run-hook.mjs` / `run-detached.mjs` first. The adapter resolves the project Cursor does not reliably report (payload `cwd` can be `.cursor`, the IDE install path, `$HOME`, or missing), sets `AGENTMEMORY_PROJECT_NAME`, and detaches `stop` / `sessionEnd` so window-close does not kill summarize. Canonical hooks are unchanged. Source: `src/hooks/cursor/`.
+
 ## [0.9.29] — 2026-08-15
 
 Release wave in two parts. Recall quality: hybrid ranking reaches the primary recall path, lessons get a real index, every record learns where it came from, the knowledge graph populates keyless, and agent scoping threads through all save paths — plus connector parity for pi and Codex, a new DeepSeek Harness connector, current provider model defaults, and a viewer clarity pass. Foundation: the `.env` file now applies everywhere, imports become searchable, consolidation runs on session stop, twelve MCP-only agents get activated on connect, and every capture surface agrees on what "project" means. No breaking changes; read the upgrade notes for behavior changes you will notice.

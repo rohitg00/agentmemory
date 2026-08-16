@@ -24,11 +24,11 @@ Then in Cursor:
 
 1. **Settings → Plugins → Add marketplace** → select the **repo root**
    `<path-to-your-agentmemory-clone>`
-   (must contain `.cursor-plugin/marketplace.json`)
+   (must contain `.cursor-plugin/plugin.json`)
 2. Enable plugin **agentmemory**
-3. **Disable** the old `rohitg00/agentmemory` marketplace entry if both are on
+3. **Disable** any second agentmemory marketplace entry if both are on
 4. **Developer: Reload Window**
-5. Confirm the hooks log shows `scripts/cursor/run-hook.mjs` or `run-detached.mjs`
+5. Confirm the hooks log shows `plugin/scripts/cursor/run-hook.mjs` or `run-detached.mjs`
 
 Only after plugin hooks are confirmed:
 
@@ -41,13 +41,13 @@ node integrations/cursor/install-local.mjs --clear-user-hooks
 ## Layout
 
 ```text
-agentmemory/                        ← marketplace root (git repo)
-  .cursor-plugin/marketplace.json
+agentmemory/                        ← Cursor plugin root (git repo)
+  .cursor-plugin/plugin.json        ← marketplace manifest (hooks + MCP + skills)
   plugin/
-    .cursor-plugin/plugin.json
-    hooks/hooks.cursor.json         ← Cursor's camelCase lifecycle names
+    cursor/hooks.json               ← Cursor camelCase events → adapter
+    cursor/mcp.json
     scripts/cursor/                 ← built from src/hooks/cursor/
-      run-hook.mjs                  ← the 8 synchronous hooks
+      run-hook.mjs                  ← the synchronous hooks
       run-detached.mjs              ← stop / sessionEnd
     scripts/*.mjs                   ← canonical hooks, shared with every agent
     skills/
@@ -73,7 +73,7 @@ other hook artifact.
 
 ```text
 Cursor
-  │  reads plugin/hooks/hooks.cursor.json, spawns a process, writes JSON to stdin
+  │  reads plugin/cursor/hooks.json, spawns a process, writes JSON to stdin
   ▼
 run-hook.mjs <event>                    run-detached.mjs stop|sessionEnd
   │                                       │  writes the payload to a temp file,

@@ -609,7 +609,7 @@ copilot plugin install rohitg00/agentmemory:plugin
 agentmemory connect cursor
 ```
 
-Then add the native hooks: **Settings → Plugins → Add marketplace** → select an agentmemory checkout (the directory containing `.cursor-plugin/marketplace.json`), enable the **agentmemory** plugin, and reload the window.
+Then add the native hooks: **Settings → Plugins → Add marketplace** → select an agentmemory checkout (the directory containing `.cursor-plugin/plugin.json`), enable the **agentmemory** plugin, and reload the window.
 
 Cursor runs the same lifecycle hooks as every other host — they are the canonical `plugin/scripts/*.mjs`, not a separate implementation. A thin adapter in front of them resolves which project a session belongs to, which Cursor does not reliably report: its payload `cwd` can be `.cursor`, the Cursor install directory, or missing entirely. Do not also wire hooks into `~/.cursor/hooks.json` — the plugin already dispatches them, and both copies firing records every observation twice.
 

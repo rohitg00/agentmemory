@@ -102,12 +102,12 @@ describe("cursor hook map", () => {
     expect(missing).toEqual([]);
   });
 
-  it("covers the events hooks.cursor.json declares", () => {
+  it("covers the events plugin/cursor/hooks.json declares", () => {
     const config = JSON.parse(
-      readFileSync(join(REPO_ROOT, "plugin", "hooks", "hooks.cursor.json"), "utf-8"),
+      readFileSync(join(REPO_ROOT, "plugin", "cursor", "hooks.json"), "utf-8"),
     ) as { hooks: Record<string, unknown> };
     for (const event of Object.keys(config.hooks)) {
-      expect(isCursorHookKey(event), `hooks.cursor.json declares "${event}"`).toBe(true);
+      expect(isCursorHookKey(event), `plugin/cursor/hooks.json declares "${event}"`).toBe(true);
     }
   });
 });
