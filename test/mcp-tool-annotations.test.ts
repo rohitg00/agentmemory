@@ -60,6 +60,7 @@ const READ_ONLY_TOOLS = new Set([
 const DESTRUCTIVE_TOOLS = new Set([
   "memory_governance_delete",
   "memory_heal",
+  "memory_lesson_delete",
   "memory_slot_delete",
 ]);
 
@@ -114,11 +115,11 @@ describe("MCP tool risk annotations", () => {
     }
   });
 
-  it("destructive set is exactly 3 tools with destructiveHint true + readOnlyHint false", () => {
+  it("destructive set is exactly 4 tools with destructiveHint true + readOnlyHint false", () => {
     const tools = getAllTools();
     const de = tools.filter((t) => classification(t) === "destructive");
     expect(new Set(de.map((t) => t.name))).toEqual(DESTRUCTIVE_TOOLS);
-    expect(de.length).toBe(3);
+    expect(de.length).toBe(4);
     for (const t of de) {
       expect(t.annotations?.destructiveHint).toBe(true);
       expect(t.annotations?.readOnlyHint).toBe(false);
@@ -137,13 +138,13 @@ describe("MCP tool risk annotations", () => {
     }
   });
 
-  it("every tool falls into exactly one classification (23 + 3 + 27 covers total)", () => {
+  it("every tool falls into exactly one classification (23 + 4 + 27 covers total)", () => {
     const tools = getAllTools();
     expect(tools.length).toBe(TOTAL);
     const counts = { "read-only": 0, destructive: 0, "state-changing": 0, invalid: 0 };
     for (const t of tools) counts[classification(t) as keyof typeof counts]++;
     expect(counts["read-only"]).toBe(23);
-    expect(counts.destructive).toBe(3);
+    expect(counts.destructive).toBe(4);
     expect(counts["state-changing"]).toBe(27);
     expect(counts.invalid).toBe(0);
     expect(counts["read-only"] + counts.destructive + counts["state-changing"]).toBe(TOTAL);

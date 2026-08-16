@@ -869,6 +869,7 @@ export const V070_TOOLS: McpToolDef[] = [
       },
       required: ["lessonId"],
     },
+    annotations: { readOnlyHint: false, destructiveHint: true },
   },
   {
     name: "memory_obsidian_export",
