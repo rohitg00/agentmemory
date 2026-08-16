@@ -75,14 +75,14 @@ const FEATURED: Agent[] = [
     sub: "NATIVE PLUGIN",
   },
   {
-    id: "openhuman",
-    name: "OpenHuman",
-    from: "tinyhumansai",
-    logo: "https://raw.githubusercontent.com/tinyhumansai/openhuman/main/app/src-tauri/icons/128x128.png",
-    accent: "#9b5cf6",
-    href: "https://github.com/tinyhumansai/openhuman",
-    pitch: "Native Memory trait backend (Rust)",
-    sub: "NATIVE BACKEND",
+    id: "cursor",
+    name: "Cursor",
+    from: "Anysphere",
+    logo: "https://svgl.app/library/cursor_dark.svg",
+    accent: "#4F8BF7",
+    href: "https://github.com/rohitg00/agentmemory/tree/main/.cursor-plugin",
+    pitch: "7 hooks + 17 skills + MCP · IDE and CLI",
+    sub: "NATIVE PLUGIN",
   },
   {
     id: "opencode",
@@ -106,12 +106,12 @@ const MARQUEE: Agent[] = [
     href: "https://claude.ai/download",
   },
   {
-    id: "cursor",
-    name: "Cursor",
-    from: "Anysphere",
-    logo: "https://svgl.app/library/cursor_dark.svg",
-    accent: "#000000",
-    href: "https://cursor.com",
+    id: "openhuman",
+    name: "OpenHuman",
+    from: "tinyhumansai",
+    logo: "https://raw.githubusercontent.com/tinyhumansai/openhuman/main/app/src-tauri/icons/128x128.png",
+    accent: "#9b5cf6",
+    href: "https://github.com/tinyhumansai/openhuman",
   },
   {
     id: "warp",
@@ -125,7 +125,7 @@ const MARQUEE: Agent[] = [
     id: "continue",
     name: "Continue",
     from: "Continue.dev",
-    logo: "https://continue.dev/icon.svg",
+    logo: "https://github.com/continuedev.png",
     accent: "#000000",
     href: "https://continue.dev",
   },
@@ -229,7 +229,7 @@ const MARQUEE: Agent[] = [
     id: "windsurf",
     name: "Windsurf",
     from: "Cognition",
-    logo: "https://svgl.app/library/windsurf-dark.svg",
+    logo: "https://github.com/Exafunction.png",
     accent: "#00A699",
     href: "https://windsurf.com",
   },
@@ -302,7 +302,7 @@ export function Agents() {
         </h2>
         <p className="section-lede">
           Native plugins for Claude Code, Copilot CLI, Codex CLI, OpenClaw,
-          Hermes, pi, and OpenHuman. OpenCode gets a plugin that attributes
+          Hermes, pi, and Cursor. OpenCode gets a plugin that attributes
           each session to its own project. Every other MCP client gets it for
           free. `agentmemory connect &lt;agent&gt;` auto-wires them all.
         </p>
