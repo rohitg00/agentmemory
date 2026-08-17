@@ -28,12 +28,9 @@ export function hookCwd(data: Record<string, unknown> | null | undefined): strin
       if (typeof root === "string" && root.trim()) return root;
     }
   }
-  // Klaat Code names the field project_root rather than cwd.
   if (typeof data.project_root === "string" && data.project_root.trim()) {
     return data.project_root;
   }
-  // Take the first non-blank var: a `||` chain would stop at a
-  // whitespace-only earlier value and shadow a valid later one.
   for (const name of [
     "DEVIN_PROJECT_DIR",
     "CLAUDE_PROJECT_DIR",

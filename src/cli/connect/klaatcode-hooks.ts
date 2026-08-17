@@ -2,30 +2,13 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 /**
- * Merge engine for Klaat Code's hooks file (`~/.klaatai/hooks.json`).
+ * Separate from `codex-hooks.ts` because Klaat Code's hooks file is flat and
+ * snake_case rather than the nested Claude-Code shape `buildMergedHooks`
+ * handles. Loader: KlaatAI/klaatcode `src/screens/repl.ts`.
  *
- * Klaat Code does not use the nested Claude-Code hook shape that
- * `codex-hooks.ts#buildMergedHooks` handles. Its config is flat — event
- * name maps straight to a list of entries, where an entry is either a bare
- * shell string (v1) or `{ command, matcher?, timeout? }` (v2):
- *
- *   { "session_start": ["cmd"],
- *     "before_tool": [{ "command": "…", "matcher": "^edit_file$", "timeout": 5 }] }
- *
- * Event names differ too (`session_start` / `before_tool` / … rather than
- * `SessionStart` / `PreToolUse` / …), so the bundled manifest for Klaat Code
- * is authored in its native shape and this module only resolves paths and
- * de-duplicates. See KlaatAI/klaatcode `src/screens/repl.ts` for the loader.
- *
- * The two guarantees match the Codex/Claude engine:
- *   1. `${CLAUDE_PLUGIN_ROOT}` is rewritten to the absolute bundled
- *      `plugin/` path, so the written file needs no env expansion (Klaat
- *      Code does not inject that variable — it is used here purely as the
- *      internal placeholder token every bundled manifest shares).
- *   2. Re-installs are idempotent: any pre-existing entry whose command
- *      points under `<pluginRoot>/scripts/` is stripped before ours are
- *      appended, so upgrading never leaves stale duplicates and never
- *      touches the user's own hooks.
+ * Klaat Code never injects `${CLAUDE_PLUGIN_ROOT}` — the token is the shared
+ * placeholder in every bundled manifest, resolved here so the written file
+ * needs no env expansion.
  */
 
 export type KlaatcodeHookEvent =

@@ -17,10 +17,6 @@ import {
   writeJsonAtomic,
 } from "./util.js";
 
-// Klaat Code keeps everything under ~/.klaatai (relocatable via KLAATAI_DIR),
-// with MCP servers and lifecycle hooks in separate files rather than one
-// settings blob. MCP entries live under the top-level "servers" key — the
-// same situation as Zed's "context_servers", handled by wrapperKey.
 function klaatDir(): string {
   const override = process.env["KLAATAI_DIR"];
   if (override && override.trim()) return override;
