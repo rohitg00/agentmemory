@@ -122,6 +122,27 @@ describe("hook payload compatibility with Klaat Code", () => {
     }
   });
 
+  it("skips a blank earlier env var instead of letting it shadow the fallback", async () => {
+    const { hookCwd } = await import("../src/hooks/_project.js");
+    const before = {
+      devin: process.env["DEVIN_PROJECT_DIR"],
+      klaat: process.env["KLAATAI_PROJECT_ROOT"],
+    };
+    process.env["DEVIN_PROJECT_DIR"] = "   ";
+    process.env["KLAATAI_PROJECT_ROOT"] = "/tmp";
+    try {
+      expect(hookCwd({ session_id: "s1" })).toBe("/tmp");
+    } finally {
+      for (const [key, value] of [
+        ["DEVIN_PROJECT_DIR", before.devin],
+        ["KLAATAI_PROJECT_ROOT", before.klaat],
+      ] as const) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
+  });
+
   it("fails open when the memory server is unreachable", async () => {
     const { code } = await runHook("session-start", {
       event: "session_start",
