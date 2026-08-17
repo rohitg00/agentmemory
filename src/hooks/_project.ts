@@ -28,8 +28,14 @@ export function hookCwd(data: Record<string, unknown> | null | undefined): strin
       if (typeof root === "string" && root.trim()) return root;
     }
   }
+  // Klaat Code names the field project_root rather than cwd.
+  if (typeof data.project_root === "string" && data.project_root.trim()) {
+    return data.project_root;
+  }
   const projectDir =
-    process.env["DEVIN_PROJECT_DIR"] || process.env["CLAUDE_PROJECT_DIR"];
+    process.env["DEVIN_PROJECT_DIR"] ||
+    process.env["CLAUDE_PROJECT_DIR"] ||
+    process.env["KLAATAI_PROJECT_ROOT"];
   if (projectDir && projectDir.trim()) return projectDir;
   return undefined;
 }
