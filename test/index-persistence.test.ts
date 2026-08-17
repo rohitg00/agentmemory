@@ -794,15 +794,26 @@ describe("IndexPersistence", () => {
 
 describe("index_persist audit gating", () => {
   let kv: ReturnType<typeof mockKV>;
+  let previousFlag: string | undefined;
 
   beforeEach(() => {
+    // AGENTMEMORY_* variables are documented as living in
+    // ~/.agentmemory/.env, so a developer running the suite on a
+    // configured machine can inherit this one. Clear it going in and put
+    // whatever was there back on the way out.
+    previousFlag = process.env.AGENTMEMORY_AUDIT_INDEX_PERSIST;
+    delete process.env.AGENTMEMORY_AUDIT_INDEX_PERSIST;
     vi.useFakeTimers();
     kv = mockKV();
   });
 
   afterEach(() => {
     vi.useRealTimers();
-    delete process.env.AGENTMEMORY_AUDIT_INDEX_PERSIST;
+    if (previousFlag === undefined) {
+      delete process.env.AGENTMEMORY_AUDIT_INDEX_PERSIST;
+    } else {
+      process.env.AGENTMEMORY_AUDIT_INDEX_PERSIST = previousFlag;
+    }
   });
 
   async function indexPersistEntries(): Promise<Array<{ operation: string }>> {
@@ -822,18 +833,40 @@ describe("index_persist audit gating", () => {
     expect(await indexPersistEntries()).toEqual([]);
   });
 
-  it("writes index_persist audit entries when explicitly enabled", async () => {
-    process.env.AGENTMEMORY_AUDIT_INDEX_PERSIST = "1";
-    const persistence = new IndexPersistence(
-      kv as never,
-      makeBm25("obs_1", "auth handler"),
-      null,
-    );
+  it.each(["1", " 1 ", "true", "TRUE", "  true  "])(
+    "writes index_persist audit entries when set to %j",
+    async (value) => {
+      process.env.AGENTMEMORY_AUDIT_INDEX_PERSIST = value;
+      const persistence = new IndexPersistence(
+        kv as never,
+        makeBm25("obs_1", "auth handler"),
+        null,
+      );
 
-    await persistence.save();
+      await persistence.save();
 
-    expect((await indexPersistEntries()).length).toBeGreaterThan(0);
-  });
+      expect((await indexPersistEntries()).length).toBeGreaterThan(0);
+    },
+  );
+
+  // Anything that is not an affirmative stays off. "0" and "false" are the
+  // ones an operator is likely to reach for to disable it, and they must
+  // not read as "present, therefore enabled".
+  it.each(["0", "false", "yes", "", " "])(
+    "keeps auditing off when set to %j",
+    async (value) => {
+      process.env.AGENTMEMORY_AUDIT_INDEX_PERSIST = value;
+      const persistence = new IndexPersistence(
+        kv as never,
+        makeBm25("obs_1", "auth handler"),
+        null,
+      );
+
+      await persistence.save();
+
+      expect(await indexPersistEntries()).toEqual([]);
+    },
+  );
 
   it("still persists the index when auditing is off", async () => {
     const persistence = new IndexPersistence(
