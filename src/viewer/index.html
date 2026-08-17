@@ -50,21 +50,20 @@
       --font-mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
     }
     html[data-theme="dark"] {
-      --bg: #1a1a1e;
-      --bg-alt: #232328;
-      --bg-subtle: #1f1f24;
-      --bg-inset: #2a2a30;
-      --border: #444;
-      --border-light: #3a3a42;
-      --border-heavy: #ccc;
-      --ink: #eee;
-      --ink-secondary: #ccc;
-      --ink-muted: #999;
-      --ink-faint: #777;
+      --bg: #121316;
+      --bg-alt: #1a1c20;
+      --bg-subtle: #17181b;
+      --bg-inset: #222428;
+      --border: #33363b;
+      --border-light: #26282c;
+      --border-heavy: #c9cbd1;
+      --ink: #eef0f3;
+      --ink-secondary: #c6c9ce;
+      --ink-muted: #94979d;
+      --ink-faint: #6d7076;
+      --accent: #f2555a;
+      --accent-light: #ff7a70;
       --cream: #2a2520;
-    }
-    html[data-theme="dark"] body {
-      background-image: radial-gradient(circle, #3a3a42 0.5px, transparent 0.5px);
     }
     html[data-theme="dark"] .graph-tooltip {
       background: rgba(30,30,35,0.92);
@@ -80,6 +79,16 @@
       color: var(--bg);
     }
     * { margin: 0; padding: 0; box-sizing: border-box; }
+    #bg-dither {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 0;
+      pointer-events: none;
+      opacity: 0.5;
+    }
+    .app-header, .tab-bar, .view, .flags-banner, footer, .app-footer { position: relative; z-index: 1; }
     body {
       font-family: var(--font-body);
       background: var(--bg);
@@ -89,8 +98,6 @@
       height: 100vh;
       display: flex;
       flex-direction: column;
-      background-image: radial-gradient(circle, #D4D4CF 0.5px, transparent 0.5px);
-      background-size: 16px 16px;
     }
     ::-webkit-scrollbar { width: 6px; }
     ::-webkit-scrollbar-track { background: var(--bg); }
@@ -139,6 +146,11 @@
       align-items: center;
       gap: 12px;
     }
+    @media (max-width: 720px) {
+      .app-header { flex-wrap: wrap; row-gap: 6px; padding: 10px 16px; }
+      .app-header .dateline { display: none; }
+      .view { overflow-x: auto; }
+    }
     .ws-status {
       font-size: 10px;
       padding: 3px 10px;
@@ -158,7 +170,11 @@
       display: inline-block;
     }
     .ws-status.connected { border-color: var(--green); color: var(--green); }
-    .ws-status.connected::before { background: var(--green); }
+    .ws-status.connected::before { background: var(--green); animation: live-pulse 2.4s ease-in-out infinite; }
+    @keyframes live-pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.35; }
+    }
     .ws-status.disconnected { border-color: var(--ink-faint); color: var(--ink-faint); }
     .ws-status.disconnected::before { background: var(--ink-faint); }
 
@@ -195,7 +211,15 @@
     }
 
     .view { display: none; flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 24px; }
-    .view.active { display: block; }
+    .view.active { display: block; animation: view-in 160ms ease-out; }
+    @keyframes view-in {
+      from { opacity: 0; transform: translateY(4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .view.active { animation: none; }
+      .ws-status.connected::before { animation: none; }
+    }
 
     .stats-grid {
       display: grid;
@@ -211,6 +235,14 @@
       border-bottom: 1px solid var(--border-light);
     }
     .stat-card:last-child { border-right: none; }
+    .stat-card[data-action] {
+      cursor: pointer;
+      transition: background 0.15s ease-out;
+    }
+    .stat-card[data-action]:hover { background: var(--bg-alt); }
+    .stat-card[data-action]:hover .label { color: var(--accent); }
+    .stat-card[data-action]:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+    .stat-card[data-action]:active { background: var(--bg-inset); }
     .stat-card .label {
       font-size: 9px;
       color: var(--ink-muted);
@@ -294,6 +326,7 @@
       border-collapse: collapse;
       font-size: 13px;
       font-family: var(--font-body);
+      font-variant-numeric: tabular-nums;
     }
     th {
       text-align: left;
@@ -333,7 +366,7 @@
       align-items: center;
       flex-wrap: wrap;
     }
-    .toolbar input, .toolbar select {
+    .toolbar input, .toolbar select, .search-input {
       background: var(--bg);
       border: 1px solid var(--border);
       color: var(--ink);
@@ -342,13 +375,13 @@
       outline: none;
       font-family: var(--font-ui);
     }
-    .toolbar input:focus, .toolbar select:focus {
+    .toolbar input:focus, .toolbar select:focus, .search-input:focus {
       border-color: var(--ink);
       box-shadow: 2px 2px 0px 0px var(--border);
     }
     .toolbar input { flex: 1; min-width: 200px; }
 
-    .btn {
+    .btn, .toolbar button {
       background: var(--bg);
       border: 1px solid var(--border);
       color: var(--ink);
@@ -361,8 +394,8 @@
       text-transform: uppercase;
       letter-spacing: 0.06em;
     }
-    .btn:hover { box-shadow: 3px 3px 0px 0px var(--border); transform: translate(-1px, -1px); }
-    .btn:active { box-shadow: none; transform: translate(0, 0); }
+    .btn:hover, .toolbar button:hover { box-shadow: 3px 3px 0px 0px var(--border); transform: translate(-1px, -1px); }
+    .btn:active, .toolbar button:active { box-shadow: none; transform: translate(0, 0); }
     .btn-danger { border-color: var(--accent); color: var(--accent); }
     .btn-danger:hover { background: var(--accent); color: white; box-shadow: 3px 3px 0px 0px var(--border); }
     .btn-primary { background: var(--ink); color: var(--bg); border-color: var(--ink); }
@@ -370,7 +403,8 @@
 
     .graph-container {
       display: flex;
-      height: calc(100vh - 130px);
+      height: calc(100vh - 178px);
+      min-height: 460px;
       margin: -24px;
       border-top: 1px solid var(--border-light);
     }
@@ -523,18 +557,36 @@
     }
     .tag.file-tag { border-color: var(--green); color: var(--green); }
 
+    /* Two-pane sessions: list left, detail pinned right on wide screens.
+       The detail panel previously rendered below the full list — selecting
+       a session on any real corpus put the response off-screen. */
+    .sessions-layout {
+      display: grid;
+      grid-template-columns: minmax(300px, 400px) minmax(0, 1fr);
+      gap: 20px;
+      align-items: start;
+    }
+    .sessions-layout #session-detail { position: sticky; top: 0; min-width: 0; }
+    .sessions-layout #session-detail .detail-panel { margin-top: 0; }
+    @media (max-width: 1100px) {
+      .sessions-layout { grid-template-columns: 1fr; }
+      .sessions-layout #session-detail { position: static; }
+    }
     .session-list { display: flex; flex-direction: column; gap: 0; }
     .session-item {
       background: var(--bg);
       border: 1px solid var(--border-light);
       border-bottom: none;
+      border-left: 3px solid transparent;
       padding: 14px 20px;
       cursor: pointer;
-      transition: background 0.1s;
+      transition: background 0.15s ease-out, border-color 0.15s ease-out;
     }
     .session-item:last-child { border-bottom: 1px solid var(--border-light); }
-    .session-item:hover { background: var(--bg-alt); }
-    .session-item.selected { background: var(--bg-alt); border-left: 3px solid var(--accent); }
+    .session-item:hover { background: var(--bg-alt); border-left-color: var(--border-light); }
+    .session-item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+    .session-item:active { background: var(--bg-inset); }
+    .session-item.selected { background: var(--bg-alt); border-left-color: var(--accent); }
     .session-item .session-top {
       display: flex;
       justify-content: space-between;
@@ -975,6 +1027,7 @@
   </style>
 </head>
 <body>
+  <canvas id="bg-dither" aria-hidden="true"></canvas>
   <div class="app-header">
     <a class="brand" href="#dashboard" data-tab-link="dashboard" aria-label="Open dashboard">
       <h1>agentmemory</h1>
@@ -1112,12 +1165,12 @@
       activeTab: 'dashboard',
       dashboard: { loaded: false, health: null, sessions: [], memories: [], graphStats: null, recentAudit: [], lessons: [], crystals: [] },
       graph: { loaded: false, nodes: [], edges: [], stats: null, filters: {}, selectedNode: null, queryError: null, truncated: false, totalNodes: 0, totalEdges: 0 },
-      memories: { loaded: false, items: [], search: '', typeFilter: '' },
+      memories: { loaded: false, items: [], search: '', typeFilter: '', selectedId: null },
       timeline: { loaded: false, observations: [], sessionId: '', minImportance: 0, page: 0, pageSize: 50 },
       sessions: { loaded: false, items: [], selectedId: null },
       audit: { loaded: false, entries: [], opFilter: '' },
       activity: { loaded: false, observations: [], sessions: [], typeFilter: '' },
-      lessons: { loaded: false, items: [], search: '' },
+      lessons: { loaded: false, items: [], search: '', selectedId: null },
       actions: { loaded: false, items: [], frontier: [], statusFilter: '', search: '' },
       crystals: { loaded: false, items: [], search: '', lessonMap: {} },
       profile: { loaded: false, projects: [], selectedProject: '', data: null },
@@ -1141,6 +1194,45 @@
       if (!ts) return '';
       try { return new Date(ts).toLocaleTimeString(); } catch { return ts; }
     }
+    // Observation subtitles are often the raw tool input serialized as
+    // JSON ('{"file_path":"src/x.ts"}'). Pull the human-meaningful field
+    // out for display; anything unparseable renders as-is.
+    // Health alerts/notes arrive as compact machine slugs
+    // (memory_heap_tight_93%_rss111mb). Translate the known families
+    // into sentences; unknown slugs render as-is.
+    function humanizeHealthFlag(f) {
+      var m;
+      if ((m = /^memory_heap_tight_(\d+)%_rss(\d+)mb$/.exec(f)))
+        return 'Heap is running tight: ' + m[1] + '% of allocated heap in use (process memory ' + m[2] + ' MB). Informational — Node grows the heap on demand.';
+      if ((m = /^memory_(warn|critical)_(\d+)%_rss(\d+)mb$/.exec(f)))
+        return 'Memory ' + (m[1] === 'critical' ? 'critically high' : 'elevated') + ': ' + m[2] + '% of heap in use, process memory ' + m[3] + ' MB.';
+      if ((m = /^cpu_(warn|critical)_(\d+)%$/.exec(f)))
+        return 'CPU ' + (m[1] === 'critical' ? 'critically high' : 'elevated') + ': ' + m[2] + '%.';
+      if ((m = /^event_loop_lag_(warn|critical)_(\d+)ms$/.exec(f)))
+        return 'Event loop ' + (m[1] === 'critical' ? 'severely delayed' : 'delayed') + ': ' + m[2] + ' ms behind. The worker is busy or blocked.';
+      if (f === 'connection_reconnecting')
+        return 'Engine connection lost — reconnecting.';
+      if ((m = /^connection_(.+)$/.exec(f)))
+        return 'Engine connection state: ' + m[1] + '.';
+      return f;
+    }
+
+    function humanizeSubtitle(s) {
+      if (typeof s !== 'string') return '';
+      var t = s.trim();
+      if (!t.startsWith('{')) return s;
+      try {
+        var o = JSON.parse(t);
+        if (o && typeof o === 'object') {
+          var keys = ['file_path', 'filepath', 'filePath', 'path', 'file', 'command', 'pattern', 'url', 'query', 'prompt'];
+          for (var i = 0; i < keys.length; i++) {
+            if (typeof o[keys[i]] === 'string' && o[keys[i]].length > 0) return o[keys[i]];
+          }
+        }
+      } catch (_) {}
+      return s;
+    }
+
     function truncate(s, n) {
       if (!s) return '';
       return s.length > n ? s.slice(0, n) + '...' : s;
@@ -1150,7 +1242,15 @@
     }
     function shortSessionId(s, n) {
       var id = sessionId(s);
-      return id ? id.slice(0, n || 8) : '';
+      if (!id) return '';
+      var max = n || 8;
+      if (id.length <= max) return id;
+      // Session ids share a long common prefix (demo_msuaboq7_...); the
+      // distinguishing part is the tail. Keep head + tail so truncated
+      // ids stay tellable apart in lists and dropdowns.
+      var tail = 6;
+      var head = Math.max(2, max - tail - 1);
+      return id.slice(0, head) + '…' + id.slice(-tail);
     }
     function sessionDisplayName(s) {
       var project = s && s.project ? String(s.project).split('/').pop() : '';
@@ -1335,26 +1435,41 @@
       loadTab(tab);
     }
 
+    // Per-tab freshness stamps. Tabs refetch on entry (the loaded-once
+    // model went stale the moment anything wrote through the API), but a
+    // short window stops rapid tab flipping from re-issuing the full
+    // fan-out (dashboard alone is ~10 requests) on every click.
+    var tabFetchedAt = {};
+    var TAB_FRESH_MS = 5000;
+
     async function loadTab(tab) {
+      var now = Date.now();
+      if (tab !== 'replay' && tabFetchedAt[tab] && now - tabFetchedAt[tab] < TAB_FRESH_MS) {
+        return;
+      }
+      tabFetchedAt[tab] = now;
       switch(tab) {
-        case 'dashboard': if (!state.dashboard.loaded) await loadDashboard(); break;
-        case 'graph': if (!state.graph.loaded) await loadGraph(); break;
-        case 'memories': if (!state.memories.loaded) await loadMemories(); break;
-        case 'timeline': if (!state.timeline.loaded) await loadTimeline(); break;
-        case 'sessions': if (!state.sessions.loaded) await loadSessions(); break;
-        case 'lessons': if (!state.lessons.loaded) await loadLessons(); break;
-        case 'actions': if (!state.actions.loaded) await loadActions(); break;
-        case 'crystals': if (!state.crystals.loaded) await loadCrystals(); break;
-        case 'audit': if (!state.audit.loaded) await loadAudit(); break;
-        case 'activity': if (!state.activity.loaded) await loadActivity(); break;
-        case 'profile': if (!state.profile.loaded) await loadProfile(); break;
+        case 'dashboard': await loadDashboard(); break;
+        case 'graph': await loadGraph(); break;
+        case 'memories': await loadMemories(); break;
+        case 'timeline': await loadTimeline(); break;
+        case 'sessions': await loadSessions(); break;
+        case 'lessons': await loadLessons(); break;
+        case 'actions': await loadActions(); break;
+        case 'crystals': await loadCrystals(); break;
+        case 'audit': await loadAudit(); break;
+        case 'activity': await loadActivity(); break;
+        case 'profile': await loadProfile(); break;
+        // Replay stays fetch-once: reloading it would reset playback
+        // timer and cursor state mid-session; its toolbar has an explicit
+        // Refresh button instead.
         case 'replay': if (!state.replay.loaded) await loadReplay(); break;
       }
     }
 
     async function loadDashboard() {
       var el = document.getElementById('view-dashboard');
-      el.innerHTML = '<div class="loading">Loading dashboard...</div>';
+      if (!state.dashboard.loaded) el.innerHTML = '<div class="loading">Loading dashboard...</div>';
       try {
         var results = await Promise.all([
           api('health', { readErrorBody: true }),
@@ -1428,13 +1543,13 @@
           '</div>';
       }
       html += '<div class="stats-grid">';
-      html += '<div class="stat-card"><div class="label">Sessions</div><div class="value">' + d.sessions.length + '</div><div class="sub">' + activeSessions + ' active</div></div>';
-      html += '<div class="stat-card"><div class="label">Memories</div><div class="value">' + d.memories.length + '</div><div class="sub">latest versions</div></div>';
+      html += '<div class="stat-card" data-action="goto-tab" data-tab="sessions" role="link" tabindex="0"><div class="label">Sessions</div><div class="value">' + d.sessions.length + '</div><div class="sub">' + activeSessions + ' active</div></div>';
+      html += '<div class="stat-card" data-action="goto-tab" data-tab="memories" role="link" tabindex="0"><div class="label">Memories</div><div class="value">' + d.memories.length + '</div><div class="sub">latest versions</div></div>';
       var lessonCount = (d.lessons || []).length;
       var crystalCount = (d.crystals || []).length;
-      html += '<div class="stat-card"><div class="label">Lessons</div><div class="value">' + lessonCount + '</div><div class="sub">confidence-scored</div></div>';
-      html += '<div class="stat-card"><div class="label">Crystals</div><div class="value">' + crystalCount + '</div><div class="sub">action digests</div></div>';
-      html += '<div class="stat-card"><div class="label">Graph Nodes</div><div class="value">' + nodeCount + '</div><div class="sub">' + edgeCount + ' edges</div></div>';
+      html += '<div class="stat-card" data-action="goto-tab" data-tab="lessons" role="link" tabindex="0"><div class="label">Lessons</div><div class="value">' + lessonCount + '</div><div class="sub">confidence-scored</div></div>';
+      html += '<div class="stat-card" data-action="goto-tab" data-tab="crystals" role="link" tabindex="0"><div class="label">Crystals</div><div class="value">' + crystalCount + '</div><div class="sub">action digests</div></div>';
+      html += '<div class="stat-card" data-action="goto-tab" data-tab="graph" role="link" tabindex="0"><div class="label">Graph Nodes</div><div class="value">' + nodeCount + '</div><div class="sub">' + edgeCount + ' edges</div></div>';
       html += '<div class="stat-card"><div class="label">Health</div><div class="value"><div class="health-bar"><span class="health-dot ' + dotClass + '"></span> ' + esc(healthStatus) + '</div></div>';
       html += '<div class="sub">' + esc(snap.connectionState || 'unknown') + '</div></div>';
       var totalCalls = fMetrics.reduce(function(a, m) { return a + (m.totalCalls || 0); }, 0);
@@ -1495,7 +1610,8 @@
 
       if (snap.alerts && snap.alerts.length > 0) {
         html += '<div class="card" style="margin-bottom:16px;border-color:var(--accent);border-width:2px;"><div class="card-title" style="color:var(--accent);border-bottom-color:var(--accent);">Alerts (' + snap.alerts.length + ')</div>';
-        snap.alerts.forEach(function(al) {
+        snap.alerts.forEach(function(alRaw) {
+          var al = humanizeHealthFlag(alRaw);
           html += '<div style="font-size:12px;color:var(--accent);padding:4px 0;border-bottom:1px solid var(--border-light);font-family:var(--font-ui);">' + esc(al) + '</div>';
         });
         html += '</div>';
@@ -1504,7 +1620,7 @@
       if (snap.notes && snap.notes.length > 0) {
         html += '<div class="card" style="margin-bottom:16px;"><div class="card-title" style="color:var(--ink-muted);">Notes (' + snap.notes.length + ')</div>';
         snap.notes.forEach(function(n) {
-          html += '<div style="font-size:12px;color:var(--ink-muted);padding:4px 0;border-bottom:1px solid var(--border-light);font-family:var(--font-ui);">' + esc(n) + '</div>';
+          html += '<div style="font-size:12px;color:var(--ink-muted);padding:4px 0;border-bottom:1px solid var(--border-light);font-family:var(--font-ui);">' + esc(humanizeHealthFlag(n)) + '</div>';
         });
         html += '</div>';
       }
@@ -1638,6 +1754,9 @@
       html += '<div class="consolidation-row"><span class="cl">Semantic facts</span><span class="cv">' + semFacts.length + '</span></div>';
       html += '<div class="consolidation-row"><span class="cl">Procedures</span><span class="cv">' + procItems.length + '</span></div>';
       html += '<div class="consolidation-row"><span class="cl">Relations</span><span class="cv">' + relItems.length + '</span></div>';
+      if (semFacts.length === 0 && procItems.length === 0 && relItems.length === 0) {
+        html += '<div style="font-size:12px;color:var(--ink-faint);margin-top:8px;line-height:1.5;">Consolidation distills session observations into durable facts and repeatable procedures. It runs on a schedule when <code>CONSOLIDATION_ENABLED=true</code> and an LLM provider key are set, or on demand via <code>memory_consolidate</code>.</div>';
+      }
       html += '</div>';
 
       if (relItems.length > 0) {
@@ -1695,9 +1814,24 @@
 
       var results = await Promise.all([
         apiPost('graph/query', { limit: GRAPH_INITIAL_LIMIT }),
-        apiGet('graph/stats')
+        api('graph/stats', { readErrorBody: true })
       ]);
       var queryResult = results[0];
+      var statsResult = results[1];
+      if (statsResult && statsResult.error && statsResult.flag) {
+        // 503 with a structured body = the feature is off, not broken.
+        // Rendering this as "query failed / Retry" sends users hunting
+        // through server logs for an error that isn't one.
+        state.graph.disabledInfo = statsResult;
+        state.graph.queryError = null;
+        state.graph.nodes = [];
+        state.graph.edges = [];
+        state.graph.stats = {};
+        state.graph.loaded = true;
+        renderGraphSidebar();
+        return;
+      }
+      state.graph.disabledInfo = null;
       if (queryResult === null) {
         // api() returns null only on non-2xx or a transport error; an
         // empty graph would come back as { nodes: [], edges: [] }.
@@ -1764,6 +1898,17 @@
 
       var html = '';
 
+      if (state.graph.disabledInfo) {
+        html += '<div style="margin:8px 0;padding:10px 12px;border:1px solid var(--border);background:var(--bg-alt);font-size:12px;color:var(--ink);line-height:1.5;">';
+        html += '<div style="font-weight:600;margin-bottom:4px;">Knowledge graph is off</div>';
+        html += '<div style="font-size:11px;color:var(--ink-muted);">' + esc(state.graph.disabledInfo.enableHow || 'Set ' + (state.graph.disabledInfo.flag || 'GRAPH_EXTRACTION_ENABLED') + '=true and restart.') + '</div>';
+        if (state.graph.disabledInfo.docsHref) {
+          html += '<a href="' + esc(state.graph.disabledInfo.docsHref) + '" target="_blank" rel="noopener" style="font-size:11px;">docs &rarr;</a>';
+        }
+        html += '</div>';
+        sb.innerHTML = html;
+        return;
+      }
       // #753: error banner stays above the search box so a failed
       // graph/query doesn't read as "0 nodes".
       if (state.graph.queryError) {
@@ -1796,7 +1941,10 @@
         html += '<label class="filter-item"><input type="checkbox" checked data-type="' + esc(type) + '"><span class="filter-dot" style="background:' + color + '"></span>' + esc(type) + '</label>';
       });
 
-      html += '<div class="graph-legend"><h3>Legend</h3>';
+      if (state.graph.nodes.length > 0 && state.graph.edges.length === 0) {
+        html += '<div style="margin:10px 0;padding:10px 12px;border:1px solid var(--border-light);background:var(--bg-subtle);font-size:11px;color:var(--ink-muted);line-height:1.5;">Entities extracted, no relations between them yet. Nodes are grouped by kind; edges appear as extraction sees entities acting on each other across more sessions (larger models find them faster).</div>';
+      }
+      html += '<div class="graph-legend" style="display:none"><h3>Legend</h3>';
       var shapeLabels = { rect: '&#9645;', circle: '&#9679;', diamond: '&#9670;', hexagon: '&#11042;' };
       var shownShapes = {};
       Object.keys(NODE_COLORS).forEach(function(type) {
@@ -1856,21 +2004,38 @@
         edgeMap[e.targetNodeId] = (edgeMap[e.targetNodeId] || 0) + 1;
       });
 
+      // With no (or few) edges a pure force layout is a meaningless
+      // scatter. Anchor each type to its own cluster center so the
+      // picture reads as "here is what memory knows, grouped by kind";
+      // once real relations exist the edge springs dominate instead.
+      var types = [];
+      state.graph.nodes.forEach(function(n) {
+        if (types.indexOf(n.type) === -1) types.push(n.type);
+      });
+      var typeCenters = {};
+      types.forEach(function(t, ti) {
+        var a = (2 * Math.PI * ti) / Math.max(types.length, 1) - Math.PI / 2;
+        var cr = types.length > 1 ? Math.min(cw, ch) * 0.28 : 0;
+        typeCenters[t] = { x: Math.cos(a) * cr, y: Math.sin(a) * cr };
+      });
+      graphSim.typeCenters = typeCenters;
+      graphSim.clustered = state.graph.edges.length < state.graph.nodes.length / 2;
+
       graphSim.nodes = state.graph.nodes.map(function(n, i) {
-        var angle = (2 * Math.PI * i) / Math.max(state.graph.nodes.length, 1);
-        var radius = Math.min(cw, ch) * 0.3;
         var deg = edgeMap[n.id] || 0;
+        var c = typeCenters[n.type] || { x: 0, y: 0 };
         return {
           id: n.id, type: n.type, name: n.name, properties: n.properties,
-          x: Math.cos(angle) * radius + (Math.random() - 0.5) * 50,
-          y: Math.sin(angle) * radius + (Math.random() - 0.5) * 50,
+          x: c.x + (Math.random() - 0.5) * 150,
+          y: c.y + (Math.random() - 0.5) * 150,
           vx: 0, vy: 0,
-          r: Math.max(8, Math.min(22, 8 + deg * 2.5))
+          r: Math.max(11, Math.min(22, 11 + deg * 2.5))
         };
       });
       graphSim.edges = state.graph.edges.slice();
       graphSim.running = true;
       graphSim.dragNode = null;
+      graphSim.autoFitPending = true;
 
       setupGraphInteraction(canvas);
       runSimulation();
@@ -2084,8 +2249,14 @@
           fx += (dx / dist) * force;
           fy += (dy / dist) * force;
         }
-        fx -= n.x * centerGravity;
-        fy -= n.y * centerGravity;
+        if (graphSim.clustered && graphSim.typeCenters && graphSim.typeCenters[n.type]) {
+          var tc = graphSim.typeCenters[n.type];
+          fx += (tc.x - n.x) * 0.006;
+          fy += (tc.y - n.y) * 0.006;
+        } else {
+          fx -= n.x * centerGravity;
+          fy -= n.y * centerGravity;
+        }
         var nvx = (n.vx + fx) * damping;
         var nvy = (n.vy + fy) * damping;
         // Velocity cap (#563): keep any single node from being launched
@@ -2118,6 +2289,10 @@
         totalKineticEnergy += n.vx * n.vx + n.vy * n.vy;
       });
 
+      if (graphSim.autoFitPending && graphSim.tickCount > 45) {
+        graphSim.autoFitPending = false;
+        fitGraphToView();
+      }
       // park the simulation when the layout is quiet to save CPU.
       // Pick up again when a drag/interaction wakes the loop.
       var rmsVelocity = nodes.length > 0 ? Math.sqrt(totalKineticEnergy / nodes.length) : 0;
@@ -2175,6 +2350,27 @@
       }
     }
 
+    function fitGraphToView() {
+      var canvas = graphSim.canvas;
+      if (!canvas || graphSim.nodes.length === 0) return;
+      var w = canvas.width / window.devicePixelRatio;
+      var h = canvas.height / window.devicePixelRatio;
+      var minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+      graphSim.nodes.forEach(function(n) {
+        if (n.x < minX) minX = n.x;
+        if (n.x > maxX) maxX = n.x;
+        if (n.y < minY) minY = n.y;
+        if (n.y > maxY) maxY = n.y;
+      });
+      var pad = 150;
+      var spanX = (maxX - minX) + pad * 2;
+      var spanY = (maxY - minY) + pad * 2;
+      var z = Math.min(w / spanX, h / spanY);
+      graphSim.zoom = Math.max(0.35, Math.min(1.4, z));
+      graphSim.panX = w / 2 - ((minX + maxX) / 2) * graphSim.zoom;
+      graphSim.panY = h / 2 - ((minY + maxY) / 2) * graphSim.zoom;
+    }
+
     function renderGraph() {
       var ctx = graphSim.ctx;
       var canvas = graphSim.canvas;
@@ -2205,6 +2401,15 @@
       graphSim.nodes.forEach(function(n) { nodeMap[n.id] = n; });
 
       var searchActive = graphSearchTerm.length > 0;
+      var drawnLabelRects = [];
+      function labelFits(x, y, w2, h2) {
+        for (var li = 0; li < drawnLabelRects.length; li++) {
+          var r = drawnLabelRects[li];
+          if (x < r.x + r.w && x + w2 > r.x && y < r.y + r.h && y + h2 > r.y) return false;
+        }
+        drawnLabelRects.push({ x: x, y: y, w: w2, h: h2 });
+        return true;
+      }
       var totalVisible = graphSim.nodes.filter(function(n) { return state.graph.filters[n.type]; }).length;
       var isDense = totalVisible > 40;
       var labelZoomThreshold = isDense ? 1.5 : 0.5;
@@ -2303,7 +2508,7 @@
         var isSelected = selectedId === n.id;
         var isHovered = hoverNodeId === n.id;
         var matchesSearch = !searchActive || n.name.toLowerCase().includes(graphSearchTerm);
-        var isFocusFaded = focusNodeId && n.id !== focusNodeId && !graphSim.edges.some(function(ed) {
+        var isFocusFaded = graphSim.edges.length > 0 && focusNodeId && n.id !== focusNodeId && !graphSim.edges.some(function(ed) {
           return (ed.sourceNodeId === focusNodeId && ed.targetNodeId === n.id) ||
                  (ed.targetNodeId === focusNodeId && ed.sourceNodeId === n.id);
         });
@@ -2356,6 +2561,7 @@
         var showLabel = matchesSearch && !isFocusFaded && (
           isSelected || isHovered ||
           (searchActive && matchesSearch) ||
+          (totalVisible <= 30 && graphSim.zoom > 0.5) ||
           (!isDense && graphSim.zoom > labelZoomThreshold) ||
           (isDense && graphSim.zoom > labelZoomThreshold && n.r > 10)
         );
@@ -2370,7 +2576,13 @@
           var labelW = textW + (16 * zoomInv);
           var labelH = 20 * zoomInv;
           var labelY = n.y + n.r + (8 * zoomInv); // Top of the background pill
-          
+          // Selected/hovered labels always win; others draw only into
+          // free space so zoomed-out views degrade to fewer labels
+          // instead of a pile of overlapping pills.
+          if (!isSelected && !isHovered && !labelFits(n.x - labelW / 2, labelY, labelW, labelH)) {
+            ctx.restore();
+            return;
+          }
           ctx.fillStyle = isDarkMode() ? 'rgba(30,30,35,0.92)' : 'rgba(255,255,255,0.92)';
           ctx.beginPath();
           ctx.roundRect ? ctx.roundRect(n.x - labelW / 2, labelY, labelW, labelH, 4 * zoomInv) : ctx.rect(n.x - labelW / 2, labelY, labelW, labelH);
@@ -2401,7 +2613,7 @@
 
     async function loadMemories() {
       var el = document.getElementById('view-memories');
-      el.innerHTML = '<div class="loading">Loading memories...</div>';
+      if (!state.memories.loaded) el.innerHTML = '<div class="loading">Loading memories...</div>';
       // cap at 2000 so the viewer remains responsive on large
       // corpora. Older endpoints returned the full unbounded list which
       // hit the iii invocation timeout and the UI fell through to 0.
@@ -2484,7 +2696,8 @@
           var strength = Math.round(rawStrength <= 1 ? rawStrength * 100 : rawStrength * 10);
           if (strength > 100) strength = 100;
           var barColor = strength > 70 ? 'var(--green)' : strength > 40 ? 'var(--yellow)' : 'var(--red)';
-          html += '<tr>';
+          var expanded = state.memories.selectedId === m.id;
+          html += '<tr class="memory-row' + (expanded ? ' selected' : '') + '" data-action="select-memory" data-memory-id="' + esc(m.id) + '" role="button" tabindex="0" aria-expanded="' + (expanded ? 'true' : 'false') + '" style="cursor:pointer;">';
           var preview = (m.content || '').split('\n').slice(0, 2).join(' ').trim();
           var previewHtml = esc(truncate(preview, 150));
           if (search && search.length > 2) {
@@ -2505,6 +2718,24 @@
           html += '<td style="font-size:11px;color:var(--ink-faint);font-family:var(--font-mono);">' + esc(formatTime(m.updatedAt)) + '</td>';
           html += '<td><button class="btn btn-danger" style="font-size:9px;padding:2px 8px;" data-action="delete-memory" data-memory-id="' + esc(m.id) + '" data-memory-title="' + esc(m.title || '') + '">Delete</button></td>';
           html += '</tr>';
+          if (expanded) {
+            html += '<tr class="memory-detail-row"><td colspan="6" style="background:var(--bg-alt);padding:14px 16px;">';
+            html += '<div style="font-size:13px;color:var(--ink);white-space:pre-wrap;line-height:1.5;margin-bottom:10px;">' + esc(m.content || '') + '</div>';
+            html += '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:11px;color:var(--ink-muted);font-family:var(--font-mono);margin-bottom:10px;">';
+            html += '<span>id: ' + esc(m.id) + '</span>';
+            if (m.origin && m.origin.channel) {
+              html += '<span>origin: ' + esc(m.origin.channel) + (m.origin.detail ? ' (' + esc(m.origin.detail) + ')' : '') + '</span>';
+            }
+            if (m.project) html += '<span>project: ' + esc(m.project) + '</span>';
+            if (m.createdAt) html += '<span>created: ' + esc(formatTime(m.createdAt)) + '</span>';
+            if (m.supersedes && m.supersedes.length > 0) html += '<span>supersedes: ' + esc(m.supersedes.join(', ')) + '</span>';
+            if (m.files && m.files.length > 0) html += '<span>files: ' + esc(m.files.join(', ')) + '</span>';
+            if (m.sessionIds && m.sessionIds.length > 0) html += '<span>sessions: ' + m.sessionIds.length + '</span>';
+            html += '</div>';
+            html += '<details><summary style="cursor:pointer;font-size:11px;color:var(--ink-faint);font-family:var(--font-mono);">raw record</summary>';
+            html += '<pre style="margin-top:8px;padding:10px;background:var(--bg);border:1px solid var(--border);font-size:11px;line-height:1.5;overflow-x:auto;">' + esc(JSON.stringify(m, null, 2)) + '</pre></details>';
+            html += '</td></tr>';
+          }
         });
         html += '</table>';
       }
@@ -2546,13 +2777,19 @@
 
     async function loadTimeline() {
       var el = document.getElementById('view-timeline');
-      el.innerHTML = '<div class="loading">Loading timeline...</div>';
+      if (!state.timeline.loaded) el.innerHTML = '<div class="loading">Loading timeline...</div>';
       var sessResult = await apiGet('sessions');
       var sessions = (sessResult && sessResult.sessions) || [];
       state.timeline.loaded = true;
 
       if (sessions.length > 0 && !state.timeline.sessionId) {
-        var sorted = sessions.slice().sort(function(a, b) { return (b.startedAt || '').localeCompare(a.startedAt || ''); });
+        // Default to the session with the most observations — the newest
+        // one is often a sparse just-started session, which made the tab
+        // look empty on first open.
+        var sorted = sessions.slice().sort(function(a, b) {
+          return (b.observationCount || 0) - (a.observationCount || 0) ||
+            (b.startedAt || '').localeCompare(a.startedAt || '');
+        });
         var firstSelectable = sorted.find(function(s) { return sessionId(s); });
         state.timeline.sessionId = firstSelectable ? sessionId(firstSelectable) : '';
       }
@@ -2692,7 +2929,7 @@
         html += '<span class="obs-time">' + esc(shortTime(o.timestamp)) + '</span>';
         html += '</div></div>';
 
-        if (o.subtitle) html += '<div class="obs-subtitle">' + esc(o.subtitle) + '</div>';
+        if (o.subtitle) html += '<div class="obs-subtitle">' + esc(humanizeSubtitle(o.subtitle)) + '</div>';
 
         html += '<div style="margin-top:4px;">';
         html += '<span class="badge" style="border-color:' + typeColor + ';color:' + typeColor + ';margin-right:4px;">' + esc(type.replace(/_/g, ' ')) + '</span>';
@@ -2772,7 +3009,7 @@
 
     async function loadActivity() {
       var el = document.getElementById('view-activity');
-      el.innerHTML = '<div class="loading">Loading activity...</div>';
+      if (!state.activity.loaded) el.innerHTML = '<div class="loading">Loading activity...</div>';
       var results = await Promise.all([
         apiGet('sessions'),
         apiGet('audit?limit=200')
@@ -2909,7 +3146,7 @@
 
     async function loadSessions() {
       var el = document.getElementById('view-sessions');
-      el.innerHTML = '<div class="loading">Loading sessions...</div>';
+      if (!state.sessions.loaded) el.innerHTML = '<div class="loading">Loading sessions...</div>';
       var result = await apiGet('sessions');
       state.sessions.items = (result && result.sessions) || [];
       state.sessions.loaded = true;
@@ -2922,7 +3159,7 @@
         return (b.startedAt || '').localeCompare(a.startedAt || '');
       });
 
-      var html = '<div class="session-list">';
+      var html = '<div class="sessions-layout"><div class="session-list">';
       if (items.length === 0) {
         html += '<div class="empty-state"><div class="empty-icon">&#128466;</div><p>No sessions</p></div>';
       } else {
@@ -2930,7 +3167,7 @@
           var statusBadge = s.status === 'active' ? 'badge-green' : s.status === 'completed' ? 'badge-blue' : 'badge-muted';
           var id = sessionId(s);
           var selected = id && state.sessions.selectedId === id;
-          html += '<div class="session-item' + (selected ? ' selected' : '') + '"' + (id ? ' data-action="select-session" data-session-id="' + esc(id) + '"' : '') + '>';
+          html += '<div class="session-item' + (selected ? ' selected' : '') + '"' + (id ? ' data-action="select-session" data-session-id="' + esc(id) + '" role="button" tabindex="0" aria-expanded="' + (selected ? 'true' : 'false') + '"' : '') + '>';
           html += '<div class="session-top"><span class="session-project">' + esc(sessionDisplayName(s)) + '</span>';
           html += '<span class="badge ' + statusBadge + '">' + esc(s.status) + '</span></div>';
           var preview = s.firstPrompt || s.summary || '';
@@ -2944,7 +3181,7 @@
         });
       }
       html += '</div>';
-      html += '<div id="session-detail"></div>';
+      html += '<div id="session-detail"></div></div>';
       el.innerHTML = html;
 
       if (state.sessions.selectedId) renderSessionDetail();
@@ -2953,6 +3190,18 @@
     function selectSession(id) {
       state.sessions.selectedId = state.sessions.selectedId === id ? null : id;
       renderSessions();
+      // On the stacked layout (narrow screens) the detail renders below
+      // the list; bring it into view. The wide two-pane layout keeps the
+      // panel sticky beside the list, so no scroll is needed there.
+      if (
+        state.sessions.selectedId &&
+        window.matchMedia('(max-width: 1100px)').matches
+      ) {
+        var panel = document.getElementById('session-detail');
+        if (panel && panel.scrollIntoView) {
+          panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      }
     }
 
     async function renderSessionDetail() {
@@ -3076,7 +3325,7 @@
 
     async function loadLessons() {
       var el = document.getElementById('view-lessons');
-      el.innerHTML = '<div class="loading">Loading lessons...</div>';
+      if (!state.lessons.loaded) el.innerHTML = '<div class="loading">Loading lessons...</div>';
       var result = await apiGet('lessons');
       state.lessons.items = (result && result.lessons) || [];
       state.lessons.loaded = true;
@@ -3108,16 +3357,17 @@
         html += '<div class="empty-state">' +
           '<div class="empty-icon">&#128161;</div>' +
           '<div class="empty-title">No lessons yet</div>' +
-          '<div class="empty-lead">Lessons are confidence-scored pattern observations &mdash; things you corrected once that the agent should never do again. They persist across projects.</div>' +
+          '<div class="empty-lead">Lessons are short imperative rules (always/never/prefer/avoid) learned from past work &mdash; things you corrected once that the agent should never repeat. Confidence grows when they hold and decays when unused.</div>' +
           '<pre class="empty-cmd"># Save a lesson explicitly\nmemory_lesson_save { rule, reason, confidence }\n\n# Or: Replay tab &rarr; Import JSONL auto-extracts lessons\n# from your past Claude Code sessions</pre>' +
           '<div><a class="empty-link" href="https://github.com/rohitg00/agentmemory#lessons" target="_blank" rel="noopener">Lesson decay &amp; scoring &rarr;</a></div>' +
           '</div>';
       } else {
-        html += '<table><thead><tr><th>Lesson</th><th>Confidence</th><th>Reinforcements</th><th>Source</th><th>Project</th><th>Updated</th></tr></thead><tbody>';
+        html += '<table><thead><tr><th>Lesson</th><th title="How battle-tested the rule is. Grows each time it is reinforced, decays weekly when unused.">Confidence</th><th title="Times the agent re-confirmed this rule.">Uses</th><th>Source</th><th>Project</th><th>Updated</th></tr></thead><tbody>';
         items.forEach(function(l) {
           var confPct = Math.round(l.confidence * 100);
           var confColor = confPct >= 70 ? 'var(--green)' : confPct >= 40 ? 'var(--yellow)' : 'var(--red)';
-          html += '<tr>';
+          var expanded = state.lessons.selectedId === l.id;
+          html += '<tr class="lesson-row' + (expanded ? ' selected' : '') + '" data-action="select-lesson" data-lesson-id="' + esc(l.id) + '" role="button" tabindex="0" aria-expanded="' + (expanded ? 'true' : 'false') + '" style="cursor:pointer;">';
           html += '<td style="max-width:400px;">' + esc(truncate(l.content, 120)) + (l.context ? '<div style="font-size:11px;color:var(--ink-faint);margin-top:2px;">' + esc(truncate(l.context, 80)) + '</div>' : '') + '</td>';
           html += '<td><div class="gauge" style="min-width:80px;"><div class="gauge-bar"><div class="gauge-fill" style="width:' + confPct + '%;background:' + confColor + '"></div></div><span class="gauge-value" style="font-size:11px;">' + confPct + '%</span></div></td>';
           html += '<td style="text-align:center;">' + (l.reinforcements || 0) + '</td>';
@@ -3125,6 +3375,21 @@
           html += '<td style="font-size:12px;color:var(--ink-muted);">' + esc(l.project || '-') + '</td>';
           html += '<td style="font-size:12px;color:var(--ink-muted);">' + shortTime(l.updatedAt) + '</td>';
           html += '</tr>';
+          if (expanded) {
+            html += '<tr class="lesson-detail-row"><td colspan="6" style="background:var(--bg-alt);padding:14px 16px;">';
+            html += '<div style="font-size:13px;color:var(--ink);white-space:pre-wrap;line-height:1.5;margin-bottom:8px;">' + esc(l.content) + '</div>';
+            if (l.context) html += '<div style="font-size:12px;color:var(--ink-muted);margin-bottom:8px;"><span style="font-family:var(--font-ui);font-size:10px;text-transform:uppercase;letter-spacing:0.1em;">Why learned</span><br>' + esc(l.context) + '</div>';
+            html += '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:11px;color:var(--ink-muted);font-family:var(--font-mono);margin-bottom:8px;">';
+            html += '<span>id: ' + esc(l.id) + '</span>';
+            if (l.tags && l.tags.length) html += '<span>tags: ' + esc(l.tags.join(', ')) + '</span>';
+            if (l.createdAt) html += '<span>learned: ' + esc(formatTime(l.createdAt)) + '</span>';
+            if (l.lastReinforcedAt) html += '<span>last confirmed: ' + esc(formatTime(l.lastReinforcedAt)) + '</span>';
+            if (l.sourceIds && l.sourceIds.length) html += '<span>from ' + l.sourceIds.length + ' session(s)</span>';
+            html += '</div>';
+            html += '<details><summary style="cursor:pointer;font-size:11px;color:var(--ink-faint);font-family:var(--font-mono);">raw record</summary>';
+            html += '<pre style="margin-top:8px;padding:10px;background:var(--bg);border:1px solid var(--border);font-size:11px;line-height:1.5;overflow-x:auto;">' + esc(JSON.stringify(l, null, 2)) + '</pre></details>';
+            html += '</td></tr>';
+          }
         });
         html += '</tbody></table>';
       }
@@ -3138,7 +3403,7 @@
 
     async function loadActions() {
       var el = document.getElementById('view-actions');
-      el.innerHTML = '<div class="loading">Loading actions...</div>';
+      if (!state.actions.loaded) el.innerHTML = '<div class="loading">Loading actions...</div>';
       var results = await Promise.all([apiGet('actions'), apiGet('frontier')]);
       state.actions.items = (results[0] && results[0].actions) || [];
       state.actions.frontier = (results[1] && (results[1].frontier || results[1].actions)) || [];
@@ -3149,6 +3414,10 @@
     function renderActions() {
       var el = document.getElementById('view-actions');
       var items = state.actions.items;
+      var introCard = '<div class="card" style="margin-bottom:12px;padding:12px;background:var(--bg-subtle);">' +
+        '<div style="font-size:13px;color:var(--ink-muted);line-height:1.5;">' +
+        '<strong>Actions</strong> are follow-ups the agent surfaced during sessions — decisions to revisit, files to inspect, tasks blocked on input. Status flows pending &rarr; active &rarr; done/blocked; the <em>frontier</em> marks what is unblocked and ready to pick up next.' +
+        '</div></div>';
       var search = state.actions.search.toLowerCase();
       var statusFilter = state.actions.statusFilter;
       var frontierIds = new Set((state.actions.frontier || []).map(function(a) { return a.id; }));
@@ -3162,7 +3431,8 @@
         items = items.filter(function(a) { return a.status === statusFilter; });
       }
 
-      var html = '<div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">';
+      var html = introCard;
+      html += '<div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">';
       html += '<input id="actions-search" class="search-input" type="text" placeholder="Search actions..." value="' + esc(state.actions.search) + '" style="flex:1;min-width:200px" />';
       html += '<select id="actions-status-filter" style="padding:4px 8px;font-size:12px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--ink);">';
       html += '<option value="">All statuses</option>';
@@ -3213,7 +3483,7 @@
 
     async function loadCrystals() {
       var el = document.getElementById('view-crystals');
-      el.innerHTML = '<div class="loading">Loading crystals...</div>';
+      if (!state.crystals.loaded) el.innerHTML = '<div class="loading">Loading crystals...</div>';
       var results = await Promise.all([apiGet('crystals'), apiGet('lessons')]);
       state.crystals.items = (results[0] && results[0].crystals) || [];
       var lessonMap = {};
@@ -3264,7 +3534,7 @@
         html += '<div class="empty-state">' +
           '<div class="empty-icon">&#128142;</div>' +
           '<div class="empty-title">No crystals yet</div>' +
-          '<div class="empty-lead">Crystals are compressed action digests &mdash; the 3-line summary of what happened in a session. Generated from long conversations to give the next session fast context without re-reading everything.</div>' +
+          '<div class="empty-lead">Crystals are frozen snapshots of completed work &mdash; one session’s narrative, key outcomes, files touched, and lessons surfaced, kept after raw observations are pruned so the next session gets fast context.</div>' +
           '<pre class="empty-cmd"># Auto: import a JSONL transcript\n#   Replay tab &rarr; Import JSONL\n\n# Manual: crystallize a specific session\nmemory_crystallize { sessionId }</pre>' +
           '<div><a class="empty-link" href="https://github.com/rohitg00/agentmemory#crystals" target="_blank" rel="noopener">Crystal pipeline &rarr;</a></div>' +
           '</div>';
@@ -3326,7 +3596,7 @@
 
     async function loadAudit() {
       var el = document.getElementById('view-audit');
-      el.innerHTML = '<div class="loading">Loading audit log...</div>';
+      if (!state.audit.loaded) el.innerHTML = '<div class="loading">Loading audit log...</div>';
       var result = await apiGet('audit?limit=100');
       state.audit.entries = (result && result.entries) || [];
       state.audit.loaded = true;
@@ -3450,7 +3720,7 @@
       html += '<div class="card"><div class="card-title">Top Concepts</div>';
       var concepts = p.topConcepts || [];
       if (concepts.length === 0) {
-        html += '<div style="font-size:13px;color:var(--ink-faint);font-style:italic;">No concepts yet</div>';
+        html += '<div style="font-size:13px;color:var(--ink-faint);line-height:1.5;">No concepts yet. Concepts are tagged when observations are compressed by an LLM (<code>AGENTMEMORY_AUTO_COMPRESS=true</code> + provider key) or attached to saved memories.</div>';
       } else {
         var maxC = Math.max.apply(null, concepts.map(function(c) { return c.frequency; })) || 1;
         html += '<div class="bar-chart">';
@@ -3859,6 +4129,17 @@
       }
     });
     fetchFlags();
+    // Keyboard activation for role="button" cards (session items). Click
+    // delegation alone leaves them unreachable for keyboard and AT users.
+    document.addEventListener('keydown', function(e) {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      if (!(e.target instanceof Element)) return;
+      var card = e.target.closest('[data-action][role="button"], [data-action][role="link"]');
+      if (!card) return;
+      e.preventDefault();
+      card.click();
+    });
+
     document.addEventListener('click', function(e) {
       if (!(e.target instanceof Element)) return;
       var target = e.target.closest('[data-action]');
@@ -3937,6 +4218,27 @@
       if (action === 'select-session') {
         var sessionId = target.getAttribute('data-session-id');
         if (sessionId) selectSession(sessionId);
+        return;
+      }
+      if (action === 'goto-tab') {
+        var gotoTab = target.getAttribute('data-tab');
+        if (gotoTab) switchTab(gotoTab);
+        return;
+      }
+      if (action === 'select-lesson') {
+        var lsnId = target.getAttribute('data-lesson-id');
+        if (lsnId) {
+          state.lessons.selectedId = state.lessons.selectedId === lsnId ? null : lsnId;
+          renderLessons();
+        }
+        return;
+      }
+      if (action === 'select-memory') {
+        var memId = target.getAttribute('data-memory-id');
+        if (memId) {
+          state.memories.selectedId = state.memories.selectedId === memId ? null : memId;
+          renderMemories();
+        }
         return;
       }
       if (action === 'end-session') {
@@ -4188,8 +4490,83 @@
     });
 
     switchTab(tabFromRoute(), { replaceRoute: true });
-    connectWs();
+    // Resolve the stream WebSocket target from the server before the first
+    // connect. The old viewerPort-1 arithmetic breaks whenever the viewer
+    // binds a fallback port (3113 taken → viewer on 3114 → 3113 is another
+    // HTTP server, not the streams endpoint) — every retry then fails and
+    // the viewer silently degrades to 10s polling.
+    (async function initWs() {
+      try {
+        var live = await api('livez', { signal: AbortSignal.timeout(5000) });
+        if (live && typeof live.streamsPort === 'number' && live.streamsPort > 0) {
+          WS_URL = wsProto + '//' + window.location.hostname + ':' + live.streamsPort;
+          WS_DIRECT_URL = WS_URL + '/stream/mem-live/viewer';
+        }
+      } catch (_) {}
+      connectWs();
+    })();
     startDashboardAutoRefresh();
+
+    // Ambient background: an ordered-dither dot field that drifts very
+    // slowly — the print-halftone cousin of the old static dot grid.
+    // Renders at quarter resolution and ~12fps; a single static frame
+    // under prefers-reduced-motion.
+    (function ditherField() {
+      var cv = document.getElementById('bg-dither');
+      if (!cv || !cv.getContext) return;
+      var ctx = cv.getContext('2d');
+      var BAYER = [
+        [0, 8, 2, 10],
+        [12, 4, 14, 6],
+        [3, 11, 1, 9],
+        [15, 7, 13, 5]
+      ];
+      var CELL = 7;
+      var t = 0;
+      var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+      function dotColor() {
+        return document.documentElement.getAttribute('data-theme') === 'dark'
+          ? 'rgba(150, 154, 162, 0.16)'
+          : 'rgba(90, 90, 84, 0.14)';
+      }
+
+      function draw() {
+        var w = cv.width = Math.ceil(window.innerWidth / 2);
+        var h = cv.height = Math.ceil(window.innerHeight / 2);
+        ctx.clearRect(0, 0, w, h);
+        ctx.fillStyle = dotColor();
+        var cols = Math.ceil(w / CELL) + 1;
+        var rows = Math.ceil(h / CELL) + 1;
+        for (var y = 0; y < rows; y++) {
+          for (var x = 0; x < cols; x++) {
+            // Slow luminance swells drifting diagonally; the Bayer
+            // threshold turns them into stable ordered-dither dots.
+            var v =
+              0.5 +
+              0.5 *
+                Math.sin(x * 0.11 + t * 0.013) *
+                Math.cos(y * 0.13 - t * 0.011);
+            if (v * 16 > BAYER[y % 4][x % 4] + 6.5) {
+              ctx.fillRect(x * CELL, y * CELL, 1.4, 1.4);
+            }
+          }
+        }
+      }
+
+      draw();
+      if (!reduced) {
+        setInterval(function () {
+          t++;
+          draw();
+        }, 85);
+      }
+      window.addEventListener('resize', draw);
+      new MutationObserver(draw).observe(document.documentElement, {
+        attributes: true,
+        attributeFilter: ['data-theme']
+      });
+    })();
   </script>
 </body>
 </html>

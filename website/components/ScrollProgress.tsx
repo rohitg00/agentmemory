@@ -40,7 +40,7 @@ export function ScrollProgress() {
           display: "block",
           height: "100%",
           width: 0,
-          background: "var(--gold)",
+          background: "rgba(255, 255, 255, 0.35)",
           transition: "width 80ms linear",
         }}
       />

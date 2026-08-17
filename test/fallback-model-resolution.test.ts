@@ -106,11 +106,11 @@ describe("Fallback provider model resolution (#778)", () => {
   it("primary OpenAI + fallback Gemini: Gemini is built with GEMINI_MODEL, NOT the primary's model", () => {
     process.env.OPENAI_API_KEY = "sk-openai";
     process.env.GEMINI_API_KEY = "gemini-key";
-    process.env.GEMINI_MODEL = "gemini-2.5-flash";
+    process.env.GEMINI_MODEL = "gemini-3.7-flash";
 
     const primary: ProviderConfig = {
       provider: "openai",
-      model: "gpt-4o-mini",
+      model: "gpt-5.6-luna",
       maxTokens: 4096,
     };
     const fallback: FallbackConfig = { providers: ["gemini"] };
@@ -119,9 +119,9 @@ describe("Fallback provider model resolution (#778)", () => {
 
     const openaiCall = captured.find((c) => c.provider === "openai");
     const geminiCall = captured.find((c) => c.provider === "gemini");
-    expect(openaiCall?.model).toBe("gpt-4o-mini");
-    expect(geminiCall?.model).toBe("gemini-2.5-flash");
-    expect(geminiCall?.model).not.toBe("gpt-4o-mini");
+    expect(openaiCall?.model).toBe("gpt-5.6-luna");
+    expect(geminiCall?.model).toBe("gemini-3.7-flash");
+    expect(geminiCall?.model).not.toBe("gpt-5.6-luna");
   });
 
   it("Gemini fallback uses the documented default when GEMINI_MODEL is unset", () => {
@@ -129,12 +129,12 @@ describe("Fallback provider model resolution (#778)", () => {
     process.env.GEMINI_API_KEY = "gemini-key";
 
     createFallbackProvider(
-      { provider: "openai", model: "gpt-4o-mini", maxTokens: 4096 },
+      { provider: "openai", model: "gpt-5.6-luna", maxTokens: 4096 },
       { providers: ["gemini"] },
     );
 
     const geminiCall = captured.find((c) => c.provider === "gemini");
-    expect(geminiCall?.model).toBe("gemini-2.5-flash");
+    expect(geminiCall?.model).toBe("gemini-3.7-flash");
   });
 
   it("primary Anthropic + fallback OpenAI + Minimax: each fallback uses its own default", () => {
@@ -146,7 +146,7 @@ describe("Fallback provider model resolution (#778)", () => {
     createFallbackProvider(
       {
         provider: "anthropic",
-        model: "claude-sonnet-4-20250514",
+        model: "claude-sonnet-5",
         maxTokens: 4096,
       },
       { providers: ["openai", "minimax"] },
@@ -155,10 +155,10 @@ describe("Fallback provider model resolution (#778)", () => {
     const openai = captured.find((c) => c.provider === "openai");
     const minimax = captured.find((c) => c.provider === "minimax");
     expect(openai?.model).toBe("gpt-5");
-    expect(minimax?.model).toBe("MiniMax-M2.7");
+    expect(minimax?.model).toBe("MiniMax-M3");
     // Neither inherits the Anthropic model name.
-    expect(openai?.model).not.toBe("claude-sonnet-4-20250514");
-    expect(minimax?.model).not.toBe("claude-sonnet-4-20250514");
+    expect(openai?.model).not.toBe("claude-sonnet-5");
+    expect(minimax?.model).not.toBe("claude-sonnet-5");
   });
 
   it("env override on the fallback provider's MODEL var wins over the default", () => {
@@ -167,7 +167,7 @@ describe("Fallback provider model resolution (#778)", () => {
     process.env.GEMINI_MODEL = "gemini-2.5-pro";
 
     createFallbackProvider(
-      { provider: "openai", model: "gpt-4o-mini", maxTokens: 4096 },
+      { provider: "openai", model: "gpt-5.6-luna", maxTokens: 4096 },
       { providers: ["gemini"] },
     );
 
@@ -180,7 +180,7 @@ describe("Fallback provider model resolution (#778)", () => {
     process.env.OPENAI_API_KEY = "sk";
 
     createFallbackProvider(
-      { provider: "openai", model: "gpt-4o-mini", maxTokens: 4096 },
+      { provider: "openai", model: "gpt-5.6-luna", maxTokens: 4096 },
       { providers: ["openai", "gemini"] },
     );
 

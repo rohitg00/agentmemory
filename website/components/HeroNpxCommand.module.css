@@ -3,41 +3,39 @@
   grid-template-columns: auto 1fr auto;
   align-items: center;
   gap: 14px;
-  padding: 16px 22px;
+  padding: 15px 24px;
   min-width: 460px;
   max-width: 100%;
-  background: var(--iron);
-  border: 1px solid var(--gold);
-  color: var(--white);
+  background: var(--canvas-soft);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-card);
+  color: var(--ink);
   font-family: var(--font-mono);
-  font-size: 16px;
+  font-size: 15px;
   letter-spacing: 0.02em;
   cursor: pointer;
-  transition: background 0.12s ease, transform 0.12s ease, border-color 0.12s ease;
+  transition: background 0.15s ease, border-color 0.15s ease;
   text-align: left;
 }
 .cmd:hover {
-  background: #1a1a1f;
-  transform: translateY(-1px);
+  background: var(--canvas-card);
+  border-color: var(--border-ghost);
 }
 .cmd:focus-visible {
-  outline: 2px solid var(--gold);
+  outline: 2px solid rgba(255, 255, 255, 0.55);
   outline-offset: 3px;
 }
 .copied {
-  background: var(--gold);
-  color: var(--ink);
-  border-color: var(--gold);
+  border-color: var(--ok);
 }
 .copied .hint {
-  color: var(--ink);
+  color: var(--ok);
 }
 .prompt {
-  color: var(--gold);
-  font-weight: 700;
+  color: var(--sunset);
 }
 .copied .prompt {
-  color: var(--ink);
+  color: var(--ok);
 }
 .text {
   overflow: hidden;
@@ -47,13 +45,10 @@
 .hint {
   font-size: 10px;
   letter-spacing: 1.4px;
-  color: var(--ash);
+  color: var(--mute);
   text-transform: uppercase;
   padding-left: 12px;
-  border-left: 1px solid var(--charcoal);
-}
-.copied .hint {
-  border-left-color: rgba(0, 0, 0, 0.2);
+  border-left: 1px solid var(--hairline);
 }
 @media (max-width: 640px) {
   .cmd {

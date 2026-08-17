@@ -23,10 +23,16 @@ const IMPLEMENTED_TOOLS = new Set([
   "memory_governance_delete",
 ]);
 
+const SUPPORTED_PROTOCOL_VERSIONS = [
+  "2025-11-25",
+  "2025-06-18",
+  "2025-03-26",
+  "2024-11-05",
+];
+
 const SERVER_INFO = {
   name: "agentmemory",
   version: VERSION,
-  protocolVersion: "2024-11-05",
 };
 
 const kv = new InMemoryKV(getStandalonePersistPath());
@@ -99,13 +105,14 @@ interface Validated {
   type?: string;
   concepts?: string[];
   files?: string[];
+  project?: string;
+  agentId?: string;
   query?: string;
   limit?: number;
   format?: string;
   tokenBudget?: number;
   memoryIds?: string[];
   reason?: string;
-  project?: string;
 }
 
 function validate(toolName: string, args: Record<string, unknown>): Validated {
@@ -123,9 +130,14 @@ function validate(toolName: string, args: Record<string, unknown>): Validated {
       v.type = (args["type"] as string) || "fact";
       v.concepts = normalizeList(args["concepts"]);
       v.files = normalizeList(args["files"]);
-      const project = args["project"];
-      if (typeof project === "string" && project.trim()) {
-        v.project = project.trim();
+      // The tool schema exposes project (and now agentId); dropping them
+      // here silently broke project/agent scoping through the stdio
+      // package specifically.
+      if (typeof args["project"] === "string" && args["project"].trim()) {
+        v.project = args["project"].trim();
+      }
+      if (typeof args["agentId"] === "string" && args["agentId"].trim()) {
+        v.agentId = args["agentId"].trim();
       }
       return v;
     }
@@ -189,6 +201,7 @@ async function handleProxy(
         files: v.files,
       };
       if (v.project != null) body["project"] = v.project;
+      if (v.agentId != null) body["agentId"] = v.agentId;
       const result = await handle.call("/agentmemory/remember", {
         method: "POST",
         body: JSON.stringify(body),
@@ -468,15 +481,23 @@ export async function handleToolsList(): Promise<{ tools: unknown[] }> {
 
 const transport = createStdioTransport(async (method, params) => {
   switch (method) {
-    case "initialize":
+    case "initialize": {
+      const requested = (params as { protocolVersion?: unknown } | undefined)
+        ?.protocolVersion;
+      const protocolVersion =
+        typeof requested === "string" &&
+        SUPPORTED_PROTOCOL_VERSIONS.includes(requested)
+          ? requested
+          : SUPPORTED_PROTOCOL_VERSIONS[0];
       return {
-        protocolVersion: SERVER_INFO.protocolVersion,
+        protocolVersion,
         capabilities: { tools: { listChanged: false } },
         serverInfo: {
           name: SERVER_INFO.name,
           version: SERVER_INFO.version,
         },
       };
+    }
 
     case "notifications/initialized":
       return {};

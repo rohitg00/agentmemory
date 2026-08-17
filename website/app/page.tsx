@@ -6,8 +6,8 @@ import { Primitives } from "@/components/Primitives";
 import { Features } from "@/components/Features";
 import { CommandCenter } from "@/components/CommandCenter";
 import { LiveTerminal } from "@/components/LiveTerminal";
-import { Compare } from "@/components/Compare";
 import { Testimonials } from "@/components/Testimonials";
+import { Compare } from "@/components/Compare";
 import { Agents } from "@/components/Agents";
 import { Install } from "@/components/Install";
 import { Footer } from "@/components/Footer";
@@ -24,6 +24,7 @@ export default function Page() {
         <Stats
           mcpTools={meta.mcpTools}
           hooks={meta.hooks}
+          restEndpoints={meta.restEndpoints}
           testsPassing={meta.testsPassing}
         />
         <Primitives />
@@ -32,7 +33,7 @@ export default function Page() {
           mcpTools={meta.mcpTools}
           restEndpoints={meta.restEndpoints}
         />
-        <CommandCenter />
+        <CommandCenter restEndpoints={meta.restEndpoints} />
         <LiveTerminal mcpTools={meta.mcpTools} hooks={meta.hooks} />
         <Compare />
         <Testimonials />

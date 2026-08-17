@@ -1,0 +1,34 @@
+{
+  "name": "agentmemory",
+  "version": "0.9.29",
+  "description": "Persistent memory for Cursor: auto-captures sessions, prompts, and tool use via hooks, recalls with hybrid BM25 + vector + graph search, and exposes 54 memory tools over MCP. Keyless by default, runs entirely on your machine.",
+  "author": {
+    "name": "Rohit Ghumare",
+    "email": "ghumare64@gmail.com"
+  },
+  "homepage": "https://agent-memory.dev",
+  "repository": "https://github.com/rohitg00/agentmemory",
+  "license": "Apache-2.0",
+  "keywords": ["memory", "mcp", "hooks", "recall", "knowledge-graph", "agent-memory"],
+  "logo": "assets/logo.svg",
+  "skills": "plugin/skills/",
+  "hooks": "plugin/cursor/hooks.json",
+  "mcpServers": "plugin/cursor/mcp.json",
+  "variables": {
+    "type": "object",
+    "properties": {
+      "AGENTMEMORY_URL": {
+        "type": "string",
+        "title": "agentmemory server URL",
+        "description": "REST base URL of the running agentmemory server",
+        "default": "http://localhost:3111"
+      },
+      "AGENTMEMORY_SECRET": {
+        "type": "string",
+        "title": "agentmemory secret",
+        "description": "Bearer token, required only when the server sets AGENTMEMORY_SECRET",
+        "default": ""
+      }
+    }
+  }
+}

@@ -830,6 +830,18 @@ function adoptRunningEngine(): void {
 
     const pids = findEnginePidsByPort(getRestPort());
     const enginePid = pids[0];
+    if (enginePid) {
+      // A Docker-forwarded port is held by the VM/proxy process
+      // (com.docker.backend, vpnkit, ...), not the engine. Adopting it
+      // as kind:"native" would make a later `stop` SIGTERM that process.
+      const comm = pidCommand(enginePid);
+      if (isForeignPortHolder(comm)) {
+        vlog(
+          `adoptRunningEngine: refusing to adopt pid ${enginePid} (${comm}) — not the iii engine binary`,
+        );
+        return;
+      }
+    }
     if (enginePid && !existingPid) {
       writeEnginePidfile(enginePid);
     }
@@ -2363,6 +2375,12 @@ async function runDemoBody(base: string) {
 
   sQuery.stop("Search complete");
 
+  // Only claim the semantic-recall win when the search actually hit.
+  // Without an embedding key this query returns 0 hits, and asserting
+  // success over a visibly failed search reads as a lie.
+  const semanticHits =
+    results.find((r) => r.query === "database performance optimization")
+      ?.hits ?? 0;
   const lines = [
     `Project:       ${demoProject}`,
     `Sessions:      ${sessions.length} seeded (${totalObs} observations)`,
@@ -2373,8 +2391,16 @@ async function runDemoBody(base: string) {
       `    ${c.dim("→")} ${c.ok(`${r.hits} hit(s)`)}, top: ${r.topTitle.slice(0, 60)}`,
     ]),
     "",
-    c.accent(`Notice: searching "database performance optimization"`),
-    c.accent(`found the N+1 query fix — keyword matching can't do that.`),
+    ...(semanticHits > 0
+      ? [
+          c.accent(`Notice: searching "database performance optimization"`),
+          c.accent(`found the N+1 query fix — keyword matching can't do that.`),
+        ]
+      : [
+          c.dim(`Note: "database performance optimization" found nothing —`),
+          c.dim(`semantic recall needs an embedding provider key (e.g.`),
+          c.dim(`OPENAI_API_KEY or GEMINI_API_KEY in ~/.agentmemory/.env).`),
+        ]),
     "",
     `Viewer:        ${c.url(getViewerUrl())}`,
     `Clean up with: ${c.dim(`curl -X DELETE "${base}/agentmemory/sessions?project=${demoProject}"`)}`,
@@ -2542,6 +2568,40 @@ async function signalAndWait(
   return !pidAlive(pid);
 }
 
+// Shared worker-reap: SIGTERM with a grace window sized for the worker's
+// shutdown flush (index snapshots land via the engine, so the worker must
+// die before the engine does, with time to commit).
+async function stopWorkerPid(pid: number, graceMs: number): Promise<boolean> {
+  const s = p.spinner();
+  s.start(`Stopping agentmemory worker (pid ${pid})... [flushing state]`);
+  const ok = await signalAndWait(pid, "SIGTERM", graceMs);
+  s.stop(ok ? `Stopped worker pid ${pid}` : `Failed to stop worker pid ${pid}`);
+  return ok;
+}
+
+function pidCommand(pid: number): string {
+  if (IS_WINDOWS) return "";
+  try {
+    return execFileSync("ps", ["-p", String(pid), "-o", "comm="], {
+      encoding: "utf-8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+  } catch {
+    return "";
+  }
+}
+
+// Positive identity beats a denylist: the engine is always the `iii`
+// binary (spawned from PATH or ~/.agentmemory/bin), so anything else
+// holding the port — Docker's proxy, an ssh forward, a stray dev
+// server — must not be adopted or signaled. A denylist of known VM
+// stacks failed open for every name it didn't know.
+function isForeignPortHolder(comm: string): boolean {
+  if (!comm) return false;
+  const base = comm.split("/").pop() || comm;
+  return base !== "iii" && !base.startsWith("iii-");
+}
+
 function findEnginePidsByPort(port: number): number[] {
   if (IS_WINDOWS) return [];
   const lsof = whichBinary("lsof");
@@ -2581,15 +2641,52 @@ async function stopDockerEngine(composeFile: string, port: number): Promise<void
     );
     process.exit(1);
   }
-  const ok = runCommand(dockerBin, ["compose", "-f", composeFile, "down"], {
-    label: `docker compose -f ${composeFile} down`,
-  });
-  clearEnginePidfile();
-  clearEngineState();
-  clearWorkerPidfile();
-  if (!ok) {
+
+  // Reap the native worker first so its shutdown flush (BM25/vector
+  // snapshots via iii state::set) lands while the engine is still up —
+  // same ordering as the native stop path. Previously the worker pidfile
+  // was cleared without ever signaling the process, leaking a worker on
+  // every Docker-mode stop.
+  const workerPid = readWorkerPidfile();
+  let workerStopped = true;
+  if (workerPid) {
+    workerStopped = await stopWorkerPid(workerPid, 5000);
+  }
+
+  // Scope teardown to agentmemory's own services. A bare `down` against a
+  // user-owned compose file tears down every service in it. `rm -s -f`
+  // stops and removes only the named containers.
+  let composeText = "";
+  try {
+    composeText = readFileSync(composeFile, "utf-8");
+  } catch {
+    composeText = "";
+  }
+  const ownServices = ["iii-engine", "iii-init"].filter((svc) =>
+    new RegExp(`^\\s+${svc}:`, "m").test(composeText),
+  );
+  if (ownServices.length === 0) {
     p.log.error(
-      `docker compose down failed. The engine may still be running on :${port}. Inspect with:\n  docker compose -f ${composeFile} ps`,
+      `${composeFile} does not define the agentmemory services (iii-engine/iii-init). Refusing to run an unscoped \`docker compose down\` against it — that would tear down every service in the file.\n\nStop the engine service manually:\n  docker compose -f ${composeFile} stop <service>`,
+    );
+    process.exit(1);
+  }
+  const ok = runCommand(
+    dockerBin,
+    ["compose", "-f", composeFile, "rm", "-s", "-f", ...ownServices],
+    {
+      label: `docker compose -f ${composeFile} rm -s -f ${ownServices.join(" ")}`,
+    },
+  );
+  // Clear each piece of state only after its shutdown succeeded, so a
+  // failed stop stays retryable.
+  if (workerStopped) clearWorkerPidfile();
+  if (ok) {
+    clearEnginePidfile();
+    clearEngineState();
+  } else {
+    p.log.error(
+      `docker compose rm failed. The engine may still be running on :${port}. Inspect with:\n  docker compose -f ${composeFile} ps`,
     );
     process.exit(1);
   }
@@ -2704,14 +2801,19 @@ async function runStop(): Promise<void> {
   // persists. Worker SIGTERM grace bumped 3s -> 5s to give a large
   // index a real chance to commit before the engine goes away.
   for (const pid of workerCandidates) {
-    const s = p.spinner();
-    s.start(`Stopping agentmemory worker (pid ${pid})... [flushing state]`);
-    const ok = await signalAndWait(pid, "SIGTERM", 5000);
-    s.stop(ok ? `Stopped worker pid ${pid}` : `Failed to stop worker pid ${pid}`);
-    if (!ok) allStopped = false;
+    if (!(await stopWorkerPid(pid, 5000))) allStopped = false;
   }
+  const skippedForeign: Array<{ pid: number; comm: string }> = [];
   for (const pid of candidates) {
     if (workerCandidates.has(pid)) continue;
+    // Last-line guard against a stale/poisoned pidfile or a Docker
+    // port-forward holding :port — signaling com.docker.backend kills
+    // Docker Desktop's whole backend.
+    const comm = pidCommand(pid);
+    if (!force && isForeignPortHolder(comm)) {
+      skippedForeign.push({ pid, comm });
+      continue;
+    }
     const s = p.spinner();
     s.start(`Stopping iii-engine (pid ${pid})...`);
     const ok = await signalAndWait(pid, "SIGTERM", 3000);
@@ -2722,6 +2824,15 @@ async function runStop(): Promise<void> {
   clearEnginePidfile();
   clearEngineState();
   clearWorkerPidfile();
+  if (skippedForeign.length > 0) {
+    const list = skippedForeign
+      .map((sf) => `  pid ${sf.pid}  ${sf.comm}`)
+      .join("\n");
+    p.log.error(
+      `Refused to signal process(es) holding :${port} that are not the iii engine:\n${list}\n\nIf the engine runs in Docker, stop it there:\n  docker compose ps && docker compose rm -s -f <service>\n\nOr re-run with --force to signal them anyway.`,
+    );
+    process.exit(1);
+  }
   if (!allStopped) {
     p.log.error("One or more processes survived SIGKILL. Investigate with `ps`.");
     process.exit(1);

@@ -14,6 +14,22 @@ let index: SearchIndex | null = null
 let vectorIndex: VectorIndex | null = null
 let currentEmbeddingProvider: EmbeddingProvider | null = null
 
+// Hybrid ranking hook for mem::search. Wired by index.ts once the
+// hybrid searcher exists (it is constructed after this module's
+// registration runs). When set and the vector index has entries,
+// mem::search ranks candidates through the full BM25+vector+graph
+// fusion instead of BM25 alone — previously only mem::smart-search got
+// hybrid ranking while the primary recall surface stayed keyword-only.
+type HybridRanker = (
+  query: string,
+  limit: number,
+) => Promise<Array<{ observation: CompressedObservation; sessionId: string; combinedScore: number }>>
+let hybridRanker: HybridRanker | null = null
+
+export function setHybridRanker(fn: HybridRanker | null): void {
+  hybridRanker = fn
+}
+
 // Dedupes the lazy cold-start rebuild kicked off from the mem::search
 // request path. A full rebuildIndex walks every observation across every
 // session, so N concurrent queries against an empty index would each
@@ -22,6 +38,11 @@ let currentEmbeddingProvider: EmbeddingProvider | null = null
 // promise; concurrent queries await the same rebuild instead of spawning
 // duplicates. The boot-time rebuild in index.ts is unaffected.
 let rebuildPromise: Promise<number> | null = null
+
+let memoryIndexReady = false
+export function isMemoryIndexReady(): boolean {
+  return memoryIndexReady
+}
 
 export function getSearchIndex(): SearchIndex {
   if (!index) index = new SearchIndex()
@@ -290,6 +311,7 @@ export async function indexRecords(
 export async function rebuildIndex(kv: StateKV): Promise<number> {
   const idx = getSearchIndex()
   idx.clear()
+  memoryIndexReady = false
 
   // BM25 clear above wipes stale doc entries; the vector index has the
   // symmetric concern — memories/observations deleted between runs
@@ -302,8 +324,10 @@ export async function rebuildIndex(kv: StateKV): Promise<number> {
   // entries vanish from BM25 on every restart even after the live-write
   // fix in remember.ts.
   let memories: Memory[] = []
+  let memoriesLoaded = false
   try {
     memories = await kv.list<Memory>(KV.memories)
+    memoriesLoaded = true
   } catch (err) {
     logger.warn('rebuildIndex: failed to load memories', {
       error: err instanceof Error ? err.message : String(err),
@@ -337,6 +361,7 @@ export async function rebuildIndex(kv: StateKV): Promise<number> {
   }
 
   indexed += await indexRecords([], memories)
+  if (memoriesLoaded) memoryIndexReady = true
   return indexed
 }
 
@@ -448,7 +473,33 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
       // rank lower than cross-agent ones in the hybrid score.
       const filtering = !!(projectFilter || cwdFilter || filterAgentId)
       const fetchLimit = filtering ? Math.max(effectiveLimit * 10, 100) : effectiveLimit
-      const results = idx.search(query, fetchLimit)
+      // Hybrid results carry the observation the ranker already loaded,
+      // so the load pass below doesn't refetch every record it just
+      // enriched.
+      let results: Array<{
+        obsId: string
+        sessionId: string
+        score: number
+        observation?: CompressedObservation
+      }>
+      if (hybridRanker && vectorIndex && vectorIndex.size > 0) {
+        try {
+          const hybrid = await hybridRanker(query, fetchLimit)
+          results = hybrid.map((r) => ({
+            obsId: r.observation.id,
+            sessionId: r.sessionId,
+            score: r.combinedScore,
+            observation: r.observation,
+          }))
+        } catch (err) {
+          logger.warn("hybrid ranking failed, falling back to keyword search", {
+            error: err instanceof Error ? err.message : String(err),
+          })
+          results = idx.search(query, fetchLimit)
+        }
+      } else {
+        results = idx.search(query, fetchLimit)
+      }
 
       // Resolve session -> project/cwd once per sessionId we touch.
       const sessionCache = new Map<string, Session | null>()
@@ -522,6 +573,7 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
       // sessionId, so the observation key never exists (#265).
       const obsResults = await Promise.all(
         candidates.map(async (r) => {
+          if (r.observation) return r.observation
           const obs = await kv
             .get<CompressedObservation>(KV.observations(r.sessionId), r.obsId)
             .catch(() => null)

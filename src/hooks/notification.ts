@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { resolveProject } from "./_project.js";
+import { resolveProject, hookCwd } from "./_project.js";
 
 function isSdkChildContext(payload: unknown): boolean {
   if (process.env["AGENTMEMORY_SDK_CHILD"] === "1") return true;
@@ -34,11 +34,12 @@ async function main() {
   const notificationType = data.notification_type ?? data.notificationType;
   if (notificationType !== "permission_prompt") return;
 
-  const rawSessionId = data.session_id ?? data.sessionId;
-  const sessionId =
-    typeof rawSessionId === "string" && rawSessionId.length > 0
-      ? rawSessionId
-      : "unknown";
+  const rawSessionId = [data.session_id, data.sessionId, data.conversation_id].find(
+    (v) => typeof v === "string" && v.length > 0,
+  );
+  const sessionId = typeof rawSessionId === "string" ? rawSessionId : "unknown";
+
+  const cwd = hookCwd(data) || process.cwd();
 
   fetch(`${REST_URL}/agentmemory/observe`, {
     method: "POST",
@@ -46,8 +47,8 @@ async function main() {
     body: JSON.stringify({
       hookType: "notification",
       sessionId,
-      project: resolveProject(data.cwd as string | undefined),
-      cwd: (data.cwd as string | undefined) || process.cwd(),
+      project: resolveProject(cwd),
+      cwd,
       timestamp: new Date().toISOString(),
       data: {
         notification_type: notificationType,

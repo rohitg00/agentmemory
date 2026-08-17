@@ -1,4 +1,4 @@
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import path from "node:path";
 import crypto from "node:crypto";
@@ -89,6 +89,7 @@ async function callAgentMemory<T>(
     method?: "GET" | "POST";
     body?: unknown;
     baseUrl?: string;
+    timeoutMs?: number;
   },
 ): Promise<T | null> {
   const baseUrl = normalizeBaseUrl(options?.baseUrl || process.env.AGENTMEMORY_URL || DEFAULT_URL);
@@ -105,6 +106,7 @@ async function callAgentMemory<T>(
       method,
       headers,
       body: options?.body !== undefined ? JSON.stringify(options.body) : undefined,
+      signal: options?.timeoutMs ? AbortSignal.timeout(options.timeoutMs) : undefined,
     });
     if (!response.ok) return null;
     return (await response.json()) as T;
@@ -149,14 +151,49 @@ export default function agentmemoryExtension(pi: ExtensionAPI) {
   let lastPrompt = "";
   let lastHealthOk = false;
 
+  const toolObserveEnabled = process.env.AGENTMEMORY_TOOL_OBSERVE !== "0";
+
+  // Skips the round-trip when an auto-retry re-submits an identical prompt.
+  const DEDUP_WINDOW_MS = 5 * 60 * 1000;
+  const recentHashes = new Map<string, number>();
+  function isDuplicate(data: string): boolean {
+    const hash = crypto.createHash("sha256").update(data).digest("hex");
+    const now = Date.now();
+    const prev = recentHashes.get(hash);
+    if (prev !== undefined && now - prev < DEDUP_WINDOW_MS) return true;
+    if (recentHashes.size > 500) {
+      for (const [key, ts] of recentHashes) {
+        if (now - ts >= DEDUP_WINDOW_MS) recentHashes.delete(key);
+      }
+    }
+    recentHashes.set(hash, now);
+    return false;
+  }
+
   async function getHealth() {
     return await callAgentMemory<HealthResponse>("health", { method: "GET" });
   }
 
   async function refreshStatus(ctx: { ui: { setStatus: (key: string, text: string) => void } }) {
+    // Bind before the await: ctx goes stale if the session is replaced.
+    let setStatus: (key: string, text: string) => void;
+    try {
+      const ui = ctx.ui;
+      setStatus = ui.setStatus.bind(ui);
+    } catch {
+      return;
+    }
     const health = await getHealth();
-    lastHealthOk = !!health && (health.status === "healthy" || health.health?.status === "healthy");
-    ctx.ui.setStatus("agentmemory", lastHealthOk ? "🧠 agentmemory" : "🧠 agentmemory off");
+    lastHealthOk =
+      !!health &&
+      (health.status === "ok" ||
+        health.status === "healthy" ||
+        health.health?.status === "healthy");
+    try {
+      setStatus("agentmemory", lastHealthOk ? "🧠 agentmemory" : "🧠 agentmemory off");
+    } catch {
+      // status is best-effort
+    }
   }
 
   pi.registerCommand("agentmemory-status", {
@@ -209,7 +246,7 @@ export default function agentmemoryExtension(pi: ExtensionAPI) {
     }),
     async execute(_toolCallId, params) {
       const result = await callAgentMemory<{ results?: SmartSearchResult[] }>("smart-search", {
-        body: { query: params.query, limit: params.limit ?? 5 },
+        body: { query: params.query, limit: params.limit ?? 5, project: currentProject },
       });
       const results = result?.results || [];
       return {
@@ -234,7 +271,7 @@ export default function agentmemoryExtension(pi: ExtensionAPI) {
     }),
     async execute(_toolCallId, params) {
       const result = await callAgentMemory<Record<string, unknown>>("remember", {
-        body: { content: params.content, type: params.type || "fact" },
+        body: { content: params.content, type: params.type || "fact", project: currentProject },
       });
       if (!result) {
         return {
@@ -255,6 +292,12 @@ export default function agentmemoryExtension(pi: ExtensionAPI) {
     currentCwd = process.cwd();
     currentProject = resolveProjectName(currentCwd);
     await refreshStatus(ctx);
+    // After refreshStatus: that is where lastHealthOk is first populated.
+    if (lastHealthOk) {
+      await callAgentMemory("session/start", {
+        body: { sessionId, project: currentProject, cwd: currentCwd },
+      });
+    }
   });
 
   pi.on("before_agent_start", async (event, ctx) => {
@@ -263,8 +306,21 @@ export default function agentmemoryExtension(pi: ExtensionAPI) {
     lastPrompt = event.prompt?.trim() || "";
     if (!lastPrompt) return;
 
+    if (lastHealthOk && !isDuplicate(`prompt_submit:${sessionId}:${lastPrompt}`)) {
+      void callAgentMemory("observe", {
+        body: {
+          hookType: "prompt_submit",
+          sessionId,
+          project: currentProject,
+          cwd: currentCwd,
+          timestamp: new Date().toISOString(),
+          data: { prompt: lastPrompt },
+        },
+      });
+    }
+
     const result = await callAgentMemory<{ results?: SmartSearchResult[] }>("smart-search", {
-      body: { query: lastPrompt, limit: 5 },
+      body: { query: lastPrompt, limit: 5, project: currentProject },
     });
     const results = result?.results || [];
     const recallBlock = results.length
@@ -280,6 +336,39 @@ export default function agentmemoryExtension(pi: ExtensionAPI) {
     };
   });
 
+  pi.on("tool_result", (event) => {
+    if (!toolObserveEnabled || !lastHealthOk || !sessionId) return;
+    const toolName = event.toolName;
+    if (!toolName) return;
+    let input = "";
+    try {
+      input = typeof event.input === "string" ? event.input : JSON.stringify(event.input ?? {});
+    } catch {
+      // non-serializable
+    }
+    let output = "";
+    try {
+      output = typeof event.content === "string" ? event.content : JSON.stringify(event.content ?? "");
+    } catch {
+      // non-serializable
+    }
+    void callAgentMemory("observe", {
+      body: {
+        hookType: "post_tool_use",
+        sessionId,
+        project: currentProject,
+        cwd: currentCwd,
+        timestamp: new Date().toISOString(),
+        data: {
+          tool_name: toolName,
+          tool_input: input.slice(0, 8000),
+          tool_output: output.slice(0, 8000),
+          ...(event.isError ? { tool_error: true } : {}),
+        },
+      },
+    });
+  });
+
   pi.on("agent_end", async (event) => {
     if (!lastHealthOk || !lastPrompt) return;
     const assistantText = getLastAssistantText(event.messages as unknown[]);
@@ -293,10 +382,22 @@ export default function agentmemoryExtension(pi: ExtensionAPI) {
         timestamp: new Date().toISOString(),
         data: {
           tool_name: "conversation",
-          tool_input: lastPrompt.slice(0, 500),
-          tool_output: assistantText.slice(0, 4000),
+          tool_input: lastPrompt.slice(0, 8000),
+          tool_output: assistantText.slice(0, 8000),
         },
       },
     });
+  });
+
+  pi.on("session_shutdown", async (event) => {
+    // /new, /resume, /fork and reloads fire this too; only quit ends the session.
+    if (event.reason !== "quit") return;
+    if (!lastHealthOk || !sessionId) return;
+    // session/end already fans out the summary server-side (#1203).
+    await callAgentMemory("session/end", {
+      body: { sessionId },
+      timeoutMs: 5_000,
+    });
+    void callAgentMemory("consolidate", { body: {} });
   });
 }

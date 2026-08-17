@@ -6,7 +6,7 @@ import { withKeyedLock } from "../state/keyed-mutex.js";
 import { memoryToObservation } from "../state/memory-utils.js";
 import { deleteAccessLog } from "./access-tracker.js";
 import { recordAudit } from "./audit.js";
-import { getSearchIndex, vectorIndexAddGuarded, vectorIndexRemove, flushIndexSave } from "./search.js";
+import { getSearchIndex, isMemoryIndexReady, vectorIndexAddGuarded, vectorIndexRemove, flushIndexSave } from "./search.js";
 import { getAgentId } from "../config.js";
 import { logger } from "../logger.js";
 
@@ -69,12 +69,51 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
           : undefined;
 
       return withKeyedLock("mem:remember", async () => {
-        const existingMemories = await kv.list<Memory>(KV.memories);
+        // Candidate generation: query the BM25 index with the new content
+        // and Jaccard-compare only the top hits, instead of walking the
+        // full memory corpus on every save. The index receives every
+        // memory at save time and is rebuilt at boot, so it covers the
+        // corpus whenever it is non-empty; a cold, never-queried index
+        // falls back to the full scan so supersession never silently
+        // stops working.
+        const idx = getSearchIndex();
+        let candidateMemories: Memory[];
+        try {
+          if (isMemoryIndexReady() && idx.size > 0) {
+            // 50 hits, not 20: the shared index also holds observations,
+            // which occupy slots but never resolve to memories below. A
+            // >0.7-Jaccard duplicate shares most tokens with the query so
+            // it ranks near the top regardless. Only mem_-prefixed ids can
+            // resolve in KV.memories, so skip the guaranteed-miss lookups.
+            const hits = idx
+              .search(data.content, 50)
+              .filter((h) => h.obsId.startsWith("mem_"));
+            const loaded = await Promise.all(
+              hits.map((h) =>
+                kv.get<Memory>(KV.memories, h.obsId).catch(() => null),
+              ),
+            );
+            candidateMemories = loaded.filter((m): m is Memory => m !== null);
+          } else {
+            candidateMemories = await kv.list<Memory>(KV.memories);
+          }
+        } catch (err) {
+          // Candidate generation is an optimization; a failure here must
+          // never block the save itself.
+          logger.warn("supersession candidate lookup failed, using full scan", {
+            error: err instanceof Error ? err.message : JSON.stringify(err),
+          });
+          candidateMemories = await kv.list<Memory>(KV.memories);
+        }
         let supersededId: string | undefined;
         let supersededVersion = 1;
         let supersededMemory: Memory | undefined;
+        // Track the closest sub-threshold match: not similar enough to
+        // supersede, but similar enough that the caller may want to
+        // consolidate. Reported back as a hint; never acted on here.
+        let nearMatch: { id: string; title: string; similarity: number } | undefined;
         const lowerContent = data.content.toLowerCase();
-        for (const existing of existingMemories) {
+        for (const existing of candidateMemories) {
           if (existing.isLatest === false) continue;
           // Never supersede a memory that belongs to a different project.
           // Both sides must have an explicit project for the guard to engage;
@@ -92,6 +131,12 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
             supersededVersion = existing.version ?? 1;
             supersededMemory = existing;
             break;
+          }
+          if (
+            similarity > 0.4 &&
+            (!nearMatch || similarity > nearMatch.similarity)
+          ) {
+            nearMatch = { id: existing.id, title: existing.title, similarity };
           }
         }
 
@@ -122,6 +167,7 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
             (id): id is string => typeof id === "string" && id.length > 0,
           ),
           isLatest: true,
+          origin: { channel: "agent", capturedAt: now },
           ...(callAgentId ? { agentId: callAgentId } : {}),
           ...(project !== undefined && { project }),
         };
@@ -133,6 +179,14 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
         if (supersededMemory) {
           supersededMemory.isLatest = false;
           await kv.set(KV.memories, supersededMemory.id, supersededMemory);
+          // The superseded version stays in KV (the viewer's version
+          // chain reads it there) but leaves both search indexes:
+          // recall returning an outdated fact as if current is worse
+          // than returning nothing.
+          try {
+            getSearchIndex().remove(supersededMemory.id);
+          } catch {}
+          vectorIndexRemove(supersededMemory.id);
         }
         await kv.set(KV.memories, memory.id, memory);
 
@@ -171,7 +225,20 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
           type: memory.type,
           project: memory.project,
         });
-        return { success: true, memory };
+        // similarTo is advisory only: a close-but-not-superseding match
+        // the caller may want to consolidate via memory_update/forget.
+        return {
+          success: true,
+          memory,
+          ...(nearMatch && !supersededId
+            ? {
+                similarTo: {
+                  ...nearMatch,
+                  similarity: Math.round(nearMatch.similarity * 100) / 100,
+                },
+              }
+            : {}),
+        };
       });
     },
   );

@@ -5,8 +5,10 @@ export type ConnectOptions = {
    * When true, adapters that ship a native hook config alongside MCP
    * additionally write it: Codex (`~/.codex/hooks.json`, workaround for
    * openai/codex#16430), Claude Code (`~/.claude/settings.json`, workaround
-   * for #508), and Droid (`~/.factory/hooks.json`, its native hooks
-   * config). No-op for adapters without a hooks installer.
+   * for #508), Droid (`~/.factory/hooks.json`, its native hooks config),
+   * and DeepSeek Harness (`$DSH_HOME/agentmemory.hooks.json` plus a
+   * hooks-claude-code patch row). No-op for adapters without a hooks
+   * installer.
    */
   withHooks?: boolean;
   /**

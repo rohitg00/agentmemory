@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { resolveProject } from "./_project.js";
+import { resolveProject, hookCwd } from "./_project.js";
 
 // Inlined from ./sdk-guard so each hook bundles to a single self-contained
 // .mjs (matches the pattern used by every other hook entry in tsdown.config).
@@ -34,6 +34,24 @@ function authHeaders(): Record<string, string> {
   return h;
 }
 
+function contextPayload(data: Record<string, unknown>, context: string): string {
+  if (
+    typeof data.cursor_version === "string" ||
+    data.hook_event_name === "sessionStart"
+  ) {
+    return JSON.stringify({ additional_context: context });
+  }
+  if (process.env["DEVIN_PROJECT_DIR"] || data.prompt_id !== undefined) {
+    return JSON.stringify({
+      hookSpecificOutput: {
+        hookEventName: "SessionStart",
+        additionalContext: context,
+      },
+    });
+  }
+  return context;
+}
+
 async function main() {
   let input = "";
   for await (const chunk of process.stdin) {
@@ -51,10 +69,10 @@ async function main() {
   if (isSdkChildContext(data)) return;
 
   const sessionId =
-    ((data.session_id || data.sessionId) as string) ||
+    ((data.session_id || data.sessionId || data.conversation_id) as string) ||
     `ses_${Date.now().toString(36)}`;
-  const cwd = (data.cwd as string) || process.cwd();
-  const project = resolveProject(data.cwd as string | undefined);
+  const cwd = hookCwd(data) || process.cwd();
+  const project = resolveProject(cwd);
 
   const url = `${REST_URL}/agentmemory/session/start`;
   const init: RequestInit = {
@@ -82,7 +100,7 @@ async function main() {
     if (res.ok) {
       const result = (await res.json()) as { context?: string };
       if (result.context) {
-        process.stdout.write(result.context);
+        process.stdout.write(contextPayload(data, result.context));
       }
     }
   } catch {

@@ -27,6 +27,23 @@ export interface CommitLink {
   linkedAt: string;
 }
 
+// Immutable write-time provenance: which trust boundary the content
+// crossed, inherited by derived records.
+export interface Origin {
+  channel: "user" | "agent" | "tool" | "import" | "shared";
+  detail?: string;
+  capturedAt: string;
+}
+
+export function importOrigin(
+  existing: Origin | undefined,
+  capturedAt: string,
+  detail?: string,
+): Origin {
+  if (existing) return existing;
+  return { channel: "import", capturedAt, ...(detail ? { detail } : {}) };
+}
+
 export interface RawObservation {
   id: string;
   sessionId: string;
@@ -41,6 +58,7 @@ export interface RawObservation {
   modality?: "text" | "image" | "mixed";
   imageData?: string;
   agentId?: string;
+  origin?: Origin;
 }
 
 export interface CompressedObservation {
@@ -61,6 +79,7 @@ export interface CompressedObservation {
   imageDescription?: string;
   modality?: "text" | "image" | "mixed";
   agentId?: string;
+  origin?: Origin;
 }
 
 export type ObservationType =
@@ -102,6 +121,7 @@ export interface Memory {
   imageData?: string;
   agentId?: string;
   project?: string;
+  origin?: Origin;
 }
 
 export interface SessionSummary {

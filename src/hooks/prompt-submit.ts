@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { resolveProject } from "./_project.js";
+import { resolveProject, hookCwd } from "./_project.js";
 
 function isSdkChildContext(payload: unknown): boolean {
   if (process.env["AGENTMEMORY_SDK_CHILD"] === "1") return true;
@@ -32,7 +32,9 @@ async function main() {
   if (!data || typeof data !== "object") return;
   if (isSdkChildContext(data)) return;
 
-  const sessionId = ((data.session_id || data.sessionId) as string) || "unknown";
+  const sessionId = ((data.session_id || data.sessionId || data.conversation_id) as string) || "unknown";
+
+  const cwd = hookCwd(data) || process.cwd();
 
   fetch(`${REST_URL}/agentmemory/observe`, {
     method: "POST",
@@ -40,8 +42,8 @@ async function main() {
     body: JSON.stringify({
       hookType: "prompt_submit",
       sessionId,
-      project: resolveProject(data.cwd as string | undefined),
-      cwd: (data.cwd as string | undefined) || process.cwd(),
+      project: resolveProject(cwd),
+      cwd,
       timestamp: new Date().toISOString(),
       data: { prompt: data.prompt ?? data.userPrompt },
     }),

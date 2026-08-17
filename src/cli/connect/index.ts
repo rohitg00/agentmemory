@@ -11,7 +11,9 @@ import { adapter as copilotCli } from "./copilot-cli.js";
 import { adapter as codex } from "./codex.js";
 import { adapter as continueDev } from "./continue.js";
 import { adapter as cursor } from "./cursor.js";
+import { adapter as devin } from "./devin.js";
 import { adapter as droid } from "./droid.js";
+import { adapter as dsh } from "./dsh.js";
 import { adapter as geminiCli } from "./gemini-cli.js";
 import { adapter as hermes } from "./hermes.js";
 import { adapter as kiro } from "./kiro.js";
@@ -28,6 +30,7 @@ export const ADAPTERS: readonly ConnectAdapter[] = [
   copilotCli,
   codex,
   cursor,
+  devin,
   geminiCli,
   qwen,
   antigravity,
@@ -38,6 +41,7 @@ export const ADAPTERS: readonly ConnectAdapter[] = [
   continueDev,
   zed,
   droid,
+  dsh,
   opencode,
   openclaw,
   hermes,
@@ -234,7 +238,7 @@ function summarize(
   );
   if (wiredAny) {
     p.log.info(
-      "Next: install agentmemory's 15 skills into the same agent(s) so they know when to call the tools:\n  npx skills add rohitg00/agentmemory -y",
+      "Next: install agentmemory's 17 skills into the same agent(s) so they know when to call the tools:\n  npx skills add rohitg00/agentmemory -y",
     );
   }
 

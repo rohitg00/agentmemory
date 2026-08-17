@@ -1,11 +1,10 @@
 import type { Metadata, Viewport } from "next";
-import { Archivo, JetBrains_Mono } from "next/font/google";
+import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 
-const archivo = Archivo({
+const inter = Inter({
   subsets: ["latin"],
-  weight: ["400", "500", "700", "900"],
-  variable: "--font-archivo",
+  variable: "--font-sans",
   display: "swap",
 });
 
@@ -18,9 +17,9 @@ const jetbrains = JetBrains_Mono({
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://agentmemory.dev"),
-  title: "AGENTMEMORY — PERSISTENT MEMORY FOR AI CODING AGENTS",
+  title: "agentmemory: persistent memory for AI coding agents",
   description:
-    "The memory layer your coding agent should have had from day one. 95.2% retrieval R@5. 92% fewer tokens. 0 external databases. Works with every agent.",
+    "Persistent memory for AI coding agents. Capture every session, recall it in the next one. Runs locally with zero external databases. Works with every MCP client.",
   icons: {
     icon: [{ url: "/icon.svg", type: "image/svg+xml" }],
     apple: "/icon.svg",
@@ -41,7 +40,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#000000",
+  themeColor: "#0a0a0a",
   width: "device-width",
   initialScale: 1,
 };
@@ -52,7 +51,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={`${archivo.variable} ${jetbrains.variable}`}>
+    <html lang="en" className={`${inter.variable} ${jetbrains.variable}`}>
       <body>{children}</body>
     </html>
   );

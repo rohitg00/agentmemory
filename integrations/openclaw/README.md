@@ -128,6 +128,17 @@ What the plugin does:
 - claims the `plugins.slots.memory = "agentmemory"` slot via `api.registerMemoryCapability({ promptBuilder })` so OpenClaw recognises it as the active memory plugin
 - recalls relevant long-term memory before the agent starts (via the `before_agent_start` hook)
 - captures completed conversation turns after the agent finishes (via the `agent_end` hook)
+
+OpenClaw blocks conversation-reading hooks from non-bundled plugins by default. Allow it once in `openclaw.json` so turn capture works:
+
+```json
+{
+  "plugins": {
+    "allow": ["agentmemory"],
+    "entries": { "agentmemory": { "hooks": { "allowConversationAccess": true } } }
+  }
+}
+```
 - shares the same backend with Claude Code, Codex CLI, Gemini CLI, Hermes, pi, and other agents
 
 ### Memory runtime (current scope)

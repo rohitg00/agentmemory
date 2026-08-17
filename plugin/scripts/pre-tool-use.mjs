@@ -56,7 +56,7 @@ async function main() {
 		const pattern = toolInput["pattern"];
 		if (typeof pattern === "string" && pattern.length > 0) terms.push(pattern);
 	}
-	const rawSessionId = data.session_id || data.sessionId;
+	const rawSessionId = data.session_id || data.sessionId || data.conversation_id;
 	const sessionId = typeof rawSessionId === "string" && rawSessionId.length > 0 ? rawSessionId : "unknown";
 	const project = typeof data.project === "string" && data.project.trim().length > 0 ? data.project.trim() : void 0;
 	try {

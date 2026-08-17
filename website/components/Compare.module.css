@@ -1,63 +1,79 @@
 .compare {
   padding: 96px 0;
-  background: var(--iron);
-  border-top: 1px solid var(--charcoal);
-  border-bottom: 1px solid var(--charcoal);
+  border-top: 1px solid var(--hairline);
+  border-bottom: 1px solid var(--hairline);
 }
 .table {
   max-width: 1100px;
   margin: 0 auto;
   padding: 0 40px;
 }
+.table:focus-visible {
+  outline: 2px solid var(--border-ghost);
+  outline-offset: 2px;
+}
+.table > .row:first-child {
+  border-radius: var(--radius-card) var(--radius-card) 0 0;
+}
+.table > .row:last-child {
+  border-radius: 0 0 var(--radius-card) var(--radius-card);
+  border-bottom: 1px solid var(--hairline);
+}
 .row {
   display: grid;
   grid-template-columns: 1.4fr 1.3fr 1fr 1fr 1fr;
   gap: 16px;
-  padding: 20px 24px;
-  border-bottom: 1px solid var(--charcoal);
+  padding: 16px 24px;
+  border: 1px solid var(--hairline);
+  border-bottom: none;
   align-items: center;
   font-size: 14px;
-  letter-spacing: 0.12px;
-  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 .row > span {
-  color: var(--steel);
-  text-transform: uppercase;
+  color: var(--body);
 }
 .row > span:first-child {
-  color: var(--white);
-  font-weight: 700;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--mute);
 }
 .head {
-  border-bottom-color: var(--gold);
+  background: var(--canvas-soft);
 }
 .head span {
+  font-family: var(--font-mono);
   font-size: 11px;
-  letter-spacing: 0.96px;
-  color: var(--ash) !important;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--mute) !important;
   font-weight: 400 !important;
 }
 .head .mine {
-  color: var(--gold) !important;
+  color: var(--ink) !important;
 }
 .mine {
-  color: var(--gold) !important;
-  font-weight: 700 !important;
+  color: var(--ink) !important;
+  font-weight: 500 !important;
 }
 @media (max-width: 1024px) {
+  .table {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
   .row {
-    grid-template-columns: 1.4fr 1fr;
-    gap: 8px 16px;
-  }
-  .row span:nth-child(n + 3) {
-    display: none;
-  }
-  .head span:nth-child(n + 3) {
-    display: none;
+    min-width: 720px;
+    gap: 12px;
   }
 }
 @media (max-width: 640px) {
   .table {
     padding: 0 20px;
+  }
+  .row {
+    padding: 14px 16px;
+    font-size: 13px;
   }
 }

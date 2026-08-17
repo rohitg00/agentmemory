@@ -31,7 +31,7 @@ const FEATURED: Agent[] = [
     logo: "https://svgl.app/library/github_dark.svg",
     accent: "#24292E",
     href: "https://docs.github.com/copilot/github-copilot-in-the-cli",
-    pitch: "11 hooks + MCP · framed stdio",
+    pitch: "MCP + plugin hooks and skills",
     sub: "NATIVE PLUGIN",
   },
   {
@@ -75,14 +75,24 @@ const FEATURED: Agent[] = [
     sub: "NATIVE PLUGIN",
   },
   {
-    id: "openhuman",
-    name: "OpenHuman",
-    from: "tinyhumansai",
-    logo: "https://raw.githubusercontent.com/tinyhumansai/openhuman/main/app/src-tauri/icons/128x128.png",
-    accent: "#9b5cf6",
-    href: "https://github.com/tinyhumansai/openhuman",
-    pitch: "Native Memory trait backend (Rust)",
-    sub: "NATIVE BACKEND",
+    id: "cursor",
+    name: "Cursor",
+    from: "Anysphere",
+    logo: "https://svgl.app/library/cursor_dark.svg",
+    accent: "#4F8BF7",
+    href: "https://github.com/rohitg00/agentmemory/tree/main/.cursor-plugin",
+    pitch: "7 hooks + 17 skills + MCP · IDE and CLI",
+    sub: "NATIVE PLUGIN",
+  },
+  {
+    id: "opencode",
+    name: "OpenCode",
+    from: "SST",
+    logo: "/opencode.png",
+    accent: "#F5A623",
+    href: "https://github.com/rohitg00/agentmemory/tree/main/plugin/opencode",
+    pitch: "Capture plugin with per-session project attribution",
+    sub: "NATIVE PLUGIN",
   },
 ];
 
@@ -96,12 +106,12 @@ const MARQUEE: Agent[] = [
     href: "https://claude.ai/download",
   },
   {
-    id: "cursor",
-    name: "Cursor",
-    from: "Anysphere",
-    logo: "https://svgl.app/library/cursor_dark.svg",
-    accent: "#000000",
-    href: "https://cursor.com",
+    id: "openhuman",
+    name: "OpenHuman",
+    from: "tinyhumansai",
+    logo: "https://raw.githubusercontent.com/tinyhumansai/openhuman/main/app/src-tauri/icons/128x128.png",
+    accent: "#9b5cf6",
+    href: "https://github.com/tinyhumansai/openhuman",
   },
   {
     id: "warp",
@@ -115,7 +125,7 @@ const MARQUEE: Agent[] = [
     id: "continue",
     name: "Continue",
     from: "Continue.dev",
-    logo: "https://continue.dev/icon.svg",
+    logo: "https://github.com/continuedev.png",
     accent: "#000000",
     href: "https://continue.dev",
   },
@@ -168,20 +178,20 @@ const MARQUEE: Agent[] = [
     href: "https://github.com/QwenLM/qwen-code",
   },
   {
+    id: "dsh",
+    name: "DeepSeek Harness",
+    from: "DeepSeek",
+    logo: "https://svgl.app/library/deepseek.svg",
+    accent: "#4D6BFE",
+    href: "https://github.com/deepseek-ai/deepseek-harness",
+  },
+  {
     id: "kiro",
     name: "Kiro",
     from: "AWS",
     logo: "https://kiro.dev/favicon.ico",
     accent: "#FF9900",
     href: "https://kiro.dev",
-  },
-  {
-    id: "opencode",
-    name: "OpenCode",
-    from: "opencode-ai",
-    logo: "https://github.com/opencode-ai.png",
-    accent: "#22C55E",
-    href: "https://github.com/opencode-ai/opencode",
   },
   {
     id: "roo",
@@ -216,12 +226,12 @@ const MARQUEE: Agent[] = [
     href: "https://github.com/Aider-AI/aider",
   },
   {
-    id: "windsurf",
-    name: "Windsurf",
+    id: "devin",
+    name: "Devin",
     from: "Cognition",
-    logo: "https://svgl.app/library/windsurf-dark.svg",
-    accent: "#00A699",
-    href: "https://windsurf.com",
+    logo: "/devin.png",
+    accent: "#317CFF",
+    href: "https://devin.ai",
   },
 ];
 
@@ -232,7 +242,6 @@ function FeaturedCard({ a }: { a: Agent }) {
       href={a.href}
       target="_blank"
       rel="noopener"
-      style={{ ["--agent-accent" as string]: a.accent }}
     >
       <div className={styles.featuredHead}>
         <div className={styles.featuredLogo}>
@@ -265,7 +274,6 @@ function MarqueeTile({ a }: { a: Agent }) {
       href={a.href}
       target="_blank"
       rel="noopener"
-      style={{ ["--agent-accent" as string]: a.accent }}
     >
       <Image
         src={a.logo}
@@ -288,14 +296,15 @@ export function Agents() {
   return (
     <section className={styles.wrap} id="agents" aria-labelledby="agents-title">
       <header className="section-head">
-        <span className="section-eyebrow">WORKS WITH</span>
+        <span className="section-eyebrow">Works with</span>
         <h2 id="agents-title" className="section-title">
-          SEVEN NATIVE PLUGINS.<br />REST MCP-NATIVE.
+          Seven native plugins.<br />Rest MCP-native.
         </h2>
         <p className="section-lede">
-          NATIVE PLUGINS FOR CLAUDE CODE, COPILOT CLI, CODEX CLI, OPENCLAW,
-          HERMES, PI, AND OPENHUMAN. EVERY OTHER MCP CLIENT GETS IT FOR FREE.
-          `agentmemory connect &lt;agent&gt;` AUTO-WIRES THEM ALL.
+          Native plugins for Claude Code, Copilot CLI, Codex CLI, OpenClaw,
+          Hermes, pi, and Cursor. OpenCode gets a plugin that attributes
+          each session to its own project. Every other MCP client gets it for
+          free. `agentmemory connect &lt;agent&gt;` auto-wires them all.
         </p>
       </header>
 

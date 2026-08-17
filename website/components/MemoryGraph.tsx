@@ -3,15 +3,9 @@
 import { useEffect, useRef, useState } from "react";
 import styles from "./MemoryGraph.module.css";
 
-interface Node {
-  x: number;
-  y: number;
-  vx: number;
-  vy: number;
-  r: number;
-  hot: boolean;
-}
-
+// Ambient hero backdrop: a quiet dither field of drifting dots.
+// Every dot stays under 0.13 alpha; prefers-reduced-motion renders a
+// single static frame instead of animating.
 export function MemoryGraph() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [running, setRunning] = useState(true);
@@ -25,9 +19,8 @@ export function MemoryGraph() {
 
     const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
     let localRunning = running && !reduceMotion;
-    let nodes: Node[] = [];
     let rafId = 0;
-    let pulse = 0;
+    let t = 0;
 
     const size = () => {
       const dpr = Math.max(1, window.devicePixelRatio || 1);
@@ -38,69 +31,33 @@ export function MemoryGraph() {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     };
 
-    const seed = () => {
-      const w = canvas.clientWidth;
-      const h = canvas.clientHeight;
-      const count = Math.min(52, Math.floor((w * h) / 22000));
-      nodes = new Array(count).fill(0).map(() => ({
-        x: Math.random() * w,
-        y: Math.random() * h,
-        vx: (Math.random() - 0.5) * 0.18,
-        vy: (Math.random() - 0.5) * 0.18,
-        r: 1.2 + Math.random() * 2.2,
-        hot: Math.random() < 0.25,
-      }));
-    };
-
     const draw = () => {
       const w = canvas.clientWidth;
       const h = canvas.clientHeight;
       ctx.clearRect(0, 0, w, h);
 
-      for (const n of nodes) {
-        n.x += n.vx;
-        n.y += n.vy;
-        if (n.x < 0 || n.x > w) n.vx *= -1;
-        if (n.y < 0 || n.y > h) n.vy *= -1;
-      }
+      const spacing = 26;
+      const cols = Math.ceil(w / spacing) + 2;
+      const rows = Math.ceil(h / spacing) + 2;
 
-      const maxDist = 160;
-      ctx.lineWidth = 1;
-      for (let i = 0; i < nodes.length; i++) {
-        for (let j = i + 1; j < nodes.length; j++) {
-          const a = nodes[i];
-          const b = nodes[j];
-          const dx = a.x - b.x;
-          const dy = a.y - b.y;
-          const d = Math.hypot(dx, dy);
-          if (d > maxDist) continue;
-          const alpha = (1 - d / maxDist) * 0.35;
-          const hot = a.hot && b.hot;
-          ctx.strokeStyle = hot
-            ? `rgba(255, 192, 0, ${alpha.toFixed(3)})`
-            : `rgba(255, 255, 255, ${(alpha * 0.5).toFixed(3)})`;
-          ctx.beginPath();
-          ctx.moveTo(a.x, a.y);
-          ctx.lineTo(b.x, b.y);
-          ctx.stroke();
+      for (let gy = 0; gy < rows; gy++) {
+        for (let gx = 0; gx < cols; gx++) {
+          const x = gx * spacing;
+          const y = gy * spacing;
+          const wave =
+            Math.sin(x * 0.011 + t * 0.5) +
+            Math.sin(y * 0.014 - t * 0.32) +
+            Math.sin((x + y) * 0.006 + t * 0.21);
+          const a = Math.max(0, wave / 3) * 0.12;
+          if (a < 0.012) continue;
+          const dx = Math.sin(t * 0.12 + y * 0.02) * 5;
+          const dy = Math.cos(t * 0.09 + x * 0.015) * 3;
+          ctx.fillStyle = `rgba(255, 255, 255, ${a.toFixed(3)})`;
+          ctx.fillRect(x + dx, y + dy, 1.5, 1.5);
         }
       }
 
-      for (const n of nodes) {
-        const r = n.r + (n.hot ? Math.sin(pulse + n.x) * 0.8 : 0);
-        ctx.fillStyle = n.hot ? "#FFC000" : "rgba(255,255,255,0.85)";
-        ctx.beginPath();
-        ctx.arc(n.x, n.y, Math.max(0.5, r), 0, Math.PI * 2);
-        ctx.fill();
-        if (n.hot) {
-          ctx.fillStyle = "rgba(255, 192, 0, 0.12)";
-          ctx.beginPath();
-          ctx.arc(n.x, n.y, r * 3.5, 0, Math.PI * 2);
-          ctx.fill();
-        }
-      }
-
-      pulse += 0.04;
+      t += 0.016;
     };
 
     const tick = () => {
@@ -111,12 +68,10 @@ export function MemoryGraph() {
 
     const onResize = () => {
       size();
-      seed();
       draw();
     };
 
     size();
-    seed();
     draw();
     if (localRunning) rafId = requestAnimationFrame(tick);
     window.addEventListener("resize", onResize);
@@ -141,28 +96,6 @@ export function MemoryGraph() {
   return (
     <>
       <canvas ref={canvasRef} className={styles.canvas} aria-hidden />
-      <button
-        className={styles.pause}
-        aria-label={running ? "Pause animation" : "Resume animation"}
-        onClick={() => setRunning((v) => !v)}
-      >
-        <svg viewBox="0 0 48 48" width="44" height="44" aria-hidden>
-          <polygon
-            points="24,2 44,13 44,35 24,46 4,35 4,13"
-            fill="none"
-            stroke="#fff"
-            strokeWidth="1.8"
-          />
-          {running ? (
-            <g>
-              <rect x="17" y="16" width="4" height="16" fill="#fff" />
-              <rect x="27" y="16" width="4" height="16" fill="#fff" />
-            </g>
-          ) : (
-            <polygon points="18,14 34,24 18,34" fill="#fff" />
-          )}
-        </svg>
-      </button>
       <div className={styles.rail} aria-hidden>
         <span ref={railRef} />
       </div>

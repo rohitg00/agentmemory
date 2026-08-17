@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { resolveProject } from "./_project.js";
+import { resolveProject, hookCwd } from "./_project.js";
 
 function isSdkChildContext(payload: unknown): boolean {
   if (process.env["AGENTMEMORY_SDK_CHILD"] === "1") return true;
@@ -32,7 +32,7 @@ async function main() {
   if (!data || typeof data !== "object") return;
   if (isSdkChildContext(data)) return;
 
-  const sessionId = ((data.session_id || data.sessionId) as string) || "unknown";
+  const sessionId = ((data.session_id || data.sessionId || data.conversation_id) as string) || "unknown";
   const agentId = data.agent_id || data.agentName;
   const agentType = data.agent_type || data.agentDisplayName || data.agentName;
   const lastMsg =
@@ -40,14 +40,16 @@ async function main() {
       ? data.last_assistant_message.slice(0, 4000)
       : "";
 
+  const cwd = hookCwd(data) || process.cwd();
+
   fetch(`${REST_URL}/agentmemory/observe`, {
     method: "POST",
     headers: authHeaders(),
     body: JSON.stringify({
       hookType: "subagent_stop",
       sessionId,
-      project: resolveProject(data.cwd as string | undefined),
-      cwd: (data.cwd as string | undefined) || process.cwd(),
+      project: resolveProject(cwd),
+      cwd,
       timestamp: new Date().toISOString(),
       data: {
         agent_id: agentId,

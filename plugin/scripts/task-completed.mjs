@@ -20,6 +20,16 @@ function resolveProject(cwd) {
 	} catch {}
 	return basename(dir);
 }
+function hookCwd(data) {
+	if (!data || typeof data !== "object") return void 0;
+	if (typeof data.cwd === "string" && data.cwd.trim()) return data.cwd;
+	const roots = data.workspace_roots;
+	if (Array.isArray(roots)) {
+		for (const root of roots) if (typeof root === "string" && root.trim()) return root;
+	}
+	const projectDir = process.env["DEVIN_PROJECT_DIR"] || process.env["CLAUDE_PROJECT_DIR"];
+	if (projectDir && projectDir.trim()) return projectDir;
+}
 //#endregion
 //#region src/hooks/task-completed.ts
 function isSdkChildContext(payload) {
@@ -45,15 +55,16 @@ async function main() {
 	}
 	if (!data || typeof data !== "object") return;
 	if (isSdkChildContext(data)) return;
-	const sessionId = data.session_id || "unknown";
+	const sessionId = data.session_id || data.sessionId || data.conversation_id || "unknown";
+	const cwd = hookCwd(data) || process.cwd();
 	fetch(`${REST_URL}/agentmemory/observe`, {
 		method: "POST",
 		headers: authHeaders(),
 		body: JSON.stringify({
 			hookType: "task_completed",
 			sessionId,
-			project: resolveProject(data.cwd),
-			cwd: data.cwd || process.cwd(),
+			project: resolveProject(cwd),
+			cwd,
 			timestamp: (/* @__PURE__ */ new Date()).toISOString(),
 			data: {
 				task_id: data.task_id,

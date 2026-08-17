@@ -14,7 +14,7 @@ describe("MinimaxProvider — base URL resolution (#285)", () => {
 
   it("defaults to https://api.minimax.io/anthropic (not the legacy minimaxi.com host)", () => {
     delete process.env["MINIMAX_BASE_URL"];
-    const provider = new MinimaxProvider("test-key", "MiniMax-M2.7", 800);
+    const provider = new MinimaxProvider("test-key", "MiniMax-M3", 800);
     expect((provider as unknown as { baseUrl: string }).baseUrl).toBe(
       "https://api.minimax.io/anthropic",
     );
@@ -22,7 +22,7 @@ describe("MinimaxProvider — base URL resolution (#285)", () => {
 
   it("honors MINIMAX_BASE_URL via getEnvVar (merged ~/.agentmemory/.env + process.env)", () => {
     process.env["MINIMAX_BASE_URL"] = "https://custom.example.com/anthropic";
-    const provider = new MinimaxProvider("test-key", "MiniMax-M2.7", 800);
+    const provider = new MinimaxProvider("test-key", "MiniMax-M3", 800);
     expect((provider as unknown as { baseUrl: string }).baseUrl).toBe(
       "https://custom.example.com/anthropic",
     );

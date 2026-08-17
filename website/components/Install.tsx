@@ -22,16 +22,16 @@ const SIMPLE: Cmd[] = [
     hint: "RUNS ON :3111 · VIEWER ON :3113",
   },
   {
-    label: "3. SEE SEMANTIC RECALL INSTANTLY",
+    label: "3. RUN THE DEMO",
     cmd: "agentmemory demo",
-    hint: "SEEDS 3 SESSIONS · PROVES HYBRID SEARCH WORKS",
+    hint: "SEEDS 3 SESSIONS · SHOWS HYBRID RECALL ON REAL DATA",
   },
 ];
 
 const NPX_FALLBACK: Cmd = {
-  label: "PREFER ZERO-INSTALL? USE NPX",
+  label: "ZERO-INSTALL PATH: NPX",
   cmd: "npx @agentmemory/agentmemory",
-  hint: "REPLACES STEPS 1+2 · USES NPX CACHE — SEE README FOR CAVEAT",
+  hint: "REPLACES STEPS 1+2 · USES NPX CACHE · SEE README FOR CAVEAT",
 };
 
 function CopyBox({ label, cmd, hint }: Cmd) {
@@ -71,13 +71,15 @@ export function Install() {
   return (
     <section className={styles.install} id="install" aria-labelledby="install-title">
       <header className="section-head">
-        <span className="section-eyebrow">SHIP IT</span>
+        <span className="section-eyebrow">Ship it</span>
         <h2 id="install-title" className="section-title">
-          ONE INSTALL.<br />ANY AGENT.
+          One install.<br />Any agent.
         </h2>
         <p className="section-lede">
-          RUNS ON YOUR MACHINE. DATA STAYS LOCAL. BRING YOUR CLAUDE SUBSCRIPTION
-          — OR POINT IT AT ANTHROPIC, GEMINI, MINIMAX, OR OPENROUTER.
+          Runs on your machine. Data stays local. Capture and recall need no
+          LLM key; add one for Anthropic, OpenAI, Gemini, MiniMax, or
+          OpenRouter to activate consolidation, graph extraction, and LLM
+          compression.
         </p>
       </header>
       <div className={styles.cards}>
@@ -89,12 +91,12 @@ export function Install() {
       </div>
       <div className={styles.cta}>
         <a
-          className="btn btn--accent"
+          className="btn btn--sunset"
           href="https://github.com/rohitg00/agentmemory#quick-start"
           target="_blank"
           rel="noopener"
         >
-          READ THE QUICKSTART
+          Read the quickstart
         </a>
         <a
           className="btn btn--ghost"
@@ -102,7 +104,7 @@ export function Install() {
           target="_blank"
           rel="noopener"
         >
-          NPM PACKAGE
+          npm package
         </a>
         <a
           className="btn btn--ghost"
@@ -110,7 +112,7 @@ export function Install() {
           target="_blank"
           rel="noopener"
         >
-          INTEGRATIONS
+          Integrations
         </a>
       </div>
     </section>
