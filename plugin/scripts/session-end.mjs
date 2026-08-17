@@ -36,7 +36,7 @@ function normalizeGitRemote(url) {
 		path = noCreds.slice(slash + 1);
 	}
 	host = host.toLowerCase().replace(/:\d+$/, "");
-	path = path.replace(/^\/+/, "").replace(/\/+$/, "").replace(/\.git$/i, "");
+	path = path.replace(/^\/+/, "").replace(/\/+$/, "").replace(/\.git$/i, "").toLowerCase();
 	if (!host || !path) return null;
 	return `${host}/${path}`;
 }

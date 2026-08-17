@@ -41,10 +41,16 @@ export function normalizeGitRemote(url: string | null | undefined): string | nul
   }
 
   host = host.toLowerCase().replace(/:\d+$/, ""); // drop optional port
+  // Lowercased end-to-end, path included: hosting providers treat owner/repo
+  // case-insensitively, so `github.com/Acme/Widgets` and
+  // `github.com/acme/widgets` are the same repo. Preserving path case would
+  // re-fragment same-repo clones into separate projects — the exact failure
+  // this identity is meant to remove.
   path = path
     .replace(/^\/+/, "")
     .replace(/\/+$/, "")
-    .replace(/\.git$/i, "");
+    .replace(/\.git$/i, "")
+    .toLowerCase();
 
   if (!host || !path) return null;
   return `${host}/${path}`;

@@ -183,8 +183,31 @@ describe("normalizeGitRemote — git URL -> host/org/repo", () => {
 
   it("lowercases host and drops port", () => {
     expect(normalizeGitRemote("https://GitHub.com:443/Org/Repo.git")).toBe(
-      "github.com/Org/Repo",
+      "github.com/org/repo",
     );
+  });
+
+  // #716 specifies the identity is lowercased end-to-end. Providers treat
+  // owner/repo case-insensitively, so two clones of one repo whose remotes
+  // differ only in case must land on the same project key.
+  it("lowercases the owner/repo path, not just the host", () => {
+    expect(normalizeGitRemote("git@github.com:Acme/Widgets.git")).toBe(
+      "github.com/acme/widgets",
+    );
+    expect(normalizeGitRemote("https://github.com/Devon3000/Chessboard")).toBe(
+      "github.com/devon3000/chessboard",
+    );
+  });
+
+  it("case-variant remotes of the same repo resolve to one identity", () => {
+    const variants = [
+      "https://github.com/acme/widgets.git",
+      "https://github.com/Acme/Widgets.git",
+      "git@github.com:ACME/WIDGETS.git",
+      "ssh://git@GitHub.com/Acme/widgets",
+    ].map((u) => normalizeGitRemote(u));
+    expect(new Set(variants).size).toBe(1);
+    expect(variants[0]).toBe("github.com/acme/widgets");
   });
 
   it("handles nested groups (gitlab subgroups)", () => {
