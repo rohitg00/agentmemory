@@ -230,6 +230,11 @@ agentmemory works with any agent that supports hooks, MCP, or REST API. All agen
 <strong>Warp</strong><br/>
 <sub>connect + MCP + skills</sub>
 </td>
+<td align="center" width="12.5%">
+<a href="https://github.com/KlaatAI/klaatcode"><img src="https://raw.githubusercontent.com/rohitg00/agentmemory/main/website/public/klaatcode.png" alt="Klaat Code" width="48" height="48" /></a><br/>
+<strong>Klaat Code</strong><br/>
+<sub>6 hooks + MCP</sub>
+</td>
 </tr>
 </table>
 
