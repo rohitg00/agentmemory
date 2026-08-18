@@ -130,4 +130,15 @@ describe("integrations/pi is a valid pi package", () => {
     expect(index).toContain("@earendil-works/pi-coding-agent");
     expect(index).not.toContain("@mariozechner/pi-coding-agent");
   });
+
+  it("uses Pi's session cwd for session and prompt attribution", () => {
+    const index = readFileSync("integrations/pi/index.ts", "utf-8");
+    const sessionStart = index.slice(
+      index.indexOf('pi.on("session_start"'),
+      index.indexOf('pi.on("before_agent_start"'),
+    );
+    expect(sessionStart).toContain("currentCwd = ctx.cwd;");
+    expect(sessionStart).not.toContain("process.cwd()");
+    expect(index).toContain("currentCwd = event.systemPromptOptions.cwd || ctx.cwd;");
+  });
 });
