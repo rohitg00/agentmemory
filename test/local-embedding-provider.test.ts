@@ -2,15 +2,8 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const previousTransitiveMissingPackage =
-  process.env.AGENTMEMORY_TEST_TRANSFORMERS_TRANSITIVE_MISSING_PACKAGE;
 const previousTransformersCache = process.env.TRANSFORMERS_CACHE;
 const previousHfHome = process.env.HF_HOME;
-const transformerImportErrorKey = Symbol.for(
-  "agentmemory.test.transformersImportError",
-);
-const testGlobals = globalThis as Record<PropertyKey, unknown>;
-const previousTransformerImportError = testGlobals[transformerImportErrorKey];
 
 function restoreEnvironmentVariable(
   name: string,
@@ -24,24 +17,13 @@ function restoreEnvironmentVariable(
 }
 
 beforeEach(() => {
-  delete process.env.AGENTMEMORY_TEST_TRANSFORMERS_TRANSITIVE_MISSING_PACKAGE;
   delete process.env.TRANSFORMERS_CACHE;
   delete process.env.HF_HOME;
-  delete testGlobals[transformerImportErrorKey];
 });
 
 afterEach(() => {
-  restoreEnvironmentVariable(
-    "AGENTMEMORY_TEST_TRANSFORMERS_TRANSITIVE_MISSING_PACKAGE",
-    previousTransitiveMissingPackage,
-  );
   restoreEnvironmentVariable("TRANSFORMERS_CACHE", previousTransformersCache);
   restoreEnvironmentVariable("HF_HOME", previousHfHome);
-  if (previousTransformerImportError === undefined) {
-    delete testGlobals[transformerImportErrorKey];
-  } else {
-    testGlobals[transformerImportErrorKey] = previousTransformerImportError;
-  }
   vi.doUnmock("@huggingface/transformers");
   vi.resetModules();
 });
@@ -65,11 +47,12 @@ describe("LocalEmbeddingProvider (package unavailable)", () => {
       ),
       { code: "ERR_MODULE_NOT_FOUND" },
     );
-    process.env.AGENTMEMORY_TEST_TRANSFORMERS_TRANSITIVE_MISSING_PACKAGE =
-      "sharp";
-    testGlobals[transformerImportErrorKey] = transitiveError;
     vi.doMock("@huggingface/transformers");
     vi.resetModules();
+    const { setTransformersImportError } = await import(
+      "./fixtures/transformers-import-error.js"
+    );
+    setTransformersImportError(transitiveError);
     const { LocalEmbeddingProvider: Fresh } = await import(
       "../src/providers/embedding/local.js"
     );
@@ -81,13 +64,13 @@ describe("LocalEmbeddingProvider (package unavailable)", () => {
 describe("Transformers cache initialization", () => {
   async function loadTransformersWithMock(
     module: Record<string, unknown>,
-  ): Promise<void> {
+  ) {
     vi.doMock("@huggingface/transformers", () => module);
     vi.resetModules();
     const { loadTransformers } = await import(
       "../src/providers/embedding/_transformers.js"
     );
-    await loadTransformers();
+    return loadTransformers();
   }
 
   it("prefers TRANSFORMERS_CACHE over HF_HOME", async () => {
@@ -119,10 +102,18 @@ describe("Transformers cache initialization", () => {
     );
   });
 
-  it("loads safely when the module has no env export", async () => {
-    await expect(
-      loadTransformersWithMock({ pipeline: vi.fn() }),
-    ).resolves.toBeUndefined();
+  it("keeps the module usable when cacheDir is not writable", async () => {
+    const pipeline = vi.fn();
+    const setCacheDir = vi.fn(() => {
+      throw new TypeError("cacheDir is read-only");
+    });
+    const env = {};
+    Object.defineProperty(env, "cacheDir", { set: setCacheDir });
+
+    const transformers = await loadTransformersWithMock({ env, pipeline });
+
+    expect(setCacheDir).toHaveBeenCalledOnce();
+    expect(transformers.pipeline).toBe(pipeline);
   });
 });
 

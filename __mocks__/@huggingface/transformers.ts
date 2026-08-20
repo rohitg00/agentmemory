@@ -1,21 +1,8 @@
-const transitiveMissingPackage =
-  process.env.AGENTMEMORY_TEST_TRANSFORMERS_TRANSITIVE_MISSING_PACKAGE;
-const injectedErrorKey = Symbol.for(
-  "agentmemory.test.transformersImportError",
-);
-const injectedError = (globalThis as Record<PropertyKey, unknown>)[
-  injectedErrorKey
-];
+import { getTransformersImportError } from "../../test/fixtures/transformers-import-error.js";
 
 throw (
-  injectedError instanceof Error
-    ? injectedError
-    : Object.assign(
-        new Error(
-          transitiveMissingPackage
-            ? `Cannot find package '${transitiveMissingPackage}' imported from @huggingface/transformers`
-            : "Cannot find package '@huggingface/transformers'",
-        ),
-        { code: "ERR_MODULE_NOT_FOUND" },
-      )
+  getTransformersImportError() ??
+  Object.assign(new Error("Cannot find package '@huggingface/transformers'"), {
+    code: "ERR_MODULE_NOT_FOUND",
+  })
 );
