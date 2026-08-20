@@ -139,6 +139,28 @@ describe("Smart Search Function", () => {
     expect(result.results[0].observation.title).toBe("Auth handler");
   });
 
+  it("expand mode resolves long-term memory IDs from KV.memories", async () => {
+    const memory = makeObs({
+      id: "mem_long_term",
+      sessionId: "memory",
+      title: "Long-term auth memory",
+      narrative: "Remembered auth detail",
+    });
+    await kv.set("mem:memories", memory.id, memory);
+
+    const result = (await sdk.trigger("mem::smart-search", {
+      expandIds: [memory.id],
+    })) as { mode: string; results: Array<{ obsId: string; sessionId: string; observation: CompressedObservation }> };
+
+    expect(result.mode).toBe("expanded");
+    expect(result.results).toHaveLength(1);
+    expect(result.results[0]).toMatchObject({
+      obsId: memory.id,
+      sessionId: "memory",
+      observation: memory,
+    });
+  });
+
   it("returns error when query is missing and no expandIds", async () => {
     const result = (await sdk.trigger("mem::smart-search", {})) as {
       mode: string;

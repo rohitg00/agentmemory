@@ -111,6 +111,7 @@ interface Validated {
   limit?: number;
   format?: string;
   tokenBudget?: number;
+  expandIds?: string[];
   memoryIds?: string[];
   reason?: string;
 }
@@ -159,6 +160,9 @@ function validate(toolName: string, args: Record<string, unknown>): Validated {
       } else if (typeof budget === "string" && budget.trim()) {
         const n = Number(budget);
         if (Number.isFinite(n) && n > 0) v.tokenBudget = Math.floor(n);
+      }
+      if (toolName === "memory_smart_search") {
+        v.expandIds = normalizeList(args["expandIds"]).slice(0, 20);
       }
       return v;
     }
@@ -220,6 +224,7 @@ async function handleProxy(
       const body: Record<string, unknown> = { query: v.query, limit: v.limit };
       if (v.format != null) body["format"] = v.format;
       if (v.tokenBudget != null) body["token_budget"] = v.tokenBudget;
+      if (v.expandIds && v.expandIds.length > 0) body["expandIds"] = v.expandIds;
       const result = await handle.call("/agentmemory/smart-search", {
         method: "POST",
         body: JSON.stringify(body),

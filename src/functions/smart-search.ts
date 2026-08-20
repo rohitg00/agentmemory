@@ -382,5 +382,5 @@ async function findObservation(
     const found = results.find((r) => r !== null);
     if (found) return found;
   }
-  return null;
+  return kv.get<CompressedObservation>(KV.memories, obsId).catch(() => null);
 }
