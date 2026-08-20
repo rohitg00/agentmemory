@@ -21,9 +21,13 @@ beforeEach(() => {
   delete process.env.HF_HOME;
 });
 
-afterEach(() => {
+afterEach(async () => {
   restoreEnvironmentVariable("TRANSFORMERS_CACHE", previousTransformersCache);
   restoreEnvironmentVariable("HF_HOME", previousHfHome);
+  const { clearTransformersImportError } = await import(
+    "./fixtures/transformers-import-error.js"
+  );
+  clearTransformersImportError();
   vi.doUnmock("@huggingface/transformers");
   vi.resetModules();
 });

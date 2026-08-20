@@ -7,3 +7,7 @@ export function setTransformersImportError(error: Error): void {
 export function getTransformersImportError(): Error | undefined {
   return transformersImportError;
 }
+
+export function clearTransformersImportError(): void {
+  transformersImportError = undefined;
+}
