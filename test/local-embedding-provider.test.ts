@@ -1,7 +1,15 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 
+const previousTransitiveMissingPackage =
+  process.env.AGENTMEMORY_TEST_TRANSFORMERS_TRANSITIVE_MISSING_PACKAGE;
+
 afterEach(() => {
-  delete process.env.AGENTMEMORY_TEST_TRANSFORMERS_TRANSITIVE_MISSING_PACKAGE;
+  if (previousTransitiveMissingPackage === undefined) {
+    delete process.env.AGENTMEMORY_TEST_TRANSFORMERS_TRANSITIVE_MISSING_PACKAGE;
+  } else {
+    process.env.AGENTMEMORY_TEST_TRANSFORMERS_TRANSITIVE_MISSING_PACKAGE =
+      previousTransitiveMissingPackage;
+  }
   vi.doUnmock("@huggingface/transformers");
   vi.resetModules();
 });
