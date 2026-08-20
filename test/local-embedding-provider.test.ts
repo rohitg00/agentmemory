@@ -1,14 +1,46 @@
-import { describe, it, expect, vi, afterEach } from "vitest";
+import { homedir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const previousTransitiveMissingPackage =
   process.env.AGENTMEMORY_TEST_TRANSFORMERS_TRANSITIVE_MISSING_PACKAGE;
+const previousTransformersCache = process.env.TRANSFORMERS_CACHE;
+const previousHfHome = process.env.HF_HOME;
+const transformerImportErrorKey = Symbol.for(
+  "agentmemory.test.transformersImportError",
+);
+const testGlobals = globalThis as Record<PropertyKey, unknown>;
+const previousTransformerImportError = testGlobals[transformerImportErrorKey];
+
+function restoreEnvironmentVariable(
+  name: string,
+  previousValue: string | undefined,
+): void {
+  if (previousValue === undefined) {
+    delete process.env[name];
+  } else {
+    process.env[name] = previousValue;
+  }
+}
+
+beforeEach(() => {
+  delete process.env.AGENTMEMORY_TEST_TRANSFORMERS_TRANSITIVE_MISSING_PACKAGE;
+  delete process.env.TRANSFORMERS_CACHE;
+  delete process.env.HF_HOME;
+  delete testGlobals[transformerImportErrorKey];
+});
 
 afterEach(() => {
-  if (previousTransitiveMissingPackage === undefined) {
-    delete process.env.AGENTMEMORY_TEST_TRANSFORMERS_TRANSITIVE_MISSING_PACKAGE;
+  restoreEnvironmentVariable(
+    "AGENTMEMORY_TEST_TRANSFORMERS_TRANSITIVE_MISSING_PACKAGE",
+    previousTransitiveMissingPackage,
+  );
+  restoreEnvironmentVariable("TRANSFORMERS_CACHE", previousTransformersCache);
+  restoreEnvironmentVariable("HF_HOME", previousHfHome);
+  if (previousTransformerImportError === undefined) {
+    delete testGlobals[transformerImportErrorKey];
   } else {
-    process.env.AGENTMEMORY_TEST_TRANSFORMERS_TRANSITIVE_MISSING_PACKAGE =
-      previousTransitiveMissingPackage;
+    testGlobals[transformerImportErrorKey] = previousTransformerImportError;
   }
   vi.doUnmock("@huggingface/transformers");
   vi.resetModules();
@@ -27,19 +59,70 @@ describe("LocalEmbeddingProvider (package unavailable)", () => {
   });
 
   it("preserves missing transitive dependency errors", async () => {
+    const transitiveError = Object.assign(
+      new Error(
+        "Cannot find package 'sharp' imported from @huggingface/transformers",
+      ),
+      { code: "ERR_MODULE_NOT_FOUND" },
+    );
     process.env.AGENTMEMORY_TEST_TRANSFORMERS_TRANSITIVE_MISSING_PACKAGE =
       "sharp";
+    testGlobals[transformerImportErrorKey] = transitiveError;
     vi.doMock("@huggingface/transformers");
     vi.resetModules();
     const { LocalEmbeddingProvider: Fresh } = await import(
       "../src/providers/embedding/local.js"
     );
 
-    await expect(new Fresh().embed("hello")).rejects.toMatchObject({
-      code: "ERR_MODULE_NOT_FOUND",
-      message:
-        "Cannot find package 'sharp' imported from @huggingface/transformers",
-    });
+    await expect(new Fresh().embed("hello")).rejects.toBe(transitiveError);
+  });
+});
+
+describe("Transformers cache initialization", () => {
+  async function loadTransformersWithMock(
+    module: Record<string, unknown>,
+  ): Promise<void> {
+    vi.doMock("@huggingface/transformers", () => module);
+    vi.resetModules();
+    const { loadTransformers } = await import(
+      "../src/providers/embedding/_transformers.js"
+    );
+    await loadTransformers();
+  }
+
+  it("prefers TRANSFORMERS_CACHE over HF_HOME", async () => {
+    process.env.TRANSFORMERS_CACHE = "/tmp/transformers-cache";
+    process.env.HF_HOME = "/tmp/hf-home";
+    const env = { cacheDir: "" };
+
+    await loadTransformersWithMock({ env });
+
+    expect(env.cacheDir).toBe("/tmp/transformers-cache");
+  });
+
+  it("uses HF_HOME when TRANSFORMERS_CACHE is absent", async () => {
+    process.env.HF_HOME = "/tmp/hf-home";
+    const env = { cacheDir: "" };
+
+    await loadTransformersWithMock({ env });
+
+    expect(env.cacheDir).toBe("/tmp/hf-home");
+  });
+
+  it("falls back to the user cache when both variables are absent", async () => {
+    const env = { cacheDir: "" };
+
+    await loadTransformersWithMock({ env });
+
+    expect(env.cacheDir).toBe(
+      join(homedir(), ".cache", "huggingface", "transformers"),
+    );
+  });
+
+  it("loads safely when the module has no env export", async () => {
+    await expect(
+      loadTransformersWithMock({ pipeline: vi.fn() }),
+    ).resolves.toBeUndefined();
   });
 });
 
