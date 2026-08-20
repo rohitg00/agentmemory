@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 
 afterEach(() => {
+  delete process.env.AGENTMEMORY_TEST_TRANSFORMERS_TRANSITIVE_MISSING_PACKAGE;
   vi.doUnmock("@huggingface/transformers");
   vi.resetModules();
 });
@@ -15,6 +16,22 @@ describe("LocalEmbeddingProvider (package unavailable)", () => {
     await expect(new Fresh().embed("hello")).rejects.toThrow(
       "Install @huggingface/transformers for local embeddings",
     );
+  });
+
+  it("preserves missing transitive dependency errors", async () => {
+    process.env.AGENTMEMORY_TEST_TRANSFORMERS_TRANSITIVE_MISSING_PACKAGE =
+      "sharp";
+    vi.doMock("@huggingface/transformers");
+    vi.resetModules();
+    const { LocalEmbeddingProvider: Fresh } = await import(
+      "../src/providers/embedding/local.js"
+    );
+
+    await expect(new Fresh().embed("hello")).rejects.toMatchObject({
+      code: "ERR_MODULE_NOT_FOUND",
+      message:
+        "Cannot find package 'sharp' imported from @huggingface/transformers",
+    });
   });
 });
 
