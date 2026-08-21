@@ -1,8 +1,28 @@
+import { cpus } from "node:os";
 import type { ISdk } from "iii-sdk";
 import type { HealthSnapshot } from "../types.js";
 import type { StateKV } from "../state/kv.js";
 import { KV } from "../state/schema.js";
 import { evaluateHealth } from "./thresholds.js";
+
+/**
+ * Process CPU usage as a percentage of total machine capacity (all cores).
+ *
+ * `process.cpuUsage()` deltas scale with single-core time: saturating one
+ * core yields 100, so an N-core host can reach N * 100. The health
+ * thresholds in thresholds.ts express a share of the whole machine, so the
+ * raw value is normalized by core count — otherwise any burst past ~0.9
+ * cores reports `cpu_critical` on wide, mostly-idle hosts (#1235).
+ */
+export function computeProcessCpuPercent(
+  userDeltaMicros: number,
+  systemDeltaMicros: number,
+  elapsedMs: number,
+  coreCount: number = cpus().length,
+): number {
+  if (elapsedMs <= 0 || coreCount <= 0) return 0;
+  return ((userDeltaMicros + systemDeltaMicros) / 1000 / elapsedMs) * 100 / coreCount;
+}
 
 export function registerHealthMonitor(
   sdk: ISdk,
@@ -27,8 +47,7 @@ export function registerHealthMonitor(
     const elapsedMs = now - prevCpuTime;
     const userDelta = currentCpu.user - prevCpuUsage.user;
     const systemDelta = currentCpu.system - prevCpuUsage.system;
-    const cpuPercent =
-      elapsedMs > 0 ? ((userDelta + systemDelta) / 1000 / elapsedMs) * 100 : 0;
+    const cpuPercent = computeProcessCpuPercent(userDelta, systemDelta, elapsedMs);
     prevCpuUsage = currentCpu;
     prevCpuTime = now;
 
