@@ -226,6 +226,16 @@ describe("viewer session rendering", () => {
     expect(paths).toHaveLength(10);
   });
 
+  it("marks lesson and crystal counts as deferred", () => {
+    const { sandbox, getElement } = loadViewerSandbox();
+
+    sandbox.renderDashboard();
+
+    const html = getElement("view-dashboard").innerHTML;
+    expect(html).toContain('<div class="label">Lessons</div><div class="value">&mdash;</div>');
+    expect(html).toContain('<div class="label">Crystals</div><div class="value">&mdash;</div>');
+  });
+
   it("attaches the saved viewer bearer to API calls", async () => {
     const { sandbox } = loadViewerSandbox();
     const requests: Array<{ url: string; opts: { headers?: Record<string, string> } }> = [];
