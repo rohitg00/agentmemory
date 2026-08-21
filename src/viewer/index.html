@@ -1471,15 +1471,17 @@
     var dashboardRefreshPending = false;
     async function loadDashboard() {
       if (dashboardLoadPromise) return dashboardLoadPromise;
-      do {
-        dashboardRefreshPending = false;
-        dashboardLoadPromise = loadDashboardOnce();
-        try {
-          await dashboardLoadPromise;
-        } finally {
-          dashboardLoadPromise = null;
-        }
-      } while (dashboardRefreshPending);
+      dashboardLoadPromise = (async function() {
+        do {
+          dashboardRefreshPending = false;
+          await loadDashboardOnce();
+        } while (dashboardRefreshPending);
+      })();
+      try {
+        await dashboardLoadPromise;
+      } finally {
+        dashboardLoadPromise = null;
+      }
     }
 
     async function loadDashboardOnce() {
