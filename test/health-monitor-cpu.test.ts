@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("iii-sdk", () => ({}));
+vi.mock("iii-sdk", () => ({
+  sdk: { trigger: vi.fn() },
+  kv: { get: vi.fn(), set: vi.fn(), list: vi.fn() },
+}));
 
 import { computeProcessCpuPercent } from "../src/health/monitor.js";
 import { evaluateHealth } from "../src/health/thresholds.js";
