@@ -208,6 +208,29 @@ describe("viewer session rendering", () => {
     ]);
   });
 
+  it("runs one pending refresh after an in-flight dashboard load", async () => {
+    const { sandbox } = loadViewerSandbox();
+    const paths: string[] = [];
+    let releaseSessions: (() => void) | undefined;
+    sandbox.fetch = async (url: string) => {
+      paths.push(new URL(url).pathname);
+      if (paths.length === 2) {
+        await new Promise<void>((resolve) => {
+          releaseSessions = resolve;
+        });
+      }
+      return { ok: true, json: async () => ({}) };
+    };
+
+    const initialLoad = sandbox.loadDashboard();
+    while (!releaseSessions) await Promise.resolve();
+    const pendingRefresh = sandbox.refreshDashboard();
+    releaseSessions();
+    await Promise.all([initialLoad, pendingRefresh]);
+
+    expect(paths).toHaveLength(20);
+  });
+
   it("attaches the saved viewer bearer to API calls", async () => {
     const { sandbox } = loadViewerSandbox();
     const requests: Array<{ url: string; opts: { headers?: Record<string, string> } }> = [];

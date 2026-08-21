@@ -1468,14 +1468,18 @@
     }
 
     var dashboardLoadPromise = null;
+    var dashboardRefreshPending = false;
     async function loadDashboard() {
       if (dashboardLoadPromise) return dashboardLoadPromise;
-      dashboardLoadPromise = loadDashboardOnce();
-      try {
-        return await dashboardLoadPromise;
-      } finally {
-        dashboardLoadPromise = null;
-      }
+      do {
+        dashboardRefreshPending = false;
+        dashboardLoadPromise = loadDashboardOnce();
+        try {
+          await dashboardLoadPromise;
+        } finally {
+          dashboardLoadPromise = null;
+        }
+      } while (dashboardRefreshPending);
     }
 
     async function loadDashboardOnce() {
@@ -1793,7 +1797,8 @@
     var dashboardTimer = null;
     function refreshDashboard() {
       state.dashboard.loaded = false;
-      loadDashboard();
+      if (dashboardLoadPromise) dashboardRefreshPending = true;
+      return loadDashboard();
     }
     function startDashboardAutoRefresh() {
       if (dashboardTimer) clearInterval(dashboardTimer);
@@ -3810,8 +3815,7 @@
       pollTimer = setInterval(function() {
         tick++;
         if (state.activeTab === 'dashboard') {
-          state.dashboard.loaded = false;
-          loadDashboard();
+          refreshDashboard();
         } else if (state.activeTab === 'memories') {
           state.memories.loaded = false;
           loadMemories();
@@ -3975,8 +3979,7 @@
         }
       }
       if (state.activeTab === 'dashboard') {
-        state.dashboard.loaded = false;
-        loadDashboard();
+        refreshDashboard();
       }
       if (state.activeTab === 'activity' && msg.observation) {
         state.activity.observations.unshift(msg.observation);
