@@ -9,6 +9,7 @@ import type {
   CompressedObservation,
   HybridSearchResult,
   CompactSearchResult,
+  Memory,
   Session,
 } from "../src/types.js";
 
@@ -140,12 +141,20 @@ describe("Smart Search Function", () => {
   });
 
   it("expand mode resolves long-term memory IDs from KV.memories", async () => {
-    const memory = makeObs({
+    const memory: Memory = {
       id: "mem_long_term",
-      sessionId: "memory",
+      createdAt: "2026-08-20T10:00:00.000Z",
+      updatedAt: "2026-08-20T11:00:00.000Z",
+      type: "fact",
       title: "Long-term auth memory",
-      narrative: "Remembered auth detail",
-    });
+      content: "Remembered auth detail",
+      concepts: ["auth"],
+      files: ["src/auth.ts"],
+      sessionIds: [],
+      strength: 8,
+      version: 1,
+      isLatest: true,
+    };
     await kv.set("mem:memories", memory.id, memory);
 
     const result = (await sdk.trigger("mem::smart-search", {
@@ -157,7 +166,18 @@ describe("Smart Search Function", () => {
     expect(result.results[0]).toMatchObject({
       obsId: memory.id,
       sessionId: "memory",
-      observation: memory,
+      observation: {
+        id: memory.id,
+        sessionId: "memory",
+        timestamp: memory.createdAt,
+        type: "decision",
+        title: memory.title,
+        facts: [memory.content],
+        narrative: memory.content,
+        concepts: memory.concepts,
+        files: memory.files,
+        importance: memory.strength,
+      },
     });
   });
 
