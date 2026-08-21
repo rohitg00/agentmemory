@@ -166,7 +166,7 @@ function loadViewerSandbox() {
   };
 
   const scriptWithoutAutoStart = scriptMatch[1].replace(
-    /\n\s*loadTab\('dashboard'\);\n\s*connectWs\(\);\n\s*startDashboardAutoRefresh\(\);\s*$/,
+    /\n    switchTab\(tabFromRoute\(\), \{ replaceRoute: true \}\);\n    \/\/ Resolve[\s\S]*?\n    startDashboardAutoRefresh\(\);/,
     "\n",
   );
 
@@ -177,6 +177,37 @@ function loadViewerSandbox() {
 }
 
 describe("viewer session rendering", () => {
+  it("deduplicates dashboard loads and fetches every endpoint serially", async () => {
+    const { sandbox } = loadViewerSandbox();
+    let active = 0;
+    let maxActive = 0;
+    const paths: string[] = [];
+    sandbox.fetch = async (url: string) => {
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      paths.push(new URL(url).pathname);
+      await Promise.resolve();
+      active -= 1;
+      return { ok: true, json: async () => ({}) };
+    };
+
+    await Promise.all([sandbox.loadDashboard(), sandbox.loadDashboard()]);
+
+    expect(maxActive).toBe(1);
+    expect(paths).toEqual([
+      "/agentmemory/health",
+      "/agentmemory/sessions",
+      "/agentmemory/memories",
+      "/agentmemory/graph/stats",
+      "/agentmemory/audit",
+      "/agentmemory/semantic",
+      "/agentmemory/procedural",
+      "/agentmemory/relations",
+      "/agentmemory/lessons",
+      "/agentmemory/crystals",
+    ]);
+  });
+
   it("attaches the saved viewer bearer to API calls", async () => {
     const { sandbox } = loadViewerSandbox();
     const requests: Array<{ url: string; opts: { headers?: Record<string, string> } }> = [];

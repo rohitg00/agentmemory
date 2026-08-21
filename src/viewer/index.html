@@ -1467,22 +1467,33 @@
       }
     }
 
+    var dashboardLoadPromise = null;
     async function loadDashboard() {
+      if (dashboardLoadPromise) return dashboardLoadPromise;
+      dashboardLoadPromise = loadDashboardOnce();
+      try {
+        return await dashboardLoadPromise;
+      } finally {
+        dashboardLoadPromise = null;
+      }
+    }
+
+    async function loadDashboardOnce() {
       var el = document.getElementById('view-dashboard');
       if (!state.dashboard.loaded) el.innerHTML = '<div class="loading">Loading dashboard...</div>';
       try {
-        var results = await Promise.all([
-          api('health', { readErrorBody: true }),
-          apiGet('sessions'),
-          apiGet('memories?latest=true&limit=500'),
-          apiGet('graph/stats'),
-          apiGet('audit?limit=5'),
-          apiGet('semantic'),
-          apiGet('procedural'),
-          apiGet('relations'),
-          apiGet('lessons'),
-          apiGet('crystals')
-        ]);
+        var results = [
+          await api('health', { readErrorBody: true }),
+          await apiGet('sessions'),
+          await apiGet('memories?latest=true&limit=500'),
+          await apiGet('graph/stats'),
+          await apiGet('audit?limit=5'),
+          await apiGet('semantic'),
+          await apiGet('procedural'),
+          await apiGet('relations'),
+          await apiGet('lessons'),
+          await apiGet('crystals')
+        ];
         state.dashboard.health = results[0];
         state.dashboard.sessions = (results[1] && results[1].sessions) || [];
         state.dashboard.memories = (results[2] && results[2].memories) || [];
@@ -1496,8 +1507,8 @@
         state.dashboard.loaded = true;
         renderDashboard();
       } catch (err) {
-        // Without this catch, any uncaught error in the await Promise.all
-        // or the renderDashboard call leaves the dashboard stuck on
+        // Without this catch, an uncaught request or render error leaves
+        // the dashboard stuck on
         // "Loading dashboard..." forever with no indication to the user
         // (#323). apiGet() already swallows network/HTTP errors and
         // returns null, but renderDashboard can still throw on shape
