@@ -1,4 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+vi.mock("iii-sdk", () => ({}));
+
 import { computeProcessCpuPercent } from "../src/health/monitor.js";
 import { evaluateHealth } from "../src/health/thresholds.js";
 import type { HealthSnapshot } from "../src/types.js";

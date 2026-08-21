@@ -5,15 +5,6 @@ import type { StateKV } from "../state/kv.js";
 import { KV } from "../state/schema.js";
 import { evaluateHealth } from "./thresholds.js";
 
-/**
- * Process CPU usage as a percentage of total machine capacity (all cores).
- *
- * `process.cpuUsage()` deltas scale with single-core time: saturating one
- * core yields 100, so an N-core host can reach N * 100. The health
- * thresholds in thresholds.ts express a share of the whole machine, so the
- * raw value is normalized by core count — otherwise any burst past ~0.9
- * cores reports `cpu_critical` on wide, mostly-idle hosts (#1235).
- */
 export function computeProcessCpuPercent(
   userDeltaMicros: number,
   systemDeltaMicros: number,
