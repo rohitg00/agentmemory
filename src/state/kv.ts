@@ -4,6 +4,9 @@ export class StateKV {
   constructor(private sdk: ISdk) {}
 
   async get<T = unknown>(scope: string, key: string): Promise<T | null> {
+    if (typeof key !== "string" || !key.trim()) {
+      throw new Error("key must be a non-empty string");
+    }
     return this.sdk.trigger<{ scope: string; key: string }, T | null>({
       function_id: 'state::get',
       payload: { scope, key },
