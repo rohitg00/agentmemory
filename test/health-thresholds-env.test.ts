@@ -1,4 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("iii-sdk", () => ({}));
+
 import {
   evaluateHealth,
   thresholdOverridesFromEnv,
@@ -52,6 +55,13 @@ describe("thresholdOverridesFromEnv", () => {
       AGENTMEMORY_HEALTH_CPU_CRITICAL_PCT: "not-a-number",
       AGENTMEMORY_HEALTH_MEM_WARN_PCT: "0",
       AGENTMEMORY_HEALTH_MEM_CRITICAL_PCT: "-5",
+    });
+    expect(overrides).toEqual({});
+  });
+
+  it("rejects RSS floor values that overflow the MiB-to-bytes conversion", () => {
+    const overrides = thresholdOverridesFromEnv({
+      AGENTMEMORY_HEALTH_MEM_RSS_FLOOR_MB: "1e308",
     });
     expect(overrides).toEqual({});
   });

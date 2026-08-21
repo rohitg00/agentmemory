@@ -20,10 +20,6 @@ const DEFAULTS: ThresholdConfig = {
   memoryRssFloorBytes: 512 * 1024 * 1024,
 };
 
-/**
- * Environment variable overrides for every threshold. Percent values are
- * plain numbers (e.g. "90"); the RSS floor is expressed in MiB.
- */
 const ENV_VARS: Record<keyof ThresholdConfig, string> = {
   eventLoopLagWarnMs: "AGENTMEMORY_HEALTH_EVENTLOOP_WARN_MS",
   eventLoopLagCriticalMs: "AGENTMEMORY_HEALTH_EVENTLOOP_CRITICAL_MS",
@@ -34,17 +30,12 @@ const ENV_VARS: Record<keyof ThresholdConfig, string> = {
   memoryRssFloorBytes: "AGENTMEMORY_HEALTH_MEM_RSS_FLOOR_MB",
 };
 
-/** Parse a positive finite number, ignoring missing/invalid values. */
 function parseThreshold(raw: string | undefined): number | undefined {
   if (raw === undefined || raw.trim() === "") return undefined;
   const value = Number(raw);
   return Number.isFinite(value) && value > 0 ? value : undefined;
 }
 
-/**
- * Threshold overrides from the environment. Invalid values are ignored so a
- * typo can never disable or break health evaluation.
- */
 export function thresholdOverridesFromEnv(
   env: NodeJS.ProcessEnv = process.env,
 ): Partial<ThresholdConfig> {
@@ -52,8 +43,13 @@ export function thresholdOverridesFromEnv(
   for (const key of Object.keys(ENV_VARS) as (keyof ThresholdConfig)[]) {
     const parsed = parseThreshold(env[ENV_VARS[key]]);
     if (parsed === undefined) continue;
-    overrides[key] =
-      key === "memoryRssFloorBytes" ? parsed * 1024 * 1024 : parsed;
+    if (key === "memoryRssFloorBytes") {
+      const bytes = parsed * 1024 * 1024;
+      if (!Number.isFinite(bytes)) continue;
+      overrides[key] = bytes;
+    } else {
+      overrides[key] = parsed;
+    }
   }
   return overrides;
 }
@@ -62,7 +58,6 @@ export function evaluateHealth(
   snapshot: HealthSnapshot,
   config: Partial<ThresholdConfig> = {},
 ): { status: "healthy" | "degraded" | "critical"; alerts: string[]; notes: string[] } {
-  // Precedence: defaults < environment < caller-supplied config.
   const cfg = { ...DEFAULTS, ...thresholdOverridesFromEnv(), ...config };
   const alerts: string[] = [];
   const notes: string[] = [];
