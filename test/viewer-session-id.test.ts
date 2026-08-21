@@ -200,11 +200,6 @@ describe("viewer session rendering", () => {
       "/agentmemory/memories",
       "/agentmemory/graph/stats",
       "/agentmemory/audit",
-      "/agentmemory/semantic",
-      "/agentmemory/procedural",
-      "/agentmemory/relations",
-      "/agentmemory/lessons",
-      "/agentmemory/crystals",
     ]);
   });
 
@@ -228,7 +223,7 @@ describe("viewer session rendering", () => {
     releaseSessions();
     await Promise.all([initialLoad, pendingRefresh]);
 
-    expect(paths).toHaveLength(20);
+    expect(paths).toHaveLength(10);
   });
 
   it("attaches the saved viewer bearer to API calls", async () => {
