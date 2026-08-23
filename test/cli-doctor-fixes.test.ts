@@ -8,6 +8,7 @@
 import { describe, it, expect } from "vitest";
 import {
   buildDiagnostics,
+  canAutoFix,
   DIAGNOSTIC_IDS,
   dryRunPlan,
   parseEnvFile,
@@ -169,17 +170,69 @@ describe("doctor v2 diagnostic catalog", () => {
     expect(status.detail).toContain("ANTHROPIC_API_KEY");
   });
 
-  it("iii-on-path-not-local-bin warns when iii lives in another location", async () => {
+  it("iii-on-path-not-local-bin warns when iii lives in another location and the private install is missing", async () => {
+    const privatePath = "/Users/test/.agentmemory/bin/iii";
     const diagnostics = buildDiagnostics(
       stubEffects({
         findIiiBinary: () => "/opt/homebrew/bin/iii",
-        localBinIiiPath: () => "/Users/test/.local/bin/iii",
+        localBinIiiPath: () => privatePath,
+        iiiBinaryVersion: (bin) => (bin === privatePath ? null : "0.11.2"),
       }),
     );
     const check = diagnostics.find((d) => d.id === "iii-on-path-not-local-bin")!;
     const status = await check.check(stubCtx());
     expect(status.ok).toBe(false);
     expect(check.manualOnly).toBe(true);
+  });
+
+  it("both engine checks pass when the private install matches the pin despite a mismatched PATH iii", async () => {
+    const privatePath = "/Users/test/.agentmemory/bin/iii";
+    const diagnostics = buildDiagnostics(
+      stubEffects({
+        findIiiBinary: () => "/opt/homebrew/bin/iii",
+        localBinIiiPath: () => privatePath,
+        iiiBinaryVersion: (bin) => (bin === privatePath ? "0.11.2" : "0.99.99"),
+      }),
+    );
+    const versionCheck = diagnostics.find((d) => d.id === "engine-version-mismatch")!;
+    const versionStatus = await versionCheck.check(stubCtx());
+    expect(versionStatus.ok).toBe(true);
+    expect(versionStatus.detail).toContain("private install wins at runtime");
+    const pathCheck = diagnostics.find((d) => d.id === "iii-on-path-not-local-bin")!;
+    const pathStatus = await pathCheck.check(stubCtx());
+    expect(pathStatus.ok).toBe(true);
+    expect(pathStatus.detail).toContain("/opt/homebrew/bin/iii");
+  });
+
+  it("engine-version-mismatch fix converges once the installer writes the private binary", async () => {
+    const privatePath = "/Users/test/.agentmemory/bin/iii";
+    let privateVersion: string | null = null;
+    const diagnostics = buildDiagnostics(
+      stubEffects({
+        findIiiBinary: () => "/opt/homebrew/bin/iii",
+        localBinIiiPath: () => privatePath,
+        iiiBinaryVersion: (bin) => (bin === privatePath ? privateVersion : "0.99.99"),
+        runIiiInstaller: async () => {
+          privateVersion = "0.11.2";
+          return { ok: true, message: "installed" };
+        },
+      }),
+    );
+    const check = diagnostics.find((d) => d.id === "engine-version-mismatch")!;
+    const before = await check.check(stubCtx());
+    expect(before.ok).toBe(false);
+    const fixResult = await check.fix(stubCtx());
+    expect(fixResult.ok).toBe(true);
+    const after = await check.check(stubCtx());
+    expect(after.ok).toBe(true);
+  });
+
+  it("canAutoFix is false for manualOnly diagnostics and true otherwise", () => {
+    const diagnostics = buildDiagnostics(stubEffects());
+    const manual = diagnostics.find((d) => d.id === "iii-on-path-not-local-bin")!;
+    expect(canAutoFix(manual)).toBe(false);
+    const auto = diagnostics.find((d) => d.id === "engine-version-mismatch")!;
+    expect(canAutoFix(auto)).toBe(true);
   });
 
   it("dryRunPlan lists each failing diagnostic with the fix preview", () => {
