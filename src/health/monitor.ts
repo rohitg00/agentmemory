@@ -1,8 +1,19 @@
+import { cpus } from "node:os";
 import type { ISdk } from "iii-sdk";
 import type { HealthSnapshot } from "../types.js";
 import type { StateKV } from "../state/kv.js";
 import { KV } from "../state/schema.js";
 import { evaluateHealth } from "./thresholds.js";
+
+export function computeProcessCpuPercent(
+  userDeltaMicros: number,
+  systemDeltaMicros: number,
+  elapsedMs: number,
+  coreCount: number = cpus().length,
+): number {
+  if (elapsedMs <= 0 || coreCount <= 0) return 0;
+  return ((userDeltaMicros + systemDeltaMicros) / 1000 / elapsedMs) * 100 / coreCount;
+}
 
 export function registerHealthMonitor(
   sdk: ISdk,
@@ -27,8 +38,7 @@ export function registerHealthMonitor(
     const elapsedMs = now - prevCpuTime;
     const userDelta = currentCpu.user - prevCpuUsage.user;
     const systemDelta = currentCpu.system - prevCpuUsage.system;
-    const cpuPercent =
-      elapsedMs > 0 ? ((userDelta + systemDelta) / 1000 / elapsedMs) * 100 : 0;
+    const cpuPercent = computeProcessCpuPercent(userDelta, systemDelta, elapsedMs);
     prevCpuUsage = currentCpu;
     prevCpuTime = now;
 
