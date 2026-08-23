@@ -15,6 +15,18 @@ function forceProxy(): boolean {
   return raw === "1" || raw === "true";
 }
 
+/**
+ * When AGENTMEMORY_DISABLE_LOCAL_FALLBACK is set, the shim throws instead of
+ * silently switching to the local InMemoryKV / ~/.agentmemory/standalone.json
+ * store on a server outage. Clients that treat a remote agentmemory server as
+ * the single source of truth use this so an outage surfaces as an error rather
+ * than being masked by a divergent local store.
+ */
+export function disableLocalFallback(): boolean {
+  const raw = process.env["AGENTMEMORY_DISABLE_LOCAL_FALLBACK"];
+  return raw === "1" || raw === "true";
+}
+
 export interface ProxyHandle {
   mode: "proxy";
   baseUrl: string;
@@ -91,17 +103,23 @@ export function setLivezProbe(fn?: LivezProbe): void {
 
 async function probe(url: string): Promise<boolean> {
   const timeout = probeTimeoutMs();
+  // When local fallback is disabled a failed probe surfaces as a thrown error,
+  // not a silent switch to InMemoryKV, so the message must not promise a
+  // fallback that will never happen.
+  const onProbeFail = disableLocalFallback()
+    ? "local fallback disabled (request will fail)"
+    : "falling back to local InMemoryKV";
   try {
     const res = await livezProbe(url, timeout, authHeader());
     if (!res.ok) {
       process.stderr.write(
-        `[@agentmemory/mcp] livez probe ${url}/agentmemory/livez -> ${res.status ?? "?"} ${res.statusText ?? ""}; falling back to local InMemoryKV (set AGENTMEMORY_FORCE_PROXY=1 to skip the probe)\n`,
+        `[@agentmemory/mcp] livez probe ${url}/agentmemory/livez -> ${res.status ?? "?"} ${res.statusText ?? ""}; ${onProbeFail} (set AGENTMEMORY_FORCE_PROXY=1 to skip the probe)\n`,
       );
     }
     return res.ok;
   } catch (err) {
     process.stderr.write(
-      `[@agentmemory/mcp] livez probe ${url}/agentmemory/livez failed in ${timeout}ms: ${err instanceof Error ? err.message : String(err)}; falling back to local InMemoryKV (set AGENTMEMORY_FORCE_PROXY=1 to skip the probe, or raise AGENTMEMORY_PROBE_TIMEOUT_MS)\n`,
+      `[@agentmemory/mcp] livez probe ${url}/agentmemory/livez failed in ${timeout}ms: ${err instanceof Error ? err.message : String(err)}; ${onProbeFail} (set AGENTMEMORY_FORCE_PROXY=1 to skip the probe, or raise AGENTMEMORY_PROBE_TIMEOUT_MS)\n`,
     );
     return false;
   }
@@ -158,6 +176,11 @@ export async function resolveHandle(): Promise<Handle> {
       cached = handle;
       cachedAt = Date.now();
       return handle;
+    }
+    if (disableLocalFallback()) {
+      throw new Error(
+        `agentmemory server unavailable at ${url}; local fallback disabled by AGENTMEMORY_DISABLE_LOCAL_FALLBACK`,
+      );
     }
     const local: LocalHandle = { mode: "local" };
     cached = local;

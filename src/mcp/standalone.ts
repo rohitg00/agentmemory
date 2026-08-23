@@ -9,6 +9,7 @@ import { generateId } from "../state/schema.js";
 import {
   resolveHandle,
   invalidateHandle,
+  disableLocalFallback,
   type Handle,
   type ProxyHandle,
 } from "./rest-proxy.js";
@@ -405,10 +406,18 @@ export async function handleToolCall(
       return await handleProxy(validated, handle);
     } catch (err) {
       process.stderr.write(
-        `[@agentmemory/mcp] proxy call failed for ${toolName}: ${err instanceof Error ? err.message : String(err)}; invalidating handle and falling back to local KV\n`,
+        `[@agentmemory/mcp] proxy call failed for ${toolName}: ${err instanceof Error ? err.message : String(err)}; invalidating handle\n`,
       );
       invalidateHandle();
+      // With local fallback disabled, surface the proxy error instead of
+      // silently serving a divergent local result.
+      if (disableLocalFallback()) throw err;
     }
+  }
+  if (disableLocalFallback()) {
+    throw new Error(
+      `agentmemory local fallback disabled by AGENTMEMORY_DISABLE_LOCAL_FALLBACK; refusing local handling for ${toolName}`,
+    );
   }
   return handleLocal(validated, kvInstance);
 }
@@ -445,15 +454,26 @@ export async function handleToolsList(): Promise<{ tools: unknown[] }> {
         }
         return { tools: remote.tools };
       }
+      if (disableLocalFallback()) {
+        throw new Error(
+          "agentmemory tools/list returned unexpected remote shape and local fallback is disabled",
+        );
+      }
       process.stderr.write(
         `[@agentmemory/mcp] tools/list: server returned unexpected shape (no .tools array); falling back to local IMPLEMENTED_TOOLS list. Set AGENTMEMORY_DEBUG=1 to inspect response.\n`,
       );
     } catch (err) {
       process.stderr.write(
-        `[@agentmemory/mcp] tools/list proxy failed: ${err instanceof Error ? err.message : String(err)}; falling back to local list\n`,
+        `[@agentmemory/mcp] tools/list proxy failed: ${err instanceof Error ? err.message : String(err)}\n`,
       );
       invalidateHandle();
+      if (disableLocalFallback()) throw err;
     }
+  }
+  if (disableLocalFallback()) {
+    throw new Error(
+      "agentmemory tools/list local fallback disabled by AGENTMEMORY_DISABLE_LOCAL_FALLBACK",
+    );
   }
   const fallback = getAllTools().filter((t) => IMPLEMENTED_TOOLS.has(t.name));
   if (debug) {
