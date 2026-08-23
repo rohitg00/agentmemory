@@ -27,12 +27,22 @@ import type {
 import { importOrigin } from "../types.js";
 import { normalizeAccessLog } from "./access-tracker.js";
 import { KV } from "../state/schema.js";
+import {
+  GraphIndexReader,
+  indexGraphEdgeOrInvalidate,
+  indexGraphNodeOrInvalidate,
+  initializeGraphIndexes,
+  readIndexedGraph,
+  resetGraphIndexes,
+  withFailClosedGraphMutation,
+} from "../state/graph-indexes.js";
 import { checkPayloadFrameSize } from "../state/frame-guard.js";
 import { StateKV } from "../state/kv.js";
 import { VERSION } from "../version.js";
 import { recordAudit } from "./audit.js";
 import { indexRecords } from "./search.js";
 import { resetLessonIndex } from "./lessons.js";
+import { rebuildGraphSnapshotOrInvalidateInMutation } from "./graph.js";
 import { logger } from "../logger.js";
 
 // Bounded-concurrency chunk size for the import delete/write loops. A
@@ -99,9 +109,28 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
         if (profile) profiles.push(profile);
       }
 
+      let indexedGraph: { nodes: GraphNode[]; edges: GraphEdge[] } | null = null;
+      let graphWarning: string | undefined;
+      try {
+        const graphReadiness = await initializeGraphIndexes(kv);
+        if (graphReadiness.ready) {
+          indexedGraph = await readIndexedGraph(kv);
+          if (!indexedGraph) {
+            graphWarning = "Graph data was omitted because its index generation changed during export.";
+          }
+        } else {
+          graphWarning =
+            "Graph data was omitted because generation-matched read indexes are unavailable.";
+        }
+      } catch (error) {
+        graphWarning = `Graph data was omitted because index readiness could not be read: ${
+          error instanceof Error ? error.message : String(error)
+        }`;
+      }
+      const graphNodes = indexedGraph?.nodes ?? [];
+      const graphEdges = indexedGraph?.edges ?? [];
+
       const [
-        graphNodes,
-        graphEdges,
         semanticMemories,
         proceduralMemories,
         actions,
@@ -117,8 +146,6 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
         checkpoints,
         accessLogs,
       ] = await Promise.all([
-        kv.list<GraphNode>(KV.graphNodes).catch(() => []),
-        kv.list<GraphEdge>(KV.graphEdges).catch(() => []),
         kv.list<SemanticMemory>(KV.semantic).catch(() => []),
         kv.list<ProceduralMemory>(KV.procedural).catch(() => []),
         kv.list<Action>(KV.actions).catch(() => []),
@@ -161,6 +188,7 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
         signals: signals.length > 0 ? signals : undefined,
         checkpoints: checkpoints.length > 0 ? checkpoints : undefined,
         accessLogs: accessLogs.length > 0 ? accessLogs : undefined,
+        warnings: graphWarning ? [graphWarning] : undefined,
       };
 
       if (maxSessions !== undefined) {
@@ -295,6 +323,10 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
         };
       }
 
+      const hasGraphData =
+        (Array.isArray(importData.graphNodes) && importData.graphNodes.length > 0) ||
+        (Array.isArray(importData.graphEdges) && importData.graphEdges.length > 0);
+
       const stats = {
         sessions: 0,
         observations: 0,
@@ -372,14 +404,10 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
           await kv.list<Insight>(KV.insights).catch(() => []),
           (i) => kv.delete(KV.insights, i.id),
         );
-        await runChunked(
-          await kv.list<{ id: string }>(KV.graphNodes).catch(() => []),
-          (n) => kv.delete(KV.graphNodes, n.id),
-        );
-        await runChunked(
-          await kv.list<{ id: string }>(KV.graphEdges).catch(() => []),
-          (e) => kv.delete(KV.graphEdges, e.id),
-        );
+        // Graph replacement is generation-based. Whole-scope list/delete can
+        // exceed iii's invocation frame on large corpora, so rotate to a fresh
+        // generation and leave old rows as unreachable orphans.
+        await resetGraphIndexes(kv);
         await runChunked(
           await kv.list<{ id: string }>(KV.semantic).catch(() => []),
           (s) => kv.delete(KV.semantic, s.id),
@@ -396,6 +424,18 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
           await kv.list<AccessLogExport>(KV.accessLog).catch(() => []),
           (a) => kv.delete(KV.accessLog, a.memoryId),
         );
+      }
+
+      if (hasGraphData) {
+        const readiness = await initializeGraphIndexes(kv);
+        if (!readiness.ready) {
+          return {
+            success: false,
+            error:
+              "Graph import requires generation-matched read indexes. Run " +
+              "graph reset before importing graph data into a legacy corpus.",
+          };
+        }
       }
 
       // Records actually written this run, accumulated for search
@@ -472,22 +512,75 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
         stats.summaries++;
       });
 
-      if (importData.graphNodes) {
-        await runChunked(importData.graphNodes, async (node) => {
-          if (strategy === "skip") {
-            const existing = await kv.get(KV.graphNodes, node.id).catch(() => null);
-            if (existing) { stats.skipped++; return; }
+      if (hasGraphData) {
+        await withFailClosedGraphMutation(kv, "graph import", async () => {
+          const readiness = await initializeGraphIndexes(kv);
+          if (!readiness.ready || !readiness.generation) {
+            throw new Error(
+              "Graph import requires generation-matched read indexes.",
+            );
           }
-          await kv.set(KV.graphNodes, node.id, node);
-        });
-      }
-      if (importData.graphEdges) {
-        await runChunked(importData.graphEdges, async (edge) => {
-          if (strategy === "skip") {
-            const existing = await kv.get(KV.graphEdges, edge.id).catch(() => null);
-            if (existing) { stats.skipped++; return; }
+          const reader = await GraphIndexReader.open(kv, readiness.generation);
+          if (!reader) throw new Error("Graph read indexes unavailable");
+          const activeNodeIds = new Set(
+            (await reader.getNameCatalog()).map((entry) => entry.id),
+          );
+          const activeEdgeIds = new Set<string>();
+          if (strategy === "skip" && importData.graphEdges?.length) {
+            const endpoints = new Set<string>();
+            for (const edge of importData.graphEdges) {
+              endpoints.add(edge.sourceNodeId);
+              endpoints.add(edge.targetNodeId);
+              const existing = await kv.get<GraphEdge>(
+                KV.graphEdges,
+                edge.id,
+              );
+              if (existing) {
+                endpoints.add(existing.sourceNodeId);
+                endpoints.add(existing.targetNodeId);
+              }
+            }
+            for (const nodeId of endpoints) {
+              for (const edge of await reader.getIncidentEdges(nodeId)) {
+                activeEdgeIds.add(edge.id);
+              }
+            }
           }
-          await kv.set(KV.graphEdges, edge.id, edge);
+
+          if (importData.graphNodes) {
+            await runChunked(importData.graphNodes, async (node) => {
+              if (strategy === "skip" && activeNodeIds.has(node.id)) {
+                stats.skipped++;
+                return;
+              }
+              await kv.set(KV.graphNodes, node.id, node);
+              await indexGraphNodeOrInvalidate(
+                kv,
+                node,
+                readiness.generation,
+              );
+              activeNodeIds.add(node.id);
+            });
+          }
+          if (importData.graphEdges) {
+            await runChunked(importData.graphEdges, async (edge) => {
+              if (strategy === "skip" && activeEdgeIds.has(edge.id)) {
+                stats.skipped++;
+                return;
+              }
+              await kv.set(KV.graphEdges, edge.id, edge);
+              await indexGraphEdgeOrInvalidate(
+                kv,
+                edge,
+                readiness.generation,
+              );
+              activeEdgeIds.add(edge.id);
+            });
+          }
+          await rebuildGraphSnapshotOrInvalidateInMutation(
+            kv,
+            readiness.generation,
+          );
         });
       }
       if (importData.semanticMemories) {

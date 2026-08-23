@@ -12,6 +12,7 @@ import type {
 } from "../types.js";
 import { recordAudit } from "./audit.js";
 import { REFLECT_SYSTEM, buildReflectPrompt } from "../prompts/reflect.js";
+import { readIndexedGraph } from "../state/graph-indexes.js";
 
 interface ConceptCluster {
   concepts: string[];
@@ -171,14 +172,14 @@ export function registerReflectFunctions(
       const maxInsightsPerCluster = 5;
       const maxTotal = 50;
 
-      const [graphNodes, graphEdges, semanticMemories, lessons, crystals] =
-        await Promise.all([
-          kv.list<GraphNode>(KV.graphNodes).catch(() => []),
-          kv.list<GraphEdge>(KV.graphEdges).catch(() => []),
-          kv.list<SemanticMemory>(KV.semantic).catch(() => []),
-          kv.list<Lesson>(KV.lessons).catch(() => []),
-          kv.list<Crystal>(KV.crystals).catch(() => []),
-        ]);
+      const [graph, semanticMemories, lessons, crystals] = await Promise.all([
+        readIndexedGraph(kv).catch(() => null),
+        kv.list<SemanticMemory>(KV.semantic).catch(() => []),
+        kv.list<Lesson>(KV.lessons).catch(() => []),
+        kv.list<Crystal>(KV.crystals).catch(() => []),
+      ]);
+      const graphNodes = graph?.nodes ?? [];
+      const graphEdges = graph?.edges ?? [];
 
       let activeLessons = lessons.filter((l) => !l.deleted);
       if (data?.project) {

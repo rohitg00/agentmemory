@@ -12,6 +12,14 @@ import type {
 } from "../types.js";
 import { KV, generateId } from "../state/schema.js";
 import type { StateKV } from "../state/kv.js";
+import {
+  graphIndexReadiness,
+  indexGraphNodeOrInvalidate,
+  initializeGraphIndexes,
+  readIndexedGraph,
+  withFailClosedGraphMutation,
+} from "../state/graph-indexes.js";
+import { rebuildGraphSnapshotOrInvalidateInMutation } from "./graph.js";
 import { recordAudit } from "./audit.js";
 import { VERSION } from "../version.js";
 import { logger } from "../logger.js";
@@ -60,7 +68,22 @@ export function registerSnapshotFunction(
 
         const sessions = await kv.list<Session>(KV.sessions);
         const memories = await kv.list<Memory>(KV.memories);
-        const graphNodes = await kv.list<GraphNode>(KV.graphNodes);
+        let graphNodes: GraphNode[] = [];
+        let graphWarning: string | undefined;
+        try {
+          const readiness = await initializeGraphIndexes(kv);
+          if (readiness.ready) {
+            const graph = await readIndexedGraph(kv);
+            if (graph) graphNodes = graph.nodes;
+            else graphWarning = "Graph read indexes unavailable";
+          } else {
+            graphWarning =
+              readiness.reason ?? "Graph read indexes unavailable";
+          }
+        } catch (error) {
+          graphWarning =
+            error instanceof Error ? error.message : String(error);
+        }
         const accessLogs = await kv
           .list<AccessLogExport>(KV.accessLog)
           .catch(() => [] as AccessLogExport[]);
@@ -81,6 +104,7 @@ export function registerSnapshotFunction(
           sessions,
           memories,
           graphNodes,
+          ...(graphWarning ? { graphWarning } : {}),
           observations,
           accessLogs,
         };
@@ -129,7 +153,11 @@ export function registerSnapshotFunction(
         });
 
         logger.info("Snapshot created", { commitHash });
-        return { success: true, snapshot: meta };
+        return {
+          success: true,
+          snapshot: meta,
+          ...(graphWarning ? { warning: graphWarning } : {}),
+        };
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         logger.error("Snapshot failed", { error: msg });
@@ -193,6 +221,18 @@ export function registerSnapshotFunction(
           accessLogs?: AccessLogExport[];
         };
 
+        if (state.graphNodes?.length) {
+          const readiness = await initializeGraphIndexes(kv);
+          if (!readiness.ready) {
+            return {
+              success: false,
+              error:
+                "Graph restore requires generation-matched read indexes. " +
+                "Run graph reset before restoring graph data into a legacy corpus.",
+            };
+          }
+        }
+
         if (state.sessions) {
           for (const session of state.sessions) {
             await kv.set(KV.sessions, session.id, session);
@@ -204,9 +244,26 @@ export function registerSnapshotFunction(
           }
         }
         if (state.graphNodes) {
-          for (const node of state.graphNodes) {
-            await kv.set(KV.graphNodes, node.id, node);
-          }
+          await withFailClosedGraphMutation(kv, "graph snapshot restore", async () => {
+            const readiness = await graphIndexReadiness(kv);
+            if (!readiness.ready || !readiness.generation) {
+              throw new Error("Graph read indexes unavailable");
+            }
+            for (const node of state.graphNodes!) {
+              await kv.set(KV.graphNodes, node.id, node);
+              await indexGraphNodeOrInvalidate(
+                kv,
+                node as unknown as GraphNode,
+                readiness.generation,
+              );
+            }
+            if (state.graphNodes!.length > 0) {
+              await rebuildGraphSnapshotOrInvalidateInMutation(
+                kv,
+                readiness.generation,
+              );
+            }
+          });
         }
         if (state.observations) {
           for (const [sessionId, obs] of Object.entries(state.observations)) {

@@ -9,6 +9,14 @@ import type {
 } from "../types.js";
 import { KV, generateId } from "../state/schema.js";
 import type { StateKV } from "../state/kv.js";
+import {
+  GraphIndexReader,
+  graphIndexReadiness,
+  indexGraphEdgeOrInvalidate,
+  indexGraphNodeOrInvalidate,
+  withFailClosedGraphMutation,
+} from "../state/graph-indexes.js";
+import { rebuildGraphSnapshotOrInvalidateInMutation } from "./graph.js";
 import { logger } from "../logger.js";
 
 const TEMPORAL_EXTRACTION_SYSTEM = `You are a temporal knowledge extraction engine. Given observations, extract entities AND their temporal relationships with full context metadata.
@@ -149,6 +157,19 @@ function parseTemporalGraphXml(
   return { nodes, edges };
 }
 
+async function findIndexedEntity(
+  reader: GraphIndexReader,
+  entityName: string,
+): Promise<GraphNode | null> {
+  const lower = entityName.toLowerCase();
+  const entry = (await reader.getNameCatalog()).find(
+    (candidate) =>
+      candidate.name.toLowerCase() === lower ||
+      candidate.aliases?.some((alias) => alias.toLowerCase() === lower),
+  );
+  return entry ? reader.getNode(entry.id) : null;
+}
+
 export function registerTemporalGraphFunctions(
   sdk: ISdk,
   kv: StateKV,
@@ -170,6 +191,16 @@ export function registerTemporalGraphFunctions(
         return { success: false, error: "No observations provided" };
       }
 
+      const reader = await GraphIndexReader.open(kv);
+      if (!reader) {
+        return {
+          success: false,
+          error:
+            "Temporal graph extraction requires generation-matched read " +
+            "indexes. Run graph reset before adding temporal graph data.",
+        };
+      }
+
       const items = data.observations
         .map(
           (o, i) =>
@@ -186,76 +217,111 @@ export function registerTemporalGraphFunctions(
         const obsIds = data.observations.map((o) => o.id);
         const { nodes, edges } = parseTemporalGraphXml(response, obsIds);
 
-        const existingNodes = await kv.list<GraphNode>(KV.graphNodes);
-        const existingEdges = await kv.list<GraphEdge>(KV.graphEdges);
-
-        const idRemap = new Map<string, string>();
-        for (const node of nodes) {
-          const existing = existingNodes.find(
-            (n) =>
-              n.name === node.name && n.type === node.type,
+        await withFailClosedGraphMutation(kv, "temporal graph extraction", async () => {
+          const readiness = await graphIndexReadiness(kv);
+          if (!readiness.ready || !readiness.generation) {
+            throw new Error("Graph read indexes became unavailable");
+          }
+          const currentReader = await GraphIndexReader.open(
+            kv,
+            readiness.generation,
           );
-          if (existing) {
-            const oldId = node.id;
-            const merged = {
-              ...existing,
-              sourceObservationIds: [
-                ...new Set([
-                  ...existing.sourceObservationIds,
-                  ...obsIds,
-                ]),
-              ],
-              properties: { ...existing.properties, ...node.properties },
-              updatedAt: new Date().toISOString(),
-              aliases: [
-                ...new Set([
-                  ...(existing.aliases || []),
-                  ...(node.aliases || []),
-                ]),
-              ],
-            };
-            if (merged.aliases.length === 0) delete (merged as any).aliases;
-            await kv.set(KV.graphNodes, existing.id, merged);
-            node.id = existing.id;
-            idRemap.set(oldId, existing.id);
-          } else {
-            await kv.set(KV.graphNodes, node.id, node);
-            existingNodes.push(node);
+          if (!currentReader) {
+            throw new Error("Graph read indexes became unavailable");
           }
-        }
+          const existingNodes: GraphNode[] = [];
+          for (const entry of await currentReader.getNameCatalog()) {
+            const existing = await currentReader.getNode(entry.id);
+            if (existing) existingNodes.push(existing);
+          }
 
-        for (const edge of edges) {
-          if (idRemap.has(edge.sourceNodeId)) {
-            edge.sourceNodeId = idRemap.get(edge.sourceNodeId)!;
+          const idRemap = new Map<string, string>();
+          for (const node of nodes) {
+            const existing = existingNodes.find(
+              (candidate) =>
+                candidate.name === node.name && candidate.type === node.type,
+            );
+            if (existing) {
+              const oldId = node.id;
+              const merged = {
+                ...existing,
+                sourceObservationIds: [
+                  ...new Set([
+                    ...existing.sourceObservationIds,
+                    ...obsIds,
+                  ]),
+                ],
+                properties: { ...existing.properties, ...node.properties },
+                updatedAt: new Date().toISOString(),
+                aliases: [
+                  ...new Set([
+                    ...(existing.aliases || []),
+                    ...(node.aliases || []),
+                  ]),
+                ],
+              };
+              if (merged.aliases.length === 0) delete (merged as any).aliases;
+              await kv.set(KV.graphNodes, existing.id, merged);
+              await indexGraphNodeOrInvalidate(
+                kv,
+                merged,
+                readiness.generation,
+              );
+              node.id = existing.id;
+              idRemap.set(oldId, existing.id);
+            } else {
+              await kv.set(KV.graphNodes, node.id, node);
+              await indexGraphNodeOrInvalidate(
+                kv,
+                node,
+                readiness.generation,
+              );
+              existingNodes.push(node);
+            }
           }
-          if (idRemap.has(edge.targetNodeId)) {
-            edge.targetNodeId = idRemap.get(edge.targetNodeId)!;
+
+          for (const edge of edges) {
+            if (idRemap.has(edge.sourceNodeId)) {
+              edge.sourceNodeId = idRemap.get(edge.sourceNodeId)!;
+            }
+            if (idRemap.has(edge.targetNodeId)) {
+              edge.targetNodeId = idRemap.get(edge.targetNodeId)!;
+            }
+            const existingKey = `${edge.sourceNodeId}|${edge.targetNodeId}|${edge.type}`;
+            const existingEdge = (
+              await currentReader.getIncidentEdges(edge.sourceNodeId)
+            ).find(
+              (candidate) =>
+                `${candidate.sourceNodeId}|${candidate.targetNodeId}|${candidate.type}` ===
+                existingKey,
+            );
+
+            if (existingEdge) {
+              const updatedOld: GraphEdge = {
+                ...existingEdge,
+                isLatest: false,
+                tvalidEnd:
+                  existingEdge.tvalidEnd || new Date().toISOString(),
+                supersededBy: edge.id,
+              };
+              await kv.set(KV.graphEdges, existingEdge.id, updatedOld);
+              await kv.set(KV.graphEdgeHistory, existingEdge.id, updatedOld);
+              edge.version = (existingEdge.version || 1) + 1;
+            }
+
+            await kv.set(KV.graphEdges, edge.id, edge);
+            await indexGraphEdgeOrInvalidate(
+              kv,
+              edge,
+              readiness.generation,
+            );
           }
-          const existingKey = `${edge.sourceNodeId}|${edge.targetNodeId}|${edge.type}`;
-          const existingEdge = existingEdges.find(
-            (e) =>
-              `${e.sourceNodeId}|${e.targetNodeId}|${e.type}` ===
-              existingKey,
+
+          await rebuildGraphSnapshotOrInvalidateInMutation(
+            kv,
+            readiness.generation,
           );
-
-          if (existingEdge) {
-            const updatedOld = {
-              ...existingEdge,
-              isLatest: false,
-              tvalidEnd:
-                existingEdge.tvalidEnd || new Date().toISOString(),
-              supersededBy: edge.id,
-            };
-            await kv.set(KV.graphEdges, existingEdge.id, updatedOld);
-
-            await kv.set(KV.graphEdgeHistory, existingEdge.id, updatedOld);
-
-            edge.version = (existingEdge.version || 1) + 1;
-          }
-
-          await kv.set(KV.graphEdges, edge.id, edge);
-          existingEdges.push(edge);
-        }
+        });
 
         logger.info("Temporal graph extraction complete", {
           nodes: nodes.length,
@@ -280,35 +346,24 @@ export function registerTemporalGraphFunctions(
       asOf?: string;
       includeHistory?: boolean;
     }): Promise<TemporalState | { error: string }> => {
-      const allNodes = await kv.list<GraphNode>(KV.graphNodes);
-      const allEdges = await kv.list<GraphEdge>(KV.graphEdges);
-
-      const entity = allNodes.find(
-        (n) =>
-          n.name.toLowerCase() === data.entityName.toLowerCase() ||
-          (n.aliases &&
-            n.aliases.some(
-              (a) =>
-                a.toLowerCase() === data.entityName.toLowerCase(),
-            )),
-      );
+      const readiness = await graphIndexReadiness(kv);
+      if (!readiness.ready || !readiness.generation) {
+        return { error: "Graph read indexes unavailable" };
+      }
+      const reader = await GraphIndexReader.open(kv);
+      if (!reader) return { error: "Graph read indexes unavailable" };
+      const entity = await findIndexedEntity(reader, data.entityName);
 
       if (!entity) {
         return { error: `Entity "${data.entityName}" not found` } as any;
       }
 
-      const relatedEdges = allEdges.filter(
-        (e) => e.sourceNodeId === entity.id || e.targetNodeId === entity.id,
-      );
+      const relatedEdges = await reader.getIncidentEdges(entity.id);
 
-      const historicalEdges = await kv
-        .list<GraphEdge>(KV.graphEdgeHistory)
-        .catch(() => [] as GraphEdge[]);
-      const entityHistory = historicalEdges.filter(
-        (e) => e.sourceNodeId === entity.id || e.targetNodeId === entity.id,
+      const entityHistory = relatedEdges.filter(
+        (edge) => edge.isLatest === false,
       );
-
-      const allEntityEdges = [...relatedEdges, ...entityHistory];
+      const allEntityEdges = relatedEdges;
 
       if (data.asOf) {
         const asOfTime = new Date(data.asOf).getTime();
@@ -331,24 +386,30 @@ export function registerTemporalGraphFunctions(
         const currentEdges = getLatestByKey(validEdges);
         const historical = data.includeHistory ? validEdges : [];
 
-        return {
+        const result = {
           entity,
           currentEdges,
           historicalEdges: historical,
           timeline: buildTimeline(allEntityEdges),
         };
+        return (await reader.isCurrent())
+          ? result
+          : { error: "Graph read index generation changed during query" };
       }
 
       const currentEdges = relatedEdges.filter(
         (e) => e.isLatest !== false,
       );
 
-      return {
+      const result = {
         entity,
         currentEdges,
         historicalEdges: data.includeHistory ? entityHistory : [],
         timeline: buildTimeline(allEntityEdges),
       };
+      return (await reader.isCurrent())
+        ? result
+        : { error: "Graph read index generation changed during query" };
     },
   );
 
@@ -358,27 +419,16 @@ export function registerTemporalGraphFunctions(
       from?: string;
       to?: string;
     }) => {
-      const allNodes = await kv.list<GraphNode>(KV.graphNodes);
-      const allEdges = await kv.list<GraphEdge>(KV.graphEdges);
-      const historicalEdges = await kv
-        .list<GraphEdge>(KV.graphEdgeHistory)
-        .catch(() => [] as GraphEdge[]);
-
-      const entity = allNodes.find(
-        (n) => n.name.toLowerCase() === data.entityName.toLowerCase(),
-      );
+      const readiness = await graphIndexReadiness(kv);
+      if (!readiness.ready || !readiness.generation) {
+        return { error: "Graph read indexes unavailable" };
+      }
+      const reader = await GraphIndexReader.open(kv);
+      if (!reader) return { error: "Graph read indexes unavailable" };
+      const entity = await findIndexedEntity(reader, data.entityName);
       if (!entity) return { error: "Entity not found" };
 
-      const allEntityEdges = [
-        ...allEdges.filter(
-          (e) =>
-            e.sourceNodeId === entity.id || e.targetNodeId === entity.id,
-        ),
-        ...historicalEdges.filter(
-          (e) =>
-            e.sourceNodeId === entity.id || e.targetNodeId === entity.id,
-        ),
-      ];
+      const allEntityEdges = await reader.getIncidentEdges(entity.id);
 
       allEntityEdges.sort(
         (a, b) =>
@@ -412,11 +462,14 @@ export function registerTemporalGraphFunctions(
         isLatest: e.isLatest !== false,
       }));
 
-      return {
+      const result = {
         entity: entity.name,
         totalChanges: changes.length,
         changes,
       };
+      return (await reader.isCurrent())
+        ? result
+        : { error: "Graph read index generation changed during query" };
     },
   );
 }

@@ -6,6 +6,10 @@ vi.mock("../src/logger.js", () => ({
 
 import { registerReflectFunctions } from "../src/functions/reflect.js";
 import type { Insight, GraphNode, GraphEdge, SemanticMemory, Lesson, Crystal } from "../src/types.js";
+import {
+  backfillGraphIndexes,
+  initializeGraphIndexes,
+} from "../src/state/graph-indexes.js";
 
 function mockKV() {
   const store = new Map<string, Map<string, unknown>>();
@@ -25,6 +29,10 @@ function mockKV() {
       const entries = store.get(scope);
       return entries ? (Array.from(entries.values()) as T[]) : [];
     },
+    listGroups: async (): Promise<string[]> =>
+      [...store.entries()]
+        .filter(([, entries]) => entries.size > 0)
+        .map(([scope]) => scope),
   };
 }
 
@@ -126,9 +134,10 @@ describe("Reflect", () => {
   let kv: ReturnType<typeof mockKV>;
   let provider: { name: string; compress: ReturnType<typeof vi.fn>; summarize: ReturnType<typeof vi.fn> };
 
-  beforeEach(() => {
+  beforeEach(async () => {
     sdk = mockSdk();
     kv = mockKV();
+    await initializeGraphIndexes(kv as never);
     provider = {
       name: "test",
       compress: vi.fn(),
@@ -154,8 +163,17 @@ describe("Reflect", () => {
       await kv.set("mem:graph:nodes", "node_security", makeConceptNode("security"));
       await kv.set("mem:graph:nodes", "node_validation", makeConceptNode("validation"));
       await kv.set("mem:graph:nodes", "node_testing", makeConceptNode("testing"));
-      await kv.set("mem:graph:edges", "edge_1", makeEdge("security", "validation"));
-      await kv.set("mem:graph:edges", "edge_2", makeEdge("security", "testing"));
+      await kv.set("mem:graph:edges", "edge_security_validation", makeEdge("security", "validation"));
+      await kv.set("mem:graph:edges", "edge_security_testing", makeEdge("security", "testing"));
+      await backfillGraphIndexes(
+        kv as never,
+        [
+          makeConceptNode("security"),
+          makeConceptNode("validation"),
+          makeConceptNode("testing"),
+        ],
+        [makeEdge("security", "validation"), makeEdge("security", "testing")],
+      );
 
       await kv.set("mem:semantic", "sem_1", makeSemantic("Always validate security inputs"));
       await kv.set("mem:semantic", "sem_2", makeSemantic("Testing improves security coverage"));
@@ -180,7 +198,12 @@ describe("Reflect", () => {
     it("skips clusters with fewer than 3 supporting items", async () => {
       await kv.set("mem:graph:nodes", "node_sparse", makeConceptNode("sparse"));
       await kv.set("mem:graph:nodes", "node_topic", makeConceptNode("topic"));
-      await kv.set("mem:graph:edges", "edge_1", makeEdge("sparse", "topic"));
+      await kv.set("mem:graph:edges", "edge_sparse_topic", makeEdge("sparse", "topic"));
+      await backfillGraphIndexes(
+        kv as never,
+        [makeConceptNode("sparse"), makeConceptNode("topic")],
+        [makeEdge("sparse", "topic")],
+      );
       await kv.set("mem:semantic", "sem_1", makeSemantic("One sparse fact"));
 
       const result = (await sdk.trigger("mem::reflect", {})) as {
@@ -196,7 +219,12 @@ describe("Reflect", () => {
     it("deduplicates insights by fingerprint", async () => {
       await kv.set("mem:graph:nodes", "node_security", makeConceptNode("security"));
       await kv.set("mem:graph:nodes", "node_validation", makeConceptNode("validation"));
-      await kv.set("mem:graph:edges", "edge_1", makeEdge("security", "validation"));
+      await kv.set("mem:graph:edges", "edge_security_validation", makeEdge("security", "validation"));
+      await backfillGraphIndexes(
+        kv as never,
+        [makeConceptNode("security"), makeConceptNode("validation")],
+        [makeEdge("security", "validation")],
+      );
       await kv.set("mem:semantic", "sem_1", makeSemantic("Always validate security inputs"));
       await kv.set("mem:semantic", "sem_2", makeSemantic("Testing improves security coverage"));
       await kv.set("mem:semantic", "sem_3", makeSemantic("Validation prevents injection"));
@@ -238,7 +266,12 @@ describe("Reflect", () => {
 
       await kv.set("mem:graph:nodes", "node_a", makeConceptNode("concept_a"));
       await kv.set("mem:graph:nodes", "node_b", makeConceptNode("concept_b"));
-      await kv.set("mem:graph:edges", "edge_1", makeEdge("concept_a", "concept_b"));
+      await kv.set("mem:graph:edges", "edge_concept_a_concept_b", makeEdge("concept_a", "concept_b"));
+      await backfillGraphIndexes(
+        kv as never,
+        [makeConceptNode("concept_a"), makeConceptNode("concept_b")],
+        [makeEdge("concept_a", "concept_b")],
+      );
       await kv.set("mem:semantic", "sem_1", makeSemantic("fact about concept_a"));
       await kv.set("mem:semantic", "sem_2", makeSemantic("fact about concept_b"));
       await kv.set("mem:semantic", "sem_3", makeSemantic("concept_a and concept_b together"));

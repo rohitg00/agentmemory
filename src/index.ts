@@ -22,6 +22,7 @@ import {
 } from "./providers/index.js";
 import { StateKV } from "./state/kv.js";
 import { KV } from "./state/schema.js";
+import { initializeGraphIndexes } from "./state/graph-indexes.js";
 import { VectorIndex } from "./state/vector-index.js";
 import { HybridSearch } from "./state/hybrid-search.js";
 import { IndexPersistence } from "./state/index-persistence.js";
@@ -256,6 +257,16 @@ async function main() {
   registerTimelineFunction(sdk, kv);
   registerProfileFunction(sdk, kv);
   registerAutoForgetFunction(sdk, kv);
+  try {
+    const graphIndexes = await initializeGraphIndexes(kv);
+    if (!graphIndexes.ready) {
+      console.warn(
+        `[agentmemory] Graph read indexes unavailable: ${graphIndexes.reason}`,
+      );
+    }
+  } catch (err) {
+    console.warn(`[agentmemory] Failed to initialize graph indexes:`, err);
+  }
   registerExportImportFunction(sdk, kv);
   registerEnrichFunction(sdk, kv);
 

@@ -1,8 +1,15 @@
 import type { ISdk } from "iii-sdk";
 import type { StateKV } from "../state/kv.js";
 import { KV } from "../state/schema.js";
-import type { Memory, GraphNode, GraphEdge } from "../types.js";
+import type { Memory, GraphEdge } from "../types.js";
+import {
+  GraphIndexReader,
+  graphIndexReadiness,
+  removeGraphNodeFromIndexOrInvalidate,
+  withFailClosedGraphMutation,
+} from "../state/graph-indexes.js";
 import { recordAudit } from "./audit.js";
+import { rebuildGraphSnapshotOrInvalidateInMutation } from "./graph.js";
 
 export function registerCascadeFunction(sdk: ISdk, kv: StateKV): void {
   sdk.registerFunction("mem::cascade-update", 
@@ -23,15 +30,39 @@ export function registerCascadeFunction(sdk: ISdk, kv: StateKV): void {
       const obsIds = new Set(superseded.sourceObservationIds || []);
 
       if (obsIds.size > 0) {
-        const now = new Date().toISOString();
-        const nodes = await kv.list<GraphNode>(KV.graphNodes);
-        for (const node of nodes) {
-          if (node.stale) continue;
-          const overlap = (node.sourceObservationIds ?? []).some((id) => obsIds.has(id));
-          if (overlap) {
+        await withFailClosedGraphMutation(kv, "graph cascade update", async () => {
+          const readiness = await graphIndexReadiness(kv);
+          if (!readiness.ready || !readiness.generation) return;
+          const reader = await GraphIndexReader.open(kv, readiness.generation);
+          if (!reader) return;
+          const nodes = [];
+          const edges = new Map<string, GraphEdge>();
+          for (const nodeId of await reader.getNodeIdsForObservations([
+            ...obsIds,
+          ])) {
+            const node = await reader.getNode(nodeId);
+            if (!node) continue;
+            nodes.push(node);
+            for (const edge of await reader.getIncidentEdges(node.id)) {
+              edges.set(edge.id, edge);
+            }
+          }
+
+          const now = new Date().toISOString();
+          for (const node of nodes) {
+            if (
+              !(node.sourceObservationIds ?? []).some((id) => obsIds.has(id))
+            ) {
+              continue;
+            }
             node.stale = true;
             node.updatedAt = now;
             await kv.set(KV.graphNodes, node.id, node);
+            await removeGraphNodeFromIndexOrInvalidate(
+              kv,
+              node.id,
+              readiness.generation,
+            );
             await recordAudit(kv, "consolidate", "mem::cascade-update", [node.id], {
               resourceType: "GraphNode",
               change: "marked stale from superseded memory",
@@ -39,13 +70,13 @@ export function registerCascadeFunction(sdk: ISdk, kv: StateKV): void {
             });
             flaggedNodes++;
           }
-        }
 
-        const edges = await kv.list<GraphEdge>(KV.graphEdges);
-        for (const edge of edges) {
-          if (edge.stale) continue;
-          const overlap = (edge.sourceObservationIds ?? []).some((id) => obsIds.has(id));
-          if (overlap) {
+          for (const edge of edges.values()) {
+            if (
+              !(edge.sourceObservationIds ?? []).some((id) => obsIds.has(id))
+            ) {
+              continue;
+            }
             edge.stale = true;
             await kv.set(KV.graphEdges, edge.id, edge);
             await recordAudit(kv, "consolidate", "mem::cascade-update", [edge.id], {
@@ -55,7 +86,14 @@ export function registerCascadeFunction(sdk: ISdk, kv: StateKV): void {
             });
             flaggedEdges++;
           }
-        }
+
+          if (flaggedNodes > 0 || flaggedEdges > 0) {
+            await rebuildGraphSnapshotOrInvalidateInMutation(
+              kv,
+              readiness.generation,
+            );
+          }
+        });
       }
 
       const supersededConcepts = new Set(

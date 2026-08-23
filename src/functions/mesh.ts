@@ -2,7 +2,17 @@ import type { ISdk } from "iii-sdk";
 import type { StateKV } from "../state/kv.js";
 import { KV, generateId } from "../state/schema.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
+import {
+  GraphIndexReader,
+  graphIndexReadiness,
+  indexGraphEdgeOrInvalidate,
+  indexGraphNodeOrInvalidate,
+  initializeGraphIndexes,
+  readIndexedGraph,
+  withFailClosedGraphMutation,
+} from "../state/graph-indexes.js";
 import { recordAudit } from "./audit.js";
+import { rebuildGraphSnapshotOrInvalidateInMutation } from "./graph.js";
 import type {
   MeshPeer,
   Memory,
@@ -74,12 +84,30 @@ interface MeshSyncPayload {
   graphEdges?: GraphEdge[];
 }
 
+function hasGraphRecords(data: MeshSyncPayload): boolean {
+  return Boolean(data.graphNodes?.length || data.graphEdges?.length);
+}
+
+async function requireGraphWriteIndexes(
+  kv: StateKV,
+  data: MeshSyncPayload,
+): Promise<void> {
+  if (!hasGraphRecords(data)) return;
+  const readiness = await initializeGraphIndexes(kv);
+  if (!readiness.ready) {
+    throw new Error(
+      "Graph mesh writes require generation-matched read indexes. Run graph reset before syncing graph data.",
+    );
+  }
+}
+
 async function lwwMergeList<T extends { id: string }>(
   kv: StateKV,
   scope: string,
   items: T[] | undefined,
   lockPrefix: string,
   tsField: "updatedAt" | "createdAt",
+  onWrite?: (item: T) => Promise<void>,
 ): Promise<number> {
   if (!items || !Array.isArray(items)) return 0;
   let count = 0;
@@ -100,7 +128,10 @@ async function lwwMergeList<T extends { id: string }>(
       }
       return false;
     });
-    if (wrote) count++;
+    if (wrote) {
+      count++;
+      if (onWrite) await onWrite(item);
+    }
   }
   return count;
 }
@@ -112,6 +143,8 @@ function graphNodeTs(node: GraphNode): string {
 async function lwwMergeGraphNodes(
   kv: StateKV,
   items: GraphNode[] | undefined,
+  activeNodeIds: Set<string>,
+  generation: string,
 ): Promise<number> {
   if (!items || !Array.isArray(items)) return 0;
   let count = 0;
@@ -121,7 +154,7 @@ async function lwwMergeGraphNodes(
     if (!ts || Number.isNaN(new Date(ts).getTime())) continue;
     const wrote = await withKeyedLock(`mem:gnode:${item.id}`, async () => {
       const existing = await kv.get<GraphNode>(KV.graphNodes, item.id);
-      if (!existing) {
+      if (!existing || !activeNodeIds.has(item.id)) {
         await kv.set(KV.graphNodes, item.id, item);
         return true;
       }
@@ -131,9 +164,73 @@ async function lwwMergeGraphNodes(
       }
       return false;
     });
-    if (wrote) count++;
+    if (wrote) {
+      count++;
+      await indexGraphNodeOrInvalidate(kv, item, generation);
+      activeNodeIds.add(item.id);
+    }
   }
   return count;
+}
+
+async function lwwMergeGraphEdges(
+  kv: StateKV,
+  items: GraphEdge[] | undefined,
+  activeEdgeIds: Set<string>,
+  generation: string,
+): Promise<number> {
+  if (!items || !Array.isArray(items)) return 0;
+  let count = 0;
+  for (const item of items) {
+    if (!item.id || typeof item.id !== "string") continue;
+    if (Number.isNaN(new Date(item.createdAt).getTime())) continue;
+    const wrote = await withKeyedLock(`mem:gedge:${item.id}`, async () => {
+      const existing = await kv.get<GraphEdge>(KV.graphEdges, item.id);
+      if (!existing || !activeEdgeIds.has(item.id)) {
+        await kv.set(KV.graphEdges, item.id, item);
+        return true;
+      }
+      if (new Date(item.createdAt) > new Date(existing.createdAt)) {
+        await kv.set(KV.graphEdges, item.id, item);
+        return true;
+      }
+      return false;
+    });
+    if (wrote) {
+      count++;
+      await indexGraphEdgeOrInvalidate(kv, item, generation);
+      activeEdgeIds.add(item.id);
+    }
+  }
+  return count;
+}
+
+async function activeGraphIds(
+  kv: StateKV,
+  incomingEdges: GraphEdge[],
+): Promise<{ nodeIds: Set<string>; edgeIds: Set<string> }> {
+  const reader = await GraphIndexReader.open(kv);
+  if (!reader) throw new Error("Graph read indexes unavailable");
+  const nodeIds = new Set(
+    (await reader.getNameCatalog()).map((entry) => entry.id),
+  );
+  const edgeIds = new Set<string>();
+  const edgeEndpoints = new Set<string>();
+  for (const edge of incomingEdges) {
+    edgeEndpoints.add(edge.sourceNodeId);
+    edgeEndpoints.add(edge.targetNodeId);
+    const existing = await kv.get<GraphEdge>(KV.graphEdges, edge.id);
+    if (existing) {
+      edgeEndpoints.add(existing.sourceNodeId);
+      edgeEndpoints.add(existing.targetNodeId);
+    }
+  }
+  for (const nodeId of edgeEndpoints) {
+    for (const edge of await reader.getIncidentEdges(nodeId)) {
+      edgeIds.add(edge.id);
+    }
+  }
+  return { nodeIds, edgeIds };
 }
 
 export function registerMeshFunction(
@@ -337,6 +434,14 @@ export function registerMeshFunction(
       if (!data || typeof data !== "object") {
         return { success: false, error: "payload required" };
       }
+      try {
+        await requireGraphWriteIndexes(kv, data);
+      } catch (err) {
+        return {
+          success: false,
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
       let accepted = 0;
 
       accepted += await lwwMergeList(kv, KV.memories, data.memories, "mem:memory", "updatedAt");
@@ -360,8 +465,36 @@ export function registerMeshFunction(
           });
         }
       }
-      accepted += await lwwMergeGraphNodes(kv, data.graphNodes);
-      accepted += await lwwMergeList(kv, KV.graphEdges, data.graphEdges, "mem:gedge", "createdAt");
+      if (hasGraphRecords(data)) {
+        accepted += await withFailClosedGraphMutation(kv, "mesh graph receive", async () => {
+          const readiness = await graphIndexReadiness(kv);
+          if (!readiness.ready || !readiness.generation) {
+            throw new Error("Graph read indexes unavailable");
+          }
+          const { nodeIds, edgeIds } = await activeGraphIds(
+            kv,
+            data.graphEdges ?? [],
+          );
+          const graphAccepted =
+            (await lwwMergeGraphNodes(
+              kv,
+              data.graphNodes,
+              nodeIds,
+              readiness.generation,
+            )) +
+            (await lwwMergeGraphEdges(
+              kv,
+              data.graphEdges,
+              edgeIds,
+              readiness.generation,
+            ));
+          await rebuildGraphSnapshotOrInvalidateInMutation(
+            kv,
+            readiness.generation,
+          );
+          return graphAccepted;
+        });
+      }
       await recordAudit(kv, "mesh_sync", "mem::mesh-receive", [], {
         action: "mesh.receive",
         accepted,
@@ -435,16 +568,25 @@ async function collectSyncData(
     result.relations = deltaFilter(all, sinceTime, "createdAt");
   }
 
-  if (scopes.includes("graph:nodes") && !projectScoped) {
-    const all = await kv.list<GraphNode>(KV.graphNodes);
-    result.graphNodes = all.filter(
-      (n) => new Date(graphNodeTs(n)).getTime() > sinceTime,
-    );
-  }
-
-  if (scopes.includes("graph:edges") && !projectScoped) {
-    const all = await kv.list<GraphEdge>(KV.graphEdges);
-    result.graphEdges = deltaFilter(all, sinceTime, "createdAt");
+  if (
+    !projectScoped &&
+    (scopes.includes("graph:nodes") || scopes.includes("graph:edges"))
+  ) {
+    const graph = await readIndexedGraph(kv);
+    if (graph) {
+      if (scopes.includes("graph:nodes")) {
+        result.graphNodes = graph.nodes.filter(
+          (node) => new Date(graphNodeTs(node)).getTime() > sinceTime,
+        );
+      }
+      if (scopes.includes("graph:edges")) {
+        result.graphEdges = deltaFilter(
+          graph.edges,
+          sinceTime,
+          "createdAt",
+        );
+      }
+    }
   }
 
   return result;
@@ -455,6 +597,11 @@ async function applySyncData(
   data: MeshSyncPayload,
   scopes: string[],
 ): Promise<number> {
+  const graphPayload: MeshSyncPayload = {
+    graphNodes: scopes.includes("graph:nodes") ? data.graphNodes : undefined,
+    graphEdges: scopes.includes("graph:edges") ? data.graphEdges : undefined,
+  };
+  await requireGraphWriteIndexes(kv, graphPayload);
   let applied = 0;
 
   if (scopes.includes("memories")) {
@@ -484,11 +631,35 @@ async function applySyncData(
       if (wrote) applied++;
     }
   }
-  if (scopes.includes("graph:nodes")) {
-    applied += await lwwMergeGraphNodes(kv, data.graphNodes);
-  }
-  if (scopes.includes("graph:edges")) {
-    applied += await lwwMergeList(kv, KV.graphEdges, data.graphEdges, "mem:gedge", "createdAt");
+  if (hasGraphRecords(graphPayload)) {
+    applied += await withFailClosedGraphMutation(kv, "mesh graph sync", async () => {
+      const readiness = await graphIndexReadiness(kv);
+      if (!readiness.ready || !readiness.generation) {
+        throw new Error("Graph read indexes unavailable");
+      }
+      const { nodeIds, edgeIds } = await activeGraphIds(
+        kv,
+        graphPayload.graphEdges ?? [],
+      );
+      const graphApplied =
+        (await lwwMergeGraphNodes(
+          kv,
+          graphPayload.graphNodes,
+          nodeIds,
+          readiness.generation,
+        )) +
+        (await lwwMergeGraphEdges(
+          kv,
+          graphPayload.graphEdges,
+          edgeIds,
+          readiness.generation,
+        ));
+      await rebuildGraphSnapshotOrInvalidateInMutation(
+        kv,
+        readiness.generation,
+      );
+      return graphApplied;
+    });
   }
 
   return applied;
