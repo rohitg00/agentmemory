@@ -17,6 +17,14 @@ const hookEntries = [
   "src/hooks/antigravity-bridge.ts",
 ];
 
+// Cursor gets a thin adapter rather than its own hook copies: two CLI
+// entrypoints that resolve the workspace Cursor fails to report, then
+// delegate to the canonical hooks above. workspace.ts/delegate.ts are not
+// entries — they inline into each CLI, so the emitted files stay
+// self-contained like every other hook, and the canonical .mjs they spawn
+// sit exactly one directory up from plugin/scripts/cursor/.
+const cursorEntries = ["src/hooks/cursor/run-hook.ts", "src/hooks/cursor/run-detached.ts"];
+
 const shared = {
   format: ["esm"] as const,
   target: "node20" as const,
@@ -79,6 +87,13 @@ export default defineConfig([
   ...hookEntries.map((entry) => ({
     entry: [entry],
     outDir: "plugin/scripts",
+    ...shared,
+    clean: false,
+    sourcemap: false,
+  })),
+  ...cursorEntries.map((entry) => ({
+    entry: [entry],
+    outDir: "plugin/scripts/cursor",
     ...shared,
     clean: false,
     sourcemap: false,
