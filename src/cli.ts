@@ -2805,6 +2805,13 @@ function buildDemoSessions(): DemoSession[] {
   ];
 }
 
+function jsonAuthHeaders(): Record<string, string> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const secret = process.env["AGENTMEMORY_SECRET"];
+  if (secret) headers["Authorization"] = `Bearer ${secret}`;
+  return headers;
+}
+
 async function postJson<T = unknown>(
   url: string,
   body: unknown,
@@ -2813,7 +2820,7 @@ async function postJson<T = unknown>(
   try {
     const res = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: jsonAuthHeaders(),
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(timeoutMs),
     });
@@ -2831,7 +2838,7 @@ async function postJsonStrict<T = unknown>(
 ): Promise<T | null> {
   const res = await fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: jsonAuthHeaders(),
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(timeoutMs),
   });
