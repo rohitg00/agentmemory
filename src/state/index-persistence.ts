@@ -29,6 +29,10 @@ type IndexPersistenceOptions = {
   createGeneration?: () => string;
 };
 
+type IndexPersistenceSaveOptions = {
+  throwOnError?: boolean;
+};
+
 function shardChars(options: IndexPersistenceOptions): number {
   const configured = options.shardChars;
   if (typeof configured !== "number" || !Number.isFinite(configured)) {
@@ -87,7 +91,7 @@ export class IndexPersistence {
     }, DEBOUNCE_MS);
   }
 
-  async save(): Promise<void> {
+  async save(options: IndexPersistenceSaveOptions = {}): Promise<void> {
     if (this.timer) {
       clearTimeout(this.timer);
       this.timer = null;
@@ -99,6 +103,7 @@ export class IndexPersistence {
       }
     } catch (err) {
       this.logFailure(err);
+      if (options.throwOnError) throw err;
     }
   }
 

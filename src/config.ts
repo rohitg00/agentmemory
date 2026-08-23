@@ -17,8 +17,14 @@ function safeParseInt(value: string | undefined, fallback: number): number {
   return Number.isNaN(parsed) ? fallback : parsed;
 }
 
-const DATA_DIR = join(homedir(), ".agentmemory");
-const ENV_FILE = join(DATA_DIR, ".env");
+const CONFIG_DIR = join(homedir(), ".agentmemory");
+const ENV_FILE = join(CONFIG_DIR, ".env");
+
+export const RESOLVED_PATHS = {
+  configDir: CONFIG_DIR,
+  envFile: ENV_FILE,
+  envFileExists: (): boolean => existsSync(ENV_FILE),
+};
 
 let warnPremiumModelShown = false;
 
@@ -216,7 +222,7 @@ export function loadConfig(): AgentMemoryConfig {
     tokenBudget: safeParseInt(env["TOKEN_BUDGET"], 2000),
     maxObservationsPerSession: safeParseInt(env["MAX_OBS_PER_SESSION"], 500),
     compressionModel: provider.model,
-    dataDir: DATA_DIR,
+    dataDir: CONFIG_DIR,
   };
 }
 
