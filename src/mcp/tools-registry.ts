@@ -1,3 +1,5 @@
+import { isSlotsEnabled } from "../functions/slots.js";
+
 export type McpToolDef = {
   name: string;
   description: string;
@@ -122,7 +124,15 @@ export const CORE_TOOLS: McpToolDef[] = [
     name: "memory_sessions",
     description:
       "List recent sessions with their status and observation counts.",
-    inputSchema: { type: "object", properties: {} },
+    inputSchema: {
+      type: "object",
+      properties: {
+        limit: {
+          type: "number",
+          description: "Max sessions to return (integer 1-100, default 20)",
+        },
+      },
+    },
   },
   {
     name: "memory_smart_search",
@@ -943,6 +953,8 @@ export const V010_SLOTS_TOOLS: McpToolDef[] = [
   },
 ];
 
+export const SLOT_TOOL_NAMES = new Set(V010_SLOTS_TOOLS.map((t) => t.name));
+
 export const ESSENTIAL_TOOLS = new Set([
   "memory_save",
   "memory_recall",
@@ -974,6 +986,9 @@ export function getAllTools(): McpToolDef[] {
 // Users who want the lean essentials can still set AGENTMEMORY_TOOLS=core.
 export function getVisibleTools(): McpToolDef[] {
   const mode = process.env["AGENTMEMORY_TOOLS"] || "all";
-  if (mode === "core") return getAllTools().filter((t) => ESSENTIAL_TOOLS.has(t.name));
-  return getAllTools();
+  const tools = isSlotsEnabled()
+    ? getAllTools()
+    : getAllTools().filter((t) => !SLOT_TOOL_NAMES.has(t.name));
+  if (mode === "core") return tools.filter((t) => ESSENTIAL_TOOLS.has(t.name));
+  return tools;
 }

@@ -8,7 +8,8 @@ import type {
   GraphNode,
   GraphEdge,
 } from "../types.js";
-import { getVisibleTools } from "./tools-registry.js";
+import { getVisibleTools, SLOT_TOOL_NAMES } from "./tools-registry.js";
+import { isSlotsEnabled } from "../functions/slots.js";
 import { timingSafeCompare } from "../auth.js";
 import { getAgentId, isAgentScopeIsolated } from "../config.js";
 
@@ -83,6 +84,26 @@ export function registerMcpEndpoints(
       }
 
       const { name, arguments: args = {} } = req.body;
+
+      if (SLOT_TOOL_NAMES.has(name) && !isSlotsEnabled()) {
+        return {
+          status_code: 200,
+          body: {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify({
+                  error: "Memory slots not enabled",
+                  flag: "AGENTMEMORY_SLOTS",
+                  enableHow:
+                    "Set AGENTMEMORY_SLOTS=true (in ~/.agentmemory/.env or the shell) and restart.",
+                }),
+              },
+            ],
+            isError: true,
+          },
+        };
+      }
 
       try {
         switch (name) {
@@ -173,14 +194,8 @@ export function registerMcpEndpoints(
               };
             }
             const type = (args.type as string) || "fact";
-            const concepts =
-              typeof args.concepts === "string"
-                ? args.concepts.split(",").map((c: string) => c.trim()).filter(Boolean)
-                : [];
-            const files =
-              typeof args.files === "string"
-                ? args.files.split(",").map((f: string) => f.trim()).filter(Boolean)
-                : [];
+            const concepts = parseCsvList(args.concepts);
+            const files = parseCsvList(args.files);
 
             const project =
               typeof args.project === "string" && args.project.trim().length > 0
@@ -258,7 +273,12 @@ export function registerMcpEndpoints(
           }
 
           case "memory_sessions": {
-            const sessions = await kv.list(KV.sessions);
+            const requestedLimit = asNumber(args.limit, 20) ?? 20;
+            const limit = Math.max(1, Math.min(Math.floor(requestedLimit), 100));
+            const all = await kv.list<Session>(KV.sessions);
+            const sessions = all
+              .sort((a, b) => b.startedAt.localeCompare(a.startedAt))
+              .slice(0, limit);
             return {
               status_code: 200,
               body: {
@@ -1282,7 +1302,7 @@ export function registerMcpEndpoints(
         return {
           status_code: 500,
           body: {
-            error: "Internal error",
+            error: `Internal error: ${err instanceof Error ? err.message : String(err)}`,
           },
         };
       }

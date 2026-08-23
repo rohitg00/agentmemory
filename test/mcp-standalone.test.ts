@@ -263,6 +263,26 @@ describe("handleToolCall", () => {
     expect(mem?.files).toEqual(["src/auth.ts"]);
   });
 
+  it("memory_save preserves trimmed project and agentId in local fallback", async () => {
+    const kv = new InMemoryKV();
+    const result = await handleToolCall(
+      "memory_save",
+      {
+        content: "Scoped fallback memory",
+        project: " project-1 ",
+        agentId: " codex-1 ",
+      },
+      kv,
+    );
+    const saved = JSON.parse(result.content[0].text);
+    const memory = await kv.get<{ project?: string; agentId?: string }>(
+      "mem:memories",
+      saved.saved,
+    );
+
+    expect(memory).toMatchObject({ project: "project-1", agentId: "codex-1" });
+  });
+
   it("memory_smart_search falls back to substring match in the standalone shim (#139)", async () => {
     const kv = new InMemoryKV();
     await handleToolCall(
