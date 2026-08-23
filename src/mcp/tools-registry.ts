@@ -30,7 +30,12 @@ export const CORE_TOOLS: McpToolDef[] = [
         },
         token_budget: {
           type: "number",
-          description: "Optional token budget to trim returned results",
+          description:
+            "Optional token budget: returned results are trimmed to fit it " +
+            "(tokens_used <= token_budget). Results that do not fit are " +
+            "dropped and reported via excluded_by_budget. If the top result " +
+            "alone exceeds the budget it is returned clipped with " +
+            "content_truncated: true instead of dropped.",
         },
       },
       required: ["query"],
