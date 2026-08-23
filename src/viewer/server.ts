@@ -174,6 +174,33 @@ function readBody(req: IncomingMessage): Promise<string> {
   });
 }
 
+// Normalize and validate a proxy pathname so that path-traversal
+// sequences ("../", percent-encoded variants) cannot escape the
+// /agentmemory/ prefix. `new URL()` resolves ".." segments the same
+// way `fetch()` does internally, so comparing the normalized result
+// against the prefix is an authoritative check.
+//
+// Returns the safe normalized pathname, or `null` if the path is
+// invalid or escapes the allowed prefix.
+function normalizeProxyPath(raw: string): string | null {
+  try {
+    // Use a throwaway base so `new URL()` can resolve relative ".."
+    // segments. The base itself is never sent upstream.
+    const resolved = new URL(raw, "http://localhost");
+    const normalized = resolved.pathname;
+
+    // The upstream path must sit under /agentmemory/ after
+    // normalization. If ".." segments collapsed it above that prefix
+    // (e.g. /agentmemory/../../admin → /admin) the check fails.
+    if (!normalized.startsWith("/agentmemory/")) {
+      return null;
+    }
+    return normalized;
+  } catch {
+    return null;
+  }
+}
+
 const MAX_VIEWER_PORT_RETRIES = 10;
 
 let boundViewerPort: number | null = null;
@@ -396,11 +423,24 @@ async function proxyToRestApi(
   res: ServerResponse,
   secret?: string,
 ): Promise<void> {
-  const upstreamPath = pathname.startsWith("/agentmemory/")
+  // Build the candidate upstream path. Requests already under
+  // /agentmemory/ pass through; others get the prefix prepended.
+  const rawUpstreamPath = pathname.startsWith("/agentmemory/")
     ? pathname
     : `/agentmemory${pathname.startsWith("/") ? pathname : "/" + pathname}`;
 
-  const upstreamUrl = `http://127.0.0.1:${restPort}${upstreamPath}${qs ? "?" + qs : ""}`;
+  // Normalize and validate the path to prevent path-traversal attacks.
+  // Without this, a request like /agentmemory/../../secret-endpoint
+  // would be resolved by fetch()'s URL parser to /secret-endpoint,
+  // escaping the /agentmemory/ prefix while still carrying the
+  // auto-attached bearer token.
+  const safePath = normalizeProxyPath(rawUpstreamPath);
+  if (safePath === null) {
+    json(res, 400, { error: "invalid proxy path" }, req);
+    return;
+  }
+
+  const upstreamUrl = `http://127.0.0.1:${restPort}${safePath}${qs ? "?" + qs : ""}`;
 
   const headers: Record<string, string> = {};
   if (secret) {
