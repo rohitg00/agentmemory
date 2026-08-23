@@ -417,6 +417,45 @@ describe("mem::search token budget contract (#1232)", () => {
     expect(result.excluded_by_budget).toBeUndefined();
   });
 
+  it("uses the remaining budget after clipping the top result", async () => {
+    const stored = await kv.get<CompressedObservation>(
+      KV.observations("ses_1"),
+      "obs_long",
+    );
+    expect(stored).not.toBeNull();
+    await kv.set(KV.observations("ses_1"), "obs_long", {
+      ...stored!,
+      title: "record decision auth ".repeat(110),
+    });
+    getSearchIndex().clear();
+    await rebuildIndex(kv as never);
+
+    const result = (await sdk.trigger("mem::search", {
+      query: "record decision auth",
+      limit: 2,
+      format: "compact",
+      token_budget: 220,
+    })) as {
+      results: Array<{
+        obsId: string;
+        content_truncated?: boolean;
+      }>;
+      tokens_used: number;
+      truncated: boolean;
+      excluded_by_budget?: number;
+    };
+
+    expect(result.results.map((item) => item.obsId)).toEqual([
+      "obs_long",
+      "obs_short",
+    ]);
+    expect(result.results[0]?.content_truncated).toBe(true);
+    expect(result.results[1]?.content_truncated).toBeUndefined();
+    expect(result.tokens_used).toBeLessThanOrEqual(220);
+    expect(result.truncated).toBe(false);
+    expect(result.excluded_by_budget).toBeUndefined();
+  });
+
   it("clips memory-derived records whose content duplicates into facts", async () => {
     const memoryContent =
       "Deployed the gift card payments toggle fix to production. ".repeat(40);

@@ -638,12 +638,9 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
           if (selected.length === 0) {
             const clipped = clipToBudget(item, tokenBudget)
             if (clipped) {
-              return {
-                items: [clipped],
-                used: estimateTokens(clipped),
-                truncated: items.length > 1,
-                excluded: items.length - 1,
-              }
+              selected.push(clipped)
+              used += estimateTokens(clipped)
+              continue
             }
           }
           return {
