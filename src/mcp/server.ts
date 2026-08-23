@@ -128,14 +128,42 @@ export function registerMcpEndpoints(
               token_budget: tokenBudget,
               agentId: recallAgentId,
             } });
-            const text =
+            let text: string;
+            if (
               format === "narrative" &&
               result &&
               typeof result === "object" &&
               "text" in (result as Record<string, unknown>) &&
               typeof (result as { text?: unknown }).text === "string"
-                ? (result as { text: string }).text
-                : JSON.stringify(result, null, 2);
+            ) {
+              const narrativeResult = result as {
+                text: string;
+                results?: Array<{ content_truncated?: boolean }>;
+                excluded_by_budget?: number;
+              };
+              const budgetMetadata: Record<string, boolean | number> = {};
+              if (
+                narrativeResult.results?.some(
+                  (item) => item.content_truncated === true,
+                )
+              ) {
+                budgetMetadata.content_truncated = true;
+              }
+              if (
+                typeof narrativeResult.excluded_by_budget === "number" &&
+                narrativeResult.excluded_by_budget > 0
+              ) {
+                budgetMetadata.excluded_by_budget =
+                  narrativeResult.excluded_by_budget;
+              }
+              const notice =
+                Object.keys(budgetMetadata).length > 0
+                  ? `[Budget metadata: ${JSON.stringify(budgetMetadata)}]`
+                  : "";
+              text = [narrativeResult.text, notice].filter(Boolean).join("\n\n");
+            } else {
+              text = JSON.stringify(result, null, 2);
+            }
             return {
               status_code: 200,
               body: {

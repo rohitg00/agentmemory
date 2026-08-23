@@ -609,23 +609,125 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
       const estimateTokens = (value: unknown): number =>
         Math.max(1, Math.ceil(JSON.stringify(value).length / 3))
 
-      const applyTokenBudget = <T>(items: T[]): {
+      const applyTokenBudget = <T>(
+        items: T[],
+        clipToBudget: (item: T, budget: number) => T | null,
+      ): {
         items: T[]
         used: number
         truncated: boolean
+        excluded: number
       } => {
-        if (!tokenBudget) return { items, used: items.reduce((sum, item) => sum + estimateTokens(item), 0), truncated: false }
+        if (!tokenBudget) {
+          return {
+            items,
+            used: items.reduce((sum, item) => sum + estimateTokens(item), 0),
+            truncated: false,
+            excluded: 0,
+          }
+        }
         const selected: T[] = []
         let used = 0
         for (const item of items) {
           const itemTokens = estimateTokens(item)
-          if (used + itemTokens > tokenBudget) {
-            return { items: selected, used, truncated: selected.length < items.length }
+          if (used + itemTokens <= tokenBudget) {
+            selected.push(item)
+            used += itemTokens
+            continue
           }
-          selected.push(item)
-          used += itemTokens
+          if (selected.length === 0) {
+            const clipped = clipToBudget(item, tokenBudget)
+            if (clipped) {
+              selected.push(clipped)
+              used += estimateTokens(clipped)
+              continue
+            }
+          }
+          return {
+            items: selected,
+            used,
+            truncated: selected.length < items.length,
+            excluded: items.length - selected.length,
+          }
         }
-        return { items: selected, used, truncated: false }
+        return { items: selected, used, truncated: false, excluded: 0 }
+      }
+
+      const clipTextFields = <T>(
+        item: T,
+        budget: number,
+        textFields: string[],
+      ): T | null => {
+        const shrink = (scale: number): T => {
+          const clipped: Record<string, unknown> = {
+            ...(item as Record<string, unknown>),
+          }
+          for (const field of textFields) {
+            const value = clipped[field]
+            if (typeof value === 'string') {
+              clipped[field] = value.slice(0, Math.floor(value.length * scale))
+            }
+          }
+          clipped.content_truncated = true
+          return clipped as T
+        }
+        let scale = 0.5
+        for (let pass = 0; pass < 12; pass++) {
+          const candidate = shrink(scale)
+          if (estimateTokens(candidate) <= budget) return candidate
+          scale *= 0.5
+        }
+        const candidate = shrink(0)
+        return estimateTokens(candidate) <= budget ? candidate : null
+      }
+
+      const clipFullResult = (
+        result: SearchResult,
+        budget: number,
+      ): SearchResult | null => {
+        const clipAt = (
+          narrativeScale: number,
+          factsScale: number,
+        ): SearchResult => ({
+          ...result,
+          observation: {
+            ...result.observation,
+            narrative: result.observation.narrative.slice(
+              0,
+              Math.floor(
+                result.observation.narrative.length * narrativeScale,
+              ),
+            ),
+            facts: result.observation.facts.map((fact) =>
+              fact.slice(0, Math.floor(fact.length * factsScale)),
+            ),
+          },
+          content_truncated: true,
+        })
+
+        let scale = 0.5
+        const factsFit = clipAt(0, 1)
+        if (estimateTokens(factsFit) <= budget) {
+          for (let pass = 0; pass < 12; pass++) {
+            const candidate = clipAt(scale, 1)
+            if (estimateTokens(candidate) <= budget) return candidate
+            scale *= 0.5
+          }
+          return factsFit
+        }
+
+        scale = 0.5
+        for (let pass = 0; pass < 12; pass++) {
+          const candidate = clipAt(0, scale)
+          if (estimateTokens(candidate) <= budget) return candidate
+          scale *= 0.5
+        }
+        const candidate: SearchResult = {
+          ...result,
+          observation: { ...result.observation, narrative: '', facts: [] },
+          content_truncated: true,
+        }
+        return estimateTokens(candidate) <= budget ? candidate : null
       }
 
       if (format === 'compact') {
@@ -637,13 +739,17 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
           score: r.score,
           timestamp: r.observation.timestamp,
         }))
-        const packed = applyTokenBudget(compactResults)
+        const packed = applyTokenBudget(
+          compactResults,
+          (item, budget) => clipTextFields(item, budget, ['title']),
+        )
         return {
           format,
           results: packed.items,
           tokens_used: packed.used,
           tokens_budget: tokenBudget,
           truncated: packed.truncated,
+          ...(packed.excluded > 0 ? { excluded_by_budget: packed.excluded } : {}),
         }
       }
 
@@ -656,7 +762,10 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
           score: r.score,
           timestamp: r.observation.timestamp,
         }))
-        const packed = applyTokenBudget(narrativeResults)
+        const packed = applyTokenBudget(
+          narrativeResults,
+          (item, budget) => clipTextFields(item, budget, ['narrative']),
+        )
         const text = packed.items
           .map((r, index) => `${index + 1}. ${r.title}\n${r.narrative}`)
           .join('\n\n')
@@ -667,10 +776,13 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
           tokens_used: packed.used,
           tokens_budget: tokenBudget,
           truncated: packed.truncated,
+          ...(packed.excluded > 0 ? { excluded_by_budget: packed.excluded } : {}),
         }
       }
 
-      const packed = applyTokenBudget(enriched)
+      const packed = applyTokenBudget(enriched, (item, budget) =>
+        clipFullResult(item, budget),
+      )
 
       // Avoid logging raw cwd/project (host paths). Log only that filters were active.
       logger.info('Search completed', {
@@ -685,6 +797,7 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
         tokens_used: packed.used,
         tokens_budget: tokenBudget,
         truncated: packed.truncated,
+        ...(packed.excluded > 0 ? { excluded_by_budget: packed.excluded } : {}),
       }
     }
   )

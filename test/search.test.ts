@@ -210,3 +210,291 @@ describe("mem::search", () => {
     setEmbeddingProvider(null);
   });
 });
+
+describe("mem::search token budget contract (#1232)", () => {
+  let sdk: ReturnType<typeof mockSdk>;
+  let kv: ReturnType<typeof mockKV>;
+
+  const LONG_PROSE =
+    "This is a deliberately authored decision record. ".repeat(60) +
+    "The decision is to adopt a rotating refresh token strategy for auth middleware.";
+
+  beforeEach(async () => {
+    sdk = mockSdk();
+    kv = mockKV();
+    registerSearchFunction(sdk as never, kv as never);
+
+    const session: Session = {
+      id: "ses_1",
+      project: "demo",
+      cwd: "/tmp/demo",
+      startedAt: "2026-01-01T00:00:00Z",
+      status: "completed",
+      observationCount: 2,
+    };
+    await kv.set(KV.sessions, session.id, session);
+
+    const longObs: CompressedObservation = {
+      id: "obs_long",
+      sessionId: "ses_1",
+      timestamp: "2026-01-01T00:00:00Z",
+      type: "decision",
+      title: "Auth refresh token strategy decision",
+      facts: ["Rotating refresh tokens adopted"],
+      narrative: LONG_PROSE,
+      concepts: ["auth", "jwt", "tokens"],
+      files: ["src/auth.ts"],
+      importance: 9,
+    };
+    const shortObs: CompressedObservation = {
+      id: "obs_short",
+      sessionId: "ses_1",
+      timestamp: "2026-01-02T00:00:00Z",
+      type: "file_edit",
+      title: "auth middleware bug",
+      facts: ["Fixed a null pointer in the auth middleware"],
+      narrative: "Fixed a null pointer in the auth middleware.",
+      concepts: ["auth"],
+      files: ["src/auth.ts"],
+      importance: 3,
+    };
+    await kv.set(KV.observations("ses_1"), longObs.id, longObs);
+    await kv.set(KV.observations("ses_1"), shortObs.id, shortObs);
+
+    getSearchIndex().clear();
+    await rebuildIndex(kv as never);
+  });
+
+  it("returns the top match clipped when it alone exceeds the budget (full)", async () => {
+    const result = (await sdk.trigger("mem::search", {
+      query: "record decision auth",
+      limit: 4,
+      token_budget: 200,
+    })) as {
+      results: Array<{
+        observation: CompressedObservation;
+        content_truncated?: boolean;
+      }>;
+      tokens_used: number;
+      truncated: boolean;
+      excluded_by_budget?: number;
+    };
+
+    expect(result.results.length).toBe(1);
+    expect(result.results[0]?.observation.id).toBe("obs_long");
+    expect(result.results[0]?.content_truncated).toBe(true);
+    expect(result.tokens_used).toBeGreaterThan(0);
+    expect(result.tokens_used).toBeLessThanOrEqual(200);
+    expect(result.truncated).toBe(true);
+    expect(result.excluded_by_budget).toBe(1);
+    expect(result.results[0]?.observation.narrative.length).toBeLessThan(
+      LONG_PROSE.length,
+    );
+    expect(result.results[0]?.observation.facts).toEqual([
+      "Rotating refresh tokens adopted",
+    ]);
+  });
+
+  it("keeps the top match intact and reports nothing excluded when the budget fits (full)", async () => {
+    const result = (await sdk.trigger("mem::search", {
+      query: "record decision auth",
+      limit: 4,
+      token_budget: 5000,
+    })) as {
+      results: Array<{ observation: CompressedObservation; content_truncated?: boolean }>;
+      tokens_used: number;
+      truncated: boolean;
+      excluded_by_budget?: number;
+    };
+
+    expect(result.results).toHaveLength(2);
+    expect(result.results[0]?.observation.id).toBe("obs_long");
+    expect(result.results[0]?.observation.narrative).toBe(LONG_PROSE);
+    expect(result.results[0]?.content_truncated).toBeUndefined();
+    expect(result.truncated).toBe(false);
+    expect(result.excluded_by_budget).toBeUndefined();
+  });
+
+  it("still returns an empty result with no drop report for a genuine miss", async () => {
+    const result = (await sdk.trigger("mem::search", {
+      query: "zzz qqq xqq",
+      limit: 4,
+      token_budget: 200,
+    })) as {
+      results: unknown[];
+      truncated: boolean;
+      excluded_by_budget?: number;
+    };
+
+    expect(result.results).toEqual([]);
+    expect(result.truncated).toBe(false);
+    expect(result.excluded_by_budget).toBeUndefined();
+  });
+
+  it("reports results excluded by the budget after the first item", async () => {
+    const result = (await sdk.trigger("mem::search", {
+      query: "auth middleware bug",
+      limit: 4,
+      token_budget: 150,
+    })) as {
+      results: Array<{
+        observation: CompressedObservation;
+        content_truncated?: boolean;
+      }>;
+      tokens_used: number;
+      truncated: boolean;
+      excluded_by_budget?: number;
+    };
+
+    expect(result.results).toHaveLength(1);
+    expect(result.results[0]?.observation.id).toBe("obs_short");
+    expect(result.results[0]?.content_truncated).toBeUndefined();
+    expect(result.tokens_used).toBeLessThanOrEqual(150);
+    expect(result.truncated).toBe(true);
+    expect(result.excluded_by_budget).toBe(1);
+  });
+
+  it("clips the top match in narrative format and keeps text consistent", async () => {
+    const result = (await sdk.trigger("mem::search", {
+      query: "record decision auth",
+      limit: 4,
+      format: "narrative",
+      token_budget: 200,
+    })) as {
+      results: Array<{ obsId: string; narrative: string; content_truncated?: boolean }>;
+      text: string;
+      tokens_used: number;
+      truncated: boolean;
+      excluded_by_budget?: number;
+    };
+
+    expect(result.results).toHaveLength(1);
+    expect(result.results[0]?.obsId).toBe("obs_long");
+    expect(result.results[0]?.content_truncated).toBe(true);
+    expect(result.tokens_used).toBeLessThanOrEqual(200);
+    expect(result.text).toContain(result.results[0]?.narrative);
+    expect(result.text).not.toContain(LONG_PROSE);
+    expect(result.excluded_by_budget).toBe(1);
+  });
+
+  it("reports the drop when even the text-free form cannot fit the budget", async () => {
+    const result = (await sdk.trigger("mem::search", {
+      query: "record decision auth",
+      limit: 4,
+      format: "compact",
+      token_budget: 10,
+    })) as {
+      results: unknown[];
+      truncated: boolean;
+      excluded_by_budget?: number;
+    };
+
+    expect(result.results).toEqual([]);
+    expect(result.truncated).toBe(true);
+    expect(result.excluded_by_budget).toBe(2);
+  });
+
+  it("clips a compact title when the metadata floor fits", async () => {
+    const result = (await sdk.trigger("mem::search", {
+      query: "record decision auth",
+      limit: 1,
+      format: "compact",
+      token_budget: 55,
+    })) as {
+      results: Array<{ title: string; content_truncated?: boolean }>;
+      tokens_used: number;
+      truncated: boolean;
+      excluded_by_budget?: number;
+    };
+
+    expect(result.results).toHaveLength(1);
+    expect(result.results[0]?.content_truncated).toBe(true);
+    expect(result.results[0]?.title.length).toBeLessThan(
+      "Auth refresh token strategy decision".length,
+    );
+    expect(result.tokens_used).toBeLessThanOrEqual(55);
+    expect(result.truncated).toBe(false);
+    expect(result.excluded_by_budget).toBeUndefined();
+  });
+
+  it("uses the remaining budget after clipping the top result", async () => {
+    const stored = await kv.get<CompressedObservation>(
+      KV.observations("ses_1"),
+      "obs_long",
+    );
+    expect(stored).not.toBeNull();
+    await kv.set(KV.observations("ses_1"), "obs_long", {
+      ...stored!,
+      title: "record decision auth ".repeat(110),
+    });
+    getSearchIndex().clear();
+    await rebuildIndex(kv as never);
+
+    const result = (await sdk.trigger("mem::search", {
+      query: "record decision auth",
+      limit: 2,
+      format: "compact",
+      token_budget: 220,
+    })) as {
+      results: Array<{
+        obsId: string;
+        content_truncated?: boolean;
+      }>;
+      tokens_used: number;
+      truncated: boolean;
+      excluded_by_budget?: number;
+    };
+
+    expect(result.results.map((item) => item.obsId)).toEqual([
+      "obs_long",
+      "obs_short",
+    ]);
+    expect(result.results[0]?.content_truncated).toBe(true);
+    expect(result.results[1]?.content_truncated).toBeUndefined();
+    expect(result.tokens_used).toBeLessThanOrEqual(220);
+    expect(result.truncated).toBe(false);
+    expect(result.excluded_by_budget).toBeUndefined();
+  });
+
+  it("clips memory-derived records whose content duplicates into facts", async () => {
+    const memoryContent =
+      "Deployed the gift card payments toggle fix to production. ".repeat(40);
+    await kv.set(KV.memories, "mem_gift", {
+      id: "mem_gift",
+      createdAt: "2026-02-01T00:00:00Z",
+      updatedAt: "2026-02-01T00:00:00Z",
+      type: "fact",
+      title: "Gift card payments toggle fix deployment",
+      content: memoryContent,
+      concepts: ["gift", "payments"],
+      files: [],
+      sessionIds: [],
+      strength: 7,
+      version: 1,
+      isLatest: true,
+    });
+    await rebuildIndex(kv as never);
+
+    const result = (await sdk.trigger("mem::search", {
+      query: "gift card payments toggle deployment",
+      limit: 4,
+      token_budget: 200,
+    })) as {
+      results: Array<{
+        observation: CompressedObservation;
+        content_truncated?: boolean;
+      }>;
+      tokens_used: number;
+      truncated: boolean;
+      excluded_by_budget?: number;
+    };
+
+    const hit = result.results.find((r) => r.observation.id === "mem_gift");
+    expect(hit).toBeDefined();
+    expect(hit?.content_truncated).toBe(true);
+    expect(result.tokens_used).toBeLessThanOrEqual(200);
+    expect(result.truncated).toBe(false);
+    expect(result.excluded_by_budget).toBeUndefined();
+    expect(hit?.observation.facts[0]?.length).toBeLessThan(memoryContent.length);
+  });
+});
