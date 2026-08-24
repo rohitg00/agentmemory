@@ -233,6 +233,14 @@ const MARQUEE: Agent[] = [
     accent: "#317CFF",
     href: "https://devin.ai",
   },
+  {
+    id: "klaatcode",
+    name: "Klaat Code",
+    from: "KlaatAI",
+    logo: "/klaatcode.png",
+    accent: "#8B5CF6",
+    href: "https://github.com/KlaatAI/klaatcode",
+  },
 ];
 
 function FeaturedCard({ a }: { a: Agent }) {

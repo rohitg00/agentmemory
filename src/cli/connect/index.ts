@@ -17,6 +17,7 @@ import { adapter as dsh } from "./dsh.js";
 import { adapter as geminiCli } from "./gemini-cli.js";
 import { adapter as hermes } from "./hermes.js";
 import { adapter as kiro } from "./kiro.js";
+import { adapter as klaatcode } from "./klaatcode.js";
 import { adapter as openclaw } from "./openclaw.js";
 import { adapter as opencode } from "./opencode.js";
 import { adapter as openhuman } from "./openhuman.js";
@@ -36,6 +37,7 @@ export const ADAPTERS: readonly ConnectAdapter[] = [
   antigravity,
   antigravityCli,
   kiro,
+  klaatcode,
   warp,
   cline,
   continueDev,
