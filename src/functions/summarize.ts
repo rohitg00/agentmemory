@@ -50,6 +50,15 @@ function getChunkConcurrency(): number {
   return Number.isFinite(n) && n > 0 ? n : CHUNK_CONCURRENCY_DEFAULT;
 }
 
+const DEDUP_WINDOW_MS_DEFAULT = 90_000;
+
+function getDedupWindowMs(): number {
+  const raw = process.env["SUMMARIZE_DEDUP_WINDOW_MS"];
+  if (raw === undefined) return DEDUP_WINDOW_MS_DEFAULT;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? n : DEDUP_WINDOW_MS_DEFAULT;
+}
+
 // One chunk call with retry-once. Returns null when both attempts fail —
 // whether by parse failure, provider 4xx (content rejected by upstream
 // filters), or transient network/5xx errors that didn't recover on retry.
@@ -246,6 +255,35 @@ export function registerSummarizeFunction(
           sessionId,
         });
         return { success: false, error: "session_not_found" };
+      }
+
+      // Stop hooks fire on every assistant turn; at sub-minute granularity
+      // the observation delta rarely justifies a fresh LLM summary.
+      const dedupWindowMs = getDedupWindowMs();
+      if (dedupWindowMs > 0) {
+        const existing = await kv
+          .get<SessionSummary>(KV.summaries, sessionId)
+          .catch(() => null);
+        if (existing && existing.createdAt) {
+          const ageMs = Date.now() - Date.parse(existing.createdAt);
+          if (Number.isFinite(ageMs) && ageMs >= 0 && ageMs < dedupWindowMs) {
+            logger.info("Summarize skipped — fresh summary present", {
+              sessionId,
+              ageMs,
+              dedupWindowMs,
+            });
+            const latencyMs = Date.now() - startMs;
+            if (metricsStore) {
+              await metricsStore.record("mem::summarize", latencyMs, true);
+            }
+            return {
+              success: true,
+              skipped: "fresh",
+              ageMs,
+              summary: existing,
+            };
+          }
+        }
       }
 
       const observations = await kv.list<CompressedObservation>(
