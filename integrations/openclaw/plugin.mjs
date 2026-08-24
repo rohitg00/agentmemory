@@ -46,8 +46,41 @@ function lastAssistantText(messages) {
     if (message.role !== "assistant") continue;
     const text = extractText(message.content);
     if (text) return text;
+    // Agents running on a Codex app-server (e.g. gpt-5.6-*) do not emit a plain
+    // assistant text block: they answer by CALLING a message-sending tool, so
+    // the user-visible reply lives in that tool call's arguments.
+    if (!Array.isArray(message.content)) continue;
+    for (const block of [...message.content].reverse()) {
+      if (!block || typeof block !== "object") continue;
+      if (block.type !== "toolCall") continue;
+      const args = block.arguments || block.input || {};
+      const candidate = args.message || args.text || args.body || args.content;
+      if (typeof candidate === "string" && candidate.trim()) return candidate.trim();
+    }
   }
   return "";
+}
+
+/**
+ * Resolve the id of the agent this turn belongs to.
+ *
+ * OpenClaw invokes plugin hooks as (event, ctx) where ctx is a
+ * PluginHookAgentContext carrying agentId/sessionKey/sessionId/workspaceDir
+ * (see openclaw src/plugins/hook-types.ts). Without this, every agent shares a
+ * single memory pool.
+ */
+function resolveAgentId(ctx, event) {
+  const context = ctx || {};
+  if (context.agentId) return String(context.agentId);
+  const sessionKey =
+    context.sessionKey ||
+    context.sessionId ||
+    (event && (event.sessionKey || event.sessionId)) ||
+    "";
+  const match = /^agent:([^:]+):/.exec(String(sessionKey));
+  if (match) return match[1];
+  if (event && event.agentId) return String(event.agentId);
+  return "main";
 }
 
 function latestUserText(messages) {
@@ -175,13 +208,16 @@ const plugin = {
       });
     }
 
-    api.on("before_agent_start", async (event) => {
+    api.on("before_agent_start", async (event, ctx) => {
       if (!cfg.enabled) return;
       const prompt = typeof event?.prompt === "string" ? event.prompt.trim() : "";
       if (!prompt) return;
+      const agentId = resolveAgentId(ctx, event);
       const result = await client.postJson("/agentmemory/smart-search", {
         query: prompt,
         limit: 5,
+        project: agentId,
+        agentId,
       });
       const block = formatResults(result?.results || []);
       if (!block) return;
@@ -190,19 +226,35 @@ const plugin = {
       };
     });
 
-    api.on("agent_end", async (event) => {
+    api.on("agent_end", async (event, ctx) => {
       if (!cfg.enabled || !event?.success || !Array.isArray(event.messages)) return;
       const userText = latestUserText(event.messages);
       const assistantText = lastAssistantText(event.messages);
       if (!userText || !assistantText) return;
+      const agentId = resolveAgentId(ctx, event);
       const sessionId =
+        ctx?.sessionId ||
+        ctx?.sessionKey ||
         event.sessionId ||
         event.sessionKey ||
         event.runId ||
         `openclaw-${Date.now()}`;
+      // Tag the session with agentId first: /agentmemory/observe does not accept
+      // an agentId itself, it inherits it from an already-existing session.
+      await client.postJson("/agentmemory/session/start", {
+        sessionId,
+        project: agentId,
+        cwd: ctx?.workspaceDir || agentId,
+        agentId,
+      });
       await client.postJson("/agentmemory/observe", {
         hookType: "post_tool_use",
         sessionId,
+        // project and cwd are required by the server; without them the request
+        // is rejected with HTTP 400 and, because fallback_on_error defaults to
+        // true, the failure is swallowed and nothing is ever captured.
+        project: agentId,
+        cwd: ctx?.workspaceDir || agentId,
         timestamp: new Date().toISOString(),
         data: {
           tool_name: "conversation",
