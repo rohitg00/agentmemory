@@ -5,7 +5,9 @@ import { InMemoryKV } from "../src/mcp/in-memory-kv.js";
 
 type FetchMock = ReturnType<typeof vi.fn>;
 
-function installFetch(handler: (url: string, init?: RequestInit) => Response): FetchMock {
+function installFetch(
+  handler: (url: string, init?: RequestInit) => Response,
+): FetchMock {
   const fn = vi.fn(async (url: string | URL, init?: RequestInit) =>
     handler(url.toString(), init),
   );
@@ -54,10 +56,13 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
   });
 
   it("proxies memory_smart_search to POST /agentmemory/smart-search", async () => {
+    const calls: Array<{ url: string; body?: unknown }> = [];
     installFetch((url, init) => {
-      if (url.endsWith("/agentmemory/livez")) return new Response("ok", { status: 200 });
+      if (url.endsWith("/agentmemory/livez"))
+        return new Response("ok", { status: 200 });
       if (url.endsWith("/agentmemory/smart-search")) {
         const body = JSON.parse((init?.body as string) || "{}");
+        calls.push({ url, body });
         return new Response(
           JSON.stringify({
             mode: "compact",
@@ -69,16 +74,23 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
       }
       return new Response("", { status: 404 });
     });
-    const res = await handleToolCall("memory_smart_search", { query: "auth bug", limit: 5 });
+    const res = await handleToolCall("memory_smart_search", {
+      query: "auth bug",
+      limit: 5,
+      format: "narrative",
+      token_budget: 0.5,
+    });
     const body = JSON.parse(res.content[0].text);
     expect(body.query).toBe("auth bug");
     expect(body.results[0].id).toBe("m1");
+    expect(calls[0]?.body).toEqual({ query: "auth bug", limit: 5 });
   });
 
   it("proxies memory_recall to POST /agentmemory/search and forwards format/token_budget (#507)", async () => {
     const calls: Array<{ url: string; body?: unknown }> = [];
     installFetch((url, init) => {
-      if (url.endsWith("/agentmemory/livez")) return new Response("ok", { status: 200 });
+      if (url.endsWith("/agentmemory/livez"))
+        return new Response("ok", { status: 200 });
       const body = init?.body ? JSON.parse(init.body as string) : undefined;
       calls.push({ url, body });
       if (url.endsWith("/agentmemory/search")) {
@@ -112,16 +124,68 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
       format: "full",
       token_budget: 800,
     });
-    expect(calls.find((c) => c.url.endsWith("/agentmemory/smart-search"))).toBeUndefined();
+    expect(
+      calls.find((c) => c.url.endsWith("/agentmemory/smart-search")),
+    ).toBeUndefined();
+  });
+
+  it("proxies memory_recall narrative format to /agentmemory/search (#507)", async () => {
+    const calls: Array<{ url: string; body?: unknown }> = [];
+    installFetch((url, init) => {
+      if (url.endsWith("/agentmemory/livez"))
+        return new Response("ok", { status: 200 });
+      calls.push({
+        url,
+        body: init?.body ? JSON.parse(init.body as string) : undefined,
+      });
+      if (url.endsWith("/agentmemory/search")) {
+        return new Response(
+          JSON.stringify({
+            format: "narrative",
+            text: "1. Deployment runbook\nUse the blue/green deploy script.",
+            results: [],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      return new Response("not found", { status: 404 });
+    });
+
+    const res = await handleToolCall("memory_recall", {
+      query: "deploy scripts",
+      limit: 3,
+      format: "narrative",
+      token_budget: 80,
+    });
+
+    expect(JSON.parse(res.content[0].text)).toEqual({
+      format: "narrative",
+      text: "1. Deployment runbook\nUse the blue/green deploy script.",
+      results: [],
+    });
+    expect(calls).toEqual([
+      {
+        url: `${BASE}/agentmemory/search`,
+        body: {
+          query: "deploy scripts",
+          limit: 3,
+          format: "narrative",
+          token_budget: 80,
+        },
+      },
+    ]);
   });
 
   it("memory_recall defaults format to 'full' when omitted (#507)", async () => {
     let recallBody: Record<string, unknown> | undefined;
     installFetch((url, init) => {
-      if (url.endsWith("/agentmemory/livez")) return new Response("ok", { status: 200 });
+      if (url.endsWith("/agentmemory/livez"))
+        return new Response("ok", { status: 200 });
       if (url.endsWith("/agentmemory/search")) {
         recallBody = init?.body ? JSON.parse(init.body as string) : undefined;
-        return new Response(JSON.stringify({ mode: "full", facts: [] }), { status: 200 });
+        return new Response(JSON.stringify({ mode: "full", facts: [] }), {
+          status: 200,
+        });
       }
       return new Response("not found", { status: 404 });
     });
@@ -134,19 +198,26 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
     const calls: Array<{ url: string; method: string; body?: unknown }> = [];
     installFetch((url, init) => {
       const method = init?.method || "GET";
-      if (url.endsWith("/agentmemory/livez")) return new Response("ok", { status: 200 });
+      if (url.endsWith("/agentmemory/livez"))
+        return new Response("ok", { status: 200 });
       calls.push({
         url,
         method,
         body: init?.body ? JSON.parse(init.body as string) : undefined,
       });
-      if (url.endsWith("/agentmemory/governance/memories") && method === "DELETE") {
+      if (
+        url.endsWith("/agentmemory/governance/memories") &&
+        method === "DELETE"
+      ) {
         return new Response(JSON.stringify({ success: true, deleted: 2 }), {
           status: 200,
           headers: { "content-type": "application/json" },
         });
       }
-      return new Response("method not allowed", { status: 405, statusText: "Method Not Allowed" });
+      return new Response("method not allowed", {
+        status: 405,
+        statusText: "Method Not Allowed",
+      });
     });
 
     const res = await handleToolCall("memory_governance_delete", {
@@ -154,7 +225,10 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
       reason: "cleanup stale test data",
     });
 
-    expect(JSON.parse(res.content[0].text)).toEqual({ success: true, deleted: 2 });
+    expect(JSON.parse(res.content[0].text)).toEqual({
+      success: true,
+      deleted: 2,
+    });
     expect(calls).toEqual([
       {
         url: `${BASE}/agentmemory/governance/memories`,
@@ -172,8 +246,16 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
       throw new Error("ECONNREFUSED");
     });
     const localKv = new InMemoryKV(undefined);
-    await handleToolCall("memory_save", { content: "shape-check entry" }, localKv);
-    const res = await handleToolCall("memory_smart_search", { query: "shape" }, localKv);
+    await handleToolCall(
+      "memory_save",
+      { content: "shape-check entry" },
+      localKv,
+    );
+    const res = await handleToolCall(
+      "memory_smart_search",
+      { query: "shape" },
+      localKv,
+    );
     const body = JSON.parse(res.content[0].text);
     expect(body).toHaveProperty("mode", "compact");
     expect(Array.isArray(body.results)).toBe(true);
@@ -189,7 +271,8 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
       ];
       const u = new URL(url);
       authByPath.set(u.pathname, auth);
-      if (url.endsWith("/agentmemory/livez")) return new Response("ok", { status: 200 });
+      if (url.endsWith("/agentmemory/livez"))
+        return new Response("ok", { status: 200 });
       return new Response(JSON.stringify({ sessions: [] }), { status: 200 });
     });
     await handleToolCall("memory_sessions", {});
@@ -203,11 +286,15 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
     });
     const localKv = new InMemoryKV(undefined);
     await handleToolCall("memory_save", { content: "local only" }, localKv);
-    const recall = await handleToolCall("memory_recall", { query: "local" }, localKv);
+    const recall = await handleToolCall(
+      "memory_recall",
+      { query: "local" },
+      localKv,
+    );
     const out = JSON.parse(recall.content[0].text);
-    expect(out.mode).toBe("compact");
+    expect(out.format).toBe("full");
     expect(out.results).toHaveLength(1);
-    expect(out.results[0].content).toBe("local only");
+    expect(out.results[0].observation.narrative).toBe("local only");
   });
 
   it("invalidates the handle on proxy failure, so the next call re-probes", async () => {
@@ -216,15 +303,24 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
     installFetch((url) => {
       if (url.endsWith("/agentmemory/livez")) {
         probeCount++;
-        return serverUp ? new Response("ok", { status: 200 }) : new Response("", { status: 500 });
+        return serverUp
+          ? new Response("ok", { status: 200 })
+          : new Response("", { status: 500 });
       }
-      return new Response("boom", { status: 500, statusText: "Internal Server Error" });
+      return new Response("boom", {
+        status: 500,
+        statusText: "Internal Server Error",
+      });
     });
     const localKv = new InMemoryKV(undefined);
     await handleToolCall("memory_save", { content: "first fallback" }, localKv);
     expect(probeCount).toBe(1);
     serverUp = false;
-    await handleToolCall("memory_save", { content: "second fallback" }, localKv);
+    await handleToolCall(
+      "memory_save",
+      { content: "second fallback" },
+      localKv,
+    );
     expect(probeCount).toBe(2);
   });
 
@@ -277,7 +373,8 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
 
   it("does not retry local after a validation error", async () => {
     const fetchFn = installFetch((url) => {
-      if (url.endsWith("/agentmemory/livez")) return new Response("ok", { status: 200 });
+      if (url.endsWith("/agentmemory/livez"))
+        return new Response("ok", { status: 200 });
       return new Response("{}", { status: 200 });
     });
     const localKv = new InMemoryKV(undefined);
@@ -325,7 +422,9 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
     const writes: string[] = [];
     const origWrite = process.stderr.write.bind(process.stderr);
     process.stderr.write = ((chunk: string | Uint8Array) => {
-      writes.push(typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8"));
+      writes.push(
+        typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8"),
+      );
       return true;
     }) as typeof process.stderr.write;
     try {
