@@ -1,0 +1,30 @@
+services:
+  agentmemory:
+    build:
+      context: ../..
+      dockerfile: deploy/docker-compose/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    expose:
+      - "3111"
+    ports:
+      - "127.0.0.1:3111:3111"
+      - "127.0.0.1:3112:3112"
+      - "127.0.0.1:3113:3113"
+    volumes:
+      - agentmemory-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:3111/agentmemory/livez || exit 1"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  agentmemory-data:

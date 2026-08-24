@@ -1,4 +1,5 @@
 import type { EmbeddingProvider } from "../../types.js";
+import { getEnvVar } from "../../config.js";
 
 type FeatureExtractor = (
   texts: string[],
@@ -7,8 +8,21 @@ type FeatureExtractor = (
 
 export class LocalEmbeddingProvider implements EmbeddingProvider {
   readonly name = "local";
-  readonly dimensions = 384;
+  readonly dimensions: number;
   private extractor: FeatureExtractor | null = null;
+  private model: string;
+
+  constructor() {
+    this.model = getEnvVar("LOCAL_EMBEDDING_MODEL") || "Xenova/all-MiniLM-L6-v2";
+    const dim = getEnvVar("LOCAL_EMBEDDING_DIMENSIONS");
+    const dimensions = dim ? Number(dim) : 384;
+    if (!Number.isSafeInteger(dimensions) || dimensions <= 0) {
+      throw new Error(
+        "LOCAL_EMBEDDING_DIMENSIONS must be a positive safe integer",
+      );
+    }
+    this.dimensions = dimensions;
+  }
 
   async embed(text: string): Promise<Float32Array> {
     const [result] = await this.embedBatch([text]);
@@ -39,7 +53,7 @@ export class LocalEmbeddingProvider implements EmbeddingProvider {
     }
     this.extractor = (await transformers.pipeline(
       "feature-extraction",
-      "Xenova/all-MiniLM-L6-v2",
+      this.model,
       { dtype: "q8" },
     )) as FeatureExtractor;
     return this.extractor;
