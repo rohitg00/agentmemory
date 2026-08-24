@@ -1,5 +1,6 @@
 import type { MemoryProvider, CircuitBreakerState } from "../types.js";
 import { CircuitBreaker } from "./circuit-breaker.js";
+import { outputLanguageDirective } from "../prompts/output-language.js";
 
 export class ResilientProvider implements MemoryProvider {
   private breaker = new CircuitBreaker();
@@ -24,11 +25,13 @@ export class ResilientProvider implements MemoryProvider {
   }
 
   async compress(systemPrompt: string, userPrompt: string): Promise<string> {
-    return this.call(() => this.inner.compress(systemPrompt, userPrompt));
+    const system = systemPrompt + outputLanguageDirective();
+    return this.call(() => this.inner.compress(system, userPrompt));
   }
 
   async summarize(systemPrompt: string, userPrompt: string): Promise<string> {
-    return this.call(() => this.inner.summarize(systemPrompt, userPrompt));
+    const system = systemPrompt + outputLanguageDirective();
+    return this.call(() => this.inner.summarize(system, userPrompt));
   }
 
   get circuitState(): CircuitBreakerState {
