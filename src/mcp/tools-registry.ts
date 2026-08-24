@@ -380,6 +380,10 @@ export const V050_TOOLS: McpToolDef[] = [
           type: "number",
           description: "Priority 1-10 (10 highest)",
         },
+        createdBy: {
+          type: "string",
+          description: "Agent or user ID creating this action",
+        },
         project: { type: "string", description: "Project path" },
         tags: {
           type: "string",
