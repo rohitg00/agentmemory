@@ -39,7 +39,7 @@ export const CORE_TOOLS: McpToolDef[] = [
   {
     name: "memory_compress_file",
     description:
-      "Compress a markdown file to reduce token usage while preserving headings, URLs, and code blocks. Creates a .original.md backup before writing.",
+      "Use to reduce the token footprint of a markdown file while preserving headings, URLs, and code blocks. Creates a .original.md backup before writing.",
     inputSchema: {
       type: "object",
       properties: {
@@ -54,7 +54,7 @@ export const CORE_TOOLS: McpToolDef[] = [
   {
     name: "memory_save",
     description:
-      "Explicitly save an important insight, decision, or pattern to long-term memory.",
+      "Use to persist an important insight, decision, or pattern to long-term memory — call this when you discover a pattern, confirm a preference, fix a recurring bug, or make a decision worth remembering across sessions.",
     inputSchema: {
       type: "object",
       properties: {
@@ -95,7 +95,8 @@ export const CORE_TOOLS: McpToolDef[] = [
   },
   {
     name: "memory_file_history",
-    description: "Get past observations about specific files.",
+    description:
+      "Use to get past observations about specific files — call before editing a file to understand its history and past decisions, or when investigating how a file was created or modified.",
     inputSchema: {
       type: "object",
       properties: {
@@ -110,7 +111,8 @@ export const CORE_TOOLS: McpToolDef[] = [
   },
   {
     name: "memory_patterns",
-    description: "Detect recurring patterns across sessions.",
+    description:
+      "Use to detect recurring patterns across sessions — call when reviewing a project to find repeated bugs, recurring workflows, or common pitfalls worth formalizing as lessons.",
     inputSchema: {
       type: "object",
       properties: {
@@ -121,12 +123,13 @@ export const CORE_TOOLS: McpToolDef[] = [
   {
     name: "memory_sessions",
     description:
-      "List recent sessions with their status and observation counts.",
+      "Use to list recent sessions with their status and observation counts — call to find what you were working on recently, or to locate a session ID for targeted recall.",
     inputSchema: { type: "object", properties: {} },
   },
   {
     name: "memory_smart_search",
-    description: "Hybrid semantic+keyword search with progressive disclosure.",
+    description:
+      "Use for broad exploratory search when you don't know the exact terms or keyword search returns too little. Hybrid semantic+keyword — returns initial matches; expand with expandIds to get full details.",
     inputSchema: {
       type: "object",
       properties: {
@@ -143,7 +146,7 @@ export const CORE_TOOLS: McpToolDef[] = [
   {
     name: "memory_vision_search",
     description:
-      "Cross-modal image search via CLIP embeddings. Pass queryText to find screenshots matching a description, or queryImageBase64/queryImageRef to find similar images. Requires AGENTMEMORY_IMAGE_EMBEDDINGS=true.",
+      "Use to find screenshots by description or locate visually similar images from past sessions. Cross-modal search via CLIP embeddings; requires AGENTMEMORY_IMAGE_EMBEDDINGS=true.",
     inputSchema: {
       type: "object",
       properties: {
@@ -157,7 +160,8 @@ export const CORE_TOOLS: McpToolDef[] = [
   },
   {
     name: "memory_timeline",
-    description: "Chronological observations around an anchor point.",
+    description:
+      "Use to see observations around an anchor point — call to see what happened before or after a specific date, event, or session. Helpful for tracing how a decision evolved.",
     inputSchema: {
       type: "object",
       properties: {
@@ -180,7 +184,8 @@ export const CORE_TOOLS: McpToolDef[] = [
   },
   {
     name: "memory_profile",
-    description: "User/project profile with top concepts and file patterns.",
+    description:
+      "Use to get a project's top concepts and file patterns — call when starting work in an unfamiliar project to quickly understand its structure and common terminology.",
     inputSchema: {
       type: "object",
       properties: {
@@ -195,12 +200,14 @@ export const CORE_TOOLS: McpToolDef[] = [
   },
   {
     name: "memory_export",
-    description: "Export all memory data as JSON.",
+    description:
+      "Use to export all memory data as JSON — for backup, migration to another system, or offline analysis.",
     inputSchema: { type: "object", properties: {} },
   },
   {
     name: "memory_relations",
-    description: "Query the memory relationship graph.",
+    description:
+      "Use to explore how memories are connected — call to find all items related to a concept, or trace a topic through the knowledge graph.",
     inputSchema: {
       type: "object",
       properties: {
@@ -223,7 +230,7 @@ export const CORE_TOOLS: McpToolDef[] = [
   {
     name: "memory_commit_lookup",
     description:
-      "Look up the agent session(s) that produced a specific git commit, given its SHA. Returns the commit metadata and linked sessions.",
+      "Use to look up the agent session that produced a git commit — call to trace a code change back to the conversation that created it. Returns commit metadata and linked sessions.",
     inputSchema: {
       type: "object",
       properties: {
@@ -235,7 +242,7 @@ export const CORE_TOOLS: McpToolDef[] = [
   {
     name: "memory_commits",
     description:
-      "List recent commits linked to agent sessions, optionally filtered by branch or repo.",
+      "Use to list recent commits linked to agent sessions — call to review what was built recently or find commits from a specific effort. Optionally filtered by branch or repo.",
     inputSchema: {
       type: "object",
       properties: {
@@ -251,7 +258,7 @@ export const V040_TOOLS: McpToolDef[] = [
   {
     name: "memory_claude_bridge_sync",
     description:
-      "Sync memory state to/from Claude Code's native MEMORY.md file.",
+      "Use to sync memory between agentmemory and Claude Code — call when switching between them to keep both stores consistent.",
     inputSchema: {
       type: "object",
       properties: {
@@ -266,7 +273,8 @@ export const V040_TOOLS: McpToolDef[] = [
   },
   {
     name: "memory_graph_query",
-    description: "Query the knowledge graph for entities and relationships.",
+    description:
+      "Use to query the knowledge graph for entities and relationships — call to explore connected concepts or discover unexpected relationships between items.",
     inputSchema: {
       type: "object",
       properties: {
@@ -286,7 +294,7 @@ export const V040_TOOLS: McpToolDef[] = [
   {
     name: "memory_consolidate",
     description:
-      "Run the 4-tier memory consolidation pipeline (working -> episodic -> semantic -> procedural).",
+      "Use to transform accumulated observations into structured long-term memories (episodic → semantic → procedural). Run periodically to organize observations into higher-quality memories that survive sessions.",
     inputSchema: {
       type: "object",
       properties: {
@@ -299,7 +307,8 @@ export const V040_TOOLS: McpToolDef[] = [
   },
   {
     name: "memory_team_share",
-    description: "Share a memory or observation with team members.",
+    description:
+      "Use to broadcast a memory or observation to other agents on the team. For multi-agent setups.",
     inputSchema: {
       type: "object",
       properties: {
@@ -317,7 +326,8 @@ export const V040_TOOLS: McpToolDef[] = [
   },
   {
     name: "memory_team_feed",
-    description: "Get recent shared items from all team members.",
+    description:
+      "Use to see what other agents have shared since you last checked. For multi-agent setups.",
     inputSchema: {
       type: "object",
       properties: {
@@ -327,7 +337,8 @@ export const V040_TOOLS: McpToolDef[] = [
   },
   {
     name: "memory_audit",
-    description: "View the audit trail of memory operations.",
+    description:
+      "Use to view the audit trail of memory operations — call to see who changed what and when, or debug unexpected modifications.",
     inputSchema: {
       type: "object",
       properties: {
@@ -338,7 +349,8 @@ export const V040_TOOLS: McpToolDef[] = [
   },
   {
     name: "memory_governance_delete",
-    description: "Delete specific memories with audit trail.",
+    description:
+      "Use to delete specific memories with an audit trail — call to remove incorrect, outdated, or sensitive memories while preserving a deletion record.",
     inputSchema: {
       type: "object",
       properties: {
@@ -353,7 +365,8 @@ export const V040_TOOLS: McpToolDef[] = [
   },
   {
     name: "memory_snapshot_create",
-    description: "Create a git-versioned snapshot of current memory state.",
+    description:
+      "Use to create a git-versioned checkpoint of current memory state — call before bulk deletes, consolidations, or imports to create a rollback point.",
     inputSchema: {
       type: "object",
       properties: {
@@ -367,7 +380,7 @@ export const V050_TOOLS: McpToolDef[] = [
   {
     name: "memory_action_create",
     description:
-      "Create an actionable work item with typed dependencies. Actions track what agents need to do and how work items relate to each other.",
+      "Use to create an actionable work item with typed dependencies — call to break down a task into tracked steps that can be leased, updated, and completed.",
     inputSchema: {
       type: "object",
       properties: {
@@ -401,7 +414,7 @@ export const V050_TOOLS: McpToolDef[] = [
   {
     name: "memory_action_update",
     description:
-      "Update an action's status, priority, or details. Set status to 'done' to complete it and unblock dependent actions.",
+      "Use to update an action's status, priority, or details — call to mark progress on tracked work items. Set status to 'done' to complete it and unblock dependent actions.",
     inputSchema: {
       type: "object",
       properties: {
@@ -422,7 +435,7 @@ export const V050_TOOLS: McpToolDef[] = [
   {
     name: "memory_frontier",
     description:
-      "Get all unblocked actions ranked by priority and urgency. Returns the frontier of actionable work with no unsatisfied dependencies.",
+      "Use to see all unblocked actions ranked by priority — call when you have multiple pending tasks to decide what to work on next. For a single recommendation, use memory_next instead.",
     inputSchema: {
       type: "object",
       properties: {
@@ -438,7 +451,7 @@ export const V050_TOOLS: McpToolDef[] = [
   {
     name: "memory_next",
     description:
-      "Get the single most important next action to work on. Combines dependency resolution, priority, and recency into a score.",
+      "Use to get the single most important next action — call for a quick recommendation instead of scanning the full list. To see all available actions, use memory_frontier.",
     inputSchema: {
       type: "object",
       properties: {
@@ -450,7 +463,7 @@ export const V050_TOOLS: McpToolDef[] = [
   {
     name: "memory_lease",
     description:
-      "Acquire, release, or renew an exclusive lease on an action. Prevents multiple agents from working on the same thing.",
+      "Use to claim exclusive ownership of an action — prevents duplicate work across agents. For multi-agent setups.",
     inputSchema: {
       type: "object",
       properties: {
@@ -475,7 +488,7 @@ export const V050_TOOLS: McpToolDef[] = [
   {
     name: "memory_routine_run",
     description:
-      "Instantiate a frozen workflow routine, creating actions for each step with proper dependencies.",
+      "Use to start a predefined multi-step process (e.g. release checklist, deploy pipeline) — instantiates a frozen routine, creating actions for each step with proper dependencies.",
     inputSchema: {
       type: "object",
       properties: {
@@ -489,7 +502,7 @@ export const V050_TOOLS: McpToolDef[] = [
   {
     name: "memory_signal_send",
     description:
-      "Send a message to another agent or broadcast. Supports threading, typed messages, and TTL expiration.",
+      "Use to send a message to another agent or broadcast — for handoffs, requests, or alerts. Supports threading, typed messages, and TTL expiration. For multi-agent setups.",
     inputSchema: {
       type: "object",
       properties: {
@@ -514,7 +527,7 @@ export const V050_TOOLS: McpToolDef[] = [
   {
     name: "memory_signal_read",
     description:
-      "Read messages for an agent. Marks delivered messages as read.",
+      "Use to read messages sent to an agent — call at session start to check for pending messages or handoffs from other agents. For multi-agent setups.",
     inputSchema: {
       type: "object",
       properties: {
@@ -535,7 +548,7 @@ export const V050_TOOLS: McpToolDef[] = [
   {
     name: "memory_checkpoint",
     description:
-      "Create or resolve an external checkpoint (CI result, approval, deploy status) that gates action progress.",
+      "Use to gate action progress on external conditions (CI result, approval, deploy status) — call to create or resolve checkpoints. For multi-agent or CI-integrated setups.",
     inputSchema: {
       type: "object",
       properties: {
@@ -568,7 +581,7 @@ export const V050_TOOLS: McpToolDef[] = [
   {
     name: "memory_mesh_sync",
     description:
-      "Sync memories and actions with peer agentmemory instances for multi-agent collaboration.",
+      "Use to sync memories and actions with peer agentmemory instances — call to keep memory consistent across separate agent environments. For multi-agent setups.",
     inputSchema: {
       type: "object",
       properties: {
@@ -589,7 +602,7 @@ export const V051_TOOLS: McpToolDef[] = [
   {
     name: "memory_sentinel_create",
     description:
-      "Create an event-driven sentinel that watches for conditions (webhook, timer, threshold, pattern, approval) and auto-unblocks gated actions when triggered.",
+      "Use to set up an event-driven sentinel that auto-unblocks actions when conditions are met (webhook, timer, threshold, pattern, approval). For multi-agent or event-driven setups.",
     inputSchema: {
       type: "object",
       properties: {
@@ -614,7 +627,7 @@ export const V051_TOOLS: McpToolDef[] = [
   {
     name: "memory_sentinel_trigger",
     description:
-      "Externally fire a sentinel, providing an optional result payload. Unblocks any gated actions.",
+      "Use to fire a sentinel from an external source — unblocks any gated actions. For multi-agent or CI-integrated setups.",
     inputSchema: {
       type: "object",
       properties: {
@@ -627,7 +640,7 @@ export const V051_TOOLS: McpToolDef[] = [
   {
     name: "memory_sketch_create",
     description:
-      "Create an ephemeral action graph for exploratory work. Auto-expires after TTL. Can be promoted to permanent actions or discarded.",
+      "Use to create an ephemeral action graph for exploratory planning — auto-expires after TTL, can be promoted to permanent actions or discarded. Ideal for trying task breakdowns before committing.",
     inputSchema: {
       type: "object",
       properties: {
@@ -642,7 +655,7 @@ export const V051_TOOLS: McpToolDef[] = [
   {
     name: "memory_sketch_promote",
     description:
-      "Promote a sketch's ephemeral actions to permanent actions. Makes the exploratory work official.",
+      "Use to convert an exploratory sketch into permanent actions — call after validating a plan to commit it as actionable work items.",
     inputSchema: {
       type: "object",
       properties: {
@@ -655,7 +668,7 @@ export const V051_TOOLS: McpToolDef[] = [
   {
     name: "memory_crystallize",
     description:
-      "Compress completed action chains into compact crystal digests using LLM summarization. Extracts narrative, key outcomes, files affected, and lessons.",
+      "Use to compress a completed action chain into a concise summary — call after finishing a multi-step task to distill what happened (narrative, key outcomes, files affected, lessons).",
     inputSchema: {
       type: "object",
       properties: {
@@ -672,7 +685,7 @@ export const V051_TOOLS: McpToolDef[] = [
   {
     name: "memory_diagnose",
     description:
-      "Run health checks across all subsystems (actions, leases, sentinels, sketches, signals, sessions, memories, mesh). Identifies stuck, orphaned, and inconsistent state.",
+      "Use to run health checks across all subsystems (actions, leases, sentinels, sketches, signals, sessions, memories, mesh) — call to find stuck, orphaned, or inconsistent state. Follow with memory_heal to fix issues.",
     inputSchema: {
       type: "object",
       properties: {
@@ -686,7 +699,7 @@ export const V051_TOOLS: McpToolDef[] = [
   {
     name: "memory_heal",
     description:
-      "Auto-fix all fixable issues found by diagnostics. Unblocks stuck actions, expires stale leases, cleans up orphaned data.",
+      "Use to auto-fix issues found by memory_diagnose — unblocks stuck actions, expires stale leases, cleans up orphaned data. Pass dryRun=true to preview without changing.",
     inputSchema: {
       type: "object",
       properties: {
@@ -704,7 +717,7 @@ export const V051_TOOLS: McpToolDef[] = [
   {
     name: "memory_facet_tag",
     description:
-      "Attach a structured tag (dimension:value) to an action, memory, or observation for multi-dimensional categorization.",
+      "Use to attach structured tags (dimension:value) to items — call to label by priority, team, or status for later querying with memory_facet_query.",
     inputSchema: {
       type: "object",
       properties: {
@@ -722,7 +735,7 @@ export const V051_TOOLS: McpToolDef[] = [
   {
     name: "memory_facet_query",
     description:
-      "Query targets by facet tags with AND/OR logic. Find all actions tagged priority:urgent AND team:backend.",
+      "Use to find items by facet tags with AND/OR logic — call after tagging items to locate all items matching specific criteria (e.g. priority:urgent AND team:backend).",
     inputSchema: {
       type: "object",
       properties: {
@@ -747,7 +760,7 @@ export const V061_TOOLS: McpToolDef[] = [
   {
     name: "memory_verify",
     description:
-      "Verify a memory or observation by tracing its citation chain back to source observations and session context. Returns provenance information including confidence scores.",
+      "Use to verify a memory by checking its source evidence — call before relying on a past observation to confirm it is well-founded rather than potentially inaccurate. Returns provenance and confidence scores.",
     inputSchema: {
       type: "object",
       properties: {
@@ -765,7 +778,7 @@ export const V070_TOOLS: McpToolDef[] = [
   {
     name: "memory_lesson_save",
     description:
-      "Save a lesson learned from this session. Lessons have confidence scores that strengthen when reinforced and decay when not used. Duplicate content auto-strengthens the existing lesson.",
+      "Use to save a lesson learned — call after discovering a reliable pattern ('X works for Y situation', 'avoid Z because...'). Confidence strengthens on reinforcement, decays when unused.",
     inputSchema: {
       type: "object",
       properties: {
@@ -790,7 +803,7 @@ export const V070_TOOLS: McpToolDef[] = [
   {
     name: "memory_lesson_recall",
     description:
-      "Search lessons by query. Returns lessons sorted by confidence and recency. Use to check what the agent has learned before making decisions.",
+      "Use to search saved lessons — call before starting a task similar to one done before. Returns lessons sorted by confidence and recency.",
     inputSchema: {
       type: "object",
       properties: {
@@ -820,7 +833,7 @@ export const V070_TOOLS: McpToolDef[] = [
   {
     name: "memory_obsidian_export",
     description:
-      "Export memories, lessons, and crystals as Obsidian-compatible Markdown files with YAML frontmatter and wikilinks for graph view.",
+      "Use to export memories as Obsidian-compatible Markdown — for manual review, sharing with humans, or archiving in a personal note-taking system. Includes YAML frontmatter and wikilinks.",
     inputSchema: {
       type: "object",
       properties: {
@@ -841,7 +854,7 @@ export const V073_TOOLS: McpToolDef[] = [
   {
     name: "memory_reflect",
     description:
-      "Traverse the knowledge graph, group related memories by concept clusters, and synthesize higher-order insights via LLM. Returns new and reinforced insights.",
+      "Use to synthesize higher-order insights from accumulated memories — call periodically to discover emergent patterns, cross-project themes, or new best practices you would not have spotted manually.",
     inputSchema: {
       type: "object",
       properties: {
@@ -856,7 +869,7 @@ export const V073_TOOLS: McpToolDef[] = [
   {
     name: "memory_insight_list",
     description:
-      "List synthesized insights — higher-order observations derived from patterns across memories, lessons, and crystals.",
+      "Use to list synthesized insights — call to review what the system has learned about your projects. Higher-order observations derived from patterns across memories, lessons, and crystals.",
     inputSchema: {
       type: "object",
       properties: {
@@ -875,12 +888,13 @@ export const V010_SLOTS_TOOLS: McpToolDef[] = [
   {
     name: "memory_slot_list",
     description:
-      "List all memory slots (pinned + project + global). Slots are editable, size-limited memory units the agent can read and modify across sessions.",
+      "Use to list all memory slots (pinned + project + global) — editable, size-limited units that persist across sessions.",
     inputSchema: { type: "object", properties: {} },
   },
   {
     name: "memory_slot_get",
-    description: "Read a single slot by label.",
+    description:
+      "Use to read a single slot by label — call to check the current value of a slot like 'persona' or 'pending_items'.",
     inputSchema: {
       type: "object",
       properties: {
@@ -891,7 +905,8 @@ export const V010_SLOTS_TOOLS: McpToolDef[] = [
   },
   {
     name: "memory_slot_create",
-    description: "Create a new slot. Reject if a slot with the same label already exists.",
+    description:
+      "Use to create a named persistent context slot (e.g. project notes, preferences) that survives across sessions. Rejects if the label already exists.",
     inputSchema: {
       type: "object",
       properties: {
@@ -908,7 +923,7 @@ export const V010_SLOTS_TOOLS: McpToolDef[] = [
   {
     name: "memory_slot_append",
     description:
-      "Append text to an existing slot. Fails with 413 if the append would exceed the slot's sizeLimit — agent must compact via memory_slot_replace first.",
+      "Use to add text to an existing slot without replacing it — ideal for appending to a running list like 'pending_items'. Fails with 413 if append exceeds sizeLimit (compact via memory_slot_replace first).",
     inputSchema: {
       type: "object",
       properties: {
@@ -920,7 +935,8 @@ export const V010_SLOTS_TOOLS: McpToolDef[] = [
   },
   {
     name: "memory_slot_replace",
-    description: "Replace slot content in place. Fails if content exceeds sizeLimit.",
+    description:
+      "Use to update a slot's entire content — call when a slot needs a fresh state. Fails if content exceeds sizeLimit.",
     inputSchema: {
       type: "object",
       properties: {
@@ -932,7 +948,8 @@ export const V010_SLOTS_TOOLS: McpToolDef[] = [
   },
   {
     name: "memory_slot_delete",
-    description: "Delete a slot. Seeded default slots can be deleted unless marked readOnly.",
+    description:
+      "Use to delete a slot. Seeded default slots cannot be deleted if marked readOnly.",
     inputSchema: {
       type: "object",
       properties: {
