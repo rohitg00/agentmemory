@@ -211,16 +211,67 @@ export function registerContextFunction(
       for (let j = 0; j < sessionsNeedingObs.length; j++) {
         const i = sessionsNeedingObs[j];
         const observations = obsResults[j];
+        // Tighten the filter: drop observations with empty narrative so
+        // they never reach the renderer and produce dangling-colon lines
+        // like `- [other] conversation: `.
         const important = observations.filter(
-          (o) => o.title && o.importance >= 5,
+          (o) =>
+            o.title &&
+            o.importance >= 5 &&
+            (o.narrative || "").trim().length > 0,
         );
 
         if (important.length > 0) {
           const top = important
             .sort((a, b) => b.importance - a.importance)
             .slice(0, 5);
+          // Defensive renderer: when the stored title is empty, equals the
+          // type, or is a generic tool name like "conversation", fall back
+          // to the subtitle (user message) as the title and use the
+          // narrative as the body. This handles observations stored before
+          // the inferType fix landed, where the synthetic compressor
+          // used the raw tool name as the title. Without this fallback
+          // those observations render as `- [other] conversation: ` with
+          // a dangling colon and no content.
+          const GENERIC_TITLES = new Set([
+            "conversation",
+            "other",
+            "observation",
+            "tool",
+          ]);
           const items = top
-            .map((o) => `- [${o.type}] ${o.title}: ${o.narrative}`)
+            .map((o) => {
+              const titleIsGeneric =
+                !o.title ||
+                o.title === o.type ||
+                GENERIC_TITLES.has(o.title);
+              const title = titleIsGeneric
+                ? o.subtitle
+                  ? o.subtitle.slice(0, 80)
+                  : o.narrative
+                    ? o.narrative
+                        .slice(0, 80)
+                        .replace(/\|/g, " ")
+                        .trim()
+                    : o.type
+                : o.title;
+              // Avoid title/content duplication when the title was
+              // derived from the start of the narrative.
+              let narrative = o.narrative || o.subtitle || "";
+              if (
+                title &&
+                narrative
+                  .toLowerCase()
+                  .startsWith(title.toLowerCase().slice(0, 40))
+              ) {
+                narrative = narrative
+                  .slice(title.length)
+                  .replace(/^[\s|:,\-]+/, "")
+                  .trim();
+                if (!narrative) narrative = o.narrative || "";
+              }
+              return `- [${o.type}] ${title}: ${narrative}`;
+            })
             .join("\n");
           const content = `## Session ${sessions[i].id.slice(0, 8)} (${sessions[i].startedAt})\n${items}`;
           blocks.push({

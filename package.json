@@ -62,7 +62,7 @@
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.142",
-    "@anthropic-ai/sdk": "^0.100.1",
+    "@anthropic-ai/sdk": "^0.106.0",
     "@clack/prompts": "^1.2.0",
     "dotenv": "^17.4.2",
     "iii-sdk": "0.11.2",
@@ -75,8 +75,8 @@
     "tiny-segmenter": "^0.2.0"
   },
   "devDependencies": {
-    "@types/node": "^25.9.1",
-    "tsdown": "^0.21.10",
+    "@types/node": "^26.0.0",
+    "tsdown": "^0.22.2",
     "tsx": "^4.19.0",
     "typescript": "^6.0.3",
     "vitest": "^4.1.6"

@@ -26,6 +26,21 @@ function inferType(
     .replace(/([a-z])([A-Z])/g, "$1_$2")
     .replace(/[-\s]+/g, "_")
     .toLowerCase();
+  // Recognize conversation-shaped tool names. Several integrations
+  // (notably the Hermes plugin) use tool_name: "conversation" as a
+  // generic catch-all for user/assistant turns. Without this branch the
+  // synthetic compressor stores the observation as type "other" with a
+  // title that is the literal string "conversation", which then renders in
+  // the memory-context block as `- [other] conversation: <narrative>`.
+  if (
+    n === "conversation" ||
+    n === "chat" ||
+    n === "prompt" ||
+    n === "message" ||
+    n === "turn"
+  ) {
+    return "conversation";
+  }
   const hasWord = (word: string) =>
     new RegExp(`(^|_)${word}(_|$)`).test(n) ||
     n === word ||
@@ -34,13 +49,13 @@ function inferType(
   if (["fetch", "http", "web"].some(hasWord)) return "web_fetch";
   if (["grep", "search", "glob", "find"].some(hasWord)) return "search";
   if (["bash", "shell", "exec", "run"].some(hasWord)) return "command_run";
-  if (["edit", "update", "patch", "replace"].some(hasWord)) return "file_edit";
+  if (["edit", "update", "patch", "replace"].some(hasWord))
+    return "file_edit";
   if (["write", "create"].some(hasWord)) return "file_write";
   if (["read", "view"].some(hasWord)) return "file_read";
   if (["task", "agent"].some(hasWord)) return "subagent";
   return "other";
 }
-
 function extractFiles(input: unknown): string[] {
   if (!input || typeof input !== "object") return [];
   const o = input as Record<string, unknown>;
@@ -90,7 +105,21 @@ export function buildSyntheticCompression(
     sessionId: raw.sessionId,
     timestamp: raw.timestamp,
     type: inferType(toolName, raw.hookType),
-    title: truncate(toolName || "observation", 80),
+    // For generic tool names ("conversation", "other", "observation",
+    // "tool") fall back to deriving a descriptive title from the user
+    // prompt or the tool input. Without this, a tool_name of
+    // "conversation" produces a title that is the literal string
+    // "conversation" — useless in the rendered memory-context block.
+    title:
+      toolName &&
+      !["conversation", "other", "observation", "tool"].includes(
+        toolName.toLowerCase(),
+      )
+        ? truncate(toolName, 80)
+        : truncate(
+            promptStr || inputStr || "observation",
+            80,
+          ),
     subtitle: inputStr ? truncate(inputStr, 120) : undefined,
     facts: [],
     narrative: truncate(narrativeParts.join(" | "), 400),
