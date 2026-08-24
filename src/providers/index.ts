@@ -12,6 +12,7 @@ import { OpenRouterProvider } from "./openrouter.js";
 import { ResilientProvider } from "./resilient.js";
 import { FallbackChainProvider } from "./fallback-chain.js";
 import { getEnvVar } from "../config.js";
+import { requiresExplicitModel } from "./_openai-shared.js";
 
 export { createEmbeddingProvider, createImageEmbeddingProvider } from "./embedding/index.js";
 
@@ -34,8 +35,15 @@ function requireEnvVar(key: string): string {
 // provider's default model is.
 function defaultModelFor(providerType: ProviderConfig["provider"]): string {
   switch (providerType) {
-    case "openai":
-      return getEnvVar("OPENAI_MODEL") || "gpt-5.6-luna";
+    case "openai": {
+      const model = getEnvVar("OPENAI_MODEL");
+      if (!model && requiresExplicitModel(getEnvVar("OPENAI_BASE_URL"))) {
+        throw new Error(
+          `OPENAI_MODEL is required when OPENAI_BASE_URL points at a non-default, non-Azure endpoint (got ${getEnvVar("OPENAI_BASE_URL")}).`,
+        );
+      }
+      return model || "gpt-5.6-luna";
+    }
     case "anthropic":
       return getEnvVar("ANTHROPIC_MODEL") || "claude-sonnet-5";
     case "gemini":

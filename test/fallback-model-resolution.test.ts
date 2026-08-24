@@ -77,6 +77,7 @@ describe("Fallback provider model resolution (#778)", () => {
   const envKeys = [
     "OPENAI_API_KEY",
     "OPENAI_MODEL",
+    "OPENAI_BASE_URL",
     "GEMINI_API_KEY",
     "GEMINI_MODEL",
     "GOOGLE_API_KEY",
@@ -186,5 +187,34 @@ describe("Fallback provider model resolution (#778)", () => {
 
     const openaiCalls = captured.filter((c) => c.provider === "openai");
     expect(openaiCalls.length).toBe(1);
+  });
+
+  it("openai fallback with a non-default base URL and no OPENAI_MODEL is skipped instead of inheriting gpt-5.6-luna", () => {
+    process.env.ANTHROPIC_API_KEY = "anth-key";
+    process.env.OPENAI_API_KEY = "sk";
+    process.env.OPENAI_BASE_URL = "https://api.novita.ai/openai/v1";
+
+    createFallbackProvider(
+      { provider: "anthropic", model: "claude-sonnet-5", maxTokens: 4096 },
+      { providers: ["openai"] },
+    );
+
+    expect(captured.find((c) => c.provider === "openai")).toBeUndefined();
+  });
+
+  it("openai fallback with a non-default base URL uses OPENAI_MODEL when set", () => {
+    process.env.ANTHROPIC_API_KEY = "anth-key";
+    process.env.OPENAI_API_KEY = "sk";
+    process.env.OPENAI_BASE_URL = "https://api.novita.ai/openai/v1";
+    process.env.OPENAI_MODEL = "deepseek/deepseek-v4-pro";
+
+    createFallbackProvider(
+      { provider: "anthropic", model: "claude-sonnet-5", maxTokens: 4096 },
+      { providers: ["openai"] },
+    );
+
+    expect(captured.find((c) => c.provider === "openai")?.model).toBe(
+      "deepseek/deepseek-v4-pro",
+    );
   });
 });

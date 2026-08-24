@@ -1323,6 +1323,7 @@ agentmemory auto-detects providers from your environment. A provider makes LLM-b
 | Gemini | `GEMINI_API_KEY` | Also enables embeddings |
 | OpenRouter | `OPENROUTER_API_KEY` | Any model |
 | OpenAI API | `OPENAI_API_KEY` | Default `gpt-5.6-luna`, override with `OPENAI_MODEL` |
+| Novita AI | `OPENAI_API_KEY` + `OPENAI_BASE_URL=https://api.novita.ai/openai/v1` + `OPENAI_MODEL=<model from Novita's [model list](https://novita.ai/llm-api)>` | OpenAI-compatible; `OPENAI_MODEL` is required — `gpt-5.6-luna` isn't served here. |
 | **Local (Ollama / LM Studio / vLLM / llama.cpp)** | `OPENAI_API_KEY=local` + `OPENAI_BASE_URL=http://localhost:11434/v1` (Ollama) or `http://localhost:1234/v1` (LM Studio) + `OPENAI_MODEL=<your model>` | Anything OpenAI-API-compatible. Zero cost, runs on your hardware. See [Local models](#local-models-ollama--lm-studio--vllm) below. |
 | Claude subscription fallback | `AGENTMEMORY_ALLOW_AGENT_SDK=true` | Opt-in only. Spawns `@anthropic-ai/claude-agent-sdk` sessions; it used to cause unbounded Stop-hook recursion, so it is no longer the default. |
 
