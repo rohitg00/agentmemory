@@ -48,16 +48,35 @@ async function isSymlink(path: string): Promise<boolean> {
   }
 }
 
-function rawFromCompressed(obs: CompressedObservation): RawObservation {
+/**
+ * 将压缩后的 observation 还原为 RawObservation 结构，供 replay/timeline 使用。
+ *
+ * 背景：运行时（含 live capture 和 jsonl-import 路径）会将所有 observation 压缩，
+ * 压缩后只保留 title/subtitle/narrative/facts/type 等字段，丢弃原始的
+ * toolName/toolInput/toolOutput 等工具字段。
+ *
+ * 旧版 shim 对所有类型一律返回 hookType:"post_tool_use" 并将工具字段全部置为
+ * undefined，导致 projectTimeline → renderReplayDetail 收到的事件没有任何可展示
+ * 的内容（detail 面板空白）。
+ *
+ * 修复：根据 obs.type 分支处理——
+ *   - "conversation"：映射为对话事件（hookType:"prompt_submit"），内容取 narrative。
+ *   - 其他（command_run / file_read / …）：映射为工具调用事件
+ *     （hookType:"post_tool_use"），工具名取 title、输入取 subtitle、输出取 narrative。
+ *
+ * 纯函数，无 I/O 副作用——导出供单元测试直接验证。
+ */
+export function rawFromCompressed(obs: CompressedObservation): RawObservation {
+  const isConversation = obs.type === "conversation";
   return {
     id: obs.id,
     sessionId: obs.sessionId,
     timestamp: obs.timestamp,
-    hookType: "post_tool_use",
-    toolName: undefined,
-    toolInput: undefined,
-    toolOutput: undefined,
-    userPrompt: obs.type === "conversation" ? obs.narrative : undefined,
+    hookType: isConversation ? "prompt_submit" : "post_tool_use",
+    toolName: isConversation ? undefined : obs.title,
+    toolInput: isConversation ? undefined : obs.subtitle,
+    toolOutput: isConversation ? undefined : obs.narrative,
+    userPrompt: isConversation ? obs.narrative : undefined,
     assistantResponse: undefined,
     raw: { title: obs.title, narrative: obs.narrative, facts: obs.facts },
   };
