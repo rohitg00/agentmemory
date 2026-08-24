@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { resolve, dirname, basename, join } from "node:path";
 
 vi.mock("../src/logger.js", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
@@ -87,6 +88,16 @@ function mockSdk() {
   };
 }
 
+const notesPath = resolve("/tmp/notes.md");
+const notesBackupPath = join(dirname(notesPath), `${basename(notesPath, ".md")}.original.md`);
+const notesOriginalPath = resolve("/tmp/notes.original.md");
+const notesOriginalBackupPath = join(
+  dirname(notesOriginalPath),
+  `${basename(notesOriginalPath, ".md")}.backup.md`,
+);
+const guidePath = resolve("/tmp/guide.md");
+const guideBackupPath = join(dirname(guidePath), `${basename(guidePath, ".md")}.original.md`);
+
 describe("mem::compress-file", () => {
   let sdk: ReturnType<typeof mockSdk>;
   let kv: ReturnType<typeof mockKV>;
@@ -107,9 +118,9 @@ describe("mem::compress-file", () => {
   });
 
   it("rejects symlinks", async () => {
-    symlinkPaths.add("/tmp/notes.md");
+    symlinkPaths.add(notesPath);
     const result = (await sdk.trigger("mem::compress-file", {
-      filePath: "/tmp/notes.md",
+      filePath: notesPath,
     })) as { success: boolean; error: string };
     expect(result.success).toBe(false);
     expect(result.error).toContain("symlink");
@@ -118,18 +129,17 @@ describe("mem::compress-file", () => {
   });
 
   it("rejects TOCTOU symlink swap at write time via O_NOFOLLOW", async () => {
-    const path = "/tmp/notes.md";
     fileStore.set(
-      path,
+      notesPath,
       "# Title\n\nVisit https://example.com\n\n```ts\nconst x = 1;\n```\n\nContent.",
     );
     summarize.mockResolvedValue(
       "# Title\n\nVisit https://example.com\n\n```ts\nconst x = 1;\n```\n\nShort.",
     );
-    openEloopPaths.add(path);
+    openEloopPaths.add(notesPath);
 
     const result = (await sdk.trigger("mem::compress-file", {
-      filePath: path,
+      filePath: notesPath,
     })) as { success: boolean; error: string };
     expect(result.success).toBe(false);
     expect(result.error).toContain("symlink");
@@ -137,7 +147,7 @@ describe("mem::compress-file", () => {
 
   it("rejects non-markdown paths", async () => {
     const result = (await sdk.trigger("mem::compress-file", {
-      filePath: "/tmp/readme.txt",
+      filePath: resolve("/tmp/readme.txt"),
     })) as { success: boolean; error: string };
     expect(result.success).toBe(false);
     expect(result.error).toContain(".md");
@@ -145,16 +155,15 @@ describe("mem::compress-file", () => {
 
   it("returns file not found for missing paths", async () => {
     const result = (await sdk.trigger("mem::compress-file", {
-      filePath: "/tmp/nonexistent.md",
+      filePath: resolve("/tmp/nonexistent.md"),
     })) as { success: boolean; error: string };
     expect(result.success).toBe(false);
     expect(result.error).toContain("not found");
   });
 
   it("compresses markdown and writes .original.md backup", async () => {
-    const path = "/tmp/notes.md";
     fileStore.set(
-      path,
+      notesPath,
       "# Title\n\nVisit https://example.com\n\n```ts\nconst x = 1;\n```\n\nSome long explanation.",
     );
 
@@ -163,7 +172,7 @@ describe("mem::compress-file", () => {
     );
 
     const result = (await sdk.trigger("mem::compress-file", {
-      filePath: path,
+      filePath: notesPath,
     })) as {
       success: boolean;
       backupPath: string;
@@ -172,41 +181,39 @@ describe("mem::compress-file", () => {
     };
 
     expect(result.success).toBe(true);
-    expect(result.backupPath).toBe("/tmp/notes.original.md");
-    expect(fileStore.get("/tmp/notes.original.md")).toContain("Some long explanation.");
-    expect(fileStore.get(path)).toContain("Short explanation.");
+    expect(result.backupPath).toBe(notesBackupPath);
+    expect(fileStore.get(notesBackupPath)).toContain("Some long explanation.");
+    expect(fileStore.get(notesPath)).toContain("Short explanation.");
     expect(result.compressedChars).toBeLessThan(result.originalChars);
   });
 
   it("fails validation when URLs change", async () => {
-    const path = "/tmp/guide.md";
-    fileStore.set(path, "# Guide\n\nhttps://example.com\n");
+    fileStore.set(guidePath, "# Guide\n\nhttps://example.com\n");
     summarize.mockResolvedValue("# Guide\n\nhttps://different.example.com\n");
 
     const result = (await sdk.trigger("mem::compress-file", {
-      filePath: path,
+      filePath: guidePath,
     })) as { success: boolean; error: string; details: string[] };
 
     expect(result.success).toBe(false);
     expect(result.error).toContain("validation");
     expect(result.details.some((d) => d.includes("url"))).toBe(true);
-    expect(fileStore.get("/tmp/guide.original.md")).toBeUndefined();
+    expect(fileStore.get(guideBackupPath)).toBeUndefined();
   });
 
   it("uses a distinct backup path for *.original.md inputs", async () => {
-    const path = "/tmp/notes.original.md";
-    fileStore.set(path, "# Title\n\nLong original body.");
+    fileStore.set(notesOriginalPath, "# Title\n\nLong original body.");
     summarize.mockResolvedValue("# Title\n\nShort body.");
 
     const result = (await sdk.trigger("mem::compress-file", {
-      filePath: path,
+      filePath: notesOriginalPath,
     })) as { success: boolean; backupPath: string };
 
     expect(result.success).toBe(true);
-    expect(result.backupPath).toBe("/tmp/notes.original.backup.md");
-    expect(fileStore.get("/tmp/notes.original.backup.md")).toBe(
+    expect(result.backupPath).toBe(notesOriginalBackupPath);
+    expect(fileStore.get(notesOriginalBackupPath)).toBe(
       "# Title\n\nLong original body.",
     );
-    expect(fileStore.get(path)).toBe("# Title\n\nShort body.");
+    expect(fileStore.get(notesOriginalPath)).toBe("# Title\n\nShort body.");
   });
 });
