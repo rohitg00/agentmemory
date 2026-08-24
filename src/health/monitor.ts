@@ -1,3 +1,4 @@
+import { getHeapStatistics } from "node:v8";
 import type { ISdk } from "iii-sdk";
 import type { HealthSnapshot } from "../types.js";
 import type { StateKV } from "../state/kv.js";
@@ -71,6 +72,7 @@ export function registerHealthMonitor(
         heapTotal: mem.heapTotal,
         rss: mem.rss,
         external: mem.external,
+        heapSizeLimit: getHeapStatistics().heap_size_limit,
       },
       cpu: {
         userMicros: currentCpu.user,

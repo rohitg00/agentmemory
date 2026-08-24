@@ -95,3 +95,80 @@ describe("evaluateHealth memory severity", () => {
     expect(strict.status).toBe("healthy");
   });
 });
+
+describe("evaluateHealth memory severity — denominator", () => {
+  const LIMIT_6192MB = 6192 * 1024 * 1024;
+
+  it("stays healthy when a busy process fills its committed heap but sits far below the V8 limit", () => {
+    // Captured from a live deployment: this process reported
+    // memory_critical_97% while using 6% of the heap it may grow to.
+    const s = snap({
+      memory: {
+        heapUsed: 390_771_624,
+        heapTotal: 404_930_560,
+        rss: 584_327_168,
+        external: 6_566_392,
+        heapSizeLimit: LIMIT_6192MB,
+      },
+    });
+
+    const { status, alerts } = evaluateHealth(s);
+
+    expect(status).toBe("healthy");
+    expect(alerts.find((a) => a.startsWith("memory_critical_"))).toBeUndefined();
+    expect(alerts.find((a) => a.startsWith("memory_warn_"))).toBeUndefined();
+  });
+
+  it("reports the percentage against the limit, not against the committed heap", () => {
+    const s = snap({
+      memory: {
+        heapUsed: 390_771_624,
+        heapTotal: 404_930_560,
+        rss: 584_327_168,
+        external: 0,
+        heapSizeLimit: LIMIT_6192MB,
+      },
+    });
+
+    // Widen the band so the alert fires as a warn either way and the rendered
+    // percentage is the only thing under test.
+    const { alerts } = evaluateHealth(s, {
+      memoryWarnPercent: 1,
+      memoryCriticalPercent: 99,
+    });
+    const warn = alerts.find((a) => a.startsWith("memory_warn_"));
+
+    // 390771624 / 6492782592 = 6%, not 390771624 / 404930560 = 97%.
+    expect(warn).toBe("memory_warn_6%_rss557mb");
+  });
+
+  it("still goes critical when the heap genuinely approaches the V8 limit", () => {
+    const s = snap({
+      memory: {
+        heapUsed: 6_200_000_000,
+        heapTotal: 6_300_000_000,
+        rss: 6_800_000_000,
+        external: 0,
+        heapSizeLimit: LIMIT_6192MB,
+      },
+    });
+
+    const { status, alerts } = evaluateHealth(s);
+
+    expect(status).toBe("critical");
+    expect(alerts.some((a) => a.startsWith("memory_critical_"))).toBe(true);
+  });
+
+  it("falls back to the committed heap when heapSizeLimit is absent", () => {
+    const s = snap({
+      memory: {
+        heapUsed: 970 * 1024 * 1024,
+        heapTotal: 1000 * 1024 * 1024,
+        rss: 1100 * 1024 * 1024,
+        external: 0,
+      },
+    });
+
+    expect(evaluateHealth(s).status).toBe("critical");
+  });
+});

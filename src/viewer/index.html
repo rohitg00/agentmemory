@@ -1579,10 +1579,16 @@
           var heapUsed = Math.round((snap.memory.heapUsed || 0) / 1024 / 1024);
           var heapTotal = Math.round((snap.memory.heapTotal || 0) / 1024 / 1024);
           var rss = Math.round((snap.memory.rss || 0) / 1024 / 1024);
-          var heapPct = heapTotal > 0 ? Math.round((heapUsed / heapTotal) * 100) : 0;
+          var limitBytes = snap.memory.heapSizeLimit || 0;
+          var ceilingBytes = limitBytes > 0 ? limitBytes : (snap.memory.heapTotal || 0);
+          var heapCeiling = Math.round(ceilingBytes / 1024 / 1024);
+          // Percentage off raw bytes so the gauge agrees with evaluateHealth,
+          // which never sees the MB rounding used for the label.
+          var heapPercent = ceilingBytes > 0 ? ((snap.memory.heapUsed || 0) / ceilingBytes) * 100 : 0;
+          var heapPct = Math.round(heapPercent);
           var rssAboveFloor = rss >= 512;
-          var heapColor = (heapPct > 80 && rssAboveFloor) ? 'var(--red)' : (heapPct > 60 && rssAboveFloor) ? 'var(--yellow)' : 'var(--green)';
-          html += '<div class="gauge"><span class="gauge-label">Heap</span><div class="gauge-bar"><div class="gauge-fill" style="width:' + heapPct + '%;background:' + heapColor + '"></div></div><span class="gauge-value">' + heapUsed + ' / ' + heapTotal + ' MB</span></div>';
+          var heapColor = (heapPercent > 80 && rssAboveFloor) ? 'var(--red)' : (heapPercent > 60 && rssAboveFloor) ? 'var(--yellow)' : 'var(--green)';
+          html += '<div class="gauge"><span class="gauge-label">Heap</span><div class="gauge-bar"><div class="gauge-fill" style="width:' + heapPct + '%;background:' + heapColor + '"></div></div><span class="gauge-value">' + heapUsed + ' / ' + heapCeiling + ' MB</span></div>';
           html += '<div class="gauge"><span class="gauge-label">RSS</span><div class="gauge-bar"><div class="gauge-fill" style="width:' + Math.min(100, Math.round(rss / 512 * 100)) + '%;background:var(--blue)"></div></div><span class="gauge-value">' + rss + ' MB</span></div>';
           if (snap.memory.external) {
             var ext = Math.round(snap.memory.external / 1024 / 1024);
