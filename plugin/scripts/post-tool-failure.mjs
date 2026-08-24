@@ -1,6 +1,46 @@
 #!/usr/bin/env node
 import { execSync } from "node:child_process";
 import { basename } from "node:path";
+//#region src/hooks/_capture-filter.ts
+const DEFAULT_DENY_PATTERNS = [
+	"memory_*",
+	"toolsearch",
+	"listmcpresources",
+	"fetchmcpresource"
+];
+function parseEnvList(raw) {
+	if (!raw?.trim()) return void 0;
+	return raw.split(/[,\s]+/).map((part) => part.trim()).filter(Boolean);
+}
+function bareToolName(toolName) {
+	const trimmed = toolName.trim();
+	if (/^mcp__/i.test(trimmed)) {
+		const parts = trimmed.split("__");
+		if (parts.length >= 3) return parts[parts.length - 1];
+	}
+	return trimmed;
+}
+function normalizePattern(pattern) {
+	return pattern.trim().toLowerCase();
+}
+function matchesPattern(toolName, pattern) {
+	const bare = bareToolName(toolName).toLowerCase();
+	const pat = normalizePattern(pattern);
+	if (!pat.includes("*")) return bare === pat;
+	const escaped = pat.replace(/[.+?^${}()|[\]\\]/g, "\\$&");
+	const re = new RegExp(`^${escaped.replace(/\*/g, ".*")}$`);
+	return re.test(bare) || re.test(toolName.toLowerCase());
+}
+function matchesAny(toolName, patterns) {
+	return patterns.some((pattern) => matchesPattern(toolName, pattern));
+}
+function shouldCaptureTool(toolName) {
+	if (typeof toolName !== "string" || !toolName.trim()) return true;
+	const allow = parseEnvList(process.env["AGENTMEMORY_CAPTURE_ALLOW"]);
+	if (allow) return matchesAny(toolName, allow);
+	return !matchesAny(toolName, [...DEFAULT_DENY_PATTERNS, ...parseEnvList(process.env["AGENTMEMORY_CAPTURE_DENY"]) ?? []]);
+}
+//#endregion
 //#region src/hooks/_project.ts
 function resolveProject(cwd) {
 	const explicit = process.env["AGENTMEMORY_PROJECT_NAME"];
@@ -58,6 +98,7 @@ async function main() {
 	if (data.is_interrupt || data.isInterrupt) return;
 	const sessionId = data.session_id || data.sessionId || data.conversation_id || "unknown";
 	const toolName = data.tool_name ?? data.toolName;
+	if (!shouldCaptureTool(toolName)) return;
 	const toolInput = data.tool_input ?? data.toolArgs;
 	const error = data.error ?? data.errorMessage;
 	const cwd = hookCwd(data) || process.cwd();
