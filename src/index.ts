@@ -49,6 +49,10 @@ import { registerConsolidateFunction } from "./functions/consolidate.js";
 import { registerPatternsFunction } from "./functions/patterns.js";
 import { registerRememberFunction } from "./functions/remember.js";
 import { registerEvictFunction } from "./functions/evict.js";
+import {
+  startEvictSweep,
+  getEvictSweepIntervalMs,
+} from "./functions/evict-scheduler.js";
 import { registerRelationsFunction } from "./functions/relations.js";
 import { registerTimelineFunction } from "./functions/timeline.js";
 import { registerSmartSearchFunction } from "./functions/smart-search.js";
@@ -561,6 +565,13 @@ async function main() {
     }, autoForgetIntervalMs);
     autoForgetTimer.unref();
     bootLog(`Auto-forget: enabled (every ${autoForgetIntervalMs / 60000}m)`);
+  }
+
+  const evictSweepTimer = startEvictSweep(sdk);
+  if (evictSweepTimer) {
+    bootLog(
+      `Evict sweep: enabled (every ${getEvictSweepIntervalMs() / 60000}m)`,
+    );
   }
 
   if (process.env.LESSON_DECAY_ENABLED !== "false") {
