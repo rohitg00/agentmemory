@@ -75,6 +75,74 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
     expect(body.results[0].id).toBe("m1");
   });
 
+  it("forwards expandIds to /agentmemory/smart-search as an ARRAY when given a comma string (#440)", async () => {
+    let searchBody: Record<string, unknown> | undefined;
+    installFetch((url, init) => {
+      if (url.endsWith("/agentmemory/livez")) return new Response("ok", { status: 200 });
+      if (url.endsWith("/agentmemory/smart-search")) {
+        searchBody = init?.body ? JSON.parse(init.body as string) : undefined;
+        return new Response(JSON.stringify({ mode: "expanded", results: [] }), { status: 200 });
+      }
+      return new Response("", { status: 404 });
+    });
+    await handleToolCall("memory_smart_search", {
+      query: "auth bug",
+      limit: 3,
+      expandIds: "obs_1, obs_2",
+    });
+    // The daemon schema is z.array(z.string()); a comma-joined STRING 500s (#440).
+    expect(searchBody).toEqual({
+      query: "auth bug",
+      limit: 3,
+      expandIds: ["obs_1", "obs_2"],
+    });
+  });
+
+  it("forwards expandIds unchanged when given an array (#440)", async () => {
+    let searchBody: Record<string, unknown> | undefined;
+    installFetch((url, init) => {
+      if (url.endsWith("/agentmemory/livez")) return new Response("ok", { status: 200 });
+      if (url.endsWith("/agentmemory/smart-search")) {
+        searchBody = init?.body ? JSON.parse(init.body as string) : undefined;
+        return new Response(JSON.stringify({ mode: "expanded", results: [] }), { status: 200 });
+      }
+      return new Response("", { status: 404 });
+    });
+    await handleToolCall("memory_smart_search", {
+      query: "auth bug",
+      expandIds: ["obs_1", "obs_2"],
+    });
+    expect(searchBody?.["expandIds"]).toEqual(["obs_1", "obs_2"]);
+  });
+
+  it("omits expandIds from the smart-search body when not provided", async () => {
+    let searchBody: Record<string, unknown> | undefined;
+    installFetch((url, init) => {
+      if (url.endsWith("/agentmemory/livez")) return new Response("ok", { status: 200 });
+      if (url.endsWith("/agentmemory/smart-search")) {
+        searchBody = init?.body ? JSON.parse(init.body as string) : undefined;
+        return new Response(JSON.stringify({ mode: "compact", results: [] }), { status: 200 });
+      }
+      return new Response("", { status: 404 });
+    });
+    await handleToolCall("memory_smart_search", { query: "x" });
+    expect(searchBody).not.toHaveProperty("expandIds");
+  });
+
+  it("never forwards expandIds on memory_recall even when supplied (#440)", async () => {
+    let recallBody: Record<string, unknown> | undefined;
+    installFetch((url, init) => {
+      if (url.endsWith("/agentmemory/livez")) return new Response("ok", { status: 200 });
+      if (url.endsWith("/agentmemory/search")) {
+        recallBody = init?.body ? JSON.parse(init.body as string) : undefined;
+        return new Response(JSON.stringify({ mode: "full", facts: [] }), { status: 200 });
+      }
+      return new Response("", { status: 404 });
+    });
+    await handleToolCall("memory_recall", { query: "x", expandIds: "obs_1, obs_2" });
+    expect(recallBody).not.toHaveProperty("expandIds");
+  });
+
   it("proxies memory_recall to POST /agentmemory/search and forwards format/token_budget (#507)", async () => {
     const calls: Array<{ url: string; body?: unknown }> = [];
     installFetch((url, init) => {
