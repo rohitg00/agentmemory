@@ -2,12 +2,14 @@ import type { ISdk } from "iii-sdk";
 import type { HealthSnapshot } from "../types.js";
 import type { StateKV } from "../state/kv.js";
 import { KV } from "../state/schema.js";
-import { evaluateHealth } from "./thresholds.js";
+import { evaluateHealth, resolveThresholdConfig } from "./thresholds.js";
 
 export function registerHealthMonitor(
   sdk: ISdk,
   kv: StateKV,
 ): { stop: () => void } {
+  // Env overrides are read once at startup; thresholds don't change at runtime.
+  const thresholdConfig = resolveThresholdConfig();
   let connectionState = "connected";
   let prevCpuUsage = process.cpuUsage();
   let prevCpuTime = Date.now();
@@ -84,7 +86,7 @@ export function registerHealthMonitor(
       alerts: [],
     };
 
-    const evaluated = evaluateHealth(snapshot);
+    const evaluated = evaluateHealth(snapshot, thresholdConfig);
     snapshot.status = evaluated.status;
     snapshot.alerts = evaluated.alerts;
     snapshot.notes = evaluated.notes;
