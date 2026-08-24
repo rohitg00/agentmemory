@@ -207,6 +207,17 @@ describe("_openai-shared — requiresExplicitModel", () => {
     expect(requiresExplicitModel("https://api.openai.com")).toBe(false);
   });
 
+  it("does not require a model for the default OpenAI endpoint with an explicit /v1 suffix (QA regression)", () => {
+    expect(requiresExplicitModel("https://api.openai.com/v1")).toBe(false);
+    expect(requiresExplicitModel("https://api.openai.com/v1/")).toBe(false);
+  });
+
+  it("still requires a model for a different host that happens to end in /v1", () => {
+    expect(requiresExplicitModel("https://api.openai.com.evil.example/v1")).toBe(
+      true,
+    );
+  });
+
   it("does not require a model for Azure OpenAI", () => {
     expect(
       requiresExplicitModel(
