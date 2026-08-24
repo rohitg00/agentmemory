@@ -38,10 +38,6 @@ function defaultModelFor(providerType: ProviderConfig["provider"]): string {
     case "openai": {
       const model = getEnvVar("OPENAI_MODEL");
       if (!model && requiresExplicitModel(getEnvVar("OPENAI_BASE_URL"))) {
-        // Caller (createFallbackProvider) wraps this in try/catch and skips
-        // fallback providers that fail to construct — same as a missing
-        // API key. gpt-5.6-luna only exists on api.openai.com, so silently
-        // returning it here would 404 against DeepSeek/SiliconFlow/Novita/etc.
         throw new Error(
           `OPENAI_MODEL is required when OPENAI_BASE_URL points at a non-default, non-Azure endpoint (got ${getEnvVar("OPENAI_BASE_URL")}).`,
         );

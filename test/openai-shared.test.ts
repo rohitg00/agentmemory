@@ -218,6 +218,11 @@ describe("_openai-shared — requiresExplicitModel", () => {
     );
   });
 
+  it("still requires a model for api.openai.com over plain http or a non-default port", () => {
+    expect(requiresExplicitModel("http://api.openai.com/v1")).toBe(true);
+    expect(requiresExplicitModel("https://api.openai.com:8443/v1")).toBe(true);
+  });
+
   it("does not require a model for Azure OpenAI", () => {
     expect(
       requiresExplicitModel(

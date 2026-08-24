@@ -165,13 +165,12 @@ export function normalizeBaseUrl(raw: string | undefined): string {
   return (raw || DEFAULT_OPENAI_BASE_URL).replace(/\/+$/, "");
 }
 
-// True when baseUrl points at api.openai.com, with or without an explicit
-// /v1 suffix (appendOpenAIRoute() treats both the same — see case 1/2
-// above), ignoring trailing slashes.
 function isDefaultOpenAIHost(baseUrl: string): boolean {
   try {
     const u = new URL(baseUrl);
+    if (u.protocol !== "https:") return false;
     if (u.hostname !== "api.openai.com") return false;
+    if (u.port !== "") return false;
     const path = u.pathname.replace(/\/+$/, "");
     return path === "" || path === "/v1";
   } catch {
@@ -179,13 +178,6 @@ function isDefaultOpenAIHost(baseUrl: string): boolean {
   }
 }
 
-// True when baseUrl points at an OpenAI-compatible endpoint whose model
-// catalog we cannot assume (DeepSeek, SiliconFlow, Novita, vLLM, LM Studio,
-// ...). Only the real OpenAI endpoint and Azure OpenAI ship the
-// gpt-5.6-luna-family models our DEFAULT_MODEL constants name, so every
-// other base URL needs an explicit OPENAI_MODEL rather than silently
-// inheriting that default and 404ing against a model the target provider
-// doesn't serve.
 export function requiresExplicitModel(baseUrl: string | undefined): boolean {
   if (!baseUrl) return false;
   const normalized = normalizeBaseUrl(baseUrl);
