@@ -5,6 +5,8 @@ import type {
   CompressedObservation,
   HybridSearchResult,
   Lesson,
+  Memory,
+  Session,
 } from "../types.js";
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
@@ -72,6 +74,33 @@ export function resetFollowupStatsForTests(): void {
 // full content is fetched via memory_lesson_recall when the caller needs it.
 const LESSON_CONTENT_PREVIEW_CHARS = 240;
 
+// Resolve the project a hit belongs to, the same way mem::search does:
+// the session's project when the session exists, otherwise the memory's
+// own project. Entries indexed via mem::remember use a synthetic
+// sessionId ('memory') with no KV.sessions row, so their project lives
+// only on the KV.memories record. Returns null when the project is
+// unknown (no session, no memory record); callers treat null as
+// "unscoped — let it through" to stay backward-compatible, matching
+// search.ts. Both lookups are cached, so a filtered page costs at most
+// one read per distinct session and per distinct unbound observation.
+function makeProjectResolver(kv: StateKV) {
+  const sessionCache = new Map<string, Session | null>();
+  const memoryProjectCache = new Map<string, string | null>();
+  return async (sessionId: string, obsId: string): Promise<string | null> => {
+    if (!sessionCache.has(sessionId)) {
+      const session = await kv.get<Session>(KV.sessions, sessionId).catch(() => null);
+      sessionCache.set(sessionId, session ?? null);
+    }
+    const session = sessionCache.get(sessionId)!;
+    if (session) return session.project;
+    if (!memoryProjectCache.has(obsId)) {
+      const memory = await kv.get<Memory>(KV.memories, obsId).catch(() => null);
+      memoryProjectCache.set(obsId, memory?.project ?? null);
+    }
+    return memoryProjectCache.get(obsId)!;
+  };
+}
+
 export function registerSmartSearchFunction(
   sdk: ISdk,
   kv: StateKV,
@@ -115,6 +144,10 @@ export function registerSmartSearchFunction(
       const filterAgentId = wildcardAgent
         ? undefined
         : explicitAgentId ?? envAgentId;
+      const filterProject =
+        typeof data.project === "string" && data.project.trim().length > 0
+          ? data.project.trim()
+          : undefined;
       if (
         isolated &&
         !wildcardAgent &&
@@ -156,9 +189,19 @@ export function registerSmartSearchFunction(
           if (r) expanded.push(r);
         }
 
-        const scoped = filterAgentId
+        const agentScoped = filterAgentId
           ? expanded.filter((e) => e.observation.agentId === filterAgentId)
           : expanded;
+        let scoped = agentScoped;
+        if (filterProject) {
+          const resolveProject = makeProjectResolver(kv);
+          const projects = await Promise.all(
+            agentScoped.map((e) => resolveProject(e.sessionId, e.observation.id)),
+          );
+          scoped = agentScoped.filter(
+            (_e, i) => projects[i] === null || projects[i] === filterProject,
+          );
+        }
 
         void recordAccessBatch(
           kv,
@@ -187,27 +230,36 @@ export function registerSmartSearchFunction(
       const includeLessons = data.includeLessons !== false;
 
       // Over-fetch when filtering. Hybrid search can't filter on
-      // agentId (BM25/vector indexes don't carry it), so we ask the
-      // searcher for more hits than we need and trim post-filter. 3×
-      // is a defensible middle ground: enough headroom for a small
-      // workload, capped at 300 so a 100-limit request never asks for
-      // thousands of hits.
-      const overFetchLimit = filterAgentId
+      // agentId or project (BM25/vector indexes carry neither), so we
+      // ask the searcher for more hits than we need and trim
+      // post-filter. 3× is a defensible middle ground: enough headroom
+      // for a small workload, capped at 300 so a 100-limit request
+      // never asks for thousands of hits.
+      const overFetchLimit = filterAgentId || filterProject
         ? Math.min(limit * 3, 300)
         : limit;
 
       const [hybridResults, lessons] = await Promise.all([
         searchFn(data.query, overFetchLimit),
         includeLessons
-          ? recallLessons(sdk, data.query, lessonLimit, data.project)
+          ? recallLessons(sdk, data.query, lessonLimit, filterProject)
           : Promise.resolve([]),
       ]);
 
-      const filteredHybrid = filterAgentId
-        ? hybridResults
-            .filter((r) => r.observation.agentId === filterAgentId)
-            .slice(0, limit)
-        : hybridResults.slice(0, limit);
+      const agentFiltered = filterAgentId
+        ? hybridResults.filter((r) => r.observation.agentId === filterAgentId)
+        : hybridResults;
+      let scopedHybrid = agentFiltered;
+      if (filterProject) {
+        const resolveProject = makeProjectResolver(kv);
+        const projects = await Promise.all(
+          agentFiltered.map((r) => resolveProject(r.sessionId, r.observation.id)),
+        );
+        scopedHybrid = agentFiltered.filter(
+          (_r, i) => projects[i] === null || projects[i] === filterProject,
+        );
+      }
+      const filteredHybrid = scopedHybrid.slice(0, limit);
 
       const compact: CompactSearchResult[] = filteredHybrid.map((r) => ({
         obsId: r.observation.id,
