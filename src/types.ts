@@ -232,6 +232,15 @@ export interface HealthSnapshot {
   eventLoopLagMs: number;
   uptimeSeconds: number;
   kvConnectivity?: { status: string; latencyMs?: number; error?: string };
+  /** Freshness of the persisted BM25/vector index, see getIndexPersistenceStatus(). */
+  indexPersistence?: {
+    bm25Docs: number;
+    vectors: number;
+    lastSavedAt: string | null;
+    lastError: string | null;
+    dirtySince: number | null;
+    stale: boolean;
+  };
   status: "healthy" | "degraded" | "critical";
   alerts: string[];
   notes?: string[];

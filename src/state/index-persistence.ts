@@ -6,6 +6,7 @@ import { logger } from "../logger.js";
 import { safeAudit } from "../functions/audit.js";
 
 const DEBOUNCE_MS = 5000;
+const STALE_AFTER_MS = 60 * 60 * 1000;
 const FAILURE_LOG_THROTTLE_MS = 60_000;
 const INDEX_PERSISTENCE_FUNCTION_ID = "mem::index-persistence";
 const BM25_KEY = "data";
@@ -23,6 +24,50 @@ type IndexShardManifest = {
   shards: Array<{ scope: string; key: string; chars: number }>;
   chars: number;
 };
+
+/**
+ * What the index persistence layer knows about itself. A search index that
+ * stops being written is invisible from the outside: search keeps answering
+ * from memory and only a restart reveals that the last snapshot is old.
+ */
+export interface IndexPersistenceStatus {
+  bm25Docs: number;
+  vectors: number;
+  lastSavedAt: string | null;
+  lastError: string | null;
+  /** When the index first went dirty without a successful save since. */
+  dirtySince: number | null;
+  stale: boolean;
+}
+
+let status: IndexPersistenceStatus = {
+  bm25Docs: 0,
+  vectors: 0,
+  lastSavedAt: null,
+  lastError: null,
+  dirtySince: null,
+  stale: false,
+};
+
+/** Snapshot of index persistence health, for /agentmemory/health. */
+export function getIndexPersistenceStatus(): IndexPersistenceStatus {
+  return {
+    ...status,
+    stale: status.dirtySince !== null && Date.now() - status.dirtySince > STALE_AFTER_MS,
+  };
+}
+
+/** Test seam. */
+export function resetIndexPersistenceStatus(): void {
+  status = {
+    bm25Docs: 0,
+    vectors: 0,
+    lastSavedAt: null,
+    lastError: null,
+    dirtySince: null,
+    stale: false,
+  };
+}
 
 type IndexPersistenceOptions = {
   shardChars?: number;
@@ -77,6 +122,7 @@ export class IndexPersistence {
   ) {}
 
   scheduleSave(): void {
+    if (status.dirtySince === null) status.dirtySince = Date.now();
     if (this.timer) clearTimeout(this.timer);
     // setTimeout discards the returned promise, so any rejection inside
     // save() would surface as unhandledRejection and crash the process
@@ -97,7 +143,13 @@ export class IndexPersistence {
       if (this.vector) {
         await this.saveVectorIndex(this.vector.serialize());
       }
+      status.bm25Docs = this.bm25.size;
+      status.vectors = this.vector ? this.vector.size : 0;
+      status.lastSavedAt = new Date().toISOString();
+      status.lastError = null;
+      status.dirtySince = null;
     } catch (err) {
+      status.lastError = err instanceof Error ? err.message : String(err);
       this.logFailure(err);
     }
   }

@@ -76,6 +76,23 @@ export function evaluateHealth(
     notes.push(`memory_heap_tight_${Math.round(memPercent)}%_rss${memMb}mb`);
   }
 
+  const index = snapshot.indexPersistence;
+  if (index) {
+    if (index.lastError) {
+      alerts.push("index_persist_error");
+      degraded = true;
+    } else if (index.stale && index.dirtySince !== null) {
+      const staleMin = Math.round((Date.now() - index.dirtySince) / 60000);
+      alerts.push(`index_persist_stale_${staleMin}m`);
+      degraded = true;
+    } else {
+      const savedAt = index.lastSavedAt
+        ? `${Math.round((Date.now() - new Date(index.lastSavedAt).getTime()) / 60000)}m_ago`
+        : "never";
+      notes.push(`index_docs_${index.bm25Docs}_vec_${index.vectors}_saved_${savedAt}`);
+    }
+  }
+
   const status = critical ? "critical" : degraded ? "degraded" : "healthy";
   return { status, alerts, notes };
 }
