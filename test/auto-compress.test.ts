@@ -79,10 +79,10 @@ describe("mem::observe auto-compress gate (#138)", () => {
     // test that sets the env var can be undermined by cached module
     // state from an earlier test (and vice versa).
     vi.resetModules();
-    delete process.env["AGENTMEMORY_AUTO_COMPRESS"];
+    process.env["AGENTMEMORY_AUTO_COMPRESS"] = "false";
   });
   afterEach(() => {
-    delete process.env["AGENTMEMORY_AUTO_COMPRESS"];
+    process.env["AGENTMEMORY_AUTO_COMPRESS"] = "false";
   });
 
   it("default (AGENTMEMORY_AUTO_COMPRESS unset): does NOT fire mem::compress", async () => {
@@ -242,5 +242,62 @@ describe("buildSyntheticCompression", () => {
       raw: {},
     });
     expect(synth.type).toBe("error");
+  });
+});
+
+describe("mem::compress noop provider graceful fallback", () => {
+  it("gracefully falls back to synthetic compression when provider is noop", async () => {
+    const { registerCompressFunction } = await import(
+      "../src/functions/compress.js"
+    );
+    const sdk = mockSdk();
+    const kv = mockKV();
+    const mockProvider = {
+      name: "noop",
+      compress: vi.fn().mockResolvedValue(""),
+      summarize: vi.fn().mockResolvedValue(""),
+    };
+    const mockMetricsStore = {
+      record: vi.fn(),
+    };
+
+    registerCompressFunction(
+      sdk as any,
+      kv as any,
+      mockProvider as any,
+      mockMetricsStore as any
+    );
+
+    const rawObs: RawObservation = {
+      id: "obs_test_noop",
+      sessionId: "ses_test_noop",
+      timestamp: new Date().toISOString(),
+      hookType: "post_tool_use",
+      toolName: "Read",
+      toolInput: { file_path: "src/noop-test.ts" },
+      toolOutput: "test contents",
+      raw: {},
+    };
+
+    const compressFn = sdk.fns.get("mem::compress");
+    expect(compressFn).toBeDefined();
+
+    const result = await compressFn({
+      observationId: "obs_test_noop",
+      sessionId: "ses_test_noop",
+      raw: rawObs,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.compressed).toBeDefined();
+    expect(result.compressed.type).toBe("file_read");
+    expect(result.compressed.title).toBe("Read");
+    expect(result.compressed.files).toContain("src/noop-test.ts");
+
+    expect(mockMetricsStore.record).not.toHaveBeenCalled();
+
+    const stored = await kv.get("mem:obs:ses_test_noop", "obs_test_noop");
+    expect(stored).toBeDefined();
+    expect((stored as any).type).toBe("file_read");
   });
 });
