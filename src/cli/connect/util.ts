@@ -100,6 +100,13 @@ export function writeTextAtomic(path: string, content: string): void {
   renameSync(tmp, path);
 }
 
+export function writeTextAtomic(path: string, value: string): void {
+  mkdirSync(dirname(path), { recursive: true });
+  const tmp = `${path}.tmp-${process.pid}-${Date.now()}`;
+  writeFileSync(tmp, value, "utf-8");
+  renameSync(tmp, path);
+}
+
 export function logInstalled(label: string, target: string): void {
   p.log.success(`${label} → wired into ${target}`);
 }
