@@ -14,6 +14,85 @@ const VALID_TYPES: Sentinel["type"][] = [
   "custom",
 ];
 
+const MAX_PATTERN_LENGTH = 512;
+const BACKREFERENCE_PATTERN = /\\[1-9]/;
+
+type CompiledPattern =
+  | { regex: RegExp }
+  | { error: string };
+
+function readUnboundedQuantifier(source: string, index: number): number | null {
+  const current = source[index];
+  if (current === "*" || current === "+") return index + 1;
+  if (current !== "{") return null;
+
+  const match = source.slice(index).match(/^\{\d+,\}/);
+  return match ? index + match[0].length : null;
+}
+
+function hasNestedUnboundedQuantifier(pattern: string): boolean {
+  const maskedPattern = pattern.replace(/\\.|\[(?:\\.|[^\]\\])*\]/g, "_");
+  const groupHasUnboundedQuantifier = [false];
+
+  for (let i = 0; i < maskedPattern.length; i++) {
+    const current = maskedPattern[i];
+    if (current === "(") {
+      groupHasUnboundedQuantifier.push(false);
+      continue;
+    }
+
+    if (current === ")") {
+      const groupHasInner = groupHasUnboundedQuantifier.pop() ?? false;
+      const quantifierEnd = readUnboundedQuantifier(maskedPattern, i + 1);
+      if (quantifierEnd !== null) {
+        if (groupHasInner) return true;
+        groupHasUnboundedQuantifier[groupHasUnboundedQuantifier.length - 1] =
+          true;
+        i = quantifierEnd - 1;
+        continue;
+      }
+      if (groupHasInner) {
+        groupHasUnboundedQuantifier[groupHasUnboundedQuantifier.length - 1] =
+          true;
+      }
+      continue;
+    }
+
+    const quantifierEnd = readUnboundedQuantifier(maskedPattern, i);
+    if (quantifierEnd !== null) {
+      groupHasUnboundedQuantifier[groupHasUnboundedQuantifier.length - 1] =
+        true;
+      i = quantifierEnd - 1;
+    }
+  }
+
+  return false;
+}
+
+function compileSentinelPattern(pattern: string): CompiledPattern {
+  if (pattern.length > MAX_PATTERN_LENGTH) {
+    return {
+      error: `pattern config must be ${MAX_PATTERN_LENGTH} characters or less`,
+    };
+  }
+
+  let regex: RegExp;
+  try {
+    regex = new RegExp(pattern, "i");
+  } catch {
+    return { error: "pattern config requires a valid regex" };
+  }
+
+  if (
+    BACKREFERENCE_PATTERN.test(pattern) ||
+    hasNestedUnboundedQuantifier(pattern)
+  ) {
+    return { error: "pattern config contains an unsafe regex" };
+  }
+
+  return { regex };
+}
+
 export function registerSentinelsFunction(sdk: ISdk, kv: StateKV): void {
   sdk.registerFunction("mem::sentinel-create", 
     async (data: {
@@ -58,6 +137,10 @@ export function registerSentinelsFunction(sdk: ISdk, kv: StateKV): void {
             success: false,
             error: "pattern config requires a pattern string",
           };
+        }
+        const compiled = compileSentinelPattern(cfg.pattern);
+        if ("error" in compiled) {
+          return { success: false, error: compiled.error };
         }
       }
 
@@ -261,7 +344,10 @@ export function registerSentinelsFunction(sdk: ISdk, kv: StateKV): void {
 
         if (sentinel.type === "pattern") {
           const cfg = sentinel.config as { pattern: string };
-          const regex = new RegExp(cfg.pattern, "i");
+          if (typeof cfg.pattern !== "string") continue;
+          const compiled = compileSentinelPattern(cfg.pattern);
+          if ("error" in compiled) continue;
+          const regex = compiled.regex;
           const sessions = await kv.list<Session>(KV.sessions);
           let matchedObs: CompressedObservation | null = null;
 
