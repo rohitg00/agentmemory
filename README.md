@@ -140,6 +140,45 @@ agentmemory pins iii-engine v0.11.2 and won't attach to a different version (the
 
 </details>
 
+### Nix
+
+For users who already use Nix with flakes:
+
+```bash
+# Run directly from the latest source
+nix run github:rohitg00/agentmemory
+
+# Build locally
+nix build github:rohitg00/agentmemory
+
+# Enter the dev shell for development
+nix develop github:rohitg00/agentmemory
+```
+
+### Devbox
+
+For reproducible development environments, use Devbox:
+
+```bash
+# Install devbox first (if not already installed)
+curl -fsSL https://get.jetify.dev/devbox | bash
+
+# Initialize the environment
+devbox shell
+
+# Install dependencies
+devbox run install
+
+# Build the project
+devbox run build
+```
+
+Or install devbox via Homebrew:
+
+```bash
+brew install jetify-com/devbox/devbox
+```
+
 ---
 
 <h2 id="works-with-every-agent"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/section-agents.svg"><img src="assets/tags/section-agents.svg" alt="Works with every agent" height="32" /></picture></h2>
