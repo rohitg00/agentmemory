@@ -41,7 +41,7 @@ workers:
     config:
       port: $SANDBOX_PORT
       host: 127.0.0.1
-      default_timeout: 180000
+      default_timeout: 600000
       cors:
         allowed_origins: ["http://localhost:$SANDBOX_PORT", "http://127.0.0.1:$SANDBOX_PORT"]
         allowed_methods: [GET, POST, PUT, DELETE, OPTIONS]

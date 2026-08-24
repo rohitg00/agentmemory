@@ -3,6 +3,7 @@ import {
   hydrateProcessEnvFromFile,
   loadConfig,
   getEnvVar,
+  resolveTimeoutMs,
   loadEmbeddingConfig,
   loadFallbackConfig,
   loadClaudeBridgeConfig,
@@ -195,7 +196,11 @@ async function main() {
 
   const sdk = registerWorker(config.engineUrl, {
     workerName: "agentmemory",
-    invocationTimeoutMs: 180000,
+    invocationTimeoutMs: resolveTimeoutMs(
+      [getEnvVar("AGENTMEMORY_INVOCATION_TIMEOUT_MS")],
+      600_000,
+      { min: 1_000, max: 600_000 },
+    ),
     otel: {
       serviceName: OTEL_CONFIG.serviceName,
       serviceVersion: OTEL_CONFIG.serviceVersion,
