@@ -6,6 +6,8 @@ import { getAllTools } from "./tools-registry.js";
 import { getStandalonePersistPath } from "../config.js";
 import { VERSION } from "../version.js";
 import { generateId } from "../state/schema.js";
+import { memoryToObservation } from "../state/memory-utils.js";
+import type { Memory } from "../types.js";
 import {
   resolveHandle,
   invalidateHandle,
@@ -111,6 +113,7 @@ interface Validated {
   limit?: number;
   format?: string;
   tokenBudget?: number;
+  expandIds?: string[];
   memoryIds?: string[];
   reason?: string;
 }
@@ -141,13 +144,34 @@ function validate(toolName: string, args: Record<string, unknown>): Validated {
       }
       return v;
     }
-    case "memory_recall":
-    case "memory_smart_search": {
+    case "memory_recall": {
       const query = args["query"];
       if (typeof query !== "string" || !query.trim()) {
         throw new Error("query is required");
       }
       v.query = query.trim();
+      v.limit = parseLimit(args["limit"]);
+      const fmt = args["format"];
+      if (typeof fmt === "string" && fmt.trim()) {
+        v.format = fmt.trim().toLowerCase();
+      }
+      const budget = args["token_budget"];
+      if (typeof budget === "number" && Number.isFinite(budget) && budget > 0) {
+        v.tokenBudget = Math.floor(budget);
+      } else if (typeof budget === "string" && budget.trim()) {
+        const n = Number(budget);
+        if (Number.isFinite(n) && n > 0) v.tokenBudget = Math.floor(n);
+      }
+      return v;
+    }
+    case "memory_smart_search": {
+      const query = args["query"];
+      const expandIds = normalizeList(args["expandIds"]).slice(0, 20);
+      if ((typeof query !== "string" || !query.trim()) && expandIds.length === 0) {
+        throw new Error("query or expandIds is required");
+      }
+      if (typeof query === "string" && query.trim()) v.query = query.trim();
+      v.expandIds = expandIds;
       v.limit = parseLimit(args["limit"]);
       const fmt = args["format"];
       if (typeof fmt === "string" && fmt.trim()) {
@@ -217,9 +241,11 @@ async function handleProxy(
       return textResponse(result, true);
     }
     case "memory_smart_search": {
-      const body: Record<string, unknown> = { query: v.query, limit: v.limit };
+      const body: Record<string, unknown> = { limit: v.limit };
+      if (v.query != null) body["query"] = v.query;
       if (v.format != null) body["format"] = v.format;
       if (v.tokenBudget != null) body["token_budget"] = v.tokenBudget;
+      if (v.expandIds && v.expandIds.length > 0) body["expandIds"] = v.expandIds;
       const result = await handle.call("/agentmemory/smart-search", {
         method: "POST",
         body: JSON.stringify(body),
@@ -282,12 +308,49 @@ async function handleLocal(
       return textResponse({ saved: id });
     }
 
-    case "memory_recall":
-    case "memory_smart_search": {
+    case "memory_recall": {
       const query = (v.query || "").toLowerCase();
       const limit = v.limit ?? DEFAULT_LIMIT;
       const all =
         await kvInstance.list<Record<string, unknown>>("mem:memories");
+      const results = all
+        .filter((m) => {
+          const text = [
+            typeof m["title"] === "string" ? m["title"] : "",
+            typeof m["content"] === "string" ? m["content"] : "",
+            Array.isArray(m["files"]) ? m["files"].join(" ") : "",
+            Array.isArray(m["concepts"]) ? m["concepts"].join(" ") : "",
+            Array.isArray(m["sessionIds"]) ? m["sessionIds"].join(" ") : "",
+            typeof m["id"] === "string" ? m["id"] : "",
+          ]
+            .join(" ")
+            .toLowerCase();
+          return query.split(/\s+/).every((word) => text.includes(word));
+        })
+        .slice(0, limit);
+      return textResponse({ mode: "compact", results }, true);
+    }
+
+    case "memory_smart_search": {
+      if (v.expandIds && v.expandIds.length > 0) {
+        const memories = await Promise.all(
+          v.expandIds.map((id) => kvInstance.get<Memory>("mem:memories", id)),
+        );
+        const results = memories.flatMap((memory, index) =>
+          memory
+            ? [{
+                obsId: v.expandIds![index],
+                sessionId: memory.sessionIds?.[0] ?? "memory",
+                observation: memoryToObservation(memory),
+              }]
+            : [],
+        );
+        return textResponse({ mode: "expanded", results }, true);
+      }
+
+      const query = (v.query || "").toLowerCase();
+      const limit = v.limit ?? DEFAULT_LIMIT;
+      const all = await kvInstance.list<Record<string, unknown>>("mem:memories");
       const results = all
         .filter((m) => {
           const text = [

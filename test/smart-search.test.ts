@@ -9,6 +9,7 @@ import type {
   CompressedObservation,
   HybridSearchResult,
   CompactSearchResult,
+  Memory,
   Session,
 } from "../src/types.js";
 
@@ -137,6 +138,47 @@ describe("Smart Search Function", () => {
     expect(result.mode).toBe("expanded");
     expect(result.results.length).toBe(1);
     expect(result.results[0].observation.title).toBe("Auth handler");
+  });
+
+  it("expand mode resolves long-term memory IDs from KV.memories", async () => {
+    const memory: Memory = {
+      id: "mem_long_term",
+      createdAt: "2026-08-20T10:00:00.000Z",
+      updatedAt: "2026-08-20T11:00:00.000Z",
+      type: "fact",
+      title: "Long-term auth memory",
+      content: "Remembered auth detail",
+      concepts: ["auth"],
+      files: ["src/auth.ts"],
+      sessionIds: [],
+      strength: 8,
+      version: 1,
+      isLatest: true,
+    };
+    await kv.set("mem:memories", memory.id, memory);
+
+    const result = (await sdk.trigger("mem::smart-search", {
+      expandIds: [memory.id],
+    })) as { mode: string; results: Array<{ obsId: string; sessionId: string; observation: CompressedObservation }> };
+
+    expect(result.mode).toBe("expanded");
+    expect(result.results).toHaveLength(1);
+    expect(result.results[0]).toMatchObject({
+      obsId: memory.id,
+      sessionId: "memory",
+      observation: {
+        id: memory.id,
+        sessionId: "memory",
+        timestamp: memory.createdAt,
+        type: "decision",
+        title: memory.title,
+        facts: [memory.content],
+        narrative: memory.content,
+        concepts: memory.concepts,
+        files: memory.files,
+        importance: memory.strength,
+      },
+    });
   });
 
   it("returns error when query is missing and no expandIds", async () => {
