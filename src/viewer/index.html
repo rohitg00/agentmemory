@@ -1562,7 +1562,7 @@
       var totalObs = d.sessions.reduce(function(a, s) { return a + (s.observationCount || 0); }, 0);
       var tokenBudget = parseInt(new URLSearchParams(window.location.search).get('tokenBudget') || '2000', 10) || 2000;
       var estFull = totalObs * 80;
-      var estInjected = d.sessions.length * tokenBudget;
+      var estInjected = Math.min(totalObs, 50) * 38;
       var savings = estFull > 0 ? Math.round((1 - estInjected / Math.max(estFull, 1)) * 100) : 0;
       if (savings < 0) savings = 0;
       var tokensSaved = Math.max(0, estFull - estInjected);
