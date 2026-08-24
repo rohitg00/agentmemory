@@ -3792,6 +3792,27 @@
 
     var WS_REPROBE_EVERY_TICKS = 6;
 
+    var isInitialSync = true;
+    var hasDashboardBeenLoadedOnce = false;
+    var dashboardLoadTimer = null;
+    var dashboardLoadPromise = null;
+
+    // Debounced version of loadDashboard
+    function debouncedLoadDashboard() {
+      if (dashboardLoadTimer) {
+        clearTimeout(dashboardLoadTimer);
+      }
+      dashboardLoadTimer = setTimeout(function() {
+        if (!dashboardLoadPromise) {
+          state.dashboard.loaded = false; // Reset loaded state before fetching
+          dashboardLoadPromise = loadDashboard().finally(function() {
+            dashboardLoadPromise = null;
+            hasDashboardBeenLoadedOnce = true;
+          });
+        }
+      }, 300); // Debounce by 300ms
+    }
+
     function startPolling() {
       if (pollTimer) return;
       setWsStatus('polling · ' + (POLL_INTERVAL_MS / 1000) + 's', 'disconnected');
@@ -3940,14 +3961,21 @@
           routeWsMessage({ observation: observation });
         }
       } else if (evt.type === 'sync') {
-        var items = Array.isArray(evt.data) ? evt.data : [];
-        items.forEach(function(item) {
-          var payload = item.data || item;
-          observation = payload.observation || payload;
-          if (looksLikeObservation(observation)) {
-            routeWsMessage({ observation: observation });
-          }
-        });
+        if (isInitialSync && state.activeTab === 'dashboard') {
+          // Ignore initial large sync for dashboard to prevent freezing
+          // A single debounced loadDashboard will be triggered after this block if the dashboard is active.
+          console.log('Skipping per-item processing of initial sync for dashboard to prevent overload.');
+        } else {
+          var items = Array.isArray(evt.data) ? evt.data : [];
+          items.forEach(function(item) {
+            var payload = item.data || item;
+            observation = payload.observation || payload;
+            if (looksLikeObservation(observation)) {
+              routeWsMessage({ observation: observation });
+            }
+          });
+        }
+        isInitialSync = false; // Initial sync processing done for this connection.
       }
     }
 
@@ -3964,8 +3992,7 @@
         }
       }
       if (state.activeTab === 'dashboard') {
-        state.dashboard.loaded = false;
-        loadDashboard();
+        debouncedLoadDashboard();
       }
       if (state.activeTab === 'activity' && msg.observation) {
         state.activity.observations.unshift(msg.observation);
