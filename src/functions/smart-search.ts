@@ -5,6 +5,8 @@ import type {
   CompressedObservation,
   HybridSearchResult,
   Lesson,
+  Memory,
+  Session,
 } from "../types.js";
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
@@ -129,6 +131,16 @@ export function registerSmartSearchFunction(
         );
       }
 
+      // #787 follow-up: computed once, up front — same reasoning as
+      // filterAgentId above. The expandIds branch used to skip this
+      // entirely, letting a caller pass expandIds + project and get
+      // back observations from every project (#554-style leak, but
+      // for project instead of agent).
+      const projectFilter =
+        typeof data.project === "string" && data.project.trim().length > 0
+          ? data.project.trim()
+          : undefined;
+
       if (data.expandIds && data.expandIds.length > 0) {
         const raw = data.expandIds.slice(0, 20);
         const items = raw.map((entry) => {
@@ -156,9 +168,12 @@ export function registerSmartSearchFunction(
           if (r) expanded.push(r);
         }
 
-        const scoped = filterAgentId
+        const agentScoped = filterAgentId
           ? expanded.filter((e) => e.observation.agentId === filterAgentId)
           : expanded;
+        const scoped = projectFilter
+          ? await filterByProject(kv, agentScoped, projectFilter)
+          : agentScoped;
 
         void recordAccessBatch(
           kv,
@@ -187,27 +202,40 @@ export function registerSmartSearchFunction(
       const includeLessons = data.includeLessons !== false;
 
       // Over-fetch when filtering. Hybrid search can't filter on
-      // agentId (BM25/vector indexes don't carry it), so we ask the
-      // searcher for more hits than we need and trim post-filter. 3×
-      // is a defensible middle ground: enough headroom for a small
-      // workload, capped at 300 so a 100-limit request never asks for
-      // thousands of hits.
-      const overFetchLimit = filterAgentId
-        ? Math.min(limit * 3, 300)
-        : limit;
+      // agentId or project (BM25/vector indexes don't carry them), so
+      // we ask the searcher for more hits than we need and trim
+      // post-filter. 3× is a defensible middle ground: enough headroom
+      // for a small workload, capped at 300 so a 100-limit request
+      // never asks for thousands of hits.
+      const overFetchLimit =
+        filterAgentId || projectFilter
+          ? Math.min(limit * 3, 300)
+          : limit;
 
       const [hybridResults, lessons] = await Promise.all([
         searchFn(data.query, overFetchLimit),
         includeLessons
-          ? recallLessons(sdk, data.query, lessonLimit, data.project)
+          ? recallLessons(sdk, data.query, lessonLimit, projectFilter)
           : Promise.resolve([]),
       ]);
 
-      const filteredHybrid = filterAgentId
-        ? hybridResults
-            .filter((r) => r.observation.agentId === filterAgentId)
-            .slice(0, limit)
-        : hybridResults.slice(0, limit);
+      const agentFiltered = filterAgentId
+        ? hybridResults.filter((r) => r.observation.agentId === filterAgentId)
+        : hybridResults;
+
+      // #787 follow-up: project was previously only threaded into
+      // recallLessons above — the main hybrid results leaked results
+      // from every project regardless of the requested scope. Mirrors
+      // mem::search's session -> project resolution (see search.ts):
+      // resolve each hit's session, fall back to a KV.memories probe
+      // for synthetic 'memory' sessions (mem::remember entries), and
+      // let unresolvable/unknown projects pass through unscoped rather
+      // than incorrectly excluding them.
+      const filteredHybrid = (
+        projectFilter
+          ? await filterByProject(kv, agentFiltered, projectFilter)
+          : agentFiltered
+      ).slice(0, limit);
 
       const compact: CompactSearchResult[] = filteredHybrid.map((r) => ({
         obsId: r.observation.id,
@@ -285,6 +313,64 @@ export function registerSmartSearchFunction(
       return response;
     },
   );
+}
+
+// Shape both HybridSearchResult and the expandIds branch's expanded
+// entries satisfy — enough to resolve a project for either.
+interface ProjectResolvable {
+  sessionId: string;
+  observation: { id: string };
+}
+
+// Resolves each hit's project the same way mem::search does (see
+// search.ts's loadSession/loadMemoryProject): via its session's
+// `project` field, falling back to a KV.memories probe for synthetic
+// sessionIds (mem::remember entries indexed under 'memory' or a
+// sessionId with no KV.sessions row). A result whose project can't be
+// resolved is treated as unscoped and passes through — we never want
+// an indexing gap to silently exclude an otherwise-matching result.
+//
+// Lookups are cached by promise (not by resolved value) and resolved
+// via Promise.all so concurrent hits sharing a sessionId/obsId only
+// hit the KV once, and independent lookups run in parallel instead of
+// serially — a project-filtered search can over-fetch up to 300 hits.
+async function filterByProject<T extends ProjectResolvable>(
+  kv: StateKV,
+  results: T[],
+  projectFilter: string,
+): Promise<T[]> {
+  const sessionCache = new Map<string, Promise<Session | null>>();
+  const loadSession = (sessionId: string): Promise<Session | null> => {
+    let cached = sessionCache.get(sessionId);
+    if (!cached) {
+      cached = kv.get<Session>(KV.sessions, sessionId).then((s) => s ?? null);
+      sessionCache.set(sessionId, cached);
+    }
+    return cached;
+  };
+
+  const memoryProjectCache = new Map<string, Promise<string | null>>();
+  const loadMemoryProject = (obsId: string): Promise<string | null> => {
+    let cached = memoryProjectCache.get(obsId);
+    if (!cached) {
+      cached = kv
+        .get<Memory>(KV.memories, obsId)
+        .then((mem) => mem?.project ?? null)
+        .catch(() => null);
+      memoryProjectCache.set(obsId, cached);
+    }
+    return cached;
+  };
+
+  const matches = await Promise.all(
+    results.map(async (r) => {
+      const session = await loadSession(r.sessionId);
+      if (session) return session.project === projectFilter;
+      const memProject = await loadMemoryProject(r.observation.id);
+      return memProject === null || memProject === projectFilter;
+    }),
+  );
+  return results.filter((_, i) => matches[i]);
 }
 
 async function recallLessons(
