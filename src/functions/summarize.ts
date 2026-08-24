@@ -20,6 +20,7 @@ import { scoreSummary } from "../eval/quality.js";
 import type { MetricsStore } from "../eval/metrics-store.js";
 import { safeAudit } from "./audit.js";
 import { logger } from "../logger.js";
+import { getEnvVar } from "../config.js";
 
 // Per-chunk observation budget when a session is too large to fit in one
 // LLM call. Default ≈ 50k input tokens per chunk at ~110 tok/obs — fits
@@ -37,14 +38,18 @@ const CHUNK_CONCURRENCY_DEFAULT = 6;
 const MAX_SKIP_RATIO = 0.5;
 
 function getChunkSize(): number {
-  const raw = process.env.SUMMARIZE_CHUNK_SIZE;
+  // Read via the merged env (file + process.env) so ~/.agentmemory/.env works,
+  // consistent with every other config var. process.env still wins (getMergedEnv
+  // spreads it last). Previously read process.env only, so the .env file value
+  // was silently ignored — a problem for small local-LLM context windows.
+  const raw = getEnvVar("SUMMARIZE_CHUNK_SIZE");
   if (!raw) return CHUNK_SIZE_DEFAULT;
   const n = parseInt(raw, 10);
   return Number.isFinite(n) && n > 0 ? n : CHUNK_SIZE_DEFAULT;
 }
 
 function getChunkConcurrency(): number {
-  const raw = process.env.SUMMARIZE_CHUNK_CONCURRENCY;
+  const raw = getEnvVar("SUMMARIZE_CHUNK_CONCURRENCY");
   if (!raw) return CHUNK_CONCURRENCY_DEFAULT;
   const n = parseInt(raw, 10);
   return Number.isFinite(n) && n > 0 ? n : CHUNK_CONCURRENCY_DEFAULT;
