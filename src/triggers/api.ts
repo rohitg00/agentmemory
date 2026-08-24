@@ -1941,6 +1941,13 @@ export function registerApiTriggers(
       const filterAgentId = wildcardAgent
         ? undefined
         : explicitAgentId ?? (isAgentScopeIsolated() ? getAgentId() : undefined);
+      // project filter. Scopes the list (and ?count=true totals) to a
+      // single project the same way agentId does, consistent with the
+      // project scoping POST /agentmemory/search already applies.
+      const projectFilter =
+        typeof req.query_params?.["project"] === "string"
+          ? req.query_params["project"].trim()
+          : undefined;
       let filtered = latest ? memories.filter((m) => m.isLatest) : memories;
       if (filterAgentId) {
         filtered = filtered.filter(
@@ -1948,6 +1955,9 @@ export function registerApiTriggers(
             m.agentId === filterAgentId ||
             (includeOrphans && m.agentId === undefined),
         );
+      }
+      if (projectFilter) {
+        filtered = filtered.filter((m) => m.project === projectFilter);
       }
 
       // viewer + `agentmemory status` were hitting this endpoint to
