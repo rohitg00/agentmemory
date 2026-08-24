@@ -299,6 +299,12 @@ export interface CompactLessonResult {
   createdAt: string;
   project?: string;
   tags: string[];
+  /**
+   * Set by recallLessons when the FULL pre-truncation content
+   * matched the named-concept boost phrase. Smart-search uses this
+   * to skip re-scanning the truncated preview. See #571.
+   */
+  boostMatched?: boolean;
 }
 
 export interface TimelineEntry {
