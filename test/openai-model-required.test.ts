@@ -85,6 +85,15 @@ describe("detectProvider — OPENAI_MODEL required for non-default OpenAI-compat
     expect(loaded.provider.model).toBe("gpt-5.6-luna");
   });
 
+  it("does not require OPENAI_MODEL when OPENAI_BASE_URL is the default endpoint with an explicit /v1 suffix (QA regression)", async () => {
+    writeEnv(
+      "OPENAI_API_KEY=sk-test\nOPENAI_BASE_URL=https://api.openai.com/v1",
+    );
+    const cfg = await freshConfig();
+    const loaded = cfg.loadConfig();
+    expect(loaded.provider.model).toBe("gpt-5.6-luna");
+  });
+
   it("does not require OPENAI_MODEL for Azure OpenAI", async () => {
     writeEnv(
       "OPENAI_API_KEY=sk-test\nOPENAI_BASE_URL=https://myresource.openai.azure.com/openai/deployments/mydeploy",

@@ -165,6 +165,20 @@ export function normalizeBaseUrl(raw: string | undefined): string {
   return (raw || DEFAULT_OPENAI_BASE_URL).replace(/\/+$/, "");
 }
 
+// True when baseUrl points at api.openai.com, with or without an explicit
+// /v1 suffix (appendOpenAIRoute() treats both the same — see case 1/2
+// above), ignoring trailing slashes.
+function isDefaultOpenAIHost(baseUrl: string): boolean {
+  try {
+    const u = new URL(baseUrl);
+    if (u.hostname !== "api.openai.com") return false;
+    const path = u.pathname.replace(/\/+$/, "");
+    return path === "" || path === "/v1";
+  } catch {
+    return false;
+  }
+}
+
 // True when baseUrl points at an OpenAI-compatible endpoint whose model
 // catalog we cannot assume (DeepSeek, SiliconFlow, Novita, vLLM, LM Studio,
 // ...). Only the real OpenAI endpoint and Azure OpenAI ship the
@@ -175,6 +189,6 @@ export function normalizeBaseUrl(raw: string | undefined): string {
 export function requiresExplicitModel(baseUrl: string | undefined): boolean {
   if (!baseUrl) return false;
   const normalized = normalizeBaseUrl(baseUrl);
-  if (normalized === DEFAULT_OPENAI_BASE_URL) return false;
+  if (isDefaultOpenAIHost(normalized)) return false;
   return !detectAzure(normalized);
 }
