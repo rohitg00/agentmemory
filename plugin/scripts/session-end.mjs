@@ -116,7 +116,7 @@ async function main() {
 		headers: authHeaders(),
 		signal: AbortSignal.timeout(3e4)
 	}).catch(() => {});
-	setTimeout(() => process.exit(0), 1500).unref();
+	setTimeout(() => process.exit(0), 1500);
 }
 main().catch(() => process.exit(0));
 //#endregion

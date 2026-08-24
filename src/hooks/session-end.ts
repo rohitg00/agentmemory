@@ -107,7 +107,11 @@ async function main() {
     }).catch(() => {});
   }
 
-  setTimeout(() => process.exit(0), 1500).unref();
+  // Force-exit after 1500ms regardless of in-flight fetches. Without this,
+  // .unref() makes the timer passive and pending fetch() calls keep the event
+  // loop alive until their AbortSignal timeouts fire (up to 120s), causing
+  // Claude Code to cancel the hook with "Hook cancelled".
+  setTimeout(() => process.exit(0), 1500);
 }
 
 main().catch(() => process.exit(0));
