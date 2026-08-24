@@ -62,6 +62,25 @@ function parseMemoryXml(
   };
 }
 
+/**
+ * Mirrors a freshly written memory into the in-run snapshot so later concept
+ * groups dedup against it. A superseded predecessor is replaced in place rather
+ * than appended: the dedup match keys on title alone, so a lingering superseded
+ * row would be re-matched by a later same-title group and spawn a second latest
+ * memory (#747).
+ */
+function reflectMemoryInSnapshot(
+  snapshot: Memory[],
+  memory: Memory,
+  supersededMemory?: Memory,
+): void {
+  const supersededIdx = supersededMemory
+    ? snapshot.indexOf(supersededMemory)
+    : -1;
+  if (supersededIdx >= 0) snapshot[supersededIdx] = memory;
+  else snapshot.push(memory);
+}
+
 export function registerConsolidateFunction(
   sdk: ISdk,
   kv: StateKV,
@@ -112,9 +131,6 @@ export function registerConsolidateFunction(
 
       let consolidated = 0;
       const existingMemories = await kv.list<Memory>(KV.memories);
-      const existingTitles = new Set(
-        existingMemories.map((m) => m.title.toLowerCase()),
-      );
 
       const MAX_LLM_CALLS = 10;
       let llmCallCount = 0;
@@ -202,7 +218,7 @@ export function registerConsolidateFunction(
               newId: evolved.id,
               concept,
             });
-            existingTitles.add(evolved.title.toLowerCase());
+            reflectMemoryInSnapshot(existingMemories, evolved, existingMatch);
             consolidated++;
           } else {
             const memory: Memory = {
@@ -220,7 +236,7 @@ export function registerConsolidateFunction(
               action: "create_memory",
               concept,
             });
-            existingTitles.add(memory.title.toLowerCase());
+            reflectMemoryInSnapshot(existingMemories, memory);
             consolidated++;
           }
         } catch (err) {
