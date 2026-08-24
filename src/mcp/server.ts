@@ -1218,7 +1218,17 @@ export function registerMcpEndpoints(
             if (!label || typeof args.content !== "string") {
               return { status_code: 400, body: { error: "label and content (string) required" } };
             }
-            const result = await sdk.trigger({ function_id: "mem::slot-replace", payload: { label, content: args.content } });
+            // The dispatcher rebuilds the payload, so any new function parameter is a
+            // silent no-op until it is forwarded here as well.
+            const result = await sdk.trigger({
+              function_id: "mem::slot-replace",
+              payload: {
+                label,
+                content: args.content,
+                ...(typeof args.expectedRev === "number" ? { expectedRev: args.expectedRev } : {}),
+                ...(typeof args.expectedHash === "string" ? { expectedHash: args.expectedHash } : {}),
+              },
+            });
             return {
               status_code: 200,
               body: { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] },
