@@ -2002,6 +2002,185 @@ export function registerApiTriggers(
     config: { api_path: "/agentmemory/memories", http_method: "GET" },
   });
 
+  // Free-text search over MEMORIES.
+  //
+  // /search and /smart-search rank observations; /memories lists memories and
+  // takes no query. So a memory written by `remember` cannot be found by any
+  // search endpoint — you have to already know its id, or page the whole
+  // collection and filter client-side. On a real corpus that means the memory
+  // you want is simply never in the window, which reads as "search is broken"
+  // when in fact search was never wired to this store.
+  //
+  // Weighted-field BM25 over concepts / title / content / files. Concepts are
+  // weighted highest because they are terms the author deliberately chose for
+  // retrieval, where a body mention is incidental. Scoping matches the list
+  // endpoint exactly — a search must not surface rows the caller is blocked
+  // from listing.
+  sdk.registerFunction("api::memories-search",
+    async (req: ApiRequest): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const rawQuery =
+        typeof body["query"] === "string"
+          ? (body["query"] as string)
+          : typeof req.query_params?.["q"] === "string"
+            ? req.query_params["q"]
+            : typeof req.query_params?.["query"] === "string"
+              ? req.query_params["query"]
+              : "";
+      const query = rawQuery.trim();
+      if (!query) {
+        return { status_code: 400, body: { error: "query is required" } };
+      }
+
+      const rawLimit =
+        typeof body["limit"] === "number"
+          ? (body["limit"] as number)
+          : typeof req.query_params?.["limit"] === "string"
+            ? Number(req.query_params["limit"])
+            : Number.NaN;
+      const limit =
+        Number.isInteger(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, 200) : 10;
+
+      const memories = await kv.list<import("../types.js").Memory>(KV.memories);
+
+      // Same scoping as api::memories. Duplicated rather than shared because
+      // the list endpoint reads several more params that do not apply here;
+      // the parts that gate visibility are identical on purpose.
+      const normalizedAgentId =
+        typeof req.query_params?.["agentId"] === "string"
+          ? req.query_params["agentId"].trim()
+          : undefined;
+      const wildcardAgent = normalizedAgentId === "*";
+      const explicitAgentId =
+        normalizedAgentId && !wildcardAgent ? normalizedAgentId : undefined;
+      const includeOrphans = req.query_params?.["includeOrphans"] === "true";
+      const filterAgentId = wildcardAgent
+        ? undefined
+        : explicitAgentId ?? (isAgentScopeIsolated() ? getAgentId() : undefined);
+      let scoped = memories.filter((m) => m.isLatest);
+      if (filterAgentId) {
+        scoped = scoped.filter(
+          (m) =>
+            m.agentId === filterAgentId ||
+            (includeOrphans && m.agentId === undefined),
+        );
+      }
+
+      // Concepts are kebab-case by convention, so a query of "memory leak"
+      // has to reach a memory tagged `memory-leak-detection`. Keeping the whole
+      // token AND its parts makes both the joined and the spaced form match.
+      const tokenize = (text: string): string[] => {
+        const lower = (text ?? "").toLowerCase();
+        const out = lower.match(/[a-z0-9]+/g) ?? [];
+        for (const part of lower.split("-")) {
+          out.push(...(part.match(/[a-z0-9]+/g) ?? []));
+        }
+        return out;
+      };
+
+      const WEIGHTS: Record<string, number> = {
+        concepts: 3.0,
+        title: 2.0,
+        content: 1.0,
+        files: 0.5,
+      };
+
+      const docs = scoped.map((m) => {
+        const parts: Record<string, string> = {
+          concepts: (m.concepts ?? []).join(" "),
+          title: m.title ?? "",
+          content: m.content ?? "",
+          files: (m.files ?? []).join(" "),
+        };
+        const counts: Record<string, Map<string, number>> = {};
+        let length = 0;
+        for (const [field, text] of Object.entries(parts)) {
+          const c = new Map<string, number>();
+          for (const t of tokenize(text)) {
+            c.set(t, (c.get(t) ?? 0) + 1);
+            length += 1;
+          }
+          counts[field] = c;
+        }
+        return { memory: m, counts, length };
+      });
+
+      const n = docs.length || 1;
+      const avgLen = docs.reduce((a, d) => a + d.length, 0) / n || 1;
+
+      const df = new Map<string, number>();
+      for (const d of docs) {
+        const present = new Set<string>();
+        for (const c of Object.values(d.counts)) {
+          for (const t of c.keys()) present.add(t);
+        }
+        for (const t of present) df.set(t, (df.get(t) ?? 0) + 1);
+      }
+
+      const terms = tokenize(query);
+      const unique = new Set(terms);
+      const k1 = 1.5;
+      const b = 0.75;
+
+      const scored: { score: number; memory: import("../types.js").Memory }[] = [];
+      for (const d of docs) {
+        let score = 0;
+        const matched = new Set<string>();
+        for (const term of terms) {
+          let tf = 0;
+          for (const [field, weight] of Object.entries(WEIGHTS)) {
+            tf += (d.counts[field]?.get(term) ?? 0) * weight;
+          }
+          if (tf <= 0) continue;
+          matched.add(term);
+          const dfT = df.get(term) ?? 0;
+          const idf = Math.log(1 + (n - dfT + 0.5) / (dfT + 0.5));
+          const denom = tf + k1 * (1 - b + (b * d.length) / avgLen);
+          score += (idf * (tf * (k1 + 1))) / Math.max(denom, 1e-9);
+        }
+        if (score > 0) {
+          // Covering more of the query beats repeating one term of it: the
+          // difference between a memory that is ABOUT the topic and one that
+          // merely mentions it.
+          score *= 1 + 0.5 * (matched.size / Math.max(unique.size, 1));
+          scored.push({ score, memory: d.memory });
+        }
+      }
+      scored.sort((a, z) => z.score - a.score);
+
+      return {
+        status_code: 200,
+        body: {
+          query,
+          searched: docs.length,
+          matched: scored.length,
+          results: scored.slice(0, limit).map(({ score, memory }) => ({
+            id: memory.id,
+            score: Math.round(score * 1000) / 1000,
+            title: memory.title,
+            concepts: memory.concepts ?? [],
+            createdAt: memory.createdAt,
+          })),
+        },
+      };
+    },
+  );
+  // Both verbs: GET keeps it usable from a shell without a JSON body, POST
+  // keeps long queries out of the URL and matches /search and /smart-search.
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::memories-search",
+    config: { api_path: "/agentmemory/memories/search", http_method: "POST" },
+  });
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::memories-search",
+    config: { api_path: "/agentmemory/memories/search", http_method: "GET" },
+  });
+
   sdk.registerFunction("api::memory-by-id",
     async (req: ApiRequest): Promise<Response> => {
       const authErr = checkAuth(req, secret);
