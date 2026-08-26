@@ -665,10 +665,28 @@ export function registerApiTriggers(
           body: { error: "sessionId is required and must be a non-empty string" },
         };
       }
-      await kv.update(KV.sessions, sessionId, [
-        { type: "set", path: "endedAt", value: new Date().toISOString() },
-        { type: "set", path: "status", value: "completed" },
-      ]);
+      // state::update has upsert semantics. A lifecycle adapter can emit an
+      // end event before its first observation has created the corresponding
+      // agentmemory session (for example, OpenClaw's /new command). Updating
+      // that missing key would create a partial row with only status/endedAt,
+      // which later breaks consumers that require Session.id.
+      const endResult = await withKeyedLock(`obs:${sessionId}`, async () => {
+        const session = await kv.get<Session>(KV.sessions, sessionId);
+        if (!session || session.id !== sessionId) return "not_found" as const;
+        if (session.status === "completed") return "already_completed" as const;
+
+        await kv.update(KV.sessions, sessionId, [
+          { type: "set", path: "endedAt", value: new Date().toISOString() },
+          { type: "set", path: "status", value: "completed" },
+        ]);
+        return "ended" as const;
+      });
+      if (endResult !== "ended") {
+        return {
+          status_code: 200,
+          body: { success: true, ended: false, reason: endResult },
+        };
+      }
       // Fan out session-stopped lifecycle (non-blocking).
       try {
         sdk.trigger({
@@ -682,7 +700,7 @@ export function registerApiTriggers(
           error: err instanceof Error ? err.message : String(err),
         });
       }
-      return { status_code: 200, body: { success: true } };
+      return { status_code: 200, body: { success: true, ended: true } };
     },
   );
   sdk.registerTrigger({
@@ -851,6 +869,17 @@ export function registerApiTriggers(
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
       const sessions = await kv.list<Session>(KV.sessions);
+      // Be tolerant of legacy partial rows created by state::update before
+      // the session existed. In particular, never issue state::get with an
+      // undefined summary key: iii-engine can leave that invocation pending
+      // until the caller times out, making the viewer look empty.
+      const validSessions = sessions.filter(
+        (session): session is Session =>
+          !!session &&
+          typeof session === "object" &&
+          typeof session.id === "string" &&
+          session.id.length > 0,
+      );
       const normalizedAgentId =
         typeof req.query_params?.["agentId"] === "string"
           ? req.query_params["agentId"].trim()
@@ -863,8 +892,8 @@ export function registerApiTriggers(
         : explicitAgentId ??
           (isAgentScopeIsolated() ? getAgentId() : undefined);
       const filtered = filterAgentId
-        ? sessions.filter((s) => s.agentId === filterAgentId)
-        : sessions;
+        ? validSessions.filter((s) => s.agentId === filterAgentId)
+        : validSessions;
       // Bounded fan-out: each kv.get is a full engine invocation, so
       // Promise.all over hundreds of sessions saturates the invocation
       // pool. Batch in chunks of 10 (parallel within a chunk, sequential
