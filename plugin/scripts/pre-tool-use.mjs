@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-//#region src/hooks/pre-tool-use.ts
+//#region ../../agentmemory/src/hooks/pre-tool-use.ts
 function isSdkChildContext(payload) {
 	if (process.env["AGENTMEMORY_SDK_CHILD"] === "1") return true;
 	if (!payload || typeof payload !== "object") return false;

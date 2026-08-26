@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-//#region src/hooks/_project.ts
+//#region ../../agentmemory/src/hooks/_project.ts
 function hookCwd(data) {
 	if (!data || typeof data !== "object") return void 0;
 	if (typeof data.cwd === "string" && data.cwd.trim()) return data.cwd;
@@ -13,7 +13,7 @@ function hookCwd(data) {
 	if (projectDir && projectDir.trim()) return projectDir;
 }
 //#endregion
-//#region src/hooks/post-commit.ts
+//#region ../../agentmemory/src/hooks/post-commit.ts
 const exec = promisify(execFile);
 function isSdkChildContext(payload) {
 	if (process.env["AGENTMEMORY_SDK_CHILD"] === "1") return true;
