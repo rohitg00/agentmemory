@@ -1,6 +1,6 @@
 import type { CircuitBreakerState } from "../types.js";
 
-interface CircuitBreakerOptions {
+export interface CircuitBreakerOptions {
   failureThreshold?: number;
   failureWindowMs?: number;
   recoveryTimeoutMs?: number;
