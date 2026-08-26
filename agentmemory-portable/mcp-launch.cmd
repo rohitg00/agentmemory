@@ -4,7 +4,7 @@ cd /d "%~dp0"
 set "KIT=%~dp0"
 set "KIT=%KIT:~0,-1%"
 set "PATH=%KIT%\portable\node;%PATH%"
-set "AGENTMEMORY_URL=http://127.0.0.1:3111"
+if not defined AGENTMEMORY_URL set "AGENTMEMORY_URL=http://127.0.0.1:3111"
 
 if exist "%KIT%\..\dist\standalone.mjs" (
   "%KIT%\portable\node\node.exe" "%KIT%\..\dist\standalone.mjs"

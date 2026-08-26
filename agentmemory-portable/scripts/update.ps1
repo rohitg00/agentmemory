@@ -34,12 +34,8 @@ if (-not $SkipPull) {
   Write-KitInfo "git pull ..."
   git pull --ff-only
   if ($LASTEXITCODE -ne 0) {
-    Write-KitWarn "git pull --ff-only failed - retrying git pull"
-    git pull
-    if ($LASTEXITCODE -ne 0) {
-      Write-KitError "git pull failed (conflicts or network). Fix and re-run update.cmd"
-      exit $LASTEXITCODE
-    }
+    Write-KitError "git pull --ff-only failed. Resolve the branch state, then re-run update.cmd"
+    exit $LASTEXITCODE
   }
 }
 
