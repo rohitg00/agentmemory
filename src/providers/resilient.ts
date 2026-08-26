@@ -108,12 +108,19 @@ export class ResilientProvider implements MemoryProvider {
       this.gate.release();
       throw new Error("circuit_breaker_open");
     }
+    // Read after the isAllowed checks, which are what move open -> half-open.
+    const probing = this.breaker.getState().state === "half-open";
     try {
       const result = await fn();
       this.breaker.recordSuccess();
       return result;
     } catch (err) {
-      if (!isRateLimited(err)) this.breaker.recordFailure();
+      // Backpressure normally must not open the breaker. The half-open probe is
+      // the exception: nothing else records an outcome for it, so excusing a
+      // rate-limited probe leaves the breaker sitting in half-open admitting
+      // every call, with no path back to either open or closed. A probe that
+      // came back rate-limited has still failed as a probe.
+      if (probing || !isRateLimited(err)) this.breaker.recordFailure();
       throw err;
     } finally {
       // In `finally` so a throw cannot leak the slot and deadlock every call

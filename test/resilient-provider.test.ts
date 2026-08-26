@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { ResilientProvider } from "../src/providers/resilient.js";
 import type { MemoryProvider } from "../src/types.js";
 
@@ -154,5 +154,40 @@ describe("ResilientProvider rate-limit classification", () => {
     }
 
     expect(provider.circuitState.state).toBe("closed");
+  });
+});
+
+describe("ResilientProvider half-open probe", () => {
+  it("does not get stuck in half-open when the probe is rate limited", async () => {
+    // Nothing else records an outcome for the probe, so excusing a
+    // rate-limited one leaves the breaker in half-open admitting every call,
+    // with no path back to open or closed. Half-open must never be a state you
+    // can enter and not leave.
+    let mode: "fail" | "ratelimit" = "fail";
+    const inner = countingProvider(async () => {
+      throw mode === "fail"
+        ? new Error("upstream exploded")
+        : new Error("API error (429): rate limited");
+    });
+    const provider = new ResilientProvider(inner);
+
+    for (let i = 0; i < 3; i++) {
+      await provider.compress("sys", "user").catch(() => undefined);
+    }
+    expect(provider.circuitState.state).toBe("open");
+
+    // Move the clock past the 30s recovery window so the next call is the
+    // probe. Sleeping a few milliseconds instead would leave the breaker still
+    // open, the probe would never happen, and this test would pass without
+    // exercising anything — it did exactly that before this was fixed.
+    vi.useFakeTimers();
+    vi.setSystemTime(Date.now() + 31_000);
+    try {
+      mode = "ratelimit";
+      await provider.compress("sys", "user").catch(() => undefined);
+      expect(provider.circuitState.state).not.toBe("half-open");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
