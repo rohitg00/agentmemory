@@ -5,7 +5,6 @@ $ErrorActionPreference = "Stop"
 
 $script:KitRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $script:DataDir = Join-Path $KitRoot "data"
-$script:IiiConfigPath = Join-Path $KitRoot "iii-config.yaml"
 $script:HomeDir = Join-Path $KitRoot "home"
 $script:PortableDir = Join-Path $KitRoot "portable"
 $script:NodeDir = Join-Path $PortableDir "node"
@@ -49,6 +48,7 @@ if ($InTree) {
   $script:RepoDir = Join-Path $KitRoot "repo"
 }
 $script:CliEntry = Join-Path $RepoDir "dist\cli.mjs"
+$script:IiiConfigPath = Join-Path $RepoDir "iii-config.yaml"
 
 function Write-KitInfo([string]$Message) {
   Write-Host "[agentmemory-portable] $Message" -ForegroundColor Cyan
@@ -107,98 +107,21 @@ function Assert-IiiPresent {
   }
 }
 
-function Sync-IiiConfigForLayout {
-  if (-not (Test-Path $IiiConfigPath)) { return }
-  $raw = Get-Content -LiteralPath $IiiConfigPath -Raw
-  if ($InTree) {
-    $raw = $raw -replace '(?m)file_path:\s*\.\./data/', 'file_path: ./data/'
-    $raw = $raw -replace '(?m)-\s+node repo/dist/index\.mjs', '- node ../dist/index.mjs'
-    $raw = $raw -replace '(?m)-\s+src/\*\*/\*\.ts', '- ../src/**/*.ts'
-  } else {
-    $raw = $raw -replace '(?m)file_path:\s*\./data/', 'file_path: ./data/'
-    $raw = $raw -replace '(?m)-\s+node \.\./dist/index\.mjs', '- node repo/dist/index.mjs'
-    $raw = $raw -replace '(?m)-\s+\.\./src/\*\*/\*\.ts', '- repo/src/**/*.ts'
-  }
-  Set-Content -LiteralPath $IiiConfigPath -Value $raw -Encoding UTF8
-}
-
 function Assert-UsbDataLayout {
-  if (-not (Test-Path $IiiConfigPath)) {
-    Write-KitError "Missing kit iii-config.yaml at $IiiConfigPath"
-    Write-KitError "Re-copy the kit or re-run setup.cmd"
-    exit 1
-  }
   if (-not (Test-Path $DataDir)) {
     New-Item -ItemType Directory -Force -Path $DataDir | Out-Null
   }
-  Sync-IiiConfigForLayout
+  if (-not (Test-Path $IiiConfigPath)) {
+    Write-KitError "Missing bundled iii-config.yaml at $IiiConfigPath"
+    Write-KitError "Esegui setup.cmd oppure update.cmd"
+    exit 1
+  }
 }
 
-function Show-DockerConflictMenu {
-  param(
-    [string[]]$ContainerNames
-  )
-
-  $names = @($ContainerNames | Where-Object { $_ } | Select-Object -Unique)
-  $stopCmd = if ($names.Count -gt 0) {
-    "docker stop $($names -join ' ')"
-  } else {
-    "docker stop <nome-container>"
-  }
-
-  Write-Host ""
-  Write-Host "============================================================" -ForegroundColor Yellow
-  Write-Host "  ATTENZIONE: Docker locale con agentmemory/iii attivo" -ForegroundColor Yellow
-  Write-Host "============================================================" -ForegroundColor Yellow
-  Write-Host ""
-  Write-Host "Il kit USB non puo avviarsi in sicurezza." -ForegroundColor White
-  Write-Host "Se proseguisse, agentmemory si aggancierebbe all'engine Docker" -ForegroundColor White
-  Write-Host "del PC e i dati finirebbero nel volume Docker, NON sulla pen drive." -ForegroundColor White
-  Write-Host ""
-  if ($names.Count -gt 0) {
-    Write-Host "Container rilevati:" -ForegroundColor Cyan
-    foreach ($n in $names) {
-      Write-Host "  - $n" -ForegroundColor Cyan
-    }
-    Write-Host ""
-  }
-  Write-Host "Scegli un'opzione:" -ForegroundColor Green
-  Write-Host ""
-  Write-Host "  A) Istruzioni manuali (fermo io Docker, poi rilancio start.cmd)" -ForegroundColor Green
-  Write-Host "       Comando tipico: $stopCmd" -ForegroundColor DarkGray
-  Write-Host ""
-  Write-Host "  B) Resta su Docker sul PC (non usare il kit USB adesso)" -ForegroundColor DarkYellow
-  Write-Host "       Cursor: http://127.0.0.1:3111" -ForegroundColor DarkGray
-  Write-Host ""
-  Write-Host "  C) Pulisci in automatico e avvia il kit USB" -ForegroundColor Cyan
-  Write-Host "       - ferma i container Docker rilevati" -ForegroundColor DarkGray
-  Write-Host "       - ripulisce pid/state del kit su questa pen drive" -ForegroundColor DarkGray
-  Write-Host "       - NON cancella i volumi Docker (i dati sul PC restano)" -ForegroundColor DarkGray
-  Write-Host "       - poi prosegue con start sulla USB (dati in data\)" -ForegroundColor DarkGray
-  Write-Host ""
-  Write-Host "============================================================" -ForegroundColor Yellow
-}
-
-function Get-AgentmemoryDockerContainers {
-  $docker = Get-Command docker -ErrorAction SilentlyContinue
-  if (-not $docker) { return @() }
-
-  $names = @()
-  $byName = docker ps --format "{{.Names}}" 2>$null | Where-Object { $_ -match "agentmemory|iii-engine|iii" }
-  if ($byName) { $names += @($byName) }
-
-  $byPort = docker ps --format "{{.Names}}\t{{.Ports}}" 2>$null | ForEach-Object {
-    if ($_ -match "3111|3112|49134") {
-      ($_ -split "`t")[0]
-    }
-  }
-  if ($byPort) { $names += @($byPort) }
-
-  return @($names | Where-Object { $_ } | Select-Object -Unique)
-}
+$script:KitPorts = @(3111, 3112, 3113, 49134)
 
 function Clear-KitRuntimeState {
-  Write-KitInfo "Cleaning kit runtime state under home\.agentmemory ..."
+  Write-KitInfo "Cleaning leftover kit processes / pid files under home\.agentmemory ..."
   foreach ($name in @("iii.pid", "worker.pid", "engine-state.json")) {
     $p = Join-Path $AgentmemoryHome $name
     if (Test-Path $p) {
@@ -207,7 +130,6 @@ function Clear-KitRuntimeState {
     }
   }
 
-  # Leftover portable processes from a previous USB session on this PC
   Get-Process -ErrorAction SilentlyContinue |
     Where-Object {
       $_.Path -and (
@@ -221,129 +143,92 @@ function Clear-KitRuntimeState {
     }
 }
 
-function Stop-AgentmemoryDocker {
-  param(
-    [string[]]$ContainerNames
-  )
+function Test-LocalPortOpen {
+  param([int]$Port)
 
-  $names = @($ContainerNames | Where-Object { $_ } | Select-Object -Unique)
-  if ($names.Count -eq 0) {
-    Write-KitWarn "No Docker containers to stop."
-    return $true
-  }
-
-  Write-KitInfo "Stopping Docker containers: $($names -join ', ')"
-  docker stop @names 2>&1 | ForEach-Object { Write-Host "  $_" }
-  if ($LASTEXITCODE -ne 0) {
-    Write-KitWarn "docker stop returned $LASTEXITCODE - checking ports anyway..."
-  }
-
-  # Best-effort compose down without -v (keeps PC volumes intact)
-  $composeCandidates = @(
-    (Join-Path $RepoDir "docker-compose.yml"),
-    (Join-Path $KitRoot "docker-compose.yml")
-  )
-  foreach ($compose in $composeCandidates) {
-    if (Test-Path $compose) {
-      Write-KitInfo "docker compose -f `"$compose`" down (no volume delete)"
-      Push-Location (Split-Path -Parent $compose)
-      try {
-        docker compose -f $compose down 2>&1 | ForEach-Object { Write-Host "  $_" }
-      } finally {
-        Pop-Location
-      }
-      break
-    }
-  }
-
-  Start-Sleep -Seconds 2
-  $still = Get-AgentmemoryDockerContainers
-  if ($still.Count -gt 0) {
-    Write-KitError "Containers still running after cleanup: $($still -join ', ')"
-    Write-KitError "Stop them manually, then re-run start.cmd"
-    return $false
-  }
-
-  Write-KitInfo "Docker conflict cleared. USB data path will be used: $DataDir"
-  return $true
-}
-
-function Resolve-DockerConflict {
-  param(
-    [switch]$AutoClean
-  )
-
-  $running = Get-AgentmemoryDockerContainers
-  if ($running.Count -eq 0) { return $true }
-
-  if ($AutoClean) {
-    Write-KitWarn "AutoClean: Docker agentmemory detected - cleaning and continuing..."
-    Clear-KitRuntimeState
-    if (-not (Stop-AgentmemoryDocker -ContainerNames $running)) { return $false }
-    return $true
-  }
-
-  Show-DockerConflictMenu -ContainerNames $running
-
-  $choice = ""
+  $client = $null
   try {
-    Write-Host "Digita A, B o C e premi Invio: " -NoNewline -ForegroundColor White
-    $choice = [System.Console]::ReadLine()
+    $client = New-Object System.Net.Sockets.TcpClient
+    $iar = $client.BeginConnect("127.0.0.1", $Port, $null, $null)
+    $wait = $iar.AsyncWaitHandle.WaitOne(250, $false)
+    if (-not $wait) { return $false }
+    try { $client.EndConnect($iar) } catch { return $false }
+    return $client.Connected
   } catch {
-    Write-KitError "Interactive input unavailable. Re-run with start-clean.cmd for automatic cleanup."
     return $false
-  }
-
-  switch -Regex ($choice.Trim().ToUpperInvariant()) {
-    "^A" {
-      Write-Host ""
-      Write-Host "Procedura manuale:" -ForegroundColor Green
-      Write-Host "  1. docker stop $($running -join ' ')" -ForegroundColor White
-      Write-Host "  2. (opzionale) docker compose down nella cartella del progetto" -ForegroundColor White
-      Write-Host "  3. Rilancia start.cmd" -ForegroundColor White
-      Write-Host ""
-      Write-Host "Premi Invio per chiudere..." -ForegroundColor DarkGray
-      try { [void][System.Console]::ReadLine() } catch { Start-Sleep -Seconds 5 }
-      return $false
-    }
-    "^B" {
-      Write-Host ""
-      Write-Host "Ok: resto su Docker. Non avvio il kit USB." -ForegroundColor DarkYellow
-      Write-Host "MCP/Cursor: http://127.0.0.1:3111" -ForegroundColor DarkYellow
-      Write-Host ""
-      Write-Host "Premi Invio per chiudere..." -ForegroundColor DarkGray
-      try { [void][System.Console]::ReadLine() } catch { Start-Sleep -Seconds 5 }
-      return $false
-    }
-    "^C" {
-      Write-Host ""
-      Write-KitInfo "Opzione C: pulizia automatica in corso..."
-      Clear-KitRuntimeState
-      if (-not (Stop-AgentmemoryDocker -ContainerNames $running)) {
-        Write-Host "Premi Invio per chiudere..." -ForegroundColor DarkGray
-        try { [void][System.Console]::ReadLine() } catch { Start-Sleep -Seconds 5 }
-        return $false
-      }
-      Write-KitInfo "Pulizia completata. Avvio del daemon USB..."
-      return $true
-    }
-    default {
-      Write-KitError "Scelta non valida ('$choice'). Usa A, B o C."
-      Write-Host "Premi Invio per chiudere..." -ForegroundColor DarkGray
-      try { [void][System.Console]::ReadLine() } catch { Start-Sleep -Seconds 5 }
-      return $false
-    }
+  } finally {
+    if ($client) { $client.Close() }
   }
 }
 
-function Assert-NoForeignEngine {
+function Get-ListenOwners {
+  param([int]$Port)
+
+  $owners = @()
+  $prev = $ErrorActionPreference
+  $ErrorActionPreference = "Continue"
+  try {
+    $conns = @(Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue)
+    foreach ($c in $conns) {
+      $procId = $c.OwningProcess
+      $procName = ""
+      try {
+        $proc = Get-Process -Id $procId -ErrorAction SilentlyContinue
+        if ($proc) { $procName = $proc.ProcessName }
+      } catch {}
+      $owners += [pscustomobject]@{ Port = $Port; Pid = $procId; Name = $procName }
+    }
+  } catch {
+  } finally {
+    $ErrorActionPreference = $prev
+  }
+
+  if ($owners.Count -eq 0 -and (Test-LocalPortOpen -Port $Port)) {
+    $owners += [pscustomobject]@{ Port = $Port; Pid = $null; Name = "" }
+  }
+  return $owners
+}
+
+function Show-PortIncompatibility {
   param(
-    [switch]$AutoClean
+    [object[]]$Owners
   )
 
-  if (-not (Resolve-DockerConflict -AutoClean:$AutoClean)) {
-    exit 1
+  Write-Host ""
+  Write-Host "============================================================" -ForegroundColor Yellow
+  Write-Host "  INCOMPATIBILITA PORTE" -ForegroundColor Yellow
+  Write-Host "============================================================" -ForegroundColor Yellow
+  Write-Host ""
+  Write-Host "Il kit USB non usa Docker e non scrive dati sul PC." -ForegroundColor White
+  Write-Host "Fonte di verita: questa pen drive / cartella (data\)." -ForegroundColor White
+  Write-Host ""
+  Write-Host "Porte richieste libere su 127.0.0.1: $($KitPorts -join ', ')" -ForegroundColor White
+  Write-Host "Porte occupate:" -ForegroundColor Cyan
+  foreach ($o in $Owners) {
+    $who = if ($o.Name) { "$($o.Name) pid $($o.Pid)" } elseif ($o.Pid) { "pid $($o.Pid)" } else { "processo sconosciuto" }
+    Write-Host ("  {0,-6}  {1}" -f $o.Port, $who) -ForegroundColor Cyan
   }
+  Write-Host ""
+  Write-Host "Libera queste porte (ferma l'altro agentmemory / Docker / servizio) e rilancia start.cmd." -ForegroundColor White
+  Write-Host "Il kit non ferma processi esterni e non si aggancia a un engine gia in ascolto." -ForegroundColor DarkGray
+  Write-Host ""
+  Write-Host "============================================================" -ForegroundColor Yellow
+  Write-Host "Premi Invio per chiudere..." -ForegroundColor DarkGray
+  try { [void][System.Console]::ReadLine() } catch { Start-Sleep -Seconds 5 }
+}
+
+function Assert-KitPortsFree {
+  Clear-KitRuntimeState
+  Start-Sleep -Milliseconds 400
+
+  $busy = @()
+  foreach ($port in $KitPorts) {
+    $busy += @(Get-ListenOwners -Port $port)
+  }
+  if ($busy.Count -eq 0) { return }
+
+  Show-PortIncompatibility -Owners $busy
+  exit 1
 }
 
 function Set-PortableRuntimeEnv {
@@ -370,6 +255,7 @@ function Set-PortableRuntimeEnv {
 
     $env:AGENTMEMORY_III_VERSION = (Get-KitConfig).IiiVersion
     $env:AGENTMEMORY_URL = "http://127.0.0.1:3111"
+    $env:AGENTMEMORY_DATA_DIR = $DataDir
     $env:AGENTMEMORY_III_CONFIG = $IiiConfigPath
     $env:AGENTMEMORY_USE_DOCKER = "0"
     $env:AGENTMEMORY_EXPORT_ROOT = Join-Path $AgentmemoryHome "exports"
@@ -404,7 +290,7 @@ function Invoke-AgentmemoryCli {
   Assert-NodePresent
   Assert-RepoBuilt
   Assert-UsbDataLayout
-  # cwd = kit root so iii-config ./data stays on the USB/kit folder
+  # cwd = kit root; SQLite path comes from AGENTMEMORY_DATA_DIR, not relative ./data
   Set-Location $KitRoot
   & $NodeExe $CliEntry @CliArgs
   return $LASTEXITCODE
@@ -450,5 +336,233 @@ function Invoke-RepoBuild {
   if ($buildCode -ne 0) {
     Write-KitWarn "npm run build exited $buildCode (Unix post-copy on Windows). Assets repaired; dist\cli.mjs OK."
   }
+}
+
+function Get-KitRuntimeLayout {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$TargetKitRoot
+  )
+
+  $homeDir = Join-Path $TargetKitRoot "home"
+  $amHome = Join-Path $homeDir ".agentmemory"
+  return [pscustomobject]@{
+    KitRoot         = $TargetKitRoot
+    DataDir         = Join-Path $TargetKitRoot "data"
+    HomeDir         = $homeDir
+    PortableDir     = Join-Path $TargetKitRoot "portable"
+    DownloadsDir    = Join-Path $TargetKitRoot "downloads"
+    AgentmemoryHome = $amHome
+    IiiBinDir       = Join-Path $amHome "bin"
+    IiiExe          = Join-Path $amHome "bin\iii.exe"
+    EnvFile         = Join-Path $amHome ".env"
+    PrefsFile       = Join-Path $amHome "preferences.json"
+    DataReadme      = Join-Path $TargetKitRoot "data\README.txt"
+  }
+}
+
+function Ensure-KitRuntimeDirs {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$TargetKitRoot
+  )
+
+  $layout = Get-KitRuntimeLayout -TargetKitRoot $TargetKitRoot
+  foreach ($d in @(
+      $layout.HomeDir,
+      $layout.AgentmemoryHome,
+      $layout.IiiBinDir,
+      $layout.PortableDir,
+      $layout.DownloadsDir,
+      $layout.DataDir,
+      (Join-Path $layout.HomeDir "AppData\Roaming"),
+      (Join-Path $layout.HomeDir "AppData\Local"),
+      (Join-Path $layout.HomeDir "Temp"),
+      (Join-Path $layout.HomeDir "cache"),
+      (Join-Path $layout.HomeDir "cache\huggingface"),
+      (Join-Path $layout.HomeDir "cache\transformers"),
+      (Join-Path $layout.AgentmemoryHome "exports"),
+      (Join-Path $layout.AgentmemoryHome "snapshots")
+    )) {
+    if (-not (Test-Path $d)) {
+      New-Item -ItemType Directory -Force -Path $d | Out-Null
+    }
+  }
+  return $layout
+}
+
+function Seed-FreshKitRuntime {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$TargetKitRoot,
+    [string]$IiiSource = "",
+    [string]$EnvExample = ""
+  )
+
+  $layout = Ensure-KitRuntimeDirs -TargetKitRoot $TargetKitRoot
+
+  if (-not (Test-Path $layout.DataReadme)) {
+    @(
+      "SQLite + stream store for the portable kit.",
+      "All memory data lives here (on the USB), not inside repo\."
+    ) | Set-Content -Path $layout.DataReadme -Encoding UTF8
+  }
+
+  $iiiCandidates = @()
+  if ($IiiSource) { $iiiCandidates += $IiiSource }
+  $iiiCandidates += (Join-Path $layout.PortableDir "iii.exe")
+  $iiiCandidates += $IiiExe
+  $resolvedIii = $iiiCandidates | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
+  if ($resolvedIii) {
+    if (-not (Test-Path $layout.IiiExe)) {
+      Copy-Item -LiteralPath $resolvedIii -Destination $layout.IiiExe -Force
+      Write-KitInfo "iii.exe -> $($layout.IiiExe)"
+    }
+    $portableBackup = Join-Path $layout.PortableDir "iii.exe"
+    if (-not (Test-Path $portableBackup)) {
+      Copy-Item -LiteralPath $resolvedIii -Destination $portableBackup -Force
+    }
+  }
+
+  if (-not (Test-Path $layout.EnvFile)) {
+    if ($EnvExample -and (Test-Path $EnvExample)) {
+      Copy-Item -LiteralPath $EnvExample -Destination $layout.EnvFile
+    }
+    else {
+      @(
+        "# agentmemory portable kit - minimal seed",
+        "EMBEDDING_PROVIDER=local",
+        "AGENTMEMORY_URL=http://127.0.0.1:3111"
+      ) | Set-Content -Path $layout.EnvFile -Encoding UTF8
+    }
+    @(
+      "",
+      "# --- portable kit overrides ---",
+      "EMBEDDING_PROVIDER=local",
+      "AGENTMEMORY_URL=http://127.0.0.1:3111",
+      "AGENTMEMORY_USE_DOCKER=0"
+    ) | Add-Content -Path $layout.EnvFile -Encoding UTF8
+    Write-KitInfo "Created $($layout.EnvFile)"
+  }
+  else {
+    Write-KitInfo ".env already present - left unchanged ($($layout.EnvFile))"
+  }
+
+  if (-not (Test-Path $layout.PrefsFile)) {
+    $prefs = @{
+      schemaVersion       = 1
+      lastAgent           = $null
+      lastAgents          = @()
+      lastProvider        = $null
+      skipSplash          = $true
+      skipNpxHint         = $true
+      skipGlobalInstall   = $true
+      skipConsoleInstall  = $true
+      firstRunAt          = (Get-Date).ToUniversalTime().ToString("o")
+      injectContextChosen = $true
+    } | ConvertTo-Json -Depth 4
+    Set-Content -Path $layout.PrefsFile -Value $prefs -Encoding UTF8
+    Write-KitInfo "Created preferences.json (onboarding skipped)"
+  }
+
+  return $layout
+}
+
+function ConvertTo-PackRelativePath([string]$Path) {
+  return ($Path -replace '\\', '/').TrimStart('/')
+}
+
+function Get-PackCriticalPaths {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$StagingRoot
+  )
+
+  $fixed = @(
+    "package.json",
+    "iii-config.yaml",
+    "dist/cli.mjs",
+    "dist/index.mjs",
+    "dist/standalone.mjs",
+    "dist/iii-config.yaml",
+    "dist/viewer/index.html",
+    "dist/viewer/favicon.svg",
+    "agentmemory-portable/portable/node/node.exe",
+    "agentmemory-portable/home/.agentmemory/bin/iii.exe",
+    "agentmemory-portable/portable/iii.exe",
+    "agentmemory-portable/home/.agentmemory/.env",
+    "agentmemory-portable/home/.agentmemory/preferences.json",
+    "agentmemory-portable/scripts/_env.ps1"
+  )
+
+  $dist = Join-Path $StagingRoot "dist"
+  if (Test-Path $dist) {
+    foreach ($pattern in @("src-*.mjs", "connect-*.mjs", "tools-registry-*.mjs")) {
+      Get-ChildItem -LiteralPath $dist -Filter $pattern -File -ErrorAction SilentlyContinue | ForEach-Object {
+        $fixed += ("dist/" + $_.Name)
+      }
+    }
+  }
+
+  return @($fixed | ForEach-Object { ConvertTo-PackRelativePath $_ } | Select-Object -Unique)
+}
+
+function Get-FileSha256Lower {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$LiteralPath
+  )
+  return (Get-FileHash -LiteralPath $LiteralPath -Algorithm SHA256).Hash.ToLowerInvariant()
+}
+
+function Test-UsbManifestIntegrity {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$PackRoot
+  )
+
+  $manifestPath = Join-Path $PackRoot "MANIFEST.json"
+  if (-not (Test-Path $manifestPath)) {
+    Write-KitError "MANIFEST.json assente: $manifestPath"
+    return $false
+  }
+
+  $manifest = Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
+  if (-not $manifest.files) {
+    Write-KitError "MANIFEST.json senza files[]"
+    return $false
+  }
+
+  $ok = $true
+  foreach ($entry in $manifest.files) {
+    $rel = [string]$entry.path
+    $expected = ([string]$entry.sha256).ToLowerInvariant()
+    $abs = Join-Path $PackRoot ($rel -replace '/', '\')
+    if (-not (Test-Path -LiteralPath $abs)) {
+      Write-Host "MISSING  $rel" -ForegroundColor Red
+      $ok = $false
+      continue
+    }
+    $actual = Get-FileSha256Lower -LiteralPath $abs
+    if ($actual -ne $expected) {
+      Write-Host "MISMATCH $rel" -ForegroundColor Red
+      $ok = $false
+    }
+    else {
+      Write-Host "OK       $rel" -ForegroundColor Green
+    }
+  }
+  return $ok
+}
+
+function Get-DirectorySizeBytes {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$LiteralPath
+  )
+  $sum = (Get-ChildItem -LiteralPath $LiteralPath -Recurse -File -Force -ErrorAction SilentlyContinue |
+      Measure-Object -Property Length -Sum).Sum
+  if ($null -eq $sum) { return 0 }
+  return [int64]$sum
 }
 

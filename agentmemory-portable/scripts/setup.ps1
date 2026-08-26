@@ -18,35 +18,10 @@ Write-KitInfo "Kit root: $KitRoot"
 Write-KitInfo "Repo dir: $RepoDir (in-tree=$InTree)"
 Write-KitInfo "Node pin: v$nodeVersion | iii pin: v$iiiVersion"
 
-foreach ($d in @(
-    $HomeDir,
-    $AgentmemoryHome,
-    $IiiBinDir,
-    $PortableDir,
-    $DownloadsDir,
-    $DataDir,
-    (Join-Path $HomeDir "AppData\Roaming"),
-    (Join-Path $HomeDir "AppData\Local"),
-    (Join-Path $HomeDir "Temp"),
-    (Join-Path $HomeDir "cache")
-  )) {
-  if (-not (Test-Path $d)) {
-    New-Item -ItemType Directory -Force -Path $d | Out-Null
-  }
-}
+[void](Seed-FreshKitRuntime -TargetKitRoot $KitRoot -EnvExample (Join-Path $RepoDir ".env.example"))
 
-# Ensure kit-owned iii-config (SQLite in ./data with cwd=kit root)
-if (-not (Test-Path $IiiConfigPath)) {
-  $repoCfg = Join-Path $RepoDir "iii-config.yaml"
-  if (Test-Path $repoCfg) {
-    Copy-Item $repoCfg $IiiConfigPath
-    Write-KitWarn "Copied upstream iii-config.yaml - adjusting paths for kit layout"
-  }
-  else {
-    throw "Missing $IiiConfigPath - restore iii-config.yaml in the kit root"
-  }
-}
-Sync-IiiConfigForLayout
+# SQLite lives in kit\data via AGENTMEMORY_DATA_DIR (set at start).
+# Engine template is the bundled repo iii-config.yaml — do not copy it into the kit.
 
 # --- Node.js portable ---
 if (-not $SkipNodeDownload) {
@@ -100,6 +75,8 @@ if (-not $SkipIiiDownload) {
 
 Assert-IiiPresent
 
+[void](Seed-FreshKitRuntime -TargetKitRoot $KitRoot -IiiSource $IiiExe -EnvExample (Join-Path $RepoDir ".env.example"))
+
 # --- repo ---
 if ($InTree) {
   Write-KitInfo "In-tree layout: using parent project as repo ($RepoDir)"
@@ -127,51 +104,6 @@ elseif (-not $SkipClone) {
     git clone --depth 1 $repoUrl $RepoDir
     if ($LASTEXITCODE -ne 0) { throw "git clone failed" }
   }
-}
-
-# --- seed config (do not overwrite existing .env) ---
-$envTarget = Join-Path $AgentmemoryHome ".env"
-$envExample = Join-Path $RepoDir ".env.example"
-if (-not (Test-Path $envTarget)) {
-  if (Test-Path $envExample) {
-    Copy-Item $envExample $envTarget
-  }
-  else {
-    @(
-      "# agentmemory portable kit - minimal seed",
-      "EMBEDDING_PROVIDER=local",
-      "AGENTMEMORY_URL=http://127.0.0.1:3111"
-    ) | Set-Content -Path $envTarget -Encoding UTF8
-  }
-  @(
-    "",
-    "# --- portable kit overrides ---",
-    "EMBEDDING_PROVIDER=local",
-    "AGENTMEMORY_URL=http://127.0.0.1:3111",
-    "AGENTMEMORY_USE_DOCKER=0"
-  ) | Add-Content -Path $envTarget -Encoding UTF8
-  Write-KitInfo "Created $envTarget"
-}
-else {
-  Write-KitInfo ".env already present - left unchanged"
-}
-
-$prefsPath = Join-Path $AgentmemoryHome "preferences.json"
-if (-not (Test-Path $prefsPath)) {
-  $prefs = @{
-    schemaVersion       = 1
-    lastAgent           = $null
-    lastAgents          = @()
-    lastProvider        = $null
-    skipSplash          = $true
-    skipNpxHint         = $true
-    skipGlobalInstall   = $true
-    skipConsoleInstall  = $true
-    firstRunAt          = (Get-Date).ToUniversalTime().ToString("o")
-    injectContextChosen = $true
-  } | ConvertTo-Json -Depth 4
-  Set-Content -Path $prefsPath -Value $prefs -Encoding UTF8
-  Write-KitInfo "Created preferences.json (onboarding skipped)"
 }
 
 # --- build ---

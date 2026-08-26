@@ -1,7 +1,6 @@
 # Start the agentmemory daemon with home/cwd on the kit root.
 param(
-  [switch]$VerboseCli,
-  [switch]$AutoCleanDocker
+  [switch]$VerboseCli
 )
 
 . "$PSScriptRoot\_env.ps1"
@@ -20,13 +19,13 @@ Assert-NodePresent
 Assert-IiiPresent
 Assert-RepoBuilt
 Assert-UsbDataLayout
-Assert-NoForeignEngine -AutoClean:$AutoCleanDocker
+Assert-KitPortsFree
 Set-PortableRuntimeEnv -ForDaemon
 
 Write-KitInfo "USERPROFILE -> $env:USERPROFILE"
 Write-KitInfo "kit root    -> $KitRoot"
 Write-KitInfo "repo        -> $RepoDir"
-Write-KitInfo "data        -> $DataDir"
+Write-KitInfo "data        -> $env:AGENTMEMORY_DATA_DIR"
 Write-KitInfo "iii-config  -> $env:AGENTMEMORY_III_CONFIG"
 Write-KitInfo "iii         -> $IiiExe"
 Write-KitInfo "Starting daemon (keep this window open)..."

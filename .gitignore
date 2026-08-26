@@ -37,3 +37,4 @@ agentmemory-portable/home/
 agentmemory-portable/data/*
 !agentmemory-portable/data/README.txt
 agentmemory-portable/repo/
+agentmemory-portable/out/

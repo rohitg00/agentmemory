@@ -1,4 +1,5 @@
 # Runtime (do not push)
+out/
 portable/node/
 portable/npm-cache/
 portable/iii.exe

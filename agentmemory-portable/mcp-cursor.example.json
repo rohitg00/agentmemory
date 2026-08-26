@@ -1,8 +1,8 @@
 {
   "mcpServers": {
     "agentmemory": {
-      "command": "npx",
-      "args": ["-y", "@agentmemory/mcp"],
+      "command": "C:\\path\\to\\agentmemory\\agentmemory-portable\\mcp-launch.cmd",
+      "args": [],
       "env": {
         "AGENTMEMORY_URL": "http://127.0.0.1:3111"
       }
