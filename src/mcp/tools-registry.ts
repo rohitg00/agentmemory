@@ -245,6 +245,124 @@ export const CORE_TOOLS: McpToolDef[] = [
       },
     },
   },
+  // ============================================================
+  // hook endpoints exposed as MCP tools (2026-08)
+  //
+  // These 6 tools mirror the REST hook endpoints that were previously
+  // only reachable from host hook scripts (Claude Code etc). Pure MCP
+  // clients (LineCodePro) have no hook runner, so the endpoints are
+  // re-exposed as MCP tools:
+  //
+  //   memory_observe          -> REST /agentmemory/observe
+  //   memory_session_start    -> REST /agentmemory/session/start
+  //   memory_session_end      -> REST /agentmemory/session/end
+  //   memory_session_commit   -> REST /agentmemory/session/commit
+  //   memory_enrich           -> REST /agentmemory/enrich
+  //   memory_context          -> REST /agentmemory/context
+  //
+  // See server.ts handleToolCall for the matching case mappings.
+  // ============================================================
+  {
+    name: "memory_observe",
+    description:
+      "Write a raw observation to the current session. This is the MCP equivalent of the hook auto-capture path — use to record prompts, tool calls, tool failures, and task completions so file_history, timeline, and sessions have data.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sessionId: { type: "string", description: "Session ID" },
+        hookType: {
+          type: "string",
+          description: "Event type: prompt_submit, post_tool_use, post_tool_failure, task_completed",
+        },
+        data: {
+          type: "object",
+          description: "Observation payload. tool events: { tool_name, tool_input, tool_output }; prompts: { prompt }",
+        },
+        project: { type: "string", description: "Stable project slug" },
+        cwd: { type: "string", description: "Working directory" },
+        timestamp: { type: "string", description: "ISO 8601 timestamp (defaults to now)" },
+      },
+      required: ["sessionId", "hookType", "data"],
+    },
+  },
+  {
+    name: "memory_session_start",
+    description:
+      "Register a new agent session and optionally return injected context. MCP equivalent of the SessionStart hook.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sessionId: { type: "string", description: "Session ID" },
+        project: { type: "string", description: "Stable project slug" },
+        cwd: { type: "string", description: "Working directory" },
+        title: { type: "string", description: "Optional session title" },
+        agentId: { type: "string", description: "Optional agent identity" },
+      },
+      required: ["sessionId", "project", "cwd"],
+    },
+  },
+  {
+    name: "memory_session_end",
+    description:
+      "End a session and trigger the consolidation/summarization pipeline. MCP equivalent of the Stop/SessionEnd hook.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sessionId: { type: "string", description: "Session ID" },
+      },
+      required: ["sessionId"],
+    },
+  },
+  {
+    name: "memory_session_commit",
+    description:
+      "Link a git commit to a session. MCP equivalent of the post-commit hook.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sha: { type: "string", description: "Git commit SHA" },
+        sessionId: { type: "string", description: "Session ID to link" },
+        branch: { type: "string", description: "Branch name" },
+        repo: { type: "string", description: "Remote URL" },
+        message: { type: "string", description: "Commit message" },
+        author: { type: "string", description: "Commit author" },
+        authoredAt: { type: "string", description: "Commit timestamp" },
+        files: { type: "string", description: "Comma-separated file paths" },
+      },
+      required: ["sha"],
+    },
+  },
+  {
+    name: "memory_enrich",
+    description:
+      "Get context relevant to specific files or search terms, for injection before tool use. MCP equivalent of the PreToolUse enrich hook.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sessionId: { type: "string", description: "Session ID" },
+        files: { type: "string", description: "Comma-separated file paths" },
+        terms: { type: "string", description: "Comma-separated search terms" },
+        toolName: { type: "string", description: "Tool name" },
+        project: { type: "string", description: "Stable project slug" },
+      },
+      required: ["sessionId", "files"],
+    },
+  },
+  {
+    name: "memory_context",
+    description:
+      "Get the current session/project context block. MCP equivalent of the PreCompact/SessionStart context injection.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sessionId: { type: "string", description: "Session ID" },
+        project: { type: "string", description: "Stable project slug" },
+        budget: { type: "number", description: "Token budget" },
+        agentId: { type: "string", description: "Optional agent identity" },
+      },
+      required: ["sessionId", "project"],
+    },
+  },
 ];
 
 export const V040_TOOLS: McpToolDef[] = [

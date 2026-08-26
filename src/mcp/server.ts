@@ -1,4 +1,6 @@
 import type { ISdk, ApiRequest } from "iii-sdk";
+import { appendFileSync, mkdirSync } from "node:fs";
+import { logger } from "../logger.js";
 import type { StateKV } from "../state/kv.js";
 import { KV } from "../state/schema.js";
 import type {
@@ -71,10 +73,9 @@ export function registerMcpEndpoints(
     config: { api_path: "/agentmemory/mcp/tools", http_method: "GET" },
   });
 
-  sdk.registerFunction("mcp::tools::call", 
-    async (
-      req: ApiRequest<{ name: string; arguments: Record<string, unknown> }>,
-    ): Promise<McpResponse> => {
+  async function handleToolCall(
+    req: ApiRequest<{ name: string; arguments: Record<string, unknown> }>,
+  ): Promise<McpResponse> {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
 
@@ -1272,6 +1273,215 @@ export function registerMcpEndpoints(
             };
           }
 
+          // ============================================================
+          // hook endpoints exposed as MCP tools
+          //
+          // Mapping strategy:
+          //   - mem::* functions take a plain payload -> trigger directly
+          //   - api::* functions take ApiRequest (destructure req.body)
+          //     -> wrap payload as { body: {...} }
+          //
+          // memory_observe / memory_enrich / memory_context -> mem::*
+          // memory_session_start / end / commit -> api::*
+          // ============================================================
+          case "memory_observe": {
+            const sessionId = asNonEmptyString(args.sessionId);
+            const hookType = asNonEmptyString(args.hookType);
+            if (!sessionId || !hookType) {
+              return {
+                status_code: 400,
+                body: { error: "sessionId and hookType are required for memory_observe" },
+              };
+            }
+            const result = await sdk.trigger({
+              function_id: "mem::observe",
+              payload: {
+                sessionId,
+                hookType,
+                project: asNonEmptyString(args.project) ?? "",
+                cwd: asNonEmptyString(args.cwd) ?? "",
+                timestamp:
+                  asNonEmptyString(args.timestamp) ?? new Date().toISOString(),
+                data: args.data ?? {},
+              },
+            });
+            return {
+              status_code: 200,
+              body: {
+                content: [{ type: "text", text: JSON.stringify(result) }],
+              },
+            };
+          }
+
+          case "memory_session_start": {
+            const sessionId = asNonEmptyString(args.sessionId);
+            const project = asNonEmptyString(args.project);
+            const cwd = asNonEmptyString(args.cwd);
+            if (!sessionId || !project || !cwd) {
+              return {
+                status_code: 400,
+                body: { error: "sessionId, project, and cwd are required for memory_session_start" },
+              };
+            }
+            const result = await sdk.trigger({
+              function_id: "api::session::start",
+              payload: {
+                body: {
+                  sessionId,
+                  project,
+                  cwd,
+                  title: asNonEmptyString(args.title),
+                  agentId: asNonEmptyString(args.agentId),
+                },
+              },
+            });
+            const unwrapped =
+              result && typeof result === "object" && "body" in result
+                ? (result as { body: unknown }).body
+                : result;
+            return {
+              status_code: 200,
+              body: {
+                content: [{ type: "text", text: JSON.stringify(unwrapped) }],
+              },
+            };
+          }
+
+          case "memory_session_end": {
+            const sessionId = asNonEmptyString(args.sessionId);
+            if (!sessionId) {
+              return {
+                status_code: 400,
+                body: { error: "sessionId is required for memory_session_end" },
+              };
+            }
+            const result = await sdk.trigger({
+              function_id: "api::session::end",
+              payload: {
+                body: { sessionId },
+              },
+            });
+            const unwrapped =
+              result && typeof result === "object" && "body" in result
+                ? (result as { body: unknown }).body
+                : result;
+            return {
+              status_code: 200,
+              body: {
+                content: [{ type: "text", text: JSON.stringify(unwrapped) }],
+              },
+            };
+          }
+
+          case "memory_session_commit": {
+            const sha = asNonEmptyString(args.sha);
+            if (!sha) {
+              return {
+                status_code: 400,
+                body: { error: "sha is required for memory_session_commit" },
+              };
+            }
+            const result = await sdk.trigger({
+              function_id: "api::session::commit",
+              payload: {
+                body: {
+                  sha,
+                  sessionId: asNonEmptyString(args.sessionId),
+                  branch: asNonEmptyString(args.branch),
+                  repo: asNonEmptyString(args.repo),
+                  message: asNonEmptyString(args.message),
+                  author: asNonEmptyString(args.author),
+                  authoredAt: asNonEmptyString(args.authoredAt),
+                  files:
+                    typeof args.files === "string"
+                      ? parseCsvList(args.files)
+                      : undefined,
+                },
+              },
+            });
+            const unwrapped =
+              result && typeof result === "object" && "body" in result
+                ? (result as { body: unknown }).body
+                : result;
+            return {
+              status_code: 200,
+              body: {
+                content: [{ type: "text", text: JSON.stringify(unwrapped) }],
+              },
+            };
+          }
+
+          case "memory_enrich": {
+            const sessionId = asNonEmptyString(args.sessionId);
+            const fileList =
+              typeof args.files === "string" ? parseCsvList(args.files) : [];
+            if (!sessionId || fileList.length === 0) {
+              return {
+                status_code: 400,
+                body: { error: "sessionId and files are required for memory_enrich" },
+              };
+            }
+            const result = await sdk.trigger({
+              function_id: "mem::enrich",
+              payload: {
+                sessionId,
+                files: fileList,
+                terms:
+                  typeof args.terms === "string"
+                    ? parseCsvList(args.terms)
+                    : undefined,
+                toolName: asNonEmptyString(args.toolName),
+                project: asNonEmptyString(args.project),
+              },
+            });
+            const context =
+              (result as { context?: string } | undefined)?.context ?? "";
+            return {
+              status_code: 200,
+              body: {
+                content: [
+                  {
+                    type: "text",
+                    text: context || "No enrichment.",
+                  },
+                ],
+              },
+            };
+          }
+
+          case "memory_context": {
+            const sessionId = asNonEmptyString(args.sessionId);
+            const project = asNonEmptyString(args.project);
+            if (!sessionId || !project) {
+              return {
+                status_code: 400,
+                body: { error: "sessionId and project are required for memory_context" },
+              };
+            }
+            const result = await sdk.trigger({
+              function_id: "mem::context",
+              payload: {
+                sessionId,
+                project,
+                budget: asNumber(args.budget),
+                agentId: asNonEmptyString(args.agentId),
+              },
+            });
+            const context =
+              (result as { context?: string } | undefined)?.context ?? "";
+            return {
+              status_code: 200,
+              body: {
+                content: [
+                  {
+                    type: "text",
+                    text: context,
+                  },
+                ],
+              },
+            };
+          }
+
           default:
             return {
               status_code: 400,
@@ -1286,12 +1496,83 @@ export function registerMcpEndpoints(
           },
         };
       }
+  }
+
+  sdk.registerFunction("mcp::tools::call", 
+    async (
+      req: ApiRequest<{ name: string; arguments: Record<string, unknown> }>,
+    ): Promise<McpResponse> => {
+      return handleToolCall(req);
     },
   );
   sdk.registerTrigger({
     type: "http",
     function_id: "mcp::tools::call",
     config: { api_path: "/agentmemory/mcp/call", http_method: "POST" },
+  });
+
+  function debugJsonRpc(req: ApiRequest<Record<string, unknown>>, body: Record<string, unknown> | undefined): void {
+    if (process.env["AGENTMEMORY_DEBUG_JSONRPC"] !== "1") return;
+    try {
+      const dir = process.env["AGENTMEMORY_DEBUG_DIR"] || ".agentmemory-debug";
+      mkdirSync(dir, { recursive: true });
+      const line = JSON.stringify({
+        ts: new Date().toISOString(),
+        headers: req.headers ?? {},
+        body,
+      });
+      appendFileSync(`${dir}/jsonrpc.log`, line + "\n", "utf8");
+    } catch (err) {
+      logger.warn("jsonrpc debug write failed", { err: String(err) });
+    }
+  }
+
+  sdk.registerFunction("mcp::jsonrpc", 
+    async (req: ApiRequest<Record<string, unknown>>): Promise<McpResponse> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+
+      const body = req.body as { method?: string; params?: Record<string, unknown> } | undefined;
+      debugJsonRpc(req, body);
+      const method = body?.method;
+      const params = body?.params ?? {};
+
+      if (method === "tools/list") {
+        const tools = getVisibleTools().map((tool) => ({
+          ...tool,
+          description:
+            "调用参数直接放在 arguments 顶层,不要包 params。示例:" +
+            (tool.name === "memory_recall"
+              ? " {\"query\":\"检索词\"}"
+              : tool.name === "memory_save"
+                ? " {\"content\":\"记忆内容\",\"type\":\"fact\"}"
+                : "") +
+            "\n" +
+            tool.description,
+        }));
+        return { status_code: 200, body: { tools } };
+      }
+
+      if (method === "tools/call") {
+        const name = params.name;
+        const args = params.arguments ?? {};
+        if (typeof name !== "string") {
+          return { status_code: 400, body: { error: "params.name is required" } };
+        }
+        const fakeReq: ApiRequest<{ name: string; arguments: Record<string, unknown> }> = {
+          ...req,
+          body: { name, arguments: args as Record<string, unknown> },
+        };
+        return handleToolCall(fakeReq);
+      }
+
+      return { status_code: 400, body: { error: `Unsupported method: ${String(method)}` } };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "mcp::jsonrpc",
+    config: { api_path: "/agentmemory/jsonrpc", http_method: "POST" },
   });
 
   const MCP_RESOURCES = [
