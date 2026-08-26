@@ -101,3 +101,58 @@ describe("ResilientProvider rate limiting", () => {
     );
   });
 });
+
+describe("ResilientProvider rate-limit classification", () => {
+  it("still opens the breaker when a real failure merely mentions a rate limit", async () => {
+    // The filter matches on message text, and providers interpolate the whole
+    // upstream body. A 500 whose body carries a docs link like
+    // /docs/guides/rate-limits would otherwise be excused forever, leaving the
+    // breaker permanently blind to a genuinely broken provider.
+    const inner = countingProvider(async () => {
+      throw new Error(
+        "HTTP 500 upstream failure, see https://example.com/docs/guides/rate-limits",
+      );
+    });
+    const provider = new ResilientProvider(inner);
+
+    for (let i = 0; i < 3; i++) {
+      await provider.compress("sys", "user").catch(() => undefined);
+    }
+
+    expect(provider.circuitState.state).toBe("open");
+  });
+
+  it("opens the breaker on quota exhaustion even though it arrives as a 429", async () => {
+    // Quota exhaustion and billing failures use the same status as
+    // backpressure, but they do not resolve on their own. Excusing them means
+    // the breaker can never open for a provider that will stay broken.
+    const inner = countingProvider(async () => {
+      throw new Error(
+        'API error (429): {"error":{"code":"insufficient_quota","message":"You exceeded your current quota"}}',
+      );
+    });
+    const provider = new ResilientProvider(inner);
+
+    for (let i = 0; i < 3; i++) {
+      await provider.compress("sys", "user").catch(() => undefined);
+    }
+
+    expect(provider.circuitState.state).toBe("open");
+  });
+
+  it("treats an overloaded provider as backpressure", async () => {
+    // Anthropic signals the same "busy, retry" condition as 529
+    // overloaded_error rather than 429.
+    const inner = countingProvider(async (n) => {
+      if (n <= 5) throw new Error('{"type":"overloaded_error"} (529)');
+      return "ok";
+    });
+    const provider = new ResilientProvider(inner);
+
+    for (let i = 0; i < 5; i++) {
+      await provider.compress("sys", "user").catch(() => undefined);
+    }
+
+    expect(provider.circuitState.state).toBe("closed");
+  });
+});

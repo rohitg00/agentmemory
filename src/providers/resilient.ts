@@ -2,7 +2,17 @@ import type { MemoryProvider, CircuitBreakerState } from "../types.js";
 import { CircuitBreaker } from "./circuit-breaker.js";
 import { getEnvVar } from "../config.js";
 
-const DEFAULT_MAX_CONCURRENT = 4;
+// Matches CHUNK_CONCURRENCY_DEFAULT in src/functions/summarize.ts on purpose.
+// That value is tuned so a ~100-chunk session finishes inside the 180s
+// invocation budget at roughly 8s per call; a global gate below it would push
+// that past the budget and silently make SUMMARIZE_CHUNK_CONCURRENCY a no-op
+// above the gate. Raise them together, never one alone.
+const DEFAULT_MAX_CONCURRENT = 6;
+
+// A queued call still holds its prompts alive, so an unbounded queue is a
+// memory leak on a service that is already memory-constrained. Compression is
+// dispatched fire-and-forget, so nothing upstream applies backpressure for us.
+const MAX_QUEUED = 512;
 
 /**
  * Bounds how many calls are inside the provider at once.
@@ -22,6 +32,9 @@ class Semaphore {
       this.active++;
       return;
     }
+    if (this.waiting.length >= MAX_QUEUED) {
+      throw new Error("provider_queue_full");
+    }
     await new Promise<void>((resolve) => this.waiting.push(resolve));
   }
 
@@ -36,7 +49,22 @@ class Semaphore {
 // provider and failed every compression for the recovery window.
 function isRateLimited(err: unknown): boolean {
   const message = err instanceof Error ? err.message : String(err);
-  return /\b429\b|rate.?limit|too many (concurrent )?requests/i.test(message);
+  // Quota exhaustion and billing failures also come back as 429, but they are
+  // persistent states rather than backpressure. Excusing them would mean the
+  // breaker could never open for a provider that will not recover on its own,
+  // so they are checked first and fall through to a genuine failure.
+  if (/insufficient_quota|exceeded your current quota|billing/i.test(message)) {
+    return false;
+  }
+  // Status codes and API error codes only. `rate.?limit` also matched the
+  // hyphenated form in a docs URL, so a genuine 500 whose body linked to
+  // /docs/guides/rate-limits was excused and the breaker stayed blind to a
+  // provider that was actually broken. `rate[ _]limit` covers prose and the
+  // rate_limit_error / rate_limit_exceeded codes without matching the URL.
+  // 529 / overloaded_error is Anthropic's form of the same backpressure signal.
+  return /\b429\b|\b529\b|rate[ _]limit|too many (concurrent )?requests|overloaded_error/i.test(
+    message,
+  );
 }
 
 // Option is the test seam, env is the operator knob on Railway, constant is the
@@ -72,6 +100,14 @@ export class ResilientProvider implements MemoryProvider {
       throw new Error("circuit_breaker_open");
     }
     await this.gate.acquire();
+    // Re-checked after queueing. A call that passed the first check may have
+    // waited while the running calls failed and opened the breaker; without
+    // this it would still be sent to a provider already known to be down, and
+    // each such failure pushes the recovery window further out.
+    if (!this.breaker.isAllowed) {
+      this.gate.release();
+      throw new Error("circuit_breaker_open");
+    }
     try {
       const result = await fn();
       this.breaker.recordSuccess();
