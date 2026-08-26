@@ -14,13 +14,6 @@ const DEFAULT_MAX_CONCURRENT = 6;
 // dispatched fire-and-forget, so nothing upstream applies backpressure for us.
 const MAX_QUEUED = 512;
 
-/**
- * Bounds how many calls are inside the provider at once.
- *
- * release() hands its slot directly to the next waiter rather than
- * decrementing and letting waiters race for the opening, so the limit holds
- * under a burst.
- */
 class Semaphore {
   private active = 0;
   private waiting: Array<() => void> = [];
@@ -45,9 +38,7 @@ class Semaphore {
   }
 }
 
-// 429 is backpressure, not a fault. Counting it opened the breaker on a healthy
-// provider and failed every compression for the recovery window.
-function isRateLimited(err: unknown): boolean {
+function isBackpressure(err: unknown): boolean {
   const message = err instanceof Error ? err.message : String(err);
   // Quota exhaustion and billing failures also come back as 429, but they are
   // persistent states rather than backpressure. Excusing them would mean the
@@ -67,9 +58,6 @@ function isRateLimited(err: unknown): boolean {
   );
 }
 
-// Option is the test seam, env is the operator knob on Railway, constant is the
-// default. getEnvVar rather than process.env so ~/.agentmemory/.env is honoured,
-// which is how every sibling provider reads config.
 function resolveMaxConcurrent(configured: number | undefined): number {
   const candidate =
     configured ??
@@ -94,8 +82,6 @@ export class ResilientProvider implements MemoryProvider {
   }
 
   private async call(fn: () => Promise<string>): Promise<string> {
-    // Checked before queueing. An open breaker should fail fast rather than
-    // occupy a slot that a call with a chance of succeeding could use.
     if (!this.breaker.isAllowed) {
       throw new Error("circuit_breaker_open");
     }
@@ -120,11 +106,9 @@ export class ResilientProvider implements MemoryProvider {
       // rate-limited probe leaves the breaker sitting in half-open admitting
       // every call, with no path back to either open or closed. A probe that
       // came back rate-limited has still failed as a probe.
-      if (probing || !isRateLimited(err)) this.breaker.recordFailure();
+      if (probing || !isBackpressure(err)) this.breaker.recordFailure();
       throw err;
     } finally {
-      // In `finally` so a throw cannot leak the slot and deadlock every call
-      // queued behind it.
       this.gate.release();
     }
   }
