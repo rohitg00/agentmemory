@@ -1,17 +1,15 @@
 import type { MemoryProvider, CircuitBreakerState } from "../types.js";
-import { CircuitBreaker, type CircuitBreakerOptions } from "./circuit-breaker.js";
+import { CircuitBreaker } from "./circuit-breaker.js";
+import { getEnvVar } from "../config.js";
 
 const DEFAULT_MAX_CONCURRENT = 4;
 
 /**
  * Bounds how many calls are inside the provider at once.
  *
- * Without this, every captured observation fired a compress() immediately and
- * unbounded, so load meant dozens of simultaneous upstream calls and the
- * provider answered with `429 too many concurrent requests`.
- *
- * release() hands its slot directly to the next waiter rather than decrementing
- * and letting it race for the opening, so the limit holds under a burst.
+ * release() hands its slot directly to the next waiter rather than
+ * decrementing and letting waiters race for the opening, so the limit holds
+ * under a burst.
  */
 class Semaphore {
   private active = 0;
@@ -34,34 +32,23 @@ class Semaphore {
   }
 }
 
-/**
- * A 429 says "slow down", not "you are broken".
- *
- * Counting it as a circuit-breaker failure turns backpressure into an outage:
- * three of them inside the failure window open the breaker, and then every
- * compression fails fast for the whole recovery timeout even though the
- * provider is healthy and merely busy.
- */
+// 429 is backpressure, not a fault. Counting it opened the breaker on a healthy
+// provider and failed every compression for the recovery window.
 function isRateLimited(err: unknown): boolean {
   const message = err instanceof Error ? err.message : String(err);
-  return (
-    /\b429\b/.test(message) ||
-    /rate.?limit|too many (concurrent )?requests/i.test(message)
-  );
+  return /\b429\b|rate.?limit|too many (concurrent )?requests/i.test(message);
 }
 
+// Option is the test seam, env is the operator knob on Railway, constant is the
+// default. getEnvVar rather than process.env so ~/.agentmemory/.env is honoured,
+// which is how every sibling provider reads config.
 function resolveMaxConcurrent(configured: number | undefined): number {
   const candidate =
     configured ??
-    Number(process.env["AGENTMEMORY_MAX_PROVIDER_CONCURRENCY"] ?? NaN);
+    Number(getEnvVar("AGENTMEMORY_MAX_PROVIDER_CONCURRENCY") ?? NaN);
   if (!Number.isFinite(candidate)) return DEFAULT_MAX_CONCURRENT;
   const whole = Math.floor(candidate);
   return whole >= 1 ? whole : DEFAULT_MAX_CONCURRENT;
-}
-
-export interface ResilientProviderOptions {
-  maxConcurrent?: number;
-  breaker?: CircuitBreakerOptions;
 }
 
 export class ResilientProvider implements MemoryProvider {
@@ -71,9 +58,9 @@ export class ResilientProvider implements MemoryProvider {
 
   constructor(
     private inner: MemoryProvider,
-    options: ResilientProviderOptions = {},
+    options: { maxConcurrent?: number } = {},
   ) {
-    this.breaker = new CircuitBreaker(options.breaker);
+    this.breaker = new CircuitBreaker();
     this.gate = new Semaphore(resolveMaxConcurrent(options.maxConcurrent));
     this.name = `resilient(${inner.name})`;
   }

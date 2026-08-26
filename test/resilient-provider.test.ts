@@ -40,25 +40,13 @@ describe("ResilientProvider concurrency", () => {
     );
     const provider = new ResilientProvider(inner, { maxConcurrent: 3 });
 
-    await Promise.all(
+    const results = await Promise.all(
       Array.from({ length: 24 }, () => provider.compress("sys", "user")),
     );
 
-    // The provider fired all 24 at once before this bound existed, which is
-    // exactly what the upstream 429 complains about.
     expect(inner.peak).toBeLessThanOrEqual(3);
+    // Bounding must not drop work: every call still ran and still resolved.
     expect(inner.calls).toBe(24);
-  });
-
-  it("still completes every call while bounded", async () => {
-    const inner = countingProvider();
-    const provider = new ResilientProvider(inner, { maxConcurrent: 2 });
-
-    const results = await Promise.all(
-      Array.from({ length: 10 }, () => provider.compress("sys", "user")),
-    );
-
-    expect(results).toHaveLength(10);
     expect(results.every((r) => r === "ok")).toBe(true);
   });
 
@@ -67,16 +55,14 @@ describe("ResilientProvider concurrency", () => {
       if (n <= 2) throw new Error("boom");
       return "ok";
     });
-    const provider = new ResilientProvider(inner, {
-      maxConcurrent: 1,
-      breaker: { failureThreshold: 100 },
-    });
+    // maxConcurrent 1 is load-bearing here: at the default of 4 a leaked slot
+    // would not deadlock, and the test would pass despite the bug.
+    const provider = new ResilientProvider(inner, { maxConcurrent: 1 });
 
     const settled = await Promise.allSettled(
       Array.from({ length: 5 }, () => provider.compress("sys", "user")),
     );
 
-    // A slot leaked on the error path would deadlock the remaining calls.
     expect(settled).toHaveLength(5);
     expect(settled.filter((s) => s.status === "fulfilled")).toHaveLength(3);
   });
@@ -84,18 +70,13 @@ describe("ResilientProvider concurrency", () => {
 
 describe("ResilientProvider rate limiting", () => {
   it("does not open the breaker on 429s", async () => {
-    // A 429 means slow down, not that the provider is broken. Counting it as a
-    // breaker failure converts backpressure into a 30s outage in which every
-    // compression fails fast.
     const inner = countingProvider(async (n) => {
       if (n <= 5) throw rateLimited();
       return "ok";
     });
-    const provider = new ResilientProvider(inner, {
-      maxConcurrent: 1,
-      breaker: { failureThreshold: 3 },
-    });
+    const provider = new ResilientProvider(inner);
 
+    // Five, against a default failure threshold of three.
     for (let i = 0; i < 5; i++) {
       await provider.compress("sys", "user").catch(() => undefined);
     }
@@ -108,10 +89,7 @@ describe("ResilientProvider rate limiting", () => {
     const inner = countingProvider(async () => {
       throw new Error("upstream exploded");
     });
-    const provider = new ResilientProvider(inner, {
-      maxConcurrent: 1,
-      breaker: { failureThreshold: 3 },
-    });
+    const provider = new ResilientProvider(inner);
 
     for (let i = 0; i < 3; i++) {
       await provider.compress("sys", "user").catch(() => undefined);
