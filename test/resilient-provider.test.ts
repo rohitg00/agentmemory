@@ -185,9 +185,52 @@ describe("ResilientProvider half-open probe", () => {
     try {
       mode = "ratelimit";
       await provider.compress("sys", "user").catch(() => undefined);
-      expect(provider.circuitState.state).not.toBe("half-open");
+
+      // Assert the probe actually dispatched. Without this the test passes
+      // vacuously if the clock advance does not take: the breaker would still
+      // be open, the first isAllowed check would throw before reaching fn(),
+      // and "open" !== "half-open" would hold while nothing was exercised.
+      expect(inner.calls).toBe(4);
+      // Must be exactly open. `not.toBe("half-open")` would also accept
+      // "closed", which is the worse bug — a rate-limited probe mistaken for
+      // full recovery.
+      expect(provider.circuitState.state).toBe("open");
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("fails a call queued before the breaker opened, without calling the provider", async () => {
+    // The post-acquire re-check. A call admitted while the breaker was closed
+    // can wait behind others that fail and open it; without the re-check it is
+    // still handed to a provider already known to be down.
+    let release!: () => void;
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    const inner = countingProvider(async (n) => {
+      if (n === 1) {
+        await gate;
+        throw new Error("upstream exploded");
+      }
+      throw new Error("upstream exploded");
+    });
+    const provider = new ResilientProvider(inner, { maxConcurrent: 1 });
+
+    // One call occupies the only slot; three more queue behind it.
+    const first = provider.compress("sys", "user").catch((e) => e);
+    const queued = Array.from({ length: 3 }, () =>
+      provider.compress("sys", "user").catch((e: Error) => e),
+    );
+    release();
+    const results = [await first, ...(await Promise.all(queued))];
+
+    // Three failures open the breaker, so the last queued call must be turned
+    // away at the re-check rather than reaching the provider.
+    expect(provider.circuitState.state).toBe("open");
+    expect(inner.calls).toBeLessThan(4);
+    expect(
+      results.some((r) => (r as Error).message === "circuit_breaker_open"),
+    ).toBe(true);
   });
 });
