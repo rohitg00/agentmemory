@@ -151,6 +151,7 @@ export const CORE_TOOLS: McpToolDef[] = [
         queryImageRef: { type: "string", description: "Absolute path to a stored image to match against" },
         queryImageBase64: { type: "string", description: "Raw base64 image bytes or data URL" },
         topK: { type: "number", description: "Max results (default 10, max 50)" },
+        limit: { type: "number", description: "Alias for topK; topK wins when both are given" },
         sessionId: { type: "string", description: "Filter to a single session" },
       },
     },

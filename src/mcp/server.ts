@@ -306,7 +306,7 @@ export function registerMcpEndpoints(
                 body: { error: "queryText, queryImageRef, or queryImageBase64 required" },
               };
             }
-            const topK = Math.max(1, Math.min(50, asNumber(args.topK, 10) ?? 10));
+            const topK = Math.max(1, Math.min(50, asNumber(args.topK ?? args.limit, 10) ?? 10));
             const sessionId = typeof args.sessionId === "string" ? args.sessionId : undefined;
             const result = await sdk.trigger({
               function_id: "mem::vision-search",
