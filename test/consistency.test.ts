@@ -35,6 +35,15 @@ describe("Consistency checks", () => {
     expect(plugin.version).toBe(pkg.version);
   });
 
+  it("packages/mcp version matches package.json", () => {
+    // The mcp package publishes in lockstep with the main package but its
+    // version lives in its own manifest; without this guard a release bump
+    // can silently ship a stale @agentmemory/mcp (it slipped in 0.9.29).
+    const pkg = JSON.parse(readText("package.json"));
+    const mcp = JSON.parse(readText("packages/mcp/package.json"));
+    expect(mcp.version).toBe(pkg.version);
+  });
+
   it("export-import.ts supports current version", () => {
     const src = readText("src/functions/export-import.ts");
     expect(src).toContain(`"${VERSION}"`);

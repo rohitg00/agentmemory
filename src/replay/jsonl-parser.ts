@@ -1,3 +1,5 @@
+import { existsSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import type { HookType, RawObservation } from "../types.js";
 import { generateId } from "../state/schema.js";
 
@@ -24,10 +26,39 @@ export interface ParsedTranscript {
   observations: RawObservation[];
 }
 
+// Memoized per import run: transcripts repeat the same cwd on every line.
+const projectByCwd = new Map<string, string>();
+
 function deriveProject(cwd: string): string {
   if (!cwd) return "unknown";
-  const parts = cwd.split("/").filter(Boolean);
-  return parts[parts.length - 1] || "unknown";
+  const cached = projectByCwd.get(cwd);
+  if (cached) return cached;
+  let name = "";
+  // When the recorded cwd still exists on this machine, resolve the git
+  // toplevel basename so a subdirectory session scopes to the repository
+  // name, matching the hooks' resolveProject. Historical or cross-platform
+  // paths fall back to the basename below. No env override here: a bulk
+  // import spans many projects, so a global name would mislabel them all.
+  if (existsSync(cwd)) {
+    try {
+      const top = execFileSync("git", ["rev-parse", "--show-toplevel"], {
+        cwd,
+        stdio: ["ignore", "pipe", "ignore"],
+        encoding: "utf8",
+      }).trim();
+      if (top) name = top.split(/[\\/]+/).filter(Boolean).pop() ?? "";
+    } catch {
+      // not a git repo
+    }
+  }
+  if (!name) {
+    // Split on both separators so a Windows-recorded cwd yields its basename
+    // instead of the whole raw path becoming the project scope.
+    const parts = cwd.split(/[\\/]+/).filter(Boolean);
+    name = parts[parts.length - 1] || "unknown";
+  }
+  projectByCwd.set(cwd, name);
+  return name;
 }
 
 function toText(content: unknown): string {
@@ -99,7 +130,7 @@ export function parseJsonlText(text: string, fallbackSessionId?: string): Parsed
 
   for (const entry of entries) {
     if (entry.sessionId && !sessionId) sessionId = entry.sessionId;
-    if (entry.cwd && !cwd) cwd = entry.cwd;
+    if (typeof entry.cwd === "string" && entry.cwd.trim() && !cwd) cwd = entry.cwd;
     const ts = entry.timestamp || new Date().toISOString();
     if (!firstTs) firstTs = ts;
     lastTs = ts;

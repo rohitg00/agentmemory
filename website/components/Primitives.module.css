@@ -4,65 +4,42 @@
 .grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 1px;
+  gap: 16px;
   max-width: 1440px;
   margin: 0 auto;
   padding: 0 40px;
-  background: var(--charcoal);
-  border: 1px solid var(--charcoal);
 }
 .card {
-  background: var(--abyss);
-  padding: 48px 32px;
-  transition:
-    background 250ms ease,
-    transform 250ms ease;
-  position: relative;
-  overflow: hidden;
-  min-height: 280px;
-}
-.card::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    135deg,
-    rgba(255, 192, 0, 0) 0%,
-    rgba(255, 192, 0, 0) 50%,
-    rgba(255, 192, 0, 0.08) 100%
-  );
-  opacity: 0;
-  transition: opacity 250ms ease;
+  background: var(--canvas-card);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-card);
+  padding: 40px 32px;
+  transition: background 200ms ease;
+  min-height: 260px;
 }
 .card:hover {
-  background: var(--iron);
-  transform: translateY(-4px);
-}
-.card:hover::before {
-  opacity: 1;
+  background: var(--canvas-soft);
 }
 .glyph {
   font-family: var(--font-mono);
-  font-size: 14px;
-  color: var(--gold);
-  letter-spacing: 0.2px;
+  font-size: 13px;
+  letter-spacing: 1.2px;
+  color: var(--mute);
   margin-bottom: 32px;
 }
 .title {
-  font-size: 40px;
-  font-weight: 900;
-  line-height: 0.98;
-  letter-spacing: -0.01em;
-  margin: 0 0 24px;
-  text-transform: uppercase;
+  font-size: 30px;
+  font-weight: 400;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  margin: 0 0 18px;
 }
 .text {
   font-size: 14px;
-  letter-spacing: 0.12px;
-  color: var(--steel);
-  text-transform: uppercase;
+  color: var(--body);
   margin: 0;
-  line-height: 1.6;
+  line-height: 1.65;
 }
 @media (max-width: 1024px) {
   .grid {

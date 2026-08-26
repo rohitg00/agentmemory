@@ -70,7 +70,11 @@ export class HybridSearch {
     }
 
     return Array.from(merged.values())
-      .sort((a, b) => b.combinedScore - a.combinedScore)
+      .sort(
+        (a, b) =>
+          b.combinedScore - a.combinedScore ||
+          (a.obsId < b.obsId ? -1 : a.obsId > b.obsId ? 1 : 0),
+      )
       .slice(0, limit);
   }
 
@@ -191,34 +195,49 @@ export class HybridSearch {
       }
     });
 
-    const hasVector = vectorResults.length > 0;
-    const hasGraph = graphResults.length > 0;
+    // Normalize once per query by the best attainable weighted score over
+    // the streams that produced results, so configured stream weights
+    // survive for single-stream hits and a silent stream carries no penalty.
+    const AGREEMENT_BONUS = 0.05;
+    const activeWeight =
+      (bm25Results.length > 0 ? this.bm25Weight : 0) +
+      (vectorResults.length > 0 ? this.vectorWeight : 0) +
+      (graphResults.length > 0 ? this.graphWeight : 0);
+    const maxAttainable = activeWeight * (1 / (RRF_K + 1));
+    const ranked = Array.from(scores.entries()).map(([obsId, s]) => {
+      const wB = Number.isFinite(s.bm25Rank) ? this.bm25Weight : 0;
+      const wV = Number.isFinite(s.vectorRank) ? this.vectorWeight : 0;
+      const wG = Number.isFinite(s.graphRank) ? this.graphWeight : 0;
+      const matchedStreams =
+        (wB > 0 ? 1 : 0) + (wV > 0 ? 1 : 0) + (wG > 0 ? 1 : 0);
+      const weighted =
+        wB * (1 / (RRF_K + s.bm25Rank)) +
+        wV * (1 / (RRF_K + s.vectorRank)) +
+        wG * (1 / (RRF_K + s.graphRank));
+      const rrf = maxAttainable > 0 ? weighted / maxAttainable : 0;
+      return {
+        obsId,
+        s,
+        combinedScore: rrf * (1 + AGREEMENT_BONUS * (matchedStreams - 1)),
+        minRank: Math.min(s.bm25Rank, s.vectorRank, s.graphRank),
+      };
+    });
 
-    let effectiveBm25W = this.bm25Weight;
-    let effectiveVectorW = hasVector ? this.vectorWeight : 0;
-    let effectiveGraphW = hasGraph ? this.graphWeight : 0;
-
-    const totalW = effectiveBm25W + effectiveVectorW + effectiveGraphW;
-    if (totalW > 0) {
-      effectiveBm25W /= totalW;
-      effectiveVectorW /= totalW;
-      effectiveGraphW /= totalW;
-    }
-
-    const combined = Array.from(scores.entries()).map(([obsId, s]) => ({
+    ranked.sort(
+      (a, b) =>
+        b.combinedScore - a.combinedScore ||
+        a.minRank - b.minRank ||
+        (a.obsId < b.obsId ? -1 : a.obsId > b.obsId ? 1 : 0),
+    );
+    const combined = ranked.map(({ obsId, s, combinedScore }) => ({
       obsId,
       sessionId: s.sessionId,
       bm25Score: s.bm25Score,
       vectorScore: s.vectorScore,
       graphScore: s.graphScore,
       graphContext: s.graphContext,
-      combinedScore:
-        effectiveBm25W * (1 / (RRF_K + s.bm25Rank)) +
-        effectiveVectorW * (1 / (RRF_K + s.vectorRank)) +
-        effectiveGraphW * (1 / (RRF_K + s.graphRank)),
+      combinedScore,
     }));
-
-    combined.sort((a, b) => b.combinedScore - a.combinedScore);
 
     const retrievalDepth = Math.max(limit, 20);
     const rerankWindow = 20;

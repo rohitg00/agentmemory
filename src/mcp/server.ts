@@ -186,6 +186,10 @@ export function registerMcpEndpoints(
               typeof args.project === "string" && args.project.trim().length > 0
                 ? args.project.trim()
                 : undefined;
+            const saveAgentId =
+              typeof args.agentId === "string" && args.agentId.trim().length > 0
+                ? (args.agentId as string).trim()
+                : undefined;
 
             const result = await sdk.trigger({ function_id: "mem::remember", payload: {
               content: args.content,
@@ -193,6 +197,7 @@ export function registerMcpEndpoints(
               concepts,
               files,
               ...(project !== undefined && { project }),
+              ...(saveAgentId !== undefined && { agentId: saveAgentId }),
             } });
             return {
               status_code: 200,
@@ -1120,6 +1125,16 @@ export function registerMcpEndpoints(
               limit: args.limit,
             } });
             return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(lessonRecallResult, null, 2) }] } };
+          }
+
+          case "memory_lesson_delete": {
+            if (typeof args.lessonId !== "string" || !args.lessonId.trim()) {
+              return { status_code: 400, body: { error: "lessonId is required" } };
+            }
+            const lessonDeleteResult = await sdk.trigger({ function_id: "mem::lesson-delete", payload: {
+              lessonId: args.lessonId.trim(),
+            } });
+            return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(lessonDeleteResult, null, 2) }] } };
           }
 
           case "memory_reflect": {

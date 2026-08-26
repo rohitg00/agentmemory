@@ -1,8 +1,8 @@
 .wrap {
   padding: 48px 0 56px;
-  background: var(--ink);
-  border-top: 1px solid var(--charcoal);
-  border-bottom: 1px solid var(--charcoal);
+  background: var(--canvas);
+  border-top: 1px solid var(--hairline);
+  border-bottom: 1px solid var(--hairline);
 }
 .wrapCompact {
   padding: 36px 0 0;
@@ -26,7 +26,7 @@
   font-family: var(--font-mono);
   font-size: 11px;
   letter-spacing: 2.4px;
-  color: var(--ash);
+  color: var(--mute);
   text-transform: uppercase;
   display: flex;
   align-items: center;
@@ -39,12 +39,12 @@
   content: "";
   flex: 0 0 80px;
   height: 1px;
-  background: var(--charcoal);
+  background: var(--hairline);
 }
 .row {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 20px;
+  gap: 16px;
   width: 100%;
   max-width: 1100px;
   align-items: stretch;
@@ -56,21 +56,21 @@
   gap: 14px;
   align-items: center;
   padding: 18px 22px;
-  border: 1px solid var(--charcoal);
-  background: var(--iron);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-card);
+  background: var(--canvas-card);
   text-decoration: none;
-  color: var(--white);
-  transition: border-color 0.12s ease, transform 0.12s ease, background 0.12s ease;
+  color: var(--ink);
+  transition: border-color 0.15s ease, background 0.15s ease;
   min-height: 96px;
 }
 .cell:hover,
 .cell:focus-visible {
-  border-color: var(--gold);
-  transform: translateY(-1px);
-  background: #16161a;
+  border-color: var(--border-ghost);
+  background: var(--canvas-soft);
 }
 .cell:focus-visible {
-  outline: 2px solid var(--gold);
+  outline: 2px solid rgba(255, 255, 255, 0.55);
   outline-offset: 2px;
 }
 .cellBadge {
@@ -84,9 +84,9 @@
 .logo {
   width: 56px;
   height: 56px;
-  border-radius: 8px;
+  border-radius: var(--radius-card);
   object-fit: cover;
-  background: var(--ink);
+  background: var(--canvas);
 }
 .badgeImg {
   width: 100%;
@@ -108,31 +108,28 @@
   min-width: 0;
 }
 .name {
-  font-family: var(--font-mono);
   font-size: 14px;
-  letter-spacing: 0.6px;
-  color: var(--white);
-  font-weight: 700;
-  text-transform: uppercase;
+  font-weight: 500;
+  color: var(--ink);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .sub {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 10.5px;
   letter-spacing: 0.8px;
-  color: var(--steel);
+  color: var(--mute);
   text-transform: uppercase;
 }
 .arrow {
   font-family: var(--font-mono);
-  color: var(--ash);
+  color: var(--mute);
   font-size: 14px;
-  transition: color 0.12s ease, transform 0.12s ease;
+  transition: color 0.15s ease, transform 0.15s ease;
 }
 .cell:hover .arrow {
-  color: var(--gold);
+  color: var(--ink);
   transform: translate(2px, -2px);
 }
 @media (max-width: 980px) {

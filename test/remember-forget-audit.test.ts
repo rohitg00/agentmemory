@@ -122,6 +122,40 @@ describe("mem::forget audit coverage (issue #125)", () => {
     const auditRows = await kv.list("mem:audit");
     expect(auditRows).toHaveLength(0);
   });
+
+  // Regression coverage for issue #1120: mem::forget must not report a
+  // deletion for ids it never touches (e.g. lesson ids live in KV.lessons,
+  // not KV.memories).
+  it("returns deleted: 0 for a nonexistent memoryId (lesson id)", async () => {
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerRememberFunction(sdk as never, kv as never);
+
+    const deleteSpy = vi.spyOn(kv, "delete");
+    const result = await sdk.trigger({
+      function_id: "mem::forget",
+      payload: { memoryId: "lsn_4f9cb07017a7c8ac" },
+    });
+
+    expect(result).toEqual({ success: true, deleted: 0 });
+    // No-op path must not touch the memories keyspace or search index.
+    expect(deleteSpy).not.toHaveBeenCalled();
+    expect(getSearchIndex().has("lsn_4f9cb07017a7c8ac")).toBe(false);
+  });
+
+  it("emits no audit row when memoryId does not exist", async () => {
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerRememberFunction(sdk as never, kv as never);
+
+    await sdk.trigger({
+      function_id: "mem::forget",
+      payload: { memoryId: "lsn_4f9cb07017a7c8ac" },
+    });
+
+    const auditRows = await kv.list("mem:audit");
+    expect(auditRows).toHaveLength(0);
+  });
 });
 
 // Delete paths must tear down the BM25 index entry and synchronously

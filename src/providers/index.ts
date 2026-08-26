@@ -35,19 +35,17 @@ function requireEnvVar(key: string): string {
 function defaultModelFor(providerType: ProviderConfig["provider"]): string {
   switch (providerType) {
     case "openai":
-      return getEnvVar("OPENAI_MODEL") || "gpt-4o-mini";
+      return getEnvVar("OPENAI_MODEL") || "gpt-5.6-luna";
     case "anthropic":
-      return getEnvVar("ANTHROPIC_MODEL") || "claude-sonnet-4-20250514";
+      return getEnvVar("ANTHROPIC_MODEL") || "claude-sonnet-5";
     case "gemini":
-      return getEnvVar("GEMINI_MODEL") || "gemini-2.5-flash";
+      return getEnvVar("GEMINI_MODEL") || "gemini-3.7-flash";
     case "openrouter":
-      return (
-        getEnvVar("OPENROUTER_MODEL") || "anthropic/claude-sonnet-4-20250514"
-      );
+      return getEnvVar("OPENROUTER_MODEL") || "anthropic/claude-sonnet-5";
     case "minimax":
-      return getEnvVar("MINIMAX_MODEL") || "MiniMax-M2.7";
+      return getEnvVar("MINIMAX_MODEL") || "MiniMax-M3";
     case "agent-sdk":
-      return "claude-sonnet-4-20250514";
+      return "claude-sonnet-5";
     case "noop":
     default:
       return "noop";

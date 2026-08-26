@@ -1,7 +1,7 @@
 .stats {
-  border-top: 1px solid var(--charcoal);
-  border-bottom: 1px solid var(--charcoal);
-  background: var(--iron);
+  border-top: 1px solid var(--hairline);
+  border-bottom: 1px solid var(--hairline);
+  background: var(--canvas);
 }
 .row {
   display: grid;
@@ -12,27 +12,29 @@
 .stat {
   padding: 48px 24px;
   text-align: center;
-  border-right: 1px solid var(--charcoal);
+  border-right: 1px solid var(--hairline);
   transition: background 250ms ease;
 }
 .stat:last-child {
   border-right: none;
 }
 .stat:hover {
-  background: var(--charcoal);
+  background: var(--canvas-card);
 }
 .num {
-  font-size: clamp(40px, 5vw, 64px);
-  font-weight: 900;
+  font-size: clamp(38px, 4.6vw, 56px);
+  font-weight: 400;
   line-height: 1;
-  color: var(--gold);
-  letter-spacing: -0.02em;
+  color: var(--ink);
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
 }
 .label {
-  margin-top: 12px;
+  margin-top: 14px;
+  font-family: var(--font-mono);
   font-size: 11px;
-  letter-spacing: 0.96px;
-  color: var(--steel);
+  letter-spacing: 1.2px;
+  color: var(--mute);
   text-transform: uppercase;
 }
 
@@ -41,7 +43,7 @@
     grid-template-columns: repeat(3, 1fr);
   }
   .stat {
-    border-bottom: 1px solid var(--charcoal);
+    border-bottom: 1px solid var(--hairline);
   }
   .stat:nth-child(3n) {
     border-right: none;
@@ -55,14 +57,14 @@
     padding: 32px 12px;
   }
   .num {
-    font-size: 36px;
+    font-size: 34px;
   }
   .label {
     font-size: 10px;
-    letter-spacing: 0.6px;
+    letter-spacing: 0.8px;
   }
   .stat:nth-child(3n) {
-    border-right: 1px solid var(--charcoal);
+    border-right: 1px solid var(--hairline);
   }
   .stat:nth-child(2n) {
     border-right: none;

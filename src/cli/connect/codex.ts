@@ -169,8 +169,11 @@ function installCodexHooks(opts: ConnectOptions): ConnectResult {
   writeJsonAtomic(CODEX_HOOKS, merged);
 
   logInstalled("Codex hooks (workaround for openai/codex#16430)", CODEX_HOOKS);
+  p.log.warn(
+    "Codex runs only trusted hooks: launch `codex` (the TUI) once and choose \"Trust all and continue\" at the \"Hooks need review\" prompt. `codex exec` never shows the prompt, so hooks stay inert until then.",
+  );
   p.log.info(
-    "User-scope hooks reference absolute paths under the bundled plugin/ dir. Re-run `agentmemory connect codex --with-hooks` after upgrading agentmemory to refresh them.",
+    "User-scope hooks reference absolute paths under the bundled plugin/ dir. Re-run `agentmemory connect codex --with-hooks` after upgrading agentmemory to refresh them, then re-approve in the TUI.",
   );
 
   return {

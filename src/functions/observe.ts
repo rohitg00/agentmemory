@@ -1,5 +1,7 @@
 import { TriggerAction, type ISdk } from "iii-sdk";
-import type { RawObservation, HookPayload } from "../types.js";
+import type { RawObservation, HookPayload, Origin } from "../types.js";
+
+const TOOL_HOOKS = new Set(["pre_tool_use", "post_tool_use", "post_tool_failure"]);
 import { KV, STREAM, generateId } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { stripPrivateData } from "./privacy.js";
@@ -63,15 +65,24 @@ export function registerObserveFunction(
 
       let dedupHash: string | undefined;
       if (dedupMap) {
-        const d =
-          typeof payload.data === "object" && payload.data !== null
-            ? (payload.data as Record<string, unknown>)
-            : {};
+        const dataIsObject =
+          typeof payload.data === "object" && payload.data !== null;
+        const d = dataIsObject
+          ? (payload.data as Record<string, unknown>)
+          : {};
         const toolName = (d["tool_name"] as string) || payload.hookType;
+        // Hash the full payload when tool_input is absent so distinct
+        // events never collapse onto one key.
+        const dedupInput =
+          d["tool_input"] !== undefined
+            ? d["tool_input"]
+            : dataIsObject
+              ? d
+              : payload.data;
         dedupHash = dedupMap.computeHash(
           payload.sessionId,
           toolName,
-          d["tool_input"],
+          dedupInput,
         );
         if (dedupMap.isDuplicate(dedupHash)) {
           return { deduplicated: true, sessionId: payload.sessionId };
@@ -87,12 +98,19 @@ export function registerObserveFunction(
         sanitizedRaw = stripPrivateData(String(payload.data));
       }
 
+      let originChannel: Origin["channel"] = "agent";
+      if (payload.hookType === "prompt_submit") originChannel = "user";
+      else if (TOOL_HOOKS.has(payload.hookType)) originChannel = "tool";
       const raw: RawObservation = {
         id: obsId,
         sessionId: payload.sessionId,
         timestamp: payload.timestamp,
         hookType: payload.hookType,
         raw: sanitizedRaw,
+        origin: {
+          channel: originChannel,
+          capturedAt: payload.timestamp,
+        },
       };
 
       let extractedImage: string | undefined;
@@ -106,6 +124,7 @@ export function registerObserveFunction(
           raw.toolName = d["tool_name"] as string | undefined;
           raw.toolInput = d["tool_input"];
           raw.toolOutput = d["tool_output"] || d["error"];
+          if (raw.origin && raw.toolName) raw.origin.detail = raw.toolName;
         }
         if (payload.hookType === "prompt_submit") {
           raw.userPrompt = d["prompt"] as string | undefined;

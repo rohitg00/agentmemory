@@ -1,16 +1,20 @@
 :root {
-  --abyss: #000000;
-  --iron: #181818;
-  --charcoal: #202020;
-  --ash: #7d7d7d;
-  --steel: #969696;
-  --mist: #e6e6e6;
-  --white: #ffffff;
-  --gold: #ffc000;
-  --gold-deep: #917300;
-  --gold-soft: #ffce3e;
-  --cyan: #29abe2;
-  --blue: #3860be;
+  --canvas: #0a0a0a;
+  --canvas-soft: #1a1c20;
+  --canvas-card: #191919;
+  --canvas-mid: #363a3f;
+  --hairline: #212327;
+  --ink: #ffffff;
+  --ink-hover: #fafaf7;
+  --body: #dadbdf;
+  --mute: #7d8187;
+  --sunset: #ff7a17;
+  --sunset-soft: #ffc285;
+  --breeze: #a0c3ec;
+  --ok: #7fce9a;
+  --radius-card: 8px;
+  --radius-pill: 9999px;
+  --border-ghost: rgba(255, 255, 255, 0.25);
 }
 
 * {
@@ -21,9 +25,9 @@ html,
 body {
   margin: 0;
   padding: 0;
-  background: var(--abyss);
-  color: var(--white);
-  font-family: var(--font-archivo), "Helvetica Neue", Arial, sans-serif;
+  background: var(--canvas);
+  color: var(--body);
+  font-family: var(--font-sans), Inter, system-ui, -apple-system, sans-serif;
   font-size: 16px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
@@ -36,7 +40,7 @@ a {
   transition: color 160ms ease;
 }
 a:hover {
-  color: var(--blue);
+  color: var(--ink);
 }
 
 button {
@@ -47,9 +51,14 @@ button {
   color: inherit;
 }
 
+:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.55);
+  outline-offset: 3px;
+}
+
 ::selection {
-  background: var(--gold);
-  color: var(--abyss);
+  background: var(--sunset);
+  color: var(--canvas);
 }
 
 /* Reveal animation */
@@ -73,18 +82,19 @@ button {
   }
 }
 
-/* Buttons shared */
+/* Buttons shared — pill shapes, quiet states */
 .btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 18px 28px;
-  font-size: 14.4px;
-  font-weight: 700;
-  letter-spacing: 0.2px;
-  text-transform: uppercase;
+  gap: 8px;
+  padding: 12px 24px;
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0;
+  line-height: 20px;
   border: 1px solid transparent;
-  border-radius: 0;
+  border-radius: var(--radius-pill);
   transition:
     background 200ms ease,
     color 200ms ease,
@@ -93,30 +103,40 @@ button {
   cursor: pointer;
 }
 .btn--accent {
-  background: var(--gold);
-  color: var(--abyss);
-  padding: 22px 32px;
-  font-size: 16px;
+  background: var(--ink);
+  color: var(--canvas);
+  border-color: var(--ink);
+  padding: 14px 28px;
 }
 .btn--accent:hover {
-  background: var(--gold-deep);
-  color: var(--white);
+  background: var(--ink-hover);
+  border-color: var(--ink-hover);
+  color: var(--canvas);
+}
+.btn--sunset {
+  background: var(--sunset);
+  color: var(--canvas);
+  border-color: var(--sunset);
+  padding: 14px 28px;
+}
+.btn--sunset:hover {
+  background: #ff8b35;
+  border-color: #ff8b35;
+  color: var(--canvas);
 }
 .btn--ghost {
   background: transparent;
-  color: var(--white);
-  border-color: rgba(255, 255, 255, 0.5);
-  opacity: 0.85;
+  color: var(--ink);
+  border-color: var(--border-ghost);
 }
 .btn--ghost:hover {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: var(--white);
-  color: var(--white);
-  opacity: 1;
+  background: rgba(255, 255, 255, 0.06);
+  border-color: var(--border-ghost);
+  color: var(--ink);
 }
 .btn--small {
-  padding: 10px 14px;
-  font-size: 12px;
+  padding: 8px 16px;
+  font-size: 13px;
 }
 
 /* Shared section head */
@@ -127,29 +147,27 @@ button {
 }
 .section-eyebrow {
   display: inline-block;
+  font-family: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 12px;
-  letter-spacing: 0.96px;
-  color: var(--gold);
+  letter-spacing: 1.4px;
+  color: var(--mute);
   text-transform: uppercase;
-  margin-bottom: 16px;
-  padding: 6px 10px;
-  border: 1px solid var(--gold);
+  margin-bottom: 20px;
 }
 .section-title {
-  font-size: clamp(32px, 5vw, 72px);
-  font-weight: 900;
-  line-height: 0.98;
-  letter-spacing: -0.01em;
-  margin: 0 0 24px;
-  text-transform: uppercase;
+  font-size: clamp(34px, 4.6vw, 56px);
+  font-weight: 400;
+  line-height: 1.06;
+  letter-spacing: -0.03em;
+  color: var(--ink);
+  margin: 0 0 20px;
   text-wrap: balance;
 }
 .section-lede {
-  max-width: 680px;
+  max-width: 660px;
   font-size: 16px;
-  letter-spacing: 0.12px;
-  color: var(--steel);
-  text-transform: uppercase;
+  line-height: 1.65;
+  color: var(--body);
   margin: 0;
 }
 

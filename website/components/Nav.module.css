@@ -5,29 +5,28 @@
   grid-template-columns: auto 1fr auto;
   align-items: center;
   gap: 32px;
-  padding: 14px 32px;
+  padding: 12px 32px;
   z-index: 100;
-  background: rgba(0, 0, 0, 0.85);
+  background: rgba(10, 10, 10, 0.82);
   backdrop-filter: blur(10px);
-  border-bottom: 1px solid var(--charcoal);
+  border-bottom: 1px solid var(--hairline);
 }
 
 .brand {
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  color: var(--white);
+  color: var(--ink);
 }
 .brandIcon {
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
   display: block;
 }
 .brandWord {
-  font-size: 17px;
-  font-weight: 900;
-  letter-spacing: -0.01em;
-  text-transform: uppercase;
+  font-size: 16px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
 }
 
 .links {
@@ -36,18 +35,14 @@
   gap: 28px;
 }
 .link {
-  font-size: 12.5px;
-  font-weight: 700;
-  letter-spacing: 0.14px;
-  text-transform: uppercase;
-  color: var(--steel);
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--body);
   padding: 6px 2px;
-  border-bottom: 1px solid transparent;
-  transition: color 180ms ease, border-color 180ms ease;
+  transition: color 180ms ease;
 }
 .link:hover {
-  color: var(--white);
-  border-bottom-color: var(--gold);
+  color: var(--ink);
 }
 
 .right {
@@ -61,42 +56,39 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 9px 14px;
-  border: 1px solid var(--charcoal);
-  background: var(--iron);
-  color: var(--white);
-  font-size: 12.5px;
-  letter-spacing: 0.12px;
+  padding: 8px 16px;
+  border: 1px solid var(--border-ghost);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--ink);
+  font-size: 13px;
   transition:
     border-color 180ms ease,
     background 180ms ease,
     color 180ms ease;
 }
 .gh:hover {
-  border-color: var(--gold);
-  background: var(--charcoal);
-  color: var(--white);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--ink);
 }
 .ghLabel {
-  font-weight: 700;
-  letter-spacing: 0.96px;
-  text-transform: uppercase;
-  font-size: 11px;
+  font-weight: 500;
+  font-size: 13px;
 }
 .ghDivider {
   width: 1px;
   height: 14px;
-  background: var(--charcoal);
+  background: var(--hairline);
 }
 .ghCount {
   font-family: var(--font-mono);
-  font-weight: 900;
-  color: var(--white);
+  font-size: 12px;
+  color: var(--ink);
 }
 
 .cta {
-  padding: 10px 18px !important;
-  font-size: 12px !important;
+  padding: 9px 18px !important;
+  font-size: 13px !important;
 }
 
 @media (max-width: 1024px) {
@@ -104,7 +96,7 @@
     gap: 20px;
   }
   .link {
-    font-size: 12px;
+    font-size: 13px;
   }
   .ghLabel {
     display: none;
@@ -122,7 +114,7 @@
 
 @media (max-width: 720px) {
   .nav {
-    padding: 12px 20px;
+    padding: 10px 20px;
     gap: 16px;
     grid-template-columns: 1fr auto;
   }

@@ -205,56 +205,56 @@ export function AgentInstall() {
   const chips: Chip[] = [
     {
       id: "cursor",
-      label: "CURSOR",
+      label: "Cursor",
       kind: "deeplink",
       href: cursor,
       sub: "DEEPLINK",
     },
     {
       id: "vscode",
-      label: "VS CODE",
+      label: "VS Code",
       kind: "deeplink",
       href: vscode,
       sub: "DEEPLINK",
     },
     {
       id: "claude-code",
-      label: "CLAUDE CODE",
+      label: "Claude Code",
       kind: "copy",
       copyText: CLAUDE_CODE_CMD,
       sub: "COPY CMD",
     },
     {
       id: "copilot-cli",
-      label: "COPILOT CLI",
+      label: "Copilot CLI",
       kind: "copy",
       copyText: COPILOT_CLI_CMD,
       sub: "COPY CMD",
     },
     {
       id: "codex",
-      label: "CODEX CLI",
+      label: "Codex CLI",
       kind: "copy",
       copyText: CODEX_TOML,
       sub: "COPY TOML",
     },
     {
       id: "warp",
-      label: "WARP",
+      label: "Warp",
       kind: "copy",
       copyText: WARP_CMD,
       sub: "COPY CMD",
     },
     {
       id: "claude-desktop",
-      label: "CLAUDE DESKTOP",
+      label: "Claude Desktop",
       kind: "copy",
       copyText: UNIVERSAL_JSON,
       sub: "COPY JSON",
     },
     {
       id: "gemini",
-      label: "GEMINI CLI",
+      label: "Gemini CLI",
       kind: "copy",
       copyText: UNIVERSAL_JSON,
       sub: "COPY JSON",
@@ -263,10 +263,10 @@ export function AgentInstall() {
 
   return (
     <div className={styles.wrap}>
-      <div className={styles.stepLabel}>3. WIRE UP ANY AGENT</div>
+      <div className={styles.stepLabel}>4. WIRE UP ANY AGENT</div>
       <p className={styles.helper}>
-        ONE MCP JSON FITS ALMOST EVERYTHING. PICK YOUR AGENT ON THE LEFT, OR
-        PASTE THE UNIVERSAL CONFIG ON THE RIGHT.
+        One MCP JSON fits almost everything. Pick your agent on the left, or
+        paste the universal config on the right.
       </p>
 
       <div className={styles.split}>
@@ -278,14 +278,14 @@ export function AgentInstall() {
             ))}
           </div>
           <p className={styles.chipNote}>
-            CURSOR / VS CODE ARE ONE-CLICK VIA DEEPLINK. OTHERS COPY THE RIGHT
-            SNIPPET DIRECTLY TO YOUR CLIPBOARD.
+            Cursor / VS Code are one-click via deeplink. Others copy the right
+            snippet directly to your clipboard.
           </p>
         </div>
         <div className={styles.snippetCol}>
           <Snippet
             title="UNIVERSAL MCP JSON"
-            hint="WORKS FOR CLAUDE DESKTOP · CURSOR · CLINE · ROO · WINDSURF · GEMINI · WARP · DROID · KIRO · ANTIGRAVITY · QWEN — MERGE INTO EXISTING mcpServers"
+            hint="WORKS FOR CLAUDE DESKTOP · CURSOR · CLINE · ROO · WINDSURF · GEMINI · WARP · DROID · KIRO · ANTIGRAVITY · QWEN · MERGE INTO EXISTING mcpServers"
             body={UNIVERSAL_JSON}
           />
         </div>
@@ -296,19 +296,19 @@ export function AgentInstall() {
         aria-expanded={showMore}
         onClick={() => setShowMore((v) => !v)}
       >
-        {showMore ? "— HIDE OTHER SHAPES" : "+ OPENCODE · CLINE · CONTINUE · ZED · DROID · QWEN · ANTIGRAVITY · KIRO · HERMES · OPENCLAW · VS CODE"}
+        {showMore ? "− Hide other shapes" : "+ OpenCode · Cline · Continue · Zed · Droid · Qwen · Antigravity · Kiro · Hermes · OpenClaw · VS Code"}
       </button>
 
       {showMore && (
         <div className={styles.moreGrid}>
           <Snippet
             title="OPENCODE"
-            hint="opencode.json — different shape (mcp key, command as array)"
+            hint="opencode.json · different shape (mcp key, command as array)"
             body={OPENCODE_JSON}
           />
           <Snippet
             title="VS CODE (mcp.json)"
-            hint=".vscode/mcp.json — uses servers key, not mcpServers"
+            hint=".vscode/mcp.json · uses servers key, not mcpServers"
             body={VSCODE_MCP_JSON}
           />
           <Snippet
@@ -318,12 +318,12 @@ export function AgentInstall() {
           />
           <Snippet
             title="HERMES"
-            hint="integrations/hermes — plugin.yaml"
+            hint="integrations/hermes · plugin.yaml"
             body={HERMES_YAML}
           />
           <Snippet
             title="OPENCLAW"
-            hint="integrations/openclaw — plugin.yaml"
+            hint="integrations/openclaw · plugin.yaml"
             body={OPENCLAW_YAML}
           />
         </div>

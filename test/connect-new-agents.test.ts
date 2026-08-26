@@ -14,13 +14,20 @@ function freshHome(): string {
 describe("connect: Qwen Code", () => {
   let home: string;
   const ORIG = process.env["HOME"];
+  const ORIG_USERPROFILE = process.env["USERPROFILE"];
   beforeEach(() => {
     home = freshHome();
     vi.resetModules();
     process.env["HOME"] = home;
+    // os.homedir() on win32 reads USERPROFILE, not HOME — without this,
+    // adapter.detect()/install() resolve the real user's home directory
+    // instead of the isolated temp one.
+    process.env["USERPROFILE"] = home;
   });
   afterEach(() => {
     process.env["HOME"] = ORIG;
+    if (ORIG_USERPROFILE === undefined) delete process.env["USERPROFILE"];
+    else process.env["USERPROFILE"] = ORIG_USERPROFILE;
     rmSync(home, { recursive: true, force: true });
   });
 
@@ -52,13 +59,20 @@ describe("connect: Qwen Code", () => {
 describe("connect: Antigravity", () => {
   let home: string;
   const ORIG = process.env["HOME"];
+  const ORIG_USERPROFILE = process.env["USERPROFILE"];
   beforeEach(() => {
     home = freshHome();
     vi.resetModules();
     process.env["HOME"] = home;
+    // os.homedir() on win32 reads USERPROFILE, not HOME — without this,
+    // adapter.detect()/install() resolve the real user's home directory
+    // instead of the isolated temp one.
+    process.env["USERPROFILE"] = home;
   });
   afterEach(() => {
     process.env["HOME"] = ORIG;
+    if (ORIG_USERPROFILE === undefined) delete process.env["USERPROFILE"];
+    else process.env["USERPROFILE"] = ORIG_USERPROFILE;
     rmSync(home, { recursive: true, force: true });
   });
 
@@ -85,13 +99,20 @@ describe("connect: Antigravity", () => {
 describe("connect: Kiro", () => {
   let home: string;
   const ORIG = process.env["HOME"];
+  const ORIG_USERPROFILE = process.env["USERPROFILE"];
   beforeEach(() => {
     home = freshHome();
     vi.resetModules();
     process.env["HOME"] = home;
+    // os.homedir() on win32 reads USERPROFILE, not HOME — without this,
+    // adapter.detect()/install() resolve the real user's home directory
+    // instead of the isolated temp one.
+    process.env["USERPROFILE"] = home;
   });
   afterEach(() => {
     process.env["HOME"] = ORIG;
+    if (ORIG_USERPROFILE === undefined) delete process.env["USERPROFILE"];
+    else process.env["USERPROFILE"] = ORIG_USERPROFILE;
     rmSync(home, { recursive: true, force: true });
   });
 
@@ -117,13 +138,20 @@ describe("connect: Kiro", () => {
 describe("connect: Warp", () => {
   let home: string;
   const ORIG = process.env["HOME"];
+  const ORIG_USERPROFILE = process.env["USERPROFILE"];
   beforeEach(() => {
     home = freshHome();
     vi.resetModules();
     process.env["HOME"] = home;
+    // os.homedir() on win32 reads USERPROFILE, not HOME — without this,
+    // adapter.detect()/install() resolve the real user's home directory
+    // instead of the isolated temp one.
+    process.env["USERPROFILE"] = home;
   });
   afterEach(() => {
     process.env["HOME"] = ORIG;
+    if (ORIG_USERPROFILE === undefined) delete process.env["USERPROFILE"];
+    else process.env["USERPROFILE"] = ORIG_USERPROFILE;
     rmSync(home, { recursive: true, force: true });
   });
 
@@ -152,13 +180,20 @@ describe("connect: Warp", () => {
 describe("connect: Cline", () => {
   let home: string;
   const ORIG = process.env["HOME"];
+  const ORIG_USERPROFILE = process.env["USERPROFILE"];
   beforeEach(() => {
     home = freshHome();
     vi.resetModules();
     process.env["HOME"] = home;
+    // os.homedir() on win32 reads USERPROFILE, not HOME — without this,
+    // adapter.detect()/install() resolve the real user's home directory
+    // instead of the isolated temp one.
+    process.env["USERPROFILE"] = home;
   });
   afterEach(() => {
     process.env["HOME"] = ORIG;
+    if (ORIG_USERPROFILE === undefined) delete process.env["USERPROFILE"];
+    else process.env["USERPROFILE"] = ORIG_USERPROFILE;
     rmSync(home, { recursive: true, force: true });
   });
 
@@ -184,13 +219,20 @@ describe("connect: Cline", () => {
 describe("connect: Droid (Factory.ai)", () => {
   let home: string;
   const ORIG = process.env["HOME"];
+  const ORIG_USERPROFILE = process.env["USERPROFILE"];
   beforeEach(() => {
     home = freshHome();
     vi.resetModules();
     process.env["HOME"] = home;
+    // os.homedir() on win32 reads USERPROFILE, not HOME — without this,
+    // adapter.detect()/install() resolve the real user's home directory
+    // instead of the isolated temp one.
+    process.env["USERPROFILE"] = home;
   });
   afterEach(() => {
     process.env["HOME"] = ORIG;
+    if (ORIG_USERPROFILE === undefined) delete process.env["USERPROFILE"];
+    else process.env["USERPROFILE"] = ORIG_USERPROFILE;
     rmSync(home, { recursive: true, force: true });
   });
 
@@ -213,18 +255,68 @@ describe("connect: Droid (Factory.ai)", () => {
     // Droid requires `type` per its documented schema
     expect(cfg.mcpServers.agentmemory.type).toBe("stdio");
   });
+
+  it("--with-hooks additionally writes ~/.factory/hooks.json with Droid's native events", async () => {
+    mkdirSync(join(home, ".factory"), { recursive: true });
+    const { adapter } = await import("../src/cli/connect/droid.js");
+    const result = await adapter.install({
+      dryRun: false,
+      force: false,
+      withHooks: true,
+    });
+    expect(result.kind).toBe("installed");
+    const hooksPath = join(home, ".factory", "hooks.json");
+    expect(existsSync(hooksPath)).toBe(true);
+    const hooks = JSON.parse(readFileSync(hooksPath, "utf-8"));
+    for (const event of [
+      "SessionStart",
+      "UserPromptSubmit",
+      "PreToolUse",
+      "PostToolUse",
+      "SessionEnd",
+    ]) {
+      expect(Object.keys(hooks.hooks)).toContain(event);
+    }
+  });
+
+  it("without --with-hooks, does not write ~/.factory/hooks.json", async () => {
+    mkdirSync(join(home, ".factory"), { recursive: true });
+    const { adapter } = await import("../src/cli/connect/droid.js");
+    await adapter.install({ dryRun: false, force: false });
+    expect(existsSync(join(home, ".factory", "hooks.json"))).toBe(false);
+  });
+
+  it("re-running install with --with-hooks on an already-wired MCP config still refreshes hooks.json", async () => {
+    mkdirSync(join(home, ".factory"), { recursive: true });
+    const { adapter } = await import("../src/cli/connect/droid.js");
+    await adapter.install({ dryRun: false, force: false });
+    const result = await adapter.install({
+      dryRun: false,
+      force: false,
+      withHooks: true,
+    });
+    expect(result.kind).toBe("already-wired");
+    expect(existsSync(join(home, ".factory", "hooks.json"))).toBe(true);
+  });
 });
 
 describe("connect: Zed", () => {
   let home: string;
   const ORIG = process.env["HOME"];
+  const ORIG_USERPROFILE = process.env["USERPROFILE"];
   beforeEach(() => {
     home = freshHome();
     vi.resetModules();
     process.env["HOME"] = home;
+    // os.homedir() on win32 reads USERPROFILE, not HOME — without this,
+    // adapter.detect()/install() resolve the real user's home directory
+    // instead of the isolated temp one.
+    process.env["USERPROFILE"] = home;
   });
   afterEach(() => {
     process.env["HOME"] = ORIG;
+    if (ORIG_USERPROFILE === undefined) delete process.env["USERPROFILE"];
+    else process.env["USERPROFILE"] = ORIG_USERPROFILE;
     rmSync(home, { recursive: true, force: true });
   });
 
@@ -251,13 +343,20 @@ describe("connect: Zed", () => {
 describe("connect: Continue.dev", () => {
   let home: string;
   const ORIG = process.env["HOME"];
+  const ORIG_USERPROFILE = process.env["USERPROFILE"];
   beforeEach(() => {
     home = freshHome();
     vi.resetModules();
     process.env["HOME"] = home;
+    // os.homedir() on win32 reads USERPROFILE, not HOME — without this,
+    // adapter.detect()/install() resolve the real user's home directory
+    // instead of the isolated temp one.
+    process.env["USERPROFILE"] = home;
   });
   afterEach(() => {
     process.env["HOME"] = ORIG;
+    if (ORIG_USERPROFILE === undefined) delete process.env["USERPROFILE"];
+    else process.env["USERPROFILE"] = ORIG_USERPROFILE;
     rmSync(home, { recursive: true, force: true });
   });
 

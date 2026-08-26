@@ -11,99 +11,99 @@ export function Features({ hooks, mcpTools, restEndpoints }: Props) {
     {
       k: `${hooks}`,
       unit: "AUTO-HOOKS",
-      title: "CAPTURE EVERYTHING",
+      title: "Capture everything",
       text:
-        "Every PreToolUse, PostToolUse, SessionStart, Stop, and the rest fire into the memory pipeline without a line of glue code. Install the plugin, done.",
+        "Every session start, prompt, tool call, and stop fires into the memory pipeline with no glue code. Install the plugin and capture begins.",
     },
     {
       k: `${mcpTools}`,
       unit: "MCP TOOLS",
-      title: "NATIVE MCP SURFACE",
+      title: "Native MCP surface",
       text:
-        "memory_save, memory_recall, memory_smart_search, memory_sessions, governance, audit, export — full surface behind a single MCP server.",
+        "memory_save, memory_recall, memory_smart_search, memory_sessions, governance, audit, export: the full surface behind a single MCP server. Saving a near-duplicate returns a similarTo hint instead of a second copy.",
     },
     {
       k: `${restEndpoints}`,
       unit: "REST ENDPOINTS",
-      title: "HTTP FIRST",
+      title: "HTTP first",
       text:
-        "Every MCP tool has a REST twin under /agentmemory/*. Curl it. Fetch it from the browser. Proxy it from your own agent.",
+        "Every MCP tool has a REST twin under /agentmemory/*. Curl it, fetch it from the browser, or proxy it from your own agent.",
     },
     {
       k: "BM25",
       unit: "+ VECTOR + GRAPH",
-      title: "TRIPLE-STREAM RECALL",
+      title: "Hybrid recall",
       text:
-        "Hybrid retrieval pipes lexical, semantic, and relational scores through an on-device reranker. 95.2% R@5 on LongMemEval-S.",
+        "The primary recall path ranks lexical, semantic, and graph scores together, reranked on device. Superseded versions stay out of results while their history stays queryable.",
+    },
+    {
+      k: "5",
+      unit: "ORIGIN CHANNELS",
+      title: "Provenance built in",
+      text:
+        "Every record carries write-time provenance: user, agent, tool, import, or shared. Pass agentId through save and recall to scope memory per agent.",
     },
     {
       k: "AUTO",
       unit: "CONSOLIDATION",
-      title: "RAW → SEMANTIC",
+      title: "Raw to semantic",
       text:
-        "Hourly sweep compresses observations into semantic memories, merges duplicates, decays stale rows with retention scoring, and emits a batched audit row.",
+        "Activates with an LLM provider key. Consolidation runs on session stop: observations compress into semantic memories, duplicates merge, stale rows decay with retention scoring, and audit rows record the sweep.",
     },
     {
       k: "∞",
       unit: "REPLAY",
-      title: "JSONL SESSION IMPORT",
+      title: "JSONL session import",
       text:
-        "Point agentmemory at a Claude Code JSONL transcript and it rehydrates the full session — observations, tool uses, timeline — into the store.",
+        "Point agentmemory at a Claude Code JSONL transcript and it rehydrates the session, indexes it for search, and derives crystals and lessons from what it finds.",
     },
     {
       k: "GRAPH",
       unit: "EXTRACTION",
-      title: "KNOWLEDGE GRAPH",
+      title: "Knowledge graph",
       text:
-        "Entities and relations extracted on compress. Query with /agentmemory/graph. Visualize in the viewer. Temporal edges supported.",
+        "Entities and relations extract from observations when an LLM provider key is set and graph extraction is enabled. Query with /agentmemory/graph. Visualize in the viewer. Temporal edges supported.",
+    },
+    {
+      k: "IDX",
+      unit: "LESSON RECALL",
+      title: "Lessons that resurface",
+      text:
+        "Save a lesson once, recall it by relevance later. Lessons live in a dedicated BM25 index with confidence and recency reranking, with save, recall, and delete over MCP and REST.",
     },
     {
       k: "MESH",
       unit: "FEDERATION",
-      title: "PEER-TO-PEER SYNC",
+      title: "Peer-to-peer sync",
       text:
-        "Register another agentmemory node, push / pull memories over authenticated HTTPS. Bearer-token required; no silent syncs.",
+        "Register another agentmemory node and push or pull memories over authenticated HTTPS. A bearer token is required; no silent syncs.",
     },
     {
       k: "MD",
       unit: "OBSIDIAN EXPORT",
-      title: "YOUR NOTES, HYDRATED",
+      title: "Your notes, hydrated",
       text:
-        "Mirror memories to a sandboxed vault directory. Frontmatter-tagged markdown, ready for Obsidian's graph view.",
-    },
-    {
-      k: "5",
-      unit: "LLM PROVIDERS",
-      title: "BYO MODEL",
-      text:
-        "Claude subscription (default, zero config), Anthropic API, Gemini, MiniMax, OpenRouter. Detected from env.",
-    },
-    {
-      k: "OTEL",
-      unit: "OBSERVABILITY",
-      title: "TRACES + LOGS",
-      text:
-        "iii-observability worker on by default. Exporter: memory for local, OTLP for Jaeger / Honeycomb / Tempo. Every operation produces a span.",
+        "Mirror memories to a sandboxed vault directory as frontmatter-tagged markdown, ready for Obsidian's graph view.",
     },
     {
       k: "0",
       unit: "EXTERNAL DBs",
-      title: "ONE PROCESS",
+      title: "One process",
       text:
-        "Runs as a single Node process. No Redis, Kafka, Postgres, Qdrant, Neo4j. State lives on disk as JSON. That's the whole stack.",
+        "Runs as a single Node process with zero external services. State lives on disk as JSON. agentmemory stop flushes indexes before exit, in Docker mode too.",
     },
   ];
 
   return (
     <section className={styles.wrap} id="features" aria-labelledby="feat-title">
       <header className="section-head">
-        <span className="section-eyebrow">WHAT'S INSIDE</span>
+        <span className="section-eyebrow">What's inside</span>
         <h2 id="feat-title" className="section-title">
-          TWELVE THINGS YOU DID NOT WANT TO BUILD.
+          Twelve things you did not want to build.
         </h2>
         <p className="section-lede">
-          AGENTMEMORY IS NOT A LIBRARY OR A VECTOR STORE. IT'S A COMPLETE MEMORY
-          RUNTIME — CAPTURE, RECALL, CONSOLIDATE, OBSERVE, FEDERATE.
+          agentmemory is not a library or a vector store. It is a complete
+          memory runtime: capture, recall, consolidate, observe, federate.
         </p>
       </header>
       <ul className={styles.grid}>

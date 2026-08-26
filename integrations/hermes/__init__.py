@@ -13,6 +13,30 @@ import json
 import os
 import sys
 import threading
+import subprocess
+from pathlib import PurePath
+
+
+def _resolve_project(cwd: str) -> str:
+    """Canonical project scope, matching the hooks' resolveProject order:
+    AGENTMEMORY_PROJECT_NAME env override, git toplevel basename, cwd basename.
+    Keeps Hermes sessions in the same project bucket as every other agent."""
+    explicit = os.environ.get("AGENTMEMORY_PROJECT_NAME", "").strip()
+    if explicit:
+        return explicit
+    try:
+        top = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        ).stdout.strip()
+        if top:
+            return PurePath(top).name
+    except Exception:
+        pass
+    return PurePath(cwd).name or cwd
 import time
 from pathlib import Path
 from typing import Any, Callable
@@ -188,14 +212,15 @@ class AgentMemoryProvider(MemoryProvider):
     def initialize(self, session_id: str, **kwargs: Any) -> None:
         self._base = os.environ.get("AGENTMEMORY_URL", DEFAULT_BASE_URL)
         self._session_id = session_id
-        self._project = kwargs.get("cwd", os.getcwd())
+        self._cwd = kwargs.get("cwd", os.getcwd())
+        self._project = _resolve_project(self._cwd)
         if os.environ.get("AGENTMEMORY_REQUIRE_HTTPS") == "1":
             _check_plaintext_bearer_guard(self._base, os.environ.get("AGENTMEMORY_SECRET", ""))
 
         _api(self._base, "session/start", {
             "sessionId": session_id,
             "project": self._project,
-            "cwd": self._project,
+            "cwd": self._cwd,
         })
 
     def get_config_schema(self) -> list[dict]:
@@ -348,7 +373,7 @@ class AgentMemoryProvider(MemoryProvider):
             "hookType": "post_tool_use",
             "sessionId": kwargs.get("session_id", self._session_id),
             "project": self._project,
-            "cwd": self._project,
+            "cwd": self._cwd,
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "data": {
                 "tool_name": "conversation",

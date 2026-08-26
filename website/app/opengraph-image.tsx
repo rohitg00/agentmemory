@@ -1,10 +1,12 @@
 import { ImageResponse } from "next/og";
+import { getProjectMeta } from "@/lib/meta";
 
-export const alt = "agentmemory — persistent memory for AI coding agents";
+export const alt = "agentmemory: persistent memory for AI coding agents";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
 export default function Image() {
+  const meta = getProjectMeta();
   return new ImageResponse(
     (
       <div
@@ -15,8 +17,7 @@ export default function Image() {
           flexDirection: "column",
           justifyContent: "space-between",
           padding: "72px 80px",
-          background:
-            "radial-gradient(ellipse at 20% 0%, #1a1407 0%, #0a0a0a 55%, #000 100%)",
+          background: "#0a0a0a",
           color: "#fff",
           fontFamily: "system-ui, -apple-system, sans-serif",
         }}
@@ -26,19 +27,19 @@ export default function Image() {
             display: "flex",
             alignItems: "center",
             gap: 16,
-            fontSize: 20,
+            fontSize: 18,
             letterSpacing: 3,
-            fontWeight: 700,
-            color: "#f3b840",
+            fontWeight: 400,
+            color: "#7d8187",
             textTransform: "uppercase",
           }}
         >
           <div
             style={{
-              width: 14,
-              height: 14,
-              background: "#f3b840",
-              boxShadow: "0 0 24px #f3b840",
+              width: 12,
+              height: 12,
+              borderRadius: 12,
+              background: "#ff7a17",
             }}
           />
           <span>AGENTMEMORY</span>
@@ -48,25 +49,25 @@ export default function Image() {
           <div
             style={{
               display: "flex",
-              flexDirection: "column",
-              fontSize: 128,
-              fontWeight: 900,
-              lineHeight: 0.95,
-              letterSpacing: -3,
-              textTransform: "uppercase",
+              fontSize: 124,
+              fontWeight: 400,
+              lineHeight: 1,
+              letterSpacing: -4,
+              color: "#ffffff",
             }}
           >
-            <span>AGENT</span>
-            <span style={{ color: "#f3b840" }}>MEMORY</span>
+            <span>agent</span>
+            <span style={{ color: "#dadbdf" }}>memory</span>
           </div>
           <div
             style={{
               display: "flex",
-              fontSize: 32,
-              color: "#b8b8b8",
-              letterSpacing: 0.5,
+              fontSize: 30,
+              color: "#dadbdf",
+              letterSpacing: 0,
               maxWidth: 900,
-              lineHeight: 1.35,
+              lineHeight: 1.4,
+              fontWeight: 400,
             }}
           >
             Persistent memory for AI coding agents. Runs locally. Zero external
@@ -78,25 +79,25 @@ export default function Image() {
           style={{
             display: "flex",
             gap: 48,
-            fontSize: 22,
-            color: "#888",
+            fontSize: 20,
+            color: "#7d8187",
             letterSpacing: 2,
             textTransform: "uppercase",
-            fontWeight: 700,
-            borderTop: "1px solid #222",
+            fontWeight: 400,
+            borderTop: "1px solid #212327",
             paddingTop: 28,
           }}
         >
           <div style={{ display: "flex", gap: 10 }}>
-            <span style={{ color: "#f3b840" }}>95.2%</span>
-            <span>RETRIEVAL R@5</span>
+            <span style={{ color: "#ffffff" }}>{meta.mcpTools}</span>
+            <span>MCP TOOLS</span>
           </div>
           <div style={{ display: "flex", gap: 10 }}>
-            <span style={{ color: "#f3b840" }}>92%</span>
-            <span>FEWER TOKENS</span>
+            <span style={{ color: "#ffffff" }}>{meta.restEndpoints}</span>
+            <span>REST ENDPOINTS</span>
           </div>
           <div style={{ display: "flex", gap: 10 }}>
-            <span style={{ color: "#f3b840" }}>0</span>
+            <span style={{ color: "#ffffff" }}>0</span>
             <span>EXTERNAL DBs</span>
           </div>
         </div>

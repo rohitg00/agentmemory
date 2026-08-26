@@ -10,10 +10,12 @@
   right: 40px;
   bottom: 56px;
   z-index: 3;
-  transition: transform 200ms ease;
+  border-radius: var(--radius-pill);
+  transition: opacity 200ms ease;
+  opacity: 0.7;
 }
 .pause:hover {
-  transform: scale(1.08);
+  opacity: 1;
 }
 
 .rail {
@@ -22,13 +24,13 @@
   right: 40px;
   bottom: 24px;
   height: 1px;
-  background: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.14);
 }
 .rail span {
   display: block;
   height: 100%;
   width: 0;
-  background: var(--white);
+  background: rgba(255, 255, 255, 0.55);
   transition: width 60ms linear;
 }
 

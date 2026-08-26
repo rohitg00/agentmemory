@@ -90,9 +90,13 @@ export function readJsonSafe<T = unknown>(path: string): T | null {
 }
 
 export function writeJsonAtomic(path: string, value: unknown): void {
+  writeTextAtomic(path, `${JSON.stringify(value, null, 2)}\n`);
+}
+
+export function writeTextAtomic(path: string, content: string): void {
   mkdirSync(dirname(path), { recursive: true });
   const tmp = `${path}.tmp-${process.pid}-${Date.now()}`;
-  writeFileSync(tmp, `${JSON.stringify(value, null, 2)}\n`, "utf-8");
+  writeFileSync(tmp, content, "utf-8");
   renameSync(tmp, path);
 }
 

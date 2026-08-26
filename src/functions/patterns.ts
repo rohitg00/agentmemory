@@ -29,37 +29,54 @@ export function registerPatternsFunction(sdk: ISdk, kv: StateKV): void {
         { count: number; sessions: Set<string> }
       >();
 
-      for (const session of filtered) {
-        const observations = await kv.list<CompressedObservation>(
-          KV.observations(session.id),
+      // Bounded fan-out: load observations for up to 10 sessions in
+      // parallel per batch (like consolidate), then fold each session's
+      // observations into the shared maps serially so the accumulation
+      // stays race-free. Parallelizing the kv.list I/O without exceeding
+      // the invocation pool cuts wall time versus the old serial loop.
+      for (let batch = 0; batch < filtered.length; batch += 10) {
+        const chunk = filtered.slice(batch, batch + 10);
+        const loaded = await Promise.all(
+          chunk.map(async (session) => ({
+            session,
+            observations: await kv.list<CompressedObservation>(
+              KV.observations(session.id),
+            ),
+          })),
         );
-        if (!observations.length) continue;
 
-        const sessionFiles = new Set<string>();
-        for (const obs of observations) {
-          if (!obs.files) continue;
-          for (const f of obs.files) {
-            sessionFiles.add(f);
-            if (!fileSessionMap.has(f)) fileSessionMap.set(f, new Set());
-            fileSessionMap.get(f)!.add(session.id);
-          }
+        for (const { session, observations } of loaded) {
+          if (!observations.length) continue;
 
-          if (obs.type === "error" && obs.title) {
-            const key = obs.title.toLowerCase();
-            if (!errorPatterns.has(key)) {
-              errorPatterns.set(key, { count: 0, sessions: new Set() });
+          const sessionFiles = new Set<string>();
+          for (const obs of observations) {
+            if (!obs.files) continue;
+            for (const f of obs.files) {
+              sessionFiles.add(f);
+              if (!fileSessionMap.has(f)) fileSessionMap.set(f, new Set());
+              fileSessionMap.get(f)!.add(session.id);
             }
-            const ep = errorPatterns.get(key)!;
-            ep.count++;
-            ep.sessions.add(session.id);
-          }
-        }
 
-        const fileList = [...sessionFiles].sort();
-        for (let i = 0; i < fileList.length; i++) {
-          for (let j = i + 1; j < fileList.length; j++) {
-            const pair = `${fileList[i]}::${fileList[j]}`;
-            fileCoOccurrences.set(pair, (fileCoOccurrences.get(pair) || 0) + 1);
+            if (obs.type === "error" && obs.title) {
+              const key = obs.title.toLowerCase();
+              if (!errorPatterns.has(key)) {
+                errorPatterns.set(key, { count: 0, sessions: new Set() });
+              }
+              const ep = errorPatterns.get(key)!;
+              ep.count++;
+              ep.sessions.add(session.id);
+            }
+          }
+
+          const fileList = [...sessionFiles].sort();
+          for (let i = 0; i < fileList.length; i++) {
+            for (let j = i + 1; j < fileList.length; j++) {
+              const pair = `${fileList[i]}::${fileList[j]}`;
+              fileCoOccurrences.set(
+                pair,
+                (fileCoOccurrences.get(pair) || 0) + 1,
+              );
+            }
           }
         }
       }

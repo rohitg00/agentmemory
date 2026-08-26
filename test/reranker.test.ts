@@ -1,13 +1,13 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 
-vi.mock("@xenova/transformers", () => {
+vi.mock("@huggingface/transformers", () => {
   throw new Error("not installed");
 });
 
 import { rerank, isRerankerAvailable } from "../src/state/reranker.js";
 
 describe("reranker", () => {
-  it("returns results unchanged when @xenova/transformers is unavailable", async () => {
+  it("returns results unchanged when @huggingface/transformers is unavailable", async () => {
     const results = [
       {
         observation: {
@@ -58,5 +58,34 @@ describe("reranker", () => {
   it("handles empty results", async () => {
     const reranked = await rerank("query", []);
     expect(reranked).toHaveLength(0);
+  });
+});
+
+describe("reranker with loaded pipeline", () => {
+  afterEach(() => {
+    vi.doUnmock("@huggingface/transformers");
+    vi.resetModules();
+  });
+
+  it("invokes the @huggingface/transformers pipeline and reorders by score", async () => {
+    const mockPipeline = vi.fn(async (text: string) => [
+      { score: text.includes("First") ? 0.9 : 0.1 },
+    ]);
+    vi.doMock("@huggingface/transformers", () => ({
+      pipeline: () => Promise.resolve(mockPipeline),
+    }));
+    vi.resetModules();
+
+    const { rerank } = await import("../src/state/reranker.js");
+
+    const results = [
+      { observation: { id: "o2", title: "Second", narrative: "" }, combinedScore: 0.9 },
+      { observation: { id: "o1", title: "First", narrative: "" }, combinedScore: 0.5 },
+    ] as any;
+
+    const reranked = await rerank("query", results);
+
+    expect(mockPipeline).toHaveBeenCalled();
+    expect(reranked[0].observation.id).toBe("o1");
   });
 });

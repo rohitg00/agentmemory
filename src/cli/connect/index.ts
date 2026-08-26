@@ -2,14 +2,18 @@ import { platform } from "node:os";
 import * as p from "@clack/prompts";
 import pc from "picocolors";
 import type { ConnectAdapter, ConnectOptions, ConnectResult } from "./types.js";
+import { writeGuideline } from "./guidelines.js";
 import { adapter as antigravity } from "./antigravity.js";
+import { adapter as antigravityCli } from "./antigravity-cli.js";
 import { adapter as claudeCode } from "./claude-code.js";
 import { adapter as cline } from "./cline.js";
 import { adapter as copilotCli } from "./copilot-cli.js";
 import { adapter as codex } from "./codex.js";
 import { adapter as continueDev } from "./continue.js";
 import { adapter as cursor } from "./cursor.js";
+import { adapter as devin } from "./devin.js";
 import { adapter as droid } from "./droid.js";
+import { adapter as dsh } from "./dsh.js";
 import { adapter as geminiCli } from "./gemini-cli.js";
 import { adapter as hermes } from "./hermes.js";
 import { adapter as kiro } from "./kiro.js";
@@ -26,15 +30,18 @@ export const ADAPTERS: readonly ConnectAdapter[] = [
   copilotCli,
   codex,
   cursor,
+  devin,
   geminiCli,
   qwen,
   antigravity,
+  antigravityCli,
   kiro,
   warp,
   cline,
   continueDev,
   zed,
   droid,
+  dsh,
   opencode,
   openclaw,
   hermes,
@@ -56,6 +63,7 @@ function parseFlags(args: string[]): {
   force: boolean;
   all: boolean;
   withHooks: boolean;
+  guidelines: boolean;
   positional: string[];
 } {
   const positional: string[] = [];
@@ -63,14 +71,16 @@ function parseFlags(args: string[]): {
   let force = false;
   let all = false;
   let withHooks = false;
+  let guidelines = true; // memory-usage guideline is written by default
   for (const a of args) {
     if (a === "--dry-run") dryRun = true;
     else if (a === "--force") force = true;
     else if (a === "--all") all = true;
     else if (a === "--with-hooks") withHooks = true;
+    else if (a === "--no-guidelines") guidelines = false;
     else if (!a.startsWith("-")) positional.push(a);
   }
-  return { dryRun, force, all, withHooks, positional };
+  return { dryRun, force, all, withHooks, guidelines, positional };
 }
 
 export async function runAdapter(
@@ -88,7 +98,33 @@ export async function runAdapter(
     p.log.message(adapter.protocolNote);
   }
   try {
-    return await adapter.install(opts);
+    const result = await adapter.install(opts);
+    // After MCP/hooks are wired, activate memory for hook-less agents by
+    // writing a memory-usage guideline into their native rules file. Best
+    // effort: never fail the connect over the guideline.
+    if (
+      opts.guidelines !== false &&
+      (result.kind === "installed" || result.kind === "already-wired")
+    ) {
+      try {
+        const g = writeGuideline(adapter.name, {
+          cwd: process.cwd(),
+          dryRun: opts.dryRun,
+        });
+        if (g.kind === "written") {
+          p.log.message(
+            `  ${pc.dim("guideline")} ${g.scope} → ${g.path} (memory auto-use)`,
+          );
+        } else if (g.kind === "would-write") {
+          p.log.message(`  ${pc.dim("[dry-run] guideline")} → ${g.path}`);
+        }
+      } catch (gerr) {
+        p.log.warn(
+          `${adapter.displayName}: guideline not written (${gerr instanceof Error ? gerr.message : String(gerr)})`,
+        );
+      }
+    }
+    return result;
   } catch (err) {
     p.log.error(
       `${adapter.displayName}: ${err instanceof Error ? err.message : String(err)}`,
@@ -98,7 +134,8 @@ export async function runAdapter(
 }
 
 export async function runConnect(args: string[]): Promise<void> {
-  const { dryRun, force, all, withHooks, positional } = parseFlags(args);
+  const { dryRun, force, all, withHooks, guidelines, positional } =
+    parseFlags(args);
   const allowWindowsAdapter =
     positional.length === 1 && positional[0]?.toLowerCase() === "copilot-cli";
   if (platform() === "win32" && !allowWindowsAdapter) {
@@ -110,7 +147,7 @@ export async function runConnect(args: string[]): Promise<void> {
     return;
   }
 
-  const opts: ConnectOptions = { dryRun, force, withHooks };
+  const opts: ConnectOptions = { dryRun, force, withHooks, guidelines };
 
   p.intro("agentmemory connect");
 
@@ -201,7 +238,7 @@ function summarize(
   );
   if (wiredAny) {
     p.log.info(
-      "Next: install agentmemory's 15 skills into the same agent(s) so they know when to call the tools:\n  npx skills add rohitg00/agentmemory -y",
+      "Next: install agentmemory's 17 skills into the same agent(s) so they know when to call the tools:\n  npx skills add rohitg00/agentmemory -y",
     );
   }
 

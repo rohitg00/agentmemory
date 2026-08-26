@@ -89,7 +89,7 @@ async function main() {
     }
   }
 
-  const rawSessionId = data.session_id || data.sessionId;
+  const rawSessionId = data.session_id || data.sessionId || data.conversation_id;
   const sessionId =
     typeof rawSessionId === "string" && rawSessionId.length > 0
       ? rawSessionId
