@@ -108,6 +108,14 @@ export function registerEventTriggers(sdk: IIIClient, kv: StateKV): void {
           const seen = compressed.filter((o) => o.timestamp <= at);
           if (observationFingerprint(seen) === mark) {
             batch = compressed.filter((o) => o.timestamp > at);
+          } else {
+            // Otherwise the fallback is silent: a session stuck re-extracting
+            // itself every turn looks exactly like a healthy one.
+            logger.info("graph-extract watermark stale, re-extracting session", {
+              sessionId: data.sessionId,
+              atOrBelow: seen.length,
+              total: compressed.length,
+            });
           }
         }
         if (batch.length > 0) {
