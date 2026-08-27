@@ -139,10 +139,11 @@ function harness(opts?: { rejectGraphExtract?: () => boolean }) {
   const land = (...os: CompressedObservation[]) => {
     for (const o of os) kv.scope(`mem:obs:${SID}`).set(o.id, o);
   };
+  const drop = (id: string) => kv.scope(`mem:obs:${SID}`).delete(id);
   const stop = () => stopped({ sessionId: SID });
   const session = () =>
     kv.scope("mem:sessions").get(SID) as Record<string, unknown>;
-  return { kv, trigger, stop, land, session };
+  return { kv, trigger, stop, land, drop, session };
 }
 
 describe("event::session::stopped graph-extract is incremental", () => {
@@ -183,14 +184,14 @@ describe("event::session::stopped graph-extract is incremental", () => {
     expect(batches(h.trigger)).toEqual([["a"]]);
   });
 
-  it("records the watermark as a matched (timestamp, count) pair on the session", async () => {
+  it("records the watermark as a matched (timestamp, digest) pair on the session", async () => {
     const h = harness();
     h.land(obs("a", "2026-01-01T00:00:01.000Z"), obs("b", "2026-01-01T00:00:02.000Z"));
     await h.stop();
 
     expect(h.session()).toMatchObject({
       graphExtractedAt: "2026-01-01T00:00:02.000Z",
-      graphExtractedCount: 2,
+      graphExtractedDigest: expect.any(Number),
     });
   });
 });
@@ -247,7 +248,7 @@ describe("graph-extract watermark never skips an observation", () => {
       status: "active",
       observationCount: 0,
       graphExtractedAt: "2026-01-01T00:00:01.000Z",
-      // graphExtractedCount deliberately missing
+      // graphExtractedDigest deliberately missing
     });
     h.land(obs("a", "2026-01-01T00:00:01.000Z"), obs("b", "2026-01-01T00:00:02.000Z"));
     await h.stop();
@@ -256,9 +257,9 @@ describe("graph-extract watermark never skips an observation", () => {
   });
 
   it("falls back to the whole session when the stored pair is inconsistent", async () => {
-    // Interleaved stops only ever write (at, count) as a matched snapshot from
-    // one run, but a torn or stale pair must still degrade to a full extract
-    // rather than skip anything.
+    // Interleaved stops only ever write (at, digest) as a matched snapshot
+    // from one run, but a torn or stale pair must still degrade to a full
+    // extract rather than skip anything.
     const h = harness();
     h.kv.scope("mem:sessions").set(SID, {
       id: SID,
@@ -268,7 +269,7 @@ describe("graph-extract watermark never skips an observation", () => {
       status: "active",
       observationCount: 0,
       graphExtractedAt: "2026-01-01T00:00:03.000Z",
-      graphExtractedCount: 99,
+      graphExtractedDigest: 123456,
     });
     h.land(
       obs("a", "2026-01-01T00:00:01.000Z"),
@@ -277,6 +278,42 @@ describe("graph-extract watermark never skips an observation", () => {
     await h.stop();
 
     expect(batches(h.trigger)).toEqual([["a", "b"]]);
+  });
+
+  it("re-extracts everything when a deletion and a late arrival cancel out", async () => {
+    // evict's per-project cap (evict.ts) is age- and status-independent, so it
+    // can delete an observation from the session that is still being appended
+    // to. If a late compression lands in the same window, a count-based
+    // tripwire nets to zero and the late observation would never be extracted.
+    const h = harness();
+    h.land(
+      obs("a", "2026-01-01T00:00:01.000Z"),
+      obs("c", "2026-01-01T00:00:03.000Z"),
+      obs("e", "2026-01-01T00:00:05.000Z"),
+    );
+    await h.stop();
+
+    h.drop("c"); // evicted
+    h.land(obs("b", "2026-01-01T00:00:02.000Z")); // compressed late
+
+    await h.stop();
+
+    expect(batches(h.trigger)[1]).toEqual(["a", "e", "b"]);
+  });
+
+  it("re-extracts when a late observation carries a timestamp the digest sums to zero", async () => {
+    // observe.ts only validates that a timestamp is a string, so a clock-skewed
+    // client can send the epoch. Date.parse("1970-01-01T00:00:00.000Z") is 0 and
+    // adds nothing to the digest sum — the set size folded into the seed is what
+    // keeps that observation visible.
+    const h = harness();
+    h.land(obs("x", "2026-01-01T00:00:01.000Z"));
+    await h.stop();
+
+    h.land(obs("y", "1970-01-01T00:00:00.000Z"));
+    await h.stop();
+
+    expect(batches(h.trigger)[1]).toEqual(["x", "y"]);
   });
 
   it("leaves the watermark unset when the extract dispatch fails, so the next stop retries", async () => {
@@ -291,6 +328,8 @@ describe("graph-extract watermark never skips an observation", () => {
     await h.stop();
 
     expect(batches(h.trigger)[1]).toEqual(["a", "b"]);
-    expect(h.session()).toMatchObject({ graphExtractedCount: 2 });
+    expect(h.session()).toMatchObject({
+      graphExtractedDigest: expect.any(Number),
+    });
   });
 });

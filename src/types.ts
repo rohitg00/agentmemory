@@ -15,13 +15,14 @@ export interface Session {
   agentId?: string;
   // Incremental graph-extract watermark. Written as a matched pair from a
   // single observation-list snapshot: `graphExtractedAt` is the newest
-  // observation timestamp handed to mem::graph-extract, `graphExtractedCount`
-  // is how many compressed observations existed at that moment. The count is
-  // the tripwire for out-of-order arrivals — mem::compress is dispatched
-  // fire-and-forget, so observations do not land in KV in timestamp order.
-  // Absent on session records written before this field existed.
+  // observation timestamp handed to mem::graph-extract, `graphExtractedDigest`
+  // fingerprints the observations at or below it. The digest is the tripwire —
+  // mem::compress is dispatched fire-and-forget so observations do not land in
+  // KV in timestamp order, and evict can delete one at any time; either way
+  // the already-extracted set changes and the whole session is re-sent rather
+  // than skipping anything. Absent on records written before this existed.
   graphExtractedAt?: string;
-  graphExtractedCount?: number;
+  graphExtractedDigest?: number;
 }
 
 export interface ProjectSessionIndexEntry {

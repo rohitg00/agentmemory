@@ -18,6 +18,19 @@ import { noteMemoryChange, noteSessionChange } from "../state/viewer-counts.js";
 // the per-turn session-stop fan-out.
 const CONSOLIDATION_MARKER_KEY = "consolidation:lastRun";
 
+// Order-independent fingerprint of an observation set, used to tell whether
+// the already-extracted half of a session still looks the way it did at the
+// last graph extract. Counting is not enough: evict's per-project cap
+// (evict.ts, age- and status-independent) can delete an observation from the
+// live session in the same window a late compression lands another, and the
+// two cancel out. Seeded with the set size so a pure size change always shows,
+// and kept under 2^32 so every intermediate stays an exact integer no matter
+// how large the session gets. An unparseable timestamp yields NaN, which never
+// compares equal, so the session falls back to a full extract.
+const OBS_DIGEST_MOD = 0x1_0000_0000;
+const observationDigest = (obs: CompressedObservation[]): number =>
+  obs.reduce((sum, o) => (sum + Date.parse(o.timestamp)) % OBS_DIGEST_MOD, obs.length);
+
 async function consolidationDueUnserialized(kv: StateKV): Promise<boolean> {
   const cooldownMs = getConsolidationCooldownMs();
   if (cooldownMs <= 0) return true; // debounce disabled
@@ -82,23 +95,24 @@ export function registerEventTriggers(sdk: IIIClient, kv: StateKV): void {
         // that is quadratic permanent heap. Send only what landed since the
         // last extract.
         //
-        // The count is what makes the timestamp watermark safe. mem::compress
+        // The digest is what makes the timestamp watermark safe. mem::compress
         // is dispatched fire-and-forget (observe.ts) and stamps the capture
         // time, not the write time, so a slow compression can land an OLDER
-        // timestamp after a newer one was already extracted. When the number
-        // of observations newer than the watermark does not exactly account
-        // for the growth since the watermark was recorded, something arrived
-        // out of order (or was evicted) and we re-send the whole session
-        // rather than skip it. Missing a memory is worse than re-merging one.
+        // timestamp after a newer one was already extracted; evict can also
+        // remove one at any point. Whenever the already-extracted half no
+        // longer fingerprints the same, we re-send the whole session rather
+        // than skip it. Missing a memory is worse than re-merging one.
         const session = await kv
           .get<Session>(KV.sessions, data.sessionId)
           .catch(() => null);
         const at = session?.graphExtractedAt;
-        const count = session?.graphExtractedCount;
+        const mark = session?.graphExtractedDigest;
         let batch = compressed;
-        if (typeof at === "string" && typeof count === "number") {
-          const fresh = compressed.filter((o) => o.timestamp > at);
-          if (fresh.length === compressed.length - count) batch = fresh;
+        if (typeof at === "string" && typeof mark === "number") {
+          const seen = compressed.filter((o) => o.timestamp <= at);
+          if (observationDigest(seen) === mark) {
+            batch = compressed.filter((o) => o.timestamp > at);
+          }
         }
         if (batch.length > 0) {
           const newest = compressed.reduce(
@@ -114,8 +128,8 @@ export function registerEventTriggers(sdk: IIIClient, kv: StateKV): void {
               { type: "set", path: "graphExtractedAt", value: newest },
               {
                 type: "set",
-                path: "graphExtractedCount",
-                value: compressed.length,
+                path: "graphExtractedDigest",
+                value: observationDigest(compressed),
               },
             ]);
           }
