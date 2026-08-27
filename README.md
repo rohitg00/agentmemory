@@ -1535,6 +1535,15 @@ Create `~/.agentmemory/.env`:
                                           # Increase for slow networks or large batch calls;
                                           # decrease to fail-fast on rate-limit holds.
 
+# Provider concurrency
+# AGENTMEMORY_MAX_PROVIDER_CONCURRENCY=6  # Default: 6. Caps calls in flight inside the
+                                          # provider, so bursty capture cannot answer with
+                                          # 429 too many concurrent requests. The gate is
+                                          # global, so raising SUMMARIZE_CHUNK_CONCURRENCY
+                                          # above it has no effect — raise them together.
+                                          # Lower it for a key whose concurrency ceiling
+                                          # is below 6.
+
 # Search tuning
 # BM25_WEIGHT=0.4
 # VECTOR_WEIGHT=0.6
