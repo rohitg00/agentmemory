@@ -563,6 +563,383 @@ describe("IndexPersistence", () => {
     expect(loaded.bm25!.search("alpha").length).toBe(0);
   });
 
+  it("reclaims the previous generation when the previous manifest read fails (#1115)", async () => {
+    const previous = makeBm25("obs_old", "alpha previous snapshot");
+    await new IndexPersistence(kv as never, previous, null, {
+      shardChars: 80,
+      createGeneration: () => "gen_old",
+    }).save();
+    const oldShardScope = "mem:index:bm25:bm25:gen_old:00000";
+    await expect(kv.get(oldShardScope, "data")).resolves.not.toBeNull();
+
+    // The manifest read that opens saveShardedIndex times out. It used to be
+    // swallowed into `previous = null`, which skipped the cleanup guard and
+    // stranded gen_old's shards with nothing left to ever revisit them.
+    const readFailsKv = {
+      ...kv,
+      get: vi.fn(async <T>(scope: string, key: string): Promise<T | null> => {
+        if (scope === BM25_SCOPE && key === BM25_MANIFEST_KEY) {
+          throw new Error("Invocation timeout after 180000ms: state::get");
+        }
+        return kv.get<T>(scope, key);
+      }),
+    };
+
+    const next = makeBm25("obs_new", "bravo new snapshot");
+    await new IndexPersistence(readFailsKv as never, next, null, {
+      shardChars: 80,
+      createGeneration: () => "gen_new",
+    }).save();
+
+    const manifest = await getBm25Manifest(kv);
+    expect(manifest.generation).toBe("gen_new");
+    await expect(kv.get(oldShardScope, "data")).resolves.toBeNull();
+  });
+
+  it("reclaims a generation stranded by a failed cleanup on the next load (#1115)", async () => {
+    const previous = makeBm25("obs_old", "alpha previous snapshot");
+    await new IndexPersistence(kv as never, previous, null, {
+      shardChars: 80,
+      createGeneration: () => "gen_old",
+    }).save();
+    const oldShardScope = "mem:index:bm25:bm25:gen_old:00000";
+
+    const cleanupKv = {
+      ...kv,
+      delete: vi.fn(async () => {
+        throw new Error("cleanup failed");
+      }),
+    };
+    const next = makeBm25("obs_new", "bravo new snapshot");
+    await new IndexPersistence(cleanupKv as never, next, null, {
+      shardChars: 80,
+      createGeneration: () => "gen_new",
+    }).save();
+
+    // Cleanup failed, so gen_old is still on disk. Nothing in the save path
+    // will revisit it — a later save only ever inspects its own predecessor.
+    await expect(kv.get(oldShardScope, "data")).resolves.not.toBeNull();
+
+    const loaded = await new IndexPersistence(
+      kv as never,
+      new SearchIndex(),
+      null,
+    ).load();
+    expect(loaded.bm25!.search("bravo").length).toBe(1);
+    await expect(kv.get(oldShardScope, "data")).resolves.toBeNull();
+  });
+
+  it("reclaims the previous vector generation when the vector manifest read fails (#1115)", async () => {
+    await new IndexPersistence(
+      kv as never,
+      makeBm25("obs_old", "alpha previous snapshot"),
+      makeVector("obs_old"),
+      { shardChars: 80, createGeneration: () => "gen_old" },
+    ).save();
+    const oldVectorScope = "mem:index:bm25:vectors:gen_old:00000";
+    await expect(kv.get(oldVectorScope, "data")).resolves.not.toBeNull();
+
+    const readFailsKv = {
+      ...kv,
+      get: vi.fn(async <T>(scope: string, key: string): Promise<T | null> => {
+        if (scope === BM25_SCOPE && key === VECTOR_MANIFEST_KEY) {
+          throw new Error("Invocation timeout after 180000ms: state::get");
+        }
+        return kv.get<T>(scope, key);
+      }),
+    };
+
+    await new IndexPersistence(
+      readFailsKv as never,
+      makeBm25("obs_new", "bravo new snapshot"),
+      makeVector("obs_new"),
+      { shardChars: 80, createGeneration: () => "gen_new" },
+    ).save();
+
+    await expect(kv.get(oldVectorScope, "data")).resolves.toBeNull();
+  });
+
+  it("leaves a generation recorded after the live one untouched on load (#1115)", async () => {
+    await new IndexPersistence(
+      kv as never,
+      makeBm25("obs_old", "alpha previous snapshot"),
+      null,
+      { shardChars: 80, createGeneration: () => "gen_live" },
+    ).save();
+
+    // A concurrent save has recorded its generation and is mid-write, but has
+    // not published its manifest yet. setIndexPersistence runs before load()
+    // in src/index.ts, so a request arriving during boot produces exactly this.
+    const inflightScope = "mem:index:bm25:bm25:gen_inflight:00000";
+    await kv.set(inflightScope, "data", "partial shard");
+    const gcKey = `${BM25_MANIFEST_KEY}:gc`;
+    const ledger = await kv.get<{
+      v: 1;
+      generations: Array<{
+        generation: string;
+        shards: Array<{ scope: string; key: string }>;
+      }>;
+    }>(BM25_SCOPE, gcKey);
+    ledger!.generations.push({
+      generation: "gen_inflight",
+      shards: [{ scope: inflightScope, key: "data" }],
+    });
+    await kv.set(BM25_SCOPE, gcKey, ledger);
+
+    await new IndexPersistence(kv as never, new SearchIndex(), null).load();
+
+    // Deleting it would leave the in-flight save publishing a manifest whose
+    // shards are already gone, which fails closed on the next load.
+    await expect(kv.get(inflightScope, "data")).resolves.toBe("partial shard");
+  });
+
+  it("reclaims a pre-ledger manifest that carries no generation (#1115)", async () => {
+    const legacyScope = "mem:index:bm25:bm25:gen_legacy:00000";
+    await kv.set(legacyScope, "data", "legacy shard");
+    await kv.set(BM25_SCOPE, BM25_MANIFEST_KEY, {
+      v: 1,
+      shards: [{ scope: legacyScope, key: "data", chars: 12 }],
+      chars: 12,
+    });
+
+    await new IndexPersistence(
+      kv as never,
+      makeBm25("obs_new", "bravo new snapshot"),
+      null,
+      { shardChars: 80, createGeneration: () => "gen_new" },
+    ).save();
+
+    await expect(kv.get(legacyScope, "data")).resolves.toBeNull();
+  });
+
+  it("keeps a published manifest whole when two saves overlap (#1115)", async () => {
+    // scheduleSave fires save() unawaited from a timer while flushIndexSave
+    // awaits save() on every delete path, so two saves on ONE instance is the
+    // normal shape, not a contrivance. Without the queue, whichever published
+    // second reclaimed the other's shards and left it naming data already gone.
+    vi.useRealTimers();
+    const store = new Map<string, Map<string, unknown>>();
+    const slowKv = {
+      get: async <T>(scope: string, key: string): Promise<T | null> =>
+        (store.get(scope)?.get(key) as T) ?? null,
+      set: async <T>(scope: string, key: string, data: T): Promise<T> => {
+        // Stall one of the first generation's shard writes so the second save
+        // overtakes it.
+        if (scope.includes(":gen_0:") && scope.endsWith("00005")) {
+          await new Promise((resolve) => setTimeout(resolve, 200));
+        }
+        if (!store.has(scope)) store.set(scope, new Map());
+        store.get(scope)!.set(key, data);
+        return data;
+      },
+      delete: async (scope: string, key: string): Promise<void> => {
+        store.get(scope)?.delete(key);
+      },
+      list: async <T>(scope: string): Promise<T[]> =>
+        Array.from((store.get(scope)?.values() ?? []) as Iterable<T>),
+    };
+
+    const bm25 = new SearchIndex();
+    for (let i = 0; i < 30; i++) {
+      bm25.add(
+        makeObs({ id: `obs_${i}`, title: `lorem ipsum dolor sit amet ${i}` }),
+      );
+    }
+    let generation = 0;
+    const persistence = new IndexPersistence(slowKv as never, bm25, null, {
+      shardChars: 400,
+      createGeneration: () => `gen_${generation++}`,
+    });
+
+    // Let the first save get into its shard writes before the second starts,
+    // so the second is the one that publishes.
+    const first = persistence.save();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const second = persistence.save();
+    await Promise.all([first, second]);
+
+    const manifest = await slowKv.get<TestIndexShardManifest>(
+      BM25_SCOPE,
+      BM25_MANIFEST_KEY,
+    );
+    const missing: string[] = [];
+    for (const shard of manifest!.shards) {
+      if ((await slowKv.get(shard.scope, shard.key)) === null) {
+        missing.push(shard.scope);
+      }
+    }
+    expect(missing).toEqual([]);
+
+    const loaded = await new IndexPersistence(
+      slowKv as never,
+      new SearchIndex(),
+      null,
+    ).load();
+    expect(loaded.bm25).not.toBeNull();
+  });
+
+  it("still persists the index when the gc ledger is unreadable (#1115)", async () => {
+    // state::get timing out is the condition this bug appears under. Aborting
+    // the save there would stop persisting entirely, which is worse than the
+    // leak: a lost BM25 index costs a full-corpus rebuild.
+    const failingKv = {
+      ...kv,
+      get: vi.fn(async <T>(scope: string, key: string): Promise<T | null> => {
+        if (scope === BM25_SCOPE && key === `${BM25_MANIFEST_KEY}:gc`) {
+          throw new Error("Invocation timeout after 180000ms: state::get");
+        }
+        return kv.get<T>(scope, key);
+      }),
+    };
+
+    await new IndexPersistence(
+      failingKv as never,
+      makeBm25("obs_new", "bravo new snapshot"),
+      null,
+      { shardChars: 80, createGeneration: () => "gen_new" },
+    ).save();
+
+    const manifest = await getBm25Manifest(kv);
+    expect(manifest.generation).toBe("gen_new");
+    await expect(
+      kv.get(manifest.shards[0].scope, manifest.shards[0].key),
+    ).resolves.not.toBeNull();
+  });
+
+  it("still persists when the gc ledger holds a malformed entry (#1115)", async () => {
+    // A null entry used to throw a TypeError out of saveShardedIndex before any
+    // shard write, leaving one throttled log line per 60s while BM25 silently
+    // stopped persisting for good.
+    await kv.set(BM25_SCOPE, `${BM25_MANIFEST_KEY}:gc`, {
+      v: 1,
+      generations: [null],
+    });
+
+    await new IndexPersistence(
+      kv as never,
+      makeBm25("obs_new", "bravo new snapshot"),
+      null,
+      { shardChars: 80, createGeneration: () => "gen_new" },
+    ).save();
+
+    const manifest = await getBm25Manifest(kv);
+    expect(manifest.generation).toBe("gen_new");
+    await expect(
+      kv.get(manifest.shards[0].scope, manifest.shards[0].key),
+    ).resolves.not.toBeNull();
+  });
+
+  it("still reclaims when the gc ledger holds a malformed entry (#1115)", async () => {
+    // Publishing is not enough. A malformed entry that silently disabled
+    // reclaim would leak a generation every cycle while this test stayed green.
+    await new IndexPersistence(kv as never, makeBm25("obs_old", "alpha"), null, {
+      shardChars: 80,
+      createGeneration: () => "gen_old",
+    }).save();
+    const oldShardScope = "mem:index:bm25:bm25:gen_old:00000";
+
+    const gcKey = `${BM25_MANIFEST_KEY}:gc`;
+    const ledger = await kv.get<{ v: 1; generations: unknown[] }>(
+      BM25_SCOPE,
+      gcKey,
+    );
+    ledger!.generations.unshift(null);
+    await kv.set(BM25_SCOPE, gcKey, ledger);
+
+    await new IndexPersistence(kv as never, makeBm25("obs_new", "bravo"), null, {
+      shardChars: 80,
+      createGeneration: () => "gen_new",
+    }).save();
+
+    await expect(kv.get(oldShardScope, "data")).resolves.toBeNull();
+  });
+
+  it("falls back to previous-generation cleanup when the ledger is unusable (#1115)", async () => {
+    // Measured regression guard: with no fallback, an unusable ledger leaked
+    // one generation per cycle — strictly worse than the code this replaced,
+    // which always had this path. Without this test the `else if` can be
+    // deleted with the whole suite green.
+    await new IndexPersistence(kv as never, makeBm25("obs_old", "alpha"), null, {
+      shardChars: 80,
+      createGeneration: () => "gen_old",
+    }).save();
+    const oldShardScope = "mem:index:bm25:bm25:gen_old:00000";
+    await expect(kv.get(oldShardScope, "data")).resolves.not.toBeNull();
+
+    // Ledger read fails, manifest read succeeds. Both are state::get with
+    // independent timeouts, so this split is ordinary, not contrived.
+    const ledgerFailsKv = {
+      ...kv,
+      get: vi.fn(async <T>(scope: string, key: string): Promise<T | null> => {
+        if (scope === BM25_SCOPE && key === `${BM25_MANIFEST_KEY}:gc`) {
+          throw new Error("Invocation timeout after 180000ms: state::get");
+        }
+        return kv.get<T>(scope, key);
+      }),
+    };
+
+    await new IndexPersistence(
+      ledgerFailsKv as never,
+      makeBm25("obs_new", "bravo"),
+      null,
+      { shardChars: 80, createGeneration: () => "gen_new" },
+    ).save();
+
+    const manifest = await getBm25Manifest(kv);
+    expect(manifest.generation).toBe("gen_new");
+    await expect(kv.get(oldShardScope, "data")).resolves.toBeNull();
+  });
+
+  it("keeps the ledger entry when a rollback delete fails (#1115)", async () => {
+    // Shards that survived their rollback delete must keep the entry that
+    // names them, or nothing can ever reclaim them.
+    let shardWrites = 0;
+    const failingKv = {
+      ...kv,
+      set: vi.fn(async <T>(scope: string, key: string, data: T): Promise<T> => {
+        if (scope.includes(":gen_new:")) {
+          shardWrites += 1;
+          if (shardWrites === 2) throw new Error("shard write failed");
+        }
+        return kv.set(scope, key, data);
+      }),
+      delete: vi.fn(async () => {
+        throw new Error("rollback delete failed");
+      }),
+    };
+
+    await new IndexPersistence(
+      failingKv as never,
+      makeBm25("obs_new", "bravo new snapshot"),
+      null,
+      { shardChars: 80, createGeneration: () => "gen_new" },
+    ).save();
+
+    const ledger = await kv.get<{
+      v: 1;
+      generations: Array<{ generation: string }>;
+    }>(BM25_SCOPE, `${BM25_MANIFEST_KEY}:gc`);
+    expect(ledger!.generations.map((entry) => entry.generation)).toContain(
+      "gen_new",
+    );
+  });
+
+  it("refuses to overwrite a gc ledger it does not recognise (#1115)", async () => {
+    const gcKey = `${BM25_MANIFEST_KEY}:gc`;
+    const future = { v: 2, generations: [], writtenByANewerBuild: true };
+    await kv.set(BM25_SCOPE, gcKey, future);
+
+    await new IndexPersistence(
+      kv as never,
+      makeBm25("obs_new", "bravo new snapshot"),
+      null,
+      { shardChars: 80, createGeneration: () => "gen_new" },
+    ).save();
+
+    // Rewriting it as a v1 ledger would drop every generation it tracked.
+    await expect(kv.get(BM25_SCOPE, gcKey)).resolves.toEqual(future);
+  });
+
   it("keeps the previous vector generation when vector save fails after BM25 publish", async () => {
     const previousBm25 = makeBm25("obs_old", "alpha previous snapshot");
     const previousVector = makeVector("obs_old");
@@ -789,5 +1166,56 @@ describe("IndexPersistence", () => {
     );
 
     await expect(persistence.load()).resolves.toBeDefined();
+  });
+});
+
+describe("IndexPersistence save coalescing", () => {
+  let kv: ReturnType<typeof mockKV>;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    kv = mockKV();
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it("does not queue a second identical save behind one that has not started", async () => {
+    // flushIndexSave awaits save() on every delete path. Serialising every one
+    // of them means a delete waits out every save ahead of it, which is fine
+    // when a save takes a second and is an outage when saves are timing out at
+    // 180s. A save that is queued but not yet running will serialise the index
+    // as it stands when it runs, so it already covers these callers.
+    let manifestWrites = 0;
+    let releaseFirst!: () => void;
+    const firstStarted = new Promise<void>((r) => {
+      releaseFirst = r;
+    });
+    let started = 0;
+    const slowKv = {
+      ...kv,
+      set: async <T>(scope: string, key: string, data: T): Promise<T> => {
+        if (scope === BM25_SCOPE && key === BM25_MANIFEST_KEY) {
+          manifestWrites++;
+          if (++started === 1) await firstStarted;
+        }
+        return kv.set(scope, key, data);
+      },
+    };
+
+    const persistence = new IndexPersistence(
+      slowKv as never,
+      makeBm25("obs_1", "alpha"),
+      null,
+      { shardChars: 400 },
+    );
+
+    const first = persistence.save();
+    // Five more delete-path flushes arrive while the first is still running.
+    const rest = Array.from({ length: 5 }, () => persistence.save());
+    releaseFirst();
+    await Promise.all([first, ...rest]);
+
+    // One running save plus at most one queued behind it covers all six
+    // callers. Six serialised saves would be the regression.
+    expect(manifestWrites).toBeLessThanOrEqual(2);
   });
 });

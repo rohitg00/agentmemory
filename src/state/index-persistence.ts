@@ -24,6 +24,27 @@ type IndexShardManifest = {
   chars: number;
 };
 
+// Suffix for the reclaim ledger that sits beside each manifest.
+const GC_LEDGER_SUFFIX = ":gc";
+
+// Stands in for a manifest written before generations were recorded, whose
+// `generation` field is absent. Cannot collide with createIndexGeneration().
+const PRE_LEDGER_GENERATION = "pre-ledger";
+
+// Every generation whose shards may still be on disk, live one included. The
+// manifest alone cannot answer that: it names only the generation that is
+// current, so a generation stranded by a failed read, a throw after commit, or
+// a kill mid-cleanup becomes unreachable the moment the next manifest replaces
+// it. Nothing else enumerates shard scopes — StateKV lists keys within a scope,
+// not scopes by prefix — so what is not recorded here can never be found again.
+type IndexGcLedger = {
+  v: 1;
+  generations: Array<{
+    generation: string;
+    shards: Array<{ scope: string; key: string }>;
+  }>;
+};
+
 type IndexPersistenceOptions = {
   shardChars?: number;
   createGeneration?: () => string;
@@ -67,7 +88,9 @@ function isValidShardDescriptor(
 
 export class IndexPersistence {
   private timer: ReturnType<typeof setTimeout> | null = null;
-  private lastFailureLogAt = 0;
+  private lastFailureLogAt = new Map<string, number>();
+  private queue: Promise<void> = Promise.resolve();
+  private unstartedSave: Promise<void> | null = null;
 
   constructor(
     private kv: StateKV,
@@ -83,7 +106,7 @@ export class IndexPersistence {
     // under sustained iii-engine write timeouts (issue #204). Funnel
     // rejections through logFailure() instead.
     this.timer = setTimeout(() => {
-      this.save().catch((err) => this.logFailure(err));
+      this.save().catch((err) => this.logFailure("index", err));
     }, DEBOUNCE_MS);
   }
 
@@ -92,13 +115,59 @@ export class IndexPersistence {
       clearTimeout(this.timer);
       this.timer = null;
     }
+    if (this.unstartedSave) return this.unstartedSave;
+
+    const pending = this.enqueue(() => {
+      if (this.unstartedSave === pending) this.unstartedSave = null;
+      return this.runSave();
+    });
+    this.unstartedSave = pending;
+    return pending;
+  }
+
+  /**
+   * Serialise everything that read-modify-writes the gc ledger.
+   *
+   * Two saves genuinely overlap here: scheduleSave fires save() unawaited from
+   * a timer, flushIndexSave awaits save() on every delete path
+   * (src/functions/search.ts), and stop() clears the timer without awaiting a
+   * save already running. Overlapping saves drop each other's ledger entries,
+   * and worse, a save that publishes second reclaims the shards the first is
+   * still writing — leaving the first to publish a manifest naming data that
+   * is already gone, which fails the next load closed.
+   *
+   * Queue, never coalesce. flushIndexSave awaits this to make a delete
+   * durable, so handing back an in-flight promise that started before the
+   * delete would report success for a snapshot that does not contain it. The
+   * cost is real: a delete-path flush waits out the save ahead of it.
+   */
+  private enqueue<T>(work: () => Promise<T>): Promise<T> {
+    // runSave never rejects and the tail below always fulfils, so the queue
+    // cannot be left rejected and needs no rejection handler here.
+    const run = this.queue.then(work);
+    this.queue = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }
+
+  private async runSave(): Promise<void> {
+    // Each index fails on its own. One try around both would let a BM25
+    // failure stop the vector index persisting at all, and a lost vector index
+    // is never rebuilt: both rebuild triggers key on the BM25 size
+    // (src/index.ts, src/functions/search.ts).
     try {
       await this.saveBm25Index(this.bm25.serialize());
-      if (this.vector) {
-        await this.saveVectorIndex(this.vector.serialize());
-      }
     } catch (err) {
-      this.logFailure(err);
+      this.logFailure("BM25", err);
+    }
+    if (this.vector) {
+      try {
+        await this.saveVectorIndex(this.vector.serialize());
+      } catch (err) {
+        this.logFailure("vector", err);
+      }
     }
   }
 
@@ -129,16 +198,19 @@ export class IndexPersistence {
     }
   }
 
-  private logFailure(err: unknown): void {
+  private logFailure(index: string, err: unknown): void {
     const now = Date.now();
     // Throttle: persistence failures under load arrive in bursts
     // (iii-engine queue pressure). Logging every debounce flush adds
-    // noise without information.
-    if (now - this.lastFailureLogAt < FAILURE_LOG_THROTTLE_MS) return;
-    this.lastFailureLogAt = now;
+    // noise without information. Throttled PER INDEX, so a vector failure
+    // right after a BM25 one is not swallowed — the two fail independently
+    // now, and at 3am you need to know which one stopped persisting.
+    const lastAt = this.lastFailureLogAt.get(index) ?? 0;
+    if (now - lastAt < FAILURE_LOG_THROTTLE_MS) return;
+    this.lastFailureLogAt.set(index, now);
     const code = (err as { code?: string })?.code;
     const message = err instanceof Error ? err.message : String(err);
-    logger.warn("index persistence: failed to save BM25/vector index", {
+    logger.warn(`index persistence: failed to save ${index} index`, {
       code,
       message,
       hint:
@@ -192,6 +264,16 @@ export class IndexPersistence {
       chunks.push(chunk);
     }
 
+    // Record the generation BEFORE the first shard write. A kill anywhere from
+    // here to the manifest publish would otherwise leave shards on disk that
+    // nothing references and nothing can enumerate.
+    const tracked = await this.trackGeneration(
+      manifestKey,
+      generation,
+      shards,
+      previous,
+    );
+
     const writeResults = await Promise.allSettled(
       shards.map(async (shard, index) => {
         const chunk = chunks[index] ?? "";
@@ -211,7 +293,14 @@ export class IndexPersistence {
       (result): result is PromiseRejectedResult => result.status === "rejected",
     );
     if (failedWrite) {
-      await this.deleteShards(shards, "shard_write_rollback");
+      const allGone = await this.deleteShards(shards, "shard_write_rollback");
+      // Drop the entry only if every shard actually went. A shard that survived
+      // its delete is unnameable once its entry is gone, which is the contract
+      // this file states for reclaim: a delete failure costs a retry, never a
+      // stranded generation.
+      if (tracked && allGone) {
+        await this.untrackGeneration(manifestKey, generation);
+      }
       throw failedWrite.reason;
     }
 
@@ -249,21 +338,268 @@ export class IndexPersistence {
           error: errorMessage(err),
         });
       } else {
-        await this.deleteShards(shards, "manifest_publish_rollback");
+        const allGone = await this.deleteShards(
+          shards,
+          "manifest_publish_rollback",
+        );
+        if (tracked && allGone) {
+          await this.untrackGeneration(manifestKey, generation);
+        }
       }
       throw err;
     }
 
     await this.deleteKey(KV.bm25Index, legacyKey, "legacy_cleanup");
-    if (previous?.v === 1 && Array.isArray(previous.shards)) {
-      const currentShardIds = new Set(
-        shards.map((shard) => `${shard.scope}\0${shard.key}`),
+    // Only reclaim when this generation is actually in the ledger. Reclaiming
+    // against a ledger that does not list us would treat live shards as dead.
+    if (tracked) {
+      await this.reclaimGenerations(manifestKey, generation);
+    } else if (previous?.v === 1 && Array.isArray(previous.shards)) {
+      // The ledger was unusable this cycle, so nothing above will ever revisit
+      // `previous`. Fall back to the pre-ledger cleanup: the manifest just
+      // published supersedes it, and saves are serialised, so its shards are
+      // dead. Without this, a run of unusable cycles orphans one generation
+      // each — strictly worse than the code this replaced, which always had
+      // this path.
+      const liveIds = new Set(
+        shards.map((shard) => `${shard.scope}\u0000${shard.key}`),
       );
-      for (const shard of previous.shards) {
-        if (currentShardIds.has(`${shard.scope}\0${shard.key}`)) continue;
-        await this.deleteShards([shard], "previous_generation_cleanup");
+      await this.deleteShards(
+        previous.shards.filter(
+          (shard) =>
+            isValidShardDescriptor(shard) &&
+            !liveIds.has(`${shard.scope}\u0000${shard.key}`),
+        ),
+        "previous_generation_cleanup",
+      );
+    }
+  }
+
+  /** Drop a generation's entry after its shards have been rolled back. */
+  private async untrackGeneration(
+    manifestKey: string,
+    generation: string,
+  ): Promise<void> {
+    try {
+      const ledger = await this.readLedger(manifestKey);
+      const generations = ledger.generations.filter(
+        (entry) => entry?.generation !== generation,
+      );
+      if (generations.length === ledger.generations.length) return;
+      await this.kv.set<IndexGcLedger>(KV.bm25Index, this.gcKey(manifestKey), {
+        v: 1,
+        generations,
+      });
+    } catch {
+      // Best effort. A surviving entry costs a retry on the next reclaim, and
+      // this runs while a save is already failing — never make that worse.
+    }
+  }
+
+  private gcKey(manifestKey: string): string {
+    return `${manifestKey}${GC_LEDGER_SUFFIX}`;
+  }
+
+  private async readLedger(manifestKey: string): Promise<IndexGcLedger> {
+    // Throws rather than returning a blank ledger, because a blank one would
+    // be written straight back over whatever is stored. Callers catch it and
+    // skip tracking for that cycle; they must never treat it as "no ledger".
+    const stored = await this.kv.get<IndexGcLedger>(
+      KV.bm25Index,
+      this.gcKey(manifestKey),
+    );
+    if (stored == null) return { v: 1, generations: [] };
+    // Present but unrecognised: a newer version, or a rollback to this build
+    // after one that wrote a different shape. Overwriting drops every
+    // generation it tracked, so leave it exactly where it is.
+    if (stored.v !== 1 || !Array.isArray(stored.generations)) {
+      throw new Error(
+        `index gc ledger ${this.gcKey(manifestKey)} has an unrecognised shape ` +
+          `(v=${String((stored as { v?: unknown }).v)}); refusing to overwrite it`,
+      );
+    }
+    return stored;
+  }
+
+  private async trackGeneration(
+    manifestKey: string,
+    generation: string,
+    shards: IndexShardManifest["shards"],
+    previous: IndexShardManifest | null,
+  ): Promise<boolean> {
+    try {
+      // The WHOLE body runs under this guard, not just the ledger read. A
+      // malformed ledger entry or manifest shard would otherwise throw a
+      // TypeError out of saveShardedIndex before any shard write, leaving one
+      // throttled log line per 60s as the only trace while BM25 stopped
+      // persisting for good. isValidShardDescriptor exists in this file
+      // because a per-shard-malformed manifest is already its threat model.
+      return await this.recordGeneration(
+        manifestKey,
+        generation,
+        shards,
+        previous,
+      );
+    } catch (err) {
+      // A state::get brownout is the exact condition this bug appears under,
+      // so this path is not rare. Aborting the save here would stop persisting
+      // the index at all, which is worse than the leak being fixed. Writing a
+      // fresh ledger would drop every generation the stored one lists. Do
+      // neither: let the shards and manifest land, skip this cycle's tracking
+      // and its reclaim, and leak at most one generation instead of one per
+      // brownout.
+      //
+      // That leak can OUTLIVE the unreadable window. This generation publishes
+      // untracked; the next save re-seeds it from `previous`, but that read is
+      // itself `.catch(() => null)`, so if it also fails the generation is in
+      // no ledger and reclaim only ever looks at what precedes the live entry.
+      // With no scope enumeration in StateKV, nothing can find it again.
+      // Throttled for the same reason every other failure log here is: an
+      // unusable ledger stays unusable, so this fires on every debounce.
+      const throttleKey = `gc:${manifestKey}`;
+      const now = Date.now();
+      if (now - (this.lastFailureLogAt.get(throttleKey) ?? 0) >= FAILURE_LOG_THROTTLE_MS) {
+        this.lastFailureLogAt.set(throttleKey, now);
+        logger.warn(
+          "index persistence: gc ledger unavailable, skipping reclaim",
+          { manifestKey, message: errorMessage(err) },
+        );
+      }
+      return false;
+    }
+  }
+
+  private async recordGeneration(
+    manifestKey: string,
+    generation: string,
+    shards: IndexShardManifest["shards"],
+    previous: IndexShardManifest | null,
+  ): Promise<boolean> {
+    const ledger = await this.readLedger(manifestKey);
+    // Optional-chained so one malformed entry costs that entry, not the whole
+    // cycle's tracking. reclaimGenerations tolerates them the same way.
+    const known = new Set(ledger.generations.map((entry) => entry?.generation));
+
+    // Seed the generation the pre-ledger code left live, so upgrading does not
+    // strand it. Only reachable while `previous` is readable, which is exactly
+    // the case the old cleanup already handled.
+    //
+    // `generation` is optional on the manifest and older stores really do omit
+    // it, so fall back to a sentinel rather than skipping the seed. The
+    // sentinel cannot collide with createIndexGeneration()'s `idx_` ids, and
+    // since every manifest written from here on carries a generation, the
+    // seeded entry always ends up preceding a live one and gets reclaimed.
+    if (previous?.v === 1 && Array.isArray(previous.shards)) {
+      const previousGeneration = previous.generation ?? PRE_LEDGER_GENERATION;
+      if (!known.has(previousGeneration)) {
+        ledger.generations.push({
+          generation: previousGeneration,
+          shards: previous.shards
+            .filter(isValidShardDescriptor)
+            .map(({ scope, key }) => ({ scope, key })),
+        });
+        known.add(previousGeneration);
       }
     }
+
+    if (!known.has(generation)) {
+      ledger.generations.push({
+        generation,
+        shards: shards.map(({ scope, key }) => ({ scope, key })),
+      });
+    }
+
+    await this.kv.set<IndexGcLedger>(
+      KV.bm25Index,
+      this.gcKey(manifestKey),
+      ledger,
+    );
+    return true;
+  }
+
+  /**
+   * Delete every tracked generation except the live one, then rewrite the
+   * ledger with whatever survived. A shard whose delete failed stays listed and
+   * is retried on the next save or load, so a delete failure costs a retry
+   * instead of stranding the generation for good.
+   */
+  private async reclaimGenerations(
+    manifestKey: string,
+    liveGeneration: string | undefined,
+  ): Promise<void> {
+    if (!liveGeneration) return;
+    const ledger = await this.readLedger(manifestKey).catch(() => null);
+    if (!ledger) return;
+
+    // Reclaim strictly what precedes the live generation in the ledger, which
+    // trackGeneration appends to in creation order. Anything at or after the
+    // live entry is either live or a save still in flight: setIndexPersistence
+    // runs before load() in src/index.ts, so a request arriving during boot can
+    // have a save writing shards while this reclaim runs, and deleting those
+    // would publish a manifest whose shards are already half gone. A generation
+    // stranded after the live one is not lost, only deferred — it becomes
+    // reclaimable as soon as a newer generation is published.
+    const liveIndex = ledger.generations.findIndex(
+      (entry) => entry?.generation === liveGeneration,
+    );
+    // Live generation untracked (a pre-ledger store, or a manifest written
+    // before this shipped). Nothing can be classified as superseded, so leave
+    // every entry alone rather than guess.
+    if (liveIndex < 0) return;
+
+    const reclaimedPaths: string[] = [];
+    let failed = 0;
+    const survivors: IndexGcLedger["generations"] = [];
+    for (const [index, entry] of ledger.generations.entries()) {
+      // A malformed entry is kept, never iterated. This also runs on the load
+      // path, where a throw would null the loaded index and trigger the
+      // full-corpus rebuild. A GC step must not be able to fail a load.
+      if (index >= liveIndex || !entry || !Array.isArray(entry.shards)) {
+        survivors.push(entry);
+        continue;
+      }
+      const stranded: IndexGcLedger["generations"][number]["shards"] = [];
+      for (const shard of entry.shards) {
+        try {
+          await this.kv.delete(shard.scope, shard.key);
+          reclaimedPaths.push(statePath(shard.scope, shard.key));
+        } catch {
+          failed += 1;
+          stranded.push(shard);
+        }
+      }
+      if (stranded.length > 0) {
+        survivors.push({ generation: entry.generation, shards: stranded });
+      }
+    }
+
+    // One audit row for the sweep, not one per shard. src/functions/audit.ts
+    // sets the policy: automatic bulk sweeps emit a single row listing every
+    // removed id, because per-item rows flood the log. A reclaim on a badly
+    // leaked store is well over a thousand shards, and this runs during boot.
+    if (reclaimedPaths.length > 0) {
+      await this.auditIndexPersistence("delete", reclaimedPaths, {
+        manifestKey,
+        reason: "generation_reclaim",
+        liveGeneration,
+        // `evicted` is the field name src/functions/audit.ts specifies for a
+        // sweep; retention.ts is the reference shape. `failed` surfaces deletes
+        // that will be retried, which would otherwise vanish silently.
+        evicted: reclaimedPaths.length,
+        failed,
+      });
+    }
+
+    // A successful delete is the only thing that shrinks the ledger, so with
+    // none there is nothing to rewrite. Without this, every boot writes the
+    // ledger back unchanged.
+    if (reclaimedPaths.length === 0) return;
+    await this.kv
+      .set<IndexGcLedger>(KV.bm25Index, this.gcKey(manifestKey), {
+        v: 1,
+        generations: survivors,
+      })
+      .catch(() => undefined);
   }
 
   private async auditIndexPersistence(
@@ -280,35 +616,41 @@ export class IndexPersistence {
     );
   }
 
+  /** Reports whether the delete landed, so the reclaim path can retry the rest. */
   private async deleteKey(
     scope: string,
     key: string,
     reason: string,
-  ): Promise<void> {
-    let result = "deleted";
+  ): Promise<boolean> {
+    let ok = true;
     let error: string | undefined;
     try {
       await this.kv.delete(scope, key);
     } catch (err) {
-      result = "failed";
+      ok = false;
       error = errorMessage(err);
     }
     await this.auditIndexPersistence("delete", [statePath(scope, key)], {
       scope,
       key,
       reason,
-      result,
+      result: ok ? "deleted" : "failed",
       error,
     });
+    return ok;
   }
 
   private async deleteShards(
     shards: IndexShardManifest["shards"],
     reason: string,
-  ): Promise<void> {
+  ): Promise<boolean> {
+    let allGone = true;
     for (const shard of shards) {
-      await this.deleteKey(shard.scope, shard.key, reason);
+      if (!(await this.deleteKey(shard.scope, shard.key, reason))) {
+        allGone = false;
+      }
     }
+    return allGone;
   }
 
   private async isManifestPublished(
@@ -368,7 +710,20 @@ export class IndexPersistence {
       manifest.value != null &&
       typeof manifest.value === "object"
     ) {
-      return this.loadManifestData(manifest.value, label);
+      const data = await this.loadManifestData(manifest.value, label);
+      // Boot is the only point that sees a generation stranded by a kill: the
+      // save path only ever inspects its own predecessor. Reclaim once the live
+      // generation has actually loaded — a failed load must not authorise
+      // deleting anything.
+      if (data !== null) {
+        // Through the same queue as save(), or this sweep's ledger rewrite
+        // clobbers a concurrent save's entry. Never allowed to fail the load.
+        const live = manifest.value.generation;
+        await this
+          .enqueue(() => this.reclaimGenerations(manifestKey, live))
+          .catch(() => undefined);
+      }
+      return data;
     }
 
     const legacy = await this.readIndexValue<string>(
