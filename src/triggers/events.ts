@@ -119,6 +119,16 @@ export function registerEventTriggers(sdk: IIIClient, kv: StateKV): void {
             (max, o) => (o.timestamp > max ? o.timestamp : max),
             "",
           );
+          // What the smaller batch costs, for the next person to read this:
+          // extractGraphHeuristics (graph.ts) loops per observation and only
+          // ever links nodes drawn from one observation's own files/concepts,
+          // and persistGraphDelta dedupes across batches through the name and
+          // edge indexes, so the heuristic graph is identical either way. The
+          // opt-in LLM pass (GRAPH_EXTRACTION_ENABLED, off by default) builds
+          // one prompt from the array, so it sees less co-occurrence per call
+          // than a whole-session batch did — bounded batches are already the
+          // norm there, api::graph-build feeds it 25 at a time.
+          //
           // Advance only after the dispatch is accepted, so a hand-off that
           // never left retries on the next turn. Completion is unobservable
           // through TriggerAction.Void(); an extract that fails downstream
