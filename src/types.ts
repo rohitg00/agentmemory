@@ -22,7 +22,7 @@ export interface Session {
   // the already-extracted set changes and the whole session is re-sent rather
   // than skipping anything. Absent on records written before this existed.
   graphExtractedAt?: string;
-  graphExtractedDigest?: number;
+  graphExtractedDigest?: string;
 }
 
 export interface ProjectSessionIndexEntry {
