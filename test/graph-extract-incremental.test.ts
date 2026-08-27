@@ -20,15 +20,8 @@ import { logger } from "../src/logger.js";
 
 const STALE = "graph-extract watermark stale, re-extracting session";
 
-// /agentmemory/session/end is posted by Claude Code's per-turn Stop hook, so
-// event::session::stopped runs on EVERY agent turn — not once per session.
-// It used to hand mem::graph-extract the session's entire observation list
-// each time, and persistGraphDelta takes the 3-call MERGE path for every node
-// and edge it has already seen, so turn N re-merged turns 1..N-1. Engine
-// invocations were quadratic in turn count, and per #843 nothing written via
-// kv.set is ever evicted from the iii engine, so that was quadratic permanent
-// heap. These tests pin the extract to the observations captured since the
-// last successful extract.
+// These tests pin the extract to the observations captured since the last
+// successful one. Why that matters is in src/triggers/events.ts.
 
 const SID = "ses_1";
 
