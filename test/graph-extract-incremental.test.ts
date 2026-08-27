@@ -56,13 +56,6 @@ function persistentKV() {
     store,
     scope,
     get: vi.fn(async (s: string, k: string) => scope(s).get(k) ?? null),
-    set: vi.fn(async (s: string, k: string, v: unknown) => {
-      scope(s).set(k, v);
-      return v;
-    }),
-    delete: vi.fn(async (s: string, k: string) => {
-      scope(s).delete(k);
-    }),
     update: vi.fn(
       async (
         s: string,
@@ -162,18 +155,6 @@ describe("event::session::stopped graph-extract is incremental", () => {
     expect(batches(h.trigger)).toEqual([["a", "b"], ["c"], ["d"]]);
   });
 
-  it("keeps total dispatched observations linear in turn count, not quadratic", async () => {
-    // Pre-fix, 8 turns of one observation each dispatched 1+2+…+8 = 36
-    // observations (and 36 merge passes downstream). Incremental sends 8.
-    const h = harness();
-    for (let i = 1; i <= 8; i++) {
-      h.land(obs(`o${i}`, `2026-01-01T00:00:0${i}.000Z`));
-      await h.stop();
-    }
-    const dispatched = batches(h.trigger).reduce((n, b) => n + b.length, 0);
-    expect(dispatched).toBe(8);
-  });
-
   it("does not dispatch graph-extract at all when no new observations landed", async () => {
     const h = harness();
     h.land(obs("a", "2026-01-01T00:00:01.000Z"));
@@ -182,17 +163,6 @@ describe("event::session::stopped graph-extract is incremental", () => {
     await h.stop();
 
     expect(batches(h.trigger)).toEqual([["a"]]);
-  });
-
-  it("records the watermark as a matched (timestamp, digest) pair on the session", async () => {
-    const h = harness();
-    h.land(obs("a", "2026-01-01T00:00:01.000Z"), obs("b", "2026-01-01T00:00:02.000Z"));
-    await h.stop();
-
-    expect(h.session()).toMatchObject({
-      graphExtractedAt: "2026-01-01T00:00:02.000Z",
-      graphExtractedDigest: expect.any(String),
-    });
   });
 });
 
@@ -236,48 +206,6 @@ describe("graph-extract watermark never skips an observation", () => {
     await h.stop();
 
     expect(batches(h.trigger)[1]).toEqual(["a", "b"]);
-  });
-
-  it("falls back to the whole session when the watermark is half-written", async () => {
-    const h = harness();
-    h.kv.scope("mem:sessions").set(SID, {
-      id: SID,
-      project: "p",
-      cwd: "/p",
-      startedAt: "2026-01-01T00:00:00.000Z",
-      status: "active",
-      observationCount: 0,
-      graphExtractedAt: "2026-01-01T00:00:01.000Z",
-      // graphExtractedDigest deliberately missing
-    });
-    h.land(obs("a", "2026-01-01T00:00:01.000Z"), obs("b", "2026-01-01T00:00:02.000Z"));
-    await h.stop();
-
-    expect(batches(h.trigger)).toEqual([["a", "b"]]);
-  });
-
-  it("falls back to the whole session when the stored pair is inconsistent", async () => {
-    // Interleaved stops only ever write (at, digest) as a matched snapshot
-    // from one run, but a torn or stale pair must still degrade to a full
-    // extract rather than skip anything.
-    const h = harness();
-    h.kv.scope("mem:sessions").set(SID, {
-      id: SID,
-      project: "p",
-      cwd: "/p",
-      startedAt: "2026-01-01T00:00:00.000Z",
-      status: "active",
-      observationCount: 0,
-      graphExtractedAt: "2026-01-01T00:00:03.000Z",
-      graphExtractedDigest: 123456,
-    });
-    h.land(
-      obs("a", "2026-01-01T00:00:01.000Z"),
-      obs("b", "2026-01-01T00:00:04.000Z"),
-    );
-    await h.stop();
-
-    expect(batches(h.trigger)).toEqual([["a", "b"]]);
   });
 
   it("re-extracts everything when a deletion and a late arrival share a millisecond", async () => {

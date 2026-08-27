@@ -60,20 +60,15 @@ export function registerEventTriggers(sdk: IIIClient, kv: StateKV): void {
       payload: data,
     });
     if (summary?.unchanged === true) return summary;
-    // Resolves true when the trigger was accepted, false when the dispatch
-    // itself failed. Callers that need to know (graph-extract's watermark)
-    // read it; the rest ignore it exactly as before.
     const fireVoid = (function_id: string, payload: unknown) =>
       sdk
         .trigger({ function_id, payload, action: TriggerAction.Void() })
-        .then(() => true)
-        .catch((err) => {
+        .catch((err) =>
           logger.warn(function_id + " trigger failed", {
             sessionId: data.sessionId,
             error: err instanceof Error ? err.message : String(err),
-          });
-          return false;
-        });
+          }),
+        );
     if (isReflectEnabled()) {
       fireVoid("mem::slot-reflect", { sessionId: data.sessionId });
     }
@@ -104,7 +99,7 @@ export function registerEventTriggers(sdk: IIIClient, kv: StateKV): void {
         const at = session?.graphExtractedAt;
         const mark = session?.graphExtractedDigest;
         let batch = compressed;
-        if (typeof at === "string" && typeof mark === "string") {
+        if (typeof at === "string") {
           const seen = compressed.filter((o) => o.timestamp <= at);
           if (observationFingerprint(seen) === mark) {
             batch = compressed.filter((o) => o.timestamp > at);
@@ -135,20 +130,24 @@ export function registerEventTriggers(sdk: IIIClient, kv: StateKV): void {
           // observation id in the session. Narrower is more accurate, and
           // graph retrieval and supersede-staling both read it.
           //
-          // Advance only after the dispatch is accepted, so a hand-off that
-          // never left retries on the next turn. Completion is unobservable
-          // through TriggerAction.Void(); an extract that fails downstream
-          // leaves its delta out of the graph until POST /agentmemory/graph/build.
-          if (await fireVoid("mem::graph-extract", { observations: batch })) {
-            await kv.update(KV.sessions, data.sessionId, [
-              { type: "set", path: "graphExtractedAt", value: newest },
-              {
-                type: "set",
-                path: "graphExtractedDigest",
-                value: observationFingerprint(extracted),
-              },
-            ]);
-          }
+          // A dispatch that throws skips the watermark write (the catch below
+          // logs it) and retries on the next turn. Accepted is not done —
+          // completion is unobservable through TriggerAction.Void(), so an
+          // extract that fails downstream leaves its delta out of the graph
+          // until POST /agentmemory/graph/build.
+          await sdk.trigger({
+            function_id: "mem::graph-extract",
+            payload: { observations: batch },
+            action: TriggerAction.Void(),
+          });
+          await kv.update(KV.sessions, data.sessionId, [
+            { type: "set", path: "graphExtractedAt", value: newest },
+            {
+              type: "set",
+              path: "graphExtractedDigest",
+              value: observationFingerprint(extracted),
+            },
+          ]);
         }
       }
     } catch (err) {

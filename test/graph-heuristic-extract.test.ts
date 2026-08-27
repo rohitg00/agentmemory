@@ -96,7 +96,7 @@ describe("keyless graph extraction wiring", () => {
     const events = readFileSync("src/triggers/events.ts", "utf-8");
     const stopped = events.slice(events.indexOf("event::session::stopped"));
     const gate = stopped.indexOf("isGraphExtractionEnabled()");
-    const fire = stopped.indexOf('fireVoid("mem::graph-extract"');
+    const fire = stopped.indexOf('"mem::graph-extract"');
     expect(fire).toBeGreaterThan(-1);
     expect(gate === -1 || gate > fire).toBe(true);
   });
