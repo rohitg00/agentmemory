@@ -16,6 +16,9 @@ vi.mock("../src/functions/slots.js", () => ({
 }));
 
 import { registerEventTriggers } from "../src/triggers/events.js";
+import { logger } from "../src/logger.js";
+
+const STALE = "graph-extract watermark stale, re-extracting session";
 
 // /agentmemory/session/end is posted by Claude Code's per-turn Stop hook, so
 // event::session::stopped runs on EVERY agent turn — not once per session.
@@ -197,6 +200,8 @@ describe("graph-extract watermark never skips an observation", () => {
     );
     await h.stop();
     expect(batches(h.trigger)).toEqual([["a", "b", "c"]]);
+    // A session that has never been extracted is not a stale watermark.
+    expect(logger.info).not.toHaveBeenCalled();
   });
 
   it("re-extracts everything when an observation lands out of order below the watermark", async () => {
@@ -243,6 +248,11 @@ describe("graph-extract watermark never skips an observation", () => {
     await h.stop();
 
     expect(batches(h.trigger)[1]).toEqual(["a", "e", "b"]);
+    expect(logger.info).toHaveBeenCalledWith(STALE, {
+      sessionId: SID,
+      atOrBelow: 3,
+      total: 3,
+    });
   });
 
   it("leaves the watermark unset when the extract dispatch fails, so the next stop retries", async () => {
