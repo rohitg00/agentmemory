@@ -231,6 +231,35 @@ describe("MCP Resources", () => {
     expect(data[0].title).toBe("Latest pattern");
   });
 
+  it("reads agentmemory://graph/stats from mem::graph-stats", async () => {
+    sdk.overrideTrigger("mem::graph-stats", async () => ({
+      totalNodes: 3,
+      totalEdges: 2,
+      nodesByType: { file: 3 },
+      edgesByType: { imports: 2 },
+      fromSnapshot: false,
+      warning:
+        "No graph snapshot available. Run POST /agentmemory/graph/snapshot-rebuild",
+    }));
+
+    const fn = sdk.getFunction("mcp::resources::read")!;
+    const result = (await fn(
+      makeReq({ uri: "agentmemory://graph/stats" }),
+    )) as {
+      status_code: number;
+      body: { contents: Array<{ text: string }> };
+    };
+
+    expect(result.status_code).toBe(200);
+    const data = JSON.parse(result.body.contents[0].text);
+    expect(data.totalNodes).toBe(3);
+    expect(data.totalEdges).toBe(2);
+    expect(data.nodesByType).toEqual({ file: 3 });
+    expect(data.edgesByType).toEqual({ imports: 2 });
+    expect(data.warning).toContain("snapshot-rebuild");
+    expect(data.pending).toBeUndefined();
+  });
+
   it("returns 404 for unknown URI", async () => {
     const fn = sdk.getFunction("mcp::resources::read")!;
     const result = (await fn(
