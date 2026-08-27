@@ -13,6 +13,15 @@ export interface Session {
   summary?: string;
   commitShas?: string[];
   agentId?: string;
+  // Incremental graph-extract watermark. Written as a matched pair from a
+  // single observation-list snapshot: `graphExtractedAt` is the newest
+  // observation timestamp handed to mem::graph-extract, `graphExtractedCount`
+  // is how many compressed observations existed at that moment. The count is
+  // the tripwire for out-of-order arrivals — mem::compress is dispatched
+  // fire-and-forget, so observations do not land in KV in timestamp order.
+  // Absent on session records written before this field existed.
+  graphExtractedAt?: string;
+  graphExtractedCount?: number;
 }
 
 export interface ProjectSessionIndexEntry {

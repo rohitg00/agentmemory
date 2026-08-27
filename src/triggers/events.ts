@@ -51,15 +51,20 @@ export function registerEventTriggers(sdk: IIIClient, kv: StateKV): void {
       payload: data,
     });
     if (summary?.unchanged === true) return summary;
+    // Resolves true when the trigger was accepted, false when the dispatch
+    // itself failed. Callers that need to know (graph-extract's watermark)
+    // read it; the rest ignore it exactly as before.
     const fireVoid = (function_id: string, payload: unknown) =>
       sdk
         .trigger({ function_id, payload, action: TriggerAction.Void() })
-        .catch((err) =>
+        .then(() => true)
+        .catch((err) => {
           logger.warn(function_id + " trigger failed", {
             sessionId: data.sessionId,
             error: err instanceof Error ? err.message : String(err),
-          }),
-        );
+          });
+          return false;
+        });
     if (isReflectEnabled()) {
       fireVoid("mem::slot-reflect", { sessionId: data.sessionId });
     }
@@ -70,7 +75,51 @@ export function registerEventTriggers(sdk: IIIClient, kv: StateKV): void {
       );
       const compressed = observations.filter((o) => o.title);
       if (compressed.length > 0) {
-        fireVoid("mem::graph-extract", { observations: compressed });
+        // /session/end is posted by the per-turn Stop hook, so this handler
+        // runs every agent turn. Re-sending the whole session each time makes
+        // persistGraphDelta re-merge turns 1..N-1 on turn N — quadratic engine
+        // calls, and per #843 every kv.set stays resident in the engine, so
+        // that is quadratic permanent heap. Send only what landed since the
+        // last extract.
+        //
+        // The count is what makes the timestamp watermark safe. mem::compress
+        // is dispatched fire-and-forget (observe.ts) and stamps the capture
+        // time, not the write time, so a slow compression can land an OLDER
+        // timestamp after a newer one was already extracted. When the number
+        // of observations newer than the watermark does not exactly account
+        // for the growth since the watermark was recorded, something arrived
+        // out of order (or was evicted) and we re-send the whole session
+        // rather than skip it. Missing a memory is worse than re-merging one.
+        const session = await kv
+          .get<Session>(KV.sessions, data.sessionId)
+          .catch(() => null);
+        const at = session?.graphExtractedAt;
+        const count = session?.graphExtractedCount;
+        let batch = compressed;
+        if (typeof at === "string" && typeof count === "number") {
+          const fresh = compressed.filter((o) => o.timestamp > at);
+          if (fresh.length === compressed.length - count) batch = fresh;
+        }
+        if (batch.length > 0) {
+          const newest = compressed.reduce(
+            (max, o) => (o.timestamp > max ? o.timestamp : max),
+            "",
+          );
+          // Advance only after the dispatch is accepted, so a hand-off that
+          // never left retries on the next turn. Completion is unobservable
+          // through TriggerAction.Void(); an extract that fails downstream
+          // leaves its delta out of the graph until POST /agentmemory/graph/build.
+          if (await fireVoid("mem::graph-extract", { observations: batch })) {
+            await kv.update(KV.sessions, data.sessionId, [
+              { type: "set", path: "graphExtractedAt", value: newest },
+              {
+                type: "set",
+                path: "graphExtractedCount",
+                value: compressed.length,
+              },
+            ]);
+          }
+        }
       }
     } catch (err) {
       logger.warn("graph-extract trigger failed", {
