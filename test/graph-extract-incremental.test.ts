@@ -164,6 +164,21 @@ describe("event::session::stopped graph-extract is incremental", () => {
 
     expect(batches(h.trigger)).toEqual([["a"]]);
   });
+
+  it("stays incremental when kv.list returns the same set in a different order", async () => {
+    // Listing order is the store's, not ours. The same observation set coming
+    // back rearranged is not a change and must not force a full re-extract.
+    const h = harness();
+    h.land(obs("a", "2026-01-01T00:00:01.000Z"), obs("b", "2026-01-01T00:00:02.000Z"));
+    await h.stop();
+
+    h.drop("a");
+    h.land(obs("a", "2026-01-01T00:00:01.000Z")); // same observation, now last
+    h.land(obs("c", "2026-01-01T00:00:03.000Z"));
+    await h.stop();
+
+    expect(batches(h.trigger)[1]).toEqual(["c"]);
+  });
 });
 
 // The fallback branch. Most of these assert the PRE-FIX behaviour (extract
