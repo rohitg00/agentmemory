@@ -8,12 +8,19 @@ const fileStore = new Map<string, string>();
 const symlinkPaths = new Set<string>();
 const openEloopPaths = new Set<string>();
 
+// The function resolves filePath before touching the fs, and resolve() turns
+// a POSIX fixture path into a drive-rooted one on Windows ("/tmp/notes.md" ->
+// "C:\tmp\notes.md"), so raw-path keys never match there.
+function key(path: string): string {
+  return path.replace(/\\/g, "/").replace(/^[A-Za-z]:/, "");
+}
+
 vi.mock("node:fs/promises", () => ({
   lstat: vi.fn(async (path: string) => {
-    if (symlinkPaths.has(path)) {
+    if (symlinkPaths.has(key(path))) {
       return { isSymbolicLink: () => true };
     }
-    if (!fileStore.has(path)) {
+    if (!fileStore.has(key(path))) {
       throw Object.assign(new Error(`ENOENT: no such file or directory, lstat '${path}'`), {
         code: "ENOENT",
       });
@@ -21,25 +28,25 @@ vi.mock("node:fs/promises", () => ({
     return { isSymbolicLink: () => false };
   }),
   open: vi.fn(async (path: string) => {
-    if (openEloopPaths.has(path)) {
+    if (openEloopPaths.has(key(path))) {
       throw Object.assign(new Error("ELOOP: too many levels of symbolic links"), {
         code: "ELOOP",
       });
     }
     return {
       writeFile: vi.fn(async (content: string) => {
-        fileStore.set(path, content);
+        fileStore.set(key(path), content);
       }),
       close: vi.fn(async () => {}),
     };
   }),
   readFile: vi.fn(async (path: string) => {
-    const value = fileStore.get(path);
+    const value = fileStore.get(key(path));
     if (value === undefined) throw new Error("ENOENT");
     return value;
   }),
   writeFile: vi.fn(async (path: string, content: string) => {
-    fileStore.set(path, content);
+    fileStore.set(key(path), content);
   }),
 }));
 
@@ -172,7 +179,7 @@ describe("mem::compress-file", () => {
     };
 
     expect(result.success).toBe(true);
-    expect(result.backupPath).toBe("/tmp/notes.original.md");
+    expect(key(result.backupPath)).toBe("/tmp/notes.original.md");
     expect(fileStore.get("/tmp/notes.original.md")).toContain("Some long explanation.");
     expect(fileStore.get(path)).toContain("Short explanation.");
     expect(result.compressedChars).toBeLessThan(result.originalChars);
@@ -203,7 +210,7 @@ describe("mem::compress-file", () => {
     })) as { success: boolean; backupPath: string };
 
     expect(result.success).toBe(true);
-    expect(result.backupPath).toBe("/tmp/notes.original.backup.md");
+    expect(key(result.backupPath)).toBe("/tmp/notes.original.backup.md");
     expect(fileStore.get("/tmp/notes.original.backup.md")).toBe(
       "# Title\n\nLong original body.",
     );
