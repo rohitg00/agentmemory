@@ -20,6 +20,25 @@ function base64ToFloat32(b64: string): Float32Array {
   );
 }
 
+// FNV-1a. Only needs to spread obsIds evenly across buckets and be stable
+// across processes — it is never a content check, so a non-cryptographic
+// 32-bit hash is the right size. Math.imul keeps the multiply in int32.
+function fnv1a32(str: string): number {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < str.length; i++) {
+    hash ^= str.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return hash >>> 0;
+}
+
+// Deterministic and stable across processes: bucket keys are reused in place,
+// so nothing can be stranded. Changing this is an addressing change — bump
+// VECTOR_LAYOUT in index-persistence.ts if you do.
+function vectorBucketOf(obsId: string, bucketCount: number): number {
+  return fnv1a32(obsId) % bucketCount;
+}
+
 function cosineSimilarity(a: Float32Array, b: Float32Array): number {
   if (a.length !== b.length) return 0;
   let dot = 0;
@@ -135,15 +154,68 @@ export class VectorIndex {
     return JSON.stringify(data);
   }
 
-  static deserialize(json: string): VectorIndex {
-    const idx = new VectorIndex();
+  /**
+   * Serialise one bucket at a time, in the same row shape `serialize()` emits
+   * so both formats deserialise through one code path.
+   *
+   * A generator rather than a `Map<number, string>` on purpose: materialising
+   * every bucket would hold the whole index as strings at once (~266 MB in
+   * production) inside an already memory-constrained process. Yielding lets the
+   * caller write and drop each bucket, so the peak is a single bucket.
+   *
+   * Grouping first costs one pass and holds ids only, not embeddings.
+   * Empty buckets are not yielded — the caller reconciles those against the
+   * previous manifest and deletes them.
+   */
+  *serializeBuckets(bucketCount: number): Generator<[number, string]> {
+    // Snapshot entry references up front rather than reading the live Map as
+    // each bucket is yielded.
+    //
+    // The caller awaits a KV write between yields, and rebuildIndex() calls
+    // vectorIndex.clear() synchronously before its first await
+    // (src/functions/search.ts). A search that triggers a rebuild mid-save
+    // would therefore empty the Map underneath this loop, every remaining
+    // bucket would serialise to "[]", and those empty buckets would be hashed,
+    // written, and published as the bucket's true content — with the manifest
+    // and disk in perfect agreement, so the load-time hash check cannot see it.
+    //
+    // Holding references costs nothing: the Float32Arrays already exist and are
+    // not copied. Only one bucket's base64 is materialised at a time, which is
+    // the memory property that matters.
+    const groups = new Map<
+      number,
+      Array<[string, { embedding: Float32Array; sessionId: string }]>
+    >();
+    for (const [obsId, entry] of this.vectors) {
+      const bucket = vectorBucketOf(obsId, bucketCount);
+      const rows = groups.get(bucket);
+      if (rows) rows.push([obsId, entry]);
+      else groups.set(bucket, [[obsId, entry]]);
+    }
+    for (const [bucket, rows] of groups) {
+      const serialised = rows.map(
+        ([obsId, entry]) =>
+          [
+            obsId,
+            {
+              embedding: float32ToBase64(entry.embedding),
+              sessionId: entry.sessionId,
+            },
+          ] as [string, { embedding: string; sessionId: string }],
+      );
+      yield [bucket, JSON.stringify(serialised)];
+    }
+  }
+
+  /** Merge serialised rows into this index. Malformed rows are skipped. */
+  mergeSerialized(json: string): void {
     let data: unknown;
     try {
       data = JSON.parse(json);
     } catch {
-      return idx;
+      return;
     }
-    if (!Array.isArray(data)) return idx;
+    if (!Array.isArray(data)) return;
     for (const row of data) {
       try {
         if (!Array.isArray(row) || row.length < 2) continue;
@@ -154,7 +226,7 @@ export class VectorIndex {
           typeof entry?.sessionId !== "string"
         )
           continue;
-        idx.vectors.set(obsId, {
+        this.vectors.set(obsId, {
           embedding: base64ToFloat32(entry.embedding),
           sessionId: entry.sessionId,
         });
@@ -162,6 +234,11 @@ export class VectorIndex {
         continue;
       }
     }
+  }
+
+  static deserialize(json: string): VectorIndex {
+    const idx = new VectorIndex();
+    idx.mergeSerialized(json);
     return idx;
   }
 }

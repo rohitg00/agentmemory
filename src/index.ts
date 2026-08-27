@@ -464,7 +464,13 @@ async function main() {
     }
   }
 
-  const needsRebuild = bm25Index.size === 0;
+  // A vector load that rejected every bucket it read is the one failure BM25
+  // cannot stand in for: BM25 restores fine, so the store looks healthy, while
+  // the vectors sit on disk unreadable and nothing re-reads them. Rebuilding is
+  // the only exit. Kept off `vectorIndex.size === 0`, which is also the ordinary
+  // state of a store whose vectors were simply never written.
+  const needsRebuild =
+    bm25Index.size === 0 || (vectorIndex !== null && loaded?.vectorRejected === true);
 
   if (needsRebuild) {
     // Fire-and-forget. rebuildIndex iterates every observation across
