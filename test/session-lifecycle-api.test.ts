@@ -1,5 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
 
+vi.mock("iii-sdk", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("iii-sdk")>();
+  return {
+    ...actual,
+    TriggerAction: {
+      ...actual.TriggerAction,
+      Void: vi.fn(() => ({ type: "void" })),
+    },
+  };
+});
+
 import { registerApiTriggers } from "../src/triggers/api.js";
 import { KV } from "../src/state/schema.js";
 import type { Session } from "../src/types.js";
@@ -108,6 +119,21 @@ describe("session lifecycle API", () => {
       reason: "not_found",
     });
     expect(harness.update).not.toHaveBeenCalled();
+  });
+
+  it("treats ending an already-completed session as a no-op", async () => {
+    const sessionId = "agent:dmp-pm:direct:completed";
+    const harness = makeHarness([[sessionId, session(sessionId, "completed")]]);
+    const handler = harness.functions.get("api::session::end")!;
+
+    const response = (await handler({ body: { sessionId } })) as ApiResponse;
+
+    expect(response).toEqual({
+      status_code: 200,
+      body: { success: true, ended: false, reason: "already_completed" },
+    });
+    expect(harness.update).not.toHaveBeenCalled();
+    expect(harness.trigger).not.toHaveBeenCalled();
   });
 
   it("ends an existing session and publishes the stopped lifecycle once", async () => {
