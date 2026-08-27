@@ -127,15 +127,13 @@ export function registerEventTriggers(sdk: IIIClient, kv: StateKV): void {
             "",
           );
           const extracted = compressed.filter((o) => o.timestamp <= newest);
-          // What the smaller batch costs, for the next person to read this:
-          // extractGraphHeuristics (graph.ts) loops per observation and only
-          // ever links nodes drawn from one observation's own files/concepts,
-          // and persistGraphDelta dedupes across batches through the name and
-          // edge indexes, so the heuristic graph is identical either way. The
-          // opt-in LLM pass (GRAPH_EXTRACTION_ENABLED, off by default) builds
-          // one prompt from the array, so it sees less co-occurrence per call
-          // than a whole-session batch did — bounded batches are already the
-          // norm there, api::graph-build feeds it 25 at a time.
+          // The node and edge SETS are unchanged: extractGraphHeuristics links
+          // only within a single observation, and persistGraphDelta dedupes
+          // across batches through the name and edge-key indexes. Provenance
+          // does change — mergeNode/mergeEdge union the whole batch's obsIds,
+          // so a whole-session batch stamped every node and edge with every
+          // observation id in the session. Narrower is more accurate, and
+          // graph retrieval and supersede-staling both read it.
           //
           // Advance only after the dispatch is accepted, so a hand-off that
           // never left retries on the next turn. Completion is unobservable
