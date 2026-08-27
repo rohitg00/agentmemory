@@ -8,7 +8,7 @@ describe("renderEngineConfig", () => {
     const source = readFileSync(
       join(import.meta.dirname, "..", "iii-config.yaml"),
       "utf8",
-    );
+    ).replace(/\r\n/g, "\n");
     const dataDir = join("/var", "lib", "agentmemory");
 
     const rendered = renderEngineConfig(source, { dataDir });
@@ -26,7 +26,7 @@ describe("renderEngineConfig", () => {
     const source = readFileSync(
       join(import.meta.dirname, "..", "iii-config.yaml"),
       "utf8",
-    );
+    ).replace(/\r\n/g, "\n");
 
     const rendered = renderEngineConfig(source, {
       dataDir: "/tmp/agentmemory",
