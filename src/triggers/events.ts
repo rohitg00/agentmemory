@@ -114,25 +114,21 @@ export function registerEventTriggers(sdk: IIIClient, kv: StateKV): void {
           }
         }
         if (batch.length > 0) {
-          // Both halves of the pair come off the batch actually dispatched, so
-          // capping the batch (api::graph-build already feeds 25 at a time)
-          // cannot advance the watermark past an observation nobody sent.
+          // Off the dispatched batch, so a future cap cannot advance the
+          // watermark past an observation nobody sent.
           const newest = batch.reduce(
             (max, o) => (o.timestamp > max ? o.timestamp : max),
             "",
           );
-          const extracted = compressed.filter((o) => o.timestamp <= newest);
-          // The node and edge SETS are unchanged: extractGraphHeuristics links
-          // only within a single observation, and persistGraphDelta dedupes
-          // across batches through the name and edge-key indexes. Provenance
-          // does change — mergeNode/mergeEdge union the whole batch's obsIds,
+          // Same node and edge sets either way — pinned by
+          // graph-heuristic-extract.test.ts. Provenance narrows, which is the
+          // real change: mergeNode/mergeEdge union the whole batch's obsIds,
           // so a whole-session batch stamped every node and edge with every
-          // observation id in the session. Narrower is more accurate, and
-          // graph retrieval and supersede-staling both read it.
+          // observation id in the session.
           //
-          // A dispatch that throws skips the watermark write (the catch below
-          // logs it) and retries on the next turn. Accepted is not done —
-          // completion is unobservable through TriggerAction.Void(), so an
+          // Accepted is not done. A throw skips the watermark write and
+          // retries next turn (pinned by graph-extract-incremental.test.ts),
+          // but completion is unobservable through TriggerAction.Void(), so an
           // extract that fails downstream leaves its delta out of the graph
           // until POST /agentmemory/graph/build.
           await sdk.trigger({
@@ -145,7 +141,7 @@ export function registerEventTriggers(sdk: IIIClient, kv: StateKV): void {
             {
               type: "set",
               path: "graphExtractedDigest",
-              value: observationFingerprint(extracted),
+              value: observationFingerprint(compressed),
             },
           ]);
         }
