@@ -204,6 +204,31 @@ describe("graph-extract watermark never skips an observation", () => {
     expect(logger.info).not.toHaveBeenCalled();
   });
 
+  it("re-extracts the whole session when the record predates the digest", async () => {
+    // The path every deployed session takes exactly once, on the first stop
+    // after this ships: a session record carrying graphExtractedAt and no
+    // digest at all. An untrustworthy watermark costs one re-extract;
+    // trusting it costs every observation at or below it.
+    const h = harness();
+    h.kv.scope("mem:sessions").set(SID, {
+      id: SID,
+      project: "p",
+      cwd: "/p",
+      startedAt: "2026-01-01T00:00:00.000Z",
+      status: "active",
+      observationCount: 0,
+      graphExtractedAt: "2026-01-01T00:00:02.000Z",
+      // graphExtractedDigest absent — written by a build that had none
+    });
+    h.land(
+      obs("a", "2026-01-01T00:00:01.000Z"),
+      obs("b", "2026-01-01T00:00:03.000Z"),
+    );
+    await h.stop();
+
+    expect(batches(h.trigger)).toEqual([["a", "b"]]);
+  });
+
   it("re-extracts everything when an observation lands out of order below the watermark", async () => {
     // mem::compress is fire-and-forget, so a slow compression writes an older
     // timestamp after a newer one was already extracted. Without the count
