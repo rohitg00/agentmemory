@@ -111,10 +111,14 @@ export function registerEventTriggers(sdk: IIIClient, kv: StateKV): void {
           }
         }
         if (batch.length > 0) {
-          const newest = compressed.reduce(
+          // Both halves of the pair come off the batch actually dispatched, so
+          // capping the batch (api::graph-build already feeds 25 at a time)
+          // cannot advance the watermark past an observation nobody sent.
+          const newest = batch.reduce(
             (max, o) => (o.timestamp > max ? o.timestamp : max),
             "",
           );
+          const extracted = compressed.filter((o) => o.timestamp <= newest);
           // What the smaller batch costs, for the next person to read this:
           // extractGraphHeuristics (graph.ts) loops per observation and only
           // ever links nodes drawn from one observation's own files/concepts,
@@ -135,7 +139,7 @@ export function registerEventTriggers(sdk: IIIClient, kv: StateKV): void {
               {
                 type: "set",
                 path: "graphExtractedDigest",
-                value: observationFingerprint(compressed),
+                value: observationFingerprint(extracted),
               },
             ]);
           }
