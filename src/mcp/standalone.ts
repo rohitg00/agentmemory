@@ -82,6 +82,18 @@ function normalizeList(value: unknown): string[] {
 
 const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 100;
+
+function configuredAgentId(): string | undefined {
+  const value = process.env["AGENT_ID"]?.trim();
+  return value ? value.slice(0, 128) : undefined;
+}
+
+function isolatedAgentId(): string | undefined {
+  return process.env["AGENTMEMORY_AGENT_SCOPE"] === "isolated"
+    ? configuredAgentId()
+    : undefined;
+}
+
 function parseLimit(raw: unknown, fallback = DEFAULT_LIMIT): number {
   if (typeof raw !== "number" && typeof raw !== "string") return fallback;
   const n = Number(raw);
@@ -119,7 +131,7 @@ function validate(toolName: string, args: Record<string, unknown>): Validated {
   if (!IMPLEMENTED_TOOLS.has(toolName)) {
     throw new Error(`Unknown tool: ${toolName}`);
   }
-  const v: Validated = { tool: toolName };
+  const v: Validated = { tool: toolName, agentId: isolatedAgentId() };
   switch (toolName) {
     case "memory_save": {
       const content = args["content"];
@@ -136,7 +148,10 @@ function validate(toolName: string, args: Record<string, unknown>): Validated {
       if (typeof args["project"] === "string" && args["project"].trim()) {
         v.project = args["project"].trim();
       }
-      if (typeof args["agentId"] === "string" && args["agentId"].trim()) {
+      const fixedAgentId = configuredAgentId();
+      if (fixedAgentId) {
+        v.agentId = fixedAgentId;
+      } else if (typeof args["agentId"] === "string" && args["agentId"].trim()) {
         v.agentId = args["agentId"].trim();
       }
       return v;
@@ -210,6 +225,7 @@ async function handleProxy(
         format: v.format ?? "full",
       };
       if (v.tokenBudget != null) body["token_budget"] = v.tokenBudget;
+      if (v.agentId != null) body["agentId"] = v.agentId;
       const result = await handle.call("/agentmemory/search", {
         method: "POST",
         body: JSON.stringify(body),
@@ -220,6 +236,7 @@ async function handleProxy(
       const body: Record<string, unknown> = { query: v.query, limit: v.limit };
       if (v.format != null) body["format"] = v.format;
       if (v.tokenBudget != null) body["token_budget"] = v.tokenBudget;
+      if (v.agentId != null) body["agentId"] = v.agentId;
       const result = await handle.call("/agentmemory/smart-search", {
         method: "POST",
         body: JSON.stringify(body),
@@ -227,8 +244,11 @@ async function handleProxy(
       return textResponse(result, true);
     }
     case "memory_sessions": {
+      const agentQuery = v.agentId
+        ? `&agentId=${encodeURIComponent(v.agentId)}`
+        : "";
       const result = await handle.call(
-        `/agentmemory/sessions?limit=${v.limit}`,
+        `/agentmemory/sessions?limit=${v.limit}${agentQuery}`,
         { method: "GET" },
       );
       return textResponse(result, true);
@@ -236,12 +256,21 @@ async function handleProxy(
     case "memory_governance_delete": {
       const result = await handle.call("/agentmemory/governance/memories", {
         method: "DELETE",
-        body: JSON.stringify({ memoryIds: v.memoryIds, reason: v.reason }),
+        body: JSON.stringify({
+          memoryIds: v.memoryIds,
+          reason: v.reason,
+          ...(v.agentId !== undefined && { agentId: v.agentId }),
+        }),
       });
       return textResponse(result);
     }
     case "memory_export": {
-      const result = await handle.call("/agentmemory/export", { method: "GET" });
+      const agentQuery = v.agentId
+        ? `?agentId=${encodeURIComponent(v.agentId)}`
+        : "";
+      const result = await handle.call(`/agentmemory/export${agentQuery}`, {
+        method: "GET",
+      });
       return textResponse(result, true);
     }
     case "memory_audit": {
@@ -277,6 +306,7 @@ async function handleLocal(
         version: 1,
         isLatest: true,
         sessionIds: [],
+        ...(v.agentId !== undefined && { agentId: v.agentId }),
       });
       kvInstance.persist();
       return textResponse({ saved: id });
@@ -289,6 +319,7 @@ async function handleLocal(
       const all =
         await kvInstance.list<Record<string, unknown>>("mem:memories");
       const results = all
+        .filter((m) => v.agentId === undefined || m["agentId"] === v.agentId)
         .filter((m) => {
           const text = [
             typeof m["title"] === "string" ? m["title"] : "",
@@ -310,14 +341,23 @@ async function handleLocal(
       const sessions =
         await kvInstance.list<Record<string, unknown>>("mem:sessions");
       const limit = v.limit ?? 20;
-      return textResponse({ sessions: sessions.slice(0, limit) }, true);
+      const visible = sessions.filter(
+        (session) => v.agentId === undefined || session["agentId"] === v.agentId,
+      );
+      return textResponse({ sessions: visible.slice(0, limit) }, true);
     }
 
     case "memory_governance_delete": {
       let deleted = 0;
       for (const id of v.memoryIds || []) {
-        const existing = await kvInstance.get("mem:memories", id);
-        if (existing) {
+        const existing = await kvInstance.get<Record<string, unknown>>(
+          "mem:memories",
+          id,
+        );
+        if (
+          existing &&
+          (v.agentId === undefined || existing["agentId"] === v.agentId)
+        ) {
           await kvInstance.delete("mem:memories", id);
           deleted++;
         }
@@ -331,9 +371,18 @@ async function handleLocal(
     }
 
     case "memory_export": {
-      const memories = await kvInstance.list("mem:memories");
-      const sessions = await kvInstance.list("mem:sessions");
-      return textResponse({ version: VERSION, memories, sessions }, true);
+      const memories = await kvInstance.list<Record<string, unknown>>("mem:memories");
+      const sessions = await kvInstance.list<Record<string, unknown>>("mem:sessions");
+      const visibleMemories = memories.filter(
+        (memory) => v.agentId === undefined || memory["agentId"] === v.agentId,
+      );
+      const visibleSessions = sessions.filter(
+        (session) => v.agentId === undefined || session["agentId"] === v.agentId,
+      );
+      return textResponse(
+        { version: VERSION, memories: visibleMemories, sessions: visibleSessions },
+        true,
+      );
     }
 
     case "memory_audit": {
@@ -361,9 +410,11 @@ async function handleProxyGeneric(
   // reach all 54 tools (lessons, sentinels, slots, signals, graph, …)
   // instead of being capped at the 7 IMPLEMENTED_TOOLS set baked into
   // this shim. The server validates arguments per tool.
+  const fixedAgentId = isolatedAgentId();
+  const scopedArgs = fixedAgentId ? { ...args, agentId: fixedAgentId } : args;
   const result = (await handle.call("/agentmemory/mcp/call", {
     method: "POST",
-    body: JSON.stringify({ name: toolName, arguments: args }),
+    body: JSON.stringify({ name: toolName, arguments: scopedArgs }),
   })) as { content?: Array<{ type: string; text: string }> } | null;
   if (result && Array.isArray(result.content)) {
     return { content: result.content };
@@ -376,6 +427,12 @@ export async function handleToolCall(
   args: Record<string, unknown>,
   kvInstance: InMemoryKV = kv,
 ): Promise<{ content: Array<{ type: string; text: string }> }> {
+  if (
+    process.env["AGENTMEMORY_AGENT_SCOPE"] === "isolated" &&
+    !configuredAgentId()
+  ) {
+    throw new Error("AGENT_ID is required when AGENTMEMORY_AGENT_SCOPE=isolated");
+  }
   const handle = await resolveHandle();
   announceMode(handle);
 

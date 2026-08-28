@@ -9,7 +9,7 @@ import { logger } from "../logger.js";
 
 export function registerGovernanceFunction(sdk: ISdk, kv: StateKV): void {
   sdk.registerFunction("mem::governance-delete", 
-    async (data: { memoryIds: string[]; reason?: string }) => {
+    async (data: { memoryIds: string[]; reason?: string; agentId?: string }) => {
       if (
         !data.memoryIds ||
         !Array.isArray(data.memoryIds) ||
@@ -18,10 +18,14 @@ export function registerGovernanceFunction(sdk: ISdk, kv: StateKV): void {
         return { success: false, error: "memoryIds array is required" };
       }
 
+      const agentId =
+        typeof data.agentId === "string" && data.agentId.trim()
+          ? data.agentId.trim().slice(0, 128)
+          : undefined;
       let deleted = 0;
       for (const id of data.memoryIds) {
         const mem = await kv.get<Memory>(KV.memories, id);
-        if (mem) {
+        if (mem && (agentId === undefined || mem.agentId === agentId)) {
           await kv.delete(KV.memories, id);
           await deleteAccessLog(kv, id);
           getSearchIndex().remove(id);
@@ -40,6 +44,7 @@ export function registerGovernanceFunction(sdk: ISdk, kv: StateKV): void {
         {
           reason: data.reason || "manual deletion",
           deleted,
+          ...(agentId ? { agentId } : {}),
         },
       );
 

@@ -13,6 +13,7 @@ import { getSearchIndex, vectorIndexAddGuarded } from "./search.js";
 import { getAgentId } from "../config.js";
 import { logger } from "../logger.js";
 import { saveImageToDisk } from "../utils/image-store.js";
+import { recordAudit } from "./audit.js";
 
 export function extractImage(d: unknown): string | undefined {
   if (!d) return undefined;
@@ -163,9 +164,13 @@ export function registerObserveFunction(
           observationCount?: number;
           firstPrompt?: string;
         }>(KV.sessions, payload.sessionId);
+        const payloadAgentId =
+          typeof payload.agentId === "string" && payload.agentId.trim()
+            ? payload.agentId.trim().slice(0, 128)
+            : undefined;
         const inheritedAgentId = existingSession
           ? existingSession.agentId
-          : getAgentId();
+          : payloadAgentId ?? getAgentId();
         if (inheritedAgentId) {
           raw.agentId = inheritedAgentId;
         }
@@ -298,6 +303,12 @@ export function registerObserveFunction(
               : {}),
           });
         }
+
+        await recordAudit(kv, "observe", "mem::observe", [obsId], {
+          sessionId: payload.sessionId,
+          hookType: payload.hookType,
+          ...(inheritedAgentId ? { agentId: inheritedAgentId } : {}),
+        });
 
         // Per-observation LLM compression is opt-in as of 0.8.8.
         // Default path: build a zero-LLM synthetic compression so recall

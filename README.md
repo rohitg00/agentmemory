@@ -670,17 +670,28 @@ Full guide: [`integrations/openclaw/`](integrations/openclaw/)
 <summary><b>Hermes Agent (paste this prompt)</b></summary>
 
 ```text
-Install agentmemory for Hermes. Run `npx -y @agentmemory/agentmemory@latest` in a separate terminal to start the memory server on localhost:3111. Then add this to ~/.hermes/config.yaml so Hermes can use agentmemory as an MCP server with all 54 memory tools:
+Install agentmemory for Hermes. Run `npx -y @agentmemory/agentmemory@latest` in a separate terminal to start the memory server on localhost:3111. Then run `agentmemory connect hermes` to render the profile-bound snippet and add it to the active Hermes config (`$HERMES_HOME/config.yaml`, `%LOCALAPPDATA%\hermes\config.yaml` on Windows, or `~/.hermes/config.yaml` on macOS/Linux):
 
 mcp_servers:
   agentmemory:
     command: npx
     args: ["-y", "@agentmemory/mcp"]
+    env:
+      AGENT_ID: "default" # exact Hermes profile id (for example: <profile-id>)
+      AGENTMEMORY_AGENT_SCOPE: "isolated"
+    tools:
+      include:
+        - memory_save
+        - memory_recall
+        - memory_smart_search
+        - memory_sessions
 
 memory:
   provider: agentmemory
 
-Verify with `curl http://localhost:3111/agentmemory/health`. Open http://localhost:3113 for the real-time viewer. For deeper 6-hook memory provider integration (pre-LLM context injection, turn capture, MEMORY.md mirroring, system prompt block), copy integrations/hermes from the agentmemory repo to ~/.hermes/plugins/agentmemory.
+The MCP `env` block applies only to the MCP subprocess. For strict provider + MCP isolation, also launch both the Hermes host process and the agentmemory daemon with `AGENTMEMORY_AGENT_SCOPE=isolated` in their shell, service, or container environment.
+
+Verify with `curl http://localhost:3111/agentmemory/health`. Open http://localhost:3113 for the real-time viewer. For deeper 6-hook memory provider integration (pre-LLM context injection, turn capture, MEMORY.md mirroring, system prompt block), copy integrations/hermes from the agentmemory repo to the active Hermes home's `plugins/agentmemory` directory.
 ```
 
 Full guide: [`integrations/hermes/`](integrations/hermes/)
@@ -1417,6 +1428,10 @@ What gets tagged when `AGENT_ID` is set: `Session.agentId`, `RawObservation.agen
 What gets filtered in isolated mode: `mem::smart-search`, `/agentmemory/memories`, `/agentmemory/observations`, `/agentmemory/sessions`. Each endpoint accepts `?agentId=<role>` to override per-request, and `?agentId=*` to opt out of the env scope entirely. `/memories` also accepts `?includeOrphans=true` to surface pre-AGENT_ID memories whose `agentId` is undefined.
 
 Per-call override at the SDK / REST layer: every mutating endpoint (`/session/start`, `/remember`) accepts an `agentId` field in the request body that wins over the env. Useful for runtimes routing many roles through one server process. The MCP `memory_save` tool exposes the same `agentId` field, the standalone stdio server forwards both `agentId` and `project`, and saved memories carry `agentId` into the search index, so agent-scoped search covers memories as well as observations.
+
+When an MCP host starts `@agentmemory/mcp` with both `AGENT_ID=<caller>` and `AGENTMEMORY_AGENT_SCOPE=isolated`, the shim binds that identity outside model-controlled tool arguments. It overrides spoofed `agentId` values and adds the fixed id to recall, smart-search, session-list, and generic full-surface proxy calls; isolated mode without `AGENT_ID` fails closed. In shared mode writes remain tagged while reads remain cross-agent.
+
+Identity propagation is not a blanket ACL for all 54 tools: export, audit, governance, coordination, and some advanced handlers still have global or tool-specific semantics. The Hermes isolated-profile snippet therefore allowlists the four save/recall/search/session operations verified to enforce per-agent scope. Remove that allowlist only when cross-agent visibility is intentional.
 
 When `AGENT_ID` is unset, memory remains unscoped (legacy behavior, no tags, no filters).
 

@@ -7,6 +7,7 @@ vi.mock("../src/logger.js", () => ({
 import { registerExportImportFunction } from "../src/functions/export-import.js";
 import { VERSION } from "../src/version.js";
 import { getSearchIndex } from "../src/functions/search.js";
+import { KV } from "../src/state/schema.js";
 import type {
   Session,
   CompressedObservation,
@@ -132,6 +133,94 @@ describe("Export/Import Functions", () => {
     expect(result.observations["ses_1"].length).toBe(1);
     expect(result.memories.length).toBe(1);
     expect(result.summaries.length).toBe(1);
+  });
+
+  it("agent-scoped export omits foreign and unattributed records", async () => {
+    const alphaSession: Session = {
+      ...testSession,
+      id: "ses_alpha",
+      project: "alpha-project",
+      agentId: "alpha",
+    };
+    const betaSession: Session = {
+      ...testSession,
+      id: "ses_beta",
+      project: "beta-project",
+      agentId: "beta",
+    };
+    await kv.set(KV.sessions, alphaSession.id, alphaSession);
+    await kv.set(KV.sessions, betaSession.id, betaSession);
+    await kv.set(KV.observations(alphaSession.id), "obs_alpha", {
+      ...testObs,
+      id: "obs_alpha",
+      sessionId: alphaSession.id,
+      agentId: "alpha",
+    });
+    await kv.set(KV.observations(alphaSession.id), "obs_foreign", {
+      ...testObs,
+      id: "obs_foreign",
+      sessionId: alphaSession.id,
+      agentId: "beta",
+    });
+    await kv.set(KV.observations(alphaSession.id), "obs_unscoped", {
+      ...testObs,
+      id: "obs_unscoped",
+      sessionId: alphaSession.id,
+    });
+    await kv.set(KV.observations(betaSession.id), "obs_beta", {
+      ...testObs,
+      id: "obs_beta",
+      sessionId: betaSession.id,
+      agentId: "beta",
+    });
+    await kv.set(KV.memories, "mem_alpha", {
+      ...testMemory,
+      id: "mem_alpha",
+      sessionIds: [alphaSession.id],
+      agentId: "alpha",
+    });
+    await kv.set(KV.memories, "mem_beta", {
+      ...testMemory,
+      id: "mem_beta",
+      sessionIds: [betaSession.id],
+      agentId: "beta",
+    });
+    await kv.set(KV.summaries, alphaSession.id, {
+      ...testSummary,
+      sessionId: alphaSession.id,
+      project: alphaSession.project,
+    });
+    await kv.set(KV.summaries, betaSession.id, {
+      ...testSummary,
+      sessionId: betaSession.id,
+      project: betaSession.project,
+    });
+    await kv.set(KV.profiles, alphaSession.project, {
+      project: alphaSession.project,
+      topConcepts: [],
+      topFiles: [],
+      conventions: [],
+      commonErrors: [],
+      updatedAt: "2026-02-01T00:00:00Z",
+    });
+    await kv.set(KV.lessons, "lesson_global", {
+      id: "lesson_global",
+      content: "GLOBAL_LESSON",
+    });
+
+    const result = (await sdk.trigger("mem::export", {
+      agentId: "alpha",
+    })) as ExportData;
+
+    expect(result.sessions.map((session) => session.id)).toEqual(["ses_alpha"]);
+    expect(Object.keys(result.observations)).toEqual(["ses_alpha"]);
+    expect(result.observations["ses_alpha"].map((observation) => observation.id)).toEqual([
+      "obs_alpha",
+    ]);
+    expect(result.memories.map((memory) => memory.id)).toEqual(["mem_alpha"]);
+    expect(result.summaries.map((summary) => summary.sessionId)).toEqual(["ses_alpha"]);
+    expect(result.profiles).toBeUndefined();
+    expect(result.lessons).toBeUndefined();
   });
 
   it("import with merge strategy adds data", async () => {

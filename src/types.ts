@@ -157,6 +157,7 @@ export interface HookPayload {
   cwd: string;
   timestamp: string;
   data: unknown;
+  agentId?: string;
 }
 
 export interface ProviderConfig {

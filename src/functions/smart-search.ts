@@ -184,7 +184,8 @@ export function registerSmartSearchFunction(
       // Lesson recall stays capped: lessons are denser than raw
       // observations so 10 covers most recall flows.
       const lessonLimit = Math.min(limit, 10);
-      const includeLessons = data.includeLessons !== false;
+      const includeLessons =
+        data.includeLessons !== false && filterAgentId === undefined;
 
       // Over-fetch when filtering. Hybrid search can't filter on
       // agentId (BM25/vector indexes don't carry it), so we ask the

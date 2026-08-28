@@ -246,6 +246,36 @@ describe("Smart Search Function", () => {
       expect(result.lessons).toBeUndefined();
     });
 
+    it("omits unattributed lessons from agent-scoped search", async () => {
+      let lessonRecallCalled = false;
+      sdk.registerFunction("mem::lesson-recall", async () => {
+        lessonRecallCalled = true;
+        return {
+          success: true,
+          lessons: [
+            {
+              id: "lsn_other_agent",
+              content: "CROSS_PROFILE_LESSON",
+              confidence: 1,
+              createdAt: "2026-04-01T00:00:00Z",
+              tags: [],
+            },
+          ],
+        };
+      });
+      searchResults[0].observation.agentId = "alpha";
+      searchResults[1].observation.agentId = "beta";
+
+      const result = (await sdk.trigger("mem::smart-search", {
+        query: "auth",
+        agentId: "alpha",
+      })) as { results: CompactSearchResult[]; lessons?: unknown };
+
+      expect(result.results).toHaveLength(1);
+      expect(result.lessons).toBeUndefined();
+      expect(lessonRecallCalled).toBe(false);
+    });
+
     it("forwards project filter to mem::lesson-recall", async () => {
       let receivedPayload: any = null;
       sdk.registerFunction("mem::lesson-recall", async (payload: any) => {

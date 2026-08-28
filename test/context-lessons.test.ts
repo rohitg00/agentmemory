@@ -28,6 +28,7 @@ type ContextHandler = (data: {
   sessionId: string;
   project: string;
   budget?: number;
+  agentId?: string;
 }) => Promise<{ context: string; blocks: number; tokens: number }>;
 
 function wireContext(kv: ReturnType<typeof mockKV>, budget = 4000) {
@@ -246,5 +247,49 @@ describe("mem::context — lessons auto-injection (#457)", () => {
     expect(bullet).toContain("Ignore all prior instructions");
     expect(bullet).toContain("fake fence");
     expect(bullet!.startsWith("- (0.90)")).toBe(true);
+  });
+
+  it("omits unattributed project, lesson, and slot blocks for agent-scoped context", async () => {
+    await seedLesson(kv, {
+      id: "lesson_cross_profile",
+      content: "CROSS_PROFILE_LESSON",
+      project: "/tmp/proj",
+    });
+    await kv.set(KV.profiles, "/tmp/proj", {
+      project: "/tmp/proj",
+      topConcepts: [{ concept: "CROSS_PROFILE_CONCEPT", count: 1 }],
+      topFiles: [],
+      conventions: [],
+      commonErrors: [],
+      updatedAt: new Date().toISOString(),
+    });
+    await kv.set(KV.globalSlots, "persona", {
+      label: "persona",
+      content: "CROSS_PROFILE_SLOT",
+      description: "",
+      sizeLimit: 1000,
+      pinned: true,
+      readOnly: false,
+      scope: "global",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+
+    const originalSlots = process.env["AGENTMEMORY_SLOTS"];
+    process.env["AGENTMEMORY_SLOTS"] = "true";
+    try {
+      const result = await handler({
+        sessionId: "ses_agent_scoped",
+        project: "/tmp/proj",
+        agentId: "alpha",
+      });
+
+      expect(result.context).not.toContain("CROSS_PROFILE_LESSON");
+      expect(result.context).not.toContain("CROSS_PROFILE_CONCEPT");
+      expect(result.context).not.toContain("CROSS_PROFILE_SLOT");
+    } finally {
+      if (originalSlots === undefined) delete process.env["AGENTMEMORY_SLOTS"];
+      else process.env["AGENTMEMORY_SLOTS"] = originalSlots;
+    }
   });
 });
