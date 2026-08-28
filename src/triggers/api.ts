@@ -299,12 +299,13 @@ export function registerApiTriggers(
 
   sdk.registerFunction("api::observe",
     async (req: ApiRequest<HookPayload>): Promise<Response> => {
-      const body = (req.body ?? {}) as Record<string, unknown>;
+      const body = (req.body ?? {}) as unknown as Record<string, unknown>;
       const hookType = asNonEmptyString(body.hookType);
       const sessionId = asNonEmptyString(body.sessionId);
       const project = asNonEmptyString(body.project);
       const cwd = asNonEmptyString(body.cwd);
       const timestamp = asNonEmptyString(body.timestamp);
+      const agentId = asNonEmptyString(body.agentId)?.slice(0, 128);
       if (!hookType || !sessionId || !project || !cwd || !timestamp) {
         return {
           status_code: 400,
@@ -321,6 +322,7 @@ export function registerApiTriggers(
         cwd,
         timestamp,
         data: body.data,
+        ...(agentId ? { agentId } : {}),
       };
       const result = await sdk.trigger({ function_id: "mem::observe", payload });
       return { status_code: 201, body: result };
@@ -1318,7 +1320,8 @@ export function registerApiTriggers(
       // Pass through the query-string pagination so callers can chunk.
       const rawMax = req.query_params?.["maxSessions"];
       const rawOffset = req.query_params?.["offset"];
-      const payload: { maxSessions?: number; offset?: number } = {};
+      const rawAgentId = req.query_params?.["agentId"];
+      const payload: { maxSessions?: number; offset?: number; agentId?: string } = {};
       if (typeof rawMax === "string") {
         const n = Number(rawMax);
         if (Number.isInteger(n) && n > 0) payload.maxSessions = n;
@@ -1327,6 +1330,8 @@ export function registerApiTriggers(
         const n = Number(rawOffset);
         if (Number.isInteger(n) && n >= 0) payload.offset = n;
       }
+      const agentId = asNonEmptyString(rawAgentId)?.slice(0, 128);
+      if (agentId) payload.agentId = agentId;
       const result = await sdk.trigger({
         function_id: "mem::export",
         payload,
@@ -1812,17 +1817,47 @@ export function registerApiTriggers(
 
   sdk.registerFunction("api::governance-delete", 
     async (
-      req: ApiRequest<{ memoryIds: string[]; reason?: string }>,
+      req: ApiRequest<{ memoryIds: string[]; reason?: string; agentId?: string }>,
     ): Promise<Response> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
-      if (!req.body?.memoryIds || !Array.isArray(req.body.memoryIds)) {
+      const memoryIds = req.body?.memoryIds;
+      if (
+        !Array.isArray(memoryIds) ||
+        memoryIds.length === 0 ||
+        memoryIds.some(
+          (id: unknown) => typeof id !== "string" || id.trim().length === 0,
+        )
+      ) {
         return {
           status_code: 400,
-          body: { error: "memoryIds array is required" },
+          body: {
+            error: "memoryIds must be a non-empty array of non-empty strings",
+          },
         };
       }
-      const result = await sdk.trigger({ function_id: "mem::governance-delete", payload: req.body });
+      const reason = asNonEmptyString(req.body.reason);
+      const requestAgentId = asNonEmptyString(req.body.agentId)?.slice(0, 128);
+      const isolatedScope =
+        process.env["AGENTMEMORY_AGENT_SCOPE"] === "isolated";
+      const agentId =
+        requestAgentId ?? (isolatedScope ? getAgentId() : undefined);
+      if (isolatedScope && !agentId) {
+        return {
+          status_code: 400,
+          body: {
+            error: "agent identity is required for isolated governance delete",
+          },
+        };
+      }
+      const result = await sdk.trigger({
+        function_id: "mem::governance-delete",
+        payload: {
+          memoryIds: memoryIds.map((id) => id.trim()),
+          ...(reason ? { reason } : {}),
+          ...(agentId ? { agentId } : {}),
+        },
+      });
       return { status_code: 200, body: result };
     },
   );

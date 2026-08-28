@@ -60,18 +60,33 @@ async function runChunked<T>(
 
 export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
   sdk.registerFunction("mem::export", 
-    async (data?: { maxSessions?: number; offset?: number }) => {
+    async (data?: { maxSessions?: number; offset?: number; agentId?: string }) => {
       const rawMax = Number(data?.maxSessions);
       const maxSessions = Number.isFinite(rawMax) && rawMax > 0 ? Math.min(Math.floor(rawMax), 1000) : undefined;
       const rawOffset = Number(data?.offset);
       const offset = Number.isFinite(rawOffset) && rawOffset >= 0 ? Math.floor(rawOffset) : 0;
+      const requestedAgentId =
+        typeof data?.agentId === "string" && data.agentId.trim()
+          ? data.agentId.trim().slice(0, 128)
+          : undefined;
+      const filterAgentId = requestedAgentId;
 
       const allSessions = await kv.list<Session>(KV.sessions);
-      const paginatedSessions = maxSessions !== undefined
-        ? allSessions.slice(offset, offset + maxSessions)
+      const visibleSessions = filterAgentId
+        ? allSessions.filter((session) => session.agentId === filterAgentId)
         : allSessions;
-      const memories = await kv.list<Memory>(KV.memories);
-      const summaries = await kv.list<SessionSummary>(KV.summaries);
+      const paginatedSessions = maxSessions !== undefined
+        ? visibleSessions.slice(offset, offset + maxSessions)
+        : visibleSessions;
+      const allMemories = await kv.list<Memory>(KV.memories);
+      const memories = filterAgentId
+        ? allMemories.filter((memory) => memory.agentId === filterAgentId)
+        : allMemories;
+      const allSummaries = await kv.list<SessionSummary>(KV.summaries);
+      const visibleSessionIds = new Set(paginatedSessions.map((session) => session.id));
+      const summaries = filterAgentId
+        ? allSummaries.filter((summary) => visibleSessionIds.has(summary.sessionId))
+        : allSummaries;
 
       const observations: Record<string, CompressedObservation[]> = {};
       const obsResults = await Promise.all(
@@ -79,7 +94,12 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
           kv
             .list<CompressedObservation>(KV.observations(session.id))
             .catch(() => [] as CompressedObservation[])
-            .then((obs) => ({ sessionId: session.id, obs })),
+            .then((obs) => ({
+              sessionId: session.id,
+              obs: filterAgentId
+                ? obs.filter((observation) => observation.agentId === filterAgentId)
+                : obs,
+            })),
         ),
       );
       for (const { sessionId, obs } of obsResults) {
@@ -89,14 +109,16 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
       }
 
       const profiles: ProjectProfile[] = [];
-      const uniqueProjects = [...new Set(paginatedSessions.map((s) => s.project))];
-      const profileResults = await Promise.all(
-        uniqueProjects.map((project) =>
-          kv.get<ProjectProfile>(KV.profiles, project).catch(() => null),
-        ),
-      );
-      for (const profile of profileResults) {
-        if (profile) profiles.push(profile);
+      if (!filterAgentId) {
+        const uniqueProjects = [...new Set(paginatedSessions.map((s) => s.project))];
+        const profileResults = await Promise.all(
+          uniqueProjects.map((project) =>
+            kv.get<ProjectProfile>(KV.profiles, project).catch(() => null),
+          ),
+        );
+        for (const profile of profileResults) {
+          if (profile) profiles.push(profile);
+        }
       }
 
       const [
@@ -142,33 +164,33 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
         observations,
         memories,
         summaries,
-        profiles: profiles.length > 0 ? profiles : undefined,
-        graphNodes: graphNodes.length > 0 ? graphNodes : undefined,
-        graphEdges: graphEdges.length > 0 ? graphEdges : undefined,
+        profiles: !filterAgentId && profiles.length > 0 ? profiles : undefined,
+        graphNodes: !filterAgentId && graphNodes.length > 0 ? graphNodes : undefined,
+        graphEdges: !filterAgentId && graphEdges.length > 0 ? graphEdges : undefined,
         semanticMemories:
-          semanticMemories.length > 0 ? semanticMemories : undefined,
+          !filterAgentId && semanticMemories.length > 0 ? semanticMemories : undefined,
         proceduralMemories:
-          proceduralMemories.length > 0 ? proceduralMemories : undefined,
-        actions: actions.length > 0 ? actions : undefined,
-        actionEdges: actionEdges.length > 0 ? actionEdges : undefined,
-        sentinels: sentinels.length > 0 ? sentinels : undefined,
-        sketches: sketches.length > 0 ? sketches : undefined,
-        crystals: crystals.length > 0 ? crystals : undefined,
-        facets: facets.length > 0 ? facets : undefined,
-        lessons: lessons.length > 0 ? lessons : undefined,
-        insights: insights.length > 0 ? insights : undefined,
-        routines: routines.length > 0 ? routines : undefined,
-        signals: signals.length > 0 ? signals : undefined,
-        checkpoints: checkpoints.length > 0 ? checkpoints : undefined,
-        accessLogs: accessLogs.length > 0 ? accessLogs : undefined,
+          !filterAgentId && proceduralMemories.length > 0 ? proceduralMemories : undefined,
+        actions: !filterAgentId && actions.length > 0 ? actions : undefined,
+        actionEdges: !filterAgentId && actionEdges.length > 0 ? actionEdges : undefined,
+        sentinels: !filterAgentId && sentinels.length > 0 ? sentinels : undefined,
+        sketches: !filterAgentId && sketches.length > 0 ? sketches : undefined,
+        crystals: !filterAgentId && crystals.length > 0 ? crystals : undefined,
+        facets: !filterAgentId && facets.length > 0 ? facets : undefined,
+        lessons: !filterAgentId && lessons.length > 0 ? lessons : undefined,
+        insights: !filterAgentId && insights.length > 0 ? insights : undefined,
+        routines: !filterAgentId && routines.length > 0 ? routines : undefined,
+        signals: !filterAgentId && signals.length > 0 ? signals : undefined,
+        checkpoints: !filterAgentId && checkpoints.length > 0 ? checkpoints : undefined,
+        accessLogs: !filterAgentId && accessLogs.length > 0 ? accessLogs : undefined,
       };
 
       if (maxSessions !== undefined) {
         exportData.pagination = {
           offset,
           limit: maxSessions,
-          total: allSessions.length,
-          hasMore: offset + maxSessions < allSessions.length,
+          total: visibleSessions.length,
+          hasMore: offset + maxSessions < visibleSessions.length,
         };
       }
 
@@ -178,7 +200,7 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
       );
       logger.info("Export complete", {
         sessions: paginatedSessions.length,
-        totalSessions: allSessions.length,
+        totalSessions: visibleSessions.length,
         observations: totalObs,
         memories: memories.length,
         summaries: summaries.length,

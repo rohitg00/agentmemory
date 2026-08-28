@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import threading
 import subprocess
@@ -77,6 +78,18 @@ DEFAULT_BASE_URL = "http://localhost:3111"
 TIMEOUT = 5
 LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
 _plaintext_bearer_warned = False
+_PROFILE_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
+
+
+def _profile_agent_id(hermes_home: str | None) -> str:
+    """Return the Hermes profile id represented by an explicit profile home."""
+    if not hermes_home:
+        return "default"
+    home = Path(hermes_home).expanduser()
+    if home.parent.name == "profiles" and _PROFILE_ID_RE.fullmatch(home.name):
+        return home.name
+    return "default"
+
 
 # agentmemory's documented runtime config lives at ~/.agentmemory/.env.
 # When agentmemory is launched as a systemd user service (or any other
@@ -209,15 +222,43 @@ class AgentMemoryProvider(MemoryProvider):
         base = os.environ.get("AGENTMEMORY_URL", DEFAULT_BASE_URL)
         return _validate_url(base)
 
+    def _scoped_body(self, body: dict | None = None, *, read: bool = False) -> dict:
+        payload = dict(body or {})
+        if not read or self._isolated_scope:
+            payload["agentId"] = self._agent_id
+        return payload
+
+    def _call(
+        self,
+        path: str,
+        body: dict | None = None,
+        *,
+        read: bool = False,
+    ) -> dict | None:
+        return _api(self._base, path, self._scoped_body(body, read=read))
+
+    def _call_bg(
+        self,
+        path: str,
+        body: dict | None = None,
+        *,
+        read: bool = False,
+    ) -> None:
+        _api_bg(self._base, path, self._scoped_body(body, read=read))
+
     def initialize(self, session_id: str, **kwargs: Any) -> None:
         self._base = os.environ.get("AGENTMEMORY_URL", DEFAULT_BASE_URL)
         self._session_id = session_id
+        self._agent_id = _profile_agent_id(kwargs.get("hermes_home"))
+        self._isolated_scope = (
+            os.environ.get("AGENTMEMORY_AGENT_SCOPE") == "isolated"
+        )
         self._cwd = kwargs.get("cwd", os.getcwd())
         self._project = _resolve_project(self._cwd)
         if os.environ.get("AGENTMEMORY_REQUIRE_HTTPS") == "1":
             _check_plaintext_bearer_guard(self._base, os.environ.get("AGENTMEMORY_SECRET", ""))
 
-        _api(self._base, "session/start", {
+        self._call("session/start", {
             "sessionId": session_id,
             "project": self._project,
             "cwd": self._cwd,
@@ -245,19 +286,19 @@ class AgentMemoryProvider(MemoryProvider):
         config_path.write_text(json.dumps(values, indent=2))
 
     def system_prompt_block(self) -> str:
-        result = _api(self._base, "context", {
+        result = self._call("context", {
             "sessionId": self._session_id,
             "project": self._project,
-        })
+        }, read=True)
         if result and result.get("context"):
             return result["context"]
         return ""
 
     def prefetch(self, query: str, **kwargs: Any) -> str:
-        result = _api(self._base, "smart-search", {
+        result = self._call("smart-search", {
             "query": query,
             "limit": 5,
-        })
+        }, read=True)
         if not result or not result.get("results"):
             return ""
 
@@ -271,7 +312,7 @@ class AgentMemoryProvider(MemoryProvider):
         return "\n".join(lines) if lines else ""
 
     def queue_prefetch(self, query: str, **kwargs: Any) -> None:
-        _api_bg(self._base, "smart-search", {"query": query, "limit": 3})
+        self._call_bg("smart-search", {"query": query, "limit": 3}, read=True)
 
     def get_tool_schemas(self) -> list[dict]:
         return [
@@ -324,10 +365,10 @@ class AgentMemoryProvider(MemoryProvider):
         # JSON string here — matches what agentmemory's main MCP server does
         # in src/mcp/standalone.ts (`{ type: "text", text: JSON.stringify(...) }`).
         if name == "memory_recall":
-            result = _api(self._base, "search", {
+            result = self._call("search", {
                 "query": args["query"],
                 "limit": args.get("limit", 10),
-            })
+            }, read=True)
             if not result:
                 return json.dumps({"results": []})
             items = []
@@ -343,17 +384,17 @@ class AgentMemoryProvider(MemoryProvider):
             return json.dumps({"results": items})
 
         if name == "memory_save":
-            result = _api(self._base, "remember", {
+            result = self._call("remember", {
                 "content": args["content"],
                 "type": args.get("type", "fact"),
             })
             return json.dumps(result or {"success": False})
 
         if name == "memory_search":
-            result = _api(self._base, "smart-search", {
+            result = self._call("smart-search", {
                 "query": args["query"],
                 "limit": args.get("limit", 5),
-            })
+            }, read=True)
             if not result:
                 return json.dumps({"results": []})
             items = []
@@ -369,7 +410,7 @@ class AgentMemoryProvider(MemoryProvider):
         return json.dumps({"error": f"Unknown tool: {name}"})
 
     def sync_turn(self, user: str, assistant: str, **kwargs: Any) -> None:
-        _api_bg(self._base, "observe", {
+        self._call_bg("observe", {
             "hookType": "post_tool_use",
             "sessionId": kwargs.get("session_id", self._session_id),
             "project": self._project,
@@ -383,15 +424,15 @@ class AgentMemoryProvider(MemoryProvider):
         })
 
     def on_session_end(self, messages: list, **kwargs: Any) -> None:
-        _api(self._base, "session/end", {
+        self._call("session/end", {
             "sessionId": kwargs.get("session_id", self._session_id),
         })
 
     def on_pre_compress(self, messages: list, **kwargs: Any) -> None:
-        result = _api(self._base, "context", {
+        result = self._call("context", {
             "sessionId": kwargs.get("session_id", self._session_id),
             "project": self._project,
-        })
+        }, read=True)
         if result and result.get("context"):
             messages.insert(0, {
                 "role": "user",
@@ -400,7 +441,7 @@ class AgentMemoryProvider(MemoryProvider):
 
     def on_memory_write(self, action: str, target: str, content: str, **kwargs: Any) -> None:
         if action in ("add", "update") and content:
-            _api_bg(self._base, "remember", {
+            self._call_bg("remember", {
                 "content": content,
                 "type": "fact",
             })

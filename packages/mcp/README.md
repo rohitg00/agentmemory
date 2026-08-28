@@ -20,11 +20,17 @@ Or wire it into your MCP client (Claude Desktop, OpenClaw, Cursor, Codex, etc.):
   "mcpServers": {
     "agentmemory": {
       "command": "npx",
-      "args": ["-y", "@agentmemory/mcp"]
+      "args": ["-y", "@agentmemory/mcp"],
+      "env": {
+        "AGENT_ID": "architect",
+        "AGENTMEMORY_AGENT_SCOPE": "isolated"
+      }
     }
   }
 }
 ```
+
+`AGENT_ID` is optional in shared mode. In isolated mode it is required and is treated as a fixed caller identity: model-provided `agentId` arguments cannot override it. The shim adds it to save/recall/search/session requests and to the generic full-tool proxy path. Configure the running agentmemory daemon with isolated scope too. Identity propagation is not a blanket ACL for every advanced/global tool; strict-profile clients should allowlist the verified save, recall, smart-search, and sessions tools as shown in the Hermes integration guide.
 
 This package depends on `@agentmemory/agentmemory` and forwards to its
 `dist/standalone.mjs` entrypoint. If you already have `@agentmemory/agentmemory`

@@ -109,6 +109,27 @@ describe("Governance Functions", () => {
     expect(remaining.length).toBe(3);
   });
 
+  it("governance-delete only removes memories owned by the requested agent", async () => {
+    await kv.set("mem:memories", "mem_alpha", {
+      ...makeMemory("mem_alpha"),
+      agentId: "alpha",
+    });
+    await kv.set("mem:memories", "mem_beta", {
+      ...makeMemory("mem_beta"),
+      agentId: "beta",
+    });
+
+    const result = (await sdk.trigger("mem::governance-delete", {
+      memoryIds: ["mem_alpha", "mem_beta", "mem_1"],
+      agentId: "beta",
+    })) as { success: boolean; deleted: number; total: number };
+
+    expect(result.deleted).toBe(1);
+    expect(await kv.get("mem:memories", "mem_alpha")).not.toBeNull();
+    expect(await kv.get("mem:memories", "mem_beta")).toBeNull();
+    expect(await kv.get("mem:memories", "mem_1")).not.toBeNull();
+  });
+
   it("governance-bulk deletes by type filter", async () => {
     const result = (await sdk.trigger("mem::governance-bulk", {
       type: ["pattern"],

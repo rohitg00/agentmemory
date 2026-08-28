@@ -70,14 +70,17 @@ export function registerContextFunction(
         );
       }
 
+      const includeUnattributedBlocks = filterAgentId === undefined;
       const [pinnedSlots, profile, lessons] = await Promise.all([
-        isSlotsEnabled()
+        includeUnattributedBlocks && isSlotsEnabled()
           ? listPinnedSlots(kv).catch(() => [] as MemorySlot[])
           : Promise.resolve([] as MemorySlot[]),
-        kv
-          .get<ProjectProfile>(KV.profiles, data.project)
-          .catch(() => null),
-        kv.list<Lesson>(KV.lessons).catch(() => [] as Lesson[]),
+        includeUnattributedBlocks
+          ? kv.get<ProjectProfile>(KV.profiles, data.project).catch(() => null)
+          : Promise.resolve(null),
+        includeUnattributedBlocks
+          ? kv.list<Lesson>(KV.lessons).catch(() => [] as Lesson[])
+          : Promise.resolve([] as Lesson[]),
       ]);
 
       const slotContent = renderPinnedContext(pinnedSlots);
