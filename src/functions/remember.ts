@@ -2,13 +2,14 @@ import { TriggerAction, type ISdk } from "iii-sdk";
 import type { Memory } from "../types.js";
 import { KV, generateId, jaccardSimilarity } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
-import { withKeyedLock } from "../state/keyed-mutex.js";
+import { withKeyedLock, sessionWriteLockKey } from "../state/keyed-mutex.js";
 import { memoryToObservation } from "../state/memory-utils.js";
 import { deleteAccessLog } from "./access-tracker.js";
 import { recordAudit } from "./audit.js";
 import { getSearchIndex, isMemoryIndexReady, vectorIndexAddGuarded, vectorIndexRemove, flushIndexSave } from "./search.js";
 import { getAgentId } from "../config.js";
 import { logger } from "../logger.js";
+import { deleteSummaryChunks } from "./summarize.js";
 
 // Slicing by UTF-16 code unit can cut an astral character (emoji, some CJK
 // extensions) mid surrogate pair, leaving a lone high surrogate that renders
@@ -290,6 +291,9 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
           deletedObservationIds.push(obsId);
           deleted++;
         }
+        // The session survives, so the whole-session branch below never
+        // runs for this path.
+        await deleteSummaryChunks(kv, data.sessionId);
       }
 
       if (
@@ -311,8 +315,12 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
           deletedObservationIds.push(obs.id);
           deleted++;
         }
-        await kv.delete(KV.sessions, data.sessionId);
-        await kv.delete(KV.summaries, data.sessionId);
+        const sessionId = data.sessionId;
+        await withKeyedLock(sessionWriteLockKey(sessionId), async () => {
+          await kv.delete(KV.sessions, sessionId);
+          await kv.delete(KV.summaries, sessionId);
+          await deleteSummaryChunks(kv, sessionId);
+        });
         deletedSession = true;
         deleted += 2;
       }

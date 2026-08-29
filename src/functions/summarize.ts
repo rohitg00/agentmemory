@@ -1,4 +1,5 @@
 import type { ISdk } from "iii-sdk";
+import { createHash } from "node:crypto";
 import type {
   CompressedObservation,
   SessionSummary,
@@ -7,6 +8,7 @@ import type {
 } from "../types.js";
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
+import { withKeyedLock, sessionWriteLockKey } from "../state/keyed-mutex.js";
 import {
   SUMMARY_SYSTEM,
   buildSummaryPrompt,
@@ -97,6 +99,7 @@ async function summarizeChunkWithRetry(
 // partials merged via a reduce call.
 async function produceSummaryXml(
   provider: MemoryProvider,
+  kv: StateKV,
   compressed: CompressedObservation[],
   sessionId: string,
   project: string,
@@ -137,7 +140,17 @@ async function produceSummaryXml(
     await Promise.all(
       batch.map(async (chunk, j) => {
         const idx = batchStart + j;
-        partialByIdx[idx] = await summarizeChunkWithRetry(
+        // A full chunk is immutable once the session grows past it, so
+        // only the trailing chunk misses.
+        const chunkKey = chunkFingerprint(chunk);
+        const cached = await kv
+          .get<CachedChunkSummary>(KV.summaryChunks(sessionId), chunkKey)
+          .catch(() => null);
+        if (cached) {
+          partialByIdx[idx] = cached.partial;
+          return;
+        }
+        const partial = await summarizeChunkWithRetry(
           provider,
           chunk,
           sessionId,
@@ -145,9 +158,34 @@ async function produceSummaryXml(
           idx,
           chunks.length,
         );
+        partialByIdx[idx] = partial;
+        if (partial) {
+          const entry: CachedChunkSummary = { chunkKey, partial };
+          await kv
+            .set(KV.summaryChunks(sessionId), chunkKey, entry)
+            .catch(() => {});
+        }
       }),
     );
   }
+
+  // On a live session only the trailing chunk's membership changes turn
+  // to turn, so each turn mints a new content-keyed entry and orphans the
+  // previous turn's. Nothing else reclaims those - deleteSummaryChunks
+  // fires only on a whole-session reclaim or an eviction touch, neither of
+  // which happens for an active session - so without this the cache grows
+  // by one dead entry per turn forever.
+  const liveChunkKeys = new Set(chunks.map((chunk) => chunkFingerprint(chunk)));
+  const cachedEntries = await kv
+    .list<CachedChunkSummary>(KV.summaryChunks(sessionId))
+    .catch(() => []);
+  await Promise.all(
+    cachedEntries
+      .filter((entry) => !liveChunkKeys.has(entry.chunkKey))
+      .map((entry) =>
+        kv.delete(KV.summaryChunks(sessionId), entry.chunkKey).catch(() => {}),
+      ),
+  );
 
   const skipped = partialByIdx.filter((p) => p === null).length;
   const partials = partialByIdx.filter((p): p is SessionSummary => p !== null);
@@ -226,20 +264,114 @@ function parseSummaryXml(
   };
 }
 
+// Length-prefixed so concatenation stays unambiguous: without it,
+// facts ["a", "bc"] and ["ab", "c"] would hash identically.
+function hashField(
+  hash: ReturnType<typeof createHash>,
+  value: string,
+): void {
+  hash.update(String(value.length));
+  hash.update(":");
+  hash.update(value);
+}
+
+function hashFieldList(
+  hash: ReturnType<typeof createHash>,
+  values: string[] | undefined,
+): void {
+  const list = values ?? [];
+  hash.update(String(list.length));
+  hash.update(":");
+  for (const value of list) hashField(hash, value);
+}
+
+// Hashes exactly the fields buildSummaryPrompt renders, so a digest match
+// means the LLM would receive a byte-identical prompt. Keep this in sync
+// with src/prompts/summary.ts: a field that reaches the prompt without
+// reaching this hash is a silent stale-summary bug. `concepts` is
+// deliberately absent - buildSummaryPrompt declares it but its template
+// never renders it, so hashing it would force re-summarization that
+// cannot change the output.
+function hashObservationSet(
+  hash: ReturnType<typeof createHash>,
+  observations: CompressedObservation[],
+): void {
+  for (const o of observations) {
+    hashField(hash, o.id);
+    hashField(hash, o.type ?? "");
+    hashField(hash, o.title ?? "");
+    hashField(hash, o.narrative ?? "");
+    hashFieldList(hash, o.facts);
+    hashFieldList(hash, o.files);
+  }
+  hash.update(String(observations.length));
+}
+
+// Sorted by id so the digest survives KV list-order churn. The handler
+// already sorts before calling this; the sort is repeated here so
+// correctness does not depend on caller discipline.
+function sourceFingerprint(compressed: CompressedObservation[]): string {
+  const sorted = [...compressed].sort((a, b) =>
+    a.id < b.id ? -1 : a.id > b.id ? 1 : 0,
+  );
+  const hash = createHash("sha256");
+  hashObservationSet(hash, sorted);
+  return `sfp_${hash.digest("hex").slice(0, 16)}`;
+}
+
+// Not sorted, unlike sourceFingerprint: chunk order is positional and
+// drives obsRangeStart/obsRangeEnd in the reduce step, so it is part of
+// what the key identifies rather than list-order noise to normalize away.
+function chunkFingerprint(chunk: CompressedObservation[]): string {
+  const hash = createHash("sha256");
+  hashObservationSet(hash, chunk);
+  return `chk_${hash.digest("hex").slice(0, 16)}`;
+}
+
+// The key is stored alongside the value because iii-sdk's IState.list()
+// returns values only, leaving deleteSummaryChunks nothing to delete by.
+interface CachedChunkSummary {
+  chunkKey: string;
+  partial: SessionSummary;
+}
+
+// Call this wherever a session's observations are reclaimed: whole-session
+// delete (mem::forget, stale-session eviction) and once per touched session
+// after a per-observation eviction pass. Removing even one observation
+// shifts every downstream chunk's membership, so it orphans the session's
+// entire chunk cache, not just the entry covering that observation.
+export async function deleteSummaryChunks(
+  kv: StateKV,
+  sessionId: string,
+): Promise<void> {
+  const entries = await kv
+    .list<CachedChunkSummary>(KV.summaryChunks(sessionId))
+    .catch(() => []);
+  await Promise.all(
+    entries.map((entry) =>
+      kv.delete(KV.summaryChunks(sessionId), entry.chunkKey).catch(() => {}),
+    ),
+  );
+}
+
 export function registerSummarizeFunction(
   sdk: ISdk,
   kv: StateKV,
   provider: MemoryProvider,
   metricsStore?: MetricsStore,
 ): void {
-  sdk.registerFunction("mem::summarize", 
-    async (data: { sessionId: string } | undefined) => {
+  sdk.registerFunction("mem::summarize",
+    async (data: { sessionId: string; force?: boolean } | undefined) => {
       const startMs = Date.now();
       if (!data || typeof data.sessionId !== "string" || !data.sessionId.trim()) {
         return { success: false, error: "sessionId is required" };
       }
       const sessionId = data.sessionId.trim();
 
+      // #1203: api::summarize stays publicly reachable, so dropping the
+      // hook's duplicate POST does not by itself prevent two concurrent
+      // full-history passes over identical input. Serialize per session.
+      return withKeyedLock(`mem:summarize:${sessionId}`, async () => {
       const session = await kv.get<Session>(KV.sessions, sessionId);
       if (!session) {
         logger.warn("Session not found for summarize", {
@@ -251,13 +383,33 @@ export function registerSummarizeFunction(
       const observations = await kv.list<CompressedObservation>(
         KV.observations(sessionId),
       );
-      const compressed = observations.filter((o) => o.title);
+      // kv.list order is not stable (the file_based store is a hash map),
+      // and chunk boundaries must be positionally stable across turns or
+      // every chunk key changes when the order shifts. generateId's base36
+      // timestamp prefix is a fixed 8 chars until 2059, so sorting by id
+      // is also sorting chronologically - which is the order the LLM and
+      // the reduce step's obsRange labels should see anyway.
+      const compressed = observations
+        .filter((o) => o.title)
+        .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 
       if (compressed.length === 0) {
         logger.info("No observations to summarize", {
           sessionId,
         });
         return { success: false, error: "no_observations" };
+      }
+
+      // The Stop hook fires every assistant turn, so without this every
+      // turn re-sends the whole session: quadratic in turn count.
+      const fingerprint = sourceFingerprint(compressed);
+      const existing = await kv.get<SessionSummary>(KV.summaries, sessionId);
+      if (!data.force && existing?.sourceFingerprint === fingerprint) {
+        logger.info("Summarize skipped — observations unchanged", {
+          sessionId,
+          observationCount: compressed.length,
+        });
+        return { success: true, summary: existing, skipped: "unchanged" };
       }
 
       if (provider.name === "noop") {
@@ -285,6 +437,7 @@ export function registerSummarizeFunction(
         for (let attempt = 1; attempt <= 2; attempt++) {
           const produced = await produceSummaryXml(
             provider,
+            kv,
             compressed,
             sessionId,
             session.project,
@@ -356,7 +509,30 @@ export function registerSummarizeFunction(
 
         const qualityScore = scoreSummary(summaryForValidation);
 
-        await kv.set(KV.summaries, sessionId, summary);
+        summary.sourceFingerprint = fingerprint;
+        const wrote = await withKeyedLock(
+          sessionWriteLockKey(sessionId),
+          async () => {
+            // Not redundant with the check on entry: the provider call
+            // between them runs for seconds, and a delete can land there.
+            if (!(await kv.get<Session>(KV.sessions, sessionId))) {
+              await deleteSummaryChunks(kv, sessionId);
+              return false;
+            }
+            await kv.set(KV.summaries, sessionId, summary);
+            return true;
+          },
+        );
+        if (!wrote) {
+          const latencyMs = Date.now() - startMs;
+          if (metricsStore) {
+            await metricsStore.record("mem::summarize", latencyMs, false);
+          }
+          logger.info("Summarize discarded — session deleted mid-run", {
+            sessionId,
+          });
+          return { success: false, error: "session_deleted" };
+        }
         await safeAudit(kv, "compress", "mem::summarize", [sessionId], {
           title: summary.title,
           observationCount: compressed.length,
@@ -393,6 +569,7 @@ export function registerSummarizeFunction(
         });
         return { success: false, error: msg };
       }
+      });
     },
   );
 }

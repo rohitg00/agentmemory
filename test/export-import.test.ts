@@ -260,6 +260,26 @@ describe("Export/Import Functions", () => {
     expect(oldSession).toBeNull();
   });
 
+  it("import with replace strategy also reclaims the wiped sessions' chunk cache", async () => {
+    await kv.set("mem:summary-chunks:ses_1", "chk_a", {
+      chunkKey: "chk_a",
+      partial: { title: "cached partial" },
+    });
+
+    const exportData: ExportData = {
+      version: "0.3.0",
+      exportedAt: new Date().toISOString(),
+      sessions: [],
+      observations: {},
+      memories: [],
+      summaries: [],
+    };
+
+    await sdk.trigger("mem::import", { exportData, strategy: "replace" });
+
+    expect(await kv.list("mem:summary-chunks:ses_1")).toHaveLength(0);
+  });
+
   it("export then import round-trip preserves data", async () => {
     const exported = (await sdk.trigger("mem::export", {})) as ExportData;
 

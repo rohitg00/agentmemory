@@ -167,6 +167,47 @@ describe("mem::evict stale sessions", () => {
     );
   });
 
+  // #1131 review finding 2: KV.summaryChunks is introduced by
+  // mem::summarize and must be reclaimed wherever a stale session is
+  // fully evicted, or the per-chunk cache scope outlives the session it
+  // belongs to (this eviction path only runs for sessions with no
+  // KV.summaries entry, but a chunked summarize can still leave chunk
+  // partials cached if the final reduce/validation step failed after
+  // successful per-chunk calls).
+  it("clears the per-chunk summary cache when a stale session is evicted (#1131)", async () => {
+    const sessionId = "ses_stale";
+    const store = storeForObservedSession(sessionId);
+    store.set(
+      KV.summaryChunks(sessionId),
+      new Map([
+        [
+          "chk_aaaaaaaaaaaaaaaa",
+          { chunkKey: "chk_aaaaaaaaaaaaaaaa", partial: { title: "t" } },
+        ],
+      ]),
+    );
+    const kv = mockKV(store);
+    const { sdk } = mockSdk();
+
+    registerEvictFunction(sdk as never, kv as never);
+    sdk.registerFunction("event::session::stopped", async () => ({
+      success: true,
+    }));
+    sdk.registerFunction("mem::consolidate-pipeline", () => ({
+      success: true,
+    }));
+    sdk.registerFunction("mem::auto-crystallize", () => ({ success: true }));
+
+    const result = (await sdk.trigger({
+      function_id: "mem::evict",
+      payload: {},
+    })) as { staleSessions: number };
+
+    expect(result.staleSessions).toBe(1);
+    const remaining = await kv.list(KV.summaryChunks(sessionId));
+    expect(remaining).toHaveLength(0);
+  });
+
   it("bounds consolidation to one pass regardless of how many stale sessions are recovered", async () => {
     // Regression (P1): before the skipConsolidation guard, N recovered
     // sessions each triggered a forced full-corpus consolidate + crystallize
@@ -293,5 +334,118 @@ describe("mem::evict stale sessions", () => {
     expect(calls.map((call) => call.function_id)).not.toContain(
       "event::session::stopped",
     );
+  });
+});
+
+// #1131 review round 2: evicting even one observation shifts every
+// downstream chunk boundary for that session, orphaning its entire
+// per-chunk summary cache at once - not just the one entry touching the
+// evicted observation. mem::evict runs repeatedly against active
+// sessions (whole-session delete never fires for those), so leaving
+// orphaned generations in place is a recurring, unbounded leak. These
+// tests prove the low-importance eviction path flushes the touched
+// session's cache once per pass, and that a dryRun pass flushes nothing.
+describe("mem::evict per-observation eviction chunk cache reclamation (#1131)", () => {
+  function chunkCacheEntry(chunkKey: string) {
+    return { chunkKey, partial: { title: "cached partial" } };
+  }
+
+  // Young startedAt keeps this session out of the stale-session branch
+  // above (age <= staleSessionDays), so only the low-importance path is
+  // exercised.
+  function storeForLowImportanceEviction(sessionId: string): Store {
+    const staleObs: CompressedObservation = {
+      ...makeObservation(sessionId),
+      id: "obs_low_importance",
+      timestamp: daysAgo(200),
+      importance: 1,
+    };
+    const store = storeForObservations(sessionId, [staleObs]);
+    store.get(KV.sessions)!.set(sessionId, {
+      ...makeSession(sessionId),
+      startedAt: daysAgo(1),
+    });
+    store.set(
+      KV.summaryChunks(sessionId),
+      new Map([["chk_a", chunkCacheEntry("chk_a")]]),
+    );
+    return store;
+  }
+
+  it("flushes the touched session's chunk cache after a low-importance eviction pass", async () => {
+    const sessionId = "ses_low_importance";
+    const store = storeForLowImportanceEviction(sessionId);
+    const kv = mockKV(store);
+    const { sdk } = mockSdk();
+    registerEvictFunction(sdk as never, kv as never);
+
+    const result = (await sdk.trigger({
+      function_id: "mem::evict",
+      payload: {},
+    })) as { lowImportanceObs: number };
+
+    expect(result.lowImportanceObs).toBe(1);
+    const remaining = await kv.list(KV.summaryChunks(sessionId));
+    expect(remaining).toHaveLength(0);
+  });
+
+  it("does not flush the chunk cache on a dry run", async () => {
+    const sessionId = "ses_low_importance_dry";
+    const store = storeForLowImportanceEviction(sessionId);
+    const kv = mockKV(store);
+    const { sdk } = mockSdk();
+    registerEvictFunction(sdk as never, kv as never);
+
+    const result = (await sdk.trigger({
+      function_id: "mem::evict",
+      payload: { dryRun: true },
+    })) as { lowImportanceObs: number };
+
+    // Still counted for reporting, but nothing actually deleted or flushed.
+    expect(result.lowImportanceObs).toBe(1);
+    expect(
+      await kv.get(KV.observations(sessionId), "obs_low_importance"),
+    ).not.toBeNull();
+    const remaining = await kv.list(KV.summaryChunks(sessionId));
+    expect(remaining).toHaveLength(1);
+  });
+
+  it("flushes the touched session's chunk cache after a project-cap eviction pass", async () => {
+    const sessionId = "ses_cap";
+    const obsA: CompressedObservation = {
+      ...makeObservation(sessionId),
+      id: "obs_a",
+      importance: 1,
+    };
+    const obsB: CompressedObservation = {
+      ...makeObservation(sessionId),
+      id: "obs_b",
+      importance: 9,
+    };
+    const store = storeForObservations(sessionId, [obsA, obsB]);
+    store.get(KV.sessions)!.set(sessionId, {
+      ...makeSession(sessionId),
+      startedAt: daysAgo(1),
+    });
+    store.set(KV.config, new Map([["eviction", { maxObservationsPerProject: 1 }]]));
+    store.set(
+      KV.summaryChunks(sessionId),
+      new Map([["chk_b", chunkCacheEntry("chk_b")]]),
+    );
+    const kv = mockKV(store);
+    const { sdk } = mockSdk();
+    registerEvictFunction(sdk as never, kv as never);
+
+    const result = (await sdk.trigger({
+      function_id: "mem::evict",
+      payload: {},
+    })) as { capEvictions: number };
+
+    expect(result.capEvictions).toBe(1);
+    // The lower-importance observation (obsA) is the one capped away.
+    expect(await kv.get(KV.observations(sessionId), "obs_a")).toBeNull();
+    expect(await kv.get(KV.observations(sessionId), "obs_b")).not.toBeNull();
+    const remaining = await kv.list(KV.summaryChunks(sessionId));
+    expect(remaining).toHaveLength(0);
   });
 });

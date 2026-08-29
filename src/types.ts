@@ -134,6 +134,9 @@ export interface SessionSummary {
   filesModified: string[];
   concepts: string[];
   observationCount: number;
+  // Fingerprint of the observation set this summary was produced from;
+  // mem::summarize short-circuits while it still matches.
+  sourceFingerprint?: string;
 }
 
 export type HookType =

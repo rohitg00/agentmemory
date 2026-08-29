@@ -4,14 +4,24 @@ vi.mock("../src/logger.js", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
-vi.mock("../src/state/schema.js", () => ({
-  KV: {
-    sessions: "sessions",
-    summaries: "summaries",
-    observations: (sessionId: string) => `obs:${sessionId}`,
-    audit: "audit",
-  },
-}));
+// #1131: spread the real module so anything summarize.ts imports from
+// schema.js beyond KV (e.g. fingerprintId) keeps its real implementation
+// instead of silently becoming undefined — only KV needs a test double.
+vi.mock("../src/state/schema.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/state/schema.js")>();
+  return {
+    ...actual,
+    KV: {
+      sessions: "sessions",
+      summaries: "summaries",
+      observations: (sessionId: string) => `obs:${sessionId}`,
+      // #1131: per-chunk summary partial cache; must be present or the
+      // chunk-memoization path sees an undefined scope key.
+      summaryChunks: (sessionId: string) => `summary-chunks:${sessionId}`,
+      audit: "audit",
+    },
+  };
+});
 
 vi.mock("../src/eval/schemas.js", () => ({
   SummaryOutputSchema: {},
@@ -478,5 +488,565 @@ describe("mem::summarize chunking", () => {
 
     expect(result.success).toBe(false);
     expect(result.error).toBe("parse_failed");
+  });
+});
+
+describe("mem::summarize concurrency", () => {
+  it("serializes concurrent runs for the same session (#1203)", async () => {
+    const kv = mockKV();
+    await kv.set("sessions", "s1", {
+      id: "s1",
+      project: "p",
+      cwd: "/tmp",
+      startedAt: new Date().toISOString(),
+      status: "active",
+      observationCount: 1,
+    } as Session);
+    await kv.set("obs:s1", "o1", {
+      id: "o1",
+      sessionId: "s1",
+      timestamp: new Date().toISOString(),
+      type: "other",
+      title: "t",
+      facts: [],
+      narrative: "n",
+      concepts: [],
+      files: [],
+      importance: 5,
+      confidence: 0.3,
+    } as CompressedObservation);
+
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const provider: MemoryProvider = {
+      name: "test",
+      compress: async () => "",
+      summarize: async () => {
+        inFlight++;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        await new Promise((r) => setTimeout(r, 20));
+        inFlight--;
+        return "<summary><title>T</title><narrative>N</narrative></summary>";
+      },
+    } as unknown as MemoryProvider;
+
+    const sdk = mockSdk();
+    registerSummarizeFunction(sdk as never, kv as never, provider);
+    const fn = sdk.functions.get("mem::summarize")!;
+
+    await Promise.all([fn({ sessionId: "s1" }), fn({ sessionId: "s1" })]);
+
+    expect(maxInFlight).toBe(1);
+  });
+});
+
+describe("mem::summarize change detection", () => {
+  it("does not call the provider twice for an unchanged session (#1131)", async () => {
+    const kv = mockKV();
+    await kv.set("sessions", "s2", {
+      id: "s2",
+      project: "p",
+      cwd: "/tmp",
+      startedAt: new Date().toISOString(),
+      status: "active",
+      observationCount: 1,
+    } as Session);
+    await kv.set("obs:s2", "o1", {
+      id: "o1",
+      sessionId: "s2",
+      timestamp: "2026-08-21T00:00:00.000Z",
+      type: "other",
+      title: "t",
+      facts: [],
+      narrative: "n",
+      concepts: [],
+      files: [],
+      importance: 5,
+      confidence: 0.3,
+    } as CompressedObservation);
+
+    let calls = 0;
+    const provider: MemoryProvider = {
+      name: "test",
+      compress: async () => "",
+      summarize: async () => {
+        calls++;
+        return "<summary><title>T</title><narrative>N</narrative></summary>";
+      },
+    } as unknown as MemoryProvider;
+
+    const sdk = mockSdk();
+    registerSummarizeFunction(sdk as never, kv as never, provider);
+    const fn = sdk.functions.get("mem::summarize")!;
+
+    const first = await fn({ sessionId: "s2" });
+    const second = await fn({ sessionId: "s2" });
+
+    expect(calls).toBe(1);
+    expect(second.success).toBe(true);
+    expect(second.skipped).toBe("unchanged");
+    expect(second.summary.title).toBe(first.summary.title);
+  });
+
+  it("re-summarizes once a new observation lands (#1131)", async () => {
+    const kv = mockKV();
+    await kv.set("sessions", "s3", {
+      id: "s3",
+      project: "p",
+      cwd: "/tmp",
+      startedAt: new Date().toISOString(),
+      status: "active",
+      observationCount: 1,
+    } as Session);
+    const obs = (id: string): CompressedObservation => ({
+      id,
+      sessionId: "s3",
+      timestamp: "2026-08-21T00:00:00.000Z",
+      type: "other",
+      title: "t",
+      facts: [],
+      narrative: "n",
+      concepts: [],
+      files: [],
+      importance: 5,
+      confidence: 0.3,
+    });
+    await kv.set("obs:s3", "o1", obs("o1"));
+
+    let calls = 0;
+    const provider: MemoryProvider = {
+      name: "test",
+      compress: async () => "",
+      summarize: async () => {
+        calls++;
+        return "<summary><title>T</title><narrative>N</narrative></summary>";
+      },
+    } as unknown as MemoryProvider;
+
+    const sdk = mockSdk();
+    registerSummarizeFunction(sdk as never, kv as never, provider);
+    const fn = sdk.functions.get("mem::summarize")!;
+
+    await fn({ sessionId: "s3" });
+    await kv.set("obs:s3", "o2", obs("o2"));
+    await fn({ sessionId: "s3" });
+
+    expect(calls).toBe(2);
+  });
+
+  it("re-summarizes on a same-id content rewrite — id-only fingerprint would false-skip (#1131)", async () => {
+    const kv = mockKV();
+    await kv.set("sessions", "s4", {
+      id: "s4",
+      project: "p",
+      cwd: "/tmp",
+      startedAt: new Date().toISOString(),
+      status: "active",
+      observationCount: 1,
+    } as Session);
+    await kv.set("obs:s4", "o1", {
+      id: "o1",
+      sessionId: "s4",
+      timestamp: "2026-08-21T00:00:00.000Z",
+      type: "other",
+      title: "original title",
+      facts: [],
+      narrative: "original narrative",
+      concepts: [],
+      files: [],
+      importance: 5,
+      confidence: 0.3,
+    } as CompressedObservation);
+
+    let calls = 0;
+    const provider: MemoryProvider = {
+      name: "test",
+      compress: async () => "",
+      summarize: async () => {
+        calls++;
+        return "<summary><title>T</title><narrative>N</narrative></summary>";
+      },
+    } as unknown as MemoryProvider;
+
+    const sdk = mockSdk();
+    registerSummarizeFunction(sdk as never, kv as never, provider);
+    const fn = sdk.functions.get("mem::summarize")!;
+
+    await fn({ sessionId: "s4" });
+
+    // #1131: same id ("o1"), but a bulk import-jsonl or replay rewrite
+    // changed the title and narrative content — content-aware fingerprint
+    // must not treat this as unchanged.
+    await kv.set("obs:s4", "o1", {
+      id: "o1",
+      sessionId: "s4",
+      timestamp: "2026-08-21T00:00:00.000Z",
+      type: "other",
+      title: "rewritten title",
+      facts: [],
+      narrative: "completely different narrative content after import",
+      concepts: [],
+      files: [],
+      importance: 5,
+      confidence: 0.3,
+    } as CompressedObservation);
+
+    const second = await fn({ sessionId: "s4" });
+
+    expect(calls).toBe(2);
+    expect(second.success).toBe(true);
+    expect(second.skipped).toBeUndefined();
+  });
+
+  it("re-summarizes when only facts change — title and narrative length are unchanged (#1131)", async () => {
+    const kv = mockKV();
+    await kv.set("sessions", "s5", {
+      id: "s5",
+      project: "p",
+      cwd: "/tmp",
+      startedAt: new Date().toISOString(),
+      status: "active",
+      observationCount: 1,
+    } as Session);
+    const base = {
+      id: "o1",
+      sessionId: "s5",
+      timestamp: "2026-08-21T00:00:00.000Z",
+      type: "other" as const,
+      title: "stable title",
+      narrative: "stable narrative",
+      concepts: [],
+      files: [],
+      importance: 5,
+      confidence: 0.3,
+    };
+    await kv.set("obs:s5", "o1", {
+      ...base,
+      facts: ["first fact"],
+    } as CompressedObservation);
+
+    let calls = 0;
+    const provider: MemoryProvider = {
+      name: "test",
+      compress: async () => "",
+      summarize: async () => {
+        calls++;
+        return "<summary><title>T</title><narrative>N</narrative></summary>";
+      },
+    } as unknown as MemoryProvider;
+
+    const sdk = mockSdk();
+    registerSummarizeFunction(sdk as never, kv as never, provider);
+    const fn = sdk.functions.get("mem::summarize")!;
+
+    await fn({ sessionId: "s5" });
+
+    // buildSummaryPrompt renders facts, so this changes the LLM input even
+    // though id, title and narrative are byte-identical. Hashing only
+    // id/title/narrative-length would false-skip here.
+    await kv.set("obs:s5", "o1", {
+      ...base,
+      facts: ["a completely different fact"],
+    } as CompressedObservation);
+
+    const second = await fn({ sessionId: "s5" });
+
+    expect(calls).toBe(2);
+    expect(second.success).toBe(true);
+    expect(second.skipped).toBeUndefined();
+  });
+
+  it("re-summarizes when only files change (#1131)", async () => {
+    const kv = mockKV();
+    await kv.set("sessions", "s6", {
+      id: "s6",
+      project: "p",
+      cwd: "/tmp",
+      startedAt: new Date().toISOString(),
+      status: "active",
+      observationCount: 1,
+    } as Session);
+    const base = {
+      id: "o1",
+      sessionId: "s6",
+      timestamp: "2026-08-21T00:00:00.000Z",
+      type: "other" as const,
+      title: "stable title",
+      narrative: "stable narrative",
+      facts: [],
+      concepts: [],
+      importance: 5,
+      confidence: 0.3,
+    };
+    await kv.set("obs:s6", "o1", {
+      ...base,
+      files: ["src/a.ts"],
+    } as CompressedObservation);
+
+    let calls = 0;
+    const provider: MemoryProvider = {
+      name: "test",
+      compress: async () => "",
+      summarize: async () => {
+        calls++;
+        return "<summary><title>T</title><narrative>N</narrative></summary>";
+      },
+    } as unknown as MemoryProvider;
+
+    const sdk = mockSdk();
+    registerSummarizeFunction(sdk as never, kv as never, provider);
+    const fn = sdk.functions.get("mem::summarize")!;
+
+    await fn({ sessionId: "s6" });
+
+    await kv.set("obs:s6", "o1", {
+      ...base,
+      files: ["src/b.ts"],
+    } as CompressedObservation);
+
+    const second = await fn({ sessionId: "s6" });
+
+    expect(calls).toBe(2);
+    expect(second.success).toBe(true);
+    expect(second.skipped).toBeUndefined();
+  });
+});
+
+describe("mem::summarize chunk memoization", () => {
+  const OLD = process.env.SUMMARIZE_CHUNK_SIZE;
+  beforeEach(() => { process.env.SUMMARIZE_CHUNK_SIZE = "2"; });
+  afterEach(() => {
+    if (OLD === undefined) delete process.env.SUMMARIZE_CHUNK_SIZE;
+    else process.env.SUMMARIZE_CHUNK_SIZE = OLD;
+  });
+
+  it("reuses full chunks when one observation is appended (#1131)", async () => {
+    const kv = mockKV();
+    await kv.set("sessions", "s4", {
+      id: "s4",
+      project: "p",
+      cwd: "/tmp",
+      startedAt: new Date().toISOString(),
+      status: "active",
+      observationCount: 0,
+    } as Session);
+    const obs = (id: string): CompressedObservation => ({
+      id,
+      sessionId: "s4",
+      timestamp: "2026-08-21T00:00:00.000Z",
+      type: "other",
+      title: `t-${id}`,
+      facts: [],
+      narrative: "n",
+      concepts: [],
+      files: [],
+      importance: 5,
+      confidence: 0.3,
+    });
+    for (const id of ["o1", "o2", "o3", "o4"]) {
+      await kv.set("obs:s4", id, obs(id));
+    }
+
+    let calls = 0;
+    const provider: MemoryProvider = {
+      name: "test",
+      compress: async () => "",
+      summarize: async () => {
+        calls++;
+        return "<summary><title>T</title><narrative>N</narrative></summary>";
+      },
+    } as unknown as MemoryProvider;
+
+    const sdk = mockSdk();
+    registerSummarizeFunction(sdk as never, kv as never, provider);
+    const fn = sdk.functions.get("mem::summarize")!;
+
+    // 4 obs / chunk size 2 = 2 chunks + 1 reduce = 3 calls.
+    await fn({ sessionId: "s4" });
+    expect(calls).toBe(3);
+
+    // Append a 5th: chunks 1 and 2 are unchanged and must be reused.
+    // Only the new partial chunk + the reduce should hit the provider.
+    calls = 0;
+    await kv.set("obs:s4", "o5", obs("o5"));
+    await fn({ sessionId: "s4" });
+    expect(calls).toBe(2);
+  });
+
+  // Chunks are contiguous slices from index 0, so on a live session only
+  // the trailing chunk's fingerprint changes turn to turn - each turn's
+  // trailing-chunk write used to mint a brand-new content-keyed entry
+  // while the previous turn's trailing entry became permanently
+  // unreachable dead weight (nothing else prunes it for an active
+  // session). Verified empirically before the fix: chunk size 2 with one
+  // observation appended per turn left 11 stored entries behind 6 live
+  // chunks at turn 12. This drives the same session through 11 turns
+  // (one appended observation each) and asserts the stored cache never
+  // holds more than the session's current live chunk count.
+  it("prunes dead chunk-cache entries so stored entries equal live chunks after several turns", async () => {
+    const kv = mockKV();
+    await kv.set("sessions", "s5", {
+      id: "s5",
+      project: "p",
+      cwd: "/tmp",
+      startedAt: new Date().toISOString(),
+      status: "active",
+      observationCount: 0,
+    } as Session);
+    const obs = (id: string): CompressedObservation => ({
+      id,
+      sessionId: "s5",
+      timestamp: "2026-08-21T00:00:00.000Z",
+      type: "other",
+      title: `t-${id}`,
+      facts: [],
+      narrative: "n",
+      concepts: [],
+      files: [],
+      importance: 5,
+      confidence: 0.3,
+    });
+
+    const provider: MemoryProvider = {
+      name: "test",
+      compress: async () => "",
+      summarize: async () =>
+        "<summary><title>T</title><narrative>N</narrative></summary>",
+    } as unknown as MemoryProvider;
+
+    const sdk = mockSdk();
+    registerSummarizeFunction(sdk as never, kv as never, provider);
+    const fn = sdk.functions.get("mem::summarize")!;
+
+    await kv.set("obs:s5", "o1", obs("o1"));
+    await kv.set("obs:s5", "o2", obs("o2"));
+
+    for (let n = 3; n <= 12; n++) {
+      await kv.set("obs:s5", `o${n}`, obs(`o${n}`));
+      await fn({ sessionId: "s5" });
+
+      const liveChunks = Math.ceil(n / 2); // SUMMARIZE_CHUNK_SIZE=2 (beforeEach)
+      const stored = await kv.list("summary-chunks:s5");
+      expect(stored).toHaveLength(liveChunks);
+    }
+  });
+
+  // #1131: kv.list order is not contractually stable
+  // (file_based backend is a hash map; sourceFingerprint already defends
+  // against this for the same reason). Without sorting `compressed` by id
+  // before chunking, a list-order permutation between turns reshuffles
+  // which observations land in which positional chunk, so every chunk key
+  // changes and every chunk misses - the memoization above would degrade
+  // to a no-op on a real store. This test wraps mockKV().list to return a
+  // reversed copy of the observations scope on the second call (turn N+1)
+  // and asserts the cache still hits, proving chunking is keyed off a
+  // stable (id-sorted) ordering rather than raw kv.list order.
+  it("reuses full chunks even when kv.list returns a permuted order between turns (#1131)", async () => {
+    const base = mockKV();
+    let obsListCalls = 0;
+    const kv = {
+      ...base,
+      list: async <T>(scope: string): Promise<T[]> => {
+        const values = await base.list<T>(scope);
+        if (scope !== "obs:s6") return values;
+        obsListCalls++;
+        // First call (turn N): natural insertion order. Every call after
+        // (turn N+1 onward): reversed - simulates a hash-map-backed
+        // store whose iteration order shifts across writes.
+        return obsListCalls === 1 ? values : [...values].reverse();
+      },
+    };
+    await kv.set("sessions", "s6", {
+      id: "s6",
+      project: "p",
+      cwd: "/tmp",
+      startedAt: new Date().toISOString(),
+      status: "active",
+      observationCount: 0,
+    } as Session);
+    const obs = (id: string): CompressedObservation => ({
+      id,
+      sessionId: "s6",
+      timestamp: "2026-08-21T00:00:00.000Z",
+      type: "other",
+      title: `t-${id}`,
+      facts: [],
+      narrative: "n",
+      concepts: [],
+      files: [],
+      importance: 5,
+      confidence: 0.3,
+    });
+    for (const id of ["o1", "o2", "o3", "o4"]) {
+      await kv.set("obs:s6", id, obs(id));
+    }
+
+    let calls = 0;
+    const provider: MemoryProvider = {
+      name: "test",
+      compress: async () => "",
+      summarize: async () => {
+        calls++;
+        return "<summary><title>T</title><narrative>N</narrative></summary>";
+      },
+    } as unknown as MemoryProvider;
+
+    const sdk = mockSdk();
+    registerSummarizeFunction(sdk as never, kv as never, provider);
+    const fn = sdk.functions.get("mem::summarize")!;
+
+    // 4 obs / chunk size 2 = 2 chunks + 1 reduce = 3 calls.
+    await fn({ sessionId: "s6" });
+    expect(calls).toBe(3);
+
+    // Append a 5th observation. kv.list now returns the whole set in
+    // reversed order (obsListCalls === 2), but chunk boundaries must
+    // still be computed from an id-sorted copy, so chunks 1 and 2 are
+    // still recognized as unchanged and reused.
+    calls = 0;
+    await kv.set("obs:s6", "o5", obs("o5"));
+    await fn({ sessionId: "s6" });
+    expect(calls).toBe(2);
+  });
+});
+
+describe("mem::summarize session deleted mid-run", () => {
+  async function tick(): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+
+  it("writes no summary when the session is deleted during the provider call", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let entered = 0;
+    const provider = {
+      name: "test",
+      compress: async () => "",
+      summarize: async () => {
+        entered += 1;
+        await gate;
+        return summaryXml({ title: "orphan" });
+      },
+    } as unknown as MemoryProvider;
+
+    const { handler, kv } = await setupHandler({
+      sessionId: "s_del",
+      obsCount: 3,
+      provider,
+    });
+
+    const run = handler({ sessionId: "s_del" });
+    while (entered === 0) await tick();
+
+    await kv.delete("sessions", "s_del");
+    await kv.delete("summaries", "s_del");
+
+    release();
+    const result = await run;
+
+    expect(kv.store.get("summaries")?.get("s_del")).toBeUndefined();
+    expect(result.success).toBe(false);
   });
 });

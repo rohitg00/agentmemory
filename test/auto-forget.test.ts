@@ -270,4 +270,41 @@ describe("Auto-Forget Function", () => {
 
     expect(result.contradictions.length).toBe(0);
   });
+
+  it("reclaims the touched session's chunk cache after a low-value eviction", async () => {
+    const session: Session = {
+      id: "ses_2",
+      project: "my-project",
+      cwd: "/tmp",
+      startedAt: "2025-01-01T00:00:00Z",
+      status: "completed",
+      observationCount: 1,
+    };
+    await kv.set("mem:sessions", "ses_2", session);
+
+    const oldLowObs: CompressedObservation = {
+      id: "obs_old2",
+      sessionId: "ses_2",
+      timestamp: "2025-01-01T00:00:00Z",
+      type: "other",
+      title: "trivial event",
+      facts: [],
+      narrative: "nothing important",
+      concepts: [],
+      files: [],
+      importance: 1,
+    };
+    await kv.set("mem:obs:ses_2", "obs_old2", oldLowObs);
+    await kv.set("mem:summary-chunks:ses_2", "chk_a", {
+      chunkKey: "chk_a",
+      partial: { title: "cached partial" },
+    });
+
+    const result = (await sdk.trigger("mem::auto-forget", {})) as {
+      lowValueObs: string[];
+    };
+    expect(result.lowValueObs).toContain("obs_old2");
+
+    expect(await kv.list("mem:summary-chunks:ses_2")).toHaveLength(0);
+  });
 });

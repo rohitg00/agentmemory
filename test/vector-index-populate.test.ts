@@ -4,7 +4,10 @@ vi.mock("../src/logger.js", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
-vi.mock("../src/state/keyed-mutex.js", () => ({
+// Spread the real module so exports beyond withKeyedLock (sessionWriteLockKey)
+// keep their implementations instead of silently becoming undefined.
+vi.mock("../src/state/keyed-mutex.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../src/state/keyed-mutex.js")>()),
   withKeyedLock: <T>(_key: string, fn: () => Promise<T>) => fn(),
 }));
 

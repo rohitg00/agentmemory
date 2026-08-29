@@ -4,7 +4,10 @@ vi.mock("../src/logger.js", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
-vi.mock("../src/state/keyed-mutex.js", () => ({
+// Spread the real module so exports beyond withKeyedLock (sessionWriteLockKey)
+// keep their implementations instead of silently becoming undefined.
+vi.mock("../src/state/keyed-mutex.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../src/state/keyed-mutex.js")>()),
   withKeyedLock: <T>(_key: string, fn: () => Promise<T>) => fn(),
 }));
 
@@ -107,6 +110,36 @@ describe("mem::forget audit coverage (issue #125)", () => {
     expect(row.details.observationsDeleted).toBe(2);
     expect(row.details.sessionDeleted).toBe(true);
     expect(row.details.deleted).toBe(4);
+  });
+
+  // #1131 review finding 2: KV.summaryChunks is introduced by
+  // mem::summarize and must be reclaimed wherever a session's
+  // KV.observations/KV.summaries are already reclaimed, or the per-chunk
+  // cache scope outlives the session it belongs to.
+  it("clears the per-chunk summary cache when an entire session is forgotten (#1131)", async () => {
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerRememberFunction(sdk as never, kv as never);
+
+    await kv.set("mem:sessions", "sess_1", { id: "sess_1" });
+    await kv.set("mem:summaries", "sess_1", { id: "sess_1" });
+    await kv.set("mem:obs:sess_1", "obs_a", { id: "obs_a" });
+    await kv.set("mem:summary-chunks:sess_1", "chk_aaaaaaaaaaaaaaaa", {
+      chunkKey: "chk_aaaaaaaaaaaaaaaa",
+      partial: { title: "t" },
+    });
+    await kv.set("mem:summary-chunks:sess_1", "chk_bbbbbbbbbbbbbbbb", {
+      chunkKey: "chk_bbbbbbbbbbbbbbbb",
+      partial: { title: "t2" },
+    });
+
+    await sdk.trigger({
+      function_id: "mem::forget",
+      payload: { sessionId: "sess_1" },
+    });
+
+    const remaining = await kv.list("mem:summary-chunks:sess_1");
+    expect(remaining).toHaveLength(0);
   });
 
   it("does not emit an audit row when nothing is deleted", async () => {
@@ -241,5 +274,30 @@ describe("mem::forget search-index cleanup", () => {
     });
 
     expect(persistence.save).toHaveBeenCalled();
+  });
+
+  it("reclaims the chunk cache when specific observationIds are forgotten", async () => {
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerRememberFunction(sdk as never, kv as never);
+
+    await kv.set("mem:sessions", "sess_2", { id: "sess_2" });
+    await kv.set("mem:obs:sess_2", "obs_a", { id: "obs_a" });
+    await kv.set("mem:obs:sess_2", "obs_b", { id: "obs_b" });
+    await kv.set("mem:summary-chunks:sess_2", "chk_a", {
+      chunkKey: "chk_a",
+      partial: { title: "cached partial" },
+    });
+
+    await sdk.trigger({
+      function_id: "mem::forget",
+      payload: { sessionId: "sess_2", observationIds: ["obs_a"] },
+    });
+
+    // The session and its remaining observation survive; only the cache
+    // invalidated by the partial delete is reclaimed.
+    expect(await kv.get("mem:sessions", "sess_2")).not.toBeNull();
+    expect(await kv.get("mem:obs:sess_2", "obs_b")).not.toBeNull();
+    expect(await kv.list("mem:summary-chunks:sess_2")).toHaveLength(0);
   });
 });

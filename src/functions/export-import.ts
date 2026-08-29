@@ -32,6 +32,8 @@ import { StateKV } from "../state/kv.js";
 import { VERSION } from "../version.js";
 import { recordAudit } from "./audit.js";
 import { indexRecords } from "./search.js";
+import { deleteSummaryChunks } from "./summarize.js";
+import { withKeyedLock, sessionWriteLockKey } from "../state/keyed-mutex.js";
 import { resetLessonIndex } from "./lessons.js";
 import { logger } from "../logger.js";
 
@@ -310,7 +312,13 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
         // multiplies in-flight deletes to chunk-size squared.
         const obsDeletes: Array<{ sessionId: string; obsId: string }> = [];
         await runChunked(existing, async (session) => {
-          await kv.delete(KV.sessions, session.id);
+          // No KV.summaries delete here: the sweep below lists after this
+          // pass, so it catches a summary written by a run that won the
+          // lock.
+          await withKeyedLock(sessionWriteLockKey(session.id), async () => {
+            await kv.delete(KV.sessions, session.id);
+            await deleteSummaryChunks(kv, session.id);
+          });
           const obs = await kv
             .list<CompressedObservation>(KV.observations(session.id))
             .catch(() => []);

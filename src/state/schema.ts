@@ -4,6 +4,7 @@ import { hasCjk, segmentCjk } from "./cjk-segmenter.js";
 export const KV = {
   sessions: "mem:sessions",
   observations: (sessionId: string) => `mem:obs:${sessionId}`,
+  summaryChunks: (sessionId: string) => `mem:summary-chunks:${sessionId}`,
   memories: "mem:memories",
   summaries: "mem:summaries",
   config: "mem:config",

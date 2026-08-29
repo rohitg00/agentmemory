@@ -5,6 +5,7 @@ import { StateKV } from "../state/kv.js";
 import { recordAudit } from "./audit.js";
 import { deleteAccessLog } from "./access-tracker.js";
 import { getSearchIndex, vectorIndexRemove, flushIndexSave } from "./search.js";
+import { deleteSummaryChunks } from "./summarize.js";
 import { logger } from "../logger.js";
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -157,6 +158,8 @@ export function registerAutoForgetFunction(sdk: ISdk, kv: StateKV): void {
         );
         obsPerSession.push(...results);
       }
+      const touchedSessionIds = new Set<string>();
+
       for (let i = 0; i < sessions.length; i++) {
         for (const obs of obsPerSession[i]) {
           if (!obs.timestamp) continue;
@@ -172,6 +175,7 @@ export function registerAutoForgetFunction(sdk: ISdk, kv: StateKV): void {
                 deletedOk = false;
               }
               if (deletedOk) {
+                touchedSessionIds.add(sessions[i].id);
                 if (obs.imageData) await decrementImageRef(kv, sdk, obs.imageData);
                 if (obs.imageRef && obs.imageRef !== obs.imageData) {
                   await decrementImageRef(kv, sdk, obs.imageRef);
@@ -188,6 +192,10 @@ export function registerAutoForgetFunction(sdk: ISdk, kv: StateKV): void {
             }
           }
         }
+      }
+
+      for (const sessionId of touchedSessionIds) {
+        await deleteSummaryChunks(kv, sessionId);
       }
 
       if (!dryRun && (result.ttlExpired.length > 0 || result.lowValueObs.length > 0)) {
