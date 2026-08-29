@@ -54,6 +54,10 @@ export class OpenAIProvider implements MemoryProvider {
   private timeoutMs: number;
   private isAzure: boolean;
   private azureApiVersion: string;
+  // Which spelling an endpoint accepts cannot be derived from the model
+  // string: Azure deployment names are user-chosen and proxies differ, so it
+  // is learned from the first rejection instead. See #1219.
+  private tokenLimitParam: "max_tokens" | "max_completion_tokens" = "max_tokens";
 
   constructor(apiKey: string, model: string, maxTokens: number, baseURL?: string) {
     this.apiKey = apiKey;
@@ -77,55 +81,84 @@ export class OpenAIProvider implements MemoryProvider {
 
   private async call(systemPrompt: string, userPrompt: string): Promise<string> {
     const url = buildChatUrl(this.baseUrl, this.isAzure, this.azureApiVersion);
-    const body: Record<string, unknown> = {
-      model: this.model,
-      max_tokens: this.maxTokens,
-      // OpenAI API spec defines `stream` as defaulting to false, so omitting
-      // it should yield a JSON response. Some OpenAI-compatible proxies
-      // (notably 9Router < 0.4.56 — see decolua/9router#1260) default to
-      // text/event-stream when `stream` is absent, which crashes the
-      // `response.json()` call below with `Unexpected token 'd', "data: {"id"...`.
-      // Send it explicitly so non-spec endpoints route to non-streaming too.
-      stream: false,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-    };
-    if (this.reasoningEffort) {
-      body.reasoning_effort = this.reasoningEffort;
-    }
+    // Spans the retry too: two full timeouts would put one call() at nearly
+    // twice the configured bound.
+    const deadline = Date.now() + this.timeoutMs;
+    const timedOut = () =>
+      new Error(
+        `OpenAI API request timed out after ${this.timeoutMs}ms — set OPENAI_TIMEOUT_MS (or AGENTMEMORY_LLM_TIMEOUT_MS) to raise the bound or check the provider status.`,
+      );
+    const send = (tokenLimitParam: "max_tokens" | "max_completion_tokens") => {
+      const body: Record<string, unknown> = {
+        model: this.model,
+        [tokenLimitParam]: this.maxTokens,
+        // OpenAI API spec defines `stream` as defaulting to false, so omitting
+        // it should yield a JSON response. Some OpenAI-compatible proxies
+        // (notably 9Router < 0.4.56 — see decolua/9router#1260) default to
+        // text/event-stream when `stream` is absent, which crashes the
+        // `response.json()` call below with `Unexpected token 'd', "data: {"id"...`.
+        // Send it explicitly so non-spec endpoints route to non-streaming too.
+        stream: false,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
+      };
+      if (this.reasoningEffort) {
+        body.reasoning_effort = this.reasoningEffort;
+      }
 
-    // Bound the request via the shared fetchWithTimeout helper, which
-    // owns the AbortController + clearTimeout cleanup for every raw-fetch
-    // provider (minimax, openrouter, gemini, openrouter-embed, etc.).
-    // OPENAI_TIMEOUT_MS keeps its v0.9.17 meaning (OpenAI-scoped alias,
-    // takes precedence); when unset we fall through to
-    // AGENTMEMORY_LLM_TIMEOUT_MS and finally the 60s default. See #446.
-    let response: Response;
-    try {
-      response = await fetchWithTimeout(
+      // Bound the request via the shared fetchWithTimeout helper, which
+      // owns the AbortController + clearTimeout cleanup for every raw-fetch
+      // provider (minimax, openrouter, gemini, openrouter-embed, etc.).
+      // OPENAI_TIMEOUT_MS keeps its v0.9.17 meaning (OpenAI-scoped alias,
+      // takes precedence); when unset we fall through to
+      // AGENTMEMORY_LLM_TIMEOUT_MS and finally the 60s default. See #446.
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) {
+        throw timedOut();
+      }
+      return fetchWithTimeout(
         url,
         {
           method: "POST",
           headers: buildAuthHeaders(this.apiKey, this.isAzure),
           body: JSON.stringify(body),
         },
-        this.timeoutMs,
+        remaining,
       );
+    };
+
+    let response: Response;
+    let errorText: string | null = null;
+    try {
+      const attempted = this.tokenLimitParam;
+      response = await send(attempted);
+
+      if (!response.ok) {
+        errorText = await response.text();
+        // Concurrent calls each judge the rejection against what they sent:
+        // the shared field may already carry a spelling this request predates.
+        if (
+          response.status === 400 &&
+          attempted === "max_tokens" &&
+          errorText.includes("max_completion_tokens")
+        ) {
+          this.tokenLimitParam = "max_completion_tokens";
+          response = await send(this.tokenLimitParam);
+          errorText = response.ok ? null : await response.text();
+        }
+      }
     } catch (err) {
       const aborted = err instanceof Error && err.name === "AbortError";
       if (aborted) {
-        throw new Error(
-          `OpenAI API request timed out after ${this.timeoutMs}ms — set OPENAI_TIMEOUT_MS (or AGENTMEMORY_LLM_TIMEOUT_MS) to raise the bound or check the provider status.`,
-        );
+        throw timedOut();
       }
       throw err;
     }
 
     if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`OpenAI API error (${response.status}): ${text}`);
+      throw new Error(`OpenAI API error (${response.status}): ${errorText}`);
     }
 
     const data = (await response.json()) as {
