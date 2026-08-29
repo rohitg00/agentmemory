@@ -16,6 +16,20 @@ const VECTOR_MANIFEST_KEY = "vectors:manifest";
 const VECTOR_SHARD_SCOPE_PREFIX = `${KV.bm25Index}:vectors:`;
 const INDEX_SHARD_KEY = "data";
 const DEFAULT_INDEX_SHARD_CHARS = 2_000_000;
+const GENERATIONS_REGISTRY_KEY = "generations:registry";
+const SWEEP_GRACE_PERIOD_MS = 60_000;
+
+type GenerationRegistry = {
+  v: 1;
+  generations: Record<
+    string,
+    {
+      type: "bm25" | "vector";
+      createdAt: string;
+      shardScopes: string[];
+    }
+  >;
+};
 
 type IndexShardManifest = {
   v: 1;
@@ -24,9 +38,10 @@ type IndexShardManifest = {
   chars: number;
 };
 
-type IndexPersistenceOptions = {
+export type IndexPersistenceOptions = {
   shardChars?: number;
   createGeneration?: () => string;
+  sweepGracePeriodMs?: number;
 };
 
 function shardChars(options: IndexPersistenceOptions): number {
@@ -60,6 +75,7 @@ function isValidShardDescriptor(
     candidate.scope.length > 0 &&
     typeof candidate.key === "string" &&
     candidate.key.length > 0 &&
+    typeof candidate.chars === "number" &&
     Number.isInteger(candidate.chars) &&
     candidate.chars >= 0
   );
@@ -68,6 +84,7 @@ function isValidShardDescriptor(
 export class IndexPersistence {
   private timer: ReturnType<typeof setTimeout> | null = null;
   private lastFailureLogAt = 0;
+  private saveQueue: Promise<void> = Promise.resolve();
 
   constructor(
     private kv: StateKV,
@@ -88,18 +105,24 @@ export class IndexPersistence {
   }
 
   async save(): Promise<void> {
-    if (this.timer) {
-      clearTimeout(this.timer);
-      this.timer = null;
-    }
-    try {
-      await this.saveBm25Index(this.bm25.serialize());
-      if (this.vector) {
-        await this.saveVectorIndex(this.vector.serialize());
+    const run = async () => {
+      if (this.timer) {
+        clearTimeout(this.timer);
+        this.timer = null;
       }
-    } catch (err) {
-      this.logFailure(err);
-    }
+      try {
+        await this.saveBm25Index(this.bm25.serialize());
+        if (this.vector) {
+          await this.saveVectorIndex(this.vector.serialize());
+        }
+      } catch (err) {
+        this.logFailure(err);
+      }
+    };
+
+    const next = this.saveQueue.then(run, run);
+    this.saveQueue = next;
+    await next;
   }
 
   async load(): Promise<{
@@ -119,7 +142,142 @@ export class IndexPersistence {
       vector = VectorIndex.deserialize(vecData);
     }
 
+    this.sweepOrphanShards().catch((err) => {
+      logger.warn("index persistence: orphan shard sweep failed during load", {
+        message: errorMessage(err),
+      });
+    });
+
     return { bm25, vector };
+  }
+
+  async sweepOrphanShards(): Promise<{
+    deletedShards: number;
+    purgedGenerations: number;
+  }> {
+    let registry: GenerationRegistry;
+    try {
+      registry = await this.getRegistry();
+    } catch (err) {
+      logger.warn(
+        "index persistence: failed to read generation registry during orphan sweep, skipping GC",
+        { message: errorMessage(err) },
+      );
+      return { deletedShards: 0, purgedGenerations: 0 };
+    }
+
+    let bm25Eligible = false;
+    let activeBm25Gen: string | null = null;
+    try {
+      const m = await this.kv.get<IndexShardManifest>(
+        KV.bm25Index,
+        BM25_MANIFEST_KEY,
+      );
+      if (m === null || m === undefined) {
+        bm25Eligible = true;
+        activeBm25Gen = null;
+      } else if (m && m.v === 1 && Array.isArray(m.shards)) {
+        bm25Eligible = true;
+        activeBm25Gen = typeof m.generation === "string" ? m.generation : null;
+      } else {
+        logger.warn(
+          "index persistence: BM25 manifest corrupt during orphan sweep, skipping BM25 GC",
+        );
+      }
+    } catch (err) {
+      logger.warn(
+        "index persistence: BM25 manifest read failed during orphan sweep, skipping BM25 GC",
+        { message: errorMessage(err) },
+      );
+    }
+
+    let vectorEligible = false;
+    let activeVectorGen: string | null = null;
+    try {
+      const m = await this.kv.get<IndexShardManifest>(
+        KV.bm25Index,
+        VECTOR_MANIFEST_KEY,
+      );
+      if (m === null || m === undefined) {
+        vectorEligible = true;
+        activeVectorGen = null;
+      } else if (m && m.v === 1 && Array.isArray(m.shards)) {
+        vectorEligible = true;
+        activeVectorGen = typeof m.generation === "string" ? m.generation : null;
+      } else {
+        logger.warn(
+          "index persistence: Vector manifest corrupt during orphan sweep, skipping Vector GC",
+        );
+      }
+    } catch (err) {
+      logger.warn(
+        "index persistence: Vector manifest read failed during orphan sweep, skipping Vector GC",
+        { message: errorMessage(err) },
+      );
+    }
+
+    const now = Date.now();
+    const gracePeriod =
+      this.options.sweepGracePeriodMs ?? SWEEP_GRACE_PERIOD_MS;
+    const orphanGenerations: string[] = [];
+    const orphanShards: IndexShardManifest["shards"] = [];
+
+    for (const [genId, genInfo] of Object.entries(registry.generations)) {
+      if (genInfo.type === "bm25") {
+        if (!bm25Eligible) continue;
+        if (activeBm25Gen && genId === activeBm25Gen) continue;
+      } else if (genInfo.type === "vector") {
+        if (!vectorEligible) continue;
+        if (activeVectorGen && genId === activeVectorGen) continue;
+      } else {
+        continue;
+      }
+
+      const createdAtMs = Date.parse(genInfo.createdAt);
+      if (!Number.isNaN(createdAtMs) && now - createdAtMs < gracePeriod) {
+        continue;
+      }
+
+      orphanGenerations.push(genId);
+      if (Array.isArray(genInfo.shardScopes)) {
+        for (const scope of genInfo.shardScopes) {
+          orphanShards.push({ scope, key: INDEX_SHARD_KEY, chars: 0 });
+        }
+      }
+    }
+
+    if (orphanShards.length > 0) {
+      await this.deleteShards(orphanShards, "orphan_shard_gc");
+    }
+
+    if (orphanGenerations.length > 0) {
+      for (const genId of orphanGenerations) {
+        delete registry.generations[genId];
+      }
+      await this.saveRegistry(registry).catch(() => {});
+    }
+
+    const stats = {
+      deletedShards: orphanShards.length,
+      purgedGenerations: orphanGenerations.length,
+    };
+
+    if (stats.purgedGenerations > 0) {
+      logger.info("index persistence: orphan shard sweep completed", {
+        purgedGenerations: stats.purgedGenerations,
+        deletedShards: stats.deletedShards,
+      });
+      await this.auditIndexPersistence(
+        "orphan_shard_gc",
+        [statePath(KV.bm25Index, GENERATIONS_REGISTRY_KEY)],
+        {
+          deletedShards: stats.deletedShards,
+          purgedGenerations: stats.purgedGenerations,
+        },
+      );
+    }
+
+    return stats;
   }
 
   stop(): void {
@@ -127,6 +285,34 @@ export class IndexPersistence {
       clearTimeout(this.timer);
       this.timer = null;
     }
+  }
+
+  private async getRegistry(): Promise<GenerationRegistry> {
+    const reg = await this.kv.get<GenerationRegistry>(
+      KV.bm25Index,
+      GENERATIONS_REGISTRY_KEY,
+    );
+    if (
+      reg &&
+      reg.v === 1 &&
+      reg.generations &&
+      typeof reg.generations === "object" &&
+      !Array.isArray(reg.generations)
+    ) {
+      return reg;
+    }
+    if (reg === null || reg === undefined) {
+      return { v: 1, generations: {} };
+    }
+    throw new Error("Invalid generations registry format in KV store");
+  }
+
+  private async saveRegistry(registry: GenerationRegistry): Promise<void> {
+    await this.kv.set<GenerationRegistry>(
+      KV.bm25Index,
+      GENERATIONS_REGISTRY_KEY,
+      registry,
+    );
   }
 
   private logFailure(err: unknown): void {
@@ -154,6 +340,7 @@ export class IndexPersistence {
       BM25_MANIFEST_KEY,
       BM25_KEY,
       BM25_SHARD_SCOPE_PREFIX,
+      "bm25",
     );
   }
 
@@ -163,6 +350,7 @@ export class IndexPersistence {
       VECTOR_MANIFEST_KEY,
       VECTOR_KEY,
       VECTOR_SHARD_SCOPE_PREFIX,
+      "vector",
     );
   }
 
@@ -171,6 +359,7 @@ export class IndexPersistence {
     manifestKey: string,
     legacyKey: string,
     scopePrefix: string,
+    type: "bm25" | "vector",
   ): Promise<void> {
     const previous = await this.kv
       .get<IndexShardManifest>(KV.bm25Index, manifestKey)
@@ -192,6 +381,14 @@ export class IndexPersistence {
       chunks.push(chunk);
     }
 
+    const registry = await this.getRegistry();
+    registry.generations[generation] = {
+      type,
+      createdAt: new Date().toISOString(),
+      shardScopes: shards.map((s) => s.scope),
+    };
+    await this.saveRegistry(registry);
+
     const writeResults = await Promise.allSettled(
       shards.map(async (shard, index) => {
         const chunk = chunks[index] ?? "";
@@ -212,6 +409,11 @@ export class IndexPersistence {
     );
     if (failedWrite) {
       await this.deleteShards(shards, "shard_write_rollback");
+      const curReg = await this.getRegistry().catch(() => null);
+      if (curReg && curReg.generations[generation]) {
+        delete curReg.generations[generation];
+        await this.saveRegistry(curReg).catch(() => {});
+      }
       throw failedWrite.reason;
     }
 
@@ -250,17 +452,53 @@ export class IndexPersistence {
         });
       } else {
         await this.deleteShards(shards, "manifest_publish_rollback");
+        const curReg = await this.getRegistry().catch(() => null);
+        if (curReg && curReg.generations[generation]) {
+          delete curReg.generations[generation];
+          await this.saveRegistry(curReg).catch(() => {});
+        }
+        throw err;
       }
-      throw err;
     }
 
     await this.deleteKey(KV.bm25Index, legacyKey, "legacy_cleanup");
+
+    const activeRegistry = await this.getRegistry();
+    const obsoleteGenerations: string[] = [];
+    const obsoleteShards: IndexShardManifest["shards"] = [];
+
+    for (const [genId, genInfo] of Object.entries(activeRegistry.generations)) {
+      if (genInfo.type === type && genId !== generation) {
+        obsoleteGenerations.push(genId);
+        if (Array.isArray(genInfo.shardScopes)) {
+          for (const scope of genInfo.shardScopes) {
+            obsoleteShards.push({ scope, key: INDEX_SHARD_KEY, chars: 0 });
+          }
+        }
+      }
+    }
+
+    if (obsoleteShards.length > 0) {
+      await this.deleteShards(obsoleteShards, "previous_generation_cleanup");
+    }
+
+    if (obsoleteGenerations.length > 0) {
+      for (const genId of obsoleteGenerations) {
+        delete activeRegistry.generations[genId];
+      }
+      await this.saveRegistry(activeRegistry).catch(() => {});
+    }
+
     if (previous?.v === 1 && Array.isArray(previous.shards)) {
       const currentShardIds = new Set(
         shards.map((shard) => `${shard.scope}\0${shard.key}`),
       );
+      const obsoleteShardIds = new Set(
+        obsoleteShards.map((shard) => `${shard.scope}\0${shard.key}`),
+      );
       for (const shard of previous.shards) {
-        if (currentShardIds.has(`${shard.scope}\0${shard.key}`)) continue;
+        const id = `${shard.scope}\0${shard.key}`;
+        if (currentShardIds.has(id) || obsoleteShardIds.has(id)) continue;
         await this.deleteShards([shard], "previous_generation_cleanup");
       }
     }
@@ -306,9 +544,9 @@ export class IndexPersistence {
     shards: IndexShardManifest["shards"],
     reason: string,
   ): Promise<void> {
-    for (const shard of shards) {
-      await this.deleteKey(shard.scope, shard.key, reason);
-    }
+    await Promise.allSettled(
+      shards.map((shard) => this.deleteKey(shard.scope, shard.key, reason)),
+    );
   }
 
   private async isManifestPublished(
