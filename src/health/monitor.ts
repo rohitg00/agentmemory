@@ -1,8 +1,21 @@
 import type { ISdk } from "iii-sdk";
+import { cpus } from "node:os";
 import type { HealthSnapshot } from "../types.js";
 import type { StateKV } from "../state/kv.js";
 import { KV } from "../state/schema.js";
 import { evaluateHealth } from "./thresholds.js";
+
+// #1235: process.cpuUsage() deltas are single-core time, so a process
+// using 2.44 cores reads as 244%. thresholds.ts treats 90 as "90% of the
+// machine", so every multi-core host tripped cpu_critical and /health
+// returned 503. Normalize at the producer, where the core count is known.
+export function normalizeCpuPercent(
+  singleCorePercent: number,
+  coreCount: number = cpus().length,
+): number {
+  const cores = coreCount > 0 ? coreCount : 1;
+  return singleCorePercent / cores;
+}
 
 export function registerHealthMonitor(
   sdk: ISdk,
@@ -27,8 +40,16 @@ export function registerHealthMonitor(
     const elapsedMs = now - prevCpuTime;
     const userDelta = currentCpu.user - prevCpuUsage.user;
     const systemDelta = currentCpu.system - prevCpuUsage.system;
-    const cpuPercent =
+    const singleCoreCpuPercent =
       elapsedMs > 0 ? ((userDelta + systemDelta) / 1000 / elapsedMs) * 100 : 0;
+    // #1235: clamp here, not just inside normalizeCpuPercent, so the divisor
+    // we record in the snapshot (cores) is the same number we divided by.
+    // Storing the raw (possibly 0) os.cpus().length would make cpu.cores
+    // lie about the divisor in exactly the empty-array edge case the clamp
+    // exists for.
+    const rawCoreCount = cpus().length;
+    const coreCount = rawCoreCount > 0 ? rawCoreCount : 1;
+    const cpuPercent = normalizeCpuPercent(singleCoreCpuPercent, coreCount);
     prevCpuUsage = currentCpu;
     prevCpuTime = now;
 
@@ -76,6 +97,7 @@ export function registerHealthMonitor(
         userMicros: currentCpu.user,
         systemMicros: currentCpu.system,
         percent: Math.round(cpuPercent * 100) / 100,
+        cores: coreCount,
       },
       eventLoopLagMs,
       uptimeSeconds: uptime,

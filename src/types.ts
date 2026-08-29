@@ -228,7 +228,9 @@ export interface HealthSnapshot {
     rss: number;
     external: number;
   };
-  cpu: { userMicros: number; systemMicros: number; percent: number };
+  // #1235: percent is machine-relative (100 = every core saturated).
+  // cores records the divisor so a snapshot stays interpretable.
+  cpu: { userMicros: number; systemMicros: number; percent: number; cores?: number };
   eventLoopLagMs: number;
   uptimeSeconds: number;
   kvConnectivity?: { status: string; latencyMs?: number; error?: string };
