@@ -38,11 +38,21 @@ export function registerHealthMonitor(
 
     let workers: HealthSnapshot["workers"] = [];
     try {
+      type EngineWorker = HealthSnapshot["workers"][number] & {
+        functions?: unknown[];
+      };
       const result = await sdk.trigger<
         unknown,
-        { workers?: HealthSnapshot["workers"] }
+        { workers?: EngineWorker[] }
       >({ function_id: "engine::workers::list", payload: {} });
-      if (result?.workers) workers = result.workers;
+      // The engine lists every registered function id per worker (~265
+      // names). Health consumers need the count, not the list — keep the
+      // snapshot small (it is stored every 30s and returned by api::health).
+      if (result?.workers)
+        workers = result.workers.map(({ functions, ...rest }) => ({
+          ...rest,
+          functionCount: functions?.length ?? 0,
+        })) as HealthSnapshot["workers"];
     } catch {}
 
     const KV_PROBE_TIMEOUT = 5000;

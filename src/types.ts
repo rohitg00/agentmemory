@@ -217,6 +217,16 @@ export interface FunctionMetrics {
   failureCount: number;
   avgLatencyMs: number;
   avgQualityScore: number;
+  /** Epoch ms of the most recent failure — lets consumers distinguish a
+   *  live problem from a cumulative counter polluted by long-fixed bugs. */
+  lastFailureAt?: number;
+  /** Ring buffer of recent call outcomes (not exposed by getAll; health
+   *  derives recentFailureRate from it). */
+  recentCalls?: Array<{ t: number; ok: boolean }>;
+  /** Computed in getAll: calls inside the recent window. */
+  recentCallCount?: number;
+  /** Computed in getAll: failure rate over the recent window (0-1). */
+  recentFailureRate?: number;
 }
 
 export interface HealthSnapshot {
