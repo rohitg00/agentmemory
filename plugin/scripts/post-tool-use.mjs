@@ -30,6 +30,22 @@ function hookCwd(data) {
 	const projectDir = process.env["DEVIN_PROJECT_DIR"] || process.env["CLAUDE_PROJECT_DIR"];
 	if (projectDir && projectDir.trim()) return projectDir;
 }
+async function postWithRetry(url, headers, body, attemptMs = 400) {
+	for (let attempt = 0; attempt < 2; attempt++) {
+		if (attempt) await new Promise((r) => setTimeout(r, 100));
+		try {
+			if ((await fetch(url, {
+				method: "POST",
+				headers,
+				body,
+				signal: AbortSignal.timeout(attemptMs)
+			})).ok) return;
+		} catch (err) {
+			const name = err?.name;
+			if (name === "TimeoutError" || name === "AbortError") return;
+		}
+	}
+}
 //#endregion
 //#region src/hooks/post-tool-use.ts
 function isSdkChildContext(payload) {
@@ -60,25 +76,20 @@ async function main() {
 	const toolInput = data.tool_input ?? data.toolArgs;
 	const { imageData, cleanOutput } = extractImageData(toolOutput(data));
 	const cwd = hookCwd(data) || process.cwd();
-	fetch(`${REST_URL}/agentmemory/observe`, {
-		method: "POST",
-		headers: authHeaders(),
-		body: JSON.stringify({
-			hookType: "post_tool_use",
-			sessionId,
-			project: resolveProject(cwd),
-			cwd,
-			timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-			data: {
-				tool_name: toolName,
-				tool_input: toolInput,
-				tool_output: truncate(cleanOutput, 8e3),
-				...imageData ? { image_data: imageData } : {}
-			}
-		}),
-		signal: AbortSignal.timeout(3e3)
-	}).catch(() => {});
-	setTimeout(() => process.exit(0), 500).unref();
+	postWithRetry(`${REST_URL}/agentmemory/observe`, authHeaders(), JSON.stringify({
+		hookType: "post_tool_use",
+		sessionId,
+		project: resolveProject(cwd),
+		cwd,
+		timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+		data: {
+			tool_name: toolName,
+			tool_input: toolInput,
+			tool_output: truncate(cleanOutput, 8e3),
+			...imageData ? { image_data: imageData } : {}
+		}
+	}));
+	setTimeout(() => process.exit(0), 1e3).unref();
 }
 function toolOutput(data) {
 	if (data.tool_response !== void 0) return data.tool_response;
