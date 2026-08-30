@@ -372,4 +372,97 @@ describe("TemporalGraph", () => {
     expect(result.success).toBe(false);
     expect(result.error).toBe("No observations provided");
   });
+
+  it("caps sourceObservationIds at 20 in parseTemporalGraphXml", async () => {
+    const { parseTemporalGraphXml, GRAPH_MAX_SOURCE_OBSERVATION_IDS } = await import(
+      "../src/functions/temporal-graph.js"
+    );
+    expect(GRAPH_MAX_SOURCE_OBSERVATION_IDS).toBe(20);
+
+    const xml = `<temporal_graph>
+  <entities>
+    <entity type="person" name="Alice">
+      <property key="role">engineer</property>
+    </entity>
+    <entity type="organization" name="Acme Corp">
+      <property key="industry">tech</property>
+    </entity>
+  </entities>
+  <relationships>
+    <relationship type="works_at" source="Alice" target="Acme Corp" weight="0.9" valid_from="2024-01-01" valid_to="current">
+      <reasoning>Alice joined Acme Corp</reasoning>
+    </relationship>
+  </relationships>
+</temporal_graph>`;
+
+    const obsIds = Array.from({ length: 25 }, (_, i) => `obs_${i + 1}`);
+    const { nodes, edges } = parseTemporalGraphXml(xml, obsIds);
+
+    expect(nodes.length).toBe(2);
+    expect(nodes[0].sourceObservationIds.length).toBe(20);
+    expect(nodes[0].sourceObservationIds[0]).toBe("obs_6");
+    expect(nodes[0].sourceObservationIds[19]).toBe("obs_25");
+
+    expect(edges.length).toBe(1);
+    expect(edges[0].sourceObservationIds.length).toBe(20);
+    expect(edges[0].sourceObservationIds[0]).toBe("obs_6");
+    expect(edges[0].sourceObservationIds[19]).toBe("obs_25");
+  });
+
+  it("caps sourceObservationIds at 20 on node merge in temporal-graph-extract", async () => {
+    const { registerTemporalGraphFunctions } = await import(
+      "../src/functions/temporal-graph.js"
+    );
+
+    const existingNode: GraphNode = {
+      id: "gn_alice",
+      type: "person",
+      name: "Alice",
+      properties: { role: "engineer" },
+      sourceObservationIds: Array.from({ length: 15 }, (_, i) => `old_obs_${i + 1}`),
+      createdAt: "2024-01-01T00:00:00Z",
+    };
+
+    const response = `<temporal_graph>
+  <entities>
+    <entity type="person" name="Alice">
+      <property key="level">senior</property>
+    </entity>
+  </entities>
+  <relationships></relationships>
+</temporal_graph>`;
+
+    const provider: MemoryProvider = {
+      name: "test",
+      compress: vi.fn().mockResolvedValue(response),
+      summarize: vi.fn().mockResolvedValue(response),
+    };
+
+    const sdk = mockSdk();
+    const kv = mockKV([existingNode]);
+    registerTemporalGraphFunctions(sdk as never, kv as never, provider);
+
+    const newObservations = Array.from({ length: 10 }, (_, i) => ({
+      id: `new_obs_${i + 1}`,
+      title: `Observation ${i + 1}`,
+      narrative: `Narrative ${i + 1}`,
+      concepts: [],
+      files: [],
+      type: "conversation",
+      timestamp: "2024-02-01T00:00:00Z",
+    }));
+
+    const result = (await sdk.trigger("mem::temporal-graph-extract", {
+      observations: newObservations,
+    })) as any;
+
+    expect(result.success).toBe(true);
+
+    const nodes = await kv.list<GraphNode>("mem:graph:nodes");
+    const aliceNode = nodes.find((n) => n.name === "Alice");
+    expect(aliceNode).toBeDefined();
+    expect(aliceNode?.sourceObservationIds.length).toBe(20);
+    expect(aliceNode?.sourceObservationIds[0]).toBe("old_obs_6");
+    expect(aliceNode?.sourceObservationIds[19]).toBe("new_obs_10");
+  });
 });
