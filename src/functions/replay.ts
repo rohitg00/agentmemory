@@ -63,18 +63,11 @@ function rawFromCompressed(obs: CompressedObservation): RawObservation {
   };
 }
 
-// A lesson is a whole sentence, not a clause starting at a trigger word.
-//
-// These patterns used to be applied with `pat.exec(text)` and the MATCH stored
-// as the lesson. Because `\b` matches a trigger token anywhere in a sentence
-// and the match begins there, everything to the left -- the subject, the actor,
-// the condition -- was discarded:
-//
-//   "The watchdog must never restart on ROUTE_MISSING_404."
-//     -> stored as "never restart on ROUTE_MISSING_404."
-//
-// which reads as a blanket prohibition rather than a rule about the watchdog.
-// The trigger is now only used to SELECT a sentence; the whole sentence is kept.
+// A lesson is a whole sentence, not the clause after a trigger word.
+// These patterns were previously applied with `pat.exec(text)` and the MATCH
+// stored, so "The watchdog must never restart on 404." became "never restart
+// on 404." -- a blanket prohibition instead of a rule about the watchdog. The
+// trigger now only SELECTS a sentence; the sentence is kept whole.
 const LESSON_TRIGGER =
   /\b(always|never|don'?t|do not|make sure|remember to|note:|caveat:|warning:|prefer|avoid)\b/i;
 
@@ -83,7 +76,35 @@ const LESSON_TRIGGER =
 const IDENTIFIER_TRIGGER =
   /(?:^|[\w])(?:always|never|don'?t|do not|prefer|avoid)(?=[-_|\]/])/i;
 
-const SENTENCE_SPLIT = /(?<=[.!?])\s+/;
+// Splitting naively on /(?<=[.!?])\s+/ breaks inside abbreviations, which
+// truncates a rule at exactly the point that changes its meaning:
+//   "Never ship to the U.S. without a compliance review."
+//     -> "Never ship to the U.S."   (the condition is gone)
+const ABBREVIATION =
+  /(?:^|[\s(["'])(?:e\.g|i\.e|etc|vs|cf|al|approx|incl|excl|resp|no|fig|ca|mr|mrs|ms|dr|prof|sr|jr|st)\.$/i;
+// An initialism: "U.S.", "I.B.M.", "J. R." -- a trailing single capital + dot.
+const INITIALISM = /(?:^|[\s(["'])(?:[A-Za-z]\.)+$/;
+
+/** Split text into sentences without breaking inside abbreviations. */
+export function splitSentences(text: string): string[] {
+  const parts: string[] = [];
+  const boundary = /[.!?]\s+/g;
+  let start = 0;
+  let m: RegExpExecArray | null;
+  while ((m = boundary.exec(text)) !== null) {
+    const head = text.slice(start, m.index + 1);
+    const rest = text.slice(m.index + m[0].length);
+    // Not a real boundary if this "end" is an abbreviation or an initialism,
+    // or if what follows does not begin a new sentence.
+    if (ABBREVIATION.test(head) || INITIALISM.test(head)) continue;
+    if (!/^[A-Z`"'([\d]/.test(rest)) continue;
+    parts.push(head.trim());
+    start = m.index + m[0].length;
+  }
+  const tail = text.slice(start).trim();
+  if (tail) parts.push(tail);
+  return parts.filter(Boolean);
+}
 
 export const MIN_LESSON_LENGTH = 20;
 export const MAX_LESSON_LENGTH = 220;
@@ -123,7 +144,7 @@ export function isUsableLesson(candidate: string): boolean {
  */
 export function extractLessonCandidates(text: string): string[] {
   const out: string[] = [];
-  for (const raw of text.split(SENTENCE_SPLIT)) {
+  for (const raw of splitSentences(text)) {
     const sentence = raw.replace(/\s+/g, " ").trim();
     if (!LESSON_TRIGGER.test(sentence)) continue;
     if (isUsableLesson(sentence)) out.push(sentence);

@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   extractLessonCandidates,
   isUsableLesson,
+  splitSentences,
   MIN_LESSON_LENGTH,
   MAX_LESSON_LENGTH,
 } from "../src/functions/replay.js";
@@ -157,5 +158,47 @@ describe("the old match-from-trigger behaviour, for contrast", () => {
     const oldOutput = OLD_PATTERN.exec(sentence)![0].trim();
     expect(isUsableLesson(oldOutput)).toBe(false);
     expect(extractLessonCandidates(sentence)).toEqual([sentence]);
+  });
+});
+
+describe("sentence splitting does not break inside abbreviations", () => {
+  it("keeps a condition that follows an initialism", () => {
+    // The whole point of the fix: truncating here would drop the condition and
+    // invert the rule, which is the same failure the trigger-match bug caused.
+    const text = "Never ship to the U.S. without a compliance review.";
+    expect(splitSentences(text)).toEqual([text]);
+    expect(extractLessonCandidates(text)).toEqual([text]);
+  });
+
+  it("does not split on e.g. or i.e.", () => {
+    const text = "Always flush the buffer (e.g. before a fork) or you lose writes.";
+    expect(extractLessonCandidates(text)).toEqual([text]);
+  });
+
+  it("does not split on a title abbreviation", () => {
+    const text = "Do not call Dr. Smith's endpoint directly; use the gateway.";
+    expect(splitSentences(text)).toEqual([text]);
+  });
+
+  it("still splits at real sentence boundaries", () => {
+    expect(
+      splitSentences("The build passed. Never merge without a review. We shipped."),
+    ).toEqual([
+      "The build passed.",
+      "Never merge without a review.",
+      "We shipped.",
+    ]);
+  });
+
+  it("still splits when the next sentence opens with a code identifier", () => {
+    expect(
+      splitSentences("That run failed. `flush()` must always be called first."),
+    ).toEqual(["That run failed.", "`flush()` must always be called first."]);
+  });
+
+  it("handles text with no terminal punctuation at all", () => {
+    expect(splitSentences("never a complete sentence")).toEqual([
+      "never a complete sentence",
+    ]);
   });
 });
