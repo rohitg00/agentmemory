@@ -1,20 +1,48 @@
 import { platform } from "node:os";
 import * as p from "@clack/prompts";
+import pc from "picocolors";
 import type { ConnectAdapter, ConnectOptions, ConnectResult } from "./types.js";
+import { writeGuideline } from "./guidelines.js";
+import { adapter as antigravity } from "./antigravity.js";
+import { adapter as antigravityCli } from "./antigravity-cli.js";
 import { adapter as claudeCode } from "./claude-code.js";
+import { adapter as cline } from "./cline.js";
+import { adapter as copilotCli } from "./copilot-cli.js";
 import { adapter as codex } from "./codex.js";
+import { adapter as continueDev } from "./continue.js";
 import { adapter as cursor } from "./cursor.js";
+import { adapter as devin } from "./devin.js";
+import { adapter as droid } from "./droid.js";
+import { adapter as dsh } from "./dsh.js";
 import { adapter as geminiCli } from "./gemini-cli.js";
 import { adapter as hermes } from "./hermes.js";
+import { adapter as kiro } from "./kiro.js";
 import { adapter as openclaw } from "./openclaw.js";
+import { adapter as opencode } from "./opencode.js";
 import { adapter as openhuman } from "./openhuman.js";
 import { adapter as pi } from "./pi.js";
+import { adapter as qwen } from "./qwen.js";
+import { adapter as warp } from "./warp.js";
+import { adapter as zed } from "./zed.js";
 
 export const ADAPTERS: readonly ConnectAdapter[] = [
   claudeCode,
+  copilotCli,
   codex,
   cursor,
+  devin,
   geminiCli,
+  qwen,
+  antigravity,
+  antigravityCli,
+  kiro,
+  warp,
+  cline,
+  continueDev,
+  zed,
+  droid,
+  dsh,
+  opencode,
   openclaw,
   hermes,
   pi,
@@ -35,6 +63,7 @@ function parseFlags(args: string[]): {
   force: boolean;
   all: boolean;
   withHooks: boolean;
+  guidelines: boolean;
   positional: string[];
 } {
   const positional: string[] = [];
@@ -42,14 +71,16 @@ function parseFlags(args: string[]): {
   let force = false;
   let all = false;
   let withHooks = false;
+  let guidelines = true; // memory-usage guideline is written by default
   for (const a of args) {
     if (a === "--dry-run") dryRun = true;
     else if (a === "--force") force = true;
     else if (a === "--all") all = true;
     else if (a === "--with-hooks") withHooks = true;
+    else if (a === "--no-guidelines") guidelines = false;
     else if (!a.startsWith("-")) positional.push(a);
   }
-  return { dryRun, force, all, withHooks, positional };
+  return { dryRun, force, all, withHooks, guidelines, positional };
 }
 
 export async function runAdapter(
@@ -67,7 +98,33 @@ export async function runAdapter(
     p.log.message(adapter.protocolNote);
   }
   try {
-    return await adapter.install(opts);
+    const result = await adapter.install(opts);
+    // After MCP/hooks are wired, activate memory for hook-less agents by
+    // writing a memory-usage guideline into their native rules file. Best
+    // effort: never fail the connect over the guideline.
+    if (
+      opts.guidelines !== false &&
+      (result.kind === "installed" || result.kind === "already-wired")
+    ) {
+      try {
+        const g = writeGuideline(adapter.name, {
+          cwd: process.cwd(),
+          dryRun: opts.dryRun,
+        });
+        if (g.kind === "written") {
+          p.log.message(
+            `  ${pc.dim("guideline")} ${g.scope} → ${g.path} (memory auto-use)`,
+          );
+        } else if (g.kind === "would-write") {
+          p.log.message(`  ${pc.dim("[dry-run] guideline")} → ${g.path}`);
+        }
+      } catch (gerr) {
+        p.log.warn(
+          `${adapter.displayName}: guideline not written (${gerr instanceof Error ? gerr.message : String(gerr)})`,
+        );
+      }
+    }
+    return result;
   } catch (err) {
     p.log.error(
       `${adapter.displayName}: ${err instanceof Error ? err.message : String(err)}`,
@@ -77,7 +134,11 @@ export async function runAdapter(
 }
 
 export async function runConnect(args: string[]): Promise<void> {
-  if (platform() === "win32") {
+  const { dryRun, force, all, withHooks, guidelines, positional } =
+    parseFlags(args);
+  const allowWindowsAdapter =
+    positional.length === 1 && positional[0]?.toLowerCase() === "copilot-cli";
+  if (platform() === "win32" && !allowWindowsAdapter) {
     p.intro("agentmemory connect");
     p.log.warn(
       "Windows: automated `connect` is not supported yet. See https://github.com/rohitg00/agentmemory#other-agents for manual install steps.",
@@ -86,8 +147,7 @@ export async function runConnect(args: string[]): Promise<void> {
     return;
   }
 
-  const { dryRun, force, all, withHooks, positional } = parseFlags(args);
-  const opts: ConnectOptions = { dryRun, force, withHooks };
+  const opts: ConnectOptions = { dryRun, force, withHooks, guidelines };
 
   p.intro("agentmemory connect");
 
@@ -155,13 +215,13 @@ function summarize(
   const lines = results.map(({ name, result }) => {
     switch (result.kind) {
       case "installed":
-        return `  ✓ ${name}${result.mutatedPath ? ` → ${result.mutatedPath}` : ""}`;
+        return `  ${pc.green("✓")} ${pc.bold(name)}${result.mutatedPath ? ` ${pc.dim("→")} ${pc.cyan(result.mutatedPath)}` : ""}`;
       case "already-wired":
-        return `  ✓ ${name} (already wired)`;
+        return `  ${pc.green("✓")} ${pc.bold(name)} ${pc.dim("(already wired)")}`;
       case "stub":
-        return `  ⚠ ${name} (manual install required: ${result.reason})`;
+        return `  ${pc.yellow("⚠")} ${pc.bold(name)} ${pc.yellow(`(manual install required: ${result.reason})`)}`;
       case "skipped":
-        return `  ✗ ${name} (skipped: ${result.reason})`;
+        return `  ${pc.red("✗")} ${pc.bold(name)} ${pc.dim(`(skipped: ${result.reason})`)}`;
     }
   });
   p.note(lines.join("\n"), "summary");
@@ -172,5 +232,15 @@ function summarize(
       `${stubs.length} agent(s) require manual install — see docs links above.`,
     );
   }
+
+  const wiredAny = results.some(
+    (r) => r.result.kind === "installed" || r.result.kind === "already-wired",
+  );
+  if (wiredAny) {
+    p.log.info(
+      "Next: install agentmemory's 17 skills into the same agent(s) so they know when to call the tools:\n  npx skills add rohitg00/agentmemory -y",
+    );
+  }
+
   p.outro("Restart any wired agent (or open a new session) to pick up agentmemory.");
 }

@@ -1,7 +1,7 @@
 .wrap {
   padding: 96px 0 96px;
-  background: var(--ink);
-  border-top: 1px solid var(--charcoal);
+  background: var(--canvas);
+  border-top: 1px solid var(--hairline);
 }
 .inner {
   max-width: 1100px;
@@ -16,7 +16,7 @@
   font-family: var(--font-mono);
   font-size: 11px;
   letter-spacing: 2.4px;
-  color: var(--ash);
+  color: var(--mute);
   text-transform: uppercase;
   display: flex;
   align-items: center;
@@ -28,41 +28,38 @@
   content: "";
   flex: 0 0 60px;
   height: 1px;
-  background: var(--charcoal);
+  background: var(--hairline);
 }
 .title {
-  font-family: var(--font-display, var(--font-mono));
-  font-size: clamp(40px, 6vw, 64px);
-  letter-spacing: -0.02em;
-  line-height: 1;
-  color: var(--white);
+  font-size: clamp(38px, 5.4vw, 56px);
+  letter-spacing: -0.03em;
+  line-height: 1.02;
+  color: var(--ink);
   text-align: center;
-  text-transform: uppercase;
-  font-weight: 800;
+  font-weight: 400;
   margin: 0;
 }
 .accent {
-  color: var(--gold);
+  color: var(--body);
 }
 .lede {
-  font-family: var(--font-mono);
-  font-size: 13px;
-  letter-spacing: 0.4px;
-  color: var(--steel);
+  font-size: 15px;
+  color: var(--body);
   text-align: center;
   margin: 0 0 8px;
   max-width: 560px;
+  line-height: 1.6;
 }
 .sectionLabel {
   align-self: flex-start;
   font-family: var(--font-mono);
   font-size: 11px;
   letter-spacing: 2.4px;
-  color: var(--gold);
+  color: var(--mute);
   text-transform: uppercase;
   margin-top: 32px;
-  padding-bottom: 4px;
-  border-bottom: 1px solid var(--charcoal);
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--hairline);
   width: 100%;
 }
 
@@ -70,7 +67,7 @@
 .useCases {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 24px;
+  gap: 16px;
   width: 100%;
 }
 .useCaseCard {
@@ -79,22 +76,21 @@
   flex-direction: column;
   gap: 20px;
   padding: 32px 30px 24px;
-  border: 1px solid var(--charcoal);
-  background: var(--iron);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-card);
+  background: var(--canvas-card);
   text-decoration: none;
-  color: var(--white);
-  transition: border-color 0.12s ease, transform 0.12s ease,
-    background 0.12s ease;
+  color: var(--ink);
+  transition: border-color 0.15s ease, background 0.15s ease;
   min-height: 240px;
 }
 .useCaseCard:hover,
 .useCaseCard:focus-visible {
-  border-color: var(--gold);
-  transform: translateY(-2px);
-  background: #16161a;
+  border-color: var(--border-ghost);
+  background: var(--canvas-soft);
 }
 .useCaseCard:focus-visible {
-  outline: 2px solid var(--gold);
+  outline: 2px solid rgba(255, 255, 255, 0.55);
   outline-offset: 2px;
 }
 .useCaseTag {
@@ -103,17 +99,16 @@
   font-family: var(--font-mono);
   font-size: 10px;
   letter-spacing: 1.4px;
-  color: var(--gold);
+  color: var(--body);
   text-transform: uppercase;
-  border: 1px solid var(--gold);
-  padding: 5px 10px;
-  background: rgba(255, 192, 0, 0.06);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-pill);
+  padding: 5px 12px;
 }
 .useCaseQuote {
-  font-family: var(--font-sans, system-ui);
   font-size: 17px;
   line-height: 1.55;
-  color: var(--white);
+  color: var(--ink);
   margin: 0;
   flex: 1;
 }
@@ -122,7 +117,7 @@
 .grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 18px;
+  gap: 16px;
   width: 100%;
 }
 .card {
@@ -131,29 +126,27 @@
   flex-direction: column;
   gap: 16px;
   padding: 24px 22px 20px;
-  border: 1px solid var(--charcoal);
-  background: var(--iron);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-card);
+  background: var(--canvas-card);
   text-decoration: none;
-  color: var(--white);
-  transition: border-color 0.12s ease, transform 0.12s ease,
-    background 0.12s ease;
+  color: var(--ink);
+  transition: border-color 0.15s ease, background 0.15s ease;
   min-height: 200px;
 }
 .card:hover,
 .card:focus-visible {
-  border-color: var(--gold);
-  transform: translateY(-2px);
-  background: #16161a;
+  border-color: var(--border-ghost);
+  background: var(--canvas-soft);
 }
 .card:focus-visible {
-  outline: 2px solid var(--gold);
+  outline: 2px solid rgba(255, 255, 255, 0.55);
   outline-offset: 2px;
 }
 .quoteMark {
-  font-family: var(--font-display, serif);
   font-size: 32px;
   line-height: 0;
-  color: var(--gold);
+  color: var(--mute);
   display: inline;
   margin-right: 4px;
   vertical-align: -4px;
@@ -163,10 +156,9 @@
   vertical-align: -6px;
 }
 .quote {
-  font-family: var(--font-sans, system-ui);
   font-size: 14px;
   line-height: 1.55;
-  color: var(--white);
+  color: var(--body);
   margin: 0;
   flex: 1;
 }
@@ -176,27 +168,24 @@
   justify-content: space-between;
   gap: 12px;
   padding-top: 12px;
-  border-top: 1px solid var(--charcoal);
+  border-top: 1px solid var(--hairline);
 }
 .name {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  letter-spacing: 0.6px;
-  color: var(--white);
-  text-transform: uppercase;
-  font-weight: 700;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink);
 }
 .source {
   font-family: var(--font-mono);
   font-size: 10px;
   letter-spacing: 0.8px;
-  color: var(--ash);
+  color: var(--mute);
   text-transform: uppercase;
-  transition: color 0.12s ease;
+  transition: color 0.15s ease;
 }
 .card:hover .source,
 .useCaseCard:hover .source {
-  color: var(--gold);
+  color: var(--ink);
 }
 
 @media (max-width: 980px) {
@@ -213,9 +202,5 @@
   }
   .wrap {
     padding: 64px 0 64px;
-  }
-  .badge {
-    width: 220px;
-    height: 47px;
   }
 }

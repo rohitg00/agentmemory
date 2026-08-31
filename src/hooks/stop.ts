@@ -31,42 +31,24 @@ async function main() {
     return;
   }
 
+  if (!data || typeof data !== "object") return;
   if (isSdkChildContext(data)) {
     // Do not summarize from inside a Claude Agent SDK child session;
     // would re-enter agent-sdk provider and loop (see sdk-guard.ts).
     return;
   }
 
-  const sessionId = (data.session_id as string) || "unknown";
+  const sessionId = ((data.session_id || data.sessionId || data.conversation_id) as string) || "unknown";
 
-  try {
-    await fetch(`${REST_URL}/agentmemory/summarize`, {
-      method: "POST",
-      headers: authHeaders(),
-      body: JSON.stringify({ sessionId }),
-      signal: AbortSignal.timeout(120000), // Increased from 30s to 120s
-    });
-  } catch {
-    // summarize is best-effort
-  }
+  // session/end already fans out the summary server-side (#1203).
+  fetch(`${REST_URL}/agentmemory/session/end`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({ sessionId }),
+    signal: AbortSignal.timeout(5000),
+  }).catch(() => {});
 
-  // Claude Code fires a separate `SessionEnd` hook that closes the
-  // viewer session lifecycle. Codex does not have a SessionEnd event,
-  // so the only signal we get when a Codex session ends is this Stop
-  // hook (#493). Always best-effort POST /agentmemory/session/end here
-  // so the viewer shows `completed` for Codex sessions; for Claude Code
-  // this is a harmless idempotent second call (session-end.mjs runs on
-  // SessionEnd and sets the same fields).
-  try {
-    await fetch(`${REST_URL}/agentmemory/session/end`, {
-      method: "POST",
-      headers: authHeaders(),
-      body: JSON.stringify({ sessionId }),
-      signal: AbortSignal.timeout(5000),
-    });
-  } catch {
-    // session/end is best-effort
-  }
+  setTimeout(() => process.exit(0), 1500).unref();
 }
 
-main();
+main().catch(() => process.exit(0));

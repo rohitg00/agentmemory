@@ -1,7 +1,7 @@
 .foot {
   padding: 48px 40px 32px;
-  background: var(--abyss);
-  border-top: 1px solid var(--charcoal);
+  background: var(--canvas);
+  border-top: 1px solid var(--hairline);
 }
 .row {
   max-width: 1440px;
@@ -13,10 +13,10 @@
   flex-wrap: wrap;
 }
 .mark {
-  font-size: 20px;
-  font-weight: 900;
-  letter-spacing: -0.01em;
-  text-transform: uppercase;
+  font-size: 18px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  color: var(--ink);
 }
 .links {
   display: flex;
@@ -24,21 +24,19 @@
   flex-wrap: wrap;
 }
 .links a {
-  font-size: 13px;
-  letter-spacing: 0.12px;
-  text-transform: uppercase;
-  color: var(--steel);
+  font-size: 14px;
+  color: var(--body);
 }
 .links a:hover {
-  color: var(--gold);
+  color: var(--ink);
 }
 .fine {
   max-width: 1440px;
   margin: 32px auto 0;
+  font-family: var(--font-mono);
   font-size: 11px;
-  letter-spacing: 0.96px;
-  color: var(--ash);
-  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--mute);
 }
 @media (max-width: 640px) {
   .foot {

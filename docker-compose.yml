@@ -8,14 +8,18 @@ services:
   iii-init:
     image: busybox:1.36
     user: "0:0"
+    environment:
+      AGENTMEMORY_DOCKER_UID: "${AGENTMEMORY_DOCKER_UID:-65532}"
+      AGENTMEMORY_DOCKER_GID: "${AGENTMEMORY_DOCKER_GID:-65532}"
+      AGENTMEMORY_DOCKER_SKIP_CHOWN: "${AGENTMEMORY_DOCKER_SKIP_CHOWN:-0}"
     volumes:
-      - iii-data:/data
-    entrypoint: ["sh", "-c", "chown -R 65532:65532 /data && chmod 755 /data"]
+      - "${AGENTMEMORY_DATA_DIR:-iii-data}:/data"
+    entrypoint: ["sh", "-c", "if [ \"$${AGENTMEMORY_DOCKER_SKIP_CHOWN}\" = \"1\" ]; then exit 0; fi; chown -R $${AGENTMEMORY_DOCKER_UID}:$${AGENTMEMORY_DOCKER_GID} /data && chmod 755 /data"]
     restart: "no"
 
   iii-engine:
     # Pinned to v0.11.2 — the last engine that runs agentmemory's current
-    # worker model cleanly. v0.11.6 introduces a new sandbox-everything-
+    # direct-registration worker cleanly. v0.11.6 introduces a new sandbox-everything-
     # via-`iii worker add` model that agentmemory hasn't been refactored
     # for yet; the architectural mismatch surfaces as EPIPE reconnect
     # loops and empty search after save. Bump only after agentmemory is
@@ -24,17 +28,22 @@ services:
     # Override per-shell or via .env file:
     #   AGENTMEMORY_III_VERSION=0.11.7 docker compose up
     image: iiidev/iii:${AGENTMEMORY_III_VERSION:-0.11.2}
-    user: "65532:65532"
+    user: "${AGENTMEMORY_DOCKER_UID:-65532}:${AGENTMEMORY_DOCKER_GID:-65532}"
     depends_on:
       iii-init:
         condition: service_completed_successfully
+    environment:
+      III_REST_PORT: "${III_REST_PORT:-3111}"
+      III_STREAM_PORT: "${III_STREAM_PORT:-3112}"
+      III_VIEWER_PORT: "${III_VIEWER_PORT:-3113}"
+      III_ENGINE_PORT: "${III_ENGINE_PORT:-49134}"
     ports:
-      - "127.0.0.1:49134:49134"
-      - "127.0.0.1:3111:3111"
-      - "127.0.0.1:3112:3112"
-      - "127.0.0.1:9464:9464"
+      - "127.0.0.1:${III_ENGINE_PORT:-49134}:${III_ENGINE_PORT:-49134}"
+      - "127.0.0.1:${III_REST_PORT:-3111}:${III_REST_PORT:-3111}"
+      - "127.0.0.1:${III_STREAM_PORT:-3112}:${III_STREAM_PORT:-3112}"
+      - "127.0.0.1:${AGENTMEMORY_METRICS_PORT:-9464}:9464"
     volumes:
-      - iii-data:/data
+      - "${AGENTMEMORY_DATA_DIR:-iii-data}:/data"
       - ./iii-config.docker.yaml:/app/config.yaml:ro
     restart: unless-stopped
     logging:

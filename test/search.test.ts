@@ -101,6 +101,10 @@ describe("mem::search", () => {
 
     // Module-level SearchIndex singleton would leak across tests; reset.
     getSearchIndex().clear();
+    // mem::search awaits a shared rebuild on a cold index; the explicit call
+    // here pre-populates the index deterministically so the query assertions
+    // below never depend on that cold-start path.
+    await rebuildIndex(kv as never);
   });
 
   it("returns full format by default", async () => {

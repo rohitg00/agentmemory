@@ -1,7 +1,12 @@
 import type { Plugin } from "@opencode-ai/plugin";
+import { execFileSync } from "node:child_process";
+import { basename } from "node:path";
 
 const API = process.env.AGENTMEMORY_URL || "http://localhost:3111";
-const FILE_TOOLS = new Set(["Read", "Write", "Edit", "Glob", "Grep"]);
+// OpenCode reports tool names in lowercase ("read", "edit", ...); matching is
+// case-insensitive at the call site so a future casing change cannot silently
+// kill file enrichment again.
+const FILE_TOOLS = new Set(["read", "write", "edit", "glob", "grep"]);
 const FILE_KEYS = ["filePath", "file_path", "path", "file", "pattern"];
 const MAX_STASHED_FILES = 20;
 
@@ -47,11 +52,12 @@ async function observe(
   hookType: string,
   data: Record<string, unknown>,
 ): Promise<void> {
+  const proj = projectFor(sessionId);
   await post("/observe", {
     hookType,
     sessionId,
-    project: projectPath,
-    cwd: projectPath,
+    project: proj.name,
+    cwd: proj.cwd,
     timestamp: new Date().toISOString(),
     data,
   });
@@ -59,11 +65,56 @@ async function observe(
 
 let activeSessionId: string | null = null;
 let pendingConfig: Record<string, unknown> | null = null;
-let projectPath: string | null = null;
+// Default scope resolved at plugin init (same resolution order as the hooks'
+// resolveProject: env override, git toplevel basename, cwd basename). In a
+// long-lived OpenCode process serving multiple directories these defaults are
+// only a fallback — attribution is per-session via sessionProjects, resolved
+// from each session's own directory at session.created. Module-level-only
+// state recorded home-directory sessions under whatever repo loaded first.
+let defaultProjectName: string | null = null;
+let defaultProjectCwd: string | null = null;
+const sessionProjects = new Map<string, { name: string; cwd: string }>();
+
+function projectFor(sessionId: string): { name: string | null; cwd: string | null } {
+  const p = sessionProjects.get(sessionId);
+  return p ?? { name: defaultProjectName, cwd: defaultProjectCwd };
+}
+
+const projectNameCache = new Map<string, string>();
+
+function resolveProjectName(dir: string): string {
+  const explicit = process.env.AGENTMEMORY_PROJECT_NAME?.trim();
+  if (explicit) return explicit;
+  const cached = projectNameCache.get(dir);
+  if (cached !== undefined) return cached;
+  try {
+    const top = execFileSync("git", ["rev-parse", "--show-toplevel"], {
+      cwd: dir,
+      stdio: ["ignore", "pipe", "ignore"],
+      encoding: "utf8",
+    }).trim();
+    if (top) {
+      const name = basename(top);
+      projectNameCache.set(dir, name);
+      return name;
+    }
+  } catch {
+    // not a git repo, fall through
+  }
+  const fallback = basename(dir) || dir;
+  projectNameCache.set(dir, fallback);
+  return fallback;
+}
 const stashedFiles = new Map<string, Set<string>>();
 const seenSubtaskIds = new Map<string, Set<string>>();
 const seenToolCallIds = new Map<string, Set<string>>();
 const contextInjectedSessions = new Set<string>();
+// cache the context returned by POST /session/start so the chat
+// system-transform hook can inject it without a second /context fetch.
+// Auto-injection now happens at session.created (immediately) AND at
+// the first prompt_submit (fallback for older OpenCode builds that
+// don't implement experimental.chat.system.transform).
+const startContextCache = new Map<string, string>();
 
 function stashFor(sid: string): Set<string> {
   let s = stashedFiles.get(sid);
@@ -87,6 +138,7 @@ function pruneSessionMaps(sid: string): void {
   stashedFiles.delete(sid);
   seenSubtaskIds.delete(sid);
   seenToolCallIds.delete(sid);
+  sessionProjects.delete(sid);
 }
 
 function safeSlice(v: unknown, max: number): string {
@@ -162,7 +214,8 @@ function extractErrorMessage(err: unknown): string {
 }
 
 export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
-  projectPath = ctx.worktree || ctx.project?.id || process.cwd();
+  defaultProjectCwd = ctx.worktree || ctx.project?.id || process.cwd();
+  defaultProjectName = resolveProjectName(defaultProjectCwd);
 
   return {
     event: async ({ event }) => {
@@ -178,16 +231,41 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
         seenSubtaskIds.delete(activeSessionId);
         seenToolCallIds.delete(activeSessionId);
         contextInjectedSessions.delete(activeSessionId);
-        await post("/session/start", {
-          sessionId: activeSessionId,
+        // Snapshot the session id locally — `activeSessionId` is mutable
+        // and another `session.created` event during the await could
+        // rebind it, causing context to be cached against the wrong key.
+        const sessionId = activeSessionId;
+        // Attribute this session to its own directory when the event
+        // carries one; a multi-directory OpenCode process otherwise
+        // records every session under whichever repo loaded the plugin.
+        const sessionDir =
+          typeof info?.directory === "string" && info.directory
+            ? info.directory
+            : defaultProjectCwd;
+        let proj: { name: string | null; cwd: string | null };
+        if (sessionDir) {
+          const entry = { cwd: sessionDir, name: resolveProjectName(sessionDir) };
+          sessionProjects.set(sessionId, entry);
+          proj = entry;
+        } else {
+          proj = projectFor(sessionId);
+        }
+        const startResult = await postJson("/session/start", {
+          sessionId,
           title: info?.title ?? null,
           parentID: info?.parentID ?? null,
           version: info?.version ?? null,
-          project: projectPath,
-          cwd: projectPath,
+          project: proj.name,
+          cwd: proj.cwd,
         });
-        if (pendingConfig && activeSessionId) {
-          await observe(activeSessionId, "config_loaded", pendingConfig);
+        // cache the context returned at session/start so the
+        // chat.system.transform hook injects it without a second fetch.
+        const startCtx = (startResult as any)?.context;
+        if (typeof startCtx === "string" && startCtx.length > 0) {
+          startContextCache.set(sessionId, startCtx);
+        }
+        if (pendingConfig) {
+          await observe(sessionId, "config_loaded", pendingConfig);
           pendingConfig = null;
         }
       }
@@ -256,9 +334,8 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
         post("/crystals/auto", { olderThanDays: 7 }, 30000);
         post("/consolidate-pipeline", { tier: "all", force: true }, 30000);
         if (sid === activeSessionId) activeSessionId = null;
-        stashedFiles.delete(sid);
-        seenSubtaskIds.delete(sid);
-        seenToolCallIds.delete(sid);
+        pruneSessionMaps(sid);
+        startContextCache.delete(sid);
         contextInjectedSessions.delete(sid);
       }
 
@@ -564,7 +641,7 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
 
     // ── tool.execute.before ──
     "tool.execute.before": async (input, output) => {
-      if (!FILE_TOOLS.has(input.tool)) return;
+      if (!FILE_TOOLS.has(String(input.tool ?? "").toLowerCase())) return;
       const sid = input.sessionID || activeSessionId;
       if (!sid) return;
       const args = output.args as Record<string, unknown> | undefined;
@@ -588,11 +665,19 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
       if (!contextInjectedSessions.has(sid)) {
         if (!Array.isArray(output.system)) return;
         output.system.push(AGENTMEMORY_INSTRUCTIONS);
-        const result = await postJson("/context", {
-          sessionId: sid,
-          project: projectPath,
-        });
-        const ctx = (result as any)?.context;
+        // prefer the context already fetched at session.created;
+        // fall back to a fresh /context call if the cache missed (e.g.
+        // session resumed across plugin reloads).
+        let ctx = startContextCache.get(sid);
+        if (typeof ctx !== "string" || ctx.length === 0) {
+          const result = await postJson("/context", {
+            sessionId: sid,
+            project: projectFor(sid).name,
+          });
+          ctx = (result as any)?.context;
+        } else {
+          startContextCache.delete(sid);
+        }
         if (typeof ctx === "string" && ctx.length > 0) {
           output.system.push(ctx);
         }
@@ -625,7 +710,7 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
 
       const result = await postJson("/context", {
         sessionId: sid,
-        project: projectPath,
+        project: projectFor(sid).name,
       });
       const ctx = (result as any)?.context;
       if (typeof ctx === "string" && ctx.length > 0) {

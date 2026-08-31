@@ -2,6 +2,7 @@
 
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { hookCwd } from "./_project.js";
 
 const exec = promisify(execFile);
 
@@ -45,12 +46,11 @@ async function main() {
     }
   }
 
+  if (!data || typeof data !== "object") data = {};
   if (isSdkChildContext(data)) return;
 
   const cwd =
-    (data.cwd as string) ||
-    process.env["AGENTMEMORY_CWD"] ||
-    process.cwd();
+    hookCwd(data) || process.env["AGENTMEMORY_CWD"] || process.cwd();
   const sessionId =
     (data.session_id as string) ||
     process.env["AGENTMEMORY_SESSION_ID"] ||
@@ -95,4 +95,4 @@ async function main() {
   }
 }
 
-main();
+main().catch(() => process.exit(0));

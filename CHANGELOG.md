@@ -4,46 +4,333 @@ All notable changes to agentmemory will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.9.29] — 2026-08-16
 
-### Fixed
+Release wave in two parts. Recall quality: hybrid ranking reaches the primary recall path, lessons get a real index, every record learns where it came from, the knowledge graph populates keyless, and agent scoping threads through all save paths — plus connector parity for pi and Codex, a new DeepSeek Harness connector, current provider model defaults, and a viewer clarity pass. Foundation: the `.env` file now applies everywhere, imports become searchable, consolidation runs on session stop, twelve MCP-only agents get activated on connect, and every capture surface agrees on what "project" means. No breaking changes; read the upgrade notes for behavior changes you will notice.
 
-- **PostToolUse hook reads `tool_response`, falls back to `tool_output`** ([PR #561](https://github.com/rohitg00/agentmemory/pull/561) by [@faraz152](https://github.com/faraz152), closes [#539](https://github.com/rohitg00/agentmemory/issues/539)). Claude Code's PostToolUse payload sends the field as `tool_response`, not `tool_output`. The hook was reading the wrong field, so `cleanOutput` was always `undefined`, `mem::compress` consistently failed its XML schema validation (requires `narrative >= 10` chars), and observations from every real Claude Code tool call were dropped. Now reads `tool_response ?? tool_output` so older integrations that emit the legacy field name keep working.
+### Upgrade notes
 
-- **iii-sdk pinned to exact `0.11.2`** ([PR #567](https://github.com/rohitg00/agentmemory/pull/567), closes [#555](https://github.com/rohitg00/agentmemory/issues/555)). `iii-sdk@0.11.6` introduced a routing regression — all `/agentmemory/*` routes returned `404` from the iii-engine, even though `0.11.6` satisfied our previous `"^0.11.2"` range. `npm install -g @agentmemory/agentmemory` silently drifted everyone forward after `0.9.21` shipped. Pin removes the caret + also pins `iii-sdk@0.11.2` in `agentmemory setup`'s upgrade flow.
-
-- **OpenAI provider sends explicit `stream: false`** ([PR #526](https://github.com/rohitg00/agentmemory/pull/526) by [@Ptah-CT](https://github.com/Ptah-CT)). Some OpenAI-compatible proxies default to `text/event-stream` when `stream` is absent, which crashes `response.json()` and trips `ResilientProvider`'s circuit breaker, silently disabling LLM-backed compression / summarisation / reflection.
-
-- **Viewer search uses NFKC normalisation for CJK / fullwidth input** ([PR #542](https://github.com/rohitg00/agentmemory/pull/542) by [@kaushalrog](https://github.com/kaushalrog)). Fullwidth characters and ligatures pasted from PDFs were missed by `.includes()`. NFKC normalisation on both sides of the comparison makes search match.
-
-- **Viewer splash shows actual bound viewer port** ([PR #560](https://github.com/rohitg00/agentmemory/pull/560) by [@Tanmay-008](https://github.com/Tanmay-008), closes [#521](https://github.com/rohitg00/agentmemory/issues/521)). `/agentmemory/livez` now returns `viewerPort` + `viewerSkipped`; CLI polls until populated. New fields are additive — existing consumers of `/livez` are unaffected.
-
-- **Viewer tab bar height stable across tab switches** ([PR #325](https://github.com/rohitg00/agentmemory/pull/325) by [@hungtd119](https://github.com/hungtd119), closes [#324](https://github.com/rohitg00/agentmemory/issues/324)). Explicit `height: 48px` on `.tab-bar` prevents scrollbar-induced height shift on tab switch (complements #313's `flex: 0 0 auto`).
-
-- **Graph parser accepts self-closing `<entity .../>` tags** ([PR #494](https://github.com/rohitg00/agentmemory/pull/494) by [@Rex57](https://github.com/Rex57), follow-up regex fix in this release, closes [#492](https://github.com/rohitg00/agentmemory/issues/492)). Real LLM output uses self-closing entity tags for entities without properties; the parser regex required explicit `</entity>` closes and dropped them. Initial fix added an alternation; follow-up made the attribute matcher lazy (`[^>]*?`) so the self-closing branch is reached before the explicit-close branch greedily eats the next entity.
-
-- **Plugin MCP server inherits remote/auth env** ([PR #386](https://github.com/rohitg00/agentmemory/pull/386) by [@LaplaceYoung](https://github.com/LaplaceYoung), closes [#375](https://github.com/rohitg00/agentmemory/issues/375)). `plugin/.mcp.json` now passes `AGENTMEMORY_URL` + `AGENTMEMORY_SECRET` through to the bundled MCP server. Matches the `AGENTMEMORY_MCP_BLOCK` already used by the connect adapters. MCP hosts that expand `${VAR}` (Claude Code, Cursor) inherit shell env; hosts that don't expand (or pass the placeholder literally) still work — the shim now strips literal `${...}` strings and falls back to `http://localhost:3111` (hardening, this release).
-
-- **`@agentmemory/mcp` rejects literal `${VAR}` placeholders** (this release). Defensive guard in `src/mcp/rest-proxy.ts` and `src/mcp/standalone.ts`: any `AGENTMEMORY_URL` / `AGENTMEMORY_SECRET` value of the form `${...}` is treated as unset, so the shim falls back to `http://localhost:3111` instead of trying to fetch from a host literally named `${AGENTMEMORY_URL}`. Future-proofs against MCP hosts that don't expand env-var placeholders.
+- `~/.agentmemory/.env` values that were silently ignored by most modules now take effect on boot. If that file has stale entries from past experiments, review it before upgrading.
+- `agentmemory connect <agent>` now writes a short memory-usage guideline into the agent's native rules file (Cursor, Cline, Continue, Zed, Warp, Kiro, Gemini CLI, Qwen, OpenCode, Droid, Copilot CLI, Antigravity) so MCP-only agents actually call the memory tools. Pass `--no-guidelines` to opt out.
+- Installs with an LLM key now run consolidation and crystallization on session stop (previously they never fired), debounced to once per 5 minutes (`AGENTMEMORY_CONSOLIDATION_COOLDOWN_MS`).
+- Local embeddings re-download once after the `@huggingface/transformers` migration (different model cache directory). Model IDs are unchanged.
 
 ### Added
 
-- **Pluggable benchmark harness with in-house coding-agent corpus** ([PR #562](https://github.com/rohitg00/agentmemory/pull/562)). New `eval/` directory: 15 fictional coding-agent sessions + 15 hand-graded queries (single-session, multi-session, preference, temporal) plus three adapters (grep, OpenAI embeddings + cosine, agentmemory hybrid). LongMemEval support via `eval/runner/longmemeval.ts`. Sandboxed agentmemory + iii-engine on alt ports via `eval/scripts/sandbox.sh`. No runtime impact on the package — `eval/` is dev-only.
+- **Two new skills (15 → 17).** `memory-discipline` (reference) codifies the session loop the memory model expects: recall before nontrivial work, save decisions with their reasons at the moment they settle, route corrections into lessons. `/lesson` (invocable) distills a correction into a confidence-weighted rule via `memory_lesson_save`, echoing the saved rule back for veto.
 
-- **`agentmemory connect codex --with-hooks` opt-in flag** ([PR #564](https://github.com/rohitg00/agentmemory/pull/564), closes [#509](https://github.com/rohitg00/agentmemory/issues/509)). Workaround for [openai/codex#16430](https://github.com/openai/codex/issues/16430), which prevents plugin-local `hooks.json` from dispatching on Codex Desktop. Opt-in flag merges the bundled `hooks.codex.json` into `~/.codex/hooks.json` with absolute paths to the bundled scripts. Idempotent (re-install strips previous entries via the resolved script-path prefix; unrelated user hooks survive). MCP wiring is unchanged.
+- **Devin support.** New `agentmemory connect devin` adapter wires the MCP entry into Devin CLI's user config, and `--with-hooks` installs six native auto-capture hooks (`SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `Stop`, `SessionEnd`) using Devin's lowercase tool matchers — the capitalized Claude Code matchers Devin also loads never match its tool names, so capture looked wired but never fired. A Devin plugin manifest at `plugin/.devin-plugin/plugin.json` registers all 17 skills as `/agentmemory:<skill>` slash commands plus the MCP server. Hook payloads now resolve the project from `DEVIN_PROJECT_DIR`, and session-start context injection answers each host in its own shape (Devin's `hookSpecificOutput.additionalContext`, Cursor's `additional_context`, Claude Code's raw stdout). Verified against Devin CLI 3000.1.23.
 
-- **Cross-platform CI matrix** ([PR #556](https://github.com/rohitg00/agentmemory/pull/556)). Runs tests on Node 20 + 22 with `paths-ignore` for doc-only changes and per-branch concurrency cancellation.
+- **Cursor plugin.** Full Cursor Marketplace plugin (`.cursor-plugin/`): 7 native auto-capture hooks (`sessionStart`, `beforeSubmitPrompt`, `preToolUse`, `postToolUse`, `postToolUseFailure`, `stop`, `sessionEnd`), all 17 skills, and the MCP server, with `AGENTMEMORY_URL` / `AGENTMEMORY_SECRET` declared as dashboard-managed plugin variables. Hook scripts accept Cursor's payload dialect (`conversation_id` session fallback, `workspace_roots` project attribution) without changing Claude Code behavior, and context injection answers each host in its own output shape. Cursor's CLI print mode never dispatches `beforeSubmitPrompt`, so session end backfills user prompts from the session transcript; server-side dedup absorbs the re-post where a live hook already captured the prompt. Verified end to end against Cursor 3.13.25, GUI and `cursor-agent` CLI.
+
+- **Write-time provenance on every record.** Each observation and memory carries an immutable origin block (channel `user` / `agent` / `tool` / `import` / `shared`, detail, capturedAt) stamped at capture, save, and import, and inherited through both compression paths. The base for trust-aware retrieval and ingest screening.
+- **`similarTo` advisory hint on save.** `mem::remember` reports a near-miss similarity match (0.4 to 0.7) back to the caller so agents can spot near-duplicates without the write being blocked.
+- **`AGENTMEMORY_LLM_NOTHINK=1`** (opt-in): asks local reasoning models to skip their hidden thinking pass during graph extraction. Extraction runs faster; relation quality can drop slightly. Default behavior unchanged; documented in `.env.example`.
+- **Keyless graph extraction.** `mem::graph-extract` always runs a deterministic structural pass first: files and concepts on compressed observations become nodes, and co-occurrence within an observation becomes a `related_to` edge. The graph now populates without any LLM key; `GRAPH_EXTRACTION_ENABLED` plus a provider key gates only the LLM pass that layers typed relations (fixes, depends_on, causes) on top. Session end fires extraction unconditionally.
+- **pi extension: capture parity with the Claude Code plugin.** Session registration on start (after the health check populates reachability, so it fires on the first session of a fresh process), prompt capture on submit (deduped in a 5-minute client window against auto-retry re-submissions; stored with user-channel provenance), per-tool observations from `tool_result` (server `inferType` classifies command_run / file_edit / file_read; `AGENTMEMORY_TOOL_OBSERVE=0` opts out), turn capture slices raised 500/4000 → 8000/8000, `memory_save` scoped to the current project instead of the global bucket, session end + one cross-session consolidate run on real quit only (`/new`, `/resume`, `/fork`, reloads excluded; no client-side summarize call — `session/end` already fans out the summary, avoiding the double-summarize the Stop hook had), status checks accept `status: "ok"`, and the status refresh no longer throws a stale-context error when the session is replaced mid-health-check. Live-verified on pi v0.84.2: prompt + turn observations landed and the session closed as `completed` on quit. Codex executes only hooks with a recorded `trusted_hash` and shows its "Hooks need review" approval prompt exclusively in the interactive TUI, so a `codex exec`-only workflow left the freshly installed hooks silently inert. `connect codex --with-hooks` now warns to launch `codex` once and choose "Trust all and continue" (and to re-approve after upgrades, since refreshed paths change the hash). Found by live-testing the documented flow end to end.
+- **`connect pi` actually installs.** The pi adapter was a stub that printed manual copy instructions because `integrations/` never shipped in the npm package. The extension source now ships, and `connect pi` copies it into `~/.pi/agent/extensions/agentmemory/`, which pi auto-discovers — no settings.json edit, `/reload` picks it up live. Idempotent by content compare; `--force` and stale copies refresh with a backup. `integrations/pi` is also a proper pi package now (`pi-package` keyword, `pi.extensions` manifest, peer deps on `@earendil-works/pi-coding-agent` + `typebox`; private, local installs only — `pi install ./integrations/pi` from a checkout), and the extension's type import moved off the renamed upstream package name.
+- **DeepSeek Harness connector.** `agentmemory connect dsh` appends an `@deepseek-ai/dsh-mcp-client` row to the home-level `$DSH_HOME/cordis.patch.yml`, the machine-local patch layer every Harness profile loads. `--with-hooks` adds full auto-capture: the bundled Claude Code hook scripts run through Harness's first-party `@deepseek-ai/dsh-hooks-claude-code` bridge (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, Stop) via a manifest written to `$DSH_HOME/agentmemory.hooks.json` with absolute script paths. Idempotent, `--force` replaces the rows, honors `DSH_HOME`.
+- **Viewer clarity pass.** Two-pane session explorer (list beside a sticky detail panel on wide screens), dashboard stat cards that navigate to their tabs, memory and lesson rows that expand to the full stored record with raw JSON and origin provenance, type-clustered graph layout with label collision avoidance when relations are sparse, health notes translated from machine slugs into sentences, honest zero states for consolidation and graph, and the official icon as the favicon.
+- `--data-dir` flag and `AGENTMEMORY_DATA_DIR` so iii-engine state lives outside repositories, with gated legacy `./data` adoption and Docker-volume preservation (#314)
+- Native hooks adapter for Droid via `~/.factory/hooks.json`, reusing the bundled hook scripts (#1130)
+- Native hooks adapter for Antigravity CLI (agy) via a stdin bridge that normalizes agy's hook payloads onto the bundled hook scripts, with an explicit PreToolUse allow decision (#1146, thanks @berthojoris)
+- `mem::graph::import-graphify` and `POST /agentmemory/graph/import-graphify`: merge graphify's `graph.json` into the knowledge graph with confidence tags carried over as edge weights (#1136)
+- Connector guideline activation for twelve hook-less agents, with every rules-file path verified against the agent's official documentation (#1136)
+- Honest `memory_forget` reporting plus a real lesson delete path (`mem::lesson-delete`, `DELETE`-style REST route, MCP tool) (#1132)
+- `AGENTMEMORY_PROJECT_NAME` override in the OpenCode plugin (#1125)
+- Provider fetches retry 429/503 honoring `Retry-After` under a total-elapsed budget capped below the iii invocation timeout (#1136)
+
+### Changed
+
+- **Provider default models bumped to current generations.** OpenAI `gpt-4o-mini` → `gpt-5.6-luna`, Anthropic `claude-sonnet-4-20250514` (deprecated upstream, retires 2026-06-15) → `claude-sonnet-5`, Gemini `gemini-2.5-flash` → `gemini-3.7-flash` (current stable Flash), MiniMax `MiniMax-M2.7` → `MiniMax-M3`, OpenRouter `anthropic/claude-sonnet-4-20250514` → `anthropic/claude-sonnet-5`. The premium-model cost warning now also matches OpenAI's Sol flagship tier, and its cheap-alternative hint leads with `deepseek/deepseek-v4-flash-0731`. Explicit `*_MODEL` env overrides are unaffected. Embedding defaults are unchanged (`text-embedding-3-small`, `gemini-embedding-001`, local MiniLM are all current). README local-model picks refreshed to the Qwen 3 / gpt-oss / DeepSeek R1 generation.
+- Local embeddings migrate from `@xenova/transformers` to `@huggingface/transformers` v4 with Node 22+ support; CI now tests Node 20, 22, 24, and 26 (#479, #1096)
+
+### Fixed
+
+- **MCP protocol version negotiation.** The standalone MCP server hardcoded `protocolVersion: "2024-11-05"` and ignored the client's requested version, so hosts that drop that revision disconnected with `-32000` ([#908](https://github.com/rohitg00/agentmemory/issues/908)). `initialize` now echoes any supported revision (`2025-11-25`, `2025-06-18`, `2025-03-26`, `2024-11-05`) and answers with the latest supported otherwise.
+
+- **Hybrid ranking on the primary recall path.** `mem::search` (behind `memory_recall`) now ranks through the full BM25 + vector + graph fusion when the vector index is populated; it was keyword-only while only smart-search got hybrid ranking. Fusion weights normalize per item over the streams that actually ranked it, with an explicit cross-stream agreement bonus, replacing the every-enabled-stream denominator that permanently penalized single-stream hits. Result order is deterministic (score, best rank, id).
+- **Indexed lesson recall.** Lessons get a dedicated in-memory BM25 index built lazily from one KV list and maintained incrementally on save, delete, and decay; recall previously listed and substring-scanned the whole corpus per query. A record cache beside the index takes recall to zero KV round-trips.
+- **Superseded versions leave recall.** Superseded memory versions are removed from the BM25 and vector indexes; the version chain stays in KV for history, but recall no longer returns an outdated fact as if current. `mem::remember` also finds supersession candidates through the search index (top 50) instead of walking every memory per save, with a full-scan fallback while the index is cold.
+- **`agentId` threads through every save path** ([#1159](https://github.com/rohitg00/agentmemory/issues/1159), [#1160](https://github.com/rohitg00/agentmemory/issues/1160), [#1197](https://github.com/rohitg00/agentmemory/issues/1197)). REST `/agentmemory/remember` forwards `agentId` instead of dropping it; `memoryToObservation()` carries the memory's `agentId` into the search-index shape so saved memories are visible to agent-scoped search; the MCP `memory_save` schema exposes `agentId` and the standalone stdio package forwards both `agentId` and `project`.
+- **Per-session project attribution in the OpenCode plugin** ([#1188](https://github.com/rohitg00/agentmemory/issues/1188)). Project and cwd resolve from each session's own directory at `session.created` (pruned on session end) instead of module-level state that filed every session in a multi-directory OpenCode process under whichever repo loaded the plugin first.
+- **Prompt dedup no longer swallows prompts** ([#1173](https://github.com/rohitg00/agentmemory/issues/1173)). Hooks hash the payload when `tool_input` is absent, so prompt_submit, notification, and lifecycle events dedup on content instead of collapsing onto one shared key that silently dropped every prompt after the first in a TTL window.
+- **Stop hook no longer summarizes twice** ([#1203](https://github.com/rohitg00/agentmemory/issues/1203)). The direct `/agentmemory/summarize` POST is gone; `/session/end` already fans out `event::session::stopped`, which runs `mem::summarize`.
+- **Safe Docker-mode stop** ([#1151](https://github.com/rohitg00/agentmemory/issues/1151)). The CLI refuses to adopt or signal Docker/VM port holders (com.docker.backend, vpnkit, colima) as the native engine unless `--force`; Docker-mode teardown is scoped to agentmemory's own compose services instead of an unscoped `down`; the native worker is reaped before Docker teardown instead of deleting `worker.pid` with the process still running.
+- **Viewer live stream and freshness.** The stream WebSocket target resolves from `/agentmemory/livez` (new `streamsPort` field) instead of viewerPort-1 arithmetic, which pointed at the wrong server whenever the viewer bound a fallback port and silently degraded live updates to polling. Tab data refetches on entry (with a freshness gate), so a memory saved by the agent appears without a hard reload.
+- **Hermetic tests** ([#1178](https://github.com/rohitg00/agentmemory/issues/1178)). HOME/USERPROFILE are isolated for the whole vitest run so suites stop reading the developer's real `~/.agentmemory/.env`.
+- Boot hydrates `~/.agentmemory/.env` into `process.env`, closing the class of "env var in .env is ignored" bugs (#1136)
+- Imported and replayed observations are indexed into BM25 and the vector index, so imports are searchable (#1072, via #1136)
+- Snapshot timer actually runs, non-positive intervals clamp to the default, and snapshot creation is serialized across timer, REST, and MCP (#1006, via #1136)
+- CJK-aware dedup with NFC normalization and an exact-match fallback for short memories (#1021, via #1136)
+- OpenRouter embeddings no longer hardcode 1536 dimensions (#1002, via #1136)
+- Viewer decodes multibyte request bodies correctly (#930, via #1136)
+- Session-stop consolidation is debounced and no longer double-fires from the client hook; eviction recovery is bounded to one consolidation pass (#1087, #1131 class, via #1136)
+- `/agentmemory/sessions` no longer deadlocks on large session counts (#1100, via #1136)
+- Filesystem watcher validates roots before `fs.watch`, fixing Node 24/26 on Linux (#1136)
+- `GET /agentmemory/export` and `/agentmemory/mesh/export` refuse an over-frame response instead of shipping it: a payload past the engine 16 MiB transport frame used to drop the worker and 404 every endpoint for ~1s. They now fail that one request (413 for mesh, an `oversized` error for export) with a hint to narrow the range, keeping the daemon up (#1142, #890). Full pagination of the non-session collections is a follow-up.
+- Claude bridge writes `MEMORY.md` under the `memory/` subdirectory Claude Code actually reads (#1134)
+- Hook project-resolution tests no longer depend on the checkout directory name (#1137, #1138)
+- Project-scope parity: the OpenCode plugin, Hermes plugin, Pi extension, and JSONL replay now resolve `project` the same way the hooks do (env override, git toplevel basename, cwd basename) instead of sending raw filesystem paths, so the same repository shares one memory bucket across agents (#903, #1135); the filesystem watcher accepts `AGENTMEMORY_PROJECT_NAME` with the old `AGENTMEMORY_PROJECT` kept as a deprecated alias; replay handles Windows-recorded paths
+- OpenCode file enrichment matches the agent's lowercase tool names, which the previous capitalized set never did
+- Viewer surfaces health status from non-2xx health responses (#1046)
+- Documented REST endpoint count matches the registered routes again (130)
+
+## [0.9.28] — 2026-07-19
+
+Patch release: hardens the hook runner against malformed payloads and closes a cross-agent context leak. No breaking changes; drop-in upgrade.
+
+### Security
+
+- **Cross-agent memory leak via `POST /agentmemory/context`** ([#1057](https://github.com/rohitg00/agentmemory/issues/1057)). `mem::context` and its `api::context` handler filtered candidate sessions by `project` only, so under `AGENTMEMORY_AGENT_SCOPE=isolated` one profile could receive another profile's session observations and summaries whenever they shared a project path — while `/search` and `/smart-search` already filtered correctly. `mem::context` now applies the same agent-scope filter as `mem::search` ([#817](https://github.com/rohitg00/agentmemory/issues/817)): explicit `agentId` pins, wildcard `agentId: "*"` bypasses, isolated mode falls back to env `AGENT_ID`, and the call fails closed if isolated mode is on with no resolvable agent id. All three callers (`api::context`, `api::session::start`, `event::session::started`) now forward `agentId`.
+
+### Fixed
+
+- **Hooks crashed with exit code 1 on a `null` JSON payload** ([#1047](https://github.com/rohitg00/agentmemory/issues/1047)). `JSON.parse("null")` returns `null` without throwing, so the existing parse guard passed it through and the first `data.session_id` access threw a `TypeError`. Because each hook called `main()` bare, that became an unhandled rejection and the host CLI (Codex CLI, Claude Code) reported "hook exited with code 1" on every affected tool call. All 13 hook entrypoints now guard `if (!data || typeof data !== "object")` before dereferencing, and wrap the top-level `main()` in `.catch()` so any hook error fails closed (silent exit 0) instead of surfacing to the host tool loop.
 
 ### Docs
 
-- **README "Config File" section + Windows path + Claude subscription opt-in example** ([PR #321](https://github.com/rohitg00/agentmemory/pull/321) by [@aqilaziz](https://github.com/aqilaziz), closes [#293](https://github.com/rohitg00/agentmemory/issues/293)).
+- Refreshed stale stats in README and AGENTS.md (AGENTS test count 950+ → 1,428+, iii-function count 50+ → 260+) plus the README source-file, LOC, function, and KV-scope counts, and regenerated the website meta snapshot for 0.9.28. Removed the rate-limited star-history chart from the README and all 11 translations.
 
-- **README sudo install hint for `EACCES` on system Node** ([PR #454](https://github.com/rohitg00/agentmemory/pull/454) by [@kedar-1](https://github.com/kedar-1)).
+## [0.9.27] — 2026-06-07
+
+Wave release closing several breaking regressions reported against v0.9.26, plus an agent-scope isolation security fix, an iii version-pin audit fix, and a benchmark scorecard correction. No breaking changes; drop-in upgrade.
+
+### Security
+
+- **`AGENTMEMORY_AGENT_SCOPE=isolated` not enforced on `mem::search` / `POST /agentmemory/search` / `memory_recall` / `recall_context`** ([#817](https://github.com/rohitg00/agentmemory/issues/817)). PR #654's isolation work covered smart-search, `/memories`, `/observations`, and `/sessions` but missed the BM25-only recall path. An isolated worker booted with `AGENT_ID=B` could read agent A's memories via the standard MCP `memory_recall` tool. `mem::search` now applies the same filter as smart-search (wildcard `agentId: "*"` bypasses, explicit `agentId` pins, isolated mode falls back to env `AGENT_ID`). `recall_context` prompt also filters its kv.list memory feed by active agent. Fail-closed: if isolated mode is on and no agent id resolves from any source, the call throws rather than dropping the filter.
+
+### Fixed
+
+- **`/graph/query` and `/graph/stats` timed out with `"Invocation stopped"` on large existing corpora** ([#814](https://github.com/rohitg00/agentmemory/issues/814), [PR #816](https://github.com/rohitg00/agentmemory/pull/816)). The v0.9.25 fix from #753 paginated the response but the unbounded `kv.list<GraphNode>` + `kv.list<GraphEdge>` pair still ran on every call. At 75K+ nodes the response payload exceeded the iii heartbeat budget and the worker was declared dead before the new wall-clock timer could fire. Refactored `mem::graph-extract` to maintain three side-indexes (`graphNameIndex`, `graphEdgeKey`, `graphNodeDegree`) so every extract path is O(1), never O(n). The hot path now reads exclusively from a precomputed top-degree snapshot updated inline on every extract. Same `kv.list` bottleneck was also blocking `mem::graph-extract` on every observation capture, so the fix immediately speeds up the observation pipeline too.
+- **All data lost on `agentmemory stop` followed by restart** ([#843](https://github.com/rohitg00/agentmemory/issues/843)). `runStop()` killed the iii engine first, then the worker. The worker's shutdown handler flushes BM25/vector snapshots and audit rows via `indexPersistence.save() -> kv.set() -> state::set`, which all routed through an iii engine that was already dead. Stop order inverted: worker first with a bumped 5s SIGTERM grace (gives a large index a real chance to commit), engine second. The "Memories persisted to disk" message now reflects actual disk state.
+- **`mem::graph-snapshot-rebuild` and `mem::graph-reset` heartbeat-crashed on legacy >25K-node corpora** ([#825](https://github.com/rohitg00/agentmemory/issues/825)). Both endpoints called `kv.list` up front. At 75K nodes the response payload blocks the event loop in `JSON.parse` and the iii heartbeat starves before any wall-clock budget timer can fire. `mem::graph-snapshot-rebuild` now refuses pre-flight when no prior snapshot exists, returning `{ legacyCorpus: true }` with operator guidance unless an explicit `force: true` flag is set. `mem::graph-reset` no longer enumerates anything: it writes an empty snapshot stamped with `resetAt` and returns. Legacy rows stay as on-disk orphans but post-reset `mem::graph-extract` calls compare each name-index hit's `createdAt` against `resetAt`, so older rows are treated as not-found and a fresh node is written instead of silently reconnecting to a pre-reset orphan.
+- **Multi-instance port collisions on one host** ([#750](https://github.com/rohitg00/agentmemory/issues/750), [PR #815](https://github.com/rohitg00/agentmemory/pull/815)). `--port N` only relocated REST + viewer; streams (3112) and iii engine (49134) stayed hardcoded so a second daemon collided on those WS ports regardless of `--port`. `loadConfig()` now derives streams = REST+1 and engine = REST+46023 (so the canonical 3111 → 3112/49134 default is unchanged, and `--port 3211` → 3212/49234). New `--instance N` shortcut picks a 100-port block: `--instance 1` → 3211/3212/3213/49234. Per-port env overrides (`III_STREAM_PORT`, `III_ENGINE_PORT`, `III_ENGINE_URL`) still win.
+- **iii console install pulled latest engine instead of the pinned v0.11.2** (audit). `III_CONSOLE_INSTALL_CMD` ran `curl -fsSL https://install.iii.dev/iii/main/install.sh | sh` with no version pin. A fresh first-run prompt could install a console build that talks a different protocol than the engine agentmemory pins. The install script reads a `VERSION` env var (`engine_version="${VERSION:-}"` in install.sh), so the command now passes `VERSION=${IIPINNED_VERSION}`. Render path is platform-aware too: Windows users get a PowerShell-friendly hint instead of a POSIX command they can't run. Mismatch error text updated from "reinstall the latest binary" to reference the pinned version explicitly.
+
+### Docs
+
+- **Corrected coding-agent-life-v1 P@5 numbers in the published scorecard** ([#796](https://github.com/rohitg00/agentmemory/issues/796), [PR #805](https://github.com/rohitg00/agentmemory/pull/805)). The original scorecard reported P@5 = 0.578 / 0.267, generated before [PR #562](https://github.com/rohitg00/agentmemory/pull/562) changed the P@K denominator from `topK.length` to `k`. On the current formula those numbers are mathematically impossible (math ceiling at K=5 on this corpus is 0.240). Re-scored on v0.9.26: hybrid 0.240 / R@5 1.000, grep 0.227 / R@5 0.967. Reframed lift as recall + temporal not aggregate precision; aggregate P@5 saturates on a small / single-gold corpus and can't differentiate top-tier adapters.
+- **README refresh** ([PR #807](https://github.com/rohitg00/agentmemory/pull/807)). Stats line bumped to 174 files / 1,390+ tests / 258 functions. Corrected hero P@5 numbers. "New in vX.Y.Z" callout block removed since that pattern went stale every release; latest release notes link points at CHANGELOG.md.
+- **`import-jsonl` users warned about Claude Code's `cleanupPeriodDays`.** Default 30-day auto-deletion of `~/.claude/projects/*.jsonl` doesn't affect hook-wired installs (each turn lands in iii state while the session is live), but fresh installs on months-old Claude Code histories silently lost anything older than 30 days. README now flags this with three workarounds: cron the import, raise `cleanupPeriodDays`, or wire hooks.
+
+### Added
+
+- **`POST /agentmemory/graph/snapshot-rebuild`** — pays the full enumeration cost once on corpora ≤ 25K nodes, persists a top-degree subgraph + aggregate counts, refuses with `{ success: false, tooLarge: true, totalNodes, ceiling }` above the safe ceiling instead of killing the worker. Strict `force: true` boolean check bypasses the legacy-corpus pre-flight refusal.
+- **`POST /agentmemory/graph/reset`** — clean-restart escape hatch for legacy corpora. Enumeration-free: writes empty snapshot with `resetAt` epoch marker. Future extracts treat any pre-`resetAt` row as orphan via `createdAt` comparison.
+- **`--instance N` CLI flag** — multi-daemon convenience. Picks a 100-port block off the 3111 base. Max N=50.
+- **`GraphSnapshot.topDegrees`** — synchronous degree lookup keyed by nodeId so re-ranking after edge writes runs sync over numbers instead of async kv.get inside the sort comparator.
+- **`GraphSnapshot.resetAt`** — ISO timestamp set by `mem::graph-reset`. Drives post-reset orphan detection in extract.
+- **`GraphQueryResult.fromSnapshot`** + **`GraphQueryResult.warning`** — response fields the viewer can use to surface "served from cache" or "rebuild needed" banners instead of opaque 500s.
+
+### Changed
+
+- **REST endpoint count: 126 → 128**. `POST /agentmemory/graph/snapshot-rebuild` and `POST /agentmemory/graph/reset` added.
+- **`mem::graph-stats`** now reads exclusively from the snapshot. Returns `{ ..., fromSnapshot, warning }` envelope when snapshot is absent; never returns a 500.
+- **`mem::graph-query` empty-body / nodeType-only path** reads exclusively from the snapshot. `startNodeId` / `query` paths keep the live enumeration behind a 6s budget with snapshot-backed fallback on rejection.
+- **`mem::search` over-fetch** triggers when agentId filtering is active (not just project/cwd). Without it, isolated-mode pages were silently underfilled when same-agent matches ranked below cross-agent ones.
+
+### Known limitations
+
+- `mem::graph-query` BFS (`startNodeId`) and text-search (`query`) paths still call `kv.list` and degrade past ~25K nodes on fresh corpora ([#828](https://github.com/rohitg00/agentmemory/issues/828)). The hot path stays safe (snapshot-only). A per-node adjacency index is the right next fix; deferred to the structured graph migration milestone ([#309](https://github.com/rohitg00/agentmemory/issues/309)).
+- `/agentmemory:forget` skill still calls `memory_governance_delete` which only touches `KV.memories` and never observations ([#833](https://github.com/rohitg00/agentmemory/issues/833)). Skill rewrite + new `memory_forget` MCP tool tracked separately.
+- `crypto.randomUUID()` global-only on Node <19 ([#715](https://github.com/rohitg00/agentmemory/issues/715)). Drop-in import fix tracked.
+
+[0.9.29]: https://github.com/rohitg00/agentmemory/compare/v0.9.28...v0.9.29
+[0.9.28]: https://github.com/rohitg00/agentmemory/compare/v0.9.27...v0.9.28
+[0.9.27]: https://github.com/rohitg00/agentmemory/compare/v0.9.26...v0.9.27
+
+## [0.9.26] — 2026-06-03
+
+Hotfix on top of v0.9.25. The first-run boot crashed for users without a persisted index because the load path didn't handle `undefined` returns from iii-state adapters.
+
+### Fixed
+
+- **First boot crash: `TypeError: Cannot read properties of undefined (reading 'v')`** ([#797](https://github.com/rohitg00/agentmemory/issues/797)). The sharded index load path (`loadShardedData`) checked `manifest.value !== null` before forwarding to `loadManifestData`. Some iii-state adapters return `undefined` (not `null`) for a missing key, so `undefined !== null` was true and `loadManifestData(undefined, ...)` immediately threw on `manifest.v`. Now treats both `null` and `undefined` (plus non-object values) as "no manifest" and falls through to the legacy load path. Self-healing: the next debounced save rebuilds a fresh manifest, so the crash was already cosmetic for ongoing operation — but it scared every fresh upgrader. Tests cover both undefined and wrong-shape manifest rows.
+
+[0.9.26]: https://github.com/rohitg00/agentmemory/compare/v0.9.25...v0.9.26
+
+## [0.9.25] — 2026-06-03
+
+Bug-fix wave closing every breaking regression reported against 0.9.24, plus a feature lane (graph pagination + smart-search followup diagnostic + obsidian-export hardening + sharded index persistence). Eleven issues closed. No breaking changes; drop-in upgrade.
+
+### Fixed
+
+- **Cross-provider fallback always 404'd and tripped the circuit breaker** ([#778](https://github.com/rohitg00/agentmemory/issues/778), [PR #791](https://github.com/rohitg00/agentmemory/pull/791)). `createFallbackProvider` copied the primary provider's `model` into every fallback config. With OpenAI primary + Gemini fallback, Gemini was called with `gpt-4o-mini` and 404'd on every call, tripping the circuit breaker and blocking downstream LLM ops. Each fallback now resolves its own env-driven default (`OPENAI_MODEL` / `GEMINI_MODEL` / `ANTHROPIC_MODEL` / `MINIMAX_MODEL` / `OPENROUTER_MODEL`).
+- **`import-jsonl` aborted entire batch on legacy session row missing `id`** ([#775](https://github.com/rohitg00/agentmemory/issues/775), [PR #791](https://github.com/rohitg00/agentmemory/pull/791)). Existing-session branch re-keyed on `existing.id` which could be undefined for older rows. `JSON.stringify` dropped the key from the `state::set` payload, the engine returned `missing field \`key\``, and the rejection aborted the whole handler. Now re-keys on `parsed.sessionId` and backfills `existing.id`.
+- **`parseSummaryXml` silently dropped summaries wrapped in markdown fences** ([#783](https://github.com/rohitg00/agentmemory/issues/783), [PR #791](https://github.com/rohitg00/agentmemory/pull/791)). DeepSeek / GPT / occasionally Anthropic responses wrap structured XML in ` ```xml ... ``` ` fences with optional conversational text. The raw payload went straight to the tag regex and returned `parse_failed`. New `stripXmlWrappers()` peels markdown fences + pre/postamble; final-merge parse path retries once on failure (matching chunk-level behavior).
+- **`sdk.triggerVoid is not a function` on iii-sdk 0.11.2** ([#758](https://github.com/rohitg00/agentmemory/issues/758), [#726](https://github.com/rohitg00/agentmemory/issues/726), [PR #773](https://github.com/rohitg00/agentmemory/pull/773)). iii-sdk 0.11.2 removed `triggerVoid` in favor of `trigger({ action: TriggerAction.Void() })`. Nine call sites still used the removed API; six ran without try/catch and threw `TypeError`, breaking image lifecycle, disk-quota cleanup, vision embeddings, and observation write paths.
+- **pi integration recorded every observation as "No content provided"** ([#759](https://github.com/rohitg00/agentmemory/issues/759), [PR #772](https://github.com/rohitg00/agentmemory/pull/772)). pi sent `data.input` / `data.output` but `observe.ts` reads `data.tool_input` / `data.tool_output`. Field-name mismatch left `raw.toolInput` / `raw.toolOutput` undefined; the compress pipeline produced empty observations.
+- **Fresh global install refused to boot when PATH iii didn't match the runtime pin** ([#752](https://github.com/rohitg00/agentmemory/issues/752), [PR #774](https://github.com/rohitg00/agentmemory/pull/774)). The hard-pin enforcer told users to overwrite their global iii with v0.11.2, but the v0.11.2 release ships only `iii` (not `iii-init` / `iii-worker`) on some platforms. agentmemory now installs to `~/.agentmemory/bin/` and auto-falls-back to it when PATH iii mismatches the pin. User's existing iii install stays untouched.
+- **`mem::obsidian-export` HTTP 500 `[object Object]` on any record missing `id`** ([#729](https://github.com/rohitg00/agentmemory/issues/729), [PR #780](https://github.com/rohitg00/agentmemory/pull/780)). `sanitize(undefined.id)` threw outside the per-record try and escaped the whole handler. Four-layer hardening: id filter, safe-array / safe-string / safe-timestamp normalizers, outer try/catch, fail-safe session sort.
+- **Concurrent agent-sdk summarize chunks failed with `too_many_chunks_skipped`** ([#781](https://github.com/rohitg00/agentmemory/issues/781), [PR #782](https://github.com/rohitg00/agentmemory/pull/782)). `AGENTMEMORY_SDK_CHILD` recursion guard mutated `process.env` globally; concurrent chunks under `Promise.all` saw the marker and returned empty. Recursion guard now scoped to `AsyncLocalStorage`; the `process.env` marker stays for cross-process hook inheritance, reference-counted so overlapping calls don't race.
+- **Viewer #graph tab blank on large graphs** ([#753](https://github.com/rohitg00/agentmemory/issues/753), [PR #789](https://github.com/rohitg00/agentmemory/pull/789)). `POST /agentmemory/graph/query` with `{}` on an 11k+ node corpus returned HTTP 500 `Invocation stopped`. `graph/query` now accepts `limit` / `offset`, applies a default cap (500) ranked by node degree, restricts page edges to in-page endpoints, and returns `totalNodes` / `totalEdges` / `truncated`. The viewer issues a bounded initial query, distinguishes server-error from empty-corpus, renders an actionable error banner with Retry.
+
+### Added
+
+- **Sharded BM25/vector index persistence with manifest commit/rollback** ([#762](https://github.com/rohitg00/agentmemory/issues/762), [PR #764](https://github.com/rohitg00/agentmemory/pull/764), contributed by [@Rokurolize](https://github.com/Rokurolize)). Large BM25/vector snapshots used to save as monolithic strings and failed past the iii state size ceiling. Each snapshot now writes as bounded shards under a generation-scoped prefix, with a manifest published only after all shards commit. Rollback on shard-write failure, fail-closed on length mismatch, legacy snapshot load preserved for downgrade compat. 957 LOC + 25 tests covering rollback / partial-commit / fail-closed paths.
+- **Smart-search followup-rate diagnostic** ([#771](https://github.com/rohitg00/agentmemory/issues/771), [PR #786](https://github.com/rohitg00/agentmemory/pull/786)). Disambiguates retrieval bugs from reader bugs. When an agent issues a second `smart-search` within `AGENTMEMORY_FOLLOWUP_WINDOW_SECONDS` (default 30s) and the new result set has zero overlap with the prior one, counts as a directional "first results didn't satisfy" signal. OTEL counter `agentmemory.smart_search.followup_within_window_total`, `GET /agentmemory/diagnostics/followup` REST endpoint, `agentmemory status` surface, viewer-source exclusion via `X-Agentmemory-Source: viewer` header.
+
+### Changed
+
+- **Dependency bumps + zero `npm audit` vulnerabilities** ([PR #779](https://github.com/rohitg00/agentmemory/pull/779)). `@anthropic-ai/sdk` 0.93 → 0.100.1, `tsdown` 0.20.3 → 0.21.10 (stays on Node 20 floor), `@types/node` 25.7 → 25.9, website `next` 16.2.6 → 16.2.7 + React 19.2.7. `iii-sdk` stays pinned at 0.11.2. Transitive vulns closed via overrides: `qs ^6.15.2`, `ws ^8.21.0`, `protobufjs ^7.5.8`. `npm audit` root + website: 8 → **0**.
+- **REST endpoint count: 125 → 126** (new `/agentmemory/diagnostics/followup`).
 
 ### Infrastructure
 
-- 98 test files, **1091 tests pass** on `fix/pre-release-hardening`.
-- All MCP env-var consumers go through a single guarded `resolveEnvOrEmpty()` helper.
+- 1379 tests passing (up from 1314 in v0.9.24). 13 new test files covering the regressions + features above.
+- Removed `website/package-lock.json` from git tracking; root `.gitignore` already forbade lockfiles.
+
+[0.9.25]: https://github.com/rohitg00/agentmemory/compare/v0.9.24...v0.9.25
+
+## [0.9.24] — 2026-05-29
+
+Hotfix on top of v0.9.23. Two bugs surfaced in the first hour after v0.9.23 hit npm:
+
+### Fixed
+
+- **`agentmemory --version` silently launched the server instead of printing the version string**. `-v` flag was reserved by `--verbose`, and no `--version` literal was handled — falling through to the default `start` command. Now `--version` (and `-V` capital, per POSIX convention) prints `VERSION` and exits 0 before any side effects (engine boot, dir mkdir, env loading).
+- **iii-engine version pin was warn-only, not enforced**. When the engine on `PATH` didn't match agentmemory's pinned version (currently `v0.11.2`), the worker still booted against the mismatched engine and crashed at runtime with cryptic `state::list not found` (v0.13.0) or sandbox-everything traps (v0.11.6). `warnIfEngineVersionMismatch` renamed to `enforceEngineVersionPin` — now `p.log.error`s with the downgrade command and `process.exit(1)`. Override escape hatch via `AGENTMEMORY_III_VERSION=<version>` env unchanged (already redefines `IIPINNED_VERSION` upstream so the comparison passes for users who knowingly run against a different engine).
+
+[0.9.24]: https://github.com/rohitg00/agentmemory/compare/v0.9.23...v0.9.24
+
+## [0.9.23] — 2026-05-28
+
+Bug-fix + integration wave. GitHub Copilot CLI joins the supported agent matrix with plugin + hooks + MCP coverage. Three silent DX bugs fixed end-to-end: graph extraction never fired on session end, `agentmemory status` reported zero memories, consolidation defaulted off even with an LLM provider configured. Five additional adapters and a clearer local-LLM story for Ollama / LM Studio users. `agentmemory connect` now points users at `npx skills add` for the native-skills install path (50+ agents).
+
+### Added
+
+- **GitHub Copilot CLI** ([PR #534](https://github.com/rohitg00/agentmemory/pull/534)). Full first-class support: `plugin/plugin.json` manifest, `hooks.copilot.json` lifecycle hooks for all 11 Copilot events with camelCase payload normalization, `agentmemory connect copilot-cli` MCP path, first-run onboarding default-select via `COPILOT_CLI` / `COPILOT_AGENT_SESSION_ID` env detection, Windows-safe `cmd.exe /d /s /c npx` wrapper. Standalone MCP transport now speaks LSP-style `Content-Length` framed JSON-RPC alongside the existing newline-delimited form so Copilot's stdio init handshake works.
+- **Five new MCP adapters** ([PR #677](https://github.com/rohitg00/agentmemory/pull/677)). Warp, Cline, Continue, Zed, and Droid. `createJsonMcpAdapter` extended with `wrapperKey` (Zed uses `context_servers` instead of `mcpServers`) and `extraEntryFields` (Droid requires `type: "stdio"`). `ADAPTERS` count: 11 → 17.
+- **`/agentmemory/graph/build` endpoint** ([PR #698](https://github.com/rohitg00/agentmemory/pull/698)). Backfills the knowledge graph from existing compressed observations across every session in configurable batches. Wires up the viewer's "Build Graph" button that previously returned 404.
+- **11 README translations + language picker** ([PR #675](https://github.com/rohitg00/agentmemory/pull/675)). zh-CN, zh-TW, ja-JP, ko-KR, es-ES, pt-BR, fr-FR, de-DE, ru-RU, tr-TR, hi-IN.
+- **`npx skills add` hint in connect output** ([PR #709](https://github.com/rohitg00/agentmemory/pull/709)). After a successful `agentmemory connect <agent>`, the CLI now prints the matching `npx skills add rohitg00/agentmemory -y` command so users get the native-skills install alongside MCP wiring. The [`skills`](https://npmjs.com/package/skills) CLI covers 50+ agents including the 5 added in PR #677. README "Other agents" section gains a dedicated subsection explaining the two-step pattern (`connect` writes MCP config, `skills add` installs the 8 SKILL.md files into the agent's native skill directory).
+
+### Changed
+
+- **Consolidation auto-enables when an LLM provider is configured** ([PR #696](https://github.com/rohitg00/agentmemory/pull/696), closes [#612](https://github.com/rohitg00/agentmemory/discussions/612)). `CONSOLIDATION_ENABLED` defaulted to `false`, so users with a working provider got compression + summarization but zero graph nodes / crystals / lessons. Now defaults `true` whenever any of `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `OPENROUTER_API_KEY` / `GEMINI_API_KEY` / `GOOGLE_API_KEY` / `MINIMAX_API_KEY` / `OPENAI_BASE_URL` is set, or `AGENTMEMORY_PROVIDER=agent-sdk`. Explicit `=false` / `AGENTMEMORY_PROVIDER=noop` still opt out. `OPENAI_API_KEY_FOR_LLM=false` honored (key scoped to embeddings).
+- **Fire-and-forget telemetry hooks** ([PR #688](https://github.com/rohitg00/agentmemory/pull/688), closes [#573](https://github.com/rohitg00/agentmemory/issues/573)). Nine telemetry-only hooks (notification, post-tool-failure, post-tool-use, prompt-submit, stop, session-end, subagent-start, subagent-stop, task-completed) switched to unawaited `fetch(...).catch(() => {})` paired with `setTimeout(() => process.exit(0), 500).unref()` (1500ms for the multi-fetch `stop` + `session-end` hooks). No longer blocks Claude Code's next-prompt boundary on every assistant turn.
+- **Observability defaults tamed** ([PR #686](https://github.com/rohitg00/agentmemory/pull/686), closes [#519](https://github.com/rohitg00/agentmemory/issues/519)). `iii-config.yaml` defaults: `sampling_ratio: 0.1`, `logs_console_output: false`. `findIiiConfig()` precedence reversed so `AGENTMEMORY_III_CONFIG` env > cwd > `~/.agentmemory/iii-config.yaml` > bundled.
+
+### Fixed
+
+- **Graph extraction never fires automatically** ([PR #698](https://github.com/rohitg00/agentmemory/pull/698), closes [#666](https://github.com/rohitg00/agentmemory/issues/666)). `event::session::stopped` listens on `agentmemory.session.stopped` but nothing in the codebase ever published that topic. `api::session::end` now directly calls `sdk.triggerVoid("event::session::stopped", { sessionId })` (try/catch guarded so a fan-out error doesn't fail the HTTP response). Knowledge graphs now materialize automatically when sessions end.
+- **`agentmemory status` shows Memories/Observations = 0** ([PR #698](https://github.com/rohitg00/agentmemory/pull/698), closes [#666](https://github.com/rohitg00/agentmemory/issues/666)). CLI fetched `/agentmemory/export` for counts but that endpoint times out (>5s) on iii-engine's file-based KV under concurrent `kv.list()`. Switched to `/memories?count=true` (count-only, constant-time) + sum of `sessions[].observationCount`.
+- **Hooks send full filesystem path as `project` instead of repo basename** ([PR #687](https://github.com/rohitg00/agentmemory/pull/687), closes [#474](https://github.com/rohitg00/agentmemory/issues/474)). Native sessions, replay-import, and `memory_lesson_save` all use repo basename — the path/basename mismatch silently filtered out the bulk of relevant lessons from auto-injected context. New `resolveProject(cwd?)` helper: `AGENTMEMORY_PROJECT_NAME` env > `git rev-parse --show-toplevel` basename > `basename(cwd)`. Applied to 9 hooks.
+- **Cross-project memory leakage** ([PR #662](https://github.com/rohitg00/agentmemory/pull/662)). Memories created in one project leaking into recall on another. Wildcard guard pattern `(!project || !m.project || m.project === project)` preserves backward-compat for legacy unscoped memories while scoping new ones strictly.
+- **Graph parser tolerates reordered XML attributes** ([PR #685](https://github.com/rohitg00/agentmemory/pull/685), closes [#635](https://github.com/rohitg00/agentmemory/issues/635)). Order-dependent regex replaced with order-independent `parseAttrs` helper. Self-closing trailing-`/` handling preserved.
+- **Defensive null guards on `Memory.sessionIds`** ([PR #684](https://github.com/rohitg00/agentmemory/pull/684)). Older exports + hand-edited dumps can omit this field; now treated as empty array on read.
+- **Vector index Buffer slice metadata round-trip** ([PR #683](https://github.com/rohitg00/agentmemory/pull/683), closes [#587](https://github.com/rohitg00/agentmemory/issues/587), [#584](https://github.com/rohitg00/agentmemory/issues/584)). `byteOffset` + `byteLength` preserved on `Buffer.from` and `Float32Array` construction so base64 round-trips don't corrupt vectors stored as slices.
+- **Slots HTTP triggers return 503 not 500** ([PR #682](https://github.com/rohitg00/agentmemory/pull/682), closes [#678](https://github.com/rohitg00/agentmemory/issues/678)). Feature-flag-disabled responses now use the documented 503 shape with `enableHow` + `docsHref`. `.env` propagation fixed (now reads via `getEnvVar()` not raw `process.env`).
+- **`agentmemory doctor` points to correct iii install URL** ([PR #681](https://github.com/rohitg00/agentmemory/pull/681)).
+- **Separate `OPENAI_EMBEDDING_BASE_URL` + `OPENAI_EMBEDDING_API_KEY`** ([PR #503](https://github.com/rohitg00/agentmemory/pull/503)). Lets users route embeddings and LLM calls to different OpenAI-compatible endpoints (e.g. cloud OpenAI for embeddings + local LM Studio for LLM, or vice versa).
+- **Viewer Memories tab sorts newest first** ([PR #701](https://github.com/rohitg00/agentmemory/pull/701), closes [#674](https://github.com/rohitg00/agentmemory/issues/674)). Memories list rendered in KV-insertion order, hiding just-saved entries at the bottom of long lists. `loadMemories()` now sorts on `createdAt` desc (fallback `updatedAt`) before items reach state — matches the `localeCompare` pattern Sessions / Metrics tabs already use.
+
+### Docs
+
+- **Local-LLM section in README** ([PR #697](https://github.com/rohitg00/agentmemory/pull/697), closes [#671](https://github.com/rohitg00/agentmemory/discussions/671)). Dedicated "Local models (Ollama / LM Studio / vLLM)" subsection with copy-paste configs, model-pick table (qwen2.5-coder:7b, llama3.2:3b, mistral:7b-instruct, deepseek-r1:7b), and reasoning-model empty-content callout. Existing OpenAI-compatible support was buried in a one-line env comment.
+- **Three pipeline layers, not three primitives** ([PR #690](https://github.com/rohitg00/agentmemory/pull/690)). Website + README copy: the three primitives are worker / function / trigger (iii). HOOKS / RECALL / CONSOLIDATE are pipeline layers. Section anchor renamed `#primitives` → `#stack` to match the nav label.
+
+### Infrastructure
+
+- Hook scripts now bundle per-entry instead of sharing chunks, so `plugin/scripts/_project-*.mjs` hashed artifacts no longer churn the diff on every build.
+- `AGENTS.md` "Hook Scripts" section documents the two patterns (context-injecting vs telemetry-only) and the 500ms / 1500ms exit-delay rule for single vs multi-fetch hooks.
+- Test suite: 1271 → 1291 (+20 new tests covering project basename resolver, fire-and-forget wiring, consolidation default behavior, session-end → graph extraction, the graph-build endpoint, and the viewer memories sort).
+
+[0.9.23]: https://github.com/rohitg00/agentmemory/compare/v0.9.22...v0.9.23
+
+## [0.9.22] — 2026-05-26
+
+Stability + ecosystem wave. Three install-broken bugs (`npm install` ERESOLVE, non-OpenAI base URLs, broken Claude bridge path) closed. Six runtime bugs from active users fixed end-to-end. Three new agent integrations (Qwen Code, Antigravity, Kiro). New `AGENT_ID` scope for multi-agent setups. Port mapping documented.
+
+### Fixed
+
+- **`npm install` ERESOLVE on fresh install** ([PR #649](https://github.com/rohitg00/agentmemory/pull/649), closes [#631](https://github.com/rohitg00/agentmemory/issues/631)). `@anthropic-ai/sdk` bumped from `^0.39.0` to `^0.93.0` so `claude-agent-sdk`'s peer is satisfied. Verified clean install with only the published `dependencies` block.
+
+- **Non-OpenAI base URLs silent-404** ([PR #649](https://github.com/rohitg00/agentmemory/pull/649), closes [#646](https://github.com/rohitg00/agentmemory/issues/646), [#628](https://github.com/rohitg00/agentmemory/issues/628)). `buildChatUrl` + `buildEmbeddingUrl` no longer blindly prepend `/v1/`. DeepSeek, SiliconFlow, Zhipu (`/api/paas/v4`), vLLM, LM Studio, Ollama all resolve correctly.
+
+- **`CLAUDE_MEMORY_BRIDGE` writes to a path Claude Code reads** ([PR #649](https://github.com/rohitg00/agentmemory/pull/649), closes [#625](https://github.com/rohitg00/agentmemory/issues/625)). Slug now preserves the leading `-` on POSIX absolute paths and drops the spurious `/memory/` subdir, matching `~/.claude/projects/<slug>/MEMORY.md`.
+
+- **OpenAI provider reads `reasoning_content` for thinking models** ([PR #648](https://github.com/rohitg00/agentmemory/pull/648), closes [#627](https://github.com/rohitg00/agentmemory/issues/627)). DeepSeek V4 / Qwen3 / GLM / Kimi return `message.reasoning_content`. Previously only `message.reasoning` was checked — compress silently failed every call and tripped the circuit breaker.
+
+- **`agentmemory stop` reaps the worker process** ([PR #648](https://github.com/rohitg00/agentmemory/pull/648), closes [#640](https://github.com/rohitg00/agentmemory/issues/640), [#474](https://github.com/rohitg00/agentmemory/issues/474)). Worker pid is written to `~/.agentmemory/worker.pid` on boot; `stop` signals both engine + worker.
+
+- **OpenCode plugin implicit-creates the session on first observation** ([PR #648](https://github.com/rohitg00/agentmemory/pull/648), closes [#638](https://github.com/rohitg00/agentmemory/issues/638)). `mem::observe` creates the session row when one doesn't exist. No more orphan observations or `Session not found for summarize`.
+
+- **OpenCode plugin zero-config auto-context injection** ([PR #648](https://github.com/rohitg00/agentmemory/pull/648), closes [#431](https://github.com/rohitg00/agentmemory/issues/431)). `POST /session/start` context is cached per-session; the existing `experimental.chat.system.transform` hook reads from the cache.
+
+- **Viewer graph settles on 1000+ node graphs** ([PR #648](https://github.com/rohitg00/agentmemory/pull/648), closes [#563](https://github.com/rohitg00/agentmemory/issues/563)). Tick-decayed damping, per-node velocity cap, raf park on quiescence. Mousedown / wheel / zoom / recenter re-wake the parked loop.
+
+- **`/memories` + `/export` paginate** ([PR #648](https://github.com/rohitg00/agentmemory/pull/648), closes [#544](https://github.com/rohitg00/agentmemory/issues/544)). New `?count=true` and `?limit=N&offset=M` on `/memories`. `/export` forwards `?maxSessions` + `?offset`. Stops large corpora (8K+ memories) from timing out at the iii-engine invocation boundary.
+
+- **Claude Code drops the MCP server silently** ([PR #650](https://github.com/rohitg00/agentmemory/pull/650), closes [#510](https://github.com/rohitg00/agentmemory/issues/510)). `plugin/.mcp.json` env block uses `${VAR:-default}` form. Unset required vars no longer fail config parse.
+
+- **Full 51-tool MCP surface by default** ([PR #650](https://github.com/rohitg00/agentmemory/pull/650), closes [#553](https://github.com/rohitg00/agentmemory/issues/553)). `getVisibleTools()` default flipped from `core` (8) to `all` (51) to match what every plugin manifest advertises. `AGENTMEMORY_TOOLS=core` still gives the lean set.
+
+- **Connect adapters write `${VAR:-default}` env block** ([PR #650](https://github.com/rohitg00/agentmemory/pull/650)). `agentmemory connect` for Claude Code / Cursor / Gemini CLI / Windsurf writes the same default form.
+
+- **Hermes `memory status` no longer reports the plugin as Missing** ([PR #643](https://github.com/rohitg00/agentmemory/pull/643), closes [#520](https://github.com/rohitg00/agentmemory/issues/520)). Hermes plugin seeds `AGENTMEMORY_URL` to `http://localhost:3111` at import. Works for systemd-managed agentmemory where the env file is loaded via `EnvironmentFile=` and never reaches the interactive shell.
+
+- **Deleted memories cleared from BM25 + vector indices** ([PR #636](https://github.com/rohitg00/agentmemory/pull/636) by [@abhinav-m22](https://github.com/abhinav-m22), closes [#632](https://github.com/rohitg00/agentmemory/issues/632)). `SearchIndex.remove()` added and called from every delete path. Snapshot flushed synchronously so a SIGKILL between mutation + debounce can't resurrect deleted entries.
+
+- **PostToolUse hook reads `tool_response`, falls back to `tool_output`** ([PR #561](https://github.com/rohitg00/agentmemory/pull/561) by [@faraz152](https://github.com/faraz152), closes [#539](https://github.com/rohitg00/agentmemory/issues/539)). Claude Code's PostToolUse payload uses `tool_response`. Now reads `tool_response ?? tool_output` so legacy integrations keep working.
+
+- **iii-sdk pinned to exact `0.11.2`** ([PR #567](https://github.com/rohitg00/agentmemory/pull/567), closes [#555](https://github.com/rohitg00/agentmemory/issues/555)). `iii-sdk@0.11.6` introduced a routing regression where every `/agentmemory/*` route returned 404. Pin removes the caret.
+
+- **OpenAI provider sends explicit `stream: false`** ([PR #526](https://github.com/rohitg00/agentmemory/pull/526) by [@Ptah-CT](https://github.com/Ptah-CT)). Some OpenAI-compatible proxies default to `text/event-stream` when `stream` is absent.
+
+- **Viewer search uses NFKC normalisation for CJK / fullwidth input** ([PR #542](https://github.com/rohitg00/agentmemory/pull/542) by [@kaushalrog](https://github.com/kaushalrog)).
+
+- **Viewer splash shows actual bound viewer port** ([PR #560](https://github.com/rohitg00/agentmemory/pull/560) by [@Tanmay-008](https://github.com/Tanmay-008), closes [#521](https://github.com/rohitg00/agentmemory/issues/521)). `/agentmemory/livez` now returns `viewerPort` + `viewerSkipped`.
+
+- **Viewer tab bar height stable across tab switches** ([PR #325](https://github.com/rohitg00/agentmemory/pull/325) by [@hungtd119](https://github.com/hungtd119), closes [#324](https://github.com/rohitg00/agentmemory/issues/324)).
+
+- **Graph parser accepts self-closing `<entity .../>` tags** ([PR #494](https://github.com/rohitg00/agentmemory/pull/494) by [@Rex57](https://github.com/Rex57), closes [#492](https://github.com/rohitg00/agentmemory/issues/492)).
+
+- **Plugin MCP server inherits remote/auth env** ([PR #386](https://github.com/rohitg00/agentmemory/pull/386) by [@LaplaceYoung](https://github.com/LaplaceYoung), closes [#375](https://github.com/rohitg00/agentmemory/issues/375)).
+
+- **`@agentmemory/mcp` rejects literal `${VAR}` placeholders**. Any `AGENTMEMORY_URL` / `AGENTMEMORY_SECRET` value of the form `${...}` is treated as unset and falls back to `http://localhost:3111`.
+
+- **Codex `stop` hook closes session** ([PR #579](https://github.com/rohitg00/agentmemory/pull/579), closes [#493](https://github.com/rohitg00/agentmemory/issues/493)). `Stop` was missing from the Codex bundle; session never got marked completed.
+
+- **Claude Code `--with-hooks` works for MCP-standalone users** ([PR #581](https://github.com/rohitg00/agentmemory/pull/581), closes [#508](https://github.com/rohitg00/agentmemory/issues/508)).
+
+### Added
+
+- **`AGENT_ID` multi-agent memory isolation** ([PR #654](https://github.com/rohitg00/agentmemory/pull/654), closes [#554](https://github.com/rohitg00/agentmemory/issues/554)). Optional `AGENT_ID` env tags every Session / RawObservation / CompressedObservation / Memory. `AGENTMEMORY_AGENT_SCOPE=isolated` (opt-in; `shared` default) also filters every recall path (`mem::smart-search`, `/memories`, `/observations`, `/sessions`). Per-call overrides via request body + `?agentId=<role>` / `?agentId=*` query params. `?includeOrphans=true` surfaces pre-tag rows.
+
+- **Qwen Code connect adapter** ([PR #651](https://github.com/rohitg00/agentmemory/pull/651), closes [#647](https://github.com/rohitg00/agentmemory/issues/647)). `agentmemory connect qwen` writes the standard `mcpServers` block to `~/.qwen/settings.json`.
+
+- **Antigravity connect adapter** ([PR #651](https://github.com/rohitg00/agentmemory/pull/651), closes [#614](https://github.com/rohitg00/agentmemory/issues/614)). Replacement for Gemini CLI (sunset 2026-06-18). Writes `mcp_config.json` to the platform-specific User dir.
+
+- **Kiro connect adapter** ([PR #651](https://github.com/rohitg00/agentmemory/pull/651), closes [#618](https://github.com/rohitg00/agentmemory/issues/618)). Writes user-level `~/.kiro/settings/mcp.json`.
+
+- **Cost-aware model selection** ([PR #654](https://github.com/rohitg00/agentmemory/pull/654), closes [#613](https://github.com/rohitg00/agentmemory/issues/613)). Runtime warning when `OPENROUTER_MODEL` matches the premium pattern. README cost-tier table with measured workload data. Suppress via `AGENTMEMORY_SUPPRESS_COST_WARNING=1`.
+
+- **Pluggable benchmark harness** ([PR #562](https://github.com/rohitg00/agentmemory/pull/562)). New `eval/` directory with the `coding-agent-life-v1` corpus (15 sessions + 15 graded queries) and three adapters (grep, OpenAI embeddings + cosine, agentmemory hybrid). LongMemEval support. Sandboxed agentmemory + iii-engine on alt ports via `eval/scripts/sandbox.sh`. Dev-only — no runtime impact.
+
+- **`agentmemory connect codex --with-hooks` opt-in flag** ([PR #564](https://github.com/rohitg00/agentmemory/pull/564), closes [#509](https://github.com/rohitg00/agentmemory/issues/509)). Workaround for [openai/codex#16430](https://github.com/openai/codex/issues/16430).
+
+- **Cross-platform CI matrix** ([PR #556](https://github.com/rohitg00/agentmemory/pull/556)). Ubuntu + macOS × Node 20 + 22, `paths-ignore`, per-branch concurrency cancellation.
+
+### Docs
+
+- **Port mapping table** ([PR #651](https://github.com/rohitg00/agentmemory/pull/651), closes [#629](https://github.com/rohitg00/agentmemory/issues/629)). `3111` REST / `3112` streams / `3113` viewer / `49134` engine WS + env overrides + stale-process cleanup recipe.
+
+- **Pairings recipe** ([PR #641](https://github.com/rohitg00/agentmemory/pull/641)). `docs/recipes/pairings.md` covers stacking agentmemory with codegraph, Understand Anything, and Graphify.
+
+- **Multi-agent README section** ([PR #654](https://github.com/rohitg00/agentmemory/pull/654)). `AGENT_ID` + `AGENTMEMORY_AGENT_SCOPE` semantics, per-endpoint behavior table.
+
+- **Supply-chain policy in SECURITY.md** ([PR #654](https://github.com/rohitg00/agentmemory/pull/654), closes [#540](https://github.com/rohitg00/agentmemory/issues/540)). Explains why no lockfile is committed (`dist/` ships pre-built) and what monitoring exists.
+
+- **README "Config File" section + Windows path** ([PR #321](https://github.com/rohitg00/agentmemory/pull/321) by [@aqilaziz](https://github.com/aqilaziz), closes [#293](https://github.com/rohitg00/agentmemory/issues/293)).
+
+- **README sudo install hint for `EACCES`** ([PR #454](https://github.com/rohitg00/agentmemory/pull/454) by [@kedar-1](https://github.com/kedar-1)).
+
+### Infrastructure
+
+- 108 test files, **1171 tests pass**.
+- Agent count: 8 → 11 (claude-code, codex, cursor, gemini-cli, qwen, antigravity, kiro, openclaw, hermes, pi, openhuman).
 
 ## [0.9.21] — 2026-05-19
 

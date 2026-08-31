@@ -13,10 +13,12 @@ interface StatItem {
 export function Stats({
   mcpTools,
   hooks,
+  restEndpoints,
   testsPassing,
 }: {
   mcpTools: number;
   hooks: number;
+  restEndpoints: number;
   testsPassing: number;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
@@ -25,7 +27,7 @@ export function Stats({
     { target: 95.2, suffix: "%", label: "RETRIEVAL R@5 · LONGMEMEVAL-S", float: true },
     { target: 92, suffix: "%", label: "FEWER INPUT TOKENS PER SESSION" },
     { target: mcpTools, label: "MCP TOOLS" },
-    { target: hooks, label: "AUTOHOOKS" },
+    { target: restEndpoints, label: "REST ENDPOINTS" },
     { target: 0, label: "EXTERNAL DATABASES" },
     { target: testsPassing, label: "TESTS PASSING" },
   ];
@@ -83,10 +85,10 @@ export function Stats({
       .forEach((el) => io.observe(el));
 
     return () => io.disconnect();
-  }, [mcpTools, hooks, testsPassing]);
+  }, [mcpTools, hooks, restEndpoints, testsPassing]);
 
   return (
-    <section className={styles.stats} aria-label="Benchmarks">
+    <section className={styles.stats} aria-label="By the numbers">
       <div className={styles.row} ref={rootRef}>
         {STATS.map((s) => (
           <article key={s.label} className={styles.stat} data-stat>

@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
+import pc from "picocolors";
 import type {
   AgentMemoryConfig,
   ProviderConfig,
@@ -19,8 +20,22 @@ function safeParseInt(value: string | undefined, fallback: number): number {
 const DATA_DIR = join(homedir(), ".agentmemory");
 const ENV_FILE = join(DATA_DIR, ".env");
 
+let warnPremiumModelShown = false;
+
+// Parsed ~/.agentmemory/.env, memoized for the process lifetime. getMergedEnv()
+// runs on every config getter (~20 of them), so without this cache a single
+// request would readFileSync + reparse the file dozens of times. The file is
+// boot-static, so read it from disk once and reuse the result. Tests that
+// mutate the file between cases reset the module (clearing this via reload) or
+// call __resetEnvFileCache().
+let envFileCache: Record<string, string> | undefined;
+
 function loadEnvFile(): Record<string, string> {
-  if (!existsSync(ENV_FILE)) return {};
+  if (envFileCache) return envFileCache;
+  if (!existsSync(ENV_FILE)) {
+    envFileCache = {};
+    return envFileCache;
+  }
   const content = readFileSync(ENV_FILE, "utf-8");
   const vars: Record<string, string> = {};
   for (const line of content.split("\n")) {
@@ -40,11 +55,32 @@ function loadEnvFile(): Record<string, string> {
     }
     vars[key] = val;
   }
-  return vars;
+  envFileCache = vars;
+  return envFileCache;
+}
+
+// Test hook: clears the memoized .env so the next loadEnvFile() re-reads disk
+// within the same module instance. vi.resetModules() reloads this module and
+// resets the cache on its own; this exists for tests that mutate the file
+// without a module reload.
+export function __resetEnvFileCache(): void {
+  envFileCache = undefined;
 }
 
 function hasRealValue(v: string | undefined): v is string {
   return typeof v === "string" && v.trim().length > 0;
+}
+
+// Hydrate ~/.agentmemory/.env into process.env at boot. loadEnvFile() is
+// otherwise only consumed via getMergedEnv(), which the many modules that
+// read raw process.env["X"] never call — so .env-only values were silently
+// ignored by them. Copy the file's vars into process.env, but only when the
+// key is currently unset so a real process.env value still wins (this
+// preserves the {...fileEnv, ...process.env} precedence getMergedEnv uses).
+export function hydrateProcessEnvFromFile(): void {
+  for (const [k, v] of Object.entries(loadEnvFile())) {
+    if (process.env[k] === undefined) process.env[k] = v;
+  }
 }
 
 function detectProvider(env: Record<string, string>): ProviderConfig {
@@ -54,7 +90,7 @@ function detectProvider(env: Record<string, string>): ProviderConfig {
   if (hasRealValue(env["OPENAI_API_KEY"]) && env["OPENAI_API_KEY_FOR_LLM"] !== "false") {
     return {
       provider: "openai",
-      model: env["OPENAI_MODEL"] || "gpt-4o-mini",
+      model: env["OPENAI_MODEL"] || "gpt-5.6-luna",
       maxTokens,
       baseURL: env["OPENAI_BASE_URL"],
     };
@@ -64,7 +100,7 @@ function detectProvider(env: Record<string, string>): ProviderConfig {
   if (hasRealValue(env["MINIMAX_API_KEY"])) {
     return {
       provider: "minimax",
-      model: env["MINIMAX_MODEL"] || "MiniMax-M2.7",
+      model: env["MINIMAX_MODEL"] || "MiniMax-M3",
       maxTokens,
     };
   }
@@ -72,7 +108,7 @@ function detectProvider(env: Record<string, string>): ProviderConfig {
   if (hasRealValue(env["ANTHROPIC_API_KEY"])) {
     return {
       provider: "anthropic",
-      model: env["ANTHROPIC_MODEL"] || "claude-sonnet-4-20250514",
+      model: env["ANTHROPIC_MODEL"] || "claude-sonnet-5",
       maxTokens,
       baseURL: env["ANTHROPIC_BASE_URL"],
     };
@@ -86,14 +122,36 @@ function detectProvider(env: Record<string, string>): ProviderConfig {
     }
     return {
       provider: "gemini",
-      model: env["GEMINI_MODEL"] || "gemini-2.5-flash",
+      model: env["GEMINI_MODEL"] || "gemini-3.7-flash",
       maxTokens,
     };
   }
   if (hasRealValue(env["OPENROUTER_API_KEY"])) {
+    const model = env["OPENROUTER_MODEL"] || "anthropic/claude-sonnet-5";
+    // warn when the configured OpenRouter model is in the
+    // premium tier and likely to burn money on background compression.
+    // Captured workload data shows ~$5/35h on claude-sonnet-4 vs
+    // ~$0.46/35h on deepseek-v4-pro for the same compression mix.
+    // Heuristic match avoids hard-coding a pricing table.
+    if (
+      !warnPremiumModelShown &&
+      /sonnet|opus|gpt-5\.\d+-sol|gpt-4o(?!.*mini)|gpt-4-turbo/i.test(model) &&
+      env["AGENTMEMORY_SUPPRESS_COST_WARNING"] !== "1" &&
+      env["AGENTMEMORY_SUPPRESS_COST_WARNING"] !== "true"
+    ) {
+      warnPremiumModelShown = true;
+      process.stderr.write(
+        `[agentmemory] OPENROUTER_MODEL=${model} is in the premium tier. ` +
+          `Background compression on this model can cost $5+/day under active use. ` +
+          `Cheaper alternatives with comparable quality for memory compression: ` +
+          `deepseek/deepseek-v4-flash-0731, deepseek/deepseek-v4-pro, qwen/qwen3-coder. ` +
+          `See README "Cost-aware model selection" for the full table. ` +
+          `Set AGENTMEMORY_SUPPRESS_COST_WARNING=1 to silence.\n`,
+      );
+    }
     return {
       provider: "openrouter",
-      model: env["OPENROUTER_MODEL"] || "anthropic/claude-sonnet-4-20250514",
+      model,
       maxTokens,
     };
   }
@@ -101,15 +159,12 @@ function detectProvider(env: Record<string, string>): ProviderConfig {
   const allowAgentSdk = env["AGENTMEMORY_ALLOW_AGENT_SDK"] === "true";
   if (!allowAgentSdk) {
     process.stderr.write(
-      "[agentmemory] No LLM provider key found " +
-        "(ANTHROPIC_API_KEY, GEMINI_API_KEY, OPENROUTER_API_KEY, MINIMAX_API_KEY, OPENAI_API_KEY). " +
-        "LLM-backed compression and summarization are DISABLED — using no-op provider. " +
-        "This is the safe default: the agent-sdk fallback used to spawn Claude Agent SDK " +
-        "child sessions which inherit Claude Code's plugin hooks and cause infinite Stop-hook " +
-        "recursion (#149 follow-up). To opt in to the agent-sdk fallback anyway, set both " +
-        "AGENTMEMORY_AUTO_COMPRESS=true AND AGENTMEMORY_ALLOW_AGENT_SDK=true — but be aware " +
-        "it will burn your Claude Pro allocation and may still recurse if you use it from " +
-        "inside Claude Code itself.\n",
+      pc.dim(
+        "[agentmemory] No LLM provider key set — running zero-LLM with BM25 search. " +
+          "Set EMBEDDING_PROVIDER=local for on-device semantic embeddings. " +
+          "Set ANTHROPIC_API_KEY (or GEMINI/OPENAI/OPENROUTER/MINIMAX) in ~/.agentmemory/.env for LLM compression and summaries. " +
+          "Agent-SDK fallback stays off by default to avoid a Stop-hook recursion loop; opt in with AGENTMEMORY_AUTO_COMPRESS=true + AGENTMEMORY_ALLOW_AGENT_SDK=true.\n",
+      ),
     );
     return {
       provider: "noop",
@@ -121,12 +176,12 @@ function detectProvider(env: Record<string, string>): ProviderConfig {
   process.stderr.write(
     "[agentmemory] WARNING: agent-sdk fallback enabled via AGENTMEMORY_ALLOW_AGENT_SDK=true. " +
       "This spawns @anthropic-ai/claude-agent-sdk child sessions that can trigger the Stop-hook " +
-      "recursion loop (#149 follow-up). A SDK-child env marker is set to block re-entry, " +
+      "recursion loop. A SDK-child env marker is set to block re-entry, " +
       "but prefer setting a real API key in ~/.agentmemory/.env instead.\n",
   );
   return {
     provider: "agent-sdk",
-    model: "claude-sonnet-4-20250514",
+    model: "claude-sonnet-5",
     maxTokens,
   };
 }
@@ -136,10 +191,27 @@ export function loadConfig(): AgentMemoryConfig {
 
   const provider = detectProvider(env);
 
+  // Port quartet: REST is the anchor; streams/engine derive from it
+  // unless individually overridden. Default anchor 3111 yields the
+  // canonical 3112 streams / 49134 engine pair, but `III_REST_PORT=3211`
+  // auto-picks 3212 + 49234 so a second instance doesn't collide.
+  const restPort = parseInt(env["III_REST_PORT"] || "3111", 10) || 3111;
+  const streamsPort =
+    parseInt(env["III_STREAM_PORT"] || env["III_STREAMS_PORT"] || "", 10) ||
+    restPort + 1;
+  const viewerPort =
+    parseInt(env["III_VIEWER_PORT"] || "", 10) || restPort + 2;
+  const engineUrl =
+    env["III_ENGINE_URL"] ||
+    `ws://localhost:${
+      parseInt(env["III_ENGINE_PORT"] || "", 10) || restPort + 46023
+    }`;
+
   return {
-    engineUrl: env["III_ENGINE_URL"] || "ws://localhost:49134",
-    restPort: parseInt(env["III_REST_PORT"] || "3111", 10) || 3111,
-    streamsPort: parseInt(env["III_STREAMS_PORT"] || "3112", 10) || 3112,
+    engineUrl,
+    restPort,
+    streamsPort,
+    viewerPort,
     provider,
     tokenBudget: safeParseInt(env["TOKEN_BUDGET"], 2000),
     maxObservationsPerSession: safeParseInt(env["MAX_OBS_PER_SESSION"], 500),
@@ -216,7 +288,14 @@ export function loadClaudeBridgeConfig(): ClaudeBridgeConfig {
   const lineBudget = safeParseInt(env["CLAUDE_MEMORY_LINE_BUDGET"], 200);
   let memoryFilePath = "";
   if (enabled && projectPath) {
-    const safePath = projectPath.replace(/[/\\]/g, "-").replace(/^-/, "");
+    // Claude Code stores project memory at
+    //   ~/.claude/projects/<slug>/memory/MEMORY.md
+    // where <slug> is the project path with `/` and `\` swapped for `-`.
+    // The leading `-` from an absolute POSIX path is preserved (Claude
+    // Code keeps it; stripping it produced a slug Claude never reads).
+    // The `memory/` subdirectory holds MEMORY.md (the index) plus one
+    // per-topic `.md` file per memory (verified against Claude Code 2.x).
+    const safePath = projectPath.replace(/[/\\]/g, "-");
     memoryFilePath = join(
       homedir(),
       ".claude",
@@ -238,15 +317,62 @@ export function loadTeamConfig(): TeamConfig | null {
   return { teamId, userId, mode };
 }
 
+// optional AGENT_ID env for multi-agent memory isolation.
+// Returns null when unset so memory stays unscoped (legacy behavior).
+// Trimmed + length-capped to keep KV writes well-formed.
+//
+// Filtering is gated by AGENTMEMORY_AGENT_SCOPE:
+//   "shared"   (default) — tag everything, do not filter recall paths
+//   "isolated"           — tag everything AND filter recall paths
+export function loadAgentScope(): {
+  agentId: string;
+  mode: "shared" | "isolated";
+} | null {
+  const env = getMergedEnv();
+  const raw = env["AGENT_ID"];
+  if (!raw) return null;
+  const agentId = raw.trim().slice(0, 128);
+  if (!agentId) return null;
+  const mode = env["AGENTMEMORY_AGENT_SCOPE"] === "isolated"
+    ? "isolated"
+    : "shared";
+  return { agentId, mode };
+}
+
+export function getAgentId(): string | undefined {
+  return loadAgentScope()?.agentId;
+}
+
+// True only when AGENT_ID is set AND scope=isolated. Recall paths
+// consult this to decide whether to filter.
+export function isAgentScopeIsolated(): boolean {
+  return loadAgentScope()?.mode === "isolated";
+}
+
+// Floor for the git-snapshot timer. A zero/negative SNAPSHOT_INTERVAL would
+// make setInterval fire on roughly every event-loop tick, saturating the
+// worker with back-to-back full-state snapshots + git commits. Anything below
+// this floor is treated as a misconfiguration and falls back to the default.
+const SNAPSHOT_INTERVAL_DEFAULT_SECONDS = 3600;
+const MIN_SNAPSHOT_INTERVAL_SECONDS = 1;
+
 export function loadSnapshotConfig(): {
   enabled: boolean;
   interval: number;
   dir: string;
 } {
   const env = getMergedEnv();
+  const rawInterval = safeParseInt(
+    env["SNAPSHOT_INTERVAL"],
+    SNAPSHOT_INTERVAL_DEFAULT_SECONDS,
+  );
+  const interval =
+    rawInterval >= MIN_SNAPSHOT_INTERVAL_SECONDS
+      ? rawInterval
+      : SNAPSHOT_INTERVAL_DEFAULT_SECONDS;
   return {
     enabled: env["SNAPSHOT_ENABLED"] === "true",
-    interval: safeParseInt(env["SNAPSHOT_INTERVAL"], 3600),
+    interval,
     dir: env["SNAPSHOT_DIR"] || join(homedir(), ".agentmemory", "snapshots"),
   };
 }
@@ -259,11 +385,47 @@ export function getGraphBatchSize(): number {
   return safeParseInt(getMergedEnv()["GRAPH_EXTRACTION_BATCH_SIZE"], 10);
 }
 
-export function isConsolidationEnabled(): boolean {
-  return getMergedEnv()["CONSOLIDATION_ENABLED"] === "true";
+// window for the smart-search followup-rate diagnostic. A second
+// search arriving within this many seconds (with disjoint results)
+// counts as a "follow-up" — a directional signal that the first result
+// set didn't satisfy. Long values overcount (legitimate refinement
+// looks like a follow-up); short values undercount.
+const FOLLOWUP_WINDOW_DEFAULT_SECONDS = 30;
+
+export function getFollowupWindowSeconds(): number {
+  return safeParseInt(
+    getMergedEnv()["AGENTMEMORY_FOLLOWUP_WINDOW_SECONDS"],
+    FOLLOWUP_WINDOW_DEFAULT_SECONDS,
+  );
 }
 
-// Per-observation LLM compression is OFF by default as of 0.8.8 (see #138).
+export function isConsolidationEnabled(): boolean {
+  const env = getMergedEnv();
+  const explicit = env["CONSOLIDATION_ENABLED"];
+  if (explicit === "false" || explicit === "0") return false;
+  if (explicit === "true" || explicit === "1") return true;
+  return hasLLMProviderConfigured(env);
+}
+
+function hasLLMProviderConfigured(env: Record<string, string | undefined>): boolean {
+  const provider = (env["AGENTMEMORY_PROVIDER"] || "").toLowerCase();
+  if (provider === "noop") return false;
+  const openaiKeyForLlm =
+    env["OPENAI_API_KEY"] &&
+    (env["OPENAI_API_KEY_FOR_LLM"] || "").toLowerCase() !== "false";
+  return Boolean(
+    env["ANTHROPIC_API_KEY"] ||
+      openaiKeyForLlm ||
+      env["OPENROUTER_API_KEY"] ||
+      env["GEMINI_API_KEY"] ||
+      env["GOOGLE_API_KEY"] ||
+      env["MINIMAX_API_KEY"] ||
+      env["OPENAI_BASE_URL"] ||
+      provider === "agent-sdk",
+  );
+}
+
+// Per-observation LLM compression is OFF by default as of 0.8.8.
 // When disabled, observations are captured and indexed via a synthetic
 // (zero-LLM) compression path so recall/search still works. Users who want
 // richer LLM-generated summaries can set AGENTMEMORY_AUTO_COMPRESS=true in
@@ -274,7 +436,7 @@ export function isAutoCompressEnabled(): boolean {
 }
 
 // Hook-level context injection into Claude Code's conversation is OFF by
-// default as of 0.8.10 (see #143). When disabled, pre-tool-use and
+// default as of 0.8.10. When disabled, pre-tool-use and
 // session-start hooks still POST observations for background capture, but
 // never write context to stdout — so Claude Code doesn't inject an extra
 // ~4000-char blob into every tool turn. 0.8.8 stopped the agentmemory-side
@@ -288,6 +450,21 @@ export function isContextInjectionEnabled(): boolean {
 
 export function getConsolidationDecayDays(): number {
   return safeParseInt(getMergedEnv()["CONSOLIDATION_DECAY_DAYS"], 30);
+}
+
+// Cooldown between corpus consolidations triggered by session stop. The Stop
+// hook fires per agent turn and posts /session/end, so without this every turn
+// would kick a full LLM semantic-merge + reflect + crystallize. Debounced to at
+// most once per window. Set to 0 to disable the debounce (consolidate on every
+// stop). Default 5 minutes.
+const CONSOLIDATION_COOLDOWN_DEFAULT_MS = 300000;
+
+export function getConsolidationCooldownMs(): number {
+  const raw = safeParseInt(
+    getMergedEnv()["AGENTMEMORY_CONSOLIDATION_COOLDOWN_MS"],
+    CONSOLIDATION_COOLDOWN_DEFAULT_MS,
+  );
+  return raw >= 0 ? raw : CONSOLIDATION_COOLDOWN_DEFAULT_MS;
 }
 
 export function isStandaloneMcp(): boolean {
@@ -333,7 +510,7 @@ export function loadFallbackConfig(): FallbackConfig {
           "[agentmemory] Ignoring FALLBACK_PROVIDERS entry 'agent-sdk' " +
             "(AGENTMEMORY_ALLOW_AGENT_SDK is not 'true'). The agent-sdk " +
             "fallback can spawn Claude Agent SDK child sessions that trigger " +
-            "the Stop-hook recursion loop (#149 follow-up). Opt in explicitly " +
+            "the Stop-hook recursion loop. Opt in explicitly " +
             "with AGENTMEMORY_ALLOW_AGENT_SDK=true if this is intentional.\n",
         );
         return false;

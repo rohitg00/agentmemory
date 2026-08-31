@@ -25,6 +25,16 @@ const FEATURED: Agent[] = [
     sub: "FIRST-CLASS PLUGIN",
   },
   {
+    id: "copilot-cli",
+    name: "Copilot CLI",
+    from: "GitHub",
+    logo: "https://svgl.app/library/github_dark.svg",
+    accent: "#24292E",
+    href: "https://docs.github.com/copilot/github-copilot-in-the-cli",
+    pitch: "MCP + plugin hooks and skills",
+    sub: "NATIVE PLUGIN",
+  },
+  {
     id: "codex",
     name: "Codex CLI",
     from: "OpenAI",
@@ -65,14 +75,24 @@ const FEATURED: Agent[] = [
     sub: "NATIVE PLUGIN",
   },
   {
-    id: "openhuman",
-    name: "OpenHuman",
-    from: "tinyhumansai",
-    logo: "https://raw.githubusercontent.com/tinyhumansai/openhuman/main/app/src-tauri/icons/128x128.png",
-    accent: "#9b5cf6",
-    href: "https://github.com/tinyhumansai/openhuman",
-    pitch: "Native Memory trait backend (Rust)",
-    sub: "NATIVE BACKEND",
+    id: "cursor",
+    name: "Cursor",
+    from: "Anysphere",
+    logo: "https://svgl.app/library/cursor_dark.svg",
+    accent: "#4F8BF7",
+    href: "https://github.com/rohitg00/agentmemory/tree/main/.cursor-plugin",
+    pitch: "7 hooks + 17 skills + MCP · IDE and CLI",
+    sub: "NATIVE PLUGIN",
+  },
+  {
+    id: "opencode",
+    name: "OpenCode",
+    from: "SST",
+    logo: "/opencode.png",
+    accent: "#F5A623",
+    href: "https://github.com/rohitg00/agentmemory/tree/main/plugin/opencode",
+    pitch: "Capture plugin with per-session project attribution",
+    sub: "NATIVE PLUGIN",
   },
 ];
 
@@ -86,12 +106,52 @@ const MARQUEE: Agent[] = [
     href: "https://claude.ai/download",
   },
   {
-    id: "cursor",
-    name: "Cursor",
-    from: "Anysphere",
-    logo: "https://www.freelogovectors.net/wp-content/uploads/2025/06/cursor-logo-freelogovectors.net_.png",
+    id: "openhuman",
+    name: "OpenHuman",
+    from: "tinyhumansai",
+    logo: "https://raw.githubusercontent.com/tinyhumansai/openhuman/main/app/src-tauri/icons/128x128.png",
+    accent: "#9b5cf6",
+    href: "https://github.com/tinyhumansai/openhuman",
+  },
+  {
+    id: "warp",
+    name: "Warp",
+    from: "Warp",
+    logo: "https://svgl.app/library/warp.svg",
+    accent: "#9B59FF",
+    href: "https://www.warp.dev",
+  },
+  {
+    id: "continue",
+    name: "Continue",
+    from: "Continue.dev",
+    logo: "https://github.com/continuedev.png",
     accent: "#000000",
-    href: "https://cursor.com",
+    href: "https://continue.dev",
+  },
+  {
+    id: "cline",
+    name: "Cline",
+    from: "cline",
+    logo: "https://github.com/cline.png",
+    accent: "#F59E0B",
+    href: "https://github.com/cline/cline",
+  },
+  {
+    id: "zed",
+    name: "Zed",
+    from: "Zed Industries",
+    logo: "https://svgl.app/library/zed-logo_dark.svg",
+    accent: "#FF4500",
+    href: "https://zed.dev",
+  },
+  {
+    id: "droid",
+    name: "Droid",
+    from: "Factory.ai",
+    logo: "https://www.factory.ai/favicon.svg",
+    accent: "#FF6B35",
+    href: "https://docs.factory.ai/cli",
   },
   {
     id: "gemini-cli",
@@ -102,20 +162,36 @@ const MARQUEE: Agent[] = [
     href: "https://github.com/google-gemini/gemini-cli",
   },
   {
-    id: "opencode",
-    name: "OpenCode",
-    from: "opencode-ai",
-    logo: "https://github.com/opencode-ai.png",
-    accent: "#22C55E",
-    href: "https://github.com/opencode-ai/opencode",
+    id: "antigravity",
+    name: "Antigravity",
+    from: "Google",
+    logo: "https://svgl.app/library/antigravity.svg",
+    accent: "#4285F4",
+    href: "https://antigravity.google",
   },
   {
-    id: "cline",
-    name: "Cline",
-    from: "cline",
-    logo: "https://github.com/cline.png",
-    accent: "#F59E0B",
-    href: "https://github.com/cline/cline",
+    id: "qwen",
+    name: "Qwen Code",
+    from: "Alibaba",
+    logo: "https://svgl.app/library/qwen_dark.svg",
+    accent: "#615CED",
+    href: "https://github.com/QwenLM/qwen-code",
+  },
+  {
+    id: "dsh",
+    name: "DeepSeek Harness",
+    from: "DeepSeek",
+    logo: "https://svgl.app/library/deepseek.svg",
+    accent: "#4D6BFE",
+    href: "https://github.com/deepseek-ai/deepseek-harness",
+  },
+  {
+    id: "kiro",
+    name: "Kiro",
+    from: "AWS",
+    logo: "https://kiro.dev/favicon.ico",
+    accent: "#FF9900",
+    href: "https://kiro.dev",
   },
   {
     id: "roo",
@@ -150,12 +226,12 @@ const MARQUEE: Agent[] = [
     href: "https://github.com/Aider-AI/aider",
   },
   {
-    id: "windsurf",
-    name: "Windsurf",
-    from: "Codeium",
-    logo: "https://exafunction.github.io/public/brand/windsurf-black-symbol.svg",
-    accent: "#00A699",
-    href: "https://windsurf.com",
+    id: "devin",
+    name: "Devin",
+    from: "Cognition",
+    logo: "/devin.png",
+    accent: "#317CFF",
+    href: "https://devin.ai",
   },
 ];
 
@@ -166,7 +242,6 @@ function FeaturedCard({ a }: { a: Agent }) {
       href={a.href}
       target="_blank"
       rel="noopener"
-      style={{ ["--agent-accent" as string]: a.accent }}
     >
       <div className={styles.featuredHead}>
         <div className={styles.featuredLogo}>
@@ -199,7 +274,6 @@ function MarqueeTile({ a }: { a: Agent }) {
       href={a.href}
       target="_blank"
       rel="noopener"
-      style={{ ["--agent-accent" as string]: a.accent }}
     >
       <Image
         src={a.logo}
@@ -222,14 +296,15 @@ export function Agents() {
   return (
     <section className={styles.wrap} id="agents" aria-labelledby="agents-title">
       <header className="section-head">
-        <span className="section-eyebrow">WORKS WITH</span>
+        <span className="section-eyebrow">Works with</span>
         <h2 id="agents-title" className="section-title">
-          SIX FIRST-PARTY.<br />REST MCP-NATIVE.
+          Seven native plugins.<br />Rest MCP-native.
         </h2>
         <p className="section-lede">
-          NATIVE PLUGINS FOR CLAUDE CODE, CODEX CLI, OPENCLAW, HERMES, PI, AND
-          OPENHUMAN. EVERY OTHER MCP CLIENT GETS IT FOR FREE. `agentmemory
-          connect &lt;agent&gt;` AUTO-WIRES THEM ALL.
+          Native plugins for Claude Code, Copilot CLI, Codex CLI, OpenClaw,
+          Hermes, pi, and Cursor. OpenCode gets a plugin that attributes
+          each session to its own project. Every other MCP client gets it for
+          free. `agentmemory connect &lt;agent&gt;` auto-wires them all.
         </p>
       </header>
 

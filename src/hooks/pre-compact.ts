@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { resolveProject, hookCwd } from "./_project.js";
 
 function isSdkChildContext(payload: unknown): boolean {
   if (process.env["AGENTMEMORY_SDK_CHILD"] === "1") return true;
@@ -28,10 +29,11 @@ async function main() {
     return;
   }
 
+  if (!data || typeof data !== "object") return;
   if (isSdkChildContext(data)) return;
 
-  const sessionId = (data.session_id as string) || "unknown";
-  const project = (data.cwd as string) || process.cwd();
+  const sessionId = ((data.session_id || data.sessionId || data.conversation_id) as string) || "unknown";
+  const project = resolveProject(hookCwd(data));
 
   if (process.env["CLAUDE_MEMORY_BRIDGE"] === "true") {
     try {
@@ -65,4 +67,4 @@ async function main() {
   }
 }
 
-main();
+main().catch(() => process.exit(0));

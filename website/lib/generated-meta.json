@@ -1,8 +1,8 @@
 {
-  "version": "0.9.20",
-  "mcpTools": 53,
+  "version": "0.9.29",
+  "mcpTools": 54,
   "hooks": 12,
-  "restEndpoints": 124,
-  "testsPassing": 1055,
-  "generatedAt": "2026-05-18T20:08:39.354Z"
+  "restEndpoints": 130,
+  "testsPassing": 1654,
+  "generatedAt": "2026-08-15T21:50:19.597Z"
 }

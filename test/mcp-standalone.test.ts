@@ -26,6 +26,7 @@ import {
 } from "../src/mcp/tools-registry.js";
 import { InMemoryKV } from "../src/mcp/in-memory-kv.js";
 import { handleToolCall } from "../src/mcp/standalone.js";
+import { createStdioTransport } from "../src/mcp/transport.js";
 import {
   resetHandleForTests,
   setLivezProbe,
@@ -448,5 +449,34 @@ describe("handleToolCall", () => {
     const parsed = JSON.parse(result.content[0].text);
     expect(parsed.deleted).toBe(1);
     expect(parsed.requested).toBe(2);
+  });
+});
+
+describe("initialize protocol version negotiation", () => {
+  type InitResult = { protocolVersion: string };
+  const handler = () =>
+    vi.mocked(createStdioTransport).mock.calls[0][0] as (
+      method: string,
+      params?: unknown,
+    ) => Promise<InitResult>;
+
+  it("echoes a supported requested version", async () => {
+    const res = await handler()("initialize", { protocolVersion: "2025-06-18" });
+    expect(res.protocolVersion).toBe("2025-06-18");
+  });
+
+  it("echoes the oldest supported version", async () => {
+    const res = await handler()("initialize", { protocolVersion: "2024-11-05" });
+    expect(res.protocolVersion).toBe("2024-11-05");
+  });
+
+  it("answers an unsupported requested version with the latest supported", async () => {
+    const res = await handler()("initialize", { protocolVersion: "1900-01-01" });
+    expect(res.protocolVersion).toBe("2025-11-25");
+  });
+
+  it("answers a missing requested version with the latest supported", async () => {
+    const res = await handler()("initialize", {});
+    expect(res.protocolVersion).toBe("2025-11-25");
   });
 });

@@ -31,5 +31,9 @@ export function buildGraphExtractionPrompt(
         `[${i + 1}] Type: ${o.type}\nTitle: ${o.title}\nNarrative: ${o.narrative}\nConcepts: ${(o.concepts ?? []).join(", ")}\nFiles: ${(o.files ?? []).join(", ")}`,
     )
     .join("\n\n");
-  return `Extract entities and relationships from these observations:\n\n${items}`;
+  // Some local models default to a hidden reasoning pass that consumes
+  // most of the token budget before any output. The suffix is their
+  // documented soft switch to skip it; other models ignore the token.
+  const noThink = process.env.AGENTMEMORY_LLM_NOTHINK === "1" ? "\n/no_think" : "";
+  return `Extract entities and relationships from these observations:\n\n${items}${noThink}`;
 }

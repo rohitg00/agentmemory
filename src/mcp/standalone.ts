@@ -23,10 +23,16 @@ const IMPLEMENTED_TOOLS = new Set([
   "memory_governance_delete",
 ]);
 
+const SUPPORTED_PROTOCOL_VERSIONS = [
+  "2025-11-25",
+  "2025-06-18",
+  "2025-03-26",
+  "2024-11-05",
+];
+
 const SERVER_INFO = {
   name: "agentmemory",
   version: VERSION,
-  protocolVersion: "2024-11-05",
 };
 
 const kv = new InMemoryKV(getStandalonePersistPath());
@@ -51,8 +57,9 @@ function announceMode(handle: Handle): void {
       `[@agentmemory/mcp] proxying to agentmemory server at ${handle.baseUrl}\n`,
     );
   } else {
+    const fullToolCount = getAllTools().length;
     process.stderr.write(
-      `[@agentmemory/mcp] no server reachable at ${displayAgentmemoryUrl()}; falling back to local InMemoryKV\n`,
+      `[@agentmemory/mcp] no server reachable at ${displayAgentmemoryUrl()}; running reduced LOCAL FALLBACK with ${IMPLEMENTED_TOOLS.size} of ${fullToolCount} tools. Start 'npx @agentmemory/agentmemory' (and point AGENTMEMORY_URL at it) to unlock all ${fullToolCount} tools.\n`,
     );
   }
 }
@@ -98,6 +105,8 @@ interface Validated {
   type?: string;
   concepts?: string[];
   files?: string[];
+  project?: string;
+  agentId?: string;
   query?: string;
   limit?: number;
   format?: string;
@@ -121,6 +130,15 @@ function validate(toolName: string, args: Record<string, unknown>): Validated {
       v.type = (args["type"] as string) || "fact";
       v.concepts = normalizeList(args["concepts"]);
       v.files = normalizeList(args["files"]);
+      // The tool schema exposes project (and now agentId); dropping them
+      // here silently broke project/agent scoping through the stdio
+      // package specifically.
+      if (typeof args["project"] === "string" && args["project"].trim()) {
+        v.project = args["project"].trim();
+      }
+      if (typeof args["agentId"] === "string" && args["agentId"].trim()) {
+        v.agentId = args["agentId"].trim();
+      }
       return v;
     }
     case "memory_recall":
@@ -179,6 +197,8 @@ async function handleProxy(
           type: v.type,
           concepts: v.concepts,
           files: v.files,
+          ...(v.project !== undefined && { project: v.project }),
+          ...(v.agentId !== undefined && { agentId: v.agentId }),
         }),
       });
       return textResponse(result);
@@ -338,7 +358,7 @@ async function handleProxyGeneric(
   handle: ProxyHandle,
 ): Promise<{ content: Array<{ type: string; text: string }> }> {
   // Forward to the server's full MCP surface so non-Claude clients can
-  // reach all 51 tools (lessons, sentinels, slots, signals, graph, …)
+  // reach all 54 tools (lessons, sentinels, slots, signals, graph, …)
   // instead of being capped at the 7 IMPLEMENTED_TOOLS set baked into
   // this shim. The server validates arguments per tool.
   const result = (await handle.call("/agentmemory/mcp/call", {
@@ -446,15 +466,23 @@ export async function handleToolsList(): Promise<{ tools: unknown[] }> {
 
 const transport = createStdioTransport(async (method, params) => {
   switch (method) {
-    case "initialize":
+    case "initialize": {
+      const requested = (params as { protocolVersion?: unknown } | undefined)
+        ?.protocolVersion;
+      const protocolVersion =
+        typeof requested === "string" &&
+        SUPPORTED_PROTOCOL_VERSIONS.includes(requested)
+          ? requested
+          : SUPPORTED_PROTOCOL_VERSIONS[0];
       return {
-        protocolVersion: SERVER_INFO.protocolVersion,
+        protocolVersion,
         capabilities: { tools: { listChanged: false } },
         serverInfo: {
           name: SERVER_INFO.name,
           version: SERVER_INFO.version,
         },
       };
+    }
 
     case "notifications/initialized":
       return {};

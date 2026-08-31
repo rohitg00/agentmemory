@@ -1,6 +1,24 @@
 import { watch, promises as fsp, statSync } from "node:fs";
 import { resolve, relative, join, extname, sep, basename } from "node:path";
 import { randomBytes } from "node:crypto";
+import { execFileSync } from "node:child_process";
+
+// Same resolution order as the hooks' resolveProject (git toplevel basename,
+// then directory basename) so a watched subdirectory scopes to the repository
+// name instead of the subdirectory name.
+function deriveProjectName(dir) {
+  try {
+    const top = execFileSync("git", ["rev-parse", "--show-toplevel"], {
+      cwd: dir,
+      stdio: ["ignore", "pipe", "ignore"],
+      encoding: "utf8",
+    }).trim();
+    if (top) return basename(top);
+  } catch {
+    // not a git repo
+  }
+  return basename(dir);
+}
 
 const TEXT_EXTENSIONS = new Set([
   ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs",
@@ -123,7 +141,13 @@ export class FilesystemWatcher {
     this.secret = config.secret;
     this.project =
       config.project ||
-      (this.roots[0] ? basename(this.roots[0]) : "filesystem-watcher");
+      (this.roots[0] ? deriveProjectName(this.roots[0]) : "filesystem-watcher");
+    // Per-root scope: a multi-root watcher must stamp each event with the
+    // project of the root that produced it, not the first root's project.
+    // An explicit config.project overrides for every root.
+    this.projectByRoot = new Map(
+      this.roots.map((r) => [r, config.project || deriveProjectName(r)]),
+    );
     this.sessionId =
       config.sessionId ||
       `fs-watcher-${Date.now().toString(36)}-${randomBytes(3).toString("hex")}`;
@@ -214,7 +238,7 @@ export class FilesystemWatcher {
     const payload = {
       hookType: "post_tool_use",
       sessionId: this.sessionId,
-      project: this.project,
+      project: this.projectByRoot.get(rootDir) ?? this.project,
       cwd: rootDir,
       timestamp: new Date().toISOString(),
       data: {
@@ -248,6 +272,18 @@ export class FilesystemWatcher {
     const failures = [];
     for (const root of this.roots) {
       try {
+        // Validate the root before handing it to fs.watch: on Linux with
+        // Node 24+, fs.watch on a nonexistent path no longer throws
+        // synchronously, so a missing root would otherwise count as
+        // "attached" and be watched-in-name-only. An explicit stat keeps
+        // the failure deterministic across Node versions and platforms.
+        const st = statSync(root, { throwIfNoEntry: false });
+        if (!st) {
+          throw new Error("no such directory");
+        }
+        if (!st.isDirectory()) {
+          throw new Error("not a directory");
+        }
         const handle = watch(
           root,
           { recursive: true, persistent: true },
@@ -307,7 +343,13 @@ export function configFromEnv(env = process.env) {
     roots,
     baseUrl: env.AGENTMEMORY_URL,
     secret: env.AGENTMEMORY_SECRET,
-    project: env.AGENTMEMORY_PROJECT || null,
+    // AGENTMEMORY_PROJECT_NAME is the canonical override (matches the hooks);
+    // AGENTMEMORY_PROJECT stays as a deprecated alias for existing setups.
+    // Trimmed, with whitespace-only treated as unset, same as resolveProject.
+    project:
+      (env.AGENTMEMORY_PROJECT_NAME || "").trim() ||
+      (env.AGENTMEMORY_PROJECT || "").trim() ||
+      null,
     sessionId: env.AGENTMEMORY_SESSION_ID || null,
     ignorePatterns: extraIgnore,
     allowBinary: env.AGENTMEMORY_FS_WATCH_ALLOW_BINARY === "1",

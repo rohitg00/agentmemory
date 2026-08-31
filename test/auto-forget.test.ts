@@ -1,10 +1,15 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 vi.mock("../src/logger.js", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
 import { registerAutoForgetFunction } from "../src/functions/auto-forget.js";
+import {
+  getSearchIndex,
+  setIndexPersistence,
+} from "../src/functions/search.js";
+import { memoryToObservation } from "../src/state/memory-utils.js";
 import type { Memory, CompressedObservation, Session } from "../src/types.js";
 
 function mockKV() {
@@ -166,6 +171,85 @@ describe("Auto-Forget Function", () => {
 
     const stillExists = await kv.get("mem:memories", "mem_expired");
     expect(stillExists).not.toBeNull();
+  });
+
+  describe("search-index cleanup", () => {
+    beforeEach(() => {
+      getSearchIndex().clear();
+      setIndexPersistence(null);
+    });
+
+    afterEach(() => {
+      setIndexPersistence(null);
+    });
+
+    it("removes TTL-expired memories from the BM25 index and flushes persistence", async () => {
+      const persistence = { scheduleSave: vi.fn(), save: vi.fn(async () => {}) };
+      setIndexPersistence(persistence);
+
+      const expired = makeMemory({
+        id: "mem_expired",
+        forgetAfter: "2020-01-01T00:00:00Z",
+      });
+      await kv.set("mem:memories", "mem_expired", expired);
+      getSearchIndex().add(memoryToObservation(expired));
+      expect(getSearchIndex().has("mem_expired")).toBe(true);
+
+      await sdk.trigger("mem::auto-forget", {});
+
+      expect(getSearchIndex().has("mem_expired")).toBe(false);
+      expect(persistence.save).toHaveBeenCalled();
+    });
+
+    it("removes evicted low-value observations from the BM25 index", async () => {
+      const session: Session = {
+        id: "ses_1",
+        project: "my-project",
+        cwd: "/tmp",
+        startedAt: "2025-01-01T00:00:00Z",
+        status: "completed",
+        observationCount: 1,
+      };
+      await kv.set("mem:sessions", "ses_1", session);
+
+      const oldLowObs: CompressedObservation = {
+        id: "obs_old",
+        sessionId: "ses_1",
+        timestamp: "2025-01-01T00:00:00Z",
+        type: "other",
+        title: "trivial event",
+        facts: [],
+        narrative: "nothing important",
+        concepts: [],
+        files: [],
+        importance: 1,
+      };
+      await kv.set("mem:obs:ses_1", "obs_old", oldLowObs);
+      getSearchIndex().add(oldLowObs);
+      expect(getSearchIndex().has("obs_old")).toBe(true);
+
+      await sdk.trigger("mem::auto-forget", {});
+
+      expect(getSearchIndex().has("obs_old")).toBe(false);
+    });
+
+    it("does not flush persistence on dryRun", async () => {
+      const persistence = { scheduleSave: vi.fn(), save: vi.fn(async () => {}) };
+      setIndexPersistence(persistence);
+
+      const expired = makeMemory({
+        id: "mem_expired",
+        forgetAfter: "2020-01-01T00:00:00Z",
+      });
+      await kv.set("mem:memories", "mem_expired", expired);
+      getSearchIndex().add(memoryToObservation(expired));
+
+      await sdk.trigger("mem::auto-forget", { dryRun: true });
+
+      // dryRun must not mutate the index or write to disk.
+      expect(getSearchIndex().has("mem_expired")).toBe(true);
+      expect(persistence.save).not.toHaveBeenCalled();
+    });
   });
 
   it("does not flag non-similar memories as contradictions", async () => {

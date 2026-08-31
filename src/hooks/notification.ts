@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { resolveProject, hookCwd } from "./_project.js";
 
 function isSdkChildContext(payload: unknown): boolean {
   if (process.env["AGENTMEMORY_SDK_CHILD"] === "1") return true;
@@ -28,32 +29,36 @@ async function main() {
     return;
   }
 
+  if (!data || typeof data !== "object") return;
   if (isSdkChildContext(data)) return;
-  if (data.notification_type !== "permission_prompt") return;
+  const notificationType = data.notification_type ?? data.notificationType;
+  if (notificationType !== "permission_prompt") return;
 
-  const sessionId = (data.session_id as string) || "unknown";
+  const rawSessionId = [data.session_id, data.sessionId, data.conversation_id].find(
+    (v) => typeof v === "string" && v.length > 0,
+  );
+  const sessionId = typeof rawSessionId === "string" ? rawSessionId : "unknown";
 
-  try {
-    await fetch(`${REST_URL}/agentmemory/observe`, {
-      method: "POST",
-      headers: authHeaders(),
-      body: JSON.stringify({
-        hookType: "notification",
-        sessionId,
-        project: data.cwd || process.cwd(),
-        cwd: data.cwd || process.cwd(),
-        timestamp: new Date().toISOString(),
-        data: {
-          notification_type: data.notification_type,
-          title: data.title,
-          message: data.message,
-        },
-      }),
-      signal: AbortSignal.timeout(2000),
-    });
-  } catch {
-    // fire and forget
-  }
+  const cwd = hookCwd(data) || process.cwd();
+
+  fetch(`${REST_URL}/agentmemory/observe`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({
+      hookType: "notification",
+      sessionId,
+      project: resolveProject(cwd),
+      cwd,
+      timestamp: new Date().toISOString(),
+      data: {
+        notification_type: notificationType,
+        title: data.title,
+        message: data.message,
+      },
+    }),
+    signal: AbortSignal.timeout(2000),
+  }).catch(() => {});
+  setTimeout(() => process.exit(0), 500).unref();
 }
 
-main();
+main().catch(() => process.exit(0));

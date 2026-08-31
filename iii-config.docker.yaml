@@ -1,12 +1,16 @@
 workers:
   - name: iii-http
     config:
-      port: 3111
+      port: ${III_REST_PORT:3111}
       host: 0.0.0.0
       default_timeout: 180000
       cors:
-        allowed_origins: ["http://localhost:3111", "http://localhost:3113", "http://127.0.0.1:3111", "http://127.0.0.1:3113"]
+        allowed_origins: ["http://localhost:${III_REST_PORT:3111}", "http://localhost:${III_VIEWER_PORT:3113}", "http://127.0.0.1:${III_REST_PORT:3111}", "http://127.0.0.1:${III_VIEWER_PORT:3113}"]
         allowed_methods: [GET, POST, PUT, DELETE, OPTIONS]
+  - name: iii-worker-manager
+    config:
+      port: ${III_ENGINE_PORT:49134}
+      host: 0.0.0.0
   - name: iii-state
     config:
       adapter:
@@ -28,7 +32,7 @@ workers:
         name: kv
   - name: iii-stream
     config:
-      port: 3112
+      port: ${III_STREAM_PORT:3112}
       host: 0.0.0.0
       adapter:
         name: kv
@@ -40,13 +44,8 @@ workers:
       enabled: true
       service_name: agentmemory
       exporter: memory
-      sampling_ratio: 1.0
+      # See iii-config.yaml for the rationale on 0.1 / console-off (#519).
+      sampling_ratio: 0.1
       metrics_enabled: true
       logs_enabled: true
-      logs_console_output: true
-  - name: iii-exec
-    config:
-      watch:
-        - src/**/*.ts
-      exec:
-        - node dist/index.mjs
+      logs_console_output: false

@@ -1,7 +1,18 @@
 #!/usr/bin/env node
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-
+//#region src/hooks/_project.ts
+function hookCwd(data) {
+	if (!data || typeof data !== "object") return void 0;
+	if (typeof data.cwd === "string" && data.cwd.trim()) return data.cwd;
+	const roots = data.workspace_roots;
+	if (Array.isArray(roots)) {
+		for (const root of roots) if (typeof root === "string" && root.trim()) return root;
+	}
+	const projectDir = process.env["DEVIN_PROJECT_DIR"] || process.env["CLAUDE_PROJECT_DIR"];
+	if (projectDir && projectDir.trim()) return projectDir;
+}
+//#endregion
 //#region src/hooks/post-commit.ts
 const exec = promisify(execFile);
 function isSdkChildContext(payload) {
@@ -35,8 +46,9 @@ async function main() {
 	if (input.trim()) try {
 		data = JSON.parse(input);
 	} catch {}
+	if (!data || typeof data !== "object") data = {};
 	if (isSdkChildContext(data)) return;
-	const cwd = data.cwd || process.env["AGENTMEMORY_CWD"] || process.cwd();
+	const cwd = hookCwd(data) || process.env["AGENTMEMORY_CWD"] || process.cwd();
 	const sessionId = data.session_id || process.env["AGENTMEMORY_SESSION_ID"] || void 0;
 	const sha = process.env["AGENTMEMORY_COMMIT_SHA"] || await git(["rev-parse", "HEAD"], cwd);
 	if (!sha) return;
@@ -95,8 +107,8 @@ async function main() {
 		});
 	} catch {}
 }
-main();
-
+main().catch(() => process.exit(0));
 //#endregion
-export {  };
+export {};
+
 //# sourceMappingURL=post-commit.mjs.map

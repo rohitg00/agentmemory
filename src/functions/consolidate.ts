@@ -152,12 +152,26 @@ export function registerConsolidateFunction(
           const parsed = parseMemoryXml(response, sessionIds);
           if (!parsed) continue;
 
-          const existingMatch = existingMemories.find(
-            (m) => m.title.toLowerCase() === parsed.title.toLowerCase(),
-          );
-
           const now = new Date().toISOString();
           const obsIds = [...new Set(top.map((o) => o.id))];
+          const scopedProject =
+            typeof data.project === "string" && data.project.trim().length > 0
+              ? data.project.trim()
+              : undefined;
+
+          // A scoped consolidation run must only evolve memories that belong
+          // to the same project. Without this guard, two projects that happen
+          // to consolidate observations into an identically-titled memory would
+          // cause one project's memory to silently evolve the other's — the
+          // exact class of cross-project corruption this fix is designed to
+          // prevent. An unscoped run (no data.project, background cron path)
+          // preserves the pre-existing behavior and may evolve any memory.
+          const existingMatch = existingMemories.find(
+            (m) =>
+              m.title.toLowerCase() === parsed.title.toLowerCase() &&
+              (!scopedProject || !m.project || m.project === scopedProject),
+          );
+
           if (existingMatch) {
             existingMatch.isLatest = false;
             await kv.set(KV.memories, existingMatch.id, existingMatch);
@@ -179,6 +193,7 @@ export function registerConsolidateFunction(
               ],
               sourceObservationIds: obsIds,
               isLatest: true,
+              ...(scopedProject !== undefined && { project: scopedProject }),
             };
             await kv.set(KV.memories, evolved.id, evolved);
             await recordAudit(kv, "evolve", "mem::consolidate", [evolved.id], {
@@ -198,6 +213,7 @@ export function registerConsolidateFunction(
               sourceObservationIds: obsIds,
               version: 1,
               isLatest: true,
+              ...(scopedProject !== undefined && { project: scopedProject }),
             };
             await kv.set(KV.memories, memory.id, memory);
             await recordAudit(kv, "remember", "mem::consolidate", [memory.id], {

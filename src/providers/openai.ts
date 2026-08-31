@@ -9,7 +9,7 @@ import {
   normalizeBaseUrl,
 } from "./_openai-shared.js";
 
-const DEFAULT_MODEL = "gpt-4o-mini";
+const DEFAULT_MODEL = "gpt-5.6-luna";
 const DEFAULT_TIMEOUT_MS = 60_000;
 
 /**
@@ -29,7 +29,7 @@ const DEFAULT_TIMEOUT_MS = 60_000;
  * Optional:
  *   OPENAI_BASE_URL          — base URL without path (default: https://api.openai.com).
  *                              Azure: https://<resource>.openai.azure.com/openai/deployments/<deployment>
- *   OPENAI_MODEL             — model name (default: gpt-4o-mini)
+ *   OPENAI_MODEL             — model name (default: gpt-5.6-luna)
  *   OPENAI_API_VERSION       — Azure api-version query param (default: 2024-08-01-preview)
  *   OPENAI_TIMEOUT_MS        — outbound fetch timeout in ms (OpenAI-scoped alias,
  *                              takes precedence over AGENTMEMORY_LLM_TIMEOUT_MS
@@ -129,15 +129,19 @@ export class OpenAIProvider implements MemoryProvider {
     }
 
     const data = (await response.json()) as {
-      choices?: Array<{ message?: { content?: string; reasoning?: string } }>;
+      choices?: Array<{
+        message?: { content?: string; reasoning?: string; reasoning_content?: string };
+      }>;
     };
     const message = data.choices?.[0]?.message;
     const content = message?.content;
     if (content) {
       return content;
     }
-    // Fallback: some thinking models return reasoning but no content
-    const reasoning = message?.reasoning;
+    // Fallback: some thinking models return reasoning but no content.
+    // DeepSeek V4 / Qwen3 / GLM / Kimi return `reasoning_content`;
+    // older OpenAI o-series + some compatibles return `reasoning`. #627
+    const reasoning = message?.reasoning ?? message?.reasoning_content;
     if (reasoning) {
       return reasoning;
     }

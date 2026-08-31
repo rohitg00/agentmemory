@@ -9,13 +9,15 @@ import type {
   RawObservation,
   Session,
 } from "../types.js";
+import { importOrigin } from "../types.js";
 import type { StateKV } from "../state/kv.js";
 import { KV, generateId, fingerprintId } from "../state/schema.js";
 import { parseJsonlText } from "../replay/jsonl-parser.js";
+import { resetLessonIndex } from "./lessons.js";
 import { projectTimeline, type Timeline } from "../replay/timeline.js";
 import { safeAudit } from "./audit.js";
 import { buildSyntheticCompression } from "./compress-synthetic.js";
-import { getSearchIndex } from "./search.js";
+import { indexRecords } from "./search.js";
 import { logger } from "../logger.js";
 
 export const MAX_FILES_DEFAULT = 200;
@@ -157,6 +159,7 @@ async function deriveCrystalAndLessons(
       lessonIds.push(lessonId);
     } catch {}
   }
+  if (lessonIds.length > 0) resetLessonIndex();
 
   // Content-addressed on sessionId so re-importing the same session
   // upserts the crystal in place instead of creating a new one.
@@ -406,7 +409,17 @@ export function registerReplayFunctions(sdk: ISdk, kv: StateKV): void {
           if (!existing.firstPrompt && firstPrompt) {
             existing.firstPrompt = firstPrompt;
           }
-          await kv.set(KV.sessions, existing.id, existing);
+          // #775: re-key on parsed.sessionId, not existing.id. Older
+          // session rows may be missing the `id` field; existing.id
+          // would then be undefined, JSON.stringify would drop the
+          // `key` from the state::set payload, and the engine would
+          // reject the call with `missing field \`key\``. Because the
+          // rejection aborts the whole import handler, a single
+          // legacy row killed the entire batch. parsed.sessionId is
+          // always populated (parseJsonlText has a three-level
+          // fallback) and is what we just used to read the row.
+          if (!existing.id) existing.id = parsed.sessionId;
+          await kv.set(KV.sessions, parsed.sessionId, existing);
         } else {
           const session: Session = {
             id: parsed.sessionId,
@@ -422,16 +435,28 @@ export function registerReplayFunctions(sdk: ISdk, kv: StateKV): void {
           await kv.set(KV.sessions, session.id, session);
         }
 
-        const searchIndex = getSearchIndex();
         const compressed: CompressedObservation[] = [];
         await Promise.all(
           parsed.observations.map(async (obs) => {
             const synthetic = buildSyntheticCompression(obs);
+            synthetic.origin = importOrigin(
+              synthetic.origin,
+              synthetic.timestamp,
+              "jsonl",
+            );
             compressed.push(synthetic);
             await kv.set(KV.observations(parsed.sessionId), obs.id, synthetic);
-            searchIndex.add(synthetic);
           }),
         );
+        // BM25 + vector in one path so jsonl-imported observations are
+        // reachable by semantic search, not just keyword.
+        try {
+          await indexRecords(compressed, []);
+        } catch (err) {
+          logger.warn("Import indexing failed; restart rebuild will recover", {
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
         observationCount += parsed.observations.length;
         sessionIds.push(parsed.sessionId);
 

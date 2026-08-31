@@ -1,4 +1,36 @@
 #!/usr/bin/env node
+import { execSync } from "node:child_process";
+import { basename } from "node:path";
+//#region src/hooks/_project.ts
+function resolveProject(cwd) {
+	const explicit = process.env["AGENTMEMORY_PROJECT_NAME"];
+	if (explicit && explicit.trim()) return explicit.trim();
+	const dir = cwd && cwd.trim() ? cwd : process.cwd();
+	try {
+		const top = execSync("git rev-parse --show-toplevel", {
+			cwd: dir,
+			stdio: [
+				"ignore",
+				"pipe",
+				"ignore"
+			],
+			timeout: 500
+		}).toString().trim();
+		if (top) return basename(top);
+	} catch {}
+	return basename(dir);
+}
+function hookCwd(data) {
+	if (!data || typeof data !== "object") return void 0;
+	if (typeof data.cwd === "string" && data.cwd.trim()) return data.cwd;
+	const roots = data.workspace_roots;
+	if (Array.isArray(roots)) {
+		for (const root of roots) if (typeof root === "string" && root.trim()) return root;
+	}
+	const projectDir = process.env["DEVIN_PROJECT_DIR"] || process.env["CLAUDE_PROJECT_DIR"];
+	if (projectDir && projectDir.trim()) return projectDir;
+}
+//#endregion
 //#region src/hooks/post-tool-use.ts
 function isSdkChildContext(payload) {
 	if (process.env["AGENTMEMORY_SDK_CHILD"] === "1") return true;
@@ -21,29 +53,42 @@ async function main() {
 	} catch {
 		return;
 	}
+	if (!data || typeof data !== "object") return;
 	if (isSdkChildContext(data)) return;
-	const sessionId = data.session_id || "unknown";
-	const { imageData, cleanOutput } = extractImageData(data.tool_response ?? data.tool_output);
-	try {
-		await fetch(`${REST_URL}/agentmemory/observe`, {
-			method: "POST",
-			headers: authHeaders(),
-			body: JSON.stringify({
-				hookType: "post_tool_use",
-				sessionId,
-				project: data.cwd || process.cwd(),
-				cwd: data.cwd || process.cwd(),
-				timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-				data: {
-					tool_name: data.tool_name,
-					tool_input: data.tool_input,
-					tool_output: truncate(cleanOutput, 8e3),
-					...imageData ? { image_data: imageData } : {}
-				}
-			}),
-			signal: AbortSignal.timeout(3e3)
-		});
-	} catch {}
+	const sessionId = data.session_id || data.sessionId || data.conversation_id || "unknown";
+	const toolName = data.tool_name ?? data.toolName;
+	const toolInput = data.tool_input ?? data.toolArgs;
+	const { imageData, cleanOutput } = extractImageData(toolOutput(data));
+	const cwd = hookCwd(data) || process.cwd();
+	fetch(`${REST_URL}/agentmemory/observe`, {
+		method: "POST",
+		headers: authHeaders(),
+		body: JSON.stringify({
+			hookType: "post_tool_use",
+			sessionId,
+			project: resolveProject(cwd),
+			cwd,
+			timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+			data: {
+				tool_name: toolName,
+				tool_input: toolInput,
+				tool_output: truncate(cleanOutput, 8e3),
+				...imageData ? { image_data: imageData } : {}
+			}
+		}),
+		signal: AbortSignal.timeout(3e3)
+	}).catch(() => {});
+	setTimeout(() => process.exit(0), 500).unref();
+}
+function toolOutput(data) {
+	if (data.tool_response !== void 0) return data.tool_response;
+	if (data.tool_output !== void 0) return data.tool_output;
+	const result = data.tool_result ?? data.toolResult;
+	if (typeof result === "object" && result !== null) {
+		const obj = result;
+		return obj.text_result_for_llm ?? obj.textResultForLlm ?? result;
+	}
+	return result;
 }
 function isBase64Image(val) {
 	return typeof val === "string" && (val.startsWith("data:image/") || val.startsWith("iVBORw0KGgo") || val.startsWith("/9j/"));
@@ -80,8 +125,8 @@ function truncate(value, max) {
 	}
 	return value;
 }
-main();
-
+main().catch(() => process.exit(0));
 //#endregion
-export {  };
+export {};
+
 //# sourceMappingURL=post-tool-use.mjs.map

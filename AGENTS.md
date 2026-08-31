@@ -19,6 +19,7 @@ agentmemory is a persistent memory system for AI coding agents, built on iii-eng
 5. `test/mcp-standalone.test.ts` — tool count assertion
 6. `README.md` — tool counts (search for "MCP tools")
 7. `plugin/.claude-plugin/plugin.json` — tool count in description
+8. `plugin/plugin.json` and `plugin/.mcp.copilot.json` (when present) — tool count or MCP exposure
 
 **When adding REST endpoints, you MUST update:**
 1. `src/triggers/api.ts` — endpoint registration
@@ -32,6 +33,7 @@ agentmemory is a persistent memory system for AI coding agents, built on iii-eng
 4. `src/functions/export-import.ts` — supportedVersions set
 5. `test/export-import.test.ts` — version assertion
 6. `plugin/.claude-plugin/plugin.json` — version field
+7. `plugin/plugin.json` (when present) — version field
 
 **When adding new KV scopes:**
 1. `src/state/schema.ts` — add to the KV object
@@ -89,7 +91,10 @@ case "memory_your_tool": {
 ```
 
 ### Hook Scripts
-Hook scripts in `src/hooks/` are standalone Node.js scripts (no iii-sdk import). They read JSON from stdin, make HTTP calls to the REST API, and exit. Always use `try/catch` with `AbortSignal.timeout()` for best-effort calls.
+Hook scripts in `src/hooks/` are standalone Node.js scripts (no iii-sdk import). They read JSON from stdin, make HTTP calls to the REST API, and exit. There are two patterns depending on whether Claude Code consumes the script's stdout:
+
+- **Context-injecting hooks** (`pre-tool-use`, `pre-compact`, `session-start`) write recalled context to stdout for Claude Code to inject. These MUST use `try/catch` with `await fetch(..., { signal: AbortSignal.timeout(N) })` — the script has to wait for the response before exiting, and the timeout is the only bound on hang time.
+- **Telemetry-only hooks** (`notification`, `post-tool-failure`, `post-tool-use`, `prompt-submit`, `stop`, `session-end`, `subagent-start`, `subagent-stop`, `task-completed`) write nothing to stdout. These MUST use fire-and-forget `fetch(..., { signal: AbortSignal.timeout(N) }).catch(() => {})` paired with `setTimeout(() => process.exit(0), 500).unref()`. The unawaited fetch dispatches the request; the unref'd `setTimeout` force-exits the process after the request has been flushed to the local daemon's socket buffer (~500ms is enough for single-request hooks; use 1500ms for multi-request hooks like `stop` and `session-end` so all fetches have time to start, especially when `AGENTMEMORY_URL` points to a remote daemon). Without the `setTimeout` Node keeps the event loop alive waiting for any in-flight fetch to settle, which means the hook still blocks Claude Code's next-prompt boundary for up to the AbortSignal duration — exactly the bug fire-and-forget is meant to fix.
 
 ## Coding Standards
 
@@ -104,16 +109,16 @@ Hook scripts in `src/hooks/` are standalone Node.js scripts (no iii-sdk import).
 
 ## Testing
 
-- All tests must pass before PR: `npm test` (950+ tests)
+- All tests must pass before PR: `npm test` (1,596+ tests)
 - Mock pattern: `vi.mock("iii-sdk")` with mock `sdk.trigger`, `kv.get/set/list`
 - Test files go in `test/` with `.test.ts` extension
 - Follow existing patterns in `test/crystallize.test.ts` for function tests
 
-## Current Stats (v0.9.16)
+## Current Stats (v0.9.29)
 
-- 53 MCP tools (8 visible by default, `AGENTMEMORY_TOOLS=all` for all)
-- 124 REST endpoints
+- 54 MCP tools (8 visible by default, `AGENTMEMORY_TOOLS=all` for all)
+- 130 REST endpoints
 - 6 MCP resources, 3 MCP prompts
-- 12 hooks, 4 skills
-- 50+ iii functions
-- 950+ tests
+- 12 hooks, 17 skills
+- 260+ iii functions
+- 1,596+ tests

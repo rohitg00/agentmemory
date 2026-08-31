@@ -11,7 +11,7 @@
 }
 
 .label {
-  letter-spacing: 0.08em;
+  letter-spacing: 0;
 }
 
 .count {
@@ -19,12 +19,13 @@
   align-items: center;
   justify-content: center;
   min-width: 2.5ch;
-  padding: 0 6px;
+  padding: 1px 8px;
   margin-left: 4px;
-  border-radius: 3px;
+  border-radius: var(--radius-pill);
   background: rgba(255, 255, 255, 0.08);
-  color: var(--mist, #cfd2d1);
+  color: var(--body);
+  font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-  font-size: 0.85em;
+  font-size: 0.8em;
   letter-spacing: 0.04em;
 }

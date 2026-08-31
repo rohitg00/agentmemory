@@ -18,9 +18,8 @@ vi.mock("../src/functions/search.js", () => ({
   vectorIndexAddGuarded: vi.fn().mockResolvedValue(false),
 }));
 
-const mockTriggerVoid = vi.fn();
 const mockTrigger = vi.fn().mockResolvedValue(undefined);
-const mockSdk = { triggerVoid: mockTriggerVoid, trigger: mockTrigger } as any;
+const mockSdk = { trigger: mockTrigger } as any;
 
 function mockKV() {
   const store = new Map<string, Map<string, unknown>>();
@@ -70,7 +69,7 @@ describe("End-to-End Multimodal Flow", () => {
   });
 
   beforeEach(() => {
-    mockTriggerVoid.mockClear();
+    mockTrigger.mockClear();
   });
 
   it("Step 1: Agent image should be successfully saved to hard drive", async () => {
@@ -105,11 +104,11 @@ describe("End-to-End Multimodal Flow", () => {
 
     savedImagePath = raw.imageData;
 
-    const deltaCalls = mockTriggerVoid.mock.calls.filter(
-      (c: any[]) => c[0] === "mem::disk-size-delta"
+    const deltaCalls = mockTrigger.mock.calls.filter(
+      (c: any[]) => c[0]?.function_id === "mem::disk-size-delta"
     );
     expect(deltaCalls.length).toBe(1);
-    expect(deltaCalls[0][1].deltaBytes).toBeGreaterThan(0);
+    expect(deltaCalls[0][0].payload.deltaBytes).toBeGreaterThan(0);
   });
 
   it("Step 2 & 3: mem::compress should call the vision model and store compressed observation in KV", async () => {
@@ -168,8 +167,8 @@ describe("End-to-End Multimodal Flow", () => {
 describe("Disk Size Manager", () => {
   it("should increment disk size and trigger cleanup when over quota", async () => {
     const localKv = mockKV() as any;
-    const localTriggerVoid = vi.fn();
-    const localSdk = { triggerVoid: localTriggerVoid } as any;
+    const localTrigger = vi.fn().mockResolvedValue(undefined);
+    const localSdk = { trigger: localTrigger } as any;
 
     let managerCallback: any = null;
     const sdkMocker = {
@@ -192,7 +191,7 @@ describe("Disk Size Manager", () => {
     expect(res2.success).toBe(true);
     expect(res2.currentTotal).toBe(3000);
 
-    expect(localTriggerVoid).not.toHaveBeenCalled();
+    expect(localTrigger).not.toHaveBeenCalled();
   });
 
   it("should trigger cleanup when total exceeds max bytes", async () => {
@@ -201,8 +200,8 @@ describe("Disk Size Manager", () => {
       process.env.AGENTMEMORY_IMAGE_STORE_MAX_BYTES = "5000";
 
       const localKv = mockKV() as any;
-      const localTriggerVoid = vi.fn();
-      const localSdk = { triggerVoid: localTriggerVoid } as any;
+      const localTrigger = vi.fn().mockResolvedValue(undefined);
+      const localSdk = { trigger: localTrigger } as any;
 
       let managerCallback: any = null;
       const sdkMocker = {
@@ -216,10 +215,15 @@ describe("Disk Size Manager", () => {
       registerDiskSizeManager(sdkMocker, localKv);
 
       await managerCallback({ deltaBytes: 3000 });
-      expect(localTriggerVoid).not.toHaveBeenCalled();
+      expect(localTrigger).not.toHaveBeenCalled();
 
       await managerCallback({ deltaBytes: 3000 });
-      expect(localTriggerVoid).toHaveBeenCalledWith("mem::image-quota-cleanup", {});
+      expect(localTrigger).toHaveBeenCalledWith(
+        expect.objectContaining({
+          function_id: "mem::image-quota-cleanup",
+          payload: {},
+        }),
+      );
     } finally {
       if (originalEnv === undefined) {
         delete process.env.AGENTMEMORY_IMAGE_STORE_MAX_BYTES;
@@ -231,7 +235,7 @@ describe("Disk Size Manager", () => {
 
   it("should clamp negative totals to zero", async () => {
     const localKv = mockKV() as any;
-    const localSdk = { triggerVoid: vi.fn() } as any;
+    const localSdk = { trigger: vi.fn().mockResolvedValue(undefined) } as any;
 
     let managerCallback: any = null;
     const sdkMocker = {
@@ -250,7 +254,7 @@ describe("Disk Size Manager", () => {
 
   it("should reject invalid deltaBytes", async () => {
     const localKv = mockKV() as any;
-    const localSdk = { triggerVoid: vi.fn() } as any;
+    const localSdk = { trigger: vi.fn().mockResolvedValue(undefined) } as any;
 
     let managerCallback: any = null;
     const sdkMocker = {
@@ -271,8 +275,8 @@ describe("Disk Size Manager", () => {
 describe("Image Refs", () => {
   it("should increment and decrement ref counts correctly with deletion parity", async () => {
     const localKv = mockKV() as any;
-    const localTriggerVoid = vi.fn();
-    const localSdk = { triggerVoid: localTriggerVoid } as any;
+    const localTrigger = vi.fn().mockResolvedValue(undefined);
+    const localSdk = { trigger: localTrigger } as any;
 
     const { saveImageToDisk } = await import("../src/utils/image-store.js");
     const { incrementImageRef, decrementImageRef, getImageRefCount } = await import("../src/functions/image-refs.js");
@@ -301,25 +305,25 @@ describe("Image Refs", () => {
     
     // (c) shared image with refcount >= 2 is NOT deleted when one decrements
     expect(existsSync(testFile)).toBe(true);
-    expect(localTriggerVoid).not.toHaveBeenCalled();
+    expect(localTrigger).not.toHaveBeenCalled();
 
     // (a) decrementing to zero triggers image file deletion and negative delta
     await decrementImageRef(localKv, localSdk, testFile);
     expect(await getImageRefCount(localKv, testFile)).toBe(0);
     expect(existsSync(testFile)).toBe(false);
-    
-    const deltaCalls = localTriggerVoid.mock.calls.filter(
-      (c: any[]) => c[0] === "mem::disk-size-delta"
+
+    const deltaCalls = localTrigger.mock.calls.filter(
+      (c: any[]) => c[0]?.function_id === "mem::disk-size-delta"
     );
     expect(deltaCalls.length).toBe(1);
-    expect(deltaCalls[0][1].deltaBytes).toBeLessThan(0);
+    expect(deltaCalls[0][0].payload.deltaBytes).toBeLessThan(0);
 
     // (b) decrementing an already-zero/unknown ref is a no-op
-    localTriggerVoid.mockClear();
+    localTrigger.mockClear();
     await decrementImageRef(localKv, localSdk, "/fake/unknown/path.png");
     expect(await getImageRefCount(localKv, "/fake/unknown/path.png")).toBe(0);
-    const noOpDeltaCalls = localTriggerVoid.mock.calls.filter(
-      (c: any[]) => c[0] === "mem::disk-size-delta"
+    const noOpDeltaCalls = localTrigger.mock.calls.filter(
+      (c: any[]) => c[0]?.function_id === "mem::disk-size-delta"
     );
     expect(noOpDeltaCalls.length).toBe(0);
   });

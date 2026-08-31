@@ -51,7 +51,15 @@ fly logs --app "$APP" | grep -A1 AGENTMEMORY_SECRET=
 
 You will see exactly one line of the form `AGENTMEMORY_SECRET=<64 hex chars>`.
 Copy it into your client environment (`~/.bashrc`, Claude Desktop config,
-etc.). The secret is never printed again on subsequent boots.
+the viewer unlock prompt, etc.). The secret is never printed again on
+subsequent boots.
+
+If the first-boot log line is no longer available, read the persisted
+secret from the mounted volume:
+
+```bash
+fly ssh console --app "$APP" -C "sh -lc 'cat /data/.hmac'"
+```
 
 ## Verify the deployment
 
@@ -74,6 +82,32 @@ fly proxy 3113:3113 --app "$APP"
 `fly proxy` opens an mTLS WireGuard channel to the machine, so the
 viewer's bearer token still has to ride a loopback connection on your
 laptop — the v0.9.12 plaintext-bearer guard stays satisfied.
+
+The entrypoint sets `AGENTMEMORY_VIEWER_HOST=::` **only when it detects
+Fly's runtime variables** (`FLY_APP_NAME` / `FLY_ALLOC_ID`). That makes
+the viewer listen on the machine's `fly-local-6pn` WireGuard interface
+as well as loopback so `fly proxy` can reach it. The same branch
+pre-seeds `VIEWER_ALLOWED_HOSTS=localhost:3113,127.0.0.1:3113,[::1]:3113`,
+which are the Host headers `fly proxy 3113:3113` actually emits on
+your laptop.
+
+When `AGENTMEMORY_VIEWER_HOST` is non-loopback the viewer enforces two
+extra guards: it refuses to start unless `VIEWER_ALLOWED_HOSTS` is
+explicitly set, and every request to `/agentmemory/*` must present
+`Authorization: Bearer $AGENTMEMORY_SECRET`. Static HTML and the
+favicon are still served unauthenticated. If a proxied viewer request
+gets a 401, the browser UI prompts for `AGENTMEMORY_SECRET` and stores
+it in session storage so subsequent viewer API calls include the bearer.
+Use the value printed in the first-boot logs or read `/data/.hmac`
+inside the machine.
+
+> **Security warning.** Setting `AGENTMEMORY_VIEWER_HOST=0.0.0.0` or
+> `::` turns the viewer into a network-reachable proxy that signs every
+> upstream call with `AGENTMEMORY_SECRET`. Never enable that outside a
+> network you trust (Fly's WireGuard mesh in this template), and never
+> set it in a plain `docker run -p 3113:3113 …` on a shared host — the
+> entrypoint deliberately skips the override when Fly env vars are
+> absent so a plain Docker pull stays loopback-only.
 
 ## Rotate the HMAC secret
 
