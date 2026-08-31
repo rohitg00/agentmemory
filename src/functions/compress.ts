@@ -13,6 +13,7 @@ import {
   COMPRESSION_SYSTEM,
   buildCompressionPrompt,
 } from "../prompts/compression.js";
+import { buildSyntheticCompression } from "./compress-synthetic.js";
 import { VISION_DESCRIPTION_PROMPT } from "../prompts/vision.js";
 import { getXmlTag, getXmlChildren } from "../prompts/xml.js";
 import { getSearchIndex, vectorIndexAddGuarded } from "./search.js";
@@ -117,7 +118,81 @@ export function registerCompressFunction(
           : data.raw.toolOutput,
         userPrompt: data.raw.userPrompt,
         timestamp: data.raw.timestamp,
+        content: data.raw.content,
       });
+
+      if (!prompt) {
+        const synthetic = buildSyntheticCompression(data.raw);
+        await kv.set(
+          KV.observations(data.sessionId),
+          data.observationId,
+          synthetic,
+        );
+
+        try {
+          getSearchIndex().add(synthetic);
+        } catch (err) {
+          logger.warn("Failed to index synthetic observation into BM25", {
+            obsId: synthetic.id,
+            sessionId: synthetic.sessionId,
+            title: synthetic.title,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+
+        await vectorIndexAddGuarded(
+          synthetic.id,
+          synthetic.sessionId,
+          synthetic.title + " " + (synthetic.narrative || ""),
+          { kind: "synthetic", logId: synthetic.id },
+        );
+
+        const streamResults = await Promise.allSettled([
+          sdk.trigger({
+            function_id: "stream::set",
+            payload: {
+              stream_name: STREAM.name,
+              group_id: STREAM.group(data.sessionId),
+              item_id: data.observationId,
+              data: { type: "compressed", observation: synthetic },
+            },
+          }),
+          sdk.trigger({
+            function_id: "stream::send",
+            payload: {
+              stream_name: STREAM.name,
+              group_id: STREAM.viewerGroup,
+              id: `compressed-${data.observationId}`,
+              type: "compressed_observation",
+              data: {
+                type: "compressed",
+                observation: synthetic,
+                sessionId: data.sessionId,
+              },
+            },
+            action: TriggerAction.Void(),
+          }),
+        ]);
+        for (const result of streamResults) {
+          if (result.status === "rejected") {
+            logger.warn("Non-fatal stream publish failure after compress", {
+              sessionId: data.sessionId,
+              observationId: data.observationId,
+              error:
+                result.reason instanceof Error
+                  ? result.reason.message
+                  : String(result.reason),
+            });
+          }
+        }
+
+        return {
+          success: true,
+          skipped_llm: true,
+          observation: synthetic,
+          compressed: synthetic,
+        };
+      }
 
       try {
         const validator = (response: string) => {

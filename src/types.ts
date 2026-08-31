@@ -4,6 +4,7 @@ export interface Session {
   cwd: string;
   startedAt: string;
   endedAt?: string;
+  updatedAt?: string;
   status: "active" | "completed" | "abandoned";
   observationCount: number;
   model?: string;
@@ -53,6 +54,7 @@ export interface RawObservation {
   toolInput?: unknown;
   toolOutput?: unknown;
   userPrompt?: string;
+  content?: string;
   assistantResponse?: string;
   raw: unknown;
   modality?: "text" | "image" | "mixed";

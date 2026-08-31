@@ -13,6 +13,11 @@ describe('KV', () => {
   it('has correct summaries scope', () => {
     expect(KV.summaries).toBe('mem:summaries')
   })
+
+  it('generates summaryPartials scope with session ID', () => {
+    expect(KV.summaryPartials('ses_123')).toBe('mem:summary_partials:ses_123')
+  })
+
 })
 
 describe('STREAM', () => {

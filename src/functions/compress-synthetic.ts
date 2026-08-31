@@ -80,8 +80,9 @@ export function buildSyntheticCompression(
   const inputStr = stringifyForNarrative(raw.toolInput);
   const outputStr = stringifyForNarrative(raw.toolOutput);
   const promptStr = raw.userPrompt ?? "";
+  const contentStr = raw.content ?? "";
 
-  const narrativeParts = [promptStr, inputStr, outputStr].filter(
+  const narrativeParts = [promptStr, inputStr, outputStr, contentStr].filter(
     (s) => s.length > 0,
   );
 
