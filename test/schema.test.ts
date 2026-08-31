@@ -13,6 +13,10 @@ describe('KV', () => {
   it('has correct summaries scope', () => {
     expect(KV.summaries).toBe('mem:summaries')
   })
+
+  it('generates graphExtracted scope with session ID', () => {
+    expect(KV.graphExtracted('ses_123')).toBe('mem:graph_extracted:ses_123')
+  })
 })
 
 describe('STREAM', () => {

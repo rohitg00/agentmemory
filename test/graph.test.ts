@@ -738,5 +738,164 @@ describe("Graph Functions", () => {
       expect(result.success).toBe(true);
       expect(listCalls).toBe(0);
     });
+
+    it("deduplication / zero-delta: calling mem::graph-extract twice skips on second call with 0 LLM calls", async () => {
+      const localKv = mockKV();
+      const localSdk = mockSdk();
+      const compressMock = vi.fn().mockResolvedValue(`<entities>
+<entity type="file" name="src/a.ts"/>
+</entities>
+<relationships/>`);
+      const provider = {
+        name: "test-provider",
+        compress: compressMock,
+        summarize: vi.fn(),
+      };
+      registerGraphFunction(localSdk as never, localKv as never, provider as never);
+
+      const obs: CompressedObservation = {
+        id: "obs_dedup_1",
+        sessionId: "ses_dedup",
+        timestamp: "2026-02-01T10:00:00Z",
+        type: "file_edit",
+        title: "Obs 1",
+        facts: [],
+        narrative: "Obs 1 narrative",
+        concepts: [],
+        files: [],
+        importance: 5,
+      };
+
+      const result1 = (await localSdk.trigger("mem::graph-extract", {
+        observations: [obs],
+        sessionId: "ses_dedup",
+      })) as any;
+      expect(result1.success).toBe(true);
+      expect(result1.nodesAdded).toBe(1);
+      expect(compressMock).toHaveBeenCalledTimes(1);
+
+      // Second call with same observation
+      const result2 = (await localSdk.trigger("mem::graph-extract", {
+        observations: [obs],
+        sessionId: "ses_dedup",
+      })) as any;
+      expect(result2.success).toBe(true);
+      expect(result2.cached).toBe(true);
+      expect(result2.skipped).toBe(true);
+      expect(result2.nodesAdded).toBe(0);
+      expect(result2.edgesAdded).toBe(0);
+      expect(compressMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("delta processing: passing previously-extracted along with new observation only processes new observation", async () => {
+      const localKv = mockKV();
+      const localSdk = mockSdk();
+      const compressMock = vi.fn().mockImplementation(async (_sys, prompt) => {
+        if (prompt.includes("Obs 2 narrative")) {
+          return `<entities>
+<entity type="file" name="src/b.ts"/>
+</entities>
+<relationships/>`;
+        }
+        return `<entities>
+<entity type="file" name="src/a.ts"/>
+</entities>
+<relationships/>`;
+      });
+      const provider = {
+        name: "test-provider",
+        compress: compressMock,
+        summarize: vi.fn(),
+      };
+      registerGraphFunction(localSdk as never, localKv as never, provider as never);
+
+      const obs1: CompressedObservation = {
+        id: "obs_delta_1",
+        sessionId: "ses_delta",
+        timestamp: "2026-02-01T10:00:00Z",
+        type: "file_edit",
+        title: "Obs 1",
+        facts: [],
+        narrative: "Obs 1 narrative",
+        concepts: [],
+        files: [],
+        importance: 5,
+      };
+      const obs2: CompressedObservation = {
+        id: "obs_delta_2",
+        sessionId: "ses_delta",
+        timestamp: "2026-02-01T10:01:00Z",
+        type: "file_edit",
+        title: "Obs 2",
+        facts: [],
+        narrative: "Obs 2 narrative",
+        concepts: [],
+        files: [],
+        importance: 5,
+      };
+
+      await localSdk.trigger("mem::graph-extract", {
+        observations: [obs1],
+        sessionId: "ses_delta",
+      });
+      expect(compressMock).toHaveBeenCalledTimes(1);
+
+      // Now pass both obs1 and obs2
+      const result2 = (await localSdk.trigger("mem::graph-extract", {
+        observations: [obs1, obs2],
+        sessionId: "ses_delta",
+      })) as any;
+      expect(result2.success).toBe(true);
+      expect(result2.nodesAdded).toBe(1);
+      expect(compressMock).toHaveBeenCalledTimes(2);
+
+      const promptArg = compressMock.mock.calls[1][1];
+      expect(promptArg).toContain("Obs 2 narrative");
+      expect(promptArg).not.toContain("Obs 1 narrative");
+    });
+
+    it("force bypass: passing force: true re-extracts even if previously recorded", async () => {
+      const localKv = mockKV();
+      const localSdk = mockSdk();
+      const compressMock = vi.fn().mockResolvedValue(`<entities>
+<entity type="file" name="src/forced.ts"/>
+</entities>
+<relationships/>`);
+      const provider = {
+        name: "test-provider",
+        compress: compressMock,
+        summarize: vi.fn(),
+      };
+      registerGraphFunction(localSdk as never, localKv as never, provider as never);
+
+      const obs: CompressedObservation = {
+        id: "obs_force_1",
+        sessionId: "ses_force",
+        timestamp: "2026-02-01T10:00:00Z",
+        type: "file_edit",
+        title: "Obs Force",
+        facts: [],
+        narrative: "Obs Force narrative",
+        concepts: [],
+        files: [],
+        importance: 5,
+      };
+
+      await localSdk.trigger("mem::graph-extract", {
+        observations: [obs],
+        sessionId: "ses_force",
+      });
+      expect(compressMock).toHaveBeenCalledTimes(1);
+
+      const result2 = (await localSdk.trigger("mem::graph-extract", {
+        observations: [obs],
+        sessionId: "ses_force",
+        force: true,
+      })) as any;
+      expect(result2.success).toBe(true);
+      expect(result2.cached).toBeUndefined();
+      expect(result2.skipped).toBeUndefined();
+      expect(compressMock).toHaveBeenCalledTimes(2);
+    });
   });
 });
