@@ -1176,6 +1176,43 @@ export function registerApiTriggers(
     config: { api_path: "/agentmemory/evict", http_method: "POST" },
   });
 
+  sdk.registerFunction("api::session-sweep",
+    async (
+      req: ApiRequest<{ dryRun?: boolean; idleMinutes?: number }>,
+    ): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const dryRun =
+        req.query_params?.["dryRun"] === "true" || req.body?.dryRun === true;
+      // Whitelisted, never the raw body. parseOptionalPositiveInt rejects
+      // booleans, arrays, and objects outright, which a bare Number() would
+      // not: Number(true) is 1, so {"idleMinutes": true} would otherwise ask
+      // for a one-minute threshold and sweep nearly every active session.
+      const idleMinutes = parseOptionalPositiveInt(
+        req.body?.idleMinutes ?? req.query_params?.["idleMinutes"],
+      );
+      if (idleMinutes === null) {
+        return {
+          status_code: 400,
+          body: { error: "idleMinutes must be a positive integer" },
+        };
+      }
+      const result = await sdk.trigger({
+        function_id: "mem::session-sweep",
+        payload: {
+          dryRun,
+          ...(idleMinutes !== undefined ? { idleMinutes } : {}),
+        },
+      });
+      return { status_code: 200, body: result };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::session-sweep",
+    config: { api_path: "/agentmemory/session-sweep", http_method: "POST" },
+  });
+
   sdk.registerFunction("api::smart-search",
     async (
       req: ApiRequest<{

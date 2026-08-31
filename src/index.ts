@@ -13,6 +13,7 @@ import {
   isConsolidationEnabled,
   isContextInjectionEnabled,
   isDropStaleIndexEnabled,
+  getSessionSweepIntervalMs,
 } from "./config.js";
 import {
   createProvider,
@@ -49,6 +50,7 @@ import { registerConsolidateFunction } from "./functions/consolidate.js";
 import { registerPatternsFunction } from "./functions/patterns.js";
 import { registerRememberFunction } from "./functions/remember.js";
 import { registerEvictFunction } from "./functions/evict.js";
+import { registerSessionSweepFunction } from "./functions/session-sweep.js";
 import { registerRelationsFunction } from "./functions/relations.js";
 import { registerTimelineFunction } from "./functions/timeline.js";
 import { registerSmartSearchFunction } from "./functions/smart-search.js";
@@ -251,6 +253,7 @@ async function main() {
   registerPatternsFunction(sdk, kv);
   registerRememberFunction(sdk, kv);
   registerEvictFunction(sdk, kv);
+  registerSessionSweepFunction(sdk, kv);
 
   registerRelationsFunction(sdk, kv);
   registerTimelineFunction(sdk, kv);
@@ -536,7 +539,7 @@ async function main() {
     `Ready. ${embeddingProvider ? "Triple-stream (BM25+Vector+Graph)" : "BM25+Graph"} search active.`,
   );
   bootLog(
-    `REST API: 130 endpoints at http://localhost:${config.restPort}/agentmemory/*`,
+    `REST API: 131 endpoints at http://localhost:${config.restPort}/agentmemory/*`,
   );
   bootLog(
     `MCP surface (opt-in via \`npx @agentmemory/mcp\`): ${getAllTools().length} tools · 6 resources · 3 prompts`,
@@ -561,6 +564,18 @@ async function main() {
     }, autoForgetIntervalMs);
     autoForgetTimer.unref();
     bootLog(`Auto-forget: enabled (every ${autoForgetIntervalMs / 60000}m)`);
+  }
+
+  const sessionSweepIntervalMs = getSessionSweepIntervalMs();
+
+  if (process.env.SESSION_SWEEP_ENABLED !== "false") {
+    const sessionSweepTimer = setInterval(async () => {
+      try {
+        await sdk.trigger({ function_id: "mem::session-sweep", payload: {} });
+      } catch {}
+    }, sessionSweepIntervalMs);
+    sessionSweepTimer.unref();
+    bootLog(`Session sweep: enabled (every ${sessionSweepIntervalMs / 60000}m)`);
   }
 
   if (process.env.LESSON_DECAY_ENABLED !== "false") {
