@@ -826,7 +826,7 @@ function inspectDockerContainer(
   state: DockerEngineState,
   ownerPort: number,
 ): DockerEngineInspection {
-  const result = spawnSync(dockerBin, ["inspect", containerId], {
+  const result = spawnBinary(dockerBin, ["inspect", containerId], {
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "ignore"],
     maxBuffer: 1024 * 1024,
@@ -991,7 +991,7 @@ function inspectOwnedDockerEngine(state: EngineState): DockerEngineInspection {
           reason: `${composeFile} does not define iii-engine`,
         };
       }
-      const psResult = spawnSync(
+      const psResult = spawnBinary(
         dockerBin,
         dockerComposeArgs(composeFile, state.projectName, [
           "ps",
@@ -1023,7 +1023,7 @@ function inspectOwnedDockerEngine(state: EngineState): DockerEngineInspection {
         ? ["--filter", `label=com.docker.compose.project=${state.projectName}`]
         : []),
     ];
-    const scanResult = spawnSync(
+    const scanResult = spawnBinary(
       dockerBin,
       scanArgs,
       { encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"] },
@@ -1442,7 +1442,7 @@ function printDockerStartupLogs(): void {
   if (inspection.status !== "running" && inspection.status !== "stopped") return;
   const dockerBin = whichBinary("docker");
   if (!dockerBin) return;
-  const result = spawnSync(
+  const result = spawnBinary(
     dockerBin,
     [
       "logs",
@@ -3118,6 +3118,35 @@ async function runDemoBody(base: string) {
   p.log.success("agentmemory is working. Point your agent at it and get back to coding.");
 }
 
+// CreateProcess cannot run a .cmd/.bat directly — spawn fails with EINVAL —
+// and `shell: true` would concatenate the arguments into a command line
+// where a container id containing shell metacharacters is interpreted.
+// Routing through cmd.exe with the arguments still passed as a real argv
+// keeps most metacharacters opaque, but cmd.exe still expands %VAR% and a
+// literal " can close the quoting cmd.exe wraps each argv entry in — reject
+// both rather than trying to escape them. Every caller here passes Docker
+// container ids ([0-9a-f]{12,64}) or compose project names ([\w-]+), so a
+// real value never trips this.
+const CMD_UNSAFE = /["%]/;
+
+function spawnBinary(
+  binary: string,
+  binaryArgs: string[],
+  options: Parameters<typeof spawnSync>[2],
+): ReturnType<typeof spawnSync> {
+  if (IS_WINDOWS && /\.(cmd|bat)$/i.test(binary)) {
+    const unsafe = binaryArgs.find((arg) => CMD_UNSAFE.test(arg));
+    if (unsafe !== undefined) {
+      throw new Error(
+        `refusing to spawn ${JSON.stringify(binary)}: argument ${JSON.stringify(unsafe)} contains a character (" or %) that is not safe to pass through cmd.exe`,
+      );
+    }
+    const comspec = process.env["ComSpec"] || "cmd.exe";
+    return spawnSync(comspec, ["/d", "/s", "/c", binary, ...binaryArgs], options);
+  }
+  return spawnSync(binary, binaryArgs, options);
+}
+
 function runCommand(
   command: string,
   commandArgs: string[],
@@ -3125,7 +3154,7 @@ function runCommand(
 ): boolean {
   const spinner = p.spinner();
   spinner.start(options.label);
-  const result = spawnSync(command, commandArgs, {
+  const result = spawnBinary(command, commandArgs, {
     cwd: options.cwd || process.cwd(),
     stdio: "pipe",
     encoding: "utf-8",
