@@ -63,10 +63,94 @@ function rawFromCompressed(obs: CompressedObservation): RawObservation {
   };
 }
 
-const LESSON_PATTERNS: RegExp[] = [
-  /\b(always|never|don'?t|do not|make sure|remember to|note:|caveat:|warning:)\b[^.\n]{10,200}[.!\n]/gi,
-  /\b(prefer|avoid)\s[^.\n]{10,200}[.!\n]/gi,
-];
+// A lesson is a whole sentence, not the clause after a trigger word.
+// These patterns were previously applied with `pat.exec(text)` and the MATCH
+// stored, so "The watchdog must never restart on 404." became "never restart
+// on 404." -- a blanket prohibition instead of a rule about the watchdog. The
+// trigger now only SELECTS a sentence; the sentence is kept whole.
+const LESSON_TRIGGER =
+  /\b(always|never|don'?t|do not|make sure|remember to|note:|caveat:|warning:|prefer|avoid)\b/i;
+
+// A trigger that is part of an identifier is not prose -- it is a filename, a
+// wiki slug or a symbol that happens to contain the word ("dont-repeat-yourself]]").
+const IDENTIFIER_TRIGGER =
+  /(?:^|[\w])(?:always|never|don'?t|do not|prefer|avoid)(?=[-_|\]/])/i;
+
+// Splitting naively on /(?<=[.!?])\s+/ breaks inside abbreviations, which
+// truncates a rule at exactly the point that changes its meaning:
+//   "Never ship to the U.S. without a compliance review."
+//     -> "Never ship to the U.S."   (the condition is gone)
+const ABBREVIATION =
+  /(?:^|[\s(["'])(?:e\.g|i\.e|etc|vs|cf|al|approx|incl|excl|resp|no|fig|ca|mr|mrs|ms|dr|prof|sr|jr|st)\.$/i;
+// An initialism: "U.S.", "I.B.M.", "J. R." -- a trailing single capital + dot.
+const INITIALISM = /(?:^|[\s(["'])(?:[A-Za-z]\.)+$/;
+
+/** Split text into sentences without breaking inside abbreviations. */
+export function splitSentences(text: string): string[] {
+  const parts: string[] = [];
+  const boundary = /[.!?]\s+/g;
+  let start = 0;
+  let m: RegExpExecArray | null;
+  while ((m = boundary.exec(text)) !== null) {
+    const head = text.slice(start, m.index + 1);
+    const rest = text.slice(m.index + m[0].length);
+    // Not a real boundary if this "end" is an abbreviation or an initialism,
+    // or if what follows does not begin a new sentence.
+    if (ABBREVIATION.test(head) || INITIALISM.test(head)) continue;
+    if (!/^[A-Z`"'([\d]/.test(rest)) continue;
+    parts.push(head.trim());
+    start = m.index + m[0].length;
+  }
+  const tail = text.slice(start).trim();
+  if (tail) parts.push(tail);
+  return parts.filter(Boolean);
+}
+
+export const MIN_LESSON_LENGTH = 20;
+export const MAX_LESSON_LENGTH = 220;
+
+/**
+ * Is this candidate usable as a standalone lesson?
+ *
+ * Rejects the shapes that indicate the text was cut out of the middle of
+ * something: a lowercase opening (the subject was dropped), unbalanced inline
+ * markup, or no terminal punctuation (the tail was truncated).
+ */
+export function isUsableLesson(candidate: string): boolean {
+  const s = candidate.trim();
+  if (s.length < MIN_LESSON_LENGTH || s.length > MAX_LESSON_LENGTH) return false;
+  if (!LESSON_TRIGGER.test(s)) return false;
+  if (IDENTIFIER_TRIGGER.test(s)) return false;
+
+  // Cut mid-sentence: a lesson starts a sentence, not a clause. Allow an
+  // opening code identifier or backticked symbol, which is legitimately lowercase.
+  const startsSentence =
+    /^[A-Z]/.test(s) || /^[`"'([]/.test(s) || /^(?:--?[a-z]|[a-z0-9_.-]+\/)/.test(s);
+  if (!startsSentence) return false;
+
+  // Truncated tail.
+  if (!/[.!?]$/.test(s)) return false;
+
+  // Inline markup cut in half.
+  if ((s.match(/\*\*/g)?.length ?? 0) % 2 !== 0) return false;
+  if ((s.match(/`/g)?.length ?? 0) % 2 !== 0) return false;
+  if ((s.match(/\[\[/g)?.length ?? 0) !== (s.match(/\]\]/g)?.length ?? 0)) return false;
+
+  return true;
+}
+
+/**
+ * Pull whole sentences that state a rule out of one block of text.
+ */
+export function extractLessonCandidates(text: string): string[] {
+  const out: string[] = [];
+  for (const raw of splitSentences(text)) {
+    const sentence = raw.replace(/\s+/g, " ").trim();
+    if (!LESSON_TRIGGER.test(sentence)) continue;
+    if (isUsableLesson(sentence)) out.push(sentence);
+  }
+  return out;
+}
 
 async function deriveCrystalAndLessons(
   kv: StateKV,
@@ -98,17 +182,11 @@ async function deriveCrystalAndLessons(
   }
 
   const lessonMatches = new Map<string, string>();
-  for (const text of assistantTexts.concat(userPrompts).slice(0, 200)) {
-    for (const pat of LESSON_PATTERNS) {
-      pat.lastIndex = 0;
-      let m: RegExpExecArray | null;
-      while ((m = pat.exec(text)) !== null && lessonMatches.size < 40) {
-        const snippet = m[0].replace(/\s+/g, " ").trim();
-        if (snippet.length >= 20 && snippet.length <= 220) {
-          const key = snippet.toLowerCase();
-          if (!lessonMatches.has(key)) lessonMatches.set(key, snippet);
-        }
-      }
+  outer: for (const text of assistantTexts.concat(userPrompts).slice(0, 200)) {
+    for (const sentence of extractLessonCandidates(text)) {
+      const key = sentence.toLowerCase();
+      if (!lessonMatches.has(key)) lessonMatches.set(key, sentence);
+      if (lessonMatches.size >= 40) break outer;
     }
   }
 
