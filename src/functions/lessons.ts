@@ -52,7 +52,12 @@ async function ensureLessonIndex(kv: StateKV): Promise<SearchIndex> {
   return lessonIndex ?? ensureLessonIndex(kv);
 }
 
-function reinforceLesson(lesson: Lesson): void {
+/**
+ * Applies one reinforcement step: bumps the counter and moves confidence
+ * asymptotically towards 1.0. Exported so the JSONL import path in replay.ts
+ * reinforces lessons through the same formula instead of duplicating it.
+ */
+export function reinforceLesson(lesson: Lesson): void {
   const now = new Date().toISOString();
   lesson.reinforcements++;
   lesson.confidence = Math.min(

@@ -13,7 +13,7 @@ import { importOrigin } from "../types.js";
 import type { StateKV } from "../state/kv.js";
 import { KV, generateId, fingerprintId } from "../state/schema.js";
 import { parseJsonlText } from "../replay/jsonl-parser.js";
-import { resetLessonIndex } from "./lessons.js";
+import { reinforceLesson, resetLessonIndex } from "./lessons.js";
 import { projectTimeline, type Timeline } from "../replay/timeline.js";
 import { safeAudit } from "./audit.js";
 import { buildSyntheticCompression } from "./compress-synthetic.js";
@@ -68,7 +68,7 @@ const LESSON_PATTERNS: RegExp[] = [
   /\b(prefer|avoid)\s[^.\n]{10,200}[.!\n]/gi,
 ];
 
-async function deriveCrystalAndLessons(
+export async function deriveCrystalAndLessons(
   kv: StateKV,
   sessionId: string,
   project: string,
@@ -134,10 +134,13 @@ async function deriveCrystalAndLessons(
           ...existing,
           sourceIds: mergedSources,
           tags: mergedTags,
-          reinforcements: (existing.reinforcements || 0) + 1,
           updatedAt: createdAt,
           lastReinforcedAt: createdAt,
         };
+        // Bumps reinforcements AND confidence. Doing it by hand here used to
+        // increment the counter only, so re-imported lessons stayed pinned at
+        // their initial 0.4 no matter how often they recurred.
+        reinforceLesson(merged);
         await kv.set(KV.lessons, lessonId, merged);
       } else {
         const lesson: Lesson = {
