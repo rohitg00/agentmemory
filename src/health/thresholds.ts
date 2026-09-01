@@ -59,11 +59,9 @@ export function evaluateHealth(
     degraded = true;
   }
 
-  // Saturation must be measured against the heap ceiling, not against
-  // heapTotal. heapTotal is only the heap V8 has committed so far, and V8
-  // deliberately keeps it close to the live set, so heapUsed/heapTotal sits at
-  // 80-95% in any healthy process under load. Fall back to heapTotal for
-  // snapshots written before heapSizeLimit existed.
+  // heapTotal is the heap V8 has committed so far, not a ceiling: V8 keeps it
+  // close to the live set, so heapUsed/heapTotal reads 80-95% in any healthy
+  // process under load. Measuring saturation against it is what produced #158.
   const memCeiling =
     snapshot.memory.heapSizeLimit && snapshot.memory.heapSizeLimit > 0
       ? snapshot.memory.heapSizeLimit

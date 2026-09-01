@@ -227,8 +227,7 @@ export interface HealthSnapshot {
     heapTotal: number;
     rss: number;
     external: number;
-    /** V8 heap ceiling (`v8.getHeapStatistics().heap_size_limit`). Optional so
-     *  snapshots persisted by older versions still deserialise. */
+    /** Optional: snapshots persisted before this field existed must still deserialise. */
     heapSizeLimit?: number;
   };
   cpu: { userMicros: number; systemMicros: number; percent: number };
