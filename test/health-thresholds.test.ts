@@ -95,3 +95,50 @@ describe("evaluateHealth memory severity", () => {
     expect(strict.status).toBe("healthy");
   });
 });
+
+describe("evaluateHealth memory saturation uses the heap ceiling", () => {
+  it("stays healthy when heapUsed/heapTotal is high but the ceiling is far away", () => {
+    // Real reading from a --max-old-space-size=8192 server doing bulk work:
+    // 92% of the committed heap, but only 3.5% of the ceiling it may grow into.
+    const s = snap({
+      memory: {
+        heapUsed: 290 * 1024 * 1024,
+        heapTotal: 314 * 1024 * 1024,
+        rss: 690 * 1024 * 1024,
+        external: 140 * 1024 * 1024,
+        heapSizeLimit: 8240 * 1024 * 1024,
+      },
+    });
+    const { status, alerts, notes } = evaluateHealth(s);
+    expect(status).toBe("healthy");
+    expect(alerts).toEqual([]);
+    expect(notes.find((n) => n.startsWith("memory_heap_tight_"))).toBeUndefined();
+  });
+
+  it("still goes critical when the ceiling itself is nearly exhausted", () => {
+    const s = snap({
+      memory: {
+        heapUsed: 7900 * 1024 * 1024,
+        heapTotal: 8000 * 1024 * 1024,
+        rss: 8300 * 1024 * 1024,
+        external: 0,
+        heapSizeLimit: 8240 * 1024 * 1024,
+      },
+    });
+    const { status, alerts } = evaluateHealth(s);
+    expect(status).toBe("critical");
+    expect(alerts.some((a) => a.startsWith("memory_critical_"))).toBe(true);
+  });
+
+  it("falls back to heapTotal when heapSizeLimit is absent (older snapshots)", () => {
+    const s = snap({
+      memory: {
+        heapUsed: 970 * 1024 * 1024,
+        heapTotal: 1000 * 1024 * 1024,
+        rss: 1100 * 1024 * 1024,
+        external: 0,
+      },
+    });
+    expect(evaluateHealth(s).status).toBe("critical");
+  });
+});
