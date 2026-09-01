@@ -6,6 +6,7 @@ import { recordAudit } from "./audit.js";
 import { deleteAccessLog } from "./access-tracker.js";
 import { getSearchIndex, vectorIndexRemove, flushIndexSave } from "./search.js";
 import { logger } from "../logger.js";
+import { deleteGraphExtractMarks } from "./graph.js";
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const CONTRADICTION_THRESHOLD = 0.9;
@@ -144,6 +145,8 @@ export function registerAutoForgetFunction(sdk: ISdk, kv: StateKV): void {
         }
       }
 
+      const touchedSessionIds = new Set<string>();
+
       const sessions = await kv.list<Session>(KV.sessions);
       const obsPerSession: CompressedObservation[][] = [];
       for (let batch = 0; batch < sessions.length; batch += 10) {
@@ -172,6 +175,7 @@ export function registerAutoForgetFunction(sdk: ISdk, kv: StateKV): void {
                 deletedOk = false;
               }
               if (deletedOk) {
+                touchedSessionIds.add(sessions[i].id);
                 if (obs.imageData) await decrementImageRef(kv, sdk, obs.imageData);
                 if (obs.imageRef && obs.imageRef !== obs.imageData) {
                   await decrementImageRef(kv, sdk, obs.imageRef);
@@ -188,6 +192,14 @@ export function registerAutoForgetFunction(sdk: ISdk, kv: StateKV): void {
             }
           }
         }
+      }
+
+      // Empty on a dryRun pass, so no dryRun guard is needed. Kept
+      // sequential rather than Promise.all: this runs hourly across every
+      // session, and the file-based KV adapter stalls under that much
+      // concurrent fan-out (upstream #1127).
+      for (const sessionId of touchedSessionIds) {
+        await deleteGraphExtractMarks(kv, sessionId);
       }
 
       if (!dryRun && (result.ttlExpired.length > 0 || result.lowValueObs.length > 0)) {

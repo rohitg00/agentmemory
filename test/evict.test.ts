@@ -133,9 +133,15 @@ describe("mem::evict stale sessions", () => {
 
     registerEvictFunction(sdk as never, kv as never);
     sdk.registerFunction("event::session::stopped", async (payload) => {
-      // Recovery must pass skipConsolidation so the per-session fan-out is
-      // suppressed (evict runs a single corpus-wide pass afterwards).
-      expect(payload).toEqual({ sessionId, skipConsolidation: true });
+      // skipConsolidation suppresses the per-session fan-out (evict runs a
+      // single corpus-wide pass afterwards). awaitGraphExtract makes the
+      // handler wait for extraction, so it cannot write its mark after the
+      // delete below orphans it.
+      expect(payload).toEqual({
+        sessionId,
+        skipConsolidation: true,
+        awaitGraphExtract: true,
+      });
       expect(await kv.get(KV.sessions, sessionId)).toMatchObject({
         id: sessionId,
       });
@@ -165,6 +171,44 @@ describe("mem::evict stale sessions", () => {
     expect(calls.map((call) => call.function_id)).toContain(
       "mem::consolidate-pipeline",
     );
+  });
+
+  // #1063/#978: KV.graphExtractMarks is introduced by mem::graph-extract's
+  // change-detection gate and must be reclaimed when a stale session is
+  // fully evicted - otherwise the per-session mark outlives the session
+  // it belongs to.
+  it("clears the graph-extract change-detection marks when a stale session is evicted (#1063, #978)", async () => {
+    const sessionId = "ses_stale_graph";
+    const store = storeForObservedSession(sessionId);
+    store.set(
+      KV.graphExtractMarks(sessionId),
+      new Map([
+        [
+          "current",
+          { fingerprint: "gfx_aaaaaaaaaaaaaaaa", llm: true, at: Date.now() },
+        ],
+      ]),
+    );
+    const kv = mockKV(store);
+    const { sdk } = mockSdk();
+
+    registerEvictFunction(sdk as never, kv as never);
+    sdk.registerFunction("event::session::stopped", async () => ({
+      success: true,
+    }));
+    sdk.registerFunction("mem::consolidate-pipeline", () => ({
+      success: true,
+    }));
+    sdk.registerFunction("mem::auto-crystallize", () => ({ success: true }));
+
+    const result = (await sdk.trigger({
+      function_id: "mem::evict",
+      payload: {},
+    })) as { staleSessions: number };
+
+    expect(result.staleSessions).toBe(1);
+    const remaining = await kv.list(KV.graphExtractMarks(sessionId));
+    expect(remaining).toHaveLength(0);
   });
 
   it("bounds consolidation to one pass regardless of how many stale sessions are recovered", async () => {
@@ -293,5 +337,117 @@ describe("mem::evict stale sessions", () => {
     expect(calls.map((call) => call.function_id)).not.toContain(
       "event::session::stopped",
     );
+  });
+});
+
+// #1063/#978: removing an observation changes the session's observation
+// set, so the fingerprint recorded against its old membership is stale.
+// mem::evict runs repeatedly against active sessions - whole-session
+// delete never fires for those - so nothing else would ever reclaim the
+// mark. These tests prove both per-observation eviction paths flush the
+// touched session's marks once per pass, and that a dryRun pass flushes
+// nothing.
+describe("mem::evict per-observation eviction graph-extract marks reclamation (#1063, #978)", () => {
+  function graphMarkEntry(fingerprint: string) {
+    return { fingerprint, llm: true, at: Date.now() };
+  }
+
+  // Young startedAt keeps this session out of the stale-session branch
+  // above (age <= staleSessionDays), so only the low-importance path is
+  // exercised.
+  function storeForLowImportanceEviction(sessionId: string): Store {
+    const staleObs: CompressedObservation = {
+      ...makeObservation(sessionId),
+      id: "obs_low_importance",
+      timestamp: daysAgo(200),
+      importance: 1,
+    };
+    const store = storeForObservations(sessionId, [staleObs]);
+    store.get(KV.sessions)!.set(sessionId, {
+      ...makeSession(sessionId),
+      startedAt: daysAgo(1),
+    });
+    store.set(
+      KV.graphExtractMarks(sessionId),
+      new Map([["current", graphMarkEntry("gfx_a")]]),
+    );
+    return store;
+  }
+
+  it("flushes the touched session's graph-extract marks after a low-importance eviction pass", async () => {
+    const sessionId = "ses_low_importance_graph";
+    const store = storeForLowImportanceEviction(sessionId);
+    const kv = mockKV(store);
+    const { sdk } = mockSdk();
+    registerEvictFunction(sdk as never, kv as never);
+
+    const result = (await sdk.trigger({
+      function_id: "mem::evict",
+      payload: {},
+    })) as { lowImportanceObs: number };
+
+    expect(result.lowImportanceObs).toBe(1);
+    const remaining = await kv.list(KV.graphExtractMarks(sessionId));
+    expect(remaining).toHaveLength(0);
+  });
+
+  it("does not flush the graph-extract marks on a dry run", async () => {
+    const sessionId = "ses_low_importance_graph_dry";
+    const store = storeForLowImportanceEviction(sessionId);
+    const kv = mockKV(store);
+    const { sdk } = mockSdk();
+    registerEvictFunction(sdk as never, kv as never);
+
+    const result = (await sdk.trigger({
+      function_id: "mem::evict",
+      payload: { dryRun: true },
+    })) as { lowImportanceObs: number };
+
+    // Still counted for reporting, but nothing actually deleted or flushed.
+    expect(result.lowImportanceObs).toBe(1);
+    expect(
+      await kv.get(KV.observations(sessionId), "obs_low_importance"),
+    ).not.toBeNull();
+    const remaining = await kv.list(KV.graphExtractMarks(sessionId));
+    expect(remaining).toHaveLength(1);
+  });
+
+  it("flushes the touched session's graph-extract marks after a project-cap eviction pass", async () => {
+    const sessionId = "ses_cap_graph";
+    const obsA: CompressedObservation = {
+      ...makeObservation(sessionId),
+      id: "obs_a",
+      importance: 1,
+    };
+    const obsB: CompressedObservation = {
+      ...makeObservation(sessionId),
+      id: "obs_b",
+      importance: 9,
+    };
+    const store = storeForObservations(sessionId, [obsA, obsB]);
+    store.get(KV.sessions)!.set(sessionId, {
+      ...makeSession(sessionId),
+      startedAt: daysAgo(1),
+    });
+    store.set(KV.config, new Map([["eviction", { maxObservationsPerProject: 1 }]]));
+    store.set(
+      KV.graphExtractMarks(sessionId),
+      new Map([["current", graphMarkEntry("gfx_b")]]),
+    );
+    const kv = mockKV(store);
+    const { sdk } = mockSdk();
+    registerEvictFunction(sdk as never, kv as never);
+
+    const result = (await sdk.trigger({
+      function_id: "mem::evict",
+      payload: {},
+    })) as { capEvictions: number };
+
+    expect(result.capEvictions).toBe(1);
+    // The lower-importance observation (obsA) is the one capped away.
+    expect(await kv.get(KV.observations(sessionId), "obs_a")).toBeNull();
+    expect(await kv.get(KV.observations(sessionId), "obs_b")).not.toBeNull();
+    const remaining = await kv.list(KV.graphExtractMarks(sessionId));
+    expect(remaining).toHaveLength(0);
   });
 });

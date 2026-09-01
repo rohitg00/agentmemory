@@ -260,6 +260,32 @@ describe("Export/Import Functions", () => {
     expect(oldSession).toBeNull();
   });
 
+  it("import with replace strategy also reclaims the wiped sessions' graph-extract marks", async () => {
+    // A "replace" import wipes every session/observation/summary, but
+    // ses_1's graph-extract change-detection mark would otherwise survive
+    // with no owner and no path that could ever reclaim it - the session
+    // it was keyed against no longer exists for any later
+    // mem::forget/mem::evict pass to find.
+    await kv.set("mem:graph:extract-marks:ses_1", "current", {
+      fingerprint: "gfx_a",
+      llm: true,
+      at: Date.now(),
+    });
+
+    const exportData: ExportData = {
+      version: "0.3.0",
+      exportedAt: new Date().toISOString(),
+      sessions: [],
+      observations: {},
+      memories: [],
+      summaries: [],
+    };
+
+    await sdk.trigger("mem::import", { exportData, strategy: "replace" });
+
+    expect(await kv.list("mem:graph:extract-marks:ses_1")).toHaveLength(0);
+  });
+
   it("export then import round-trip preserves data", async () => {
     const exported = (await sdk.trigger("mem::export", {})) as ExportData;
 

@@ -38,6 +38,12 @@ export const KV = {
   graphNameIndex: "mem:graph:name-index",
   graphEdgeKey: "mem:graph:edge-key",
   graphNodeDegree: "mem:graph:node-degree",
+  // Change-detection mark for the observation set already fed through
+  // mem::graph-extract. One fixed key per session (MARK_KEY in graph.ts):
+  // only the newest mark is ever read, and a flat global scope would mint
+  // a never-revisited entry on almost every Stop with nothing to reclaim
+  // it. See deleteGraphExtractMarks for reclamation.
+  graphExtractMarks: (sessionId: string) => `mem:graph:extract-marks:${sessionId}`,
   semantic: "mem:semantic",
   procedural: "mem:procedural",
   teamShared: (teamId: string) => `mem:team:${teamId}:shared`,

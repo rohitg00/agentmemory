@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { ISdk } from "iii-sdk";
 import type {
   GraphNode,
@@ -470,6 +471,12 @@ export function extractGraphHeuristics(
   ): GraphNode | null => {
     const trimmed = name.trim();
     if (!trimmed) return null;
+    // The delimiter below is a literal NUL byte, not the two-character
+    // escape "\0" - chosen because a NUL cannot occur in either `type` or
+    // the lowercased name, so composite keys built from them cannot
+    // collide. Its presence also makes grep/ripgrep treat this file as
+    // binary, so any repo-wide search that needs to include this file
+    // must pass -a/--text.
     const key = `${type} ${trimmed.toLowerCase()}`;
     let node = nodeByKey.get(key);
     if (!node) {
@@ -679,6 +686,85 @@ export async function persistGraphDelta(
   return { newNodeCount, newEdgeCount };
 }
 
+// Length-prefixed so concatenation stays unambiguous: without it,
+// files ["a", "bc"] and ["ab", "c"] would hash identically.
+function hashField(
+  hash: ReturnType<typeof createHash>,
+  value: string,
+): void {
+  hash.update(String(value.length));
+  hash.update(":");
+  hash.update(value);
+}
+
+function hashFieldList(
+  hash: ReturnType<typeof createHash>,
+  values: string[] | undefined,
+): void {
+  const list = values ?? [];
+  hash.update(String(list.length));
+  hash.update(":");
+  for (const value of list) hashField(hash, value);
+}
+
+// Hashes exactly the fields graph extraction reads - extractGraphHeuristics
+// uses id/files/concepts, buildGraphExtractionPrompt renders
+// title/narrative/concepts/files/type. A field that reaches either
+// without reaching this hash is a silent stale-graph bug. summarize.ts's
+// same-named helper tracks a different prompt and so a different set,
+// which is why the two are not shared.
+function hashObservationSet(
+  hash: ReturnType<typeof createHash>,
+  observations: CompressedObservation[],
+): void {
+  for (const o of observations) {
+    hashField(hash, o.id);
+    hashField(hash, o.type ?? "");
+    hashField(hash, o.title ?? "");
+    hashField(hash, o.narrative ?? "");
+    hashFieldList(hash, o.concepts);
+    hashFieldList(hash, o.files);
+  }
+  hash.update(String(observations.length));
+}
+
+// Sorted by id because the caller's kv.list order is not stable, and an
+// unsorted digest would churn across turns on a permuted-but-unchanged
+// set and never hit the gate.
+function observationSetFingerprint(
+  observations: CompressedObservation[],
+): string {
+  const sorted = [...observations].sort((a, b) =>
+    a.id < b.id ? -1 : a.id > b.id ? 1 : 0,
+  );
+  const hash = createHash("sha256");
+  hashObservationSet(hash, sorted);
+  return `gfx_${hash.digest("hex").slice(0, 16)}`;
+}
+
+// `llm` records whether the LLM pass actually ran, so the gate below does
+// not skip a set that was only ever extracted heuristically once an LLM
+// becomes available.
+interface GraphExtractMark {
+  fingerprint: string;
+  llm: boolean;
+  at: number;
+}
+
+const MARK_KEY = "current";
+
+// Call this wherever a session's observations are reclaimed: whole-session
+// delete, and once per touched session after a per-observation eviction
+// pass. Removing an observation changes the set the fingerprint was
+// recorded against. Failures are swallowed so cleanup can never fail the
+// caller's own delete.
+export async function deleteGraphExtractMarks(
+  kv: StateKV,
+  sessionId: string,
+): Promise<void> {
+  await kv.delete(KV.graphExtractMarks(sessionId), MARK_KEY).catch(() => {});
+}
+
 export function registerGraphFunction(
   sdk: ISdk,
   kv: StateKV,
@@ -692,6 +778,53 @@ export function registerGraphFunction(
 
       const obsIds = data.observations.map((o) => o.id);
 
+      // The mark scope is per-session so it can be reclaimed with the
+      // session, which means the gate needs one session to key on. Every
+      // current caller passes a single-session batch, but nothing enforces
+      // that in the types, so a multi-session batch skips the gate rather
+      // than guessing a scope - that degrades to always extracting, never
+      // to wrongly skipping.
+      const sessionIds = new Set(data.observations.map((o) => o.sessionId));
+      let gateSessionId: string | null = null;
+      if (sessionIds.size === 1) {
+        gateSessionId = data.observations[0].sessionId;
+      } else {
+        // No `logger.debug` in this shim (see src/logger.ts) - `info`
+        // is the closest level and this is a rare, worth-seeing event.
+        logger.info(
+          "mem::graph-extract batch spans multiple sessions; skipping change-detection gate",
+          { sessionCount: sessionIds.size },
+        );
+      }
+
+      const llmEnabled =
+        isGraphExtractionEnabled() && !provider.name.includes("noop");
+
+      // Skip only when the previous attempt already did everything this
+      // one could: an llm:false mark is not a ceiling, because a key added
+      // since then means the LLM pass has never seen this set. Getting
+      // this wrong permanently strands every set a keyless install marked
+      // heuristically, including the /graph/build recovery path.
+      let setFingerprint: string | null = null;
+      if (gateSessionId) {
+        setFingerprint = observationSetFingerprint(data.observations);
+        const mark = await kv
+          .get<GraphExtractMark>(KV.graphExtractMarks(gateSessionId), MARK_KEY)
+          .catch(() => null);
+        if (
+          mark &&
+          mark.fingerprint === setFingerprint &&
+          (mark.llm || !llmEnabled)
+        ) {
+          return {
+            success: true,
+            nodesAdded: 0,
+            edgesAdded: 0,
+            skipped: "unchanged",
+          };
+        }
+      }
+
       let nodes: GraphNode[] = [];
       let edges: GraphEdge[] = [];
       try {
@@ -704,8 +837,6 @@ export function registerGraphFunction(
         });
       }
 
-      const llmEnabled =
-        isGraphExtractionEnabled() && !provider.name.includes("noop");
       let llmError: string | undefined;
       if (llmEnabled) {
         const prompt = buildGraphExtractionPrompt(
@@ -731,7 +862,41 @@ export function registerGraphFunction(
         }
       }
 
+      // Marks a completed attempt, not a successful persist. An llmError
+      // must not mark: the heuristic pass alone almost always yields
+      // something, so a provider failure would otherwise persist a partial
+      // graph, mark the set done, and strand that turn's LLM-derived nodes
+      // until the observation set happens to change.
+      const markExtractedIfClean = async (): Promise<void> => {
+        if (gateSessionId && setFingerprint && !llmError) {
+          await kv
+            .set(KV.graphExtractMarks(gateSessionId), MARK_KEY, {
+              fingerprint: setFingerprint,
+              llm: llmEnabled,
+              at: Date.now(),
+            })
+            .catch(() => {});
+        }
+      };
+
       if (nodes.length === 0 && edges.length === 0) {
+        // A zero-yield result with no llmError is a settled outcome, not
+        // a failure, so it earns a mark. The mark is state that gates
+        // every later run, so it is audited first and skipped entirely
+        // if that audit fails - an unmarked session just re-extracts.
+        if (!llmError) {
+          try {
+            await recordAudit(kv, "observe", "mem::graph-extract", obsIds, {
+              nodesExtracted: 0,
+              edgesExtracted: 0,
+            });
+            await markExtractedIfClean();
+          } catch (err) {
+            logger.warn("Graph extraction zero-yield mark skipped", {
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }
+        }
         return llmError
           ? { success: false, error: llmError }
           : { success: true, nodesAdded: 0, edgesAdded: 0 };
@@ -749,6 +914,11 @@ export function registerGraphFunction(
           nodesExtracted: nodes.length,
           edgesExtracted: edges.length,
         });
+
+        // Mark only after persistGraphDelta + recordAudit succeed (a
+        // throw here is still caught below and must not mark), AND only
+        // when the LLM pass did not fail (see markExtractedIfClean).
+        await markExtractedIfClean();
 
         logger.info("Graph extraction complete", {
           nodes: nodes.length,

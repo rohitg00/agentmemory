@@ -9,6 +9,7 @@ import { recordAudit } from "./audit.js";
 import { getSearchIndex, isMemoryIndexReady, vectorIndexAddGuarded, vectorIndexRemove, flushIndexSave } from "./search.js";
 import { getAgentId } from "../config.js";
 import { logger } from "../logger.js";
+import { deleteGraphExtractMarks } from "./graph.js";
 
 // Slicing by UTF-16 code unit can cut an astral character (emoji, some CJK
 // extensions) mid surrogate pair, leaving a lone high surrogate that renders
@@ -290,6 +291,9 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
           deletedObservationIds.push(obsId);
           deleted++;
         }
+        // The session survives this path, but its recorded mark now
+        // describes an observation set that no longer exists.
+        await deleteGraphExtractMarks(kv, data.sessionId);
       }
 
       if (
@@ -313,6 +317,7 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
         }
         await kv.delete(KV.sessions, data.sessionId);
         await kv.delete(KV.summaries, data.sessionId);
+        await deleteGraphExtractMarks(kv, data.sessionId);
         deletedSession = true;
         deleted += 2;
       }

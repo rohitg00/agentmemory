@@ -109,6 +109,63 @@ describe("mem::forget audit coverage (issue #125)", () => {
     expect(row.details.deleted).toBe(4);
   });
 
+  // #1063/#978: KV.graphExtractMarks is introduced by mem::graph-extract's
+  // change-detection gate and must be reclaimed wherever a session's
+  // KV.observations/KV.summaries are already reclaimed - otherwise the
+  // per-session mark outlives the session it belongs to.
+  it("clears the graph-extract change-detection marks when an entire session is forgotten (#1063, #978)", async () => {
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerRememberFunction(sdk as never, kv as never);
+
+    await kv.set("mem:sessions", "sess_1", { id: "sess_1" });
+    await kv.set("mem:summaries", "sess_1", { id: "sess_1" });
+    await kv.set("mem:obs:sess_1", "obs_a", { id: "obs_a" });
+    await kv.set("mem:graph:extract-marks:sess_1", "current", {
+      fingerprint: "gfx_aaaaaaaaaaaaaaaa",
+      llm: true,
+      at: Date.now(),
+    });
+
+    await sdk.trigger({
+      function_id: "mem::forget",
+      payload: { sessionId: "sess_1" },
+    });
+
+    const remaining = await kv.list("mem:graph:extract-marks:sess_1");
+    expect(remaining).toHaveLength(0);
+  });
+
+  // The explicit-observationIds branch deletes some of a session's
+  // observations while the session itself survives, so it never reaches
+  // the whole-session branch covered above - it needs its own flush, or
+  // the mark outlives the observation set it was computed over.
+  it("reclaims the graph-extract mark when specific observationIds are forgotten", async () => {
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerRememberFunction(sdk as never, kv as never);
+
+    await kv.set("mem:sessions", "sess_2", { id: "sess_2" });
+    await kv.set("mem:obs:sess_2", "obs_a", { id: "obs_a" });
+    await kv.set("mem:obs:sess_2", "obs_b", { id: "obs_b" });
+    await kv.set("mem:graph:extract-marks:sess_2", "current", {
+      fingerprint: "gfx_aaaaaaaaaaaaaaaa",
+      llm: true,
+      at: Date.now(),
+    });
+
+    await sdk.trigger({
+      function_id: "mem::forget",
+      payload: { sessionId: "sess_2", observationIds: ["obs_a"] },
+    });
+
+    // The session and its remaining observation survive - only the mark
+    // invalidated by the partial delete is reclaimed.
+    expect(await kv.get("mem:sessions", "sess_2")).not.toBeNull();
+    expect(await kv.get("mem:obs:sess_2", "obs_b")).not.toBeNull();
+    expect(await kv.list("mem:graph:extract-marks:sess_2")).toHaveLength(0);
+  });
+
   it("does not emit an audit row when nothing is deleted", async () => {
     const sdk = mockSdk();
     const kv = mockKV();

@@ -154,6 +154,49 @@ describe("Auto-Forget Function", () => {
     expect(result.lowValueObs).toContain("obs_old");
   });
 
+  it("reclaims the touched session's graph-extract mark after a low-value eviction", async () => {
+    // Same reclamation requirement as mem::evict's low-importance/
+    // project-cap paths (evict.ts): mem::auto-forget deletes observations
+    // on an hourly timer, so a session touched here must have its
+    // graph-extract change-detection mark flushed too, or the mark
+    // outlives the observation set it was computed over.
+    const session: Session = {
+      id: "ses_2",
+      project: "my-project",
+      cwd: "/tmp",
+      startedAt: "2025-01-01T00:00:00Z",
+      status: "completed",
+      observationCount: 1,
+    };
+    await kv.set("mem:sessions", "ses_2", session);
+
+    const oldLowObs: CompressedObservation = {
+      id: "obs_old2",
+      sessionId: "ses_2",
+      timestamp: "2025-01-01T00:00:00Z",
+      type: "other",
+      title: "trivial event",
+      facts: [],
+      narrative: "nothing important",
+      concepts: [],
+      files: [],
+      importance: 1,
+    };
+    await kv.set("mem:obs:ses_2", "obs_old2", oldLowObs);
+    await kv.set("mem:graph:extract-marks:ses_2", "current", {
+      fingerprint: "gfx_a",
+      llm: true,
+      at: Date.now(),
+    });
+
+    const result = (await sdk.trigger("mem::auto-forget", {})) as {
+      lowValueObs: string[];
+    };
+    expect(result.lowValueObs).toContain("obs_old2");
+
+    expect(await kv.list("mem:graph:extract-marks:ses_2")).toHaveLength(0);
+  });
+
   it("dryRun mode identifies but does not delete anything", async () => {
     const expired = makeMemory({
       id: "mem_expired",

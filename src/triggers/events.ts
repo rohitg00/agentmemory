@@ -93,7 +93,7 @@ export function registerEventTriggers(sdk: ISdk, kv: StateKV): void {
     config: { topic: "agentmemory.observation" },
   });
 
-  sdk.registerFunction("event::session::stopped", async (data: { sessionId: string; skipConsolidation?: boolean }) => {
+  sdk.registerFunction("event::session::stopped", async (data: { sessionId: string; skipConsolidation?: boolean; awaitGraphExtract?: boolean }) => {
     const summary = await sdk.trigger({ function_id: "mem::summarize", payload: data });
     const fireVoid = (function_id: string, payload: unknown) =>
       sdk
@@ -107,14 +107,25 @@ export function registerEventTriggers(sdk: ISdk, kv: StateKV): void {
     if (isReflectEnabled()) {
       fireVoid("mem::slot-reflect", { sessionId: data.sessionId });
     }
-    // Unconditional: mem::graph-extract gates its LLM pass internally.
     try {
       const observations = await kv.list<CompressedObservation>(
         KV.observations(data.sessionId),
       );
       const compressed = observations.filter((o) => o.title);
       if (compressed.length > 0) {
-        fireVoid("mem::graph-extract", { observations: compressed });
+        // awaitGraphExtract is set by eviction's stale-session recovery,
+        // which deletes the session and its mark as soon as this handler
+        // returns. A fire-and-forget extraction could write its mark
+        // after that delete and orphan it, so recovery waits. Ordinary
+        // Stop events stay fire-and-forget.
+        if (data.awaitGraphExtract) {
+          await sdk.trigger({
+            function_id: "mem::graph-extract",
+            payload: { observations: compressed },
+          });
+        } else {
+          fireVoid("mem::graph-extract", { observations: compressed });
+        }
       }
     } catch (err) {
       logger.warn("graph-extract trigger failed", {

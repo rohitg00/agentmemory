@@ -5,11 +5,13 @@ vi.mock("../src/logger.js", () => ({
 }));
 
 import { registerGraphFunction } from "../src/functions/graph.js";
+import { KV } from "../src/state/schema.js";
 import type {
   CompressedObservation,
   GraphNode,
   GraphEdge,
   GraphQueryResult,
+  MemoryProvider,
 } from "../src/types.js";
 
 function mockKV() {
@@ -223,6 +225,311 @@ describe("Graph Functions", () => {
 
     expect(result.success).toBe(false);
     expect(result.error).toContain("No observations");
+  });
+
+  // #1063/#978: event::session::stopped fires on every assistant turn and
+  // hands mem::graph-extract the session's entire observation set with no
+  // change detection, so a session with tens of thousands of observations
+  // re-ran a full-corpus LLM extraction on every single turn.
+  it("does not re-run the LLM pass for an unchanged observation set (#1063)", async () => {
+    await sdk.trigger("mem::graph-extract", { observations: [testObs] });
+    const callsAfterFirst = mockProvider.compress.mock.calls.length;
+
+    await sdk.trigger("mem::graph-extract", { observations: [testObs] });
+
+    expect(callsAfterFirst).toBe(1);
+    expect(mockProvider.compress.mock.calls.length).toBe(1);
+  });
+
+  it("re-runs once a new observation is added to the set (#1063)", async () => {
+    const obs2: CompressedObservation = { ...testObs, id: "obs_2" };
+
+    await sdk.trigger("mem::graph-extract", { observations: [testObs] });
+    await sdk.trigger("mem::graph-extract", {
+      observations: [testObs, obs2],
+    });
+
+    expect(mockProvider.compress.mock.calls.length).toBe(2);
+  });
+
+  it("re-runs on a same-id content rewrite - id-only fingerprint would false-skip (#1063)", async () => {
+    await sdk.trigger("mem::graph-extract", { observations: [testObs] });
+
+    // #1063: same id ("obs_1"), but a bulk import-jsonl (strategy !==
+    // "skip") or replay-over-edited-transcript rewrite changed the title
+    // and narrative content - a content-aware fingerprint must not treat
+    // this as unchanged.
+    const rewritten: CompressedObservation = {
+      ...testObs,
+      title: "rewritten title",
+      narrative: "completely different narrative content after import",
+    };
+    await sdk.trigger("mem::graph-extract", { observations: [rewritten] });
+
+    expect(mockProvider.compress.mock.calls.length).toBe(2);
+  });
+
+  it("re-runs on a same-length narrative rewrite (#1063)", async () => {
+    await sdk.trigger("mem::graph-extract", { observations: [testObs] });
+
+    const rewritten: CompressedObservation = {
+      ...testObs,
+      narrative: "x".repeat((testObs.narrative ?? "").length),
+    };
+    await sdk.trigger("mem::graph-extract", { observations: [rewritten] });
+
+    expect(mockProvider.compress.mock.calls.length).toBe(2);
+  });
+
+  it("re-runs when only concepts change (#1063)", async () => {
+    await sdk.trigger("mem::graph-extract", { observations: [testObs] });
+
+    // extractGraphHeuristics builds concept nodes straight from this
+    // field, so a change here changes the graph even though title and
+    // narrative are byte-identical.
+    const retagged: CompressedObservation = {
+      ...testObs,
+      concepts: [...(testObs.concepts ?? []), "newly-tagged-concept"],
+    };
+    await sdk.trigger("mem::graph-extract", { observations: [retagged] });
+
+    expect(mockProvider.compress.mock.calls.length).toBe(2);
+  });
+
+  it("re-runs when only files change (#1063)", async () => {
+    await sdk.trigger("mem::graph-extract", { observations: [testObs] });
+
+    const remapped: CompressedObservation = {
+      ...testObs,
+      files: [...(testObs.files ?? []), "src/newly/touched.ts"],
+    };
+    await sdk.trigger("mem::graph-extract", { observations: [remapped] });
+
+    expect(mockProvider.compress.mock.calls.length).toBe(2);
+  });
+
+  it("re-runs when only type changes (#1063)", async () => {
+    await sdk.trigger("mem::graph-extract", { observations: [testObs] });
+
+    const retyped: CompressedObservation = {
+      ...testObs,
+      type: testObs.type === "decision" ? "discovery" : "decision",
+    };
+    await sdk.trigger("mem::graph-extract", { observations: [retyped] });
+
+    expect(mockProvider.compress.mock.calls.length).toBe(2);
+  });
+
+  it("treats a kv.list-permuted but otherwise identical set as unchanged (#1063)", async () => {
+    const obs2: CompressedObservation = { ...testObs, id: "obs_2" };
+
+    await sdk.trigger("mem::graph-extract", {
+      observations: [testObs, obs2],
+    });
+    // Same two observations, reversed order - simulates kv.list's
+    // non-stable (hash-map backend, no sort) iteration order shifting
+    // between Stop-hook fan-outs for an unchanged session.
+    await sdk.trigger("mem::graph-extract", {
+      observations: [obs2, testObs],
+    });
+
+    expect(mockProvider.compress.mock.calls.length).toBe(1);
+  });
+
+  // A failed LLM pass must not mark the set done. The heuristic pass
+  // (obs.files/obs.concepts) almost always yields something for real
+  // coding observations, so before this fix the common path fell
+  // straight through to the mark write and recorded "done" while
+  // discarding llmError entirely - permanently losing that turn's
+  // LLM-derived graph for exactly the biggest, most-likely-to-time-out
+  // sessions this fix exists to help.
+  it("re-runs after an LLM failure even though the heuristic pass alone yields nodes (#1063)", async () => {
+    const heuristicObs: CompressedObservation = {
+      ...testObs,
+      id: "obs_h1",
+      concepts: ["auth"],
+      files: ["src/auth.ts"],
+    };
+    mockProvider.compress.mockRejectedValueOnce(new Error("provider timeout"));
+
+    const first = (await sdk.trigger("mem::graph-extract", {
+      observations: [heuristicObs],
+    })) as { success: boolean; nodesAdded: number; skipped?: string };
+
+    // Heuristic pass alone (file + concept node, 1 edge) still succeeds
+    // and persists even though the LLM pass failed.
+    expect(first.success).toBe(true);
+    expect(first.nodesAdded).toBeGreaterThan(0);
+    expect(first.skipped).toBeUndefined();
+    expect(mockProvider.compress.mock.calls.length).toBe(1);
+
+    const second = (await sdk.trigger("mem::graph-extract", {
+      observations: [heuristicObs],
+    })) as { success: boolean; skipped?: string };
+
+    // The set must NOT have been marked done - a second identical call
+    // re-runs extraction, including retrying the LLM pass, instead of
+    // being skipped as "unchanged".
+    expect(second.skipped).toBeUndefined();
+    expect(mockProvider.compress.mock.calls.length).toBe(2);
+  });
+
+  // A genuine zero-yield result (no llmError) is a settled outcome, not
+  // a failure - it must still be marked, or an unchanged zero-yield set
+  // re-runs the heuristic + LLM pass on every subsequent Stop forever.
+  // This shares the mark-timing root cause above, so the fix for one
+  // fixes both.
+  it("marks a genuine zero-yield result as done and does not re-run on the next identical call (#1063)", async () => {
+    mockProvider.compress.mockResolvedValueOnce(
+      "<entities></entities><relationships></relationships>",
+    );
+
+    const first = (await sdk.trigger("mem::graph-extract", {
+      observations: [testObs],
+    })) as { success: boolean; nodesAdded: number; edgesAdded: number };
+
+    // testObs has no files/concepts (heuristic pass yields nothing) and
+    // the LLM response above parses to nothing either - a genuine
+    // zero-yield result, not a failure.
+    expect(first.success).toBe(true);
+    expect(first.nodesAdded).toBe(0);
+    expect(first.edgesAdded).toBe(0);
+    expect(mockProvider.compress.mock.calls.length).toBe(1);
+
+    const second = (await sdk.trigger("mem::graph-extract", {
+      observations: [testObs],
+    })) as { success: boolean; skipped?: string };
+
+    expect(second.skipped).toBe("unchanged");
+    expect(mockProvider.compress.mock.calls.length).toBe(1);
+  });
+
+  it("audits the clean zero-yield extraction that produced the mark (#1063)", async () => {
+    mockProvider.compress.mockResolvedValueOnce(
+      "<entities></entities><relationships></relationships>",
+    );
+
+    await sdk.trigger("mem::graph-extract", { observations: [testObs] });
+
+    const auditRows = await kv.list<{
+      functionId: string;
+      targetIds: string[];
+      details: Record<string, unknown>;
+    }>("mem:audit");
+    const row = auditRows.find((r) => r.functionId === "mem::graph-extract");
+
+    expect(row).toBeDefined();
+    expect(row!.targetIds).toContain(testObs.id);
+    expect(row!.details.nodesExtracted).toBe(0);
+    expect(row!.details.edgesExtracted).toBe(0);
+  });
+
+  // No LLM pass was attempted, so it cannot have failed - a
+  // heuristic-only run that completes cleanly should mark, same as any
+  // other clean attempt.
+  it("marks a heuristic-only run as done when the LLM pass is disabled via a noop provider (#1063)", async () => {
+    const heuristicObs: CompressedObservation = {
+      ...testObs,
+      id: "obs_h2",
+      concepts: ["auth"],
+      files: ["src/auth.ts"],
+    };
+    const noopCompress = vi.fn();
+    const noopProvider = {
+      name: "noop",
+      compress: noopCompress,
+      summarize: vi.fn(),
+    } as unknown as MemoryProvider;
+    const localKv = mockKV();
+    const localSdk = mockSdk();
+    registerGraphFunction(localSdk as never, localKv as never, noopProvider);
+
+    const first = (await localSdk.trigger("mem::graph-extract", {
+      observations: [heuristicObs],
+    })) as { success: boolean; nodesAdded: number };
+    expect(first.success).toBe(true);
+    expect(first.nodesAdded).toBeGreaterThan(0);
+    expect(noopCompress).not.toHaveBeenCalled();
+
+    const marks = await localKv.list(KV.graphExtractMarks("ses_1"));
+    expect(marks).toHaveLength(1);
+
+    const second = (await localSdk.trigger("mem::graph-extract", {
+      observations: [heuristicObs],
+    })) as { success: boolean; skipped?: string; nodesAdded: number };
+    expect(second.skipped).toBe("unchanged");
+    expect(second.nodesAdded).toBe(0);
+    expect(noopCompress).not.toHaveBeenCalled();
+  });
+
+  // #1063/#978: a set that was only ever extracted with the LLM pass OFF
+  // (here, a noop provider - the same llmEnabled=false shape a
+  // default install with no key configured produces) must NOT stay
+  // permanently skipped once a real provider becomes available for the
+  // exact same, unchanged observation set - the LLM has never actually
+  // seen this set yet. Simulates that by registering against a noop
+  // provider first (heuristic-only mark), then re-registering the SAME
+  // kv against a real provider and re-running the identical set.
+  it("re-extracts a set marked heuristic-only once the LLM pass becomes available (#1063)", async () => {
+    const heuristicObs: CompressedObservation = {
+      ...testObs,
+      id: "obs_h3",
+      concepts: ["auth"],
+      files: ["src/auth.ts"],
+    };
+    const noopCompress = vi.fn();
+    const noopProvider = {
+      name: "noop",
+      compress: noopCompress,
+      summarize: vi.fn(),
+    } as unknown as MemoryProvider;
+    const localKv = mockKV();
+    const noopSdk = mockSdk();
+    registerGraphFunction(noopSdk as never, localKv as never, noopProvider);
+
+    const first = (await noopSdk.trigger("mem::graph-extract", {
+      observations: [heuristicObs],
+    })) as { success: boolean; skipped?: string };
+    expect(first.skipped).toBeUndefined();
+    expect(noopCompress).not.toHaveBeenCalled();
+
+    // Same kv (same mark), but now a real LLM-capable provider is wired
+    // up - as if the user just set an API key.
+    const llmSdk = mockSdk();
+    registerGraphFunction(llmSdk as never, localKv as never, mockProvider as never);
+
+    const second = (await llmSdk.trigger("mem::graph-extract", {
+      observations: [heuristicObs],
+    })) as { success: boolean; skipped?: string };
+
+    // Must NOT be skipped as "unchanged" - the LLM pass has never run
+    // over this set, so a previously heuristic-only mark cannot gate it.
+    expect(second.skipped).toBeUndefined();
+    expect(mockProvider.compress.mock.calls.length).toBe(1);
+  });
+
+  // A batch spanning more than one session has no single session to key
+  // the per-session marks scope on, so the gate must skip entirely
+  // (always extract) rather than guess a bucket. No current caller does
+  // this (event::session::stopped and api::graph-build both pass
+  // single-session batches), but the function must stay correct if that
+  // ever changes.
+  it("always extracts a multi-session batch instead of gating on a guessed session (#1063)", async () => {
+    const otherSessionObs: CompressedObservation = {
+      ...testObs,
+      id: "obs_other",
+      sessionId: "ses_2",
+    };
+
+    await sdk.trigger("mem::graph-extract", {
+      observations: [testObs, otherSessionObs],
+    });
+    await sdk.trigger("mem::graph-extract", {
+      observations: [testObs, otherSessionObs],
+    });
+
+    // Never gated - both calls ran the LLM pass.
+    expect(mockProvider.compress.mock.calls.length).toBe(2);
   });
 
   // #753: an unbounded {} body used to materialize every node+edge in

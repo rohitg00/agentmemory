@@ -33,6 +33,7 @@ import { VERSION } from "../version.js";
 import { recordAudit } from "./audit.js";
 import { indexRecords } from "./search.js";
 import { resetLessonIndex } from "./lessons.js";
+import { deleteGraphExtractMarks } from "./graph.js";
 import { logger } from "../logger.js";
 
 // Bounded-concurrency chunk size for the import delete/write loops. A
@@ -311,6 +312,7 @@ export function registerExportImportFunction(sdk: ISdk, kv: StateKV): void {
         const obsDeletes: Array<{ sessionId: string; obsId: string }> = [];
         await runChunked(existing, async (session) => {
           await kv.delete(KV.sessions, session.id);
+          await deleteGraphExtractMarks(kv, session.id);
           const obs = await kv
             .list<CompressedObservation>(KV.observations(session.id))
             .catch(() => []);
