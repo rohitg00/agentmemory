@@ -227,6 +227,8 @@ export interface HealthSnapshot {
     heapTotal: number;
     rss: number;
     external: number;
+    /** Optional: snapshots persisted before this field existed must still deserialise. */
+    heapSizeLimit?: number;
   };
   cpu: { userMicros: number; systemMicros: number; percent: number };
   eventLoopLagMs: number;
