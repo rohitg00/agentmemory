@@ -19,6 +19,7 @@ import {
   createFallbackProvider,
   createEmbeddingProvider,
   createImageEmbeddingProvider,
+  reportEmbeddingProbeResult,
 } from "./providers/index.js";
 import { StateKV } from "./state/kv.js";
 import { KV } from "./state/schema.js";
@@ -101,7 +102,7 @@ import { DedupMap } from "./functions/dedup.js";
 import { registerHealthMonitor } from "./health/monitor.js";
 import { initMetrics, OTEL_CONFIG } from "./telemetry/setup.js";
 import { VERSION } from "./version.js";
-import { bootLog } from "./logger.js";
+import { bootLog, logger } from "./logger.js";
 import { runtimeMetadataPath } from "./runtime-paths.js";
 import { mkdirSync, writeFileSync, unlinkSync } from "node:fs";
 import { dirname } from "node:path";
@@ -549,6 +550,25 @@ async function main() {
     secret,
     config.restPort,
   );
+
+  // Deliberately not awaited: the SIGINT/SIGTERM handlers are registered
+  // further down this function, and a cold local-model load can take long
+  // enough to download tens of MB. A deploy signal arriving in that window
+  // would kill the process with no shutdown handler installed, losing the
+  // persisted search index.
+  if (!embeddingProvider) {
+    // Reports the resolved value rather than a hardcoded "none", because
+    // createEmbeddingProvider also returns null for an unrecognized
+    // provider name - blaming the opt-out would misdirect a typo.
+    logger.info("Embeddings disabled", {
+      provider: embeddingConfig.provider ?? "none",
+    });
+    bootLog(
+      `Embeddings: disabled (EMBEDDING_PROVIDER=${embeddingConfig.provider ?? "none"})`,
+    );
+  } else {
+    void reportEmbeddingProbeResult(embeddingProvider);
+  }
 
   const autoForgetIntervalMs = parseInt(process.env.AUTO_FORGET_INTERVAL_MS || "3600000", 10);
   const consolidationIntervalMs = parseInt(process.env.CONSOLIDATION_INTERVAL_MS || "7200000", 10);

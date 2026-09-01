@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { SearchIndex } from "../src/state/search-index.js";
 import { segmentCjk } from "../src/state/cjk-segmenter.js";
+import { indexRecords, getSearchIndex } from "../src/functions/search.js";
 import type { CompressedObservation } from "../src/types.js";
 
 function makeObs(
@@ -289,5 +290,39 @@ describe("SearchIndex", () => {
     ]);
     expect(segmentCjk("leading 项目")).toEqual(["leading", "项目"]);
     expect(segmentCjk("项目 trailing")).toEqual(["项目", "trailing"]);
+  });
+});
+
+describe("indexRecords", () => {
+  // #931: synthetic compressions can have an empty narrative when the hook
+  // carried no prompt, input, or output (compress-synthetic.ts). The gate
+  // used to require both title and narrative, dropping these observations
+  // from the index entirely.
+  it("indexes an observation with an empty narrative (title still carries signal)", async () => {
+    const indexed = await indexRecords(
+      [
+        {
+          id: "o1",
+          sessionId: "s1",
+          timestamp: "2026-08-21T00:00:00.000Z",
+          type: "other",
+          title: "Bash",
+          facts: [],
+          narrative: "",
+          concepts: [],
+          files: [],
+          importance: 5,
+          confidence: 0.3,
+        },
+      ],
+      [],
+    );
+    expect(indexed).toBe(1);
+    // The count alone passes even if o1 never reached the index, which is
+    // the regression this test exists to catch.
+    expect(getSearchIndex().has("o1")).toBe(true);
+    expect(getSearchIndex().search("Bash").map((r) => r.obsId)).toContain(
+      "o1",
+    );
   });
 });

@@ -294,12 +294,17 @@ export async function indexRecords(
     count++
   }
   for (const obs of observations) {
-    if (!obs.title || !obs.narrative) continue
+    // #931: a synthetic compression legitimately has an empty narrative
+    // when the hook carried no prompt, input, or output
+    // (compress-synthetic.ts). Requiring one here dropped those
+    // observations from BOTH the BM25 and vector indexes, while the live
+    // observe.ts path indexed them fine using title + narrative.
+    if (!obs.title) continue
     idx.add(obs)
     await enqueue({
       id: obs.id,
       sessionId: obs.sessionId,
-      text: obs.title + ' ' + obs.narrative,
+      text: obs.narrative ? obs.title + ' ' + obs.narrative : obs.title,
       context: { kind: "observation", logId: obs.id },
     })
     count++
