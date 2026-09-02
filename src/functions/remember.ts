@@ -19,6 +19,19 @@ function safeSlice(text: string, length: number): string {
   return /[\uD800-\uDBFF]$/.test(sliced) ? sliced.slice(0, -1) : sliced;
 }
 
+// Signs that a caller mis-encoded its tool call and the arguments after content
+// were absorbed into content as literal text. Matching the argument names of the
+// save tools keeps this specific to that failure. No /g flag: these are reused
+// across calls, and a stateful lastIndex would make matching intermittent.
+const ARG_LEAK_PATTERNS = [
+  /<\/(?:[a-z]+:)?(?:parameter|invoke|function_calls)>/i,
+  /<\/content>/i,
+  /<type>\s*\S/i,
+  /<concepts>\s*\S/i,
+  /<files>\s*\S/i,
+  /<project>\s*\S/i,
+];
+
 export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
   sdk.registerFunction("mem::remember", 
     async (data: {
@@ -37,6 +50,24 @@ export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
         !data.content.trim()
       ) {
         return { success: false, error: "content is required" };
+      }
+      // content is free-form, so a call whose later arguments leaked into it is
+      // not schema-invalid: it saves, with type/concepts/files/project silently
+      // left at their defaults and the markup embedded in the memory. Refuse it
+      // so the caller resends instead. More than one marker is required, so
+      // content that legitimately mentions one of these tags still saves.
+      const markerCount = ARG_LEAK_PATTERNS.reduce(
+        (count, p) => count + (data.content.match(new RegExp(p.source, p.flags + "g"))?.length ?? 0),
+        0,
+      );
+      if (markerCount > 1) {
+        return {
+          success: false,
+          error:
+            "content contains tool-call markup, so the arguments after it were " +
+            "probably absorbed into content. Resend with one parameter per " +
+            "argument: content, type, concepts, files, project.",
+        };
       }
       if (data.files && !Array.isArray(data.files)) {
         return { success: false, error: "files must be an array" };
