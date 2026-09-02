@@ -1278,7 +1278,7 @@ export function registerMcpEndpoints(
               body: { error: `Unknown tool: ${name}` },
             };
         }
-      } catch (err) {
+      } catch {
         return {
           status_code: 500,
           body: {
