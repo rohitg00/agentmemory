@@ -1,0 +1,81 @@
+{
+  "name": "agentmemory",
+  "version": "0.9.29",
+  "description": "Persistent memory for AI coding agents -- captures tool usage, compresses via LLM, injects context into future sessions. 10 hooks, 54 MCP tools, 17 skills, real-time viewer.",
+  "author": {
+    "name": "Rohit Ghumare",
+    "url": "https://github.com/rohitg00"
+  },
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/rohitg00/agentmemory",
+  "keywords": ["memory", "agent-memory", "mcp", "context", "hooks"],
+  "interface": {
+    "displayName": "AgentMemory",
+    "shortDescription": "Persistent memory for coding agents: recall, lessons, handoffs, session history"
+  },
+  "skills": "./skills/",
+  "mcpServers": {
+    "agentmemory": {
+      "command": "npx",
+      "args": ["-y", "@agentmemory/mcp"],
+      "env": {
+        "AGENTMEMORY_URL": "${AGENTMEMORY_URL:-http://localhost:3111}",
+        "AGENTMEMORY_SECRET": "${AGENTMEMORY_SECRET:-}",
+        "AGENTMEMORY_TOOLS": "${AGENTMEMORY_TOOLS:-all}"
+      }
+    }
+  },
+  "hooks": [
+    {
+      "event": "SessionStart",
+      "command": "node ./scripts/session-start.mjs",
+      "timeout": 15
+    },
+    {
+      "event": "UserPromptSubmit",
+      "command": "node ./scripts/prompt-submit.mjs",
+      "timeout": 5
+    },
+    {
+      "event": "PreToolUse",
+      "matcher": "Edit|Write|Read|Glob|Grep",
+      "command": "node ./scripts/pre-tool-use.mjs",
+      "timeout": 10
+    },
+    {
+      "event": "PostToolUse",
+      "command": "node ./scripts/post-tool-use.mjs",
+      "timeout": 5
+    },
+    {
+      "event": "PostToolUseFailure",
+      "command": "node ./scripts/post-tool-failure.mjs",
+      "timeout": 5
+    },
+    {
+      "event": "PreCompact",
+      "command": "node ./scripts/pre-compact.mjs",
+      "timeout": 15
+    },
+    {
+      "event": "SubagentStart",
+      "command": "node ./scripts/subagent-start.mjs",
+      "timeout": 5
+    },
+    {
+      "event": "SubagentStop",
+      "command": "node ./scripts/subagent-stop.mjs",
+      "timeout": 5
+    },
+    {
+      "event": "Stop",
+      "command": "node ./scripts/stop.mjs",
+      "timeout": 10
+    },
+    {
+      "event": "SessionEnd",
+      "command": "node ./scripts/session-end.mjs",
+      "timeout": 10
+    }
+  ]
+}
