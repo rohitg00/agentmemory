@@ -12,9 +12,14 @@ import { readFileSync } from "node:fs";
 describe("api::session::end → event::session::stopped (#666)", () => {
   const api = readFileSync("src/triggers/api.ts", "utf-8");
 
-  it("api::session::end fires event::session::stopped after kv.update", () => {
+  // #745: the kv.update(KV.sessions ...) terminal write is now conditional
+  // on `final === true` (see test/session-end-final-flag.test.ts), so this
+  // assertion no longer demands kv.update be unconditional -- only that
+  // api::session::end still fans out to event::session::stopped, which is
+  // the actual #666 intent this test encodes.
+  it("api::session::end fires event::session::stopped", () => {
     expect(api).toMatch(
-      /api::session::end[\s\S]*?kv\.update\(KV\.sessions[\s\S]*?function_id:\s*"event::session::stopped"/,
+      /api::session::end[\s\S]*?function_id:\s*"event::session::stopped"/,
     );
   });
 

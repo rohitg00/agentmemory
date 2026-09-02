@@ -108,7 +108,10 @@ async function main() {
 	fetch(`${REST_URL}/agentmemory/session/end`, {
 		method: "POST",
 		headers: authHeaders(),
-		body: JSON.stringify({ sessionId }),
+		body: JSON.stringify({
+			sessionId,
+			final: true
+		}),
 		signal: AbortSignal.timeout(3e4)
 	}).catch(() => {});
 	if (process.env["CLAUDE_MEMORY_BRIDGE"] === "true") fetch(`${REST_URL}/agentmemory/claude-bridge/sync`, {

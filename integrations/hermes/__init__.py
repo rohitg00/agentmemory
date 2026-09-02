@@ -383,8 +383,14 @@ class AgentMemoryProvider(MemoryProvider):
         })
 
     def on_session_end(self, messages: list, **kwargs: Any) -> None:
+        # #745: this fires at genuine session end (not per-turn), so set
+        # final=True or the session would sit "active" forever and could
+        # trip the stale-session diagnostic - same fix already applied to
+        # every other first-party integration (src/hooks/session-end.ts,
+        # plugin/opencode/agentmemory-capture.ts, integrations/pi).
         _api(self._base, "session/end", {
             "sessionId": kwargs.get("session_id", self._session_id),
+            "final": True,
         })
 
     def on_pre_compress(self, messages: list, **kwargs: Any) -> None:

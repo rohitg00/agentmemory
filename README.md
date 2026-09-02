@@ -1618,7 +1618,7 @@ Create `~/.agentmemory/.env`:
 |--------|------|-------------|
 | `GET` | `/agentmemory/health` | Health check (always public) |
 | `POST` | `/agentmemory/session/start` | Start session + get context |
-| `POST` | `/agentmemory/session/end` | End session |
+| `POST` | `/agentmemory/session/end` | End session (pass `final: true` for genuine termination — a per-turn call without it leaves the session marked active) |
 | `POST` | `/agentmemory/observe` | Capture observation |
 | `POST` | `/agentmemory/smart-search` | Hybrid search |
 | `POST` | `/agentmemory/context` | Generate context |

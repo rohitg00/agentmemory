@@ -41,6 +41,8 @@ async function main() {
   const sessionId = ((data.session_id || data.sessionId || data.conversation_id) as string) || "unknown";
 
   // session/end already fans out the summary server-side (#1203).
+  // No `final` flag: this fires every turn, so it must not mark the
+  // session completed.
   fetch(`${REST_URL}/agentmemory/session/end`, {
     method: "POST",
     headers: authHeaders(),

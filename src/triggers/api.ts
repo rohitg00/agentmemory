@@ -657,19 +657,30 @@ export function registerApiTriggers(
   });
 
   sdk.registerFunction("api::session::end",
-    async (req: ApiRequest<{ sessionId: string }>): Promise<Response> => {
-      const sessionId = asNonEmptyString((req.body as Record<string, unknown>)?.sessionId);
+    async (req: ApiRequest<{ sessionId: string; final?: boolean }>): Promise<Response> => {
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const sessionId = asNonEmptyString(body.sessionId);
       if (!sessionId) {
         return {
           status_code: 400,
           body: { error: "sessionId is required and must be a non-empty string" },
         };
       }
-      await kv.update(KV.sessions, sessionId, [
-        { type: "set", path: "endedAt", value: new Date().toISOString() },
-        { type: "set", path: "status", value: "completed" },
-      ]);
-      // Fan out session-stopped lifecycle (non-blocking).
+      // The per-turn Stop hook posts this endpoint with the same payload
+      // shape as the real SessionEnd hook, so only an explicit `final`
+      // marks the session completed. Strict `=== true` keeps a truthy
+      // non-boolean from being coerced into a terminal write. An older
+      // plugin that predates the flag simply never marks completed, which
+      // self-heals on update.
+      const final = body.final === true;
+      if (final) {
+        await kv.update(KV.sessions, sessionId, [
+          { type: "set", path: "endedAt", value: new Date().toISOString() },
+          { type: "set", path: "status", value: "completed" },
+        ]);
+      }
+      // Unconditional: summarize, graph extraction and consolidation run
+      // every turn, not only at genuine session end.
       try {
         sdk.trigger({
           function_id: "event::session::stopped",

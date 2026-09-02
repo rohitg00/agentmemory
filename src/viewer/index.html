@@ -3309,7 +3309,10 @@
     }
 
     async function endSession(id) {
-      await apiPost('session/end', { sessionId: id });
+      // #745: the viewer's "End Session" button is an explicit, one-shot
+      // session end, not a per-turn call, so set final:true or the session
+      // would sit "active" forever and could trip the stale-session diagnostic.
+      await apiPost('session/end', { sessionId: id, final: true });
       state.sessions.loaded = false;
       loadSessions();
     }

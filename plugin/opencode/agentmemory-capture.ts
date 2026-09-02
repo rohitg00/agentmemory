@@ -330,7 +330,10 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
           if (DEBUG) console.error("[agentmemory] session.deleted with no session ID");
           return;
         }
-        await post("/session/end", { sessionId: sid });
+        // #745: session.deleted is a genuine one-shot session end (not a
+        // per-turn call), so set final:true or the session would sit
+        // "active" forever and could trip the stale-session diagnostic.
+        await post("/session/end", { sessionId: sid, final: true });
         post("/crystals/auto", { olderThanDays: 7 }, 30000);
         post("/consolidate-pipeline", { tier: "all", force: true }, 30000);
         if (sid === activeSessionId) activeSessionId = null;

@@ -92,10 +92,12 @@ async function main() {
     );
   }
 
+  // Genuine session end, unlike the per-turn Stop hook which posts the
+  // same endpoint without the flag.
   fetch(`${REST_URL}/agentmemory/session/end`, {
     method: "POST",
     headers: authHeaders(),
-    body: JSON.stringify({ sessionId }),
+    body: JSON.stringify({ sessionId, final: true }),
     signal: AbortSignal.timeout(30000),
   }).catch(() => {});
 

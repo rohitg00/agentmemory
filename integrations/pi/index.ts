@@ -394,8 +394,11 @@ export default function agentmemoryExtension(pi: ExtensionAPI) {
     if (event.reason !== "quit") return;
     if (!lastHealthOk || !sessionId) return;
     // session/end already fans out the summary server-side (#1203).
+    // #745: this fires only on a genuine quit (guarded above), not per-turn,
+    // so set final:true or the session would sit "active" forever and could
+    // trip the stale-session diagnostic.
     await callAgentMemory("session/end", {
-      body: { sessionId },
+      body: { sessionId, final: true },
       timeoutMs: 5_000,
     });
     void callAgentMemory("consolidate", { body: {} });

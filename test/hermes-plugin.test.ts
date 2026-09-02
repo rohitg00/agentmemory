@@ -68,4 +68,22 @@ describe("Hermes plugin manifest", () => {
       /os\.environ\.setdefault\(\s*["']AGENTMEMORY_URL["']\s*,\s*DEFAULT_BASE_URL\s*\)/,
     );
   });
+
+  // #745: on_session_end fires at genuine session end (not per-turn, unlike
+  // a Stop-hook-style call), so it must set final=True or the session sits
+  // "active" forever and can trip the stale-session diagnostic - the same
+  // fix already applied to every other first-party integration
+  // (src/hooks/session-end.ts, plugin/opencode/agentmemory-capture.ts,
+  // integrations/pi/index.ts). This is a structural (source-regex) test,
+  // not a behavioural one, matching the idiom test/evict.test.ts's
+  // "eviction scheduling" describe block uses for the same reason: no
+  // Python runtime is available to exercise the plugin directly here.
+  it("marks the session/end call final on genuine session end", () => {
+    const source = readFileSync("integrations/hermes/__init__.py", "utf8");
+    const match = source.match(
+      /def on_session_end\(self,[^)]*\)[^:]*:\n((?:.*\n)*?)\n {4}def /,
+    );
+    expect(match).not.toBeNull();
+    expect(match![1]).toMatch(/"final":\s*True/);
+  });
 });

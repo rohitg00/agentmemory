@@ -2892,7 +2892,9 @@ async function seedDemoSession(
     }
   }
 
-  await postJsonStrict(`${base}/agentmemory/session/end`, { sessionId: session.id });
+  // One-shot end, not a per-turn Stop call, so the session does not sit
+  // "active" forever.
+  await postJsonStrict(`${base}/agentmemory/session/end`, { sessionId: session.id, final: true });
   return stored;
 }
 

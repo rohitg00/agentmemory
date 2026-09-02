@@ -82,10 +82,12 @@ describe("agentmemory integration", () => {
     });
 
     it("ends the session", async () => {
+      // #745: only final:true marks the session completed; a plain
+      // per-turn-shaped post no longer does.
       const res = await fetch(url("/agentmemory/session/end"), {
         method: "POST",
         headers: authHeaders(),
-        body: JSON.stringify({ sessionId: SESSION_ID }),
+        body: JSON.stringify({ sessionId: SESSION_ID, final: true }),
       });
       expect(res.status).toBe(200);
       const body = (await json(res)) as { success: boolean };
@@ -123,7 +125,7 @@ describe("agentmemory integration", () => {
       await fetch(url("/agentmemory/session/end"), {
         method: "POST",
         headers: authHeaders(),
-        body: JSON.stringify({ sessionId: OBS_SESSION }),
+        body: JSON.stringify({ sessionId: OBS_SESSION, final: true }),
       });
     });
 
