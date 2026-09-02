@@ -271,6 +271,9 @@ export function detectEmbeddingProvider(
 ): string | null {
   const source = env ?? getMergedEnv();
   const forced = source["EMBEDDING_PROVIDER"];
+  // Keeps an explicit opt-out reachable now that the fallback is a real
+  // provider rather than null.
+  if (forced === "none") return null;
   if (forced) return forced;
 
   if (source["GEMINI_API_KEY"]) return "gemini";
@@ -278,7 +281,11 @@ export function detectEmbeddingProvider(
   if (source["VOYAGE_API_KEY"]) return "voyage";
   if (source["COHERE_API_KEY"]) return "cohere";
   if (source["OPENROUTER_API_KEY"]) return "openrouter";
-  return null;
+  // Falls back to local rather than null: null left the provider unset, so
+  // indexing silently no-opped and semantic search returned nothing. Local
+  // needs no key, and its optional dependency resolves lazily, so a missing
+  // package surfaces as a per-write warning rather than a boot failure.
+  return "local";
 }
 
 export function loadClaudeBridgeConfig(): ClaudeBridgeConfig {
