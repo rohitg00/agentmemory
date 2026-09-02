@@ -519,3 +519,24 @@ export function loadFallbackConfig(): FallbackConfig {
     });
   return { providers };
 }
+
+// Parses a *_INTERVAL_MS env var, falling back to `fallbackMs` for
+// anything that is not a plain positive decimal integer in setInterval's
+// working range. Every rejected shape would otherwise arm a destructive
+// timer far more often than configured:
+// - parseInt("abc") is NaN, and setInterval(fn, NaN) fires on
+//   effectively every event-loop tick;
+// - parseInt truncates "1e3" and "1.5" to 1, a 1ms loop;
+// - a value above 2147483647 (2^31 - 1) overflows Node's 32-bit timer
+//   delay and is coerced to 1ms;
+// - zero/negative behave like the NaN case.
+export const TIMER_MAX_INTERVAL_MS = 2147483647;
+
+export function parsePositiveIntervalMs(
+  raw: string | undefined,
+  fallbackMs: number,
+): number {
+  if (raw === undefined || !/^\d+$/.test(raw.trim())) return fallbackMs;
+  const n = Number(raw.trim());
+  return n > 0 && n <= TIMER_MAX_INTERVAL_MS ? n : fallbackMs;
+}

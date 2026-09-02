@@ -48,7 +48,7 @@ import { registerFileIndexFunction } from "./functions/file-index.js";
 import { registerConsolidateFunction } from "./functions/consolidate.js";
 import { registerPatternsFunction } from "./functions/patterns.js";
 import { registerRememberFunction } from "./functions/remember.js";
-import { registerEvictFunction } from "./functions/evict.js";
+import { registerEvictFunction, reportEvictionScheduled } from "./functions/evict.js";
 import { registerRelationsFunction } from "./functions/relations.js";
 import { registerTimelineFunction } from "./functions/timeline.js";
 import { registerSmartSearchFunction } from "./functions/smart-search.js";
@@ -101,7 +101,8 @@ import { DedupMap } from "./functions/dedup.js";
 import { registerHealthMonitor } from "./health/monitor.js";
 import { initMetrics, OTEL_CONFIG } from "./telemetry/setup.js";
 import { VERSION } from "./version.js";
-import { bootLog } from "./logger.js";
+import { bootLog, logger } from "./logger.js";
+import { parsePositiveIntervalMs } from "./config.js";
 import { runtimeMetadataPath } from "./runtime-paths.js";
 import { mkdirSync, writeFileSync, unlinkSync } from "node:fs";
 import { dirname } from "node:path";
@@ -550,8 +551,9 @@ async function main() {
     config.restPort,
   );
 
-  const autoForgetIntervalMs = parseInt(process.env.AUTO_FORGET_INTERVAL_MS || "3600000", 10);
-  const consolidationIntervalMs = parseInt(process.env.CONSOLIDATION_INTERVAL_MS || "7200000", 10);
+  const autoForgetIntervalMs = parsePositiveIntervalMs(process.env.AUTO_FORGET_INTERVAL_MS, 3600000);
+  const consolidationIntervalMs = parsePositiveIntervalMs(process.env.CONSOLIDATION_INTERVAL_MS, 7200000);
+  const evictionIntervalMs = parsePositiveIntervalMs(process.env.EVICTION_INTERVAL_MS, 21600000);
 
   if (process.env.AUTO_FORGET_ENABLED !== "false") {
     const autoForgetTimer = setInterval(async () => {
@@ -561,6 +563,48 @@ async function main() {
     }, autoForgetIntervalMs);
     autoForgetTimer.unref();
     bootLog(`Auto-forget: enabled (every ${autoForgetIntervalMs / 60000}m)`);
+  }
+
+  // Unlike auto-forget, this sweep can run genuinely long: stale-session
+  // recovery fans out a full LLM summarize and graph-extract per recovered
+  // session, plus a corpus-wide consolidate pass. Outcomes are logged
+  // explicitly because a bare try/catch would absorb a mid-sweep timeout
+  // and leave the project cap unenforced with nothing to show why.
+  //
+  // evictionInFlight guards against two sweeps overlapping: if one pass
+  // is still running when the next tick fires (a slow LLM-recovery sweep
+  // outlasting evictionIntervalMs), decrementImageRef (image-refs.ts) is
+  // lock-protected per image path but not idempotent across separate
+  // eviction passes - two concurrent passes evicting observations that
+  // share an image can each decrement its refcount, deleting an image
+  // still referenced by a third observation neither pass touched. A
+  // dropped tick under sustained overlap is the safer failure mode.
+  let evictionInFlight = false;
+  if (process.env.EVICTION_ENABLED !== "false") {
+    const evictionTimer = setInterval(async () => {
+      if (evictionInFlight) {
+        logger.warn("Eviction sweep skipped — previous sweep still running");
+        return;
+      }
+      evictionInFlight = true;
+      const startedAt = Date.now();
+      try {
+        const stats = await sdk.trigger({ function_id: "mem::evict", payload: { dryRun: false } });
+        logger.info("Scheduled eviction sweep complete", {
+          stats,
+          durationMs: Date.now() - startedAt,
+        });
+      } catch (err) {
+        logger.warn("Scheduled eviction sweep failed", {
+          error: err instanceof Error ? err.message : String(err),
+          durationMs: Date.now() - startedAt,
+        });
+      } finally {
+        evictionInFlight = false;
+      }
+    }, evictionIntervalMs);
+    evictionTimer.unref();
+    reportEvictionScheduled(evictionIntervalMs);
   }
 
   if (process.env.LESSON_DECAY_ENABLED !== "false") {

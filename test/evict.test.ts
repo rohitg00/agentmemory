@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { parsePositiveIntervalMs, TIMER_MAX_INTERVAL_MS } from "../src/config.js";
 import type {
   CompressedObservation,
   RawObservation,
@@ -293,5 +295,78 @@ describe("mem::evict stale sessions", () => {
     expect(calls.map((call) => call.function_id)).not.toContain(
       "event::session::stopped",
     );
+  });
+});
+
+// mem::evict is fully implemented (above) but was reachable only from the
+// REST handler - the boot scheduler in src/index.ts registers auto-forget,
+// lesson-decay, insight-decay, the recent-searches sweep, and consolidation,
+// but never eviction. maxObservationsPerProject was therefore never enforced
+// on a running deployment: a dry run against the live store reported
+// capEvictions: 55,716 against the 10,000 default. This is a structural
+// (source-regex) test rather than a behavioural one, matching the idiom
+// already used in test/session-end-triggers-graph.test.ts and
+// test/events-consolidation.test.ts - the scheduler lives inside main(),
+// which connects to an engine and starts servers, so there is no
+// proportionate way to unit-test the registration directly.
+describe("eviction scheduling", () => {
+  const src = readFileSync("src/index.ts", "utf-8");
+
+  it("registers mem::evict on a setInterval, guarded by EVICTION_ENABLED, matching the auto-forget shape", () => {
+    // Requires the actual call shape - the EVICTION_ENABLED guard wrapping
+    // a setInterval whose body triggers "mem::evict" with { dryRun: false },
+    // timed by evictionIntervalMs, and unref'd - so this fails if the
+    // registration is removed, or reduced to a comment / dead code that
+    // merely mentions the string "mem::evict" without actually wiring it up.
+    expect(src).toMatch(
+      /if\s*\(\s*process\.env\.EVICTION_ENABLED\s*!==\s*"false"\s*\)\s*\{\s*const\s+evictionTimer\s*=\s*setInterval\(\s*async\s*\(\)\s*=>\s*\{[\s\S]*?await\s+sdk\.trigger\(\{\s*function_id:\s*"mem::evict",\s*payload:\s*\{\s*dryRun:\s*false\s*\}\s*\}\);[\s\S]*?\},\s*evictionIntervalMs\);\s*evictionTimer\.unref\(\);/,
+    );
+  });
+
+  it("logs scheduled eviction sweep completion and failure instead of swallowing both", () => {
+    // Silent-failure guard: the timer body must not be a bare
+    // `try { await ... } catch {}` - it needs to report what happened.
+    expect(src).toMatch(/logger\.info\(\s*"Scheduled eviction sweep complete"/);
+    expect(src).toMatch(/logger\.warn\(\s*"Scheduled eviction sweep failed"/);
+  });
+
+  it("guards the scheduled sweep against overlapping with itself", () => {
+    expect(src).toMatch(/let\s+evictionInFlight\s*=\s*false;/);
+    expect(src).toMatch(/if\s*\(\s*evictionInFlight\s*\)\s*\{/);
+  });
+
+  it("derives evictionIntervalMs from EVICTION_INTERVAL_MS, defaulting to 6h, guarded against NaN/non-positive values", () => {
+    expect(src).toMatch(
+      /const\s+evictionIntervalMs\s*=\s*parsePositiveIntervalMs\(\s*process\.env\.EVICTION_INTERVAL_MS,\s*21600000\);/,
+    );
+  });
+});
+
+describe("parsePositiveIntervalMs", () => {
+  it("accepts a plain positive decimal integer", () => {
+    expect(parsePositiveIntervalMs("21600000", 1)).toBe(21600000);
+    expect(parsePositiveIntervalMs(String(TIMER_MAX_INTERVAL_MS), 1)).toBe(
+      TIMER_MAX_INTERVAL_MS,
+    );
+  });
+
+  it("falls back on unset, non-numeric, zero and negative values", () => {
+    expect(parsePositiveIntervalMs(undefined, 7)).toBe(7);
+    expect(parsePositiveIntervalMs("abc", 7)).toBe(7);
+    expect(parsePositiveIntervalMs("0", 7)).toBe(7);
+    expect(parsePositiveIntervalMs("-5", 7)).toBe(7);
+  });
+
+  it("rejects values parseInt would silently truncate", () => {
+    // parseInt("1e3") and parseInt("1.5") are both 1 - a 1ms destructive
+    // loop if either were accepted.
+    expect(parsePositiveIntervalMs("1e3", 7)).toBe(7);
+    expect(parsePositiveIntervalMs("1.5", 7)).toBe(7);
+  });
+
+  it("rejects values above Node's 32-bit timer delay ceiling", () => {
+    // setInterval coerces delays above 2^31 - 1 to 1ms, so an oversized
+    // configured interval would run the sweep every millisecond.
+    expect(parsePositiveIntervalMs("2147483648", 7)).toBe(7);
   });
 });

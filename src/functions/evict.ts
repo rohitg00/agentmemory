@@ -11,7 +11,7 @@ import { StateKV } from "../state/kv.js";
 import { isConsolidationEnabled } from "../config.js";
 import { recordAudit } from "./audit.js";
 import { deleteAccessLog } from "./access-tracker.js";
-import { logger } from "../logger.js";
+import { bootLog, logger } from "../logger.js";
 
 interface EvictionConfig {
   staleSessionDays: number;
@@ -103,6 +103,15 @@ async function runRecoveredSessionConsolidation(sdk: ISdk): Promise<void> {
       error: err instanceof Error ? err.message : String(err),
     });
   }
+}
+
+// Reports through `logger`, not `bootLog` alone: bootLog only reaches
+// stderr under --verbose, which a daemon start never sets, leaving no
+// signal that a destructive sweep had been armed.
+export function reportEvictionScheduled(intervalMs: number): void {
+  const intervalMinutes = intervalMs / 60000;
+  logger.info("Eviction sweep scheduled", { intervalMinutes });
+  bootLog(`Eviction: enabled (every ${intervalMinutes}m)`);
 }
 
 export function registerEvictFunction(sdk: ISdk, kv: StateKV): void {
