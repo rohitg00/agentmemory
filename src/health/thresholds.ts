@@ -59,9 +59,15 @@ export function evaluateHealth(
     degraded = true;
   }
 
+  // heapTotal is demand-sized, so measuring against it reported critical
+  // on a process at 10% of its real ceiling.
+  const heapDenominator =
+    snapshot.memory.heapLimit && snapshot.memory.heapLimit > 0
+      ? snapshot.memory.heapLimit
+      : snapshot.memory.heapTotal;
   const memPercent =
-    snapshot.memory.heapTotal > 0
-      ? (snapshot.memory.heapUsed / snapshot.memory.heapTotal) * 100
+    heapDenominator > 0
+      ? (snapshot.memory.heapUsed / heapDenominator) * 100
       : 0;
   const rss = snapshot.memory.rss ?? 0;
   const rssAboveFloor = rss >= cfg.memoryRssFloorBytes;

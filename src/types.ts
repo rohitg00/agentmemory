@@ -225,6 +225,9 @@ export interface HealthSnapshot {
   memory: {
     heapUsed: number;
     heapTotal: number;
+    // V8's heap_size_limit. Optional so snapshots persisted before this
+    // field keep deserializing.
+    heapLimit?: number;
     rss: number;
     external: number;
   };
