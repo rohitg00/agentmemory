@@ -193,6 +193,27 @@ describe("mem::compress-file", () => {
     expect(fileStore.get("/tmp/guide.original.md")).toBeUndefined();
   });
 
+  it("surfaces the provider error message instead of letting it escape (Bedrock hint)", async () => {
+    const path = "/tmp/notes.md";
+    fileStore.set(path, "# Title\n\nLong original body.");
+    summarize.mockRejectedValue(
+      new Error(
+        'Bedrock model "anthropic.claude-haiku-4-5-20251001-v1:0" could not be invoked: ' +
+          "set AWS_BEDROCK_MODEL to the us./eu.-prefixed cross-region inference profile ID.",
+      ),
+    );
+
+    const result = (await sdk.trigger("mem::compress-file", {
+      filePath: path,
+    })) as { success: boolean; error: string };
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("cross-region inference profile");
+    // The original file is untouched and no backup is written on provider failure.
+    expect(fileStore.get(path)).toBe("# Title\n\nLong original body.");
+    expect(fileStore.get("/tmp/notes.original.md")).toBeUndefined();
+  });
+
   it("uses a distinct backup path for *.original.md inputs", async () => {
     const path = "/tmp/notes.original.md";
     fileStore.set(path, "# Title\n\nLong original body.");

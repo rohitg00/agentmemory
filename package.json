@@ -18,6 +18,7 @@
   },
   "scripts": {
     "build": "tsdown && (cp iii-config.yaml dist/ 2>/dev/null || true) && (cp iii-config.docker.yaml dist/ 2>/dev/null || true) && (cp docker-compose.yml dist/ 2>/dev/null || true) && (cp .env.example dist/ 2>/dev/null || true) && mkdir -p dist/viewer && cp src/viewer/index.html dist/viewer/ && cp src/viewer/favicon.svg dist/viewer/",
+    "prepare": "npm run build",
     "dev": "tsx src/index.ts",
     "start": "node dist/cli.mjs",
     "migrate": "node dist/functions/migrate.js",
@@ -61,8 +62,10 @@
     "url": "https://github.com/rohitg00/agentmemory"
   },
   "dependencies": {
+    "@anthropic-ai/bedrock-sdk": "^0.29.2",
     "@anthropic-ai/claude-agent-sdk": "^0.3.142",
     "@anthropic-ai/sdk": "^0.100.1",
+    "@aws-sdk/client-bedrock-runtime": "^3.1057.0",
     "@clack/prompts": "^1.2.0",
     "dotenv": "^17.4.2",
     "iii-sdk": "0.11.2",

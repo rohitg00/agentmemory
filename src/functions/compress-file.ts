@@ -5,6 +5,7 @@ import type { ISdk } from "iii-sdk";
 import type { MemoryProvider } from "../types.js";
 import type { StateKV } from "../state/kv.js";
 import { recordAudit } from "./audit.js";
+import { logger } from "../logger.js";
 
 const SENSITIVE_PATH_TERMS = [
   "secret",
@@ -133,10 +134,24 @@ export function registerCompressFileFunction(
         return { success: true, skipped: true, reason: "file is empty" };
       }
 
-      const response = await provider.summarize(
-        COMPRESS_FILE_SYSTEM_PROMPT,
-        `Compress this markdown file while preserving structure and code blocks:\n\n${original}`,
-      );
+      let response: string;
+      try {
+        response = await provider.summarize(
+          COMPRESS_FILE_SYSTEM_PROMPT,
+          `Compress this markdown file while preserving structure and code blocks:\n\n${original}`,
+        );
+      } catch (err) {
+        // Surface the provider's message as a structured error. Without this the
+        // throw escapes the function and the engine serializes it as the opaque
+        // "[object Object]", hiding actionable hints (e.g. the Bedrock provider's
+        // model-access / inference-profile guidance).
+        const msg = err instanceof Error ? err.message : String(err);
+        logger.error("compress-file provider call failed", {
+          filePath: absolutePath,
+          error: msg,
+        });
+        return { success: false, error: msg };
+      }
       const compressed = stripMarkdownFence(response);
       const validationErrors = validateCompression(original, compressed);
       if (validationErrors.length > 0) {
