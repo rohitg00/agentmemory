@@ -1477,11 +1477,11 @@
           apiGet('memories?latest=true&limit=500'),
           apiGet('graph/stats'),
           apiGet('audit?limit=5'),
-          apiGet('semantic'),
-          apiGet('procedural'),
-          apiGet('relations'),
-          apiGet('lessons'),
-          apiGet('crystals')
+          apiGet('semantic?limit=50'),
+          apiGet('procedural?limit=50'),
+          apiGet('relations?limit=50'),
+          apiGet('lessons?limit=50'),
+          apiGet('crystals?limit=50')
         ]);
         state.dashboard.health = results[0];
         state.dashboard.sessions = (results[1] && results[1].sessions) || [];

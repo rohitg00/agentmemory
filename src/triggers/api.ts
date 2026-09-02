@@ -865,24 +865,15 @@ export function registerApiTriggers(
       const filtered = filterAgentId
         ? sessions.filter((s) => s.agentId === filterAgentId)
         : sessions;
-      // Bounded fan-out: each kv.get is a full engine invocation, so
-      // Promise.all over hundreds of sessions saturates the invocation
-      // pool. Batch in chunks of 10 (parallel within a chunk, sequential
-      // across chunks); the summaries array stays index-aligned with
-      // `filtered`.
-      const summaries: Array<SessionSummary | null> = [];
-      for (let batch = 0; batch < filtered.length; batch += 10) {
-        const chunk = filtered.slice(batch, batch + 10);
-        const results = await Promise.all(
-          chunk.map((s) =>
-            kv.get<SessionSummary>(KV.summaries, s.id).catch(() => null),
-          ),
-        );
-        summaries.push(...results);
+      const summariesList = await kv.list<SessionSummary>(KV.summaries).catch(() => []);
+      const summaryBySessionId = new Map<string, SessionSummary>();
+      for (const sm of summariesList) {
+        if (sm?.sessionId) summaryBySessionId.set(sm.sessionId, sm);
       }
-      const withSummary = filtered.map((s, i) =>
-        summaries[i] ? { ...s, summary: summaries[i] } : s,
-      );
+      const withSummary = filtered.map((s) => {
+        const sum = summaryBySessionId.get(s.id);
+        return sum ? { ...s, summary: sum } : s;
+      });
       return { status_code: 200, body: { sessions: withSummary } };
     },
   );
@@ -2027,8 +2018,11 @@ export function registerApiTriggers(
     async (req: ApiRequest): Promise<Response> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
-      const semantic = await kv.list<import("../types.js").SemanticMemory>(KV.semantic);
-      return { status_code: 200, body: { semantic } };
+      const limitParam = parseOptionalPositiveInt(req.query_params?.["limit"]);
+      const limit = limitParam ?? 100;
+      const allSemantic = await kv.list<import("../types.js").SemanticMemory>(KV.semantic);
+      const semantic = allSemantic.slice(0, limit);
+      return { status_code: 200, body: { semantic, total: allSemantic.length } };
     },
   );
   sdk.registerTrigger({
@@ -2041,8 +2035,11 @@ export function registerApiTriggers(
     async (req: ApiRequest): Promise<Response> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
-      const procedural = await kv.list<import("../types.js").ProceduralMemory>(KV.procedural);
-      return { status_code: 200, body: { procedural } };
+      const limitParam = parseOptionalPositiveInt(req.query_params?.["limit"]);
+      const limit = limitParam ?? 100;
+      const allProcedural = await kv.list<import("../types.js").ProceduralMemory>(KV.procedural);
+      const procedural = allProcedural.slice(0, limit);
+      return { status_code: 200, body: { procedural, total: allProcedural.length } };
     },
   );
   sdk.registerTrigger({
@@ -2055,8 +2052,11 @@ export function registerApiTriggers(
     async (req: ApiRequest): Promise<Response> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
-      const relations = await kv.list<import("../types.js").MemoryRelation>(KV.relations);
-      return { status_code: 200, body: { relations } };
+      const limitParam = parseOptionalPositiveInt(req.query_params?.["limit"]);
+      const limit = limitParam ?? 100;
+      const allRelations = await kv.list<import("../types.js").MemoryRelation>(KV.relations);
+      const relations = allRelations.slice(0, limit);
+      return { status_code: 200, body: { relations, total: allRelations.length } };
     },
   );
   sdk.registerTrigger({
