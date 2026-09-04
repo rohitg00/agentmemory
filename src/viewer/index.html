@@ -1277,16 +1277,24 @@
       if (typeof sum.narrative === 'string' && sum.narrative.trim() && sum.narrative !== sum.title) {
         parts.push(sum.narrative);
       }
-      if (Array.isArray(sum.keyDecisions) && sum.keyDecisions.length) {
-        parts.push('Key decisions: ' + sum.keyDecisions.map(String).join(', '));
-      }
-      if (Array.isArray(sum.filesModified) && sum.filesModified.length) {
-        parts.push('Files: ' + sum.filesModified.map(String).join(', '));
-      }
-      if (Array.isArray(sum.concepts) && sum.concepts.length) {
-        parts.push('Concepts: ' + sum.concepts.map(String).join(', '));
-      }
+      var keyDecisions = summaryList(sum.keyDecisions);
+      if (keyDecisions) parts.push('Key decisions: ' + keyDecisions);
+      var files = summaryList(sum.filesModified);
+      if (files) parts.push('Files: ' + files);
+      var concepts = summaryList(sum.concepts);
+      if (concepts) parts.push('Concepts: ' + concepts);
       return parts.join(' — ');
+    }
+    // Summary list fields are typed string[] but arrive unvalidated from
+    // stored summaries (the import path accepts hand-edited dumps), so a
+    // non-string entry stringified into "[object Object]" and re-created
+    // the defect sessionSummaryText exists to prevent. Keep scalar
+    // strings only; skip everything else.
+    function summaryList(values) {
+      if (!Array.isArray(values)) return '';
+      return values
+        .filter(function (value) { return typeof value === 'string' && value.trim(); })
+        .join(', ');
     }
     function debounce(fn, ms) {
       var t;

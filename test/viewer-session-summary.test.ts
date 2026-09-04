@@ -303,4 +303,82 @@ describe("viewer session summary rendering", () => {
     expect(html).not.toContain("[object Object]");
     expect(html).toContain("still/works.ts");
   });
+
+  it("skips non-string and empty entries inside summary list fields", () => {
+    const { sandbox } = loadViewerSandbox();
+    const summary = {
+      title: "Mixed entry types",
+      narrative: "Narrative body.",
+      keyDecisions: ["Real decision", {}, null, "", 42] as unknown as string[],
+      filesModified: ["kept.ts", {}, "also.ts"] as unknown as string[],
+      concepts: [{ nested: true }, "concept"] as unknown as string[],
+    };
+    const text = sandbox.sessionSummaryText({ summary });
+    expect(text).not.toContain("[object Object]");
+    expect(text).not.toContain("null");
+    expect(text).not.toContain("42");
+    expect(text).toContain("Key decisions: Real decision");
+    expect(text).toContain("Files: kept.ts, also.ts");
+    expect(text).toContain("Concepts: concept");
+  });
+
+  it("renders firstPrompt over a serialized summary in both render paths", async () => {
+    const { sandbox, getElement } = loadViewerSandbox();
+    sandbox.state.sessions.items = [
+      baseSession({ firstPrompt: "User prompt text", summary: sessionSummaryObject }),
+    ];
+    sandbox.state.sessions.selectedId = "20260811_113447_ba4a38";
+
+    sandbox.renderSessions();
+    const listHtml = getElement("view-sessions").innerHTML;
+    expect(listHtml).not.toContain("[object Object]");
+    expect(listHtml).toContain("User prompt text");
+    expect(listHtml).not.toContain("Todoist skill fixes");
+
+    await sandbox.renderSessionDetail();
+    const detailHtml = getElement("session-detail").innerHTML;
+    expect(detailHtml).not.toContain("[object Object]");
+    expect(detailHtml).toContain("User prompt text");
+  });
+
+  it("renders the serialized summary when firstPrompt is absent", () => {
+    const { sandbox, getElement } = loadViewerSandbox();
+    sandbox.state.sessions.items = [
+      baseSession({ firstPrompt: "", summary: sessionSummaryObject }),
+    ];
+
+    sandbox.renderSessions();
+
+    const html = getElement("view-sessions").innerHTML;
+    expect(html).toContain("Todoist skill fixes");
+    expect(html).toContain("Migrated the Todoist integration to API v1");
+  });
+
+  it("deduplicates a narrative identical to the title", () => {
+    const { sandbox } = loadViewerSandbox();
+    expect(
+      sandbox.sessionSummaryText({
+        summary: { title: "Same text", narrative: "Same text" },
+      }),
+    ).toBe("Same text");
+    expect(
+      sandbox.sessionSummaryText({
+        summary: { title: "Same text", narrative: "Same text." },
+      }),
+    ).toBe("Same text — Same text.");
+  });
+
+  it("returns empty text for numeric and empty-object summaries", () => {
+    const { sandbox, getElement } = loadViewerSandbox();
+    sandbox.state.sessions.items = [
+      baseSession({ summary: 42 as unknown as object }),
+      baseSession({ id: "20260904_empty_obj", summary: {} }),
+    ];
+
+    sandbox.renderSessions();
+
+    const html = getElement("view-sessions").innerHTML;
+    expect(html).not.toContain("[object Object]");
+    expect(html).not.toContain("session-preview");
+  });
 });
