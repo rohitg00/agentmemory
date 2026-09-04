@@ -1262,6 +1262,32 @@
       var name = sessionDisplayName(s);
       return id ? name + ' (' + id + ')' : name + ' (missing id)';
     }
+    // GET /agentmemory/sessions merges each session's SessionSummary object
+    // into `summary` (api::sessions), so the field is either a plain string
+    // (legacy title slice from session/start) or an object with title,
+    // narrative, and list fields. Interpolating the object form directly
+    // rendered "[object Object]" (#1229); serialize both shapes to text.
+    function sessionSummaryText(s) {
+      var sum = s && s.summary;
+      if (!sum) return '';
+      if (typeof sum === 'string') return sum;
+      if (typeof sum !== 'object') return '';
+      var parts = [];
+      if (typeof sum.title === 'string' && sum.title.trim()) parts.push(sum.title);
+      if (typeof sum.narrative === 'string' && sum.narrative.trim() && sum.narrative !== sum.title) {
+        parts.push(sum.narrative);
+      }
+      if (Array.isArray(sum.keyDecisions) && sum.keyDecisions.length) {
+        parts.push('Key decisions: ' + sum.keyDecisions.map(String).join(', '));
+      }
+      if (Array.isArray(sum.filesModified) && sum.filesModified.length) {
+        parts.push('Files: ' + sum.filesModified.map(String).join(', '));
+      }
+      if (Array.isArray(sum.concepts) && sum.concepts.length) {
+        parts.push('Concepts: ' + sum.concepts.map(String).join(', '));
+      }
+      return parts.join(' — ');
+    }
     function debounce(fn, ms) {
       var t;
       return function() {
@@ -3170,7 +3196,7 @@
           html += '<div class="session-item' + (selected ? ' selected' : '') + '"' + (id ? ' data-action="select-session" data-session-id="' + esc(id) + '" role="button" tabindex="0" aria-expanded="' + (selected ? 'true' : 'false') + '"' : '') + '>';
           html += '<div class="session-top"><span class="session-project">' + esc(sessionDisplayName(s)) + '</span>';
           html += '<span class="badge ' + statusBadge + '">' + esc(s.status) + '</span></div>';
-          var preview = s.firstPrompt || s.summary || '';
+          var preview = s.firstPrompt || sessionSummaryText(s) || '';
           if (preview) {
             html += '<div class="session-preview" style="font-size:13px;color:var(--ink);margin:4px 0;line-height:1.4;">' + esc(truncate(preview, 140)) + '</div>';
           }
@@ -3234,7 +3260,7 @@
       var durationMs = s.endedAt ? new Date(s.endedAt).getTime() - new Date(s.startedAt).getTime() : 0;
       var durationLabel = durationMs > 0 ? (durationMs < 60000 ? (durationMs / 1000).toFixed(1) + 's' : (durationMs / 60000).toFixed(1) + 'm') : '-';
 
-      var preview = s.firstPrompt || s.summary || firstPromptFromObs || '';
+      var preview = s.firstPrompt || sessionSummaryText(s) || firstPromptFromObs || '';
 
       var html = '<div class="detail-panel">';
       html += '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;">';
