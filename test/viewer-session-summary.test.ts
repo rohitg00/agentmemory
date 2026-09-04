@@ -6,6 +6,13 @@ import { renderViewerDocument } from "../src/viewer/document.js";
 // string (legacy title slice) or the full SessionSummary object merged by
 // api::sessions. The Sessions tab must render readable text in both shapes
 // and never the literal "[object Object]" (issue #1229).
+function htmlEscape(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
 function loadViewerSandbox() {
   const rendered = renderViewerDocument();
   expect(rendered.found).toBe(true);
@@ -93,7 +100,10 @@ function loadViewerSandbox() {
           text = String(value ?? "");
         },
         get innerHTML() {
-          return text;
+          // Matches the sibling loader in test/viewer-session-id.test.ts —
+          // the esc() helper in the viewer script round-trips through
+          // createElement/textContent/innerHTML escaping.
+          return htmlEscape(text);
         },
       };
     },
@@ -150,10 +160,15 @@ function loadViewerSandbox() {
     encodeURIComponent,
   };
 
-  const scriptWithoutAutoStart = scriptMatch[1].replace(
-    /\n\s*loadTab\('dashboard'\);\n\s*connectWs\(\);\n\s*startDashboardAutoRefresh\(\);\s*$/,
-    "\n",
-  );
+  const scriptWithoutAutoStart = scriptMatch[1]
+    .replace(/\n\s*switchTab\(tabFromRoute\(\)[^;]*;\n/, "\n")
+    .replace(/\n\s*\(async function initWs\(\)[\s\S]*?\}\)\(\);\n/, "\n")
+    .replace(/\n\s*startDashboardAutoRefresh\(\);\n/, "\n");
+
+  // The strip must actually fire. If the viewer script's startup tail
+  // changes shape, fail loudly here instead of silently running startup
+  // code (WebSocket/fetch chains) inside every rendering test.
+  expect(scriptWithoutAutoStart).not.toBe(scriptMatch[1]);
 
   vm.createContext(sandbox);
   vm.runInContext(scriptWithoutAutoStart, sandbox);
@@ -203,15 +218,10 @@ describe("viewer session summary rendering", () => {
 
     // The list preview truncates at 140 chars, so assert the labeled lists
     // through the full serialization the detail panel renders (600 chars).
-    expect(sandbox.sessionSummaryText({ summary: sessionSummaryObject })).toContain(
-      "Key decisions: Ship API v1 behind a flag, Keep v0 fallback for a release",
-    );
-    expect(sandbox.sessionSummaryText({ summary: sessionSummaryObject })).toContain(
-      "Files: integrations/todoist.ts, skills/todoist.md",
-    );
-    expect(sandbox.sessionSummaryText({ summary: sessionSummaryObject })).toContain(
-      "Concepts: api-migration, skills",
-    );
+    const text = sandbox.sessionSummaryText({ summary: sessionSummaryObject });
+    expect(text).toContain("Key decisions: Ship API v1 behind a flag, Keep v0 fallback for a release");
+    expect(text).toContain("Files: integrations/todoist.ts, skills/todoist.md");
+    expect(text).toContain("Concepts: api-migration, skills");
 
     return sandbox.renderSessionDetail().then(() => {
       const html = getElement("session-detail").innerHTML;
