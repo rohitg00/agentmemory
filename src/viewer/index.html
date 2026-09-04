@@ -1270,22 +1270,31 @@
     function sessionSummaryText(s) {
       var sum = s && s.summary;
       if (!sum) return '';
-      if (typeof sum === 'string') return sum;
-      if (typeof sum !== 'object') return '';
-      var parts = [];
-      var title = typeof sum.title === 'string' ? sum.title.trim() : '';
-      var narrative = typeof sum.narrative === 'string' ? sum.narrative.trim() : '';
-      if (title) parts.push(sum.title);
-      // Trim before comparing so a whitespace-variant duplicate does not
-      // render the same text twice.
-      if (narrative && narrative !== title) parts.push(sum.narrative);
-      var keyDecisions = summaryList(sum.keyDecisions);
-      if (keyDecisions) parts.push('Key decisions: ' + keyDecisions);
-      var files = summaryList(sum.filesModified);
-      if (files) parts.push('Files: ' + files);
-      var concepts = summaryList(sum.concepts);
-      if (concepts) parts.push('Concepts: ' + concepts);
-      return parts.join(' — ');
+      try {
+        if (typeof sum === 'string') {
+          // Trim so a whitespace-only legacy summary yields '' and the
+          // render paths' truthiness guards fall through cleanly.
+          return sum.trim();
+        }
+        if (typeof sum !== 'object') return '';
+        var parts = [];
+        var title = typeof sum.title === 'string' ? sum.title.trim() : '';
+        var narrative = typeof sum.narrative === 'string' ? sum.narrative.trim() : '';
+        if (title) parts.push(sum.title);
+        // Trim before comparing so a whitespace-variant duplicate does not
+        // render the same text twice.
+        if (narrative && narrative !== title) parts.push(sum.narrative);
+        var keyDecisions = summaryList(sum.keyDecisions);
+        if (keyDecisions) parts.push('Key decisions: ' + keyDecisions);
+        var files = summaryList(sum.filesModified);
+        if (files) parts.push('Files: ' + files);
+        var concepts = summaryList(sum.concepts);
+        if (concepts) parts.push('Concepts: ' + concepts);
+        return parts.join(' — ');
+      } catch (_) {
+        // A hostile property getter must not take down the render pass.
+        return '';
+      }
     }
     // Summary list fields are typed string[] but arrive unvalidated from
     // stored summaries (the import path accepts hand-edited dumps), so a

@@ -403,4 +403,39 @@ describe("viewer session summary rendering", () => {
     expect(html).not.toContain("[object Object]");
     expect(html).not.toContain("session-preview");
   });
+
+  it("renders no preview for a whitespace-only string summary and keeps the detail fallback", async () => {
+    const { sandbox, getElement } = loadViewerSandbox();
+    sandbox.state.sessions.items = [
+      baseSession({ summary: "  \n\t " }),
+    ];
+    sandbox.state.sessions.selectedId = "20260811_113447_ba4a38";
+    sandbox.fetch = async () => ({
+      ok: true,
+      json: async () => ({
+        observations: [{ type: "conversation", userPrompt: "Recovered from observations" }],
+      }),
+    });
+
+    sandbox.renderSessions();
+    const listHtml = getElement("view-sessions").innerHTML;
+    expect(listHtml).not.toContain("session-preview");
+
+    await sandbox.renderSessionDetail();
+    const detailHtml = getElement("session-detail").innerHTML;
+    expect(detailHtml).not.toContain("[object Object]");
+    expect(detailHtml).toContain("Recovered from observations");
+  });
+
+  it("returns empty text when a summary property getter throws", () => {
+    const { sandbox } = loadViewerSandbox();
+    const hostile: Record<string, unknown> = {};
+    Object.defineProperty(hostile, "title", {
+      get() {
+        throw new Error("boom");
+      },
+    });
+
+    expect(sandbox.sessionSummaryText({ summary: hostile })).toBe("");
+  });
 });
