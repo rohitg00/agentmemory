@@ -1,5 +1,12 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { registerSlotsFunctions, DEFAULT_SLOTS, listPinnedSlots, renderPinnedContext } from "../src/functions/slots.js";
+import {
+  registerSlotsFunctions,
+  DEFAULT_SLOTS,
+  listPinnedSlots,
+  renderPinnedContext,
+  truncateAtLineBoundaryFromEnd,
+  truncateAtLineBoundaryFromStart,
+} from "../src/functions/slots.js";
 import { KV } from "../src/state/schema.js";
 
 function mockKV() {
@@ -253,5 +260,83 @@ describe("slots — reflect", () => {
       slot: { content: string };
     };
     expect(patterns.slot.content).toMatch(/errors: 2/);
+  });
+
+  it("truncates project_context at line boundaries without slicing mid-line or creating dangling prefix fragments", async () => {
+    const slot = (await handlers["mem::slot-get"]({ label: "project_context" })) as {
+      slot: { sizeLimit: number };
+    };
+    const limit = slot.slot.sizeLimit;
+
+    const line = "- /Volumes/DB/Work/TCC-Technology/LTJ/SOOK/Backend/Monolith/order-service/pkg/repository/ordermcrepo/order.go\n";
+    const initial = line.repeat(Math.floor(2950 / line.length));
+    await handlers["mem::slot-replace"]({ label: "project_context", content: initial });
+
+    const sessionId = "sess_truncation_repro";
+    const obsKey = KV.observations(sessionId);
+    await kv.set(obsKey, "obs_files", {
+      id: "obs_files",
+      sessionId,
+      timestamp: new Date().toISOString(),
+      type: "command",
+      title: "edit files",
+      files: [
+        "/Volumes/DB/Work/TCC-Technology/LTJ/SOOK/Backend/Monolith/order-service/pkg/service/paymentsvc/payment.go",
+        "/Volumes/DB/Work/TCC-Technology/LTJ/SOOK/Backend/Monolith/order-service/pkg/service/fcmsvc/fcm.go",
+      ],
+      importance: 5,
+    });
+
+    await handlers["mem::slot-reflect"]({ sessionId });
+
+    const updated = (await handlers["mem::slot-get"]({ label: "project_context" })) as {
+      slot: { content: string };
+    };
+    const content = updated.slot.content;
+
+    expect(content.length).toBeLessThanOrEqual(limit);
+    const lines = content.split("\n").filter((l) => l.trim().length > 0);
+    for (const l of lines) {
+      expect(l.startsWith("- ")).toBe(true);
+      expect(l).not.toMatch(/^r-service/);
+    }
+  });
+
+  describe("boundary truncation helpers", () => {
+    it("truncateAtLineBoundaryFromEnd returns text unmodified if within limit", () => {
+      const text = "line1\nline2\nline3";
+      expect(truncateAtLineBoundaryFromEnd(text, 100)).toBe(text);
+    });
+
+    it("truncateAtLineBoundaryFromEnd drops partial line at start when over limit", () => {
+      const text = "- /path/to/very/long/first/file.ts\n- /path/to/second.ts\n- /path/to/third.ts";
+      // sizeLimit cuts somewhere in the middle of first file
+      const limit = 45;
+      const res = truncateAtLineBoundaryFromEnd(text, limit);
+      expect(res.length).toBeLessThanOrEqual(limit);
+      expect(res.startsWith("- ")).toBe(true);
+      expect(res).not.toContain("very/long/first");
+      expect(res).toContain("- /path/to/second.ts");
+      expect(res).toContain("- /path/to/third.ts");
+    });
+
+    it("truncateAtLineBoundaryFromEnd falls back to raw slice when no newline exists", () => {
+      const text = "nonewlineatallanywhere";
+      expect(truncateAtLineBoundaryFromEnd(text, 5)).toBe("where");
+    });
+
+    it("truncateAtLineBoundaryFromStart drops partial line at end when over limit", () => {
+      const text = "- item 1\n- item 2\n- item 3";
+      // cuts in the middle of item 3
+      const limit = 20;
+      const res = truncateAtLineBoundaryFromStart(text, limit);
+      expect(res.length).toBeLessThanOrEqual(limit);
+      expect(res).toBe("- item 1\n- item 2");
+    });
+
+    it("truncateAtLineBoundaryFromStart falls back to raw slice when no newline exists", () => {
+      const text = "nonewlineatallanywhere";
+      expect(truncateAtLineBoundaryFromStart(text, 5)).toBe("nonew");
+    });
   });
 });

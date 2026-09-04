@@ -5,7 +5,19 @@ import {
 } from "../src/providers/embedding/index.js";
 import { GeminiEmbeddingProvider } from "../src/providers/embedding/gemini.js";
 import { OpenAIEmbeddingProvider } from "../src/providers/embedding/openai.js";
+import { OpenRouterEmbeddingProvider } from "../src/providers/embedding/openrouter.js";
 import type { EmbeddingProvider } from "../src/types.js";
+
+vi.mock("node:fs", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs")>();
+  return {
+    ...actual,
+    existsSync: (path: string) => {
+      if (typeof path === "string" && path.endsWith(".env")) return false;
+      return actual.existsSync(path);
+    },
+  };
+});
 
 describe("createEmbeddingProvider", () => {
   const originalEnv = { ...process.env };
@@ -153,6 +165,43 @@ describe("OpenAIEmbeddingProvider", () => {
     process.env["OPENAI_EMBEDDING_DIMENSIONS"] = "0";
     expect(() => new OpenAIEmbeddingProvider("test-key")).toThrow(
       /OPENAI_EMBEDDING_DIMENSIONS must be a positive integer/,
+    );
+  });
+});
+
+describe("OpenRouterEmbeddingProvider", () => {
+  const originalEnv = { ...process.env };
+
+  beforeEach(() => {
+    process.env = { ...originalEnv };
+    delete process.env["OPENROUTER_EMBEDDING_MODEL"];
+    delete process.env["OPENROUTER_EMBEDDING_DIMENSIONS"];
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+  });
+
+  it("uses default dimensions (1536) when env is not set", () => {
+    const provider = new OpenRouterEmbeddingProvider("test-key");
+    expect(provider.dimensions).toBe(1536);
+  });
+
+  it("respects OPENROUTER_EMBEDDING_DIMENSIONS env var", () => {
+    process.env["OPENROUTER_EMBEDDING_DIMENSIONS"] = "2048";
+    const provider = new OpenRouterEmbeddingProvider("test-key");
+    expect(provider.dimensions).toBe(2048);
+  });
+
+  it("rejects invalid OPENROUTER_EMBEDDING_DIMENSIONS values", () => {
+    process.env["OPENROUTER_EMBEDDING_DIMENSIONS"] = "not-a-number";
+    expect(() => new OpenRouterEmbeddingProvider("test-key")).toThrow(
+      /OPENROUTER_EMBEDDING_DIMENSIONS must be a positive integer/,
+    );
+
+    process.env["OPENROUTER_EMBEDDING_DIMENSIONS"] = "-10";
+    expect(() => new OpenRouterEmbeddingProvider("test-key")).toThrow(
+      /OPENROUTER_EMBEDDING_DIMENSIONS must be a positive integer/,
     );
   });
 });

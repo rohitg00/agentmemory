@@ -790,4 +790,432 @@ describe("IndexPersistence", () => {
 
     await expect(persistence.load()).resolves.toBeDefined();
   });
+
+  it("cleans up orphan shards from multiple older crashed generations on next save", async () => {
+    const REGISTRY_KEY = "generations:registry";
+    // Simulate two older crashed generations left in registry and KV
+    await kv.set("mem:index:bm25:bm25:gen_crash1:00000", "data", "crash1-shard0");
+    await kv.set("mem:index:bm25:bm25:gen_crash1:00001", "data", "crash1-shard1");
+    await kv.set("mem:index:bm25:bm25:gen_crash2:00000", "data", "crash2-shard0");
+
+    await kv.set(BM25_SCOPE, REGISTRY_KEY, {
+      v: 1,
+      generations: {
+        gen_crash1: {
+          type: "bm25",
+          createdAt: new Date(Date.now() - 120_000).toISOString(),
+          shardScopes: [
+            "mem:index:bm25:bm25:gen_crash1:00000",
+            "mem:index:bm25:bm25:gen_crash1:00001",
+          ],
+        },
+        gen_crash2: {
+          type: "bm25",
+          createdAt: new Date(Date.now() - 100_000).toISOString(),
+          shardScopes: ["mem:index:bm25:bm25:gen_crash2:00000"],
+        },
+      },
+    });
+
+    const bm25 = makeBm25("obs_1", "healthy active index");
+    const persistence = new IndexPersistence(kv as never, bm25, null, {
+      shardChars: 80,
+      createGeneration: () => "gen_active",
+    });
+
+    await persistence.save();
+
+    // Shards from crashed generations must be deleted
+    await expect(
+      kv.get("mem:index:bm25:bm25:gen_crash1:00000", "data"),
+    ).resolves.toBeNull();
+    await expect(
+      kv.get("mem:index:bm25:bm25:gen_crash1:00001", "data"),
+    ).resolves.toBeNull();
+    await expect(
+      kv.get("mem:index:bm25:bm25:gen_crash2:00000", "data"),
+    ).resolves.toBeNull();
+
+    // Active shards must exist
+    const manifest = await getBm25Manifest(kv);
+    expect(manifest.generation).toBe("gen_active");
+    await expect(
+      kv.get(manifest.shards[0].scope, manifest.shards[0].key),
+    ).resolves.toEqual(expect.any(String));
+
+    // Registry must now only contain gen_active
+    const registry = await kv.get<{
+      v: 1;
+      generations: Record<string, unknown>;
+    }>(BM25_SCOPE, REGISTRY_KEY);
+    expect(registry).not.toBeNull();
+    expect(Object.keys(registry!.generations)).toEqual(["gen_active"]);
+  });
+
+  it("cleans up orphan shards from multiple older crashed generations on sweepOrphanShards()", async () => {
+    const REGISTRY_KEY = "generations:registry";
+
+    // Setup active BM25 generation
+    const activeBm25 = makeBm25("obs_bm25", "active bm25");
+    const activeVector = makeVector("obs_vec");
+
+    const p = new IndexPersistence(kv as never, activeBm25, activeVector, {
+      shardChars: 80,
+      createGeneration: () => "gen_active",
+    });
+    await p.save();
+
+    // Inject orphan BM25 and vector generations into registry and KV (older than 60s grace period)
+    await kv.set("mem:index:bm25:bm25:gen_orphan_bm25:00000", "data", "orphan-bm25-shard");
+    await kv.set("mem:index:bm25:vectors:gen_orphan_vec:00000", "data", "orphan-vec-shard");
+
+    const registry = await kv.get<{
+      v: 1;
+      generations: Record<
+        string,
+        { type: "bm25" | "vector"; createdAt: string; shardScopes: string[] }
+      >;
+    }>(BM25_SCOPE, REGISTRY_KEY);
+    expect(registry).not.toBeNull();
+
+    registry!.generations["gen_orphan_bm25"] = {
+      type: "bm25",
+      createdAt: new Date(Date.now() - 120_000).toISOString(),
+      shardScopes: ["mem:index:bm25:bm25:gen_orphan_bm25:00000"],
+    };
+    registry!.generations["gen_orphan_vec"] = {
+      type: "vector",
+      createdAt: new Date(Date.now() - 120_000).toISOString(),
+      shardScopes: ["mem:index:bm25:vectors:gen_orphan_vec:00000"],
+    };
+    await kv.set(BM25_SCOPE, REGISTRY_KEY, registry);
+
+    const stats = await p.sweepOrphanShards();
+    expect(stats.purgedGenerations).toBe(2);
+    expect(stats.deletedShards).toBe(2);
+
+    // Orphan shards must be deleted
+    await expect(
+      kv.get("mem:index:bm25:bm25:gen_orphan_bm25:00000", "data"),
+    ).resolves.toBeNull();
+    await expect(
+      kv.get("mem:index:bm25:vectors:gen_orphan_vec:00000", "data"),
+    ).resolves.toBeNull();
+
+    // Active shards must remain intact
+    const bm25Manifest = await kv.get<TestIndexShardManifest>(
+      BM25_SCOPE,
+      BM25_MANIFEST_KEY,
+    );
+    expect(bm25Manifest?.generation).toBe("gen_active");
+    await expect(
+      kv.get(bm25Manifest!.shards[0].scope, "data"),
+    ).resolves.toEqual(expect.any(String));
+
+    const vectorManifest = await kv.get<TestIndexShardManifest>(
+      BM25_SCOPE,
+      VECTOR_MANIFEST_KEY,
+    );
+    expect(vectorManifest?.generation).toBe("gen_active");
+    await expect(
+      kv.get(vectorManifest!.shards[0].scope, "data"),
+    ).resolves.toEqual(expect.any(String));
+
+    // Registry must now only contain active generations
+    const updatedRegistry = await kv.get<{
+      v: 1;
+      generations: Record<string, unknown>;
+    }>(BM25_SCOPE, REGISTRY_KEY);
+    expect(Object.keys(updatedRegistry!.generations).sort()).toEqual(["gen_active"]);
+  });
+
+  it("recovers from crash before publishing manifest by sweeping uncommitted shards", async () => {
+    const REGISTRY_KEY = "generations:registry";
+
+    // Initial committed generation
+    const initialBm25 = makeBm25("obs_init", "initial active");
+    const persistence = new IndexPersistence(kv as never, initialBm25, null, {
+      shardChars: 80,
+      createGeneration: () => "gen_initial",
+    });
+    await persistence.save();
+
+    // Crash simulation: save wrote shards and updated registry for gen_crash, but died before manifest write
+    await kv.set("mem:index:bm25:bm25:gen_crash:00000", "data", "crash-shard-data");
+    const registry = await kv.get<{
+      v: 1;
+      generations: Record<
+        string,
+        { type: "bm25" | "vector"; createdAt: string; shardScopes: string[] }
+      >;
+    }>(BM25_SCOPE, REGISTRY_KEY);
+    registry!.generations["gen_crash"] = {
+      type: "bm25",
+      createdAt: new Date(Date.now() - 120_000).toISOString(),
+      shardScopes: ["mem:index:bm25:bm25:gen_crash:00000"],
+    };
+    await kv.set(BM25_SCOPE, REGISTRY_KEY, registry);
+
+    // Startup or load runs sweepOrphanShards
+    const stats = await persistence.sweepOrphanShards();
+    expect(stats.purgedGenerations).toBe(1);
+    expect(stats.deletedShards).toBe(1);
+
+    // Uncommitted crashed shards purged
+    await expect(
+      kv.get("mem:index:bm25:bm25:gen_crash:00000", "data"),
+    ).resolves.toBeNull();
+
+    // Initial generation still healthy and loadable
+    const loaded = await persistence.load();
+    expect(loaded.bm25!.search("initial").length).toBe(1);
+  });
+
+  it("rolls back registry entry and shards when shard write fails", async () => {
+    const REGISTRY_KEY = "generations:registry";
+
+    const failingKv = {
+      ...kv,
+      set: vi.fn(async <T>(scope: string, key: string, data: T): Promise<T> => {
+        if (scope.includes(":gen_fail:")) {
+          throw new Error("shard write disk full");
+        }
+        return kv.set(scope, key, data);
+      }),
+    };
+
+    const bm25 = makeBm25("obs_1", "fail shard write");
+    const persistence = new IndexPersistence(failingKv as never, bm25, null, {
+      shardChars: 80,
+      createGeneration: () => "gen_fail",
+    });
+
+    await persistence.save();
+
+    // Registry must not retain gen_fail
+    const registry = await kv.get<{
+      v: 1;
+      generations: Record<string, unknown>;
+    }>(BM25_SCOPE, REGISTRY_KEY);
+    expect(registry?.generations["gen_fail"]).toBeUndefined();
+    await expect(
+      kv.get("mem:index:bm25:bm25:gen_fail:00000", "data"),
+    ).resolves.toBeNull();
+  });
+
+  it("rolls back registry entry and shards when manifest publish fails", async () => {
+    const REGISTRY_KEY = "generations:registry";
+
+    const failingKv = {
+      ...kv,
+      set: vi.fn(async <T>(scope: string, key: string, data: T): Promise<T> => {
+        if (scope === BM25_SCOPE && key === BM25_MANIFEST_KEY) {
+          throw new Error("manifest publish failed");
+        }
+        return kv.set(scope, key, data);
+      }),
+    };
+
+    const bm25 = makeBm25("obs_1", "fail manifest publish");
+    const persistence = new IndexPersistence(failingKv as never, bm25, null, {
+      shardChars: 80,
+      createGeneration: () => "gen_fail_manifest",
+    });
+
+    await persistence.save();
+
+    // Registry must not retain gen_fail_manifest
+    const registry = await kv.get<{
+      v: 1;
+      generations: Record<string, unknown>;
+    }>(BM25_SCOPE, REGISTRY_KEY);
+    expect(registry?.generations["gen_fail_manifest"]).toBeUndefined();
+    await expect(
+      kv.get("mem:index:bm25:bm25:gen_fail_manifest:00000", "data"),
+    ).resolves.toBeNull();
+  });
+
+  it("load() triggers non-blocking orphan shard sweep", async () => {
+    const REGISTRY_KEY = "generations:registry";
+
+    // Setup active generation
+    const activeBm25 = makeBm25("obs_1", "active bm25");
+    const persistence = new IndexPersistence(kv as never, activeBm25, null, {
+      shardChars: 80,
+      createGeneration: () => "gen_active",
+    });
+    await persistence.save();
+
+    // Inject orphan generation (older than 60s)
+    await kv.set("mem:index:bm25:bm25:gen_orphan:00000", "data", "orphan-data");
+    const registry = await kv.get<{
+      v: 1;
+      generations: Record<
+        string,
+        { type: "bm25" | "vector"; createdAt: string; shardScopes: string[] }
+      >;
+    }>(BM25_SCOPE, REGISTRY_KEY);
+    registry!.generations["gen_orphan"] = {
+      type: "bm25",
+      createdAt: new Date(Date.now() - 120_000).toISOString(),
+      shardScopes: ["mem:index:bm25:bm25:gen_orphan:00000"],
+    };
+    await kv.set(BM25_SCOPE, REGISTRY_KEY, registry);
+
+    const loaded = await persistence.load();
+    expect(loaded.bm25).not.toBeNull();
+
+    // Flush async sweep
+    await vi.runAllTimersAsync();
+    await Promise.resolve();
+
+    await expect(
+      kv.get("mem:index:bm25:bm25:gen_orphan:00000", "data"),
+    ).resolves.toBeNull();
+  });
+
+  it("fails closed on manifest read error during sweepOrphanShards without deleting shards", async () => {
+    const REGISTRY_KEY = "generations:registry";
+
+    // Write a registered generation and its shard
+    await kv.set("mem:index:bm25:bm25:gen_test:00000", "data", "protected-data");
+    await kv.set(BM25_SCOPE, REGISTRY_KEY, {
+      v: 1,
+      generations: {
+        gen_test: {
+          type: "bm25",
+          createdAt: new Date(Date.now() - 120_000).toISOString(),
+          shardScopes: ["mem:index:bm25:bm25:gen_test:00000"],
+        },
+      },
+    });
+
+    const errorKv = {
+      ...kv,
+      get: vi.fn(async (scope: string, key: string) => {
+        if (scope === BM25_SCOPE && key === BM25_MANIFEST_KEY) {
+          throw new Error("backend manifest read error");
+        }
+        return kv.get(scope, key);
+      }),
+    };
+
+    const persistence = new IndexPersistence(
+      errorKv as never,
+      new SearchIndex(),
+      null,
+    );
+
+    const stats = await persistence.sweepOrphanShards();
+    expect(stats.purgedGenerations).toBe(0);
+    expect(stats.deletedShards).toBe(0);
+
+    // Shards and registry must remain untouched
+    await expect(
+      kv.get("mem:index:bm25:bm25:gen_test:00000", "data"),
+    ).resolves.toBe("protected-data");
+
+    const reg = await kv.get<{ v: 1; generations: Record<string, unknown> }>(
+      BM25_SCOPE,
+      REGISTRY_KEY,
+    );
+    expect(reg?.generations["gen_test"]).toBeDefined();
+  });
+
+  it("preserves uncommitted generation younger than 60s grace period during sweep", async () => {
+    const REGISTRY_KEY = "generations:registry";
+
+    // Generation created 10 seconds ago (in-flight write)
+    await kv.set("mem:index:bm25:bm25:gen_inflight:00000", "data", "in-flight-shard");
+    await kv.set(BM25_SCOPE, REGISTRY_KEY, {
+      v: 1,
+      generations: {
+        gen_inflight: {
+          type: "bm25",
+          createdAt: new Date(Date.now() - 10_000).toISOString(),
+          shardScopes: ["mem:index:bm25:bm25:gen_inflight:00000"],
+        },
+      },
+    });
+
+    const persistence = new IndexPersistence(
+      kv as never,
+      new SearchIndex(),
+      null,
+    );
+
+    const stats = await persistence.sweepOrphanShards();
+    expect(stats.purgedGenerations).toBe(0);
+    expect(stats.deletedShards).toBe(0);
+
+    // In-flight shard and registry entry must be preserved
+    await expect(
+      kv.get("mem:index:bm25:bm25:gen_inflight:00000", "data"),
+    ).resolves.toBe("in-flight-shard");
+
+    const reg = await kv.get<{ v: 1; generations: Record<string, unknown> }>(
+      BM25_SCOPE,
+      REGISTRY_KEY,
+    );
+    expect(reg?.generations["gen_inflight"]).toBeDefined();
+  });
+
+  it("serializes concurrent save calls cleanly", async () => {
+    const executionOrder: string[] = [];
+    let activeSaves = 0;
+    let maxConcurrentSaves = 0;
+
+    const serializeKv = {
+      ...kv,
+      set: vi.fn(async <T>(scope: string, key: string, data: T): Promise<T> => {
+        if (key === BM25_MANIFEST_KEY) {
+          activeSaves++;
+          if (activeSaves > maxConcurrentSaves) {
+            maxConcurrentSaves = activeSaves;
+          }
+          // Yield execution across microtasks to ensure concurrency contention is tested
+          await Promise.resolve();
+          await Promise.resolve();
+          executionOrder.push(`manifest_${(data as TestIndexShardManifest).generation}`);
+          activeSaves--;
+        }
+        return kv.set(scope, key, data);
+      }),
+    };
+
+    let genCounter = 0;
+    const bm25 = makeBm25("obs_concurrent", "concurrent test");
+    const persistence = new IndexPersistence(serializeKv as never, bm25, null, {
+      shardChars: 80,
+      createGeneration: () => `gen_${++genCounter}`,
+    });
+
+    // Launch multiple saves concurrently
+    await Promise.all([
+      persistence.save(),
+      persistence.save(),
+      persistence.save(),
+    ]);
+
+    expect(maxConcurrentSaves).toBe(1);
+    expect(executionOrder).toEqual(["manifest_gen_1", "manifest_gen_2", "manifest_gen_3"]);
+  });
+
+  it("fails closed when generation registry is corrupted or throws on get", async () => {
+    const REGISTRY_KEY = "generations:registry";
+
+    // Set corrupted registry (not valid object)
+    await kv.set(BM25_SCOPE, REGISTRY_KEY, "invalid-registry-string");
+
+    const bm25 = makeBm25("obs_corrupt", "corrupt reg test");
+    const persistence = new IndexPersistence(kv as never, bm25, null);
+
+    // Save should catch failure and not throw unhandled exception
+    await persistence.save();
+
+    // sweepOrphanShards should return 0/0 and not delete anything
+    const stats = await persistence.sweepOrphanShards();
+    expect(stats.purgedGenerations).toBe(0);
+    expect(stats.deletedShards).toBe(0);
+  });
 });

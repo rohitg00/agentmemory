@@ -196,6 +196,197 @@ describe("Consolidation Pipeline", () => {
     expect(stored[0].triggerCondition).toBe("when writing tests");
   });
 
+  it("deduplicates identical corpus: second sequential run skips the LLM", async () => {
+    let calls = 0;
+    const provider = {
+      name: "test",
+      compress: vi.fn(),
+      summarize: vi.fn().mockImplementation(async () => {
+        calls++;
+        return `<facts><fact confidence="0.9">TypeScript is the primary language</fact></facts>`;
+      }),
+    };
+    registerConsolidationPipelineFunction(sdk as never, kv as never, provider as never);
+
+    for (let i = 0; i < 6; i++) {
+      await kv.set("mem:summaries", `ses_${i}`, makeSummary(i));
+    }
+
+    const first = (await sdk.trigger("mem::consolidate-pipeline", {
+      tier: "semantic",
+    })) as { results: { semantic: { newFacts: number } } };
+    expect(first.results.semantic.newFacts).toBe(1);
+    expect(calls).toBe(1);
+
+    const second = (await sdk.trigger("mem::consolidate-pipeline", {
+      tier: "semantic",
+    })) as { results: { semantic: { skipped: boolean; reason: string } } };
+    expect(second.results.semantic.skipped).toBe(true);
+    expect(second.results.semantic.reason).toContain("corpus unchanged");
+    expect(calls).toBe(1);
+  });
+
+  it("deduplicates concurrent identical invocations: LLM called exactly once", async () => {
+    let calls = 0;
+    const provider = {
+      name: "test",
+      compress: vi.fn(),
+      summarize: vi.fn().mockImplementation(async () => {
+        calls++;
+        return `<facts><fact confidence="0.9">TypeScript is the primary language</fact></facts>`;
+      }),
+    };
+    registerConsolidationPipelineFunction(sdk as never, kv as never, provider as never);
+
+    for (let i = 0; i < 6; i++) {
+      await kv.set("mem:summaries", `ses_${i}`, makeSummary(i));
+    }
+
+    await Promise.all([
+      sdk.trigger("mem::consolidate-pipeline", { tier: "semantic" }),
+      sdk.trigger("mem::consolidate-pipeline", { tier: "semantic" }),
+    ]);
+
+    expect(calls).toBe(1);
+  });
+
+  it("re-runs consolidation when the corpus gains new summaries", async () => {
+    let calls = 0;
+    const provider = {
+      name: "test",
+      compress: vi.fn(),
+      summarize: vi.fn().mockImplementation(async () => {
+        calls++;
+        return `<facts><fact confidence="0.9">TypeScript is the primary language</fact></facts>`;
+      }),
+    };
+    registerConsolidationPipelineFunction(sdk as never, kv as never, provider as never);
+
+    for (let i = 0; i < 6; i++) {
+      await kv.set("mem:summaries", `ses_${i}`, makeSummary(i));
+    }
+    await sdk.trigger("mem::consolidate-pipeline", { tier: "semantic" });
+    expect(calls).toBe(1);
+
+    await kv.set("mem:summaries", "ses_new", makeSummary(6));
+    await sdk.trigger("mem::consolidate-pipeline", { tier: "semantic" });
+    expect(calls).toBe(2);
+  });
+
+  it("force=true does not bypass corpus dedup: unchanged corpus still skips the LLM", async () => {
+    let calls = 0;
+    const provider = {
+      name: "test",
+      compress: vi.fn(),
+      summarize: vi.fn().mockImplementation(async () => {
+        calls++;
+        return `<facts><fact confidence="0.9">TypeScript is the primary language</fact></facts>`;
+      }),
+    };
+    registerConsolidationPipelineFunction(sdk as never, kv as never, provider as never);
+
+    for (let i = 0; i < 6; i++) {
+      await kv.set("mem:summaries", `ses_${i}`, makeSummary(i));
+    }
+
+    const first = (await sdk.trigger("mem::consolidate-pipeline", {
+      tier: "semantic",
+      force: true,
+    })) as { results: { semantic: { newFacts: number } } };
+    expect(first.results.semantic.newFacts).toBe(1);
+    expect(calls).toBe(1);
+
+    const second = (await sdk.trigger("mem::consolidate-pipeline", {
+      tier: "semantic",
+      force: true,
+    })) as { results: { semantic: { skipped: boolean; reason: string } } };
+    expect(second.results.semantic.skipped).toBe(true);
+    expect(second.results.semantic.reason).toContain("corpus unchanged");
+    expect(calls).toBe(1);
+  });
+
+  it("force=true reruns the LLM when the corpus changed since last consolidation", async () => {
+    let calls = 0;
+    const provider = {
+      name: "test",
+      compress: vi.fn(),
+      summarize: vi.fn().mockImplementation(async () => {
+        calls++;
+        return `<facts><fact confidence="0.9">TypeScript is the primary language</fact></facts>`;
+      }),
+    };
+    registerConsolidationPipelineFunction(sdk as never, kv as never, provider as never);
+
+    for (let i = 0; i < 6; i++) {
+      await kv.set("mem:summaries", `ses_${i}`, makeSummary(i));
+    }
+    await sdk.trigger("mem::consolidate-pipeline", { tier: "semantic", force: true });
+    expect(calls).toBe(1);
+
+    await kv.set("mem:summaries", "ses_new", makeSummary(6));
+    await sdk.trigger("mem::consolidate-pipeline", { tier: "semantic", force: true });
+    expect(calls).toBe(2);
+  });
+
+  it("releases the fingerprint reservation when the LLM fails so retry re-runs", async () => {
+    let calls = 0;
+    const provider = {
+      name: "test",
+      compress: vi.fn(),
+      summarize: vi.fn().mockImplementation(async () => {
+        calls++;
+        if (calls === 1) throw new Error("LLM timeout");
+        return `<facts><fact confidence="0.9">TypeScript is the primary language</fact></facts>`;
+      }),
+    };
+    registerConsolidationPipelineFunction(sdk as never, kv as never, provider as never);
+
+    for (let i = 0; i < 6; i++) {
+      await kv.set("mem:summaries", `ses_${i}`, makeSummary(i));
+    }
+
+    const first = (await sdk.trigger("mem::consolidate-pipeline", {
+      tier: "semantic",
+    })) as { results: { semantic: { error: string } } };
+    expect(first.results.semantic.error).toContain("LLM timeout");
+    expect(
+      await kv.get("mem:config", "consolidation:corpusFingerprint"),
+    ).toBeNull();
+
+    const second = (await sdk.trigger("mem::consolidate-pipeline", {
+      tier: "semantic",
+    })) as { results: { semantic: { newFacts: number } } };
+    expect(second.results.semantic.newFacts).toBe(1);
+    expect(calls).toBe(2);
+  });
+
+  it("writes the audit row before the LLM call so a mid-pipeline kill still leaves a trail", async () => {
+    let auditAtLlmCall: unknown = null;
+    const provider = {
+      name: "test",
+      compress: vi.fn(),
+      summarize: vi.fn().mockImplementation(async () => {
+        auditAtLlmCall = await kv.list("mem:audit");
+        return `<facts><fact confidence="0.9">TypeScript is the primary language</fact></facts>`;
+      }),
+    };
+    registerConsolidationPipelineFunction(sdk as never, kv as never, provider as never);
+
+    for (let i = 0; i < 6; i++) {
+      await kv.set("mem:summaries", `ses_${i}`, makeSummary(i));
+    }
+
+    await sdk.trigger("mem::consolidate-pipeline", { tier: "semantic" });
+
+    const atCall = auditAtLlmCall as Array<{ details: { status: string } }>;
+    expect(atCall.length).toBe(1);
+    expect(atCall[0].details.status).toBe("started");
+
+    const final = await kv.list<{ details: { status: string } }>("mem:audit");
+    expect(final.length).toBe(1);
+    expect(final[0].details.status).toBe("completed");
+  });
+
   it("consolidation records an audit entry", async () => {
     const provider = {
       name: "test",

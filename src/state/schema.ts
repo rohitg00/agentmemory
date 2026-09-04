@@ -6,6 +6,8 @@ export const KV = {
   observations: (sessionId: string) => `mem:obs:${sessionId}`,
   memories: "mem:memories",
   summaries: "mem:summaries",
+  graphExtracted: (sessionId: string) => `mem:graph_extracted:${sessionId}`,
+  summaryPartials: (sessionId: string) => `mem:summary_partials:${sessionId}`,
   config: "mem:config",
   metrics: "mem:metrics",
   health: "mem:health",

@@ -114,6 +114,32 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
+export function truncateAtLineBoundaryFromEnd(
+  text: string,
+  sizeLimit: number,
+): string {
+  if (text.length <= sizeLimit) return text;
+  const rawSliced = text.slice(text.length - sizeLimit);
+  const firstNewline = rawSliced.indexOf("\n");
+  if (firstNewline !== -1 && firstNewline < rawSliced.length - 1) {
+    return rawSliced.slice(firstNewline + 1);
+  }
+  return rawSliced;
+}
+
+export function truncateAtLineBoundaryFromStart(
+  text: string,
+  sizeLimit: number,
+): string {
+  if (text.length <= sizeLimit) return text;
+  const rawSliced = text.slice(0, sizeLimit);
+  const lastNewline = rawSliced.lastIndexOf("\n");
+  if (lastNewline !== -1 && lastNewline > 0) {
+    return rawSliced.slice(0, lastNewline);
+  }
+  return rawSliced;
+}
+
 function validateLabel(label: unknown): string | null {
   if (typeof label !== "string") return null;
   const trimmed = label.trim();
@@ -410,9 +436,7 @@ export function registerSlotsFunctions(sdk: ISdk, kv: StateKV): void {
           if (fresh.length === 0) return false;
           const sep = slot.content && !slot.content.endsWith("\n") ? "\n" : "";
           const next = `${slot.content}${sep}${fresh.join("\n")}`;
-          const truncated = next.length > slot.sizeLimit
-            ? next.slice(next.length - slot.sizeLimit)
-            : next;
+          const truncated = truncateAtLineBoundaryFromEnd(next, slot.sizeLimit);
           await kv.set(scopeKv(scope), "pending_items", {
             ...slot,
             content: truncated,
@@ -433,8 +457,7 @@ export function registerSlotsFunctions(sdk: ISdk, kv: StateKV): void {
               ([kind, count]) => `- ${kind}: ${count} in last ${recent.length} observations`,
             ),
           ].join("\n");
-          const next =
-            summary.length > slot.sizeLimit ? summary.slice(0, slot.sizeLimit) : summary;
+          const next = truncateAtLineBoundaryFromStart(summary, slot.sizeLimit);
           await kv.set(scopeKv(scope), "session_patterns", {
             ...slot,
             content: next,
@@ -460,10 +483,7 @@ export function registerSlotsFunctions(sdk: ISdk, kv: StateKV): void {
           const nextRaw = `${already}${sep}${header ? header + "\n" : ""}${fresh
             .map((f) => `- ${f}`)
             .join("\n")}`;
-          const next =
-            nextRaw.length > slot.sizeLimit
-              ? nextRaw.slice(nextRaw.length - slot.sizeLimit)
-              : nextRaw;
+          const next = truncateAtLineBoundaryFromEnd(nextRaw, slot.sizeLimit);
           await kv.set(scopeKv(scope), "project_context", {
             ...slot,
             content: next,

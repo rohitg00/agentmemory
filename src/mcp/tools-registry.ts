@@ -672,7 +672,7 @@ export const V051_TOOLS: McpToolDef[] = [
   {
     name: "memory_diagnose",
     description:
-      "Run health checks across all subsystems (actions, leases, sentinels, sketches, signals, sessions, memories, mesh). Identifies stuck, orphaned, and inconsistent state.",
+      "Run health checks across all subsystems (actions, leases, sentinels, sketches, signals, sessions, memories, mesh, index). Identifies stuck, orphaned, and inconsistent state.",
     inputSchema: {
       type: "object",
       properties: {
