@@ -14,7 +14,8 @@ function htmlEscape(value: string): string {
   return value
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+    .replace(/>/g, "&gt;")
+    .replace(/\u00a0/g, "&nbsp;");
 }
 function loadViewerSandbox() {
   const rendered = renderViewerDocument();
