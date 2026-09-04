@@ -1280,10 +1280,13 @@
         var parts = [];
         var title = typeof sum.title === 'string' ? sum.title.trim() : '';
         var narrative = typeof sum.narrative === 'string' ? sum.narrative.trim() : '';
-        if (title) parts.push(sum.title);
+        // Push the trimmed forms so object summaries render like the
+        // string path (which returns trimmed text) instead of leaking
+        // hand-edited padding into the preview.
+        if (title) parts.push(title);
         // Trim before comparing so a whitespace-variant duplicate does not
         // render the same text twice.
-        if (narrative && narrative !== title) parts.push(sum.narrative);
+        if (narrative && narrative !== title) parts.push(narrative);
         var keyDecisions = summaryList(sum.keyDecisions);
         if (keyDecisions) parts.push('Key decisions: ' + keyDecisions);
         var files = summaryList(sum.filesModified);
@@ -1301,11 +1304,12 @@
     // non-string entry stringified into "[object Object]" and re-created
     // the defect sessionSummaryText exists to prevent. Keep scalar
     // strings only; skip everything else.
+    function isNonEmptyString(value) {
+      return typeof value === 'string' && value.trim();
+    }
     function summaryList(values) {
       if (!Array.isArray(values)) return '';
-      return values
-        .filter(function (value) { return typeof value === 'string' && value.trim(); })
-        .join(', ');
+      return values.filter(isNonEmptyString).join(', ');
     }
     function debounce(fn, ms) {
       var t;

@@ -228,7 +228,7 @@ describe("viewer session summary rendering", () => {
     expect(html).toContain("Ship API v1 behind a flag");
   });
 
-  it("labels and joins the other list fields of an object summary", () => {
+  it("labels and joins the other list fields of an object summary", async () => {
     const { sandbox, getElement } = loadViewerSandbox();
     sandbox.state.sessions.items = [baseSession({ summary: sessionSummaryObject })];
     sandbox.state.sessions.selectedId = "20260811_113447_ba4a38";
@@ -244,17 +244,15 @@ describe("viewer session summary rendering", () => {
         "Files: integrations/todoist.ts, skills/todoist.md — " +
         "Concepts: api-migration, skills",
     );
-    expect(text.indexOf("Key decisions:")).toBeLessThan(text.indexOf("Files:"));
-    expect(text.indexOf("Files:")).toBeLessThan(text.indexOf("Concepts:"));
 
-    return sandbox.renderSessionDetail().then(() => {
-      const html = getElement("session-detail").innerHTML;
-      expect(html).not.toContain("[object Object]");
-      expect(html).toContain("Files:");
-      expect(html).toContain("integrations/todoist.ts");
-      expect(html).toContain("Concepts:");
-      expect(html).toContain("api-migration");
-    });
+    await sandbox.renderSessionDetail();
+
+    const html = getElement("session-detail").innerHTML;
+    expect(html).not.toContain("[object Object]");
+    expect(html).toContain("Files:");
+    expect(html).toContain("integrations/todoist.ts");
+    expect(html).toContain("Concepts:");
+    expect(html).toContain("api-migration");
   });
 
   it("renders the detail panel preview from an object summary", async () => {
