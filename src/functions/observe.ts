@@ -1,7 +1,21 @@
 import { TriggerAction, type ISdk } from "iii-sdk";
 import type { RawObservation, HookPayload, Origin } from "../types.js";
+import { TELEMETRY_HOOKS } from "../types.js";
 
 const TOOL_HOOKS = new Set(["pre_tool_use", "post_tool_use", "post_tool_failure"]);
+
+function extractStringFiles(value: unknown, cap: number): string[] {
+  if (!Array.isArray(value)) return [];
+  const out: string[] = [];
+  for (const item of value) {
+    if (typeof item === "string" && item.length > 0) {
+      out.push(item);
+      if (out.length >= cap) break;
+    }
+  }
+  return out;
+}
+
 import { KV, STREAM, generateId } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { stripPrivateData } from "./privacy.js";
@@ -128,6 +142,74 @@ export function registerObserveFunction(
         }
         if (payload.hookType === "prompt_submit") {
           raw.userPrompt = d["prompt"] as string | undefined;
+          const promptFiles = extractStringFiles(d["files"], 20);
+          if (promptFiles.length > 0) raw.files = promptFiles;
+        }
+        if (payload.hookType === "patch_applied") {
+          const files = extractStringFiles(d["files"], 50);
+          raw.files = files;
+          raw.title = `Applied patch to ${files.length} file(s)`;
+        }
+        if (payload.hookType === "command_executed") {
+          const nameVal = d["name"];
+          const isStringName = typeof nameVal === "string";
+          const name = isStringName ? nameVal : undefined;
+          if (name) {
+            raw.toolName = name;
+            if (raw.origin) raw.origin.detail = name;
+          } else if (nameVal !== undefined && nameVal !== null) {
+            raw.toolName = String(nameVal);
+          }
+          const args = d["arguments"];
+          if (args !== undefined && args !== null) {
+            const s = String(args);
+            if (s.length > 0) raw.toolInput = s.length > 2000 ? s.slice(0, 2000) : s;
+          }
+          const titleName = isStringName ? nameVal : String(nameVal ?? "unknown");
+          raw.title = `Executed command: ${titleName}`;
+        }
+        if (payload.hookType === "subagent_start") {
+          const desc = typeof d["description"] === "string" ? d["description"] : undefined;
+          const agent = typeof d["agent"] === "string" ? d["agent"] : undefined;
+          const promptVal = typeof d["prompt"] === "string" ? d["prompt"] : undefined;
+          let titleSeed: string | undefined = desc || agent;
+          if (!titleSeed && promptVal) titleSeed = promptVal.slice(0, 120);
+          if (!titleSeed) titleSeed = "unknown";
+          raw.title = `Started subagent: ${titleSeed}`;
+          if (promptVal !== undefined) {
+            raw.toolInput = promptVal.length > 4000 ? promptVal.slice(0, 4000) : promptVal;
+          } else if (d["prompt"] !== undefined && d["prompt"] !== null) {
+            const s = String(d["prompt"]);
+            raw.toolInput = s.length > 4000 ? s.slice(0, 4000) : s;
+          }
+          if (raw.toolName === undefined && agent) {
+            raw.toolName = agent;
+            if (raw.origin) raw.origin.detail = agent;
+          }
+        }
+        if (payload.hookType === "task_completed") {
+          const completed = d["completed"];
+          const completedLen = Array.isArray(completed) ? completed.length : 0;
+          let total = 0;
+          if (typeof d["total"] === "number") total = d["total"];
+          else if (typeof d["total"] === "string") total = Number(d["total"]) || 0;
+          raw.title = `Task completed: ${completedLen}/${total} items`;
+          if (Array.isArray(completed)) {
+            const contents = (completed as unknown[])
+              .map((item) => {
+                if (item && typeof item === "object" && typeof (item as Record<string, unknown>).content === "string") {
+                  return (item as Record<string, unknown>).content as string;
+                }
+                return "";
+              })
+              .filter(Boolean)
+              .join("; ");
+            if (contents.length > 0) raw.toolInput = contents.slice(0, 4000);
+            else if (completedLen > 0) raw.toolInput = `${completedLen} items`;
+          }
+        }
+        if (TELEMETRY_HOOKS.has(payload.hookType)) {
+          raw.isTelemetry = true;
         }
 
         extractedImage = extractImage(sanitizedRaw);

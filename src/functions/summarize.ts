@@ -50,6 +50,30 @@ function getChunkConcurrency(): number {
   return Number.isFinite(n) && n > 0 ? n : CHUNK_CONCURRENCY_DEFAULT;
 }
 
+export function filterObservationsForSummary(
+  observations: CompressedObservation[],
+): CompressedObservation[] {
+  const out: CompressedObservation[] = [];
+  for (const o of observations) {
+    if (o.isTelemetry === true) continue;
+    const anyO = o as unknown as Record<string, unknown>;
+    const hasTitle = typeof o.title === "string" && o.title.trim().length > 0;
+    const hasNarrative = typeof o.narrative === "string" && o.narrative.trim().length > 0;
+    const hasFacts = Array.isArray(o.facts) && o.facts.length > 0;
+    const hasFiles = Array.isArray(o.files) && o.files.length > 0;
+    const hasToolInput = anyO["toolInput"] !== undefined && anyO["toolInput"] !== null && String(anyO["toolInput"]).trim().length > 0;
+    const hasToolOutput = anyO["toolOutput"] !== undefined && anyO["toolOutput"] !== null && String(anyO["toolOutput"]).trim().length > 0;
+    const hasUserPrompt = typeof anyO["userPrompt"] === "string" && (anyO["userPrompt"] as string).trim().length > 0;
+    const hasContent = typeof anyO["content"] === "string" && (anyO["content"] as string).trim().length > 0;
+    const hasSubtitle = typeof anyO["subtitle"] === "string" && (anyO["subtitle"] as string).trim().length > 0;
+    if (!hasTitle && !hasNarrative && !hasFacts && !hasFiles && !hasToolInput && !hasToolOutput && !hasUserPrompt && !hasContent && !hasSubtitle) {
+      continue;
+    }
+    out.push(o);
+  }
+  return out;
+}
+
 // One chunk call with retry-once. Returns null when both attempts fail —
 // whether by parse failure, provider 4xx (content rejected by upstream
 // filters), or transient network/5xx errors that didn't recover on retry.
@@ -251,7 +275,7 @@ export function registerSummarizeFunction(
       const observations = await kv.list<CompressedObservation>(
         KV.observations(sessionId),
       );
-      const compressed = observations.filter((o) => o.title);
+      const compressed = filterObservationsForSummary(observations);
 
       if (compressed.length === 0) {
         logger.info("No observations to summarize", {

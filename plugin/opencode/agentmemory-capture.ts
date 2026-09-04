@@ -147,6 +147,29 @@ function safeSlice(v: unknown, max: number): string {
   try { return JSON.stringify(v).slice(0, max); } catch { return ""; }
 }
 
+function normalizePatchData(part: Record<string, unknown>): { files: string[]; title: string } {
+  const raw = (part as Record<string, unknown>)?.files;
+  const files = Array.isArray(raw) ? (raw as unknown[]).filter((f): f is string => typeof f === "string").slice(0, 50) : [];
+  return { files, title: `Applied patch to ${files.length} file(s)` };
+}
+
+function normalizeCommandData(props: Record<string, unknown>): { name: string | undefined; arguments: string; title: string } {
+  const name = typeof props?.name === "string" ? props.name : undefined;
+  return {
+    name,
+    arguments: safeSlice(props?.arguments, 2000),
+    title: `Executed command: ${name ?? ""}`,
+  };
+}
+
+function normalizeSubagentTitle(part: Record<string, unknown>): string {
+  return `Started subagent: ${safeSlice((part as Record<string, unknown>)?.description || (part as Record<string, unknown>)?.agent || (part as Record<string, unknown>)?.prompt, 120)}`;
+}
+
+function normalizeTaskTitle(completed: unknown[], todos: unknown[]): string {
+  return `Task completed: ${completed.length}/${todos.length} items`;
+}
+
 const AGENTMEMORY_INSTRUCTIONS = `<agentmemory-instructions>
 You have access to agentmemory for persistent cross-session memory. Use these tools proactively.
 
@@ -412,6 +435,7 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
             agent: part.agent,
             prompt: safeSlice(part.prompt, 4000),
             description: safeSlice(part.description, 2000),
+            title: normalizeSubagentTitle(part as Record<string, unknown>),
           });
           return;
         }
@@ -489,10 +513,12 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
         }
 
         if (part.type === "patch") {
+          const { files, title } = normalizePatchData(part as Record<string, unknown>);
           await observe(sid, "patch_applied", {
             messageID: part.messageID,
             hash: (part as any).hash,
-            files: (part as any).files || [],
+            files,
+            title,
           });
           return;
         }
@@ -574,6 +600,7 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
           completed: completed.map((t: any) => ({ content: t.content, priority: t.priority })),
           in_progress: active.map((t: any) => ({ content: t.content, priority: t.priority })),
           total: todos.length,
+          title: normalizeTaskTitle(completed, todos),
         });
       }
 
@@ -581,9 +608,11 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
       if (type === "command.executed") {
         const sid = props.sessionID || activeSessionId;
         if (sid) {
+          const { title } = normalizeCommandData(props as Record<string, unknown>);
           await observe(sid, "command_executed", {
             name: props.name,
             arguments: props.arguments || "",
+            title,
           });
         }
       }
@@ -745,3 +774,12 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
     },
   };
 };
+
+Object.assign(AgentmemoryCapturePlugin, {
+  normalizePatchData,
+  normalizeCommandData,
+  normalizeSubagentTitle,
+  normalizeTaskTitle,
+});
+
+export default AgentmemoryCapturePlugin;

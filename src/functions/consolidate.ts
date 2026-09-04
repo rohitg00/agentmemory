@@ -91,7 +91,7 @@ export function registerConsolidateFunction(
       }
       for (let i = 0; i < filtered.length; i++) {
         for (const obs of obsPerSession[i]) {
-          if (obs.title && obs.importance >= 5) {
+          if (!obs.isTelemetry && obs.title && obs.importance >= 5) {
             allObs.push({ ...obs, sid: filtered[i].id });
           }
         }

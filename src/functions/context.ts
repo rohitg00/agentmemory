@@ -1,12 +1,13 @@
 import type { ISdk } from "iii-sdk";
-import type {
-  Session,
-  CompressedObservation,
-  SessionSummary,
-  ContextBlock,
-  ProjectProfile,
-  MemorySlot,
-  Lesson,
+import {
+  type Session,
+  type CompressedObservation,
+  type SessionSummary,
+  type ContextBlock,
+  type ProjectProfile,
+  type MemorySlot,
+  type Lesson,
+  TELEMETRY_HOOKS,
 } from "../types.js";
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
@@ -212,7 +213,12 @@ export function registerContextFunction(
         const i = sessionsNeedingObs[j];
         const observations = obsResults[j];
         const important = observations.filter(
-          (o) => o.title && o.importance >= 5,
+          (o) =>
+            !o.isTelemetry &&
+            !TELEMETRY_HOOKS.has(o.title as never) &&
+            typeof o.title === "string" &&
+            o.title.trim().length > 0 &&
+            o.importance >= 5,
         );
 
         if (important.length > 0) {
@@ -220,7 +226,13 @@ export function registerContextFunction(
             .sort((a, b) => b.importance - a.importance)
             .slice(0, 5);
           const items = top
-            .map((o) => `- [${o.type}] ${o.title}: ${o.narrative}`)
+            .map((o) => {
+              const narrative =
+                typeof o.narrative === "string" && o.narrative.trim().length > 0
+                  ? `: ${o.narrative.trim()}`
+                  : "";
+              return `- [${o.type}] ${o.title.trim()}${narrative}`;
+            })
             .join("\n");
           const content = `## Session ${sessions[i].id.slice(0, 8)} (${sessions[i].startedAt})\n${items}`;
           blocks.push({
