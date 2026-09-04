@@ -26,6 +26,9 @@ function loadViewerSandbox() {
   expect(scriptMatch).not.toBeNull();
   if (!scriptMatch) throw new Error("viewer script not found");
 
+  // `any` mirrors the sibling loader in test/viewer-session-id.test.ts:
+  // tests assign and read untyped state off the vm sandbox, and tsconfig
+  // excludes test/ so the compiler cannot check these shapes.
   const elements = new Map<string, any>();
   const createMockElement = (id = "") => {
     const attributes = new Map<string, string>();
@@ -117,6 +120,8 @@ function loadViewerSandbox() {
   };
 
   const sandbox: Record<string, any> = {
+    // `any` here too: the vm sandbox globals are intentionally loose and
+    // match the sibling loader's typing (see the comment above).
     console: { log: () => {}, warn: () => {}, error: () => {} },
     document,
     window: {
@@ -333,8 +338,9 @@ describe("viewer session summary rendering", () => {
     const html = getElement("view-sessions").innerHTML;
     expect(html).not.toContain("[object Object]");
     // Title is numeric: it must be dropped, not stringified into the preview.
-    // The exact preview pins this: only the surviving Files entry renders.
-    expect(html).toContain('>Files: still/works.ts</div>');
+    // The bare-string keyDecisions field coerces to a one-element list, and
+    // the exact preview pins both behaviors.
+    expect(html).toContain('>Key decisions: not-an-array — Files: still/works.ts</div>');
     // A numeric narrative must likewise never leak into the text.
     expect(
       sandbox.sessionSummaryText({
@@ -464,5 +470,105 @@ describe("viewer session summary rendering", () => {
     });
 
     expect(sandbox.sessionSummaryText({ summary: hostile })).toBe("");
+  });
+
+  it("escapes summary markup through both render paths", async () => {
+    const { sandbox, getElement } = loadViewerSandbox();
+    const hostileText = {
+      title: "<script>alert(1)</script>",
+      narrative: 'a & b </div> "quoted"',
+      keyDecisions: ["<img src=x>"],
+    };
+    sandbox.state.sessions.items = [
+      baseSession({ summary: hostileText as unknown as object }),
+      baseSession({
+        id: "20260904_escape_str",
+        summary: "<b>bold</b> & more",
+      }),
+    ];
+    sandbox.state.sessions.selectedId = "20260811_113447_ba4a38";
+
+    sandbox.renderSessions();
+    const listHtml = getElement("view-sessions").innerHTML;
+    expect(listHtml).not.toContain("<script>");
+    expect(listHtml).not.toContain("<img");
+    expect(listHtml).toContain("&lt;script&gt;");
+    expect(listHtml).toContain("&amp;");
+
+    await sandbox.renderSessionDetail();
+    const detailHtml = getElement("session-detail").innerHTML;
+    expect(detailHtml).not.toContain("<script>alert(1)</script>");
+    expect(detailHtml).not.toContain("</div> \"quoted\"");
+    expect(detailHtml).toContain("&lt;script&gt;");
+    expect(detailHtml).toContain("a &amp; b");
+  });
+
+  it("skips zero-width-only entries and summaries", () => {
+    const { sandbox } = loadViewerSandbox();
+    const text = sandbox.sessionSummaryText({
+      summary: {
+        title: "Zero-width guard",
+        narrative: "Real body.",
+        keyDecisions: ["\u200b", "\u200b\u200c", "Real decision"] as unknown as string[],
+      },
+    });
+    expect(text).toContain("Key decisions: Real decision");
+    expect(text).not.toContain("\u200b\u200b");
+    expect(
+      sandbox.sessionSummaryText({ summary: "\u200b\u200b " }),
+    ).toBe("");
+  });
+
+  it("falls through a non-string firstPrompt to the serialized summary", () => {
+    const { sandbox, getElement } = loadViewerSandbox();
+    sandbox.state.sessions.items = [
+      baseSession({
+        firstPrompt: { malicious: "object" } as unknown as string,
+        summary: sessionSummaryObject,
+      }),
+    ];
+
+    sandbox.renderSessions();
+
+    const html = getElement("view-sessions").innerHTML;
+    expect(html).not.toContain("[object Object]");
+    expect(html).toContain("Todoist skill fixes");
+  });
+
+  it("does not throw when a hostile summary getter fires through the render paths", async () => {
+    const { sandbox, getElement } = loadViewerSandbox();
+    const hostileSession: Record<string, unknown> = baseSession();
+    Object.defineProperty(hostileSession, "summary", {
+      get() {
+        throw new Error("boom");
+      },
+    });
+    sandbox.state.sessions.items = [hostileSession];
+    sandbox.state.sessions.selectedId = "20260811_113447_ba4a38";
+
+    expect(() => sandbox.renderSessions()).not.toThrow();
+    const listHtml = getElement("view-sessions").innerHTML;
+    expect(listHtml).not.toContain("[object Object]");
+
+    await sandbox.renderSessionDetail();
+    const detailHtml = getElement("session-detail").innerHTML;
+    expect(detailHtml).not.toContain("[object Object]");
+  });
+
+  it("trims a padded non-empty legacy string summary", () => {
+    const { sandbox, getElement } = loadViewerSandbox();
+    sandbox.state.sessions.items = [
+      baseSession({ summary: "  Padded legacy summary  " }),
+    ];
+
+    expect(sandbox.sessionSummaryText({ summary: "  Padded legacy  " })).toBe(
+      "Padded legacy",
+    );
+
+    sandbox.renderSessions();
+
+    const html = getElement("view-sessions").innerHTML;
+    expect(html).toContain("Padded legacy summary");
+    expect(html).not.toContain("  Padded");
   });
 });

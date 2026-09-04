@@ -1268,13 +1268,13 @@
     // narrative, and list fields. Interpolating the object form directly
     // rendered "[object Object]" (#1229); serialize both shapes to text.
     function sessionSummaryText(s) {
-      var sum = s && s.summary;
-      if (!sum) return '';
       try {
+        var sum = s && s.summary;
+        if (!sum) return '';
         if (typeof sum === 'string') {
           // Trim so a whitespace-only legacy summary yields '' and the
           // render paths' truthiness guards fall through cleanly.
-          return sum.trim();
+          return hasVisibleText(sum) ? sum.trim() : '';
         }
         if (typeof sum !== 'object') return '';
         var parts = [];
@@ -1302,14 +1302,20 @@
     // Summary list fields are typed string[] but arrive unvalidated from
     // stored summaries (the import path accepts hand-edited dumps), so a
     // non-string entry stringified into "[object Object]" and re-created
-    // the defect sessionSummaryText exists to prevent. Keep scalar
-    // strings only; skip everything else.
-    function isNonEmptyString(value) {
-      return typeof value === 'string' && value.trim();
+    // the defect sessionSummaryText exists to prevent. Keep visible scalar
+    // strings only (trim alone does not catch zero-width characters);
+    // skip everything else.
+    var INVISIBLE_CHARS = /[\s\u200b-\u200f\u2060\uFEFF]/g;
+    function hasVisibleText(value) {
+      return typeof value === 'string' && !!value.replace(INVISIBLE_CHARS, '');
     }
     function summaryList(values) {
+      if (typeof values === 'string') values = [values];
       if (!Array.isArray(values)) return '';
-      return values.filter(isNonEmptyString).join(', ');
+      return values
+        .filter(hasVisibleText)
+        .map(function (value) { return value.trim(); })
+        .join(', ');
     }
     function debounce(fn, ms) {
       var t;
@@ -3219,7 +3225,12 @@
           html += '<div class="session-item' + (selected ? ' selected' : '') + '"' + (id ? ' data-action="select-session" data-session-id="' + esc(id) + '" role="button" tabindex="0" aria-expanded="' + (selected ? 'true' : 'false') + '"' : '') + '>';
           html += '<div class="session-top"><span class="session-project">' + esc(sessionDisplayName(s)) + '</span>';
           html += '<span class="badge ' + statusBadge + '">' + esc(s.status) + '</span></div>';
-          var preview = s.firstPrompt || sessionSummaryText(s) || '';
+          // String-type-and-visible test on every chain term: a non-string
+          // firstPrompt (unvalidated import) or an invisible-char-only one
+          // would otherwise win the truthy chain and render "[object
+          // Object]" or blank out the preview.
+          var preview = hasVisibleText(s.firstPrompt) ? s.firstPrompt.trim() : '';
+          if (!preview) preview = sessionSummaryText(s);
           if (preview) {
             html += '<div class="session-preview" style="font-size:13px;color:var(--ink);margin:4px 0;line-height:1.4;">' + esc(truncate(preview, 140)) + '</div>';
           }
@@ -3275,15 +3286,19 @@
         var tool = o.title || o.toolName;
         if (tool && t !== 'conversation') toolCounts[tool] = (toolCounts[tool] || 0) + 1;
         (o.files || []).forEach(function(f) { fileSet.add(f); });
-        if (!firstPromptFromObs && (o.userPrompt || (o.type === 'conversation' && o.narrative))) {
-          firstPromptFromObs = o.userPrompt || o.narrative || '';
+        if (!firstPromptFromObs && (hasVisibleText(o.userPrompt) || (o.type === 'conversation' && hasVisibleText(o.narrative)))) {
+          firstPromptFromObs = hasVisibleText(o.userPrompt) ? o.userPrompt : o.narrative;
         }
       });
 
       var durationMs = s.endedAt ? new Date(s.endedAt).getTime() - new Date(s.startedAt).getTime() : 0;
       var durationLabel = durationMs > 0 ? (durationMs < 60000 ? (durationMs / 1000).toFixed(1) + 's' : (durationMs / 60000).toFixed(1) + 'm') : '-';
 
-      var preview = s.firstPrompt || sessionSummaryText(s) || firstPromptFromObs || '';
+      // Same visible-string guard as the list preview: non-string or
+      // invisible-char chain terms must fall through, not render garbage.
+      var preview = hasVisibleText(s.firstPrompt) ? s.firstPrompt.trim() : '';
+      if (!preview) preview = sessionSummaryText(s);
+      if (!preview) preview = hasVisibleText(firstPromptFromObs) ? firstPromptFromObs.trim() : '';
 
       var html = '<div class="detail-panel">';
       html += '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;">';
