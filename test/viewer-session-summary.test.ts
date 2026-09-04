@@ -235,9 +235,16 @@ describe("viewer session summary rendering", () => {
     // The list preview truncates at 140 chars, so assert the labeled lists
     // through the full serialization the detail panel renders (600 chars).
     const text = sandbox.sessionSummaryText({ summary: sessionSummaryObject });
-    expect(text).toContain("Key decisions: Ship API v1 behind a flag, Keep v0 fallback for a release");
-    expect(text).toContain("Files: integrations/todoist.ts, skills/todoist.md");
-    expect(text).toContain("Concepts: api-migration, skills");
+    // Exact pin: the full serialization, including labeled-section order.
+    expect(text).toBe(
+      "Todoist skill fixes — " +
+        "Migrated the Todoist integration to API v1 and fixed the skill handlers. — " +
+        "Key decisions: Ship API v1 behind a flag, Keep v0 fallback for a release — " +
+        "Files: integrations/todoist.ts, skills/todoist.md — " +
+        "Concepts: api-migration, skills",
+    );
+    expect(text.indexOf("Key decisions:")).toBeLessThan(text.indexOf("Files:"));
+    expect(text.indexOf("Files:")).toBeLessThan(text.indexOf("Concepts:"));
 
     return sandbox.renderSessionDetail().then(() => {
       const html = getElement("session-detail").innerHTML;
@@ -253,6 +260,14 @@ describe("viewer session summary rendering", () => {
     const { sandbox, getElement } = loadViewerSandbox();
     sandbox.state.sessions.items = [baseSession({ summary: sessionSummaryObject })];
     sandbox.state.sessions.selectedId = "20260811_113447_ba4a38";
+    // Observations with a recovered prompt must NOT outrank the serialized
+    // summary: the detail chain is firstPrompt || summary || firstPromptFromObs.
+    sandbox.fetch = async () => ({
+      ok: true,
+      json: async () => ({
+        observations: [{ type: "conversation", userPrompt: "Observed prompt" }],
+      }),
+    });
 
     await sandbox.renderSessionDetail();
 
@@ -260,6 +275,7 @@ describe("viewer session summary rendering", () => {
     expect(html).not.toContain("[object Object]");
     expect(html).toContain("Migrated the Todoist integration to API v1");
     expect(html).toContain("Ship API v1 behind a flag");
+    expect(html).not.toContain("Observed prompt");
   });
 
   it("keeps rendering plain string summaries unchanged", () => {
@@ -317,7 +333,15 @@ describe("viewer session summary rendering", () => {
     expect(() => sandbox.renderSessions()).not.toThrow();
     const html = getElement("view-sessions").innerHTML;
     expect(html).not.toContain("[object Object]");
-    expect(html).toContain("still/works.ts");
+    // Title is numeric: it must be dropped, not stringified into the preview.
+    // The exact preview pins this: only the surviving Files entry renders.
+    expect(html).toContain('>Files: still/works.ts</div>');
+    // A numeric narrative must likewise never leak into the text.
+    expect(
+      sandbox.sessionSummaryText({
+        summary: { title: "T", narrative: 99, keyDecisions: ["K"] } as unknown as object,
+      }),
+    ).toBe("T — Key decisions: K");
   });
 
   it("skips non-string and empty entries inside summary list fields", () => {
@@ -325,7 +349,7 @@ describe("viewer session summary rendering", () => {
     const summary = {
       title: "Mixed entry types",
       narrative: "Narrative body.",
-      keyDecisions: ["Real decision", {}, null, "", 42] as unknown as string[],
+      keyDecisions: ["Real decision", "  ", "", {}, null, 42] as unknown as string[],
       filesModified: ["kept.ts", {}, "also.ts"] as unknown as string[],
       concepts: [{ nested: true }, "concept"] as unknown as string[],
     };
@@ -333,9 +357,13 @@ describe("viewer session summary rendering", () => {
     expect(text).not.toContain("[object Object]");
     expect(text).not.toContain("null");
     expect(text).not.toContain("42");
-    expect(text).toContain("Key decisions: Real decision");
-    expect(text).toContain("Files: kept.ts, also.ts");
-    expect(text).toContain("Concepts: concept");
+    // Whitespace-only entries must be skipped, not joined as stray ", ," gaps.
+    expect(text).not.toContain(", ,");
+    // Exact pin: filter + join order for every list field.
+    expect(text).toBe(
+      "Mixed entry types — Narrative body. — Key decisions: Real decision — " +
+        "Files: kept.ts, also.ts — Concepts: concept",
+    );
   });
 
   it("renders firstPrompt over a serialized summary in both render paths", async () => {
