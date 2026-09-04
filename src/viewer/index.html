@@ -1278,8 +1278,8 @@
         }
         if (typeof sum !== 'object') return '';
         var parts = [];
-        var title = typeof sum.title === 'string' ? sum.title.trim() : '';
-        var narrative = typeof sum.narrative === 'string' ? sum.narrative.trim() : '';
+        var title = hasVisibleText(sum.title) ? sum.title.trim() : '';
+        var narrative = hasVisibleText(sum.narrative) ? sum.narrative.trim() : '';
         // Push the trimmed forms so object summaries render like the
         // string path (which returns trimmed text) instead of leaking
         // hand-edited padding into the preview.

@@ -517,6 +517,12 @@ describe("viewer session summary rendering", () => {
     expect(
       sandbox.sessionSummaryText({ summary: "\u200b\u200b " }),
     ).toBe("");
+    // Zero-width-only object fields are invisible too, not just strings.
+    expect(
+      sandbox.sessionSummaryText({
+        summary: { title: "\u200b", narrative: "\u200b", filesModified: ["f.ts"] } as unknown as object,
+      }),
+    ).toBe("Files: f.ts");
   });
 
   it("falls through a non-string firstPrompt to the serialized summary", () => {
