@@ -672,7 +672,7 @@ export const V051_TOOLS: McpToolDef[] = [
   {
     name: "memory_diagnose",
     description:
-      "Run health checks across all subsystems (actions, leases, sentinels, sketches, signals, sessions, memories, mesh). Identifies stuck, orphaned, and inconsistent state.",
+      "Run health checks across all subsystems (actions, leases, sentinels, sketches, signals, sessions, memories, mesh, index). Identifies stuck, orphaned, and inconsistent state.",
     inputSchema: {
       type: "object",
       properties: {
@@ -876,7 +876,12 @@ export const V010_SLOTS_TOOLS: McpToolDef[] = [
     name: "memory_slot_list",
     description:
       "List all memory slots (pinned + project + global). Slots are editable, size-limited memory units the agent can read and modify across sessions.",
-    inputSchema: { type: "object", properties: {} },
+    inputSchema: {
+      type: "object",
+      properties: {
+        project: { type: "string", description: "Optional project name to scope project slots to" },
+      },
+    },
   },
   {
     name: "memory_slot_get",
@@ -885,6 +890,7 @@ export const V010_SLOTS_TOOLS: McpToolDef[] = [
       type: "object",
       properties: {
         label: { type: "string", description: "Slot label (e.g. 'persona', 'pending_items')" },
+        project: { type: "string", description: "Optional project name to scope project slots to" },
       },
       required: ["label"],
     },
@@ -901,6 +907,7 @@ export const V010_SLOTS_TOOLS: McpToolDef[] = [
         description: { type: "string", description: "What this slot is for" },
         pinned: { type: "string", description: "'false' to exclude from context injection; default true" },
         scope: { type: "string", description: "'project' (default) or 'global' (shared across projects)" },
+        project: { type: "string", description: "Optional project name to scope project slots to (used when scope is 'project')" },
       },
       required: ["label"],
     },
@@ -914,6 +921,7 @@ export const V010_SLOTS_TOOLS: McpToolDef[] = [
       properties: {
         label: { type: "string", description: "Slot label" },
         text: { type: "string", description: "Text to append" },
+        project: { type: "string", description: "Optional project name to scope project slots to" },
       },
       required: ["label", "text"],
     },
@@ -926,6 +934,7 @@ export const V010_SLOTS_TOOLS: McpToolDef[] = [
       properties: {
         label: { type: "string", description: "Slot label" },
         content: { type: "string", description: "New full content" },
+        project: { type: "string", description: "Optional project name to scope project slots to" },
       },
       required: ["label", "content"],
     },
@@ -937,6 +946,7 @@ export const V010_SLOTS_TOOLS: McpToolDef[] = [
       type: "object",
       properties: {
         label: { type: "string", description: "Slot label" },
+        project: { type: "string", description: "Optional project name to scope project slots to" },
       },
       required: ["label"],
     },

@@ -28,6 +28,13 @@ import { logger } from "../logger.js";
 //                         emitted by mem::auto-forget (automatic sweep).
 //   - everything else   — see AuditEntry["operation"] union in src/types.ts.
 //
+// Two-phase rows: mem::consolidate-pipeline writes its OWN row (via kv.set,
+// not recordAudit, because recordAudit mints a new id per call) with a
+// stable aud_ id — details.status "started" before the LLM work, then an
+// in-place update to "completed" + results. Crash-safe: a mid-pipeline kill
+// leaves the started row as evidence. Do not "simplify" this back into a
+// single recordAudit at the end.
+//
 // When adding a new deletion path, add an explicit recordAudit call
 // BEFORE kv.delete(...) and match one of the two shapes above.
 

@@ -696,14 +696,16 @@ export function registerApiTriggers(
   });
 
   sdk.registerFunction("api::summarize", 
-    async (req: ApiRequest<{ sessionId: string }>): Promise<Response> => {
-      const sessionId = asNonEmptyString((req.body as Record<string, unknown>)?.sessionId);
+    async (req: ApiRequest<{ sessionId: string; force?: boolean }>): Promise<Response> => {
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const sessionId = asNonEmptyString(body?.sessionId);
       if (!sessionId) {
         return { status_code: 400, body: { error: "sessionId is required" } };
       }
+      const force = Boolean(body?.force);
       const result = await sdk.trigger({
         function_id: "mem::summarize",
-        payload: { sessionId },
+        payload: { sessionId, ...(force ? { force: true } : {}) },
       });
       return { status_code: 200, body: result };
     },
@@ -850,7 +852,10 @@ export function registerApiTriggers(
     async (req: ApiRequest): Promise<Response> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
-      const sessions = await kv.list<Session>(KV.sessions);
+      const [sessions, summaries] = await Promise.all([
+        kv.list<Session>(KV.sessions),
+        kv.list<SessionSummary>(KV.summaries).catch(() => [] as SessionSummary[]),
+      ]);
       const normalizedAgentId =
         typeof req.query_params?.["agentId"] === "string"
           ? req.query_params["agentId"].trim()
@@ -865,25 +870,20 @@ export function registerApiTriggers(
       const filtered = filterAgentId
         ? sessions.filter((s) => s.agentId === filterAgentId)
         : sessions;
-      // Bounded fan-out: each kv.get is a full engine invocation, so
-      // Promise.all over hundreds of sessions saturates the invocation
-      // pool. Batch in chunks of 10 (parallel within a chunk, sequential
-      // across chunks); the summaries array stays index-aligned with
-      // `filtered`.
-      const summaries: Array<SessionSummary | null> = [];
-      for (let batch = 0; batch < filtered.length; batch += 10) {
-        const chunk = filtered.slice(batch, batch + 10);
-        const results = await Promise.all(
-          chunk.map((s) =>
-            kv.get<SessionSummary>(KV.summaries, s.id).catch(() => null),
-          ),
-        );
-        summaries.push(...results);
-      }
-      const withSummary = filtered.map((s, i) =>
-        summaries[i] ? { ...s, summary: summaries[i] } : s,
+      const summaryMap = new Map(
+        summaries.map((s) => [s.sessionId ?? (s as unknown as { id: string }).id, s]),
       );
-      return { status_code: 200, body: { sessions: withSummary } };
+      const withSummary = filtered.map((s) => {
+        const sum = summaryMap.get(s.id);
+        return sum ? { ...s, summary: sum } : s;
+      });
+      const rawLimit = Number(req.query_params?.["limit"]);
+      const limit =
+        Number.isFinite(rawLimit) && rawLimit > 0
+          ? Math.floor(rawLimit)
+          : undefined;
+      const result = limit ? withSummary.slice(0, limit) : withSummary;
+      return { status_code: 200, body: { sessions: result } };
     },
   );
   sdk.registerTrigger({
@@ -2027,8 +2027,11 @@ export function registerApiTriggers(
     async (req: ApiRequest): Promise<Response> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
-      const semantic = await kv.list<import("../types.js").SemanticMemory>(KV.semantic);
-      return { status_code: 200, body: { semantic } };
+      const limitParam = parseOptionalPositiveInt(req.query_params?.["limit"]);
+      const limit = limitParam ?? 100;
+      const allSemantic = await kv.list<import("../types.js").SemanticMemory>(KV.semantic);
+      const semantic = allSemantic.slice(0, limit);
+      return { status_code: 200, body: { semantic, total: allSemantic.length } };
     },
   );
   sdk.registerTrigger({
@@ -2041,8 +2044,11 @@ export function registerApiTriggers(
     async (req: ApiRequest): Promise<Response> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
-      const procedural = await kv.list<import("../types.js").ProceduralMemory>(KV.procedural);
-      return { status_code: 200, body: { procedural } };
+      const limitParam = parseOptionalPositiveInt(req.query_params?.["limit"]);
+      const limit = limitParam ?? 100;
+      const allProcedural = await kv.list<import("../types.js").ProceduralMemory>(KV.procedural);
+      const procedural = allProcedural.slice(0, limit);
+      return { status_code: 200, body: { procedural, total: allProcedural.length } };
     },
   );
   sdk.registerTrigger({
@@ -2055,8 +2061,11 @@ export function registerApiTriggers(
     async (req: ApiRequest): Promise<Response> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
-      const relations = await kv.list<import("../types.js").MemoryRelation>(KV.relations);
-      return { status_code: 200, body: { relations } };
+      const limitParam = parseOptionalPositiveInt(req.query_params?.["limit"]);
+      const limit = limitParam ?? 100;
+      const allRelations = await kv.list<import("../types.js").MemoryRelation>(KV.relations);
+      const relations = allRelations.slice(0, limit);
+      return { status_code: 200, body: { relations, total: allRelations.length } };
     },
   );
   sdk.registerTrigger({
@@ -2136,7 +2145,10 @@ export function registerApiTriggers(
     const authErr = checkAuth(req, secret);
     if (authErr) return authErr;
     if (!isSlotsEnabled()) return slotsDisabledResponse();
-    const result = await sdk.trigger({ function_id: "mem::slot-list", payload: {} });
+    const project = asNonEmptyString(req.query_params?.["project"]);
+    const payload: Record<string, unknown> = {};
+    if (project) payload["project"] = project;
+    const result = await sdk.trigger({ function_id: "mem::slot-list", payload });
     return { status_code: 200, body: result };
   });
   sdk.registerTrigger({
@@ -2151,7 +2163,10 @@ export function registerApiTriggers(
     if (!isSlotsEnabled()) return slotsDisabledResponse();
     const label = asNonEmptyString(req.query_params?.["label"]);
     if (!label) return { status_code: 400, body: { error: "label query param required" } };
-    const result = await sdk.trigger({ function_id: "mem::slot-get", payload: { label } });
+    const project = asNonEmptyString(req.query_params?.["project"]);
+    const payload: Record<string, unknown> = { label };
+    if (project) payload["project"] = project;
+    const result = await sdk.trigger({ function_id: "mem::slot-get", payload });
     const resp = result as { success?: boolean; error?: string };
     if (resp?.success === false) {
       return { status_code: resp.error?.includes("not found") ? 404 : 400, body: resp };
@@ -2201,6 +2216,8 @@ export function registerApiTriggers(
     if (sizeLimit !== undefined) payload["sizeLimit"] = sizeLimit;
     if (typeof body["pinned"] === "boolean") payload["pinned"] = body["pinned"];
     if (body["scope"] === "project" || body["scope"] === "global") payload["scope"] = body["scope"];
+    const project = asNonEmptyString(body["project"]);
+    if (project) payload["project"] = project;
     const result = await sdk.trigger({ function_id: "mem::slot-create", payload });
     const resp = result as { success?: boolean; error?: string };
     if (resp?.success === false) {
@@ -2222,7 +2239,10 @@ export function registerApiTriggers(
     const label = asNonEmptyString(body["label"]);
     const text = typeof body["text"] === "string" ? body["text"] : null;
     if (!label || !text) return { status_code: 400, body: { error: "label and text required" } };
-    const result = await sdk.trigger({ function_id: "mem::slot-append", payload: { label, text } });
+    const project = asNonEmptyString(body["project"]);
+    const payload: Record<string, unknown> = { label, text };
+    if (project) payload["project"] = project;
+    const result = await sdk.trigger({ function_id: "mem::slot-append", payload });
     const resp = result as { success?: boolean; error?: string };
     if (resp?.success === false) {
       const notFound = resp.error?.includes("not found");
@@ -2247,7 +2267,10 @@ export function registerApiTriggers(
     if (!label || typeof content !== "string") {
       return { status_code: 400, body: { error: "label and content (string) required" } };
     }
-    const result = await sdk.trigger({ function_id: "mem::slot-replace", payload: { label, content } });
+    const project = asNonEmptyString(body["project"]);
+    const payload: Record<string, unknown> = { label, content };
+    if (project) payload["project"] = project;
+    const result = await sdk.trigger({ function_id: "mem::slot-replace", payload });
     const resp = result as { success?: boolean; error?: string };
     if (resp?.success === false) {
       const notFound = resp.error?.includes("not found");
@@ -2268,7 +2291,10 @@ export function registerApiTriggers(
     if (!isSlotsEnabled()) return slotsDisabledResponse();
     const label = asNonEmptyString(req.query_params?.["label"]);
     if (!label) return { status_code: 400, body: { error: "label query param required" } };
-    const result = await sdk.trigger({ function_id: "mem::slot-delete", payload: { label } });
+    const project = asNonEmptyString(req.query_params?.["project"]);
+    const payload: Record<string, unknown> = { label };
+    if (project) payload["project"] = project;
+    const result = await sdk.trigger({ function_id: "mem::slot-delete", payload });
     const resp = result as { success?: boolean; error?: string };
     if (resp?.success === false) {
       return { status_code: resp.error?.includes("not found") ? 404 : 400, body: resp };
@@ -2293,6 +2319,8 @@ export function registerApiTriggers(
     if (maxObservations === null) return { status_code: 400, body: { error: "maxObservations must be a positive integer" } };
     const payload: Record<string, unknown> = { sessionId };
     if (maxObservations !== undefined) payload["maxObservations"] = maxObservations;
+    const project = asNonEmptyString(body["project"]);
+    if (project) payload["project"] = project;
     const result = await sdk.trigger({ function_id: "mem::slot-reflect", payload });
     return { status_code: 200, body: result };
   });

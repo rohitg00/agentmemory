@@ -10,7 +10,6 @@ import type {
   Insight,
   Lease,
   Lesson,
-  Checkpoint,
   Crystal,
   ProceduralMemory,
   SemanticMemory,
@@ -38,6 +37,7 @@ const ALL_CATEGORIES = [
   "crystals",
   "insights",
   "mesh",
+  "index",
 ];
 
 const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
@@ -620,6 +620,200 @@ export function registerDiagnosticsFunction(sdk: ISdk, kv: StateKV): void {
         }
       }
 
+      if (categories.includes("index")) {
+        const [bm25Settled, vectorSettled, registrySettled] =
+          await Promise.allSettled([
+            kv.get<{
+              v: number;
+              generation?: string;
+              shards?: unknown[];
+              chars?: number;
+            }>(KV.bm25Index, "data:manifest"),
+            kv.get<{
+              v: number;
+              generation?: string;
+              shards?: unknown[];
+              chars?: number;
+            }>(KV.bm25Index, "vectors:manifest"),
+            kv.get<{
+              v: number;
+              generations?: Record<
+                string,
+                {
+                  type: "bm25" | "vector";
+                  createdAt: string;
+                  shardScopes: string[];
+                }
+              >;
+            }>(KV.bm25Index, "generations:registry"),
+          ]);
+
+        let bm25Eligible = false;
+        let bm25Manifest: {
+          v: number;
+          generation?: string;
+          shards?: unknown[];
+          chars?: number;
+        } | null = null;
+        if (bm25Settled.status === "fulfilled") {
+          const m = bm25Settled.value;
+          if (m === null || m === undefined) {
+            bm25Eligible = true;
+            bm25Manifest = null;
+            checks.push({
+              name: "index-manifest-bm25",
+              category: "index",
+              status: "warn",
+              message:
+                "BM25 index manifest not found (index not yet persisted or empty)",
+              fixable: false,
+            });
+          } else if (m && m.v === 1 && Array.isArray(m.shards)) {
+            bm25Eligible = true;
+            bm25Manifest = m;
+            checks.push({
+              name: "index-manifest-bm25",
+              category: "index",
+              status: "pass",
+              message: `BM25 index manifest is valid (${m.shards.length} shards)`,
+              fixable: false,
+            });
+          } else {
+            checks.push({
+              name: "index-manifest-bm25",
+              category: "index",
+              status: "fail",
+              message: "BM25 index manifest is corrupt",
+              fixable: false,
+            });
+          }
+        } else {
+          checks.push({
+            name: "index-manifest-bm25",
+            category: "index",
+            status: "fail",
+            message: "BM25 index manifest read failed",
+            fixable: false,
+          });
+        }
+
+        let vectorEligible = false;
+        let vectorManifest: {
+          v: number;
+          generation?: string;
+          shards?: unknown[];
+          chars?: number;
+        } | null = null;
+        if (vectorSettled.status === "fulfilled") {
+          const m = vectorSettled.value;
+          if (m === null || m === undefined) {
+            vectorEligible = true;
+            vectorManifest = null;
+            checks.push({
+              name: "index-manifest-vectors",
+              category: "index",
+              status: "warn",
+              message:
+                "Vector index manifest not found (index not yet persisted or empty)",
+              fixable: false,
+            });
+          } else if (m && m.v === 1 && Array.isArray(m.shards)) {
+            vectorEligible = true;
+            vectorManifest = m;
+            checks.push({
+              name: "index-manifest-vectors",
+              category: "index",
+              status: "pass",
+              message: `Vector index manifest is valid (${m.shards.length} shards)`,
+              fixable: false,
+            });
+          } else {
+            checks.push({
+              name: "index-manifest-vectors",
+              category: "index",
+              status: "fail",
+              message: "Vector index manifest is corrupt",
+              fixable: false,
+            });
+          }
+        } else {
+          checks.push({
+            name: "index-manifest-vectors",
+            category: "index",
+            status: "fail",
+            message: "Vector index manifest read failed",
+            fixable: false,
+          });
+        }
+
+        const registry =
+          registrySettled.status === "fulfilled" ? registrySettled.value : null;
+        const activeBm25Gen =
+          bm25Eligible &&
+          bm25Manifest &&
+          typeof bm25Manifest.generation === "string"
+            ? bm25Manifest.generation
+            : null;
+        const activeVectorGen =
+          vectorEligible &&
+          vectorManifest &&
+          typeof vectorManifest.generation === "string"
+            ? vectorManifest.generation
+            : null;
+
+        const INDEX_GRACE_PERIOD_MS = 60_000;
+        let orphanGenCount = 0;
+        let orphanShardCount = 0;
+
+        if (
+          registry &&
+          registry.v === 1 &&
+          registry.generations &&
+          typeof registry.generations === "object"
+        ) {
+          for (const [genId, genInfo] of Object.entries(registry.generations)) {
+            if (genInfo.type === "bm25") {
+              if (!bm25Eligible) continue;
+              if (activeBm25Gen && genId === activeBm25Gen) continue;
+            } else if (genInfo.type === "vector") {
+              if (!vectorEligible) continue;
+              if (activeVectorGen && genId === activeVectorGen) continue;
+            } else {
+              continue;
+            }
+
+            const createdAtMs = Date.parse(genInfo.createdAt);
+            if (
+              Number.isNaN(createdAtMs) ||
+              now - createdAtMs > INDEX_GRACE_PERIOD_MS
+            ) {
+              orphanGenCount++;
+              if (Array.isArray(genInfo.shardScopes)) {
+                orphanShardCount += genInfo.shardScopes.length;
+              }
+            }
+          }
+        }
+
+        if (orphanGenCount > 0) {
+          checks.push({
+            name: "index-orphan-shards",
+            category: "index",
+            status: "fail",
+            message: `Found ${orphanGenCount} orphan generations (${orphanShardCount} shards) in index registry`,
+            fixable: true,
+          });
+        } else {
+          checks.push({
+            name: "index-orphan-shards",
+            category: "index",
+            status: "pass",
+            message: "Index shard generations are clean (no orphan shards)",
+            fixable: false,
+          });
+        }
+      }
+
       const summary = {
         pass: checks.filter((c) => c.status === "pass").length,
         warn: checks.filter((c) => c.status === "warn").length,
@@ -1053,6 +1247,166 @@ export function registerDiagnosticsFunction(sdk: ISdk, kv: StateKV): void {
             } else {
               skipped++;
             }
+          }
+        }
+      }
+
+      if (categories.includes("index")) {
+        const [bm25Settled, vectorSettled, registrySettled] =
+          await Promise.allSettled([
+            kv.get<{
+              v: number;
+              generation?: string;
+              shards?: unknown[];
+              chars?: number;
+            }>(KV.bm25Index, "data:manifest"),
+            kv.get<{
+              v: number;
+              generation?: string;
+              shards?: unknown[];
+              chars?: number;
+            }>(KV.bm25Index, "vectors:manifest"),
+            kv.get<{
+              v: number;
+              generations?: Record<
+                string,
+                {
+                  type: "bm25" | "vector";
+                  createdAt: string;
+                  shardScopes: string[];
+                }
+              >;
+            }>(KV.bm25Index, "generations:registry"),
+          ]);
+
+        let bm25Eligible = false;
+        let bm25Manifest: {
+          v: number;
+          generation?: string;
+          shards?: unknown[];
+          chars?: number;
+        } | null = null;
+        if (bm25Settled.status === "fulfilled") {
+          const m = bm25Settled.value;
+          if (m === null || m === undefined) {
+            bm25Eligible = true;
+            bm25Manifest = null;
+          } else if (m && m.v === 1 && Array.isArray(m.shards)) {
+            bm25Eligible = true;
+            bm25Manifest = m;
+          }
+        }
+
+        let vectorEligible = false;
+        let vectorManifest: {
+          v: number;
+          generation?: string;
+          shards?: unknown[];
+          chars?: number;
+        } | null = null;
+        if (vectorSettled.status === "fulfilled") {
+          const m = vectorSettled.value;
+          if (m === null || m === undefined) {
+            vectorEligible = true;
+            vectorManifest = null;
+          } else if (m && m.v === 1 && Array.isArray(m.shards)) {
+            vectorEligible = true;
+            vectorManifest = m;
+          }
+        }
+
+        const registry =
+          registrySettled.status === "fulfilled" ? registrySettled.value : null;
+        const activeBm25Gen =
+          bm25Eligible &&
+          bm25Manifest &&
+          typeof bm25Manifest.generation === "string"
+            ? bm25Manifest.generation
+            : null;
+        const activeVectorGen =
+          vectorEligible &&
+          vectorManifest &&
+          typeof vectorManifest.generation === "string"
+            ? vectorManifest.generation
+            : null;
+
+        const INDEX_GRACE_PERIOD_MS = 60_000;
+        const orphanGens: Array<{
+          id: string;
+          type: "bm25" | "vector";
+          createdAt: string;
+          shardScopes: string[];
+        }> = [];
+        let orphanShardCount = 0;
+
+        if (
+          registry &&
+          registry.v === 1 &&
+          registry.generations &&
+          typeof registry.generations === "object"
+        ) {
+          for (const [genId, genInfo] of Object.entries(registry.generations)) {
+            if (genInfo.type === "bm25") {
+              if (!bm25Eligible) continue;
+              if (activeBm25Gen && genId === activeBm25Gen) continue;
+            } else if (genInfo.type === "vector") {
+              if (!vectorEligible) continue;
+              if (activeVectorGen && genId === activeVectorGen) continue;
+            } else {
+              continue;
+            }
+
+            const createdAtMs = Date.parse(genInfo.createdAt);
+            if (
+              Number.isNaN(createdAtMs) ||
+              now - createdAtMs > INDEX_GRACE_PERIOD_MS
+            ) {
+              const scopes = Array.isArray(genInfo.shardScopes)
+                ? genInfo.shardScopes
+                : [];
+              orphanGens.push({
+                id: genId,
+                type: genInfo.type,
+                createdAt: genInfo.createdAt,
+                shardScopes: scopes,
+              });
+              orphanShardCount += scopes.length;
+            }
+          }
+        }
+
+        if (orphanGens.length > 0) {
+          if (dryRun) {
+            details.push(
+              `[dry-run] Would delete ${orphanShardCount} orphan shards across ${orphanGens.length} unreferenced generations`,
+            );
+            fixed++;
+          } else {
+            const deletePromises: Promise<void>[] = [];
+            for (const gen of orphanGens) {
+              for (const scope of gen.shardScopes) {
+                deletePromises.push(kv.delete(scope, "data"));
+              }
+            }
+            await Promise.allSettled(deletePromises);
+
+            for (const gen of orphanGens) {
+              delete registry!.generations![gen.id];
+            }
+            await kv.set(KV.bm25Index, "generations:registry", registry);
+
+            for (const gen of orphanGens) {
+              await recordAudit(kv, "heal", "mem::heal", [gen.id], {
+                entityType: "index_shard",
+                reason: "orphan-shard-gc",
+                action: "delete",
+              });
+            }
+
+            details.push(
+              `Deleted ${orphanShardCount} orphan shards from ${orphanGens.length} unreferenced generations`,
+            );
+            fixed++;
           }
         }
       }

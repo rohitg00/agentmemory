@@ -50,6 +50,30 @@ function getChunkConcurrency(): number {
   return Number.isFinite(n) && n > 0 ? n : CHUNK_CONCURRENCY_DEFAULT;
 }
 
+export function filterObservationsForSummary(
+  observations: CompressedObservation[],
+): CompressedObservation[] {
+  const out: CompressedObservation[] = [];
+  for (const o of observations) {
+    if (o.isTelemetry === true) continue;
+    const anyO = o as unknown as Record<string, unknown>;
+    const hasTitle = typeof o.title === "string" && o.title.trim().length > 0;
+    const hasNarrative = typeof o.narrative === "string" && o.narrative.trim().length > 0;
+    const hasFacts = Array.isArray(o.facts) && o.facts.length > 0;
+    const hasFiles = Array.isArray(o.files) && o.files.length > 0;
+    const hasToolInput = anyO["toolInput"] !== undefined && anyO["toolInput"] !== null && String(anyO["toolInput"]).trim().length > 0;
+    const hasToolOutput = anyO["toolOutput"] !== undefined && anyO["toolOutput"] !== null && String(anyO["toolOutput"]).trim().length > 0;
+    const hasUserPrompt = typeof anyO["userPrompt"] === "string" && (anyO["userPrompt"] as string).trim().length > 0;
+    const hasContent = typeof anyO["content"] === "string" && (anyO["content"] as string).trim().length > 0;
+    const hasSubtitle = typeof anyO["subtitle"] === "string" && (anyO["subtitle"] as string).trim().length > 0;
+    if (!hasTitle && !hasNarrative && !hasFacts && !hasFiles && !hasToolInput && !hasToolOutput && !hasUserPrompt && !hasContent && !hasSubtitle) {
+      continue;
+    }
+    out.push(o);
+  }
+  return out;
+}
+
 // One chunk call with retry-once. Returns null when both attempts fail —
 // whether by parse failure, provider 4xx (content rejected by upstream
 // filters), or transient network/5xx errors that didn't recover on retry.
@@ -100,6 +124,8 @@ async function produceSummaryXml(
   compressed: CompressedObservation[],
   sessionId: string,
   project: string,
+  kv?: StateKV,
+  force?: boolean,
 ): Promise<{
   response: string;
   mode: "single" | "chunked";
@@ -137,7 +163,17 @@ async function produceSummaryXml(
     await Promise.all(
       batch.map(async (chunk, j) => {
         const idx = batchStart + j;
-        partialByIdx[idx] = await summarizeChunkWithRetry(
+        if (!force && chunk.length === chunkSize && kv) {
+          const cached = await kv.get<SessionSummary>(
+            KV.summaryPartials(sessionId),
+            String(idx),
+          );
+          if (cached && cached.observationCount === chunk.length) {
+            partialByIdx[idx] = cached;
+            return;
+          }
+        }
+        const partial = await summarizeChunkWithRetry(
           provider,
           chunk,
           sessionId,
@@ -145,6 +181,10 @@ async function produceSummaryXml(
           idx,
           chunks.length,
         );
+        partialByIdx[idx] = partial;
+        if (partial && chunk.length === chunkSize && kv) {
+          await kv.set(KV.summaryPartials(sessionId), String(idx), partial);
+        }
       }),
     );
   }
@@ -233,12 +273,13 @@ export function registerSummarizeFunction(
   metricsStore?: MetricsStore,
 ): void {
   sdk.registerFunction("mem::summarize", 
-    async (data: { sessionId: string } | undefined) => {
+    async (data: { sessionId: string; force?: boolean } | undefined) => {
       const startMs = Date.now();
       if (!data || typeof data.sessionId !== "string" || !data.sessionId.trim()) {
         return { success: false, error: "sessionId is required" };
       }
       const sessionId = data.sessionId.trim();
+      const force = Boolean(data.force);
 
       const session = await kv.get<Session>(KV.sessions, sessionId);
       if (!session) {
@@ -251,13 +292,30 @@ export function registerSummarizeFunction(
       const observations = await kv.list<CompressedObservation>(
         KV.observations(sessionId),
       );
-      const compressed = observations.filter((o) => o.title);
+      const compressed = filterObservationsForSummary(observations);
 
       if (compressed.length === 0) {
         logger.info("No observations to summarize", {
           sessionId,
         });
         return { success: false, error: "no_observations" };
+      }
+
+      if (!force) {
+        const existingSummary = await kv.get<SessionSummary>(
+          KV.summaries,
+          sessionId,
+        );
+        if (
+          existingSummary &&
+          existingSummary.observationCount === compressed.length
+        ) {
+          logger.info("Summarize zero-delta unchanged, returning cached summary", {
+            sessionId,
+            observationCount: compressed.length,
+          });
+          return { success: true, summary: existingSummary, cached: true };
+        }
       }
 
       if (provider.name === "noop") {
@@ -288,6 +346,8 @@ export function registerSummarizeFunction(
             compressed,
             sessionId,
             session.project,
+            kv,
+            force,
           );
           response = produced.response;
           mode = produced.mode;

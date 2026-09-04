@@ -72,7 +72,7 @@ export function registerContextFunction(
 
       const [pinnedSlots, profile, lessons] = await Promise.all([
         isSlotsEnabled()
-          ? listPinnedSlots(kv).catch(() => [] as MemorySlot[])
+          ? listPinnedSlots(kv, data.project).catch(() => [] as MemorySlot[])
           : Promise.resolve([] as MemorySlot[]),
         kv
           .get<ProjectProfile>(KV.profiles, data.project)
