@@ -7,11 +7,14 @@ import { renderViewerDocument } from "../src/viewer/document.js";
 // api::sessions. The Sessions tab must render readable text in both shapes
 // and never the literal "[object Object]" (issue #1229).
 function htmlEscape(value: string): string {
+  // Matches real text-node innerHTML serialization (&, <, >, nbsp only).
+  // Double quotes are intentionally NOT escaped — a browser does not
+  // escape them in text context, and over-escaping would mask quote
+  // breakouts the real viewer could produce.
   return value
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+    .replace(/>/g, "&gt;");
 }
 function loadViewerSandbox() {
   const rendered = renderViewerDocument();
