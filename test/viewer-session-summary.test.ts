@@ -161,14 +161,27 @@ function loadViewerSandbox() {
   };
 
   const scriptWithoutAutoStart = scriptMatch[1]
-    .replace(/\n\s*switchTab\(tabFromRoute\(\)[^;]*;\n/, "\n")
-    .replace(/\n\s*\(async function initWs\(\)[\s\S]*?\}\)\(\);\n/, "\n")
+    // The startup call at the script tail is textually identical to the
+    // body of syncTabFromRoute() (src/viewer/index.html), so anchor the
+    // strip to the startup occurrence with the comment that follows it;
+    // an unanchored regex strips the wrong one and leaves startup code
+    // running inside every test.
+    .replace(/\n\s*switchTab\(tabFromRoute\(\), \{ replaceRoute: true \}\);\n(?=\s*\/\/ Resolve the stream)/, "\n")
+    .replace(/\n\s*\(async function initWs\(\)[\s\S]*?\}\)\(\);\n(?=\s*startDashboardAutoRefresh\(\);)/, "\n")
     .replace(/\n\s*startDashboardAutoRefresh\(\);\n/, "\n");
 
-  // The strip must actually fire. If the viewer script's startup tail
-  // changes shape, fail loudly here instead of silently running startup
-  // code (WebSocket/fetch chains) inside every rendering test.
+  // The strip must actually fire AND hit the startup tail, not the
+  // identically-texted call inside syncTabFromRoute() (which must remain).
+  // If the viewer script's startup shape changes, fail loudly here instead
+  // of silently running startup code (WebSocket/fetch chains) in every test.
   expect(scriptWithoutAutoStart).not.toBe(scriptMatch[1]);
+  const startupCall = 'switchTab(tabFromRoute(), { replaceRoute: true });';
+  const callsBefore = scriptMatch[1].split(startupCall).length - 1;
+  const callsAfter = scriptWithoutAutoStart.split(startupCall).length - 1;
+  expect(callsBefore).toBe(2);
+  expect(callsAfter).toBe(callsBefore - 1);
+  expect(scriptWithoutAutoStart).not.toContain('startDashboardAutoRefresh();');
+  expect(scriptWithoutAutoStart).not.toContain('(async function initWs()');
 
   vm.createContext(sandbox);
   vm.runInContext(scriptWithoutAutoStart, sandbox);
@@ -359,6 +372,12 @@ describe("viewer session summary rendering", () => {
     expect(
       sandbox.sessionSummaryText({
         summary: { title: "Same text", narrative: "Same text" },
+      }),
+    ).toBe("Same text");
+    // Whitespace-variant duplicates are also deduplicated.
+    expect(
+      sandbox.sessionSummaryText({
+        summary: { title: "Same text", narrative: "  Same text  " },
       }),
     ).toBe("Same text");
     expect(

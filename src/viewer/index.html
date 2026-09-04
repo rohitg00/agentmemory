@@ -1273,10 +1273,12 @@
       if (typeof sum === 'string') return sum;
       if (typeof sum !== 'object') return '';
       var parts = [];
-      if (typeof sum.title === 'string' && sum.title.trim()) parts.push(sum.title);
-      if (typeof sum.narrative === 'string' && sum.narrative.trim() && sum.narrative !== sum.title) {
-        parts.push(sum.narrative);
-      }
+      var title = typeof sum.title === 'string' ? sum.title.trim() : '';
+      var narrative = typeof sum.narrative === 'string' ? sum.narrative.trim() : '';
+      if (title) parts.push(sum.title);
+      // Trim before comparing so a whitespace-variant duplicate does not
+      // render the same text twice.
+      if (narrative && narrative !== title) parts.push(sum.narrative);
       var keyDecisions = summaryList(sum.keyDecisions);
       if (keyDecisions) parts.push('Key decisions: ' + keyDecisions);
       var files = summaryList(sum.filesModified);
