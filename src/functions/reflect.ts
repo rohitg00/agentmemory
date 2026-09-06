@@ -8,6 +8,7 @@ import type {
   SemanticMemory,
   Lesson,
   Crystal,
+  Session,
   MemoryProvider,
 } from "../types.js";
 import { recordAudit } from "./audit.js";
@@ -185,8 +186,51 @@ export function registerReflectFunctions(
         activeLessons = activeLessons.filter((l) => l.project === data.project);
       }
 
+      let activeCrystals = crystals;
+      if (data?.project) {
+        activeCrystals = crystals.filter((c) => c.project === data.project);
+      }
+      activeCrystals.sort((a, b) =>
+        (b.createdAt || "").localeCompare(a.createdAt || ""),
+      );
+
+      let activeSemantic = semanticMemories;
+      if (data?.project) {
+        const sessions = await kv.list<Session>(KV.sessions).catch(() => []);
+        const projectSessionIds = new Set(
+          sessions.filter((s) => s.project === data.project).map((s) => s.id),
+        );
+        activeSemantic = semanticMemories.filter((s) =>
+          (s.sourceSessionIds || []).some((id) => projectSessionIds.has(id)),
+        );
+      }
+
+      let relevantGraphNodes = graphNodes;
+      if (data?.project) {
+        const projectTerms = new Set<string>();
+        for (const l of activeLessons) {
+          for (const t of l.tags) projectTerms.add(t.toLowerCase());
+        }
+        for (const c of activeCrystals) {
+          for (const l of c.lessons || []) projectTerms.add(l.toLowerCase());
+          for (const o of c.keyOutcomes || []) {
+            for (const term of o.toLowerCase().split(/\s+/)) {
+              if (term.length > 3) projectTerms.add(term);
+            }
+          }
+        }
+        for (const s of activeSemantic) {
+          for (const term of s.fact.toLowerCase().split(/\s+/)) {
+            if (term.length > 3) projectTerms.add(term);
+          }
+        }
+        relevantGraphNodes = graphNodes.filter(
+          (n) => n.type !== "concept" || projectTerms.has(n.name.toLowerCase()),
+        );
+      }
+
       let conceptClusters = buildGraphClusters(
-        graphNodes,
+        relevantGraphNodes,
         graphEdges,
         maxClusters,
       );
@@ -194,7 +238,7 @@ export function registerReflectFunctions(
       const usedFallback = conceptClusters.length === 0;
       if (usedFallback) {
         conceptClusters = buildJaccardClusters(
-          semanticMemories,
+          activeSemantic,
           activeLessons,
           maxClusters,
         );
@@ -210,7 +254,7 @@ export function registerReflectFunctions(
 
         const conceptSet = new Set(conceptNames.map((c) => c.toLowerCase()));
 
-        const clusterFacts = semanticMemories.filter((s) => {
+        const clusterFacts = activeSemantic.filter((s) => {
           const factTerms = s.fact.toLowerCase().split(/\s+/);
           return factTerms.some((t) => conceptSet.has(t));
         });
@@ -222,7 +266,7 @@ export function registerReflectFunctions(
           ),
         );
 
-        const clusterCrystals = crystals.filter((c) =>
+        const clusterCrystals = activeCrystals.filter((c) =>
           (c.lessons || []).some((l) =>
             conceptNames.some((cn) =>
               l.toLowerCase().includes(cn.toLowerCase()),

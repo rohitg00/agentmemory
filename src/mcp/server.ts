@@ -483,9 +483,10 @@ export function registerMcpEndpoints(
 
           case "memory_consolidate": {
             try {
-              const result = await sdk.trigger({ function_id: "mem::consolidate-pipeline", payload: {
-                tier: args.tier as string,
-              } });
+              const payload: Record<string, unknown> = {};
+              if (typeof args.tier === "string") payload.tier = args.tier;
+              if (typeof args.project === "string") payload.project = args.project;
+              const result = await sdk.trigger({ function_id: "mem::consolidate-pipeline", payload });
               return {
                 status_code: 200,
                 body: {
