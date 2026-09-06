@@ -167,6 +167,13 @@ async function main() {
     fallbackConfig.providers.length > 0
       ? createFallbackProvider(config.provider, fallbackConfig)
       : createProvider(config.provider);
+  const compressionProvider =
+    config.compressionModel === config.provider.model
+      ? provider
+      : createFallbackProvider(
+          { ...config.provider, model: config.compressionModel },
+          fallbackConfig,
+        );
 
   const embeddingProvider = createEmbeddingProvider();
   const imageEmbeddingProvider = createImageEmbeddingProvider();
@@ -241,7 +248,7 @@ async function main() {
     registerSlotsFunctions(sdk, kv);
   }
   registerDiskSizeManager(sdk, kv);
-  registerCompressFunction(sdk, kv, provider, metricsStore);
+  registerCompressFunction(sdk, kv, compressionProvider, metricsStore);
   registerSearchFunction(sdk, kv);
   registerContextFunction(sdk, kv, config.tokenBudget);
   registerSummarizeFunction(sdk, kv, provider, metricsStore);
@@ -328,11 +335,11 @@ async function main() {
   registerSkillExtractFunctions(sdk, kv, provider);
   registerCascadeFunction(sdk, kv);
 
-  registerSlidingWindowFunction(sdk, kv, provider);
+  registerSlidingWindowFunction(sdk, kv, compressionProvider);
   registerQueryExpansionFunction(sdk, provider);
   registerTemporalGraphFunctions(sdk, kv, provider);
   registerRetentionFunctions(sdk, kv);
-  registerCompressFileFunction(sdk, kv, provider);
+  registerCompressFileFunction(sdk, kv, compressionProvider);
   registerReplayFunctions(sdk, kv);
   bootLog(
     `v0.6 advanced retrieval: sliding-window, query-expansion, temporal-graph, retention-scoring`,

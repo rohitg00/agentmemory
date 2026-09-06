@@ -215,7 +215,8 @@ export function loadConfig(): AgentMemoryConfig {
     provider,
     tokenBudget: safeParseInt(env["TOKEN_BUDGET"], 2000),
     maxObservationsPerSession: safeParseInt(env["MAX_OBS_PER_SESSION"], 500),
-    compressionModel: provider.model,
+    compressionModel:
+      env["AGENTMEMORY_COMPRESSION_MODEL"] || provider.model,
     dataDir: DATA_DIR,
   };
 }
