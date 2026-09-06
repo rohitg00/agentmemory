@@ -251,6 +251,94 @@ describe("Reflect", () => {
       expect(result.success).toBe(true);
       expect(result.newInsights).toBe(0);
     });
+
+    it("isolates facts, lessons, crystals, and concept clusters by project", async () => {
+      // Setup project A
+      await kv.set("mem:sessions", "ses_a1", {
+        id: "ses_a1",
+        project: "proj-alpha",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        observationCount: 5,
+        status: "active",
+      });
+      await kv.set("mem:semantic", "sem_a1", {
+        ...makeSemantic("alpha architecture pipeline design"),
+        sourceSessionIds: ["ses_a1"],
+      });
+      await kv.set("mem:lessons", "lsn_a1", {
+        ...makeLesson("Alpha pipeline lesson", ["alpha", "pipeline"]),
+        project: "proj-alpha",
+      });
+      await kv.set("mem:crystals", "cry_a1", {
+        id: "cry_a1",
+        narrative: "Alpha deployment completed",
+        keyOutcomes: ["alpha pipeline works"],
+        filesAffected: ["alpha.go"],
+        lessons: ["alpha"],
+        sourceActionIds: [],
+        project: "proj-alpha",
+        createdAt: new Date().toISOString(),
+      });
+
+      // Setup project B (unrelated)
+      await kv.set("mem:sessions", "ses_b1", {
+        id: "ses_b1",
+        project: "proj-beta",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        observationCount: 5,
+        status: "active",
+      });
+      await kv.set("mem:semantic", "sem_b1", {
+        ...makeSemantic("beta database migration indexing"),
+        sourceSessionIds: ["ses_b1"],
+      });
+      await kv.set("mem:lessons", "lsn_b1", {
+        ...makeLesson("Beta indexing lesson", ["beta", "database"]),
+        project: "proj-beta",
+      });
+      await kv.set("mem:crystals", "cry_b1", {
+        id: "cry_b1",
+        narrative: "Beta migration completed",
+        keyOutcomes: ["beta migration works"],
+        filesAffected: ["beta.go"],
+        lessons: ["beta"],
+        sourceActionIds: [],
+        project: "proj-beta",
+        createdAt: new Date().toISOString(),
+      });
+
+      // Concept graph nodes
+      await kv.set("mem:graph:nodes", "node_alpha", makeConceptNode("alpha"));
+      await kv.set("mem:graph:nodes", "node_pipeline", makeConceptNode("pipeline"));
+      await kv.set("mem:graph:nodes", "node_beta", makeConceptNode("beta"));
+      await kv.set("mem:graph:nodes", "node_database", makeConceptNode("database"));
+      await kv.set("mem:graph:edges", "edge_ap", makeEdge("alpha", "pipeline"));
+      await kv.set("mem:graph:edges", "edge_bd", makeEdge("beta", "database"));
+
+      const result = (await sdk.trigger("mem::reflect", {
+        project: "proj-alpha",
+      })) as {
+        success: boolean;
+        clustersProcessed: number;
+        newInsights: number;
+      };
+
+      expect(result.success).toBe(true);
+      expect(result.clustersProcessed).toBe(1);
+      expect(result.newInsights).toBe(2);
+
+      const insights = await kv.list<Insight>("mem:insights");
+      const alphaInsights = insights.filter((i) => i.project === "proj-alpha");
+      expect(alphaInsights.length).toBe(2);
+      expect(alphaInsights[0].sourceConceptCluster).toEqual(expect.arrayContaining(["alpha", "pipeline"]));
+      expect(alphaInsights[0].sourceConceptCluster).not.toContain("beta");
+      expect(alphaInsights[0].sourceConceptCluster).not.toContain("database");
+
+      const betaInsights = insights.filter((i) => i.project === "proj-beta");
+      expect(betaInsights.length).toBe(0);
+    });
   });
 
   describe("mem::insight-list", () => {

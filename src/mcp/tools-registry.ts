@@ -294,6 +294,11 @@ export const V040_TOOLS: McpToolDef[] = [
           type: "string",
           description: "Target tier: episodic, semantic, or procedural",
         },
+        project: {
+          type: "string",
+          description:
+            "Optional project to scope consolidation and reflection to",
+        },
       },
     },
   },
