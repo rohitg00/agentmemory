@@ -89,3 +89,65 @@ describe("reranker with loaded pipeline", () => {
     expect(reranked[0].observation.id).toBe("o1");
   });
 });
+
+describe("reranker with OpenRouter", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+
+  const results = [
+    { observation: { id: "o1", title: "First", narrative: "one" }, combinedScore: 0.5 },
+    { observation: { id: "o2", title: "Second", narrative: "two" }, combinedScore: 0.4 },
+  ] as any;
+
+  it("uses the configured model and key and reorders by response indexes", async () => {
+    vi.stubEnv("RERANK_PROVIDER", "openrouter");
+    vi.stubEnv("OPENROUTER_API_KEY", "rerank-key");
+    vi.stubEnv("OPENAI_API_KEY", "different-openai-key");
+    vi.stubEnv("OPENROUTER_RERANK_MODEL", "custom/rerank");
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        results: [
+          { index: 1, relevance_score: 0.9 },
+          { index: 0, relevance_score: 0.2 },
+        ],
+      }),
+    } as Response);
+
+    const reranked = await rerank("query", results);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://openrouter.ai/api/v1/rerank",
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: "Bearer rerank-key" }),
+        body: expect.stringContaining('"model":"custom/rerank"'),
+      }),
+    );
+    const body = JSON.parse(fetchMock.mock.calls[0][1]?.body as string);
+    expect(body.query).toBe("query");
+    expect(body.documents).toEqual(["First one", "Second two"]);
+    expect(body.top_n).toBe(2);
+    expect(isRerankerAvailable()).toBe(false);
+    expect(reranked.map((item) => item.observation.id)).toEqual(["o2", "o1"]);
+    expect(reranked[0].combinedScore).toBe(0.9);
+  });
+
+  it("throws for invalid response and HTTP errors", async () => {
+    vi.stubEnv("RERANK_PROVIDER", "openrouter");
+    vi.stubEnv("OPENROUTER_API_KEY", "rerank-key");
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ results: [{ index: 0, relevance_score: 0.9 }, { index: 0, relevance_score: 0.1 }] }),
+    } as Response);
+    await expect(rerank("query", results)).rejects.toThrow("Invalid OpenRouter rerank response");
+
+    fetchMock.mockResolvedValueOnce({
+      ok: false,
+      status: 502,
+      text: async () => "bad gateway",
+    } as Response);
+    await expect(rerank("query", results)).rejects.toThrow("OpenRouter rerank failed (502)");
+  });
+});
