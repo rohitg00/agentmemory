@@ -1486,6 +1486,9 @@
         state.dashboard.health = results[0];
         state.dashboard.sessions = (results[1] && results[1].sessions) || [];
         state.dashboard.memories = (results[2] && results[2].memories) || [];
+        state.dashboard.memoriesTotal = results[2] && typeof results[2].total === 'number'
+          ? results[2].total
+          : state.dashboard.memories.length;
         state.dashboard.graphStats = results[3];
         state.dashboard.recentAudit = (results[4] && results[4].entries) || [];
         state.dashboard.semantic = (results[5] && results[5].facts) || (results[5] && results[5].semantic) || [];
@@ -1544,7 +1547,7 @@
       }
       html += '<div class="stats-grid">';
       html += '<div class="stat-card" data-action="goto-tab" data-tab="sessions" role="link" tabindex="0"><div class="label">Sessions</div><div class="value">' + d.sessions.length + '</div><div class="sub">' + activeSessions + ' active</div></div>';
-      html += '<div class="stat-card" data-action="goto-tab" data-tab="memories" role="link" tabindex="0"><div class="label">Memories</div><div class="value">' + d.memories.length + '</div><div class="sub">latest versions</div></div>';
+      html += '<div class="stat-card" data-action="goto-tab" data-tab="memories" role="link" tabindex="0"><div class="label">Memories</div><div class="value">' + d.memoriesTotal + '</div><div class="sub">latest versions</div></div>';
       var lessonCount = (d.lessons || []).length;
       var crystalCount = (d.crystals || []).length;
       html += '<div class="stat-card" data-action="goto-tab" data-tab="lessons" role="link" tabindex="0"><div class="label">Lessons</div><div class="value">' + lessonCount + '</div><div class="sub">confidence-scored</div></div>';
