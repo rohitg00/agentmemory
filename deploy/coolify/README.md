@@ -42,6 +42,21 @@ the host, attaches Traefik (or Caddy) for the public domain, and starts
 the service. The container is reachable only through the proxy — there
 is no published host port.
 
+## Pre-built image
+
+Tagged releases publish the same Coolify image to GHCR for
+`linux/amd64` and `linux/arm64`:
+
+```bash
+docker pull ghcr.io/rohitg00/agentmemory:0.9.29
+docker pull ghcr.io/rohitg00/agentmemory:0.9
+docker pull ghcr.io/rohitg00/agentmemory:latest
+```
+
+Use the source-build flow above when you want Coolify to build directly
+from this repository. Use the GHCR image when you prefer faster deploys
+and version-pinned pulls.
+
 ## Capture the HMAC secret
 
 Once the deploy logs show the service is up, open the application's
