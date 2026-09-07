@@ -101,12 +101,18 @@ export class HybridSearch {
       }
     }
 
+    // AGENTMEMORY_GRAPH_WEIGHT=0 used to zero only the graph term in the
+    // score while both traversals still ran at full cost. Treat zero as
+    // "skip the stream" so the knob is a real kill switch when graph
+    // retrieval has to come out of the hot path.
+    const graphEnabled = this.graphWeight > 0;
+
     const entities =
       entityHints && entityHints.length > 0
         ? entityHints
         : extractEntitiesFromQuery(query);
     let graphResults: GraphRetrievalResult[] = [];
-    if (entities.length > 0) {
+    if (graphEnabled && entities.length > 0) {
       try {
         graphResults = await this.graphRetrieval.searchByEntities(
           entities,
@@ -119,7 +125,7 @@ export class HybridSearch {
     }
 
     const topVectorObs = vectorResults.slice(0, 5).map((r) => r.obsId);
-    if (topVectorObs.length > 0) {
+    if (graphEnabled && topVectorObs.length > 0) {
       try {
         const expansionResults =
           await this.graphRetrieval.expandFromChunks(topVectorObs, 1, 5);

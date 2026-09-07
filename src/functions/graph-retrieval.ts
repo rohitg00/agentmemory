@@ -2,8 +2,23 @@ import type {
   GraphNode,
   GraphEdge,
 } from "../types.js";
-import { KV } from "../state/schema.js";
 import type { StateKV } from "../state/kv.js";
+import { getGraphView, type GraphView } from "../state/graph-cache.js";
+import { getEnvVar } from "../config.js";
+
+// Traversal bounds. Both are here because this corpus grew to 69K
+// nodes / 185K edges: an unbounded start-node set means one Dijkstra
+// per matching node, and an unbounded expansion lets a single hub node
+// walk most of the graph on maxDepth=2.
+const DEFAULT_MAX_START_NODES = 25;
+const DEFAULT_MAX_VISITED = 2000;
+
+function envInt(key: string, fallback: number): number {
+  const raw = getEnvVar(key);
+  if (!raw) return fallback;
+  const parsed = parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
 
 export interface GraphRetrievalResult {
   obsId: string;
@@ -46,30 +61,46 @@ export class GraphRetrieval {
     maxDepth = 2,
     maxResults = 20,
   ): Promise<GraphRetrievalResult[]> {
-    const allNodes = (await this.kv.list<GraphNode>(KV.graphNodes)).filter((n) => !n.stale);
-    const allEdges = (await this.kv.list<GraphEdge>(KV.graphEdges)).filter((e) => !e.stale);
+    const view = await getGraphView(this.kv);
 
-    const matchingNodes = allNodes.filter((n) => {
-      const nameLower = n.name.toLowerCase();
-      return entityNames.some(
-        (e) =>
-          nameLower.includes(e.toLowerCase()) ||
-          e.toLowerCase().includes(nameLower),
-      );
-    });
+    const lowered = entityNames.map((e) => e.toLowerCase());
+    const matchingNodes: Array<{ node: GraphNode; exact: boolean }> = [];
+    for (const node of view.nodes.values()) {
+      const nameLower = node.name.toLowerCase();
+      let matched = false;
+      let exact = false;
+      for (const entity of lowered) {
+        if (nameLower === entity) {
+          matched = true;
+          exact = true;
+          break;
+        }
+        if (nameLower.includes(entity) || entity.includes(nameLower)) {
+          matched = true;
+        }
+      }
+      if (matched) matchingNodes.push({ node, exact });
+    }
 
     if (matchingNodes.length === 0) return [];
+
+    // One Dijkstra per start node, so the start set has to be bounded.
+    // Rank exact name matches first, then the shortest names — a short
+    // node name that contains the query term is the more specific
+    // entity, a long one is usually an incidental substring hit.
+    matchingNodes.sort((a, b) => {
+      if (a.exact !== b.exact) return a.exact ? -1 : 1;
+      return a.node.name.length - b.node.name.length;
+    });
+    const startNodes = matchingNodes
+      .slice(0, envInt("AGENTMEMORY_GRAPH_MAX_START_NODES", DEFAULT_MAX_START_NODES))
+      .map((m) => m.node);
 
     const results: GraphRetrievalResult[] = [];
     const visitedObs = new Set<string>();
 
-    for (const startNode of matchingNodes) {
-      const paths = this.dijkstraTraversal(
-        startNode,
-        allNodes,
-        allEdges,
-        maxDepth,
-      );
+    for (const startNode of startNodes) {
+      const paths = this.dijkstraTraversal(startNode, view, maxDepth);
 
       for (const path of paths) {
         const lastNode = path[path.length - 1].node;
@@ -119,18 +150,26 @@ export class GraphRetrieval {
     maxDepth = 1,
     maxResults = 10,
   ): Promise<GraphRetrievalResult[]> {
-    const allNodes = (await this.kv.list<GraphNode>(KV.graphNodes)).filter((n) => !n.stale);
-    const allEdges = (await this.kv.list<GraphEdge>(KV.graphEdges)).filter((e) => !e.stale);
+    const view = await getGraphView(this.kv);
 
-    const linkedNodes = allNodes.filter((n) =>
-      n.sourceObservationIds.some((id) => obsIds.includes(id)),
-    );
+    // obsId -> node ids is maintained by the view, so this no longer
+    // scans every node to find the handful that cite these chunks.
+    const linkedNodes: GraphNode[] = [];
+    const seenNodes = new Set<string>();
+    for (const obsId of obsIds) {
+      for (const nodeId of view.nodesByObservation.get(obsId) ?? []) {
+        if (seenNodes.has(nodeId)) continue;
+        seenNodes.add(nodeId);
+        const node = view.nodes.get(nodeId);
+        if (node) linkedNodes.push(node);
+      }
+    }
 
     const results: GraphRetrievalResult[] = [];
     const visitedObs = new Set<string>(obsIds);
 
     for (const node of linkedNodes) {
-      const paths = this.dijkstraTraversal(node, allNodes, allEdges, maxDepth);
+      const paths = this.dijkstraTraversal(node, view, maxDepth);
       for (const path of paths) {
         const lastNode = path[path.length - 1].node;
         for (const obsId of lastNode.sourceObservationIds) {
@@ -163,17 +202,25 @@ export class GraphRetrieval {
     currentState: GraphEdge[];
     history: GraphEdge[];
   }> {
-    const allNodes = (await this.kv.list<GraphNode>(KV.graphNodes)).filter((n) => !n.stale);
-    const allEdges = (await this.kv.list<GraphEdge>(KV.graphEdges)).filter((e) => !e.stale);
+    const view = await getGraphView(this.kv);
 
-    const entity = allNodes.find(
-      (n) => n.name.toLowerCase() === entityName.toLowerCase(),
-    );
+    const wanted = entityName.toLowerCase();
+    let entity: GraphNode | null = null;
+    for (const node of view.nodes.values()) {
+      if (node.name.toLowerCase() === wanted) {
+        entity = node;
+        break;
+      }
+    }
     if (!entity) return { entity: null, currentState: [], history: [] };
 
-    const relatedEdges = allEdges.filter(
-      (e) => e.sourceNodeId === entity.id || e.targetNodeId === entity.id,
-    );
+    // Incident edges come straight off the adjacency index instead of
+    // filtering the whole edge scope.
+    const relatedEdges: GraphEdge[] = [];
+    for (const { edgeId } of view.adjacency.get(entity.id) ?? []) {
+      const edge = view.edges.get(edgeId);
+      if (edge) relatedEdges.push(edge);
+    }
 
     if (!asOf) {
       const latestEdges = this.getLatestEdges(relatedEdges);
@@ -231,31 +278,18 @@ export class GraphRetrieval {
   // which fell back to edge-count order and ignored the 0.1-1.0 weight
   // attached to every graph edge. Dijkstra over `cost = 1/weight`
   // (cheaper edges = stronger relationships) returns the
-  // highest-weighted path to each reachable node within maxDepth. Also
-  // tightens the perf profile:
-  //   - Adjacency built once in O(V+E) (previous BFS re-filtered
-  //     allEdges per visited node, O(V·E) overall).
-  //   - Min-heap dequeue is O(log V) per pop (previous queue.shift()
-  //     was O(n) — the dominant cost on graphs above ~200 nodes per
-  //     the contributor's benchmark in #328).
+  // highest-weighted path to each reachable node within maxDepth.
+  //
+  // The node index and adjacency map now come from the shared graph
+  // view, so they are built once per process rather than once per
+  // start node (the previous code rebuilt both from the full node and
+  // edge arrays on every call).
   private dijkstraTraversal(
     startNode: GraphNode,
-    allNodes: GraphNode[],
-    allEdges: GraphEdge[],
+    view: GraphView,
     maxDepth: number,
   ): Array<Array<{ node: GraphNode; edge?: GraphEdge }>> {
-    const nodeIndex = new Map<string, GraphNode>();
-    for (const n of allNodes) nodeIndex.set(n.id, n);
-
-    const adjacency = new Map<string, Array<{ neighborId: string; edge: GraphEdge }>>();
-    for (const edge of allEdges) {
-      const a = edge.sourceNodeId;
-      const b = edge.targetNodeId;
-      if (!adjacency.has(a)) adjacency.set(a, []);
-      if (!adjacency.has(b)) adjacency.set(b, []);
-      adjacency.get(a)!.push({ neighborId: b, edge });
-      adjacency.get(b)!.push({ neighborId: a, edge });
-    }
+    const maxVisited = envInt("AGENTMEMORY_GRAPH_MAX_VISITED", DEFAULT_MAX_VISITED);
 
     const dist = new Map<string, number>();
     const pathTo = new Map<string, Array<{ node: GraphNode; edge?: GraphEdge }>>();
@@ -267,16 +301,27 @@ export class GraphRetrieval {
     );
     heap.push({ nodeId: startNode.id, depth: 0, cost: 0 });
 
+    let visited = 0;
     while (heap.size() > 0) {
       const { nodeId, depth, cost } = heap.pop()!;
       // Skip stale heap entries (cost beaten by a later push).
       if (cost > (dist.get(nodeId) ?? Infinity)) continue;
       if (depth >= maxDepth) continue;
+      // A hub node on a large graph can reach much of the corpus even at
+      // depth 2. Results past this point are weak paths the caller drops.
+      if (++visited > maxVisited) break;
 
-      const neighbors = adjacency.get(nodeId) ?? [];
-      for (const { neighborId, edge } of neighbors) {
-        const nextNode = nodeIndex.get(neighborId);
+      const neighbors = view.adjacency.get(nodeId) ?? [];
+      for (const { neighborId, edgeId } of neighbors) {
+        const nextNode = view.nodes.get(neighborId);
         if (!nextNode) continue;
+        const edge = view.edges.get(edgeId);
+        if (!edge) continue;
+        // Bound discovery, not just expansion. A single hub node can add
+        // tens of thousands of neighbours in one iteration, all of which
+        // would be returned and scored even though the loop stops
+        // expanding them.
+        if (!dist.has(neighborId) && pathTo.size >= maxVisited) continue;
         // Clamp weight to avoid division-by-zero on malformed edges;
         // 0.01 is below the documented 0.1 floor.
         const edgeCost = 1 / Math.max(edge.weight, 0.01);
