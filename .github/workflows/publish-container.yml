@@ -25,9 +25,11 @@ jobs:
 
       - name: Resolve version
         id: version
+        env:
+          DISPATCH_VERSION: ${{ inputs.version }}
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            VERSION="${{ inputs.version }}"
+            VERSION="$DISPATCH_VERSION"
           else
             VERSION="${GITHUB_REF_NAME#v}"
           fi

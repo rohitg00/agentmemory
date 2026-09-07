@@ -55,7 +55,30 @@ docker pull ghcr.io/rohitg00/agentmemory:latest
 
 Use the source-build flow above when you want Coolify to build directly
 from this repository. Use the GHCR image when you prefer faster deploys
-and version-pinned pulls.
+and version-pinned pulls: replace the `build:` block in
+`deploy/coolify/docker-compose.yml` with an `image:` line.
+
+```yaml
+services:
+  agentmemory:
+    image: ghcr.io/rohitg00/agentmemory:0.9.29
+    restart: unless-stopped
+    environment:
+      SERVICE_FQDN_AGENTMEMORY_3111: ${SERVICE_FQDN_AGENTMEMORY_3111}
+```
+
+Keep the existing `expose`, `volumes`, `healthcheck`, and `logging`
+settings. Only remove the source-build settings:
+
+```yaml
+build:
+  context: .
+  dockerfile: Dockerfile
+  args:
+    AGENTMEMORY_VERSION: "0.9.29"
+    III_VERSION: "0.11.2"
+    III_SDK_VERSION: "0.11.2"
+```
 
 ## Capture the HMAC secret
 
