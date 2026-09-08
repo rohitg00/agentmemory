@@ -53,6 +53,7 @@ const PROVIDERS: { value: string; label: string; envKey: string | null }[] = [
   { value: "openai", label: "OpenAI — gpt", envKey: "OPENAI_API_KEY" },
   { value: "gemini", label: "Google — gemini", envKey: "GEMINI_API_KEY" },
   { value: "openrouter", label: "OpenRouter — multi-model", envKey: "OPENROUTER_API_KEY" },
+  { value: "requesty", label: "Requesty — multi-model router", envKey: "REQUESTY_API_KEY" },
   { value: "minimax", label: "MiniMax — MiniMax-M3", envKey: "MINIMAX_API_KEY" },
   { value: "skip", label: "Skip — BM25-only mode (no LLM key)", envKey: null },
 ];
@@ -62,6 +63,7 @@ const PROVIDER_COST_HINTS: Record<string, string> = {
   openai: "rough cost: a mini-class model keeps compress/consolidate at fractions of a cent per session.",
   gemini: "rough cost: a Flash-class model keeps compress/consolidate at fractions of a cent per session.",
   openrouter: "rough cost: pick a small model; spend tracks your chosen model's per-token price.",
+  requesty: "rough cost: pick a small model; spend tracks your chosen model's per-token price.",
   minimax: "rough cost: scales with the MiniMax model price per token.",
 };
 

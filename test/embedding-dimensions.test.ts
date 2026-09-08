@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { resolveDimensions } from "../src/providers/embedding/_dimensions.js";
 import { OpenRouterEmbeddingProvider } from "../src/providers/embedding/openrouter.js";
+import { RequestyEmbeddingProvider } from "../src/providers/embedding/requesty.js";
 import { OpenAIEmbeddingProvider } from "../src/providers/embedding/openai.js";
 
 describe("resolveDimensions", () => {
@@ -72,6 +73,43 @@ describe("OpenRouterEmbeddingProvider dimension regression", () => {
     process.env["OPENROUTER_EMBEDDING_DIMENSIONS"] = "1024";
     const provider = new OpenRouterEmbeddingProvider("test-key");
     expect(provider.dimensions).toBe(1024);
+  });
+});
+
+describe("RequestyEmbeddingProvider dimension resolution", () => {
+  const originalEnv = { ...process.env };
+
+  beforeEach(() => {
+    process.env = { ...originalEnv };
+    delete process.env["REQUESTY_EMBEDDING_MODEL"];
+    delete process.env["REQUESTY_EMBEDDING_DIMENSIONS"];
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+  });
+
+  it("defaults to 1536 for openai/text-embedding-3-small", () => {
+    const provider = new RequestyEmbeddingProvider("test-key");
+    expect(provider.dimensions).toBe(1536);
+  });
+
+  it("reports 3072 for openai/text-embedding-3-large with no override", () => {
+    process.env["REQUESTY_EMBEDDING_MODEL"] = "openai/text-embedding-3-large";
+    const provider = new RequestyEmbeddingProvider("test-key");
+    expect(provider.dimensions).toBe(3072);
+  });
+
+  it("lets REQUESTY_EMBEDDING_DIMENSIONS override the model-derived dimensions", () => {
+    process.env["REQUESTY_EMBEDDING_MODEL"] = "openai/text-embedding-3-large";
+    process.env["REQUESTY_EMBEDDING_DIMENSIONS"] = "1024";
+    const provider = new RequestyEmbeddingProvider("test-key");
+    expect(provider.dimensions).toBe(1024);
+  });
+
+  it("throws when REQUESTY_API_KEY is missing", () => {
+    delete process.env["REQUESTY_API_KEY"];
+    expect(() => new RequestyEmbeddingProvider("")).toThrow(/REQUESTY_API_KEY is required/);
   });
 });
 

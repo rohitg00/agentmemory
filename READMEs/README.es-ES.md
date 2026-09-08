@@ -954,6 +954,7 @@ npm install @huggingface/transformers
 | Voyage AI | `voyage-code-3` | De pago | Optimizado para código |
 | Cohere | `embed-english-v3.0` | Trial gratis | Uso general |
 | OpenRouter | Cualquier modelo | Varía | Proxy multi-modelo |
+| Requesty | Cualquier modelo | Varía | Proxy multi-modelo |
 
 ---
 
@@ -1237,6 +1238,7 @@ agentmemory autodetecta desde tu entorno. Por defecto no se hacen llamadas LLM a
 | MiniMax | `MINIMAX_API_KEY` | Compatible con Anthropic |
 | Gemini | `GEMINI_API_KEY` | También habilita embeddings |
 | OpenRouter | `OPENROUTER_API_KEY` | Cualquier modelo |
+| Requesty | `REQUESTY_API_KEY` | Cualquier modelo |
 | OpenAI API | `OPENAI_API_KEY` | Por defecto `gpt-5.6-luna`, sobrescribe con `OPENAI_MODEL` |
 | **Local (Ollama / LM Studio / vLLM / llama.cpp)** | `OPENAI_API_KEY=local` + `OPENAI_BASE_URL=http://localhost:11434/v1` (Ollama) o `http://localhost:1234/v1` (LM Studio) + `OPENAI_MODEL=<your model>` | Cualquier cosa compatible con la API de OpenAI. Coste cero, corre en tu hardware. Ver [Modelos locales](#modelos-locales-ollama--lm-studio--vllm) más abajo. |
 | Claude subscription fallback | `AGENTMEMORY_ALLOW_AGENT_SDK=true` | Solo opt-in. Lanza sesiones de `@anthropic-ai/claude-agent-sdk`; solía causar recursión sin límite en el Stop-hook, por eso ya no es el comportamiento por defecto. |
@@ -1398,6 +1400,7 @@ Crea `~/.agentmemory/.env`:
 # ANTHROPIC_BASE_URL=...              # Optional: Anthropic-compatible proxy / Azure
 # GEMINI_API_KEY=...
 # OPENROUTER_API_KEY=...
+# REQUESTY_API_KEY=...
 # MINIMAX_API_KEY=...
 # OPENAI_API_KEY=***                       # NOTE: this same key auto-activates BOTH the
 #                                          # OpenAI LLM provider (here) AND the OpenAI

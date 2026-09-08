@@ -9,6 +9,7 @@ import { MinimaxProvider } from "./minimax.js";
 import { NoopProvider } from "./noop.js";
 import { OpenAIProvider } from "./openai.js";
 import { OpenRouterProvider } from "./openrouter.js";
+import { RequestyProvider } from "./requesty.js";
 import { ResilientProvider } from "./resilient.js";
 import { FallbackChainProvider } from "./fallback-chain.js";
 import { getEnvVar } from "../config.js";
@@ -42,6 +43,8 @@ function defaultModelFor(providerType: ProviderConfig["provider"]): string {
       return getEnvVar("GEMINI_MODEL") || "gemini-3.7-flash";
     case "openrouter":
       return getEnvVar("OPENROUTER_MODEL") || "anthropic/claude-sonnet-5";
+    case "requesty":
+      return getEnvVar("REQUESTY_MODEL") || "openai/gpt-4o-mini";
     case "minimax":
       return getEnvVar("MINIMAX_MODEL") || "MiniMax-M3";
     case "agent-sdk":
@@ -126,6 +129,12 @@ function createBaseProvider(config: ProviderConfig): MemoryProvider {
         config.model,
         config.maxTokens,
         "https://openrouter.ai/api/v1/chat/completions",
+      );
+    case "requesty":
+      return new RequestyProvider(
+        requireEnvVar("REQUESTY_API_KEY"),
+        config.model,
+        config.maxTokens,
       );
     case "openai": {
       const openaiKey = getEnvVar("OPENAI_API_KEY");

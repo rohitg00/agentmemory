@@ -155,6 +155,13 @@ function detectProvider(env: Record<string, string>): ProviderConfig {
       maxTokens,
     };
   }
+  if (hasRealValue(env["REQUESTY_API_KEY"])) {
+    return {
+      provider: "requesty",
+      model: env["REQUESTY_MODEL"] || "openai/gpt-4o-mini",
+      maxTokens,
+    };
+  }
 
   const allowAgentSdk = env["AGENTMEMORY_ALLOW_AGENT_SDK"] === "true";
   if (!allowAgentSdk) {
@@ -162,7 +169,7 @@ function detectProvider(env: Record<string, string>): ProviderConfig {
       pc.dim(
         "[agentmemory] No LLM provider key set — running zero-LLM with BM25 search. " +
           "Set EMBEDDING_PROVIDER=local for on-device semantic embeddings. " +
-          "Set ANTHROPIC_API_KEY (or GEMINI/OPENAI/OPENROUTER/MINIMAX) in ~/.agentmemory/.env for LLM compression and summaries. " +
+          "Set ANTHROPIC_API_KEY (or GEMINI/OPENAI/OPENROUTER/REQUESTY/MINIMAX) in ~/.agentmemory/.env for LLM compression and summaries. " +
           "Agent-SDK fallback stays off by default to avoid a Stop-hook recursion loop; opt in with AGENTMEMORY_AUTO_COMPRESS=true + AGENTMEMORY_ALLOW_AGENT_SDK=true.\n",
       ),
     );
@@ -242,6 +249,7 @@ export function detectLlmProviderKind(): "llm" | "noop" {
     hasRealValue(env["GEMINI_API_KEY"]) ||
     hasRealValue(env["GOOGLE_API_KEY"]) ||
     hasRealValue(env["OPENROUTER_API_KEY"]) ||
+    hasRealValue(env["REQUESTY_API_KEY"]) ||
     hasRealValue(env["MINIMAX_API_KEY"]) ||
     (hasRealValue(env["OPENAI_API_KEY"]) &&
       env["OPENAI_API_KEY_FOR_LLM"] !== "false")
@@ -278,6 +286,7 @@ export function detectEmbeddingProvider(
   if (source["VOYAGE_API_KEY"]) return "voyage";
   if (source["COHERE_API_KEY"]) return "cohere";
   if (source["OPENROUTER_API_KEY"]) return "openrouter";
+  if (source["REQUESTY_API_KEY"]) return "requesty";
   return null;
 }
 
@@ -417,6 +426,7 @@ function hasLLMProviderConfigured(env: Record<string, string | undefined>): bool
     env["ANTHROPIC_API_KEY"] ||
       openaiKeyForLlm ||
       env["OPENROUTER_API_KEY"] ||
+      env["REQUESTY_API_KEY"] ||
       env["GEMINI_API_KEY"] ||
       env["GOOGLE_API_KEY"] ||
       env["MINIMAX_API_KEY"] ||
@@ -483,6 +493,7 @@ const VALID_PROVIDERS = new Set([
   "anthropic",
   "gemini",
   "openrouter",
+  "requesty",
   "agent-sdk",
   "minimax",
   "openai",
