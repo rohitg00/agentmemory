@@ -1,5 +1,4 @@
 import type { ISdk } from "iii-sdk";
-import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";

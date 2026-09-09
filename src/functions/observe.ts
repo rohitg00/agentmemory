@@ -1,5 +1,5 @@
 import type { ISdk } from "iii-sdk";
-import type { RawObservation, HookPayload, Session } from "../types.js";
+import type { RawObservation, CompressedObservation, HookPayload, Session } from "../types.js";
 import { KV, STREAM, generateId } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { stripPrivateData } from "./privacy.js";

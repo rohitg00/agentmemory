@@ -176,7 +176,7 @@ function sessionContextFields(body: Record<string, unknown>): Partial<HookPayloa
 function parseObserveRequest(
   req: ApiRequest<HookPayload>,
 ): { payload: HookPayload } | { error: Response } {
-  const body = (req.body ?? {}) as Record<string, unknown>;
+  const body = (req.body ?? {}) as unknown as Record<string, unknown>;
   const hookType = asNonEmptyString(body.hookType);
   const sessionId = asNonEmptyString(body.sessionId);
   const project = asNonEmptyString(body.project);
@@ -349,7 +349,7 @@ export function registerApiTriggers(
   });
 
   sdk.registerFunction("api::health", 
-    async (req: ApiRequest): Promise<Response> => {
+    async (_req: ApiRequest): Promise<Response> => {
       const health = await getLatestHealth(kv);
       const llmExecutionState = getLlmExecutionState(provider);
       const functionMetrics = metricsStore
@@ -3348,7 +3348,8 @@ export function registerApiTriggers(
     async (req: ApiRequest): Promise<Response> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
-      if (!req.body?.name || !req.body?.steps) {
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      if (!body.name || !body.steps) {
         return {
           status_code: 400,
           body: { error: "name and steps are required" },

@@ -1,5 +1,5 @@
 import type { ISdk } from "iii-sdk";
-import type { Memory, CompressedObservation, ContextBlock } from "../types.js";
+import type { Memory } from "../types.js";
 import { KV, generateId } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { recordAudit } from "./audit.js";

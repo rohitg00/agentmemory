@@ -139,7 +139,9 @@ function classifyScope(
   }
 
   const related = new Set(
-    (context.relatedRepoIds ?? []).map((repoId) => normalized(repoId)),
+    (context.relatedRepoIds ?? [])
+      .map((repoId) => normalized(repoId))
+      .filter((repoId): repoId is string => repoId !== undefined),
   );
   // Once a candidate has canonical repository evidence, aliases cannot
   // override it. Alias matching remains available only for legacy candidates

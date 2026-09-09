@@ -121,6 +121,7 @@ function isValidShardDescriptor(
     candidate.scope.length > 0 &&
     typeof candidate.key === "string" &&
     candidate.key.length > 0 &&
+    typeof candidate.chars === "number" &&
     Number.isInteger(candidate.chars) &&
     candidate.chars >= 0
   );

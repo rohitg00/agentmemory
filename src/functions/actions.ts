@@ -299,6 +299,7 @@ export function registerActionsFunction(sdk: ISdk, kv: StateKV): void {
           error: `type must be one of: ${VALID_EDGE_TYPES.join(", ")}`,
         };
       }
+      const edgeType = data.type;
 
       try {
         return await withActionStoreLock(async () => {
@@ -327,7 +328,7 @@ export function registerActionsFunction(sdk: ISdk, kv: StateKV): void {
           }
           const edge: ActionEdge = {
             id: generateId("ae"),
-            type: data.type,
+            type: edgeType,
             sourceActionId: data.sourceActionId,
             targetActionId: data.targetActionId,
             createdAt: new Date().toISOString(),

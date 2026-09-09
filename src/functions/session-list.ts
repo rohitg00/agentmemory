@@ -1,4 +1,4 @@
-import type { Session } from "../types.js";
+import type { Session, SessionSummary } from "../types.js";
 
 export interface SessionListOptions {
   limit?: number;
@@ -12,7 +12,13 @@ export interface SessionListOptions {
 }
 
 export interface SessionPage {
-  sessions: Array<Partial<Session> & Pick<Session, "id" | "project" | "status"> & { issues?: string[] }>;
+  sessions: Array<
+    Omit<Partial<Session>, "summary"> &
+      Pick<Session, "id" | "project" | "status"> & {
+        issues?: string[];
+        summary?: string | SessionSummary;
+      }
+  >;
   pagination: {
     total: number;
     limit: number;

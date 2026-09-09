@@ -1580,10 +1580,12 @@ function optionalStrictDate(
   field: string,
 ): string | undefined {
   if (value === undefined || value === null || value === "") return undefined;
-  const match =
-    typeof value === "string"
-      ? EXPLICIT_RFC3339_PATTERN.exec(value)
-      : null;
+  if (typeof value !== "string") {
+    throw new LessonInputError(
+      `${field} must be an RFC3339 timestamp with explicit Z or numeric offset`,
+    );
+  }
+  const match = EXPLICIT_RFC3339_PATTERN.exec(value);
   if (!match) {
     throw new LessonInputError(
       `${field} must be an RFC3339 timestamp with explicit Z or numeric offset`,

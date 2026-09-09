@@ -6,7 +6,7 @@ import type {
   Session,
   MemoryProvider,
 } from "../types.js";
-import { KV, generateId, fingerprintId } from "../state/schema.js";
+import { KV, fingerprintId } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { recordAudit } from "./audit.js";
 import { logger } from "../logger.js";

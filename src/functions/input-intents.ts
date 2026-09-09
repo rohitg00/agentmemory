@@ -190,7 +190,7 @@ export function registerInputIntentsFunction(sdk: ISdk, kv: StateKV): void {
       !targetSession ||
       !SESSION_REF.test(targetSession) ||
       (data.sourceSession !== undefined && !sourceSession) ||
-      (sourceSession !== undefined && !SESSION_REF.test(sourceSession)) ||
+      (sourceSession && !SESSION_REF.test(sourceSession)) ||
       !payloadRef ||
       !OPAQUE_REF.test(payloadRef) ||
       !payloadSha256 ||
@@ -219,7 +219,7 @@ export function registerInputIntentsFunction(sdk: ISdk, kv: StateKV): void {
       const immutable = {
         idempotencyKey,
         targetSession,
-        sourceSession,
+        sourceSession: sourceSession ?? undefined,
         payloadRef,
         payloadSha256,
         payloadBytes,
@@ -288,7 +288,7 @@ export function registerInputIntentsFunction(sdk: ISdk, kv: StateKV): void {
       !workerId ||
       !SESSION_REF.test(workerId) ||
       (data.targetSession !== undefined && !targetSession) ||
-      (targetSession !== undefined && !SESSION_REF.test(targetSession)) ||
+      (targetSession && !SESSION_REF.test(targetSession)) ||
       ttlMs === null
     ) {
       return { success: false, error: "invalid_claim_request" };
@@ -462,7 +462,7 @@ export function registerInputIntentsFunction(sdk: ISdk, kv: StateKV): void {
         !claimToken ||
         !outcomes.includes(data.outcome) ||
         (data.errorCode !== undefined && !errorCode) ||
-        (errorCode !== undefined && !ERROR_CODE.test(errorCode)) ||
+        (errorCode && !ERROR_CODE.test(errorCode)) ||
         notBefore === null
       ) {
         return { success: false, error: "invalid_settlement" };
@@ -505,8 +505,8 @@ export function registerInputIntentsFunction(sdk: ISdk, kv: StateKV): void {
           intent.status = data.outcome;
           intent.settledAt = now;
         }
-        intent.evidence = evidence;
-        intent.lastErrorCode = errorCode;
+        intent.evidence = evidence ?? undefined;
+        intent.lastErrorCode = errorCode ?? undefined;
         intent.updatedAt = now;
         intent.revision += 1;
         clearClaim(intent);
@@ -562,7 +562,7 @@ export function registerInputIntentsFunction(sdk: ISdk, kv: StateKV): void {
         (data.intentId !== undefined && !intentId) ||
         (data.targetSession !== undefined && !targetSession) ||
         (data.statuses !== undefined &&
-          (statuses === null || statuses.length !== data.statuses.length)) ||
+          (statuses == null || statuses.length !== data.statuses.length)) ||
         limit === null
       ) {
         return { success: false, error: "invalid_input_list_query" };
@@ -598,7 +598,7 @@ export function registerInputIntentsFunction(sdk: ISdk, kv: StateKV): void {
         !intentId ||
         !actor ||
         !SESSION_REF.test(actor) ||
-        (reason !== undefined && !ERROR_CODE.test(reason)) ||
+        (reason && !ERROR_CODE.test(reason)) ||
         (data.reason !== undefined && !reason)
       ) {
         return { success: false, error: "invalid_cancel_request" };
@@ -616,7 +616,7 @@ export function registerInputIntentsFunction(sdk: ISdk, kv: StateKV): void {
         intent.status = "cancelled";
         intent.settledAt = new Date().toISOString();
         intent.updatedAt = intent.settledAt;
-        intent.lastErrorCode = reason;
+        intent.lastErrorCode = reason ?? undefined;
         intent.revision += 1;
         clearClaim(intent);
         await kv.set(KV.inputIntents, intent.id, intent);
