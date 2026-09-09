@@ -1401,12 +1401,13 @@ async function runIiiInstaller(): Promise<{ ok: boolean; binPath: string | null 
 
   const binDir = agentmemoryBinDir();
   const binPath = privateIiiPath();
-  const installCmd = [
-    `mkdir -p "${binDir}"`,
-    `curl -fsSL "${releaseUrl}" | tar -xz -C "${binDir}"`,
-    `chmod +x "${binPath}"`,
-  ].join(" && ");
-  const installerOk = runCommand(shBin, ["-c", installCmd], {
+  // binDir/binPath come from $HOME (or $USERPROFILE) and releaseUrl from the pinned
+  // release. Interpolating them into a shell string lets any of them close the quoting
+  // and run arbitrary commands, so pass them as positional arguments instead:
+  // `sh -c SCRIPT name a b c` binds "$1".."$3" without the shell parsing their contents.
+  const installScript =
+    'mkdir -p "$1" && curl -fsSL "$3" | tar -xz -C "$1" && chmod +x "$2"';
+  const installerOk = runCommand(shBin, ["-c", installScript, "sh", binDir, binPath, releaseUrl], {
     label: `Installing iii-engine v${IIPINNED_VERSION} (pinned)`,
     optional: true,
   });
