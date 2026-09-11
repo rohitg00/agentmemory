@@ -70,6 +70,7 @@ import { registerLeasesFunction } from "./functions/leases.js";
 import { registerRoutinesFunction } from "./functions/routines.js";
 import { registerSignalsFunction } from "./functions/signals.js";
 import { registerCheckpointsFunction } from "./functions/checkpoints.js";
+import { registerMicroCompactFunction } from "./functions/micro-compact.js";
 import { registerFlowCompressFunction } from "./functions/flow-compress.js";
 import { registerMeshFunction } from "./functions/mesh.js";
 import { registerBranchAwareFunction } from "./functions/branch-aware.js";
@@ -312,6 +313,7 @@ async function main() {
   registerRoutinesFunction(sdk, kv);
   registerSignalsFunction(sdk, kv);
   registerCheckpointsFunction(sdk, kv);
+  registerMicroCompactFunction(sdk, kv);
   registerMeshFunction(sdk, kv, secret);
   registerBranchAwareFunction(sdk, kv);
   registerFlowCompressFunction(sdk, kv, provider);

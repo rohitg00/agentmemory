@@ -3,6 +3,7 @@ import type {
   CompressedObservation,
   Memory,
   Session,
+  Lesson,
   MemoryProvider,
 } from "../types.js";
 import { KV, generateId } from "../state/schema.js";
@@ -62,14 +63,112 @@ function parseMemoryXml(
   };
 }
 
+// Gradual Self-Healing Consolidation: opportunistic re-tag of legacy records
+// written under an un-scoped Project Display Name (e.g. "Monolith") to the
+// canonical Project Key (e.g. "github.com-myorg-monolith"). Runs inline as
+// part of the normal consolidation write cycle — no cold migrations, no
+// locking. Legacy names come from (a) sessions already scoped to the
+// canonical key that carry a projectDisplayName, and (b) an explicit
+// caller-supplied list. Idempotent by construction: a healed record's
+// project equals the canonical key, so a second pass matches nothing.
+export async function resolveLegacyProjectNames(
+  kv: StateKV,
+  canonicalProject: string,
+  explicitNames: string[] = [],
+): Promise<Set<string>> {
+  const legacyNames = new Set<string>();
+  for (const raw of explicitNames) {
+    const name = raw.trim();
+    if (name && name !== canonicalProject) legacyNames.add(name);
+  }
+  if (!canonicalProject.trim()) return legacyNames;
+
+  const sessions = await kv.list<Session>(KV.sessions).catch(() => [] as Session[]);
+  for (const s of sessions) {
+    if (s.project === canonicalProject && s.projectDisplayName?.trim()) {
+      legacyNames.add(s.projectDisplayName.trim());
+    }
+  }
+  legacyNames.delete(canonicalProject);
+  return legacyNames;
+}
+
+export async function healLegacyProjects(
+  kv: StateKV,
+  canonicalProject: string,
+  opts?: { legacyNames?: string[] },
+): Promise<{
+  healedMemories: number;
+  healedLessons: number;
+  healedSessions: number;
+}> {
+  const legacyNames = await resolveLegacyProjectNames(
+    kv,
+    canonicalProject,
+    opts?.legacyNames ?? [],
+  );
+  if (legacyNames.size === 0) {
+    return { healedMemories: 0, healedLessons: 0, healedSessions: 0 };
+  }
+
+  const [memories, lessons, sessions] = await Promise.all([
+    kv.list<Memory>(KV.memories).catch(() => [] as Memory[]),
+    kv.list<Lesson>(KV.lessons).catch(() => [] as Lesson[]),
+    kv.list<Session>(KV.sessions).catch(() => [] as Session[]),
+  ]);
+
+  let healedMemories = 0;
+  let healedLessons = 0;
+  let healedSessions = 0;
+  const writes: Promise<unknown>[] = [];
+
+  for (const m of memories) {
+    if (m.project && legacyNames.has(m.project)) {
+      m.project = canonicalProject;
+      writes.push(kv.set(KV.memories, m.id, m));
+      healedMemories++;
+    }
+  }
+  for (const l of lessons) {
+    if (l.project && legacyNames.has(l.project)) {
+      l.project = canonicalProject;
+      writes.push(kv.set(KV.lessons, l.id, l));
+      healedLessons++;
+    }
+  }
+  for (const s of sessions) {
+    if (s.project && legacyNames.has(s.project)) {
+      s.project = canonicalProject;
+      writes.push(kv.set(KV.sessions, s.id, s));
+      healedSessions++;
+    }
+  }
+
+  await Promise.all(writes);
+  return { healedMemories, healedLessons, healedSessions };
+}
+
 export function registerConsolidateFunction(
   sdk: ISdk,
   kv: StateKV,
   provider: MemoryProvider,
 ): void {
   sdk.registerFunction("mem::consolidate", 
-    async (data: { project?: string; minObservations?: number }) => {
+    async (data: {
+      project?: string;
+      minObservations?: number;
+      project_display_name?: string;
+    }) => {
       const minObs = data.minObservations ?? 10;
+
+      const healed = data.project
+        ? await healLegacyProjects(kv, data.project, {
+            legacyNames: data.project_display_name?.trim()
+              ? [data.project_display_name.trim()]
+              : undefined,
+          })
+        : undefined;
+      const healSummary = healed ? { healed } : {};
 
       const sessions = await kv.list<Session>(KV.sessions);
       const filtered = data.project
@@ -91,14 +190,14 @@ export function registerConsolidateFunction(
       }
       for (let i = 0; i < filtered.length; i++) {
         for (const obs of obsPerSession[i]) {
-          if (obs.title && obs.importance >= 5) {
+          if (!obs.isTelemetry && obs.title && obs.importance >= 5) {
             allObs.push({ ...obs, sid: filtered[i].id });
           }
         }
       }
 
       if (allObs.length < minObs) {
-        return { consolidated: 0, reason: "insufficient_observations" };
+        return { consolidated: 0, reason: "insufficient_observations", ...healSummary };
       }
 
       const conceptGroups = new Map<string, typeof allObs>();
@@ -235,7 +334,7 @@ export function registerConsolidateFunction(
         consolidated,
         totalObs: allObs.length,
       });
-      return { consolidated, totalObservations: allObs.length };
+      return { consolidated, totalObservations: allObs.length, ...healSummary };
     },
   );
 }

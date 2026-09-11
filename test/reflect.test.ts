@@ -4,7 +4,17 @@ vi.mock("../src/logger.js", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
-import { registerReflectFunctions } from "../src/functions/reflect.js";
+import {
+  registerReflectFunctions,
+  INSIGHT_MAX_SOURCE_IDS,
+  MAX_CONCEPTS_PER_CLUSTER,
+  MAX_CLUSTER_FACTS,
+  MAX_CLUSTER_LESSONS,
+  MAX_CLUSTER_CRYSTALS,
+  buildGraphClusters,
+  buildJaccardClusters,
+} from "../src/functions/reflect.js";
+import { buildReflectPrompt, MAX_REFLECT_PROMPT_CHARS } from "../src/prompts/reflect.js";
 import type { Insight, GraphNode, GraphEdge, SemanticMemory, Lesson, Crystal } from "../src/types.js";
 
 function mockKV() {
@@ -251,6 +261,187 @@ describe("Reflect", () => {
       expect(result.success).toBe(true);
       expect(result.newInsights).toBe(0);
     });
+
+    it("isolates facts, lessons, and crystals by project when project option is passed", async () => {
+      await kv.set("mem:sessions", "ses_alpha", {
+        id: "ses_alpha",
+        project: "proj-alpha",
+        cwd: "/alpha",
+        startedAt: new Date().toISOString(),
+        status: "completed",
+        observationCount: 5,
+      });
+      await kv.set("mem:sessions", "ses_beta", {
+        id: "ses_beta",
+        project: "proj-beta",
+        cwd: "/beta",
+        startedAt: new Date().toISOString(),
+        status: "completed",
+        observationCount: 5,
+      });
+
+      await kv.set("mem:graph:nodes", "node_alpha_sec", makeConceptNode("alpha_sec"));
+      await kv.set("mem:graph:nodes", "node_alpha_val", makeConceptNode("alpha_val"));
+      await kv.set("mem:graph:edges", "edge_alpha", makeEdge("alpha_sec", "alpha_val"));
+
+      await kv.set("mem:graph:nodes", "node_beta_auth", makeConceptNode("beta_auth"));
+      await kv.set("mem:graph:nodes", "node_beta_crypto", makeConceptNode("beta_crypto"));
+      await kv.set("mem:graph:edges", "edge_beta", makeEdge("beta_auth", "beta_crypto"));
+
+      await kv.set("mem:semantic", "sem_alpha_1", {
+        ...makeSemantic("alpha_sec and alpha_val are critical"),
+        id: "sem_alpha_1",
+        sourceSessionIds: ["ses_alpha"],
+      });
+      await kv.set("mem:semantic", "sem_alpha_2", {
+        ...makeSemantic("alpha_sec rules require strict enforcement"),
+        id: "sem_alpha_2",
+        sourceSessionIds: ["ses_alpha"],
+      });
+      await kv.set("mem:lessons", "lsn_alpha_1", {
+        ...makeLesson("alpha_sec lesson for validation", ["alpha_sec"]),
+        id: "lsn_alpha_1",
+        project: "proj-alpha",
+      });
+      await kv.set("mem:crystals", "crys_alpha_1", {
+        ...makeCrystal("alpha crystal completed", ["alpha_sec rule"]),
+        id: "crys_alpha_1",
+        project: "proj-alpha",
+      });
+
+      await kv.set("mem:semantic", "sem_beta_1", {
+        ...makeSemantic("beta_auth and beta_crypto are used for encryption"),
+        id: "sem_beta_1",
+        sourceSessionIds: ["ses_beta"],
+      });
+      await kv.set("mem:lessons", "lsn_beta_1", {
+        ...makeLesson("beta_auth lesson for crypto", ["beta_auth"]),
+        id: "lsn_beta_1",
+        project: "proj-beta",
+      });
+      await kv.set("mem:crystals", "crys_beta_1", {
+        ...makeCrystal("beta crystal completed", ["beta_auth encryption"]),
+        id: "crys_beta_1",
+        project: "proj-beta",
+      });
+
+      const result = (await sdk.trigger("mem::reflect", {
+        project: "proj-alpha",
+      })) as {
+        success: boolean;
+        newInsights: number;
+      };
+
+      expect(result.success).toBe(true);
+      expect(result.newInsights).toBeGreaterThan(0);
+
+      const insights = await kv.list<Insight>("mem:insights");
+      expect(insights.length).toBeGreaterThan(0);
+      for (const ins of insights) {
+        expect(ins.project).toBe("proj-alpha");
+        expect(ins.sourceMemoryIds).not.toContain("sem_beta_1");
+        expect(ins.sourceLessonIds).not.toContain("lsn_beta_1");
+        expect(ins.sourceCrystalIds).not.toContain("crys_beta_1");
+        expect(ins.sourceConceptCluster).not.toContain("beta_auth");
+        expect(ins.sourceConceptCluster).not.toContain("beta_crypto");
+      }
+    });
+
+    it("bounds cluster items and caps source IDs with MAX_CLUSTER_FACTS, MAX_CLUSTER_LESSONS, MAX_CLUSTER_CRYSTALS", async () => {
+      expect(INSIGHT_MAX_SOURCE_IDS).toBe(20);
+      expect(MAX_CLUSTER_FACTS).toBe(10);
+      expect(MAX_CLUSTER_LESSONS).toBe(10);
+      expect(MAX_CLUSTER_CRYSTALS).toBe(5);
+
+      await kv.set("mem:graph:nodes", "node_security", makeConceptNode("security"));
+      await kv.set("mem:graph:nodes", "node_validation", makeConceptNode("validation"));
+      await kv.set("mem:graph:edges", "edge_1", makeEdge("security", "validation"));
+
+      for (let i = 0; i < 25; i++) {
+        const pad = i.toString().padStart(2, "0");
+        await kv.set(
+          "mem:semantic",
+          `sem_${pad}`,
+          makeSemantic(`security fact ${pad}`, `sem_${pad}`),
+        );
+        await kv.set(
+          "mem:lessons",
+          `lsn_${pad}`,
+          {
+            ...makeLesson(`security lesson ${pad}`, ["security"]),
+            id: `lsn_${pad}`,
+          },
+        );
+        await kv.set(
+          "mem:crystals",
+          `crys_${pad}`,
+          {
+            ...makeCrystal(`crystal narrative ${pad}`, [`security topic ${pad}`]),
+            id: `crys_${pad}`,
+          },
+        );
+      }
+
+      const result = (await sdk.trigger("mem::reflect", {})) as {
+        success: boolean;
+        newInsights: number;
+      };
+
+      expect(result.success).toBe(true);
+      expect(result.newInsights).toBeGreaterThan(0);
+
+      const insights = await kv.list<Insight>("mem:insights");
+      expect(insights.length).toBeGreaterThan(0);
+      for (const ins of insights) {
+        expect(ins.sourceMemoryIds.length).toBe(MAX_CLUSTER_FACTS);
+        expect(ins.sourceLessonIds.length).toBe(MAX_CLUSTER_LESSONS);
+        expect(ins.sourceCrystalIds.length).toBe(MAX_CLUSTER_CRYSTALS);
+      }
+    });
+
+    it("sorts facts and lessons by confidence descending when bounding", async () => {
+      await kv.set("mem:graph:nodes", "node_security", makeConceptNode("security"));
+      await kv.set("mem:graph:nodes", "node_validation", makeConceptNode("validation"));
+      await kv.set("mem:graph:edges", "edge_1", makeEdge("security", "validation"));
+
+      for (let i = 0; i < 15; i++) {
+        const pad = i.toString().padStart(2, "0");
+        await kv.set(
+          "mem:semantic",
+          `sem_${pad}`,
+          {
+            ...makeSemantic(`security fact ${pad}`, `sem_${pad}`),
+            confidence: 0.1 + i * 0.05,
+          },
+        );
+        await kv.set(
+          "mem:lessons",
+          `lsn_${pad}`,
+          {
+            ...makeLesson(`security lesson ${pad}`, ["security"]),
+            id: `lsn_${pad}`,
+            confidence: 0.1 + i * 0.05,
+          },
+        );
+      }
+
+      await sdk.trigger("mem::reflect", {});
+
+      const insights = await kv.list<Insight>("mem:insights");
+      expect(insights.length).toBeGreaterThan(0);
+      const ins = insights[0];
+      expect(ins.sourceMemoryIds.length).toBe(MAX_CLUSTER_FACTS);
+      expect(ins.sourceMemoryIds).toContain("sem_14");
+      expect(ins.sourceMemoryIds).toContain("sem_13");
+      expect(ins.sourceMemoryIds).not.toContain("sem_00");
+      expect(ins.sourceMemoryIds).not.toContain("sem_01");
+
+      expect(ins.sourceLessonIds.length).toBe(MAX_CLUSTER_LESSONS);
+      expect(ins.sourceLessonIds).toContain("lsn_14");
+      expect(ins.sourceLessonIds).toContain("lsn_13");
+      expect(ins.sourceLessonIds).not.toContain("lsn_00");
+      expect(ins.sourceLessonIds).not.toContain("lsn_01");
+    });
   });
 
   describe("mem::insight-list", () => {
@@ -347,6 +538,150 @@ describe("Reflect", () => {
 
       const after = await kv.get<Insight>("mem:insights", "ins_weak");
       expect(after!.deleted).toBe(true);
+    });
+  });
+
+  describe("buildGraphClusters (Issue #1133 / PR #1243)", () => {
+    it("discovers disconnected concept clusters via continue on visited seeds", () => {
+      const nodes: GraphNode[] = [
+        makeConceptNode("alpha"),
+        makeConceptNode("beta"),
+        makeConceptNode("gamma"),
+        makeConceptNode("delta"),
+      ];
+      const edges: GraphEdge[] = [
+        makeEdge("alpha", "beta"),
+        makeEdge("gamma", "delta"),
+      ];
+
+      const clusters = buildGraphClusters(nodes, edges, 10);
+      expect(clusters.length).toBe(2);
+      expect(clusters[0]).toEqual(expect.arrayContaining(["alpha", "beta"]));
+      expect(clusters[1]).toEqual(expect.arrayContaining(["gamma", "delta"]));
+    });
+
+    it("respects maxClusters limit across disconnected components", () => {
+      const nodes: GraphNode[] = [
+        makeConceptNode("c1_a"),
+        makeConceptNode("c1_b"),
+        makeConceptNode("c2_a"),
+        makeConceptNode("c2_b"),
+        makeConceptNode("c3_a"),
+        makeConceptNode("c3_b"),
+      ];
+      const edges: GraphEdge[] = [
+        makeEdge("c1_a", "c1_b"),
+        makeEdge("c2_a", "c2_b"),
+        makeEdge("c3_a", "c3_b"),
+      ];
+
+      const clusters = buildGraphClusters(nodes, edges, 2);
+      expect(clusters.length).toBe(2);
+    });
+
+    it("caps cluster size at MAX_CONCEPTS_PER_CLUSTER", () => {
+      const hub = makeConceptNode("hub");
+      const nodes: GraphNode[] = [hub];
+      const edges: GraphEdge[] = [];
+
+      for (let i = 0; i < 25; i++) {
+        const leaf = makeConceptNode(`leaf_${i}`);
+        nodes.push(leaf);
+        edges.push({
+          id: `edge_hub_leaf_${i}`,
+          type: "related_to",
+          sourceNodeId: hub.id,
+          targetNodeId: leaf.id,
+          weight: 1,
+          sourceObservationIds: [],
+          createdAt: "2026-04-01T00:00:00Z",
+        });
+      }
+
+      const clusters = buildGraphClusters(nodes, edges, 5);
+      expect(clusters.length).toBeGreaterThan(0);
+      expect(clusters[0].length).toBe(MAX_CONCEPTS_PER_CLUSTER);
+      expect(clusters[0].length).toBe(15);
+    });
+  });
+
+  describe("buildJaccardClusters", () => {
+    it("uses continue on visited concepts and discovers multiple clusters", () => {
+      const memories: SemanticMemory[] = [
+        makeSemantic("database migration replication performance indexing"),
+        makeSemantic("database migration replication failover clustering"),
+        makeSemantic("frontend styling components responsive layout"),
+        makeSemantic("frontend styling components hydration render"),
+      ];
+      const lessons: Lesson[] = [
+        makeLesson("database replication requires careful monitoring", ["database", "replication"]),
+        makeLesson("frontend layout should be responsive", ["frontend", "styling"]),
+      ];
+
+      const clusters = buildJaccardClusters(memories, lessons, 10);
+      expect(clusters.length).toBeGreaterThanOrEqual(2);
+    });
+
+    it("caps cluster size at MAX_CONCEPTS_PER_CLUSTER", () => {
+      const tags = Array.from({ length: 30 }, (_, i) => `concept_tag_${i}`);
+      const lessons: Lesson[] = [
+        { ...makeLesson("lesson one", tags), id: "lsn_1" },
+        { ...makeLesson("lesson two", tags), id: "lsn_2" },
+      ];
+
+      const clusters = buildJaccardClusters([], lessons, 5);
+      expect(clusters.length).toBeGreaterThan(0);
+      for (const cluster of clusters) {
+        expect(cluster.length).toBeLessThanOrEqual(MAX_CONCEPTS_PER_CLUSTER);
+      }
+      expect(clusters[0].length).toBe(MAX_CONCEPTS_PER_CLUSTER);
+      expect(clusters[0].length).toBe(15);
+    });
+
+    it("respects maxClusters limit", () => {
+      const lessons: Lesson[] = [
+        makeLesson("l1", ["alpha_one", "alpha_two"]),
+        makeLesson("l1b", ["alpha_one", "alpha_two"]),
+        makeLesson("l2", ["beta_one", "beta_two"]),
+        makeLesson("l2b", ["beta_one", "beta_two"]),
+        makeLesson("l3", ["gamma_one", "gamma_two"]),
+        makeLesson("l3b", ["gamma_one", "gamma_two"]),
+      ];
+
+      const clusters = buildJaccardClusters([], lessons, 2);
+      expect(clusters.length).toBeLessThanOrEqual(2);
+    });
+  });
+
+  describe("buildReflectPrompt & MAX_REFLECT_PROMPT_CHARS", () => {
+    it("returns prompt as-is when under MAX_REFLECT_PROMPT_CHARS", () => {
+      const cluster = {
+        concepts: ["security", "auth"],
+        facts: [{ fact: "JWT tokens must be validated", confidence: 0.9 }],
+        lessons: [{ content: "Never log auth tokens", confidence: 0.8 }],
+        crystalNarratives: ["Implemented auth flow"],
+      };
+
+      const prompt = buildReflectPrompt(cluster);
+      expect(prompt.length).toBeLessThan(MAX_REFLECT_PROMPT_CHARS);
+      expect(prompt).toContain("## Concept Cluster: security, auth");
+      expect(prompt).toContain("JWT tokens must be validated");
+      expect(prompt).not.toContain("[... truncated due to size limit]");
+    });
+
+    it("truncates prompt cleanly when exceeding MAX_REFLECT_PROMPT_CHARS", () => {
+      const giantFact = "a".repeat(15000);
+      const cluster = {
+        concepts: ["scalability"],
+        facts: [{ fact: giantFact, confidence: 0.9 }],
+        lessons: [],
+        crystalNarratives: [],
+      };
+
+      const prompt = buildReflectPrompt(cluster);
+      expect(prompt.length).toBe(MAX_REFLECT_PROMPT_CHARS);
+      expect(prompt).toContain("## Concept Cluster: scalability");
+      expect(prompt.endsWith("\n\n[... truncated due to size limit]")).toBe(true);
     });
   });
 });

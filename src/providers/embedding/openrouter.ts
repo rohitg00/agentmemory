@@ -12,14 +12,17 @@ export class OpenRouterEmbeddingProvider implements EmbeddingProvider {
   readonly dimensions: number;
   private apiKey: string;
   private model: string;
+  private customDimensions: boolean;
 
   constructor(apiKey?: string) {
     this.apiKey = apiKey || getEnvVar("OPENROUTER_API_KEY") || "";
     if (!this.apiKey) throw new Error("OPENROUTER_API_KEY is required");
     this.model = getEnvVar("OPENROUTER_EMBEDDING_MODEL") || DEFAULT_MODEL;
+    const dimEnv = getEnvVar("OPENROUTER_EMBEDDING_DIMENSIONS");
+    this.customDimensions = Boolean(dimEnv && dimEnv.trim().length > 0);
     this.dimensions = resolveDimensions(
       this.model,
-      getEnvVar("OPENROUTER_EMBEDDING_DIMENSIONS"),
+      dimEnv,
       "OPENROUTER_EMBEDDING_DIMENSIONS",
     );
   }
@@ -39,6 +42,7 @@ export class OpenRouterEmbeddingProvider implements EmbeddingProvider {
       body: JSON.stringify({
         model: this.model,
         input: texts,
+        ...(this.customDimensions ? { dimensions: this.dimensions } : {}),
       }),
     });
 

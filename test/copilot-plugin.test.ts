@@ -288,14 +288,15 @@ describe("Copilot hook scripts", () => {
     const result = await runHook(
       "scripts/session-start.mjs",
       { sessionId: "copilot-session", cwd: "C:\\repo" },
-      { AGENTMEMORY_INJECT_CONTEXT: "true" },
+      { AGENTMEMORY_INJECT_CONTEXT: "true", AGENTMEMORY_PROJECT_NAME: "copilot-repo" },
     );
 
     expect(result.stdout).toBe("remembered context");
     expect(result.requests[0]?.path).toBe("/agentmemory/session/start");
     expect(result.requests[0]?.body).toMatchObject({
       sessionId: "copilot-session",
-      project: "C:\\repo",
+      project: "copilot-repo",
+      project_display_name: "copilot-repo",
       cwd: "C:\\repo",
     });
   });

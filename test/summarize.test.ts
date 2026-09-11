@@ -8,6 +8,7 @@ vi.mock("../src/state/schema.js", () => ({
   KV: {
     sessions: "sessions",
     summaries: "summaries",
+    summaryPartials: (sessionId: string) => `summary_partials:${sessionId}`,
     observations: (sessionId: string) => `obs:${sessionId}`,
     audit: "audit",
   },
@@ -478,5 +479,125 @@ describe("mem::summarize chunking", () => {
 
     expect(result.success).toBe(false);
     expect(result.error).toBe("parse_failed");
+  });
+
+  it("zero-delta unchanged guard returns cached summary with 0 LLM calls", async () => {
+    const provider = makeProvider([
+      summaryXml({
+        title: "Initial summary",
+        decisions: ["decision 1"],
+        files: ["src/index.ts"],
+        concepts: ["initial"],
+      }),
+    ]);
+    const { handler } = await setupHandler({
+      sessionId: "ses_zero_delta",
+      obsCount: 5,
+      provider,
+    });
+
+    const firstResult: any = await handler({ sessionId: "ses_zero_delta" });
+    expect(firstResult.success).toBe(true);
+    expect(firstResult.summary.title).toBe("Initial summary");
+    expect(provider.calls).toHaveLength(1);
+
+    // Second summarize on unchanged observations returns cached: true with 0 new provider calls
+    const secondResult: any = await handler({ sessionId: "ses_zero_delta" });
+    expect(secondResult.success).toBe(true);
+    expect(secondResult.cached).toBe(true);
+    expect(secondResult.summary.title).toBe("Initial summary");
+    expect(provider.calls).toHaveLength(1);
+  });
+
+  it("chunk partial memoization reuses earlier chunk partials when delta observations are added", async () => {
+    process.env.SUMMARIZE_CHUNK_SIZE = "100";
+    process.env.SUMMARIZE_CHUNK_CONCURRENCY = "1";
+
+    const provider = makeProvider([
+      summaryXml({ title: "Chunk 1 summary" }),
+      summaryXml({ title: "Reduce 1" }),
+      summaryXml({ title: "Chunk 2 summary" }),
+      summaryXml({ title: "Reduce 2" }),
+    ]);
+
+    const sdk = mockSdk();
+    const kv = mockKV();
+    const session: Session = {
+      id: "ses_memo",
+      project: "test-project",
+      cwd: "/tmp",
+      startedAt: new Date().toISOString(),
+      status: "completed",
+      observationCount: 100,
+    };
+    await kv.set("sessions", "ses_memo", session);
+    for (let i = 0; i < 100; i++) {
+      const o = makeObs(i, "ses_memo");
+      await kv.set("obs:ses_memo", o.id, o);
+    }
+    registerSummarizeFunction(sdk as any, kv as any, provider);
+    const handler = sdk.functions.get("mem::summarize")!;
+
+    // Turn 1: 100 observations (1 full chunk) -> single-call path (since 100 <= chunkSize 100)
+    const turn1Result: any = await handler({ sessionId: "ses_memo" });
+    expect(turn1Result.success).toBe(true);
+    expect(provider.calls).toHaveLength(1);
+
+    // Now add 50 more observations (total 150 -> 2 chunks: chunk 0 has 100, chunk 1 has 50)
+    for (let i = 100; i < 150; i++) {
+      const o = makeObs(i, "ses_memo");
+      await kv.set("obs:ses_memo", o.id, o);
+    }
+
+    // Turn 2: Run chunked summarize.
+    // Chunk 0 (full chunk of 100) will be computed and cached.
+    // Chunk 1 (tail chunk of 50) will be computed.
+    // Plus reduce.
+    const turn2Result: any = await handler({ sessionId: "ses_memo" });
+    expect(turn2Result.success).toBe(true);
+    // Provider calls: 1 (from turn 1) + 1 (chunk 0) + 1 (chunk 1) + 1 (reduce) = 4
+    expect(provider.calls).toHaveLength(4);
+
+    // Now add 20 more observations (total 170 -> 2 chunks: chunk 0 has 100, chunk 1 has 70)
+    for (let i = 150; i < 170; i++) {
+      const o = makeObs(i, "ses_memo");
+      await kv.set("obs:ses_memo", o.id, o);
+    }
+
+    // Provider response for turn 3: only chunk 1 (tail chunk) and reduce should be called!
+    (provider as any).summarize = async (system: string, user: string) => {
+      provider.calls.push({ system, user });
+      if (system.includes("merging")) return summaryXml({ title: "Reduce 3" });
+      return summaryXml({ title: "Chunk 2 updated" });
+    };
+
+    const turn3Result: any = await handler({ sessionId: "ses_memo" });
+    expect(turn3Result.success).toBe(true);
+    // Calls added in turn 3: exactly 2 (chunk 1 + reduce), chunk 0 was reused from KV cache!
+    expect(provider.calls).toHaveLength(6);
+  });
+
+  it("forced re-summarization with force: true bypasses cache and re-runs", async () => {
+    const provider = makeProvider([
+      summaryXml({ title: "First run" }),
+      summaryXml({ title: "Forced second run" }),
+    ]);
+    const { handler } = await setupHandler({
+      sessionId: "ses_forced",
+      obsCount: 5,
+      provider,
+    });
+
+    const firstResult: any = await handler({ sessionId: "ses_forced" });
+    expect(firstResult.success).toBe(true);
+    expect(firstResult.summary.title).toBe("First run");
+    expect(provider.calls).toHaveLength(1);
+
+    // Second summarize with force: true bypasses zero-delta cache
+    const secondResult: any = await handler({ sessionId: "ses_forced", force: true });
+    expect(secondResult.success).toBe(true);
+    expect(secondResult.cached).toBeUndefined();
+    expect(secondResult.summary.title).toBe("Forced second run");
+    expect(provider.calls).toHaveLength(2);
   });
 });

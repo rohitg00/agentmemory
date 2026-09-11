@@ -599,6 +599,24 @@
       font-size: 14px;
       font-family: var(--font-display);
     }
+    /* Canonical project key disambiguator: two workspaces can share a
+       display name but never a project key. Muted monospace chip. */
+    .project-key-badge {
+      display: inline-block;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 400;
+      color: var(--ink-muted);
+      background: var(--bg-alt);
+      border: 1px solid var(--border-light);
+      border-radius: 4px;
+      padding: 1px 5px;
+      max-width: 280px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      vertical-align: middle;
+    }
     .session-item .session-meta {
       font-size: 11px;
       color: var(--ink-muted);
@@ -1253,14 +1271,33 @@
       return id.slice(0, head) + '…' + id.slice(-tail);
     }
     function sessionDisplayName(s) {
+      if (s && s.projectDisplayName) return String(s.projectDisplayName);
       var project = s && s.project ? String(s.project).split('/').pop() : '';
       if (project) return project;
       return shortSessionId(s, 8) || 'Unknown session';
     }
+    // Canonical partition key (host-owner-repo slug or path hash). Two
+    // workspaces can share a display name but never this key.
+    function projectKey(s) {
+      return s && s.project ? String(s.project) : '';
+    }
+    function projectKeyBadgeHtml(s) {
+      var key = projectKey(s);
+      if (!key) return '';
+      // Skip when the visible name already is the key — the badge would
+      // duplicate it (legacy sessions have no display name).
+      if (key === sessionDisplayName(s)) return '';
+      return '<span class="project-key-badge" title="' + esc(key) + '">' + esc(key) + '</span>';
+    }
+    function sessionKeySuffix(s) {
+      var key = projectKey(s);
+      if (!key || key === sessionDisplayName(s)) return '';
+      return ' · ' + key;
+    }
     function sessionLabel(s) {
       var id = shortSessionId(s, 8);
       var name = sessionDisplayName(s);
-      return id ? name + ' (' + id + ')' : name + ' (missing id)';
+      return (id ? name + ' (' + id + ')' : name + ' (missing id)') + sessionKeySuffix(s);
     }
     function debounce(fn, ms) {
       var t;
@@ -1415,6 +1452,13 @@
       if (state.activeTab === 'replay' && tab !== 'replay' && typeof stopReplayTimer === 'function') {
         stopReplayTimer();
       }
+      if (tab !== 'graph' && graphSim.raf) {
+        cancelAnimationFrame(graphSim.raf);
+        graphSim.raf = null;
+      }
+      if (tab !== 'dashboard') {
+        dashboardCoordinator.cancel();
+      }
       if (!opts.skipRoute) {
         updateTabRoute(tab, !!opts.replaceRoute);
       }
@@ -1432,6 +1476,13 @@
         v.classList.toggle('active', v.id === 'view-' + tab);
       });
       if (state.flagsConfig) renderFlagBanners(state.flagsConfig);
+      if (tab === 'graph') {
+        if (graphSim.running && graphSim.quietTicks <= 30) {
+          wakeGraphSim();
+        } else if (graphSim.canvas) {
+          renderGraph();
+        }
+      }
       loadTab(tab);
     }
 
@@ -1442,6 +1493,71 @@
     var tabFetchedAt = {};
     var TAB_FRESH_MS = 5000;
 
+    var dashboardCoordinator = {
+      debounceTimer: null,
+      inFlight: false,
+      pendingReload: false,
+      abortController: null,
+      DEBOUNCE_MS: 300,
+
+      schedule: function() {
+        if (document.hidden) {
+          this.pendingReload = true;
+          return;
+        }
+        if (this.debounceTimer) {
+          clearTimeout(this.debounceTimer);
+        }
+        var self = this;
+        this.debounceTimer = setTimeout(function() {
+          self.debounceTimer = null;
+          self.execute();
+        }, this.DEBOUNCE_MS);
+      },
+
+      execute: async function() {
+        if (this.inFlight) {
+          this.pendingReload = true;
+          return;
+        }
+        if (this.abortController) {
+          try { this.abortController.abort(); } catch {}
+        }
+        this.abortController = typeof AbortController !== 'undefined' ? new AbortController() : null;
+        var signal = this.abortController ? this.abortController.signal : undefined;
+
+        this.inFlight = true;
+        this.pendingReload = false;
+
+        try {
+          await loadDashboard({ signal: signal });
+        } catch (err) {
+          if (err && err.name !== 'AbortError') {
+            console.error('[viewer] dashboard load failed:', err);
+          }
+        } finally {
+          this.inFlight = false;
+          if (this.pendingReload && !document.hidden && state.activeTab === 'dashboard') {
+            this.pendingReload = false;
+            this.schedule();
+          }
+        }
+      },
+
+      cancel: function() {
+        if (this.debounceTimer) {
+          clearTimeout(this.debounceTimer);
+          this.debounceTimer = null;
+        }
+        if (this.abortController) {
+          try { this.abortController.abort(); } catch {}
+          this.abortController = null;
+        }
+        this.inFlight = false;
+        this.pendingReload = false;
+      }
+    };
+
     async function loadTab(tab) {
       var now = Date.now();
       if (tab !== 'replay' && tabFetchedAt[tab] && now - tabFetchedAt[tab] < TAB_FRESH_MS) {
@@ -1449,7 +1565,7 @@
       }
       tabFetchedAt[tab] = now;
       switch(tab) {
-        case 'dashboard': await loadDashboard(); break;
+        case 'dashboard': await dashboardCoordinator.execute(); break;
         case 'graph': await loadGraph(); break;
         case 'memories': await loadMemories(); break;
         case 'timeline': await loadTimeline(); break;
@@ -1467,7 +1583,7 @@
       }
     }
 
-    async function loadDashboard() {
+    async function loadDashboard(opts) {
       var el = document.getElementById('view-dashboard');
       if (!state.dashboard.loaded) el.innerHTML = '<div class="loading">Loading dashboard...</div>';
       try {
@@ -1477,11 +1593,11 @@
           apiGet('memories?latest=true&limit=500'),
           apiGet('graph/stats'),
           apiGet('audit?limit=5'),
-          apiGet('semantic'),
-          apiGet('procedural'),
-          apiGet('relations'),
-          apiGet('lessons'),
-          apiGet('crystals')
+          apiGet('semantic?limit=50'),
+          apiGet('procedural?limit=50'),
+          apiGet('relations?limit=50'),
+          apiGet('lessons?limit=50'),
+          apiGet('crystals?limit=50')
         ]);
         state.dashboard.health = results[0];
         state.dashboard.sessions = (results[1] && results[1].sessions) || [];
@@ -1496,13 +1612,7 @@
         state.dashboard.loaded = true;
         renderDashboard();
       } catch (err) {
-        // Without this catch, any uncaught error in the await Promise.all
-        // or the renderDashboard call leaves the dashboard stuck on
-        // "Loading dashboard..." forever with no indication to the user
-        // (#323). apiGet() already swallows network/HTTP errors and
-        // returns null, but renderDashboard can still throw on shape
-        // surprises (CSP-blocked event handler binding, undefined fields).
-        // Surface the error in the panel + log full detail to console.
+        if (err && err.name === 'AbortError') return;
         var msg = (err && err.message) ? err.message : String(err);
         console.error('[viewer] loadDashboard failed:', err);
         el.innerHTML =
@@ -1635,7 +1745,7 @@
         html += '<table><tr><th>Project</th><th>Status</th><th>Obs</th><th>Started</th></tr>';
         recent.forEach(function(s) {
           var statusBadge = s.status === 'active' ? 'badge-green' : s.status === 'completed' ? 'badge-blue' : 'badge-muted';
-          html += '<tr><td style="color:var(--ink);font-weight:500;">' + esc(sessionDisplayName(s)) + '</td>';
+          html += '<tr><td style="color:var(--ink);font-weight:500;">' + esc(sessionDisplayName(s)) + ' ' + projectKeyBadgeHtml(s) + '</td>';
           html += '<td><span class="badge ' + statusBadge + '">' + esc(s.status) + '</span></td>';
           html += '<td style="color:var(--ink-muted);font-family:var(--font-mono);font-size:12px;">' + (s.observationCount || 0) + '</td>';
           html += '<td style="font-family:var(--font-mono);font-size:11px;color:var(--ink-faint);">' + esc(shortTime(s.startedAt)) + '</td></tr>';
@@ -1782,11 +1892,12 @@
     var dashboardTimer = null;
     function refreshDashboard() {
       state.dashboard.loaded = false;
-      loadDashboard();
+      dashboardCoordinator.schedule();
     }
     function startDashboardAutoRefresh() {
       if (dashboardTimer) clearInterval(dashboardTimer);
       dashboardTimer = setInterval(function() {
+        if (document.hidden) return;
         if (pollTimer) return;
         if (state.activeTab === 'dashboard') refreshDashboard();
       }, 30000);
@@ -3168,7 +3279,7 @@
           var id = sessionId(s);
           var selected = id && state.sessions.selectedId === id;
           html += '<div class="session-item' + (selected ? ' selected' : '') + '"' + (id ? ' data-action="select-session" data-session-id="' + esc(id) + '" role="button" tabindex="0" aria-expanded="' + (selected ? 'true' : 'false') + '"' : '') + '>';
-          html += '<div class="session-top"><span class="session-project">' + esc(sessionDisplayName(s)) + '</span>';
+          html += '<div class="session-top"><span style="display:flex;align-items:center;gap:6px;min-width:0;"><span class="session-project">' + esc(sessionDisplayName(s)) + '</span>' + projectKeyBadgeHtml(s) + '</span>';
           html += '<span class="badge ' + statusBadge + '">' + esc(s.status) + '</span></div>';
           var preview = s.firstPrompt || s.summary || '';
           if (preview) {
@@ -3238,7 +3349,7 @@
 
       var html = '<div class="detail-panel">';
       html += '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;">';
-      html += '<h3 style="margin:0;">Session · ' + esc(s.project || 'Unknown') + '</h3>';
+      html += '<h3 style="margin:0;">Session · ' + esc(s.projectDisplayName || s.project || 'Unknown') + ' ' + projectKeyBadgeHtml(s) + '</h3>';
       html += '<span class="badge ' + (s.status === 'active' ? 'badge-green' : 'badge-blue') + '">' + esc(s.status) + '</span>';
       html += '</div>';
 
@@ -3662,9 +3773,19 @@
       var sessResult = await apiGet('sessions');
       var sessions = (sessResult && sessResult.sessions) || [];
 
+      // Keyed by canonical project key (one entry per key) so duplicate
+      // display names stay individually selectable. Values hold the best
+      // display name seen for that key ('' when none).
       var projects = {};
-      sessions.forEach(function(s) { if (s.project) projects[s.project] = true; });
+      sessions.forEach(function(s) {
+        if (!s.project) return;
+        var existing = projects[s.project];
+        if (existing === undefined || (existing === '' && s.projectDisplayName)) {
+          projects[s.project] = s.projectDisplayName ? String(s.projectDisplayName) : '';
+        }
+      });
       state.profile.projects = Object.keys(projects).sort();
+      state.profile.projectNames = projects;
       state.profile.loaded = true;
 
       if (state.profile.projects.length > 0 && !state.profile.selectedProject) {
@@ -3683,7 +3804,9 @@
         html += '<option value="">No projects</option>';
       } else {
         state.profile.projects.forEach(function(p) {
-          html += '<option value="' + esc(p) + '"' + (state.profile.selectedProject === p ? ' selected' : '') + '>' + esc(p) + '</option>';
+          var display = (state.profile.projectNames || {})[p];
+          var label = display ? display + ' (' + p + ')' : p;
+          html += '<option value="' + esc(p) + '"' + (state.profile.selectedProject === p ? ' selected' : '') + '>' + esc(label) + '</option>';
         });
       }
       html += '</select></div>';
@@ -3797,10 +3920,10 @@
       setWsStatus('polling · ' + (POLL_INTERVAL_MS / 1000) + 's', 'disconnected');
       var tick = 0;
       pollTimer = setInterval(function() {
+        if (document.hidden) return;
         tick++;
         if (state.activeTab === 'dashboard') {
-          state.dashboard.loaded = false;
-          loadDashboard();
+          dashboardCoordinator.schedule();
         } else if (state.activeTab === 'memories') {
           state.memories.loaded = false;
           loadMemories();
@@ -3941,13 +4064,32 @@
         }
       } else if (evt.type === 'sync') {
         var items = Array.isArray(evt.data) ? evt.data : [];
-        items.forEach(function(item) {
+        if (items.length === 0) return;
+        // Cap sync backlog to the latest 50 items for timeline/activity ring buffer
+        var recent = items.slice(-50);
+        recent.forEach(function(item) {
           var payload = item.data || item;
-          observation = payload.observation || payload;
-          if (looksLikeObservation(observation)) {
-            routeWsMessage({ observation: observation });
+          var obs = payload.observation || payload;
+          if (looksLikeObservation(obs)) {
+            if (state.activeTab === 'timeline' && (!state.timeline.sessionId || obs.sessionId === state.timeline.sessionId)) {
+              var existing = state.timeline.observations.findIndex(function(o) { return o.id === obs.id; });
+              if (existing >= 0) {
+                state.timeline.observations[existing] = obs;
+              } else {
+                state.timeline.observations.unshift(obs);
+                if (state.timeline.observations.length > 200) state.timeline.observations.length = 200;
+              }
+            } else if (state.activeTab === 'activity') {
+              state.activity.observations.unshift(obs);
+              if (state.activity.observations.length > 200) state.activity.observations.length = 200;
+            }
           }
         });
+        if (state.activeTab === 'timeline') renderObservations();
+        if (state.activeTab === 'activity') renderActivity();
+        if (state.activeTab === 'dashboard') {
+          dashboardCoordinator.schedule();
+        }
       }
     }
 
@@ -3959,16 +4101,17 @@
             state.timeline.observations[existing] = msg.observation;
           } else {
             state.timeline.observations.unshift(msg.observation);
+            if (state.timeline.observations.length > 200) state.timeline.observations.length = 200;
           }
           renderObservations();
         }
       }
       if (state.activeTab === 'dashboard') {
-        state.dashboard.loaded = false;
-        loadDashboard();
+        dashboardCoordinator.schedule();
       }
       if (state.activeTab === 'activity' && msg.observation) {
         state.activity.observations.unshift(msg.observation);
+        if (state.activity.observations.length > 200) state.activity.observations.length = 200;
         renderActivity();
       }
     }
@@ -4298,7 +4441,7 @@
       var sessions = state.replay.sessions || [];
       var options = '<option value="">— pick a session —</option>' + sessions.map(function(s) {
         var id = sessionId(s);
-        var label = sessionDisplayName(s) + ' · ' + (shortSessionId(s, 8) || 'missing id') + ' · ' + (s.observationCount || 0) + ' obs';
+        var label = sessionDisplayName(s) + sessionKeySuffix(s) + ' · ' + (shortSessionId(s, 8) || 'missing id') + ' · ' + (s.observationCount || 0) + ' obs';
         return '<option value="' + esc(id) + '"' + (id && id === state.replay.selectedId ? ' selected' : '') + (id ? '' : ' disabled') + '>' + esc(label) + '</option>';
       }).join('');
 
@@ -4507,9 +4650,13 @@
     })();
     startDashboardAutoRefresh();
 
+    var ditherInterval = null;
+    var startDitherLoop = function() {};
+    var stopDitherLoop = function() {};
+
     // Ambient background: an ordered-dither dot field that drifts very
     // slowly — the print-halftone cousin of the old static dot grid.
-    // Renders at quarter resolution and ~12fps; a single static frame
+    // Renders at quarter resolution and ~8fps; a single static frame
     // under prefers-reduced-motion.
     (function ditherField() {
       var cv = document.getElementById('bg-dither');
@@ -4554,19 +4701,51 @@
         }
       }
 
-      draw();
-      if (!reduced) {
-        setInterval(function () {
+      startDitherLoop = function() {
+        if (reduced || ditherInterval) return;
+        ditherInterval = setInterval(function () {
           t++;
           draw();
-        }, 85);
-      }
+        }, 120);
+      };
+
+      stopDitherLoop = function() {
+        if (ditherInterval) {
+          clearInterval(ditherInterval);
+          ditherInterval = null;
+        }
+      };
+
+      draw();
+      startDitherLoop();
       window.addEventListener('resize', draw);
       new MutationObserver(draw).observe(document.documentElement, {
         attributes: true,
         attributeFilter: ['data-theme']
       });
     })();
+
+    document.addEventListener('visibilitychange', function() {
+      if (document.hidden) {
+        if (graphSim.raf) {
+          cancelAnimationFrame(graphSim.raf);
+          graphSim.raf = null;
+        }
+        stopDitherLoop();
+      } else {
+        startDitherLoop();
+        if (state.activeTab === 'graph') {
+          if (graphSim.running && graphSim.quietTicks <= 30) {
+            wakeGraphSim();
+          } else if (graphSim.canvas) {
+            renderGraph();
+          }
+        }
+        if (state.activeTab === 'dashboard' && dashboardCoordinator.pendingReload) {
+          dashboardCoordinator.schedule();
+        }
+      }
+    });
   </script>
 </body>
 </html>

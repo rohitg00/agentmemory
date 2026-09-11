@@ -685,17 +685,63 @@ export function registerGraphFunction(
   provider: MemoryProvider,
 ): void {
   sdk.registerFunction("mem::graph-extract",
-    async (data: { observations: CompressedObservation[] }) => {
-      if (!data.observations || data.observations.length === 0) {
+    async (data: {
+      observations: CompressedObservation[];
+      sessionId?: string;
+      force?: boolean;
+    }) => {
+      if (!data || !data.observations || data.observations.length === 0) {
         return { success: false, error: "No observations provided" };
       }
 
-      const obsIds = data.observations.map((o) => o.id);
+      const sessionId =
+        (typeof data.sessionId === "string" && data.sessionId.trim()) ||
+        data.observations[0]?.sessionId;
+
+      let targetObs = data.observations;
+      if (!data.force && sessionId) {
+        const extractedSet = new Set<string>();
+        try {
+          const extractedList = await kv.list<
+            { id?: string; obsId?: string } | string
+          >(KV.graphExtracted(sessionId));
+          for (const item of extractedList) {
+            if (typeof item === "string") {
+              extractedSet.add(item);
+            } else if (item && typeof item === "object") {
+              if (typeof item.id === "string") extractedSet.add(item.id);
+              else if (typeof item.obsId === "string") extractedSet.add(item.obsId);
+            }
+          }
+        } catch (err) {
+          logger.warn("failed to read graph extracted observations", {
+            sessionId,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+
+        targetObs = data.observations.filter((o) => !extractedSet.has(o.id));
+        if (targetObs.length === 0) {
+          logger.info("Graph extraction skipped — all observations already extracted", {
+            sessionId,
+            count: data.observations.length,
+          });
+          return {
+            success: true,
+            nodesAdded: 0,
+            edgesAdded: 0,
+            cached: true,
+            skipped: true,
+          };
+        }
+      }
+
+      const obsIds = targetObs.map((o) => o.id);
 
       let nodes: GraphNode[] = [];
       let edges: GraphEdge[] = [];
       try {
-        const heuristic = extractGraphHeuristics(data.observations);
+        const heuristic = extractGraphHeuristics(targetObs);
         nodes = heuristic.nodes;
         edges = heuristic.edges;
       } catch (err) {
@@ -709,7 +755,7 @@ export function registerGraphFunction(
       let llmError: string | undefined;
       if (llmEnabled) {
         const prompt = buildGraphExtractionPrompt(
-          data.observations.map((o) => ({
+          targetObs.map((o) => ({
             title: o.title,
             narrative: o.narrative,
             concepts: o.concepts,
@@ -732,9 +778,20 @@ export function registerGraphFunction(
       }
 
       if (nodes.length === 0 && edges.length === 0) {
-        return llmError
-          ? { success: false, error: llmError }
-          : { success: true, nodesAdded: 0, edgesAdded: 0 };
+        if (llmError) {
+          return { success: false, error: llmError };
+        }
+        if (sessionId) {
+          await Promise.all(
+            targetObs.map((o) =>
+              kv.set(KV.graphExtracted(sessionId), o.id, {
+                id: o.id,
+                extractedAt: new Date().toISOString(),
+              }),
+            ),
+          );
+        }
+        return { success: true, nodesAdded: 0, edgesAdded: 0 };
       }
 
       try {
@@ -744,6 +801,17 @@ export function registerGraphFunction(
           edges,
           obsIds,
         );
+
+        if (sessionId) {
+          await Promise.all(
+            targetObs.map((o) =>
+              kv.set(KV.graphExtracted(sessionId), o.id, {
+                id: o.id,
+                extractedAt: new Date().toISOString(),
+              }),
+            ),
+          );
+        }
 
         await recordAudit(kv, "observe", "mem::graph-extract", obsIds, {
           nodesExtracted: nodes.length,

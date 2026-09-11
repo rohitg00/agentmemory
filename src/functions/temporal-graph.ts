@@ -45,7 +45,9 @@ Rules:
 - Capture reasoning/motivation behind each relationship
 - Weight relationships by directness: 1.0 = explicit statement, 0.5 = inferred, 0.1 = speculative`;
 
-function parseTemporalGraphXml(
+export const GRAPH_MAX_SOURCE_OBSERVATION_IDS = 20;
+
+export function parseTemporalGraphXml(
   xml: string,
   observationIds: string[],
 ): { nodes: GraphNode[]; edges: GraphEdge[] } {
@@ -79,7 +81,9 @@ function parseTemporalGraphXml(
       type,
       name,
       properties,
-      sourceObservationIds: observationIds,
+      sourceObservationIds: (observationIds || []).slice(
+        -GRAPH_MAX_SOURCE_OBSERVATION_IDS,
+      ),
       createdAt: now,
       aliases: aliases.length > 0 ? aliases : undefined,
     });
@@ -132,7 +136,9 @@ function parseTemporalGraphXml(
         sourceNodeId: sourceNode.id,
         targetNodeId: targetNode.id,
         weight: Math.max(0, Math.min(1, weight)),
-        sourceObservationIds: observationIds,
+        sourceObservationIds: (observationIds || []).slice(
+          -GRAPH_MAX_SOURCE_OBSERVATION_IDS,
+        ),
         createdAt: now,
         tcommit: now,
         tvalid:
@@ -201,10 +207,10 @@ export function registerTemporalGraphFunctions(
               ...existing,
               sourceObservationIds: [
                 ...new Set([
-                  ...existing.sourceObservationIds,
+                  ...(existing.sourceObservationIds || []),
                   ...obsIds,
                 ]),
-              ],
+              ].slice(-GRAPH_MAX_SOURCE_OBSERVATION_IDS),
               properties: { ...existing.properties, ...node.properties },
               updatedAt: new Date().toISOString(),
               aliases: [

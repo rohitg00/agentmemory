@@ -1,17 +1,37 @@
+export interface SessionMetrics {
+  tokens: {
+    input: number;
+    output: number;
+    reasoning: number;
+    cacheRead: number;
+    cacheWrite: number;
+  };
+  cost: number;
+  durationMs: number;
+  turnCount: number;
+  models: Record<string, number>;
+}
+
 export interface Session {
   id: string;
   project: string;
   cwd: string;
   startedAt: string;
+  updatedAt?: string;
   endedAt?: string;
   status: "active" | "completed" | "abandoned";
   observationCount: number;
+  uncompactedCount?: number;
+  compactedWatermark?: number;
+  projectDisplayName?: string;
+  subpackage?: string;
   model?: string;
   tags?: string[];
   firstPrompt?: string;
   summary?: string;
   commitShas?: string[];
   agentId?: string;
+  metrics?: SessionMetrics;
 }
 
 export interface CommitLink {
@@ -25,6 +45,18 @@ export interface CommitLink {
   files?: string[];
   sessionIds: string[];
   linkedAt: string;
+}
+
+export interface GraphExtracted {
+  extractedAt: string;
+  observationId?: string;
+  nodeCount?: number;
+  edgeCount?: number;
+}
+
+export interface SummaryPartial extends SessionSummary {
+  chunkIndex?: number;
+  cachedAt?: string;
 }
 
 // Immutable write-time provenance: which trust boundary the content
@@ -53,7 +85,11 @@ export interface RawObservation {
   toolInput?: unknown;
   toolOutput?: unknown;
   userPrompt?: string;
+  content?: string;
   assistantResponse?: string;
+  title?: string;
+  files?: string[];
+  isTelemetry?: boolean;
   raw: unknown;
   modality?: "text" | "image" | "mixed";
   imageData?: string;
@@ -80,6 +116,7 @@ export interface CompressedObservation {
   modality?: "text" | "image" | "mixed";
   agentId?: string;
   origin?: Origin;
+  isTelemetry?: boolean;
 }
 
 export type ObservationType =
@@ -148,12 +185,52 @@ export type HookType =
   | "notification"
   | "task_completed"
   | "stop"
-  | "session_end";
+  | "session_end"
+  | "patch_applied"
+  | "command_executed"
+  | "assistant_message"
+  | "session_status"
+  | "session_updated"
+  | "session_compacted"
+  | "step_finish"
+  | "reasoning"
+  | "llm_params"
+  | "config_loaded"
+  | "message_removed"
+  | "permission_replied"
+  | "compaction_event"
+  | "retry_attempt"
+  | "session_diff"
+  | "invalid"
+  | "council_session"
+  | "permission_prompt"
+  | "agent_selected";
+
+export const TELEMETRY_HOOKS: ReadonlySet<HookType> = new Set<HookType>([
+  "assistant_message",
+  "session_status",
+  "session_updated",
+  "session_compacted",
+  "config_loaded",
+  "llm_params",
+  "reasoning",
+  "step_finish",
+  "message_removed",
+  "permission_replied",
+  "compaction_event",
+  "session_diff",
+  "invalid",
+  "notification",
+  "retry_attempt",
+  "council_session",
+  "permission_prompt",
+]);
 
 export interface HookPayload {
   hookType: HookType;
   sessionId: string;
   project: string;
+  project_display_name?: string;
   cwd: string;
   timestamp: string;
   data: unknown;
@@ -625,6 +702,7 @@ export interface AuditEntry {
     | "core_add"
     | "core_remove"
     | "auto_page"
+    | "micro_compact"
     | "vision_embed"
     | "slot_append"
     | "slot_replace"

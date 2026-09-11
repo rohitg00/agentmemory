@@ -25,6 +25,8 @@ pnpm-lock.yaml
 yarn.lock
 integrations/hermes/__pycache__/
 
+.slim/deepwork/
+
 # Eval reports (transient; published scorecards live in docs/benchmarks/)
 eval/reports/
 # LongMemEval download is 278MB; fetched on demand

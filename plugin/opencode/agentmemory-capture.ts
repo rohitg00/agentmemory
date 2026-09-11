@@ -1,13 +1,15 @@
 import type { Plugin } from "@opencode-ai/plugin";
 import { execFileSync } from "node:child_process";
-import { basename } from "node:path";
+import { createHash } from "node:crypto";
+import { existsSync, realpathSync, statSync } from "node:fs";
+import { basename, dirname, relative, resolve } from "node:path";
 
 const API = process.env.AGENTMEMORY_URL || "http://localhost:3111";
 // OpenCode reports tool names in lowercase ("read", "edit", ...); matching is
 // case-insensitive at the call site so a future casing change cannot silently
 // kill file enrichment again.
 const FILE_TOOLS = new Set(["read", "write", "edit", "glob", "grep"]);
-const FILE_KEYS = ["filePath", "file_path", "path", "file", "pattern"];
+const FILE_KEYS = ["filePath", "file_path", "path", "file"];
 const MAX_STASHED_FILES = 20;
 
 const DEBUG = process.env.OPENCODE_AGENTMEMORY_DEBUG === "1";
@@ -32,13 +34,13 @@ async function post(path: string, body: Record<string, unknown>, timeoutMs = 500
   }
 }
 
-async function postJson(path: string, body: Record<string, unknown>): Promise<unknown | null> {
+async function postJson(path: string, body: Record<string, unknown>, timeoutMs = 5000): Promise<unknown | null> {
   try {
     const res = await fetch(`${API}/agentmemory${path}`, {
       method: "POST",
       headers: authHeaders(),
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(5000),
+      signal: AbortSignal.timeout(timeoutMs),
     });
     return res.ok ? await res.json() : null;
   } catch (e) {
@@ -53,12 +55,15 @@ async function observe(
   data: Record<string, unknown>,
 ): Promise<void> {
   const proj = projectFor(sessionId);
+  const identity = resolveWorkspaceIdentity(proj.cwd);
   await post("/observe", {
     hookType,
     sessionId,
-    project: proj.name,
+    project: identity.projectKey,
+    project_display_name: identity.displayName,
     cwd: proj.cwd,
     timestamp: new Date().toISOString(),
+    ...(identity.subpath ? { subpackage: identity.subpath } : {}),
     data,
   });
 }
@@ -75,45 +80,211 @@ let defaultProjectName: string | null = null;
 let defaultProjectCwd: string | null = null;
 const sessionProjects = new Map<string, { name: string; cwd: string }>();
 
-function projectFor(sessionId: string): { name: string | null; cwd: string | null } {
+function projectFor(sessionId: string): { name: string; cwd: string } {
   const p = sessionProjects.get(sessionId);
-  return p ?? { name: defaultProjectName, cwd: defaultProjectCwd };
+  const name = p?.name || defaultProjectName || "default";
+  const cwd = p?.cwd || defaultProjectCwd || process.cwd() || "/";
+  return { name, cwd };
 }
 
-const projectNameCache = new Map<string, string>();
+function isAppBundle(dir: string | undefined | null): boolean {
+  if (!dir || typeof dir !== "string") return true;
+  const d = dir.trim();
+  return d.includes(".app/") || d.endsWith(".app");
+}
+
+function resolveCandidateDir(...candidates: (string | undefined | null)[]): string {
+  for (const dir of candidates) {
+    if (dir && typeof dir === "string" && dir.trim().length > 0 && !isAppBundle(dir)) {
+      return dir.trim();
+    }
+  }
+  return process.cwd() || "/";
+}
 
 function resolveProjectName(dir: string): string {
-  const explicit = process.env.AGENTMEMORY_PROJECT_NAME?.trim();
-  if (explicit) return explicit;
-  const cached = projectNameCache.get(dir);
-  if (cached !== undefined) return cached;
+  return resolveWorkspaceIdentity(dir).projectKey;
+}
+
+export interface WorkspaceIdentity {
+  projectKey: string;
+  displayName: string;
+  rootPath: string;
+  subpath?: string;
+}
+
+const identityCache = new Map<string, WorkspaceIdentity>();
+
+function gitConfig(dir: string, key: string): string {
+  try {
+    return execFileSync("git", ["config", "--get", key], {
+      cwd: dir,
+      stdio: ["ignore", "pipe", "ignore"],
+      encoding: "utf8",
+      timeout: 1000,
+    }).trim();
+  } catch {
+    return "";
+  }
+}
+
+function parseRemoteSlug(url: string): string {
+  let cleaned = url.trim();
+  if (cleaned.endsWith(".git")) {
+    cleaned = cleaned.slice(0, -4);
+  }
+  cleaned = cleaned.replace(/^(https?|git|ssh):\/\//, "");
+  if (cleaned.includes("@")) {
+    cleaned = cleaned.split("@")[1];
+  }
+  cleaned = cleaned.replace(/^([^/:]+):\d+\//, "$1/");
+  cleaned = cleaned.replace(/:/g, "/");
+
+  const segments = cleaned
+    .split("/")
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  if (segments.length === 0) return "unknown";
+
+  const host = segments[0].toLowerCase();
+  const rest = segments.slice(1).join("-").toLowerCase();
+
+  const combined = rest ? `${host}-${rest}` : host;
+  return combined.replace(/[^a-z0-9.-]/gi, "-").replace(/-+/g, "-");
+}
+
+function resolveWorkspaceIdentity(cwd?: string): WorkspaceIdentity {
+  const explicit = process.env["AGENTMEMORY_PROJECT_NAME"];
+  const rawDir = cwd && cwd.trim() ? resolve(cwd.trim()) : process.cwd();
+
+  if (explicit && explicit.trim()) {
+    const name = explicit.trim();
+    return {
+      projectKey: name,
+      displayName: name,
+      rootPath: rawDir,
+    };
+  }
+
+  let dir = rawDir;
+  try {
+    dir = realpathSync(rawDir);
+  } catch {}
+
+  const cached = identityCache.get(dir);
+  if (cached) return cached;
+
+  let rootPath = dir;
+  let displayName = basename(dir);
+  let subpath: string | undefined;
+  let remoteUrl: string | undefined;
+
   try {
     const top = execFileSync("git", ["rev-parse", "--show-toplevel"], {
       cwd: dir,
       stdio: ["ignore", "pipe", "ignore"],
       encoding: "utf8",
+      timeout: 1000,
     }).trim();
+
     if (top) {
-      const name = basename(top);
-      projectNameCache.set(dir, name);
-      return name;
+      let resolvedTop = top;
+      try {
+        resolvedTop = realpathSync(top);
+      } catch {}
+
+      rootPath = resolvedTop;
+      displayName = basename(resolvedTop);
+
+      if (dir !== resolvedTop) {
+        const rel = relative(resolvedTop, dir).replace(/\\/g, "/");
+        if (rel && rel !== ".") {
+          subpath = rel;
+        }
+      }
+
+      remoteUrl = gitConfig(dir, "remote.upstream.url") || gitConfig(dir, "remote.origin.url");
     }
   } catch {
     // not a git repo, fall through
   }
-  const fallback = basename(dir) || dir;
-  projectNameCache.set(dir, fallback);
-  return fallback;
+
+  let projectKey: string;
+  if (remoteUrl) {
+    projectKey = parseRemoteSlug(remoteUrl);
+  } else {
+    const hash = createHash("sha256").update(rootPath).digest("hex").slice(0, 8);
+    projectKey = `${displayName.toLowerCase()}-${hash}`;
+  }
+
+  const identity: WorkspaceIdentity = {
+    projectKey,
+    displayName,
+    rootPath,
+    subpath,
+  };
+
+  identityCache.set(dir, identity);
+  identityCache.set(rawDir, identity);
+  return identity;
+}
+
+function inferProjectFromPath(targetPath: string): { cwd: string; name: string } | null {
+  if (!targetPath || typeof targetPath !== "string") return null;
+  const raw = targetPath.trim();
+  if (!raw || isAppBundle(raw)) return null;
+
+  try {
+    let dir = raw;
+    if (existsSync(raw)) {
+      const stat = statSync(raw);
+      if (!stat.isDirectory()) {
+        dir = dirname(raw);
+      }
+    } else {
+      dir = dirname(raw);
+    }
+    const top = execFileSync("git", ["rev-parse", "--show-toplevel"], {
+      cwd: dir,
+      stdio: ["ignore", "pipe", "ignore"],
+      encoding: "utf8",
+      timeout: 1000,
+    }).trim();
+    if (top) {
+      return { cwd: top, name: resolveProjectName(top) };
+    }
+    return { cwd: dir, name: resolveProjectName(dir) };
+  } catch {
+    return null;
+  }
+}
+
+function updateSessionProjectIfDiscovered(sid: string, candidatePath?: string): void {
+  if (!sid || !candidatePath || typeof candidatePath !== "string") return;
+  const discovered = inferProjectFromPath(candidatePath);
+  if (discovered) {
+    const existing = sessionProjects.get(sid);
+    if (!existing || existing.cwd !== discovered.cwd || existing.name === "default") {
+      sessionProjects.set(sid, discovered);
+      if (DEBUG) {
+        console.error(`[agentmemory] Session ${sid} dynamically bound to project: ${discovered.name} (${discovered.cwd})`);
+      }
+    }
+  }
 }
 const stashedFiles = new Map<string, Set<string>>();
 const seenSubtaskIds = new Map<string, Set<string>>();
 const seenToolCallIds = new Map<string, Set<string>>();
-const contextInjectedSessions = new Set<string>();
+const pendingSummarizeTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const inFlightSummaries = new Set<string>();
+const sessionBootstrapMs = new Map<string, number>();
+const forkSessionIds = new Set<string>();
+const seenAssistantMessageIds = new Map<string, Set<string>>();
 // cache the context returned by POST /session/start so the chat
 // system-transform hook can inject it without a second /context fetch.
-// Auto-injection now happens at session.created (immediately) AND at
-// the first prompt_submit (fallback for older OpenCode builds that
-// don't implement experimental.chat.system.transform).
+// Auto-injection happens at session.created (immediately) and cached
+// startContext is injected on every chat turn to preserve LLM prefix caching (#720).
 const startContextCache = new Map<string, string>();
 
 function stashFor(sid: string): Set<string> {
@@ -134,17 +305,135 @@ function toolCallSetFor(sid: string): Set<string> {
   return s;
 }
 
+function cancelPendingSummarize(sid: string): void {
+  const timer = pendingSummarizeTimers.get(sid);
+  if (timer) {
+    clearTimeout(timer);
+    pendingSummarizeTimers.delete(sid);
+  }
+}
+
+function assistantMessageSetFor(sid: string): Set<string> {
+  let s = seenAssistantMessageIds.get(sid);
+  if (!s) { s = new Set<string>(); seenAssistantMessageIds.set(sid, s); }
+  return s;
+}
+
 function pruneSessionMaps(sid: string): void {
+  cancelPendingSummarize(sid);
+  inFlightSummaries.delete(sid);
   stashedFiles.delete(sid);
   seenSubtaskIds.delete(sid);
   seenToolCallIds.delete(sid);
+  seenAssistantMessageIds.delete(sid);
   sessionProjects.delete(sid);
+  sessionBootstrapMs.delete(sid);
+  forkSessionIds.delete(sid);
+}
+
+function resolveEventTimestampMs(raw: unknown): number | null {
+  if (typeof raw !== "number" || !Number.isFinite(raw)) return null;
+  const ms = raw > 1e12 ? raw : raw < 1e10 ? raw * 1000 : raw;
+  return Number.isFinite(ms) ? ms : null;
+}
+
+function eventTimestampMsFrom(props: Record<string, unknown>, info: Record<string, unknown> | null, part: Record<string, unknown> | null): number | null {
+  const candidates: unknown[] = [];
+  if (part) candidates.push((part as any).time?.created, (part as any).time?.completed, part.time, part.timestamp, (part as any).created, (part as any).updated);
+  if (info) candidates.push((info as any).time?.created, (info as any).time?.completed, info.time, info.timestamp, (info as any).created, (info as any).updated);
+  candidates.push(props.time, props.timestamp, (props as any).created, (props as any).updated);
+  for (const c of candidates) {
+    const ms = resolveEventTimestampMs(c);
+    if (ms != null) return ms;
+  }
+  return null;
+}
+
+function ensureSessionBootstrap(sid: string, _eventTsMs: number | null): void {
+  if (sessionBootstrapMs.has(sid)) return;
+  sessionBootstrapMs.set(sid, Date.now());
+}
+
+function maybeMarkForkFromTimestamp(sid: string, eventTsMs: number | null): void {
+  if (eventTsMs == null || eventTsMs < 1_500_000_000_000) return;
+  if (forkSessionIds.has(sid)) return;
+  const watermark = sessionBootstrapMs.get(sid);
+  if (watermark == null) return;
+  if (watermark - eventTsMs > 60_000) forkSessionIds.add(sid);
+}
+
+function isReplayedEvent(sid: string, eventTsMs: number | null): boolean {
+  if (!forkSessionIds.has(sid)) return false;
+  if (eventTsMs == null) return false;
+  const watermark = sessionBootstrapMs.get(sid);
+  if (watermark == null) return false;
+  return eventTsMs < watermark - 500;
+}
+
+function __resetReplayGuardForTests(): void {
+  sessionBootstrapMs.clear();
+  forkSessionIds.clear();
+}
+
+function __setReplayWatermarkForTests(sid: string, ms: number, opts?: { fork?: boolean }): void {
+  sessionBootstrapMs.set(sid, ms);
+  if (opts?.fork) forkSessionIds.add(sid);
+}
+
+function scheduleSummarize(sid: string, delayMs = 3000): void {
+  if (!sid || typeof sid !== "string") return;
+  cancelPendingSummarize(sid);
+  if (inFlightSummaries.has(sid)) return;
+
+  const timer = setTimeout(async () => {
+    pendingSummarizeTimers.delete(sid);
+    if (inFlightSummaries.has(sid)) return;
+    inFlightSummaries.add(sid);
+    try {
+      await post("/summarize", { sessionId: sid });
+    } catch (err) {
+      if (DEBUG) {
+        console.error(`[agentmemory] Failed to post /summarize for session ${sid}:`, err);
+      }
+    } finally {
+      inFlightSummaries.delete(sid);
+    }
+  }, delayMs);
+
+  if (typeof (timer as any)?.unref === "function") {
+    (timer as any).unref();
+  }
+
+  pendingSummarizeTimers.set(sid, timer);
 }
 
 function safeSlice(v: unknown, max: number): string {
   if (typeof v === "string") return v.slice(0, max);
   if (v == null) return "";
   try { return JSON.stringify(v).slice(0, max); } catch { return ""; }
+}
+
+function normalizePatchData(part: Record<string, unknown>): { files: string[]; title: string } {
+  const raw = (part as Record<string, unknown>)?.files;
+  const files = Array.isArray(raw) ? (raw as unknown[]).filter((f): f is string => typeof f === "string").slice(0, 50) : [];
+  return { files, title: `Applied patch to ${files.length} file(s)` };
+}
+
+function normalizeCommandData(props: Record<string, unknown>): { name: string | undefined; arguments: string; title: string } {
+  const name = typeof props?.name === "string" ? props.name : undefined;
+  return {
+    name,
+    arguments: safeSlice(props?.arguments, 2000),
+    title: `Executed command: ${name ?? ""}`,
+  };
+}
+
+function normalizeSubagentTitle(part: Record<string, unknown>): string {
+  return `Started subagent: ${safeSlice((part as Record<string, unknown>)?.description || (part as Record<string, unknown>)?.agent || (part as Record<string, unknown>)?.prompt, 120)}`;
+}
+
+function normalizeTaskTitle(completed: unknown[], todos: unknown[]): string {
+  return `Task completed: ${completed.length}/${todos.length} items`;
 }
 
 const AGENTMEMORY_INSTRUCTIONS = `<agentmemory-instructions>
@@ -187,15 +476,92 @@ memory_consolidate — Run the 4-tier memory consolidation pipeline.
 All memory tools start with \`agentmemory_memory_\`. Use the exact names as they appear in your tool list. Tool results are JSON. Always check what was returned before presenting to the user.
 </agentmemory-instructions>`;
 
+// Upstream @opencode-ai/plugin types omit runtime agent parameter (#1184)
+interface OpenCodeChatTransformInput {
+  sessionID?: string;
+  agent?: string;
+  small?: boolean;
+}
+
+interface OpenCodeContextResponse {
+  context?: string;
+}
+
 function extractFilePaths(args: Record<string, unknown>): string[] {
   const files: string[] = [];
   for (const key of FILE_KEYS) {
     const val = args[key];
     if (typeof val === "string" && val.length > 0) {
-      files.push(val);
+      // Filter out glob patterns or regexes that aren't literal file paths
+      if (!/[\*\?\{\}\[\]\(\)\|\^\$]/.test(val)) {
+        files.push(val);
+      }
     }
   }
   return files;
+}
+
+async function linkCommitIfApplicable(
+  sid: string,
+  inputArgs: Record<string, unknown> | undefined,
+  outputResult: unknown,
+  cwd?: string,
+): Promise<void> {
+  try {
+    const inputCmd = typeof inputArgs?.command === "string" ? inputArgs.command : "";
+    const outputStr = typeof outputResult === "string" ? outputResult : JSON.stringify(outputResult || "");
+    if (!/\bgit\s+commit\b/.test(inputCmd) && !/\bgit\s+commit\b/.test(outputStr)) return;
+
+    const shaMatch =
+      outputStr.match(/\[[\w./\-]+ ([0-9a-f]{7,40})\]/) ||
+      outputStr.match(/^([0-9a-f]{7,40})\s/m);
+    if (!shaMatch) return;
+    const sha = shaMatch[1];
+    if (!sha) return;
+
+    const effectiveCwd = cwd || projectFor(sid).cwd || process.cwd();
+    const runGit = (args: string[]): string => {
+      return execFileSync("git", args, {
+        cwd: effectiveCwd,
+        stdio: ["ignore", "pipe", "ignore"],
+        encoding: "utf8",
+        timeout: 2000,
+      }).trim();
+    };
+
+    let branch = "";
+    let repo = "";
+    let message = "";
+    let author = "";
+    let files: string[] = [];
+    try {
+      branch = runGit(["rev-parse", "--abbrev-ref", "HEAD"]);
+      const top = runGit(["rev-parse", "--show-toplevel"]);
+      repo = top ? basename(top) : projectFor(sid).name;
+      message = runGit(["log", "-1", "--format=%B", sha]);
+      author = runGit(["log", "-1", "--format=%an", sha]);
+      files = runGit(["diff-tree", "--no-commit-id", "--name-only", "-r", sha]).split("\n").filter(Boolean);
+    } catch {
+      // git lookup fallback
+    }
+
+    await postJson(
+      "/session/commit",
+      {
+        sessionId: sid,
+        sha,
+        branch: branch || "main",
+        repo: repo || projectFor(sid).name,
+        message: message || "git commit",
+        author: author || "unknown",
+        files,
+      },
+      3000,
+    );
+    if (DEBUG) console.error(`[agentmemory] Linked commit ${sha} -> ${sid}`);
+  } catch (e) {
+    if (DEBUG) console.error("[agentmemory] commit link failed:", (e as Error).message);
+  }
 }
 
 function extractErrorMessage(err: unknown): string {
@@ -214,7 +580,13 @@ function extractErrorMessage(err: unknown): string {
 }
 
 export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
-  defaultProjectCwd = ctx.worktree || ctx.project?.id || process.cwd();
+  defaultProjectCwd = resolveCandidateDir(
+    ctx.worktree,
+    (ctx as any)?.project?.directory,
+    (ctx as any)?.directory,
+    ctx.project?.id,
+    process.cwd(),
+  );
   defaultProjectName = resolveProjectName(defaultProjectCwd);
 
   return {
@@ -227,10 +599,13 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
         const info = props.info as Record<string, unknown> | undefined;
         activeSessionId = (info?.id as string) || props.sessionID || null;
         if (!activeSessionId) return;
+        if (typeof info?.parentID === "string" && info.parentID.length > 0) {
+          forkSessionIds.add(activeSessionId);
+        }
+        sessionBootstrapMs.set(activeSessionId, Date.now());
         stashedFiles.set(activeSessionId, new Set());
         seenSubtaskIds.delete(activeSessionId);
         seenToolCallIds.delete(activeSessionId);
-        contextInjectedSessions.delete(activeSessionId);
         // Snapshot the session id locally — `activeSessionId` is mutable
         // and another `session.created` event during the await could
         // rebind it, causing context to be cached against the wrong key.
@@ -238,24 +613,26 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
         // Attribute this session to its own directory when the event
         // carries one; a multi-directory OpenCode process otherwise
         // records every session under whichever repo loaded the plugin.
-        const sessionDir =
-          typeof info?.directory === "string" && info.directory
-            ? info.directory
-            : defaultProjectCwd;
-        let proj: { name: string | null; cwd: string | null };
-        if (sessionDir) {
-          const entry = { cwd: sessionDir, name: resolveProjectName(sessionDir) };
-          sessionProjects.set(sessionId, entry);
-          proj = entry;
-        } else {
-          proj = projectFor(sessionId);
-        }
+        // Skip macOS .app bundles from Desktop mode so we resolve the real project path.
+        const sessionDir = resolveCandidateDir(
+          typeof info?.directory === "string" ? info.directory : undefined,
+          (ctx as any)?.project?.directory,
+          (ctx as any)?.directory,
+          ctx.worktree,
+          ctx.project?.id,
+          defaultProjectCwd,
+          process.cwd(),
+        );
+        const proj = { cwd: sessionDir, name: resolveProjectName(sessionDir) };
+        const sessionIdentity = resolveWorkspaceIdentity(sessionDir);
+        sessionProjects.set(sessionId, proj);
         const startResult = await postJson("/session/start", {
           sessionId,
           title: info?.title ?? null,
           parentID: info?.parentID ?? null,
           version: info?.version ?? null,
-          project: proj.name,
+          project: sessionIdentity.projectKey,
+          project_display_name: sessionIdentity.displayName,
           cwd: proj.cwd,
         });
         // cache the context returned at session/start so the
@@ -270,7 +647,13 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
         }
       }
 
-      // ── session.idle ── (summarize handled in session.status idle branch)
+      // ── session.idle ──
+      if (type === "session.idle") {
+        const sid = props.sessionID || activeSessionId;
+        if (sid) {
+          scheduleSummarize(sid);
+        }
+      }
 
       // ── session.status ──
       if (type === "session.status") {
@@ -278,7 +661,9 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
         const sid = props.sessionID || activeSessionId;
         if (!sid || !status) return;
         if (status.type === "idle") {
-          await post("/summarize", { sessionId: sid });
+          scheduleSummarize(sid);
+        } else {
+          cancelPendingSummarize(sid);
         }
         await observe(sid, "session_status", {
           status_type: status.type,
@@ -291,36 +676,19 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
       if (type === "session.compacted") {
         const sid = props.sessionID || activeSessionId;
         if (sid) {
-          await post("/summarize", { sessionId: sid });
+          scheduleSummarize(sid);
           await observe(sid, "session_compacted", {});
         }
       }
 
       // ── session.updated ──
       if (type === "session.updated") {
-        const info = props.info as Record<string, unknown> | undefined;
-        const sid = (info?.id as string) || props.sessionID || activeSessionId;
-        if (!sid) return;
-        await observe(sid, "session_updated", {
-          title: info?.title ?? null,
-          parentID: info?.parentID ?? null,
-          additions: (info?.summary as any)?.additions ?? null,
-          deletions: (info?.summary as any)?.deletions ?? null,
-          files: (info?.summary as any)?.files ?? null,
-        });
+        // Internal telemetry filtered at edge
       }
 
       // ── session.diff ──
       if (type === "session.diff") {
-        const sid = props.sessionID || activeSessionId;
-        if (!sid || !Array.isArray(props.diff)) return;
-        const diffs = props.diff as Array<Record<string, unknown>>;
-        await observe(sid, "session_diff", {
-          files: diffs.map(d => d.file),
-          additions: diffs.reduce((s, d) => s + ((d.additions as number) || 0), 0),
-          deletions: diffs.reduce((s, d) => s + ((d.deletions as number) || 0), 0),
-          diffs: diffs.slice(0, 50),
-        });
+        // Internal telemetry filtered at edge
       }
 
       // ── session.deleted ──
@@ -336,7 +704,6 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
         if (sid === activeSessionId) activeSessionId = null;
         pruneSessionMaps(sid);
         startContextCache.delete(sid);
-        contextInjectedSessions.delete(sid);
       }
 
       // ── session.error ──
@@ -359,8 +726,23 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
         if (info.role === "assistant") {
           const sid = props.sessionID || (info.sessionID as string) || activeSessionId;
           if (!sid) return;
+          const eventTs = eventTimestampMsFrom(props, info, null);
+          ensureSessionBootstrap(sid, eventTs);
+          maybeMarkForkFromTimestamp(sid, eventTs);
+          if (isReplayedEvent(sid, eventTs)) return;
+          const isTerminal = info.finish != null || info.error != null || (info.time as any)?.completed != null;
+          if (!isTerminal) return;
+          const seen = assistantMessageSetFor(sid);
+          if (seen.has(info.id as string)) return;
+          seen.add(info.id as string);
           const tokens = info.tokens as Record<string, unknown> | undefined;
+          const outputTokens = ((tokens?.output as number) ?? 0);
           const error = info.error ? extractErrorMessage(info.error) : null;
+
+          if (!info.finish || (!error && outputTokens <= 0)) {
+            return;
+          }
+
           await observe(sid, "assistant_message", {
             messageID: info.id,
             parentID: info.parentID,
@@ -370,7 +752,7 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
             cost: info.cost ?? 0,
             tokens: {
               input: tokens?.input ?? 0,
-              output: tokens?.output ?? 0,
+              output: outputTokens,
               reasoning: tokens?.reasoning ?? 0,
               cache_read: (tokens?.cache as any)?.read ?? 0,
               cache_write: (tokens?.cache as any)?.write ?? 0,
@@ -388,6 +770,10 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
       if (type === "message.removed") {
         const sid = props.sessionID || activeSessionId;
         if (sid) {
+          const ts = eventTimestampMsFrom(props, null, null);
+          ensureSessionBootstrap(sid, ts);
+          maybeMarkForkFromTimestamp(sid, ts);
+          if (isReplayedEvent(sid, ts)) return;
           await observe(sid, "message_removed", {
             messageID: props.messageID,
           });
@@ -400,6 +786,10 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
         if (!part) return;
         const sid = (part.sessionID as string) || props.sessionID || activeSessionId;
         if (!sid) return;
+        const partEventTs = eventTimestampMsFrom(props, null, part as Record<string, unknown>);
+        ensureSessionBootstrap(sid, partEventTs);
+        maybeMarkForkFromTimestamp(sid, partEventTs);
+        if (isReplayedEvent(sid, partEventTs)) return;
 
         if (part.type === "subtask") {
           const subtaskId = part.id as string;
@@ -412,6 +802,7 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
             agent: part.agent,
             prompt: safeSlice(part.prompt, 4000),
             description: safeSlice(part.description, 2000),
+            title: normalizeSubagentTitle(part as Record<string, unknown>),
           });
           return;
         }
@@ -419,15 +810,31 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
         if (part.type === "tool") {
           const state = part.state as Record<string, unknown> | undefined;
           if (!state) return;
-          const callId = part.callID as string;
+          const callId = (part.callID as string) || (part.id as string);
           if (!callId) return;
           const toolName = part.tool as string;
+
+          if (state.input && typeof state.input === "object") {
+            const inObj = state.input as Record<string, unknown>;
+            for (const fp of extractFilePaths(inObj)) {
+              updateSessionProjectIfDiscovered(sid, fp);
+            }
+            if (typeof inObj.workdir === "string") {
+              updateSessionProjectIfDiscovered(sid, inObj.workdir);
+            }
+            if (typeof inObj.cwd === "string") {
+              updateSessionProjectIfDiscovered(sid, inObj.cwd);
+            }
+          }
 
           if (state.status === "completed") {
             const callSet = toolCallSetFor(sid);
             if (callSet.has(callId)) return;
             callSet.add(callId);
             const st = state as Record<string, unknown>;
+            if (toolName === "bash" || toolName === "shell") {
+              await linkCommitIfApplicable(sid, st.input as any, st.output, projectFor(sid).cwd);
+            }
             const rawTime = (st.time as any) || {};
             const startTime = typeof rawTime.start === "number" ? rawTime.start : null;
             const endTime = typeof rawTime.end === "number" ? rawTime.end : null;
@@ -463,14 +870,7 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
         }
 
         if (part.type === "step-finish") {
-          await observe(sid, "step_finish", {
-            messageID: part.messageID,
-            reason: part.reason ?? null,
-            cost: (part as any).cost ?? 0,
-            input_tokens: ((part as any).tokens?.input as number) ?? 0,
-            output_tokens: ((part as any).tokens?.output as number) ?? 0,
-            reasoning_tokens: ((part as any).tokens?.reasoning as number) ?? 0,
-          });
+          // Internal telemetry filtered at edge to avoid double-counting tokens/cost
           return;
         }
 
@@ -489,10 +889,12 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
         }
 
         if (part.type === "patch") {
+          const { files, title } = normalizePatchData(part as Record<string, unknown>);
           await observe(sid, "patch_applied", {
             messageID: part.messageID,
             hash: (part as any).hash,
-            files: (part as any).files || [],
+            files,
+            title,
           });
           return;
         }
@@ -506,10 +908,7 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
         }
 
         if (part.type === "agent") {
-          await observe(sid, "agent_selected", {
-            messageID: part.messageID,
-            name: (part as any).name,
-          });
+          // Internal telemetry filtered at edge
           return;
         }
 
@@ -523,8 +922,17 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
         }
       }
 
-      // ── file.edited ──
+      // ── file.edited ── (stash-only, never observed — guard anyway to avoid polluting future enrich)
       if (type === "file.edited") {
+        {
+          const sid = props.sessionID || activeSessionId;
+          if (sid) {
+            const ts = eventTimestampMsFrom(props, null, null);
+            ensureSessionBootstrap(sid, ts);
+            maybeMarkForkFromTimestamp(sid, ts);
+            if (isReplayedEvent(sid, ts)) return;
+          }
+        }
         const sid = props.sessionID || activeSessionId;
         if (sid && typeof props.file === "string" && props.file.length > 0) {
           const stash = stashFor(sid);
@@ -541,6 +949,12 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
       if (type === "permission.updated") {
         const sid = props.sessionID || activeSessionId;
         if (!sid) return;
+        {
+          const ts = eventTimestampMsFrom(props, null, null);
+          ensureSessionBootstrap(sid, ts);
+          maybeMarkForkFromTimestamp(sid, ts);
+          if (isReplayedEvent(sid, ts)) return;
+        }
         await observe(sid, "notification", {
           notification_type: "permission_prompt",
           permission: props.type || "unknown",
@@ -557,6 +971,12 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
       if (type === "permission.replied") {
         const sid = props.sessionID || activeSessionId;
         if (!sid) return;
+        {
+          const ts = eventTimestampMsFrom(props, null, null);
+          ensureSessionBootstrap(sid, ts);
+          maybeMarkForkFromTimestamp(sid, ts);
+          if (isReplayedEvent(sid, ts)) return;
+        }
         await observe(sid, "permission_replied", {
           permission_id: props.permissionID || props.requestID || "",
           response: props.response || props.reply || "",
@@ -568,12 +988,19 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
         const sid = props.sessionID || activeSessionId;
         const todos = Array.isArray(props.todos) ? props.todos.slice(0, 100) : [];
         if (!sid || todos.length === 0) return;
+        {
+          const ts = eventTimestampMsFrom(props, null, null);
+          ensureSessionBootstrap(sid, ts);
+          maybeMarkForkFromTimestamp(sid, ts);
+          if (isReplayedEvent(sid, ts)) return;
+        }
         const completed = todos.filter((t: any) => t.status === "completed");
         const active = todos.filter((t: any) => t.status !== "completed");
         await observe(sid, "task_completed", {
           completed: completed.map((t: any) => ({ content: t.content, priority: t.priority })),
           in_progress: active.map((t: any) => ({ content: t.content, priority: t.priority })),
           total: todos.length,
+          title: normalizeTaskTitle(completed, todos),
         });
       }
 
@@ -581,9 +1008,15 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
       if (type === "command.executed") {
         const sid = props.sessionID || activeSessionId;
         if (sid) {
+          const ts = eventTimestampMsFrom(props, null, null);
+          ensureSessionBootstrap(sid, ts);
+          maybeMarkForkFromTimestamp(sid, ts);
+          if (isReplayedEvent(sid, ts)) return;
+          const { title } = normalizeCommandData(props as Record<string, unknown>);
           await observe(sid, "command_executed", {
             name: props.name,
             arguments: props.arguments || "",
+            title,
           });
         }
       }
@@ -593,12 +1026,14 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
     "chat.message": async (input, output) => {
       const sid = input.sessionID || activeSessionId;
       if (!sid) return;
+      cancelPendingSummarize(sid);
       const parts = output.parts || [];
       const files = parts
         .filter((p: any) => p.type === "file")
-        .map((p: any) => p.filename || p.url)
+        .map((p: any) => p.filename || p.url || p.path || p.filePath || p.file)
         .filter(Boolean);
       for (const f of files) {
+        updateSessionProjectIfDiscovered(sid, f);
         const stash = stashFor(sid);
         stash.add(f);
         if (stash.size > MAX_STASHED_FILES) {
@@ -622,29 +1057,27 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
     },
 
     // ── chat.params ──
-    "chat.params": async (input, output) => {
-      if (!input.model || !output) return;
-      const sid = input.sessionID || activeSessionId;
-      if (!sid) return;
-      await observe(sid, "llm_params", {
-        agent: input.agent,
-        model: `${input.model.providerID}/${input.model.id}`,
-        provider_url: input.model.api?.url ?? null,
-        temperature: output.temperature,
-        topP: output.topP,
-        max_output_tokens: input.model.limit?.output ?? null,
-        context_limit: input.model.limit?.context ?? null,
-        cost_1k_input: input.model.cost?.input ?? 0,
-        cost_1k_output: input.model.cost?.output ?? 0,
-      });
+    "chat.params": async (_input, _output) => {
+      // Internal telemetry filtered at edge
     },
 
     // ── tool.execute.before ──
     "tool.execute.before": async (input, output) => {
-      if (!FILE_TOOLS.has(String(input.tool ?? "").toLowerCase())) return;
       const sid = input.sessionID || activeSessionId;
       if (!sid) return;
       const args = output.args as Record<string, unknown> | undefined;
+      if (args) {
+        for (const fp of extractFilePaths(args)) {
+          updateSessionProjectIfDiscovered(sid, fp);
+        }
+        if (typeof args.workdir === "string") {
+          updateSessionProjectIfDiscovered(sid, args.workdir);
+        }
+        if (typeof args.cwd === "string") {
+          updateSessionProjectIfDiscovered(sid, args.cwd);
+        }
+      }
+      if (!FILE_TOOLS.has(String(input.tool ?? "").toLowerCase())) return;
       if (!args) return;
       const stash = stashFor(sid);
       for (const fp of extractFilePaths(args)) {
@@ -660,46 +1093,102 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
     // ── experimental.chat.system.transform ──
     "experimental.chat.system.transform": async (input, output) => {
       const sid = input.sessionID || activeSessionId;
-      if (!sid) return;
+      if (!sid || !Array.isArray(output.system)) return;
 
-      if (!contextInjectedSessions.has(sid)) {
-        if (!Array.isArray(output.system)) return;
-        output.system.push(AGENTMEMORY_INSTRUCTIONS);
-        // prefer the context already fetched at session.created;
-        // fall back to a fresh /context call if the cache missed (e.g.
-        // session resumed across plugin reloads).
-        let ctx = startContextCache.get(sid);
-        if (typeof ctx !== "string" || ctx.length === 0) {
-          const result = await postJson("/context", {
-            sessionId: sid,
-            project: projectFor(sid).name,
-          });
-          ctx = (result as any)?.context;
-        } else {
-          startContextCache.delete(sid);
-        }
-        if (typeof ctx === "string" && ctx.length > 0) {
-          output.system.push(ctx);
-        }
-        contextInjectedSessions.add(sid);
+      // Type assertion: upstream @opencode-ai/plugin types omit runtime agent and small model flags (#1184)
+      const chatInput = input as OpenCodeChatTransformInput;
+
+      // Skip internal utility requests (e.g. background auto-title generation #1184 or compaction)
+      // which share the session ID but do not participate in the interactive chat stream.
+      if (
+        chatInput.agent === "title" ||
+        chatInput.agent === "compaction" ||
+        chatInput.small === true
+      ) {
+        return;
       }
+
+      // Fallback for OpenCode runtimes where chatInput.agent is not populated on internal prompts.
+      const isInternalTitle = output.system.some(
+        (s: string) =>
+          typeof s === "string" &&
+          /title generator|generate a (short|concise|brief) title|title for this conversation|thread title/i.test(s),
+      );
+      if (isInternalTitle) return;
+
+      // Identical bytes per turn preserve LLM prefix cache (#720) across all regular chat steps.
+      let ctx = startContextCache.get(sid);
+      if (typeof ctx !== "string") {
+        const sidIdentity = resolveWorkspaceIdentity(projectFor(sid).cwd);
+        const result = await postJson("/context", {
+          sessionId: sid,
+          project: sidIdentity.projectKey,
+          project_display_name: sidIdentity.displayName,
+        });
+        ctx = (result as OpenCodeContextResponse)?.context;
+        if (typeof ctx === "string") {
+          startContextCache.set(sid, ctx);
+        } else {
+          startContextCache.set(sid, "");
+        }
+      }
+
+      output.system.push(AGENTMEMORY_INSTRUCTIONS);
+      if (typeof ctx === "string" && ctx.length > 0) {
+        output.system.push(ctx);
+      }
+    },
+
+    // ── experimental.chat.messages.transform ──
+    // In-memory message transform hook: attaches volatile file enrichment context to the tail
+    // of the latest user message in-memory without touching SQLite durable events or creating UI clutter.
+    "experimental.chat.messages.transform": async (input, output) => {
+      // Type assertion: upstream @opencode-ai/plugin types omit runtime agent and small model flags (#1184)
+      const chatInput = input as OpenCodeChatTransformInput;
+      if (
+        chatInput?.agent === "title" ||
+        chatInput?.agent === "compaction" ||
+        chatInput?.small === true
+      ) {
+        return;
+      }
+
+      const msgs = output?.messages;
+      if (!Array.isArray(msgs) || msgs.length === 0) return;
+
+      const lastUserMsg = msgs.filter((m: any) => m.info?.role === "user").pop();
+      if (!lastUserMsg) return;
+      const sid = lastUserMsg.info?.sessionID || activeSessionId;
+      if (!sid) return;
 
       const stash = stashFor(sid);
       if (stash.size === 0) return;
-      const files = [...stash].slice(0, 10);
 
-      const enrichResult = await postJson("/enrich", {
-        sessionId: sid,
-        files,
-        toolName: "enrich_inject",
-      });
+      const stashedFileList = [...stash].slice(0, 10);
+      for (const f of stashedFileList) stash.delete(f);
 
-      const enrichCtx = (enrichResult as any)?.context;
-      if (typeof enrichCtx === "string" && enrichCtx.length > 0) {
-        if (Array.isArray(output.system)) {
-          output.system.push(enrichCtx);
+      const proj = projectFor(sid);
+      const enrichIdentity = resolveWorkspaceIdentity(proj.cwd);
+      try {
+        const enrichResult = await postJson(
+          "/enrich",
+          {
+            sessionId: sid,
+            files: stashedFileList,
+            project: enrichIdentity.projectKey,
+            toolName: "enrich_inject",
+          },
+          3000,
+        );
+        const enrichCtx = (enrichResult as any)?.context;
+        if (typeof enrichCtx === "string" && enrichCtx.length > 0 && Array.isArray(lastUserMsg.parts)) {
+          const textPart = lastUserMsg.parts.filter((p: any) => p.type === "text").pop() as any;
+          if (textPart) {
+            textPart.text = (textPart.text || "") + `\n\n<agentmemory-file-context>\n${enrichCtx}\n</agentmemory-file-context>`;
+          }
         }
-        for (const f of files) stash.delete(f);
+      } catch (e) {
+        if (DEBUG) console.error("[agentmemory] enrich injection failed:", (e as Error).message);
       }
     },
 
@@ -710,7 +1199,8 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
 
       const result = await postJson("/context", {
         sessionId: sid,
-        project: projectFor(sid).name,
+        project: resolveWorkspaceIdentity(projectFor(sid).cwd).projectKey,
+        project_display_name: resolveWorkspaceIdentity(projectFor(sid).cwd).displayName,
       });
       const ctx = (result as any)?.context;
       if (typeof ctx === "string" && ctx.length > 0) {
@@ -745,3 +1235,14 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
     },
   };
 };
+
+Object.assign(AgentmemoryCapturePlugin, {
+  normalizePatchData,
+  normalizeCommandData,
+  normalizeSubagentTitle,
+  normalizeTaskTitle,
+  __resetReplayGuardForTests,
+  __setReplayWatermarkForTests,
+});
+
+export default AgentmemoryCapturePlugin;

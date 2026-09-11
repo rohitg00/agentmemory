@@ -8,10 +8,18 @@ import type {
   SemanticMemory,
   Lesson,
   Crystal,
+  Session,
   MemoryProvider,
 } from "../types.js";
 import { recordAudit } from "./audit.js";
 import { REFLECT_SYSTEM, buildReflectPrompt } from "../prompts/reflect.js";
+import { healLegacyProjects, resolveLegacyProjectNames } from "./consolidate.js";
+
+export const INSIGHT_MAX_SOURCE_IDS = 20;
+export const MAX_CONCEPTS_PER_CLUSTER = 15;
+export const MAX_CLUSTER_FACTS = 10;
+export const MAX_CLUSTER_LESSONS = 10;
+export const MAX_CLUSTER_CRYSTALS = 5;
 
 interface ConceptCluster {
   concepts: string[];
@@ -34,7 +42,7 @@ function reinforceInsight(insight: Insight): void {
   insight.updatedAt = now;
 }
 
-function buildGraphClusters(
+export function buildGraphClusters(
   nodes: GraphNode[],
   edges: GraphEdge[],
   maxClusters: number,
@@ -67,16 +75,22 @@ function buildGraphClusters(
   const visited = new Set<string>();
   const clusters: string[][] = [];
   const conceptNodeIds = new Set(conceptNodes.map((n) => n.id));
+  const nodeById = new Map(conceptNodes.map((n) => [n.id, n]));
 
   for (const seed of sorted) {
-    if (visited.has(seed.id) || clusters.length >= maxClusters) break;
+    if (clusters.length >= maxClusters) break;
+    if (visited.has(seed.id)) continue;
 
     const cluster: string[] = [];
     const queue = [seed.id];
     const seen = new Set<string>();
     let depth = 0;
 
-    while (queue.length > 0 && depth <= 2) {
+    while (
+      queue.length > 0 &&
+      depth <= 2 &&
+      cluster.length < MAX_CONCEPTS_PER_CLUSTER
+    ) {
       const levelCount = queue.length;
       for (let i = 0; i < levelCount; i++) {
         const current = queue.shift()!;
@@ -84,9 +98,12 @@ function buildGraphClusters(
         seen.add(current);
 
         if (conceptNodeIds.has(current)) {
-          const node = conceptNodes.find((n) => n.id === current);
-          if (node) cluster.push(node.name);
-          visited.add(current);
+          const node = nodeById.get(current);
+          if (node) {
+            cluster.push(node.name);
+            visited.add(current);
+            if (cluster.length >= MAX_CONCEPTS_PER_CLUSTER) break;
+          }
         }
 
         const neighbors = edgeMap.get(current) || new Set();
@@ -103,7 +120,7 @@ function buildGraphClusters(
   return clusters;
 }
 
-function buildJaccardClusters(
+export function buildJaccardClusters(
   semanticMemories: SemanticMemory[],
   lessons: Lesson[],
   maxClusters: number,
@@ -133,13 +150,15 @@ function buildJaccardClusters(
   const clusters: string[][] = [];
 
   for (const concept of conceptList) {
-    if (visited.has(concept) || clusters.length >= maxClusters) break;
+    if (clusters.length >= maxClusters) break;
+    if (visited.has(concept)) continue;
 
     const cluster = [concept];
     visited.add(concept);
 
     const docsA = allConcepts.get(concept) || new Set();
     for (const other of conceptList) {
+      if (cluster.length >= MAX_CONCEPTS_PER_CLUSTER) break;
       if (visited.has(other)) continue;
       const docsB = allConcepts.get(other) || new Set();
       let intersection = 0;
@@ -166,10 +185,32 @@ export function registerReflectFunctions(
   provider: MemoryProvider,
 ): void {
   sdk.registerFunction("mem::reflect", 
-    async (data: { maxClusters?: number; project?: string }) => {
+    async (data: {
+      maxClusters?: number;
+      project?: string;
+      project_display_name?: string;
+    }) => {
       const maxClusters = Math.min(data?.maxClusters ?? 10, 20);
       const maxInsightsPerCluster = 5;
       const maxTotal = 50;
+
+      const legacyNames = data?.project
+        ? await resolveLegacyProjectNames(
+            kv,
+            data.project,
+            data.project_display_name?.trim()
+              ? [data.project_display_name.trim()]
+              : [],
+          )
+        : new Set<string>();
+      const projectNames = data?.project
+        ? new Set([data.project, ...legacyNames])
+        : undefined;
+      const healed = data?.project
+        ? await healLegacyProjects(kv, data.project, {
+            legacyNames: [...legacyNames],
+          })
+        : undefined;
 
       const [graphNodes, graphEdges, semanticMemories, lessons, crystals] =
         await Promise.all([
@@ -181,12 +222,70 @@ export function registerReflectFunctions(
         ]);
 
       let activeLessons = lessons.filter((l) => !l.deleted);
+      if (projectNames) {
+        activeLessons = activeLessons.filter((l) =>
+          projectNames.has(l.project ?? ""),
+        );
+      }
+
+      let activeCrystals = crystals.filter(
+        (c) => !projectNames || projectNames.has(c.project ?? ""),
+      );
+      activeCrystals.sort(
+        (a, b) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+      );
+
+      let activeSemantic = semanticMemories;
       if (data?.project) {
-        activeLessons = activeLessons.filter((l) => l.project === data.project);
+        const sessions = await kv.list<Session>(KV.sessions).catch(() => []);
+        const projectSessionIds = new Set(
+          sessions
+            .filter((s) => !projectNames || projectNames.has(s.project))
+            .map((s) => s.id),
+        );
+        activeSemantic = semanticMemories.filter((s) =>
+          (s.sourceSessionIds || []).some((id) => projectSessionIds.has(id)),
+        );
+      }
+
+      let relevantGraphNodes = graphNodes;
+      if (data?.project) {
+        const projectTerms = new Set<string>();
+        const addTerms = (text: string) => {
+          if (!text) return;
+          for (const token of text.toLowerCase().split(/[\s,.;:!?()[\]{}"]+/)) {
+            const clean = token.replace(/^[^a-z0-9_-]+|[^a-z0-9_-]+$/gi, "");
+            if (clean.length > 3) projectTerms.add(clean);
+          }
+        };
+
+        for (const l of activeLessons) {
+          for (const t of l.tags || []) addTerms(t);
+          if (l.content) addTerms(l.content);
+        }
+        for (const c of activeCrystals) {
+          for (const l of c.lessons || []) addTerms(l);
+          if (c.narrative) addTerms(c.narrative);
+        }
+        for (const s of activeSemantic) {
+          if (s.fact) addTerms(s.fact);
+        }
+
+        relevantGraphNodes = graphNodes.filter((node) => {
+          if (node.type !== "concept") return true;
+          const nameLower = (node.name || "").toLowerCase();
+          const cleanName = nameLower.replace(/^[^a-z0-9_-]+|[^a-z0-9_-]+$/gi, "");
+          return (
+            projectTerms.has(nameLower) ||
+            projectTerms.has(cleanName) ||
+            nameLower.split(/[\s,.;:!?()[\]{}"]+/).some((w) => projectTerms.has(w))
+          );
+        });
       }
 
       let conceptClusters = buildGraphClusters(
-        graphNodes,
+        relevantGraphNodes,
         graphEdges,
         maxClusters,
       );
@@ -194,7 +293,7 @@ export function registerReflectFunctions(
       const usedFallback = conceptClusters.length === 0;
       if (usedFallback) {
         conceptClusters = buildJaccardClusters(
-          semanticMemories,
+          activeSemantic,
           activeLessons,
           maxClusters,
         );
@@ -210,25 +309,37 @@ export function registerReflectFunctions(
 
         const conceptSet = new Set(conceptNames.map((c) => c.toLowerCase()));
 
-        const clusterFacts = semanticMemories.filter((s) => {
-          const factTerms = s.fact.toLowerCase().split(/\s+/);
-          return factTerms.some((t) => conceptSet.has(t));
-        });
+        const clusterFacts = activeSemantic
+          .filter((s) => {
+            const factTerms = s.fact.toLowerCase().split(/\s+/);
+            return factTerms.some((t) => conceptSet.has(t));
+          })
+          .sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0))
+          .slice(0, MAX_CLUSTER_FACTS);
 
-        const clusterLessons = activeLessons.filter((l) =>
-          l.tags.some((t) => conceptSet.has(t.toLowerCase())) ||
-          conceptNames.some((c) =>
-            l.content.toLowerCase().includes(c.toLowerCase()),
-          ),
-        );
-
-        const clusterCrystals = crystals.filter((c) =>
-          (c.lessons || []).some((l) =>
-            conceptNames.some((cn) =>
-              l.toLowerCase().includes(cn.toLowerCase()),
+        const clusterLessons = activeLessons
+          .filter((l) =>
+            l.tags.some((t) => conceptSet.has(t.toLowerCase())) ||
+            conceptNames.some((c) =>
+              l.content.toLowerCase().includes(c.toLowerCase()),
             ),
-          ),
-        );
+          )
+          .sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0))
+          .slice(0, MAX_CLUSTER_LESSONS);
+
+        const clusterCrystals = activeCrystals
+          .filter((c) =>
+            (c.lessons || []).some((l) =>
+              conceptNames.some((cn) =>
+                l.toLowerCase().includes(cn.toLowerCase()),
+              ),
+            ),
+          )
+          .sort(
+            (a, b) =>
+              new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+          )
+          .slice(0, MAX_CLUSTER_CRYSTALS);
 
         const totalItems =
           clusterFacts.length + clusterLessons.length + clusterCrystals.length;
@@ -292,9 +403,9 @@ export function registerReflectFunctions(
                 confidence,
                 reinforcements: 0,
                 sourceConceptCluster: conceptNames,
-                sourceMemoryIds: cluster.factIds,
-                sourceLessonIds: cluster.lessonIds,
-                sourceCrystalIds: cluster.crystalIds,
+                sourceMemoryIds: (cluster.factIds || []).slice(-INSIGHT_MAX_SOURCE_IDS),
+                sourceLessonIds: (cluster.lessonIds || []).slice(-INSIGHT_MAX_SOURCE_IDS),
+                sourceCrystalIds: (cluster.crystalIds || []).slice(-INSIGHT_MAX_SOURCE_IDS),
                 project: data?.project,
                 tags: conceptNames,
                 createdAt: now,
@@ -320,6 +431,7 @@ export function registerReflectFunctions(
           clustersProcessed: conceptClusters.length - clustersSkipped,
           clustersSkipped,
           usedFallback,
+          healed,
         });
       } catch {}
 
@@ -330,6 +442,7 @@ export function registerReflectFunctions(
         clustersProcessed: conceptClusters.length - clustersSkipped,
         clustersSkipped,
         usedFallback,
+        ...(healed ? { healed } : {}),
       };
     },
   );

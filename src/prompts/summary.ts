@@ -31,8 +31,19 @@ export function buildSummaryPrompt(observations: Array<{
   concepts: string[]
 }>): string {
   const lines = observations.map((obs, i) => {
-    const facts = obs.facts.map((f) => `  - ${f}`).join('\n')
-    return `[${i + 1}] ${obs.type}: ${obs.title}\n${obs.narrative}\nFacts:\n${facts}\nFiles: ${obs.files.join(', ')}`
+    const header = `[${i + 1}] ${obs.type}: ${obs.title}`;
+    const parts: string[] = [header];
+    const narrative = typeof obs.narrative === "string" ? obs.narrative : "";
+    if (narrative && narrative.trim().length > 0) parts.push(narrative);
+    const facts = Array.isArray(obs.facts) ? obs.facts : [];
+    if (facts.length > 0) {
+      parts.push(`Facts:\n${facts.map((f) => `  - ${f}`).join("\n")}`);
+    }
+    const files = Array.isArray(obs.files) ? obs.files : [];
+    if (files.length > 0) {
+      parts.push(`Files: ${files.join(", ")}`);
+    }
+    return parts.join("\n");
   })
   return `Session observations (${observations.length} total):\n\n${lines.join('\n\n---\n\n')}`
 }

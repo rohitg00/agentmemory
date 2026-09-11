@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { resolveProject, hookCwd } from "./_project.js";
+import { resolveWorkspaceIdentity, hookCwd } from "./_project.js";
 
 // Inlined from ./sdk-guard so each hook bundles to a single self-contained
 // .mjs (matches the pattern used by every other hook entry in tsdown.config).
@@ -72,13 +72,18 @@ async function main() {
     ((data.session_id || data.sessionId || data.conversation_id) as string) ||
     `ses_${Date.now().toString(36)}`;
   const cwd = hookCwd(data) || process.cwd();
-  const project = resolveProject(cwd);
+  const identity = resolveWorkspaceIdentity(cwd);
 
   const url = `${REST_URL}/agentmemory/session/start`;
   const init: RequestInit = {
     method: "POST",
     headers: authHeaders(),
-    body: JSON.stringify({ sessionId, project, cwd }),
+    body: JSON.stringify({
+      sessionId,
+      project: identity.projectKey,
+      project_display_name: identity.displayName,
+      cwd,
+    }),
   };
 
   if (!INJECT_CONTEXT) {

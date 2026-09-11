@@ -1,12 +1,13 @@
 import type { ISdk } from "iii-sdk";
-import type {
-  Session,
-  CompressedObservation,
-  SessionSummary,
-  ContextBlock,
-  ProjectProfile,
-  MemorySlot,
-  Lesson,
+import {
+  type Session,
+  type CompressedObservation,
+  type SessionSummary,
+  type ContextBlock,
+  type ProjectProfile,
+  type MemorySlot,
+  type Lesson,
+  TELEMETRY_HOOKS,
 } from "../types.js";
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
@@ -18,6 +19,17 @@ import {
   renderPinnedContext,
 } from "./slots.js";
 import { getAgentId, isAgentScopeIsolated } from "../config.js";
+
+interface SessionCheckpoint {
+  id: string;
+  sessionId: string;
+  project: string;
+  watermarkStart: number;
+  watermarkEnd: number;
+  summary: string;
+  filesModified: string[];
+  createdAt: string;
+}
 
 function estimateTokens(text: string): number {
   return Math.ceil(text.length / 3);
@@ -31,6 +43,26 @@ function escapeXmlAttr(s: string): string {
     .replace(/>/g, "&gt;");
 }
 
+function extractProjectFallbacks(project: string, displayName?: string): string[] {
+  const list: string[] = [];
+  if (displayName && displayName !== project) {
+    list.push(displayName);
+  }
+  if (project.includes("-")) {
+    const parts = project.split("-");
+    const last = parts[parts.length - 1];
+    if (/^[a-f0-9]{8}$/.test(last) && parts.length > 1) {
+      list.push(parts.slice(0, -1).join("-"));
+    } else {
+      list.push(last);
+      if (parts.length > 2) {
+        list.push(parts.slice(1).join("-"));
+      }
+    }
+  }
+  return Array.from(new Set(list)).filter((p) => p.length > 0 && p !== project);
+}
+
 export function registerContextFunction(
   sdk: ISdk,
   kv: StateKV,
@@ -40,11 +72,17 @@ export function registerContextFunction(
     async (data: {
       sessionId: string;
       project: string;
+      project_display_name?: string;
+      projectDisplayName?: string;
       budget?: number;
       agentId?: string;
     }) => {
       const budget = data.budget || tokenBudget;
       const blocks: ContextBlock[] = [];
+      const fallbacks = extractProjectFallbacks(
+        data.project,
+        data.project_display_name ?? data.projectDisplayName,
+      );
 
       // Cross-agent isolation for the injected-context path. Mirrors the
       // filter mem::search / mem::smart-search already apply so /context
@@ -70,15 +108,50 @@ export function registerContextFunction(
         );
       }
 
-      const [pinnedSlots, profile, lessons] = await Promise.all([
+      let [pinnedSlots, profile, lessons, checkpoints] = await Promise.all([
         isSlotsEnabled()
-          ? listPinnedSlots(kv).catch(() => [] as MemorySlot[])
+          ? listPinnedSlots(kv, data.project).catch(() => [] as MemorySlot[])
           : Promise.resolve([] as MemorySlot[]),
         kv
           .get<ProjectProfile>(KV.profiles, data.project)
           .catch(() => null),
         kv.list<Lesson>(KV.lessons).catch(() => [] as Lesson[]),
+        kv.list<SessionCheckpoint>(KV.checkpoints).catch(() => [] as SessionCheckpoint[]),
       ]);
+
+      if (fallbacks.length > 0) {
+        if (pinnedSlots.length === 0 && isSlotsEnabled()) {
+          for (const fb of fallbacks) {
+            const fbSlots = await listPinnedSlots(kv, fb).catch(() => [] as MemorySlot[]);
+            if (fbSlots.length > 0) {
+              pinnedSlots = fbSlots;
+              break;
+            }
+          }
+        }
+        if (!profile) {
+          for (const fb of fallbacks) {
+            const fbProfile = await kv.get<ProjectProfile>(KV.profiles, fb).catch(() => null);
+            if (fbProfile) {
+              profile = fbProfile;
+              break;
+            }
+          }
+        }
+      }
+
+      // ADR 0004: sessions with a checkpoint render the 3-tier working
+      // context (checkpoint + semantic top-3 + trailing observations).
+      // Sessions without one keep the legacy byte-identical output.
+      const sessionCheckpoints = checkpoints.filter(
+        (c) => c.sessionId === data.sessionId,
+      );
+      const latestCheckpoint =
+        sessionCheckpoints.length > 0
+          ? sessionCheckpoints.sort(
+              (a, b) => (b.watermarkEnd || 0) - (a.watermarkEnd || 0),
+            )[0]
+          : undefined;
 
       const slotContent = renderPinnedContext(pinnedSlots);
       if (slotContent) {
@@ -129,17 +202,26 @@ export function registerContextFunction(
       // Lessons — closes the loop opened by mem::lesson-save / mem::reflect.
       // Without this block, lessons sit in KV and only surface when the agent
       // thinks to call memory_lesson_recall. Ranking puts project-scoped
-      // lessons ahead of global ones, then weights by confidence; we cap at
-      // 10 to keep the block bounded since the outer token-budget loop
-      // below will drop the whole block if it doesn't fit. #457.
+      // lessons ahead of global ones, then weights by confidence. In 3-tier
+      // mode (checkpoint present) the semantic tier contributes at most the
+      // top 3; legacy sessions keep the cap at 10. The outer token-budget
+      // loop below will drop the whole block if it doesn't fit. #457.
       const relevantLessons = lessons
-        .filter((l) => !l.deleted && (!l.project || l.project === data.project))
+        .filter(
+          (l) =>
+            !l.deleted &&
+            (!l.project ||
+              l.project === data.project ||
+              fallbacks.includes(l.project)),
+        )
         .sort((a, b) => {
-          const scoreA = (a.project === data.project ? 1.5 : 1) * a.confidence;
-          const scoreB = (b.project === data.project ? 1.5 : 1) * b.confidence;
+          const matchesA = a.project === data.project || fallbacks.includes(a.project || "");
+          const matchesB = b.project === data.project || fallbacks.includes(b.project || "");
+          const scoreA = (matchesA ? 1.5 : 1) * a.confidence;
+          const scoreB = (matchesB ? 1.5 : 1) * b.confidence;
           return scoreB - scoreA;
         })
-        .slice(0, 10);
+        .slice(0, latestCheckpoint ? 3 : 10);
 
       if (relevantLessons.length > 0) {
         const oneLine = (s: string): string =>
@@ -164,8 +246,65 @@ export function registerContextFunction(
         });
       }
 
+      // Tier 1 — Session Checkpoint (ADR 0004). Latest compacted checkpoint
+      // for the CURRENT session. Recency pinned to now so it sorts above the
+      // profile/lessons/summary blocks.
+      if (latestCheckpoint) {
+        const checkpointContent = `## Session Checkpoint\n${latestCheckpoint.summary}`;
+        blocks.push({
+          type: "memory",
+          content: checkpointContent,
+          tokens: estimateTokens(checkpointContent),
+          recency: Date.now(),
+        });
+      }
+
+      // Tier 3 — trailing window of the last 25 episodic observations from
+      // the CURRENT session, preserving immediate tactical execution state.
+      if (latestCheckpoint) {
+        const currentObservations = await kv
+          .list<CompressedObservation>(KV.observations(data.sessionId))
+          .catch(() => [] as CompressedObservation[]);
+        const episodic = currentObservations
+          .filter(
+            (o) =>
+              !o.isTelemetry &&
+              !TELEMETRY_HOOKS.has(o.title as never),
+          )
+          .sort(
+            (a, b) =>
+              new Date(a.timestamp || 0).getTime() -
+              new Date(b.timestamp || 0).getTime(),
+          );
+        const tail = episodic.slice(-25);
+        const tailLines = tail
+          .map((o) => {
+            const title =
+              typeof o.title === "string" && o.title.trim().length > 0
+                ? o.title.trim()
+                : "";
+            if (!title) return "";
+            const narrative =
+              typeof o.narrative === "string" && o.narrative.trim().length > 0
+                ? `: ${o.narrative.trim()}`
+                : "";
+            return `- ${title}${narrative}`;
+          })
+          .filter((line) => line.length > 0)
+          .map((line) => (line.length > 200 ? line.slice(0, 200) : line));
+        if (tailLines.length > 0) {
+          const tailContent = `## Recent Activity (last 25 observations)\n${tailLines.join("\n")}`;
+          blocks.push({
+            type: "observation",
+            content: tailContent,
+            tokens: estimateTokens(tailContent),
+            recency: new Date(tail[tail.length - 1].timestamp || 0).getTime(),
+          });
+        }
+      }
+
       const allSessions = await kv.list<Session>(KV.sessions);
-      const sessions = allSessions
+      let sessions = allSessions
         .filter(
           (s) =>
             s.project === data.project &&
@@ -177,6 +316,21 @@ export function registerContextFunction(
             new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime(),
         )
         .slice(0, 10);
+
+      if (sessions.length === 0 && fallbacks.length > 0) {
+        sessions = allSessions
+          .filter(
+            (s) =>
+              fallbacks.includes(s.project) &&
+              s.id !== data.sessionId &&
+              (filterAgentId === undefined || s.agentId === filterAgentId),
+          )
+          .sort(
+            (a, b) =>
+              new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime(),
+          )
+          .slice(0, 10);
+      }
 
       const summariesPerSession = await Promise.all(
         sessions.map((s) =>
@@ -212,7 +366,12 @@ export function registerContextFunction(
         const i = sessionsNeedingObs[j];
         const observations = obsResults[j];
         const important = observations.filter(
-          (o) => o.title && o.importance >= 5,
+          (o) =>
+            !o.isTelemetry &&
+            !TELEMETRY_HOOKS.has(o.title as never) &&
+            typeof o.title === "string" &&
+            o.title.trim().length > 0 &&
+            o.importance >= 5,
         );
 
         if (important.length > 0) {
@@ -220,7 +379,13 @@ export function registerContextFunction(
             .sort((a, b) => b.importance - a.importance)
             .slice(0, 5);
           const items = top
-            .map((o) => `- [${o.type}] ${o.title}: ${o.narrative}`)
+            .map((o) => {
+              const narrative =
+                typeof o.narrative === "string" && o.narrative.trim().length > 0
+                  ? `: ${o.narrative.trim()}`
+                  : "";
+              return `- [${o.type}] ${o.title.trim()}${narrative}`;
+            })
             .join("\n");
           const content = `## Session ${sessions[i].id.slice(0, 8)} (${sessions[i].startedAt})\n${items}`;
           blocks.push({

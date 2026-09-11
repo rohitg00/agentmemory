@@ -1,11 +1,44 @@
 #!/usr/bin/env node
 import { execSync } from "node:child_process";
-import { basename } from "node:path";
+import { createHash } from "node:crypto";
+import { realpathSync } from "node:fs";
+import { basename, relative, resolve } from "node:path";
 //#region src/hooks/_project.ts
-function resolveProject(cwd) {
+const identityCache = /* @__PURE__ */ new Map();
+function parseRemoteSlug(url) {
+	let cleaned = url.trim();
+	if (cleaned.endsWith(".git")) cleaned = cleaned.slice(0, -4);
+	cleaned = cleaned.replace(/^(https?|git|ssh):\/\//, "");
+	if (cleaned.includes("@")) cleaned = cleaned.split("@")[1];
+	cleaned = cleaned.replace(/^([^/:]+):\d+\//, "$1/");
+	cleaned = cleaned.replace(/:/g, "/");
+	const segments = cleaned.split("/").map((s) => s.trim()).filter(Boolean);
+	if (segments.length === 0) return "unknown";
+	const host = segments[0].toLowerCase();
+	const rest = segments.slice(1).join("-").toLowerCase();
+	return (rest ? `${host}-${rest}` : host).replace(/[^a-z0-9.-]/gi, "-").replace(/-+/g, "-");
+}
+function resolveWorkspaceIdentity(cwd) {
 	const explicit = process.env["AGENTMEMORY_PROJECT_NAME"];
-	if (explicit && explicit.trim()) return explicit.trim();
-	const dir = cwd && cwd.trim() ? cwd : process.cwd();
+	const rawDir = cwd && cwd.trim() ? resolve(cwd.trim()) : process.cwd();
+	if (explicit && explicit.trim()) {
+		const name = explicit.trim();
+		return {
+			projectKey: name,
+			displayName: name,
+			rootPath: rawDir
+		};
+	}
+	let dir = rawDir;
+	try {
+		dir = realpathSync(rawDir);
+	} catch {}
+	const cached = identityCache.get(dir);
+	if (cached) return cached;
+	let rootPath = dir;
+	let displayName = basename(dir);
+	let subpath;
+	let remoteUrl;
 	try {
 		const top = execSync("git rev-parse --show-toplevel", {
 			cwd: dir,
@@ -16,9 +49,56 @@ function resolveProject(cwd) {
 			],
 			timeout: 500
 		}).toString().trim();
-		if (top) return basename(top);
+		if (top) {
+			let resolvedTop = top;
+			try {
+				resolvedTop = realpathSync(top);
+			} catch {}
+			rootPath = resolvedTop;
+			displayName = basename(resolvedTop);
+			if (dir !== resolvedTop) {
+				const rel = relative(resolvedTop, dir).replace(/\\/g, "/");
+				if (rel && rel !== ".") subpath = rel;
+			}
+			try {
+				remoteUrl = execSync("git config --get remote.upstream.url", {
+					cwd: dir,
+					stdio: [
+						"ignore",
+						"pipe",
+						"ignore"
+					],
+					timeout: 500
+				}).toString().trim();
+			} catch {}
+			if (!remoteUrl) try {
+				remoteUrl = execSync("git config --get remote.origin.url", {
+					cwd: dir,
+					stdio: [
+						"ignore",
+						"pipe",
+						"ignore"
+					],
+					timeout: 500
+				}).toString().trim();
+			} catch {}
+		}
 	} catch {}
-	return basename(dir);
+	let projectKey;
+	if (remoteUrl) projectKey = parseRemoteSlug(remoteUrl);
+	else {
+		const hash = createHash("sha256").update(rootPath).digest("hex").slice(0, 8);
+		projectKey = `${displayName.toLowerCase()}-${hash}`;
+	}
+	const identity = {
+		projectKey,
+		displayName,
+		rootPath,
+		subpath
+	};
+	identityCache.set(dir, identity);
+	identityCache.set(rawDir, identity);
+	return identity;
 }
 function hookCwd(data) {
 	if (!data || typeof data !== "object") return void 0;
@@ -60,19 +140,22 @@ async function main() {
 	const toolInput = data.tool_input ?? data.toolArgs;
 	const { imageData, cleanOutput } = extractImageData(toolOutput(data));
 	const cwd = hookCwd(data) || process.cwd();
+	const identity = resolveWorkspaceIdentity(cwd);
 	fetch(`${REST_URL}/agentmemory/observe`, {
 		method: "POST",
 		headers: authHeaders(),
 		body: JSON.stringify({
 			hookType: "post_tool_use",
 			sessionId,
-			project: resolveProject(cwd),
+			project: identity.projectKey,
+			project_display_name: identity.displayName,
 			cwd,
 			timestamp: (/* @__PURE__ */ new Date()).toISOString(),
 			data: {
 				tool_name: toolName,
 				tool_input: toolInput,
 				tool_output: truncate(cleanOutput, 8e3),
+				...identity.subpath ? { subpackage: identity.subpath } : {},
 				...imageData ? { image_data: imageData } : {}
 			}
 		}),

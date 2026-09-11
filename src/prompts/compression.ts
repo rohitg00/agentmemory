@@ -27,6 +27,16 @@ Rules:
 - Concepts should be reusable search terms (e.g., "React hooks", "SQL migration", "auth middleware")
 - Strip any secrets, tokens, or credentials from the output`;
 
+function hasValue(val: unknown): boolean {
+  if (val === undefined || val === null) return false;
+  if (typeof val === "string") return val.trim().length > 0;
+  if (typeof val === "object") {
+    if (Array.isArray(val)) return val.length > 0;
+    return Object.keys(val).length > 0;
+  }
+  return true;
+}
+
 export function buildCompressionPrompt(observation: {
   hookType: string;
   toolName?: string;
@@ -34,29 +44,44 @@ export function buildCompressionPrompt(observation: {
   toolOutput?: unknown;
   userPrompt?: string;
   timestamp: string;
-}): string {
+  content?: string;
+}): string | null {
+  const hasSubstantive =
+    hasValue(observation.toolName) ||
+    hasValue(observation.toolInput) ||
+    hasValue(observation.toolOutput) ||
+    hasValue(observation.userPrompt) ||
+    hasValue(observation.content);
+
+  if (!hasSubstantive) {
+    return null;
+  }
+
   const parts = [
     `Timestamp: ${observation.timestamp}`,
     `Hook: ${observation.hookType}`,
   ];
 
-  if (observation.toolName) parts.push(`Tool: ${observation.toolName}`);
-  if (observation.toolInput) {
+  if (hasValue(observation.toolName)) parts.push(`Tool: ${observation.toolName}`);
+  if (hasValue(observation.toolInput)) {
     const input =
       typeof observation.toolInput === "string"
         ? observation.toolInput
         : JSON.stringify(observation.toolInput, null, 2);
     parts.push(`Input:\n${truncate(input, 4000)}`);
   }
-  if (observation.toolOutput) {
+  if (hasValue(observation.toolOutput)) {
     const output =
       typeof observation.toolOutput === "string"
         ? observation.toolOutput
         : JSON.stringify(observation.toolOutput, null, 2);
     parts.push(`Output:\n${truncate(output, 4000)}`);
   }
-  if (observation.userPrompt) {
-    parts.push(`User prompt:\n${truncate(observation.userPrompt, 2000)}`);
+  if (hasValue(observation.userPrompt)) {
+    parts.push(`User prompt:\n${truncate(observation.userPrompt!, 2000)}`);
+  }
+  if (hasValue(observation.content)) {
+    parts.push(`Content:\n${truncate(observation.content!, 4000)}`);
   }
 
   return parts.join("\n\n");

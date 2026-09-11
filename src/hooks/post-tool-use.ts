@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { resolveProject, hookCwd } from "./_project.js";
+import { resolveWorkspaceIdentity, hookCwd } from "./_project.js";
 
 function isSdkChildContext(payload: unknown): boolean {
   if (process.env["AGENTMEMORY_SDK_CHILD"] === "1") return true;
@@ -38,6 +38,7 @@ async function main() {
 
   const { imageData, cleanOutput } = extractImageData(toolOutput(data));
   const cwd = hookCwd(data) || process.cwd();
+  const identity = resolveWorkspaceIdentity(cwd);
 
   fetch(`${REST_URL}/agentmemory/observe`, {
     method: "POST",
@@ -45,13 +46,15 @@ async function main() {
     body: JSON.stringify({
       hookType: "post_tool_use",
       sessionId,
-      project: resolveProject(cwd),
+      project: identity.projectKey,
+      project_display_name: identity.displayName,
       cwd,
       timestamp: new Date().toISOString(),
       data: {
         tool_name: toolName,
         tool_input: toolInput,
         tool_output: truncate(cleanOutput, 8000),
+        ...(identity.subpath ? { subpackage: identity.subpath } : {}),
         ...(imageData ? { image_data: imageData } : {}),
       },
     }),
