@@ -4,6 +4,20 @@ import { fetchWithTimeout } from "./_fetch.js";
 export const REQUESTY_CHAT_URL =
   "https://router.requesty.ai/v1/chat/completions";
 
+// The bearer token and prompt body are sent to baseUrl, so refuse anything
+// that is not HTTPS up front rather than issuing a plaintext request.
+function assertHttpsUrl(baseUrl: string): void {
+  let protocol: string;
+  try {
+    protocol = new URL(baseUrl).protocol;
+  } catch {
+    throw new Error(`requesty base URL is not a valid URL: ${baseUrl}`);
+  }
+  if (protocol !== "https:") {
+    throw new Error(`requesty base URL must use https: ${baseUrl}`);
+  }
+}
+
 export class RequestyProvider implements MemoryProvider {
   name = "requesty";
   private apiKey: string;
@@ -17,6 +31,7 @@ export class RequestyProvider implements MemoryProvider {
     maxTokens: number,
     baseUrl: string = REQUESTY_CHAT_URL,
   ) {
+    assertHttpsUrl(baseUrl);
     this.apiKey = apiKey;
     this.model = model;
     this.maxTokens = maxTokens;

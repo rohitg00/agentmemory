@@ -370,6 +370,38 @@ describe("Provider hang regression — RequestyProvider", () => {
   });
 });
 
+describe("RequestyProvider base URL validation", () => {
+  it("rejects a plain http base URL before any request is made", () => {
+    expect(
+      () =>
+        new RequestyProvider(
+          "test-key",
+          "openai/gpt-4o-mini",
+          1024,
+          "http://router.requesty.ai/v1/chat/completions",
+        ),
+    ).toThrow(/must use https/);
+  });
+
+  it("rejects a malformed base URL", () => {
+    expect(
+      () => new RequestyProvider("test-key", "openai/gpt-4o-mini", 1024, "not a url"),
+    ).toThrow(/not a valid URL/);
+  });
+
+  it("accepts an https base URL", () => {
+    expect(
+      () =>
+        new RequestyProvider(
+          "test-key",
+          "openai/gpt-4o-mini",
+          1024,
+          "https://example.com/v1/chat/completions",
+        ),
+    ).not.toThrow();
+  });
+});
+
 describe("Provider hang regression — GeminiEmbeddingProvider", () => {
   beforeEach(() => {
     vi.spyOn(globalThis, "fetch").mockImplementation(hangingFetch as typeof fetch);
