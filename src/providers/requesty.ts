@@ -37,6 +37,7 @@ export class RequestyProvider implements MemoryProvider {
   ): Promise<string> {
     const response = await fetchWithTimeout(this.baseUrl, {
       method: "POST",
+      redirect: "error",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${this.apiKey}`,
@@ -60,10 +61,10 @@ export class RequestyProvider implements MemoryProvider {
 
     const data = (await response.json()) as Record<string, unknown>;
     const choices = data.choices as
-      | Array<{ message: { content: string } }>
+      | Array<{ message?: { content?: unknown } }>
       | undefined;
     const content = choices?.[0]?.message?.content;
-    if (!content) {
+    if (typeof content !== "string" || content.length === 0) {
       throw new Error(
         `${this.name} returned unexpected response: ${JSON.stringify(data).slice(0, 200)}`,
       );

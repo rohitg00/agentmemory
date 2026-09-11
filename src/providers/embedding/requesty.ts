@@ -12,16 +12,24 @@ export class RequestyEmbeddingProvider implements EmbeddingProvider {
   readonly dimensions: number;
   private apiKey: string;
   private model: string;
+  // Set only when REQUESTY_EMBEDDING_DIMENSIONS is configured, so the request
+  // asks the model for that size instead of relying on its native default.
+  private requestedDimensions: number | undefined;
 
   constructor(apiKey?: string) {
     this.apiKey = apiKey || getEnvVar("REQUESTY_API_KEY") || "";
     if (!this.apiKey) throw new Error("REQUESTY_API_KEY is required");
     this.model = getEnvVar("REQUESTY_EMBEDDING_MODEL") || DEFAULT_MODEL;
+    const override = getEnvVar("REQUESTY_EMBEDDING_DIMENSIONS");
     this.dimensions = resolveDimensions(
       this.model,
-      getEnvVar("REQUESTY_EMBEDDING_DIMENSIONS"),
+      override,
       "REQUESTY_EMBEDDING_DIMENSIONS",
     );
+    this.requestedDimensions =
+      override !== undefined && override.trim().length > 0
+        ? this.dimensions
+        : undefined;
   }
 
   async embed(text: string): Promise<Float32Array> {
@@ -39,6 +47,9 @@ export class RequestyEmbeddingProvider implements EmbeddingProvider {
       body: JSON.stringify({
         model: this.model,
         input: texts,
+        ...(this.requestedDimensions !== undefined
+          ? { dimensions: this.requestedDimensions }
+          : {}),
       }),
     });
 

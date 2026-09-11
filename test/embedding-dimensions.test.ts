@@ -1,4 +1,11 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+
+// Read env from process.env only, so a key in ~/.agentmemory/.env on the
+// developer machine cannot leak into the missing-key assertions below.
+vi.mock("../src/config.js", () => ({
+  getEnvVar: (key: string) => process.env[key],
+}));
+
 import { resolveDimensions } from "../src/providers/embedding/_dimensions.js";
 import { OpenRouterEmbeddingProvider } from "../src/providers/embedding/openrouter.js";
 import { RequestyEmbeddingProvider } from "../src/providers/embedding/requesty.js";
@@ -110,6 +117,46 @@ describe("RequestyEmbeddingProvider dimension resolution", () => {
   it("throws when REQUESTY_API_KEY is missing", () => {
     delete process.env["REQUESTY_API_KEY"];
     expect(() => new RequestyEmbeddingProvider("")).toThrow(/REQUESTY_API_KEY is required/);
+  });
+
+  describe("request body", () => {
+    const originalFetch = globalThis.fetch;
+    let lastBody: Record<string, unknown> | undefined;
+
+    beforeEach(() => {
+      lastBody = undefined;
+      globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
+        lastBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        const input = lastBody["input"] as string[];
+        const size = (lastBody["dimensions"] as number | undefined) ?? 1536;
+        return new Response(
+          JSON.stringify({
+            data: input.map(() => ({ embedding: new Array(size).fill(0) })),
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }) as typeof fetch;
+    });
+
+    afterEach(() => {
+      globalThis.fetch = originalFetch;
+    });
+
+    it("sends the configured dimensions when REQUESTY_EMBEDDING_DIMENSIONS is set", async () => {
+      process.env["REQUESTY_EMBEDDING_MODEL"] = "openai/text-embedding-3-large";
+      process.env["REQUESTY_EMBEDDING_DIMENSIONS"] = "1024";
+      const provider = new RequestyEmbeddingProvider("test-key");
+      const [vector] = await provider.embedBatch(["hello"]);
+      expect(lastBody?.["dimensions"]).toBe(1024);
+      expect(vector.length).toBe(1024);
+    });
+
+    it("omits dimensions when no override is configured", async () => {
+      const provider = new RequestyEmbeddingProvider("test-key");
+      await provider.embedBatch(["hello"]);
+      expect(lastBody).toBeDefined();
+      expect("dimensions" in (lastBody as object)).toBe(false);
+    });
   });
 });
 
