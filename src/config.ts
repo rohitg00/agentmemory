@@ -156,6 +156,17 @@ function detectProvider(env: Record<string, string>): ProviderConfig {
     };
   }
 
+  // OrcaRouter: OpenAI-compatible gateway. The key may have been pasted by
+  // hand or minted by the OAuth 2.0 + PKCE login; both land in the same env
+  // var, so detection does not care which one it was.
+  if (hasRealValue(env["ORCAROUTER_API_KEY"])) {
+    return {
+      provider: "orcarouter",
+      model: env["ORCAROUTER_MODEL"] || "orcarouter/auto",
+      maxTokens,
+    };
+  }
+
   const allowAgentSdk = env["AGENTMEMORY_ALLOW_AGENT_SDK"] === "true";
   if (!allowAgentSdk) {
     process.stderr.write(
@@ -242,6 +253,7 @@ export function detectLlmProviderKind(): "llm" | "noop" {
     hasRealValue(env["GEMINI_API_KEY"]) ||
     hasRealValue(env["GOOGLE_API_KEY"]) ||
     hasRealValue(env["OPENROUTER_API_KEY"]) ||
+    hasRealValue(env["ORCAROUTER_API_KEY"]) ||
     hasRealValue(env["MINIMAX_API_KEY"]) ||
     (hasRealValue(env["OPENAI_API_KEY"]) &&
       env["OPENAI_API_KEY_FOR_LLM"] !== "false")
@@ -278,6 +290,7 @@ export function detectEmbeddingProvider(
   if (source["VOYAGE_API_KEY"]) return "voyage";
   if (source["COHERE_API_KEY"]) return "cohere";
   if (source["OPENROUTER_API_KEY"]) return "openrouter";
+  if (source["ORCAROUTER_API_KEY"]) return "orcarouter";
   return null;
 }
 
@@ -417,6 +430,7 @@ function hasLLMProviderConfigured(env: Record<string, string | undefined>): bool
     env["ANTHROPIC_API_KEY"] ||
       openaiKeyForLlm ||
       env["OPENROUTER_API_KEY"] ||
+      env["ORCAROUTER_API_KEY"] ||
       env["GEMINI_API_KEY"] ||
       env["GOOGLE_API_KEY"] ||
       env["MINIMAX_API_KEY"] ||
@@ -483,6 +497,7 @@ const VALID_PROVIDERS = new Set([
   "anthropic",
   "gemini",
   "openrouter",
+  "orcarouter",
   "agent-sdk",
   "minimax",
   "openai",
