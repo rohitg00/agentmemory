@@ -2310,12 +2310,50 @@
       graphSim.raf = requestAnimationFrame(runSimulation);
     }
 
+    // #1383: graph/build is not an incremental refresh - api::graph-build walks
+    // every session's observations and re-extracts, so it is minutes of work on a
+    // large corpus, against the same store the rest of the UI is reading from.
+    // Confirm before starting it, refuse to start a second run while one is in
+    // flight, and report what came back. api() resolves to null on a non-2xx, so
+    // a failed build used to be indistinguishable from one that found nothing.
+    var rebuildInFlight = false;
+    function setRebuildButtonsDisabled(disabled) {
+      var btns = document.querySelectorAll('[data-action="rebuild-graph"]');
+      for (var i = 0; i < btns.length; i++) btns[i].disabled = disabled;
+    }
+    function graphRebuildStatus(text) {
+      var sb = document.getElementById('graph-sidebar');
+      if (!sb) return;
+      sb.innerHTML = '<h3>Graph</h3><p style="font-size:12px;color:var(--ink-faint);margin:8px 0;">' +
+        esc(text) + '</p>' +
+        '<button class="btn" style="margin-top:8px;font-size:11px;" data-action="rebuild-graph">Retry</button>';
+    }
     async function rebuildGraph() {
+      if (rebuildInFlight) return;
+      var known = state.graph.totalNodes || (state.graph.stats && state.graph.stats.totalNodes) || 0;
+      var question = 'Rebuild the graph from stored observations?';
+      if (known > 0) {
+        question += ' This replays ' + known + ' known nodes and can take minutes on a large corpus.';
+      }
+      if (!window.confirm(question)) return;
+      rebuildInFlight = true;
+      setRebuildButtonsDisabled(true);
       var sb = document.getElementById('graph-sidebar');
       if (sb) sb.innerHTML = '<h3>Graph</h3><p style="font-size:12px;color:var(--ink-faint);font-style:italic;">Rebuilding graph from observations...</p>';
-      await apiPost('graph/build', {});
-      state.graph.loaded = false;
-      loadGraph();
+      try {
+        var result = await apiPost('graph/build', {});
+        if (result && result.success) {
+          state.graph.loaded = false;
+          loadGraph();
+          return;
+        }
+        graphRebuildStatus('Rebuild failed: ' + ((result && result.error) || 'the server did not report success') + '.');
+      } catch (err) {
+        graphRebuildStatus('Rebuild failed: ' + ((err && err.message) || String(err)) + '.');
+      } finally {
+        rebuildInFlight = false;
+        setRebuildButtonsDisabled(false);
+      }
     }
 
     function drawNodeShape(ctx, x, y, r, type) {
