@@ -7,10 +7,10 @@ import styles from "./CommandCenter.module.css";
 type Tab = "viewer" | "console" | "state" | "traces";
 
 const TABS: Array<{ id: Tab; label: string; sub: string }> = [
-  { id: "viewer", label: "Viewer", sub: ":3113 · LIVE OBSERVATION STREAM" },
-  { id: "console", label: "iii Console", sub: ":3114 · ENGINE DASHBOARD" },
-  { id: "state", label: "State", sub: "RAW KV BROWSER + JSON EDITOR" },
-  { id: "traces", label: "Traces", sub: "OTEL WATERFALL + FLAME" },
+  { id: "viewer", label: "Viewer", sub: ":3113 · Live observations" },
+  { id: "console", label: "iii Console", sub: ":3114 · Engine dashboard" },
+  { id: "state", label: "State", sub: "Raw KV browser · JSON editor" },
+  { id: "traces", label: "Traces", sub: "OTEL waterfall · Flame" },
 ];
 
 function buildPanels(restEndpoints: number): Record<
@@ -38,7 +38,7 @@ function buildPanels(restEndpoints: number): Record<
       ],
       img: "/demo.gif",
       alt: "agentmemory viewer live demo",
-      launch: "open http://localhost:3113",
+      launch: "open http://localhost:3113  # macOS · Linux: xdg-open · Windows: start",
     },
     console: {
       title: "iii console · first-class",
@@ -67,7 +67,7 @@ function buildPanels(restEndpoints: number): Record<
       ],
       img: "/states.png",
       alt: "iii console state browser",
-      launch: "open http://localhost:3114/states",
+      launch: "open http://localhost:3114/states  # or xdg-open / start",
     },
     traces: {
       title: "OpenTelemetry out of the box",
@@ -81,7 +81,7 @@ function buildPanels(restEndpoints: number): Record<
       ],
       img: "/traces-waterfall.png",
       alt: "iii console traces waterfall",
-      launch: "open http://localhost:3114/traces",
+      launch: "open http://localhost:3114/traces  # or xdg-open / start",
     },
   };
 }

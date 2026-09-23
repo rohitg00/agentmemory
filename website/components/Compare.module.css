@@ -58,6 +58,18 @@
   color: var(--ink) !important;
   font-weight: 500 !important;
 }
+.footnotes {
+  max-width: 1100px;
+  margin: 16px auto 0;
+  padding: 0 40px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--mute);
+}
+.footnotes code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
 @media (max-width: 1024px) {
   .table {
     overflow-x: auto;

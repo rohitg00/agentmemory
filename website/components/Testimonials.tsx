@@ -82,8 +82,9 @@ export function Testimonials() {
           In the <span className={styles.accent}>wild.</span>
         </h2>
         <p className={styles.lede}>
-          Verbatim from the Product Hunt launch thread. Each card
-          links back to the source comment.
+          Verbatim quotes from the Product Hunt launch discussion. Cards link
+          back to the thread — only Peter Neyra&apos;s card deep-links the
+          exact comment.
         </p>
 
         <div className={styles.sectionLabel}>HOW THEY USE IT</div>

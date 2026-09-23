@@ -64,7 +64,7 @@ export function LiveTerminal({
   hooks: number;
 }) {
   const termRef = useRef<HTMLElement>(null);
-  const [status, setStatus] = useState("IDLE");
+  const [status, setStatus] = useState("Ready");
   const runningRef = useRef(false);
   const played = useRef(false);
 
@@ -72,7 +72,7 @@ export function LiveTerminal({
     const term = termRef.current;
     if (!term || runningRef.current) return;
     runningRef.current = true;
-    setStatus("RUNNING");
+    setStatus("Playing…");
     term.innerHTML = "";
     const caret = document.createElement("span");
     caret.className = styles.caret;
@@ -98,7 +98,7 @@ export function LiveTerminal({
         await new Promise((r) => setTimeout(r, reduce ? 0 : 160));
       }
     }
-    setStatus("DONE");
+    setStatus("Done");
     runningRef.current = false;
   }, [mcpTools, hooks]);
 
@@ -139,11 +139,19 @@ export function LiveTerminal({
           <span className={styles.title}>agentmemory@localhost:3111</span>
         </div>
         <pre className={styles.body}>
-          <code ref={termRef} />
+          {/* Static transcript: first paint, crawlers and no-JS clients see
+              real content. play() clears it when the animation starts. */}
+          <code ref={termRef}>
+            $ npx @agentmemory/agentmemory{"\n"}[agentmemory] iii-engine ready
+            on :3111{"\n"}[agentmemory] {mcpTools} MCP tools registered{"\n"}
+            [agentmemory] {hooks} autohooks armed{"\n"}
+            {"\n"}Press Replay to watch hybrid recall in action.
+          </code>
         </pre>
         <div className={styles.foot}>
           <button
             className="btn btn--ghost btn--small"
+            aria-label="Replay the live terminal demo"
             onClick={() => {
               played.current = true;
               play();
@@ -151,7 +159,9 @@ export function LiveTerminal({
           >
             Replay
           </button>
-          <span className={styles.status}>{status}</span>
+          <span className={styles.status} role="status" aria-live="polite">
+            {status}
+          </span>
         </div>
       </div>
     </section>

@@ -16,7 +16,8 @@ const jetbrains = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://agentmemory.dev"),
+  metadataBase: new URL("https://www.agent-memory.dev"),
+  alternates: { canonical: "https://www.agent-memory.dev/" },
   title: "agentmemory: persistent memory for AI coding agents",
   description:
     "Persistent memory for AI coding agents. Capture every session, recall it in the next one. Runs locally with zero external databases. Works with every MCP client.",
@@ -29,7 +30,7 @@ export const metadata: Metadata = {
     description:
       "Persistent memory for AI coding agents. Runs locally. Zero external databases.",
     type: "website",
-    url: "/",
+    url: "https://www.agent-memory.dev/",
   },
   twitter: {
     card: "summary_large_image",

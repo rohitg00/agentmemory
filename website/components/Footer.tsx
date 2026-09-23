@@ -15,12 +15,34 @@ export function Footer() {
           >
             Source
           </a>
+          <a href="/docs">Docs</a>
+          <a
+            href="https://www.npmjs.com/package/@agentmemory/agentmemory"
+            target="_blank"
+            rel="noopener"
+          >
+            npm
+          </a>
           <a
             href="https://github.com/rohitg00/agentmemory/blob/main/CHANGELOG.md"
             target="_blank"
             rel="noopener"
           >
             Changelog
+          </a>
+          <a
+            href="https://github.com/rohitg00/agentmemory/blob/main/SECURITY.md"
+            target="_blank"
+            rel="noopener"
+          >
+            Security
+          </a>
+          <a
+            href="https://github.com/rohitg00/agentmemory/issues"
+            target="_blank"
+            rel="noopener"
+          >
+            Issues
           </a>
           <a href="https://iii.dev" target="_blank" rel="noopener">
             Runs on iii
@@ -34,7 +56,9 @@ export function Footer() {
           </a>
         </nav>
       </div>
-      <div className={styles.fine}>© 2026 agentmemory · Built in the open</div>
+      <div className={styles.fine}>
+        © {new Date().getFullYear()} agentmemory · Built in the open
+      </div>
     </footer>
   );
 }

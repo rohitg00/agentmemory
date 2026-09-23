@@ -52,35 +52,35 @@ export function Features({ hooks, mcpTools, restEndpoints }: Props) {
     },
     {
       k: "∞",
-      unit: "REPLAY",
+      unit: "SESSION REPLAY",
       title: "JSONL session import",
       text:
         "Point agentmemory at a Claude Code JSONL transcript and it rehydrates the session, indexes it for search, and derives crystals and lessons from what it finds.",
     },
     {
       k: "GRAPH",
-      unit: "EXTRACTION",
+      unit: "KNOWLEDGE GRAPH",
       title: "Knowledge graph",
       text:
         "Entities and relations extract from observations when an LLM provider key is set and graph extraction is enabled. Query with /agentmemory/graph. Visualize in the viewer. Temporal edges supported.",
     },
     {
-      k: "IDX",
+      k: "★",
       unit: "LESSON RECALL",
       title: "Lessons that resurface",
       text:
         "Save a lesson once, recall it by relevance later. Lessons live in a dedicated BM25 index with confidence and recency reranking, with save, recall, and delete over MCP and REST.",
     },
     {
-      k: "MESH",
-      unit: "FEDERATION",
+      k: "P2P",
+      unit: "SYNC",
       title: "Peer-to-peer sync",
       text:
         "Register another agentmemory node and push or pull memories over authenticated HTTPS. A bearer token is required; no silent syncs.",
     },
     {
       k: "MD",
-      unit: "OBSIDIAN EXPORT",
+      unit: "OBSIDIAN SYNC",
       title: "Your notes, hydrated",
       text:
         "Mirror memories to a sandboxed vault directory as frontmatter-tagged markdown, ready for Obsidian's graph view.",
