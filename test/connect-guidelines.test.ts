@@ -29,6 +29,17 @@ describe("writeGuideline", () => {
     expect(body).toContain("memory_save");
   });
 
+  it("writes a marked block into Klaat Code's global rules.md", () => {
+    const r = writeGuideline("klaatcode", { cwd, home });
+    expect(r.kind).toBe("written");
+    if (r.kind === "written") expect(r.scope).toBe("global");
+    const path = join(home, ".klaatai", "rules.md");
+    expect(existsSync(path)).toBe(true);
+    const body = readFileSync(path, "utf8");
+    expect(body).toContain("memory_recall");
+    expect(body).toContain("memory_save");
+  });
+
   it("writes a Kiro steering file with inclusion: always (global)", () => {
     const r = writeGuideline("kiro", { cwd, home });
     expect(r.kind).toBe("written");
@@ -141,6 +152,7 @@ describe("guidelineTargets coverage", () => {
         "droid",
         "gemini-cli",
         "kiro",
+        "klaatcode",
         "opencode",
         "qwen",
         "warp",

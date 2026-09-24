@@ -57,6 +57,7 @@ describe("agentmemory connect — dispatcher", () => {
         "gemini-cli",
         "hermes",
         "kiro",
+        "klaatcode",
         "opencode",
         "openclaw",
         "openhuman",
@@ -66,7 +67,7 @@ describe("agentmemory connect — dispatcher", () => {
         "zed",
       ].sort(),
     );
-    expect(ADAPTERS.length).toBe(21);
+    expect(ADAPTERS.length).toBe(22);
   });
 
   it("every adapter exposes detect() and install()", () => {
