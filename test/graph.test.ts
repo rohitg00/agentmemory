@@ -597,6 +597,102 @@ describe("Graph Functions", () => {
   // the oversized-corpus rebuild refusal. The hot path never enumerates
   // any more, but the rebuild endpoint AND the BFS / query branches
   // still call kv.list — both need explicit failure-mode tests.
+  describe("snapshot write must not fail open (#1381)", () => {
+    // persistGraphDelta used to read the snapshot with the lenient readSnapshot,
+    // which returns null for a failed read as well as for an absent key. The
+    // caller coalesced that null into emptySnapshot() and wrote it back, so a
+    // single transient state::get failure replaced the counters with zeroes.
+    async function seedSnapshot(totalNodes: number) {
+      await kv.set("mem:graph:snapshot", "current", {
+        version: 1,
+        topNodes: [],
+        topEdges: [],
+        topDegrees: {},
+        stats: { totalNodes, totalEdges: 0, nodesByType: {}, edgesByType: {} },
+        updatedAt: "2026-01-01T00:00:00Z",
+        dirty: false,
+      });
+    }
+
+    // Fails every snapshot read, or only the first `failures` of them.
+    async function extractWithFlakySnapshot(kvImpl: ReturnType<typeof mockKV>) {
+      registerGraphFunction(sdk as never, kvImpl as never, mockProvider as never);
+      return (await sdk.trigger("mem::graph-extract", {
+        observations: [testObs],
+      })) as { success: boolean; error?: string; nodesAdded?: number };
+    }
+
+    function flakyKV(failures: number) {
+      let reads = 0;
+      const realGet = kv.get.bind(kv);
+      return {
+        ...kv,
+        get: async <T>(scope: string, key: string): Promise<T | null> => {
+          if (scope === "mem:graph:snapshot" && reads++ < failures) {
+            throw new Error("Invocation timeout after 180000ms: state::get");
+          }
+          return realGet<T>(scope, key);
+        },
+      };
+    }
+
+    it("a persistent read failure aborts the delta instead of zeroing the snapshot", async () => {
+      await seedSnapshot(40000);
+
+      const result = await extractWithFlakySnapshot(flakyKV(Number.POSITIVE_INFINITY));
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("Invocation timeout");
+
+      const snap = await kv.get<{ stats: { totalNodes: number } }>(
+        "mem:graph:snapshot",
+        "current",
+      );
+      expect(snap!.stats.totalNodes).toBe(40000);
+    });
+
+    it("retries a transient read failure once and then merges onto the real snapshot", async () => {
+      await seedSnapshot(40000);
+
+      const result = await extractWithFlakySnapshot(flakyKV(1));
+
+      expect(result.success).toBe(true);
+      const snap = await kv.get<{ stats: { totalNodes: number } }>(
+        "mem:graph:snapshot",
+        "current",
+      );
+      // Merged onto the seeded counters, not replaced by a fresh delta's count.
+      expect(snap!.stats.totalNodes).toBeGreaterThan(39999);
+    });
+
+    it("a snapshot under an unknown schema version aborts instead of reading as empty", async () => {
+      await kv.set("mem:graph:snapshot", "current", {
+        version: 2,
+        stats: { totalNodes: 40000, totalEdges: 0, nodesByType: {}, edgesByType: {} },
+      });
+
+      const result = await extractWithFlakySnapshot(kv);
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("unknown schema version");
+
+      const snap = await kv.get<{ version: number }>("mem:graph:snapshot", "current");
+      expect(snap!.version).toBe(2);
+    });
+
+    it("an absent snapshot is still a clean first run", async () => {
+      const result = await extractWithFlakySnapshot(kv);
+
+      expect(result.success).toBe(true);
+      const snap = await kv.get<{ version: number; stats: { totalNodes: number } }>(
+        "mem:graph:snapshot",
+        "current",
+      );
+      expect(snap).not.toBeNull();
+      expect(snap!.stats.totalNodes).toBe(2);
+    });
+  });
+
   describe("budget + tooLarge guards (#814 v2)", () => {
     function slowKV(delayMs: number) {
       const base = mockKV();

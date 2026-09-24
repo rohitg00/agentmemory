@@ -92,6 +92,41 @@ async function readSnapshot(kv: StateKV): Promise<GraphSnapshot | null> {
   }
 }
 
+// Writer-side counterpart to readSnapshot. The lenient version above cannot be
+// used by persistGraphDelta: it returns null both when the key is genuinely
+// absent AND when the read failed, and the caller coalesces that null into
+// emptySnapshot(). A transient state::get failure (store saturated, invocation
+// timeout) would therefore be written back as a zeroed snapshot, reported by
+// /graph/query and /graph/stats until the next full rebuild.
+//
+// Only a genuinely-absent key is a "no snapshot yet" case. Everything else -
+// a failed read, or a snapshot present under a schema we don't understand -
+// aborts rather than zeroes.
+async function readSnapshotStrict(kv: StateKV): Promise<GraphSnapshot | null> {
+  let raw: unknown;
+  try {
+    raw = await kv.get<unknown>(KV.graphSnapshot, SNAPSHOT_KEY);
+  } catch (err) {
+    logger.warn("Graph snapshot read failed, retrying once", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    // A second failure propagates: better to skip this delta than to clobber
+    // the snapshot with one derived from emptySnapshot().
+    raw = await kv.get<unknown>(KV.graphSnapshot, SNAPSHOT_KEY);
+  }
+  if (raw === null || raw === undefined) return null;
+  if (typeof raw === "object" && (raw as { version?: unknown }).version === 1) {
+    return raw as GraphSnapshot;
+  }
+  // Present but unrecognised. Returning null here would read as "empty store"
+  // and the next extraction would overwrite a future-version snapshot.
+  throw new Error(
+    `Graph snapshot has unknown schema version: ${JSON.stringify(
+      (raw as { version?: unknown }).version,
+    )}`,
+  );
+}
+
 function buildSnapshotFromArrays(
   nodes: GraphNode[],
   edges: GraphEdge[],
@@ -554,7 +589,7 @@ export async function persistGraphDelta(
   edges: GraphEdge[],
   obsIds: string[],
 ): Promise<{ newNodeCount: number; newEdgeCount: number }> {
-  const snap = (await readSnapshot(kv)) ?? emptySnapshot();
+  const snap = (await readSnapshotStrict(kv)) ?? emptySnapshot();
   const capturedAt = new Date().toISOString();
   let newNodeCount = 0;
   let newEdgeCount = 0;
