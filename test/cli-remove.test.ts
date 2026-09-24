@@ -17,6 +17,10 @@ import { join } from "node:path";
 
 let sandbox: string;
 
+// remove-plan looks for iii.exe on Windows, so the fixtures have to use the
+// same name or the plan items never become applicable.
+const III_BIN = process.platform === "win32" ? "iii.exe" : "iii";
+
 function ctx(overrides: Partial<RemoveContext> = {}): RemoveContext {
   return {
     home: sandbox,
@@ -112,7 +116,7 @@ describe("buildRemovePlan", () => {
   });
 
   it("local-bin/iii is alwaysAsk when version does not match", () => {
-    touch(".local/bin/iii", "fakebin");
+    touch(`.local/bin/${III_BIN}`, "fakebin");
     const plan = buildRemovePlan(
       ctx({ localBinIiiVersion: "9.9.9" }),
       { force: false, keepData: false },
@@ -123,7 +127,7 @@ describe("buildRemovePlan", () => {
   });
 
   it("local-bin/iii is auto-fixable when version matches pinned", () => {
-    touch(".local/bin/iii", "fakebin");
+    touch(`.local/bin/${III_BIN}`, "fakebin");
     const plan = buildRemovePlan(
       ctx({ localBinIiiVersion: "0.11.2" }),
       { force: false, keepData: false },
@@ -141,7 +145,7 @@ describe("buildRemovePlan", () => {
   });
 
   it("private ~/.agentmemory/bin/iii is removed without prompt", () => {
-    touch(".agentmemory/bin/iii", "fakebin");
+    touch(`.agentmemory/bin/${III_BIN}`, "fakebin");
     const plan = buildRemovePlan(ctx(), { force: false, keepData: false });
     const item = plan.find((p) => p.id === "private-bin-iii")!;
     expect(item).toBeDefined();

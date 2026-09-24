@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 describe("fresh native engine startup", () => {
-  const source = readFileSync("src/cli.ts", "utf8");
+  const source = readFileSync("src/cli.ts", "utf8").replace(/\r\n/g, "\n");
 
   it("routes existing and newly installed engines through one runtime config", () => {
     const prepareStart = source.indexOf("function prepareEngineLaunch");

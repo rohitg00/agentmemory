@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import {
   agentmemoryHome,
   dockerComposeArgs,
@@ -32,12 +32,12 @@ describe("engine-launch path resolution", () => {
   });
 
   it("resolveEngineCwd keeps the invocation cwd for repo-local configs", () => {
-    const repo = "/work/agentmemory";
+    const repo = resolve("/work/agentmemory");
     expect(resolveEngineCwd(join(repo, "iii-config.yaml"), repo, HOME)).toBe(repo);
   });
 
   it("resolveEngineCwd anchors bundled configs and preserves custom config roots", () => {
-    const repo = "/work/some-project";
+    const repo = resolve("/work/some-project");
     expect(resolveEngineCwd("/opt/pkg/dist/iii-config.yaml", repo, HOME, true)).toBe(
       join(HOME, ".agentmemory"),
     );
