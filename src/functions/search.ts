@@ -309,7 +309,9 @@ export async function indexRecords(
   return count
 }
 
-export async function reconcileIndex(kv: StateKV): Promise<number> {
+export async function findUnindexedObservations(
+  kv: StateKV,
+): Promise<{ sessions: number; missing: CompressedObservation[] }> {
   const idx = getSearchIndex()
   const sessions = await kv.list<Session>(KV.sessions)
   const indexed = idx.observationCountsBySession()
@@ -323,6 +325,12 @@ export async function reconcileIndex(kv: StateKV): Promise<number> {
       missing.push(obs)
     }
   }
+  return { sessions: sessions.length, missing }
+}
+
+export async function reconcileIndex(kv: StateKV): Promise<number> {
+  const idx = getSearchIndex()
+  const { missing } = await findUnindexedObservations(kv)
   const stillMissing = missing.filter((obs) => !idx.has(obs.id))
   if (stillMissing.length === 0) return 0
   return indexRecords(stillMissing, [])

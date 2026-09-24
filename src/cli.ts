@@ -79,7 +79,7 @@ import { isFirstRun, readPrefs, resetPrefs, writePrefs } from "./cli/preferences
 import { runOnboarding } from "./cli/onboarding.js";
 import { setBootVerbose } from "./logger.js";
 import { hydrateProcessEnvFromFile } from "./config.js";
-import { VERSION } from "./version.js";
+import { III_PINNED_VERSION, VERSION } from "./version.js";
 import { getAllTools, ESSENTIAL_TOOLS } from "./mcp/tools-registry.js";
 import { knownAgents } from "./cli/connect/index.js";
 
@@ -130,7 +130,7 @@ if (args.includes("--version") || args.includes("-V")) {
 // constant and the two package.json dependencies together.
 // AGENTMEMORY_III_VERSION overrides the pin for anyone running a
 // self-managed engine.
-const IIPINNED_DEFAULT_VERSION = "0.22.1";
+const IIPINNED_DEFAULT_VERSION = III_PINNED_VERSION;
 const IIPINNED_VERSION =
   process.env["AGENTMEMORY_III_VERSION"] || IIPINNED_DEFAULT_VERSION;
 const IIIENGINE_INSTALL_CMD = `curl -fsSL https://install.iii.dev/iii/main/install.sh | VERSION=${IIPINNED_VERSION} sh`;

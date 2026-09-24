@@ -1,5 +1,6 @@
 import { TriggerAction, type IIIClient } from "iii-sdk";
 import type { HttpRequest } from "@iii-dev/helpers/http";
+import { randomBytes } from "node:crypto";
 import type { Session, CompressedObservation, HookPayload, CommitLink, SessionSummary } from "../types.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
 import { KV } from "../state/schema.js";
@@ -8,7 +9,9 @@ import { StateKV } from "../state/kv.js";
 import { getLatestHealth } from "../health/monitor.js";
 import type { MetricsStore } from "../eval/metrics-store.js";
 import type { ResilientProvider } from "../providers/resilient.js";
-import { VERSION } from "../version.js";
+import { III_PINNED_VERSION, VERSION } from "../version.js";
+import { evaluateStatus, prefersHtml, renderStatusHtml, type GraphStatsInput } from "../functions/status.js";
+import { findUnindexedObservations, getSearchIndex, getVectorIndex } from "../functions/search.js";
 import { timingSafeCompare } from "../auth.js";
 import { isSlotsEnabled, isReflectEnabled } from "../functions/slots.js";
 import { renderViewerDocument } from "../viewer/document.js";
@@ -138,6 +141,55 @@ function parseOptionalPositiveInt(value: unknown): number | undefined | null {
   return parsed;
 }
 
+function buildConfigFlags() {
+  return [
+    {
+      key: "GRAPH_EXTRACTION_ENABLED",
+      label: "Knowledge graph extraction",
+      enabled: isGraphExtractionEnabled(),
+      default: false,
+      affects: ["Graph", "Dashboard"],
+      needsLlm: true,
+      description: "Extracts entities and relations from observations into a knowledge graph.",
+      enableHow: "Set GRAPH_EXTRACTION_ENABLED=true and provide an LLM key, then restart.",
+      docsHref: "https://github.com/rohitg00/agentmemory#knowledge-graph",
+    },
+    {
+      key: "CONSOLIDATION_ENABLED",
+      label: "Memory consolidation",
+      enabled: isConsolidationEnabled(),
+      default: false,
+      affects: ["Dashboard", "Memories", "Crystals"],
+      needsLlm: true,
+      description: "Periodically summarizes sessions into semantic facts + procedures.",
+      enableHow: "Set CONSOLIDATION_ENABLED=true and provide an LLM key, then restart.",
+      docsHref: "https://github.com/rohitg00/agentmemory#consolidation",
+    },
+    {
+      key: "AGENTMEMORY_AUTO_COMPRESS",
+      label: "LLM-powered observation compression",
+      enabled: isAutoCompressEnabled(),
+      default: false,
+      affects: ["Memories", "Timeline"],
+      needsLlm: true,
+      description: "Every observation is compressed by the LLM for richer summaries (costs tokens). OFF uses zero-LLM synthetic compression.",
+      enableHow: "Set AGENTMEMORY_AUTO_COMPRESS=true and provide an LLM key.",
+      docsHref: "https://github.com/rohitg00/agentmemory/issues/138",
+    },
+    {
+      key: "AGENTMEMORY_INJECT_CONTEXT",
+      label: "In-conversation context injection",
+      enabled: isContextInjectionEnabled(),
+      default: false,
+      affects: ["Hooks"],
+      needsLlm: false,
+      description: "Hooks write recalled context into Claude Code's conversation. OFF captures in the background without injecting.",
+      enableHow: "Set AGENTMEMORY_INJECT_CONTEXT=true and restart.",
+      docsHref: "https://github.com/rohitg00/agentmemory/issues/143",
+    },
+  ];
+}
+
 export function registerApiTriggers(
   sdk: IIIClient,
   kv: StateKV,
@@ -197,52 +249,7 @@ export function registerApiTriggers(
       if (authErr) return authErr;
       const providerKind = detectLlmProviderKind();
       const embeddingProvider = detectEmbeddingProvider() ? "embeddings" : "none";
-      const flags = [
-        {
-          key: "GRAPH_EXTRACTION_ENABLED",
-          label: "Knowledge graph extraction",
-          enabled: isGraphExtractionEnabled(),
-          default: false,
-          affects: ["Graph", "Dashboard"],
-          needsLlm: true,
-          description: "Extracts entities and relations from observations into a knowledge graph.",
-          enableHow: "Set GRAPH_EXTRACTION_ENABLED=true and provide an LLM key, then restart.",
-          docsHref: "https://github.com/rohitg00/agentmemory#knowledge-graph",
-        },
-        {
-          key: "CONSOLIDATION_ENABLED",
-          label: "Memory consolidation",
-          enabled: isConsolidationEnabled(),
-          default: false,
-          affects: ["Dashboard", "Memories", "Crystals"],
-          needsLlm: true,
-          description: "Periodically summarizes sessions into semantic facts + procedures.",
-          enableHow: "Set CONSOLIDATION_ENABLED=true and provide an LLM key, then restart.",
-          docsHref: "https://github.com/rohitg00/agentmemory#consolidation",
-        },
-        {
-          key: "AGENTMEMORY_AUTO_COMPRESS",
-          label: "LLM-powered observation compression",
-          enabled: isAutoCompressEnabled(),
-          default: false,
-          affects: ["Memories", "Timeline"],
-          needsLlm: true,
-          description: "Every observation is compressed by the LLM for richer summaries (costs tokens). OFF uses zero-LLM synthetic compression.",
-          enableHow: "Set AGENTMEMORY_AUTO_COMPRESS=true and provide an LLM key.",
-          docsHref: "https://github.com/rohitg00/agentmemory/issues/138",
-        },
-        {
-          key: "AGENTMEMORY_INJECT_CONTEXT",
-          label: "In-conversation context injection",
-          enabled: isContextInjectionEnabled(),
-          default: false,
-          affects: ["Hooks"],
-          needsLlm: false,
-          description: "Hooks write recalled context into Claude Code's conversation. OFF captures in the background without injecting.",
-          enableHow: "Set AGENTMEMORY_INJECT_CONTEXT=true and restart.",
-          docsHref: "https://github.com/rohitg00/agentmemory/issues/143",
-        },
-      ];
+      const flags = buildConfigFlags();
       return {
         status_code: 200,
         body: {
@@ -296,6 +303,95 @@ export function registerApiTriggers(
       http_method: "GET",
       middleware_function_ids: ["middleware::api-auth"],
     },
+  });
+
+  const STATUS_CHECK_TIMEOUT_MS = 5000;
+
+  async function valueWithin<T>(work: Promise<T>, ms: number): Promise<T | null> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const expiry = new Promise<null>((resolve) => {
+      timer = setTimeout(() => resolve(null), ms);
+    });
+    try {
+      return await Promise.race([work.catch(() => null), expiry]);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  sdk.registerFunction("api::status",
+    async (req: HttpRequest): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const idx = getSearchIndex();
+      const [health, functionMetrics, graph, unindexed] = await Promise.all([
+        valueWithin(getLatestHealth(kv), STATUS_CHECK_TIMEOUT_MS),
+        metricsStore ? valueWithin(metricsStore.getAll(), STATUS_CHECK_TIMEOUT_MS) : Promise.resolve([]),
+        valueWithin(
+          sdk.trigger({ function_id: "mem::graph-stats", payload: {} }) as Promise<GraphStatsInput>,
+          STATUS_CHECK_TIMEOUT_MS,
+        ),
+        valueWithin(findUnindexedObservations(kv), STATUS_CHECK_TIMEOUT_MS),
+      ]);
+      const observationsIndexed = [...idx.observationCountsBySession().values()].reduce((a, n) => a + n, 0);
+      const circuit =
+        provider && "circuitState" in provider
+          ? (provider.circuitState as { state?: string; failures?: number } | null)
+          : null;
+      const report = evaluateStatus({
+        now: new Date(),
+        version: VERSION,
+        engineVersion: III_PINNED_VERSION,
+        uptimeSeconds: Math.round(process.uptime()),
+        ports: {
+          rest: loadConfig().restPort ?? null,
+          streams: bootStreamsPort ?? null,
+          viewer: getViewerSkipped() ? null : (getBoundViewerPort() ?? null),
+        },
+        health: health
+          ? {
+              status: health.status,
+              alerts: health.alerts,
+              notes: health.notes,
+              connectionState: health.connectionState,
+            }
+          : null,
+        circuitBreaker: circuit,
+        functionMetrics: functionMetrics ?? [],
+        provider: detectLlmProviderKind(),
+        embeddingProvider: detectEmbeddingProvider() ? "embeddings" : "none",
+        flags: buildConfigFlags(),
+        index: {
+          bm25Documents: idx.size,
+          vectorDocuments: getVectorIndex()?.size ?? null,
+          observationsIndexed,
+          missingObservations: unindexed ? unindexed.missing.length : null,
+          sessions: unindexed ? unindexed.sessions : null,
+        },
+        graph,
+        graphExtractionEnabled: isGraphExtractionEnabled(),
+      });
+      const accept = req.headers?.["accept"] ?? req.headers?.["Accept"];
+      const format = req.query_params?.["format"];
+      if (prefersHtml(typeof accept === "string" ? accept : undefined, typeof format === "string" ? format : undefined)) {
+        const nonce = randomBytes(16).toString("base64");
+        return {
+          status_code: 200,
+          headers: {
+            "Content-Type": "text/html; charset=utf-8",
+            "Content-Security-Policy": `default-src 'none'; style-src 'nonce-${nonce}'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`,
+            "Cache-Control": "no-store",
+          },
+          body: renderStatusHtml(report, nonce),
+        };
+      }
+      return { status_code: 200, headers: { "Cache-Control": "no-store" }, body: report };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::status",
+    config: { api_path: "/agentmemory/status", http_method: "GET" },
   });
 
   sdk.registerFunction("api::observe",
