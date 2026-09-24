@@ -221,6 +221,15 @@
       .ws-status.connected::before { animation: none; }
     }
 
+    .layer-row { padding: 12px 0; border-bottom: 1px solid var(--border-light); }
+    .layer-row:last-child { border-bottom: none; }
+    .layer-head { display: flex; align-items: baseline; gap: 10px; }
+    .layer-name { font-family: var(--font-display); font-weight: 700; font-size: 14px; color: var(--ink); }
+    .layer-count { font-family: var(--font-mono); font-size: 13px; color: var(--ink); margin-left: auto; }
+    .layer-from { font-size: 12px; color: var(--ink-muted); margin-top: 2px; }
+    .layer-detail { font-size: 12px; color: var(--ink-faint); margin-top: 4px; line-height: 1.5; }
+    .layer-preview { margin: 6px 0 0; padding-left: 16px; font-size: 12px; color: var(--ink-muted); }
+    .layer-preview li { margin-bottom: 2px; }
     .stats-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -1014,9 +1023,6 @@
     .procedure-item:last-child { border-bottom: none; }
     .procedure-steps { margin: 6px 0 0 16px; font-size: 12px; color: var(--ink-muted); }
     .procedure-steps li { margin-bottom: 2px; }
-    .consolidation-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 12px; font-family: var(--font-ui); }
-    .consolidation-row .cl { color: var(--ink-muted); }
-    .consolidation-row .cv { color: var(--ink); font-weight: 600; font-family: var(--font-mono); }
 
     .activity-feed-item { display: flex; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border-light); font-size: 13px; }
     .activity-feed-item:last-child { border-bottom: none; }
@@ -1525,7 +1531,8 @@
           apiGet('procedural'),
           apiGet('relations'),
           apiGet('lessons'),
-          apiGet('crystals')
+          apiGet('crystals'),
+          apiGet('consolidation/status')
         ]);
         var sessionsOk = !!(results[1] && Array.isArray(results[1].sessions));
         if (!sessionsOk && !d.loaded) {
@@ -1546,6 +1553,7 @@
         d.relations = listOr(d.relations, results[7], 'relations');
         d.lessons = listOr(d.lessons, results[8], 'lessons');
         d.crystals = listOr(d.crystals, results[9], 'crystals');
+        if (results[10] && results[10].tiers) d.consolidation = results[10];
         d.loaded = true;
         renderDashboard();
       } catch (err) {
@@ -1586,6 +1594,49 @@
       });
       var saved = Math.max(0, full - injected);
       return { percent: full > 0 ? Math.round((saved / full) * 100) : 0, saved: saved };
+    }
+
+    var LAYER_STATE_BADGES = { off: 'badge-muted', waiting: 'badge-yellow', ready: 'badge-blue', ran: 'badge-green', error: 'badge-red' };
+    var LAYER_STATE_LABELS = { off: 'off', waiting: 'waiting', ready: 'ready', ran: 'active', error: 'failed' };
+
+    function layerPreview(tierId, semFacts, procItems) {
+      var items = [];
+      if (tierId === 'semantic') {
+        items = semFacts.slice(0, 3).map(function(f) { return f.fact || f.content || f.title || ''; });
+      } else if (tierId === 'procedural') {
+        items = procItems.slice(0, 3).map(function(p) {
+          var steps = p.steps && p.steps.length ? ' (' + p.steps.length + ' steps)' : '';
+          return (p.name || p.title || 'Procedure') + steps;
+        });
+      }
+      items = items.filter(Boolean);
+      if (!items.length) return '';
+      return '<ul class="layer-preview">' + items.map(function(t) { return '<li>' + esc(truncate(t, 140)) + '</li>'; }).join('') + '</ul>';
+    }
+
+    function renderMemoryLayers(status, semFacts, procItems) {
+      var html = '<div class="card" style="margin-top:16px;"><div class="card-title">Memory layers';
+      if (status && status.lastRunAt) {
+        html += '<span style="float:right;font-size:10px;color:var(--ink-faint);font-family:var(--font-mono);">consolidated ' + esc(shortTime(status.lastRunAt)) + '</span>';
+      }
+      html += '</div>';
+      if (!status || !status.tiers) {
+        html += '<div style="font-size:13px;color:var(--ink-faint);">Consolidation status did not load. Semantic facts: ' + semFacts.length + ', procedures: ' + procItems.length + '.</div></div>';
+        return html;
+      }
+      html += '<div style="font-size:12px;color:var(--ink-muted);margin-bottom:8px;line-height:1.5;">Raw observations stay searchable as they are. Consolidation turns them into these longer-lived layers.</div>';
+      status.tiers.forEach(function(t) {
+        html += '<div class="layer-row">' +
+          '<div class="layer-head"><span class="layer-name">' + esc(t.label) + '</span>' +
+          '<span class="layer-count">' + esc(String(t.count)) + '</span>' +
+          '<span class="badge ' + (LAYER_STATE_BADGES[t.state] || 'badge-muted') + '">' + esc(LAYER_STATE_LABELS[t.state] || t.state) + '</span></div>' +
+          '<div class="layer-from">' + esc(t.from) + '</div>' +
+          '<div class="layer-detail">' + esc(t.detail) + '</div>' +
+          layerPreview(t.id, semFacts, procItems) +
+          '</div>';
+      });
+      html += '</div>';
+      return html;
     }
 
     function renderDashboard() {
@@ -1781,56 +1832,7 @@
       var relItems = d.relations || [];
 
       html += '<hr class="section-rule">';
-      html += '<div class="two-col">';
-
-      html += '<div class="card"><div class="card-title">Semantic Memory</div>';
-      if (semFacts.length === 0) {
-        html += '<div style="font-size:13px;color:var(--ink-faint);font-style:italic;">No semantic facts yet. Observations will be consolidated into semantic memories over time.</div>';
-      } else {
-          semFacts.slice(0, 5).forEach(function(f) {
-            var conf = typeof f.confidence === 'number' ? Math.round(f.confidence * 100) : null;
-            var str = typeof f.strength === 'number' ? Math.round(f.strength * 100) : null;
-            var barColor = (str || 0) > 70 ? 'var(--green)' : (str || 0) > 40 ? 'var(--yellow)' : 'var(--red)';
-            html += '<div class="memory-fact">';
-            html += '<span style="color:var(--ink);">' + esc(f.fact || f.content || f.title || 'Fact') + '</span>';
-            html += '<span style="display:flex;align-items:center;gap:6px;">';
-            if (str !== null) html += '<span class="strength-bar" style="width:40px;"><span class="fill" style="width:' + str + '%;background:' + barColor + '"></span></span>';
-            if (conf !== null) html += '<span style="font-size:10px;font-family:var(--font-mono);color:var(--ink-faint);">' + conf + '%</span>';
-            html += '</span></div>';
-          });
-        }
-        html += '</div>';
-
-        html += '<div class="card"><div class="card-title">Procedural Memory</div>';
-      if (procItems.length === 0) {
-        html += '<div style="font-size:13px;color:var(--ink-faint);font-style:italic;">No procedures yet. Repeated patterns will be extracted as procedures.</div>';
-      } else {
-          procItems.slice(0, 5).forEach(function(p) {
-            html += '<div class="procedure-item">';
-            html += '<div style="font-weight:600;color:var(--ink);font-family:var(--font-display);font-size:13px;">' + esc(p.name || p.title || 'Procedure') + '</div>';
-            if (p.trigger || p.triggerCondition) html += '<div style="font-size:11px;color:var(--ink-faint);font-family:var(--font-mono);margin-top:2px;">Trigger: ' + esc(p.trigger || p.triggerCondition) + '</div>';
-            if (p.frequency) html += '<div style="font-size:11px;color:var(--ink-faint);margin-top:2px;">Freq: ' + p.frequency + '</div>';
-            if (p.steps && p.steps.length > 0) {
-              html += '<ol class="procedure-steps">';
-              p.steps.slice(0, 4).forEach(function(s) { html += '<li>' + esc(typeof s === 'string' ? s : s.description || s.action || JSON.stringify(s)) + '</li>'; });
-              if (p.steps.length > 4) html += '<li style="color:var(--ink-faint);font-style:italic;">+ ' + (p.steps.length - 4) + ' more...</li>';
-              html += '</ol>';
-            }
-            html += '</div>';
-          });
-        }
-      html += '</div>';
-
-      html += '</div>';
-
-      html += '<div class="card" style="margin-top:16px;"><div class="card-title">Consolidation Status</div>';
-      html += '<div class="consolidation-row"><span class="cl">Semantic facts</span><span class="cv">' + semFacts.length + '</span></div>';
-      html += '<div class="consolidation-row"><span class="cl">Procedures</span><span class="cv">' + procItems.length + '</span></div>';
-      html += '<div class="consolidation-row"><span class="cl">Relations</span><span class="cv">' + relItems.length + '</span></div>';
-      if (semFacts.length === 0 && procItems.length === 0 && relItems.length === 0) {
-        html += '<div style="font-size:12px;color:var(--ink-faint);margin-top:8px;line-height:1.5;">Consolidation distills session observations into durable facts and repeatable procedures. It runs on a schedule when <code>CONSOLIDATION_ENABLED=true</code> and an LLM provider key are set, or on demand via <code>memory_consolidate</code>.</div>';
-      }
-      html += '</div>';
+      html += renderMemoryLayers(d.consolidation, semFacts, procItems);
 
       if (relItems.length > 0) {
         html += '<div class="card" style="margin-top:16px;"><div class="card-title">Memory Relations</div>';

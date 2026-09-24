@@ -4,6 +4,7 @@ import { KV, STREAM } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { isReflectEnabled } from "../functions/slots.js";
 import {
+  detectLlmProviderKind,
   getAgentId,
   getConsolidationCooldownMs,
   isConsolidationEnabled,
@@ -142,6 +143,9 @@ export function registerEventTriggers(sdk: IIIClient, kv: StateKV): void {
       if (await consolidationDue(kv)) {
         fireVoid("mem::consolidate-pipeline", { tier: "all", force: true });
         fireVoid("mem::auto-crystallize", { olderThanDays: 0 });
+        if (detectLlmProviderKind() === "llm") {
+          fireVoid("mem::skill-extract", { sessionId: data.sessionId });
+        }
       }
     }
     return summary;
