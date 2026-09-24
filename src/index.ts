@@ -632,8 +632,11 @@ async function main() {
     healthMonitor.stop();
     dedupMap.stop();
     indexPersistence.stop();
+    const viewerClosed = new Promise<void>((resolve) =>
+      viewerServer.close(() => resolve()),
+    );
     viewerServer.closeAllConnections();
-    await new Promise<void>((resolve) => viewerServer.close(() => resolve()));
+    await viewerClosed;
     const flushed = await settleWithin(
       indexPersistence.save(),
       SHUTDOWN_FLUSH_TIMEOUT_MS,
