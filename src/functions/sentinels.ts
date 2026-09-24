@@ -1,4 +1,4 @@
-import type { ISdk } from "iii-sdk";
+import type { IIIClient } from "iii-sdk";
 import type { StateKV } from "../state/kv.js";
 import { KV, generateId } from "../state/schema.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
@@ -14,7 +14,7 @@ const VALID_TYPES: Sentinel["type"][] = [
   "custom",
 ];
 
-export function registerSentinelsFunction(sdk: ISdk, kv: StateKV): void {
+export function registerSentinelsFunction(sdk: IIIClient, kv: StateKV): void {
   sdk.registerFunction("mem::sentinel-create", 
     async (data: {
       name: string;

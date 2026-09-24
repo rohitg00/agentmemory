@@ -1,4 +1,4 @@
-import type { ISdk } from "iii-sdk";
+import type { IIIClient } from "iii-sdk";
 import type { CompressedObservation, Session } from "../types.js";
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
@@ -12,7 +12,7 @@ interface Pattern {
   sessions: string[];
 }
 
-export function registerPatternsFunction(sdk: ISdk, kv: StateKV): void {
+export function registerPatternsFunction(sdk: IIIClient, kv: StateKV): void {
   sdk.registerFunction("mem::patterns", 
     async (data: { project?: string }) => {
       const patterns: Pattern[] = [];

@@ -1,4 +1,4 @@
-import { TriggerAction, type ISdk } from "iii-sdk";
+import { TriggerAction, type IIIClient } from "iii-sdk";
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { deleteImage, touchImage } from "../utils/image-store.js";
@@ -17,7 +17,7 @@ export async function incrementImageRef(kv: StateKV, filePath: string): Promise<
   });
 }
 
-export async function decrementImageRef(kv: StateKV, sdk: ISdk, filePath: string): Promise<void> {
+export async function decrementImageRef(kv: StateKV, sdk: IIIClient, filePath: string): Promise<void> {
   return withKeyedLock(`imgRef:${filePath}`, async () => {
     const current = await getImageRefCount(kv, filePath);
     if (current <= 1) {

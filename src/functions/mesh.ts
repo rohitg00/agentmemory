@@ -1,4 +1,4 @@
-import type { ISdk } from "iii-sdk";
+import type { IIIClient } from "iii-sdk";
 import type { StateKV } from "../state/kv.js";
 import { KV, generateId } from "../state/schema.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
@@ -137,7 +137,7 @@ async function lwwMergeGraphNodes(
 }
 
 export function registerMeshFunction(
-  sdk: ISdk,
+  sdk: IIIClient,
   kv: StateKV,
   meshAuthToken?: string,
 ): void {

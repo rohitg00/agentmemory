@@ -1,11 +1,11 @@
-import type { ISdk } from "iii-sdk";
+import type { IIIClient } from "iii-sdk";
 import type { HealthSnapshot } from "../types.js";
 import type { StateKV } from "../state/kv.js";
 import { KV } from "../state/schema.js";
 import { evaluateHealth } from "./thresholds.js";
 
 export function registerHealthMonitor(
-  sdk: ISdk,
+  sdk: IIIClient,
   kv: StateKV,
 ): { stop: () => void } {
   let connectionState = "connected";

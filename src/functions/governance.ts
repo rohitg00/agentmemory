@@ -1,4 +1,4 @@
-import type { ISdk } from "iii-sdk";
+import type { IIIClient } from "iii-sdk";
 import type { Memory, GovernanceFilter, AuditEntry } from "../types.js";
 import { KV } from "../state/schema.js";
 import type { StateKV } from "../state/kv.js";
@@ -7,7 +7,7 @@ import { deleteAccessLog } from "./access-tracker.js";
 import { getSearchIndex, vectorIndexRemove, flushIndexSave } from "./search.js";
 import { logger } from "../logger.js";
 
-export function registerGovernanceFunction(sdk: ISdk, kv: StateKV): void {
+export function registerGovernanceFunction(sdk: IIIClient, kv: StateKV): void {
   sdk.registerFunction("mem::governance-delete", 
     async (data: { memoryIds: string[]; reason?: string }) => {
       if (

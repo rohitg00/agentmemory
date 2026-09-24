@@ -1,4 +1,4 @@
-import type { ISdk } from "iii-sdk";
+import type { IIIClient } from "iii-sdk";
 import type { MemorySlot, CompressedObservation } from "../types.js";
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
@@ -193,7 +193,7 @@ export function renderPinnedContext(slots: MemorySlot[]): string {
   return lines.join("\n");
 }
 
-export function registerSlotsFunctions(sdk: ISdk, kv: StateKV): void {
+export function registerSlotsFunctions(sdk: IIIClient, kv: StateKV): void {
   void seedDefaults(kv).catch((err) => {
     logger.warn("slot defaults seed failed", {
       error: err instanceof Error ? err.message : String(err),

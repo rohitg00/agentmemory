@@ -35,7 +35,7 @@ function wireContext(kv: ReturnType<typeof mockKV>) {
     registerFunction: vi.fn((id: string, cb: ContextHandler) => {
       if (id === "mem::context") handler = cb;
     }),
-  } as unknown as import("iii-sdk").ISdk;
+  } as unknown as import("iii-sdk").IIIClient;
   registerContextFunction(sdk, kv as never, 2000);
   if (!handler) throw new Error("mem::context not registered");
   return handler;

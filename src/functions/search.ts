@@ -1,4 +1,4 @@
-import type { ISdk } from 'iii-sdk'
+import type { IIIClient } from 'iii-sdk'
 import type { CompactSearchResult, CompressedObservation, Memory, SearchResult, Session } from '../types.js'
 import { KV } from '../state/schema.js'
 import { StateKV } from '../state/kv.js'
@@ -385,7 +385,7 @@ export async function rebuildIndex(kv: StateKV): Promise<number> {
   return indexed
 }
 
-export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
+export function registerSearchFunction(sdk: IIIClient, kv: StateKV): void {
   sdk.registerFunction(
     'mem::search',
     async (data: {

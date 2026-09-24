@@ -1,4 +1,4 @@
-import { TriggerAction, type ISdk } from "iii-sdk";
+import { TriggerAction, type IIIClient } from "iii-sdk";
 import { readFileSync } from "node:fs";
 import { isManagedImagePath } from "../utils/image-store.js";
 import type {
@@ -65,7 +65,7 @@ function parseCompressionXml(
 }
 
 export function registerCompressFunction(
-  sdk: ISdk,
+  sdk: IIIClient,
   kv: StateKV,
   provider: MemoryProvider,
   metricsStore?: MetricsStore,

@@ -1,10 +1,10 @@
-import type { ISdk } from "iii-sdk";
+import type { IIIClient } from "iii-sdk";
 import type { StateKV } from "../state/kv.js";
 import { KV } from "../state/schema.js";
 import type { Memory, GraphNode, GraphEdge } from "../types.js";
 import { recordAudit } from "./audit.js";
 
-export function registerCascadeFunction(sdk: ISdk, kv: StateKV): void {
+export function registerCascadeFunction(sdk: IIIClient, kv: StateKV): void {
   sdk.registerFunction("mem::cascade-update", 
     async (data: { supersededMemoryId: string }) => {
       if (!data.supersededMemoryId || typeof data.supersededMemoryId !== "string") {

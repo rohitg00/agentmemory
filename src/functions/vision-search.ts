@@ -1,4 +1,4 @@
-import type { ISdk } from "iii-sdk";
+import type { IIIClient } from "iii-sdk";
 import type { EmbeddingProvider } from "../types.js";
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
@@ -17,7 +17,7 @@ interface StoredEmbedding {
 }
 
 export function registerVisionSearchFunctions(
-  sdk: ISdk,
+  sdk: IIIClient,
   kv: StateKV,
   imageProvider: EmbeddingProvider | null,
 ): void {

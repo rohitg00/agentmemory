@@ -1,4 +1,4 @@
-import { TriggerAction, type ISdk } from "iii-sdk";
+import { TriggerAction, type IIIClient } from "iii-sdk";
 import type { RawObservation, HookPayload, Origin } from "../types.js";
 
 const TOOL_HOOKS = new Set(["pre_tool_use", "post_tool_use", "post_tool_failure"]);
@@ -38,7 +38,7 @@ export function extractImage(d: unknown): string | undefined {
 }
 
 export function registerObserveFunction(
-  sdk: ISdk,
+  sdk: IIIClient,
   kv: StateKV,
   dedupMap?: DedupMap,
   maxObservationsPerSession?: number,

@@ -1,4 +1,4 @@
-import type { ISdk } from "iii-sdk";
+import type { IIIClient } from "iii-sdk";
 import type { Memory, CompressedObservation, Session } from "../types.js";
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
@@ -21,7 +21,7 @@ interface AutoForgetResult {
   dryRun: boolean;
 }
 
-export function registerAutoForgetFunction(sdk: ISdk, kv: StateKV): void {
+export function registerAutoForgetFunction(sdk: IIIClient, kv: StateKV): void {
   sdk.registerFunction("mem::auto-forget", 
     async (data: { dryRun?: boolean }): Promise<AutoForgetResult> => {
       const dryRun = data?.dryRun ?? false;

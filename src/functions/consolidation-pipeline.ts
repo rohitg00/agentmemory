@@ -1,4 +1,4 @@
-import type { ISdk } from "iii-sdk";
+import type { IIIClient } from "iii-sdk";
 import type {
   SemanticMemory,
   ProceduralMemory,
@@ -43,7 +43,7 @@ function applyDecay(
 }
 
 export function registerConsolidationPipelineFunction(
-  sdk: ISdk,
+  sdk: IIIClient,
   kv: StateKV,
   provider: MemoryProvider,
 ): void {

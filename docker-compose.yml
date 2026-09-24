@@ -21,12 +21,12 @@ services:
     # Pinned to the same release as agentmemory's iii-sdk dependency
     # (package.json). The worker speaks this engine's wire protocol, so
     # bump the image tag and the SDK together, never one of them alone.
-    # v0.19.7 is the last engine before the 0.20 SDK reorganization and
-    # keeps HTTP routes owned by the reconnecting worker.
+    # 0.22.x is the last line before 0.23 removes the config.yaml worker
+    # lifecycle; it keeps HTTP routes owned by the reconnecting worker.
     #
     # Override per-shell or via .env file:
-    #   AGENTMEMORY_III_VERSION=0.19.7 docker compose up
-    image: iiidev/iii:${AGENTMEMORY_III_VERSION:-0.19.7}
+    #   AGENTMEMORY_III_VERSION=0.22.1 docker compose up
+    image: iiidev/iii:${AGENTMEMORY_III_VERSION:-0.22.1}
     user: "${AGENTMEMORY_DOCKER_UID:-65532}:${AGENTMEMORY_DOCKER_GID:-65532}"
     depends_on:
       iii-init:
@@ -45,13 +45,12 @@ services:
       - "${AGENTMEMORY_DATA_DIR:-iii-data}:/data"
       - ./iii-config.docker.yaml:/app/config.yaml:ro
       # The engine persists each builtin worker's seeded config block under
-      # data/configuration of its working directory (/home/nonroot in the
-      # image) on first boot and treats that copy as the source of truth
-      # afterwards. Keeping it on a tmpfs means every
-      # container start re-seeds from config.yaml and the III_* env vars,
-      # the same behavior the native CLI path has.
+      # config/ next to its config file (/app/config in the image) on first
+      # boot and treats that copy as the source of truth afterwards. Keeping
+      # it on a tmpfs means every container start re-seeds from config.yaml
+      # and the III_* env vars, the same behavior the native CLI path has.
       - type: tmpfs
-        target: /home/nonroot/data/configuration
+        target: /app/config
         tmpfs:
           mode: 01777
     restart: unless-stopped

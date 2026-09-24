@@ -1,4 +1,4 @@
-import type { ISdk } from "iii-sdk";
+import type { IIIClient } from "iii-sdk";
 import type { Memory } from "../types.js";
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
@@ -15,7 +15,7 @@ function escapeXml(s: string): string {
     .replace(/'/g, "&apos;");
 }
 
-export function registerEnrichFunction(sdk: ISdk, kv: StateKV): void {
+export function registerEnrichFunction(sdk: IIIClient, kv: StateKV): void {
   sdk.registerFunction("mem::enrich",
     async (data: {
       sessionId: string;

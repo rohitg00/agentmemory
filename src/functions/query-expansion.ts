@@ -1,4 +1,4 @@
-import type { ISdk } from "iii-sdk";
+import type { IIIClient } from "iii-sdk";
 import type { MemoryProvider, QueryExpansion } from "../types.js";
 import { logger } from "../logger.js";
 
@@ -67,7 +67,7 @@ function parseExpansionXml(xml: string): QueryExpansion | null {
 }
 
 export function registerQueryExpansionFunction(
-  sdk: ISdk,
+  sdk: IIIClient,
   provider: MemoryProvider,
 ): void {
   sdk.registerFunction("mem::expand-query", 

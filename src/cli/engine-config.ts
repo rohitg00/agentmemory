@@ -1,11 +1,16 @@
 import { rmSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 const SEEDED_BUILTIN_WORKERS = [
+  "http",
   "iii-http",
+  "state",
   "iii-state",
+  "queue",
   "iii-queue",
+  "pubsub",
   "iii-pubsub",
+  "cron",
   "iii-cron",
   "iii-stream",
   "iii-observability",
@@ -25,9 +30,14 @@ export function configuredPersistDir(renderedConfig: string): string | null {
 
 export function persistedBuiltinConfigDirs(
   engineCwd: string,
+  configPath: string,
   renderedConfig?: string,
 ): string[] {
-  const dirs = [join(engineCwd, "data", "configuration")];
+  const dirs = [
+    join(engineCwd, "config"),
+    join(dirname(configPath), "config"),
+    join(engineCwd, "data", "configuration"),
+  ];
   const custom = renderedConfig ? configuredPersistDir(renderedConfig) : null;
   if (custom) dirs.unshift(resolve(engineCwd, custom));
   return [...new Set(dirs)];
@@ -35,19 +45,21 @@ export function persistedBuiltinConfigDirs(
 
 export function persistedBuiltinConfigPaths(
   engineCwd: string,
+  configPath: string,
   renderedConfig?: string,
 ): string[] {
-  return persistedBuiltinConfigDirs(engineCwd, renderedConfig).flatMap((dir) =>
+  return persistedBuiltinConfigDirs(engineCwd, configPath, renderedConfig).flatMap((dir) =>
     SEEDED_BUILTIN_WORKERS.map((id) => join(dir, `${id}.yaml`)),
   );
 }
 
 export function clearPersistedBuiltinConfig(
   engineCwd: string,
+  configPath: string,
   renderedConfig?: string,
 ): string[] {
   const cleared: string[] = [];
-  for (const path of persistedBuiltinConfigPaths(engineCwd, renderedConfig)) {
+  for (const path of persistedBuiltinConfigPaths(engineCwd, configPath, renderedConfig)) {
     try {
       rmSync(path);
       cleared.push(path);

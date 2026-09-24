@@ -1,4 +1,4 @@
-import type { ISdk } from "iii-sdk";
+import type { IIIClient } from "iii-sdk";
 import type { StateKV } from "../state/kv.js";
 import { KV, generateId } from "../state/schema.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
@@ -8,7 +8,7 @@ import { recordAudit } from "./audit.js";
 const DEFAULT_LEASE_TTL_MS = 10 * 60 * 1000;
 const MAX_LEASE_TTL_MS = 60 * 60 * 1000;
 
-export function registerLeasesFunction(sdk: ISdk, kv: StateKV): void {
+export function registerLeasesFunction(sdk: IIIClient, kv: StateKV): void {
   sdk.registerFunction("mem::lease-acquire", 
     async (data: { actionId: string; agentId: string; ttlMs?: number }) => {
       if (!data.actionId || !data.agentId) {

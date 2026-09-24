@@ -1,4 +1,4 @@
-import type { ISdk } from "iii-sdk";
+import type { IIIClient } from "iii-sdk";
 import type { StateKV } from "../state/kv.js";
 import { KV, fingerprintId } from "../state/schema.js";
 import type { Lesson } from "../types.js";
@@ -63,7 +63,7 @@ function reinforceLesson(lesson: Lesson): void {
   lesson.updatedAt = now;
 }
 
-export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
+export function registerLessonsFunctions(sdk: IIIClient, kv: StateKV): void {
   sdk.registerFunction("mem::lesson-save", 
     async (data: {
       content: string;

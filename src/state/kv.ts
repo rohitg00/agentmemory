@@ -1,7 +1,7 @@
-import type { ISdk } from 'iii-sdk'
+import type { IIIClient } from 'iii-sdk'
 
 export class StateKV {
-  constructor(private sdk: ISdk) {}
+  constructor(private sdk: IIIClient) {}
 
   async get<T = unknown>(scope: string, key: string): Promise<T | null> {
     return this.sdk.trigger<{ scope: string; key: string }, T | null>({

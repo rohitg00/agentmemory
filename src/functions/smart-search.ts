@@ -1,4 +1,4 @@
-import type { ISdk } from "iii-sdk";
+import type { IIIClient } from "iii-sdk";
 import type {
   CompactLessonResult,
   CompactSearchResult,
@@ -73,7 +73,7 @@ export function resetFollowupStatsForTests(): void {
 const LESSON_CONTENT_PREVIEW_CHARS = 240;
 
 export function registerSmartSearchFunction(
-  sdk: ISdk,
+  sdk: IIIClient,
   kv: StateKV,
   searchFn: (query: string, limit: number) => Promise<HybridSearchResult[]>,
 ): void {
@@ -288,7 +288,7 @@ export function registerSmartSearchFunction(
 }
 
 async function recallLessons(
-  sdk: ISdk,
+  sdk: IIIClient,
   query: string,
   limit: number,
   project?: string,

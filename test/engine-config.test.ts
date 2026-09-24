@@ -72,51 +72,93 @@ describe("renderEngineConfig", () => {
       /- name: iii-worker-manager\n\s+config:\n\s+port: 49234\n\s+host: 127\.0\.0\.1/,
     );
   });
+
+  it("keeps the iii- prefixed builtin names: on 0.22.1 the unprefixed names resolve to registry workers", () => {
+    const source = readFileSync(
+      join(import.meta.dirname, "..", "iii-config.yaml"),
+      "utf8",
+    );
+    const names = [...source.matchAll(/^\s*- name: (\S+)$/gm)].map((m) => m[1]);
+
+    expect(names).toEqual(
+      expect.arrayContaining([
+        "iii-http",
+        "iii-state",
+        "iii-pubsub",
+        "iii-cron",
+        "iii-queue",
+        "iii-stream",
+        "iii-observability",
+      ]),
+    );
+    for (const bare of ["http", "state", "pubsub", "cron", "queue"]) {
+      expect(names).not.toContain(bare);
+    }
+  });
 });
 
 describe("clearPersistedBuiltinConfig", () => {
-  it("lists one persisted entry per seeded builtin under data/configuration", () => {
-    const paths = persistedBuiltinConfigPaths("/srv/engine");
+  const configPath = join("/srv", "state", "iii-config.runtime.yaml");
 
+  it("covers the engine cwd, the config file directory and the legacy 0.19 location", () => {
+    expect(persistedBuiltinConfigDirs("/srv/engine", configPath)).toEqual([
+      join("/srv", "engine", "config"),
+      join("/srv", "state", "config"),
+      join("/srv", "engine", "data", "configuration"),
+    ]);
+  });
+
+  it("lists both the unprefixed and the legacy entry name for every seeded builtin", () => {
+    const paths = persistedBuiltinConfigPaths("/srv/engine", configPath);
+
+    expect(paths).toContain(join("/srv", "state", "config", "http.yaml"));
+    expect(paths).toContain(join("/srv", "state", "config", "iii-http.yaml"));
+    expect(paths).toContain(join("/srv", "state", "config", "iii-worker-manager.yaml"));
     expect(paths).toContain(
-      join("/srv/engine", "data", "configuration", "iii-http.yaml"),
-    );
-    expect(paths).toContain(
-      join("/srv/engine", "data", "configuration", "iii-worker-manager.yaml"),
+      join("/srv", "engine", "data", "configuration", "iii-http.yaml"),
     );
     expect(paths.every((p) => p.endsWith(".yaml"))).toBe(true);
   });
 
   it("adds the directory a configuration worker entry names, resolved against the engine cwd", () => {
-    expect(persistedBuiltinConfigDirs("/srv/engine", customDirConfig)).toEqual([
+    expect(persistedBuiltinConfigDirs("/srv/engine", configPath, customDirConfig)).toEqual([
       join("/srv", "engine", "custom-cfg"),
+      join("/srv", "engine", "config"),
+      join("/srv", "state", "config"),
       join("/srv", "engine", "data", "configuration"),
     ]);
     expect(
       persistedBuiltinConfigDirs(
         "/srv/engine",
+        configPath,
         customDirConfig.replace("./custom-cfg", "'/var/lib/iii-cfg'"),
       )[0],
     ).toBe(join("/var", "lib", "iii-cfg"));
     expect(
-      persistedBuiltinConfigDirs("/srv/engine", "workers:\n  - name: iii-http\n"),
-    ).toEqual([join("/srv", "engine", "data", "configuration")]);
+      persistedBuiltinConfigDirs("/srv/engine", configPath, "workers:\n  - name: iii-http\n"),
+    ).toEqual(persistedBuiltinConfigDirs("/srv/engine", configPath));
   });
 
-  it("removes persisted builtin entries and leaves everything else in place", () => {
+  it("removes persisted builtin entries from both locations and leaves everything else in place", () => {
     const cwd = mkdtempSync(join(tmpdir(), "agentmemory-engine-"));
-    const dir = join(cwd, "data", "configuration");
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, "iii-http.yaml"), "id: iii-http\nvalue:\n  port: 3111\n");
-    writeFileSync(join(dir, "iii-state.yaml"), "id: iii-state\nvalue: {}\n");
-    writeFileSync(join(dir, "agentmemory.yaml"), "id: agentmemory\nvalue: {}\n");
+    const dataDir = mkdtempSync(join(tmpdir(), "agentmemory-data-"));
+    const runtimeConfig = join(dataDir, "iii-config.runtime.yaml");
+    const current = join(dataDir, "config");
+    const legacy = join(cwd, "data", "configuration");
+    mkdirSync(current, { recursive: true });
+    mkdirSync(legacy, { recursive: true });
+    writeFileSync(join(current, "http.yaml"), "id: http\nvalue:\n  port: 3111\n");
+    writeFileSync(join(current, "iii-state.yaml"), "id: iii-state\nvalue: {}\n");
+    writeFileSync(join(current, "agentmemory.yaml"), "id: agentmemory\nvalue: {}\n");
+    writeFileSync(join(legacy, "iii-http.yaml"), "id: iii-http\nvalue:\n  port: 3111\n");
 
-    const cleared = clearPersistedBuiltinConfig(cwd);
+    const cleared = clearPersistedBuiltinConfig(cwd, runtimeConfig);
 
-    expect(cleared).toHaveLength(2);
-    expect(existsSync(join(dir, "iii-http.yaml"))).toBe(false);
-    expect(existsSync(join(dir, "iii-state.yaml"))).toBe(false);
-    expect(existsSync(join(dir, "agentmemory.yaml"))).toBe(true);
+    expect(cleared).toHaveLength(3);
+    expect(existsSync(join(current, "http.yaml"))).toBe(false);
+    expect(existsSync(join(current, "iii-state.yaml"))).toBe(false);
+    expect(existsSync(join(legacy, "iii-http.yaml"))).toBe(false);
+    expect(existsSync(join(current, "agentmemory.yaml"))).toBe(true);
   });
 
   it("removes the entries the engine persisted under a custom configuration directory", () => {
@@ -126,7 +168,11 @@ describe("clearPersistedBuiltinConfig", () => {
     writeFileSync(join(dir, "iii-http.yaml"), "id: iii-http\nvalue:\n  port: 3111\n");
     writeFileSync(join(dir, "agentmemory.yaml"), "id: agentmemory\nvalue: {}\n");
 
-    const cleared = clearPersistedBuiltinConfig(cwd, customDirConfig);
+    const cleared = clearPersistedBuiltinConfig(
+      cwd,
+      join(cwd, "iii-config.runtime.yaml"),
+      customDirConfig,
+    );
 
     expect(cleared).toEqual([join(dir, "iii-http.yaml")]);
     expect(existsSync(join(dir, "agentmemory.yaml"))).toBe(true);
@@ -135,13 +181,17 @@ describe("clearPersistedBuiltinConfig", () => {
   it("is a no-op when the engine has never persisted anything", () => {
     const cwd = mkdtempSync(join(tmpdir(), "agentmemory-engine-"));
 
-    expect(clearPersistedBuiltinConfig(cwd)).toEqual([]);
+    expect(
+      clearPersistedBuiltinConfig(cwd, join(cwd, "iii-config.runtime.yaml")),
+    ).toEqual([]);
   });
 
   it("fails loudly when a persisted entry exists but cannot be removed", () => {
     const cwd = mkdtempSync(join(tmpdir(), "agentmemory-engine-"));
-    mkdirSync(join(cwd, "data", "configuration", "iii-http.yaml"), { recursive: true });
+    mkdirSync(join(cwd, "config", "http.yaml"), { recursive: true });
 
-    expect(() => clearPersistedBuiltinConfig(cwd)).toThrow(/iii-http\.yaml/);
+    expect(() =>
+      clearPersistedBuiltinConfig(cwd, join(cwd, "iii-config.runtime.yaml")),
+    ).toThrow(/http\.yaml/);
   });
 });

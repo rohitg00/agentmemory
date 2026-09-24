@@ -1,4 +1,4 @@
-import type { ISdk } from "iii-sdk";
+import type { IIIClient } from "iii-sdk";
 import type {
   GraphNode,
   GraphEdge,
@@ -680,7 +680,7 @@ export async function persistGraphDelta(
 }
 
 export function registerGraphFunction(
-  sdk: ISdk,
+  sdk: IIIClient,
   kv: StateKV,
   provider: MemoryProvider,
 ): void {

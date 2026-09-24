@@ -1,4 +1,4 @@
-import type { ISdk } from "iii-sdk";
+import type { IIIClient } from "iii-sdk";
 import type {
   TeamConfig,
   TeamSharedItem,
@@ -13,7 +13,7 @@ import { logger } from "../logger.js";
 const VALID_ITEM_TYPES = new Set(["memory", "pattern", "observation"]);
 
 export function registerTeamFunction(
-  sdk: ISdk,
+  sdk: IIIClient,
   kv: StateKV,
   config: TeamConfig,
 ): void {

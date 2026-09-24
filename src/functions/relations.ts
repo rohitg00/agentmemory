@@ -1,4 +1,4 @@
-import type { ISdk } from "iii-sdk";
+import type { IIIClient } from "iii-sdk";
 import type { Memory, MemoryRelation } from "../types.js";
 import { KV, generateId } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
@@ -36,7 +36,7 @@ function computeConfidence(
   return Math.max(0, Math.min(1, score));
 }
 
-export function registerRelationsFunction(sdk: ISdk, kv: StateKV): void {
+export function registerRelationsFunction(sdk: IIIClient, kv: StateKV): void {
   sdk.registerFunction("mem::relate", 
     async (data: {
       sourceId: string;

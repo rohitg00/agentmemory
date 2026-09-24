@@ -1,4 +1,4 @@
-import { TriggerAction, type ISdk } from "iii-sdk";
+import { TriggerAction, type IIIClient } from "iii-sdk";
 import type { CompressedObservation, HookPayload, Session } from "../types.js";
 import { KV, STREAM } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
@@ -40,7 +40,7 @@ function consolidationDue(kv: StateKV): Promise<boolean> {
   return result;
 }
 
-export function registerEventTriggers(sdk: ISdk, kv: StateKV): void {
+export function registerEventTriggers(sdk: IIIClient, kv: StateKV): void {
   sdk.registerFunction(
     "event::session::started",
     async (data: {

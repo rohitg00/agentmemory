@@ -4,7 +4,7 @@ You are a coding agent. Follow this runbook top to bottom to install agentmemory
 
 ## What you are installing
 
-agentmemory is a local memory server for coding agents. It exposes a REST API and MCP HTTP routes on port 3111, streams on 3112, a viewer on 3113, and connects its worker to iii-engine on 49134. It is built on the iii engine, which agentmemory manages as a pinned v0.19.7 binary under `~/.agentmemory/bin` on macOS/Linux or `%USERPROFILE%\.agentmemory\bin` on Windows.
+agentmemory is a local memory server for coding agents. It exposes a REST API and MCP HTTP routes on port 3111, streams on 3112, a viewer on 3113, and connects its worker to iii-engine on 49134. It is built on the iii engine, which agentmemory manages as a pinned v0.22.1 binary under `~/.agentmemory/bin` on macOS/Linux or `%USERPROFILE%\.agentmemory\bin` on Windows.
 
 Configuration and the managed iii binary live under `~/.agentmemory`. Persistent iii state uses the platform data directory: `~/Library/Application Support/agentmemory` on macOS, `$XDG_DATA_HOME/agentmemory` or `~/.local/share/agentmemory` on Linux, and `%APPDATA%\agentmemory` on Windows. Override it with `--data-dir <path>` or `AGENTMEMORY_DATA_DIR`; use the same override on every restart. For instance 0, an existing `./data/state_store.db` or `./data/iii-config.yaml` takes precedence over the platform default, while an explicit flag or environment override still wins. Native and Docker starts use the same resolved host data directory.
 
@@ -14,7 +14,7 @@ Default keyless mode needs no API key or cloud account and disables vector embed
 
 - Node.js >= 20 with npm and npx. Check with `node -v`, `npm -v`, and `npx -v`.
 - macOS/Linux automatic iii installation also requires `curl`, a POSIX `sh`, and `tar`. Check with `command -v curl sh tar`. Minimal images such as `node:20-slim` may not include them.
-- Windows: WSL2 follows the Linux path above. Native Windows requires a manually downloaded, pinned iii-engine v0.19.7 `iii.exe`, or Docker Desktop; the CLI does not auto-extract the Windows ZIP. Native automated `connect` supports only `copilot-cli`. Other Windows agents need manual MCP configuration; WSL `connect` applies only to agents installed in that same WSL environment.
+- Windows: WSL2 follows the Linux path above. Native Windows requires a manually downloaded, pinned iii-engine v0.22.1 `iii.exe`, or Docker Desktop; the CLI does not auto-extract the Windows ZIP. Native automated `connect` supports only `copilot-cli`. Other Windows agents need manual MCP configuration; WSL `connect` applies only to agents installed in that same WSL environment.
 - Ports 3111 (REST), 3112 (streams), 3113 (viewer), and 49134 (engine) free. If any are taken, stop whatever is using them before starting (see Troubleshooting).
 
 ## Running non-interactively
@@ -38,12 +38,12 @@ For native Windows, install the engine before continuing:
 
 ```powershell
 # Download the archive that matches your CPU from the pinned release:
-# https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.19.7
+# https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.22.1
 # Extract iii.exe to $HOME\.agentmemory\bin\iii.exe, then verify the pin:
 & "$HOME\.agentmemory\bin\iii.exe" --version
 ```
 
-Expect: exactly `0.19.7`. Do not install the latest unpinned iii release. Alternatively, use WSL2 or start Docker Desktop and choose the Docker path when agentmemory starts.
+Expect: exactly `0.22.1`. Do not install the latest unpinned iii release. Alternatively, use WSL2 or start Docker Desktop and choose the Docker path when agentmemory starts.
 
 ## 2. Start the server
 
@@ -61,7 +61,7 @@ npx -y @agentmemory/agentmemory@latest --data-dir /absolute/path/to/agentmemory-
 
 Docker bind-mounts that same resolved host directory at `/data`. For a second isolated daemon, add `--instance 1`; it stores data and lifecycle metadata under `instance-1` and defaults to ports 3211, 3212, 3213, and 49234. Do not use `--port` alone for concurrent daemons: it changes the ports but keeps instance 0's canonical lifecycle ownership. Use `--instance` for isolation.
 
-Expect: iii-engine v0.19.7 starts, the agentmemory worker registers with iii, and the ready panel lists REST, viewer, streams, and engine addresses. First boot can take longer while the engine binary is downloaded.
+Expect: iii-engine v0.22.1 starts, the agentmemory worker registers with iii, and the ready panel lists REST, viewer, streams, and engine addresses. First boot can take longer while the engine binary is downloaded.
 
 ## 3. Validate the server and all four ports
 
@@ -202,9 +202,9 @@ The MCP server exposes 54 tools by default (`--tools all`). Use `--tools core` (
 - Server starts but `livez` never returns 200: re-run with `npx -y @agentmemory/agentmemory@latest --verbose` to see engine stderr.
 - `The engine process started but the REST API never responded.`: inspect all four derived ports, confirm the pinned iii process stayed alive, and use `--verbose` for captured engine stderr.
 - Engine version warning on start: harmless. agentmemory uses its own pinned engine in `~/.agentmemory/bin` regardless of any `iii` on `PATH`. Set `AGENTMEMORY_III_VERSION` only to override deliberately.
-- "engine conflict" / another iii engine already running: if a different iii version is already serving the port, agentmemory will not adopt it. Stop that engine (`npx -y @agentmemory/agentmemory@latest stop --force`, or however you started it), then rerun the canonical command. Its private v0.19.7 binary does not replace a user-managed `iii` on `PATH`.
+- "engine conflict" / another iii engine already running: if a different iii version is already serving the port, agentmemory will not adopt it. Stop that engine (`npx -y @agentmemory/agentmemory@latest stop --force`, or however you started it), then rerun the canonical command. Its private v0.22.1 binary does not replace a user-managed `iii` on `PATH`.
 - Only 7 tools visible in the agent: the MCP shim is in local fallback because it could not reach a server. Start `npx -y @agentmemory/agentmemory@latest`, ensure `AGENTMEMORY_URL` points at it (default `http://localhost:3111`), then reload MCP.
-- Native Windows: the CLI does not auto-extract the ZIP. Install the pinned v0.19.7 `iii.exe` manually, use WSL2, or run with Docker Desktop and `AGENTMEMORY_USE_DOCKER=1`. Automated `connect` supports only `copilot-cli`; configure other native agents manually.
+- Native Windows: the CLI does not auto-extract the ZIP. Install the pinned v0.22.1 `iii.exe` manually, use WSL2, or run with Docker Desktop and `AGENTMEMORY_USE_DOCKER=1`. Automated `connect` supports only `copilot-cli`; configure other native agents manually.
 - Semantic demo query returns zero hits: this is expected with vectors disabled in default keyless mode. Set `EMBEDDING_PROVIDER=local`, restart, allow the first model download to complete, and rerun the demo.
 
 ## Report success
@@ -212,7 +212,7 @@ The MCP server exposes 54 tools by default (`--tools all`). Use `--tools core` (
 Report back to the user:
 
 - agentmemory installed, version, and the server running on port 3111
-- iii-engine v0.19.7 running, the selected platform data directory, and all four ports accounted for
+- iii-engine v0.22.1 running, the selected platform data directory, and all four ports accounted for
 - which agent was wired via `agentmemory connect`, and the tool count the agent now sees
 - the save and recall round-trip returned the probe memory after a full stop/start
 - the viewer is available at `http://localhost:3113`

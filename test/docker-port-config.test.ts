@@ -41,6 +41,7 @@ describe("Docker engine port configuration", () => {
       'user: "${AGENTMEMORY_DOCKER_UID:-65532}:${AGENTMEMORY_DOCKER_GID:-65532}"',
     );
     expect(compose).toContain("AGENTMEMORY_DOCKER_SKIP_CHOWN");
+    expect(compose).toContain("target: /app/config");
   });
 
   it("configures every iii listener from the same environment", () => {
@@ -50,6 +51,7 @@ describe("Docker engine port configuration", () => {
     const manager = workerBlock("iii-worker-manager");
     expect(manager).toContain("port: ${III_ENGINE_PORT:49134}");
     expect(manager).toContain("host: 0.0.0.0");
+    expect(engineConfig).not.toMatch(/- name: (http|state|pubsub|cron|queue)$/m);
   });
 
   it("leaves worker ownership to the host CLI", () => {

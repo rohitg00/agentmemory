@@ -1,7 +1,7 @@
 import { homedir } from "node:os";
 import { lstat, readFile, readdir } from "node:fs/promises";
 import { resolve, join } from "node:path";
-import type { ISdk } from "iii-sdk";
+import type { IIIClient } from "iii-sdk";
 import type {
   CompressedObservation,
   Crystal,
@@ -261,7 +261,7 @@ async function findJsonlFiles(
   };
 }
 
-export function registerReplayFunctions(sdk: ISdk, kv: StateKV): void {
+export function registerReplayFunctions(sdk: IIIClient, kv: StateKV): void {
   sdk.registerFunction(
     "mem::replay::load",
     async (data: { sessionId: string }): Promise<

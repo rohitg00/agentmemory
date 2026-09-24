@@ -1,4 +1,4 @@
-import type { ISdk } from "iii-sdk";
+import type { IIIClient } from "iii-sdk";
 import type {
   Memory,
   SemanticMemory,
@@ -121,7 +121,7 @@ function computeSalience(
 }
 
 export function registerRetentionFunctions(
-  sdk: ISdk,
+  sdk: IIIClient,
   kv: StateKV,
 ): void {
   sdk.registerFunction("mem::retention-score",

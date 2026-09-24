@@ -1,4 +1,4 @@
-import type { ISdk } from "iii-sdk";
+import type { IIIClient } from "iii-sdk";
 import type {
   Session,
   CompressedObservation,
@@ -32,7 +32,7 @@ function escapeXmlAttr(s: string): string {
 }
 
 export function registerContextFunction(
-  sdk: ISdk,
+  sdk: IIIClient,
   kv: StateKV,
   tokenBudget: number,
 ): void {

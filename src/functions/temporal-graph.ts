@@ -1,4 +1,4 @@
-import type { ISdk } from "iii-sdk";
+import type { IIIClient } from "iii-sdk";
 import type {
   GraphNode,
   GraphEdge,
@@ -150,7 +150,7 @@ function parseTemporalGraphXml(
 }
 
 export function registerTemporalGraphFunctions(
-  sdk: ISdk,
+  sdk: IIIClient,
   kv: StateKV,
   provider: MemoryProvider,
 ): void {

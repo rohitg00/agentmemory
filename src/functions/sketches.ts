@@ -1,11 +1,11 @@
-import type { ISdk } from "iii-sdk";
+import type { IIIClient } from "iii-sdk";
 import type { StateKV } from "../state/kv.js";
 import { KV, generateId } from "../state/schema.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
 import type { Action, ActionEdge, Sketch } from "../types.js";
 import { safeAudit } from "./audit.js";
 
-export function registerSketchesFunction(sdk: ISdk, kv: StateKV): void {
+export function registerSketchesFunction(sdk: IIIClient, kv: StateKV): void {
   sdk.registerFunction("mem::sketch-create", 
     async (data: {
       title: string;

@@ -124,7 +124,7 @@ npx met en cache par version. Forcez la dernière avec `npx -y @agentmemory/agen
 <details>
 <summary><strong>Vous faites déjà tourner votre propre moteur iii</strong></summary>
 
-agentmemory épingle iii-engine v0.19.7 et ne s'attachera pas à une autre version (le worker ne peut pas parler le protocole d'un autre moteur). Arrêtez l'autre moteur, puis lancez `npx -y @agentmemory/agentmemory@latest`. Il installe et exécute le v0.19.7 épinglé dans `~/.agentmemory/bin`, sans toucher à votre propre `iii`.
+agentmemory épingle iii-engine v0.22.1 et ne s'attachera pas à une autre version (le worker ne peut pas parler le protocole d'un autre moteur). Arrêtez l'autre moteur, puis lancez `npx -y @agentmemory/agentmemory@latest`. Il installe et exécute le v0.22.1 épinglé dans `~/.agentmemory/bin`, sans toucher à votre propre `iii`.
 
 </details>
 
@@ -463,7 +463,7 @@ Aucun d'eux ne capture automatiquement depuis les hooks d'agents de codage, ne l
 
 <h2 id="quick-start"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-quickstart.svg"><img src="../assets/tags/section-quickstart.svg" alt="Démarrage rapide" height="32" /></picture></h2>
 
-Compatibilité : cette version cible `iii-sdk` 0.19.7 et épingle iii-engine v0.19.7.
+Compatibilité : cette version cible `iii-sdk` 0.22.1 et épingle iii-engine v0.22.1.
 
 ### Essayez en 30 secondes
 
@@ -517,7 +517,7 @@ Utilisez la commande de maintenance lorsque vous voulez intentionnellement mettr
 npx @agentmemory/agentmemory upgrade
 ```
 
-Avertissement : cette commande modifie l'espace de travail / runtime courant. Elle peut mettre à jour les dépendances JavaScript et tirer l'image Docker épinglée `iiidev/iii:0.19.7`. Elle n'installe jamais un moteur iii non épinglé ou plus récent.
+Avertissement : cette commande modifie l'espace de travail / runtime courant. Elle peut mettre à jour les dépendances JavaScript et tirer l'image Docker épinglée `iiidev/iii:0.22.1`. Elle n'installe jamais un moteur iii non épinglé ou plus récent.
 
 Détails d'implémentation dans `src/cli.ts` (voir `runUpgrade` autour de la zone `src/cli.ts:544-595`).
 
@@ -721,15 +721,15 @@ npm install && npm run build && npm start
 
 Cela démarre agentmemory avec un `iii-engine` local si `iii` est déjà installé, ou retombe sur Docker Compose si Docker est disponible. REST, streams et visualiseur se lient à `127.0.0.1` par défaut.
 
-Installer `iii-engine` manuellement. **agentmemory épingle actuellement `iii-engine` à `v0.19.7`**, la même version que sa dépendance `iii-sdk` ; le worker parle le protocole de ce moteur précis, et 0.20.0 a réorganisé la surface du SDK, donc les deux évoluent ensemble dans les versions d'agentmemory. Remplacez avec `AGENTMEMORY_III_VERSION=<version>` si vous exécutez votre propre moteur et savez qu'il correspond.
+Installer `iii-engine` manuellement. **agentmemory épingle actuellement `iii-engine` à `v0.22.1`**, la même version que sa dépendance `iii-sdk` ; le worker parle le protocole de ce moteur précis, et 0.20.0 a réorganisé la surface du SDK, donc les deux évoluent ensemble dans les versions d'agentmemory. Remplacez avec `AGENTMEMORY_III_VERSION=<version>` si vous exécutez votre propre moteur et savez qu'il correspond.
 
-- **macOS arm64 :** `mkdir -p ~/.local/bin && curl -fsSL https://github.com/iii-hq/iii/releases/download/iii/v0.19.7/iii-aarch64-apple-darwin.tar.gz | tar -xz -C ~/.local/bin && chmod +x ~/.local/bin/iii`
+- **macOS arm64 :** `mkdir -p ~/.local/bin && curl -fsSL https://github.com/iii-hq/iii/releases/download/iii/v0.22.1/iii-aarch64-apple-darwin.tar.gz | tar -xz -C ~/.local/bin && chmod +x ~/.local/bin/iii`
 - **macOS x64 :** remplacez `aarch64-apple-darwin` par `x86_64-apple-darwin`
 - **Linux x64 :** remplacez par `x86_64-unknown-linux-gnu`
 - **Linux arm64 :** remplacez par `aarch64-unknown-linux-gnu`
-- **Windows :** téléchargez `iii-x86_64-pc-windows-msvc.zip` depuis [iii-hq/iii releases v0.19.7](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.19.7), extrayez `iii.exe`, ajoutez-le au PATH
+- **Windows :** téléchargez `iii-x86_64-pc-windows-msvc.zip` depuis [iii-hq/iii releases v0.22.1](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.22.1), extrayez `iii.exe`, ajoutez-le au PATH
 
-Ou utilisez Docker (le `docker-compose.yml` fourni tire `iiidev/iii:0.19.7`). Documentation complète : [iii.dev/docs](https://iii.dev/docs).
+Ou utilisez Docker (le `docker-compose.yml` fourni tire `iiidev/iii:0.22.1`). Documentation complète : [iii.dev/docs](https://iii.dev/docs).
 
 ### Windows
 
@@ -738,9 +738,9 @@ agentmemory tourne sur Windows 10/11, mais le paquet Node.js seul ne suffit pas 
 **Option A : binaire Windows précompilé (recommandé)**
 
 ```powershell
-# 1. Open https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.19.7 in your browser
+# 1. Open https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.22.1 in your browser
 #    (agentmemory pins the engine to the same release as its iii-sdk;
-#     v0.19.7 is the current pair)
+#     v0.22.1 is the current pair)
 # 2. Download iii-x86_64-pc-windows-msvc.zip
 #    (or iii-aarch64-pc-windows-msvc.zip if you're on an ARM machine)
 # 3. Extract iii.exe somewhere on PATH, or place it at:
@@ -748,7 +748,7 @@ agentmemory tourne sur Windows 10/11, mais le paquet Node.js seul ne suffit pas 
 #    (agentmemory checks that location automatically)
 # 4. Verify:
 iii --version
-# Should print: 0.19.7
+# Should print: 0.22.1
 
 # 5. Then run agentmemory as usual:
 npx -y @agentmemory/agentmemory
@@ -780,7 +780,7 @@ npx -y @agentmemory/mcp
 | Conflit de port | `netstat -ano \| findstr :3111` pour voir ce qui est lié, puis tuez-le ou utilisez `--port <N>` |
 | Fallback Docker ignoré bien que Docker soit installé | Assurez-vous que Docker Desktop tourne effectivement (icône de la barre d'état système) |
 
-> Note : le **moteur** iii est un binaire précompilé, pas un crate cargo, donc n'essayez pas de l'installer avec `cargo install`. (Les **SDK** iii sont bien publiés sur crates.io, npm et PyPI, mais agentmemory n'en a pas besoin.) Méthodes d'installation du moteur supportées, toutes épinglées à v0.19.7 : le binaire précompilé v0.19.7 ci-dessus, le script d'installation `sh` amont **avec l'épingle de version** `curl -fsSL https://install.iii.dev/iii/main/install.sh | VERSION=0.19.7 sh` (macOS/Linux) et l'image Docker `iiidev/iii:0.19.7`. Un simple `install.sh | sh` installe le moteur **le plus récent**, que agentmemory ne supporte pas ; passez toujours `VERSION=0.19.7`. Le plus simple de tout : exécutez simplement `npx @agentmemory/agentmemory`, qui récupère le moteur épinglé dans `~/.agentmemory/bin` pour vous.
+> Note : le **moteur** iii est un binaire précompilé, pas un crate cargo, donc n'essayez pas de l'installer avec `cargo install`. (Les **SDK** iii sont bien publiés sur crates.io, npm et PyPI, mais agentmemory n'en a pas besoin.) Méthodes d'installation du moteur supportées, toutes épinglées à v0.22.1 : le binaire précompilé v0.22.1 ci-dessus, le script d'installation `sh` amont **avec l'épingle de version** `curl -fsSL https://install.iii.dev/iii/main/install.sh | VERSION=0.22.1 sh` (macOS/Linux) et l'image Docker `iiidev/iii:0.22.1`. Un simple `install.sh | sh` installe le moteur **le plus récent**, que agentmemory ne supporte pas ; passez toujours `VERSION=0.22.1`. Le plus simple de tout : exécutez simplement `npx @agentmemory/agentmemory`, qui récupère le moteur épinglé dans `~/.agentmemory/bin` pour vous.
 
 ---
 

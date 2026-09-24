@@ -1,4 +1,4 @@
-import { TriggerAction, type ISdk } from "iii-sdk";
+import { TriggerAction, type IIIClient } from "iii-sdk";
 import type { Memory } from "../types.js";
 import { KV, generateId, jaccardSimilarity } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
@@ -19,7 +19,7 @@ function safeSlice(text: string, length: number): string {
   return /[\uD800-\uDBFF]$/.test(sliced) ? sliced.slice(0, -1) : sliced;
 }
 
-export function registerRememberFunction(sdk: ISdk, kv: StateKV): void {
+export function registerRememberFunction(sdk: IIIClient, kv: StateKV): void {
   sdk.registerFunction("mem::remember", 
     async (data: {
       content: string;

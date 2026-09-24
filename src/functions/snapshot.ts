@@ -1,4 +1,4 @@
-import type { ISdk } from "iii-sdk";
+import type { IIIClient } from "iii-sdk";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { existsSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
@@ -37,7 +37,7 @@ async function ensureGitRepo(dir: string): Promise<void> {
 }
 
 export function registerSnapshotFunction(
-  sdk: ISdk,
+  sdk: IIIClient,
   kv: StateKV,
   snapshotDir: string,
 ): void {

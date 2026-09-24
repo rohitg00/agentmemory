@@ -1,7 +1,7 @@
 import { constants } from "node:fs";
 import { lstat, open, readFile, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, join, resolve } from "node:path";
-import type { ISdk } from "iii-sdk";
+import type { IIIClient } from "iii-sdk";
 import type { MemoryProvider } from "../types.js";
 import type { StateKV } from "../state/kv.js";
 import { recordAudit } from "./audit.js";
@@ -93,7 +93,7 @@ function resolveBackupPath(filePath: string): string {
 }
 
 export function registerCompressFileFunction(
-  sdk: ISdk,
+  sdk: IIIClient,
   kv: StateKV,
   provider: MemoryProvider,
 ): void {

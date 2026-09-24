@@ -1,4 +1,4 @@
-import type { ISdk } from "iii-sdk";
+import type { IIIClient } from "iii-sdk";
 import { resolve } from "node:path";
 import { homedir } from "node:os";
 import { KV, generateId } from "../state/schema.js";
@@ -85,7 +85,7 @@ export async function inferMemoryProjects(
   return { updated, skipped, ambiguous };
 }
 
-export function registerMigrateFunction(sdk: ISdk, kv: StateKV): void {
+export function registerMigrateFunction(sdk: IIIClient, kv: StateKV): void {
   sdk.registerFunction("mem::migrate",
     async (data: { dbPath?: string; step?: string; dryRun?: boolean }) => {
       // In-place KV migration steps (no SQLite dependency).
