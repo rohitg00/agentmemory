@@ -51,6 +51,15 @@ export class SearchIndex {
     return this.entries.has(id);
   }
 
+  observationCountsBySession(): Map<string, number> {
+    const counts = new Map<string, number>();
+    for (const entry of this.entries.values()) {
+      if (entry.obsId.startsWith("mem_")) continue;
+      counts.set(entry.sessionId, (counts.get(entry.sessionId) ?? 0) + 1);
+    }
+    return counts;
+  }
+
   remove(id: string): void {
     const entry = this.entries.get(id);
     if (!entry) return;

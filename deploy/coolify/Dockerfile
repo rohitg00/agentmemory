@@ -15,6 +15,8 @@ RUN apt-get update \
 COPY --from=iii-image /app/iii /usr/local/bin/iii
 
 WORKDIR /opt/agentmemory
+RUN [ "${III_VERSION}" = "${III_SDK_VERSION}" ] \
+ || { echo "III_VERSION=${III_VERSION} and III_SDK_VERSION=${III_SDK_VERSION} must be the same release: the agentmemory worker speaks the wire protocol of the engine it was built against, so override both together" >&2; exit 1; }
 RUN printf '{"name":"agentmemory-deploy","version":"1.0.0","private":true,"overrides":{"iii-sdk":"%s"}}\n' "${III_SDK_VERSION}" > package.json \
  && npm install "@agentmemory/agentmemory@${AGENTMEMORY_VERSION}" --omit=optional --no-fund --no-audit \
  && ln -s /opt/agentmemory/node_modules/.bin/agentmemory /usr/local/bin/agentmemory

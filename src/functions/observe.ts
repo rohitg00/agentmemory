@@ -9,7 +9,7 @@ import { DedupMap } from "./dedup.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
 import { isAutoCompressEnabled } from "../config.js";
 import { buildSyntheticCompression } from "./compress-synthetic.js";
-import { getSearchIndex, vectorIndexAddGuarded } from "./search.js";
+import { getSearchIndex, scheduleIndexSave, vectorIndexAddGuarded } from "./search.js";
 import { getAgentId } from "../config.js";
 import { logger } from "../logger.js";
 import { saveImageToDisk } from "../utils/image-store.js";
@@ -321,6 +321,7 @@ export function registerObserveFunction(
             synthetic,
           );
           getSearchIndex().add(synthetic);
+          scheduleIndexSave();
           await vectorIndexAddGuarded(
             synthetic.id,
             synthetic.sessionId,

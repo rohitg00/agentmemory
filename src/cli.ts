@@ -70,6 +70,7 @@ import {
   clearPersistedBuiltinConfig,
   renderEngineConfig,
 } from "./cli/engine-config.js";
+import { SHUTDOWN_HARD_EXIT_MS } from "./shutdown.js";
 import { processStatIsRunning } from "./cli/process-state.js";
 import { renderSplash } from "./cli/splash.js";
 import { isFirstRun, readPrefs, resetPrefs, writePrefs } from "./cli/preferences.js";
@@ -1564,9 +1565,10 @@ function prepareEngineLaunch(configPath: string): {
         );
       }
     } catch (err) {
-      p.log.warn(
-        `${String(err instanceof Error ? err.message : err)}. The engine will keep its previously persisted ports and timeouts; fix the file permissions under ${join(cwd, "data", "configuration")} and restart.`,
+      p.log.error(
+        `${String(err instanceof Error ? err.message : err)}. The engine would ignore the rendered runtime config and keep its previously persisted ports and timeouts. Fix the permissions under ${join(cwd, "data", "configuration")} and run agentmemory start again.`,
       );
+      process.exit(1);
     }
     if (selectedInstance === 0 && dataDirResolution.source === "default") {
       for (const m of legacyDataMigrations(
@@ -3550,7 +3552,7 @@ async function runStop(): Promise<void> {
       // instead of preserving for manual cleanup.
       const s = p.spinner();
       s.start(`Stopping orphaned agentmemory worker (pid ${workerPid})...`);
-      const ok = await signalAndWait(workerPid, "SIGTERM", 3000);
+      const ok = await signalAndWait(workerPid, "SIGTERM", SHUTDOWN_HARD_EXIT_MS + 1000);
       s.stop(ok ? `Stopped worker pid ${workerPid}` : `Failed to stop worker pid ${workerPid}`);
       clearEnginePidfile();
       clearEngineState();

@@ -305,7 +305,25 @@ export async function indexRecords(
     count++
   }
   await flush()
+  if (count > 0) scheduleIndexSave()
   return count
+}
+
+export async function reconcileIndex(kv: StateKV): Promise<number> {
+  const idx = getSearchIndex()
+  const sessions = await kv.list<Session>(KV.sessions)
+  const indexed = idx.observationCountsBySession()
+  const missing: CompressedObservation[] = []
+  for (const session of sessions) {
+    if ((session.observationCount ?? 0) <= (indexed.get(session.id) ?? 0)) continue
+    const observations = await kv.list<CompressedObservation>(KV.observations(session.id))
+    for (const obs of observations) {
+      if (!obs.title || !obs.narrative || idx.has(obs.id)) continue
+      missing.push(obs)
+    }
+  }
+  if (missing.length === 0) return 0
+  return indexRecords(missing, [])
 }
 
 export async function rebuildIndex(kv: StateKV): Promise<number> {

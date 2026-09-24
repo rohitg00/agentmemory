@@ -25,6 +25,7 @@ import { KV } from "./state/schema.js";
 import { VectorIndex } from "./state/vector-index.js";
 import { HybridSearch } from "./state/hybrid-search.js";
 import { IndexPersistence } from "./state/index-persistence.js";
+import { SHUTDOWN_FLUSH_TIMEOUT_MS, SHUTDOWN_HARD_EXIT_MS, settleWithin } from "./shutdown.js";
 import { registerPrivacyFunction } from "./functions/privacy.js";
 import { registerObserveFunction } from "./functions/observe.js";
 import { registerImageQuotaCleanup } from "./functions/image-quota-cleanup.js";
@@ -35,6 +36,7 @@ import { registerCompressFunction } from "./functions/compress.js";
 import {
   registerSearchFunction,
   rebuildIndex,
+  reconcileIndex,
   getSearchIndex,
   setVectorIndex,
   setEmbeddingProvider,
@@ -526,6 +528,17 @@ async function main() {
         err,
       );
     }
+    void reconcileIndex(kv)
+      .then((count) => {
+        if (count > 0) {
+          bootLog(
+            `Search index reconciled: ${count} observations missing from the persisted snapshot were re-indexed`,
+          );
+        }
+      })
+      .catch((err) => {
+        console.warn(`[agentmemory] Failed to reconcile search index:`, err);
+      });
   }
 
   // Ready / Endpoints lines are emitted via `bootLog` so they're
@@ -608,14 +621,29 @@ async function main() {
 
   const shutdown = async () => {
     console.log(`\n[agentmemory] Shutting down...`);
+    const hardExit = setTimeout(() => {
+      console.warn(
+        `[agentmemory] Shutdown still blocked after ${SHUTDOWN_HARD_EXIT_MS}ms; exiting now.`,
+      );
+      clearWorkerPidfile();
+      process.exit(1);
+    }, SHUTDOWN_HARD_EXIT_MS);
+    hardExit.unref();
     healthMonitor.stop();
     dedupMap.stop();
     indexPersistence.stop();
+    viewerServer.closeAllConnections();
     await new Promise<void>((resolve) => viewerServer.close(() => resolve()));
-    await indexPersistence.save().catch((err) => {
-      console.warn(`[agentmemory] Failed to save index on shutdown:`, err);
-    });
-    await sdk.shutdown();
+    const flushed = await settleWithin(
+      indexPersistence.save(),
+      SHUTDOWN_FLUSH_TIMEOUT_MS,
+    );
+    if (!flushed) {
+      console.warn(
+        `[agentmemory] Search index flush did not finish within ${SHUTDOWN_FLUSH_TIMEOUT_MS}ms; the engine is probably gone. Observations are already in the engine's state store and the index reconciles them on the next boot.`,
+      );
+    }
+    await settleWithin(sdk.shutdown(), SHUTDOWN_FLUSH_TIMEOUT_MS);
     clearWorkerPidfile();
     process.exit(0);
   };

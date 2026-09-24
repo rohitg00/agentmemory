@@ -45,12 +45,13 @@ services:
       - "${AGENTMEMORY_DATA_DIR:-iii-data}:/data"
       - ./iii-config.docker.yaml:/app/config.yaml:ro
       # The engine persists each builtin worker's seeded config block under
-      # ./data/configuration on first boot and treats that copy as the
-      # source of truth afterwards. Keeping it on a tmpfs means every
+      # data/configuration of its working directory (/home/nonroot in the
+      # image) on first boot and treats that copy as the source of truth
+      # afterwards. Keeping it on a tmpfs means every
       # container start re-seeds from config.yaml and the III_* env vars,
       # the same behavior the native CLI path has.
       - type: tmpfs
-        target: /app/data/configuration
+        target: /home/nonroot/data/configuration
         tmpfs:
           mode: 01777
     restart: unless-stopped
