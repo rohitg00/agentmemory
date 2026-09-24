@@ -409,6 +409,10 @@ export interface GraphNode {
   updatedAt?: string;
   aliases?: string[];
   stale?: boolean;
+  /** Present on graph-query responses: true length of sourceObservationIds
+   *  before projection. The array itself is a recent sample unless the
+   *  caller passed includeSources (upstream #1171). */
+  sourceObservationCount?: number;
 }
 
 export type GraphEdgeType =
@@ -445,6 +449,10 @@ export interface GraphEdge {
   supersededBy?: string;
   isLatest?: boolean;
   stale?: boolean;
+  /** Present on graph-query responses: true length of sourceObservationIds
+   *  before projection. The array itself is a recent sample unless the
+   *  caller passed includeSources (upstream #1171). */
+  sourceObservationCount?: number;
 }
 
 export interface EdgeContext {

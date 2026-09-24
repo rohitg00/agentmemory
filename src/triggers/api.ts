@@ -1578,6 +1578,36 @@ export function registerApiTriggers(
     config: { api_path: "/agentmemory/graph/reset", http_method: "POST" },
   });
 
+  // Graph GC. Defaults to a dry run so an accidental POST reports what
+  // it would collect instead of collecting it; the scheduled sweep
+  // passes dryRun:false explicitly.
+  sdk.registerFunction("api::graph-prune",
+    async (
+      req: ApiRequest<{
+        dryRun?: boolean;
+        supersededOlderThanDays?: number;
+        compactSourceIds?: boolean;
+      }>,
+    ): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      try {
+        const result = await sdk.trigger({
+          function_id: "mem::graph-prune",
+          payload: req.body ?? {},
+        });
+        return { status_code: 200, body: result };
+      } catch {
+        return graphDisabledResponse();
+      }
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::graph-prune",
+    config: { api_path: "/agentmemory/graph/prune", http_method: "POST" },
+  });
+
   sdk.registerFunction("api::graph-extract",
     async (req: HttpRequest<{ observations: unknown[] }>): Promise<Response> => {
       const authErr = checkAuth(req, secret);
