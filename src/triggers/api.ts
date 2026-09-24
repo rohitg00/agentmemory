@@ -10,7 +10,7 @@ import { getLatestHealth } from "../health/monitor.js";
 import type { MetricsStore } from "../eval/metrics-store.js";
 import type { ResilientProvider } from "../providers/resilient.js";
 import { III_PINNED_VERSION, VERSION } from "../version.js";
-import { evaluateStatus, prefersHtml, renderStatusHtml, type GraphStatsInput } from "../functions/status.js";
+import { UNINDEXED_SCAN_REUSE_MS, evaluateStatus, prefersHtml, renderStatusHtml, singleFlight, type GraphStatsInput } from "../functions/status.js";
 import { findUnindexedObservations, getSearchIndex, getVectorIndex } from "../functions/search.js";
 import { timingSafeCompare } from "../auth.js";
 import { isSlotsEnabled, isReflectEnabled } from "../functions/slots.js";
@@ -319,6 +319,8 @@ export function registerApiTriggers(
     }
   }
 
+  const sharedUnindexedScan = singleFlight(() => findUnindexedObservations(kv), UNINDEXED_SCAN_REUSE_MS);
+
   sdk.registerFunction("api::status",
     async (req: HttpRequest): Promise<Response> => {
       const authErr = checkAuth(req, secret);
@@ -331,7 +333,7 @@ export function registerApiTriggers(
           sdk.trigger({ function_id: "mem::graph-stats", payload: {} }) as Promise<GraphStatsInput>,
           STATUS_CHECK_TIMEOUT_MS,
         ),
-        valueWithin(findUnindexedObservations(kv), STATUS_CHECK_TIMEOUT_MS),
+        valueWithin(sharedUnindexedScan(), STATUS_CHECK_TIMEOUT_MS),
       ]);
       const observationsIndexed = [...idx.observationCountsBySession().values()].reduce((a, n) => a + n, 0);
       const circuit =

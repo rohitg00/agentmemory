@@ -102,6 +102,13 @@ function secondsBetween(later: Date, earlierIso: string | undefined): number | n
 export function evaluateStatus(input: StatusInputs): StatusReport {
   const problems: StatusProblem[] = [];
 
+  if (!input.health) {
+    problems.push({
+      level: "info",
+      code: "health-check-unavailable",
+      message: "The health monitor has no snapshot yet or did not answer in time, so its state was not checked.",
+    });
+  }
   const healthStatus = input.health?.status;
   if (healthStatus === "critical") {
     problems.push({ level: "error", code: "health-critical", message: "The health monitor reports a critical state." });
@@ -335,6 +342,32 @@ ${graph
 <h2>Features</h2><table class="list"><tr><th>Feature</th><th>State</th><th>How to enable</th></tr>${flags}</table>
 <h2>More</h2><p>Environment checks (keys, engine binary, stale pid files) run on your machine with <code>agentmemory doctor</code>. This page as JSON: <code>GET /agentmemory/status</code> with <code>Accept: application/json</code>.</p>
 </main></body></html>`;
+}
+
+export const UNINDEXED_SCAN_REUSE_MS = 30_000;
+
+export function singleFlight<T>(
+  run: () => Promise<T>,
+  reuseMs: number,
+  now: () => number = Date.now,
+): () => Promise<T> {
+  let current: { promise: Promise<T>; settledAt: number | null } | null = null;
+  return () => {
+    if (current && (current.settledAt === null || now() - current.settledAt < reuseMs)) {
+      return current.promise;
+    }
+    const entry: { promise: Promise<T>; settledAt: number | null } = { promise: run(), settledAt: null };
+    entry.promise.then(
+      () => {
+        entry.settledAt = now();
+      },
+      () => {
+        if (current === entry) current = null;
+      },
+    );
+    current = entry;
+    return entry.promise;
+  };
 }
 
 export function prefersHtml(accept: string | undefined, format: string | undefined): boolean {

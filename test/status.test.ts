@@ -4,6 +4,7 @@ import {
   evaluateStatus,
   prefersHtml,
   renderStatusHtml,
+  singleFlight,
   type StatusInputs,
 } from "../src/functions/status.js";
 
@@ -115,6 +116,56 @@ describe("evaluateStatus", () => {
   });
 });
 
+describe("missing health snapshot", () => {
+  it("says the health check was not run instead of reporting ok", () => {
+    const report = evaluateStatus(inputs({ health: null }));
+    expect(report.status).toBe("info");
+    expect(codes(report)).toEqual(["health-check-unavailable"]);
+  });
+});
+
+describe("singleFlight", () => {
+  it("shares one run between overlapping callers and reuses the result inside the window", async () => {
+    let clock = 0;
+    let runs = 0;
+    let finish: (v: number) => void = () => undefined;
+    const shared = singleFlight(
+      () => {
+        runs++;
+        return new Promise<number>((resolve) => {
+          finish = resolve;
+        });
+      },
+      30_000,
+      () => clock,
+    );
+    const a = shared();
+    const b = shared();
+    expect(a).toBe(b);
+    finish(7);
+    await expect(a).resolves.toBe(7);
+    clock = 29_000;
+    await expect(shared()).resolves.toBe(7);
+    expect(runs).toBe(1);
+    clock = 31_000;
+    const c = shared();
+    finish(8);
+    await expect(c).resolves.toBe(8);
+    expect(runs).toBe(2);
+  });
+
+  it("starts a fresh run after a failure", async () => {
+    let runs = 0;
+    const shared = singleFlight(() => {
+      runs++;
+      return runs === 1 ? Promise.reject(new Error("store timeout")) : Promise.resolve("ok");
+    }, 30_000);
+    await expect(shared()).rejects.toThrow("store timeout");
+    await expect(shared()).resolves.toBe("ok");
+    expect(runs).toBe(2);
+  });
+});
+
 describe("renderStatusHtml", () => {
   it("escapes every server-provided string and carries no script", () => {
     const report = evaluateStatus(
@@ -167,6 +218,8 @@ describe("status wiring", () => {
   it("time-boxes every status probe so a slow store cannot hang the page", () => {
     const handler = api.slice(api.indexOf('registerFunction("api::status"'), api.indexOf('function_id: "api::status"'));
     expect(handler.match(/valueWithin\(/g)?.length).toBe(4);
+    expect(handler).toMatch(/valueWithin\(sharedUnindexedScan\(\), STATUS_CHECK_TIMEOUT_MS\)/);
+    expect(api).toMatch(/const sharedUnindexedScan = singleFlight\(\(\) => findUnindexedObservations\(kv\), UNINDEXED_SCAN_REUSE_MS\);/);
   });
 
   it("config flags and status share one flag list", () => {
