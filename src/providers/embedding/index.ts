@@ -1,5 +1,6 @@
 import type { EmbeddingProvider } from "../../types.js";
 import { detectEmbeddingProvider, getEnvVar } from "../../config.js";
+import { bootLog, logger } from "../../logger.js";
 import { GeminiEmbeddingProvider } from "./gemini.js";
 import { OpenAIEmbeddingProvider } from "./openai.js";
 import { VoyageEmbeddingProvider } from "./voyage.js";
@@ -46,6 +47,50 @@ export function createEmbeddingProvider(): EmbeddingProvider | null {
       return withDimensionGuard(new LocalEmbeddingProvider());
     default:
       return null;
+  }
+}
+
+// Reports through `logger` rather than `bootLog` alone: bootLog only
+// reaches stderr under --verbose, which a daemon start never sets, so a
+// broken embedding runtime used to print nothing at all. Exported so
+// tests can await it - the caller dispatches it fire-and-forget.
+export async function reportEmbeddingProbeResult(
+  embeddingProvider: EmbeddingProvider,
+): Promise<void> {
+  try {
+    // embedBatch, not embed: that is what the indexing path calls, and a
+    // provider can implement the two differently. The shape check matters
+    // because the guard silently drops wrong-length vectors, so a bad
+    // provider would pass a bare probe yet index nothing.
+    const vectors = await embeddingProvider.embedBatch([
+      "agentmemory boot probe",
+    ]);
+    if (
+      vectors.length !== 1 ||
+      vectors[0].length !== embeddingProvider.dimensions
+    ) {
+      throw new Error(
+        `embedBatch returned ${vectors.length} vector(s) of length ` +
+          `${vectors[0]?.length ?? 0}, expected 1 of length ${embeddingProvider.dimensions}`,
+      );
+    }
+    logger.info("Embedding provider verified", {
+      provider: embeddingProvider.name,
+      dimensions: embeddingProvider.dimensions,
+    });
+    bootLog(`Embeddings: ${embeddingProvider.name} (${embeddingProvider.dimensions}d)`);
+  } catch (err) {
+    logger.warn(
+      "Embedding provider failed boot probe - semantic search degrades to BM25-only",
+      {
+        provider: embeddingProvider.name,
+        error: err instanceof Error ? err.message : String(err),
+      },
+    );
+    bootLog(
+      `Embeddings: ${embeddingProvider.name} FAILED - semantic search will be BM25-only. ` +
+        (err instanceof Error ? err.message : String(err)),
+    );
   }
 }
 
