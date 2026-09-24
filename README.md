@@ -864,12 +864,14 @@ npx -y @agentmemory/mcp
 One-click templates for managed hosts. Each one ships a self-contained
 Dockerfile that pulls `@agentmemory/agentmemory` from npm and copies
 the iii engine binary in from the official `iiidev/iii` Docker Hub
-image; no pre-built agentmemory image required. Persistent storage
-mounts at `/data`; the first-boot entrypoint overwrites the
-npm-bundled iii config (which binds `127.0.0.1`) with a deploy-tuned
-one that binds `0.0.0.0` and uses absolute `/data` paths, generates
-the HMAC secret, then drops privileges from `root` to `node` via
-`gosu` before exec'ing the agentmemory CLI.
+image. Tagged releases also publish a pre-built multi-arch image to
+`ghcr.io/rohitg00/agentmemory`, with tags like `0.9.29`, `0.9`, and
+`latest`. Persistent storage mounts at `/data`; the first-boot
+entrypoint overwrites the npm-bundled iii config (which binds
+`127.0.0.1`) with a deploy-tuned one that binds `0.0.0.0` and uses
+absolute `/data` paths, generates the HMAC secret, then drops
+privileges from `root` to `node` via `gosu` before exec'ing the
+agentmemory CLI.
 
 <p>
   <a href="https://fly.io/launch?repo=https://github.com/rohitg00/agentmemory&path=deploy/fly"><img src="https://img.shields.io/badge/Deploy%20to-fly.io-8b5cf6?style=for-the-badge&logo=fly.io&logoColor=white" alt="Deploy to fly.io" /></a>
