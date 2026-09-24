@@ -7,7 +7,7 @@ const API = process.env.AGENTMEMORY_URL || "http://localhost:3111";
 // case-insensitive at the call site so a future casing change cannot silently
 // kill file enrichment again.
 const FILE_TOOLS = new Set(["read", "write", "edit", "glob", "grep"]);
-const FILE_KEYS = ["filePath", "file_path", "path", "file", "pattern"];
+const FILE_KEYS = ["filePath", "file_path", "path", "file"];
 const MAX_STASHED_FILES = 20;
 
 const DEBUG = process.env.OPENCODE_AGENTMEMORY_DEBUG === "1";
@@ -32,13 +32,13 @@ async function post(path: string, body: Record<string, unknown>, timeoutMs = 500
   }
 }
 
-async function postJson(path: string, body: Record<string, unknown>): Promise<unknown | null> {
+async function postJson(path: string, body: Record<string, unknown>, timeoutMs = 5000): Promise<unknown | null> {
   try {
     const res = await fetch(`${API}/agentmemory${path}`, {
       method: "POST",
       headers: authHeaders(),
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(5000),
+      signal: AbortSignal.timeout(timeoutMs),
     });
     return res.ok ? await res.json() : null;
   } catch (e) {
@@ -75,9 +75,26 @@ let defaultProjectName: string | null = null;
 let defaultProjectCwd: string | null = null;
 const sessionProjects = new Map<string, { name: string; cwd: string }>();
 
-function projectFor(sessionId: string): { name: string | null; cwd: string | null } {
+function projectFor(sessionId: string): { name: string; cwd: string } {
   const p = sessionProjects.get(sessionId);
-  return p ?? { name: defaultProjectName, cwd: defaultProjectCwd };
+  const name = p?.name || defaultProjectName || "default";
+  const cwd = p?.cwd || defaultProjectCwd || process.cwd() || "/";
+  return { name, cwd };
+}
+
+function isAppBundle(dir: string | undefined | null): boolean {
+  if (!dir || typeof dir !== "string") return true;
+  const d = dir.trim();
+  return d.includes(".app/") || d.endsWith(".app");
+}
+
+function resolveCandidateDir(...candidates: (string | undefined | null)[]): string {
+  for (const dir of candidates) {
+    if (dir && typeof dir === "string" && dir.trim().length > 0 && !isAppBundle(dir)) {
+      return dir.trim();
+    }
+  }
+  return process.cwd() || "/";
 }
 
 const projectNameCache = new Map<string, string>();
@@ -92,6 +109,7 @@ function resolveProjectName(dir: string): string {
       cwd: dir,
       stdio: ["ignore", "pipe", "ignore"],
       encoding: "utf8",
+      timeout: 1000,
     }).trim();
     if (top) {
       const name = basename(top);
@@ -101,7 +119,7 @@ function resolveProjectName(dir: string): string {
   } catch {
     // not a git repo, fall through
   }
-  const fallback = basename(dir) || dir;
+  const fallback = basename(dir) || dir || "default";
   projectNameCache.set(dir, fallback);
   return fallback;
 }
@@ -109,6 +127,8 @@ const stashedFiles = new Map<string, Set<string>>();
 const seenSubtaskIds = new Map<string, Set<string>>();
 const seenToolCallIds = new Map<string, Set<string>>();
 const contextInjectedSessions = new Set<string>();
+const pendingSummarizeTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const inFlightSummaries = new Set<string>();
 // cache the context returned by POST /session/start so the chat
 // system-transform hook can inject it without a second /context fetch.
 // Auto-injection now happens at session.created (immediately) AND at
@@ -134,11 +154,48 @@ function toolCallSetFor(sid: string): Set<string> {
   return s;
 }
 
+function cancelPendingSummarize(sid: string): void {
+  const timer = pendingSummarizeTimers.get(sid);
+  if (timer) {
+    clearTimeout(timer);
+    pendingSummarizeTimers.delete(sid);
+  }
+}
+
 function pruneSessionMaps(sid: string): void {
+  cancelPendingSummarize(sid);
+  inFlightSummaries.delete(sid);
   stashedFiles.delete(sid);
   seenSubtaskIds.delete(sid);
   seenToolCallIds.delete(sid);
   sessionProjects.delete(sid);
+}
+
+function scheduleSummarize(sid: string, delayMs = 3000): void {
+  if (!sid || typeof sid !== "string") return;
+  cancelPendingSummarize(sid);
+  if (inFlightSummaries.has(sid)) return;
+
+  const timer = setTimeout(async () => {
+    pendingSummarizeTimers.delete(sid);
+    if (inFlightSummaries.has(sid)) return;
+    inFlightSummaries.add(sid);
+    try {
+      await post("/summarize", { sessionId: sid });
+    } catch (err) {
+      if (DEBUG) {
+        console.error(`[agentmemory] Failed to post /summarize for session ${sid}:`, err);
+      }
+    } finally {
+      inFlightSummaries.delete(sid);
+    }
+  }, delayMs);
+
+  if (typeof (timer as any)?.unref === "function") {
+    (timer as any).unref();
+  }
+
+  pendingSummarizeTimers.set(sid, timer);
 }
 
 function safeSlice(v: unknown, max: number): string {
@@ -192,10 +249,76 @@ function extractFilePaths(args: Record<string, unknown>): string[] {
   for (const key of FILE_KEYS) {
     const val = args[key];
     if (typeof val === "string" && val.length > 0) {
-      files.push(val);
+      // Filter out glob patterns or regexes that aren't literal file paths
+      if (!/[\*\?\{\}\[\]\(\)\|\^\$]/.test(val)) {
+        files.push(val);
+      }
     }
   }
   return files;
+}
+
+async function linkCommitIfApplicable(
+  sid: string,
+  inputArgs: Record<string, unknown> | undefined,
+  outputResult: unknown,
+  cwd?: string,
+): Promise<void> {
+  try {
+    const inputCmd = typeof inputArgs?.command === "string" ? inputArgs.command : "";
+    const outputStr = typeof outputResult === "string" ? outputResult : JSON.stringify(outputResult || "");
+    if (!/\bgit\s+commit\b/.test(inputCmd) && !/\bgit\s+commit\b/.test(outputStr)) return;
+
+    const shaMatch =
+      outputStr.match(/\[[\w./\-]+ ([0-9a-f]{7,40})\]/) ||
+      outputStr.match(/^([0-9a-f]{7,40})\s/m);
+    if (!shaMatch) return;
+    const sha = shaMatch[1];
+    if (!sha) return;
+
+    const effectiveCwd = cwd || projectFor(sid).cwd || process.cwd();
+    const runGit = (args: string[]): string => {
+      return execFileSync("git", args, {
+        cwd: effectiveCwd,
+        stdio: ["ignore", "pipe", "ignore"],
+        encoding: "utf8",
+        timeout: 2000,
+      }).trim();
+    };
+
+    let branch = "";
+    let repo = "";
+    let message = "";
+    let author = "";
+    let files: string[] = [];
+    try {
+      branch = runGit(["rev-parse", "--abbrev-ref", "HEAD"]);
+      const top = runGit(["rev-parse", "--show-toplevel"]);
+      repo = top ? basename(top) : projectFor(sid).name;
+      message = runGit(["log", "-1", "--format=%B", sha]);
+      author = runGit(["log", "-1", "--format=%an", sha]);
+      files = runGit(["diff-tree", "--no-commit-id", "--name-only", "-r", sha]).split("\n").filter(Boolean);
+    } catch {
+      // git lookup fallback
+    }
+
+    await postJson(
+      "/session/commit",
+      {
+        sessionId: sid,
+        sha,
+        branch: branch || "main",
+        repo: repo || projectFor(sid).name,
+        message: message || "git commit",
+        author: author || "unknown",
+        files,
+      },
+      3000,
+    );
+    if (DEBUG) console.error(`[agentmemory] Linked commit ${sha} -> ${sid}`);
+  } catch (e) {
+    if (DEBUG) console.error("[agentmemory] commit link failed:", (e as Error).message);
+  }
 }
 
 function extractErrorMessage(err: unknown): string {
@@ -214,7 +337,13 @@ function extractErrorMessage(err: unknown): string {
 }
 
 export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
-  defaultProjectCwd = ctx.worktree || ctx.project?.id || process.cwd();
+  defaultProjectCwd = resolveCandidateDir(
+    ctx.worktree,
+    (ctx as any)?.project?.directory,
+    (ctx as any)?.directory,
+    ctx.project?.id,
+    process.cwd(),
+  );
   defaultProjectName = resolveProjectName(defaultProjectCwd);
 
   return {
@@ -238,18 +367,18 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
         // Attribute this session to its own directory when the event
         // carries one; a multi-directory OpenCode process otherwise
         // records every session under whichever repo loaded the plugin.
-        const sessionDir =
-          typeof info?.directory === "string" && info.directory
-            ? info.directory
-            : defaultProjectCwd;
-        let proj: { name: string | null; cwd: string | null };
-        if (sessionDir) {
-          const entry = { cwd: sessionDir, name: resolveProjectName(sessionDir) };
-          sessionProjects.set(sessionId, entry);
-          proj = entry;
-        } else {
-          proj = projectFor(sessionId);
-        }
+        // Skip macOS .app bundles from Desktop mode so we resolve the real project path.
+        const sessionDir = resolveCandidateDir(
+          typeof info?.directory === "string" ? info.directory : undefined,
+          (ctx as any)?.project?.directory,
+          (ctx as any)?.directory,
+          ctx.worktree,
+          ctx.project?.id,
+          defaultProjectCwd,
+          process.cwd(),
+        );
+        const proj = { cwd: sessionDir, name: resolveProjectName(sessionDir) };
+        sessionProjects.set(sessionId, proj);
         const startResult = await postJson("/session/start", {
           sessionId,
           title: info?.title ?? null,
@@ -270,7 +399,13 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
         }
       }
 
-      // ── session.idle ── (summarize handled in session.status idle branch)
+      // ── session.idle ──
+      if (type === "session.idle") {
+        const sid = props.sessionID || activeSessionId;
+        if (sid) {
+          scheduleSummarize(sid);
+        }
+      }
 
       // ── session.status ──
       if (type === "session.status") {
@@ -278,7 +413,9 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
         const sid = props.sessionID || activeSessionId;
         if (!sid || !status) return;
         if (status.type === "idle") {
-          await post("/summarize", { sessionId: sid });
+          scheduleSummarize(sid);
+        } else {
+          cancelPendingSummarize(sid);
         }
         await observe(sid, "session_status", {
           status_type: status.type,
@@ -291,7 +428,7 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
       if (type === "session.compacted") {
         const sid = props.sessionID || activeSessionId;
         if (sid) {
-          await post("/summarize", { sessionId: sid });
+          scheduleSummarize(sid);
           await observe(sid, "session_compacted", {});
         }
       }
@@ -419,7 +556,7 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
         if (part.type === "tool") {
           const state = part.state as Record<string, unknown> | undefined;
           if (!state) return;
-          const callId = part.callID as string;
+          const callId = (part.callID as string) || (part.id as string);
           if (!callId) return;
           const toolName = part.tool as string;
 
@@ -428,6 +565,9 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
             if (callSet.has(callId)) return;
             callSet.add(callId);
             const st = state as Record<string, unknown>;
+            if (toolName === "bash" || toolName === "shell") {
+              await linkCommitIfApplicable(sid, st.input as any, st.output, projectFor(sid).cwd);
+            }
             const rawTime = (st.time as any) || {};
             const startTime = typeof rawTime.start === "number" ? rawTime.start : null;
             const endTime = typeof rawTime.end === "number" ? rawTime.end : null;
@@ -593,6 +733,7 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
     "chat.message": async (input, output) => {
       const sid = input.sessionID || activeSessionId;
       if (!sid) return;
+      cancelPendingSummarize(sid);
       const parts = output.parts || [];
       const files = parts
         .filter((p: any) => p.type === "file")
@@ -662,6 +803,18 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
       const sid = input.sessionID || activeSessionId;
       if (!sid) return;
 
+      // Skip internal/title-generator LLM requests — OpenCode fires an internal concurrent
+      // title request on turn 1 using the same sessionID. If injected there, the title
+      // generator consumes the one-time injection and the main conversation turn gets nothing! (Issue #1184)
+      if (Array.isArray(output.system)) {
+        const isInternalTitle = output.system.some(
+          (s: string) =>
+            typeof s === "string" &&
+            /title generator|generate a (short|concise|brief) title|title for this conversation|thread title/i.test(s),
+        );
+        if (isInternalTitle) return;
+      }
+
       if (!contextInjectedSessions.has(sid)) {
         if (!Array.isArray(output.system)) return;
         output.system.push(AGENTMEMORY_INSTRUCTIONS);
@@ -684,22 +837,51 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
         contextInjectedSessions.add(sid);
       }
 
+      // Note: We deliberately do NOT push per-turn dynamic file enrichment into output.system
+      // because mutating the system prompt on subsequent turns invalidates LLM prompt/prefix caching (#720),
+      // creating an unnecessary 12.5x-20x cost multiplier. Instead, volatile file enrichment is attached
+      // in-memory to the tail of user message parts in `experimental.chat.messages.transform`.
+    },
+
+    // ── experimental.chat.messages.transform ──
+    // In-memory message transform hook: attaches volatile file enrichment context to the tail
+    // of the latest user message in-memory without touching SQLite durable events or creating UI clutter.
+    "experimental.chat.messages.transform": async (input, output) => {
+      const msgs = output?.messages;
+      if (!Array.isArray(msgs) || msgs.length === 0) return;
+
+      const lastUserMsg = msgs.filter((m: any) => m.info?.role === "user").pop();
+      if (!lastUserMsg) return;
+      const sid = lastUserMsg.info?.sessionID || activeSessionId;
+      if (!sid) return;
+
       const stash = stashFor(sid);
       if (stash.size === 0) return;
-      const files = [...stash].slice(0, 10);
 
-      const enrichResult = await postJson("/enrich", {
-        sessionId: sid,
-        files,
-        toolName: "enrich_inject",
-      });
+      const stashedFileList = [...stash].slice(0, 10);
+      for (const f of stashedFileList) stash.delete(f);
 
-      const enrichCtx = (enrichResult as any)?.context;
-      if (typeof enrichCtx === "string" && enrichCtx.length > 0) {
-        if (Array.isArray(output.system)) {
-          output.system.push(enrichCtx);
+      const proj = projectFor(sid);
+      try {
+        const enrichResult = await postJson(
+          "/enrich",
+          {
+            sessionId: sid,
+            files: stashedFileList,
+            project: proj.name,
+            toolName: "enrich_inject",
+          },
+          3000,
+        );
+        const enrichCtx = (enrichResult as any)?.context;
+        if (typeof enrichCtx === "string" && enrichCtx.length > 0 && Array.isArray(lastUserMsg.parts)) {
+          const textPart = lastUserMsg.parts.filter((p: any) => p.type === "text").pop() as any;
+          if (textPart) {
+            textPart.text = (textPart.text || "") + `\n\n<agentmemory-file-context>\n${enrichCtx}\n</agentmemory-file-context>`;
+          }
         }
-        for (const f of files) stash.delete(f);
+      } catch (e) {
+        if (DEBUG) console.error("[agentmemory] enrich injection failed:", (e as Error).message);
       }
     },
 
