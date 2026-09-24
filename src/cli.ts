@@ -3943,7 +3943,10 @@ async function runRemove(): Promise<void> {
 }
 
 async function runConsole(): Promise<void> {
-  const iiiBin = resolveCompatibleIii(whichBinary("iii") ?? privateIiiPath());
+  const iiiBin = pickCompatibleIii([
+    whichBinary("iii"),
+    ...fallbackIiiPaths().filter((candidate) => existsSync(candidate)),
+  ]);
   if (!iiiBin) {
     p.log.error(
       `No iii v${IIPINNED_VERSION} found. Start agentmemory once so it installs the pinned engine into ${privateIiiPath()}, then run this again.`,

@@ -1,5 +1,5 @@
-import { rmSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { readFileSync, rmSync } from "node:fs";
+import { basename, dirname, join, resolve } from "node:path";
 
 const SEEDED_BUILTIN_WORKERS = [
   "http",
@@ -53,6 +53,11 @@ export function persistedBuiltinConfigPaths(
   );
 }
 
+export function isPersistedBuiltinEntry(content: string, id: string): boolean {
+  const firstLine = content.split("\n").find((line) => line.trim() !== "");
+  return firstLine?.trim() === `id: ${id}`;
+}
+
 export function clearPersistedBuiltinConfig(
   engineCwd: string,
   configPath: string,
@@ -61,6 +66,8 @@ export function clearPersistedBuiltinConfig(
   const cleared: string[] = [];
   for (const path of persistedBuiltinConfigPaths(engineCwd, configPath, renderedConfig)) {
     try {
+      const content = readFileSync(path, "utf8");
+      if (!isPersistedBuiltinEntry(content, basename(path, ".yaml"))) continue;
       rmSync(path);
       cleared.push(path);
     } catch (err) {

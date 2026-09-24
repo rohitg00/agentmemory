@@ -178,6 +178,21 @@ describe("clearPersistedBuiltinConfig", () => {
     expect(existsSync(join(dir, "agentmemory.yaml"))).toBe(true);
   });
 
+  it("leaves files that are not engine entries alone, even under a seeded builtin name", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "agentmemory-engine-"));
+    const dir = join(cwd, "config");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "http.yaml"), "host: 0.0.0.0\nport: 8080\n");
+    writeFileSync(join(dir, "state.yaml"), "id: something-else\nvalue: {}\n");
+    writeFileSync(join(dir, "iii-http.yaml"), "\nid: iii-http\nname: HTTP\nvalue:\n  port: 3111\n");
+
+    const cleared = clearPersistedBuiltinConfig(cwd, join(cwd, "iii-config.runtime.yaml"));
+
+    expect(cleared).toEqual([join(dir, "iii-http.yaml")]);
+    expect(existsSync(join(dir, "http.yaml"))).toBe(true);
+    expect(existsSync(join(dir, "state.yaml"))).toBe(true);
+  });
+
   it("is a no-op when the engine has never persisted anything", () => {
     const cwd = mkdtempSync(join(tmpdir(), "agentmemory-engine-"));
 
