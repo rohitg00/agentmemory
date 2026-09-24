@@ -124,7 +124,7 @@ npx はバージョン単位でキャッシュします。`npx -y @agentmemory/a
 <details>
 <summary><strong>自前の iii エンジンを既に動かしている</strong></summary>
 
-agentmemory は iii-engine v0.11.2 にピン留めしており、異なるバージョンにはアタッチしません(worker は別のエンジンのプロトコルを話せません)。他のエンジンを停止してから `npx -y @agentmemory/agentmemory@latest` を実行してください。ピン留めされた v0.11.2 を `~/.agentmemory/bin` にインストールして実行し、あなた自身の `iii` には触れません。
+agentmemory は iii-engine v0.19.7 にピン留めしており、異なるバージョンにはアタッチしません(worker は別のエンジンのプロトコルを話せません)。他のエンジンを停止してから `npx -y @agentmemory/agentmemory@latest` を実行してください。ピン留めされた v0.19.7 を `~/.agentmemory/bin` にインストールして実行し、あなた自身の `iii` には触れません。
 
 </details>
 
@@ -463,7 +463,7 @@ npx @agentmemory/agentmemory
 
 <h2 id="quick-start"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-quickstart.svg"><img src="../assets/tags/section-quickstart.svg" alt="Quick Start" height="32" /></picture></h2>
 
-互換性:このリリースは安定版の `iii-sdk` `^0.11.0` と iii-engine v0.11.x を対象とします。
+互換性:このリリースは `iii-sdk` 0.19.7 を対象とし、iii-engine v0.19.7 にピン留めします。
 
 ### 30 秒で試す
 
@@ -517,7 +517,7 @@ npx @agentmemory/agentmemory import-jsonl ~/.claude/projects/-my-project/abc123.
 npx @agentmemory/agentmemory upgrade
 ```
 
-警告: このコマンドは現在のワークスペース/ランタイムを変更します。JavaScript 依存を更新したり、ピン留めされた Docker イメージ `iiidev/iii:0.11.2` を pull したりすることがあります。ピン留めされていない、あるいは新しい iii エンジンをインストールすることは決してありません。
+警告: このコマンドは現在のワークスペース/ランタイムを変更します。JavaScript 依存を更新したり、ピン留めされた Docker イメージ `iiidev/iii:0.19.7` を pull したりすることがあります。ピン留めされていない、あるいは新しい iii エンジンをインストールすることは決してありません。
 
 実装の詳細は `src/cli.ts` を参照(`src/cli.ts:544-595` 付近の `runUpgrade`)。
 
@@ -722,15 +722,15 @@ npm install && npm run build && npm start
 
 `iii` が既にインストールされていれば、これでローカルの `iii-engine` で agentmemory が起動します。Docker が使える場合は Docker Compose にフォールバックします。REST、ストリーム、ビューワーはデフォルトで `127.0.0.1` にバインドします。
 
-`iii-engine` を手動でインストールしてください。**agentmemory は現在 `iii-engine` を `v0.11.2` にピン留めしています** — `v0.11.6` では `iii worker add` で何でもサンドボックス化する新モデルが導入されましたが、agentmemory はまだそれ向けにリファクタリングされていません。リファクタが完了次第ピンは解除されます。サンドボックスモデルへ手動移行済みなら `AGENTMEMORY_III_VERSION=<version>` でオーバーライドできます。
+`iii-engine` を手動でインストールしてください。**agentmemory は現在 `iii-engine` を `v0.19.7` にピン留めしています** — `iii-sdk` 依存関係と同じリリースです。worker はそのエンジンの wire プロトコルを話し、0.20.0 で SDK の API 面が再編されたため、両者は agentmemory のリリースで一緒に更新されます。自前のエンジンを運用していて一致していると分かっている場合は `AGENTMEMORY_III_VERSION=<version>` で上書きできます。
 
-- **macOS arm64:** `mkdir -p ~/.local/bin && curl -fsSL https://github.com/iii-hq/iii/releases/download/iii/v0.11.2/iii-aarch64-apple-darwin.tar.gz | tar -xz -C ~/.local/bin && chmod +x ~/.local/bin/iii`
+- **macOS arm64:** `mkdir -p ~/.local/bin && curl -fsSL https://github.com/iii-hq/iii/releases/download/iii/v0.19.7/iii-aarch64-apple-darwin.tar.gz | tar -xz -C ~/.local/bin && chmod +x ~/.local/bin/iii`
 - **macOS x64:** `aarch64-apple-darwin` を `x86_64-apple-darwin` に置換
 - **Linux x64:** `x86_64-unknown-linux-gnu` に置換
 - **Linux arm64:** `aarch64-unknown-linux-gnu` に置換
-- **Windows:** [iii-hq/iii releases v0.11.2](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.11.2) から `iii-x86_64-pc-windows-msvc.zip` をダウンロード、`iii.exe` を展開し PATH に追加
+- **Windows:** [iii-hq/iii releases v0.19.7](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.19.7) から `iii-x86_64-pc-windows-msvc.zip` をダウンロード、`iii.exe` を展開し PATH に追加
 
-または Docker を使用(同梱の `docker-compose.yml` が `iiidev/iii:0.11.2` を pull します)。詳細ドキュメント:[iii.dev/docs](https://iii.dev/docs)。
+または Docker を使用(同梱の `docker-compose.yml` が `iiidev/iii:0.19.7` を pull します)。詳細ドキュメント:[iii.dev/docs](https://iii.dev/docs)。
 
 ### Windows
 
@@ -739,9 +739,9 @@ agentmemory は Windows 10/11 で動作しますが、Node.js パッケージだ
 **選択肢 A: ビルド済み Windows バイナリ(推奨)**
 
 ```powershell
-# 1. ブラウザで https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.11.2 を開く
-#    (engine v0.11.6+ が要求する新しいサンドボックスモデルへ
-#     agentmemory がリファクタリングされるまで v0.11.2 にピン留め)
+# 1. ブラウザで https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.19.7 を開く
+#    (agentmemory はエンジンを iii-sdk と同じリリースにピン留めしています。
+#     現在のペアは v0.19.7)
 # 2. iii-x86_64-pc-windows-msvc.zip をダウンロード
 #    (ARM マシンの場合は iii-aarch64-pc-windows-msvc.zip)
 # 3. iii.exe を PATH 上のどこかに展開、または以下に配置:
@@ -749,7 +749,7 @@ agentmemory は Windows 10/11 で動作しますが、Node.js パッケージだ
 #    (agentmemory はこの場所を自動でチェックします)
 # 4. 確認:
 iii --version
-# 出力: 0.11.2
+# 出力: 0.19.7
 
 # 5. その後 agentmemory を通常通り起動:
 npx -y @agentmemory/agentmemory
@@ -781,7 +781,7 @@ npx -y @agentmemory/mcp
 | ポート競合 | `netstat -ano \| findstr :3111` でバインドを確認、kill するか `--port <N>` を使用 |
 | Docker をインストール済みなのにフォールバックがスキップされる | Docker Desktop が実際に動作している(システムトレイアイコン)ことを確認 |
 
-> 注意: iii **エンジン** はビルド済みバイナリであり、cargo クレートではありません — `cargo install` でインストールしようとしないでください。(iii **SDK** は crates.io、npm、PyPI に公開されていますが、agentmemory には不要です。)サポートされるエンジンのインストール方法はすべて v0.11.2 にピン留めされています: 上記のビルド済み v0.11.2 バイナリ、バージョンピン**付き**の上流 `sh` インストールスクリプト `curl -fsSL https://install.iii.dev/iii/main/install.sh | VERSION=0.11.2 sh`(macOS/Linux)、および Docker イメージ `iiidev/iii:0.11.2`。単なる `install.sh | sh` は **最新** のエンジンをインストールしますが、agentmemory はそれをサポートしていません — 必ず `VERSION=0.11.2` を渡してください。最も簡単なのは、`npx @agentmemory/agentmemory` を実行するだけです。これがピン留めされたエンジンを `~/.agentmemory/bin` に取得してくれます。
+> 注意: iii **エンジン** はビルド済みバイナリであり、cargo クレートではありません — `cargo install` でインストールしようとしないでください。(iii **SDK** は crates.io、npm、PyPI に公開されていますが、agentmemory には不要です。)サポートされるエンジンのインストール方法はすべて v0.19.7 にピン留めされています: 上記のビルド済み v0.19.7 バイナリ、バージョンピン**付き**の上流 `sh` インストールスクリプト `curl -fsSL https://install.iii.dev/iii/main/install.sh | VERSION=0.19.7 sh`(macOS/Linux)、および Docker イメージ `iiidev/iii:0.19.7`。単なる `install.sh | sh` は **最新** のエンジンをインストールしますが、agentmemory はそれをサポートしていません — 必ず `VERSION=0.19.7` を渡してください。最も簡単なのは、`npx @agentmemory/agentmemory` を実行するだけです。これがピン留めされたエンジンを `~/.agentmemory/bin` に取得してくれます。
 
 ---
 

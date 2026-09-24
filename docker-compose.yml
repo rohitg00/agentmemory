@@ -18,16 +18,15 @@ services:
     restart: "no"
 
   iii-engine:
-    # Pinned to v0.11.2 — the last engine that runs agentmemory's current
-    # direct-registration worker cleanly. v0.11.6 introduces a new sandbox-everything-
-    # via-`iii worker add` model that agentmemory hasn't been refactored
-    # for yet; the architectural mismatch surfaces as EPIPE reconnect
-    # loops and empty search after save. Bump only after agentmemory is
-    # refactored to register as a sandboxed worker.
+    # Pinned to the same release as agentmemory's iii-sdk dependency
+    # (package.json). The worker speaks this engine's wire protocol, so
+    # bump the image tag and the SDK together, never one of them alone.
+    # v0.19.7 is the last engine before the 0.20 SDK reorganization and
+    # keeps HTTP routes owned by the reconnecting worker.
     #
     # Override per-shell or via .env file:
-    #   AGENTMEMORY_III_VERSION=0.11.7 docker compose up
-    image: iiidev/iii:${AGENTMEMORY_III_VERSION:-0.11.2}
+    #   AGENTMEMORY_III_VERSION=0.19.7 docker compose up
+    image: iiidev/iii:${AGENTMEMORY_III_VERSION:-0.19.7}
     user: "${AGENTMEMORY_DOCKER_UID:-65532}:${AGENTMEMORY_DOCKER_GID:-65532}"
     depends_on:
       iii-init:

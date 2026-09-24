@@ -124,7 +124,7 @@ npx는 버전별로 캐싱합니다. `npx -y @agentmemory/agentmemory@latest`로
 <details>
 <summary><strong>이미 자체 iii 엔진을 실행 중인 경우</strong></summary>
 
-agentmemory는 iii-engine v0.11.2를 고정하며 다른 버전에는 연결되지 않습니다(워커가 다른 엔진의 프로토콜을 말할 수 없습니다). 다른 엔진을 중지한 후 `npx -y @agentmemory/agentmemory@latest`를 실행하십시오. 고정된 v0.11.2를 `~/.agentmemory/bin`에 설치·실행하며, 기존 `iii`는 건드리지 않습니다.
+agentmemory는 iii-engine v0.19.7를 고정하며 다른 버전에는 연결되지 않습니다(워커가 다른 엔진의 프로토콜을 말할 수 없습니다). 다른 엔진을 중지한 후 `npx -y @agentmemory/agentmemory@latest`를 실행하십시오. 고정된 v0.19.7를 `~/.agentmemory/bin`에 설치·실행하며, 기존 `iii`는 건드리지 않습니다.
 
 </details>
 
@@ -463,7 +463,7 @@ npx @agentmemory/agentmemory
 
 <h2 id="quick-start"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-quickstart.svg"><img src="../assets/tags/section-quickstart.svg" alt="빠른 시작" height="32" /></picture></h2>
 
-호환성: 이 릴리스는 안정 버전 `iii-sdk` `^0.11.0`과 iii-engine v0.11.x를 대상으로 합니다.
+호환성: 이 릴리스는 `iii-sdk` 0.19.7을 대상으로 하며 iii-engine을 v0.19.7로 고정합니다.
 
 ### 30초 만에 사용해 보기
 
@@ -515,7 +515,7 @@ npx @agentmemory/agentmemory import-jsonl ~/.claude/projects/-my-project/abc123.
 npx @agentmemory/agentmemory upgrade
 ```
 
-경고: 이 명령은 현재 workspace/런타임을 변경합니다. JavaScript 의존성을 업데이트할 수 있으며, 고정된 Docker 이미지 `iiidev/iii:0.11.2`를 pull할 수 있습니다. 고정되지 않았거나 더 새로운 iii 엔진을 설치하는 일은 절대 없습니다.
+경고: 이 명령은 현재 workspace/런타임을 변경합니다. JavaScript 의존성을 업데이트할 수 있으며, 고정된 Docker 이미지 `iiidev/iii:0.19.7`를 pull할 수 있습니다. 고정되지 않았거나 더 새로운 iii 엔진을 설치하는 일은 절대 없습니다.
 
 구현 세부 사항은 `src/cli.ts`에 있습니다 (`runUpgrade`는 `src/cli.ts:544-595` 부근 참고).
 
@@ -719,15 +719,15 @@ npm install && npm run build && npm start
 
 `iii`가 이미 설치되어 있으면 로컬 `iii-engine`으로 agentmemory를 시작하고, Docker가 사용 가능하면 Docker Compose로 폴백합니다. REST, 스트림, 뷰어는 기본적으로 `127.0.0.1`에 바인딩됩니다.
 
-`iii-engine`을 수동으로 설치하십시오. **agentmemory는 현재 `iii-engine`을 `v0.11.2`로 고정합니다**. `v0.11.6`은 모든 것을 `iii worker add`를 통해 샌드박스화하는 새 모델을 도입했는데 agentmemory는 아직 이를 위해 리팩터링되지 않았기 때문입니다. 리팩터링이 완료되면 고정이 풀립니다. 수동으로 sandbox 모델로 마이그레이션했다면 `AGENTMEMORY_III_VERSION=<version>`으로 덮어쓰십시오.
+`iii-engine`을 수동으로 설치하십시오. **agentmemory는 현재 `iii-engine`을 `v0.19.7`로 고정합니다**. `iii-sdk` 의존성과 같은 릴리스입니다. 워커는 해당 엔진의 wire 프로토콜을 사용하고 0.20.0에서 SDK 표면이 재구성되었으므로, 둘은 agentmemory 릴리스에서 함께 올라갑니다. 직접 운영하는 엔진이 일치한다고 확신한다면 `AGENTMEMORY_III_VERSION=<version>`으로 재정의하세요.
 
-- **macOS arm64:** `mkdir -p ~/.local/bin && curl -fsSL https://github.com/iii-hq/iii/releases/download/iii/v0.11.2/iii-aarch64-apple-darwin.tar.gz | tar -xz -C ~/.local/bin && chmod +x ~/.local/bin/iii`
+- **macOS arm64:** `mkdir -p ~/.local/bin && curl -fsSL https://github.com/iii-hq/iii/releases/download/iii/v0.19.7/iii-aarch64-apple-darwin.tar.gz | tar -xz -C ~/.local/bin && chmod +x ~/.local/bin/iii`
 - **macOS x64:** `aarch64-apple-darwin`을 `x86_64-apple-darwin`으로 교체
 - **Linux x64:** `x86_64-unknown-linux-gnu`로 교체
 - **Linux arm64:** `aarch64-unknown-linux-gnu`로 교체
-- **Windows:** [iii-hq/iii releases v0.11.2](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.11.2)에서 `iii-x86_64-pc-windows-msvc.zip`을 다운로드하고 `iii.exe`를 추출한 후 PATH에 추가
+- **Windows:** [iii-hq/iii releases v0.19.7](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.19.7)에서 `iii-x86_64-pc-windows-msvc.zip`을 다운로드하고 `iii.exe`를 추출한 후 PATH에 추가
 
-또는 Docker 사용 (번들된 `docker-compose.yml`이 `iiidev/iii:0.11.2`를 pull). 전체 문서: [iii.dev/docs](https://iii.dev/docs).
+또는 Docker 사용 (번들된 `docker-compose.yml`이 `iiidev/iii:0.19.7`를 pull). 전체 문서: [iii.dev/docs](https://iii.dev/docs).
 
 ### Windows
 
@@ -736,9 +736,9 @@ agentmemory는 Windows 10/11에서 실행되지만, Node.js 패키지만으로�
 **옵션 A: 사전 빌드된 Windows 바이너리 (권장)**
 
 ```powershell
-# 1. Open https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.11.2 in your browser
-#    (we pin to v0.11.2 until agentmemory refactors for the new sandbox
-#     model that engine v0.11.6+ requires)
+# 1. Open https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.19.7 in your browser
+#    (agentmemory pins the engine to the same release as its iii-sdk;
+#     v0.19.7 is the current pair)
 # 2. Download iii-x86_64-pc-windows-msvc.zip
 #    (or iii-aarch64-pc-windows-msvc.zip if you're on an ARM machine)
 # 3. Extract iii.exe somewhere on PATH, or place it at:
@@ -746,7 +746,7 @@ agentmemory는 Windows 10/11에서 실행되지만, Node.js 패키지만으로�
 #    (agentmemory checks that location automatically)
 # 4. Verify:
 iii --version
-# Should print: 0.11.2
+# Should print: 0.19.7
 
 # 5. Then run agentmemory as usual:
 npx -y @agentmemory/agentmemory
@@ -778,7 +778,7 @@ npx -y @agentmemory/mcp
 | 포트 충돌 | `netstat -ano \| findstr :3111`로 무엇이 바인딩되어 있는지 확인하고 종료하거나 `--port <N>` 사용 |
 | Docker가 설치되어 있어도 Docker 폴백을 건너뜀 | Docker Desktop이 실제로 실행 중인지 확인 (시스템 트레이 아이콘) |
 
-> 참고: iii **엔진**은 사전 빌드된 바이너리이며 cargo 크레이트가 아니므로, `cargo install`로 설치하려 하지 마세요. (iii **SDK**는 crates.io, npm, PyPI에 게시되어 있지만 agentmemory에는 필요하지 않습니다.) 지원되는 엔진 설치 방법은 모두 v0.11.2에 고정되어 있습니다: 위의 사전 빌드된 v0.11.2 바이너리, 버전 핀**을 포함한** 업스트림 `sh` 설치 스크립트 `curl -fsSL https://install.iii.dev/iii/main/install.sh | VERSION=0.11.2 sh` (macOS/Linux), 그리고 Docker 이미지 `iiidev/iii:0.11.2`. 그냥 `install.sh | sh`를 실행하면 **최신** 엔진이 설치되는데, agentmemory는 이를 지원하지 않습니다; 항상 `VERSION=0.11.2`를 전달하세요. 가장 쉬운 방법은 그냥 `npx @agentmemory/agentmemory`를 실행하는 것입니다. 이 명령이 고정된 엔진을 `~/.agentmemory/bin`에 가져다 줍니다.
+> 참고: iii **엔진**은 사전 빌드된 바이너리이며 cargo 크레이트가 아니므로, `cargo install`로 설치하려 하지 마세요. (iii **SDK**는 crates.io, npm, PyPI에 게시되어 있지만 agentmemory에는 필요하지 않습니다.) 지원되는 엔진 설치 방법은 모두 v0.19.7에 고정되어 있습니다: 위의 사전 빌드된 v0.19.7 바이너리, 버전 핀**을 포함한** 업스트림 `sh` 설치 스크립트 `curl -fsSL https://install.iii.dev/iii/main/install.sh | VERSION=0.19.7 sh` (macOS/Linux), 그리고 Docker 이미지 `iiidev/iii:0.19.7`. 그냥 `install.sh | sh`를 실행하면 **최신** 엔진이 설치되는데, agentmemory는 이를 지원하지 않습니다; 항상 `VERSION=0.19.7`를 전달하세요. 가장 쉬운 방법은 그냥 `npx @agentmemory/agentmemory`를 실행하는 것입니다. 이 명령이 고정된 엔진을 `~/.agentmemory/bin`에 가져다 줍니다.
 
 ---
 

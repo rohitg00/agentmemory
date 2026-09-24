@@ -14,6 +14,8 @@ updates:
     commit-message:
       prefix: deps
       include: scope
+    ignore:
+      - dependency-name: iii-sdk
     groups:
       minor-and-patch:
         update-types:

@@ -1,4 +1,33 @@
+import { rmSync } from "node:fs";
 import { join } from "node:path";
+
+const SEEDED_BUILTIN_WORKERS = [
+  "iii-http",
+  "iii-state",
+  "iii-queue",
+  "iii-pubsub",
+  "iii-cron",
+  "iii-stream",
+  "iii-observability",
+  "iii-worker-manager",
+];
+
+export function persistedBuiltinConfigPaths(engineCwd: string): string[] {
+  return SEEDED_BUILTIN_WORKERS.map((id) =>
+    join(engineCwd, "data", "configuration", `${id}.yaml`),
+  );
+}
+
+export function clearPersistedBuiltinConfig(engineCwd: string): string[] {
+  const cleared: string[] = [];
+  for (const path of persistedBuiltinConfigPaths(engineCwd)) {
+    try {
+      rmSync(path);
+      cleared.push(path);
+    } catch {}
+  }
+  return cleared;
+}
 
 export interface EngineConfigOptions {
   dataDir: string;

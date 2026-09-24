@@ -124,7 +124,7 @@ npx प्रति-वर्ज़न कैश करता है। नव�
 <details>
 <summary><strong>पहले से अपना iii engine चला रहे हैं</strong></summary>
 
-agentmemory iii-engine v0.11.2 को pin करता है और किसी भिन्न version से attach नहीं होगा (worker किसी दूसरे engine का protocol नहीं बोल सकता)। दूसरे engine को रोकें, फिर `npx -y @agentmemory/agentmemory@latest` चलाएँ। यह pinned v0.11.2 को `~/.agentmemory/bin` में install और run करता है, आपके अपने `iii` को अछूता छोड़ते हुए।
+agentmemory iii-engine v0.19.7 को pin करता है और किसी भिन्न version से attach नहीं होगा (worker किसी दूसरे engine का protocol नहीं बोल सकता)। दूसरे engine को रोकें, फिर `npx -y @agentmemory/agentmemory@latest` चलाएँ। यह pinned v0.19.7 को `~/.agentmemory/bin` में install और run करता है, आपके अपने `iii` को अछूता छोड़ते हुए।
 
 </details>
 
@@ -463,7 +463,7 @@ npx @agentmemory/agentmemory
 
 <h2 id="quick-start"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-quickstart.svg"><img src="../assets/tags/section-quickstart.svg" alt="Quick Start" height="32" /></picture></h2>
 
-संगतता: यह रिलीज़ stable `iii-sdk` `^0.11.0` और iii-engine v0.11.x को टार्गेट करता है।
+संगतता: यह रिलीज़ `iii-sdk` 0.19.7 को टार्गेट करता है और iii-engine को v0.19.7 पर pin करता है।
 
 ### 30 सेकंड में आज़माएँ
 
@@ -515,7 +515,7 @@ Imported सेशंस native ones के साथ Replay picker में �
 npx @agentmemory/agentmemory upgrade
 ```
 
-चेतावनी: यह कमांड वर्तमान workspace/runtime को mutate करता है। यह JavaScript निर्भरताएँ update कर सकता है और pinned Docker image `iiidev/iii:0.11.2` खींच सकता है। यह कभी भी unpinned या नया iii engine install नहीं करता।
+चेतावनी: यह कमांड वर्तमान workspace/runtime को mutate करता है। यह JavaScript निर्भरताएँ update कर सकता है और pinned Docker image `iiidev/iii:0.19.7` खींच सकता है। यह कभी भी unpinned या नया iii engine install नहीं करता।
 
 Implementation विवरण `src/cli.ts` में हैं (`src/cli.ts:544-595` क्षेत्र के आसपास `runUpgrade` देखें)।
 
@@ -700,15 +700,15 @@ npm install && npm run build && npm start
 
 यह agentmemory को local `iii-engine` के साथ शुरू करता है अगर `iii` पहले से installed है, या Docker उपलब्ध होने पर Docker Compose पर fallback करता है। REST, streams, और व्यूअर default रूप से `127.0.0.1` से bind करते हैं।
 
-`iii-engine` मैनुअली इंस्टॉल करें। **agentmemory वर्तमान में `iii-engine` को `v0.11.2` पर pin करता है**। `v0.11.6` एक नया sandbox-everything-via-`iii worker add` model introduce करता है जिसके लिए agentmemory को अभी refactor नहीं किया गया है। Refactor land होने के बाद pin हटा दी जाती है। अगर आपने sandbox model पर मैनुअली migrate किया है तो `AGENTMEMORY_III_VERSION=<version>` से override करें।
+`iii-engine` मैनुअली इंस्टॉल करें। **agentmemory वर्तमान में `iii-engine` को `v0.19.7` पर pin करता है**, जो इसकी `iii-sdk` dependency वाला ही release है; worker उसी engine का wire protocol बोलता है, और 0.20.0 ने SDK surface को reorganize किया, इसलिए दोनों agentmemory releases में साथ बढ़ते हैं। यदि आप अपना engine चलाते हैं और जानते हैं कि वह मेल खाता है तो `AGENTMEMORY_III_VERSION=<version>` से override करें।
 
-- **macOS arm64:** `mkdir -p ~/.local/bin && curl -fsSL https://github.com/iii-hq/iii/releases/download/iii/v0.11.2/iii-aarch64-apple-darwin.tar.gz | tar -xz -C ~/.local/bin && chmod +x ~/.local/bin/iii`
+- **macOS arm64:** `mkdir -p ~/.local/bin && curl -fsSL https://github.com/iii-hq/iii/releases/download/iii/v0.19.7/iii-aarch64-apple-darwin.tar.gz | tar -xz -C ~/.local/bin && chmod +x ~/.local/bin/iii`
 - **macOS x64:** `aarch64-apple-darwin` को `x86_64-apple-darwin` के साथ बदलें
 - **Linux x64:** `x86_64-unknown-linux-gnu` के साथ बदलें
 - **Linux arm64:** `aarch64-unknown-linux-gnu` के साथ बदलें
-- **Windows:** [iii-hq/iii releases v0.11.2](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.11.2) से `iii-x86_64-pc-windows-msvc.zip` download करें, `iii.exe` extract करें, PATH में जोड़ें
+- **Windows:** [iii-hq/iii releases v0.19.7](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.19.7) से `iii-x86_64-pc-windows-msvc.zip` download करें, `iii.exe` extract करें, PATH में जोड़ें
 
-या Docker का उपयोग करें (bundled `docker-compose.yml` `iiidev/iii:0.11.2` खींचता है)। पूर्ण docs: [iii.dev/docs](https://iii.dev/docs)।
+या Docker का उपयोग करें (bundled `docker-compose.yml` `iiidev/iii:0.19.7` खींचता है)। पूर्ण docs: [iii.dev/docs](https://iii.dev/docs)।
 
 ### Windows
 
@@ -717,9 +717,9 @@ agentmemory Windows 10/11 पर चलता है, लेकिन केव�
 **विकल्प A: prebuilt Windows binary (अनुशंसित)**
 
 ```powershell
-# 1. अपने browser में https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.11.2 खोलें
-#    (हम v0.11.2 पर pin करते हैं जब तक agentmemory नए sandbox
-#     model के लिए refactor नहीं हो जाता जो engine v0.11.6+ की आवश्यकता है)
+# 1. अपने browser में https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.19.7 खोलें
+#    (agentmemory engine को अपनी iii-sdk वाले ही release पर pin करता है;
+#     वर्तमान pair v0.19.7 है)
 # 2. iii-x86_64-pc-windows-msvc.zip download करें
 #    (या ARM machine पर हैं तो iii-aarch64-pc-windows-msvc.zip)
 # 3. PATH पर कहीं iii.exe extract करें, या यहाँ रखें:
@@ -727,7 +727,7 @@ agentmemory Windows 10/11 पर चलता है, लेकिन केव�
 #    (agentmemory उस location को automatically check करता है)
 # 4. Verify करें:
 iii --version
-# Print होना चाहिए: 0.11.2
+# Print होना चाहिए: 0.19.7
 
 # 5. फिर agentmemory को सामान्य की तरह चलाएँ:
 npx -y @agentmemory/agentmemory
@@ -759,7 +759,7 @@ npx -y @agentmemory/mcp
 | Port conflict | `netstat -ano \| findstr :3111` से देखें कि क्या bind है, फिर उसे kill करें या `--port <N>` का उपयोग करें |
 | Docker installed होने पर भी Docker fallback skip हो रहा है | सुनिश्चित करें कि Docker Desktop वास्तव में चल रहा है (system tray icon) |
 
-> नोट: iii **engine** एक prebuilt binary है, cargo crate नहीं, इसलिए इसे `cargo install` से install करने की कोशिश न करें। (iii **SDKs** crates.io, npm, और PyPI पर publish हैं, लेकिन agentmemory को उनकी ज़रूरत नहीं है।) समर्थित engine install methods, सभी v0.11.2 पर pinned: ऊपर वाला prebuilt v0.11.2 binary, version pin **के साथ** upstream `sh` install script `curl -fsSL https://install.iii.dev/iii/main/install.sh | VERSION=0.11.2 sh` (macOS/Linux), और Docker image `iiidev/iii:0.11.2`। केवल `install.sh | sh` **latest** engine install करता है, जिसे agentmemory support नहीं करता; हमेशा `VERSION=0.11.2` पास करें। सबसे आसान: बस `npx @agentmemory/agentmemory` चलाएँ, जो pinned engine को आपके लिए `~/.agentmemory/bin` में ले आता है।
+> नोट: iii **engine** एक prebuilt binary है, cargo crate नहीं, इसलिए इसे `cargo install` से install करने की कोशिश न करें। (iii **SDKs** crates.io, npm, और PyPI पर publish हैं, लेकिन agentmemory को उनकी ज़रूरत नहीं है।) समर्थित engine install methods, सभी v0.19.7 पर pinned: ऊपर वाला prebuilt v0.19.7 binary, version pin **के साथ** upstream `sh` install script `curl -fsSL https://install.iii.dev/iii/main/install.sh | VERSION=0.19.7 sh` (macOS/Linux), और Docker image `iiidev/iii:0.19.7`। केवल `install.sh | sh` **latest** engine install करता है, जिसे agentmemory support नहीं करता; हमेशा `VERSION=0.19.7` पास करें। सबसे आसान: बस `npx @agentmemory/agentmemory` चलाएँ, जो pinned engine को आपके लिए `~/.agentmemory/bin` में ले आता है।
 
 ---
 

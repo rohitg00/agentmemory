@@ -4,6 +4,14 @@ All notable changes to agentmemory will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **iii engine and `iii-sdk` move from 0.11.2 to 0.19.7.** Same release on both sides, as before; the CLI downloads the pinned engine into `~/.agentmemory/bin`, the bundled `docker-compose.yml` and the deploy templates pull `iiidev/iii:0.19.7`, and `agentmemory upgrade` pins the SDK to the same constant. 0.19.7 is the last engine before the 0.20 SDK reorganization and carries the upstream fix that keeps HTTP routes owned by the reconnecting worker, so `/agentmemory/*` no longer answers 404 after the engine reconnects (#1013). Existing state stores load unchanged.
+- **Runtime config is re-seeded on every start.** Engines from 0.19.4 on persist each builtin worker's `config:` block into `data/configuration/<worker>.yaml` on first boot and treat that copy as the source of truth afterwards, which would have made `--port`, `--instance` and data-dir changes silently ineffective after the first run. The CLI now clears those persisted builtin entries right before it spawns the engine, so the runtime config it renders from your environment is the seed every time.
+- Dependabot no longer proposes `iii-sdk` bumps; the engine pin and the SDK version are updated together by hand.
+
 ## [0.9.29] — 2026-08-16
 
 Release wave in two parts. Recall quality: hybrid ranking reaches the primary recall path, lessons get a real index, every record learns where it came from, the knowledge graph populates keyless, and agent scoping threads through all save paths — plus connector parity for pi and Codex, a new DeepSeek Harness connector, current provider model defaults, and a viewer clarity pass. Foundation: the `.env` file now applies everywhere, imports become searchable, consolidation runs on session stop, twelve MCP-only agents get activated on connect, and every capture surface agrees on what "project" means. No breaking changes; read the upgrade notes for behavior changes you will notice.

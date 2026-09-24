@@ -1,7 +1,12 @@
-import { readFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { renderEngineConfig } from "../src/cli/engine-config.js";
+import {
+  clearPersistedBuiltinConfig,
+  persistedBuiltinConfigPaths,
+  renderEngineConfig,
+} from "../src/cli/engine-config.js";
 
 describe("renderEngineConfig", () => {
   it("stores engine state in the resolved data directory", () => {
@@ -50,5 +55,41 @@ describe("renderEngineConfig", () => {
     expect(rendered).toMatch(
       /- name: iii-worker-manager\n\s+config:\n\s+port: 49234\n\s+host: 127\.0\.0\.1/,
     );
+  });
+});
+
+describe("clearPersistedBuiltinConfig", () => {
+  it("lists one persisted entry per seeded builtin under data/configuration", () => {
+    const paths = persistedBuiltinConfigPaths("/srv/engine");
+
+    expect(paths).toContain(
+      join("/srv/engine", "data", "configuration", "iii-http.yaml"),
+    );
+    expect(paths).toContain(
+      join("/srv/engine", "data", "configuration", "iii-worker-manager.yaml"),
+    );
+    expect(paths.every((p) => p.endsWith(".yaml"))).toBe(true);
+  });
+
+  it("removes persisted builtin entries and leaves everything else in place", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "agentmemory-engine-"));
+    const dir = join(cwd, "data", "configuration");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "iii-http.yaml"), "id: iii-http\nvalue:\n  port: 3111\n");
+    writeFileSync(join(dir, "iii-state.yaml"), "id: iii-state\nvalue: {}\n");
+    writeFileSync(join(dir, "agentmemory.yaml"), "id: agentmemory\nvalue: {}\n");
+
+    const cleared = clearPersistedBuiltinConfig(cwd);
+
+    expect(cleared).toHaveLength(2);
+    expect(existsSync(join(dir, "iii-http.yaml"))).toBe(false);
+    expect(existsSync(join(dir, "iii-state.yaml"))).toBe(false);
+    expect(existsSync(join(dir, "agentmemory.yaml"))).toBe(true);
+  });
+
+  it("is a no-op when the engine has never persisted anything", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "agentmemory-engine-"));
+
+    expect(clearPersistedBuiltinConfig(cwd)).toEqual([]);
   });
 });

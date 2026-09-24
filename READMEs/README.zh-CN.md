@@ -124,7 +124,7 @@ npx 会按版本缓存。用 `npx -y @agentmemory/agentmemory@latest` 强制拉�
 <details>
 <summary><strong>已在运行自己的 iii 引擎</strong></summary>
 
-agentmemory 固定 iii-engine v0.11.2,不会挂接到其他版本(worker 无法使用其他引擎的协议)。停止另一个引擎,然后运行 `npx -y @agentmemory/agentmemory@latest`。它会在 `~/.agentmemory/bin` 安装并运行固定的 v0.11.2,不动你自己的 `iii`。
+agentmemory 固定 iii-engine v0.19.7,不会挂接到其他版本(worker 无法使用其他引擎的协议)。停止另一个引擎,然后运行 `npx -y @agentmemory/agentmemory@latest`。它会在 `~/.agentmemory/bin` 安装并运行固定的 v0.19.7,不动你自己的 `iii`。
 
 </details>
 
@@ -463,7 +463,7 @@ npx @agentmemory/agentmemory
 
 <h2 id="quick-start"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-quickstart.svg"><img src="../assets/tags/section-quickstart.svg" alt="Quick Start" height="32" /></picture></h2>
 
-兼容性:此版本面向稳定的 `iii-sdk` `^0.11.0` 和 iii-engine v0.11.x。
+兼容性:此版本面向 `iii-sdk` 0.19.7,并将 iii-engine 固定在 v0.19.7。
 
 ### 30 秒体验
 
@@ -515,7 +515,7 @@ npx @agentmemory/agentmemory import-jsonl ~/.claude/projects/-my-project/abc123.
 npx @agentmemory/agentmemory upgrade
 ```
 
-警告:此命令会变更当前工作空间/运行时。它可能更新 JavaScript 依赖,并拉取固定版本的 Docker 镜像 `iiidev/iii:0.11.2`。它绝不会安装未固定版本或更新的 iii 引擎。
+警告:此命令会变更当前工作空间/运行时。它可能更新 JavaScript 依赖,并拉取固定版本的 Docker 镜像 `iiidev/iii:0.19.7`。它绝不会安装未固定版本或更新的 iii 引擎。
 
 实现细节见 `src/cli.ts`(参考 `src/cli.ts:544-595` 附近的 `runUpgrade`)。
 
@@ -720,15 +720,15 @@ npm install && npm run build && npm start
 
 如果已经安装 `iii`,这会以本地 `iii-engine` 启动 agentmemory;如果 Docker 可用,则回退到 Docker Compose。REST、流和查看器默认绑定到 `127.0.0.1`。
 
-手动安装 `iii-engine`。**agentmemory 当前将 `iii-engine` 固定在 `v0.11.2`**。`v0.11.6` 引入了新的「通过 `iii worker add` 沙盒化一切」模型,agentmemory 尚未为此重构。重构落地后即解除固定。如果你已经手动迁移到沙盒模型,可用 `AGENTMEMORY_III_VERSION=<version>` 覆盖。
+手动安装 `iii-engine`。**agentmemory 当前将 `iii-engine` 固定在 `v0.19.7`**,与其 `iii-sdk` 依赖是同一个版本;worker 使用的是该引擎的 wire 协议,而 0.20.0 重组了 SDK 接口,因此两者在 agentmemory 的每个版本中一起升级。如果你运行自己的引擎并确定版本匹配,可用 `AGENTMEMORY_III_VERSION=<version>` 覆盖。
 
-- **macOS arm64:** `mkdir -p ~/.local/bin && curl -fsSL https://github.com/iii-hq/iii/releases/download/iii/v0.11.2/iii-aarch64-apple-darwin.tar.gz | tar -xz -C ~/.local/bin && chmod +x ~/.local/bin/iii`
+- **macOS arm64:** `mkdir -p ~/.local/bin && curl -fsSL https://github.com/iii-hq/iii/releases/download/iii/v0.19.7/iii-aarch64-apple-darwin.tar.gz | tar -xz -C ~/.local/bin && chmod +x ~/.local/bin/iii`
 - **macOS x64:** 把 `aarch64-apple-darwin` 换成 `x86_64-apple-darwin`
 - **Linux x64:** 换成 `x86_64-unknown-linux-gnu`
 - **Linux arm64:** 换成 `aarch64-unknown-linux-gnu`
-- **Windows:** 从 [iii-hq/iii releases v0.11.2](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.11.2) 下载 `iii-x86_64-pc-windows-msvc.zip`,提取 `iii.exe`,加入 PATH
+- **Windows:** 从 [iii-hq/iii releases v0.19.7](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.19.7) 下载 `iii-x86_64-pc-windows-msvc.zip`,提取 `iii.exe`,加入 PATH
 
-或使用 Docker(捆绑的 `docker-compose.yml` 会拉取 `iiidev/iii:0.11.2`)。完整文档:[iii.dev/docs](https://iii.dev/docs)。
+或使用 Docker(捆绑的 `docker-compose.yml` 会拉取 `iiidev/iii:0.19.7`)。完整文档:[iii.dev/docs](https://iii.dev/docs)。
 
 ### Windows
 
@@ -737,9 +737,9 @@ agentmemory 可在 Windows 10/11 运行,但仅 Node.js 包不够;你还需要 `i
 **选项 A:预构建 Windows 二进制(推荐)**
 
 ```powershell
-# 1. 在浏览器打开 https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.11.2
-#    (我们固定在 v0.11.2,直到 agentmemory 为 v0.11.6+ 引擎要求的
-#     新沙盒模型完成重构)
+# 1. 在浏览器打开 https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.19.7
+#    (agentmemory 将引擎固定在与其 iii-sdk 相同的版本;
+#     当前配对为 v0.19.7)
 # 2. 下载 iii-x86_64-pc-windows-msvc.zip
 #    (如果是 ARM 机器则下载 iii-aarch64-pc-windows-msvc.zip)
 # 3. 把 iii.exe 解压到 PATH 上的某处,或放在:
@@ -747,7 +747,7 @@ agentmemory 可在 Windows 10/11 运行,但仅 Node.js 包不够;你还需要 `i
 #    (agentmemory 会自动检查该位置)
 # 4. 验证:
 iii --version
-# 应输出:0.11.2
+# 应输出:0.19.7
 
 # 5. 然后照常运行 agentmemory:
 npx -y @agentmemory/agentmemory
@@ -779,7 +779,7 @@ npx -y @agentmemory/mcp
 | 端口冲突 | `netstat -ano \| findstr :3111` 查看占用,然后 kill 或用 `--port <N>` |
 | Docker 已安装但仍跳过回退 | 确保 Docker Desktop 确实在运行(系统托盘图标) |
 
-> 注意:iii **引擎** 是预构建的二进制文件,而非 cargo crate,所以不要尝试用 `cargo install` 安装它。(iii 的 **SDK** 确实已发布到 crates.io、npm 和 PyPI,但 agentmemory 并不需要它们。)受支持的引擎安装方式均固定为 v0.11.2:上面的预构建 v0.11.2 二进制、**带版本固定** 的上游 `sh` 安装脚本 `curl -fsSL https://install.iii.dev/iii/main/install.sh | VERSION=0.11.2 sh`(macOS/Linux),以及 Docker 镜像 `iiidev/iii:0.11.2`。直接运行 `install.sh | sh` 会安装 **最新** 引擎,而 agentmemory 不支持该版本;请务必传入 `VERSION=0.11.2`。最简单的方式:直接运行 `npx @agentmemory/agentmemory`,它会为你把固定版本的引擎获取到 `~/.agentmemory/bin`。
+> 注意:iii **引擎** 是预构建的二进制文件,而非 cargo crate,所以不要尝试用 `cargo install` 安装它。(iii 的 **SDK** 确实已发布到 crates.io、npm 和 PyPI,但 agentmemory 并不需要它们。)受支持的引擎安装方式均固定为 v0.19.7:上面的预构建 v0.19.7 二进制、**带版本固定** 的上游 `sh` 安装脚本 `curl -fsSL https://install.iii.dev/iii/main/install.sh | VERSION=0.19.7 sh`(macOS/Linux),以及 Docker 镜像 `iiidev/iii:0.19.7`。直接运行 `install.sh | sh` 会安装 **最新** 引擎,而 agentmemory 不支持该版本;请务必传入 `VERSION=0.19.7`。最简单的方式:直接运行 `npx @agentmemory/agentmemory`,它会为你把固定版本的引擎获取到 `~/.agentmemory/bin`。
 
 ---
 
