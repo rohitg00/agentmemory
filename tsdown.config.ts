@@ -82,5 +82,22 @@ export default defineConfig([
     ...shared,
     clean: false,
     sourcemap: false,
+    // Assets ride on the last mapped block only. Setting `copy` on every
+    // block would run these copies once per entry, and the parallel copies
+    // race each other (EBUSY on Windows). Copying from tsdown rather than a
+    // shell `cp` in the npm script keeps the build working where npm runs
+    // scripts through cmd.exe and POSIX file utilities do not exist.
+    ...(entry === hookEntries[hookEntries.length - 1]
+      ? {
+          copy: [
+            { from: "iii-config.yaml", to: "dist" },
+            { from: "iii-config.docker.yaml", to: "dist" },
+            { from: "docker-compose.yml", to: "dist" },
+            { from: ".env.example", to: "dist" },
+            { from: "src/viewer/index.html", to: "dist/viewer" },
+            { from: "src/viewer/favicon.svg", to: "dist/viewer" },
+          ],
+        }
+      : {}),
   })),
 ]);
