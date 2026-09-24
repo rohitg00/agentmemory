@@ -20,6 +20,7 @@ export class SearchIndex {
   private readonly b = 0.75;
 
   add(obs: CompressedObservation): void {
+    if (this.entries.has(obs.id)) this.remove(obs.id);
     const terms = this.extractTerms(obs);
     const termFreq = new Map<string, number>();
     let termCount = 0;

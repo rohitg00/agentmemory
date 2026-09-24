@@ -643,7 +643,9 @@ async function main() {
         `[agentmemory] Search index flush did not finish within ${SHUTDOWN_FLUSH_TIMEOUT_MS}ms; the engine is probably gone. Observations are already in the engine's state store and the index reconciles them on the next boot.`,
       );
     }
-    await settleWithin(sdk.shutdown(), SHUTDOWN_FLUSH_TIMEOUT_MS);
+    await settleWithin(sdk.shutdown(), SHUTDOWN_FLUSH_TIMEOUT_MS).catch((err) => {
+      console.warn(`[agentmemory] SDK shutdown failed:`, err);
+    });
     clearWorkerPidfile();
     process.exit(0);
   };

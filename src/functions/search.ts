@@ -315,15 +315,17 @@ export async function reconcileIndex(kv: StateKV): Promise<number> {
   const indexed = idx.observationCountsBySession()
   const missing: CompressedObservation[] = []
   for (const session of sessions) {
-    if ((session.observationCount ?? 0) <= (indexed.get(session.id) ?? 0)) continue
+    const known = session.observationCount ?? 0
+    if (known > 0 && known <= (indexed.get(session.id) ?? 0)) continue
     const observations = await kv.list<CompressedObservation>(KV.observations(session.id))
     for (const obs of observations) {
       if (!obs.title || !obs.narrative || idx.has(obs.id)) continue
       missing.push(obs)
     }
   }
-  if (missing.length === 0) return 0
-  return indexRecords(missing, [])
+  const stillMissing = missing.filter((obs) => !idx.has(obs.id))
+  if (stillMissing.length === 0) return 0
+  return indexRecords(stillMissing, [])
 }
 
 export async function rebuildIndex(kv: StateKV): Promise<number> {

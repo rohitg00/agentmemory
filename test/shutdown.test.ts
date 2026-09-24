@@ -10,8 +10,8 @@ describe("settleWithin", () => {
     expect(await settleWithin(Promise.resolve("ok"), 1000)).toBe(true);
   });
 
-  it("treats a rejection as settled", async () => {
-    expect(await settleWithin(Promise.reject(new Error("boom")), 1000)).toBe(true);
+  it("propagates a rejection instead of reporting success", async () => {
+    await expect(settleWithin(Promise.reject(new Error("boom")), 1000)).rejects.toThrow("boom");
   });
 
   it("resolves false when the work never settles", async () => {

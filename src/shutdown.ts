@@ -10,7 +10,7 @@ export async function settleWithin(
     timer = setTimeout(() => resolve(false), ms);
   });
   try {
-    return await Promise.race([work.then(() => true, () => true), expiry]);
+    return await Promise.race([work.then(() => true), expiry]);
   } finally {
     clearTimeout(timer);
   }
