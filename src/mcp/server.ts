@@ -684,6 +684,7 @@ export function registerMcpEndpoints(
               title: args.title,
               description: args.description,
               priority: args.priority,
+              createdBy: typeof args.createdBy === "string" ? args.createdBy : undefined,
               project: args.project,
               tags,
               parentId: args.parentId,
