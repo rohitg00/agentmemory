@@ -13,6 +13,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Dependabot no longer proposes `iii-sdk` bumps; the engine pin and the SDK version are updated together by hand.
 - The deploy Dockerfiles (`deploy/fly`, `railway`, `render`, `coolify`) refuse to build when `III_VERSION` and `III_SDK_VERSION` differ, so overriding the engine tag alone can no longer produce a worker that speaks the wrong wire protocol.
 
+### Added
+
+- **`agentmemory console`** launches the iii web console (workers, functions, triggers, queues, traces) through the pinned engine, against the ports agentmemory resolved, one port above the viewer by default (`--console-port` overrides). Engine 0.22 ships the console as part of `iii` and downloads it on first use, so the "install iii console?" prompt on start and the `skipConsoleInstall` preference are gone; the ready panel now points at the command instead.
+
 ### Fixed
 
 - **The search index snapshot is written continuously, not only on clean shutdown.** Every observation, compression result and memory save now schedules the debounced snapshot write, and bulk indexing (import, replay, rebuild) does the same. Before, the BM25/vector snapshot was written only by a graceful shutdown; after a crash, `kill -9` or power loss the worker booted the stale snapshot, skipped the rebuild because the snapshot was not empty, and every observation captured since the last clean stop stayed invisible to search for good. On boot the worker now also compares the loaded snapshot against each session's observation count and re-indexes whatever is missing. Re-adding an observation under an id that is already indexed (compression replacing the synthetic entry) now replaces the index document instead of stacking postings on top of the old ones.

@@ -1210,22 +1210,20 @@ agentmemory ships this for free because every function call and trigger fires th
   <em>Workers page: every connected worker, including agentmemory itself, with PID, function count, runtime, and last-seen.</em>
 </p>
 
-**Already installed.** The console ships with `iii`; no separate installer.
+**Already installed.** The console ships with the pinned `iii` engine (0.22+); nothing separate to install. The first launch downloads the console binary next to the engine.
 
 **Launch alongside agentmemory:**
 
 ```bash
-# agentmemory viewer holds port 3113, so run the console on 3114.
-# Engine REST (3111), WebSocket (3112), and bridge (49134) defaults match agentmemory.
-iii console --port 3114
+agentmemory console
 ```
 
-Then open `http://localhost:3114`. Add `--enable-flow` for the experimental architecture-graph page.
+This runs the pinned engine's `iii console` against the ports agentmemory resolved (REST, streams, bridge) and serves it one port above the viewer, `http://localhost:3114` by default. `--console-port N` picks another port; `--port` and `--instance` select the agentmemory instance the same way they do for `stop`; any other flag is passed through, for example `--enable-flow` for the experimental architecture-graph page.
 
-Override engine endpoints only if you've moved them:
+The same thing by hand, useful when `agentmemory` is not on PATH:
 
 ```bash
-iii console --port 3114 \
+~/.agentmemory/bin/iii console --port 3114 \
   --engine-port 3111 \
   --ws-port 3112 \
   --bridge-port 49134
