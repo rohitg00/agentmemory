@@ -4,6 +4,9 @@ export interface Session {
   cwd: string;
   startedAt: string;
   endedAt?: string;
+  // Stamped on every observation (src/functions/observe.ts); the inactivity
+  // signal mem::session-sweep ages sessions by.
+  updatedAt?: string;
   status: "active" | "completed" | "abandoned";
   observationCount: number;
   model?: string;
@@ -622,6 +625,7 @@ export interface AuditEntry {
     | "reflect"
     | "insight_search"
     | "skill_extract"
+    | "session_sweep"
     | "core_add"
     | "core_remove"
     | "auto_page"
