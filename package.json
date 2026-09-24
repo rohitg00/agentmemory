@@ -64,7 +64,7 @@
     "@anthropic-ai/claude-agent-sdk": "^0.3.142",
     "@anthropic-ai/sdk": "^0.100.1",
     "@clack/prompts": "^1.2.0",
-    "dotenv": "^17.4.2",
+    "dotenv": "^18.0.1",
     "@iii-dev/helpers": "0.22.1",
     "iii-sdk": "0.22.1",
     "picocolors": "^1.1.1",
