@@ -57,7 +57,8 @@ export function registerConsolidationPipelineFunction(
       const results: Record<string, unknown> = {};
 
       if (tier === "all" || tier === "semantic") {
-        const summaries = await kv.list<SessionSummary>(KV.summaries);
+        let summaries = await kv.list<SessionSummary>(KV.summaries);
+        if (data?.project) summaries = summaries.filter((s) => s.project === data.project);
         const existingSemantic = await kv.list<SemanticMemory>(KV.semantic);
 
         if (summaries.length >= 5) {

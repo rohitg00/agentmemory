@@ -249,4 +249,40 @@ describe("Consolidation Pipeline", () => {
     expect(result.results).toBeDefined();
     vi.mocked(isConsolidationEnabled).mockReturnValue(true);
   });
+
+  it("filters session summaries by project when specified", async () => {
+    const provider = {
+      name: "test",
+      compress: vi.fn(),
+      summarize: vi.fn().mockResolvedValue(
+        `<facts><fact confidence="0.9">Alpha pipeline is ready</fact></facts>`,
+      ),
+    };
+    registerConsolidationPipelineFunction(sdk as never, kv as never, provider as never);
+
+    // Project alpha: 5 summaries
+    for (let i = 0; i < 5; i++) {
+      await kv.set("mem:summaries", `ses_alpha_${i}`, {
+        ...makeSummary(i),
+        project: "proj-alpha",
+      });
+    }
+    // Project beta: 5 summaries
+    for (let i = 0; i < 5; i++) {
+      await kv.set("mem:summaries", `ses_beta_${i}`, {
+        ...makeSummary(10 + i),
+        project: "proj-beta",
+      });
+    }
+
+    const result = (await sdk.trigger("mem::consolidate-pipeline", {
+      tier: "semantic",
+      project: "proj-alpha",
+    })) as { success: boolean; results: Record<string, unknown> };
+
+    expect(result.success).toBe(true);
+    const semantic = result.results.semantic as { newFacts: number; totalSummaries: number };
+    expect(semantic.totalSummaries).toBe(5);
+    expect(provider.summarize).toHaveBeenCalledTimes(1);
+  });
 });
