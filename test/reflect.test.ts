@@ -1,10 +1,12 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 vi.mock("../src/logger.js", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
 import { registerReflectFunctions } from "../src/functions/reflect.js";
+import { buildReflectPrompt } from "../src/prompts/reflect.js";
+import { logger } from "../src/logger.js";
 import type { Insight, GraphNode, GraphEdge, SemanticMemory, Lesson, Crystal } from "../src/types.js";
 
 function mockKV() {
@@ -67,6 +69,33 @@ function makeEdge(src: string, tgt: string): GraphEdge {
     sourceObservationIds: [],
     createdAt: "2026-04-01T00:00:00Z",
   };
+}
+
+function seedGraphSnapshot(
+  kv: ReturnType<typeof mockKV>,
+  nodes: GraphNode[],
+  edges: GraphEdge[],
+) {
+  return kv.set("mem:graph:snapshot", "current", {
+    version: 1,
+    topNodes: nodes,
+    topEdges: edges,
+    topDegrees: {},
+    stats: {
+      totalNodes: nodes.length,
+      totalEdges: edges.length,
+      nodesByType: {},
+      edgesByType: {},
+    },
+    updatedAt: "2026-04-01T00:00:00Z",
+    dirty: false,
+  });
+}
+
+function graphScopeListCalls(listSpy: { mock: { calls: unknown[][] } }) {
+  return listSpy.mock.calls.filter(
+    ([scope]) => scope === "mem:graph:nodes" || scope === "mem:graph:edges",
+  );
 }
 
 function makeSemantic(fact: string, id?: string): SemanticMemory {
@@ -135,6 +164,11 @@ describe("Reflect", () => {
       summarize: vi.fn().mockResolvedValue(XML_RESPONSE),
     };
     registerReflectFunctions(sdk as never, kv as never, provider as never);
+    vi.mocked(logger.warn).mockClear();
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
   });
 
   describe("mem::reflect", () => {
@@ -151,11 +185,11 @@ describe("Reflect", () => {
     });
 
     it("synthesizes insights from graph concept clusters", async () => {
-      await kv.set("mem:graph:nodes", "node_security", makeConceptNode("security"));
-      await kv.set("mem:graph:nodes", "node_validation", makeConceptNode("validation"));
-      await kv.set("mem:graph:nodes", "node_testing", makeConceptNode("testing"));
-      await kv.set("mem:graph:edges", "edge_1", makeEdge("security", "validation"));
-      await kv.set("mem:graph:edges", "edge_2", makeEdge("security", "testing"));
+      await seedGraphSnapshot(
+        kv,
+        [makeConceptNode("security"), makeConceptNode("validation"), makeConceptNode("testing")],
+        [makeEdge("security", "validation"), makeEdge("security", "testing")],
+      );
 
       await kv.set("mem:semantic", "sem_1", makeSemantic("Always validate security inputs"));
       await kv.set("mem:semantic", "sem_2", makeSemantic("Testing improves security coverage"));
@@ -178,9 +212,11 @@ describe("Reflect", () => {
     });
 
     it("skips clusters with fewer than 3 supporting items", async () => {
-      await kv.set("mem:graph:nodes", "node_sparse", makeConceptNode("sparse"));
-      await kv.set("mem:graph:nodes", "node_topic", makeConceptNode("topic"));
-      await kv.set("mem:graph:edges", "edge_1", makeEdge("sparse", "topic"));
+      await seedGraphSnapshot(
+        kv,
+        [makeConceptNode("sparse"), makeConceptNode("topic")],
+        [makeEdge("sparse", "topic")],
+      );
       await kv.set("mem:semantic", "sem_1", makeSemantic("One sparse fact"));
 
       const result = (await sdk.trigger("mem::reflect", {})) as {
@@ -194,9 +230,11 @@ describe("Reflect", () => {
     });
 
     it("deduplicates insights by fingerprint", async () => {
-      await kv.set("mem:graph:nodes", "node_security", makeConceptNode("security"));
-      await kv.set("mem:graph:nodes", "node_validation", makeConceptNode("validation"));
-      await kv.set("mem:graph:edges", "edge_1", makeEdge("security", "validation"));
+      await seedGraphSnapshot(
+        kv,
+        [makeConceptNode("security"), makeConceptNode("validation")],
+        [makeEdge("security", "validation")],
+      );
       await kv.set("mem:semantic", "sem_1", makeSemantic("Always validate security inputs"));
       await kv.set("mem:semantic", "sem_2", makeSemantic("Testing improves security coverage"));
       await kv.set("mem:semantic", "sem_3", makeSemantic("Validation prevents injection"));
@@ -233,12 +271,14 @@ describe("Reflect", () => {
       expect(result.usedFallback).toBe(true);
     });
 
-    it("handles LLM failure gracefully", async () => {
+    it("logs LLM failures instead of swallowing them", async () => {
       provider.summarize.mockRejectedValue(new Error("LLM timeout"));
 
-      await kv.set("mem:graph:nodes", "node_a", makeConceptNode("concept_a"));
-      await kv.set("mem:graph:nodes", "node_b", makeConceptNode("concept_b"));
-      await kv.set("mem:graph:edges", "edge_1", makeEdge("concept_a", "concept_b"));
+      await seedGraphSnapshot(
+        kv,
+        [makeConceptNode("concept_a"), makeConceptNode("concept_b")],
+        [makeEdge("concept_a", "concept_b")],
+      );
       await kv.set("mem:semantic", "sem_1", makeSemantic("fact about concept_a"));
       await kv.set("mem:semantic", "sem_2", makeSemantic("fact about concept_b"));
       await kv.set("mem:semantic", "sem_3", makeSemantic("concept_a and concept_b together"));
@@ -250,6 +290,142 @@ describe("Reflect", () => {
 
       expect(result.success).toBe(true);
       expect(result.newInsights).toBe(0);
+      expect(logger.warn).toHaveBeenCalledWith(
+        "reflect: cluster synthesis failed",
+        expect.objectContaining({ error: "LLM timeout" }),
+      );
+    });
+
+    it("seeds clusters from the graph snapshot without enumerating graph scopes", async () => {
+      await seedGraphSnapshot(
+        kv,
+        [makeConceptNode("security"), makeConceptNode("validation")],
+        [makeEdge("security", "validation")],
+      );
+      await kv.set("mem:semantic", "sem_1", makeSemantic("Always validate security inputs"));
+      await kv.set("mem:semantic", "sem_2", makeSemantic("Testing improves security coverage"));
+      await kv.set("mem:semantic", "sem_3", makeSemantic("Validation prevents injection"));
+      const listSpy = vi.spyOn(kv, "list");
+
+      const result = (await sdk.trigger("mem::reflect", {})) as {
+        newInsights: number;
+        usedFallback: boolean;
+      };
+
+      expect(result.usedFallback).toBe(false);
+      expect(result.newInsights).toBe(2);
+      expect(graphScopeListCalls(listSpy)).toEqual([]);
+    });
+
+    it("uses the Jaccard fallback without enumerating graph scopes when no snapshot exists", async () => {
+      await kv.set("mem:graph:nodes", "node_security", makeConceptNode("security"));
+      await kv.set("mem:graph:nodes", "node_validation", makeConceptNode("validation"));
+      await kv.set("mem:graph:edges", "edge_1", makeEdge("security", "validation"));
+      await kv.set("mem:semantic", "sem_1", makeSemantic("security validation is important"));
+      await kv.set("mem:semantic", "sem_2", makeSemantic("security testing prevents bugs"));
+      await kv.set("mem:semantic", "sem_3", makeSemantic("validation testing framework"));
+      const listSpy = vi.spyOn(kv, "list");
+
+      const result = (await sdk.trigger("mem::reflect", {})) as {
+        usedFallback: boolean;
+      };
+
+      expect(result.usedFallback).toBe(true);
+      expect(graphScopeListCalls(listSpy)).toEqual([]);
+    });
+
+    it("caps the cluster prompt sent to the provider", async () => {
+      vi.stubEnv("AGENTMEMORY_REFLECT_PROMPT_CHARS", "4000");
+      await seedGraphSnapshot(
+        kv,
+        [makeConceptNode("security"), makeConceptNode("validation")],
+        [makeEdge("security", "validation")],
+      );
+      for (let i = 0; i < 300; i++) {
+        const lesson = makeLesson(`security lesson ${i} ${"detail ".repeat(30)}`, ["security"]);
+        await kv.set("mem:lessons", `lsn_${i}`, { ...lesson, id: `lsn_${i}` });
+      }
+
+      await sdk.trigger("mem::reflect", {});
+
+      expect(provider.summarize).toHaveBeenCalled();
+      for (const [, prompt] of provider.summarize.mock.calls) {
+        expect((prompt as string).length).toBeLessThanOrEqual(4000);
+      }
+    });
+  });
+
+  describe("buildReflectPrompt", () => {
+    afterEach(() => {
+      vi.unstubAllEnvs();
+    });
+
+    const lessons = (count: number) =>
+      Array.from({ length: count }, (_, i) => ({
+        content: `lesson-${i} ${"x".repeat(100)}`,
+        confidence: i / count,
+      }));
+
+    it("keeps a small cluster intact", () => {
+      const prompt = buildReflectPrompt({
+        concepts: ["security", "validation"],
+        facts: [{ fact: "Validate inputs", confidence: 0.9 }],
+        lessons: [{ content: "Use execFile", confidence: 0.7 }],
+        crystalNarratives: ["Hardened the shell runner"],
+      });
+
+      expect(prompt).toContain("## Concept Cluster: security, validation");
+      expect(prompt).toContain("- [confidence=0.9] Validate inputs");
+      expect(prompt).toContain("- [confidence=0.7] Use execFile");
+      expect(prompt).toContain("- Hardened the shell runner");
+    });
+
+    it("bounds a large cluster to the default budget, highest confidence first", () => {
+      const prompt = buildReflectPrompt({
+        concepts: ["security"],
+        facts: [],
+        lessons: lessons(500),
+        crystalNarratives: [],
+      });
+
+      expect(prompt.length).toBeLessThanOrEqual(12000);
+      expect(prompt).toContain("lesson-499 ");
+      expect(prompt).not.toContain("lesson-0 ");
+    });
+
+    it("honors AGENTMEMORY_REFLECT_PROMPT_CHARS with a 2000-char floor", () => {
+      vi.stubEnv("AGENTMEMORY_REFLECT_PROMPT_CHARS", "3000");
+      const capped = buildReflectPrompt({
+        concepts: ["security"],
+        facts: [],
+        lessons: lessons(500),
+        crystalNarratives: [],
+      });
+      expect(capped.length).toBeLessThanOrEqual(3000);
+      expect(capped.length).toBeGreaterThan(2000);
+
+      vi.stubEnv("AGENTMEMORY_REFLECT_PROMPT_CHARS", "10");
+      const floored = buildReflectPrompt({
+        concepts: ["security"],
+        facts: [],
+        lessons: lessons(500),
+        crystalNarratives: [],
+      });
+      expect(floored.length).toBeLessThanOrEqual(2000);
+      expect(floored).toContain("lesson-499 ");
+    });
+
+    it("truncates oversized items so one item cannot consume the budget", () => {
+      const prompt = buildReflectPrompt({
+        concepts: ["security"],
+        facts: [{ fact: "y".repeat(5000), confidence: 0.9 }],
+        lessons: [{ content: "Use execFile", confidence: 0.7 }],
+        crystalNarratives: [],
+      });
+
+      expect(prompt).not.toContain("y".repeat(801));
+      expect(prompt).toContain("…");
+      expect(prompt).toContain("Use execFile");
     });
   });
 

@@ -11,6 +11,8 @@ import type {
   MemoryProvider,
 } from "../types.js";
 import { recordAudit } from "./audit.js";
+import { readSnapshot } from "./graph.js";
+import { logger } from "../logger.js";
 import { REFLECT_SYSTEM, buildReflectPrompt } from "../prompts/reflect.js";
 
 interface ConceptCluster {
@@ -171,14 +173,19 @@ export function registerReflectFunctions(
       const maxInsightsPerCluster = 5;
       const maxTotal = 50;
 
-      const [graphNodes, graphEdges, semanticMemories, lessons, crystals] =
+      // #814: enumerating the full graph node/edge scopes on a large corpus
+      // blocks the worker long enough for the engine to declare it dead.
+      // Cluster seeds only need the top-degree subgraph, which the snapshot
+      // already holds; without a snapshot we use the Jaccard fallback.
+      const [snapshot, semanticMemories, lessons, crystals] =
         await Promise.all([
-          kv.list<GraphNode>(KV.graphNodes).catch(() => []),
-          kv.list<GraphEdge>(KV.graphEdges).catch(() => []),
+          readSnapshot(kv),
           kv.list<SemanticMemory>(KV.semantic).catch(() => []),
           kv.list<Lesson>(KV.lessons).catch(() => []),
           kv.list<Crystal>(KV.crystals).catch(() => []),
         ]);
+      const graphNodes: GraphNode[] = snapshot?.topNodes ?? [];
+      const graphEdges: GraphEdge[] = snapshot?.topEdges ?? [];
 
       let activeLessons = lessons.filter((l) => !l.deleted);
       if (data?.project) {
@@ -308,8 +315,11 @@ export function registerReflectFunctions(
             clusterCount++;
             totalInsights++;
           }
-        } catch {
-          continue;
+        } catch (err) {
+          logger.warn("reflect: cluster synthesis failed", {
+            concepts: conceptNames.slice(0, 6),
+            error: err instanceof Error ? err.message : String(err),
+          });
         }
       }
 
