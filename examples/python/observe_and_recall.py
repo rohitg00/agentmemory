@@ -4,7 +4,7 @@ Pattern: send hook-style observations during a coding session, then ask
 agentmemory to render the most relevant context back at a fixed token budget.
 
 Prerequisites:
-    pip install iii-sdk
+    pip install iii-sdk==0.22.1
     npx -y @agentmemory/agentmemory
 
 Run:

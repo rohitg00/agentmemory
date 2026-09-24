@@ -10,7 +10,7 @@ This example uses the official Python SDK.
 ## Install
 
 ```bash
-pip install iii-sdk
+pip install iii-sdk==0.22.1
 ```
 
 ## Quickstart

@@ -1158,7 +1158,7 @@ iii console --port 3114 \
 
 **Traces는 이미 켜져 있습니다:**
 
-`iii-config.yaml`은 `iii-observability` 워커가 활성화된 상태로 제공됩니다(`exporter: memory`, `sampling_ratio: 1.0`, metrics + logs). 추가 설정이 필요 없습니다. agentmemory가 시작되는 순간 모든 메모리 작업이 콘솔이 읽을 수 있는 trace span과 구조화된 로그를 방출합니다.
+`iii-config.yaml`은 `iii-observability` 워커가 활성화된 상태로 제공됩니다(`exporter: memory`, `sampling_ratio: 0.1`, metrics + logs). 추가 설정이 필요 없습니다. agentmemory가 시작되는 순간 모든 메모리 작업이 콘솔이 읽을 수 있는 trace span과 구조화된 로그를 방출합니다.
 
 대신 Jaeger/Honeycomb/Grafana Tempo로 내보내고 싶다면 `exporter: memory`를 `exporter: otlp`로 변경하고 iii의 가시성 문서에 따라 collector 엔드포인트를 설정하십시오.
 

@@ -1176,7 +1176,7 @@ iii console --port 3114 \
 
 **Traces уже включены:**
 
-`iii-config.yaml` поставляется с включённым воркером `iii-observability` (`exporter: memory`, `sampling_ratio: 1.0`, метрики + логи). Дополнительная настройка не нужна — как только agentmemory запускается, каждая операция памяти эмитит trace-span и структурированный лог, который консоль читает.
+`iii-config.yaml` поставляется с включённым воркером `iii-observability` (`exporter: memory`, `sampling_ratio: 0.1`, метрики + логи). Дополнительная настройка не нужна — как только agentmemory запускается, каждая операция памяти эмитит trace-span и структурированный лог, который консоль читает.
 
 Если хотите экспортировать в Jaeger/Honeycomb/Grafana Tempo, измените `exporter: memory` на `exporter: otlp` и укажите эндпоинт коллектора согласно документации по observability в iii.
 
