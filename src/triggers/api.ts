@@ -1983,6 +1983,11 @@ export function registerApiTriggers(
           : undefined;
       const offset =
         Number.isInteger(parsedOffset) && parsedOffset >= 0 ? parsedOffset : 0;
+      filtered.sort((a, b) =>
+        (b.updatedAt || b.createdAt || "").localeCompare(
+          a.updatedAt || a.createdAt || "",
+        ),
+      );
       const sliced =
         limit !== undefined ? filtered.slice(offset, offset + limit) : filtered;
 
