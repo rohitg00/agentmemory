@@ -1467,37 +1467,44 @@
       }
     }
 
+    var dashboardLoadPromise = null;
+    var dashboardRefreshPending = false;
     async function loadDashboard() {
+      if (dashboardLoadPromise) return dashboardLoadPromise;
+      dashboardLoadPromise = (async function() {
+        do {
+          dashboardRefreshPending = false;
+          await loadDashboardOnce();
+        } while (dashboardRefreshPending);
+      })();
+      try {
+        await dashboardLoadPromise;
+      } finally {
+        dashboardLoadPromise = null;
+      }
+    }
+
+    async function loadDashboardOnce() {
       var el = document.getElementById('view-dashboard');
       if (!state.dashboard.loaded) el.innerHTML = '<div class="loading">Loading dashboard...</div>';
       try {
-        var results = await Promise.all([
-          api('health', { readErrorBody: true }),
-          apiGet('sessions'),
-          apiGet('memories?latest=true&limit=500'),
-          apiGet('graph/stats'),
-          apiGet('audit?limit=5'),
-          apiGet('semantic'),
-          apiGet('procedural'),
-          apiGet('relations'),
-          apiGet('lessons'),
-          apiGet('crystals')
-        ]);
+        var results = [
+          await api('health', { readErrorBody: true }),
+          await apiGet('sessions'),
+          await apiGet('memories?latest=true&limit=500'),
+          await apiGet('graph/stats'),
+          await apiGet('audit?limit=5')
+        ];
         state.dashboard.health = results[0];
         state.dashboard.sessions = (results[1] && results[1].sessions) || [];
         state.dashboard.memories = (results[2] && results[2].memories) || [];
         state.dashboard.graphStats = results[3];
         state.dashboard.recentAudit = (results[4] && results[4].entries) || [];
-        state.dashboard.semantic = (results[5] && results[5].facts) || (results[5] && results[5].semantic) || [];
-        state.dashboard.procedural = (results[6] && results[6].procedures) || (results[6] && results[6].procedural) || [];
-        state.dashboard.lessons = (results[8] && results[8].lessons) || [];
-        state.dashboard.crystals = (results[9] && results[9].crystals) || [];
-        state.dashboard.relations = (results[7] && results[7].relations) || [];
         state.dashboard.loaded = true;
         renderDashboard();
       } catch (err) {
-        // Without this catch, any uncaught error in the await Promise.all
-        // or the renderDashboard call leaves the dashboard stuck on
+        // Without this catch, an uncaught request or render error leaves
+        // the dashboard stuck on
         // "Loading dashboard..." forever with no indication to the user
         // (#323). apiGet() already swallows network/HTTP errors and
         // returns null, but renderDashboard can still throw on shape
@@ -1545,10 +1552,8 @@
       html += '<div class="stats-grid">';
       html += '<div class="stat-card" data-action="goto-tab" data-tab="sessions" role="link" tabindex="0"><div class="label">Sessions</div><div class="value">' + d.sessions.length + '</div><div class="sub">' + activeSessions + ' active</div></div>';
       html += '<div class="stat-card" data-action="goto-tab" data-tab="memories" role="link" tabindex="0"><div class="label">Memories</div><div class="value">' + d.memories.length + '</div><div class="sub">latest versions</div></div>';
-      var lessonCount = (d.lessons || []).length;
-      var crystalCount = (d.crystals || []).length;
-      html += '<div class="stat-card" data-action="goto-tab" data-tab="lessons" role="link" tabindex="0"><div class="label">Lessons</div><div class="value">' + lessonCount + '</div><div class="sub">confidence-scored</div></div>';
-      html += '<div class="stat-card" data-action="goto-tab" data-tab="crystals" role="link" tabindex="0"><div class="label">Crystals</div><div class="value">' + crystalCount + '</div><div class="sub">action digests</div></div>';
+      html += '<div class="stat-card" data-action="goto-tab" data-tab="lessons" role="link" tabindex="0"><div class="label">Lessons</div><div class="value">&mdash;</div><div class="sub">load tab to view</div></div>';
+      html += '<div class="stat-card" data-action="goto-tab" data-tab="crystals" role="link" tabindex="0"><div class="label">Crystals</div><div class="value">&mdash;</div><div class="sub">load tab to view</div></div>';
       html += '<div class="stat-card" data-action="goto-tab" data-tab="graph" role="link" tabindex="0"><div class="label">Graph Nodes</div><div class="value">' + nodeCount + '</div><div class="sub">' + edgeCount + ' edges</div></div>';
       html += '<div class="stat-card"><div class="label">Health</div><div class="value"><div class="health-bar"><span class="health-dot ' + dotClass + '"></span> ' + esc(healthStatus) + '</div></div>';
       html += '<div class="sub">' + esc(snap.connectionState || 'unknown') + '</div></div>';
@@ -1706,12 +1711,15 @@
       var semFacts = d.semantic || [];
       var procItems = d.procedural || [];
       var relItems = d.relations || [];
+      var consolidationDeferred = d.semantic === undefined;
 
       html += '<hr class="section-rule">';
       html += '<div class="two-col">';
 
       html += '<div class="card"><div class="card-title">Semantic Memory</div>';
-      if (semFacts.length === 0) {
+      if (consolidationDeferred) {
+        html += '<div style="font-size:13px;color:var(--ink-faint);font-style:italic;">Not loaded on the dashboard to keep large memory stores responsive.</div>';
+      } else if (semFacts.length === 0) {
         html += '<div style="font-size:13px;color:var(--ink-faint);font-style:italic;">No semantic facts yet. Observations will be consolidated into semantic memories over time.</div>';
       } else {
           semFacts.slice(0, 5).forEach(function(f) {
@@ -1729,7 +1737,9 @@
         html += '</div>';
 
         html += '<div class="card"><div class="card-title">Procedural Memory</div>';
-      if (procItems.length === 0) {
+      if (consolidationDeferred) {
+        html += '<div style="font-size:13px;color:var(--ink-faint);font-style:italic;">Not loaded on the dashboard to keep large memory stores responsive.</div>';
+      } else if (procItems.length === 0) {
         html += '<div style="font-size:13px;color:var(--ink-faint);font-style:italic;">No procedures yet. Repeated patterns will be extracted as procedures.</div>';
       } else {
           procItems.slice(0, 5).forEach(function(p) {
@@ -1751,10 +1761,10 @@
       html += '</div>';
 
       html += '<div class="card" style="margin-top:16px;"><div class="card-title">Consolidation Status</div>';
-      html += '<div class="consolidation-row"><span class="cl">Semantic facts</span><span class="cv">' + semFacts.length + '</span></div>';
-      html += '<div class="consolidation-row"><span class="cl">Procedures</span><span class="cv">' + procItems.length + '</span></div>';
-      html += '<div class="consolidation-row"><span class="cl">Relations</span><span class="cv">' + relItems.length + '</span></div>';
-      if (semFacts.length === 0 && procItems.length === 0 && relItems.length === 0) {
+      html += '<div class="consolidation-row"><span class="cl">Semantic facts</span><span class="cv">' + (consolidationDeferred ? '&mdash;' : semFacts.length) + '</span></div>';
+      html += '<div class="consolidation-row"><span class="cl">Procedures</span><span class="cv">' + (consolidationDeferred ? '&mdash;' : procItems.length) + '</span></div>';
+      html += '<div class="consolidation-row"><span class="cl">Relations</span><span class="cv">' + (consolidationDeferred ? '&mdash;' : relItems.length) + '</span></div>';
+      if (!consolidationDeferred && semFacts.length === 0 && procItems.length === 0 && relItems.length === 0) {
         html += '<div style="font-size:12px;color:var(--ink-faint);margin-top:8px;line-height:1.5;">Consolidation distills session observations into durable facts and repeatable procedures. It runs on a schedule when <code>CONSOLIDATION_ENABLED=true</code> and an LLM provider key are set, or on demand via <code>memory_consolidate</code>.</div>';
       }
       html += '</div>';
@@ -1782,7 +1792,8 @@
     var dashboardTimer = null;
     function refreshDashboard() {
       state.dashboard.loaded = false;
-      loadDashboard();
+      if (dashboardLoadPromise) dashboardRefreshPending = true;
+      return loadDashboard();
     }
     function startDashboardAutoRefresh() {
       if (dashboardTimer) clearInterval(dashboardTimer);
@@ -3799,8 +3810,7 @@
       pollTimer = setInterval(function() {
         tick++;
         if (state.activeTab === 'dashboard') {
-          state.dashboard.loaded = false;
-          loadDashboard();
+          refreshDashboard();
         } else if (state.activeTab === 'memories') {
           state.memories.loaded = false;
           loadMemories();
@@ -3964,8 +3974,7 @@
         }
       }
       if (state.activeTab === 'dashboard') {
-        state.dashboard.loaded = false;
-        loadDashboard();
+        refreshDashboard();
       }
       if (state.activeTab === 'activity' && msg.observation) {
         state.activity.observations.unshift(msg.observation);

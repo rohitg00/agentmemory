@@ -1,5 +1,5 @@
 import * as vm from "node:vm";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { renderViewerDocument } from "../src/viewer/document.js";
 
 function htmlEscape(value: string): string {
@@ -166,9 +166,10 @@ function loadViewerSandbox() {
   };
 
   const scriptWithoutAutoStart = scriptMatch[1].replace(
-    /\n\s*loadTab\('dashboard'\);\n\s*connectWs\(\);\n\s*startDashboardAutoRefresh\(\);\s*$/,
+    /\n    switchTab\(tabFromRoute\(\), \{ replaceRoute: true \}\);\n    \/\/ Resolve[\s\S]*?\n    startDashboardAutoRefresh\(\);/,
     "\n",
   );
+  expect(scriptWithoutAutoStart).not.toBe(scriptMatch[1]);
 
   vm.createContext(sandbox);
   vm.runInContext(scriptWithoutAutoStart, sandbox);
@@ -176,7 +177,103 @@ function loadViewerSandbox() {
   return { sandbox, getElement };
 }
 
+const DASHBOARD_PATHS = [
+  "/agentmemory/health",
+  "/agentmemory/sessions",
+  "/agentmemory/memories",
+  "/agentmemory/graph/stats",
+  "/agentmemory/audit",
+] as const;
+
 describe("viewer session rendering", () => {
+  it("deduplicates dashboard loads and fetches every endpoint serially", async () => {
+    const { sandbox } = loadViewerSandbox();
+    let active = 0;
+    let maxActive = 0;
+    const paths: string[] = [];
+    sandbox.fetch = async (url: string) => {
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      paths.push(new URL(url).pathname);
+      await Promise.resolve();
+      active -= 1;
+      return { ok: true, json: async () => ({}) };
+    };
+
+    await Promise.all([sandbox.loadDashboard(), sandbox.loadDashboard()]);
+
+    expect(maxActive).toBe(1);
+    expect(paths).toEqual(DASHBOARD_PATHS);
+  });
+
+  it("runs one pending refresh after an in-flight dashboard load", async () => {
+    const { sandbox } = loadViewerSandbox();
+    const paths: string[] = [];
+    let active = 0;
+    let maxActive = 0;
+    let releaseSessions = () => {
+      throw new Error("sessions request did not start");
+    };
+    let sessionsStarted = false;
+    sandbox.fetch = async (url: string) => {
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      paths.push(new URL(url).pathname);
+      if (paths.length === 2) {
+        await new Promise<void>((resolve) => {
+          releaseSessions = resolve;
+          sessionsStarted = true;
+        });
+      }
+      active -= 1;
+      return { ok: true, json: async () => ({}) };
+    };
+
+    const initialLoad = sandbox.loadDashboard();
+    await vi.waitFor(() => expect(sessionsStarted).toBe(true), { timeout: 1000 });
+    const pendingRefresh = sandbox.refreshDashboard();
+    releaseSessions();
+    await pendingRefresh;
+    const pathsWhenRefreshResolved = paths.slice();
+    await initialLoad;
+
+    expect(maxActive).toBe(1);
+    expect(pathsWhenRefreshResolved).toEqual([...DASHBOARD_PATHS, ...DASHBOARD_PATHS]);
+    expect(paths).toEqual([...DASHBOARD_PATHS, ...DASHBOARD_PATHS]);
+  });
+
+  it("starts a fresh dashboard cycle after a failed load", async () => {
+    const { sandbox } = loadViewerSandbox();
+    const getElementById = sandbox.document.getElementById;
+    sandbox.document.getElementById = () => null;
+
+    await expect(sandbox.loadDashboard()).rejects.toThrow();
+
+    sandbox.document.getElementById = getElementById;
+    const paths: string[] = [];
+    sandbox.fetch = async (url: string) => {
+      paths.push(new URL(url).pathname);
+      return { ok: true, json: async () => ({}) };
+    };
+    await sandbox.loadDashboard();
+
+    expect(paths).toEqual(DASHBOARD_PATHS);
+  });
+
+  it("marks lesson and crystal counts as deferred", () => {
+    const { sandbox, getElement } = loadViewerSandbox();
+
+    sandbox.renderDashboard();
+
+    const html = getElement("view-dashboard").innerHTML;
+    expect(html).toContain(
+      '<div class="label">Lessons</div><div class="value">&mdash;</div><div class="sub">load tab to view</div>',
+    );
+    expect(html).toContain(
+      '<div class="label">Crystals</div><div class="value">&mdash;</div><div class="sub">load tab to view</div>',
+    );
+  });
+
   it("attaches the saved viewer bearer to API calls", async () => {
     const { sandbox } = loadViewerSandbox();
     const requests: Array<{ url: string; opts: { headers?: Record<string, string> } }> = [];
