@@ -123,8 +123,9 @@ if (args.includes("--version") || args.includes("-V")) {
 // stops the REST 404s after an engine reconnect. Bump this constant and the
 // package.json dependency together. AGENTMEMORY_III_VERSION overrides the pin
 // for anyone running a self-managed engine.
+const IIPINNED_DEFAULT_VERSION = "0.19.7";
 const IIPINNED_VERSION =
-  process.env["AGENTMEMORY_III_VERSION"] || "0.19.7";
+  process.env["AGENTMEMORY_III_VERSION"] || IIPINNED_DEFAULT_VERSION;
 
 // Map Node platform/arch → the asset name iii-hq/iii ships under
 // https://github.com/iii-hq/iii/releases/download/iii/v<version>/<asset>
@@ -1555,10 +1556,16 @@ function prepareEngineLaunch(configPath: string): {
     const runtimePath = runtimeConfigPath(dataDirResolution.dataDir);
     mkdirSync(dirname(runtimePath), { recursive: true });
     writeFileSync(runtimePath, rewritten, "utf-8");
-    const cleared = clearPersistedBuiltinConfig(cwd);
-    if (cleared.length > 0) {
-      vlog(
-        `cleared ${cleared.length} persisted builtin config entries so the rendered runtime config seeds the engine again`,
+    try {
+      const cleared = clearPersistedBuiltinConfig(cwd);
+      if (cleared.length > 0) {
+        vlog(
+          `cleared ${cleared.length} persisted builtin config entries so the rendered runtime config seeds the engine again`,
+        );
+      }
+    } catch (err) {
+      p.log.warn(
+        `${String(err instanceof Error ? err.message : err)}. The engine will keep its previously persisted ports and timeouts; fix the file permissions under ${join(cwd, "data", "configuration")} and restart.`,
       );
     }
     if (selectedInstance === 0 && dataDirResolution.source === "default") {
@@ -3184,8 +3191,8 @@ async function runUpgrade() {
         label: "Refreshing dependencies (pnpm install)",
       });
       requireSuccess(installOk, "pnpm install");
-      runCommand(pnpmBin, ["up", `iii-sdk@${IIPINNED_VERSION}`], {
-        label: `Pinning iii-sdk@${IIPINNED_VERSION}`,
+      runCommand(pnpmBin, ["up", `iii-sdk@${IIPINNED_DEFAULT_VERSION}`], {
+        label: `Pinning iii-sdk@${IIPINNED_DEFAULT_VERSION}`,
         optional: true,
       });
     } else if (npmBin) {
@@ -3193,8 +3200,8 @@ async function runUpgrade() {
         label: "Refreshing dependencies (npm install)",
       });
       requireSuccess(installOk, "npm install");
-      runCommand(npmBin, ["install", `iii-sdk@${IIPINNED_VERSION}`], {
-        label: `Pinning iii-sdk@${IIPINNED_VERSION}`,
+      runCommand(npmBin, ["install", `iii-sdk@${IIPINNED_DEFAULT_VERSION}`], {
+        label: `Pinning iii-sdk@${IIPINNED_DEFAULT_VERSION}`,
         optional: true,
       });
     } else {

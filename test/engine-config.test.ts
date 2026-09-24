@@ -92,4 +92,11 @@ describe("clearPersistedBuiltinConfig", () => {
 
     expect(clearPersistedBuiltinConfig(cwd)).toEqual([]);
   });
+
+  it("fails loudly when a persisted entry exists but cannot be removed", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "agentmemory-engine-"));
+    mkdirSync(join(cwd, "data", "configuration", "iii-http.yaml"), { recursive: true });
+
+    expect(() => clearPersistedBuiltinConfig(cwd)).toThrow(/iii-http\.yaml/);
+  });
 });

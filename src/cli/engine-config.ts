@@ -24,7 +24,12 @@ export function clearPersistedBuiltinConfig(engineCwd: string): string[] {
     try {
       rmSync(path);
       cleared.push(path);
-    } catch {}
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") continue;
+      throw new Error(
+        `could not remove persisted engine config ${path}: ${String(err)}`,
+      );
+    }
   }
   return cleared;
 }
