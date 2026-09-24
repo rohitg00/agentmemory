@@ -260,7 +260,9 @@ export function registerSummarizeFunction(
         return { success: false, error: "no_observations" };
       }
 
-      if (provider.name === "noop") {
+      // createProvider() wraps every base provider ("resilient(noop)"), so
+      // an exact name match never fires; match by substring as graph.ts does.
+      if (provider.name.includes("noop")) {
         logger.info("Summarize skipped — no LLM provider configured", {
           sessionId,
         });
