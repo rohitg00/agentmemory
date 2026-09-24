@@ -28,7 +28,7 @@
   "homepage": "https://github.com/rohitg00/agentmemory#readme",
   "bugs": "https://github.com/rohitg00/agentmemory/issues",
   "dependencies": {
-    "@agentmemory/agentmemory": "~0.9.0"
+    "@agentmemory/agentmemory": "0.9.29"
   },
   "publishConfig": {
     "access": "public",
