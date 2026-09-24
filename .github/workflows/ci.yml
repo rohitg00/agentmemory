@@ -54,7 +54,7 @@ jobs:
         os: [ubuntu-latest, macos-latest]
         node-version: [20, 22, 24, 26]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - uses: actions/setup-node@v6
