@@ -5,6 +5,7 @@ import { OpenAIEmbeddingProvider } from "./openai.js";
 import { VoyageEmbeddingProvider } from "./voyage.js";
 import { CohereEmbeddingProvider } from "./cohere.js";
 import { OpenRouterEmbeddingProvider } from "./openrouter.js";
+import { BedrockEmbeddingProvider } from "./bedrock.js";
 import { LocalEmbeddingProvider } from "./local.js";
 import { ClipEmbeddingProvider } from "./clip.js";
 
@@ -14,6 +15,7 @@ export {
   VoyageEmbeddingProvider,
   CohereEmbeddingProvider,
   OpenRouterEmbeddingProvider,
+  BedrockEmbeddingProvider,
   LocalEmbeddingProvider,
   ClipEmbeddingProvider,
 };
@@ -42,6 +44,8 @@ export function createEmbeddingProvider(): EmbeddingProvider | null {
       return withDimensionGuard(new CohereEmbeddingProvider(getEnvVar("COHERE_API_KEY")!));
     case "openrouter":
       return withDimensionGuard(new OpenRouterEmbeddingProvider(getEnvVar("OPENROUTER_API_KEY")!));
+    case "bedrock":
+      return withDimensionGuard(new BedrockEmbeddingProvider());
     case "local":
       return withDimensionGuard(new LocalEmbeddingProvider());
     default:

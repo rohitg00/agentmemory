@@ -83,8 +83,49 @@ export function hydrateProcessEnvFromFile(): void {
   }
 }
 
-function detectProvider(env: Record<string, string>): ProviderConfig {
+/**
+ * Case-insensitive boolean-env check. Accepts "true" in any case with
+ * surrounding whitespace (e.g. "True", "TRUE", " true ") so a natural
+ * capitalization of AWS_BEDROCK=True doesn't silently disable Bedrock.
+ */
+function isEnvTrue(v: string | undefined): boolean {
+  return typeof v === "string" && v.trim().toLowerCase() === "true";
+}
+
+/** Shared so detectProvider and isBedrockUsable gate on the same opt-in values. */
+function isBedrockOptIn(env: Record<string, string>): boolean {
+  return isEnvTrue(env["AWS_BEDROCK"]);
+}
+
+/** A region is required to construct the client, so capability detection never reports an unbuildable config. */
+function isBedrockUsable(env: Record<string, string>): boolean {
+  return isBedrockOptIn(env) && hasRealValue(env["AWS_REGION"]);
+}
+
+export function detectProvider(env: Record<string, string>): ProviderConfig {
   const maxTokens = parseInt(env["MAX_TOKENS"] || "4096", 10);
+
+  // AWS Bedrock: explicit opt-in via AWS_BEDROCK=true. Placed first so a machine
+  // with both Ollama and Bedrock configured prefers Bedrock when opted in; the
+  // strict flag gate means it never fires for existing OpenAI/Ollama users.
+  // Credentials come from the AWS provider chain (env / IAM role / SSO cache),
+  // so we do NOT key detection on credential env vars — only the flag + region.
+  // Region is mandatory: without it Bedrock cannot be constructed, so we reject
+  // here and fall through rather than returning an unusable bedrock config.
+  if (isBedrockOptIn(env)) {
+    if (isBedrockUsable(env)) {
+      return {
+        provider: "bedrock",
+        model: env["AWS_BEDROCK_MODEL"] || "anthropic.claude-haiku-4-5-20251001-v1:0",
+        maxTokens,
+      };
+    }
+    process.stderr.write(
+      "[agentmemory] AWS_BEDROCK=true but AWS_REGION is unset — ignoring Bedrock " +
+        "and falling through to the next provider. Set AWS_REGION in " +
+        "~/.agentmemory/.env to enable Bedrock.\n",
+    );
+  }
 
   // OpenAI-compatible: supports OpenAI, DeepSeek, SiliconFlow, Azure, vLLM, LM Studio
   if (hasRealValue(env["OPENAI_API_KEY"]) && env["OPENAI_API_KEY_FOR_LLM"] !== "false") {
@@ -238,6 +279,7 @@ export function isDropStaleIndexEnabled(): boolean {
 export function detectLlmProviderKind(): "llm" | "noop" {
   const env = getMergedEnv();
   if (
+    isBedrockUsable(env) ||
     hasRealValue(env["ANTHROPIC_API_KEY"]) ||
     hasRealValue(env["GEMINI_API_KEY"]) ||
     hasRealValue(env["GOOGLE_API_KEY"]) ||
@@ -481,6 +523,7 @@ export function getStandalonePersistPath(): string {
 
 const VALID_PROVIDERS = new Set([
   "anthropic",
+  "bedrock",
   "gemini",
   "openrouter",
   "agent-sdk",
