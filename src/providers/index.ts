@@ -9,6 +9,7 @@ import { MinimaxProvider } from "./minimax.js";
 import { NoopProvider } from "./noop.js";
 import { OpenAIProvider } from "./openai.js";
 import { OpenRouterProvider } from "./openrouter.js";
+import { createOrcaRouterProvider, orcaRouterModel } from "./orcarouter.js";
 import { ResilientProvider } from "./resilient.js";
 import { FallbackChainProvider } from "./fallback-chain.js";
 import { getEnvVar } from "../config.js";
@@ -42,6 +43,8 @@ function defaultModelFor(providerType: ProviderConfig["provider"]): string {
       return getEnvVar("GEMINI_MODEL") || "gemini-3.7-flash";
     case "openrouter":
       return getEnvVar("OPENROUTER_MODEL") || "anthropic/claude-sonnet-5";
+    case "orcarouter":
+      return orcaRouterModel();
     case "minimax":
       return getEnvVar("MINIMAX_MODEL") || "MiniMax-M3";
     case "agent-sdk":
@@ -127,6 +130,10 @@ function createBaseProvider(config: ProviderConfig): MemoryProvider {
         config.maxTokens,
         "https://openrouter.ai/api/v1/chat/completions",
       );
+    case "orcarouter":
+      // Credential resolution (env var or PKCE-issued key) lives in the
+      // orcarouter credential seam; the provider cannot tell which one it got.
+      return createOrcaRouterProvider(config.model, config.maxTokens);
     case "openai": {
       const openaiKey = getEnvVar("OPENAI_API_KEY");
       if (!openaiKey) {

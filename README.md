@@ -1039,6 +1039,7 @@ The normal npm install includes the optional `@huggingface/transformers` runtime
 | Voyage AI | `voyage-code-3` | Paid | Optimized for code |
 | Cohere | `embed-english-v3.0` | Free trial | General purpose |
 | OpenRouter | Any model | Varies | Multi-model proxy |
+| OrcaRouter | Any `embeddings` model | Varies | OpenAI-compatible gateway; set `EMBEDDING_PROVIDER=orcarouter` |
 
 ---
 
@@ -1316,9 +1317,76 @@ agentmemory auto-detects providers from your environment. A provider makes LLM-b
 | MiniMax | `MINIMAX_API_KEY` | Anthropic-compatible |
 | Gemini | `GEMINI_API_KEY` | Also enables embeddings |
 | OpenRouter | `OPENROUTER_API_KEY` | Any model |
+| OrcaRouter | `ORCAROUTER_API_KEY`, or `agentmemory orcarouter login` | OpenAI-compatible gateway. Connect with a pasted `sk-orca-…` key or authorize in your browser (OAuth 2.0 + PKCE); model list comes from the live `/v1/models` catalog. See [OrcaRouter](#orcarouter) below. |
 | OpenAI API | `OPENAI_API_KEY` | Default `gpt-5.6-luna`, override with `OPENAI_MODEL` |
 | **Local (Ollama / LM Studio / vLLM / llama.cpp)** | `OPENAI_API_KEY=local` + `OPENAI_BASE_URL=http://localhost:11434/v1` (Ollama) or `http://localhost:1234/v1` (LM Studio) + `OPENAI_MODEL=<your model>` | Anything OpenAI-API-compatible. Zero cost, runs on your hardware. See [Local models](#local-models-ollama--lm-studio--vllm) below. |
 | Claude subscription fallback | `AGENTMEMORY_ALLOW_AGENT_SDK=true` | Opt-in only. Spawns `@anthropic-ai/claude-agent-sdk` sessions; it used to cause unbounded Stop-hook recursion, so it is no longer the default. |
+
+<h3 id="orcarouter">OrcaRouter</h3>
+
+[OrcaRouter](https://www.orcarouter.ai) is an OpenAI-compatible gateway: inference
+lives at `https://api.orcarouter.ai/v1` and speaks the standard
+`/v1/chat/completions` wire format, so agentmemory treats it as a first-class
+named provider — not as a custom base URL. Its model list is read from the live
+`GET /v1/models` catalog, so the models you can pick are the ones your own
+workspace can actually call.
+
+**Two ways to connect.** Both produce an ordinary OrcaRouter API key and both
+store it in the same place as your other provider secrets (`~/.agentmemory/.env`,
+mode 0600). Nothing downstream can tell which one you used.
+
+| Choice | CLI | Viewer | Use it when |
+|---|---|---|---|
+| **OrcaRouter - API** | `agentmemory orcarouter key` | Settings → OrcaRouter - API | You already have a `sk-orca-…` key. |
+| **OrcaRouter - Auth** | `agentmemory orcarouter login` | Settings → OrcaRouter - Auth | You would rather authorize in a browser than copy a key. |
+
+```bash
+agentmemory orcarouter login    # opens your browser (OAuth 2.0 + PKCE, loopback redirect)
+agentmemory orcarouter key      # paste an existing sk-orca-... key
+agentmemory orcarouter status   # show the configured credential (masked)
+agentmemory orcarouter logout   # remove the stored credential
+```
+
+Or set the key directly, like any other provider:
+
+```bash
+# ~/.agentmemory/.env
+ORCAROUTER_API_KEY=sk-orca-...
+ORCAROUTER_MODEL=orcarouter/auto
+```
+
+**The key is yours, not agentmemory's.** It is billed to your OrcaRouter
+account, listed in your console, and revocable at any time from
+[Authorized apps](https://www.orcarouter.ai/console/authorized-apps). Revoking
+it deletes every key issued to this app in one click; agentmemory then marks the
+exact account and credential generation as needing reauthentication and asks you
+to connect again. A PKCE-issued key is a durable credential, not a refresh
+token — there is no refresh grant, and agentmemory never attempts one.
+
+No client secret is involved, and no redirect URI has to be registered: PKCE
+binds the authorization code to the process that generated the verifier, so an
+intercepted code cannot be redeemed by anyone else. The verifier is generated
+per attempt from a cryptographic RNG and never leaves the backend process.
+
+**Self-hosted / separate origins.** Authentication and inference are different
+origins by default (`www.orcarouter.ai` and `api.orcarouter.ai`). Point both at
+one self-hosted base, or override them individually:
+
+```bash
+ORCA_BASE_URL=https://gateway.internal.example   # shared fallback for both
+ORCA_AUTH_BASE_URL=https://auth.internal.example # explicit, wins over the shared base
+ORCA_API_BASE_URL=https://relay.internal.example # explicit, wins over the shared base
+```
+
+Remote origins must be HTTPS; plain HTTP is accepted only for loopback.
+
+**Models.** Under Settings, the model dropdowns are populated from the live
+catalog and filtered by what each entry point can actually do — chat models for
+compression and summarisation, and only models that explicitly declare image
+input for image understanding. A model whose capabilities the catalog does not
+declare is left out rather than guessed at. If discovery is unavailable, a small
+verified fallback list is shown and clearly labelled as a fallback, never passed
+off as your live catalog.
 
 ### Local models (Ollama / LM Studio / vLLM)
 
@@ -1608,7 +1676,7 @@ Create `~/.agentmemory/.env`:
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/section-api.svg"><img src="assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-130 endpoints on port `3111`. The REST API binds to `127.0.0.1` by default. Protected endpoints require `Authorization: Bearer <secret>` when `AGENTMEMORY_SECRET` is set, and mesh sync endpoints require `AGENTMEMORY_SECRET` on both peers.
+137 endpoints on port `3111`. The REST API binds to `127.0.0.1` by default. Protected endpoints require `Authorization: Bearer <secret>` when `AGENTMEMORY_SECRET` is set, and mesh sync endpoints require `AGENTMEMORY_SECRET` on both peers.
 
 <details>
 <summary>Key endpoints</summary>

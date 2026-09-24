@@ -33,6 +33,27 @@ function loadViewerFavicon(): Buffer | null {
 // disk read per /favicon.svg request.
 const VIEWER_FAVICON: Buffer | null = loadViewerFavicon();
 
+// The OrcaRouter provider entry in Settings shows the official logo. The
+// viewer CSP is `img-src 'self'`, so the asset is self-hosted next to the
+// favicon rather than hotlinked from www.orcarouter.ai. Same resolution
+// strategy as the favicon so it works from source and from dist/.
+function loadOrcaLogo(): Buffer | null {
+  const base = dirname(fileURLToPath(import.meta.url));
+  const candidates = [
+    join(base, "..", "src", "viewer", "orca-logo.png"),
+    join(base, "..", "viewer", "orca-logo.png"),
+    join(base, "viewer", "orca-logo.png"),
+  ];
+  for (const path of candidates) {
+    try {
+      return readFileSync(path);
+    } catch {}
+  }
+  return null;
+}
+
+const VIEWER_ORCA_LOGO: Buffer | null = loadOrcaLogo();
+
 const ALLOWED_ORIGINS = (
   process.env.VIEWER_ALLOWED_ORIGINS ||
   "http://localhost:3111,http://localhost:3113,http://127.0.0.1:3111,http://127.0.0.1:3113"
@@ -295,6 +316,20 @@ export function startViewerServer(
       }
       res.writeHead(404, { "Content-Type": "text/plain" });
       res.end("favicon not found");
+      return;
+    }
+
+    if (method === "GET" && pathname === "/orca-logo.png") {
+      if (VIEWER_ORCA_LOGO) {
+        res.writeHead(200, {
+          "Content-Type": "image/png",
+          "Cache-Control": "public, max-age=3600",
+        });
+        res.end(VIEWER_ORCA_LOGO);
+        return;
+      }
+      res.writeHead(404, { "Content-Type": "text/plain" });
+      res.end("orca logo not found");
       return;
     }
 

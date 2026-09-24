@@ -206,6 +206,11 @@ Commands:
                      --dry-run: show what each fix would do, don't execute
   remove             Cleanly uninstall agentmemory (pidfile, state, .env, binaries).
                      --force: skip confirmations · --keep-data: keep memory data
+  orcarouter         Connect OrcaRouter. Subcommands:
+                       login   authorize in your browser (OAuth 2.0 + PKCE)
+                       key     paste an existing sk-orca-... API key
+                       status  show the configured credential (masked)
+                       logout  remove the stored credential
   demo [--serve]     Seed sample sessions and show recall in action.
                      --serve boots the server, runs the demo, and stops it
                      in one command (no second terminal).
@@ -3589,6 +3594,137 @@ async function runMcp(): Promise<void> {
   await import("./mcp/standalone.js");
 }
 
+/**
+ * `agentmemory orcarouter` — the two discoverable ways to give agentmemory an
+ * OrcaRouter credential.
+ *
+ *   orcarouter login   OAuth 2.0 + PKCE (Flow A, loopback redirect)
+ *   orcarouter key     paste an existing sk-orca-… key
+ *   orcarouter status  show which one is configured, key masked
+ *   orcarouter logout  remove the stored credential
+ *
+ * Both paths land in the same credential seam, so everything downstream is
+ * identical once either one succeeds.
+ */
+async function runOrcaRouterCmd(): Promise<void> {
+  const sub = (args[1] ?? "help").toLowerCase();
+  const {
+    connectWithApiKey,
+    resolveCredential,
+    clearCredential,
+    maskSecret,
+    credentialStorePath,
+    looksLikeOrcaRouterKey,
+  } = await import("./orcarouter/credentials.js");
+  const { API_KEYS_URL, AUTHORIZED_APPS_URL, resolveOrigins } = await import(
+    "./orcarouter/origins.js"
+  );
+
+  if (sub === "key" || sub === "api-key") {
+    const inline = args.slice(2).join(" ").trim();
+    const apiKey =
+      inline ||
+      ((await p.password({
+        message: "Paste your OrcaRouter API key (sk-orca-…)",
+        validate: (v) =>
+          looksLikeOrcaRouterKey(v ?? "")
+            ? undefined
+            : 'OrcaRouter keys start with "sk-orca-".',
+      })) as string | symbol);
+    if (typeof apiKey !== "string" || p.isCancel(apiKey)) {
+      p.cancel("Cancelled. Nothing was saved.");
+      return;
+    }
+    try {
+      const result = connectWithApiKey(apiKey);
+      p.log.success(result.message);
+      p.log.info(`Stored in ${credentialStorePath()} (mode 0600).`);
+      p.outro("OrcaRouter is ready. Restart agentmemory to pick up the new provider.");
+    } catch (err) {
+      p.log.error(err instanceof Error ? err.message : "Could not save the key.");
+      process.exit(1);
+    }
+    return;
+  }
+
+  if (sub === "login" || sub === "auth") {
+    const { startConnect } = await import("./orcarouter/connect.js");
+    const { exec } = await import("node:child_process");
+    p.log.info("Opening your browser to authorize agentmemory with OrcaRouter…");
+    const started = await startConnect({});
+    p.log.info(
+      "If the browser did not open, visit this URL:\n" + started.authorizeUrl,
+    );
+    const opener =
+      process.platform === "darwin"
+        ? "open"
+        : process.platform === "win32"
+          ? "start"
+          : "xdg-open";
+    exec(`${opener} "${started.authorizeUrl}"`, () => {});
+    p.log.info("Waiting for approval in the browser (Ctrl-C to cancel)…");
+    try {
+      const { waitForConnect } = await import("./orcarouter/connect.js");
+      const credential = await waitForConnect(started.attemptId);
+      p.log.success(
+        `Connected to OrcaRouter as ${credential.userId || "your account"} — key ${maskSecret(credential.apiKey)} stored in ${credentialStorePath()}.`,
+      );
+      p.outro("OrcaRouter is ready.");
+    } catch (err) {
+      const { cancelConnect } = await import("./orcarouter/connect.js");
+      cancelConnect(started.attemptId);
+      p.log.error(err instanceof Error ? err.message : "Authorization failed.");
+      process.exit(1);
+    }
+    return;
+  }
+
+  if (sub === "logout" || sub === "signout") {
+    const cleared = clearCredential();
+    p.log.info(
+      cleared
+        ? "Removed the stored OrcaRouter credential."
+        : "No stored OrcaRouter credential to remove.",
+    );
+    p.outro(
+      `Keys already issued stay valid until you revoke them at ${AUTHORIZED_APPS_URL}.`,
+    );
+    return;
+  }
+
+  if (sub === "status") {
+    const credential = resolveCredential();
+    const origins = resolveOrigins();
+    const lines = [
+      `Auth origin:  ${origins.authBaseUrl}`,
+      `API origin:   ${origins.apiBaseUrl}/v1`,
+      `Store:        ${credentialStorePath()}`,
+    ];
+    if (!credential) {
+      lines.push("Credential:   none — run `agentmemory orcarouter login` or `agentmemory orcarouter key`.");
+    } else {
+      lines.push(`Credential:   ${credential.status === "ok" ? "ready" : "needs reauthentication"}`);
+      lines.push(`Key:          ${maskSecret(credential.apiKey)} (${credential.origin})`);
+      if (credential.userId) lines.push(`Account:      ${credential.userId}`);
+      if (credential.scope) lines.push(`Scope:        ${credential.scope}`);
+      if (credential.needsReauthReason) lines.push(`Problem:      ${credential.needsReauthReason}`);
+    }
+    p.note(lines.join("\n"), "OrcaRouter");
+    p.outro(`Manage keys: ${API_KEYS_URL}`);
+    return;
+  }
+
+  p.note(
+    [
+      "agentmemory orcarouter login   Authorize in your browser (OAuth 2.0 + PKCE)",
+      "agentmemory orcarouter key     Paste an existing sk-orca-… API key",
+      "agentmemory orcarouter status  Show the configured credential (masked)",
+      "agentmemory orcarouter logout  Remove the stored credential",
+    ].join("\n"),
+    "OrcaRouter",
+  );
+}
+
 async function runConnectCmd(): Promise<void> {
   const { runConnect } = await import("./cli/connect/index.js");
   await runConnect(args.slice(1));
@@ -4014,6 +4150,7 @@ const commands: Record<string, () => Promise<void>> = {
   stop: runStop,
   remove: runRemove,
   mcp: runMcp,
+  orcarouter: runOrcaRouterCmd,
   "import-jsonl": runImportJsonl,
 };
 

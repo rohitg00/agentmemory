@@ -26,6 +26,27 @@ import {
   isAgentScopeIsolated,
   loadConfig,
 } from "../config.js";
+import {
+  API_KEYS_URL,
+  AUTHORIZED_APPS_URL,
+  resolveOrigins,
+} from "../orcarouter/origins.js";
+import {
+  clearCredential,
+  connectWithApiKey,
+  getStoredCredentialState,
+  maskSecret,
+  resolveCredential,
+} from "../orcarouter/credentials.js";
+import {
+  cancelConnect,
+  connectStatus,
+  currentAttemptId,
+  isBusy,
+  startConnect,
+} from "../orcarouter/connect.js";
+import { filterModels } from "../orcarouter/catalog.js";
+import { asCapability, getCatalog, supportedCapabilities } from "../orcarouter/catalog-cache.js";
 
 type Response = {
   status_code: number;
@@ -3310,4 +3331,263 @@ export function registerApiTriggers(
     return { status_code: 200, body: result };
   });
   sdk.registerTrigger({ type: "http", function_id: "api::insight-search", config: { api_path: "/agentmemory/insights/search", http_method: "POST" } });
+
+  registerOrcaRouterTriggers(sdk, secret);
+}
+
+/**
+ * OrcaRouter credential + catalog surface.
+ *
+ * The viewer page cannot talk to `www.orcarouter.ai` or `api.orcarouter.ai`
+ * itself: its CSP allows `connect-src 'self'` plus loopback only. So the
+ * browser never holds the key it is configuring — these endpoints run the
+ * connect flow, keep the key in `~/.agentmemory/.env`, and hand the page
+ * nothing but masked summaries and capability-filtered model metadata.
+ */
+function registerOrcaRouterTriggers(sdk: ISdk, secret?: string): void {
+  sdk.registerFunction("api::orcarouter-status", async (req: ApiRequest): Promise<Response> => {
+    const denied = checkAuth(req, secret);
+    if (denied) return denied;
+    const credential = resolveCredential();
+    const stored = getStoredCredentialState();
+    return {
+      status_code: 200,
+      body: {
+        provider: "orcarouter",
+        configured: Boolean(credential),
+        status: credential?.status ?? "unconfigured",
+        origin: credential?.origin ?? null,
+        // Masked only. The raw key never crosses this boundary.
+        keyMasked: credential ? maskSecret(credential.apiKey) : null,
+        userId: credential?.userId ?? null,
+        scope: credential?.scope ?? null,
+        needsReauthReason: credential?.needsReauthReason ?? null,
+        updatedAt: stored?.updatedAt ?? null,
+        // Two explicit choices, surfaced so the UI can render both.
+        methods: [
+          {
+            id: "api_key",
+            label: "OrcaRouter - API",
+            description: "Paste an existing sk-orca-… key.",
+            available: true,
+            consoleUrl: API_KEYS_URL,
+          },
+          {
+            id: "pkce",
+            label: "OrcaRouter - Auth",
+            description: "Authorize in your browser; no key to copy.",
+            available: true,
+            flow: "loopback",
+          },
+        ],
+        origins: {
+          authBaseUrl: resolveOrigins().authBaseUrl,
+          apiBaseUrl: resolveOrigins().apiBaseUrl,
+        },
+        authorizedAppsUrl: AUTHORIZED_APPS_URL,
+      },
+    };
+  });
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::orcarouter-status",
+    config: {
+      api_path: "/agentmemory/orcarouter/status",
+      http_method: "GET",
+      middleware_function_ids: ["middleware::api-auth"],
+    },
+  });
+
+  // Adapter 1 — the user pastes a key they already hold.
+  sdk.registerFunction("api::orcarouter-key", async (req: ApiRequest): Promise<Response> => {
+    const denied = checkAuth(req, secret);
+    if (denied) return denied;
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const apiKey = typeof body.apiKey === "string" ? body.apiKey : "";
+    if (!apiKey.trim()) {
+      return { status_code: 400, body: { error: "apiKey is required" } };
+    }
+    try {
+      const result = connectWithApiKey(apiKey);
+      return {
+        status_code: 200,
+        body: {
+          ok: true,
+          message: result.message,
+          keyMasked: maskSecret(result.credential.apiKey),
+          origin: result.credential.origin,
+          status: result.credential.status,
+        },
+      };
+    } catch (err) {
+      // The auth error message is written to be user-facing and never embeds
+      // the submitted key.
+      return {
+        status_code: 400,
+        body: {
+          error: err instanceof Error ? err.message : "could not save the API key",
+        },
+      };
+    }
+  });
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::orcarouter-key",
+    config: {
+      api_path: "/agentmemory/orcarouter/key",
+      http_method: "POST",
+      middleware_function_ids: ["middleware::api-auth"],
+    },
+  });
+
+  // Adapter 2 — PKCE. Start returns the authorize URL; the verifier stays here.
+  sdk.registerFunction("api::orcarouter-connect-start", async (req: ApiRequest): Promise<Response> => {
+    const denied = checkAuth(req, secret);
+    if (denied) return denied;
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    try {
+      const started = await startConnect({
+        loginHint: typeof body.loginHint === "string" ? body.loginHint : undefined,
+        workspaceHint:
+          typeof body.workspaceHint === "string" ? body.workspaceHint : undefined,
+      });
+      return { status_code: 200, body: { ok: true, ...started } };
+    } catch (err) {
+      return {
+        status_code: 502,
+        body: {
+          error:
+            err instanceof Error
+              ? err.message
+              : "could not start the OrcaRouter connection",
+        },
+      };
+    }
+  });
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::orcarouter-connect-start",
+    config: {
+      api_path: "/agentmemory/orcarouter/connect/start",
+      http_method: "POST",
+      middleware_function_ids: ["middleware::api-auth"],
+    },
+  });
+
+  sdk.registerFunction("api::orcarouter-connect-status", async (req: ApiRequest): Promise<Response> => {
+    const denied = checkAuth(req, secret);
+    if (denied) return denied;
+    const attemptId = asNonEmptyString(req.query_params?.["attemptId"]);
+    const status = attemptId ? connectStatus(attemptId) : connectStatus();
+    if (!status) {
+      return { status_code: 200, body: { phase: "idle", busy: isBusy() } };
+    }
+    return {
+      status_code: 200,
+      body: { ...status, busy: isBusy() && currentAttemptId() === status.attemptId },
+    };
+  });
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::orcarouter-connect-status",
+    config: {
+      api_path: "/agentmemory/orcarouter/connect/status",
+      http_method: "GET",
+      middleware_function_ids: ["middleware::api-auth"],
+    },
+  });
+
+  // Every terminal path lands here: explicit cancel, switching auth method,
+  // closing the modal, and the pagehide/beforeunload beacon.
+  sdk.registerFunction("api::orcarouter-connect-cancel", async (req: ApiRequest): Promise<Response> => {
+    const denied = checkAuth(req, secret);
+    if (denied) return denied;
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const attemptId = typeof body.attemptId === "string" ? body.attemptId : undefined;
+    const canceled = cancelConnect(attemptId);
+    return { status_code: 200, body: { ok: true, canceled } };
+  });
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::orcarouter-connect-cancel",
+    config: {
+      api_path: "/agentmemory/orcarouter/connect/cancel",
+      http_method: "POST",
+      middleware_function_ids: ["middleware::api-auth"],
+    },
+  });
+
+  sdk.registerFunction("api::orcarouter-signout", async (req: ApiRequest): Promise<Response> => {
+    const denied = checkAuth(req, secret);
+    if (denied) return denied;
+    const cleared = clearCredential();
+    return { status_code: 200, body: { ok: true, cleared } };
+  });
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::orcarouter-signout",
+    config: {
+      api_path: "/agentmemory/orcarouter/signout",
+      http_method: "POST",
+      middleware_function_ids: ["middleware::api-auth"],
+    },
+  });
+
+  // Live model discovery, backend-mediated. `capability` and `inputModality`
+  // select the filter, so the page renders exactly the options it may use.
+  sdk.registerFunction("api::orcarouter-models", async (req: ApiRequest): Promise<Response> => {
+    const denied = checkAuth(req, secret);
+    if (denied) return denied;
+
+    const rawCapability = asNonEmptyString(req.query_params?.["capability"]) ?? "chat";
+    const capability = asCapability(rawCapability);
+    if (!capability) {
+      return {
+        status_code: 400,
+        body: {
+          error: `unsupported capability: ${rawCapability}`,
+          supported: supportedCapabilities(),
+        },
+      };
+    }
+    const inputModality =
+      asNonEmptyString(req.query_params?.["inputModality"]) ?? undefined;
+    const forceRefresh = req.query_params?.["refresh"] === "true";
+
+    const catalog = await getCatalog(forceRefresh);
+    const options = filterModels(catalog.models, capability, inputModality);
+
+    return {
+      status_code: 200,
+      body: {
+        source: catalog.source,
+        degraded: catalog.degraded,
+        degradedReason: catalog.degradedReason ?? null,
+        fetchedAt: catalog.fetchedAt ?? null,
+        capability,
+        inputModality: inputModality ?? null,
+        // Bounded, UI-facing projection: ids and the metadata a selector needs.
+        options: options.map((m) => ({
+          id: m.id,
+          name: m.name,
+          contextWindow: m.contextWindow ?? null,
+          maxOutputTokens: m.maxOutputTokens ?? null,
+          reasoningEfforts: m.reasoningEfforts ?? null,
+          inputModalities: m.capabilities.inputModalities,
+          verified: m.verified ?? false,
+        })),
+        total: catalog.models.length,
+        filtered: options.length,
+      },
+    };
+  });
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::orcarouter-models",
+    config: {
+      api_path: "/agentmemory/orcarouter/models",
+      http_method: "GET",
+      middleware_function_ids: ["middleware::api-auth"],
+    },
+  });
 }

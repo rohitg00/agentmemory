@@ -17,6 +17,7 @@ describe("createEmbeddingProvider", () => {
     delete process.env["VOYAGE_API_KEY"];
     delete process.env["COHERE_API_KEY"];
     delete process.env["OPENROUTER_API_KEY"];
+    delete process.env["ORCAROUTER_API_KEY"];
     delete process.env["EMBEDDING_PROVIDER"];
   });
 

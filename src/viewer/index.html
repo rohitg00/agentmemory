@@ -699,6 +699,165 @@
     }
     .empty-state .empty-link { color: var(--accent); text-decoration: underline; font-size: 13px; font-style: normal; }
 
+    /* OrcaRouter settings. Two authentication entries are laid out side by
+       side so neither reads as the fallback: a pasted API key and a browser
+       authorization are peers, not a default plus an exception. */
+    .orca-methods {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+    .orca-method {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .orca-method-head {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-family: var(--font-display);
+      font-size: 13px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--ink);
+    }
+    .orca-method-logo { width: 18px; height: 18px; flex: 0 0 auto; }
+    .orca-method p.orca-method-desc {
+      font-size: 12px;
+      color: var(--ink-muted);
+      line-height: 1.5;
+      margin: 0;
+    }
+    .orca-method input[type="password"],
+    .orca-method input[type="text"] {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 7px 9px;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      background: var(--bg-alt);
+      color: var(--ink);
+      border: 1px solid var(--border);
+      border-radius: 3px;
+    }
+    .orca-method input:focus-visible,
+    .orca-select:focus-visible,
+    .orca-method .btn:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 1px;
+    }
+    .orca-method .btn[disabled] { opacity: 0.5; cursor: not-allowed; }
+    .orca-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    /* Searchable model combobox. A native <select> popup is rendered by the
+       OS and cannot be styled, measured, or captured, so the selector is a
+       real listbox: it keeps the model metadata visible next to each option and
+       behaves the same in every browser. */
+    .orca-combo { position: relative; }
+    .orca-combo-trigger {
+      width: 100%;
+      box-sizing: border-box;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 7px 9px;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      text-align: left;
+      background: var(--bg-alt);
+      color: var(--ink);
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      cursor: pointer;
+    }
+    .orca-combo-trigger[aria-expanded="true"] { border-color: var(--ink); }
+    .orca-combo-value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .orca-combo-value.placeholder { color: var(--ink-faint); }
+    .orca-combo-caret { flex: 0 0 auto; opacity: 0.6; }
+    .orca-combo-panel {
+      position: absolute;
+      top: calc(100% + 2px);
+      right: 0;
+      left: 0;
+      z-index: 40;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      box-shadow: 6px 6px 0px 0px var(--border);
+      max-height: 280px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .orca-combo-panel[hidden] { display: none; }
+    .orca-combo-search {
+      border: none;
+      border-bottom: 1px solid var(--border-light);
+      padding: 7px 9px;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      background: var(--bg);
+      color: var(--ink);
+      outline: none;
+    }
+    .orca-combo-list { overflow-y: auto; max-height: 232px; }
+    .orca-combo-option {
+      padding: 6px 9px;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--ink);
+      cursor: pointer;
+      border-bottom: 1px solid var(--border-light);
+    }
+    .orca-combo-option:last-child { border-bottom: none; }
+    .orca-combo-option[aria-selected="true"] { background: var(--bg-alt); font-weight: 700; }
+    .orca-combo-option:hover, .orca-combo-option.active { background: var(--ink); color: var(--bg); }
+    .orca-combo-option .orca-opt-meta { font-size: 10px; opacity: 0.7; }
+    .orca-combo-empty { padding: 10px; font-size: 12px; color: var(--ink-faint); font-style: italic; }
+    .orca-status-line {
+      font-size: 12px;
+      font-family: var(--font-mono);
+      color: var(--ink-muted);
+      line-height: 1.6;
+      word-break: break-all;
+    }
+    .orca-status-line .orca-ok { color: var(--green, #2f9e44); }
+    .orca-status-line .orca-warn { color: var(--yellow, #b8860b); }
+    .orca-status-line .orca-bad { color: var(--red, #c92a2a); }
+    .orca-banner {
+      border: 1px solid var(--border);
+      border-left-width: 3px;
+      padding: 9px 12px;
+      font-size: 12px;
+      line-height: 1.5;
+      margin-bottom: 14px;
+      background: var(--bg-alt);
+    }
+    .orca-banner.degraded { border-left-color: var(--yellow, #b8860b); }
+    .orca-banner.error { border-left-color: var(--red, #c92a2a); }
+    .orca-hint {
+      font-size: 12px;
+      font-family: var(--font-mono);
+      color: var(--ink-muted);
+      word-break: break-all;
+      background: var(--bg-alt);
+      border: 1px dashed var(--border);
+      padding: 8px 10px;
+    }
+    .orca-model-meta {
+      font-size: 11px;
+      color: var(--ink-faint);
+      font-family: var(--font-mono);
+      margin-top: 4px;
+      min-height: 14px;
+    }
+
     /* Feature flag banner system — compact collapsed by default */
     .flag-banners {
       padding: 0 12px 10px 12px;
@@ -1052,6 +1211,7 @@
     <button data-tab="audit">Audit</button>
     <button data-tab="activity">Activity</button>
     <button data-tab="profile">Profile</button>
+    <button data-tab="settings">Settings</button>
     <button data-tab="replay">Replay</button>
   </div>
 
@@ -1069,6 +1229,7 @@
   <div id="view-audit" class="view"></div>
   <div id="view-activity" class="view"></div>
   <div id="view-profile" class="view"></div>
+  <div id="view-settings" class="view"></div>
   <div id="view-replay" class="view"></div>
 
   <div id="modal-overlay" class="modal-overlay">
@@ -1158,7 +1319,7 @@
       task: '&#9745;', other: '&#128196;'
     };
     var CB_STATE_COLORS = { closed: 'badge-green', open: 'badge-red', 'half-open': 'badge-yellow' };
-    var TAB_IDS = ['dashboard', 'graph', 'memories', 'timeline', 'sessions', 'lessons', 'actions', 'crystals', 'audit', 'activity', 'profile', 'replay'];
+    var TAB_IDS = ['dashboard', 'graph', 'memories', 'timeline', 'sessions', 'lessons', 'actions', 'crystals', 'audit', 'activity', 'profile', 'settings', 'replay'];
     var VIEWER_TOKEN_STORAGE_KEY = 'agentmemory-viewer-token';
 
     var state = {
@@ -1177,7 +1338,24 @@
       replay: { loaded: false, sessions: [], selectedId: '', timeline: null, cursor: 0, playing: false, speed: 1, timer: null, startAt: 0, offsetAt: 0 },
       flagsConfig: null,
       flagsDismissed: {},
-      ws: null
+      ws: null,
+      // OrcaRouter credentials + model catalog. `generation` guards every
+      // async continuation: a response that belongs to a superseded attempt
+      // must never mutate credentials or UI state.
+      orcarouter: {
+        loaded: false,
+        status: null,
+        generation: 0,
+        attemptId: null,
+        busy: false,
+        hint: '',
+        error: null,
+        pollTimer: null,
+        // Per-capability model catalogs, keyed by the filter that produced them.
+        catalogs: {},
+        selected: { chat: '', multimodal: '', embedding: '' },
+        search: { chat: '', multimodal: '', embedding: '' }
+      }
     };
 
     function esc(s) {
@@ -1442,6 +1620,513 @@
     var tabFetchedAt = {};
     var TAB_FRESH_MS = 5000;
 
+    // ---------------------------------------------------------------------
+    // OrcaRouter settings
+    //
+    // Two authentication entries, one credential seam. The API-key half and
+    // the PKCE half both end up as an ordinary OrcaRouter key stored by the
+    // backend in ~/.agentmemory/.env; this page never receives the key, only
+    // a masked summary. Model options are produced by the backend from the
+    // live /v1/models catalog, filtered by the capability the entry point
+    // actually needs, so an incompatible model can never be selected.
+    // ---------------------------------------------------------------------
+    function orca() { return state.orcarouter; }
+
+    function orcaNextGeneration() {
+      orca().generation += 1;
+      return orca().generation;
+    }
+
+    // Every async continuation re-checks this before touching credentials or
+    // DOM state. A late response from a superseded attempt is dropped rather
+    // than allowed to surface under the current one.
+    function orcaIsCurrent(gen) { return orca().generation === gen; }
+
+    function orcaStopPolling() {
+      if (orca().pollTimer) {
+        clearInterval(orca().pollTimer);
+        orca().pollTimer = null;
+      }
+    }
+
+    async function loadSettings() {
+      var el = document.getElementById('view-settings');
+      if (!el) return;
+      if (!orca().loaded) {
+        el.innerHTML = '<div class="loading">Loading settings...</div>';
+      }
+      var status = await apiGet('orcarouter/status');
+      if (!status) {
+        el.innerHTML = '<div class="empty-state"><div class="empty-title">Settings unavailable</div>'
+          + '<p>The memory server did not answer. Confirm it is running, then reopen this tab.</p></div>';
+        return;
+      }
+      orca().status = status;
+      orca().loaded = true;
+      renderSettings();
+      await orcaLoadCatalog('chat');
+      await orcaLoadCatalog('multimodal');
+      await orcaLoadCatalog('embedding');
+    }
+
+    function orcaCredentialLine() {
+      var st = orca().status || {};
+      if (!st.configured) {
+        return '<span class="orca-bad">Not configured</span> — set an API key or authorize in the browser below.';
+      }
+      if (st.status === 'needsReauth') {
+        return '<span class="orca-bad">Needs reauthentication</span> — '
+          + esc(st.needsReauthReason || 'the stored key was rejected by OrcaRouter.')
+          + ' Connect again to issue a new key.';
+      }
+      return '<span class="orca-ok">Ready</span> — key ' + esc(st.keyMasked || '(masked)')
+        + ' (' + esc(st.origin || 'unknown') + ')'
+        + (st.scope ? ' · scope ' + esc(st.scope) : '')
+        + (st.userId ? ' · account ' + esc(st.userId) : '');
+    }
+
+    function renderSettings() {
+      var el = document.getElementById('view-settings');
+      if (!el) return;
+      var st = orca().status || {};
+      var o = orca();
+      var methods = st.methods || [];
+
+      var html = '<div class="card"><div class="card-title">OrcaRouter</div>';
+      html += '<div class="orca-status-line">' + orcaCredentialLine() + '</div>';
+      if (st.updatedAt) {
+        html += '<div class="orca-model-meta">Updated ' + esc(formatTime(st.updatedAt)) + '</div>';
+      }
+      html += '</div>';
+
+      html += '<div class="orca-methods">';
+
+      // --- Entry 1: paste an existing API key ------------------------------
+      html += '<div class="orca-method" data-orca-method="api-key">';
+      html += '<div class="orca-method-head">'
+        + '<img class="orca-method-logo" src="/orca-logo.png" alt="" width="18" height="18">'
+        + '<span>' + esc((methods[0] && methods[0].label) || 'OrcaRouter - API') + '</span></div>';
+      html += '<p class="orca-method-desc">'
+        + esc((methods[0] && methods[0].description) || 'Paste an existing sk-orca-… key.')
+        + ' Stored in the same secret file as your other provider keys.</p>';
+      html += '<input id="orca-api-key" type="password" autocomplete="off" spellcheck="false"'
+        + ' aria-label="OrcaRouter API key" placeholder="sk-orca-...">';
+      html += '<div class="orca-row">'
+        + '<button class="btn" data-action="orca-save-key" id="orca-save-key">Save key</button>'
+        + '<button class="btn" data-action="orca-signout">Remove stored credential</button>'
+        + '</div>';
+      html += '<div class="orca-model-meta">'
+        + '<a class="empty-link" href="' + esc(st.apiKeysUrl || 'https://www.orcarouter.ai/console/api-keys')
+        + '" target="_blank" rel="noopener">Get an API key &rarr;</a></div>';
+      html += '</div>';
+
+      // --- Entry 2: authorize in a browser (OAuth 2.0 + PKCE) --------------
+      html += '<div class="orca-method" data-orca-method="pkce">';
+      html += '<div class="orca-method-head">'
+        + '<img class="orca-method-logo" src="/orca-logo.png" alt="" width="18" height="18">'
+        + '<span>' + esc((methods[1] && methods[1].label) || 'OrcaRouter - Auth') + '</span></div>';
+      html += '<p class="orca-method-desc">'
+        + esc((methods[1] && methods[1].description) || 'Authorize in your browser; no key to copy.')
+        + ' The key is issued to your own OrcaRouter account and can be revoked at any time.</p>';
+      html += '<div class="orca-row">'
+        + '<button class="btn" id="orca-connect" data-action="orca-connect"'
+        + (o.busy ? ' disabled aria-busy="true"' : '') + '>'
+        + (o.busy ? 'Waiting for browser…' : 'Connect with OrcaRouter') + '</button>'
+        + '<button class="btn" id="orca-cancel" data-action="orca-cancel"'
+        + (o.busy ? '' : ' disabled') + '>Cancel</button>'
+        + '</div>';
+      if (o.error) {
+        html += '<div class="orca-banner error">' + esc(o.error) + '</div>';
+      }
+      if (o.hint) {
+        html += '<div class="orca-hint" id="orca-auth-hint">' + esc(o.hint) + '</div>';
+      }
+      html += '<div class="orca-model-meta">'
+        + '<a class="empty-link" href="' + esc(st.authorizedAppsUrl || 'https://www.orcarouter.ai/console/authorized-apps')
+        + '" target="_blank" rel="noopener">Manage authorized apps &rarr;</a></div>';
+      html += '</div>';
+
+      html += '</div>'; // .orca-methods
+
+      // --- Model catalog ---------------------------------------------------
+      html += '<div class="card"><div class="card-title">Models</div>';
+      html += '<div class="orca-status-line">Loading models from '
+        + esc((st.origins && st.origins.apiBaseUrl) || 'https://api.orcarouter.ai') + '/v1/models</div>';
+
+      html += orcaModelField('chat', 'Chat &amp; agent models',
+        'Used for observation compression, summarisation, and consolidation.');
+      html += orcaModelField('multimodal', 'Multimodal (image input) models',
+        'Only models that explicitly declare image input are listed, so an image attachment can never be sent to a text-only model.');
+      html += orcaModelField('embedding', 'Embedding models',
+        'Used for vector search when EMBEDDING_PROVIDER=orcarouter.');
+
+      html += '</div>';
+
+      el.innerHTML = html;
+      orcaRenderModelFields();
+    }
+
+    function orcaModelField(capability, title, desc) {
+      return '<div style="margin-bottom:16px;" data-orca-field="' + capability + '">'
+        + '<div style="font-size:12px;font-weight:700;margin-bottom:4px;">' + title + '</div>'
+        + '<p class="orca-method-desc" style="margin-bottom:6px;">' + esc(desc) + '</p>'
+        + '<div class="orca-banner" id="orca-banner-' + capability + '" hidden></div>'
+        + '<div class="orca-combo" data-orca-capability="' + capability + '">'
+        + '<button type="button" class="orca-combo-trigger" id="orca-trigger-' + capability + '"'
+        + ' aria-haspopup="listbox" aria-expanded="false" aria-controls="orca-panel-' + capability + '"'
+        + ' aria-label="' + esc(title) + '">'
+        + '<span class="orca-combo-value placeholder" id="orca-value-' + capability + '">Loading…</span>'
+        + '<span class="orca-combo-caret" aria-hidden="true">&#9662;</span>'
+        + '</button>'
+        + '<div class="orca-combo-panel" id="orca-panel-' + capability + '" role="listbox"'
+        + ' aria-label="' + esc(title) + '" hidden>'
+        + '<input class="orca-combo-search" id="orca-search-' + capability + '" type="text"'
+        + ' placeholder="Search models..." aria-label="Filter ' + esc(title) + '" autocomplete="off">'
+        + '<div class="orca-combo-list" id="orca-list-' + capability + '"></div>'
+        + '</div></div>'
+        + '<div class="orca-model-meta" id="orca-meta-' + capability + '"></div>'
+        + '</div>';
+    }
+
+    // The option list is data-driven: `image` attachment capability is decided
+    // by the backend filter, never by anything in this function.
+    function orcaOptionHtml(capability, model, selectedId) {
+      var label = model.name && model.name !== model.id ? model.name : model.id;
+      var meta = [model.id];
+      if (model.contextWindow) meta.push(model.contextWindow.toLocaleString() + ' ctx');
+      if (model.reasoningEfforts && model.reasoningEfforts.length) {
+        meta.push('reasoning: ' + model.reasoningEfforts.join('/'));
+      }
+      return '<div class="orca-combo-option" role="option" data-value="' + esc(model.id) + '"'
+        + ' aria-selected="' + (model.id === selectedId ? 'true' : 'false') + '">'
+        + esc(label) + '<div class="orca-opt-meta">' + esc(meta.join(' · ')) + '</div></div>';
+    }
+
+    function orcaRenderOptionList(capability) {
+      var entry = orca().catalogs[capability];
+      var list = document.getElementById('orca-list-' + capability);
+      if (!list) return;
+      if (!entry) {
+        list.innerHTML = '<div class="orca-combo-empty">Loading…</div>';
+        return;
+      }
+      var query = (orca().search[capability] || '').toLowerCase();
+      var options = (entry.options || []).filter(function(m) {
+        if (!query) return true;
+        return m.id.toLowerCase().indexOf(query) >= 0
+          || (m.name || '').toLowerCase().indexOf(query) >= 0;
+      });
+      if (options.length === 0) {
+        list.innerHTML = '<div class="orca-combo-empty">'
+          + (((entry.options || []).length === 0)
+              ? 'No compatible models for this entry point.'
+              : 'No model matches that search.')
+          + '</div>';
+        return;
+      }
+      var selected = orca().selected[capability];
+      list.innerHTML = options.map(function(m) {
+        return orcaOptionHtml(capability, m, selected);
+      }).join('');
+    }
+
+    function orcaOpenCombo(capability, open) {
+      // Only one panel is open at a time.
+      ['chat', 'multimodal', 'embedding'].forEach(function(other) {
+        var panel = document.getElementById('orca-panel-' + other);
+        var trigger = document.getElementById('orca-trigger-' + other);
+        if (!panel || !trigger) return;
+        var shouldOpen = other === capability && open;
+        panel.hidden = !shouldOpen;
+        trigger.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
+        if (!shouldOpen && other === capability) {
+          var search = document.getElementById('orca-search-' + other);
+          if (search) search.value = '';
+          orca().search[other] = '';
+        }
+      });
+    }
+
+    function orcaSelectModel(capability, id) {
+      var entry = orca().catalogs[capability];
+      if (!entry) return;
+      var previous = orca().selected[capability];
+      orca().selected[capability] = id;
+      orcaOpenCombo(capability, false);
+      var valueEl = document.getElementById('orca-value-' + capability);
+      if (valueEl) {
+        var model = (entry.options || []).filter(function(m) { return m.id === id; })[0];
+        if (model) {
+          valueEl.textContent = model.id;
+          valueEl.classList.remove('placeholder');
+        } else {
+          valueEl.textContent = 'Select a model…';
+          valueEl.classList.add('placeholder');
+        }
+      }
+      if (previous !== id) {
+        var meta = document.getElementById('orca-meta-' + capability);
+        var current = (entry.options || []).filter(function(m) { return m.id === id; })[0];
+        if (meta) meta.textContent = orcaMetaText(entry, (entry.options || []).length, current);
+      }
+      orcaRenderOptionList(capability);
+    }
+
+    function orcaRenderModelFields() {
+      ['chat', 'multimodal', 'embedding'].forEach(function(capability) {
+        var entry = orca().catalogs[capability];
+        var valueEl = document.getElementById('orca-value-' + capability);
+        if (!valueEl) return;
+        if (!entry) {
+          valueEl.textContent = 'Loading…';
+          valueEl.classList.add('placeholder');
+          orcaRenderOptionList(capability);
+          return;
+        }
+        var banner = document.getElementById('orca-banner-' + capability);
+        if (banner) {
+          if (entry.degraded) {
+            banner.hidden = false;
+            banner.className = 'orca-banner degraded';
+            banner.textContent = (entry.degradedReason || 'Live discovery unavailable.')
+              + ' These entries are a verified fallback list, not the live workspace catalog.';
+          } else {
+            banner.hidden = true;
+            banner.textContent = '';
+          }
+        }
+        var options = entry.options || [];
+        var selected = orca().selected[capability];
+        // An id that is no longer compatible must be cleared, not silently
+        // kept: keeping it would send a request the entry point cannot make.
+        if (selected && !options.some(function(m) { return m.id === selected; })) {
+          orca().selected[capability] = '';
+          selected = '';
+        }
+        var current = options.filter(function(m) { return m.id === selected; })[0];
+        if (current) {
+          valueEl.textContent = current.id;
+          valueEl.classList.remove('placeholder');
+        } else {
+          valueEl.textContent = options.length === 0 ? 'No compatible models' : 'Select a model…';
+          valueEl.classList.add('placeholder');
+        }
+        orcaRenderOptionList(capability);
+        var meta = document.getElementById('orca-meta-' + capability);
+        if (meta) meta.textContent = orcaMetaText(entry, options.length, current);
+      });
+    }
+
+    function orcaMetaText(entry, count, model) {
+      var source = entry.source === 'live'
+        ? 'live catalog'
+        : (entry.source === 'last-known-good' ? 'last-known-good catalog' : 'verified fallback');
+      var text = count + ' of ' + entry.total + ' models · ' + source;
+      if (entry.fetchedAt) text += ' · fetched ' + shortTime(entry.fetchedAt);
+      if (model) {
+        text += ' · ' + model.id;
+        if (model.contextWindow) text += ' · ' + model.contextWindow.toLocaleString() + ' ctx';
+        if (model.reasoningEfforts && model.reasoningEfforts.length) {
+          text += ' · reasoning: ' + model.reasoningEfforts.join('/');
+        }
+      }
+      return text;
+    }
+
+    async function orcaLoadCatalog(capability, forceRefresh) {
+      var gen = orca().generation;
+      var qs = 'orcarouter/models?capability=' + encodeURIComponent(capability)
+        + (capability === 'multimodal' ? '&inputModality=image' : '')
+        + (forceRefresh ? '&refresh=true' : '');
+      var res = await apiGet(qs);
+      if (!orcaIsCurrent(gen)) return;
+      if (!res) {
+        orca().catalogs[capability] = {
+          options: [], total: 0, degraded: true,
+          degradedReason: 'Could not reach the memory server to list models.',
+          source: 'unavailable', fetchedAt: null
+        };
+      } else {
+        orca().catalogs[capability] = res;
+      }
+      orcaRenderModelFields();
+    }
+
+    async function orcaSaveKey() {
+      var input = document.getElementById('orca-api-key');
+      if (!input) return;
+      var key = (input.value || '').trim();
+      var gen = orca().generation;
+      orca().error = null;
+      var res = await apiPost('orcarouter/key', { apiKey: key });
+      if (!orcaIsCurrent(gen)) return;
+      if (!res || res.error) {
+        orca().error = (res && res.error) || 'Could not save the API key.';
+        renderSettings();
+        return;
+      }
+      // Clear the field immediately — the key now lives in the backend secret
+      // store and has no reason to stay in the DOM.
+      if (input) input.value = '';
+      orca().error = null;
+      await refreshOrcaStatus();
+      await orcaLoadCatalog('chat', true);
+    }
+
+    async function orcaSignOut() {
+      var gen = orca().generation;
+      await apiPost('orcarouter/signout', {});
+      if (!orcaIsCurrent(gen)) return;
+      orca().error = null;
+      orca().hint = '';
+      await refreshOrcaStatus();
+    }
+
+    async function refreshOrcaStatus() {
+      var status = await apiGet('orcarouter/status');
+      if (!status) return;
+      orca().status = status;
+      renderSettings();
+    }
+
+    async function orcaConnect() {
+      orcaStopPolling();
+      // A new attempt always owns a new generation, so anything still in
+      // flight from a previous attempt can no longer mutate this state.
+      var gen = orcaNextGeneration();
+      orca().error = null;
+      orca().busy = true;
+      orca().hint = '';
+      renderSettings();
+
+      var res = await apiPost('orcarouter/connect/start', {});
+      if (!orcaIsCurrent(gen)) return;
+      if (!res || res.error) {
+        orca().busy = false;
+        orca().error = (res && res.error) || 'Could not start the OrcaRouter connection.';
+        renderSettings();
+        return;
+      }
+      orca().attemptId = res.attemptId;
+      orca().hint = 'Waiting for approval. If your browser did not open, visit:\n' + res.authorizeUrl;
+      renderSettings();
+      // The backend already opened the browser; this is the manual fallback
+      // for browsers that refuse, and for the screenshot/automation path.
+      orcaPoll(gen, res.attemptId);
+    }
+
+    function orcaPoll(gen, attemptId) {
+      orcaStopPolling();
+      orca().pollTimer = setInterval(async function() {
+        if (!orcaIsCurrent(gen)) { orcaStopPolling(); return; }
+        var status = await apiGet('orcarouter/connect/status?attemptId=' + encodeURIComponent(attemptId));
+        if (!orcaIsCurrent(gen)) return;
+        if (!status) return;
+        if (status.phase === 'succeeded') {
+          orcaStopPolling();
+          orca().busy = false;
+          orca().hint = '';
+          orca().attemptId = null;
+          await refreshOrcaStatus();
+          await orcaLoadCatalog('chat', true);
+          return;
+        }
+        if (status.phase === 'failed') {
+          orcaStopPolling();
+          orca().busy = false;
+          orca().hint = '';
+          orca().attemptId = null;
+          orca().error = (status.error && status.error.message) || 'Authorization failed.';
+          renderSettings();
+        }
+      }, 1000);
+    }
+
+    async function orcaCancel() {
+      var attemptId = orca().attemptId;
+      orcaStopPolling();
+      // Bump the generation first: whatever the in-flight poll returns is now
+      // stale and cannot re-enable the busy state it was about to set.
+      orcaNextGeneration();
+      orca().busy = false;
+      orca().hint = '';
+      orca().attemptId = null;
+      orca().error = null;
+      orcaClearBusyDom();
+      renderSettings();
+      if (attemptId) {
+        // Tell the server to stop working on an attempt nobody is waiting for
+        // and release the login lock.
+        await apiPost('orcarouter/connect/cancel', { attemptId: attemptId });
+      }
+      await refreshOrcaStatus();
+    }
+
+    // Clear the busy affordances in the DOM without a full re-render. Needed
+    // because the pagehide path must not depend on renderSettings() running
+    // later: if the page is restored from the back-forward cache, whatever the
+    // DOM looks like at that moment is what the user gets back.
+    function orcaClearBusyDom() {
+      var connect = document.getElementById('orca-connect');
+      if (connect) {
+        connect.disabled = false;
+        connect.removeAttribute('aria-busy');
+        connect.textContent = 'Connect with OrcaRouter';
+      }
+      var cancel = document.getElementById('orca-cancel');
+      if (cancel) cancel.disabled = true;
+      var hint = document.getElementById('orca-auth-hint');
+      if (hint && hint.parentNode) hint.parentNode.removeChild(hint);
+    }
+
+    // `pagehide` can put this page in the back-forward cache. Invalidating the
+    // generation makes any in-flight response harmless — but the guarded
+    // `finally` blocks then correctly refuse to touch state, which would leave
+    // a restored page permanently busy. So clear the busy flag, the hint, and
+    // the DOM that shows them, synchronously, right here.
+    function orcaReleaseOnPageHide() {
+      var attemptId = orca().attemptId;
+      orcaNextGeneration();
+      orcaStopPolling();
+      orca().busy = false;
+      orca().hint = '';
+      orca().attemptId = null;
+      orcaClearBusyDom();
+      if (!attemptId) return;
+      try {
+        var url = REST + '/agentmemory/orcarouter/connect/cancel';
+        var headers = { 'Content-Type': 'application/json' };
+        var viewerToken = getViewerToken();
+        if (viewerToken) headers.Authorization = 'Bearer ' + viewerToken;
+        // `keepalive` lets the request outlive the page. It is best-effort:
+        // older browsers reject it, and the generation guard above has
+        // already made the outcome safe either way.
+        fetch(url, {
+          method: 'POST',
+          headers: headers,
+          body: JSON.stringify({ attemptId: attemptId }),
+          keepalive: true
+        }).catch(function() {});
+      } catch (err) {
+        console.debug('[viewer] orcarouter pagehide cancel skipped:', err);
+      }
+    }
+
+    // Unmounting (tab switch, provider switch, modal close) releases the
+    // server-side lock without writing UI state that no longer exists.
+    function orcaReleaseOnUnmount() {
+      var attemptId = orca().attemptId;
+      if (!attemptId) return;
+      orcaNextGeneration();
+      orcaStopPolling();
+      orca().attemptId = null;
+      orca().busy = false;
+      apiPost('orcarouter/connect/cancel', { attemptId: attemptId });
+    }
+
+    window.addEventListener('pagehide', orcaReleaseOnPageHide);
+    window.addEventListener('beforeunload', orcaReleaseOnPageHide);
+
     async function loadTab(tab) {
       var now = Date.now();
       if (tab !== 'replay' && tabFetchedAt[tab] && now - tabFetchedAt[tab] < TAB_FRESH_MS) {
@@ -1460,6 +2145,7 @@
         case 'audit': await loadAudit(); break;
         case 'activity': await loadActivity(); break;
         case 'profile': await loadProfile(); break;
+        case 'settings': await loadSettings(); break;
         // Replay stays fetch-once: reloading it would reset playback
         // timer and cursor state mid-session; its toolbar has an explicit
         // Refresh button instead.
@@ -3973,6 +4659,52 @@
       }
     }
 
+    // Model combobox interactions, delegated so they survive the innerHTML
+    // re-renders in renderSettings().
+    document.addEventListener('click', function(e) {
+      if (!(e.target instanceof Element)) return;
+      var trigger = e.target.closest('.orca-combo-trigger');
+      if (trigger) {
+        var capability = trigger.closest('.orca-combo').getAttribute('data-orca-capability');
+        orcaOpenCombo(capability, trigger.getAttribute('aria-expanded') !== 'true');
+        return;
+      }
+      var option = e.target.closest('.orca-combo-option');
+      if (option) {
+        var combo = option.closest('.orca-combo');
+        orcaSelectModel(
+          combo.getAttribute('data-orca-capability'),
+          option.getAttribute('data-value')
+        );
+        return;
+      }
+      // Clicking anywhere else closes an open panel.
+      if (!e.target.closest('.orca-combo-panel')) orcaOpenCombo(null, false);
+    });
+
+    document.addEventListener('input', function(e) {
+      if (!(e.target instanceof Element)) return;
+      var search = e.target.closest('.orca-combo-search');
+      if (!search) return;
+      var capability = search.closest('.orca-combo').getAttribute('data-orca-capability');
+      orca().search[capability] = search.value || '';
+      orcaRenderOptionList(capability);
+    });
+
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') { orcaOpenCombo(null, false); return; }
+      if (!(e.target instanceof Element)) return;
+      var trigger = e.target.closest('.orca-combo-trigger');
+      // Enter/Space/ArrowDown open the listbox from the keyboard.
+      if (trigger && (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowDown')) {
+        e.preventDefault();
+        var capability = trigger.closest('.orca-combo').getAttribute('data-orca-capability');
+        orcaOpenCombo(capability, true);
+        var search = document.getElementById('orca-search-' + capability);
+        if (search) search.focus();
+      }
+    });
+
     document.getElementById('tab-bar').addEventListener('click', function(e) {
       var btn = e.target instanceof Element ? e.target.closest('button[data-tab]') : null;
       if (btn) switchTab(btn.dataset.tab);
@@ -4225,6 +4957,10 @@
         if (gotoTab) switchTab(gotoTab);
         return;
       }
+      if (action === 'orca-save-key') { orcaSaveKey(); return; }
+      if (action === 'orca-connect') { orcaConnect(); return; }
+      if (action === 'orca-cancel') { orcaCancel(); return; }
+      if (action === 'orca-signout') { orcaSignOut(); return; }
       if (action === 'select-lesson') {
         var lsnId = target.getAttribute('data-lesson-id');
         if (lsnId) {
