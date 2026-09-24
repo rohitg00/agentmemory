@@ -9,6 +9,7 @@ import { generateId } from "../state/schema.js";
 import {
   resolveHandle,
   invalidateHandle,
+  ProxyHttpError,
   type Handle,
   type ProxyHandle,
 } from "./rest-proxy.js";
@@ -390,7 +391,7 @@ export async function handleToolCall(
         process.stderr.write(
           `[@agentmemory/mcp] proxy call failed for ${toolName}: ${err instanceof Error ? err.message : String(err)}\n`,
         );
-        invalidateHandle();
+        if (!(err instanceof ProxyHttpError)) invalidateHandle();
         throw err;
       }
     }
@@ -404,6 +405,7 @@ export async function handleToolCall(
     try {
       return await handleProxy(validated, handle);
     } catch (err) {
+      if (err instanceof ProxyHttpError) throw err;
       process.stderr.write(
         `[@agentmemory/mcp] proxy call failed for ${toolName}: ${err instanceof Error ? err.message : String(err)}; invalidating handle and falling back to local KV\n`,
       );

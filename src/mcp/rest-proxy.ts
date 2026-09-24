@@ -15,6 +15,18 @@ function forceProxy(): boolean {
   return raw === "1" || raw === "true";
 }
 
+// Server reached and tool ran but failed — not a connectivity problem, so
+// callers must not invalidate the handle or fall back to local.
+export class ProxyHttpError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+  ) {
+    super(message);
+    this.name = "ProxyHttpError";
+  }
+}
+
 export interface ProxyHandle {
   mode: "proxy";
   baseUrl: string;
@@ -147,8 +159,17 @@ export async function resolveHandle(): Promise<Handle> {
             signal: AbortSignal.timeout(CALL_TIMEOUT_MS),
           });
           if (!res.ok) {
-            throw new Error(
-              `${init?.method || "GET"} ${path} -> ${res.status} ${res.statusText}`,
+            const bodyText = await res.text().catch(() => "");
+            let detail = "";
+            try {
+              const parsed = bodyText ? JSON.parse(bodyText) : null;
+              if (parsed && typeof parsed.error === "string") detail = parsed.error;
+            } catch {
+              detail = bodyText;
+            }
+            throw new ProxyHttpError(
+              `${init?.method || "GET"} ${path} -> ${res.status} ${res.statusText}${detail ? `: ${detail}` : ""}`,
+              res.status,
             );
           }
           const text = await res.text();

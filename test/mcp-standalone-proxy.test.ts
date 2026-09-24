@@ -210,7 +210,7 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
     expect(out.results[0].content).toBe("local only");
   });
 
-  it("invalidates the handle on proxy failure, so the next call re-probes", async () => {
+  it("invalidates the handle on a connectivity failure, so the next call re-probes", async () => {
     let probeCount = 0;
     let serverUp = true;
     installFetch((url) => {
@@ -218,7 +218,9 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
         probeCount++;
         return serverUp ? new Response("ok", { status: 200 }) : new Response("", { status: 500 });
       }
-      return new Response("boom", { status: 500, statusText: "Internal Server Error" });
+      // Connection dropped mid-request — a real connectivity failure, distinct
+      // from an HTTP error response where the tool actually ran and failed.
+      throw new Error("ECONNRESET");
     });
     const localKv = new InMemoryKV(undefined);
     await handleToolCall("memory_save", { content: "first fallback" }, localKv);
@@ -226,6 +228,21 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
     serverUp = false;
     await handleToolCall("memory_save", { content: "second fallback" }, localKv);
     expect(probeCount).toBe(2);
+  });
+
+  it("surfaces a real tool-execution error instead of masking it as a fallback", async () => {
+    installFetch((url) => {
+      if (url.endsWith("/agentmemory/livez")) return new Response("ok", { status: 200 });
+      return new Response(JSON.stringify({ error: "disk full" }), {
+        status: 500,
+        statusText: "Internal Server Error",
+        headers: { "content-type": "application/json" },
+      });
+    });
+    const localKv = new InMemoryKV(undefined);
+    await expect(
+      handleToolCall("memory_save", { content: "should not fall back" }, localKv),
+    ).rejects.toThrow(/disk full/);
   });
 
   it("forwards non-essential tools to /agentmemory/mcp/call (#234)", async () => {
@@ -373,7 +390,10 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
         probeStarted++;
         return new Response("ok", { status: 200 });
       }
-      return new Response("not found", { status: 404 });
+      return new Response(JSON.stringify({ id: "mem-1" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
     });
     try {
       const localKv = new InMemoryKV(undefined);
