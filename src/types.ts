@@ -248,6 +248,8 @@ export interface MemorySlot {
   label: string;
   content: string;
   sizeLimit: number;
+  /** Bumped on every write; pass it back as expectedRev to reject a stale overwrite. */
+  rev?: number;
   description: string;
   pinned: boolean;
   readOnly: boolean;
