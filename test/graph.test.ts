@@ -597,6 +597,77 @@ describe("Graph Functions", () => {
   // the oversized-corpus rebuild refusal. The hot path never enumerates
   // any more, but the rebuild endpoint AND the BFS / query branches
   // still call kv.list — both need explicit failure-mode tests.
+  describe("snapshot-reported total floor (#1382)", () => {
+    // totalNodes feeds the viewer badge and gates the "showing N of M" banner
+    // via `truncated`. It is read straight from the snapshot's counters, which
+    // a lossy write can leave below the nodes the snapshot actually holds, so
+    // the response could report fewer nodes than it returned with the banner
+    // switched off.
+    function seedSnapshot(
+      stats: { totalNodes: number; nodesByType: Record<string, number> },
+      topNodeCount: number,
+    ) {
+      const topNodes = Array.from({ length: topNodeCount }, (_, i) => ({
+        id: `n_${i}`,
+        type: "file",
+        name: `node-${i}`,
+        properties: {},
+        sourceObservationIds: [`obs_${i}`],
+        firstSeen: "2026-01-01T00:00:00Z",
+        lastSeen: "2026-01-01T00:00:00Z",
+        observationCount: 1,
+        stale: false,
+      }));
+      return kv.set("mem:graph:snapshot", "current", {
+        version: 1,
+        topNodes,
+        topEdges: [],
+        topDegrees: {},
+        stats: {
+          totalNodes: stats.totalNodes,
+          totalEdges: 0,
+          nodesByType: stats.nodesByType,
+          edgesByType: {},
+        },
+        updatedAt: "2026-01-01T00:00:00Z",
+        dirty: false,
+      });
+    }
+
+    it("does not report fewer nodes than it returns when the counter is low", async () => {
+      await seedSnapshot({ totalNodes: 101, nodesByType: { file: 101 } }, 343);
+
+      const result = (await sdk.trigger("mem::graph-query", {})) as GraphQueryResult;
+
+      expect(result.nodes.length).toBe(343);
+      expect(result.totalNodes).toBe(343);
+      // Nothing is actually hidden, so the banner correctly stays off.
+      expect(result.truncated).toBe(false);
+    });
+
+    it("leaves a healthy counter above the top-N cap alone and raises the banner", async () => {
+      await seedSnapshot({ totalNodes: 40000, nodesByType: { file: 40000 } }, 343);
+
+      const result = (await sdk.trigger("mem::graph-query", {})) as GraphQueryResult;
+
+      expect(result.nodes.length).toBe(343);
+      expect(result.totalNodes).toBe(40000);
+      expect(result.truncated).toBe(true);
+    });
+
+    it("applies the same floor to the type-filtered total", async () => {
+      await seedSnapshot({ totalNodes: 101, nodesByType: { file: 101 } }, 343);
+
+      const result = (await sdk.trigger("mem::graph-query", {
+        nodeType: "file",
+      })) as GraphQueryResult;
+
+      expect(result.nodes.length).toBe(343);
+      expect(result.totalNodes).toBe(343);
+      expect(result.truncated).toBe(false);
+    });
+  });
+
   describe("budget + tooLarge guards (#814 v2)", () => {
     function slowKV(delayMs: number) {
       const base = mockKV();

@@ -150,9 +150,15 @@ function paginateFromSnapshot(
   const filteredNodes = filterType
     ? snap.topNodes.filter((n) => n.type === filterType)
     : snap.topNodes;
-  const total = filterType
+  const totalRaw = filterType
     ? snap.stats.nodesByType[filterType] ?? 0
     : snap.stats.totalNodes;
+  // A recorded total that undercuts the candidates it is drawn from is wrong,
+  // and reporting it hides the discrepancy: `truncated` is gated on this value,
+  // so an understated count switches off the "showing N of M" banner exactly
+  // when the counter is least trustworthy. Flooring keeps a lossy counter from
+  // making the response claim fewer nodes than it returns.
+  const total = Math.max(totalRaw, filteredNodes.length);
   const pageNodes = filteredNodes.slice(offset, offset + limit);
   const pageIds = new Set(pageNodes.map((n) => n.id));
   const pageEdges = snap.topEdges.filter(
