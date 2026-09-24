@@ -7,6 +7,7 @@ import {
   detectLlmProviderKind,
   getAgentId,
   getConsolidationCooldownMs,
+  isAgentScopeIsolated,
   isConsolidationEnabled,
 } from "../config.js";
 import { logger } from "../logger.js";
@@ -181,7 +182,10 @@ export function registerEventTriggers(sdk: IIIClient, kv: StateKV): void {
       old_value?: Session;
       new_value?: Session;
     }) => {
-      if (payload.event_type === "delete") {
+      if (isOutOfAgentScope(payload.new_value ?? payload.old_value)) {
+        return { emitted: false };
+      }
+      if (isStateDelete(payload)) {
         await sendViewerEvent(sdk, `session-deleted-${payload.key}-${Date.now()}`, "session.deleted", {
           sessionId: payload.key,
         });
@@ -217,9 +221,13 @@ export function registerEventTriggers(sdk: IIIClient, kv: StateKV): void {
     async (payload: {
       key: string;
       event_type: string;
+      old_value?: Memory;
       new_value?: Memory;
     }) => {
-      const deleted = payload.event_type === "delete" || !payload.new_value;
+      if (isOutOfAgentScope(payload.new_value ?? payload.old_value)) {
+        return { emitted: false };
+      }
+      const deleted = isStateDelete(payload);
       const memory = payload.new_value;
       await sendViewerEvent(
         sdk,
@@ -243,6 +251,14 @@ export function registerEventTriggers(sdk: IIIClient, kv: StateKV): void {
     function_id: "event::memory::changed",
     config: { scope: KV.memories },
   });
+}
+
+function isStateDelete(payload: { event_type: string; new_value?: unknown }): boolean {
+  return payload.event_type === "state:deleted" || !payload.new_value;
+}
+
+function isOutOfAgentScope(record: { agentId?: string } | undefined): boolean {
+  return isAgentScopeIsolated() && record?.agentId !== getAgentId();
 }
 
 async function sendViewerEvent(

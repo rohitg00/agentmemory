@@ -98,7 +98,7 @@ describe("viewer dashboard reliability", () => {
 
   it("a failed refresh keeps the last data instead of showing the new-install hero", () => {
     const loader = extractFunction("loadDashboard");
-    expect(loader).toMatch(/if \(sessionsOk\) d\.sessions = results\[1\]\.sessions;/);
+    expect(loader).toMatch(/if \(sessionsOk\) d\.sessions = replaySessionEvents\(results\[1\]\.sessions, seqAtStart\);/);
     expect(loader).toMatch(/if \(!sessionsOk && !d\.loaded\)/);
     const listOr = load<(p: unknown[], r: unknown, k: string, f?: string) => unknown[]>("listOr");
     expect(listOr([1, 2], null, "items")).toEqual([1, 2]);
@@ -149,6 +149,64 @@ describe("viewer dashboard reliability", () => {
     expect(rebuild).toMatch(/window\.confirm\(/);
     expect(rebuild).toMatch(/result && result\.success/);
     expect(rebuild).toMatch(/finally \{\s*graphRebuilding = false;/);
+  });
+
+  it("a session list fetched while live events arrive replays them so deletes and updates stick", () => {
+    const deps = ["sessionKey", "upsertSessionIn", "removeSessionFrom", "patchSessionCount", "applySessionEvent", "replaySessionEvents"]
+      .map(extractFunction)
+      .join("\n");
+    const replay = new Function(
+      "liveSessionLog",
+      `${deps}\nreturn replaySessionEvents;`,
+    )([
+      { seq: 1, type: "session.deleted", data: { sessionId: "old" } },
+      { seq: 2, type: "session.deleted", data: { sessionId: "a" } },
+      { seq: 3, type: "session.updated", data: { session: { id: "c", status: "active" } } },
+      { seq: 4, type: "session.activity", data: { sessionId: "b", observationCount: 9 } },
+    ]) as (l: Array<Record<string, unknown>>, since: number) => Array<Record<string, unknown>>;
+    const fetched = [
+      { id: "a", observationCount: 1 },
+      { id: "b", observationCount: 2 },
+      { id: "old", observationCount: 0 },
+    ];
+    expect(replay(fetched, 1)).toEqual([
+      { id: "c", status: "active" },
+      { id: "b", observationCount: 9 },
+      { id: "old", observationCount: 0 },
+    ]);
+    expect(extractFunction("loadSessions")).toMatch(/replaySessionEvents\(result\.sessions, seqAtStart\)/);
+  });
+
+  it("count updates rerender the session list without refetching or blanking the open detail", () => {
+    const render = extractFunction("renderSessions");
+    expect(render).toMatch(/cached\.id === state\.sessions\.selectedId && !state\.sessions\.detailStale/);
+    const detail = extractFunction("renderSessionDetail");
+    expect(detail).toMatch(/if \(!cached \|\| cached\.id !== id\) \{\s*panel\.innerHTML = '<div class="detail-panel"><h3>Loading/);
+    expect(detail).toMatch(/if \(request !== sessionDetailRequest \|\| state\.sessions\.selectedId !== id\) return;/);
+    expect(extractFunction("handleLiveEvent")).toMatch(
+      /if \(type !== 'session\.activity' && touched === state\.sessions\.selectedId\) \{\s*state\.sessions\.detailStale = true;/,
+    );
+  });
+
+  it("memory events coalesce list reloads and only the newest count response wins", () => {
+    const reload = extractFunction("scheduleMemoriesReload");
+    expect(reload).toMatch(/if \(memoriesReloading\) \{\s*memoriesReloadPending = true;\s*return;/);
+    expect(reload).toMatch(/finally \{\s*memoriesReloading = false;/);
+    expect(extractFunction("handleLiveEvent")).not.toMatch(/loadMemories\(\)/);
+    expect(extractFunction("refreshMemoryCount")).toMatch(
+      /var request = \+\+memoryCountRequest;[\s\S]*if \(request !== memoryCountRequest\) return;/,
+    );
+  });
+
+  it("a reconnect resyncs loaded views, and only a delivered message clears the failure count", () => {
+    expect(viewer).toMatch(/if \(wsHasConnected\) resyncLiveViews\(\);\s*wsHasConnected = true;/);
+    const resync = extractFunction("resyncLiveViews");
+    expect(resync).toMatch(/if \(state\.dashboard\.loaded\) loadDashboard\(\);/);
+    expect(resync).toMatch(/if \(state\.sessions\.loaded\) loadSessions\(\);/);
+    expect(viewer).toMatch(/if \(!ws\.__usable\) \{\s*ws\.__usable = true;\s*directFailures = 0;/);
+    const onopen = viewer.slice(viewer.indexOf("ws.onopen = function"), viewer.indexOf("ws.onmessage = function"));
+    expect(onopen).toMatch(/wsRetries = 0;/);
+    expect(onopen).not.toMatch(/directFailures = 0;/);
   });
 
   it("returning to the tab reconnects a dropped live stream (#1370)", () => {

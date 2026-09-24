@@ -28,7 +28,7 @@ describe("viewer live events", () => {
     const handler = handlers.get("event::session::observation-count-changed")!;
     await handler({
       key: "s1",
-      event_type: "update",
+      event_type: "state:updated",
       old_value: { id: "s1", status: "active", observationCount: 2 },
       new_value: { id: "s1", status: "active", observationCount: 3 },
     });
@@ -42,7 +42,7 @@ describe("viewer live events", () => {
     const { handlers, sent } = setup();
     await handlers.get("event::session::observation-count-changed")!({
       key: "s1",
-      event_type: "update",
+      event_type: "state:updated",
       old_value: { id: "s1", status: "active", observationCount: 3 },
       new_value: { id: "s1", status: "completed", observationCount: 3 },
     });
@@ -52,8 +52,32 @@ describe("viewer live events", () => {
 
   it("pushes session.deleted when a session is removed", async () => {
     const { handlers, sent } = setup();
-    await handlers.get("event::session::observation-count-changed")!({ key: "s9", event_type: "delete" });
+    await handlers.get("event::session::observation-count-changed")!({
+      key: "s9",
+      event_type: "state:deleted",
+      old_value: { id: "s9", status: "completed", observationCount: 4 },
+      new_value: null,
+    });
     expect(sent).toEqual([expect.objectContaining({ type: "session.deleted", data: { sessionId: "s9" } })]);
+  });
+
+  it("drops session and memory events from other agents when agent scope is isolated", async () => {
+    vi.stubEnv("AGENT_ID", "agent-a");
+    vi.stubEnv("AGENTMEMORY_AGENT_SCOPE", "isolated");
+    try {
+      const { handlers, sent } = setup();
+      const sessions = handlers.get("event::session::observation-count-changed")!;
+      const memories = handlers.get("event::memory::changed")!;
+      await sessions({ key: "s1", event_type: "state:created", new_value: { id: "s1", agentId: "agent-b", observationCount: 1 } });
+      await sessions({ key: "s2", event_type: "state:deleted", old_value: { id: "s2", agentId: "agent-b" }, new_value: null });
+      await memories({ key: "m1", event_type: "state:created", new_value: { id: "m1", agentId: "agent-b" } });
+      expect(sent).toEqual([]);
+      await sessions({ key: "s3", event_type: "state:created", new_value: { id: "s3", agentId: "agent-a", observationCount: 0 } });
+      await memories({ key: "m2", event_type: "state:deleted", old_value: { id: "m2", agentId: "agent-a" }, new_value: null });
+      expect(sent.map((e) => e.type)).toEqual(["session.updated", "memory.deleted"]);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it("pushes a slim memory.updated or memory.deleted on memory writes", async () => {
@@ -64,10 +88,10 @@ describe("viewer live events", () => {
     const handler = handlers.get("event::memory::changed")!;
     await handler({
       key: "m1",
-      event_type: "create",
+      event_type: "state:created",
       new_value: { id: "m1", type: "fact", title: "t", content: "long body", isLatest: true, updatedAt: "2026-09-24T00:00:00Z" },
     });
-    await handler({ key: "m1", event_type: "delete" });
+    await handler({ key: "m1", event_type: "state:deleted", new_value: null });
     expect(sent.map((e) => e.type)).toEqual(["memory.updated", "memory.deleted"]);
     expect(sent[0].data).toEqual({
       memoryId: "m1",

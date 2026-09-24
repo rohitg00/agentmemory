@@ -1520,6 +1520,7 @@
       var el = document.getElementById('view-dashboard');
       var d = state.dashboard;
       if (!d.loaded) el.innerHTML = '<div class="loading">Loading dashboard...</div>';
+      var seqAtStart = liveSessionSeq;
       try {
         var results = await Promise.all([
           api('health', { readErrorBody: true }),
@@ -1544,7 +1545,7 @@
         }
         d.stale = results.some(function(r) { return r === null; });
         if (results[0]) d.health = results[0];
-        if (sessionsOk) d.sessions = results[1].sessions;
+        if (sessionsOk) d.sessions = replaySessionEvents(results[1].sessions, seqAtStart);
         if (results[2] && typeof results[2].total === 'number') d.memoryTotal = results[2].total;
         if (results[3]) d.graphStats = results[3];
         d.recentAudit = listOr(d.recentAudit, results[4], 'entries');
@@ -3236,8 +3237,14 @@
     async function loadSessions() {
       var el = document.getElementById('view-sessions');
       if (!state.sessions.loaded) el.innerHTML = '<div class="loading">Loading sessions...</div>';
+      var seqAtStart = liveSessionSeq;
       var result = await apiGet('sessions');
-      state.sessions.items = (result && result.sessions) || [];
+      if (result && Array.isArray(result.sessions)) {
+        state.sessions.items = replaySessionEvents(result.sessions, seqAtStart);
+      } else if (!state.sessions.loaded) {
+        state.sessions.items = [];
+      }
+      state.sessions.detailStale = true;
       state.sessions.loaded = true;
       renderSessions();
     }
@@ -3273,7 +3280,14 @@
       html += '<div id="session-detail"></div></div>';
       setViewHtml(el, html);
 
-      if (state.sessions.selectedId) renderSessionDetail();
+      if (!state.sessions.selectedId) return;
+      var cached = state.sessions.detailCache;
+      if (cached && cached.id === state.sessions.selectedId && !state.sessions.detailStale) {
+        var panel = document.getElementById('session-detail');
+        if (panel && panel.innerHTML !== cached.html) panel.innerHTML = cached.html;
+        return;
+      }
+      renderSessionDetail();
     }
 
     function selectSession(id) {
@@ -3293,6 +3307,7 @@
       }
     }
 
+    var sessionDetailRequest = 0;
     async function renderSessionDetail() {
       var panel = document.getElementById('session-detail');
       if (!panel) return;
@@ -3300,9 +3315,15 @@
       var id = sessionId(s);
       if (!s || !id) { panel.innerHTML = ''; return; }
 
-      panel.innerHTML = '<div class="detail-panel"><h3>Loading session details…</h3></div>';
+      state.sessions.detailStale = false;
+      var request = ++sessionDetailRequest;
+      var cached = state.sessions.detailCache;
+      if (!cached || cached.id !== id) {
+        panel.innerHTML = '<div class="detail-panel"><h3>Loading session details…</h3></div>';
+      }
 
       var obsRes = await apiGet('observations?sessionId=' + encodeURIComponent(id));
+      if (request !== sessionDetailRequest || state.sessions.selectedId !== id) return;
       var obs = (obsRes && obsRes.observations) || [];
 
       var typeCounts = {};
@@ -3394,7 +3415,9 @@
         html += '<button class="btn btn-primary" disabled>Summarize unavailable</button>';
       }
       html += '</div></div>';
-      panel.innerHTML = html;
+      state.sessions.detailCache = { id: id, html: html };
+      panel = document.getElementById('session-detail');
+      if (panel) panel.innerHTML = html;
     }
 
     async function endSession(id) {
@@ -3867,6 +3890,7 @@
     var WS_MAX_RETRIES = 4;
     var directFailed = true;
     var directFailures = 0;
+    var wsHasConnected = false;
     var DIRECT_FAILURE_THRESHOLD = 2;
     var pollTimer = null;
     var POLL_INTERVAL_MS = 10000;
@@ -3939,8 +3963,9 @@
           clearTimeout(connectTimer);
           if (state.ws !== ws) return;
           wsRetries = 0;
-          directFailures = 0;
           stopPolling();
+          if (wsHasConnected) resyncLiveViews();
+          wsHasConnected = true;
           if (!ws.__direct) {
             ws.send(JSON.stringify({
               type: 'join',
@@ -3955,6 +3980,10 @@
         };
         ws.onmessage = function(e) {
           if (state.ws !== ws) return;
+          if (!ws.__usable) {
+            ws.__usable = true;
+            directFailures = 0;
+          }
           try {
             var msg = JSON.parse(e.data);
             if (msg.type === 'stream' && msg.event) {
@@ -4024,17 +4053,71 @@
       });
     }
 
+    var LIVE_SESSION_LOG_MAX = 500;
+    var liveSessionLog = [];
+    var liveSessionSeq = 0;
+
+    function applySessionEvent(list, entry) {
+      if (entry.type === 'session.updated') return upsertSessionIn(list, entry.data.session);
+      if (entry.type === 'session.deleted') return removeSessionFrom(list, entry.data.sessionId);
+      patchSessionCount(list, entry.data.sessionId, entry.data.observationCount);
+      return list;
+    }
+
+    function replaySessionEvents(list, sinceSeq) {
+      liveSessionLog.forEach(function(entry) {
+        if (entry.seq > sinceSeq) list = applySessionEvent(list, entry);
+      });
+      return list;
+    }
+
     var memoryCountTimer = null;
+    var memoryCountRequest = 0;
     function refreshMemoryCount() {
       if (memoryCountTimer) return;
       memoryCountTimer = setTimeout(async function() {
         memoryCountTimer = null;
+        var request = ++memoryCountRequest;
         var result = await apiGet('memories?latest=true&count=true');
+        if (request !== memoryCountRequest) return;
         if (result && typeof result.total === 'number') {
           state.dashboard.memoryTotal = result.total;
           if (state.activeTab === 'dashboard' && state.dashboard.loaded) renderDashboard();
         }
       }, 500);
+    }
+
+    var memoriesReloadTimer = null;
+    var memoriesReloading = false;
+    var memoriesReloadPending = false;
+    function scheduleMemoriesReload() {
+      if (memoriesReloading) {
+        memoriesReloadPending = true;
+        return;
+      }
+      if (memoriesReloadTimer) return;
+      memoriesReloadTimer = setTimeout(async function() {
+        memoriesReloadTimer = null;
+        if (state.activeTab !== 'memories') return;
+        memoriesReloading = true;
+        try {
+          await loadMemories();
+        } finally {
+          memoriesReloading = false;
+          if (memoriesReloadPending) {
+            memoriesReloadPending = false;
+            scheduleMemoriesReload();
+          }
+        }
+      }, 500);
+    }
+
+    function resyncLiveViews() {
+      if (state.dashboard.loaded) loadDashboard();
+      if (state.sessions.loaded) loadSessions();
+      tabFetchedAt.memories = 0;
+      if (state.memories.loaded) scheduleMemoriesReload();
+      refreshMemoryCount();
     }
 
     var LIVE_RENDER_THROTTLE_MS = 250;
@@ -4049,23 +4132,24 @@
     }
 
     function handleLiveEvent(type, data) {
-      var d = state.dashboard;
-      if (type === 'session.updated' && data.session) {
-        upsertSessionIn(d.sessions, data.session);
-        upsertSessionIn(state.sessions.items, data.session);
-      } else if (type === 'session.activity' && data.sessionId) {
-        patchSessionCount(d.sessions, data.sessionId, data.observationCount);
-        patchSessionCount(state.sessions.items, data.sessionId, data.observationCount);
-      } else if (type === 'session.deleted' && data.sessionId) {
-        d.sessions = removeSessionFrom(d.sessions, data.sessionId);
-        state.sessions.items = removeSessionFrom(state.sessions.items, data.sessionId);
-      } else if (type === 'memory.updated' || type === 'memory.deleted') {
+      if (type === 'memory.updated' || type === 'memory.deleted') {
         refreshMemoryCount();
         tabFetchedAt.memories = 0;
-        if (state.activeTab === 'memories') loadMemories();
+        scheduleMemoriesReload();
         return;
-      } else {
-        return;
+      }
+      var isSessionEvent =
+        (type === 'session.updated' && data.session && sessionKey(data.session)) ||
+        ((type === 'session.activity' || type === 'session.deleted') && data.sessionId);
+      if (!isSessionEvent) return;
+      var entry = { seq: ++liveSessionSeq, type: type, data: data };
+      liveSessionLog.push(entry);
+      if (liveSessionLog.length > LIVE_SESSION_LOG_MAX) liveSessionLog.shift();
+      state.dashboard.sessions = applySessionEvent(state.dashboard.sessions, entry);
+      state.sessions.items = applySessionEvent(state.sessions.items, entry);
+      var touched = type === 'session.updated' ? sessionKey(data.session) : data.sessionId;
+      if (type !== 'session.activity' && touched === state.sessions.selectedId) {
+        state.sessions.detailStale = true;
       }
       scheduleLiveRender();
     }
