@@ -267,13 +267,15 @@ function FeaturedCard({ a }: { a: Agent }) {
   );
 }
 
-function MarqueeTile({ a }: { a: Agent }) {
+function MarqueeTile({ a, hidden }: { a: Agent; hidden?: boolean }) {
   return (
     <a
       className={styles.tile}
       href={a.href}
       target="_blank"
       rel="noopener"
+      aria-hidden={hidden || undefined}
+      tabIndex={hidden ? -1 : undefined}
     >
       <Image
         src={a.logo}
@@ -292,18 +294,18 @@ function MarqueeTile({ a }: { a: Agent }) {
 }
 
 export function Agents() {
-  const loop = [...MARQUEE, ...MARQUEE];
+  // Duplicated marquee content keeps the loop seamless; the second copy is
+  // hidden from assistive tech and keyboard tab order.
   return (
     <section className={styles.wrap} id="agents" aria-labelledby="agents-title">
       <header className="section-head">
         <span className="section-eyebrow">Works with</span>
         <h2 id="agents-title" className="section-title">
-          Seven native plugins.<br />Rest MCP-native.
+          Eight native plugins.<br />Rest MCP-native.
         </h2>
         <p className="section-lede">
           Native plugins for Claude Code, Copilot CLI, Codex CLI, OpenClaw,
-          Hermes, pi, and Cursor. OpenCode gets a plugin that attributes
-          each session to its own project. Every other MCP client gets it for
+          Hermes, pi, Cursor, and OpenCode. Every other MCP client gets it for
           free. `agentmemory connect &lt;agent&gt;` auto-wires them all.
         </p>
       </header>
@@ -318,8 +320,11 @@ export function Agents() {
         <div className={styles.fadeLeft} aria-hidden />
         <div className={styles.fadeRight} aria-hidden />
         <div className={styles.marquee}>
-          {loop.map((a, i) => (
-            <MarqueeTile key={`${a.id}-${i}`} a={a} />
+          {MARQUEE.map((a) => (
+            <MarqueeTile key={a.id} a={a} />
+          ))}
+          {MARQUEE.map((a) => (
+            <MarqueeTile key={`${a.id}-loop`} a={a} hidden />
           ))}
         </div>
       </div>

@@ -8,33 +8,35 @@ interface Cmd {
   label: string;
   cmd: string;
   hint: string;
+  hintUrl?: string;
 }
 
 const SIMPLE: Cmd[] = [
   {
-    label: "1. INSTALL ONCE",
+    label: "1. Install once",
     cmd: "npm install -g @agentmemory/agentmemory",
-    hint: "PUTS `agentmemory` ON YOUR PATH · STEPS 2/3 NEED THIS",
+    hint: "Puts `agentmemory` on your PATH · steps 2/3 need this",
   },
   {
-    label: "2. START THE MEMORY SERVER",
+    label: "2. Start the memory server",
     cmd: "agentmemory",
-    hint: "RUNS ON :3111 · VIEWER ON :3113",
+    hint: "Runs on :3111 · viewer on :3113",
   },
   {
-    label: "3. RUN THE DEMO",
+    label: "3. Run the demo",
     cmd: "agentmemory demo",
-    hint: "SEEDS 3 SESSIONS · SHOWS HYBRID RECALL ON REAL DATA",
+    hint: "Seeds 3 sessions · shows hybrid recall on real data",
   },
 ];
 
 const NPX_FALLBACK: Cmd = {
-  label: "ZERO-INSTALL PATH: NPX",
+  label: "Zero-install path: npx",
   cmd: "npx @agentmemory/agentmemory",
-  hint: "REPLACES STEPS 1+2 · USES NPX CACHE · SEE README FOR CAVEAT",
+  hint: "Replaces steps 1+2 · uses the npx cache · slower cold start",
+  hintUrl: "https://github.com/rohitg00/agentmemory#quick-start",
 };
 
-function CopyBox({ label, cmd, hint }: Cmd) {
+function CopyBox({ label, cmd, hint, hintUrl }: Cmd) {
   const [copied, setCopied] = useState(false);
   const [text, setText] = useState(hint);
 
@@ -63,6 +65,16 @@ function CopyBox({ label, cmd, hint }: Cmd) {
         <span className={styles.cmd}>{cmd}</span>
         <span className={styles.hint}>{text}</span>
       </button>
+      {hintUrl && (
+        <a
+          className={styles.hintLink}
+          href={hintUrl}
+          target="_blank"
+          rel="noopener"
+        >
+          Read the npx caveat ↗
+        </a>
+      )}
     </div>
   );
 }
@@ -76,10 +88,12 @@ export function Install() {
           One install.<br />Any agent.
         </h2>
         <p className="section-lede">
-          Runs on your machine. Data stays local. Capture and recall need no
-          LLM key; add one for Anthropic, OpenAI, Gemini, MiniMax, or
-          OpenRouter to activate consolidation, graph extraction, and LLM
-          compression.
+          Runs on your machine. Data stays local. The CLI package (
+          <code>@agentmemory/agentmemory</code>) runs the server; agents talk
+          to it through the MCP package (<code>@agentmemory/mcp</code>).
+          Capture and recall need no LLM key; add one for Anthropic, OpenAI,
+          Gemini, MiniMax, or OpenRouter to activate consolidation, graph
+          extraction, and LLM compression.
         </p>
       </header>
       <div className={styles.cards}>
