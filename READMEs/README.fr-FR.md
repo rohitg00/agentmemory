@@ -1198,7 +1198,7 @@ iii worker add iii-cron            # scheduled consolidation, decay sweeps, snap
 iii worker add iii-queue           # durable retries for embedding + compression jobs
 iii worker add iii-observability   # OTEL traces on every memory op (default on)
 iii worker add iii-sandbox         # run recalled code inside an isolated microVM
-iii worker add iii-database        # swap in a SQL-backed state adapter
+iii worker add database        # swap in a SQL-backed state adapter
 iii worker add mcp                 # generic MCP host alongside the agentmemory MCP
 ```
 
@@ -1211,7 +1211,7 @@ Chaque `iii worker add` enregistre de nouvelles fonctions et triggers dans le m�
 | [`iii-queue`](https://workers.iii.dev/workers/iii-queue) | Retries durables : les jobs d'embedding + compression en échec survivent au redémarrage, aucune observation perdue |
 | [`iii-observability`](https://workers.iii.dev/workers/iii-observability) | Traces, métriques et logs OTEL sur chaque fonction, câblés dans `iii-config.yaml` dès le premier jour |
 | [`iii-sandbox`](https://workers.iii.dev/workers/iii-sandbox) | Le code issu de `memory_recall` s'exécute dans une VM jetable, pas dans votre shell |
-| [`iii-database`](https://workers.iii.dev/workers/iii-database) | Adaptateur d'état adossé à SQL lorsque vous dépassez les valeurs par défaut KV en mémoire |
+| [`database`](https://workers.iii.dev/workers/database) | Adaptateur d'état adossé à SQL lorsque vous dépassez les valeurs par défaut KV en mémoire |
 | [`mcp`](https://workers.iii.dev/workers/mcp) | Déployez des serveurs MCP supplémentaires à côté de celui d'agentmemory, partageant le même moteur |
 
 Registre complet : [workers.iii.dev](https://workers.iii.dev). Chaque worker là-bas se compose via les mêmes primitives qu'utilise agentmemory, et l'agentmemory que vous avez déjà en est un.

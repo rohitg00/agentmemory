@@ -1200,7 +1200,7 @@ iii worker add iii-cron            # zamanlanmış konsolidasyon, decay süpürm
 iii worker add iii-queue           # embedding + sıkıştırma işleri için dayanıklı yeniden denemeler
 iii worker add iii-observability   # her bellek op'unda OTEL trace'leri (varsayılan açık)
 iii worker add iii-sandbox         # hatırlanan kodu izole bir microVM içinde çalıştır
-iii worker add iii-database        # SQL destekli bir state adaptörü tak
+iii worker add database        # SQL destekli bir state adaptörü tak
 iii worker add mcp                 # agentmemory MCP'sinin yanında genel MCP host'u
 ```
 
@@ -1213,7 +1213,7 @@ Her `iii worker add` agentmemory'nin zaten çalıştığı aynı engine'e yeni f
 | [`iii-queue`](https://workers.iii.dev/workers/iii-queue) | Dayanıklı yeniden denemeler: başarısız embedding + sıkıştırma işleri yeniden başlatmaya dayanır, kayıp gözlem yok |
 | [`iii-observability`](https://workers.iii.dev/workers/iii-observability) | OTEL trace'leri, metrikleri, log'ları her fonksiyonda, birinci günden itibaren `iii-config.yaml`'da bağlı |
 | [`iii-sandbox`](https://workers.iii.dev/workers/iii-sandbox) | `memory_recall`'dan çıkan kod, shell'inizde değil, bir kullan-at VM içinde çalışır |
-| [`iii-database`](https://workers.iii.dev/workers/iii-database) | In-memory KV varsayılanlarını aştığınızda SQL destekli state adaptörü |
+| [`database`](https://workers.iii.dev/workers/database) | In-memory KV varsayılanlarını aştığınızda SQL destekli state adaptörü |
 | [`mcp`](https://workers.iii.dev/workers/mcp) | agentmemory'ninin yanında ekstra MCP sunucuları ayağa kaldırın, aynı engine'i paylaşın |
 
 Tam kayıt defteri: [workers.iii.dev](https://workers.iii.dev). Oradaki her worker, agentmemory'nin kullandığı aynı primitifler aracılığıyla bir araya gelir ve elinizdeki agentmemory de onlardan biridir.

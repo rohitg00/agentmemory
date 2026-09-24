@@ -1,3 +1,5 @@
+
+The pinned engine starts with `--no-update-check` (no update or security-advisory lookups against GitHub at boot) and with iii's anonymous usage telemetry off: agentmemory sets `III_TELEMETRY_ENABLED=false` for the engine it spawns unless you export the variable yourself, and the bundled compose file does the same.
 <p align="center">
   <img src="assets/banner.png" alt="agentmemory: persistent memory for AI coding agents" width="720" />
 </p>
@@ -1266,29 +1268,25 @@ agentmemory is **already a running [iii](https://iii.dev) instance**. Three prim
 
 That means one more command extends agentmemory with an entire new capability.
 
-### Extend agentmemory with one command
+### Extend agentmemory with more workers
 
-```bash
-iii worker add iii-pubsub          # fan memory writes out to every connected instance
-iii worker add iii-cron            # scheduled consolidation, decay sweeps, snapshot rotation
-iii worker add iii-queue           # durable retries for embedding + compression jobs
-iii worker add iii-observability   # OTEL traces on every memory op (default on)
-iii worker add iii-sandbox         # run recalled code inside an isolated microVM
-iii worker add iii-database        # swap in a SQL-backed state adapter
-iii worker add mcp                 # generic MCP host alongside the agentmemory MCP
+The builtins agentmemory needs are already in `iii-config.yaml` and boot with it: `iii-state` (KV), `iii-queue` (durable retries for the event subscribers), `iii-pubsub`, `iii-cron`, `iii-stream`, and `iii-observability` (OTEL traces, metrics and logs on every function). Anything else from the [iii worker registry](https://workers.iii.dev) plugs into the same engine: copy `iii-config.yaml` to `~/.agentmemory/iii-config.yaml` (the CLI prefers that file over the bundled one and still renders ports and data paths into it), add the entry, install the worker runtime once with `~/.agentmemory/bin/iii update worker`, and restart agentmemory.
+
+```yaml
+workers:
+  # ...the bundled entries...
+  - name: database          # SQL-backed state adapter when you outgrow the KV defaults
+  - name: iii-sandbox       # run code that came out of memory_recall inside a throwaway VM
+  - name: mcp               # extra MCP servers next to agentmemory's, same engine
 ```
 
-Each `iii worker add` registers new functions and triggers into the same engine agentmemory is already running on. The viewer and console pick them up immediately: no reload, no new integration, no new container.
-
-| `iii worker add` | What you get on top of agentmemory |
+| Worker | What you get on top of agentmemory |
 |---|---|
-| [`iii-pubsub`](https://workers.iii.dev/workers/iii-pubsub) | Multi-instance memory: every `remember` fans out, every `search` reads the union |
-| [`iii-cron`](https://workers.iii.dev/workers/iii-cron) | Scheduled lifecycle: nightly consolidation, weekly snapshots, decay on a fixed clock |
-| [`iii-queue`](https://workers.iii.dev/workers/iii-queue) | Durable retries: failed embedding + compression jobs survive restart, no lost observations |
-| [`iii-observability`](https://workers.iii.dev/workers/iii-observability) | OTEL traces, metrics, logs on every function, wired in `iii-config.yaml` from day one |
+| [`database`](https://workers.iii.dev/workers/database) | SQL-backed state adapter when you outgrow the in-memory KV defaults |
 | [`iii-sandbox`](https://workers.iii.dev/workers/iii-sandbox) | Code that came out of `memory_recall` runs inside a throwaway VM, not your shell |
-| [`iii-database`](https://workers.iii.dev/workers/iii-database) | SQL-backed state adapter when you outgrow the in-memory KV defaults |
 | [`mcp`](https://workers.iii.dev/workers/mcp) | Stand up extra MCP servers next to agentmemory's, share the same engine |
+
+On engine 0.22.x keep the `iii-` prefixed names for the builtins above; the unprefixed `http`, `state`, `queue`, `pubsub` and `cron` entries are the standalone registry workers agentmemory moves to with the 0.23 migration.
 
 Full registry: [workers.iii.dev](https://workers.iii.dev). Every worker there composes through the same primitives agentmemory uses, and the agentmemory you already have is one of them.
 
@@ -1543,6 +1541,9 @@ Create `~/.agentmemory/.env`:
 
 # Ports (defaults: 3111 API, 3113 viewer)
 # III_REST_PORT=3111
+
+# Engine usage telemetry (iii). Off unless you set it; true opts in.
+# III_TELEMETRY_ENABLED=false
 
 # Features
 # AGENTMEMORY_AUTO_COMPRESS=false  # OFF by default. Requires an LLM

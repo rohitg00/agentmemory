@@ -54,6 +54,11 @@ describe("Docker engine port configuration", () => {
     expect(engineConfig).not.toMatch(/- name: (http|state|pubsub|cron|queue)$/m);
   });
 
+  it("starts the pinned engine without update checks and with usage telemetry off by default", () => {
+    expect(compose).toContain('command: ["--config", "/app/config.yaml", "--no-update-check"]');
+    expect(compose).toContain('III_TELEMETRY_ENABLED: "${III_TELEMETRY_ENABLED:-false}"');
+  });
+
   it("leaves worker ownership to the host CLI", () => {
     expect(engineConfig).not.toContain("- name: iii-exec");
     expect(engineConfig).not.toContain("node dist/index.mjs");

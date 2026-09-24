@@ -1197,7 +1197,7 @@ iii worker add iii-cron            # 定时整合、衰减扫描、快照轮换
 iii worker add iii-queue           # 嵌入 + 压缩任务的持久重试
 iii worker add iii-observability   # 每个记忆操作的 OTEL traces(默认开启)
 iii worker add iii-sandbox         # 在隔离 microVM 内运行召回到的代码
-iii worker add iii-database        # 切换 SQL 后端的状态适配器
+iii worker add database        # 切换 SQL 后端的状态适配器
 iii worker add mcp                 # 在 agentmemory 的 MCP 旁开通用 MCP 宿主
 ```
 
@@ -1210,7 +1210,7 @@ iii worker add mcp                 # 在 agentmemory 的 MCP 旁开通用 MCP �
 | [`iii-queue`](https://workers.iii.dev/workers/iii-queue) | 持久重试:失败的嵌入 + 压缩任务在重启后存活,无观测丢失 |
 | [`iii-observability`](https://workers.iii.dev/workers/iii-observability) | 每个函数的 OTEL traces、指标、日志,从第一天起就接入 `iii-config.yaml` |
 | [`iii-sandbox`](https://workers.iii.dev/workers/iii-sandbox) | `memory_recall` 出来的代码在一次性 VM 中运行,不在你的 shell 中 |
-| [`iii-database`](https://workers.iii.dev/workers/iii-database) | 当默认的内存 KV 不够用时,SQL 后端状态适配器 |
+| [`database`](https://workers.iii.dev/workers/database) | 当默认的内存 KV 不够用时,SQL 后端状态适配器 |
 | [`mcp`](https://workers.iii.dev/workers/mcp) | 在 agentmemory 的旁边架设额外 MCP 服务器,共享同一引擎 |
 
 完整注册表:[workers.iii.dev](https://workers.iii.dev)。那里的每个 worker 都通过 agentmemory 所用的同样原语组合,而你已经拥有的 agentmemory 本身就是其中之一。

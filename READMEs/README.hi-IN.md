@@ -1180,7 +1180,7 @@ iii worker add iii-cron            # scheduled consolidation, decay sweeps, snap
 iii worker add iii-queue           # embedding + compression jobs के लिए durable retries
 iii worker add iii-observability   # हर memory op पर OTEL traces (default on)
 iii worker add iii-sandbox         # recalled code को isolated microVM के अंदर चलाएँ
-iii worker add iii-database        # एक SQL-backed state adapter में swap करें
+iii worker add database        # एक SQL-backed state adapter में swap करें
 iii worker add mcp                 # agentmemory MCP के साथ-साथ generic MCP host
 ```
 
@@ -1193,7 +1193,7 @@ iii worker add mcp                 # agentmemory MCP के साथ-साथ 
 | [`iii-queue`](https://workers.iii.dev/workers/iii-queue) | Durable retries: failed embedding + compression jobs restart से बचते हैं, कोई lost observations नहीं |
 | [`iii-observability`](https://workers.iii.dev/workers/iii-observability) | हर function पर OTEL traces, metrics, logs, दिन एक से `iii-config.yaml` में wired |
 | [`iii-sandbox`](https://workers.iii.dev/workers/iii-sandbox) | `memory_recall` से निकला code throwaway VM के अंदर चलता है, आपके shell में नहीं |
-| [`iii-database`](https://workers.iii.dev/workers/iii-database) | जब आप in-memory KV defaults से बाहर निकलते हैं तो SQL-backed state adapter |
+| [`database`](https://workers.iii.dev/workers/database) | जब आप in-memory KV defaults से बाहर निकलते हैं तो SQL-backed state adapter |
 | [`mcp`](https://workers.iii.dev/workers/mcp) | agentmemory के साथ-साथ extra MCP servers खड़े करें, वही engine share करें |
 
 Full registry: [workers.iii.dev](https://workers.iii.dev)। वहाँ हर worker उन्हीं primitives के माध्यम से compose करता है जिनका agentmemory उपयोग करता है, और आपके पास पहले से जो agentmemory है, वह उनमें से एक है।

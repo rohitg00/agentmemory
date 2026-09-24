@@ -70,10 +70,10 @@ workers:
       enabled: true
       service_name: agentmemory
       exporter: memory
-      sampling_ratio: 1.0
+      sampling_ratio: 0.1
       metrics_enabled: true
       logs_enabled: true
-      logs_console_output: true
+      logs_console_output: false
 EOF
 chown "$RUN_AS" "$III_CONFIG"
 

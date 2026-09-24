@@ -1201,7 +1201,7 @@ iii worker add iii-cron            # スケジュール統合、減衰スイー�
 iii worker add iii-queue           # 埋め込み + 圧縮ジョブの永続リトライ
 iii worker add iii-observability   # すべてのメモリ操作に OTEL トレース(デフォルト オン)
 iii worker add iii-sandbox         # リコールしたコードを隔離 microVM 内で実行
-iii worker add iii-database        # SQL バックエンドのステートアダプタに切り替え
+iii worker add database        # SQL バックエンドのステートアダプタに切り替え
 iii worker add mcp                 # agentmemory MCP の横に汎用 MCP ホストを立てる
 ```
 
@@ -1214,7 +1214,7 @@ iii worker add mcp                 # agentmemory MCP の横に汎用 MCP ホス�
 | [`iii-queue`](https://workers.iii.dev/workers/iii-queue) | 永続リトライ: 失敗した埋め込み + 圧縮ジョブが再起動を生き延び、観測は失われない |
 | [`iii-observability`](https://workers.iii.dev/workers/iii-observability) | すべての function に OTEL トレース、メトリクス、ログ — 初日から `iii-config.yaml` に配線済み |
 | [`iii-sandbox`](https://workers.iii.dev/workers/iii-sandbox) | `memory_recall` から出てきたコードはあなたのシェルではなく使い捨て VM 内で実行 |
-| [`iii-database`](https://workers.iii.dev/workers/iii-database) | デフォルトのインメモリ KV では足りないときの SQL バックエンドのステートアダプタ |
+| [`database`](https://workers.iii.dev/workers/database) | デフォルトのインメモリ KV では足りないときの SQL バックエンドのステートアダプタ |
 | [`mcp`](https://workers.iii.dev/workers/mcp) | agentmemory の隣に追加の MCP サーバーを立て、同じエンジンを共有 |
 
 完全なレジストリ:[workers.iii.dev](https://workers.iii.dev)。そこにあるすべての worker は agentmemory が使っているのと同じプリミティブで組み立てられています — そして既に手元にある agentmemory もその 1 つです。

@@ -187,3 +187,7 @@ export function legacyDataMigrations(
     },
   ];
 }
+
+export function engineChildEnv(base: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  return { ...base, III_TELEMETRY_ENABLED: base["III_TELEMETRY_ENABLED"] ?? "false" };
+}

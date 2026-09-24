@@ -31,7 +31,9 @@ services:
     depends_on:
       iii-init:
         condition: service_completed_successfully
+    command: ["--config", "/app/config.yaml", "--no-update-check"]
     environment:
+      III_TELEMETRY_ENABLED: "${III_TELEMETRY_ENABLED:-false}"
       III_REST_PORT: "${III_REST_PORT:-3111}"
       III_STREAM_PORT: "${III_STREAM_PORT:-3112}"
       III_VIEWER_PORT: "${III_VIEWER_PORT:-3113}"

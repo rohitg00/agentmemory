@@ -1180,7 +1180,7 @@ iii worker add iii-cron            # scheduled consolidation, decay sweeps, snap
 iii worker add iii-queue           # durable retries for embedding + compression jobs
 iii worker add iii-observability   # OTEL traces on every memory op (default on)
 iii worker add iii-sandbox         # run recalled code inside an isolated microVM
-iii worker add iii-database        # swap in a SQL-backed state adapter
+iii worker add database        # swap in a SQL-backed state adapter
 iii worker add mcp                 # generic MCP host alongside the agentmemory MCP
 ```
 
@@ -1193,7 +1193,7 @@ iii worker add mcp                 # generic MCP host alongside the agentmemory 
 | [`iii-queue`](https://workers.iii.dev/workers/iii-queue) | 내구성 있는 재시도: 실패한 임베딩 + 압축 작업은 재시작에도 살아남아 관측 손실 없음 |
 | [`iii-observability`](https://workers.iii.dev/workers/iii-observability) | 모든 함수에 OTEL traces, metrics, logs, 첫날부터 `iii-config.yaml`에 연결됨 |
 | [`iii-sandbox`](https://workers.iii.dev/workers/iii-sandbox) | `memory_recall`에서 나온 코드를 셸이 아니라 일회용 VM 안에서 실행 |
-| [`iii-database`](https://workers.iii.dev/workers/iii-database) | 인메모리 KV 기본값을 넘어설 때 SQL 기반 state adapter |
+| [`database`](https://workers.iii.dev/workers/database) | 인메모리 KV 기본값을 넘어설 때 SQL 기반 state adapter |
 | [`mcp`](https://workers.iii.dev/workers/mcp) | agentmemory의 MCP 옆에 추가 MCP 서버를 세우고 동일한 엔진을 공유 |
 
 전체 레지스트리: [workers.iii.dev](https://workers.iii.dev). 그곳의 모든 워커는 agentmemory가 사용하는 동일한 프리미티브로 구성되며, 이미 갖고 있는 agentmemory도 그중 하나입니다.
