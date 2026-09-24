@@ -4,13 +4,13 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 // model name and 404 on every call. Each fallback must resolve its
 // own env-driven default model.
 
-const captured: Array<{ provider: string; model: string }> = [];
+const captured: Array<{ provider: string; model: string; baseURL?: string }> = [];
 
 vi.mock("../src/providers/openai.js", () => ({
   OpenAIProvider: class {
     name = "openai";
-    constructor(_key: string, model: string) {
-      captured.push({ provider: "openai", model });
+    constructor(_key: string, model: string, _max: number, baseURL?: string) {
+      captured.push({ provider: "openai", model, baseURL });
     }
     async compress() {
       return "";
@@ -42,8 +42,8 @@ vi.mock("../src/providers/openrouter.js", () => ({
 vi.mock("../src/providers/anthropic.js", () => ({
   AnthropicProvider: class {
     name = "anthropic";
-    constructor(_key: string, model: string) {
-      captured.push({ provider: "anthropic", model });
+    constructor(_key: string, model: string, _max: number, baseURL?: string) {
+      captured.push({ provider: "anthropic", model, baseURL });
     }
     async compress() {
       return "";
@@ -77,11 +77,13 @@ describe("Fallback provider model resolution (#778)", () => {
   const envKeys = [
     "OPENAI_API_KEY",
     "OPENAI_MODEL",
+    "OPENAI_BASE_URL",
     "GEMINI_API_KEY",
     "GEMINI_MODEL",
     "GOOGLE_API_KEY",
     "ANTHROPIC_API_KEY",
     "ANTHROPIC_MODEL",
+    "ANTHROPIC_BASE_URL",
     "OPENROUTER_API_KEY",
     "OPENROUTER_MODEL",
     "MINIMAX_API_KEY",
@@ -174,6 +176,62 @@ describe("Fallback provider model resolution (#778)", () => {
     expect(captured.find((c) => c.provider === "gemini")?.model).toBe(
       "gemini-2.5-pro",
     );
+  });
+
+  it("Anthropic fallback uses its own ANTHROPIC_BASE_URL", () => {
+    process.env.OPENAI_API_KEY = "sk-openai";
+    process.env.ANTHROPIC_API_KEY = "sk-anthropic-compatible";
+    process.env.ANTHROPIC_BASE_URL = "https://api.kimi.example/coding";
+
+    createFallbackProvider(
+      {
+        provider: "openai",
+        model: "gpt-5.6-luna",
+        maxTokens: 4096,
+        baseURL: "https://api.deepseek.example",
+      },
+      { providers: ["anthropic"] },
+    );
+
+    const anthropic = captured.find((c) => c.provider === "anthropic");
+    expect(anthropic?.baseURL).toBe("https://api.kimi.example/coding");
+  });
+
+  it("OpenAI fallback uses its own OPENAI_BASE_URL", () => {
+    process.env.ANTHROPIC_API_KEY = "sk-anthropic";
+    process.env.OPENAI_API_KEY = "sk-openai-compatible";
+    process.env.OPENAI_BASE_URL = "https://api.deepseek.example";
+
+    createFallbackProvider(
+      {
+        provider: "anthropic",
+        model: "claude-sonnet-5",
+        maxTokens: 4096,
+        baseURL: "https://api.kimi.example/coding",
+      },
+      { providers: ["openai"] },
+    );
+
+    const openai = captured.find((c) => c.provider === "openai");
+    expect(openai?.baseURL).toBe("https://api.deepseek.example");
+  });
+
+  it("fallback does not inherit the primary provider's baseURL", () => {
+    process.env.OPENAI_API_KEY = "sk-openai";
+    process.env.ANTHROPIC_API_KEY = "sk-anthropic";
+
+    createFallbackProvider(
+      {
+        provider: "openai",
+        model: "gpt-5.6-luna",
+        maxTokens: 4096,
+        baseURL: "https://primary.example",
+      },
+      { providers: ["anthropic"] },
+    );
+
+    const anthropic = captured.find((c) => c.provider === "anthropic");
+    expect(anthropic?.baseURL).toBeUndefined();
   });
 
   it("fallback that matches the primary provider is skipped (no duplicate)", () => {
