@@ -1,5 +1,5 @@
 import { TriggerAction, type IIIClient } from "iii-sdk";
-import type { CompressedObservation, HookPayload, Session } from "../types.js";
+import type { CompressedObservation, HookPayload, Memory, Session } from "../types.js";
 import { KV, STREAM } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { isReflectEnabled } from "../functions/slots.js";
@@ -177,26 +177,26 @@ export function registerEventTriggers(sdk: IIIClient, kv: StateKV): void {
       old_value?: Session;
       new_value?: Session;
     }) => {
-      if (payload.event_type === "delete") return { skipped: true };
+      if (payload.event_type === "delete") {
+        await sendViewerEvent(sdk, `session-deleted-${payload.key}-${Date.now()}`, "session.deleted", {
+          sessionId: payload.key,
+        });
+        return { emitted: true };
+      }
+      if (payload.new_value) {
+        await sendViewerEvent(sdk, `session-updated-${payload.key}-${Date.now()}`, "session.updated", {
+          session: payload.new_value,
+        });
+      }
       const oldCount = payload.old_value?.observationCount ?? 0;
       const newCount = payload.new_value?.observationCount ?? 0;
-      if (newCount <= oldCount) return { skipped: true };
+      if (newCount <= oldCount) return { emitted: Boolean(payload.new_value) };
 
-      await sdk.trigger({
-        function_id: "stream::send",
-        payload: {
-          stream_name: STREAM.name,
-          group_id: STREAM.viewerGroup,
-          id: `session-activity-${payload.key}-${Date.now()}`,
-          type: "session.activity",
-          data: {
-            sessionId: payload.key,
-            observationCount: newCount,
-            delta: newCount - oldCount,
-            updatedAt: payload.new_value?.updatedAt ?? new Date().toISOString(),
-          },
-        },
-        action: TriggerAction.Void(),
+      await sendViewerEvent(sdk, `session-activity-${payload.key}-${Date.now()}`, "session.activity", {
+        sessionId: payload.key,
+        observationCount: newCount,
+        delta: newCount - oldCount,
+        updatedAt: payload.new_value?.updatedAt ?? new Date().toISOString(),
       });
 
       return { emitted: true };
@@ -206,5 +206,50 @@ export function registerEventTriggers(sdk: IIIClient, kv: StateKV): void {
     type: "state",
     function_id: "event::session::observation-count-changed",
     config: { scope: KV.sessions },
+  });
+
+  sdk.registerFunction(
+    "event::memory::changed",
+    async (payload: {
+      key: string;
+      event_type: string;
+      new_value?: Memory;
+    }) => {
+      const deleted = payload.event_type === "delete" || !payload.new_value;
+      const memory = payload.new_value;
+      await sendViewerEvent(
+        sdk,
+        `memory-${deleted ? "deleted" : "updated"}-${payload.key}-${Date.now()}`,
+        deleted ? "memory.deleted" : "memory.updated",
+        deleted
+          ? { memoryId: payload.key }
+          : {
+              memoryId: payload.key,
+              type: memory?.type,
+              title: memory?.title,
+              isLatest: memory?.isLatest,
+              updatedAt: memory?.updatedAt,
+            },
+      );
+      return { emitted: true };
+    },
+  );
+  sdk.registerTrigger({
+    type: "state",
+    function_id: "event::memory::changed",
+    config: { scope: KV.memories },
+  });
+}
+
+async function sendViewerEvent(
+  sdk: IIIClient,
+  id: string,
+  type: string,
+  data: Record<string, unknown>,
+): Promise<void> {
+  await sdk.trigger({
+    function_id: "stream::send",
+    payload: { stream_name: STREAM.name, group_id: STREAM.viewerGroup, id, type, data },
+    action: TriggerAction.Void(),
   });
 }

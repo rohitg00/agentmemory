@@ -1246,6 +1246,13 @@
       return [];
     }
 
+    function setViewHtml(el, html) {
+      if (el.__renderedHtml === html && el.firstElementChild && el.firstElementChild === el.__renderedFirst) return;
+      el.innerHTML = html;
+      el.__renderedHtml = html;
+      el.__renderedFirst = el.firstElementChild;
+    }
+
     function truncate(s, n) {
       if (!s) return '';
       return s.length > n ? s.slice(0, n) + '...' : s;
@@ -1840,22 +1847,13 @@
       }
 
       html += '<div style="text-align:center;margin-top:20px;"><button class="btn btn-primary" data-action="refresh-dashboard">Refresh</button>';
-      html += '<span style="font-size:10px;color:var(--ink-faint);margin-left:10px;font-family:var(--font-mono);text-transform:uppercase;letter-spacing:0.08em;">Auto-refresh 30s</span></div>';
+      html += '</div>';
 
-      el.innerHTML = html;
+      setViewHtml(el, html);
     }
 
-    var dashboardTimer = null;
     function refreshDashboard() {
-      state.dashboard.loaded = false;
       loadDashboard();
-    }
-    function startDashboardAutoRefresh() {
-      if (dashboardTimer) clearInterval(dashboardTimer);
-      dashboardTimer = setInterval(function() {
-        if (pollTimer) return;
-        if (state.activeTab === 'dashboard') refreshDashboard();
-      }, 30000);
     }
 
     var graphSim = { nodes: [], edges: [], running: false, canvas: null, ctx: null, raf: null, panX: 0, panY: 0, zoom: 1, dragNode: null, mouseX: 0, mouseY: 0, tickCount: 0, quietTicks: 0 };
@@ -2831,7 +2829,7 @@
       }
 
       var __focus = captureSearchFocus(['mem-search']);
-      el.innerHTML = html;
+      setViewHtml(el, html);
 
       var searchInput = document.getElementById('mem-search');
       if (searchInput) {
@@ -2857,7 +2855,6 @@
     async function confirmDeleteMemory(id) {
       closeModal();
       await apiDelete('governance/memories', { memoryIds: [id], reason: 'Deleted via viewer' });
-      state.memories.loaded = false;
       loadMemories();
     }
 
@@ -3231,7 +3228,7 @@
 
       html += '</div>';
 
-      el.innerHTML = html;
+      setViewHtml(el, html);
     }
 
     async function loadSessions() {
@@ -3272,7 +3269,7 @@
       }
       html += '</div>';
       html += '<div id="session-detail"></div></div>';
-      el.innerHTML = html;
+      setViewHtml(el, html);
 
       if (state.sessions.selectedId) renderSessionDetail();
     }
@@ -3400,7 +3397,6 @@
 
     async function endSession(id) {
       await apiPost('session/end', { sessionId: id });
-      state.sessions.loaded = false;
       loadSessions();
     }
 
@@ -3867,7 +3863,7 @@
     var wsReconnectTimer = null;
     var wsRetries = 0;
     var WS_MAX_RETRIES = 4;
-    var directFailed = false;
+    var directFailed = true;
     var directFailures = 0;
     var DIRECT_FAILURE_THRESHOLD = 2;
     var pollTimer = null;
@@ -3891,13 +3887,10 @@
         if (state.activeTab === 'dashboard') {
           loadDashboard();
         } else if (state.activeTab === 'memories') {
-          state.memories.loaded = false;
           loadMemories();
         } else if (state.activeTab === 'sessions') {
-          state.sessions.loaded = false;
           loadSessions();
         } else if (state.activeTab === 'activity') {
-          state.activity.loaded = false;
           loadActivity();
         }
         if (tick % WS_REPROBE_EVERY_TICKS === 0) {
@@ -3905,7 +3898,7 @@
           if (!ws || ws.readyState !== WebSocket.OPEN) {
             wsRetries = 0;
             directFailures = 0;
-            directFailed = false;
+            directFailed = true;
             connectWs();
           }
         }
@@ -3944,11 +3937,8 @@
           clearTimeout(connectTimer);
           if (state.ws !== ws) return;
           wsRetries = 0;
+          directFailures = 0;
           stopPolling();
-          if (ws.__direct) {
-            directFailures = 0;
-            directFailed = false;
-          }
           if (!ws.__direct) {
             ws.send(JSON.stringify({
               type: 'join',
@@ -3975,11 +3965,10 @@
         ws.onclose = function() {
           clearTimeout(connectTimer);
           if (state.ws !== ws) return;
-          if (ws.__direct) {
-            directFailures += 1;
-            if (directFailures >= DIRECT_FAILURE_THRESHOLD) {
-              directFailed = true;
-            }
+          directFailures += 1;
+          if (directFailures >= DIRECT_FAILURE_THRESHOLD) {
+            directFailed = ws.__direct;
+            directFailures = 0;
           }
           wsRetries++;
           if (wsRetries < WS_MAX_RETRIES) {
@@ -4010,10 +3999,83 @@
       return !!(obj && typeof obj === 'object' && obj.id && obj.timestamp);
     }
 
+    function sessionKey(s) {
+      return s && (s.id || s.sessionId);
+    }
+
+    function upsertSessionIn(list, session) {
+      var key = sessionKey(session);
+      if (!key) return list;
+      var index = list.findIndex(function(s) { return sessionKey(s) === key; });
+      if (index >= 0) list[index] = Object.assign({}, list[index], session);
+      else list.unshift(session);
+      return list;
+    }
+
+    function removeSessionFrom(list, key) {
+      return list.filter(function(s) { return sessionKey(s) !== key; });
+    }
+
+    function patchSessionCount(list, key, count) {
+      list.forEach(function(s) {
+        if (sessionKey(s) === key) s.observationCount = count;
+      });
+    }
+
+    var memoryCountTimer = null;
+    function refreshMemoryCount() {
+      if (memoryCountTimer) return;
+      memoryCountTimer = setTimeout(async function() {
+        memoryCountTimer = null;
+        var result = await apiGet('memories?latest=true&count=true');
+        if (result && typeof result.total === 'number') {
+          state.dashboard.memoryTotal = result.total;
+          if (state.activeTab === 'dashboard' && state.dashboard.loaded) renderDashboard();
+        }
+      }, 500);
+    }
+
+    var LIVE_RENDER_THROTTLE_MS = 250;
+    var pendingLiveRender = null;
+    function scheduleLiveRender() {
+      if (pendingLiveRender) return;
+      pendingLiveRender = setTimeout(function() {
+        pendingLiveRender = null;
+        if (state.activeTab === 'dashboard' && state.dashboard.loaded) renderDashboard();
+        if (state.activeTab === 'sessions' && state.sessions.loaded) renderSessions();
+      }, LIVE_RENDER_THROTTLE_MS);
+    }
+
+    function handleLiveEvent(type, data) {
+      var d = state.dashboard;
+      if (type === 'session.updated' && data.session) {
+        upsertSessionIn(d.sessions, data.session);
+        upsertSessionIn(state.sessions.items, data.session);
+      } else if (type === 'session.activity' && data.sessionId) {
+        patchSessionCount(d.sessions, data.sessionId, data.observationCount);
+        patchSessionCount(state.sessions.items, data.sessionId, data.observationCount);
+      } else if (type === 'session.deleted' && data.sessionId) {
+        d.sessions = removeSessionFrom(d.sessions, data.sessionId);
+        state.sessions.items = removeSessionFrom(state.sessions.items, data.sessionId);
+      } else if (type === 'memory.updated' || type === 'memory.deleted') {
+        refreshMemoryCount();
+        tabFetchedAt.memories = 0;
+        if (state.activeTab === 'memories') loadMemories();
+        return;
+      } else {
+        return;
+      }
+      scheduleLiveRender();
+    }
+
     function handleStreamEvent(msg) {
       var evt = msg.event;
       var observation;
       if (!evt) return;
+      if (evt.type === 'event' && evt.event && evt.event.type) {
+        handleLiveEvent(evt.event.type, evt.event.data || {});
+        return;
+      }
       if (evt.event_type && evt.event_type !== 'observation' && evt.event_type !== 'create' && evt.event_type !== 'update') {
         return;
       }
@@ -4056,9 +4118,6 @@
           }
           renderObservations();
         }
-      }
-      if (state.activeTab === 'dashboard') {
-        scheduleDashboardReload();
       }
       if (state.activeTab === 'activity' && msg.observation) {
         state.activity.observations.unshift(msg.observation);
@@ -4601,7 +4660,6 @@
       } catch (_) {}
       connectWs();
     })();
-    startDashboardAutoRefresh();
 
     document.addEventListener('visibilitychange', function() {
       if (document.visibilityState !== 'visible') return;
@@ -4610,7 +4668,7 @@
       if (wsReconnectTimer) clearTimeout(wsReconnectTimer);
       wsRetries = 0;
       directFailures = 0;
-      directFailed = false;
+      directFailed = true;
       connectWs();
       if (state.activeTab === 'dashboard') scheduleDashboardReload();
     });
