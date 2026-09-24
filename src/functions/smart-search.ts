@@ -192,9 +192,14 @@ export function registerSmartSearchFunction(
       // is a defensible middle ground: enough headroom for a small
       // workload, capped at 300 so a 100-limit request never asks for
       // thousands of hits.
-      const overFetchLimit = filterAgentId
-        ? Math.min(limit * 3, 300)
-        : limit;
+      const projectFilter =
+        typeof data.project === "string" && data.project.trim().length > 0
+          ? data.project.trim()
+          : undefined;
+      const overFetchLimit =
+        filterAgentId || projectFilter
+          ? Math.min(limit * 3, 300)
+          : limit;
 
       const [hybridResults, lessons] = await Promise.all([
         searchFn(data.query, overFetchLimit),
@@ -203,11 +208,53 @@ export function registerSmartSearchFunction(
           : Promise.resolve([]),
       ]);
 
+      const sessionProjects = new Map<string, Promise<string | undefined>>();
+      const memoryProjects = new Map<string, Promise<string | undefined>>();
+      const getSessionProject = (sessionId: string): Promise<string | undefined> => {
+        let project = sessionProjects.get(sessionId);
+        if (!project) {
+          project = kv
+            .get<{ project?: string }>(KV.sessions, sessionId)
+            .catch(() => null)
+            .then((session) => session?.project);
+          sessionProjects.set(sessionId, project);
+        }
+        return project;
+      };
+      const getMemoryProject = (obsId: string): Promise<string | undefined> => {
+        let project = memoryProjects.get(obsId);
+        if (!project) {
+          project = kv
+            .get<{ project?: string }>(KV.memories, obsId)
+            .catch(() => null)
+            .then((memory) => memory?.project);
+          memoryProjects.set(obsId, project);
+        }
+        return project;
+      };
+      const resolveHitProject = async (r: HybridSearchResult): Promise<string | undefined> => {
+        if (r.sessionId) {
+          const p = await getSessionProject(r.sessionId);
+          if (p) return p;
+        }
+        return getMemoryProject(r.observation.id);
+      };
+
+      let projectScoped = hybridResults;
+      if (projectFilter) {
+        const resolved = await Promise.all(
+          hybridResults.map(async (r) => ({ r, project: await resolveHitProject(r) })),
+        );
+        projectScoped = resolved
+          .filter(({ project }) => !project || project === projectFilter)
+          .map(({ r }) => r);
+      }
+
       const filteredHybrid = filterAgentId
-        ? hybridResults
+        ? projectScoped
             .filter((r) => r.observation.agentId === filterAgentId)
             .slice(0, limit)
-        : hybridResults.slice(0, limit);
+        : projectScoped.slice(0, limit);
 
       const compact: CompactSearchResult[] = filteredHybrid.map((r) => ({
         obsId: r.observation.id,
