@@ -139,6 +139,125 @@ describe("OpenAIEmbeddingProvider", () => {
     expect(provider.dimensions).toBe(1536);
   });
 
+  function embeddingResponse(...vectors: number[][]): Response {
+    return new Response(
+      JSON.stringify({ data: vectors.map((embedding) => ({ embedding })) }),
+      { status: 200 },
+    );
+  }
+
+  function requestBody(spy: { mock: { calls: unknown[][] } }, call: number) {
+    return JSON.parse((spy.mock.calls[call][1] as RequestInit).body as string);
+  }
+
+  it("sends dimensions when OPENAI_EMBEDDING_DIMENSIONS is set", async () => {
+    process.env["OPENAI_EMBEDDING_MODEL"] = "text-embedding-3-large";
+    process.env["OPENAI_EMBEDDING_DIMENSIONS"] = "3";
+    const provider = new OpenAIEmbeddingProvider("test-key");
+
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(embeddingResponse([0.1, 0.2, 0.3]));
+
+    await provider.embed("hello");
+    expect(requestBody(fetchSpy, 0).dimensions).toBe(3);
+
+    fetchSpy.mockRestore();
+  });
+
+  it("omits dimensions when the size comes from the known-models table", async () => {
+    process.env["OPENAI_EMBEDDING_MODEL"] = "text-embedding-3-large";
+    const provider = new OpenAIEmbeddingProvider("test-key");
+
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(embeddingResponse([0.1, 0.2, 0.3]));
+
+    await provider.embed("hello");
+    expect(requestBody(fetchSpy, 0)).not.toHaveProperty("dimensions");
+
+    fetchSpy.mockRestore();
+  });
+
+  it("truncates and renormalizes when the server ignores the dimensions field", async () => {
+    process.env["OPENAI_EMBEDDING_MODEL"] = "nomic-embed-text-v1.5";
+    process.env["OPENAI_EMBEDDING_DIMENSIONS"] = "2";
+    const provider = new OpenAIEmbeddingProvider("test-key");
+
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(embeddingResponse([3, 4, 5, 6], [0, 2, 9, 9]));
+
+    const [first, second] = await provider.embedBatch(["a", "b"]);
+    expect(Array.from(first)).toEqual([
+      expect.closeTo(0.6, 5),
+      expect.closeTo(0.8, 5),
+    ]);
+    expect(Array.from(second)).toEqual([0, 1]);
+
+    fetchSpy.mockRestore();
+  });
+
+  it("does not truncate when dimensions were not explicitly configured", async () => {
+    process.env["OPENAI_EMBEDDING_MODEL"] = "mystery-self-hosted-model";
+    const provider = new OpenAIEmbeddingProvider("test-key");
+
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(embeddingResponse(Array.from({ length: 2048 }, () => 0.5)));
+
+    const vec = await provider.embed("hello");
+    expect(vec.length).toBe(2048);
+
+    fetchSpy.mockRestore();
+  });
+
+  it("retries without dimensions when the server rejects the field, and stops sending it", async () => {
+    process.env["OPENAI_EMBEDDING_MODEL"] = "BAAI/bge-m3";
+    process.env["OPENAI_EMBEDDING_DIMENSIONS"] = "2";
+    const provider = new OpenAIEmbeddingProvider("test-key");
+
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            error: { message: "Model does not support Matryoshka embeddings; dimensions must be unset" },
+          }),
+          { status: 400 },
+        ),
+      )
+      .mockImplementation(async () => embeddingResponse([0.1, 0.2, 0.3]));
+
+    const vec = await provider.embed("hello");
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(requestBody(fetchSpy, 0).dimensions).toBe(2);
+    expect(requestBody(fetchSpy, 1)).not.toHaveProperty("dimensions");
+    expect(vec.length).toBe(3);
+
+    await provider.embed("again");
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
+    expect(requestBody(fetchSpy, 2)).not.toHaveProperty("dimensions");
+
+    fetchSpy.mockRestore();
+  });
+
+  it("does not retry on errors unrelated to the dimensions field", async () => {
+    process.env["OPENAI_EMBEDDING_DIMENSIONS"] = "3";
+    const provider = new OpenAIEmbeddingProvider("test-key");
+
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response("invalid input", { status: 400 }));
+
+    await expect(provider.embed("hello")).rejects.toThrow(
+      /OpenAI embedding failed \(400\): invalid input/,
+    );
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+
+    fetchSpy.mockRestore();
+  });
+
   it("rejects invalid OPENAI_EMBEDDING_DIMENSIONS values", () => {
     process.env["OPENAI_EMBEDDING_DIMENSIONS"] = "not-a-number";
     expect(() => new OpenAIEmbeddingProvider("test-key")).toThrow(
