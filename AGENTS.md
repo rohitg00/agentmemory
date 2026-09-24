@@ -12,7 +12,7 @@ agentmemory is a persistent memory system for AI coding agents, built on iii-eng
 ## Consistency Rules
 
 **When adding or removing MCP tools, you MUST update ALL of the following:**
-1. `src/mcp/tools-registry.ts` — tool definition + `getAllTools()` array
+1. `src/mcp/tools-registry.ts` — tool definition + `getAllTools()` array (every tool must include `annotations` with `readOnlyHint`/`destructiveHint`: read-only tools get `readOnlyHint: true`, destructive tools get `destructiveHint: true`)
 2. `src/mcp/server.ts` — handler case in the `mcp::tools::call` switch
 3. `src/triggers/api.ts` — REST endpoint registration
 4. `src/index.ts` — function registration + endpoint count in the log line
