@@ -1,5 +1,5 @@
 import { rmSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 const SEEDED_BUILTIN_WORKERS = [
   "iii-http",
@@ -12,15 +12,42 @@ const SEEDED_BUILTIN_WORKERS = [
   "iii-worker-manager",
 ];
 
-export function persistedBuiltinConfigPaths(engineCwd: string): string[] {
-  return SEEDED_BUILTIN_WORKERS.map((id) =>
-    join(engineCwd, "data", "configuration", `${id}.yaml`),
+export function configuredPersistDir(renderedConfig: string): string | null {
+  const lines = renderedConfig.split("\n");
+  const block = workerBlock(lines, "configuration");
+  if (!block) return null;
+  for (let i = block.start + 1; i < block.end; i++) {
+    const match = lines[i]!.trim().match(/^directory:\s*(.+?)\s*$/);
+    if (match) return match[1]!.replace(/^(['"])(.*)\1$/, "$2");
+  }
+  return null;
+}
+
+export function persistedBuiltinConfigDirs(
+  engineCwd: string,
+  renderedConfig?: string,
+): string[] {
+  const dirs = [join(engineCwd, "data", "configuration")];
+  const custom = renderedConfig ? configuredPersistDir(renderedConfig) : null;
+  if (custom) dirs.unshift(resolve(engineCwd, custom));
+  return [...new Set(dirs)];
+}
+
+export function persistedBuiltinConfigPaths(
+  engineCwd: string,
+  renderedConfig?: string,
+): string[] {
+  return persistedBuiltinConfigDirs(engineCwd, renderedConfig).flatMap((dir) =>
+    SEEDED_BUILTIN_WORKERS.map((id) => join(dir, `${id}.yaml`)),
   );
 }
 
-export function clearPersistedBuiltinConfig(engineCwd: string): string[] {
+export function clearPersistedBuiltinConfig(
+  engineCwd: string,
+  renderedConfig?: string,
+): string[] {
   const cleared: string[] = [];
-  for (const path of persistedBuiltinConfigPaths(engineCwd)) {
+  for (const path of persistedBuiltinConfigPaths(engineCwd, renderedConfig)) {
     try {
       rmSync(path);
       cleared.push(path);

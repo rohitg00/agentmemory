@@ -4,9 +4,25 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   clearPersistedBuiltinConfig,
+  persistedBuiltinConfigDirs,
   persistedBuiltinConfigPaths,
   renderEngineConfig,
 } from "../src/cli/engine-config.js";
+
+const customDirConfig = [
+  "workers:",
+  "  - name: iii-http",
+  "    config:",
+  "      port: 3111",
+  "  - name: configuration",
+  "    config:",
+  "      adapter:",
+  "        name: fs",
+  "        config:",
+  "          directory: ./custom-cfg",
+  "  - name: iii-state",
+  "    config: {}",
+].join("\n");
 
 describe("renderEngineConfig", () => {
   it("stores engine state in the resolved data directory", () => {
@@ -71,6 +87,22 @@ describe("clearPersistedBuiltinConfig", () => {
     expect(paths.every((p) => p.endsWith(".yaml"))).toBe(true);
   });
 
+  it("adds the directory a configuration worker entry names, resolved against the engine cwd", () => {
+    expect(persistedBuiltinConfigDirs("/srv/engine", customDirConfig)).toEqual([
+      join("/srv", "engine", "custom-cfg"),
+      join("/srv", "engine", "data", "configuration"),
+    ]);
+    expect(
+      persistedBuiltinConfigDirs(
+        "/srv/engine",
+        customDirConfig.replace("./custom-cfg", "'/var/lib/iii-cfg'"),
+      )[0],
+    ).toBe(join("/var", "lib", "iii-cfg"));
+    expect(
+      persistedBuiltinConfigDirs("/srv/engine", "workers:\n  - name: iii-http\n"),
+    ).toEqual([join("/srv", "engine", "data", "configuration")]);
+  });
+
   it("removes persisted builtin entries and leaves everything else in place", () => {
     const cwd = mkdtempSync(join(tmpdir(), "agentmemory-engine-"));
     const dir = join(cwd, "data", "configuration");
@@ -84,6 +116,19 @@ describe("clearPersistedBuiltinConfig", () => {
     expect(cleared).toHaveLength(2);
     expect(existsSync(join(dir, "iii-http.yaml"))).toBe(false);
     expect(existsSync(join(dir, "iii-state.yaml"))).toBe(false);
+    expect(existsSync(join(dir, "agentmemory.yaml"))).toBe(true);
+  });
+
+  it("removes the entries the engine persisted under a custom configuration directory", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "agentmemory-engine-"));
+    const dir = join(cwd, "custom-cfg");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "iii-http.yaml"), "id: iii-http\nvalue:\n  port: 3111\n");
+    writeFileSync(join(dir, "agentmemory.yaml"), "id: agentmemory\nvalue: {}\n");
+
+    const cleared = clearPersistedBuiltinConfig(cwd, customDirConfig);
+
+    expect(cleared).toEqual([join(dir, "iii-http.yaml")]);
     expect(existsSync(join(dir, "agentmemory.yaml"))).toBe(true);
   });
 

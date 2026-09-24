@@ -1558,7 +1558,7 @@ function prepareEngineLaunch(configPath: string): {
     mkdirSync(dirname(runtimePath), { recursive: true });
     writeFileSync(runtimePath, rewritten, "utf-8");
     try {
-      const cleared = clearPersistedBuiltinConfig(cwd);
+      const cleared = clearPersistedBuiltinConfig(cwd, rewritten);
       if (cleared.length > 0) {
         vlog(
           `cleared ${cleared.length} persisted builtin config entries so the rendered runtime config seeds the engine again`,
