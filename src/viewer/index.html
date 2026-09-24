@@ -1449,7 +1449,7 @@
       }
       tabFetchedAt[tab] = now;
       switch(tab) {
-        case 'dashboard': await loadDashboard(); break;
+        case 'dashboard': requestDashboardReload(); break;
         case 'graph': await loadGraph(); break;
         case 'memories': await loadMemories(); break;
         case 'timeline': await loadTimeline(); break;
@@ -1483,16 +1483,26 @@
           apiGet('lessons'),
           apiGet('crystals')
         ]);
-        state.dashboard.health = results[0];
-        state.dashboard.sessions = (results[1] && results[1].sessions) || [];
-        state.dashboard.memories = (results[2] && results[2].memories) || [];
-        state.dashboard.graphStats = results[3];
-        state.dashboard.recentAudit = (results[4] && results[4].entries) || [];
-        state.dashboard.semantic = (results[5] && results[5].facts) || (results[5] && results[5].semantic) || [];
-        state.dashboard.procedural = (results[6] && results[6].procedures) || (results[6] && results[6].procedural) || [];
-        state.dashboard.lessons = (results[8] && results[8].lessons) || [];
-        state.dashboard.crystals = (results[9] && results[9].crystals) || [];
-        state.dashboard.relations = (results[7] && results[7].relations) || [];
+        // A failed fetch resolves to null (api() swallows errors), never
+        // throws. Apply only the requests that succeeded so a failed batch
+        // keeps the last-good data instead of wiping the panel to empty —
+        // an empty sessions array rendered the first-run hero while
+        // sessions existed (the stats <-> new install flip loop).
+        var sessionsOk = !!(results[1] && Array.isArray(results[1].sessions));
+        state.dashboard.sessionsFailed = !sessionsOk;
+        if (results[0]) state.dashboard.health = results[0];
+        if (sessionsOk) {
+          state.dashboard.sessions = results[1].sessions;
+          state.dashboard.lastGoodAt = Date.now();
+        }
+        if (results[2]) state.dashboard.memories = results[2].memories || [];
+        if (results[3]) state.dashboard.graphStats = results[3];
+        if (results[4]) state.dashboard.recentAudit = results[4].entries || [];
+        if (results[5]) state.dashboard.semantic = results[5].facts || results[5].semantic || [];
+        if (results[6]) state.dashboard.procedural = results[6].procedures || results[6].procedural || [];
+        if (results[7]) state.dashboard.relations = results[7].relations || [];
+        if (results[8]) state.dashboard.lessons = results[8].lessons || [];
+        if (results[9]) state.dashboard.crystals = results[9].crystals || [];
         state.dashboard.loaded = true;
         renderDashboard();
       } catch (err) {
@@ -1505,6 +1515,10 @@
         // Surface the error in the panel + log full detail to console.
         var msg = (err && err.message) ? err.message : String(err);
         console.error('[viewer] loadDashboard failed:', err);
+        // Only replace the panel when nothing good was ever rendered; if
+        // last-good data is on screen, keep it visible (the failed batch
+        // already left it untouched) instead of blanking to an error wall.
+        if (state.dashboard.loaded) return;
         el.innerHTML =
           '<div class="loading" style="color:var(--accent);">' +
           'Dashboard failed to load: ' + msg +
@@ -1532,8 +1546,24 @@
       var workers = snap.workers || [];
 
       var html = '';
-      // First-run hero: empty dashboard = guided next step
-      if (d.sessions.length === 0) {
+      // Stale-data notice: the last refresh failed (api() resolves null on
+      // failure), so the panel is showing data from an earlier fetch. This
+      // must never look like a brand-new install — that is what the hero
+      // below is for, and it is gated on a *successful* empty sessions
+      // response.
+      if (d.sessionsFailed) {
+        var lastGood = d.lastGoodAt ? new Date(d.lastGoodAt).toLocaleTimeString() : null;
+        html += '<div class="card" style="margin-bottom:14px;padding:14px 18px;background:var(--bg-subtle);border-left:3px solid var(--red);">' +
+          '<div style="font-size:12px;color:var(--ink);line-height:1.5;">' +
+          (lastGood
+            ? '<strong>Dashboard refresh failed</strong> — showing data from ' + esc(lastGood) + '. Retrying automatically&hellip;'
+            : '<strong>Dashboard refresh failed</strong> — check that the agentmemory server is reachable. Retrying automatically&hellip;') +
+          '</div></div>';
+      }
+      // First-run hero: empty dashboard = guided next step. Only render it
+      // when the sessions fetch *succeeded* with zero sessions — a failed
+      // fetch must not present as a brand-new install.
+      if (!d.sessionsFailed && d.sessions.length === 0) {
         html += '<div class="card" style="margin-bottom:14px;padding:24px 28px;background:var(--bg-subtle);border-left:3px solid var(--accent);">' +
           '<div style="font-family:var(--font-ui);font-size:11px;letter-spacing:0.15em;text-transform:uppercase;color:var(--accent);font-weight:700;margin-bottom:8px;">First run &rarr; magical moment in 10 seconds</div>' +
           '<div style="font-family:var(--font-display,Lora,Georgia,serif);font-size:22px;font-weight:700;color:var(--ink);margin-bottom:8px;">Seed sample data + prove semantic recall works</div>' +
@@ -1780,9 +1810,24 @@
     }
 
     var dashboardTimer = null;
+    // Dashboard reloads are coalesced: WS observation events, the 30s
+    // timer, the polling fallback and tab re-entry can all fire in bursts,
+    // and each full reload fans out ~10 parallel fetches. Running them
+    // concurrently exhausted the browser's per-origin connection budget
+    // (net::ERR_INSUFFICIENT_RESOURCES); the guard serializes reloads and
+    // collapses bursts into a single trailing reload.
+    var dashBusy = false, dashQueued = false;
+    function requestDashboardReload() {
+      if (dashBusy) { dashQueued = true; return; }
+      dashBusy = true;
+      var settle = function() {
+        dashBusy = false;
+        if (dashQueued) { dashQueued = false; requestDashboardReload(); }
+      };
+      loadDashboard().then(settle, settle);
+    }
     function refreshDashboard() {
-      state.dashboard.loaded = false;
-      loadDashboard();
+      requestDashboardReload();
     }
     function startDashboardAutoRefresh() {
       if (dashboardTimer) clearInterval(dashboardTimer);
@@ -3799,8 +3844,7 @@
       pollTimer = setInterval(function() {
         tick++;
         if (state.activeTab === 'dashboard') {
-          state.dashboard.loaded = false;
-          loadDashboard();
+          requestDashboardReload();
         } else if (state.activeTab === 'memories') {
           state.memories.loaded = false;
           loadMemories();
@@ -3964,8 +4008,14 @@
         }
       }
       if (state.activeTab === 'dashboard') {
-        state.dashboard.loaded = false;
-        loadDashboard();
+        // Observation bursts arrive far faster than a 10-request fan-out
+        // can complete; coalesce through requestDashboardReload and drop
+        // events closer than 1s apart (the 30s timer is the backstop).
+        var now = Date.now();
+        if (now - (state.dashboard.lastWsReloadAt || 0) >= 1000) {
+          state.dashboard.lastWsReloadAt = now;
+          requestDashboardReload();
+        }
       }
       if (state.activeTab === 'activity' && msg.observation) {
         state.activity.observations.unshift(msg.observation);

@@ -480,3 +480,45 @@ describe("mem::summarize chunking", () => {
     expect(result.error).toBe("parse_failed");
   });
 });
+
+describe("mem::summarize noop short-circuit", () => {
+  it("wrapped noop provider (name 'resilient(noop)') short-circuits to no_provider without calling the provider", async () => {
+    const summarizeSpy = vi.fn(async () => "");
+    const provider = {
+      name: "resilient(noop)",
+      compress: async () => "",
+      summarize: summarizeSpy,
+    } as unknown as MemoryProvider;
+    const { handler } = await setupHandler({
+      sessionId: "ses_noop_wrapped",
+      obsCount: 3,
+      provider,
+    });
+
+    const result: any = await handler({ sessionId: "ses_noop_wrapped" });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe("no_provider");
+    expect(summarizeSpy).not.toHaveBeenCalled();
+  });
+
+  it("bare noop provider short-circuits to no_provider", async () => {
+    const summarizeSpy = vi.fn(async () => "");
+    const provider = {
+      name: "noop",
+      compress: async () => "",
+      summarize: summarizeSpy,
+    } as unknown as MemoryProvider;
+    const { handler } = await setupHandler({
+      sessionId: "ses_noop_bare",
+      obsCount: 3,
+      provider,
+    });
+
+    const result: any = await handler({ sessionId: "ses_noop_bare" });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe("no_provider");
+    expect(summarizeSpy).not.toHaveBeenCalled();
+  });
+});
