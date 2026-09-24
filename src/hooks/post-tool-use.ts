@@ -1,4 +1,9 @@
 #!/usr/bin/env node
+import {
+  captureOutputMax,
+  shouldCaptureTool,
+  truncateCaptureOutput,
+} from "./_capture-filter.js";
 import { resolveProject, hookCwd } from "./_project.js";
 
 function isSdkChildContext(payload: unknown): boolean {
@@ -34,10 +39,13 @@ async function main() {
 
   const sessionId = ((data.session_id || data.sessionId || data.conversation_id) as string) || "unknown";
   const toolName = data.tool_name ?? data.toolName;
+  if (!shouldCaptureTool(toolName)) return;
+
   const toolInput = data.tool_input ?? data.toolArgs;
 
   const { imageData, cleanOutput } = extractImageData(toolOutput(data));
   const cwd = hookCwd(data) || process.cwd();
+  const outputMax = captureOutputMax();
 
   fetch(`${REST_URL}/agentmemory/observe`, {
     method: "POST",
@@ -51,7 +59,7 @@ async function main() {
       data: {
         tool_name: toolName,
         tool_input: toolInput,
-        tool_output: truncate(cleanOutput, 8000),
+        tool_output: truncateCaptureOutput(cleanOutput, outputMax),
         ...(imageData ? { image_data: imageData } : {}),
       },
     }),
@@ -102,18 +110,6 @@ function extractImageData(output: unknown): { imageData: string | undefined; cle
   }
 
   return { imageData: undefined, cleanOutput: output };
-}
-
-function truncate(value: unknown, max: number): unknown {
-  if (typeof value === "string" && value.length > max) {
-    return value.slice(0, max) + "\n[...truncated]";
-  }
-  if (typeof value === "object" && value !== null) {
-    const str = JSON.stringify(value);
-    if (str.length > max) return str.slice(0, max) + "...[truncated]";
-    return value;
-  }
-  return value;
 }
 
 main().catch(() => process.exit(0));
