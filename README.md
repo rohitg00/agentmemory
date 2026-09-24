@@ -1,5 +1,3 @@
-
-The pinned engine starts with `--no-update-check` (no update or security-advisory lookups against GitHub at boot) and with iii's anonymous usage telemetry off: agentmemory sets `III_TELEMETRY_ENABLED=false` for the engine it spawns unless you export the variable yourself, and the bundled compose file does the same.
 <p align="center">
   <img src="assets/banner.png" alt="agentmemory: persistent memory for AI coding agents" width="720" />
 </p>
@@ -1428,6 +1426,8 @@ agentmemory + iii-engine bind four ports by default. If a restart fails with `po
 | `49134` | iii-engine | WebSocket; workers register here, OTel telemetry flows over it | `III_ENGINE_PORT` or `III_ENGINE_URL` |
 
 `--port <N>` changes the REST anchor and derives streams `N+1`, viewer `N+2`, and engine WebSocket `N+46023` only where the corresponding explicit port or URL above is unset. It does not create an isolated lifecycle namespace. Use `--instance 1` for a second daemon; it uses anchor 3211, defaults to `3211/3212/3213/49234`, and receives a separate `instance-1` data and lifecycle directory. Instances 1 through 50 follow the same pattern.
+
+The pinned engine starts with `--no-update-check` (no update or security-advisory lookups against GitHub at boot) and with iii's anonymous usage telemetry off: agentmemory sets `III_TELEMETRY_ENABLED=false` for the engine it spawns unless you export the variable yourself, and the bundled compose file does the same.
 
 Stale-process cleanup when ports stay bound after a crashed run:
 
