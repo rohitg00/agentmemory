@@ -291,4 +291,105 @@ describe("Smart Search Function", () => {
       expect(result.lessons).toEqual([]);
     });
   });
+
+  describe("project filter on hybrid results (#787 follow-up)", () => {
+    it("filters observations by session project, keeping only the matching project", async () => {
+      const result = (await sdk.trigger("mem::smart-search", {
+        query: "auth",
+        project: "my-project",
+      })) as { results: CompactSearchResult[] };
+
+      // Both obs_1 and obs_2 belong to ses_1, whose project is "my-project".
+      expect(result.results.length).toBe(2);
+    });
+
+    it("excludes observations whose session belongs to a different project", async () => {
+      const result = (await sdk.trigger("mem::smart-search", {
+        query: "auth",
+        project: "someone-elses-project",
+      })) as { results: CompactSearchResult[] };
+
+      expect(result.results).toEqual([]);
+    });
+
+    it("resolves project via KV.memories for synthetic memory sessions (mem::remember entries)", async () => {
+      const memObs = makeObs({
+        id: "mem_1",
+        sessionId: "memory",
+        title: "Saved insight",
+      });
+      const memResult: HybridSearchResult = {
+        observation: memObs,
+        bm25Score: 0.5,
+        vectorScore: 0,
+        graphScore: 0,
+        combinedScore: 0.5,
+        sessionId: "memory",
+      };
+      await kv.set("mem:memories", "mem_1", {
+        id: "mem_1",
+        project: "proj-alpha",
+      });
+
+      const localSdk = mockSdk();
+      const localSearchFn = async () => [memResult];
+      registerSmartSearchFunction(localSdk as never, kv as never, localSearchFn);
+
+      const matching = (await localSdk.trigger("mem::smart-search", {
+        query: "insight",
+        project: "proj-alpha",
+      })) as { results: CompactSearchResult[] };
+      expect(matching.results.length).toBe(1);
+
+      const mismatched = (await localSdk.trigger("mem::smart-search", {
+        query: "insight",
+        project: "proj-beta",
+      })) as { results: CompactSearchResult[] };
+      expect(mismatched.results).toEqual([]);
+    });
+
+    it("passes through results whose project can't be resolved (no session, no memory record)", async () => {
+      const orphanObs = makeObs({ id: "obs_orphan", sessionId: "ses_gone" });
+      const orphanResult: HybridSearchResult = {
+        observation: orphanObs,
+        bm25Score: 0.4,
+        vectorScore: 0,
+        graphScore: 0,
+        combinedScore: 0.4,
+        sessionId: "ses_gone",
+      };
+
+      const localSdk = mockSdk();
+      const localSearchFn = async () => [orphanResult];
+      registerSmartSearchFunction(localSdk as never, kv as never, localSearchFn);
+
+      const result = (await localSdk.trigger("mem::smart-search", {
+        query: "auth",
+        project: "any-project",
+      })) as { results: CompactSearchResult[] };
+      expect(result.results.length).toBe(1);
+    });
+
+    it("does not filter results when no project is given", async () => {
+      const result = (await sdk.trigger("mem::smart-search", {
+        query: "auth",
+      })) as { results: CompactSearchResult[] };
+
+      expect(result.results.length).toBe(2);
+    });
+
+    it("also scopes the expandIds branch — a caller can't bypass project scoping by expanding directly", async () => {
+      const matching = (await sdk.trigger("mem::smart-search", {
+        expandIds: ["obs_1"],
+        project: "my-project",
+      })) as { mode: string; results: unknown[] };
+      expect(matching.results.length).toBe(1);
+
+      const mismatched = (await sdk.trigger("mem::smart-search", {
+        expandIds: ["obs_1"],
+        project: "someone-elses-project",
+      })) as { mode: string; results: unknown[] };
+      expect(mismatched.results).toEqual([]);
+    });
+  });
 });

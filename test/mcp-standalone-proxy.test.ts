@@ -130,6 +130,88 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
     expect(recallBody).not.toHaveProperty("token_budget");
   });
 
+  it("forwards project on memory_save to POST /agentmemory/remember (#926)", async () => {
+    let rememberBody: Record<string, unknown> | undefined;
+    installFetch((url, init) => {
+      if (url.endsWith("/agentmemory/livez")) return new Response("ok", { status: 200 });
+      if (url.endsWith("/agentmemory/remember")) {
+        rememberBody = init?.body ? JSON.parse(init.body as string) : undefined;
+        return new Response(JSON.stringify({ id: "m-1", action: "created" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return new Response("not found", { status: 404 });
+    });
+    await handleToolCall("memory_save", {
+      content: "project-scoped entry",
+      project: "acme-widgets",
+    });
+    expect(rememberBody?.["project"]).toBe("acme-widgets");
+  });
+
+  it("trims whitespace off project before forwarding (memory_save)", async () => {
+    let rememberBody: Record<string, unknown> | undefined;
+    installFetch((url, init) => {
+      if (url.endsWith("/agentmemory/livez")) return new Response("ok", { status: 200 });
+      if (url.endsWith("/agentmemory/remember")) {
+        rememberBody = init?.body ? JSON.parse(init.body as string) : undefined;
+        return new Response(JSON.stringify({ id: "m-1", action: "created" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return new Response("not found", { status: 404 });
+    });
+    await handleToolCall("memory_save", {
+      content: "project-scoped entry",
+      project: "  acme-widgets  ",
+    });
+    expect(rememberBody?.["project"]).toBe("acme-widgets");
+  });
+
+  it("forwards project on memory_recall to POST /agentmemory/search (#787)", async () => {
+    let searchBody: Record<string, unknown> | undefined;
+    installFetch((url, init) => {
+      if (url.endsWith("/agentmemory/livez")) return new Response("ok", { status: 200 });
+      if (url.endsWith("/agentmemory/search")) {
+        searchBody = init?.body ? JSON.parse(init.body as string) : undefined;
+        return new Response(JSON.stringify({ mode: "full", facts: [] }), { status: 200 });
+      }
+      return new Response("not found", { status: 404 });
+    });
+    await handleToolCall("memory_recall", { query: "auth bug", project: "acme-widgets" });
+    expect(searchBody?.["project"]).toBe("acme-widgets");
+  });
+
+  it("forwards project on memory_smart_search to POST /agentmemory/smart-search (#787)", async () => {
+    let smartSearchBody: Record<string, unknown> | undefined;
+    installFetch((url, init) => {
+      if (url.endsWith("/agentmemory/livez")) return new Response("ok", { status: 200 });
+      if (url.endsWith("/agentmemory/smart-search")) {
+        smartSearchBody = init?.body ? JSON.parse(init.body as string) : undefined;
+        return new Response(JSON.stringify({ mode: "compact", results: [] }), { status: 200 });
+      }
+      return new Response("not found", { status: 404 });
+    });
+    await handleToolCall("memory_smart_search", { query: "auth bug", project: "acme-widgets" });
+    expect(smartSearchBody?.["project"]).toBe("acme-widgets");
+  });
+
+  it("trims whitespace off project before forwarding (memory_recall)", async () => {
+    let searchBody: Record<string, unknown> | undefined;
+    installFetch((url, init) => {
+      if (url.endsWith("/agentmemory/livez")) return new Response("ok", { status: 200 });
+      if (url.endsWith("/agentmemory/search")) {
+        searchBody = init?.body ? JSON.parse(init.body as string) : undefined;
+        return new Response(JSON.stringify({ mode: "full", facts: [] }), { status: 200 });
+      }
+      return new Response("not found", { status: 404 });
+    });
+    await handleToolCall("memory_recall", { query: "auth bug", project: "  acme-widgets  " });
+    expect(searchBody?.["project"]).toBe("acme-widgets");
+  });
+
   it("proxies memory_governance_delete to the DELETE REST endpoint", async () => {
     const calls: Array<{ url: string; method: string; body?: unknown }> = [];
     installFetch((url, init) => {
@@ -165,6 +247,48 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
         },
       },
     ]);
+  });
+
+  it("local fallback preserves project on memory_save and scopes memory_recall/memory_smart_search to it (#926/#787)", async () => {
+    installFetch(() => {
+      throw new Error("ECONNREFUSED");
+    });
+    const localKv = new InMemoryKV(undefined);
+    await handleToolCall(
+      "memory_save",
+      { content: "alpha widget note", project: "proj-alpha" },
+      localKv,
+    );
+    await handleToolCall(
+      "memory_save",
+      { content: "beta widget note", project: "proj-beta" },
+      localKv,
+    );
+
+    const scopedRecall = await handleToolCall(
+      "memory_recall",
+      { query: "widget", project: "proj-alpha" },
+      localKv,
+    );
+    const scopedResults = JSON.parse(scopedRecall.content[0].text).results;
+    expect(scopedResults).toHaveLength(1);
+    expect(scopedResults[0].content).toBe("alpha widget note");
+
+    const scopedSmartSearch = await handleToolCall(
+      "memory_smart_search",
+      { query: "widget", project: "proj-beta" },
+      localKv,
+    );
+    const scopedSmartResults = JSON.parse(scopedSmartSearch.content[0].text).results;
+    expect(scopedSmartResults).toHaveLength(1);
+    expect(scopedSmartResults[0].content).toBe("beta widget note");
+
+    const unscopedRecall = await handleToolCall(
+      "memory_recall",
+      { query: "widget" },
+      localKv,
+    );
+    expect(JSON.parse(unscopedRecall.content[0].text).results).toHaveLength(2);
   });
 
   it("local fallback returns the same shape as proxy for memory_smart_search", async () => {
