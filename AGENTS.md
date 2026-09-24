@@ -20,6 +20,7 @@ agentmemory is a persistent memory system for AI coding agents, built on iii-eng
 6. `README.md` — tool counts (search for "MCP tools")
 7. `plugin/.claude-plugin/plugin.json` — tool count in description
 8. `plugin/plugin.json` and `plugin/.mcp.copilot.json` (when present) — tool count or MCP exposure
+9. `plugin/kimi.plugin.json` — tool count in description
 
 **When adding REST endpoints, you MUST update:**
 1. `src/triggers/api.ts` — endpoint registration
@@ -34,6 +35,7 @@ agentmemory is a persistent memory system for AI coding agents, built on iii-eng
 5. `test/export-import.test.ts` — version assertion
 6. `plugin/.claude-plugin/plugin.json` — version field
 7. `plugin/plugin.json` (when present) — version field
+8. `plugin/kimi.plugin.json` — version field
 
 **When adding new KV scopes:**
 1. `src/state/schema.ts` — add to the KV object
