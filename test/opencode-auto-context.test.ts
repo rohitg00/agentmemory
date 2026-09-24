@@ -1,38 +1,173 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { readFileSync } from "node:fs";
 
-// OpenCode plugin needs zero-config memory injection. Plugin
-// already wires experimental.chat.system.transform; this PR threads
-// the /session/start context through a cache so injection happens
-// without a second /context fetch and is documented as the
-// SessionStart-equivalent behaviour.
-describe("OpenCode plugin auto-context injection (#431)", () => {
+describe("OpenCode plugin auto-context injection (#431, #720, #1184)", () => {
   const plugin = readFileSync(
     "plugin/opencode/agentmemory-capture.ts",
     "utf-8",
   );
 
-  it("captures context returned by POST /session/start", () => {
+  it("captures and caches session context at initialization", () => {
     expect(plugin).toMatch(/startContextCache\s*=\s*new Map<string,\s*string>/);
-    expect(plugin).toMatch(
-      /postJson\(["']\/session\/start["']/,
-    );
-    // Snapshot `activeSessionId` into a local before the await so the cached
-    // context binds to the session that opened it, not a later one.
+    expect(plugin).toMatch(/postJson\(["']\/session\/start["']/);
     expect(plugin).toMatch(
       /const\s+sessionId\s*=\s*activeSessionId[\s\S]*?startContextCache\.set\(sessionId/,
     );
   });
 
-  it("chat.system.transform reads cached context first, falls back to /context", () => {
-    expect(plugin).toMatch(/startContextCache\.get\(sid\)/);
-    expect(plugin).toMatch(/postJson\(["']\/context["']/);
-    expect(plugin).toMatch(/startContextCache\.delete\(sid\)/);
+  it("injects frozen context on every conversational turn without deleting cached entries", () => {
+    const transformBlock = plugin.slice(
+      plugin.indexOf('"experimental.chat.system.transform"'),
+      plugin.indexOf('"experimental.session.compacting"'),
+    );
+    expect(transformBlock).toMatch(/startContextCache\.get\(sid\)/);
+    expect(transformBlock).toMatch(/postJson\(["']\/context["']/);
+    expect(transformBlock).not.toContain("startContextCache.delete(sid)");
   });
 
-  it("session.deleted clears the cache to avoid stale entries", () => {
+  it("clears cached session state upon session deletion", () => {
     const deletedBlock = plugin.slice(plugin.indexOf("session.deleted"));
     expect(deletedBlock).toMatch(/startContextCache\.delete\(sid\)/);
+  });
+});
+
+describe("OpenCode plugin system prompt transformation behavior", () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ context: "<agentmemory-context project=\"demo\">mock data</agentmemory-context>" }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  async function getPluginHooks(ctx: Record<string, unknown> = { worktree: "/repo/demo" }) {
+    const { AgentmemoryCapturePlugin } = await import(
+      "../plugin/opencode/agentmemory-capture.ts"
+    );
+    return (AgentmemoryCapturePlugin as (c: unknown) => Promise<{
+      event: (msg: unknown) => Promise<void>;
+      "experimental.chat.system.transform": (
+        input: { sessionID?: string; agent?: string; small?: boolean },
+        output: { system?: string[] },
+      ) => Promise<void>;
+    }>)(ctx);
+  }
+
+  it("preserves identical memory context across multi-turn chat interactions", async () => {
+    const hooks = await getPluginHooks();
+
+    // 1. Session created -> fetches and caches start context
+    await hooks.event({
+      event: { type: "session.created", properties: { info: { id: "ses_multi_turn" } } },
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    // 2. Turn 1
+    const turn1Output: { system: string[] } = { system: [] };
+    await hooks["experimental.chat.system.transform"](
+      { sessionID: "ses_multi_turn" },
+      turn1Output,
+    );
+    expect(turn1Output.system).toHaveLength(2);
+    expect(turn1Output.system[0]).toContain("<agentmemory-instructions>");
+    expect(turn1Output.system[1]).toContain("<agentmemory-context project=\"demo\">mock data</agentmemory-context>");
+    // Should NOT have made an extra network call (used cached start context)
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    // 3. Turn 2 (OpenCode creates a fresh output.system array)
+    const turn2Output: { system: string[] } = { system: [] };
+    await hooks["experimental.chat.system.transform"](
+      { sessionID: "ses_multi_turn" },
+      turn2Output,
+    );
+    expect(turn2Output.system).toHaveLength(2);
+    expect(turn2Output.system[0]).toBe(turn1Output.system[0]);
+    expect(turn2Output.system[1]).toBe(turn1Output.system[1]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    // 4. Turn 3
+    const turn3Output: { system: string[] } = { system: [] };
+    await hooks["experimental.chat.system.transform"](
+      { sessionID: "ses_multi_turn" },
+      turn3Output,
+    );
+    expect(turn3Output.system[0]).toBe(turn1Output.system[0]);
+    expect(turn3Output.system[1]).toBe(turn1Output.system[1]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("skips internal utility requests such as title generation and compaction", async () => {
+    const hooks = await getPluginHooks();
+    await hooks.event({
+      event: { type: "session.created", properties: { info: { id: "ses_internal_guard" } } },
+    });
+
+    // Internal title agent request
+    const titleOutput: { system: string[] } = { system: [] };
+    await hooks["experimental.chat.system.transform"](
+      { sessionID: "ses_internal_guard", agent: "title" },
+      titleOutput,
+    );
+    expect(titleOutput.system).toEqual([]);
+
+    // Compaction agent request
+    const compactionOutput: { system: string[] } = { system: [] };
+    await hooks["experimental.chat.system.transform"](
+      { sessionID: "ses_internal_guard", agent: "compaction" },
+      compactionOutput,
+    );
+    expect(compactionOutput.system).toEqual([]);
+
+    // Small model request
+    const smallOutput: { system: string[] } = { system: [] };
+    await hooks["experimental.chat.system.transform"](
+      { sessionID: "ses_internal_guard", small: true },
+      smallOutput,
+    );
+    expect(smallOutput.system).toEqual([]);
+
+    // Legacy title prompt regex fallback when agent metadata is missing
+    const legacyTitleOutput: { system: string[] } = {
+      system: ["You are a title generator. Output only a short title."],
+    };
+    await hooks["experimental.chat.system.transform"](
+      { sessionID: "ses_internal_guard" },
+      legacyTitleOutput,
+    );
+    expect(legacyTitleOutput.system).toHaveLength(1);
+    expect(legacyTitleOutput.system[0]).not.toContain("<agentmemory-instructions>");
+  });
+
+  it("fetches and re-caches context on cache miss for resumed sessions", async () => {
+    const hooks = await getPluginHooks();
+
+    // Directly call transform without prior session.created event
+    const output: { system: string[] } = { system: [] };
+    await hooks["experimental.chat.system.transform"](
+      { sessionID: "ses_resumed_session" },
+      output,
+    );
+
+    expect(output.system).toHaveLength(2);
+    expect(output.system[0]).toContain("<agentmemory-instructions>");
+    expect(output.system[1]).toContain("<agentmemory-context project=\"demo\">mock data</agentmemory-context>");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    // Second turn on resumed session should now hit the cache
+    const secondTurnOutput: { system: string[] } = { system: [] };
+    await hooks["experimental.chat.system.transform"](
+      { sessionID: "ses_resumed_session" },
+      secondTurnOutput,
+    );
+    expect(secondTurnOutput.system).toHaveLength(2);
+    expect(fetchMock).toHaveBeenCalledTimes(1); // No new network call
   });
 });
 
