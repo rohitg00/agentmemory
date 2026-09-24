@@ -12,6 +12,11 @@ export interface Session {
   summary?: string;
   commitShas?: string[];
   agentId?: string;
+  // Matched incremental graph-extract watermark, written together by
+  // event::session::stopped (triggers/events.ts) — see there for why the
+  // digest is needed. Absent on records written before this existed.
+  graphExtractedAt?: string;
+  graphExtractedDigest?: string;
 }
 
 export interface CommitLink {
