@@ -1175,7 +1175,7 @@ iii console --port 3114 \
 
 **Traces 已开启:**
 
-`iii-config.yaml` 出厂启用 `iii-observability` worker(`exporter: memory`、`sampling_ratio: 0.1`、指标 + 日志)。无需额外配置;agentmemory 启动那一刻,每个记忆操作都会发出一个 trace span 和一个控制台可读的结构化日志。
+`iii-config.yaml` 出厂启用 `iii-observability` worker(`exporter: memory`、`sampling_ratio: 0.1`、指标 + 日志)。无需额外配置;agentmemory 启动那一刻,每个记忆操作都会发出一个控制台可读的结构化日志,其中十分之一(`sampling_ratio: 0.1`)还会发出一个 trace span。
 
 如果你想改为导出到 Jaeger/Honeycomb/Grafana Tempo,把 `exporter: memory` 改为 `exporter: otlp` 并按 iii 的可观测性文档设置收集器端点。
 

@@ -1178,7 +1178,7 @@ iii console --port 3114 \
 
 **Trace'ler zaten açık:**
 
-`iii-config.yaml` `iii-observability` worker'ı etkinleştirilmiş olarak gelir (`exporter: memory`, `sampling_ratio: 0.1`, metrikler + log'lar). Ekstra yapılandırma gerekmez; agentmemory başlar başlamaz, her bellek işlemi konsolun okuyabileceği bir trace span'ı ve yapılandırılmış bir log yayar.
+`iii-config.yaml` `iii-observability` worker'ı etkinleştirilmiş olarak gelir (`exporter: memory`, `sampling_ratio: 0.1`, metrikler + log'lar). Ekstra yapılandırma gerekmez; agentmemory başlar başlamaz, her bellek işlemi konsolun okuyabileceği yapılandırılmış bir log yayar ve her on işlemden biri (`sampling_ratio: 0.1`) ayrıca bir trace span'ı yayar.
 
 Bunun yerine Jaeger/Honeycomb/Grafana Tempo'ya dışa aktarmak isterseniz, `exporter: memory`'yi `exporter: otlp` olarak değiştirin ve collector endpoint'ini iii'nin observability dokümanlarına göre ayarlayın.
 

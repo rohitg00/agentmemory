@@ -1179,7 +1179,7 @@ iii console --port 3114 \
 
 **Traces は既にオン:**
 
-`iii-config.yaml` は出荷時から `iii-observability` worker を有効化(`exporter: memory`、`sampling_ratio: 0.1`、メトリクス + ログ)。追加設定不要 — agentmemory が起動した瞬間に、すべてのメモリ操作がトレーススパンとコンソールが読み取れる構造化ログを出します。
+`iii-config.yaml` は出荷時から `iii-observability` worker を有効化(`exporter: memory`、`sampling_ratio: 0.1`、メトリクス + ログ)。追加設定不要 — agentmemory が起動した瞬間に、すべてのメモリ操作がコンソールが読み取れる構造化ログを出し、そのうち 10 分の 1(`sampling_ratio: 0.1`)はトレーススパンも出します。
 
 代わりに Jaeger / Honeycomb / Grafana Tempo へエクスポートしたい場合は、`exporter: memory` を `exporter: otlp` に変更し、iii の可観測性ドキュメントに従ってコレクタエンドポイントを設定してください。
 

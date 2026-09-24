@@ -1252,7 +1252,7 @@ The same thing by hand, useful when `agentmemory` is not on PATH:
 
 **Traces are already on:**
 
-`iii-config.yaml` ships with the `iii-observability` worker enabled (`exporter: memory`, `sampling_ratio: 0.1`, metrics + logs). No extra config needed; the moment agentmemory starts, every memory operation emits a trace span and a structured log the console can read.
+`iii-config.yaml` ships with the `iii-observability` worker enabled (`exporter: memory`, `sampling_ratio: 0.1`, metrics + logs). No extra config needed; the moment agentmemory starts, every memory operation emits a structured log the console can read, and one in ten of them (`sampling_ratio: 0.1`) also emits a trace span.
 
 If you want to export to Jaeger/Honeycomb/Grafana Tempo instead, change `exporter: memory` to `exporter: otlp` and set the collector endpoint per iii's observability docs.
 

@@ -1169,7 +1169,7 @@ iii console --port 3114 \
 
 **Las trazas ya están activas:**
 
-`iii-config.yaml` se sirve con el worker `iii-observability` habilitado (`exporter: memory`, `sampling_ratio: 0.1`, métricas + logs). No se necesita configuración adicional; desde el momento en que agentmemory arranca, cada operación de memoria emite una traza-span y un log estructurado que la console puede leer.
+`iii-config.yaml` se sirve con el worker `iii-observability` habilitado (`exporter: memory`, `sampling_ratio: 0.1`, métricas + logs). No se necesita configuración adicional; desde el momento en que agentmemory arranca, cada operación de memoria emite un log estructurado que la console puede leer, y una de cada diez (`sampling_ratio: 0.1`) emite además una traza-span.
 
 Si quieres exportar a Jaeger/Honeycomb/Grafana Tempo en su lugar, cambia `exporter: memory` por `exporter: otlp` y define el endpoint del collector según la documentación de observabilidad de iii.
 
