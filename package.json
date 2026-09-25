@@ -79,7 +79,7 @@
     "@types/node": "^25.9.1",
     "tsdown": "^0.21.10",
     "tsx": "^4.19.0",
-    "typescript": "^6.0.3",
+    "typescript": "^7.0.2",
     "vitest": "^4.1.6"
   },
   "overrides": {
