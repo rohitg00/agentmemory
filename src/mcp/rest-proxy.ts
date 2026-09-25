@@ -1,6 +1,6 @@
 const DEFAULT_URL = "http://localhost:3111";
 const DEFAULT_HEALTH_PROBE_TIMEOUT_MS = 2_000;
-const CALL_TIMEOUT_MS = 15_000;
+const DEFAULT_CALL_TIMEOUT_MS = 600_000;
 const LOCAL_MODE_TTL_MS = 30_000;
 
 function probeTimeoutMs(): number {
@@ -8,6 +8,19 @@ function probeTimeoutMs(): number {
   if (!raw) return DEFAULT_HEALTH_PROBE_TIMEOUT_MS;
   const n = Number(raw);
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : DEFAULT_HEALTH_PROBE_TIMEOUT_MS;
+}
+
+// Node.js timer internals use a signed 32-bit integer; values above this
+// wrap to negative and fire immediately. Cap env overrides to stay safe.
+const MAX_TIMER_MS = 2_147_483_647;
+
+export function callTimeoutMs(): number {
+  const raw = process.env["AGENTMEMORY_CALL_TIMEOUT_MS"];
+  if (!raw) return DEFAULT_CALL_TIMEOUT_MS;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0
+    ? Math.min(Math.floor(n), MAX_TIMER_MS)
+    : DEFAULT_CALL_TIMEOUT_MS;
 }
 
 function forceProxy(): boolean {
@@ -144,7 +157,7 @@ export async function resolveHandle(): Promise<Handle> {
               ...authHeader(),
               ...(init?.headers as Record<string, string> | undefined),
             },
-            signal: AbortSignal.timeout(CALL_TIMEOUT_MS),
+            signal: AbortSignal.timeout(callTimeoutMs()),
           });
           if (!res.ok) {
             throw new Error(
