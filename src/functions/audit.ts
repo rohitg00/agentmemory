@@ -32,8 +32,7 @@ import { logger } from "../logger.js";
 // BEFORE kv.delete(...) and match one of the two shapes above.
 
 const AUDIT_MIGRATE_FUNCTION_ID = "mem::audit-migrate";
-const AUDIT_MIGRATION_BATCH_SIZE = 200;
-const AUDIT_MIGRATION_TICK_MS = 50;
+const AUDIT_MIGRATION_CONCURRENCY = 32;
 
 interface AuditMonthIndex {
   months: string[];
@@ -190,64 +189,60 @@ export async function queryAudit(
   return collected.slice(0, limit);
 }
 
-async function migrateAuditEntry(
-  kv: StateKV,
-  entry: AuditEntry,
-): Promise<"migrated" | "purged"> {
-  if (entry.operation === "index_persist") {
-    await kv.delete(KV.audit, entry.id);
-    return "purged";
-  }
-  const month = auditMonthOf(entry.timestamp);
-  await kv.set(KV.auditMonth(month), entry.id, entry);
-  await markAuditMonth(kv, month);
-  await kv.delete(KV.audit, entry.id);
-  return "migrated";
-}
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => {
-    const timer = setTimeout(resolve, ms);
-    timer.unref();
+async function inParallel<T>(
+  items: T[],
+  concurrency: number,
+  work: (item: T) => Promise<void>,
+): Promise<void> {
+  let next = 0;
+  const runners = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+    while (next < items.length) {
+      const item = items[next++];
+      await work(item);
+    }
   });
+  await Promise.all(runners);
 }
 
 export async function startAuditMigration(kv: StateKV): Promise<void> {
-  let totalMigrated = 0;
-  let totalPurged = 0;
+  let legacy: AuditEntry[];
+  try {
+    legacy = await kv.list<AuditEntry>(KV.audit);
+  } catch (err) {
+    logger.warn("audit migration could not read the legacy audit log", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return;
+  }
+  if (legacy.length === 0) return;
+
+  const kept = legacy.filter((entry) => entry.operation !== "index_persist");
+  const purged = legacy.length - kept.length;
 
   try {
-    const queue = await kv.list<AuditEntry>(KV.audit);
-    let cursor = 0;
-
-    while (cursor < queue.length) {
-      const batch = queue.slice(cursor, cursor + AUDIT_MIGRATION_BATCH_SIZE);
-      cursor += batch.length;
-
-      for (const entry of batch) {
-        const outcome = await migrateAuditEntry(kv, entry);
-        if (outcome === "purged") totalPurged++;
-        else totalMigrated++;
-      }
-
-      if (cursor < queue.length) {
-        await delay(AUDIT_MIGRATION_TICK_MS);
-      }
-    }
+    const months = new Set<string>();
+    await inParallel(kept, AUDIT_MIGRATION_CONCURRENCY, async (entry) => {
+      const month = auditMonthOf(entry.timestamp);
+      await kv.set(KV.auditMonth(month), entry.id, entry);
+      months.add(month);
+    });
+    for (const month of months) await markAuditMonth(kv, month);
+    await inParallel(legacy, AUDIT_MIGRATION_CONCURRENCY, async (entry) => {
+      await kv.delete(KV.audit, entry.id);
+    });
   } catch (err) {
-    logger.warn("audit migration failed", {
+    logger.warn("audit migration stopped before finishing; it resumes on the next boot", {
       error: err instanceof Error ? err.message : String(err),
-      migrated: totalMigrated,
-      purged: totalPurged,
     });
     return;
   }
 
-  if (totalPurged > 0) {
+  logger.info("audit log moved to monthly scopes", { migrated: kept.length, purged });
+  if (purged > 0) {
     await safeAudit(kv, "audit_migrate", AUDIT_MIGRATE_FUNCTION_ID, [], {
       reason: "index_persist rows predate opt-in auditing",
-      purged: totalPurged,
-      migrated: totalMigrated,
+      purged,
+      migrated: kept.length,
     });
   }
 }
