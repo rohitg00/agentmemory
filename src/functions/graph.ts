@@ -13,7 +13,10 @@ import {
   GRAPH_EXTRACTION_SYSTEM,
   buildGraphExtractionPrompt,
 } from "../prompts/graph-extraction.js";
-import { isGraphExtractionEnabled } from "../config.js";
+import {
+  isGraphExtractionEnabled,
+  getGraphMaxSourceIds,
+} from "../config.js";
 import { recordAudit } from "./audit.js";
 import { logger } from "../logger.js";
 
@@ -22,6 +25,37 @@ import { logger } from "../logger.js";
 // reported 11k-node / 28k-edge corpus, and 5,000 is the upper bound a
 // caller can request explicitly. Tuned conservatively because edges
 // fan out faster than nodes.
+// How many provenance ids a projected graph-query response keeps as a
+// sample. The full array is available with `includeSources: true`.
+const GRAPH_QUERY_SOURCE_SAMPLE = 3;
+
+/** Bound a provenance array, keeping the most recent ids. */
+function capSourceIds(ids: string[]): string[] {
+  const max = getGraphMaxSourceIds();
+  return ids.length <= max ? ids : ids.slice(-max);
+}
+
+/**
+ * Strip the provenance array down to a count plus a small sample.
+ * graph-query used to return node objects verbatim, so every consumer
+ * paid for accumulated provenance on every call — for an agent that
+ * cost is context window (upstream #1171).
+ */
+function projectSources<T extends { sourceObservationIds?: string[] }>(
+  row: T,
+  includeSources: boolean,
+): T & { sourceObservationCount?: number } {
+  const ids = row.sourceObservationIds ?? [];
+  if (includeSources || ids.length <= GRAPH_QUERY_SOURCE_SAMPLE) {
+    return { ...row, sourceObservationCount: ids.length };
+  }
+  return {
+    ...row,
+    sourceObservationIds: ids.slice(-GRAPH_QUERY_SOURCE_SAMPLE),
+    sourceObservationCount: ids.length,
+  };
+}
+
 const DEFAULT_GRAPH_QUERY_LIMIT = 500;
 const MAX_GRAPH_QUERY_LIMIT = 5000;
 
@@ -146,6 +180,7 @@ function paginateFromSnapshot(
   filterType: string | undefined,
   limit: number,
   offset: number,
+  includeSources = false,
 ): GraphQueryResult {
   const filteredNodes = filterType
     ? snap.topNodes.filter((n) => n.type === filterType)
@@ -159,8 +194,8 @@ function paginateFromSnapshot(
     (e) => pageIds.has(e.sourceNodeId) && pageIds.has(e.targetNodeId),
   );
   return {
-    nodes: pageNodes,
-    edges: pageEdges,
+    nodes: pageNodes.map((n) => projectSources(n, includeSources)),
+    edges: pageEdges.map((e) => projectSources(e, includeSources)),
     depth: 0,
     totalNodes: total,
     totalEdges: snap.stats.totalEdges,
@@ -280,13 +315,15 @@ function mergeNode(
 ): GraphNode {
   return {
     ...existing,
-    sourceObservationIds: [
+    // Newest ids sort last through the Set, so the cap keeps the most
+    // recent provenance and drops the oldest (upstream #1171).
+    sourceObservationIds: capSourceIds([
       ...new Set([
         ...existing.sourceObservationIds,
         ...incoming.sourceObservationIds,
         ...obsIds,
       ]),
-    ],
+    ]),
     properties: { ...existing.properties, ...incoming.properties },
     updatedAt: capturedAt,
   };
@@ -298,9 +335,9 @@ function mergeEdge(
 ): GraphEdge {
   return {
     ...existing,
-    sourceObservationIds: [
+    sourceObservationIds: capSourceIds([
       ...new Set([...existing.sourceObservationIds, ...obsIds]),
-    ],
+    ]),
   };
 }
 
@@ -327,6 +364,7 @@ function paginate(
   depth: number,
   limit: number,
   offset: number,
+  includeSources = false,
 ): GraphQueryResult {
   const totalNodes = nodes.length;
   const pageNodes = nodes.slice(offset, offset + limit);
@@ -349,8 +387,8 @@ function paginate(
     0,
   );
   return {
-    nodes: pageNodes,
-    edges: pageEdges,
+    nodes: pageNodes.map((n) => projectSources(n, includeSources)),
+    edges: pageEdges.map((e) => projectSources(e, includeSources)),
     depth,
     totalNodes,
     totalEdges,
@@ -411,7 +449,7 @@ function parseGraphXml(
       type,
       name,
       properties,
-      sourceObservationIds: observationIds,
+      sourceObservationIds: capSourceIds(observationIds),
       createdAt: now,
     });
   };
@@ -443,7 +481,7 @@ function parseGraphXml(
       sourceNodeId: sourceNode.id,
       targetNodeId: targetNode.id,
       weight: Math.max(0, Math.min(1, weight)),
-      sourceObservationIds: observationIds,
+      sourceObservationIds: capSourceIds(observationIds),
       createdAt: now,
     });
   }
@@ -484,7 +522,10 @@ export function extractGraphHeuristics(
       nodeByKey.set(key, node);
       nodes.push(node);
     } else if (!node.sourceObservationIds.includes(obsId)) {
-      node.sourceObservationIds.push(obsId);
+      node.sourceObservationIds = capSourceIds([
+        ...node.sourceObservationIds,
+        obsId,
+      ]);
     }
     return node;
   };
@@ -497,7 +538,10 @@ export function extractGraphHeuristics(
       const existing = edgeByPair.get(pair);
       if (existing) {
         if (!existing.sourceObservationIds.includes(obs.id)) {
-          existing.sourceObservationIds.push(obs.id);
+          existing.sourceObservationIds = capSourceIds([
+            ...existing.sourceObservationIds,
+            obs.id,
+          ]);
         }
         return;
       }
@@ -784,9 +828,13 @@ export function registerGraphFunction(
       query?: string;
       limit?: number;
       offset?: number;
+      includeSources?: boolean;
     }): Promise<GraphQueryResult> => {
       const maxDepth = Math.min(data.maxDepth || 3, 5);
       const { limit, offset } = resolvePagination(data.limit, data.offset);
+      // Off by default: the full provenance array is ~99% of the bytes
+      // and almost never what the caller wanted (upstream #1171).
+      const includeSources = data.includeSources === true;
 
       // #814 v2: the empty-body / nodeType-only path NEVER enumerates.
       // It reads the snapshot exclusively. The snapshot is updated
@@ -799,7 +847,7 @@ export function registerGraphFunction(
       if (noWalk) {
         const snap = await readSnapshot(kv);
         if (snap && snap.stats.totalNodes > 0) {
-          return paginateFromSnapshot(snap, data.nodeType, limit, offset);
+          return paginateFromSnapshot(snap, data.nodeType, limit, offset, includeSources);
         }
         return {
           nodes: [],
@@ -875,7 +923,7 @@ export function registerGraphFunction(
               (v) => typeof v === "string" && v.toLowerCase().includes(lower),
             ),
         );
-        return paginate(matchingNodes, allEdges, 0, limit, offset);
+        return paginate(matchingNodes, allEdges, 0, limit, offset, includeSources);
       }
 
       if (data.startNodeId) {
@@ -917,11 +965,11 @@ export function registerGraphFunction(
           }
         }
 
-        return paginate(resultNodes, resultEdges, maxDepth, limit, offset);
+        return paginate(resultNodes, resultEdges, maxDepth, limit, offset, includeSources);
       }
 
       // Unreachable — noWalk branch handles the rest.
-      return paginate([], [], 0, limit, offset);
+      return paginate([], [], 0, limit, offset, includeSources);
     },
   );
 

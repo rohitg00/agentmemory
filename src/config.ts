@@ -385,6 +385,26 @@ export function getGraphBatchSize(): number {
   return safeParseInt(getMergedEnv()["GRAPH_EXTRACTION_BATCH_SIZE"], 10);
 }
 
+// Upstream #1168 / #1171: `sourceObservationIds` on graph nodes (and the
+// same field on edges) was capped at creation but re-unioned without a
+// cap on every merge. Because extraction re-observes the same entities
+// continuously, the array grew monotonically for the life of the graph
+// and ended up as ~97-99% of all bytes in the collection — measured here
+// at 9.55 MB of 9.4 MB across 500 nodes, with one `package.json` node
+// holding 4,707 ids in 133 KB. Provenance past the most recent handful
+// carries almost no signal, so bound it and keep the newest.
+const GRAPH_MAX_SOURCE_IDS_DEFAULT = 10;
+
+export function getGraphMaxSourceIds(): number {
+  return Math.max(
+    1,
+    safeParseInt(
+      getMergedEnv()["GRAPH_MAX_SOURCE_IDS"],
+      GRAPH_MAX_SOURCE_IDS_DEFAULT,
+    ),
+  );
+}
+
 // window for the smart-search followup-rate diagnostic. A second
 // search arriving within this many seconds (with disjoint results)
 // counts as a "follow-up" — a directional signal that the first result
