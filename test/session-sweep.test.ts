@@ -4,13 +4,14 @@ vi.mock("../src/logger.js", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
-import { registerSessionSweepFunction, getSessionSweepStaleHours } from "../src/functions/session-sweep.js";
+import { registerSessionSweepFunction } from "../src/functions/session-sweep.js";
 import type { Session } from "../src/types.js";
 import { KV } from "../src/state/schema.js";
 
 function mockKV() {
   const store = new Map<string, Map<string, unknown>>();
   return {
+    store,
     get: async <T>(scope: string, key: string): Promise<T | null> => {
       return (store.get(scope)?.get(key) as T) ?? null;
     },
@@ -85,11 +86,12 @@ describe("mem::session-sweep", () => {
 
   it("marks stale active sessions as abandoned with endedAt", async () => {
     kv.set(KV.sessions, "s-old", session({ id: "s-old", updatedAt: new Date(nowMs - 30 * H).toISOString() }));
-    const sweep = (sdk as unknown as { triggers: unknown }) && (await (sdk as any).trigger({ function_id: "mem::session-sweep", payload: {} }));
+    const sweep = await (sdk as any).trigger({ function_id: "mem::session-sweep", payload: {} });
     const updated = await kv.get<Session>(KV.sessions, "s-old");
     expect(updated!.status).toBe("abandoned");
     expect(updated!.endedAt).toBeTruthy();
     expect(sweep.abandoned).toBe(1);
+    expect(sweep.success).toBe(true);
   });
 
   it("falls back to startedAt when the session has no heartbeat", async () => {
@@ -106,7 +108,6 @@ describe("mem::session-sweep", () => {
     const updated = await kv.get<Session>(KV.sessions, "s-fresh");
     expect(updated!.status).toBe("active");
     expect(sweep.abandoned).toBe(0);
-    expect(sdk.triggers.map((t) => t.function_id)).not.toContain("mem::evict");
   });
 
   it("leaves completed sessions untouched", async () => {
@@ -117,23 +118,36 @@ describe("mem::session-sweep", () => {
     expect(sweep.abandoned).toBe(0);
   });
 
-  it("queues mem::evict only when something was abandoned", async () => {
-    kv.set(KV.sessions, "s-zombie", session({ id: "s-zombie", updatedAt: new Date(nowMs - 25 * H).toISOString() }));
-    await (sdk as any).trigger({ function_id: "mem::session-sweep", payload: {} });
-    expect(sdk.triggers.map((t) => t.function_id)).toContain("mem::evict");
-
-    sdk.triggers.length = 0;
-    kv.set(KV.sessions, "s-fresh2", session({ id: "s-fresh2", updatedAt: new Date(nowMs - 1 * H).toISOString() }));
-    await (sdk as any).trigger({ function_id: "mem::session-sweep", payload: {} });
-    expect(sdk.triggers.map((t) => t.function_id)).not.toContain("mem::evict");
+  it("reports failure when the session scan fails", async () => {
+    (kv as any).list = async () => {
+      throw new Error("state store down");
+    };
+    const sweep = await (sdk as any).trigger({ function_id: "mem::session-sweep", payload: {} });
+    expect(sweep.success).toBe(false);
+    expect(sweep.error).toContain("state store down");
   });
 
-  it("respects SESSION_SWEEP_STALE_HOURS override", async () => {
-    vi.stubEnv("SESSION_SWEEP_STALE_HOURS", "48");
-    expect(getSessionSweepStaleHours()).toBe(48);
+  it("reports failure when the sweep is disabled", async () => {
+    vi.stubEnv("AGENTMEMORY_SESSION_SWEEP_ENABLED", "false");
+    const sweep = await (sdk as any).trigger({ function_id: "mem::session-sweep", payload: {} });
+    expect(sweep.success).toBe(false);
+    expect(sweep.abandoned).toBe(0);
+  });
+
+  it("respects AGENTMEMORY_SESSION_SWEEP_STALE_HOURS override", async () => {
+    vi.stubEnv("AGENTMEMORY_SESSION_SWEEP_STALE_HOURS", "48");
     kv.set(KV.sessions, "s-30h", session({ id: "s-30h", updatedAt: new Date(nowMs - 30 * H).toISOString() }));
     const sweep = await (sdk as any).trigger({ function_id: "mem::session-sweep", payload: {} });
     const updated = await kv.get<Session>(KV.sessions, "s-30h");
+    expect(updated!.status).toBe("active");
+    expect(sweep.abandoned).toBe(0);
+  });
+
+  it("rejects non-plain-integer stale-hour values", async () => {
+    vi.stubEnv("AGENTMEMORY_SESSION_SWEEP_STALE_HOURS", "1e2");
+    kv.set(KV.sessions, "s-2h", session({ id: "s-2h", updatedAt: new Date(nowMs - 2 * H).toISOString() }));
+    const sweep = await (sdk as any).trigger({ function_id: "mem::session-sweep", payload: {} });
+    const updated = await kv.get<Session>(KV.sessions, "s-2h");
     expect(updated!.status).toBe("active");
     expect(sweep.abandoned).toBe(0);
   });

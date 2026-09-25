@@ -13,6 +13,8 @@ import {
   isConsolidationEnabled,
   isContextInjectionEnabled,
   isDropStaleIndexEnabled,
+  isSessionSweepEnabled,
+  getSessionSweepStaleHours,
 } from "./config.js";
 import {
   createProvider,
@@ -613,16 +615,16 @@ async function main() {
 
   // #1410: hourly backstop for sessions whose host never delivered
   // session/end (reused gateway/cron runtimes). Marks stale active
-  // sessions abandoned and lets the existing eviction pass apply its
-  // own retention policy.
-  if (process.env.SESSION_SWEEP_ENABLED !== "false") {
+  // sessions abandoned so dashboards and recall stop treating them
+  // as live. Retention stays with the manual eviction pass.
+  if (isSessionSweepEnabled()) {
     const sessionSweepTimer = setInterval(async () => {
       try {
         await sdk.trigger({ function_id: "mem::session-sweep", payload: {} });
       } catch {}
     }, 60 * 60 * 1000);
     sessionSweepTimer.unref();
-    bootLog(`Session sweep: enabled (hourly, stale after ${process.env.SESSION_SWEEP_STALE_HOURS || 24}h)`);
+    bootLog(`Session sweep: enabled (hourly, stale after ${getSessionSweepStaleHours()}h)`);
   }
 
   if (isConsolidationEnabled()) {

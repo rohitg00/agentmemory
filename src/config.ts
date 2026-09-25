@@ -231,6 +231,17 @@ export function getEnvVar(key: string): string | undefined {
   return getMergedEnv()[key];
 }
 
+export function isSessionSweepEnabled(): boolean {
+  return getMergedEnv()["AGENTMEMORY_SESSION_SWEEP_ENABLED"] !== "false";
+}
+
+export function getSessionSweepStaleHours(): number {
+  const raw = getMergedEnv()["AGENTMEMORY_SESSION_SWEEP_STALE_HOURS"];
+  if (!raw || !/^\d+$/.test(raw.trim())) return 24;
+  const parsed = parseInt(raw.trim(), 10);
+  return parsed > 0 ? parsed : 24;
+}
+
 export function isDropStaleIndexEnabled(): boolean {
   return getMergedEnv()["AGENTMEMORY_DROP_STALE_INDEX"] === "true";
 }
