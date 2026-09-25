@@ -60,7 +60,9 @@ async function decayAndWriteChanged<
   const before = items.map((item) => item.strength);
   applyDecay(items, decayDays);
   const dirty = items.filter((item, i) => strengthChanged(before[i], item.strength));
-  await Promise.all(dirty.map((item) => kv.set(scope, item.id, item)));
+  for (const item of dirty) {
+    await kv.set(scope, item.id, item);
+  }
   return { scanned: items.length, written: dirty.length };
 }
 
