@@ -8,6 +8,7 @@ import {
   trackViewerStreamItem,
   pruneViewerStreamIfDue,
   resetViewerStreamTracker,
+  seedViewerStreamTracker,
 } from "../src/state/viewer-stream.js";
 import { STREAM } from "../src/state/schema.js";
 import { logger } from "../src/logger.js";
@@ -110,5 +111,52 @@ describe("viewer stream bounding", () => {
     }
     await expect(pruneViewerStreamIfDue(sdk as never)).resolves.toBeUndefined();
     expect(logger.warn).toHaveBeenCalled();
+  });
+  it("seeds the tracker from the stored backlog at boot and trims it oldest first", async () => {
+    process.env.AGENTMEMORY_VIEWER_STREAM_MAX = "2";
+    const deleted: string[] = [];
+    const sdk = {
+      trigger: vi.fn(async (req: { function_id: string; payload: { item_id?: string } }) => {
+        if (req.function_id === "stream::list") {
+          return [
+            { observation: { id: "obs_new", timestamp: "2026-09-25T10:00:00Z" } },
+            { observation: { id: "obs_old", timestamp: "2026-09-20T10:00:00Z" } },
+            { observation: { id: "obs_mid", timestamp: "2026-09-22T10:00:00Z" } },
+            { observation: { id: "obs_newest", timestamp: "2026-09-25T11:00:00Z" } },
+            { other: true },
+          ];
+        }
+        if (req.payload.item_id) deleted.push(req.payload.item_id);
+        return {};
+      }),
+    };
+    await expect(seedViewerStreamTracker(sdk as never)).resolves.toBe(4);
+    expect(deleted).toEqual(["obs_old", "obs_mid"]);
+  });
+
+  it("deletes a large backlog in bounded batches", async () => {
+    process.env.AGENTMEMORY_VIEWER_STREAM_MAX = "0";
+    let inFlight = 0;
+    let peak = 0;
+    const sdk = {
+      trigger: vi.fn(async (req: { function_id: string }) => {
+        if (req.function_id === "stream::list") {
+          return Array.from({ length: 450 }, (_, i) => ({ observation: { id: "obs_" + i, timestamp: new Date(i * 1000).toISOString() } }));
+        }
+        inFlight++;
+        peak = Math.max(peak, inFlight);
+        await new Promise((r) => setTimeout(r, 1));
+        inFlight--;
+        return {};
+      }),
+    };
+    await seedViewerStreamTracker(sdk as never);
+    expect(sdk.trigger).toHaveBeenCalledTimes(451);
+    expect(peak).toBeLessThanOrEqual(100);
+  });
+
+  it("keeps working when the backlog cannot be read", async () => {
+    const sdk = { trigger: vi.fn(async () => { throw new Error("no stream"); }) };
+    await expect(seedViewerStreamTracker(sdk as never)).resolves.toBe(0);
   });
 });

@@ -333,7 +333,7 @@ export function registerObserveFunction(
             },
           });
           trackViewerStreamItem(obsId);
-          await pruneViewerStreamIfDue(sdk);
+          void pruneViewerStreamIfDue(sdk).catch(() => {});
         }
 
         logger.info("Observation captured", {

@@ -28,6 +28,7 @@ import { IndexPersistence } from "./state/index-persistence.js";
 import { SHUTDOWN_FLUSH_TIMEOUT_MS, SHUTDOWN_HARD_EXIT_MS, settleWithin } from "./shutdown.js";
 import { registerPrivacyFunction } from "./functions/privacy.js";
 import { registerObserveFunction } from "./functions/observe.js";
+import { seedViewerStreamTracker } from "./state/viewer-stream.js";
 import { registerImageQuotaCleanup } from "./functions/image-quota-cleanup.js";
 import { registerVisionSearchFunctions } from "./functions/vision-search.js";
 import { registerSlotsFunctions, isSlotsEnabled, isReflectEnabled } from "./functions/slots.js";
@@ -608,6 +609,8 @@ async function main() {
     } catch {}
   }, 60 * 60 * 1000);
   recentSearchesSweepTimer.unref();
+
+  void seedViewerStreamTracker(sdk).catch(() => {});
 
   if (isConsolidationEnabled()) {
     const consolidationTimer = setInterval(async () => {
