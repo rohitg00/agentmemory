@@ -33,6 +33,10 @@ import {
   addSessionToProjectIndex,
   removeSessionFromProjectIndex,
 } from "../state/session-index.js";
+import {
+  indexObservationSession,
+  unindexObservationSession,
+} from "../state/obs-index.js";
 import { VERSION } from "../version.js";
 import { recordAudit } from "./audit.js";
 import { indexRecords } from "./search.js";
@@ -327,9 +331,10 @@ export function registerExportImportFunction(sdk: IIIClient, kv: StateKV): void 
             obsDeletes.push({ sessionId: session.id, obsId: o.id });
           }
         });
-        await runChunked(obsDeletes, (d) =>
-          kv.delete(KV.observations(d.sessionId), d.obsId),
-        );
+        await runChunked(obsDeletes, async (d) => {
+          await kv.delete(KV.observations(d.sessionId), d.obsId);
+          await unindexObservationSession(kv, d.obsId).catch(() => {});
+        });
         await runChunked(await kv.list<Memory>(KV.memories), (m) =>
           kv.delete(KV.memories, m.id),
         );
@@ -446,6 +451,7 @@ export function registerExportImportFunction(sdk: IIIClient, kv: StateKV): void 
           }
           o.origin = importOrigin(o.origin, o.timestamp);
           await kv.set(KV.observations(sessionId), o.id, o);
+          await indexObservationSession(kv, o.id, sessionId).catch(() => {});
           stats.observations++;
           indexObs.push(o);
         });

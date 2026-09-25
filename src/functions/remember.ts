@@ -4,6 +4,7 @@ import { KV, generateId, jaccardSimilarity } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
 import { removeSessionFromProjectIndex } from "../state/session-index.js";
+import { unindexObservationSession } from "../state/obs-index.js";
 import { memoryToObservation } from "../state/memory-utils.js";
 import { deleteAccessLog } from "./access-tracker.js";
 import { recordAudit } from "./audit.js";
@@ -283,6 +284,7 @@ export function registerRememberFunction(sdk: IIIClient, kv: StateKV): void {
             obsId,
           );
           await kv.delete(KV.observations(data.sessionId), obsId);
+          await unindexObservationSession(kv, obsId).catch(() => {});
           if (obs?.imageData) await decrementImageRef(kv, sdk, obs.imageData);
           if (obs?.imageRef && obs.imageRef !== obs.imageData) {
             await decrementImageRef(kv, sdk, obs.imageRef);
@@ -304,6 +306,7 @@ export function registerRememberFunction(sdk: IIIClient, kv: StateKV): void {
         );
         for (const obs of observations) {
           await kv.delete(KV.observations(data.sessionId), obs.id);
+          await unindexObservationSession(kv, obs.id).catch(() => {});
           if (obs.imageData) await decrementImageRef(kv, sdk, obs.imageData);
           if (obs.imageRef && obs.imageRef !== obs.imageData) {
             await decrementImageRef(kv, sdk, obs.imageRef);

@@ -74,6 +74,7 @@ export const KV = {
   // the followup-rate diagnostic. Key = sessionId. TTL-swept hourly.
   recentSearches: "mem:recent-searches",
   projectSessionsIndex: "mem:idx:project-sessions",
+  obsSessionIndex: (shard: number) => `mem:idx:obs:${shard}`,
 } as const;
 
 export const STREAM = {

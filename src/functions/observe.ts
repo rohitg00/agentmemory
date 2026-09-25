@@ -5,6 +5,7 @@ const TOOL_HOOKS = new Set(["pre_tool_use", "post_tool_use", "post_tool_failure"
 import { KV, STREAM, generateId } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { addSessionToProjectIndex } from "../state/session-index.js";
+import { indexObservationSession } from "../state/obs-index.js";
 import { stripPrivateData } from "./privacy.js";
 import { DedupMap } from "./dedup.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
@@ -197,6 +198,15 @@ export function registerObserveFunction(
         try {
 
           await kv.set(KV.observations(payload.sessionId), obsId, raw);
+          await indexObservationSession(kv, obsId, payload.sessionId).catch(
+            (err) => {
+              logger.warn("observation index update failed", {
+                obsId,
+                sessionId: payload.sessionId,
+                error: err instanceof Error ? err.message : String(err),
+              });
+            },
+          );
 
         } catch (error) {
           if (raw.imageData) {

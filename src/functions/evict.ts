@@ -9,6 +9,7 @@ import type {
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { removeSessionFromProjectIndex } from "../state/session-index.js";
+import { unindexObservationSession } from "../state/obs-index.js";
 import { isConsolidationEnabled } from "../config.js";
 import { recordAudit } from "./audit.js";
 import { deleteAccessLog } from "./access-tracker.js";
@@ -231,6 +232,7 @@ export function registerEvictFunction(sdk: IIIClient, kv: StateKV): void {
                 });
                 continue;
               }
+              await unindexObservationSession(kv, o.id).catch(() => {});
               if (o.imageData) await decrementImageRef(kv, sdk, o.imageData);
               if (o.imageRef && o.imageRef !== o.imageData) await decrementImageRef(kv, sdk, o.imageRef);
               await recordAudit(kv, "delete", "mem::evict", [o.id], {
@@ -274,6 +276,7 @@ export function registerEvictFunction(sdk: IIIClient, kv: StateKV): void {
                 });
                 continue;
               }
+              await unindexObservationSession(kv, o.id).catch(() => {});
               if (o.imageData) await decrementImageRef(kv, sdk, o.imageData);
               if (o.imageRef && o.imageRef !== o.imageData) await decrementImageRef(kv, sdk, o.imageRef);
               await recordAudit(kv, "delete", "mem::evict", [o.id], {
