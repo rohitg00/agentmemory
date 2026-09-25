@@ -109,6 +109,8 @@ const stashedFiles = new Map<string, Set<string>>();
 const seenSubtaskIds = new Map<string, Set<string>>();
 const seenToolCallIds = new Map<string, Set<string>>();
 const contextInjectedSessions = new Set<string>();
+const sessionBootstrapMs = new Map<string, number>();
+const forkSessionIds = new Set<string>();
 // cache the context returned by POST /session/start so the chat
 // system-transform hook can inject it without a second /context fetch.
 // Auto-injection now happens at session.created (immediately) AND at
@@ -139,6 +141,57 @@ function pruneSessionMaps(sid: string): void {
   seenSubtaskIds.delete(sid);
   seenToolCallIds.delete(sid);
   sessionProjects.delete(sid);
+  sessionBootstrapMs.delete(sid);
+  forkSessionIds.delete(sid);
+}
+
+function resolveEventTimestampMs(raw: unknown): number | null {
+  if (typeof raw !== "number" || !Number.isFinite(raw)) return null;
+  const ms = raw > 1e12 ? raw : raw < 1e10 ? raw * 1000 : raw;
+  return Number.isFinite(ms) ? ms : null;
+}
+
+function eventTimestampMsFrom(props: Record<string, unknown>, info: Record<string, unknown> | null, part: Record<string, unknown> | null): number | null {
+  const candidates: unknown[] = [];
+  if (part) candidates.push((part as any).time?.created, (part as any).time?.completed, part.time, part.timestamp, (part as any).created, (part as any).updated);
+  if (info) candidates.push((info as any).time?.created, (info as any).time?.completed, info.time, info.timestamp, (info as any).created, (info as any).updated);
+  candidates.push(props.time, props.timestamp, (props as any).created, (props as any).updated);
+  for (const c of candidates) {
+    const ms = resolveEventTimestampMs(c);
+    if (ms != null) return ms;
+  }
+  return null;
+}
+
+function ensureSessionBootstrap(sid: string, _eventTsMs: number | null): void {
+  if (sessionBootstrapMs.has(sid)) return;
+  sessionBootstrapMs.set(sid, Date.now());
+}
+
+function maybeMarkForkFromTimestamp(sid: string, eventTsMs: number | null): void {
+  if (eventTsMs == null) return;
+  if (forkSessionIds.has(sid)) return;
+  const watermark = sessionBootstrapMs.get(sid);
+  if (watermark == null) return;
+  if (watermark - eventTsMs > 60_000) forkSessionIds.add(sid);
+}
+
+function isReplayedEvent(sid: string, eventTsMs: number | null): boolean {
+  if (!forkSessionIds.has(sid)) return false;
+  if (eventTsMs == null) return false;
+  const watermark = sessionBootstrapMs.get(sid);
+  if (watermark == null) return false;
+  return eventTsMs < watermark - 500;
+}
+
+function __resetReplayGuardForTests(): void {
+  sessionBootstrapMs.clear();
+  forkSessionIds.clear();
+}
+
+function __setReplayWatermarkForTests(sid: string, ms: number, opts?: { fork?: boolean }): void {
+  sessionBootstrapMs.set(sid, ms);
+  if (opts?.fork) forkSessionIds.add(sid);
 }
 
 function safeSlice(v: unknown, max: number): string {
@@ -227,6 +280,10 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
         const info = props.info as Record<string, unknown> | undefined;
         activeSessionId = (info?.id as string) || props.sessionID || null;
         if (!activeSessionId) return;
+        if (typeof info?.parentID === "string" && info.parentID.length > 0) {
+          forkSessionIds.add(activeSessionId);
+        }
+        sessionBootstrapMs.set(activeSessionId, Date.now());
         stashedFiles.set(activeSessionId, new Set());
         seenSubtaskIds.delete(activeSessionId);
         seenToolCallIds.delete(activeSessionId);
@@ -359,6 +416,10 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
         if (info.role === "assistant") {
           const sid = props.sessionID || (info.sessionID as string) || activeSessionId;
           if (!sid) return;
+          const eventTs = eventTimestampMsFrom(props, info, null);
+          ensureSessionBootstrap(sid, eventTs);
+          maybeMarkForkFromTimestamp(sid, eventTs);
+          if (isReplayedEvent(sid, eventTs)) return;
           const tokens = info.tokens as Record<string, unknown> | undefined;
           const error = info.error ? extractErrorMessage(info.error) : null;
           await observe(sid, "assistant_message", {
@@ -388,6 +449,10 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
       if (type === "message.removed") {
         const sid = props.sessionID || activeSessionId;
         if (sid) {
+          const ts = eventTimestampMsFrom(props, null, null);
+          ensureSessionBootstrap(sid, ts);
+          maybeMarkForkFromTimestamp(sid, ts);
+          if (isReplayedEvent(sid, ts)) return;
           await observe(sid, "message_removed", {
             messageID: props.messageID,
           });
@@ -400,6 +465,10 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
         if (!part) return;
         const sid = (part.sessionID as string) || props.sessionID || activeSessionId;
         if (!sid) return;
+        const partEventTs = eventTimestampMsFrom(props, null, part as Record<string, unknown>);
+        ensureSessionBootstrap(sid, partEventTs);
+        maybeMarkForkFromTimestamp(sid, partEventTs);
+        if (isReplayedEvent(sid, partEventTs)) return;
 
         if (part.type === "subtask") {
           const subtaskId = part.id as string;
@@ -523,8 +592,17 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
         }
       }
 
-      // ── file.edited ──
+      // ── file.edited ── (stash-only, never observed — guard anyway to avoid polluting future enrich)
       if (type === "file.edited") {
+        {
+          const sid = props.sessionID || activeSessionId;
+          if (sid) {
+            const ts = eventTimestampMsFrom(props, null, null);
+            ensureSessionBootstrap(sid, ts);
+            maybeMarkForkFromTimestamp(sid, ts);
+            if (isReplayedEvent(sid, ts)) return;
+          }
+        }
         const sid = props.sessionID || activeSessionId;
         if (sid && typeof props.file === "string" && props.file.length > 0) {
           const stash = stashFor(sid);
@@ -541,6 +619,12 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
       if (type === "permission.updated") {
         const sid = props.sessionID || activeSessionId;
         if (!sid) return;
+        {
+          const ts = eventTimestampMsFrom(props, null, null);
+          ensureSessionBootstrap(sid, ts);
+          maybeMarkForkFromTimestamp(sid, ts);
+          if (isReplayedEvent(sid, ts)) return;
+        }
         await observe(sid, "notification", {
           notification_type: "permission_prompt",
           permission: props.type || "unknown",
@@ -557,6 +641,12 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
       if (type === "permission.replied") {
         const sid = props.sessionID || activeSessionId;
         if (!sid) return;
+        {
+          const ts = eventTimestampMsFrom(props, null, null);
+          ensureSessionBootstrap(sid, ts);
+          maybeMarkForkFromTimestamp(sid, ts);
+          if (isReplayedEvent(sid, ts)) return;
+        }
         await observe(sid, "permission_replied", {
           permission_id: props.permissionID || props.requestID || "",
           response: props.response || props.reply || "",
@@ -568,6 +658,12 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
         const sid = props.sessionID || activeSessionId;
         const todos = Array.isArray(props.todos) ? props.todos.slice(0, 100) : [];
         if (!sid || todos.length === 0) return;
+        {
+          const ts = eventTimestampMsFrom(props, null, null);
+          ensureSessionBootstrap(sid, ts);
+          maybeMarkForkFromTimestamp(sid, ts);
+          if (isReplayedEvent(sid, ts)) return;
+        }
         const completed = todos.filter((t: any) => t.status === "completed");
         const active = todos.filter((t: any) => t.status !== "completed");
         await observe(sid, "task_completed", {
@@ -581,6 +677,10 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
       if (type === "command.executed") {
         const sid = props.sessionID || activeSessionId;
         if (sid) {
+          const ts = eventTimestampMsFrom(props, null, null);
+          ensureSessionBootstrap(sid, ts);
+          maybeMarkForkFromTimestamp(sid, ts);
+          if (isReplayedEvent(sid, ts)) return;
           await observe(sid, "command_executed", {
             name: props.name,
             arguments: props.arguments || "",
@@ -745,3 +845,10 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
     },
   };
 };
+
+Object.assign(AgentmemoryCapturePlugin, {
+  __resetReplayGuardForTests,
+  __setReplayWatermarkForTests,
+});
+
+export default AgentmemoryCapturePlugin;
