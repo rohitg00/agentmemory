@@ -797,10 +797,6 @@ describe("index_persist audit gating", () => {
   let previousFlag: string | undefined;
 
   beforeEach(() => {
-    // AGENTMEMORY_* variables are documented as living in
-    // ~/.agentmemory/.env, so a developer running the suite on a
-    // configured machine can inherit this one. Clear it going in and put
-    // whatever was there back on the way out.
     previousFlag = process.env.AGENTMEMORY_AUDIT_INDEX_PERSIST;
     delete process.env.AGENTMEMORY_AUDIT_INDEX_PERSIST;
     vi.useFakeTimers();
@@ -849,9 +845,6 @@ describe("index_persist audit gating", () => {
     },
   );
 
-  // Anything that is not an affirmative stays off. "0" and "false" are the
-  // ones an operator is likely to reach for to disable it, and they must
-  // not read as "present, therefore enabled".
   it.each(["0", "false", "yes", "", " "])(
     "keeps auditing off when set to %j",
     async (value) => {

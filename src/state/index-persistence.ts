@@ -17,13 +17,6 @@ const VECTOR_SHARD_SCOPE_PREFIX = `${KV.bm25Index}:vectors:`;
 const INDEX_SHARD_KEY = "data";
 const DEFAULT_INDEX_SHARD_CHARS = 2_000_000;
 
-// mem:audit exists to record structural deletions of user data — that is
-// the policy stated at the top of src/functions/audit.ts. Index shard
-// writes and manifest publishes remove no user rows, so they fall outside
-// it, yet a single save() emits three of them: on a real store they
-// reached 59876 of 84028 entries (71%), which is what makes the audit log
-// slow to query and bloats startup. Off by default; set
-// AGENTMEMORY_AUDIT_INDEX_PERSIST=1 when debugging index persistence.
 function auditIndexPersistEnabled(): boolean {
   const raw = process.env.AGENTMEMORY_AUDIT_INDEX_PERSIST;
   if (!raw) return false;
