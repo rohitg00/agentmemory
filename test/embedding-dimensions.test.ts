@@ -1,6 +1,14 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+
+// Read env from process.env only, so a key in ~/.agentmemory/.env on the
+// developer machine cannot leak into the missing-key assertions below.
+vi.mock("../src/config.js", () => ({
+  getEnvVar: (key: string) => process.env[key],
+}));
+
 import { resolveDimensions } from "../src/providers/embedding/_dimensions.js";
 import { OpenRouterEmbeddingProvider } from "../src/providers/embedding/openrouter.js";
+import { RequestyEmbeddingProvider } from "../src/providers/embedding/requesty.js";
 import { OpenAIEmbeddingProvider } from "../src/providers/embedding/openai.js";
 
 describe("resolveDimensions", () => {
@@ -72,6 +80,83 @@ describe("OpenRouterEmbeddingProvider dimension regression", () => {
     process.env["OPENROUTER_EMBEDDING_DIMENSIONS"] = "1024";
     const provider = new OpenRouterEmbeddingProvider("test-key");
     expect(provider.dimensions).toBe(1024);
+  });
+});
+
+describe("RequestyEmbeddingProvider dimension resolution", () => {
+  const originalEnv = { ...process.env };
+
+  beforeEach(() => {
+    process.env = { ...originalEnv };
+    delete process.env["REQUESTY_EMBEDDING_MODEL"];
+    delete process.env["REQUESTY_EMBEDDING_DIMENSIONS"];
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+  });
+
+  it("defaults to 1536 for openai/text-embedding-3-small", () => {
+    const provider = new RequestyEmbeddingProvider("test-key");
+    expect(provider.dimensions).toBe(1536);
+  });
+
+  it("reports 3072 for openai/text-embedding-3-large with no override", () => {
+    process.env["REQUESTY_EMBEDDING_MODEL"] = "openai/text-embedding-3-large";
+    const provider = new RequestyEmbeddingProvider("test-key");
+    expect(provider.dimensions).toBe(3072);
+  });
+
+  it("lets REQUESTY_EMBEDDING_DIMENSIONS override the model-derived dimensions", () => {
+    process.env["REQUESTY_EMBEDDING_MODEL"] = "openai/text-embedding-3-large";
+    process.env["REQUESTY_EMBEDDING_DIMENSIONS"] = "1024";
+    const provider = new RequestyEmbeddingProvider("test-key");
+    expect(provider.dimensions).toBe(1024);
+  });
+
+  it("throws when REQUESTY_API_KEY is missing", () => {
+    delete process.env["REQUESTY_API_KEY"];
+    expect(() => new RequestyEmbeddingProvider("")).toThrow(/REQUESTY_API_KEY is required/);
+  });
+
+  describe("request body", () => {
+    const originalFetch = globalThis.fetch;
+    let lastBody: Record<string, unknown> | undefined;
+
+    beforeEach(() => {
+      lastBody = undefined;
+      globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
+        lastBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        const input = lastBody["input"] as string[];
+        const size = (lastBody["dimensions"] as number | undefined) ?? 1536;
+        return new Response(
+          JSON.stringify({
+            data: input.map(() => ({ embedding: new Array(size).fill(0) })),
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }) as typeof fetch;
+    });
+
+    afterEach(() => {
+      globalThis.fetch = originalFetch;
+    });
+
+    it("sends the configured dimensions when REQUESTY_EMBEDDING_DIMENSIONS is set", async () => {
+      process.env["REQUESTY_EMBEDDING_MODEL"] = "openai/text-embedding-3-large";
+      process.env["REQUESTY_EMBEDDING_DIMENSIONS"] = "1024";
+      const provider = new RequestyEmbeddingProvider("test-key");
+      const [vector] = await provider.embedBatch(["hello"]);
+      expect(lastBody?.["dimensions"]).toBe(1024);
+      expect(vector.length).toBe(1024);
+    });
+
+    it("omits dimensions when no override is configured", async () => {
+      const provider = new RequestyEmbeddingProvider("test-key");
+      await provider.embedBatch(["hello"]);
+      expect(lastBody).toBeDefined();
+      expect("dimensions" in (lastBody as object)).toBe(false);
+    });
   });
 });
 

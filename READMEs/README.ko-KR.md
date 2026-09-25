@@ -943,6 +943,7 @@ npm install @huggingface/transformers
 | Voyage AI | `voyage-code-3` | 유료 | 코드 최적화 |
 | Cohere | `embed-english-v3.0` | 무료 평가판 | 범용 |
 | OpenRouter | 모든 모델 | 다양 | 멀티 모델 프록시 |
+| Requesty | 모든 모델 | 다양 | 멀티 모델 프록시 |
 
 ---
 
@@ -1226,6 +1227,7 @@ agentmemory는 환경에서 자동 감지합니다. 기본적으로 프로바이
 | MiniMax | `MINIMAX_API_KEY` | Anthropic 호환 |
 | Gemini | `GEMINI_API_KEY` | 임베딩도 활성화 |
 | OpenRouter | `OPENROUTER_API_KEY` | 모든 모델 |
+| Requesty | `REQUESTY_API_KEY` | 모든 모델 |
 | OpenAI API | `OPENAI_API_KEY` | 기본 `gpt-5.6-luna`, `OPENAI_MODEL`로 덮어쓰기 |
 | **Local (Ollama / LM Studio / vLLM / llama.cpp)** | `OPENAI_API_KEY=local` + `OPENAI_BASE_URL=http://localhost:11434/v1` (Ollama) 또는 `http://localhost:1234/v1` (LM Studio) + `OPENAI_MODEL=<your model>` | OpenAI-API 호환이면 무엇이든. 비용 제로, 자체 하드웨어에서 실행. 아래 [로컬 모델](#로컬-모델-ollama--lm-studio--vllm) 참고. |
 | Claude subscription 폴백 | `AGENTMEMORY_ALLOW_AGENT_SDK=true` | 옵트인 전용. `@anthropic-ai/claude-agent-sdk` 세션을 스폰합니다. 무한 Stop-hook 재귀를 일으킨 전력이 있어 더 이상 기본값이 아닙니다. |
@@ -1387,6 +1389,7 @@ CONSOLIDATION_ENABLED=true
 # ANTHROPIC_BASE_URL=...              # Optional: Anthropic-compatible proxy / Azure
 # GEMINI_API_KEY=...
 # OPENROUTER_API_KEY=...
+# REQUESTY_API_KEY=...
 # MINIMAX_API_KEY=...
 # OPENAI_API_KEY=***                       # NOTE: this same key auto-activates BOTH the
 #                                          # OpenAI LLM provider (here) AND the OpenAI

@@ -964,6 +964,7 @@ npm install @huggingface/transformers
 | Voyage AI | `voyage-code-3` | 有料 | コード向け最適化 |
 | Cohere | `embed-english-v3.0` | 無料試用 | 汎用 |
 | OpenRouter | 任意のモデル | 場合による | マルチモデルプロキシ |
+| Requesty | 任意のモデル | 場合による | マルチモデルプロキシ |
 
 ---
 
@@ -1247,6 +1248,7 @@ agentmemory は環境から自動検出します。デフォルトでは、プ�
 | MiniMax | `MINIMAX_API_KEY` | Anthropic 互換 |
 | Gemini | `GEMINI_API_KEY` | 埋め込みも有効化 |
 | OpenRouter | `OPENROUTER_API_KEY` | 任意のモデル |
+| Requesty | `REQUESTY_API_KEY` | 任意のモデル |
 | OpenAI API | `OPENAI_API_KEY` | デフォルト `gpt-5.6-luna`、`OPENAI_MODEL` で上書き |
 | **ローカル(Ollama / LM Studio / vLLM / llama.cpp)** | `OPENAI_API_KEY=local` + `OPENAI_BASE_URL=http://localhost:11434/v1`(Ollama)または `http://localhost:1234/v1`(LM Studio)+ `OPENAI_MODEL=<your model>` | OpenAI API 互換なら何でも。コストゼロ、あなたのハードウェアで動作。下記の[ローカルモデル](#local-models-ollama--lm-studio--vllm)を参照。 |
 | Claude 購読フォールバック | `AGENTMEMORY_ALLOW_AGENT_SDK=true` | オプトインのみ。`@anthropic-ai/claude-agent-sdk` セッションを生成 — 過去に無限の Stop-hook 再帰を引き起こしたため、もはやデフォルトではありません。 |
@@ -1408,6 +1410,7 @@ CONSOLIDATION_ENABLED=true
 # ANTHROPIC_BASE_URL=...              # Optional: Anthropic-compatible proxy / Azure
 # GEMINI_API_KEY=...
 # OPENROUTER_API_KEY=...
+# REQUESTY_API_KEY=...
 # MINIMAX_API_KEY=...
 # OPENAI_API_KEY=***                       # NOTE: this same key auto-activates BOTH the
 #                                          # OpenAI LLM provider (here) AND the OpenAI
