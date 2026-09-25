@@ -399,6 +399,15 @@ export function getFollowupWindowSeconds(): number {
   );
 }
 
+const VIEWER_STREAM_MAX_DEFAULT = 500;
+
+export function getViewerStreamMax(): number {
+  return safeParseInt(
+    getMergedEnv()["AGENTMEMORY_VIEWER_STREAM_MAX"],
+    VIEWER_STREAM_MAX_DEFAULT,
+  );
+}
+
 export function isConsolidationEnabled(): boolean {
   const env = getMergedEnv();
   const explicit = env["CONSOLIDATION_ENABLED"];
