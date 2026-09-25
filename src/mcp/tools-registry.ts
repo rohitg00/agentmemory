@@ -121,8 +121,19 @@ export const CORE_TOOLS: McpToolDef[] = [
   {
     name: "memory_sessions",
     description:
-      "List recent sessions with their status and observation counts.",
-    inputSchema: { type: "object", properties: {} },
+      "List recent sessions with their status and observation counts. "
+      + "Returns the newest sessions first, projected to a summary row.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        limit: {
+          type: "number",
+          description: "Max sessions to return (default 20, max 200)",
+        },
+        project: { type: "string", description: "Filter by project" },
+        status: { type: "string", description: "Filter by status" },
+      },
+    },
   },
   {
     name: "memory_smart_search",
@@ -280,6 +291,17 @@ export const V040_TOOLS: McpToolDef[] = [
           description: "Max BFS depth (default 3, max 5)",
         },
         query: { type: "string", description: "Search nodes by name" },
+        limit: {
+          type: "number",
+          description: "Max nodes to return (default 25, max 200)",
+        },
+        includeSources: {
+          type: "boolean",
+          description:
+            "Return the full sourceObservationIds array per node/edge. "
+            + "Off by default: it is ~99% of the payload. A count is always "
+            + "returned as sourceObservationCount.",
+        },
       },
     },
   },

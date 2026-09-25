@@ -41,6 +41,98 @@ function parseCsvList(value: unknown): string[] {
   return [];
 }
 
+// Last-resort ceiling on any tool response. Individual tools bound
+// their own output, but a single unbounded one costs the caller its
+// entire context window: memory_sessions returned 7.7 MB (all 3,646
+// rows, pretty-printed) and memory_graph_query 14.8 MB before this.
+// One guard here covers every tool, including ones added later.
+const MCP_MAX_RESPONSE_BYTES_DEFAULT = 262_144;
+
+function mcpMaxResponseBytes(): number {
+  const raw = process.env["AGENTMEMORY_MCP_MAX_RESPONSE_BYTES"];
+  const parsed = raw ? parseInt(raw, 10) : NaN;
+  return Number.isFinite(parsed) && parsed > 0
+    ? parsed
+    : MCP_MAX_RESPONSE_BYTES_DEFAULT;
+}
+
+function utf8Bytes(text: string): number {
+  return Buffer.byteLength(text, "utf8");
+}
+
+/**
+ * Cut a string to a UTF-8 byte budget without splitting a code point.
+ * String.slice counts UTF-16 units, so it neither measures the budget the
+ * env var names nor guarantees a valid tail.
+ */
+function sliceToUtf8Bytes(text: string, maxBytes: number): string {
+  if (maxBytes <= 0) return "";
+  if (utf8Bytes(text) <= maxBytes) return text;
+  const cut = Buffer.from(text, "utf8").subarray(0, maxBytes);
+  const decoded = new TextDecoder("utf-8", { fatal: false }).decode(cut);
+  // A trailing partial sequence decodes to U+FFFD; drop it rather than
+  // emit a character the caller never sent.
+  return decoded.endsWith("\uFFFD") ? decoded.slice(0, -1) : decoded;
+}
+
+function truncationNotice(label: string, max: number): string {
+  return (
+    `\n\n[agentmemory] ${label} produced more than ${max} bytes and was ` +
+    `truncated, so the payload above is cut mid-value and will not parse ` +
+    `as JSON. Re-run with a narrower request (lower limit, add a filter, ` +
+    `or ask for fewer fields), or raise ` +
+    `AGENTMEMORY_MCP_MAX_RESPONSE_BYTES.`
+  );
+}
+
+function capMcpResponse(res: McpResponse, label: string): McpResponse {
+  const body = res?.body as
+    | { content?: unknown; messages?: unknown; error?: unknown }
+    | undefined;
+  if (!body) return res;
+  const max = mcpMaxResponseBytes();
+
+  // Error bodies are not content arrays, and some of them echo a
+  // caller-supplied name, so they need the ceiling too.
+  if (typeof body.error === "string" && utf8Bytes(body.error) > max) {
+    return {
+      ...res,
+      body: { ...body, error: sliceToUtf8Bytes(body.error, max) },
+    };
+  }
+
+  const content = body.content;
+  if (!Array.isArray(content)) return res;
+
+  // Reserve the notice up front, so a response that overshoots by one
+  // character does not come back larger than the advertised ceiling.
+  const notice = truncationNotice(label, max);
+  const budget = Math.max(0, max - utf8Bytes(notice));
+
+  let used = 0;
+  let truncated = false;
+  const next = content.map((part) => {
+    const c = part as { type?: string; text?: string };
+    if (c?.type !== "text" || typeof c.text !== "string") return part;
+    const room = budget - used;
+    if (room <= 0) {
+      truncated = true;
+      return { ...c, text: "" };
+    }
+    const size = utf8Bytes(c.text);
+    if (size <= room) {
+      used += size;
+      return part;
+    }
+    truncated = true;
+    used = budget;
+    return { ...c, text: sliceToUtf8Bytes(c.text, room) };
+  });
+  if (!truncated) return res;
+  next.push({ type: "text", text: notice });
+  return { ...res, body: { ...body, content: next } };
+}
+
 export function registerMcpEndpoints(
   sdk: IIIClient,
   kv: StateKV,
@@ -85,7 +177,7 @@ export function registerMcpEndpoints(
 
       const { name, arguments: args = {} } = req.body;
 
-      try {
+      const dispatch = async (): Promise<McpResponse> => {
         switch (name) {
           case "memory_recall": {
             if (typeof args.query !== "string" || !args.query.trim()) {
@@ -136,7 +228,7 @@ export function registerMcpEndpoints(
               "text" in (result as Record<string, unknown>) &&
               typeof (result as { text?: unknown }).text === "string"
                 ? (result as { text: string }).text
-                : JSON.stringify(result, null, 2);
+                : JSON.stringify(result);
             return {
               status_code: 200,
               body: {
@@ -161,7 +253,7 @@ export function registerMcpEndpoints(
             return {
               status_code: 200,
               body: {
-                content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+                content: [{ type: "text", text: JSON.stringify(result) }],
               },
             };
           }
@@ -252,19 +344,75 @@ export function registerMcpEndpoints(
               status_code: 200,
               body: {
                 content: [
-                  { type: "text", text: JSON.stringify(result, null, 2) },
+                  { type: "text", text: JSON.stringify(result) },
                 ],
               },
             };
           }
 
           case "memory_sessions": {
-            const sessions = await kv.list(KV.sessions);
+            // Was `kv.list(KV.sessions)` verbatim: all 3,646 rows,
+            // pretty-printed, 7.7 MB, and the tool declared no arguments
+            // at all despite promising "recent" sessions. `summary` alone
+            // was 76% of those bytes. Return a bounded, projected list;
+            // the full row is one memory_recall away.
+            if (
+              args.limit !== undefined &&
+              (typeof args.limit !== "number" ||
+                !Number.isInteger(args.limit) ||
+                args.limit < 1)
+            ) {
+              return {
+                status_code: 400,
+                body: { error: "limit must be a positive integer" },
+              };
+            }
+            for (const key of ["project", "status"] as const) {
+              if (args[key] !== undefined && !asNonEmptyString(args[key])) {
+                return {
+                  status_code: 400,
+                  body: { error: `${key} must be a non-empty string` },
+                };
+              }
+            }
+            const limit = Math.max(1, Math.min(200, asNumber(args.limit, 20) ?? 20));
+            const project = asNonEmptyString(args.project);
+            const status = asNonEmptyString(args.status);
+            const all = (await kv.list(KV.sessions)) as Array<Record<string, unknown>>;
+            const rows = all
+              .filter((s) => !project || s["project"] === project)
+              .filter((s) => !status || s["status"] === status)
+              .sort((a, b) =>
+                String(b["startedAt"] ?? "").localeCompare(String(a["startedAt"] ?? "")),
+              );
+            const page = rows.slice(0, limit).map((s) => {
+              const summary = s["summary"];
+              return {
+                id: s["id"],
+                project: s["project"],
+                status: s["status"],
+                startedAt: s["startedAt"],
+                endedAt: s["endedAt"],
+                observationCount: s["observationCount"],
+                title:
+                  summary && typeof summary === "object"
+                    ? (summary as { title?: string }).title
+                    : undefined,
+              };
+            });
             return {
               status_code: 200,
               body: {
                 content: [
-                  { type: "text", text: JSON.stringify({ sessions }, null, 2) },
+                  {
+                    type: "text",
+                    text: JSON.stringify({
+                      sessions: page,
+                      total: rows.length,
+                      returned: page.length,
+                      truncated: rows.length > page.length,
+                    }),
+                  },
                 ],
               },
             };
@@ -291,7 +439,7 @@ export function registerMcpEndpoints(
               status_code: 200,
               body: {
                 content: [
-                  { type: "text", text: JSON.stringify(result, null, 2) },
+                  { type: "text", text: JSON.stringify(result) },
                 ],
               },
             };
@@ -317,7 +465,7 @@ export function registerMcpEndpoints(
               status_code: 200,
               body: {
                 content: [
-                  { type: "text", text: JSON.stringify(result, null, 2) },
+                  { type: "text", text: JSON.stringify(result) },
                 ],
               },
             };
@@ -340,7 +488,7 @@ export function registerMcpEndpoints(
               status_code: 200,
               body: {
                 content: [
-                  { type: "text", text: JSON.stringify(result, null, 2) },
+                  { type: "text", text: JSON.stringify(result) },
                 ],
               },
             };
@@ -361,7 +509,7 @@ export function registerMcpEndpoints(
               status_code: 200,
               body: {
                 content: [
-                  { type: "text", text: JSON.stringify(result, null, 2) },
+                  { type: "text", text: JSON.stringify(result) },
                 ],
               },
             };
@@ -373,7 +521,7 @@ export function registerMcpEndpoints(
               status_code: 200,
               body: {
                 content: [
-                  { type: "text", text: JSON.stringify(result, null, 2) },
+                  { type: "text", text: JSON.stringify(result) },
                 ],
               },
             };
@@ -399,7 +547,7 @@ export function registerMcpEndpoints(
               status_code: 200,
               body: {
                 content: [
-                  { type: "text", text: JSON.stringify(result, null, 2) },
+                  { type: "text", text: JSON.stringify(result) },
                 ],
               },
             };
@@ -420,7 +568,7 @@ export function registerMcpEndpoints(
                 status_code: 200,
                 body: {
                   content: [
-                    { type: "text", text: JSON.stringify(result, null, 2) },
+                    { type: "text", text: JSON.stringify(result) },
                   ],
                 },
               };
@@ -446,6 +594,8 @@ export function registerMcpEndpoints(
                 nodeType?: string;
                 maxDepth?: number;
                 query?: string;
+                limit?: number;
+                includeSources?: boolean;
               } = {};
               const startNodeId = asNonEmptyString(args.startNodeId);
               const nodeType = asNonEmptyString(args.nodeType);
@@ -455,6 +605,31 @@ export function registerMcpEndpoints(
               if (nodeType) payload.nodeType = nodeType;
               if (query) payload.query = query;
               if (maxDepth !== undefined) payload.maxDepth = Math.max(1, Math.min(8, maxDepth));
+              // The REST default of 500 nodes is fine for the viewer and
+              // far too large for an agent; 25 is a readable page. The
+              // provenance array stays projected out unless asked for.
+              if (
+                args.limit !== undefined &&
+                (typeof args.limit !== "number" ||
+                  !Number.isInteger(args.limit) ||
+                  args.limit < 1)
+              ) {
+                return {
+                  status_code: 400,
+                  body: { error: "limit must be a positive integer" },
+                };
+              }
+              if (
+                args.includeSources !== undefined &&
+                typeof args.includeSources !== "boolean"
+              ) {
+                return {
+                  status_code: 400,
+                  body: { error: "includeSources must be a boolean" },
+                };
+              }
+              payload.limit = Math.max(1, Math.min(200, asNumber(args.limit, 25) ?? 25));
+              payload.includeSources = args.includeSources === true;
               const result = await sdk.trigger({
                 function_id: "mem::graph-query",
                 payload,
@@ -463,7 +638,7 @@ export function registerMcpEndpoints(
                 status_code: 200,
                 body: {
                   content: [
-                    { type: "text", text: JSON.stringify(result, null, 2) },
+                    { type: "text", text: JSON.stringify(result) },
                   ],
                 },
               };
@@ -491,7 +666,7 @@ export function registerMcpEndpoints(
                 status_code: 200,
                 body: {
                   content: [
-                    { type: "text", text: JSON.stringify(result, null, 2) },
+                    { type: "text", text: JSON.stringify(result) },
                   ],
                 },
               };
@@ -529,7 +704,7 @@ export function registerMcpEndpoints(
                 status_code: 200,
                 body: {
                   content: [
-                    { type: "text", text: JSON.stringify(result, null, 2) },
+                    { type: "text", text: JSON.stringify(result) },
                   ],
                 },
               };
@@ -557,7 +732,7 @@ export function registerMcpEndpoints(
                 status_code: 200,
                 body: {
                   content: [
-                    { type: "text", text: JSON.stringify(result, null, 2) },
+                    { type: "text", text: JSON.stringify(result) },
                   ],
                 },
               };
@@ -586,7 +761,7 @@ export function registerMcpEndpoints(
                 status_code: 200,
                 body: {
                   content: [
-                    { type: "text", text: JSON.stringify(result, null, 2) },
+                    { type: "text", text: JSON.stringify(result) },
                   ],
                 },
               };
@@ -621,7 +796,7 @@ export function registerMcpEndpoints(
                 status_code: 200,
                 body: {
                   content: [
-                    { type: "text", text: JSON.stringify(result, null, 2) },
+                    { type: "text", text: JSON.stringify(result) },
                   ],
                 },
               };
@@ -645,7 +820,7 @@ export function registerMcpEndpoints(
                 status_code: 200,
                 body: {
                   content: [
-                    { type: "text", text: JSON.stringify(result, null, 2) },
+                    { type: "text", text: JSON.stringify(result) },
                   ],
                 },
               };
@@ -693,7 +868,7 @@ export function registerMcpEndpoints(
               status_code: 200,
               body: {
                 content: [
-                  { type: "text", text: JSON.stringify(actionResult, null, 2) },
+                  { type: "text", text: JSON.stringify(actionResult) },
                 ],
               },
             };
@@ -716,7 +891,7 @@ export function registerMcpEndpoints(
               status_code: 200,
               body: {
                 content: [
-                  { type: "text", text: JSON.stringify(updateResult, null, 2) },
+                  { type: "text", text: JSON.stringify(updateResult) },
                 ],
               },
             };
@@ -732,7 +907,7 @@ export function registerMcpEndpoints(
               status_code: 200,
               body: {
                 content: [
-                  { type: "text", text: JSON.stringify(frontierResult, null, 2) },
+                  { type: "text", text: JSON.stringify(frontierResult) },
                 ],
               },
             };
@@ -747,7 +922,7 @@ export function registerMcpEndpoints(
               status_code: 200,
               body: {
                 content: [
-                  { type: "text", text: JSON.stringify(nextResult, null, 2) },
+                  { type: "text", text: JSON.stringify(nextResult) },
                 ],
               },
             };
@@ -794,7 +969,7 @@ export function registerMcpEndpoints(
               status_code: 200,
               body: {
                 content: [
-                  { type: "text", text: JSON.stringify(leaseResult, null, 2) },
+                  { type: "text", text: JSON.stringify(leaseResult) },
                 ],
               },
             };
@@ -816,7 +991,7 @@ export function registerMcpEndpoints(
               status_code: 200,
               body: {
                 content: [
-                  { type: "text", text: JSON.stringify(runResult, null, 2) },
+                  { type: "text", text: JSON.stringify(runResult) },
                 ],
               },
             };
@@ -843,7 +1018,7 @@ export function registerMcpEndpoints(
               status_code: 200,
               body: {
                 content: [
-                  { type: "text", text: JSON.stringify(sigResult, null, 2) },
+                  { type: "text", text: JSON.stringify(sigResult) },
                 ],
               },
             };
@@ -866,7 +1041,7 @@ export function registerMcpEndpoints(
               status_code: 200,
               body: {
                 content: [
-                  { type: "text", text: JSON.stringify(readResult, null, 2) },
+                  { type: "text", text: JSON.stringify(readResult) },
                 ],
               },
             };
@@ -917,7 +1092,7 @@ export function registerMcpEndpoints(
               status_code: 200,
               body: {
                 content: [
-                  { type: "text", text: JSON.stringify(cpResult, null, 2) },
+                  { type: "text", text: JSON.stringify(cpResult) },
                 ],
               },
             };
@@ -932,7 +1107,7 @@ export function registerMcpEndpoints(
               status_code: 200,
               body: {
                 content: [
-                  { type: "text", text: JSON.stringify(meshResult, null, 2) },
+                  { type: "text", text: JSON.stringify(meshResult) },
                 ],
               },
             };
@@ -964,7 +1139,7 @@ export function registerMcpEndpoints(
               function_id: "mem::sentinel-create",
               payload,
             });
-            return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(snlResult, null, 2) }] } };
+            return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(snlResult) }] } };
           }
 
           case "memory_sentinel_trigger": {
@@ -987,7 +1162,7 @@ export function registerMcpEndpoints(
               sentinelId,
               result: snlTrigPayload,
             } });
-            return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(snlTrigResult, null, 2) }] } };
+            return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(snlTrigResult) }] } };
           }
 
           case "memory_sketch_create": {
@@ -1008,7 +1183,7 @@ export function registerMcpEndpoints(
               function_id: "mem::sketch-create",
               payload: sketchPayload,
             });
-            return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(skResult, null, 2) }] } };
+            return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(skResult) }] } };
           }
 
           case "memory_sketch_promote": {
@@ -1023,7 +1198,7 @@ export function registerMcpEndpoints(
               sketchId,
               project: args.project,
             } });
-            return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(skpResult, null, 2) }] } };
+            return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(skpResult) }] } };
           }
 
           case "memory_crystallize": {
@@ -1036,7 +1211,7 @@ export function registerMcpEndpoints(
               project: args.project,
               sessionId: args.sessionId,
             } });
-            return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(crysResult, null, 2) }] } };
+            return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(crysResult) }] } };
           }
 
           case "memory_diagnose": {
@@ -1044,7 +1219,7 @@ export function registerMcpEndpoints(
               ? args.categories.split(",").map((s: string) => s.trim()).filter(Boolean)
               : undefined;
             const diagResult = await sdk.trigger({ function_id: "mem::diagnose", payload: { categories: diagCats } });
-            return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(diagResult, null, 2) }] } };
+            return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(diagResult) }] } };
           }
 
           case "memory_heal": {
@@ -1055,7 +1230,7 @@ export function registerMcpEndpoints(
               categories: healCats,
               dryRun: args.dryRun === true || args.dryRun === "true",
             } });
-            return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(healResult, null, 2) }] } };
+            return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(healResult) }] } };
           }
 
           case "memory_facet_tag": {
@@ -1065,7 +1240,7 @@ export function registerMcpEndpoints(
               dimension: args.dimension,
               value: args.value,
             } });
-            return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(fctResult, null, 2) }] } };
+            return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(fctResult) }] } };
           }
 
           case "memory_facet_query": {
@@ -1086,7 +1261,7 @@ export function registerMcpEndpoints(
               matchAny: fqAny,
               targetType: args.targetType,
             } });
-            return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(fqResult, null, 2) }] } };
+            return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(fqResult) }] } };
           }
 
           case "memory_verify": {
@@ -1094,7 +1269,7 @@ export function registerMcpEndpoints(
               return { status_code: 400, body: { error: "id is required" } };
             }
             const verifyResult = await sdk.trigger({ function_id: "mem::verify", payload: { id: args.id } });
-            return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(verifyResult, null, 2) }] } };
+            return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(verifyResult) }] } };
           }
 
           case "memory_lesson_save": {
@@ -1112,7 +1287,7 @@ export function registerMcpEndpoints(
               tags: lessonTags,
               source: "manual",
             } });
-            return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(lessonSaveResult, null, 2) }] } };
+            return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(lessonSaveResult) }] } };
           }
 
           case "memory_lesson_recall": {
@@ -1125,7 +1300,7 @@ export function registerMcpEndpoints(
               minConfidence: args.minConfidence,
               limit: args.limit,
             } });
-            return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(lessonRecallResult, null, 2) }] } };
+            return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(lessonRecallResult) }] } };
           }
 
           case "memory_lesson_delete": {
@@ -1135,7 +1310,7 @@ export function registerMcpEndpoints(
             const lessonDeleteResult = await sdk.trigger({ function_id: "mem::lesson-delete", payload: {
               lessonId: args.lessonId.trim(),
             } });
-            return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(lessonDeleteResult, null, 2) }] } };
+            return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(lessonDeleteResult) }] } };
           }
 
           case "memory_reflect": {
@@ -1143,7 +1318,7 @@ export function registerMcpEndpoints(
               project: args.project,
               maxClusters: args.maxClusters,
             } });
-            return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(reflectResult, null, 2) }] } };
+            return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(reflectResult) }] } };
           }
 
           case "memory_insight_list": {
@@ -1152,7 +1327,7 @@ export function registerMcpEndpoints(
               minConfidence: args.minConfidence,
               limit: args.limit,
             } });
-            return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(insightListResult, null, 2) }] } };
+            return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(insightListResult) }] } };
           }
 
           case "memory_obsidian_export": {
@@ -1163,14 +1338,14 @@ export function registerMcpEndpoints(
               vaultDir: args.vaultDir,
               types: exportTypes,
             } });
-            return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(obsidianResult, null, 2) }] } };
+            return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(obsidianResult) }] } };
           }
 
           case "memory_slot_list": {
             const result = await sdk.trigger({ function_id: "mem::slot-list", payload: {} });
             return {
               status_code: 200,
-              body: { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] },
+              body: { content: [{ type: "text", text: JSON.stringify(result) }] },
             };
           }
 
@@ -1180,7 +1355,7 @@ export function registerMcpEndpoints(
             const result = await sdk.trigger({ function_id: "mem::slot-get", payload: { label } });
             return {
               status_code: 200,
-              body: { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] },
+              body: { content: [{ type: "text", text: JSON.stringify(result) }] },
             };
           }
 
@@ -1199,7 +1374,7 @@ export function registerMcpEndpoints(
             const result = await sdk.trigger({ function_id: "mem::slot-create", payload });
             return {
               status_code: 200,
-              body: { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] },
+              body: { content: [{ type: "text", text: JSON.stringify(result) }] },
             };
           }
 
@@ -1210,7 +1385,7 @@ export function registerMcpEndpoints(
             const result = await sdk.trigger({ function_id: "mem::slot-append", payload: { label, text } });
             return {
               status_code: 200,
-              body: { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] },
+              body: { content: [{ type: "text", text: JSON.stringify(result) }] },
             };
           }
 
@@ -1222,7 +1397,7 @@ export function registerMcpEndpoints(
             const result = await sdk.trigger({ function_id: "mem::slot-replace", payload: { label, content: args.content } });
             return {
               status_code: 200,
-              body: { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] },
+              body: { content: [{ type: "text", text: JSON.stringify(result) }] },
             };
           }
 
@@ -1232,7 +1407,7 @@ export function registerMcpEndpoints(
             const result = await sdk.trigger({ function_id: "mem::slot-delete", payload: { label } });
             return {
               status_code: 200,
-              body: { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] },
+              body: { content: [{ type: "text", text: JSON.stringify(result) }] },
             };
           }
 
@@ -1243,7 +1418,7 @@ export function registerMcpEndpoints(
             if (!link) {
               return {
                 status_code: 200,
-                body: { content: [{ type: "text", text: JSON.stringify({ commit: null, sessions: [] }, null, 2) }] },
+                body: { content: [{ type: "text", text: JSON.stringify({ commit: null, sessions: [] }) }] },
               };
             }
             const linkRecord = link as { sessionIds?: string[] };
@@ -1253,7 +1428,7 @@ export function registerMcpEndpoints(
             const sessions = fetched.filter((s) => s !== null);
             return {
               status_code: 200,
-              body: { content: [{ type: "text", text: JSON.stringify({ commit: link, sessions }, null, 2) }] },
+              body: { content: [{ type: "text", text: JSON.stringify({ commit: link, sessions }) }] },
             };
           }
 
@@ -1269,16 +1444,20 @@ export function registerMcpEndpoints(
               .slice(0, limit);
             return {
               status_code: 200,
-              body: { content: [{ type: "text", text: JSON.stringify({ commits: filtered }, null, 2) }] },
+              body: { content: [{ type: "text", text: JSON.stringify({ commits: filtered }) }] },
             };
           }
 
           default:
             return {
               status_code: 400,
-              body: { error: `Unknown tool: ${name}` },
+              body: { error: `Unknown tool: ${String(name).slice(0, 100)}` },
             };
         }
+      };
+
+      try {
+        return capMcpResponse(await dispatch(), name);
       } catch (err) {
         return {
           status_code: 500,
@@ -1646,9 +1825,12 @@ export function registerMcpEndpoints(
         return { status_code: 400, body: { error: "name is required" } };
       }
 
+      const capped = (res: McpResponse): McpResponse =>
+        capMcpResponse(res, `prompt ${promptName.slice(0, 100)}`);
+
       const promptArgs = req.body?.arguments || {};
 
-      try {
+      const build = async (): Promise<McpResponse> => {
         switch (promptName) {
           case "recall_context": {
             const taskDesc = promptArgs.task_description;
@@ -1704,7 +1886,7 @@ export function registerMcpEndpoints(
                     role: "user",
                     content: {
                       type: "text",
-                      text: `Here is relevant context from past sessions for the task: "${taskDesc}"\n\n## Past Observations\n${JSON.stringify(searchResult, null, 2)}\n\n## Relevant Memories\n${JSON.stringify(relevant, null, 2)}`,
+                      text: `Here is relevant context from past sessions for the task: "${taskDesc}"\n\n## Past Observations\n${JSON.stringify(searchResult)}\n\n## Relevant Memories\n${JSON.stringify(relevant)}`,
                     },
                   },
                 ],
@@ -1733,7 +1915,7 @@ export function registerMcpEndpoints(
                     role: "user",
                     content: {
                       type: "text",
-                      text: `## Session Handoff\n\n### Session\n${JSON.stringify(session, null, 2)}\n\n### Summary\n${JSON.stringify(summary || "No summary available", null, 2)}`,
+                      text: `## Session Handoff\n\n### Session\n${JSON.stringify(session)}\n\n### Summary\n${JSON.stringify(summary || "No summary available")}`,
                     },
                   },
                 ],
@@ -1762,7 +1944,7 @@ export function registerMcpEndpoints(
                     role: "user",
                     content: {
                       type: "text",
-                      text: `## Pattern Analysis\n\n${JSON.stringify(result, null, 2)}`,
+                      text: `## Pattern Analysis\n\n${JSON.stringify(result)}`,
                     },
                   },
                 ],
@@ -1773,9 +1955,13 @@ export function registerMcpEndpoints(
           default:
             return {
               status_code: 400,
-              body: { error: `Unknown prompt: ${promptName}` },
+              body: { error: `Unknown prompt: ${promptName.slice(0, 100)}` },
             };
         }
+      };
+
+      try {
+        return capped(await build());
       } catch {
         return { status_code: 500, body: { error: "Internal error" } };
       }
