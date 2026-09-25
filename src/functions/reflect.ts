@@ -13,6 +13,8 @@ import type {
 import { recordAudit } from "./audit.js";
 import { REFLECT_SYSTEM, buildReflectPrompt } from "../prompts/reflect.js";
 
+export const INSIGHT_MAX_SOURCE_IDS = 20;
+
 interface ConceptCluster {
   concepts: string[];
   facts: Array<{ fact: string; confidence: number }>;
@@ -292,9 +294,9 @@ export function registerReflectFunctions(
                 confidence,
                 reinforcements: 0,
                 sourceConceptCluster: conceptNames,
-                sourceMemoryIds: cluster.factIds,
-                sourceLessonIds: cluster.lessonIds,
-                sourceCrystalIds: cluster.crystalIds,
+                sourceMemoryIds: (cluster.factIds || []).slice(-INSIGHT_MAX_SOURCE_IDS),
+                sourceLessonIds: (cluster.lessonIds || []).slice(-INSIGHT_MAX_SOURCE_IDS),
+                sourceCrystalIds: (cluster.crystalIds || []).slice(-INSIGHT_MAX_SOURCE_IDS),
                 project: data?.project,
                 tags: conceptNames,
                 createdAt: now,
