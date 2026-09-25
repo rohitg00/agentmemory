@@ -193,7 +193,7 @@
       background: none;
       border: none;
       color: var(--ink-muted);
-      padding: 10px 20px;
+      padding: 10px 16px;
       font-size: 11px;
       cursor: pointer;
       border-bottom: 2px solid transparent;
@@ -1059,6 +1059,7 @@
     <button data-tab="activity">Activity</button>
     <button data-tab="profile">Profile</button>
     <button data-tab="replay">Replay</button>
+    <button data-tab="health">Health</button>
   </div>
 
   <div id="flag-banners" class="flag-banners"></div>
@@ -1076,6 +1077,7 @@
   <div id="view-activity" class="view"></div>
   <div id="view-profile" class="view"></div>
   <div id="view-replay" class="view"></div>
+  <div id="view-health" class="view"></div>
 
   <div id="modal-overlay" class="modal-overlay">
     <div class="modal" id="modal"></div>
@@ -1164,7 +1166,7 @@
       task: '&#9745;', other: '&#128196;'
     };
     var CB_STATE_COLORS = { closed: 'badge-green', open: 'badge-red', 'half-open': 'badge-yellow' };
-    var TAB_IDS = ['dashboard', 'graph', 'memories', 'timeline', 'sessions', 'lessons', 'actions', 'crystals', 'audit', 'activity', 'profile', 'replay'];
+    var TAB_IDS = ['dashboard', 'graph', 'memories', 'timeline', 'sessions', 'lessons', 'actions', 'crystals', 'audit', 'activity', 'profile', 'replay', 'health'];
     var VIEWER_TOKEN_STORAGE_KEY = 'agentmemory-viewer-token';
 
     var state = {
@@ -1180,6 +1182,7 @@
       actions: { loaded: false, items: [], frontier: [], statusFilter: '', search: '' },
       crystals: { loaded: false, items: [], search: '', lessonMap: {} },
       profile: { loaded: false, projects: [], selectedProject: '', data: null },
+      health: { report: null, error: null },
       replay: { loaded: false, sessions: [], selectedId: '', timeline: null, cursor: 0, playing: false, speed: 1, timer: null, startAt: 0, offsetAt: 0 },
       flagsConfig: null,
       flagsDismissed: {},
@@ -1486,6 +1489,7 @@
         case 'audit': await loadAudit(); break;
         case 'activity': await loadActivity(); break;
         case 'profile': await loadProfile(); break;
+        case 'health': await loadHealth(); break;
         // Replay stays fetch-once: reloading it would reset playback
         // timer and cursor state mid-session; its toolbar has an explicit
         // Refresh button instead.
@@ -3767,6 +3771,110 @@
       if (el) el.classList.toggle('open');
     }
 
+    var HEALTH_LEVEL_BADGES = { ok: 'badge-green', info: 'badge-blue', warn: 'badge-yellow', error: 'badge-red' };
+
+    async function loadHealth() {
+      var el = document.getElementById('view-health');
+      if (!state.health.report) el.innerHTML = '<div class="loading">Checking agentmemory...</div>';
+      var report = await api('status', { headers: { Accept: 'application/json' } });
+      if (report && report.problems) {
+        state.health.report = report;
+        state.health.error = null;
+      } else {
+        state.health.error = 'The status check did not answer. The server may be restarting.';
+      }
+      renderHealth();
+    }
+
+    function healthRow(label, value) {
+      return '<div class="detail-row"><div class="dl">' + esc(label) + '</div><div class="dv">' + esc(value === null || value === undefined ? '' : String(value)) + '</div></div>';
+    }
+
+    function formatSeconds(seconds) {
+      if (seconds === null || seconds === undefined) return 'unknown';
+      if (seconds < 60) return seconds + 's';
+      var minutes = Math.floor(seconds / 60);
+      if (minutes < 60) return minutes + 'm';
+      var hours = Math.floor(minutes / 60);
+      return hours < 48 ? hours + 'h ' + (minutes % 60) + 'm' : Math.floor(hours / 24) + 'd';
+    }
+
+    function renderHealth() {
+      var el = document.getElementById('view-health');
+      var r = state.health.report;
+      var html = '';
+      if (state.health.error) {
+        html += '<div class="card" style="margin-bottom:14px;padding:10px 16px;font-size:12px;color:var(--ink-muted);border-left:3px solid var(--yellow);">' +
+          esc(state.health.error) + (r ? ' Showing the last result.' : '') + '</div>';
+      }
+      if (!r) {
+        el.innerHTML = html + '<div style="text-align:center;"><button class="btn btn-primary" data-action="refresh-health">Retry</button></div>';
+        return;
+      }
+      html += '<div class="card" style="margin-bottom:16px;"><div class="card-title">Status <span class="badge ' + (HEALTH_LEVEL_BADGES[r.status] || 'badge-muted') + '">' + esc(r.status) + '</span>' +
+        '<span style="float:right;font-size:10px;color:var(--ink-faint);font-family:var(--font-mono);">checked ' + esc(shortTime(r.checkedAt)) + '</span></div>';
+      if (!r.problems.length) {
+        html += '<p style="font-size:13px;color:var(--ink-muted);">No problems found.</p>';
+      }
+      r.problems.forEach(function(p) {
+        html += '<div style="padding:10px 0;border-bottom:1px solid var(--border-light);">';
+        html += '<span class="badge ' + (HEALTH_LEVEL_BADGES[p.level] || 'badge-muted') + '">' + esc(p.level) + '</span> ';
+        html += '<span style="font-size:13px;color:var(--ink);">' + esc(p.message) + '</span>';
+        if (p.fix) html += '<div style="font-size:12px;color:var(--ink-muted);margin-top:4px;">' + esc(p.fix) + '</div>';
+        html += '</div>';
+      });
+      html += '</div>';
+
+      var ports = r.service.ports || {};
+      var idx = r.index || {};
+      var cb = r.provider.circuitBreaker;
+      html += '<div class="two-col">';
+      html += '<div class="card"><div class="card-title">Service</div>' +
+        healthRow('Version', 'v' + r.service.version) +
+        healthRow('Engine', r.service.engineVersion) +
+        healthRow('Uptime', formatSeconds(r.service.uptimeSeconds)) +
+        healthRow('Ports', 'REST ' + (ports.rest || '?') + ' · streams ' + (ports.streams || '?') + ' · viewer ' + (ports.viewer || 'off')) +
+        healthRow('Engine connection', (r.health && r.health.connectionState) || 'unknown') +
+        healthRow('LLM provider', r.provider.llm) +
+        healthRow('Embeddings', r.provider.embeddings) +
+        healthRow('Circuit breaker', cb ? (cb.state + ' (' + (cb.failures || 0) + ' failures)') : 'not in use') +
+        '</div>';
+      html += '<div class="card"><div class="card-title">Search index &amp; graph</div>' +
+        healthRow('BM25 documents', idx.bm25Documents) +
+        healthRow('Vector documents', idx.vectorDocuments === null ? 'vector search off' : idx.vectorDocuments) +
+        healthRow('Observations indexed', idx.observationsIndexed) +
+        healthRow('Missing from index', idx.missingObservations === null ? 'not checked' : idx.missingObservations) +
+        healthRow('Sessions', idx.sessions === null ? 'unknown' : idx.sessions);
+      if (r.graph) {
+        html += healthRow('Graph extraction', r.graph.extractionEnabled ? 'on' : 'off') +
+          healthRow('Graph nodes / edges', (r.graph.totalNodes || 0) + ' / ' + (r.graph.totalEdges || 0)) +
+          healthRow('Graph snapshot age', r.graph.fromSnapshot ? formatSeconds(r.graph.ageSeconds) : 'no snapshot');
+      }
+      html += '</div></div>';
+
+      var fns = (r.functions || []).slice().sort(function(a, b) { return b.totalCalls - a.totalCalls; });
+      html += '<div class="card" style="margin-top:16px;"><div class="card-title">Functions</div>';
+      if (!fns.length) {
+        html += '<p style="font-size:13px;color:var(--ink-faint);">No function calls recorded yet.</p>';
+      } else {
+        html += '<table class="metric-table"><tr><th>Function</th><th style="text-align:right">Calls</th><th style="text-align:right">Failed</th><th style="text-align:right">Failure rate</th><th style="text-align:right">Avg latency</th></tr>';
+        fns.forEach(function(f) {
+          var bad = f.totalCalls >= 5 && f.failureRate >= 0.2;
+          html += '<tr><td class="metric-fn">' + esc(f.functionId) + '</td>' +
+            '<td class="metric-num">' + f.totalCalls + '</td>' +
+            '<td class="metric-num" style="color:' + (f.failureCount > 0 ? 'var(--red)' : 'var(--ink-faint)') + '">' + f.failureCount + '</td>' +
+            '<td class="metric-num" style="color:' + (bad ? 'var(--red)' : 'var(--ink-muted)') + '">' + Math.round(f.failureRate * 100) + '%</td>' +
+            '<td class="metric-num">' + Math.round(f.avgLatencyMs) + ' ms</td></tr>';
+        });
+        html += '</table>';
+      }
+      html += '</div>';
+
+      html += '<div style="text-align:center;margin-top:20px;"><button class="btn btn-primary" data-action="refresh-health">Check again</button>' +
+        '<span style="font-size:11px;color:var(--ink-faint);margin-left:10px;">Environment checks (keys, engine binary, pid files) run on your machine with <code>agentmemory doctor</code>.</span></div>';
+      el.innerHTML = html;
+    }
+
     async function loadProfile() {
       var el = document.getElementById('view-profile');
       el.innerHTML = '<div class="loading">Loading profile...</div>';
@@ -4394,6 +4502,10 @@
       }
       if (action === 'refresh-dashboard') {
         refreshDashboard();
+        return;
+      }
+      if (action === 'refresh-health') {
+        loadHealth();
         return;
       }
       if (action === 'zoom-graph') {

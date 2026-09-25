@@ -18,6 +18,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- **`GET /agentmemory/status` and a Health tab in the viewer.** One report of what is wrong and how to fix it: the health monitor state and alerts, the LLM and embedding providers and the circuit breaker, functions failing on at least 20% of their calls (with a provider-specific fix for summarize, compress and graph extraction), observations missing from the search index (the same exact check the boot reconcile runs), graph snapshot age, ports, uptime, the pinned engine version and every feature flag with how to enable it. Browsers get an HTML page with no scripts and a strict CSP; everything else gets JSON (`?format=json` or `?format=html` force either). Every probe is time-boxed at 5 s so a slow store cannot hang the page. Uses the same bearer auth as the rest of the API.
 - **`agentmemory console`** launches the iii web console (workers, functions, triggers, queues, traces) through the pinned engine, against the ports agentmemory resolved, one port above the viewer by default (`--console-port` overrides). Engine 0.22 ships the console as part of `iii` and downloads it on first use, so the "install iii console?" prompt on start and the `skipConsoleInstall` preference are gone; the ready panel now points at the command instead.
 
 ### Fixed
