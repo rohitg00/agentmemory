@@ -1,6 +1,6 @@
 import type { CircuitBreakerState } from "../types.js";
 
-interface CircuitBreakerOptions {
+export interface CircuitBreakerOptions {
   failureThreshold?: number;
   failureWindowMs?: number;
   recoveryTimeoutMs?: number;
@@ -45,12 +45,25 @@ export class CircuitBreaker {
   }
 
   recordSuccess(): void {
+    // A request already in flight when another request opened the breaker
+    // still lands here. Clearing openedAt in that state would strip the
+    // recovery deadline and leave the breaker open permanently.
+    if (this.state === "open") return;
     if (this.state === "half-open") {
       this.state = "closed";
-      this.failures = 0;
-      this.lastFailureAt = null;
-      this.openedAt = null;
     }
+    // A success in the CLOSED state used to leave `failures` untouched,
+    // so the counter only ever reset when two consecutive failures were
+    // more than failureWindowMs apart. Under steady load — where
+    // failures are frequent enough to keep landing inside the window
+    // but rare in proportion to successes — the count crept to the
+    // threshold and opened the breaker on a provider that was mostly
+    // healthy. One flaky upstream then produced a thousand consecutive
+    // circuit_breaker_open fast-fails. Treat the window as "failures
+    // since the last success" and clear it here.
+    this.failures = 0;
+    this.lastFailureAt = null;
+    this.openedAt = null;
   }
 
   recordFailure(): void {
