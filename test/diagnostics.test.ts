@@ -195,15 +195,15 @@ describe("Diagnostics Functions", () => {
       };
 
       expect(result.success).toBe(true);
-      // 15 = 8 original (actions, leases, sentinels, sketches, signals,
+      // 16 = 8 original (actions, leases, sentinels, sketches, signals,
       // sessions, memories, mesh) + 6 added in #lesson-visibility
       // (lessons, summaries, semantic, procedural, crystals, insights) +
-      // 1 added in #memory-project-scope (memory-project-coverage).
-      expect(result.summary.pass).toBe(15);
-      expect(result.summary.warn).toBe(0);
+      // 1 added in #memory-project-scope (memory-project-coverage) +
+      // 1 added in #index-persistence (index-orphan-shards).
+      expect(result.summary.pass).toBe(16);
+      expect(result.summary.warn).toBe(2);
       expect(result.summary.fail).toBe(0);
       expect(result.summary.fixable).toBe(0);
-      expect(result.checks.every((c) => c.status === "pass")).toBe(true);
     });
 
     it("active action with no lease produces warn", async () => {
@@ -862,6 +862,309 @@ describe("Diagnostics Functions", () => {
 
         expect(result.checks.find((c) => c.name === "insight-bad-confidence:ins_inf")?.status).toBe("warn");
         expect(result.checks.find((c) => c.name === "semantic-bad-confidence:sem_nan")?.status).toBe("warn");
+      });
+
+      it("index category: passes with valid manifests and clean registry", async () => {
+        await kv.set(KV.bm25Index, "data:manifest", {
+          v: 1,
+          generation: "gen_bm25_1",
+          shards: [{ scope: "mem:index:bm25:bm25:gen_bm25_1:00000", key: "data", chars: 50 }],
+          chars: 50,
+        });
+        await kv.set(KV.bm25Index, "vectors:manifest", {
+          v: 1,
+          generation: "gen_vec_1",
+          shards: [{ scope: "mem:index:bm25:vectors:gen_vec_1:00000", key: "data", chars: 50 }],
+          chars: 50,
+        });
+        await kv.set(KV.bm25Index, "generations:registry", {
+          v: 1,
+          generations: {
+            gen_bm25_1: {
+              type: "bm25",
+              createdAt: new Date(Date.now() - 10_000).toISOString(),
+              shardScopes: ["mem:index:bm25:bm25:gen_bm25_1:00000"],
+            },
+            gen_vec_1: {
+              type: "vector",
+              createdAt: new Date(Date.now() - 10_000).toISOString(),
+              shardScopes: ["mem:index:bm25:vectors:gen_vec_1:00000"],
+            },
+          },
+        });
+
+        const result = (await sdk.trigger("mem::diagnose", {
+          categories: ["index"],
+        })) as { checks: DiagnosticCheck[]; success: boolean };
+
+        expect(result.success).toBe(true);
+        expect(result.checks.find((c) => c.name === "index-manifest-bm25")?.status).toBe("pass");
+        expect(result.checks.find((c) => c.name === "index-manifest-vectors")?.status).toBe("pass");
+        expect(result.checks.find((c) => c.name === "index-orphan-shards")?.status).toBe("pass");
+      });
+
+      it("index category: warns on missing manifests", async () => {
+        const result = (await sdk.trigger("mem::diagnose", {
+          categories: ["index"],
+        })) as { checks: DiagnosticCheck[] };
+
+        expect(result.checks.find((c) => c.name === "index-manifest-bm25")?.status).toBe("warn");
+        expect(result.checks.find((c) => c.name === "index-manifest-vectors")?.status).toBe("warn");
+        expect(result.checks.find((c) => c.name === "index-orphan-shards")?.status).toBe("pass");
+      });
+
+      it("index category: fails on corrupt manifests", async () => {
+        await kv.set(KV.bm25Index, "data:manifest", { v: 2, invalid: true });
+        await kv.set(KV.bm25Index, "vectors:manifest", { v: 1, shards: "not-array" });
+
+        const result = (await sdk.trigger("mem::diagnose", {
+          categories: ["index"],
+        })) as { checks: DiagnosticCheck[] };
+
+        expect(result.checks.find((c) => c.name === "index-manifest-bm25")?.status).toBe("fail");
+        expect(result.checks.find((c) => c.name === "index-manifest-vectors")?.status).toBe("fail");
+      });
+
+      it("index category: fails with fixable flag on orphan generations", async () => {
+        await kv.set(KV.bm25Index, "data:manifest", {
+          v: 1,
+          generation: "gen_bm25_active",
+          shards: [{ scope: "mem:index:bm25:bm25:gen_bm25_active:00000", key: "data", chars: 50 }],
+          chars: 50,
+        });
+        await kv.set(KV.bm25Index, "generations:registry", {
+          v: 1,
+          generations: {
+            gen_bm25_active: {
+              type: "bm25",
+              createdAt: new Date(Date.now() - 120_000).toISOString(),
+              shardScopes: ["mem:index:bm25:bm25:gen_bm25_active:00000"],
+            },
+            gen_bm25_orphan1: {
+              type: "bm25",
+              createdAt: new Date(Date.now() - 120_000).toISOString(),
+              shardScopes: ["mem:index:bm25:bm25:gen_bm25_orphan1:00000"],
+            },
+            gen_vec_orphan2: {
+              type: "vector",
+              createdAt: new Date(Date.now() - 120_000).toISOString(),
+              shardScopes: [
+                "mem:index:bm25:vectors:gen_vec_orphan2:00000",
+                "mem:index:bm25:vectors:gen_vec_orphan2:00001",
+              ],
+            },
+          },
+        });
+
+        const result = (await sdk.trigger("mem::diagnose", {
+          categories: ["index"],
+        })) as { checks: DiagnosticCheck[] };
+
+        const orphanCheck = result.checks.find((c) => c.name === "index-orphan-shards");
+        expect(orphanCheck?.status).toBe("fail");
+        expect(orphanCheck?.fixable).toBe(true);
+        expect(orphanCheck?.message).toContain("2 orphan generations");
+        expect(orphanCheck?.message).toContain("3 shards");
+      });
+
+      it("index category: ignores in-flight generation younger than 60s grace period", async () => {
+        await kv.set(KV.bm25Index, "data:manifest", {
+          v: 1,
+          generation: "gen_bm25_active",
+          shards: [{ scope: "mem:index:bm25:bm25:gen_bm25_active:00000", key: "data", chars: 50 }],
+          chars: 50,
+        });
+        await kv.set(KV.bm25Index, "generations:registry", {
+          v: 1,
+          generations: {
+            gen_bm25_active: {
+              type: "bm25",
+              createdAt: new Date(Date.now() - 120_000).toISOString(),
+              shardScopes: ["mem:index:bm25:bm25:gen_bm25_active:00000"],
+            },
+            gen_inflight: {
+              type: "bm25",
+              createdAt: new Date(Date.now() - 10_000).toISOString(),
+              shardScopes: ["mem:index:bm25:bm25:gen_inflight:00000"],
+            },
+          },
+        });
+
+        const result = (await sdk.trigger("mem::diagnose", {
+          categories: ["index"],
+        })) as { checks: DiagnosticCheck[] };
+
+        expect(result.checks.find((c) => c.name === "index-orphan-shards")?.status).toBe("pass");
+      });
+
+      it("index category: heal dry-run reports orphan shards without modifying storage", async () => {
+        await kv.set(KV.bm25Index, "data:manifest", {
+          v: 1,
+          generation: "gen_active",
+          shards: [{ scope: "mem:index:bm25:bm25:gen_active:00000", key: "data", chars: 50 }],
+          chars: 50,
+        });
+        await kv.set("mem:index:bm25:bm25:gen_orphan:00000", "data", "orphan-data");
+        await kv.set(KV.bm25Index, "generations:registry", {
+          v: 1,
+          generations: {
+            gen_active: {
+              type: "bm25",
+              createdAt: new Date(Date.now() - 120_000).toISOString(),
+              shardScopes: ["mem:index:bm25:bm25:gen_active:00000"],
+            },
+            gen_orphan: {
+              type: "bm25",
+              createdAt: new Date(Date.now() - 120_000).toISOString(),
+              shardScopes: ["mem:index:bm25:bm25:gen_orphan:00000"],
+            },
+          },
+        });
+
+        const result = (await sdk.trigger("mem::heal", {
+          categories: ["index"],
+          dryRun: true,
+        })) as { success: boolean; fixed: number; details: string[] };
+
+        expect(result.success).toBe(true);
+        expect(result.fixed).toBe(1);
+        expect(result.details[0]).toBe("[dry-run] Would delete 1 orphan shards across 1 unreferenced generations");
+
+        // Storage remains intact
+        const orphanData = await kv.get("mem:index:bm25:bm25:gen_orphan:00000", "data");
+        expect(orphanData).toBe("orphan-data");
+        const registry = await kv.get<{ generations: Record<string, unknown> }>(KV.bm25Index, "generations:registry");
+        expect(registry?.generations["gen_orphan"]).toBeDefined();
+      });
+
+      it("index category: heal live deletes orphan shards, updates registry, and writes audit logs", async () => {
+        await kv.set(KV.bm25Index, "data:manifest", {
+          v: 1,
+          generation: "gen_active",
+          shards: [{ scope: "mem:index:bm25:bm25:gen_active:00000", key: "data", chars: 50 }],
+          chars: 50,
+        });
+        await kv.set("mem:index:bm25:bm25:gen_active:00000", "data", "active-data");
+        await kv.set("mem:index:bm25:bm25:gen_orphan1:00000", "data", "orphan-data-1");
+        await kv.set("mem:index:bm25:vectors:gen_orphan2:00000", "data", "orphan-data-2");
+        await kv.set("mem:index:bm25:vectors:gen_orphan2:00001", "data", "orphan-data-3");
+
+        await kv.set(KV.bm25Index, "generations:registry", {
+          v: 1,
+          generations: {
+            gen_active: {
+              type: "bm25",
+              createdAt: new Date(Date.now() - 120_000).toISOString(),
+              shardScopes: ["mem:index:bm25:bm25:gen_active:00000"],
+            },
+            gen_orphan1: {
+              type: "bm25",
+              createdAt: new Date(Date.now() - 120_000).toISOString(),
+              shardScopes: ["mem:index:bm25:bm25:gen_orphan1:00000"],
+            },
+            gen_orphan2: {
+              type: "vector",
+              createdAt: new Date(Date.now() - 120_000).toISOString(),
+              shardScopes: [
+                "mem:index:bm25:vectors:gen_orphan2:00000",
+                "mem:index:bm25:vectors:gen_orphan2:00001",
+              ],
+            },
+          },
+        });
+
+        const result = (await sdk.trigger("mem::heal", {
+          categories: ["index"],
+          dryRun: false,
+        })) as { success: boolean; fixed: number; details: string[] };
+
+        expect(result.success).toBe(true);
+        expect(result.fixed).toBe(1);
+        expect(result.details[0]).toBe("Deleted 3 orphan shards from 2 unreferenced generations");
+
+        // Orphan shards deleted
+        expect(await kv.get("mem:index:bm25:bm25:gen_orphan1:00000", "data")).toBeNull();
+        expect(await kv.get("mem:index:bm25:vectors:gen_orphan2:00000", "data")).toBeNull();
+        expect(await kv.get("mem:index:bm25:vectors:gen_orphan2:00001", "data")).toBeNull();
+
+        // Active shard preserved
+        expect(await kv.get("mem:index:bm25:bm25:gen_active:00000", "data")).toBe("active-data");
+
+        // Registry pruned
+        const registry = await kv.get<{ generations: Record<string, unknown> }>(KV.bm25Index, "generations:registry");
+        expect(registry?.generations["gen_orphan1"]).toBeUndefined();
+        expect(registry?.generations["gen_orphan2"]).toBeUndefined();
+        expect(registry?.generations["gen_active"]).toBeDefined();
+
+        // Audit entries created
+        const audits = await kv.list<{ targetIds: string[]; details: { reason: string } }>(KV.audit);
+        const shardAudits = audits.filter((a) => a.details?.reason === "orphan-shard-gc");
+        expect(shardAudits.length).toBe(2);
+        expect(shardAudits.map((a) => a.targetIds[0])).toEqual(expect.arrayContaining(["gen_orphan1", "gen_orphan2"]));
+      });
+
+      it("index category: heal fails closed and does not delete shards when data:manifest is corrupt or throws", async () => {
+        const failingKv = {
+          ...kv,
+          get: vi.fn(async <T>(scope: string, key: string): Promise<T | null> => {
+            if (scope === KV.bm25Index && key === "data:manifest") {
+              throw new Error("backend read failure");
+            }
+            return kv.get(scope, key);
+          }),
+        };
+
+        await kv.set("mem:index:bm25:bm25:gen_orphan1:00000", "data", "orphan-data-1");
+        await kv.set(KV.bm25Index, "generations:registry", {
+          v: 1,
+          generations: {
+            gen_orphan1: {
+              type: "bm25",
+              createdAt: new Date(Date.now() - 120_000).toISOString(),
+              shardScopes: ["mem:index:bm25:bm25:gen_orphan1:00000"],
+            },
+          },
+        });
+
+        const localSdk = mockSdk();
+        registerDiagnosticsFunction(localSdk as never, failingKv as never);
+
+        const result = (await localSdk.trigger("mem::heal", {
+          categories: ["index"],
+          dryRun: false,
+        })) as { success: boolean; fixed: number; details: string[] };
+
+        expect(result.success).toBe(true);
+        expect(result.fixed).toBe(0);
+        expect(result.details.length).toBe(0);
+
+        // Storage was NOT deleted
+        expect(await kv.get("mem:index:bm25:bm25:gen_orphan1:00000", "data")).toBe("orphan-data-1");
+        const registry = await kv.get<{ generations: Record<string, unknown> }>(KV.bm25Index, "generations:registry");
+        expect(registry?.generations["gen_orphan1"]).toBeDefined();
+      });
+
+      it("index category: diagnose does not report false-positive orphan failure when manifest is corrupt", async () => {
+        await kv.set(KV.bm25Index, "data:manifest", { v: 999, invalid: true });
+        await kv.set(KV.bm25Index, "generations:registry", {
+          v: 1,
+          generations: {
+            gen_bm25_1: {
+              type: "bm25",
+              createdAt: new Date(Date.now() - 120_000).toISOString(),
+              shardScopes: ["mem:index:bm25:bm25:gen_bm25_1:00000"],
+            },
+          },
+        });
+
+        const result = (await sdk.trigger("mem::diagnose", {
+          categories: ["index"],
+        })) as { checks: DiagnosticCheck[] };
+
+        // Manifest check fails because manifest is corrupt
+        expect(result.checks.find((c) => c.name === "index-manifest-bm25")?.status).toBe("fail");
+        // But orphan check is NOT reported as false-positive fixable fail because BM25 is not eligible
+        expect(result.checks.find((c) => c.name === "index-orphan-shards")?.status).toBe("pass");
       });
     });
   });
