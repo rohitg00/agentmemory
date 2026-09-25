@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { resolveProject, hookCwd } from "./_project.js";
+import { postWithRetry } from "./_post.js";
 
 function isSdkChildContext(payload: unknown): boolean {
   if (process.env["AGENTMEMORY_SDK_CHILD"] === "1") return true;
@@ -36,10 +37,10 @@ async function main() {
 
   const cwd = hookCwd(data) || process.cwd();
 
-  fetch(`${REST_URL}/agentmemory/observe`, {
-    method: "POST",
-    headers: authHeaders(),
-    body: JSON.stringify({
+  postWithRetry(
+    `${REST_URL}/agentmemory/observe`,
+    authHeaders(),
+    JSON.stringify({
       hookType: "task_completed",
       sessionId,
       project: resolveProject(cwd),
@@ -55,9 +56,8 @@ async function main() {
         team_name: data.team_name,
       },
     }),
-    signal: AbortSignal.timeout(2000),
-  }).catch(() => {});
-  setTimeout(() => process.exit(0), 500).unref();
+  );
+  setTimeout(() => process.exit(0), 1000).unref();
 }
 
 main().catch(() => process.exit(0));

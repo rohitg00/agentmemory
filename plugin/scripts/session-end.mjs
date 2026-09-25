@@ -31,8 +31,25 @@ function hookCwd(data) {
 	const projectDir = process.env["DEVIN_PROJECT_DIR"] || process.env["CLAUDE_PROJECT_DIR"];
 	if (projectDir && projectDir.trim()) return projectDir;
 }
+async function postWithRetry(url, headers, body, attemptMs = 400) {
+	for (let attempt = 0; attempt < 2; attempt++) {
+		if (attempt) await new Promise((r) => setTimeout(r, 100));
+		try {
+			if ((await fetch(url, {
+				method: "POST",
+				headers,
+				body,
+				signal: AbortSignal.timeout(attemptMs)
+			})).ok) return;
+		} catch (err) {
+			const name = err?.name;
+			if (name === "TimeoutError" || name === "AbortError") return;
+		}
+	}
+}
 //#endregion
 //#region src/hooks/session-end.ts
+const OBSERVE_ATTEMPT_MS = 3e3;
 function isSdkChildContext(payload) {
 	if (process.env["AGENTMEMORY_SDK_CHILD"] === "1") return true;
 	if (!payload || typeof payload !== "object") return false;
@@ -91,19 +108,14 @@ async function main() {
 		const cwd = hookCwd(data) || process.cwd();
 		const project = resolveProject(cwd);
 		const timestamp = (/* @__PURE__ */ new Date()).toISOString();
-		await Promise.allSettled(transcriptPrompts.map((prompt) => fetch(`${REST_URL}/agentmemory/observe`, {
-			method: "POST",
-			headers: authHeaders(),
-			body: JSON.stringify({
-				hookType: "prompt_submit",
-				sessionId,
-				project,
-				cwd,
-				timestamp,
-				data: { prompt }
-			}),
-			signal: AbortSignal.timeout(3e3)
-		})));
+		await Promise.allSettled(transcriptPrompts.map((prompt) => postWithRetry(`${REST_URL}/agentmemory/observe`, authHeaders(), JSON.stringify({
+			hookType: "prompt_submit",
+			sessionId,
+			project,
+			cwd,
+			timestamp,
+			data: { prompt }
+		}), OBSERVE_ATTEMPT_MS)));
 	}
 	fetch(`${REST_URL}/agentmemory/session/end`, {
 		method: "POST",
@@ -120,6 +132,6 @@ async function main() {
 }
 main().catch(() => process.exit(0));
 //#endregion
-export {};
+export { OBSERVE_ATTEMPT_MS };
 
 //# sourceMappingURL=session-end.mjs.map

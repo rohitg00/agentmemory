@@ -1,6 +1,11 @@
 #!/usr/bin/env node
 import { readFileSync } from "node:fs";
 import { resolveProject, hookCwd } from "./_project.js";
+import { postWithRetry } from "./_post.js";
+
+// Exported so the regression test binds to the real value instead of a copy
+// that can silently drift back to a losing one.
+export const OBSERVE_ATTEMPT_MS = 3000;
 
 function isSdkChildContext(payload: unknown): boolean {
   if (process.env["AGENTMEMORY_SDK_CHILD"] === "1") return true;
@@ -75,10 +80,10 @@ async function main() {
     const timestamp = new Date().toISOString();
     await Promise.allSettled(
       transcriptPrompts.map((prompt) =>
-        fetch(`${REST_URL}/agentmemory/observe`, {
-          method: "POST",
-          headers: authHeaders(),
-          body: JSON.stringify({
+        postWithRetry(
+          `${REST_URL}/agentmemory/observe`,
+          authHeaders(),
+          JSON.stringify({
             hookType: "prompt_submit",
             sessionId,
             project,
@@ -86,8 +91,10 @@ async function main() {
             timestamp,
             data: { prompt },
           }),
-          signal: AbortSignal.timeout(3000),
-        }),
+          // Awaited, and the exit timer below is armed after the await, so
+          // these keep the generous per-request timeout they had before.
+          OBSERVE_ATTEMPT_MS,
+        ),
       ),
     );
   }
