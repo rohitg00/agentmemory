@@ -178,6 +178,17 @@ describe("consolidation status wiring", () => {
     expect(api).toMatch(/api_path: "\/agentmemory\/consolidation\/status", http_method: "GET"/);
   });
 
+  it("status requests share one set of store scans instead of listing every scope per request", () => {
+    expect(api).toMatch(/const sharedConsolidationCounts = singleFlight\(async \(\) => \{/);
+    expect(api).toMatch(/\}, CONSOLIDATION_COUNTS_REUSE_MS\);/);
+    const handler = api.slice(
+      api.indexOf('registerFunction("api::consolidation-status"'),
+      api.indexOf('function_id: "api::consolidation-status"'),
+    );
+    expect(handler).toMatch(/sharedConsolidationCounts\(\)/);
+    expect(handler).not.toMatch(/kv\.list\(/);
+  });
+
   it("the dashboard shows one Memory layers panel instead of the three separate cards", () => {
     expect(viewer).toMatch(/apiGet\('consolidation\/status'\)/);
     expect(viewer).toMatch(/html \+= renderMemoryLayers\(d\.consolidation, semFacts, procItems\);/);

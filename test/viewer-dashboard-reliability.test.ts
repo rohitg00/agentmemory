@@ -209,6 +209,27 @@ describe("viewer dashboard reliability", () => {
     expect(onopen).not.toMatch(/directFailures = 0;/);
   });
 
+  it("a stale dashboard retries on its own slower timer, once at a time", () => {
+    expect(viewer).toMatch(/var STALE_RETRY_MS = 15000;/);
+    const retry = extractFunction("scheduleStaleRetry");
+    expect(retry).toMatch(/if \(staleRetryTimer\) return;/);
+    expect(retry).toMatch(/state\.dashboard\.stale\) loadDashboard\(\);/);
+    expect(extractFunction("loadDashboard")).toMatch(/if \(d\.stale\) scheduleStaleRetry\(\);/);
+  });
+
+  it("the dashboard applies its memory total only when no newer count request started", () => {
+    const loader = extractFunction("loadDashboard");
+    expect(loader).toMatch(/var countToken = \+\+memoryCountRequest;/);
+    expect(loader).toMatch(/if \(countToken === memoryCountRequest && results\[2\]/);
+  });
+
+  it("a rebuild whose graph refresh fails says so instead of reporting success", () => {
+    expect(extractFunction("rebuildGraph")).toMatch(
+      /await loadGraph\(\);\s*if \(state\.graph\.queryError && state\.graph\.rebuildResult\) \{\s*state\.graph\.rebuildResult = 'The rebuild finished, but the graph could not be refreshed/,
+    );
+    expect(viewer).toMatch(/consolidated ' \+ esc\(formatTime\(status\.lastRunAt\)\)/);
+  });
+
   it("returning to the tab reconnects a dropped live stream (#1370)", () => {
     expect(viewer).toMatch(/addEventListener\('visibilitychange'/);
     expect(viewer).toMatch(/visibilityState !== 'visible'[\s\S]{0,400}connectWs\(\);/);

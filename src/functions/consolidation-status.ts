@@ -2,6 +2,7 @@ export const CONSOLIDATION_LAST_RUN_KEY = "consolidation:lastPipelineRun";
 export const SEMANTIC_MIN_SUMMARIES = 5;
 export const PROCEDURAL_MIN_PATTERNS = 2;
 export const PROCEDURAL_MIN_SESSIONS_PER_PATTERN = 2;
+export const CONSOLIDATION_COUNTS_REUSE_MS = 30_000;
 
 export type TierState = "off" | "waiting" | "ready" | "ran" | "error";
 

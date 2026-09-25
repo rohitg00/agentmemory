@@ -1510,6 +1510,16 @@
       }, DASHBOARD_RELOAD_COALESCE_MS);
     }
 
+    var STALE_RETRY_MS = 15000;
+    var staleRetryTimer = null;
+    function scheduleStaleRetry() {
+      if (staleRetryTimer) return;
+      staleRetryTimer = setTimeout(function() {
+        staleRetryTimer = null;
+        if (state.activeTab === 'dashboard' && state.dashboard.stale) loadDashboard();
+      }, STALE_RETRY_MS);
+    }
+
     function listOr(previous, result, key, fallbackKey) {
       if (result === null || result === undefined) return previous || [];
       return result[key] || (fallbackKey && result[fallbackKey]) || [];
@@ -1525,6 +1535,7 @@
       var d = state.dashboard;
       if (!d.loaded) el.innerHTML = '<div class="loading">Loading dashboard...</div>';
       var seqAtStart = liveSessionSeq;
+      var countToken = ++memoryCountRequest;
       try {
         var results = await Promise.all([
           api('health', { readErrorBody: true }),
@@ -1548,9 +1559,12 @@
           return;
         }
         d.stale = results.some(function(r) { return r === null; });
+        if (d.stale) scheduleStaleRetry();
         if (results[0]) d.health = results[0];
         if (sessionsOk) d.sessions = replaySessionEvents(results[1].sessions, seqAtStart);
-        if (results[2] && typeof results[2].total === 'number') d.memoryTotal = results[2].total;
+        if (countToken === memoryCountRequest && results[2] && typeof results[2].total === 'number') {
+          d.memoryTotal = results[2].total;
+        }
         if (results[3]) d.graphStats = results[3];
         d.recentAudit = listOr(d.recentAudit, results[4], 'entries');
         d.semantic = listOr(d.semantic, results[5], 'facts', 'semantic');
@@ -1622,7 +1636,7 @@
     function renderMemoryLayers(status, semFacts, procItems) {
       var html = '<div class="card" style="margin-top:16px;"><div class="card-title">Memory layers';
       if (status && status.lastRunAt) {
-        html += '<span style="float:right;font-size:10px;color:var(--ink-faint);font-family:var(--font-mono);">consolidated ' + esc(shortTime(status.lastRunAt)) + '</span>';
+        html += '<span style="float:right;font-size:10px;color:var(--ink-faint);font-family:var(--font-mono);">consolidated ' + esc(formatTime(status.lastRunAt)) + '</span>';
       }
       html += '</div>';
       if (!status || !status.tiers) {
@@ -2403,6 +2417,9 @@
         graphRebuilding = false;
         state.graph.loaded = false;
         await loadGraph();
+        if (state.graph.queryError && state.graph.rebuildResult) {
+          state.graph.rebuildResult = 'The rebuild finished, but the graph could not be refreshed. Reload the Graph tab.';
+        }
         var sidebar = document.getElementById('graph-sidebar');
         if (sidebar && state.graph.rebuildResult) {
           var note = document.createElement('p');
