@@ -3,6 +3,10 @@ export interface Session {
   project: string;
   cwd: string;
   startedAt: string;
+  // Written by mem::observe on every observation (path-based update, so the
+  // field was stored without being declared). Optional: session/start does
+  // not initialize it.
+  updatedAt?: string;
   endedAt?: string;
   status: "active" | "completed" | "abandoned";
   observationCount: number;
