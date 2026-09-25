@@ -1199,8 +1199,8 @@ export function registerApiTriggers(
     config: { api_path: "/agentmemory/consolidate", http_method: "POST" },
   });
 
-  sdk.registerFunction("api::patterns", 
-    async (req: HttpRequest<{ project?: string }>): Promise<Response> => {
+  sdk.registerFunction("api::patterns",
+    async (req: HttpRequest<{ project?: string; limit?: number }>): Promise<Response> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
       const result = await sdk.trigger({ function_id: "mem::patterns", payload: req.body });

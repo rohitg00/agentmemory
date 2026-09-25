@@ -12,15 +12,32 @@ interface Pattern {
   sessions: string[];
 }
 
+const DEFAULT_SESSION_LIMIT = 50;
+const MAX_SESSION_LIMIT = 500;
+const MAX_OBSERVATIONS_SCANNED = 5_000;
+
+function resolveSessionLimit(raw: unknown): number {
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) return DEFAULT_SESSION_LIMIT;
+  return Math.min(Math.floor(n), MAX_SESSION_LIMIT);
+}
+
 export function registerPatternsFunction(sdk: IIIClient, kv: StateKV): void {
-  sdk.registerFunction("mem::patterns", 
-    async (data: { project?: string }) => {
+  sdk.registerFunction("mem::patterns",
+    async (data: { project?: string; limit?: number }) => {
       const patterns: Pattern[] = [];
+      const sessionLimit = resolveSessionLimit(data.limit);
 
       const sessions = await kv.list<Session>(KV.sessions);
-      const filtered = data.project
+      const filtered = (data.project
         ? sessions.filter((s) => s.project === data.project)
-        : sessions;
+        : sessions
+      )
+        .sort(
+          (a, b) =>
+            new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime(),
+        )
+        .slice(0, sessionLimit);
 
       const fileCoOccurrences = new Map<string, number>();
       const fileSessionMap = new Map<string, Set<string>>();
@@ -34,7 +51,13 @@ export function registerPatternsFunction(sdk: IIIClient, kv: StateKV): void {
       // observations into the shared maps serially so the accumulation
       // stays race-free. Parallelizing the kv.list I/O without exceeding
       // the invocation pool cuts wall time versus the old serial loop.
+      // Sessions are already capped to sessionLimit above; this loop also
+      // stops early once MAX_OBSERVATIONS_SCANNED is reached, so one huge
+      // session inside the limit can't still blow the invocation timeout.
+      let observationsScanned = 0;
+      let sessionsProcessed = 0;
       for (let batch = 0; batch < filtered.length; batch += 10) {
+        if (observationsScanned >= MAX_OBSERVATIONS_SCANNED) break;
         const chunk = filtered.slice(batch, batch + 10);
         const loaded = await Promise.all(
           chunk.map(async (session) => ({
@@ -46,7 +69,9 @@ export function registerPatternsFunction(sdk: IIIClient, kv: StateKV): void {
         );
 
         for (const { session, observations } of loaded) {
+          sessionsProcessed++;
           if (!observations.length) continue;
+          observationsScanned += observations.length;
 
           const sessionFiles = new Set<string>();
           for (const obs of observations) {
@@ -115,10 +140,19 @@ export function registerPatternsFunction(sdk: IIIClient, kv: StateKV): void {
 
       logger.info("Pattern detection complete", {
         patterns: patterns.length,
-        sessions: filtered.length,
+        sessionsInScope: filtered.length,
+        sessionsProcessed,
+        sessionLimit,
+        observationsScanned,
       });
 
-      return { patterns: patterns.slice(0, 20) };
+      return {
+        patterns: patterns.slice(0, 20),
+        sessionsInScope: filtered.length,
+        sessionsProcessed,
+        sessionLimit,
+        observationsScanned,
+      };
     },
   );
 

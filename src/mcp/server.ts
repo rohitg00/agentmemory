@@ -247,6 +247,7 @@ export function registerMcpEndpoints(
           case "memory_patterns": {
             const result = await sdk.trigger({ function_id: "mem::patterns", payload: {
               project: args.project as string,
+              limit: args.limit,
             } });
             return {
               status_code: 200,
