@@ -1,3 +1,5 @@
+import { V8_MAX_STRING_CHARS, type IndexLegStatus, type IndexPersistenceStatus } from "../state/index-persistence.js";
+
 export type StatusLevel = "ok" | "info" | "warn" | "error";
 
 export interface StatusProblem {
@@ -58,6 +60,7 @@ export interface StatusInputs {
   };
   graph: GraphStatsInput | null;
   graphExtractionEnabled: boolean;
+  indexPersistence?: IndexPersistenceStatus | null;
 }
 
 export interface StatusReport {
@@ -72,6 +75,7 @@ export interface StatusReport {
   health: StatusInputs["health"];
   provider: { llm: string; embeddings: string; circuitBreaker: StatusInputs["circuitBreaker"] };
   index: StatusInputs["index"];
+  indexPersistence: IndexPersistenceStatus | null;
   graph: (GraphStatsInput & { ageSeconds: number | null; extractionEnabled: boolean }) | null;
   functions: Array<FunctionMetricInput & { failureRate: number }>;
   flags: StatusFlag[];
@@ -81,6 +85,7 @@ export interface StatusReport {
 const FAILURE_RATE_THRESHOLD = 0.2;
 const FAILURE_MIN_CALLS = 5;
 const GRAPH_SNAPSHOT_STALE_SECONDS = 24 * 60 * 60;
+const VECTOR_STRING_WARN_RATIO = 0.8;
 const LEVEL_RANK: Record<StatusLevel, number> = { ok: 0, info: 1, warn: 2, error: 3 };
 
 const FUNCTION_FIXES: Record<string, string> = {
@@ -168,6 +173,43 @@ export function evaluateStatus(input: StatusInputs): StatusReport {
     });
   }
 
+  const persistence = input.indexPersistence ?? null;
+  if (persistence) {
+    const legs: Array<[string, IndexLegStatus | null]> = [
+      ["BM25", persistence.bm25],
+      ["vector", persistence.vector],
+    ];
+    for (const [label, leg] of legs) {
+      if (!leg) continue;
+      if (leg.lastError) {
+        problems.push({
+          level: "error",
+          code: "index-save-failing",
+          message: `The ${label} search index could not be saved: ${leg.lastError}. Search keeps working from memory, but changes since the last save are lost on restart.`,
+          fix: "Check the server log for the failing state write. The next save retries automatically.",
+        });
+      }
+      const dirtyAge = secondsBetween(input.now, leg.dirtySince ?? undefined);
+      if (!leg.lastError && dirtyAge !== null && dirtyAge * 1000 > 2 * persistence.saveIntervalMs) {
+        problems.push({
+          level: "warn",
+          code: "index-save-stale",
+          message: `The ${label} search index has unsaved changes from ${formatDuration(dirtyAge)} ago.`,
+          fix: "Saves run at most once per AGENTMEMORY_INDEX_SAVE_INTERVAL_MS. Check the server log for save errors or a save that never finishes.",
+        });
+      }
+    }
+    const vectorChars = persistence.vector?.serializedChars ?? null;
+    if (vectorChars !== null && vectorChars > V8_MAX_STRING_CHARS * VECTOR_STRING_WARN_RATIO) {
+      problems.push({
+        level: "warn",
+        code: "vector-index-near-string-limit",
+        message: `The saved vector index is ${Math.round((vectorChars / V8_MAX_STRING_CHARS) * 100)}% of the largest string Node.js can hold. Past that limit it can no longer be saved or loaded.`,
+        fix: "Upgrade agentmemory once bucketed vector storage ships, or reduce the index (a smaller embedding model, or forget unused observations) before it reaches the limit.",
+      });
+    }
+  }
+
   let graph: StatusReport["graph"] = null;
   if (input.graph) {
     const ageSeconds = secondsBetween(input.now, input.graph.updatedAt);
@@ -218,6 +260,7 @@ export function evaluateStatus(input: StatusInputs): StatusReport {
       circuitBreaker: input.circuitBreaker,
     },
     index: input.index,
+    indexPersistence: persistence,
     graph,
     functions,
     flags: input.flags,
@@ -246,6 +289,29 @@ function formatDuration(seconds: number | null): string {
 
 function row(label: string, value: string): string {
   return `<tr><th>${escapeHtml(label)}</th><td>${value}</td></tr>`;
+}
+
+function legSummary(report: StatusReport, leg: IndexLegStatus): string {
+  if (leg.lastError) return `failing: ${leg.lastError}`;
+  const saved = leg.lastSavedAt ? `saved ${formatDuration(secondsBetween(new Date(report.checkedAt), leg.lastSavedAt))} ago` : "not saved since start";
+  return leg.dirtySince ? `${saved}, unsaved changes pending` : saved;
+}
+
+function indexPersistenceRows(report: StatusReport): string {
+  const persistence = report.indexPersistence;
+  if (!persistence) return "";
+  let rows = row("BM25 save", escapeHtml(legSummary(report, persistence.bm25)));
+  if (persistence.vector) {
+    rows += row("Vector save", escapeHtml(legSummary(report, persistence.vector)));
+    const chars = persistence.vector.serializedChars;
+    if (chars !== null) {
+      rows += row(
+        "Vector index size",
+        escapeHtml(`${chars.toLocaleString("en-US")} characters (${Math.round((chars / V8_MAX_STRING_CHARS) * 100)}% of the Node.js string limit)`),
+      );
+    }
+  }
+  return rows;
 }
 
 export function renderStatusHtml(report: StatusReport, styleNonce: string): string {
@@ -330,6 +396,7 @@ ${row("Vector documents", escapeHtml(idx.vectorDocuments ?? "vector search off")
 ${row("Observations indexed", escapeHtml(idx.observationsIndexed))}
 ${row("Missing from index", escapeHtml(idx.missingObservations ?? "not checked"))}
 ${row("Sessions", escapeHtml(idx.sessions ?? "unknown"))}
+${indexPersistenceRows(report)}
 </table>
 <h2>Knowledge graph</h2><table>
 ${graph

@@ -1,4 +1,5 @@
 import type { IIIClient } from 'iii-sdk'
+import type { IndexPersistenceStatus } from "../state/index-persistence.js";
 import type { CompactSearchResult, CompressedObservation, Memory, SearchResult, Session } from '../types.js'
 import { KV } from '../state/schema.js'
 import { StateKV } from '../state/kv.js'
@@ -75,15 +76,20 @@ export function vectorIndexRemove(id: string): void {
 // Wired by src/index.ts after IndexPersistence is constructed; no-op
 // until then so unit tests that exercise the delete paths in
 // isolation don't need to wire persistence.
-let indexPersistence: {
+type IndexPersistenceHook = {
   scheduleSave: () => void;
   save: () => Promise<void>;
-} | null = null;
+  status?: () => IndexPersistenceStatus;
+};
 
-export function setIndexPersistence(
-  p: { scheduleSave: () => void; save: () => Promise<void> } | null,
-): void {
+let indexPersistence: IndexPersistenceHook | null = null;
+
+export function setIndexPersistence(p: IndexPersistenceHook | null): void {
   indexPersistence = p;
+}
+
+export function getIndexPersistenceStatus(): IndexPersistenceStatus | null {
+  return indexPersistence?.status?.() ?? null;
 }
 
 export function scheduleIndexSave(): void {

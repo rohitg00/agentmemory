@@ -12,7 +12,7 @@ import type { ResilientProvider } from "../providers/resilient.js";
 import { III_PINNED_VERSION, VERSION } from "../version.js";
 import { CONSOLIDATION_COUNTS_REUSE_MS, CONSOLIDATION_LAST_RUN_KEY, PROCEDURAL_MIN_SESSIONS_PER_PATTERN, describeConsolidation, type ConsolidationRunRecord } from "../functions/consolidation-status.js";
 import { UNINDEXED_SCAN_REUSE_MS, evaluateStatus, prefersHtml, renderStatusHtml, singleFlight, type GraphStatsInput } from "../functions/status.js";
-import { findUnindexedObservations, getSearchIndex, getVectorIndex } from "../functions/search.js";
+import { findUnindexedObservations, getIndexPersistenceStatus, getSearchIndex, getVectorIndex } from "../functions/search.js";
 import { timingSafeCompare } from "../auth.js";
 import { isSlotsEnabled, isReflectEnabled } from "../functions/slots.js";
 import { renderViewerDocument } from "../viewer/document.js";
@@ -373,6 +373,7 @@ export function registerApiTriggers(
         },
         graph,
         graphExtractionEnabled: isGraphExtractionEnabled(),
+        indexPersistence: getIndexPersistenceStatus(),
       });
       const accept = req.headers?.["accept"] ?? req.headers?.["Accept"];
       const format = req.query_params?.["format"];

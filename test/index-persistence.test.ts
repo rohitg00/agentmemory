@@ -670,7 +670,7 @@ describe("IndexPersistence", () => {
 
   it("scheduleSave debounces multiple calls", async () => {
     const bm25 = new SearchIndex();
-    const persistence = new IndexPersistence(kv as never, bm25, null);
+    const persistence = new IndexPersistence(kv as never, bm25, null, { saveIntervalMs: 5000 });
 
     persistence.scheduleSave();
     persistence.scheduleSave();
@@ -721,7 +721,7 @@ describe("IndexPersistence", () => {
     };
     const bm25 = new SearchIndex();
     bm25.add(makeObs({ id: "obs_1", title: "auth handler" }));
-    const persistence = new IndexPersistence(failingKv as never, bm25, null);
+    const persistence = new IndexPersistence(failingKv as never, bm25, null, { saveIntervalMs: 5000 });
 
     let unhandled = false;
     const onUnhandled = () => {
@@ -751,7 +751,7 @@ describe("IndexPersistence", () => {
     };
     const bm25 = new SearchIndex();
     bm25.add(makeObs({ id: "obs_1", title: "auth handler" }));
-    const persistence = new IndexPersistence(failingKv as never, bm25, null);
+    const persistence = new IndexPersistence(failingKv as never, bm25, null, { saveIntervalMs: 5000 });
 
     await expect(persistence.save()).resolves.toBeUndefined();
   });

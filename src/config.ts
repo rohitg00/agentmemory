@@ -467,6 +467,16 @@ export function getConsolidationCooldownMs(): number {
   return raw >= 0 ? raw : CONSOLIDATION_COOLDOWN_DEFAULT_MS;
 }
 
+export const INDEX_SAVE_INTERVAL_DEFAULT_MS = 600_000;
+
+export function getIndexSaveIntervalMs(): number {
+  const raw = safeParseInt(
+    getMergedEnv()["AGENTMEMORY_INDEX_SAVE_INTERVAL_MS"],
+    INDEX_SAVE_INTERVAL_DEFAULT_MS,
+  );
+  return raw > 0 ? raw : INDEX_SAVE_INTERVAL_DEFAULT_MS;
+}
+
 export function isStandaloneMcp(): boolean {
   return getMergedEnv()["STANDALONE_MCP"] === "true";
 }
