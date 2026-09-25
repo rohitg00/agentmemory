@@ -15,6 +15,7 @@ import {
   buildProceduralExtractionPrompt,
 } from "../prompts/consolidation.js";
 import { recordAudit } from "./audit.js";
+import { CONSOLIDATION_LAST_RUN_KEY } from "./consolidation-status.js";
 import { getConsolidationDecayDays, isConsolidationEnabled } from "../config.js";
 import { logger } from "../logger.js";
 
@@ -262,6 +263,10 @@ export function registerConsolidationPipelineFunction(
         tier,
         results,
       });
+
+      await kv
+        .set(KV.config, CONSOLIDATION_LAST_RUN_KEY, { at: new Date().toISOString(), tier, results })
+        .catch(() => {});
 
       logger.info("Consolidation pipeline complete", { tier, results });
       return { success: true, results };

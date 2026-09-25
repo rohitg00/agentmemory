@@ -35,9 +35,19 @@ describe("memories + export pagination (#544)", () => {
     );
   });
 
-  it("viewer dashboard caps memories?latest fetch with limit", () => {
+  it("viewer dashboard counts memories via count=true and the tab caps its fetch", () => {
     const viewer = readFileSync("src/viewer/index.html", "utf-8");
-    expect(viewer).toMatch(/memories\?latest=true&limit=500/);
+    expect(viewer).toMatch(/memories\?latest=true&count=true/);
+    expect(viewer).not.toMatch(/memories\?latest=true&limit=500/);
     expect(viewer).toMatch(/memories\?latest=true&limit=2000/);
+  });
+
+  it("api::memories orders the list newest first before slicing a page", () => {
+    expect(api).toMatch(
+      /filtered\.sort\(\(a, b\) =>\s*\(b\.updatedAt \|\| b\.createdAt \|\| ""\)\.localeCompare\(/,
+    );
+    expect(api.indexOf("filtered.sort(")).toBeLessThan(
+      api.indexOf("filtered.slice(offset"),
+    );
   });
 });

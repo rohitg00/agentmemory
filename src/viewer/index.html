@@ -221,6 +221,15 @@
       .ws-status.connected::before { animation: none; }
     }
 
+    .layer-row { padding: 12px 0; border-bottom: 1px solid var(--border-light); }
+    .layer-row:last-child { border-bottom: none; }
+    .layer-head { display: flex; align-items: baseline; gap: 10px; }
+    .layer-name { font-family: var(--font-display); font-weight: 700; font-size: 14px; color: var(--ink); }
+    .layer-count { font-family: var(--font-mono); font-size: 13px; color: var(--ink); margin-left: auto; }
+    .layer-from { font-size: 12px; color: var(--ink-muted); margin-top: 2px; }
+    .layer-detail { font-size: 12px; color: var(--ink-faint); margin-top: 4px; line-height: 1.5; }
+    .layer-preview { margin: 6px 0 0; padding-left: 16px; font-size: 12px; color: var(--ink-muted); }
+    .layer-preview li { margin-bottom: 2px; }
     .stats-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -1014,9 +1023,6 @@
     .procedure-item:last-child { border-bottom: none; }
     .procedure-steps { margin: 6px 0 0 16px; font-size: 12px; color: var(--ink-muted); }
     .procedure-steps li { margin-bottom: 2px; }
-    .consolidation-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 12px; font-family: var(--font-ui); }
-    .consolidation-row .cl { color: var(--ink-muted); }
-    .consolidation-row .cv { color: var(--ink); font-weight: 600; font-family: var(--font-mono); }
 
     .activity-feed-item { display: flex; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border-light); font-size: 13px; }
     .activity-feed-item:last-child { border-bottom: none; }
@@ -1234,6 +1240,26 @@
         }
       } catch (_) {}
       return s;
+    }
+
+    function summaryText(v) {
+      if (!v) return '';
+      if (typeof v === 'string') return v;
+      if (typeof v === 'object') return v.title || v.narrative || (Array.isArray(v.keyDecisions) ? v.keyDecisions.join('; ') : '');
+      return String(v);
+    }
+
+    function asTags(v) {
+      if (Array.isArray(v)) return v.map(String);
+      if (typeof v === 'string') return v.split(',').map(function(t) { return t.trim(); }).filter(Boolean);
+      return [];
+    }
+
+    function setViewHtml(el, html) {
+      if (el.__renderedHtml === html && el.firstElementChild && el.firstElementChild === el.__renderedFirst) return;
+      el.innerHTML = html;
+      el.__renderedHtml = html;
+      el.__renderedFirst = el.firstElementChild;
     }
 
     function truncate(s, n) {
@@ -1471,33 +1497,83 @@
       }
     }
 
+    var dashboardLoading = false;
+    var dashboardReloadPending = false;
+    var dashboardReloadTimer = null;
+    var DASHBOARD_RELOAD_COALESCE_MS = 2000;
+
+    function scheduleDashboardReload() {
+      if (dashboardReloadTimer) return;
+      dashboardReloadTimer = setTimeout(function() {
+        dashboardReloadTimer = null;
+        if (state.activeTab === 'dashboard') loadDashboard();
+      }, DASHBOARD_RELOAD_COALESCE_MS);
+    }
+
+    var STALE_RETRY_MS = 15000;
+    var staleRetryTimer = null;
+    function scheduleStaleRetry() {
+      if (staleRetryTimer) return;
+      staleRetryTimer = setTimeout(function() {
+        staleRetryTimer = null;
+        if (state.activeTab === 'dashboard' && state.dashboard.stale) loadDashboard();
+      }, STALE_RETRY_MS);
+    }
+
+    function listOr(previous, result, key, fallbackKey) {
+      if (result === null || result === undefined) return previous || [];
+      return result[key] || (fallbackKey && result[fallbackKey]) || [];
+    }
+
     async function loadDashboard() {
+      if (dashboardLoading) {
+        dashboardReloadPending = true;
+        return;
+      }
+      dashboardLoading = true;
       var el = document.getElementById('view-dashboard');
-      if (!state.dashboard.loaded) el.innerHTML = '<div class="loading">Loading dashboard...</div>';
+      var d = state.dashboard;
+      if (!d.loaded) el.innerHTML = '<div class="loading">Loading dashboard...</div>';
+      var seqAtStart = liveSessionSeq;
+      var countToken = ++memoryCountRequest;
       try {
         var results = await Promise.all([
           api('health', { readErrorBody: true }),
           apiGet('sessions'),
-          apiGet('memories?latest=true&limit=500'),
+          apiGet('memories?latest=true&count=true'),
           apiGet('graph/stats'),
           apiGet('audit?limit=5'),
           apiGet('semantic'),
           apiGet('procedural'),
           apiGet('relations'),
           apiGet('lessons'),
-          apiGet('crystals')
+          apiGet('crystals'),
+          apiGet('consolidation/status')
         ]);
-        state.dashboard.health = results[0];
-        state.dashboard.sessions = (results[1] && results[1].sessions) || [];
-        state.dashboard.memories = (results[2] && results[2].memories) || [];
-        state.dashboard.graphStats = results[3];
-        state.dashboard.recentAudit = (results[4] && results[4].entries) || [];
-        state.dashboard.semantic = (results[5] && results[5].facts) || (results[5] && results[5].semantic) || [];
-        state.dashboard.procedural = (results[6] && results[6].procedures) || (results[6] && results[6].procedural) || [];
-        state.dashboard.lessons = (results[8] && results[8].lessons) || [];
-        state.dashboard.crystals = (results[9] && results[9].crystals) || [];
-        state.dashboard.relations = (results[7] && results[7].relations) || [];
-        state.dashboard.loaded = true;
+        var sessionsOk = !!(results[1] && Array.isArray(results[1].sessions));
+        if (!sessionsOk && !d.loaded) {
+          el.innerHTML =
+            '<div class="loading" style="color:var(--accent);">Could not reach the agentmemory API. ' +
+            'The server may be restarting.<br><br>' +
+            '<button class="btn btn-primary" data-action="refresh-dashboard">Retry</button></div>';
+          return;
+        }
+        d.stale = results.some(function(r) { return r === null; });
+        if (d.stale) scheduleStaleRetry();
+        if (results[0]) d.health = results[0];
+        if (sessionsOk) d.sessions = replaySessionEvents(results[1].sessions, seqAtStart);
+        if (countToken === memoryCountRequest && results[2] && typeof results[2].total === 'number') {
+          d.memoryTotal = results[2].total;
+        }
+        if (results[3]) d.graphStats = results[3];
+        d.recentAudit = listOr(d.recentAudit, results[4], 'entries');
+        d.semantic = listOr(d.semantic, results[5], 'facts', 'semantic');
+        d.procedural = listOr(d.procedural, results[6], 'procedures', 'procedural');
+        d.relations = listOr(d.relations, results[7], 'relations');
+        d.lessons = listOr(d.lessons, results[8], 'lessons');
+        d.crystals = listOr(d.crystals, results[9], 'crystals');
+        if (results[10] && results[10].tiers) d.consolidation = results[10];
+        d.loaded = true;
         renderDashboard();
       } catch (err) {
         // Without this catch, any uncaught error in the await Promise.all
@@ -1517,7 +1593,69 @@
           'violations, please open an issue with the agentmemory version ' +
           '(top-right of the viewer) and the violation text.' +
           '</span></div>';
+      } finally {
+        dashboardLoading = false;
+        if (dashboardReloadPending) {
+          dashboardReloadPending = false;
+          scheduleDashboardReload();
+        }
       }
+    }
+
+    function estimateTokenSavings(sessions, tokenBudget) {
+      var full = 0;
+      var injected = 0;
+      sessions.forEach(function(s) {
+        var sessionFull = (s.observationCount || 0) * 80;
+        if (sessionFull <= 0) return;
+        full += sessionFull;
+        injected += Math.min(tokenBudget, sessionFull);
+      });
+      var saved = Math.max(0, full - injected);
+      return { percent: full > 0 ? Math.round((saved / full) * 100) : 0, saved: saved };
+    }
+
+    var LAYER_STATE_BADGES = { off: 'badge-muted', waiting: 'badge-yellow', ready: 'badge-blue', ran: 'badge-green', error: 'badge-red' };
+    var LAYER_STATE_LABELS = { off: 'off', waiting: 'waiting', ready: 'ready', ran: 'active', error: 'failed' };
+
+    function layerPreview(tierId, semFacts, procItems) {
+      var items = [];
+      if (tierId === 'semantic') {
+        items = semFacts.slice(0, 3).map(function(f) { return f.fact || f.content || f.title || ''; });
+      } else if (tierId === 'procedural') {
+        items = procItems.slice(0, 3).map(function(p) {
+          var steps = p.steps && p.steps.length ? ' (' + p.steps.length + ' steps)' : '';
+          return (p.name || p.title || 'Procedure') + steps;
+        });
+      }
+      items = items.filter(Boolean);
+      if (!items.length) return '';
+      return '<ul class="layer-preview">' + items.map(function(t) { return '<li>' + esc(truncate(t, 140)) + '</li>'; }).join('') + '</ul>';
+    }
+
+    function renderMemoryLayers(status, semFacts, procItems) {
+      var html = '<div class="card" style="margin-top:16px;"><div class="card-title">Memory layers';
+      if (status && status.lastRunAt) {
+        html += '<span style="float:right;font-size:10px;color:var(--ink-faint);font-family:var(--font-mono);">consolidated ' + esc(formatTime(status.lastRunAt)) + '</span>';
+      }
+      html += '</div>';
+      if (!status || !status.tiers) {
+        html += '<div style="font-size:13px;color:var(--ink-faint);">Consolidation status did not load. Semantic facts: ' + semFacts.length + ', procedures: ' + procItems.length + '.</div></div>';
+        return html;
+      }
+      html += '<div style="font-size:12px;color:var(--ink-muted);margin-bottom:8px;line-height:1.5;">Raw observations stay searchable as they are. Consolidation turns them into these longer-lived layers.</div>';
+      status.tiers.forEach(function(t) {
+        html += '<div class="layer-row">' +
+          '<div class="layer-head"><span class="layer-name">' + esc(t.label) + '</span>' +
+          '<span class="layer-count">' + esc(String(t.count)) + '</span>' +
+          '<span class="badge ' + (LAYER_STATE_BADGES[t.state] || 'badge-muted') + '">' + esc(LAYER_STATE_LABELS[t.state] || t.state) + '</span></div>' +
+          '<div class="layer-from">' + esc(t.from) + '</div>' +
+          '<div class="layer-detail">' + esc(t.detail) + '</div>' +
+          layerPreview(t.id, semFacts, procItems) +
+          '</div>';
+      });
+      html += '</div>';
+      return html;
     }
 
     function renderDashboard() {
@@ -1546,14 +1684,18 @@
           '<div style="margin-top:10px;"><a class="empty-link" href="https://github.com/rohitg00/agentmemory#quick-start" target="_blank" rel="noopener" style="font-size:12px;">Or: wire up your real agent &rarr;</a></div>' +
           '</div>';
       }
+      if (d.stale) {
+        html += '<div class="card" style="margin-bottom:14px;padding:10px 16px;font-size:12px;color:var(--ink-muted);border-left:3px solid var(--yellow);">' +
+          'Some panels could not refresh; showing the last data that loaded. Retrying automatically.</div>';
+      }
       html += '<div class="stats-grid">';
       html += '<div class="stat-card" data-action="goto-tab" data-tab="sessions" role="link" tabindex="0"><div class="label">Sessions</div><div class="value">' + d.sessions.length + '</div><div class="sub">' + activeSessions + ' active</div></div>';
-      html += '<div class="stat-card" data-action="goto-tab" data-tab="memories" role="link" tabindex="0"><div class="label">Memories</div><div class="value">' + d.memories.length + '</div><div class="sub">latest versions</div></div>';
+      html += '<div class="stat-card" data-action="goto-tab" data-tab="memories" role="link" tabindex="0"><div class="label">Memories</div><div class="value">' + (d.memoryTotal || 0) + '</div><div class="sub">latest versions</div></div>';
       var lessonCount = (d.lessons || []).length;
       var crystalCount = (d.crystals || []).length;
       html += '<div class="stat-card" data-action="goto-tab" data-tab="lessons" role="link" tabindex="0"><div class="label">Lessons</div><div class="value">' + lessonCount + '</div><div class="sub">confidence-scored</div></div>';
       html += '<div class="stat-card" data-action="goto-tab" data-tab="crystals" role="link" tabindex="0"><div class="label">Crystals</div><div class="value">' + crystalCount + '</div><div class="sub">action digests</div></div>';
-      html += '<div class="stat-card" data-action="goto-tab" data-tab="graph" role="link" tabindex="0"><div class="label">Graph Nodes</div><div class="value">' + nodeCount + '</div><div class="sub">' + edgeCount + ' edges</div></div>';
+      html += '<div class="stat-card" data-action="goto-tab" data-tab="graph" role="link" tabindex="0"><div class="label">Graph Nodes</div><div class="value">' + nodeCount + '</div><div class="sub">' + edgeCount + ' edges' + (gs.fromSnapshot && gs.updatedAt ? ' · snapshot ' + esc(shortTime(gs.updatedAt)) : '') + '</div></div>';
       html += '<div class="stat-card"><div class="label">Health</div><div class="value"><div class="health-bar"><span class="health-dot ' + dotClass + '"></span> ' + esc(healthStatus) + '</div></div>';
       html += '<div class="sub">' + esc(snap.connectionState || 'unknown') + '</div></div>';
       var totalCalls = fMetrics.reduce(function(a, m) { return a + (m.totalCalls || 0); }, 0);
@@ -1563,13 +1705,10 @@
         html += '<div class="stat-card"><div class="label">Circuit Breaker</div><div class="value"><span class="cb-indicator ' + cbClass + '">' + esc(cb.state) + '</span></div>';
         html += '<div class="sub">' + (cb.failures || 0) + ' failures</div></div>';
       }
-      var totalObs = d.sessions.reduce(function(a, s) { return a + (s.observationCount || 0); }, 0);
       var tokenBudget = parseInt(new URLSearchParams(window.location.search).get('tokenBudget') || '2000', 10) || 2000;
-      var estFull = totalObs * 80;
-      var estInjected = d.sessions.length * tokenBudget;
-      var savings = estFull > 0 ? Math.round((1 - estInjected / Math.max(estFull, 1)) * 100) : 0;
-      if (savings < 0) savings = 0;
-      var tokensSaved = Math.max(0, estFull - estInjected);
+      var tokenEstimate = estimateTokenSavings(d.sessions, tokenBudget);
+      var savings = tokenEstimate.percent;
+      var tokensSaved = tokenEstimate.saved;
       // Rate: $0.30 per 1K tokens (mid-tier model baseline)
       var costDollars = tokensSaved / 1000 * 0.3;
       var costCents = Math.round(costDollars * 100);
@@ -1712,56 +1851,7 @@
       var relItems = d.relations || [];
 
       html += '<hr class="section-rule">';
-      html += '<div class="two-col">';
-
-      html += '<div class="card"><div class="card-title">Semantic Memory</div>';
-      if (semFacts.length === 0) {
-        html += '<div style="font-size:13px;color:var(--ink-faint);font-style:italic;">No semantic facts yet. Observations will be consolidated into semantic memories over time.</div>';
-      } else {
-          semFacts.slice(0, 5).forEach(function(f) {
-            var conf = typeof f.confidence === 'number' ? Math.round(f.confidence * 100) : null;
-            var str = typeof f.strength === 'number' ? Math.round(f.strength * 100) : null;
-            var barColor = (str || 0) > 70 ? 'var(--green)' : (str || 0) > 40 ? 'var(--yellow)' : 'var(--red)';
-            html += '<div class="memory-fact">';
-            html += '<span style="color:var(--ink);">' + esc(f.fact || f.content || f.title || 'Fact') + '</span>';
-            html += '<span style="display:flex;align-items:center;gap:6px;">';
-            if (str !== null) html += '<span class="strength-bar" style="width:40px;"><span class="fill" style="width:' + str + '%;background:' + barColor + '"></span></span>';
-            if (conf !== null) html += '<span style="font-size:10px;font-family:var(--font-mono);color:var(--ink-faint);">' + conf + '%</span>';
-            html += '</span></div>';
-          });
-        }
-        html += '</div>';
-
-        html += '<div class="card"><div class="card-title">Procedural Memory</div>';
-      if (procItems.length === 0) {
-        html += '<div style="font-size:13px;color:var(--ink-faint);font-style:italic;">No procedures yet. Repeated patterns will be extracted as procedures.</div>';
-      } else {
-          procItems.slice(0, 5).forEach(function(p) {
-            html += '<div class="procedure-item">';
-            html += '<div style="font-weight:600;color:var(--ink);font-family:var(--font-display);font-size:13px;">' + esc(p.name || p.title || 'Procedure') + '</div>';
-            if (p.trigger || p.triggerCondition) html += '<div style="font-size:11px;color:var(--ink-faint);font-family:var(--font-mono);margin-top:2px;">Trigger: ' + esc(p.trigger || p.triggerCondition) + '</div>';
-            if (p.frequency) html += '<div style="font-size:11px;color:var(--ink-faint);margin-top:2px;">Freq: ' + p.frequency + '</div>';
-            if (p.steps && p.steps.length > 0) {
-              html += '<ol class="procedure-steps">';
-              p.steps.slice(0, 4).forEach(function(s) { html += '<li>' + esc(typeof s === 'string' ? s : s.description || s.action || JSON.stringify(s)) + '</li>'; });
-              if (p.steps.length > 4) html += '<li style="color:var(--ink-faint);font-style:italic;">+ ' + (p.steps.length - 4) + ' more...</li>';
-              html += '</ol>';
-            }
-            html += '</div>';
-          });
-        }
-      html += '</div>';
-
-      html += '</div>';
-
-      html += '<div class="card" style="margin-top:16px;"><div class="card-title">Consolidation Status</div>';
-      html += '<div class="consolidation-row"><span class="cl">Semantic facts</span><span class="cv">' + semFacts.length + '</span></div>';
-      html += '<div class="consolidation-row"><span class="cl">Procedures</span><span class="cv">' + procItems.length + '</span></div>';
-      html += '<div class="consolidation-row"><span class="cl">Relations</span><span class="cv">' + relItems.length + '</span></div>';
-      if (semFacts.length === 0 && procItems.length === 0 && relItems.length === 0) {
-        html += '<div style="font-size:12px;color:var(--ink-faint);margin-top:8px;line-height:1.5;">Consolidation distills session observations into durable facts and repeatable procedures. It runs on a schedule when <code>CONSOLIDATION_ENABLED=true</code> and an LLM provider key are set, or on demand via <code>memory_consolidate</code>.</div>';
-      }
-      html += '</div>';
+      html += renderMemoryLayers(d.consolidation, semFacts, procItems);
 
       if (relItems.length > 0) {
         html += '<div class="card" style="margin-top:16px;"><div class="card-title">Memory Relations</div>';
@@ -1778,22 +1868,13 @@
       }
 
       html += '<div style="text-align:center;margin-top:20px;"><button class="btn btn-primary" data-action="refresh-dashboard">Refresh</button>';
-      html += '<span style="font-size:10px;color:var(--ink-faint);margin-left:10px;font-family:var(--font-mono);text-transform:uppercase;letter-spacing:0.08em;">Auto-refresh 30s</span></div>';
+      html += '</div>';
 
-      el.innerHTML = html;
+      setViewHtml(el, html);
     }
 
-    var dashboardTimer = null;
     function refreshDashboard() {
-      state.dashboard.loaded = false;
       loadDashboard();
-    }
-    function startDashboardAutoRefresh() {
-      if (dashboardTimer) clearInterval(dashboardTimer);
-      dashboardTimer = setInterval(function() {
-        if (pollTimer) return;
-        if (state.activeTab === 'dashboard') refreshDashboard();
-      }, 30000);
     }
 
     var graphSim = { nodes: [], edges: [], running: false, canvas: null, ctx: null, raf: null, panX: 0, panY: 0, zoom: 1, dragNode: null, mouseX: 0, mouseY: 0, tickCount: 0, quietTicks: 0 };
@@ -2314,12 +2395,39 @@
       graphSim.raf = requestAnimationFrame(runSimulation);
     }
 
+    var graphRebuilding = false;
+
     async function rebuildGraph() {
+      if (graphRebuilding) return;
+      var ok = window.confirm(
+        'Rebuild the knowledge graph from every stored observation?\n\n' +
+        'This replays the whole corpus and can take several minutes on a large store. ' +
+        'With an LLM provider configured it also spends provider tokens.'
+      );
+      if (!ok) return;
+      graphRebuilding = true;
       var sb = document.getElementById('graph-sidebar');
       if (sb) sb.innerHTML = '<h3>Graph</h3><p style="font-size:12px;color:var(--ink-faint);font-style:italic;">Rebuilding graph from observations...</p>';
-      await apiPost('graph/build', {});
-      state.graph.loaded = false;
-      loadGraph();
+      try {
+        var result = await apiPost('graph/build', {});
+        state.graph.rebuildResult = result && result.success
+          ? 'Rebuilt from ' + (result.sessions || 0) + ' sessions: ' + (result.nodes || 0) + ' nodes, ' + (result.edges || 0) + ' edges.'
+          : 'Graph rebuild failed or graph extraction is disabled. Check the server log.';
+      } finally {
+        graphRebuilding = false;
+        state.graph.loaded = false;
+        await loadGraph();
+        if (state.graph.queryError && state.graph.rebuildResult) {
+          state.graph.rebuildResult = 'The rebuild finished, but the graph could not be refreshed. Reload the Graph tab.';
+        }
+        var sidebar = document.getElementById('graph-sidebar');
+        if (sidebar && state.graph.rebuildResult) {
+          var note = document.createElement('p');
+          note.style.cssText = 'font-size:12px;color:var(--ink-muted);margin:8px 0;';
+          note.textContent = state.graph.rebuildResult;
+          sidebar.insertBefore(note, sidebar.firstChild);
+        }
+      }
     }
 
     function drawNodeShape(ctx, x, y, r, type) {
@@ -2745,7 +2853,7 @@
       }
 
       var __focus = captureSearchFocus(['mem-search']);
-      el.innerHTML = html;
+      setViewHtml(el, html);
 
       var searchInput = document.getElementById('mem-search');
       if (searchInput) {
@@ -2771,7 +2879,6 @@
     async function confirmDeleteMemory(id) {
       closeModal();
       await apiDelete('governance/memories', { memoryIds: [id], reason: 'Deleted via viewer' });
-      state.memories.loaded = false;
       loadMemories();
     }
 
@@ -3145,14 +3252,20 @@
 
       html += '</div>';
 
-      el.innerHTML = html;
+      setViewHtml(el, html);
     }
 
     async function loadSessions() {
       var el = document.getElementById('view-sessions');
       if (!state.sessions.loaded) el.innerHTML = '<div class="loading">Loading sessions...</div>';
+      var seqAtStart = liveSessionSeq;
       var result = await apiGet('sessions');
-      state.sessions.items = (result && result.sessions) || [];
+      if (result && Array.isArray(result.sessions)) {
+        state.sessions.items = replaySessionEvents(result.sessions, seqAtStart);
+      } else if (!state.sessions.loaded) {
+        state.sessions.items = [];
+      }
+      state.sessions.detailStale = true;
       state.sessions.loaded = true;
       renderSessions();
     }
@@ -3174,7 +3287,7 @@
           html += '<div class="session-item' + (selected ? ' selected' : '') + '"' + (id ? ' data-action="select-session" data-session-id="' + esc(id) + '" role="button" tabindex="0" aria-expanded="' + (selected ? 'true' : 'false') + '"' : '') + '>';
           html += '<div class="session-top"><span class="session-project">' + esc(sessionDisplayName(s)) + '</span>';
           html += '<span class="badge ' + statusBadge + '">' + esc(s.status) + '</span></div>';
-          var preview = s.firstPrompt || s.summary || '';
+          var preview = s.firstPrompt || summaryText(s.summary) || '';
           if (preview) {
             html += '<div class="session-preview" style="font-size:13px;color:var(--ink);margin:4px 0;line-height:1.4;">' + esc(truncate(preview, 140)) + '</div>';
           }
@@ -3186,9 +3299,16 @@
       }
       html += '</div>';
       html += '<div id="session-detail"></div></div>';
-      el.innerHTML = html;
+      setViewHtml(el, html);
 
-      if (state.sessions.selectedId) renderSessionDetail();
+      if (!state.sessions.selectedId) return;
+      var cached = state.sessions.detailCache;
+      if (cached && cached.id === state.sessions.selectedId && !state.sessions.detailStale) {
+        var panel = document.getElementById('session-detail');
+        if (panel && panel.innerHTML !== cached.html) panel.innerHTML = cached.html;
+        return;
+      }
+      renderSessionDetail();
     }
 
     function selectSession(id) {
@@ -3208,6 +3328,7 @@
       }
     }
 
+    var sessionDetailRequest = 0;
     async function renderSessionDetail() {
       var panel = document.getElementById('session-detail');
       if (!panel) return;
@@ -3215,9 +3336,15 @@
       var id = sessionId(s);
       if (!s || !id) { panel.innerHTML = ''; return; }
 
-      panel.innerHTML = '<div class="detail-panel"><h3>Loading session details…</h3></div>';
+      state.sessions.detailStale = false;
+      var request = ++sessionDetailRequest;
+      var cached = state.sessions.detailCache;
+      if (!cached || cached.id !== id) {
+        panel.innerHTML = '<div class="detail-panel"><h3>Loading session details…</h3></div>';
+      }
 
       var obsRes = await apiGet('observations?sessionId=' + encodeURIComponent(id));
+      if (request !== sessionDetailRequest || state.sessions.selectedId !== id) return;
       var obs = (obsRes && obsRes.observations) || [];
 
       var typeCounts = {};
@@ -3238,7 +3365,7 @@
       var durationMs = s.endedAt ? new Date(s.endedAt).getTime() - new Date(s.startedAt).getTime() : 0;
       var durationLabel = durationMs > 0 ? (durationMs < 60000 ? (durationMs / 1000).toFixed(1) + 's' : (durationMs / 60000).toFixed(1) + 'm') : '-';
 
-      var preview = s.firstPrompt || s.summary || firstPromptFromObs || '';
+      var preview = s.firstPrompt || summaryText(s.summary) || firstPromptFromObs || '';
 
       var html = '<div class="detail-panel">';
       html += '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;">';
@@ -3296,7 +3423,7 @@
       html += '<div><span style="color:var(--ink-muted);">started:</span> ' + esc(formatTime(s.startedAt)) + '</div>';
       if (s.endedAt) html += '<div><span style="color:var(--ink-muted);">ended:</span> ' + esc(formatTime(s.endedAt)) + '</div>';
       if (s.model) html += '<div><span style="color:var(--ink-muted);">model:</span> ' + esc(s.model) + '</div>';
-      if (s.tags && s.tags.length) html += '<div><span style="color:var(--ink-muted);">tags:</span> ' + s.tags.map(esc).join(', ') + '</div>';
+      if (asTags(s.tags).length) html += '<div><span style="color:var(--ink-muted);">tags:</span> ' + asTags(s.tags).map(esc).join(', ') + '</div>';
       html += '</div></div>';
 
       html += '<div style="display:flex;gap:8px;">';
@@ -3309,12 +3436,13 @@
         html += '<button class="btn btn-primary" disabled>Summarize unavailable</button>';
       }
       html += '</div></div>';
-      panel.innerHTML = html;
+      state.sessions.detailCache = { id: id, html: html };
+      panel = document.getElementById('session-detail');
+      if (panel) panel.innerHTML = html;
     }
 
     async function endSession(id) {
       await apiPost('session/end', { sessionId: id });
-      state.sessions.loaded = false;
       loadSessions();
     }
 
@@ -3343,7 +3471,7 @@
 
       if (search) {
         items = items.filter(function(l) {
-          return (l.content + ' ' + l.context + ' ' + (l.tags || []).join(' ')).toLowerCase().indexOf(search) >= 0;
+          return (l.content + ' ' + l.context + ' ' + asTags(l.tags).join(' ')).toLowerCase().indexOf(search) >= 0;
         });
       }
 
@@ -3385,7 +3513,7 @@
             if (l.context) html += '<div style="font-size:12px;color:var(--ink-muted);margin-bottom:8px;"><span style="font-family:var(--font-ui);font-size:10px;text-transform:uppercase;letter-spacing:0.1em;">Why learned</span><br>' + esc(l.context) + '</div>';
             html += '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:11px;color:var(--ink-muted);font-family:var(--font-mono);margin-bottom:8px;">';
             html += '<span>id: ' + esc(l.id) + '</span>';
-            if (l.tags && l.tags.length) html += '<span>tags: ' + esc(l.tags.join(', ')) + '</span>';
+            if (asTags(l.tags).length) html += '<span>tags: ' + esc(asTags(l.tags).join(', ')) + '</span>';
             if (l.createdAt) html += '<span>learned: ' + esc(formatTime(l.createdAt)) + '</span>';
             if (l.lastReinforcedAt) html += '<span>last confirmed: ' + esc(formatTime(l.lastReinforcedAt)) + '</span>';
             if (l.sourceIds && l.sourceIds.length) html += '<span>from ' + l.sourceIds.length + ' session(s)</span>';
@@ -3428,7 +3556,7 @@
 
       if (search) {
         items = items.filter(function(a) {
-          return (a.title + ' ' + (a.description || '') + ' ' + (a.tags || []).join(' ')).toLowerCase().indexOf(search) >= 0;
+          return (a.title + ' ' + (a.description || '') + ' ' + asTags(a.tags).join(' ')).toLowerCase().indexOf(search) >= 0;
         });
       }
       if (statusFilter) {
@@ -3468,7 +3596,7 @@
           html += '</td>';
           html += '<td><span class="badge ' + statusClass + '">' + esc(a.status) + '</span></td>';
           html += '<td style="text-align:center;font-weight:600;">' + (a.priority || '-') + '</td>';
-          html += '<td style="font-size:11px;color:var(--ink-muted);">' + (a.tags || []).map(esc).join(', ') + '</td>';
+          html += '<td style="font-size:11px;color:var(--ink-muted);">' + asTags(a.tags).map(esc).join(', ') + '</td>';
           html += '<td style="text-align:center;">' + (isFrontier ? '&#9889;' : '') + '</td>';
           html += '<td style="font-size:12px;color:var(--ink-muted);">' + shortTime(a.updatedAt) + '</td>';
           html += '</tr>';
@@ -3870,7 +3998,7 @@
 
       if (p.summary) {
         html += '<div class="card" style="margin-top:16px;"><div class="card-title">Project Summary</div>';
-        html += '<p style="font-size:13px;color:var(--ink-muted);line-height:1.7;">' + esc(p.summary) + '</p></div>';
+        html += '<p style="font-size:13px;color:var(--ink-muted);line-height:1.7;">' + esc(summaryText(p.summary)) + '</p></div>';
       }
 
       var stats = '<div class="card" style="margin-top:16px;"><div class="card-title">Project Stats</div>';
@@ -3885,8 +4013,9 @@
     var wsReconnectTimer = null;
     var wsRetries = 0;
     var WS_MAX_RETRIES = 4;
-    var directFailed = false;
+    var directFailed = true;
     var directFailures = 0;
+    var wsHasConnected = false;
     var DIRECT_FAILURE_THRESHOLD = 2;
     var pollTimer = null;
     var POLL_INTERVAL_MS = 10000;
@@ -3907,16 +4036,12 @@
       pollTimer = setInterval(function() {
         tick++;
         if (state.activeTab === 'dashboard') {
-          state.dashboard.loaded = false;
           loadDashboard();
         } else if (state.activeTab === 'memories') {
-          state.memories.loaded = false;
           loadMemories();
         } else if (state.activeTab === 'sessions') {
-          state.sessions.loaded = false;
           loadSessions();
         } else if (state.activeTab === 'activity') {
-          state.activity.loaded = false;
           loadActivity();
         }
         if (tick % WS_REPROBE_EVERY_TICKS === 0) {
@@ -3924,7 +4049,7 @@
           if (!ws || ws.readyState !== WebSocket.OPEN) {
             wsRetries = 0;
             directFailures = 0;
-            directFailed = false;
+            directFailed = true;
             connectWs();
           }
         }
@@ -3964,10 +4089,8 @@
           if (state.ws !== ws) return;
           wsRetries = 0;
           stopPolling();
-          if (ws.__direct) {
-            directFailures = 0;
-            directFailed = false;
-          }
+          if (wsHasConnected) resyncLiveViews();
+          wsHasConnected = true;
           if (!ws.__direct) {
             ws.send(JSON.stringify({
               type: 'join',
@@ -3982,6 +4105,10 @@
         };
         ws.onmessage = function(e) {
           if (state.ws !== ws) return;
+          if (!ws.__usable) {
+            ws.__usable = true;
+            directFailures = 0;
+          }
           try {
             var msg = JSON.parse(e.data);
             if (msg.type === 'stream' && msg.event) {
@@ -3994,11 +4121,10 @@
         ws.onclose = function() {
           clearTimeout(connectTimer);
           if (state.ws !== ws) return;
-          if (ws.__direct) {
-            directFailures += 1;
-            if (directFailures >= DIRECT_FAILURE_THRESHOLD) {
-              directFailed = true;
-            }
+          directFailures += 1;
+          if (directFailures >= DIRECT_FAILURE_THRESHOLD) {
+            directFailed = ws.__direct;
+            directFailures = 0;
           }
           wsRetries++;
           if (wsRetries < WS_MAX_RETRIES) {
@@ -4023,14 +4149,144 @@
       }
     }
 
+    var LIVE_BUFFER_MAX = 200;
+
     function looksLikeObservation(obj) {
       return !!(obj && typeof obj === 'object' && obj.id && obj.timestamp);
+    }
+
+    function sessionKey(s) {
+      return s && (s.id || s.sessionId);
+    }
+
+    function upsertSessionIn(list, session) {
+      var key = sessionKey(session);
+      if (!key) return list;
+      var index = list.findIndex(function(s) { return sessionKey(s) === key; });
+      if (index >= 0) list[index] = Object.assign({}, list[index], session);
+      else list.unshift(session);
+      return list;
+    }
+
+    function removeSessionFrom(list, key) {
+      return list.filter(function(s) { return sessionKey(s) !== key; });
+    }
+
+    function patchSessionCount(list, key, count) {
+      list.forEach(function(s) {
+        if (sessionKey(s) === key) s.observationCount = count;
+      });
+    }
+
+    var LIVE_SESSION_LOG_MAX = 500;
+    var liveSessionLog = [];
+    var liveSessionSeq = 0;
+
+    function applySessionEvent(list, entry) {
+      if (entry.type === 'session.updated') return upsertSessionIn(list, entry.data.session);
+      if (entry.type === 'session.deleted') return removeSessionFrom(list, entry.data.sessionId);
+      patchSessionCount(list, entry.data.sessionId, entry.data.observationCount);
+      return list;
+    }
+
+    function replaySessionEvents(list, sinceSeq) {
+      liveSessionLog.forEach(function(entry) {
+        if (entry.seq > sinceSeq) list = applySessionEvent(list, entry);
+      });
+      return list;
+    }
+
+    var memoryCountTimer = null;
+    var memoryCountRequest = 0;
+    function refreshMemoryCount() {
+      if (memoryCountTimer) return;
+      memoryCountTimer = setTimeout(async function() {
+        memoryCountTimer = null;
+        var request = ++memoryCountRequest;
+        var result = await apiGet('memories?latest=true&count=true');
+        if (request !== memoryCountRequest) return;
+        if (result && typeof result.total === 'number') {
+          state.dashboard.memoryTotal = result.total;
+          if (state.activeTab === 'dashboard' && state.dashboard.loaded) renderDashboard();
+        }
+      }, 500);
+    }
+
+    var memoriesReloadTimer = null;
+    var memoriesReloading = false;
+    var memoriesReloadPending = false;
+    function scheduleMemoriesReload() {
+      if (memoriesReloading) {
+        memoriesReloadPending = true;
+        return;
+      }
+      if (memoriesReloadTimer) return;
+      memoriesReloadTimer = setTimeout(async function() {
+        memoriesReloadTimer = null;
+        if (state.activeTab !== 'memories') return;
+        memoriesReloading = true;
+        try {
+          await loadMemories();
+        } finally {
+          memoriesReloading = false;
+          if (memoriesReloadPending) {
+            memoriesReloadPending = false;
+            scheduleMemoriesReload();
+          }
+        }
+      }, 500);
+    }
+
+    function resyncLiveViews() {
+      if (state.dashboard.loaded) loadDashboard();
+      if (state.sessions.loaded) loadSessions();
+      tabFetchedAt.memories = 0;
+      if (state.memories.loaded) scheduleMemoriesReload();
+      refreshMemoryCount();
+    }
+
+    var LIVE_RENDER_THROTTLE_MS = 250;
+    var pendingLiveRender = null;
+    function scheduleLiveRender() {
+      if (pendingLiveRender) return;
+      pendingLiveRender = setTimeout(function() {
+        pendingLiveRender = null;
+        if (state.activeTab === 'dashboard' && state.dashboard.loaded) renderDashboard();
+        if (state.activeTab === 'sessions' && state.sessions.loaded) renderSessions();
+      }, LIVE_RENDER_THROTTLE_MS);
+    }
+
+    function handleLiveEvent(type, data) {
+      if (type === 'memory.updated' || type === 'memory.deleted') {
+        refreshMemoryCount();
+        tabFetchedAt.memories = 0;
+        scheduleMemoriesReload();
+        return;
+      }
+      var isSessionEvent =
+        (type === 'session.updated' && data.session && sessionKey(data.session)) ||
+        ((type === 'session.activity' || type === 'session.deleted') && data.sessionId);
+      if (!isSessionEvent) return;
+      var entry = { seq: ++liveSessionSeq, type: type, data: data };
+      liveSessionLog.push(entry);
+      if (liveSessionLog.length > LIVE_SESSION_LOG_MAX) liveSessionLog.shift();
+      state.dashboard.sessions = applySessionEvent(state.dashboard.sessions, entry);
+      state.sessions.items = applySessionEvent(state.sessions.items, entry);
+      var touched = type === 'session.updated' ? sessionKey(data.session) : data.sessionId;
+      if (type !== 'session.activity' && touched === state.sessions.selectedId) {
+        state.sessions.detailStale = true;
+      }
+      scheduleLiveRender();
     }
 
     function handleStreamEvent(msg) {
       var evt = msg.event;
       var observation;
       if (!evt) return;
+      if (evt.type === 'event' && evt.event && evt.event.type) {
+        handleLiveEvent(evt.event.type, evt.event.data || {});
+        return;
+      }
       if (evt.event_type && evt.event_type !== 'observation' && evt.event_type !== 'create' && evt.event_type !== 'update') {
         return;
       }
@@ -4048,7 +4304,7 @@
           routeWsMessage({ observation: observation });
         }
       } else if (evt.type === 'sync') {
-        var items = Array.isArray(evt.data) ? evt.data : [];
+        var items = Array.isArray(evt.data) ? evt.data.slice(-LIVE_BUFFER_MAX) : [];
         items.forEach(function(item) {
           var payload = item.data || item;
           observation = payload.observation || payload;
@@ -4067,16 +4323,18 @@
             state.timeline.observations[existing] = msg.observation;
           } else {
             state.timeline.observations.unshift(msg.observation);
+            if (state.timeline.observations.length > LIVE_BUFFER_MAX * 4) {
+              state.timeline.observations.length = LIVE_BUFFER_MAX * 4;
+            }
           }
           renderObservations();
         }
       }
-      if (state.activeTab === 'dashboard') {
-        state.dashboard.loaded = false;
-        loadDashboard();
-      }
       if (state.activeTab === 'activity' && msg.observation) {
         state.activity.observations.unshift(msg.observation);
+        if (state.activity.observations.length > LIVE_BUFFER_MAX) {
+          state.activity.observations.length = LIVE_BUFFER_MAX;
+        }
         renderActivity();
       }
     }
@@ -4617,7 +4875,18 @@
       } catch (_) {}
       connectWs();
     })();
-    startDashboardAutoRefresh();
+
+    document.addEventListener('visibilitychange', function() {
+      if (document.visibilityState !== 'visible') return;
+      var ws = state.ws;
+      if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
+      if (wsReconnectTimer) clearTimeout(wsReconnectTimer);
+      wsRetries = 0;
+      directFailures = 0;
+      directFailed = true;
+      connectWs();
+      if (state.activeTab === 'dashboard') scheduleDashboardReload();
+    });
 
     // Ambient background: an ordered-dither dot field that drifts very
     // slowly — the print-halftone cousin of the old static dot grid.
