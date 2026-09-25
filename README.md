@@ -1288,6 +1288,35 @@ On engine 0.22.x keep the `iii-` prefixed names for the builtins above; the unpr
 
 Full registry: [workers.iii.dev](https://workers.iii.dev). Every worker there composes through the same primitives agentmemory uses, and the agentmemory you already have is one of them.
 
+### Storage backend: file (default) vs redis
+
+`iii-state` and `iii-stream` default to iii-engine's bundled file-based KV store: one JSON file per scope, held in the engine process's memory and rewritten to disk on a timer. That's the right default for a single-user local install, but a shared daemon with several concurrent writers benefits from real per-key writes instead.
+
+Set `AGENTMEMORY_STATE_BACKEND=redis` (plus `AGENTMEMORY_REDIS_URL`) to switch both workers to iii-engine's built-in `redis` adapter, which stores each key as a Redis hash field (`HSET`) instead of rewriting a whole scope on every write:
+
+```env
+# ~/.agentmemory/.env
+AGENTMEMORY_STATE_BACKEND=redis
+AGENTMEMORY_REDIS_URL=redis://localhost:6379
+```
+
+`AGENTMEMORY_STATE_BACKEND` defaults to `file`; leaving it unset keeps today's behavior unchanged. Only a native (non-Docker) start reads these two variables and renders them into the launched `iii-config`. A Docker Compose deployment mounts `iii-config.docker.yaml` read-only and never goes through this render step — switch it by hand, following the same `name: redis` / `config: redis_url: ...` shape shown in the [iii-state](https://workers.iii.dev/workers/iii-state) and [iii-stream](https://workers.iii.dev/workers/iii-stream) worker docs, and point `redis_url` at a Redis reachable from the container.
+
+**Migration is not automatic.** Switching `AGENTMEMORY_STATE_BACKEND` starts from an empty store on either side — nothing copies existing data from file to Redis or back. Export from the backend you're leaving and import into the one you're moving to:
+
+```bash
+# 1. On the old backend, while agentmemory is still running on it:
+curl -s http://localhost:3111/agentmemory/export > backup.json
+
+# 2. Switch AGENTMEMORY_STATE_BACKEND (and AGENTMEMORY_REDIS_URL if needed),
+#    restart agentmemory against the new backend, then:
+jq -n --slurpfile d backup.json '{exportData: $d[0], strategy: "merge"}' | \
+  curl -s -X POST http://localhost:3111/agentmemory/import \
+    -H 'Content-Type: application/json' -d @-
+```
+
+`/agentmemory/export` also accepts `?maxSessions=` and `?offset=` for chunking a large corpus across several calls; `strategy` on import is `merge` (default-safe), `replace`, or `skip`.
+
 ### What iii replaces
 
 | Traditional stack | agentmemory uses |

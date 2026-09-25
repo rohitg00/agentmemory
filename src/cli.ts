@@ -78,7 +78,7 @@ import { renderSplash } from "./cli/splash.js";
 import { isFirstRun, readPrefs, resetPrefs, writePrefs } from "./cli/preferences.js";
 import { runOnboarding } from "./cli/onboarding.js";
 import { setBootVerbose } from "./logger.js";
-import { hydrateProcessEnvFromFile } from "./config.js";
+import { getRedisUrl, getStateBackend, hydrateProcessEnvFromFile } from "./config.js";
 import { III_PINNED_VERSION, VERSION } from "./version.js";
 import { getAllTools, ESSENTIAL_TOOLS } from "./mcp/tools-registry.js";
 import { knownAgents } from "./cli/connect/index.js";
@@ -1465,6 +1465,7 @@ function prepareEngineLaunch(configPath: string): {
         viewerPort: getConfiguredViewerPort(),
         enginePort: getEnginePort(),
       },
+      stateBackend: { kind: getStateBackend(), redisUrl: getRedisUrl() },
     };
     const rewritten = bundledConfig
       ? rewriteBundledConfig(
@@ -1552,6 +1553,13 @@ function pickCompatibleIii(candidates: Array<string | null | undefined>): string
 }
 
 async function startEngine(): Promise<boolean> {
+  if (getStateBackend() === "redis" && !getRedisUrl()) {
+    p.log.error(
+      "AGENTMEMORY_STATE_BACKEND=redis requires AGENTMEMORY_REDIS_URL to be set (e.g. redis://localhost:6379). " +
+        "Set both in ~/.agentmemory/.env, or unset AGENTMEMORY_STATE_BACKEND to keep the default file store.",
+    );
+    process.exit(1);
+  }
   await assertRuntimePortOwnership();
   const persistedState = readEngineState();
   if (persistedState?.kind === "docker") {

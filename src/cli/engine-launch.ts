@@ -162,6 +162,7 @@ export function rewriteBundledConfig(
   const rendered = renderEngineConfig(raw, {
     dataDir: options?.dataDir ?? join(agentmemoryHome(home), "data"),
     ...(options?.ports ? { ports: options.ports } : {}),
+    ...(options?.stateBackend ? { stateBackend: options.stateBackend } : {}),
   });
   return removeAgentmemoryExecCommand(rendered, nodeBin, workerEntry);
 }

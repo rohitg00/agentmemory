@@ -175,4 +175,22 @@ describe("rewriteBundledConfig", () => {
     expect(out).toContain("port: 3212");
     expect(out).toContain("port: 49234");
   });
+
+  it("forwards the redis state backend through to renderEngineConfig", () => {
+    const raw = readFileSync(join(import.meta.dirname, "..", "iii-config.yaml"), "utf-8");
+    const out = rewriteBundledConfig(
+      raw,
+      HOME,
+      process.execPath,
+      "/opt/pkg/dist/index.mjs",
+      {
+        dataDir: "/var/lib/agentmemory",
+        stateBackend: { kind: "redis", redisUrl: "redis://localhost:6379" },
+      },
+    );
+
+    expect(out).toMatch(/- name: iii-state\n {4}config:\n {6}adapter:\n {8}name: redis/);
+    expect(out).toMatch(/- name: iii-stream\n {4}config:\n {6}port: 3112\n {6}host: 127\.0\.0\.1\n {6}adapter:\n {8}name: redis/);
+    expect(out).not.toContain("store_method: file_based");
+  });
 });

@@ -235,6 +235,20 @@ export function isDropStaleIndexEnabled(): boolean {
   return getMergedEnv()["AGENTMEMORY_DROP_STALE_INDEX"] === "true";
 }
 
+const VALID_STATE_BACKENDS = new Set(["file", "redis"]);
+
+export function getStateBackend(): "file" | "redis" {
+  const raw = (getMergedEnv()["AGENTMEMORY_STATE_BACKEND"] || "file")
+    .trim()
+    .toLowerCase();
+  return VALID_STATE_BACKENDS.has(raw) ? (raw as "file" | "redis") : "file";
+}
+
+export function getRedisUrl(): string | undefined {
+  const value = getMergedEnv()["AGENTMEMORY_REDIS_URL"];
+  return hasRealValue(value) ? value.trim() : undefined;
+}
+
 export function detectLlmProviderKind(): "llm" | "noop" {
   const env = getMergedEnv();
   if (

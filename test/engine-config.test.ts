@@ -73,6 +73,60 @@ describe("renderEngineConfig", () => {
     );
   });
 
+  it("is byte-identical to the file-default render when stateBackend is omitted or 'file'", () => {
+    const source = readFileSync(
+      join(import.meta.dirname, "..", "iii-config.yaml"),
+      "utf8",
+    );
+    const dataDir = "/tmp/agentmemory-fixture";
+
+    const withoutOption = renderEngineConfig(source, { dataDir });
+    const withFileKind = renderEngineConfig(source, {
+      dataDir,
+      stateBackend: { kind: "file" },
+    });
+
+    expect(withFileKind).toBe(withoutOption);
+    expect(withFileKind).toContain("name: kv");
+    expect(withFileKind).not.toContain("name: redis");
+  });
+
+  it("switches both iii-state and iii-stream to the redis adapter", () => {
+    const source = readFileSync(
+      join(import.meta.dirname, "..", "iii-config.yaml"),
+      "utf8",
+    );
+
+    const rendered = renderEngineConfig(source, {
+      dataDir: "/tmp/agentmemory-fixture",
+      stateBackend: { kind: "redis", redisUrl: "redis://localhost:6390" },
+    });
+
+    expect(rendered).toMatch(
+      /- name: iii-state\n {4}config:\n {6}adapter:\n {8}name: redis\n {8}config:\n {10}redis_url: 'redis:\/\/localhost:6390'/,
+    );
+    expect(rendered).toMatch(
+      /- name: iii-stream\n {4}config:\n {6}port: 3112\n {6}host: 127\.0\.0\.1\n {6}adapter:\n {8}name: redis\n {8}config:\n {10}redis_url: 'redis:\/\/localhost:6390'/,
+    );
+    expect(rendered).not.toContain("store_method: file_based");
+    expect(rendered).not.toContain("state_store.db");
+    expect(rendered).not.toContain("stream_store");
+  });
+
+  it("throws a clear error when redis is selected without a URL", () => {
+    const source = readFileSync(
+      join(import.meta.dirname, "..", "iii-config.yaml"),
+      "utf8",
+    );
+
+    expect(() =>
+      renderEngineConfig(source, {
+        dataDir: "/tmp/agentmemory-fixture",
+        stateBackend: { kind: "redis" },
+      }),
+    ).toThrow(/AGENTMEMORY_REDIS_URL/);
+  });
+
   it("keeps the iii- prefixed builtin names: on 0.22.1 the unprefixed names resolve to registry workers", () => {
     const source = readFileSync(
       join(import.meta.dirname, "..", "iii-config.yaml"),
