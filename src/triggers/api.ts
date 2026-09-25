@@ -1431,6 +1431,10 @@ export function registerApiTriggers(
         function_id: "mem::export",
         payload,
       });
+      const resp = result as { success?: boolean; oversized?: boolean };
+      if (resp?.success === false && resp?.oversized === true) {
+        return { status_code: 413, body: result };
+      }
       return { status_code: 200, body: result };
     },
   );
